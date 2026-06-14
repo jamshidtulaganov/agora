@@ -61,7 +61,7 @@ type Config struct {
 	// the UI can hide every "Create workspace" affordance — see #3433.
 	DisableWorkspaceCreation bool
 	// PublicURL is the absolute base URL the API is reachable at from the
-	// public internet, with no trailing slash (e.g. "https://app.tandem.dev").
+	// public internet, with no trailing slash (e.g. "https://app.agora.dev").
 	// Used only to build webhook_url responses for autopilot webhook triggers
 	// — never for auth, routing, or workspace resolution. Empty when unset,
 	// in which case clients fall back to webhook_path + their own origin.
@@ -73,7 +73,7 @@ type Config struct {
 	// TrustedProxies are CIDRs whose source IP we trust to set
 	// X-Forwarded-For / X-Real-IP. Empty means "trust nothing": the rate
 	// limiter uses r.RemoteAddr exclusively. Populated via the
-	// TANDEM_TRUSTED_PROXIES env var (comma-separated CIDRs, e.g.
+	// AGORA_TRUSTED_PROXIES env var (comma-separated CIDRs, e.g.
 	// "10.0.0.0/8,127.0.0.1/32"). This is specifically to keep the per-IP
 	// webhook limiter from being bypassed by a spoofed XFF on deployments
 	// without a header-stripping reverse proxy in front.
@@ -124,7 +124,7 @@ type Handler struct {
 	WebhookIPRateLimiter WebhookRateLimiter
 	CloudRuntime         cloudRuntimeProxy
 	// Lark integration. All three are nil when the Lark master key
-	// (TANDEM_LARK_SECRET_KEY) is unset; the corresponding HTTP
+	// (AGORA_LARK_SECRET_KEY) is unset; the corresponding HTTP
 	// handlers return 503 in that case so a misconfigured self-host
 	// deployment surfaces a clear error instead of silently using a
 	// zero key. Wired in cmd/server/router.go after handler.New.
@@ -140,14 +140,14 @@ type Handler struct {
 	// LarkAPIClient is the live transport that backs SendInteractiveCard,
 	// PatchInteractiveCard, SendBindingPromptCard, GetBotInfo. The
 	// router wires the real Lark HTTP client whenever
-	// TANDEM_LARK_SECRET_KEY is set; tests that need a no-op
+	// AGORA_LARK_SECRET_KEY is set; tests that need a no-op
 	// behaviour can swap in `lark.NewStubAPIClient(...)` directly. The
 	// UI consults IsConfigured() to decide whether to surface install
 	// entry points.
 	LarkAPIClient lark.APIClient
 	// LarkHub owns the per-installation supervisor goroutines that
 	// hold the §4.4 WS lease and run the EventConnector. Nil only
-	// when the master at-rest key (TANDEM_LARK_SECRET_KEY) is unset.
+	// when the master at-rest key (AGORA_LARK_SECRET_KEY) is unset.
 	// The router constructs the Hub but does NOT call Run on it; the
 	// process owner (main.go) starts it under a long-running context
 	// and joins via WaitWithTimeout (bounded wait, fenced by

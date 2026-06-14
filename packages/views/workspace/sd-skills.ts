@@ -1,4 +1,4 @@
-import { api } from "@tandem/core/api";
+import { api } from "@agora/core/api";
 
 /**
  * SD shared skills, seeded onto every developer's helper agent during

@@ -23,11 +23,11 @@ func TestRealtimeCollectorExposesCounters(t *testing.T) {
 	body := rec.Body.String()
 
 	for _, want := range []string{
-		"tandem_realtime_active_connections 3",
-		"tandem_realtime_messages_sent_total 11",
-		"tandem_realtime_redis_connected 1",
-		`tandem_realtime_redis_mirror_errors_total{target="primary"} 2`,
-		`tandem_realtime_redis_mirror_errors_total{target="secondary"} 5`,
+		"agora_realtime_active_connections 3",
+		"agora_realtime_messages_sent_total 11",
+		"agora_realtime_redis_connected 1",
+		`agora_realtime_redis_mirror_errors_total{target="primary"} 2`,
+		`agora_realtime_redis_mirror_errors_total{target="secondary"} 5`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("metrics body missing %q\n%s", want, body)

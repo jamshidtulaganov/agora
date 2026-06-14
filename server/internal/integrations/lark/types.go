@@ -6,12 +6,12 @@ import "time"
 // installations of the same app produce different open_ids for the
 // same human user; cross-installation identity merging would need
 // union_id (Phase 2). Typed alias instead of plain string so callers
-// can't accidentally pass a Tandem user UUID where a Lark open_id is
+// can't accidentally pass a Agora user UUID where a Lark open_id is
 // expected.
 type OpenID string
 
 // ChatID identifies a Lark conversation (p2p or group). One ChatID maps
-// to one Tandem chat_session via lark_chat_session_binding.
+// to one Agora chat_session via lark_chat_session_binding.
 type ChatID string
 
 // ChatType discriminates p2p (single-user DM with the Bot) from group
@@ -38,7 +38,7 @@ const (
 // Region identifies which Lark open-platform cloud an installation lives
 // on. Feishu (mainland China, open.feishu.cn / accounts.feishu.cn) and
 // Lark (international, open.larksuite.com / accounts.larksuite.com) are
-// separate clouds with distinct hosts; a single Tandem deployment serves
+// separate clouds with distinct hosts; a single Agora deployment serves
 // both by resolving the host per installation from this value rather than
 // from a deployment-wide env var. Mirrors the lark_installation.region
 // CHECK constraint (migration 116) — keep the two in lockstep.
@@ -95,7 +95,7 @@ const (
 	// binding card; the message itself is not stored.
 	DropReasonUnboundUser DropReason = "unbound_user"
 
-	// DropReasonNonWorkspaceMember — the sender resolved to a Tandem
+	// DropReasonNonWorkspaceMember — the sender resolved to a Agora
 	// user, but that user is not a member of this installation's
 	// workspace. The Bot replies with a "not in this workspace" notice;
 	// the message itself is not stored.

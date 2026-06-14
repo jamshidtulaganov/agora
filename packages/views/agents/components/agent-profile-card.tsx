@@ -1,19 +1,19 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { Agent, AgentRuntime } from "@tandem/core/types";
-import { useAgentPresenceDetail } from "@tandem/core/agents";
-import { useWorkspaceId } from "@tandem/core/hooks";
+import type { Agent, AgentRuntime } from "@agora/core/types";
+import { useAgentPresenceDetail } from "@agora/core/agents";
+import { useWorkspaceId } from "@agora/core/hooks";
 import {
   deriveRuntimeHealth,
   type RuntimeHealth,
-} from "@tandem/core/runtimes";
-import { agentListOptions, memberListOptions } from "@tandem/core/workspace/queries";
-import { resolvePublicFileUrl } from "@tandem/core/workspace/avatar-url";
-import { runtimeListOptions } from "@tandem/core/runtimes/queries";
-import { useWorkspacePaths } from "@tandem/core/paths";
-import { ActorAvatar as ActorAvatarBase } from "@tandem/ui/components/common/actor-avatar";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
+} from "@agora/core/runtimes";
+import { agentListOptions, memberListOptions } from "@agora/core/workspace/queries";
+import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
+import { runtimeListOptions } from "@agora/core/runtimes/queries";
+import { useWorkspacePaths } from "@agora/core/paths";
+import { ActorAvatar as ActorAvatarBase } from "@agora/ui/components/common/actor-avatar";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import { AppLink } from "../../navigation";
 import { HealthIcon } from "../../runtimes/components/shared";
 import { availabilityConfig } from "../presence";

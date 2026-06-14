@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { AutopilotDetailPage } from "@tandem/views/autopilots/components";
+import { AutopilotDetailPage } from "@agora/views/autopilots/components";
 
 export default function Page({
   params,

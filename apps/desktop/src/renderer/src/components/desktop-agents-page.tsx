@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AgentsPage } from "@tandem/views/agents";
+import { AgentsPage } from "@agora/views/agents";
 import type { DaemonStatus } from "../../../shared/daemon-types";
 
 /**

@@ -49,7 +49,7 @@ export const useQuickCreateStore = create<QuickCreateState>()(
       setKeepOpen: (v) => set({ keepOpen: v }),
     }),
     {
-      name: "tandem_quick_create",
+      name: "agora_quick_create",
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
     },
   ),

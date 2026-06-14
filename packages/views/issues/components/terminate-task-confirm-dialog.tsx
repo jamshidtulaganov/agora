@@ -9,7 +9,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@tandem/ui/components/ui/alert-dialog";
+} from "@agora/ui/components/ui/alert-dialog";
 import { useT } from "../../i18n";
 
 // Reusable confirm step for the two issue-detail surfaces that terminate

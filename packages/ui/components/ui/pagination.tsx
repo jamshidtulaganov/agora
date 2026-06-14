@@ -1,8 +1,8 @@
 import * as React from "react"
 import { useTranslation } from "react-i18next"
 
-import { cn } from "@tandem/ui/lib/utils"
-import { Button } from "@tandem/ui/components/ui/button"
+import { cn } from "@agora/ui/lib/utils"
+import { Button } from "@agora/ui/components/ui/button"
 import { ChevronLeftIcon, ChevronRightIcon, MoreHorizontalIcon } from "lucide-react"
 
 function Pagination({ className, ...props }: React.ComponentProps<"nav">) {

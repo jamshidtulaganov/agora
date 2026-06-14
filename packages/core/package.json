@@ -1,5 +1,5 @@
 {
-  "name": "@tandem/core",
+  "name": "@agora/core",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -120,8 +120,8 @@
     "react": "catalog:"
   },
   "devDependencies": {
-    "@tandem/eslint-config": "workspace:*",
-    "@tandem/tsconfig": "workspace:*",
+    "@agora/eslint-config": "workspace:*",
+    "@agora/tsconfig": "workspace:*",
     "@testing-library/react": "catalog:",
     "@types/react": "catalog:",
     "jsdom": "catalog:",

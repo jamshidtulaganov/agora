@@ -10,9 +10,9 @@ describe("runtime config", () => {
   it("uses cloud defaults without a desktop.json file", () => {
     expect(DEFAULT_RUNTIME_CONFIG).toEqual({
       schemaVersion: 1,
-      apiUrl: "https://api.tandem.dev",
-      wsUrl: "wss://api.tandem.dev/ws",
-      appUrl: "https://tandem.dev",
+      apiUrl: "https://api.agora.dev",
+      wsUrl: "wss://api.agora.dev/ws",
+      appUrl: "https://agora.dev",
     });
   });
 
@@ -35,13 +35,13 @@ describe("runtime config", () => {
   it("strips the leading api. label when deriving appUrl", () => {
     expect(
       parseRuntimeConfig(
-        JSON.stringify({ schemaVersion: 1, apiUrl: "https://api.tandem.dev" }),
+        JSON.stringify({ schemaVersion: 1, apiUrl: "https://api.agora.dev" }),
       ),
     ).toEqual({
       schemaVersion: 1,
-      apiUrl: "https://api.tandem.dev",
-      wsUrl: "wss://api.tandem.dev/ws",
-      appUrl: "https://tandem.dev",
+      apiUrl: "https://api.agora.dev",
+      wsUrl: "wss://api.agora.dev/ws",
+      appUrl: "https://agora.dev",
     });
   });
 
@@ -79,7 +79,7 @@ describe("runtime config", () => {
 
   it("rejects non-http api schemes", () => {
     expect(() =>
-      parseRuntimeConfig(JSON.stringify({ schemaVersion: 1, apiUrl: "file:///tmp/tandem" })),
+      parseRuntimeConfig(JSON.stringify({ schemaVersion: 1, apiUrl: "file:///tmp/agora" })),
     ).toThrow(/apiUrl must use http or https/);
   });
 
@@ -122,30 +122,30 @@ describe("runtime config", () => {
   it("derives dev appUrl by stripping the leading api. label", () => {
     // When the dev renderer is pointed at a remote backend (e.g. a test
     // environment), copy-link / share URLs must reflect that environment's
-    // public web host, not the api host. Tandem's convention exposes the
+    // public web host, not the api host. Agora's convention exposes the
     // api at `api.<web-host>`, so stripping the leading label gives the
     // right web origin without a separate VITE_APP_URL.
     expect(
-      runtimeConfigFromDevEnv({ apiUrl: "https://api.test.tandem.dev" }),
+      runtimeConfigFromDevEnv({ apiUrl: "https://api.test.agora.dev" }),
     ).toEqual({
       schemaVersion: 1,
-      apiUrl: "https://api.test.tandem.dev",
-      wsUrl: "wss://api.test.tandem.dev/ws",
-      appUrl: "https://test.tandem.dev",
+      apiUrl: "https://api.test.agora.dev",
+      wsUrl: "wss://api.test.agora.dev/ws",
+      appUrl: "https://test.agora.dev",
     });
   });
 
   it("dev VITE_APP_URL still wins over apiUrl-derived value", () => {
     expect(
       runtimeConfigFromDevEnv({
-        apiUrl: "https://api.test.tandem.dev",
-        appUrl: "https://staging.tandem.dev",
+        apiUrl: "https://api.test.agora.dev",
+        appUrl: "https://staging.agora.dev",
       }),
     ).toEqual({
       schemaVersion: 1,
-      apiUrl: "https://api.test.tandem.dev",
-      wsUrl: "wss://api.test.tandem.dev/ws",
-      appUrl: "https://staging.tandem.dev",
+      apiUrl: "https://api.test.agora.dev",
+      wsUrl: "wss://api.test.agora.dev/ws",
+      appUrl: "https://staging.agora.dev",
     });
   });
 });

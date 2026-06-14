@@ -1,4 +1,4 @@
-/** A Lark Bot installation bound to a single Tandem agent.
+/** A Lark Bot installation bound to a single Agora agent.
  *
  * Wire shape mirrors `LarkInstallationResponse` in
  * `server/internal/handler/lark.go`. New fields the backend adds in the

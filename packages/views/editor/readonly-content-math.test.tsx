@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
-import { Markdown } from "@tandem/ui/markdown";
+import { Markdown } from "@agora/ui/markdown";
 import { ReadonlyContent } from "./readonly-content";
 
 // Prose with two dollar amounts and `~` (approximately) markers. With

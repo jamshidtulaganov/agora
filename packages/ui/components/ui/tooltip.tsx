@@ -2,7 +2,7 @@
 
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip"
 
-import { cn } from "@tandem/ui/lib/utils"
+import { cn } from "@agora/ui/lib/utils"
 
 function TooltipProvider({
   delay = 200,

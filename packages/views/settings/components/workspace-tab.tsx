@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Camera, Loader2, Save, LogOut } from "lucide-react";
-import { Input } from "@tandem/ui/components/ui/input";
-import { Textarea } from "@tandem/ui/components/ui/textarea";
-import { Label } from "@tandem/ui/components/ui/label";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Card, CardContent } from "@tandem/ui/components/ui/card";
+import { Input } from "@agora/ui/components/ui/input";
+import { Textarea } from "@agora/ui/components/ui/textarea";
+import { Label } from "@agora/ui/components/ui/label";
+import { Button } from "@agora/ui/components/ui/button";
+import { Card, CardContent } from "@agora/ui/components/ui/card";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -16,28 +16,28 @@ import {
   AlertDialogFooter,
   AlertDialogCancel,
   AlertDialogAction,
-} from "@tandem/ui/components/ui/alert-dialog";
+} from "@agora/ui/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAuthStore } from "@tandem/core/auth";
-import { useLeaveWorkspace, useDeleteWorkspace } from "@tandem/core/workspace/mutations";
-import { useWorkspaceId } from "@tandem/core/hooks";
+import { useAuthStore } from "@agora/core/auth";
+import { useLeaveWorkspace, useDeleteWorkspace } from "@agora/core/workspace/mutations";
+import { useWorkspaceId } from "@agora/core/hooks";
 import {
   memberListOptions,
   workspaceKeys,
   workspaceListOptions,
-} from "@tandem/core/workspace/queries";
-import { issueKeys } from "@tandem/core/issues/queries";
-import { api } from "@tandem/core/api";
-import { useFileUpload } from "@tandem/core/hooks/use-file-upload";
-import { resolvePublicFileUrl } from "@tandem/core/workspace/avatar-url";
+} from "@agora/core/workspace/queries";
+import { issueKeys } from "@agora/core/issues/queries";
+import { api } from "@agora/core/api";
+import { useFileUpload } from "@agora/core/hooks/use-file-upload";
+import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
 import {
   resolvePostAuthDestination,
   useCurrentWorkspace,
   useHasOnboarded,
-} from "@tandem/core/paths";
-import { setCurrentWorkspace } from "@tandem/core/platform";
-import type { Workspace } from "@tandem/core/types";
+} from "@agora/core/paths";
+import { setCurrentWorkspace } from "@agora/core/platform";
+import type { Workspace } from "@agora/core/types";
 import { useNavigation } from "../../navigation";
 import { DeleteWorkspaceDialog } from "./delete-workspace-dialog";
 import { useT } from "../../i18n";

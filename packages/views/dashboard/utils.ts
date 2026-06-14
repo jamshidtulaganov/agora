@@ -3,7 +3,7 @@ import type {
   DashboardUsageByAgent,
   DashboardAgentRunTime,
   DashboardRunTimeDaily,
-} from "@tandem/core/types";
+} from "@agora/core/types";
 import {
   addDaysIso,
   estimateCost,

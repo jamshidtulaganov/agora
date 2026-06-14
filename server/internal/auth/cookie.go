@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	AuthCookieName      = "tandem_auth"
-	CSRFCookieName      = "tandem_csrf"
+	AuthCookieName      = "agora_auth"
+	CSRFCookieName      = "agora_csrf"
 	defaultAuthTokenTTL = 30 * 24 * time.Hour // 30 days
 )
 

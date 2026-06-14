@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CloudWaitlistExpand } from "@tandem/views/onboarding";
+import { CloudWaitlistExpand } from "@agora/views/onboarding";
 import { useLocale } from "../../i18n";
 
 /**

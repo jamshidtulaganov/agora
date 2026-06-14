@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import type { Attachment } from "@tandem/core/types";
-import type { UploadResult } from "@tandem/core/hooks/use-file-upload";
+import type { Attachment } from "@agora/core/types";
+import type { UploadResult } from "@agora/core/hooks/use-file-upload";
 
 const mockFocus = vi.hoisted(() => vi.fn());
 const mockSetContent = vi.hoisted(() => vi.fn());
@@ -329,7 +329,7 @@ function makeAttachment(id: string, overrides: Partial<Attachment> = {}): Attach
     filename: `${id}.png`,
     url: `/uploads/${id}.png`,
     download_url: `/api/attachments/${id}/download`,
-    markdown_url: `https://api.tandem.test/api/attachments/${id}/download`,
+    markdown_url: `https://api.agora.test/api/attachments/${id}/download`,
     content_type: "image/png",
     size_bytes: 1,
     created_at: "2026-06-10T00:00:00Z",

@@ -13,28 +13,28 @@ import type {
   MemberWithUser,
   Skill,
   SkillSummary,
-} from "@tandem/core/types";
+} from "@agora/core/types";
 import { useQuery } from "@tanstack/react-query";
 import { getCoreRowModel, useReactTable } from "@tanstack/react-table";
-import { useAuthStore } from "@tandem/core/auth";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { useWorkspacePaths } from "@tandem/core/paths";
+import { useAuthStore } from "@agora/core/auth";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { useWorkspacePaths } from "@agora/core/paths";
 import {
   agentListOptions,
   memberListOptions,
   selectSkillAssignments,
   skillListOptions,
-} from "@tandem/core/workspace/queries";
-import { runtimeListOptions } from "@tandem/core/runtimes";
-import { Button } from "@tandem/ui/components/ui/button";
-import { DataTable } from "@tandem/ui/components/ui/data-table";
-import { Input } from "@tandem/ui/components/ui/input";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
+} from "@agora/core/workspace/queries";
+import { runtimeListOptions } from "@agora/core/runtimes";
+import { Button } from "@agora/ui/components/ui/button";
+import { DataTable } from "@agora/ui/components/ui/data-table";
+import { Input } from "@agora/ui/components/ui/input";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@tandem/ui/components/ui/tooltip";
+} from "@agora/ui/components/ui/tooltip";
 import { useNavigation } from "../../navigation";
 import { PageHeader } from "../../layout/page-header";
 import { canEditSkill } from "../hooks/use-can-edit-skill";
@@ -73,7 +73,7 @@ function PageHeaderBar({
         <p className="ml-2 hidden text-xs text-muted-foreground md:block">
           {t(($) => $.page.tagline)}{" "}
           <a
-            href="https://tandem.dev/docs/skills"
+            href="https://agora.dev/docs/skills"
             target="_blank"
             rel="noopener noreferrer"
             className="underline decoration-muted-foreground/30 underline-offset-4 transition-colors hover:text-foreground"

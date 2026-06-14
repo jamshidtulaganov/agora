@@ -3,16 +3,16 @@
 import { memo, useCallback, useRef, useState, type ReactNode } from "react";
 import { CheckCircle2, ChevronRight, ListChevronsDownUp, Copy, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { Card } from "@tandem/ui/components/ui/card";
-import { Button } from "@tandem/ui/components/ui/button";
+import { Card } from "@agora/ui/components/ui/card";
+import { Button } from "@agora/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-} from "@tandem/ui/components/ui/dropdown-menu";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@tandem/ui/components/ui/tooltip";
+} from "@agora/ui/components/ui/dropdown-menu";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@agora/ui/components/ui/tooltip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,22 +22,22 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@tandem/ui/components/ui/alert-dialog";
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@tandem/ui/components/ui/collapsible";
+} from "@agora/ui/components/ui/alert-dialog";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@agora/ui/components/ui/collapsible";
 import { ActorAvatar } from "../../common/actor-avatar";
-import { ReactionBar } from "@tandem/ui/components/common/reaction-bar";
-import { cn } from "@tandem/ui/lib/utils";
-import { copyText } from "@tandem/ui/lib/clipboard";
-import { useActorName } from "@tandem/core/workspace/hooks";
+import { ReactionBar } from "@agora/ui/components/common/reaction-bar";
+import { cn } from "@agora/ui/lib/utils";
+import { copyText } from "@agora/ui/lib/clipboard";
+import { useActorName } from "@agora/core/workspace/hooks";
 import { useTimeAgo } from "../../i18n";
 import { ContentEditor, type ContentEditorRef, ReadonlyContent, useFileDropZone, FileDropOverlay, Attachment as AttachmentRenderer, AttachmentDownloadProvider } from "../../editor";
-import { FileUploadButton } from "@tandem/ui/components/common/file-upload-button";
-import { useFileUpload } from "@tandem/core/hooks/use-file-upload";
-import { api } from "@tandem/core/api";
+import { FileUploadButton } from "@agora/ui/components/common/file-upload-button";
+import { useFileUpload } from "@agora/core/hooks/use-file-upload";
+import { api } from "@agora/core/api";
 import { ReplyInput } from "./reply-input";
-import type { TimelineEntry, Attachment } from "@tandem/core/types";
-import { contentReferencesAttachment } from "@tandem/core/types";
-import { useCommentCollapseStore, useCommentDraftStore } from "@tandem/core/issues/stores";
+import type { TimelineEntry, Attachment } from "@agora/core/types";
+import { contentReferencesAttachment } from "@agora/core/types";
+import { useCommentCollapseStore, useCommentDraftStore } from "@agora/core/issues/stores";
 import { useT } from "../../i18n";
 import { CommentsFoldBar } from "./resolved-thread-bar";
 import { deriveThreadResolution } from "./thread-utils";

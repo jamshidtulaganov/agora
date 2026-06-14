@@ -2,12 +2,12 @@
 
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Button } from "@tandem/ui/components/ui/button";
+import { Button } from "@agora/ui/components/ui/button";
 import {
   resolvePostAuthDestination,
   useHasOnboarded,
-} from "@tandem/core/paths";
-import { workspaceListOptions } from "@tandem/core/workspace/queries";
+} from "@agora/core/paths";
+import { workspaceListOptions } from "@agora/core/workspace/queries";
 import { useNavigation } from "../navigation";
 import { useLogout } from "../auth";
 import { DragStrip } from "../platform";

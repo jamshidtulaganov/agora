@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { SkillDetailPage } from "@tandem/views/skills";
+import { SkillDetailPage } from "@agora/views/skills";
 
 export default function SkillDetailRoute({
   params,

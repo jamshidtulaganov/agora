@@ -12,30 +12,30 @@ import type {
   Agent,
   AgentRuntime,
   MemberWithUser,
-} from "@tandem/core/types";
+} from "@agora/core/types";
 import {
   AGENT_DESCRIPTION_MAX_LENGTH,
   type AgentPresenceDetail,
-} from "@tandem/core/agents";
-import { api } from "@tandem/core/api";
-import { useFileUpload } from "@tandem/core/hooks/use-file-upload";
-import { isImeComposing } from "@tandem/core/utils";
+} from "@agora/core/agents";
+import { api } from "@agora/core/api";
+import { useFileUpload } from "@agora/core/hooks/use-file-upload";
+import { isImeComposing } from "@agora/core/utils";
 import { useTimeAgo } from "../../i18n";
-import { Button } from "@tandem/ui/components/ui/button";
+import { Button } from "@agora/ui/components/ui/button";
 import { ActorAvatar } from "../../common/actor-avatar";
-import { Input } from "@tandem/ui/components/ui/input";
+import { Input } from "@agora/ui/components/ui/input";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@tandem/ui/components/ui/dialog";
+} from "@agora/ui/components/ui/dialog";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@tandem/ui/components/ui/popover";
+} from "@agora/ui/components/ui/popover";
 import { PropRow } from "../../common/prop-row";
 import { availabilityConfig } from "../presence";
 import { CharCounter } from "./char-counter";

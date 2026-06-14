@@ -3,8 +3,8 @@
 import {
   ONBOARDING_STEP_ORDER,
   type OnboardingStep,
-} from "@tandem/core/onboarding";
-import { cn } from "@tandem/ui/lib/utils";
+} from "@agora/core/onboarding";
+import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
 
 /**

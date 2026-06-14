@@ -30,7 +30,7 @@ export const useCreateModeStore = create<CreateModeState>()(
       setLastMode: (mode) => set({ lastMode: mode }),
     }),
     {
-      name: "tandem_create_mode",
+      name: "agora_create_mode",
       storage: createJSONStorage(() => defaultStorage),
     },
   ),

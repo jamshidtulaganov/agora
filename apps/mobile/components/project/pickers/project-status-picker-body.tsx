@@ -6,7 +6,7 @@
 import { Pressable, ScrollView, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "nativewind";
-import type { ProjectStatus } from "@tandem/core/types";
+import type { ProjectStatus } from "@agora/core/types";
 import { Text } from "@/components/ui/text";
 import { ProjectStatusIcon } from "@/components/ui/project-status-icon";
 import {

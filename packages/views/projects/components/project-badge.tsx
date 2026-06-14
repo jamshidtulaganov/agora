@@ -6,15 +6,15 @@ import {
   PROJECT_STATUS_ORDER,
   PROJECT_PRIORITY_CONFIG,
   PROJECT_PRIORITY_ORDER
-} from "@tandem/core/projects/config";
-import { cn } from "@tandem/ui/lib/utils";
+} from "@agora/core/projects/config";
+import { cn } from "@agora/ui/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@tandem/ui/components/ui/dropdown-menu";
-import type { Project, ProjectStatus, ProjectPriority, UpdateProjectRequest } from "@tandem/core/types";
+} from "@agora/ui/components/ui/dropdown-menu";
+import type { Project, ProjectStatus, ProjectPriority, UpdateProjectRequest } from "@agora/core/types";
 import { PriorityIcon } from "../../issues/components/priority-icon";
 import { useProjectStatusLabels, useProjectPriorityLabels } from "./labels";
 

@@ -3,9 +3,9 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { useAuthStore } from "@tandem/core/auth";
-import { workspaceListOptions } from "@tandem/core/workspace";
-import { resolvePostAuthDestination, useHasOnboarded } from "@tandem/core/paths";
+import { useAuthStore } from "@agora/core/auth";
+import { workspaceListOptions } from "@agora/core/workspace";
+import { resolvePostAuthDestination, useHasOnboarded } from "@agora/core/paths";
 
 /**
  * Client-side fallback redirect for authenticated visitors on the landing page.

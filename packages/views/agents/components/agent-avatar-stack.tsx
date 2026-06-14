@@ -1,8 +1,8 @@
 "use client";
 
-import { ActorAvatar as ActorAvatarBase } from "@tandem/ui/components/common/actor-avatar";
-import { useActorName } from "@tandem/core/workspace/hooks";
-import { cn } from "@tandem/ui/lib/utils";
+import { ActorAvatar as ActorAvatarBase } from "@agora/ui/components/common/actor-avatar";
+import { useActorName } from "@agora/core/workspace/hooks";
+import { cn } from "@agora/ui/lib/utils";
 
 interface AgentAvatarStackProps {
   // Agent ids to render, in display order. The component does NOT dedupe —

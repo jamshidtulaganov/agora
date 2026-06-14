@@ -5,19 +5,19 @@ import userEvent from "@testing-library/user-event";
 import { renderWithI18n } from "../test/i18n";
 
 const longRepoUrl =
-  "https://github.com/tandem-ai/a-very-long-repository-name-that-needs-a-tooltip";
-const apiRepoUrl = "https://github.com/tandem-ai/api";
-const webRepoUrl = "https://github.com/tandem-ai/web";
+  "https://github.com/agora-ai/a-very-long-repository-name-that-needs-a-tooltip";
+const apiRepoUrl = "https://github.com/agora-ai/api";
+const webRepoUrl = "https://github.com/agora-ai/web";
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({ data: [] }),
 }));
 
-vi.mock("@tandem/core/projects/mutations", () => ({
+vi.mock("@agora/core/projects/mutations", () => ({
   useCreateProject: () => ({ mutateAsync: vi.fn() }),
 }));
 
-vi.mock("@tandem/core/projects", () => ({
+vi.mock("@agora/core/projects", () => ({
   useProjectDraftStore: (selector: (state: unknown) => unknown) =>
     selector({
       draft: {
@@ -34,11 +34,11 @@ vi.mock("@tandem/core/projects", () => ({
     }),
 }));
 
-vi.mock("@tandem/core/hooks", () => ({
+vi.mock("@agora/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
-vi.mock("@tandem/core/paths", () => ({
+vi.mock("@agora/core/paths", () => ({
   useCurrentWorkspace: () => ({
     id: "workspace-1",
     name: "Test Workspace",
@@ -50,12 +50,12 @@ vi.mock("@tandem/core/paths", () => ({
   }),
 }));
 
-vi.mock("@tandem/core/workspace/queries", () => ({
+vi.mock("@agora/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"], queryFn: vi.fn() }),
   agentListOptions: () => ({ queryKey: ["agents"], queryFn: vi.fn() }),
 }));
 
-vi.mock("@tandem/core/workspace/hooks", () => ({
+vi.mock("@agora/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: vi.fn() }),
 }));
 
@@ -89,13 +89,13 @@ vi.mock("../common/actor-avatar", () => ({
   ActorAvatar: () => <span data-testid="actor-avatar" />,
 }));
 
-vi.mock("@tandem/ui/components/ui/dialog", () => ({
+vi.mock("@agora/ui/components/ui/dialog", () => ({
   Dialog: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DialogContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DialogTitle: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
-vi.mock("@tandem/ui/components/ui/dropdown-menu", () => ({
+vi.mock("@agora/ui/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   DropdownMenuTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -112,13 +112,13 @@ vi.mock("@tandem/ui/components/ui/dropdown-menu", () => ({
   ),
 }));
 
-vi.mock("@tandem/ui/components/ui/popover", () => ({
+vi.mock("@agora/ui/components/ui/popover", () => ({
   Popover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   PopoverTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   PopoverContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
-vi.mock("@tandem/ui/components/ui/tooltip", () => ({
+vi.mock("@agora/ui/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   TooltipContent: ({ children }: { children: React.ReactNode }) => (
@@ -126,7 +126,7 @@ vi.mock("@tandem/ui/components/ui/tooltip", () => ({
   ),
 }));
 
-vi.mock("@tandem/ui/components/ui/button", () => ({
+vi.mock("@agora/ui/components/ui/button", () => ({
   Button: ({
     children,
     disabled,
@@ -144,11 +144,11 @@ vi.mock("@tandem/ui/components/ui/button", () => ({
   ),
 }));
 
-vi.mock("@tandem/ui/components/common/emoji-picker", () => ({
+vi.mock("@agora/ui/components/common/emoji-picker", () => ({
   EmojiPicker: () => null,
 }));
 
-vi.mock("@tandem/ui/lib/utils", () => ({
+vi.mock("@agora/ui/lib/utils", () => ({
   cn: (...values: Array<string | false | null | undefined>) =>
     values.filter(Boolean).join(" "),
 }));

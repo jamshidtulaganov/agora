@@ -1,14 +1,14 @@
 "use client";
 
 import { useMemo } from "react";
-import { cn } from "@tandem/ui/lib/utils";
+import { cn } from "@agora/ui/lib/utils";
 import {
   Select,
   SelectTrigger,
   SelectValue,
   SelectContent,
   SelectItem,
-} from "@tandem/ui/components/ui/select";
+} from "@agora/ui/components/ui/select";
 import { useT } from "../../i18n";
 
 export type TriggerFrequency = "hourly" | "daily" | "weekdays" | "weekly" | "custom";

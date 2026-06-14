@@ -41,11 +41,11 @@ describe("docsAlternates", () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates(["agents"])).toEqual({
-      canonical: "https://www.tandem.dev/docs/agents",
+      canonical: "https://www.agora.dev/docs/agents",
       languages: {
-        en: "https://www.tandem.dev/docs/agents",
-        zh: "https://www.tandem.dev/docs/zh/agents",
-        "x-default": "https://www.tandem.dev/docs/agents",
+        en: "https://www.agora.dev/docs/agents",
+        zh: "https://www.agora.dev/docs/zh/agents",
+        "x-default": "https://www.agora.dev/docs/agents",
       },
     });
   });
@@ -61,12 +61,12 @@ describe("docsAlternates", () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates(["agents"])).toEqual({
-      canonical: "https://www.tandem.dev/docs/agents",
+      canonical: "https://www.agora.dev/docs/agents",
       languages: {
-        en: "https://www.tandem.dev/docs/agents",
-        zh: "https://www.tandem.dev/docs/zh/agents",
-        ko: "https://www.tandem.dev/docs/ko/agents",
-        "x-default": "https://www.tandem.dev/docs/agents",
+        en: "https://www.agora.dev/docs/agents",
+        zh: "https://www.agora.dev/docs/zh/agents",
+        ko: "https://www.agora.dev/docs/ko/agents",
+        "x-default": "https://www.agora.dev/docs/agents",
       },
     });
   });
@@ -76,12 +76,12 @@ describe("docsAlternates", () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates(["agents"])).toEqual({
-      canonical: "https://www.tandem.dev/docs/agents",
+      canonical: "https://www.agora.dev/docs/agents",
       languages: {
-        en: "https://www.tandem.dev/docs/agents",
-        zh: "https://www.tandem.dev/docs/zh/agents",
-        ja: "https://www.tandem.dev/docs/ja/agents",
-        "x-default": "https://www.tandem.dev/docs/agents",
+        en: "https://www.agora.dev/docs/agents",
+        zh: "https://www.agora.dev/docs/zh/agents",
+        ja: "https://www.agora.dev/docs/ja/agents",
+        "x-default": "https://www.agora.dev/docs/agents",
       },
     });
   });
@@ -90,11 +90,11 @@ describe("docsAlternates", () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates([])).toEqual({
-      canonical: "https://www.tandem.dev/docs",
+      canonical: "https://www.agora.dev/docs",
       languages: {
-        en: "https://www.tandem.dev/docs",
-        zh: "https://www.tandem.dev/docs/zh",
-        "x-default": "https://www.tandem.dev/docs",
+        en: "https://www.agora.dev/docs",
+        zh: "https://www.agora.dev/docs/zh",
+        "x-default": "https://www.agora.dev/docs",
       },
     });
   });

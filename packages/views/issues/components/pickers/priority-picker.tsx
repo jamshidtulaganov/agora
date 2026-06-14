@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { IssuePriority, UpdateIssueRequest } from "@tandem/core/types";
-import { PRIORITY_ORDER, PRIORITY_CONFIG } from "@tandem/core/issues/config";
+import type { IssuePriority, UpdateIssueRequest } from "@agora/core/types";
+import { PRIORITY_ORDER, PRIORITY_CONFIG } from "@agora/core/issues/config";
 import { PriorityIcon } from "../priority-icon";
 import { PropertyPicker, PickerItem } from "./property-picker";
 import { useT } from "../../../i18n";

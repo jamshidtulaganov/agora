@@ -5,15 +5,15 @@ import type { FormEvent, HTMLAttributes } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Cloud, Loader2, RefreshCw, Rocket, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import type { CloudRuntimeNode } from "@tandem/core/runtimes";
+import type { CloudRuntimeNode } from "@agora/core/runtimes";
 import {
   cloudRuntimeNodeListOptions,
   useCreateCloudRuntimeNode,
   useDeleteCloudRuntimeNode,
-} from "@tandem/core/runtimes";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { Badge } from "@tandem/ui/components/ui/badge";
-import { Button } from "@tandem/ui/components/ui/button";
+} from "@agora/core/runtimes";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { Badge } from "@agora/ui/components/ui/badge";
+import { Button } from "@agora/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -21,17 +21,17 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@tandem/ui/components/ui/dialog";
-import { Input } from "@tandem/ui/components/ui/input";
-import { Label } from "@tandem/ui/components/ui/label";
+} from "@agora/ui/components/ui/dialog";
+import { Input } from "@agora/ui/components/ui/input";
+import { Label } from "@agora/ui/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@tandem/ui/components/ui/select";
-import { cn } from "@tandem/ui/lib/utils";
+} from "@agora/ui/components/ui/select";
+import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
 
 const CLOUD_RUNTIME_INSTANCE_TYPES = ["t4g.medium", "t4g.large"] as const;

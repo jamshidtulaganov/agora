@@ -1,5 +1,5 @@
-import { resolvePublicFileUrl } from "@tandem/core/workspace/avatar-url";
-import { cn } from "@tandem/ui/lib/utils";
+import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
+import { cn } from "@agora/ui/lib/utils";
 
 const sizeMap = {
   sm: "h-5 w-5 text-xs rounded",

@@ -1,11 +1,11 @@
 ---
 title: AI 코딩 도구 대조표
-description: Tandem는 12개의 AI 코딩 도구를 지원합니다. 모두 동일한 인터페이스를 구현하지만, 기능 세부사항은 크게 다릅니다.
+description: Agora는 12개의 AI 코딩 도구를 지원합니다. 모두 동일한 인터페이스를 구현하지만, 기능 세부사항은 크게 다릅니다.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Tandem는 **12개의 AI 코딩 도구**를 기본 지원합니다. 이들은 모두 동일한 인터페이스(대기열 적재, 디스패치, 실행, 결과 반환)를 구현하므로, 같은 Tandem 보드에서 어느 것이든 구동할 수 있습니다. **하지만 기능 세부사항은 크게 다릅니다**: 세션 재개가 실제로 동작하는지, MCP를 지원하는지, 스킬 파일이 어디에 위치하는지, 모델을 어떻게 선택하는지. 이 페이지가 전체 대조표입니다.
+Agora는 **12개의 AI 코딩 도구**를 기본 지원합니다. 이들은 모두 동일한 인터페이스(대기열 적재, 디스패치, 실행, 결과 반환)를 구현하므로, 같은 Agora 보드에서 어느 것이든 구동할 수 있습니다. **하지만 기능 세부사항은 크게 다릅니다**: 세션 재개가 실제로 동작하는지, MCP를 지원하는지, 스킬 파일이 어디에 위치하는지, 모델을 어떻게 선택하는지. 이 페이지가 전체 대조표입니다.
 
 에이전트를 생성할 때 도구를 고르는 방법은 [에이전트 생성 및 구성](/agents-create)을 참고하세요.
 
@@ -66,11 +66,11 @@ Amazon에서 제공합니다. `kiro-cli acp`를 통해 stdio 위에서 ACP를 �
 
 ### OpenCode
 
-SST에서 제공하는 오픈소스입니다. 사용 가능한 모델과 모델 variant를 동적으로 탐색합니다(CLI의 구성 파일을 스캔). 세션 재개가 동작하고, 에이전트의 `mcp_config` 필드를 소비합니다. Tandem는 `OPENCODE_CONFIG_CONTENT` 환경 변수를 통해 이를 인라인으로 주입하므로, 에이전트의 MCP 서버가 작업 디렉터리의 `opencode.json`(에이전트 또는 사용자가 소유하는 파일)을 건드리지 않고 OpenCode에 전달됩니다. 모델이 variant를 노출하면 Tandem는 이를 에이전트 thinking selector로 표시하고 선택한 값을 `opencode run --variant`로 전달합니다. **자신의 모델 카탈로그를 커스터마이징하고 싶은, 만지작거리기 좋아하는 사용자에게 적합합니다.**
+SST에서 제공하는 오픈소스입니다. 사용 가능한 모델과 모델 variant를 동적으로 탐색합니다(CLI의 구성 파일을 스캔). 세션 재개가 동작하고, 에이전트의 `mcp_config` 필드를 소비합니다. Agora는 `OPENCODE_CONFIG_CONTENT` 환경 변수를 통해 이를 인라인으로 주입하므로, 에이전트의 MCP 서버가 작업 디렉터리의 `opencode.json`(에이전트 또는 사용자가 소유하는 파일)을 건드리지 않고 OpenCode에 전달됩니다. 모델이 variant를 노출하면 Agora는 이를 에이전트 thinking selector로 표시하고 선택한 값을 `opencode run --variant`로 전달합니다. **자신의 모델 카탈로그를 커스터마이징하고 싶은, 만지작거리기 좋아하는 사용자에게 적합합니다.**
 
 ### OpenClaw
 
-오픈소스 프로젝트이며, CLI 에이전트 오케스트레이터입니다. MCP 구성은 Tandem의 작업별 config wrapper를 통해 기록됩니다. **모델이 에이전트 계층에 바인딩됩니다**(`openclaw agents add --model`) — 작업마다 재정의할 수 없습니다. 구성이 엄격하게 통제됩니다: 사용자는 `--model`이나 `--system-prompt`를 전달할 수 없으며, 에이전트 등록 구성이 결정합니다.
+오픈소스 프로젝트이며, CLI 에이전트 오케스트레이터입니다. MCP 구성은 Agora의 작업별 config wrapper를 통해 기록됩니다. **모델이 에이전트 계층에 바인딩됩니다**(`openclaw agents add --model`) — 작업마다 재정의할 수 없습니다. 구성이 엄격하게 통제됩니다: 사용자는 `--model`이나 `--system-prompt`를 전달할 수 없으며, 에이전트 등록 구성이 결정합니다.
 
 ### Pi
 
@@ -92,7 +92,7 @@ Inflection AI에서 제공하며, 미니멀합니다. **세션 재개 방식이 
 
 **12개 도구 중 `mcp_config`를 실제로 소비하는 것은 8개입니다: Claude Code, Codex, Cursor, Hermes, Kimi, Kiro CLI, OpenCode, OpenClaw**. 나머지 4개는 이 필드를 받아들이지만 **무시합니다** — 오류도, 경고도 없으며, 구성이 그저 효과를 내지 못합니다.
 
-각 도구의 연결 방식은 다릅니다: Claude Code는 `--mcp-config`와 `--strict-mcp-config`로 받고, Codex는 데몬이 관리하는 `mcp_servers` 블록을 작업별 `$CODEX_HOME/config.toml`에 기록하며, Cursor는 `.cursor/mcp.json`과 작업별 `CURSOR_DATA_DIR` 아래의 프로젝트 approval을 기록합니다. Hermes/Kimi/Kiro CLI는 ACP `mcpServers`로 받습니다. OpenCode는 `OPENCODE_CONFIG_CONTENT` 환경 변수로 인라인 구성을 받고, OpenClaw는 Tandem의 작업별 config wrapper를 통해 `mcp.servers`를 받습니다. OpenCode 경로는 프로젝트의 `opencode.json`을 다시 쓰지 않습니다.
+각 도구의 연결 방식은 다릅니다: Claude Code는 `--mcp-config`와 `--strict-mcp-config`로 받고, Codex는 데몬이 관리하는 `mcp_servers` 블록을 작업별 `$CODEX_HOME/config.toml`에 기록하며, Cursor는 `.cursor/mcp.json`과 작업별 `CURSOR_DATA_DIR` 아래의 프로젝트 approval을 기록합니다. Hermes/Kimi/Kiro CLI는 ACP `mcpServers`로 받습니다. OpenCode는 `OPENCODE_CONFIG_CONTENT` 환경 변수로 인라인 구성을 받고, OpenClaw는 Agora의 작업별 config wrapper를 통해 `mcp.servers`를 받습니다. OpenCode 경로는 프로젝트의 `opencode.json`을 다시 쓰지 않습니다.
 
 <Callout type="warning">
 에이전트 구성에서 `mcp_config`를 설정했더라도 MCP 열에 ✅가 없는 도구를 선택하면, MCP 서버가 해당 에이전트에 **아무런 효과**도 미치지 않습니다. MCP 연동은 도구별로 구현됩니다.
@@ -100,7 +100,7 @@ Inflection AI에서 제공하며, 미니멀합니다. **세션 재개 방식이 
 
 ## 스킬 파일이 위치하는 곳
 
-각 도구는 **자체** 스킬 탐색 경로를 사용합니다. 작업이 실행되기 전에 Tandem 데몬이 워크스페이스의 스킬 파일을 해당 경로로 복사합니다:
+각 도구는 **자체** 스킬 탐색 경로를 사용합니다. 작업이 실행되기 전에 Agora 데몬이 워크스페이스의 스킬 파일을 해당 경로로 복사합니다:
 
 | 도구 | 경로 | 기본 탐색 여부 |
 |---|---|---|
@@ -125,5 +125,5 @@ fallback 경로를 쓰는 도구가 실제로 이 디렉터리를 읽는지는 �
 
 - [에이전트 생성 및 구성](/agents-create) — 에이전트에 사용할 도구를 선택하세요
 - [작업](/tasks) — 작업 생명주기와 세션 재개 메커니즘
-- [데몬과 런타임](/daemon-runtimes) — 도구가 실행되는 곳과 Tandem에 연결되는 방식
+- [데몬과 런타임](/daemon-runtimes) — 도구가 실행되는 곳과 Agora에 연결되는 방식
 - [에이전트 런타임 설치](/install-agent-runtime) — 지원되는 12개 도구 각각의 설치 및 인증

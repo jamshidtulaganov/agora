@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { I18nProvider } from "@tandem/core/i18n/react";
+import { I18nProvider } from "@agora/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 import enWorkspace from "../locales/en/workspace.json";
 import { NoAccessPage } from "./no-access-page";
@@ -22,10 +22,10 @@ vi.mock("../auth", () => ({
   useLogout: () => logout,
 }));
 
-vi.mock("@tandem/core/paths", async () => {
+vi.mock("@agora/core/paths", async () => {
   const actual =
-    await vi.importActual<typeof import("@tandem/core/paths")>(
-      "@tandem/core/paths",
+    await vi.importActual<typeof import("@agora/core/paths")>(
+      "@agora/core/paths",
     );
   return {
     ...actual,
@@ -37,7 +37,7 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({ data: mockWorkspaces }),
 }));
 
-vi.mock("@tandem/core/workspace/queries", () => ({
+vi.mock("@agora/core/workspace/queries", () => ({
   workspaceListOptions: () => ({ queryKey: ["workspaces", "list"] }),
 }));
 

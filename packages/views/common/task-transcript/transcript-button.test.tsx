@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { AgentTask } from "@tandem/core/types/agent";
+import type { AgentTask } from "@agora/core/types/agent";
 import { describe, expect, it, vi } from "vitest";
 import { TranscriptButton } from "./transcript-button";
 import type { TimelineItem } from "./build-timeline";
 
-vi.mock("@tandem/core/api", () => ({
+vi.mock("@agora/core/api", () => ({
   api: {
     listTaskMessages: vi.fn(),
   },
@@ -61,7 +61,7 @@ describe("TranscriptButton", () => {
 
     act(() => {
       window.dispatchEvent(
-        new CustomEvent("tandem:navigate", {
+        new CustomEvent("agora:navigate", {
           detail: { path: "/acme/inbox?issue=MUL-123" },
         }),
       );

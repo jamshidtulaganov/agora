@@ -3,21 +3,21 @@
 import { useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@tandem/ui/components/ui/button";
-import { useScrollFade } from "@tandem/ui/hooks/use-scroll-fade";
-import { cn } from "@tandem/ui/lib/utils";
-import { api } from "@tandem/core/api";
+import { Button } from "@agora/ui/components/ui/button";
+import { useScrollFade } from "@agora/ui/hooks/use-scroll-fade";
+import { cn } from "@agora/ui/lib/utils";
+import { api } from "@agora/core/api";
 import {
   recommendTemplate,
   type AgentTemplateId,
   type QuestionnaireAnswers,
-} from "@tandem/core/onboarding";
+} from "@agora/core/onboarding";
 import type {
   Agent,
   AgentRuntime,
   CreateAgentRequest,
-} from "@tandem/core/types";
-import { DragStrip } from "@tandem/views/platform";
+} from "@agora/core/types";
+import { DragStrip } from "@agora/views/platform";
 import { StepHeader } from "../components/step-header";
 import { useT } from "../../i18n";
 
@@ -311,7 +311,7 @@ function AboutAgentsSide() {
       </p>
 
       <a
-        href="https://tandem.dev/docs/agents-create"
+        href="https://agora.dev/docs/agents-create"
         target="_blank"
         rel="noopener noreferrer"
         className="self-start text-[13px] text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground"

@@ -1,6 +1,6 @@
 import * as React from "react"
 
-import { cn } from "@tandem/ui/lib/utils"
+import { cn } from "@agora/ui/lib/utils"
 import { ChevronDownIcon } from "lucide-react"
 
 type NativeSelectProps = Omit<React.ComponentProps<"select">, "size"> & {

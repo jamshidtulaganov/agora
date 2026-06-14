@@ -79,7 +79,7 @@ func TestQuickCreateIssueParentTrustBoundary(t *testing.T) {
 	var foreignWorkspaceID, foreignUserID, foreignParentID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO "user" (name, email) VALUES ($1, $2) RETURNING id
-	`, "QuickCreate Foreign", "quickcreate-foreign@tandem.dev").Scan(&foreignUserID); err != nil {
+	`, "QuickCreate Foreign", "quickcreate-foreign@agora.dev").Scan(&foreignUserID); err != nil {
 		t.Fatalf("create foreign user: %v", err)
 	}
 	t.Cleanup(func() {

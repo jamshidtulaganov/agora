@@ -1,7 +1,7 @@
 "use client";
 
-import { cn } from "@tandem/ui/lib/utils";
-import { SidebarTrigger, useSidebarSafe } from "@tandem/ui/components/ui/sidebar";
+import { cn } from "@agora/ui/lib/utils";
+import { SidebarTrigger, useSidebarSafe } from "@agora/ui/components/ui/sidebar";
 
 function MobileSidebarTrigger() {
   const sidebar = useSidebarSafe();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useModalStore } from "@tandem/core/modals";
+import { useModalStore } from "@agora/core/modals";
 import { CreateWorkspaceModal } from "./create-workspace";
 import { CreateIssueDialog } from "./create-issue-dialog";
 import { CreateProjectModal } from "./create-project";

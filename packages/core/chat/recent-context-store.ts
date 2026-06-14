@@ -100,7 +100,7 @@ export const useRecentContextStore = create<RecentContextState>()(
         }),
     }),
     {
-      name: "tandem_recent_contexts",
+      name: "agora_recent_contexts",
       storage: createJSONStorage(() => defaultStorage),
       partialize: (state) => ({ byWorkspace: state.byWorkspace }),
       version: 1,

@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { cn } from "@tandem/ui/lib/utils";
-import { useScrollFade } from "@tandem/ui/hooks/use-scroll-fade";
+import { cn } from "@agora/ui/lib/utils";
+import { useScrollFade } from "@agora/ui/hooks/use-scroll-fade";
 import { AppLink, useNavigation } from "../navigation";
 import { HelpLauncher } from "./help-launcher";
 import {
@@ -36,12 +36,12 @@ import {
   Users,
 } from "lucide-react";
 import { WorkspaceAvatar } from "../workspace/workspace-avatar";
-import { ActorAvatar } from "@tandem/ui/components/common/actor-avatar";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@tandem/ui/components/ui/tooltip";
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@tandem/ui/components/ui/collapsible";
+import { ActorAvatar } from "@agora/ui/components/common/actor-avatar";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@agora/ui/components/ui/tooltip";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@agora/ui/components/ui/collapsible";
 import { StatusIcon } from "../issues/components/status-icon";
-import { useIssueDraftStore } from "@tandem/core/issues/stores/draft-store";
-import { openCreateIssueWithPreference } from "@tandem/core/issues/stores/create-mode-store";
+import { useIssueDraftStore } from "@agora/core/issues/stores/draft-store";
+import { openCreateIssueWithPreference } from "@agora/core/issues/stores/create-mode-store";
 import {
   Sidebar,
   SidebarContent,
@@ -54,7 +54,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
-} from "@tandem/ui/components/ui/sidebar";
+} from "@agora/ui/components/ui/sidebar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -63,22 +63,22 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@tandem/ui/components/ui/dropdown-menu";
-import { useAuthStore } from "@tandem/core/auth";
-import { useCurrentWorkspace, useWorkspacePaths, paths } from "@tandem/core/paths";
-import { workspaceListOptions, myInvitationListOptions, workspaceKeys } from "@tandem/core/workspace/queries";
-import { resolvePublicFileUrl } from "@tandem/core/workspace/avatar-url";
+} from "@agora/ui/components/ui/dropdown-menu";
+import { useAuthStore } from "@agora/core/auth";
+import { useCurrentWorkspace, useWorkspacePaths, paths } from "@agora/core/paths";
+import { workspaceListOptions, myInvitationListOptions, workspaceKeys } from "@agora/core/workspace/queries";
+import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { inboxKeys, deduplicateInboxItems } from "@tandem/core/inbox/queries";
-import { api, ApiError } from "@tandem/core/api";
-import { useModalStore } from "@tandem/core/modals";
-import { useConfigStore } from "@tandem/core/config";
-import { useMyRuntimesNeedUpdate } from "@tandem/core/runtimes/hooks";
-import { pinListOptions } from "@tandem/core/pins/queries";
-import { useDeletePin, useReorderPins } from "@tandem/core/pins/mutations";
-import { issueDetailOptions } from "@tandem/core/issues/queries";
-import { projectDetailOptions } from "@tandem/core/projects/queries";
-import type { PinnedItem } from "@tandem/core/types";
+import { inboxKeys, deduplicateInboxItems } from "@agora/core/inbox/queries";
+import { api, ApiError } from "@agora/core/api";
+import { useModalStore } from "@agora/core/modals";
+import { useConfigStore } from "@agora/core/config";
+import { useMyRuntimesNeedUpdate } from "@agora/core/runtimes/hooks";
+import { pinListOptions } from "@agora/core/pins/queries";
+import { useDeletePin, useReorderPins } from "@agora/core/pins/mutations";
+import { issueDetailOptions } from "@agora/core/issues/queries";
+import { projectDetailOptions } from "@agora/core/projects/queries";
+import type { PinnedItem } from "@agora/core/types";
 import { useLogout } from "../auth";
 import { ProjectIcon } from "../projects/components/project-icon";
 import { useT } from "../i18n";
@@ -485,7 +485,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                         )}
                       </span>
                       <span className="flex-1 truncate font-medium">
-                        {workspace?.name ?? "Tandem"}
+                        {workspace?.name ?? "Agora"}
                       </span>
                       <ChevronDown className="size-3 text-muted-foreground" />
                     </SidebarMenuButton>

@@ -13,10 +13,10 @@ import {
   Webhook,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import type { Agent, AgentRuntime } from "@tandem/core/types";
-import { providerSupportsMcpConfig } from "@tandem/core/agents";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { larkInstallationsOptions } from "@tandem/core/lark";
+import type { Agent, AgentRuntime } from "@agora/core/types";
+import { providerSupportsMcpConfig } from "@agora/core/agents";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { larkInstallationsOptions } from "@agora/core/lark";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,7 +26,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@tandem/ui/components/ui/alert-dialog";
+} from "@agora/ui/components/ui/alert-dialog";
 import { ActivityTab } from "./tabs/activity-tab";
 import { InstructionsTab } from "./tabs/instructions-tab";
 import { SkillsTab } from "./tabs/skills-tab";

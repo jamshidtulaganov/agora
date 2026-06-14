@@ -7,7 +7,7 @@
  * Colors are kept identical to the issue PriorityIcon hex map.
  */
 import Svg, { Line, Rect } from "react-native-svg";
-import type { ProjectPriority } from "@tandem/core/types";
+import type { ProjectPriority } from "@agora/core/types";
 import { projectPriorityBars } from "@/lib/project-status";
 
 const COLOR: Record<ProjectPriority, string> = {

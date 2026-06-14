@@ -1,8 +1,8 @@
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ProjectDetail } from "@tandem/views/projects/components";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { projectDetailOptions } from "@tandem/core/projects/queries";
+import { ProjectDetail } from "@agora/views/projects/components";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { projectDetailOptions } from "@agora/core/projects/queries";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 
 export function ProjectDetailPage() {

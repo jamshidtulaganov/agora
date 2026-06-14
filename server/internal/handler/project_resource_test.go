@@ -529,7 +529,7 @@ func TestProjectResourceCountBreadcrumb(t *testing.T) {
 	w = httptest.NewRecorder()
 	req = newRequest("POST", "/api/projects/"+project.ID+"/resources", map[string]any{
 		"resource_type": "github_repo",
-		"resource_ref":  map[string]any{"url": "https://github.com/tandem-ai/breadcrumb"},
+		"resource_ref":  map[string]any{"url": "https://github.com/agora-ai/breadcrumb"},
 	})
 	req = withURLParam(req, "id", project.ID)
 	testHandler.CreateProjectResource(w, req)
@@ -623,7 +623,7 @@ func TestCreateProjectWithResourcesEchoesCount(t *testing.T) {
 		"resources": []map[string]any{
 			{
 				"resource_type": "github_repo",
-				"resource_ref":  map[string]any{"url": "https://github.com/tandem-ai/echo-count"},
+				"resource_ref":  map[string]any{"url": "https://github.com/agora-ai/echo-count"},
 			},
 		},
 	})

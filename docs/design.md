@@ -1,6 +1,6 @@
-# Tandem Design System
+# Agora Design System
 
-本文档定义 Tandem 的视觉语言和交互规范。所有 UI 开发以此为准。
+本文档定义 Agora 的视觉语言和交互规范。所有 UI 开发以此为准。
 
 ---
 

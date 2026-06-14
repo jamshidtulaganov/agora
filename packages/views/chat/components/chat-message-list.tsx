@@ -4,28 +4,28 @@ import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import { Virtuoso } from "react-virtuoso";
-import { cn } from "@tandem/ui/lib/utils";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
-import { Button } from "@tandem/ui/components/ui/button";
+import { cn } from "@agora/ui/lib/utils";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import { Button } from "@agora/ui/components/ui/button";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@tandem/ui/components/ui/collapsible";
+} from "@agora/ui/components/ui/collapsible";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@tandem/ui/components/ui/tooltip";
+} from "@agora/ui/components/ui/tooltip";
 import { ChevronRight, ChevronDown, Brain, AlertCircle, AlertTriangle, Copy } from "lucide-react";
-import { useScrollFade } from "@tandem/ui/hooks/use-scroll-fade";
-import { isTaskMessageTaskId, taskMessagesOptions } from "@tandem/core/chat/queries";
-import { Markdown } from "@tandem/views/common/markdown";
-import { copyText } from "@tandem/ui/lib/clipboard";
+import { useScrollFade } from "@agora/ui/hooks/use-scroll-fade";
+import { isTaskMessageTaskId, taskMessagesOptions } from "@agora/core/chat/queries";
+import { Markdown } from "@agora/views/common/markdown";
+import { copyText } from "@agora/ui/lib/clipboard";
 import { AttachmentList } from "../../issues/components/comment-card";
-import type { AgentAvailability } from "@tandem/core/agents";
-import type { ChatMessage, ChatPendingTask, TaskFailureReason } from "@tandem/core/types";
-import type { ChatTimelineItem } from "@tandem/core/chat";
+import type { AgentAvailability } from "@agora/core/agents";
+import type { ChatMessage, ChatPendingTask, TaskFailureReason } from "@agora/core/types";
+import type { ChatTimelineItem } from "@agora/core/chat";
 import { failureReasonLabel } from "../../agents/components/tabs/task-failure";
 import { buildTimeline } from "../../common/task-transcript";
 import { TaskStatusPill } from "./task-status-pill";
@@ -438,7 +438,7 @@ function TimelineView({
 }: {
   items: ChatTimelineItem[];
   isStreaming?: boolean;
-  attachments?: import("@tandem/core/types").Attachment[];
+  attachments?: import("@agora/core/types").Attachment[];
 }) {
   const { preface, middle, final } = splitTimeline(items);
 
@@ -476,7 +476,7 @@ function OuterProcessFold({
 }: {
   items: ChatTimelineItem[];
   defaultOpen?: boolean;
-  attachments?: import("@tandem/core/types").Attachment[];
+  attachments?: import("@agora/core/types").Attachment[];
 }) {
   const { t } = useT("chat");
   // useState seeds once at mount — subsequent renders never overwrite the
@@ -517,7 +517,7 @@ function MiddleTextRow({
   attachments,
 }: {
   item: ChatTimelineItem;
-  attachments?: import("@tandem/core/types").Attachment[];
+  attachments?: import("@agora/core/types").Attachment[];
 }) {
   return (
     <div className="py-0.5 text-xs text-muted-foreground prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">

@@ -46,7 +46,7 @@ ENV NEXT_PUBLIC_APP_VERSION=$NEXT_PUBLIC_APP_VERSION
 ENV STANDALONE=true
 
 # Build the web app (standalone output for minimal runtime)
-RUN pnpm --filter @tandem/web build
+RUN pnpm --filter @agora/web build
 
 # --- Runtime ---
 FROM node:22-alpine AS runner

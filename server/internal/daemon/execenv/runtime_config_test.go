@@ -47,7 +47,7 @@ func TestSubIssueCreationSectionPresentForIssueRuns(t *testing.T) {
 				"**Choosing `--status` when creating sub-issues.**",
 				"`--status todo` = **start now**",
 				"`--status backlog` = **wait**",
-				"`tandem issue status <child-id> todo`",
+				"`agora issue status <child-id> todo`",
 				"all `--status todo`",
 				"`--status backlog` from the start",
 			} {
@@ -90,7 +90,7 @@ func TestBriefHasNoParentNotificationGuidance(t *testing.T) {
 			// Old "do it yourself" framing (PR #2918).
 			"## Parent / Sub-issue Protocol",
 			"**Tell the parent when you finish a child.**",
-			"tandem issue comment add <parent-id>",
+			"agora issue comment add <parent-id>",
 			"with NO `--parent`",
 			"link the child as `[MUL-",
 			"`@mention` the parent's assignee",
@@ -121,7 +121,7 @@ func TestBriefHasNoParentNotificationGuidance(t *testing.T) {
 			// The protocol must no longer emit a placeholder
 			// `<this-issue-id>` status flip — the workflow above owns
 			// that command with the real issue id substituted.
-			"`tandem issue status <this-issue-id> in_review`",
+			"`agora issue status <this-issue-id> in_review`",
 			// Non-existent CLI form Elon's earlier review flagged.
 			"issue list --parent",
 		} {
@@ -134,7 +134,7 @@ func TestBriefHasNoParentNotificationGuidance(t *testing.T) {
 
 // Comment-triggered briefs must NOT carry any unconditional status-flip
 // command targeting the current issue. Previous revisions had a
-// dedicated protocol step that wrote `tandem issue status <this-issue-id> in_review`;
+// dedicated protocol step that wrote `agora issue status <this-issue-id> in_review`;
 // the comment-triggered workflow rule "Do NOT change the issue status
 // unless the comment explicitly asks for it" must remain the source of
 // truth (Elon's blocking review on PR #2918).
@@ -146,7 +146,7 @@ func TestCommentTriggeredProtocolDoesNotForceInReview(t *testing.T) {
 	}
 	out := buildMetaSkillContent("claude", ctx)
 
-	if strings.Contains(out, "`tandem issue status <this-issue-id> in_review`") {
+	if strings.Contains(out, "`agora issue status <this-issue-id> in_review`") {
 		t.Errorf("comment-triggered brief must not contain a placeholder `<this-issue-id> in_review` flip — that conflicts with the comment-triggered \"do not change status unless asked\" rule")
 	}
 
@@ -188,11 +188,11 @@ func TestCommentTriggeredBriefCarriesNewCommentsHint(t *testing.T) {
 		t.Errorf("comment brief must offer the full-thread (--tail 30) option, got:\n%s", out)
 	}
 	// Issue-wide catch-up demoted to an only-if-needed fallback.
-	if !strings.Contains(out, "tandem issue comment list "+issueID+" --since "+since+" --output json") {
+	if !strings.Contains(out, "agora issue comment list "+issueID+" --since "+since+" --output json") {
 		t.Errorf("comment brief must keep the issue-wide --since catch-up fallback, got:\n%s", out)
 	}
 	// The removed resolve step must not reappear.
-	if strings.Contains(out, "tandem comment resolve") {
+	if strings.Contains(out, "agora comment resolve") {
 		t.Errorf("comment brief must not carry the dropped resolve step, got:\n%s", out)
 	}
 }
@@ -214,7 +214,7 @@ func TestCommentTriggeredBriefColdStartThreadRead(t *testing.T) {
 	if strings.Contains(out, "new comment(s) since your last run") {
 		t.Errorf("no since-delta hint should render on cold start, got:\n%s", out)
 	}
-	if !strings.Contains(out, "tandem issue comment list "+issueID+" --thread thread-root-1 --tail 30 --output json") {
+	if !strings.Contains(out, "agora issue comment list "+issueID+" --thread thread-root-1 --tail 30 --output json") {
 		t.Errorf("cold start must point at the triggering thread read, got:\n%s", out)
 	}
 }
@@ -242,7 +242,7 @@ func TestCommentTriggeredBriefResumedNoDeltaSkipsDefaultThreadRead(t *testing.T)
 		"active thread anchor `thread-root-1` and triggering comment ID `trigger-1`",
 		"If your reply depends on thread context",
 		"do not rely only on resumed session memory",
-		"tandem issue comment list " + issueID + " --thread thread-root-1 --tail 30 --output json",
+		"agora issue comment list " + issueID + " --thread thread-root-1 --tail 30 --output json",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("resumed/no-delta brief missing %q\n--- output ---\n%s", want, out)
@@ -271,11 +271,11 @@ func TestAssignmentTriggeredProtocolHonorsAgentIdentity(t *testing.T) {
 		"Agent Identity instructions have priority over the assignment workflow below.",
 		"If a workflow step conflicts with Agent Identity, skip the conflicting action",
 		"Never treat this runtime workflow as permission to change issue status, investigate, implement",
-		"Run `tandem issue status " + issueID + " in_progress` unless your Agent Identity forbids issue status changes; if it does, skip this step.",
+		"Run `agora issue status " + issueID + " in_progress` unless your Agent Identity forbids issue status changes; if it does, skip this step.",
 		"Complete the task within your Agent Identity boundaries.",
 		"Do not investigate, implement, create issues, update issues, or delegate if your Agent Identity forbids that action",
-		"When done, run `tandem issue status " + issueID + " in_review` unless your Agent Identity forbids issue status changes; if it does, skip this step.",
-		"If blocked, run `tandem issue status " + issueID + " blocked` unless your Agent Identity forbids issue status changes.",
+		"When done, run `agora issue status " + issueID + " in_review` unless your Agent Identity forbids issue status changes; if it does, skip this step.",
+		"If blocked, run `agora issue status " + issueID + " blocked` unless your Agent Identity forbids issue status changes.",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("assignment-triggered brief missing identity-bound workflow text %q\n---\n%s", want, out)
@@ -283,9 +283,9 @@ func TestAssignmentTriggeredProtocolHonorsAgentIdentity(t *testing.T) {
 	}
 
 	for _, banned := range []string{
-		"4. Run `tandem issue status " + issueID + " in_progress`\n",
+		"4. Run `agora issue status " + issueID + " in_progress`\n",
 		"5. Follow your Skills and Agent Identity to complete the task (write code, investigate, etc.)",
-		"8. When done, run `tandem issue status " + issueID + " in_review`\n",
+		"8. When done, run `agora issue status " + issueID + " in_review`\n",
 	} {
 		if strings.Contains(out, banned) {
 			t.Errorf("assignment-triggered brief still contains unconditional legacy workflow text %q\n---\n%s", banned, out)
@@ -513,7 +513,7 @@ func TestWriteRuntimeConfigFileCreatesMissingFile(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "CLAUDE.md")
-	const brief = "# Tandem Agent Runtime\n\nbrief body line"
+	const brief = "# Agora Agent Runtime\n\nbrief body line"
 
 	if err := writeRuntimeConfigFile(path, brief); err != nil {
 		t.Fatalf("writeRuntimeConfigFile returned error: %v", err)
@@ -543,7 +543,7 @@ func TestWriteRuntimeConfigFilePreservesUserContent(t *testing.T) {
 		t.Fatalf("seed user file: %v", err)
 	}
 
-	const brief = "## Tandem brief\n\ninjected body"
+	const brief = "## Agora brief\n\ninjected body"
 	if err := writeRuntimeConfigFile(path, brief); err != nil {
 		t.Fatalf("writeRuntimeConfigFile returned error: %v", err)
 	}
@@ -586,7 +586,7 @@ func TestWriteRuntimeConfigFileReplacesExistingBlock(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	const newBrief = "## New Tandem brief\n\nfresh body"
+	const newBrief = "## New Agora brief\n\nfresh body"
 	if err := writeRuntimeConfigFile(path, newBrief); err != nil {
 		t.Fatalf("writeRuntimeConfigFile returned error: %v", err)
 	}
@@ -622,7 +622,7 @@ func TestWriteRuntimeConfigFileIsIdempotent(t *testing.T) {
 		t.Fatalf("seed user file: %v", err)
 	}
 
-	const brief = "## Tandem brief\n\nbody"
+	const brief = "## Agora brief\n\nbody"
 	for i := 0; i < 5; i++ {
 		if err := writeRuntimeConfigFile(path, brief); err != nil {
 			t.Fatalf("iteration %d: %v", i, err)
@@ -744,8 +744,8 @@ func TestWriteRuntimeConfigFileIgnoresStrayEndMarkerBeforeBegin(t *testing.T) {
 
 	// Seed a file whose user-authored portion documents the marker format
 	// (so the *end* marker appears before any *begin* marker), then has a
-	// real block authored by an earlier Tandem run below.
-	const userDoc = "# Repo CLAUDE.md\n\nExample of what Tandem writes:\n" +
+	// real block authored by an earlier Agora run below.
+	const userDoc = "# Repo CLAUDE.md\n\nExample of what Agora writes:\n" +
 		runtimeMarkerEnd + "\n\n# Real config below\n"
 	original := userDoc +
 		runtimeMarkerBegin + "\nFIRST BRIEF\n" + runtimeMarkerEnd + "\n"
@@ -838,7 +838,7 @@ func TestWriteRuntimeConfigFileReplacesMalformedHalfBlock(t *testing.T) {
 
 // Cleanup excises the marker block, preserving every byte of surrounding
 // user content. This is the local_directory invariant: a `claude` /
-// `codex` run started by the user after a Tandem task must see the same
+// `codex` run started by the user after a Agora task must see the same
 // file the user wrote.
 func TestCleanupRuntimeConfigPreservesUserContent(t *testing.T) {
 	t.Parallel()

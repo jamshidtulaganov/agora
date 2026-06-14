@@ -1,8 +1,8 @@
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { RuntimeDetailPage as SharedRuntimeDetailPage } from "@tandem/views/runtimes";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { runtimeListOptions } from "@tandem/core/runtimes/queries";
+import { RuntimeDetailPage as SharedRuntimeDetailPage } from "@agora/views/runtimes";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { runtimeListOptions } from "@agora/core/runtimes/queries";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 
 export function RuntimeDetailPage() {

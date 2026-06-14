@@ -2,36 +2,36 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@tandem/core/api";
-import { useAuthStore } from "@tandem/core/auth";
-import { useCurrentWorkspace, useWorkspacePaths } from "@tandem/core/paths";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { resolvePublicFileUrl } from "@tandem/core/workspace/avatar-url";
-import { useFileUpload } from "@tandem/core/hooks/use-file-upload";
-import { isImeComposing } from "@tandem/core/utils";
+import { api } from "@agora/core/api";
+import { useAuthStore } from "@agora/core/auth";
+import { useCurrentWorkspace, useWorkspacePaths } from "@agora/core/paths";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
+import { useFileUpload } from "@agora/core/hooks/use-file-upload";
+import { isImeComposing } from "@agora/core/utils";
 import { useTimeAgo } from "../../i18n";
-import { agentListOptions, memberListOptions, squadMemberStatusOptions, workspaceKeys } from "@tandem/core/workspace/queries";
-import { runtimeListOptions } from "@tandem/core/runtimes";
+import { agentListOptions, memberListOptions, squadMemberStatusOptions, workspaceKeys } from "@agora/core/workspace/queries";
+import { runtimeListOptions } from "@agora/core/runtimes";
 import { CreateAgentDialog } from "../../agents/components/create-agent-dialog";
 import { useNavigation } from "../../navigation";
 import { AppLink } from "../../navigation";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { PageHeader } from "../../layout/page-header";
 import { Users, Plus, Trash2, ArrowUpRight, Crown, Camera, Loader2, Pencil, FileText, Save } from "lucide-react";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Input } from "@tandem/ui/components/ui/input";
-import { Label } from "@tandem/ui/components/ui/label";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
+import { Button } from "@agora/ui/components/ui/button";
+import { Input } from "@agora/ui/components/ui/input";
+import { Label } from "@agora/ui/components/ui/label";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@tandem/ui/components/ui/popover";
+} from "@agora/ui/components/ui/popover";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@tandem/ui/components/ui/tooltip";
+} from "@agora/ui/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -39,7 +39,7 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from "@tandem/ui/components/ui/dialog";
+} from "@agora/ui/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,8 +49,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@tandem/ui/components/ui/alert-dialog";
-import { ActorAvatar as ActorAvatarBase } from "@tandem/ui/components/common/actor-avatar";
+} from "@agora/ui/components/ui/alert-dialog";
+import { ActorAvatar as ActorAvatarBase } from "@agora/ui/components/common/actor-avatar";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { ContentEditor } from "../../editor/content-editor";
 import {
@@ -60,7 +60,7 @@ import {
 } from "../../issues/components/pickers/property-picker";
 import { ChevronDown, UserPlus } from "lucide-react";
 import { toast } from "sonner";
-import type { Squad, SquadMember, SquadMemberStatus, SquadMemberStatusValue, Agent, CreateAgentRequest, MemberWithUser } from "@tandem/core/types";
+import type { Squad, SquadMember, SquadMemberStatus, SquadMemberStatusValue, Agent, CreateAgentRequest, MemberWithUser } from "@agora/core/types";
 import { useT } from "../../i18n";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 

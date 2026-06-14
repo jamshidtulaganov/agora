@@ -31,7 +31,7 @@ import type {
   TaskFailedPayload,
   TaskMessagePayload,
   TaskQueuedPayload,
-} from "@tandem/core/types";
+} from "@agora/core/types";
 import { issueKeys } from "@/data/queries/issue-keys";
 import { useWSSubscriptions } from "@/lib/use-ws-subscriptions";
 import {

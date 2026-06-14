@@ -9,7 +9,7 @@ import {
   Folder,
   FolderOpen,
 } from "lucide-react";
-import { cn } from "@tandem/ui/lib/utils";
+import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
 
 // ---------------------------------------------------------------------------

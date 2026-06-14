@@ -3,14 +3,14 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { Agent, SkillSummary } from "@tandem/core/types";
-import { api } from "@tandem/core/api";
-import { useWorkspaceId } from "@tandem/core/hooks";
+import type { Agent, SkillSummary } from "@agora/core/types";
+import { api } from "@agora/core/api";
+import { useWorkspaceId } from "@agora/core/hooks";
 import {
   skillListOptions,
   workspaceKeys,
-} from "@tandem/core/workspace/queries";
-import { Button } from "@tandem/ui/components/ui/button";
+} from "@agora/core/workspace/queries";
+import { Button } from "@agora/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -18,7 +18,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@tandem/ui/components/ui/dialog";
+} from "@agora/ui/components/ui/dialog";
 import { useT } from "../../i18n";
 import { SkillPickerList } from "./skill-picker-list";
 

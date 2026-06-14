@@ -14,16 +14,16 @@ import type {
   AgentRuntime,
   MemberWithUser,
   SkillSummary,
-} from "@tandem/core/types";
+} from "@agora/core/types";
 import { useTimeAgo } from "../../i18n";
-import { ActorAvatar } from "@tandem/ui/components/common/actor-avatar";
+import { ActorAvatar } from "@agora/ui/components/common/actor-avatar";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@tandem/ui/components/ui/tooltip";
+} from "@agora/ui/components/ui/tooltip";
 import { readOrigin, totalFileCount } from "../lib/origin";
-import { resolvePublicFileUrl } from "@tandem/core/workspace/avatar-url";
+import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
 import { useT } from "../../i18n";
 
 // Per-row data assembled at the page level. The columns reach into

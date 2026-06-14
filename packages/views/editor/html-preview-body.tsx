@@ -19,11 +19,11 @@
  * just slot HtmlPreviewBody as the body.
  */
 
-import { cn } from "@tandem/ui/lib/utils";
+import { cn } from "@agora/ui/lib/utils";
 import {
   PreviewTooLargeError,
   PreviewUnsupportedError,
-} from "@tandem/core/api";
+} from "@agora/core/api";
 import { useT } from "../i18n";
 import { CodeBlockIframe } from "./code-block-iframe";
 import { withFragmentNavShim } from "./utils/iframe-fragment-nav";

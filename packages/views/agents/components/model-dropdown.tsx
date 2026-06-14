@@ -3,15 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, Cpu, Loader2, Plus, Check, Info } from "lucide-react";
-import { runtimeModelsOptions } from "@tandem/core/runtimes";
-import type { RuntimeModel } from "@tandem/core/types";
+import { runtimeModelsOptions } from "@agora/core/runtimes";
+import type { RuntimeModel } from "@agora/core/types";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@tandem/ui/components/ui/popover";
-import { Input } from "@tandem/ui/components/ui/input";
-import { Label } from "@tandem/ui/components/ui/label";
+} from "@agora/ui/components/ui/popover";
+import { Input } from "@agora/ui/components/ui/input";
+import { Label } from "@agora/ui/components/ui/label";
 import { useT } from "../../i18n";
 
 // ModelDropdown renders a searchable, creatable model picker for an agent.

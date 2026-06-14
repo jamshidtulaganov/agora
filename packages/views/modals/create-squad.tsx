@@ -3,33 +3,33 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, UserPlus, X } from "lucide-react";
-import { api } from "@tandem/core/api";
-import { useAuthStore } from "@tandem/core/auth";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { useWorkspacePaths } from "@tandem/core/paths";
+import { api } from "@agora/core/api";
+import { useAuthStore } from "@agora/core/auth";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { useWorkspacePaths } from "@agora/core/paths";
 import {
   agentListOptions,
   memberListOptions,
   workspaceKeys,
-} from "@tandem/core/workspace/queries";
-import { AGENT_DESCRIPTION_MAX_LENGTH } from "@tandem/core/agents";
-import { isImeComposing } from "@tandem/core/utils";
-import type { Agent, MemberWithUser } from "@tandem/core/types";
+} from "@agora/core/workspace/queries";
+import { AGENT_DESCRIPTION_MAX_LENGTH } from "@agora/core/agents";
+import { isImeComposing } from "@agora/core/utils";
+import type { Agent, MemberWithUser } from "@agora/core/types";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "@tandem/ui/components/ui/dialog";
+} from "@agora/ui/components/ui/dialog";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@tandem/ui/components/ui/popover";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Input } from "@tandem/ui/components/ui/input";
-import { Label } from "@tandem/ui/components/ui/label";
+} from "@agora/ui/components/ui/popover";
+import { Button } from "@agora/ui/components/ui/button";
+import { Input } from "@agora/ui/components/ui/input";
+import { Label } from "@agora/ui/components/ui/label";
 import { toast } from "sonner";
 
 import { useNavigation } from "../navigation";

@@ -1,5 +1,5 @@
-import type { IssuePriority } from "@tandem/core/types";
-import { PRIORITY_CONFIG } from "@tandem/core/issues/config";
+import type { IssuePriority } from "@agora/core/types";
+import { PRIORITY_CONFIG } from "@agora/core/issues/config";
 
 export function PriorityIcon({
   priority,

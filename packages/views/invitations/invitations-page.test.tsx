@@ -35,7 +35,7 @@ vi.mock("../platform", () => ({
   DragStrip: () => null,
 }));
 
-vi.mock("@tandem/core/auth", () => ({
+vi.mock("@agora/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: (s: unknown) => unknown) => {
       const state = { refreshMe };
@@ -47,7 +47,7 @@ vi.mock("@tandem/core/auth", () => ({
   ),
 }));
 
-vi.mock("@tandem/core/api", () => ({
+vi.mock("@agora/core/api", () => ({
   api: {
     acceptInvitation,
     markOnboardingComplete,
@@ -56,7 +56,7 @@ vi.mock("@tandem/core/api", () => ({
   },
 }));
 
-import { I18nProvider } from "@tandem/core/i18n/react";
+import { I18nProvider } from "@agora/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 import enInvite from "../locales/en/invite.json";
 import { InvitationsPage } from "./invitations-page";

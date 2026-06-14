@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { Check, Copy, Terminal } from "lucide-react";
-import { copyText } from "@tandem/ui/lib/clipboard";
+import { copyText } from "@agora/ui/lib/clipboard";
 import { useLocale } from "../../i18n";
 
 const INSTALL_CMD =
   "curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash";
-const SETUP_CMD = "tandem setup";
+const SETUP_CMD = "agora setup";
 
 /**
  * Scenario-first CLI section. Copy leans into servers / remote dev

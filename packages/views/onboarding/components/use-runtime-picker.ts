@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useWSEvent } from "@tandem/core/realtime";
+import { useWSEvent } from "@agora/core/realtime";
 import {
   runtimeKeys,
   runtimeListOptions,
-} from "@tandem/core/runtimes/queries";
-import type { AgentRuntime } from "@tandem/core/types";
+} from "@agora/core/runtimes/queries";
+import type { AgentRuntime } from "@agora/core/types";
 
 /**
  * Step 3's runtime data layer, shared by Desktop (`StepRuntimeConnect`)

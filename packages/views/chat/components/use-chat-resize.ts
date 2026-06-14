@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useCallback, useState, useEffect } from "react";
-import { CHAT_MIN_W, CHAT_MIN_H, useChatStore } from "@tandem/core/chat";
+import { CHAT_MIN_W, CHAT_MIN_H, useChatStore } from "@agora/core/chat";
 
 type DragDir = "left" | "top" | "corner";
 

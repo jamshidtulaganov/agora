@@ -30,7 +30,7 @@ Go backend + monorepo frontend (pnpm workspaces + Turborepo) with shared package
 ### Package Boundaries (hard rules)
 
 - `packages/core/` — zero react-dom, zero localStorage, zero process.env
-- `packages/ui/` — zero `@tandem/core` imports
+- `packages/ui/` — zero `@agora/core` imports
 - `packages/views/` — zero `next/*`, zero `react-router-dom`, use `NavigationAdapter` for routing
 - `apps/web/platform/` — only place for Next.js APIs
 

@@ -122,7 +122,7 @@ func TestSubscriberIssueCreated_CreatorAndAssignee(t *testing.T) {
 	bus := events.New()
 	registerSubscriberListeners(bus, queries)
 
-	assigneeEmail := "subscriber-assignee-test@tandem.dev"
+	assigneeEmail := "subscriber-assignee-test@agora.dev"
 	assigneeID := createTestUser(t, assigneeEmail)
 	t.Cleanup(func() { cleanupTestUser(t, assigneeEmail) })
 
@@ -206,7 +206,7 @@ func TestSubscriberIssueUpdated_AssigneeChanged(t *testing.T) {
 	bus := events.New()
 	registerSubscriberListeners(bus, queries)
 
-	assigneeEmail := "subscriber-new-assignee-test@tandem.dev"
+	assigneeEmail := "subscriber-new-assignee-test@agora.dev"
 	assigneeID := createTestUser(t, assigneeEmail)
 	t.Cleanup(func() { cleanupTestUser(t, assigneeEmail) })
 
@@ -280,7 +280,7 @@ func TestSubscriberCommentCreated_CommenterSubscribed(t *testing.T) {
 	bus := events.New()
 	registerSubscriberListeners(bus, queries)
 
-	commenterEmail := "subscriber-commenter-test@tandem.dev"
+	commenterEmail := "subscriber-commenter-test@agora.dev"
 	commenterID := createTestUser(t, commenterEmail)
 	t.Cleanup(func() { cleanupTestUser(t, commenterEmail) })
 

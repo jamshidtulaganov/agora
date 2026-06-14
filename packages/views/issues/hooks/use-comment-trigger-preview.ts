@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { api } from "@tandem/core/api";
-import { issueKeys } from "@tandem/core/issues/queries";
-import type { CommentTriggerPreviewAgent } from "@tandem/core/types";
+import { api } from "@agora/core/api";
+import { issueKeys } from "@agora/core/issues/queries";
+import type { CommentTriggerPreviewAgent } from "@agora/core/types";
 
 const COMMENT_TRIGGER_PREVIEW_DEBOUNCE_MS = 300;
 const MENTION_RE = /\[@?(.+?)\]\(mention:\/\/(member|agent|squad|issue|all)\/([0-9a-fA-F-]+|all)\)/g;

@@ -1,4 +1,4 @@
-import { useAuthStore } from "@tandem/core/auth";
+import { useAuthStore } from "@agora/core/auth";
 import { browserTimezone } from "./timezone-select";
 
 // Viewer's IANA tz: stored user preference, else browser-detected, else UTC.

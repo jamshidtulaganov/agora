@@ -2,7 +2,7 @@ import { act, type ReactNode } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { I18nProvider } from "@tandem/core/i18n/react";
+import { I18nProvider } from "@agora/core/i18n/react";
 import { SearchCommand } from "./search-command";
 import { useSearchStore } from "./search-store";
 import enCommon from "../locales/en/common.json";
@@ -49,7 +49,7 @@ const {
   mockSetTheme: vi.fn(),
   mockTheme: { current: "system" as "light" | "dark" | "system" },
   mockPathname: { current: "/ws-test/issues" as string },
-  mockGetShareableUrl: vi.fn((p: string) => `https://app.tandem/${p}`),
+  mockGetShareableUrl: vi.fn((p: string) => `https://app.agora/${p}`),
   mockMembers: {
     current: [] as Array<{
       id: string;
@@ -81,7 +81,7 @@ const {
   mockClipboardWrite: vi.fn(() => Promise.resolve()),
 }));
 
-vi.mock("@tandem/core/api", () => ({
+vi.mock("@agora/core/api", () => ({
   api: {
     getBaseUrl: () => "http://127.0.0.1:8080",
     searchIssues: mockSearchIssues,
@@ -114,7 +114,7 @@ vi.mock("../common/actor-avatar", () => ({
   },
 }));
 
-vi.mock("@tandem/core/issues/stores", () => {
+vi.mock("@agora/core/issues/stores", () => {
   const EMPTY: Array<{ id: string; visitedAt: number }> = [];
   return {
     useRecentIssuesStore: (
@@ -134,11 +134,11 @@ vi.mock("@tandem/core/issues/stores", () => {
   };
 });
 
-vi.mock("@tandem/core", () => ({
+vi.mock("@agora/core", () => ({
   useWorkspaceId: () => "ws-test",
 }));
 
-vi.mock("@tandem/core/paths", () => ({
+vi.mock("@agora/core/paths", () => ({
   useWorkspacePaths: () => ({
     inbox: () => "/ws-test/inbox",
     myIssues: () => "/ws-test/my-issues",
@@ -156,19 +156,19 @@ vi.mock("@tandem/core/paths", () => ({
   }),
 }));
 
-vi.mock("@tandem/core/issues/queries", () => ({
+vi.mock("@agora/core/issues/queries", () => ({
   issueDetailOptions: (_wsId: string, id: string) => ({
     queryKey: ["issues", "ws-test", "detail", id],
   }),
 }));
 
-vi.mock("@tandem/core/workspace/queries", () => ({
+vi.mock("@agora/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["workspaces", "ws-test", "members"] }),
   agentListOptions: () => ({ queryKey: ["workspaces", "ws-test", "agents"] }),
   squadListOptions: () => ({ queryKey: ["workspaces", "ws-test", "squads"] }),
 }));
 
-vi.mock("@tandem/core/modals", () => ({
+vi.mock("@agora/core/modals", () => ({
   useModalStore: Object.assign(vi.fn(), {
     getState: () => ({ open: mockOpenModal }),
   }),
@@ -210,7 +210,7 @@ vi.mock("../navigation", () => ({
   }),
 }));
 
-vi.mock("@tandem/ui/components/common/theme-provider", () => ({
+vi.mock("@agora/ui/components/common/theme-provider", () => ({
   useTheme: () => ({ theme: mockTheme.current, setTheme: mockSetTheme }),
 }));
 
@@ -230,7 +230,7 @@ describe("SearchCommand", () => {
     mockSetTheme.mockReset();
     mockTheme.current = "system";
     mockPathname.current = "/ws-test/issues";
-    mockGetShareableUrl.mockReset().mockImplementation((p: string) => `https://app.tandem/${p}`);
+    mockGetShareableUrl.mockReset().mockImplementation((p: string) => `https://app.agora/${p}`);
     mockMembers.current = [];
     mockOpenModal.mockReset();
     mockToastSuccess.mockReset();
@@ -434,7 +434,7 @@ describe("SearchCommand", () => {
     await user.click(linkItem);
 
     expect(mockGetShareableUrl).toHaveBeenCalledWith("/ws-test/issues/issue-1");
-    expect(mockClipboardWrite).toHaveBeenCalledWith("https://app.tandem//ws-test/issues/issue-1");
+    expect(mockClipboardWrite).toHaveBeenCalledWith("https://app.agora//ws-test/issues/issue-1");
     expect(mockToastSuccess).toHaveBeenCalledWith("Link copied");
 
     // Reopen palette and test identifier copy

@@ -1,5 +1,5 @@
 import { Lock } from "lucide-react";
-import { cn } from "@tandem/ui/lib/utils";
+import { cn } from "@agora/ui/lib/utils";
 
 type Resource = "agent" | "skill" | "comment" | "runtime" | "workspace";
 

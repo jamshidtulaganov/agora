@@ -17,7 +17,7 @@ export interface ActorIssuesViewState extends IssueViewState {
   setScope: (scope: ActorIssuesScope) => void;
 }
 
-const basePersist = viewStorePersistOptions("tandem_actor_issues_view");
+const basePersist = viewStorePersistOptions("agora_actor_issues_view");
 
 const _actorIssuesViewStore = createStore<ActorIssuesViewState>()(
   persist(

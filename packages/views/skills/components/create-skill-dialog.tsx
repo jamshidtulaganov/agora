@@ -14,30 +14,30 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { api } from "@tandem/core/api";
-import type { Skill } from "@tandem/core/types";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { isImeComposing } from "@tandem/core/utils";
+import { api } from "@agora/core/api";
+import type { Skill } from "@agora/core/types";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { isImeComposing } from "@agora/core/utils";
 import {
   skillDetailOptions,
   workspaceKeys,
-} from "@tandem/core/workspace/queries";
+} from "@agora/core/workspace/queries";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
-} from "@tandem/ui/components/ui/dialog";
+} from "@agora/ui/components/ui/dialog";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@tandem/ui/components/ui/tooltip";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Input } from "@tandem/ui/components/ui/input";
-import { Label } from "@tandem/ui/components/ui/label";
-import { Textarea } from "@tandem/ui/components/ui/textarea";
-import { useScrollFade } from "@tandem/ui/hooks/use-scroll-fade";
-import { cn } from "@tandem/ui/lib/utils";
+} from "@agora/ui/components/ui/tooltip";
+import { Button } from "@agora/ui/components/ui/button";
+import { Input } from "@agora/ui/components/ui/input";
+import { Label } from "@agora/ui/components/ui/label";
+import { Textarea } from "@agora/ui/components/ui/textarea";
+import { useScrollFade } from "@agora/ui/hooks/use-scroll-fade";
+import { cn } from "@agora/ui/lib/utils";
 import { openExternal } from "../../platform";
 import { RuntimeLocalSkillImportPanel } from "./runtime-local-skill-import-panel";
 import { useT } from "../../i18n";

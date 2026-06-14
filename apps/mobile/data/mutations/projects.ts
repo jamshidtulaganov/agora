@@ -21,7 +21,7 @@ import type {
   Project,
   ProjectResource,
   UpdateProjectRequest,
-} from "@tandem/core/types";
+} from "@agora/core/types";
 import { api } from "@/data/api";
 import { projectKeys } from "@/data/queries/projects";
 import { useWorkspaceStore } from "@/data/workspace-store";

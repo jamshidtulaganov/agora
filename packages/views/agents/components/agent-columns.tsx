@@ -2,18 +2,18 @@
 
 import { Cloud, Lock, Monitor } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
-import type { Agent, AgentRuntime } from "@tandem/core/types";
+import type { Agent, AgentRuntime } from "@agora/core/types";
 import {
   type AgentActivity,
   type AgentPresenceDetail,
   summarizeActivityWindow,
   VISIBILITY_TOOLTIP,
-} from "@tandem/core/agents";
+} from "@agora/core/agents";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@tandem/ui/components/ui/tooltip";
+} from "@agora/ui/components/ui/tooltip";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { availabilityConfig, workloadConfig } from "../presence";
 import { AgentRowActions } from "./agent-row-actions";

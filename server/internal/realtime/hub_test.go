@@ -357,7 +357,7 @@ func TestCheckOrigin(t *testing.T) {
 	prev := allowedWSOrigins.Load().([]string)
 	SetAllowedOrigins([]string{
 		"http://localhost:3000",
-		"https://tandem.dev",
+		"https://agora.dev",
 	})
 	t.Cleanup(func() { SetAllowedOrigins(prev) })
 
@@ -377,24 +377,24 @@ func TestCheckOrigin(t *testing.T) {
 		remoteAddr string
 		want       bool
 	}{
-		{"empty origin allowed", "api.tandem.dev", "", "", "1.2.3.4:5678", true},
+		{"empty origin allowed", "api.agora.dev", "", "", "1.2.3.4:5678", true},
 		{"same-origin allowed (native client default)", "localhost:8080", "http://localhost:8080", "", "1.2.3.4:5678", true},
-		{"same-origin allowed (https)", "api.tandem.dev", "https://api.tandem.dev", "", "1.2.3.4:5678", true},
-		{"same-origin allowed (case-insensitive host, RFC 7230)", "API.Tandem.AI", "https://api.tandem.dev", "", "1.2.3.4:5678", true},
+		{"same-origin allowed (https)", "api.agora.dev", "https://api.agora.dev", "", "1.2.3.4:5678", true},
+		{"same-origin allowed (case-insensitive host, RFC 7230)", "API.Agora.AI", "https://api.agora.dev", "", "1.2.3.4:5678", true},
 		{"whitelisted origin allowed (web cross-origin)", "localhost:8080", "http://localhost:3000", "", "1.2.3.4:5678", true},
-		{"whitelisted origin allowed (prod web)", "api.tandem.dev", "https://tandem.dev", "", "1.2.3.4:5678", true},
-		{"unknown origin rejected (CSWSH defense)", "api.tandem.dev", "https://evil.com", "", "1.2.3.4:5678", false},
+		{"whitelisted origin allowed (prod web)", "api.agora.dev", "https://agora.dev", "", "1.2.3.4:5678", true},
+		{"unknown origin rejected (CSWSH defense)", "api.agora.dev", "https://evil.com", "", "1.2.3.4:5678", false},
 		{"different port rejected", "localhost:8080", "http://localhost:9999", "", "1.2.3.4:5678", false},
-		{"X-Forwarded-Host from trusted proxy matches origin", "internal.proxy", "https://tandem.dev", "tandem.dev", "127.0.0.1:5678", true},
-		{"X-Forwarded-Host from trusted proxy case-insensitive", "internal.proxy", "https://Tandem.AI", "tandem.dev", "10.0.0.1:5678", true},
+		{"X-Forwarded-Host from trusted proxy matches origin", "internal.proxy", "https://agora.dev", "agora.dev", "127.0.0.1:5678", true},
+		{"X-Forwarded-Host from trusted proxy case-insensitive", "internal.proxy", "https://Agora.AI", "agora.dev", "10.0.0.1:5678", true},
 		{"X-Forwarded-Host from untrusted source rejected", "internal.proxy", "https://example.com", "example.com", "1.2.3.4:5678", false},
-		{"X-Forwarded-Host from trusted proxy but evil origin rejected", "internal.proxy", "https://evil.com", "tandem.dev", "127.0.0.1:5678", false},
-		{"X-Forwarded-Host present but origin matches direct Host", "tandem.dev", "https://tandem.dev", "other.host", "1.2.3.4:5678", true},
+		{"X-Forwarded-Host from trusted proxy but evil origin rejected", "internal.proxy", "https://evil.com", "agora.dev", "127.0.0.1:5678", false},
+		{"X-Forwarded-Host present but origin matches direct Host", "agora.dev", "https://agora.dev", "other.host", "1.2.3.4:5678", true},
 		{"X-Forwarded-Host spoofed by attacker rejected", "internal.proxy", "https://evil.com", "evil.com", "1.2.3.4:5678", false},
-		{"X-Forwarded-Host from trusted CIDR range matches origin", "internal.proxy", "https://tandem.dev", "tandem.dev", "10.5.6.7:5678", true},
-		{"X-Forwarded-Host from trusted IPv6 proxy matches origin", "internal.proxy", "https://tandem.dev", "tandem.dev", "[::1]:5678", true},
-		{"X-Forwarded-Host comma list uses first (client-facing) value", "internal.proxy", "https://tandem.dev", "tandem.dev, proxy.internal", "127.0.0.1:5678", true},
-		{"X-Forwarded-Host comma list ignores trailing values", "internal.proxy", "https://app.tandem.dev", "proxy.internal, app.tandem.dev", "127.0.0.1:5678", false},
+		{"X-Forwarded-Host from trusted CIDR range matches origin", "internal.proxy", "https://agora.dev", "agora.dev", "10.5.6.7:5678", true},
+		{"X-Forwarded-Host from trusted IPv6 proxy matches origin", "internal.proxy", "https://agora.dev", "agora.dev", "[::1]:5678", true},
+		{"X-Forwarded-Host comma list uses first (client-facing) value", "internal.proxy", "https://agora.dev", "agora.dev, proxy.internal", "127.0.0.1:5678", true},
+		{"X-Forwarded-Host comma list ignores trailing values", "internal.proxy", "https://app.agora.dev", "proxy.internal, app.agora.dev", "127.0.0.1:5678", false},
 	}
 
 	for _, tc := range cases {

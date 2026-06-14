@@ -288,7 +288,7 @@ func TestResolveViewingTZ(t *testing.T) {
 	var userID string
 	if err := testPool.QueryRow(ctx,
 		`INSERT INTO "user" (name, email, timezone)
-		 VALUES ('TZ Resolve', 'tz-resolve@tandem.dev', 'Asia/Tokyo') RETURNING id`,
+		 VALUES ('TZ Resolve', 'tz-resolve@agora.dev', 'Asia/Tokyo') RETURNING id`,
 	).Scan(&userID); err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
@@ -319,7 +319,7 @@ func TestResolveViewingTZ(t *testing.T) {
 	var bareUserID string
 	if err := testPool.QueryRow(ctx,
 		`INSERT INTO "user" (name, email)
-		 VALUES ('TZ Bare', 'tz-bare@tandem.dev') RETURNING id`,
+		 VALUES ('TZ Bare', 'tz-bare@agora.dev') RETURNING id`,
 	).Scan(&bareUserID); err != nil {
 		t.Fatalf("insert bare user: %v", err)
 	}
@@ -337,7 +337,7 @@ func TestResolveViewingTZ(t *testing.T) {
 	var badTZUserID string
 	if err := testPool.QueryRow(ctx,
 		`INSERT INTO "user" (name, email, timezone)
-		 VALUES ('TZ Bad', 'tz-bad@tandem.dev', 'Bad/Zone') RETURNING id`,
+		 VALUES ('TZ Bad', 'tz-bad@agora.dev', 'Bad/Zone') RETURNING id`,
 	).Scan(&badTZUserID); err != nil {
 		t.Fatalf("insert bad-tz user: %v", err)
 	}

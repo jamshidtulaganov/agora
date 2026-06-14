@@ -19,7 +19,7 @@ export const useProjectViewStore = create<ProjectViewState>()(
       setViewMode: (mode) => set({ viewMode: mode }),
     }),
     {
-      name: "tandem_projects_view",
+      name: "agora_projects_view",
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
       partialize: (state) => ({ viewMode: state.viewMode }),
       merge: (persisted, current) => {

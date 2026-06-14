@@ -2,18 +2,18 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Key, Trash2, Copy, Check } from "lucide-react";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@tandem/ui/components/ui/tooltip";
-import type { PersonalAccessToken } from "@tandem/core/types";
-import { Input } from "@tandem/ui/components/ui/input";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Card, CardContent } from "@tandem/ui/components/ui/card";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@agora/ui/components/ui/tooltip";
+import type { PersonalAccessToken } from "@agora/core/types";
+import { Input } from "@agora/ui/components/ui/input";
+import { Button } from "@agora/ui/components/ui/button";
+import { Card, CardContent } from "@agora/ui/components/ui/card";
 import {
   Select,
   SelectTrigger,
   SelectValue,
   SelectContent,
   SelectItem,
-} from "@tandem/ui/components/ui/select";
+} from "@agora/ui/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -21,7 +21,7 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from "@tandem/ui/components/ui/dialog";
+} from "@agora/ui/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,11 +31,11 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@tandem/ui/components/ui/alert-dialog";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
-import { copyText } from "@tandem/ui/lib/clipboard";
+} from "@agora/ui/components/ui/alert-dialog";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import { copyText } from "@agora/ui/lib/clipboard";
 import { toast } from "sonner";
-import { api } from "@tandem/core/api";
+import { api } from "@agora/core/api";
 import { useT } from "../../i18n";
 
 const EXPIRY_KEYS = ["30", "90", "365", "never"] as const;

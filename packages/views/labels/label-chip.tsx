@@ -1,6 +1,6 @@
 "use client";
 
-import type { Label } from "@tandem/core/types";
+import type { Label } from "@agora/core/types";
 import { X } from "lucide-react";
 import { useT } from "../i18n";
 

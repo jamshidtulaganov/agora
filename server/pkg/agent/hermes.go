@@ -207,7 +207,7 @@ func (b *hermesBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 		initResult, err := c.request(runCtx, "initialize", map[string]any{
 			"protocolVersion": 1,
 			"clientInfo": map[string]any{
-				"name":    "tandem-agent-sdk",
+				"name":    "agora-agent-sdk",
 				"version": "0.2.0",
 			},
 			"clientCapabilities": map[string]any{},
@@ -1232,7 +1232,7 @@ func extractACPSessionID(result json.RawMessage) string {
 // extractACPCurrentModelID pulls the model selected by the ACP runtime out of
 // a session/new or session/resume response. Hermes returns this when it uses
 // its own default model, so token usage can still be attributed to a real model
-// even when Tandem did not pass an explicit agent.model override.
+// even when Agora did not pass an explicit agent.model override.
 func extractACPCurrentModelID(result json.RawMessage) string {
 	var r struct {
 		Models struct {
@@ -1761,7 +1761,7 @@ func (s *acpProviderErrorSniffer) messageLocked() string {
 // Without it, runs that exhaust retries against the upstream LLM
 // (HTTP 429, expired token, …) silently report as "completed"
 // because session/prompt still ends with stopReason=end_turn — see
-// GitHub tandem#1952.
+// GitHub agora#1952.
 func promoteACPResultOnProviderError(finalStatus, finalError, finalOutput string, sniffer *acpProviderErrorSniffer) (string, string) {
 	if finalStatus != "completed" {
 		return finalStatus, finalError

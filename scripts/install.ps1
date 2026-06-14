@@ -1,10 +1,10 @@
-# Tandem installer for Windows — one command to get started.
+# Agora installer for Windows — one command to get started.
 #
-# Install CLI (default): connects to tandem.dev
+# Install CLI (default): connects to agora.dev
 #   irm https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.ps1 | iex
 #
-# Self-host: starts a local Tandem server + installs CLI + configures
-#   $env:TANDEM_MODE="local"; irm https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.ps1 | iex
+# Self-host: starts a local Agora server + installs CLI + configures
+#   $env:AGORA_MODE="local"; irm https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.ps1 | iex
 #
 
 $ErrorActionPreference = "Stop"
@@ -14,8 +14,8 @@ $ErrorActionPreference = "Stop"
 # ---------------------------------------------------------------------------
 $RepoUrl       = "https://github.com/multica-ai/multica.git"
 $RepoWebUrl    = "https://github.com/multica-ai/multica"
-$DefaultInstallDir = Join-Path $env:USERPROFILE ".tandem\server"
-$InstallDir    = if ($env:TANDEM_INSTALL_DIR) { $env:TANDEM_INSTALL_DIR } else { $DefaultInstallDir }
+$DefaultInstallDir = Join-Path $env:USERPROFILE ".agora\server"
+$InstallDir    = if ($env:AGORA_INSTALL_DIR) { $env:AGORA_INSTALL_DIR } else { $DefaultInstallDir }
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -93,8 +93,8 @@ function Get-LatestVersion {
 }
 
 function Get-SelfHostRef {
-    if ($env:TANDEM_SELFHOST_REF) {
-        return $env:TANDEM_SELFHOST_REF
+    if ($env:AGORA_SELFHOST_REF) {
+        return $env:AGORA_SELFHOST_REF
     }
 
     $latest = Get-LatestVersion
@@ -215,7 +215,7 @@ function Get-WindowsCliArch {
 
 function Get-InstalledCliVersion {
     try {
-        $firstLine = tandem version 2>$null | Select-Object -First 1
+        $firstLine = agora version 2>$null | Select-Object -First 1
         if ("$firstLine" -match '\b(v?\d+(?:\.\d+)+)\b') {
             $version = $Matches[1]
             if ($version -notlike 'v*') {
@@ -232,10 +232,10 @@ function Get-InstalledCliVersion {
 # CLI Installation
 # ---------------------------------------------------------------------------
 function Install-CliBinary {
-    Write-Info "Installing Tandem CLI from GitHub Releases..."
+    Write-Info "Installing Agora CLI from GitHub Releases..."
 
     if (-not [Environment]::Is64BitOperatingSystem) {
-        Write-Fail "Tandem requires a 64-bit Windows installation."
+        Write-Fail "Agora requires a 64-bit Windows installation."
     }
 
     $arch = Get-WindowsCliArch
@@ -246,15 +246,15 @@ function Install-CliBinary {
     }
 
     $version = $latest.TrimStart('v')
-    $url = "https://github.com/multica-ai/multica/releases/download/$latest/tandem-cli-$version-windows-$arch.zip"
-    $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "tandem-install"
+    $url = "https://github.com/multica-ai/multica/releases/download/$latest/agora-cli-$version-windows-$arch.zip"
+    $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "agora-install"
 
     if (Test-Path $tmpDir) { Remove-Item $tmpDir -Recurse -Force }
     New-Item -ItemType Directory -Path $tmpDir | Out-Null
 
     Write-Info "Downloading $url ..."
     try {
-        Invoke-WebRequest -Uri $url -OutFile (Join-Path $tmpDir "tandem.zip") -UseBasicParsing
+        Invoke-WebRequest -Uri $url -OutFile (Join-Path $tmpDir "agora.zip") -UseBasicParsing
     } catch {
         Remove-Item $tmpDir -Recurse -Force
         Write-Fail "Failed to download CLI binary: $_"
@@ -269,10 +269,10 @@ function Install-CliBinary {
         } else {
             [string]$checksums.Content
         }
-        $zipFile = Join-Path $tmpDir "tandem.zip"
+        $zipFile = Join-Path $tmpDir "agora.zip"
         $actualHash = (Get-FileHash -Path $zipFile -Algorithm SHA256).Hash.ToLower()
-        $releaseAsset = "tandem-cli-$version-windows-$arch.zip"
-        $legacyAsset = "tandem_windows_$arch.zip"
+        $releaseAsset = "agora-cli-$version-windows-$arch.zip"
+        $legacyAsset = "agora_windows_$arch.zip"
         $expectedLine = ($checksumContent -split "`r?`n") |
             Where-Object {
                 $_ -match [regex]::Escape($releaseAsset) -or
@@ -293,27 +293,27 @@ function Install-CliBinary {
         Write-Warn "Could not download checksums.txt — skipping verification."
     }
 
-    Expand-Archive -Path (Join-Path $tmpDir "tandem.zip") -DestinationPath $tmpDir -Force
+    Expand-Archive -Path (Join-Path $tmpDir "agora.zip") -DestinationPath $tmpDir -Force
 
-    $binDir = Join-Path $env:USERPROFILE ".tandem\bin"
+    $binDir = Join-Path $env:USERPROFILE ".agora\bin"
     if (-not (Test-Path $binDir)) {
         New-Item -ItemType Directory -Path $binDir -Force | Out-Null
     }
 
-    $exeSrc = Join-Path $tmpDir "tandem.exe"
+    $exeSrc = Join-Path $tmpDir "agora.exe"
     if (-not (Test-Path $exeSrc)) {
-        $exeSrc = Get-ChildItem -Path $tmpDir -Filter "tandem.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName
+        $exeSrc = Get-ChildItem -Path $tmpDir -Filter "agora.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName
     }
     if (-not $exeSrc -or -not (Test-Path $exeSrc)) {
         Remove-Item $tmpDir -Recurse -Force
-        Write-Fail "tandem.exe not found in downloaded archive."
+        Write-Fail "agora.exe not found in downloaded archive."
     }
 
-    Copy-Item $exeSrc (Join-Path $binDir "tandem.exe") -Force
+    Copy-Item $exeSrc (Join-Path $binDir "agora.exe") -Force
     Remove-Item $tmpDir -Recurse -Force
 
     Add-ToUserPath $binDir
-    Write-Ok "Tandem CLI installed to $binDir\tandem.exe"
+    Write-Ok "Agora CLI installed to $binDir\agora.exe"
 }
 
 function Add-ToUserPath {
@@ -332,7 +332,7 @@ function Add-ToUserPath {
 }
 
 function Install-Cli {
-    if (Test-CommandExists "tandem") {
+    if (Test-CommandExists "agora") {
         $currentVer = Get-InstalledCliVersion
         $latestVer = Get-LatestVersion
 
@@ -349,22 +349,22 @@ function Install-Cli {
         }
 
         if ($isUpToDate) {
-            Write-Ok "Tandem CLI is up to date ($currentVer)"
+            Write-Ok "Agora CLI is up to date ($currentVer)"
             return
         }
 
-        Write-Info "Tandem CLI $currentVer installed, latest is $latestVer - upgrading..."
+        Write-Info "Agora CLI $currentVer installed, latest is $latestVer - upgrading..."
         Install-CliBinary
 
         $newVer = Get-InstalledCliVersion
-        Write-Ok "Tandem CLI upgraded ($currentVer -> $newVer)"
+        Write-Ok "Agora CLI upgraded ($currentVer -> $newVer)"
         return
     }
 
     Install-CliBinary
 
-    if (-not (Test-CommandExists "tandem")) {
-        Write-Fail "CLI installed but 'tandem' not found on PATH. Restart your terminal and try again."
+    if (-not (Test-CommandExists "agora")) {
+        Write-Fail "CLI installed but 'agora' not found on PATH. Restart your terminal and try again."
     }
 }
 
@@ -374,12 +374,12 @@ function Install-Cli {
 function Test-Docker {
     if (-not (Test-CommandExists "docker")) {
         Write-Fail @"
-Docker is not installed. Tandem self-hosting requires Docker and Docker Compose.
+Docker is not installed. Agora self-hosting requires Docker and Docker Compose.
 
 Install Docker Desktop for Windows:
   https://docs.docker.com/desktop/install/windows-install/
 
-After installing Docker, re-run this script with `$env:TANDEM_MODE="local"`.
+After installing Docker, re-run this script with `$env:AGORA_MODE="local"`.
 "@
     }
 
@@ -396,7 +396,7 @@ After installing Docker, re-run this script with `$env:TANDEM_MODE="local"`.
 # Server setup (self-host / local)
 # ---------------------------------------------------------------------------
 function Install-Server {
-    Write-Info "Setting up Tandem server..."
+    Write-Info "Setting up Agora server..."
     $serverRef = Get-SelfHostRef
     Write-Info "Using self-host assets from $serverRef..."
 
@@ -404,7 +404,7 @@ function Install-Server {
         Write-Info "Updating existing installation at $InstallDir..."
         Write-Warn "Any local changes in $InstallDir will be overwritten."
     } else {
-        Write-Info "Cloning Tandem repository..."
+        Write-Info "Cloning Agora repository..."
         if (-not (Test-CommandExists "git")) {
             Write-Fail "Git is not installed. Please install git and re-run."
         }
@@ -438,9 +438,9 @@ function Install-Server {
         Write-Ok "Using existing .env"
     }
 
-    Write-Info "Pulling official Tandem images..."
+    Write-Info "Pulling official Agora images..."
     Pull-OfficialSelfHostImages
-    Write-Info "Starting Tandem services (this may take a few minutes on first run)..."
+    Write-Info "Starting Agora services (this may take a few minutes on first run)..."
     docker compose -f docker-compose.selfhost.yml up -d
 
     Write-Info "Waiting for backend to be ready..."
@@ -457,7 +457,7 @@ function Install-Server {
     }
 
     if ($ready) {
-        Write-Ok "Tandem server is running"
+        Write-Ok "Agora server is running"
     } else {
         Write-Warn "Server is still starting. Check logs with:"
         Write-Host "  cd $InstallDir; docker compose -f docker-compose.selfhost.yml logs"
@@ -472,23 +472,23 @@ function Install-Server {
 # ---------------------------------------------------------------------------
 function Start-DefaultInstall {
     Write-Host ""
-    Write-Host "  Tandem - Installer" -ForegroundColor White
+    Write-Host "  Agora - Installer" -ForegroundColor White
     Write-Host ""
 
     Install-Cli
 
     Write-Host ""
     Write-Host "  ============================================" -ForegroundColor Green
-    Write-Host "  [OK] Tandem CLI is ready!" -ForegroundColor Green
+    Write-Host "  [OK] Agora CLI is ready!" -ForegroundColor Green
     Write-Host "  ============================================" -ForegroundColor Green
     Write-Host ""
     Write-Host "  Next: configure your environment"
     Write-Host ""
-    Write-Host "     tandem setup               " -NoNewline; Write-Host "# Connect to Tandem Cloud (tandem.dev)" -ForegroundColor DarkGray
-    Write-Host "     tandem setup self-host      " -NoNewline; Write-Host "# Connect to a self-hosted server" -ForegroundColor DarkGray
+    Write-Host "     agora setup               " -NoNewline; Write-Host "# Connect to Agora Cloud (agora.dev)" -ForegroundColor DarkGray
+    Write-Host "     agora setup self-host      " -NoNewline; Write-Host "# Connect to a self-hosted server" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  Self-hosting? Install the server first:"
-    Write-Host '     $env:TANDEM_MODE="with-server"; irm https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.ps1 | iex'
+    Write-Host '     $env:AGORA_MODE="with-server"; irm https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.ps1 | iex'
     Write-Host ""
 }
 
@@ -497,7 +497,7 @@ function Start-DefaultInstall {
 # ---------------------------------------------------------------------------
 function Start-LocalInstall {
     Write-Host ""
-    Write-Host "  Tandem - Self-Host Installer" -ForegroundColor White
+    Write-Host "  Agora - Self-Host Installer" -ForegroundColor White
     Write-Host "  Provisioning server infrastructure + installing CLI"
     Write-Host ""
 
@@ -507,7 +507,7 @@ function Start-LocalInstall {
 
     Write-Host ""
     Write-Host "  ============================================" -ForegroundColor Green
-    Write-Host "  [OK] Tandem server is running and CLI is ready!" -ForegroundColor Green
+    Write-Host "  [OK] Agora server is running and CLI is ready!" -ForegroundColor Green
     Write-Host "  ============================================" -ForegroundColor Green
     Write-Host ""
     $frontendPort = Get-SelfHostFrontendPort
@@ -518,13 +518,13 @@ function Start-LocalInstall {
     Write-Host ""
     Write-Host "  Next: configure your CLI to connect"
     Write-Host ""
-    Write-Host "     tandem setup self-host  " -NoNewline; Write-Host "# Configure + authenticate + start daemon" -ForegroundColor DarkGray
+    Write-Host "     agora setup self-host  " -NoNewline; Write-Host "# Configure + authenticate + start daemon" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  Login: configure RESEND_API_KEY in .env for email codes,"
     Write-Host "  or read the generated code from backend logs when Resend is unset."
     Write-Host ""
     Write-Host "  To stop all services:"
-    Write-Host '     $env:TANDEM_MODE="stop"; irm https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.ps1 | iex'
+    Write-Host '     $env:AGORA_MODE="stop"; irm https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.ps1 | iex'
     Write-Host ""
 }
 
@@ -533,7 +533,7 @@ function Start-LocalInstall {
 # ---------------------------------------------------------------------------
 function Start-Stop {
     Write-Host ""
-    Write-Info "Stopping Tandem services..."
+    Write-Info "Stopping Agora services..."
 
     if (Test-Path $InstallDir) {
         Push-Location $InstallDir
@@ -545,12 +545,12 @@ function Start-Stop {
         }
         Pop-Location
     } else {
-        Write-Warn "No Tandem installation found at $InstallDir"
+        Write-Warn "No Agora installation found at $InstallDir"
     }
 
-    if (Test-CommandExists "tandem") {
+    if (Test-CommandExists "agora") {
         try {
-            tandem daemon stop 2>$null
+            agora daemon stop 2>$null
             Write-Ok "Daemon stopped"
         } catch {}
     }
@@ -561,7 +561,7 @@ function Start-Stop {
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
-$mode = if ($env:TANDEM_MODE) { $env:TANDEM_MODE.ToLower() } else { "default" }
+$mode = if ($env:AGORA_MODE) { $env:AGORA_MODE.ToLower() } else { "default" }
 
 switch ($mode) {
     "with-server" { Start-LocalInstall }

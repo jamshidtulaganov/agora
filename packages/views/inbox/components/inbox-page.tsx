@@ -3,15 +3,15 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { useWorkspacePaths } from "@tandem/core/paths";
-import { useModalStore } from "@tandem/core/modals";
-import { useIssueDraftStore } from "@tandem/core/issues/stores/draft-store";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { useWorkspacePaths } from "@agora/core/paths";
+import { useModalStore } from "@agora/core/modals";
+import { useIssueDraftStore } from "@agora/core/issues/stores/draft-store";
 import {
   inboxListOptions,
   deduplicateInboxItems,
   useInboxUnreadCount,
-} from "@tandem/core/inbox/queries";
+} from "@agora/core/inbox/queries";
 import {
   useMarkInboxRead,
   useArchiveInbox,
@@ -19,10 +19,10 @@ import {
   useArchiveAllInbox,
   useArchiveAllReadInbox,
   useArchiveCompletedInbox,
-} from "@tandem/core/inbox/mutations";
+} from "@agora/core/inbox/mutations";
 
 import { IssueDetail } from "../../issues/components";
-import { ErrorBoundary } from "@tandem/ui/components/common/error-boundary";
+import { ErrorBoundary } from "@agora/ui/components/common/error-boundary";
 import { useNavigation } from "../../navigation";
 import { toast } from "sonner";
 import {
@@ -34,22 +34,22 @@ import {
   ListChecks,
   ArrowLeft,
 } from "lucide-react";
-import type { InboxItem } from "@tandem/core/types";
-import { Button } from "@tandem/ui/components/ui/button";
+import type { InboxItem } from "@agora/core/types";
+import { Button } from "@agora/ui/components/ui/button";
 import {
   ResizablePanelGroup,
   ResizablePanel,
   ResizableHandle,
-} from "@tandem/ui/components/ui/resizable";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
+} from "@agora/ui/components/ui/resizable";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-} from "@tandem/ui/components/ui/dropdown-menu";
-import { useIsMobile } from "@tandem/ui/hooks/use-mobile";
+} from "@agora/ui/components/ui/dropdown-menu";
+import { useIsMobile } from "@agora/ui/hooks/use-mobile";
 import { PageHeader } from "../../layout/page-header";
 import { InboxListItem, useTimeAgo } from "./inbox-list-item";
 import { useTypeLabels } from "./inbox-detail-label";
@@ -109,7 +109,7 @@ export function InboxPage() {
   }, [loading, selectedKey, selected, replace, wsPaths, setSelectedKey]);
 
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: "tandem_inbox_layout",
+    id: "agora_inbox_layout",
   });
 
   const isMobile = useIsMobile();
@@ -296,7 +296,7 @@ export function InboxPage() {
         key={selected.issue_id}
         issueId={selected.issue_id}
         defaultSidebarOpen={false}
-        layoutId="tandem_inbox_issue_detail_layout"
+        layoutId="agora_inbox_issue_detail_layout"
         highlightCommentId={selected.details?.comment_id ?? undefined}
         onDelete={() => {
           // Issue deletion CASCADE-deletes the inbox item server-side, and the

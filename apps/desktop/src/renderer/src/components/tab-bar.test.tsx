@@ -54,7 +54,7 @@ vi.mock("@/stores/tab-store", () => {
   return { useTabStore, useActiveGroup, resolveRouteIcon };
 });
 
-vi.mock("@tandem/core/paths", () => ({
+vi.mock("@agora/core/paths", () => ({
   paths: {
     workspace: (slug: string) => ({
       issues: () => `/${slug}/issues`,

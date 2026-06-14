@@ -105,21 +105,21 @@ func TestBusinessSamplerCollectorEmitsExpectedMetrics(t *testing.T) {
 	body := rec.Body.String()
 
 	wantSubstrings := []string{
-		`tandem_active_users{window="5m"} 7`,
-		`tandem_active_workspaces{window="5m"} 3`,
-		`tandem_agent_task_queued{source="chat"} 5`,
-		`tandem_agent_task_queued{source="issue"} 2`,
+		`agora_active_users{window="5m"} 7`,
+		`agora_active_workspaces{window="5m"} 3`,
+		`agora_agent_task_queued{source="chat"} 5`,
+		`agora_agent_task_queued{source="issue"} 2`,
 		// Zero series for sources that didn't appear in the snapshot.
-		`tandem_agent_task_queued{source="autopilot"} 0`,
-		`tandem_agent_task_queued{source="other"} 0`,
-		`tandem_agent_task_running{runtime_mode="cloud",source="chat"} 3`,
-		`tandem_agent_task_running{runtime_mode="local",source="issue"} 1`,
-		`tandem_agent_task_stuck_total{source="issue"} 1`,
-		`tandem_runtime_online{provider="claude",runtime_mode="local"} 4`,
-		`tandem_runtime_online{provider="kiro",runtime_mode="cloud"} 2`,
-		`tandem_runtime_heartbeat_age_seconds_count{runtime_mode="local"} 3`,
-		`tandem_runtime_heartbeat_age_seconds_sum{runtime_mode="local"} 45`,
-		`tandem_workspace_total 250`,
+		`agora_agent_task_queued{source="autopilot"} 0`,
+		`agora_agent_task_queued{source="other"} 0`,
+		`agora_agent_task_running{runtime_mode="cloud",source="chat"} 3`,
+		`agora_agent_task_running{runtime_mode="local",source="issue"} 1`,
+		`agora_agent_task_stuck_total{source="issue"} 1`,
+		`agora_runtime_online{provider="claude",runtime_mode="local"} 4`,
+		`agora_runtime_online{provider="kiro",runtime_mode="cloud"} 2`,
+		`agora_runtime_heartbeat_age_seconds_count{runtime_mode="local"} 3`,
+		`agora_runtime_heartbeat_age_seconds_sum{runtime_mode="local"} 45`,
+		`agora_workspace_total 250`,
 	}
 	for _, want := range wantSubstrings {
 		if !strings.Contains(body, want) {
@@ -127,10 +127,10 @@ func TestBusinessSamplerCollectorEmitsExpectedMetrics(t *testing.T) {
 		}
 	}
 	for _, removed := range []string{
-		`tandem_active_users{window="1h"}`,
-		`tandem_active_users{window="24h"}`,
-		`tandem_active_workspaces{window="1h"}`,
-		`tandem_active_workspaces{window="24h"}`,
+		`agora_active_users{window="1h"}`,
+		`agora_active_users{window="24h"}`,
+		`agora_active_workspaces{window="1h"}`,
+		`agora_active_workspaces{window="24h"}`,
 	} {
 		if strings.Contains(body, removed) {
 			t.Errorf("metrics body still exposes removed long DB window %q\nbody:\n%s", removed, body)
@@ -154,7 +154,7 @@ func TestBusinessSamplerSelfIntrospectionHistogramIsExposed(t *testing.T) {
 	rec := httptest.NewRecorder()
 	NewHandler(registry).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	body := rec.Body.String()
-	if !strings.Contains(body, `tandem_business_sampler_query_seconds_count{name="active_users"} 1`) {
+	if !strings.Contains(body, `agora_business_sampler_query_seconds_count{name="active_users"} 1`) {
 		t.Fatalf("query duration histogram missing\n%s", body)
 	}
 }
@@ -223,14 +223,14 @@ func TestBusinessSamplerCollectorBoundedCardinality(t *testing.T) {
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(c.Collectors()...)
 
-	if got := testutil.CollectAndCount(c, "tandem_agent_task_queued"); got != len(knownSourceLabels()) {
+	if got := testutil.CollectAndCount(c, "agora_agent_task_queued"); got != len(knownSourceLabels()) {
 		t.Fatalf("agent_task_queued series = %d, want %d", got, len(knownSourceLabels()))
 	}
 	expectedRunning := len(knownSourceLabels()) * len(knownRuntimeModeLabels())
-	if got := testutil.CollectAndCount(c, "tandem_agent_task_running"); got != expectedRunning {
+	if got := testutil.CollectAndCount(c, "agora_agent_task_running"); got != expectedRunning {
 		t.Fatalf("agent_task_running series = %d, want %d", got, expectedRunning)
 	}
-	if got := testutil.CollectAndCount(c, "tandem_runtime_online"); got != 1 {
+	if got := testutil.CollectAndCount(c, "agora_runtime_online"); got != 1 {
 		t.Fatalf("runtime_online series = %d, want 1 (collapsed by normalizers)", got)
 	}
 }
@@ -247,10 +247,10 @@ func TestBusinessSamplerCollectorDisabledWithoutOptions(t *testing.T) {
 	NewHandler(registry.Gatherer).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	body := rec.Body.String()
 	for _, forbidden := range []string{
-		"tandem_active_users",
-		"tandem_agent_task_queued",
-		"tandem_runtime_online",
-		"tandem_business_sampler_query_seconds",
+		"agora_active_users",
+		"agora_agent_task_queued",
+		"agora_runtime_online",
+		"agora_business_sampler_query_seconds",
 	} {
 		if strings.Contains(body, forbidden) {
 			t.Errorf("/metrics leaked sampler family %q when sampler disabled", forbidden)

@@ -11,8 +11,8 @@ import (
 
 // BackfillRegionFromLegacyOverride is the upgrade-repair path for self-host
 // deployments that ran the WHOLE Lark integration against Lark international
-// via the deployment-wide TANDEM_LARK_HTTP_BASE_URL /
-// TANDEM_LARK_CALLBACK_BASE_URL override, before per-installation region
+// via the deployment-wide AGORA_LARK_HTTP_BASE_URL /
+// AGORA_LARK_CALLBACK_BASE_URL override, before per-installation region
 // existed.
 //
 // Migration 116 backfilled every existing row to 'feishu' (the mainland

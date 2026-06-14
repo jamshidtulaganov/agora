@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Issue } from "@tandem/core/types";
+import type { Issue } from "@agora/core/types";
 
-vi.mock("@tandem/core/hooks", () => ({
+vi.mock("@agora/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
 const mockOpenModal = vi.fn();
-vi.mock("@tandem/core/modals", () => ({
+vi.mock("@agora/core/modals", () => ({
   useModalStore: Object.assign(
     (selector?: any) => {
       const state = { open: mockOpenModal };
@@ -19,7 +19,7 @@ vi.mock("@tandem/core/modals", () => ({
 }));
 
 const mockAuthState = { user: { id: "user-1" }, isAuthenticated: true };
-vi.mock("@tandem/core/auth", () => ({
+vi.mock("@agora/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: any) => (selector ? selector(mockAuthState) : mockAuthState),
     { getState: () => mockAuthState },
@@ -33,7 +33,7 @@ const pinListRef: { value: Array<{ item_type: string; item_id: string }> } = {
 };
 const mockCreatePinMutate = vi.fn();
 const mockDeletePinMutate = vi.fn();
-vi.mock("@tandem/core/pins", () => ({
+vi.mock("@agora/core/pins", () => ({
   pinListOptions: () => ({
     queryKey: ["pins", "ws-1", "user-1"],
     queryFn: () => Promise.resolve(pinListRef.value),
@@ -43,13 +43,13 @@ vi.mock("@tandem/core/pins", () => ({
 }));
 
 const mockUpdateMutate = vi.fn();
-vi.mock("@tandem/core/issues/mutations", () => ({
+vi.mock("@agora/core/issues/mutations", () => ({
   useUpdateIssue: () => ({ mutate: mockUpdateMutate }),
 }));
 
-vi.mock("@tandem/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@tandem/core/paths")>(
-    "@tandem/core/paths",
+vi.mock("@agora/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@agora/core/paths")>(
+    "@agora/core/paths",
   );
   return {
     ...actual,
@@ -65,7 +65,7 @@ vi.mock("../../../navigation", () => ({
     searchParams: new URLSearchParams(),
     back: vi.fn(),
     replace: vi.fn(),
-    getShareableUrl: (p: string) => `https://app.tandem.com${p}`,
+    getShareableUrl: (p: string) => `https://app.agora.com${p}`,
   }),
 }));
 
@@ -148,7 +148,7 @@ describe("useIssueActions", () => {
   });
 
   it("does not re-open backlog-hint when the user has dismissed it", () => {
-    localStorage.setItem("tandem:backlog-agent-hint-dismissed", "true");
+    localStorage.setItem("agora:backlog-agent-hint-dismissed", "true");
     const backlogIssue = { ...mockIssue, status: "backlog" } as Issue;
     const { result } = renderHook(() => useIssueActions(backlogIssue), { wrapper });
 
@@ -170,7 +170,7 @@ describe("useIssueActions", () => {
     });
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-      "https://app.tandem.com/test/issues/issue-1",
+      "https://app.agora.com/test/issues/issue-1",
     );
   });
 

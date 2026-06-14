@@ -2,10 +2,10 @@
 
 import { useMemo } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { selectRecentContexts, useRecentContextStore, type RecentContextEntry } from "@tandem/core/chat";
-import { issueDetailOptions } from "@tandem/core/issues/queries";
-import { projectDetailOptions } from "@tandem/core/projects/queries";
-import type { Issue, Project } from "@tandem/core/types";
+import { selectRecentContexts, useRecentContextStore, type RecentContextEntry } from "@agora/core/chat";
+import { issueDetailOptions } from "@agora/core/issues/queries";
+import { projectDetailOptions } from "@agora/core/projects/queries";
+import type { Issue, Project } from "@agora/core/types";
 import type { MentionItem } from "../../editor/extensions/mention-suggestion";
 import { useNavigation } from "../../navigation";
 

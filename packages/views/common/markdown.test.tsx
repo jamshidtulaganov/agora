@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { Markdown } from "./markdown";
 
-vi.mock("@tandem/core/config", () => ({
+vi.mock("@agora/core/config", () => ({
   useConfigStore: (selector: (state: { cdnDomain: string }) => unknown) =>
     selector({ cdnDomain: "" }),
 }));
@@ -14,8 +14,8 @@ vi.mock("../issues/components/issue-mention-card", () => ({
   ),
 }));
 
-vi.mock("@tandem/core/paths", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@tandem/core/paths")>();
+vi.mock("@agora/core/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@agora/core/paths")>();
   return {
     ...actual,
     useWorkspaceSlug: () => "acme",

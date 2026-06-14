@@ -4,9 +4,9 @@ import { useEffect, useRef } from "react";
 import {
   registerSystemNotificationClickHandler,
   type SystemNotificationPayload,
-} from "@tandem/core/platform";
-import { paths } from "@tandem/core/paths";
-import { useNavigation } from "@tandem/views/navigation";
+} from "@agora/core/platform";
+import { paths } from "@agora/core/paths";
+import { useNavigation } from "@agora/views/navigation";
 
 /**
  * Routes browser notification clicks to the source workspace's inbox, focused

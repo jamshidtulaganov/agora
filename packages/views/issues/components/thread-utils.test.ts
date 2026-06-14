@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { TimelineEntry } from "@tandem/core/types";
+import type { TimelineEntry } from "@agora/core/types";
 import { collectThreadReplies } from "./thread-utils";
 
 function comment(id: string, createdAt: string, parentId: string | null): TimelineEntry {

@@ -5,15 +5,15 @@ import { createLogger } from "../logger";
 
 const logger = createLogger("chat.store");
 
-const AGENT_STORAGE_KEY = "tandem:chat:selectedAgentId";
-const SESSION_STORAGE_KEY = "tandem:chat:activeSessionId";
+const AGENT_STORAGE_KEY = "agora:chat:selectedAgentId";
+const SESSION_STORAGE_KEY = "agora:chat:activeSessionId";
 /** Drafts are stored as one JSON blob per workspace: { [sessionId]: text }. */
-const DRAFTS_KEY = "tandem:chat:drafts";
+const DRAFTS_KEY = "agora:chat:drafts";
 /** Placeholder sessionId for a chat that hasn't been created yet. */
 export const DRAFT_NEW_SESSION = "__new__";
-const CHAT_WIDTH_KEY = "tandem:chat:width";
-const CHAT_HEIGHT_KEY = "tandem:chat:height";
-const CHAT_EXPANDED_KEY = "tandem:chat:expanded";
+const CHAT_WIDTH_KEY = "agora:chat:width";
+const CHAT_HEIGHT_KEY = "agora:chat:height";
+const CHAT_EXPANDED_KEY = "agora:chat:expanded";
 /**
  * Open/closed preference, persisted globally (not per-workspace) — most users
  * have one habitual chat-panel preference across workspaces. Missing key =
@@ -21,7 +21,7 @@ const CHAT_EXPANDED_KEY = "tandem:chat:expanded";
  * Once the user toggles even once, their explicit choice is respected on
  * every subsequent reload.
  */
-const OPEN_KEY = "tandem:chat:isOpen";
+const OPEN_KEY = "agora:chat:isOpen";
 
 function readDrafts(storage: StorageAdapter, key: string): Record<string, string> {
   const raw = storage.getItem(key);

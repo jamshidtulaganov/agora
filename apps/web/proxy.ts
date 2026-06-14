@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { LOCALE_COOKIE } from "@tandem/core/i18n";
+import { LOCALE_COOKIE } from "@agora/core/i18n";
 import {
-  TANDEM_LOCALE_HEADER,
+  AGORA_LOCALE_HEADER,
   resolveLocaleFromSignals,
 } from "./lib/locale-routing";
 
@@ -28,13 +28,13 @@ function resolveLocale(req: NextRequest): string {
   });
 }
 
-// Forward the resolved locale to RSC layouts via the `x-tandem-locale`
+// Forward the resolved locale to RSC layouts via the `x-agora-locale`
 // request header. layout.tsx reads it through `await headers()`. The
 // `request: { headers }` form is what makes the header land on the upstream
 // request — without it the value would only sit on the response.
 function nextWithLocale(req: NextRequest): NextResponse {
   const headers = new Headers(req.headers);
-  headers.set(TANDEM_LOCALE_HEADER, resolveLocale(req));
+  headers.set(AGORA_LOCALE_HEADER, resolveLocale(req));
   return NextResponse.next({ request: { headers } });
 }
 
@@ -44,7 +44,7 @@ function nextWithLocale(req: NextRequest): NextResponse {
 // edge.
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  const hasSession = req.cookies.has("tandem_logged_in");
+  const hasSession = req.cookies.has("agora_logged_in");
   const lastSlug = req.cookies.get("last_workspace_slug")?.value;
 
   // --- Legacy URL redirect: /issues/... → /{slug}/issues/... ---

@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { X, Plus, Filter, ExternalLink } from "lucide-react";
-import { cn } from "@tandem/ui/lib/utils";
-import type { WebhookEventFilter } from "@tandem/core/types";
+import { cn } from "@agora/ui/lib/utils";
+import type { WebhookEventFilter } from "@agora/core/types";
 import { useT } from "../../i18n";
 
 interface WebhookEventFilterSectionProps {
@@ -19,8 +19,8 @@ export function WebhookEventFilterSection({
   const [newEvent, setNewEvent] = useState("");
   const [newActions, setNewActions] = useState("");
   const docsHref = i18n.language?.startsWith("zh")
-    ? `https://tandem.dev/docs/zh/autopilots#${encodeURIComponent("事件过滤")}`
-    : "https://tandem.dev/docs/autopilots#event-filters";
+    ? `https://agora.dev/docs/zh/autopilots#${encodeURIComponent("事件过滤")}`
+    : "https://agora.dev/docs/autopilots#event-filters";
 
   const addFilter = () => {
     const event = newEvent.trim();

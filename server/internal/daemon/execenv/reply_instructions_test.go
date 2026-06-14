@@ -25,7 +25,7 @@ func TestBuildCommentReplyInstructionsCodexLinux(t *testing.T) {
 	got := BuildCommentReplyInstructions("codex", issueID, triggerID)
 
 	for _, want := range []string{
-		"tandem issue comment add " + issueID + " --parent " + triggerID + " --content-stdin",
+		"agora issue comment add " + issueID + " --parent " + triggerID + " --content-stdin",
 		"Always use `--content-stdin`",
 		"even when the reply is a single line",
 		"<<'COMMENT'",
@@ -67,7 +67,7 @@ func TestBuildCommentReplyInstructionsNonCodexLinux(t *testing.T) {
 				got := BuildCommentReplyInstructions(provider, issueID, triggerID)
 
 				for _, want := range []string{
-					"cat <<'COMMENT' | tandem issue comment add " + issueID + " --parent " + triggerID + " --content-stdin",
+					"cat <<'COMMENT' | agora issue comment add " + issueID + " --parent " + triggerID + " --content-stdin",
 					"Always use `--content-stdin`",
 					"do NOT reuse --parent values from previous turns",
 					"If you decide to reply",
@@ -109,7 +109,7 @@ func TestBuildCommentReplyInstructionsWindowsUsesContentFile(t *testing.T) {
 		t.Run(provider+"/windows", func(t *testing.T) {
 			got := BuildCommentReplyInstructions(provider, issueID, triggerID)
 			for _, want := range []string{
-				"tandem issue comment add " + issueID + " --parent " + triggerID + " --content-file",
+				"agora issue comment add " + issueID + " --parent " + triggerID + " --content-file",
 				"On Windows, write the reply body to a UTF-8 file",
 				"Do NOT pipe via `--content-stdin`",
 				"silently drops non-ASCII",
@@ -171,7 +171,7 @@ func TestInjectRuntimeConfigCommentTriggerUsesHelper(t *testing.T) {
 	s := string(content)
 	for _, want := range []string{
 		triggerID,
-		"tandem issue comment add " + issueID + " --parent " + triggerID,
+		"agora issue comment add " + issueID + " --parent " + triggerID,
 		"do NOT reuse --parent values from previous turns",
 	} {
 		if !strings.Contains(s, want) {
@@ -216,7 +216,7 @@ func TestInjectRuntimeConfigWindowsCommentTriggerHasNoStdin(t *testing.T) {
 			s := string(data)
 
 			for _, want := range []string{
-				"tandem issue comment add " + issueID + " --parent " + triggerID + " --content-file",
+				"agora issue comment add " + issueID + " --parent " + triggerID + " --content-file",
 				"--content-file",
 				"On Windows, write the reply body to a UTF-8 file",
 			} {

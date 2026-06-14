@@ -1,17 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import type { CommentTriggerPreviewAgent } from "@tandem/core/types";
-import { useAgentPresenceDetail } from "@tandem/core/agents";
-import { useCurrentWorkspace } from "@tandem/core/paths";
-import { ActorAvatar as ActorAvatarBase } from "@tandem/ui/components/common/actor-avatar";
+import type { CommentTriggerPreviewAgent } from "@agora/core/types";
+import { useAgentPresenceDetail } from "@agora/core/agents";
+import { useCurrentWorkspace } from "@agora/core/paths";
+import { ActorAvatar as ActorAvatarBase } from "@agora/ui/components/common/actor-avatar";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@tandem/ui/components/ui/popover";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@tandem/ui/components/ui/tooltip";
-import { cn } from "@tandem/ui/lib/utils";
+} from "@agora/ui/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@agora/ui/components/ui/tooltip";
+import { cn } from "@agora/ui/lib/utils";
 import { AgentStatusDot } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 

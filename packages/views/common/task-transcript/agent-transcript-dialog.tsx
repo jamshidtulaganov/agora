@@ -21,10 +21,10 @@ import {
   ArrowDownNarrowWide,
   ArrowUpNarrowWide,
 } from "lucide-react";
-import { cn } from "@tandem/ui/lib/utils";
-import { copyText } from "@tandem/ui/lib/clipboard";
-import { Dialog, DialogContent, DialogTitle } from "@tandem/ui/components/ui/dialog";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@tandem/ui/components/ui/collapsible";
+import { cn } from "@agora/ui/lib/utils";
+import { copyText } from "@agora/ui/lib/clipboard";
+import { Dialog, DialogContent, DialogTitle } from "@agora/ui/components/ui/dialog";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@agora/ui/components/ui/collapsible";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -32,11 +32,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuCheckboxItem,
   DropdownMenuItem,
-} from "@tandem/ui/components/ui/dropdown-menu";
+} from "@agora/ui/components/ui/dropdown-menu";
 import { ActorAvatar } from "../actor-avatar";
-import { api } from "@tandem/core/api";
-import { useTranscriptViewStore, type TranscriptSortDirection } from "@tandem/core/agents/stores";
-import type { AgentTask, Agent, AgentRuntime } from "@tandem/core/types/agent";
+import { api } from "@agora/core/api";
+import { useTranscriptViewStore, type TranscriptSortDirection } from "@agora/core/agents/stores";
+import type { AgentTask, Agent, AgentRuntime } from "@agora/core/types/agent";
 import { redactSecrets } from "./redact";
 import type { TimelineItem } from "./build-timeline";
 import { useT } from "../../i18n";

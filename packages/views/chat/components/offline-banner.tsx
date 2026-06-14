@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertCircle, WifiOff } from "lucide-react";
-import type { AgentAvailability } from "@tandem/core/agents";
+import type { AgentAvailability } from "@agora/core/agents";
 import { useT } from "../../i18n";
 
 interface Props {

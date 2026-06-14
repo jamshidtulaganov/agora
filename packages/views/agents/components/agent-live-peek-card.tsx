@@ -1,18 +1,18 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ActorAvatar as ActorAvatarBase } from "@tandem/ui/components/common/actor-avatar";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { useWorkspacePaths } from "@tandem/core/paths";
-import { agentListOptions } from "@tandem/core/workspace/queries";
-import { resolvePublicFileUrl } from "@tandem/core/workspace/avatar-url";
+import { ActorAvatar as ActorAvatarBase } from "@agora/ui/components/common/actor-avatar";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { useWorkspacePaths } from "@agora/core/paths";
+import { agentListOptions } from "@agora/core/workspace/queries";
+import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
 import {
   agentTaskSnapshotOptions,
   useAgentPresenceDetail,
-} from "@tandem/core/agents";
-import { issueDetailOptions } from "@tandem/core/issues";
-import type { AgentTask } from "@tandem/core/types";
+} from "@agora/core/agents";
+import { issueDetailOptions } from "@agora/core/issues";
+import type { AgentTask } from "@agora/core/types";
 import { AlertTriangle } from "lucide-react";
 import { AppLink } from "../../navigation";
 import { useT, useTimeAgo } from "../../i18n";

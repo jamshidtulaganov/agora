@@ -1,4 +1,4 @@
-import type { IssueStatus } from "@tandem/core/types";
+import type { IssueStatus } from "@agora/core/types";
 import { StatusIcon } from "./status-icon";
 import { useT } from "../../i18n";
 

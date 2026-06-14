@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { AlertCircle, Info, LogIn } from "lucide-react";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Switch } from "@tandem/ui/components/ui/switch";
-import { cn } from "@tandem/ui/lib/utils";
+import { Button } from "@agora/ui/components/ui/button";
+import { Switch } from "@agora/ui/components/ui/switch";
+import { cn } from "@agora/ui/lib/utils";
 import { reauthenticateDaemon } from "../platform/daemon-reauth";
 import type { DaemonPrefs, DaemonStatus } from "../../../shared/daemon-types";
 import {
@@ -132,8 +132,8 @@ export function DaemonSettingsTab() {
             This device&apos;s daemon runs outside the app — for example inside
             WSL2 — so the app can&apos;t start or stop it. Start or stop it from
             that environment with{" "}
-            <code className="font-mono text-xs">tandem daemon start</code> /{" "}
-            <code className="font-mono text-xs">tandem daemon stop</code>.
+            <code className="font-mono text-xs">agora daemon start</code> /{" "}
+            <code className="font-mono text-xs">agora daemon stop</code>.
           </p>
         </div>
       )}
@@ -167,8 +167,8 @@ export function DaemonSettingsTab() {
             {cliInstalled === null
               ? "Checking…"
               : cliInstalled
-                ? "tandem CLI is installed and available in PATH."
-                : "tandem CLI not found. Install it to enable daemon management."}
+                ? "agora CLI is installed and available in PATH."
+                : "agora CLI not found. Install it to enable daemon management."}
           </p>
           {cliInstalled === false && (
             <Button

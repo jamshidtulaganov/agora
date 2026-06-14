@@ -11,8 +11,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@tandem/ui/components/ui/alert-dialog";
-import { useDeleteIssue } from "@tandem/core/issues/mutations";
+} from "@agora/ui/components/ui/alert-dialog";
+import { useDeleteIssue } from "@agora/core/issues/mutations";
 import { useNavigation } from "../navigation";
 import { useT } from "../i18n";
 

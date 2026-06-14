@@ -8,15 +8,15 @@ import type { StorageAdapter } from "../types/storage";
  * Also ensure the store uses `createWorkspaceAwareStorage` for its persist config.
  */
 const WORKSPACE_SCOPED_KEYS = [
-  "tandem_issue_draft",
-  "tandem_issues_view",
-  "tandem_issues_scope",
-  "tandem_my_issues_view",
-  "tandem:chat:selectedAgentId",
-  "tandem:chat:activeSessionId",
-  "tandem:chat:drafts",
-  "tandem:chat:expanded",
-  "tandem_navigation",
+  "agora_issue_draft",
+  "agora_issues_view",
+  "agora_issues_scope",
+  "agora_my_issues_view",
+  "agora:chat:selectedAgentId",
+  "agora:chat:activeSessionId",
+  "agora:chat:drafts",
+  "agora:chat:expanded",
+  "agora_navigation",
 ];
 
 /** Remove all workspace-scoped storage entries for the given workspace slug. */

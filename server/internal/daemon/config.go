@@ -25,7 +25,7 @@ const (
 	// agent run. 0 = no cap: a run is bounded only by the inactivity watchdogs
 	// (DefaultAgentIdleWatchdog / DefaultAgentToolWatchdog), so a session that keeps emitting events is
 	// never killed merely for running long (MUL-3064). Operators who want a
-	// hard ceiling for cost/resource control can set TANDEM_AGENT_TIMEOUT.
+	// hard ceiling for cost/resource control can set AGORA_AGENT_TIMEOUT.
 	DefaultAgentTimeout                   = 0
 	DefaultCodexSemanticInactivityTimeout = 10 * time.Minute
 	// DefaultAgentIdleWatchdog is the per-task safety net that force-stops a
@@ -39,7 +39,7 @@ const (
 	// where the model streams a single message for many minutes without any
 	// daemon-visible activity — see MUL-2300. 30 min keeps the safety net for
 	// truly stuck runs (dockerd hang) while leaving headroom for long writes.
-	// Set TANDEM_AGENT_IDLE_WATCHDOG=0 to disable.
+	// Set AGORA_AGENT_IDLE_WATCHDOG=0 to disable.
 	DefaultAgentIdleWatchdog = 30 * time.Minute
 	// DefaultAgentToolWatchdog bounds how long a single tool call may stay in
 	// flight (tool_use emitted, no tool_result and no other message) before the
@@ -48,7 +48,7 @@ const (
 	// legitimately runs silently for many minutes — but with no wall-clock cap
 	// (DefaultAgentTimeout = 0) a backend that emits tool_use and never the
 	// matching tool_result would otherwise run forever. This is the backstop for
-	// that stuck-tool case (MUL-3064). Set TANDEM_AGENT_TOOL_WATCHDOG=0 to
+	// that stuck-tool case (MUL-3064). Set AGORA_AGENT_TOOL_WATCHDOG=0 to
 	// disable, in which case an in-flight tool never force-stops the run.
 	DefaultAgentToolWatchdog       = 2 * time.Hour
 	DefaultRuntimeName             = "Local Agent"
@@ -67,7 +67,7 @@ const (
 // always cheap to recreate (`pnpm install`, `next build`, `turbo build`). Things
 // like `dist/`, `build/`, `.cache/` or `.venv/` may legitimately hold source or
 // release output in some repos and are NOT included by default — set
-// TANDEM_GC_ARTIFACT_PATTERNS to extend the list per deployment.
+// AGORA_GC_ARTIFACT_PATTERNS to extend the list per deployment.
 var DefaultGCArtifactPatterns = []string{"node_modules", ".next", ".turbo"}
 
 // Config holds all daemon configuration.
@@ -77,11 +77,11 @@ type Config struct {
 	LegacyDaemonIDs                []string // historical daemon_ids this machine may have registered under; reported at register time so the server can merge old runtime rows
 	DeviceName                     string
 	RuntimeName                    string
-	CLIVersion                     string                // tandem CLI version (e.g. "0.1.13")
+	CLIVersion                     string                // agora CLI version (e.g. "0.1.13")
 	LaunchedBy                     string                // "desktop" when spawned by the Electron app, empty for standalone
 	Profile                        string                // profile name (empty = default)
 	Agents                         map[string]AgentEntry // keyed by provider: claude, codebuddy, codex, copilot, opencode, openclaw, hermes, gemini, pi, cursor, kimi, kiro, antigravity
-	WorkspacesRoot                 string                // base path for execution envs (default: ~/tandem_workspaces)
+	WorkspacesRoot                 string                // base path for execution envs (default: ~/agora_workspaces)
 	KeepEnvAfterTask               bool                  // preserve env after task for debugging
 	HealthPort                     int                   // local HTTP port for health checks (default: 19514)
 	MaxConcurrentTasks             int                   // max tasks running in parallel (default: 20)
@@ -91,7 +91,7 @@ type Config struct {
 	GCOrphanTTL                    time.Duration         // clean orphan dirs with no meta, or dirs whose issue gc-check returns 404, once they exceed this age (default: 72h). The 404 path uses the same TTL — a scoped-down token can't instantly wipe live workspaces.
 	GCArtifactTTL                  time.Duration         // when a task has been completed for at least this long but its issue is still open, drop regenerable artifacts (default: 12h, set 0 to disable)
 	GCArtifactPatterns             []string              // basename patterns whose subtrees are removed during artifact cleanup (default: node_modules, .next, .turbo)
-	AutoUpdateEnabled              bool                  // periodically check for a newer CLI release and self-update when idle (default: true on Tandem Cloud, false on self-host)
+	AutoUpdateEnabled              bool                  // periodically check for a newer CLI release and self-update when idle (default: true on Agora Cloud, false on self-host)
 	AutoUpdateCheckInterval        time.Duration         // how often the auto-update loop polls for a new release (default: 6h)
 	PollInterval                   time.Duration
 	HeartbeatInterval              time.Duration
@@ -132,7 +132,7 @@ type Overrides struct {
 // and optional CLI flag overrides.
 func LoadConfig(overrides Overrides) (Config, error) {
 	// Server URL: override > env > default
-	rawServerURL := envOrDefault("TANDEM_SERVER_URL", DefaultServerURL)
+	rawServerURL := envOrDefault("AGORA_SERVER_URL", DefaultServerURL)
 	if overrides.ServerURL != "" {
 		rawServerURL = overrides.ServerURL
 	}
@@ -148,13 +148,13 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	// instead of a launchctl env hack. We translate those fields into the
 	// same env vars the rest of LoadConfig already honors:
 	//
-	//   - TANDEM_OPENCLAW_PATH: read by probe() via envOrDefault for the
+	//   - AGORA_OPENCLAW_PATH: read by probe() via envOrDefault for the
 	//     binary lookup; pre-existing path.
 	//   - OPENCLAW_STATE_DIR:    OpenClaw's own env var; the daemon already
 	//     forwards it to spawned children via mergeEnv (server/pkg/agent/...).
 	//
 	// Precedence is "env wins over config wins over default" — same shape
-	// users already get with TANDEM_OPENCLAW_PATH today. We achieve it with
+	// users already get with AGORA_OPENCLAW_PATH today. We achieve it with
 	// LookupEnv guards: if the user already exported the env var (in their
 	// shell, via launchctl, or via the systemd unit), we leave it alone;
 	// otherwise we Setenv from the config file. This keeps every downstream
@@ -183,7 +183,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	// resolveAgentsViaLoginShell for the details and constraints.
 	//
 	// Laziness matters: the happy path (every agent on the daemon's PATH or
-	// pinned to an explicit TANDEM_*_PATH) must not pay the cost of
+	// pinned to an explicit AGORA_*_PATH) must not pay the cost of
 	// spawning the user's login shell — that touches their rc files and
 	// adds startup latency that scales with whatever they put in there. We
 	// only fork a shell when a bare command name actually missed LookPath.
@@ -206,7 +206,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 			}, true
 		}
 		// The shell fallback only rescues bare command names. An operator
-		// who pinned TANDEM_*_PATH to an absolute or relative path that
+		// who pinned AGORA_*_PATH to an absolute or relative path that
 		// doesn't exist should hard-miss, not silently get a different
 		// binary.
 		if strings.ContainsAny(cmd, "/\\") {
@@ -234,62 +234,62 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	}
 
 	agents := map[string]AgentEntry{}
-	if e, ok := probe("TANDEM_CLAUDE_PATH", "claude", "TANDEM_CLAUDE_MODEL"); ok {
+	if e, ok := probe("AGORA_CLAUDE_PATH", "claude", "AGORA_CLAUDE_MODEL"); ok {
 		agents["claude"] = e
 	}
-	if e, ok := probe("TANDEM_CODEX_PATH", "codex", "TANDEM_CODEX_MODEL"); ok {
+	if e, ok := probe("AGORA_CODEX_PATH", "codex", "AGORA_CODEX_MODEL"); ok {
 		agents["codex"] = e
 	}
-	if e, ok := probe("TANDEM_OPENCODE_PATH", "opencode", "TANDEM_OPENCODE_MODEL"); ok {
+	if e, ok := probe("AGORA_OPENCODE_PATH", "opencode", "AGORA_OPENCODE_MODEL"); ok {
 		agents["opencode"] = e
 	}
-	if e, ok := probe("TANDEM_OPENCLAW_PATH", "openclaw", "TANDEM_OPENCLAW_MODEL"); ok {
+	if e, ok := probe("AGORA_OPENCLAW_PATH", "openclaw", "AGORA_OPENCLAW_MODEL"); ok {
 		agents["openclaw"] = e
 	}
-	if e, ok := probe("TANDEM_HERMES_PATH", "hermes", "TANDEM_HERMES_MODEL"); ok {
+	if e, ok := probe("AGORA_HERMES_PATH", "hermes", "AGORA_HERMES_MODEL"); ok {
 		agents["hermes"] = e
 	}
-	if e, ok := probe("TANDEM_GEMINI_PATH", "gemini", "TANDEM_GEMINI_MODEL"); ok {
+	if e, ok := probe("AGORA_GEMINI_PATH", "gemini", "AGORA_GEMINI_MODEL"); ok {
 		agents["gemini"] = e
 	}
-	if e, ok := probe("TANDEM_PI_PATH", "pi", "TANDEM_PI_MODEL"); ok {
+	if e, ok := probe("AGORA_PI_PATH", "pi", "AGORA_PI_MODEL"); ok {
 		agents["pi"] = e
 	}
-	if e, ok := probe("TANDEM_CURSOR_PATH", "cursor-agent", "TANDEM_CURSOR_MODEL"); ok {
+	if e, ok := probe("AGORA_CURSOR_PATH", "cursor-agent", "AGORA_CURSOR_MODEL"); ok {
 		agents["cursor"] = e
 	}
-	if e, ok := probe("TANDEM_COPILOT_PATH", "copilot", "TANDEM_COPILOT_MODEL"); ok {
+	if e, ok := probe("AGORA_COPILOT_PATH", "copilot", "AGORA_COPILOT_MODEL"); ok {
 		agents["copilot"] = e
 	}
-	if e, ok := probe("TANDEM_KIMI_PATH", "kimi", "TANDEM_KIMI_MODEL"); ok {
+	if e, ok := probe("AGORA_KIMI_PATH", "kimi", "AGORA_KIMI_MODEL"); ok {
 		agents["kimi"] = e
 	}
-	if e, ok := probe("TANDEM_KIRO_PATH", "kiro-cli", "TANDEM_KIRO_MODEL"); ok {
+	if e, ok := probe("AGORA_KIRO_PATH", "kiro-cli", "AGORA_KIRO_MODEL"); ok {
 		agents["kiro"] = e
 	}
-	if e, ok := probe("TANDEM_CODEBUDDY_PATH", "codebuddy", "TANDEM_CODEBUDDY_MODEL"); ok {
+	if e, ok := probe("AGORA_CODEBUDDY_PATH", "codebuddy", "AGORA_CODEBUDDY_MODEL"); ok {
 		agents["codebuddy"] = e
 	}
 	// agy 1.0.6 added a `--model` flag (MUL-3125), so Antigravity now takes a
-	// model env like every other backend. TANDEM_ANTIGRAVITY_MODEL seeds the
+	// model env like every other backend. AGORA_ANTIGRAVITY_MODEL seeds the
 	// daemon-wide default; its value is the exact `agy models` display string
 	// (e.g. "Claude Opus 4.6 (Thinking)"), not a provider/model slug.
-	if e, ok := probe("TANDEM_ANTIGRAVITY_PATH", "agy", "TANDEM_ANTIGRAVITY_MODEL"); ok {
+	if e, ok := probe("AGORA_ANTIGRAVITY_PATH", "agy", "AGORA_ANTIGRAVITY_MODEL"); ok {
 		agents["antigravity"] = e
 	}
 	if len(agents) == 0 {
 		return Config{}, fmt.Errorf("no agent CLI found: install claude, codebuddy, codex, copilot, opencode, openclaw, hermes, gemini, pi, cursor-agent, kimi, kiro-cli, or agy and ensure it is on PATH")
 	}
 
-	claudeArgs, err := shellArgsFromEnv("TANDEM_CLAUDE_ARGS")
+	claudeArgs, err := shellArgsFromEnv("AGORA_CLAUDE_ARGS")
 	if err != nil {
 		return Config{}, err
 	}
-	codexArgs, err := shellArgsFromEnv("TANDEM_CODEX_ARGS")
+	codexArgs, err := shellArgsFromEnv("AGORA_CODEX_ARGS")
 	if err != nil {
 		return Config{}, err
 	}
-	codebuddyArgs, err := shellArgsFromEnv("TANDEM_CODEBUDDY_ARGS")
+	codebuddyArgs, err := shellArgsFromEnv("AGORA_CODEBUDDY_ARGS")
 	if err != nil {
 		return Config{}, err
 	}
@@ -301,7 +301,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	}
 
 	// Durations: override > env > default
-	pollInterval, err := durationFromEnv("TANDEM_DAEMON_POLL_INTERVAL", DefaultPollInterval)
+	pollInterval, err := durationFromEnv("AGORA_DAEMON_POLL_INTERVAL", DefaultPollInterval)
 	if err != nil {
 		return Config{}, err
 	}
@@ -309,7 +309,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		pollInterval = overrides.PollInterval
 	}
 
-	heartbeatInterval, err := durationFromEnv("TANDEM_DAEMON_HEARTBEAT_INTERVAL", DefaultHeartbeatInterval)
+	heartbeatInterval, err := durationFromEnv("AGORA_DAEMON_HEARTBEAT_INTERVAL", DefaultHeartbeatInterval)
 	if err != nil {
 		return Config{}, err
 	}
@@ -317,7 +317,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		heartbeatInterval = overrides.HeartbeatInterval
 	}
 
-	agentTimeout, err := durationFromEnv("TANDEM_AGENT_TIMEOUT", DefaultAgentTimeout)
+	agentTimeout, err := durationFromEnv("AGORA_AGENT_TIMEOUT", DefaultAgentTimeout)
 	if err != nil {
 		return Config{}, err
 	}
@@ -325,7 +325,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		agentTimeout = *overrides.AgentTimeout
 	}
 
-	codexSemanticInactivityTimeout, err := durationFromEnv("TANDEM_CODEX_SEMANTIC_INACTIVITY_TIMEOUT", DefaultCodexSemanticInactivityTimeout)
+	codexSemanticInactivityTimeout, err := durationFromEnv("AGORA_CODEX_SEMANTIC_INACTIVITY_TIMEOUT", DefaultCodexSemanticInactivityTimeout)
 	if err != nil {
 		return Config{}, err
 	}
@@ -333,22 +333,22 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		codexSemanticInactivityTimeout = overrides.CodexSemanticInactivityTimeout
 	}
 
-	// TANDEM_AGENT_IDLE_WATCHDOG=0 disables the per-task idle watchdog. We
+	// AGORA_AGENT_IDLE_WATCHDOG=0 disables the per-task idle watchdog. We
 	// route 0 through durationFromEnv so the operator can opt out without
 	// patching the binary; any positive duration overrides DefaultAgentIdleWatchdog.
-	agentIdleWatchdog, err := durationFromEnv("TANDEM_AGENT_IDLE_WATCHDOG", DefaultAgentIdleWatchdog)
+	agentIdleWatchdog, err := durationFromEnv("AGORA_AGENT_IDLE_WATCHDOG", DefaultAgentIdleWatchdog)
 	if err != nil {
 		return Config{}, err
 	}
 
-	// TANDEM_AGENT_TOOL_WATCHDOG=0 disables the in-flight-tool backstop; any
+	// AGORA_AGENT_TOOL_WATCHDOG=0 disables the in-flight-tool backstop; any
 	// positive duration overrides DefaultAgentToolWatchdog.
-	agentToolWatchdog, err := durationFromEnv("TANDEM_AGENT_TOOL_WATCHDOG", DefaultAgentToolWatchdog)
+	agentToolWatchdog, err := durationFromEnv("AGORA_AGENT_TOOL_WATCHDOG", DefaultAgentToolWatchdog)
 	if err != nil {
 		return Config{}, err
 	}
 
-	maxConcurrentTasks, err := intFromEnv("TANDEM_DAEMON_MAX_CONCURRENT_TASKS", DefaultMaxConcurrentTasks)
+	maxConcurrentTasks, err := intFromEnv("AGORA_DAEMON_MAX_CONCURRENT_TASKS", DefaultMaxConcurrentTasks)
 	if err != nil {
 		return Config{}, err
 	}
@@ -363,9 +363,9 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	// The persistent UUID is written once to `<profile-dir>/daemon.id` and
 	// then reused forever so hostname drift (.local suffix, system rename,
 	// mDNS state, profile switch) no longer mints a new runtime identity.
-	// Callers may still pin a specific id via TANDEM_DAEMON_ID or the
+	// Callers may still pin a specific id via AGORA_DAEMON_ID or the
 	// override field (e.g. for tests or embedded environments).
-	daemonID := strings.TrimSpace(os.Getenv("TANDEM_DAEMON_ID"))
+	daemonID := strings.TrimSpace(os.Getenv("AGORA_DAEMON_ID"))
 	if overrides.DaemonID != "" {
 		daemonID = overrides.DaemonID
 	}
@@ -382,7 +382,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	legacyDaemonIDs := LegacyDaemonIDs(host, profile)
 	// Pre-change (#1220) daemon identity was stored per profile, which means
 	// the same machine could end up with multiple leftover daemon.id files
-	// — e.g. ~/.tandem/daemon.id (default) plus ~/.tandem/profiles/<x>/
+	// — e.g. ~/.agora/daemon.id (default) plus ~/.agora/profiles/<x>/
 	// daemon.id. Surface those UUIDs so the server can merge their runtime
 	// rows into the canonical machine UUID. Fatal-free: a broken profiles
 	// dir shouldn't block startup.
@@ -390,21 +390,21 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		legacyDaemonIDs = append(legacyDaemonIDs, uuids...)
 	}
 	// Strip anything that collides with the resolved daemon_id (e.g. when
-	// the user explicitly pins TANDEM_DAEMON_ID=<hostname>, or when the
+	// the user explicitly pins AGORA_DAEMON_ID=<hostname>, or when the
 	// canonical id was itself promoted from a pre-change profile file).
 	legacyDaemonIDs = filterLegacyIDs(legacyDaemonIDs, daemonID)
 
-	deviceName := envOrDefault("TANDEM_DAEMON_DEVICE_NAME", host)
+	deviceName := envOrDefault("AGORA_DAEMON_DEVICE_NAME", host)
 	if overrides.DeviceName != "" {
 		deviceName = overrides.DeviceName
 	}
 
-	runtimeName := envOrDefault("TANDEM_AGENT_RUNTIME_NAME", DefaultRuntimeName)
+	runtimeName := envOrDefault("AGORA_AGENT_RUNTIME_NAME", DefaultRuntimeName)
 	if overrides.RuntimeName != "" {
 		runtimeName = overrides.RuntimeName
 	}
 
-	// Workspaces root: override > env > default (~/tandem_workspaces or ~/tandem_workspaces_<profile>)
+	// Workspaces root: override > env > default (~/agora_workspaces or ~/agora_workspaces_<profile>)
 	workspacesRoot, err := ResolveWorkspacesRoot(profile, overrides.WorkspacesRoot)
 	if err != nil {
 		return Config{}, err
@@ -417,42 +417,42 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	}
 
 	// Keep env after task: env > default (false)
-	keepEnv := os.Getenv("TANDEM_KEEP_ENV_AFTER_TASK") == "true" || os.Getenv("TANDEM_KEEP_ENV_AFTER_TASK") == "1"
+	keepEnv := os.Getenv("AGORA_KEEP_ENV_AFTER_TASK") == "true" || os.Getenv("AGORA_KEEP_ENV_AFTER_TASK") == "1"
 
 	// GC config: env > defaults
 	gcEnabled := true
-	if v := os.Getenv("TANDEM_GC_ENABLED"); v == "false" || v == "0" {
+	if v := os.Getenv("AGORA_GC_ENABLED"); v == "false" || v == "0" {
 		gcEnabled = false
 	}
-	gcInterval, err := durationFromEnv("TANDEM_GC_INTERVAL", DefaultGCInterval)
+	gcInterval, err := durationFromEnv("AGORA_GC_INTERVAL", DefaultGCInterval)
 	if err != nil {
 		return Config{}, err
 	}
-	gcTTL, err := durationFromEnv("TANDEM_GC_TTL", DefaultGCTTL)
+	gcTTL, err := durationFromEnv("AGORA_GC_TTL", DefaultGCTTL)
 	if err != nil {
 		return Config{}, err
 	}
-	gcOrphanTTL, err := durationFromEnv("TANDEM_GC_ORPHAN_TTL", DefaultGCOrphanTTL)
+	gcOrphanTTL, err := durationFromEnv("AGORA_GC_ORPHAN_TTL", DefaultGCOrphanTTL)
 	if err != nil {
 		return Config{}, err
 	}
-	gcArtifactTTL, err := durationFromEnv("TANDEM_GC_ARTIFACT_TTL", DefaultGCArtifactTTL)
+	gcArtifactTTL, err := durationFromEnv("AGORA_GC_ARTIFACT_TTL", DefaultGCArtifactTTL)
 	if err != nil {
 		return Config{}, err
 	}
-	gcArtifactPatterns := patternsFromEnv("TANDEM_GC_ARTIFACT_PATTERNS", DefaultGCArtifactPatterns)
+	gcArtifactPatterns := patternsFromEnv("AGORA_GC_ARTIFACT_PATTERNS", DefaultGCArtifactPatterns)
 
 	// Auto-update config: default -> env override -> CLI override.
 	//
-	// Default is opt-in on Tandem Cloud (api.tandem.dev) and opt-out for
+	// Default is opt-in on Agora Cloud (api.agora.dev) and opt-out for
 	// self-hosted instances. Self-host operators frequently run a fork with
 	// their own patches, and silently upgrading their daemon to an upstream
 	// GitHub release would clobber that work; they also commonly stay on an
 	// older server build, which a fresh CLI may no longer talk to. Keeping
 	// auto-update off by default for self-host avoids both footguns (MUL-2381).
-	// Operators on either side can flip the default with TANDEM_DAEMON_AUTO_UPDATE.
+	// Operators on either side can flip the default with AGORA_DAEMON_AUTO_UPDATE.
 	autoUpdateEnabled := isOfficialCloudServer(serverBaseURL)
-	if v := strings.TrimSpace(os.Getenv("TANDEM_DAEMON_AUTO_UPDATE")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("AGORA_DAEMON_AUTO_UPDATE")); v != "" {
 		switch strings.ToLower(v) {
 		case "false", "0", "no", "off":
 			autoUpdateEnabled = false
@@ -463,7 +463,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	if overrides.DisableAutoUpdate {
 		autoUpdateEnabled = false
 	}
-	autoUpdateInterval, err := durationFromEnv("TANDEM_DAEMON_AUTO_UPDATE_INTERVAL", DefaultAutoUpdateCheckInterval)
+	autoUpdateInterval, err := durationFromEnv("AGORA_DAEMON_AUTO_UPDATE_INTERVAL", DefaultAutoUpdateCheckInterval)
 	if err != nil {
 		return Config{}, err
 	}
@@ -503,14 +503,14 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	}, nil
 }
 
-// officialCloudHost is the hostname of Tandem's hosted cloud. It's the only
+// officialCloudHost is the hostname of Agora's hosted cloud. It's the only
 // origin we treat as "official" for the auto-update default — staging,
-// preview, and any future *.tandem.dev subdomains are deliberately excluded
+// preview, and any future *.agora.dev subdomains are deliberately excluded
 // so they inherit the safer self-host default until explicitly opted in.
-const officialCloudHost = "api.tandem.dev"
+const officialCloudHost = "api.agora.dev"
 
 // isOfficialCloudServer reports whether the resolved server base URL points
-// at Tandem's hosted cloud. Used to pick the auto-update default: cloud
+// at Agora's hosted cloud. Used to pick the auto-update default: cloud
 // users run a server that publishes the matching CLI release, so opt-in
 // self-update is safe; self-host users may run a fork or pin to an older
 // server, so the default flips to off. Matching is host-only and
@@ -527,7 +527,7 @@ func isOfficialCloudServer(baseURL string) bool {
 func NormalizeServerBaseURL(raw string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
-		return "", fmt.Errorf("invalid TANDEM_SERVER_URL: %w", err)
+		return "", fmt.Errorf("invalid AGORA_SERVER_URL: %w", err)
 	}
 	switch u.Scheme {
 	case "ws":
@@ -536,7 +536,7 @@ func NormalizeServerBaseURL(raw string) (string, error) {
 		u.Scheme = "https"
 	case "http", "https":
 	default:
-		return "", fmt.Errorf("TANDEM_SERVER_URL must use ws, wss, http, or https")
+		return "", fmt.Errorf("AGORA_SERVER_URL must use ws, wss, http, or https")
 	}
 	if u.Path == "/ws" {
 		u.Path = ""
@@ -549,24 +549,24 @@ func NormalizeServerBaseURL(raw string) (string, error) {
 
 // ResolveWorkspacesRoot returns the absolute path that the daemon and CLI
 // should treat as the workspaces root. Resolution order: explicit override >
-// TANDEM_WORKSPACES_ROOT env > default ($HOME/tandem_workspaces, or
-// $HOME/tandem_workspaces_<profile> for a named profile). Read-only callers
-// (e.g. `tandem daemon disk-usage`) use this directly so they pick the same
+// AGORA_WORKSPACES_ROOT env > default ($HOME/agora_workspaces, or
+// $HOME/agora_workspaces_<profile> for a named profile). Read-only callers
+// (e.g. `agora daemon disk-usage`) use this directly so they pick the same
 // directory the running daemon would have picked.
 func ResolveWorkspacesRoot(profile, override string) (string, error) {
-	root := strings.TrimSpace(os.Getenv("TANDEM_WORKSPACES_ROOT"))
+	root := strings.TrimSpace(os.Getenv("AGORA_WORKSPACES_ROOT"))
 	if override != "" {
 		root = override
 	}
 	if root == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return "", fmt.Errorf("resolve home directory: %w (set TANDEM_WORKSPACES_ROOT to override)", err)
+			return "", fmt.Errorf("resolve home directory: %w (set AGORA_WORKSPACES_ROOT to override)", err)
 		}
 		if profile != "" {
-			root = filepath.Join(home, "tandem_workspaces_"+profile)
+			root = filepath.Join(home, "agora_workspaces_"+profile)
 		} else {
-			root = filepath.Join(home, "tandem_workspaces")
+			root = filepath.Join(home, "agora_workspaces")
 		}
 	}
 	abs, err := filepath.Abs(root)
@@ -581,7 +581,7 @@ func ResolveWorkspacesRoot(profile, override string) (string, error) {
 // disk-usage CLI uses this to make sure the "artifact size" it reports
 // matches what the GC would actually reclaim.
 func ArtifactPatternsFromEnv() []string {
-	return patternsFromEnv("TANDEM_GC_ARTIFACT_PATTERNS", DefaultGCArtifactPatterns)
+	return patternsFromEnv("AGORA_GC_ARTIFACT_PATTERNS", DefaultGCArtifactPatterns)
 }
 
 // patternsFromEnv reads a comma-separated list from env. Patterns containing
@@ -620,7 +620,7 @@ func shellArgsFromEnv(name string) ([]string, error) {
 }
 
 // defaultAgentCommandNames lists the command names the agent probe loop tries
-// before any TANDEM_*_PATH override is applied. Kept in sync with the
+// before any AGORA_*_PATH override is applied. Kept in sync with the
 // `probe(...)` calls in LoadConfig — the shell-fallback resolver uses this
 // list to pre-fetch canonical paths for every known agent in a single shell
 // invocation, instead of paying the cost-per-miss.
@@ -700,7 +700,7 @@ var supportedLoginShells = map[string]struct{}{
 //     path) and per-shell paths the shell happened not to fully canonicalise.
 //   - Agent names are restricted to the bare set in defaultAgentCommandNames
 //     (`[A-Za-z0-9._-]` only); we inline them into the script unquoted to
-//     keep the script readable. Custom TANDEM_*_PATH values never reach this
+//     keep the script readable. Custom AGORA_*_PATH values never reach this
 //     resolver — those go through exec.LookPath directly.
 func resolveAgentsViaLoginShell(names []string) map[string]string {
 	out := map[string]string{}
@@ -846,7 +846,7 @@ func openclawOverrideFrom(cfg cli.CLIConfig) *cli.OpenClawOverride {
 //
 // Side-effecting on os.Setenv is intentional and scoped:
 //
-//   - The two vars touched (TANDEM_OPENCLAW_PATH, OPENCLAW_STATE_DIR) are
+//   - The two vars touched (AGORA_OPENCLAW_PATH, OPENCLAW_STATE_DIR) are
 //     OpenClaw-specific. Other backends do not read them; setting them in the
 //     daemon process has no observable effect on, e.g., Claude Code or Codex
 //     spawn behavior.
@@ -859,8 +859,8 @@ func applyOpenclawOverride(oc *cli.OpenClawOverride) {
 		return
 	}
 	if oc.BinaryPath != "" {
-		if _, set := os.LookupEnv("TANDEM_OPENCLAW_PATH"); !set {
-			_ = os.Setenv("TANDEM_OPENCLAW_PATH", oc.BinaryPath)
+		if _, set := os.LookupEnv("AGORA_OPENCLAW_PATH"); !set {
+			_ = os.Setenv("AGORA_OPENCLAW_PATH", oc.BinaryPath)
 		}
 	}
 	if oc.StateDir != "" {

@@ -11,7 +11,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from "@tandem/ui/components/ui/chart";
+} from "@agora/ui/components/ui/chart";
 import { useT } from "../../../i18n";
 
 // Weekly counterpart of DailyTimeChart — same single-series bar, but each

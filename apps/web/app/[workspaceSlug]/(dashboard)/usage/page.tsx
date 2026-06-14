@@ -1,1 +1,1 @@
-export { DashboardPage as default } from "@tandem/views/dashboard";
+export { DashboardPage as default } from "@agora/views/dashboard";

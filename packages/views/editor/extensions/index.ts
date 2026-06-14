@@ -35,7 +35,7 @@ import { TaskList } from "@tiptap/extension-list";
 import { Markdown } from "@tiptap/markdown";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import type { AnyExtension } from "@tiptap/core";
-import type { UploadResult } from "@tandem/core/hooks/use-file-upload";
+import type { UploadResult } from "@agora/core/hooks/use-file-upload";
 import { escapeMarkdownLabel } from "../utils/escape-markdown-label";
 import { BaseMentionExtension } from "./mention-extension";
 import { createMentionSuggestion, type MentionItem } from "./mention-suggestion";
@@ -127,7 +127,7 @@ export interface EditorExtensionsOptions {
   /**
    * When true, the `@` suggestion picker is not attached. The mention node
    * type is still registered in the schema so any mention pasted in from
-   * another Tandem editor renders as the normal mention pill instead of
+   * another Agora editor renders as the normal mention pill instead of
    * being silently dropped by ProseMirror's schema check. Use for editors
    * where *creating* a new mention has no business meaning (e.g. agent
    * system prompts) but *preserving* an existing one still matters.

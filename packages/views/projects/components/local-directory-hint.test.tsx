@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@tandem/core/i18n/react";
-import type { ProjectResource } from "@tandem/core/types";
+import { I18nProvider } from "@agora/core/i18n/react";
+import type { ProjectResource } from "@agora/core/types";
 import enCommon from "../../locales/en/common.json";
 import enProjects from "../../locales/en/projects.json";
 
@@ -18,13 +18,13 @@ vi.mock("../../platform", () => ({
   useLocalDaemonStatus: () => mockDaemonStatus,
 }));
 
-vi.mock("@tandem/core/hooks", () => ({
+vi.mock("@agora/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
 const mockListResources = vi.hoisted(() => vi.fn());
 
-vi.mock("@tandem/core/api", () => ({
+vi.mock("@agora/core/api", () => ({
   api: {
     listProjectResources: (...args: unknown[]) => mockListResources(...args),
   },

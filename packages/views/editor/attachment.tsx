@@ -30,11 +30,11 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "@tandem/ui/lib/utils";
-import { copyText } from "@tandem/ui/lib/clipboard";
-import { api } from "@tandem/core/api";
-import { useConfigStore } from "@tandem/core/config";
-import type { Attachment as AttachmentRecord } from "@tandem/core/types";
+import { cn } from "@agora/ui/lib/utils";
+import { copyText } from "@agora/ui/lib/clipboard";
+import { api } from "@agora/core/api";
+import { useConfigStore } from "@agora/core/config";
+import type { Attachment as AttachmentRecord } from "@agora/core/types";
 import { useT } from "../i18n";
 import { useAttachmentDownloadResolver } from "./attachment-download-context";
 import { useAttachmentPreview } from "./attachment-preview-modal";
@@ -207,7 +207,7 @@ function absolutizeMediaURL(rawUrl: string): string {
 //   - `record.markdown_url` — the durable URL the server picked for
 //                             persistence (MUL-3192 / `buildMarkdownURL`):
 //                             public CDN passthrough when the storage is
-//                             public-readable, or `TANDEM_PUBLIC_URL +
+//                             public-readable, or `AGORA_PUBLIC_URL +
 //                             /api/attachments/<id>/download` for
 //                             private-bucket modes. Aligned with the
 //                             server-side policy by construction, so it

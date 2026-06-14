@@ -1,5 +1,5 @@
-import { deriveRuntimeHealth, type RuntimeHealth } from "@tandem/core/runtimes";
-import type { AgentRuntime } from "@tandem/core/types";
+import { deriveRuntimeHealth, type RuntimeHealth } from "@agora/core/runtimes";
+import type { AgentRuntime } from "@agora/core/types";
 import { formatDeviceInfo } from "../utils";
 
 export type RuntimeMachineSection = "local" | "remote" | "cloud";

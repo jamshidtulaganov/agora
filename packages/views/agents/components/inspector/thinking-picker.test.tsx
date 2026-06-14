@@ -2,8 +2,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import type { RuntimeModelThinkingLevel } from "@tandem/core/types";
-import { I18nProvider } from "@tandem/core/i18n/react";
+import type { RuntimeModelThinkingLevel } from "@agora/core/types";
+import { I18nProvider } from "@agora/core/i18n/react";
 import enCommon from "../../../locales/en/common.json";
 import enAgents from "../../../locales/en/agents.json";
 import enIssues from "../../../locales/en/issues.json";
@@ -48,7 +48,7 @@ describe("ThinkingPicker", () => {
   it('renders "Follow CLI config" when value is empty', () => {
     renderPicker({ value: "" });
     // The trigger and the tooltip both carry the label. Empty value means
-    // Tandem omits --effort, so the local CLI's config decides the
+    // Agora omits --effort, so the local CLI's config decides the
     // reasoning level — see thinking-prop-row.tsx for the contract.
     expect(screen.getAllByText("Follow CLI config").length).toBeGreaterThan(0);
   });

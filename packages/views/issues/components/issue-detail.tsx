@@ -23,30 +23,30 @@ import {
   Users,
 } from "lucide-react";
 import { BreadcrumbHeader, type BreadcrumbSegment } from "../../layout/breadcrumb-header";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
-import { Button } from "@tandem/ui/components/ui/button";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@tandem/ui/components/ui/resizable";
-import { Sheet, SheetContent } from "@tandem/ui/components/ui/sheet";
-import { useIsMobile } from "@tandem/ui/hooks/use-mobile";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import { Button } from "@agora/ui/components/ui/button";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@agora/ui/components/ui/resizable";
+import { Sheet, SheetContent } from "@agora/ui/components/ui/sheet";
+import { useIsMobile } from "@agora/ui/hooks/use-mobile";
 import { ContentEditor, type ContentEditorRef, TitleEditor, useFileDropZone, FileDropOverlay } from "../../editor";
-import { FileUploadButton } from "@tandem/ui/components/common/file-upload-button";
+import { FileUploadButton } from "@agora/ui/components/common/file-upload-button";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@tandem/ui/components/ui/tooltip";
-import { Popover, PopoverTrigger, PopoverContent } from "@tandem/ui/components/ui/popover";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@tandem/ui/components/ui/dialog";
-import { Checkbox } from "@tandem/ui/components/ui/checkbox";
-import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@tandem/ui/components/ui/command";
-import { AvatarGroup, AvatarGroupCount } from "@tandem/ui/components/ui/avatar";
+} from "@agora/ui/components/ui/tooltip";
+import { Popover, PopoverTrigger, PopoverContent } from "@agora/ui/components/ui/popover";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@agora/ui/components/ui/dialog";
+import { Checkbox } from "@agora/ui/components/ui/checkbox";
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@agora/ui/components/ui/command";
+import { AvatarGroup, AvatarGroupCount } from "@agora/ui/components/ui/avatar";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { PropRow } from "../../common/prop-row";
-import type { Attachment, Issue, IssueStatus, IssuePriority, TimelineEntry, UpdateIssueRequest } from "@tandem/core/types";
-import { contentReferencesAttachment } from "@tandem/core/types";
-import { STATUS_CONFIG, PRIORITY_CONFIG } from "@tandem/core/issues/config";
-import { formatDateOnly } from "@tandem/core/issues/date";
-import { useUpdateIssue } from "@tandem/core/issues/mutations";
+import type { Attachment, Issue, IssueStatus, IssuePriority, TimelineEntry, UpdateIssueRequest } from "@agora/core/types";
+import { contentReferencesAttachment } from "@agora/core/types";
+import { STATUS_CONFIG, PRIORITY_CONFIG } from "@agora/core/issues/config";
+import { formatDateOnly } from "@agora/core/issues/date";
+import { useUpdateIssue } from "@agora/core/issues/mutations";
 import { toast } from "sonner";
 import { StatusIcon, PriorityIcon, StatusPicker, PriorityPicker, StartDatePicker, DueDatePicker, AssigneePicker, LabelPicker } from ".";
 import { IssueActionsDropdown, useIssueActions } from "../actions";
@@ -60,29 +60,29 @@ import { IssueAgentHeaderChip } from "./issue-agent-header-chip";
 import { ExecutionLogSection } from "./execution-log-section";
 import { SliceActionsSection } from "./slice-actions-section";
 import { PullRequestList } from "./pull-request-list";
-import { useGitHubSettings } from "@tandem/core/github";
+import { useGitHubSettings } from "@agora/core/github";
 import { useQuery } from "@tanstack/react-query";
-import { useAuthStore } from "@tandem/core/auth";
-import { useWorkspacePaths } from "@tandem/core/paths";
-import { useActorName } from "@tandem/core/workspace/hooks";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { useRecentContextStore } from "@tandem/core/chat";
-import { issueListOptions, issueDetailOptions, childIssuesOptions, issueUsageOptions, issueAttachmentsOptions } from "@tandem/core/issues/queries";
-import { projectDetailOptions } from "@tandem/core/projects/queries";
+import { useAuthStore } from "@agora/core/auth";
+import { useWorkspacePaths } from "@agora/core/paths";
+import { useActorName } from "@agora/core/workspace/hooks";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { useRecentContextStore } from "@agora/core/chat";
+import { issueListOptions, issueDetailOptions, childIssuesOptions, issueUsageOptions, issueAttachmentsOptions } from "@agora/core/issues/queries";
+import { projectDetailOptions } from "@agora/core/projects/queries";
 import { ProjectIcon } from "../../projects/components/project-icon";
-import { issueLabelsOptions } from "@tandem/core/labels";
-import { memberListOptions, agentListOptions } from "@tandem/core/workspace/queries";
-import { useRecentIssuesStore } from "@tandem/core/issues/stores";
-import { useIssueSelectionStore } from "@tandem/core/issues/stores/selection-store";
+import { issueLabelsOptions } from "@agora/core/labels";
+import { memberListOptions, agentListOptions } from "@agora/core/workspace/queries";
+import { useRecentIssuesStore } from "@agora/core/issues/stores";
+import { useIssueSelectionStore } from "@agora/core/issues/stores/selection-store";
 import { BatchActionToolbar } from "./batch-action-toolbar";
 import { useIssueTimeline } from "../hooks/use-issue-timeline";
 import { useIssueReactions } from "../hooks/use-issue-reactions";
 import { useIssueSubscribers } from "../hooks/use-issue-subscribers";
-import { ReactionBar } from "@tandem/ui/components/common/reaction-bar";
-import { useFileUpload } from "@tandem/core/hooks/use-file-upload";
-import { api } from "@tandem/core/api";
+import { ReactionBar } from "@agora/ui/components/common/reaction-bar";
+import { useFileUpload } from "@agora/core/hooks/use-file-upload";
+import { api } from "@agora/core/api";
 import { useTimeAgo } from "../../i18n";
-import { cn } from "@tandem/ui/lib/utils";
+import { cn } from "@agora/ui/lib/utils";
 
 import { ProgressRing } from "./progress-ring";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
@@ -656,7 +656,7 @@ interface IssueDetailProps {
 // IssueDetail
 // ---------------------------------------------------------------------------
 
-export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "tandem_issue_detail_layout", highlightCommentId }: IssueDetailProps) {
+export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "agora_issue_detail_layout", highlightCommentId }: IssueDetailProps) {
   const { t } = useT("issues");
   const timeAgo = useTimeAgo();
   const id = issueId;
@@ -1175,7 +1175,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // Real fix is in-app search (separate PR); this is the toast stopgap.
   useEffect(() => {
     if (items.length <= 30) return;
-    const flagKey = `tandem_cmdF_warned:${id}`;
+    const flagKey = `agora_cmdF_warned:${id}`;
     const handler = (e: KeyboardEvent) => {
       if (e.key !== "f" || !(e.metaKey || e.ctrlKey)) return;
       if (sessionStorage.getItem(flagKey)) return;

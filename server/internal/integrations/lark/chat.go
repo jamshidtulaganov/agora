@@ -45,7 +45,7 @@ type ChatSessionService interface {
 }
 
 // EnsureChatSessionParams carries the inputs for ChatSessionService.EnsureChatSession.
-// Note `Sender` is the resolved Tandem user UUID — the caller has
+// Note `Sender` is the resolved Agora user UUID — the caller has
 // already mapped lark_open_id → user via lark_user_binding.
 type EnsureChatSessionParams struct {
 	WorkspaceID    pgtype.UUID

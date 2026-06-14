@@ -1,12 +1,12 @@
 version: 2
 
-project_name: tandem
+project_name: agora
 
 builds:
-  - id: tandem
-    main: ./cmd/tandem
+  - id: agora
+    main: ./cmd/agora
     dir: server
-    binary: tandem
+    binary: agora
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
@@ -23,8 +23,8 @@ builds:
       - arm64
 
 archives:
-  # Legacy archive name kept so already-released CLIs (whose `tandem update`
-  # looks for `tandem_{os}_{arch}.{ext}`) can keep self-updating. Remove
+  # Legacy archive name kept so already-released CLIs (whose `agora update`
+  # looks for `agora_{os}_{arch}.{ext}`) can keep self-updating. Remove
   # once those versions are no longer in use.
   - id: legacy
     formats:
@@ -57,19 +57,19 @@ changelog:
       - "^chore:"
 
 brews:
-  - name: tandem
+  - name: agora
     ids:
       - versioned
     repository:
-      owner: tandem-ai
+      owner: agora-ai
       name: homebrew-tap
       branch: main
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
     homepage: "https://github.com/multica-ai/multica"
-    description: "Tandem CLI — local agent runtime and management tool for the Tandem platform"
+    description: "Agora CLI — local agent runtime and management tool for the Agora platform"
     license: "Apache-2.0"
     install: |
-      bin.install "tandem"
+      bin.install "agora"
     test: |
-      system "#{bin}/tandem", "version"
+      system "#{bin}/agora", "version"

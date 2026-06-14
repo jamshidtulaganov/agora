@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Trash2, Plus, Pencil, Check, X } from "lucide-react";
-import { Input } from "@tandem/ui/components/ui/input";
-import { Label as UILabel } from "@tandem/ui/components/ui/label";
-import { Button } from "@tandem/ui/components/ui/button";
+import { Input } from "@agora/ui/components/ui/input";
+import { Label as UILabel } from "@agora/ui/components/ui/label";
+import { Button } from "@agora/ui/components/ui/button";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -15,12 +15,12 @@ import {
   AlertDialogFooter,
   AlertDialogCancel,
   AlertDialogAction,
-} from "@tandem/ui/components/ui/alert-dialog";
+} from "@agora/ui/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { labelListOptions, useCreateLabel, useUpdateLabel, useDeleteLabel } from "@tandem/core/labels";
-import type { Label } from "@tandem/core/types";
-import { isImeComposing } from "@tandem/core/utils";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { labelListOptions, useCreateLabel, useUpdateLabel, useDeleteLabel } from "@agora/core/labels";
+import type { Label } from "@agora/core/types";
+import { isImeComposing } from "@agora/core/utils";
 import { LabelChip } from "../../labels/label-chip";
 import { useT } from "../../i18n";
 

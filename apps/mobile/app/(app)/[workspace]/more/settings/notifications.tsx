@@ -12,7 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import type {
   NotificationGroupKey,
   NotificationPreferences,
-} from "@tandem/core/types";
+} from "@agora/core/types";
 import { Text } from "@/components/ui/text";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
@@ -128,7 +128,7 @@ export default function NotificationsSettingsScreen() {
 
       <Section
         title="System"
-        description="Tandem-wide announcements and important account events."
+        description="Agora-wide announcements and important account events."
       >
         <View className="flex-row items-center px-4 py-3 gap-3">
           <View className="flex-1">

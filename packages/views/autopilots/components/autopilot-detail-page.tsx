@@ -7,8 +7,8 @@ import {
   Webhook, Copy, Check, RotateCw,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { autopilotDetailOptions, autopilotRunsOptions, autopilotRunOptions } from "@tandem/core/autopilots/queries";
-import { projectDetailOptions } from "@tandem/core/projects/queries";
+import { autopilotDetailOptions, autopilotRunsOptions, autopilotRunOptions } from "@agora/core/autopilots/queries";
+import { projectDetailOptions } from "@agora/core/projects/queries";
 import {
   useUpdateAutopilot,
   useDeleteAutopilot,
@@ -16,26 +16,26 @@ import {
   useCreateAutopilotTrigger,
   useDeleteAutopilotTrigger,
   useRotateAutopilotTriggerWebhookToken,
-} from "@tandem/core/autopilots/mutations";
-import { buildAutopilotWebhookUrl } from "@tandem/core/autopilots";
-import { api } from "@tandem/core/api";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { useWorkspacePaths } from "@tandem/core/paths";
-import { useActorName } from "@tandem/core/workspace/hooks";
+} from "@agora/core/autopilots/mutations";
+import { buildAutopilotWebhookUrl } from "@agora/core/autopilots";
+import { api } from "@agora/core/api";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { useWorkspacePaths } from "@agora/core/paths";
+import { useActorName } from "@agora/core/workspace/hooks";
 import { useNavigation, AppLink } from "../../navigation";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { ActorAvatar } from "../../common/actor-avatar";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Switch } from "@tandem/ui/components/ui/switch";
-import { cn } from "@tandem/ui/lib/utils";
-import { copyText } from "@tandem/ui/lib/clipboard";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import { Button } from "@agora/ui/components/ui/button";
+import { Switch } from "@agora/ui/components/ui/switch";
+import { cn } from "@agora/ui/lib/utils";
+import { copyText } from "@agora/ui/lib/clipboard";
 import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
-} from "@tandem/ui/components/ui/dialog";
+} from "@agora/ui/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,15 +45,15 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@tandem/ui/components/ui/alert-dialog";
+} from "@agora/ui/components/ui/alert-dialog";
 import {
   TriggerConfigSection,
   getDefaultTriggerConfig,
   toCronExpression,
 } from "./trigger-config";
 import type { TriggerConfig } from "./trigger-config";
-import type { AutopilotExecutionMode, AutopilotRun, AutopilotTrigger } from "@tandem/core/types";
-import type { AgentTask } from "@tandem/core/types/agent";
+import type { AutopilotExecutionMode, AutopilotRun, AutopilotTrigger } from "@agora/core/types";
+import type { AgentTask } from "@agora/core/types/agent";
 import { ReadonlyContent } from "../../editor";
 import { TranscriptButton } from "../../common/task-transcript";
 import { AutopilotDialog } from "./autopilot-dialog";

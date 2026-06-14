@@ -9,8 +9,8 @@ import {
   useTransition,
 } from "react";
 import { useRouter } from "next/navigation";
-import { useConfigStore } from "@tandem/core/config";
-import { createBrowserCookieLocaleAdapter } from "@tandem/core/i18n/browser";
+import { useConfigStore } from "@agora/core/config";
+import { createBrowserCookieLocaleAdapter } from "@agora/core/i18n/browser";
 import { createEnDict } from "./en";
 import { createJaDict } from "./ja";
 import { createKoDict } from "./ko";

@@ -22,7 +22,7 @@ import {
   UserPen,
   Waves,
 } from "lucide-react";
-import { Button } from "@tandem/ui/components/ui/button";
+import { Button } from "@agora/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -37,23 +37,23 @@ import {
   DropdownMenuSub,
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
-} from "@tandem/ui/components/ui/dropdown-menu";
+} from "@agora/ui/components/ui/dropdown-menu";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@tandem/ui/components/ui/popover";
-import { Switch } from "@tandem/ui/components/ui/switch";
+} from "@agora/ui/components/ui/popover";
+import { Switch } from "@agora/ui/components/ui/switch";
 import {
   ALL_STATUSES,
   PRIORITY_ORDER,
-} from "@tandem/core/issues/config";
+} from "@agora/core/issues/config";
 import { StatusIcon, PriorityIcon } from ".";
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { memberListOptions, agentListOptions, squadListOptions } from "@tandem/core/workspace/queries";
-import { projectListOptions } from "@tandem/core/projects/queries";
-import { labelListOptions } from "@tandem/core/labels/queries";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { memberListOptions, agentListOptions, squadListOptions } from "@agora/core/workspace/queries";
+import { projectListOptions } from "@agora/core/projects/queries";
+import { labelListOptions } from "@agora/core/labels/queries";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { LabelChip } from "../../labels/label-chip";
@@ -63,15 +63,15 @@ import {
   SWIMLANE_GROUPINGS,
   CARD_PROPERTY_OPTIONS,
   type ActorFilterValue,
-} from "@tandem/core/issues/stores/view-store";
-import { useViewStore, useViewStoreApi } from "@tandem/core/issues/stores/view-store-context";
-import type { SortField, IssueGrouping, SwimlaneGrouping, ViewMode } from "@tandem/core/issues/stores/view-store";
+} from "@agora/core/issues/stores/view-store";
+import { useViewStore, useViewStoreApi } from "@agora/core/issues/stores/view-store-context";
+import type { SortField, IssueGrouping, SwimlaneGrouping, ViewMode } from "@agora/core/issues/stores/view-store";
 import {
   useIssuesScopeStore,
   type IssuesScope,
-} from "@tandem/core/issues/stores/issues-scope-store";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@tandem/ui/components/ui/tooltip";
-import type { Issue } from "@tandem/core/types";
+} from "@agora/core/issues/stores/issues-scope-store";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@agora/ui/components/ui/tooltip";
+import type { Issue } from "@agora/core/types";
 import { useT } from "../../i18n";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 import { WorkspaceAgentWorkingChip } from "./workspace-agent-working-chip";

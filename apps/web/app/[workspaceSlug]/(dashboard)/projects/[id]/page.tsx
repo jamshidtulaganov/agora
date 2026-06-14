@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { ProjectDetail } from "@tandem/views/projects/components";
+import { ProjectDetail } from "@agora/views/projects/components";
 
 export default function ProjectDetailPage({
   params,

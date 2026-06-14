@@ -4,7 +4,7 @@ const mockListSkills = vi.fn();
 const mockCreateSkill = vi.fn();
 const mockAddAgentSkills = vi.fn();
 
-vi.mock("@tandem/core/api", () => ({
+vi.mock("@agora/core/api", () => ({
   api: {
     listSkills: (...args: unknown[]) => mockListSkills(...args),
     createSkill: (...args: unknown[]) => mockCreateSkill(...args),

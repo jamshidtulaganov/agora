@@ -1751,7 +1751,7 @@ RETURNING id
 	mkUser := func(t *testing.T, label string) string {
 		t.Helper()
 		var id string
-		email := fmt.Sprintf("github-routes-%s-%s@tandem.dev", slug, label)
+		email := fmt.Sprintf("github-routes-%s-%s@agora.dev", slug, label)
 		if err := testPool.QueryRow(ctx, `
 INSERT INTO "user" (name, email) VALUES ($1, $2) RETURNING id
 `, "GHR "+label, email).Scan(&id); err != nil {

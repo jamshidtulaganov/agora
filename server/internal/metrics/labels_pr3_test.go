@@ -84,7 +84,7 @@ func TestOnboardingStartedUnknownPlatformCollapses(t *testing.T) {
 	// present: web and unknown. Anything else means the raw header
 	// leaked into the label.
 	families := metrics.GatherForTest(t, m)
-	famName := "tandem_onboarding_started_total"
+	famName := "agora_onboarding_started_total"
 	fam, ok := families[famName]
 	if !ok {
 		t.Fatalf("metric family %s not present in registry output", famName)

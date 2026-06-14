@@ -20,9 +20,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@tandem/ui/components/ui/table";
-import { getCellStyle } from "@tandem/ui/lib/data-table";
-import { cn } from "@tandem/ui/lib/utils";
+} from "@agora/ui/components/ui/table";
+import { getCellStyle } from "@agora/ui/lib/data-table";
+import { cn } from "@agora/ui/lib/utils";
 
 interface DataTableProps<TData> extends React.ComponentProps<"div"> {
   table: TanstackTable<TData>;

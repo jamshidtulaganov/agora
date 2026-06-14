@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { cn } from "@tandem/ui/lib/utils";
-import { UnicodeSpinner } from "@tandem/ui/components/common/unicode-spinner";
-import type { AgentAvailability } from "@tandem/core/agents";
-import type { ChatPendingTask, TaskMessagePayload } from "@tandem/core/types";
+import { cn } from "@agora/ui/lib/utils";
+import { UnicodeSpinner } from "@agora/ui/components/common/unicode-spinner";
+import type { AgentAvailability } from "@agora/core/agents";
+import type { ChatPendingTask, TaskMessagePayload } from "@agora/core/types";
 import { formatElapsedSecs } from "../lib/format";
 import { useT } from "../../i18n";
 

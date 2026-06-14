@@ -10,7 +10,7 @@ import type {
   Comment,
   TimelineEntry,
   Reaction,
-} from "@tandem/core/types";
+} from "@agora/core/types";
 import type {
   CommentCreatedPayload,
   CommentUpdatedPayload,
@@ -20,11 +20,11 @@ import type {
   ActivityCreatedPayload,
   ReactionAddedPayload,
   ReactionRemovedPayload,
-} from "@tandem/core/types";
+} from "@agora/core/types";
 import {
   issueTimelineOptions,
   issueKeys,
-} from "@tandem/core/issues/queries";
+} from "@agora/core/issues/queries";
 import {
   useCreateComment,
   useUpdateComment,
@@ -32,9 +32,9 @@ import {
   useResolveComment,
   useToggleCommentReaction,
   type ToggleCommentReactionVars,
-} from "@tandem/core/issues/mutations";
-import { sortTimelineEntriesAsc } from "@tandem/core/issues/timeline-sort";
-import { useWSEvent, useWSReconnect } from "@tandem/core/realtime";
+} from "@agora/core/issues/mutations";
+import { sortTimelineEntriesAsc } from "@agora/core/issues/timeline-sort";
+import { useWSEvent, useWSReconnect } from "@agora/core/realtime";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 

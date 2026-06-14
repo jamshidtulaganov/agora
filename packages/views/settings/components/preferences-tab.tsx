@@ -8,17 +8,17 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@tandem/ui/components/ui/select";
-import { useTheme } from "@tandem/ui/components/common/theme-provider";
-import { cn } from "@tandem/ui/lib/utils";
+} from "@agora/ui/components/ui/select";
+import { useTheme } from "@agora/ui/components/common/theme-provider";
+import { cn } from "@agora/ui/lib/utils";
 import {
   DEFAULT_LOCALE,
   SUPPORTED_LOCALES,
   type SupportedLocale,
-} from "@tandem/core/i18n";
-import { useLocaleAdapter } from "@tandem/core/i18n/react";
-import { useAuthStore } from "@tandem/core/auth";
-import { api } from "@tandem/core/api";
+} from "@agora/core/i18n";
+import { useLocaleAdapter } from "@agora/core/i18n/react";
+import { useAuthStore } from "@agora/core/auth";
+import { api } from "@agora/core/api";
 import { browserTimezone, timezoneOptions } from "../../common/timezone-select";
 import { useT } from "../../i18n";
 

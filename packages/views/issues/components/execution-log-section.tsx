@@ -4,15 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Ban, CheckCircle2, ChevronRight, ExternalLink, Loader2, RotateCcw, Square, XCircle } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@tandem/core/api";
-import { issueKeys } from "@tandem/core/issues/queries";
-import type { AgentTask, TaskFailureReason } from "@tandem/core/types";
+import { api } from "@agora/core/api";
+import { issueKeys } from "@agora/core/issues/queries";
+import type { AgentTask, TaskFailureReason } from "@agora/core/types";
 import { useTimeAgo } from "../../i18n";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@tandem/ui/components/ui/tooltip";
+} from "@agora/ui/components/ui/tooltip";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { formatDuration } from "../../agents/components/agent-activity-hover-content";
 import { TranscriptButton } from "../../common/task-transcript";

@@ -1,4 +1,4 @@
-import nextConfig from "@tandem/eslint-config/next";
+import nextConfig from "@agora/eslint-config/next";
 
 export default [
   ...nextConfig,

@@ -3,11 +3,11 @@
 import { useState } from "react";
 import { Crown, Shield, User, Plus, MoreHorizontal, UserMinus, Users, Clock, X, Mail } from "lucide-react";
 import { ActorAvatar } from "../../common/actor-avatar";
-import type { MemberWithUser, MemberRole, Invitation } from "@tandem/core/types";
-import { Input } from "@tandem/ui/components/ui/input";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Card, CardContent } from "@tandem/ui/components/ui/card";
-import { Badge } from "@tandem/ui/components/ui/badge";
+import type { MemberWithUser, MemberRole, Invitation } from "@agora/core/types";
+import { Input } from "@agora/ui/components/ui/input";
+import { Button } from "@agora/ui/components/ui/button";
+import { Card, CardContent } from "@agora/ui/components/ui/card";
+import { Badge } from "@agora/ui/components/ui/badge";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -17,14 +17,14 @@ import {
   AlertDialogFooter,
   AlertDialogCancel,
   AlertDialogAction,
-} from "@tandem/ui/components/ui/alert-dialog";
+} from "@agora/ui/components/ui/alert-dialog";
 import {
   Select,
   SelectTrigger,
   SelectValue,
   SelectContent,
   SelectItem,
-} from "@tandem/ui/components/ui/select";
+} from "@agora/ui/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -34,14 +34,14 @@ import {
   DropdownMenuSub,
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
-} from "@tandem/ui/components/ui/dropdown-menu";
+} from "@agora/ui/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAuthStore } from "@tandem/core/auth";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { useCurrentWorkspace } from "@tandem/core/paths";
-import { memberListOptions, invitationListOptions, workspaceKeys } from "@tandem/core/workspace/queries";
-import { api } from "@tandem/core/api";
+import { useAuthStore } from "@agora/core/auth";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { useCurrentWorkspace } from "@agora/core/paths";
+import { memberListOptions, invitationListOptions, workspaceKeys } from "@agora/core/workspace/queries";
+import { api } from "@agora/core/api";
 import { useT } from "../../i18n";
 
 const ROLE_ICONS: Record<MemberRole, typeof Crown> = {

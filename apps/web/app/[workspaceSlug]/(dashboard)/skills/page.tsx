@@ -1,1 +1,1 @@
-export { SkillsPage as default } from "@tandem/views/skills";
+export { SkillsPage as default } from "@agora/views/skills";

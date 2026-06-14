@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { FileText, Search } from "lucide-react";
-import type { SkillSummary } from "@tandem/core/types";
-import { Checkbox } from "@tandem/ui/components/ui/checkbox";
-import { Input } from "@tandem/ui/components/ui/input";
-import { cn } from "@tandem/ui/lib/utils";
+import type { SkillSummary } from "@agora/core/types";
+import { Checkbox } from "@agora/ui/components/ui/checkbox";
+import { Input } from "@agora/ui/components/ui/input";
+import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
 
 interface SkillPickerListProps {

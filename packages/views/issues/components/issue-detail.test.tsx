@@ -2,8 +2,8 @@ import { forwardRef, useRef, useState, useImperativeHandle } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Issue, TimelineEntry } from "@tandem/core/types";
-import { I18nProvider } from "@tandem/core/i18n/react";
+import type { Issue, TimelineEntry } from "@agora/core/types";
+import { I18nProvider } from "@agora/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enIssues from "../../locales/en/issues.json";
 
@@ -11,15 +11,15 @@ const TEST_RESOURCES = { en: { common: enCommon, issues: enIssues } };
 
 const mockViewport = vi.hoisted(() => ({ isMobile: false }));
 
-vi.mock("@tandem/ui/hooks/use-mobile", () => ({
+vi.mock("@agora/ui/hooks/use-mobile", () => ({
   useIsMobile: () => mockViewport.isMobile,
 }));
 
 // useWorkspaceId() derives from useCurrentWorkspace (relative import inside
-// @tandem/core/hooks.tsx). vi.mock("@tandem/core/paths") only intercepts
+// @agora/core/hooks.tsx). vi.mock("@agora/core/paths") only intercepts
 // the bare-specifier, not the internal relative import. Mock the hooks module
 // directly so the bridge hook returns the test UUID.
-vi.mock("@tandem/core/hooks", () => ({
+vi.mock("@agora/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
@@ -27,9 +27,9 @@ vi.mock("@tandem/core/hooks", () => ({
 // Mocks
 // ---------------------------------------------------------------------------
 
-// Mock @tandem/core/auth
+// Mock @agora/core/auth
 const mockAuthUser = { id: "user-1", email: "test@test.com", name: "Test User" };
-vi.mock("@tandem/core/auth", () => ({
+vi.mock("@agora/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: any) => {
       const state = { user: mockAuthUser, isAuthenticated: true };
@@ -41,8 +41,8 @@ vi.mock("@tandem/core/auth", () => ({
   createAuthStore: vi.fn(),
 }));
 
-// Mock @tandem/core/workspace/hooks
-vi.mock("@tandem/core/workspace/hooks", () => ({
+// Mock @agora/core/workspace/hooks
+vi.mock("@agora/core/workspace/hooks", () => ({
   useActorName: () => ({
     getMemberName: (id: string) => (id === "user-1" ? "Test User" : "Unknown"),
     getAgentName: (id: string) => (id === "agent-1" ? "Claude Agent" : "Unknown Agent"),
@@ -57,7 +57,7 @@ vi.mock("@tandem/core/workspace/hooks", () => ({
 }));
 
 // Mock workspace queries
-vi.mock("@tandem/core/workspace/queries", () => ({
+vi.mock("@agora/core/workspace/queries", () => ({
   memberListOptions: () => ({
     queryKey: ["workspaces", "ws-1", "members"],
     queryFn: () => Promise.resolve([{ user_id: "user-1", name: "Test User", email: "test@test.com", role: "admin" }]),
@@ -80,12 +80,12 @@ vi.mock("@tandem/core/workspace/queries", () => ({
   }),
 }));
 
-// Mock @tandem/core/paths — after the URL-driven workspace refactor,
+// Mock @agora/core/paths — after the URL-driven workspace refactor,
 // useCurrentWorkspace / useWorkspacePaths derive from the workspace slug in
 // URL Context. Tests don't mount a real route, so we short-circuit to fixtures.
-vi.mock("@tandem/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@tandem/core/paths")>(
-    "@tandem/core/paths",
+vi.mock("@agora/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@agora/core/paths")>(
+    "@agora/core/paths",
   );
   return {
     ...actual,
@@ -104,7 +104,7 @@ vi.mock("../../navigation", () => ({
   useNavigation: () => ({
     push: vi.fn(),
     pathname: "/issues/issue-1",
-    getShareableUrl: (p: string) => `https://app.tandem.com${p}`,
+    getShareableUrl: (p: string) => `https://app.agora.com${p}`,
   }),
   NavigationProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
@@ -224,14 +224,14 @@ const mockApiObj = vi.hoisted(() => ({
   listProjects: vi.fn().mockResolvedValue({ projects: [] }),
 }));
 
-vi.mock("@tandem/core/api", () => ({
+vi.mock("@agora/core/api", () => ({
   api: mockApiObj,
   getApi: () => mockApiObj,
   setApiInstance: vi.fn(),
 }));
 
 // Mock issue config
-vi.mock("@tandem/core/issues/config", () => ({
+vi.mock("@agora/core/issues/config", () => ({
   ALL_STATUSES: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   BOARD_STATUSES: ["backlog", "todo", "in_progress", "in_review", "done", "blocked"],
   STATUS_ORDER: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
@@ -256,7 +256,7 @@ vi.mock("@tandem/core/issues/config", () => ({
 
 // Mock recent issues store
 const mockRecordVisit = vi.fn();
-vi.mock("@tandem/core/issues/stores", () => ({
+vi.mock("@agora/core/issues/stores", () => ({
   useRecentIssuesStore: Object.assign(
     (selector?: any) => {
       const state = { byWorkspace: {}, recordVisit: mockRecordVisit, pruneWorkspaces: vi.fn() };
@@ -348,7 +348,7 @@ beforeEach(() => {
 });
 
 // Mock modals
-vi.mock("@tandem/core/modals", () => ({
+vi.mock("@agora/core/modals", () => ({
   useModalStore: Object.assign(
     () => ({ open: vi.fn() }),
     { getState: () => ({ open: vi.fn() }) },
@@ -356,12 +356,12 @@ vi.mock("@tandem/core/modals", () => ({
 }));
 
 // Mock core/hooks/use-file-upload
-vi.mock("@tandem/core/hooks/use-file-upload", () => ({
+vi.mock("@agora/core/hooks/use-file-upload", () => ({
   useFileUpload: () => ({ uploadWithToast: vi.fn().mockResolvedValue("https://example.com/file.png") }),
 }));
 
 // Mock realtime
-vi.mock("@tandem/core/realtime", () => ({
+vi.mock("@agora/core/realtime", () => ({
   useWSEvent: vi.fn(),
   useWSReconnect: vi.fn(),
   useWS: () => ({ subscribe: vi.fn(() => () => {}), onReconnect: vi.fn(() => () => {}) }),
@@ -374,7 +374,7 @@ vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
 
-// Mock react-resizable-panels (used by @tandem/ui/components/ui/resizable)
+// Mock react-resizable-panels (used by @agora/ui/components/ui/resizable)
 vi.mock("react-resizable-panels", () => ({
   Group: ({ children, ...props }: any) => <div data-testid="panel-group" {...props}>{children}</div>,
   Panel: ({ children, ...props }: any) => <div data-testid="panel" {...props}>{children}</div>,

@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { MemberDetailPage } from "@tandem/views/members";
+import { MemberDetailPage } from "@agora/views/members";
 
 export default function MemberDetailRoute({
   params,

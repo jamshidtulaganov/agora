@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { TandemIcon } from "@tandem/ui/components/common/tandem-icon";
-import { cn } from "@tandem/ui/lib/utils";
-import { useAuthStore } from "@tandem/core/auth";
-import { captureDownloadIntent } from "@tandem/core/analytics";
+import { AgoraIcon } from "@agora/ui/components/common/agora-icon";
+import { cn } from "@agora/ui/lib/utils";
+import { useAuthStore } from "@agora/core/auth";
+import { captureDownloadIntent } from "@agora/core/analytics";
 import { XMark, GitHubMark, githubUrl, twitterUrl } from "./shared";
 import { useLocale, locales, localeLabels } from "../i18n";
 
@@ -21,9 +21,9 @@ export function LandingFooter() {
           {/* Left — newsletter / CTA */}
           <div className="lg:w-[340px] lg:shrink-0">
             <Link href="#product" className="flex items-center gap-3">
-              <TandemIcon className="size-5 text-white" noSpin />
+              <AgoraIcon className="size-5 text-white" noSpin />
               <span className="text-[18px] font-semibold tracking-[0.04em] lowercase">
-                tandem
+                agora
               </span>
             </Link>
             <p className="mt-4 max-w-[300px] text-[14px] leading-[1.7] text-white/50 sm:text-[15px]">
@@ -120,12 +120,12 @@ export function LandingFooter() {
         {/* Giant logo */}
         <div className="relative overflow-hidden pb-4">
           <div className="flex items-end gap-6 sm:gap-8">
-            <TandemIcon
+            <AgoraIcon
               className="size-[clamp(4rem,12vw,10rem)] shrink-0 text-white"
               noSpin
             />
             <span className="font-[family-name:var(--font-serif)] text-[clamp(6rem,22vw,16rem)] font-normal leading-[0.82] tracking-[-0.04em] text-white lowercase">
-              tandem
+              agora
             </span>
           </div>
         </div>

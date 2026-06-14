@@ -17,15 +17,15 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   return {
     ...config,
     name: isProd
-      ? "Tandem"
+      ? "Agora"
       : isStaging
-        ? "Tandem (Staging)"
-        : "Tandem (Dev)",
-    slug: "tandem-mobile",
+        ? "Agora (Staging)"
+        : "Agora (Dev)",
+    slug: "agora-mobile",
     version: "0.1.0",
     orientation: "portrait",
     userInterfaceStyle: "automatic",
-    scheme: "tandem",
+    scheme: "agora",
     // 1024x1024 source shared with the desktop client
     // (apps/desktop/build/icon.png). Expo prebuild generates every required
     // iOS icon size from this single PNG.
@@ -34,7 +34,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       supportsTablet: false,
       // Per-variant bundle id overrides exist for one reason: an Apple ID
       // can only sign bundle prefixes it owns, so contributors not on the
-      // Tandem Apple Developer team (and external users self-building a
+      // Agora Apple Developer team (and external users self-building a
       // personal copy against production) need to swap to a reverse-domain
       // they control. Each variant has its own `_<VARIANT>` suffix and is
       // only read inside that variant's branch — a generic
@@ -42,10 +42,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       // auto-loads `.env.<mode>.local` regardless of APP_ENV) and collapse
       // dev / staging / prod onto a single id.
       bundleIdentifier: isProd
-        ? (process.env.EXPO_BUNDLE_IDENTIFIER_PROD ?? "ai.tandem.mobile")
+        ? (process.env.EXPO_BUNDLE_IDENTIFIER_PROD ?? "ai.agora.mobile")
         : isStaging
-          ? "ai.tandem.mobile.staging"
-          : (process.env.EXPO_BUNDLE_IDENTIFIER_DEV ?? "ai.tandem.mobile.dev"),
+          ? "ai.agora.mobile.staging"
+          : (process.env.EXPO_BUNDLE_IDENTIFIER_DEV ?? "ai.agora.mobile.dev"),
     },
     plugins: [
       "expo-router",
@@ -60,7 +60,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           // iOS 14+. Camera + microphone are disabled — we only ever read
           // from the existing photo library.
           photosPermission:
-            "Allow Tandem to access your photos to attach images to issues and comments.",
+            "Allow Agora to access your photos to attach images to issues and comments.",
           cameraPermission: false,
           microphonePermission: false,
         },

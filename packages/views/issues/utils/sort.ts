@@ -1,6 +1,6 @@
-import type { Issue } from "@tandem/core/types";
-import { PRIORITY_ORDER } from "@tandem/core/issues/config";
-import type { SortField, SortDirection } from "@tandem/core/issues/stores/view-store";
+import type { Issue } from "@agora/core/types";
+import { PRIORITY_ORDER } from "@agora/core/issues/config";
+import type { SortField, SortDirection } from "@agora/core/issues/stores/view-store";
 
 const PRIORITY_RANK: Record<string, number> = Object.fromEntries(
   PRIORITY_ORDER.map((p, i) => [p, i])

@@ -1,12 +1,12 @@
 import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
 import { ArrowUpRight } from "lucide-react";
 
-// Docs-local stateless Tandem mark — matches @tandem/ui's TandemIcon
+// Docs-local stateless Agora mark — matches @agora/ui's AgoraIcon
 // visually (same 8-pointed-asterisk clip-path), but without useState/
 // useEffect so it's safe to render from Server Components such as
 // layout.config.tsx / layout.tsx. Keep in sync with
-// packages/ui/components/common/tandem-icon.tsx if the mark changes.
-const TANDEM_CLIP = `polygon(
+// packages/ui/components/common/agora-icon.tsx if the mark changes.
+const AGORA_CLIP = `polygon(
   45% 62.1%, 45% 100%, 55% 100%, 55% 62.1%,
   81.8% 88.9%, 88.9% 81.8%, 62.1% 55%, 100% 55%,
   100% 45%, 62.1% 45%, 88.9% 18.2%, 81.8% 11.1%,
@@ -15,12 +15,12 @@ const TANDEM_CLIP = `polygon(
   0% 55%, 37.9% 55%, 11.1% 81.8%, 18.2% 88.9%
 )`;
 
-function TandemMark() {
+function AgoraMark() {
   return (
     <span className="inline-block size-[1em]" aria-hidden="true">
       <span
         className="block size-full bg-current"
-        style={{ clipPath: TANDEM_CLIP }}
+        style={{ clipPath: AGORA_CLIP }}
       />
     </span>
   );
@@ -43,7 +43,7 @@ function GitHubMark() {
 }
 
 // External links shown at the top of the sidebar (and in the top nav on
-// desktop). Leading icon = brand identity (GitHub mark / Tandem asterisk);
+// desktop). Leading icon = brand identity (GitHub mark / Agora asterisk);
 // trailing ArrowUpRight = "opens externally" glyph, same pattern as
 // `packages/views/layout/help-launcher.tsx` from PR #1560.
 const externalLinkText = (label: string) => (
@@ -56,7 +56,7 @@ const externalLinkText = (label: string) => (
 export const baseOptions: BaseLayoutProps = {
   nav: {
     title: (
-      <span className="font-semibold text-base">Tandem Docs</span>
+      <span className="font-semibold text-base">Agora Docs</span>
     ),
   },
   links: [
@@ -67,9 +67,9 @@ export const baseOptions: BaseLayoutProps = {
       external: true,
     },
     {
-      icon: <TandemMark />,
-      text: externalLinkText("Tandem"),
-      url: "https://tandem.dev",
+      icon: <AgoraMark />,
+      text: externalLinkText("Agora"),
+      url: "https://agora.dev",
       external: true,
     },
   ],

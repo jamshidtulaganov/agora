@@ -1,18 +1,18 @@
 {
-  "name": "@tandem/desktop",
-  "productName": "Tandem",
+  "name": "@agora/desktop",
+  "productName": "Agora",
   "version": "0.1.0",
   "private": true,
-  "description": "Tandem Desktop — native desktop client for the Tandem platform.",
-  "homepage": "https://tandem.dev",
+  "description": "Agora Desktop — native desktop client for the Agora platform.",
+  "homepage": "https://agora.dev",
   "repository": {
     "type": "git",
     "url": "https://github.com/multica-ai/multica.git",
     "directory": "apps/desktop"
   },
   "author": {
-    "name": "Tandem",
-    "email": "support@tandem.dev"
+    "name": "Agora",
+    "email": "support@agora.dev"
   },
   "license": "UNLICENSED",
   "main": "./out/main/index.js",
@@ -42,9 +42,9 @@
     "@fontsource-variable/inter": "^5.2.5",
     "@fontsource-variable/source-serif-4": "^5.2.9",
     "@fontsource/geist-mono": "^5.2.7",
-    "@tandem/core": "workspace:*",
-    "@tandem/ui": "workspace:*",
-    "@tandem/views": "workspace:*",
+    "@agora/core": "workspace:*",
+    "@agora/ui": "workspace:*",
+    "@agora/views": "workspace:*",
     "@tanstack/react-query": "catalog:",
     "electron-updater": "^6.8.3",
     "fix-path": "^5.0.0",
@@ -59,8 +59,8 @@
   },
   "devDependencies": {
     "@electron-toolkit/tsconfig": "^2.0.0",
-    "@tandem/eslint-config": "workspace:*",
-    "@tandem/tsconfig": "workspace:*",
+    "@agora/eslint-config": "workspace:*",
+    "@agora/tsconfig": "workspace:*",
     "@tailwindcss/vite": "^4",
     "@testing-library/jest-dom": "catalog:",
     "@testing-library/react": "catalog:",

@@ -1,6 +1,6 @@
 // Package bitrix is a DB-free client for the Bitrix24 inbound-webhook REST
 // API plus the pure mapping helpers that translate a Bitrix task into a
-// Tandem issue. It deliberately depends on nothing from the handler/service
+// Agora issue. It deliberately depends on nothing from the handler/service
 // layers so it can be unit-tested against httptest mock servers without a
 // database.
 //
@@ -55,7 +55,7 @@ func NewClient(restBaseURL string) *Client {
 	}
 }
 
-// Task is the subset of a Bitrix task Tandem cares about. All scalar fields
+// Task is the subset of a Bitrix task Agora cares about. All scalar fields
 // are normalized to strings up front because Bitrix is wildly inconsistent
 // about encoding numbers as JSON numbers vs. JSON strings.
 type Task struct {

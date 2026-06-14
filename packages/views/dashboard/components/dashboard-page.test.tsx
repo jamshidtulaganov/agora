@@ -25,13 +25,13 @@ vi.mock("@tanstack/react-query", async () => {
   };
 });
 
-vi.mock("@tandem/core/hooks", () => ({
+vi.mock("@agora/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
 const tzRef = vi.hoisted(() => ({ current: "UTC" as string | null }));
 
-vi.mock("@tandem/core/auth", () => {
+vi.mock("@agora/core/auth", () => {
   type AuthState = { user: { timezone: string | null } | null };
   const state = (): AuthState => ({ user: { timezone: tzRef.current } });
   const useAuthStore = Object.assign(
@@ -41,7 +41,7 @@ vi.mock("@tandem/core/auth", () => {
   return { useAuthStore };
 });
 
-vi.mock("@tandem/core/runtimes/custom-pricing-store", () => {
+vi.mock("@agora/core/runtimes/custom-pricing-store", () => {
   const state = () => ({ pricings: {} });
   const useCustomPricingStore = Object.assign(
     (sel?: (s: ReturnType<typeof state>) => unknown) =>
@@ -60,7 +60,7 @@ describe("DashboardPage — viewing timezone drives the query key", () => {
   });
 
   // The `tz` segment is the last element of every dashboard key
-  // (see dashboardKeys in @tandem/core/dashboard/queries).
+  // (see dashboardKeys in @agora/core/dashboard/queries).
   function tzSegments(): unknown[] {
     return queryKeys
       .filter((k) => k[0] === "dashboard")

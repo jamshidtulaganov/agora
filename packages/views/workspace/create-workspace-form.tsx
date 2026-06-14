@@ -2,20 +2,20 @@
 
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { Input } from "@tandem/ui/components/ui/input";
-import { Label } from "@tandem/ui/components/ui/label";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Card, CardContent } from "@tandem/ui/components/ui/card";
-import { useCreateWorkspace } from "@tandem/core/workspace/mutations";
-import type { Workspace } from "@tandem/core/types";
-import { isImeComposing } from "@tandem/core/utils";
+import { Input } from "@agora/ui/components/ui/input";
+import { Label } from "@agora/ui/components/ui/label";
+import { Button } from "@agora/ui/components/ui/button";
+import { Card, CardContent } from "@agora/ui/components/ui/card";
+import { useCreateWorkspace } from "@agora/core/workspace/mutations";
+import type { Workspace } from "@agora/core/types";
+import { isImeComposing } from "@agora/core/utils";
 import {
   WORKSPACE_SLUG_REGEX,
   isWorkspaceSlugConflict,
   nameToWorkspaceSlug,
 } from "./slug";
 import { useT } from "../i18n";
-import { isReservedSlug } from "@tandem/core/paths";
+import { isReservedSlug } from "@agora/core/paths";
 
 export interface CreateWorkspaceFormProps {
   onSuccess: (workspace: Workspace) => void | Promise<void>;
@@ -100,7 +100,7 @@ export function CreateWorkspaceForm({ onSuccess }: CreateWorkspaceFormProps) {
           <div className="flex items-center gap-0 rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring">
             {/* eslint-disable-next-line i18next/no-literal-string -- brand URL prefix, not translatable */}
             <span className="pl-3 text-sm text-muted-foreground select-none">
-              tandem.dev/
+              agora.dev/
             </span>
             <Input
               id="ws-slug"

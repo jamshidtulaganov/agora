@@ -21,24 +21,24 @@ import type {
   Skill,
   SkillFile,
   UpdateSkillRequest,
-} from "@tandem/core/types";
+} from "@agora/core/types";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@tandem/core/api";
+import { api } from "@agora/core/api";
 import { useTimeAgo } from "../../i18n";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { useWorkspacePaths } from "@tandem/core/paths";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { useWorkspacePaths } from "@agora/core/paths";
 import {
   agentListOptions,
   memberListOptions,
   selectSkillAssignments,
   skillDetailOptions,
   workspaceKeys,
-} from "@tandem/core/workspace/queries";
-import { resolvePublicFileUrl } from "@tandem/core/workspace/avatar-url";
-import { runtimeListOptions } from "@tandem/core/runtimes";
-import { ActorAvatar } from "@tandem/ui/components/common/actor-avatar";
-import { Button, buttonVariants } from "@tandem/ui/components/ui/button";
+} from "@agora/core/workspace/queries";
+import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
+import { runtimeListOptions } from "@agora/core/runtimes";
+import { ActorAvatar } from "@agora/ui/components/common/actor-avatar";
+import { Button, buttonVariants } from "@agora/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -46,21 +46,21 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@tandem/ui/components/ui/dialog";
-import { Input } from "@tandem/ui/components/ui/input";
-import { Label } from "@tandem/ui/components/ui/label";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
-import { Textarea } from "@tandem/ui/components/ui/textarea";
+} from "@agora/ui/components/ui/dialog";
+import { Input } from "@agora/ui/components/ui/input";
+import { Label } from "@agora/ui/components/ui/label";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import { Textarea } from "@agora/ui/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@tandem/ui/components/ui/tooltip";
+} from "@agora/ui/components/ui/tooltip";
 import { AppLink, useNavigation } from "../../navigation";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { useCanEditSkill } from "../hooks/use-can-edit-skill";
-import { useSkillPermissions } from "@tandem/core/permissions";
-import { CapabilityBanner } from "@tandem/ui/components/common/capability-banner";
+import { useSkillPermissions } from "@agora/core/permissions";
+import { CapabilityBanner } from "@agora/ui/components/common/capability-banner";
 import { readOrigin, totalFileCount, type OriginInfo } from "../lib/origin";
 import { FileTree } from "./file-tree";
 import { FileViewer } from "./file-viewer";

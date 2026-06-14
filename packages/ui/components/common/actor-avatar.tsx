@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { Bot, Users } from "lucide-react";
-import { cn } from "@tandem/ui/lib/utils";
-import { TandemIcon } from "./tandem-icon";
+import { cn } from "@agora/ui/lib/utils";
+import { AgoraIcon } from "./agora-icon";
 
 interface ActorAvatarProps {
   name: string;
@@ -54,7 +54,7 @@ function ActorAvatar({
           onError={() => setImgError(true)}
         />
       ) : isSystem ? (
-        <TandemIcon noSpin style={{ width: size * 0.55, height: size * 0.55 }} />
+        <AgoraIcon noSpin style={{ width: size * 0.55, height: size * 0.55 }} />
       ) : isAgent ? (
         <Bot style={{ width: size * 0.55, height: size * 0.55 }} />
       ) : isSquad ? (

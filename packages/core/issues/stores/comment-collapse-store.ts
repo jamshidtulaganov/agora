@@ -37,7 +37,7 @@ export const useCommentCollapseStore = create<CommentCollapseStore>()(
         }),
     }),
     {
-      name: "tandem_comment_collapse",
+      name: "agora_comment_collapse",
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
     },
   ),

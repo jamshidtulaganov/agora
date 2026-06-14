@@ -10,7 +10,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from "@tandem/ui/components/ui/chart";
+} from "@agora/ui/components/ui/chart";
 
 // Single-series bar — total daily run time in seconds. The y-axis tick
 // formatter and tooltip both use the same `formatDuration` so the user

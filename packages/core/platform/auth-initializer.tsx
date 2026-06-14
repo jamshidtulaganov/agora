@@ -59,6 +59,9 @@ export function AuthInitializer({
           // Old servers omit this field — treat that as "creation allowed"
           // (the managed-cloud default) rather than blocking the UI.
           workspaceCreationDisabled: cfg.workspace_creation_disabled === true,
+          // Old servers omit this field — treat that as "all methods enabled"
+          // rather than hiding the email/Google paths.
+          telegramOnly: cfg.telegram_only === true,
         });
         configStore.getState().setDaemonConfig({
           daemonServerUrl: cfg.daemon_server_url,
@@ -110,7 +113,7 @@ export function AuthInitializer({
     }
 
     // Token mode: read from localStorage (Electron / legacy).
-    const token = storage.getItem("tandem_token");
+    const token = storage.getItem("agora_token");
     if (!token) {
       onLogout?.();
       useAuthStore.setState({ isLoading: false });
@@ -130,7 +133,7 @@ export function AuthInitializer({
         logger.error("auth init failed", err);
         api.setToken(null);
         setCurrentWorkspace(null, null);
-        storage.removeItem("tandem_token");
+        storage.removeItem("agora_token");
         onAuthFailure();
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { RuntimeDetailPage } from "@tandem/views/runtimes";
+import { RuntimeDetailPage } from "@agora/views/runtimes";
 
 export default function RuntimeDetailRoute({
   params,

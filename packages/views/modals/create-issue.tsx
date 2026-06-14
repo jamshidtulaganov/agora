@@ -16,44 +16,44 @@ import {
   MoreHorizontal,
   X as XIcon,
 } from "lucide-react";
-import { cn } from "@tandem/ui/lib/utils";
+import { cn } from "@agora/ui/lib/utils";
 import { toast } from "sonner";
-import type { Issue, IssueStatus, IssuePriority, IssueAssigneeType, Attachment } from "@tandem/core/types";
-import { contentReferencesAttachment } from "@tandem/core/types";
+import type { Issue, IssueStatus, IssuePriority, IssueAssigneeType, Attachment } from "@agora/core/types";
+import { contentReferencesAttachment } from "@agora/core/types";
 import {
   DialogContent,
   DialogTitle,
-} from "@tandem/ui/components/ui/dialog";
+} from "@agora/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@tandem/ui/components/ui/dropdown-menu";
-import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@tandem/ui/components/ui/tooltip";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Switch } from "@tandem/ui/components/ui/switch";
+} from "@agora/ui/components/ui/dropdown-menu";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@agora/ui/components/ui/tooltip";
+import { Button } from "@agora/ui/components/ui/button";
+import { Switch } from "@agora/ui/components/ui/switch";
 import { ContentEditor, type ContentEditorRef, TitleEditor, useFileDropZone, FileDropOverlay } from "../editor";
 import { StatusIcon, StatusPicker, PriorityPicker, AssigneePicker, StartDatePicker, DueDatePicker } from "../issues/components";
 import { BacklogAgentHintContent } from "../issues/components/backlog-agent-hint-dialog";
 import { ProjectPicker } from "../projects/components/project-picker";
-import { useCurrentWorkspace, useWorkspacePaths } from "@tandem/core/paths";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { useIssueDraftStore } from "@tandem/core/issues/stores/draft-store";
-import { useCreateModeStore } from "@tandem/core/issues/stores/create-mode-store";
-import { useQuickCreateStore } from "@tandem/core/issues/stores/quick-create-store";
-import { issueDetailOptions } from "@tandem/core/issues/queries";
-import { useCreateIssue, useUpdateIssue } from "@tandem/core/issues/mutations";
-import { useFileUpload } from "@tandem/core/hooks/use-file-upload";
+import { useCurrentWorkspace, useWorkspacePaths } from "@agora/core/paths";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { useIssueDraftStore } from "@agora/core/issues/stores/draft-store";
+import { useCreateModeStore } from "@agora/core/issues/stores/create-mode-store";
+import { useQuickCreateStore } from "@agora/core/issues/stores/quick-create-store";
+import { issueDetailOptions } from "@agora/core/issues/queries";
+import { useCreateIssue, useUpdateIssue } from "@agora/core/issues/mutations";
+import { useFileUpload } from "@agora/core/hooks/use-file-upload";
 import {
   api,
   ApiError,
   DuplicateIssueErrorBodySchema,
   type DuplicateIssueErrorBody,
   parseWithFallback,
-} from "@tandem/core/api";
-import { FileUploadButton } from "@tandem/ui/components/common/file-upload-button";
+} from "@agora/core/api";
+import { FileUploadButton } from "@agora/ui/components/common/file-upload-button";
 import { PillButton } from "../common/pill-button";
 import { IssuePickerModal } from "./issue-picker-modal";
 import { useT } from "../i18n";
@@ -288,7 +288,7 @@ export function ManualCreatePanel({
       clearDraft();
       const shouldShowBacklogHint =
         status === "backlog" && assigneeType === "agent" && assigneeId &&
-        localStorage.getItem("tandem:backlog-agent-hint-dismissed") !== "true";
+        localStorage.getItem("agora:backlog-agent-hint-dismissed") !== "true";
 
       if (shouldShowBacklogHint) {
         setBacklogHintIssueId(issue.id);
@@ -432,7 +432,7 @@ export function ManualCreatePanel({
               onClose();
             }}
             onDismissPermanently={() => {
-              localStorage.setItem("tandem:backlog-agent-hint-dismissed", "true");
+              localStorage.setItem("agora:backlog-agent-hint-dismissed", "true");
             }}
             onMoveToTodo={() => {
               updateIssueMutation.mutate(
@@ -785,7 +785,7 @@ export function manualDialogContentClass(
 // shell's shared Dialog, but a few legacy callers (and the test suite) still
 // import this module's modal version. Equivalent runtime behavior to the
 // pre-refactor component when used standalone.
-import { Dialog as DialogRoot } from "@tandem/ui/components/ui/dialog";
+import { Dialog as DialogRoot } from "@agora/ui/components/ui/dialog";
 export function CreateIssueModal(props: {
   onClose: () => void;
   data?: Record<string, unknown> | null;

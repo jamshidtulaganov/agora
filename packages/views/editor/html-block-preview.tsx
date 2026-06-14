@@ -24,12 +24,12 @@ import {
   Eye,
   Maximize2,
 } from "lucide-react";
-import { cn } from "@tandem/ui/lib/utils";
-import { copyText } from "@tandem/ui/lib/clipboard";
+import { cn } from "@agora/ui/lib/utils";
+import { copyText } from "@agora/ui/lib/clipboard";
 import {
   Dialog,
   DialogContent,
-} from "@tandem/ui/components/ui/dialog";
+} from "@agora/ui/components/ui/dialog";
 import { useT } from "../i18n";
 import { CodeBlockStatic } from "./code-block-static";
 import { HtmlPreviewBody } from "./html-preview-body";

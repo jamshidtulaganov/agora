@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Rebrand the bundled Electron.app's Info.plist so `pnpm dev:desktop`
-// shows "Tandem Canary" in the menu bar, Cmd+Tab switcher, and
+// shows "Agora Canary" in the menu bar, Cmd+Tab switcher, and
 // Activity Monitor. On macOS these titles come from CFBundleName at
 // launch time — `app.setName()` cannot override them at runtime, so
 // patching the plist in node_modules is the only working fix.
@@ -17,7 +17,7 @@ import { resolve } from "node:path";
 
 if (process.platform !== "darwin") process.exit(0);
 
-const DESIRED_NAME = "Tandem Canary";
+const DESIRED_NAME = "Agora Canary";
 
 const require = createRequire(import.meta.url);
 // `require('electron')` returns the path to the executable

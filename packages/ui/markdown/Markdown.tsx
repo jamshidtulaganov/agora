@@ -7,8 +7,8 @@ import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import { FileText, Download } from 'lucide-react'
-import { cn } from '@tandem/ui/lib/utils'
-import { CODE_LIGATURE_CLASS } from '@tandem/ui/lib/code-style'
+import { cn } from '@agora/ui/lib/utils'
+import { CODE_LIGATURE_CLASS } from '@agora/ui/lib/code-style'
 import { CodeBlock, InlineCode } from './CodeBlock'
 import { isAllowedFileCardHref, preprocessFileCards } from './file-cards'
 import { preprocessLinks } from './linkify'
@@ -57,7 +57,7 @@ export interface MarkdownProps {
    */
   renderMention?: (props: { type: string; id: string }) => React.ReactNode
   /**
-   * CDN hostname for file card detection (e.g. "tandem-static.copilothub.ai").
+   * CDN hostname for file card detection (e.g. "agora-static.copilothub.ai").
    * When provided, enables file card preprocessing and rendering.
    */
   cdnDomain?: string
@@ -78,7 +78,7 @@ export interface MarkdownProps {
 }
 
 // Sanitization schema — extends GitHub defaults to allow code highlighting classes
-// and Tandem's internal mention/slash protocols.
+// and Agora's internal mention/slash protocols.
 const sanitizeSchema = {
   ...defaultSchema,
   protocols: {
@@ -107,7 +107,7 @@ const sanitizeSchema = {
 }
 
 /**
- * Custom URL transform that allows Tandem internal protocols while keeping
+ * Custom URL transform that allows Agora internal protocols while keeping
  * the default security for all other URLs.
  */
 function urlTransform(url: string): string {

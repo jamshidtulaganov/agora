@@ -126,7 +126,7 @@ describe("issue draft store — legacy rehydrate", () => {
 
   it("backfills attachments for drafts persisted before the field existed", async () => {
     localStorage.setItem(
-      "tandem_issue_draft:acme",
+      "agora_issue_draft:acme",
       JSON.stringify({
         state: {
           draft: {

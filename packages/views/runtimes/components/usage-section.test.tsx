@@ -3,8 +3,8 @@
 import type { ReactNode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import type { AgentRuntime } from "@tandem/core/types";
-import { I18nProvider } from "@tandem/core/i18n/react";
+import type { AgentRuntime } from "@agora/core/types";
+import { I18nProvider } from "@agora/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enRuntimes from "../../locales/en/runtimes.json";
 
@@ -26,23 +26,23 @@ vi.mock("../../common/use-viewing-timezone", () => ({
   useViewingTimezone: () => VIEWER_TZ,
 }));
 
-vi.mock("@tandem/core/runtimes/queries", () => ({
+vi.mock("@agora/core/runtimes/queries", () => ({
   runtimeUsageOptions,
   runtimeUsageByAgentOptions,
 }));
 
-vi.mock("@tandem/core/workspace/queries", () => ({
+vi.mock("@agora/core/workspace/queries", () => ({
   agentListOptions: () => ({ kind: "agents" as const }),
 }));
 
-vi.mock("@tandem/core/hooks", () => ({
+vi.mock("@agora/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
 // custom-pricing-store is consumed two ways: usage-section reads the store
 // hook, and runtimes/utils reads getCustomPricing(). The hook must be both
 // callable and expose getState(), mirroring a real Zustand store.
-vi.mock("@tandem/core/runtimes/custom-pricing-store", () => {
+vi.mock("@agora/core/runtimes/custom-pricing-store", () => {
   const state = { pricings: {} as Record<string, unknown> };
   const useCustomPricingStore = Object.assign(
     (sel?: (s: typeof state) => unknown) => (sel ? sel(state) : state),

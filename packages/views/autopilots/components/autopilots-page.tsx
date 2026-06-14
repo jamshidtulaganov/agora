@@ -3,18 +3,18 @@
 import { useState } from "react";
 import { Plus, Zap, Play, Pause, AlertCircle, Newspaper, GitPullRequest, Bug, BarChart3, Shield, FileSearch } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { autopilotListOptions } from "@tandem/core/autopilots/queries";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { useWorkspacePaths } from "@tandem/core/paths";
-import { useActorName } from "@tandem/core/workspace/hooks";
+import { autopilotListOptions } from "@agora/core/autopilots/queries";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { useWorkspacePaths } from "@agora/core/paths";
+import { useActorName } from "@agora/core/workspace/hooks";
 import { AppLink } from "../../navigation";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { PageHeader } from "../../layout/page-header";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
-import { Button } from "@tandem/ui/components/ui/button";
-import { cn } from "@tandem/ui/lib/utils";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import { Button } from "@agora/ui/components/ui/button";
+import { cn } from "@agora/ui/lib/utils";
 import { AutopilotDialog } from "./autopilot-dialog";
-import type { Autopilot, AutopilotStatus, AutopilotExecutionMode } from "@tandem/core/types";
+import type { Autopilot, AutopilotStatus, AutopilotExecutionMode } from "@agora/core/types";
 import type { TriggerFrequency } from "./trigger-config";
 import { useT } from "../../i18n";
 

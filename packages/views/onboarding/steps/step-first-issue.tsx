@@ -3,11 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@tandem/ui/components/ui/button";
+import { Button } from "@agora/ui/components/ui/button";
 import {
   completeOnboarding,
   type OnboardingCompletionPath,
-} from "@tandem/core/onboarding";
+} from "@agora/core/onboarding";
 import { useT } from "../../i18n";
 
 /**

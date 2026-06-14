@@ -25,7 +25,7 @@
  * fewer rows because replies are folded into parents). That preserves the
  * "Counts must agree" parity rule against web.
  */
-import type { TimelineEntry } from "@tandem/core/types";
+import type { TimelineEntry } from "@agora/core/types";
 
 export interface TimelineRow {
   entry: TimelineEntry;

@@ -1,8 +1,8 @@
 "use client";
 
 import { createContext, use, useMemo, type ReactNode } from "react";
-import type { Attachment } from "@tandem/core/types";
-import { attachmentIdFromDownloadURL } from "@tandem/core/types/attachment-url";
+import type { Attachment } from "@agora/core/types";
+import { attachmentIdFromDownloadURL } from "@agora/core/types/attachment-url";
 import { openExternal } from "../platform";
 import { useDownloadAttachment } from "./use-download-attachment";
 

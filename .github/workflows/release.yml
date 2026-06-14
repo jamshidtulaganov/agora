@@ -58,10 +58,10 @@ jobs:
     needs: verify
     # Only run on the canonical upstream repo. Forks don't have the
     # HOMEBREW_TAP_GITHUB_TOKEN secret and should not be publishing to
-    # `tandem-ai/homebrew-tap` anyway. Without this guard, every fork's
+    # `agora-ai/homebrew-tap` anyway. Without this guard, every fork's
     # tag push fails this job (401 against the upstream tap), which makes
     # downstream CI go red without affecting the actual artifact pipeline.
-    if: github.repository_owner == 'tandem-ai'
+    if: github.repository_owner == 'agora-ai'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -112,10 +112,10 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/tandem-backend
+          images: ghcr.io/${{ github.repository_owner }}/agora-backend
           labels: |
-            org.opencontainers.image.title=Tandem Backend
-            org.opencontainers.image.description=Tandem self-hosted backend
+            org.opencontainers.image.title=Agora Backend
+            org.opencontainers.image.description=Agora self-hosted backend
 
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -141,7 +141,7 @@ jobs:
           build-args: |
             VERSION=${{ needs.verify.outputs.tag_name }}
             COMMIT=${{ github.sha }}
-          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/tandem-backend,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/agora-backend,push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -178,7 +178,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/tandem-backend
+          images: ghcr.io/${{ github.repository_owner }}/agora-backend
           flavor: |
             latest=false
           tags: |
@@ -198,12 +198,12 @@ jobs:
         run: |
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf 'ghcr.io/${{ github.repository_owner }}/tandem-backend@sha256:%s ' *)
+            $(printf 'ghcr.io/${{ github.repository_owner }}/agora-backend@sha256:%s ' *)
 
       - name: Inspect image
         run: |
           docker buildx imagetools inspect \
-            ghcr.io/${{ github.repository_owner }}/tandem-backend:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/agora-backend:${{ steps.meta.outputs.version }}
 
   docker-web-build:
     needs: verify
@@ -229,10 +229,10 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/tandem-web
+          images: ghcr.io/${{ github.repository_owner }}/agora-web
           labels: |
-            org.opencontainers.image.title=Tandem Web
-            org.opencontainers.image.description=Tandem self-hosted web frontend
+            org.opencontainers.image.title=Agora Web
+            org.opencontainers.image.description=Agora self-hosted web frontend
 
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -258,7 +258,7 @@ jobs:
           build-args: |
             REMOTE_API_URL=http://backend:8080
             NEXT_PUBLIC_APP_VERSION=${{ needs.verify.outputs.tag_name }}
-          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/tandem-web,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/agora-web,push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -295,7 +295,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/tandem-web
+          images: ghcr.io/${{ github.repository_owner }}/agora-web
           flavor: |
             latest=false
           tags: |
@@ -315,22 +315,22 @@ jobs:
         run: |
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf 'ghcr.io/${{ github.repository_owner }}/tandem-web@sha256:%s ' *)
+            $(printf 'ghcr.io/${{ github.repository_owner }}/agora-web@sha256:%s ' *)
 
       - name: Inspect image
         run: |
           docker buildx imagetools inspect \
-            ghcr.io/${{ github.repository_owner }}/tandem-web:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/agora-web:${{ steps.meta.outputs.version }}
 
   helm-chart:
     needs: [verify, docker-backend-merge, docker-web-merge]
-    if: github.repository_owner == 'tandem-ai'
+    if: github.repository_owner == 'agora-ai'
     runs-on: ubuntu-latest
     concurrency:
       group: release-helm-chart-${{ github.ref }}
       cancel-in-progress: true
     env:
-      CHART_DIR: deploy/helm/tandem
+      CHART_DIR: deploy/helm/agora
       OCI_REGISTRY: oci://ghcr.io/${{ github.repository_owner }}/charts
     steps:
       - name: Checkout
@@ -358,10 +358,10 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
 
       - name: Push chart to GHCR
-        run: helm push ".chart-packages/tandem-${CHART_VERSION}.tgz" "$OCI_REGISTRY"
+        run: helm push ".chart-packages/agora-${CHART_VERSION}.tgz" "$OCI_REGISTRY"
 
       - name: Verify published chart
-        run: helm show chart "$OCI_REGISTRY/tandem" --version "$CHART_VERSION"
+        run: helm show chart "$OCI_REGISTRY/agora" --version "$CHART_VERSION"
 
   # Build the Desktop installers for Linux and Windows and upload them to
   # the GitHub Release that the `release` job above just published. macOS

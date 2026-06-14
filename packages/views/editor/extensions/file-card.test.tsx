@@ -18,7 +18,7 @@ const { getAttachmentTextContentMock, resolveAttachmentMock, openByUrlMock, tryO
     tryOpenMock: vi.fn(),
   }));
 
-vi.mock("@tandem/core/api", () => ({
+vi.mock("@agora/core/api", () => ({
   api: { getAttachmentTextContent: getAttachmentTextContentMock },
   PreviewTooLargeError: class extends Error {},
   PreviewUnsupportedError: class extends Error {},
@@ -50,8 +50,8 @@ vi.mock("../../navigation", () => ({
   }),
 }));
 
-vi.mock("@tandem/core/paths", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@tandem/core/paths")>();
+vi.mock("@agora/core/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@agora/core/paths")>();
   return {
     ...actual,
     useWorkspaceSlug: () => "acme",

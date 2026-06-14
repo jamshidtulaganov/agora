@@ -3,22 +3,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Loader2 } from "lucide-react";
-import { api } from "@tandem/core/api";
-import { useAuthStore } from "@tandem/core/auth";
-import { useWelcomeStore } from "@tandem/core/onboarding";
-import { paths, useCurrentWorkspace } from "@tandem/core/paths";
-import { resolvePublicFileUrl } from "@tandem/core/workspace/avatar-url";
-import { issueKeys } from "@tandem/core/issues/queries";
-import { workspaceKeys } from "@tandem/core/workspace/queries";
-import type { Agent, CreateIssueRequest, Issue } from "@tandem/core/types";
+import { api } from "@agora/core/api";
+import { useAuthStore } from "@agora/core/auth";
+import { useWelcomeStore } from "@agora/core/onboarding";
+import { paths, useCurrentWorkspace } from "@agora/core/paths";
+import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
+import { issueKeys } from "@agora/core/issues/queries";
+import { workspaceKeys } from "@agora/core/workspace/queries";
+import type { Agent, CreateIssueRequest, Issue } from "@agora/core/types";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
-} from "@tandem/ui/components/ui/dialog";
-import { Button } from "@tandem/ui/components/ui/button";
-import { cn } from "@tandem/ui/lib/utils";
+} from "@agora/ui/components/ui/dialog";
+import { Button } from "@agora/ui/components/ui/button";
+import { cn } from "@agora/ui/lib/utils";
 import { useNavigation } from "../navigation";
 import { useT } from "../i18n";
 import { seedSdSkills } from "./sd-skills";
@@ -185,7 +185,7 @@ async function findOrCreateHelper(
       runtime_id: runtimeId,
       visibility: "workspace",
       max_concurrent_tasks: 6,
-      template: "tandem_helper",
+      template: "agora_helper",
     });
     // Same fire-and-forget seed on the freshly created helper.
     void seedSdSkills(workspaceId, created.id);

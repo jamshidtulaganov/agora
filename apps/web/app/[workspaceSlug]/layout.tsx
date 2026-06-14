@@ -3,14 +3,14 @@
 import { use, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { WorkspaceSlugProvider, paths } from "@tandem/core/paths";
-import { workspaceBySlugOptions } from "@tandem/core/workspace";
-import { setCurrentWorkspace } from "@tandem/core/platform";
-import { useAuthStore } from "@tandem/core/auth";
-import { NoAccessPage } from "@tandem/views/workspace/no-access-page";
-import { WelcomeAfterOnboarding } from "@tandem/views/workspace/welcome-after-onboarding";
-import { TandemIcon } from "@tandem/ui/components/common/tandem-icon";
-import { useWorkspaceSeen } from "@tandem/views/workspace/use-workspace-seen";
+import { WorkspaceSlugProvider, paths } from "@agora/core/paths";
+import { workspaceBySlugOptions } from "@agora/core/workspace";
+import { setCurrentWorkspace } from "@agora/core/platform";
+import { useAuthStore } from "@agora/core/auth";
+import { NoAccessPage } from "@agora/views/workspace/no-access-page";
+import { WelcomeAfterOnboarding } from "@agora/views/workspace/welcome-after-onboarding";
+import { AgoraIcon } from "@agora/ui/components/common/agora-icon";
+import { useWorkspaceSeen } from "@agora/views/workspace/use-workspace-seen";
 
 export default function WorkspaceLayout({
   children,
@@ -76,7 +76,7 @@ export default function WorkspaceLayout({
 
   const loadingIndicator = (
     <div className="flex h-svh items-center justify-center">
-      <TandemIcon className="size-6 animate-pulse" />
+      <AgoraIcon className="size-6 animate-pulse" />
     </div>
   );
 

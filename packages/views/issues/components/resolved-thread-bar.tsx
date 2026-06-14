@@ -1,7 +1,7 @@
 import { CheckCircle2, ChevronRight } from "lucide-react";
-import { useActorName } from "@tandem/core/workspace/hooks";
-import { Card } from "@tandem/ui/components/ui/card";
-import type { TimelineEntry } from "@tandem/core/types";
+import { useActorName } from "@agora/core/workspace/hooks";
+import { Card } from "@agora/ui/components/ui/card";
+import type { TimelineEntry } from "@agora/core/types";
 import { useT } from "../../i18n";
 
 interface ResolvedThreadBarProps {

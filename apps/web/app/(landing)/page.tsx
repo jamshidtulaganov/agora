@@ -1,15 +1,15 @@
 import type { Metadata } from "next";
-import { TandemLanding } from "@/features/landing/components/tandem-landing";
+import { AgoraLanding } from "@/features/landing/components/agora-landing";
 import { RedirectIfAuthenticated } from "@/features/landing/components/redirect-if-authenticated";
 
 export const metadata: Metadata = {
   title: {
-    absolute: "Tandem — Project Management for Human + Agent Teams",
+    absolute: "Agora — Project Management for Human + Agent Teams",
   },
   description:
     "Open-source platform that turns coding agents into real teammates. Assign tasks, track progress, compound skills.",
   openGraph: {
-    title: "Tandem — Project Management for Human + Agent Teams",
+    title: "Agora — Project Management for Human + Agent Teams",
     description:
       "Manage your human + agent workforce in one place.",
     url: "/",
@@ -23,7 +23,7 @@ export default function LandingPage() {
   return (
     <>
       <RedirectIfAuthenticated />
-      <TandemLanding />
+      <AgoraLanding />
     </>
   );
 }

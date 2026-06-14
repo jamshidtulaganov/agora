@@ -18,36 +18,36 @@ import type {
   RuntimeLocalSkillImportConflict,
   RuntimeLocalSkillSummary,
   Skill,
-} from "@tandem/core/types";
-import { useAuthStore } from "@tandem/core/auth";
-import { useWorkspaceId } from "@tandem/core/hooks";
+} from "@agora/core/types";
+import { useAuthStore } from "@agora/core/auth";
+import { useWorkspaceId } from "@agora/core/hooks";
 import {
   runtimeListOptions,
   runtimeLocalSkillsKeys,
   runtimeLocalSkillsOptions,
   resolveRuntimeLocalSkillImport,
-} from "@tandem/core/runtimes";
+} from "@agora/core/runtimes";
 import {
   memberListOptions,
   skillDetailOptions,
   workspaceKeys,
-} from "@tandem/core/workspace/queries";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Badge } from "@tandem/ui/components/ui/badge";
-import { Checkbox } from "@tandem/ui/components/ui/checkbox";
-import { Input } from "@tandem/ui/components/ui/input";
-import { Label } from "@tandem/ui/components/ui/label";
-import { Progress } from "@tandem/ui/components/ui/progress";
-import { Textarea } from "@tandem/ui/components/ui/textarea";
+} from "@agora/core/workspace/queries";
+import { Button } from "@agora/ui/components/ui/button";
+import { Badge } from "@agora/ui/components/ui/badge";
+import { Checkbox } from "@agora/ui/components/ui/checkbox";
+import { Input } from "@agora/ui/components/ui/input";
+import { Label } from "@agora/ui/components/ui/label";
+import { Progress } from "@agora/ui/components/ui/progress";
+import { Textarea } from "@agora/ui/components/ui/textarea";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@tandem/ui/components/ui/select";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
-import { useScrollFade } from "@tandem/ui/hooks/use-scroll-fade";
+} from "@agora/ui/components/ui/select";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import { useScrollFade } from "@agora/ui/hooks/use-scroll-fade";
 import { useT } from "../../i18n";
 import { isNameConflictError } from "../lib/utils";
 

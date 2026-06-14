@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
-import { capturePageview } from "@tandem/core/analytics";
-import { useAuthStore } from "@tandem/core/auth";
+import { capturePageview } from "@agora/core/analytics";
+import { useAuthStore } from "@agora/core/auth";
 import {
   getActiveTab,
   useActiveTabIdentity,

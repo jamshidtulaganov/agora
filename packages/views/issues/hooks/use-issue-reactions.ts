@@ -2,14 +2,14 @@
 
 import { useCallback, useMemo } from "react";
 import { useQuery, useQueryClient, useMutationState } from "@tanstack/react-query";
-import type { IssueReaction } from "@tandem/core/types";
+import type { IssueReaction } from "@agora/core/types";
 import type {
   IssueReactionAddedPayload,
   IssueReactionRemovedPayload,
-} from "@tandem/core/types";
-import { issueReactionsOptions, issueKeys } from "@tandem/core/issues/queries";
-import { useToggleIssueReaction, type ToggleIssueReactionVars } from "@tandem/core/issues/mutations";
-import { useWSEvent, useWSReconnect } from "@tandem/core/realtime";
+} from "@agora/core/types";
+import { issueReactionsOptions, issueKeys } from "@agora/core/issues/queries";
+import { useToggleIssueReaction, type ToggleIssueReactionVars } from "@agora/core/issues/mutations";
+import { useWSEvent, useWSReconnect } from "@agora/core/realtime";
 
 export function useIssueReactions(issueId: string, userId?: string) {
   const qc = useQueryClient();

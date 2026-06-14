@@ -2,19 +2,19 @@
 
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { cn } from "@tandem/ui/lib/utils";
+import { cn } from "@agora/ui/lib/utils";
 import {
   ContentEditor,
   type ContentEditorRef,
   useFileDropZone,
   FileDropOverlay,
 } from "../../editor";
-import { FileUploadButton } from "@tandem/ui/components/common/file-upload-button";
-import { SubmitButton } from "@tandem/ui/components/common/submit-button";
-import { useChatStore, DRAFT_NEW_SESSION } from "@tandem/core/chat";
-import { createLogger } from "@tandem/core/logger";
-import { enterKey, formatShortcut, modKey } from "@tandem/core/platform";
-import type { UploadResult } from "@tandem/core/hooks/use-file-upload";
+import { FileUploadButton } from "@agora/ui/components/common/file-upload-button";
+import { SubmitButton } from "@agora/ui/components/common/submit-button";
+import { useChatStore, DRAFT_NEW_SESSION } from "@agora/core/chat";
+import { createLogger } from "@agora/core/logger";
+import { enterKey, formatShortcut, modKey } from "@agora/core/platform";
+import type { UploadResult } from "@agora/core/hooks/use-file-upload";
 import type { MentionItem } from "../../editor/extensions/mention-suggestion";
 import { useT } from "../../i18n";
 
@@ -182,7 +182,7 @@ export function ChatInput({
     // Block the send while any file is still uploading. If we let it
     // through the attachment id is not yet in uploadMapRef (the upload
     // resolves later) and the attachment would only end up bound to the
-    // session, not the message — the agent then can't `tandem attachment
+    // session, not the message — the agent then can't `agora attachment
     // download <id>` the file. The SubmitButton is also disabled in this
     // state via `uploading`, but Mod+Enter bypasses the button so we
     // still gate here.

@@ -2,16 +2,16 @@
 
 import { Check, FolderKanban, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { projectListOptions } from "@tandem/core/projects/queries";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import type { UpdateIssueRequest } from "@tandem/core/types";
+import { projectListOptions } from "@agora/core/projects/queries";
+import { useWorkspaceId } from "@agora/core/hooks";
+import type { UpdateIssueRequest } from "@agora/core/types";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
-} from "@tandem/ui/components/ui/dropdown-menu";
+} from "@agora/ui/components/ui/dropdown-menu";
 import { ProjectIcon } from "./project-icon";
 import { useT } from "../../i18n";
 

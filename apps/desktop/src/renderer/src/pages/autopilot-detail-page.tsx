@@ -1,8 +1,8 @@
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { AutopilotDetailPage as AutopilotDetail } from "@tandem/views/autopilots/components";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { autopilotDetailOptions } from "@tandem/core/autopilots/queries";
+import { AutopilotDetailPage as AutopilotDetail } from "@agora/views/autopilots/components";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { autopilotDetailOptions } from "@agora/core/autopilots/queries";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 
 export function AutopilotDetailPage() {

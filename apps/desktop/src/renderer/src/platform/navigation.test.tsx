@@ -92,14 +92,14 @@ vi.mock("@/stores/window-overlay-store", () => ({
   ),
 }));
 
-vi.mock("@tandem/core/auth", () => ({
+vi.mock("@agora/core/auth", () => ({
   useAuthStore: Object.assign(
     () => null,
     { getState: () => ({ logout: vi.fn() }) },
   ),
 }));
 
-vi.mock("@tandem/core/paths", () => ({
+vi.mock("@agora/core/paths", () => ({
   isReservedSlug: (s: string) =>
     ["login", "workspaces", "invite", "onboarding", "invitations"].includes(s),
 }));
@@ -136,7 +136,7 @@ import {
   DesktopNavigationProvider,
   TabNavigationProvider,
 } from "./navigation";
-import { useNavigation } from "@tandem/views/navigation";
+import { useNavigation } from "@agora/views/navigation";
 
 function captureAdapter(onAdapter: (adapter: ReturnType<typeof useNavigation>) => void) {
   function Probe() {

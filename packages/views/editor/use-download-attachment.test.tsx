@@ -9,11 +9,11 @@ const useWorkspaceSlugMock = vi.hoisted(() =>
   vi.fn<() => string | null>(() => "acme"),
 );
 
-vi.mock("@tandem/core/api", () => ({
+vi.mock("@agora/core/api", () => ({
   api: { getAttachment: getAttachmentMock, getBaseUrl: getBaseUrlMock },
 }));
 
-vi.mock("@tandem/core/paths", () => ({
+vi.mock("@agora/core/paths", () => ({
   useWorkspaceSlug: useWorkspaceSlugMock,
 }));
 

@@ -1,1 +1,1 @@
-export { InboxPage as default } from "@tandem/views/inbox";
+export { InboxPage as default } from "@agora/views/inbox";

@@ -8,11 +8,11 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from "@tandem/ui/components/ui/dialog";
-import { Input } from "@tandem/ui/components/ui/input";
-import { Label } from "@tandem/ui/components/ui/label";
-import { Button } from "@tandem/ui/components/ui/button";
-import { isImeComposing } from "@tandem/core/utils";
+} from "@agora/ui/components/ui/dialog";
+import { Input } from "@agora/ui/components/ui/input";
+import { Label } from "@agora/ui/components/ui/label";
+import { Button } from "@agora/ui/components/ui/button";
+import { isImeComposing } from "@agora/core/utils";
 import { useT } from "../../i18n";
 
 /**

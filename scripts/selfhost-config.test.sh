@@ -39,7 +39,7 @@ require_config "$config" 'published: "3100"'
 require_config "$config" 'published: "9100"'
 require_config "$config" 'FRONTEND_ORIGIN: http://localhost:3100'
 require_config "$config" 'GOOGLE_REDIRECT_URI: http://localhost:3100/auth/callback'
-require_config "$config" 'TANDEM_APP_URL: http://localhost:3100'
+require_config "$config" 'AGORA_APP_URL: http://localhost:3100'
 
 for script in scripts/dev.sh scripts/check.sh; do
   if ! grep -Fq '. scripts/local-env.sh' "$script"; then
@@ -67,9 +67,9 @@ local_env="$(
       "PORT=${PORT}" \
       "FRONTEND_PORT=${FRONTEND_PORT}" \
       "FRONTEND_ORIGIN=${FRONTEND_ORIGIN}" \
-      "TANDEM_APP_URL=${TANDEM_APP_URL}" \
+      "AGORA_APP_URL=${AGORA_APP_URL}" \
       "GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}" \
-      "TANDEM_SERVER_URL=${TANDEM_SERVER_URL}" \
+      "AGORA_SERVER_URL=${AGORA_SERVER_URL}" \
       "LOCAL_UPLOAD_BASE_URL=${LOCAL_UPLOAD_BASE_URL}" \
       "PLAYWRIGHT_BASE_URL=${PLAYWRIGHT_BASE_URL}"
   ' _ "$tmp_env"
@@ -78,9 +78,9 @@ local_env="$(
 require_env "$local_env" 'PORT=9100'
 require_env "$local_env" 'FRONTEND_PORT=3100'
 require_env "$local_env" 'FRONTEND_ORIGIN=http://localhost:3100'
-require_env "$local_env" 'TANDEM_APP_URL=http://localhost:3100'
+require_env "$local_env" 'AGORA_APP_URL=http://localhost:3100'
 require_env "$local_env" 'GOOGLE_REDIRECT_URI=http://localhost:3100/auth/callback'
-require_env "$local_env" 'TANDEM_SERVER_URL=ws://localhost:9100/ws'
+require_env "$local_env" 'AGORA_SERVER_URL=ws://localhost:9100/ws'
 require_env "$local_env" 'LOCAL_UPLOAD_BASE_URL=http://localhost:9100'
 require_env "$local_env" 'PLAYWRIGHT_BASE_URL=http://localhost:3100'
 

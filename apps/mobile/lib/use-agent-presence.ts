@@ -7,7 +7,7 @@
  * QueryClient + query keys.
  *
  * Pure derivation is shared though — `deriveAgentPresenceDetail` /
- * `buildPresenceMap` are imported from `@tandem/core/agents` (pure functions,
+ * `buildPresenceMap` are imported from `@agora/core/agents` (pure functions,
  * on the whitelist). Don't re-implement the three-state logic locally; the
  * web/desktop/mobile semantics MUST agree (apps/mobile/CLAUDE.md
  * "State enums and transitions must agree").
@@ -29,7 +29,7 @@ import {
   buildPresenceMap,
   deriveAgentPresenceDetail,
   type AgentPresenceDetail,
-} from "@tandem/core/agents";
+} from "@agora/core/agents";
 import { agentListOptions } from "@/data/queries/agents";
 import { runtimeListOptions } from "@/data/queries/runtimes";
 import { agentTaskSnapshotOptions } from "@/data/queries/agent-task-snapshot";

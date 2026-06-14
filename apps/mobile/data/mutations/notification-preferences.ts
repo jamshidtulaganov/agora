@@ -13,7 +13,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type {
   NotificationPreferenceResponse,
   NotificationPreferences,
-} from "@tandem/core/types";
+} from "@agora/core/types";
 import { api } from "@/data/api";
 import { useWorkspaceStore } from "@/data/workspace-store";
 import { notificationPreferenceKeys } from "@/data/queries/notification-preferences";

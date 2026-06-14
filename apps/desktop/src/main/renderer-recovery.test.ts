@@ -124,10 +124,10 @@ describe("installRendererRecoveryHandlers", () => {
 
     expect(showMessageBox).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: "Tandem needs to reload",
+        title: "Agora needs to reload",
         message: "The desktop window has been stuck for a few seconds.",
         detail: expect.stringContaining(
-          "Click Reload to refresh this window and keep using Tandem.",
+          "Click Reload to refresh this window and keep using Agora.",
         ),
       }),
     );

@@ -1,4 +1,4 @@
-const RELEASE_ARCHIVE_PREFIX = "tandem-cli-";
+const RELEASE_ARCHIVE_PREFIX = "agora-cli-";
 
 function platformArchiveDescriptor(
   platform: NodeJS.Platform = process.platform,
@@ -35,8 +35,8 @@ export function selectPlatformReleaseAssetName(
   );
   const names = [...assetNames];
 
-  // Prefer the versioned `tandem-cli-<v>-<os>-<arch>.<ext>` name; fall
-  // back to the legacy `tandem_<os>_<arch>.<ext>` so older releases that
+  // Prefer the versioned `agora-cli-<v>-<os>-<arch>.<ext>` name; fall
+  // back to the legacy `agora_<os>_<arch>.<ext>` so older releases that
   // only ship the legacy archive keep working.
   const suffix = `-${os}-${mappedArch}.${ext}`;
   const matches = names.filter(
@@ -53,7 +53,7 @@ export function selectPlatformReleaseAssetName(
     );
   }
 
-  const legacyName = `tandem_${os}_${mappedArch}.${ext}`;
+  const legacyName = `agora_${os}_${mappedArch}.${ext}`;
   if (names.includes(legacyName)) {
     return legacyName;
   }

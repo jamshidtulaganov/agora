@@ -3,7 +3,7 @@
 
 services:
   backend:
-    image: tandem-backend:dev
+    image: agora-backend:dev
     build:
       context: .
       dockerfile: Dockerfile
@@ -13,7 +13,7 @@ services:
         DATE: ${DATE:-unknown}
 
   frontend:
-    image: tandem-web:dev
+    image: agora-web:dev
     build:
       context: .
       dockerfile: Dockerfile.web

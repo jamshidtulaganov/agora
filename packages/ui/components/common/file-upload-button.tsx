@@ -3,7 +3,7 @@
 import { useRef } from "react";
 import { Paperclip } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { cn } from "@tandem/ui/lib/utils";
+import { cn } from "@agora/ui/lib/utils";
 
 interface FileUploadButtonProps {
   /** Called with the selected File — caller handles upload. */

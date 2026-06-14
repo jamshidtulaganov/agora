@@ -19,41 +19,41 @@ import {
   X as XIcon,
   Zap,
 } from "lucide-react";
-import { cn } from "@tandem/ui/lib/utils";
-import { copyText } from "@tandem/ui/lib/clipboard";
+import { cn } from "@agora/ui/lib/utils";
+import { copyText } from "@agora/ui/lib/clipboard";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
-} from "@tandem/ui/components/ui/dialog";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@tandem/ui/components/ui/tooltip";
-import { Button } from "@tandem/ui/components/ui/button";
+} from "@agora/ui/components/ui/dialog";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@agora/ui/components/ui/tooltip";
+import { Button } from "@agora/ui/components/ui/button";
 import {
   Select,
   SelectTrigger,
   SelectValue,
   SelectContent,
   SelectItem,
-} from "@tandem/ui/components/ui/select";
-import { TimeInput } from "@tandem/ui/components/ui/time-input";
+} from "@agora/ui/components/ui/select";
+import { TimeInput } from "@agora/ui/components/ui/time-input";
 import { TimezonePicker } from "./pickers/timezone-picker";
-import { useCurrentWorkspace } from "@tandem/core/paths";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { agentListOptions, squadListOptions } from "@tandem/core/workspace/queries";
-import { projectListOptions } from "@tandem/core/projects/queries";
+import { useCurrentWorkspace } from "@agora/core/paths";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { agentListOptions, squadListOptions } from "@agora/core/workspace/queries";
+import { projectListOptions } from "@agora/core/projects/queries";
 import {
   useCreateAutopilot,
   useCreateAutopilotTrigger,
   useUpdateAutopilot,
   useUpdateAutopilotTrigger,
-} from "@tandem/core/autopilots/mutations";
-import { buildAutopilotWebhookUrl } from "@tandem/core/autopilots";
-import { api } from "@tandem/core/api";
+} from "@agora/core/autopilots/mutations";
+import { buildAutopilotWebhookUrl } from "@agora/core/autopilots";
+import { api } from "@agora/core/api";
 import type {
   AutopilotAssigneeType,
   AutopilotExecutionMode,
   AutopilotTrigger,
-} from "@tandem/core/types";
+} from "@agora/core/types";
 import { TitleEditor, ContentEditor } from "../../editor";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { ProjectPicker } from "../../projects/components/project-picker";
@@ -70,7 +70,7 @@ import {
 import { WebhookEventFilterSection } from "./webhook-event-filter-section";
 import { useT } from "../../i18n";
 import { formatSchedulePartialFailureToast } from "./autopilot-dialog-toast";
-import type { WebhookEventFilter } from "@tandem/core/types";
+import type { WebhookEventFilter } from "@agora/core/types";
 
 // ---------------------------------------------------------------------------
 // Types

@@ -2,7 +2,7 @@
 
 import * as React from "react"
 
-import { cn } from "@tandem/ui/lib/utils"
+import { cn } from "@agora/ui/lib/utils"
 
 function Label({ className, ...props }: React.ComponentProps<"label">) {
   return (

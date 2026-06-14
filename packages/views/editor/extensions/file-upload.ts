@@ -1,7 +1,7 @@
 import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
-import type { UploadResult } from "@tandem/core/hooks/use-file-upload";
-import { createSafeId } from "@tandem/core/utils";
+import type { UploadResult } from "@agora/core/hooks/use-file-upload";
+import { createSafeId } from "@agora/core/utils";
 
 /** Find and remove a fileCard node by uploadId. */
  

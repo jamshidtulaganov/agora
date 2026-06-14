@@ -1,6 +1,6 @@
 import { loader } from "fumadocs-core/source";
 import { defineI18n } from "fumadocs-core/i18n";
-import type { SupportedLocale } from "@tandem/core/i18n";
+import type { SupportedLocale } from "@agora/core/i18n";
 import { useCases } from "@/.source";
 import { mergeUseCasePagesWithEnglishFallback } from "./use-case-locale-fallback";
 

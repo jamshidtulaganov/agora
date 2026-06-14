@@ -23,7 +23,7 @@ import type {
   Reaction,
   TimelineEntry,
   UpdateIssueRequest,
-} from "@tandem/core/types";
+} from "@agora/core/types";
 import { api } from "@/data/api";
 import { issueKeys } from "@/data/queries/issues";
 import { inboxKeys } from "@/data/queries/inbox";

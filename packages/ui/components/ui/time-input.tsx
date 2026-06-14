@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Clock } from "lucide-react";
 
-import { cn } from "@tandem/ui/lib/utils";
+import { cn } from "@agora/ui/lib/utils";
 
 // Adapted from openstatusHQ/time-picker (MIT).
 // Segmented HH:MM input with keyboard arrow increment / digit typing.

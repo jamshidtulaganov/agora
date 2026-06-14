@@ -1,6 +1,6 @@
 "use client";
 
-import { TandemIcon } from "@tandem/ui/components/common/tandem-icon";
+import { AgoraIcon } from "@agora/ui/components/common/agora-icon";
 import { useT } from "../i18n";
 
 /**
@@ -22,7 +22,7 @@ export function WorkspaceLoader({ name }: { name?: string | null }) {
       role="status"
     >
       <div className="flex flex-col items-center gap-4">
-        <TandemIcon className="size-8 animate-pulse" />
+        <AgoraIcon className="size-8 animate-pulse" />
         {name ? (
           <p className="text-sm text-muted-foreground">
             {t(($) => $.workspace_loader.loading_named_prefix)}{" "}

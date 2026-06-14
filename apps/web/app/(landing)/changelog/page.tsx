@@ -4,10 +4,10 @@ import { ChangelogPageClient } from "@/features/landing/components/changelog-pag
 export const metadata: Metadata = {
   title: "Changelog",
   description:
-    "See what's new in Tandem — latest features, improvements, and fixes.",
+    "See what's new in Agora — latest features, improvements, and fixes.",
   openGraph: {
-    title: "Changelog | Tandem",
-    description: "Latest updates and releases from Tandem.",
+    title: "Changelog | Agora",
+    description: "Latest updates and releases from Agora.",
     url: "/changelog",
   },
   alternates: {

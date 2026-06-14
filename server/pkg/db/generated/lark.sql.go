@@ -304,7 +304,7 @@ type CreateLarkInstallationParams struct {
 // Used by the OAuth callback. `app_secret_encrypted` is the ciphertext
 // produced by internal/util/secretbox — never plaintext. The
 // (workspace_id, agent_id) UNIQUE constraint enforces the spec rule
-// "one Tandem Agent ↔ one Lark Bot"; re-installing on the same agent
+// "one Agora Agent ↔ one Lark Bot"; re-installing on the same agent
 // goes through UpsertLarkInstallation instead.
 func (q *Queries) CreateLarkInstallation(ctx context.Context, arg CreateLarkInstallationParams) (LarkInstallation, error) {
 	row := q.db.QueryRow(ctx, createLarkInstallation,
@@ -385,20 +385,20 @@ func (q *Queries) CreateLarkOutboundCardMessage(ctx context.Context, arg CreateL
 const createLarkUserBinding = `-- name: CreateLarkUserBinding :one
 
 INSERT INTO lark_user_binding (
-    workspace_id, tandem_user_id, installation_id, lark_open_id, union_id
+    workspace_id, agora_user_id, installation_id, lark_open_id, union_id
 ) VALUES (
     $1, $2, $3, $4, $5
 )
 ON CONFLICT (installation_id, lark_open_id) DO UPDATE SET
     union_id = COALESCE(EXCLUDED.union_id, lark_user_binding.union_id),
     bound_at = now()
-WHERE lark_user_binding.tandem_user_id = EXCLUDED.tandem_user_id
-RETURNING id, workspace_id, tandem_user_id, installation_id, lark_open_id, union_id, bound_at
+WHERE lark_user_binding.agora_user_id = EXCLUDED.agora_user_id
+RETURNING id, workspace_id, agora_user_id, installation_id, lark_open_id, union_id, bound_at
 `
 
 type CreateLarkUserBindingParams struct {
 	WorkspaceID    pgtype.UUID `json:"workspace_id"`
-	TandemUserID  pgtype.UUID `json:"tandem_user_id"`
+	AgoraUserID  pgtype.UUID `json:"agora_user_id"`
 	InstallationID pgtype.UUID `json:"installation_id"`
 	LarkOpenID     string      `json:"lark_open_id"`
 	UnionID        pgtype.Text `json:"union_id"`
@@ -407,14 +407,14 @@ type CreateLarkUserBindingParams struct {
 // =====================
 // lark_user_binding
 // =====================
-// Records that a Lark open_id (per-installation) maps to a Tandem
+// Records that a Lark open_id (per-installation) maps to a Agora
 // user.
 //
 // Two structural guarantees:
 //  1. The composite FK to member(workspace_id, user_id) makes this
 //     statement fail when the redeemer is not (or no longer) a
 //     workspace member — that is §4.3 of the design.
-//  2. ON CONFLICT DO UPDATE is gated on `tandem_user_id` matching
+//  2. ON CONFLICT DO UPDATE is gated on `agora_user_id` matching
 //     the existing binding, so a second redeemer holding their own
 //     valid binding token CANNOT silently steal an already-bound
 //     open_id. If the conflict row points at a different user, the
@@ -430,7 +430,7 @@ type CreateLarkUserBindingParams struct {
 func (q *Queries) CreateLarkUserBinding(ctx context.Context, arg CreateLarkUserBindingParams) (LarkUserBinding, error) {
 	row := q.db.QueryRow(ctx, createLarkUserBinding,
 		arg.WorkspaceID,
-		arg.TandemUserID,
+		arg.AgoraUserID,
 		arg.InstallationID,
 		arg.LarkOpenID,
 		arg.UnionID,
@@ -439,7 +439,7 @@ func (q *Queries) CreateLarkUserBinding(ctx context.Context, arg CreateLarkUserB
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
-		&i.TandemUserID,
+		&i.AgoraUserID,
 		&i.InstallationID,
 		&i.LarkOpenID,
 		&i.UnionID,
@@ -659,7 +659,7 @@ func (q *Queries) GetLarkOutboundCardByTask(ctx context.Context, taskID pgtype.U
 }
 
 const getLarkUserBindingByOpenID = `-- name: GetLarkUserBindingByOpenID :one
-SELECT id, workspace_id, tandem_user_id, installation_id, lark_open_id, union_id, bound_at FROM lark_user_binding
+SELECT id, workspace_id, agora_user_id, installation_id, lark_open_id, union_id, bound_at FROM lark_user_binding
 WHERE installation_id = $1 AND lark_open_id = $2
 `
 
@@ -669,7 +669,7 @@ type GetLarkUserBindingByOpenIDParams struct {
 }
 
 // The inbound identity check. A row here means: this open_id maps to a
-// Tandem user who IS currently a workspace member (the composite FK
+// Agora user who IS currently a workspace member (the composite FK
 // cascades the binding away when membership is revoked, so a row's
 // existence is itself the membership proof).
 func (q *Queries) GetLarkUserBindingByOpenID(ctx context.Context, arg GetLarkUserBindingByOpenIDParams) (LarkUserBinding, error) {
@@ -678,7 +678,7 @@ func (q *Queries) GetLarkUserBindingByOpenID(ctx context.Context, arg GetLarkUse
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
-		&i.TandemUserID,
+		&i.AgoraUserID,
 		&i.InstallationID,
 		&i.LarkOpenID,
 		&i.UnionID,
@@ -820,7 +820,7 @@ func (q *Queries) ListLarkInstallationsByWorkspace(ctx context.Context, workspac
 }
 
 const listLarkUserBindingsByInstallation = `-- name: ListLarkUserBindingsByInstallation :many
-SELECT id, workspace_id, tandem_user_id, installation_id, lark_open_id, union_id, bound_at FROM lark_user_binding
+SELECT id, workspace_id, agora_user_id, installation_id, lark_open_id, union_id, bound_at FROM lark_user_binding
 WHERE installation_id = $1
 ORDER BY bound_at DESC
 `
@@ -837,7 +837,7 @@ func (q *Queries) ListLarkUserBindingsByInstallation(ctx context.Context, instal
 		if err := rows.Scan(
 			&i.ID,
 			&i.WorkspaceID,
-			&i.TandemUserID,
+			&i.AgoraUserID,
 			&i.InstallationID,
 			&i.LarkOpenID,
 			&i.UnionID,

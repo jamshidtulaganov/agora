@@ -43,7 +43,7 @@ export const useCustomPricingStore = create<CustomPricingState>()(
         }),
     }),
     {
-      name: "tandem_runtime_custom_pricing",
+      name: "agora_runtime_custom_pricing",
       storage: createJSONStorage(() => stateStorage),
     },
   ),

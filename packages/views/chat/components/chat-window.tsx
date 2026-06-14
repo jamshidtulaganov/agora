@@ -4,22 +4,22 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { Minus, Maximize2, Minimize2, ChevronDown, Plus, Check, Trash2, Pencil, Loader2, Square } from "lucide-react";
-import { Button } from "@tandem/ui/components/ui/button";
-import { cn } from "@tandem/ui/lib/utils";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@tandem/ui/components/ui/tooltip";
+import { Button } from "@agora/ui/components/ui/button";
+import { cn } from "@agora/ui/lib/utils";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@agora/ui/components/ui/tooltip";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@tandem/ui/components/ui/popover";
+} from "@agora/ui/components/ui/popover";
 import { toast } from "sonner";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { useAuthStore } from "@tandem/core/auth";
-import { agentListOptions, memberListOptions } from "@tandem/core/workspace/queries";
-import { canAssignAgent } from "@tandem/views/issues/components";
-import { api } from "@tandem/core/api";
-import { useAgentPresenceDetail, useWorkspaceAgentAvailability } from "@tandem/core/agents";
-import { useFileUpload } from "@tandem/core/hooks/use-file-upload";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { useAuthStore } from "@agora/core/auth";
+import { agentListOptions, memberListOptions } from "@agora/core/workspace/queries";
+import { canAssignAgent } from "@agora/views/issues/components";
+import { api } from "@agora/core/api";
+import { useAgentPresenceDetail, useWorkspaceAgentAvailability } from "@agora/core/agents";
+import { useFileUpload } from "@agora/core/hooks/use-file-upload";
 import { ActorAvatar } from "../../common/actor-avatar";
 import {
   PickerEmpty,
@@ -37,21 +37,21 @@ import {
   pendingChatTasksOptions,
   chatKeys,
   isTaskMessageTaskId,
-} from "@tandem/core/chat/queries";
+} from "@agora/core/chat/queries";
 import {
   useCreateChatSession,
   useDeleteChatSession,
   useMarkChatSessionRead,
   useUpdateChatSession,
-} from "@tandem/core/chat/mutations";
-import { useChatStore } from "@tandem/core/chat";
+} from "@agora/core/chat/mutations";
+import { useChatStore } from "@agora/core/chat";
 import { ChatMessageList, ChatMessageSkeleton } from "./chat-message-list";
 import { ChatInput } from "./chat-input";
 import { ChatResizeHandles } from "./chat-resize-handles";
 import { useChatContextItems } from "./use-chat-context-items";
 import { useChatResize } from "./use-chat-resize";
-import { createLogger } from "@tandem/core/logger";
-import type { Agent, ChatMessage, ChatMessagesPage, ChatPendingTask, ChatSession, PendingChatTasksResponse } from "@tandem/core/types";
+import { createLogger } from "@agora/core/logger";
+import type { Agent, ChatMessage, ChatMessagesPage, ChatPendingTask, ChatSession, PendingChatTasksResponse } from "@agora/core/types";
 import { useT } from "../../i18n";
 
 const uiLogger = createLogger("chat.ui");

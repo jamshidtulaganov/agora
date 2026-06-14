@@ -3,9 +3,9 @@
 import { useMemo } from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 
-import { cn } from "@tandem/ui/lib/utils"
-import { Label } from "@tandem/ui/components/ui/label"
-import { Separator } from "@tandem/ui/components/ui/separator"
+import { cn } from "@agora/ui/lib/utils"
+import { Label } from "@agora/ui/components/ui/label"
+import { Separator } from "@agora/ui/components/ui/separator"
 
 function FieldSet({ className, ...props }: React.ComponentProps<"fieldset">) {
   return (

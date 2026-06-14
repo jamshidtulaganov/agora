@@ -35,7 +35,7 @@ var (
 // the JWT_SECRET env var (set in .env) and stays in sync with the server.
 
 const (
-	integrationTestEmail         = "integration-test@tandem.dev"
+	integrationTestEmail         = "integration-test@agora.dev"
 	integrationTestName          = "Integration Tester"
 	integrationTestWorkspaceSlug = "integration-tests"
 )
@@ -275,7 +275,7 @@ func TestConfigRouteIsPublic(t *testing.T) {
 // ---- Auth ----
 
 func TestSendCodeAndVerify(t *testing.T) {
-	const email = "integration-sendcode@tandem.dev"
+	const email = "integration-sendcode@agora.dev"
 	ctx := context.Background()
 
 	t.Cleanup(func() {
@@ -358,7 +358,7 @@ func TestSendCodeAndVerify(t *testing.T) {
 }
 
 func TestVerifyCodeNewUserHasNoWorkspace(t *testing.T) {
-	const email = "new-integration-verify@tandem.dev"
+	const email = "new-integration-verify@agora.dev"
 	ctx := context.Background()
 
 	t.Cleanup(func() {

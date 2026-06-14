@@ -5,9 +5,9 @@ import { Archive, ArrowRight, Bot, CheckCircle2 } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogContent,
-} from "@tandem/ui/components/ui/alert-dialog";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Checkbox } from "@tandem/ui/components/ui/checkbox";
+} from "@agora/ui/components/ui/alert-dialog";
+import { Button } from "@agora/ui/components/ui/button";
+import { Checkbox } from "@agora/ui/components/ui/checkbox";
 import { useT } from "../../i18n";
 
 interface BacklogAgentHintDialogProps {

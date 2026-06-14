@@ -11,36 +11,36 @@ import {
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getCoreRowModel, useReactTable } from "@tanstack/react-table";
-import type { Agent, AgentRuntime, CreateAgentRequest } from "@tandem/core/types";
+import type { Agent, AgentRuntime, CreateAgentRequest } from "@agora/core/types";
 import {
   type AgentAvailability,
   agentRunCounts30dOptions,
   summarizeActivityWindow,
   useWorkspaceActivityMap,
   useWorkspacePresenceMap,
-} from "@tandem/core/agents";
-import { useAgentsViewStore } from "@tandem/core/agents/stores";
-import { api } from "@tandem/core/api";
-import { useAuthStore } from "@tandem/core/auth";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { canAssignAgentToIssue } from "@tandem/core/permissions";
-import { useWorkspacePaths } from "@tandem/core/paths";
+} from "@agora/core/agents";
+import { useAgentsViewStore } from "@agora/core/agents/stores";
+import { api } from "@agora/core/api";
+import { useAuthStore } from "@agora/core/auth";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { canAssignAgentToIssue } from "@agora/core/permissions";
+import { useWorkspacePaths } from "@agora/core/paths";
 import {
   agentListOptions,
   memberListOptions,
   workspaceKeys,
-} from "@tandem/core/workspace/queries";
-import { runtimeListOptions } from "@tandem/core/runtimes";
-import { Button } from "@tandem/ui/components/ui/button";
+} from "@agora/core/workspace/queries";
+import { runtimeListOptions } from "@agora/core/runtimes";
+import { Button } from "@agora/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@tandem/ui/components/ui/dropdown-menu";
-import { Input } from "@tandem/ui/components/ui/input";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
-import { DataTable } from "@tandem/ui/components/ui/data-table";
+} from "@agora/ui/components/ui/dropdown-menu";
+import { Input } from "@agora/ui/components/ui/input";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import { DataTable } from "@agora/ui/components/ui/data-table";
 import { useNavigation } from "../../navigation";
 import { PageHeader } from "../../layout/page-header";
 import { availabilityConfig, availabilityOrder } from "../presence";
@@ -658,7 +658,7 @@ function PageHeaderBar({
         <p className="ml-2 hidden text-xs text-muted-foreground md:block">
           {t(($) => $.page.tagline)}{" "}
           <a
-            href="https://tandem.dev/docs/agents"
+            href="https://agora.dev/docs/agents"
             target="_blank"
             rel="noopener noreferrer"
             className="underline decoration-muted-foreground/30 underline-offset-4 transition-colors hover:text-foreground"

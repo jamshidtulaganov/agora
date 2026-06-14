@@ -2,15 +2,15 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Button } from "@tandem/ui/components/ui/button";
+import { Button } from "@agora/ui/components/ui/button";
 import {
   HoverCard,
   HoverCardTrigger,
   HoverCardContent,
-} from "@tandem/ui/components/ui/hover-card";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { agentTaskSnapshotOptions } from "@tandem/core/agents";
-import type { AgentTask } from "@tandem/core/types";
+} from "@agora/ui/components/ui/hover-card";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { agentTaskSnapshotOptions } from "@agora/core/agents";
+import type { AgentTask } from "@agora/core/types";
 import { AgentAvatarStack } from "../../agents/components/agent-avatar-stack";
 import { AgentActivityHoverContent } from "../../agents/components/agent-activity-hover-content";
 import { useT } from "../../i18n";

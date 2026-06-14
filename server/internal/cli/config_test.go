@@ -18,13 +18,13 @@ func TestCLIConfig_BackwardCompat_OldFileLoadsWithNilBackends(t *testing.T) {
 	t.Setenv("HOME", tmp)
 
 	// Write a 4-field config exactly as the historical daemon would have.
-	cfgDir := filepath.Join(tmp, ".tandem")
+	cfgDir := filepath.Join(tmp, ".agora")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	historical := `{
-  "server_url": "https://api.tandem.dev",
-  "app_url": "https://app.tandem.dev",
+  "server_url": "https://api.agora.dev",
+  "app_url": "https://app.agora.dev",
   "workspace_id": "ws-123",
   "token": "mul_abcdef"
 }`
@@ -37,7 +37,7 @@ func TestCLIConfig_BackwardCompat_OldFileLoadsWithNilBackends(t *testing.T) {
 		t.Fatalf("LoadCLIConfig on historical file: %v", err)
 	}
 
-	if cfg.ServerURL != "https://api.tandem.dev" {
+	if cfg.ServerURL != "https://api.agora.dev" {
 		t.Errorf("ServerURL: got %q, want historical value", cfg.ServerURL)
 	}
 	if cfg.Token != "mul_abcdef" {
@@ -58,14 +58,14 @@ func TestCLIConfig_BackwardCompat_NilBackendsOmittedFromJSON(t *testing.T) {
 	t.Setenv("HOME", tmp)
 
 	cfg := CLIConfig{
-		ServerURL: "https://api.tandem.dev",
+		ServerURL: "https://api.agora.dev",
 		Token:     "mul_xyz",
 	}
 	if err := SaveCLIConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmp, ".tandem", "config.json"))
+	data, err := os.ReadFile(filepath.Join(tmp, ".agora", "config.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestCLIConfig_OpenClawOverride_RoundTrip(t *testing.T) {
 	t.Setenv("HOME", tmp)
 
 	original := CLIConfig{
-		ServerURL: "https://api.tandem.dev",
+		ServerURL: "https://api.agora.dev",
 		Token:     "mul_xyz",
 		Backends: &BackendOverrides{
 			OpenClaw: &OpenClawOverride{
@@ -131,7 +131,7 @@ func TestCLIConfig_OpenClawOverride_PartialFieldsOmitted(t *testing.T) {
 	t.Setenv("HOME", tmp)
 
 	cfg := CLIConfig{
-		ServerURL: "https://api.tandem.dev",
+		ServerURL: "https://api.agora.dev",
 		Token:     "mul_xyz",
 		Backends: &BackendOverrides{
 			OpenClaw: &OpenClawOverride{
@@ -144,7 +144,7 @@ func TestCLIConfig_OpenClawOverride_PartialFieldsOmitted(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmp, ".tandem", "config.json"))
+	data, err := os.ReadFile(filepath.Join(tmp, ".agora", "config.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,12 +181,12 @@ func TestCLIConfig_UnknownFieldsArePreserved(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
-	cfgDir := filepath.Join(tmp, ".tandem")
+	cfgDir := filepath.Join(tmp, ".agora")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	withFutureField := `{
-  "server_url": "https://api.tandem.dev",
+  "server_url": "https://api.agora.dev",
   "token": "mul_xyz",
   "backends": {
     "openclaw": {"state_dir": "/x"},

@@ -16,8 +16,8 @@ import (
 )
 
 // CloudPATPrefix is the literal token prefix that identifies an mcn_
-// (Tandem Cloud Node) PAT. Tokens with this prefix are validated by
-// calling the Tandem Cloud Fleet service rather than by hitting our
+// (Agora Cloud Node) PAT. Tokens with this prefix are validated by
+// calling the Agora Cloud Fleet service rather than by hitting our
 // local personal_access_tokens table — the cloud is the authoritative
 // owner of the token's lifecycle, status, and (owner_id, instance_id)
 // binding.
@@ -163,7 +163,7 @@ type OwnerLookupFunc func(ctx context.Context, ownerID string) (bool, error)
 // A nil *CloudPATVerifier is safe — Verify returns
 // ErrCloudPATNotConfigured. The Auth/DaemonAuth middlewares treat
 // "verifier nil" the same as "fleet URL empty", so a server with no
-// TANDEM_CLOUD_FLEET_URL configured simply rejects mcn_ tokens at
+// AGORA_CLOUD_FLEET_URL configured simply rejects mcn_ tokens at
 // the prefix branch instead of nil-derefing.
 type CloudPATVerifier struct {
 	baseURL string
@@ -177,7 +177,7 @@ type CloudPATVerifier struct {
 // without churning every call site.
 type CloudPATVerifierConfig struct {
 	// FleetBaseURL is the Cloud Fleet base URL (e.g.
-	// https://fleet.tandem.cloud). Trailing slashes are trimmed.
+	// https://fleet.agora.cloud). Trailing slashes are trimmed.
 	// Empty disables the verifier — NewCloudPATVerifier returns nil.
 	FleetBaseURL string
 

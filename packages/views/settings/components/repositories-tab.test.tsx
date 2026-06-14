@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@tandem/core/i18n/react";
+import { I18nProvider } from "@agora/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
@@ -24,24 +24,24 @@ vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ setQueryData: vi.fn() }),
 }));
 
-vi.mock("@tandem/core/hooks", () => ({
+vi.mock("@agora/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
-vi.mock("@tandem/core/paths", () => ({
+vi.mock("@agora/core/paths", () => ({
   useCurrentWorkspace: () => workspaceRef.current,
 }));
 
-vi.mock("@tandem/core/workspace/queries", () => ({
+vi.mock("@agora/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"], queryFn: vi.fn() }),
   workspaceKeys: { list: () => ["workspaces"] },
 }));
 
-vi.mock("@tandem/core/api", () => ({
+vi.mock("@agora/core/api", () => ({
   api: { updateWorkspace: mockUpdateWorkspace },
 }));
 
-vi.mock("@tandem/core/auth", () => {
+vi.mock("@agora/core/auth", () => {
   const useAuthStore = Object.assign(
     (sel?: (s: { user: { id: string } }) => unknown) =>
       sel ? sel({ user: { id: "user-1" } }) : { user: { id: "user-1" } },
@@ -113,7 +113,7 @@ describe("RepositoriesTab — view/edit toggle", () => {
     await user.click(screen.getByRole("button", { name: "Edit repository" }));
     const input = screen.getAllByRole("textbox")[0]!;
     await user.clear(input);
-    await user.type(input, "https://github.com/tandem-ai/edited");
+    await user.type(input, "https://github.com/agora-ai/edited");
 
     const saveBtn = screen.getByRole("button", { name: /^Save$/ });
     expect(saveBtn).not.toBeDisabled();
@@ -172,7 +172,7 @@ describe("RepositoriesTab — view/edit toggle", () => {
     await user.click(screen.getByRole("button", { name: "Edit repository" }));
     const input = screen.getAllByRole("textbox")[0] as HTMLInputElement;
     await user.clear(input);
-    await user.type(input, "https://github.com/tandem-ai/changed");
+    await user.type(input, "https://github.com/agora-ai/changed");
     expect(screen.getByRole("button", { name: /^Save$/ })).not.toBeDisabled();
 
     await user.click(screen.getByRole("button", { name: "Cancel edit" }));

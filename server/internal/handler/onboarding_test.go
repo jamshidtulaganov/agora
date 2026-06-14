@@ -45,7 +45,7 @@ func newWaitlistRequest(userID string, body map[string]string) *http.Request {
 }
 
 func TestJoinCloudWaitlistRecordsEmailAndReason(t *testing.T) {
-	userID := newWaitlistTestUser(t, "waitlist-ok@tandem.dev")
+	userID := newWaitlistTestUser(t, "waitlist-ok@agora.dev")
 
 	w := httptest.NewRecorder()
 	req := newWaitlistRequest(userID, map[string]string{
@@ -84,7 +84,7 @@ func TestJoinCloudWaitlistRecordsEmailAndReason(t *testing.T) {
 }
 
 func TestJoinCloudWaitlistAllowsEmptyReason(t *testing.T) {
-	userID := newWaitlistTestUser(t, "waitlist-noreason@tandem.dev")
+	userID := newWaitlistTestUser(t, "waitlist-noreason@agora.dev")
 
 	w := httptest.NewRecorder()
 	req := newWaitlistRequest(userID, map[string]string{
@@ -107,7 +107,7 @@ func TestJoinCloudWaitlistAllowsEmptyReason(t *testing.T) {
 }
 
 func TestJoinCloudWaitlistMissingEmailReturns400(t *testing.T) {
-	userID := newWaitlistTestUser(t, "waitlist-missing@tandem.dev")
+	userID := newWaitlistTestUser(t, "waitlist-missing@agora.dev")
 
 	cases := []map[string]string{
 		{},               // empty body
@@ -127,7 +127,7 @@ func TestJoinCloudWaitlistMissingEmailReturns400(t *testing.T) {
 }
 
 func TestJoinCloudWaitlistRejectsOverlongReason(t *testing.T) {
-	userID := newWaitlistTestUser(t, "waitlist-long@tandem.dev")
+	userID := newWaitlistTestUser(t, "waitlist-long@agora.dev")
 
 	w := httptest.NewRecorder()
 	req := newWaitlistRequest(userID, map[string]string{
@@ -141,7 +141,7 @@ func TestJoinCloudWaitlistRejectsOverlongReason(t *testing.T) {
 }
 
 func TestJoinCloudWaitlistSecondCallOverwrites(t *testing.T) {
-	userID := newWaitlistTestUser(t, "waitlist-overwrite@tandem.dev")
+	userID := newWaitlistTestUser(t, "waitlist-overwrite@agora.dev")
 
 	// First submission.
 	w := httptest.NewRecorder()
@@ -278,7 +278,7 @@ func TestBootstrapOnboardingRuntimeCreatesSingleGuideIssue(t *testing.T) {
 		t.Fatalf("assistant instructions were not seeded with the new identity: %q", instructions)
 	}
 	if avatarURL == nil || *avatarURL != onboardingAssistantAvatarURL {
-		t.Fatalf("agent avatar_url = %v, want seeded Tandem Helper avatar", avatarURL)
+		t.Fatalf("agent avatar_url = %v, want seeded Agora Helper avatar", avatarURL)
 	}
 
 	var (
@@ -389,7 +389,7 @@ func TestBootstrapOnboardingRuntime_WithStarterPrompt(t *testing.T) {
 		testUserID,
 	)
 
-	const wantPrompt = "Introduce Tandem to me, please."
+	const wantPrompt = "Introduce Agora to me, please."
 	body := map[string]string{
 		"workspace_id":   testWorkspaceID,
 		"runtime_id":     testRuntimeID,
@@ -548,8 +548,8 @@ func TestBootstrapOnboardingNoRuntimeCreatesSingleGuideIssue(t *testing.T) {
 		t.Fatalf("issue status/priority = %s/%s, want todo/high", issueStatus, issuePriority)
 	}
 	for _, want := range []string{
-		"Try Tandem first",
-		"https://tandem.dev/docs/install-agent-runtime",
+		"Try Agora first",
+		"https://agora.dev/docs/install-agent-runtime",
 		"npm i -g @openai/codex",
 	} {
 		if !strings.Contains(description, want) {
@@ -653,7 +653,7 @@ func TestBootstrapOnboardingNoRuntimeUsesChineseGuideForChineseUsers(t *testing.
 	}
 	for _, want := range []string{
 		"先体验项目管理功能",
-		"https://tandem.dev/docs/install-agent-runtime",
+		"https://agora.dev/docs/install-agent-runtime",
 		"中文用户建议先装 Kimi CLI",
 		"kimi --version",
 	} {

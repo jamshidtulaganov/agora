@@ -1,5 +1,5 @@
-import type { Issue, IssueStatus, IssuePriority } from "@tandem/core/types";
-import type { ActorFilterValue } from "@tandem/core/issues/stores/view-store";
+import type { Issue, IssueStatus, IssuePriority } from "@agora/core/types";
+import type { ActorFilterValue } from "@agora/core/issues/stores/view-store";
 
 export interface IssueFilters {
   statusFilters: IssueStatus[];

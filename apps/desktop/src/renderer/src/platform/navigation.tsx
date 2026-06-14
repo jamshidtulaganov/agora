@@ -3,9 +3,9 @@ import type { DataRouter } from "react-router-dom";
 import {
   NavigationProvider,
   type NavigationAdapter,
-} from "@tandem/views/navigation";
-import { useAuthStore } from "@tandem/core/auth";
-import { isReservedSlug } from "@tandem/core/paths";
+} from "@agora/views/navigation";
+import { useAuthStore } from "@agora/core/auth";
+import { isReservedSlug } from "@agora/core/paths";
 import {
   useTabStore,
   resolveRouteIcon,
@@ -254,7 +254,7 @@ function currentActiveTab() {
  * Per-tab navigation provider rendered inside each tab's Activity wrapper.
  * Subscribes to the tab's own router for up-to-date pathname.
  *
- * This is what @tandem/views page components read via useNavigation().
+ * This is what @agora/views page components read via useNavigation().
  */
 export function TabNavigationProvider({
   router,

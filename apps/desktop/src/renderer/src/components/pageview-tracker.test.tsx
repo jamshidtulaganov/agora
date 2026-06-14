@@ -14,12 +14,12 @@ const state = vi.hoisted(() => ({
   capturePageview: vi.fn<(path?: string) => void>(),
 }));
 
-vi.mock("@tandem/core/analytics", () => ({
+vi.mock("@agora/core/analytics", () => ({
   capturePageview: state.capturePageview,
 }));
 
 // Auth store — single selector pattern (`s => s.user`).
-vi.mock("@tandem/core/auth", () => {
+vi.mock("@agora/core/auth", () => {
   const useAuthStore = (selector: (s: typeof state) => unknown) =>
     selector(state);
   return { useAuthStore };

@@ -1,8 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { RuntimeModel } from "@tandem/core/types";
-import { runtimeModelsOptions } from "@tandem/core/runtimes";
+import type { RuntimeModel } from "@agora/core/types";
+import { runtimeModelsOptions } from "@agora/core/runtimes";
 import { PropRow } from "../../../common/prop-row";
 import { useT } from "../../../i18n";
 import { ThinkingPicker } from "./thinking-picker";

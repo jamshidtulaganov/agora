@@ -6,12 +6,12 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@tandem/ui/components/ui/popover";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { useActorName } from "@tandem/core/workspace/hooks";
-import { cn } from "@tandem/ui/lib/utils";
-import { agentTaskSnapshotOptions } from "@tandem/core/agents";
-import type { AgentTask } from "@tandem/core/types";
+} from "@agora/ui/components/ui/popover";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { useActorName } from "@agora/core/workspace/hooks";
+import { cn } from "@agora/ui/lib/utils";
+import { agentTaskSnapshotOptions } from "@agora/core/agents";
+import type { AgentTask } from "@agora/core/types";
 import { AgentAvatarStack } from "../../agents/components/agent-avatar-stack";
 import { ActiveTaskRow } from "./execution-log-section";
 import { useT } from "../../i18n";

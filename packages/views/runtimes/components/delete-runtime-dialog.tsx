@@ -4,27 +4,27 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Globe, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
-import { ApiError } from "@tandem/core/api";
-import type { Agent, AgentRuntime, MemberWithUser } from "@tandem/core/types";
+import { ApiError } from "@agora/core/api";
+import type { Agent, AgentRuntime, MemberWithUser } from "@agora/core/types";
 import {
   useDeleteRuntime,
   useArchiveAgentsAndDeleteRuntime,
-} from "@tandem/core/runtimes/mutations";
+} from "@agora/core/runtimes/mutations";
 import {
   agentListOptions,
   memberListOptions,
-} from "@tandem/core/workspace/queries";
+} from "@agora/core/workspace/queries";
 import {
   type AgentPresenceDetail,
   useWorkspacePresenceMap,
-} from "@tandem/core/agents";
-import { useAuthStore } from "@tandem/core/auth";
+} from "@agora/core/agents";
+import { useAuthStore } from "@agora/core/auth";
 import {
   AlertDialog,
   AlertDialogContent,
-} from "@tandem/ui/components/ui/alert-dialog";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Checkbox } from "@tandem/ui/components/ui/checkbox";
+} from "@agora/ui/components/ui/alert-dialog";
+import { Button } from "@agora/ui/components/ui/button";
+import { Checkbox } from "@agora/ui/components/ui/checkbox";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { availabilityConfig, workloadConfig } from "../../agents/presence";
 import { useT } from "../../i18n";

@@ -36,7 +36,7 @@ function initCore(
   const api = new ApiClient(apiBaseUrl, {
     logger: createLogger("api"),
     onUnauthorized: () => {
-      storage.removeItem("tandem_token");
+      storage.removeItem("agora_token");
     },
     identity,
   });
@@ -45,7 +45,7 @@ function initCore(
 
   // In token mode, hydrate token from storage.
   if (!cookieAuth) {
-    const token = storage.getItem("tandem_token");
+    const token = storage.getItem("agora_token");
     if (token) api.setToken(token);
   }
   // Workspace identity is URL-driven: the [workspaceSlug] layout resolves

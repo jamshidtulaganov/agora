@@ -1,9 +1,9 @@
 "use client";
 
 import { ArrowLeft, LogOut } from "lucide-react";
-import { Button } from "@tandem/ui/components/ui/button";
-import type { Workspace } from "@tandem/core/types";
-import { useConfigStore } from "@tandem/core/config";
+import { Button } from "@agora/ui/components/ui/button";
+import type { Workspace } from "@agora/core/types";
+import { useConfigStore } from "@agora/core/config";
 import { useLogout } from "../auth";
 import { DragStrip } from "../platform";
 import { useT } from "../i18n";

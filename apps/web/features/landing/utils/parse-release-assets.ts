@@ -5,9 +5,9 @@
  * installer artifacts are relevant on the /download page.
  *
  * Desktop artifact naming (see apps/desktop/electron-builder.yml):
- *   tandem-desktop-{version}-mac-{arch}.{dmg|zip}
- *   tandem-desktop-{version}-windows-{arch}.exe
- *   tandem-desktop-{version}-linux-{arch}.{AppImage|deb|rpm}
+ *   agora-desktop-{version}-mac-{arch}.{dmg|zip}
+ *   agora-desktop-{version}-windows-{arch}.exe
+ *   agora-desktop-{version}-linux-{arch}.{AppImage|deb|rpm}
  *
  * Linux arch appears as amd64 / x86_64 / arm64 / aarch64 depending
  * on the format; we normalize to amd64 and arm64.
@@ -32,7 +32,7 @@ export interface DownloadAssets {
 }
 
 const DESKTOP_ARTIFACT_RE =
-  /^tandem-desktop-[^-]+-(mac|windows|linux)-([a-z0-9_]+)\.(dmg|zip|exe|AppImage|deb|rpm)$/i;
+  /^agora-desktop-[^-]+-(mac|windows|linux)-([a-z0-9_]+)\.(dmg|zip|exe|AppImage|deb|rpm)$/i;
 
 function normalizeLinuxArch(arch: string): "amd64" | "arm64" | null {
   const a = arch.toLowerCase();

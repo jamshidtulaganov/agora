@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, ScrollText } from "lucide-react";
-import { cn } from "@tandem/ui/lib/utils";
+import { cn } from "@agora/ui/lib/utils";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@tandem/ui/components/ui/tooltip";
-import { api } from "@tandem/core/api";
-import type { AgentTask } from "@tandem/core/types/agent";
+} from "@agora/ui/components/ui/tooltip";
+import { api } from "@agora/core/api";
+import type { AgentTask } from "@agora/core/types/agent";
 import { AgentTranscriptDialog } from "./agent-transcript-dialog";
 import { buildTimeline, type TimelineItem } from "./build-timeline";
 
@@ -88,9 +88,9 @@ export function TranscriptButton({
       setOpen(false);
     };
 
-    window.addEventListener("tandem:navigate", handleGlobalNavigate);
+    window.addEventListener("agora:navigate", handleGlobalNavigate);
     return () => {
-      window.removeEventListener("tandem:navigate", handleGlobalNavigate);
+      window.removeEventListener("agora:navigate", handleGlobalNavigate);
     };
   }, [open]);
 

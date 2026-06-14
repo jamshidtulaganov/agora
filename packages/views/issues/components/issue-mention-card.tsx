@@ -1,7 +1,7 @@
 "use client";
 
 import { AppLink } from "../../navigation";
-import { useWorkspacePaths } from "@tandem/core/paths";
+import { useWorkspacePaths } from "@agora/core/paths";
 import { IssueChip } from "./issue-chip";
 
 interface IssueMentionCardProps {

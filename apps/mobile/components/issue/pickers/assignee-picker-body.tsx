@@ -22,7 +22,7 @@ import type {
   IssueAssigneeType,
   MemberWithUser,
   Squad,
-} from "@tandem/core/types";
+} from "@agora/core/types";
 import { Text } from "@/components/ui/text";
 import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { memberListOptions } from "@/data/queries/members";

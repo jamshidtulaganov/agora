@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ActorAvatar as ActorAvatarBase } from "@tandem/ui/components/common/actor-avatar";
-import { useActorName } from "@tandem/core/workspace/hooks";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { runtimeListOptions } from "@tandem/core/runtimes/queries";
-import { agentListOptions } from "@tandem/core/workspace/queries";
-import { deriveAgentAvailability } from "@tandem/core/agents";
-import type { AgentTask } from "@tandem/core/types";
+import { ActorAvatar as ActorAvatarBase } from "@agora/ui/components/common/actor-avatar";
+import { useActorName } from "@agora/core/workspace/hooks";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { runtimeListOptions } from "@agora/core/runtimes/queries";
+import { agentListOptions } from "@agora/core/workspace/queries";
+import { deriveAgentAvailability } from "@agora/core/agents";
+import type { AgentTask } from "@agora/core/types";
 import { workloadConfig } from "../presence";
 import { useT } from "../../i18n";
 

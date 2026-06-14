@@ -12,12 +12,17 @@ interface ConfigState {
   // must be hidden. Defaults to false so unknown / older servers behave like
   // the managed-cloud case.
   workspaceCreationDisabled: boolean;
+  // SD fork: when true, the login page shows ONLY the Telegram path — the
+  // email send-code form, the Google button, and the "or" divider are all
+  // hidden. Defaults to false so unknown / older servers keep every method.
+  telegramOnly: boolean;
   setCdnDomain: (domain: string) => void;
   setAuthConfig: (config: {
     allowSignup: boolean;
     googleClientId?: string;
     telegramBotUsername?: string;
     workspaceCreationDisabled?: boolean;
+    telegramOnly?: boolean;
   }) => void;
   setDaemonConfig: (config: {
     daemonServerUrl?: string;
@@ -33,14 +38,22 @@ export const configStore = createStore<ConfigState>((set) => ({
   daemonServerUrl: "",
   daemonAppUrl: "",
   workspaceCreationDisabled: false,
+  telegramOnly: false,
   setCdnDomain: (domain) => set({ cdnDomain: domain }),
   setAuthConfig: ({
     allowSignup,
     googleClientId = "",
     telegramBotUsername = "",
     workspaceCreationDisabled = false,
+    telegramOnly = false,
   }) =>
-    set({ allowSignup, googleClientId, telegramBotUsername, workspaceCreationDisabled }),
+    set({
+      allowSignup,
+      googleClientId,
+      telegramBotUsername,
+      workspaceCreationDisabled,
+      telegramOnly,
+    }),
   setDaemonConfig: ({ daemonServerUrl = "", daemonAppUrl = "" }) =>
     set({ daemonServerUrl, daemonAppUrl }),
 }));

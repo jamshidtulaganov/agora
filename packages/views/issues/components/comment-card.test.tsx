@@ -7,7 +7,7 @@ const { getAttachmentTextContentMock } = vi.hoisted(() => ({
   getAttachmentTextContentMock: vi.fn(),
 }));
 
-vi.mock("@tandem/core/api", () => ({
+vi.mock("@agora/core/api", () => ({
   api: {
     getAttachmentTextContent: getAttachmentTextContentMock,
     getAttachment: vi.fn(),
@@ -32,8 +32,8 @@ vi.mock("../../navigation", () => ({
   }),
 }));
 
-vi.mock("@tandem/core/paths", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@tandem/core/paths")>();
+vi.mock("@agora/core/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@agora/core/paths")>();
   return {
     ...actual,
     useWorkspaceSlug: () => "acme",

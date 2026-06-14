@@ -1,11 +1,11 @@
 ---
 title: Environment variables
-description: The full list of environment variables for running a self-hosted Tandem server.
+description: The full list of environment variables for running a self-hosted Agora server.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-A self-hosted Tandem [server](/self-host-quickstart) reads its configuration from environment variables at startup — database, sign-in, email, storage, signup allowlists all live here. This page groups every variable by purpose: each section spells out **what happens if you leave it unset** and **which ones you must set in production**. For how to actually configure the auth-related ones, see [Sign-in and signup configuration](/auth-setup).
+A self-hosted Agora [server](/self-host-quickstart) reads its configuration from environment variables at startup — database, sign-in, email, storage, signup allowlists all live here. This page groups every variable by purpose: each section spells out **what happens if you leave it unset** and **which ones you must set in production**. For how to actually configure the auth-related ones, see [Sign-in and signup configuration](/auth-setup).
 
 ## Core server variables
 
@@ -15,13 +15,13 @@ These are the core variables you must think about before deploying — some have
 |---|---|---|
 | `DATABASE_URL` | `postgres://multica:multica@localhost:5432/multica?sslmode=disable` | **Yes** |
 | `PORT` | `8080` | No (unless you change the port) |
-| `JWT_SECRET` | `tandem-dev-secret-change-in-production` | **Yes** (the default is unsafe) |
+| `JWT_SECRET` | `agora-dev-secret-change-in-production` | **Yes** (the default is unsafe) |
 | `APP_ENV` | empty | **Yes** (must be `production`) |
 | `FRONTEND_ORIGIN` | empty | **Yes** (self-host must set its own domain) |
-| `TANDEM_DEV_VERIFICATION_CODE` | empty | No (must stay empty in production) |
+| `AGORA_DEV_VERIFICATION_CODE` | empty | No (must stay empty in production) |
 
 <Callout type="warning">
-**Keep `TANDEM_DEV_VERIFICATION_CODE` empty in production.** A fixed local test code is disabled by default, but if you opt in with `TANDEM_DEV_VERIFICATION_CODE=888888`, anyone who can request a code can sign in with that fixed value while `APP_ENV` is non-production. The shortcut is ignored when `APP_ENV=production`.
+**Keep `AGORA_DEV_VERIFICATION_CODE` empty in production.** A fixed local test code is disabled by default, but if you opt in with `AGORA_DEV_VERIFICATION_CODE=888888`, anyone who can request a code can sign in with that fixed value while `APP_ENV` is non-production. The shortcut is ignored when `APP_ENV=production`.
 </Callout>
 
 ### Database connection pool
@@ -35,14 +35,14 @@ These are the core variables you must think about before deploying — some have
 
 ## Email configuration
 
-Tandem supports two delivery backends — [Resend](https://resend.com/) for cloud deployments, or an SMTP relay for internal / on-premise networks. `SMTP_HOST` takes priority over `RESEND_API_KEY` when both are set.
+Agora supports two delivery backends — [Resend](https://resend.com/) for cloud deployments, or an SMTP relay for internal / on-premise networks. `SMTP_HOST` takes priority over `RESEND_API_KEY` when both are set.
 
 ### Resend
 
 | Variable | Default | Description |
 |---|---|---|
 | `RESEND_API_KEY` | empty | Resend API key |
-| `RESEND_FROM_EMAIL` | `noreply@tandem.dev` | Sender address (must be a domain verified in your Resend account; also reused as the `From:` header when SMTP is in use) |
+| `RESEND_FROM_EMAIL` | `noreply@agora.dev` | Sender address (must be a domain verified in your Resend account; also reused as the `From:` header when SMTP is in use) |
 
 ### SMTP relay
 
@@ -76,7 +76,7 @@ Full setup (including Google Cloud Console steps) is in [Sign-in and signup conf
 
 ## File storage configuration
 
-Tandem stores user-uploaded attachments (images and files in comments). **S3 is preferred**; if S3 is not configured, it falls back to local disk.
+Agora stores user-uploaded attachments (images and files in comments). **S3 is preferred**; if S3 is not configured, it falls back to local disk.
 
 ### S3 / S3-compatible storage
 
@@ -132,7 +132,7 @@ Three allowlist layers combine by priority. **If any layer is set to a non-empty
 
 **The counterintuitive part**: `ALLOWED_EMAIL_DOMAINS=company.io` + `ALLOW_SIGNUP=true` does **not** mean "allow company.io or everyone" — it means **only allow company.io**. The allowlist layers are AND semantics — the full decision tree is in [Sign-in and signup configuration → Signup allowlists](/auth-setup#restricting-who-can-sign-up).
 
-**Invite flows themselves do not check the signup allowlist** — but the invitee must still be able to **sign in** before accepting the invite. If they already have a Tandem account (for example from another workspace), they can accept directly, unaffected by the allowlist; **if they have never signed up**, the first step of sign-in (requesting a verification code) still passes through the allowlist check, and an email rejected by `ALLOW_SIGNUP=false` or by `ALLOWED_EMAILS` / `ALLOWED_EMAIL_DOMAINS` **cannot finish signup, and therefore cannot accept the invite**.
+**Invite flows themselves do not check the signup allowlist** — but the invitee must still be able to **sign in** before accepting the invite. If they already have a Agora account (for example from another workspace), they can accept directly, unaffected by the allowlist; **if they have never signed up**, the first step of sign-in (requesting a verification code) still passes through the allowlist check, and an email rejected by `ALLOW_SIGNUP=false` or by `ALLOWED_EMAILS` / `ALLOWED_EMAIL_DOMAINS` **cannot finish signup, and therefore cannot accept the invite**.
 
 ## Locking down workspace creation
 
@@ -148,7 +148,7 @@ Recommended bootstrap sequence:
 2. Sign in as the admin and create the shared workspace.
 3. Set `DISABLE_WORKSPACE_CREATION=true` and restart the backend. From this point on, users join via invitation only.
 
-If you also want to keep `ALLOW_SIGNUP=true` so invited users can finish signup with their first verification code, combine `DISABLE_WORKSPACE_CREATION=true` with `ALLOWED_EMAIL_DOMAINS` / `ALLOWED_EMAILS` to scope which addresses can sign up. Setting `ALLOW_SIGNUP=false` will additionally block pending invitees from creating their account at all — useful only on instances where every member already has a Tandem account.
+If you also want to keep `ALLOW_SIGNUP=true` so invited users can finish signup with their first verification code, combine `DISABLE_WORKSPACE_CREATION=true` with `ALLOWED_EMAIL_DOMAINS` / `ALLOWED_EMAILS` to scope which addresses can sign up. Setting `ALLOW_SIGNUP=false` will additionally block pending invitees from creating their account at all — useful only on instances where every member already has a Agora account.
 
 ## Rate limiting (optional Redis)
 
@@ -167,7 +167,7 @@ When a request is over the limit, the server replies with `429 Too Many Requests
 **Behind a reverse proxy you must set `RATE_LIMIT_TRUSTED_PROXIES`.** Otherwise every real user shares the proxy's IP from the backend's point of view, the whole deployment ends up in one bucket, and `/auth/send-code` becomes 5 req/min for the entire site. Typical values: `127.0.0.1/32,::1/128` for a same-host Caddy / Nginx; the CDN's published ranges for Cloudflare / ALB / CloudFront. Only IPs whose `RemoteAddr` falls inside one of these CIDRs may use `X-Forwarded-For` to identify the client.
 </Callout>
 
-This separate `RATE_LIMIT_TRUSTED_PROXIES` is **not** the same as `TANDEM_TRUSTED_PROXIES`, which controls the autopilot-webhook limiter (`/api/webhooks/autopilots/{token}`). Each limiter parses its own list, so a deployment behind a proxy should set both.
+This separate `RATE_LIMIT_TRUSTED_PROXIES` is **not** the same as `AGORA_TRUSTED_PROXIES`, which controls the autopilot-webhook limiter (`/api/webhooks/autopilots/{token}`). Each limiter parses its own list, so a deployment behind a proxy should set both.
 
 ## Daemon tuning parameters
 
@@ -175,12 +175,12 @@ The daemon runs on the user's local machine, and its config is read from local e
 
 | Variable | Default | Description |
 |---|---|---|
-| `TANDEM_SERVER_URL` | `ws://localhost:8080/ws` | Server address (self-host: replace with your domain) |
-| `TANDEM_DAEMON_HEARTBEAT_INTERVAL` | `15s` | Heartbeat interval |
-| `TANDEM_DAEMON_POLL_INTERVAL` | `3s` | Task polling interval |
-| `TANDEM_DAEMON_MAX_CONCURRENT_TASKS` | `20` | Max concurrent tasks |
-| `TANDEM_<PROVIDER>_PATH` | matches the CLI name | Path to each AI coding tool's executable (for example `TANDEM_CLAUDE_PATH`) |
-| `TANDEM_<PROVIDER>_MODEL` | empty | Default model for each AI coding tool |
+| `AGORA_SERVER_URL` | `ws://localhost:8080/ws` | Server address (self-host: replace with your domain) |
+| `AGORA_DAEMON_HEARTBEAT_INTERVAL` | `15s` | Heartbeat interval |
+| `AGORA_DAEMON_POLL_INTERVAL` | `3s` | Task polling interval |
+| `AGORA_DAEMON_MAX_CONCURRENT_TASKS` | `20` | Max concurrent tasks |
+| `AGORA_<PROVIDER>_PATH` | matches the CLI name | Path to each AI coding tool's executable (for example `AGORA_CLAUDE_PATH`) |
+| `AGORA_<PROVIDER>_MODEL` | empty | Default model for each AI coding tool |
 
 For a full explanation of how each parameter affects daemon behavior, see [Daemon and runtimes](/daemon-runtimes).
 
@@ -188,14 +188,14 @@ For a full explanation of how each parameter affects daemon behavior, see [Daemo
 
 | Variable | Default | Description |
 |---|---|---|
-| `FRONTEND_ORIGIN` | empty | Frontend address. Invite email links, the CORS allowlist, and the cookie domain are all derived from this. When unset, invite email links fall back to the hosted domain `https://app.tandem.dev` — self-host must set this explicitly |
-| `TANDEM_APP_URL` | empty | Frontend URL for CLI login flow. Also used by the web UI to show self-host daemon setup commands with your app domain; for same-origin deployments this is also used as daemon `server_url` when `TANDEM_PUBLIC_URL` is unset |
-| `TANDEM_PUBLIC_URL` | empty | Public API URL, without trailing slash. Used for autopilot webhook URLs and by the web UI as the daemon `server_url` |
+| `FRONTEND_ORIGIN` | empty | Frontend address. Invite email links, the CORS allowlist, and the cookie domain are all derived from this. When unset, invite email links fall back to the hosted domain `https://app.agora.dev` — self-host must set this explicitly |
+| `AGORA_APP_URL` | empty | Frontend URL for CLI login flow. Also used by the web UI to show self-host daemon setup commands with your app domain; for same-origin deployments this is also used as daemon `server_url` when `AGORA_PUBLIC_URL` is unset |
+| `AGORA_PUBLIC_URL` | empty | Public API URL, without trailing slash. Used for autopilot webhook URLs and by the web UI as the daemon `server_url` |
 | `CORS_ALLOWED_ORIGINS` | empty | Additional allowed CORS origins (comma-separated) |
 | `ALLOWED_ORIGINS` | empty | WebSocket-specific origin allowlist (comma-separated); when unset, fallback order is `CORS_ALLOWED_ORIGINS` → `FRONTEND_ORIGIN` → `localhost:3000/5173/5174` |
 
 <Callout type="warning">
-**Leaving `FRONTEND_ORIGIN` unset creates two silent failures**: (1) invite email links point at `https://app.tandem.dev` (the hosted domain), and clicking them doesn't bring users back to your self-hosted instance; (2) WebSocket Origin checks fall back to `localhost:3000 / 5173 / 5174`, so every WebSocket connection in a production deployment is rejected and the frontend appears to "lose real-time updates."
+**Leaving `FRONTEND_ORIGIN` unset creates two silent failures**: (1) invite email links point at `https://app.agora.dev` (the hosted domain), and clicking them doesn't bring users back to your self-hosted instance; (2) WebSocket Origin checks fall back to `localhost:3000 / 5173 / 5174`, so every WebSocket connection in a production deployment is rejected and the frontend appears to "lose real-time updates."
 </Callout>
 
 ## GitHub integration
@@ -212,17 +212,17 @@ The [GitHub PR ↔ issue integration](/github-integration) needs two variables. 
 **Behavior when either of the required variables is unset:**
 
 - `Connect GitHub` in Settings → GitHub is **disabled** and shows a "not configured" hint to admins.
-- The `/api/webhooks/github` endpoint returns **`503 github webhooks not configured`** — Tandem refuses to process events with no secret rather than treating every signature as valid.
+- The `/api/webhooks/github` endpoint returns **`503 github webhooks not configured`** — Agora refuses to process events with no secret rather than treating every signature as valid.
 
 **Behavior when the optional `GITHUB_APP_ID` / `GITHUB_APP_PRIVATE_KEY` are unset:**
 
-- The connection card briefly shows `Connected to unknown` after install. Tandem refreshes the row to the real org/user name as soon as GitHub delivers the `installation.created` webhook (typically within a few seconds), and broadcasts a realtime update so any open Settings → GitHub tab reflects the change without a manual refresh.
+- The connection card briefly shows `Connected to unknown` after install. Agora refreshes the row to the real org/user name as soon as GitHub delivers the `installation.created` webhook (typically within a few seconds), and broadcasts a realtime update so any open Settings → GitHub tab reflects the change without a manual refresh.
 
 **Note:** `GITHUB_WEBHOOK_SECRET` is reused as the signing key for the install-flow state token, so operators only need to manage one secret. It is **not** the GitHub App's *Client* secret — Client secrets are OAuth-related and not used by this integration. See [GitHub integration → Self-host setup](/github-integration#self-host-setup) for the full walkthrough.
 
 ## Usage analytics
 
-By default, the server reports to Tandem's official PostHog instance. To opt out, set `ANALYTICS_DISABLED=true`.
+By default, the server reports to Agora's official PostHog instance. To opt out, set `ANALYTICS_DISABLED=true`.
 
 | Variable | Default | Description |
 |---|---|---|
@@ -235,4 +235,4 @@ By default, the server reports to Tandem's official PostHog instance. To opt out
 - [Sign-in and signup configuration](/auth-setup) — how to actually configure the auth-related variables above and where the traps are
 - [GitHub integration](/github-integration) — how to set up the GitHub App that backs `GITHUB_APP_SLUG` / `GITHUB_WEBHOOK_SECRET`
 - [Troubleshooting](/troubleshooting) — symptoms and fixes for common misconfigurations
-- [Daemon and runtimes](/daemon-runtimes) — what the `TANDEM_DAEMON_*` parameters actually do
+- [Daemon and runtimes](/daemon-runtimes) — what the `AGORA_DAEMON_*` parameters actually do

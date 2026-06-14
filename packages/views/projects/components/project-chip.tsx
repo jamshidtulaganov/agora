@@ -1,8 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { projectListOptions, projectDetailOptions } from "@tandem/core/projects/queries";
-import { useWorkspaceId } from "@tandem/core/hooks";
+import { projectListOptions, projectDetailOptions } from "@agora/core/projects/queries";
+import { useWorkspaceId } from "@agora/core/hooks";
 import { ProjectIcon } from "./project-icon";
 import { useT } from "../../i18n";
 

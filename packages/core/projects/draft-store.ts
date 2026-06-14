@@ -45,7 +45,7 @@ export const useProjectDraftStore = create<ProjectDraftStore>()(
       },
     }),
     {
-      name: "tandem_project_draft",
+      name: "agora_project_draft",
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
     },
   ),

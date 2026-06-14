@@ -1,9 +1,9 @@
 import { render } from "@testing-library/react";
 import { createRef, type ReactNode } from "react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { I18nProvider } from "@tandem/core/i18n/react";
-import { workspaceKeys } from "@tandem/core/workspace/queries";
-import type { Agent, MemberWithUser } from "@tandem/core/types";
+import { I18nProvider } from "@agora/core/i18n/react";
+import { workspaceKeys } from "@agora/core/workspace/queries";
+import type { Agent, MemberWithUser } from "@agora/core/types";
 import type { QueryClient } from "@tanstack/react-query";
 import enEditor from "../../locales/en/editor.json";
 
@@ -23,17 +23,17 @@ beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
 });
 
-vi.mock("@tandem/core/platform", () => ({
+vi.mock("@agora/core/platform", () => ({
   getCurrentWsId: () => "ws-1",
 }));
 
 const authState = { user: { id: "u1" } as { id: string } | null };
-vi.mock("@tandem/core/auth", () => ({
+vi.mock("@agora/core/auth", () => ({
   useAuthStore: { getState: () => authState },
 }));
 
 const chatState = { selectedAgentId: "agent-1" as string | null };
-vi.mock("@tandem/core/chat", () => ({
+vi.mock("@agora/core/chat", () => ({
   useChatStore: { getState: () => chatState },
 }));
 

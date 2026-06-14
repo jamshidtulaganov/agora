@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
@@ -13,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/multica-ai/multica/server/internal/analytics"
 	"github.com/multica-ai/multica/server/internal/auth"
@@ -62,7 +65,7 @@ const telegramWebhookSecretHeader = "X-Telegram-Bot-Api-Secret-Token"
 // Returns nil when the token is unset/blank so the handlers can 503 and the
 // public config can hide the Telegram login option — mirroring how the Lark and
 // Google integrations stay dormant until their secrets are provided. An
-// optional TANDEM_TELEGRAM_API_BASE_URL override lets tests / proxies point the
+// optional AGORA_TELEGRAM_API_BASE_URL override lets tests / proxies point the
 // client at a mock server (left empty in normal operation).
 func newTelegramBotFromEnv() *telegram.BotClient {
 	token := strings.TrimSpace(os.Getenv("TELEGRAM_BOT_TOKEN"))
@@ -70,7 +73,7 @@ func newTelegramBotFromEnv() *telegram.BotClient {
 		return nil
 	}
 	c := telegram.NewBotClient(token)
-	if base := strings.TrimSpace(os.Getenv("TANDEM_TELEGRAM_API_BASE_URL")); base != "" {
+	if base := strings.TrimSpace(os.Getenv("AGORA_TELEGRAM_API_BASE_URL")); base != "" {
 		c.BaseURL = base
 	}
 	return c
@@ -146,7 +149,7 @@ type telegramUpdate struct {
 	} `json:"message"`
 }
 
-// TelegramWebhook receives bot updates. Public (no Tandem auth) — the optional
+// TelegramWebhook receives bot updates. Public (no Agora auth) — the optional
 // secret-token header is the only authentication. On a "/start login_<nonce>"
 // message it binds the nonce to the sender, generates a 6-digit code, and DMs
 // it. ALWAYS returns 200 so Telegram does not retry and we never leak whether a
@@ -236,7 +239,7 @@ func (h *Handler) TelegramWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msg := fmt.Sprintf("Your Tandem login code is: %s\n\nIt expires in 5 minutes. If you didn't request this, ignore this message.", code)
+	msg := fmt.Sprintf("Your Agora login code is: %s\n\nIt expires in 5 minutes. If you didn't request this, ignore this message.", code)
 	if err := h.telegramBot.SendMessage(r.Context(), telegramID, msg); err != nil {
 		// DM failed (e.g. the user blocked the bot). The code is still bound;
 		// log and ack — the user simply won't get a code and can retry.
@@ -328,6 +331,12 @@ func (h *Handler) TelegramVerify(w http.ResponseWriter, r *http.Request) {
 		// the next login.
 	}
 
+	// SD fork: every Telegram user lands in the three SalesDoctor workspaces
+	// (sd-main / sd-cs / sd-billing) — they cannot create their own. Runs for
+	// both new and existing users (idempotent) and is fully best-effort so a
+	// missing workspace or a transient DB error never blocks the login.
+	h.ensureDefaultWorkspaceMemberships(r.Context(), user.ID)
+
 	tokenString, err := h.issueJWT(user)
 	if err != nil {
 		slog.Warn("telegram login failed", append(logger.RequestAttrs(r), "error", err, "email", email)...)
@@ -350,6 +359,76 @@ func (h *Handler) TelegramVerify(w http.ResponseWriter, r *http.Request) {
 		Token: tokenString,
 		User:  userToResponse(user),
 	})
+}
+
+// defaultWorkspaceSlugs returns the workspace slugs every Telegram user is
+// auto-joined to, read from AGORA_DEFAULT_WORKSPACE_SLUGS (comma-separated).
+// Falls back to the three SalesDoctor workspaces when the env var is unset or
+// blank. Each slug is lowercased + trimmed and de-duplicated, mirroring the
+// BITRIX_WORKSPACE_SLUGS parsing style.
+func defaultWorkspaceSlugs() []string {
+	raw := strings.TrimSpace(os.Getenv("AGORA_DEFAULT_WORKSPACE_SLUGS"))
+	if raw == "" {
+		raw = "sd-main,sd-cs,sd-billing"
+	}
+	seen := map[string]bool{}
+	slugs := make([]string, 0, 3)
+	for _, s := range strings.Split(raw, ",") {
+		s = strings.ToLower(strings.TrimSpace(s))
+		if s == "" || seen[s] {
+			continue
+		}
+		seen[s] = true
+		slugs = append(slugs, s)
+	}
+	return slugs
+}
+
+// ensureDefaultWorkspaceMemberships makes the user a 'member' of each default
+// workspace (defaultWorkspaceSlugs) it isn't already in, so a Telegram-only
+// account lands in the three SalesDoctor workspaces and never needs to create
+// its own. Fully best-effort: a missing workspace, an existing membership, or
+// any transient DB error is logged and skipped — it must NEVER fail the login,
+// so it returns nothing and callers do not branch on it.
+func (h *Handler) ensureDefaultWorkspaceMemberships(ctx context.Context, userID pgtype.UUID) {
+	for _, slug := range defaultWorkspaceSlugs() {
+		ws, err := h.Queries.GetWorkspaceBySlug(ctx, slug)
+		if err != nil {
+			if !isNotFound(err) {
+				slog.Warn("telegram verify: failed to look up default workspace",
+					"error", err, "slug", slug, "user_id", uuidToString(userID))
+			}
+			// Workspace not seeded on this instance — skip it.
+			continue
+		}
+
+		// Already a member? Nothing to do.
+		if _, err := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
+			UserID:      userID,
+			WorkspaceID: ws.ID,
+		}); err == nil {
+			continue
+		} else if !isNotFound(err) {
+			slog.Warn("telegram verify: failed to check default workspace membership",
+				"error", err, "slug", slug, "user_id", uuidToString(userID))
+			continue
+		}
+
+		if _, err := h.Queries.CreateMember(ctx, db.CreateMemberParams{
+			WorkspaceID: ws.ID,
+			UserID:      userID,
+			Role:        "member",
+		}); err != nil {
+			// A racing concurrent login may have inserted the membership between
+			// our check and insert (unique constraint) — treat as success-ish:
+			// log and move on, never fail the login.
+			slog.Warn("telegram verify: failed to add default workspace membership",
+				"error", err, "slug", slug, "user_id", uuidToString(userID))
+			continue
+		}
+		slog.Info("telegram verify: auto-joined default workspace",
+			"slug", slug, "user_id", uuidToString(userID))
+	}
 }
 
 // telegramSyntheticEmail derives the stable, non-deliverable email used to key a

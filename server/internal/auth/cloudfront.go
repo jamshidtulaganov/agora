@@ -26,8 +26,8 @@ import (
 type CloudFrontSigner struct {
 	keyPairID    string
 	privateKey   *rsa.PrivateKey
-	domain       string // CDN domain, e.g. "static.tandem.dev"
-	cookieDomain string // cookie scope, e.g. ".tandem.dev"
+	domain       string // CDN domain, e.g. "static.agora.dev"
+	cookieDomain string // cookie scope, e.g. ".agora.dev"
 }
 
 // NewCloudFrontSignerFromEnv creates a signer from environment variables.
@@ -39,8 +39,8 @@ type CloudFrontSigner struct {
 //
 // Other required environment variables:
 //   - CLOUDFRONT_KEY_PAIR_ID
-//   - CLOUDFRONT_DOMAIN       (e.g. "static.tandem.dev")
-//   - COOKIE_DOMAIN           (e.g. ".tandem.dev")
+//   - CLOUDFRONT_DOMAIN       (e.g. "static.agora.dev")
+//   - COOKIE_DOMAIN           (e.g. ".agora.dev")
 func NewCloudFrontSignerFromEnv() *CloudFrontSigner {
 	keyPairID := os.Getenv("CLOUDFRONT_KEY_PAIR_ID")
 	if keyPairID == "" {

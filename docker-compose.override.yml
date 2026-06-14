@@ -1,6 +1,6 @@
 # Local dev/test only: expose the (otherwise internal-only) selfhost Postgres on
 # a host port so `go test` can reach the already-migrated DB at
-# postgres://multica:multica@localhost:5433/tandem. Auto-loaded by
+# postgres://multica:multica@localhost:5433/multica. Auto-loaded by
 # `docker compose` only when passed explicitly with -f alongside the selfhost
 # file; production self-host never uses this override.
 services:
@@ -15,3 +15,7 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
       TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
+      # Agora: lock to 3 workspaces + Telegram-only registration
+      DISABLE_WORKSPACE_CREATION: ${DISABLE_WORKSPACE_CREATION:-}
+      AGORA_TELEGRAM_ONLY: ${AGORA_TELEGRAM_ONLY:-}
+      AGORA_DEFAULT_WORKSPACE_SLUGS: ${AGORA_DEFAULT_WORKSPACE_SLUGS:-}

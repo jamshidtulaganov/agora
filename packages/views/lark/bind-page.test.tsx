@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { I18nProvider } from "@tandem/core/i18n/react";
+import { I18nProvider } from "@agora/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 
 const TEST_RESOURCES = { en: { common: enCommon } };
@@ -17,7 +17,7 @@ const mockAuthState = vi.hoisted(() => ({
 const mockNavigatePush = vi.hoisted(() => vi.fn());
 const mockRedeemToken = vi.hoisted(() => vi.fn());
 
-vi.mock("@tandem/core/auth", () => {
+vi.mock("@agora/core/auth", () => {
   const useAuthStore = Object.assign(
     (sel?: (s: typeof mockAuthState) => unknown) =>
       sel ? sel(mockAuthState) : mockAuthState,
@@ -30,7 +30,7 @@ vi.mock("../navigation", () => ({
   useNavigation: () => ({ push: mockNavigatePush }),
 }));
 
-vi.mock("@tandem/core/api", () => ({
+vi.mock("@agora/core/api", () => ({
   api: { redeemLarkBindingToken: mockRedeemToken },
 }));
 

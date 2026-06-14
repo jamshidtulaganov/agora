@@ -1,19 +1,19 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { I18nProvider } from "@tandem/core/i18n/react";
-import { configStore } from "@tandem/core/config";
+import { I18nProvider } from "@agora/core/i18n/react";
+import { configStore } from "@agora/core/config";
 import enCommon from "../../locales/en/common.json";
 import enRuntimes from "../../locales/en/runtimes.json";
 import { ConnectRemoteDialog } from "./connect-remote-dialog";
 
 const TEST_RESOURCES = { en: { common: enCommon, runtimes: enRuntimes } };
 
-vi.mock("@tandem/core/hooks", () => ({
+vi.mock("@agora/core/hooks", () => ({
   useWorkspaceId: () => "ws-test",
 }));
 
-vi.mock("@tandem/core/paths", () => ({
+vi.mock("@agora/core/paths", () => ({
   paths: {
     workspace: () => ({
       agents: () => "/agents",
@@ -23,7 +23,7 @@ vi.mock("@tandem/core/paths", () => ({
   useWorkspaceSlug: () => "workspace-test",
 }));
 
-vi.mock("@tandem/core/realtime", () => ({
+vi.mock("@agora/core/realtime", () => ({
   useWSEvent: vi.fn(),
 }));
 
@@ -69,13 +69,13 @@ describe("ConnectRemoteDialog", () => {
   it("uses cloud setup commands by default", () => {
     const { baseElement } = renderDialog();
 
-    expect(baseElement).toHaveTextContent("tandem setup");
-    expect(baseElement).not.toHaveTextContent("tandem setup self-host");
+    expect(baseElement).toHaveTextContent("agora setup");
+    expect(baseElement).not.toHaveTextContent("agora setup self-host");
     expect(baseElement).toHaveTextContent(
-      "tandem config set server_url https://api.tandem.dev",
+      "agora config set server_url https://api.agora.dev",
     );
     expect(baseElement).toHaveTextContent(
-      "tandem config set app_url https://tandem.dev",
+      "agora config set app_url https://agora.dev",
     );
   });
 
@@ -86,13 +86,13 @@ describe("ConnectRemoteDialog", () => {
     });
 
     expect(baseElement).toHaveTextContent(
-      "tandem setup self-host --server-url https://api.example.com --app-url https://app.example.com",
+      "agora setup self-host --server-url https://api.example.com --app-url https://app.example.com",
     );
     expect(baseElement).toHaveTextContent(
-      "tandem config set server_url https://api.example.com",
+      "agora config set server_url https://api.example.com",
     );
     expect(baseElement).toHaveTextContent(
-      "tandem config set app_url https://app.example.com",
+      "agora config set app_url https://app.example.com",
     );
   });
 
@@ -100,7 +100,7 @@ describe("ConnectRemoteDialog", () => {
     const { baseElement } = renderDialog();
 
     const setupCode = Array.from(baseElement.querySelectorAll("code")).find((node) =>
-      node.textContent?.includes("tandem setup"),
+      node.textContent?.includes("agora setup"),
     );
 
     expect(setupCode).toHaveClass(...ligatureClasses);
@@ -110,7 +110,7 @@ describe("ConnectRemoteDialog", () => {
     const { baseElement } = renderDialog();
 
     const tokenCode = Array.from(baseElement.querySelectorAll("code")).find((node) =>
-      node.textContent?.includes("tandem login --token <YOUR_TOKEN>"),
+      node.textContent?.includes("agora login --token <YOUR_TOKEN>"),
     );
 
     expect(tokenCode).toHaveClass(...ligatureClasses);

@@ -6,13 +6,13 @@ import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@tandem/ui/components/ui/popover";
+} from "@agora/ui/components/ui/popover";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@tandem/ui/components/ui/tooltip";
-import { isImeComposing } from "@tandem/core/utils";
+} from "@agora/ui/components/ui/tooltip";
+import { isImeComposing } from "@agora/core/utils";
 import { useT } from "../../../i18n";
 
 const HIGHLIGHT_CLASS = "bg-accent";

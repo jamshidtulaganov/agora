@@ -2,9 +2,9 @@ import {
   matchLocale,
   SUPPORTED_LOCALES,
   type SupportedLocale,
-} from "@tandem/core/i18n";
+} from "@agora/core/i18n";
 
-export const TANDEM_LOCALE_HEADER = "x-tandem-locale";
+export const AGORA_LOCALE_HEADER = "x-agora-locale";
 
 export function isSupportedLocale(
   value: string | null,

@@ -1,5 +1,5 @@
-import type { TimelineEntry } from "@tandem/core/types";
-import { sortTimelineEntriesAsc } from "@tandem/core/issues/timeline-sort";
+import type { TimelineEntry } from "@agora/core/types";
+import { sortTimelineEntriesAsc } from "@agora/core/issues/timeline-sort";
 
 /**
  * Walks the parent_id graph rooted at `rootId` and returns every descendant in

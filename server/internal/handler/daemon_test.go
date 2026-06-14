@@ -2069,7 +2069,7 @@ func TestClaimTaskByRuntime_TaskWorkspaceMismatch_CancelsAndRejects(t *testing.T
 // comment, threaded under the trigger. Before the fix, CompleteTask exempted
 // comment-triggered tasks from the auto-synthesis path, so a Claude Code /
 // Codex / etc. agent that ended its run with only terminal text (no
-// `tandem issue comment add` call) left the user staring at a "Completed"
+// `agora issue comment add` call) left the user staring at a "Completed"
 // badge with no reply.
 func TestCompleteTask_CommentTriggered_SynthesizesCommentWhenAgentSilent(t *testing.T) {
 	if testHandler == nil {
@@ -2969,7 +2969,7 @@ func TestClaimTask_ChatPopulatesInitiator(t *testing.T) {
 	// A separate user stands in for the Lark group session creator (installer).
 	var installerID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO "user" (name, email) VALUES ('Installer User', 'installer-test@tandem.dev')
+		INSERT INTO "user" (name, email) VALUES ('Installer User', 'installer-test@agora.dev')
 		RETURNING id
 	`).Scan(&installerID); err != nil {
 		t.Fatalf("setup: create installer user: %v", err)
@@ -3411,7 +3411,7 @@ func installFreshMembershipCache(t *testing.T) {
 // deletes it on test cleanup. Returns the user id as a string.
 func createEphemeralUser(t *testing.T, label string) string {
 	t.Helper()
-	email := fmt.Sprintf("membership-cache-%s-%s@tandem.dev", label, uuid.NewString())
+	email := fmt.Sprintf("membership-cache-%s-%s@agora.dev", label, uuid.NewString())
 	var userID string
 	if err := testPool.QueryRow(context.Background(), `
 		INSERT INTO "user" (name, email) VALUES ($1, $2) RETURNING id

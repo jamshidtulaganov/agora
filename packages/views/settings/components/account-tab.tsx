@@ -2,16 +2,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Camera, Loader2, Save } from "lucide-react";
-import { Input } from "@tandem/ui/components/ui/input";
-import { Label } from "@tandem/ui/components/ui/label";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Card, CardContent } from "@tandem/ui/components/ui/card";
-import { Textarea } from "@tandem/ui/components/ui/textarea";
+import { Input } from "@agora/ui/components/ui/input";
+import { Label } from "@agora/ui/components/ui/label";
+import { Button } from "@agora/ui/components/ui/button";
+import { Card, CardContent } from "@agora/ui/components/ui/card";
+import { Textarea } from "@agora/ui/components/ui/textarea";
 import { toast } from "sonner";
-import { useAuthStore } from "@tandem/core/auth";
-import { api } from "@tandem/core/api";
-import { resolvePublicFileUrl } from "@tandem/core/workspace/avatar-url";
-import { useFileUpload } from "@tandem/core/hooks/use-file-upload";
+import { useAuthStore } from "@agora/core/auth";
+import { api } from "@agora/core/api";
+import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
+import { useFileUpload } from "@agora/core/hooks/use-file-upload";
 import { useT } from "../../i18n";
 
 // Mirror server/internal/handler/auth.go:MaxProfileDescriptionLen. Counted in

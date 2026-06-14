@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement, ReactNode } from "react";
-import { I18nProvider } from "@tandem/core/i18n/react";
+import { I18nProvider } from "@agora/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 import enAuth from "../locales/en/auth.json";
 import enSettings from "../locales/en/settings.json";
@@ -41,6 +41,7 @@ const mockSetQueryData = vi.hoisted(() => vi.fn());
 // Mutable per-test config state — controls telegramBotUsername visibility.
 const mockConfigState = vi.hoisted(() => ({
   telegramBotUsername: "",
+  telegramOnly: false,
 }));
 
 vi.mock("@tanstack/react-query", async () => {
@@ -50,7 +51,7 @@ vi.mock("@tanstack/react-query", async () => {
   return { ...actual, useQueryClient: () => ({ setQueryData: mockSetQueryData }) };
 });
 
-vi.mock("@tandem/core/auth", () => ({
+vi.mock("@agora/core/auth", () => ({
   useAuthStore: Object.assign(
     // Zustand hook form — component may call useAuthStore(selector)
     (selector?: (s: unknown) => unknown) => {
@@ -71,12 +72,12 @@ vi.mock("@tandem/core/auth", () => ({
   ),
 }));
 
-vi.mock("@tandem/core/config", () => ({
+vi.mock("@agora/core/config", () => ({
   useConfigStore: (selector: (state: typeof mockConfigState) => unknown) =>
     selector(mockConfigState),
 }));
 
-vi.mock("@tandem/core/api", () => ({
+vi.mock("@agora/core/api", () => ({
   api: {
     listWorkspaces: mockApiListWorkspaces,
     verifyCode: mockApiVerifyCode,
@@ -88,7 +89,7 @@ vi.mock("@tandem/core/api", () => ({
   },
 }));
 
-vi.mock("@tandem/core/types", () => ({}));
+vi.mock("@agora/core/types", () => ({}));
 
 // ---------------------------------------------------------------------------
 // Import after mocks
@@ -119,6 +120,8 @@ describe("LoginPage", () => {
     mockApiGetMe.mockRejectedValue(new Error("unauthorized"));
     // Default: Telegram bot not configured (button hidden).
     mockConfigState.telegramBotUsername = "";
+    // Default: all sign-in methods enabled (telegram_only off).
+    mockConfigState.telegramOnly = false;
     localStorage.clear();
     // Reset window.location for tests that change it
     Object.defineProperty(window, "location", {
@@ -135,10 +138,10 @@ describe("LoginPage", () => {
   // Email step rendering
   // -------------------------------------------------------------------------
 
-  it("renders email form with 'Sign in to Tandem' title", () => {
+  it("renders email form with 'Sign in to Agora' title", () => {
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
     expect(
-      screen.getByText(/sign in to tandem/i),
+      screen.getByText(/sign in to agora/i),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/enter your email to get a login code/i),
@@ -425,7 +428,7 @@ describe("LoginPage", () => {
   });
 
   it("shows Telegram button + divider when bot username is configured", () => {
-    mockConfigState.telegramBotUsername = "tandem_bot";
+    mockConfigState.telegramBotUsername = "agora_bot";
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
     expect(
       screen.getByRole("button", { name: /continue with telegram/i }),
@@ -434,10 +437,10 @@ describe("LoginPage", () => {
   });
 
   it("starts the Telegram flow and shows deep-link + OTP on click", async () => {
-    mockConfigState.telegramBotUsername = "tandem_bot";
+    mockConfigState.telegramBotUsername = "agora_bot";
     mockApiTelegramStartLogin.mockResolvedValueOnce({
       nonce: "nonce-123",
-      deep_link: "https://t.me/tandem_bot?start=nonce-123",
+      deep_link: "https://t.me/agora_bot?start=nonce-123",
     });
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
@@ -454,21 +457,21 @@ describe("LoginPage", () => {
     // Deep-link button rendered as an anchor pointing at deep_link, with the
     // bot username interpolated into the label.
     const openLink = screen.getByRole("link", {
-      name: /open @tandem_bot in telegram/i,
+      name: /open @agora_bot in telegram/i,
     });
     expect(openLink).toHaveAttribute(
       "href",
-      "https://t.me/tandem_bot?start=nonce-123",
+      "https://t.me/agora_bot?start=nonce-123",
     );
     // The 6-digit OTP input is present.
     expect(getOTPInput()).toBeInTheDocument();
   });
 
   it("verifies code, establishes session via token, then onSuccess", async () => {
-    mockConfigState.telegramBotUsername = "tandem_bot";
+    mockConfigState.telegramBotUsername = "agora_bot";
     mockApiTelegramStartLogin.mockResolvedValueOnce({
       nonce: "nonce-123",
-      deep_link: "https://t.me/tandem_bot?start=nonce-123",
+      deep_link: "https://t.me/agora_bot?start=nonce-123",
     });
     mockApiTelegramVerifyLogin.mockResolvedValueOnce({
       token: "tg-jwt-token",
@@ -512,10 +515,10 @@ describe("LoginPage", () => {
   });
 
   it("shows error and clears code on failed Telegram verify", async () => {
-    mockConfigState.telegramBotUsername = "tandem_bot";
+    mockConfigState.telegramBotUsername = "agora_bot";
     mockApiTelegramStartLogin.mockResolvedValueOnce({
       nonce: "nonce-123",
-      deep_link: "https://t.me/tandem_bot?start=nonce-123",
+      deep_link: "https://t.me/agora_bot?start=nonce-123",
     });
     mockApiTelegramVerifyLogin.mockRejectedValueOnce(
       new Error("Invalid or expired code"),
@@ -542,10 +545,10 @@ describe("LoginPage", () => {
   });
 
   it("back button on Telegram step returns to email step", async () => {
-    mockConfigState.telegramBotUsername = "tandem_bot";
+    mockConfigState.telegramBotUsername = "agora_bot";
     mockApiTelegramStartLogin.mockResolvedValueOnce({
       nonce: "nonce-123",
-      deep_link: "https://t.me/tandem_bot?start=nonce-123",
+      deep_link: "https://t.me/agora_bot?start=nonce-123",
     });
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
@@ -560,11 +563,11 @@ describe("LoginPage", () => {
 
     await user.click(screen.getByRole("button", { name: /back/i }));
 
-    expect(screen.getByText(/sign in to tandem/i)).toBeInTheDocument();
+    expect(screen.getByText(/sign in to agora/i)).toBeInTheDocument();
   });
 
   it("shows error when Telegram start fails", async () => {
-    mockConfigState.telegramBotUsername = "tandem_bot";
+    mockConfigState.telegramBotUsername = "agora_bot";
     mockApiTelegramStartLogin.mockRejectedValueOnce(new Error("start boom"));
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
@@ -577,7 +580,81 @@ describe("LoginPage", () => {
       expect(screen.getByText("start boom")).toBeInTheDocument();
     });
     // Stays on the email step since the flow never started.
-    expect(screen.getByText(/sign in to tandem/i)).toBeInTheDocument();
+    expect(screen.getByText(/sign in to agora/i)).toBeInTheDocument();
+  });
+
+  // -------------------------------------------------------------------------
+  // telegram_only gate — hide every non-Telegram path
+  // -------------------------------------------------------------------------
+
+  it("telegram_only: hides email form, Google button, and divider; shows Telegram", () => {
+    mockConfigState.telegramOnly = true;
+    mockConfigState.telegramBotUsername = "agora_bot";
+    render(
+      <LoginPage
+        onSuccess={onSuccess}
+        google={{ clientId: "goog-123", redirectUri: "http://localhost/cb" }}
+      />,
+    );
+
+    // Email send-code form + its submit are gone.
+    expect(screen.queryByLabelText(/email/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^continue$/i }),
+    ).not.toBeInTheDocument();
+    // Google button is gone even though the google prop is supplied.
+    expect(
+      screen.queryByRole("button", { name: /continue with google/i }),
+    ).not.toBeInTheDocument();
+    // The "or" divider is gone.
+    expect(screen.queryByText(/^or$/i)).not.toBeInTheDocument();
+    // Telegram is the sole sign-in action.
+    expect(
+      screen.getByRole("button", { name: /continue with telegram/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("telegram_only: starting the flow still reaches the Telegram step", async () => {
+    mockConfigState.telegramOnly = true;
+    mockConfigState.telegramBotUsername = "agora_bot";
+    mockApiTelegramStartLogin.mockResolvedValueOnce({
+      nonce: "nonce-123",
+      deep_link: "https://t.me/agora_bot?start=nonce-123",
+    });
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
+
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole("button", { name: /continue with telegram/i }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/sign in with telegram/i)).toBeInTheDocument();
+    });
+    expect(getOTPInput()).toBeInTheDocument();
+  });
+
+  it("telegram_only off: email form, Google, divider, and Telegram all render as before", () => {
+    // telegramOnly defaults to false in beforeEach.
+    mockConfigState.telegramBotUsername = "agora_bot";
+    render(
+      <LoginPage
+        onSuccess={onSuccess}
+        google={{ clientId: "goog-123", redirectUri: "http://localhost/cb" }}
+      />,
+    );
+
+    expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^continue$/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /continue with google/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/^or$/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /continue with telegram/i }),
+    ).toBeInTheDocument();
   });
 
   // -------------------------------------------------------------------------
@@ -585,7 +662,7 @@ describe("LoginPage", () => {
   // -------------------------------------------------------------------------
 
   it("shows cli_confirm step when existing session + cliCallback", async () => {
-    localStorage.setItem("tandem_token", "existing-jwt");
+    localStorage.setItem("agora_token", "existing-jwt");
     // Cookie attempt fails first, then localStorage fallback succeeds
     mockApiGetMe
       .mockRejectedValueOnce(new Error("no cookie"))
@@ -617,7 +694,7 @@ describe("LoginPage", () => {
   });
 
   it("CLI authorize button redirects to callback URL", async () => {
-    localStorage.setItem("tandem_token", "existing-jwt");
+    localStorage.setItem("agora_token", "existing-jwt");
     // Cookie attempt fails, localStorage fallback succeeds
     mockApiGetMe
       .mockRejectedValueOnce(new Error("no cookie"))
@@ -652,7 +729,7 @@ describe("LoginPage", () => {
   });
 
   it("'Use a different account' returns to email step", async () => {
-    localStorage.setItem("tandem_token", "existing-jwt");
+    localStorage.setItem("agora_token", "existing-jwt");
     // Cookie attempt fails, localStorage fallback succeeds
     mockApiGetMe
       .mockRejectedValueOnce(new Error("no cookie"))
@@ -681,7 +758,7 @@ describe("LoginPage", () => {
     );
 
     expect(
-      screen.getByText(/sign in to tandem/i),
+      screen.getByText(/sign in to agora/i),
     ).toBeInTheDocument();
   });
 
@@ -867,7 +944,7 @@ describe("LoginPage", () => {
     await user.click(screen.getByRole("button", { name: /back/i }));
 
     expect(
-      screen.getByText(/sign in to tandem/i),
+      screen.getByText(/sign in to agora/i),
     ).toBeInTheDocument();
   });
 

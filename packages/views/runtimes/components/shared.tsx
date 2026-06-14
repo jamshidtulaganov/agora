@@ -1,6 +1,6 @@
 import { Cloud, Monitor, Wifi, WifiHigh, WifiOff } from "lucide-react";
-import { Badge } from "@tandem/ui/components/ui/badge";
-import type { RuntimeHealth } from "@tandem/core/runtimes";
+import { Badge } from "@agora/ui/components/ui/badge";
+import type { RuntimeHealth } from "@agora/core/runtimes";
 import { ProviderLogo } from "./provider-logo";
 import { useT } from "../../i18n";
 

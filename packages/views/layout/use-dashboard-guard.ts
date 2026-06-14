@@ -2,16 +2,16 @@
 
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigationStore } from "@tandem/core/navigation";
-import { useAuthStore } from "@tandem/core/auth";
+import { useNavigationStore } from "@agora/core/navigation";
+import { useAuthStore } from "@agora/core/auth";
 import {
   paths,
   resolvePostAuthDestination,
   useCurrentWorkspace,
   useHasOnboarded,
-} from "@tandem/core/paths";
-import { workspaceListOptions } from "@tandem/core/workspace";
-import { useRecentIssuesStore } from "@tandem/core/issues/stores";
+} from "@agora/core/paths";
+import { workspaceListOptions } from "@agora/core/workspace";
+import { useRecentIssuesStore } from "@agora/core/issues/stores";
 import { useNavigation } from "../navigation";
 
 /**

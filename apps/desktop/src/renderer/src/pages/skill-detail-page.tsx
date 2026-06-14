@@ -1,8 +1,8 @@
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { SkillDetailPage as SharedSkillDetailPage } from "@tandem/views/skills";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { skillDetailOptions } from "@tandem/core/workspace/queries";
+import { SkillDetailPage as SharedSkillDetailPage } from "@agora/views/skills";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { skillDetailOptions } from "@agora/core/workspace/queries";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 
 export function SkillDetailPage() {

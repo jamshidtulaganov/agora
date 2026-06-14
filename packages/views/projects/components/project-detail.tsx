@@ -4,15 +4,15 @@ import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { Check, ChevronRight, Link2, ListTodo, MoreHorizontal, PanelRight, Pin, PinOff, Plus, Trash2, UserMinus } from "lucide-react";
 import { useQuery, type QueryKey } from "@tanstack/react-query";
-import { cn } from "@tandem/ui/lib/utils";
-import { copyText } from "@tandem/ui/lib/clipboard";
+import { cn } from "@agora/ui/lib/utils";
+import { copyText } from "@agora/ui/lib/clipboard";
 import { toast } from "sonner";
-import type { Issue, IssueAssigneeGroup, ProjectStatus, ProjectPriority, UpdateIssueRequest } from "@tandem/core/types";
-import { useAuthStore } from "@tandem/core/auth";
-import { projectDetailOptions } from "@tandem/core/projects/queries";
-import { useUpdateProject, useDeleteProject } from "@tandem/core/projects/mutations";
-import { pinListOptions } from "@tandem/core/pins";
-import { useCreatePin, useDeletePin } from "@tandem/core/pins";
+import type { Issue, IssueAssigneeGroup, ProjectStatus, ProjectPriority, UpdateIssueRequest } from "@agora/core/types";
+import { useAuthStore } from "@agora/core/auth";
+import { projectDetailOptions } from "@agora/core/projects/queries";
+import { useUpdateProject, useDeleteProject } from "@agora/core/projects/mutations";
+import { pinListOptions } from "@agora/core/pins";
+import { useCreatePin, useDeletePin } from "@agora/core/pins";
 import {
   myIssueAssigneeGroupsOptions,
   myIssueListOptions,
@@ -21,19 +21,19 @@ import {
   type AssigneeGroupedIssuesFilter,
   type IssueSortParam,
   type MyIssuesFilter,
-} from "@tandem/core/issues/queries";
-import { useUpdateIssue } from "@tandem/core/issues/mutations";
-import { useModalStore } from "@tandem/core/modals";
-import { memberListOptions, agentListOptions } from "@tandem/core/workspace/queries";
-import { agentTaskSnapshotOptions } from "@tandem/core/agents";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { useRecentContextStore } from "@tandem/core/chat";
-import { useWorkspacePaths } from "@tandem/core/paths";
-import { useActorName } from "@tandem/core/workspace/hooks";
-import { PROJECT_STATUS_ORDER, PROJECT_STATUS_CONFIG, PROJECT_PRIORITY_ORDER } from "@tandem/core/projects/config";
-import { BOARD_STATUSES } from "@tandem/core/issues/config";
-import { createIssueViewStore } from "@tandem/core/issues/stores/view-store";
-import { ViewStoreProvider, useViewStore } from "@tandem/core/issues/stores/view-store-context";
+} from "@agora/core/issues/queries";
+import { useUpdateIssue } from "@agora/core/issues/mutations";
+import { useModalStore } from "@agora/core/modals";
+import { memberListOptions, agentListOptions } from "@agora/core/workspace/queries";
+import { agentTaskSnapshotOptions } from "@agora/core/agents";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { useRecentContextStore } from "@agora/core/chat";
+import { useWorkspacePaths } from "@agora/core/paths";
+import { useActorName } from "@agora/core/workspace/hooks";
+import { PROJECT_STATUS_ORDER, PROJECT_STATUS_CONFIG, PROJECT_PRIORITY_ORDER } from "@agora/core/projects/config";
+import { BOARD_STATUSES } from "@agora/core/issues/config";
+import { createIssueViewStore } from "@agora/core/issues/stores/view-store";
+import { ViewStoreProvider, useViewStore } from "@agora/core/issues/stores/view-store-context";
 import { filterIssues } from "../../issues/utils/filter";
 import { getProjectIssueMetrics } from "./project-issue-metrics";
 import { filterRunningAssigneeGroups } from "./project-issue-filters";
@@ -48,29 +48,29 @@ import { ListView } from "../../issues/components/list-view";
 import { GanttView } from "../../issues/components/gantt-view";
 import { SwimLaneView } from "../../issues/components/swimlane-view";
 import { BatchActionToolbar } from "../../issues/components/batch-action-toolbar";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
-import { Button } from "@tandem/ui/components/ui/button";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@tandem/ui/components/ui/resizable";
-import { Sheet, SheetContent } from "@tandem/ui/components/ui/sheet";
-import { useIsMobile } from "@tandem/ui/hooks/use-mobile";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import { Button } from "@agora/ui/components/ui/button";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@agora/ui/components/ui/resizable";
+import { Sheet, SheetContent } from "@agora/ui/components/ui/sheet";
+import { useIsMobile } from "@agora/ui/hooks/use-mobile";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@tandem/ui/components/ui/dropdown-menu";
+} from "@agora/ui/components/ui/dropdown-menu";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@tandem/ui/components/ui/popover";
+} from "@agora/ui/components/ui/popover";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@tandem/ui/components/ui/tooltip";
-import { EmojiPicker } from "@tandem/ui/components/common/emoji-picker";
+} from "@agora/ui/components/ui/tooltip";
+import { EmojiPicker } from "@agora/ui/components/common/emoji-picker";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import {
   AlertDialog,
@@ -81,7 +81,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@tandem/ui/components/ui/alert-dialog";
+} from "@agora/ui/components/ui/alert-dialog";
 import { useT } from "../../i18n";
 import { useProjectStatusLabels, useProjectPriorityLabels } from "./labels";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
@@ -457,7 +457,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
 
   // Sidebar panel
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: "tandem_project_detail_layout",
+    id: "agora_project_detail_layout",
   });
   const sidebarRef = usePanelRef();
   // Desktop and mobile sidebar state must be separate. A single state defaulting

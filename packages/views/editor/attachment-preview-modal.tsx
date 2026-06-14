@@ -41,11 +41,11 @@ import { createPortal } from "react-dom";
 import {
   PreviewTooLargeError,
   PreviewUnsupportedError,
-} from "@tandem/core/api";
+} from "@agora/core/api";
 import { Download, ExternalLink, FileText, Loader2, X } from "lucide-react";
-import type { Attachment } from "@tandem/core/types";
-import { paths, useWorkspaceSlug } from "@tandem/core/paths";
-import { resolvePublicFileUrl } from "@tandem/core/workspace/avatar-url";
+import type { Attachment } from "@agora/core/types";
+import { paths, useWorkspaceSlug } from "@agora/core/paths";
+import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
 import { useT } from "../i18n";
 import { useNavigation } from "../navigation";
 import { openExternal } from "../platform";

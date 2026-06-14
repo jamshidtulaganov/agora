@@ -1,7 +1,7 @@
-import { cn } from "@tandem/ui/lib/utils";
+import { cn } from "@agora/ui/lib/utils";
 
 export const githubUrl = "https://github.com/multica-ai/multica";
-export const twitterUrl = "https://x.com/TandemAI";
+export const twitterUrl = "https://x.com/AgoraAI";
 
 export function GitHubMark({ className }: { className?: string }) {
   return (

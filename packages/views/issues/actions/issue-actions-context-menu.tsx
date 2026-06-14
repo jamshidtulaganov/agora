@@ -1,12 +1,12 @@
 "use client";
 
 import { useRef, useState, type ReactElement } from "react";
-import type { Issue } from "@tandem/core/types";
+import type { Issue } from "@agora/core/types";
 import {
   ContextMenu,
   ContextMenuTrigger,
   ContextMenuContent,
-} from "@tandem/ui/components/ui/context-menu";
+} from "@agora/ui/components/ui/context-menu";
 import { useIssueActions } from "./use-issue-actions";
 import {
   IssueActionsMenuItems,

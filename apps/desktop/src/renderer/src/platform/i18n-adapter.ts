@@ -1,6 +1,6 @@
-import type { LocaleAdapter, SupportedLocale } from "@tandem/core/i18n";
+import type { LocaleAdapter, SupportedLocale } from "@agora/core/i18n";
 
-const STORAGE_KEY = "tandem-locale";
+const STORAGE_KEY = "agora-locale";
 
 // Desktop adapter:
 //   - User choice: localStorage (set by Settings switcher).

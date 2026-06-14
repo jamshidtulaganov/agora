@@ -1,7 +1,7 @@
 "use client";
 
-import { useWorkspaceId } from "@tandem/core";
-import { useWorkspacePresencePrefetch } from "@tandem/core/agents";
+import { useWorkspaceId } from "@agora/core";
+import { useWorkspacePresencePrefetch } from "@agora/core/agents";
 
 // Mount once inside any subtree that's already gated on "workspace resolved"
 // (DashboardLayout on web, WorkspaceRouteLayout on desktop). useWorkspaceId

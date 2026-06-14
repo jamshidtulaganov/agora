@@ -2,23 +2,23 @@
 
 import { useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@tandem/core/api";
-import { useAuthStore } from "@tandem/core/auth";
+import { api } from "@agora/core/api";
+import { useAuthStore } from "@agora/core/auth";
 import {
   myInvitationListOptions,
   workspaceKeys,
   workspaceListOptions,
-} from "@tandem/core/workspace/queries";
-import { paths } from "@tandem/core/paths";
-import type { Invitation } from "@tandem/core/types";
+} from "@agora/core/workspace/queries";
+import { paths } from "@agora/core/paths";
+import type { Invitation } from "@agora/core/types";
 import { useNavigation } from "../navigation";
 import { useLogout } from "../auth";
 import { DragStrip } from "../platform";
 import { useT } from "../i18n";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Card, CardContent } from "@tandem/ui/components/ui/card";
-import { Checkbox } from "@tandem/ui/components/ui/checkbox";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
+import { Button } from "@agora/ui/components/ui/button";
+import { Card, CardContent } from "@agora/ui/components/ui/card";
+import { Checkbox } from "@agora/ui/components/ui/checkbox";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import { LogOut, Mail, Users } from "lucide-react";
 
 /**

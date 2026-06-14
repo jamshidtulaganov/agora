@@ -1,9 +1,9 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { arrayMove } from "@dnd-kit/sortable";
-import { createPersistStorage, defaultStorage } from "@tandem/core/platform";
-import { createSafeId } from "@tandem/core/utils";
-import { isReservedSlug } from "@tandem/core/paths";
+import { createPersistStorage, defaultStorage } from "@agora/core/platform";
+import { createSafeId } from "@agora/core/utils";
+import { isReservedSlug } from "@agora/core/paths";
 import type { DataRouter } from "react-router-dom";
 import { createTabRouter } from "../routes";
 
@@ -630,7 +630,7 @@ export const useTabStore = create<TabStore>()(
       },
     }),
     {
-      name: "tandem_tabs",
+      name: "agora_tabs",
       version: 3,
       storage: createJSONStorage(() => createPersistStorage(defaultStorage)),
       migrate: (persistedState, version) => {

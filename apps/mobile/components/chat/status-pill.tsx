@@ -35,8 +35,8 @@ import Animated, {
 import type {
   ChatPendingTask,
   TaskMessagePayload,
-} from "@tandem/core/types";
-import type { AgentAvailability } from "@tandem/core/agents";
+} from "@agora/core/types";
+import type { AgentAvailability } from "@agora/core/agents";
 import { Text } from "@/components/ui/text";
 import { formatElapsedSecs } from "@/lib/format-elapsed";
 import { useColorScheme } from "@/lib/use-color-scheme";

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { I18nProvider } from "@tandem/core/i18n/react";
-import type { Agent } from "@tandem/core/types";
+import { I18nProvider } from "@agora/core/i18n/react";
+import type { Agent } from "@agora/core/types";
 import enChat from "../../locales/en/chat.json";
 import enIssues from "../../locales/en/issues.json";
 

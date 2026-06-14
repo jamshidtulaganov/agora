@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Issue } from "@tandem/core/types";
-import { I18nProvider } from "@tandem/core/i18n/react";
+import type { Issue } from "@agora/core/types";
+import { I18nProvider } from "@agora/core/i18n/react";
 import enCommon from "../../../locales/en/common.json";
 import enIssues from "../../../locales/en/issues.json";
 
@@ -12,12 +12,12 @@ const TEST_RESOURCES = { en: { common: enCommon, issues: enIssues } };
 // Mocks — same pattern as the issue-detail test suite.
 // ---------------------------------------------------------------------------
 
-vi.mock("@tandem/core/hooks", () => ({
+vi.mock("@agora/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
 const mockOpenModal = vi.fn();
-vi.mock("@tandem/core/modals", () => ({
+vi.mock("@agora/core/modals", () => ({
   useModalStore: Object.assign(
     (selector?: any) => {
       const state = { open: mockOpenModal };
@@ -28,7 +28,7 @@ vi.mock("@tandem/core/modals", () => ({
 }));
 
 const mockAuthState = { user: { id: "user-1" }, isAuthenticated: true };
-vi.mock("@tandem/core/auth", () => ({
+vi.mock("@agora/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: any) => (selector ? selector(mockAuthState) : mockAuthState),
     { getState: () => mockAuthState },
@@ -36,7 +36,7 @@ vi.mock("@tandem/core/auth", () => ({
   registerAuthStore: vi.fn(),
 }));
 
-vi.mock("@tandem/core/workspace/queries", () => ({
+vi.mock("@agora/core/workspace/queries", () => ({
   memberListOptions: () => ({
     queryKey: ["workspaces", "ws-1", "members"],
     queryFn: () =>
@@ -58,11 +58,11 @@ vi.mock("@tandem/core/workspace/queries", () => ({
   }),
 }));
 
-vi.mock("@tandem/core/workspace/hooks", () => ({
+vi.mock("@agora/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: (_t: string, _id: string) => "" }),
 }));
 
-vi.mock("@tandem/core/pins", () => ({
+vi.mock("@agora/core/pins", () => ({
   pinListOptions: () => ({
     queryKey: ["pins", "ws-1", "user-1"],
     queryFn: () => Promise.resolve([]),
@@ -71,13 +71,13 @@ vi.mock("@tandem/core/pins", () => ({
   useDeletePin: () => ({ mutate: vi.fn() }),
 }));
 
-vi.mock("@tandem/core/issues/mutations", () => ({
+vi.mock("@agora/core/issues/mutations", () => ({
   useUpdateIssue: () => ({ mutate: vi.fn() }),
 }));
 
-vi.mock("@tandem/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@tandem/core/paths")>(
-    "@tandem/core/paths",
+vi.mock("@agora/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@agora/core/paths")>(
+    "@agora/core/paths",
   );
   return {
     ...actual,

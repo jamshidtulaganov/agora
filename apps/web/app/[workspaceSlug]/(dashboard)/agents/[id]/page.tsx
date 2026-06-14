@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { AgentDetailPage } from "@tandem/views/agents";
+import { AgentDetailPage } from "@agora/views/agents";
 
 export default function AgentDetailRoute({
   params,

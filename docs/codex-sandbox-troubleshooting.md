@@ -3,7 +3,7 @@
 This doc explains the failure mode that caused [MUL-963][mul-963] and the
 matrix the daemon now follows when writing Codex's per-task `config.toml`.
 
-[mul-963]: https://tandem-api.copilothub.ai/issues/28c34ad2-102a-4f46-91ac-336ed78c5859
+[mul-963]: https://agora-api.copilothub.ai/issues/28c34ad2-102a-4f46-91ac-336ed78c5859
 
 ## Symptom fingerprint
 
@@ -14,7 +14,7 @@ matrix the daemon now follows when writing Codex's per-task `config.toml`.
 | `dial tcp IP:PORT: i/o timeout`                               | Container-level network policy or firewall (not Codex sandbox).                 |
 | `x509: certificate signed by unknown authority`               | TLS/CA issue, unrelated.                                                        |
 
-If you see `no such host` *inside a Codex session on macOS* but `curl https://tandem-api.copilothub.ai` from a plain shell on the same machine works, you are hitting the Seatbelt bug below.
+If you see `no such host` *inside a Codex session on macOS* but `curl https://agora-api.copilothub.ai` from a plain shell on the same machine works, you are hitting the Seatbelt bug below.
 
 ## Root cause
 
@@ -30,9 +30,9 @@ Linux (Landlock) is **not** affected — only macOS Seatbelt.
 
 ## What the daemon does now
 
-The daemon writes a *tandem-managed* block into each task's
-`$CODEX_HOME/config.toml`, delimited by `# BEGIN tandem-managed` /
-`# END tandem-managed` markers. Anything outside the markers is left
+The daemon writes a *agora-managed* block into each task's
+`$CODEX_HOME/config.toml`, delimited by `# BEGIN agora-managed` /
+`# END agora-managed` markers. Anything outside the markers is left
 untouched so users can still tune Codex behavior.
 
 Decision matrix (see [`server/internal/daemon/execenv/codex_sandbox.go`](../server/internal/daemon/execenv/codex_sandbox.go)):
@@ -46,8 +46,8 @@ Decision matrix (see [`server/internal/daemon/execenv/codex_sandbox.go`](../serv
 The managed block is always hoisted to the top of `config.toml` and uses
 TOML dotted-key syntax rather than a `[sandbox_workspace_write]` section
 header. Both are load-bearing: if the block sat after a user table like
-`[permissions.tandem]`, a bare `sandbox_mode = "..."` line would be parsed
-as `permissions.tandem.sandbox_mode` and Codex would silently ignore it.
+`[permissions.agora]`, a bare `sandbox_mode = "..."` line would be parsed
+as `permissions.agora.sandbox_mode` and Codex would silently ignore it.
 
 `CodexDarwinNetworkAccessFixedVersion` is an empty string today, meaning *no
 known fixed release yet*. Bump it once a tagged Codex release includes the
@@ -68,14 +68,14 @@ codex sandbox: falling back to danger-full-access on macOS
 From the host shell (outside the sandbox):
 
 ```bash
-# Is the Tandem API reachable at all?
-curl -sSf https://tandem-api.copilothub.ai/healthz
+# Is the Agora API reachable at all?
+curl -sSf https://agora-api.copilothub.ai/healthz
 ```
 
 From inside a Codex session (after the daemon writes its config):
 
 ```bash
-tandem issue list --limit 1 --output json >/dev/null && echo OK
+agora issue list --limit 1 --output json >/dev/null && echo OK
 ```
 
 If the host curl works but the Codex-session call fails with `no such host`,
@@ -85,9 +85,9 @@ looking at the managed block in `$CODEX_HOME/config.toml`.
 ## Options and trade-offs
 
 - **A. Domain-scoped `permissions` profile** (tight): when the upstream
-  `network_access` fix is available, prefer writing a `permissions.tandem`
-  profile that allows only `tandem-api.copilothub.ai` and
-  `tandem-static.copilothub.ai`. Keeps filesystem sandbox intact.
+  `network_access` fix is available, prefer writing a `permissions.agora`
+  profile that allows only `agora-api.copilothub.ai` and
+  `agora-static.copilothub.ai`. Keeps filesystem sandbox intact.
 - **B. `danger-full-access`** (current macOS fallback): drops the whole
   Seatbelt profile. Simplest reliable workaround until the upstream fix is
   released.
@@ -100,8 +100,8 @@ looking at the managed block in `$CODEX_HOME/config.toml`.
 
 ```bash
 # Inspect the managed block the daemon wrote for a given task.
-sed -n '/# BEGIN tandem-managed/,/# END tandem-managed/p' \
-  ~/tandem_workspaces/$WORKSPACE_ID/$TASK_SHORT/codex-home/config.toml
+sed -n '/# BEGIN agora-managed/,/# END agora-managed/p' \
+  ~/agora_workspaces/$WORKSPACE_ID/$TASK_SHORT/codex-home/config.toml
 ```
 
 The block is idempotent — re-running a task rewrites it in place.

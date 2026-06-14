@@ -5,10 +5,10 @@ import {
   Markdown as MarkdownBase,
   type MarkdownProps as MarkdownBaseProps,
   type RenderMode,
-} from "@tandem/ui/markdown";
-import { useConfigStore } from "@tandem/core/config";
-import type { Attachment as AttachmentRecord } from "@tandem/core/types";
-import { useWorkspacePaths } from "@tandem/core/paths";
+} from "@agora/ui/markdown";
+import { useConfigStore } from "@agora/core/config";
+import type { Attachment as AttachmentRecord } from "@agora/core/types";
+import { useWorkspacePaths } from "@agora/core/paths";
 import { IssueMentionCard } from "../issues/components/issue-mention-card";
 import { ProjectChip } from "../projects/components/project-chip";
 import { AppLink } from "../navigation";

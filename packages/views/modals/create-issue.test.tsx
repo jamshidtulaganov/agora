@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@tandem/core/i18n/react";
+import { I18nProvider } from "@agora/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 import enModals from "../locales/en/modals.json";
 
@@ -74,25 +74,25 @@ vi.mock("../navigation", () => ({
   useNavigation: () => ({ push: mockPush }),
 }));
 
-vi.mock("@tandem/core/paths", () => ({
+vi.mock("@agora/core/paths", () => ({
   useCurrentWorkspace: () => ({ name: "Test Workspace" }),
   useWorkspacePaths: () => ({
     issueDetail: (id: string) => `/ws-test/issues/${id}`,
   }),
 }));
 
-vi.mock("@tandem/core/hooks", () => ({
+vi.mock("@agora/core/hooks", () => ({
   useWorkspaceId: () => "ws-test",
 }));
 
-vi.mock("@tandem/core/issues/queries", () => ({
+vi.mock("@agora/core/issues/queries", () => ({
   issueDetailOptions: (wsId: string, id: string) => ({
     queryKey: ["issues", wsId, "detail", id],
     queryFn: () => Promise.resolve(null),
   }),
 }));
 
-vi.mock("@tandem/core/issues/stores/draft-store", () => ({
+vi.mock("@agora/core/issues/stores/draft-store", () => ({
   useIssueDraftStore: Object.assign(
     (selector?: (state: typeof mockDraftStore) => unknown) =>
       (selector ? selector(mockDraftStore) : mockDraftStore),
@@ -100,17 +100,17 @@ vi.mock("@tandem/core/issues/stores/draft-store", () => ({
   ),
 }));
 
-vi.mock("@tandem/core/issues/stores/quick-create-store", () => ({
+vi.mock("@agora/core/issues/stores/quick-create-store", () => ({
   useQuickCreateStore: (selector?: (state: typeof mockQuickCreateStore) => unknown) =>
     (selector ? selector(mockQuickCreateStore) : mockQuickCreateStore),
 }));
 
-vi.mock("@tandem/core/issues/mutations", () => ({
+vi.mock("@agora/core/issues/mutations", () => ({
   useCreateIssue: () => ({ mutateAsync: mockCreateIssue }),
   useUpdateIssue: () => ({ mutate: vi.fn() }),
 }));
 
-vi.mock("@tandem/core/hooks/use-file-upload", () => ({
+vi.mock("@agora/core/hooks/use-file-upload", () => ({
   useFileUpload: () => ({ uploadWithToast: mockUploadWithToast }),
 }));
 
@@ -134,18 +134,18 @@ const { ApiError } = vi.hoisted(() => {
   return { ApiError: ApiErrorImpl };
 });
 
-vi.mock("@tandem/core/api", async () => {
+vi.mock("@agora/core/api", async () => {
   // Pull real `parseWithFallback` + `DuplicateIssueErrorBodySchema` from the
   // schema modules so the drift-fallback branch in create-issue.tsx runs the
   // actual validation logic (not a stub). Only `ApiError` is local — the
   // component imports it from this module and the cross-realm `instanceof`
   // check requires a single class identity.
-  const { parseWithFallback } = await vi.importActual<typeof import("@tandem/core/api/schema")>(
-    "@tandem/core/api/schema",
+  const { parseWithFallback } = await vi.importActual<typeof import("@agora/core/api/schema")>(
+    "@agora/core/api/schema",
   );
   const { DuplicateIssueErrorBodySchema } = await vi.importActual<
-    typeof import("@tandem/core/api/schemas")
-  >("@tandem/core/api/schemas");
+    typeof import("@agora/core/api/schemas")
+  >("@agora/core/api/schemas");
   return {
     api: {},
     ApiError,
@@ -227,7 +227,7 @@ vi.mock("../projects/components/project-picker", () => ({
   ProjectPicker: () => <div data-testid="project-picker" />,
 }));
 
-vi.mock("@tandem/ui/components/ui/dialog", () => ({
+vi.mock("@agora/ui/components/ui/dialog", () => ({
   Dialog: ({ children }: { children: React.ReactNode }) => <div data-testid="dialog-root">{children}</div>,
   DialogContent: ({ children, className }: { children: React.ReactNode; className?: string }) => (
     <div className={className}>{children}</div>
@@ -237,7 +237,7 @@ vi.mock("@tandem/ui/components/ui/dialog", () => ({
   ),
 }));
 
-vi.mock("@tandem/ui/components/ui/dropdown-menu", () => ({
+vi.mock("@agora/ui/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   DropdownMenuTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -251,14 +251,14 @@ vi.mock("./issue-picker-modal", () => ({
   IssuePickerModal: () => null,
 }));
 
-vi.mock("@tandem/ui/components/ui/tooltip", () => ({
+vi.mock("@agora/ui/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   TooltipContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock("@tandem/ui/components/ui/button", () => ({
+vi.mock("@agora/ui/components/ui/button", () => ({
   Button: ({
     children,
     disabled,
@@ -276,7 +276,7 @@ vi.mock("@tandem/ui/components/ui/button", () => ({
   ),
 }));
 
-vi.mock("@tandem/ui/components/ui/switch", () => ({
+vi.mock("@agora/ui/components/ui/switch", () => ({
   Switch: ({
     checked,
     onCheckedChange,
@@ -293,7 +293,7 @@ vi.mock("@tandem/ui/components/ui/switch", () => ({
   ),
 }));
 
-vi.mock("@tandem/ui/components/common/file-upload-button", () => ({
+vi.mock("@agora/ui/components/common/file-upload-button", () => ({
   FileUploadButton: ({ onSelect }: { onSelect: (file: File) => void }) => (
     <button type="button" onClick={() => onSelect(new File(["test"], "test.txt"))}>
       Upload file
@@ -301,7 +301,7 @@ vi.mock("@tandem/ui/components/common/file-upload-button", () => ({
   ),
 }));
 
-vi.mock("@tandem/ui/lib/utils", () => ({
+vi.mock("@agora/ui/lib/utils", () => ({
   cn: (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(" "),
 }));
 
@@ -372,12 +372,12 @@ describe("CreateIssueModal", () => {
       filename: "shot.png",
       url: "https://cdn.example.test/shot.png",
       download_url: "https://cdn.example.test/shot.png?Signature=fresh",
-      markdown_url: "https://tandem-api.copilothub.ai/api/attachments/11111111-2222-3333-4444-555555555555/download",
+      markdown_url: "https://agora-api.copilothub.ai/api/attachments/11111111-2222-3333-4444-555555555555/download",
       content_type: "image/png",
       size_bytes: 123,
       created_at: "2026-06-12T00:00:00Z",
       link: "https://cdn.example.test/shot.png",
-      markdownLink: "https://tandem-api.copilothub.ai/api/attachments/11111111-2222-3333-4444-555555555555/download",
+      markdownLink: "https://agora-api.copilothub.ai/api/attachments/11111111-2222-3333-4444-555555555555/download",
     });
     mockCreateIssue.mockResolvedValue({
       id: "issue-123",
@@ -517,7 +517,7 @@ describe("CreateIssueModal", () => {
       filename: "shot.png",
       url: "https://cdn.example.test/shot.png",
       download_url: "",
-      markdown_url: "https://tandem-api.copilothub.ai/api/attachments/11111111-2222-3333-4444-555555555555/download",
+      markdown_url: "https://agora-api.copilothub.ai/api/attachments/11111111-2222-3333-4444-555555555555/download",
       content_type: "image/png",
       size_bytes: 123,
       created_at: "2026-06-12T00:00:00Z",
@@ -558,7 +558,7 @@ describe("CreateIssueModal", () => {
       filename: "kept.png",
       url: "https://cdn.example.test/kept.png",
       download_url: "",
-      markdown_url: "https://tandem-api.copilothub.ai/api/attachments/11111111-2222-3333-4444-555555555555/download",
+      markdown_url: "https://agora-api.copilothub.ai/api/attachments/11111111-2222-3333-4444-555555555555/download",
       content_type: "image/png",
       size_bytes: 123,
       created_at: "2026-06-12T00:00:00Z",
@@ -568,7 +568,7 @@ describe("CreateIssueModal", () => {
       id: "99999999-8888-7777-6666-555555555555",
       filename: "deleted.png",
       url: "https://cdn.example.test/deleted.png",
-      markdown_url: "https://tandem-api.copilothub.ai/api/attachments/99999999-8888-7777-6666-555555555555/download",
+      markdown_url: "https://agora-api.copilothub.ai/api/attachments/99999999-8888-7777-6666-555555555555/download",
     };
     mockDraftStore.draft.title = "Image draft";
     mockDraftStore.draft.description = `![kept.png](${referenced.markdown_url})`;

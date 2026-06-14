@@ -18,19 +18,19 @@ import {
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Input } from "@tandem/ui/components/ui/input";
-import { Label } from "@tandem/ui/components/ui/label";
-import { useScrollFade } from "@tandem/ui/hooks/use-scroll-fade";
-import { cn } from "@tandem/ui/lib/utils";
+import { Button } from "@agora/ui/components/ui/button";
+import { Input } from "@agora/ui/components/ui/input";
+import { Label } from "@agora/ui/components/ui/label";
+import { useScrollFade } from "@agora/ui/hooks/use-scroll-fade";
+import { cn } from "@agora/ui/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
-import { api } from "@tandem/core/api";
-import { useCreateWorkspace } from "@tandem/core/workspace/mutations";
-import { workspaceKeys } from "@tandem/core/workspace/queries";
-import type { Workspace } from "@tandem/core/types";
-import { isImeComposing } from "@tandem/core/utils";
-import { useConfigStore } from "@tandem/core/config";
-import { DragStrip } from "@tandem/views/platform";
+import { api } from "@agora/core/api";
+import { useCreateWorkspace } from "@agora/core/workspace/mutations";
+import { workspaceKeys } from "@agora/core/workspace/queries";
+import type { Workspace } from "@agora/core/types";
+import { isImeComposing } from "@agora/core/utils";
+import { useConfigStore } from "@agora/core/config";
+import { DragStrip } from "@agora/views/platform";
 import { useLogout } from "../../auth";
 import { StepHeader } from "../components/step-header";
 import { RadioMark } from "../components/option-card";
@@ -41,7 +41,7 @@ import {
   isWorkspaceSlugConflict,
   nameToWorkspaceSlug,
 } from "../../workspace/slug";
-import { isReservedSlug } from "@tandem/core/paths";
+import { isReservedSlug } from "@agora/core/paths";
 
 /**
  * Step 2 — create your first workspace, or continue with one set up in
@@ -455,60 +455,84 @@ export function StepWorkspace({
               </div>
             )}
 
-            <div className={cn(!workspaceCreationDisabled ? "mt-8" : "mt-10")}>
-              {!workspaceCreationDisabled && (
-                <div className="mb-5 flex items-center gap-3">
-                  <span className="h-px flex-1 bg-border" />
-                  <span className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                    {t(($) => $.step_workspace.sd_manual_divider)}
-                  </span>
-                  <span className="h-px flex-1 bg-border" />
-                </div>
-              )}
-              {reusing ? (
-                <div className="flex flex-col gap-3">
-                  <ExistingWorkspaceCard
-                    workspace={reusing}
-                    selected={mode === "existing"}
-                    onSelect={pickExisting}
-                  />
-                  {/* Hide the create-new card entirely when the self-host
-                      gate (DISABLE_WORKSPACE_CREATION) is on (#3433) — the
-                      backend would 403 the POST and the user would be stuck
-                      with a useless form. */}
-                  {!workspaceCreationDisabled && (
-                    <CreateNewWorkspaceCard
-                      selected={mode === "create"}
-                      onSelect={pickCreate}
+            {/* SD fork: when workspace creation is locked
+                (DISABLE_WORKSPACE_CREATION), neither the bulk "Create all 3"
+                action nor the manual form is reachable — the user has already
+                been auto-joined to the SalesDoctor workspaces on login. Show a
+                read-only summary of those workspaces plus a single Continue
+                button (or a logout escape if the membership list hasn't
+                resolved into an `existing` workspace yet, so a stray user is
+                never trapped — preserves the #3433 intent). */}
+            {workspaceCreationDisabled ? (
+              <div className="mt-10 flex flex-col gap-6">
+                <LockedWorkspacesNote />
+                {reusing ? (
+                  <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
+                    <span
+                      aria-live="polite"
+                      className="mr-auto text-xs text-muted-foreground"
                     >
-                      {createFields}
-                    </CreateNewWorkspaceCard>
+                      {t(($) => $.step_workspace.hint_opening, { name: reusing.name })}
+                    </span>
+                    <Button
+                      size="lg"
+                      disabled={isCreating || seedingAll}
+                      onClick={() => onCreated(reusing)}
+                    >
+                      {t(($) => $.common.continue)}
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <CreationDisabledNotice onLogout={logout} />
+                )}
+              </div>
+            ) : (
+              <>
+                <div className="mt-8">
+                  <div className="mb-5 flex items-center gap-3">
+                    <span className="h-px flex-1 bg-border" />
+                    <span className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      {t(($) => $.step_workspace.sd_manual_divider)}
+                    </span>
+                    <span className="h-px flex-1 bg-border" />
+                  </div>
+                  {reusing ? (
+                    <div className="flex flex-col gap-3">
+                      <ExistingWorkspaceCard
+                        workspace={reusing}
+                        selected={mode === "existing"}
+                        onSelect={pickExisting}
+                      />
+                      <CreateNewWorkspaceCard
+                        selected={mode === "create"}
+                        onSelect={pickCreate}
+                      >
+                        {createFields}
+                      </CreateNewWorkspaceCard>
+                    </div>
+                  ) : (
+                    createFields
                   )}
                 </div>
-              ) : workspaceCreationDisabled ? (
-                <CreationDisabledNotice onLogout={logout} />
-              ) : (
-                createFields
-              )}
-            </div>
 
-            {!(workspaceCreationDisabled && !reusing) && (
-              <div className="mt-8 flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
-                <span
-                  aria-live="polite"
-                  className="mr-auto text-xs text-muted-foreground"
-                >
-                  {hint}
-                </span>
-                <Button
-                  size="lg"
-                  disabled={continueDisabled || seedingAll}
-                  onClick={onContinue}
-                >
-                  {continueLabel}
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </div>
+                <div className="mt-8 flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
+                  <span
+                    aria-live="polite"
+                    className="mr-auto text-xs text-muted-foreground"
+                  >
+                    {hint}
+                  </span>
+                  <Button
+                    size="lg"
+                    disabled={continueDisabled || seedingAll}
+                    onClick={onContinue}
+                  >
+                    {continueLabel}
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </>
             )}
           </div>
         </main>
@@ -595,6 +619,52 @@ function SdWorkspacesPrimary({
           : t(($) => $.step_workspace.sd_primary_cta)}
         {!pending && <ArrowRight className="h-4 w-4" />}
       </Button>
+    </div>
+  );
+}
+
+/**
+ * SD fork: read-only summary of the SalesDoctor workspaces shown on the
+ * workspace step when creation is locked (DISABLE_WORKSPACE_CREATION). Lists
+ * the three sibling projects the user has been auto-joined to on login — no
+ * create affordance, no inputs — so the step communicates "you're already in
+ * these" instead of offering a form the backend would 403.
+ */
+function LockedWorkspacesNote() {
+  const { t } = useT("onboarding");
+  return (
+    <div className="rounded-lg border bg-card p-5">
+      <div className="flex items-start gap-3">
+        <div
+          aria-hidden
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted text-foreground"
+        >
+          <Lock className="h-4 w-4" />
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="text-[14.5px] font-medium text-foreground">
+            {t(($) => $.step_workspace.locked_title)}
+          </div>
+          <div className="mt-0.5 text-[13px] leading-[1.5] text-muted-foreground">
+            {t(($) => $.step_workspace.locked_subtitle)}
+          </div>
+        </div>
+      </div>
+      <ul className="mt-4 flex flex-col gap-1.5">
+        {SD_WORKSPACES.map((ws) => (
+          <li
+            key={ws.slug}
+            className="grid grid-cols-[auto_1fr] items-baseline gap-2 text-[13px] leading-[1.5]"
+          >
+            <span className="font-mono font-medium text-foreground">
+              {ws.name}
+            </span>
+            <span className="truncate text-muted-foreground">
+              {ws.description}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

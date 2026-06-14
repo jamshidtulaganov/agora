@@ -81,7 +81,7 @@ func seedAgentOnRuntime(t *testing.T, runtimeID, name string, archived bool) str
 
 // seedSquad creates a squad with the given leader. If archived is true the
 // row is created with archived_at = now() (the case the user originally hit
-// — `tandem squad list` filters out archived squads, hiding the FK
+// — `agora squad list` filters out archived squads, hiding the FK
 // blocker).
 func seedSquad(t *testing.T, leaderID, name string, archived bool) string {
 	t.Helper()
@@ -228,7 +228,7 @@ func TestDeleteAgentRuntime_RemovesArchivedSquadsLedByArchivedAgents(t *testing.
 	runtimeID := seedIsolatedRuntime(t, "Runtime With Archived Squad Leader")
 	archivedLeader := seedAgentOnRuntime(t, runtimeID, "Archived Squad Leader Agent", true)
 	// Use an *archived* squad — that's the case the user originally hit, and
-	// it's the one that's invisible from `tandem squad list`.
+	// it's the one that's invisible from `agora squad list`.
 	archivedSquad := seedSquad(t, archivedLeader, "Archived Squad For Runtime Delete", true)
 
 	w := httptest.NewRecorder()

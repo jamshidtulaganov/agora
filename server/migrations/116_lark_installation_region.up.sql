@@ -1,9 +1,9 @@
--- Add a per-installation `region` so one Tandem deployment can serve
+-- Add a per-installation `region` so one Agora deployment can serve
 -- BOTH mainland Feishu (open.feishu.cn / accounts.feishu.cn) and Lark
 -- international (open.larksuite.com / accounts.larksuite.com) at the same
 -- time. Before this column the open-platform host was a single
--- deployment-wide value (the TANDEM_LARK_HTTP_BASE_URL /
--- TANDEM_LARK_CALLBACK_BASE_URL env knobs, defaulting to open.feishu.cn),
+-- deployment-wide value (the AGORA_LARK_HTTP_BASE_URL /
+-- AGORA_LARK_CALLBACK_BASE_URL env knobs, defaulting to open.feishu.cn),
 -- so a given deployment could talk to only one cloud at a time.
 --
 -- The device-flow installer already auto-detects the tenant: Lark emits

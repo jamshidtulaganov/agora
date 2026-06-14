@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useInboxUnreadCount } from "@tandem/core/inbox/queries";
+import { useInboxUnreadCount } from "@agora/core/inbox/queries";
 
 type BadgeCapableAPI = {
   setUnreadBadge?: (count: number) => void;

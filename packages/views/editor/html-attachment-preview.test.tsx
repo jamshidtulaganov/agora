@@ -7,7 +7,7 @@ const { getAttachmentTextContentMock } = vi.hoisted(() => ({
   getAttachmentTextContentMock: vi.fn(),
 }));
 
-vi.mock("@tandem/core/api", () => ({
+vi.mock("@agora/core/api", () => ({
   api: { getAttachmentTextContent: getAttachmentTextContentMock },
   PreviewTooLargeError: class extends Error {},
   PreviewUnsupportedError: class extends Error {},
@@ -50,10 +50,10 @@ vi.mock("../navigation", () => ({
 }));
 
 // Slug is required for the new-tab path to be built. The component reads
-// it from useWorkspaceSlug() on @tandem/core/paths — stub to return a
+// it from useWorkspaceSlug() on @agora/core/paths — stub to return a
 // fixed slug so the tests do not need a WorkspaceSlugProvider tree.
-vi.mock("@tandem/core/paths", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@tandem/core/paths")>();
+vi.mock("@agora/core/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@agora/core/paths")>();
   return {
     ...actual,
     useWorkspaceSlug: () => "acme",

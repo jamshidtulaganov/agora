@@ -2,13 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { Lock, UserMinus } from "lucide-react";
-import type { Agent, IssueAssigneeType, UpdateIssueRequest } from "@tandem/core/types";
+import type { Agent, IssueAssigneeType, UpdateIssueRequest } from "@agora/core/types";
 import { useQuery } from "@tanstack/react-query";
-import { useAuthStore } from "@tandem/core/auth";
-import { canAssignAgentToIssue } from "@tandem/core/permissions";
-import { useActorName } from "@tandem/core/workspace/hooks";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { memberListOptions, agentListOptions, squadListOptions, assigneeFrequencyOptions } from "@tandem/core/workspace/queries";
+import { useAuthStore } from "@agora/core/auth";
+import { canAssignAgentToIssue } from "@agora/core/permissions";
+import { useActorName } from "@agora/core/workspace/hooks";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { memberListOptions, agentListOptions, squadListOptions, assigneeFrequencyOptions } from "@agora/core/workspace/queries";
 import { ActorAvatar } from "../../../common/actor-avatar";
 import {
   PropertyPicker,

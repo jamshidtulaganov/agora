@@ -2,13 +2,13 @@
 
 import { ChevronRight, UserRound } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import type { MemberRole } from "@tandem/core/types";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { useCurrentWorkspace } from "@tandem/core/paths";
-import { memberListOptions } from "@tandem/core/workspace/queries";
-import { resolvePublicFileUrl } from "@tandem/core/workspace/avatar-url";
-import { ActorAvatar as ActorAvatarBase } from "@tandem/ui/components/common/actor-avatar";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
+import type { MemberRole } from "@agora/core/types";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { useCurrentWorkspace } from "@agora/core/paths";
+import { memberListOptions } from "@agora/core/workspace/queries";
+import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
+import { ActorAvatar as ActorAvatarBase } from "@agora/ui/components/common/actor-avatar";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import { PageHeader } from "../layout/page-header";
 import { WorkspaceAvatar } from "../workspace/workspace-avatar";
 import { ActorIssuesPanel } from "../common/actor-issues-panel";

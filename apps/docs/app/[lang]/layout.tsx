@@ -4,7 +4,7 @@ import { DocsLayout } from "fumadocs-ui/layouts/docs";
 import { Inter, Geist_Mono, Source_Serif_4 } from "next/font/google";
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
-import { cn } from "@tandem/ui/lib/utils";
+import { cn } from "@agora/ui/lib/utils";
 import { baseOptions } from "@/app/layout.config";
 import { source } from "@/lib/source";
 import { i18n, type Lang } from "@/lib/i18n";
@@ -46,11 +46,11 @@ const sourceSerif = Source_Serif_4({
 
 export const metadata: Metadata = {
   title: {
-    template: "%s | Tandem Docs",
-    default: "Tandem Docs",
+    template: "%s | Agora Docs",
+    default: "Agora Docs",
   },
   description:
-    "Documentation for Tandem — the open-source managed agents platform.",
+    "Documentation for Agora — the open-source managed agents platform.",
 };
 
 export function generateStaticParams() {

@@ -39,10 +39,10 @@ func TestBuiltinSkillsConformToTemplate(t *testing.T) {
 
 	for _, skill := range skills {
 		t.Run(skill.Name, func(t *testing.T) {
-			// The tandem- prefix keeps the on-disk slug from colliding with a
+			// The agora- prefix keeps the on-disk slug from colliding with a
 			// user-authored workspace skill.
-			if !strings.HasPrefix(skill.Name, "tandem-") {
-				t.Errorf("skill name %q must carry the tandem- prefix", skill.Name)
+			if !strings.HasPrefix(skill.Name, "agora-") {
+				t.Errorf("skill name %q must carry the agora- prefix", skill.Name)
 			}
 
 			fm, body, ok := splitFrontmatter(skill.Content)
@@ -121,10 +121,10 @@ func TestBuiltinSkillsFrontmatterIsStrictYAML(t *testing.T) {
 
 // TestMentioningSkillFollowsContractFrontmatter locks the reference template:
 // the mentioning skill is a context-triggered platform-contract skill, so it
-// must declare user-invocable:false and fence itself to the tandem CLI. New
+// must declare user-invocable:false and fence itself to the agora CLI. New
 // contract skills should copy this shape.
 func TestMentioningSkillFollowsContractFrontmatter(t *testing.T) {
-	skill, ok := findSkill(t, "tandem-mentioning")
+	skill, ok := findSkill(t, "agora-mentioning")
 	if !ok {
 		return
 	}
@@ -133,8 +133,8 @@ func TestMentioningSkillFollowsContractFrontmatter(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false (a platform-contract skill triggers from context, not a slash command)", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); got != "Bash(tandem *)" {
-		t.Errorf("allowed-tools = %q, want Bash(tandem *) (fence the skill to the CLI it teaches)", got)
+	if got := strings.TrimSpace(fm["allowed-tools"]); got != "Bash(agora *)" {
+		t.Errorf("allowed-tools = %q, want Bash(agora *) (fence the skill to the CLI it teaches)", got)
 	}
 }
 
@@ -203,7 +203,7 @@ func TestMentioningSkillTeachesTheParserContract(t *testing.T) {
 }
 
 func TestWorkingOnIssuesSkillCoversIssueLoopContracts(t *testing.T) {
-	skill, ok := findSkill(t, "tandem-working-on-issues")
+	skill, ok := findSkill(t, "agora-working-on-issues")
 	if !ok {
 		return
 	}
@@ -212,17 +212,17 @@ func TestWorkingOnIssuesSkillCoversIssueLoopContracts(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false (issue workflow guidance triggers from context)", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(tandem *)") {
-		t.Errorf("allowed-tools = %q, want access to the Tandem CLI", got)
+	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(agora *)") {
+		t.Errorf("allowed-tools = %q, want access to the Agora CLI", got)
 	}
 
 	// Contract anchors only — exact file:line citations live in the skill's
 	// references/source-map.md, not here, so a downstream main merge that
 	// shifts a line cannot rot this test into pinning a stale lie.
 	mustContain := []string{
-		"tandem issue pull-requests <issue-id> --output json",
+		"agora issue pull-requests <issue-id> --output json",
 		"Default for code-changing issue work",
-		"open or update a PR before posting the final Tandem issue comment",
+		"open or update a PR before posting the final Agora issue comment",
 		"This is a default, not",
 		"Use a routable issue key in the PR title, body, or branch",
 		"include the PR URL when a PR exists",
@@ -239,10 +239,10 @@ func TestWorkingOnIssuesSkillCoversIssueLoopContracts(t *testing.T) {
 
 	mustNotContain := []string{
 		"Start from the trigger, not from memory",
-		"tandem issue get <issue-id> --output json",
-		"tandem issue metadata list <issue-id> --output json",
-		"tandem issue comment list <issue-id> --thread <trigger-comment-id>",
-		"tandem issue comment add <issue-id> --parent <trigger-comment-id>",
+		"agora issue get <issue-id> --output json",
+		"agora issue metadata list <issue-id> --output json",
+		"agora issue comment list <issue-id> --thread <trigger-comment-id>",
+		"agora issue comment add <issue-id> --parent <trigger-comment-id>",
 	}
 	for _, forbidden := range mustNotContain {
 		if strings.Contains(body, forbidden) {
@@ -256,7 +256,7 @@ func TestWorkingOnIssuesSkillCoversIssueLoopContracts(t *testing.T) {
 }
 
 func TestSkillImportingSkillCoversWorkspaceImportContracts(t *testing.T) {
-	skill, ok := findSkill(t, "tandem-skill-importing")
+	skill, ok := findSkill(t, "agora-skill-importing")
 	if !ok {
 		return
 	}
@@ -265,12 +265,12 @@ func TestSkillImportingSkillCoversWorkspaceImportContracts(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false (skill import guidance triggers from context)", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(tandem *)") {
-		t.Errorf("allowed-tools = %q, want access to the Tandem CLI", got)
+	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(agora *)") {
+		t.Errorf("allowed-tools = %q, want access to the Agora CLI", got)
 	}
 
 	mustContain := []string{
-		"tandem skill import --url <url> --output json",
+		"agora skill import --url <url> --output json",
 		"/api/skills/import",
 		"clawhub.ai",
 		"skills.sh",
@@ -288,10 +288,10 @@ func TestSkillImportingSkillCoversWorkspaceImportContracts(t *testing.T) {
 		"id",
 		"name",
 		"legacy",
-		"tandem skill list --output json",
+		"agora skill list --output json",
 		"npx skills add",
-		"tandem agent skills add <agent-id> --skill-ids <skill-id> --output json",
-		"tandem agent skills list <agent-id> --output json",
+		"agora agent skills add <agent-id> --skill-ids <skill-id> --output json",
+		"agora agent skills list <agent-id> --output json",
 		"replace-all",
 		"`set` is the replacement path",
 		"references/skill-importing-source-map.md",
@@ -303,7 +303,7 @@ func TestSkillImportingSkillCoversWorkspaceImportContracts(t *testing.T) {
 	}
 
 	mustNotContain := []string{
-		"tandem agent skills set <agent-id> --skill-ids <skill-id>",
+		"agora agent skills set <agent-id> --skill-ids <skill-id>",
 		"merge the new skill id with the existing ids",
 	}
 	for _, forbidden := range mustNotContain {
@@ -318,7 +318,7 @@ func TestSkillImportingSkillCoversWorkspaceImportContracts(t *testing.T) {
 }
 
 func TestCreatingAgentsSkillCoversAgentCreationContracts(t *testing.T) {
-	skill, ok := findSkill(t, "tandem-creating-agents")
+	skill, ok := findSkill(t, "agora-creating-agents")
 	if !ok {
 		return
 	}
@@ -327,22 +327,22 @@ func TestCreatingAgentsSkillCoversAgentCreationContracts(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false (agent creation guidance triggers from context)", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(tandem *)") {
-		t.Errorf("allowed-tools = %q, want access to the Tandem CLI", got)
+	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(agora *)") {
+		t.Errorf("allowed-tools = %q, want access to the Agora CLI", got)
 	}
 
 	mustContain := []string{
 		"not a parameter manual",
 		"`description` is a catalog summary",
 		"`instructions` is the runtime behavior contract",
-		"tandem agent create --name <name> --runtime-id <runtime-id>",
+		"agora agent create --name <name> --runtime-id <runtime-id>",
 		"`model` is a first-class persisted column",
 		"custom_env",
 		"--custom-env-stdin",
 		"--custom-env-file",
-		"tandem agent skills add <agent-id> --skill-ids <skill-id> --output json",
-		"tandem agent skills list <agent-id> --output json",
-		"tandem agent get <agent-id> --output json",
+		"agora agent skills add <agent-id> --skill-ids <skill-id> --output json",
+		"agora agent skills list <agent-id> --output json",
+		"agora agent get <agent-id> --output json",
 		"255",
 		"references/creating-agents-source-map.md",
 	}
@@ -376,7 +376,7 @@ func TestCreatingAgentsSkillCoversAgentCreationContracts(t *testing.T) {
 }
 
 func TestSquadsSkillCoversLeaderRoutingContract(t *testing.T) {
-	skill, ok := findSkill(t, "tandem-squads")
+	skill, ok := findSkill(t, "agora-squads")
 	if !ok {
 		return
 	}
@@ -385,15 +385,15 @@ func TestSquadsSkillCoversLeaderRoutingContract(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false (squad guidance triggers from context)", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(tandem *)") {
-		t.Errorf("allowed-tools = %q, want access to the Tandem CLI", got)
+	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(agora *)") {
+		t.Errorf("allowed-tools = %q, want access to the Agora CLI", got)
 	}
 
 	mustContain := []string{
 		"A squad is not an agent",
 		"squad's `leader_id` agent",
 		"squad members are not automatically fanned out",
-		"tandem squad member set-role",
+		"agora squad member set-role",
 		"mention://squad/<squad-id>",
 		"recording squad activity",
 		"references/squad-source-map.md",
@@ -410,7 +410,7 @@ func TestSquadsSkillCoversLeaderRoutingContract(t *testing.T) {
 }
 
 func TestAutopilotsSkillCoversDispatchAndSideEffects(t *testing.T) {
-	skill, ok := findSkill(t, "tandem-autopilots")
+	skill, ok := findSkill(t, "agora-autopilots")
 	if !ok {
 		return
 	}
@@ -419,16 +419,16 @@ func TestAutopilotsSkillCoversDispatchAndSideEffects(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(tandem *)") {
-		t.Errorf("allowed-tools = %q, want access to the Tandem CLI", got)
+	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(agora *)") {
+		t.Errorf("allowed-tools = %q, want access to the Agora CLI", got)
 	}
 
 	mustContain := []string{
 		"An autopilot is not an agent",
 		"create_issue",
 		"run_only",
-		"tandem autopilot trigger-add <autopilot-id> --kind schedule",
-		"tandem autopilot trigger <autopilot-id> --output json",
+		"agora autopilot trigger-add <autopilot-id> --kind schedule",
+		"agora autopilot trigger <autopilot-id> --output json",
 		"Do not run `trigger`",
 		"webhook tokens",
 		"{{date}}",
@@ -446,7 +446,7 @@ func TestAutopilotsSkillCoversDispatchAndSideEffects(t *testing.T) {
 }
 
 func TestRuntimesAndReposSkillCoversClaimAndCheckoutChain(t *testing.T) {
-	skill, ok := findSkill(t, "tandem-runtimes-and-repos")
+	skill, ok := findSkill(t, "agora-runtimes-and-repos")
 	if !ok {
 		return
 	}
@@ -455,16 +455,16 @@ func TestRuntimesAndReposSkillCoversClaimAndCheckoutChain(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(tandem *)") {
-		t.Errorf("allowed-tools = %q, want access to the Tandem CLI", got)
+	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(agora *)") {
+		t.Errorf("allowed-tools = %q, want access to the Agora CLI", got)
 	}
 
 	mustContain := []string{
 		"agent_task_queue",
 		"daemon polls/claims the task",
-		"tandem runtime list --output json",
-		"tandem repo checkout <url>",
-		"TANDEM_DAEMON_PORT",
+		"agora runtime list --output json",
+		"agora repo checkout <url>",
+		"AGORA_DAEMON_PORT",
 		"github_repo",
 		"local_directory",
 		"Runtime and repo commands affect active agent execution",
@@ -481,7 +481,7 @@ func TestRuntimesAndReposSkillCoversClaimAndCheckoutChain(t *testing.T) {
 }
 
 func TestProjectsAndResourcesSkillCoversDurableContext(t *testing.T) {
-	skill, ok := findSkill(t, "tandem-projects-and-resources")
+	skill, ok := findSkill(t, "agora-projects-and-resources")
 	if !ok {
 		return
 	}
@@ -490,16 +490,16 @@ func TestProjectsAndResourcesSkillCoversDurableContext(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(tandem *)") {
-		t.Errorf("allowed-tools = %q, want access to the Tandem CLI", got)
+	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(agora *)") {
+		t.Errorf("allowed-tools = %q, want access to the Agora CLI", got)
 	}
 
 	mustContain := []string{
 		"Projects are durable context containers",
-		".tandem/project/resources.json",
-		"tandem project resource list <project-id> --output json",
-		"tandem project resource add <project-id> --type github_repo --url <github-url> --output json",
-		"tandem project resource add <project-id> --type local_directory",
+		".agora/project/resources.json",
+		"agora project resource list <project-id> --output json",
+		"agora project resource add <project-id> --type github_repo --url <github-url> --output json",
+		"agora project resource add <project-id> --type local_directory",
 		"Project resources are durable and affect future tasks",
 		"github_repo.resource_ref.url",
 		"references/projects-and-resources-source-map.md",

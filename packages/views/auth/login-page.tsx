@@ -9,20 +9,20 @@ import {
   CardDescription,
   CardContent,
   CardFooter,
-} from "@tandem/ui/components/ui/card";
-import { Input } from "@tandem/ui/components/ui/input";
-import { Button, buttonVariants } from "@tandem/ui/components/ui/button";
-import { Label } from "@tandem/ui/components/ui/label";
+} from "@agora/ui/components/ui/card";
+import { Input } from "@agora/ui/components/ui/input";
+import { Button, buttonVariants } from "@agora/ui/components/ui/button";
+import { Label } from "@agora/ui/components/ui/label";
 import {
   InputOTP,
   InputOTPGroup,
   InputOTPSlot,
-} from "@tandem/ui/components/ui/input-otp";
-import { useAuthStore } from "@tandem/core/auth";
-import { useConfigStore } from "@tandem/core/config";
-import { workspaceKeys } from "@tandem/core/workspace/queries";
-import { api } from "@tandem/core/api";
-import type { User } from "@tandem/core/types";
+} from "@agora/ui/components/ui/input-otp";
+import { useAuthStore } from "@agora/core/auth";
+import { useConfigStore } from "@agora/core/config";
+import { workspaceKeys } from "@agora/core/workspace/queries";
+import { api } from "@agora/core/api";
+import type { User } from "@agora/core/types";
 import { useT } from "../i18n";
 
 // ---------------------------------------------------------------------------
@@ -113,6 +113,11 @@ export function LoginPage({
   // and surfaced via the config store — the Telegram button keys off it the
   // same way the Google button keys off google_client_id.
   const telegramBotUsername = useConfigStore((s) => s.telegramBotUsername);
+  // SD fork: when true, the login page presents ONLY the Telegram path — the
+  // email send-code form, the Google button, and the "or" divider are hidden.
+  // Surfaced via the config store (AGORA_TELEGRAM_ONLY → /api/config), the same
+  // way telegramBotUsername flows through.
+  const telegramOnly = useConfigStore((s) => s.telegramOnly);
   const [step, setStep] = useState<
     "email" | "code" | "cli_confirm" | "telegram"
   >("email");
@@ -147,7 +152,7 @@ export function LoginPage({
       })
       .catch(() => {
         // Cookie auth failed — fall back to localStorage token
-        const token = localStorage.getItem("tandem_token");
+        const token = localStorage.getItem("agora_token");
         if (!token) return;
 
         api.setToken(token);
@@ -160,7 +165,7 @@ export function LoginPage({
           })
           .catch(() => {
             api.setToken(null);
-            localStorage.removeItem("tandem_token");
+            localStorage.removeItem("agora_token");
           });
       });
   }, [cliCallback]);
@@ -208,7 +213,7 @@ export function LoginPage({
         if (cliCallback) {
           // CLI path: get token directly for the redirect URL
           const { token } = await api.verifyCode(email, value);
-          localStorage.setItem("tandem_token", token);
+          localStorage.setItem("agora_token", token);
           api.setToken(token);
           onTokenObtained?.();
           redirectToCliCallback(cliCallback.url, token, cliCallback.state);
@@ -305,7 +310,7 @@ export function LoginPage({
 
       if (authSourceRef.current === "localStorage") {
         // Session was detected via localStorage — reuse that token directly.
-        const stored = localStorage.getItem("tandem_token");
+        const stored = localStorage.getItem("agora_token");
         if (!stored) throw new Error("token missing");
         token = stored;
       } else {
@@ -547,38 +552,50 @@ export function LoginPage({
             {t(($) => $.signin.description)}
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <form id="login-form" onSubmit={handleSendCode} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="login-email">{t(($) => $.common.email)}</Label>
-              <Input
-                id="login-email"
-                type="email"
-                placeholder={t(($) => $.common.email_placeholder)}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoFocus
-                required
-              />
-            </div>
-            {error && (
-              <p className="text-sm text-destructive">{error}</p>
-            )}
-          </form>
-        </CardContent>
+        {!telegramOnly && (
+          <CardContent>
+            <form id="login-form" onSubmit={handleSendCode} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="login-email">{t(($) => $.common.email)}</Label>
+                <Input
+                  id="login-email"
+                  type="email"
+                  placeholder={t(($) => $.common.email_placeholder)}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoFocus
+                  required
+                />
+              </div>
+              {error && (
+                <p className="text-sm text-destructive">{error}</p>
+              )}
+            </form>
+          </CardContent>
+        )}
         <CardFooter className="flex flex-col gap-3">
-          <Button
-            type="submit"
-            form="login-form"
-            className="w-full"
-            size="lg"
-            disabled={!email || loading}
-          >
-            {loading
-              ? t(($) => $.signin.sending)
-              : t(($) => $.signin.continue)}
-          </Button>
-          {(google || onGoogleLogin || telegramBotUsername) && (
+          {/* Email send-code submit, Google button, and the "or" divider are
+              all part of the NON-Telegram paths gated off in telegram_only
+              mode. In that mode only the "Continue with Telegram" button below
+              renders. The Telegram-step error surfaces there; render the
+              email-step error here only when the email form is present. */}
+          {!telegramOnly && (
+            <Button
+              type="submit"
+              form="login-form"
+              className="w-full"
+              size="lg"
+              disabled={!email || loading}
+            >
+              {loading
+                ? t(($) => $.signin.sending)
+                : t(($) => $.signin.continue)}
+            </Button>
+          )}
+          {telegramOnly && error && (
+            <p className="w-full text-sm text-destructive">{error}</p>
+          )}
+          {!telegramOnly && (google || onGoogleLogin || telegramBotUsername) && (
             <>
               <div className="relative w-full">
                 <div className="absolute inset-0 flex items-center">
@@ -620,26 +637,31 @@ export function LoginPage({
                   {t(($) => $.signin.google)}
                 </Button>
               )}
-              {telegramBotUsername && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full"
-                  size="lg"
-                  onClick={handleTelegramStart}
-                  disabled={loading}
-                >
-                  <svg
-                    className="mr-2 h-4 w-4"
-                    viewBox="0 0 24 24"
-                    fill="#229ED9"
-                  >
-                    <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.56 8.21-1.86 8.77c-.14.62-.51.77-1.03.48l-2.85-2.1-1.37 1.32c-.15.15-.28.28-.57.28l.2-2.9 5.29-4.78c.23-.2-.05-.32-.36-.12L8.66 13.1l-2.82-.88c-.61-.19-.62-.61.13-.9l11.02-4.25c.51-.19.96.12.79.04z" />
-                  </svg>
-                  {t(($) => $.signin.telegram)}
-                </Button>
-              )}
             </>
+          )}
+          {/* Telegram button — rendered in BOTH modes when the bot is
+              configured. In telegram_only mode it is the sole sign-in action
+              (no email form, no Google, no divider above it); in normal mode
+              the divider+Google block above already separated it from the
+              email path. */}
+          {telegramBotUsername && (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              size="lg"
+              onClick={handleTelegramStart}
+              disabled={loading}
+            >
+              <svg
+                className="mr-2 h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="#229ED9"
+              >
+                <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.56 8.21-1.86 8.77c-.14.62-.51.77-1.03.48l-2.85-2.1-1.37 1.32c-.15.15-.28.28-.57.28l.2-2.9 5.29-4.78c.23-.2-.05-.32-.36-.12L8.66 13.1l-2.82-.88c-.61-.19-.62-.61.13-.9l11.02-4.25c.51-.19.96.12.79.04z" />
+              </svg>
+              {t(($) => $.signin.telegram)}
+            </Button>
           )}
           {extra && <div className="w-full pt-1 text-center">{extra}</div>}
         </CardFooter>

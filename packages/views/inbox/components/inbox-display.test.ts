@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { InboxItem } from "@tandem/core/types";
+import type { InboxItem } from "@agora/core/types";
 import {
   getInboxDisplayTitle,
   getQuickCreateFailureDetail,

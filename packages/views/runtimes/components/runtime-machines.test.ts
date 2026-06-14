@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgentRuntime } from "@tandem/core/types";
+import type { AgentRuntime } from "@agora/core/types";
 import {
   buildRuntimeMachines,
   filterRuntimeMachines,

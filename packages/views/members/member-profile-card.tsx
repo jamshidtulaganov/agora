@@ -1,14 +1,14 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { Agent, MemberRole } from "@tandem/core/types";
-import { useWorkspaceId } from "@tandem/core";
-import { agentRunCounts30dOptions } from "@tandem/core/agents";
-import { agentListOptions, memberListOptions } from "@tandem/core/workspace/queries";
-import { resolvePublicFileUrl } from "@tandem/core/workspace/avatar-url";
-import { useWorkspacePaths } from "@tandem/core/paths";
-import { ActorAvatar as ActorAvatarBase } from "@tandem/ui/components/common/actor-avatar";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
+import type { Agent, MemberRole } from "@agora/core/types";
+import { useWorkspaceId } from "@agora/core";
+import { agentRunCounts30dOptions } from "@agora/core/agents";
+import { agentListOptions, memberListOptions } from "@agora/core/workspace/queries";
+import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
+import { useWorkspacePaths } from "@agora/core/paths";
+import { ActorAvatar as ActorAvatarBase } from "@agora/ui/components/common/actor-avatar";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import { ActorAvatar } from "../common/actor-avatar";
 import { AppLink } from "../navigation";
 import { useT } from "../i18n";

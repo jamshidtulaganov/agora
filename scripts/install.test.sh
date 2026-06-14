@@ -13,12 +13,12 @@ _setup_sandbox() {
   local payload_dir="$tmp/payload"
   mkdir -p "$stub_bin" "$install_bin" "$payload_dir"
 
-  cat >"$payload_dir/tandem" <<'STUB'
+  cat >"$payload_dir/agora" <<'STUB'
 #!/usr/bin/env bash
-echo "tandem v0.3.2 (commit: test)"
+echo "agora v0.3.2 (commit: test)"
 STUB
-  chmod +x "$payload_dir/tandem"
-  tar -czf "$tmp/tandem.tar.gz" -C "$payload_dir" tandem
+  chmod +x "$payload_dir/agora"
+  tar -czf "$tmp/agora.tar.gz" -C "$payload_dir" agora
 
   cat >"$stub_bin/curl" <<'STUB'
 #!/usr/bin/env bash
@@ -44,7 +44,7 @@ if [[ -z "$out" ]]; then
   echo "stub curl expected -o" >&2
   exit 2
 fi
-cp "$TANDEM_TEST_ARCHIVE" "$out"
+cp "$AGORA_TEST_ARCHIVE" "$out"
 STUB
   chmod +x "$stub_bin/curl"
 }
@@ -54,8 +54,8 @@ _run_installer() {
   local out="$tmp/install.out"
   local err="$tmp/install.err"
   if ! PATH="$tmp/stub-bin:$tmp/install-bin:/usr/bin:/bin" \
-    TANDEM_BIN_DIR="$tmp/install-bin" \
-    TANDEM_TEST_ARCHIVE="$tmp/tandem.tar.gz" \
+    AGORA_BIN_DIR="$tmp/install-bin" \
+    AGORA_TEST_ARCHIVE="$tmp/agora.tar.gz" \
     bash "$ROOT_DIR/scripts/install.sh" >"$out" 2>"$err"; then
     echo "install.sh exited non-zero" >&2
     cat "$out" >&2 || true
@@ -63,8 +63,8 @@ _run_installer() {
     return 1
   fi
 
-  if [[ ! -x "$tmp/install-bin/tandem" ]]; then
-    echo "expected fallback binary at $tmp/install-bin/tandem" >&2
+  if [[ ! -x "$tmp/install-bin/agora" ]]; then
+    echo "expected fallback binary at $tmp/install-bin/agora" >&2
     cat "$out" >&2 || true
     cat "$err" >&2 || true
     return 1

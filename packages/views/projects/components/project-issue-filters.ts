@@ -1,4 +1,4 @@
-import type { IssueAssigneeGroup } from "@tandem/core/types";
+import type { IssueAssigneeGroup } from "@agora/core/types";
 
 export function filterRunningAssigneeGroups(
   groups: IssueAssigneeGroup[] | undefined,

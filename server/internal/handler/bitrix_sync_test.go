@@ -268,10 +268,10 @@ func TestMirrorIssueStatusToBitrix(t *testing.T) {
 	if len(portal.comments) == 0 {
 		t.Fatal("expected a courtesy comment to Bitrix")
 	}
-	// Spec format: "🤖 Tandem: issue <PREFIX>-<n> → <Label>". The
+	// Spec format: "🤖 Agora: issue <PREFIX>-<n> → <Label>". The
 	// handler-test workspace prefix is "HAN" (see handler_test.go fixture).
 	lastComment := portal.comments[len(portal.comments)-1]
-	if !strings.Contains(lastComment, "🤖 Tandem: issue ") {
+	if !strings.Contains(lastComment, "🤖 Agora: issue ") {
 		t.Errorf("comment missing emoji/prefix preamble: %q", lastComment)
 	}
 	if !strings.Contains(lastComment, "HAN-") {

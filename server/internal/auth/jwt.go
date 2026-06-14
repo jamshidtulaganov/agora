@@ -9,7 +9,7 @@ import (
 	"sync"
 )
 
-const defaultJWTSecret = "tandem-dev-secret-change-in-production"
+const defaultJWTSecret = "agora-dev-secret-change-in-production"
 
 var (
 	jwtSecret     []byte

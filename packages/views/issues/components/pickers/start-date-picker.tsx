@@ -2,19 +2,19 @@
 
 import { useState } from "react";
 import { CalendarClock } from "lucide-react";
-import type { UpdateIssueRequest } from "@tandem/core/types";
+import type { UpdateIssueRequest } from "@agora/core/types";
 import {
   toDateOnly,
   dateOnlyToLocalDate,
   formatDateOnly,
-} from "@tandem/core/issues/date";
-import { Calendar } from "@tandem/ui/components/ui/calendar";
+} from "@agora/core/issues/date";
+import { Calendar } from "@agora/ui/components/ui/calendar";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@tandem/ui/components/ui/popover";
-import { Button } from "@tandem/ui/components/ui/button";
+} from "@agora/ui/components/ui/popover";
+import { Button } from "@agora/ui/components/ui/button";
 import { useT } from "../../../i18n";
 
 export function StartDatePicker({

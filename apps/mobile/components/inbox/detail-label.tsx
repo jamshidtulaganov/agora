@@ -16,8 +16,8 @@ import type {
   InboxItemType,
   IssueStatus,
   IssuePriority,
-} from "@tandem/core/types";
-import { formatDateOnly } from "@tandem/core/issues/date";
+} from "@agora/core/types";
+import { formatDateOnly } from "@agora/core/issues/date";
 import { Text } from "@/components/ui/text";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { PriorityIcon } from "@/components/ui/priority-icon";

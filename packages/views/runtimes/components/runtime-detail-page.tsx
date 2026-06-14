@@ -2,9 +2,9 @@
 
 import { Server } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { runtimeListOptions } from "@tandem/core/runtimes/queries";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { runtimeListOptions } from "@agora/core/runtimes/queries";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import { RuntimeDetail } from "./runtime-detail";
 import { useT } from "../../i18n";
 

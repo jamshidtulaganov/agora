@@ -3,14 +3,14 @@
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { useAuthStore } from "@tandem/core/auth";
+import { useAuthStore } from "@agora/core/auth";
 import {
   paths,
   resolvePostAuthDestination,
   useHasOnboarded,
-} from "@tandem/core/paths";
-import { workspaceListOptions } from "@tandem/core/workspace/queries";
-import { CliInstallInstructions, OnboardingFlow } from "@tandem/views/onboarding";
+} from "@agora/core/paths";
+import { workspaceListOptions } from "@agora/core/workspace/queries";
+import { CliInstallInstructions, OnboardingFlow } from "@agora/views/onboarding";
 
 /**
  * Web shell for the onboarding flow. The route is the platform chrome on

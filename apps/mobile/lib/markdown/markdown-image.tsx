@@ -10,7 +10,7 @@
  *   - Tap dispatches into the global LightboxProvider for fullscreen
  *     viewing with pinch-zoom + swipe-down-to-dismiss.
  *
- * URI resolution: markdown content authored in Tandem stores image
+ * URI resolution: markdown content authored in Agora stores image
  * references using the internal `mc://file/<id>` scheme rather than
  * baking signed HTTPS URLs into the content (signed URLs expire). iOS
  * doesn't understand `mc://`, so we look the URI up in the supplied
@@ -27,7 +27,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Image as RNImage, Pressable, View } from "react-native";
 import { Image as ExpoImage } from "expo-image";
-import type { Attachment } from "@tandem/core/types";
+import type { Attachment } from "@agora/core/types";
 import { resolveAttachmentUrl } from "@/lib/attachment-url";
 import { useLightbox } from "./lightbox-provider";
 

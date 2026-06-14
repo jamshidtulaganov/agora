@@ -8,13 +8,13 @@ import type { DaemonStatus } from "../../../shared/daemon-types";
 vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({ data: [] }),
 }));
-vi.mock("@tandem/core/hooks", () => ({
+vi.mock("@agora/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
-vi.mock("@tandem/core/runtimes", () => ({
+vi.mock("@agora/core/runtimes", () => ({
   runtimeListOptions: () => ({ queryKey: ["runtimes"] }),
 }));
-vi.mock("@tandem/core/agents", () => ({
+vi.mock("@agora/core/agents", () => ({
   agentTaskSnapshotOptions: () => ({ queryKey: ["snapshot"] }),
 }));
 vi.mock("./daemon-panel", () => ({ DaemonPanel: () => null }));

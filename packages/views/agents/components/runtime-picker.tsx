@@ -4,13 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, Cloud, Loader2, Lock } from "lucide-react";
 import { ProviderLogo } from "../../runtimes/components/provider-logo";
 import { ActorAvatar } from "../../common/actor-avatar";
-import type { MemberWithUser, RuntimeDevice } from "@tandem/core/types";
+import type { MemberWithUser, RuntimeDevice } from "@agora/core/types";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@tandem/ui/components/ui/popover";
-import { Label } from "@tandem/ui/components/ui/label";
+} from "@agora/ui/components/ui/popover";
+import { Label } from "@agora/ui/components/ui/label";
 import { useT } from "../../i18n";
 
 export type RuntimeFilter = "mine" | "all";

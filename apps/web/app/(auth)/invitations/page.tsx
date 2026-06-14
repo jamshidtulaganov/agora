@@ -2,9 +2,9 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAuthStore } from "@tandem/core/auth";
-import { paths } from "@tandem/core/paths";
-import { InvitationsPage } from "@tandem/views/invitations";
+import { useAuthStore } from "@agora/core/auth";
+import { paths } from "@agora/core/paths";
+import { InvitationsPage } from "@agora/views/invitations";
 
 export default function InvitationsRoutePage() {
   const router = useRouter();

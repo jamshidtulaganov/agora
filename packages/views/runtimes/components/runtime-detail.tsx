@@ -10,23 +10,23 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
-import type { AgentRuntime, Agent, MemberWithUser } from "@tandem/core/types";
-import { useAuthStore } from "@tandem/core/auth";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { memberListOptions, agentListOptions } from "@tandem/core/workspace/queries";
-import { useUpdateRuntime } from "@tandem/core/runtimes/mutations";
-import { deriveRuntimeHealth } from "@tandem/core/runtimes";
+import type { AgentRuntime, Agent, MemberWithUser } from "@agora/core/types";
+import { useAuthStore } from "@agora/core/auth";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { memberListOptions, agentListOptions } from "@agora/core/workspace/queries";
+import { useUpdateRuntime } from "@agora/core/runtimes/mutations";
+import { deriveRuntimeHealth } from "@agora/core/runtimes";
 import {
   type AgentPresenceDetail,
   useWorkspacePresenceMap,
-} from "@tandem/core/agents";
-import { useWorkspacePaths } from "@tandem/core/paths";
-import { Button } from "@tandem/ui/components/ui/button";
+} from "@agora/core/agents";
+import { useWorkspacePaths } from "@agora/core/paths";
+import { Button } from "@agora/ui/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@tandem/ui/components/ui/tooltip";
+} from "@agora/ui/components/ui/tooltip";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { AppLink, useNavigation } from "../../navigation";
@@ -297,7 +297,7 @@ function HeroCard({
         </Fact>
       </dl>
 
-      {/* Diagnostic IDs — tandem CLI git hash + truncated daemon UUID.
+      {/* Diagnostic IDs — agora CLI git hash + truncated daemon UUID.
           Only useful when filing an issue or reading logs; folded by
           default so they don't compete with the user-visible facts above. */}
       {hasTechDetails && (

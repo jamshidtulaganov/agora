@@ -38,7 +38,7 @@ export const useNavigationStore = create<NavigationState>()(
       },
     }),
     {
-      name: "tandem_navigation",
+      name: "agora_navigation",
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
       partialize: (state) => ({ lastPath: state.lastPath }),
     },

@@ -2,20 +2,20 @@
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useCurrentWorkspace, useWorkspacePaths } from "@tandem/core/paths";
-import { agentListOptions, memberListOptions, squadListOptions } from "@tandem/core/workspace/queries";
-import { resolvePublicFileUrl } from "@tandem/core/workspace/avatar-url";
-import { useAuthStore } from "@tandem/core/auth";
-import { useSquadsViewStore } from "@tandem/core/squads/stores";
+import { useCurrentWorkspace, useWorkspacePaths } from "@agora/core/paths";
+import { agentListOptions, memberListOptions, squadListOptions } from "@agora/core/workspace/queries";
+import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
+import { useAuthStore } from "@agora/core/auth";
+import { useSquadsViewStore } from "@agora/core/squads/stores";
 import { AppLink } from "../../navigation";
 import { PageHeader } from "../../layout/page-header";
 import { Users, Plus, Search, Bot, User } from "lucide-react";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Input } from "@tandem/ui/components/ui/input";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
-import { ActorAvatar as ActorAvatarBase } from "@tandem/ui/components/common/actor-avatar";
-import { useModalStore } from "@tandem/core/modals";
-import type { Agent, Squad } from "@tandem/core/types";
+import { Button } from "@agora/ui/components/ui/button";
+import { Input } from "@agora/ui/components/ui/input";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import { ActorAvatar as ActorAvatarBase } from "@agora/ui/components/common/actor-avatar";
+import { useModalStore } from "@agora/core/modals";
+import type { Agent, Squad } from "@agora/core/types";
 import { useT } from "../../i18n";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 

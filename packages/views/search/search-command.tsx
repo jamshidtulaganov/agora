@@ -30,35 +30,35 @@ import type {
   MemberWithUser,
   SearchIssueResult,
   SearchProjectResult,
-} from "@tandem/core/types";
-import { api } from "@tandem/core/api";
+} from "@agora/core/types";
+import { api } from "@agora/core/api";
 import {
   openCreateIssueWithPreference,
   selectRecentIssues,
   useRecentIssuesStore,
-} from "@tandem/core/issues/stores";
-import { issueDetailOptions } from "@tandem/core/issues/queries";
-import { useWorkspaceId } from "@tandem/core";
-import { useWorkspacePaths } from "@tandem/core/paths";
-import type { WorkspacePaths } from "@tandem/core/paths";
-import { useModalStore } from "@tandem/core/modals";
-import { memberListOptions } from "@tandem/core/workspace/queries";
-import { resolvePublicFileUrl } from "@tandem/core/workspace/avatar-url";
+} from "@agora/core/issues/stores";
+import { issueDetailOptions } from "@agora/core/issues/queries";
+import { useWorkspaceId } from "@agora/core";
+import { useWorkspacePaths } from "@agora/core/paths";
+import type { WorkspacePaths } from "@agora/core/paths";
+import { useModalStore } from "@agora/core/modals";
+import { memberListOptions } from "@agora/core/workspace/queries";
+import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
 import { StatusIcon } from "../issues/components";
 import { ProjectIcon } from "../projects/components/project-icon";
-import { PROJECT_STATUS_CONFIG } from "@tandem/core/projects/config";
-import type { ProjectStatus } from "@tandem/core/types";
+import { PROJECT_STATUS_CONFIG } from "@agora/core/projects/config";
+import type { ProjectStatus } from "@agora/core/types";
 import { ActorAvatar } from "../common/actor-avatar";
-import { ActorAvatar as ActorAvatarBase } from "@tandem/ui/components/common/actor-avatar";
+import { ActorAvatar as ActorAvatarBase } from "@agora/ui/components/common/actor-avatar";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "@tandem/ui/components/ui/dialog";
-import { useTheme } from "@tandem/ui/components/common/theme-provider";
-import { copyText } from "@tandem/ui/lib/clipboard";
+} from "@agora/ui/components/ui/dialog";
+import { useTheme } from "@agora/ui/components/common/theme-provider";
+import { copyText } from "@agora/ui/lib/clipboard";
 import { useNavigation } from "../navigation";
 import { useT } from "../i18n";
 import { matchesPinyin } from "../editor/extensions/pinyin-match";

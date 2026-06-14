@@ -3,16 +3,16 @@
 import { useMemo, useState } from "react";
 import { BarChart3, ChevronRight, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
-import { Button } from "@tandem/ui/components/ui/button";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { agentListOptions } from "@tandem/core/workspace/queries";
-import type { RuntimeUsage, AgentRuntime } from "@tandem/core/types";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import { Button } from "@agora/ui/components/ui/button";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { agentListOptions } from "@agora/core/workspace/queries";
+import type { RuntimeUsage, AgentRuntime } from "@agora/core/types";
 import {
   runtimeUsageOptions,
   runtimeUsageByAgentOptions,
-} from "@tandem/core/runtimes/queries";
-import { useCustomPricingStore } from "@tandem/core/runtimes/custom-pricing-store";
+} from "@agora/core/runtimes/queries";
+import { useCustomPricingStore } from "@agora/core/runtimes/custom-pricing-store";
 import { useViewingTimezone } from "../../common/use-viewing-timezone";
 import {
   formatTokens,

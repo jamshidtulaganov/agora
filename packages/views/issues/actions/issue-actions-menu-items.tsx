@@ -17,15 +17,15 @@ import {
   Trash2,
   UserMinus,
 } from "lucide-react";
-import type { AgentTask, Issue } from "@tandem/core/types";
-import { todayDateOnly, addDaysDateOnly } from "@tandem/core/issues/date";
-import { api } from "@tandem/core/api";
+import type { AgentTask, Issue } from "@agora/core/types";
+import { todayDateOnly, addDaysDateOnly } from "@agora/core/issues/date";
+import { api } from "@agora/core/api";
 import {
   ALL_STATUSES,
   PRIORITY_ORDER,
   PRIORITY_CONFIG,
-} from "@tandem/core/issues/config";
-import { issueKeys } from "@tandem/core/issues/queries";
+} from "@agora/core/issues/config";
+import { issueKeys } from "@agora/core/issues/queries";
 import { StatusIcon } from "../components/status-icon";
 import { PriorityIcon } from "../components/priority-icon";
 import {
@@ -34,15 +34,15 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
   DropdownMenuSeparator,
-} from "@tandem/ui/components/ui/dropdown-menu";
+} from "@agora/ui/components/ui/dropdown-menu";
 import {
   ContextMenuItem,
   ContextMenuSub,
   ContextMenuSubTrigger,
   ContextMenuSubContent,
   ContextMenuSeparator,
-} from "@tandem/ui/components/ui/context-menu";
-import { copyText } from "@tandem/ui/lib/clipboard";
+} from "@agora/ui/components/ui/context-menu";
+import { copyText } from "@agora/ui/lib/clipboard";
 import type { UseIssueActionsResult } from "./use-issue-actions";
 import { useT } from "../../i18n";
 

@@ -22,9 +22,16 @@ type AppConfig struct {
 	// from the JSON when false to keep responses identical to the
 	// previous shape for the common managed-cloud case (#3433).
 	WorkspaceCreationDisabled bool `json:"workspace_creation_disabled,omitempty"`
+	// TelegramOnly mirrors the server-side AGORA_TELEGRAM_ONLY env var so the
+	// login page can hide every non-Telegram auth path (the email send-code
+	// form, the Google button, and the "or" divider) and present Telegram as
+	// the sole way in. Omitted from the JSON when false to keep responses
+	// identical to the previous shape for the common managed-cloud case,
+	// mirroring WorkspaceCreationDisabled above.
+	TelegramOnly bool `json:"telegram_only,omitempty"`
 	// Public daemon setup config consumed by the web app at runtime so
-	// self-hosted instances can show `tandem setup self-host` commands
-	// with the operator's own domains instead of Tandem Cloud defaults.
+	// self-hosted instances can show `agora setup self-host` commands
+	// with the operator's own domains instead of Agora Cloud defaults.
 	DaemonServerURL string `json:"daemon_server_url,omitempty"`
 	DaemonAppURL    string `json:"daemon_app_url,omitempty"`
 
@@ -53,6 +60,7 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		AllowSignup:               os.Getenv("ALLOW_SIGNUP") != "false",
 		GoogleClientID:            os.Getenv("GOOGLE_CLIENT_ID"),
 		WorkspaceCreationDisabled: os.Getenv("DISABLE_WORKSPACE_CREATION") == "true",
+		TelegramOnly:              os.Getenv("AGORA_TELEGRAM_ONLY") == "true",
 	}
 	if h.Storage != nil {
 		config.CdnDomain = h.Storage.CdnDomain()
@@ -77,8 +85,8 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func daemonSetupURLsFromEnv() (string, string) {
-	serverURL := normalizePublicURL(os.Getenv("TANDEM_PUBLIC_URL"))
-	appURL := normalizePublicURL(os.Getenv("TANDEM_APP_URL"))
+	serverURL := normalizePublicURL(os.Getenv("AGORA_PUBLIC_URL"))
+	appURL := normalizePublicURL(os.Getenv("AGORA_APP_URL"))
 	if appURL == "" {
 		appURL = normalizePublicURL(os.Getenv("FRONTEND_ORIGIN"))
 	}
@@ -100,16 +108,16 @@ func normalizePublicURL(raw string) string {
 }
 
 // isOfficialCloudDaemonConfig reports whether this deployment is the official
-// Tandem Cloud, identified by its frontend host alone (tandem.dev /
-// app.tandem.dev). The daemon setup for the managed cloud is always
-// `tandem setup` (which hardcodes api.tandem.dev), so the per-deployment URLs
-// must be omitted from /api/config even when TANDEM_PUBLIC_URL is unset or
-// misconfigured. Previously this also required serverURL==api.tandem.dev, so a
-// cloud deployment that forgot TANDEM_PUBLIC_URL fell through and emitted a
-// `setup self-host --server-url https://tandem.dev` command — pointing the
+// Agora Cloud, identified by its frontend host alone (agora.dev /
+// app.agora.dev). The daemon setup for the managed cloud is always
+// `agora setup` (which hardcodes api.agora.dev), so the per-deployment URLs
+// must be omitted from /api/config even when AGORA_PUBLIC_URL is unset or
+// misconfigured. Previously this also required serverURL==api.agora.dev, so a
+// cloud deployment that forgot AGORA_PUBLIC_URL fell through and emitted a
+// `setup self-host --server-url https://agora.dev` command — pointing the
 // daemon's backend at the frontend (no /health, no WebSocket proxy).
 func isOfficialCloudDaemonConfig(appURL string) bool {
-	return urlHostEquals(appURL, "tandem.dev") || urlHostEquals(appURL, "app.tandem.dev")
+	return urlHostEquals(appURL, "agora.dev") || urlHostEquals(appURL, "app.agora.dev")
 }
 
 func urlHostEquals(raw, want string) bool {

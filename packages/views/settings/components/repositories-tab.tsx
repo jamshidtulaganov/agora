@@ -2,17 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { Save, Plus, Trash2, Pencil, X } from "lucide-react";
-import { Input } from "@tandem/ui/components/ui/input";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Card, CardContent } from "@tandem/ui/components/ui/card";
+import { Input } from "@agora/ui/components/ui/input";
+import { Button } from "@agora/ui/components/ui/button";
+import { Card, CardContent } from "@agora/ui/components/ui/card";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAuthStore } from "@tandem/core/auth";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { useCurrentWorkspace } from "@tandem/core/paths";
-import { memberListOptions, workspaceKeys } from "@tandem/core/workspace/queries";
-import { api } from "@tandem/core/api";
-import type { Workspace, WorkspaceRepo } from "@tandem/core/types";
+import { useAuthStore } from "@agora/core/auth";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { useCurrentWorkspace } from "@agora/core/paths";
+import { memberListOptions, workspaceKeys } from "@agora/core/workspace/queries";
+import { api } from "@agora/core/api";
+import type { Workspace, WorkspaceRepo } from "@agora/core/types";
 import { useT } from "../../i18n";
 
 function dropAndShiftIndex(set: Set<number>, removed: number): Set<number> {

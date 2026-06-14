@@ -2,11 +2,11 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@tandem/core/i18n/react";
+import { I18nProvider } from "@agora/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enOnboarding from "../../locales/en/onboarding.json";
 import enWorkspace from "../../locales/en/workspace.json";
-import type { Workspace } from "@tandem/core/types";
+import type { Workspace } from "@agora/core/types";
 
 const TEST_RESOURCES = {
   en: {
@@ -28,12 +28,12 @@ vi.mock("../../auth", () => ({
   useLogout: () => mockLogout,
 }));
 
-vi.mock("@tandem/core/config", () => ({
+vi.mock("@agora/core/config", () => ({
   useConfigStore: (selector: (state: { workspaceCreationDisabled: boolean }) => unknown) =>
     mockUseConfigStore(selector),
 }));
 
-vi.mock("@tandem/core/workspace/mutations", () => ({
+vi.mock("@agora/core/workspace/mutations", () => ({
   useCreateWorkspace: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
@@ -41,7 +41,7 @@ const mockListWorkspaces = vi.hoisted(() => vi.fn());
 const mockCreateWorkspace = vi.hoisted(() => vi.fn());
 const mockUpdateWorkspace = vi.hoisted(() => vi.fn());
 
-vi.mock("@tandem/core/api", () => ({
+vi.mock("@agora/core/api", () => ({
   api: {
     getBaseUrl: () => "http://127.0.0.1:8080",
     listWorkspaces: (...args: unknown[]) => mockListWorkspaces(...args),
@@ -118,38 +118,73 @@ describe("StepWorkspace — DISABLE_WORKSPACE_CREATION gate", () => {
         exact: false,
       }),
     ).toBeInTheDocument();
+    // No create UI: neither the bulk "Create all 3" action nor the manual form.
     expect(screen.queryByLabelText("Workspace name")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("URL")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /create all 3 workspaces/i }),
+    ).not.toBeInTheDocument();
+    // Read-only note lists the three SD workspaces the user belongs to.
+    expect(
+      screen.getByText("Your SalesDoctor workspaces", { exact: false }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("sd-main")).toBeInTheDocument();
+    expect(screen.getByText("sd-cs")).toBeInTheDocument();
+    expect(screen.getByText("sd-billing")).toBeInTheDocument();
+    // With no resolved existing workspace, the logout escape is the only action
+    // (the user is never trapped — preserves #3433 intent).
     expect(screen.getByRole("button", { name: /log out/i })).toBeInTheDocument();
   });
 
-  it("forces the existing-workspace-only state when the flag is on and the user already has a workspace", () => {
-    renderStep({ existing: EXISTING_WORKSPACE, disabled: true });
+  it("shows the read-only note + a working Continue when the flag is on and the user has a workspace", () => {
+    const onCreated = vi.fn();
+    mockUseConfigStore.mockImplementation(
+      (selector: (state: { workspaceCreationDisabled: boolean }) => unknown) =>
+        selector({ workspaceCreationDisabled: true }),
+    );
+    render(
+      <StepWorkspace
+        existing={EXISTING_WORKSPACE}
+        onCreated={onCreated}
+        onBack={vi.fn()}
+      />,
+      { wrapper: I18nWrapper },
+    );
 
     // Disabled-specific copy is used in place of the "or start another" prose.
     expect(
       screen.getByText("Continue with Acme.", { exact: false }),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByText(/start another/i),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/start another/i)).not.toBeInTheDocument();
     expect(
       screen.queryByText(/create a new one alongside it/i),
     ).not.toBeInTheDocument();
 
-    // Resume picker still shows the existing workspace card (its name
-    // appears multiple times across avatar / card / side panel — at least
-    // one is enough to know the card is rendered), but the "Create a new
-    // workspace" radio card is gone entirely.
-    expect(screen.getAllByText("Acme").length).toBeGreaterThan(0);
+    // No create affordances at all: no bulk action, no manual form inputs, and
+    // no "Create a new workspace" radio card.
+    expect(
+      screen.queryByRole("button", { name: /create all 3 workspaces/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Workspace name")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("URL")).not.toBeInTheDocument();
     expect(
       screen.queryByText("Create a new workspace", { exact: false }),
     ).not.toBeInTheDocument();
 
-    // CTA is pre-selected to the existing-only action and immediately
-    // enabled, so the user can press it without further interaction.
-    const cta = screen.getByRole("button", { name: "Open Acme" });
+    // The read-only note lists the three SD workspaces.
+    expect(
+      screen.getByText("Your SalesDoctor workspaces", { exact: false }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("sd-main")).toBeInTheDocument();
+    expect(screen.getByText("sd-cs")).toBeInTheDocument();
+    expect(screen.getByText("sd-billing")).toBeInTheDocument();
+
+    // A single Continue button, enabled, advances into the existing workspace.
+    const cta = screen.getByRole("button", { name: /continue/i });
     expect(cta).toBeEnabled();
+    fireEvent.click(cta);
+    expect(onCreated).toHaveBeenCalledTimes(1);
+    expect(onCreated).toHaveBeenCalledWith(EXISTING_WORKSPACE);
   });
 });
 

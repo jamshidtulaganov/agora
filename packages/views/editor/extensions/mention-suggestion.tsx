@@ -11,28 +11,28 @@ import {
   type ReactNode,
 } from "react";
 import type { QueryClient } from "@tanstack/react-query";
-import { getCurrentWsId } from "@tandem/core/platform";
-import { flattenIssueBuckets, issueKeys } from "@tandem/core/issues/queries";
-import { workspaceKeys } from "@tandem/core/workspace/queries";
-import { useAuthStore } from "@tandem/core/auth";
-import { canAssignAgentToIssue } from "@tandem/core/permissions";
-import { api } from "@tandem/core/api";
-import { isImeComposing } from "@tandem/core/utils";
+import { getCurrentWsId } from "@agora/core/platform";
+import { flattenIssueBuckets, issueKeys } from "@agora/core/issues/queries";
+import { workspaceKeys } from "@agora/core/workspace/queries";
+import { useAuthStore } from "@agora/core/auth";
+import { canAssignAgentToIssue } from "@agora/core/permissions";
+import { api } from "@agora/core/api";
+import { isImeComposing } from "@agora/core/utils";
 import type {
   Issue,
   ListIssuesCache,
   MemberWithUser,
   Agent,
   Squad,
-} from "@tandem/core/types";
+} from "@agora/core/types";
 import { ListTodo } from "lucide-react";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { StatusIcon } from "../../issues/components/status-icon";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { useT } from "../../i18n";
-import { Badge } from "@tandem/ui/components/ui/badge";
-import type { IssueStatus, ProjectStatus } from "@tandem/core/types";
-import { PROJECT_STATUS_CONFIG } from "@tandem/core/projects/config";
+import { Badge } from "@agora/ui/components/ui/badge";
+import type { IssueStatus, ProjectStatus } from "@agora/core/types";
+import { PROJECT_STATUS_CONFIG } from "@agora/core/projects/config";
 import type { SuggestionOptions } from "@tiptap/suggestion";
 import { PluginKey } from "@tiptap/pm/state";
 import {

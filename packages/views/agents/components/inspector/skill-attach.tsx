@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { Plus } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import type { Agent } from "@tandem/core/types";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { skillListOptions } from "@tandem/core/workspace/queries";
+import type { Agent } from "@agora/core/types";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { skillListOptions } from "@agora/core/workspace/queries";
 import { SkillAddDialog } from "../skill-add-dialog";
 import { useT } from "../../../i18n";
 

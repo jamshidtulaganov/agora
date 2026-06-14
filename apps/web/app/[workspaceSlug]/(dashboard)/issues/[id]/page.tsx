@@ -1,8 +1,8 @@
 "use client";
 
 import { use } from "react";
-import { IssueDetail } from "@tandem/views/issues/components";
-import { ErrorBoundary } from "@tandem/ui/components/common/error-boundary";
+import { IssueDetail } from "@agora/views/issues/components";
+import { ErrorBoundary } from "@agora/ui/components/common/error-boundary";
 
 export default function IssueDetailPage({
   params,

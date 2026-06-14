@@ -3,8 +3,8 @@ import {
   closestCenter,
   type CollisionDetection,
 } from "@dnd-kit/core";
-import type { Issue, IssueAssigneeType, IssueStatus, UpdateIssueRequest } from "@tandem/core/types";
-import type { IssueGrouping } from "@tandem/core/issues/stores/view-store";
+import type { Issue, IssueAssigneeType, IssueStatus, UpdateIssueRequest } from "@agora/core/types";
+import type { IssueGrouping } from "@agora/core/issues/stores/view-store";
 import type { BoardColumnGroup } from "../components/board-column";
 
 export type DragMoveUpdates = Pick<

@@ -3,9 +3,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import type { Agent, MemberWithUser, RuntimeDevice } from "@tandem/core/types";
-import { I18nProvider } from "@tandem/core/i18n/react";
-import { WorkspaceSlugProvider } from "@tandem/core/paths";
+import type { Agent, MemberWithUser, RuntimeDevice } from "@agora/core/types";
+import { I18nProvider } from "@agora/core/i18n/react";
+import { WorkspaceSlugProvider } from "@agora/core/paths";
 import { NavigationProvider, type NavigationAdapter } from "../../navigation";
 import enCommon from "../../locales/en/common.json";
 import enAgents from "../../locales/en/agents.json";
@@ -21,7 +21,7 @@ const navigationStub: NavigationAdapter = {
 
 const TEST_RESOURCES = { en: { common: enCommon, agents: enAgents } };
 
-vi.mock("@tandem/core/hooks", () => ({
+vi.mock("@agora/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 

@@ -14,7 +14,7 @@ import {
   type DetectResult,
 } from "@/features/landing/utils/os-detect";
 import type { LatestRelease } from "@/features/landing/utils/github-release";
-import { captureDownloadPageViewed } from "@tandem/core/analytics";
+import { captureDownloadPageViewed } from "@agora/core/analytics";
 
 const ALL_RELEASES_URL =
   "https://github.com/multica-ai/multica/releases";
@@ -53,7 +53,7 @@ export function DownloadClient({ release }: { release: LatestRelease }) {
   return (
     <>
       {/* Positioning context for the dark-variant LandingHeader —
-          mirrors tandem-landing.tsx. The header is `absolute top-0
+          mirrors agora-landing.tsx. The header is `absolute top-0
           inset-x-0`, so it anchors to this `relative` wrapper and
           scrolls off together with the dark hero below. Without the
           wrapper, `absolute` would escape to the initial containing

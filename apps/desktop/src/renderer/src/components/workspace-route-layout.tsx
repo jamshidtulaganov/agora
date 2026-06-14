@@ -1,17 +1,17 @@
 import { useEffect } from "react";
 import { Outlet, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { WorkspaceSlugProvider, paths } from "@tandem/core/paths";
+import { WorkspaceSlugProvider, paths } from "@agora/core/paths";
 import {
   workspaceBySlugOptions,
   workspaceListOptions,
-} from "@tandem/core/workspace";
-import { setCurrentWorkspace } from "@tandem/core/platform";
-import { useAuthStore } from "@tandem/core/auth";
-import { useWorkspaceSeen } from "@tandem/views/workspace/use-workspace-seen";
-import { WelcomeAfterOnboarding } from "@tandem/views/workspace/welcome-after-onboarding";
-import { WorkspacePresencePrefetch } from "@tandem/views/layout";
-import { SourceBackfillModal } from "@tandem/views/onboarding";
+} from "@agora/core/workspace";
+import { setCurrentWorkspace } from "@agora/core/platform";
+import { useAuthStore } from "@agora/core/auth";
+import { useWorkspaceSeen } from "@agora/views/workspace/use-workspace-seen";
+import { WelcomeAfterOnboarding } from "@agora/views/workspace/welcome-after-onboarding";
+import { WorkspacePresencePrefetch } from "@agora/views/layout";
+import { SourceBackfillModal } from "@agora/views/onboarding";
 import { useTabStore } from "@/stores/tab-store";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 

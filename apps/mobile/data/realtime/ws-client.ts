@@ -26,7 +26,7 @@ import type {
   WSEventPayload,
   WSEventType,
   WSMessage,
-} from "@tandem/core/types";
+} from "@agora/core/types";
 
 /** Generic handler used internally by the dispatcher map. Each `on<E>()`
  *  call narrows this to `(payload: WSEventPayload<E>, actorId?) => void`

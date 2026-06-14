@@ -29,7 +29,7 @@ dist-electron
 !apps/mobile/.env.staging
 # Mobile production config is public (production API URL) — track it so
 # external users can run `pnpm ios:mobile:device:prod:release` against
-# tandem.dev's production backend without copying templates first.
+# agora.dev's production backend without copying templates first.
 !apps/mobile/.env.production
 
 # test coverage
@@ -40,7 +40,7 @@ server/bin/
 server/tmp/
 server/migrate
 server/daemon
-server/tandem
+server/agora
 
 # Test artifacts
 test-results/
@@ -49,7 +49,7 @@ apps/web/test-results/
 # context (agent workspace)
 .context
 .agent_context/
-.tandem/
+.agora/
 
 # local settings
 .claude/

@@ -15,7 +15,7 @@ const state = vi.hoisted(() => ({
   modalAriaLabel: "source-backfill-modal-marker",
 }));
 
-vi.mock("@tandem/core/auth", () => {
+vi.mock("@agora/core/auth", () => {
   const useAuthStore = (selector: (s: typeof state) => unknown) => {
     if (selector.toString().includes("isLoading"))
       return state.isAuthLoading;
@@ -24,13 +24,13 @@ vi.mock("@tandem/core/auth", () => {
   return { useAuthStore };
 });
 
-vi.mock("@tandem/core/platform", () => ({
+vi.mock("@agora/core/platform", () => ({
   setCurrentWorkspace: vi.fn(),
 }));
 
-vi.mock("@tandem/core/workspace", async () => {
-  const actual = await vi.importActual<typeof import("@tandem/core/workspace")>(
-    "@tandem/core/workspace",
+vi.mock("@agora/core/workspace", async () => {
+  const actual = await vi.importActual<typeof import("@agora/core/workspace")>(
+    "@agora/core/workspace",
   );
   return {
     ...actual,
@@ -45,9 +45,9 @@ vi.mock("@tandem/core/workspace", async () => {
   };
 });
 
-vi.mock("@tandem/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@tandem/core/paths")>(
-    "@tandem/core/paths",
+vi.mock("@agora/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@agora/core/paths")>(
+    "@agora/core/paths",
   );
   return {
     ...actual,
@@ -61,15 +61,15 @@ vi.mock("@tandem/core/paths", async () => {
   };
 });
 
-vi.mock("@tandem/views/workspace/use-workspace-seen", () => ({
+vi.mock("@agora/views/workspace/use-workspace-seen", () => ({
   useWorkspaceSeen: () => state.workspaceSeen,
 }));
 
-vi.mock("@tandem/views/workspace/welcome-after-onboarding", () => ({
+vi.mock("@agora/views/workspace/welcome-after-onboarding", () => ({
   WelcomeAfterOnboarding: () => null,
 }));
 
-vi.mock("@tandem/views/layout", () => ({
+vi.mock("@agora/views/layout", () => ({
   WorkspacePresencePrefetch: () => null,
 }));
 
@@ -77,7 +77,7 @@ vi.mock("@tandem/views/layout", () => ({
 // SourceBackfillModal. We stub the real component with a marker that
 // renders only when the layout actually rendered it (and not e.g.
 // suppressed by overlayActive).
-vi.mock("@tandem/views/onboarding", () => ({
+vi.mock("@agora/views/onboarding", () => ({
   SourceBackfillModal: () => {
     state.modalRenders += 1;
     return <div data-testid={state.modalAriaLabel} />;

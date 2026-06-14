@@ -10,10 +10,10 @@ import {
   Save,
   Trash2,
 } from "lucide-react";
-import { api } from "@tandem/core/api";
-import type { Agent } from "@tandem/core/types";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Input } from "@tandem/ui/components/ui/input";
+import { api } from "@agora/core/api";
+import type { Agent } from "@agora/core/types";
+import { Button } from "@agora/ui/components/ui/button";
+import { Input } from "@agora/ui/components/ui/input";
 import { toast } from "sonner";
 import { useT } from "../../../i18n";
 

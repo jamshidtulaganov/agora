@@ -3,8 +3,8 @@
 import { useState, useMemo } from "react";
 import { Webhook, ChevronDown, ChevronRight, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "@tandem/ui/lib/utils";
-import { copyText } from "@tandem/ui/lib/clipboard";
+import { cn } from "@agora/ui/lib/utils";
+import { copyText } from "@agora/ui/lib/clipboard";
 import { useT } from "../../i18n";
 
 interface WebhookPayloadPreviewProps {

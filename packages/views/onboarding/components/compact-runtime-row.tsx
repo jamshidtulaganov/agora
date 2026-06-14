@@ -1,5 +1,5 @@
-import { cn } from "@tandem/ui/lib/utils";
-import type { AgentRuntime } from "@tandem/core/types";
+import { cn } from "@agora/ui/lib/utils";
+import type { AgentRuntime } from "@agora/core/types";
 import { ProviderLogo } from "../../runtimes/components/provider-logo";
 import { useT } from "../../i18n";
 

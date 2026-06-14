@@ -1,16 +1,16 @@
 ---
 title: CLI Reference
-description: Complete command reference for the Tandem CLI and agent daemon.
+description: Complete command reference for the Agora CLI and agent daemon.
 ---
 
-The `tandem` CLI connects your local machine to Tandem. It handles authentication, workspace management, issue tracking, and runs the agent daemon that executes AI tasks locally.
+The `agora` CLI connects your local machine to Agora. It handles authentication, workspace management, issue tracking, and runs the agent daemon that executes AI tasks locally.
 
 ## Authentication
 
 ### Browser Login
 
 ```bash
-tandem login
+agora login
 ```
 
 Opens your browser for OAuth authentication, creates a 90-day personal access token, and auto-configures your workspaces.
@@ -18,7 +18,7 @@ Opens your browser for OAuth authentication, creates a 90-day personal access to
 ### Token Login
 
 ```bash
-tandem login --token <mul_...>
+agora login --token <mul_...>
 ```
 
 Authenticate using a personal access token directly. Useful for headless environments. Pass `--token=` with an empty value to be prompted interactively (so the token never lands in shell history).
@@ -26,7 +26,7 @@ Authenticate using a personal access token directly. Useful for headless environ
 ### Check Status
 
 ```bash
-tandem auth status
+agora auth status
 ```
 
 Shows your current server, user, and token validity.
@@ -34,40 +34,40 @@ Shows your current server, user, and token validity.
 ### Logout
 
 ```bash
-tandem auth logout
+agora auth logout
 ```
 
 Removes the stored authentication token.
 
 ## Agent Daemon
 
-The daemon is the local agent runtime. It detects available AI CLIs on your machine, registers them with the Tandem server, and executes tasks when agents are assigned work.
+The daemon is the local agent runtime. It detects available AI CLIs on your machine, registers them with the Agora server, and executes tasks when agents are assigned work.
 
 ### Start
 
 ```bash
-tandem daemon start
+agora daemon start
 ```
 
-By default, the daemon runs in the background and logs to `~/.tandem/daemon.log`.
+By default, the daemon runs in the background and logs to `~/.agora/daemon.log`.
 
 To run in the foreground (useful for debugging):
 
 ```bash
-tandem daemon start --foreground
+agora daemon start --foreground
 ```
 
 ### Stop
 
 ```bash
-tandem daemon stop
+agora daemon stop
 ```
 
 ### Status
 
 ```bash
-tandem daemon status
-tandem daemon status --output json
+agora daemon status
+agora daemon status --output json
 ```
 
 Shows PID, uptime, detected agents, and watched workspaces.
@@ -75,9 +75,9 @@ Shows PID, uptime, detected agents, and watched workspaces.
 ### Logs
 
 ```bash
-tandem daemon logs              # Last 50 lines
-tandem daemon logs -f           # Follow (tail -f)
-tandem daemon logs -n 100       # Last 100 lines
+agora daemon logs              # Last 50 lines
+agora daemon logs -f           # Follow (tail -f)
+agora daemon logs -n 100       # Last 100 lines
 ```
 
 ### Supported Agents
@@ -113,57 +113,57 @@ Daemon behavior is configured via flags or environment variables:
 
 | Setting | Flag | Env Variable | Default |
 |---------|------|--------------|---------|
-| Poll interval | `--poll-interval` | `TANDEM_DAEMON_POLL_INTERVAL` | `3s` |
-| Heartbeat interval | `--heartbeat-interval` | `TANDEM_DAEMON_HEARTBEAT_INTERVAL` | `15s` |
-| Agent timeout | `--agent-timeout` | `TANDEM_AGENT_TIMEOUT` | `0`（不限制，由看门狗兜底）|
-| Max concurrent tasks | `--max-concurrent-tasks` | `TANDEM_DAEMON_MAX_CONCURRENT_TASKS` | `20` |
-| Daemon ID | `--daemon-id` | `TANDEM_DAEMON_ID` | hostname |
-| Device name | `--device-name` | `TANDEM_DAEMON_DEVICE_NAME` | hostname |
-| Runtime name | `--runtime-name` | `TANDEM_AGENT_RUNTIME_NAME` | `Local Agent` |
-| Workspaces root | — | `TANDEM_WORKSPACES_ROOT` | `~/tandem_workspaces` |
+| Poll interval | `--poll-interval` | `AGORA_DAEMON_POLL_INTERVAL` | `3s` |
+| Heartbeat interval | `--heartbeat-interval` | `AGORA_DAEMON_HEARTBEAT_INTERVAL` | `15s` |
+| Agent timeout | `--agent-timeout` | `AGORA_AGENT_TIMEOUT` | `0`（不限制，由看门狗兜底）|
+| Max concurrent tasks | `--max-concurrent-tasks` | `AGORA_DAEMON_MAX_CONCURRENT_TASKS` | `20` |
+| Daemon ID | `--daemon-id` | `AGORA_DAEMON_ID` | hostname |
+| Device name | `--device-name` | `AGORA_DAEMON_DEVICE_NAME` | hostname |
+| Runtime name | `--runtime-name` | `AGORA_AGENT_RUNTIME_NAME` | `Local Agent` |
+| Workspaces root | — | `AGORA_WORKSPACES_ROOT` | `~/agora_workspaces` |
 
 Agent-specific overrides:
 
 | Variable | Description |
 |----------|-------------|
-| `TANDEM_CLAUDE_PATH` | Custom path to the `claude` binary |
-| `TANDEM_CLAUDE_MODEL` | Override the Claude model used |
-| `TANDEM_CODEX_PATH` | Custom path to the `codex` binary |
-| `TANDEM_CODEX_MODEL` | Override the Codex model used |
-| `TANDEM_OPENCODE_PATH` | Custom path to the `opencode` binary |
-| `TANDEM_OPENCODE_MODEL` | Override the OpenCode model used |
-| `TANDEM_OPENCLAW_PATH` | Custom path to the `openclaw` binary |
-| `TANDEM_OPENCLAW_MODEL` | Override the OpenClaw model used |
-| `TANDEM_HERMES_PATH` | Custom path to the `hermes` binary |
-| `TANDEM_HERMES_MODEL` | Override the Hermes model used |
-| `TANDEM_GEMINI_PATH` | Custom path to the `gemini` binary |
-| `TANDEM_GEMINI_MODEL` | Override the Gemini model used |
-| `TANDEM_PI_PATH` | Custom path to the `pi` binary |
-| `TANDEM_PI_MODEL` | Override the Pi model used |
-| `TANDEM_CURSOR_PATH` | Custom path to the `cursor-agent` binary |
-| `TANDEM_CURSOR_MODEL` | Override the Cursor model used |
-| `TANDEM_KIMI_PATH` | Custom path to the `kimi` binary |
-| `TANDEM_KIMI_MODEL` | Override the Kimi model used |
-| `TANDEM_KIRO_PATH` | Custom path to the `kiro-cli` binary |
-| `TANDEM_KIRO_MODEL` | Override the Kiro model used |
+| `AGORA_CLAUDE_PATH` | Custom path to the `claude` binary |
+| `AGORA_CLAUDE_MODEL` | Override the Claude model used |
+| `AGORA_CODEX_PATH` | Custom path to the `codex` binary |
+| `AGORA_CODEX_MODEL` | Override the Codex model used |
+| `AGORA_OPENCODE_PATH` | Custom path to the `opencode` binary |
+| `AGORA_OPENCODE_MODEL` | Override the OpenCode model used |
+| `AGORA_OPENCLAW_PATH` | Custom path to the `openclaw` binary |
+| `AGORA_OPENCLAW_MODEL` | Override the OpenClaw model used |
+| `AGORA_HERMES_PATH` | Custom path to the `hermes` binary |
+| `AGORA_HERMES_MODEL` | Override the Hermes model used |
+| `AGORA_GEMINI_PATH` | Custom path to the `gemini` binary |
+| `AGORA_GEMINI_MODEL` | Override the Gemini model used |
+| `AGORA_PI_PATH` | Custom path to the `pi` binary |
+| `AGORA_PI_MODEL` | Override the Pi model used |
+| `AGORA_CURSOR_PATH` | Custom path to the `cursor-agent` binary |
+| `AGORA_CURSOR_MODEL` | Override the Cursor model used |
+| `AGORA_KIMI_PATH` | Custom path to the `kimi` binary |
+| `AGORA_KIMI_MODEL` | Override the Kimi model used |
+| `AGORA_KIRO_PATH` | Custom path to the `kiro-cli` binary |
+| `AGORA_KIRO_MODEL` | Override the Kiro model used |
 
 ### Self-Hosted Server
 
-When connecting to a self-hosted Tandem instance, point the CLI to your server before logging in:
+When connecting to a self-hosted Agora instance, point the CLI to your server before logging in:
 
 ```bash
-export TANDEM_APP_URL=https://app.example.com
-export TANDEM_SERVER_URL=wss://api.example.com/ws
+export AGORA_APP_URL=https://app.example.com
+export AGORA_SERVER_URL=wss://api.example.com/ws
 
-tandem login
-tandem daemon start
+agora login
+agora daemon start
 ```
 
 Or set them persistently:
 
 ```bash
-tandem config set app_url https://app.example.com
-tandem config set server_url wss://api.example.com/ws
+agora config set app_url https://app.example.com
+agora config set server_url wss://api.example.com/ws
 ```
 
 ### Profiles
@@ -172,23 +172,23 @@ Profiles let you run multiple daemons on the same machine — for example, one f
 
 ```bash
 # Set up a staging profile
-tandem setup self-host --profile staging --server-url https://api-staging.example.com --app-url https://staging.example.com
+agora setup self-host --profile staging --server-url https://api-staging.example.com --app-url https://staging.example.com
 
 # Start its daemon
-tandem daemon start --profile staging
+agora daemon start --profile staging
 
 # Default profile runs separately
-tandem daemon start
+agora daemon start
 ```
 
-Each profile gets its own config directory (`~/.tandem/profiles/<name>/`), daemon state, health port, and workspace root.
+Each profile gets its own config directory (`~/.agora/profiles/<name>/`), daemon state, health port, and workspace root.
 
 ## Workspaces
 
 ### List Workspaces
 
 ```bash
-tandem workspace list
+agora workspace list
 ```
 
 Watched workspaces are marked with `*`. The daemon only processes tasks for watched workspaces.
@@ -196,21 +196,21 @@ Watched workspaces are marked with `*`. The daemon only processes tasks for watc
 ### Watch / Unwatch
 
 ```bash
-tandem workspace watch <workspace-id>
-tandem workspace unwatch <workspace-id>
+agora workspace watch <workspace-id>
+agora workspace unwatch <workspace-id>
 ```
 
 ### Get Details
 
 ```bash
-tandem workspace get <workspace-id>
-tandem workspace get <workspace-id> --output json
+agora workspace get <workspace-id>
+agora workspace get <workspace-id> --output json
 ```
 
 ### List Members
 
 ```bash
-tandem workspace member list <workspace-id>
+agora workspace member list <workspace-id>
 ```
 
 ### Update Workspace
@@ -218,8 +218,8 @@ tandem workspace member list <workspace-id>
 需要 admin 或 owner 权限。所有字段都是部分更新（PATCH 语义）：未传的字段保持不变。
 
 ```bash
-tandem workspace update <workspace-id> --name "Acme Eng"
-tandem workspace update <workspace-id> \
+agora workspace update <workspace-id> --name "Acme Eng"
+agora workspace update <workspace-id> \
   --description "Engineering team workspace" \
   --issue-prefix ENG
 ```
@@ -227,7 +227,7 @@ tandem workspace update <workspace-id> \
 长文本走 stdin（保留换行/反斜杠）：
 
 ```bash
-cat <<'CTX' | tandem workspace update <workspace-id> --context-stdin
+cat <<'CTX' | agora workspace update <workspace-id> --context-stdin
 我们是一支 5 人 AI-native 团队。
 工作语言：中文 + 英文混合。
 CTX
@@ -240,12 +240,12 @@ CTX
 ### List Issues
 
 ```bash
-tandem issue list
-tandem issue list --status in_progress
-tandem issue list --priority urgent --assignee "Agent Name"
-tandem issue list --assignee-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
-tandem issue list --full-id
-tandem issue list --limit 20 --output json
+agora issue list
+agora issue list --status in_progress
+agora issue list --priority urgent --assignee "Agent Name"
+agora issue list --assignee-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
+agora issue list --full-id
+agora issue list --limit 20 --output json
 ```
 
 表格输出默认显示可直接复制到后续命令的 issue `KEY`（例如 `MUL-123`）；需要完整 UUID 时使用 `--full-id`。Available filters: `--status`, `--priority`, `--assignee` / `--assignee-id`, `--project`, `--limit`. 在重名 workspace 下用 `--assignee-id <uuid>` 可以精确锁定一个成员或 agent。
@@ -253,34 +253,34 @@ tandem issue list --limit 20 --output json
 ### Get Issue
 
 ```bash
-tandem issue get MUL-123
-tandem issue get <uuid>
-tandem issue get <id> --output json
+agora issue get MUL-123
+agora issue get <uuid>
+agora issue get <id> --output json
 ```
 
-`<id>` 同时接受 issue key（`tandem issue list` 表格里直接显示，例如 `MUL-123`）和完整 UUID（给 `list` 加 `--full-id` 可显示）。同样的规则适用于下面 `update` / `assign` / `status` / `comment` / `subscriber` / `runs` 等接受 `<id>` 的命令。
+`<id>` 同时接受 issue key（`agora issue list` 表格里直接显示，例如 `MUL-123`）和完整 UUID（给 `list` 加 `--full-id` 可显示）。同样的规则适用于下面 `update` / `assign` / `status` / `comment` / `subscriber` / `runs` 等接受 `<id>` 的命令。
 
 ### Create Issue
 
 ```bash
-tandem issue create --title "Fix login bug" --description "..." --priority high --assignee "Lambda"
-tandem issue create --title "Fix login bug" --assignee-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
+agora issue create --title "Fix login bug" --description "..." --priority high --assignee "Lambda"
+agora issue create --title "Fix login bug" --assignee-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
 ```
 
-Flags: `--title` (required), `--description`, `--status`, `--priority`, `--assignee` / `--assignee-id`, `--parent`, `--project`, `--due-date`. 脚本里如果已经拿到了 UUID（例如来自 `tandem workspace member list --output json`），传 `--assignee-id <uuid>`（与 `--assignee` 互斥）以精确锁定。
+Flags: `--title` (required), `--description`, `--status`, `--priority`, `--assignee` / `--assignee-id`, `--parent`, `--project`, `--due-date`. 脚本里如果已经拿到了 UUID（例如来自 `agora workspace member list --output json`），传 `--assignee-id <uuid>`（与 `--assignee` 互斥）以精确锁定。
 
 ### Update Issue
 
 ```bash
-tandem issue update <id> --title "New title" --priority urgent
+agora issue update <id> --title "New title" --priority urgent
 ```
 
 ### Assign Issue
 
 ```bash
-tandem issue assign <id> --to "Lambda"
-tandem issue assign <id> --to-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
-tandem issue assign <id> --unassign
+agora issue assign <id> --to "Lambda"
+agora issue assign <id> --to-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
+agora issue assign <id> --unassign
 ```
 
 `--to-id <uuid>`（与 `--to` 互斥）按 UUID 精确分配；适合重名 workspace 下脚本化场景。
@@ -288,7 +288,7 @@ tandem issue assign <id> --unassign
 ### Change Status
 
 ```bash
-tandem issue status <id> in_progress
+agora issue status <id> in_progress
 ```
 
 Valid statuses: `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`, `cancelled`.
@@ -297,33 +297,33 @@ Valid statuses: `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`
 
 ```bash
 # List comments
-tandem issue comment list <issue-id>
+agora issue comment list <issue-id>
 
 # Add a comment
-tandem issue comment add <issue-id> --content "Looks good, merging now"
+agora issue comment add <issue-id> --content "Looks good, merging now"
 
 # Reply to a specific comment
-tandem issue comment add <issue-id> --parent <comment-id> --content "Thanks!"
+agora issue comment add <issue-id> --parent <comment-id> --content "Thanks!"
 
 # Delete a comment
-tandem issue comment delete <comment-id>
+agora issue comment delete <comment-id>
 ```
 
 ### Execution History
 
 ```bash
 # List all execution runs for an issue
-tandem issue runs <issue-id>
-tandem issue runs <issue-id> --full-id
-tandem issue runs <issue-id> --output json
+agora issue runs <issue-id>
+agora issue runs <issue-id> --full-id
+agora issue runs <issue-id> --output json
 
 # View messages for a specific execution run
-tandem issue run-messages <task-id>
-tandem issue run-messages <short-task-id> --issue <issue-id>
-tandem issue run-messages <task-id> --output json
+agora issue run-messages <task-id>
+agora issue run-messages <short-task-id> --issue <issue-id>
+agora issue run-messages <task-id> --output json
 
 # Incremental fetch (only messages after a given sequence number)
-tandem issue run-messages <task-id> --since 42 --output json
+agora issue run-messages <task-id> --since 42 --output json
 ```
 
 `runs` 的表格输出默认显示 task UUID 短前缀；需要完整 task UUID 时使用 `--full-id`。`run-messages` 可直接接受完整 task UUID；从 `runs` 表格复制短前缀时需要同时传 `--issue <issue-id>`，CLI 只会在该 issue 的 runs 内解析。
@@ -336,9 +336,9 @@ belongs to a workspace and can optionally have a lead (member or agent).
 ### List Projects
 
 ```bash
-tandem project list
-tandem project list --status in_progress
-tandem project list --output json
+agora project list
+agora project list --status in_progress
+agora project list --output json
 ```
 
 Available filters: `--status`.
@@ -346,14 +346,14 @@ Available filters: `--status`.
 ### Get Project
 
 ```bash
-tandem project get <id>
-tandem project get <id> --output json
+agora project get <id>
+agora project get <id> --output json
 ```
 
 ### Create Project
 
 ```bash
-tandem project create --title "2026 Week 16 Sprint" --icon "🏃" --lead "Lambda"
+agora project create --title "2026 Week 16 Sprint" --icon "🏃" --lead "Lambda"
 ```
 
 Flags: `--title` (required), `--description`, `--status`, `--icon`, `--lead`.
@@ -361,8 +361,8 @@ Flags: `--title` (required), `--description`, `--status`, `--icon`, `--lead`.
 ### Update Project
 
 ```bash
-tandem project update <id> --title "New title" --status in_progress
-tandem project update <id> --lead "Lambda"
+agora project update <id> --title "New title" --status in_progress
+agora project update <id> --lead "Lambda"
 ```
 
 Flags: `--title`, `--description`, `--status`, `--icon`, `--lead`.
@@ -370,7 +370,7 @@ Flags: `--title`, `--description`, `--status`, `--icon`, `--lead`.
 ### Change Status
 
 ```bash
-tandem project status <id> in_progress
+agora project status <id> in_progress
 ```
 
 Valid statuses: `planned`, `in_progress`, `paused`, `completed`, `cancelled`.
@@ -378,7 +378,7 @@ Valid statuses: `planned`, `in_progress`, `paused`, `completed`, `cancelled`.
 ### Delete Project
 
 ```bash
-tandem project delete <id>
+agora project delete <id>
 ```
 
 ### Associating Issues with Projects
@@ -387,9 +387,9 @@ Use the `--project` flag on `issue create` / `issue update` to attach an issue t
 project, or on `issue list` to filter issues by project:
 
 ```bash
-tandem issue create --title "Login bug" --project <project-id>
-tandem issue update <issue-id> --project <project-id>
-tandem issue list --project <project-id>
+agora issue create --title "Login bug" --project <project-id>
+agora issue update <issue-id> --project <project-id>
+agora issue list --project <project-id>
 ```
 
 ## Configuration
@@ -397,7 +397,7 @@ tandem issue list --project <project-id>
 ### View Config
 
 ```bash
-tandem config show
+agora config show
 ```
 
 Shows config file path, server URL, app URL, and default workspace.
@@ -405,17 +405,17 @@ Shows config file path, server URL, app URL, and default workspace.
 ### Set Values
 
 ```bash
-tandem config set server_url wss://api.example.com/ws
-tandem config set app_url https://app.example.com
-tandem config set workspace_id <workspace-id>
+agora config set server_url wss://api.example.com/ws
+agora config set app_url https://app.example.com
+agora config set workspace_id <workspace-id>
 ```
 
 ## Other Commands
 
 ```bash
-tandem version              # Show CLI version and commit hash
-tandem update               # Update to latest version
-tandem agent list           # List agents in the current workspace
+agora version              # Show CLI version and commit hash
+agora update               # Update to latest version
+agora agent list           # List agents in the current workspace
 ```
 
 ## Output Formats
@@ -426,6 +426,6 @@ Most commands support `--output` with two formats:
 - `json` — structured JSON (useful for scripting and automation)
 
 ```bash
-tandem issue list --output json
-tandem daemon status --output json
+agora issue list --output json
+agora daemon status --output json
 ```

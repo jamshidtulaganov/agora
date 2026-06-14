@@ -1,8 +1,8 @@
 "use client";
 
 import { Globe, Lock } from "lucide-react";
-import type { AgentVisibility } from "@tandem/core/types";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@tandem/ui/components/ui/tooltip";
+import type { AgentVisibility } from "@agora/core/types";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@agora/ui/components/ui/tooltip";
 import { useT } from "../../i18n";
 
 /**

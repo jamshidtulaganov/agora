@@ -1,16 +1,16 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { SquadMemberPreview } from "@tandem/core/types";
-import { useWorkspaceId } from "@tandem/core/hooks";
+import type { SquadMemberPreview } from "@agora/core/types";
+import { useWorkspaceId } from "@agora/core/hooks";
 import {
   squadListOptions,
   agentListOptions,
   memberListOptions,
-} from "@tandem/core/workspace/queries";
-import { useWorkspacePaths } from "@tandem/core/paths";
-import { ActorAvatar as ActorAvatarBase } from "@tandem/ui/components/common/actor-avatar";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
+} from "@agora/core/workspace/queries";
+import { useWorkspacePaths } from "@agora/core/paths";
+import { ActorAvatar as ActorAvatarBase } from "@agora/ui/components/common/actor-avatar";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { AppLink } from "../../navigation";
 import { useT } from "../../i18n";

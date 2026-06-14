@@ -4,24 +4,24 @@ import { useEffect, useMemo, useState } from "react";
 import { useStore } from "zustand";
 import { ListTodo, Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { BOARD_STATUSES } from "@tandem/core/issues/config";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { BOARD_STATUSES } from "@agora/core/issues/config";
 import {
   childIssueProgressOptions,
   myIssueListOptions,
   type MyIssuesFilter,
-} from "@tandem/core/issues/queries";
+} from "@agora/core/issues/queries";
 import {
   actorIssuesViewStore,
   type ActorIssuesScope,
-} from "@tandem/core/issues/stores/actor-issues-view-store";
-import { useIssueSelectionStore } from "@tandem/core/issues/stores/selection-store";
-import { useClearFiltersOnWorkspaceChange } from "@tandem/core/issues/stores/view-store";
-import { ViewStoreProvider } from "@tandem/core/issues/stores/view-store-context";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Input } from "@tandem/ui/components/ui/input";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@tandem/ui/components/ui/tooltip";
+} from "@agora/core/issues/stores/actor-issues-view-store";
+import { useIssueSelectionStore } from "@agora/core/issues/stores/selection-store";
+import { useClearFiltersOnWorkspaceChange } from "@agora/core/issues/stores/view-store";
+import { ViewStoreProvider } from "@agora/core/issues/stores/view-store-context";
+import { Button } from "@agora/ui/components/ui/button";
+import { Input } from "@agora/ui/components/ui/input";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@agora/ui/components/ui/tooltip";
 import { ListView } from "../issues/components/list-view";
 import { BatchActionToolbar } from "../issues/components/batch-action-toolbar";
 import { IssueDisplayControls } from "../issues/components/issues-header";

@@ -1,4 +1,4 @@
-import type { Skill, SkillSummary } from "@tandem/core/types";
+import type { Skill, SkillSummary } from "@agora/core/types";
 
 /**
  * Discriminated view over `Skill.config.origin` — the JSONB blob the backend

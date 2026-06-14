@@ -330,7 +330,7 @@ func boundUser() db.LarkUserBinding {
 	return db.LarkUserBinding{
 		ID:             validUUID(0x44),
 		WorkspaceID:    validUUID(0x22),
-		TandemUserID:  validUUID(0x55),
+		AgoraUserID:  validUUID(0x55),
 		InstallationID: validUUID(0x11),
 		LarkOpenID:     "ou_user_a",
 	}
@@ -466,13 +466,13 @@ func TestDispatcher_PlainMessageEnqueuesTask(t *testing.T) {
 	}
 	// For p2p the session creator should be the bound user, not the
 	// installer — verifies the chat-type branch in Handle.
-	if chat.lastEnsureParams.Sender != queries.userBinding.TandemUserID {
+	if chat.lastEnsureParams.Sender != queries.userBinding.AgoraUserID {
 		t.Fatalf("p2p session creator should be sender; got %+v", chat.lastEnsureParams.Sender)
 	}
 	// The task initiator is also the sender (MUL-2645).
-	if enq.lastInitiatorUID != queries.userBinding.TandemUserID {
+	if enq.lastInitiatorUID != queries.userBinding.AgoraUserID {
 		t.Fatalf("p2p task initiator should be sender; got %+v want %+v",
-			enq.lastInitiatorUID, queries.userBinding.TandemUserID)
+			enq.lastInitiatorUID, queries.userBinding.AgoraUserID)
 	}
 }
 
@@ -511,7 +511,7 @@ func TestDispatcher_GroupMessageUsesInstallerAsCreator(t *testing.T) {
 // but the TASK INITIATOR must be the actual message sender. Before the fix the
 // claim derived the initiator from chat_session.creator_id (= installer), so
 // every group member appeared to the agent as the installer. The dispatcher now
-// passes the sender's TandemUserID to EnqueueChatTask; this asserts that the
+// passes the sender's AgoraUserID to EnqueueChatTask; this asserts that the
 // enqueued initiator is the sender (boundUser), NOT the installer.
 func TestDispatcher_GroupMessageEnqueuesWithSenderAsInitiator(t *testing.T) {
 	inst := activeInstallation()
@@ -551,9 +551,9 @@ func TestDispatcher_GroupMessageEnqueuesWithSenderAsInitiator(t *testing.T) {
 		t.Fatalf("group session creator should be installer; got %+v", chat.lastEnsureParams.Sender)
 	}
 	// ...but the task initiator is the SENDER, not the installer.
-	if enq.lastInitiatorUID != queries.userBinding.TandemUserID {
+	if enq.lastInitiatorUID != queries.userBinding.AgoraUserID {
 		t.Fatalf("group task initiator should be the sender; got %+v want %+v",
-			enq.lastInitiatorUID, queries.userBinding.TandemUserID)
+			enq.lastInitiatorUID, queries.userBinding.AgoraUserID)
 	}
 	if enq.lastInitiatorUID == inst.InstallerUserID {
 		t.Fatalf("group task initiator must NOT be the installer (%+v)", inst.InstallerUserID)
@@ -637,7 +637,7 @@ func TestDispatcher_DedupBeforeGroupFilter(t *testing.T) {
 }
 
 // TestDispatcher_DedupIsScopedPerInstallation pins MUL-2671's multi-bot
-// invariant: in a Lark group with TWO Tandem bots installed, the
+// invariant: in a Lark group with TWO Agora bots installed, the
 // same Lark message_id arrives at both WS supervisors and each one
 // MUST be free to claim, evaluate AddressedToBot independently, and
 // either ingest or drop. Before the (installation_id, message_id)
@@ -1066,9 +1066,9 @@ func TestDispatcher_DebounceCoalescesRunTrigger(t *testing.T) {
 // message's sender, so the final enqueue carries the last sender's identity.
 func TestDispatcher_LatestSenderWinsAsInitiator(t *testing.T) {
 	sessionID := validUUID(0x66)
-	alice := boundUser() // TandemUserID 0x55, open id ou_alice below
+	alice := boundUser() // AgoraUserID 0x55, open id ou_alice below
 	bob := boundUser()
-	bob.TandemUserID = validUUID(0xBB)
+	bob.AgoraUserID = validUUID(0xBB)
 	queries := &fakeQueries{
 		installationByApp:   activeInstallation(),
 		chatSession:         db.ChatSession{ID: sessionID, AgentID: validUUID(0x33)},
@@ -1099,9 +1099,9 @@ func TestDispatcher_LatestSenderWinsAsInitiator(t *testing.T) {
 	if enq.called != 1 {
 		t.Fatalf("a coalesced burst must enqueue exactly once; called=%d", enq.called)
 	}
-	if enq.lastInitiatorUID != bob.TandemUserID {
+	if enq.lastInitiatorUID != bob.AgoraUserID {
 		t.Fatalf("latest sender (Bob) should be the initiator; got %+v want %+v",
-			enq.lastInitiatorUID, bob.TandemUserID)
+			enq.lastInitiatorUID, bob.AgoraUserID)
 	}
 }
 

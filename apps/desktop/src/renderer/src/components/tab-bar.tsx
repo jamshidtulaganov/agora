@@ -37,15 +37,15 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
-} from "@tandem/ui/components/ui/context-menu";
-import { cn } from "@tandem/ui/lib/utils";
+} from "@agora/ui/components/ui/context-menu";
+import { cn } from "@agora/ui/lib/utils";
 import {
   useTabStore,
   useActiveGroup,
   resolveRouteIcon,
   type Tab,
 } from "@/stores/tab-store";
-import { paths } from "@tandem/core/paths";
+import { paths } from "@agora/core/paths";
 
 const TAB_ICONS: Record<string, LucideIcon> = {
   Inbox,

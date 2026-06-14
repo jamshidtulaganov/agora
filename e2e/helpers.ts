@@ -2,7 +2,7 @@ import { type Page } from "@playwright/test";
 import { TestApiClient } from "./fixtures";
 
 const DEFAULT_E2E_NAME = "E2E User";
-const DEFAULT_E2E_EMAIL = "e2e@tandem.dev";
+const DEFAULT_E2E_EMAIL = "e2e@agora.dev";
 const DEFAULT_E2E_WORKSPACE = "e2e-workspace";
 
 /**
@@ -23,7 +23,7 @@ export async function loginAsDefault(page: Page): Promise<string> {
   const token = api.getToken();
   await page.goto("/login");
   await page.evaluate((t) => {
-    localStorage.setItem("tandem_token", t);
+    localStorage.setItem("agora_token", t);
   }, token);
   await page.goto(`/${workspace.slug}/issues`);
   await page.waitForURL("**/issues", { timeout: 10000 });

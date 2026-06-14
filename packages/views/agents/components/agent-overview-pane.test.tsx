@@ -3,8 +3,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Agent, AgentRuntime } from "@tandem/core/types";
-import { I18nProvider } from "@tandem/core/i18n/react";
+import type { Agent, AgentRuntime } from "@agora/core/types";
+import { I18nProvider } from "@agora/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enAgents from "../../locales/en/agents.json";
 
@@ -45,10 +45,10 @@ vi.mock("../../common/actor-issues-panel", () => ({
 const larkListingRef = vi.hoisted(() => ({
   current: { installations: [] as unknown[], configured: false },
 }));
-vi.mock("@tandem/core/hooks", () => ({
+vi.mock("@agora/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
-vi.mock("@tandem/core/lark", () => ({
+vi.mock("@agora/core/lark", () => ({
   larkInstallationsOptions: () => ({
     queryKey: ["lark", "installations"],
     queryFn: () => Promise.resolve(larkListingRef.current),

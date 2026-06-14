@@ -3,15 +3,15 @@
 import { useNavigation } from "../navigation";
 import { DragStrip } from "../platform";
 import { ArrowLeft } from "lucide-react";
-import { Button } from "@tandem/ui/components/ui/button";
+import { Button } from "@agora/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
   DialogDescription,
-} from "@tandem/ui/components/ui/dialog";
-import { paths } from "@tandem/core/paths";
-import { useConfigStore } from "@tandem/core/config";
+} from "@agora/ui/components/ui/dialog";
+import { paths } from "@agora/core/paths";
+import { useConfigStore } from "@agora/core/config";
 import { CreateWorkspaceForm } from "../workspace/create-workspace-form";
 import { useT } from "../i18n";
 

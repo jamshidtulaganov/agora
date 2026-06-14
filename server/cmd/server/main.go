@@ -43,7 +43,7 @@ func redisClientName(existing, suffix string) string {
 	if existing != "" {
 		return existing + ":" + suffix
 	}
-	return "tandem-api:" + suffix
+	return "agora-api:" + suffix
 }
 
 func closeRedisClient(label string, client *redis.Client) {
@@ -128,11 +128,11 @@ func main() {
 	if os.Getenv("RESEND_API_KEY") == "" && strings.TrimSpace(os.Getenv("SMTP_HOST")) == "" {
 		slog.Warn("no email backend configured (RESEND_API_KEY and SMTP_HOST both empty) — verification codes will be printed to the log instead of emailed.")
 	}
-	if os.Getenv("TANDEM_DEV_VERIFICATION_CODE") != "" {
+	if os.Getenv("AGORA_DEV_VERIFICATION_CODE") != "" {
 		if strings.EqualFold(strings.TrimSpace(os.Getenv("APP_ENV")), "production") {
-			slog.Warn("TANDEM_DEV_VERIFICATION_CODE is set but ignored because APP_ENV=production.")
+			slog.Warn("AGORA_DEV_VERIFICATION_CODE is set but ignored because APP_ENV=production.")
 		} else {
-			slog.Warn("TANDEM_DEV_VERIFICATION_CODE is enabled. Use it only for local development or private test instances.")
+			slog.Warn("AGORA_DEV_VERIFICATION_CODE is enabled. Use it only for local development or private test instances.")
 		}
 	}
 

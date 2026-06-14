@@ -2,8 +2,8 @@
 
 import { use } from "react";
 import { useSearchParams } from "next/navigation";
-import { AttachmentPreviewPage } from "@tandem/views/attachments";
-import { ErrorBoundary } from "@tandem/ui/components/common/error-boundary";
+import { AttachmentPreviewPage } from "@agora/views/attachments";
+import { ErrorBoundary } from "@agora/ui/components/common/error-boundary";
 
 // Lives at /:slug/attachments/:id/preview — OUTSIDE the (dashboard) group on
 // purpose. The dashboard layout adds a left sidebar + top chrome; this page

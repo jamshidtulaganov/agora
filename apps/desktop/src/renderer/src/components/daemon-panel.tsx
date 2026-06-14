@@ -15,14 +15,14 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { cn } from "@tandem/ui/lib/utils";
-import { copyText } from "@tandem/ui/lib/clipboard";
-import { Button } from "@tandem/ui/components/ui/button";
+import { cn } from "@agora/ui/lib/utils";
+import { copyText } from "@agora/ui/lib/clipboard";
+import { Button } from "@agora/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
-} from "@tandem/ui/components/ui/dialog";
+} from "@agora/ui/components/ui/dialog";
 import { toast } from "sonner";
 import type { DaemonStatus } from "../../../shared/daemon-types";
 import {

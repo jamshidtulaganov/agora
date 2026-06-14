@@ -20,13 +20,13 @@ import {
   shouldShowPullRequestStats,
   type PullRequestStatusKind,
   type PullRequestProgressSegment,
-} from "@tandem/core/github";
+} from "@agora/core/github";
 import type {
   GitHubPullRequest,
   GitHubPullRequestChecksConclusion,
   GitHubPullRequestState,
-} from "@tandem/core/types";
-import { cn } from "@tandem/ui/lib/utils";
+} from "@agora/core/types";
+import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
 
 type IssuesT = ReturnType<typeof useT<"issues">>["t"];

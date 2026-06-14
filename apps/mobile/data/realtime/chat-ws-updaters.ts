@@ -29,7 +29,7 @@ import type {
   TaskMessagePayload,
   TaskQueuedPayload,
   TaskDispatchPayload,
-} from "@tandem/core/types";
+} from "@agora/core/types";
 import { chatKeys } from "@/data/queries/chat";
 
 // =====================================================

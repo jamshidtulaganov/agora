@@ -1,11 +1,11 @@
 ---
 title: Mobile app (iOS)
-description: How to build the open-source Tandem iOS app on your own iPhone — no App Store yet.
+description: How to build the open-source Agora iOS app on your own iPhone — no App Store yet.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Tandem's iOS client is open-source and lives in the [main repo](https://github.com/multica-ai/multica) alongside web, desktop, and backend. It isn't on the App Store yet — until that changes, anyone who wants it on their iPhone builds from source. The build takes about 10–20 minutes the first time and ~2 minutes after that, and it talks to the same backend as [tandem.dev](https://tandem.dev) so your existing account just works.
+Agora's iOS client is open-source and lives in the [main repo](https://github.com/multica-ai/multica) alongside web, desktop, and backend. It isn't on the App Store yet — until that changes, anyone who wants it on their iPhone builds from source. The build takes about 10–20 minutes the first time and ~2 minutes after that, and it talks to the same backend as [agora.dev](https://agora.dev) so your existing account just works.
 
 <Callout type="info">
 This page is for **personal use**. App developers should read [`apps/mobile/README.md`](https://github.com/multica-ai/multica/blob/main/apps/mobile/README.md) in the repo — it covers the dev / staging variants and the full script matrix.
@@ -16,11 +16,11 @@ This page is for **personal use**. App developers should read [`apps/mobile/READ
 - A **Mac** with Xcode installed (free from the App Store).
 - A free **Apple ID** added under Xcode → Settings → Accounts. A paid Apple Developer Program account is optional and only extends the 7-day signing window to 1 year — see [7-day limit](#7-day-signing-limit) below.
 - An **iPhone** connected via USB cable, with [Developer Mode enabled](https://docs.expo.dev/guides/ios-developer-mode/) (Settings → Privacy & Security → Developer Mode).
-- The Tandem source code checked out:
+- The Agora source code checked out:
 
   ```bash
   git clone https://github.com/multica-ai/multica.git
-  cd tandem
+  cd agora
   pnpm install
   ```
 
@@ -48,7 +48,7 @@ The only way to extend this is an **Apple Developer Program account** ($99/yr fr
 
 ## Updating
 
-There is no auto-update yet. When the Tandem codebase moves forward, pull and rebuild:
+There is no auto-update yet. When the Agora codebase moves forward, pull and rebuild:
 
 ```bash
 git pull
@@ -60,16 +60,16 @@ Subsequent builds are fast because Xcode caches the native compile.
 
 ## Why no App Store yet
 
-The iOS app is still moving fast — the team prefers ship-and-iterate over App Store review cycles right now. A TestFlight beta is the most likely next step before a full App Store release. Until then, the self-build path above is the only way to use Tandem on iOS.
+The iOS app is still moving fast — the team prefers ship-and-iterate over App Store review cycles right now. A TestFlight beta is the most likely next step before a full App Store release. Until then, the self-build path above is the only way to use Agora on iOS.
 
 If you'd like to be notified when TestFlight opens, watch the [GitHub repo](https://github.com/multica-ai/multica).
 
 ## Troubleshooting
 
-**"No matching provisioning profiles found"** — Xcode refuses to sign the default bundle id `ai.tandem.mobile` with your Apple ID. Rare, but happens if someone has registered that prefix on Apple's developer portal. Pick any reverse-domain you control (`com.yourname.tandem` is fine), export it, and re-run:
+**"No matching provisioning profiles found"** — Xcode refuses to sign the default bundle id `ai.agora.mobile` with your Apple ID. Rare, but happens if someone has registered that prefix on Apple's developer portal. Pick any reverse-domain you control (`com.yourname.agora` is fine), export it, and re-run:
 
 ```bash
-export EXPO_BUNDLE_IDENTIFIER_PROD=com.yourname.tandem
+export EXPO_BUNDLE_IDENTIFIER_PROD=com.yourname.agora
 pnpm ios:mobile:device:prod:release
 ```
 
@@ -79,4 +79,4 @@ The id doesn't have to mean anything — Apple just needs it to be unclaimed by 
 
 **Build hangs on `Pod install` or compiles forever** — first build is genuinely 10–20 minutes because CocoaPods downloads dependencies and Xcode compiles React Native from source. Subsequent builds are much faster.
 
-**App can't reach the backend** — confirm `apps/mobile/.env.production` hasn't been modified (it ships with `EXPO_PUBLIC_API_URL=https://api.tandem.dev`). If you changed it, restore with `git checkout apps/mobile/.env.production`.
+**App can't reach the backend** — confirm `apps/mobile/.env.production` hasn't been modified (it ships with `EXPO_PUBLIC_API_URL=https://api.agora.dev`). If you changed it, restore with `git checkout apps/mobile/.env.production`.

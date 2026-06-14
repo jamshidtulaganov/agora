@@ -295,8 +295,8 @@ func TestBitrixStatusFromIssue(t *testing.T) {
 }
 
 func TestStatusRoundTrip(t *testing.T) {
-	// For every Tandem status, mapping to Bitrix and back lands on the same
-	// Tandem status (the lossless subset).
+	// For every Agora status, mapping to Bitrix and back lands on the same
+	// Agora status (the lossless subset).
 	for _, s := range []string{StatusBacklog, StatusTodo, StatusInProgress, StatusInReview, StatusDone, StatusCancelled} {
 		round := MapStatus(BitrixStatusFromIssue(s))
 		if round != s {

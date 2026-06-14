@@ -6,8 +6,8 @@ import {
   captureDownloadIntent,
   captureEvent,
   setPersonProperties,
-} from "@tandem/core/analytics";
-import { Button } from "@tandem/ui/components/ui/button";
+} from "@agora/core/analytics";
+import { Button } from "@agora/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -15,11 +15,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@tandem/ui/components/ui/dialog";
-import { useScrollFade } from "@tandem/ui/hooks/use-scroll-fade";
-import { cn } from "@tandem/ui/lib/utils";
-import type { AgentRuntime } from "@tandem/core/types";
-import { DragStrip } from "@tandem/views/platform";
+} from "@agora/ui/components/ui/dialog";
+import { useScrollFade } from "@agora/ui/hooks/use-scroll-fade";
+import { cn } from "@agora/ui/lib/utils";
+import type { AgentRuntime } from "@agora/core/types";
+import { DragStrip } from "@agora/views/platform";
 import { StepHeader } from "../components/step-header";
 import { RuntimeAsidePanel } from "../components/runtime-aside-panel";
 import { CompactRuntimeRow } from "../components/compact-runtime-row";
@@ -474,7 +474,7 @@ function CliWaitingStatus({ dialogOpen }: { dialogOpen: boolean }) {
     return () => window.clearInterval(id);
   }, [dialogOpen]);
 
-  // Stage thresholds are rough — `tandem setup` typical flow is
+  // Stage thresholds are rough — `agora setup` typical flow is
   //   ~1s save config → browser-tab auth (user-driven, 5–30s) →
   //   ~2s daemon boot → immediate WS register. So under 15s means
   //   "still normal", 15–45s means "probably stuck on browser auth",
@@ -516,21 +516,21 @@ function CliWaitingStatus({ dialogOpen }: { dialogOpen: boolean }) {
         {stage === "normal" && (
           <>
             {t(($) => $.step_platform.stage_normal_prefix)}
-            <span className="font-mono">{"tandem setup"}</span>
+            <span className="font-mono">{"agora setup"}</span>
             {t(($) => $.step_platform.stage_normal_suffix)}
           </>
         )}
         {stage === "midway" && (
           <>
             {t(($) => $.step_platform.stage_midway_prefix)}
-            <span className="font-mono">{"tandem setup"}</span>
+            <span className="font-mono">{"agora setup"}</span>
             {t(($) => $.step_platform.stage_midway_suffix)}
           </>
         )}
         {stage === "slow" && (
           <>
             {t(($) => $.step_platform.stage_slow_prefix)}
-            <span className="font-mono">{"tandem setup"}</span>
+            <span className="font-mono">{"agora setup"}</span>
             {t(($) => $.step_platform.stage_slow_suffix)}
           </>
         )}

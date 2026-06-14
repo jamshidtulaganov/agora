@@ -6,9 +6,9 @@ import {
   isWebNotificationSupported,
   requestWebNotificationPermission,
   type WebNotificationPermission,
-} from "@tandem/core/platform";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Card, CardContent } from "@tandem/ui/components/ui/card";
+} from "@agora/core/platform";
+import { Button } from "@agora/ui/components/ui/button";
+import { Card, CardContent } from "@agora/ui/components/ui/card";
 import { isDesktopShell } from "../../platform";
 import { useT } from "../../i18n";
 

@@ -5,7 +5,7 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import {
   NavigationProvider,
   type NavigationAdapter,
-} from "@tandem/views/navigation";
+} from "@agora/views/navigation";
 
 function NavigationProviderInner({
   children,

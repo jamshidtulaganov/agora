@@ -25,30 +25,30 @@ import type {
   IssueStatus,
   Project,
   UpdateIssueRequest,
-} from "@tandem/core/types";
-import { useViewStore, useViewStoreApi } from "@tandem/core/issues/stores/view-store-context";
-import { agentTaskSnapshotOptions } from "@tandem/core/agents";
+} from "@agora/core/types";
+import { useViewStore, useViewStoreApi } from "@agora/core/issues/stores/view-store-context";
+import { agentTaskSnapshotOptions } from "@agora/core/agents";
 import { filterIssues, type IssueFilters } from "../utils/filter";
-import type { SwimlaneGrouping } from "@tandem/core/issues/stores/view-store";
-import { useWorkspacePaths } from "@tandem/core/paths";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { projectListOptions } from "@tandem/core/projects/queries";
-import { useActorName } from "@tandem/core/workspace/hooks";
-import { useLoadMoreByStatus } from "@tandem/core/issues/mutations";
-import { childrenByParentsOptions, issueKeys, type IssueSortParam, type MyIssuesFilter } from "@tandem/core/issues/queries";
+import type { SwimlaneGrouping } from "@agora/core/issues/stores/view-store";
+import { useWorkspacePaths } from "@agora/core/paths";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { projectListOptions } from "@agora/core/projects/queries";
+import { useActorName } from "@agora/core/workspace/hooks";
+import { useLoadMoreByStatus } from "@agora/core/issues/mutations";
+import { childrenByParentsOptions, issueKeys, type IssueSortParam, type MyIssuesFilter } from "@agora/core/issues/queries";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-} from "@tandem/ui/components/ui/dropdown-menu";
+} from "@agora/ui/components/ui/dropdown-menu";
 import { sortIssues } from "../utils/sort";
-import { BOARD_STATUSES, STATUS_CONFIG } from "@tandem/core/issues/config";
-import { useModalStore } from "@tandem/core/modals";
+import { BOARD_STATUSES, STATUS_CONFIG } from "@agora/core/issues/config";
+import { useModalStore } from "@agora/core/modals";
 import { DraggableBoardCard, BoardCardContent } from "./board-card";
 import { StatusIcon } from "./status-icon";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@tandem/ui/components/ui/tooltip";
-import { Button } from "@tandem/ui/components/ui/button";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@agora/ui/components/ui/tooltip";
+import { Button } from "@agora/ui/components/ui/button";
 import { StatusHeading } from "./status-heading";
 import { HiddenColumnsPanel, HiddenColumnRow } from "./hidden-columns-panel";
 import { InfiniteScrollSentinel } from "./infinite-scroll-sentinel";

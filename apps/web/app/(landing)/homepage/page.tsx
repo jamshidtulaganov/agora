@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
-import { TandemLanding } from "@/features/landing/components/tandem-landing";
+import { AgoraLanding } from "@/features/landing/components/agora-landing";
 
 export const metadata: Metadata = {
   title: "Homepage",
   description:
-    "Tandem — open-source platform that turns coding agents into real teammates. Assign tasks, track progress, compound skills.",
+    "Agora — open-source platform that turns coding agents into real teammates. Assign tasks, track progress, compound skills.",
   openGraph: {
-    title: "Tandem — Project Management for Human + Agent Teams",
+    title: "Agora — Project Management for Human + Agent Teams",
     description:
       "Manage your human + agent workforce in one place.",
     url: "/homepage",
@@ -17,5 +17,5 @@ export const metadata: Metadata = {
 };
 
 export default function HomepagePage() {
-  return <TandemLanding />;
+  return <AgoraLanding />;
 }

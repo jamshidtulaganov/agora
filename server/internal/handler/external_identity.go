@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// External identity providers. A Tandem user is mapped to their id on these
+// External identity providers. A Agora user is mapped to their id on these
 // systems so inbound events resolve to a member (e.g. Bitrix RESPONSIBLE_ID ->
 // member) and alternate logins bind to the same account (Telegram).
 const (

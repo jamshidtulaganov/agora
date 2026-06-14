@@ -10,10 +10,10 @@ import {
   Info,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { runtimeListOptions } from "@tandem/core/runtimes";
-import { agentTaskSnapshotOptions } from "@tandem/core/agents";
-import { Button } from "@tandem/ui/components/ui/button";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { runtimeListOptions } from "@agora/core/runtimes";
+import { agentTaskSnapshotOptions } from "@agora/core/agents";
+import { Button } from "@agora/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -21,7 +21,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@tandem/ui/components/ui/dialog";
+} from "@agora/ui/components/ui/dialog";
 import { toast } from "sonner";
 import { DaemonPanel } from "./daemon-panel";
 import { reauthenticateDaemon } from "../platform/daemon-reauth";

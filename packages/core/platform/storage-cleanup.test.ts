@@ -11,15 +11,15 @@ describe("clearWorkspaceStorage", () => {
 
     clearWorkspaceStorage(adapter, "ws_123");
 
-    expect(adapter.removeItem).toHaveBeenCalledWith("tandem_issue_draft:ws_123");
-    expect(adapter.removeItem).toHaveBeenCalledWith("tandem_issues_view:ws_123");
-    expect(adapter.removeItem).toHaveBeenCalledWith("tandem_issues_scope:ws_123");
-    expect(adapter.removeItem).toHaveBeenCalledWith("tandem_my_issues_view:ws_123");
-    expect(adapter.removeItem).toHaveBeenCalledWith("tandem:chat:selectedAgentId:ws_123");
-    expect(adapter.removeItem).toHaveBeenCalledWith("tandem:chat:activeSessionId:ws_123");
-    expect(adapter.removeItem).toHaveBeenCalledWith("tandem:chat:drafts:ws_123");
-    expect(adapter.removeItem).toHaveBeenCalledWith("tandem:chat:expanded:ws_123");
-    expect(adapter.removeItem).toHaveBeenCalledWith("tandem_navigation:ws_123");
+    expect(adapter.removeItem).toHaveBeenCalledWith("agora_issue_draft:ws_123");
+    expect(adapter.removeItem).toHaveBeenCalledWith("agora_issues_view:ws_123");
+    expect(adapter.removeItem).toHaveBeenCalledWith("agora_issues_scope:ws_123");
+    expect(adapter.removeItem).toHaveBeenCalledWith("agora_my_issues_view:ws_123");
+    expect(adapter.removeItem).toHaveBeenCalledWith("agora:chat:selectedAgentId:ws_123");
+    expect(adapter.removeItem).toHaveBeenCalledWith("agora:chat:activeSessionId:ws_123");
+    expect(adapter.removeItem).toHaveBeenCalledWith("agora:chat:drafts:ws_123");
+    expect(adapter.removeItem).toHaveBeenCalledWith("agora:chat:expanded:ws_123");
+    expect(adapter.removeItem).toHaveBeenCalledWith("agora_navigation:ws_123");
     expect(adapter.removeItem).toHaveBeenCalledTimes(9);
   });
 });

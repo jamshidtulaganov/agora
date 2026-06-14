@@ -17,25 +17,25 @@ import {
   useCreateProjectResource,
   useDeleteProjectResource,
   useUpdateProjectResource,
-} from "@tandem/core/projects";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { useCurrentWorkspace } from "@tandem/core/paths";
+} from "@agora/core/projects";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { useCurrentWorkspace } from "@agora/core/paths";
 import type {
   GithubRepoResourceRef,
   LocalDirectoryResourceRef,
   ProjectResource,
-} from "@tandem/core/types";
-import { Button } from "@tandem/ui/components/ui/button";
+} from "@agora/core/types";
+import { Button } from "@agora/ui/components/ui/button";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@tandem/ui/components/ui/popover";
+} from "@agora/ui/components/ui/popover";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@tandem/ui/components/ui/tooltip";
+} from "@agora/ui/components/ui/tooltip";
 import {
   isDesktopShell,
   pickDirectory,
@@ -49,7 +49,7 @@ import { useT } from "../../i18n";
 //
 // Type-dispatched at the row + add-flow level. Add a new resource_type by:
 //   (1) extending the server validator
-//   (2) extending ProjectResourceType in @tandem/core/types
+//   (2) extending ProjectResourceType in @agora/core/types
 //   (3) adding a render case in ResourceRow and an add-control here
 function isGithubRef(r: ProjectResource): r is ProjectResource & {
   resource_ref: GithubRepoResourceRef;

@@ -261,7 +261,7 @@ func TestKiroBackendInvokesACPWithTrustAllTools(t *testing.T) {
 	session, err := backend.Execute(ctx, "prompt-ignored", ExecOptions{
 		Model:      "bogus-model",
 		Timeout:    5 * time.Second,
-		CustomArgs: []string{"acp", "--trust-tools", "shell", "-a", "--agent", "tandem"},
+		CustomArgs: []string{"acp", "--trust-tools", "shell", "-a", "--agent", "agora"},
 	})
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -293,7 +293,7 @@ func TestKiroBackendInvokesACPWithTrustAllTools(t *testing.T) {
 			}
 		}
 	}
-	if strings.Join(lines, "\n") != strings.Join([]string{"acp", "--trust-all-tools", "--agent", "tandem"}, "\n") {
+	if strings.Join(lines, "\n") != strings.Join([]string{"acp", "--trust-all-tools", "--agent", "agora"}, "\n") {
 		t.Errorf("unexpected argv after filtering: %q", lines)
 	}
 }

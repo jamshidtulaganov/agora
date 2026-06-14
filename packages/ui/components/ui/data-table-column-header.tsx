@@ -16,8 +16,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@tandem/ui/components/ui/dropdown-menu";
-import { cn } from "@tandem/ui/lib/utils";
+} from "@agora/ui/components/ui/dropdown-menu";
+import { cn } from "@agora/ui/lib/utils";
 
 interface DataTableColumnHeaderProps<TData, TValue>
   extends React.ComponentProps<typeof DropdownMenuTrigger> {

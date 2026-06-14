@@ -3,10 +3,10 @@
 import { useState } from "react";
 import { ChevronDown, Plus, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import type { SkillSummary } from "@tandem/core/types";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { skillListOptions } from "@tandem/core/workspace/queries";
-import { Button } from "@tandem/ui/components/ui/button";
+import type { SkillSummary } from "@agora/core/types";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { skillListOptions } from "@agora/core/workspace/queries";
+import { Button } from "@agora/ui/components/ui/button";
 import { useT } from "../../i18n";
 import { SkillPickerList } from "./skill-picker-list";
 

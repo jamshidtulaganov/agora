@@ -1,11 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { NewWorkspacePage } from "@tandem/views/workspace/new-workspace-page";
-import { InvitePage } from "@tandem/views/invite";
-import { InvitationsPage } from "@tandem/views/invitations";
-import { OnboardingFlow } from "@tandem/views/onboarding";
-import { useNavigation } from "@tandem/views/navigation";
-import { paths } from "@tandem/core/paths";
-import { workspaceListOptions } from "@tandem/core/workspace/queries";
+import { NewWorkspacePage } from "@agora/views/workspace/new-workspace-page";
+import { InvitePage } from "@agora/views/invite";
+import { InvitationsPage } from "@agora/views/invitations";
+import { OnboardingFlow } from "@agora/views/onboarding";
+import { useNavigation } from "@agora/views/navigation";
+import { paths } from "@agora/core/paths";
+import { workspaceListOptions } from "@agora/core/workspace/queries";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 
 /**

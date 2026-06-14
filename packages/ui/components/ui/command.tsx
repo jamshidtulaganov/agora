@@ -3,18 +3,18 @@
 import * as React from "react"
 import { Command as CommandPrimitive } from "cmdk"
 
-import { cn } from "@tandem/ui/lib/utils"
+import { cn } from "@agora/ui/lib/utils"
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@tandem/ui/components/ui/dialog"
+} from "@agora/ui/components/ui/dialog"
 import {
   InputGroup,
   InputGroupAddon,
-} from "@tandem/ui/components/ui/input-group"
+} from "@agora/ui/components/ui/input-group"
 import { SearchIcon, CheckIcon } from "lucide-react"
 
 function Command({

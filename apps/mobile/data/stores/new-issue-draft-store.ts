@@ -26,7 +26,7 @@ import type {
   IssuePriority,
   IssueStatus,
   Project,
-} from "@tandem/core/types";
+} from "@agora/core/types";
 import type { AssigneeValue } from "@/components/issue/pickers/assignee-picker-body";
 
 interface NewIssueDraftState {

@@ -1,4 +1,4 @@
-import type { Project } from "@tandem/core/types";
+import type { Project } from "@agora/core/types";
 
 export function getProjectIssueMetrics(
   project: Pick<Project, "issue_count" | "done_count">,

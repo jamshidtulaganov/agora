@@ -1,7 +1,7 @@
 "use client";
 
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
-import type { AgentPresenceDetail } from "@tandem/core/agents";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import type { AgentPresenceDetail } from "@agora/core/agents";
 import { availabilityConfig, workloadConfig } from "../presence";
 import { useT } from "../../i18n";
 

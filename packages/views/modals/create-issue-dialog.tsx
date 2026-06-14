@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { cn } from "@tandem/ui/lib/utils";
-import { Dialog, DialogContent } from "@tandem/ui/components/ui/dialog";
+import { cn } from "@agora/ui/lib/utils";
+import { Dialog, DialogContent } from "@agora/ui/components/ui/dialog";
 import {
   useCreateModeStore,
   type CreateMode,
-} from "@tandem/core/issues/stores/create-mode-store";
+} from "@agora/core/issues/stores/create-mode-store";
 import { AgentCreatePanel } from "./quick-create-issue";
 import { ManualCreatePanel, manualDialogContentClass } from "./create-issue";
 

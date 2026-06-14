@@ -10,7 +10,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from "@tandem/ui/components/ui/chart";
+} from "@agora/ui/components/ui/chart";
 import { formatTokens, type DailyTokenData } from "../../utils";
 import { useT } from "../../../i18n";
 

@@ -11,13 +11,13 @@ fi
 worktree_name="${WORKTREE_NAME:-$(basename "$PWD")}"
 slug="$(printf '%s' "$worktree_name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/_/g; s/__*/_/g; s/^_//; s/_$//')"
 if [ -z "$slug" ]; then
-  slug="tandem"
+  slug="agora"
 fi
 
 hash_value="$(printf '%s' "$PWD" | cksum | awk '{print $1}')"
 offset=$((hash_value % 1000))
 
-postgres_db="tandem_${slug}_${offset}"
+postgres_db="agora_${slug}_${offset}"
 postgres_port=5432
 backend_port=$((18080 + offset))
 frontend_port=$((13000 + offset))
@@ -32,9 +32,9 @@ DATABASE_URL=postgres://multica:multica@localhost:${postgres_port}/${postgres_db
 
 PORT=${backend_port}
 JWT_SECRET=change-me-in-production
-TANDEM_DEV_VERIFICATION_CODE=888888
-TANDEM_SERVER_URL=ws://localhost:${backend_port}/ws
-TANDEM_APP_URL=${frontend_origin}
+AGORA_DEV_VERIFICATION_CODE=888888
+AGORA_SERVER_URL=ws://localhost:${backend_port}/ws
+AGORA_APP_URL=${frontend_origin}
 
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=

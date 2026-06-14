@@ -9,7 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
 	"github.com/multica-ai/multica/server/internal/integrations/telegram"
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
 // setupTelegramTest wires the handler's Telegram fields against a mock Bot API
@@ -46,7 +49,7 @@ func setupTelegramTest(t *testing.T) (sent *capturedSend) {
 	prevStore := testHandler.telegramLogins
 	testHandler.telegramBot = bot
 	testHandler.telegramLogins = telegram.NewLoginStore()
-	t.Setenv("TELEGRAM_BOT_USERNAME", "tandem_test_bot")
+	t.Setenv("TELEGRAM_BOT_USERNAME", "agora_test_bot")
 	t.Cleanup(func() {
 		testHandler.telegramBot = prevBot
 		testHandler.telegramLogins = prevStore
@@ -78,7 +81,7 @@ func TestTelegramStartReturnsNonceAndDeepLink(t *testing.T) {
 	if resp.Nonce == "" {
 		t.Fatal("TelegramStart: expected non-empty nonce")
 	}
-	wantPrefix := "https://t.me/tandem_test_bot?start=login_"
+	wantPrefix := "https://t.me/agora_test_bot?start=login_"
 	if !strings.HasPrefix(resp.DeepLink, wantPrefix) {
 		t.Fatalf("TelegramStart: deep_link = %q, want prefix %q", resp.DeepLink, wantPrefix)
 	}
@@ -192,7 +195,7 @@ func TestTelegramWebhookIgnoresNonPrivateChat(t *testing.T) {
 	// Group form: "/start@bot login_<nonce>" delivered in a group chat.
 	update := map[string]any{
 		"message": map[string]any{
-			"text": "/start@tandem_test_bot login_" + start.Nonce,
+			"text": "/start@agora_test_bot login_" + start.Nonce,
 			"from": map[string]any{"id": 424242},
 			"chat": map[string]any{"id": -100123456, "type": "group"},
 		},
@@ -378,5 +381,106 @@ func TestTelegramVerifyNewUserGetsFirstName(t *testing.T) {
 	}
 	if resp.User.Name != "Charlie" {
 		t.Fatalf("new telegram user name = %q, want %q (seeded from first_name)", resp.User.Name, "Charlie")
+	}
+}
+
+// TestTelegramVerifyAutoJoinsDefaultWorkspaces is the regression for the SD
+// fork auto-join: a Telegram verify for a fresh user results in a 'member'
+// membership in every seeded default workspace. Hermetic — it seeds its own
+// workspaces (overriding AGORA_DEFAULT_WORKSPACE_SLUGS) and tears down the
+// user, identity, memberships, and workspaces on cleanup.
+func TestTelegramVerifyAutoJoinsDefaultWorkspaces(t *testing.T) {
+	setupTelegramTest(t)
+	ctx := context.Background()
+
+	// Two of the three default slugs are seeded; the third is intentionally
+	// absent to prove a missing workspace is skipped, not fatal.
+	const presentSlugA = "sd-autojoin-a"
+	const presentSlugB = "sd-autojoin-b"
+	const missingSlug = "sd-autojoin-missing"
+	t.Setenv("AGORA_DEFAULT_WORKSPACE_SLUGS", presentSlugA+","+presentSlugB+","+missingSlug)
+
+	seed := func(slug string) pgtype.UUID {
+		var id pgtype.UUID
+		if err := testPool.QueryRow(ctx, `
+			INSERT INTO workspace (name, slug, description, issue_prefix)
+			VALUES ($1, $2, $3, $4)
+			RETURNING id
+		`, slug, slug, "auto-join test workspace", "AJ").Scan(&id); err != nil {
+			t.Fatalf("seed workspace %q: %v", slug, err)
+		}
+		return id
+	}
+	wsA := seed(presentSlugA)
+	wsB := seed(presentSlugB)
+
+	const telegramID = "990011223"
+	email := telegramSyntheticEmail(telegramID)
+	t.Cleanup(func() {
+		// Order: memberships (FK to user + workspace) → identity/user → workspaces.
+		testPool.Exec(ctx, `DELETE FROM member WHERE workspace_id = ANY($1)`, []pgtype.UUID{wsA, wsB})
+		testPool.Exec(ctx, `DELETE FROM user_external_identity WHERE provider = $1 AND external_id = $2`, providerTelegram, telegramID)
+		testPool.Exec(ctx, `DELETE FROM "user" WHERE email = $1`, email)
+		testPool.Exec(ctx, `DELETE FROM workspace WHERE slug = ANY($1)`, []string{presentSlugA, presentSlugB})
+	})
+
+	testHandler.telegramLogins.Start("nonce-autojoin")
+	testHandler.telegramLogins.Bind("nonce-autojoin", telegramID, "", "112233")
+
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/auth/telegram/verify", map[string]string{
+		"nonce": "nonce-autojoin",
+		"code":  "112233",
+	})
+	testHandler.TelegramVerify(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("TelegramVerify auto-join: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp LoginResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode login response: %v", err)
+	}
+	userID := parseUUID(resp.User.ID)
+
+	// The user is a 'member' of both seeded default workspaces.
+	for slug, wsID := range map[string]pgtype.UUID{presentSlugA: wsA, presentSlugB: wsB} {
+		m, err := testHandler.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
+			UserID:      userID,
+			WorkspaceID: wsID,
+		})
+		if err != nil {
+			t.Fatalf("expected membership in %q, got error: %v", slug, err)
+		}
+		if m.Role != "member" {
+			t.Fatalf("membership in %q has role %q, want %q", slug, m.Role, "member")
+		}
+	}
+
+	// Re-running verify (a second login for the same user) must be idempotent:
+	// no duplicate membership, no error. Bind a fresh nonce and verify again.
+	testHandler.telegramLogins.Start("nonce-autojoin-2")
+	testHandler.telegramLogins.Bind("nonce-autojoin-2", telegramID, "", "445566")
+	w = httptest.NewRecorder()
+	req = newRequest("POST", "/auth/telegram/verify", map[string]string{
+		"nonce": "nonce-autojoin-2",
+		"code":  "445566",
+	})
+	testHandler.TelegramVerify(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("TelegramVerify auto-join replay: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	members, err := testHandler.Queries.ListMembers(ctx, wsA)
+	if err != nil {
+		t.Fatalf("ListMembers(%q): %v", presentSlugA, err)
+	}
+	count := 0
+	for _, m := range members {
+		if uuidToString(m.UserID) == resp.User.ID {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly 1 membership for user in %q after replay, got %d", presentSlugA, count)
 	}
 }

@@ -10,24 +10,24 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Agent, UpdateAgentRequest } from "@tandem/core/types";
+import type { Agent, UpdateAgentRequest } from "@agora/core/types";
 import {
   type AgentPresenceDetail,
   useWorkspacePresenceMap,
-} from "@tandem/core/agents";
-import { api, ApiError } from "@tandem/core/api";
-import { useAuthStore } from "@tandem/core/auth";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { useWorkspacePaths } from "@tandem/core/paths";
+} from "@agora/core/agents";
+import { api, ApiError } from "@agora/core/api";
+import { useAuthStore } from "@agora/core/auth";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { useWorkspacePaths } from "@agora/core/paths";
 import {
   agentListOptions,
   memberListOptions,
   workspaceKeys,
-} from "@tandem/core/workspace/queries";
-import { runtimeListOptions } from "@tandem/core/runtimes";
-import { useAgentPermissions } from "@tandem/core/permissions";
-import { Button } from "@tandem/ui/components/ui/button";
-import { CapabilityBanner } from "@tandem/ui/components/common/capability-banner";
+} from "@agora/core/workspace/queries";
+import { runtimeListOptions } from "@agora/core/runtimes";
+import { useAgentPermissions } from "@agora/core/permissions";
+import { Button } from "@agora/ui/components/ui/button";
+import { CapabilityBanner } from "@agora/ui/components/common/capability-banner";
 import {
   Dialog,
   DialogContent,
@@ -35,14 +35,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@tandem/ui/components/ui/dialog";
+} from "@agora/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@tandem/ui/components/ui/dropdown-menu";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
+} from "@agora/ui/components/ui/dropdown-menu";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import { AppLink, useNavigation } from "../../navigation";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { PageHeader } from "../../layout/page-header";

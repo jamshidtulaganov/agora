@@ -331,7 +331,7 @@ func (s *RegistrationService) BeginInstall(ctx context.Context, p BeginInstallPa
 	//
 	// We keep the agent: its name pre-fills the bot name on Lark's
 	// PersonalAgent creation form (see botNamePreset) so the installed
-	// bot reads "<agent> - Tandem" instead of "{用户姓名}的智能助手".
+	// bot reads "<agent> - Agora" instead of "{用户姓名}的智能助手".
 	agent, err := s.authQueries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
 		ID:          p.AgentID,
 		WorkspaceID: p.WorkspaceID,
@@ -583,7 +583,7 @@ func (s *RegistrationService) finishSuccess(ctx context.Context, sess *registrat
 	if err := s.binder.BindInstallerTx(ctx, qtx, InstallerBindParams{
 		WorkspaceID:    sess.workspaceID,
 		InstallationID: inst.ID,
-		TandemUserID:  sess.initiatorID,
+		AgoraUserID:  sess.initiatorID,
 		LarkOpenID:     res.OpenID,
 	}); err != nil {
 		s.cfg.Logger.Warn("lark registration: bind installer",
@@ -653,17 +653,17 @@ func uuidEqual(a, b pgtype.UUID) bool {
 
 // botNamePreset builds the display name we pre-fill on Lark's
 // PersonalAgent creation form so the installed bot reads
-// "<agent> - Tandem" instead of Lark's auto-generated
+// "<agent> - Agora" instead of Lark's auto-generated
 // "{用户姓名}的智能助手". Lark treats this as a default the installer can
 // still edit; we never get to lock the final name. A blank agent name
 // (defensive — Agent.Name is NOT NULL in schema) degrades to plain
-// "Tandem" rather than a dangling " - Tandem".
+// "Agora" rather than a dangling " - Agora".
 func botNamePreset(agentName string) string {
 	name := strings.TrimSpace(agentName)
 	if name == "" {
-		return "Tandem"
+		return "Agora"
 	}
-	return name + " - Tandem"
+	return name + " - Agora"
 }
 
 // uuidString is the package-local UUID-to-string helper defined in

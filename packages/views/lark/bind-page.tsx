@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Card, CardContent } from "@tandem/ui/components/ui/card";
-import { Button } from "@tandem/ui/components/ui/button";
-import { api } from "@tandem/core/api";
-import { useAuthStore } from "@tandem/core/auth";
+import { Card, CardContent } from "@agora/ui/components/ui/card";
+import { Button } from "@agora/ui/components/ui/button";
+import { api } from "@agora/core/api";
+import { useAuthStore } from "@agora/core/auth";
 import { useNavigation } from "../navigation";
 import { useT } from "../i18n";
 
@@ -17,7 +17,7 @@ type RedeemState =
 
 // LarkBindPage is the destination the Bot's "you need to bind" reply
 // card points at. The user lands here logged out OR logged in; we
-// require auth before redeeming because the redeemer's Tandem
+// require auth before redeeming because the redeemer's Agora
 // identity is taken from the session (the token alone never proves
 // who is binding — see lark.BindingTokenService.RedeemAndBind).
 //

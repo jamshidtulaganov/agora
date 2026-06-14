@@ -3,10 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useAuthStore } from "@tandem/core/auth";
-import { paths } from "@tandem/core/paths";
-import { workspaceListOptions } from "@tandem/core/workspace/queries";
-import { NewWorkspacePage } from "@tandem/views/workspace/new-workspace-page";
+import { useAuthStore } from "@agora/core/auth";
+import { paths } from "@agora/core/paths";
+import { workspaceListOptions } from "@agora/core/workspace/queries";
+import { NewWorkspacePage } from "@agora/views/workspace/new-workspace-page";
 
 export default function Page() {
   const router = useRouter();

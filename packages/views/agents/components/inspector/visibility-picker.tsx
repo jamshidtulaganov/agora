@@ -6,8 +6,8 @@ import {
   VISIBILITY_DESCRIPTION,
   VISIBILITY_LABEL,
   VISIBILITY_TOOLTIP,
-} from "@tandem/core/agents";
-import type { AgentVisibility } from "@tandem/core/types";
+} from "@agora/core/agents";
+import type { AgentVisibility } from "@agora/core/types";
 import {
   PickerItem,
   PropertyPicker,

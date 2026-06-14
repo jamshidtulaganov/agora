@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgentTask } from "@tandem/core/types";
+import type { AgentTask } from "@agora/core/types";
 import {
   deriveAvgDurationLast30d,
   formatDurationMs,

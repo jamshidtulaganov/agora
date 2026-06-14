@@ -14,8 +14,8 @@ import type {
   IssuePriority,
   IssueStatus,
   TimelineEntry,
-} from "@tandem/core/types";
-import { formatDateOnly } from "@tandem/core/issues/date";
+} from "@agora/core/types";
+import { formatDateOnly } from "@agora/core/issues/date";
 
 const STATUS_LABEL: Record<IssueStatus, string> = {
   backlog: "Backlog",

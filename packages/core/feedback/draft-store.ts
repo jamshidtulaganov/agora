@@ -32,7 +32,7 @@ export const useFeedbackDraftStore = create<FeedbackDraftStore>()(
       },
     }),
     {
-      name: "tandem_feedback_draft",
+      name: "agora_feedback_draft",
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
     },
   ),

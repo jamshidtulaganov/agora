@@ -3,8 +3,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import type { Agent, AgentRuntime } from "@tandem/core/types";
-import { I18nProvider } from "@tandem/core/i18n/react";
+import type { Agent, AgentRuntime } from "@agora/core/types";
+import { I18nProvider } from "@agora/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enRuntimes from "../../locales/en/runtimes.json";
 import enAgents from "../../locales/en/agents.json";
@@ -35,7 +35,7 @@ const { ApiError, apiDeleteRuntime, apiArchiveAgentsAndDeleteRuntime } = vi.hois
   };
 });
 
-vi.mock("@tandem/core/api", () => ({
+vi.mock("@agora/core/api", () => ({
   api: {
     deleteRuntime: (...args: unknown[]) => apiDeleteRuntime(...args),
     archiveAgentsAndDeleteRuntime: (...args: unknown[]) =>
@@ -49,7 +49,7 @@ vi.mock("@tandem/core/api", () => ({
 // The mutations file imports api lazily via the mock above; the mocked
 // hooks below thread directly to the api stubs so the dialog's mode
 // transitions are deterministic in this test.
-vi.mock("@tandem/core/runtimes/mutations", () => ({
+vi.mock("@agora/core/runtimes/mutations", () => ({
   useDeleteRuntime: () => ({
     isPending: false,
     mutate: vi.fn(),
@@ -77,13 +77,13 @@ vi.mock("@tanstack/react-query", async () => {
   };
 });
 
-vi.mock("@tandem/core/agents", () => ({
+vi.mock("@agora/core/agents", () => ({
   // Empty presence map keeps the cell renderers honest without dragging in
   // the full presence pipeline.
   useWorkspacePresenceMap: () => ({ byAgent: new Map(), loading: false }),
 }));
 
-vi.mock("@tandem/core/auth", () => ({
+vi.mock("@agora/core/auth", () => ({
   useAuthStore: (sel: (s: { user: { id: string } }) => unknown) =>
     sel({ user: { id: "user-me" } }),
 }));

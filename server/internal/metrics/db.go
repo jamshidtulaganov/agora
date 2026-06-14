@@ -44,7 +44,7 @@ func NewDBCollector(pool *pgxpool.Pool) *DBCollector {
 }
 
 func newDBDesc(name, help string) *prometheus.Desc {
-	return prometheus.NewDesc("tandem_db_pool_"+name, help, nil, nil)
+	return prometheus.NewDesc("agora_db_pool_"+name, help, nil, nil)
 }
 
 func (c *DBCollector) Describe(ch chan<- *prometheus.Desc) {

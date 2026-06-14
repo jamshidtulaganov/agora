@@ -47,7 +47,7 @@ func TestHook_DirectV034Upgrade(t *testing.T) {
 		t.Skip("integration test requires Postgres at DATABASE_URL")
 	}
 
-	tmpDB := fmt.Sprintf("tandem_v034_upgrade_%d", time.Now().UnixNano())
+	tmpDB := fmt.Sprintf("agora_v034_upgrade_%d", time.Now().UnixNano())
 	if err := createDatabase(ctx, adminURL, tmpDB); err != nil {
 		t.Fatalf("create temp database %s: %v", tmpDB, err)
 	}
@@ -166,7 +166,7 @@ func TestHook_FreshDatabaseStampsWatermarkOnly(t *testing.T) {
 		t.Skip("integration test requires Postgres at DATABASE_URL")
 	}
 
-	tmpDB := fmt.Sprintf("tandem_v034_fresh_%d", time.Now().UnixNano())
+	tmpDB := fmt.Sprintf("agora_v034_fresh_%d", time.Now().UnixNano())
 	if err := createDatabase(ctx, adminURL, tmpDB); err != nil {
 		t.Fatalf("create temp database: %v", err)
 	}

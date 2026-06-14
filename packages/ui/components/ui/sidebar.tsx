@@ -6,24 +6,24 @@ import { useRender } from "@base-ui/react/use-render"
 import { cva, type VariantProps } from "class-variance-authority"
 import { useTranslation } from "react-i18next"
 
-import { useIsMobile } from "@tandem/ui/hooks/use-mobile"
-import { cn } from "@tandem/ui/lib/utils"
-import { Button } from "@tandem/ui/components/ui/button"
-import { Input } from "@tandem/ui/components/ui/input"
-import { Separator } from "@tandem/ui/components/ui/separator"
+import { useIsMobile } from "@agora/ui/hooks/use-mobile"
+import { cn } from "@agora/ui/lib/utils"
+import { Button } from "@agora/ui/components/ui/button"
+import { Input } from "@agora/ui/components/ui/input"
+import { Separator } from "@agora/ui/components/ui/separator"
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from "@tandem/ui/components/ui/sheet"
-import { Skeleton } from "@tandem/ui/components/ui/skeleton"
+} from "@agora/ui/components/ui/sheet"
+import { Skeleton } from "@agora/ui/components/ui/skeleton"
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@tandem/ui/components/ui/tooltip"
+} from "@agora/ui/components/ui/tooltip"
 import { PanelLeftIcon } from "lucide-react"
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state"

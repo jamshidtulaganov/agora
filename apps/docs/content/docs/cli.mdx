@@ -1,24 +1,24 @@
 ---
 title: CLI command reference
-description: One-page overview of every top-level Tandem CLI command. For full usage, run `tandem <command> --help`.
+description: One-page overview of every top-level Agora CLI command. For full usage, run `agora <command> --help`.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-The Tandem CLI mirrors almost everything the Web UI can do (create [issues](/issues), assign [agents](/agents), start the [daemon](/daemon-runtimes), and more). This page lists every top-level command with a one-line description. For the full set of flags and examples, run `tandem <command> --help`.
+The Agora CLI mirrors almost everything the Web UI can do (create [issues](/issues), assign [agents](/agents), start the [daemon](/daemon-runtimes), and more). This page lists every top-level command with a one-line description. For the full set of flags and examples, run `agora <command> --help`.
 
 ## Getting authenticated
 
 Run this the first time you use the CLI to obtain a **personal access token (PAT)**:
 
 ```bash
-tandem login
+agora login
 ```
 
-Your browser opens automatically. After you approve in the web app, the CLI saves the PAT (prefixed with `mul_`) to `~/.tandem/config.json`. Every subsequent command authenticates with that PAT.
+Your browser opens automatically. After you approve in the web app, the CLI saves the PAT (prefixed with `mul_`) to `~/.agora/config.json`. Every subsequent command authenticates with that PAT.
 
 <Callout type="tip">
-For CI or headless environments, skip the browser flow: create a PAT in the web app under **Settings → Personal Access Tokens**, then run `tandem login --token <mul_...>` to supply it directly.
+For CI or headless environments, skip the browser flow: create a PAT in the web app under **Settings → Personal Access Tokens**, then run `agora login --token <mul_...>` to supply it directly.
 </Callout>
 
 For the difference between token types, see [Authentication and tokens](/auth-tokens).
@@ -27,61 +27,61 @@ For the difference between token types, see [Authentication and tokens](/auth-to
 
 | Command | Purpose |
 |---|---|
-| `tandem login` | Log in and save a PAT |
-| `tandem auth status` | Show current login status, user, and workspace |
-| `tandem auth logout` | Clear the local PAT |
-| `tandem setup cloud` | One-shot setup for Tandem Cloud (login + install daemon) |
-| `tandem setup self-host` | One-shot setup for a self-hosted backend |
+| `agora login` | Log in and save a PAT |
+| `agora auth status` | Show current login status, user, and workspace |
+| `agora auth logout` | Clear the local PAT |
+| `agora setup cloud` | One-shot setup for Agora Cloud (login + install daemon) |
+| `agora setup self-host` | One-shot setup for a self-hosted backend |
 
 ## Workspaces and members
 
 | Command | Purpose |
 |---|---|
-| `tandem workspace list` | List every workspace you can access |
-| `tandem workspace get <slug>` | Show details for one workspace |
-| `tandem workspace member list` | List members of the current workspace |
-| `tandem workspace update <id> --name "..." [--description "..."] [--context "..."] [--issue-prefix "..."]` | Update workspace metadata (admin/owner). Long fields accept `--description-stdin` / `--context-stdin`. |
+| `agora workspace list` | List every workspace you can access |
+| `agora workspace get <slug>` | Show details for one workspace |
+| `agora workspace member list` | List members of the current workspace |
+| `agora workspace update <id> --name "..." [--description "..."] [--context "..."] [--issue-prefix "..."]` | Update workspace metadata (admin/owner). Long fields accept `--description-stdin` / `--context-stdin`. |
 
 ## Issues and projects
 
 <Callout type="info">
-`list` commands (`tandem issue list`, `autopilot list`, `project list`, etc.) print short, copy-paste-ready IDs by default — issue keys like `MUL-123` for issues, short UUID prefixes for the rest. The `<id>` argument on the follow-up commands below accepts either the short ID or the full UUID, so the typical flow is `tandem issue list` → copy the key → `tandem issue get MUL-123`. Pass `--full-id` to a list command when you need the canonical UUID.
+`list` commands (`agora issue list`, `autopilot list`, `project list`, etc.) print short, copy-paste-ready IDs by default — issue keys like `MUL-123` for issues, short UUID prefixes for the rest. The `<id>` argument on the follow-up commands below accepts either the short ID or the full UUID, so the typical flow is `agora issue list` → copy the key → `agora issue get MUL-123`. Pass `--full-id` to a list command when you need the canonical UUID.
 </Callout>
 
 | Command | Purpose |
 |---|---|
-| `tandem issue list` | List issues (prints copy-paste-ready issue keys) |
-| `tandem issue get <id>` | Show a single issue (accepts an issue key or a UUID) |
-| `tandem issue create --title "..."` | Create a new issue |
-| `tandem issue update <id> ...` | Update an issue (status, priority, assignee, etc.) |
-| `tandem issue assign <id> --agent <slug>` | Assign to an agent (triggers a task immediately) |
-| `tandem issue status <id> --set <status>` | Shortcut to change status |
-| `tandem issue search <query>` | Keyword search |
-| `tandem issue runs <id>` | Show agent runs on an issue |
-| `tandem issue rerun <id>` | Re-enqueue a fresh task for the issue's current agent assignee |
-| `tandem issue comment <id> ...` | Nested: view / post comments |
-| `tandem issue subscriber <id> ...` | Nested: subscribe / unsubscribe |
-| `tandem project list/get/create/update/delete/status` | Project CRUD |
+| `agora issue list` | List issues (prints copy-paste-ready issue keys) |
+| `agora issue get <id>` | Show a single issue (accepts an issue key or a UUID) |
+| `agora issue create --title "..."` | Create a new issue |
+| `agora issue update <id> ...` | Update an issue (status, priority, assignee, etc.) |
+| `agora issue assign <id> --agent <slug>` | Assign to an agent (triggers a task immediately) |
+| `agora issue status <id> --set <status>` | Shortcut to change status |
+| `agora issue search <query>` | Keyword search |
+| `agora issue runs <id>` | Show agent runs on an issue |
+| `agora issue rerun <id>` | Re-enqueue a fresh task for the issue's current agent assignee |
+| `agora issue comment <id> ...` | Nested: view / post comments |
+| `agora issue subscriber <id> ...` | Nested: subscribe / unsubscribe |
+| `agora project list/get/create/update/delete/status` | Project CRUD |
 
 ## Agents and skills
 
 | Command | Purpose |
 |---|---|
-| `tandem agent list` | List the workspace's agents |
-| `tandem agent get <slug>` | Show an agent's configuration |
-| `tandem agent create ...` | Create an agent |
-| `tandem agent update <slug> ...` | Update an agent |
-| `tandem agent archive <slug>` | Archive |
-| `tandem agent restore <slug>` | Restore an archived agent |
-| `tandem agent tasks <slug>` | Show an agent's task history |
-| `tandem agent skills ...` | Nested: attach / detach skills |
-| `tandem skill list/get/create/update/delete` | Skill CRUD |
-| `tandem skill import ...` | Import a skill from GitHub, ClawHub, or the local machine |
-| `tandem skill files ...` | Nested: manage a skill's files |
+| `agora agent list` | List the workspace's agents |
+| `agora agent get <slug>` | Show an agent's configuration |
+| `agora agent create ...` | Create an agent |
+| `agora agent update <slug> ...` | Update an agent |
+| `agora agent archive <slug>` | Archive |
+| `agora agent restore <slug>` | Restore an archived agent |
+| `agora agent tasks <slug>` | Show an agent's task history |
+| `agora agent skills ...` | Nested: attach / detach skills |
+| `agora skill list/get/create/update/delete` | Skill CRUD |
+| `agora skill import ...` | Import a skill from GitHub, ClawHub, or the local machine |
+| `agora skill files ...` | Nested: manage a skill's files |
 
 ### Skill import conflicts
 
-`tandem skill import --url <url>` defaults to `--on-conflict fail`. If a skill
+`agora skill import --url <url>` defaults to `--on-conflict fail`. If a skill
 with the same name already exists, the command exits with a structured
 `conflict` result and does not change the workspace.
 
@@ -92,23 +92,23 @@ Use `--on-conflict skip` to leave the existing skill untouched and report
 `skipped`.
 
 ```bash
-tandem skill import --url https://skills.sh/acme/repo/review-helper
-tandem skill import --url https://skills.sh/acme/repo/review-helper --on-conflict overwrite
-tandem skill import --url https://skills.sh/acme/repo/review-helper --on-conflict rename
-tandem skill import --url https://skills.sh/acme/repo/review-helper --on-conflict skip
+agora skill import --url https://skills.sh/acme/repo/review-helper
+agora skill import --url https://skills.sh/acme/repo/review-helper --on-conflict overwrite
+agora skill import --url https://skills.sh/acme/repo/review-helper --on-conflict rename
+agora skill import --url https://skills.sh/acme/repo/review-helper --on-conflict skip
 ```
 
 ## Squads
 
 | Command | Purpose |
 |---|---|
-| `tandem squad list` | List squads in the workspace |
-| `tandem squad get <id>` | Show a single squad |
-| `tandem squad create --name "..." --leader <agent>` | Create a squad (owner / admin) |
-| `tandem squad update <id> ...` | Update name, description, instructions, leader, or avatar |
-| `tandem squad delete <id>` | Archive (soft-delete) — transfers assigned issues to the leader |
-| `tandem squad member list/add/remove/set-role <squad-id>` | Manage squad members and update roles in place |
-| `tandem squad activity <issue-id> <action\|no_action\|failed> --reason "..."` | Used by squad leader agents to record an evaluation per turn |
+| `agora squad list` | List squads in the workspace |
+| `agora squad get <id>` | Show a single squad |
+| `agora squad create --name "..." --leader <agent>` | Create a squad (owner / admin) |
+| `agora squad update <id> ...` | Update name, description, instructions, leader, or avatar |
+| `agora squad delete <id>` | Archive (soft-delete) — transfers assigned issues to the leader |
+| `agora squad member list/add/remove/set-role <squad-id>` | Manage squad members and update roles in place |
+| `agora squad activity <issue-id> <action\|no_action\|failed> --reason "..."` | Used by squad leader agents to record an evaluation per turn |
 
 See [Squads](/squads) for the full model.
 
@@ -116,45 +116,45 @@ See [Squads](/squads) for the full model.
 
 | Command | Purpose |
 |---|---|
-| `tandem autopilot list` | List every autopilot in the workspace |
-| `tandem autopilot get <id>` | Show a single autopilot |
-| `tandem autopilot create ...` | Create an autopilot |
-| `tandem autopilot update <id> ...` | Update |
-| `tandem autopilot delete <id>` | Delete |
-| `tandem autopilot runs <id>` | Show run history |
-| `tandem autopilot trigger <id>` | Trigger a run manually |
+| `agora autopilot list` | List every autopilot in the workspace |
+| `agora autopilot get <id>` | Show a single autopilot |
+| `agora autopilot create ...` | Create an autopilot |
+| `agora autopilot update <id> ...` | Update |
+| `agora autopilot delete <id>` | Delete |
+| `agora autopilot runs <id>` | Show run history |
+| `agora autopilot trigger <id>` | Trigger a run manually |
 
 ## Daemon and runtimes
 
 | Command | Purpose |
 |---|---|
-| `tandem daemon start` | Start the daemon (background by default; add `--foreground` to run in the foreground) |
-| `tandem daemon stop` | Stop the daemon |
-| `tandem daemon restart` | Restart the daemon |
-| `tandem daemon status` | Check whether the daemon is online and its concurrency |
-| `tandem daemon logs` | View daemon logs |
-| `tandem runtime list` | List runtimes in the current workspace |
-| `tandem runtime usage` | Show resource usage |
-| `tandem runtime activity` | Recent activity log |
-| `tandem runtime update <id> ...` | Update a runtime's configuration |
+| `agora daemon start` | Start the daemon (background by default; add `--foreground` to run in the foreground) |
+| `agora daemon stop` | Stop the daemon |
+| `agora daemon restart` | Restart the daemon |
+| `agora daemon status` | Check whether the daemon is online and its concurrency |
+| `agora daemon logs` | View daemon logs |
+| `agora runtime list` | List runtimes in the current workspace |
+| `agora runtime usage` | Show resource usage |
+| `agora runtime activity` | Recent activity log |
+| `agora runtime update <id> ...` | Update a runtime's configuration |
 
 ## Miscellaneous
 
 | Command | Purpose |
 |---|---|
-| `tandem repo checkout <url>` | Clone a repo locally for agents to use |
-| `tandem config` | View or edit local CLI configuration |
-| `tandem version` | Print the CLI version |
-| `tandem update` | Upgrade the CLI to the latest release |
-| `tandem attachment download <id>` | Download an attachment from an issue or comment |
+| `agora repo checkout <url>` | Clone a repo locally for agents to use |
+| `agora config` | View or edit local CLI configuration |
+| `agora version` | Print the CLI version |
+| `agora update` | Upgrade the CLI to the latest release |
+| `agora attachment download <id>` | Download an attachment from an issue or comment |
 
 ## Getting full flags
 
 Every command supports `--help`:
 
 ```bash
-tandem issue create --help
-tandem agent update --help
+agora issue create --help
+agora agent update --help
 ```
 
 v2 will ship a dedicated detailed reference page for each command.
@@ -163,4 +163,4 @@ v2 will ship a dedicated detailed reference page for each command.
 
 - [Authentication and tokens](/auth-tokens) — PAT vs. JWT vs. daemon token
 - [Daemon and runtimes](/daemon-runtimes) — how the `daemon` commands work under the hood
-- [Creating and configuring agents](/agents-create) — all options for `tandem agent create`
+- [Creating and configuring agents](/agents-create) — all options for `agora agent create`

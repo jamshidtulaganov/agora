@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, ChevronRight, Copy, Terminal } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { runtimeKeys } from "@tandem/core/runtimes/queries";
-import { useWSEvent } from "@tandem/core/realtime";
-import { paths, useWorkspaceSlug } from "@tandem/core/paths";
-import { useConfigStore } from "@tandem/core/config";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { runtimeKeys } from "@agora/core/runtimes/queries";
+import { useWSEvent } from "@agora/core/realtime";
+import { paths, useWorkspaceSlug } from "@agora/core/paths";
+import { useConfigStore } from "@agora/core/config";
 import {
   Dialog,
   DialogContent,
@@ -15,11 +15,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@tandem/ui/components/ui/dialog";
-import { Button } from "@tandem/ui/components/ui/button";
-import { CODE_LIGATURE_CLASS } from "@tandem/ui/lib/code-style";
-import { copyText } from "@tandem/ui/lib/clipboard";
-import { cn } from "@tandem/ui/lib/utils";
+} from "@agora/ui/components/ui/dialog";
+import { Button } from "@agora/ui/components/ui/button";
+import { CODE_LIGATURE_CLASS } from "@agora/ui/lib/code-style";
+import { copyText } from "@agora/ui/lib/clipboard";
+import { cn } from "@agora/ui/lib/utils";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 
@@ -27,8 +27,8 @@ type Step = "instructions" | "success";
 
 const INSTALL_CMD =
   "curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash";
-const CLOUD_SERVER_URL = "https://api.tandem.dev";
-const CLOUD_APP_URL = "https://tandem.dev";
+const CLOUD_SERVER_URL = "https://api.agora.dev";
+const CLOUD_APP_URL = "https://agora.dev";
 
 function normalizeCommandURL(url: string | undefined) {
   return url?.trim().replace(/\/+$/, "") ?? "";
@@ -39,20 +39,20 @@ function daemonCommands(serverUrl: string | undefined, appUrl: string | undefine
   const normalizedAppUrl = normalizeCommandURL(appUrl);
   if (normalizedServerUrl && normalizedAppUrl) {
     return {
-      setupCmd: `tandem setup self-host --server-url ${normalizedServerUrl} --app-url ${normalizedAppUrl}`,
-      tokenCmd: `tandem config set server_url ${normalizedServerUrl}
-tandem config set app_url ${normalizedAppUrl}
-tandem login --token <YOUR_TOKEN>
-tandem daemon start`,
+      setupCmd: `agora setup self-host --server-url ${normalizedServerUrl} --app-url ${normalizedAppUrl}`,
+      tokenCmd: `agora config set server_url ${normalizedServerUrl}
+agora config set app_url ${normalizedAppUrl}
+agora login --token <YOUR_TOKEN>
+agora daemon start`,
     };
   }
 
   return {
-    setupCmd: "tandem setup",
-    tokenCmd: `tandem config set server_url ${CLOUD_SERVER_URL}
-tandem config set app_url ${CLOUD_APP_URL}
-tandem login --token <YOUR_TOKEN>
-tandem daemon start`,
+    setupCmd: "agora setup",
+    tokenCmd: `agora config set server_url ${CLOUD_SERVER_URL}
+agora config set app_url ${CLOUD_APP_URL}
+agora login --token <YOUR_TOKEN>
+agora daemon start`,
   };
 }
 
@@ -64,7 +64,7 @@ export function ConnectRemoteDialog({ onClose }: { onClose: () => void }) {
   const navigation = useNavigation();
   const newRuntimeIdRef = useRef<string | null>(null);
 
-  // `tandem setup` is one blocking command that handles config + login
+  // `agora setup` is one blocking command that handles config + login
   // + daemon start; the dialog passively listens for the resulting
   // `daemon:register` WS event and auto-advances to success.
   const handleDaemonRegister = useCallback(
@@ -277,7 +277,7 @@ function TroubleshootingDetails({ tokenCmd }: { tokenCmd: string }) {
                 CODE_LIGATURE_CLASS,
               )}
             >
-              {"tandem daemon status"}
+              {"agora daemon status"}
             </code>
           </li>
           <li className="flex items-center gap-1.5">
@@ -290,7 +290,7 @@ function TroubleshootingDetails({ tokenCmd }: { tokenCmd: string }) {
                 CODE_LIGATURE_CLASS,
               )}
             >
-              {"tandem daemon logs -f"}
+              {"agora daemon logs -f"}
             </code>
           </li>
         </ul>

@@ -15,14 +15,14 @@ import {
   type DragOverEvent,
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@tandem/ui/components/ui/tooltip";
-import { Button } from "@tandem/ui/components/ui/button";
-import type { Issue, IssueStatus } from "@tandem/core/types";
-import { useLoadMoreByStatus } from "@tandem/core/issues/mutations";
-import type { IssueSortParam, MyIssuesFilter } from "@tandem/core/issues/queries";
-import { useModalStore } from "@tandem/core/modals";
-import { useViewStore } from "@tandem/core/issues/stores/view-store-context";
-import { useIssueSelectionStore } from "@tandem/core/issues/stores/selection-store";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@agora/ui/components/ui/tooltip";
+import { Button } from "@agora/ui/components/ui/button";
+import type { Issue, IssueStatus } from "@agora/core/types";
+import { useLoadMoreByStatus } from "@agora/core/issues/mutations";
+import type { IssueSortParam, MyIssuesFilter } from "@agora/core/issues/queries";
+import { useModalStore } from "@agora/core/modals";
+import { useViewStore } from "@agora/core/issues/stores/view-store-context";
+import { useIssueSelectionStore } from "@agora/core/issues/stores/selection-store";
 import { StatusHeading } from "./status-heading";
 import { ListRow, DraggableListRow, type ChildProgress } from "./list-row";
 import { InfiniteScrollSentinel } from "./infinite-scroll-sentinel";

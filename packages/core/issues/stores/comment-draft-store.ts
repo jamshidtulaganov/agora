@@ -66,7 +66,7 @@ export const useCommentDraftStore = create<CommentDraftStore>()(
         }),
     }),
     {
-      name: "tandem_comment_drafts",
+      name: "agora_comment_drafts",
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
       onRehydrateStorage: () => (state) => {
         if (state) {

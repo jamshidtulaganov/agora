@@ -3,30 +3,30 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { sanitizeNextUrl, useAuthStore } from "@tandem/core/auth";
-import { useConfigStore } from "@tandem/core/config";
-import { workspaceKeys } from "@tandem/core/workspace/queries";
+import { sanitizeNextUrl, useAuthStore } from "@agora/core/auth";
+import { useConfigStore } from "@agora/core/config";
+import { workspaceKeys } from "@agora/core/workspace/queries";
 import {
   paths,
   resolvePostAuthDestination,
   useHasOnboarded,
-} from "@tandem/core/paths";
-import { api } from "@tandem/core/api";
-import type { Workspace } from "@tandem/core/types";
+} from "@agora/core/paths";
+import { api } from "@agora/core/api";
+import type { Workspace } from "@agora/core/types";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
   CardContent,
-} from "@tandem/ui/components/ui/card";
-import { Button } from "@tandem/ui/components/ui/button";
+} from "@agora/ui/components/ui/card";
+import { Button } from "@agora/ui/components/ui/button";
 import { Loader2 } from "lucide-react";
-import { captureDownloadIntent } from "@tandem/core/analytics";
+import { captureDownloadIntent } from "@agora/core/analytics";
 import { setLoggedInCookie } from "@/features/auth/auth-cookie";
 import Link from "next/link";
-import { LoginPage, validateCliCallback } from "@tandem/views/auth";
-import { useT } from "@tandem/views/i18n";
+import { LoginPage, validateCliCallback } from "@agora/views/auth";
+import { useT } from "@agora/views/i18n";
 
 /**
  * Pick where a logged-in user with no explicit `?next=` should land.
@@ -91,7 +91,7 @@ function LoginPageContent() {
         .issueCliToken()
         .then(({ token }) => {
           setDesktopToken(token);
-          window.location.href = `tandem://auth/callback?token=${encodeURIComponent(token)}`;
+          window.location.href = `agora://auth/callback?token=${encodeURIComponent(token)}`;
         })
         .catch((err) => {
           setDesktopError(
@@ -170,7 +170,7 @@ function LoginPageContent() {
               <Button
                 variant="outline"
                 onClick={() => {
-                  window.location.href = `tandem://auth/callback?token=${encodeURIComponent(desktopToken)}`;
+                  window.location.href = `agora://auth/callback?token=${encodeURIComponent(desktopToken)}`;
                 }}
               >
                 {t(($) => $.web.desktop_handoff.open_button)}

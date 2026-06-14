@@ -83,7 +83,7 @@ func TestNotification_IssueCreated_AssigneeNotified(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
-	assigneeEmail := "notif-assignee-created@tandem.dev"
+	assigneeEmail := "notif-assignee-created@agora.dev"
 	assigneeID := createTestUser(t, assigneeEmail)
 	t.Cleanup(func() { cleanupTestUser(t, assigneeEmail) })
 
@@ -243,11 +243,11 @@ func TestNotification_StatusChanged(t *testing.T) {
 	bus := newNotificationBus(t, queries)
 
 	// Create two extra users as subscribers
-	sub1Email := "notif-sub1-status@tandem.dev"
+	sub1Email := "notif-sub1-status@agora.dev"
 	sub1ID := createTestUser(t, sub1Email)
 	t.Cleanup(func() { cleanupTestUser(t, sub1Email) })
 
-	sub2Email := "notif-sub2-status@tandem.dev"
+	sub2Email := "notif-sub2-status@agora.dev"
 	sub2ID := createTestUser(t, sub2Email)
 	t.Cleanup(func() { cleanupTestUser(t, sub2Email) })
 
@@ -322,11 +322,11 @@ func TestNotification_CommentCreated(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
-	commenterEmail := "notif-commenter@tandem.dev"
+	commenterEmail := "notif-commenter@agora.dev"
 	commenterID := createTestUser(t, commenterEmail)
 	t.Cleanup(func() { cleanupTestUser(t, commenterEmail) })
 
-	sub1Email := "notif-sub1-comment@tandem.dev"
+	sub1Email := "notif-sub1-comment@agora.dev"
 	sub1ID := createTestUser(t, sub1Email)
 	t.Cleanup(func() { cleanupTestUser(t, sub1Email) })
 
@@ -402,13 +402,13 @@ func TestNotification_SystemCommentSkipsInboxAndMentions(t *testing.T) {
 	bus := newNotificationBus(t, queries)
 
 	// Subscriber on the issue who would normally receive new_comment.
-	subEmail := "notif-system-comment-sub@tandem.dev"
+	subEmail := "notif-system-comment-sub@agora.dev"
 	subID := createTestUser(t, subEmail)
 	t.Cleanup(func() { cleanupTestUser(t, subEmail) })
 
 	// A second member whose UUID we will smuggle into the system-comment
 	// body as a fake mention to prove the listener does not parse it.
-	targetEmail := "notif-system-comment-target@tandem.dev"
+	targetEmail := "notif-system-comment-target@agora.dev"
 	targetID := createTestUser(t, targetEmail)
 	t.Cleanup(func() { cleanupTestUser(t, targetEmail) })
 
@@ -496,15 +496,15 @@ func TestNotification_AssigneeChanged(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
-	oldAssigneeEmail := "notif-old-assignee@tandem.dev"
+	oldAssigneeEmail := "notif-old-assignee@agora.dev"
 	oldAssigneeID := createTestUser(t, oldAssigneeEmail)
 	t.Cleanup(func() { cleanupTestUser(t, oldAssigneeEmail) })
 
-	newAssigneeEmail := "notif-new-assignee@tandem.dev"
+	newAssigneeEmail := "notif-new-assignee@agora.dev"
 	newAssigneeID := createTestUser(t, newAssigneeEmail)
 	t.Cleanup(func() { cleanupTestUser(t, newAssigneeEmail) })
 
-	bystanderEmail := "notif-bystander@tandem.dev"
+	bystanderEmail := "notif-bystander@agora.dev"
 	bystanderID := createTestUser(t, bystanderEmail)
 	t.Cleanup(func() { cleanupTestUser(t, bystanderEmail) })
 
@@ -675,7 +675,7 @@ func TestNotification_PriorityChanged(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
-	sub1Email := "notif-sub1-priority@tandem.dev"
+	sub1Email := "notif-sub1-priority@agora.dev"
 	sub1ID := createTestUser(t, sub1Email)
 	t.Cleanup(func() { cleanupTestUser(t, sub1Email) })
 
@@ -740,7 +740,7 @@ func TestNotification_DueDateChanged(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
-	sub1Email := "notif-sub1-duedate@tandem.dev"
+	sub1Email := "notif-sub1-duedate@agora.dev"
 	sub1ID := createTestUser(t, sub1Email)
 	t.Cleanup(func() { cleanupTestUser(t, sub1Email) })
 
@@ -801,7 +801,7 @@ func TestNotification_StartDateChanged(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
-	sub1Email := "notif-sub1-startdate@tandem.dev"
+	sub1Email := "notif-sub1-startdate@agora.dev"
 	sub1ID := createTestUser(t, sub1Email)
 	t.Cleanup(func() { cleanupTestUser(t, sub1Email) })
 
@@ -861,7 +861,7 @@ func TestNotification_ParentBubble_StatusChanged(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
-	parentSubEmail := "notif-parent-sub-status@tandem.dev"
+	parentSubEmail := "notif-parent-sub-status@agora.dev"
 	parentSubID := createTestUser(t, parentSubEmail)
 	t.Cleanup(func() { cleanupTestUser(t, parentSubEmail) })
 
@@ -923,11 +923,11 @@ func TestNotification_ParentBubble_NewCommentSuppressed(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
-	commenterEmail := "notif-parent-bubble-commenter@tandem.dev"
+	commenterEmail := "notif-parent-bubble-commenter@agora.dev"
 	commenterID := createTestUser(t, commenterEmail)
 	t.Cleanup(func() { cleanupTestUser(t, commenterEmail) })
 
-	parentSubEmail := "notif-parent-sub-comment@tandem.dev"
+	parentSubEmail := "notif-parent-sub-comment@agora.dev"
 	parentSubID := createTestUser(t, parentSubEmail)
 	t.Cleanup(func() { cleanupTestUser(t, parentSubEmail) })
 
@@ -975,7 +975,7 @@ func TestNotification_ParentBubble_PriorityChangeSuppressed(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
-	parentSubEmail := "notif-parent-sub-priority@tandem.dev"
+	parentSubEmail := "notif-parent-sub-priority@agora.dev"
 	parentSubID := createTestUser(t, parentSubEmail)
 	t.Cleanup(func() { cleanupTestUser(t, parentSubEmail) })
 
@@ -1081,7 +1081,7 @@ func TestNotification_StatusChange_ArchivesStaleTaskFailed(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
-	subEmail := "notif-archive-task-failed-sub@tandem.dev"
+	subEmail := "notif-archive-task-failed-sub@agora.dev"
 	subID := createTestUser(t, subEmail)
 	t.Cleanup(func() { cleanupTestUser(t, subEmail) })
 

@@ -13,8 +13,8 @@ import {
   Plug,
 } from "lucide-react";
 import { GitHubMark } from "./github-mark";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@tandem/ui/components/ui/tabs";
-import { useCurrentWorkspace } from "@tandem/core/paths";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@agora/ui/components/ui/tabs";
+import { useCurrentWorkspace } from "@agora/core/paths";
 import { useNavigation } from "../../navigation";
 import { AccountTab } from "./account-tab";
 import { PreferencesTab } from "./preferences-tab";

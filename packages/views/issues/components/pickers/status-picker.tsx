@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { IssueStatus, UpdateIssueRequest } from "@tandem/core/types";
-import { ALL_STATUSES, STATUS_CONFIG } from "@tandem/core/issues/config";
+import type { IssueStatus, UpdateIssueRequest } from "@agora/core/types";
+import { ALL_STATUSES, STATUS_CONFIG } from "@agora/core/issues/config";
 import { StatusIcon } from "../status-icon";
 import { PropertyPicker, PickerItem } from "./property-picker";
 import { useT } from "../../../i18n";

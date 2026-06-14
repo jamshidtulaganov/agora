@@ -8,16 +8,16 @@ import type {
   AgentRuntime,
   AgentTask,
   MemberWithUser,
-} from "@tandem/core/types";
-import { useAuthStore } from "@tandem/core/auth";
-import { useWorkspaceId } from "@tandem/core/hooks";
+} from "@agora/core/types";
+import { useAuthStore } from "@agora/core/auth";
+import { useWorkspaceId } from "@agora/core/hooks";
 import {
   agentListOptions,
   memberListOptions,
-} from "@tandem/core/workspace/queries";
-import { agentTaskSnapshotOptions } from "@tandem/core/agents";
-import { paths, useWorkspaceSlug } from "@tandem/core/paths";
-import { DataTable } from "@tandem/ui/components/ui/data-table";
+} from "@agora/core/workspace/queries";
+import { agentTaskSnapshotOptions } from "@agora/core/agents";
+import { paths, useWorkspaceSlug } from "@agora/core/paths";
+import { DataTable } from "@agora/ui/components/ui/data-table";
 import { useNavigation } from "../../navigation";
 import { type RuntimeRow, createRuntimeColumns } from "./runtime-columns";
 import { useT } from "../../i18n";
@@ -76,7 +76,7 @@ export function RuntimeList({
 }: {
   runtimes: AgentRuntime[];
   // Kept on the API surface for callers, but unused here: the CLI column
-  // shows each agent's own tool version, while the tandem daemon CLI
+  // shows each agent's own tool version, while the agora daemon CLI
   // update prompt lives at the machine/detail level (UpdateSection), so the
   // table no longer derives per-row update state. Left to avoid scope creep
   // on the page-level wrapper that still computes the set.

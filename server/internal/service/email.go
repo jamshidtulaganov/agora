@@ -38,7 +38,7 @@ func NewEmailService() *EmailService {
 	apiKey := os.Getenv("RESEND_API_KEY")
 	from := strings.TrimSpace(os.Getenv("RESEND_FROM_EMAIL"))
 	if from == "" {
-		from = "noreply@tandem.dev"
+		from = "noreply@agora.dev"
 	}
 
 	smtpHost := strings.TrimSpace(os.Getenv("SMTP_HOST"))
@@ -98,7 +98,7 @@ func NewEmailService() *EmailService {
 	case client != nil:
 		fmt.Printf("EmailService: Resend API from=%s\n", from)
 	default:
-		fmt.Println("EmailService: DEV mode — codes printed to stdout (set TANDEM_DEV_VERIFICATION_CODE in .env for a fixed local code)")
+		fmt.Println("EmailService: DEV mode — codes printed to stdout (set AGORA_DEV_VERIFICATION_CODE in .env for a fixed local code)")
 	}
 
 	return &EmailService{
@@ -239,7 +239,7 @@ func (s *EmailService) SendVerificationCode(to, code string) error {
 		</div>`, code)
 
 	if s.smtpHost != "" {
-		return s.sendSMTP(to, "Your Tandem verification code", body)
+		return s.sendSMTP(to, "Your Agora verification code", body)
 	}
 	if s.client == nil {
 		fmt.Printf("[DEV] Verification code for %s: %s\n", to, code)
@@ -248,7 +248,7 @@ func (s *EmailService) SendVerificationCode(to, code string) error {
 	params := &resend.SendEmailRequest{
 		From:    s.fromEmail,
 		To:      []string{to},
-		Subject: "Your Tandem verification code",
+		Subject: "Your Agora verification code",
 		Html:    body,
 	}
 	_, err := s.client.Emails.Send(params)
@@ -260,7 +260,7 @@ func (s *EmailService) SendVerificationCode(to, code string) error {
 func (s *EmailService) SendInvitationEmail(to, inviterName, workspaceName, invitationID string) error {
 	appURL := strings.TrimSpace(os.Getenv("FRONTEND_ORIGIN"))
 	if appURL == "" {
-		appURL = "https://app.tandem.dev"
+		appURL = "https://app.agora.dev"
 	}
 	inviteURL := fmt.Sprintf("%s/invite/%s", appURL, invitationID)
 
@@ -289,11 +289,11 @@ func buildInvitationParams(from, to, inviterName, workspaceName, inviteURL strin
 	return &resend.SendEmailRequest{
 		From:    from,
 		To:      []string{to},
-		Subject: fmt.Sprintf("%s invited you to %s on Tandem", subjectInviter, subjectWorkspace),
+		Subject: fmt.Sprintf("%s invited you to %s on Agora", subjectInviter, subjectWorkspace),
 		Html: fmt.Sprintf(
 			`<div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
 				<h2>You're invited to join %s</h2>
-				<p><strong>%s</strong> invited you to collaborate in the <strong>%s</strong> workspace on Tandem.</p>
+				<p><strong>%s</strong> invited you to collaborate in the <strong>%s</strong> workspace on Agora.</p>
 				<p style="margin: 24px 0;">
 					<a href="%s" style="display: inline-block; padding: 12px 24px; background: #000; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 500;">Accept invitation</a>
 				</p>

@@ -10,23 +10,23 @@ import {
   Server,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAuthStore } from "@tandem/core/auth";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { agentTaskSnapshotOptions } from "@tandem/core/agents";
-import { runtimeListOptions, runtimeKeys } from "@tandem/core/runtimes/queries";
-import { useUpdatableRuntimeIds } from "@tandem/core/runtimes/hooks";
-import { useWSEvent } from "@tandem/core/realtime";
-import { agentListOptions } from "@tandem/core/workspace/queries";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Input } from "@tandem/ui/components/ui/input";
+import { useAuthStore } from "@agora/core/auth";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { agentTaskSnapshotOptions } from "@agora/core/agents";
+import { runtimeListOptions, runtimeKeys } from "@agora/core/runtimes/queries";
+import { useUpdatableRuntimeIds } from "@agora/core/runtimes/hooks";
+import { useWSEvent } from "@agora/core/realtime";
+import { agentListOptions } from "@agora/core/workspace/queries";
+import { Button } from "@agora/ui/components/ui/button";
+import { Input } from "@agora/ui/components/ui/input";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
-} from "@tandem/ui/components/ui/resizable";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
-import { useIsMobile } from "@tandem/ui/hooks/use-mobile";
-import { cn } from "@tandem/ui/lib/utils";
+} from "@agora/ui/components/ui/resizable";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import { useIsMobile } from "@agora/ui/hooks/use-mobile";
+import { cn } from "@agora/ui/lib/utils";
 import { PageHeader } from "../../layout/page-header";
 import { ConnectRemoteDialog } from "./connect-remote-dialog";
 import { CloudRuntimeDialog } from "./cloud-runtime-dialog";
@@ -110,7 +110,7 @@ export function RuntimesPage({
   const [showConnectDialog, setShowConnectDialog] = useState(false);
   const [showCloudRuntimeDialog, setShowCloudRuntimeDialog] = useState(false);
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: "tandem_runtimes_layout",
+    id: "agora_runtimes_layout",
   });
   const isMobile = useIsMobile();
 

@@ -15,9 +15,9 @@ export type RuntimeConfigResult =
 
 export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
   schemaVersion: 1,
-  apiUrl: "https://api.tandem.dev",
-  wsUrl: "wss://api.tandem.dev/ws",
-  appUrl: "https://tandem.dev",
+  apiUrl: "https://api.agora.dev",
+  wsUrl: "wss://api.agora.dev/ws",
+  appUrl: "https://agora.dev",
 });
 
 const LOCAL_DEV_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
@@ -93,8 +93,8 @@ export function deriveWsUrl(apiUrl: string): string {
   return trimTrailingSlash(url.toString());
 }
 
-// Convention: api hosts are exposed at `api.<web-host>` (api.tandem.dev →
-// tandem.dev, api.test.tandem.dev → test.tandem.dev). Strip the leading
+// Convention: api hosts are exposed at `api.<web-host>` (api.agora.dev →
+// agora.dev, api.test.agora.dev → test.agora.dev). Strip the leading
 // `api.` label so a single `apiUrl` configuration produces the right
 // shareable web URL. Hosts that don't match the convention (no leading
 // `api.` label, or short two-label hosts like `api.local`) fall through

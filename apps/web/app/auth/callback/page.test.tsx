@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, waitFor } from "@testing-library/react";
-import { paths } from "@tandem/core/paths";
+import { paths } from "@agora/core/paths";
 
 const {
   mockPush,
@@ -26,7 +26,7 @@ const makeUser = (
 ) => ({
   id: "user-1",
   name: "Test",
-  email: "test@tandem.dev",
+  email: "test@agora.dev",
   avatar_url: null,
   onboarded_at: null,
   onboarding_questionnaire: { source: ["search"] },
@@ -46,10 +46,10 @@ vi.mock("@tanstack/react-query", () => ({
 
 // Preserve the real sanitizeNextUrl so the "drop unsafe ?next=" behavior is
 // exercised rather than silently diverging from the source of truth.
-vi.mock("@tandem/core/auth", async () => {
+vi.mock("@agora/core/auth", async () => {
   const actual =
-    await vi.importActual<typeof import("@tandem/core/auth")>(
-      "@tandem/core/auth",
+    await vi.importActual<typeof import("@agora/core/auth")>(
+      "@agora/core/auth",
     );
   return {
     ...actual,
@@ -58,14 +58,14 @@ vi.mock("@tandem/core/auth", async () => {
   };
 });
 
-vi.mock("@tandem/core/workspace/queries", () => ({
+vi.mock("@agora/core/workspace/queries", () => ({
   workspaceKeys: {
     list: () => ["workspaces"],
     myInvitations: () => ["invitations", "mine"],
   },
 }));
 
-vi.mock("@tandem/core/api", () => ({
+vi.mock("@agora/core/api", () => ({
   api: {
     listWorkspaces: mockListWorkspaces,
     listMyInvitations: mockListMyInvitations,
@@ -83,7 +83,7 @@ describe("CallbackPage", () => {
     // doesn't inherit a cap-reached state from a previous run).
     for (let i = window.localStorage.length - 1; i >= 0; i--) {
       const k = window.localStorage.key(i);
-      if (k && k.startsWith("tandem.source_backfill.dismiss.")) {
+      if (k && k.startsWith("agora.source_backfill.dismiss.")) {
         window.localStorage.removeItem(k);
       }
     }

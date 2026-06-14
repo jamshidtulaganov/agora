@@ -1,7 +1,7 @@
 import {
   matchLocale,
   type SupportedLocale,
-} from "@tandem/core/i18n";
+} from "@agora/core/i18n";
 
 export {
   HELPER_INSTRUCTIONS,

@@ -6,9 +6,9 @@ import {
   ArrowUpCircle,
   Check,
 } from "lucide-react";
-import { Button } from "@tandem/ui/components/ui/button";
-import { api } from "@tandem/core/api";
-import type { RuntimeUpdateStatus } from "@tandem/core/types";
+import { Button } from "@agora/ui/components/ui/button";
+import { api } from "@agora/core/api";
+import type { RuntimeUpdateStatus } from "@agora/core/types";
 import { useT } from "../../i18n";
 
 const GITHUB_RELEASES_URL =

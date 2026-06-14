@@ -1,4 +1,4 @@
-import type { TaskMessagePayload } from "@tandem/core/types/events";
+import type { TaskMessagePayload } from "@agora/core/types/events";
 import { redactSecrets } from "./redact";
 
 /** A unified timeline entry: tool calls, thinking, text, and errors in chronological order. */

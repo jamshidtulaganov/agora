@@ -2,9 +2,9 @@
 
 import { useCallback } from "react";
 import { toast } from "sonner";
-import { api } from "@tandem/core/api";
-import { useWorkspaceSlug } from "@tandem/core/paths";
-import { resolvePublicFileUrl } from "@tandem/core/workspace/avatar-url";
+import { api } from "@agora/core/api";
+import { useWorkspaceSlug } from "@agora/core/paths";
+import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
 import { useT } from "../i18n";
 
 interface DesktopBridge {

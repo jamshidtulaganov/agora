@@ -2,9 +2,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { childIssuesOptions } from "@tandem/core/issues/queries";
-import { useUpdateIssue } from "@tandem/core/issues/mutations";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { childIssuesOptions } from "@agora/core/issues/queries";
+import { useUpdateIssue } from "@agora/core/issues/mutations";
 import { IssuePickerModal } from "./issue-picker-modal";
 import { useT } from "../i18n";
 

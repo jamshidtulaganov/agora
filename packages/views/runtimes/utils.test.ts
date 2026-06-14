@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { useCustomPricingStore } from "@tandem/core/runtimes/custom-pricing-store";
-import type { AgentRuntime, RuntimeUsage } from "@tandem/core/types";
+import { useCustomPricingStore } from "@agora/core/runtimes/custom-pricing-store";
+import type { AgentRuntime, RuntimeUsage } from "@agora/core/types";
 
 import {
   addDaysIso,

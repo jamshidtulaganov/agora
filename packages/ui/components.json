@@ -12,10 +12,10 @@
   },
   "iconLibrary": "lucide",
   "aliases": {
-    "components": "@tandem/ui/components",
-    "ui": "@tandem/ui/components/ui",
-    "hooks": "@tandem/ui/hooks",
-    "lib": "@tandem/ui/lib",
-    "utils": "@tandem/ui/lib/utils"
+    "components": "@agora/ui/components",
+    "ui": "@agora/ui/components/ui",
+    "hooks": "@agora/ui/hooks",
+    "lib": "@agora/ui/lib",
+    "utils": "@agora/ui/lib/utils"
   }
 }

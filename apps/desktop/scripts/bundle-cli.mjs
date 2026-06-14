@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// Builds the `tandem` CLI from server/cmd/tandem and copies the binary
+// Builds the `agora` CLI from server/cmd/agora and copies the binary
 // into apps/desktop/resources/bin/ so electron-vite (dev) and electron-
 // builder (prod) pick it up. Running this on every dev/build/package
 // invocation guarantees the bundled CLI always matches the current Go
 // source — no more stale binary surprises. Go's build cache makes the
 // no-op case (nothing changed) effectively free.
 //
-// ldflags mirror `make build` so `tandem --version` reports a meaningful
+// ldflags mirror `make build` so `agora --version` reports a meaningful
 // version / commit / date.
 //
 // Graceful: if `go` is not installed (e.g. frontend-only contributor), we
@@ -60,7 +60,7 @@ function normalizeRuntimeArch(arch) {
 }
 
 function binaryNameForPlatform(platform) {
-  return platform === "win32" ? "tandem.exe" : "tandem";
+  return platform === "win32" ? "agora.exe" : "agora";
 }
 
 const targetPlatform = normalizeRuntimePlatform(
@@ -118,7 +118,7 @@ if (hasGo()) {
       ldflags,
       "-o",
       srcBinary,
-      "./cmd/tandem",
+      "./cmd/agora",
     ],
     {
       cwd: serverDir,

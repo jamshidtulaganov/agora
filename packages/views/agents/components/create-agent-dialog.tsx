@@ -8,33 +8,33 @@ import { RuntimePicker, isRuntimeUsableForUser } from "./runtime-picker";
 import { InstructionsEditor } from "./instructions-editor";
 import { SkillMultiSelect } from "./skill-multi-select";
 import { AvatarPicker } from "./avatar-picker";
-import { api } from "@tandem/core/api";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { workspaceKeys } from "@tandem/core/workspace/queries";
+import { api } from "@agora/core/api";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { workspaceKeys } from "@agora/core/workspace/queries";
 import type {
   Agent,
   AgentVisibility,
   RuntimeDevice,
   MemberWithUser,
   CreateAgentRequest,
-} from "@tandem/core/types";
-import { isImeComposing } from "@tandem/core/utils";
+} from "@agora/core/types";
+import { isImeComposing } from "@agora/core/utils";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "@tandem/ui/components/ui/dialog";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Input } from "@tandem/ui/components/ui/input";
-import { Label } from "@tandem/ui/components/ui/label";
+} from "@agora/ui/components/ui/dialog";
+import { Button } from "@agora/ui/components/ui/button";
+import { Input } from "@agora/ui/components/ui/input";
+import { Label } from "@agora/ui/components/ui/label";
 import { toast } from "sonner";
 import {
   AGENT_DESCRIPTION_MAX_LENGTH,
   VISIBILITY_DESCRIPTION,
   VISIBILITY_LABEL,
-} from "@tandem/core/agents";
+} from "@agora/core/agents";
 import { CharCounter } from "./char-counter";
 import { useT } from "../../i18n";
 

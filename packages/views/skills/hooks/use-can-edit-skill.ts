@@ -1,9 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { MemberRole, SkillSummary } from "@tandem/core/types";
-import { useAuthStore } from "@tandem/core/auth";
-import { memberListOptions } from "@tandem/core/workspace/queries";
+import type { MemberRole, SkillSummary } from "@agora/core/types";
+import { useAuthStore } from "@agora/core/auth";
+import { memberListOptions } from "@agora/core/workspace/queries";
 
 /**
  * Whether the current user may edit/delete the given skill.

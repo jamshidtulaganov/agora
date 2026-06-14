@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import type { RuntimeUsage } from "@tandem/core/types";
-import { useCustomPricingStore } from "@tandem/core/runtimes/custom-pricing-store";
+import type { RuntimeUsage } from "@agora/core/types";
+import { useCustomPricingStore } from "@agora/core/runtimes/custom-pricing-store";
 import { addDaysIso, estimateCost, todayIso, weekStartIso } from "../../utils";
 import { useT } from "../../../i18n";
 

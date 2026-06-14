@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, act, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@tandem/core/i18n/react";
+import { I18nProvider } from "@agora/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enAuth from "../../locales/en/auth.json";
 import enSettings from "../../locales/en/settings.json";
@@ -17,14 +17,14 @@ const userRef = vi.hoisted(() => ({
   current: null as { id: string; timezone?: string | null } | null,
 }));
 
-vi.mock("@tandem/ui/components/common/theme-provider", () => ({
+vi.mock("@agora/ui/components/common/theme-provider", () => ({
   useTheme: () => ({ theme: "light", setTheme: vi.fn() }),
 }));
 
-vi.mock("@tandem/core/i18n/react", async () => {
+vi.mock("@agora/core/i18n/react", async () => {
   const actual =
-    await vi.importActual<typeof import("@tandem/core/i18n/react")>(
-      "@tandem/core/i18n/react",
+    await vi.importActual<typeof import("@agora/core/i18n/react")>(
+      "@agora/core/i18n/react",
     );
   return {
     ...actual,
@@ -36,7 +36,7 @@ vi.mock("@tandem/core/i18n/react", async () => {
   };
 });
 
-vi.mock("@tandem/core/api", () => ({
+vi.mock("@agora/core/api", () => ({
   api: { updateMe: mockUpdateMe },
 }));
 
@@ -44,10 +44,10 @@ vi.mock("sonner", () => ({
   toast: { warning: mockToastWarning, error: mockToastError },
 }));
 
-vi.mock("@tandem/core/auth", async () => {
+vi.mock("@agora/core/auth", async () => {
   const actual =
-    await vi.importActual<typeof import("@tandem/core/auth")>(
-      "@tandem/core/auth",
+    await vi.importActual<typeof import("@agora/core/auth")>(
+      "@agora/core/auth",
     );
   type AuthState = {
     user: typeof userRef.current;

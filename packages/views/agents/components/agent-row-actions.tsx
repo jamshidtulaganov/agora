@@ -11,11 +11,11 @@ import {
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { Agent } from "@tandem/core/types";
-import type { AgentPresenceDetail } from "@tandem/core/agents";
-import { api } from "@tandem/core/api";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { workspaceKeys } from "@tandem/core/workspace/queries";
+import type { Agent } from "@agora/core/types";
+import type { AgentPresenceDetail } from "@agora/core/agents";
+import { api } from "@agora/core/api";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { workspaceKeys } from "@agora/core/workspace/queries";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,15 +25,15 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@tandem/ui/components/ui/alert-dialog";
-import { Button } from "@tandem/ui/components/ui/button";
+} from "@agora/ui/components/ui/alert-dialog";
+import { Button } from "@agora/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@tandem/ui/components/ui/dropdown-menu";
+} from "@agora/ui/components/ui/dropdown-menu";
 import { useT } from "../../i18n";
 
 interface AgentRowActionsProps {

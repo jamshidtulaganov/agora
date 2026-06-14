@@ -1,1 +1,1 @@
-export { SquadDetailPage as default } from "@tandem/views/squads";
+export { SquadDetailPage as default } from "@agora/views/squads";

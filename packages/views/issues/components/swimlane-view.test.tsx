@@ -2,15 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SwimLaneView } from "./swimlane-view";
-import type { Issue } from "@tandem/core/types";
-import { I18nProvider } from "@tandem/core/i18n/react";
+import type { Issue } from "@agora/core/types";
+import { I18nProvider } from "@agora/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enIssues from "../../locales/en/issues.json";
 
 const TEST_RESOURCES = { en: { common: enCommon, issues: enIssues } };
 
 // Mock hooks
-vi.mock("@tandem/core/hooks", () => ({
+vi.mock("@agora/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
@@ -22,7 +22,7 @@ const mockListChildrenByParents = vi.hoisted(() =>
 const mockGetAgentTaskSnapshot = vi.hoisted(() =>
   vi.fn().mockResolvedValue([]),
 );
-vi.mock("@tandem/core/api", () => ({
+vi.mock("@agora/core/api", () => ({
   api: {
     listChildrenByParents: mockListChildrenByParents,
     getAgentTaskSnapshot: mockGetAgentTaskSnapshot,
@@ -35,9 +35,9 @@ vi.mock("@tandem/core/api", () => ({
 }));
 
 // Mock paths
-vi.mock("@tandem/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@tandem/core/paths")>(
-    "@tandem/core/paths",
+vi.mock("@agora/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@agora/core/paths")>(
+    "@agora/core/paths",
   );
   return {
     ...actual,
@@ -53,7 +53,7 @@ vi.mock("@tandem/core/paths", async () => {
 // swimlane feeds the result into a `useMemo(..., [getActorName, ...])`
 // that then drives a `useEffect(setLocalCells, [cells])` chain. A fresh
 // object per render therefore loops the effect indefinitely.
-vi.mock("@tandem/core/projects/queries", () => ({
+vi.mock("@agora/core/projects/queries", () => ({
   projectListOptions: (_wsId: string) => ({
     queryKey: ["projects", _wsId, "list"],
     queryFn: () => Promise.resolve([]),
@@ -69,13 +69,13 @@ const { mockActorNameResult } = vi.hoisted(() => ({
     getSquadName: () => "Mock Squad",
   },
 }));
-vi.mock("@tandem/core/workspace/hooks", () => ({
+vi.mock("@agora/core/workspace/hooks", () => ({
   useActorName: () => mockActorNameResult,
 }));
 
-// Mock @tandem/core/auth
+// Mock @agora/core/auth
 const mockAuthUser = { id: "user-1", email: "test@test.com", name: "Test User" };
-vi.mock("@tandem/core/auth", () => ({
+vi.mock("@agora/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: any) => {
       const state = { user: mockAuthUser, isAuthenticated: true };
@@ -99,7 +99,7 @@ vi.mock("../../navigation", () => ({
 }));
 
 // Mock issue config
-vi.mock("@tandem/core/issues/config", () => ({
+vi.mock("@agora/core/issues/config", () => ({
   ALL_STATUSES: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   BOARD_STATUSES: ["backlog", "todo", "in_progress", "in_review", "done", "blocked"],
   STATUS_ORDER: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
@@ -134,8 +134,8 @@ const useLoadMoreByStatusMock = vi.fn(
     loadMore: mockLoadMore,
   }),
 );
-vi.mock("@tandem/core/issues/mutations", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@tandem/core/issues/mutations")>();
+vi.mock("@agora/core/issues/mutations", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@agora/core/issues/mutations")>();
   return {
     ...actual,
     useLoadMoreByStatus: (status: string, opts?: unknown, sort?: unknown) =>
@@ -195,7 +195,7 @@ const mockViewState: {
 const mockSetSwimlaneOrder = mockViewState.setSwimlaneOrder as ReturnType<typeof vi.fn>;
 const mockToggleSwimlaneCollapsed = mockViewState.toggleSwimlaneCollapsed as ReturnType<typeof vi.fn>;
 
-vi.mock("@tandem/core/issues/stores/view-store-context", () => ({
+vi.mock("@agora/core/issues/stores/view-store-context", () => ({
   ViewStoreProvider: ({ children }: { children: React.ReactNode }) => children,
   useViewStore: (selector?: any) => (selector ? selector(mockViewState) : mockViewState),
   useViewStoreApi: () => ({ getState: () => mockViewState, setState: vi.fn(), subscribe: vi.fn() }),
@@ -203,7 +203,7 @@ vi.mock("@tandem/core/issues/stores/view-store-context", () => ({
 
 // Mock modal store
 const mockOpenModal = vi.fn();
-vi.mock("@tandem/core/modals", () => ({
+vi.mock("@agora/core/modals", () => ({
   useModalStore: Object.assign(
     () => ({ open: mockOpenModal }),
     { getState: () => ({ open: mockOpenModal }) },

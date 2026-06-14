@@ -9,7 +9,7 @@ import { isSafeExternalHttpUrl, openExternalSafely } from "./external-url";
 
 describe("isSafeExternalHttpUrl", () => {
   it("allows http and https URLs", () => {
-    expect(isSafeExternalHttpUrl("https://tandem.dev")).toBe(true);
+    expect(isSafeExternalHttpUrl("https://agora.dev")).toBe(true);
     expect(isSafeExternalHttpUrl("http://localhost:3000/auth")).toBe(true);
   });
 
@@ -60,8 +60,8 @@ describe("openExternalSafely", () => {
   });
 
   it("forwards http/https URLs to shell.openExternal", () => {
-    openExternalSafely("https://tandem.dev");
-    expect(shell.openExternal).toHaveBeenCalledWith("https://tandem.dev");
+    openExternalSafely("https://agora.dev");
+    expect(shell.openExternal).toHaveBeenCalledWith("https://agora.dev");
   });
 
   it("does not call shell.openExternal for rejected schemes", () => {

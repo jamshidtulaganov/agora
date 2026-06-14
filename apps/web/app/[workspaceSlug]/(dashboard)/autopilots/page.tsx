@@ -1,6 +1,6 @@
 "use client";
 
-import { AutopilotsPage } from "@tandem/views/autopilots/components";
+import { AutopilotsPage } from "@agora/views/autopilots/components";
 
 export default function Page() {
   return <AutopilotsPage />;

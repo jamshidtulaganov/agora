@@ -4,7 +4,7 @@ import {
   FILE_CARD_URL_PATTERN,
   isAllowedFileCardHref,
   preprocessFileCards,
-} from "@tandem/ui/markdown";
+} from "@agora/ui/markdown";
 
 describe("isAllowedFileCardHref", () => {
   it.each([

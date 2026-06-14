@@ -13,11 +13,11 @@
   "iconLibrary": "lucide",
   "rtl": false,
   "aliases": {
-    "components": "@tandem/ui/components",
-    "utils": "@tandem/ui/lib/utils",
-    "ui": "@tandem/ui/components/ui",
-    "lib": "@tandem/ui/lib",
-    "hooks": "@tandem/ui/hooks"
+    "components": "@agora/ui/components",
+    "utils": "@agora/ui/lib/utils",
+    "ui": "@agora/ui/components/ui",
+    "lib": "@agora/ui/lib",
+    "hooks": "@agora/ui/hooks"
   },
   "menuColor": "default",
   "menuAccent": "subtle",

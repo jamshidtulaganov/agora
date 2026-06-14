@@ -2,7 +2,7 @@
 
 import { Fragment, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
-import { cn } from "@tandem/ui/lib/utils";
+import { cn } from "@agora/ui/lib/utils";
 import { PageHeader } from "./page-header";
 import { AppLink } from "../navigation";
 

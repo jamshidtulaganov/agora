@@ -31,7 +31,7 @@ import type {
   IssueStatus,
   SearchIssueResult,
   SearchProjectResult,
-} from "@tandem/core/types";
+} from "@agora/core/types";
 import { Text } from "@/components/ui/text";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { PriorityIcon } from "@/components/ui/priority-icon";

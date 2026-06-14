@@ -1,15 +1,15 @@
 "use client";
 
-import { DashboardLayout } from "@tandem/views/layout";
-import { TandemIcon } from "@tandem/ui/components/common/tandem-icon";
-import { SearchCommand, SearchTrigger } from "@tandem/views/search";
-import { ChatFab, ChatWindow } from "@tandem/views/chat";
+import { DashboardLayout } from "@agora/views/layout";
+import { AgoraIcon } from "@agora/ui/components/common/agora-icon";
+import { SearchCommand, SearchTrigger } from "@agora/views/search";
+import { ChatFab, ChatWindow } from "@agora/views/chat";
 import { WebNotificationBridge } from "@/components/web-notification-bridge";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <DashboardLayout
-      loadingIndicator={<TandemIcon className="size-6" />}
+      loadingIndicator={<AgoraIcon className="size-6" />}
       searchSlot={<SearchTrigger />}
       extra={
         <>

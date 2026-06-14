@@ -31,7 +31,7 @@ export function useActorName() {
     if (type === "member") return getMemberName(id);
     if (type === "agent") return getAgentName(id);
     if (type === "squad") return getSquadName(id);
-    if (type === "system") return "Tandem";
+    if (type === "system") return "Agora";
     return "System";
   }, [getAgentName, getMemberName, getSquadName]);
 

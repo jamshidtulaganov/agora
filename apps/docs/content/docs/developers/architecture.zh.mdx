@@ -1,11 +1,11 @@
 ---
 title: Architecture
-description: Technical architecture of the Tandem platform.
+description: Technical architecture of the Agora platform.
 ---
 
 ## Overview
 
-Tandem is a Go backend + monorepo frontend (pnpm workspaces + Turborepo) with shared packages.
+Agora is a Go backend + monorepo frontend (pnpm workspaces + Turborepo) with shared packages.
 
 ```
 ┌──────────────┐     ┌──────────────┐     ┌──────────────────┐
@@ -36,7 +36,7 @@ Tandem is a Go backend + monorepo frontend (pnpm workspaces + Turborepo) with sh
 
 ## Backend Structure
 
-- **Entry points** (`cmd/`): `server` (HTTP API), `tandem` (CLI + daemon), `migrate`
+- **Entry points** (`cmd/`): `server` (HTTP API), `agora` (CLI + daemon), `migrate`
 - **Handlers** (`internal/handler/`): One file per domain (issue, comment, agent, auth, daemon)
 - **Real-time** (`internal/realtime/`): Hub manages WebSocket clients, server broadcasts events
 - **Auth** (`internal/auth/` + `internal/middleware/`): JWT (HS256), middleware sets `X-User-ID` and `X-User-Email` headers

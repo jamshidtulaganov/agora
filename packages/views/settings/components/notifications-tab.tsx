@@ -1,12 +1,12 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { notificationPreferenceOptions } from "@tandem/core/notification-preferences/queries";
-import { useUpdateNotificationPreferences } from "@tandem/core/notification-preferences/mutations";
-import type { NotificationGroupKey, NotificationPreferences } from "@tandem/core/types";
-import { Card, CardContent } from "@tandem/ui/components/ui/card";
-import { Switch } from "@tandem/ui/components/ui/switch";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { notificationPreferenceOptions } from "@agora/core/notification-preferences/queries";
+import { useUpdateNotificationPreferences } from "@agora/core/notification-preferences/mutations";
+import type { NotificationGroupKey, NotificationPreferences } from "@agora/core/types";
+import { Card, CardContent } from "@agora/ui/components/ui/card";
+import { Switch } from "@agora/ui/components/ui/switch";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 import { BrowserNotificationSetting } from "./browser-notification-setting";

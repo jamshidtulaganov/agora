@@ -4,11 +4,11 @@ import { AboutPageClient } from "@/features/landing/components/about-page-client
 export const metadata: Metadata = {
   title: "About",
   description:
-    "Learn about Tandem — multiplexed information and computing agent. An open-source project management platform for human + agent teams.",
+    "Learn about Agora — multiplexed information and computing agent. An open-source project management platform for human + agent teams.",
   openGraph: {
-    title: "About Tandem",
+    title: "About Agora",
     description:
-      "The story behind Tandem and why we're building project management for human + agent teams.",
+      "The story behind Agora and why we're building project management for human + agent teams.",
     url: "/about",
   },
   alternates: {

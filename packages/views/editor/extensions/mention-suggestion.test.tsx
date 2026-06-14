@@ -1,10 +1,10 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { createRef, type ReactNode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { workspaceKeys } from "@tandem/core/workspace/queries";
-import { issueKeys, PAGINATED_STATUSES } from "@tandem/core/issues/queries";
-import { I18nProvider } from "@tandem/core/i18n/react";
-import type { IssueStatus, ListIssuesCache } from "@tandem/core/types";
+import { workspaceKeys } from "@agora/core/workspace/queries";
+import { issueKeys, PAGINATED_STATUSES } from "@agora/core/issues/queries";
+import { I18nProvider } from "@agora/core/i18n/react";
+import type { IssueStatus, ListIssuesCache } from "@agora/core/types";
 import type { QueryClient } from "@tanstack/react-query";
 import enCommon from "../../locales/en/common.json";
 import enAuth from "../../locales/en/auth.json";
@@ -24,14 +24,14 @@ function I18nWrapper({ children }: { children: ReactNode }) {
 }
 
 // Mock the workspace id singleton — items() reads it imperatively.
-vi.mock("@tandem/core/platform", () => ({
+vi.mock("@agora/core/platform", () => ({
   getCurrentWsId: () => "ws-1",
 }));
 
 // Mock the API so we control search responses + observe calls.
 const searchIssuesMock = vi.fn();
 const searchProjectsMock = vi.fn();
-vi.mock("@tandem/core/api", () => ({
+vi.mock("@agora/core/api", () => ({
   api: {
     get searchIssues() {
       return searchIssuesMock;
@@ -45,7 +45,7 @@ vi.mock("@tandem/core/api", () => ({
 // Mock the auth store: items() reads `useAuthStore.getState()` imperatively
 // to identify the current user when filtering personal agents.
 const authState = { user: { id: "u1" } as { id: string } | null };
-vi.mock("@tandem/core/auth", () => ({
+vi.mock("@agora/core/auth", () => ({
   useAuthStore: { getState: () => authState },
 }));
 

@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Loader2, Save } from "lucide-react";
-import type { Agent } from "@tandem/core/types";
-import { Button } from "@tandem/ui/components/ui/button";
+import type { Agent } from "@agora/core/types";
+import { Button } from "@agora/ui/components/ui/button";
 import { ContentEditor } from "../../../editor/content-editor";
 import { useT } from "../../../i18n";
 

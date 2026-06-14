@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Attachment as AttachmentRecord } from "@tandem/core/types";
+import type { Attachment as AttachmentRecord } from "@agora/core/types";
 
 const {
   getAttachmentTextContentMock,
@@ -22,7 +22,7 @@ const {
   openByUrlMock: vi.fn(),
 }));
 
-vi.mock("@tandem/core/api", () => ({
+vi.mock("@agora/core/api", () => ({
   api: {
     getAttachmentTextContent: getAttachmentTextContentMock,
     getBaseUrl: getBaseUrlMock,
@@ -77,8 +77,8 @@ vi.mock("../navigation", () => ({
   }),
 }));
 
-vi.mock("@tandem/core/paths", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@tandem/core/paths")>();
+vi.mock("@agora/core/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@agora/core/paths")>();
   return {
     ...actual,
     useWorkspaceSlug: () => "acme",
@@ -121,7 +121,7 @@ vi.mock("./attachment-download-context", () => ({
 }));
 
 import { Attachment } from "./attachment";
-import { configStore } from "@tandem/core/config";
+import { configStore } from "@agora/core/config";
 
 function makeRecord(overrides: Partial<AttachmentRecord> = {}): AttachmentRecord {
   return {
@@ -229,7 +229,7 @@ describe("Attachment — image dispatch", () => {
   it("renders the configured CDN URL when description markdown stores the stable API URL", () => {
     configStore.setState({ cdnDomain: "cdn.example.test" });
     const id = "11111111-2222-3333-4444-555555555555";
-    const markdownUrl = `https://tandem-api.copilothub.ai/api/attachments/${id}/download`;
+    const markdownUrl = `https://agora-api.copilothub.ai/api/attachments/${id}/download`;
     const att = makeRecord({
       id,
       url: "https://cdn.example.test/uploads/ws/shot.png",
@@ -262,7 +262,7 @@ describe("Attachment — image dispatch", () => {
   it("opens preview with the same resolved media URL when a reopened draft record has no download_url", () => {
     configStore.setState({ cdnDomain: "cdn.example.test" });
     const id = "11111111-2222-3333-4444-555555555555";
-    const markdownUrl = `https://tandem-api.copilothub.ai/api/attachments/${id}/download`;
+    const markdownUrl = `https://agora-api.copilothub.ai/api/attachments/${id}/download`;
     const mediaUrl = "https://cdn.example.test/uploads/ws/shot.png";
     const att = makeRecord({
       id,
@@ -352,14 +352,14 @@ describe("Attachment — image dispatch", () => {
     const att = makeRecord({
       // Raw private-bucket URL — must NOT be the rendered src.
       url: "https://prod.s3.amazonaws.com/key.png",
-      markdown_url: "https://api.tandem.test/api/attachments/att-1/download",
+      markdown_url: "https://api.agora.test/api/attachments/att-1/download",
       // bare API path on download_url — no signature query.
       download_url: "/api/attachments/att-1/download",
     });
     renderWithQuery(<Attachment attachment={{ kind: "record", attachment: att }} />);
     const img = document.querySelector("img");
     expect(img?.getAttribute("src")).toBe(
-      "https://api.tandem.test/api/attachments/att-1/download",
+      "https://api.agora.test/api/attachments/att-1/download",
     );
     expect(img?.getAttribute("src")).not.toContain("prod.s3.amazonaws.com");
   });

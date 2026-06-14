@@ -231,7 +231,7 @@ export async function handleInboxNew(
   const sourceWsId = item.workspace_id;
   if (sourceWsId) onInboxNew(qc, sourceWsId, item);
   // Fire a native OS notification only when the app isn't focused. When
-  // the user is already looking at Tandem, the inbox sidebar's unread
+  // the user is already looking at Agora, the inbox sidebar's unread
   // styling is enough — no need to interrupt with a banner. `desktopAPI`
   // is injected by the preload script; its absence (web app) skips silently.
   if (typeof document !== "undefined" && document.hasFocus()) return;

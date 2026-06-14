@@ -2,13 +2,13 @@
 
 import { useState, useMemo } from "react";
 import { Pencil, Eye } from "lucide-react";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Textarea } from "@tandem/ui/components/ui/textarea";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@tandem/ui/components/ui/tooltip";
+import { Button } from "@agora/ui/components/ui/button";
+import { Textarea } from "@agora/ui/components/ui/textarea";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@agora/ui/components/ui/tooltip";
 import {
   parseFrontmatter,
   type SkillFrontmatter,
-} from "@tandem/core/skills/frontmatter";
+} from "@agora/core/skills/frontmatter";
 import { Markdown } from "../../common/markdown";
 import { useT } from "../../i18n";
 

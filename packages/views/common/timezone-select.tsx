@@ -6,7 +6,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@tandem/ui/components/ui/select";
+} from "@agora/ui/components/ui/select";
 
 // Curated fallback list used when the runtime lacks `Intl.supportedValuesOf`.
 // Exported so every timezone picker draws from one source instead of

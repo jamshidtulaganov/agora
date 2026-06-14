@@ -1,4 +1,4 @@
-import type { TimelineEntry } from "@tandem/core/types";
+import type { TimelineEntry } from "@agora/core/types";
 
 /**
  * Stable-ascending sort for flat TimelineEntry[] caches.

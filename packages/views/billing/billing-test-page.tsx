@@ -36,21 +36,21 @@ import {
   useCreateCloudBillingCheckoutSession,
   useCreateCloudBillingPortalSession,
   useInvalidateBillingDataAfterCredit,
-} from "@tandem/core/billing";
+} from "@agora/core/billing";
 import type {
   BillingBatch,
   BillingPriceTier,
   BillingTopup,
   BillingTransaction,
-} from "@tandem/core/types";
-import { Button } from "@tandem/ui/components/ui/button";
+} from "@agora/core/types";
+import { Button } from "@agora/ui/components/ui/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@tandem/ui/components/ui/card";
+} from "@agora/ui/components/ui/card";
 import { useT } from "../i18n";
 import { useNavigation } from "../navigation";
 

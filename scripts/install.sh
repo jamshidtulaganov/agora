@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tandem installer — installs the CLI and optionally provisions a self-host server.
+# Agora installer — installs the CLI and optionally provisions a self-host server.
 #
 # Install / upgrade CLI only:
 #   curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash
@@ -7,7 +7,7 @@
 # Install CLI + provision self-host server:
 #   curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash -s -- --with-server
 #
-# After installation, run `tandem setup` to configure your environment.
+# After installation, run `agora setup` to configure your environment.
 #
 set -euo pipefail
 
@@ -16,8 +16,8 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 REPO_URL="https://github.com/multica-ai/multica.git"
 REPO_WEB_URL="https://github.com/multica-ai/multica"  # without .git, for GitHub web APIs
-INSTALL_DIR="${TANDEM_INSTALL_DIR:-$HOME/.tandem/server}"
-BREW_PACKAGE="tandem-ai/tap/tandem"
+INSTALL_DIR="${AGORA_INSTALL_DIR:-$HOME/.agora/server}"
+BREW_PACKAGE="agora-ai/tap/agora"
 
 # Colors (disabled when not a terminal)
 if [ -t 1 ] || [ -t 2 ]; then
@@ -88,7 +88,7 @@ detect_os() {
     MINGW*|MSYS*|CYGWIN*)
             fail "This script does not support Windows. Use the PowerShell installer instead:
   irm https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.ps1 | iex" ;;
-    *)      fail "Unsupported operating system: $(uname -s). Tandem supports macOS, Linux, and Windows." ;;
+    *)      fail "Unsupported operating system: $(uname -s). Agora supports macOS, Linux, and Windows." ;;
   esac
 
   ARCH="$(uname -m)"
@@ -112,10 +112,10 @@ _dump_brew_log() {
 }
 
 install_cli_brew() {
-  info "Installing Tandem CLI via Homebrew..."
+  info "Installing Agora CLI via Homebrew..."
   local brew_log
   brew_log=$(mktemp)
-  if ! brew tap tandem-ai/tap >"$brew_log" 2>&1; then
+  if ! brew tap agora-ai/tap >"$brew_log" 2>&1; then
     warn "Failed to add Homebrew tap. Falling back to GitHub Releases binary install."
     _dump_brew_log "$brew_log"
     rm -f "$brew_log"
@@ -125,21 +125,21 @@ install_cli_brew() {
   if ! brew install "$BREW_PACKAGE" >"$brew_log" 2>&1; then
     if brew list "$BREW_PACKAGE" >/dev/null 2>&1; then
       rm -f "$brew_log"
-      ok "Tandem CLI already installed via Homebrew"
+      ok "Agora CLI already installed via Homebrew"
     else
-      warn "Failed to install tandem via Homebrew. Falling back to GitHub Releases binary install."
+      warn "Failed to install agora via Homebrew. Falling back to GitHub Releases binary install."
       _dump_brew_log "$brew_log"
       rm -f "$brew_log"
       return 1
     fi
   else
     rm -f "$brew_log"
-    ok "Tandem CLI installed via Homebrew"
+    ok "Agora CLI installed via Homebrew"
   fi
 }
 
 install_cli_binary() {
-  info "Installing Tandem CLI from GitHub Releases..."
+  info "Installing Agora CLI from GitHub Releases..."
 
   # Get latest release tag
   local latest
@@ -149,30 +149,30 @@ install_cli_binary() {
   fi
 
   local version="${latest#v}"
-  local url="https://github.com/multica-ai/multica/releases/download/${latest}/tandem-cli-${version}-${OS}-${ARCH}.tar.gz"
+  local url="https://github.com/multica-ai/multica/releases/download/${latest}/agora-cli-${version}-${OS}-${ARCH}.tar.gz"
   local tmp_dir
   tmp_dir=$(mktemp -d)
 
   info "Downloading $url ..."
-  if ! curl -fsSL "$url" -o "$tmp_dir/tandem.tar.gz"; then
+  if ! curl -fsSL "$url" -o "$tmp_dir/agora.tar.gz"; then
     rm -rf "$tmp_dir"
     fail "Failed to download CLI binary."
   fi
 
-  tar -xzf "$tmp_dir/tandem.tar.gz" -C "$tmp_dir" tandem
+  tar -xzf "$tmp_dir/agora.tar.gz" -C "$tmp_dir" agora
 
   # Try /usr/local/bin first, fall back to ~/.local/bin. Tests and scripted
-  # installs can override the first choice with TANDEM_BIN_DIR.
-  local bin_dir="${TANDEM_BIN_DIR:-/usr/local/bin}"
+  # installs can override the first choice with AGORA_BIN_DIR.
+  local bin_dir="${AGORA_BIN_DIR:-/usr/local/bin}"
   if [ -w "$bin_dir" ]; then
-    mv "$tmp_dir/tandem" "$bin_dir/tandem"
+    mv "$tmp_dir/agora" "$bin_dir/agora"
   elif command_exists sudo; then
-    sudo mv "$tmp_dir/tandem" "$bin_dir/tandem"
+    sudo mv "$tmp_dir/agora" "$bin_dir/agora"
   else
     bin_dir="$HOME/.local/bin"
     mkdir -p "$bin_dir"
-    mv "$tmp_dir/tandem" "$bin_dir/tandem"
-    chmod +x "$bin_dir/tandem"
+    mv "$tmp_dir/agora" "$bin_dir/agora"
+    chmod +x "$bin_dir/agora"
     # Add to PATH if not already there
     if ! echo "$PATH" | tr ':' '\n' | grep -q "^$bin_dir$"; then
       export PATH="$bin_dir:$PATH"
@@ -181,7 +181,7 @@ install_cli_binary() {
   fi
 
   rm -rf "$tmp_dir"
-  ok "Tandem CLI installed to $bin_dir/tandem"
+  ok "Agora CLI installed to $bin_dir/agora"
 }
 
 add_to_path() {
@@ -189,7 +189,7 @@ add_to_path() {
   local line="export PATH=\"$dir:\$PATH\""
   for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
     if [ -f "$rc" ] && ! grep -qF "$dir" "$rc"; then
-      printf '\n# Added by Tandem installer\n%s\n' "$line" >> "$rc"
+      printf '\n# Added by Agora installer\n%s\n' "$line" >> "$rc"
     fi
   done
 }
@@ -200,8 +200,8 @@ get_latest_version() {
 }
 
 get_selfhost_ref() {
-  if [ -n "${TANDEM_SELFHOST_REF:-}" ]; then
-    printf '%s' "$TANDEM_SELFHOST_REF"
+  if [ -n "${AGORA_SELFHOST_REF:-}" ]; then
+    printf '%s' "$AGORA_SELFHOST_REF"
     return
   fi
 
@@ -249,21 +249,21 @@ pull_official_selfhost_images() {
 }
 
 upgrade_cli_brew() {
-  info "Upgrading Tandem CLI via Homebrew..."
+  info "Upgrading Agora CLI via Homebrew..."
   brew update 2>/dev/null || true
   if brew upgrade "$BREW_PACKAGE" 2>/dev/null; then
-    ok "Tandem CLI upgraded via Homebrew"
+    ok "Agora CLI upgraded via Homebrew"
   else
     # brew upgrade exits non-zero if already up to date
-    ok "Tandem CLI is already the latest version"
+    ok "Agora CLI is already the latest version"
   fi
 }
 
 install_cli() {
-  if command_exists tandem; then
+  if command_exists agora; then
     local current_ver
-    # `tandem version` outputs "tandem v0.1.13 (commit: abc1234)" — extract just the version
-    current_ver=$(tandem version 2>/dev/null | awk '{print $2}' || echo "unknown")
+    # `agora version` outputs "agora v0.1.13 (commit: abc1234)" — extract just the version
+    current_ver=$(agora version 2>/dev/null | awk '{print $2}' || echo "unknown")
 
     local latest_ver
     latest_ver=$(get_latest_version)
@@ -273,11 +273,11 @@ install_cli() {
     local latest_cmp="${latest_ver#v}"
 
     if [ -z "$latest_ver" ] || [ "$current_cmp" = "$latest_cmp" ]; then
-      ok "Tandem CLI is up to date ($current_ver)"
+      ok "Agora CLI is up to date ($current_ver)"
       return 0
     fi
 
-    info "Tandem CLI $current_ver installed, latest is $latest_ver — upgrading..."
+    info "Agora CLI $current_ver installed, latest is $latest_ver — upgrading..."
     if command_exists brew && brew list "$BREW_PACKAGE" >/dev/null 2>&1; then
       upgrade_cli_brew
     else
@@ -285,8 +285,8 @@ install_cli() {
     fi
 
     local new_ver
-    new_ver=$(tandem version 2>/dev/null | awk '{print $2}' || echo "unknown")
-    ok "Tandem CLI upgraded ($current_ver → $new_ver)"
+    new_ver=$(agora version 2>/dev/null | awk '{print $2}' || echo "unknown")
+    ok "Agora CLI upgraded ($current_ver → $new_ver)"
     return 0
   fi
 
@@ -297,8 +297,8 @@ install_cli() {
   fi
 
   # Verify
-  if ! command_exists tandem; then
-    fail "CLI installed but 'tandem' not found on PATH. You may need to restart your shell."
+  if ! command_exists agora; then
+    fail "CLI installed but 'agora' not found on PATH. You may need to restart your shell."
   fi
 }
 
@@ -308,7 +308,7 @@ install_cli() {
 check_docker() {
   if ! command_exists docker; then
     printf "\n"
-    fail "Docker is not installed. Tandem self-hosting requires Docker and Docker Compose.
+    fail "Docker is not installed. Agora self-hosting requires Docker and Docker Compose.
 
 Install Docker:
   macOS:  https://docs.docker.com/desktop/install/mac-install/
@@ -328,7 +328,7 @@ After installing Docker, re-run this script with --with-server."
 # Server setup (self-host / --with-server)
 # ---------------------------------------------------------------------------
 setup_server() {
-  info "Setting up Tandem server..."
+  info "Setting up Agora server..."
   local server_ref
   server_ref=$(get_selfhost_ref)
   info "Using self-host assets from ${server_ref}..."
@@ -337,7 +337,7 @@ setup_server() {
     info "Updating existing installation at $INSTALL_DIR..."
     cd "$INSTALL_DIR"
   else
-    info "Cloning Tandem repository..."
+    info "Cloning Agora repository..."
     if ! command_exists git; then
       fail "Git is not installed. Please install git and re-run."
     fi
@@ -377,9 +377,9 @@ setup_server() {
   fi
 
   # Start Docker Compose
-  info "Pulling official Tandem images..."
+  info "Pulling official Agora images..."
   pull_official_selfhost_images
-  info "Starting Tandem services (this may take a few minutes on first run)..."
+  info "Starting Agora services (this may take a few minutes on first run)..."
   docker compose -f docker-compose.selfhost.yml up -d
 
   # Wait for health check
@@ -396,7 +396,7 @@ setup_server() {
   done
 
   if [ "$ready" = true ]; then
-    ok "Tandem server is running"
+    ok "Agora server is running"
   else
     warn "Server is still starting. You can check logs with:"
     echo "  cd $INSTALL_DIR && docker compose -f docker-compose.selfhost.yml logs"
@@ -410,7 +410,7 @@ setup_server() {
 # ---------------------------------------------------------------------------
 run_default() {
   printf "\n"
-  printf "${BOLD}  Tandem — Installer${RESET}\n"
+  printf "${BOLD}  Agora — Installer${RESET}\n"
   printf "\n"
 
   detect_os
@@ -418,13 +418,13 @@ run_default() {
 
   printf "\n"
   printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
-  printf "${BOLD}${GREEN}  ✓ Tandem CLI is ready!${RESET}\n"
+  printf "${BOLD}${GREEN}  ✓ Agora CLI is ready!${RESET}\n"
   printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
   printf "\n"
   printf "  ${BOLD}Next: configure your environment${RESET}\n"
   printf "\n"
-  printf "     ${CYAN}tandem setup${RESET}                # Connect to Tandem Cloud (tandem.dev)\n"
-  printf "     ${CYAN}tandem setup self-host${RESET}       # Connect to a self-hosted server\n"
+  printf "     ${CYAN}agora setup${RESET}                # Connect to Agora Cloud (agora.dev)\n"
+  printf "     ${CYAN}agora setup self-host${RESET}       # Connect to a self-hosted server\n"
   printf "\n"
   printf "  ${BOLD}Self-hosting?${RESET} Install the server first:\n"
   printf "     curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash -s -- --with-server\n"
@@ -436,7 +436,7 @@ run_default() {
 # ---------------------------------------------------------------------------
 run_with_server() {
   printf "\n"
-  printf "${BOLD}  Tandem — Self-Host Installer${RESET}\n"
+  printf "${BOLD}  Agora — Self-Host Installer${RESET}\n"
   printf "  Provisioning server infrastructure + installing CLI\n"
   printf "\n"
 
@@ -447,7 +447,7 @@ run_with_server() {
 
   printf "\n"
   printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
-  printf "${BOLD}${GREEN}  ✓ Tandem server is running and CLI is ready!${RESET}\n"
+  printf "${BOLD}${GREEN}  ✓ Agora server is running and CLI is ready!${RESET}\n"
   printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
   printf "\n"
   local frontend_port backend_port
@@ -459,7 +459,7 @@ run_with_server() {
   printf "\n"
   printf "  ${BOLD}Next: configure your CLI to connect${RESET}\n"
   printf "\n"
-  printf "     ${CYAN}tandem setup self-host${RESET}   # Configure + authenticate + start daemon\n"
+  printf "     ${CYAN}agora setup self-host${RESET}   # Configure + authenticate + start daemon\n"
   printf "\n"
   printf "  ${BOLD}Login:${RESET} configure ${CYAN}RESEND_API_KEY${RESET} in .env for email codes,\n"
   printf "  or read the generated code from backend logs when Resend is unset.\n"
@@ -474,7 +474,7 @@ run_with_server() {
 # ---------------------------------------------------------------------------
 run_stop() {
   printf "\n"
-  info "Stopping Tandem services..."
+  info "Stopping Agora services..."
 
   if [ -d "$INSTALL_DIR" ]; then
     cd "$INSTALL_DIR"
@@ -485,11 +485,11 @@ run_stop() {
       warn "No docker-compose.selfhost.yml found at $INSTALL_DIR"
     fi
   else
-    warn "No Tandem installation found at $INSTALL_DIR"
+    warn "No Agora installation found at $INSTALL_DIR"
   fi
 
-  if command_exists tandem; then
-    tandem daemon stop 2>/dev/null && ok "Daemon stopped" || true
+  if command_exists agora; then
+    agora daemon stop 2>/dev/null && ok "Daemon stopped" || true
   fi
 
   printf "\n"
@@ -509,20 +509,20 @@ main() {
       --help|-h)
         echo "Usage: install.sh [--with-server | --stop]"
         echo ""
-        echo "  (default)       Install / upgrade the Tandem CLI"
+        echo "  (default)       Install / upgrade the Agora CLI"
         echo "  --with-server   Install CLI + provision a self-host server (Docker)"
         echo "  --stop          Stop a self-hosted installation"
         echo ""
         echo "Environment variables:"
-        echo "  TANDEM_INSTALL_DIR   Self-host server install directory"
-        echo "                        (default: \$HOME/.tandem/server)"
-        echo "  TANDEM_BIN_DIR       Target directory for the CLI binary when"
+        echo "  AGORA_INSTALL_DIR   Self-host server install directory"
+        echo "                        (default: \$HOME/.agora/server)"
+        echo "  AGORA_BIN_DIR       Target directory for the CLI binary when"
         echo "                        installing from GitHub Releases"
         echo "                        (default: /usr/local/bin, then \$HOME/.local/bin)"
-        echo "  TANDEM_SELFHOST_REF  Git ref to check out for self-host assets"
+        echo "  AGORA_SELFHOST_REF  Git ref to check out for self-host assets"
         echo "                        (default: latest release tag, falling back to main)"
         echo ""
-        echo "After installation, run 'tandem setup' to configure your environment."
+        echo "After installation, run 'agora setup' to configure your environment."
         exit 0
         ;;
       *) warn "Unknown option: $1" ;;

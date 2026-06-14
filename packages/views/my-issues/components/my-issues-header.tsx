@@ -3,17 +3,17 @@
 import { useMemo } from "react";
 import { useStore } from "zustand";
 import { ChevronDown } from "lucide-react";
-import { Button } from "@tandem/ui/components/ui/button";
+import { Button } from "@agora/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from "@tandem/ui/components/ui/dropdown-menu";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@tandem/ui/components/ui/tooltip";
-import type { Issue } from "@tandem/core/types";
-import { myIssuesViewStore, type MyIssuesScope } from "@tandem/core/issues/stores/my-issues-view-store";
+} from "@agora/ui/components/ui/dropdown-menu";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@agora/ui/components/ui/tooltip";
+import type { Issue } from "@agora/core/types";
+import { myIssuesViewStore, type MyIssuesScope } from "@agora/core/issues/stores/my-issues-view-store";
 import { useT } from "../../i18n";
 import { WorkspaceAgentWorkingChip } from "../../issues/components/workspace-agent-working-chip";
 import { IssueDisplayControls } from "../../issues/components/issues-header";

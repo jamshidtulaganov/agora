@@ -6,12 +6,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@tandem/ui/components/ui/dropdown-menu";
-import { useModalStore } from "@tandem/core/modals";
+} from "@agora/ui/components/ui/dropdown-menu";
+import { useModalStore } from "@agora/core/modals";
 import { useT } from "../i18n";
 
-const DOCS_URL = "https://tandem.dev/docs";
-const CHANGELOG_URL = "https://tandem.dev/changelog";
+const DOCS_URL = "https://agora.dev/docs";
+const CHANGELOG_URL = "https://agora.dev/changelog";
 
 export function HelpLauncher() {
   const { t } = useT("layout");

@@ -4,29 +4,29 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeftRight, Check, ChevronRight, Maximize2, Minimize2, X as XIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { DialogTitle } from "@tandem/ui/components/ui/dialog";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Switch } from "@tandem/ui/components/ui/switch";
-import { api, ApiError } from "@tandem/core/api";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { useCurrentWorkspace } from "@tandem/core/paths";
-import { agentListOptions, squadListOptions } from "@tandem/core/workspace/queries";
-import { projectListOptions } from "@tandem/core/projects/queries";
+import { DialogTitle } from "@agora/ui/components/ui/dialog";
+import { Button } from "@agora/ui/components/ui/button";
+import { Switch } from "@agora/ui/components/ui/switch";
+import { api, ApiError } from "@agora/core/api";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { useCurrentWorkspace } from "@agora/core/paths";
+import { agentListOptions, squadListOptions } from "@agora/core/workspace/queries";
+import { projectListOptions } from "@agora/core/projects/queries";
 import {
   useQuickCreateStore,
   type QuickCreateActorType,
-} from "@tandem/core/issues/stores/quick-create-store";
-import { useIssueDraftStore } from "@tandem/core/issues/stores/draft-store";
-import { useCreateModeStore } from "@tandem/core/issues/stores/create-mode-store";
+} from "@agora/core/issues/stores/quick-create-store";
+import { useIssueDraftStore } from "@agora/core/issues/stores/draft-store";
+import { useCreateModeStore } from "@agora/core/issues/stores/create-mode-store";
 import {
   runtimeListOptions,
   checkQuickCreateCliVersion,
   readRuntimeCliVersion,
   MIN_QUICK_CREATE_CLI_VERSION,
-} from "@tandem/core/runtimes";
-import { useFileUpload } from "@tandem/core/hooks/use-file-upload";
-import { formatShortcut, modKey, enterKey } from "@tandem/core/platform";
-import { contentReferencesAttachment, type Agent, type Attachment, type Squad } from "@tandem/core/types";
+} from "@agora/core/runtimes";
+import { useFileUpload } from "@agora/core/hooks/use-file-upload";
+import { formatShortcut, modKey, enterKey } from "@agora/core/platform";
+import { contentReferencesAttachment, type Agent, type Attachment, type Squad } from "@agora/core/types";
 import { ActorAvatar } from "../common/actor-avatar";
 import { PillButton } from "../common/pill-button";
 import { ProjectPicker } from "../projects/components/project-picker";
@@ -37,15 +37,15 @@ import {
   PickerSection,
   PickerEmpty,
 } from "../issues/components/pickers/property-picker";
-import { useAuthStore } from "@tandem/core/auth";
-import { memberListOptions } from "@tandem/core/workspace/queries";
+import { useAuthStore } from "@agora/core/auth";
+import { memberListOptions } from "@agora/core/workspace/queries";
 import {
   ContentEditor,
   type ContentEditorRef,
   useFileDropZone,
   FileDropOverlay,
 } from "../editor";
-import { FileUploadButton } from "@tandem/ui/components/common/file-upload-button";
+import { FileUploadButton } from "@agora/ui/components/common/file-upload-button";
 import { useT } from "../i18n";
 import { matchesPinyin } from "../editor/extensions/pinyin-match";
 
@@ -225,7 +225,7 @@ export function AgentCreatePanel({
   }, [projectsLoaded, projects, projectId, lastProjectId, setLastProjectId]);
 
   // Daemon CLI version gate. The agent-create flow needs the runtime's
-  // bundled tandem CLI to be ≥ MIN_QUICK_CREATE_CLI_VERSION; older
+  // bundled agora CLI to be ≥ MIN_QUICK_CREATE_CLI_VERSION; older
   // daemons handle attachments and partial-failure retries incorrectly
   // (see PR #1851 / MUL-1496). Pre-check on the picker so the user gets
   // immediate feedback instead of waiting for the inbox failure; the

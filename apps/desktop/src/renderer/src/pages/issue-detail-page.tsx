@@ -1,8 +1,8 @@
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { IssueDetail } from "@tandem/views/issues/components";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { issueDetailOptions } from "@tandem/core/issues/queries";
+import { IssueDetail } from "@agora/views/issues/components";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { issueDetailOptions } from "@agora/core/issues/queries";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 
 export function IssueDetailPage() {

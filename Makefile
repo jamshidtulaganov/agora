@@ -1,4 +1,4 @@
-.PHONY: help makehelp dev server daemon cli tandem build test migrate-up migrate-down sqlc seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree db-up db-down db-reset selfhost selfhost-build selfhost-stop
+.PHONY: help makehelp dev server daemon cli agora build test migrate-up migrate-down sqlc seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree db-up db-down db-reset selfhost selfhost-build selfhost-stop
 
 MAIN_ENV_FILE ?= .env
 WORKTREE_ENV_FILE ?= .env.worktree
@@ -8,24 +8,24 @@ ifneq ($(wildcard $(ENV_FILE)),)
 include $(ENV_FILE)
 endif
 
-POSTGRES_DB ?= tandem
-POSTGRES_USER ?= tandem
-POSTGRES_PASSWORD ?= tandem
+POSTGRES_DB ?= agora
+POSTGRES_USER ?= agora
+POSTGRES_PASSWORD ?= agora
 POSTGRES_PORT ?= 5432
 PORT := $(or $(BACKEND_PORT),$(API_PORT),$(SERVER_PORT),$(PORT),8080)
 FRONTEND_PORT ?= 3000
 FRONTEND_ORIGIN ?= http://localhost:$(FRONTEND_PORT)
-TANDEM_APP_URL ?= $(FRONTEND_ORIGIN)
+AGORA_APP_URL ?= $(FRONTEND_ORIGIN)
 DATABASE_URL ?= postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=disable
 NEXT_PUBLIC_API_URL ?= http://localhost:$(PORT)
 NEXT_PUBLIC_WS_URL ?= ws://localhost:$(PORT)/ws
 GOOGLE_REDIRECT_URI ?= $(FRONTEND_ORIGIN)/auth/callback
-TANDEM_SERVER_URL ?= ws://localhost:$(PORT)/ws
+AGORA_SERVER_URL ?= ws://localhost:$(PORT)/ws
 LOCAL_UPLOAD_BASE_URL ?= http://localhost:$(PORT)
 
 export
 
-TANDEM_ARGS ?= $(ARGS)
+AGORA_ARGS ?= $(ARGS)
 
 COMPOSE := docker compose
 
@@ -70,15 +70,15 @@ selfhost: ## Create .env if needed, then pull and start the official self-hosted
 		fi; \
 		echo "==> Generated random JWT_SECRET and POSTGRES_PASSWORD"; \
 	fi
-	@echo "==> Pulling official Tandem images..."
+	@echo "==> Pulling official Agora images..."
 	@if ! docker compose -f docker-compose.selfhost.yml pull; then \
 		echo ""; \
-		echo "Official images for tag '$${TANDEM_IMAGE_TAG:-latest}' are not published yet."; \
+		echo "Official images for tag '$${AGORA_IMAGE_TAG:-latest}' are not published yet."; \
 		echo "If this is before the first GHCR release, build from the current checkout:"; \
 		echo "  make selfhost-build"; \
 		exit 1; \
 	fi
-	@echo "==> Starting Tandem via Docker Compose..."
+	@echo "==> Starting Agora via Docker Compose..."
 	docker compose -f docker-compose.selfhost.yml up -d
 	@echo "==> Waiting for backend to be ready..."
 	@for i in $$(seq 1 30); do \
@@ -89,19 +89,19 @@ selfhost: ## Create .env if needed, then pull and start the official self-hosted
 	done
 	@if curl -sf http://localhost:$${PORT:-8080}/health > /dev/null 2>&1; then \
 		echo ""; \
-		echo "✓ Tandem is running!"; \
+		echo "✓ Agora is running!"; \
 		echo "  Frontend: http://localhost:$${FRONTEND_PORT:-3000}"; \
 		echo "  Backend:  http://localhost:$${PORT:-8080}"; \
 		echo ""; \
-		echo "Images: $${TANDEM_BACKEND_IMAGE:-ghcr.io/multica-ai/multica-backend}:$${TANDEM_IMAGE_TAG:-latest}"; \
-		echo "        $${TANDEM_WEB_IMAGE:-ghcr.io/multica-ai/multica-web}:$${TANDEM_IMAGE_TAG:-latest}"; \
+		echo "Images: $${AGORA_BACKEND_IMAGE:-ghcr.io/multica-ai/multica-backend}:$${AGORA_IMAGE_TAG:-latest}"; \
+		echo "        $${AGORA_WEB_IMAGE:-ghcr.io/multica-ai/multica-web}:$${AGORA_IMAGE_TAG:-latest}"; \
 		echo ""; \
 		echo "Log in: configure RESEND_API_KEY in .env for email codes,"; \
 		echo "        or read the generated code from backend logs when Resend is unset."; \
 		echo ""; \
 		echo "Next — install the CLI and connect your machine:"; \
-		echo "  brew install tandem-ai/tap/tandem"; \
-		echo "  tandem setup self-host"; \
+		echo "  brew install agora-ai/tap/agora"; \
+		echo "  agora setup self-host"; \
 	else \
 		echo ""; \
 		echo "Services are still starting. Check logs:"; \
@@ -125,7 +125,7 @@ selfhost-build: ## Build backend/web from the current checkout and start the sel
 		fi; \
 		echo "==> Generated random JWT_SECRET and POSTGRES_PASSWORD"; \
 	fi
-	@echo "==> Building Tandem from the current checkout..."
+	@echo "==> Building Agora from the current checkout..."
 	docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build
 	@echo "==> Waiting for backend to be ready..."
 	@for i in $$(seq 1 30); do \
@@ -136,7 +136,7 @@ selfhost-build: ## Build backend/web from the current checkout and start the sel
 	done
 	@if curl -sf http://localhost:$${PORT:-8080}/health > /dev/null 2>&1; then \
 		echo ""; \
-		echo "✓ Tandem is running!"; \
+		echo "✓ Agora is running!"; \
 		echo "  Frontend: http://localhost:$${FRONTEND_PORT:-3000}"; \
 		echo "  Backend:  http://localhost:$${PORT:-8080}"; \
 		echo ""; \
@@ -144,11 +144,11 @@ selfhost-build: ## Build backend/web from the current checkout and start the sel
 		echo "        or read the generated code from backend logs when Resend is unset."; \
 		echo ""; \
 		echo "Built images locally via docker-compose.selfhost.build.yml."; \
-		echo "Local tags: tandem-backend:dev and tandem-web:dev."; \
+		echo "Local tags: agora-backend:dev and agora-web:dev."; \
 		echo ""; \
 		echo "Next — install the CLI and connect your machine:"; \
-		echo "  brew install tandem-ai/tap/tandem"; \
-		echo "  tandem setup self-host"; \
+		echo "  brew install agora-ai/tap/agora"; \
+		echo "  agora setup self-host"; \
 	else \
 		echo ""; \
 		echo "Services are still starting. Check logs:"; \
@@ -156,7 +156,7 @@ selfhost-build: ## Build backend/web from the current checkout and start the sel
 	fi
 
 selfhost-stop: ## Stop the self-hosted Docker Compose stack
-	@echo "==> Stopping Tandem services..."
+	@echo "==> Stopping Agora services..."
 	docker compose -f docker-compose.selfhost.yml down
 	@echo "✓ All services stopped."
 
@@ -275,13 +275,13 @@ server: ## Run only the Go server for the current checkout
 	cd server && go run ./cmd/server
 
 daemon: ## Restart the local agent daemon using the CLI's stored auth/session
-	@$(MAKE) tandem TANDEM_ARGS="daemon restart --profile local"
+	@$(MAKE) agora AGORA_ARGS="daemon restart --profile local"
 
-cli: ## Run the tandem CLI with ARGS or TANDEM_ARGS from source
-	@$(MAKE) tandem TANDEM_ARGS="$(TANDEM_ARGS)"
+cli: ## Run the agora CLI with ARGS or AGORA_ARGS from source
+	@$(MAKE) agora AGORA_ARGS="$(AGORA_ARGS)"
 
-tandem: ## Run the tandem CLI entrypoint directly from the Go source tree
-	cd server && go run ./cmd/tandem $(TANDEM_ARGS)
+agora: ## Run the agora CLI entrypoint directly from the Go source tree
+	cd server && go run ./cmd/agora $(AGORA_ARGS)
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
@@ -289,7 +289,7 @@ DATE    ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 
 build: ## Build the server, CLI, and migrate binaries into server/bin
 	cd server && go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT)" -o bin/server ./cmd/server
-	cd server && go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" -o bin/tandem ./cmd/tandem
+	cd server && go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" -o bin/agora ./cmd/agora
 	cd server && go build -o bin/migrate ./cmd/migrate
 
 test: ## Run Go tests after ensuring the target DB exists and migrations are applied

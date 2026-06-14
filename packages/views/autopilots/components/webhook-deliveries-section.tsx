@@ -18,25 +18,25 @@ import {
   autopilotDeliveriesOptions,
   autopilotDeliveryOptions,
   useReplayAutopilotDelivery,
-} from "@tandem/core/autopilots";
-import { useWorkspaceId } from "@tandem/core/hooks";
-import { Skeleton } from "@tandem/ui/components/ui/skeleton";
-import { Button } from "@tandem/ui/components/ui/button";
-import { Badge } from "@tandem/ui/components/ui/badge";
+} from "@agora/core/autopilots";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import { Button } from "@agora/ui/components/ui/button";
+import { Badge } from "@agora/ui/components/ui/badge";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
-} from "@tandem/ui/components/ui/dialog";
-import { cn } from "@tandem/ui/lib/utils";
-import { copyText } from "@tandem/ui/lib/clipboard";
+} from "@agora/ui/components/ui/dialog";
+import { cn } from "@agora/ui/lib/utils";
+import { copyText } from "@agora/ui/lib/clipboard";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 import type {
   WebhookDelivery,
   WebhookDeliveryStatus,
   WebhookSignatureStatus,
-} from "@tandem/core/types";
+} from "@agora/core/types";
 
 // --- Status visuals -------------------------------------------------------
 

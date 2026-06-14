@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { Issue } from "@tandem/core/types";
-import { api } from "@tandem/core/api";
+import type { Issue } from "@agora/core/types";
+import { api } from "@agora/core/api";
 import {
   Command,
   CommandDialog,
@@ -11,7 +11,7 @@ import {
   CommandEmpty,
   CommandGroup,
   CommandItem,
-} from "@tandem/ui/components/ui/command";
+} from "@agora/ui/components/ui/command";
 import { StatusIcon } from "../issues/components/status-icon";
 import { useT } from "../i18n";
 

@@ -35,11 +35,11 @@ describe("prefixLocale", () => {
   });
 
   it("leaves external URLs alone", () => {
-    expect(prefixLocale("https://tandem.dev/download", "zh")).toBe(
-      "https://tandem.dev/download",
+    expect(prefixLocale("https://agora.dev/download", "zh")).toBe(
+      "https://agora.dev/download",
     );
-    expect(prefixLocale("mailto:hello@tandem.dev", "zh")).toBe(
-      "mailto:hello@tandem.dev",
+    expect(prefixLocale("mailto:hello@agora.dev", "zh")).toBe(
+      "mailto:hello@agora.dev",
     );
     expect(prefixLocale("tel:+1234567890", "zh")).toBe("tel:+1234567890");
   });

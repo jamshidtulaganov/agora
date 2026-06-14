@@ -12,8 +12,8 @@
  * (`useIssuesRealtime`) don't have to know about scope.
  *
  * `IssuesScope` is defined locally rather than imported from
- * `@tandem/core/issues/stores/issues-scope-store` — mobile only
- * `import type` from `@tandem/core/types/*` per Sharing Principles, and
+ * `@agora/core/issues/stores/issues-scope-store` — mobile only
+ * `import type` from `@agora/core/types/*` per Sharing Principles, and
  * the union is small enough that a duplicated literal is preferable to a
  * cross-package type import hop.
  *
@@ -26,7 +26,7 @@
  * to its routing model, not an invariant mobile should mirror).
  */
 import { create } from "zustand";
-import type { IssuePriority, IssueStatus } from "@tandem/core/types";
+import type { IssuePriority, IssueStatus } from "@agora/core/types";
 
 export type IssuesScope = "all" | "members" | "agents";
 

@@ -3,9 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
-import { TandemIcon } from "@tandem/ui/components/common/tandem-icon";
-import { cn } from "@tandem/ui/lib/utils";
-import { useAuthStore } from "@tandem/core/auth";
+import { AgoraIcon } from "@agora/ui/components/common/agora-icon";
+import { cn } from "@agora/ui/lib/utils";
+import { useAuthStore } from "@agora/core/auth";
 import { docsHrefForLocale, useLocale } from "../i18n";
 import { GitHubMark, githubUrl, headerButtonClassName } from "./shared";
 
@@ -38,7 +38,7 @@ export function LandingHeader({
       <div className="mx-auto flex h-[76px] max-w-[1320px] items-center justify-between px-4 sm:px-6 lg:px-8">
         <div className="flex min-w-0 items-center gap-6 lg:gap-8">
           <Link href="/" className="flex shrink-0 items-center gap-3">
-            <TandemIcon
+            <AgoraIcon
               className={cn(
                 "size-5",
                 variant === "dark" ? "text-white" : "text-[#0a0d12]",
@@ -51,7 +51,7 @@ export function LandingHeader({
                 variant === "dark" ? "text-white/92" : "text-[#0a0d12]",
               )}
             >
-              tandem
+              agora
             </span>
           </Link>
 

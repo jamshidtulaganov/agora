@@ -5,13 +5,13 @@ import {
   QueryClientProvider,
   QueryObserver,
 } from "@tanstack/react-query";
-import { setApiInstance } from "@tandem/core/api";
-import { agentTaskSnapshotKeys, agentTasksKeys } from "@tandem/core/agents/queries";
-import { useBatchDeleteIssues, useDeleteIssue } from "@tandem/core/issues/mutations";
-import { issueKeys } from "@tandem/core/issues/queries";
-import { labelKeys } from "@tandem/core/labels/queries";
-import { WorkspaceSlugProvider } from "@tandem/core/paths";
-import { workspaceKeys } from "@tandem/core/workspace/queries";
+import { setApiInstance } from "@agora/core/api";
+import { agentTaskSnapshotKeys, agentTasksKeys } from "@agora/core/agents/queries";
+import { useBatchDeleteIssues, useDeleteIssue } from "@agora/core/issues/mutations";
+import { issueKeys } from "@agora/core/issues/queries";
+import { labelKeys } from "@agora/core/labels/queries";
+import { WorkspaceSlugProvider } from "@agora/core/paths";
+import { workspaceKeys } from "@agora/core/workspace/queries";
 import type {
   AgentTask,
   Attachment,
@@ -22,7 +22,7 @@ import type {
   ListIssuesCache,
   TimelineEntry,
   Workspace,
-} from "@tandem/core/types";
+} from "@agora/core/types";
 
 const WS_ID = "ws-1";
 const SLUG = "test";

@@ -3,8 +3,8 @@
 import { useRef, useState } from "react";
 import { ChevronDown, FileText, X } from "lucide-react";
 import { ContentEditor, type ContentEditorRef } from "../../editor";
-import { Button } from "@tandem/ui/components/ui/button";
-import { cn } from "@tandem/ui/lib/utils";
+import { Button } from "@agora/ui/components/ui/button";
+import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
 
 interface InstructionsEditorProps {

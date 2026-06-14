@@ -1,5 +1,5 @@
-import type { ChatMessage } from "@tandem/core/types";
-import type { ChatTimelineItem } from "@tandem/core/chat";
+import type { ChatMessage } from "@agora/core/types";
+import type { ChatTimelineItem } from "@agora/core/chat";
 
 /**
  * Split an assistant timeline into three regions for the conductor-style fold:

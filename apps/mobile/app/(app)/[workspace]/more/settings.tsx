@@ -16,7 +16,7 @@ import { Alert, ActivityIndicator, Pressable, ScrollView, View } from "react-nat
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import type { Workspace } from "@tandem/core/types";
+import type { Workspace } from "@agora/core/types";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -68,7 +68,7 @@ export default function SettingsPage() {
   const onSignOut = () => {
     Alert.alert(
       "Sign out",
-      "You'll need to sign in again to use Tandem on this device.",
+      "You'll need to sign in again to use Agora on this device.",
       [
         { text: "Cancel", style: "cancel" },
         {

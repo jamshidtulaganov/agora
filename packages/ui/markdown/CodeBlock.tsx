@@ -2,14 +2,14 @@ import * as React from 'react'
 import { codeToHtml, bundledLanguages, type BundledLanguage } from 'shiki'
 import { Copy, Check } from "lucide-react"
 import { useTranslation } from "react-i18next"
-import { Button } from "@tandem/ui/components/ui/button"
-import { Tooltip, TooltipTrigger, TooltipContent } from "@tandem/ui/components/ui/tooltip"
-import { cn } from '@tandem/ui/lib/utils'
+import { Button } from "@agora/ui/components/ui/button"
+import { Tooltip, TooltipTrigger, TooltipContent } from "@agora/ui/components/ui/tooltip"
+import { cn } from '@agora/ui/lib/utils'
 import { copyText } from '../lib/clipboard'
 import {
   CODE_LIGATURE_CLASS,
   CODE_LIGATURE_DESCENDANT_CLASS,
-} from '@tandem/ui/lib/code-style'
+} from '@agora/ui/lib/code-style'
 
 export interface CodeBlockProps {
   code: string

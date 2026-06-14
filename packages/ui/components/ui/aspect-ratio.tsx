@@ -1,4 +1,4 @@
-import { cn } from "@tandem/ui/lib/utils"
+import { cn } from "@agora/ui/lib/utils"
 
 function AspectRatio({
   ratio,
