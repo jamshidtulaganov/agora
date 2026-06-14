@@ -21,6 +21,7 @@ import { Button } from "@multica/ui/components/ui/button";
 import { cn } from "@multica/ui/lib/utils";
 import { useNavigation } from "../navigation";
 import { useT } from "../i18n";
+import { seedSdSkills } from "./sd-skills";
 import {
   buildUserContextSection,
   CREATE_AGENT_GUIDE_ISSUE_TITLE,
@@ -49,7 +50,7 @@ import {
  *
  *   "runtime":
  *     1. Full-screen loading veil ("Preparing your Helper…")
- *     2. Find-or-create a "Multica Helper" agent on the picked runtime
+ *     2. Find-or-create a "SD Helper" agent on the picked runtime
  *        — `listAgents` first to dedupe against re-entries, then
  *        `createAgent` with the localized instructions from
  *        `onboarding/templates/helper-instructions.ts`.
@@ -130,7 +131,7 @@ export function WelcomeAfterOnboarding() {
 // Runtime sub-template
 // ---------------------------------------------------------------------------
 
-const HELPER_AGENT_NAME = "Multica Helper";
+const HELPER_AGENT_NAME = "SD Helper";
 
 const HELPER_AVATAR_URL =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'%3E%3Cdefs%3E%3ClinearGradient id='t' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0%25' stop-color='%2323242C'/%3E%3Cstop offset='100%25' stop-color='%2313141A'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='128' height='128' rx='28' fill='url(%23t)'/%3E%3Cg stroke='%23FFFFFF' stroke-width='13' stroke-linecap='round'%3E%3Cline x1='64' y1='32' x2='64' y2='96'/%3E%3Cline x1='32' y1='64' x2='96' y2='64'/%3E%3Cline x1='41.4' y1='41.4' x2='86.6' y2='86.6'/%3E%3Cline x1='86.6' y1='41.4' x2='41.4' y2='86.6'/%3E%3C/g%3E%3C/svg%3E";
@@ -167,9 +168,16 @@ async function findOrCreateHelper(
         a.visibility === "workspace" &&
         !a.archived_at,
     );
-    if (found) return found;
+    if (found) {
+      // Fire-and-forget: seed the SD shared skills onto the helper agent so
+      // every dev's helper carries the same SalesDoctor context. Never
+      // blocks onboarding — `seedSdSkills` is best-effort and swallows its
+      // own errors.
+      void seedSdSkills(workspaceId, found.id);
+      return found;
+    }
     const lang = pickContentLang(language);
-    return api.createAgent({
+    const created = await api.createAgent({
       name: HELPER_AGENT_NAME,
       description: HELPER_DESCRIPTION[lang],
       instructions: HELPER_INSTRUCTIONS[lang],
@@ -179,6 +187,9 @@ async function findOrCreateHelper(
       max_concurrent_tasks: 6,
       template: "multica_helper",
     });
+    // Same fire-and-forget seed on the freshly created helper.
+    void seedSdSkills(workspaceId, created.id);
+    return created;
   })();
 
   pendingHelperSetup.set(key, promise);
@@ -318,11 +329,12 @@ function RuntimeWelcome({
   // Got it on the success view is what finally dismisses + navigates.
   const [successIssueId, setSuccessIssueId] = useState<string | null>(null);
 
-  // Resolve the role / use_case enum slugs to human-readable labels in
-  // the user's current locale, then build the markdown block that gets
-  // appended to every starter issue description. Memoized on t +
-  // i18n.language so a language switch refreshes everything in one
-  // re-render; bundle is rebuilt whenever the questionnaire row changes.
+  // SD fork: the acquisition survey (role / use_case) was removed, so the
+  // onboarding questionnaire is always empty and `buildUserContextSection`
+  // always returns "". We keep the call site (and the pure helper) intact
+  // for upstream-mergeability, but feed it empty label maps — the slug→label
+  // lookups for the deleted survey questions no longer exist. Memoized on
+  // t + i18n.language so a language switch refreshes the heading labels.
   const userContextLabels: UserContextLabels = useMemo(() => {
     const lang = pickContentLang(i18n.language);
     return {
@@ -332,28 +344,8 @@ function RuntimeWelcome({
         ($) => $.welcome_after_onboarding.user_context_use_case_label,
       ),
       listSeparator: lang === "zh" || lang === "ja" ? "、" : ", ",
-      role: {
-        engineer: t(($) => $.questions.role.engineer),
-        product: t(($) => $.questions.role.product),
-        designer: t(($) => $.questions.role.designer),
-        founder: t(($) => $.questions.role.founder),
-        marketing: t(($) => $.questions.role.marketing),
-        writer: t(($) => $.questions.role.writer),
-        research: t(($) => $.questions.role.research),
-        ops: t(($) => $.questions.role.ops),
-        student: t(($) => $.questions.role.student),
-        other: t(($) => $.questions.role.other),
-      },
-      useCase: {
-        ship_code: t(($) => $.questions.use_case.ship_code),
-        manage_team: t(($) => $.questions.use_case.manage_team),
-        personal_tasks: t(($) => $.questions.use_case.personal_tasks),
-        plan_research: t(($) => $.questions.use_case.plan_research),
-        write_publish: t(($) => $.questions.use_case.write_publish),
-        automate_ops: t(($) => $.questions.use_case.automate_ops),
-        evaluate: t(($) => $.questions.use_case.evaluate),
-        other: t(($) => $.questions.use_case.other),
-      },
+      role: {},
+      useCase: {},
     };
   }, [t, i18n.language]);
   const toggle = (id: StarterCardId) => {

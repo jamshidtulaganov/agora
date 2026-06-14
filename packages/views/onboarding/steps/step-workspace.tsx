@@ -8,7 +8,9 @@ import {
   Bot,
   FolderKanban,
   Inbox,
+  Layers,
   ListTodo,
+  Loader2,
   Lock,
   MoreHorizontal,
   Monitor,
@@ -21,7 +23,10 @@ import { Input } from "@multica/ui/components/ui/input";
 import { Label } from "@multica/ui/components/ui/label";
 import { useScrollFade } from "@multica/ui/hooks/use-scroll-fade";
 import { cn } from "@multica/ui/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
+import { api } from "@multica/core/api";
 import { useCreateWorkspace } from "@multica/core/workspace/mutations";
+import { workspaceKeys } from "@multica/core/workspace/queries";
 import type { Workspace } from "@multica/core/types";
 import { isImeComposing } from "@multica/core/utils";
 import { useConfigStore } from "@multica/core/config";
@@ -51,7 +56,7 @@ import { isReservedSlug } from "@multica/core/paths";
  * shared form's own button would fight the footer CTA.
  *
  * The create-fields block doubles as a pedagogical preview: the URL is
- * rendered as a `multica.ai/[slug]` pill, and a live `Issues will look
+ * rendered as a `salesdoctor/[slug]` pill, and a live `Issues will look
  * like ACME-123` line shows the user what their issue IDs will read
  * like before they've created anything.
  *
@@ -59,6 +64,39 @@ import { isReservedSlug } from "@multica/core/paths";
  * user toggles between them. No-existing path just shows the create
  * fields directly.
  */
+
+/**
+ * SD fork: the three SalesDoctor sibling projects, default-created as
+ * workspaces by the "Create all 3 workspaces" primary action below.
+ *
+ * Data flow: sd-cs → sd-main → sd-billing (reads); sd-billing pushes
+ * licences down. `slug === name` (lowercase, hyphen-safe) so the seeded
+ * URLs read cleanly. `repo` is attached to each workspace as its first
+ * repo so the seeded helper agent knows where the code lives.
+ */
+const SD_WORKSPACES = [
+  {
+    slug: "sd-main",
+    name: "sd-main",
+    description:
+      "Dealer CRM — system of record for daily ops: orders, agents & routes, clients & debt, warehouse, payments, audits, GPS, integrations & 80+ reports. Yii/PHP, MySQL (d0_).",
+    repo: "https://github.com/azizkh/sd",
+  },
+  {
+    slug: "sd-cs",
+    name: "sd-cs",
+    description:
+      "HQ Country Sales 3 — consolidated reporting & pivots (RFM/SKU/expeditor) across all dealers via read-only multi-DB. Yii 1.x, cs_* schema.",
+    repo: "https://github.com/azizkh/cs3",
+  },
+  {
+    slug: "sd-billing",
+    name: "sd-billing",
+    description:
+      "Platform-vendor subscriptions, licensing & feature-gating, payments (Click/Payme/Paynet/MBANK/P2P), daily settlement, dunning & partner portal. Yii 1.1, MySQL, Docker.",
+    repo: "https://github.com/azizkh/billing",
+  },
+] as const;
 
 function issuePrefix(slug: string): string {
   // Mirrors the server's default prefix derivation — first 4 chars of
@@ -140,6 +178,77 @@ export function StepWorkspace({
   };
 
   const createWorkspace = useCreateWorkspace();
+
+  // SD fork: bulk-seed the three SalesDoctor sibling workspaces. Idempotent
+  // and best-effort — dedups against the existing workspace list by slug,
+  // reuses any that already exist, and never blocks the user from continuing.
+  // Lands on sd-main when done (the system of record / daily-ops home).
+  const qc = useQueryClient();
+  const [seedingAll, setSeedingAll] = useState(false);
+
+  const handleCreateAllSdWorkspaces = async () => {
+    if (seedingAll || isCreating) return;
+    setSeedingAll(true);
+    try {
+      // Snapshot existing workspaces once so we can dedup by slug. Best-effort:
+      // if the list call fails, fall back to an empty set and let createWorkspace
+      // surface conflicts per-entry (which we swallow below).
+      let existingList: Workspace[] = [];
+      try {
+        existingList = await api.listWorkspaces();
+      } catch {
+        existingList = [];
+      }
+      const bySlug = new Map(existingList.map((w) => [w.slug, w]));
+
+      let landing: Workspace | null = null;
+      for (const entry of SD_WORKSPACES) {
+        let ws = bySlug.get(entry.slug) ?? null;
+        if (!ws) {
+          try {
+            ws = await api.createWorkspace({
+              name: entry.name,
+              slug: entry.slug,
+              description: entry.description,
+            });
+            bySlug.set(entry.slug, ws);
+          } catch {
+            // Slug conflict (created concurrently) or transient failure —
+            // skip this entry, keep seeding the rest. Never block onboarding.
+            ws = bySlug.get(entry.slug) ?? null;
+          }
+        }
+        if (ws) {
+          // Attach the repo idempotently: only set repos when the workspace
+          // has none yet, so re-running never clobbers a developer's edits.
+          if (!ws.repos || ws.repos.length === 0) {
+            try {
+              const updated = await api.updateWorkspace(ws.id, {
+                repos: [{ url: entry.repo, description: entry.description }],
+              });
+              ws = updated;
+              bySlug.set(entry.slug, updated);
+            } catch {
+              // Best-effort: a failed repo set never blocks landing.
+            }
+          }
+          if (entry.slug === "sd-main") landing = ws;
+        }
+      }
+
+      // Refresh the workspace-list cache so the sidebar / pickers see all three.
+      qc.invalidateQueries({ queryKey: workspaceKeys.list() });
+
+      const target = landing ?? bySlug.get("sd-main") ?? bySlug.get("sd-cs") ?? null;
+      if (target) {
+        await onCreated(target);
+      } else {
+        toast.error(t(($) => $.step_workspace.create_failed_toast));
+      }
+    } finally {
+      setSeedingAll(false);
+    }
+  };
 
   const handleCreate = () => {
     if (!canCreate || createWorkspace.isPending) return;
@@ -242,7 +351,7 @@ export function StepWorkspace({
         </Label>
         <div className="flex items-center rounded-md border bg-muted transition-colors focus-within:border-foreground">
           <span className="select-none pl-3 font-mono text-sm text-muted-foreground">
-            {"multica.ai/"}
+            {"salesdoctor/"}
           </span>
           <Input
             id="ws-slug"
@@ -284,7 +393,7 @@ export function StepWorkspace({
             <button
               type="button"
               onClick={onBack}
-              disabled={isCreating}
+              disabled={isCreating || seedingAll}
               className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
@@ -332,7 +441,30 @@ export function StepWorkspace({
                   : t(($) => $.step_workspace.creation_disabled_lede)}
             </p>
 
-            <div className="mt-10">
+            {/* SD fork: primary action — seed the three SalesDoctor sibling
+                workspaces in one click. Shown whenever workspace creation is
+                allowed; the manual name/slug form below stays as a secondary
+                fallback. */}
+            {!workspaceCreationDisabled && (
+              <div className="mt-10">
+                <SdWorkspacesPrimary
+                  pending={seedingAll}
+                  disabled={isCreating}
+                  onCreateAll={handleCreateAllSdWorkspaces}
+                />
+              </div>
+            )}
+
+            <div className={cn(!workspaceCreationDisabled ? "mt-8" : "mt-10")}>
+              {!workspaceCreationDisabled && (
+                <div className="mb-5 flex items-center gap-3">
+                  <span className="h-px flex-1 bg-border" />
+                  <span className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                    {t(($) => $.step_workspace.sd_manual_divider)}
+                  </span>
+                  <span className="h-px flex-1 bg-border" />
+                </div>
+              )}
               {reusing ? (
                 <div className="flex flex-col gap-3">
                   <ExistingWorkspaceCard
@@ -368,7 +500,11 @@ export function StepWorkspace({
                 >
                   {hint}
                 </span>
-                <Button size="lg" disabled={continueDisabled} onClick={onContinue}>
+                <Button
+                  size="lg"
+                  disabled={continueDisabled || seedingAll}
+                  onClick={onContinue}
+                >
                   {continueLabel}
                   <ArrowRight className="h-4 w-4" />
                 </Button>
@@ -394,6 +530,71 @@ export function StepWorkspace({
           )}
         </div>
       </aside>
+    </div>
+  );
+}
+
+/**
+ * SD fork: the recommended primary action on the workspace step — a single
+ * "Create all 3 workspaces" button that seeds the SalesDoctor sibling
+ * projects (sd-main / sd-cs / sd-billing) and lands the user on sd-main.
+ * The handler (in StepWorkspace) is idempotent and best-effort.
+ */
+function SdWorkspacesPrimary({
+  pending,
+  disabled,
+  onCreateAll,
+}: {
+  pending: boolean;
+  disabled: boolean;
+  onCreateAll: () => void;
+}) {
+  const { t } = useT("onboarding");
+  return (
+    <div className="rounded-lg border bg-card p-5">
+      <div className="flex items-start gap-3">
+        <div
+          aria-hidden
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted text-foreground"
+        >
+          <Layers className="h-4 w-4" />
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="text-[14.5px] font-medium text-foreground">
+            {t(($) => $.step_workspace.sd_primary_title)}
+          </div>
+          <div className="mt-0.5 text-[13px] leading-[1.5] text-muted-foreground">
+            {t(($) => $.step_workspace.sd_primary_subtitle)}
+          </div>
+        </div>
+      </div>
+      <ul className="mt-4 flex flex-col gap-1.5">
+        {SD_WORKSPACES.map((ws) => (
+          <li
+            key={ws.slug}
+            className="grid grid-cols-[auto_1fr] items-baseline gap-2 text-[13px] leading-[1.5]"
+          >
+            <span className="font-mono font-medium text-foreground">
+              {ws.name}
+            </span>
+            <span className="truncate text-muted-foreground">
+              {ws.description}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <Button
+        size="lg"
+        className="mt-5 w-full"
+        disabled={pending || disabled}
+        onClick={onCreateAll}
+      >
+        {pending && <Loader2 className="h-4 w-4 animate-spin" />}
+        {pending
+          ? t(($) => $.step_workspace.sd_primary_cta_pending)
+          : t(($) => $.step_workspace.sd_primary_cta)}
+        {!pending && <ArrowRight className="h-4 w-4" />}
+      </Button>
     </div>
   );
 }
@@ -444,7 +645,7 @@ function ExistingWorkspaceCard({
           {workspace.name}
         </div>
         <div className="truncate font-mono text-xs text-muted-foreground">
-          {`multica.ai/${workspace.slug}`}
+          {`salesdoctor/${workspace.slug}`}
         </div>
       </div>
       <RadioMark selected={selected} />
@@ -580,7 +781,7 @@ function WorkspacePreviewCard({
             {name}
           </div>
           <div className="truncate font-mono text-[11.5px] text-muted-foreground">
-            {`multica.ai/${slug}`}
+            {`salesdoctor/${slug}`}
           </div>
         </div>
         <Lock

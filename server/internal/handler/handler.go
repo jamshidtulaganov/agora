@@ -21,6 +21,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/daemonws"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/integrations/lark"
+	"github.com/multica-ai/multica/server/internal/integrations/telegram"
 	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
 	"github.com/multica-ai/multica/server/internal/middleware"
 	"github.com/multica-ai/multica/server/internal/realtime"
@@ -155,7 +156,13 @@ type Handler struct {
 	// process exit indefinitely if the pool is frozen — at worst the
 	// next replica waits the full TTL.
 	LarkHub *lark.Hub
-	cfg     Config
+	// Telegram bot-OTP login (PM bot DMs a 6-digit code). Both are wired in
+	// New() from env. telegramBot is nil when TELEGRAM_BOT_TOKEN is unset, so
+	// the start/verify handlers 503 and /api/config omits telegram_bot_username.
+	// telegramLogins is the single-node in-memory nonce->code store (5-min TTL).
+	telegramBot    *telegram.BotClient
+	telegramLogins *telegram.LoginStore
+	cfg            Config
 }
 
 func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *events.Bus, emailService *service.EmailService, store storage.Storage, cfSigner *auth.CloudFrontSigner, analyticsClient analytics.Client, cfg Config, daemonHubs ...*daemonws.Hub) *Handler {
@@ -184,7 +191,7 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 
 	taskSvc := service.NewTaskService(queries, txStarter, hub, bus, daemonHub)
 	taskSvc.Analytics = analyticsClient
-	return &Handler{
+	h := &Handler{
 		Queries:               queries,
 		DB:                    executor,
 		TxStarter:             txStarter,
@@ -210,8 +217,17 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 			BaseURL: cfg.CloudRuntimeFleetURL,
 			Timeout: cfg.CloudRuntimeFleetTimeout,
 		}),
-		cfg: cfg,
+		// Telegram bot-OTP login: read TELEGRAM_BOT_TOKEN now. nil when unset
+		// so handlers can 503 / the UI can hide the option. The login store is
+		// always allocated (cheap, in-memory) but unused until a bot exists.
+		telegramBot:    newTelegramBotFromEnv(),
+		telegramLogins: telegram.NewLoginStore(),
+		cfg:            cfg,
 	}
+	// Bitrix24 outbound status mirror. No-op when BITRIX_WEBHOOK_URL is unset,
+	// so self-hosted deployments without Bitrix pay nothing.
+	h.registerBitrixOutbound()
+	return h
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

@@ -53,6 +53,9 @@ export function AuthInitializer({
         configStore.getState().setAuthConfig({
           allowSignup: cfg.allow_signup,
           googleClientId: cfg.google_client_id,
+          // Only present when the Telegram bot is configured server-side
+          // (omitempty). Empty string keeps the Telegram button hidden.
+          telegramBotUsername: cfg.telegram_bot_username,
           // Old servers omit this field — treat that as "creation allowed"
           // (the managed-cloud default) rather than blocking the UI.
           workspaceCreationDisabled: cfg.workspace_creation_disabled === true,

@@ -349,7 +349,20 @@
     "status_running": "作業中",
     "status_completed": "完了",
     "status_failed": "失敗",
-    "status_cancelled": "キャンセル済み"
+    "status_cancelled": "キャンセル済み",
+    "view_pr_tooltip": "プルリクエストを表示",
+    "view_pr_aria": "プルリクエストを表示"
+  },
+  "slice_actions": {
+    "section": "AI アクション",
+    "scope_placeholder": "範囲（任意）— 例: ログインフォーム",
+    "action_draft_code": "コードを下書き",
+    "action_write_docs": "ドキュメントを作成",
+    "action_write_tests": "テストを作成",
+    "action_review_part": "一部をレビュー",
+    "no_agent_hint": "AI アクションを委任するにはエージェントを割り当ててください（自分自身でも可）。上の担当者ピッカーを使用します。",
+    "toast_fired": "AI アクションを送信しました。下書きは実行ログに表示されます。",
+    "toast_failed": "AI アクションの送信に失敗しました"
   },
   "terminate_dialog": {
     "title": "このタスクを停止しますか？",

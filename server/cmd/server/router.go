@@ -468,6 +468,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	r.With(authRL).Post("/auth/send-code", h.SendCode)
 	r.With(authVerifyRL).Post("/auth/verify-code", h.VerifyCode)
 	r.With(authRL).Post("/auth/google", h.GoogleLogin)
+	// Telegram bot-OTP login (PM bot DMs a 6-digit code). start mints the
+	// nonce/deep-link (authRL, same as send-code/google); verify exchanges
+	// nonce+code for a session (authVerifyRL, same per-IP budget as
+	// /auth/verify-code).
+	r.With(authRL).Post("/auth/telegram/start", h.TelegramStart)
+	r.With(authVerifyRL).Post("/auth/telegram/verify", h.TelegramVerify)
 	r.Post("/auth/logout", h.Logout)
 
 	// Public API
@@ -477,6 +483,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// Webhook ingress for autopilots. Outside the authenticated group on
 	// purpose: the bearer token in the URL path IS the credential. Workspace
 	// context is derived from the trigger row, never from request headers.
+	// Bitrix24 inbound task webhook (no Multica auth — an optional shared
+	// secret is checked in the handler via ?secret= / X-Bitrix-Secret).
+	// Always responds 200 so Bitrix never retry-storms.
+	r.With(h.BitrixWebhookRateLimit).Post("/bitrix/webhook", h.BitrixWebhook)
 	r.Post("/api/webhooks/autopilots/{token}", h.HandleAutopilotWebhook)
 	// GitHub App webhook (no Multica auth — requests are authenticated via
 	// HMAC-SHA256 signature in the handler) and post-install setup callback.
@@ -487,6 +497,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// only forward the bytes + the Stripe-Signature header; see
 	// HandleCloudBillingStripeWebhook for the rationale).
 	r.Post("/api/webhooks/stripe", h.HandleCloudBillingStripeWebhook)
+	// Telegram bot webhook (no Multica auth). Authenticated only by the
+	// optional X-Telegram-Bot-Api-Secret-Token header compared to
+	// TELEGRAM_WEBHOOK_SECRET inside the handler; always returns 200 to
+	// suppress Telegram retries.
+	r.Post("/telegram/webhook", h.TelegramWebhook)
 
 	// Daemon API routes (require daemon token or valid user token)
 	r.Route("/api/daemon", func(r chi.Router) {
@@ -532,6 +547,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// --- User-scoped routes (no workspace context required) ---
 		r.Get("/api/me", h.GetMe)
 		r.Patch("/api/me", h.UpdateMe)
+		// SD: external-identity mapping (e.g. Bitrix RESPONSIBLE_ID -> member).
+		r.Get("/api/me/links", h.ListMyLinks)
+		r.Post("/api/me/links/bitrix", h.LinkBitrixIdentity)
 		r.Patch("/api/me/onboarding", h.PatchOnboarding)
 		r.Post("/api/me/onboarding/complete", h.CompleteOnboarding)
 		r.Post("/api/me/onboarding/cloud-waitlist", h.JoinCloudWaitlist)
@@ -706,6 +724,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Delete("/", h.DeleteIssue)
 					r.Post("/comments/trigger-preview", h.PreviewCommentTriggers)
 					r.Post("/comments", h.CreateComment)
+					r.Post("/slice-actions", h.CreateSliceAction)
 					r.Get("/comments", h.ListComments)
 					r.Get("/timeline", h.ListTimeline)
 					r.Get("/subscribers", h.ListIssueSubscribers)

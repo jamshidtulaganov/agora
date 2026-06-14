@@ -20,9 +20,6 @@ import type { OnboardingStep } from "./types";
  * `packages/views/workspace/onboarding-helper-modal.tsx`.
  */
 export const ONBOARDING_STEP_ORDER: readonly OnboardingStep[] = [
-  "source",
-  "role",
-  "use_case",
   "workspace",
   "runtime",
 ] as const;

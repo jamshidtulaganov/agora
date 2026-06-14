@@ -3,11 +3,11 @@
     "step_of": "{{total}}단계 중 {{current}}단계"
   },
   "welcome": {
-    "wordmark": "Multica에 오신 것을 환영합니다",
+    "wordmark": "SD Developers에 오신 것을 환영합니다",
     "headline_line1": "AI 팀원과",
     "headline_line2": "하나의",
     "headline_emphasis": "워크스페이스에서.",
-    "lede": "동료에게 일을 맡기듯 작업을 할당하세요. 에이전트가 이슈를 맡고, 상태를 업데이트하고, 끝나면 댓글을 남깁니다.",
+    "lede": "SalesDoctor는 현장 영업, 밴 셀링, 머천다이징, 루트 회계를 위한 멀티테넌트 Distribution CRM입니다. 동료에게 일을 맡기듯 AI 팀원에게 작업을 할당하세요. 에이전트가 이슈를 맡고, 상태를 업데이트하고, 끝나면 댓글을 남깁니다.",
     "lede_web": "데스크톱에는 런타임이 포함되어 있어 따로 설치할 게 없습니다. 웹에서 계속하려면 내 CLI를 연결하세요.",
     "lede_desktop": "끝나면 실제 에이전트가 첫 이슈에 답하고 있을 겁니다.",
     "download_desktop": "데스크톱 다운로드",
@@ -43,65 +43,9 @@
     "cancel": "취소",
     "close": "닫기"
   },
-  "source_backfill": {
-    "eyebrow": "간단한 질문 하나",
-    "lede": "가입할 때 선택하지 않으셨더라고요. 어떤 사용자에게 Multica가 유용한지 파악하는 데 도움이 됩니다. 답하시면 바로 작업으로 돌아가실 수 있어요.",
-    "submit": "제출",
-    "hint_ready": "좋습니다. 준비되면 제출을 눌러주세요."
-  },
-  "questions": {
-    "eyebrow_about_you": "내 정보",
-    "source": {
-      "question": "Multica를 어디서 알게 되셨나요?",
-      "friends_colleagues": "친구 또는 동료",
-      "search": "Google / 검색",
-      "social_x": "X / Twitter",
-      "social_linkedin": "LinkedIn",
-      "social_youtube": "YouTube",
-      "social_github": "GitHub",
-      "social_misc": "기타 소셜",
-      "blog_newsletter": "블로그 / 뉴스레터",
-      "ai_assistant": "ChatGPT / Claude / Cursor",
-      "from_work": "직장에서",
-      "event_conference": "컨퍼런스 / 밋업",
-      "dont_remember": "기억나지 않음",
-      "other": "기타",
-      "other_placeholder": "예: 자주 듣는 팟캐스트"
-    },
-    "role": {
-      "question": "어떤 역할에 가장 가까우신가요?",
-      "engineer": "엔지니어 / 개발자",
-      "product": "프로덕트 매니저",
-      "designer": "디자이너",
-      "founder": "창업자 / 임원",
-      "marketing": "마케팅 / 그로스",
-      "writer": "작가 / 콘텐츠",
-      "research": "리서처 / 애널리스트",
-      "ops": "운영 / 프로젝트 관리",
-      "student": "학생 / 개인 사용",
-      "other": "기타",
-      "other_placeholder": "예: 교사, 지원팀 리드"
-    },
-    "use_case": {
-      "question": "Multica를 무엇에 쓰고 싶으신가요?",
-      "ship_code": "AI 에이전트와 코드 배포",
-      "manage_team": "팀 작업 관리",
-      "personal_tasks": "개인 작업 정리",
-      "plan_research": "기획, 브레인스토밍, 리서치",
-      "write_publish": "작성, 편집, 게시",
-      "automate_ops": "운영 및 워크플로 자동화",
-      "evaluate": "일단 둘러보기",
-      "other": "기타",
-      "other_placeholder": "예: 스터디 그룹 운영"
-    }
-  },
   "option_card": {
     "other_label": "기타",
     "other_aria": "다른 내용 입력"
-  },
-  "step_question": {
-    "hint_pick": "하나를 선택해 계속하세요. 말하고 싶지 않다면 건너뛸 수 있습니다.",
-    "hint_continue": "좋습니다. 준비되면 계속을 누르세요."
   },
   "runtime_aside": {
     "what_eyebrow": "에이전트 런타임이란?",
@@ -118,7 +62,7 @@
   "cli_install": {
     "copy_aria": "복사",
     "intro": "이 컴퓨터에서 에이전트를 실행하려면 에이전트 런타임(Claude Code, Codex, Cursor 등)이 필요합니다. 서버와 원격 개발 환경에서도 사용할 수 있습니다.",
-    "step1_label": "Multica CLI 설치",
+    "step1_label": "에이전트 런타임 설치",
     "step2_label": "데몬 시작"
   },
   "cloud_waitlist": {
@@ -196,18 +140,18 @@
     "error_close": "닫기",
     "user_context_heading": "내 정보",
     "user_context_role_label": "역할",
-    "user_context_use_case_label": "Multica로 하고 싶은 일",
+    "user_context_use_case_label": "SD Developers로 하고 싶은 일",
     "runtime": {
-      "greeting": "안녕하세요, Multica에 오신 것을 환영합니다",
+      "greeting": "안녕하세요, SD Developers에 오신 것을 환영합니다",
       "subtitle": "저는 첫 에이전트 어시스턴트입니다.",
-      "capabilities": "Multica 사용법은 무엇이든 물어보세요. 워크스페이스에서 이슈를 만들고, cron 작업을 설정하고, 새 에이전트를 만드는 일도 맡길 수 있습니다.",
+      "capabilities": "SD Developers 사용법은 무엇이든 물어보세요. 워크스페이스에서 이슈를 만들고, cron 작업을 설정하고, 새 에이전트를 만드는 일도 맡길 수 있습니다.",
       "section_label": "시작할 작업을 하나 이상 선택하세요:",
       "assign_empty": "하나 이상 선택",
       "assign_count": "작업 {{count}}개를 나에게 할당 →",
       "assign_count_plural": "작업 {{count}}개를 나에게 할당 →",
       "cards": {
         "intro": {
-          "subtitle": "Multica가 무엇이고 무엇을 할 수 있는지 1-2문단으로 설명하겠습니다."
+          "subtitle": "SD Developers가 무엇이고 무엇을 할 수 있는지 1-2문단으로 설명하겠습니다."
         },
         "tour": {
           "subtitle": "이슈, 에이전트, 스쿼드, 오토파일럿이 어떻게 맞물리는지 안내하겠습니다."
@@ -226,7 +170,7 @@
     },
     "skip": {
       "loading": "워크스페이스 설정 중...",
-      "title": "Multica에 오신 것을 환영합니다!",
+      "title": "SD Developers에 오신 것을 환영합니다!",
       "subtitle": "다음 단계를 돕기 위해 작업 두 개를 추가했습니다.",
       "got_it": "알겠습니다",
       "status_in_progress": "진행 중",
@@ -238,7 +182,7 @@
         },
         "create_agent": {
           "title": "첫 에이전트 만들기",
-          "subtitle": "런타임이 온라인이 되면 첫 Multica 에이전트를 만드세요."
+          "subtitle": "런타임이 온라인이 되면 첫 SD 에이전트를 만드세요."
         }
       }
     }
@@ -285,7 +229,7 @@
     "perk_invite": "팀원 초대 — 이 워크스페이스만 보입니다",
     "perk_switch": "왼쪽 위에서 언제든 다른 워크스페이스로 전환",
     "next_runtime": "에이전트를 실행할 컴퓨터 연결",
-    "next_agent": "연결된 런타임에서 Multica Helper 만들기",
+    "next_agent": "연결된 런타임에서 SD Helper 만들기",
     "next_starter": "다음 단계를 위한 온보딩 이슈 열기",
     "preview": {
       "inbox_label": "인박스",
@@ -307,11 +251,16 @@
     },
     "creation_disabled_eyebrow": "워크스페이스 생성이 비활성화되었습니다",
     "creation_disabled_headline": "관리자에게 초대를 요청하세요.",
-    "creation_disabled_lede": "이 Multica instance에서는 새 워크스페이스를 만들 수 없습니다. 관리자가 기존 워크스페이스로 초대하면 초대를 수락한 뒤 새로고침해 계속하세요.",
+    "creation_disabled_lede": "이 SD Developers instance에서는 새 워크스페이스를 만들 수 없습니다. 관리자가 기존 워크스페이스로 초대하면 초대를 수락한 뒤 새로고침해 계속하세요.",
     "creation_disabled_logout": "로그아웃",
     "creation_disabled_eyebrow_resume": "내 워크스페이스",
     "creation_disabled_headline_resume": "{{name}}에서 계속하세요.",
-    "creation_disabled_lede_resume": "이 instance에서는 워크스페이스 생성이 비활성화되어 있으므로 기존 워크스페이스로 계속 이동합니다."
+    "creation_disabled_lede_resume": "이 instance에서는 워크스페이스 생성이 비활성화되어 있으므로 기존 워크스페이스로 계속 이동합니다.",
+    "sd_primary_title": "SalesDoctor 프로젝트 설정",
+    "sd_primary_subtitle": "형제 프로젝트마다 workspace를 하나씩 만듭니다. 완료되면 sd-main으로 이동합니다.",
+    "sd_primary_cta": "workspace 3개 모두 만들기",
+    "sd_primary_cta_pending": "workspace를 만드는 중…",
+    "sd_manual_divider": "또는 직접 만들기"
   },
   "step_runtime": {
     "scanning_headline": "이 컴퓨터 연결 중...",
@@ -347,7 +296,7 @@
   "step_platform": {
     "eyebrow": "컴퓨터 연결",
     "headline": "에이전트를 실행할 컴퓨터를 연결하세요.",
-    "lede": "에이전트는 Multica에 연결한 실제 컴퓨터에서 실행됩니다. 연결 방법을 선택하세요.",
+    "lede": "에이전트는 SD Developers에 연결한 실제 컴퓨터에서 실행됩니다. 연결 방법을 선택하세요.",
     "hint_default": "연결 방법을 선택하세요. 건너뛰고 나중에 연결할 수도 있습니다.",
     "hint_downloaded": "다운로드 페이지에서 설정을 마친 뒤 이 탭으로 돌아오세요.",
     "download_title": "이 컴퓨터 사용",

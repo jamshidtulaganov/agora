@@ -3,11 +3,11 @@
     "step_of": "ステップ {{current}} / {{total}}"
   },
   "welcome": {
-    "wordmark": "Multica へようこそ",
+    "wordmark": "SD Developers へようこそ",
     "headline_line1": "あなたの AI チームメイトを、",
     "headline_line2": "ひとつの",
     "headline_emphasis": "ワークスペースに。",
-    "lede": "同僚に仕事を任せるように作業を割り当てるだけ。エージェントがイシューを引き受け、ステータスを更新し、完了したらコメントします。",
+    "lede": "SalesDoctor は、フィールドセールス・バンセリング・マーチャンダイジング・ルート会計のためのマルチテナント型 Distribution CRM です。同僚に仕事を任せるように AI チームメイトへ作業を割り当てるだけ。エージェントがイシューを引き受け、ステータスを更新し、完了したらコメントします。",
     "lede_web": "デスクトップ版にはランタイムが同梱されており、何もインストールする必要はありません。ご自身の CLI を接続するには、ウェブで続けてください。",
     "lede_desktop": "完了するころには、実際のエージェントがあなたの最初のイシューに返信しています。",
     "download_desktop": "デスクトップ版をダウンロード",
@@ -43,65 +43,9 @@
     "cancel": "キャンセル",
     "close": "閉じる"
   },
-  "source_backfill": {
-    "eyebrow": "ちょっと質問",
-    "lede": "登録時にお答えいただかなかった項目です。Multica がどんな方に役立っているかを把握するのに役立ちます。一問だけ、終わればすぐ作業に戻れます。",
-    "submit": "送信",
-    "hint_ready": "OK です。準備ができたら送信を押してください。"
-  },
-  "questions": {
-    "eyebrow_about_you": "あなたについて",
-    "source": {
-      "question": "Multica をどこで知りましたか?",
-      "friends_colleagues": "友人または同僚",
-      "search": "Google / 検索",
-      "social_x": "X / Twitter",
-      "social_linkedin": "LinkedIn",
-      "social_youtube": "YouTube",
-      "social_misc": "その他の SNS",
-      "blog_newsletter": "ブログ / ニュースレター",
-      "ai_assistant": "ChatGPT / Claude / Cursor",
-      "from_work": "職場で",
-      "event_conference": "カンファレンス / ミートアップ",
-      "dont_remember": "覚えていない",
-      "other": "その他",
-      "other_placeholder": "例: よく聴くポッドキャスト",
-      "social_github": "GitHub"
-    },
-    "role": {
-      "question": "あなたに最も近いのはどれですか?",
-      "engineer": "エンジニア / 開発者",
-      "product": "プロダクトマネージャー",
-      "designer": "デザイナー",
-      "founder": "創業者 / 経営層",
-      "marketing": "マーケティング / グロース",
-      "writer": "ライター / コンテンツ",
-      "research": "リサーチャー / アナリスト",
-      "ops": "オペレーション / プロジェクト管理",
-      "student": "学生 / 個人利用",
-      "other": "その他",
-      "other_placeholder": "例: 教師、サポートリード"
-    },
-    "use_case": {
-      "question": "Multica を何に使いたいですか?",
-      "ship_code": "AI エージェントとコードをリリース",
-      "manage_team": "チームのタスクを管理",
-      "personal_tasks": "自分のタスクを整理",
-      "plan_research": "計画、ブレインストーミング、リサーチ",
-      "write_publish": "執筆、編集、公開",
-      "automate_ops": "運用とワークフローの自動化",
-      "evaluate": "とりあえず試してみる",
-      "other": "その他",
-      "other_placeholder": "例: スタディグループの運営"
-    }
-  },
   "option_card": {
     "other_label": "その他",
     "other_aria": "別の内容を入力"
-  },
-  "step_question": {
-    "hint_pick": "ひとつ選んで続けてください。答えたくない場合はスキップできます。",
-    "hint_continue": "いい感じです。準備ができたら「続ける」を押してください。"
   },
   "runtime_aside": {
     "what_eyebrow": "エージェントランタイムとは?",
@@ -118,7 +62,7 @@
   "cli_install": {
     "copy_aria": "コピー",
     "intro": "エージェントを実行するには、このコンピュータにエージェントランタイム(Claude Code、Codex、Cursor など)が必要です。サーバーやリモート開発環境でも動作します。",
-    "step1_label": "Multica CLI をインストール",
+    "step1_label": "エージェントランタイムをインストール",
     "step2_label": "デーモンを起動"
   },
   "cloud_waitlist": {
@@ -196,18 +140,18 @@
     "error_close": "閉じる",
     "user_context_heading": "私について",
     "user_context_role_label": "役割",
-    "user_context_use_case_label": "Multica でやりたいこと",
+    "user_context_use_case_label": "SD Developers でやりたいこと",
     "runtime": {
-      "greeting": "こんにちは、Multica へようこそ",
+      "greeting": "こんにちは、SD Developers へようこそ",
       "subtitle": "私はあなたの最初の Agent アシスタントです。",
-      "capabilities": "Multica の使い方について、何でも聞いてください。ワークスペースでの作業を任せることもできます — イシューの作成、cron タスクの設定、新しいエージェントの構築など…",
+      "capabilities": "SD Developers の使い方について、何でも聞いてください。ワークスペースでの作業を任せることもできます — イシューの作成、cron タスクの設定、新しいエージェントの構築など…",
       "section_label": "まず取り組むタスクを 1 つ以上選んでください:",
       "assign_empty": "1 つ以上選択",
       "assign_count": "{{count}} 件のタスクを私に割り当てる →",
       "assign_count_plural": "{{count}} 件のタスクを私に割り当てる →",
       "cards": {
         "intro": {
-          "subtitle": "Multica とは何か、何ができるのかを 1〜2 段落で説明します。"
+          "subtitle": "SD Developers とは何か、何ができるのかを 1〜2 段落で説明します。"
         },
         "tour": {
           "subtitle": "イシュー、エージェント、スクワッド、オートパイロットがどう連携するかをご案内します。"
@@ -226,7 +170,7 @@
     },
     "skip": {
       "loading": "ワークスペースを準備中…",
-      "title": "Multica へようこそ!",
+      "title": "SD Developers へようこそ!",
       "subtitle": "次のステップを助けるために、2 つのタスクを追加しました。",
       "got_it": "了解",
       "status_in_progress": "進行中",
@@ -238,7 +182,7 @@
         },
         "create_agent": {
           "title": "最初のエージェントを作成",
-          "subtitle": "ランタイムがオンラインになったら、最初の Multica エージェントを作りましょう。"
+          "subtitle": "ランタイムがオンラインになったら、最初の SD エージェントを作りましょう。"
         }
       }
     }
@@ -285,7 +229,7 @@
     "perk_invite": "チームメイトを招待 — 招待した人にはこのワークスペースだけが見えます",
     "perk_switch": "左上からいつでも他のワークスペースに切り替え",
     "next_runtime": "エージェントが動く場所を用意するためにコンピュータを接続",
-    "next_agent": "接続したランタイムから Multica Helper を作成",
+    "next_agent": "接続したランタイムから SD Helper を作成",
     "next_starter": "次のステップのためにオンボーディングイシューを 1 つ開く",
     "preview": {
       "inbox_label": "インボックス",
@@ -307,11 +251,16 @@
     },
     "creation_disabled_eyebrow": "ワークスペースの作成は無効です",
     "creation_disabled_headline": "管理者に招待を依頼してください。",
-    "creation_disabled_lede": "この Multica インスタンスでは新しいワークスペースを作成できません。管理者からワークスペースに招待されたら、招待を承諾して更新し、続けてください。",
+    "creation_disabled_lede": "この SD Developers インスタンスでは新しいワークスペースを作成できません。管理者からワークスペースに招待されたら、招待を承諾して更新し、続けてください。",
     "creation_disabled_logout": "ログアウト",
     "creation_disabled_eyebrow_resume": "あなたのワークスペース",
     "creation_disabled_headline_resume": "{{name}} で続けましょう。",
-    "creation_disabled_lede_resume": "このインスタンスではワークスペースの作成が無効になっているため、既存のワークスペースへ続けて移動します。"
+    "creation_disabled_lede_resume": "このインスタンスではワークスペースの作成が無効になっているため、既存のワークスペースへ続けて移動します。",
+    "sd_primary_title": "SalesDoctor のプロジェクトをセットアップ",
+    "sd_primary_subtitle": "兄弟プロジェクトごとに workspace を 1 つ作成します。完了後は sd-main に移動します。",
+    "sd_primary_cta": "3 つの workspace をすべて作成",
+    "sd_primary_cta_pending": "workspace を作成中…",
+    "sd_manual_divider": "または手動で作成する"
   },
   "step_runtime": {
     "scanning_headline": "このコンピュータを接続中…",
@@ -346,7 +295,7 @@
   "step_platform": {
     "eyebrow": "コンピュータを接続",
     "headline": "エージェントを実行するコンピュータを接続しましょう。",
-    "lede": "エージェントは、Multica に接続した実際のコンピュータで実行されます。どう接続するかを選んでください。",
+    "lede": "エージェントは、SD Developers に接続した実際のコンピュータで実行されます。どう接続するかを選んでください。",
     "hint_default": "接続方法を選んでください。スキップしてあとでコンピュータを接続することもできます。",
     "hint_downloaded": "ダウンロードページでセットアップを完了したら、このタブに戻ってください。",
     "download_title": "このコンピュータを使う",

@@ -27,7 +27,7 @@ vi.mock("./terminate-task-confirm-dialog", () => ({
   TerminateTaskConfirmDialog: () => null,
 }));
 
-import { ActiveTaskRow } from "./execution-log-section";
+import { ActiveTaskRow, PastRow } from "./execution-log-section";
 
 function makeTask(overrides: Partial<AgentTask> = {}): AgentTask {
   return {
@@ -68,5 +68,54 @@ describe("ActiveTaskRow", () => {
     expect(screen.getByText("Started from comment")).toBeInTheDocument();
     expect(screen.getByText("View transcript")).toBeInTheDocument();
     expect(mockState.taskMessagesOptions).not.toHaveBeenCalled();
+  });
+});
+
+describe("PastRow View pull request", () => {
+  it("renders a View-PR link when a completed task's result carries a pr_url", () => {
+    const task = makeTask({
+      status: "completed",
+      completed_at: "2026-06-08T08:04:00Z",
+      result: { pr_url: "https://github.com/acme/repo/pull/7" },
+    });
+    renderWithI18n(<PastRow task={task} issueId="issue-1" />);
+
+    const link = screen.getByRole("link", { name: "View pull request" });
+    expect(link).toHaveAttribute("href", "https://github.com/acme/repo/pull/7");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noreferrer noopener");
+  });
+
+  it("omits the View-PR link when the result has no pr_url", () => {
+    const task = makeTask({
+      status: "completed",
+      completed_at: "2026-06-08T08:04:00Z",
+      result: { summary: "done" },
+    });
+    renderWithI18n(<PastRow task={task} issueId="issue-1" />);
+
+    expect(screen.queryByRole("link", { name: "View pull request" })).not.toBeInTheDocument();
+  });
+
+  it("ignores a non-http pr_url (defensive read)", () => {
+    const task = makeTask({
+      status: "completed",
+      completed_at: "2026-06-08T08:04:00Z",
+      result: { pr_url: "javascript:alert(1)" },
+    });
+    renderWithI18n(<PastRow task={task} issueId="issue-1" />);
+
+    expect(screen.queryByRole("link", { name: "View pull request" })).not.toBeInTheDocument();
+  });
+
+  it("does not render the link for a non-completed task even if pr_url is present", () => {
+    const task = makeTask({
+      status: "failed",
+      completed_at: "2026-06-08T08:04:00Z",
+      result: { pr_url: "https://github.com/acme/repo/pull/7" },
+    });
+    renderWithI18n(<PastRow task={task} issueId="issue-1" />);
+
+    expect(screen.queryByRole("link", { name: "View pull request" })).not.toBeInTheDocument();
   });
 });

@@ -220,6 +220,18 @@ export interface LoginResponse {
   user: User;
 }
 
+/** Result of POST /api/issues/{id}/slice-actions. The backend owns the
+ *  instruction templates per `kind`; it echoes the resolved kind/scope, the
+ *  rendered instruction, the agent it dispatched to, and the comment it
+ *  posted on the issue (which carries the agent's draft). */
+export interface SliceActionResponse {
+  kind: string;
+  scope: string;
+  instruction: string;
+  agent_id: string;
+  comment: import("../types").Comment;
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly statusText: string;
@@ -403,6 +415,22 @@ export class ApiClient {
     return this.fetch("/auth/google", {
       method: "POST",
       body: JSON.stringify({ code, redirect_uri: redirectUri }),
+    });
+  }
+
+  async telegramStartLogin(): Promise<{ nonce: string; deep_link: string }> {
+    return this.fetch("/auth/telegram/start", {
+      method: "POST",
+    });
+  }
+
+  async telegramVerifyLogin(
+    nonce: string,
+    code: string,
+  ): Promise<LoginResponse> {
+    return this.fetch("/auth/telegram/verify", {
+      method: "POST",
+      body: JSON.stringify({ nonce, code }),
     });
   }
 
@@ -657,6 +685,23 @@ export class ApiClient {
         ...(parentId ? { parent_id: parentId } : {}),
         ...(attachmentIds?.length ? { attachment_ids: attachmentIds } : {}),
         ...(suppressAgentIds?.length ? { suppress_agent_ids: suppressAgentIds } : {}),
+      }),
+    });
+  }
+
+  // Fires a scoped AI slice-action against the issue's agent. The backend
+  // renders the instruction template for `kind`, dispatches a task, and posts
+  // the agent draft as a comment (surfaced in the execution log). 201 ->
+  // { kind, scope, instruction, agent_id, comment }.
+  async sliceAction(
+    issueId: string,
+    body: { kind: string; scope?: string },
+  ): Promise<SliceActionResponse> {
+    return this.fetch(`/api/issues/${issueId}/slice-actions`, {
+      method: "POST",
+      body: JSON.stringify({
+        kind: body.kind,
+        ...(body.scope ? { scope: body.scope } : {}),
       }),
     });
   }
@@ -1542,6 +1587,17 @@ export class ApiClient {
     await this.fetch(`/api/agents/${agentId}/skills`, {
       method: "PUT",
       body: JSON.stringify(data),
+    });
+  }
+
+  // Idempotently attaches skills to an agent — server does ON CONFLICT DO
+  // NOTHING, so it never clobbers existing agent_skill links (unlike
+  // setAgentSkills, which replaces the set wholesale via PUT). Used by the
+  // SD onboarding skill-seeder (packages/views/workspace/sd-skills.ts).
+  async addAgentSkills(agentId: string, skillIds: string[]): Promise<void> {
+    await this.fetch(`/api/agents/${agentId}/skills/add`, {
+      method: "POST",
+      body: JSON.stringify({ skill_ids: skillIds }),
     });
   }
 

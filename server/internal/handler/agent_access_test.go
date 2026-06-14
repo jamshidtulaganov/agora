@@ -546,11 +546,11 @@ func TestShouldEnqueueOnComment_PrivateAgentGate(t *testing.T) {
 	}
 
 	cases := []struct {
-		name       string
-		actorType  string
-		actorID    string
-		want       bool
-		reason     string
+		name      string
+		actorType string
+		actorID   string
+		want      bool
+		reason    string
 	}{
 		{
 			name:      "plain member — denied",

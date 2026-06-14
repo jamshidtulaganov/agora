@@ -363,7 +363,20 @@
     "status_running": "작업 중",
     "status_completed": "완료됨",
     "status_failed": "실패함",
-    "status_cancelled": "취소됨"
+    "status_cancelled": "취소됨",
+    "view_pr_tooltip": "풀 리퀘스트 보기",
+    "view_pr_aria": "풀 리퀘스트 보기"
+  },
+  "slice_actions": {
+    "section": "AI 작업",
+    "scope_placeholder": "범위(선택) — 예: 로그인 폼",
+    "action_draft_code": "코드 초안 작성",
+    "action_write_docs": "문서 작성",
+    "action_write_tests": "테스트 작성",
+    "action_review_part": "일부 검토",
+    "no_agent_hint": "AI 작업을 위임하려면 에이전트를 지정하세요(본인도 가능). 위의 담당자 선택기를 사용하세요.",
+    "toast_fired": "AI 작업을 보냈습니다. 초안이 실행 로그에 표시됩니다.",
+    "toast_failed": "AI 작업 전송에 실패했습니다"
   },
   "terminate_dialog": {
     "title": "이 작업을 중지할까요?",

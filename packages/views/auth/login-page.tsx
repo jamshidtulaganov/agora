@@ -11,7 +11,7 @@ import {
   CardFooter,
 } from "@multica/ui/components/ui/card";
 import { Input } from "@multica/ui/components/ui/input";
-import { Button } from "@multica/ui/components/ui/button";
+import { Button, buttonVariants } from "@multica/ui/components/ui/button";
 import { Label } from "@multica/ui/components/ui/label";
 import {
   InputOTP,
@@ -19,6 +19,7 @@ import {
   InputOTPSlot,
 } from "@multica/ui/components/ui/input-otp";
 import { useAuthStore } from "@multica/core/auth";
+import { useConfigStore } from "@multica/core/config";
 import { workspaceKeys } from "@multica/core/workspace/queries";
 import { api } from "@multica/core/api";
 import type { User } from "@multica/core/types";
@@ -108,13 +109,22 @@ export function LoginPage({
 }: LoginPageProps) {
   const { t } = useT("auth");
   const qc = useQueryClient();
-  const [step, setStep] = useState<"email" | "code" | "cli_confirm">("email");
+  // Telegram bot username is configured server-side (omitempty in /api/config)
+  // and surfaced via the config store — the Telegram button keys off it the
+  // same way the Google button keys off google_client_id.
+  const telegramBotUsername = useConfigStore((s) => s.telegramBotUsername);
+  const [step, setStep] = useState<
+    "email" | "code" | "cli_confirm" | "telegram"
+  >("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [existingUser, setExistingUser] = useState<User | null>(null);
+  // Telegram bot-OTP flow: nonce + deep_link returned by telegramStartLogin.
+  const [telegramNonce, setTelegramNonce] = useState("");
+  const [telegramDeepLink, setTelegramDeepLink] = useState("");
   // Tracks how the existing session was detected so handleCliAuthorize
   // uses the matching token source (cookie → issueCliToken, localStorage → direct).
   const authSourceRef = useRef<"cookie" | "localStorage">("cookie");
@@ -227,6 +237,52 @@ export function LoginPage({
     [email, onSuccess, cliCallback, onTokenObtained, qc, t],
   );
 
+  const handleTelegramStart = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const { nonce, deep_link } = await api.telegramStartLogin();
+      setTelegramNonce(nonce);
+      setTelegramDeepLink(deep_link);
+      setCode("");
+      setStep("telegram");
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : `${t(($) => $.errors.telegram_start_failed)} ${t(($) => $.errors.server_unreachable)}`,
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [t]);
+
+  const handleTelegramVerify = useCallback(
+    async (value: string) => {
+      if (value.length !== 6) return;
+      setLoading(true);
+      setError("");
+      try {
+        // Telegram verify returns the same LoginResponse shape as Google/CLI;
+        // establish the session via the canonical token path so the caller's
+        // onSuccess can read the seeded workspace list synchronously.
+        const { token } = await api.telegramVerifyLogin(telegramNonce, value);
+        await useAuthStore.getState().loginWithToken(token);
+        const wsList = await api.listWorkspaces();
+        qc.setQueryData(workspaceKeys.list(), wsList);
+        onTokenObtained?.();
+        onSuccess();
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : t(($) => $.errors.code_invalid),
+        );
+        setCode("");
+        setLoading(false);
+      }
+    },
+    [telegramNonce, onSuccess, onTokenObtained, qc, t],
+  );
+
   const handleResend = async () => {
     if (cooldown > 0) return;
     setError("");
@@ -325,6 +381,80 @@ export function LoginPage({
               {t(($) => $.cli.different_account)}
             </Button>
           </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Telegram bot-OTP step
+  // -------------------------------------------------------------------------
+
+  if (step === "telegram") {
+    return (
+      <div className="flex min-h-svh items-center justify-center">
+        <Card className="w-full max-w-sm">
+          <CardHeader className="text-center">
+            {logo && <div className="mx-auto mb-4">{logo}</div>}
+            <CardTitle className="text-2xl">
+              {t(($) => $.telegram.title)}
+            </CardTitle>
+            <CardDescription>
+              {t(($) => $.telegram.description)}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col items-center gap-4">
+            <a
+              href={telegramDeepLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={buttonVariants({
+                variant: "outline",
+                size: "lg",
+                className: "w-full",
+              })}
+            >
+              {t(($) => $.telegram.open_button, {
+                bot: telegramBotUsername,
+              })}
+            </a>
+            <p className="text-sm text-muted-foreground">
+              {t(($) => $.telegram.code_hint)}
+            </p>
+            <InputOTP
+              maxLength={6}
+              value={code}
+              onChange={(value) => {
+                setCode(value);
+                if (value.length === 6) handleTelegramVerify(value);
+              }}
+              disabled={loading}
+            >
+              <InputOTPGroup>
+                <InputOTPSlot index={0} />
+                <InputOTPSlot index={1} />
+                <InputOTPSlot index={2} />
+                <InputOTPSlot index={3} />
+                <InputOTPSlot index={4} />
+                <InputOTPSlot index={5} />
+              </InputOTPGroup>
+            </InputOTP>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+          </CardContent>
+          <CardFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              onClick={() => {
+                setStep("email");
+                setCode("");
+                setError("");
+              }}
+            >
+              {t(($) => $.common.back)}
+            </Button>
+          </CardFooter>
         </Card>
       </div>
     );
@@ -448,7 +578,7 @@ export function LoginPage({
               ? t(($) => $.signin.sending)
               : t(($) => $.signin.continue)}
           </Button>
-          {(google || onGoogleLogin) && (
+          {(google || onGoogleLogin || telegramBotUsername) && (
             <>
               <div className="relative w-full">
                 <div className="absolute inset-0 flex items-center">
@@ -460,34 +590,55 @@ export function LoginPage({
                   </span>
                 </div>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                size="lg"
-                onClick={handleGoogleLogin}
-                disabled={loading}
-              >
-                <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
-                  <path
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"
-                    fill="#4285F4"
-                  />
-                  <path
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                    fill="#34A853"
-                  />
-                  <path
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                    fill="#FBBC05"
-                  />
-                  <path
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                    fill="#EA4335"
-                  />
-                </svg>
-                {t(($) => $.signin.google)}
-              </Button>
+              {(google || onGoogleLogin) && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  size="lg"
+                  onClick={handleGoogleLogin}
+                  disabled={loading}
+                >
+                  <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
+                    <path
+                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"
+                      fill="#4285F4"
+                    />
+                    <path
+                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                      fill="#34A853"
+                    />
+                    <path
+                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                      fill="#FBBC05"
+                    />
+                    <path
+                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                      fill="#EA4335"
+                    />
+                  </svg>
+                  {t(($) => $.signin.google)}
+                </Button>
+              )}
+              {telegramBotUsername && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  size="lg"
+                  onClick={handleTelegramStart}
+                  disabled={loading}
+                >
+                  <svg
+                    className="mr-2 h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="#229ED9"
+                  >
+                    <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.56 8.21-1.86 8.77c-.14.62-.51.77-1.03.48l-2.85-2.1-1.37 1.32c-.15.15-.28.28-.57.28l.2-2.9 5.29-4.78c.23-.2-.05-.32-.36-.12L8.66 13.1l-2.82-.88c-.61-.19-.62-.61.13-.9l11.02-4.25c.51-.19.96.12.79.04z" />
+                  </svg>
+                  {t(($) => $.signin.telegram)}
+                </Button>
+              )}
             </>
           )}
           {extra && <div className="w-full pt-1 text-center">{extra}</div>}

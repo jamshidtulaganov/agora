@@ -5,6 +5,7 @@ interface ConfigState {
   cdnDomain: string;
   allowSignup: boolean;
   googleClientId: string;
+  telegramBotUsername: string;
   daemonServerUrl: string;
   daemonAppUrl: string;
   // Self-host gate (#3433): when true, every "Create workspace" affordance
@@ -15,6 +16,7 @@ interface ConfigState {
   setAuthConfig: (config: {
     allowSignup: boolean;
     googleClientId?: string;
+    telegramBotUsername?: string;
     workspaceCreationDisabled?: boolean;
   }) => void;
   setDaemonConfig: (config: {
@@ -27,12 +29,18 @@ export const configStore = createStore<ConfigState>((set) => ({
   cdnDomain: "",
   allowSignup: true,
   googleClientId: "",
+  telegramBotUsername: "",
   daemonServerUrl: "",
   daemonAppUrl: "",
   workspaceCreationDisabled: false,
   setCdnDomain: (domain) => set({ cdnDomain: domain }),
-  setAuthConfig: ({ allowSignup, googleClientId = "", workspaceCreationDisabled = false }) =>
-    set({ allowSignup, googleClientId, workspaceCreationDisabled }),
+  setAuthConfig: ({
+    allowSignup,
+    googleClientId = "",
+    telegramBotUsername = "",
+    workspaceCreationDisabled = false,
+  }) =>
+    set({ allowSignup, googleClientId, telegramBotUsername, workspaceCreationDisabled }),
   setDaemonConfig: ({ daemonServerUrl = "", daemonAppUrl = "" }) =>
     set({ daemonServerUrl, daemonAppUrl }),
 }));

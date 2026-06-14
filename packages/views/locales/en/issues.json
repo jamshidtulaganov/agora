@@ -364,7 +364,20 @@
     "status_running": "Working",
     "status_completed": "Completed",
     "status_failed": "Failed",
-    "status_cancelled": "Cancelled"
+    "status_cancelled": "Cancelled",
+    "view_pr_tooltip": "View pull request",
+    "view_pr_aria": "View pull request"
+  },
+  "slice_actions": {
+    "section": "AI actions",
+    "scope_placeholder": "Scope (optional) — e.g. the login form",
+    "action_draft_code": "Draft code",
+    "action_write_docs": "Write docs",
+    "action_write_tests": "Write tests",
+    "action_review_part": "Review a part",
+    "no_agent_hint": "Assign an agent (or set yourself one) to hand off AI actions. Use the Assignee picker above.",
+    "toast_fired": "AI action sent — the draft will appear in the execution log.",
+    "toast_failed": "Failed to send AI action"
   },
   "terminate_dialog": {
     "title": "Stop this task?",

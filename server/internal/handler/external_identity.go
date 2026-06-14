@@ -1,0 +1,141 @@
+package handler
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strings"
+
+	"github.com/jackc/pgx/v5"
+)
+
+// External identity providers. A Multica user is mapped to their id on these
+// systems so inbound events resolve to a member (e.g. Bitrix RESPONSIBLE_ID ->
+// member) and alternate logins bind to the same account (Telegram).
+const (
+	providerTelegram = "telegram"
+	providerBitrix   = "bitrix"
+)
+
+// errExternalIdentityClaimed is returned by linkExternalIdentity when the
+// (provider, external_id) is already mapped to a DIFFERENT user. The mapping is
+// left untouched — a member must not be able to re-link (steal) another user's
+// external identity.
+var errExternalIdentityClaimed = errors.New("external identity already linked to another user")
+
+// linkExternalIdentity binds a (provider, external_id) -> user_id mapping. It
+// is idempotent for the SAME user (re-linking your own id is a no-op upsert),
+// but it will NOT overwrite a mapping owned by a different user: that returns
+// errExternalIdentityClaimed and leaves the existing mapping intact, closing the
+// identity-steal hole. Raw pgx (no sqlc) because user_external_identity is
+// intentionally outside the generated set.
+//
+// The ON CONFLICT ... DO UPDATE is guarded by a WHERE clause that only fires
+// when the existing row already belongs to this user. When the conflict row
+// belongs to someone else the WHERE fails, no row is updated, and ExecResult
+// reports 0 rows affected — which we translate into the sentinel error.
+func (h *Handler) linkExternalIdentity(ctx context.Context, provider, externalID, userID string) error {
+	tag, err := h.DB.Exec(ctx,
+		`INSERT INTO user_external_identity (provider, external_id, user_id)
+		 VALUES ($1, $2, $3::uuid)
+		 ON CONFLICT (provider, external_id)
+		 DO UPDATE SET user_id = EXCLUDED.user_id, updated_at = now()
+		 WHERE user_external_identity.user_id = EXCLUDED.user_id`,
+		provider, externalID, userID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		// No insert and no update fired: the row exists and is owned by a
+		// different user. Do NOT overwrite — surface the steal attempt.
+		return errExternalIdentityClaimed
+	}
+	return nil
+}
+
+// userIDByExternalIdentity returns the user_id mapped to (provider, external_id),
+// or "" when no mapping exists.
+func (h *Handler) userIDByExternalIdentity(ctx context.Context, provider, externalID string) (string, error) {
+	var userID string
+	err := h.DB.QueryRow(ctx,
+		`SELECT user_id::text FROM user_external_identity WHERE provider = $1 AND external_id = $2`,
+		provider, externalID).Scan(&userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	return userID, nil
+}
+
+type linkBitrixRequest struct {
+	BitrixUserID string `json:"bitrix_user_id"`
+}
+
+// LinkBitrixIdentity maps the authenticated user to their Bitrix24 user id so a
+// synced Bitrix task's RESPONSIBLE_ID resolves to this member on the board.
+// POST /api/me/links/bitrix
+func (h *Handler) LinkBitrixIdentity(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	var req linkBitrixRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	bitrixID := strings.TrimSpace(req.BitrixUserID)
+	if bitrixID == "" {
+		writeError(w, http.StatusBadRequest, "bitrix_user_id required")
+		return
+	}
+	if err := h.linkExternalIdentity(r.Context(), providerBitrix, bitrixID, userID); err != nil {
+		if errors.Is(err, errExternalIdentityClaimed) {
+			writeError(w, http.StatusConflict, "bitrix_user_id already linked to another account")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to link identity")
+		return
+	}
+	writeJSON(w, http.StatusOK, externalLinkResponse{Provider: providerBitrix, ExternalID: bitrixID})
+}
+
+type externalLinkResponse struct {
+	Provider   string `json:"provider"`
+	ExternalID string `json:"external_id"`
+}
+
+// ListMyLinks returns the authenticated user's external identity mappings.
+// GET /api/me/links
+func (h *Handler) ListMyLinks(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	rows, err := h.DB.Query(r.Context(),
+		`SELECT provider, external_id FROM user_external_identity WHERE user_id = $1::uuid ORDER BY provider`,
+		userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list links")
+		return
+	}
+	defer rows.Close()
+
+	links := []externalLinkResponse{}
+	for rows.Next() {
+		var l externalLinkResponse
+		if err := rows.Scan(&l.Provider, &l.ExternalID); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to read links")
+			return
+		}
+		links = append(links, l)
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to read links")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"links": links})
+}

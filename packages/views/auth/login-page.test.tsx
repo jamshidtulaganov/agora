@@ -29,12 +29,19 @@ function renderWithI18n(ui: ReactElement) {
 
 const mockSendCode = vi.hoisted(() => vi.fn());
 const mockVerifyCode = vi.hoisted(() => vi.fn());
+const mockLoginWithToken = vi.hoisted(() => vi.fn());
 const mockApiListWorkspaces = vi.hoisted(() => vi.fn());
 const mockApiVerifyCode = vi.hoisted(() => vi.fn());
 const mockApiSetToken = vi.hoisted(() => vi.fn());
 const mockApiGetMe = vi.hoisted(() => vi.fn());
 const mockApiIssueCliToken = vi.hoisted(() => vi.fn());
+const mockApiTelegramStartLogin = vi.hoisted(() => vi.fn());
+const mockApiTelegramVerifyLogin = vi.hoisted(() => vi.fn());
 const mockSetQueryData = vi.hoisted(() => vi.fn());
+// Mutable per-test config state — controls telegramBotUsername visibility.
+const mockConfigState = vi.hoisted(() => ({
+  telegramBotUsername: "",
+}));
 
 vi.mock("@tanstack/react-query", async () => {
   const actual = await vi.importActual<typeof import("@tanstack/react-query")>(
@@ -47,16 +54,26 @@ vi.mock("@multica/core/auth", () => ({
   useAuthStore: Object.assign(
     // Zustand hook form — component may call useAuthStore(selector)
     (selector?: (s: unknown) => unknown) => {
-      const state = { sendCode: mockSendCode, verifyCode: mockVerifyCode };
+      const state = {
+        sendCode: mockSendCode,
+        verifyCode: mockVerifyCode,
+        loginWithToken: mockLoginWithToken,
+      };
       return selector ? selector(state) : state;
     },
     {
       getState: () => ({
         sendCode: mockSendCode,
         verifyCode: mockVerifyCode,
+        loginWithToken: mockLoginWithToken,
       }),
     },
   ),
+}));
+
+vi.mock("@multica/core/config", () => ({
+  useConfigStore: (selector: (state: typeof mockConfigState) => unknown) =>
+    selector(mockConfigState),
 }));
 
 vi.mock("@multica/core/api", () => ({
@@ -66,6 +83,8 @@ vi.mock("@multica/core/api", () => ({
     setToken: mockApiSetToken,
     getMe: mockApiGetMe,
     issueCliToken: mockApiIssueCliToken,
+    telegramStartLogin: mockApiTelegramStartLogin,
+    telegramVerifyLogin: mockApiTelegramVerifyLogin,
   },
 }));
 
@@ -98,6 +117,8 @@ describe("LoginPage", () => {
     vi.clearAllMocks();
     // Default: no existing session (getMe rejects when no auth)
     mockApiGetMe.mockRejectedValue(new Error("unauthorized"));
+    // Default: Telegram bot not configured (button hidden).
+    mockConfigState.telegramBotUsername = "";
     localStorage.clear();
     // Reset window.location for tests that change it
     Object.defineProperty(window, "location", {
@@ -387,6 +408,176 @@ describe("LoginPage", () => {
     expect(
       screen.queryByRole("button", { name: /continue with google/i }),
     ).not.toBeInTheDocument();
+  });
+
+  // -------------------------------------------------------------------------
+  // Telegram bot-OTP login
+  // -------------------------------------------------------------------------
+
+  it("hides Telegram button when bot username not configured", () => {
+    // mockConfigState.telegramBotUsername defaults to "" in beforeEach
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
+    expect(
+      screen.queryByRole("button", { name: /continue with telegram/i }),
+    ).not.toBeInTheDocument();
+    // Divider also hidden when neither Google nor Telegram is configured
+    expect(screen.queryByText(/^or$/i)).not.toBeInTheDocument();
+  });
+
+  it("shows Telegram button + divider when bot username is configured", () => {
+    mockConfigState.telegramBotUsername = "multica_bot";
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
+    expect(
+      screen.getByRole("button", { name: /continue with telegram/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/^or$/i)).toBeInTheDocument();
+  });
+
+  it("starts the Telegram flow and shows deep-link + OTP on click", async () => {
+    mockConfigState.telegramBotUsername = "multica_bot";
+    mockApiTelegramStartLogin.mockResolvedValueOnce({
+      nonce: "nonce-123",
+      deep_link: "https://t.me/multica_bot?start=nonce-123",
+    });
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
+
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole("button", { name: /continue with telegram/i }),
+    );
+
+    await waitFor(() => {
+      expect(mockApiTelegramStartLogin).toHaveBeenCalled();
+      expect(screen.getByText(/sign in with telegram/i)).toBeInTheDocument();
+    });
+
+    // Deep-link button rendered as an anchor pointing at deep_link, with the
+    // bot username interpolated into the label.
+    const openLink = screen.getByRole("link", {
+      name: /open @multica_bot in telegram/i,
+    });
+    expect(openLink).toHaveAttribute(
+      "href",
+      "https://t.me/multica_bot?start=nonce-123",
+    );
+    // The 6-digit OTP input is present.
+    expect(getOTPInput()).toBeInTheDocument();
+  });
+
+  it("verifies code, establishes session via token, then onSuccess", async () => {
+    mockConfigState.telegramBotUsername = "multica_bot";
+    mockApiTelegramStartLogin.mockResolvedValueOnce({
+      nonce: "nonce-123",
+      deep_link: "https://t.me/multica_bot?start=nonce-123",
+    });
+    mockApiTelegramVerifyLogin.mockResolvedValueOnce({
+      token: "tg-jwt-token",
+      user: { id: "u-1", email: "tg@example.com", name: "TG User" },
+    });
+    mockLoginWithToken.mockResolvedValueOnce({ id: "u-1" });
+    mockApiListWorkspaces.mockResolvedValueOnce([{ id: "ws-1" }]);
+    const onTokenObtained = vi.fn();
+
+    renderWithI18n(
+      <LoginPage onSuccess={onSuccess} onTokenObtained={onTokenObtained} />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole("button", { name: /continue with telegram/i }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/sign in with telegram/i)).toBeInTheDocument();
+    });
+
+    const otpInput = getOTPInput();
+    await user.type(otpInput, "246813");
+
+    await waitFor(() => {
+      expect(mockApiTelegramVerifyLogin).toHaveBeenCalledWith(
+        "nonce-123",
+        "246813",
+      );
+      // Session established via the canonical token path.
+      expect(mockLoginWithToken).toHaveBeenCalledWith("tg-jwt-token");
+      expect(mockApiListWorkspaces).toHaveBeenCalled();
+      expect(mockSetQueryData).toHaveBeenCalledWith(
+        expect.arrayContaining(["workspaces", "list"]),
+        [{ id: "ws-1" }],
+      );
+      expect(onTokenObtained).toHaveBeenCalled();
+      expect(onSuccess).toHaveBeenCalled();
+    });
+  });
+
+  it("shows error and clears code on failed Telegram verify", async () => {
+    mockConfigState.telegramBotUsername = "multica_bot";
+    mockApiTelegramStartLogin.mockResolvedValueOnce({
+      nonce: "nonce-123",
+      deep_link: "https://t.me/multica_bot?start=nonce-123",
+    });
+    mockApiTelegramVerifyLogin.mockRejectedValueOnce(
+      new Error("Invalid or expired code"),
+    );
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
+
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole("button", { name: /continue with telegram/i }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/sign in with telegram/i)).toBeInTheDocument();
+    });
+
+    await user.type(getOTPInput(), "000000");
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/invalid or expired code/i),
+      ).toBeInTheDocument();
+    });
+    expect(onSuccess).not.toHaveBeenCalled();
+  });
+
+  it("back button on Telegram step returns to email step", async () => {
+    mockConfigState.telegramBotUsername = "multica_bot";
+    mockApiTelegramStartLogin.mockResolvedValueOnce({
+      nonce: "nonce-123",
+      deep_link: "https://t.me/multica_bot?start=nonce-123",
+    });
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
+
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole("button", { name: /continue with telegram/i }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/sign in with telegram/i)).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /back/i }));
+
+    expect(screen.getByText(/sign in to multica/i)).toBeInTheDocument();
+  });
+
+  it("shows error when Telegram start fails", async () => {
+    mockConfigState.telegramBotUsername = "multica_bot";
+    mockApiTelegramStartLogin.mockRejectedValueOnce(new Error("start boom"));
+    renderWithI18n(<LoginPage onSuccess={onSuccess} />);
+
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole("button", { name: /continue with telegram/i }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("start boom")).toBeInTheDocument();
+    });
+    // Stays on the email step since the flow never started.
+    expect(screen.getByText(/sign in to multica/i)).toBeInTheDocument();
   });
 
   // -------------------------------------------------------------------------

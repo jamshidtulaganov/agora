@@ -354,7 +354,20 @@
     "status_running": "处理中",
     "status_completed": "已完成",
     "status_failed": "失败",
-    "status_cancelled": "已取消"
+    "status_cancelled": "已取消",
+    "view_pr_tooltip": "查看拉取请求",
+    "view_pr_aria": "查看拉取请求"
+  },
+  "slice_actions": {
+    "section": "AI 操作",
+    "scope_placeholder": "范围（可选）— 例如登录表单",
+    "action_draft_code": "起草代码",
+    "action_write_docs": "编写文档",
+    "action_write_tests": "编写测试",
+    "action_review_part": "审查部分",
+    "no_agent_hint": "请分配一个智能体（也可以分配给自己）以移交 AI 操作。请使用上方的负责人选择器。",
+    "toast_fired": "AI 操作已发送 — 草稿将显示在执行日志中。",
+    "toast_failed": "发送 AI 操作失败"
   },
   "terminate_dialog": {
     "title": "确定停止该 task？",

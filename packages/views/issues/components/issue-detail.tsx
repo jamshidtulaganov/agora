@@ -58,6 +58,7 @@ import { ResolvedThreadBar } from "./resolved-thread-bar";
 import { collectThreadReplies, deriveThreadResolution } from "./thread-utils";
 import { IssueAgentHeaderChip } from "./issue-agent-header-chip";
 import { ExecutionLogSection } from "./execution-log-section";
+import { SliceActionsSection } from "./slice-actions-section";
 import { PullRequestList } from "./pull-request-list";
 import { useGitHubSettings } from "@multica/core/github";
 import { useQuery } from "@tanstack/react-query";
@@ -1550,6 +1551,11 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           </PropRow>
         </div>}
       </div>
+
+      {/* AI slice-actions — the human-protagonist layer. Hand a slice of work
+          (draft code / docs / tests / review) to the issue's agent; the agent
+          draft surfaces below in the execution log. */}
+      <SliceActionsSection issueId={id} />
 
       {/* Execution log — active runs + collapsed past runs. Self-contained;
           owns its own collapse state and WS subscriptions. Hides itself

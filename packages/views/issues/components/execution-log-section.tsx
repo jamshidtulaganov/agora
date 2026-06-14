@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Ban, CheckCircle2, ChevronRight, Loader2, RotateCcw, Square, XCircle } from "lucide-react";
+import { Ban, CheckCircle2, ChevronRight, ExternalLink, Loader2, RotateCcw, Square, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@multica/core/api";
 import { issueKeys } from "@multica/core/issues/queries";
@@ -203,6 +203,21 @@ const STATUS_TONE: Record<AgentTask["status"], string> = {
   cancelled: "text-muted-foreground",
 };
 
+// A completed task's `result` is JSONB typed as `unknown` on the wire — a
+// coding agent may have written a `pr_url` there. Read it defensively: the
+// shape is not guaranteed, so we narrow to a plain object and accept only a
+// non-empty http(s) string. Anything else (missing field, wrong type, a
+// non-web scheme like javascript:) returns null so we never render an unsafe
+// or broken external link.
+function readPrUrl(result: unknown): string | null {
+  if (typeof result !== "object" || result === null) return null;
+  const candidate = (result as Record<string, unknown>).pr_url;
+  if (typeof candidate !== "string") return null;
+  const url = candidate.trim();
+  if (!/^https?:\/\//i.test(url)) return null;
+  return url;
+}
+
 // ─── Active row ────────────────────────────────────────────────────────────
 
 import { stripMentionMarkdown } from "../utils/strip-mention-markdown";
@@ -355,7 +370,7 @@ export function ActiveTaskRow({
 
 // ─── Past row ──────────────────────────────────────────────────────────────
 
-function PastRow({ task, issueId }: { task: AgentTask; issueId: string }) {
+export function PastRow({ task, issueId }: { task: AgentTask; issueId: string }) {
   const { t } = useT("issues");
   const timeAgo = useTimeAgo();
   const [retrying, setRetrying] = useState(false);
@@ -366,6 +381,10 @@ function PastRow({ task, issueId }: { task: AgentTask; issueId: string }) {
     task.status === "failed" && task.failure_reason
       ? failureReasonLabel[task.failure_reason as TaskFailureReason]
       : null;
+
+  // A completed run may have produced a pull request — surface a direct link
+  // out to it (defensive read; only http(s) urls survive readPrUrl).
+  const prUrl = task.status === "completed" ? readPrUrl(task.result) : null;
 
   // Retry only makes sense for terminal-but-not-success rows. Passing
   // task.id targets this specific row's agent — without it, the rerun
@@ -399,6 +418,24 @@ function PastRow({ task, issueId }: { task: AgentTask; issueId: string }) {
       </RowStatus>
       <RowActions>
         <TranscriptButton task={task} agentName="" title={t(($) => $.execution_log.transcript_tooltip)} />
+        {prUrl && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <a
+                  href={prUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  aria-label={t(($) => $.execution_log.view_pr_aria)}
+                />
+              }
+              className="flex items-center justify-center rounded p-1 text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+            </TooltipTrigger>
+            <TooltipContent>{t(($) => $.execution_log.view_pr_tooltip)}</TooltipContent>
+          </Tooltip>
+        )}
         {canRetry && (
           <Tooltip>
             <TooltipTrigger

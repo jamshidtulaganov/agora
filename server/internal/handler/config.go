@@ -28,6 +28,12 @@ type AppConfig struct {
 	DaemonServerURL string `json:"daemon_server_url,omitempty"`
 	DaemonAppURL    string `json:"daemon_app_url,omitempty"`
 
+	// TelegramBotUsername is the bot's @username (without the @) used to
+	// build the t.me login deep link. Exposed (omitempty) so the web app
+	// renders the Telegram login button only when bot-OTP login is
+	// configured; empty/omitted when TELEGRAM_BOT_USERNAME is unset.
+	TelegramBotUsername string `json:"telegram_bot_username,omitempty"`
+
 	// PostHog public config for the frontend. The key is the same Project
 	// API Key the backend uses; returning it here (instead of baking it
 	// into the frontend bundle via NEXT_PUBLIC_*) means self-hosted
@@ -52,6 +58,9 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		config.CdnDomain = h.Storage.CdnDomain()
 	}
 	config.DaemonServerURL, config.DaemonAppURL = daemonSetupURLsFromEnv()
+	if h.telegramLoginEnabled() {
+		config.TelegramBotUsername = telegramBotUsername()
+	}
 
 	// Re-read from env on every request so operators can rotate keys via
 	// secret refresh without a server restart.

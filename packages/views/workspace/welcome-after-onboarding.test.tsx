@@ -83,6 +83,14 @@ vi.mock("@multica/core/api", () => ({
   },
 }));
 
+// SD shared skills are seeded fire-and-forget inside findOrCreateHelper. The
+// seed has its own unit tests (sd-skills.test.ts); here we no-op it so it
+// doesn't fan out real api calls or affect the helper-setup assertions.
+const mockSeedSdSkills = vi.fn();
+vi.mock("./sd-skills", () => ({
+  seedSdSkills: (...args: unknown[]) => mockSeedSdSkills(...args),
+}));
+
 const mockPush = vi.fn();
 const navigationAdapter: NavigationAdapter = {
   push: (path: string) => mockPush(path),
@@ -129,6 +137,7 @@ beforeEach(() => {
   mockCreateIssue.mockReset();
   mockCreateComment.mockReset();
   mockGetWorkspace.mockReset();
+  mockSeedSdSkills.mockReset();
   mockPush.mockReset();
   useWelcomeStore.getState().reset();
 });
@@ -159,7 +168,7 @@ describe("WelcomeAfterOnboarding", () => {
       mockListAgents.mockResolvedValueOnce([]);
       mockCreateAgent.mockResolvedValueOnce({
         id: "agent-1",
-        name: "Multica Helper",
+        name: "SD Helper",
         description: "Built-in workspace assistant.",
         avatar_url: null,
         visibility: "workspace",
@@ -175,14 +184,14 @@ describe("WelcomeAfterOnboarding", () => {
       expect(screen.getByText(/Preparing your Helper/i)).toBeInTheDocument();
 
       await waitFor(() => {
-        expect(screen.getByText(/welcome to Multica/i)).toBeInTheDocument();
+        expect(screen.getByText(/welcome to SD Developers/i)).toBeInTheDocument();
       });
 
       expect(mockCreateAgent).toHaveBeenCalledTimes(1);
       const [agentArgs] = mockCreateAgent.mock.calls[0]!;
       expect(agentArgs.runtime_id).toBe("rt-1");
-      expect(agentArgs.name).toBe("Multica Helper");
-      expect(agentArgs.instructions).toContain("Multica Helper");
+      expect(agentArgs.name).toBe("SD Helper");
+      expect(agentArgs.instructions).toContain("SD Helper");
 
       // 3 starter card titles come from HELPER_STARTER_PROMPTS (TS const,
       // EN under the test's en locale).
@@ -197,11 +206,11 @@ describe("WelcomeAfterOnboarding", () => {
       ).toBeInTheDocument();
     });
 
-    it("reuses an existing Multica Helper agent instead of creating duplicates", async () => {
+    it("reuses an existing SD Helper agent instead of creating duplicates", async () => {
       mockListAgents.mockResolvedValueOnce([
         {
           id: "agent-existing",
-          name: "Multica Helper",
+          name: "SD Helper",
           description: "",
           avatar_url: null,
           visibility: "workspace",
@@ -216,7 +225,7 @@ describe("WelcomeAfterOnboarding", () => {
 
       renderWelcome();
       await waitFor(() => {
-        expect(screen.getByText(/welcome to Multica/i)).toBeInTheDocument();
+        expect(screen.getByText(/welcome to SD Developers/i)).toBeInTheDocument();
       });
 
       expect(mockCreateAgent).not.toHaveBeenCalled();
@@ -226,7 +235,7 @@ describe("WelcomeAfterOnboarding", () => {
       mockListAgents.mockResolvedValueOnce([]);
       mockCreateAgent.mockResolvedValueOnce({
         id: "agent-1",
-        name: "Multica Helper",
+        name: "SD Helper",
         description: "",
         avatar_url: null,
         visibility: "workspace",
@@ -302,7 +311,7 @@ describe("WelcomeAfterOnboarding", () => {
       mockListAgents.mockResolvedValueOnce([]);
       mockCreateAgent.mockResolvedValueOnce({
         id: "agent-1",
-        name: "Multica Helper",
+        name: "SD Helper",
         description: "",
         avatar_url: null,
         visibility: "workspace",
@@ -349,7 +358,7 @@ describe("WelcomeAfterOnboarding", () => {
       mockListAgents.mockResolvedValueOnce([]);
       mockCreateAgent.mockResolvedValueOnce({
         id: "agent-1",
-        name: "Multica Helper",
+        name: "SD Helper",
         description: "",
         avatar_url: null,
         visibility: "workspace",
@@ -427,7 +436,7 @@ describe("WelcomeAfterOnboarding", () => {
 
       // Modal appears once all 3 API calls succeed.
       await waitFor(() => {
-        expect(screen.getByText(/Welcome to Multica/i)).toBeInTheDocument();
+        expect(screen.getByText(/Welcome to SD Developers/i)).toBeInTheDocument();
       });
 
       expect(mockCreateIssue).toHaveBeenCalledTimes(2);
@@ -475,7 +484,7 @@ describe("WelcomeAfterOnboarding", () => {
       await waitFor(() =>
         expect(useWelcomeStore.getState().dismissed).toBe(true),
       );
-      expect(screen.queryByText(/Welcome to Multica/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Welcome to SD Developers/i)).not.toBeInTheDocument();
     });
 
     it("uses Korean persisted skip-path issue and comment artifacts under ko locale", async () => {
@@ -500,7 +509,7 @@ describe("WelcomeAfterOnboarding", () => {
       renderWelcome({ locale: "ko" });
 
       await waitFor(() => {
-        expect(screen.getByText(/Multica에 오신 것을 환영합니다/i)).toBeInTheDocument();
+        expect(screen.getByText(/SD Developers에 오신 것을 환영합니다/i)).toBeInTheDocument();
       });
 
       expect(mockCreateIssue).toHaveBeenCalledTimes(2);
@@ -553,7 +562,7 @@ describe("WelcomeAfterOnboarding", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByText(/Multica へようこそ/),
+          screen.getByText(/SD Developers へようこそ/),
         ).toBeInTheDocument();
       });
 
