@@ -13,28 +13,28 @@ import type {
   MemberWithUser,
   Skill,
   SkillSummary,
-} from "@multica/core/types";
+} from "@tandem/core/types";
 import { useQuery } from "@tanstack/react-query";
 import { getCoreRowModel, useReactTable } from "@tanstack/react-table";
-import { useAuthStore } from "@multica/core/auth";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useWorkspacePaths } from "@multica/core/paths";
+import { useAuthStore } from "@tandem/core/auth";
+import { useWorkspaceId } from "@tandem/core/hooks";
+import { useWorkspacePaths } from "@tandem/core/paths";
 import {
   agentListOptions,
   memberListOptions,
   selectSkillAssignments,
   skillListOptions,
-} from "@multica/core/workspace/queries";
-import { runtimeListOptions } from "@multica/core/runtimes";
-import { Button } from "@multica/ui/components/ui/button";
-import { DataTable } from "@multica/ui/components/ui/data-table";
-import { Input } from "@multica/ui/components/ui/input";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
+} from "@tandem/core/workspace/queries";
+import { runtimeListOptions } from "@tandem/core/runtimes";
+import { Button } from "@tandem/ui/components/ui/button";
+import { DataTable } from "@tandem/ui/components/ui/data-table";
+import { Input } from "@tandem/ui/components/ui/input";
+import { Skeleton } from "@tandem/ui/components/ui/skeleton";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@multica/ui/components/ui/tooltip";
+} from "@tandem/ui/components/ui/tooltip";
 import { useNavigation } from "../../navigation";
 import { PageHeader } from "../../layout/page-header";
 import { canEditSkill } from "../hooks/use-can-edit-skill";
@@ -73,7 +73,7 @@ function PageHeaderBar({
         <p className="ml-2 hidden text-xs text-muted-foreground md:block">
           {t(($) => $.page.tagline)}{" "}
           <a
-            href="https://multica.ai/docs/skills"
+            href="https://tandem.dev/docs/skills"
             target="_blank"
             rel="noopener noreferrer"
             className="underline decoration-muted-foreground/30 underline-offset-4 transition-colors hover:text-foreground"

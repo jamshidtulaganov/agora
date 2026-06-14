@@ -3,8 +3,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import type { AgentRuntime } from "@multica/core/types";
-import { I18nProvider } from "@multica/core/i18n/react";
+import type { AgentRuntime } from "@tandem/core/types";
+import { I18nProvider } from "@tandem/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enRuntimes from "../../locales/en/runtimes.json";
 import enAgents from "../../locales/en/agents.json";
@@ -15,11 +15,11 @@ const TEST_RESOURCES = {
 
 const mockUpdateRuntime = vi.hoisted(() => vi.fn());
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@tandem/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@tandem/core/api", () => ({
   api: {
     updateRuntime: (...args: unknown[]) => mockUpdateRuntime(...args),
     deleteRuntime: vi.fn(),
@@ -52,27 +52,27 @@ vi.mock("@tanstack/react-query", async () => {
   };
 });
 
-vi.mock("@multica/core/auth", () => ({
+vi.mock("@tandem/core/auth", () => ({
   useAuthStore: (sel: (s: { user: { id: string } }) => unknown) =>
     sel({ user: { id: "user-me" } }),
 }));
 
-vi.mock("@multica/core/runtimes", () => ({
+vi.mock("@tandem/core/runtimes", () => ({
   deriveRuntimeHealth: () => "online",
 }));
 
-vi.mock("@multica/core/agents", () => ({
+vi.mock("@tandem/core/agents", () => ({
   useWorkspacePresenceMap: () => ({ byAgent: new Map() }),
 }));
 
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@tandem/core/paths", () => ({
   useWorkspacePaths: () => ({
     runtimes: () => "/runtimes",
     agentDetail: () => "/agents",
   }),
 }));
 
-vi.mock("@multica/core/runtimes/mutations", () => ({
+vi.mock("@tandem/core/runtimes/mutations", () => ({
   useUpdateRuntime: () => ({
     mutate: (
       args: { runtimeId: string; patch: Record<string, unknown> },

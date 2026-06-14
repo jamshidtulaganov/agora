@@ -7,8 +7,8 @@ import {
   Webhook, Copy, Check, RotateCw,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { autopilotDetailOptions, autopilotRunsOptions, autopilotRunOptions } from "@multica/core/autopilots/queries";
-import { projectDetailOptions } from "@multica/core/projects/queries";
+import { autopilotDetailOptions, autopilotRunsOptions, autopilotRunOptions } from "@tandem/core/autopilots/queries";
+import { projectDetailOptions } from "@tandem/core/projects/queries";
 import {
   useUpdateAutopilot,
   useDeleteAutopilot,
@@ -16,26 +16,26 @@ import {
   useCreateAutopilotTrigger,
   useDeleteAutopilotTrigger,
   useRotateAutopilotTriggerWebhookToken,
-} from "@multica/core/autopilots/mutations";
-import { buildAutopilotWebhookUrl } from "@multica/core/autopilots";
-import { api } from "@multica/core/api";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useWorkspacePaths } from "@multica/core/paths";
-import { useActorName } from "@multica/core/workspace/hooks";
+} from "@tandem/core/autopilots/mutations";
+import { buildAutopilotWebhookUrl } from "@tandem/core/autopilots";
+import { api } from "@tandem/core/api";
+import { useWorkspaceId } from "@tandem/core/hooks";
+import { useWorkspacePaths } from "@tandem/core/paths";
+import { useActorName } from "@tandem/core/workspace/hooks";
 import { useNavigation, AppLink } from "../../navigation";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { ActorAvatar } from "../../common/actor-avatar";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
-import { Button } from "@multica/ui/components/ui/button";
-import { Switch } from "@multica/ui/components/ui/switch";
-import { cn } from "@multica/ui/lib/utils";
-import { copyText } from "@multica/ui/lib/clipboard";
+import { Skeleton } from "@tandem/ui/components/ui/skeleton";
+import { Button } from "@tandem/ui/components/ui/button";
+import { Switch } from "@tandem/ui/components/ui/switch";
+import { cn } from "@tandem/ui/lib/utils";
+import { copyText } from "@tandem/ui/lib/clipboard";
 import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
+} from "@tandem/ui/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,15 +45,15 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
+} from "@tandem/ui/components/ui/alert-dialog";
 import {
   TriggerConfigSection,
   getDefaultTriggerConfig,
   toCronExpression,
 } from "./trigger-config";
 import type { TriggerConfig } from "./trigger-config";
-import type { AutopilotExecutionMode, AutopilotRun, AutopilotTrigger } from "@multica/core/types";
-import type { AgentTask } from "@multica/core/types/agent";
+import type { AutopilotExecutionMode, AutopilotRun, AutopilotTrigger } from "@tandem/core/types";
+import type { AgentTask } from "@tandem/core/types/agent";
 import { ReadonlyContent } from "../../editor";
 import { TranscriptButton } from "../../common/task-transcript";
 import { AutopilotDialog } from "./autopilot-dialog";

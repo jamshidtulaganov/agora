@@ -36,21 +36,21 @@ import {
   useCreateCloudBillingCheckoutSession,
   useCreateCloudBillingPortalSession,
   useInvalidateBillingDataAfterCredit,
-} from "@multica/core/billing";
+} from "@tandem/core/billing";
 import type {
   BillingBatch,
   BillingPriceTier,
   BillingTopup,
   BillingTransaction,
-} from "@multica/core/types";
-import { Button } from "@multica/ui/components/ui/button";
+} from "@tandem/core/types";
+import { Button } from "@tandem/ui/components/ui/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@multica/ui/components/ui/card";
+} from "@tandem/ui/components/ui/card";
 import { useT } from "../i18n";
 import { useNavigation } from "../navigation";
 

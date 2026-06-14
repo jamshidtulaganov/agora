@@ -17,7 +17,7 @@
 -- Used by the OAuth callback. `app_secret_encrypted` is the ciphertext
 -- produced by internal/util/secretbox — never plaintext. The
 -- (workspace_id, agent_id) UNIQUE constraint enforces the spec rule
--- "one Multica Agent ↔ one Lark Bot"; re-installing on the same agent
+-- "one Tandem Agent ↔ one Lark Bot"; re-installing on the same agent
 -- goes through UpsertLarkInstallation instead.
 INSERT INTO lark_installation (
     workspace_id, agent_id, app_id, app_secret_encrypted,
@@ -148,14 +148,14 @@ WHERE id = $1
 -- =====================
 
 -- name: CreateLarkUserBinding :one
--- Records that a Lark open_id (per-installation) maps to a Multica
+-- Records that a Lark open_id (per-installation) maps to a Tandem
 -- user.
 --
 -- Two structural guarantees:
 --   1. The composite FK to member(workspace_id, user_id) makes this
 --      statement fail when the redeemer is not (or no longer) a
 --      workspace member — that is §4.3 of the design.
---   2. ON CONFLICT DO UPDATE is gated on `multica_user_id` matching
+--   2. ON CONFLICT DO UPDATE is gated on `tandem_user_id` matching
 --      the existing binding, so a second redeemer holding their own
 --      valid binding token CANNOT silently steal an already-bound
 --      open_id. If the conflict row points at a different user, the
@@ -169,19 +169,19 @@ WHERE id = $1
 -- True account changes must go through an explicit unbind flow, not
 -- through a binding token.
 INSERT INTO lark_user_binding (
-    workspace_id, multica_user_id, installation_id, lark_open_id, union_id
+    workspace_id, tandem_user_id, installation_id, lark_open_id, union_id
 ) VALUES (
     $1, $2, $3, $4, sqlc.narg('union_id')
 )
 ON CONFLICT (installation_id, lark_open_id) DO UPDATE SET
     union_id = COALESCE(EXCLUDED.union_id, lark_user_binding.union_id),
     bound_at = now()
-WHERE lark_user_binding.multica_user_id = EXCLUDED.multica_user_id
+WHERE lark_user_binding.tandem_user_id = EXCLUDED.tandem_user_id
 RETURNING *;
 
 -- name: GetLarkUserBindingByOpenID :one
 -- The inbound identity check. A row here means: this open_id maps to a
--- Multica user who IS currently a workspace member (the composite FK
+-- Tandem user who IS currently a workspace member (the composite FK
 -- cascades the binding away when membership is revoked, so a row's
 -- existence is itself the membership proof).
 SELECT * FROM lark_user_binding

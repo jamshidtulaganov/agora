@@ -1,13 +1,13 @@
-# Multica 产品全景文档
+# Tandem 产品全景文档
 
 > **文档说明**
 >
-> 这份文档的目的是：**让任何没有写过代码的新同事，在 30 分钟内完全理解 Multica 这个产品到底有哪些功能、每个功能在整体中处于什么位置、一个功能和另一个功能如何协同**。
+> 这份文档的目的是：**让任何没有写过代码的新同事，在 30 分钟内完全理解 Tandem 这个产品到底有哪些功能、每个功能在整体中处于什么位置、一个功能和另一个功能如何协同**。
 >
 > 它的受众包括：
 >
 > - **新加入的工程师 / 产品 / 设计 / 运营**——用它做 onboarding 的第一份材料
-> - **产品介绍工作**——需要对外讲解 Multica 时的事实基础
+> - **产品介绍工作**——需要对外讲解 Tandem 时的事实基础
 > - **文案工作者**——写交互文案、营销文案、帮助文档时，需要知道某个词（比如 "Skill"、"Runtime"、"Autopilot"）在产品体系里代表什么
 > - **任何需要在修改某个局部前，先理解它与整体关系的人**
 >
@@ -19,7 +19,7 @@
 
 ## 目录
 
-1. [Multica 是什么](#1-multica-是什么)
+1. [Tandem 是什么](#1-tandem-是什么)
 2. [核心概念词典](#2-核心概念词典)
 3. [功能全景（按模块）](#3-功能全景按模块)
    - 3.1 [Workspace 工作区](#31-workspace-工作区)
@@ -43,11 +43,11 @@
 
 ---
 
-## 1. Multica 是什么
+## 1. Tandem 是什么
 
 ### 一句话定位
 
-**Multica 把编码智能体变成真正的团队成员。**
+**Tandem 把编码智能体变成真正的团队成员。**
 
 像给同事分配任务一样，把一个 issue 指派给一个 agent，它会自己认领、写代码、汇报进度、更新状态——不需要你一直守着。
 
@@ -60,7 +60,7 @@
 - 没有跨任务的记忆，每次都从零开始
 - 多个 agent 同时工作时，没有一个"看板"能看到全局
 
-Multica 做的事：
+Tandem 做的事：
 
 - Agent 和人**共用同一个任务看板**（issue board）
 - Agent **有 profile**，会出现在 assignee 下拉里、会在评论区发言、会自己创建 issue
@@ -70,17 +70,17 @@ Multica 做的事：
 
 ### 定位一句话版本
 
-> Multica 不是一个 AI 工具，而是一个**人 + AI 协作的任务管理平台**。agent 是一等公民，和人在同一个工作流里。
+> Tandem 不是一个 AI 工具，而是一个**人 + AI 协作的任务管理平台**。agent 是一等公民，和人在同一个工作流里。
 
 ### 部署形态
 
-- **云版本（Multica Cloud）**：官方托管服务，agent 通过你本地跑的 daemon 执行
+- **云版本（Tandem Cloud）**：官方托管服务，agent 通过你本地跑的 daemon 执行
 - **自托管（Self-Host）**：完整后端可以部署在自己的服务器
 - **客户端**：Next.js web 版 + Electron 桌面版（两端体验基本一致，桌面独有：多标签、原生托盘、自动更新）
 
 ### 支持的 Coding Agent
 
-Multica **不自己训模型**，也不锁定某一家厂商。它是调度器，本地 daemon 会自动探测以下 CLI 工具并接入：
+Tandem **不自己训模型**，也不锁定某一家厂商。它是调度器，本地 daemon 会自动探测以下 CLI 工具并接入：
 
 Claude Code · Codex · OpenClaw · OpenCode · Hermes · Gemini · Pi · Cursor Agent · Kimi · Kiro CLI
 
@@ -126,7 +126,7 @@ Claude Code · Codex · OpenClaw · OpenCode · Hermes · Gemini · Pi · Cursor
 
 ### 3.1 Workspace 工作区
 
-> **角色**：一切的容器。Multica 的多租户边界。
+> **角色**：一切的容器。Tandem 的多租户边界。
 
 #### 功能
 
@@ -150,9 +150,9 @@ Workspace 不是一个功能，而是**所有功能的坐标系**。URL 的形�
 
 ### 3.2 Issue 议题管理
 
-> **角色**：Multica 的核心工作对象。
+> **角色**：Tandem 的核心工作对象。
 
-Issue 对应的概念在 Linear 叫 Issue、在 Jira 叫 Ticket、在 GitHub 叫 Issue——就是一个任务单元。Multica 的特色在于**issue 可以分配给 agent，和分配给人完全对等**。
+Issue 对应的概念在 Linear 叫 Issue、在 Jira 叫 Ticket、在 GitHub 叫 Issue——就是一个任务单元。Tandem 的特色在于**issue 可以分配给 agent，和分配给人完全对等**。
 
 #### 核心字段
 
@@ -237,7 +237,7 @@ Project 相比 Issue 是更高层的组织单元。一个 issue 可以不属于�
 
 ### 3.4 Agent 智能体
 
-> **角色**：AI 工作者。Multica 最独特的对象。
+> **角色**：AI 工作者。Tandem 最独特的对象。
 
 一个 Agent 不是一个"AI 模型"，而是一个**带配置的工作者身份**。它有名字、头像、个人描述、说明书（系统提示词）、绑定的运行时、挂载的技能。在 UI 上它和人一样会出现在 assignee 下拉、评论作者、订阅者列表里。
 
@@ -268,7 +268,7 @@ Project 相比 Issue 是更高层的组织单元。一个 issue 可以不属于�
 
 #### 产品里的位置
 
-Agent 是 Multica 的灵魂。几乎所有功能都围绕"如何让一个 agent 干活"展开：
+Agent 是 Tandem 的灵魂。几乎所有功能都围绕"如何让一个 agent 干活"展开：
 - Issue 通过分配触发 agent
 - Skill 通过挂载赋能 agent
 - Runtime 提供 agent 的运行环境
@@ -285,11 +285,11 @@ Agent 是 Multica 的灵魂。几乎所有功能都围绕"如何让一个 agent 
 
 > **角色**：Agent 真正跑起来的物理/虚拟机器。
 
-这是 Multica **分布式执行架构**的核心设计：**agent 不在 server 上运行，而在用户自己的机器上运行**。Server 只做任务调度、状态同步、数据存储。
+这是 Tandem **分布式执行架构**的核心设计：**agent 不在 server 上运行，而在用户自己的机器上运行**。Server 只做任务调度、状态同步、数据存储。
 
 #### Daemon 是什么
 
-`multica` CLI 在用户的机器上启动一个后台进程（macOS launchd / Linux systemd / Windows 服务风格），它：
+`tandem` CLI 在用户的机器上启动一个后台进程（macOS launchd / Linux systemd / Windows 服务风格），它：
 
 1. **自动探测** `$PATH` 上安装的 coding CLI（`claude`, `codex`, `opencode`, `openclaw`, `hermes`, `gemini`, `pi`, `cursor-agent`, `kimi`, `kiro-cli`）
 2. 向 server **注册** 为一组 runtime（一个 CLI = 一个 runtime）
@@ -321,19 +321,19 @@ Agent 是 Multica 的灵魂。几乎所有功能都围绕"如何让一个 agent 
 
 | 命令 | 说明 |
 |------|------|
-| `multica setup` | 一键配置：填 URL + 登录 + 启动 daemon |
-| `multica login` | 浏览器打开 OAuth 登录，保存 90 天 PAT 到 `~/.multica/config.json` |
-| `multica login --token <pat>` | 无头登录（SSH/CI） |
-| `multica daemon start` | 后台启动 daemon（写 PID 到 `~/.multica/daemon.pid`，日志到 `~/.multica/daemon.log`） |
-| `multica daemon stop` | 发 SIGTERM，优雅关闭（等待进行中的任务完成，超时 30s） |
-| `multica daemon status` | 打印 daemon 状态、探测到的 agent、watch 中的 workspace |
-| `multica daemon logs -f` | 实时跟随日志 |
-| `multica daemon start --profile <name>` | 启动独立配置的 daemon（用于多环境，比如同时连 staging 和生产） |
+| `tandem setup` | 一键配置：填 URL + 登录 + 启动 daemon |
+| `tandem login` | 浏览器打开 OAuth 登录，保存 90 天 PAT 到 `~/.tandem/config.json` |
+| `tandem login --token <pat>` | 无头登录（SSH/CI） |
+| `tandem daemon start` | 后台启动 daemon（写 PID 到 `~/.tandem/daemon.pid`，日志到 `~/.tandem/daemon.log`） |
+| `tandem daemon stop` | 发 SIGTERM，优雅关闭（等待进行中的任务完成，超时 30s） |
+| `tandem daemon status` | 打印 daemon 状态、探测到的 agent、watch 中的 workspace |
+| `tandem daemon logs -f` | 实时跟随日志 |
+| `tandem daemon start --profile <name>` | 启动独立配置的 daemon（用于多环境，比如同时连 staging 和生产） |
 
 #### 安全边界
 
-- 每个任务一个**独立工作目录** `~/multica_workspaces/{ws}/{task_short_id}/workdir/`
-- 环境变量**过滤**：阻止 agent 覆盖 daemon 的认证变量（`MULTICA_TOKEN` 等）
+- 每个任务一个**独立工作目录** `~/tandem_workspaces/{ws}/{task_short_id}/workdir/`
+- 环境变量**过滤**：阻止 agent 覆盖 daemon 的认证变量（`TANDEM_TOKEN` 等）
 - 仓库访问**白名单**：agent 只能 checkout workspace 配置的仓库
 - Codex 有**版本相关的 sandbox 策略**
 
@@ -384,16 +384,16 @@ skill
 #### CLI 对应命令
 
 ```bash
-multica skill list
-multica skill get <id>
-multica skill create --title ...
-multica skill import --url https://...
-multica skill files upsert <skill-id> --path ...
+tandem skill list
+tandem skill get <id>
+tandem skill create --title ...
+tandem skill import --url https://...
+tandem skill files upsert <skill-id> --path ...
 ```
 
 #### 产品里的位置
 
-Skill 是 Multica 区别于"每次都要写长 prompt"的关键机制。它让团队的专业知识**沉淀成可复用的组件**，绑在 agent 上就生效——就像给员工写的 SOP/playbook。
+Skill 是 Tandem 区别于"每次都要写长 prompt"的关键机制。它让团队的专业知识**沉淀成可复用的组件**，绑在 agent 上就生效——就像给员工写的 SOP/playbook。
 
 从架构角度：skill 不参与执行逻辑，只参与**上下文注入**。它在整个任务生命周期里只出现一次——在 daemon 启动 CLI 之前的环境准备阶段。
 
@@ -434,7 +434,7 @@ autopilot
 
 - **Schedule（cron）**：server 后台每 30 秒扫一次 `autopilot_trigger`，到点的触发出去
 - **Webhook**：给出一个带 `webhook_token` 的 URL，外部 POST 即可触发
-- **API / Manual**：UI 上点"立即运行"按钮，或用 CLI `multica autopilot trigger <id>`
+- **API / Manual**：UI 上点"立即运行"按钮，或用 CLI `tandem autopilot trigger <id>`
 
 #### 并发策略
 
@@ -459,7 +459,7 @@ autopilot
 
 #### 产品里的位置
 
-Autopilot 让 Multica 从"你分配 → agent 做"升级到"agent 自己发起工作"。配合 `run_only` 模式，甚至可以在没有 issue 的前提下跑定时任务。Issue 上的 `origin_type=autopilot` + `origin_id` 字段留下了"这个 issue 是哪个 autopilot run 创建的"的追溯链。
+Autopilot 让 Tandem 从"你分配 → agent 做"升级到"agent 自己发起工作"。配合 `run_only` 模式，甚至可以在没有 issue 的前提下跑定时任务。Issue 上的 `origin_type=autopilot` + `origin_id` 字段留下了"这个 issue 是哪个 autopilot run 创建的"的追溯链。
 
 #### 对应表
 
@@ -577,11 +577,11 @@ Inbox 是"主动注意力系统"，让用户不必一直盯着看板也知道哪
 
 #### 邀请接受的桌面特殊处理
 
-桌面端的 `multica://invite/{id}` 深链接**不是走路由**，而是触发 `WindowOverlay`——共享视图组件 `InvitePage` 装在原生窗口覆盖层里，保证拖拽移动窗口等原生体验。
+桌面端的 `tandem://invite/{id}` 深链接**不是走路由**，而是触发 `WindowOverlay`——共享视图组件 `InvitePage` 装在原生窗口覆盖层里，保证拖拽移动窗口等原生体验。
 
 #### 产品里的位置
 
-成员管理是**一切协作的前提**。但在 Multica 里它有一个独特之处：成员系统也管 agent。之所以要有 `assignee_type` 区分 member 和 agent，就是为了让两者在同一套 API 里表达"谁可以被分配"。
+成员管理是**一切协作的前提**。但在 Tandem 里它有一个独特之处：成员系统也管 agent。之所以要有 `assignee_type` 区分 member 和 agent，就是为了让两者在同一套 API 里表达"谁可以被分配"。
 
 #### 对应表
 
@@ -683,52 +683,52 @@ Onboarding 是新用户能不能成功把 agent 跑起来的关键漏斗。任�
 
 #### 产品里的位置
 
-Settings 是所有"配置即工作"动作的汇总：agent 的 prompt、workspace 的 context、仓库白名单、skill 的内容——都在这里。**对运营和文案来说最重要的一句话**：用户在 Multica 的 settings 页面做的配置，每一项都会影响 agent 实际执行时读到的上下文。
+Settings 是所有"配置即工作"动作的汇总：agent 的 prompt、workspace 的 context、仓库白名单、skill 的内容——都在这里。**对运营和文案来说最重要的一句话**：用户在 Tandem 的 settings 页面做的配置，每一项都会影响 agent 实际执行时读到的上下文。
 
 ---
 
 ### 3.14 CLI 命令行工具
 
-`multica` 不只是启动 daemon 的工具，也是完整的命令行操作层。很多用户喜欢在终端里推进工作而不是开 UI。
+`tandem` 不只是启动 daemon 的工具，也是完整的命令行操作层。很多用户喜欢在终端里推进工作而不是开 UI。
 
 #### 工作区 / 议题
 
 ```bash
-multica workspace list | get | watch | unwatch
-multica issue list | get | create | update | assign | status
-multica issue comment list | add | delete
-multica issue runs <id>                 # 查看任务执行历史
-multica issue run-messages <task-id>    # 查看某次执行的消息
+tandem workspace list | get | watch | unwatch
+tandem issue list | get | create | update | assign | status
+tandem issue comment list | add | delete
+tandem issue runs <id>                 # 查看任务执行历史
+tandem issue run-messages <task-id>    # 查看某次执行的消息
 ```
 
 #### Agent / Skill / Autopilot / Project / Repo
 
 ```bash
-multica agent list | get | create | update | archive
-multica skill list | get | create | update | delete | import | files upsert
-multica autopilot list | get | create | update | trigger
-multica autopilot trigger-add --cron "0 9 * * 1-5"
-multica project list | get | create | update
-multica repo list | add | update | delete
+tandem agent list | get | create | update | archive
+tandem skill list | get | create | update | delete | import | files upsert
+tandem autopilot list | get | create | update | trigger
+tandem autopilot trigger-add --cron "0 9 * * 1-5"
+tandem project list | get | create | update
+tandem repo list | add | update | delete
 ```
 
 #### Runtime
 
 ```bash
-multica runtime list | usage | activity | update
+tandem runtime list | usage | activity | update
 ```
 
 #### 配置 / 更新
 
 ```bash
-multica config show | set server_url ...
-multica auth status | logout
-multica version | update
+tandem config show | set server_url ...
+tandem auth status | logout
+tandem version | update
 ```
 
 #### 产品里的位置
 
-CLI 是 Multica 对开发者友好度的体现。对于 agent 自己来说，也同等重要——**agent 在执行任务时能调用 `multica` 命令读写 issue、评论、查文档**，这正是 CLI 在 "agent 作为一等公民"架构里的作用。
+CLI 是 Tandem 对开发者友好度的体现。对于 agent 自己来说，也同等重要——**agent 在执行任务时能调用 `tandem` 命令读写 issue、评论、查文档**，这正是 CLI 在 "agent 作为一等公民"架构里的作用。
 
 ---
 
@@ -736,7 +736,7 @@ CLI 是 Multica 对开发者友好度的体现。对于 agent 自己来说，也
 
 ```
 ┌─────────────────────┐        ┌────────────────────┐        ┌──────────────────┐
-│  Next.js Web App    │        │  Electron Desktop  │        │  multica CLI     │
+│  Next.js Web App    │        │  Electron Desktop  │        │  tandem CLI     │
 │  apps/web           │        │  apps/desktop      │        │  server/cmd/     │
 └──────────┬──────────┘        └──────────┬─────────┘        └────────┬─────────┘
            │  HTTP + WebSocket             │                           │  HTTP
@@ -782,7 +782,7 @@ CLI 是 Multica 对开发者友好度的体现。对于 agent 自己来说，也
 | **Web / Desktop 客户端** | UI、本地客户端状态（Zustand）、服务器状态缓存（TanStack Query）、WebSocket 订阅 | 业务规则、AI 调用 |
 | **Server** | 持久化、权限、任务编排、事件广播、Autopilot 调度、Runtime 健康监测 | 不直接执行 agent、不调 LLM |
 | **Daemon** | 探测并启动本地 CLI、管理任务工作目录、流式上报消息、session 恢复 | 不做业务决策、只认 server 给它的任务 |
-| **Agent CLI（Claude Code 等）** | 实际调用 LLM、执行工具调用、写文件、跑测试 | 不感知 Multica 的数据模型（所有上下文通过 `multica` CLI 命令读回） |
+| **Agent CLI（Claude Code 等）** | 实际调用 LLM、执行工具调用、写文件、跑测试 | 不感知 Tandem 的数据模型（所有上下文通过 `tandem` CLI 命令读回） |
 
 ### 实时层（WebSocket）
 
@@ -812,7 +812,7 @@ Server 启动一个 WebSocket hub：
 
 ### AI / LLM 在哪里
 
-**Multica 本身不直接调 LLM API**。所有 LLM 调用都在 agent CLI 子进程里发生（Claude Code 调 Anthropic API、Codex 调 OpenAI API 等）。
+**Tandem 本身不直接调 LLM API**。所有 LLM 调用都在 agent CLI 子进程里发生（Claude Code 调 Anthropic API、Codex 调 OpenAI API 等）。
 
 Server 和 daemon 做的事情是：
 
@@ -863,7 +863,7 @@ Server 启动三个 goroutine：
 ### 桌面端特有（不是路由，是 WindowOverlay）
 
 - **Create workspace overlay**
-- **Invite accept overlay**（来自 `multica://invite/{id}` 深链接）
+- **Invite accept overlay**（来自 `tandem://invite/{id}` 深链接）
 - **Onboarding overlay**（首次或零工作区时）
 
 ---
@@ -888,7 +888,7 @@ Server 启动三个 goroutine：
 - **本地 daemon runtime 卡片**：在 Runtimes 页面自动显示本机 daemon
 - **自动更新**：`Settings → Updates` 检查/下载/安装新版本
 - **Immersive mode**：全屏模式，隐藏侧边栏
-- **深链接**：`multica://auth/callback?token=...` 和 `multica://invite/{id}`
+- **深链接**：`tandem://auth/callback?token=...` 和 `tandem://invite/{id}`
 - **拖动区**：macOS 的红绿灯 + 顶部 48px 拖拽条（`h-12`）用来移动窗口
 - **Workspace 单例守护**：`setCurrentWorkspace()` 管理当前活跃工作区的全局身份
 
@@ -970,7 +970,7 @@ Web 有 URL 栏——错误状态（比如"你没有访问这个 workspace 的�
 
 ## 尾声
 
-Multica 的设计可以归结为一句话：**把"人在一个看板上协作"这件事，扩展到了"人 + AI agent 在同一个看板上协作"**。
+Tandem 的设计可以归结为一句话：**把"人在一个看板上协作"这件事，扩展到了"人 + AI agent 在同一个看板上协作"**。
 
 所有功能都是围绕这个核心展开：
 - 为了让 agent 能像人一样被分配任务 → polymorphic actor（`assignee_type`）

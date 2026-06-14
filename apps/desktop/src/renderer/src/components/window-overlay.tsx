@@ -1,11 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { NewWorkspacePage } from "@multica/views/workspace/new-workspace-page";
-import { InvitePage } from "@multica/views/invite";
-import { InvitationsPage } from "@multica/views/invitations";
-import { OnboardingFlow } from "@multica/views/onboarding";
-import { useNavigation } from "@multica/views/navigation";
-import { paths } from "@multica/core/paths";
-import { workspaceListOptions } from "@multica/core/workspace/queries";
+import { NewWorkspacePage } from "@tandem/views/workspace/new-workspace-page";
+import { InvitePage } from "@tandem/views/invite";
+import { InvitationsPage } from "@tandem/views/invitations";
+import { OnboardingFlow } from "@tandem/views/onboarding";
+import { useNavigation } from "@tandem/views/navigation";
+import { paths } from "@tandem/core/paths";
+import { workspaceListOptions } from "@tandem/core/workspace/queries";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 
 /**

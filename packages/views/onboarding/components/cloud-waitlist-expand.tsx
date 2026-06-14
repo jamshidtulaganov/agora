@@ -3,11 +3,11 @@
 import { useState } from "react";
 import { ArrowRight, Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@multica/ui/components/ui/button";
-import { Input } from "@multica/ui/components/ui/input";
-import { Label } from "@multica/ui/components/ui/label";
-import { Textarea } from "@multica/ui/components/ui/textarea";
-import { joinCloudWaitlist } from "@multica/core/onboarding";
+import { Button } from "@tandem/ui/components/ui/button";
+import { Input } from "@tandem/ui/components/ui/input";
+import { Label } from "@tandem/ui/components/ui/label";
+import { Textarea } from "@tandem/ui/components/ui/textarea";
+import { joinCloudWaitlist } from "@tandem/core/onboarding";
 import { useT } from "../../i18n";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

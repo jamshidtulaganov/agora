@@ -4,7 +4,7 @@ import {
   FILE_CARD_URL_PATTERN,
   isAllowedFileCardHref,
   preprocessFileCards,
-} from "@multica/ui/markdown";
+} from "@tandem/ui/markdown";
 
 describe("isAllowedFileCardHref", () => {
   it.each([

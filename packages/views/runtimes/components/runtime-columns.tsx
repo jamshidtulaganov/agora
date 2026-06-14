@@ -5,24 +5,24 @@ import { Globe, MoreHorizontal, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useQuery } from "@tanstack/react-query";
-import type { AgentRuntime, MemberWithUser } from "@multica/core/types";
-import { deriveWorkload } from "@multica/core/agents";
+import type { AgentRuntime, MemberWithUser } from "@tandem/core/types";
+import { deriveWorkload } from "@tandem/core/agents";
 import {
   deriveRuntimeHealth,
   runtimeUsageOptions,
-} from "@multica/core/runtimes";
-import { Button } from "@multica/ui/components/ui/button";
+} from "@tandem/core/runtimes";
+import { Button } from "@tandem/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@multica/ui/components/ui/dropdown-menu";
+} from "@tandem/ui/components/ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@multica/ui/components/ui/tooltip";
+} from "@tandem/ui/components/ui/tooltip";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useViewingTimezone } from "../../common/use-viewing-timezone";
 import { workloadConfig } from "../../agents/presence";
@@ -367,7 +367,7 @@ function CliCell({ runtime }: { runtime: AgentRuntime }) {
   const meta = runtime.metadata as Record<string, unknown> | null;
   // `version` is the agent's own underlying CLI tool version — distinct per
   // provider (e.g. "2.1.5 (Claude Code)", "codex-cli 0.118.0", "0.42.0").
-  // The separate `cli_version` is the shared multica daemon CLI, identical
+  // The separate `cli_version` is the shared tandem daemon CLI, identical
   // for every runtime on one machine; surfacing it here made all agents
   // show the same number (#3838). The daemon CLI version and its update
   // prompt belong to the machine — they live in the machine meta strip and

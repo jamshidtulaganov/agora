@@ -174,7 +174,7 @@ type DaemonRegisterRequest struct {
 	// and tasks keep working without manual intervention.
 	LegacyDaemonIDs []string `json:"legacy_daemon_ids"`
 	DeviceName      string   `json:"device_name"`
-	CLIVersion      string   `json:"cli_version"` // multica CLI version
+	CLIVersion      string   `json:"cli_version"` // tandem CLI version
 	LaunchedBy      string   `json:"launched_by"` // "desktop" when spawned by the Electron app
 	Runtimes        []struct {
 		Name    string `json:"name"`
@@ -1112,7 +1112,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 	resp := taskToResponse(*task, runtimeWorkspaceID)
 	if agent, err := h.Queries.GetAgent(r.Context(), task.AgentID); err == nil {
 		// Workspace-bound skills first, then platform built-in skills. Built-in
-		// names carry a "multica-" prefix so their on-disk slugs never collide
+		// names carry a "tandem-" prefix so their on-disk slugs never collide
 		// with a user-authored workspace skill (see writeSkillFiles).
 		skills := h.TaskService.LoadAgentSkills(r.Context(), task.AgentID)
 		skills = append(skills, h.TaskService.BuiltinSkills()...)
@@ -1251,7 +1251,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 							Label:        label,
 						})
 						// Lift github_repo resources into the daemon's repo list
-						// so `multica repo checkout` and the meta-skill render
+						// so `tandem repo checkout` and the meta-skill render
 						// them as the issue's repos.
 						if row.ResourceType == "github_repo" {
 							var payload struct {
@@ -1421,7 +1421,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 			// messages after the last assistant message (every completed or
 			// failed run writes an assistant row, so that anchor advances each
 			// turn). Attachments are collected from each included message so
-			// the agent can `multica attachment download <id>` — the markdown
+			// the agent can `tandem attachment download <id>` — the markdown
 			// URL alone is signed and 30-min expiring on the private CDN.
 			if msgs, err := h.Queries.ListChatMessages(r.Context(), cs.ID); err == nil && len(msgs) > 0 {
 				unanswered := trailingUserMessages(msgs)
@@ -1498,7 +1498,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 			// When the user picked a project in the modal, surface its title
 			// and resources to the daemon so the agent has the same context
 			// it would for an issue-bound task: the prompt template can name
-			// the project, and `multica repo checkout` sees the project's
+			// the project, and `tandem repo checkout` sees the project's
 			// github_repo resources instead of the workspace fallback.
 			var projectRepos []RepoData
 			if qc.ProjectID != "" {
@@ -1611,7 +1611,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Workspace isolation check: the daemon uses this response's workspace_id
-	// as the only authority for MULTICA_WORKSPACE_ID in the agent env. An
+	// as the only authority for TANDEM_WORKSPACE_ID in the agent env. An
 	// empty value would make the CLI silently fall back to the user-global
 	// config and talk to whatever workspace the user happened to last
 	// configure; a value that doesn't match the runtime's workspace means
@@ -1657,7 +1657,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Mint a task-scoped `mat_` token bound to (agent, task, workspace,
-	// owner). The daemon will inject this as MULTICA_TOKEN into the agent
+	// owner). The daemon will inject this as TANDEM_TOKEN into the agent
 	// process instead of its own credential, so any API call the agent
 	// makes — even one that strips X-Agent-ID / X-Task-ID headers — is
 	// recognized server-side as actor=agent, closing the lateral-movement

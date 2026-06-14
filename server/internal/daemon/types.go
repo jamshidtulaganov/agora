@@ -61,7 +61,7 @@ type Task struct {
 	NewCommentsSince         string                `json:"new_comments_since,omitempty"`          // RFC3339 anchor (last run's started_at) the count is measured from; empty on cold start
 	ChatSessionID            string                `json:"chat_session_id,omitempty"`             // non-empty for chat tasks
 	ChatMessage              string                `json:"chat_message,omitempty"`                // user message content for chat tasks
-	ChatMessageAttachments   []ChatAttachmentMeta  `json:"chat_message_attachments,omitempty"`    // attachments linked to the chat message; agent uses these to `multica attachment download <id>`
+	ChatMessageAttachments   []ChatAttachmentMeta  `json:"chat_message_attachments,omitempty"`    // attachments linked to the chat message; agent uses these to `tandem attachment download <id>`
 	AutopilotRunID           string                `json:"autopilot_run_id,omitempty"`            // non-empty for autopilot run_only tasks
 	AutopilotID              string                `json:"autopilot_id,omitempty"`                // autopilot that spawned this run
 	AutopilotTitle           string                `json:"autopilot_title,omitempty"`             // autopilot title used as task context
@@ -98,7 +98,7 @@ type Task struct {
 	InitiatorName  string `json:"initiator_name,omitempty"`
 	InitiatorEmail string `json:"initiator_email,omitempty"`
 	// AuthToken is the task-scoped credential the server mints at claim time.
-	// The daemon injects it into the spawned agent as MULTICA_TOKEN so the
+	// The daemon injects it into the spawned agent as TANDEM_TOKEN so the
 	// agent never sees the daemon's own (often workspace-owner) credential.
 	// Empty when the server-side runtime has no owning user — the daemon
 	// then falls back to its own token. See MUL-2600.
@@ -108,7 +108,7 @@ type Task struct {
 // ChatAttachmentMeta is the structured attachment metadata the daemon
 // hands to the agent for chat tasks. We pass id + filename + content_type
 // so the chat prompt can list them explicitly and instruct the agent to
-// run `multica attachment download <id>` instead of guessing from a
+// run `tandem attachment download <id>` instead of guessing from a
 // signed CDN URL (which expires).
 type ChatAttachmentMeta struct {
 	ID          string `json:"id"`

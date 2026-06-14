@@ -174,7 +174,7 @@ func TestPrepareWithProjectResources(t *testing.T) {
 	defer env.Cleanup(true)
 
 	// resources.json should exist and decode back to what we wrote.
-	resourcesPath := filepath.Join(env.WorkDir, ".multica", "project", "resources.json")
+	resourcesPath := filepath.Join(env.WorkDir, ".tandem", "project", "resources.json")
 	raw, err := os.ReadFile(resourcesPath)
 	if err != nil {
 		t.Fatalf("failed to read resources.json: %v", err)
@@ -216,7 +216,7 @@ func TestPrepareWithProjectResources(t *testing.T) {
 		"GitHub repo",
 		"https://github.com/multica-ai/multica",
 		"default branch: `main`",
-		".multica/project/resources.json",
+		".tandem/project/resources.json",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("CLAUDE.md missing %q", want)
@@ -272,7 +272,7 @@ func TestWriteProjectResourcesSkippedWhenNone(t *testing.T) {
 	if err := writeProjectResources(dir, TaskContextForEnv{}, nil); err != nil {
 		t.Fatalf("writeProjectResources: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".multica", "project", "resources.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dir, ".tandem", "project", "resources.json")); !os.IsNotExist(err) {
 		t.Errorf("expected no resources.json to be written when project context is empty")
 	}
 }
@@ -325,7 +325,7 @@ func TestPrepareWithRepoContext(t *testing.T) {
 	}
 	s := string(content)
 	for _, want := range []string{
-		"multica repo checkout",
+		"tandem repo checkout",
 		"https://github.com/org/backend",
 		"https://github.com/org/frontend",
 	} {
@@ -450,14 +450,14 @@ func TestWriteContextFilesAutopilotRunOnly(t *testing.T) {
 		"run-1",
 		"autopilot-1",
 		"Check dependencies and report outdated packages.",
-		"multica autopilot get autopilot-1 --output json",
+		"tandem autopilot get autopilot-1 --output json",
 		"no assigned issue",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("autopilot context missing %q\n---\n%s", want, s)
 		}
 	}
-	if strings.Contains(s, "Run `multica issue get") {
+	if strings.Contains(s, "Run `tandem issue get") {
 		t.Errorf("autopilot context should not contain issue get workflow\n---\n%s", s)
 	}
 }
@@ -515,8 +515,8 @@ func TestWriteContextFilesClaudeNativeSkills(t *testing.T) {
 // TestReuseRefreshesSkillsWithoutDuplicating is the regression guard for
 // GitHub #3684: re-dispatching the same agent on the same issue goes through
 // the Reuse path, which must refresh skills in place rather than pile up
-// collision-free duplicates (issue-review, issue-review-multica,
-// issue-review-multica-2, …). Reuse rolls back the prior dispatch's writes
+// collision-free duplicates (issue-review, issue-review-tandem,
+// issue-review-tandem-2, …). Reuse rolls back the prior dispatch's writes
 // via its sidecar manifest before re-writing, so each skill lands at its
 // natural slug on every dispatch instead of dodging its own prior output.
 func TestReuseRefreshesSkillsWithoutDuplicating(t *testing.T) {
@@ -564,7 +564,7 @@ func TestReuseRefreshesSkillsWithoutDuplicating(t *testing.T) {
 		names = append(names, e.Name())
 	}
 	if len(names) != 1 || names[0] != "issue-review" {
-		t.Fatalf("after re-dispatch the skills dir = %v, want exactly [issue-review] with no -multica duplicates", names)
+		t.Fatalf("after re-dispatch the skills dir = %v, want exactly [issue-review] with no -tandem duplicates", names)
 	}
 
 	// The surviving skill keeps its natural slug in frontmatter, so the agent
@@ -582,7 +582,7 @@ func TestReuseRefreshesSkillsWithoutDuplicating(t *testing.T) {
 // #3716 review surfaced: a prior-dispatch agent writes a file into the
 // platform's managed skill directory. CleanupSidecars on its own would keep
 // that now-non-empty directory, leaving the canonical slug occupied so the
-// next refresh dodges to issue-review-multica. Reuse must reclaim the
+// next refresh dodges to issue-review-tandem. Reuse must reclaim the
 // platform-owned skill directory so the refreshed skill stays at its natural
 // slug.
 func TestReuseReclaimsManagedSkillDirWithStrayAgentFile(t *testing.T) {
@@ -633,7 +633,7 @@ func TestReuseReclaimsManagedSkillDirWithStrayAgentFile(t *testing.T) {
 		names = append(names, e.Name())
 	}
 	if len(names) != 1 || names[0] != "issue-review" {
-		t.Fatalf("after reuse with a stray agent file the skills dir = %v, want exactly [issue-review] with no -multica duplicate", names)
+		t.Fatalf("after reuse with a stray agent file the skills dir = %v, want exactly [issue-review] with no -tandem duplicate", names)
 	}
 
 	// The managed skill dir is platform-owned: reclaiming it drops the agent's
@@ -788,9 +788,9 @@ func TestInjectRuntimeConfigClaude(t *testing.T) {
 
 	s := string(content)
 	for _, want := range []string{
-		"Multica Agent Runtime",
-		"multica issue get",
-		"multica issue comment list",
+		"Tandem Agent Runtime",
+		"tandem issue get",
+		"tandem issue comment list",
 		"Go Conventions",
 		"PR Review",
 		"discovered automatically",
@@ -818,18 +818,18 @@ func TestInjectRuntimeConfigAvailableCommandsCoreOnly(t *testing.T) {
 	for _, want := range []string{
 		"## Available Commands",
 		"core agent loop and common issue create/update tasks",
-		"`multica <command> --help`",
-		"multica issue get <id> --output json",
-		"multica issue comment list <issue-id>",
-		"multica issue create --title",
-		"multica issue update <id>",
+		"`tandem <command> --help`",
+		"tandem issue get <id> --output json",
+		"tandem issue comment list <issue-id>",
+		"tandem issue create --title",
+		"tandem issue update <id>",
 		"--description-file <path>",
 		"--parent \"\"",
-		"multica repo checkout <url>",
-		"multica issue status <id> <status>",
-		"multica issue comment add <issue-id>",
-		"multica issue comment add --help",
-		"multica squad member set-role <squad-id>",
+		"tandem repo checkout <url>",
+		"tandem issue status <id> <status>",
+		"tandem issue comment add <issue-id>",
+		"tandem issue comment add --help",
+		"tandem squad member set-role <squad-id>",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("AGENTS.md missing core command/help text %q\n---\n%s", want, s)
@@ -837,30 +837,30 @@ func TestInjectRuntimeConfigAvailableCommandsCoreOnly(t *testing.T) {
 	}
 
 	for _, banned := range []string{
-		"multica issue list [--status",
-		"multica issue label list",
-		"multica issue subscriber list",
-		"multica label list",
-		"multica workspace member list",
-		"multica agent list",
-		"multica squad list",
-		"multica issue runs",
-		"multica issue run-messages",
-		"multica attachment download",
-		"multica autopilot list",
-		"multica autopilot create",
-		"multica autopilot update",
-		"multica autopilot trigger",
-		"multica autopilot delete",
-		"multica project get",
-		"multica project resource list",
-		"multica issue assign",
-		"multica issue label add",
-		"multica issue label remove",
-		"multica issue subscriber add",
-		"multica issue subscriber remove",
-		"multica issue comment delete",
-		"multica label create",
+		"tandem issue list [--status",
+		"tandem issue label list",
+		"tandem issue subscriber list",
+		"tandem label list",
+		"tandem workspace member list",
+		"tandem agent list",
+		"tandem squad list",
+		"tandem issue runs",
+		"tandem issue run-messages",
+		"tandem attachment download",
+		"tandem autopilot list",
+		"tandem autopilot create",
+		"tandem autopilot update",
+		"tandem autopilot trigger",
+		"tandem autopilot delete",
+		"tandem project get",
+		"tandem project resource list",
+		"tandem issue assign",
+		"tandem issue label add",
+		"tandem issue label remove",
+		"tandem issue subscriber add",
+		"tandem issue subscriber remove",
+		"tandem issue comment delete",
+		"tandem label create",
 	} {
 		if strings.Contains(s, banned) {
 			t.Errorf("AGENTS.md should not inject non-core command %q\n---\n%s", banned, s)
@@ -888,8 +888,8 @@ func TestInjectRuntimeConfigGemini(t *testing.T) {
 
 	s := string(content)
 	for _, want := range []string{
-		"Multica Agent Runtime",
-		"multica issue get",
+		"Tandem Agent Runtime",
+		"tandem issue get",
 		"Writing",
 	} {
 		if !strings.Contains(s, want) {
@@ -925,7 +925,7 @@ func TestInjectRuntimeConfigCodex(t *testing.T) {
 	}
 
 	s := string(content)
-	if !strings.Contains(s, "Multica Agent Runtime") {
+	if !strings.Contains(s, "Tandem Agent Runtime") {
 		t.Error("AGENTS.md missing meta skill header")
 	}
 	if !strings.Contains(s, "Coding") {
@@ -949,8 +949,8 @@ func TestInjectRuntimeConfigNoSkills(t *testing.T) {
 	}
 
 	s := string(content)
-	if !strings.Contains(s, "multica issue get") {
-		t.Error("should reference multica CLI even without skills")
+	if !strings.Contains(s, "tandem issue get") {
+		t.Error("should reference tandem CLI even without skills")
 	}
 	if strings.Contains(s, "## Skills") {
 		t.Error("should not have Skills section when there are no skills")
@@ -1246,7 +1246,7 @@ func TestInjectRuntimeConfigOpencode(t *testing.T) {
 	}
 
 	s := string(content)
-	if !strings.Contains(s, "Multica Agent Runtime") {
+	if !strings.Contains(s, "Tandem Agent Runtime") {
 		t.Error("AGENTS.md missing meta skill header")
 	}
 	if !strings.Contains(s, "Coding") {
@@ -1281,7 +1281,7 @@ func TestInjectRuntimeConfigKiro(t *testing.T) {
 	}
 
 	s := string(content)
-	if !strings.Contains(s, "Multica Agent Runtime") {
+	if !strings.Contains(s, "Tandem Agent Runtime") {
 		t.Error("AGENTS.md missing meta skill header")
 	}
 	if !strings.Contains(s, "Coding") {
@@ -1314,7 +1314,7 @@ func TestInjectRuntimeConfigAntigravity(t *testing.T) {
 	}
 
 	s := string(content)
-	if !strings.Contains(s, "Multica Agent Runtime") {
+	if !strings.Contains(s, "Tandem Agent Runtime") {
 		t.Error("AGENTS.md missing meta skill header")
 	}
 	if !strings.Contains(s, "Coding") {
@@ -1406,7 +1406,7 @@ func TestPrepareWithRepoContextOpencode(t *testing.T) {
 	}
 	s := string(content)
 	for _, want := range []string{
-		"multica repo checkout",
+		"tandem repo checkout",
 		"https://github.com/org/backend",
 	} {
 		if !strings.Contains(s, want) {
@@ -1448,10 +1448,10 @@ func TestInjectRuntimeConfigRequiresExplicitCommentPost(t *testing.T) {
 			}
 			s := string(data)
 
-			// The workflow must contain an explicit `multica issue comment add`
+			// The workflow must contain an explicit `tandem issue comment add`
 			// invocation for this issue — not just a prose mention of posting.
 			mustContain := []string{
-				"multica issue comment add issue-1",
+				"tandem issue comment add issue-1",
 				"mandatory",
 			}
 			for _, want := range mustContain {
@@ -1464,7 +1464,7 @@ func TestInjectRuntimeConfigRequiresExplicitCommentPost(t *testing.T) {
 			// output is not user-visible. This is the second line of defense
 			// in case the agent skips past the workflow steps.
 			for _, want := range []string{
-				"Final results MUST be delivered via `multica issue comment add`",
+				"Final results MUST be delivered via `tandem issue comment add`",
 				"does NOT see your terminal output",
 			} {
 				if !strings.Contains(s, want) {
@@ -1606,7 +1606,7 @@ func TestInjectRuntimeConfigLinuxCommentFormattingEmphasizesStdin(t *testing.T) 
 // the Comment Formatting section directs the agent at `--content-file`
 // instead of `--content-stdin`. PowerShell 5.1 / cmd.exe re-encode piped
 // HEREDOC bytes through the active console codepage and silently drop
-// non-ASCII as `?` before reaching `multica.exe` (#2198 / #2236 / #2376).
+// non-ASCII as `?` before reaching `tandem.exe` (#2198 / #2236 / #2376).
 //
 // Not parallel: mutates the package-level runtimeGOOS.
 func TestInjectRuntimeConfigCodexWindowsUsesContentFile(t *testing.T) {
@@ -1700,7 +1700,7 @@ func TestInjectRuntimeConfigAutopilotRunOnlyNoIssueWorkflow(t *testing.T) {
 		"Autopilot in run-only mode",
 		"Autopilot run ID: `run-1`",
 		"Check dependencies and report outdated packages.",
-		"multica autopilot get autopilot-1 --output json",
+		"tandem autopilot get autopilot-1 --output json",
 		"Your final assistant output is captured automatically as the autopilot run result",
 	} {
 		if !strings.Contains(s, want) {
@@ -1709,8 +1709,8 @@ func TestInjectRuntimeConfigAutopilotRunOnlyNoIssueWorkflow(t *testing.T) {
 	}
 
 	for _, absent := range []string{
-		"Run `multica issue get",
-		"Final results MUST be delivered via `multica issue comment add`",
+		"Run `tandem issue get",
+		"Final results MUST be delivered via `tandem issue comment add`",
 	} {
 		if strings.Contains(s, absent) {
 			t.Errorf("autopilot runtime config should not contain %q\n---\n%s", absent, s)
@@ -1754,7 +1754,7 @@ func TestInjectRuntimeConfigHermes(t *testing.T) {
 	}
 
 	s := string(content)
-	if !strings.Contains(s, "Multica Agent Runtime") {
+	if !strings.Contains(s, "Tandem Agent Runtime") {
 		t.Error("AGENTS.md missing meta skill header")
 	}
 	if !strings.Contains(s, "Coding") {
@@ -2133,10 +2133,10 @@ env_key = "NEW_API_KEY"
 	// Daemon-managed sandbox / multi-agent / memory blocks must all be
 	// re-applied on top of the fresh copy — PR correctness depends on it.
 	for _, marker := range []string{
-		multicaManagedBeginMarker,
-		multicaMultiAgentBeginMarker,
-		multicaMemoryFeatureBeginMarker,
-		multicaMemoryConfigBeginMarker,
+		tandemManagedBeginMarker,
+		tandemMultiAgentBeginMarker,
+		tandemMemoryFeatureBeginMarker,
+		tandemMemoryConfigBeginMarker,
 	} {
 		if !strings.Contains(s, marker) {
 			t.Errorf("daemon-managed marker %q missing after refresh, got:\n%s", marker, s)
@@ -2239,10 +2239,10 @@ env_key = "OLD_API_KEY"
 		}
 	}
 	for _, marker := range []string{
-		multicaManagedBeginMarker,
-		multicaMultiAgentBeginMarker,
-		multicaMemoryFeatureBeginMarker,
-		multicaMemoryConfigBeginMarker,
+		tandemManagedBeginMarker,
+		tandemMultiAgentBeginMarker,
+		tandemMemoryFeatureBeginMarker,
+		tandemMemoryConfigBeginMarker,
 	} {
 		if !strings.Contains(s, marker) {
 			t.Errorf("daemon-managed marker %q missing after shared source removed, got:\n%s", marker, s)
@@ -2265,7 +2265,7 @@ func TestEnsureCodexSandboxConfigCreatesDefaultLinux(t *testing.T) {
 		t.Fatalf("failed to read config.toml: %v", err)
 	}
 	s := string(data)
-	if !strings.Contains(s, multicaManagedBeginMarker) || !strings.Contains(s, multicaManagedEndMarker) {
+	if !strings.Contains(s, tandemManagedBeginMarker) || !strings.Contains(s, tandemManagedEndMarker) {
 		t.Errorf("missing managed block markers, got:\n%s", s)
 	}
 	if !strings.Contains(s, `sandbox_mode = "workspace-write"`) {
@@ -2273,7 +2273,7 @@ func TestEnsureCodexSandboxConfigCreatesDefaultLinux(t *testing.T) {
 	}
 	// The managed block uses TOML dotted-key form rather than a
 	// `[sandbox_workspace_write]` section header so it cannot leak into or
-	// inherit from any surrounding table scope. See upsertMulticaManagedBlock
+	// inherit from any surrounding table scope. See upsertTandemManagedBlock
 	// for why.
 	if strings.Contains(s, "[sandbox_workspace_write]") {
 		t.Errorf("managed block must not open a [sandbox_workspace_write] table header, got:\n%s", s)
@@ -2315,7 +2315,7 @@ func TestEnsureCodexSandboxConfigIsIdempotent(t *testing.T) {
 	}
 	data, _ := os.ReadFile(configPath)
 	// The managed block should appear exactly once.
-	if n := strings.Count(string(data), multicaManagedBeginMarker); n != 1 {
+	if n := strings.Count(string(data), tandemManagedBeginMarker); n != 1 {
 		t.Errorf("expected exactly 1 managed block, got %d in:\n%s", n, data)
 	}
 }
@@ -2394,12 +2394,12 @@ func TestEnsureCodexSandboxConfigHoistsAboveUserTables(t *testing.T) {
 
 	// User config that ends inside a table. If the managed block were
 	// appended at EOF, `sandbox_mode = "..."` would be parsed as
-	// permissions.multica.sandbox_mode and Codex would never see it — see
+	// permissions.tandem.sandbox_mode and Codex would never see it — see
 	// review of MUL-963 PR #1246. The block must be hoisted above any
 	// user-defined table headers so it lives at the TOML root.
 	existing := `model = "o3"
 
-[permissions.multica]
+[permissions.tandem]
 trust = "always"
 `
 	os.WriteFile(configPath, []byte(existing), 0o644)
@@ -2412,9 +2412,9 @@ trust = "always"
 	data, _ := os.ReadFile(configPath)
 	s := string(data)
 
-	beginIdx := strings.Index(s, multicaManagedBeginMarker)
-	endIdx := strings.Index(s, multicaManagedEndMarker)
-	tableIdx := strings.Index(s, "[permissions.multica]")
+	beginIdx := strings.Index(s, tandemManagedBeginMarker)
+	endIdx := strings.Index(s, tandemManagedEndMarker)
+	tableIdx := strings.Index(s, "[permissions.tandem]")
 	if beginIdx < 0 || endIdx < 0 || tableIdx < 0 {
 		t.Fatalf("expected managed block and user table to both be present, got:\n%s", s)
 	}
@@ -2422,14 +2422,14 @@ trust = "always"
 	// that sandbox_mode and sandbox_workspace_write.network_access are
 	// parsed at the TOML root.
 	if !(beginIdx < endIdx && endIdx < tableIdx) {
-		t.Errorf("managed block must be hoisted above [permissions.multica]; got begin=%d end=%d table=%d:\n%s", beginIdx, endIdx, tableIdx, s)
+		t.Errorf("managed block must be hoisted above [permissions.tandem]; got begin=%d end=%d table=%d:\n%s", beginIdx, endIdx, tableIdx, s)
 	}
 	// User content must be preserved verbatim.
 	if !strings.Contains(s, `model = "o3"`) {
 		t.Error("lost user top-level key")
 	}
 	if !strings.Contains(s, `trust = "always"`) {
-		t.Error("lost user permissions.multica content")
+		t.Error("lost user permissions.tandem content")
 	}
 
 	// Running again must be idempotent even when the preceding content ends
@@ -2441,7 +2441,7 @@ trust = "always"
 	if string(data2) != s {
 		t.Errorf("second pass should be idempotent:\n--- first ---\n%s\n--- second ---\n%s", s, data2)
 	}
-	if n := strings.Count(string(data2), multicaManagedBeginMarker); n != 1 {
+	if n := strings.Count(string(data2), tandemManagedBeginMarker); n != 1 {
 		t.Errorf("expected exactly one managed block after idempotent rewrite, got %d", n)
 	}
 }
@@ -2457,15 +2457,15 @@ func TestEnsureCodexSandboxConfigMovesLegacyTrailingBlockToTop(t *testing.T) {
 	// top; otherwise sandbox_mode remains trapped inside the preceding table.
 	legacy := `model = "o3"
 
-[permissions.multica]
+[permissions.tandem]
 trust = "always"
 
-` + multicaManagedBeginMarker + `
+` + tandemManagedBeginMarker + `
 sandbox_mode = "workspace-write"
 
 [sandbox_workspace_write]
 network_access = true
-` + multicaManagedEndMarker + `
+` + tandemManagedEndMarker + `
 `
 	os.WriteFile(configPath, []byte(legacy), 0o644)
 
@@ -2476,12 +2476,12 @@ network_access = true
 	data, _ := os.ReadFile(configPath)
 	s := string(data)
 
-	beginIdx := strings.Index(s, multicaManagedBeginMarker)
-	tableIdx := strings.Index(s, "[permissions.multica]")
+	beginIdx := strings.Index(s, tandemManagedBeginMarker)
+	tableIdx := strings.Index(s, "[permissions.tandem]")
 	if beginIdx < 0 || tableIdx < 0 || beginIdx > tableIdx {
-		t.Errorf("expected managed block to be hoisted above [permissions.multica], got:\n%s", s)
+		t.Errorf("expected managed block to be hoisted above [permissions.tandem], got:\n%s", s)
 	}
-	if strings.Count(s, multicaManagedBeginMarker) != 1 {
+	if strings.Count(s, tandemManagedBeginMarker) != 1 {
 		t.Errorf("expected exactly one managed block, got:\n%s", s)
 	}
 	// The old inline `[sandbox_workspace_write]` header must be gone — the
@@ -2589,8 +2589,8 @@ func TestReuseRestoresCodexHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config.toml not found in reused CodexHome: %v", err)
 	}
-	if !strings.Contains(string(data), multicaManagedBeginMarker) {
-		t.Error("reused config.toml missing multica-managed block")
+	if !strings.Contains(string(data), tandemManagedBeginMarker) {
+		t.Error("reused config.toml missing tandem-managed block")
 	}
 }
 
@@ -2754,7 +2754,7 @@ func TestReuseUpdatesCodexWorkspaceSkills(t *testing.T) {
 
 // TestPrepareCodexSeedsUserSkills covers the fix for #1922: skills the user
 // installs under ~/.codex/skills/ must be discoverable by the codex CLI
-// inside a Multica task, despite the daemon redirecting CODEX_HOME to a
+// inside a Tandem task, despite the daemon redirecting CODEX_HOME to a
 // per-task directory.
 func TestPrepareCodexSeedsUserSkills(t *testing.T) {
 	// Cannot use t.Parallel() with t.Setenv.
@@ -3365,7 +3365,7 @@ func TestInjectRuntimeConfigSquadLeaderCommentTriggeredNoAction(t *testing.T) {
 	for _, want := range []string{
 		"Squad leader rule",
 		"DO NOT post any comment",
-		"multica squad activity",
+		"tandem squad activity",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("squad leader comment-triggered CLAUDE.md missing %q", want)
@@ -3736,7 +3736,7 @@ func TestInjectRuntimeConfigCommentTriggerColdStartRead(t *testing.T) {
 	// and no since-delta hint.
 	for _, want := range []string{
 		"Read the triggering conversation first",
-		"multica issue comment list " + issueID + " --thread " + triggerID + " --tail 30 --output json",
+		"tandem issue comment list " + issueID + " --thread " + triggerID + " --tail 30 --output json",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("comment-triggered Workflow missing cold-start read %q\n---\n%s", want, s)
@@ -3766,7 +3766,7 @@ func TestInjectRuntimeConfigCommentTriggerColdStartRead(t *testing.T) {
 	}
 	// The pre-MUL-2421 unbounded `--thread` recipe (no --tail) is also a
 	// regression target: it dumps the entire thread on long threads.
-	if strings.Contains(s, "multica issue comment list "+issueID+" --thread "+triggerID+" --output json") {
+	if strings.Contains(s, "tandem issue comment list "+issueID+" --thread "+triggerID+" --output json") {
 		t.Errorf("comment-triggered Workflow regressed to unbounded --thread recipe (no --tail) — long threads will overflow context\n---\n%s", s)
 	}
 }
@@ -3805,7 +3805,7 @@ func TestInjectRuntimeConfigCommentTriggerResumedNoDeltaRead(t *testing.T) {
 		"active thread anchor `thread-root-1` and triggering comment ID `" + triggerID + "`",
 		"If your reply depends on thread context",
 		"do not rely only on resumed session memory",
-		"multica issue comment list " + issueID + " --thread thread-root-1 --tail 30 --output json",
+		"tandem issue comment list " + issueID + " --thread thread-root-1 --tail 30 --output json",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("comment-triggered resumed Workflow missing %q\n---\n%s", want, s)
@@ -3840,7 +3840,7 @@ func TestInjectRuntimeConfigAssignmentTriggerMentionsRecent(t *testing.T) {
 
 	// Mandatory full-history rule (MUL-1124) must stay.
 	for _, want := range []string{
-		"multica issue comment list issue-1 --output json",
+		"tandem issue comment list issue-1 --output json",
 		"this is mandatory, not optional",
 		"Skipping this step is the most common cause",
 	} {
@@ -3888,9 +3888,9 @@ func TestInjectRuntimeConfigIssueMetadataSectionScope(t *testing.T) {
 	// discovery point for the CLI when an agent decides to read or write
 	// metadata outside the numbered workflow.
 	coreDiscoveryLines := []string{
-		"multica issue metadata list <issue-id>",
-		"multica issue metadata set <issue-id> --key <k> --value <v> [--type string|number|bool]",
-		"multica issue metadata delete <issue-id> --key <k>",
+		"tandem issue metadata list <issue-id>",
+		"tandem issue metadata set <issue-id> --key <k> --value <v> [--type string|number|bool]",
+		"tandem issue metadata delete <issue-id> --key <k>",
 	}
 
 	type wantSection struct {
@@ -3932,7 +3932,7 @@ func TestInjectRuntimeConfigIssueMetadataSectionScope(t *testing.T) {
 		},
 	}
 	withoutSection := wantSection{
-		// We can't simply require `multica issue metadata list` absent
+		// We can't simply require `tandem issue metadata list` absent
 		// because the Available Commands → Core discovery line is
 		// global (it uses `<issue-id>` placeholder text). What MUST be
 		// absent is the semantic section itself plus the workflow-step
@@ -3970,13 +3970,13 @@ func TestInjectRuntimeConfigIssueMetadataSectionScope(t *testing.T) {
 			provider: "claude",
 			filename: "CLAUDE.md",
 			workflowStepPresent: []string{
-				"multica issue metadata list issue-md-1 --output json",
+				"tandem issue metadata list issue-md-1 --output json",
 				"See the `## Issue Metadata` section above",
 				// Exit step must show both write and delete, not just
 				// "set" — stale-key cleanup is the half that keeps
 				// metadata from rotting.
-				"multica issue metadata set",
-				"multica issue metadata delete",
+				"tandem issue metadata set",
+				"tandem issue metadata delete",
 				"Before exiting",
 			},
 			want: withSection,
@@ -3987,10 +3987,10 @@ func TestInjectRuntimeConfigIssueMetadataSectionScope(t *testing.T) {
 			provider: "claude",
 			filename: "CLAUDE.md",
 			workflowStepPresent: []string{
-				"multica issue metadata list issue-md-2 --output json",
+				"tandem issue metadata list issue-md-2 --output json",
 				"See the `## Issue Metadata` section above",
-				"multica issue metadata set",
-				"multica issue metadata delete",
+				"tandem issue metadata set",
+				"tandem issue metadata delete",
 				"Before exiting",
 			},
 			want: withSection,
@@ -4102,7 +4102,7 @@ func TestInjectRuntimeConfigIssueMetadataCodexFormattingUnchanged(t *testing.T) 
 		if !strings.Contains(s, "## Issue Metadata") {
 			t.Fatalf("Issue Metadata section missing\n---\n%s", s)
 		}
-		if !strings.Contains(s, "multica issue metadata list issue-md-codex --output json") {
+		if !strings.Contains(s, "tandem issue metadata list issue-md-codex --output json") {
 			t.Fatalf("metadata list step missing\n---\n%s", s)
 		}
 		// ...AND the codex-specific stdin-only rule is still emitted.

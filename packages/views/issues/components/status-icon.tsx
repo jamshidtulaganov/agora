@@ -1,5 +1,5 @@
-import type { IssueStatus } from "@multica/core/types";
-import { STATUS_CONFIG } from "@multica/core/issues/config";
+import type { IssueStatus } from "@tandem/core/types";
+import { STATUS_CONFIG } from "@tandem/core/issues/config";
 
 // ---------------------------------------------------------------------------
 // Geometry constants (viewBox 0 0 14 14, center 7,7)

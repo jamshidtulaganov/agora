@@ -1,4 +1,4 @@
--- Maps a Multica user to their identity on an external system (Telegram,
+-- Maps a Tandem user to their identity on an external system (Telegram,
 -- Bitrix24) so inbound events resolve to a member -- e.g. a synced Bitrix task's
 -- RESPONSIBLE_ID becomes the assignee on the board, and a Telegram login binds
 -- to the same user. Kept as a separate table (not columns on "user") so it

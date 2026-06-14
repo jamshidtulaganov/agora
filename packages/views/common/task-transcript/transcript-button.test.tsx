@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { AgentTask } from "@multica/core/types/agent";
+import type { AgentTask } from "@tandem/core/types/agent";
 import { describe, expect, it, vi } from "vitest";
 import { TranscriptButton } from "./transcript-button";
 import type { TimelineItem } from "./build-timeline";
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@tandem/core/api", () => ({
   api: {
     listTaskMessages: vi.fn(),
   },
@@ -61,7 +61,7 @@ describe("TranscriptButton", () => {
 
     act(() => {
       window.dispatchEvent(
-        new CustomEvent("multica:navigate", {
+        new CustomEvent("tandem:navigate", {
           detail: { path: "/acme/inbox?issue=MUL-123" },
         }),
       );

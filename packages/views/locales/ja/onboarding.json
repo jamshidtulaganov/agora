@@ -3,7 +3,7 @@
     "step_of": "ステップ {{current}} / {{total}}"
   },
   "welcome": {
-    "wordmark": "SD Developers へようこそ",
+    "wordmark": "Tandem へようこそ",
     "headline_line1": "あなたの AI チームメイトを、",
     "headline_line2": "ひとつの",
     "headline_emphasis": "ワークスペースに。",
@@ -140,18 +140,18 @@
     "error_close": "閉じる",
     "user_context_heading": "私について",
     "user_context_role_label": "役割",
-    "user_context_use_case_label": "SD Developers でやりたいこと",
+    "user_context_use_case_label": "Tandem でやりたいこと",
     "runtime": {
-      "greeting": "こんにちは、SD Developers へようこそ",
+      "greeting": "こんにちは、Tandem へようこそ",
       "subtitle": "私はあなたの最初の Agent アシスタントです。",
-      "capabilities": "SD Developers の使い方について、何でも聞いてください。ワークスペースでの作業を任せることもできます — イシューの作成、cron タスクの設定、新しいエージェントの構築など…",
+      "capabilities": "Tandem の使い方について、何でも聞いてください。ワークスペースでの作業を任せることもできます — イシューの作成、cron タスクの設定、新しいエージェントの構築など…",
       "section_label": "まず取り組むタスクを 1 つ以上選んでください:",
       "assign_empty": "1 つ以上選択",
       "assign_count": "{{count}} 件のタスクを私に割り当てる →",
       "assign_count_plural": "{{count}} 件のタスクを私に割り当てる →",
       "cards": {
         "intro": {
-          "subtitle": "SD Developers とは何か、何ができるのかを 1〜2 段落で説明します。"
+          "subtitle": "Tandem とは何か、何ができるのかを 1〜2 段落で説明します。"
         },
         "tour": {
           "subtitle": "イシュー、エージェント、スクワッド、オートパイロットがどう連携するかをご案内します。"
@@ -170,7 +170,7 @@
     },
     "skip": {
       "loading": "ワークスペースを準備中…",
-      "title": "SD Developers へようこそ!",
+      "title": "Tandem へようこそ!",
       "subtitle": "次のステップを助けるために、2 つのタスクを追加しました。",
       "got_it": "了解",
       "status_in_progress": "進行中",
@@ -251,7 +251,7 @@
     },
     "creation_disabled_eyebrow": "ワークスペースの作成は無効です",
     "creation_disabled_headline": "管理者に招待を依頼してください。",
-    "creation_disabled_lede": "この SD Developers インスタンスでは新しいワークスペースを作成できません。管理者からワークスペースに招待されたら、招待を承諾して更新し、続けてください。",
+    "creation_disabled_lede": "この Tandem インスタンスでは新しいワークスペースを作成できません。管理者からワークスペースに招待されたら、招待を承諾して更新し、続けてください。",
     "creation_disabled_logout": "ログアウト",
     "creation_disabled_eyebrow_resume": "あなたのワークスペース",
     "creation_disabled_headline_resume": "{{name}} で続けましょう。",
@@ -295,7 +295,7 @@
   "step_platform": {
     "eyebrow": "コンピュータを接続",
     "headline": "エージェントを実行するコンピュータを接続しましょう。",
-    "lede": "エージェントは、SD Developers に接続した実際のコンピュータで実行されます。どう接続するかを選んでください。",
+    "lede": "エージェントは、Tandem に接続した実際のコンピュータで実行されます。どう接続するかを選んでください。",
     "hint_default": "接続方法を選んでください。スキップしてあとでコンピュータを接続することもできます。",
     "hint_downloaded": "ダウンロードページでセットアップを完了したら、このタブに戻ってください。",
     "download_title": "このコンピュータを使う",

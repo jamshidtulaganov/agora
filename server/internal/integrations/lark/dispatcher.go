@@ -136,7 +136,7 @@ type DispatchResult struct {
 	IssueIdentifier string
 	// IssueTitle is the title the user supplied on /issue, echoed back
 	// in the confirmation message so the chat history reads naturally
-	// even when the Multica deep link is not reachable.
+	// even when the Tandem deep link is not reachable.
 	IssueTitle string
 }
 
@@ -447,7 +447,7 @@ func (d *Dispatcher) processClaimed(ctx context.Context, msg InboundMessage, ins
 	//    won't cascade-delete when individual group members churn);
 	//    for p2p, the sender is the one and only human in the chat
 	//    so we use them.
-	sessionCreator := binding.MulticaUserID
+	sessionCreator := binding.TandemUserID
 	if msg.ChatType == ChatTypeGroup {
 		sessionCreator = inst.InstallerUserID
 	}
@@ -479,7 +479,7 @@ func (d *Dispatcher) processClaimed(ctx context.Context, msg InboundMessage, ins
 	//    duplicate drop. finalizeNone — the other holder owns the row.
 	appendRes, err := d.Chat.AppendUserMessage(ctx, AppendUserMessageParams{
 		ChatSessionID:  sessionID,
-		Sender:         binding.MulticaUserID,
+		Sender:         binding.TandemUserID,
 		Body:           msg.Body,
 		CommandBody:    msg.CommandBody,
 		InstallationID: inst.ID,
@@ -519,7 +519,7 @@ func (d *Dispatcher) processClaimed(ctx context.Context, msg InboundMessage, ins
 	//    above; from here all error returns must signal finalizeNone
 	//    (or finalizeMark in the defensive fallback above).
 	if appendRes.IssueCommand != nil {
-		issueRes, err := d.createIssueFromCommand(ctx, inst, binding.MulticaUserID, sessionID, *appendRes.IssueCommand)
+		issueRes, err := d.createIssueFromCommand(ctx, inst, binding.TandemUserID, sessionID, *appendRes.IssueCommand)
 		if err != nil {
 			return DispatchResult{}, postAppendFinalize, fmt.Errorf("create issue from command: %w", err)
 		}
@@ -552,12 +552,12 @@ func (d *Dispatcher) processClaimed(ctx context.Context, msg InboundMessage, ins
 	//    Note: a daemon that's merely disconnected is NOT an error. As
 	//    long as agent.runtime_id is set, the chat task is enqueued at
 	//    flush and waits for the daemon to claim it on next online.
-	// binding.MulticaUserID is THIS message's sender — the task initiator. It is
+	// binding.TandemUserID is THIS message's sender — the task initiator. It is
 	// deliberately not the session creator (group sessions are creator=installer,
 	// see step 5). The debouncer keeps the latest scheduled flush per session, so
 	// in a multi-sender silence window the last sender wins, matching the
 	// "latest message in a window wins" rule above. See MUL-2645.
-	d.scheduleRun(inst, msg, sessionID, binding.MulticaUserID)
+	d.scheduleRun(inst, msg, sessionID, binding.TandemUserID)
 	return res, postAppendFinalize, nil
 }
 

@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Eraser, Loader2, Lock, Save } from "lucide-react";
-import type { Agent } from "@multica/core/types";
-import { Button } from "@multica/ui/components/ui/button";
-import { Textarea } from "@multica/ui/components/ui/textarea";
+import type { Agent } from "@tandem/core/types";
+import { Button } from "@tandem/ui/components/ui/button";
+import { Textarea } from "@tandem/ui/components/ui/textarea";
 import { toast } from "sonner";
 import { useT } from "../../../i18n";
 

@@ -46,7 +46,7 @@ func setupTelegramTest(t *testing.T) (sent *capturedSend) {
 	prevStore := testHandler.telegramLogins
 	testHandler.telegramBot = bot
 	testHandler.telegramLogins = telegram.NewLoginStore()
-	t.Setenv("TELEGRAM_BOT_USERNAME", "multica_test_bot")
+	t.Setenv("TELEGRAM_BOT_USERNAME", "tandem_test_bot")
 	t.Cleanup(func() {
 		testHandler.telegramBot = prevBot
 		testHandler.telegramLogins = prevStore
@@ -78,7 +78,7 @@ func TestTelegramStartReturnsNonceAndDeepLink(t *testing.T) {
 	if resp.Nonce == "" {
 		t.Fatal("TelegramStart: expected non-empty nonce")
 	}
-	wantPrefix := "https://t.me/multica_test_bot?start=login_"
+	wantPrefix := "https://t.me/tandem_test_bot?start=login_"
 	if !strings.HasPrefix(resp.DeepLink, wantPrefix) {
 		t.Fatalf("TelegramStart: deep_link = %q, want prefix %q", resp.DeepLink, wantPrefix)
 	}
@@ -192,7 +192,7 @@ func TestTelegramWebhookIgnoresNonPrivateChat(t *testing.T) {
 	// Group form: "/start@bot login_<nonce>" delivered in a group chat.
 	update := map[string]any{
 		"message": map[string]any{
-			"text": "/start@multica_test_bot login_" + start.Nonce,
+			"text": "/start@tandem_test_bot login_" + start.Nonce,
 			"from": map[string]any{"id": 424242},
 			"chat": map[string]any{"id": -100123456, "type": "group"},
 		},

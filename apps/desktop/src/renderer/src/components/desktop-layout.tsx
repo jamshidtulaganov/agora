@@ -1,6 +1,6 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { cn } from "@multica/ui/lib/utils";
+import { cn } from "@tandem/ui/lib/utils";
 import { useTabHistory } from "@/hooks/use-tab-history";
 import { useActiveTitleSync } from "@/hooks/use-tab-sync";
 import { useTabStore, resolveRouteIcon } from "@/stores/tab-store";
@@ -8,15 +8,15 @@ import {
   SidebarProvider,
   SidebarTrigger,
   useSidebar,
-} from "@multica/ui/components/ui/sidebar";
-import { ModalRegistry } from "@multica/views/modals/registry";
-import { AppSidebar } from "@multica/views/layout";
-import { SearchCommand, SearchTrigger } from "@multica/views/search";
-import { ChatFab, ChatWindow } from "@multica/views/chat";
-import { WorkspaceSlugProvider, paths, useCurrentWorkspace } from "@multica/core/paths";
-import { useNavigation } from "@multica/views/navigation";
-import { getCurrentSlug, subscribeToCurrentSlug } from "@multica/core/platform";
-import { useDesktopUnreadBadge } from "@multica/views/platform";
+} from "@tandem/ui/components/ui/sidebar";
+import { ModalRegistry } from "@tandem/views/modals/registry";
+import { AppSidebar } from "@tandem/views/layout";
+import { SearchCommand, SearchTrigger } from "@tandem/views/search";
+import { ChatFab, ChatWindow } from "@tandem/views/chat";
+import { WorkspaceSlugProvider, paths, useCurrentWorkspace } from "@tandem/core/paths";
+import { useNavigation } from "@tandem/views/navigation";
+import { getCurrentSlug, subscribeToCurrentSlug } from "@tandem/core/platform";
+import { useDesktopUnreadBadge } from "@tandem/views/platform";
 import { DesktopNavigationProvider } from "@/platform/navigation";
 import { TabBar } from "./tab-bar";
 import { TabContent } from "./tab-content";
@@ -109,8 +109,8 @@ function useInternalLinkHandler() {
       const tabId = store.openTab(path, path, icon);
       store.setActiveTab(tabId);
     };
-    window.addEventListener("multica:navigate", handler);
-    return () => window.removeEventListener("multica:navigate", handler);
+    window.addEventListener("tandem:navigate", handler);
+    return () => window.removeEventListener("tandem:navigate", handler);
   }, []);
 }
 
@@ -130,7 +130,7 @@ function useInternalLinkHandler() {
  *      covers both click-to-select and URL-param-select paths.
  *
  * The click routes through `useNavigation().push` — NOT the
- * `multica:navigate` event, whose handler `openTab`s into the ACTIVE
+ * `tandem:navigate` event, whose handler `openTab`s into the ACTIVE
  * workspace's tab group. The navigation adapter detects a cross-workspace
  * path and translates it into `switchWorkspace(slug, path)`, so clicking a
  * workspace-A notification while B is active performs a real workspace

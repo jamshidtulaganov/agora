@@ -2,19 +2,19 @@
 
 import { useState } from "react";
 import { CalendarClock } from "lucide-react";
-import type { UpdateIssueRequest } from "@multica/core/types";
+import type { UpdateIssueRequest } from "@tandem/core/types";
 import {
   toDateOnly,
   dateOnlyToLocalDate,
   formatDateOnly,
-} from "@multica/core/issues/date";
-import { Calendar } from "@multica/ui/components/ui/calendar";
+} from "@tandem/core/issues/date";
+import { Calendar } from "@tandem/ui/components/ui/calendar";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@multica/ui/components/ui/popover";
-import { Button } from "@multica/ui/components/ui/button";
+} from "@tandem/ui/components/ui/popover";
+import { Button } from "@tandem/ui/components/ui/button";
 import { useT } from "../../../i18n";
 
 export function StartDatePicker({

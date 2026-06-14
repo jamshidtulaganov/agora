@@ -1,4 +1,4 @@
-import { api } from "@multica/core/api";
+import { api } from "@tandem/core/api";
 
 /**
  * SD shared skills, seeded onto every developer's helper agent during

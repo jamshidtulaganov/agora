@@ -100,7 +100,7 @@ export const useRecentContextStore = create<RecentContextState>()(
         }),
     }),
     {
-      name: "multica_recent_contexts",
+      name: "tandem_recent_contexts",
       storage: createJSONStorage(() => defaultStorage),
       partialize: (state) => ({ byWorkspace: state.byWorkspace }),
       version: 1,

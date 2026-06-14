@@ -15,25 +15,25 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@multica/ui/components/ui/tooltip";
+} from "@tandem/ui/components/ui/tooltip";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import type {
   Agent,
   AgentTask,
   Issue,
   TaskFailureReason,
-} from "@multica/core/types";
+} from "@tandem/core/types";
 import {
   type AgentActivity,
   agentTaskSnapshotOptions,
   agentTasksOptions,
   summarizeActivityWindow,
   useWorkspaceActivityMap,
-} from "@multica/core/agents";
-import { api } from "@multica/core/api";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useWorkspacePaths } from "@multica/core/paths";
-import { issueDetailOptions } from "@multica/core/issues/queries";
+} from "@tandem/core/agents";
+import { api } from "@tandem/core/api";
+import { useWorkspaceId } from "@tandem/core/hooks";
+import { useWorkspacePaths } from "@tandem/core/paths";
+import { issueDetailOptions } from "@tandem/core/issues/queries";
 import { AppLink } from "../../../navigation";
 import { TranscriptButton } from "../../../common/task-transcript";
 import { taskStatusConfig } from "../../config";

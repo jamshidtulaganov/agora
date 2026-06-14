@@ -15,9 +15,9 @@ import (
 )
 
 func TestPatternsFromEnv_DefaultsWhenUnset(t *testing.T) {
-	t.Setenv("MULTICA_GC_ARTIFACT_PATTERNS", "")
+	t.Setenv("TANDEM_GC_ARTIFACT_PATTERNS", "")
 	defaults := []string{"node_modules", ".next", ".turbo"}
-	got := patternsFromEnv("MULTICA_GC_ARTIFACT_PATTERNS", defaults)
+	got := patternsFromEnv("TANDEM_GC_ARTIFACT_PATTERNS", defaults)
 	if !reflect.DeepEqual(got, defaults) {
 		t.Fatalf("expected defaults %v, got %v", defaults, got)
 	}
@@ -29,8 +29,8 @@ func TestPatternsFromEnv_DefaultsWhenUnset(t *testing.T) {
 }
 
 func TestPatternsFromEnv_DropsSeparatorBearingEntries(t *testing.T) {
-	t.Setenv("MULTICA_GC_ARTIFACT_PATTERNS", "node_modules, .next ,foo/bar, ../etc, ,target")
-	got := patternsFromEnv("MULTICA_GC_ARTIFACT_PATTERNS", nil)
+	t.Setenv("TANDEM_GC_ARTIFACT_PATTERNS", "node_modules, .next ,foo/bar, ../etc, ,target")
+	got := patternsFromEnv("TANDEM_GC_ARTIFACT_PATTERNS", nil)
 	want := []string{"node_modules", ".next", "target"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("expected %v, got %v", want, got)
@@ -196,19 +196,19 @@ func TestIsOfficialCloudServer(t *testing.T) {
 		url  string
 		want bool
 	}{
-		{"canonical cloud https", "https://api.multica.ai", true},
-		{"canonical cloud with trailing slash stripped", "https://api.multica.ai/", true},
-		{"canonical cloud case-insensitive", "https://API.Multica.AI", true},
-		{"cloud over plain http (unusual but match host)", "http://api.multica.ai", true},
+		{"canonical cloud https", "https://api.tandem.dev", true},
+		{"canonical cloud with trailing slash stripped", "https://api.tandem.dev/", true},
+		{"canonical cloud case-insensitive", "https://API.Tandem.AI", true},
+		{"cloud over plain http (unusual but match host)", "http://api.tandem.dev", true},
 		{"localhost is self-host", "http://localhost:8080", false},
 		{"loopback ip is self-host", "http://127.0.0.1:8080", false},
 		{"lan ip is self-host", "http://192.168.0.28:8080", false},
-		{"third-party host is self-host", "https://multica.example.com", false},
+		{"third-party host is self-host", "https://tandem.example.com", false},
 		// Staging / preview / future subdomains deliberately follow the
 		// safer self-host default until explicitly opted in.
-		{"multica.ai apex is not the api host", "https://multica.ai", false},
-		{"staging subdomain is self-host", "https://staging.multica.ai", false},
-		{"preview subdomain is self-host", "https://api-preview.multica.ai", false},
+		{"tandem.dev apex is not the api host", "https://tandem.dev", false},
+		{"staging subdomain is self-host", "https://staging.tandem.dev", false},
+		{"preview subdomain is self-host", "https://api-preview.tandem.dev", false},
 		// Malformed inputs must not falsely match.
 		{"empty string is self-host", "", false},
 		{"garbage string is self-host", "::not a url::", false},
@@ -236,10 +236,10 @@ func stageFakeAgent(t *testing.T) string {
 		t.Fatalf("write fake claude: %v", err)
 	}
 	t.Setenv("PATH", binDir)
-	t.Setenv("MULTICA_DAEMON_ID", "11111111-1111-1111-1111-111111111111")
+	t.Setenv("TANDEM_DAEMON_ID", "11111111-1111-1111-1111-111111111111")
 	// Clear any inherited env-var override so the test sees the URL-based
 	// default, not whatever the developer happens to have exported.
-	t.Setenv("MULTICA_DAEMON_AUTO_UPDATE", "")
+	t.Setenv("TANDEM_DAEMON_AUTO_UPDATE", "")
 	return binDir
 }
 
@@ -262,21 +262,21 @@ func TestLoadConfig_AutoUpdateDefault_SelfHostOff(t *testing.T) {
 }
 
 // TestLoadConfig_AutoUpdateDefault_CloudOn confirms the symmetric case: a
-// daemon pointed at Multica's hosted cloud keeps the historical opt-in
+// daemon pointed at Tandem's hosted cloud keeps the historical opt-in
 // auto-update default. We pass the WSS form of the URL to also exercise that
 // NormalizeServerBaseURL maps it through to the http host the detector
 // inspects.
 func TestLoadConfig_AutoUpdateDefault_CloudOn(t *testing.T) {
 	stageFakeAgent(t)
 	cfg, err := LoadConfig(Overrides{
-		ServerURL:      "wss://api.multica.ai/ws",
+		ServerURL:      "wss://api.tandem.dev/ws",
 		WorkspacesRoot: t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
 	if !cfg.AutoUpdateEnabled {
-		t.Fatalf("AutoUpdateEnabled = false for Multica Cloud server, want true")
+		t.Fatalf("AutoUpdateEnabled = false for Tandem Cloud server, want true")
 	}
 }
 
@@ -284,7 +284,7 @@ func TestLoadConfig_AutoUpdateDefault_CloudOn(t *testing.T) {
 // re-enable auto-update via env var, overriding the new conservative default.
 func TestLoadConfig_AutoUpdateEnv_ForcesOnForSelfHost(t *testing.T) {
 	stageFakeAgent(t)
-	t.Setenv("MULTICA_DAEMON_AUTO_UPDATE", "true")
+	t.Setenv("TANDEM_DAEMON_AUTO_UPDATE", "true")
 	cfg, err := LoadConfig(Overrides{
 		ServerURL:      "http://localhost:8080",
 		WorkspacesRoot: t.TempDir(),
@@ -293,7 +293,7 @@ func TestLoadConfig_AutoUpdateEnv_ForcesOnForSelfHost(t *testing.T) {
 		t.Fatalf("LoadConfig: %v", err)
 	}
 	if !cfg.AutoUpdateEnabled {
-		t.Fatalf("AutoUpdateEnabled = false after explicit MULTICA_DAEMON_AUTO_UPDATE=true, want true")
+		t.Fatalf("AutoUpdateEnabled = false after explicit TANDEM_DAEMON_AUTO_UPDATE=true, want true")
 	}
 }
 
@@ -301,16 +301,16 @@ func TestLoadConfig_AutoUpdateEnv_ForcesOnForSelfHost(t *testing.T) {
 // user can still opt out via env var.
 func TestLoadConfig_AutoUpdateEnv_ForcesOffForCloud(t *testing.T) {
 	stageFakeAgent(t)
-	t.Setenv("MULTICA_DAEMON_AUTO_UPDATE", "false")
+	t.Setenv("TANDEM_DAEMON_AUTO_UPDATE", "false")
 	cfg, err := LoadConfig(Overrides{
-		ServerURL:      "https://api.multica.ai",
+		ServerURL:      "https://api.tandem.dev",
 		WorkspacesRoot: t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
 	if cfg.AutoUpdateEnabled {
-		t.Fatalf("AutoUpdateEnabled = true after explicit MULTICA_DAEMON_AUTO_UPDATE=false, want false")
+		t.Fatalf("AutoUpdateEnabled = true after explicit TANDEM_DAEMON_AUTO_UPDATE=false, want false")
 	}
 }
 
@@ -319,9 +319,9 @@ func TestLoadConfig_AutoUpdateEnv_ForcesOffForCloud(t *testing.T) {
 // forces auto-update off even when the cloud default and env var would enable.
 func TestLoadConfig_AutoUpdate_NoFlagWinsOverCloudDefault(t *testing.T) {
 	stageFakeAgent(t)
-	t.Setenv("MULTICA_DAEMON_AUTO_UPDATE", "true")
+	t.Setenv("TANDEM_DAEMON_AUTO_UPDATE", "true")
 	cfg, err := LoadConfig(Overrides{
-		ServerURL:         "https://api.multica.ai",
+		ServerURL:         "https://api.tandem.dev",
 		WorkspacesRoot:    t.TempDir(),
 		DisableAutoUpdate: true,
 	})
@@ -447,7 +447,7 @@ func TestResolveAgentsViaLoginShell_HardTimeoutOnBackgroundedStdout(t *testing.T
 
 // TestLoadConfig_SkipsLoginShellWhenLookPathSucceeds proves the laziness
 // requirement: if every agent CLI the operator cares about is already
-// resolvable via the daemon's PATH (or pinned to an explicit MULTICA_*_PATH),
+// resolvable via the daemon's PATH (or pinned to an explicit TANDEM_*_PATH),
 // the shell-fallback path must not run. We assert this by pointing SHELL at
 // a sentinel script that touches a marker file when invoked.
 func TestLoadConfig_SkipsLoginShellWhenLookPathSucceeds(t *testing.T) {
@@ -480,7 +480,7 @@ func TestLoadConfig_SkipsLoginShellWhenLookPathSucceeds(t *testing.T) {
 	// the fallback — except `claude` already resolves, and the user hasn't
 	// configured anything else, so the probe loop should be satisfied
 	// after the first probe alone.
-	t.Setenv("MULTICA_DAEMON_ID", "11111111-1111-1111-1111-111111111111")
+	t.Setenv("TANDEM_DAEMON_ID", "11111111-1111-1111-1111-111111111111")
 
 	if _, err := LoadConfig(Overrides{
 		ServerURL:      "http://localhost:0",
@@ -519,8 +519,8 @@ func TestLoadConfig_UsesCodexDesktopAppBundleFallback(t *testing.T) {
 
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("SHELL", filepath.Join(t.TempDir(), "fish"))
-	t.Setenv("MULTICA_DAEMON_ID", "11111111-1111-1111-1111-111111111111")
-	t.Setenv("MULTICA_CODEX_MODEL", "gpt-5")
+	t.Setenv("TANDEM_DAEMON_ID", "11111111-1111-1111-1111-111111111111")
+	t.Setenv("TANDEM_CODEX_MODEL", "gpt-5")
 	pinNonCodexAgentsToMissingPaths(t)
 
 	cfg, err := LoadConfig(Overrides{
@@ -558,14 +558,14 @@ func TestLoadConfig_CodexDesktopFallbackDoesNotOverrideExplicitPath(t *testing.T
 
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("SHELL", filepath.Join(t.TempDir(), "fish"))
-	t.Setenv("MULTICA_DAEMON_ID", "11111111-1111-1111-1111-111111111111")
-	t.Setenv("MULTICA_CODEX_PATH", filepath.Join(t.TempDir(), "missing-codex"))
+	t.Setenv("TANDEM_DAEMON_ID", "11111111-1111-1111-1111-111111111111")
+	t.Setenv("TANDEM_CODEX_PATH", filepath.Join(t.TempDir(), "missing-codex"))
 	pinNonCodexAgentsToMissingPaths(t)
 	fakeClaude := filepath.Join(t.TempDir(), "claude")
 	if err := os.WriteFile(fakeClaude, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatalf("write fake claude: %v", err)
 	}
-	t.Setenv("MULTICA_CLAUDE_PATH", fakeClaude)
+	t.Setenv("TANDEM_CLAUDE_PATH", fakeClaude)
 
 	cfg, err := LoadConfig(Overrides{
 		ServerURL:      "http://localhost:0",
@@ -575,7 +575,7 @@ func TestLoadConfig_CodexDesktopFallbackDoesNotOverrideExplicitPath(t *testing.T
 		t.Fatalf("LoadConfig: %v", err)
 	}
 	if got, ok := cfg.Agents["codex"]; ok {
-		t.Fatalf("explicit missing MULTICA_CODEX_PATH should not fall back to Desktop bundle, got %#v", got)
+		t.Fatalf("explicit missing TANDEM_CODEX_PATH should not fall back to Desktop bundle, got %#v", got)
 	}
 }
 
@@ -583,16 +583,16 @@ func pinNonCodexAgentsToMissingPaths(t *testing.T) {
 	t.Helper()
 	missingDir := t.TempDir()
 	for _, name := range []string{
-		"MULTICA_CLAUDE_PATH",
-		"MULTICA_OPENCODE_PATH",
-		"MULTICA_OPENCLAW_PATH",
-		"MULTICA_HERMES_PATH",
-		"MULTICA_GEMINI_PATH",
-		"MULTICA_PI_PATH",
-		"MULTICA_CURSOR_PATH",
-		"MULTICA_COPILOT_PATH",
-		"MULTICA_KIMI_PATH",
-		"MULTICA_KIRO_PATH",
+		"TANDEM_CLAUDE_PATH",
+		"TANDEM_OPENCODE_PATH",
+		"TANDEM_OPENCLAW_PATH",
+		"TANDEM_HERMES_PATH",
+		"TANDEM_GEMINI_PATH",
+		"TANDEM_PI_PATH",
+		"TANDEM_CURSOR_PATH",
+		"TANDEM_COPILOT_PATH",
+		"TANDEM_KIMI_PATH",
+		"TANDEM_KIRO_PATH",
 	} {
 		t.Setenv(name, filepath.Join(missingDir, strings.ToLower(name)))
 	}
@@ -619,13 +619,13 @@ func writeCLIConfigForProfile(t *testing.T, profile string, cfg cli.CLIConfig) {
 // existing probe / spawn flow remains undisturbed.
 func TestApplyOpenclawOverride_DoesNothingWhenNil(t *testing.T) {
 	// Pre-set both env vars to known values; verify they survive untouched.
-	t.Setenv("MULTICA_OPENCLAW_PATH", "/before/openclaw")
+	t.Setenv("TANDEM_OPENCLAW_PATH", "/before/openclaw")
 	t.Setenv("OPENCLAW_STATE_DIR", "/before/state")
 
 	applyOpenclawOverride(nil)
 
-	if got := os.Getenv("MULTICA_OPENCLAW_PATH"); got != "/before/openclaw" {
-		t.Errorf("MULTICA_OPENCLAW_PATH mutated: got %q, want /before/openclaw", got)
+	if got := os.Getenv("TANDEM_OPENCLAW_PATH"); got != "/before/openclaw" {
+		t.Errorf("TANDEM_OPENCLAW_PATH mutated: got %q, want /before/openclaw", got)
 	}
 	if got := os.Getenv("OPENCLAW_STATE_DIR"); got != "/before/state" {
 		t.Errorf("OPENCLAW_STATE_DIR mutated: got %q, want /before/state", got)
@@ -636,12 +636,12 @@ func TestApplyOpenclawOverride_DoesNothingWhenNil(t *testing.T) {
 // neither env var is set, the override has both fields, both env vars get
 // set to the override values.
 func TestApplyOpenclawOverride_SetsBothWhenEnvUnset(t *testing.T) {
-	t.Setenv("MULTICA_OPENCLAW_PATH", "")
+	t.Setenv("TANDEM_OPENCLAW_PATH", "")
 	t.Setenv("OPENCLAW_STATE_DIR", "")
-	os.Unsetenv("MULTICA_OPENCLAW_PATH")
+	os.Unsetenv("TANDEM_OPENCLAW_PATH")
 	os.Unsetenv("OPENCLAW_STATE_DIR")
 	t.Cleanup(func() {
-		os.Unsetenv("MULTICA_OPENCLAW_PATH")
+		os.Unsetenv("TANDEM_OPENCLAW_PATH")
 		os.Unsetenv("OPENCLAW_STATE_DIR")
 	})
 
@@ -650,8 +650,8 @@ func TestApplyOpenclawOverride_SetsBothWhenEnvUnset(t *testing.T) {
 		StateDir:   "/from/config/state",
 	})
 
-	if got := os.Getenv("MULTICA_OPENCLAW_PATH"); got != "/from/config/openclaw" {
-		t.Errorf("MULTICA_OPENCLAW_PATH: got %q, want /from/config/openclaw", got)
+	if got := os.Getenv("TANDEM_OPENCLAW_PATH"); got != "/from/config/openclaw" {
+		t.Errorf("TANDEM_OPENCLAW_PATH: got %q, want /from/config/openclaw", got)
 	}
 	if got := os.Getenv("OPENCLAW_STATE_DIR"); got != "/from/config/state" {
 		t.Errorf("OPENCLAW_STATE_DIR: got %q, want /from/config/state", got)
@@ -662,11 +662,11 @@ func TestApplyOpenclawOverride_SetsBothWhenEnvUnset(t *testing.T) {
 // agreed with @YOMXXX in #3875 review: an env var set upstream by the user
 // (shell export, launchctl, systemd unit) MUST take precedence over the
 // config-file value. This is the back-compat contract — anyone with
-// MULTICA_OPENCLAW_PATH already in their environment must not see the
+// TANDEM_OPENCLAW_PATH already in their environment must not see the
 // daemon silently change its meaning when they later add a config file.
 func TestApplyOpenclawOverride_EnvWinsOverConfig(t *testing.T) {
 	// User has already exported these in their shell.
-	t.Setenv("MULTICA_OPENCLAW_PATH", "/from/env/openclaw")
+	t.Setenv("TANDEM_OPENCLAW_PATH", "/from/env/openclaw")
 	t.Setenv("OPENCLAW_STATE_DIR", "/from/env/state")
 
 	applyOpenclawOverride(&cli.OpenClawOverride{
@@ -674,8 +674,8 @@ func TestApplyOpenclawOverride_EnvWinsOverConfig(t *testing.T) {
 		StateDir:   "/from/config/state",
 	})
 
-	if got := os.Getenv("MULTICA_OPENCLAW_PATH"); got != "/from/env/openclaw" {
-		t.Errorf("MULTICA_OPENCLAW_PATH: env should win, got %q want /from/env/openclaw", got)
+	if got := os.Getenv("TANDEM_OPENCLAW_PATH"); got != "/from/env/openclaw" {
+		t.Errorf("TANDEM_OPENCLAW_PATH: env should win, got %q want /from/env/openclaw", got)
 	}
 	if got := os.Getenv("OPENCLAW_STATE_DIR"); got != "/from/env/state" {
 		t.Errorf("OPENCLAW_STATE_DIR: env should win, got %q want /from/env/state", got)
@@ -685,23 +685,23 @@ func TestApplyOpenclawOverride_EnvWinsOverConfig(t *testing.T) {
 // TestApplyOpenclawOverride_PartialFields_OnlySetsConfigured verifies that
 // an override with only one field set leaves the other env var alone (does
 // not Setenv to ""). This matters: a user who only configures state_dir
-// must not have their MULTICA_OPENCLAW_PATH discovery path forcibly
+// must not have their TANDEM_OPENCLAW_PATH discovery path forcibly
 // short-circuited to an empty string.
 func TestApplyOpenclawOverride_PartialFields_OnlySetsConfigured(t *testing.T) {
-	os.Unsetenv("MULTICA_OPENCLAW_PATH")
+	os.Unsetenv("TANDEM_OPENCLAW_PATH")
 	os.Unsetenv("OPENCLAW_STATE_DIR")
 	t.Cleanup(func() {
-		os.Unsetenv("MULTICA_OPENCLAW_PATH")
+		os.Unsetenv("TANDEM_OPENCLAW_PATH")
 		os.Unsetenv("OPENCLAW_STATE_DIR")
 	})
 
 	applyOpenclawOverride(&cli.OpenClawOverride{
 		StateDir: "/from/config/state",
-		// BinaryPath intentionally empty — must NOT call Setenv("MULTICA_OPENCLAW_PATH", "")
+		// BinaryPath intentionally empty — must NOT call Setenv("TANDEM_OPENCLAW_PATH", "")
 	})
 
-	if _, set := os.LookupEnv("MULTICA_OPENCLAW_PATH"); set {
-		t.Errorf("MULTICA_OPENCLAW_PATH should remain unset when BinaryPath is empty; got %q", os.Getenv("MULTICA_OPENCLAW_PATH"))
+	if _, set := os.LookupEnv("TANDEM_OPENCLAW_PATH"); set {
+		t.Errorf("TANDEM_OPENCLAW_PATH should remain unset when BinaryPath is empty; got %q", os.Getenv("TANDEM_OPENCLAW_PATH"))
 	}
 	if got := os.Getenv("OPENCLAW_STATE_DIR"); got != "/from/config/state" {
 		t.Errorf("OPENCLAW_STATE_DIR: got %q, want /from/config/state", got)
@@ -743,10 +743,10 @@ func TestLoadConfig_AppliesBackendOverridesFromConfigFile(t *testing.T) {
 	}
 
 	// Make sure no env-var override is leaking in from the test runner.
-	os.Unsetenv("MULTICA_OPENCLAW_PATH")
+	os.Unsetenv("TANDEM_OPENCLAW_PATH")
 	os.Unsetenv("OPENCLAW_STATE_DIR")
 	t.Cleanup(func() {
-		os.Unsetenv("MULTICA_OPENCLAW_PATH")
+		os.Unsetenv("TANDEM_OPENCLAW_PATH")
 		os.Unsetenv("OPENCLAW_STATE_DIR")
 	})
 
@@ -796,10 +796,10 @@ func TestLoadConfig_BackendOverrides_BackwardCompat_NoConfigFile(t *testing.T) {
 
 	// Point HOME at an empty dir — no config.json present.
 	t.Setenv("HOME", t.TempDir())
-	os.Unsetenv("MULTICA_OPENCLAW_PATH")
+	os.Unsetenv("TANDEM_OPENCLAW_PATH")
 	os.Unsetenv("OPENCLAW_STATE_DIR")
 	t.Cleanup(func() {
-		os.Unsetenv("MULTICA_OPENCLAW_PATH")
+		os.Unsetenv("TANDEM_OPENCLAW_PATH")
 		os.Unsetenv("OPENCLAW_STATE_DIR")
 	})
 
@@ -827,7 +827,7 @@ func TestLoadConfig_BackendOverrides_MalformedConfigFileNonFatal(t *testing.T) {
 	t.Setenv("HOME", homeDir)
 
 	// Write malformed JSON.
-	cfgDir := filepath.Join(homeDir, ".multica")
+	cfgDir := filepath.Join(homeDir, ".tandem")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}

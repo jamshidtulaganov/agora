@@ -1,5 +1,5 @@
 {
-  "name": "@multica/views",
+  "name": "@tandem/views",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -60,8 +60,8 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@floating-ui/dom": "^1.7.6",
-    "@multica/core": "workspace:*",
-    "@multica/ui": "workspace:*",
+    "@tandem/core": "workspace:*",
+    "@tandem/ui": "workspace:*",
     "@tiptap/core": "^3.22.1",
     "@tiptap/extension-code-block-lowlight": "^3.22.1",
     "@tiptap/extension-document": "^3.22.1",
@@ -114,8 +114,8 @@
     "zustand": "catalog:"
   },
   "devDependencies": {
-    "@multica/eslint-config": "workspace:*",
-    "@multica/tsconfig": "workspace:*",
+    "@tandem/eslint-config": "workspace:*",
+    "@tandem/tsconfig": "workspace:*",
     "@testing-library/jest-dom": "catalog:",
     "@testing-library/react": "catalog:",
     "@testing-library/user-event": "catalog:",

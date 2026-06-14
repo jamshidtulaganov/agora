@@ -14,30 +14,30 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { api } from "@multica/core/api";
-import type { Skill } from "@multica/core/types";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { isImeComposing } from "@multica/core/utils";
+import { api } from "@tandem/core/api";
+import type { Skill } from "@tandem/core/types";
+import { useWorkspaceId } from "@tandem/core/hooks";
+import { isImeComposing } from "@tandem/core/utils";
 import {
   skillDetailOptions,
   workspaceKeys,
-} from "@multica/core/workspace/queries";
+} from "@tandem/core/workspace/queries";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
+} from "@tandem/ui/components/ui/dialog";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@multica/ui/components/ui/tooltip";
-import { Button } from "@multica/ui/components/ui/button";
-import { Input } from "@multica/ui/components/ui/input";
-import { Label } from "@multica/ui/components/ui/label";
-import { Textarea } from "@multica/ui/components/ui/textarea";
-import { useScrollFade } from "@multica/ui/hooks/use-scroll-fade";
-import { cn } from "@multica/ui/lib/utils";
+} from "@tandem/ui/components/ui/tooltip";
+import { Button } from "@tandem/ui/components/ui/button";
+import { Input } from "@tandem/ui/components/ui/input";
+import { Label } from "@tandem/ui/components/ui/label";
+import { Textarea } from "@tandem/ui/components/ui/textarea";
+import { useScrollFade } from "@tandem/ui/hooks/use-scroll-fade";
+import { cn } from "@tandem/ui/lib/utils";
 import { openExternal } from "../../platform";
 import { RuntimeLocalSkillImportPanel } from "./runtime-local-skill-import-panel";
 import { useT } from "../../i18n";

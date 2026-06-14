@@ -3,7 +3,7 @@
     "step_of": "Step {{current}} of {{total}}"
   },
   "welcome": {
-    "wordmark": "Welcome to SD Developers",
+    "wordmark": "Welcome to Tandem",
     "headline_line1": "Your AI teammates,",
     "headline_line2": "in",
     "headline_emphasis": "one workspace.",
@@ -140,18 +140,18 @@
     "error_close": "Close",
     "user_context_heading": "About me",
     "user_context_role_label": "Role",
-    "user_context_use_case_label": "What I want to do with SD Developers",
+    "user_context_use_case_label": "What I want to do with Tandem",
     "runtime": {
-      "greeting": "Hi, welcome to SD Developers",
+      "greeting": "Hi, welcome to Tandem",
       "subtitle": "I'm your first Agent assistant.",
-      "capabilities": "Ask me anything about how to use SD Developers. You can also have me get things done in your workspace — create issues, set up cron tasks, build new agents…",
+      "capabilities": "Ask me anything about how to use Tandem. You can also have me get things done in your workspace — create issues, set up cron tasks, build new agents…",
       "section_label": "Pick one or more tasks to start with:",
       "assign_empty": "Pick one or more",
       "assign_count": "Assign {{count}} task to me →",
       "assign_count_plural": "Assign {{count}} tasks to me →",
       "cards": {
         "intro": {
-          "subtitle": "Let me explain in 1–2 paragraphs what SD Developers is and what it can do."
+          "subtitle": "Let me explain in 1–2 paragraphs what Tandem is and what it can do."
         },
         "tour": {
           "subtitle": "I'll walk you through how issue, agent, squad, autopilot fit together."
@@ -170,7 +170,7 @@
     },
     "skip": {
       "loading": "Setting up your workspace…",
-      "title": "Welcome to SD Developers!",
+      "title": "Welcome to Tandem!",
       "subtitle": "We've added two tasks to help you with the next step.",
       "got_it": "Got it",
       "status_in_progress": "In progress",
@@ -251,7 +251,7 @@
     },
     "creation_disabled_eyebrow": "Workspace creation is disabled",
     "creation_disabled_headline": "Ask your administrator for an invitation.",
-    "creation_disabled_lede": "This SD Developers instance does not allow new workspaces to be created. Once an administrator invites you to a workspace, accept the invitation and refresh to continue.",
+    "creation_disabled_lede": "This Tandem instance does not allow new workspaces to be created. Once an administrator invites you to a workspace, accept the invitation and refresh to continue.",
     "creation_disabled_logout": "Log out",
     "creation_disabled_eyebrow_resume": "Your workspace",
     "creation_disabled_headline_resume": "Continue with {{name}}.",
@@ -296,7 +296,7 @@
   "step_platform": {
     "eyebrow": "Connect a computer",
     "headline": "Connect a computer to run your agent.",
-    "lede": "Your agent runs on a real computer that you connect to SD Developers. Pick how you want to connect one.",
+    "lede": "Your agent runs on a real computer that you connect to Tandem. Pick how you want to connect one.",
     "hint_default": "Pick a way to connect — or skip and connect a computer later.",
     "hint_downloaded": "Finish setup on the download page, then come back to this tab.",
     "download_title": "Use this computer",

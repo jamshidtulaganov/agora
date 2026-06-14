@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-const defaultCLIConfigPath = ".multica/config.json"
+const defaultCLIConfigPath = ".tandem/config.json"
 
 // CLIConfig holds persistent CLI settings.
 type CLIConfig struct {
@@ -41,18 +41,18 @@ type BackendOverrides struct {
 //
 // Resolution precedence (env beats config beats default, for back-compat):
 //
-//	BinaryPath: MULTICA_OPENCLAW_PATH (env)  > backends.openclaw.binary_path > PATH lookup
+//	BinaryPath: TANDEM_OPENCLAW_PATH (env)  > backends.openclaw.binary_path > PATH lookup
 //	StateDir:   OPENCLAW_STATE_DIR (env)     > backends.openclaw.state_dir   > OpenClaw's built-in default (~/.openclaw)
 //
 // The StateDir env var here is OpenClaw's own OPENCLAW_STATE_DIR — NOT a new
-// MULTICA_OPENCLAW_STATE_DIR. Rationale: OpenClaw already honors its own env
+// TANDEM_OPENCLAW_STATE_DIR. Rationale: OpenClaw already honors its own env
 // var, the daemon already forwards inherited env to spawned children via
 // `mergeEnv`, and a user who exports OPENCLAW_STATE_DIR in their shell
 // already gets the right behavior with zero daemon changes today. This field
 // is purely additive: when set, the daemon injects OPENCLAW_STATE_DIR=<value>
 // into the spawned child's env unless the user already exported one upstream.
 // (If a future use case needs daemon-namespaced isolation distinct from
-// OpenClaw's own env, MULTICA_OPENCLAW_STATE_DIR can be layered on top
+// OpenClaw's own env, TANDEM_OPENCLAW_STATE_DIR can be layered on top
 // without breaking this contract — see #3875 discussion.)
 //
 // Setting StateDir is the fix for the long-standing usability gap where
@@ -74,8 +74,8 @@ func CLIConfigPath() (string, error) {
 }
 
 // CLIConfigPathForProfile returns the config file path for the given profile.
-// An empty profile returns the default path (~/.multica/config.json).
-// A named profile returns ~/.multica/profiles/<name>/config.json.
+// An empty profile returns the default path (~/.tandem/config.json).
+// A named profile returns ~/.tandem/profiles/<name>/config.json.
 func CLIConfigPathForProfile(profile string) (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -84,20 +84,20 @@ func CLIConfigPathForProfile(profile string) (string, error) {
 	if profile == "" {
 		return filepath.Join(home, defaultCLIConfigPath), nil
 	}
-	return filepath.Join(home, ".multica", "profiles", profile, "config.json"), nil
+	return filepath.Join(home, ".tandem", "profiles", profile, "config.json"), nil
 }
 
 // ProfileDir returns the base directory for a profile's state files (pid, log).
-// An empty profile returns ~/.multica/. A named profile returns ~/.multica/profiles/<name>/.
+// An empty profile returns ~/.tandem/. A named profile returns ~/.tandem/profiles/<name>/.
 func ProfileDir(profile string) (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve profile dir: %w", err)
 	}
 	if profile == "" {
-		return filepath.Join(home, ".multica"), nil
+		return filepath.Join(home, ".tandem"), nil
 	}
-	return filepath.Join(home, ".multica", "profiles", profile), nil
+	return filepath.Join(home, ".tandem", "profiles", profile), nil
 }
 
 // LoadCLIConfig reads the CLI config from disk (default profile).

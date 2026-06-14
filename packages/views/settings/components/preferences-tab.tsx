@@ -8,17 +8,17 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@multica/ui/components/ui/select";
-import { useTheme } from "@multica/ui/components/common/theme-provider";
-import { cn } from "@multica/ui/lib/utils";
+} from "@tandem/ui/components/ui/select";
+import { useTheme } from "@tandem/ui/components/common/theme-provider";
+import { cn } from "@tandem/ui/lib/utils";
 import {
   DEFAULT_LOCALE,
   SUPPORTED_LOCALES,
   type SupportedLocale,
-} from "@multica/core/i18n";
-import { useLocaleAdapter } from "@multica/core/i18n/react";
-import { useAuthStore } from "@multica/core/auth";
-import { api } from "@multica/core/api";
+} from "@tandem/core/i18n";
+import { useLocaleAdapter } from "@tandem/core/i18n/react";
+import { useAuthStore } from "@tandem/core/auth";
+import { api } from "@tandem/core/api";
 import { browserTimezone, timezoneOptions } from "../../common/timezone-select";
 import { useT } from "../../i18n";
 

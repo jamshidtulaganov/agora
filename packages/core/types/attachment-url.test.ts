@@ -100,7 +100,7 @@ describe("contentReferencesAttachment", () => {
   // Regression — issue DESCRIPTION editor binding (Desktop image render).
   //
   // The editor persists the durable `markdown_url`
-  // (`<MULTICA_PUBLIC_URL>/api/attachments/<id>/download`) into the body,
+  // (`<TANDEM_PUBLIC_URL>/api/attachments/<id>/download`) into the body,
   // NOT the raw storage `a.url`. The description composer used to bind
   // pending uploads with `md.includes(a.url)`, which never matched this
   // shape, so the upload was never linked via `attachment_ids`. After a
@@ -111,7 +111,7 @@ describe("contentReferencesAttachment", () => {
   // absolute-host download URL via its stable-path substring, so the
   // attachment now binds the same way comments do.
   it("matches the absolute-host markdown_url the editor actually persists", () => {
-    const markdownUrl = `https://multica-api.copilothub.ai/api/attachments/${ID}/download`;
+    const markdownUrl = `https://tandem-api.copilothub.ai/api/attachments/${ID}/download`;
     const md = `body\n\n![pasted](${markdownUrl})\n`;
     // The raw storage url is NOT present in the body — the old
     // `md.includes(a.url)` check would have returned false here.

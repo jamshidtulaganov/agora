@@ -1,6 +1,6 @@
 # Contributing Guide
 
-This guide documents the local development workflow for contributors working on the Multica codebase.
+This guide documents the local development workflow for contributors working on the Tandem codebase.
 
 It covers:
 
@@ -163,8 +163,8 @@ make check-main
 Use a worktree when you want isolated data and separate app ports.
 
 ```bash
-git worktree add ../multica-feature -b feat/my-change main
-cd ../multica-feature
+git worktree add ../tandem-feature -b feat/my-change main
+cd ../tandem-feature
 make dev
 ```
 
@@ -183,7 +183,7 @@ This is a first-class workflow.
 Example:
 
 - main checkout
-  - database: `multica`
+  - database: `tandem`
   - backend: `8080`
   - frontend: `3000`
 - worktree checkout
@@ -306,7 +306,7 @@ Run the local daemon:
 make daemon
 ```
 
-The daemon authenticates using the CLI's stored token (`multica login`).
+The daemon authenticates using the CLI's stored token (`tandem login`).
 It registers runtimes for all watched workspaces from the CLI config.
 
 ## Full-Stack Isolated Testing
@@ -319,7 +319,7 @@ human intervention.
 ### Why Not Just `make daemon`?
 
 `make daemon` uses the system-installed CLI's stored token and connects to
-whatever server is configured in `~/.multica/config.json`. That's fine for
+whatever server is configured in `~/.tandem/config.json`. That's fine for
 day-to-day development against a shared server, but for fully isolated testing
 you need:
 
@@ -344,8 +344,8 @@ OFFSET=$((HASH % 1000))
 PROFILE="dev-${SLUG}-${OFFSET}"
 ```
 
-Example: worktree at `../multica-feat-auth` produces profile
-`dev-multica_feat_auth-347`, matching that worktree's port and database
+Example: worktree at `../tandem-feat-auth` produces profile
+`dev-tandem_feat_auth-347`, matching that worktree's port and database
 allocation.
 
 ### Start the Isolated Environment
@@ -373,7 +373,7 @@ done
 
 #### 2. Create a test user and token (automated auth)
 
-For deterministic local automation, set `MULTICA_DEV_VERIFICATION_CODE=888888`
+For deterministic local automation, set `TANDEM_DEV_VERIFICATION_CODE=888888`
 in your env file before starting the backend:
 
 ```bash
@@ -413,7 +413,7 @@ PROFILE="dev-${SLUG}-${OFFSET}"
 FRONTEND_PORT=$(grep '^FRONTEND_PORT=' .env.worktree 2>/dev/null || grep '^FRONTEND_PORT=' .env | head -1 | cut -d= -f2)
 FRONTEND_PORT=${FRONTEND_PORT:-3000}
 
-CONFIG_DIR="$HOME/.multica/profiles/$PROFILE"
+CONFIG_DIR="$HOME/.tandem/profiles/$PROFILE"
 mkdir -p "$CONFIG_DIR"
 
 cat > "$CONFIG_DIR/config.json" << EOF
@@ -434,7 +434,7 @@ make cli ARGS="daemon start --profile $PROFILE"
 ```
 
 The daemon runs from the current worktree's Go source, connecting to the
-local backend. Agent-executed `multica` commands automatically use the same
+local backend. Agent-executed `tandem` commands automatically use the same
 binary (the daemon prepends its own directory to `PATH`).
 
 ### Stop the Isolated Environment
@@ -457,7 +457,7 @@ make db-down
 make clean
 
 # 5. (Optional) Remove profile config
-rm -rf "$HOME/.multica/profiles/$PROFILE"
+rm -rf "$HOME/.tandem/profiles/$PROFILE"
 ```
 
 ### Desktop App Local Testing
@@ -471,14 +471,14 @@ pnpm dev:desktop
 
 This automatically:
 
-1. Compiles the `multica` CLI from `server/cmd/multica` into
-   `apps/desktop/resources/bin/multica`
+1. Compiles the `tandem` CLI from `server/cmd/tandem` into
+   `apps/desktop/resources/bin/tandem`
 2. Creates an isolated profile named `desktop-localhost-<PORT>`
 3. Starts and manages its own daemon instance
 4. Connects to the local backend
 
 Login in the Desktop UI with `dev@localhost` and the generated code from the
-backend logs. If you set `MULTICA_DEV_VERIFICATION_CODE=888888` before starting
+backend logs. If you set `TANDEM_DEV_VERIFICATION_CODE=888888` before starting
 the backend, you can use `888888` instead.
 
 If the backend runs on a non-default port (worktree), create
@@ -491,17 +491,17 @@ VITE_WS_URL=ws://localhost:<backend-port>/ws
 
 ### Isolation Guarantee
 
-Nothing in this flow touches the system-installed `multica` or the default
-`~/.multica/config.json`:
+Nothing in this flow touches the system-installed `tandem` or the default
+`~/.tandem/config.json`:
 
 | Resource | System / Production | Local Dev (per-worktree) |
 |---|---|---|
-| Config | `~/.multica/config.json` | `~/.multica/profiles/dev-<slug>-<hash>/config.json` |
-| Daemon PID | `~/.multica/daemon.pid` | `~/.multica/profiles/dev-<slug>-<hash>/daemon.pid` |
+| Config | `~/.tandem/config.json` | `~/.tandem/profiles/dev-<slug>-<hash>/config.json` |
+| Daemon PID | `~/.tandem/daemon.pid` | `~/.tandem/profiles/dev-<slug>-<hash>/daemon.pid` |
 | Health port | `19514` | `19514 + 1 + (name_hash % 1000)` |
-| Workspaces dir | `~/multica_workspaces/` | `~/multica_workspaces_dev-<slug>-<hash>/` |
-| Database | remote / production | local Docker: `multica_<slug>_<hash>` |
-| Desktop profile | `desktop-api.multica.ai` | `desktop-localhost-<port>` |
+| Workspaces dir | `~/tandem_workspaces/` | `~/tandem_workspaces_dev-<slug>-<hash>/` |
+| Database | remote / production | local Docker: `tandem_<slug>_<hash>` |
+| Desktop profile | `desktop-api.tandem.dev` | `desktop-localhost-<port>` |
 
 Multiple worktrees can run simultaneously without conflict.
 
@@ -554,7 +554,7 @@ Look for:
 ### List All Local Databases in Shared PostgreSQL
 
 ```bash
-docker compose exec -T postgres psql -U multica -d postgres -At -c "select datname from pg_database order by datname;"
+docker compose exec -T postgres psql -U tandem -d postgres -At -c "select datname from pg_database order by datname;"
 ```
 
 ### Worktree Is Accidentally Using the Main Database
@@ -631,15 +631,15 @@ make dev
 ### Feature Worktree
 
 ```bash
-git worktree add ../multica-feature -b feat/my-change main
-cd ../multica-feature
+git worktree add ../tandem-feature -b feat/my-change main
+cd ../tandem-feature
 make dev
 ```
 
 ### Return to a Previously Configured Worktree
 
 ```bash
-cd ../multica-feature
+cd ../tandem-feature
 make start-worktree
 ```
 

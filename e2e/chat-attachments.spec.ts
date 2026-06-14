@@ -3,7 +3,7 @@
  *
  * Stays at the HTTP layer (auth → upload-file → send-chat-message → DB
  * check) so the test doesn't depend on a real agent runtime being online.
- * The UI wiring is covered by `chat-input.test.tsx` in @multica/views; this
+ * The UI wiring is covered by `chat-input.test.tsx` in @tandem/views; this
  * spec is the end-to-end contract proof: the backend really does persist
  * chat_session_id at upload and back-fill chat_message_id at send.
  */
@@ -85,7 +85,7 @@ test.describe("Chat attachments", () => {
 
     const userRow = await pgc.query(
       `SELECT id FROM "user" WHERE email = $1 LIMIT 1`,
-      ["e2e@multica.ai"],
+      ["e2e@tandem.dev"],
     );
     if (userRow.rows.length === 0) throw new Error("e2e user missing");
     const userId = userRow.rows[0].id as string;

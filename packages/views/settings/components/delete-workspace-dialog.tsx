@@ -8,11 +8,11 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from "@multica/ui/components/ui/dialog";
-import { Input } from "@multica/ui/components/ui/input";
-import { Label } from "@multica/ui/components/ui/label";
-import { Button } from "@multica/ui/components/ui/button";
-import { isImeComposing } from "@multica/core/utils";
+} from "@tandem/ui/components/ui/dialog";
+import { Input } from "@tandem/ui/components/ui/input";
+import { Label } from "@tandem/ui/components/ui/label";
+import { Button } from "@tandem/ui/components/ui/button";
+import { isImeComposing } from "@tandem/core/utils";
 import { useT } from "../../i18n";
 
 /**

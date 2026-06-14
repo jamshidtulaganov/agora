@@ -25,8 +25,8 @@
 import { useMemo } from "react";
 import { FlatList, Pressable, View } from "react-native";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import type { Agent, Issue, MemberWithUser, Squad } from "@multica/core/types";
-import { canAssignAgentToIssue } from "@multica/core/permissions";
+import type { Agent, Issue, MemberWithUser, Squad } from "@tandem/core/types";
+import { canAssignAgentToIssue } from "@tandem/core/permissions";
 import { Text } from "@/components/ui/text";
 import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { StatusIcon } from "@/components/ui/status-icon";

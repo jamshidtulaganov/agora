@@ -541,7 +541,7 @@ func piSessionDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".multica", "pi-sessions"), nil
+	return filepath.Join(home, ".tandem", "pi-sessions"), nil
 }
 
 func newPiSessionPath() (string, error) {

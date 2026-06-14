@@ -23,10 +23,10 @@ func TestDBCollectorExposesPoolStats(t *testing.T) {
 	body := rec.Body.String()
 
 	for _, want := range []string{
-		"multica_db_pool_acquired_conns",
-		"multica_db_pool_idle_conns",
-		"multica_db_pool_max_conns",
-		"multica_db_pool_acquire_duration_seconds_total",
+		"tandem_db_pool_acquired_conns",
+		"tandem_db_pool_idle_conns",
+		"tandem_db_pool_max_conns",
+		"tandem_db_pool_acquire_duration_seconds_total",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("metrics body missing %q\n%s", want, body)

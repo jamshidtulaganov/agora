@@ -3,21 +3,21 @@
 import { useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@multica/ui/components/ui/button";
-import { useScrollFade } from "@multica/ui/hooks/use-scroll-fade";
-import { cn } from "@multica/ui/lib/utils";
-import { api } from "@multica/core/api";
+import { Button } from "@tandem/ui/components/ui/button";
+import { useScrollFade } from "@tandem/ui/hooks/use-scroll-fade";
+import { cn } from "@tandem/ui/lib/utils";
+import { api } from "@tandem/core/api";
 import {
   recommendTemplate,
   type AgentTemplateId,
   type QuestionnaireAnswers,
-} from "@multica/core/onboarding";
+} from "@tandem/core/onboarding";
 import type {
   Agent,
   AgentRuntime,
   CreateAgentRequest,
-} from "@multica/core/types";
-import { DragStrip } from "@multica/views/platform";
+} from "@tandem/core/types";
+import { DragStrip } from "@tandem/views/platform";
 import { StepHeader } from "../components/step-header";
 import { useT } from "../../i18n";
 
@@ -311,7 +311,7 @@ function AboutAgentsSide() {
       </p>
 
       <a
-        href="https://multica.ai/docs/agents-create"
+        href="https://tandem.dev/docs/agents-create"
         target="_blank"
         rel="noopener noreferrer"
         className="self-start text-[13px] text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground"

@@ -1,5 +1,5 @@
 {
-  "name": "@multica/core",
+  "name": "@tandem/core",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -120,8 +120,8 @@
     "react": "catalog:"
   },
   "devDependencies": {
-    "@multica/eslint-config": "workspace:*",
-    "@multica/tsconfig": "workspace:*",
+    "@tandem/eslint-config": "workspace:*",
+    "@tandem/tsconfig": "workspace:*",
     "@testing-library/react": "catalog:",
     "@types/react": "catalog:",
     "jsdom": "catalog:",

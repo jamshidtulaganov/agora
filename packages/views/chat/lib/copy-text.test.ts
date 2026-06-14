@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import type { ChatMessage } from "@multica/core/types";
-import type { ChatTimelineItem } from "@multica/core/chat";
+import type { ChatMessage } from "@tandem/core/types";
+import type { ChatTimelineItem } from "@tandem/core/chat";
 import { splitTimeline, extractCopyText } from "./copy-text";
 
 const text = (seq: number, content: string): ChatTimelineItem => ({

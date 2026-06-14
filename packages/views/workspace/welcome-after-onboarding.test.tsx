@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@multica/core/i18n/react";
-import type { SupportedLocale } from "@multica/core/i18n";
+import { I18nProvider } from "@tandem/core/i18n/react";
+import type { SupportedLocale } from "@tandem/core/i18n";
 import enOnboarding from "../locales/en/onboarding.json";
 import enCommon from "../locales/en/common.json";
 import koOnboarding from "../locales/ko/onboarding.json";
@@ -12,7 +12,7 @@ import jaOnboarding from "../locales/ja/onboarding.json";
 import jaCommon from "../locales/ja/common.json";
 import { NavigationProvider } from "../navigation";
 import type { NavigationAdapter } from "../navigation";
-import { useWelcomeStore } from "@multica/core/onboarding";
+import { useWelcomeStore } from "@tandem/core/onboarding";
 import { WelcomeAfterOnboarding } from "./welcome-after-onboarding";
 
 const TEST_RESOURCES = {
@@ -27,7 +27,7 @@ const TEST_RESOURCES = {
 const mockUser = {
   id: "user-1",
   name: "Test",
-  email: "test@multica.ai",
+  email: "test@tandem.dev",
   avatar_url: null,
   onboarded_at: "2026-01-01T00:00:00Z",
   onboarding_questionnaire: {},
@@ -37,7 +37,7 @@ const mockUser = {
   created_at: "",
   updated_at: "",
 };
-vi.mock("@multica/core/auth", () => ({
+vi.mock("@tandem/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: (s: { user: typeof mockUser }) => unknown) => {
       const state = { user: mockUser };
@@ -58,9 +58,9 @@ const mockGetWorkspace = vi.fn();
 // `useCurrentWorkspace` is gated by `WorkspaceSlugProvider`; in tests
 // we short-circuit to a fixture matching the welcome signal's workspace id
 // so the cross-workspace guard doesn't drop the component.
-vi.mock("@multica/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@multica/core/paths")>(
-    "@multica/core/paths",
+vi.mock("@tandem/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@tandem/core/paths")>(
+    "@tandem/core/paths",
   );
   return {
     ...actual,
@@ -72,7 +72,7 @@ vi.mock("@multica/core/paths", async () => {
   };
 });
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@tandem/core/api", () => ({
   api: {
     getBaseUrl: () => "http://127.0.0.1:8080",
     listAgents: (...args: unknown[]) => mockListAgents(...args),
@@ -184,7 +184,7 @@ describe("WelcomeAfterOnboarding", () => {
       expect(screen.getByText(/Preparing your Helper/i)).toBeInTheDocument();
 
       await waitFor(() => {
-        expect(screen.getByText(/welcome to SD Developers/i)).toBeInTheDocument();
+        expect(screen.getByText(/welcome to Tandem/i)).toBeInTheDocument();
       });
 
       expect(mockCreateAgent).toHaveBeenCalledTimes(1);
@@ -196,13 +196,13 @@ describe("WelcomeAfterOnboarding", () => {
       // 3 starter card titles come from HELPER_STARTER_PROMPTS (TS const,
       // EN under the test's en locale).
       expect(
-        screen.getByText("Introduce Multica to me"),
+        screen.getByText("Introduce Tandem to me"),
       ).toBeInTheDocument();
       expect(
         screen.getByText("Walk me through the core features"),
       ).toBeInTheDocument();
       expect(
-        screen.getByText("Show me what Multica can do for me — as slides"),
+        screen.getByText("Show me what Tandem can do for me — as slides"),
       ).toBeInTheDocument();
     });
 
@@ -225,7 +225,7 @@ describe("WelcomeAfterOnboarding", () => {
 
       renderWelcome();
       await waitFor(() => {
-        expect(screen.getByText(/welcome to SD Developers/i)).toBeInTheDocument();
+        expect(screen.getByText(/welcome to Tandem/i)).toBeInTheDocument();
       });
 
       expect(mockCreateAgent).not.toHaveBeenCalled();
@@ -261,7 +261,7 @@ describe("WelcomeAfterOnboarding", () => {
       renderWelcome();
       await waitFor(() =>
         expect(
-          screen.getByText("Introduce Multica to me"),
+          screen.getByText("Introduce Tandem to me"),
         ).toBeInTheDocument(),
       );
 
@@ -270,9 +270,9 @@ describe("WelcomeAfterOnboarding", () => {
       expect(ctaEmpty).toBeDisabled();
 
       // Toggle two cards.
-      fireEvent.click(screen.getByText("Introduce Multica to me"));
+      fireEvent.click(screen.getByText("Introduce Tandem to me"));
       fireEvent.click(
-        screen.getByText("Show me what Multica can do for me — as slides"),
+        screen.getByText("Show me what Tandem can do for me — as slides"),
       );
 
       // CTA enables and reflects the count.
@@ -283,8 +283,8 @@ describe("WelcomeAfterOnboarding", () => {
       await waitFor(() => expect(mockCreateIssue).toHaveBeenCalledTimes(2));
       const titles = mockCreateIssue.mock.calls.map(([args]) => args.title);
       expect(titles).toEqual([
-        "Introduce Multica to me",
-        "Show me what Multica can do for me — as slides",
+        "Introduce Tandem to me",
+        "Show me what Tandem can do for me — as slides",
       ]);
       // Both assigned to the same Helper agent.
       mockCreateIssue.mock.calls.forEach(([args]) => {
@@ -330,27 +330,27 @@ describe("WelcomeAfterOnboarding", () => {
 
       await waitFor(() =>
         expect(
-          screen.getByText("Multica를 간단히 소개해 주세요"),
+          screen.getByText("Tandem를 간단히 소개해 주세요"),
         ).toBeInTheDocument(),
       );
 
       expect(mockCreateAgent).toHaveBeenCalledTimes(1);
       const [agentArgs] = mockCreateAgent.mock.calls[0]!;
-      expect(agentArgs.description).toContain("Multica 사용 어시스턴트");
+      expect(agentArgs.description).toContain("Tandem 사용 어시스턴트");
       expect(agentArgs.instructions).toContain(
-        "당신은 이 Multica 워크스페이스에 내장된 AI 어시스턴트",
+        "당신은 이 Tandem 워크스페이스에 내장된 AI 어시스턴트",
       );
 
-      fireEvent.click(screen.getByText("Multica를 간단히 소개해 주세요"));
+      fireEvent.click(screen.getByText("Tandem를 간단히 소개해 주세요"));
       fireEvent.click(
         await screen.findByRole("button", { name: /작업 1개를 나에게 할당/i }),
       );
 
       await waitFor(() => expect(mockCreateIssue).toHaveBeenCalledTimes(1));
       const [issueArgs] = mockCreateIssue.mock.calls[0]!;
-      expect(issueArgs.title).toBe("Multica를 간단히 소개해 주세요");
+      expect(issueArgs.title).toBe("Tandem를 간단히 소개해 주세요");
       expect(issueArgs.description).toContain(
-        "Multica를 1-2문단으로 간단히 소개해 주세요",
+        "Tandem를 1-2문단으로 간단히 소개해 주세요",
       );
     });
 
@@ -377,18 +377,18 @@ describe("WelcomeAfterOnboarding", () => {
 
       await waitFor(() =>
         expect(
-          screen.getByText("Multica を簡単に紹介してください"),
+          screen.getByText("Tandem を簡単に紹介してください"),
         ).toBeInTheDocument(),
       );
 
       expect(mockCreateAgent).toHaveBeenCalledTimes(1);
       const [agentArgs] = mockCreateAgent.mock.calls[0]!;
-      expect(agentArgs.description).toContain("Multica の使い方アシスタント");
+      expect(agentArgs.description).toContain("Tandem の使い方アシスタント");
       expect(agentArgs.instructions).toContain(
-        "あなたは Multica Helper、この Multica ワークスペースに組み込まれた AI アシスタント",
+        "あなたは Tandem Helper、この Tandem ワークスペースに組み込まれた AI アシスタント",
       );
 
-      fireEvent.click(screen.getByText("Multica を簡単に紹介してください"));
+      fireEvent.click(screen.getByText("Tandem を簡単に紹介してください"));
       fireEvent.click(
         await screen.findByRole("button", {
           name: /1 件のタスクを私に割り当てる/,
@@ -397,9 +397,9 @@ describe("WelcomeAfterOnboarding", () => {
 
       await waitFor(() => expect(mockCreateIssue).toHaveBeenCalledTimes(1));
       const [issueArgs] = mockCreateIssue.mock.calls[0]!;
-      expect(issueArgs.title).toBe("Multica を簡単に紹介してください");
+      expect(issueArgs.title).toBe("Tandem を簡単に紹介してください");
       expect(issueArgs.description).toContain(
-        "Multica を1〜2段落で簡単に紹介してください",
+        "Tandem を1〜2段落で簡単に紹介してください",
       );
     });
   });
@@ -436,7 +436,7 @@ describe("WelcomeAfterOnboarding", () => {
 
       // Modal appears once all 3 API calls succeed.
       await waitFor(() => {
-        expect(screen.getByText(/Welcome to SD Developers/i)).toBeInTheDocument();
+        expect(screen.getByText(/Welcome to Tandem/i)).toBeInTheDocument();
       });
 
       expect(mockCreateIssue).toHaveBeenCalledTimes(2);
@@ -455,7 +455,7 @@ describe("WelcomeAfterOnboarding", () => {
       // install-runtime mention chip pointing at MUL-1 / issue-install.
       const [secondCall] = mockCreateIssue.mock.calls.slice(1);
       expect(secondCall![0].title).toBe(
-        "Step 2 — Create your first Multica Agent",
+        "Step 2 — Create your first Tandem Agent",
       );
       expect(secondCall![0].status).toBe("todo");
       expect(secondCall![0].description).toContain(
@@ -484,7 +484,7 @@ describe("WelcomeAfterOnboarding", () => {
       await waitFor(() =>
         expect(useWelcomeStore.getState().dismissed).toBe(true),
       );
-      expect(screen.queryByText(/Welcome to SD Developers/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Welcome to Tandem/i)).not.toBeInTheDocument();
     });
 
     it("uses Korean persisted skip-path issue and comment artifacts under ko locale", async () => {
@@ -509,7 +509,7 @@ describe("WelcomeAfterOnboarding", () => {
       renderWelcome({ locale: "ko" });
 
       await waitFor(() => {
-        expect(screen.getByText(/SD Developers에 오신 것을 환영합니다/i)).toBeInTheDocument();
+        expect(screen.getByText(/Tandem에 오신 것을 환영합니다/i)).toBeInTheDocument();
       });
 
       expect(mockCreateIssue).toHaveBeenCalledTimes(2);
@@ -518,10 +518,10 @@ describe("WelcomeAfterOnboarding", () => {
         "1단계 — agent를 사용하려면 runtime 연결하기",
       );
       expect(installCall![0].description).toContain(
-        "Multica에 오신 것을 환영합니다.",
+        "Tandem에 오신 것을 환영합니다.",
       );
       expect(guideCall![0].title).toBe(
-        "2단계 — 첫 Multica Agent 만들기",
+        "2단계 — 첫 Tandem Agent 만들기",
       );
       expect(guideCall![0].description).toContain(
         "runtime이 online 상태가 되면",
@@ -562,7 +562,7 @@ describe("WelcomeAfterOnboarding", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByText(/SD Developers へようこそ/),
+          screen.getByText(/Tandem へようこそ/),
         ).toBeInTheDocument();
       });
 
@@ -571,9 +571,9 @@ describe("WelcomeAfterOnboarding", () => {
       expect(installCall![0].title).toBe(
         "ステップ1 — agent を使うために runtime を接続する",
       );
-      expect(installCall![0].description).toContain("Multica へようこそ。");
+      expect(installCall![0].description).toContain("Tandem へようこそ。");
       expect(guideCall![0].title).toBe(
-        "ステップ2 — 最初の Multica Agent を作成する",
+        "ステップ2 — 最初の Tandem Agent を作成する",
       );
       expect(guideCall![0].description).toContain("runtime が online になったら");
       expect(guideCall![0].description).toContain(

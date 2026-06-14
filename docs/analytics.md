@@ -1,6 +1,6 @@
 # Product Analytics
 
-This document is the source of truth for the analytics events Multica ships
+This document is the source of truth for the analytics events Tandem ships
 to PostHog. Events feed the acquisition → activation → expansion funnel that
 drives our weekly Active Workspaces (WAW) north-star metric.
 
@@ -36,7 +36,7 @@ events leave the process unless the operator explicitly opts in**.
 
 ### Self-hosted instances
 
-Self-hosters should **never inherit a Multica-issued `POSTHOG_API_KEY`** —
+Self-hosters should **never inherit a Tandem-issued `POSTHOG_API_KEY`** —
 that would route their users' behavior to our analytics project. The
 defaults guarantee this:
 
@@ -93,7 +93,7 @@ handler → analytics.Client.Capture(Event)   ← non-blocking, returns immediat
   (role, use_case, team_size, platform_preference) that a user can
   legitimately change during onboarding. `Event.Set` on the backend
   maps to `$set`; the frontend helper is
-  `setPersonProperties()` in `@multica/core/analytics`. Use
+  `setPersonProperties()` in `@tandem/core/analytics`. Use
   `$set_once` only for values that must never be overwritten (email,
   initial attribution, first-completion timestamp).
 
@@ -114,7 +114,7 @@ The v0 core dashboard must use only `core_loop` plus the specific
 `onboarding_support` steps used by the activation funnel. Acquisition,
 feedback, and system/noise events stay in separate dashboards. The
 `operational` row is **not shipped to PostHog** — those signals live in
-Grafana via `multica_*` business counters (see `server/internal/metrics`).
+Grafana via `tandem_*` business counters (see `server/internal/metrics`).
 
 ## Standard core properties
 
@@ -154,7 +154,7 @@ OAuth entry points (`findOrCreateUser` is the single emission site).
 | Property | Type | Description |
 |---|---|---|
 | `email_domain` | string | Lower-cased domain portion of the user's email. |
-| `signup_source` | string | Opaque attribution bundle from the frontend cookie `multica_signup_source` (UTM + referrer). Empty when the cookie is absent. |
+| `signup_source` | string | Opaque attribution bundle from the frontend cookie `tandem_signup_source` (UTM + referrer). Empty when the cookie is absent. |
 | `auth_method` | string | Optional. `"google"` for Google OAuth signups. Absent for verification-code signups. |
 
 Person properties set with `$set_once`:
@@ -201,7 +201,7 @@ extra query, no race.
 | `runtime_mode` | string | Currently `local`; reserved for cloud runtimes. |
 | `provider` | string | e.g. `"codex"`, `"claude"`. |
 | `runtime_version` | string | Version of the agent runtime binary. |
-| `cli_version` | string | Version of the `multica` CLI that registered it. |
+| `cli_version` | string | Version of the `tandem` CLI that registered it. |
 
 `distinct_id` is the authenticated owner's user id when the daemon was
 registered via a member's JWT/PAT; daemon-token registrations fall back to
@@ -294,20 +294,20 @@ sets in `server/internal/metrics/labels.go`):
 
 | Metric | Type | Labels |
 |---|---|---|
-| `multica_agent_task_enqueued_total` | counter | `source`, `runtime_mode` |
-| `multica_agent_task_dispatched_total` | counter | `source`, `runtime_mode` |
-| `multica_agent_task_started_total` | counter | `source`, `runtime_mode`, `provider` |
-| `multica_agent_task_terminal_total` | counter | `source`, `runtime_mode`, `terminal_status` |
-| `multica_agent_task_failed_total` | counter | `source`, `runtime_mode`, `failure_reason` |
-| `multica_agent_task_queue_wait_seconds` | histogram | `source`, `runtime_mode` |
-| `multica_agent_task_run_seconds` | histogram | `source`, `runtime_mode`, `terminal_status` |
-| `multica_agent_task_total_seconds` | histogram | `source`, `runtime_mode`, `terminal_status` |
+| `tandem_agent_task_enqueued_total` | counter | `source`, `runtime_mode` |
+| `tandem_agent_task_dispatched_total` | counter | `source`, `runtime_mode` |
+| `tandem_agent_task_started_total` | counter | `source`, `runtime_mode`, `provider` |
+| `tandem_agent_task_terminal_total` | counter | `source`, `runtime_mode`, `terminal_status` |
+| `tandem_agent_task_failed_total` | counter | `source`, `runtime_mode`, `failure_reason` |
+| `tandem_agent_task_queue_wait_seconds` | histogram | `source`, `runtime_mode` |
+| `tandem_agent_task_run_seconds` | histogram | `source`, `runtime_mode`, `terminal_status` |
+| `tandem_agent_task_total_seconds` | histogram | `source`, `runtime_mode`, `terminal_status` |
 
 - `terminal_status` is the task's final `agent_task_queue.status` —
   `completed` / `failed` / `cancelled`. There is **no** separate
   completed/cancelled metric: all three land on
-  `multica_agent_task_terminal_total{terminal_status=…}`. Failures
-  additionally increment `multica_agent_task_failed_total` carrying the coarse
+  `tandem_agent_task_terminal_total{terminal_status=…}`. Failures
+  additionally increment `tandem_agent_task_failed_total` carrying the coarse
   `failure_reason` (`agent_task_queue.failure_reason`, default `agent_error`).
 - Task wall-clock lives in the `*_seconds` histograms (queue wait / run /
   total), replacing the old `duration_ms` event property.
@@ -647,7 +647,7 @@ sent from a pre-workspace surface.
     workspace. Omitted on pre-workspace surfaces.
 
 - Attribution is NOT a separate event; UTM + referrer origin are written
-  to the `multica_signup_source` cookie on the first anonymous pageview
+  to the `tandem_signup_source` cookie on the first anonymous pageview
   and read by the backend's `signup` emission. The cookie carries a JSON
   payload URL-encoded at write time (`encodeURIComponent`) and
   URL-decoded at read time (`url.QueryUnescape`) — the JSON is never
@@ -659,7 +659,7 @@ sent from a pre-workspace surface.
 
 Per-task completion is no longer shipped to PostHog. Task success now
 reconciles **DB ↔ Prometheus** instead of DB ↔ PostHog: the
-`BusinessMetrics.RecordTaskTerminal` counter (exported as a `multica_*` task
+`BusinessMetrics.RecordTaskTerminal` counter (exported as a `tandem_*` task
 metric) should track the operational source of truth:
 
 ```sql

@@ -30,35 +30,35 @@ import type {
   MemberWithUser,
   SearchIssueResult,
   SearchProjectResult,
-} from "@multica/core/types";
-import { api } from "@multica/core/api";
+} from "@tandem/core/types";
+import { api } from "@tandem/core/api";
 import {
   openCreateIssueWithPreference,
   selectRecentIssues,
   useRecentIssuesStore,
-} from "@multica/core/issues/stores";
-import { issueDetailOptions } from "@multica/core/issues/queries";
-import { useWorkspaceId } from "@multica/core";
-import { useWorkspacePaths } from "@multica/core/paths";
-import type { WorkspacePaths } from "@multica/core/paths";
-import { useModalStore } from "@multica/core/modals";
-import { memberListOptions } from "@multica/core/workspace/queries";
-import { resolvePublicFileUrl } from "@multica/core/workspace/avatar-url";
+} from "@tandem/core/issues/stores";
+import { issueDetailOptions } from "@tandem/core/issues/queries";
+import { useWorkspaceId } from "@tandem/core";
+import { useWorkspacePaths } from "@tandem/core/paths";
+import type { WorkspacePaths } from "@tandem/core/paths";
+import { useModalStore } from "@tandem/core/modals";
+import { memberListOptions } from "@tandem/core/workspace/queries";
+import { resolvePublicFileUrl } from "@tandem/core/workspace/avatar-url";
 import { StatusIcon } from "../issues/components";
 import { ProjectIcon } from "../projects/components/project-icon";
-import { PROJECT_STATUS_CONFIG } from "@multica/core/projects/config";
-import type { ProjectStatus } from "@multica/core/types";
+import { PROJECT_STATUS_CONFIG } from "@tandem/core/projects/config";
+import type { ProjectStatus } from "@tandem/core/types";
 import { ActorAvatar } from "../common/actor-avatar";
-import { ActorAvatar as ActorAvatarBase } from "@multica/ui/components/common/actor-avatar";
+import { ActorAvatar as ActorAvatarBase } from "@tandem/ui/components/common/actor-avatar";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "@multica/ui/components/ui/dialog";
-import { useTheme } from "@multica/ui/components/common/theme-provider";
-import { copyText } from "@multica/ui/lib/clipboard";
+} from "@tandem/ui/components/ui/dialog";
+import { useTheme } from "@tandem/ui/components/common/theme-provider";
+import { copyText } from "@tandem/ui/lib/clipboard";
 import { useNavigation } from "../navigation";
 import { useT } from "../i18n";
 import { matchesPinyin } from "../editor/extensions/pinyin-match";

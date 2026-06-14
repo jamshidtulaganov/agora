@@ -40,11 +40,11 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
-import { cn } from "@multica/ui/lib/utils";
-import type { UploadResult } from "@multica/core/hooks/use-file-upload";
-import { useWorkspaceSlug } from "@multica/core/paths";
+import { cn } from "@tandem/ui/lib/utils";
+import type { UploadResult } from "@tandem/core/hooks/use-file-upload";
+import { useWorkspaceSlug } from "@tandem/core/paths";
 import { useQueryClient } from "@tanstack/react-query";
-import type { Attachment } from "@multica/core/types";
+import type { Attachment } from "@tandem/core/types";
 import {
   parseMarkdownChunked,
   MARKDOWN_CHUNK_THRESHOLD,
@@ -99,7 +99,7 @@ interface ContentEditorProps {
   /**
    * When true, the `@` suggestion picker is disabled but the mention node
    * type remains in the schema, so existing mentions pasted in from other
-   * Multica editors still render as the normal pill. Use for editors where
+   * Tandem editors still render as the normal pill. Use for editors where
    * *creating* a new mention has no business meaning (e.g. agent system
    * prompts) but *preserving* an existing one still matters.
    */

@@ -18,36 +18,36 @@ import type {
   RuntimeLocalSkillImportConflict,
   RuntimeLocalSkillSummary,
   Skill,
-} from "@multica/core/types";
-import { useAuthStore } from "@multica/core/auth";
-import { useWorkspaceId } from "@multica/core/hooks";
+} from "@tandem/core/types";
+import { useAuthStore } from "@tandem/core/auth";
+import { useWorkspaceId } from "@tandem/core/hooks";
 import {
   runtimeListOptions,
   runtimeLocalSkillsKeys,
   runtimeLocalSkillsOptions,
   resolveRuntimeLocalSkillImport,
-} from "@multica/core/runtimes";
+} from "@tandem/core/runtimes";
 import {
   memberListOptions,
   skillDetailOptions,
   workspaceKeys,
-} from "@multica/core/workspace/queries";
-import { Button } from "@multica/ui/components/ui/button";
-import { Badge } from "@multica/ui/components/ui/badge";
-import { Checkbox } from "@multica/ui/components/ui/checkbox";
-import { Input } from "@multica/ui/components/ui/input";
-import { Label } from "@multica/ui/components/ui/label";
-import { Progress } from "@multica/ui/components/ui/progress";
-import { Textarea } from "@multica/ui/components/ui/textarea";
+} from "@tandem/core/workspace/queries";
+import { Button } from "@tandem/ui/components/ui/button";
+import { Badge } from "@tandem/ui/components/ui/badge";
+import { Checkbox } from "@tandem/ui/components/ui/checkbox";
+import { Input } from "@tandem/ui/components/ui/input";
+import { Label } from "@tandem/ui/components/ui/label";
+import { Progress } from "@tandem/ui/components/ui/progress";
+import { Textarea } from "@tandem/ui/components/ui/textarea";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@multica/ui/components/ui/select";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
-import { useScrollFade } from "@multica/ui/hooks/use-scroll-fade";
+} from "@tandem/ui/components/ui/select";
+import { Skeleton } from "@tandem/ui/components/ui/skeleton";
+import { useScrollFade } from "@tandem/ui/hooks/use-scroll-fade";
 import { useT } from "../../i18n";
 import { isNameConflictError } from "../lib/utils";
 

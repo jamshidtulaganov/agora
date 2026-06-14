@@ -10,10 +10,10 @@ import {
   Save,
   Trash2,
 } from "lucide-react";
-import { api } from "@multica/core/api";
-import type { Agent } from "@multica/core/types";
-import { Button } from "@multica/ui/components/ui/button";
-import { Input } from "@multica/ui/components/ui/input";
+import { api } from "@tandem/core/api";
+import type { Agent } from "@tandem/core/types";
+import { Button } from "@tandem/ui/components/ui/button";
+import { Input } from "@tandem/ui/components/ui/input";
 import { toast } from "sonner";
 import { useT } from "../../../i18n";
 

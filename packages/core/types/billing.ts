@@ -1,6 +1,6 @@
-// Mirrors the multica-cloud Billing module response shapes
-// (multica-cloud/docs/api/billing.md). These types are the contract our
-// frontend consumes via /api/cloud-billing/* — multica-api itself does
+// Mirrors the tandem-cloud Billing module response shapes
+// (tandem-cloud/docs/api/billing.md). These types are the contract our
+// frontend consumes via /api/cloud-billing/* — tandem-api itself does
 // not own the schema, it just proxies bytes. Keep field names verbatim
 // with what the cloud sends.
 //

@@ -3,15 +3,15 @@
 import { useNavigation } from "../navigation";
 import { DragStrip } from "../platform";
 import { ArrowLeft } from "lucide-react";
-import { Button } from "@multica/ui/components/ui/button";
+import { Button } from "@tandem/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
   DialogDescription,
-} from "@multica/ui/components/ui/dialog";
-import { paths } from "@multica/core/paths";
-import { useConfigStore } from "@multica/core/config";
+} from "@tandem/ui/components/ui/dialog";
+import { paths } from "@tandem/core/paths";
+import { useConfigStore } from "@tandem/core/config";
 import { CreateWorkspaceForm } from "../workspace/create-workspace-form";
 import { useT } from "../i18n";
 

@@ -26,8 +26,8 @@ import (
 
 // Bitrix24 task sync. Bitrix is the task master: an inbound webhook on
 // ONTASKADD / ONTASKUPDATE pulls the task, and (if it is tagged "ai") creates
-// or updates a Multica issue in the routed workspace. A complementary outbound
-// listener mirrors Multica issue status changes back to Bitrix as a courtesy
+// or updates a Tandem issue in the routed workspace. A complementary outbound
+// listener mirrors Tandem issue status changes back to Bitrix as a courtesy
 // comment (always) and, when BITRIX_PUSH_STATUS is truthy, a real status
 // update.
 //
@@ -212,7 +212,7 @@ func (h *Handler) BitrixWebhook(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// syncBitrixTask pulls a Bitrix task and reconciles it into the routed Multica
+// syncBitrixTask pulls a Bitrix task and reconciles it into the routed Tandem
 // workspace. It is a no-op (nil error) when the task is not an AI task, or when
 // routing resolves to no workspace.
 func (h *Handler) syncBitrixTask(ctx context.Context, taskID string, cfg bitrix.RouteConfig) error {
@@ -464,10 +464,10 @@ func (h *Handler) bitrixWorkspaceOwner(ctx context.Context, wsID pgtype.UUID) (p
 	return pgtype.UUID{}, fmt.Errorf("workspace %s has no owner member", util.UUIDToString(wsID))
 }
 
-// bitrixResolveAssignee maps a Bitrix RESPONSIBLE_ID to a Multica member
+// bitrixResolveAssignee maps a Bitrix RESPONSIBLE_ID to a Tandem member
 // assignee, returning the (type, id) pair to set on the issue. It returns an
 // unset (invalid) pair — leaving the issue unassigned — when the responsible
-// id is empty, not linked to any Multica user, or linked to a user who is not
+// id is empty, not linked to any Tandem user, or linked to a user who is not
 // a member of this workspace.
 func (h *Handler) bitrixResolveAssignee(ctx context.Context, wsID pgtype.UUID, responsibleID string) (pgtype.Text, pgtype.UUID) {
 	none := pgtype.Text{}
@@ -596,11 +596,11 @@ func (h *Handler) mirrorIssueStatusToBitrix(ctx context.Context, issueID string)
 
 	client := bitrix.NewClient(bitrixWebhookURL())
 
-	// Spec format: "🤖 SD Developers: issue <PREFIX>-<n> → <Label>" — the
+	// Spec format: "🤖 Tandem: issue <PREFIX>-<n> → <Label>" — the
 	// workspace-prefixed identifier (PROJ-12) the rest of the product uses, a
 	// bot emoji, and a Unicode arrow.
 	prefix := h.getIssuePrefix(ctx, issue.WorkspaceID)
-	comment := fmt.Sprintf("🤖 SD Developers: issue %s-%d → %s", prefix, issue.Number, bitrixStatusLabel(issue.Status))
+	comment := fmt.Sprintf("🤖 Tandem: issue %s-%d → %s", prefix, issue.Number, bitrixStatusLabel(issue.Status))
 	if err := client.AddTaskComment(ctx, taskID, comment); err != nil {
 		return fmt.Errorf("add task comment: %w", err)
 	}
@@ -641,7 +641,7 @@ func bitrixTaskIDFromMetadata(raw []byte) string {
 	}
 }
 
-// bitrixStatusLabel turns a Multica issue status into a human label for the
+// bitrixStatusLabel turns a Tandem issue status into a human label for the
 // Bitrix comment.
 func bitrixStatusLabel(status string) string {
 	switch status {

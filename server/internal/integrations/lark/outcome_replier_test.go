@@ -142,7 +142,7 @@ func TestLarkOutcomeReplierFallsBackToNoopWhenStubAPI(t *testing.T) {
 		BindingSvc:  &BindingTokenService{}, // not nil so we exercise the IsConfigured guard
 		Credentials: stubCredentialsResolver{secret: "s"},
 		Queries:     stubReplierQueries{},
-		PublicURL:   "https://multica.test",
+		PublicURL:   "https://tandem.test",
 		Logger:      log,
 	})
 	if _, isNoop := rep.(*noopReplier); !isNoop {
@@ -183,7 +183,7 @@ func TestLarkOutcomeReplierAgentOfflineSendsCard(t *testing.T) {
 		BindingSvc:  &BindingTokenService{},
 		Credentials: stubCredentialsResolver{secret: "s"},
 		Queries:     stubReplierQueries{agent: db.Agent{Name: "Trump"}},
-		PublicURL:   "https://multica.test",
+		PublicURL:   "https://tandem.test",
 		Logger:      log,
 	})
 	inst := db.LarkInstallation{AppID: "cli_x"}
@@ -218,7 +218,7 @@ func TestLarkOutcomeReplierAgentArchivedSendsCard(t *testing.T) {
 		BindingSvc:  &BindingTokenService{},
 		Credentials: stubCredentialsResolver{secret: "s"},
 		Queries:     stubReplierQueries{},
-		PublicURL:   "https://multica.test",
+		PublicURL:   "https://tandem.test",
 		Logger:      log,
 	})
 	msg := InboundMessage{ChatID: "oc_chat_arch"}
@@ -243,7 +243,7 @@ func TestLarkOutcomeReplierIngestedAndDroppedAreSilent(t *testing.T) {
 		BindingSvc:  &BindingTokenService{},
 		Credentials: stubCredentialsResolver{secret: "s"},
 		Queries:     stubReplierQueries{},
-		PublicURL:   "https://multica.test",
+		PublicURL:   "https://tandem.test",
 		Logger:      log,
 	})
 	msg := InboundMessage{ChatID: "oc_x"}
@@ -268,7 +268,7 @@ func TestLarkOutcomeReplierOfflineSwallowsAPIError(t *testing.T) {
 		BindingSvc:  &BindingTokenService{},
 		Credentials: stubCredentialsResolver{secret: "s"},
 		Queries:     stubReplierQueries{},
-		PublicURL:   "https://multica.test",
+		PublicURL:   "https://tandem.test",
 		Logger:      log,
 	})
 	// Should NOT panic.
@@ -296,7 +296,7 @@ func TestNoopReplierIsHandledByHub(t *testing.T) {
 // blocker on PR #3277 review. Fix: OutcomeIngested with IssueID.Valid
 // triggers a plain text confirmation send via SendTextMessage,
 // composing the workspace-qualified identifier with the title and a
-// deep link back to Multica.
+// deep link back to Tandem.
 func TestLarkOutcomeReplierIssueCreatedSendsConfirmation(t *testing.T) {
 	t.Parallel()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -306,7 +306,7 @@ func TestLarkOutcomeReplierIssueCreatedSendsConfirmation(t *testing.T) {
 		BindingSvc:  &BindingTokenService{},
 		Credentials: stubCredentialsResolver{secret: "s"},
 		Queries:     stubReplierQueries{},
-		PublicURL:   "https://multica.test",
+		PublicURL:   "https://tandem.test",
 		Logger:      log,
 	})
 
@@ -336,8 +336,8 @@ func TestLarkOutcomeReplierIssueCreatedSendsConfirmation(t *testing.T) {
 	if !strings.Contains(got.Text, "fix login bug") {
 		t.Errorf("text should embed the issue title; got %q", got.Text)
 	}
-	if !strings.Contains(got.Text, "https://multica.test/issues/MUL-42") {
-		t.Errorf("text should embed the deep link back to Multica; got %q", got.Text)
+	if !strings.Contains(got.Text, "https://tandem.test/issues/MUL-42") {
+		t.Errorf("text should embed the deep link back to Tandem; got %q", got.Text)
 	}
 	// No interactive card on this path — the confirmation must be
 	// plain text, matching how chat replies render.
@@ -360,7 +360,7 @@ func TestLarkOutcomeReplierOutcomeIngestedSilentWithoutIssue(t *testing.T) {
 		BindingSvc:  &BindingTokenService{},
 		Credentials: stubCredentialsResolver{secret: "s"},
 		Queries:     stubReplierQueries{},
-		PublicURL:   "https://multica.test",
+		PublicURL:   "https://tandem.test",
 		Logger:      log,
 	})
 

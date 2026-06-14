@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement, ReactNode } from "react";
-import { I18nProvider } from "@multica/core/i18n/react";
+import { I18nProvider } from "@tandem/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 import enAuth from "../locales/en/auth.json";
 import enSettings from "../locales/en/settings.json";
@@ -50,7 +50,7 @@ vi.mock("@tanstack/react-query", async () => {
   return { ...actual, useQueryClient: () => ({ setQueryData: mockSetQueryData }) };
 });
 
-vi.mock("@multica/core/auth", () => ({
+vi.mock("@tandem/core/auth", () => ({
   useAuthStore: Object.assign(
     // Zustand hook form — component may call useAuthStore(selector)
     (selector?: (s: unknown) => unknown) => {
@@ -71,12 +71,12 @@ vi.mock("@multica/core/auth", () => ({
   ),
 }));
 
-vi.mock("@multica/core/config", () => ({
+vi.mock("@tandem/core/config", () => ({
   useConfigStore: (selector: (state: typeof mockConfigState) => unknown) =>
     selector(mockConfigState),
 }));
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@tandem/core/api", () => ({
   api: {
     listWorkspaces: mockApiListWorkspaces,
     verifyCode: mockApiVerifyCode,
@@ -88,7 +88,7 @@ vi.mock("@multica/core/api", () => ({
   },
 }));
 
-vi.mock("@multica/core/types", () => ({}));
+vi.mock("@tandem/core/types", () => ({}));
 
 // ---------------------------------------------------------------------------
 // Import after mocks
@@ -135,10 +135,10 @@ describe("LoginPage", () => {
   // Email step rendering
   // -------------------------------------------------------------------------
 
-  it("renders email form with 'Sign in to Multica' title", () => {
+  it("renders email form with 'Sign in to Tandem' title", () => {
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
     expect(
-      screen.getByText(/sign in to multica/i),
+      screen.getByText(/sign in to tandem/i),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/enter your email to get a login code/i),
@@ -425,7 +425,7 @@ describe("LoginPage", () => {
   });
 
   it("shows Telegram button + divider when bot username is configured", () => {
-    mockConfigState.telegramBotUsername = "multica_bot";
+    mockConfigState.telegramBotUsername = "tandem_bot";
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
     expect(
       screen.getByRole("button", { name: /continue with telegram/i }),
@@ -434,10 +434,10 @@ describe("LoginPage", () => {
   });
 
   it("starts the Telegram flow and shows deep-link + OTP on click", async () => {
-    mockConfigState.telegramBotUsername = "multica_bot";
+    mockConfigState.telegramBotUsername = "tandem_bot";
     mockApiTelegramStartLogin.mockResolvedValueOnce({
       nonce: "nonce-123",
-      deep_link: "https://t.me/multica_bot?start=nonce-123",
+      deep_link: "https://t.me/tandem_bot?start=nonce-123",
     });
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
@@ -454,21 +454,21 @@ describe("LoginPage", () => {
     // Deep-link button rendered as an anchor pointing at deep_link, with the
     // bot username interpolated into the label.
     const openLink = screen.getByRole("link", {
-      name: /open @multica_bot in telegram/i,
+      name: /open @tandem_bot in telegram/i,
     });
     expect(openLink).toHaveAttribute(
       "href",
-      "https://t.me/multica_bot?start=nonce-123",
+      "https://t.me/tandem_bot?start=nonce-123",
     );
     // The 6-digit OTP input is present.
     expect(getOTPInput()).toBeInTheDocument();
   });
 
   it("verifies code, establishes session via token, then onSuccess", async () => {
-    mockConfigState.telegramBotUsername = "multica_bot";
+    mockConfigState.telegramBotUsername = "tandem_bot";
     mockApiTelegramStartLogin.mockResolvedValueOnce({
       nonce: "nonce-123",
-      deep_link: "https://t.me/multica_bot?start=nonce-123",
+      deep_link: "https://t.me/tandem_bot?start=nonce-123",
     });
     mockApiTelegramVerifyLogin.mockResolvedValueOnce({
       token: "tg-jwt-token",
@@ -512,10 +512,10 @@ describe("LoginPage", () => {
   });
 
   it("shows error and clears code on failed Telegram verify", async () => {
-    mockConfigState.telegramBotUsername = "multica_bot";
+    mockConfigState.telegramBotUsername = "tandem_bot";
     mockApiTelegramStartLogin.mockResolvedValueOnce({
       nonce: "nonce-123",
-      deep_link: "https://t.me/multica_bot?start=nonce-123",
+      deep_link: "https://t.me/tandem_bot?start=nonce-123",
     });
     mockApiTelegramVerifyLogin.mockRejectedValueOnce(
       new Error("Invalid or expired code"),
@@ -542,10 +542,10 @@ describe("LoginPage", () => {
   });
 
   it("back button on Telegram step returns to email step", async () => {
-    mockConfigState.telegramBotUsername = "multica_bot";
+    mockConfigState.telegramBotUsername = "tandem_bot";
     mockApiTelegramStartLogin.mockResolvedValueOnce({
       nonce: "nonce-123",
-      deep_link: "https://t.me/multica_bot?start=nonce-123",
+      deep_link: "https://t.me/tandem_bot?start=nonce-123",
     });
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
@@ -560,11 +560,11 @@ describe("LoginPage", () => {
 
     await user.click(screen.getByRole("button", { name: /back/i }));
 
-    expect(screen.getByText(/sign in to multica/i)).toBeInTheDocument();
+    expect(screen.getByText(/sign in to tandem/i)).toBeInTheDocument();
   });
 
   it("shows error when Telegram start fails", async () => {
-    mockConfigState.telegramBotUsername = "multica_bot";
+    mockConfigState.telegramBotUsername = "tandem_bot";
     mockApiTelegramStartLogin.mockRejectedValueOnce(new Error("start boom"));
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
 
@@ -577,7 +577,7 @@ describe("LoginPage", () => {
       expect(screen.getByText("start boom")).toBeInTheDocument();
     });
     // Stays on the email step since the flow never started.
-    expect(screen.getByText(/sign in to multica/i)).toBeInTheDocument();
+    expect(screen.getByText(/sign in to tandem/i)).toBeInTheDocument();
   });
 
   // -------------------------------------------------------------------------
@@ -585,7 +585,7 @@ describe("LoginPage", () => {
   // -------------------------------------------------------------------------
 
   it("shows cli_confirm step when existing session + cliCallback", async () => {
-    localStorage.setItem("multica_token", "existing-jwt");
+    localStorage.setItem("tandem_token", "existing-jwt");
     // Cookie attempt fails first, then localStorage fallback succeeds
     mockApiGetMe
       .mockRejectedValueOnce(new Error("no cookie"))
@@ -617,7 +617,7 @@ describe("LoginPage", () => {
   });
 
   it("CLI authorize button redirects to callback URL", async () => {
-    localStorage.setItem("multica_token", "existing-jwt");
+    localStorage.setItem("tandem_token", "existing-jwt");
     // Cookie attempt fails, localStorage fallback succeeds
     mockApiGetMe
       .mockRejectedValueOnce(new Error("no cookie"))
@@ -652,7 +652,7 @@ describe("LoginPage", () => {
   });
 
   it("'Use a different account' returns to email step", async () => {
-    localStorage.setItem("multica_token", "existing-jwt");
+    localStorage.setItem("tandem_token", "existing-jwt");
     // Cookie attempt fails, localStorage fallback succeeds
     mockApiGetMe
       .mockRejectedValueOnce(new Error("no cookie"))
@@ -681,7 +681,7 @@ describe("LoginPage", () => {
     );
 
     expect(
-      screen.getByText(/sign in to multica/i),
+      screen.getByText(/sign in to tandem/i),
     ).toBeInTheDocument();
   });
 
@@ -867,7 +867,7 @@ describe("LoginPage", () => {
     await user.click(screen.getByRole("button", { name: /back/i }));
 
     expect(
-      screen.getByText(/sign in to multica/i),
+      screen.getByText(/sign in to tandem/i),
     ).toBeInTheDocument();
   });
 

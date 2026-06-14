@@ -7,22 +7,22 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
-import { Button } from "@multica/ui/components/ui/button";
-import { FileUploadButton } from "@multica/ui/components/common/file-upload-button";
+} from "@tandem/ui/components/ui/dialog";
+import { Button } from "@tandem/ui/components/ui/button";
+import { FileUploadButton } from "@tandem/ui/components/common/file-upload-button";
 import {
   ContentEditor,
   type ContentEditorRef,
   useFileDropZone,
   FileDropOverlay,
 } from "../editor";
-import { useCreateFeedback, useFeedbackDraftStore } from "@multica/core/feedback";
-import { useCurrentWorkspace } from "@multica/core/paths";
-import { useFileUpload } from "@multica/core/hooks/use-file-upload";
-import { api } from "@multica/core/api";
-import { captureFeedbackOpened } from "@multica/core/analytics";
+import { useCreateFeedback, useFeedbackDraftStore } from "@tandem/core/feedback";
+import { useCurrentWorkspace } from "@tandem/core/paths";
+import { useFileUpload } from "@tandem/core/hooks/use-file-upload";
+import { api } from "@tandem/core/api";
+import { captureFeedbackOpened } from "@tandem/core/analytics";
 import { useT } from "../i18n";
-import { formatShortcut, modKey, enterKey } from "@multica/core/platform";
+import { formatShortcut, modKey, enterKey } from "@tandem/core/platform";
 
 const MAX_MESSAGE_LEN = 10000;
 

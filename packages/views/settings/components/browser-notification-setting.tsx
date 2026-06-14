@@ -6,9 +6,9 @@ import {
   isWebNotificationSupported,
   requestWebNotificationPermission,
   type WebNotificationPermission,
-} from "@multica/core/platform";
-import { Button } from "@multica/ui/components/ui/button";
-import { Card, CardContent } from "@multica/ui/components/ui/card";
+} from "@tandem/core/platform";
+import { Button } from "@tandem/ui/components/ui/button";
+import { Card, CardContent } from "@tandem/ui/components/ui/card";
 import { isDesktopShell } from "../../platform";
 import { useT } from "../../i18n";
 

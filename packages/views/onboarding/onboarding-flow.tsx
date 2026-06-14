@@ -3,17 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { captureEvent } from "@multica/core/analytics";
-import { setCurrentWorkspace } from "@multica/core/platform";
-import { useAuthStore } from "@multica/core/auth";
+import { captureEvent } from "@tandem/core/analytics";
+import { setCurrentWorkspace } from "@tandem/core/platform";
+import { useAuthStore } from "@tandem/core/auth";
 import {
   completeOnboarding,
   ONBOARDING_STEP_ORDER,
   useWelcomeStore,
   type OnboardingStep,
-} from "@multica/core/onboarding";
-import { workspaceListOptions } from "@multica/core/workspace/queries";
-import type { AgentRuntime, Workspace } from "@multica/core/types";
+} from "@tandem/core/onboarding";
+import { workspaceListOptions } from "@tandem/core/workspace/queries";
+import type { AgentRuntime, Workspace } from "@tandem/core/types";
 import { StepWelcome } from "./steps/step-welcome";
 import { StepWorkspace } from "./steps/step-workspace";
 import { StepRuntimeConnect } from "./steps/step-runtime-connect";

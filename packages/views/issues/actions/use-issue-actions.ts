@@ -3,18 +3,18 @@
 import { useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { Issue, UpdateIssueRequest } from "@multica/core/types";
-import { useAuthStore } from "@multica/core/auth";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useWorkspacePaths } from "@multica/core/paths";
-import { useModalStore } from "@multica/core/modals";
-import { useUpdateIssue } from "@multica/core/issues/mutations";
-import { pinListOptions, useCreatePin, useDeletePin } from "@multica/core/pins";
-import { copyText } from "@multica/ui/lib/clipboard";
+import type { Issue, UpdateIssueRequest } from "@tandem/core/types";
+import { useAuthStore } from "@tandem/core/auth";
+import { useWorkspaceId } from "@tandem/core/hooks";
+import { useWorkspacePaths } from "@tandem/core/paths";
+import { useModalStore } from "@tandem/core/modals";
+import { useUpdateIssue } from "@tandem/core/issues/mutations";
+import { pinListOptions, useCreatePin, useDeletePin } from "@tandem/core/pins";
+import { copyText } from "@tandem/ui/lib/clipboard";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 
-const BACKLOG_HINT_LS_KEY = "multica:backlog-agent-hint-dismissed";
+const BACKLOG_HINT_LS_KEY = "tandem:backlog-agent-hint-dismissed";
 
 export interface UseIssueActionsResult {
   isPinned: boolean;

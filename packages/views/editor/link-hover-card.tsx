@@ -14,9 +14,9 @@ import { createPortal } from "react-dom";
 import { computePosition, offset, flip, shift } from "@floating-ui/dom";
 import { ExternalLink, Copy } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@multica/ui/components/ui/button";
-import { copyText } from "@multica/ui/lib/clipboard";
-import { useWorkspaceSlug } from "@multica/core/paths";
+import { Button } from "@tandem/ui/components/ui/button";
+import { copyText } from "@tandem/ui/lib/clipboard";
+import { useWorkspaceSlug } from "@tandem/core/paths";
 import { useT } from "../i18n";
 import { openLink, isMentionHref } from "./utils/link-handler";
 

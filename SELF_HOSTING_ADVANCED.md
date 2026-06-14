@@ -1,6 +1,6 @@
 # Self-Hosting — Advanced Configuration
 
-This document covers advanced configuration for self-hosted Multica deployments. For the quick start guide, see [SELF_HOSTING.md](SELF_HOSTING.md).
+This document covers advanced configuration for self-hosted Tandem deployments. For the quick start guide, see [SELF_HOSTING.md](SELF_HOSTING.md).
 
 ## Configuration
 
@@ -25,14 +25,14 @@ These have sensible defaults and only need to be set when tuning a large or cons
 
 ### Email (Required for Authentication)
 
-Multica supports two email backends. `SMTP_HOST` takes priority when set; otherwise `RESEND_API_KEY` is used. With neither configured, verification codes are printed to the server log — copy them from there to log in.
+Tandem supports two email backends. `SMTP_HOST` takes priority when set; otherwise `RESEND_API_KEY` is used. With neither configured, verification codes are printed to the server log — copy them from there to log in.
 
 #### Option A: Resend (recommended for cloud deployments)
 
 | Variable | Description |
 |----------|-------------|
 | `RESEND_API_KEY` | Your Resend API key |
-| `RESEND_FROM_EMAIL` | Sender email address (default: `noreply@multica.ai`) |
+| `RESEND_FROM_EMAIL` | Sender email address (default: `noreply@tandem.dev`) |
 
 #### Option B: SMTP relay (for self-hosted / on-premise deployments)
 
@@ -50,7 +50,7 @@ Use this option when your deployment cannot reach the public internet or you alr
 
 STARTTLS is used automatically when advertised by the server. Port 465 (SMTPS / implicit TLS) is supported and auto-enables implicit TLS; set `SMTP_TLS=implicit` (aliases `smtps`, `ssl`) to force it on a non-standard port.
 
-> **Note:** If neither Resend nor SMTP is configured, generated verification codes are printed to backend logs — copy them from there to log in. A fixed local testing code (e.g. `888888`) is **opt-in only**: set `MULTICA_DEV_VERIFICATION_CODE=888888` in `.env` and keep `APP_ENV` non-production. The Docker self-host stack pins `APP_ENV=production`, so the shortcut is ignored there. **Never enable a fixed code on a publicly reachable instance.**
+> **Note:** If neither Resend nor SMTP is configured, generated verification codes are printed to backend logs — copy them from there to log in. A fixed local testing code (e.g. `888888`) is **opt-in only**: set `TANDEM_DEV_VERIFICATION_CODE=888888` in `.env` and keep `APP_ENV` non-production. The Docker self-host stack pins `APP_ENV=production`, so the shortcut is ignored there. **Never enable a fixed code on a publicly reachable instance.**
 
 ### Google OAuth (Optional)
 
@@ -124,37 +124,37 @@ These are configured on each user's machine, not on the server:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MULTICA_SERVER_URL` | `ws://localhost:8080/ws` | WebSocket URL for daemon → server connection |
-| `MULTICA_APP_URL` | `http://localhost:3000` | Frontend URL for CLI login flow |
-| `MULTICA_DAEMON_POLL_INTERVAL` | `3s` | How often the daemon polls for tasks |
-| `MULTICA_DAEMON_HEARTBEAT_INTERVAL` | `15s` | Heartbeat frequency |
+| `TANDEM_SERVER_URL` | `ws://localhost:8080/ws` | WebSocket URL for daemon → server connection |
+| `TANDEM_APP_URL` | `http://localhost:3000` | Frontend URL for CLI login flow |
+| `TANDEM_DAEMON_POLL_INTERVAL` | `3s` | How often the daemon polls for tasks |
+| `TANDEM_DAEMON_HEARTBEAT_INTERVAL` | `15s` | Heartbeat frequency |
 
 Agent-specific overrides:
 
 | Variable | Description |
 |----------|-------------|
-| `MULTICA_CLAUDE_PATH` | Custom path to the `claude` binary |
-| `MULTICA_CLAUDE_MODEL` | Override the Claude model used |
-| `MULTICA_CODEX_PATH` | Custom path to the `codex` binary |
-| `MULTICA_CODEX_MODEL` | Override the Codex model used |
-| `MULTICA_COPILOT_PATH` | Custom path to the `copilot` (GitHub Copilot CLI) binary |
-| `MULTICA_COPILOT_MODEL` | Override the Copilot model used (note: GitHub Copilot routes models through your account entitlement, so this may not be honoured) |
-| `MULTICA_OPENCODE_PATH` | Custom path to the `opencode` binary |
-| `MULTICA_OPENCODE_MODEL` | Override the OpenCode model used |
-| `MULTICA_OPENCLAW_PATH` | Custom path to the `openclaw` binary |
-| `MULTICA_OPENCLAW_MODEL` | Override the OpenClaw model used |
-| `MULTICA_HERMES_PATH` | Custom path to the `hermes` binary |
-| `MULTICA_HERMES_MODEL` | Override the Hermes model used |
-| `MULTICA_GEMINI_PATH` | Custom path to the `gemini` binary |
-| `MULTICA_GEMINI_MODEL` | Override the Gemini model used |
-| `MULTICA_PI_PATH` | Custom path to the `pi` binary |
-| `MULTICA_PI_MODEL` | Override the Pi model used |
-| `MULTICA_CURSOR_PATH` | Custom path to the `cursor-agent` binary |
-| `MULTICA_CURSOR_MODEL` | Override the Cursor Agent model used |
+| `TANDEM_CLAUDE_PATH` | Custom path to the `claude` binary |
+| `TANDEM_CLAUDE_MODEL` | Override the Claude model used |
+| `TANDEM_CODEX_PATH` | Custom path to the `codex` binary |
+| `TANDEM_CODEX_MODEL` | Override the Codex model used |
+| `TANDEM_COPILOT_PATH` | Custom path to the `copilot` (GitHub Copilot CLI) binary |
+| `TANDEM_COPILOT_MODEL` | Override the Copilot model used (note: GitHub Copilot routes models through your account entitlement, so this may not be honoured) |
+| `TANDEM_OPENCODE_PATH` | Custom path to the `opencode` binary |
+| `TANDEM_OPENCODE_MODEL` | Override the OpenCode model used |
+| `TANDEM_OPENCLAW_PATH` | Custom path to the `openclaw` binary |
+| `TANDEM_OPENCLAW_MODEL` | Override the OpenClaw model used |
+| `TANDEM_HERMES_PATH` | Custom path to the `hermes` binary |
+| `TANDEM_HERMES_MODEL` | Override the Hermes model used |
+| `TANDEM_GEMINI_PATH` | Custom path to the `gemini` binary |
+| `TANDEM_GEMINI_MODEL` | Override the Gemini model used |
+| `TANDEM_PI_PATH` | Custom path to the `pi` binary |
+| `TANDEM_PI_MODEL` | Override the Pi model used |
+| `TANDEM_CURSOR_PATH` | Custom path to the `cursor-agent` binary |
+| `TANDEM_CURSOR_MODEL` | Override the Cursor Agent model used |
 
 ## Database Setup
 
-Multica requires PostgreSQL 17 with the pgvector extension.
+Tandem requires PostgreSQL 17 with the pgvector extension.
 
 ### Using Docker Compose (Recommended)
 
@@ -220,7 +220,7 @@ docker compose -f docker-compose.selfhost.yml exec backend \
   ./backfill_task_usage_hourly --sleep-between-slices=2s
 
 # Kubernetes
-kubectl -n multica exec deploy/multica-backend -- \
+kubectl -n tandem exec deploy/tandem-backend -- \
   ./backfill_task_usage_hourly --sleep-between-slices=2s
 ```
 
@@ -279,10 +279,10 @@ In production, put a reverse proxy in front of both the backend and frontend to 
 **Single-domain layout** — frontend and backend served on the same hostname (this is what `docker-compose.selfhost.yml` defaults to):
 
 ```
-multica.example.com {
+tandem.example.com {
     # WebSocket route — must come before the catch-all
-    @multica_ws path /ws /ws/*
-    handle @multica_ws {
+    @tandem_ws path /ws /ws/*
+    handle @tandem_ws {
         reverse_proxy localhost:8080 {
             flush_interval -1
         }
@@ -293,7 +293,7 @@ multica.example.com {
 }
 ```
 
-> Even on a single domain, set `FRONTEND_ORIGIN` / `CORS_ALLOWED_ORIGINS` to that public origin (e.g. `https://multica.example.com`) on the backend. The backend's default origin allowlist is `localhost` only, so without this it rejects the WebSocket upgrade from the public URL with `403` and real-time updates silently stop working. See [LAN / Non-localhost Access](#lan--non-localhost-access).
+> Even on a single domain, set `FRONTEND_ORIGIN` / `CORS_ALLOWED_ORIGINS` to that public origin (e.g. `https://tandem.example.com`) on the backend. The backend's default origin allowlist is `localhost` only, so without this it rejects the WebSocket upgrade from the public URL with `403` and real-time updates silently stop working. See [LAN / Non-localhost Access](#lan--non-localhost-access).
 
 **Separate-domain layout** — frontend and backend on different hostnames:
 
@@ -303,8 +303,8 @@ app.example.com {
 }
 
 api.example.com {
-    @multica_ws path /ws /ws/*
-    handle @multica_ws {
+    @tandem_ws path /ws /ws/*
+    handle @tandem_ws {
         reverse_proxy localhost:8080 {
             flush_interval -1
         }
@@ -382,7 +382,7 @@ NEXT_PUBLIC_WS_URL=wss://api.example.com/ws
 
 ## LAN / Non-localhost Access
 
-By default, Multica works on `localhost`. If you access it from another machine on the LAN (e.g. `http://192.168.1.100:3000`), you need to tell the backend to accept that origin:
+By default, Tandem works on `localhost`. If you access it from another machine on the LAN (e.g. `http://192.168.1.100:3000`), you need to tell the backend to accept that origin:
 
 ```bash
 # .env — replace with your server's LAN IP
@@ -414,7 +414,7 @@ HTTP requests (issues, comments, uploads) work on LAN out of the box — Next.js
 
    `NEXT_PUBLIC_WS_URL` is a build-time variable (see `Dockerfile.web`), so setting it only in `environment:` on the pre-built image has no effect — you must use the `selfhost.build.yml` override that rebuilds the image.
 
-**Also required: allowlist the browser origin.** The two options above fix the WebSocket *upgrade proxying*, but a second, independent setting gates the connection: the backend validates the WebSocket `Origin` header against an allowlist that defaults to `localhost` only. When you open Multica from any other origin — a LAN IP **or a public domain behind a reverse proxy** — set `CORS_ALLOWED_ORIGINS` (or `FRONTEND_ORIGIN`) on the backend to that exact origin and restart, exactly as shown under [LAN / Non-localhost Access](#lan--non-localhost-access) above. Otherwise the upgrade is refused with `403`: the backend logs `websocket: request origin not allowed by Upgrader.CheckOrigin` and the browser console loops `disconnected, reconnecting in 3s`, while HTTP requests (and manual page refreshes) keep working because they are same-origin to the page. The single value covers both HTTP CORS and the WebSocket origin check.
+**Also required: allowlist the browser origin.** The two options above fix the WebSocket *upgrade proxying*, but a second, independent setting gates the connection: the backend validates the WebSocket `Origin` header against an allowlist that defaults to `localhost` only. When you open Tandem from any other origin — a LAN IP **or a public domain behind a reverse proxy** — set `CORS_ALLOWED_ORIGINS` (or `FRONTEND_ORIGIN`) on the backend to that exact origin and restart, exactly as shown under [LAN / Non-localhost Access](#lan--non-localhost-access) above. Otherwise the upgrade is refused with `403`: the backend logs `websocket: request origin not allowed by Upgrader.CheckOrigin` and the browser console loops `disconnected, reconnecting in 3s`, while HTTP requests (and manual page refreshes) keep working because they are same-origin to the page. The single value covers both HTTP CORS and the WebSocket origin check.
 
 > **Note:** If you need to hard-code a different public API / WebSocket endpoint into the web image for any other reason, use the same source-build override: `docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build`.
 
@@ -467,5 +467,5 @@ docker compose -f docker-compose.selfhost.yml pull
 docker compose -f docker-compose.selfhost.yml up -d
 ```
 
-Pin `MULTICA_IMAGE_TAG` in `.env` to an exact release like `v0.2.4` if you want to stay on a specific version. Migrations run automatically on backend startup. They are idempotent — running them multiple times has no effect.
+Pin `TANDEM_IMAGE_TAG` in `.env` to an exact release like `v0.2.4` if you want to stay on a specific version. Migrations run automatically on backend startup. They are idempotent — running them multiple times has no effect.
 If the selected GHCR tag has not been published yet, fall back to `docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build`.

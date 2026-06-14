@@ -27,8 +27,8 @@
  */
 
 import { Download, ExternalLink, Maximize2, Trash2 } from "lucide-react";
-import { cn } from "@multica/ui/lib/utils";
-import { paths, useWorkspaceSlug } from "@multica/core/paths";
+import { cn } from "@tandem/ui/lib/utils";
+import { paths, useWorkspaceSlug } from "@tandem/core/paths";
 import { useT } from "../i18n";
 import { useNavigation } from "../navigation";
 import { useAttachmentHtmlText } from "./hooks/use-attachment-html-text";

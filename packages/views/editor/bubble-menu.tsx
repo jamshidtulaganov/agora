@@ -33,24 +33,24 @@ import type { Editor } from "@tiptap/core";
 import { posToDOMRect } from "@tiptap/core";
 import { NodeSelection } from "@tiptap/pm/state";
 import { toast } from "sonner";
-import { useCreateIssue } from "@multica/core/issues/mutations";
+import { useCreateIssue } from "@tandem/core/issues/mutations";
 import { useT } from "../i18n";
-import { modKey } from "@multica/core/platform";
-import { Toggle } from "@multica/ui/components/ui/toggle";
-import { Separator } from "@multica/ui/components/ui/separator";
+import { modKey } from "@tandem/core/platform";
+import { Toggle } from "@tandem/ui/components/ui/toggle";
+import { Separator } from "@tandem/ui/components/ui/separator";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
   TooltipProvider,
-} from "@multica/ui/components/ui/tooltip";
+} from "@tandem/ui/components/ui/tooltip";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@multica/ui/components/ui/popover";
-import { Input } from "@multica/ui/components/ui/input";
-import { Button } from "@multica/ui/components/ui/button";
+} from "@tandem/ui/components/ui/popover";
+import { Input } from "@tandem/ui/components/ui/input";
+import { Button } from "@tandem/ui/components/ui/button";
 import {
   Bold,
   Italic,

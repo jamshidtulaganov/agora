@@ -433,7 +433,7 @@ INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')
 		t.Fatalf("create requester member: %v", err)
 	}
 
-	targetEmail := fmt.Sprintf("revocation-%s@multica.ai", slug)
+	targetEmail := fmt.Sprintf("revocation-%s@tandem.dev", slug)
 	var targetUserID string
 	if err := testPool.QueryRow(ctx, `
 INSERT INTO "user" (name, email) VALUES ($1, $2) RETURNING id
@@ -462,7 +462,7 @@ INSERT INTO agent_runtime (
     workspace_id, daemon_id, name, runtime_mode, provider, status,
     device_info, metadata, owner_id, last_seen_at
 )
-VALUES ($1, $2, 'Target Runtime', 'local', 'multica_daemon', 'online', '', '{}'::jsonb, $3, now())
+VALUES ($1, $2, 'Target Runtime', 'local', 'tandem_daemon', 'online', '', '{}'::jsonb, $3, now())
 RETURNING id
 `, wsID, daemonID, targetUserID).Scan(&runtimeID); err != nil {
 		t.Fatalf("insert runtime: %v", err)
@@ -622,7 +622,7 @@ INSERT INTO agent_runtime (
     workspace_id, daemon_id, name, runtime_mode, provider, status,
     device_info, metadata, owner_id, last_seen_at
 )
-VALUES ($1, $2, 'Other Runtime', 'local', 'multica_daemon', 'online', '', '{}'::jsonb, $3, now())
+VALUES ($1, $2, 'Other Runtime', 'local', 'tandem_daemon', 'online', '', '{}'::jsonb, $3, now())
 RETURNING id
 `, fx.WorkspaceID, "daemon-revoke-reassign-other", testUserID).Scan(&otherRuntimeID); err != nil {
 		t.Fatalf("insert other runtime: %v", err)
@@ -701,7 +701,7 @@ INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')
 	var targetUserID string
 	if err := testPool.QueryRow(ctx, `
 INSERT INTO "user" (name, email) VALUES ($1, $2) RETURNING id
-`, "Revocation No Runtimes Target", "revocation-no-runtimes@multica.ai").Scan(&targetUserID); err != nil {
+`, "Revocation No Runtimes Target", "revocation-no-runtimes@tandem.dev").Scan(&targetUserID); err != nil {
 		t.Fatalf("create target user: %v", err)
 	}
 	t.Cleanup(func() {

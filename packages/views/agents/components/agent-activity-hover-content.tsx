@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ActorAvatar as ActorAvatarBase } from "@multica/ui/components/common/actor-avatar";
-import { useActorName } from "@multica/core/workspace/hooks";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { runtimeListOptions } from "@multica/core/runtimes/queries";
-import { agentListOptions } from "@multica/core/workspace/queries";
-import { deriveAgentAvailability } from "@multica/core/agents";
-import type { AgentTask } from "@multica/core/types";
+import { ActorAvatar as ActorAvatarBase } from "@tandem/ui/components/common/actor-avatar";
+import { useActorName } from "@tandem/core/workspace/hooks";
+import { useWorkspaceId } from "@tandem/core/hooks";
+import { runtimeListOptions } from "@tandem/core/runtimes/queries";
+import { agentListOptions } from "@tandem/core/workspace/queries";
+import { deriveAgentAvailability } from "@tandem/core/agents";
+import type { AgentTask } from "@tandem/core/types";
 import { workloadConfig } from "../presence";
 import { useT } from "../../i18n";
 

@@ -2,11 +2,11 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@multica/core/i18n/react";
+import { I18nProvider } from "@tandem/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enOnboarding from "../../locales/en/onboarding.json";
 import enWorkspace from "../../locales/en/workspace.json";
-import type { Workspace } from "@multica/core/types";
+import type { Workspace } from "@tandem/core/types";
 
 const TEST_RESOURCES = {
   en: {
@@ -28,12 +28,12 @@ vi.mock("../../auth", () => ({
   useLogout: () => mockLogout,
 }));
 
-vi.mock("@multica/core/config", () => ({
+vi.mock("@tandem/core/config", () => ({
   useConfigStore: (selector: (state: { workspaceCreationDisabled: boolean }) => unknown) =>
     mockUseConfigStore(selector),
 }));
 
-vi.mock("@multica/core/workspace/mutations", () => ({
+vi.mock("@tandem/core/workspace/mutations", () => ({
   useCreateWorkspace: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
@@ -41,7 +41,7 @@ const mockListWorkspaces = vi.hoisted(() => vi.fn());
 const mockCreateWorkspace = vi.hoisted(() => vi.fn());
 const mockUpdateWorkspace = vi.hoisted(() => vi.fn());
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@tandem/core/api", () => ({
   api: {
     getBaseUrl: () => "http://127.0.0.1:8080",
     listWorkspaces: (...args: unknown[]) => mockListWorkspaces(...args),

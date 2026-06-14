@@ -1,16 +1,16 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CoreProvider } from "@multica/core/platform";
-import { pickLocale, type SupportedLocale } from "@multica/core/i18n";
-import { useAuthStore } from "@multica/core/auth";
-import { useWelcomeStore } from "@multica/core/onboarding";
-import { workspaceKeys, workspaceListOptions } from "@multica/core/workspace/queries";
-import { api } from "@multica/core/api";
-import { useHasOnboarded } from "@multica/core/paths";
-import { setCurrentWorkspace } from "@multica/core/platform";
-import { ThemeProvider } from "@multica/ui/components/common/theme-provider";
-import { MulticaIcon } from "@multica/ui/components/common/multica-icon";
-import { Toaster } from "@multica/ui/components/ui/sonner";
+import { CoreProvider } from "@tandem/core/platform";
+import { pickLocale, type SupportedLocale } from "@tandem/core/i18n";
+import { useAuthStore } from "@tandem/core/auth";
+import { useWelcomeStore } from "@tandem/core/onboarding";
+import { workspaceKeys, workspaceListOptions } from "@tandem/core/workspace/queries";
+import { api } from "@tandem/core/api";
+import { useHasOnboarded } from "@tandem/core/paths";
+import { setCurrentWorkspace } from "@tandem/core/platform";
+import { ThemeProvider } from "@tandem/ui/components/common/theme-provider";
+import { TandemIcon } from "@tandem/ui/components/common/tandem-icon";
+import { Toaster } from "@tandem/ui/components/ui/sonner";
 import { DesktopLoginPage } from "./pages/login";
 import { DesktopShell } from "./components/desktop-layout";
 import { PageviewTracker } from "./components/pageview-tracker";
@@ -19,7 +19,7 @@ import { useTabStore } from "./stores/tab-store";
 import { useWindowOverlayStore } from "./stores/window-overlay-store";
 import { useDaemonIPCBridge } from "./platform/daemon-ipc-bridge";
 import { createDesktopLocaleAdapter } from "./platform/i18n-adapter";
-import { RESOURCES } from "@multica/views/locales";
+import { RESOURCES } from "@tandem/views/locales";
 
 // BCP-47 region tags for the <html lang> attribute, mirroring
 // apps/web/app/layout.tsx HTML_LANG. index.html ships a static lang="en";
@@ -52,13 +52,13 @@ function AppContent() {
     : null;
 
   // Tell the main process which backend URL we talk to, so daemon-manager
-  // can pick the matching CLI profile (server_url from ~/.multica config).
+  // can pick the matching CLI profile (server_url from ~/.tandem config).
   useEffect(() => {
     if (!runtimeConfig) return;
     window.daemonAPI.setTargetApiUrl(runtimeConfig.apiUrl);
   }, [runtimeConfig]);
 
-  // Listen for invite IDs delivered via deep link (multica://invite/<id>).
+  // Listen for invite IDs delivered via deep link (tandem://invite/<id>).
   // We open the overlay regardless of login state — if the user isn't logged
   // in, InvitePage's queries will fail and render the "not found" state,
   // which is acceptable; the expected pre-flight happens in the web app
@@ -69,7 +69,7 @@ function AppContent() {
     });
   }, []);
 
-  // Listen for auth token delivered via deep link (multica://auth/callback?token=...).
+  // Listen for auth token delivered via deep link (tandem://auth/callback?token=...).
   // daemonAPI.syncToken is handled separately by the [user] effect below, which
   // fires whenever a user logs in (deep link, session restore, account switch).
   useEffect(() => {
@@ -95,7 +95,7 @@ function AppContent() {
   // Sync token and start the daemon whenever the user logs in.
   useEffect(() => {
     if (!user) return;
-    const token = localStorage.getItem("multica_token");
+    const token = localStorage.getItem("tandem_token");
     if (!token) return;
     const userId = user.id;
     (async () => {
@@ -239,7 +239,7 @@ function AppContent() {
   if (isLoading || bootstrapping) {
     return (
       <div className="flex h-screen items-center justify-center">
-        <MulticaIcon className="size-6 animate-pulse" />
+        <TandemIcon className="size-6 animate-pulse" />
       </div>
     );
   }
@@ -261,7 +261,7 @@ function BlockingRuntimeConfigError({ message }: { message: string }) {
       <div className="max-w-xl rounded-lg border bg-card p-6 shadow-sm">
         <h1 className="text-lg font-semibold">Desktop configuration error</h1>
         <p className="mt-3 text-sm text-muted-foreground">
-          Multica Desktop could not load <code>~/.multica/desktop.json</code>. Fix or remove the file and restart the app.
+          Tandem Desktop could not load <code>~/.tandem/desktop.json</code>. Fix or remove the file and restart the app.
         </p>
         <pre className="mt-4 whitespace-pre-wrap rounded-md bg-muted p-3 text-xs text-muted-foreground">
           {message}

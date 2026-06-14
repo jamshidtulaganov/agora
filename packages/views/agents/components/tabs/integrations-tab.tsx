@@ -2,11 +2,11 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Webhook } from "lucide-react";
-import type { Agent } from "@multica/core/types";
-import { useAuthStore } from "@multica/core/auth";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { larkInstallationsOptions } from "@multica/core/lark";
-import { memberListOptions } from "@multica/core/workspace/queries";
+import type { Agent } from "@tandem/core/types";
+import { useAuthStore } from "@tandem/core/auth";
+import { useWorkspaceId } from "@tandem/core/hooks";
+import { larkInstallationsOptions } from "@tandem/core/lark";
+import { memberListOptions } from "@tandem/core/workspace/queries";
 import { LarkAgentBindButton } from "../../../settings/components/lark-tab";
 import { useT } from "../../../i18n";
 

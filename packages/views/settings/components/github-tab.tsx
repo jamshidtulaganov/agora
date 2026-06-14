@@ -4,10 +4,10 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ExternalLink, GitCommitHorizontal, Link2, PanelRight } from "lucide-react";
-import { Button } from "@multica/ui/components/ui/button";
-import { Card, CardContent } from "@multica/ui/components/ui/card";
-import { Label } from "@multica/ui/components/ui/label";
-import { Switch } from "@multica/ui/components/ui/switch";
+import { Button } from "@tandem/ui/components/ui/button";
+import { Card, CardContent } from "@tandem/ui/components/ui/card";
+import { Label } from "@tandem/ui/components/ui/label";
+import { Switch } from "@tandem/ui/components/ui/switch";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,17 +17,17 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
-import { useAuthStore } from "@multica/core/auth";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useCurrentWorkspace } from "@multica/core/paths";
-import { memberListOptions, workspaceKeys } from "@multica/core/workspace/queries";
+} from "@tandem/ui/components/ui/alert-dialog";
+import { useAuthStore } from "@tandem/core/auth";
+import { useWorkspaceId } from "@tandem/core/hooks";
+import { useCurrentWorkspace } from "@tandem/core/paths";
+import { memberListOptions, workspaceKeys } from "@tandem/core/workspace/queries";
 import {
   deriveGitHubSettings,
   githubInstallationsOptions,
-} from "@multica/core/github";
-import { api } from "@multica/core/api";
-import type { Workspace } from "@multica/core/types";
+} from "@tandem/core/github";
+import { api } from "@tandem/core/api";
+import type { Workspace } from "@tandem/core/types";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import { GitHubMark } from "./github-mark";
@@ -279,7 +279,7 @@ export function GitHubTab() {
                 <p className="text-sm text-muted-foreground">
                   {t(($) => $.github.feature_co_author_description_prefix)}{" "}
                   <code className="rounded bg-muted px-1 py-0.5 text-xs">
-                    {"Co-authored-by: multica-agent <github@multica.ai>"}
+                    {"Co-authored-by: tandem-agent <github@tandem.dev>"}
                   </code>{" "}
                   {t(($) => $.github.feature_co_author_description_suffix)}
                 </p>

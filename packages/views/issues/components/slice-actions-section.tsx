@@ -4,13 +4,13 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, FileCode2, FileText, FlaskConical, Loader2, ScanEye } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@multica/core/api";
-import { issueKeys, issueDetailOptions } from "@multica/core/issues/queries";
-import { agentListOptions } from "@multica/core/workspace/queries";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useAuthStore } from "@multica/core/auth";
-import { Button } from "@multica/ui/components/ui/button";
-import { Input } from "@multica/ui/components/ui/input";
+import { api } from "@tandem/core/api";
+import { issueKeys, issueDetailOptions } from "@tandem/core/issues/queries";
+import { agentListOptions } from "@tandem/core/workspace/queries";
+import { useWorkspaceId } from "@tandem/core/hooks";
+import { useAuthStore } from "@tandem/core/auth";
+import { Button } from "@tandem/ui/components/ui/button";
+import { Input } from "@tandem/ui/components/ui/input";
 import { useT } from "../../i18n";
 
 // Right-panel section that lets a human protagonist hand a *slice* of work to

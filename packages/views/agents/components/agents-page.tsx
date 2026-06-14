@@ -11,36 +11,36 @@ import {
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getCoreRowModel, useReactTable } from "@tanstack/react-table";
-import type { Agent, AgentRuntime, CreateAgentRequest } from "@multica/core/types";
+import type { Agent, AgentRuntime, CreateAgentRequest } from "@tandem/core/types";
 import {
   type AgentAvailability,
   agentRunCounts30dOptions,
   summarizeActivityWindow,
   useWorkspaceActivityMap,
   useWorkspacePresenceMap,
-} from "@multica/core/agents";
-import { useAgentsViewStore } from "@multica/core/agents/stores";
-import { api } from "@multica/core/api";
-import { useAuthStore } from "@multica/core/auth";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { canAssignAgentToIssue } from "@multica/core/permissions";
-import { useWorkspacePaths } from "@multica/core/paths";
+} from "@tandem/core/agents";
+import { useAgentsViewStore } from "@tandem/core/agents/stores";
+import { api } from "@tandem/core/api";
+import { useAuthStore } from "@tandem/core/auth";
+import { useWorkspaceId } from "@tandem/core/hooks";
+import { canAssignAgentToIssue } from "@tandem/core/permissions";
+import { useWorkspacePaths } from "@tandem/core/paths";
 import {
   agentListOptions,
   memberListOptions,
   workspaceKeys,
-} from "@multica/core/workspace/queries";
-import { runtimeListOptions } from "@multica/core/runtimes";
-import { Button } from "@multica/ui/components/ui/button";
+} from "@tandem/core/workspace/queries";
+import { runtimeListOptions } from "@tandem/core/runtimes";
+import { Button } from "@tandem/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@multica/ui/components/ui/dropdown-menu";
-import { Input } from "@multica/ui/components/ui/input";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
-import { DataTable } from "@multica/ui/components/ui/data-table";
+} from "@tandem/ui/components/ui/dropdown-menu";
+import { Input } from "@tandem/ui/components/ui/input";
+import { Skeleton } from "@tandem/ui/components/ui/skeleton";
+import { DataTable } from "@tandem/ui/components/ui/data-table";
 import { useNavigation } from "../../navigation";
 import { PageHeader } from "../../layout/page-header";
 import { availabilityConfig, availabilityOrder } from "../presence";
@@ -658,7 +658,7 @@ function PageHeaderBar({
         <p className="ml-2 hidden text-xs text-muted-foreground md:block">
           {t(($) => $.page.tagline)}{" "}
           <a
-            href="https://multica.ai/docs/agents"
+            href="https://tandem.dev/docs/agents"
             target="_blank"
             rel="noopener noreferrer"
             className="underline decoration-muted-foreground/30 underline-offset-4 transition-colors hover:text-foreground"

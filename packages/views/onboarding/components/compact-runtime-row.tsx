@@ -1,5 +1,5 @@
-import { cn } from "@multica/ui/lib/utils";
-import type { AgentRuntime } from "@multica/core/types";
+import { cn } from "@tandem/ui/lib/utils";
+import type { AgentRuntime } from "@tandem/core/types";
 import { ProviderLogo } from "../../runtimes/components/provider-logo";
 import { useT } from "../../i18n";
 

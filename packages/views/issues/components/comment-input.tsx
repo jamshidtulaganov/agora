@@ -2,14 +2,14 @@
 
 import { useRef, useState, useCallback, useEffect } from "react";
 import { ContentEditor, type ContentEditorRef, useFileDropZone, FileDropOverlay } from "../../editor";
-import { FileUploadButton } from "@multica/ui/components/common/file-upload-button";
-import { SubmitButton } from "@multica/ui/components/common/submit-button";
-import { useFileUpload } from "@multica/core/hooks/use-file-upload";
-import { api } from "@multica/core/api";
-import type { Attachment } from "@multica/core/types";
-import { contentReferencesAttachment } from "@multica/core/types";
-import { enterKey, formatShortcut, modKey } from "@multica/core/platform";
-import { useCommentDraftStore } from "@multica/core/issues/stores";
+import { FileUploadButton } from "@tandem/ui/components/common/file-upload-button";
+import { SubmitButton } from "@tandem/ui/components/common/submit-button";
+import { useFileUpload } from "@tandem/core/hooks/use-file-upload";
+import { api } from "@tandem/core/api";
+import type { Attachment } from "@tandem/core/types";
+import { contentReferencesAttachment } from "@tandem/core/types";
+import { enterKey, formatShortcut, modKey } from "@tandem/core/platform";
+import { useCommentDraftStore } from "@tandem/core/issues/stores";
 import { useT } from "../../i18n";
 import { CommentTriggerChips } from "./comment-trigger-chips";
 import { useCommentTriggerPreview } from "../hooks/use-comment-trigger-preview";

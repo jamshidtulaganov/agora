@@ -9,13 +9,13 @@ import { DownloadClient } from "./download-client";
 export const revalidate = 300;
 
 export const metadata: Metadata = {
-  title: "Download Multica",
+  title: "Download Tandem",
   description:
-    "Download Multica for macOS, Windows, or Linux — or install the CLI for servers and remote dev boxes.",
+    "Download Tandem for macOS, Windows, or Linux — or install the CLI for servers and remote dev boxes.",
   openGraph: {
-    title: "Download Multica",
+    title: "Download Tandem",
     description:
-      "Get the Multica desktop app with a bundled daemon, or install the CLI for servers and remote dev boxes.",
+      "Get the Tandem desktop app with a bundled daemon, or install the CLI for servers and remote dev boxes.",
     url: "/download",
   },
   alternates: {

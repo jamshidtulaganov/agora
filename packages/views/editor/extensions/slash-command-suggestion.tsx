@@ -11,13 +11,13 @@ import {
 import type { QueryClient } from "@tanstack/react-query";
 import type { SuggestionOptions } from "@tiptap/suggestion";
 import { PluginKey } from "@tiptap/pm/state";
-import { useAuthStore } from "@multica/core/auth";
-import { useChatStore } from "@multica/core/chat";
-import { getCurrentWsId } from "@multica/core/platform";
-import { canAssignAgentToIssue } from "@multica/core/permissions";
-import { isImeComposing } from "@multica/core/utils";
-import { workspaceKeys } from "@multica/core/workspace/queries";
-import type { Agent, MemberWithUser } from "@multica/core/types";
+import { useAuthStore } from "@tandem/core/auth";
+import { useChatStore } from "@tandem/core/chat";
+import { getCurrentWsId } from "@tandem/core/platform";
+import { canAssignAgentToIssue } from "@tandem/core/permissions";
+import { isImeComposing } from "@tandem/core/utils";
+import { workspaceKeys } from "@tandem/core/workspace/queries";
+import type { Agent, MemberWithUser } from "@tandem/core/types";
 import { useT } from "../../i18n";
 import { createSuggestionPopupRender } from "./suggestion-popup";
 

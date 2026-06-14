@@ -2,19 +2,19 @@
 
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Agent, Issue } from "@multica/core/types";
+import type { Agent, Issue } from "@tandem/core/types";
 import { renderWithI18n } from "../../test/i18n";
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@tandem/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
 const mockAuthUser = { id: "user-1", email: "u@test.com", name: "User" };
-vi.mock("@multica/core/auth", () => ({
+vi.mock("@tandem/core/auth", () => ({
   useAuthStore: (selector?: (s: unknown) => unknown) => {
     const state = { user: mockAuthUser };
     return selector ? selector(state) : state;
@@ -25,7 +25,7 @@ vi.mock("@multica/core/auth", () => ({
 // clientEdits); the mock stands in for it at test time so this file does not
 // depend on the integrated method existing.
 const mockSliceAction = vi.hoisted(() => vi.fn().mockResolvedValue({}));
-vi.mock("@multica/core/api", () => ({
+vi.mock("@tandem/core/api", () => ({
   api: { sliceAction: mockSliceAction },
 }));
 

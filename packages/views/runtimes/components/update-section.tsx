@@ -6,9 +6,9 @@ import {
   ArrowUpCircle,
   Check,
 } from "lucide-react";
-import { Button } from "@multica/ui/components/ui/button";
-import { api } from "@multica/core/api";
-import type { RuntimeUpdateStatus } from "@multica/core/types";
+import { Button } from "@tandem/ui/components/ui/button";
+import { api } from "@tandem/core/api";
+import type { RuntimeUpdateStatus } from "@tandem/core/types";
 import { useT } from "../../i18n";
 
 const GITHUB_RELEASES_URL =

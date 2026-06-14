@@ -46,8 +46,8 @@ jobs:
         # to apps/mobile/** + packages/core/types/**) so it doesn't add
         # ~50s of expo-lint + tsc to every web/desktop PR. Keep this
         # filter in sync with the root package.json scripts, which also
-        # exclude @multica/mobile.
-        run: pnpm exec turbo build typecheck lint test --filter='!@multica/docs' --filter='!@multica/mobile'
+        # exclude @tandem/mobile.
+        run: pnpm exec turbo build typecheck lint test --filter='!@tandem/docs' --filter='!@tandem/mobile'
 
   backend:
     runs-on: ubuntu-latest
@@ -56,12 +56,12 @@ jobs:
         image: pgvector/pgvector:pg17
         env:
           POSTGRES_DB: multica
-          POSTGRES_USER: multica
-          POSTGRES_PASSWORD: multica
+          POSTGRES_USER: tandem
+          POSTGRES_PASSWORD: tandem
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U multica -d multica"
+          --health-cmd "pg_isready -U tandem -d tandem"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20

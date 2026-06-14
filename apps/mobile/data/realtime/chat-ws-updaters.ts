@@ -29,7 +29,7 @@ import type {
   TaskMessagePayload,
   TaskQueuedPayload,
   TaskDispatchPayload,
-} from "@multica/core/types";
+} from "@tandem/core/types";
 import { chatKeys } from "@/data/queries/chat";
 
 // =====================================================

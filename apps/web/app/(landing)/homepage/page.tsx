@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
-import { MulticaLanding } from "@/features/landing/components/multica-landing";
+import { TandemLanding } from "@/features/landing/components/tandem-landing";
 
 export const metadata: Metadata = {
   title: "Homepage",
   description:
-    "Multica — open-source platform that turns coding agents into real teammates. Assign tasks, track progress, compound skills.",
+    "Tandem — open-source platform that turns coding agents into real teammates. Assign tasks, track progress, compound skills.",
   openGraph: {
-    title: "Multica — Project Management for Human + Agent Teams",
+    title: "Tandem — Project Management for Human + Agent Teams",
     description:
       "Manage your human + agent workforce in one place.",
     url: "/homepage",
@@ -17,5 +17,5 @@ export const metadata: Metadata = {
 };
 
 export default function HomepagePage() {
-  return <MulticaLanding />;
+  return <TandemLanding />;
 }

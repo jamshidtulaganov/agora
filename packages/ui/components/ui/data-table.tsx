@@ -20,9 +20,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@multica/ui/components/ui/table";
-import { getCellStyle } from "@multica/ui/lib/data-table";
-import { cn } from "@multica/ui/lib/utils";
+} from "@tandem/ui/components/ui/table";
+import { getCellStyle } from "@tandem/ui/lib/data-table";
+import { cn } from "@tandem/ui/lib/utils";
 
 interface DataTableProps<TData> extends React.ComponentProps<"div"> {
   table: TanstackTable<TData>;

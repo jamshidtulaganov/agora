@@ -2,13 +2,13 @@ package bitrix
 
 import "strings"
 
-// aiTag is the tag (case-insensitive) that marks a Bitrix task as one Multica
+// aiTag is the tag (case-insensitive) that marks a Bitrix task as one Tandem
 // should sync. Bitrix stays the task master; only tasks explicitly flagged
-// "ai" cross into Multica so the board isn't flooded with the portal's full
+// "ai" cross into Tandem so the board isn't flooded with the portal's full
 // task list.
 const aiTag = "ai"
 
-// Multica issue statuses. Kept as plain strings (not an enum) because the
+// Tandem issue statuses. Kept as plain strings (not an enum) because the
 // canonical list lives in the DB / handler layer; these are the values the
 // mapping emits.
 const (
@@ -34,7 +34,7 @@ func IsAITask(task *Task) bool {
 	return false
 }
 
-// MapStatus maps a Bitrix task status code to a Multica issue status.
+// MapStatus maps a Bitrix task status code to a Tandem issue status.
 //
 // Bitrix task status codes (REAL_STATUS / STATUS):
 //
@@ -67,11 +67,11 @@ func MapStatus(bitrixStatus string) string {
 	}
 }
 
-// BitrixStatusFromIssue is the inverse of MapStatus: it maps a Multica issue
+// BitrixStatusFromIssue is the inverse of MapStatus: it maps a Tandem issue
 // status to the Bitrix status code used when mirroring a status change back to
 // the portal. It is intentionally NOT a perfect round-trip (Bitrix has more
-// codes than Multica statuses) — it picks the most faithful Bitrix code for
-// each Multica status:
+// codes than Tandem statuses) — it picks the most faithful Bitrix code for
+// each Tandem status:
 //
 //	backlog     -> 6 (deferred)
 //	todo        -> 2 (pending)
@@ -129,7 +129,7 @@ func MapTaskToIssue(task *Task) IssueDraft {
 	}
 }
 
-// RouteConfig describes how a Bitrix task is routed to a Multica workspace.
+// RouteConfig describes how a Bitrix task is routed to a Tandem workspace.
 //
 //   - DefaultSlug: the catch-all workspace slug (may be "").
 //   - GroupMap:    Bitrix GROUP_ID -> workspace slug.

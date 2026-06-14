@@ -62,7 +62,7 @@ const telegramWebhookSecretHeader = "X-Telegram-Bot-Api-Secret-Token"
 // Returns nil when the token is unset/blank so the handlers can 503 and the
 // public config can hide the Telegram login option — mirroring how the Lark and
 // Google integrations stay dormant until their secrets are provided. An
-// optional MULTICA_TELEGRAM_API_BASE_URL override lets tests / proxies point the
+// optional TANDEM_TELEGRAM_API_BASE_URL override lets tests / proxies point the
 // client at a mock server (left empty in normal operation).
 func newTelegramBotFromEnv() *telegram.BotClient {
 	token := strings.TrimSpace(os.Getenv("TELEGRAM_BOT_TOKEN"))
@@ -70,7 +70,7 @@ func newTelegramBotFromEnv() *telegram.BotClient {
 		return nil
 	}
 	c := telegram.NewBotClient(token)
-	if base := strings.TrimSpace(os.Getenv("MULTICA_TELEGRAM_API_BASE_URL")); base != "" {
+	if base := strings.TrimSpace(os.Getenv("TANDEM_TELEGRAM_API_BASE_URL")); base != "" {
 		c.BaseURL = base
 	}
 	return c
@@ -146,7 +146,7 @@ type telegramUpdate struct {
 	} `json:"message"`
 }
 
-// TelegramWebhook receives bot updates. Public (no Multica auth) — the optional
+// TelegramWebhook receives bot updates. Public (no Tandem auth) — the optional
 // secret-token header is the only authentication. On a "/start login_<nonce>"
 // message it binds the nonce to the sender, generates a 6-digit code, and DMs
 // it. ALWAYS returns 200 so Telegram does not retry and we never leak whether a
@@ -236,7 +236,7 @@ func (h *Handler) TelegramWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msg := fmt.Sprintf("Your Multica login code is: %s\n\nIt expires in 5 minutes. If you didn't request this, ignore this message.", code)
+	msg := fmt.Sprintf("Your Tandem login code is: %s\n\nIt expires in 5 minutes. If you didn't request this, ignore this message.", code)
 	if err := h.telegramBot.SendMessage(r.Context(), telegramID, msg); err != nil {
 		// DM failed (e.g. the user blocked the bot). The code is still bound;
 		// log and ack — the user simply won't get a code and can retry.

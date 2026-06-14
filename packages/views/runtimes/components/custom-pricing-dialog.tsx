@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
-import { Button } from "@multica/ui/components/ui/button";
+import { Button } from "@tandem/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -10,13 +10,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
-import { Input } from "@multica/ui/components/ui/input";
-import { Label } from "@multica/ui/components/ui/label";
+} from "@tandem/ui/components/ui/dialog";
+import { Input } from "@tandem/ui/components/ui/input";
+import { Label } from "@tandem/ui/components/ui/label";
 import {
   useCustomPricingStore,
   type CustomModelPricing,
-} from "@multica/core/runtimes/custom-pricing-store";
+} from "@tandem/core/runtimes/custom-pricing-store";
 import { useT } from "../../i18n";
 
 // Per-million-token rate fields. Stored as strings during editing so the

@@ -13,10 +13,10 @@ import {
   Webhook,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import type { Agent, AgentRuntime } from "@multica/core/types";
-import { providerSupportsMcpConfig } from "@multica/core/agents";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { larkInstallationsOptions } from "@multica/core/lark";
+import type { Agent, AgentRuntime } from "@tandem/core/types";
+import { providerSupportsMcpConfig } from "@tandem/core/agents";
+import { useWorkspaceId } from "@tandem/core/hooks";
+import { larkInstallationsOptions } from "@tandem/core/lark";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,7 +26,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
+} from "@tandem/ui/components/ui/alert-dialog";
 import { ActivityTab } from "./tabs/activity-tab";
 import { InstructionsTab } from "./tabs/instructions-tab";
 import { SkillsTab } from "./tabs/skills-tab";

@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "@multica/core/api";
+import { ApiError } from "@tandem/core/api";
 import { AppSidebar } from "./app-sidebar";
 
 const { detail, deletePin, pins } = vi.hoisted(() => ({
@@ -34,7 +34,7 @@ vi.mock("@dnd-kit/sortable", () => ({
   verticalListSortingStrategy: vi.fn(),
 }));
 vi.mock("@dnd-kit/utilities", () => ({ CSS: { Transform: { toString: () => undefined } } }));
-vi.mock("@multica/ui/components/ui/sidebar", () => ({
+vi.mock("@tandem/ui/components/ui/sidebar", () => ({
   Sidebar: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SidebarContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SidebarFooter: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -47,7 +47,7 @@ vi.mock("@multica/ui/components/ui/sidebar", () => ({
   SidebarMenuItem: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SidebarRail: () => null,
 }));
-vi.mock("@multica/ui/components/ui/dropdown-menu", () => ({
+vi.mock("@tandem/ui/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   DropdownMenuContent: () => null,
   DropdownMenuGroup: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -56,12 +56,12 @@ vi.mock("@multica/ui/components/ui/dropdown-menu", () => ({
   DropdownMenuSeparator: () => null,
   DropdownMenuTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
 }));
-vi.mock("@multica/ui/components/ui/collapsible", () => ({
+vi.mock("@tandem/ui/components/ui/collapsible", () => ({
   Collapsible: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   CollapsibleContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   CollapsibleTrigger: () => <button type="button" />,
 }));
-vi.mock("@multica/ui/components/ui/tooltip", () => ({
+vi.mock("@tandem/ui/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipTrigger: ({ children }: { children: React.ReactNode }) => <button type="button">{children}</button>,
@@ -75,12 +75,12 @@ vi.mock("../navigation", () => ({
 }));
 vi.mock("../projects/components/project-icon", () => ({ ProjectIcon: () => <span /> }));
 vi.mock("../workspace/workspace-avatar", () => ({ WorkspaceAvatar: () => <span /> }));
-vi.mock("@multica/ui/components/common/actor-avatar", () => ({ ActorAvatar: () => <span /> }));
+vi.mock("@tandem/ui/components/common/actor-avatar", () => ({ ActorAvatar: () => <span /> }));
 
-vi.mock("@multica/core/auth", () => ({
+vi.mock("@tandem/core/auth", () => ({
   useAuthStore: (selector: (state: { user: { id: string } }) => unknown) => selector({ user: { id: "user-1" } }),
 }));
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@tandem/core/paths", () => ({
   paths: { workspace: (slug: string) => ({ issues: () => `/${slug}/issues` }) },
   useCurrentWorkspace: () => ({ id: "ws-1", name: "Acme", slug: "acme" }),
   useWorkspacePaths: () => ({
@@ -99,8 +99,8 @@ vi.mock("@multica/core/paths", () => ({
     projectDetail: (id: string) => `/acme/projects/${id}`,
   }),
 }));
-vi.mock("@multica/core/api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@multica/core/api")>();
+vi.mock("@tandem/core/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tandem/core/api")>();
   return {
     ...actual,
     api: {
@@ -109,19 +109,19 @@ vi.mock("@multica/core/api", async (importOriginal) => {
     },
   };
 });
-vi.mock("@multica/core/inbox/queries", () => ({ deduplicateInboxItems: (items: unknown[]) => items, inboxKeys: { list: () => ["inbox"] } }));
-vi.mock("@multica/core/issues/queries", () => ({ issueDetailOptions: () => ({ queryKey: ["issue"] }) }));
-vi.mock("@multica/core/issues/stores/create-mode-store", () => ({
+vi.mock("@tandem/core/inbox/queries", () => ({ deduplicateInboxItems: (items: unknown[]) => items, inboxKeys: { list: () => ["inbox"] } }));
+vi.mock("@tandem/core/issues/queries", () => ({ issueDetailOptions: () => ({ queryKey: ["issue"] }) }));
+vi.mock("@tandem/core/issues/stores/create-mode-store", () => ({
   useCreateModeStore: { getState: () => ({ lastMode: "agent" }) },
   openCreateIssueWithPreference: vi.fn(),
 }));
-vi.mock("@multica/core/issues/stores/draft-store", () => ({ useIssueDraftStore: () => false }));
-vi.mock("@multica/core/modals", () => ({ useModalStore: { getState: () => ({ modal: null, open: vi.fn() }) } }));
-vi.mock("@multica/core/pins/mutations", () => ({ useDeletePin: () => ({ mutate: deletePin }), useReorderPins: () => ({ mutate: vi.fn() }) }));
-vi.mock("@multica/core/pins/queries", () => ({ pinListOptions: () => ({ queryKey: ["pins"] }) }));
-vi.mock("@multica/core/projects/queries", () => ({ projectDetailOptions: () => ({ queryKey: ["project"] }) }));
-vi.mock("@multica/core/runtimes/hooks", () => ({ useMyRuntimesNeedUpdate: () => false }));
-vi.mock("@multica/core/workspace/queries", () => ({
+vi.mock("@tandem/core/issues/stores/draft-store", () => ({ useIssueDraftStore: () => false }));
+vi.mock("@tandem/core/modals", () => ({ useModalStore: { getState: () => ({ modal: null, open: vi.fn() }) } }));
+vi.mock("@tandem/core/pins/mutations", () => ({ useDeletePin: () => ({ mutate: deletePin }), useReorderPins: () => ({ mutate: vi.fn() }) }));
+vi.mock("@tandem/core/pins/queries", () => ({ pinListOptions: () => ({ queryKey: ["pins"] }) }));
+vi.mock("@tandem/core/projects/queries", () => ({ projectDetailOptions: () => ({ queryKey: ["project"] }) }));
+vi.mock("@tandem/core/runtimes/hooks", () => ({ useMyRuntimesNeedUpdate: () => false }));
+vi.mock("@tandem/core/workspace/queries", () => ({
   myInvitationListOptions: () => ({ queryKey: ["invitations"] }),
   workspaceKeys: { myInvitations: () => ["invitations"] },
   workspaceListOptions: () => ({ queryKey: ["workspaces"] }),

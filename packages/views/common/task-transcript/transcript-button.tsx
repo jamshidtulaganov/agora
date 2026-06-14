@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, ScrollText } from "lucide-react";
-import { cn } from "@multica/ui/lib/utils";
+import { cn } from "@tandem/ui/lib/utils";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@multica/ui/components/ui/tooltip";
-import { api } from "@multica/core/api";
-import type { AgentTask } from "@multica/core/types/agent";
+} from "@tandem/ui/components/ui/tooltip";
+import { api } from "@tandem/core/api";
+import type { AgentTask } from "@tandem/core/types/agent";
 import { AgentTranscriptDialog } from "./agent-transcript-dialog";
 import { buildTimeline, type TimelineItem } from "./build-timeline";
 
@@ -88,9 +88,9 @@ export function TranscriptButton({
       setOpen(false);
     };
 
-    window.addEventListener("multica:navigate", handleGlobalNavigate);
+    window.addEventListener("tandem:navigate", handleGlobalNavigate);
     return () => {
-      window.removeEventListener("multica:navigate", handleGlobalNavigate);
+      window.removeEventListener("tandem:navigate", handleGlobalNavigate);
     };
   }, [open]);
 

@@ -2,9 +2,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { FolderOpen } from "lucide-react";
-import { projectResourcesOptions } from "@multica/core/projects";
-import type { LocalDirectoryResourceRef, ProjectResource } from "@multica/core/types";
-import { useWorkspaceId } from "@multica/core/hooks";
+import { projectResourcesOptions } from "@tandem/core/projects";
+import type { LocalDirectoryResourceRef, ProjectResource } from "@tandem/core/types";
+import { useWorkspaceId } from "@tandem/core/hooks";
 import { useLocalDaemonStatus } from "../../platform";
 import { useT } from "../../i18n";
 

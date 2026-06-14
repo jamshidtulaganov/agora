@@ -1,5 +1,5 @@
-import type { Project } from "@multica/core/types";
-import { cn } from "@multica/ui/lib/utils";
+import type { Project } from "@tandem/core/types";
+import { cn } from "@tandem/ui/lib/utils";
 
 export type ProjectIconSize = "sm" | "md" | "lg";
 

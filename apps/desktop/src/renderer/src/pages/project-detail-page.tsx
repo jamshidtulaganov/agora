@@ -1,8 +1,8 @@
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ProjectDetail } from "@multica/views/projects/components";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { projectDetailOptions } from "@multica/core/projects/queries";
+import { ProjectDetail } from "@tandem/views/projects/components";
+import { useWorkspaceId } from "@tandem/core/hooks";
+import { projectDetailOptions } from "@tandem/core/projects/queries";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 
 export function ProjectDetailPage() {

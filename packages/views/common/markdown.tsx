@@ -5,10 +5,10 @@ import {
   Markdown as MarkdownBase,
   type MarkdownProps as MarkdownBaseProps,
   type RenderMode,
-} from "@multica/ui/markdown";
-import { useConfigStore } from "@multica/core/config";
-import type { Attachment as AttachmentRecord } from "@multica/core/types";
-import { useWorkspacePaths } from "@multica/core/paths";
+} from "@tandem/ui/markdown";
+import { useConfigStore } from "@tandem/core/config";
+import type { Attachment as AttachmentRecord } from "@tandem/core/types";
+import { useWorkspacePaths } from "@tandem/core/paths";
 import { IssueMentionCard } from "../issues/components/issue-mention-card";
 import { ProjectChip } from "../projects/components/project-chip";
 import { AppLink } from "../navigation";

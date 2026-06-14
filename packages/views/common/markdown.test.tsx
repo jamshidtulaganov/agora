@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { Markdown } from "./markdown";
 
-vi.mock("@multica/core/config", () => ({
+vi.mock("@tandem/core/config", () => ({
   useConfigStore: (selector: (state: { cdnDomain: string }) => unknown) =>
     selector({ cdnDomain: "" }),
 }));
@@ -14,8 +14,8 @@ vi.mock("../issues/components/issue-mention-card", () => ({
   ),
 }));
 
-vi.mock("@multica/core/paths", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@multica/core/paths")>();
+vi.mock("@tandem/core/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tandem/core/paths")>();
   return {
     ...actual,
     useWorkspaceSlug: () => "acme",

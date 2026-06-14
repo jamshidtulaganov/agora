@@ -15,14 +15,14 @@ import {
   type DragOverEvent,
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@multica/ui/components/ui/tooltip";
-import { Button } from "@multica/ui/components/ui/button";
-import type { Issue, IssueStatus } from "@multica/core/types";
-import { useLoadMoreByStatus } from "@multica/core/issues/mutations";
-import type { IssueSortParam, MyIssuesFilter } from "@multica/core/issues/queries";
-import { useModalStore } from "@multica/core/modals";
-import { useViewStore } from "@multica/core/issues/stores/view-store-context";
-import { useIssueSelectionStore } from "@multica/core/issues/stores/selection-store";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@tandem/ui/components/ui/tooltip";
+import { Button } from "@tandem/ui/components/ui/button";
+import type { Issue, IssueStatus } from "@tandem/core/types";
+import { useLoadMoreByStatus } from "@tandem/core/issues/mutations";
+import type { IssueSortParam, MyIssuesFilter } from "@tandem/core/issues/queries";
+import { useModalStore } from "@tandem/core/modals";
+import { useViewStore } from "@tandem/core/issues/stores/view-store-context";
+import { useIssueSelectionStore } from "@tandem/core/issues/stores/selection-store";
 import { StatusHeading } from "./status-heading";
 import { ListRow, DraggableListRow, type ChildProgress } from "./list-row";
 import { InfiniteScrollSentinel } from "./infinite-scroll-sentinel";

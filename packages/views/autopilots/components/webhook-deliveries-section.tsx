@@ -18,25 +18,25 @@ import {
   autopilotDeliveriesOptions,
   autopilotDeliveryOptions,
   useReplayAutopilotDelivery,
-} from "@multica/core/autopilots";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
-import { Button } from "@multica/ui/components/ui/button";
-import { Badge } from "@multica/ui/components/ui/badge";
+} from "@tandem/core/autopilots";
+import { useWorkspaceId } from "@tandem/core/hooks";
+import { Skeleton } from "@tandem/ui/components/ui/skeleton";
+import { Button } from "@tandem/ui/components/ui/button";
+import { Badge } from "@tandem/ui/components/ui/badge";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
-import { cn } from "@multica/ui/lib/utils";
-import { copyText } from "@multica/ui/lib/clipboard";
+} from "@tandem/ui/components/ui/dialog";
+import { cn } from "@tandem/ui/lib/utils";
+import { copyText } from "@tandem/ui/lib/clipboard";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 import type {
   WebhookDelivery,
   WebhookDeliveryStatus,
   WebhookSignatureStatus,
-} from "@multica/core/types";
+} from "@tandem/core/types";
 
 // --- Status visuals -------------------------------------------------------
 

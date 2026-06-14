@@ -479,7 +479,7 @@ type LarkOutboundCardMessage struct {
 type LarkUserBinding struct {
 	ID             pgtype.UUID        `json:"id"`
 	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
-	MulticaUserID  pgtype.UUID        `json:"multica_user_id"`
+	TandemUserID  pgtype.UUID        `json:"tandem_user_id"`
 	InstallationID pgtype.UUID        `json:"installation_id"`
 	LarkOpenID     string             `json:"lark_open_id"`
 	UnionID        pgtype.Text        `json:"union_id"`

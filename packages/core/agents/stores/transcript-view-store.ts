@@ -18,7 +18,7 @@ export const useTranscriptViewStore = create<TranscriptViewState>()(
       setSortDirection: (sortDirection) => set({ sortDirection }),
     }),
     {
-      name: "multica_transcript_view",
+      name: "tandem_transcript_view",
       storage: createJSONStorage(() => defaultStorage),
       partialize: (state) => ({ sortDirection: state.sortDirection }),
     },

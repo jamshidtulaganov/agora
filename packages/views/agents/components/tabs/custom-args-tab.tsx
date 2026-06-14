@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { Loader2, Plus, Save, Trash2 } from "lucide-react";
-import type { Agent, RuntimeDevice } from "@multica/core/types";
-import { createSafeId } from "@multica/core/utils";
-import { Button } from "@multica/ui/components/ui/button";
-import { Input } from "@multica/ui/components/ui/input";
+import type { Agent, RuntimeDevice } from "@tandem/core/types";
+import { createSafeId } from "@tandem/core/utils";
+import { Button } from "@tandem/ui/components/ui/button";
+import { Input } from "@tandem/ui/components/ui/input";
 import { toast } from "sonner";
 import { useT } from "../../../i18n";
 
