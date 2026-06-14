@@ -83,6 +83,14 @@ func ProbeAuth(ctx context.Context, provider, binPath string) AuthInfo {
 	defer cancel()
 
 	cmd := exec.CommandContext(probeCtx, binPath, args...)
+	// WaitDelay bounds cmd.Run() even when the probed CLI (e.g. node-based
+	// gemini) spawns grandchildren that keep the stdout/stderr pipe open after
+	// the context kills the parent. Without it, the internal output-copy
+	// goroutine blocks on the still-open pipe and Run() never returns, wedging
+	// daemon startup. After the ctx deadline, Go waits WaitDelay then force-
+	// closes the pipes and returns. Probe is best-effort: a slow/blocked CLI
+	// must never block runtime registration.
+	cmd.WaitDelay = 2 * time.Second
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
