@@ -58,6 +58,11 @@ var (
 	// helpers above.
 	detectAgentVersion   = agent.DetectVersion
 	checkAgentMinVersion = agent.CheckMinVersion
+
+	// probeAuth is an indirection over ProbeAuth so the registration path can
+	// be exercised in tests without shelling out to a real CLI's login/status
+	// subcommand. Production wiring stays ProbeAuth.
+	probeAuth = ProbeAuth
 )
 
 // workspaceState tracks registered runtimes for a single workspace.
@@ -758,12 +763,29 @@ func (d *Daemon) registerRuntimesForWorkspace(ctx context.Context, workspaceID s
 		if d.cfg.DeviceName != "" {
 			displayName = fmt.Sprintf("%s (%s)", displayName, d.cfg.DeviceName)
 		}
-		runtimes = append(runtimes, map[string]string{
-			"name":    displayName,
-			"type":    name,
-			"version": version,
-			"status":  "online",
-		})
+		// Best-effort, short-timeout auth probe so the web "AI accounts" page
+		// can show whether this CLI is signed in as an account (subscription
+		// token) vs. needing login. probeAuth never errors — a slow/unknown CLI
+		// degrades to AuthState "unknown" and must not block registration.
+		auth := probeAuth(ctx, name, entry.Path)
+		d.logger.Debug("agent auth probed", "name", name, "auth_state", auth.AuthState, "has_email", auth.AccountEmail != "", "plan", auth.AccountPlan)
+		rt := map[string]string{
+			"name":       displayName,
+			"type":       name,
+			"version":    version,
+			"status":     "online",
+			"auth_state": auth.AuthState,
+		}
+		// Only send email/plan when present so an upsert never clobbers a
+		// previously-stored value with an empty string for providers that
+		// don't surface them.
+		if auth.AccountEmail != "" {
+			rt["account_email"] = auth.AccountEmail
+		}
+		if auth.AccountPlan != "" {
+			rt["account_plan"] = auth.AccountPlan
+		}
+		runtimes = append(runtimes, rt)
 	}
 	if len(runtimes) == 0 {
 		return nil, fmt.Errorf("no agent runtimes could be registered")

@@ -247,6 +247,49 @@
       "timeout": "Timeout"
     }
   },
+  "ai_accounts": {
+    "title": "AI accounts",
+    "subtitle": "Each agent CLI signs in as an account — a subscription, not an API key. This shows which providers are connected on your machines.",
+    "providers": {
+      "claude": "Claude",
+      "codex": "Codex",
+      "gemini": "Gemini",
+      "antigravity": "Antigravity"
+    },
+    "state": {
+      "connected": "Connected",
+      "not_connected": "Not connected",
+      "unknown": "Unknown",
+      "offline": "Offline"
+    },
+    "account": {
+      "email_label": "Account",
+      "plan_label": "Plan",
+      "email_unknown": "Signed in",
+      "plan_unknown": "—",
+      "runtimes_count_one": "{{count}} runtime",
+      "runtimes_count_other": "{{count}} runtimes"
+    },
+    "status_hint": {
+      "connected": "Signed in and ready to run tasks.",
+      "not_connected": "This CLI has no account session yet — sign in below.",
+      "unknown": "Couldn't read this CLI's sign-in state. It may still work, or it may need login.",
+      "offline": "No runtime online for this provider. Start the daemon on a machine where this CLI is installed."
+    },
+    "connect": {
+      "title": "How to connect",
+      "claude": "Run `claude setup-token` on the machine, then restart the daemon.",
+      "codex": "Run `codex login` on the machine, then restart the daemon.",
+      "gemini": "Run `gemini auth login` on the machine, then restart the daemon.",
+      "antigravity": "Sign in to Antigravity (`agy`) on the machine, then restart the daemon.",
+      "generic": "Sign in to this CLI on the machine, then restart the daemon with `agora setup self-host`.",
+      "copy_aria": "Copy command"
+    },
+    "empty": {
+      "title": "No AI accounts detected",
+      "hint": "Add a computer with an agent CLI installed, then sign that CLI into its account."
+    }
+  },
   "charts": {
     "heatmap_less": "Less",
     "heatmap_more": "More",

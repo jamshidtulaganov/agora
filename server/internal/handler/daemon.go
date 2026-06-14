@@ -181,6 +181,14 @@ type DaemonRegisterRequest struct {
 		Type    string `json:"type"`
 		Version string `json:"version"` // agent CLI version (claude/codex)
 		Status  string `json:"status"`
+		// AI-account auth state reported by the daemon's per-CLI auth probe.
+		// AuthState ∈ {"logged_in","logged_out","unknown"}; email/plan are
+		// optional and only present when the CLI surfaces them. Persisted into
+		// agent_runtime.metadata so the web "AI accounts" page can render a
+		// per-provider connect status without ever handling raw tokens.
+		AuthState    string `json:"auth_state"`
+		AccountEmail string `json:"account_email"`
+		AccountPlan  string `json:"account_plan"`
 	} `json:"runtimes"`
 }
 
@@ -327,11 +335,28 @@ func (h *Handler) DaemonRegister(w http.ResponseWriter, r *http.Request) {
 		if runtime.Status == "offline" {
 			status = "offline"
 		}
-		metadata, _ := json.Marshal(map[string]any{
+		// Per-runtime auth ("AI account") state, surfaced to the web AI-accounts
+		// page. auth_state is always written (defaulting to "unknown" for older
+		// daemons that don't send it); email/plan are only written when present
+		// so an upsert from a daemon that can't read them doesn't wipe a value a
+		// previous register stored.
+		authState := strings.TrimSpace(runtime.AuthState)
+		if authState == "" {
+			authState = "unknown"
+		}
+		metaMap := map[string]any{
 			"version":     runtime.Version,
 			"cli_version": req.CLIVersion,
 			"launched_by": req.LaunchedBy,
-		})
+			"auth_state":  authState,
+		}
+		if email := strings.TrimSpace(runtime.AccountEmail); email != "" {
+			metaMap["account_email"] = email
+		}
+		if plan := strings.TrimSpace(runtime.AccountPlan); plan != "" {
+			metaMap["account_plan"] = plan
+		}
+		metadata, _ := json.Marshal(metaMap)
 
 		row, err := h.Queries.UpsertAgentRuntime(r.Context(), db.UpsertAgentRuntimeParams{
 			WorkspaceID: wsUUID,

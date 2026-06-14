@@ -198,7 +198,7 @@ func TestIsOfficialCloudServer(t *testing.T) {
 	}{
 		{"canonical cloud https", "https://api.agora.dev", true},
 		{"canonical cloud with trailing slash stripped", "https://api.agora.dev/", true},
-		{"canonical cloud case-insensitive", "https://API.Agora.AI", true},
+		{"canonical cloud case-insensitive", "https://API.Agora.DEV", true},
 		{"cloud over plain http (unusual but match host)", "http://api.agora.dev", true},
 		{"localhost is self-host", "http://localhost:8080", false},
 		{"loopback ip is self-host", "http://127.0.0.1:8080", false},

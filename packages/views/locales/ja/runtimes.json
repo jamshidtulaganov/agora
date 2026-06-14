@@ -235,6 +235,48 @@
       "timeout": "タイムアウト"
     }
   },
+  "ai_accounts": {
+    "title": "AI アカウント",
+    "subtitle": "各エージェント CLI は API キーではなくサブスクリプションのアカウントでサインインします。ここでは各マシンで接続されているプロバイダーを確認できます。",
+    "providers": {
+      "claude": "Claude",
+      "codex": "Codex",
+      "gemini": "Gemini",
+      "antigravity": "Antigravity"
+    },
+    "state": {
+      "connected": "接続済み",
+      "not_connected": "未接続",
+      "unknown": "不明",
+      "offline": "オフライン"
+    },
+    "account": {
+      "email_label": "アカウント",
+      "plan_label": "プラン",
+      "email_unknown": "サインイン済み",
+      "plan_unknown": "—",
+      "runtimes_count_other": "ランタイム {{count}} 個"
+    },
+    "status_hint": {
+      "connected": "サインイン済みで、タスクを実行できます。",
+      "not_connected": "この CLI にはまだアカウントセッションがありません。以下からサインインしてください。",
+      "unknown": "この CLI のサインイン状態を読み取れませんでした。動作する場合もあれば、ログインが必要な場合もあります。",
+      "offline": "このプロバイダーのオンラインなランタイムがありません。この CLI がインストールされたマシンでデーモンを起動してください。"
+    },
+    "connect": {
+      "title": "接続方法",
+      "claude": "マシンで `claude setup-token` を実行し、デーモンを再起動します。",
+      "codex": "マシンで `codex login` を実行し、デーモンを再起動します。",
+      "gemini": "マシンで `gemini auth login` を実行し、デーモンを再起動します。",
+      "antigravity": "マシンで Antigravity（`agy`）にサインインし、デーモンを再起動します。",
+      "generic": "マシンでこの CLI にサインインし、`agora setup self-host` でデーモンを再起動します。",
+      "copy_aria": "コマンドをコピー"
+    },
+    "empty": {
+      "title": "AI アカウントが検出されません",
+      "hint": "エージェント CLI がインストールされたコンピューターを追加し、その CLI をアカウントにサインインさせてください。"
+    }
+  },
   "charts": {
     "heatmap_less": "少ない",
     "heatmap_more": "多い",

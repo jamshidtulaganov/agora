@@ -235,6 +235,48 @@
       "timeout": "超时"
     }
   },
+  "ai_accounts": {
+    "title": "AI 账户",
+    "subtitle": "每个智能体 CLI 都以账户（订阅）而非 API 密钥登录。这里显示你的各台机器上已连接的提供方。",
+    "providers": {
+      "claude": "Claude",
+      "codex": "Codex",
+      "gemini": "Gemini",
+      "antigravity": "Antigravity"
+    },
+    "state": {
+      "connected": "已连接",
+      "not_connected": "未连接",
+      "unknown": "未知",
+      "offline": "离线"
+    },
+    "account": {
+      "email_label": "账户",
+      "plan_label": "套餐",
+      "email_unknown": "已登录",
+      "plan_unknown": "—",
+      "runtimes_count_other": "{{count}} 个运行时"
+    },
+    "status_hint": {
+      "connected": "已登录，可以执行任务。",
+      "not_connected": "此 CLI 尚无账户会话，请在下方登录。",
+      "unknown": "无法读取此 CLI 的登录状态。它可能仍可使用，也可能需要登录。",
+      "offline": "该提供方没有在线运行时。请在安装了此 CLI 的机器上启动守护进程。"
+    },
+    "connect": {
+      "title": "如何连接",
+      "claude": "在机器上运行 `claude setup-token`，然后重启守护进程。",
+      "codex": "在机器上运行 `codex login`，然后重启守护进程。",
+      "gemini": "在机器上运行 `gemini auth login`，然后重启守护进程。",
+      "antigravity": "在机器上登录 Antigravity（`agy`），然后重启守护进程。",
+      "generic": "在机器上登录此 CLI，然后用 `agora setup self-host` 重启守护进程。",
+      "copy_aria": "复制命令"
+    },
+    "empty": {
+      "title": "未检测到 AI 账户",
+      "hint": "添加一台安装了智能体 CLI 的电脑，然后将该 CLI 登录到其账户。"
+    }
+  },
   "charts": {
     "heatmap_less": "少",
     "heatmap_more": "多",
