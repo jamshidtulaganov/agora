@@ -46,6 +46,16 @@ const bitrixCommentsImportedMetaKey = "bitrix_comments_imported"
 // re-download + re-upload them.
 const bitrixFilesImportedMetaKey = "bitrix_files_imported"
 
+// QA verdict labels the agora-sddev-qa skill attaches to an issue after a run.
+const (
+	qaPassLabel = "qa:pass"
+	qaFailLabel = "qa:fail"
+)
+
+// bitrixQAMirroredMetaKey records the last QA verdict mirrored to the Bitrix
+// task ("pass"/"fail"), so a later label edit doesn't re-post the same verdict.
+const bitrixQAMirroredMetaKey = "bitrix_qa_mirrored"
+
 // bitrixProjectMarkerPrefix is the durable marker embedded in a project's
 // description to link it back to its Bitrix workgroup id, used for dedup when
 // the same group is synced again. Format: "bitrix_group:<id>". A deterministic
@@ -697,6 +707,27 @@ func (h *Handler) registerBitrixOutbound() {
 			}
 		}()
 	})
+
+	// QA verdict mirror: when an issue gains a qa:pass / qa:fail label, post a
+	// courtesy verdict comment to the linked Bitrix task. The payload carries the
+	// full label set (no delta), so the handler re-reads + dedups.
+	h.Bus.Subscribe(protocol.EventIssueLabelsChanged, func(e events.Event) {
+		m, ok := e.Payload.(map[string]any)
+		if !ok {
+			return
+		}
+		issueID, _ := m["issue_id"].(string)
+		if issueID == "" {
+			return
+		}
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), bitrixOutboundTimeout)
+			defer cancel()
+			if err := h.mirrorQAVerdictToBitrix(ctx, issueID); err != nil {
+				slog.Warn("bitrix outbound: qa verdict mirror failed", "issue_id", issueID, "error", err)
+			}
+		}()
+	})
 }
 
 // bitrixShouldMirror decides whether an issue:updated payload represents a real
@@ -779,6 +810,103 @@ func (h *Handler) mirrorIssueStatusToBitrix(ctx context.Context, issueID string)
 		}
 	}
 	return nil
+}
+
+// mirrorQAVerdictToBitrix posts a courtesy QA verdict comment to the linked
+// Bitrix task when an issue carries a qa:pass / qa:fail label. It re-reads the
+// issue's labels (authoritative, not the event payload), bails when the issue is
+// not Bitrix-linked or has no verdict label, and dedups on the
+// bitrix_qa_mirrored metadata key so repeated label edits don't re-post.
+func (h *Handler) mirrorQAVerdictToBitrix(ctx context.Context, issueID string) error {
+	issueUUID, err := util.ParseUUID(issueID)
+	if err != nil {
+		return fmt.Errorf("parse issue id: %w", err)
+	}
+	issue, err := h.Queries.GetIssue(ctx, issueUUID)
+	if err != nil {
+		return fmt.Errorf("get issue: %w", err)
+	}
+	taskID := bitrixTaskIDFromMetadata(issue.Metadata)
+	if taskID == "" {
+		return nil // not a Bitrix-originated issue
+	}
+
+	verdict := qaVerdictFromLabels(h.issueLabelNames(ctx, issue.ID))
+	if verdict == "" {
+		return nil // no QA verdict label present
+	}
+	if metaString(issue.Metadata, bitrixQAMirroredMetaKey) == verdict {
+		return nil // already mirrored this verdict
+	}
+
+	prefix := h.getIssuePrefix(ctx, issue.WorkspaceID)
+	line := fmt.Sprintf("🤖 Agora: QA passed ✅ for issue %s-%d", prefix, issue.Number)
+	if verdict == "fail" {
+		line = fmt.Sprintf("🤖 Agora: QA failed ❌ for issue %s-%d", prefix, issue.Number)
+	}
+	if err := bitrix.NewClient(bitrixWebhookURL()).AddTaskComment(ctx, taskID, line); err != nil {
+		return fmt.Errorf("add qa verdict comment: %w", err)
+	}
+
+	val, _ := json.Marshal(verdict)
+	if _, err := h.Queries.SetIssueMetadataKey(ctx, db.SetIssueMetadataKeyParams{
+		ID:          issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+		Key:         bitrixQAMirroredMetaKey,
+		Value:       val,
+	}); err != nil {
+		slog.Warn("bitrix outbound: stamp qa verdict failed", "issue_id", issueID, "error", err)
+	}
+	return nil
+}
+
+// qaVerdictFromLabels reduces a label set to a QA verdict: "fail" wins over
+// "pass" (a fail means do not ship); "" when neither label is present.
+func qaVerdictFromLabels(names []string) string {
+	pass := false
+	for _, n := range names {
+		switch strings.ToLower(strings.TrimSpace(n)) {
+		case qaFailLabel:
+			return "fail"
+		case qaPassLabel:
+			pass = true
+		}
+	}
+	if pass {
+		return "pass"
+	}
+	return ""
+}
+
+// issueLabelNames returns the names of the labels attached to an issue. Raw pgx
+// (no new sqlc method) keeps the change surgical; errors degrade to nil.
+func (h *Handler) issueLabelNames(ctx context.Context, issueID pgtype.UUID) []string {
+	rows, err := h.DB.Query(ctx,
+		`SELECT l.name FROM issue_label l
+		   JOIN issue_to_label il ON il.label_id = l.id
+		  WHERE il.issue_id = $1`, issueID)
+	if err != nil {
+		slog.Warn("bitrix outbound: list issue labels failed", "error", err)
+		return nil
+	}
+	defer rows.Close()
+	var names []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err == nil {
+			names = append(names, n)
+		}
+	}
+	return names
+}
+
+// metaString reads a string-valued key from an issue's JSONB metadata, "" when
+// absent or non-string.
+func metaString(raw []byte, key string) string {
+	if v, ok := parseIssueMetadata(raw)[key].(string); ok {
+		return v
+	}
+	return ""
 }
 
 // bitrixTaskIDFromMetadata extracts the bitrix_task_id value from an issue's
