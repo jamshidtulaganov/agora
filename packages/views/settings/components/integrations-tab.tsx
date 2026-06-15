@@ -1,6 +1,7 @@
 "use client";
 
 import { LarkTab } from "./lark-tab";
+import { BitrixTab } from "./bitrix-tab";
 import { useT } from "../../i18n";
 
 // Integrations is the umbrella tab for third-party platform connections.
@@ -17,6 +18,7 @@ export function IntegrationsTab() {
         <h2 className="text-sm font-semibold">{t(($) => $.lark.section_title)}</h2>
         <LarkTab />
       </section>
+      <BitrixTab />
     </div>
   );
 }
