@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS agent_plugin;
+DROP TABLE IF EXISTS plugin_skill;
+DROP TABLE IF EXISTS plugin;

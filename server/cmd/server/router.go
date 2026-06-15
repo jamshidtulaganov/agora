@@ -912,6 +912,18 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				})
 			})
 
+			// Plugins — a plugin bundles skills + MCP connectors and installs
+			// them onto agents as a unit (see internal/handler/plugin.go).
+			r.Route("/api/plugins", func(r chi.Router) {
+				r.Get("/", h.ListPlugins)
+				r.Post("/", h.CreatePlugin)
+				r.Route("/{id}", func(r chi.Router) {
+					r.Delete("/", h.DeletePlugin)
+					r.Post("/install", h.InstallPlugin)
+					r.Post("/uninstall", h.UninstallPlugin)
+				})
+			})
+
 			// Dashboard — workspace-wide token + run-time rollups for the
 			// "/{slug}/dashboard" page. Optional ?project_id filter scopes
 			// the rollup to a single project.
