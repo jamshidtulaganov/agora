@@ -121,6 +121,12 @@ import type {
 } from "../types";
 import type { OnboardingCompletionPath } from "../onboarding/types";
 import type {
+  BitrixGroup,
+  BitrixTask,
+  BitrixImportRequest,
+  BitrixImportResponse,
+} from "../bitrix/types";
+import type {
   CloudRuntimeNode,
   CreateCloudRuntimeNodeRequest,
   ListCloudRuntimeNodesParams,
@@ -1880,6 +1886,28 @@ export class ApiClient {
     return this.fetch(`/api/labels`, {
       method: "POST",
       body: JSON.stringify(data),
+    });
+  }
+
+  // --- Bitrix import browser -------------------------------------------------
+  // Workspace scoping rides the X-Workspace-Slug header (added by fetchRaw), so
+  // these take no explicit workspace param.
+  async listBitrixGroups(): Promise<BitrixGroup[]> {
+    return this.fetch(`/api/bitrix/groups`);
+  }
+
+  async listBitrixTasks(groupId: string): Promise<BitrixTask[]> {
+    return this.fetch(
+      `/api/bitrix/tasks?group_id=${encodeURIComponent(groupId)}`,
+    );
+  }
+
+  async importBitrixTasks(
+    req: BitrixImportRequest,
+  ): Promise<BitrixImportResponse> {
+    return this.fetch(`/api/bitrix/import`, {
+      method: "POST",
+      body: JSON.stringify(req),
     });
   }
 

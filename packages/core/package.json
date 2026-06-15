@@ -20,6 +20,7 @@
     "./api/ws-client": "./api/ws-client.ts",
     "./config": "./config/index.ts",
     "./auth": "./auth/index.ts",
+    "./bitrix": "./bitrix/index.ts",
     "./workspace": "./workspace/index.ts",
     "./workspace/queries": "./workspace/queries.ts",
     "./workspace/mutations": "./workspace/mutations.ts",
