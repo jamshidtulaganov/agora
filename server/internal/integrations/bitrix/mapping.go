@@ -124,7 +124,7 @@ func MapTaskToIssue(task *Task) IssueDraft {
 	}
 	return IssueDraft{
 		Title:       title,
-		Description: task.Description,
+		Description: BBCodeToMarkdown(task.Description),
 		Status:      MapStatus(task.Status),
 	}
 }

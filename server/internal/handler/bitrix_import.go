@@ -153,7 +153,7 @@ func formatBitrixComment(c bitrix.Comment) string {
 		header += " (" + d + ")"
 	}
 	header += "**:"
-	return header + "\n" + strings.TrimSpace(c.Text)
+	return header + "\n" + bitrix.BBCodeToMarkdown(strings.TrimSpace(c.Text))
 }
 
 // --- attachments + video frames ---------------------------------------------
