@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/multica-ai/multica/server/internal/integrations/bitrix"
 )
@@ -160,12 +163,17 @@ type BitrixImportRequest struct {
 	TaskIDs  []string `json:"task_ids"`
 }
 
-// BitrixImportResponse tallies the run.
+// BitrixImportResponse tallies the run. The import is asynchronous: the request
+// returns 202 with Accepted (how many task ids were enqueued) once the task set
+// is resolved; Created/Updated/Skipped stay 0 because the per-task sync runs in
+// the background (issues then stream onto the board over the websocket). Errors
+// only carries up-front failures (e.g. a group listing that failed).
 type BitrixImportResponse struct {
-	Created int      `json:"created"`
-	Updated int      `json:"updated"`
-	Skipped int      `json:"skipped"`
-	Errors  []string `json:"errors"`
+	Created  int      `json:"created"`
+	Updated  int      `json:"updated"`
+	Skipped  int      `json:"skipped"`
+	Accepted int      `json:"accepted"`
+	Errors   []string `json:"errors"`
 }
 
 // ImportBitrixTasks bulk-syncs tasks: the explicit task_ids plus every task in
@@ -189,6 +197,15 @@ func (h *Handler) ImportBitrixTasks(w http.ResponseWriter, r *http.Request) {
 
 	cfg := bitrixRouteConfig()
 	st := h.newBitrixSyncState()
+
+	// Detach the heavy import work (Bitrix REST round-trips, file downloads,
+	// enrichment) from the request context. A video-heavy group can take longer
+	// than the client/proxy is willing to wait (~30s); without this, a client
+	// disconnect cancels r.Context() mid-task and leaves partial imports. With a
+	// detached context the import runs to completion server-side regardless, and
+	// new issues stream into the board live over the websocket.
+	// cancel() is invoked by the background goroutine below, NOT here.
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 
 	// Resolve the task id set: explicit ids first, then expand each group into
 	// its task ids (filtered by BITRIX_TASK_TAG), deduping as we go and stopping
@@ -220,7 +237,7 @@ func (h *Handler) ImportBitrixTasks(w http.ResponseWriter, r *http.Request) {
 			if gid == "" {
 				continue
 			}
-			tasks, err := st.client.ListTasks(r.Context(), gid, st.tag)
+			tasks, err := st.client.ListTasks(ctx, gid, st.tag)
 			if err != nil {
 				resp.Errors = append(resp.Errors, "list group "+gid+": "+err.Error())
 				continue
@@ -237,14 +254,20 @@ func (h *Handler) ImportBitrixTasks(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	for _, id := range taskIDs {
-		if err := h.syncBitrixTaskWithState(r.Context(), id, cfg, st); err != nil {
-			resp.Errors = append(resp.Errors, "task "+id+": "+err.Error())
+	// Per-task sync (downloads + enrichment) runs in the background so a big or
+	// video-heavy group doesn't blow the request budget. The board updates live
+	// over the websocket as each issue is created/reconciled.
+	go func() {
+		defer cancel()
+		for _, id := range taskIDs {
+			if err := h.syncBitrixTaskWithState(ctx, id, cfg, st); err != nil {
+				slog.Warn("bitrix import: task sync failed", "task_id", id, "error", err)
+			}
 		}
-	}
+		slog.Info("bitrix import: background sync finished",
+			"requested", len(taskIDs), "created", st.created, "updated", st.updated, "skipped", st.skipped)
+	}()
 
-	resp.Created = st.created
-	resp.Updated = st.updated
-	resp.Skipped = st.skipped
-	writeJSON(w, http.StatusOK, resp)
+	resp.Accepted = len(taskIDs)
+	writeJSON(w, http.StatusAccepted, resp)
 }

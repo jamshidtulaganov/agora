@@ -167,9 +167,9 @@ const maxBitrixVideoFrames = bitrix.MaxVideoFrames
 const bitrixFrameExtractTimeout = 60 * time.Second
 
 // importBitrixAttachments downloads a task's attachments and stores them as
-// issue attachments, once. Video files are additionally decomposed into still
-// frames (uploaded as image attachments) so an agent that can't watch a
-// recording still gets the key states. Bounded by the client
+// issue attachments, once. Videos are stored as-is (linked in the description);
+// ffmpeg frame extraction is deferred to planning time so a video-heavy group
+// doesn't blow the import's request budget. Bounded by the client
 // (maxFilesPerTask) and idempotent via the bitrix_files_imported metadata flag.
 // Requires Storage; a no-op (logged) when storage is unconfigured. All failures
 // are logged, never fatal.
@@ -188,7 +188,6 @@ func (h *Handler) importBitrixAttachments(ctx context.Context, wsID, issueID, ow
 	}
 
 	stored := 0
-	frames := 0
 	var embeds []bitrixEmbed
 	for _, f := range files {
 		data, ctype, err := st.client.DownloadFile(ctx, f.URL)
@@ -206,23 +205,20 @@ func (h *Handler) importBitrixAttachments(ctx context.Context, wsID, issueID, ow
 		}
 		stored++
 		embeds = append(embeds, bitrixEmbed{url: url, name: f.Name, contentType: contentType})
-
-		// Video → frames. Best-effort: if ffmpeg is missing or extraction
-		// fails, the original video attachment is still stored above.
-		if bitrix.IsVideo(f.Name, contentType) {
-			frameEmbeds := h.extractAndStoreFrames(ctx, wsID, issueID, ownerID, f.Name, data, st)
-			frames += len(frameEmbeds)
-			embeds = append(embeds, frameEmbeds...)
-		}
+		// Videos are stored as-is and surfaced as a link; frame extraction
+		// (ffmpeg) is intentionally NOT done here — it is the single slowest
+		// step and a video-heavy group would blow the import's request budget.
+		// Frames are extracted lazily at planning time instead (the agent runs
+		// ffmpeg on the stored video via extractAndStoreFrames-equivalent).
 	}
 
-	// Surface every stored file/frame inline in the issue description.
+	// Surface every stored file inline in the issue description (videos as 🎬 links).
 	h.appendBitrixAttachmentsToDescription(ctx, wsID, issueID, embeds)
 
 	h.setBitrixImportFlag(ctx, wsID, issueID, bitrixFilesImportedMetaKey)
 	slog.Info("bitrix sync: imported attachments",
 		"task_id", taskID, "issue_id", util.UUIDToString(issueID),
-		"files", stored, "frames", frames)
+		"files", stored)
 }
 
 // storeBitrixAttachment uploads bytes to Storage and records the attachment row

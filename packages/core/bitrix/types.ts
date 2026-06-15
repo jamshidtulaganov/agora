@@ -32,5 +32,12 @@ export interface BitrixImportResponse {
   created: number;
   updated: number;
   skipped: number;
+  /**
+   * Number of tasks accepted for the asynchronous import. The server returns
+   * 202 immediately after resolving the task set; per-task sync runs in the
+   * background and issues stream onto the board over the websocket, so
+   * created/updated/skipped are 0 in this response.
+   */
+  accepted?: number;
   errors: string[];
 }

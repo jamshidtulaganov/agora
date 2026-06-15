@@ -104,8 +104,19 @@ export function BitrixSyncPanel() {
 
         {result && (
           <div className="mb-4 rounded-md border border-border bg-muted/40 p-3 text-sm">
-            <span className="font-medium">Imported:</span> {result.created}{" "}
-            created, {result.updated} updated, {result.skipped} skipped.
+            {result.accepted ? (
+              <span>
+                <span className="font-medium">Import started:</span>{" "}
+                {result.accepted} task{result.accepted === 1 ? "" : "s"} queued —
+                issues appear on the board as they sync (videos download in the
+                background).
+              </span>
+            ) : (
+              <span>
+                <span className="font-medium">Imported:</span> {result.created}{" "}
+                created, {result.updated} updated, {result.skipped} skipped.
+              </span>
+            )}
             {result.errors?.length ? (
               <ul className="mt-2 list-disc pl-5 text-destructive">
                 {result.errors.slice(0, 5).map((e, i) => (
