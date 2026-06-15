@@ -35,6 +35,8 @@ import {
   X,
   Zap,
   Users,
+  Plug,
+  Building2,
 } from "lucide-react";
 import { WorkspaceAvatar } from "../workspace/workspace-avatar";
 import { ActorAvatar } from "@agora/ui/components/common/actor-avatar";
@@ -117,6 +119,8 @@ type NavKey =
   | "runtimes"
   | "aiAccounts"
   | "skills"
+  | "mcp"
+  | "bitrix"
   | "settings";
 
 // Static schema (key + icon) — labels resolved at render via useT("layout").
@@ -132,6 +136,8 @@ type NavLabelKey =
   | "runtimes"
   | "ai_accounts"
   | "skills"
+  | "mcp"
+  | "bitrix"
   | "settings";
 
 const personalNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[] = [
@@ -152,6 +158,8 @@ const configureNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[]
   { key: "runtimes", labelKey: "runtimes", icon: Monitor },
   { key: "aiAccounts", labelKey: "ai_accounts", icon: KeyRound },
   { key: "skills", labelKey: "skills", icon: BookOpenText },
+  { key: "mcp", labelKey: "mcp", icon: Plug },
+  { key: "bitrix", labelKey: "bitrix", icon: Building2 },
   { key: "settings", labelKey: "settings", icon: Settings },
 ];
 
