@@ -39,9 +39,9 @@ A QA checkout must not contact the real billing service. Merge
 > and rebuilds.
 
 ## Agora side
-1. Create a QA agent from the **qa-tester** template (Agents → New → QA Tester).
-   It ships with the Playwright `webapp-testing` skill, and every agent already
-   carries the builtin **agora-sddev-qa** skill that drives the flow below.
+1. The **QA Tester** agent (workspace `sd-main`) carries the **`sd-qa-process`**
+   workspace skill — that skill is the QA flow. (If the agent is missing,
+   re-create it and attach `sd-qa-process`.)
 2. Set the agent's `custom_env` to match this box:
    ```
    QA_SWITCH_URL=https://<box>/qa_switch.php
@@ -50,10 +50,11 @@ A QA checkout must not contact the real billing service. Merge
    QA_LOGIN=demo   QA_PASSWORD=<staging>   QA_LOGIN_PATH=/site/login   QA_SDDEV_BASE_BRANCH=billing
    ```
 3. On an issue with an open PR, fire **Run QA** (the `run_qa` slice action) or
-   @-mention the QA Tester. The agora-sddev-qa skill then runs:
+   @-mention the QA Tester. `sd-qa-process` then runs:
    `qa_switch?branch=btx-<id>&remote=fork` → Playwright smoke on `QA_SDDEV_URL`
    → restore `?branch=billing&remote=origin` → posts a `qa:pass` / `qa:fail`
-   verdict comment + label.
+   verdict comment + label. The label mirrors a courtesy comment back to the
+   Bitrix task (see `mirrorQAVerdictToBitrix`).
 
-Without the `QA_*` env the skill no-ops with a clear comment, so a non-QA agent
-that happens to receive the builtin skill never touches a box.
+`run_qa`'s instruction names the `sd-qa-process` skill explicitly, so the agent
+follows it even though its base instructions are generic.

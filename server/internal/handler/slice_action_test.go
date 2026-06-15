@@ -88,7 +88,7 @@ func TestBuildSliceInstructionRunQA(t *testing.T) {
 		t.Fatal("run_qa instruction must not be empty")
 	}
 	lower := strings.ToLower(got)
-	for _, want := range []string{"qa", "sddev-qa", "verdict", "btx-", "do not"} {
+	for _, want := range []string{"qa", "sd-qa-process", "verdict", "btx-", "do not"} {
 		if !strings.Contains(lower, strings.ToLower(want)) {
 			t.Errorf("run_qa instruction must mention %q, got: %s", want, got)
 		}
