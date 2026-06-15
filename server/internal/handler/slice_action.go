@@ -86,7 +86,7 @@ func buildSliceInstruction(kind, scope string) string {
 	case sliceActionRunQA:
 		base = "Run QA for this issue against the dev test box. Resolve the open pull request " +
 			"for this issue's branch (e.g. `gh pr list --head btx-<bitrix task id>`), then use " +
-			"the sddev-qa skill to switch the box to that branch, run a smoke test against the " +
+			"the agora-sddev-qa skill to switch the box to that branch, run a smoke test against the " +
 			"live UI, and restore the base branch afterwards. Post the pass/fail verdict as a " +
 			"comment and set the `qa:pass` or `qa:fail` label. Do NOT make code changes or merge " +
 			"anything — your verdict is advisory and the human decides what to do next."
