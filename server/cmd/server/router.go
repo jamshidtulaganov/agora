@@ -565,6 +565,15 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/api/upload-file", h.UploadFile)
 		r.Post("/api/feedback", h.CreateFeedback)
 
+		// SD: Bitrix import browser. Login-gated but NOT workspace-scoped —
+		// each task's destination workspace is decided by the routing config
+		// (BITRIX_GROUP_MAP / default slug / tag slugs), the same logic the
+		// inbound /bitrix/webhook uses. List groups + their routed workspace,
+		// list a group's tasks with already-synced state, and bulk-import.
+		r.Get("/api/bitrix/groups", h.ListBitrixGroups)
+		r.Get("/api/bitrix/tasks", h.ListBitrixTasks)
+		r.Post("/api/bitrix/import", h.ImportBitrixTasks)
+
 		// Attachment download — user-scoped (auth-only), NOT
 		// workspace-scoped. The handler self-resolves the workspace
 		// from the attachment row and enforces membership inside, so

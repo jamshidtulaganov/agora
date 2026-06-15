@@ -214,14 +214,18 @@ func TestBitrixWebhookUpdatesInPlace(t *testing.T) {
 	}
 }
 
-// TestBitrixWebhookIgnoresUntaggedTask: a task without the "ai" tag creates no
-// issue.
-func TestBitrixWebhookIgnoresUntaggedTask(t *testing.T) {
+// TestBitrixWebhookSkipsTaskMissingConfiguredTag: with BITRIX_TASK_TAG set, a
+// task lacking that tag creates no issue. (v2 behavior: the ai-only gate is gone
+// — the tag filter is OPTIONAL and only skips when configured AND absent. The
+// "import everything by default" path is covered by
+// TestBitrixSyncImportsAllTasksNoTag in bitrix_import_test.go.)
+func TestBitrixWebhookSkipsTaskMissingConfiguredTag(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("no database")
 	}
 	portal := newBitrixMockPortal(t)
 	configureBitrixEnv(t, portal.srv.URL)
+	t.Setenv("BITRIX_TASK_TAG", "ai")
 
 	const taskID = "bx-untagged-1"
 	cleanupBitrixIssues(t, taskID)
@@ -235,7 +239,7 @@ func TestBitrixWebhookIgnoresUntaggedTask(t *testing.T) {
 
 	_, _, _, _, count := issueByBitrixTaskID(t, taskID)
 	if count != 0 {
-		t.Fatalf("issue count = %d, want 0 for untagged task", count)
+		t.Fatalf("issue count = %d, want 0 for task missing configured tag", count)
 	}
 }
 

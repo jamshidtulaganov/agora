@@ -65,7 +65,12 @@ type Task struct {
 	Status        string
 	ResponsibleID string
 	GroupID       string
-	Tags          []string
+	// GroupName is the Bitrix workgroup name when the payload carried a nested
+	// group object (some tasks.task.get responses include {group:{id,name}}).
+	// Often empty — the handler resolves the name from GROUP_ID via a cached
+	// ListGroups / GetGroup lookup when this is blank.
+	GroupName string
+	Tags      []string
 }
 
 // jsonStr decodes a value that Bitrix may send as either a JSON string or a
@@ -120,8 +125,22 @@ type rawTask struct {
 	RespUpper   jsonStr `json:"RESPONSIBLE_ID"`
 	GroupID     jsonStr `json:"groupId"`
 	GroupUpper  jsonStr `json:"GROUP_ID"`
-	Tags        rawTags `json:"tags"`
-	TagsUpper   rawTags `json:"TAGS"`
+	// Group is the optional nested workgroup object Bitrix includes on some
+	// tasks.task.get responses ({"group":{"id":5,"name":"Sprint 12"}}). When
+	// present it lets us pick up the group NAME without a second sonet_group.get.
+	Group     rawGroupRef `json:"group"`
+	GroupUp   rawGroupRef `json:"GROUP"`
+	Tags      rawTags     `json:"tags"`
+	TagsUpper rawTags     `json:"TAGS"`
+}
+
+// rawGroupRef is the nested {id,name} object Bitrix sometimes embeds in a task
+// under "group". Both fields are flexibly typed.
+type rawGroupRef struct {
+	ID        jsonStr `json:"id"`
+	IDUpper   jsonStr `json:"ID"`
+	Name      jsonStr `json:"name"`
+	NameUpper jsonStr `json:"NAME"`
 }
 
 // firstNonEmpty returns the first non-empty value among the candidates,
@@ -141,13 +160,19 @@ func (rt rawTask) toTask() Task {
 	if len(tags) == 0 {
 		tags = rt.TagsUpper
 	}
+	groupID := firstNonEmpty(rt.GroupID, rt.GroupUpper)
+	if groupID == "" {
+		// Fall back to the nested group object's id when the flat field is absent.
+		groupID = firstNonEmpty(rt.Group.ID, rt.Group.IDUpper, rt.GroupUp.ID, rt.GroupUp.IDUpper)
+	}
 	return Task{
 		ID:            firstNonEmpty(rt.ID, rt.IDUpper),
 		Title:         firstNonEmpty(rt.Title, rt.TitleUpper),
 		Description:   firstNonEmpty(rt.Description, rt.DescUpper),
 		Status:        firstNonEmpty(rt.Status, rt.StatusUpper),
 		ResponsibleID: firstNonEmpty(rt.Responsible, rt.RespUpper),
-		GroupID:       firstNonEmpty(rt.GroupID, rt.GroupUpper),
+		GroupID:       groupID,
+		GroupName:     firstNonEmpty(rt.Group.Name, rt.Group.NameUpper, rt.GroupUp.Name, rt.GroupUp.NameUpper),
 		Tags:          []string(tags),
 	}
 }
@@ -435,6 +460,356 @@ func (c *Client) ListTasks(ctx context.Context, groupID, tag string) ([]Task, er
 		}
 	}
 	return tasks, nil
+}
+
+// Comment is the subset of a Bitrix task comment Agora mirrors into an issue
+// comment. Author/Date are normalized strings; Text is the raw POST_MESSAGE
+// (BB-code, left untouched — the handler renders it verbatim).
+type Comment struct {
+	ID     string
+	Author string
+	Date   string
+	Text   string
+}
+
+// rawComment mirrors the SCREAMING_SNAKE fields task.commentitem.getlist
+// returns per comment. Bitrix returns the list as a bare array (like
+// sonet_group.get), so the envelope decodes result directly into a slice.
+type rawComment struct {
+	ID         jsonStr `json:"ID"`
+	IDLower    jsonStr `json:"id"`
+	PostMsg    jsonStr `json:"POST_MESSAGE"`
+	PostMsgL   jsonStr `json:"postMessage"`
+	AuthorName jsonStr `json:"AUTHOR_NAME"`
+	AuthorL    jsonStr `json:"authorName"`
+	PostDate   jsonStr `json:"POST_DATE"`
+	PostDateL  jsonStr `json:"postDate"`
+}
+
+// listCommentsResponse is the envelope for task.commentitem.getlist. Like
+// sonet_group.get the result is a bare array, not wrapped in an object.
+type listCommentsResponse struct {
+	Result    []rawComment `json:"result"`
+	Error     string       `json:"error"`
+	ErrorDesc string       `json:"error_description"`
+}
+
+// maxCommentsPerTask caps how many comments GetTaskComments returns so a task
+// with a long discussion thread can't balloon the import. Mirrors the legacy
+// bot's bounded comment mirror.
+const maxCommentsPerTask = 50
+
+// GetTaskComments returns a task's comment feed (author, date, text), oldest
+// first, via task.commentitem.getlist with ORDER[ID]=asc. Comments with an
+// empty POST_MESSAGE (file-only system rows) are skipped. The result is capped
+// at maxCommentsPerTask. Reuses the same flexible jsonStr decoding as the rest
+// of the client so a number-vs-string id / author parses identically.
+func (c *Client) GetTaskComments(ctx context.Context, taskID string) ([]Comment, error) {
+	if c.baseURL == "" {
+		return nil, errors.New("bitrix: empty base URL")
+	}
+	if strings.TrimSpace(taskID) == "" {
+		return nil, errors.New("bitrix: empty task id")
+	}
+	endpoint := c.baseURL + "task.commentitem.getlist"
+	form := url.Values{}
+	form.Set("taskId", strings.TrimSpace(taskID))
+	form.Set("ORDER[ID]", "asc")
+
+	body, err := c.post(ctx, endpoint, form)
+	if err != nil {
+		return nil, err
+	}
+
+	var parsed listCommentsResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("bitrix: decode task.commentitem.getlist: %w", err)
+	}
+	if parsed.Error != "" {
+		return nil, fmt.Errorf("bitrix: task.commentitem.getlist error %s: %s", parsed.Error, parsed.ErrorDesc)
+	}
+
+	comments := make([]Comment, 0, len(parsed.Result))
+	for _, rc := range parsed.Result {
+		text := strings.TrimSpace(firstNonEmpty(rc.PostMsg, rc.PostMsgL))
+		if text == "" {
+			continue // file-only / system row — nothing to mirror as a comment
+		}
+		comments = append(comments, Comment{
+			ID:     firstNonEmpty(rc.ID, rc.IDLower),
+			Author: firstNonEmpty(rc.AuthorName, rc.AuthorL),
+			Date:   firstNonEmpty(rc.PostDate, rc.PostDateL),
+			Text:   text,
+		})
+		if len(comments) >= maxCommentsPerTask {
+			break
+		}
+	}
+	return comments, nil
+}
+
+// File is a task attachment Agora mirrors into an issue attachment. URL is the
+// (possibly host-relative) Bitrix DOWNLOAD_URL; the credential is in the REST
+// base URL so it can be fetched directly via DownloadFile. ContentType is left
+// empty by the listing call (Bitrix doesn't return it on disk.attachedObject.get)
+// and inferred by the handler from the filename extension.
+type File struct {
+	ID          string
+	Name        string
+	URL         string
+	Size        int64
+	ContentType string
+}
+
+// taskFilesResponse decodes tasks.task.get when selecting UF_TASK_WEBDAV_FILES.
+// The file id list is flexibly typed (string or number ids), so it is captured
+// raw and normalized via parseFileIDs.
+type taskFilesResponse struct {
+	Result struct {
+		Task struct {
+			Files  json.RawMessage `json:"ufTaskWebdavFiles"`
+			FilesU json.RawMessage `json:"UF_TASK_WEBDAV_FILES"`
+		} `json:"task"`
+	} `json:"result"`
+	Error     string `json:"error"`
+	ErrorDesc string `json:"error_description"`
+}
+
+// attachedObjectResponse decodes disk.attachedObject.get: {"result":{NAME,DOWNLOAD_URL,SIZE}}.
+type attachedObjectResponse struct {
+	Result struct {
+		ID          jsonStr `json:"ID"`
+		IDLower     jsonStr `json:"id"`
+		Name        jsonStr `json:"NAME"`
+		NameLower   jsonStr `json:"name"`
+		DownloadURL jsonStr `json:"DOWNLOAD_URL"`
+		DownloadL   jsonStr `json:"downloadUrl"`
+		Size        jsonStr `json:"SIZE"`
+		SizeLower   jsonStr `json:"size"`
+	} `json:"result"`
+	Error     string `json:"error"`
+	ErrorDesc string `json:"error_description"`
+}
+
+// maxFilesPerTask caps how many attachments GetTaskFiles resolves so a task
+// with dozens of files can't make the sync goroutine fan out unbounded
+// disk.attachedObject.get calls. Matches the legacy bot's per-task cap.
+const maxFilesPerTask = 8
+
+// GetTaskFiles resolves a task's attachments. It first reads the task's
+// UF_TASK_WEBDAV_FILES (a list of disk file ids) via tasks.task.get, then
+// resolves each id to NAME/DOWNLOAD_URL/SIZE via disk.attachedObject.get. The
+// returned URL is made absolute against the portal host derived from the REST
+// base URL when Bitrix hands back a host-relative path. The result is capped at
+// maxFilesPerTask; an individual file that fails to resolve is skipped rather
+// than failing the whole call.
+func (c *Client) GetTaskFiles(ctx context.Context, taskID string) ([]File, error) {
+	if c.baseURL == "" {
+		return nil, errors.New("bitrix: empty base URL")
+	}
+	if strings.TrimSpace(taskID) == "" {
+		return nil, errors.New("bitrix: empty task id")
+	}
+
+	endpoint := c.baseURL + "tasks.task.get"
+	form := url.Values{}
+	form.Set("taskId", strings.TrimSpace(taskID))
+	form.Add("select[]", "ID")
+	form.Add("select[]", "UF_TASK_WEBDAV_FILES")
+
+	body, err := c.post(ctx, endpoint, form)
+	if err != nil {
+		return nil, err
+	}
+	var parsed taskFilesResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("bitrix: decode tasks.task.get (files): %w", err)
+	}
+	if parsed.Error != "" {
+		return nil, fmt.Errorf("bitrix: tasks.task.get (files) error %s: %s", parsed.Error, parsed.ErrorDesc)
+	}
+
+	ids := parseFileIDs(parsed.Result.Task.Files)
+	if len(ids) == 0 {
+		ids = parseFileIDs(parsed.Result.Task.FilesU)
+	}
+
+	files := make([]File, 0, len(ids))
+	for _, fid := range ids {
+		if len(files) >= maxFilesPerTask {
+			break
+		}
+		f, err := c.getAttachedObject(ctx, fid)
+		if err != nil {
+			// A single unresolved file must not abort the whole attachment
+			// sync — skip it and keep going.
+			continue
+		}
+		if f.URL == "" {
+			continue
+		}
+		files = append(files, f)
+	}
+	return files, nil
+}
+
+// getAttachedObject resolves one disk file id to a File via disk.attachedObject.get.
+func (c *Client) getAttachedObject(ctx context.Context, fileID string) (File, error) {
+	endpoint := c.baseURL + "disk.attachedObject.get"
+	form := url.Values{}
+	form.Set("id", fileID)
+	body, err := c.post(ctx, endpoint, form)
+	if err != nil {
+		return File{}, err
+	}
+	var parsed attachedObjectResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return File{}, fmt.Errorf("bitrix: decode disk.attachedObject.get: %w", err)
+	}
+	if parsed.Error != "" {
+		return File{}, fmt.Errorf("bitrix: disk.attachedObject.get error %s: %s", parsed.Error, parsed.ErrorDesc)
+	}
+	r := parsed.Result
+	size, _ := strconv.ParseInt(firstNonEmpty(r.Size, r.SizeLower), 10, 64)
+	return File{
+		ID:   firstNonEmpty(r.ID, r.IDLower, jsonStr(fileID)),
+		Name: firstNonEmpty(r.Name, r.NameLower),
+		URL:  c.absoluteURL(firstNonEmpty(r.DownloadURL, r.DownloadL)),
+		Size: size,
+	}, nil
+}
+
+// parseFileIDs normalizes the UF_TASK_WEBDAV_FILES value, which Bitrix encodes
+// as an array of ids that may be strings or numbers (or, on some portals, a
+// map keyed by index). Anything it can't interpret yields no ids.
+func parseFileIDs(raw json.RawMessage) []string {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || string(raw) == "null" || string(raw) == "false" {
+		return nil
+	}
+	var out []string
+	add := func(s jsonStr) {
+		if v := strings.TrimSpace(s.String()); v != "" && v != "0" {
+			out = append(out, v)
+		}
+	}
+	if raw[0] == '[' {
+		var items []jsonStr
+		if err := json.Unmarshal(raw, &items); err == nil {
+			for _, it := range items {
+				add(it)
+			}
+		}
+		return out
+	}
+	if raw[0] == '{' {
+		var m map[string]jsonStr
+		if err := json.Unmarshal(raw, &m); err == nil {
+			for _, v := range m {
+				add(v)
+			}
+		}
+		return out
+	}
+	return out
+}
+
+// absoluteURL makes a Bitrix DOWNLOAD_URL absolute. Bitrix often returns a
+// host-relative path (e.g. "/rest/...&token=..."); we resolve it against the
+// scheme+host of the REST base URL so DownloadFile (and any HTTP client) can
+// fetch it. An already-absolute http(s) URL is returned unchanged.
+func (c *Client) absoluteURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
+		return raw
+	}
+	base, err := url.Parse(c.baseURL)
+	if err != nil || base.Host == "" {
+		return raw
+	}
+	rel, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	return base.ResolveReference(rel).String()
+}
+
+// maxDownloadBytes caps a single attachment download so a hostile/huge file
+// can't exhaust memory in the sync goroutine. 80 MiB matches the legacy bot.
+const maxDownloadBytes = 80 << 20
+
+// DownloadFile fetches the bytes at a Bitrix file URL. The portal credential is
+// already embedded in the REST base URL (and therefore in DOWNLOAD_URLs derived
+// from it), so no separate auth is attached. Redirects are followed. The body
+// is capped at maxDownloadBytes; a larger file returns an error rather than a
+// truncated download. The returned content type is the server's reported one
+// (may be empty).
+func (c *Client) DownloadFile(ctx context.Context, fileURL string) (data []byte, contentType string, err error) {
+	if strings.TrimSpace(fileURL) == "" {
+		return nil, "", errors.New("bitrix: empty file url")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("bitrix: build download request: %w", err)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("bitrix: download failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, "", fmt.Errorf("bitrix: download http %d", resp.StatusCode)
+	}
+	// Read one extra byte so we can distinguish "exactly at the cap" from
+	// "exceeds the cap" and reject the latter.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxDownloadBytes+1))
+	if err != nil {
+		return nil, "", fmt.Errorf("bitrix: read download body: %w", err)
+	}
+	if int64(len(body)) > maxDownloadBytes {
+		return nil, "", fmt.Errorf("bitrix: file exceeds %d byte cap", maxDownloadBytes)
+	}
+	return body, resp.Header.Get("Content-Type"), nil
+}
+
+// GetGroup resolves a single workgroup by id to its name via sonet_group.get
+// with FILTER[ID]. Returns ("", nil) when the group is not found (so the caller
+// can fall back to a placeholder name) and a non-nil error only on transport /
+// Bitrix-error failures. Used to label a Bitrix GROUP_ID when ListGroups hasn't
+// been cached.
+func (c *Client) GetGroup(ctx context.Context, groupID string) (Group, error) {
+	if c.baseURL == "" {
+		return Group{}, errors.New("bitrix: empty base URL")
+	}
+	if strings.TrimSpace(groupID) == "" {
+		return Group{}, errors.New("bitrix: empty group id")
+	}
+	endpoint := c.baseURL + "sonet_group.get"
+	form := url.Values{}
+	form.Set("FILTER[ID]", strings.TrimSpace(groupID))
+
+	body, err := c.post(ctx, endpoint, form)
+	if err != nil {
+		return Group{}, err
+	}
+	var parsed listGroupsResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return Group{}, fmt.Errorf("bitrix: decode sonet_group.get (by id): %w", err)
+	}
+	if parsed.Error != "" {
+		return Group{}, fmt.Errorf("bitrix: sonet_group.get (by id) error %s: %s", parsed.Error, parsed.ErrorDesc)
+	}
+	for _, rg := range parsed.Result {
+		id := firstNonEmpty(rg.ID, rg.IDLower)
+		if id == "" {
+			continue
+		}
+		return Group{ID: id, Name: firstNonEmpty(rg.Name, rg.NameLower)}, nil
+	}
+	return Group{}, nil // not found — caller falls back to a placeholder
 }
 
 // AddTaskComment posts a comment to a task's comment feed via

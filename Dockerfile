@@ -24,7 +24,11 @@ RUN cd server && CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/backfill_task_us
 # --- Runtime stage ---
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates tzdata
+# ffmpeg powers Bitrix video-attachment frame extraction (the backend decodes a
+# bug recording into still frames so agents can "see" it). When absent the sync
+# logs + skips frames rather than failing, so this is a soft dependency — but
+# shipping it in the image makes the feature work out of the box.
+RUN apk add --no-cache ca-certificates tzdata ffmpeg
 
 WORKDIR /app
 

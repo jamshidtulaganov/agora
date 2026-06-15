@@ -36,6 +36,22 @@ import (
 // instead of spawning duplicates.
 const bitrixTaskIDMetaKey = "bitrix_task_id"
 
+// bitrixCommentsImportedMetaKey marks an issue whose Bitrix comments have
+// already been mirrored, so a re-sync (ONTASKUPDATE) doesn't duplicate them.
+// Comments are imported once, on first issue creation.
+const bitrixCommentsImportedMetaKey = "bitrix_comments_imported"
+
+// bitrixFilesImportedMetaKey marks an issue whose Bitrix attachments (and any
+// extracted video frames) have already been imported, so a re-sync doesn't
+// re-download + re-upload them.
+const bitrixFilesImportedMetaKey = "bitrix_files_imported"
+
+// bitrixProjectMarkerPrefix is the durable marker embedded in a project's
+// description to link it back to its Bitrix workgroup id, used for dedup when
+// the same group is synced again. Format: "bitrix_group:<id>". A deterministic
+// marker (rather than a new column) keeps the change surgical + upstream-mergeable.
+const bitrixProjectMarkerPrefix = "bitrix_group:"
+
 // bitrixSyncTimeout bounds a single inbound sync so a slow Bitrix portal can't
 // hold a goroutine open indefinitely.
 const bitrixSyncTimeout = 20 * time.Second
@@ -55,6 +71,31 @@ func bitrixWebhookURL() string { return strings.TrimSpace(os.Getenv("BITRIX_WEBH
 // bitrixInboundSecret is an optional shared secret. When set, the inbound
 // webhook requires a matching ?secret= or X-Bitrix-Secret header.
 func bitrixInboundSecret() string { return strings.TrimSpace(os.Getenv("BITRIX_INBOUND_SECRET")) }
+
+// bitrixTaskTag is the OPTIONAL tag filter for imports. Empty (the default)
+// means import ALL tasks; when set, only tasks carrying this tag
+// (case-insensitive) are synced. Replaces the old hard "ai"-only gate so the
+// integration mirrors a whole Bitrix workgroup, not just AI-flagged tasks.
+func bitrixTaskTag() string { return strings.TrimSpace(os.Getenv("BITRIX_TASK_TAG")) }
+
+// bitrixTaskHasTag reports whether the task carries the given tag
+// (case-insensitive, whitespace-trimmed). An empty tag always matches (the
+// "import everything" default).
+func bitrixTaskHasTag(task *bitrix.Task, tag string) bool {
+	tag = strings.ToLower(strings.TrimSpace(tag))
+	if tag == "" {
+		return true
+	}
+	if task == nil {
+		return false
+	}
+	for _, t := range task.Tags {
+		if strings.EqualFold(strings.TrimSpace(t), tag) {
+			return true
+		}
+	}
+	return false
+}
 
 // bitrixPushStatus reports whether outbound mirroring should also push a real
 // status update (tasks.task.update) on top of the courtesy comment.
@@ -212,18 +253,66 @@ func (h *Handler) BitrixWebhook(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// bitrixSyncState carries per-run caches and a tally shared across a batch of
+// syncBitrixTask calls (the /api/bitrix/import endpoint syncs many tasks in one
+// request). Keeping the group→project and group-id→name maps here means a 200-
+// task import resolves each workgroup once instead of per task. The webhook path
+// allocates a fresh single-use state via syncBitrixTask.
+type bitrixSyncState struct {
+	client *bitrix.Client
+	tag    string // BITRIX_TASK_TAG snapshot ("" = import all)
+
+	// projectCache maps "<workspaceID>:<groupID>" -> resolved project id, so a
+	// batch creates/looks-up each group's project exactly once.
+	projectCache map[string]pgtype.UUID
+	// groupNames maps Bitrix group id -> name, lazily filled from GetGroup so a
+	// batch doesn't re-query the same workgroup name.
+	groupNames map[string]string
+
+	// importContent toggles comment + attachment (and video-frame) import. The
+	// webhook + import paths both enable it; it exists so a future caller can
+	// sync metadata-only.
+	importContent bool
+
+	// Tally for the import endpoint.
+	created int
+	updated int
+	skipped int
+}
+
+func (h *Handler) newBitrixSyncState() *bitrixSyncState {
+	return &bitrixSyncState{
+		client:        bitrix.NewClient(bitrixWebhookURL()),
+		tag:           bitrixTaskTag(),
+		projectCache:  map[string]pgtype.UUID{},
+		groupNames:    map[string]string{},
+		importContent: true,
+	}
+}
+
 // syncBitrixTask pulls a Bitrix task and reconciles it into the routed Agora
-// workspace. It is a no-op (nil error) when the task is not an AI task, or when
-// routing resolves to no workspace.
+// workspace. It is a no-op (nil error) when the task is filtered out by
+// BITRIX_TASK_TAG, or when routing resolves to no workspace. This is the
+// single-task entry point (webhook); it allocates a fresh per-call state.
 func (h *Handler) syncBitrixTask(ctx context.Context, taskID string, cfg bitrix.RouteConfig) error {
-	client := bitrix.NewClient(bitrixWebhookURL())
-	task, err := client.GetTask(ctx, taskID)
+	return h.syncBitrixTaskWithState(ctx, taskID, cfg, h.newBitrixSyncState())
+}
+
+// syncBitrixTaskWithState is the batched core of the inbound sync. It reuses the
+// caches + tally on st so a multi-task import resolves each workgroup once.
+func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cfg bitrix.RouteConfig, st *bitrixSyncState) error {
+	task, err := st.client.GetTask(ctx, taskID)
 	if err != nil {
 		return fmt.Errorf("get bitrix task %s: %w", taskID, err)
 	}
 
-	if !bitrix.IsAITask(task) {
-		slog.Debug("bitrix sync: task not tagged ai, skipping", "task_id", task.ID)
+	// Optional tag filter (default empty = import ALL tasks). Only skip when a
+	// tag is configured AND the task lacks it — routing still decides the
+	// workspace below, so tasks in unmapped groups are dropped there.
+	if !bitrixTaskHasTag(task, st.tag) {
+		slog.Debug("bitrix sync: task lacks configured tag, skipping",
+			"task_id", task.ID, "tag", st.tag)
+		st.skipped++
 		return nil
 	}
 
@@ -231,6 +320,7 @@ func (h *Handler) syncBitrixTask(ctx context.Context, taskID string, cfg bitrix.
 	if slug == "" {
 		slog.Warn("bitrix sync: no workspace resolved for task, skipping",
 			"task_id", task.ID, "group_id", task.GroupID, "tags", task.Tags)
+		st.skipped++
 		return nil
 	}
 
@@ -317,6 +407,7 @@ func (h *Handler) syncBitrixTask(ctx context.Context, taskID string, cfg bitrix.
 				"issue_id", util.UUIDToString(existing.ID),
 				"task_id", task.ID, "responsible_id", task.ResponsibleID)
 		}
+		st.updated++
 		return nil
 	}
 
@@ -328,6 +419,12 @@ func (h *Handler) syncBitrixTask(ctx context.Context, taskID string, cfg bitrix.
 	if err != nil {
 		return fmt.Errorf("resolve workspace owner: %w", err)
 	}
+
+	// Resolve the task's Bitrix workgroup to an Agora project in this workspace
+	// (creating it on first sight). A failure here is non-fatal: the issue is
+	// still created, just unfiled, so a missing "sonet" scope or a transient
+	// error never blocks task import.
+	projectID := h.resolveBitrixProject(ctx, ws.ID, task, st)
 
 	draft := bitrix.MapTaskToIssue(task)
 
@@ -343,6 +440,7 @@ func (h *Handler) syncBitrixTask(ctx context.Context, taskID string, cfg bitrix.
 		AssigneeID:   assigneeID,
 		CreatorType:  "member",
 		CreatorID:    ownerID,
+		ProjectID:    projectID,
 		// Dedup is on the task id (set as metadata post-create), not the
 		// title, so allow titles that collide with existing issues.
 		AllowDuplicate: true,
@@ -371,8 +469,59 @@ func (h *Handler) syncBitrixTask(ctx context.Context, taskID string, cfg bitrix.
 
 	slog.Info("bitrix sync: created issue from task",
 		"issue_id", util.UUIDToString(res.Issue.ID),
-		"task_id", task.ID, "workspace", slug, "status", draft.Status)
+		"task_id", task.ID, "workspace", slug, "status", draft.Status,
+		"project_id", util.UUIDToString(projectID))
+	st.created++
+
+	// Enrich the new issue with the task's comments and attachments. Best-effort
+	// and bounded; failures are logged, never fatal — the issue already exists.
+	// Only on first create (the dedup branch above returns before reaching here),
+	// so a re-sync doesn't duplicate comments/files.
+	if st.importContent {
+		h.importBitrixComments(ctx, ws.ID, res.Issue.ID, ownerID, task.ID, st)
+		h.importBitrixAttachments(ctx, ws.ID, res.Issue.ID, ownerID, task.ID, st)
+	}
 	return nil
+}
+
+// resolveBitrixProject maps a task's Bitrix GROUP_ID to an Agora project id in
+// the workspace, creating the project on first sight. Returns an invalid
+// (unset) UUID when the task has no group or project resolution fails — the
+// caller then creates an unfiled issue rather than failing the whole sync.
+func (h *Handler) resolveBitrixProject(ctx context.Context, wsID pgtype.UUID, task *bitrix.Task, st *bitrixSyncState) pgtype.UUID {
+	groupID := strings.TrimSpace(task.GroupID)
+	if groupID == "" {
+		return pgtype.UUID{}
+	}
+	name := strings.TrimSpace(task.GroupName)
+	if name == "" {
+		name = h.bitrixGroupName(ctx, groupID, st)
+	}
+	projectID, err := h.getOrCreateBitrixProject(ctx, wsID, groupID, name, st)
+	if err != nil {
+		slog.Warn("bitrix sync: could not resolve project for group, leaving issue unfiled",
+			"group_id", groupID, "workspace_id", util.UUIDToString(wsID), "error", err)
+		return pgtype.UUID{}
+	}
+	return projectID
+}
+
+// bitrixGroupName resolves (and caches) a Bitrix group id to its display name
+// via sonet_group.get. On any failure it returns "" so the caller falls back to
+// a generated placeholder name.
+func (h *Handler) bitrixGroupName(ctx context.Context, groupID string, st *bitrixSyncState) string {
+	if name, ok := st.groupNames[groupID]; ok {
+		return name
+	}
+	g, err := st.client.GetGroup(ctx, groupID)
+	name := ""
+	if err != nil {
+		slog.Debug("bitrix sync: group name lookup failed", "group_id", groupID, "error", err)
+	} else {
+		name = strings.TrimSpace(g.Name)
+	}
+	st.groupNames[groupID] = name
+	return name
 }
 
 // findIssueByBitrixTaskID returns the issue in the workspace whose metadata
