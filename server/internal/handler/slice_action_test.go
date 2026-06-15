@@ -75,6 +75,29 @@ func TestBuildSliceInstruction(t *testing.T) {
 	})
 }
 
+// TestBuildSliceInstructionRunQA covers the run_qa kind, whose contract differs
+// from the code/docs/tests/review kinds: it asks for a QA verdict on an existing
+// PR (no new PR), so it must reference the sddev-qa skill, the branch resolution,
+// the verdict, and the no-merge guardrail — and must NOT be a PR-opening action.
+func TestBuildSliceInstructionRunQA(t *testing.T) {
+	if !isKnownSliceActionKind(sliceActionRunQA) {
+		t.Fatal("run_qa must be a known slice-action kind")
+	}
+	got := buildSliceInstruction(sliceActionRunQA, "")
+	if got == "" {
+		t.Fatal("run_qa instruction must not be empty")
+	}
+	lower := strings.ToLower(got)
+	for _, want := range []string{"qa", "sddev-qa", "verdict", "btx-", "do not"} {
+		if !strings.Contains(lower, strings.ToLower(want)) {
+			t.Errorf("run_qa instruction must mention %q, got: %s", want, got)
+		}
+	}
+	if sliceActionOpensPR(sliceActionRunQA) {
+		t.Error("run_qa opens no PR; must be excluded from the branch-hint set")
+	}
+}
+
 // TestSanitizeSliceScope is a pure unit test of the scope sanitizer that defends
 // against mention injection. It runs without a database. The contract: after
 // sanitizing, the scope embedded as a "Focus on:" clause can NEVER be parsed by

@@ -35,6 +35,7 @@ const (
 	sliceActionWriteDocs  = "write_docs"
 	sliceActionWriteTests = "write_tests"
 	sliceActionReviewPart = "review_part"
+	sliceActionRunQA      = "run_qa"
 )
 
 // isKnownSliceActionKind reports whether kind is one of the supported scoped
@@ -42,7 +43,7 @@ const (
 // agent is resolved or any comment is written.
 func isKnownSliceActionKind(kind string) bool {
 	switch kind {
-	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart:
+	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA:
 		return true
 	default:
 		return false
@@ -82,6 +83,13 @@ func buildSliceInstruction(kind, scope string) string {
 		base = "Review the relevant part of this issue and post your findings as a comment for " +
 			"the human to review. Do NOT make or merge any changes yourself — your review is " +
 			"advisory and the human reviewer decides what to do next."
+	case sliceActionRunQA:
+		base = "Run QA for this issue against the dev test box. Resolve the open pull request " +
+			"for this issue's branch (e.g. `gh pr list --head btx-<bitrix task id>`), then use " +
+			"the sddev-qa skill to switch the box to that branch, run a smoke test against the " +
+			"live UI, and restore the base branch afterwards. Post the pass/fail verdict as a " +
+			"comment and set the `qa:pass` or `qa:fail` label. Do NOT make code changes or merge " +
+			"anything — your verdict is advisory and the human decides what to do next."
 	default:
 		return ""
 	}
