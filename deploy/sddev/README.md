@@ -27,12 +27,22 @@ curl -s -X POST "https://<box>/qa_switch.php?branch=billing&remote=origin" \
 # -> {"ok":true,"branch":"billing",...}
 ```
 
-## Agora side (I wire this once you give the box URL)
-QA Tester agent `custom_env`:
-```
-QA_SWITCH_URL=https://<box>/qa_switch.php
-QA_SDDEV_URL=https://<box>
-QA_SWITCH_TOKEN=<same as box>
-QA_LOGIN=demo   QA_PASSWORD=<staging>   QA_LOGIN_PATH=/site/login   QA_SDDEV_BASE_BRANCH=billing
-```
-Flow: QA agent → `qa_switch?branch=btx-<id>&remote=fork` → Playwright smoke on `QA_SDDEV_URL` → verdict → restore `?branch=billing&remote=origin`.
+## Agora side
+1. Create a QA agent from the **qa-tester** template (Agents → New → QA Tester).
+   It ships with the Playwright `webapp-testing` skill, and every agent already
+   carries the builtin **agora-sddev-qa** skill that drives the flow below.
+2. Set the agent's `custom_env` to match this box:
+   ```
+   QA_SWITCH_URL=https://<box>/qa_switch.php
+   QA_SDDEV_URL=https://<box>
+   QA_SWITCH_TOKEN=<same token as the box>
+   QA_LOGIN=demo   QA_PASSWORD=<staging>   QA_LOGIN_PATH=/site/login   QA_SDDEV_BASE_BRANCH=billing
+   ```
+3. On an issue with an open PR, fire **Run QA** (the `run_qa` slice action) or
+   @-mention the QA Tester. The agora-sddev-qa skill then runs:
+   `qa_switch?branch=btx-<id>&remote=fork` → Playwright smoke on `QA_SDDEV_URL`
+   → restore `?branch=billing&remote=origin` → posts a `qa:pass` / `qa:fail`
+   verdict comment + label.
+
+Without the `QA_*` env the skill no-ops with a clear comment, so a non-QA agent
+that happens to receive the builtin skill never touches a box.
