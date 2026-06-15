@@ -93,6 +93,18 @@ func buildSliceInstruction(kind, scope string) string {
 	return base
 }
 
+// sliceActionOpensPR reports whether a slice-action kind produces a pull request
+// (and so benefits from a deterministic, QA-resolvable branch name). review_part
+// posts an advisory comment and opens nothing.
+func sliceActionOpensPR(kind string) bool {
+	switch kind {
+	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests:
+		return true
+	default:
+		return false
+	}
+}
+
 // sanitizeSliceScope neutralizes a caller-supplied scope so it can NEVER form a
 // parsable mention once embedded in the slice-action comment body. The comment
 // is re-parsed by triggerTasksForComment via util.ParseMentions, whose
@@ -193,6 +205,16 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 	// inside buildSliceInstruction) keeps that renderer pure and unit-testable.
 	scope := sanitizeSliceScope(req.Scope)
 	instruction := buildSliceInstruction(req.Kind, scope)
+
+	// For PR-producing actions, pin the working branch to the Bitrix task id so
+	// the QA runner can later resolve the PR deterministically
+	// (gh pr list --head btx-<id>). Done in the handler, not in the pure
+	// buildSliceInstruction, because it depends on the issue's metadata.
+	if sliceActionOpensPR(req.Kind) {
+		if tid := bitrixTaskIDFromMetadata(issue.Metadata); tid != "" {
+			instruction += " Name the working branch btx-" + tid + "."
+		}
+	}
 
 	// Build the @mention link the comment-trigger path keys off:
 	// [@Name](mention://agent/<id>). The label is human-display only — the

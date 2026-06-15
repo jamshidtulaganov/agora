@@ -209,6 +209,49 @@ func TestCreateSliceActionAgentAssignee(t *testing.T) {
 	}
 }
 
+// TestCreateSliceActionBranchHint verifies that PR-producing actions on a
+// Bitrix-synced issue pin the working branch to btx-<bitrixTaskId>, while
+// review_part (which opens no PR) does not.
+func TestCreateSliceActionBranchHint(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("no DATABASE_URL; handler integration tests skipped")
+	}
+	agentID := createHandlerTestAgent(t, "Slice Branch "+time.Now().Format("150405.000000"), nil)
+	issueID := sliceActionTestIssue(t, "agent", agentID)
+
+	// Stamp the Bitrix task id the branch hint keys off.
+	if _, err := testPool.Exec(context.Background(),
+		`UPDATE issue SET metadata = '{"bitrix_task_id":"77123"}'::jsonb WHERE id = $1`, issueID); err != nil {
+		t.Fatalf("seed metadata: %v", err)
+	}
+
+	// draft_code opens a PR → deterministic branch hint present.
+	w := postSliceAction(t, issueID, map[string]any{"kind": sliceActionDraftCode})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("draft_code: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp CreateSliceActionResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !strings.Contains(resp.Instruction, "btx-77123") {
+		t.Errorf("draft_code should pin branch btx-77123, got: %s", resp.Instruction)
+	}
+
+	// review_part posts an advisory comment, opens no PR → no branch hint.
+	w2 := postSliceAction(t, issueID, map[string]any{"kind": sliceActionReviewPart})
+	if w2.Code != http.StatusCreated {
+		t.Fatalf("review_part: expected 201, got %d: %s", w2.Code, w2.Body.String())
+	}
+	var resp2 CreateSliceActionResponse
+	if err := json.NewDecoder(w2.Body).Decode(&resp2); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if strings.Contains(resp2.Instruction, "btx-") {
+		t.Errorf("review_part must not pin a branch, got: %s", resp2.Instruction)
+	}
+}
+
 // TestCreateSliceActionFallbackToOwnAgent verifies fallback (c): on a
 // member-assigned issue with no explicit agent_id, the action resolves to the
 // caller's own ready agent and queues exactly one task driven by the mention.
