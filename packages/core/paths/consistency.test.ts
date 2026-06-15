@@ -28,6 +28,8 @@ describe("paths.workspace() shape", () => {
         "runtimes",
         "aiAccounts",
         "skills",
+        "bitrix",
+        "mcp",
         "squads",
         "settings",
       ]),
@@ -50,6 +52,8 @@ describe("paths.workspace() shape", () => {
       ["runtimes", "runtimes"],
       ["aiAccounts", "ai-accounts"],
       ["skills", "skills"],
+      ["bitrix", "bitrix"],
+      ["mcp", "mcp"],
       ["squads", "squads"],
       ["settings", "settings"],
     ];

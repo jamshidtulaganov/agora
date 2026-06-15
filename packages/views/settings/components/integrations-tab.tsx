@@ -2,6 +2,7 @@
 
 import { LarkTab } from "./lark-tab";
 import { BitrixTab } from "./bitrix-tab";
+import { McpServersTab } from "./mcp-servers-tab";
 import { useT } from "../../i18n";
 
 // Integrations is the umbrella tab for third-party platform connections.
@@ -19,6 +20,7 @@ export function IntegrationsTab() {
         <LarkTab />
       </section>
       <BitrixTab />
+      <McpServersTab />
     </div>
   );
 }

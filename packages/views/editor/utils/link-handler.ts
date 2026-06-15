@@ -28,6 +28,8 @@ const WORKSPACE_ROUTE_SEGMENTS = new Set([
   "my-issues",
   "runtimes",
   "skills",
+  "bitrix",
+  "mcp",
   "settings",
 ]);
 

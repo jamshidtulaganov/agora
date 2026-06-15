@@ -21,6 +21,7 @@
     "./config": "./config/index.ts",
     "./auth": "./auth/index.ts",
     "./bitrix": "./bitrix/index.ts",
+    "./mcp": "./mcp/index.ts",
     "./workspace": "./workspace/index.ts",
     "./workspace/queries": "./workspace/queries.ts",
     "./workspace/mutations": "./workspace/mutations.ts",
