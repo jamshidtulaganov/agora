@@ -2429,6 +2429,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 
 		if h.shouldEnqueueAgentTask(r.Context(), issue) {
 			h.TaskService.EnqueueTaskForIssue(r.Context(), issue)
+			h.kickVideoFrameExtraction(issue)
 		}
 
 		// Squad assign: trigger the squad leader, respecting the backlog
@@ -2453,6 +2454,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		!h.isAgentRunningOnIssue(r, actorType, issue) {
 		if h.isAgentAssigneeReady(r.Context(), issue) {
 			h.TaskService.EnqueueTaskForIssue(r.Context(), issue)
+			h.kickVideoFrameExtraction(issue)
 		}
 		if h.isSquadLeaderReady(r.Context(), issue) {
 			h.enqueueSquadLeaderTask(r.Context(), issue, pgtype.UUID{}, actorType, actorID)
