@@ -694,6 +694,13 @@ func (c *Client) getAttachedObject(ctx context.Context, fileID string) (File, er
 	}, nil
 }
 
+// ResolveAttachedObject resolves one Bitrix disk attached-object id — the N in a
+// task description's "[DISK FILE ID=N]" — to a File (name + absolute download
+// URL). Public wrapper around getAttachedObject, used to embed inline images.
+func (c *Client) ResolveAttachedObject(ctx context.Context, id string) (File, error) {
+	return c.getAttachedObject(ctx, id)
+}
+
 // parseFileIDs normalizes the UF_TASK_WEBDAV_FILES value, which Bitrix encodes
 // as an array of ids that may be strings or numbers (or, on some portals, a
 // map keyed by index). Anything it can't interpret yields no ids.

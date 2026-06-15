@@ -436,6 +436,12 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 				}
 			}
 		}
+		// Resolve inline [DISK FILE ID=N] images in the description on re-sync too,
+		// so issues imported before inline-image embedding get fixed. Idempotent:
+		// a no-op once the refs are resolved.
+		if oid, oerr := h.bitrixWorkspaceOwner(ctx, ws.ID); oerr == nil {
+			h.embedInlineDiskImages(ctx, ws.ID, existing.ID, oid, st)
+		}
 		st.updated++
 		return nil
 	}
@@ -508,6 +514,7 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 	// so a re-sync doesn't duplicate comments/files.
 	if st.importContent {
 		h.importBitrixComments(ctx, ws.ID, res.Issue.ID, ownerID, task.ID, st)
+		h.embedInlineDiskImages(ctx, ws.ID, res.Issue.ID, ownerID, st)
 		h.importBitrixAttachments(ctx, ws.ID, res.Issue.ID, ownerID, task.ID, st)
 	}
 	return nil

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -314,6 +315,80 @@ func sanitizeEmbedName(name string) string {
 	return strings.TrimSpace(strings.NewReplacer(
 		"[", "(", "]", ")", "\n", " ", "\r", " ",
 	).Replace(name))
+}
+
+// diskFileRefRe matches Bitrix's inline file reference in a description body:
+// [DISK FILE ID=123] (the N is a disk attached-object id).
+var diskFileRefRe = regexp.MustCompile(`\[DISK FILE ID=(\d+)\]`)
+
+// maxInlineImages caps how many inline [DISK FILE ID=N] refs we resolve per task.
+const maxInlineImages = 12
+
+// embedInlineDiskImages resolves [DISK FILE ID=N] refs in the issue's
+// description to the real files (disk.attachedObject.get → download → store) and
+// rewrites each ref as an inline markdown image (a link for non-images), so the
+// screenshots referenced in a Bitrix task body actually render. Best-effort and
+// deduped; a ref that fails to resolve is left untouched. Runs once on first
+// import (create path).
+func (h *Handler) embedInlineDiskImages(ctx context.Context, wsID, issueID, ownerID pgtype.UUID, st *bitrixSyncState) {
+	if h.Storage == nil {
+		return
+	}
+	var desc string
+	if err := h.DB.QueryRow(ctx,
+		`SELECT coalesce(description, '') FROM issue WHERE id = $1 AND workspace_id = $2`,
+		issueID, wsID).Scan(&desc); err != nil || !strings.Contains(desc, "[DISK FILE ID=") {
+		return
+	}
+
+	repl := map[string]string{} // disk id -> markdown replacement
+	for _, m := range diskFileRefRe.FindAllStringSubmatch(desc, -1) {
+		id := m[1]
+		if _, done := repl[id]; done {
+			continue
+		}
+		if len(repl) >= maxInlineImages {
+			break
+		}
+		f, err := st.client.ResolveAttachedObject(ctx, id)
+		if err != nil || f.URL == "" {
+			continue
+		}
+		data, ctype, err := st.client.DownloadFile(ctx, f.URL)
+		if err != nil {
+			continue
+		}
+		contentType := pickAttachmentContentType(ctype, f.Name)
+		_, url, err := h.storeBitrixAttachment(ctx, wsID, issueID, ownerID, f.Name, contentType, data)
+		if err != nil {
+			continue
+		}
+		name := sanitizeEmbedName(f.Name)
+		if strings.HasPrefix(contentType, "image/") {
+			repl[id] = "\n\n![" + name + "](" + url + ")\n\n"
+		} else {
+			repl[id] = "[" + name + "](" + url + ")"
+		}
+	}
+	if len(repl) == 0 {
+		return
+	}
+
+	newDesc := diskFileRefRe.ReplaceAllStringFunc(desc, func(ref string) string {
+		if r, ok := repl[diskFileRefRe.FindStringSubmatch(ref)[1]]; ok {
+			return r
+		}
+		return ref
+	})
+	if newDesc == desc {
+		return
+	}
+	if _, err := h.DB.Exec(ctx,
+		`UPDATE issue SET description = $3, updated_at = now() WHERE id = $1 AND workspace_id = $2`,
+		issueID, wsID, newDesc); err != nil {
+		slog.Warn("bitrix sync: embed inline images failed",
+			"issue_id", util.UUIDToString(issueID), "error", err)
+	}
 }
 
 // extractAndStoreFrames writes the video bytes to a temp file, runs ffmpeg to
