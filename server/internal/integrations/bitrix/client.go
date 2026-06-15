@@ -300,6 +300,143 @@ func (c *Client) GetTask(ctx context.Context, taskID string) (*Task, error) {
 	return &task, nil
 }
 
+// Group is the subset of a Bitrix workgroup/project Agora cares about for the
+// import browser. Like Task, scalars are normalized to strings because Bitrix
+// encodes the id as either a JSON number or a JSON string depending on the
+// portal.
+type Group struct {
+	ID   string
+	Name string
+}
+
+// rawGroup mirrors the SCREAMING_SNAKE fields Bitrix returns for a workgroup
+// in the sonet_group.get result array. Both the id and name are flexibly
+// decoded so a number-vs-string id (the usual Bitrix inconsistency) parses.
+type rawGroup struct {
+	ID        jsonStr `json:"ID"`
+	IDLower   jsonStr `json:"id"`
+	Name      jsonStr `json:"NAME"`
+	NameLower jsonStr `json:"name"`
+}
+
+// listGroupsResponse is the envelope for sonet_group.get. Unlike the task
+// endpoints, the result is a bare ARRAY of group objects (not wrapped in a
+// {tasks:[...]} object), so result decodes directly into a slice.
+type listGroupsResponse struct {
+	Result    []rawGroup `json:"result"`
+	Error     string     `json:"error"`
+	ErrorDesc string     `json:"error_description"`
+}
+
+// maxGroups caps how many workgroups ListGroups returns so a portal with
+// thousands of projects can't balloon the picker. Matches the legacy bot's
+// "newest ~30-50" behavior; the order is ID DESC (newest first) server-side.
+const maxGroups = 50
+
+// ListGroups returns the active Bitrix workgroups/projects, newest first. It
+// POSTs sonet_group.get with ORDER ID DESC and FILTER ACTIVE=Y. The endpoint
+// needs the "sonet" REST scope on the inbound webhook; when that scope is
+// missing Bitrix returns an error envelope which surfaces as a non-nil error.
+// The result is capped at maxGroups.
+func (c *Client) ListGroups(ctx context.Context) ([]Group, error) {
+	if c.baseURL == "" {
+		return nil, errors.New("bitrix: empty base URL")
+	}
+	endpoint := c.baseURL + "sonet_group.get"
+	form := url.Values{}
+	form.Set("ORDER[ID]", "DESC")
+	form.Set("FILTER[ACTIVE]", "Y")
+
+	body, err := c.post(ctx, endpoint, form)
+	if err != nil {
+		return nil, err
+	}
+
+	var parsed listGroupsResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("bitrix: decode sonet_group.get: %w", err)
+	}
+	if parsed.Error != "" {
+		return nil, fmt.Errorf("bitrix: sonet_group.get error %s: %s", parsed.Error, parsed.ErrorDesc)
+	}
+
+	groups := make([]Group, 0, len(parsed.Result))
+	for _, rg := range parsed.Result {
+		id := firstNonEmpty(rg.ID, rg.IDLower)
+		if id == "" {
+			continue // skip malformed rows rather than emitting blank ids
+		}
+		groups = append(groups, Group{
+			ID:   id,
+			Name: firstNonEmpty(rg.Name, rg.NameLower),
+		})
+		if len(groups) >= maxGroups {
+			break
+		}
+	}
+	return groups, nil
+}
+
+// listTasksResponse is the envelope for tasks.task.list: {"result":{"tasks":[...]}}.
+type listTasksResponse struct {
+	Result struct {
+		Tasks []rawTask `json:"tasks"`
+	} `json:"result"`
+	Error     string `json:"error"`
+	ErrorDesc string `json:"error_description"`
+}
+
+// maxTasksPerGroup caps a single ListTasks page. Bitrix returns 50 per page;
+// the import browser shows one page (the newest tasks) rather than paginating,
+// matching the legacy dashboard's per-group view.
+const maxTasksPerGroup = 50
+
+// ListTasks returns the tasks in a Bitrix workgroup, newest first. It POSTs
+// tasks.task.list filtered by GROUP_ID (and TAG when tag != ""), selecting the
+// fields Agora maps. Reuses the same rawTask → Task parsing as GetTask so a
+// task's id/title/status/etc. decode identically regardless of Bitrix's
+// number-vs-string quirks.
+func (c *Client) ListTasks(ctx context.Context, groupID, tag string) ([]Task, error) {
+	if c.baseURL == "" {
+		return nil, errors.New("bitrix: empty base URL")
+	}
+	if strings.TrimSpace(groupID) == "" {
+		return nil, errors.New("bitrix: empty group id")
+	}
+	endpoint := c.baseURL + "tasks.task.list"
+	form := url.Values{}
+	form.Set("filter[GROUP_ID]", strings.TrimSpace(groupID))
+	if t := strings.TrimSpace(tag); t != "" {
+		form.Set("filter[TAG]", t)
+	}
+	for _, f := range []string{"ID", "TITLE", "DESCRIPTION", "GROUP_ID", "RESPONSIBLE_ID", "STATUS", "TAGS"} {
+		form.Add("select[]", f)
+	}
+	form.Set("order[ID]", "DESC")
+
+	body, err := c.post(ctx, endpoint, form)
+	if err != nil {
+		return nil, err
+	}
+
+	var parsed listTasksResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("bitrix: decode tasks.task.list: %w", err)
+	}
+	if parsed.Error != "" {
+		return nil, fmt.Errorf("bitrix: tasks.task.list error %s: %s", parsed.Error, parsed.ErrorDesc)
+	}
+
+	tasks := make([]Task, 0, len(parsed.Result.Tasks))
+	for _, rt := range parsed.Result.Tasks {
+		tasks = append(tasks, rt.toTask())
+		if len(tasks) >= maxTasksPerGroup {
+			break
+		}
+	}
+	return tasks, nil
+}
+
 // AddTaskComment posts a comment to a task's comment feed via
 // task.commentitem.add. Fields are sent as taskId + fields[POST_MESSAGE].
 func (c *Client) AddTaskComment(ctx context.Context, taskID, text string) error {
