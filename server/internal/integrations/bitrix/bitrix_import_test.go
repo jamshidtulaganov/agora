@@ -20,12 +20,13 @@ func TestGetTaskComments(t *testing.T) {
 		gotTaskID = r.PostForm.Get("taskId")
 		gotOrder = r.PostForm.Get("ORDER[ID]")
 		w.Header().Set("Content-Type", "application/json")
-		// Bare-array result (Bitrix shape). Mix string/number ids, include a
-		// file-only row with empty POST_MESSAGE that must be dropped.
+		// Bare-array result (Bitrix shape). Returned OUT OF ORDER (3 before 1) and
+		// with mixed string/number ids to prove the client sorts ascending; a
+		// file-only row with empty POST_MESSAGE must be dropped.
 		io.WriteString(w, `{"result":[
-			{"ID":1,"POST_MESSAGE":"first comment","AUTHOR_NAME":"Alice","POST_DATE":"2024-01-02 10:00:00"},
+			{"ID":3,"POST_MESSAGE":"second comment","AUTHOR_NAME":"Bob","POST_DATE":"2024-01-02 11:00:00"},
 			{"ID":"2","POST_MESSAGE":"  ","AUTHOR_NAME":"System","POST_DATE":"2024-01-02 10:05:00"},
-			{"ID":3,"POST_MESSAGE":"second comment","AUTHOR_NAME":"Bob","POST_DATE":"2024-01-02 11:00:00"}
+			{"ID":1,"POST_MESSAGE":"first comment","AUTHOR_NAME":"Alice","POST_DATE":"2024-01-02 10:00:00"}
 		]}`)
 	}))
 	defer srv.Close()
@@ -41,12 +42,17 @@ func TestGetTaskComments(t *testing.T) {
 	if gotTaskID != "55" {
 		t.Errorf("taskId = %q, want 55", gotTaskID)
 	}
-	if gotOrder != "asc" {
-		t.Errorf("ORDER[ID] = %q, want asc", gotOrder)
+	// The fix sends NO ORDER param: the legacy task.commentitem.getlist binds
+	// args positionally and url.Values.Encode would sort "ORDER[ID]" ahead of
+	// "taskId", making Bitrix reject the ORDER array as a non-integer taskId.
+	// Ordering is done client-side instead.
+	if gotOrder != "" {
+		t.Errorf("ORDER[ID] = %q, want empty (no ORDER param sent)", gotOrder)
 	}
 	if len(comments) != 2 {
 		t.Fatalf("got %d comments, want 2 (empty-message row dropped): %+v", len(comments), comments)
 	}
+	// Sorted ascending by id despite the server returning 3 before 1.
 	if comments[0].Author != "Alice" || comments[0].Text != "first comment" || comments[0].Date != "2024-01-02 10:00:00" {
 		t.Errorf("comment[0] = %+v", comments[0])
 	}

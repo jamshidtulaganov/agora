@@ -24,6 +24,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -513,8 +514,12 @@ func (c *Client) GetTaskComments(ctx context.Context, taskID string) ([]Comment,
 	}
 	endpoint := c.baseURL + "task.commentitem.getlist"
 	form := url.Values{}
+	// NOTE: do NOT pass an ORDER[...] param. The legacy task.commentitem.getlist
+	// binds arguments POSITIONALLY, and url.Values.Encode sorts "ORDER[ID]" ahead
+	// of "taskId" — so Bitrix maps the ORDER array into the first positional arg
+	// ($taskId) and rejects it ("Param #0 (taskId) expected to be of type
+	// integer"). We request unordered and sort client-side below instead.
 	form.Set("taskId", strings.TrimSpace(taskID))
-	form.Set("ORDER[ID]", "asc")
 
 	body, err := c.post(ctx, endpoint, form)
 	if err != nil {
@@ -541,9 +546,19 @@ func (c *Client) GetTaskComments(ctx context.Context, taskID string) ([]Comment,
 			Date:   firstNonEmpty(rc.PostDate, rc.PostDateL),
 			Text:   text,
 		})
-		if len(comments) >= maxCommentsPerTask {
-			break
+	}
+	// Oldest-first by numeric comment id (we can't ask Bitrix to ORDER; see the
+	// note above), then cap. Falls back to a string compare for non-numeric ids.
+	sort.Slice(comments, func(i, j int) bool {
+		a, errA := strconv.Atoi(comments[i].ID)
+		b, errB := strconv.Atoi(comments[j].ID)
+		if errA == nil && errB == nil {
+			return a < b
 		}
+		return comments[i].ID < comments[j].ID
+	})
+	if len(comments) > maxCommentsPerTask {
+		comments = comments[:maxCommentsPerTask]
 	}
 	return comments, nil
 }
