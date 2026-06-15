@@ -695,3 +695,34 @@ func TestBitrixEndpointsDisabled(t *testing.T) {
 		}
 	}
 }
+
+func TestBitrixAttachmentBlock(t *testing.T) {
+	if got := bitrixAttachmentBlock(nil); got != "" {
+		t.Errorf("empty embeds = %q, want empty", got)
+	}
+
+	block := bitrixAttachmentBlock([]bitrixEmbed{
+		{url: "/uploads/a.png", name: "shot [1].png", contentType: "image/png"},
+		{url: "/uploads/v.mp4", name: "rec.mp4", contentType: "video/mp4"},
+		{url: "/uploads/d.txt", name: "notes.txt", contentType: "text/plain"},
+	})
+
+	if !strings.Contains(block, "**Attachments (from Bitrix):**") {
+		t.Errorf("missing header:\n%s", block)
+	}
+	// Image embeds inline; the bracket in the name is sanitized so it can't break
+	// the markdown alt text.
+	if !strings.Contains(block, "![shot (1).png](/uploads/a.png)") {
+		t.Errorf("image embed wrong:\n%s", block)
+	}
+	// Video + other files render as labelled links, not inline images.
+	if !strings.Contains(block, "🎬 [rec.mp4](/uploads/v.mp4)") {
+		t.Errorf("video link wrong:\n%s", block)
+	}
+	if !strings.Contains(block, "📎 [notes.txt](/uploads/d.txt)") {
+		t.Errorf("file link wrong:\n%s", block)
+	}
+	if strings.Contains(block, "![rec.mp4]") {
+		t.Errorf("video must not embed as an inline image:\n%s", block)
+	}
+}

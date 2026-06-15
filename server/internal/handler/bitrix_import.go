@@ -188,6 +188,7 @@ func (h *Handler) importBitrixAttachments(ctx context.Context, wsID, issueID, ow
 
 	stored := 0
 	frames := 0
+	var embeds []bitrixEmbed
 	for _, f := range files {
 		data, ctype, err := st.client.DownloadFile(ctx, f.URL)
 		if err != nil {
@@ -196,20 +197,26 @@ func (h *Handler) importBitrixAttachments(ctx context.Context, wsID, issueID, ow
 			continue
 		}
 		contentType := pickAttachmentContentType(ctype, f.Name)
-		if _, err := h.storeBitrixAttachment(ctx, wsID, issueID, ownerID, f.Name, contentType, data); err != nil {
+		_, url, err := h.storeBitrixAttachment(ctx, wsID, issueID, ownerID, f.Name, contentType, data)
+		if err != nil {
 			slog.Warn("bitrix sync: store attachment failed",
 				"task_id", taskID, "name", f.Name, "error", err)
 			continue
 		}
 		stored++
+		embeds = append(embeds, bitrixEmbed{url: url, name: f.Name, contentType: contentType})
 
 		// Video → frames. Best-effort: if ffmpeg is missing or extraction
 		// fails, the original video attachment is still stored above.
 		if bitrix.IsVideo(f.Name, contentType) {
-			n := h.extractAndStoreFrames(ctx, wsID, issueID, ownerID, f.Name, data, st)
-			frames += n
+			frameEmbeds := h.extractAndStoreFrames(ctx, wsID, issueID, ownerID, f.Name, data, st)
+			frames += len(frameEmbeds)
+			embeds = append(embeds, frameEmbeds...)
 		}
 	}
+
+	// Surface every stored file/frame inline in the issue description.
+	h.appendBitrixAttachmentsToDescription(ctx, wsID, issueID, embeds)
 
 	h.setBitrixImportFlag(ctx, wsID, issueID, bitrixFilesImportedMetaKey)
 	slog.Info("bitrix sync: imported attachments",
@@ -220,17 +227,17 @@ func (h *Handler) importBitrixAttachments(ctx context.Context, wsID, issueID, ow
 // storeBitrixAttachment uploads bytes to Storage and records the attachment row
 // linked to the issue, mirroring the /api/upload-file path (storage.Upload +
 // CreateAttachment). The uploader is the workspace owner ("member"). Returns the
-// created attachment id.
-func (h *Handler) storeBitrixAttachment(ctx context.Context, wsID, issueID, ownerID pgtype.UUID, filename, contentType string, data []byte) (pgtype.UUID, error) {
+// created attachment id and its public URL (for embedding in the description).
+func (h *Handler) storeBitrixAttachment(ctx context.Context, wsID, issueID, ownerID pgtype.UUID, filename, contentType string, data []byte) (pgtype.UUID, string, error) {
 	id, err := uuid.NewV7()
 	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("generate attachment id: %w", err)
+		return pgtype.UUID{}, "", fmt.Errorf("generate attachment id: %w", err)
 	}
 	// Same key layout as UploadFile: workspaces/<ws>/<uuid><ext>.
 	key := "workspaces/" + util.UUIDToString(wsID) + "/" + id.String() + path.Ext(filename)
 	link, err := h.Storage.Upload(ctx, key, data, contentType, filename)
 	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("upload: %w", err)
+		return pgtype.UUID{}, "", fmt.Errorf("upload: %w", err)
 	}
 	att, err := h.Queries.CreateAttachment(ctx, db.CreateAttachmentParams{
 		ID:           pgtype.UUID{Bytes: id, Valid: true},
@@ -244,26 +251,87 @@ func (h *Handler) storeBitrixAttachment(ctx context.Context, wsID, issueID, owne
 		IssueID:      issueID,
 	})
 	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("create attachment row: %w", err)
+		return pgtype.UUID{}, "", fmt.Errorf("create attachment row: %w", err)
 	}
-	return att.ID, nil
+	return att.ID, link, nil
+}
+
+// bitrixEmbed is one stored attachment (file or extracted frame) to surface in
+// the issue description as inline markdown.
+type bitrixEmbed struct {
+	url         string
+	name        string
+	contentType string
+}
+
+// appendBitrixAttachmentsToDescription appends a markdown block linking every
+// imported attachment to the issue description, so the issue view AND the
+// Planner's claim brief see the screenshots/frames inline instead of as orphan
+// attachment rows. Images embed (![]); videos and other files render as links.
+// Best-effort: a failure is logged, never fatal (the attachment rows already
+// exist). Runs once, on first import (the same create-only path as the rows).
+func (h *Handler) appendBitrixAttachmentsToDescription(ctx context.Context, wsID, issueID pgtype.UUID, embeds []bitrixEmbed) {
+	block := bitrixAttachmentBlock(embeds)
+	if block == "" {
+		return
+	}
+	if _, err := h.DB.Exec(ctx,
+		`UPDATE issue SET description = coalesce(description, '') || $3, updated_at = now()
+		   WHERE id = $1 AND workspace_id = $2`,
+		issueID, wsID, block); err != nil {
+		slog.Warn("bitrix sync: append attachments to description failed",
+			"issue_id", util.UUIDToString(issueID), "error", err)
+	}
+}
+
+// bitrixAttachmentBlock renders the markdown block appended to an issue
+// description for the imported attachments. Images embed inline (![]); videos
+// and other files render as labelled links. Returns "" when there is nothing to
+// embed.
+func bitrixAttachmentBlock(embeds []bitrixEmbed) string {
+	if len(embeds) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n\n---\n\n**Attachments (from Bitrix):**\n\n")
+	for _, e := range embeds {
+		name := sanitizeEmbedName(e.name)
+		switch {
+		case strings.HasPrefix(e.contentType, "image/"):
+			fmt.Fprintf(&b, "![%s](%s)\n\n", name, e.url)
+		case strings.HasPrefix(e.contentType, "video/"):
+			fmt.Fprintf(&b, "🎬 [%s](%s)\n\n", name, e.url)
+		default:
+			fmt.Fprintf(&b, "📎 [%s](%s)\n\n", name, e.url)
+		}
+	}
+	return b.String()
+}
+
+// sanitizeEmbedName makes a filename safe for a markdown link/alt label: brackets
+// would terminate the [..](..) syntax and newlines would break the block.
+func sanitizeEmbedName(name string) string {
+	return strings.TrimSpace(strings.NewReplacer(
+		"[", "(", "]", ")", "\n", " ", "\r", " ",
+	).Replace(name))
 }
 
 // extractAndStoreFrames writes the video bytes to a temp file, runs ffmpeg to
 // pull still frames (scene detection with an interval fallback, mirroring the
 // legacy bot), and uploads each frame as an image attachment on the issue.
-// Returns the number of frames uploaded. ffmpeg missing / any failure logs and
-// returns 0 — never fatal.
-func (h *Handler) extractAndStoreFrames(ctx context.Context, wsID, issueID, ownerID pgtype.UUID, filename string, data []byte, st *bitrixSyncState) int {
+// Returns the stored frames as embeds (for inline description embedding); its
+// length is the count. ffmpeg missing / any failure logs and returns nil — never
+// fatal.
+func (h *Handler) extractAndStoreFrames(ctx context.Context, wsID, issueID, ownerID pgtype.UUID, filename string, data []byte, st *bitrixSyncState) []bitrixEmbed {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		slog.Warn("bitrix sync: ffmpeg not found, skipping video frames", "filename", filename)
-		return 0
+		return nil
 	}
 
 	tmpDir, err := os.MkdirTemp("", "bitrix-frames-*")
 	if err != nil {
 		slog.Warn("bitrix sync: temp dir failed", "error", err)
-		return 0
+		return nil
 	}
 	defer os.RemoveAll(tmpDir)
 
@@ -274,19 +342,19 @@ func (h *Handler) extractAndStoreFrames(ctx context.Context, wsID, issueID, owne
 	srcPath := filepath.Join(tmpDir, "source"+ext)
 	if err := os.WriteFile(srcPath, data, 0o600); err != nil {
 		slog.Warn("bitrix sync: write temp video failed", "error", err)
-		return 0
+		return nil
 	}
 
 	framePaths := extractVideoFrames(ctx, srcPath, tmpDir)
 	if len(framePaths) == 0 {
 		slog.Debug("bitrix sync: no frames extracted", "filename", filename)
-		return 0
+		return nil
 	}
 
 	base := strings.TrimSuffix(path.Base(filename), ext)
-	uploaded := 0
+	var embeds []bitrixEmbed
 	for i, fp := range framePaths {
-		if uploaded >= maxBitrixVideoFrames {
+		if len(embeds) >= maxBitrixVideoFrames {
 			break
 		}
 		frameBytes, err := os.ReadFile(fp)
@@ -294,13 +362,14 @@ func (h *Handler) extractAndStoreFrames(ctx context.Context, wsID, issueID, owne
 			continue
 		}
 		frameName := fmt.Sprintf("%s_frame_%03d.jpg", base, i+1)
-		if _, err := h.storeBitrixAttachment(ctx, wsID, issueID, ownerID, frameName, "image/jpeg", frameBytes); err != nil {
+		_, url, err := h.storeBitrixAttachment(ctx, wsID, issueID, ownerID, frameName, "image/jpeg", frameBytes)
+		if err != nil {
 			slog.Warn("bitrix sync: store frame failed", "name", frameName, "error", err)
 			continue
 		}
-		uploaded++
+		embeds = append(embeds, bitrixEmbed{url: url, name: frameName, contentType: "image/jpeg"})
 	}
-	return uploaded
+	return embeds
 }
 
 // extractVideoFrames shells out to ffmpeg to pull stills from srcPath into
