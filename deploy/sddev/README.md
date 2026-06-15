@@ -27,6 +27,17 @@ curl -s -X POST "https://<box>/qa_switch.php?branch=billing&remote=origin" \
 # -> {"ok":true,"branch":"billing",...}
 ```
 
+## Keep QA off real billing
+A QA checkout must not contact the real billing service. Merge
+[`qa-main-params.php`](qa-main-params.php) into the box's
+`protected/config/main.php` (see the file header) — it enables `simulate_host`
+(a fake license + generous subscription counts, valid to 2030). QA box only.
+
+> The bots' `scripts/setup_qa_infra.sh` (fly.io app + staging-MySQL provisioning)
+> is intentionally NOT ported: the sddev box is the developer's existing box, so
+> nothing new is provisioned — `qa_switch.php` only flips the checkout's branch
+> and rebuilds.
+
 ## Agora side
 1. Create a QA agent from the **qa-tester** template (Agents → New → QA Tester).
    It ships with the Playwright `webapp-testing` skill, and every agent already
