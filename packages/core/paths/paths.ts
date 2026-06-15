@@ -40,6 +40,7 @@ function workspaceScoped(slug: string) {
     settings: () => `${ws}/settings`,
     bitrix: () => `${ws}/bitrix`,
     mcp: () => `${ws}/mcp`,
+    plugins: () => `${ws}/plugins`,
     attachmentPreview: (id: string) => `${ws}/attachments/${encode(id)}/preview`,
   };
 }

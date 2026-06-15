@@ -126,6 +126,7 @@ import type {
   BitrixImportRequest,
   BitrixImportResponse,
 } from "../bitrix/types";
+import type { Plugin, CreatePluginRequest } from "../plugins/types";
 import type {
   CloudRuntimeNode,
   CreateCloudRuntimeNodeRequest,
@@ -1604,6 +1605,44 @@ export class ApiClient {
     await this.fetch(`/api/agents/${agentId}/skills/add`, {
       method: "POST",
       body: JSON.stringify({ skill_ids: skillIds }),
+    });
+  }
+
+  // Plugins
+  // A plugin bundles workspace skills + MCP connectors and installs them onto
+  // agents as a unit. Workspace is resolved server-side from the
+  // X-Workspace-Slug header (the same path the rest of the workspace-scoped
+  // endpoints use). The list response redacts `mcp_config` env values to "***".
+  async listPlugins(): Promise<Plugin[]> {
+    const res = await this.fetch<{ plugins?: Plugin[] }>("/api/plugins");
+    return res.plugins ?? [];
+  }
+
+  async createPlugin(data: CreatePluginRequest): Promise<{ id: string }> {
+    return this.fetch("/api/plugins", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deletePlugin(id: string): Promise<void> {
+    await this.fetch(`/api/plugins/${id}`, { method: "DELETE" });
+  }
+
+  // Binds the plugin's skills + merges its connectors into each agent's
+  // mcp_config (server-side merge preserves existing data). Returns the count
+  // of agents the plugin was installed onto.
+  async installPlugin(id: string, agentIds: string[]): Promise<{ installed: number }> {
+    return this.fetch(`/api/plugins/${id}/install`, {
+      method: "POST",
+      body: JSON.stringify({ agent_ids: agentIds }),
+    });
+  }
+
+  async uninstallPlugin(id: string, agentIds: string[]): Promise<{ uninstalled: number }> {
+    return this.fetch(`/api/plugins/${id}/uninstall`, {
+      method: "POST",
+      body: JSON.stringify({ agent_ids: agentIds }),
     });
   }
 

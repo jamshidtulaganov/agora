@@ -36,6 +36,7 @@ import {
   Zap,
   Users,
   Plug,
+  Boxes,
   Building2,
 } from "lucide-react";
 import { WorkspaceAvatar } from "../workspace/workspace-avatar";
@@ -119,6 +120,7 @@ type NavKey =
   | "runtimes"
   | "aiAccounts"
   | "skills"
+  | "plugins"
   | "mcp"
   | "bitrix"
   | "settings";
@@ -136,6 +138,7 @@ type NavLabelKey =
   | "runtimes"
   | "ai_accounts"
   | "skills"
+  | "plugins"
   | "mcp"
   | "bitrix"
   | "settings";
@@ -158,6 +161,7 @@ const configureNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[]
   { key: "runtimes", labelKey: "runtimes", icon: Monitor },
   { key: "aiAccounts", labelKey: "ai_accounts", icon: KeyRound },
   { key: "skills", labelKey: "skills", icon: BookOpenText },
+  { key: "plugins", labelKey: "plugins", icon: Boxes },
   { key: "mcp", labelKey: "mcp", icon: Plug },
   { key: "bitrix", labelKey: "bitrix", icon: Building2 },
   { key: "settings", labelKey: "settings", icon: Settings },
