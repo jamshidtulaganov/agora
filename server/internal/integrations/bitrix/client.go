@@ -834,6 +834,77 @@ func (c *Client) GetGroup(ctx context.Context, groupID string) (Group, error) {
 	return Group{}, nil // not found — caller falls back to a placeholder
 }
 
+// User is a minimal Bitrix portal user — the person behind a task's
+// RESPONSIBLE_ID. Only the fields Agora needs to display or map an assignee.
+type User struct {
+	ID       string
+	Name     string // given name
+	LastName string
+	Email    string
+	Position string
+}
+
+// FullName joins the given and family name, trimmed. Falls back to the email,
+// then the id, so the result is never empty when the user exists.
+func (u User) FullName() string {
+	if n := strings.TrimSpace(u.Name + " " + u.LastName); n != "" {
+		return n
+	}
+	if e := strings.TrimSpace(u.Email); e != "" {
+		return e
+	}
+	return strings.TrimSpace(u.ID)
+}
+
+// GetUser fetches a portal user by id via user.get. Returns a zero User (no
+// error) when the id is unknown so a missing/renamed responsible never fails a
+// sync. Requires the token's "user" scope (present on the SD webhook).
+func (c *Client) GetUser(ctx context.Context, userID string) (User, error) {
+	if c.baseURL == "" {
+		return User{}, errors.New("bitrix: empty base URL")
+	}
+	id := strings.TrimSpace(userID)
+	if id == "" {
+		return User{}, errors.New("bitrix: empty user id")
+	}
+	endpoint := c.baseURL + "user.get"
+	form := url.Values{}
+	form.Set("ID", id)
+
+	body, err := c.post(ctx, endpoint, form)
+	if err != nil {
+		return User{}, err
+	}
+	var parsed struct {
+		Result []struct {
+			ID           jsonStr `json:"ID"`
+			Name         jsonStr `json:"NAME"`
+			LastName     jsonStr `json:"LAST_NAME"`
+			Email        jsonStr `json:"EMAIL"`
+			WorkPosition jsonStr `json:"WORK_POSITION"`
+		} `json:"result"`
+		Error     string `json:"error"`
+		ErrorDesc string `json:"error_description"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return User{}, fmt.Errorf("bitrix: decode user.get: %w", err)
+	}
+	if parsed.Error != "" {
+		return User{}, fmt.Errorf("bitrix: user.get error %s: %s", parsed.Error, parsed.ErrorDesc)
+	}
+	if len(parsed.Result) == 0 {
+		return User{}, nil // unknown id — caller treats as "no info"
+	}
+	r := parsed.Result[0]
+	return User{
+		ID:       firstNonEmpty(r.ID, jsonStr(id)),
+		Name:     firstNonEmpty(r.Name),
+		LastName: firstNonEmpty(r.LastName),
+		Email:    firstNonEmpty(r.Email),
+		Position: firstNonEmpty(r.WorkPosition),
+	}, nil
+}
+
 // AddTaskComment posts a comment to a task's comment feed via
 // task.commentitem.add. Fields are sent as taskId + fields[POST_MESSAGE].
 func (c *Client) AddTaskComment(ctx context.Context, taskID, text string) error {

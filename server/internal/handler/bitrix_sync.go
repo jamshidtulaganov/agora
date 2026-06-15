@@ -278,6 +278,10 @@ type bitrixSyncState struct {
 	// groupNames maps Bitrix group id -> name, lazily filled from GetGroup so a
 	// batch doesn't re-query the same workgroup name.
 	groupNames map[string]string
+	// userCache maps Bitrix user id -> portal user (the task responsible),
+	// lazily filled from user.get so a batch resolves each assignee once. A nil
+	// value caches a failed/unknown lookup so it isn't retried per task.
+	userCache map[string]*bitrix.User
 
 	// importContent toggles comment + attachment (and video-frame) import. The
 	// webhook + import paths both enable it; it exists so a future caller can
@@ -296,6 +300,7 @@ func (h *Handler) newBitrixSyncState() *bitrixSyncState {
 		tag:           bitrixTaskTag(),
 		projectCache:  map[string]pgtype.UUID{},
 		groupNames:    map[string]string{},
+		userCache:     map[string]*bitrix.User{},
 		importContent: true,
 	}
 }
@@ -408,7 +413,8 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		// reassigned the Bitrix task. Apply only when it actually differs, via a
 		// RAW bus-free update (no EventIssueUpdated publish, to avoid an
 		// outbound echo).
-		assigneeType, assigneeID := h.bitrixResolveAssignee(ctx, ws.ID, task.ResponsibleID)
+		responsible := h.bitrixResponsible(ctx, st, task.ResponsibleID)
+		assigneeType, assigneeID := h.bitrixResolveAssignee(ctx, ws.ID, task.ResponsibleID, responsible)
 		if !sameIssueAssignee(existing, assigneeType, assigneeID) {
 			if err := h.bitrixSetIssueAssignee(ctx, existing.ID, ws.ID, assigneeType, assigneeID); err != nil {
 				return fmt.Errorf("update issue assignee: %w", err)
@@ -417,6 +423,10 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 				"issue_id", util.UUIDToString(existing.ID),
 				"task_id", task.ID, "responsible_id", task.ResponsibleID)
 		}
+		// Always refresh the responsible's display metadata (name/email/position)
+		// so the assignee is visible even when they aren't an Agora member, and so
+		// older issues synced before this existed get backfilled on re-import.
+		h.setBitrixResponsibleMetadata(ctx, existing.ID, ws.ID, task.ResponsibleID, responsible)
 
 		// Backfill the project for issues created before the group→project mapping
 		// existed (the create path sets ProjectID; older synced issues have none).
@@ -463,7 +473,8 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 
 	draft := bitrix.MapTaskToIssue(task)
 
-	assigneeType, assigneeID := h.bitrixResolveAssignee(ctx, ws.ID, task.ResponsibleID)
+	responsible := h.bitrixResponsible(ctx, st, task.ResponsibleID)
+	assigneeType, assigneeID := h.bitrixResolveAssignee(ctx, ws.ID, task.ResponsibleID, responsible)
 
 	res, err := h.IssueService.Create(ctx, service.IssueCreateParams{
 		WorkspaceID:  ws.ID,
@@ -501,6 +512,10 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 	}); err != nil {
 		return fmt.Errorf("set bitrix_task_id metadata: %w", err)
 	}
+
+	// Record the Bitrix responsible (name/email/position) so the assignee shows
+	// in the issue's Metadata panel even when they aren't an Agora member.
+	h.setBitrixResponsibleMetadata(ctx, res.Issue.ID, ws.ID, task.ResponsibleID, responsible)
 
 	slog.Info("bitrix sync: created issue from task",
 		"issue_id", util.UUIDToString(res.Issue.ID),
@@ -654,34 +669,108 @@ func (h *Handler) bitrixWorkspaceOwner(ctx context.Context, wsID pgtype.UUID) (p
 // unset (invalid) pair — leaving the issue unassigned — when the responsible
 // id is empty, not linked to any Agora user, or linked to a user who is not
 // a member of this workspace.
-func (h *Handler) bitrixResolveAssignee(ctx context.Context, wsID pgtype.UUID, responsibleID string) (pgtype.Text, pgtype.UUID) {
+func (h *Handler) bitrixResolveAssignee(ctx context.Context, wsID pgtype.UUID, responsibleID string, u *bitrix.User) (pgtype.Text, pgtype.UUID) {
 	none := pgtype.Text{}
-	if strings.TrimSpace(responsibleID) == "" {
-		return none, pgtype.UUID{}
+	// (1) Explicit Bitrix→Agora external-identity link.
+	if id := strings.TrimSpace(responsibleID); id != "" {
+		userID, err := h.userIDByExternalIdentity(ctx, providerBitrix, id)
+		if err != nil {
+			slog.Warn("bitrix sync: external identity lookup failed", "responsible_id", id, "error", err)
+		} else if t, uid := h.assigneeIfMember(ctx, wsID, userID); t.Valid {
+			return t, uid
+		}
 	}
-	userID, err := h.userIDByExternalIdentity(ctx, providerBitrix, responsibleID)
-	if err != nil {
-		slog.Warn("bitrix sync: external identity lookup failed", "responsible_id", responsibleID, "error", err)
-		return none, pgtype.UUID{}
+	// (2) Email match — most SD staff aren't explicitly linked but share a
+	// salesdoc.io email between Bitrix and Agora.
+	if u != nil {
+		if email := strings.TrimSpace(u.Email); email != "" {
+			if agoraUser, err := h.Queries.GetUserByEmail(ctx, email); err == nil {
+				if t, uid := h.assigneeIfMember(ctx, wsID, util.UUIDToString(agoraUser.ID)); t.Valid {
+					return t, uid
+				}
+			}
+		}
 	}
-	if userID == "" {
+	return none, pgtype.UUID{}
+}
+
+// assigneeIfMember returns ("member", uuid) when userID is a member of wsID,
+// else an unset pair. Shared by the external-identity and email assignee paths;
+// a linked user in another workspace must never become the assignee here.
+func (h *Handler) assigneeIfMember(ctx context.Context, wsID pgtype.UUID, userID string) (pgtype.Text, pgtype.UUID) {
+	none := pgtype.Text{}
+	if strings.TrimSpace(userID) == "" {
 		return none, pgtype.UUID{}
 	}
 	userUUID, err := util.ParseUUID(userID)
 	if err != nil {
 		return none, pgtype.UUID{}
 	}
-	// Confirm membership before assigning — a linked user in another workspace
-	// must not become the assignee here.
 	if _, err := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
 		UserID:      userUUID,
 		WorkspaceID: wsID,
 	}); err != nil {
-		slog.Debug("bitrix sync: responsible user not a member of workspace, leaving unassigned",
-			"user_id", userID, "workspace_id", util.UUIDToString(wsID))
 		return none, pgtype.UUID{}
 	}
 	return pgtype.Text{String: "member", Valid: true}, userUUID
+}
+
+// bitrixResponsible resolves a Bitrix RESPONSIBLE_ID to its portal user via a
+// per-sync cache (user.get). Returns nil when the id is empty or the lookup
+// fails — callers treat nil as "no assignee info". The nil result is cached so
+// a failed/unknown id isn't re-queried for every task in the batch.
+func (h *Handler) bitrixResponsible(ctx context.Context, st *bitrixSyncState, responsibleID string) *bitrix.User {
+	id := strings.TrimSpace(responsibleID)
+	if id == "" {
+		return nil
+	}
+	if u, ok := st.userCache[id]; ok {
+		return u
+	}
+	u, err := st.client.GetUser(ctx, id)
+	if err != nil || strings.TrimSpace(u.ID) == "" {
+		if err != nil {
+			slog.Warn("bitrix sync: user.get failed", "responsible_id", id, "error", err)
+		}
+		st.userCache[id] = nil
+		return nil
+	}
+	cached := u
+	st.userCache[id] = &cached
+	return &cached
+}
+
+// setBitrixResponsibleMetadata records the Bitrix responsible's id, display
+// name, email and position on the issue metadata so the assignee is visible in
+// the issue's Metadata panel even when the person isn't an Agora member (and so
+// can't be the native assignee). Best-effort per key; runs on create + re-sync.
+func (h *Handler) setBitrixResponsibleMetadata(ctx context.Context, issueID, wsID pgtype.UUID, responsibleID string, u *bitrix.User) {
+	kv := [][2]string{{"bitrix_responsible_id", strings.TrimSpace(responsibleID)}}
+	if u != nil {
+		kv = append(kv,
+			[2]string{"bitrix_responsible_name", u.FullName()},
+			[2]string{"bitrix_responsible_email", strings.TrimSpace(u.Email)},
+			[2]string{"bitrix_responsible_position", strings.TrimSpace(u.Position)},
+		)
+	}
+	for _, p := range kv {
+		if p[1] == "" {
+			continue
+		}
+		val, err := json.Marshal(p[1])
+		if err != nil {
+			continue
+		}
+		if _, err := h.Queries.SetIssueMetadataKey(ctx, db.SetIssueMetadataKeyParams{
+			ID:          issueID,
+			WorkspaceID: wsID,
+			Key:         p[0],
+			Value:       val,
+		}); err != nil {
+			slog.Warn("bitrix sync: set responsible metadata failed",
+				"issue_id", util.UUIDToString(issueID), "key", p[0], "error", err)
+		}
+	}
 }
 
 // --- outbound mirror --------------------------------------------------------

@@ -220,7 +220,8 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 	// buildSliceInstruction, because it depends on the issue's metadata.
 	if sliceActionOpensPR(req.Kind) {
 		if tid := bitrixTaskIDFromMetadata(issue.Metadata); tid != "" {
-			instruction += " Name the working branch btx-" + tid + "."
+			instruction += " Name the working branch btx-" + tid +
+				", branch it from `billing`, and open the pull request against the `billing` base branch (never master)."
 		}
 	}
 
