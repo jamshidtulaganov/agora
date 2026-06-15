@@ -407,6 +407,25 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 				"issue_id", util.UUIDToString(existing.ID),
 				"task_id", task.ID, "responsible_id", task.ResponsibleID)
 		}
+
+		// Backfill the project for issues created before the group→project mapping
+		// existed (the create path sets ProjectID; older synced issues have none).
+		// Raw, bus-free update — no EventIssueUpdated publish, to avoid an echo.
+		if !existing.ProjectID.Valid {
+			if pid := h.resolveBitrixProject(ctx, ws.ID, task, st); pid.Valid {
+				if _, err := h.DB.Exec(ctx,
+					`UPDATE issue SET project_id = $3, updated_at = now()
+					   WHERE id = $1 AND workspace_id = $2`,
+					existing.ID, ws.ID, pid); err != nil {
+					slog.Warn("bitrix sync: backfill project failed",
+						"issue_id", util.UUIDToString(existing.ID), "task_id", task.ID, "error", err)
+				} else {
+					slog.Info("bitrix sync: backfilled project on existing issue",
+						"issue_id", util.UUIDToString(existing.ID),
+						"task_id", task.ID, "project_id", util.UUIDToString(pid))
+				}
+			}
+		}
 		st.updated++
 		return nil
 	}
