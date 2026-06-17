@@ -1,6 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Agora">
+  <rect width="100" height="100" fill="#2563EB"/>
   <polygon
-    fill="#f9fafb"
+    fill="#ffffff"
+    transform="translate(17,17) scale(0.66)"
     points="50,4 57.27,32.45 82.5,17.5 67.55,42.73 96,50 67.55,57.27 82.5,82.5 57.27,67.55 50,96 42.73,67.55 17.5,82.5 32.45,57.27 4,50 32.45,42.73 17.5,17.5 42.73,32.45"
   />
 </svg>

@@ -27,9 +27,9 @@ const borderedSizes = {
 };
 
 /**
- * Pure CSS 8-pointed asterisk icon matching the Agora logo.
+ * Pure CSS 8-point aperture star icon matching the Agora logo.
  * Uses currentColor so it adapts to light/dark themes automatically.
- * Clip-path polygon traced from the original SVG path coordinates.
+ * Clip-path polygon traced from the brand star SVG coordinates.
  */
 export function AgoraIcon({
   className,
@@ -48,12 +48,10 @@ export function AgoraIcon({
   }, [animate]);
 
   const clipPath = `polygon(
-    45% 62.1%, 45% 100%, 55% 100%, 55% 62.1%,
-    81.8% 88.9%, 88.9% 81.8%, 62.1% 55%, 100% 55%,
-    100% 45%, 62.1% 45%, 88.9% 18.2%, 81.8% 11.1%,
-    55% 37.9%, 55% 0%, 45% 0%, 45% 37.9%,
-    18.2% 11.1%, 11.1% 18.2%, 37.9% 45%, 0% 45%,
-    0% 55%, 37.9% 55%, 11.1% 81.8%, 18.2% 88.9%
+    50% 4%, 57.27% 32.45%, 82.5% 17.5%, 67.55% 42.73%,
+    96% 50%, 67.55% 57.27%, 82.5% 82.5%, 57.27% 67.55%,
+    50% 96%, 42.73% 67.55%, 17.5% 82.5%, 32.45% 57.27%,
+    4% 50%, 32.45% 42.73%, 17.5% 17.5%, 42.73% 32.45%
   )`;
 
   if (bordered) {

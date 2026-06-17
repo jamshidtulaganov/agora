@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="Agora — project management for human and agent teams">
+  <rect width="1200" height="630" fill="#0b0e14"/>
+  <polygon
+    fill="#3B82F6"
+    transform="translate(525,120) scale(1.5)"
+    points="50,4 57.27,32.45 82.5,17.5 67.55,42.73 96,50 67.55,57.27 82.5,82.5 57.27,67.55 50,96 42.73,67.55 17.5,82.5 32.45,57.27 4,50 32.45,42.73 17.5,17.5 42.73,32.45"
+  />
+  <text x="600" y="415" text-anchor="middle" font-family="Inter, -apple-system, system-ui, sans-serif" font-size="120" font-weight="600" letter-spacing="-3" fill="#ffffff">agora</text>
+  <text x="600" y="475" text-anchor="middle" font-family="Inter, -apple-system, system-ui, sans-serif" font-size="29" font-weight="400" fill="#94a3b8">Project management for human + agent teams</text>
+</svg>

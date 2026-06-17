@@ -68,18 +68,30 @@ export const metadata: Metadata = {
   description:
     "Open-source platform that turns coding agents into real teammates. Assign tasks, track progress, compound skills.",
   icons: {
-    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon-32x32.png", type: "image/png", sizes: "32x32" },
+      { url: "/favicon-16x16.png", type: "image/png", sizes: "16x16" },
+    ],
     shortcut: ["/favicon.svg"],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
+  manifest: "/site.webmanifest",
   openGraph: {
     type: "website",
     siteName: "Agora",
     locale: "en_US",
+    url: "/",
+    title: "Agora — Project Management for Human + Agent Teams",
+    description:
+      "Open-source platform that turns coding agents into real teammates. Assign tasks, track progress, compound skills.",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "Agora" }],
   },
   twitter: {
     card: "summary_large_image",
     site: "@agora_hq",
     creator: "@agora_hq",
+    images: ["/og.png"],
   },
   alternates: {
     canonical: "/",
