@@ -37,6 +37,13 @@ var defaultOrigins = []string{
 	"http://localhost:3000", // Next.js dev
 	"http://localhost:5173", // electron-vite dev
 	"http://localhost:5174", // electron-vite dev (fallback port)
+	// Loopback-IP mirrors: browsers treat http://127.0.0.1:3000 and
+	// http://localhost:3000 as distinct origins, so a self-host user who
+	// navigates to the 127.0.0.1 host would otherwise get their WebSocket
+	// upgrade rejected (no live issue/task updates) even though the page loads.
+	"http://127.0.0.1:3000",
+	"http://127.0.0.1:5173",
+	"http://127.0.0.1:5174",
 }
 
 func allowedOrigins() []string {
