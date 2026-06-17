@@ -1550,6 +1550,26 @@ func (s *TaskService) MaybeRetryFailedTask(ctx context.Context, parent db.AgentT
 		return nil, nil
 	}
 
+	// Idempotency guard for the duplicate-branch failure mode. If this task's
+	// issue already has an in-flight PR (open or draft), the agent already
+	// delivered its work and this "failure" is a post-delivery hang — the CLI
+	// session wedged after committing/pushing and then tripped the idle
+	// watchdog or got reclaimed by recover-orphans. Auto-retrying would start a
+	// fresh session (the local work_dir/session is gone after a daemon restart)
+	// that re-clones the repo and invents a SECOND branch for work already up
+	// for review — the feat/persian-lang vs feat/persian-relocalize duplication
+	// we hit. Only in-flight PRs suppress the retry, so a genuinely new
+	// follow-up task on an issue whose prior PR already merged still recovers
+	// normally.
+	if parent.IssueID.Valid && s.issueHasInFlightPR(ctx, parent.IssueID) {
+		slog.Info("task auto-retry skipped: issue already has an in-flight PR",
+			"task_id", util.UUIDToString(parent.ID),
+			"issue_id", util.UUIDToString(parent.IssueID),
+			"reason", reason,
+		)
+		return nil, nil
+	}
+
 	child, err := s.Queries.CreateRetryTask(ctx, parent.ID)
 	if err != nil {
 		slog.Warn("task auto-retry failed",
@@ -1572,6 +1592,26 @@ func (s *TaskService) MaybeRetryFailedTask(ctx context.Context, parent db.AgentT
 	s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, child)
 	s.NotifyTaskEnqueued(ctx, child)
 	return &child, nil
+}
+
+// issueHasInFlightPR reports whether the issue has at least one open or draft
+// pull request. It is the "work already delivered" signal that suppresses
+// post-delivery churn from a hung agent session: an auto-retry that would fork
+// a duplicate branch (MaybeRetryFailedTask) and a stuck-issue reset that would
+// regress the issue to todo while a PR sits awaiting review (HandleFailedTasks).
+// Fails open (returns false) on a query error so a transient read can never
+// permanently wedge infra recovery — at worst it falls back to the prior
+// behaviour for that one tick.
+func (s *TaskService) issueHasInFlightPR(ctx context.Context, issueID pgtype.UUID) bool {
+	agg, err := s.Queries.GetIssuePullRequestCloseAggregate(ctx, issueID)
+	if err != nil {
+		slog.Warn("in-flight PR check failed; assuming none",
+			"issue_id", util.UUIDToString(issueID),
+			"error", err,
+		)
+		return false
+	}
+	return agg.OpenCount > 0
 }
 
 // RerunIssue creates a fresh queued task for an agent on the issue. Used by
@@ -1747,7 +1787,15 @@ func (s *TaskService) HandleFailedTasks(ctx context.Context, tasks []db.AgentTas
 							"error", checkErr,
 						)
 					} else if !hasActive {
-						if _, updateErr := s.Queries.UpdateIssueStatus(ctx, db.UpdateIssueStatusParams{
+						if s.issueHasInFlightPR(ctx, t.IssueID) {
+							// Delivered work awaiting review — a hung session
+							// that already pushed a PR. Leave the issue
+							// in_progress; regressing it to todo would tell the
+							// human owner nothing was done.
+							slog.Info("handle failed tasks: issue kept in_progress (in-flight PR present)",
+								"issue_id", issueKey,
+							)
+						} else if _, updateErr := s.Queries.UpdateIssueStatus(ctx, db.UpdateIssueStatusParams{
 							ID:          t.IssueID,
 							Status:      "todo",
 							WorkspaceID: issue.WorkspaceID,
