@@ -26,6 +26,7 @@ import { captureDownloadIntent } from "@agora/core/analytics";
 import { setLoggedInCookie } from "@/features/auth/auth-cookie";
 import Link from "next/link";
 import { LoginPage, validateCliCallback } from "@agora/views/auth";
+import { AgoraIcon } from "@agora/ui/components/common/agora-icon";
 import { useT } from "@agora/views/i18n";
 
 /**
@@ -186,6 +187,14 @@ function LoginPageContent() {
 
   return (
     <LoginPage
+      logo={
+        <span className="flex items-center gap-2">
+          <AgoraIcon className="size-7 text-brand" noSpin />
+          <span className="font-serif text-2xl font-medium lowercase tracking-tight">
+            agora
+          </span>
+        </span>
+      }
       onSuccess={handleSuccess}
       google={
         googleClientId

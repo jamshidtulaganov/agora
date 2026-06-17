@@ -79,7 +79,7 @@ export function StepWelcome({
         <div className="flex flex-1 flex-col justify-center px-6 pb-12 sm:px-10 md:px-20 lg:px-20 xl:px-24">
           <div className="flex w-full max-w-[540px] flex-col gap-8">
             <div className="flex items-center gap-2.5">
-              <AgoraIcon className="size-5 text-foreground" noSpin />
+              <AgoraIcon className="size-6 text-brand" animate />
               <span className="font-serif text-xl font-medium tracking-tight">
                 {t(($) => $.welcome.wordmark)}
               </span>
