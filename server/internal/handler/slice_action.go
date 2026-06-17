@@ -36,6 +36,7 @@ const (
 	sliceActionWriteTests = "write_tests"
 	sliceActionReviewPart = "review_part"
 	sliceActionRunQA      = "run_qa"
+	sliceActionRunCI      = "run_ci"
 )
 
 // isKnownSliceActionKind reports whether kind is one of the supported scoped
@@ -43,7 +44,7 @@ const (
 // agent is resolved or any comment is written.
 func isKnownSliceActionKind(kind string) bool {
 	switch kind {
-	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA:
+	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunCI:
 		return true
 	default:
 		return false
@@ -90,6 +91,18 @@ func buildSliceInstruction(kind, scope string) string {
 			"live UI, and restore the base branch afterwards. Post the pass/fail verdict as a " +
 			"comment and set the `qa:pass` or `qa:fail` label. Do NOT make code changes or merge " +
 			"anything — your verdict is advisory and the human decides what to do next."
+	case sliceActionRunCI:
+		base = "Run the CI gate for this issue's branch. Resolve the open pull request " +
+			"(e.g. `gh pr list --head btx-<bitrix task id>`) and check out its branch. Detect the " +
+			"project's checks and run them, reporting strictly by EXIT CODE — not opinion: for PHP run " +
+			"`php -l` on every changed .php file plus any test suite (phpunit / codeception); for JS/TS " +
+			"run the lint and test scripts if present (e.g. `pnpm lint`, `pnpm test`); for Go run " +
+			"`go build ./...` and `go test ./...`. Then inspect the diff for the agent-fixes-the-test " +
+			"failure mode: if it rewrites, weakens, or deletes test assertions, or lowers coverage / " +
+			"disables lint to pass, call that out explicitly. Post a comment listing each command, its " +
+			"exit status, and any failing output, then set the `ci:pass` label ONLY if every check " +
+			"exited 0, otherwise `ci:fail`. Do NOT change code or merge anything — the gate is a " +
+			"deterministic signal and the human decides what to do next."
 	default:
 		return ""
 	}

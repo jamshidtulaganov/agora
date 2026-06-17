@@ -98,6 +98,29 @@ func TestBuildSliceInstructionRunQA(t *testing.T) {
 	}
 }
 
+// TestBuildSliceInstructionRunCI covers the run_ci kind: a deterministic gate on
+// an existing PR branch (no new PR). It must run the checks and report by exit
+// code, set the ci:pass/ci:fail label, reference branch resolution + the no-merge
+// guardrail, and must NOT be a PR-opening action.
+func TestBuildSliceInstructionRunCI(t *testing.T) {
+	if !isKnownSliceActionKind(sliceActionRunCI) {
+		t.Fatal("run_ci must be a known slice-action kind")
+	}
+	got := buildSliceInstruction(sliceActionRunCI, "")
+	if got == "" {
+		t.Fatal("run_ci instruction must not be empty")
+	}
+	lower := strings.ToLower(got)
+	for _, want := range []string{"ci:pass", "ci:fail", "exit", "btx-", "do not"} {
+		if !strings.Contains(lower, strings.ToLower(want)) {
+			t.Errorf("run_ci instruction must mention %q, got: %s", want, got)
+		}
+	}
+	if sliceActionOpensPR(sliceActionRunCI) {
+		t.Error("run_ci opens no PR; must be excluded from the branch-hint set")
+	}
+}
+
 // TestSanitizeSliceScope is a pure unit test of the scope sanitizer that defends
 // against mention injection. It runs without a database. The contract: after
 // sanitizing, the scope embedded as a "Focus on:" clause can NEVER be parsed by
