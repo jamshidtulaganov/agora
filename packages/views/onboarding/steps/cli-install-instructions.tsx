@@ -10,7 +10,7 @@ import { useT } from "../../i18n";
 
 const INSTALL_CMD =
   "curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash";
-const SETUP_CMD = "agora setup";
+const SETUP_CMD = "agora setup self-host";
 
 function CopyButton({ text }: { text: string }) {
   const { t } = useT("onboarding");
@@ -64,11 +64,11 @@ function Step({ n, label, cmd }: { n: number; label: string; cmd: string }) {
 
 /**
  * CLI install instructions — two copy-and-run commands. Hardcoded because
- * there's nothing environmental to infer: step 1 is the public install
- * script, step 2 is the cloud `agora setup` which the CLI itself knows
- * the endpoints for. Local development tests a self-host variant by
- * typing the extended command directly in the terminal; no need to
- * thread env vars through React.
+ * step 1 is the public install script; step 2 is `agora setup self-host`
+ * — this is a self-hosted SD instance, so the CLI connects to the local
+ * server (defaults to localhost:8080 / :3000). For a remote deployment,
+ * append `--server-url <api> --app-url <app>` (and `--callback-host` when
+ * setting up from a different machine than the server).
  */
 export function CliInstallInstructions() {
   const { t } = useT("onboarding");
