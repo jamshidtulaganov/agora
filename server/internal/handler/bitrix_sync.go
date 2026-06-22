@@ -275,6 +275,15 @@ type bitrixSyncState struct {
 	// projectCache maps "<workspaceID>:<groupID>" -> resolved project id, so a
 	// batch creates/looks-up each group's project exactly once.
 	projectCache map[string]pgtype.UUID
+	// sprintCache maps "<workspaceID>:<groupID>" -> resolved sprint id, so a
+	// batch creates/looks-up each sprint-named group's Agora sprint exactly once
+	// (the sprint lives under the sd-main project, keyed off the same group id).
+	sprintCache map[string]pgtype.UUID
+	// sdMainProjectID memoizes the "sd-main" project id once per run (nil until
+	// first resolved) so a batch doesn't re-query it per task. The inner pointer
+	// being nil while the outer field is set is impossible here — we only assign
+	// a resolved id; a missing sd-main leaves the field nil so it is re-attempted.
+	sdMainProjectID *pgtype.UUID
 	// groupNames maps Bitrix group id -> name, lazily filled from GetGroup so a
 	// batch doesn't re-query the same workgroup name.
 	groupNames map[string]string
@@ -299,6 +308,7 @@ func (h *Handler) newBitrixSyncState() *bitrixSyncState {
 		client:        bitrix.NewClient(bitrixWebhookURL()),
 		tag:           bitrixTaskTag(),
 		projectCache:  map[string]pgtype.UUID{},
+		sprintCache:   map[string]pgtype.UUID{},
 		groupNames:    map[string]string{},
 		userCache:     map[string]*bitrix.User{},
 		importContent: true,
@@ -428,22 +438,42 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		// older issues synced before this existed get backfilled on re-import.
 		h.setBitrixResponsibleMetadata(ctx, existing.ID, ws.ID, task.ResponsibleID, responsible)
 
+		// Resolve the task's group to its Agora target (project + optional sprint).
+		// For a group already mapped to a project this returns that project with no
+		// sprint (case (1) of resolveBitrixTarget), so re-syncing an issue that
+		// predates sprint-mapping never spuriously mints a sprint — the new-syncs-
+		// only rule holds on the update path too.
+		targetProject, targetSprint := h.resolveBitrixTarget(ctx, ws.ID, task, st)
+
 		// Backfill the project for issues created before the group→project mapping
 		// existed (the create path sets ProjectID; older synced issues have none).
+		// Only fill when missing — never reassign a project a user may have moved.
 		// Raw, bus-free update — no EventIssueUpdated publish, to avoid an echo.
-		if !existing.ProjectID.Valid {
-			if pid := h.resolveBitrixProject(ctx, ws.ID, task, st); pid.Valid {
-				if _, err := h.DB.Exec(ctx,
-					`UPDATE issue SET project_id = $3, updated_at = now()
-					   WHERE id = $1 AND workspace_id = $2`,
-					existing.ID, ws.ID, pid); err != nil {
-					slog.Warn("bitrix sync: backfill project failed",
-						"issue_id", util.UUIDToString(existing.ID), "task_id", task.ID, "error", err)
-				} else {
-					slog.Info("bitrix sync: backfilled project on existing issue",
-						"issue_id", util.UUIDToString(existing.ID),
-						"task_id", task.ID, "project_id", util.UUIDToString(pid))
-				}
+		if !existing.ProjectID.Valid && targetProject.Valid {
+			if _, err := h.DB.Exec(ctx,
+				`UPDATE issue SET project_id = $3, updated_at = now()
+				   WHERE id = $1 AND workspace_id = $2`,
+				existing.ID, ws.ID, targetProject); err != nil {
+				slog.Warn("bitrix sync: backfill project failed",
+					"issue_id", util.UUIDToString(existing.ID), "task_id", task.ID, "error", err)
+			} else {
+				slog.Info("bitrix sync: backfilled project on existing issue",
+					"issue_id", util.UUIDToString(existing.ID),
+					"task_id", task.ID, "project_id", util.UUIDToString(targetProject))
+			}
+		}
+		// Link the issue to its Bitrix-derived sprint on re-sync too, so issues
+		// synced before sprint-mapping existed get backfilled. SetIssueSprint is an
+		// idempotent upsert keyed on issue_id, so a no-op when already linked.
+		// Best-effort: a failure is logged, never fatal.
+		if targetSprint.Valid {
+			if err := h.Queries.SetIssueSprint(ctx, db.SetIssueSprintParams{
+				IssueID:  existing.ID,
+				SprintID: targetSprint,
+			}); err != nil {
+				slog.Warn("bitrix sync: link issue to sprint failed",
+					"issue_id", util.UUIDToString(existing.ID),
+					"task_id", task.ID, "sprint_id", util.UUIDToString(targetSprint), "error", err)
 			}
 		}
 		// Resolve inline [DISK FILE ID=N] images in the description on re-sync too,
@@ -465,11 +495,12 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		return fmt.Errorf("resolve workspace owner: %w", err)
 	}
 
-	// Resolve the task's Bitrix workgroup to an Agora project in this workspace
-	// (creating it on first sight). A failure here is non-fatal: the issue is
-	// still created, just unfiled, so a missing "sonet" scope or a transient
-	// error never blocks task import.
-	projectID := h.resolveBitrixProject(ctx, ws.ID, task, st)
+	// Resolve the task's Bitrix workgroup to an Agora target: a project, and
+	// (for a sprint-named group not already mapped to a project) a sprint under
+	// sd-main. A failure here is non-fatal: the issue is still created, just
+	// unfiled, so a missing "sonet" scope or a transient error never blocks task
+	// import.
+	projectID, sprintID := h.resolveBitrixTarget(ctx, ws.ID, task, st)
 
 	draft := bitrix.MapTaskToIssue(task)
 
@@ -513,6 +544,20 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		return fmt.Errorf("set bitrix_task_id metadata: %w", err)
 	}
 
+	// Link the issue to its Bitrix-derived sprint (sprint-named group under
+	// sd-main). Best-effort: a failure leaves the issue filed in sd-main but
+	// outside the sprint, which is recoverable on re-sync, so never fatal.
+	if sprintID.Valid {
+		if err := h.Queries.SetIssueSprint(ctx, db.SetIssueSprintParams{
+			IssueID:  res.Issue.ID,
+			SprintID: sprintID,
+		}); err != nil {
+			slog.Warn("bitrix sync: link issue to sprint failed",
+				"issue_id", util.UUIDToString(res.Issue.ID),
+				"task_id", task.ID, "sprint_id", util.UUIDToString(sprintID), "error", err)
+		}
+	}
+
 	// Record the Bitrix responsible (name/email/position) so the assignee shows
 	// in the issue's Metadata panel even when they aren't an Agora member.
 	h.setBitrixResponsibleMetadata(ctx, res.Issue.ID, ws.ID, task.ResponsibleID, responsible)
@@ -535,26 +580,83 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 	return nil
 }
 
-// resolveBitrixProject maps a task's Bitrix GROUP_ID to an Agora project id in
-// the workspace, creating the project on first sight. Returns an invalid
+// resolveBitrixProject maps a task's Bitrix GROUP_ID to the Agora project id its
+// issue should live in, creating the project on first sight. Returns an invalid
 // (unset) UUID when the task has no group or project resolution fails — the
-// caller then creates an unfiled issue rather than failing the whole sync.
+// caller then creates an unfiled issue rather than failing the whole sync. It is
+// now a thin wrapper over resolveBitrixTarget that drops the sprint half, kept so
+// any caller wanting only the project keeps a single-return helper.
 func (h *Handler) resolveBitrixProject(ctx context.Context, wsID pgtype.UUID, task *bitrix.Task, st *bitrixSyncState) pgtype.UUID {
+	projectID, _ := h.resolveBitrixTarget(ctx, wsID, task, st)
+	return projectID
+}
+
+// bitrixGroupIsSprint reports whether a Bitrix workgroup name denotes a sprint
+// (e.g. "Sprint 7", "Iyun Sprint", "Спринт 12"). Case-insensitive, and matches
+// either the Latin "sprint" or the Cyrillic "спринт" anywhere in the name. An
+// empty name is not a sprint.
+func bitrixGroupIsSprint(name string) bool {
+	n := strings.ToLower(strings.TrimSpace(name))
+	if n == "" {
+		return false
+	}
+	return strings.Contains(n, "sprint") || strings.Contains(n, "спринт")
+}
+
+// resolveBitrixTarget maps a task's Bitrix GROUP_ID to where its Agora issue
+// should live: a project, and optionally a sprint under sd-main. Order matters
+// and encodes the "new syncs only" rule for sprints:
+//
+//  1. If the group ALREADY has an Agora project (marker lookup hits), the issue
+//     stays in that project — no sprint. This is what keeps groups synced before
+//     sprint-mapping existed as projects.
+//  2. Else if the group's name denotes a sprint AND an "sd-main" project exists,
+//     the issue goes into sd-main and is linked to the group's sprint (created on
+//     first sight).
+//  3. Else the group becomes its own project (the original behavior), no sprint.
+//
+// A failure in any resolution degrades to an unfiled issue (zero project) rather
+// than failing the sync — matching resolveBitrixProject. The returned sprintID is
+// the zero UUID (Valid=false) unless case (2) applies.
+func (h *Handler) resolveBitrixTarget(ctx context.Context, wsID pgtype.UUID, task *bitrix.Task, st *bitrixSyncState) (projectID pgtype.UUID, sprintID pgtype.UUID) {
 	groupID := strings.TrimSpace(task.GroupID)
 	if groupID == "" {
-		return pgtype.UUID{}
+		return pgtype.UUID{}, pgtype.UUID{}
 	}
+
+	// (1) Existing project for this group wins — found first, so groups synced
+	// before sprint-mapping stay projects.
+	if pid, ok := h.findBitrixProjectForGroup(ctx, wsID, groupID, st); ok {
+		return pid, pgtype.UUID{}
+	}
+
 	name := strings.TrimSpace(task.GroupName)
 	if name == "" {
 		name = h.bitrixGroupName(ctx, groupID, st)
 	}
-	projectID, err := h.getOrCreateBitrixProject(ctx, wsID, groupID, name, st)
+
+	// (2) Sprint-named group with an sd-main project to host it → sprint under
+	// sd-main.
+	if bitrixGroupIsSprint(name) {
+		if sdMain, ok := h.resolveSdMainProject(ctx, wsID, st); ok {
+			sid, err := h.getOrCreateBitrixSprint(ctx, wsID, sdMain, groupID, name, st)
+			if err != nil {
+				slog.Warn("bitrix sync: could not resolve sprint for group, filing in sd-main without sprint",
+					"group_id", groupID, "workspace_id", util.UUIDToString(wsID), "error", err)
+				return sdMain, pgtype.UUID{}
+			}
+			return sdMain, sid
+		}
+	}
+
+	// (3) Fall back to the original group-as-project behavior.
+	pid, err := h.getOrCreateBitrixProject(ctx, wsID, groupID, name, st)
 	if err != nil {
 		slog.Warn("bitrix sync: could not resolve project for group, leaving issue unfiled",
 			"group_id", groupID, "workspace_id", util.UUIDToString(wsID), "error", err)
-		return pgtype.UUID{}
+		return pgtype.UUID{}, pgtype.UUID{}
 	}
-	return projectID
+	return pid, pgtype.UUID{}
 }
 
 // bitrixGroupName resolves (and caches) a Bitrix group id to its display name

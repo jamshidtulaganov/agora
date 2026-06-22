@@ -96,6 +96,131 @@ func (h *Handler) getOrCreateBitrixProject(ctx context.Context, workspaceID pgty
 	return project.ID, nil
 }
 
+// findBitrixProjectForGroup is the LOOKUP-ONLY half of getOrCreateBitrixProject:
+// it resolves an EXISTING Agora project for a Bitrix workgroup (cache, then the
+// durable "bitrix_group:<id>" description marker) but never creates one. ok=false
+// (with no error surfaced) means no project is mapped to this group yet — the
+// caller then decides whether the group should become a sprint instead. This is
+// what preserves the "new syncs only" sprint behavior: a group that already has
+// a project is found here first and stays a project.
+func (h *Handler) findBitrixProjectForGroup(ctx context.Context, workspaceID pgtype.UUID, groupID string, st *bitrixSyncState) (pgtype.UUID, bool) {
+	groupID = strings.TrimSpace(groupID)
+	if groupID == "" {
+		return pgtype.UUID{}, false
+	}
+	cacheKey := util.UUIDToString(workspaceID) + ":" + groupID
+	if id, ok := st.projectCache[cacheKey]; ok {
+		return id, true
+	}
+
+	marker := bitrixProjectMarkerPrefix + groupID
+	var existingID pgtype.UUID
+	err := h.DB.QueryRow(ctx,
+		`SELECT id FROM project
+		  WHERE workspace_id = $1 AND description LIKE '%' || $2 || '%'
+		  ORDER BY created_at ASC
+		  LIMIT 1`,
+		workspaceID, marker).Scan(&existingID)
+	if err == nil {
+		st.projectCache[cacheKey] = existingID
+		return existingID, true
+	}
+	if err != pgx.ErrNoRows {
+		slog.Warn("bitrix sync: lookup project for group failed",
+			"group_id", groupID, "workspace_id", util.UUIDToString(workspaceID), "error", err)
+	}
+	return pgtype.UUID{}, false
+}
+
+// --- group → sprint (sd-main) -----------------------------------------------
+
+// resolveSdMainProject resolves (and memoizes on st) the id of the "sd-main"
+// project in the workspace — the parent under which sprint-named Bitrix groups
+// become Agora sprints. ok=false (no error surfaced) when the workspace has no
+// sd-main project, so the caller falls back to the group-as-project path.
+func (h *Handler) resolveSdMainProject(ctx context.Context, workspaceID pgtype.UUID, st *bitrixSyncState) (pgtype.UUID, bool) {
+	if st.sdMainProjectID != nil {
+		return *st.sdMainProjectID, true
+	}
+	var id pgtype.UUID
+	err := h.DB.QueryRow(ctx,
+		`SELECT id FROM project WHERE workspace_id = $1 AND title = 'sd-main' LIMIT 1`,
+		workspaceID).Scan(&id)
+	if err != nil {
+		if err != pgx.ErrNoRows {
+			slog.Warn("bitrix sync: resolve sd-main project failed",
+				"workspace_id", util.UUIDToString(workspaceID), "error", err)
+		}
+		return pgtype.UUID{}, false
+	}
+	memo := id
+	st.sdMainProjectID = &memo
+	return id, true
+}
+
+// getOrCreateBitrixSprint returns the Agora sprint id for a sprint-named Bitrix
+// workgroup, creating it under the sd-main project on first sight. It mirrors
+// getOrCreateBitrixProject exactly, but the durable "bitrix_group:<id>" marker
+// lives in the sprint's GOAL (sprint has no description column), and dedup is
+// scoped to the parent project. Resolutions are cached on st for the batch.
+func (h *Handler) getOrCreateBitrixSprint(ctx context.Context, workspaceID, sdMainProjectID pgtype.UUID, groupID, groupName string, st *bitrixSyncState) (pgtype.UUID, error) {
+	groupID = strings.TrimSpace(groupID)
+	if groupID == "" {
+		return pgtype.UUID{}, fmt.Errorf("empty group id")
+	}
+	cacheKey := util.UUIDToString(workspaceID) + ":" + groupID
+	if id, ok := st.sprintCache[cacheKey]; ok {
+		return id, nil
+	}
+
+	marker := bitrixProjectMarkerPrefix + groupID
+
+	// Look up an existing sprint for this group via the durable goal marker,
+	// scoped to the sd-main project (the sprint's parent).
+	var existingID pgtype.UUID
+	err := h.DB.QueryRow(ctx,
+		`SELECT id FROM sprint
+		  WHERE project_id = $1 AND goal LIKE '%' || $2 || '%'
+		  ORDER BY created_at ASC
+		  LIMIT 1`,
+		sdMainProjectID, marker).Scan(&existingID)
+	if err == nil {
+		st.sprintCache[cacheKey] = existingID
+		return existingID, nil
+	}
+	if err != pgx.ErrNoRows {
+		return pgtype.UUID{}, fmt.Errorf("lookup bitrix sprint: %w", err)
+	}
+
+	// Create it. Name is the group name (fall back to a stable placeholder so a
+	// nameless group still files). Goal carries the marker so the LIKE dedup is
+	// reliable. Status "active" (a live sprint); no start/end dates.
+	name := strings.TrimSpace(groupName)
+	if name == "" {
+		name = "Bitrix group " + groupID
+	}
+
+	sprint, err := h.Queries.CreateSprint(ctx, db.CreateSprintParams{
+		WorkspaceID: workspaceID,
+		ProjectID:   sdMainProjectID,
+		Name:        name,
+		Goal:        marker,
+		Status:      "active",
+		StartDate:   pgtype.Timestamptz{},
+		EndDate:     pgtype.Timestamptz{},
+	})
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("create bitrix sprint: %w", err)
+	}
+	st.sprintCache[cacheKey] = sprint.ID
+	slog.Info("bitrix sync: created sprint for workgroup",
+		"sprint_id", util.UUIDToString(sprint.ID),
+		"group_id", groupID, "name", name,
+		"project_id", util.UUIDToString(sdMainProjectID),
+		"workspace_id", util.UUIDToString(workspaceID))
+	return sprint.ID, nil
+}
+
 // --- comments ---------------------------------------------------------------
 
 // importBitrixComments mirrors a task's Bitrix comment feed onto the freshly
