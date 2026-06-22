@@ -228,7 +228,14 @@ func (h *Handler) processTelegramLoginUpdate(ctx context.Context, update telegra
 
 	nonce, ok := telegram.ParseStartPayload(update.Message.Text)
 	if !ok {
-		// Not a login start command — ignore (the bot may receive other DMs).
+		// A bare "/start" (no login_<nonce> payload) means the user opened the
+		// bot directly instead of following the app's login deep link, so there
+		// is no nonce to bind. Guide them rather than dropping it silently — a
+		// silent no-op reads as "the bot is broken". Non-/start DMs are ignored.
+		if strings.HasPrefix(strings.TrimSpace(update.Message.Text), "/start") {
+			_ = h.telegramBot.SendMessage(ctx, strconv.FormatInt(update.Message.From.ID, 10),
+				"To sign in, open Agora and choose \"Continue with Telegram\", then tap the link it shows you. That link is what sends me your one-time login code.")
+		}
 		return
 	}
 
