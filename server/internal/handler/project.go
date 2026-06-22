@@ -27,10 +27,15 @@ type ProjectResponse struct {
 	Priority    string  `json:"priority"`
 	LeadType    *string `json:"lead_type"`
 	LeadID      *string `json:"lead_id"`
-	CreatedAt   string  `json:"created_at"`
-	UpdatedAt   string  `json:"updated_at"`
-	IssueCount  int64   `json:"issue_count"`
-	DoneCount   int64   `json:"done_count"`
+	// Settings is the project's preferences blob (project.settings jsonb),
+	// mirroring WorkspaceResponse.Settings. Always an object — empty rows and
+	// nulls normalize to {} so clients can read keys (e.g. sprint_mode)
+	// without a null guard.
+	Settings    any    `json:"settings"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+	IssueCount  int64  `json:"issue_count"`
+	DoneCount   int64  `json:"done_count"`
 	// ResourceCount is a breadcrumb pointing at the sub-collection at
 	// /api/projects/{id}/resources. Resources themselves stay out of this
 	// payload to keep parent metadata and child collections separate; clients
@@ -39,6 +44,13 @@ type ProjectResponse struct {
 }
 
 func projectToResponse(p db.Project) ProjectResponse {
+	var settings any
+	if p.Settings != nil {
+		json.Unmarshal(p.Settings, &settings)
+	}
+	if settings == nil {
+		settings = map[string]any{}
+	}
 	return ProjectResponse{
 		ID:          uuidToString(p.ID),
 		WorkspaceID: uuidToString(p.WorkspaceID),
@@ -49,6 +61,7 @@ func projectToResponse(p db.Project) ProjectResponse {
 		Priority:    p.Priority,
 		LeadType:    textToPtr(p.LeadType),
 		LeadID:      uuidToPtr(p.LeadID),
+		Settings:    settings,
 		CreatedAt:   timestampToString(p.CreatedAt),
 		UpdatedAt:   timestampToString(p.UpdatedAt),
 	}
@@ -99,6 +112,10 @@ type UpdateProjectRequest struct {
 	Priority    *string `json:"priority"`
 	LeadType    *string `json:"lead_type"`
 	LeadID      *string `json:"lead_id"`
+	// Settings, when present, replaces the whole project.settings blob
+	// (PUT {"settings": {...}}). Mirrors UpdateWorkspaceRequest.Settings:
+	// the client sends the merged object, the server stores it verbatim.
+	Settings any `json:"settings"`
 }
 
 func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
@@ -487,6 +504,13 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		} else {
 			params.LeadID = pgtype.UUID{Valid: false}
 		}
+	}
+	// settings: mirror UpdateWorkspace — marshal the request blob and let the
+	// query's COALESCE($settings, settings) replace the column. Omitted
+	// settings leave params.Settings nil → narg NULL → existing value kept.
+	if req.Settings != nil {
+		s, _ := json.Marshal(req.Settings)
+		params.Settings = s
 	}
 	project, err := h.Queries.UpdateProject(r.Context(), params)
 	if err != nil {

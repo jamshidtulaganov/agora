@@ -2,6 +2,17 @@ export type ProjectStatus = "planned" | "in_progress" | "paused" | "completed" |
 
 export type ProjectPriority = "urgent" | "high" | "medium" | "low" | "none";
 
+// Per-project preferences blob (project.settings jsonb on the server, mirrors
+// Workspace.settings). Always an object — the server normalizes empty/null to
+// {}. Known keys are typed; the index signature keeps unknown server-side keys
+// round-tripping through an update without being dropped.
+export interface ProjectSettings {
+  // Per-project "sprint mode". Absent means ON (the historical default from the
+  // old localStorage stub); explicit false hides the Sprints UI for the project.
+  sprint_mode?: boolean;
+  [key: string]: unknown;
+}
+
 export interface Project {
   id: string;
   workspace_id: string;
@@ -12,6 +23,7 @@ export interface Project {
   priority: ProjectPriority;
   lead_type: "member" | "agent" | null;
   lead_id: string | null;
+  settings: ProjectSettings;
   created_at: string;
   updated_at: string;
   issue_count: number;
@@ -40,6 +52,9 @@ export interface UpdateProjectRequest {
   priority?: ProjectPriority;
   lead_type?: "member" | "agent" | null;
   lead_id?: string | null;
+  // When present, replaces the whole settings blob. Callers send the merged
+  // object ({ ...project.settings, <changed key> }).
+  settings?: ProjectSettings;
 }
 
 export interface ListProjectsResponse {

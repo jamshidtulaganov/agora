@@ -33,7 +33,6 @@ import { useActorName } from "@agora/core/workspace/hooks";
 import { PROJECT_STATUS_ORDER, PROJECT_STATUS_CONFIG, PROJECT_PRIORITY_ORDER } from "@agora/core/projects/config";
 import { BOARD_STATUSES } from "@agora/core/issues/config";
 import { useStore } from "zustand";
-import { defaultStorage } from "@agora/core/platform";
 import { createIssueViewStore } from "@agora/core/issues/stores/view-store";
 import { ViewStoreProvider, useViewStore } from "@agora/core/issues/stores/view-store-context";
 import { filterIssues } from "../../issues/utils/filter";
@@ -480,29 +479,23 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   }, []);
 
   // Per-project "sprint mode". When off, the Sprints section + the sprint
-  // board filter are hidden for this project. Default ON so existing projects
-  // keep showing the already-live sprints UI (flipping it off by default would
-  // hide a shipped feature everywhere).
-  //
-  // TODO(sprint): persist this in the project's `settings` jsonb
-  // (`settings.sprint_mode`) once the backend round-trips project settings —
-  // the column/handler don't carry `settings` yet (see project.go /
-  // UpdateProjectRequest). Until then it's a client-local per-project flag.
-  const sprintModeKey = `agora_sprint_mode:${projectId}`;
-  const [sprintMode, setSprintMode] = useState(true);
-  useEffect(() => {
-    const stored = defaultStorage.getItem(sprintModeKey);
-    setSprintMode(stored === null ? true : stored === "true");
-  }, [sprintModeKey]);
+  // board filter are hidden for this project. Persisted server-side in the
+  // project's `settings` jsonb (`settings.sprint_mode`); the toggle writes the
+  // merged blob via updateProject and the optimistic cache update flips the UI
+  // immediately. Default ON when the key is absent so existing projects keep
+  // showing the already-live sprints UI (flipping it off by default would hide
+  // a shipped feature everywhere).
+  const sprintMode = project?.settings?.sprint_mode ?? true;
   const toggleSprintMode = useCallback(() => {
-    setSprintMode((prev) => {
-      const next = !prev;
-      defaultStorage.setItem(sprintModeKey, String(next));
-      // Leaving sprint mode shouldn't strand a hidden sprint filter on the board.
-      if (!next) projectViewStore.getState().setSprintFilter([]);
-      return next;
+    if (!project) return;
+    const next = !(project.settings?.sprint_mode ?? true);
+    updateProject.mutate({
+      id: project.id,
+      settings: { ...project.settings, sprint_mode: next },
     });
-  }, [sprintModeKey]);
+    // Leaving sprint mode shouldn't strand a hidden sprint filter on the board.
+    if (!next) projectViewStore.getState().setSprintFilter([]);
+  }, [project, updateProject]);
 
   // Sidebar panel
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({

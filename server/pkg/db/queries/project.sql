@@ -30,6 +30,7 @@ UPDATE project SET
     priority = COALESCE(sqlc.narg('priority'), priority),
     lead_type = sqlc.narg('lead_type'),
     lead_id = sqlc.narg('lead_id'),
+    settings = COALESCE(sqlc.narg('settings'), settings),
     updated_at = now()
 WHERE id = $1
 RETURNING *;
