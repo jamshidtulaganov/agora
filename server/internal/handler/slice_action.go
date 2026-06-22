@@ -126,6 +126,66 @@ func sliceActionOpensPR(kind string) bool {
 	}
 }
 
+// issueRepoIsGitLab reports whether the issue's project is backed by a GitLab
+// repo. GitLab repos are bound as github_repo resources (that type is just the
+// daemon's checkout trigger) carrying a gitlab URL — e.g. sd-bridge on
+// gitlab.sdteam.uz. GitLab has no `gh`/pull-request flow, so PR-producing slice
+// actions must steer the agent to the merge-request push-option flow instead.
+func (h *Handler) issueRepoIsGitLab(ctx context.Context, issue db.Issue) bool {
+	if !issue.ProjectID.Valid {
+		return false
+	}
+	for _, row := range h.listProjectResourcesForProject(ctx, issue.ProjectID) {
+		if row.ResourceType != "github_repo" {
+			continue
+		}
+		var ref struct {
+			URL string `json:"url"`
+		}
+		if json.Unmarshal(row.ResourceRef, &ref) == nil && strings.Contains(strings.ToLower(ref.URL), "gitlab") {
+			return true
+		}
+	}
+	return false
+}
+
+// sliceActionBranchInstruction returns the host-specific branch + review-request
+// guidance appended to a PR-producing slice action. GitHub repos get the `gh`
+// pull-request flow against `billing` (PROD). GitLab repos get the merge-request
+// push-option flow against `main`: a plain `git push -o merge_request.create`
+// opens the MR over the SAME SSH remote the clone already uses — no `glab` login,
+// no token — because neither `gh` nor a `billing` base exists there. Either way
+// the agent never merges; the human reviewer decides.
+func (h *Handler) sliceActionBranchInstruction(ctx context.Context, issue db.Issue) string {
+	branch := ""
+	if tid := bitrixTaskIDFromMetadata(issue.Metadata); tid != "" {
+		branch = "btx-" + tid
+	}
+	return branchInstructionFor(h.issueRepoIsGitLab(ctx, issue), branch)
+}
+
+// branchInstructionFor is the pure text policy behind sliceActionBranchInstruction
+// (split out so it is unit-testable without a DB). GitLab → merge-request push
+// options against `main`; GitHub with a known branch → `gh` PR against `billing`;
+// GitHub without one → no extra guidance (the agent names its own branch).
+func branchInstructionFor(isGitLab bool, branch string) string {
+	if isGitLab {
+		name := branch
+		if name == "" {
+			name = "a short descriptive"
+		}
+		return " This is a GitLab repository — there is no `gh` or GitHub pull-request flow here. Create branch `" + name +
+			"` from `main`, commit your change, and push it WITH GitLab merge-request push options so a Merge Request opens automatically: " +
+			"`git push -o merge_request.create -o merge_request.target=main -o merge_request.remove_source_branch origin <branch>`. " +
+			"Do NOT merge the merge request — leave that decision to the human reviewer."
+	}
+	if branch != "" {
+		return " Name the working branch " + branch +
+			", branch it from `billing`, and open the pull request against the `billing` base branch (never master)."
+	}
+	return ""
+}
+
 // sanitizeSliceScope neutralizes a caller-supplied scope so it can NEVER form a
 // parsable mention once embedded in the slice-action comment body. The comment
 // is re-parsed by triggerTasksForComment via util.ParseMentions, whose
@@ -232,10 +292,7 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 	// (gh pr list --head btx-<id>). Done in the handler, not in the pure
 	// buildSliceInstruction, because it depends on the issue's metadata.
 	if sliceActionOpensPR(req.Kind) {
-		if tid := bitrixTaskIDFromMetadata(issue.Metadata); tid != "" {
-			instruction += " Name the working branch btx-" + tid +
-				", branch it from `billing`, and open the pull request against the `billing` base branch (never master)."
-		}
+		instruction += h.sliceActionBranchInstruction(r.Context(), issue)
 	}
 
 	// Build the @mention link the comment-trigger path keys off:
