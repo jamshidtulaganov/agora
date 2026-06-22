@@ -32,6 +32,8 @@ import { useWorkspacePaths } from "@agora/core/paths";
 import { useActorName } from "@agora/core/workspace/hooks";
 import { PROJECT_STATUS_ORDER, PROJECT_STATUS_CONFIG, PROJECT_PRIORITY_ORDER } from "@agora/core/projects/config";
 import { BOARD_STATUSES } from "@agora/core/issues/config";
+import { useStore } from "zustand";
+import { defaultStorage } from "@agora/core/platform";
 import { createIssueViewStore } from "@agora/core/issues/stores/view-store";
 import { ViewStoreProvider, useViewStore } from "@agora/core/issues/stores/view-store-context";
 import { filterIssues } from "../../issues/utils/filter";
@@ -51,6 +53,7 @@ import { SwimLaneView } from "../../issues/components/swimlane-view";
 import { BatchActionToolbar } from "../../issues/components/batch-action-toolbar";
 import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import { Button } from "@agora/ui/components/ui/button";
+import { Switch } from "@agora/ui/components/ui/switch";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@agora/ui/components/ui/resizable";
 import { Sheet, SheetContent } from "@agora/ui/components/ui/sheet";
 import { useIsMobile } from "@agora/ui/hooks/use-mobile";
@@ -144,6 +147,7 @@ function ProjectIssuesContent({
   const includeNoAssignee = useViewStore((s) => s.includeNoAssignee);
   const creatorFilters = useViewStore((s) => s.creatorFilters);
   const labelFilters = useViewStore((s) => s.labelFilters);
+  const sprintFilters = useViewStore((s) => s.sprintFilters);
   const agentRunningFilter = useViewStore((s) => s.agentRunningFilter);
 
   const { data: snapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
@@ -156,14 +160,14 @@ function ProjectIssuesContent({
   }, [snapshot]);
 
   const issues = useMemo(
-    () => filterIssues(projectIssues, { statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters: [], includeNoProject: false, labelFilters, agentRunningFilter, runningIssueIds }),
-    [projectIssues, statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, labelFilters, agentRunningFilter, runningIssueIds],
+    () => filterIssues(projectIssues, { statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters: [], includeNoProject: false, labelFilters, sprintFilters, agentRunningFilter, runningIssueIds }),
+    [projectIssues, statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, labelFilters, sprintFilters, agentRunningFilter, runningIssueIds],
   );
 
   // Status-unfiltered companion for Swimlane.
   const swimlaneIssues = useMemo(
-    () => filterIssues(projectIssues, { statusFilters: [], priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters: [], includeNoProject: false, labelFilters, agentRunningFilter, runningIssueIds }),
-    [projectIssues, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, labelFilters, agentRunningFilter, runningIssueIds],
+    () => filterIssues(projectIssues, { statusFilters: [], priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters: [], includeNoProject: false, labelFilters, sprintFilters, agentRunningFilter, runningIssueIds }),
+    [projectIssues, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, labelFilters, sprintFilters, agentRunningFilter, runningIssueIds],
   );
 
   const activeFilters = useMemo(() => ({
@@ -174,6 +178,7 @@ function ProjectIssuesContent({
     projectFilters: [],
     includeNoProject: false,
     labelFilters,
+    sprintFilters,
     agentRunningFilter,
   }), [
     priorityFilters,
@@ -181,6 +186,7 @@ function ProjectIssuesContent({
     includeNoAssignee,
     creatorFilters,
     labelFilters,
+    sprintFilters,
     agentRunningFilter,
   ]);
 
@@ -188,8 +194,8 @@ function ProjectIssuesContent({
   // to wait for every status bucket to paginate in. View-store filters still
   // apply so toggling priority / assignee / label hides the same bars.
   const filteredGanttIssues = useMemo(
-    () => filterIssues(ganttIssues, { statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters: [], includeNoProject: false, labelFilters, agentRunningFilter, runningIssueIds }),
-    [ganttIssues, statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, labelFilters, agentRunningFilter, runningIssueIds],
+    () => filterIssues(ganttIssues, { statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters: [], includeNoProject: false, labelFilters, sprintFilters, agentRunningFilter, runningIssueIds }),
+    [ganttIssues, statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, labelFilters, sprintFilters, agentRunningFilter, runningIssueIds],
   );
 
   const filteredAssigneeGroups = useMemo(
@@ -309,10 +315,14 @@ function ProjectIssuesSurface({
   projectId,
   scope,
   filter,
+  sprintMode,
 }: {
   projectId: string;
   scope: string;
   filter: MyIssuesFilter;
+  // Gates the project-scoped Sprint filter in the issues header. When sprint
+  // mode is off for this project, the header omits the Sprint section.
+  sprintMode: boolean;
 }) {
   const wsId = useWorkspaceId();
   const viewMode = useViewStore((s) => s.viewMode);
@@ -388,7 +398,7 @@ function ProjectIssuesSurface({
 
   return (
     <>
-      <IssuesHeader scopedIssues={projectIssues} allowGantt />
+      <IssuesHeader scopedIssues={projectIssues} allowGantt projectId={sprintMode ? projectId : undefined} />
       <ProjectIssuesContent
         projectId={projectId}
         projectIssues={projectIssues}
@@ -455,6 +465,44 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const [propertiesOpen, setPropertiesOpen] = useState(true);
   const [progressOpen, setProgressOpen] = useState(true);
   const [descriptionOpen, setDescriptionOpen] = useState(true);
+
+  // Sprint board filter — read straight off the project view store (the sidebar
+  // renders outside the ViewStoreProvider, so we subscribe to the singleton
+  // store instance directly). A single applied sprint id powers both the
+  // sidebar row highlight and the board filter; clicking the active sprint
+  // again clears it.
+  const sprintFilters = useStore(projectViewStore, (s) => s.sprintFilters);
+  const activeSprintId =
+    sprintFilters.length === 1 ? sprintFilters[0] : undefined;
+  const handleSprintClick = useCallback((sprintId: string) => {
+    const { sprintFilters: cur, setSprintFilter } = projectViewStore.getState();
+    setSprintFilter(cur.length === 1 && cur[0] === sprintId ? [] : [sprintId]);
+  }, []);
+
+  // Per-project "sprint mode". When off, the Sprints section + the sprint
+  // board filter are hidden for this project. Default ON so existing projects
+  // keep showing the already-live sprints UI (flipping it off by default would
+  // hide a shipped feature everywhere).
+  //
+  // TODO(sprint): persist this in the project's `settings` jsonb
+  // (`settings.sprint_mode`) once the backend round-trips project settings —
+  // the column/handler don't carry `settings` yet (see project.go /
+  // UpdateProjectRequest). Until then it's a client-local per-project flag.
+  const sprintModeKey = `agora_sprint_mode:${projectId}`;
+  const [sprintMode, setSprintMode] = useState(true);
+  useEffect(() => {
+    const stored = defaultStorage.getItem(sprintModeKey);
+    setSprintMode(stored === null ? true : stored === "true");
+  }, [sprintModeKey]);
+  const toggleSprintMode = useCallback(() => {
+    setSprintMode((prev) => {
+      const next = !prev;
+      defaultStorage.setItem(sprintModeKey, String(next));
+      // Leaving sprint mode shouldn't strand a hidden sprint filter on the board.
+      if (!next) projectViewStore.getState().setSprintFilter([]);
+      return next;
+    });
+  }, [sprintModeKey]);
 
   // Sidebar panel
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
@@ -682,6 +730,18 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
               </PopoverContent>
             </Popover>
           </PropRow>
+          <PropRow label={t(($) => $.sprints.mode_label)}>
+            <label className="inline-flex cursor-pointer items-center gap-1.5">
+              <Switch
+                size="sm"
+                checked={sprintMode}
+                onCheckedChange={toggleSprintMode}
+              />
+              <span className="text-xs text-muted-foreground">
+                {sprintMode ? t(($) => $.sprints.mode_on) : t(($) => $.sprints.mode_off)}
+              </span>
+            </label>
+          </PropRow>
         </div>}
       </div>
 
@@ -735,8 +795,14 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
         </div>}
       </div>
 
-      {/* Sprints */}
-      <ProjectSprintsSection projectId={projectId} />
+      {/* Sprints — hidden when sprint mode is off for this project */}
+      {sprintMode && (
+        <ProjectSprintsSection
+          projectId={projectId}
+          activeSprintId={activeSprintId}
+          onSprintClick={handleSprintClick}
+        />
+      )}
 
       {/* Resources */}
       <ProjectResourcesSection projectId={projectId} />
@@ -828,6 +894,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                 projectId={projectId}
                 scope={projectScope}
                 filter={projectFilter}
+                sprintMode={sprintMode}
               />
             </ViewStoreProvider>
           </div>

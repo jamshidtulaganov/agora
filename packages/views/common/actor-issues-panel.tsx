@@ -105,6 +105,10 @@ export function ActorIssuesPanel({
         projectFilters,
         includeNoProject,
         labelFilters,
+        // Sprints are project-scoped; the workspace-level actor panel has no
+        // sprint filter UI, so this is always a no-op. Present to satisfy the
+        // required IssueFilters field.
+        sprintFilters: [],
       }),
     [
       actorIssues,

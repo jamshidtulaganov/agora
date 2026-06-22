@@ -47,6 +47,11 @@ export interface Issue {
   creator_id: string;
   parent_issue_id: string | null;
   project_id: string | null;
+  // Id of the sprint this issue belongs to, or null/absent when it belongs to
+  // none. Bulk-attached by the list/detail endpoints alongside `labels` (PK
+  // issue_to_sprint → one sprint per issue). Optional because write/broadcast
+  // paths omit it; readers should treat absent as "unknown, leave as-is".
+  sprint_id?: string | null;
   position: number;
   // Calendar days as date-only "YYYY-MM-DD" (no time, no timezone). Use the
   // helpers in @agora/core/issues/date to format/compare — never `new Date()`

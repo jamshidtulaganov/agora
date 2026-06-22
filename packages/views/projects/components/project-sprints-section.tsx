@@ -49,13 +49,25 @@ function formatSprintDates(
  * with a delete action behind a confirmation dialog. Create flows through the
  * shared modal store (`create-sprint`, carrying the project id).
  *
- * Phase 2b (deferred — not built):
- *   - sprint board/backlog view (clicking a sprint row should open it; rows
- *     are display-only for now)
- *   - filter-by-sprint in the project issues header
- *   - per-project "sprint mode" toggle
+ * Clicking a sprint row applies that sprint's filter to the project issue
+ * board (the filtered board IS the "sprint board" — see filter-by-sprint in
+ * the issues header). The filter state lives in the project view store, which
+ * is owned by ProjectDetail (the sidebar renders outside its ViewStoreProvider
+ * boundary), so the row click + active highlight are driven through the
+ * `onSprintClick` / `activeSprintId` props rather than reading the store here.
+ * Clicking the already-active sprint clears the filter (toggle).
  */
-export function ProjectSprintsSection({ projectId }: { projectId: string }) {
+export function ProjectSprintsSection({
+  projectId,
+  activeSprintId,
+  onSprintClick,
+}: {
+  projectId: string;
+  /** Sprint id currently applied to the board filter, for the active affordance. */
+  activeSprintId?: string;
+  /** Apply (or clear, when re-clicking the active one) a sprint's board filter. */
+  onSprintClick?: (sprintId: string) => void;
+}) {
   const { t } = useT("projects");
   const wsId = useWorkspaceId();
   const statusLabels = useSprintStatusLabels();
@@ -130,39 +142,54 @@ export function ProjectSprintsSection({ projectId }: { projectId: string }) {
           ) : (
             sprints.map((sprint) => {
               const cfg = SPRINT_STATUS_CONFIG[sprint.status];
+              const isActive = activeSprintId === sprint.id;
               return (
                 <div
                   key={sprint.id}
-                  className="group flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent/50 transition-colors"
+                  className={cn(
+                    "group flex items-center gap-2 rounded-md pr-2 transition-colors",
+                    isActive ? "bg-accent" : "hover:bg-accent/50",
+                  )}
                 >
-                  <span
-                    className={cn("size-2 shrink-0 rounded-full", cfg.dotColor)}
-                    aria-hidden
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-xs font-medium">{sprint.name}</span>
-                      <span
-                        className={cn(
-                          "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
-                          cfg.badgeBg,
-                          cfg.badgeText,
-                        )}
-                      >
-                        {statusLabels[sprint.status]}
-                      </span>
+                  <button
+                    type="button"
+                    // Clicking applies this sprint's board filter; clicking the
+                    // active sprint again clears it. Falls back to a plain row
+                    // (no pointer) when no handler is wired.
+                    onClick={onSprintClick ? () => onSprintClick(sprint.id) : undefined}
+                    disabled={!onSprintClick}
+                    aria-pressed={onSprintClick ? isActive : undefined}
+                    className="flex min-w-0 flex-1 items-center gap-2 rounded-md py-1.5 pl-2 text-left disabled:cursor-default"
+                  >
+                    <span
+                      className={cn("size-2 shrink-0 rounded-full", cfg.dotColor)}
+                      aria-hidden
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-xs font-medium">{sprint.name}</span>
+                        <span
+                          className={cn(
+                            "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
+                            cfg.badgeBg,
+                            cfg.badgeText,
+                          )}
+                        >
+                          {statusLabels[sprint.status]}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <CalendarClock className="size-3 shrink-0" />
+                        <span className="truncate">
+                          {formatSprintDates(
+                            sprint,
+                            t(($) => $.sprints.no_dates),
+                            (start, end) => t(($) => $.sprints.date_range, { start, end }),
+                          )}
+                        </span>
+                      </div>
                     </div>
-                    <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
-                      <CalendarClock className="size-3 shrink-0" />
-                      <span className="truncate">
-                        {formatSprintDates(
-                          sprint,
-                          t(($) => $.sprints.no_dates),
-                          (start, end) => t(($) => $.sprints.date_range, { start, end }),
-                        )}
-                      </span>
-                    </div>
-                  </div>
+                  </button>
                   <Tooltip>
                     <TooltipTrigger
                       render={

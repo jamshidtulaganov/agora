@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
+  CalendarClock,
   ChartGantt,
   Check,
   ChevronDown,
@@ -22,6 +23,7 @@ import {
   UserPen,
   Waves,
 } from "lucide-react";
+import { cn } from "@agora/ui/lib/utils";
 import { Button } from "@agora/ui/components/ui/button";
 import {
   DropdownMenu,
@@ -54,6 +56,8 @@ import { useWorkspaceId } from "@agora/core/hooks";
 import { memberListOptions, agentListOptions, squadListOptions } from "@agora/core/workspace/queries";
 import { projectListOptions } from "@agora/core/projects/queries";
 import { labelListOptions } from "@agora/core/labels/queries";
+import { sprintListByProjectOptions } from "@agora/core/sprints/queries";
+import { SPRINT_STATUS_CONFIG } from "@agora/core/sprints/config";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { LabelChip } from "../../labels/label-chip";
@@ -107,6 +111,7 @@ function getActiveFilterCount(state: {
   projectFilters: string[];
   includeNoProject: boolean;
   labelFilters: string[];
+  sprintFilters: string[];
 }) {
   let count = 0;
   if (state.statusFilters.length > 0) count++;
@@ -115,6 +120,7 @@ function getActiveFilterCount(state: {
   if (state.creatorFilters.length > 0) count++;
   if (state.projectFilters.length > 0 || state.includeNoProject) count++;
   if (state.labelFilters.length > 0) count++;
+  if (state.sprintFilters.length > 0) count++;
   return count;
 }
 
@@ -126,6 +132,7 @@ function useIssueCounts(allIssues: Issue[]) {
     const creator = new Map<string, number>();
     const project = new Map<string, number>();
     const label = new Map<string, number>();
+    const sprint = new Map<string, number>();
     let noAssignee = 0;
     let noProject = 0;
 
@@ -154,9 +161,13 @@ function useIssueCounts(allIssues: Issue[]) {
           label.set(l.id, (label.get(l.id) ?? 0) + 1);
         }
       }
+
+      if (issue.sprint_id) {
+        sprint.set(issue.sprint_id, (sprint.get(issue.sprint_id) ?? 0) + 1);
+      }
     }
 
-    return { status, priority, assignee, creator, noAssignee, project, noProject, label };
+    return { status, priority, assignee, creator, noAssignee, project, noProject, label, sprint };
   }, [allIssues]);
 }
 
@@ -495,15 +506,98 @@ function LabelSubContent({
 }
 
 // ---------------------------------------------------------------------------
+// Sprint sub-menu content
+// ---------------------------------------------------------------------------
+
+// Sprints are project-scoped, so this only renders when a `projectId` is in
+// scope (project detail). Mirrors LabelSubContent: a search box over the
+// project's sprints, each row a checkbox with a status dot + name + issue
+// count. `cn` keeps the dot class composition consistent with the sprints
+// sidebar section.
+function SprintSubContent({
+  projectId,
+  counts,
+  selected,
+  onToggle,
+}: {
+  projectId: string;
+  counts: Map<string, number>;
+  selected: string[];
+  onToggle: (sprintId: string) => void;
+}) {
+  const { t } = useT("issues");
+  const [search, setSearch] = useState("");
+  const wsId = useWorkspaceId();
+  const { data: sprints = [] } = useQuery(
+    sprintListByProjectOptions(wsId, projectId),
+  );
+  const query = search.trim().toLowerCase();
+  const filtered = sprints.filter((s) => s.name.toLowerCase().includes(query));
+
+  return (
+    <>
+      <div className="px-2 py-1.5 border-b border-foreground/5">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={t(($) => $.filters.placeholder)}
+          className="w-full bg-transparent text-sm placeholder:text-muted-foreground outline-none"
+          autoFocus
+        />
+      </div>
+
+      <div className="max-h-64 overflow-y-auto p-1">
+        {filtered.map((s) => {
+          const checked = selected.includes(s.id);
+          const count = counts.get(s.id) ?? 0;
+          const cfg = SPRINT_STATUS_CONFIG[s.status];
+          return (
+            <DropdownMenuCheckboxItem
+              key={s.id}
+              checked={checked}
+              onCheckedChange={() => onToggle(s.id)}
+              className={FILTER_ITEM_CLASS}
+            >
+              <HoverCheck checked={checked} />
+              <span
+                className={cn("size-2 shrink-0 rounded-full", cfg.dotColor)}
+                aria-hidden
+              />
+              <span className="truncate">{s.name}</span>
+              {count > 0 && (
+                <span className="ml-auto text-xs text-muted-foreground">
+                  {count}
+                </span>
+              )}
+            </DropdownMenuCheckboxItem>
+          );
+        })}
+
+        {filtered.length === 0 && (
+          <div className="px-2 py-3 text-center text-sm text-muted-foreground">
+            {search ? t(($) => $.filters.no_results) : t(($) => $.filters.no_sprints)}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // IssuesHeader
 // ---------------------------------------------------------------------------
 
 export function IssuesHeader({
   scopedIssues,
   allowGantt = false,
+  projectId,
 }: {
   scopedIssues: Issue[];
   allowGantt?: boolean;
+  // When set, the filter menu gains a project-scoped Sprint section. Sprints
+  // are project-scoped, so the global /issues + /my-issues headers omit this.
+  projectId?: string;
 }) {
   const { t } = useT("issues");
   const scope = useIssuesScopeStore((s) => s.scope);
@@ -600,7 +694,7 @@ export function IssuesHeader({
             onToggle={toggleAgentRunningFilter}
             scopedIssueIds={scopedIssueIds}
           />
-          <IssueDisplayControls scopedIssues={scopedIssues} allowGantt={allowGantt} />
+          <IssueDisplayControls scopedIssues={scopedIssues} allowGantt={allowGantt} projectId={projectId} />
         </div>
       </div>
     </div>
@@ -611,6 +705,7 @@ export function IssueDisplayControls({
   scopedIssues,
   hideViewToggle = false,
   allowGantt = false,
+  projectId,
 }: {
   scopedIssues: Issue[];
   hideViewToggle?: boolean;
@@ -618,6 +713,9 @@ export function IssueDisplayControls({
   // /my-issues, actor panel) ignore viewMode === "gantt" and would silently
   // fall back to List if the option were exposed there. Keep Gantt opt-in.
   allowGantt?: boolean;
+  // When set, the filter menu gains a project-scoped Sprint section. Sprints
+  // are project-scoped, so non-project surfaces omit it.
+  projectId?: string;
 }) {
   const { t } = useT("issues");
   const viewMode = useViewStore((s) => s.viewMode);
@@ -629,6 +727,7 @@ export function IssueDisplayControls({
   const projectFilters = useViewStore((s) => s.projectFilters);
   const includeNoProject = useViewStore((s) => s.includeNoProject);
   const labelFilters = useViewStore((s) => s.labelFilters);
+  const sprintFilters = useViewStore((s) => s.sprintFilters);
   const sortBy = useViewStore((s) => s.sortBy);
   const sortDirection = useViewStore((s) => s.sortDirection);
   const grouping = useViewStore((s) => s.grouping);
@@ -647,6 +746,7 @@ export function IssueDisplayControls({
     projectFilters,
     includeNoProject,
     labelFilters,
+    sprintFilters,
   });
   const hasActiveFilters = activeFilterCount > 0;
 
@@ -887,6 +987,29 @@ export function IssueDisplayControls({
                 />
               </DropdownMenuSubContent>
             </DropdownMenuSub>
+
+            {/* Sprint — project-scoped, only shown on project detail */}
+            {projectId && (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <CalendarClock className="size-3.5" />
+                  <span className="flex-1">{t(($) => $.filters.section_sprint)}</span>
+                  {sprintFilters.length > 0 && (
+                    <span className="text-xs text-primary font-medium">
+                      {sprintFilters.length}
+                    </span>
+                  )}
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-auto min-w-52 p-0">
+                  <SprintSubContent
+                    projectId={projectId}
+                    counts={counts.sprint}
+                    selected={sprintFilters}
+                    onToggle={act.toggleSprintFilter}
+                  />
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            )}
 
             {/* Reset */}
             {hasActiveFilters && (

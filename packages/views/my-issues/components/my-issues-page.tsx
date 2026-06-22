@@ -138,6 +138,7 @@ export function MyIssuesPage() {
         projectFilters: [],
         includeNoProject: false,
         labelFilters: [],
+        sprintFilters: [],
         agentRunningFilter,
         runningIssueIds,
       }),
@@ -156,6 +157,7 @@ export function MyIssuesPage() {
         projectFilters: [],
         includeNoProject: false,
         labelFilters: [],
+        sprintFilters: [],
         agentRunningFilter,
         runningIssueIds,
       }),
@@ -170,6 +172,7 @@ export function MyIssuesPage() {
     projectFilters: [],
     includeNoProject: false,
     labelFilters: [],
+    sprintFilters: [],
     agentRunningFilter,
   }), [priorityFilters, agentRunningFilter]);
 

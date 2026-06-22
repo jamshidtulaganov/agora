@@ -59,6 +59,12 @@ type IssueResponse struct {
 	// preserves whatever labels are already in cache. nil pointer = "field
 	// absent, do not touch"; non-nil (incl. empty slice) = authoritative list.
 	Labels *[]LabelResponse `json:"labels,omitempty"`
+	// SprintID is the id of the sprint this issue belongs to (or nil when it
+	// belongs to none). Bulk-attached by the same list/detail endpoints that
+	// attach labels so the client can filter/group by sprint without an N+1.
+	// Nullable; omitempty keeps it absent on write/broadcast paths that don't
+	// load it, so the client cache isn't clobbered.
+	SprintID *string `json:"sprint_id,omitempty"`
 }
 
 func issueToResponse(i db.Issue, issuePrefix string) IssueResponse {
@@ -141,6 +147,27 @@ func (h *Handler) labelsByIssue(ctx context.Context, wsUUID pgtype.UUID, issueID
 			CreatedAt:   timestampToString(r.CreatedAt),
 			UpdatedAt:   timestampToString(r.UpdatedAt),
 		})
+	}
+	return out
+}
+
+// sprintIdsByIssue bulk-loads the sprint id for the given issue IDs and returns
+// a map keyed by issue UUID string. Mirrors labelsByIssue: on error or empty
+// input it returns an empty map — sprint membership is non-critical, we'd
+// rather serve issues without it than fail the whole list call. issue_to_sprint
+// is keyed by issue_id (PK), so each issue maps to at most one sprint id.
+func (h *Handler) sprintIdsByIssue(ctx context.Context, issueIDs []pgtype.UUID) map[string]string {
+	out := map[string]string{}
+	if len(issueIDs) == 0 {
+		return out
+	}
+	rows, err := h.Queries.ListSprintIdsForIssues(ctx, issueIDs)
+	if err != nil {
+		slog.Warn("ListSprintIdsForIssues failed", "error", err)
+		return out
+	}
+	for _, r := range rows {
+		out[uuidToString(r.IssueID)] = uuidToString(r.SprintID)
 	}
 	return out
 }
@@ -790,6 +817,7 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 			ids[i] = issue.ID
 		}
 		labelsMap := h.labelsByIssue(ctx, wsUUID, ids)
+		sprintMap := h.sprintIdsByIssue(ctx, ids)
 		resp := make([]IssueResponse, len(issues))
 		for i, issue := range issues {
 			resp[i] = openIssueRowToResponse(issue, prefix)
@@ -798,6 +826,9 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 				labels = []LabelResponse{}
 			}
 			resp[i].Labels = &labels
+			if sid, ok := sprintMap[resp[i].ID]; ok {
+				resp[i].SprintID = &sid
+			}
 		}
 
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -1017,6 +1048,7 @@ LIMIT %s OFFSET %s`, whereSql, orderBy, limitRef, offsetRef)
 		ids[i] = issue.ID
 	}
 	labelsMap := h.labelsByIssue(ctx, wsUUID, ids)
+	sprintMap := h.sprintIdsByIssue(ctx, ids)
 	resp := make([]IssueResponse, len(issues))
 	for i, issue := range issues {
 		resp[i] = issueListRowToResponse(issue, prefix)
@@ -1025,6 +1057,9 @@ LIMIT %s OFFSET %s`, whereSql, orderBy, limitRef, offsetRef)
 			labels = []LabelResponse{}
 		}
 		resp[i].Labels = &labels
+		if sid, ok := sprintMap[resp[i].ID]; ok {
+			resp[i].SprintID = &sid
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -1457,6 +1492,7 @@ ORDER BY
 		ids[i] = row.ID
 	}
 	labelsMap := h.labelsByIssue(ctx, wsUUID, ids)
+	sprintMap := h.sprintIdsByIssue(ctx, ids)
 	prefix := h.getIssuePrefix(ctx, wsUUID)
 
 	groups := []IssueAssigneeGroupResponse{}
@@ -1482,6 +1518,9 @@ ORDER BY
 			labels = []LabelResponse{}
 		}
 		issue.Labels = &labels
+		if sid, ok := sprintMap[issue.ID]; ok {
+			issue.SprintID = &sid
+		}
 		groups[idx].Issues = append(groups[idx].Issues, issue)
 	}
 
@@ -1501,6 +1540,9 @@ func (h *Handler) GetIssue(w http.ResponseWriter, r *http.Request) {
 		detailLabels = []LabelResponse{}
 	}
 	resp.Labels = &detailLabels
+	if sid, ok := h.sprintIdsByIssue(r.Context(), []pgtype.UUID{issue.ID})[uuidToString(issue.ID)]; ok {
+		resp.SprintID = &sid
+	}
 
 	// Fetch issue reactions.
 	reactions, err := h.Queries.ListIssueReactions(r.Context(), issue.ID)

@@ -70,6 +70,12 @@ export interface IssueViewState {
   projectFilters: string[];
   includeNoProject: boolean;
   labelFilters: string[];
+  // Sprint ids to filter on (OR semantics, mirrors labelFilters). Drives the
+  // "sprint board" affordance: clicking a sprint row in the project sidebar
+  // sets a single id here so the existing board/list view shows just that
+  // sprint's issues. Sprints are project-scoped, so this only has meaning on a
+  // per-project view store.
+  sprintFilters: string[];
   // When true, the list only shows issues that currently have at least one
   // agent task in `running` status. Drives the workspace "agents working"
   // quick filter chip in the issues header. Not persisted across reloads —
@@ -103,6 +109,10 @@ export interface IssueViewState {
   toggleProjectFilter: (projectId: string) => void;
   toggleNoProject: () => void;
   toggleLabelFilter: (labelId: string) => void;
+  toggleSprintFilter: (sprintId: string) => void;
+  /** Replace the sprint filter wholesale. Used by the sprint-row click to set
+   *  exactly one sprint (or clear, with []), independent of multi-toggle. */
+  setSprintFilter: (sprintIds: string[]) => void;
   toggleAgentRunningFilter: () => void;
   hideStatus: (status: IssueStatus) => void;
   showStatus: (status: IssueStatus) => void;
@@ -129,6 +139,7 @@ export const viewStoreSlice = (set: StoreApi<IssueViewState>["setState"]): Issue
   projectFilters: [],
   includeNoProject: false,
   labelFilters: [],
+  sprintFilters: [],
   agentRunningFilter: false,
   sortBy: "position",
   sortDirection: "asc",
@@ -208,6 +219,13 @@ export const viewStoreSlice = (set: StoreApi<IssueViewState>["setState"]): Issue
         ? state.labelFilters.filter((id) => id !== labelId)
         : [...state.labelFilters, labelId],
     })),
+  toggleSprintFilter: (sprintId) =>
+    set((state) => ({
+      sprintFilters: state.sprintFilters.includes(sprintId)
+        ? state.sprintFilters.filter((id) => id !== sprintId)
+        : [...state.sprintFilters, sprintId],
+    })),
+  setSprintFilter: (sprintIds) => set({ sprintFilters: sprintIds }),
   toggleAgentRunningFilter: () =>
     set((state) => ({ agentRunningFilter: !state.agentRunningFilter })),
   hideStatus: (status) =>
@@ -236,6 +254,7 @@ export const viewStoreSlice = (set: StoreApi<IssueViewState>["setState"]): Issue
       projectFilters: [],
       includeNoProject: false,
       labelFilters: [],
+      sprintFilters: [],
       agentRunningFilter: false,
     }),
   setSortBy: (field) => set({ sortBy: field }),
@@ -289,6 +308,7 @@ export const viewStorePersistOptions = (name: string) => ({
     projectFilters: state.projectFilters,
     includeNoProject: state.includeNoProject,
     labelFilters: state.labelFilters,
+    sprintFilters: state.sprintFilters,
     sortBy: state.sortBy,
     sortDirection: state.sortDirection,
     cardProperties: state.cardProperties,

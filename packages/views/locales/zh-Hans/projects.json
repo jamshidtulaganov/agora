@@ -116,6 +116,9 @@
   },
   "sprints": {
     "section_header": "Sprints",
+    "mode_label": "冲刺",
+    "mode_on": "开启",
+    "mode_off": "关闭",
     "status_planned": "Planned",
     "status_active": "Active",
     "status_completed": "Completed",

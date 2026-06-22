@@ -11,6 +11,7 @@ const NO_FILTER: IssueFilters = {
   projectFilters: [],
   includeNoProject: false,
   labelFilters: [],
+  sprintFilters: [],
 };
 
 function makeIssue(overrides: Partial<Issue> = {}): Issue {

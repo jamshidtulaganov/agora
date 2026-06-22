@@ -164,6 +164,41 @@ func (q *Queries) ListIssuesBySprint(ctx context.Context, sprintID pgtype.UUID) 
 	return items, nil
 }
 
+const listSprintIdsForIssues = `-- name: ListSprintIdsForIssues :many
+SELECT issue_id, sprint_id
+FROM issue_to_sprint
+WHERE issue_id = ANY($1::uuid[])
+`
+
+type ListSprintIdsForIssuesRow struct {
+	IssueID  pgtype.UUID `json:"issue_id"`
+	SprintID pgtype.UUID `json:"sprint_id"`
+}
+
+// Bulk variant: fetch each issue's sprint id in one round-trip so the issue
+// list/detail endpoints can fold sprint_id into each row without an N+1 from
+// the client. Mirrors ListLabelsForIssues. issue_to_sprint is keyed by
+// issue_id (PK), so this returns at most one row per issue.
+func (q *Queries) ListSprintIdsForIssues(ctx context.Context, issueIds []pgtype.UUID) ([]ListSprintIdsForIssuesRow, error) {
+	rows, err := q.db.Query(ctx, listSprintIdsForIssues, issueIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSprintIdsForIssuesRow{}
+	for rows.Next() {
+		var i ListSprintIdsForIssuesRow
+		if err := rows.Scan(&i.IssueID, &i.SprintID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSprintsByProject = `-- name: ListSprintsByProject :many
 SELECT id, workspace_id, project_id, name, goal, status, start_date, end_date, created_at, updated_at FROM sprint WHERE project_id = $1 ORDER BY COALESCE(start_date, created_at) DESC
 `

@@ -116,6 +116,9 @@
   },
   "sprints": {
     "section_header": "Sprints",
+    "mode_label": "スプリント",
+    "mode_on": "オン",
+    "mode_off": "オフ",
     "status_planned": "Planned",
     "status_active": "Active",
     "status_completed": "Completed",

@@ -506,6 +506,7 @@ export function SwimLaneView({
     projectFilters: activeFiltersProp?.projectFilters ?? [],
     includeNoProject: activeFiltersProp?.includeNoProject ?? false,
     labelFilters: activeFiltersProp?.labelFilters ?? [],
+    sprintFilters: activeFiltersProp?.sprintFilters ?? [],
     agentRunningFilter: activeFiltersProp?.agentRunningFilter ?? false,
     runningIssueIds,
   }), [activeFiltersProp, runningIssueIds]);

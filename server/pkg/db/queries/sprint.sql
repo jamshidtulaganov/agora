@@ -27,3 +27,12 @@ SELECT s.* FROM sprint s JOIN issue_to_sprint i ON i.sprint_id = s.id WHERE i.is
 
 -- name: ListIssuesBySprint :many
 SELECT i.* FROM issue i JOIN issue_to_sprint x ON x.issue_id = i.id WHERE x.sprint_id = $1 ORDER BY i.created_at;
+
+-- name: ListSprintIdsForIssues :many
+-- Bulk variant: fetch each issue's sprint id in one round-trip so the issue
+-- list/detail endpoints can fold sprint_id into each row without an N+1 from
+-- the client. Mirrors ListLabelsForIssues. issue_to_sprint is keyed by
+-- issue_id (PK), so this returns at most one row per issue.
+SELECT issue_id, sprint_id
+FROM issue_to_sprint
+WHERE issue_id = ANY(sqlc.arg('issue_ids')::uuid[]);

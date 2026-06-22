@@ -116,6 +116,9 @@
   },
   "sprints": {
     "section_header": "Sprints",
+    "mode_label": "스프린트",
+    "mode_on": "켜짐",
+    "mode_off": "꺼짐",
     "status_planned": "Planned",
     "status_active": "Active",
     "status_completed": "Completed",

@@ -116,6 +116,9 @@
   },
   "sprints": {
     "section_header": "Sprints",
+    "mode_label": "Sprints",
+    "mode_on": "On",
+    "mode_off": "Off",
     "status_planned": "Planned",
     "status_active": "Active",
     "status_completed": "Completed",

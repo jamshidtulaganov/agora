@@ -1456,6 +1456,7 @@ describe("SwimLaneView", () => {
           projectFilters: [],
           includeNoProject: false,
           labelFilters: [],
+          sprintFilters: [],
           agentRunningFilter: false,
         }}
         childProgressMap={childProgressMap}
@@ -1551,6 +1552,7 @@ describe("SwimLaneView", () => {
           projectFilters: [],
           includeNoProject: false,
           labelFilters: [],
+          sprintFilters: [],
           agentRunningFilter: true,
         }}
         childProgressMap={childProgressMap}

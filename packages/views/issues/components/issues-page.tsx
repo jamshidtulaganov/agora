@@ -42,6 +42,10 @@ export function IssuesPage() {
   const projectFilters = useIssueViewStore((s) => s.projectFilters);
   const includeNoProject = useIssueViewStore((s) => s.includeNoProject);
   const labelFilters = useIssueViewStore((s) => s.labelFilters);
+  // Sprints are project-scoped, so the global /issues view never sets this —
+  // it's threaded through only because filterIssues requires the field. Empty
+  // = no-op. (The sprint filter UI lives in the project detail header.)
+  const sprintFilters = useIssueViewStore((s) => s.sprintFilters);
   const sortBy = useIssueViewStore((s) => s.sortBy);
   const sortDirection = useIssueViewStore((s) => s.sortDirection);
   const agentRunningFilter = useIssueViewStore((s) => s.agentRunningFilter);
@@ -126,15 +130,15 @@ export function IssuesPage() {
   const headerIssues = usesAssigneeBoard ? assigneeIssues : scopedIssues;
 
   const issues = useMemo(
-    () => filterIssues(scopedIssues, { statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters, includeNoProject, labelFilters, agentRunningFilter, runningIssueIds }),
-    [scopedIssues, statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters, includeNoProject, labelFilters, agentRunningFilter, runningIssueIds],
+    () => filterIssues(scopedIssues, { statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters, includeNoProject, labelFilters, sprintFilters, agentRunningFilter, runningIssueIds }),
+    [scopedIssues, statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters, includeNoProject, labelFilters, sprintFilters, agentRunningFilter, runningIssueIds],
   );
 
   // Status-unfiltered companion for Swimlane — same narrowing as `issues`
   // minus the status filter.
   const swimlaneIssues = useMemo(
-    () => filterIssues(scopedIssues, { statusFilters: [], priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters, includeNoProject, labelFilters, agentRunningFilter, runningIssueIds }),
-    [scopedIssues, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters, includeNoProject, labelFilters, agentRunningFilter, runningIssueIds],
+    () => filterIssues(scopedIssues, { statusFilters: [], priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters, includeNoProject, labelFilters, sprintFilters, agentRunningFilter, runningIssueIds }),
+    [scopedIssues, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters, includeNoProject, labelFilters, sprintFilters, agentRunningFilter, runningIssueIds],
   );
 
   const activeFilters = useMemo(() => ({
@@ -145,6 +149,7 @@ export function IssuesPage() {
     projectFilters,
     includeNoProject,
     labelFilters,
+    sprintFilters,
     agentRunningFilter,
   }), [
     priorityFilters,
@@ -154,6 +159,7 @@ export function IssuesPage() {
     projectFilters,
     includeNoProject,
     labelFilters,
+    sprintFilters,
     agentRunningFilter,
   ]);
 
