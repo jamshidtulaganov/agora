@@ -477,6 +477,13 @@ func (s *TaskService) enqueueIssueTask(ctx context.Context, issue db.Issue, trig
 		return db.AgentTaskQueue{}, fmt.Errorf("create task: %w", err)
 	}
 
+	// Auto-tier the issue by size on first work so per-task model tiering
+	// (applyIssueCostTier in the claim handler) can run a small task on a cheap
+	// model without a human tagging it. Runs before the daemon is notified so
+	// the tier label is in place when the claim resolves the model. Best-effort:
+	// it never blocks the enqueue.
+	s.maybeAutoTierIssue(ctx, issue)
+
 	slog.Info("task enqueued",
 		"task_id", util.UUIDToString(task.ID),
 		"issue_id", util.UUIDToString(issue.ID),
