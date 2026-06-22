@@ -361,6 +361,14 @@ func main() {
 		go h.LarkHub.Run(sweepCtx)
 	}
 
+	// Telegram bot-OTP login: self-host long-poll fallback. A backend with no
+	// public URL is unreachable by Telegram's webhook callers, so without this
+	// the "/start login_<nonce>" bind never arrives and every verify returns
+	// 401. No-op unless telegram login is enabled and AGORA_PUBLIC_URL is unset
+	// (public deployments use the /telegram/webhook path instead). Bound to
+	// sweepCtx so it drains with the other background workers.
+	go h.RunTelegramLoginPoller(sweepCtx)
+
 	// MUL-2957: DB-backed execution scheduler. The scheduler turns the
 	// `sys_cron_executions` table into the distributed lease + audit
 	// log for internal periodic jobs. The first job is

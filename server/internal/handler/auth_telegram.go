@@ -136,7 +136,8 @@ func (h *Handler) TelegramStart(w http.ResponseWriter, r *http.Request) {
 // TelegramWebhook. chat.type lets us ignore non-private chats so a "/start" in
 // a group never leaks the OTP to the group.
 type telegramUpdate struct {
-	Message *struct {
+	UpdateID int64 `json:"update_id"`
+	Message  *struct {
 		Text string `json:"text"`
 		From *struct {
 			ID        int64  `json:"id"`
@@ -196,57 +197,126 @@ func (h *Handler) TelegramWebhook(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	if update.Message == nil || update.Message.From == nil {
-		w.WriteHeader(http.StatusOK)
+
+	h.processTelegramLoginUpdate(r.Context(), update)
+
+	// ALWAYS 200 so Telegram does not retry and we never leak whether a nonce
+	// was valid.
+	w.WriteHeader(http.StatusOK)
+}
+
+// processTelegramLoginUpdate handles one inbound bot update for the login flow:
+// on a private "/start login_<nonce>" DM it binds the nonce to the sender, mints
+// a 6-digit code, and DMs it back. Shared by the webhook ingress and the
+// long-poll fallback (RunTelegramLoginPoller) so both delivery paths behave
+// identically. Best-effort per update — it never surfaces an error.
+//
+// Only PRIVATE chats are processed: ParseStartPayload accepts the group form
+// "/start@bot login_<nonce>", so a "/start" in a group would otherwise bind the
+// nonce and DM the OTP into a group context. Anything that is not a 1:1 DM is
+// ignored so the code is never delivered to a group.
+func (h *Handler) processTelegramLoginUpdate(ctx context.Context, update telegramUpdate) {
+	if h.telegramBot == nil || h.telegramLogins == nil {
 		return
 	}
-
-	// Only ever process PRIVATE chats. ParseStartPayload accepts the group form
-	// "/start@bot login_<nonce>", so a "/start" issued in a group would
-	// otherwise bind the nonce and DM the OTP. We ack 200 (so Telegram does not
-	// retry) and ignore anything that is not a 1:1 DM with the bot, so the code
-	// is never delivered to a group context.
+	if update.Message == nil || update.Message.From == nil {
+		return
+	}
 	if update.Message.Chat == nil || update.Message.Chat.Type != "private" {
-		w.WriteHeader(http.StatusOK)
 		return
 	}
 
 	nonce, ok := telegram.ParseStartPayload(update.Message.Text)
 	if !ok {
 		// Not a login start command — ignore (the bot may receive other DMs).
-		w.WriteHeader(http.StatusOK)
 		return
 	}
 
-	// Bind identity AND deliver the code to the SAME user (message.from.id). In
-	// a private chat chat.id == from.id, but we send to from.id unconditionally
-	// so the code can never be routed anywhere other than the bound account.
+	// Bind identity AND deliver the code to the SAME user (message.from.id) so
+	// the code can never be routed anywhere other than the bound account.
 	telegramID := strconv.FormatInt(update.Message.From.ID, 10)
 	firstName := strings.TrimSpace(update.Message.From.FirstName)
 
 	code, err := generateCode()
 	if err != nil {
-		slog.Error("telegram webhook: failed to generate code", "error", err)
-		w.WriteHeader(http.StatusOK)
+		slog.Error("telegram login: failed to generate code", "error", err)
 		return
 	}
 
 	if !h.telegramLogins.Bind(nonce, telegramID, firstName, code) {
 		// Stale / expired / unknown nonce. Let the user know so they restart.
-		_ = h.telegramBot.SendMessage(r.Context(), telegramID,
+		_ = h.telegramBot.SendMessage(ctx, telegramID,
 			"This login link has expired. Please start again from the app.")
-		w.WriteHeader(http.StatusOK)
 		return
 	}
 
 	msg := fmt.Sprintf("Your Agora login code is: %s\n\nIt expires in 5 minutes. If you didn't request this, ignore this message.", code)
-	if err := h.telegramBot.SendMessage(r.Context(), telegramID, msg); err != nil {
+	if err := h.telegramBot.SendMessage(ctx, telegramID, msg); err != nil {
 		// DM failed (e.g. the user blocked the bot). The code is still bound;
-		// log and ack — the user simply won't get a code and can retry.
-		slog.Warn("telegram webhook: failed to DM login code", "error", err, "telegram_id", telegramID)
+		// log and move on — the user can retry.
+		slog.Warn("telegram login: failed to DM login code", "error", err, "telegram_id", telegramID)
+	}
+}
+
+// RunTelegramLoginPoller is the self-host delivery path for bot-OTP login. A
+// backend with no public URL is unreachable by Telegram's webhook callers, so
+// the "/start login_<nonce>" bind never arrives over the webhook and every
+// verify returns 401. This long-polls getUpdates and feeds each update through
+// the same processor as the webhook. No-op unless telegram login is enabled AND
+// no AGORA_PUBLIC_URL is set (a public deployment uses the webhook instead, and
+// we must not clear its webhook). Bound to ctx; returns on cancellation.
+func (h *Handler) RunTelegramLoginPoller(ctx context.Context) {
+	if !h.telegramLoginEnabled() {
+		return
+	}
+	if strings.TrimSpace(os.Getenv("AGORA_PUBLIC_URL")) != "" {
+		// Public URL present → webhook mode is viable; don't poll, and don't
+		// clear a webhook the operator may have registered.
+		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	// getUpdates and a webhook are mutually exclusive; drop any stale webhook so
+	// polling isn't rejected with 409.
+	if err := h.telegramBot.DeleteWebhook(ctx); err != nil {
+		slog.Warn("telegram poller: deleteWebhook failed (continuing)", "error", err)
+	}
+	slog.Info("telegram login poller started (self-host long-poll)")
+
+	const pollTimeout = 25
+	var offset int64
+	backoff := time.Second
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		updates, err := h.telegramBot.GetUpdates(ctx, offset, pollTimeout)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			slog.Warn("telegram poller: getUpdates failed", "error", err, "retry_in", backoff)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(backoff):
+			}
+			if backoff < 30*time.Second {
+				backoff *= 2
+			}
+			continue
+		}
+		backoff = time.Second
+		for _, raw := range updates {
+			var u telegramUpdate
+			if err := json.Unmarshal(raw, &u); err != nil {
+				continue
+			}
+			if u.UpdateID >= offset {
+				offset = u.UpdateID + 1
+			}
+			h.processTelegramLoginUpdate(ctx, u)
+		}
+	}
 }
 
 type telegramVerifyRequest struct {

@@ -141,6 +141,75 @@ func (c *BotClient) SendMessage(ctx context.Context, chatID, text string) error 
 	return nil
 }
 
+// GetUpdates long-polls the Bot API for inbound updates, returning each update
+// as raw JSON so this package need not model the full update schema (the
+// handler layer owns it). offset is the next update_id to fetch (highest seen +
+// 1); timeoutSec is the server-side long-poll window. Restricted to message
+// updates — login only cares about "/start" DMs. This is the self-host path:
+// when the backend has no public URL, Telegram cannot reach the webhook, so the
+// server polls instead.
+func (c *BotClient) GetUpdates(ctx context.Context, offset int64, timeoutSec int) ([]json.RawMessage, error) {
+	if c.token == "" {
+		return nil, ErrNoToken
+	}
+	// allowed_updates=["message"], URL-encoded.
+	url := fmt.Sprintf("%s/bot%s/getUpdates?offset=%d&timeout=%d&allowed_updates=%%5B%%22message%%22%%5D",
+		c.baseURL(), c.token, offset, timeoutSec)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("telegram: new getUpdates request: %w", err)
+	}
+	// The HTTP read must outlast the server-side long-poll window, so the
+	// default 10s per-call timeout would cut a 25s poll short. Use a
+	// poll-aware client when the caller hasn't injected one (tests do).
+	client := c.httpClient()
+	if c.HTTPClient == nil {
+		client = &http.Client{Timeout: time.Duration(timeoutSec+10) * time.Second}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("telegram: getUpdates http: %w", err)
+	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("telegram: read getUpdates response: %w", err)
+	}
+	var parsed struct {
+		telegramResponse
+		Result []json.RawMessage `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return nil, fmt.Errorf("telegram: decode getUpdates response: %w", err)
+	}
+	if !parsed.OK {
+		return nil, fmt.Errorf("telegram: getUpdates failed: code=%d description=%q", parsed.ErrorCode, parsed.Description)
+	}
+	return parsed.Result, nil
+}
+
+// DeleteWebhook clears any registered webhook. getUpdates and a webhook are
+// mutually exclusive (Telegram rejects getUpdates with 409 while a webhook is
+// set), so the long-poll login path calls this once before it starts polling.
+func (c *BotClient) DeleteWebhook(ctx context.Context) error {
+	if c.token == "" {
+		return ErrNoToken
+	}
+	url := fmt.Sprintf("%s/bot%s/deleteWebhook", c.baseURL(), c.token)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+	if err != nil {
+		return fmt.Errorf("telegram: new deleteWebhook request: %w", err)
+	}
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return fmt.Errorf("telegram: deleteWebhook http: %w", err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return nil
+}
+
 // ParseStartPayload extracts the login nonce from a "/start login_<nonce>"
 // message. It tolerates surrounding whitespace and an optional "@botname"
 // suffix on the command (Telegram appends it in group chats, e.g.
