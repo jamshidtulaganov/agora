@@ -55,17 +55,10 @@ export function issueSprintOptions(
   return queryOptions({
     queryKey: sprintKeys.forIssue(wsId, issueId),
     queryFn: async () => {
+      // Sprints are project-scoped, so an issue with no project has none.
+      // Otherwise fetch it directly (one call) via GET /api/issues/{id}/sprint.
       if (!projectId) return null;
-      const { sprints } = await api.listProjectSprints(projectId, {
-        workspace_id: wsId,
-      });
-      const memberships = await Promise.all(
-        sprints.map(async (sprint) => {
-          const { issues } = await api.listSprintIssues(sprint.id);
-          return issues.some((i) => i.id === issueId) ? sprint : null;
-        }),
-      );
-      return memberships.find((s) => s !== null) ?? null;
+      return api.getIssueSprint(issueId);
     },
     enabled: !!projectId,
   });

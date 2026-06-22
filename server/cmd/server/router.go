@@ -765,6 +765,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Delete("/metadata/{key}", h.DeleteIssueMetadataKey)
 					r.Get("/pull-requests", h.ListPullRequestsForIssue)
 					// Sprint assignment (an issue belongs to at most one sprint).
+					r.Get("/sprint", h.GetIssueSprint)
 					r.Put("/sprint", h.SetIssueSprint)
 					r.Delete("/sprint", h.RemoveIssueSprint)
 				})

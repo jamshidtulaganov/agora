@@ -509,6 +509,29 @@ func (h *Handler) SetIssueSprint(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"sprint": resp})
 }
 
+// GetIssueSprint returns the sprint an issue is assigned to, or {"sprint": null}
+// when it is in none. Lets the UI fetch an issue's sprint directly instead of
+// scanning every sprint's issue list (the join already scopes by issue_id, and
+// loadIssueForUser is the workspace gate). GET /api/issues/{id}/sprint.
+func (h *Handler) GetIssueSprint(w http.ResponseWriter, r *http.Request) {
+	issueID := chi.URLParam(r, "id")
+	issue, ok := h.loadIssueForUser(w, r, issueID)
+	if !ok {
+		return
+	}
+	sprint, err := h.Queries.GetSprintForIssue(r.Context(), issue.ID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeJSON(w, http.StatusOK, map[string]any{"sprint": nil})
+			return
+		}
+		slog.Warn("GetIssueSprint failed", append(logger.RequestAttrs(r), "error", err)...)
+		writeError(w, http.StatusInternalServerError, "failed to load sprint")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sprint": sprintToResponse(sprint)})
+}
+
 // RemoveIssueSprint unassigns an issue from whatever sprint it's in.
 func (h *Handler) RemoveIssueSprint(w http.ResponseWriter, r *http.Request) {
 	issueID := chi.URLParam(r, "id")

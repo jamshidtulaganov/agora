@@ -1977,6 +1977,15 @@ export class ApiClient {
     await this.fetch(`/api/issues/${issueId}/sprint`, { method: "DELETE" });
   }
 
+  // Fetch the issue's current sprint directly (server returns `{sprint}` or
+  // `{sprint: null}`), avoiding a scan of every sprint's issue list.
+  async getIssueSprint(issueId: string): Promise<Sprint | null> {
+    const res = await this.fetch<{ sprint: Sprint | null }>(
+      `/api/issues/${issueId}/sprint`,
+    );
+    return res.sprint;
+  }
+
   // Labels
   async listLabels(): Promise<ListLabelsResponse> {
     return this.fetch(`/api/labels`);
