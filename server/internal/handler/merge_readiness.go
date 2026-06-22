@@ -32,9 +32,40 @@ type gateStatus struct {
 // MergeReadinessResponse is the deterministic gate verdict for an issue's PR.
 type MergeReadinessResponse struct {
 	Ready   bool         `json:"ready"`
-	Tier    string       `json:"tier"` // "full" | "light"
+	Tier    string       `json:"tier"` // "trivial" | "light" | "full"
 	Gates   []gateStatus `json:"gates"`
 	Blocked []string     `json:"blocked,omitempty"` // human-readable reasons it is not ready
+	Reviews []string     `json:"reviews"`           // recommended reviewer fleet for this tier (advisory)
+}
+
+// reviewTier maps an issue's blast radius to its review effort. `required` is the
+// set of deterministic, label-backed gates that must pass before merge — only
+// gates the pipeline actually emits (ci via run_ci, qa via run_qa). `reviews` is
+// the recommended reviewer fleet for the tier: advisory guidance so a human does
+// not fire a full QA + Security + code-review pass on a one-line change. reviews
+// is intentionally kept OUT of required — listing a reviewer that does not yet
+// emit a pass label there would deadlock the gate forever.
+type reviewTier struct {
+	name     string
+	required []string
+	reviews  []string
+}
+
+// reviewTierForLabels resolves the review tier from the issue's label set.
+// `billing` is PROD and every agent PR targets it, so the default (no tier
+// label) is the full fleet. tier:light and tier:trivial both gate on CI alone —
+// the trivial/light split drives the MODEL (see applyIssueCostTier), not the
+// merge gate — and both skip the heavy QA + Security + code-review fleet that a
+// full-blast change warrants.
+func reviewTierForLabels(labels map[string]bool) reviewTier {
+	switch {
+	case labels["tier:trivial"]:
+		return reviewTier{name: "trivial", required: []string{"ci"}, reviews: []string{"ci"}}
+	case labels["tier:light"]:
+		return reviewTier{name: "light", required: []string{"ci"}, reviews: []string{"ci"}}
+	default:
+		return reviewTier{name: "full", required: []string{"ci", "qa"}, reviews: []string{"ci", "qa", "security", "code-review"}}
+	}
 }
 
 // gateFromLabels resolves one gate's status from the issue's label set: a
@@ -65,12 +96,8 @@ func (h *Handler) MergeReadiness(w http.ResponseWriter, r *http.Request) {
 		labels[strings.ToLower(strings.TrimSpace(l.Name))] = true
 	}
 
-	tier := "full"
-	required := []string{"ci", "qa"}
-	if labels["tier:light"] {
-		tier = "light"
-		required = []string{"ci"}
-	}
+	t := reviewTierForLabels(labels)
+	required := t.required
 
 	gates := make([]gateStatus, 0, len(required))
 	blocked := make([]string, 0)
@@ -90,8 +117,9 @@ func (h *Handler) MergeReadiness(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, MergeReadinessResponse{
 		Ready:   ready,
-		Tier:    tier,
+		Tier:    t.name,
 		Gates:   gates,
 		Blocked: blocked,
+		Reviews: t.reviews,
 	})
 }
