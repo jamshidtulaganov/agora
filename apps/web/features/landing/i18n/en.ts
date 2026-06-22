@@ -16,15 +16,15 @@ export function createEnDict(allowSignup: boolean): LandingDict {
   },
 
   hero: {
-    headlineLine1: "Your next 10 hires",
-    headlineLine2: "won\u2019t be human.",
+    headlineLine1: "Assign it to a person.",
+    headlineLine2: "Or an agent.",
     subheading:
-      "Agora is an open-source platform that turns coding agents into real teammates. Assign tasks, track progress, compound skills \u2014 manage your human + agent workforce in one place.",
-    cta: "Start free trial",
+      "Agora puts your developers and AI coding agents on one board. Every issue gets an assignee \u2014 human or agent \u2014 reports its own progress, and ships as a pull request.",
+    cta: "Get started",
     downloadDesktop: "Download Desktop",
     talkToSales: "Talk to sales",
     worksWith: "Works with",
-    imageAlt: "Agora board view \u2014 issues managed by humans and agents",
+    imageAlt: "Agora board \u2014 issues assigned to both people and agents",
   },
 
   features: {
