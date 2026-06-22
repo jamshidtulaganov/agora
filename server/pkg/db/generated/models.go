@@ -46,6 +46,12 @@ type Agent struct {
 	ThinkingLevel      pgtype.Text        `json:"thinking_level"`
 }
 
+type AgentPlugin struct {
+	AgentID     pgtype.UUID        `json:"agent_id"`
+	PluginID    pgtype.UUID        `json:"plugin_id"`
+	InstalledAt pgtype.Timestamptz `json:"installed_at"`
+}
+
 type AgentRuntime struct {
 	ID             pgtype.UUID        `json:"id"`
 	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
@@ -408,6 +414,12 @@ type IssueToLabel struct {
 	LabelID pgtype.UUID `json:"label_id"`
 }
 
+type IssueToSprint struct {
+	IssueID   pgtype.UUID        `json:"issue_id"`
+	SprintID  pgtype.UUID        `json:"sprint_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type LarkBindingToken struct {
 	TokenHash      string             `json:"token_hash"`
 	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
@@ -479,7 +491,7 @@ type LarkOutboundCardMessage struct {
 type LarkUserBinding struct {
 	ID             pgtype.UUID        `json:"id"`
 	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
-	AgoraUserID  pgtype.UUID        `json:"agora_user_id"`
+	AgoraUserID    pgtype.UUID        `json:"agora_user_id"`
 	InstallationID pgtype.UUID        `json:"installation_id"`
 	LarkOpenID     string             `json:"lark_open_id"`
 	UnionID        pgtype.Text        `json:"union_id"`
@@ -522,6 +534,21 @@ type PinnedItem struct {
 	ItemID      pgtype.UUID        `json:"item_id"`
 	Position    float64            `json:"position"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type Plugin struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	McpConfig   []byte             `json:"mcp_config"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type PluginSkill struct {
+	PluginID pgtype.UUID `json:"plugin_id"`
+	SkillID  pgtype.UUID `json:"skill_id"`
 }
 
 type Project struct {
@@ -569,6 +596,19 @@ type SkillFile struct {
 	Content   string             `json:"content"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Sprint struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	ProjectID   pgtype.UUID        `json:"project_id"`
+	Name        string             `json:"name"`
+	Goal        string             `json:"goal"`
+	Status      string             `json:"status"`
+	StartDate   pgtype.Timestamptz `json:"start_date"`
+	EndDate     pgtype.Timestamptz `json:"end_date"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Squad struct {
@@ -709,6 +749,14 @@ type User struct {
 	ProfileDescription      string             `json:"profile_description"`
 	// User-preferred IANA timezone for report rendering (Viewing tz). NULL means "use the browser-detected tz at render time". Affects dashboards, charts, and any "today" label shown to this user. Does not affect data materialisation — all rollups remain in UTC.
 	Timezone pgtype.Text `json:"timezone"`
+}
+
+type UserExternalIdentity struct {
+	UserID     pgtype.UUID        `json:"user_id"`
+	Provider   string             `json:"provider"`
+	ExternalID string             `json:"external_id"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }
 
 type VerificationCode struct {

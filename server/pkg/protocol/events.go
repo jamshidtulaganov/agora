@@ -89,6 +89,12 @@ const (
 	EventLabelDeleted       = "label:deleted"
 	EventIssueLabelsChanged = "issue_labels:changed"
 
+	// Sprint events
+	EventSprintCreated      = "sprint:created"
+	EventSprintUpdated      = "sprint:updated"
+	EventSprintDeleted      = "sprint:deleted"
+	EventIssueSprintChanged = "issue_sprint:changed"
+
 	// Pin events
 	EventPinCreated   = "pin:created"
 	EventPinDeleted   = "pin:deleted"

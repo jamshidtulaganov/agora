@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS issue_to_sprint;
+DROP TABLE IF EXISTS sprint;

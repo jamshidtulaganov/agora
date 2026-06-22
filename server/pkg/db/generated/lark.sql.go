@@ -398,7 +398,7 @@ RETURNING id, workspace_id, agora_user_id, installation_id, lark_open_id, union_
 
 type CreateLarkUserBindingParams struct {
 	WorkspaceID    pgtype.UUID `json:"workspace_id"`
-	AgoraUserID  pgtype.UUID `json:"agora_user_id"`
+	AgoraUserID    pgtype.UUID `json:"agora_user_id"`
 	InstallationID pgtype.UUID `json:"installation_id"`
 	LarkOpenID     string      `json:"lark_open_id"`
 	UnionID        pgtype.Text `json:"union_id"`

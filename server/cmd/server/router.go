@@ -764,6 +764,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Put("/metadata/{key}", h.SetIssueMetadataKey)
 					r.Delete("/metadata/{key}", h.DeleteIssueMetadataKey)
 					r.Get("/pull-requests", h.ListPullRequestsForIssue)
+					// Sprint assignment (an issue belongs to at most one sprint).
+					r.Put("/sprint", h.SetIssueSprint)
+					r.Delete("/sprint", h.RemoveIssueSprint)
 				})
 			})
 
@@ -794,6 +797,20 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/resources", h.CreateProjectResource)
 					r.Put("/resources/{resourceId}", h.UpdateProjectResource)
 					r.Delete("/resources/{resourceId}", h.DeleteProjectResource)
+					// Sprints — a cycle layer under a project.
+					r.Get("/sprints", h.ListSprints)
+					r.Post("/sprints", h.CreateSprint)
+				})
+			})
+
+			// Sprints — direct access by id (the project-scoped list/create
+			// lives under /api/projects/{id}/sprints above).
+			r.Route("/api/sprints", func(r chi.Router) {
+				r.Route("/{id}", func(r chi.Router) {
+					r.Get("/", h.GetSprintByID)
+					r.Put("/", h.UpdateSprint)
+					r.Delete("/", h.DeleteSprint)
+					r.Get("/issues", h.ListSprintIssues)
 				})
 			})
 
