@@ -1081,6 +1081,40 @@ func logClaimEndpointSlow(runtimeID, outcome string, start time.Time, authMs, cl
 	)
 }
 
+// applyIssueCostTier overrides an agent's configured model/thinking for a
+// single task based on the issue's tier labels. It is the per-task cost lever:
+// the audit found opus[1m] was ~74% of agent spend, and trivial work (a CSS
+// fix) ran at $2.82 on opus[1m] vs ~$0.20 on haiku. Because the model string
+// is opaque to the daemon and forwarded verbatim to the CLI, returning a
+// different string here switches both the model family and — via the [1m]
+// suffix the CLI interprets as the 1M-context beta — the context window.
+//
+// Policy (most specific first):
+//
+//	tier:trivial -> haiku, no thinking
+//	tier:light   -> sonnet, no thinking
+//	(no tier)    -> the agent's own model/thinking, unchanged
+//
+// On top of the family choice, the 1M context window is OPT-IN: the [1m] suffix
+// is stripped unless context:large is set, since cache-read volume on [1m] runs
+// dominated cost. A full-tier billing task therefore runs opus at the default
+// 200k window unless a human marks it context:large.
+//
+// Labels must be pre-lowercased/trimmed by the caller. Thinking "off" is the
+// empty string — the daemon's ValidateThinkingLevel resolves "" to no thinking.
+func applyIssueCostTier(model, thinking string, labels map[string]bool) (string, string) {
+	switch {
+	case labels["tier:trivial"]:
+		model, thinking = "claude-haiku-4-5-20251001", ""
+	case labels["tier:light"]:
+		model, thinking = "claude-sonnet-4-6", ""
+	}
+	if !labels["context:large"] {
+		model = strings.TrimSuffix(model, "[1m]")
+	}
+	return model, thinking
+}
+
 // ClaimTaskByRuntime atomically claims the next queued task for a runtime.
 // The response includes the agent's name and skills, fetched fresh from the DB.
 func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
@@ -1225,6 +1259,30 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		if issue, err := h.Queries.GetIssue(r.Context(), task.IssueID); err == nil {
 			resp.WorkspaceID = uuidToString(issue.WorkspaceID)
 			resp.ThreadName = issue.Title
+
+			// Per-task cost tiering: override the agent's model/thinking for
+			// THIS run based on the issue's tier labels, so a small task does
+			// not burn opus[1m] money (an observed CSS fix cost $2.82 on
+			// opus[1m] vs ~$0.20 on haiku). The model string is opaque to the
+			// daemon and forwarded verbatim to the CLI, so setting it here
+			// fully controls both the model and — via the [1m] suffix — the 1M
+			// context window. See applyIssueCostTier for the policy.
+			if resp.Agent != nil {
+				labelRows, _ := h.listLabelsForIssueSafe(r, issue.ID, issue.WorkspaceID)
+				labelSet := make(map[string]bool, len(labelRows))
+				for _, l := range labelRows {
+					labelSet[strings.ToLower(strings.TrimSpace(l.Name))] = true
+				}
+				if m, tl := applyIssueCostTier(resp.Agent.Model, resp.Agent.ThinkingLevel, labelSet); m != resp.Agent.Model || tl != resp.Agent.ThinkingLevel {
+					slog.Info("issue cost-tier applied",
+						"issue_id", uuidToString(issue.ID),
+						"from_model", resp.Agent.Model, "to_model", m,
+						"from_thinking", resp.Agent.ThinkingLevel, "to_thinking", tl,
+					)
+					resp.Agent.Model = m
+					resp.Agent.ThinkingLevel = tl
+				}
+			}
 
 			// Squad-leader briefing injection: when the issue is assigned
 			// to a squad and the claiming agent is that squad's current
