@@ -123,6 +123,20 @@
     "local_invalid_dir": "このディレクトリは使用できません。別のものを選択してください。",
     "local_hint": "他のマシンのエージェントはこのパスを参照できず、起動に失敗します。共有作業にはリポジトリを使用してください。"
   },
+  "create_sprint": {
+    "title": "Create sprint",
+    "title_breadcrumb": "New sprint",
+    "name_placeholder": "Sprint name",
+    "goal_placeholder": "Sprint goal (optional)…",
+    "status_label": "Status",
+    "start_date_label": "Start date",
+    "end_date_label": "End date",
+    "clear_date": "Clear date",
+    "submit": "Create sprint",
+    "submitting": "Creating…",
+    "toast_created": "Sprint created",
+    "toast_failed": "Failed to create sprint"
+  },
   "create_issue": {
     "sr_manual": "新規イシュー",
     "sr_agent": "イシューをクイック作成",

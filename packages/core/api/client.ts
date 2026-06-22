@@ -75,6 +75,11 @@ import type {
   CreateProjectResourceRequest,
   UpdateProjectResourceRequest,
   ListProjectResourcesResponse,
+  Sprint,
+  CreateSprintRequest,
+  UpdateSprintRequest,
+  ListSprintsResponse,
+  ListSprintIssuesResponse,
   Label,
   CreateLabelRequest,
   UpdateLabelRequest,
@@ -1910,6 +1915,66 @@ export class ApiClient {
     await this.fetch(`/api/projects/${projectId}/resources/${resourceId}`, {
       method: "DELETE",
     });
+  }
+
+  // Sprints
+  // Workspace scoping rides the `workspace_id` query param on the list call
+  // (mirrors listIssues); the rest are id-scoped and resolve the workspace
+  // server-side.
+  async listProjectSprints(
+    projectId: string,
+    params?: { workspace_id?: string },
+  ): Promise<ListSprintsResponse> {
+    const search = new URLSearchParams();
+    if (params?.workspace_id) search.set("workspace_id", params.workspace_id);
+    return this.fetch(`/api/projects/${projectId}/sprints?${search}`);
+  }
+
+  async createSprint(
+    projectId: string,
+    data: CreateSprintRequest,
+  ): Promise<Sprint> {
+    return this.fetch(`/api/projects/${projectId}/sprints`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getSprint(id: string): Promise<Sprint> {
+    return this.fetch(`/api/sprints/${id}`);
+  }
+
+  async updateSprint(id: string, data: UpdateSprintRequest): Promise<Sprint> {
+    return this.fetch(`/api/sprints/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSprint(id: string): Promise<void> {
+    await this.fetch(`/api/sprints/${id}`, { method: "DELETE" });
+  }
+
+  async listSprintIssues(id: string): Promise<ListSprintIssuesResponse> {
+    return this.fetch(`/api/sprints/${id}/issues`);
+  }
+
+  // Assign / clear an issue's sprint. Mirrors attachLabel/detachLabel — the
+  // issue is the resource being mutated, so these live on the issue path.
+  // PUT echoes the assigned sprint (`{sprint}`); DELETE is 204.
+  async assignIssueSprint(issueId: string, sprintId: string): Promise<Sprint> {
+    const res = await this.fetch<{ sprint: Sprint }>(
+      `/api/issues/${issueId}/sprint`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ sprint_id: sprintId }),
+      },
+    );
+    return res.sprint;
+  }
+
+  async clearIssueSprint(issueId: string): Promise<void> {
+    await this.fetch(`/api/issues/${issueId}/sprint`, { method: "DELETE" });
   }
 
   // Labels

@@ -42,6 +42,7 @@ import { useNavigation } from "../../navigation";
 import { TitleEditor, ContentEditor, type ContentEditorRef } from "../../editor";
 import { PriorityIcon } from "../../issues/components/priority-icon";
 import { ProjectResourcesSection } from "./project-resources-section";
+import { ProjectSprintsSection } from "./project-sprints-section";
 import { IssuesHeader } from "../../issues/components/issues-header";
 import { BoardView } from "../../issues/components/board-view";
 import { ListView } from "../../issues/components/list-view";
@@ -733,6 +734,9 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           />
         </div>}
       </div>
+
+      {/* Sprints */}
+      <ProjectSprintsSection projectId={projectId} />
 
       {/* Resources */}
       <ProjectResourcesSection projectId={projectId} />

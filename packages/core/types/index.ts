@@ -96,6 +96,14 @@ export type {
   UpdateProjectResourceRequest,
   ListProjectResourcesResponse,
 } from "./project";
+export type {
+  Sprint,
+  SprintStatus,
+  CreateSprintRequest,
+  UpdateSprintRequest,
+  ListSprintsResponse,
+  ListSprintIssuesResponse,
+} from "./sprint";
 export type { PinnedItem, PinnedItemType, CreatePinRequest, ReorderPinsRequest } from "./pin";
 export type {
   GitHubInstallation,

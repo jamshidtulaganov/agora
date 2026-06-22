@@ -125,6 +125,20 @@
     "local_invalid_dir": "This directory can't be used. Pick another.",
     "local_hint": "Agents on other machines won't see this path — they'll fail to start. Use repos for shared work."
   },
+  "create_sprint": {
+    "title": "Create sprint",
+    "title_breadcrumb": "New sprint",
+    "name_placeholder": "Sprint name",
+    "goal_placeholder": "Sprint goal (optional)…",
+    "status_label": "Status",
+    "start_date_label": "Start date",
+    "end_date_label": "End date",
+    "clear_date": "Clear date",
+    "submit": "Create sprint",
+    "submitting": "Creating…",
+    "toast_created": "Sprint created",
+    "toast_failed": "Failed to create sprint"
+  },
   "create_issue": {
     "sr_manual": "New Issue",
     "sr_agent": "Quick create issue",

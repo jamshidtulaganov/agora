@@ -125,6 +125,20 @@
     "local_invalid_dir": "이 디렉터리는 사용할 수 없습니다. 다른 디렉터리를 선택하세요.",
     "local_hint": "다른 기기의 에이전트는 이 경로를 볼 수 없어 시작에 실패합니다. 공유 작업에는 저장소를 사용하세요."
   },
+  "create_sprint": {
+    "title": "Create sprint",
+    "title_breadcrumb": "New sprint",
+    "name_placeholder": "Sprint name",
+    "goal_placeholder": "Sprint goal (optional)…",
+    "status_label": "Status",
+    "start_date_label": "Start date",
+    "end_date_label": "End date",
+    "clear_date": "Clear date",
+    "submit": "Create sprint",
+    "submitting": "Creating…",
+    "toast_created": "Sprint created",
+    "toast_failed": "Failed to create sprint"
+  },
   "create_issue": {
     "sr_manual": "새 이슈",
     "sr_agent": "빠른 이슈 생성",

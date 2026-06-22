@@ -51,6 +51,7 @@ import { toast } from "sonner";
 import { StatusIcon, PriorityIcon, StatusPicker, PriorityPicker, StartDatePicker, DueDatePicker, AssigneePicker, LabelPicker } from ".";
 import { IssueActionsDropdown, useIssueActions } from "../actions";
 import { ProjectPicker } from "../../projects/components/project-picker";
+import { SprintPicker } from "../../projects/components/sprint-picker";
 import { LocalDirectoryHint } from "../../projects/components/local-directory-hint";
 import { BitrixAssigneeChip } from "../../bitrix";
 import { CommentCard } from "./comment-card";
@@ -1395,6 +1396,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               projectId={issue.project_id}
               onUpdate={handleUpdateField}
             />
+          </PropRow>
+          <PropRow label={t(($) => $.detail.prop_sprint)}>
+            <SprintPicker issueId={issue.id} projectId={issue.project_id} />
           </PropRow>
 
           {/* Optional props — rendered only when set on the issue OR added

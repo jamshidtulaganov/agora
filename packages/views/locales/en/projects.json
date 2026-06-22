@@ -114,6 +114,34 @@
     "remove": "Remove from project",
     "empty": "No projects yet"
   },
+  "sprints": {
+    "section_header": "Sprints",
+    "status_planned": "Planned",
+    "status_active": "Active",
+    "status_completed": "Completed",
+    "new_sprint": "New sprint",
+    "empty": "No sprints yet",
+    "issue_count_one": "{{count}} issue",
+    "issue_count_other": "{{count}} issues",
+    "no_dates": "No dates",
+    "date_range": "{{start}} – {{end}}",
+    "delete_action": "Delete sprint",
+    "toast_deleted": "Sprint deleted",
+    "toast_delete_failed": "Failed to delete sprint",
+    "delete_dialog_title": "Delete sprint",
+    "delete_dialog_description": "This will delete the sprint. Issues will not be deleted but will be unassigned from it.",
+    "delete_dialog_confirm": "Delete",
+    "delete_dialog_cancel": "Cancel"
+  },
+  "sprint_picker": {
+    "trigger_label": "Sprint",
+    "no_sprint": "No sprint",
+    "remove": "Remove from sprint",
+    "empty": "No sprints in this project",
+    "no_project": "Add the issue to a project first",
+    "search_placeholder": "Find a sprint…",
+    "toast_assign_failed": "Failed to set sprint"
+  },
   "chip": {
     "fallback_label": "Project"
   }
