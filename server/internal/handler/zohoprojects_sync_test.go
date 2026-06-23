@@ -23,7 +23,8 @@ type zohoHandlerMock struct {
 	ownerEmail    string
 	statusName    string
 	statusType    string
-	hasSubtask    bool // when true, task 777 reports subtasks and /subtasks/ serves one
+	taskName      string // name of task 777 (default "Do thing")
+	hasSubtask    bool   // when true, task 777 reports subtasks and /subtasks/ serves one
 }
 
 func newZohoHandlerMock(t *testing.T) *zohoHandlerMock {
@@ -33,6 +34,7 @@ func newZohoHandlerMock(t *testing.T) *zohoHandlerMock {
 		ownerEmail:    handlerTestEmail,
 		statusName:    "In Progress",
 		statusType:    "open",
+		taskName:      "Do thing",
 	}
 	m.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -67,11 +69,11 @@ func newZohoHandlerMock(t *testing.T) *zohoHandlerMock {
 			io.WriteString(w, `{"tasks":[]}`)
 		case strings.HasSuffix(path, "/tasks/"):
 			io.WriteString(w, fmt.Sprintf(`{"tasks":[{
-				"id":777,"id_string":"777","name":"Do thing","subtasks":%v,
+				"id":777,"id_string":"777","name":%q,"subtasks":%v,
 				"status":{"name":%q,"type":%q},
 				"details":{"owners":[{"zpuid":900,"name":"Jam","email":%q}]},
 				"tasklist":{"id":501,"id_string":"501","name":"Sprint 7"}}]}`,
-				m.hasSubtask, m.statusName, m.statusType, m.ownerEmail))
+				m.taskName, m.hasSubtask, m.statusName, m.statusType, m.ownerEmail))
 		case strings.HasSuffix(path, "/projects/"):
 			io.WriteString(w, `{"projects":[{"id":111,"id_string":"111","name":"RnD","status":"active"}]}`)
 		default:
@@ -131,7 +133,8 @@ func cleanupZohoFixtures(t *testing.T) {
 			`DELETE FROM issue WHERE workspace_id = $1::uuid AND metadata ? 'zoho_task_id'`,
 			testWorkspaceID)
 		testPool.Exec(ctx,
-			`DELETE FROM sprint WHERE workspace_id = $1::uuid AND goal LIKE '%zoho_tasklist:%'`,
+			`DELETE FROM sprint WHERE workspace_id = $1::uuid
+			   AND (goal LIKE '%zoho_tasklist:%' OR goal LIKE '%zoho_sprint:%')`,
 			testWorkspaceID)
 		testPool.Exec(ctx,
 			`DELETE FROM project WHERE workspace_id = $1::uuid AND description LIKE '%zoho_project:%'`,
@@ -251,6 +254,56 @@ func TestZohoImportSubtasks(t *testing.T) {
 	}
 	if parentRef != parentID {
 		t.Errorf("subtask parent_issue_id = %q, want %q", parentRef, parentID)
+	}
+}
+
+// TestZohoImportSprintFromTask: a top-level task whose name denotes a sprint
+// becomes a Agora sprint (no issue for the task itself), and its subtasks become
+// issues filed under that sprint (sprint membership, no parent issue).
+func TestZohoImportSprintFromTask(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("no database")
+	}
+	mock := newZohoHandlerMock(t)
+	mock.taskName = "Mega Build [Sprint 9]"
+	mock.hasSubtask = true
+	configureZohoEnv(t, mock.srv.URL)
+	cleanupZohoFixtures(t)
+
+	wsUUID, _ := util.ParseUUID(testWorkspaceID)
+	st := testHandler.newZohoSyncState()
+	if err := testHandler.syncZohoProject(context.Background(), wsUUID, "111", st); err != nil {
+		t.Fatalf("syncZohoProject: %v", err)
+	}
+
+	// The sprint-task itself is NOT imported as an issue.
+	if _, _, _, _, _, c := issueByZohoTaskID(t, "777"); c != 0 {
+		t.Fatalf("sprint-task became an issue (count=%d), want 0", c)
+	}
+	// The subtask IS imported as an issue.
+	subID, _, _, _, _, sc := issueByZohoTaskID(t, "888")
+	if sc != 1 || subID == "" {
+		t.Fatalf("subtask issue: count=%d", sc)
+	}
+	// It is a direct sprint item: in the sprint derived from task 777, no parent.
+	var inSprint int
+	if err := testPool.QueryRow(context.Background(),
+		`SELECT count(*) FROM issue_to_sprint isp
+		   JOIN sprint s ON s.id = isp.sprint_id
+		  WHERE isp.issue_id = $1::uuid AND s.goal LIKE '%zoho_sprint:777%'`,
+		subID).Scan(&inSprint); err != nil {
+		t.Fatalf("sprint membership query: %v", err)
+	}
+	if inSprint != 1 {
+		t.Errorf("subtask not filed under the task-sprint (count=%d)", inSprint)
+	}
+	var parentRef string
+	if err := testPool.QueryRow(context.Background(),
+		`SELECT COALESCE(parent_issue_id::text,'') FROM issue WHERE id = $1::uuid`, subID).Scan(&parentRef); err != nil {
+		t.Fatalf("parent query: %v", err)
+	}
+	if parentRef != "" {
+		t.Errorf("sprint item has parent_issue_id %q, want none", parentRef)
 	}
 }
 

@@ -81,6 +81,14 @@ const zohoProjectMarkerPrefix = "zoho_project:"
 // a task-list id can never collide with a project id in the LIKE dedup.
 const zohoSprintMarkerPrefix = "zoho_tasklist:"
 
+// zohoSprintTaskMarkerPrefix marks a Agora sprint derived from a sprint-named
+// parent TASK (not a task list). The Octane portal has no Zoho Sprints API
+// access and models a sprint as a parent task like "Foo [Sprint 3]" whose
+// subtasks are the work items; such a task becomes a sprint (marker in
+// sprint.goal) and its subtasks become issues filed under it. Distinct prefix so
+// a task id can't collide with the task-list marker in the LIKE dedup.
+const zohoSprintTaskMarkerPrefix = "zoho_sprint:"
+
 // zohoSyncTimeout bounds a single project import so a slow Zoho portal can't hold
 // a goroutine open indefinitely. The endpoint runs the import in the background
 // against a longer-lived context; this is the per-call ceiling used by the
@@ -302,7 +310,7 @@ func (h *Handler) syncZohoProject(ctx context.Context, wsID pgtype.UUID, zohoPro
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := h.syncZohoTask(ctx, wsID, zohoProjectID, &tasks[i], st, pgtype.UUID{}, 0); err != nil {
+		if err := h.syncZohoTask(ctx, wsID, zohoProjectID, &tasks[i], st, pgtype.UUID{}, pgtype.UUID{}, 0); err != nil {
 			slog.Warn("zoho import: task sync failed",
 				"task_id", tasks[i].ID, "project_id", zohoProjectID, "error", err)
 		}
@@ -345,16 +353,30 @@ const maxSubtaskDepth = 5
 // depth bounds the recursion. The locked reconcile runs first and its lock is
 // released before the subtask fetch, so a deep tree never holds an ancestor's
 // lock-tx open across child API calls.
-func (h *Handler) syncZohoTask(ctx context.Context, wsID pgtype.UUID, zohoProjectID string, task *zohoprojects.Task, st *zohoSyncState, parentIssueID pgtype.UUID, depth int) error {
-	issueID, err := h.reconcileZohoTask(ctx, wsID, zohoProjectID, task, st, parentIssueID)
+func (h *Handler) syncZohoTask(ctx context.Context, wsID pgtype.UUID, zohoProjectID string, task *zohoprojects.Task, st *zohoSyncState, parentIssueID, sprintID pgtype.UUID, depth int) error {
+	// A TOP-LEVEL task whose name denotes a sprint becomes a Agora sprint (not an
+	// issue); its subtasks are filed as issues under that sprint. Detection is
+	// top-level only, so a subtask that merely mentions "sprint" stays a normal
+	// issue.
+	if depth == 0 && zohoprojects.TaskIsSprint(task.Name) {
+		sid := h.getOrCreateZohoSprintFromTask(ctx, wsID, st.agoraProjectID, task, st)
+		if sid.Valid && task.HasSubtasks && depth < maxSubtaskDepth && !st.subtasksThrottled {
+			// Subtasks of a sprint-task have no parent issue — they are the sprint's
+			// work items, filed directly under the sprint.
+			h.importZohoSubtasks(ctx, wsID, zohoProjectID, task.ID, pgtype.UUID{}, sid, st, depth)
+		}
+		return nil
+	}
+
+	issueID, err := h.reconcileZohoTask(ctx, wsID, zohoProjectID, task, st, parentIssueID, sprintID)
 	if err != nil {
 		return err
 	}
-	// Import subtasks as sub-issues. Gated on Zoho's HasSubtasks flag so childless
-	// tasks cost no extra (rate-limited) API call, bounded by depth, and stopped
-	// once Zoho throttles the subtasks endpoint.
+	// Import subtasks as sub-issues, carrying the same sprint membership. Gated on
+	// Zoho's HasSubtasks flag so childless tasks cost no extra (rate-limited) API
+	// call, bounded by depth, and stopped once Zoho throttles the subtasks endpoint.
 	if issueID.Valid && task.HasSubtasks && depth < maxSubtaskDepth && !st.subtasksThrottled {
-		h.importZohoSubtasks(ctx, wsID, zohoProjectID, task.ID, issueID, st, depth)
+		h.importZohoSubtasks(ctx, wsID, zohoProjectID, task.ID, issueID, sprintID, st, depth)
 	}
 	return nil
 }
@@ -364,7 +386,7 @@ func (h *Handler) syncZohoTask(ctx context.Context, wsID pgtype.UUID, zohoProjec
 // levels. Best-effort: a fetch failure is logged and skipped; a Zoho throttle
 // trips a per-run breaker so the rest of the run stops hitting the subtasks
 // endpoint.
-func (h *Handler) importZohoSubtasks(ctx context.Context, wsID pgtype.UUID, zohoProjectID, parentTaskID string, parentIssueID pgtype.UUID, st *zohoSyncState, depth int) {
+func (h *Handler) importZohoSubtasks(ctx context.Context, wsID pgtype.UUID, zohoProjectID, parentTaskID string, parentIssueID, sprintID pgtype.UUID, st *zohoSyncState, depth int) {
 	subs, err := st.client.ListSubtasks(ctx, st.portalID, zohoProjectID, parentTaskID)
 	if err != nil {
 		if zohoprojects.IsThrottle(err) {
@@ -380,7 +402,8 @@ func (h *Handler) importZohoSubtasks(ctx context.Context, wsID pgtype.UUID, zoho
 		if ctx.Err() != nil {
 			return
 		}
-		if err := h.syncZohoTask(ctx, wsID, zohoProjectID, &subs[i], st, parentIssueID, depth+1); err != nil {
+		// depth+1, so a subtask is never itself treated as a sprint container.
+		if err := h.syncZohoTask(ctx, wsID, zohoProjectID, &subs[i], st, parentIssueID, sprintID, depth+1); err != nil {
 			slog.Warn("zoho import: subtask sync failed",
 				"subtask_id", subs[i].ID, "parent_task_id", parentTaskID, "error", err)
 		}
@@ -394,7 +417,7 @@ func (h *Handler) importZohoSubtasks(ctx context.Context, wsID pgtype.UUID, zoho
 // Agora issue id so the caller can thread it as the parent of any subtasks.
 // Mirrors syncBitrixTaskWithState (minus the inbound-webhook/tag-filter concerns,
 // which don't apply to a pull import).
-func (h *Handler) reconcileZohoTask(ctx context.Context, wsID pgtype.UUID, zohoProjectID string, task *zohoprojects.Task, st *zohoSyncState, parentIssueID pgtype.UUID) (pgtype.UUID, error) {
+func (h *Handler) reconcileZohoTask(ctx context.Context, wsID pgtype.UUID, zohoProjectID string, task *zohoprojects.Task, st *zohoSyncState, parentIssueID, sprintID pgtype.UUID) (pgtype.UUID, error) {
 	if strings.TrimSpace(task.ID) == "" {
 		st.skipped++
 		return pgtype.UUID{}, errors.New("empty task id")
@@ -430,9 +453,13 @@ func (h *Handler) reconcileZohoTask(ctx context.Context, wsID pgtype.UUID, zohoP
 
 	mappedStatus := mapZohoStatusToAgora(task)
 
-	// Resolve the task's task list to an Agora sprint (sprint-named lists only).
+	// Sprint membership: prefer the sprint threaded down from a sprint-task
+	// ancestor; otherwise fall back to a sprint-named task LIST (resolveZohoSprint).
 	// Non-fatal: a failure leaves the issue filed in the project without a sprint.
-	sprintID := h.resolveZohoSprint(ctx, wsID, st.agoraProjectID, task, st)
+	effectiveSprint := sprintID
+	if !effectiveSprint.Valid {
+		effectiveSprint = h.resolveZohoSprint(ctx, wsID, st.agoraProjectID, task, st)
+	}
 
 	if found {
 		// Already imported. Reconcile status + assignee with RAW bus-free updates
@@ -497,10 +524,10 @@ func (h *Handler) reconcileZohoTask(ctx context.Context, wsID pgtype.UUID, zohoP
 			}
 		}
 		// Link to the sprint on re-import too (idempotent upsert keyed on issue id).
-		if sprintID.Valid {
+		if effectiveSprint.Valid {
 			if err := h.Queries.SetIssueSprint(ctx, db.SetIssueSprintParams{
 				IssueID:  existing.ID,
-				SprintID: sprintID,
+				SprintID: effectiveSprint,
 			}); err != nil {
 				slog.Warn("zoho import: link issue to sprint failed",
 					"issue_id", util.UUIDToString(existing.ID), "task_id", task.ID, "error", err)
@@ -560,10 +587,10 @@ func (h *Handler) reconcileZohoTask(ctx context.Context, wsID pgtype.UUID, zohoP
 	// mirror can address the task (portal + project + task) from metadata alone.
 	h.stampZohoProjectID(ctx, res.Issue.ID, wsID, zohoProjectID)
 
-	if sprintID.Valid {
+	if effectiveSprint.Valid {
 		if err := h.Queries.SetIssueSprint(ctx, db.SetIssueSprintParams{
 			IssueID:  res.Issue.ID,
-			SprintID: sprintID,
+			SprintID: effectiveSprint,
 		}); err != nil {
 			slog.Warn("zoho import: link issue to sprint failed",
 				"issue_id", util.UUIDToString(res.Issue.ID), "task_id", task.ID, "error", err)
@@ -726,6 +753,66 @@ func (h *Handler) getOrCreateZohoSprint(ctx context.Context, workspaceID, projec
 		"name", name, "project_id", util.UUIDToString(projectID),
 		"workspace_id", util.UUIDToString(workspaceID))
 	return sprint.ID, nil
+}
+
+// getOrCreateZohoSprintFromTask resolves the Agora sprint for a sprint-named
+// parent TASK (e.g. "Foo [Sprint 3]"), creating it under the project on first
+// sight. Mirrors getOrCreateZohoSprint but keys on the TASK id with the distinct
+// "zoho_sprint:" marker, and caches under a "task:" namespace so a task id can't
+// collide with a task-list id in st.sprintCache. Returns the zero UUID on any
+// failure (the caller then files the subtasks without a sprint).
+func (h *Handler) getOrCreateZohoSprintFromTask(ctx context.Context, workspaceID, projectID pgtype.UUID, task *zohoprojects.Task, st *zohoSyncState) pgtype.UUID {
+	if !projectID.Valid {
+		return pgtype.UUID{}
+	}
+	taskID := strings.TrimSpace(task.ID)
+	if taskID == "" {
+		return pgtype.UUID{}
+	}
+	cacheKey := "task:" + taskID
+	if id, ok := st.sprintCache[cacheKey]; ok {
+		return id
+	}
+
+	marker := zohoSprintTaskMarkerPrefix + taskID
+	var existingID pgtype.UUID
+	err := h.DB.QueryRow(ctx,
+		`SELECT id FROM sprint
+		  WHERE project_id = $1 AND goal LIKE '%' || $2 || '%'
+		  ORDER BY created_at ASC
+		  LIMIT 1`,
+		projectID, marker).Scan(&existingID)
+	if err == nil {
+		st.sprintCache[cacheKey] = existingID
+		return existingID
+	}
+	if err != pgx.ErrNoRows {
+		slog.Warn("zoho import: lookup sprint-from-task failed", "task_id", taskID, "error", err)
+		return pgtype.UUID{}
+	}
+
+	name := strings.TrimSpace(task.Name)
+	if name == "" {
+		name = "Zoho sprint " + taskID
+	}
+	sprint, err := h.Queries.CreateSprint(ctx, db.CreateSprintParams{
+		WorkspaceID: workspaceID,
+		ProjectID:   projectID,
+		Name:        name,
+		Goal:        marker,
+		Status:      "active",
+		StartDate:   pgtype.Timestamptz{},
+		EndDate:     pgtype.Timestamptz{},
+	})
+	if err != nil {
+		slog.Warn("zoho import: create sprint-from-task failed", "task_id", taskID, "error", err)
+		return pgtype.UUID{}
+	}
+	st.sprintCache[cacheKey] = sprint.ID
+	slog.Info("zoho import: created sprint from task",
+		"sprint_id", util.UUIDToString(sprint.ID), "task_id", taskID,
+		"name", name, "project_id", util.UUIDToString(projectID))
+	return sprint.ID
 }
 
 // --- comments ---------------------------------------------------------------
