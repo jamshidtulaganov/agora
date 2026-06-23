@@ -177,15 +177,27 @@ func MapTaskToIssue(task *Task) IssueDraft {
 	}
 }
 
-// TasklistIsSprint reports whether a Zoho task-list name denotes a sprint (e.g.
-// "Sprint 7", "Спринт 12"). Case-insensitive, matching either the Latin
+// nameDenotesSprint reports whether a Zoho container name (a task list or a
+// parent task) denotes a sprint — case-insensitive, matching either the Latin
 // "sprint" or the Cyrillic "спринт" anywhere in the name. An empty name is not a
-// sprint. Mirrors bitrixGroupIsSprint so the two importers treat sprint-named
-// containers identically.
-func TasklistIsSprint(name string) bool {
+// sprint.
+func nameDenotesSprint(name string) bool {
 	n := strings.ToLower(strings.TrimSpace(name))
 	if n == "" {
 		return false
 	}
 	return strings.Contains(n, "sprint") || strings.Contains(n, "спринт")
 }
+
+// TasklistIsSprint reports whether a Zoho task-list name denotes a sprint (e.g.
+// "Sprint 7", "Спринт 12"). Mirrors bitrixGroupIsSprint so the two importers
+// treat sprint-named containers identically.
+func TasklistIsSprint(name string) bool { return nameDenotesSprint(name) }
+
+// TaskIsSprint reports whether a top-level Zoho task's NAME denotes a sprint
+// container. The Octane portal has no Zoho Sprints API access (different OAuth
+// scope) and instead models sprints as parent tasks named e.g.
+// "Sales Mytrion [Sprint 3]" / "Browser Automation [SPRINT]" whose subtasks are
+// the sprint's work items — so the importer turns such a task into a Agora sprint
+// and files its subtasks under it rather than creating an issue for the task.
+func TaskIsSprint(name string) bool { return nameDenotesSprint(name) }

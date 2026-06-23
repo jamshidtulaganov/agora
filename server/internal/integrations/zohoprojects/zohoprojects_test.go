@@ -185,6 +185,23 @@ func TestTasklistIsSprint(t *testing.T) {
 	}
 }
 
+func TestTaskIsSprint(t *testing.T) {
+	// Real Octane parent-task names that denote a sprint container.
+	yes := []string{"Sales Mytrion [Sprint 3]", "Browser Automation [SPRINT]",
+		"ZepToMail implementation sprint", "Analyze Debtor List [ Collection sprint]", "Спринт 2"}
+	no := []string{"Fix the Weekly Progress", "WEX Lead Converter", "", "Bug fixing"}
+	for _, n := range yes {
+		if !TaskIsSprint(n) {
+			t.Errorf("TaskIsSprint(%q) = false, want true", n)
+		}
+	}
+	for _, n := range no {
+		if TaskIsSprint(n) {
+			t.Errorf("TaskIsSprint(%q) = true, want false", n)
+		}
+	}
+}
+
 // --- client (httptest) ------------------------------------------------------
 
 func TestClientListProjectsAndTasks(t *testing.T) {
