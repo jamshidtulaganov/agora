@@ -591,6 +591,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/api/zoho-projects/sync", h.SyncZohoProjects)
 		r.Post("/api/zoho-projects/import", h.ImportZohoProjects)
 
+		// SD: Zoho Sprints importer (separate product from Zoho Projects;
+		// Team -> Project -> Sprint -> Item). Imports each Sprints project into its
+		// own "<name> (Sprints)" Agora project. Same workspace-scoped + role-gated
+		// model; 400s "Zoho Sprints not configured" when the OAuth env is unset.
+		r.Get("/api/zoho-sprints/projects", h.ListZohoSprintsProjects)
+		r.Post("/api/zoho-sprints/import", h.ImportZohoSprintsProjects)
+
 		// Attachment download — user-scoped (auth-only), NOT
 		// workspace-scoped. The handler self-resolves the workspace
 		// from the attachment row and enforces membership inside, so
