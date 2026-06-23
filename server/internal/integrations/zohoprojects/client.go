@@ -390,6 +390,10 @@ type Task struct {
 	Description     string
 	TasklistID      string
 	TasklistName    string
+	// HasSubtasks is Zoho's per-task "subtasks"/"isparent" flag — true when the
+	// task has children. The importer only issues a (rate-limited) per-task
+	// subtasks fetch when this is set, so childless tasks cost no extra call.
+	HasSubtasks bool
 }
 
 // TaskList is a Zoho Projects task list — the closest native analog to a
@@ -571,17 +575,21 @@ type listTasksResponse struct {
 }
 
 type rawTask struct {
-	ID           flexInt `json:"id"`
-	IDString     flexInt `json:"id_string"`
-	Name         flexInt `json:"name"`
-	Description  flexInt `json:"description"`
-	Created      flexInt `json:"created_time"`
-	CreatedLong  flexInt `json:"created_time_long"`
-	Updated      flexInt `json:"last_updated_time"`
-	UpdatedLong  flexInt `json:"last_updated_time_long"`
-	Status       rawTaskStatus `json:"status"`
-	Owner        rawTaskOwner  `json:"details"`
-	TasklistRef  rawTasklistRef `json:"tasklist"`
+	ID          flexInt        `json:"id"`
+	IDString    flexInt        `json:"id_string"`
+	Name        flexInt        `json:"name"`
+	Description flexInt        `json:"description"`
+	Created     flexInt        `json:"created_time"`
+	CreatedLong flexInt        `json:"created_time_long"`
+	Updated     flexInt        `json:"last_updated_time"`
+	UpdatedLong flexInt        `json:"last_updated_time_long"`
+	Status      rawTaskStatus  `json:"status"`
+	Owner       rawTaskOwner   `json:"details"`
+	TasklistRef rawTasklistRef `json:"tasklist"`
+	// Subtasks / IsParent: Zoho's flags that the task has children. Used to gate
+	// the per-task subtasks fetch so childless tasks cost no extra API call.
+	Subtasks bool `json:"subtasks"`
+	IsParent bool `json:"isparent"`
 }
 
 // rawTaskStatus is the nested status object Zoho returns per task:
@@ -637,6 +645,7 @@ func (rt rawTask) toTask() Task {
 		Description:     rt.Description.String(),
 		TasklistID:      firstNonEmpty(rt.TasklistRef.IDString, rt.TasklistRef.ID),
 		TasklistName:    rt.TasklistRef.Name.String(),
+		HasSubtasks:     rt.Subtasks || rt.IsParent,
 	}
 }
 
@@ -681,6 +690,58 @@ func (c *Client) ListTasks(ctx context.Context, portalID, projectID string, modi
 		var parsed listTasksResponse
 		if err := json.Unmarshal(body, &parsed); err != nil {
 			return nil, fmt.Errorf("zohoprojects: decode tasks: %w", err)
+		}
+		if len(parsed.Tasks) == 0 {
+			break
+		}
+		for _, rt := range parsed.Tasks {
+			t := rt.toTask()
+			if t.ID == "" {
+				continue
+			}
+			out = append(out, t)
+		}
+		if len(parsed.Tasks) < maxPageSize {
+			break
+		}
+		index += maxPageSize
+	}
+	return out, nil
+}
+
+// ListSubtasks returns the direct children of a parent task. Zoho excludes
+// subtasks from the main ListTasks response and serves them per-parent at
+// .../tasks/{parentTaskID}/subtasks/ (same task shape). Owners/status live on the
+// subtask just like a top-level task, so the importer reconciles each into a
+// Agora sub-issue. Only call this when Task.HasSubtasks is set — the endpoint is
+// subject to the same per-endpoint rate limit as comments.
+func (c *Client) ListSubtasks(ctx context.Context, portalID, projectID, parentTaskID string) ([]Task, error) {
+	portalID = strings.TrimSpace(portalID)
+	projectID = strings.TrimSpace(projectID)
+	parentTaskID = strings.TrimSpace(parentTaskID)
+	if portalID == "" || projectID == "" || parentTaskID == "" {
+		return nil, errors.New("zohoprojects: empty portal, project, or parent task id")
+	}
+	path := "/portal/" + url.PathEscape(portalID) + "/projects/" + url.PathEscape(projectID) +
+		"/tasks/" + url.PathEscape(parentTaskID) + "/subtasks/"
+
+	var out []Task
+	index := 1
+	for page := 0; page < maxPages; page++ {
+		q := url.Values{}
+		q.Set("index", strconv.Itoa(index))
+		q.Set("range", strconv.Itoa(maxPageSize))
+		q.Set("status", "all")
+		body, err := c.get(ctx, path, q)
+		if err != nil {
+			return nil, err
+		}
+		if emptyJSONBody(body) {
+			break // 204 / empty body = no subtasks (or no more pages)
+		}
+		var parsed listTasksResponse
+		if err := json.Unmarshal(body, &parsed); err != nil {
+			return nil, fmt.Errorf("zohoprojects: decode subtasks: %w", err)
 		}
 		if len(parsed.Tasks) == 0 {
 			break

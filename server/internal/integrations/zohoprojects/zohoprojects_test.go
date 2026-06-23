@@ -40,6 +40,10 @@ func newZohoMock(t *testing.T) *zohoMock {
 			io.WriteString(w, `{"comments":[{"id":9,"id_string":"9","content":"hello","added_person":"Jam","created_time":"06-01-2026"}]}`)
 		case strings.HasSuffix(path, "/tasklists/"):
 			io.WriteString(w, `{"tasklists":[{"id":501,"id_string":"501","name":"Sprint 7"}]}`)
+		case strings.HasSuffix(path, "/subtasks/"):
+			io.WriteString(w, `{"tasks":[{"id":888,"id_string":"888","name":"child","subtasks":false,
+				"status":{"name":"Closed","type":"closed"},
+				"details":{"owners":[{"zpuid":901,"name":"Sub","email":"sub@x.io"}]}}]}`)
 		case strings.Contains(path, "/tasks/") && r.Method == http.MethodPost:
 			// Task update: POST .../tasks/<id>/ with a custom_status form param.
 			r.ParseForm()
@@ -54,7 +58,7 @@ func newZohoMock(t *testing.T) *zohoMock {
 				"status":{"name":"In Progress","type":"open"},
 				"details":{"owners":[{"zpuid":900,"name":"Jam","email":"jam@x.io"}]},
 				"tasklist":{"id":501,"id_string":"501","name":"Sprint 7"},
-				"last_updated_time_long":"1717200000000"}]}`)
+				"subtasks":true,"last_updated_time_long":"1717200000000"}]}`)
 		case strings.HasSuffix(path, "/projects/"):
 			io.WriteString(w, `{"projects":[{"id":111,"id_string":"111","name":"RnD","status":"active"}]}`)
 		default:
@@ -212,6 +216,27 @@ func TestClientListProjectsAndTasks(t *testing.T) {
 	}
 	if tk.LastUpdatedUnix != 1717200000000 {
 		t.Errorf("LastUpdatedUnix = %d, want 1717200000000", tk.LastUpdatedUnix)
+	}
+	if !tk.HasSubtasks {
+		t.Error("HasSubtasks = false, want true (task carries subtasks:true)")
+	}
+}
+
+func TestClientListSubtasks(t *testing.T) {
+	m := newZohoMock(t)
+	c := m.client()
+	subs, err := c.ListSubtasks(context.Background(), "12345", "111", "777")
+	if err != nil {
+		t.Fatalf("ListSubtasks: %v", err)
+	}
+	if len(subs) != 1 {
+		t.Fatalf("subtasks = %d, want 1", len(subs))
+	}
+	if subs[0].ID != "888" || subs[0].Owner.Email != "sub@x.io" || subs[0].HasSubtasks {
+		t.Errorf("subtask = %+v", subs[0])
+	}
+	if MapStatusWithType(subs[0].Status, subs[0].StatusType) != StatusDone {
+		t.Errorf("subtask status mapping = %q, want done", subs[0].Status)
 	}
 }
 
