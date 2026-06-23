@@ -581,6 +581,16 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Get("/api/bitrix/tasks", h.ListBitrixTasks)
 		r.Post("/api/bitrix/import", h.ImportBitrixTasks)
 
+		// SD: Zoho Projects importer (Phase 1, one-way Zoho -> Agora). Unlike
+		// the Bitrix browser these are workspace-scoped + role-gated: the
+		// destination workspace comes from the X-Workspace-ID/Slug header and
+		// the caller must be owner/admin. Listing the portal's projects is
+		// login-gated only (useful before picking a destination). Each handler
+		// 400s "Zoho Projects not configured" when the OAuth env is unset.
+		r.Get("/api/zoho-projects/projects", h.ListZohoProjects)
+		r.Post("/api/zoho-projects/sync", h.SyncZohoProjects)
+		r.Post("/api/zoho-projects/import", h.ImportZohoProjects)
+
 		// Attachment download — user-scoped (auth-only), NOT
 		// workspace-scoped. The handler self-resolves the workspace
 		// from the attachment row and enforces membership inside, so

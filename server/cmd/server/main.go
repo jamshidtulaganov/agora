@@ -369,6 +369,13 @@ func main() {
 	// sweepCtx so it drains with the other background workers.
 	go h.RunTelegramLoginPoller(sweepCtx)
 
+	// Zoho Projects periodic modified-since sync (Phase 2). Re-pulls tasks
+	// changed in Zoho since each project's persisted cursor so post-import edits
+	// flow into Agora without a manual /sync. No-op unless ZOHO_PROJECTS_* is
+	// configured and ZOHO_PROJECTS_SYNC_INTERVAL is positive (default 15m). Bound
+	// to sweepCtx so it drains with the other background workers.
+	go h.RunZohoSyncPoller(sweepCtx)
+
 	// MUL-2957: DB-backed execution scheduler. The scheduler turns the
 	// `sys_cron_executions` table into the distributed lease + audit
 	// log for internal periodic jobs. The first job is

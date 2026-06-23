@@ -227,6 +227,9 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 	// Bitrix24 outbound status mirror. No-op when BITRIX_WEBHOOK_URL is unset,
 	// so self-hosted deployments without Bitrix pay nothing.
 	h.registerBitrixOutbound()
+	// Zoho Projects outbound status mirror (Phase 2, bidirectional). No-op unless
+	// the integration is configured and ZOHO_PROJECTS_PUSH_STATUS is on.
+	h.registerZohoOutbound()
 	return h
 }
 
