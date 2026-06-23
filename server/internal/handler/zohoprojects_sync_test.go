@@ -23,6 +23,7 @@ type zohoHandlerMock struct {
 	ownerEmail    string
 	statusName    string
 	statusType    string
+	hasSubtask    bool // when true, task 777 reports subtasks and /subtasks/ serves one
 }
 
 func newZohoHandlerMock(t *testing.T) *zohoHandlerMock {
@@ -50,6 +51,15 @@ func newZohoHandlerMock(t *testing.T) *zohoHandlerMock {
 			io.WriteString(w, `{"comments":[{"id":9,"id_string":"9","content":"a zoho comment","added_person":"Jam","created_time":"06-01-2026"}]}`)
 		case strings.HasSuffix(path, "/tasklists/"):
 			io.WriteString(w, `{"tasklists":[{"id":501,"id_string":"501","name":"Sprint 7"}]}`)
+		case strings.HasSuffix(path, "/subtasks/"):
+			if m.hasSubtask && strings.Contains(path, "/tasks/777/") {
+				io.WriteString(w, `{"tasks":[{
+					"id":888,"id_string":"888","name":"A subtask","subtasks":false,
+					"status":{"name":"Closed","type":"closed"},
+					"details":{"owners":[{"zpuid":901,"name":"Sub","email":"sub@x.io"}]}}]}`)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
 		case strings.Contains(path, "/tasks/") && r.Method == http.MethodPost:
 			r.ParseForm()
 			parts := strings.Split(strings.Trim(path, "/"), "/")
@@ -57,11 +67,11 @@ func newZohoHandlerMock(t *testing.T) *zohoHandlerMock {
 			io.WriteString(w, `{"tasks":[]}`)
 		case strings.HasSuffix(path, "/tasks/"):
 			io.WriteString(w, fmt.Sprintf(`{"tasks":[{
-				"id":777,"id_string":"777","name":"Do thing",
+				"id":777,"id_string":"777","name":"Do thing","subtasks":%v,
 				"status":{"name":%q,"type":%q},
 				"details":{"owners":[{"zpuid":900,"name":"Jam","email":%q}]},
 				"tasklist":{"id":501,"id_string":"501","name":"Sprint 7"}}]}`,
-				m.statusName, m.statusType, m.ownerEmail))
+				m.hasSubtask, m.statusName, m.statusType, m.ownerEmail))
 		case strings.HasSuffix(path, "/projects/"):
 			io.WriteString(w, `{"projects":[{"id":111,"id_string":"111","name":"RnD","status":"active"}]}`)
 		default:
@@ -118,7 +128,7 @@ func cleanupZohoFixtures(t *testing.T) {
 	t.Cleanup(func() {
 		ctx := context.Background()
 		testPool.Exec(ctx,
-			`DELETE FROM issue WHERE workspace_id = $1::uuid AND metadata @> '{"zoho_task_id":"777"}'::jsonb`,
+			`DELETE FROM issue WHERE workspace_id = $1::uuid AND metadata ? 'zoho_task_id'`,
 			testWorkspaceID)
 		testPool.Exec(ctx,
 			`DELETE FROM sprint WHERE workspace_id = $1::uuid AND goal LIKE '%zoho_tasklist:%'`,
@@ -205,6 +215,45 @@ func TestZohoImportCreatesIssue(t *testing.T) {
 	}
 }
 
+// TestZohoImportSubtasks: a task that reports subtasks gets its children imported
+// as Agora sub-issues (parent_issue_id = the parent task's issue).
+func TestZohoImportSubtasks(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("no database")
+	}
+	mock := newZohoHandlerMock(t)
+	mock.hasSubtask = true
+	configureZohoEnv(t, mock.srv.URL)
+	cleanupZohoFixtures(t)
+
+	wsUUID, _ := util.ParseUUID(testWorkspaceID)
+	st := testHandler.newZohoSyncState()
+	if err := testHandler.syncZohoProject(context.Background(), wsUUID, "111", st); err != nil {
+		t.Fatalf("syncZohoProject: %v", err)
+	}
+
+	parentID, _, _, _, _, pc := issueByZohoTaskID(t, "777")
+	if pc != 1 || parentID == "" {
+		t.Fatalf("parent issue: count=%d id=%q", pc, parentID)
+	}
+	subID, subStatus, _, _, _, sc := issueByZohoTaskID(t, "888")
+	if sc != 1 || subID == "" {
+		t.Fatalf("subtask issue not created: count=%d", sc)
+	}
+	if subStatus != "done" {
+		t.Errorf("subtask status = %q, want done", subStatus)
+	}
+	// The subtask must be parented under the parent task's issue.
+	var parentRef string
+	if err := testPool.QueryRow(context.Background(),
+		`SELECT COALESCE(parent_issue_id::text,'') FROM issue WHERE id = $1::uuid`, subID).Scan(&parentRef); err != nil {
+		t.Fatalf("parent ref query: %v", err)
+	}
+	if parentRef != parentID {
+		t.Errorf("subtask parent_issue_id = %q, want %q", parentRef, parentID)
+	}
+}
+
 // TestZohoImportUpdatesInPlace: a second sync of the same task updates the
 // existing issue (status flip to done) without creating a duplicate.
 func TestZohoImportUpdatesInPlace(t *testing.T) {
@@ -240,6 +289,48 @@ func TestZohoImportUpdatesInPlace(t *testing.T) {
 	}
 	if status2 != "done" {
 		t.Errorf("after update: status = %q, want done", status2)
+	}
+}
+
+// TestZohoImportPreservesManualAssignee: a re-import must NOT clear a manual
+// assignment when the Zoho owner doesn't map to a workspace member. Regression
+// for the reconcile wiping the assignee on every sync.
+func TestZohoImportPreservesManualAssignee(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("no database")
+	}
+	mock := newZohoHandlerMock(t)
+	mock.ownerEmail = "nobody@nowhere.example" // not a member -> import leaves unassigned
+	configureZohoEnv(t, mock.srv.URL)
+	cleanupZohoFixtures(t)
+
+	wsUUID, _ := util.ParseUUID(testWorkspaceID)
+	ctx := context.Background()
+
+	st := testHandler.newZohoSyncState()
+	if err := testHandler.syncZohoProject(ctx, wsUUID, "111", st); err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+	id, _, atype, _, _, c := issueByZohoTaskID(t, "777")
+	if c != 1 || atype != "" {
+		t.Fatalf("after import: count=%d assignee_type=%q (want 1, unassigned)", c, atype)
+	}
+
+	// Manually assign to the workspace owner.
+	if _, err := testPool.Exec(ctx,
+		`UPDATE issue SET assignee_type='member', assignee_id=$2::uuid WHERE id=$1::uuid`,
+		id, testUserID); err != nil {
+		t.Fatalf("manual assign: %v", err)
+	}
+
+	// Re-import: the manual assignment must survive.
+	st2 := testHandler.newZohoSyncState()
+	if err := testHandler.syncZohoProject(ctx, wsUUID, "111", st2); err != nil {
+		t.Fatalf("re-import: %v", err)
+	}
+	_, _, atype2, aid2, _, _ := issueByZohoTaskID(t, "777")
+	if atype2 != "member" || aid2 != testUserID {
+		t.Errorf("manual assignee wiped by re-import: type=%q id=%q, want member/%s", atype2, aid2, testUserID)
 	}
 }
 

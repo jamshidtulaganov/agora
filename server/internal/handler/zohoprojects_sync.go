@@ -192,6 +192,10 @@ type zohoSyncState struct {
 	// tasks can be backfilled by a later, throttle-paced pass.
 	commentsThrottled bool
 
+	// subtasksThrottled is the same circuit-breaker for the per-parent subtasks
+	// endpoint (also rate-limited). Once tripped, the run stops fetching subtasks.
+	subtasksThrottled bool
+
 	// incremental selects the Phase-2 modified-since semantics: when true,
 	// syncZohoProject reads the per-project cursor (settings.zoho_synced_at) and
 	// passes it as the ListTasks last_modified_time filter, so only changed tasks
@@ -298,7 +302,7 @@ func (h *Handler) syncZohoProject(ctx context.Context, wsID pgtype.UUID, zohoPro
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := h.syncZohoTask(ctx, wsID, zohoProjectID, &tasks[i], st); err != nil {
+		if err := h.syncZohoTask(ctx, wsID, zohoProjectID, &tasks[i], st, pgtype.UUID{}, 0); err != nil {
 			slog.Warn("zoho import: task sync failed",
 				"task_id", tasks[i].ID, "project_id", zohoProjectID, "error", err)
 		}
@@ -330,15 +334,70 @@ func (h *Handler) zohoProjectName(ctx context.Context, portalID, zohoProjectID s
 
 // --- task → issue -----------------------------------------------------------
 
-// syncZohoTask reconciles a single Zoho task into a Agora issue in the
-// workspace: it dedups on the zoho_task_id marker, creating the issue on first
-// sight and updating status/assignee/sprint in place on re-import. Mirrors
-// syncBitrixTaskWithState (minus the inbound-webhook/tag-filter concerns, which
-// don't apply to a pull import).
-func (h *Handler) syncZohoTask(ctx context.Context, wsID pgtype.UUID, zohoProjectID string, task *zohoprojects.Task, st *zohoSyncState) error {
+// maxSubtaskDepth bounds the Zoho subtask recursion so a pathological parent
+// chain (or an unexpected cycle) can't spin. Zoho task nesting is shallow in
+// practice; 5 levels is well beyond any real tree.
+const maxSubtaskDepth = 5
+
+// syncZohoTask reconciles a Zoho task into a Agora issue and then imports its
+// subtasks (one level deeper) as Agora sub-issues, recursively. parentIssueID is
+// the Agora issue this task hangs under (zero/invalid for a top-level task);
+// depth bounds the recursion. The locked reconcile runs first and its lock is
+// released before the subtask fetch, so a deep tree never holds an ancestor's
+// lock-tx open across child API calls.
+func (h *Handler) syncZohoTask(ctx context.Context, wsID pgtype.UUID, zohoProjectID string, task *zohoprojects.Task, st *zohoSyncState, parentIssueID pgtype.UUID, depth int) error {
+	issueID, err := h.reconcileZohoTask(ctx, wsID, zohoProjectID, task, st, parentIssueID)
+	if err != nil {
+		return err
+	}
+	// Import subtasks as sub-issues. Gated on Zoho's HasSubtasks flag so childless
+	// tasks cost no extra (rate-limited) API call, bounded by depth, and stopped
+	// once Zoho throttles the subtasks endpoint.
+	if issueID.Valid && task.HasSubtasks && depth < maxSubtaskDepth && !st.subtasksThrottled {
+		h.importZohoSubtasks(ctx, wsID, zohoProjectID, task.ID, issueID, st, depth)
+	}
+	return nil
+}
+
+// importZohoSubtasks fetches a parent task's direct children and reconciles each
+// into a Agora sub-issue (parent_issue_id = parentIssueID), recursing for deeper
+// levels. Best-effort: a fetch failure is logged and skipped; a Zoho throttle
+// trips a per-run breaker so the rest of the run stops hitting the subtasks
+// endpoint.
+func (h *Handler) importZohoSubtasks(ctx context.Context, wsID pgtype.UUID, zohoProjectID, parentTaskID string, parentIssueID pgtype.UUID, st *zohoSyncState, depth int) {
+	subs, err := st.client.ListSubtasks(ctx, st.portalID, zohoProjectID, parentTaskID)
+	if err != nil {
+		if zohoprojects.IsThrottle(err) {
+			st.subtasksThrottled = true
+			slog.Warn("zoho import: subtasks rate-limited by Zoho; skipping subtask import for the rest of this run",
+				"parent_task_id", parentTaskID)
+			return
+		}
+		slog.Warn("zoho import: fetch subtasks failed", "parent_task_id", parentTaskID, "error", err)
+		return
+	}
+	for i := range subs {
+		if ctx.Err() != nil {
+			return
+		}
+		if err := h.syncZohoTask(ctx, wsID, zohoProjectID, &subs[i], st, parentIssueID, depth+1); err != nil {
+			slog.Warn("zoho import: subtask sync failed",
+				"subtask_id", subs[i].ID, "parent_task_id", parentTaskID, "error", err)
+		}
+	}
+}
+
+// reconcileZohoTask reconciles a single Zoho task into a Agora issue: it dedups
+// on the zoho_task_id marker, creating the issue on first sight and updating
+// status/assignee/sprint in place on re-import. When parentIssueID is valid the
+// issue is linked under it (Zoho subtask → Agora sub-issue). Returns the resolved
+// Agora issue id so the caller can thread it as the parent of any subtasks.
+// Mirrors syncBitrixTaskWithState (minus the inbound-webhook/tag-filter concerns,
+// which don't apply to a pull import).
+func (h *Handler) reconcileZohoTask(ctx context.Context, wsID pgtype.UUID, zohoProjectID string, task *zohoprojects.Task, st *zohoSyncState, parentIssueID pgtype.UUID) (pgtype.UUID, error) {
 	if strings.TrimSpace(task.ID) == "" {
 		st.skipped++
-		return errors.New("empty task id")
+		return pgtype.UUID{}, errors.New("empty task id")
 	}
 
 	// Serialize the find/create/stamp sequence per (workspace, task) with a
@@ -351,11 +410,11 @@ func (h *Handler) syncZohoTask(ctx context.Context, wsID pgtype.UUID, zohoProjec
 	lockKey := util.UUIDToString(wsID) + ":zoho:" + task.ID
 	lockTx, err := h.TxStarter.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("begin sync lock tx: %w", err)
+		return pgtype.UUID{}, fmt.Errorf("begin sync lock tx: %w", err)
 	}
 	defer func() { _ = lockTx.Rollback(ctx) }()
 	if _, err := lockTx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, lockKey); err != nil {
-		return fmt.Errorf("acquire sync lock: %w", err)
+		return pgtype.UUID{}, fmt.Errorf("acquire sync lock: %w", err)
 	}
 	releaseLock := func() {
 		if cerr := lockTx.Commit(ctx); cerr != nil {
@@ -366,7 +425,7 @@ func (h *Handler) syncZohoTask(ctx context.Context, wsID pgtype.UUID, zohoProjec
 
 	existing, found, err := h.findIssueByZohoTaskID(ctx, wsID, task.ID)
 	if err != nil {
-		return fmt.Errorf("dedup lookup: %w", err)
+		return pgtype.UUID{}, fmt.Errorf("dedup lookup: %w", err)
 	}
 
 	mappedStatus := mapZohoStatusToAgora(task)
@@ -390,16 +449,20 @@ func (h *Handler) syncZohoTask(ctx context.Context, wsID pgtype.UUID, zohoProjec
 				Status:      mappedStatus,
 				WorkspaceID: wsID,
 			}); err != nil {
-				return fmt.Errorf("update issue status: %w", err)
+				return pgtype.UUID{}, fmt.Errorf("update issue status: %w", err)
 			}
 			slog.Info("zoho import: updated issue status in place",
 				"issue_id", util.UUIDToString(existing.ID), "task_id", task.ID, "status", mappedStatus)
 		}
 
+		// Only (re)assign when the Zoho owner maps to a real workspace member.
+		// NEVER clear an assignee just because the owner isn't an Agora member —
+		// that would wipe a manual assignment on every re-sync (the owner email
+		// often differs from the member's Agora email).
 		assigneeType, assigneeID := h.zohoResolveAssignee(ctx, wsID, &task.Owner, st)
-		if !sameIssueAssignee(existing, assigneeType, assigneeID) {
+		if assigneeType.Valid && assigneeID.Valid && !sameIssueAssignee(existing, assigneeType, assigneeID) {
 			if err := h.zohoSetIssueAssignee(ctx, existing.ID, wsID, assigneeType, assigneeID); err != nil {
-				return fmt.Errorf("update issue assignee: %w", err)
+				return pgtype.UUID{}, fmt.Errorf("update issue assignee: %w", err)
 			}
 		}
 		// Always refresh the Zoho owner display metadata so the assignee is
@@ -421,6 +484,18 @@ func (h *Handler) syncZohoTask(ctx context.Context, wsID pgtype.UUID, zohoProjec
 					"issue_id", util.UUIDToString(existing.ID), "task_id", task.ID, "error", err)
 			}
 		}
+		// Backfill the parent link for a subtask imported before its parent issue
+		// existed (only when missing — never re-parent an issue a user may have
+		// moved).
+		if parentIssueID.Valid && !existing.ParentIssueID.Valid {
+			if _, err := h.DB.Exec(ctx,
+				`UPDATE issue SET parent_issue_id = $3, updated_at = now()
+				   WHERE id = $1 AND workspace_id = $2 AND parent_issue_id IS NULL`,
+				existing.ID, wsID, parentIssueID); err != nil {
+				slog.Warn("zoho import: backfill parent failed",
+					"issue_id", util.UUIDToString(existing.ID), "task_id", task.ID, "error", err)
+			}
+		}
 		// Link to the sprint on re-import too (idempotent upsert keyed on issue id).
 		if sprintID.Valid {
 			if err := h.Queries.SetIssueSprint(ctx, db.SetIssueSprintParams{
@@ -432,14 +507,14 @@ func (h *Handler) syncZohoTask(ctx context.Context, wsID pgtype.UUID, zohoProjec
 			}
 		}
 		st.updated++
-		return nil
+		return existing.ID, nil
 	}
 
 	// New issue. Creator is the workspace owner (the integration is a system
 	// actor with no member of its own).
 	ownerID, err := h.zohoWorkspaceOwner(ctx, wsID)
 	if err != nil {
-		return fmt.Errorf("resolve workspace owner: %w", err)
+		return pgtype.UUID{}, fmt.Errorf("resolve workspace owner: %w", err)
 	}
 
 	draft := zohoprojects.MapTaskToIssue(task)
@@ -456,19 +531,22 @@ func (h *Handler) syncZohoTask(ctx context.Context, wsID pgtype.UUID, zohoProjec
 		CreatorType:  "member",
 		CreatorID:    ownerID,
 		ProjectID:    st.agoraProjectID,
+		// Link a Zoho subtask under its parent's Agora issue (zero/invalid for a
+		// top-level task).
+		ParentIssueID: parentIssueID,
 		// Dedup is on the task id (set as metadata post-create), not the title.
 		AllowDuplicate: true,
 	}, service.IssueCreateOpts{
 		ActorID: util.UUIDToString(ownerID),
 	})
 	if err != nil {
-		return fmt.Errorf("create issue: %w", err)
+		return pgtype.UUID{}, fmt.Errorf("create issue: %w", err)
 	}
 
 	// Stamp the link so the next import dedups onto this issue.
 	idValue, err := json.Marshal(task.ID)
 	if err != nil {
-		return fmt.Errorf("encode task id: %w", err)
+		return pgtype.UUID{}, fmt.Errorf("encode task id: %w", err)
 	}
 	if _, err := h.Queries.SetIssueMetadataKey(ctx, db.SetIssueMetadataKeyParams{
 		ID:          res.Issue.ID,
@@ -476,7 +554,7 @@ func (h *Handler) syncZohoTask(ctx context.Context, wsID pgtype.UUID, zohoProjec
 		Key:         zohoTaskIDMetaKey,
 		Value:       idValue,
 	}); err != nil {
-		return fmt.Errorf("set zoho_task_id metadata: %w", err)
+		return pgtype.UUID{}, fmt.Errorf("set zoho_task_id metadata: %w", err)
 	}
 	// Also stamp the originating Zoho project id (Phase 2) so the outbound status
 	// mirror can address the task (portal + project + task) from metadata alone.
@@ -505,7 +583,7 @@ func (h *Handler) syncZohoTask(ctx context.Context, wsID pgtype.UUID, zohoProjec
 	if st.importComments && !st.commentsThrottled {
 		h.importZohoComments(ctx, wsID, res.Issue.ID, ownerID, zohoProjectID, task.ID, st)
 	}
-	return nil
+	return res.Issue.ID, nil
 }
 
 // --- project marker dedup ---------------------------------------------------
