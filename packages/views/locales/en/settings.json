@@ -345,6 +345,8 @@
     "no_members": "No members found.",
     "pending_title": "Pending invitations ({{count}})",
     "pending_status": "Pending",
+    "copy_link": "Copy invite link",
+    "link_copied": "Invite link copied",
     "revoke_invitation_tooltip": "Revoke invitation",
     "revoke_invitation_title": "Revoke invitation",
     "revoke_invitation_description": "Revoke the invitation to {{email}}? They will no longer be able to join this workspace.",

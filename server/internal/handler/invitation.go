@@ -264,8 +264,9 @@ func (h *Handler) RevokeInvitation(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 func (h *Handler) GetMyInvitation(w http.ResponseWriter, r *http.Request) {
-	userID, ok := requireUserID(w, r)
-	if !ok {
+	// Auth required, but the user identity is intentionally not matched against
+	// the invite — see the bearer-link note below.
+	if _, ok := requireUserID(w, r); !ok {
 		return
 	}
 
@@ -280,17 +281,10 @@ func (h *Handler) GetMyInvitation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the invitation belongs to the current user.
-	user, err := h.Queries.GetUser(r.Context(), parseUUID(userID))
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to load user")
-		return
-	}
-	if strings.ToLower(user.Email) != inv.InviteeEmail && uuidToString(inv.InviteeUserID) != userID {
-		writeError(w, http.StatusForbidden, "invitation does not belong to you")
-		return
-	}
-
+	// Shareable-link (bearer) model: the invitation UUID is the secret, so any
+	// authenticated link-holder may view the invite. Required for Telegram-OTP
+	// users, whose synthetic tg<chatid>@telegram.local address never matches
+	// invitee_email; they open invites shared out-of-band (e.g. over Telegram).
 	resp := invitationToResponse(inv)
 
 	// Enrich with workspace name and inviter name.
@@ -375,14 +369,13 @@ func (h *Handler) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the invitation belongs to the current user.
+	// Shareable-link (bearer) model: any authenticated link-holder may accept
+	// and is recorded as the member. Lets Telegram-OTP users (whose synthetic
+	// tg<chatid>@telegram.local address never matches invitee_email) join via a
+	// link shared out-of-band. Pending + expiry checks below still gate it.
 	user, err := h.Queries.GetUser(r.Context(), parseUUID(userID))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load user")
-		return
-	}
-	if strings.ToLower(user.Email) != inv.InviteeEmail && uuidToString(inv.InviteeUserID) != userID {
-		writeError(w, http.StatusForbidden, "invitation does not belong to you")
 		return
 	}
 

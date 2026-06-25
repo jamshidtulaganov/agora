@@ -345,6 +345,8 @@
     "no_members": "A’zolar topilmadi.",
     "pending_title": "Kutilayotgan takliflar ({{count}})",
     "pending_status": "Kutilmoqda",
+    "copy_link": "Taklif havolasini nusxalash",
+    "link_copied": "Havola nusxalandi",
     "revoke_invitation_tooltip": "Taklifni bekor qilish",
     "revoke_invitation_title": "Taklifni bekor qilish",
     "revoke_invitation_description": "{{email}} ga taklif bekor qilinsinmi? U bu ish maydoniga qo‘shila olmaydi.",

@@ -345,6 +345,8 @@
     "no_members": "Участники не найдены.",
     "pending_title": "Ожидающие приглашения ({{count}})",
     "pending_status": "Ожидает",
+    "copy_link": "Скопировать ссылку-приглашение",
+    "link_copied": "Ссылка скопирована",
     "revoke_invitation_tooltip": "Отозвать приглашение",
     "revoke_invitation_title": "Отозвать приглашение",
     "revoke_invitation_description": "Отозвать приглашение для {{email}}? Они больше не смогут присоединиться к этому рабочему пространству.",

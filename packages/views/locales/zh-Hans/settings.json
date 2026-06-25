@@ -345,6 +345,8 @@
     "no_members": "未找到成员。",
     "pending_title": "待处理邀请（{{count}}）",
     "pending_status": "待处理",
+    "copy_link": "复制邀请链接",
+    "link_copied": "邀请链接已复制",
     "revoke_invitation_tooltip": "撤销邀请",
     "revoke_invitation_title": "撤销邀请",
     "revoke_invitation_description": "撤销发给 {{email}} 的邀请？对方将不能再加入该工作区。",

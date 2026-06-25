@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Crown, Shield, User, Plus, MoreHorizontal, UserMinus, Users, Clock, X, Mail } from "lucide-react";
+import { Crown, Shield, User, Plus, MoreHorizontal, UserMinus, Users, Clock, X, Mail, Copy } from "lucide-react";
 import { ActorAvatar } from "../../common/actor-avatar";
 import type { MemberWithUser, MemberRole, Invitation } from "@agora/core/types";
 import { Input } from "@agora/ui/components/ui/input";
@@ -39,7 +39,7 @@ import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@agora/core/auth";
 import { useWorkspaceId } from "@agora/core/hooks";
-import { useCurrentWorkspace } from "@agora/core/paths";
+import { useCurrentWorkspace, paths } from "@agora/core/paths";
 import { memberListOptions, invitationListOptions, workspaceKeys } from "@agora/core/workspace/queries";
 import { api } from "@agora/core/api";
 import { useT } from "../../i18n";
@@ -196,6 +196,21 @@ function InvitationRow({
   const roleConfig = useRoleLabels();
   const rc = roleConfig[invitation.role];
 
+  // Shareable invite link (bearer): any logged-in user who opens it joins.
+  // The page is served same-origin at /invite/<id>, so window.location.origin
+  // yields the public URL the admin can paste into Telegram/chat.
+  const handleCopyLink = async () => {
+    const url = `${window.location.origin}${paths.invite(invitation.id)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success(t(($) => $.members.link_copied));
+    } catch {
+      // Clipboard blocked (permissions/insecure context): surface the raw URL
+      // so it can still be copied by hand.
+      toast(url);
+    }
+  };
+
   return (
     <div className="flex items-center gap-3 px-4 py-3">
       <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
@@ -208,6 +223,16 @@ function InvitationRow({
           <span>{t(($) => $.members.pending_status)}</span>
         </div>
       </div>
+      {canManage && (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={handleCopyLink}
+          title={t(($) => $.members.copy_link)}
+        >
+          <Copy className="h-4 w-4 text-muted-foreground" />
+        </Button>
+      )}
       {canManage && (
         <Button
           variant="ghost"
