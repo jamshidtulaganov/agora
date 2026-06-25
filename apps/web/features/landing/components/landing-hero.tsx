@@ -22,7 +22,7 @@ export function LandingHero() {
   const user = useAuthStore((s) => s.user);
 
   return (
-    <div className="relative min-h-full overflow-hidden bg-[#05060b] text-white">
+    <div className="relative min-h-full overflow-hidden bg-white text-[#18181B] dark:bg-[#05060b] dark:text-white">
       <LandingBackdrop />
 
       <main className="relative z-10">
@@ -32,14 +32,14 @@ export function LandingHero() {
         >
           <div className="mx-auto max-w-[1120px] text-center">
             <Reveal from="none">
-              <p className="text-[12px] font-medium uppercase tracking-[0.34em] text-white/40">
-                One board <span className="text-white/25">·</span>{" "}
+              <p className="text-[12px] font-medium uppercase tracking-[0.34em] text-[#71717A] dark:text-white/40">
+                One board <span className="text-[#A1A1AA] dark:text-white/25">·</span>{" "}
                 <span style={{ color: ACCENT }}>Humans + Agents</span>
               </p>
             </Reveal>
 
             <Reveal delay={80}>
-              <h1 className="mt-5 font-[family-name:var(--font-serif)] text-[3.65rem] leading-[0.93] tracking-[-0.038em] text-white drop-shadow-[0_10px_34px_rgba(0,0,0,0.32)] sm:text-[4.85rem] lg:text-[6.4rem]">
+              <h1 className="mt-5 font-[family-name:var(--font-serif)] text-[3.65rem] leading-[0.93] tracking-[-0.038em] text-[#18181B] dark:text-white dark:drop-shadow-[0_10px_34px_rgba(0,0,0,0.32)] sm:text-[4.85rem] lg:text-[6.4rem]">
                 {t.hero.headlineLine1}
                 <br />
                 <span
@@ -52,7 +52,7 @@ export function LandingHero() {
             </Reveal>
 
             <Reveal delay={160}>
-              <p className="mx-auto mt-7 max-w-[760px] text-[15px] leading-7 text-white/84 sm:text-[17px]">
+              <p className="mx-auto mt-7 max-w-[760px] text-[15px] leading-7 text-[#3F3F46] dark:text-white/84 sm:text-[17px]">
                 {t.hero.subheading}
               </p>
             </Reveal>
@@ -72,7 +72,7 @@ export function LandingHero() {
                 </Link>
                 <Link
                   href="#preview"
-                  className="inline-flex items-center justify-center gap-1.5 rounded-[12px] border border-white/14 bg-white/[0.04] px-5 py-3 text-[14px] font-semibold text-white/85 transition-colors hover:bg-white/[0.08] hover:text-white"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-[12px] border border-zinc-200 bg-zinc-50 px-5 py-3 text-[14px] font-semibold text-[#3F3F46] transition-colors hover:bg-zinc-100 hover:text-[#18181B] dark:border-white/14 dark:bg-white/[0.04] dark:text-white/85 dark:hover:bg-white/[0.08] dark:hover:text-white"
                 >
                   See the board
                 </Link>
@@ -82,7 +82,7 @@ export function LandingHero() {
 
           <Reveal delay={320}>
             <div className="mt-10 flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
-              <span className="text-[12px] font-medium uppercase tracking-[0.2em] text-white/35">
+              <span className="text-[12px] font-medium uppercase tracking-[0.2em] text-[#71717A] dark:text-white/35">
                 {t.hero.worksWith}
               </span>
               <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-3">
@@ -122,7 +122,7 @@ export function LandingHero() {
               ].map((c) => (
                 <span
                   key={c.label}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-white/12 bg-white/[0.04] px-3 py-1.5 text-[12px] font-medium text-white/75"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-[12px] font-medium text-[#3F3F46] dark:border-white/12 dark:bg-white/[0.04] dark:text-white/75"
                 >
                   <span style={{ color: ACCENT }}>{c.icon}</span>
                   {c.label}
@@ -137,7 +137,7 @@ export function LandingHero() {
           >
             <div id="preview">
               <BoardMockup />
-              <p className="mt-5 text-center text-[12px] uppercase tracking-[0.28em] text-white/30">
+              <p className="mt-5 text-center text-[12px] uppercase tracking-[0.28em] text-[#A1A1AA] dark:text-white/30">
                 one agent walks it Todo → Done — you just review
               </p>
             </div>
@@ -156,7 +156,7 @@ function WorksWithItem({
   label: string;
 }) {
   return (
-    <div className="flex items-center gap-2.5 text-white/80">
+    <div className="flex items-center gap-2.5 text-[#3F3F46] dark:text-white/80">
       {icon}
       <span className="text-[15px] font-medium">{label}</span>
     </div>
@@ -166,18 +166,40 @@ function WorksWithItem({
 function LandingBackdrop() {
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0">
-      {/* accent glow */}
+      {/* accent glow (light — softened) */}
       <div
-        className="absolute inset-0"
+        className="absolute inset-0 dark:hidden"
+        style={{
+          background:
+            "radial-gradient(120% 80% at 50% -10%, rgba(37,99,235,0.12), transparent 55%)," +
+            "radial-gradient(90% 60% at 85% 110%, rgba(37,99,235,0.05), transparent 60%)",
+        }}
+      />
+      {/* accent glow (dark) */}
+      <div
+        className="absolute inset-0 hidden dark:block"
         style={{
           background:
             "radial-gradient(120% 80% at 50% -10%, rgba(37,99,235,0.30), transparent 55%)," +
             "radial-gradient(90% 60% at 85% 110%, rgba(37,99,235,0.10), transparent 60%)",
         }}
       />
-      {/* faint dotted grid */}
+      {/* faint dotted grid (light — dark dots) */}
       <div
-        className="absolute inset-0 opacity-[0.5]"
+        className="absolute inset-0 opacity-[0.5] dark:hidden"
+        style={{
+          backgroundImage:
+            "radial-gradient(rgba(9,9,11,0.05) 1px, transparent 1px)",
+          backgroundSize: "26px 26px",
+          maskImage:
+            "radial-gradient(80% 55% at 50% 0%, black, transparent 75%)",
+          WebkitMaskImage:
+            "radial-gradient(80% 55% at 50% 0%, black, transparent 75%)",
+        }}
+      />
+      {/* faint dotted grid (dark — light dots) */}
+      <div
+        className="absolute inset-0 hidden opacity-[0.5] dark:block"
         style={{
           backgroundImage:
             "radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px)",
@@ -188,9 +210,17 @@ function LandingBackdrop() {
             "radial-gradient(80% 55% at 50% 0%, black, transparent 75%)",
         }}
       />
-      {/* center vertical beam */}
+      {/* center vertical beam (light — softened) */}
       <div
-        className="absolute left-1/2 top-0 h-[420px] w-px -translate-x-1/2"
+        className="absolute left-1/2 top-0 h-[420px] w-px -translate-x-1/2 dark:hidden"
+        style={{
+          background:
+            "linear-gradient(to bottom, rgba(37,99,235,0.22), transparent)",
+        }}
+      />
+      {/* center vertical beam (dark) */}
+      <div
+        className="absolute left-1/2 top-0 hidden h-[420px] w-px -translate-x-1/2 dark:block"
         style={{
           background:
             "linear-gradient(to bottom, rgba(37,99,235,0.55), transparent)",
@@ -217,7 +247,7 @@ const DV: Assignee = { name: "Dilnoza", initials: "DV", kind: "human" };
 const COLUMNS: { name: string; dot: string; cards: Card[] }[] = [
   {
     name: "Todo",
-    dot: "bg-white/45",
+    dot: "bg-zinc-400 dark:bg-white/45",
     cards: [
       { key: "AGORA-142", title: "Stripe billing webhooks", assignee: JT },
     ],
@@ -257,7 +287,7 @@ const LIVE_CARD = {
   title: "Persian localization — RTL polish",
 };
 const STAGE_STATUS = [
-  { label: "queued", tone: "text-white/45" },
+  { label: "queued", tone: "text-[#71717A] dark:text-white/45" },
   { label: "working", tone: "text-amber-300", pulse: true },
   { label: "in review", tone: "text-blue-300" },
   { label: "shipped", tone: "text-emerald-300", done: true },
@@ -267,7 +297,7 @@ function BoardMockup() {
   const stage = useBoardStage();
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0a0c16]/80 shadow-[0_40px_120px_-30px_rgba(37,99,235,0.45)]">
+    <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_30px_90px_-40px_rgba(37,99,235,0.30)] dark:border-white/10 dark:bg-[#0a0c16]/80 dark:shadow-[0_40px_120px_-30px_rgba(37,99,235,0.45)]">
       <div className="grid grid-cols-2 gap-3 p-3 sm:p-4 lg:grid-cols-4">
         {COLUMNS.map((col, ci) => {
           const liveHere = stage === ci;
@@ -275,17 +305,17 @@ function BoardMockup() {
             <Reveal
               key={col.name}
               delay={ci * 110}
-              className="rounded-xl bg-white/[0.03] p-2.5"
+              className="rounded-xl bg-zinc-50 p-2.5 dark:bg-white/[0.03]"
             >
               <div className="mb-2 flex items-center justify-between px-1">
-                <span className="flex items-center gap-2 text-[12px] font-medium text-white/65">
+                <span className="flex items-center gap-2 text-[12px] font-medium text-[#52525B] dark:text-white/65">
                   <span
                     className={cn("size-1.5 rounded-full", col.dot)}
                     aria-hidden
                   />
                   {col.name}
                 </span>
-                <span className="text-[12px] text-white/35">
+                <span className="text-[12px] text-[#A1A1AA] dark:text-white/35">
                   {col.cards.length + (liveHere ? 1 : 0)}
                 </span>
               </div>
@@ -294,12 +324,12 @@ function BoardMockup() {
                 {col.cards.map((card) => (
                   <article
                     key={card.key}
-                    className="rounded-lg border border-white/[0.06] bg-white/[0.04] p-2.5 text-left"
+                    className="rounded-lg border border-zinc-200 bg-white p-2.5 text-left dark:border-white/[0.06] dark:bg-white/[0.04]"
                   >
-                    <div className="mb-2 text-[11px] font-medium tracking-wide text-white/35">
+                    <div className="mb-2 text-[11px] font-medium tracking-wide text-[#A1A1AA] dark:text-white/35">
                       {card.key}
                     </div>
-                    <div className="mb-2.5 text-[13px] leading-snug text-white/90">
+                    <div className="mb-2.5 text-[13px] leading-snug text-[#27272A] dark:text-white/90">
                       {card.title}
                     </div>
                     <AssigneeChip assignee={card.assignee} />
@@ -341,10 +371,10 @@ function LiveCard({ stage }: { stage: number }) {
       // Re-mount on every stage so the entrance animation re-runs — reads as
       // the card "landing" in the new column.
       key={stage}
-      className="animate-in fade-in slide-in-from-top-2 rounded-lg border border-[#2563EB]/60 bg-[#2563EB]/[0.08] p-2.5 text-left shadow-[0_0_0_1px_rgba(37,99,235,0.25)] duration-500"
+      className="animate-in fade-in slide-in-from-top-2 rounded-lg border border-[#2563EB]/40 bg-[#2563EB]/[0.06] p-2.5 text-left shadow-[0_0_0_1px_rgba(37,99,235,0.12)] duration-500 dark:border-[#2563EB]/60 dark:bg-[#2563EB]/[0.08] dark:shadow-[0_0_0_1px_rgba(37,99,235,0.25)]"
     >
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-[11px] font-medium tracking-wide text-white/40">
+        <span className="text-[11px] font-medium tracking-wide text-[#71717A] dark:text-white/40">
           {LIVE_CARD.key}
         </span>
         <span
@@ -357,7 +387,7 @@ function LiveCard({ stage }: { stage: number }) {
           {status.label}
         </span>
       </div>
-      <div className="mb-2.5 text-[13px] leading-snug text-white/90">
+      <div className="mb-2.5 text-[13px] leading-snug text-[#27272A] dark:text-white/90">
         {LIVE_CARD.title}
       </div>
       <AssigneeChip assignee={ARIA} />
@@ -368,19 +398,23 @@ function LiveCard({ stage }: { stage: number }) {
 function AssigneeChip({ assignee }: { assignee: Assignee }) {
   const isAgent = assignee.kind === "agent";
   return (
-    <span className="inline-flex items-center gap-2 text-[11px] font-medium text-white/55">
+    <span className="inline-flex items-center gap-2 text-[11px] font-medium text-[#71717A] dark:text-white/55">
       <span
         className={cn(
           "flex size-5 items-center justify-center rounded-full text-[9px] font-semibold",
-          isAgent ? "text-white" : "bg-white/10 text-white/80",
+          isAgent
+            ? "text-white"
+            : "bg-zinc-200 text-[#52525B] dark:bg-white/10 dark:text-white/80",
         )}
         style={isAgent ? { backgroundColor: ACCENT } : undefined}
         aria-hidden
       >
         {isAgent ? <Sparkles className="size-2.5" /> : assignee.initials}
       </span>
-      <span className="text-white/80">{assignee.name}</span>
-      <span className="text-white/35">· {isAgent ? "agent" : "you"}</span>
+      <span className="text-[#52525B] dark:text-white/80">{assignee.name}</span>
+      <span className="text-[#A1A1AA] dark:text-white/35">
+        · {isAgent ? "agent" : "you"}
+      </span>
     </span>
   );
 }

@@ -53,6 +53,8 @@ deploy_backend() {
     TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" \
     TELEGRAM_WEBHOOK_SECRET="$TELEGRAM_WEBHOOK_SECRET" \
     TELEGRAM_MINIAPP_SHORTNAME="${TELEGRAM_MINIAPP_SHORTNAME:-}" \
+    BITRIX_WEBHOOK_URL="$BITRIX_WEBHOOK_URL" \
+    BITRIX_INBOUND_SECRET="$BITRIX_INBOUND_SECRET" \
     --app sd-agora-backend --stage
   # Build context = repo root; Dockerfile copies server/.
   fly deploy --config "$FLYDIR/backend/fly.toml" --app sd-agora-backend \

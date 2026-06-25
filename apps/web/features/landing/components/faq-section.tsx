@@ -10,10 +10,10 @@ export function FAQSection() {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   return (
-    <section id="faq" className="bg-[#05060b] text-white">
+    <section id="faq" className="bg-white text-[#18181B] dark:bg-[#05060b] dark:text-white">
       <div className="mx-auto max-w-[860px] px-4 py-24 sm:px-6 sm:py-32 lg:py-40">
         <Reveal className="text-center">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#71717A] dark:text-white/40">
             {t.faq.label}
           </p>
           <h2 className="mt-4 font-[family-name:var(--font-serif)] text-[2.6rem] leading-[1.05] tracking-[-0.03em] sm:text-[3.4rem] lg:text-[4.2rem]">
@@ -21,7 +21,7 @@ export function FAQSection() {
           </h2>
         </Reveal>
 
-        <div className="mt-14 divide-y divide-white/10 sm:mt-16">
+        <div className="mt-14 divide-y divide-zinc-200 dark:divide-white/10 sm:mt-16">
           {t.faq.items.map((faq, i) => (
             <Reveal key={i} delay={i * 55}>
               <button
@@ -29,12 +29,12 @@ export function FAQSection() {
                 onClick={() => setOpenIndex(openIndex === i ? null : i)}
                 className="flex w-full items-start justify-between gap-4 py-6 text-left"
               >
-                <span className="text-[16px] font-semibold leading-snug text-white sm:text-[17px]">
+                <span className="text-[16px] font-semibold leading-snug text-[#18181B] dark:text-white sm:text-[17px]">
                   {faq.question}
                 </span>
                 <span
                   className={cn(
-                    "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-white/15 text-white/40 transition-transform",
+                    "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-zinc-200 text-[#71717A] transition-transform dark:border-white/15 dark:text-white/40",
                     openIndex === i && "rotate-45",
                   )}
                 >
@@ -58,7 +58,7 @@ export function FAQSection() {
                 )}
               >
                 <div className="overflow-hidden">
-                  <p className="pb-6 pr-12 text-[14px] leading-[1.7] text-white/56 sm:text-[15px]">
+                  <p className="pb-6 pr-12 text-[14px] leading-[1.7] text-[#3F3F46] dark:text-white/56 sm:text-[15px]">
                     {faq.answer}
                   </p>
                 </div>

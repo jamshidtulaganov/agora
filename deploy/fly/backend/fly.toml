@@ -32,6 +32,11 @@ primary_region = "fra"
   # Telegram bot-OTP login. Token + webhook secret are fly secrets.
   TELEGRAM_BOT_USERNAME = "agora_ai_pm_bot"
 
+  # Bitrix24 sync — Sales Doctor (sd-main) only. Webhook URL + inbound secret
+  # are fly secrets; the routing below is plain env.
+  BITRIX_SYNC_WORKSPACE_SLUG = "sd-main"
+  BITRIX_GROUP_MAP = "153:sd-main"
+
   # Email via Gmail SMTP relay. Password is a fly secret.
   SMTP_HOST = "smtp.gmail.com"
   SMTP_PORT = "587"

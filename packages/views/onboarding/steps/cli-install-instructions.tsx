@@ -9,7 +9,7 @@ import { copyText } from "@agora/ui/lib/clipboard";
 import { useT } from "../../i18n";
 
 const INSTALL_CMD =
-  "curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash";
+  "curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.sh | bash";
 // Remote deployment: pin the CLI to this server (otherwise `agora setup
 // self-host` defaults to localhost:8080/:3000 and the daemon never connects).
 const SETUP_CMD =

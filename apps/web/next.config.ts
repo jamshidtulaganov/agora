@@ -76,6 +76,21 @@ const nextConfig: NextConfig = {
           source: "/uploads/:path*",
           destination: `${remoteApiUrl}/uploads/:path*`,
         },
+        {
+          // Backend health/readiness. `agora setup self-host` probes /health,
+          // so it must reach the backend, not the Next.js 404 page.
+          source: "/health",
+          destination: `${remoteApiUrl}/health`,
+        },
+        {
+          source: "/healthz",
+          destination: `${remoteApiUrl}/healthz`,
+        },
+        {
+          // Bitrix24 inbound webhook -> backend /bitrix/webhook.
+          source: "/bitrix/:path*",
+          destination: `${remoteApiUrl}/bitrix/:path*`,
+        },
       ],
       fallback: [],
     };

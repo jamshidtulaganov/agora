@@ -24,19 +24,19 @@ export function LandingFooter() {
   }));
 
   return (
-    <footer className="bg-[#0a0d12] text-white">
+    <footer className="bg-white text-[#18181B] dark:bg-[#0a0d12] dark:text-white">
       <div className="mx-auto max-w-[1320px] px-4 sm:px-6 lg:px-8">
         {/* Top: CTA + link columns */}
-        <div className="flex flex-col gap-12 border-b border-white/10 py-16 sm:py-20 lg:flex-row lg:gap-20">
+        <div className="flex flex-col gap-12 border-b border-zinc-200 py-16 dark:border-white/10 sm:py-20 lg:flex-row lg:gap-20">
           {/* Left — newsletter / CTA */}
           <div className="lg:w-[340px] lg:shrink-0">
             <Link href="#product" className="flex items-center gap-3">
-              <AgoraIcon className="size-5 text-[#2563EB]" noSpin />
+              <AgoraIcon className="size-5 text-foreground" noSpin />
               <span className="text-[18px] font-semibold tracking-[0.04em] lowercase">
                 agora
               </span>
             </Link>
-            <p className="mt-4 max-w-[300px] text-[14px] leading-[1.7] text-white/50 sm:text-[15px]">
+            <p className="mt-4 max-w-[300px] text-[14px] leading-[1.7] text-[#71717A] dark:text-white/50 sm:text-[15px]">
               {t.footer.tagline}
             </p>
             <div className="mt-4 flex items-center gap-3">
@@ -44,7 +44,7 @@ export function LandingFooter() {
                 href={twitterUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="text-white/40 transition-colors hover:text-white"
+                className="text-[#71717A] transition-colors hover:text-[#18181B] dark:text-white/40 dark:hover:text-white"
               >
                 <XMark className="size-4" />
               </Link>
@@ -63,7 +63,7 @@ export function LandingFooter() {
           <div className="grid flex-1 grid-cols-2 gap-8 sm:grid-cols-4">
             {groups.map((group) => (
               <div key={group.label}>
-                <h4 className="text-[12px] font-semibold uppercase tracking-[0.1em] text-white/40">
+                <h4 className="text-[12px] font-semibold uppercase tracking-[0.1em] text-[#71717A] dark:text-white/40">
                   {group.label}
                 </h4>
                 <ul className="mt-4 flex flex-col gap-2.5">
@@ -79,7 +79,7 @@ export function LandingFooter() {
                             ? () => captureDownloadIntent("landing_footer")
                             : undefined
                         }
-                        className="text-[14px] text-white/50 transition-colors hover:text-white"
+                        className="text-[14px] text-[#71717A] transition-colors hover:text-[#18181B] dark:text-white/50 dark:hover:text-white"
                       >
                         {link.label}
                       </Link>
@@ -93,7 +93,7 @@ export function LandingFooter() {
 
         {/* Bottom: copyright + language switcher */}
         <div className="flex items-center justify-between py-6">
-          <p className="text-[13px] text-white/36">
+          <p className="text-[13px] text-[#A1A1AA] dark:text-white/36">
             {t.footer.copyright.replace(
               "{year}",
               String(new Date().getFullYear()),
@@ -108,9 +108,9 @@ export function LandingFooter() {
                 className={cn(
                   "px-1.5 py-1 text-[12px] font-medium transition-colors",
                   l === locale
-                    ? "text-white/70"
-                    : "text-white/30 hover:text-white/50",
-                  i > 0 && "border-l border-white/16",
+                    ? "text-[#3F3F46] dark:text-white/70"
+                    : "text-[#A1A1AA] hover:text-[#71717A] dark:text-white/30 dark:hover:text-white/50",
+                  i > 0 && "border-l border-zinc-200 dark:border-white/16",
                 )}
               >
                 {localeLabels[l]}
@@ -123,10 +123,10 @@ export function LandingFooter() {
         <div className="relative overflow-hidden pb-4">
           <div className="flex items-end gap-6 sm:gap-8">
             <AgoraIcon
-              className="size-[clamp(4rem,12vw,10rem)] shrink-0 text-white"
+              className="size-[clamp(4rem,12vw,10rem)] shrink-0 text-[#18181B] dark:text-white"
               noSpin
             />
-            <span className="font-[family-name:var(--font-serif)] text-[clamp(6rem,22vw,16rem)] font-normal leading-[0.82] tracking-[-0.04em] text-white lowercase">
+            <span className="font-[family-name:var(--font-serif)] text-[clamp(6rem,22vw,16rem)] font-normal leading-[0.82] tracking-[-0.04em] text-[#18181B] lowercase dark:text-white">
               agora
             </span>
           </div>

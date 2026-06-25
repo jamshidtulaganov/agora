@@ -184,6 +184,6 @@ export function heroButtonClassName(tone: "ghost" | "solid") {
     "inline-flex items-center justify-center gap-2 rounded-[12px] px-5 py-3 text-[14px] font-semibold transition-colors",
     tone === "solid"
       ? "bg-[#2563EB] text-white hover:bg-[#2563EB]/90"
-      : "border border-white/18 bg-black/16 text-white hover:bg-black/24",
+      : "border border-zinc-200 bg-zinc-50 text-[#3F3F46] hover:bg-zinc-100 hover:text-[#18181B] dark:border-white/18 dark:bg-black/16 dark:text-white dark:hover:bg-black/24",
   );
 }

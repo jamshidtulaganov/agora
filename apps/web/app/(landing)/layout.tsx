@@ -52,7 +52,7 @@ export default async function LandingLayout({
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <div className={`${instrumentSerif.variable} ${notoSerifSC.variable} landing-light h-full overflow-x-hidden overflow-y-auto bg-white`}>
+      <div className={`${instrumentSerif.variable} ${notoSerifSC.variable} landing-light h-full overflow-x-hidden overflow-y-auto bg-white dark:bg-[#05060b]`}>
         <LocaleProvider initialLocale={initialLocale}>{children}</LocaleProvider>
       </div>
     </>

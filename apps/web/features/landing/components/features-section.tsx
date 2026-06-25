@@ -1363,7 +1363,7 @@ export function FeaturesSection() {
   };
 
   return (
-    <section id="features" className="bg-[#05060b] text-white">
+    <section id="features" className="bg-white text-[#18181B] dark:bg-[#05060b] dark:text-white">
       <div className="mx-auto max-w-[1320px] px-4 sm:px-6 lg:px-8">
         <div className="relative lg:flex lg:gap-20">
           {/* Sticky left nav */}
@@ -1377,8 +1377,8 @@ export function FeaturesSection() {
                   className={cn(
                     "group flex items-center gap-3 rounded-lg px-4 py-3 text-left text-[11px] font-semibold tracking-[0.12em] transition-colors",
                     i === activeIndex
-                      ? "text-white"
-                      : "text-white/36 hover:text-white/60",
+                      ? "text-[#18181B] dark:text-white"
+                      : "text-[#A1A1AA] hover:text-[#52525B] dark:text-white/36 dark:hover:text-white/60",
                   )}
                 >
                   <span
@@ -1404,17 +1404,17 @@ export function FeaturesSection() {
                 data-index={i}
                 className={cn(
                   "py-20 lg:py-28",
-                  i < features.length - 1 && "border-b border-white/8",
+                  i < features.length - 1 && "border-b border-zinc-200 dark:border-white/8",
                 )}
               >
                 {/* Title + description */}
                 <Reveal>
-                  <h2 className="font-[family-name:var(--font-serif)] text-[2.6rem] leading-[1.05] tracking-[-0.03em] text-white sm:text-[3.4rem] lg:text-[4.2rem]">
+                  <h2 className="font-[family-name:var(--font-serif)] text-[2.6rem] leading-[1.05] tracking-[-0.03em] text-[#18181B] dark:text-white sm:text-[3.4rem] lg:text-[4.2rem]">
                     {feature.title}
                   </h2>
                 </Reveal>
                 <Reveal delay={80}>
-                  <p className="mt-5 max-w-[640px] text-[15px] leading-7 text-white/60 sm:text-[16px]">
+                  <p className="mt-5 max-w-[640px] text-[15px] leading-7 text-[#3F3F46] dark:text-white/60 sm:text-[16px]">
                     {feature.description}
                   </p>
                 </Reveal>
@@ -1436,14 +1436,14 @@ export function FeaturesSection() {
                       </div>
                     </div>
                   ) : (
-                    <div className="relative overflow-hidden border border-white/8 bg-[#f5f5f5]">
+                    <div className="relative overflow-hidden border border-zinc-200 bg-[#f5f5f5] dark:border-white/8">
                       <div className="aspect-[16/9] w-full" />
                       <div className="absolute inset-0 flex items-center justify-center">
                         <div className="flex flex-col items-center gap-4 text-center">
-                          <div className="grid size-14 place-items-center rounded-2xl border border-white/8 bg-white shadow-sm">
-                            <ImageIcon className="size-6 text-white/30" />
+                          <div className="grid size-14 place-items-center rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-white/8">
+                            <ImageIcon className="size-6 text-[#A1A1AA] dark:text-white/30" />
                           </div>
-                          <p className="text-[13px] text-white/36">
+                          <p className="text-[13px] text-[#71717A] dark:text-white/36">
                             {feature.label.toLowerCase()} visual
                           </p>
                         </div>
@@ -1456,10 +1456,10 @@ export function FeaturesSection() {
                 <div className="mt-14 grid gap-8 sm:mt-18 md:grid-cols-3 md:gap-10">
                   {feature.cards.map((card, ci) => (
                     <Reveal key={card.title} delay={ci * 100}>
-                      <h3 className="text-[15px] font-semibold leading-snug text-white sm:text-[16px]">
+                      <h3 className="text-[15px] font-semibold leading-snug text-[#18181B] dark:text-white sm:text-[16px]">
                         {card.title}
                       </h3>
-                      <p className="mt-2.5 text-[14px] leading-[1.7] text-white/56 sm:text-[15px]">
+                      <p className="mt-2.5 text-[14px] leading-[1.7] text-[#3F3F46] dark:text-white/56 sm:text-[15px]">
                         {card.description}
                       </p>
                     </Reveal>

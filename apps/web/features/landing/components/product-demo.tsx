@@ -60,16 +60,24 @@ export function ProductDemo() {
   const status = step >= 7 ? "In review" : step >= 3 ? "In progress" : "Todo";
   const statusTone =
     step >= 7
-      ? "text-blue-300 bg-blue-400/15"
+      ? "text-blue-600 bg-blue-400/15 dark:text-blue-300"
       : step >= 3
-        ? "text-amber-300 bg-amber-400/15"
-        : "text-white/50 bg-white/10";
+        ? "text-amber-600 bg-amber-400/15 dark:text-amber-300"
+        : "text-[#71717A] bg-zinc-100 dark:text-white/50 dark:bg-white/10";
 
   return (
-    <section className="relative overflow-hidden bg-[#05060b] py-24 text-white sm:py-32">
+    <section className="relative overflow-hidden bg-white py-24 text-[#18181B] dark:bg-[#05060b] dark:text-white sm:py-32">
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0"
+        className="pointer-events-none absolute inset-0 dark:hidden"
+        style={{
+          background:
+            "radial-gradient(70% 50% at 50% 0%, rgba(37,99,235,0.07), transparent 60%)",
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 hidden dark:block"
         style={{
           background:
             "radial-gradient(70% 50% at 50% 0%, rgba(37,99,235,0.18), transparent 60%)",
@@ -77,7 +85,7 @@ export function ProductDemo() {
       />
       <div className="relative mx-auto max-w-[980px] px-4 sm:px-6 lg:px-8">
         <Reveal className="text-center">
-          <p className="text-[12px] font-medium uppercase tracking-[0.28em] text-white/40">
+          <p className="text-[12px] font-medium uppercase tracking-[0.28em] text-[#71717A] dark:text-white/40">
             See it in action
           </p>
           <h2 className="mx-auto mt-4 max-w-[680px] font-[family-name:var(--font-serif)] text-[2.4rem] leading-[1.05] tracking-[-0.03em] sm:text-[3.2rem]">
@@ -86,13 +94,13 @@ export function ProductDemo() {
         </Reveal>
 
         <Reveal delay={120} className="mt-12">
-          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0a0c16] shadow-[0_40px_120px_-30px_rgba(37,99,235,0.45)]">
+          <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_30px_90px_-40px_rgba(37,99,235,0.30)] dark:border-white/10 dark:bg-[#0a0c16] dark:shadow-[0_40px_120px_-30px_rgba(37,99,235,0.45)]">
             {/* Window chrome */}
-            <div className="flex items-center gap-2 border-b border-white/8 px-4 py-2.5">
-              <span className="size-2.5 rounded-full bg-white/15" />
-              <span className="size-2.5 rounded-full bg-white/15" />
-              <span className="size-2.5 rounded-full bg-white/15" />
-              <span className="ml-3 text-[12px] text-white/40">
+            <div className="flex items-center gap-2 border-b border-zinc-200 px-4 py-2.5 dark:border-white/8">
+              <span className="size-2.5 rounded-full bg-zinc-200 dark:bg-white/15" />
+              <span className="size-2.5 rounded-full bg-zinc-200 dark:bg-white/15" />
+              <span className="size-2.5 rounded-full bg-zinc-200 dark:bg-white/15" />
+              <span className="ml-3 text-[12px] text-[#71717A] dark:text-white/40">
                 AGORA-128 · Persian localization — RTL polish
               </span>
               <span
@@ -107,10 +115,10 @@ export function ProductDemo() {
 
             <div className="grid gap-0 sm:grid-cols-[1fr_240px]">
               {/* Conversation */}
-              <div className="min-h-[320px] space-y-3 border-b border-white/8 p-5 sm:border-b-0 sm:border-r">
+              <div className="min-h-[320px] space-y-3 border-b border-zinc-200 p-5 dark:border-white/8 sm:border-b-0 sm:border-r">
                 {/* User message */}
                 <Bubble side="right" show={step >= 0}>
-                  <span className="text-white/90">
+                  <span className="text-[#27272A] dark:text-white/90">
                     <span style={{ color: ACCENT }}>@Aria</span> the dashboard
                     breaks in right-to-left — can you fix the alignment?
                   </span>
@@ -124,7 +132,7 @@ export function ProductDemo() {
                 ) : null}
                 {step >= 2 ? (
                   <Bubble side="left" agent show>
-                    <span className="text-white/85">
+                    <span className="text-[#3F3F46] dark:text-white/85">
                       On it — auditing the layout files and flipping the grid
                       now.
                     </span>
@@ -133,14 +141,14 @@ export function ProductDemo() {
 
                 {/* Working card */}
                 {step >= 3 ? (
-                  <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] p-3">
+                  <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-white/[0.06] dark:bg-white/[0.03]">
                     <div className="flex items-center gap-2">
                       <AgentAvatar size={20} />
-                      <span className="text-[12px] font-medium text-white/85">
+                      <span className="text-[12px] font-medium text-[#3F3F46] dark:text-white/85">
                         Aria is working
                       </span>
                       {step < 7 ? (
-                        <span className="ml-auto flex items-center gap-1.5 text-[11px] text-white/45">
+                        <span className="ml-auto flex items-center gap-1.5 text-[11px] text-[#71717A] dark:text-white/45">
                           <span
                             className="size-1.5 animate-pulse rounded-full"
                             style={{ backgroundColor: ACCENT }}
@@ -160,11 +168,11 @@ export function ProductDemo() {
                           className={cn(
                             "flex items-center gap-2 transition-all duration-300",
                             step >= 4 + i
-                              ? "translate-y-0 text-white/55 opacity-100"
+                              ? "translate-y-0 text-[#52525B] opacity-100 dark:text-white/55"
                               : "translate-y-1 opacity-0",
                           )}
                         >
-                          <span className="shrink-0 font-semibold text-white/80">
+                          <span className="shrink-0 font-semibold text-[#27272A] dark:text-white/80">
                             {row.tool}
                           </span>
                           <span className="truncate">{row.text}</span>
@@ -174,11 +182,11 @@ export function ProductDemo() {
                         className={cn(
                           "flex items-center gap-2 transition-all duration-300",
                           step >= 7
-                            ? "translate-y-0 text-emerald-300/80 opacity-100"
+                            ? "translate-y-0 text-emerald-600 opacity-100 dark:text-emerald-300/80"
                             : "translate-y-1 opacity-0",
                         )}
                       >
-                        <span className="shrink-0 text-white/35">›</span>
+                        <span className="shrink-0 text-[#A1A1AA] dark:text-white/35">›</span>
                         <span className="truncate">
                           12 tests passed · 0.41s
                         </span>
@@ -200,20 +208,20 @@ export function ProductDemo() {
                       className="size-4"
                       style={{ color: ACCENT }}
                     />
-                    <span className="text-white/85">PR #214 — RTL polish</span>
-                    <span className="ml-auto text-[11px] text-emerald-300/80">
+                    <span className="text-[#3F3F46] dark:text-white/85">PR #214 — RTL polish</span>
+                    <span className="ml-auto text-[11px] text-emerald-600 dark:text-emerald-300/80">
                       ready to merge
                     </span>
                   </div>
                 ) : null}
 
                 {/* Composer */}
-                <div className="!mt-4 flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                <div className="!mt-4 flex items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-white/10 dark:bg-white/[0.03]">
                   <input
                     readOnly
                     value=""
                     placeholder="Reply to Aria…"
-                    className="flex-1 bg-transparent text-[13px] text-white/70 placeholder:text-white/30 focus:outline-none"
+                    className="flex-1 bg-transparent text-[13px] text-[#3F3F46] placeholder:text-[#A1A1AA] focus:outline-none dark:text-white/70 dark:placeholder:text-white/30"
                   />
                   <span
                     className="grid size-6 place-items-center rounded-md text-white"
@@ -232,15 +240,15 @@ export function ProductDemo() {
                   </span>
                 </PropRow>
                 <PropRow label="Assignee">
-                  <span className="flex items-center gap-1.5 text-white/80">
+                  <span className="flex items-center gap-1.5 text-[#3F3F46] dark:text-white/80">
                     <AgentAvatar size={18} /> Aria
                   </span>
                 </PropRow>
                 <PropRow label="Priority">
-                  <span className="text-white/70">High</span>
+                  <span className="text-[#52525B] dark:text-white/70">High</span>
                 </PropRow>
                 <PropRow label="Project">
-                  <span className="text-white/70">i18n</span>
+                  <span className="text-[#52525B] dark:text-white/70">i18n</span>
                 </PropRow>
               </div>
             </div>
@@ -273,7 +281,7 @@ function Bubble({
       {agent ? (
         <AgentAvatar size={22} />
       ) : (
-        <span className="grid size-[22px] shrink-0 place-items-center rounded-full bg-white/10 text-[9px] font-semibold text-white/80">
+        <span className="grid size-[22px] shrink-0 place-items-center rounded-full bg-zinc-200 text-[9px] font-semibold text-[#52525B] dark:bg-white/10 dark:text-white/80">
           JT
         </span>
       )}
@@ -281,8 +289,8 @@ function Bubble({
         className={cn(
           "max-w-[78%] rounded-2xl px-3 py-2 text-[13px] leading-snug",
           side === "right"
-            ? "rounded-br-sm bg-white/10"
-            : "rounded-bl-sm border border-white/[0.06] bg-white/[0.03]",
+            ? "rounded-br-sm bg-zinc-100 dark:bg-white/10"
+            : "rounded-bl-sm border border-zinc-200 bg-zinc-50 dark:border-white/[0.06] dark:bg-white/[0.03]",
         )}
       >
         {children}
@@ -297,7 +305,7 @@ function Typing() {
       {[0, 1, 2].map((i) => (
         <span
           key={i}
-          className="size-1.5 animate-bounce rounded-full bg-white/50"
+          className="size-1.5 animate-bounce rounded-full bg-[#A1A1AA] dark:bg-white/50"
           style={{ animationDelay: `${i * 0.15}s` }}
         />
       ))}
@@ -325,7 +333,7 @@ function PropRow({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="w-16 shrink-0 text-white/40">{label}</span>
+      <span className="w-16 shrink-0 text-[#71717A] dark:text-white/40">{label}</span>
       {children}
     </div>
   );

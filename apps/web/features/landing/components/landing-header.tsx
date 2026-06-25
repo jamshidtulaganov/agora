@@ -36,7 +36,7 @@ export function LandingHeader({
       <div className="mx-auto flex h-[76px] max-w-[1320px] items-center justify-between px-4 sm:px-6 lg:px-8">
         <div className="flex min-w-0 items-center gap-6 lg:gap-8">
           <Link href="/" className="flex shrink-0 items-center gap-3">
-            <AgoraIcon className="size-5 text-[#2563EB]" noSpin />
+            <AgoraIcon className="size-5 text-foreground" noSpin />
             <span
               className={cn(
                 "text-[18px] font-semibold tracking-[0.04em] lowercase sm:text-[20px]",
