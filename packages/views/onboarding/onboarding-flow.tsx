@@ -128,9 +128,9 @@ export function OnboardingFlow({
       setCurrentWorkspace(ws.slug, ws.id);
       // Full onboarding: advance to the runtime-connect step so each user
       // sets up their own daemon (BYO Claude/Codex CLI on their machine).
-      advanceFrom("workspace");
+      setStep("runtime");
     },
-    [advanceFrom],
+    [],
   );
 
   const handleRuntimeNext = useCallback(
