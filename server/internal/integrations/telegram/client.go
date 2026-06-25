@@ -91,8 +91,34 @@ type replyMarkup struct {
 }
 
 type inlineButton struct {
-	Text string `json:"text"`
-	URL  string `json:"url"`
+	Text         string `json:"text"`
+	URL          string `json:"url,omitempty"`
+	CallbackData string `json:"callback_data,omitempty"`
+}
+
+// Button is the public shape for building inline keyboards (a URL button OR a
+// callback button). Exactly one of URL / CallbackData is set per button.
+type Button struct {
+	Text         string
+	URL          string
+	CallbackData string
+}
+
+func toRows(rows [][]Button) [][]inlineButton {
+	out := make([][]inlineButton, len(rows))
+	for i, row := range rows {
+		out[i] = make([]inlineButton, len(row))
+		for j, b := range row {
+			out[i][j] = inlineButton{Text: b.Text, URL: b.URL, CallbackData: b.CallbackData}
+		}
+	}
+	return out
+}
+
+// BotCommand is one entry in the bot's command menu (setMyCommands).
+type BotCommand struct {
+	Command     string `json:"command"`
+	Description string `json:"description"`
 }
 
 // telegramResponse is the common Bot API envelope. On failure Telegram returns
@@ -171,6 +197,85 @@ func (c *BotClient) sendMessage(ctx context.Context, reqBody sendMessageRequest)
 		return fmt.Errorf("telegram: sendMessage failed: code=%d description=%q", parsed.ErrorCode, parsed.Description)
 	}
 	return nil
+}
+
+// call POSTs a JSON body to an arbitrary Bot API method and checks the ok
+// envelope. Backs the non-sendMessage methods (callbacks, edits, commands).
+func (c *BotClient) call(ctx context.Context, method string, body any) error {
+	if c.token == "" {
+		return ErrNoToken
+	}
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("telegram: marshal %s: %w", method, err)
+	}
+	url := fmt.Sprintf("%s/bot%s/%s", c.baseURL(), c.token, method)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(buf))
+	if err != nil {
+		return fmt.Errorf("telegram: new %s request: %w", method, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return fmt.Errorf("telegram: %s http: %w", method, err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("telegram: read %s response: %w", method, err)
+	}
+	var parsed telegramResponse
+	if jsonErr := json.Unmarshal(raw, &parsed); jsonErr != nil {
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return fmt.Errorf("telegram: %s http %d", method, resp.StatusCode)
+		}
+		return fmt.Errorf("telegram: decode %s response: %w", method, jsonErr)
+	}
+	if !parsed.OK {
+		return fmt.Errorf("telegram: %s failed: code=%d description=%q", method, parsed.ErrorCode, parsed.Description)
+	}
+	return nil
+}
+
+// SendButtons sends an HTML message with an inline keyboard (URL and/or callback
+// buttons). Callers MUST HTML-escape dynamic text. A nil/empty rows sends plain.
+func (c *BotClient) SendButtons(ctx context.Context, chatID, text string, rows [][]Button) error {
+	req := sendMessageRequest{ChatID: chatID, Text: text, ParseMode: "HTML"}
+	if len(rows) > 0 {
+		req.ReplyMarkup = &replyMarkup{InlineKeyboard: toRows(rows)}
+	}
+	return c.sendMessage(ctx, req)
+}
+
+// EditButtons edits an existing message's text + inline keyboard, used by the
+// create wizard to advance the same message through its steps.
+func (c *BotClient) EditButtons(ctx context.Context, chatID string, messageID int64, text string, rows [][]Button) error {
+	body := struct {
+		ChatID      string       `json:"chat_id"`
+		MessageID   int64        `json:"message_id"`
+		Text        string       `json:"text"`
+		ParseMode   string       `json:"parse_mode"`
+		ReplyMarkup *replyMarkup `json:"reply_markup,omitempty"`
+	}{ChatID: chatID, MessageID: messageID, Text: text, ParseMode: "HTML"}
+	if len(rows) > 0 {
+		body.ReplyMarkup = &replyMarkup{InlineKeyboard: toRows(rows)}
+	}
+	return c.call(ctx, "editMessageText", body)
+}
+
+// AnswerCallback acknowledges a callback query so the client stops its inline
+// loading spinner. Best-effort; the UI change is done via EditButtons/SendButtons.
+func (c *BotClient) AnswerCallback(ctx context.Context, callbackID string) error {
+	return c.call(ctx, "answerCallbackQuery", struct {
+		CallbackQueryID string `json:"callback_query_id"`
+	}{CallbackQueryID: callbackID})
+}
+
+// SetMyCommands registers the bot's command menu (the "/" list in the chat UI).
+func (c *BotClient) SetMyCommands(ctx context.Context, cmds []BotCommand) error {
+	return c.call(ctx, "setMyCommands", struct {
+		Commands []BotCommand `json:"commands"`
+	}{Commands: cmds})
 }
 
 // GetUpdates long-polls the Bot API for inbound updates, returning each update

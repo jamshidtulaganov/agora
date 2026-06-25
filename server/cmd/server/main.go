@@ -374,6 +374,10 @@ func main() {
 	// sweepCtx so it drains with the other background workers.
 	go h.RunTelegramLoginPoller(sweepCtx)
 
+	// Register the bot's command menu (/start /new /tasks /help). One-shot,
+	// best-effort; no-op when the bot is unconfigured.
+	go h.RegisterBotCommands(sweepCtx)
+
 	// Zoho Projects periodic modified-since sync (Phase 2). Re-pulls tasks
 	// changed in Zoho since each project's persisted cursor so post-import edits
 	// flow into Agora without a manual /sync. No-op unless ZOHO_PROJECTS_* is

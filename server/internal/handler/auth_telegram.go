@@ -155,14 +155,31 @@ type telegramUpdate struct {
 	Message  *struct {
 		Text string `json:"text"`
 		From *struct {
-			ID        int64  `json:"id"`
-			FirstName string `json:"first_name"`
+			ID           int64  `json:"id"`
+			FirstName    string `json:"first_name"`
+			LanguageCode string `json:"language_code"`
 		} `json:"from"`
 		Chat *struct {
 			ID   int64  `json:"id"`
 			Type string `json:"type"`
 		} `json:"chat"`
 	} `json:"message"`
+	// CallbackQuery is sent when a user taps an inline button (the "/new" create
+	// wizard). Only the subset we consume is modeled.
+	CallbackQuery *struct {
+		ID   string `json:"id"`
+		Data string `json:"data"`
+		From *struct {
+			ID           int64  `json:"id"`
+			LanguageCode string `json:"language_code"`
+		} `json:"from"`
+		Message *struct {
+			Chat *struct {
+				ID   int64  `json:"id"`
+				Type string `json:"type"`
+			} `json:"chat"`
+		} `json:"message"`
+	} `json:"callback_query"`
 }
 
 // TelegramWebhook receives bot updates. Public (no Agora auth) — the optional
@@ -213,7 +230,7 @@ func (h *Handler) TelegramWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.processTelegramLoginUpdate(r.Context(), update)
+	h.processTelegramUpdate(r.Context(), update)
 
 	// ALWAYS 200 so Telegram does not retry and we never leak whether a nonce
 	// was valid.
