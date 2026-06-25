@@ -52,17 +52,91 @@ func setupPushMockBot(t *testing.T) <-chan capturedDM {
 	return ch
 }
 
+func strptr(s string) *string { return &s }
+
 func TestComposeIssueDM(t *testing.T) {
-	if got := composeIssueDM("issue_assigned", "MUL-12", "Fix login"); got != "🔔 You were assigned MUL-12: Fix login" {
-		t.Fatalf("assigned: got %q", got)
+	cases := []struct {
+		name      string
+		lang      string // empty → "en"
+		notifType string
+		id        string
+		title     string
+		body      *string
+		actor     string
+		details   []byte
+		want      string
+	}{
+		{
+			name: "assigned", notifType: "issue_assigned", id: "MUL-12", title: "Fix login",
+			want: "🔔 <b>Assigned to you</b>\n<b>MUL-12</b> Fix login",
+		},
+		{
+			name: "unknown type falls back to bell", notifType: "totally_new_type", id: "MUL-7", title: "Thing",
+			want: "🔔 <b>Update</b>\n<b>MUL-7</b> Thing",
+		},
+		{
+			name: "missing identifier → title only", notifType: "mentioned", id: "", title: "Hi there",
+			want: "💬 <b>You were mentioned</b>\nHi there",
+		},
+		{
+			name: "actor suffix", notifType: "issue_assigned", id: "MUL-1", title: "T", actor: "Alice",
+			want: "🔔 <b>Assigned to you</b> · <i>Alice</i>\n<b>MUL-1</b> T",
+		},
+		{
+			name: "status transition", notifType: "status_changed", id: "MUL-3", title: "T",
+			details: []byte(`{"from":"todo","to":"in_progress"}`),
+			want:    "🔄 <b>Status changed</b>\n<b>MUL-3</b> T\nTodo → In Progress",
+		},
+		{
+			name: "comment snippet in blockquote", notifType: "new_comment", id: "MUL-4", title: "T",
+			body: strptr("Looks good to me"),
+			want: "💬 <b>New comment</b>\n<b>MUL-4</b> T\n<blockquote>Looks good to me</blockquote>",
+		},
+		{
+			name: "html-escapes dynamic content", notifType: "issue_assigned", id: "MUL-5", title: "a < b & c",
+			want: "🔔 <b>Assigned to you</b>\n<b>MUL-5</b> a &lt; b &amp; c",
+		},
+		// Localized (ru/uz) + fallback.
+		{
+			name: "ru assigned", lang: "ru", notifType: "issue_assigned", id: "MUL-9", title: "Починить вход",
+			want: "🔔 <b>Назначено вам</b>\n<b>MUL-9</b> Починить вход",
+		},
+		{
+			name: "ru status transition localizes tokens", lang: "ru", notifType: "status_changed", id: "MUL-3", title: "T",
+			details: []byte(`{"from":"todo","to":"in_progress"}`),
+			want:    "🔄 <b>Статус изменён</b>\n<b>MUL-3</b> T\nК выполнению → В работе",
+		},
+		{
+			name: "uz new comment", lang: "uz", notifType: "new_comment", id: "MUL-4", title: "T",
+			body: strptr("Yaxshi"),
+			want: "💬 <b>Yangi izoh</b>\n<b>MUL-4</b> T\n<blockquote>Yaxshi</blockquote>",
+		},
+		{
+			name: "unknown lang falls back to ru", lang: "fr", notifType: "issue_assigned", id: "MUL-1", title: "T",
+			want: "🔔 <b>Назначено вам</b>\n<b>MUL-1</b> T",
+		},
 	}
-	// Unknown type falls back to a plain bell.
-	if got := composeIssueDM("totally_new_type", "MUL-7", "Thing"); got != "🔔 MUL-7: Thing" {
-		t.Fatalf("unknown type: got %q", got)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			lang := c.lang
+			if lang == "" {
+				lang = "en"
+			}
+			if got := composeIssueDM(lang, c.notifType, c.id, c.title, c.body, c.actor, c.details); got != c.want {
+				t.Fatalf("got  %q\nwant %q", got, c.want)
+			}
+		})
 	}
-	// Missing identifier falls back to title only.
-	if got := composeIssueDM("mentioned", "", "Hi there"); got != "💬 You were mentioned in Hi there" {
-		t.Fatalf("no identifier: got %q", got)
+}
+
+func TestCommentSnippet_Truncates(t *testing.T) {
+	long := strings.Repeat("x", 200)
+	got := commentSnippet(&long)
+	if r := []rune(got); len(r) != dmSnippetMaxLen+1 || string(r[len(r)-1]) != "…" {
+		t.Fatalf("expected truncation to %d runes + ellipsis, got %d runes", dmSnippetMaxLen, len([]rune(got)))
+	}
+	if commentSnippet(nil) != "" {
+		t.Fatal("nil body should yield empty snippet")
 	}
 }
 
@@ -107,7 +181,7 @@ func TestSendIssueInboxDM_MemberWithLinkGetsDM(t *testing.T) {
 		t.Fatalf("linkExternalIdentity: %v", err)
 	}
 
-	testHandler.SendIssueInboxDM(ctx, "member", userID, nonExistentIssueID, "issue_assigned", "Fix login bug")
+	testHandler.SendIssueInboxDM(ctx, "member", userID, nonExistentIssueID, "issue_assigned", "Fix login bug", nil, "", "", nil)
 
 	select {
 	case dm := <-ch:
@@ -124,7 +198,7 @@ func TestSendIssueInboxDM_MemberWithLinkGetsDM(t *testing.T) {
 
 func TestSendIssueInboxDM_AgentRecipientNoDM(t *testing.T) {
 	ch := setupPushMockBot(t)
-	testHandler.SendIssueInboxDM(context.Background(), "agent", "00000000-0000-0000-0000-000000000001", nonExistentIssueID, "issue_assigned", "x")
+	testHandler.SendIssueInboxDM(context.Background(), "agent", "00000000-0000-0000-0000-000000000001", nonExistentIssueID, "issue_assigned", "x", nil, "", "", nil)
 	assertNoDM(t, ch)
 }
 
@@ -140,7 +214,7 @@ func TestSendIssueInboxDM_MemberWithoutLinkNoDM(t *testing.T) {
 		testPool.Exec(ctx, `DELETE FROM "user" WHERE email = $1`, email)
 	})
 	// No external identity linked → no telegram chat → no DM.
-	testHandler.SendIssueInboxDM(ctx, "member", uuidToString(user.ID), nonExistentIssueID, "issue_assigned", "x")
+	testHandler.SendIssueInboxDM(ctx, "member", uuidToString(user.ID), nonExistentIssueID, "issue_assigned", "x", nil, "", "", nil)
 	assertNoDM(t, ch)
 }
 

@@ -80,6 +80,7 @@ func (c *BotClient) httpClient() *http.Client {
 type sendMessageRequest struct {
 	ChatID      string       `json:"chat_id"`
 	Text        string       `json:"text"`
+	ParseMode   string       `json:"parse_mode,omitempty"`
 	ReplyMarkup *replyMarkup `json:"reply_markup,omitempty"`
 }
 
@@ -111,11 +112,13 @@ func (c *BotClient) SendMessage(ctx context.Context, chatID, text string) error 
 	return c.sendMessage(ctx, sendMessageRequest{ChatID: chatID, Text: text})
 }
 
-// SendMessageWithButton delivers text plus a single inline URL button (used by
-// push DMs to deep-link into the Mini App). A blank url degrades to a plain text
-// message. Separate from SendMessage so the OTP login path stays button-free.
+// SendMessageWithButton delivers an HTML-formatted message plus a single inline
+// URL button (used by push DMs to deep-link into the Mini App). The text is
+// parsed as Telegram HTML (parse_mode=HTML), so callers MUST HTML-escape any
+// dynamic content. A blank url degrades to a plain (button-free) HTML message.
+// Separate from SendMessage so the OTP login path stays plain + button-free.
 func (c *BotClient) SendMessageWithButton(ctx context.Context, chatID, text, buttonText, url string) error {
-	req := sendMessageRequest{ChatID: chatID, Text: text}
+	req := sendMessageRequest{ChatID: chatID, Text: text, ParseMode: "HTML"}
 	if strings.TrimSpace(url) != "" {
 		req.ReplyMarkup = &replyMarkup{
 			InlineKeyboard: [][]inlineButton{{{Text: buttonText, URL: url}}},

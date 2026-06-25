@@ -377,7 +377,7 @@ func (h *Handler) TelegramVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.telegramIssueSession(w, r, telegramID, firstName, "telegram")
+	h.telegramIssueSession(w, r, telegramID, firstName, "telegram", "")
 }
 
 // telegramIssueSession runs the canonical Telegram login tail shared by the
@@ -389,7 +389,7 @@ func (h *Handler) TelegramVerify(w http.ResponseWriter, r *http.Request) {
 // "telegram_miniapp") tags the signup analytics event. Both entry points share
 // this so the synthetic-email / link / auto-join / session behavior is provably
 // identical regardless of how the Telegram id was authenticated.
-func (h *Handler) telegramIssueSession(w http.ResponseWriter, r *http.Request, telegramID, firstName, authMethod string) {
+func (h *Handler) telegramIssueSession(w http.ResponseWriter, r *http.Request, telegramID, firstName, authMethod, languageCode string) {
 	email := telegramSyntheticEmail(telegramID)
 
 	user, isNew, err := h.findOrCreateUser(r.Context(), email)
@@ -423,6 +423,24 @@ func (h *Handler) telegramIssueSession(w http.ResponseWriter, r *http.Request, t
 			} else {
 				user = updated
 			}
+		}
+	}
+
+	// Persist the Telegram UI language so localized bot push DMs pick the right
+	// language. Runs for new and existing users (so a user who switched their
+	// Telegram language updates on next open). UpdateUser COALESCEs the other
+	// nullable columns; we pass the current name so it is not blanked.
+	if lang := normalizeUserLang(languageCode); lang != "" && lang != user.Language.String {
+		updated, uerr := h.Queries.UpdateUser(r.Context(), db.UpdateUserParams{
+			ID:       user.ID,
+			Name:     user.Name,
+			Language: pgtype.Text{String: lang, Valid: true},
+		})
+		if uerr != nil {
+			slog.Warn("telegram: failed to store user language",
+				append(logger.RequestAttrs(r), "error", uerr, "user_id", uuidToString(user.ID))...)
+		} else {
+			user = updated
 		}
 	}
 
@@ -513,7 +531,7 @@ func (h *Handler) TelegramMiniAppLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	telegramID := strconv.FormatInt(user.ID, 10)
-	h.telegramIssueSession(w, r, telegramID, user.FirstName, "telegram_miniapp")
+	h.telegramIssueSession(w, r, telegramID, user.FirstName, "telegram_miniapp", user.LanguageCode)
 }
 
 // defaultWorkspaceSlugs returns the workspace slugs every Telegram user is
@@ -592,4 +610,22 @@ func (h *Handler) ensureDefaultWorkspaceMemberships(ctx context.Context, userID 
 // effectively a no-op, but it keeps the contract identical).
 func telegramSyntheticEmail(telegramID string) string {
 	return strings.ToLower(fmt.Sprintf("tg%s@%s", telegramID, telegramSyntheticEmailDomain))
+}
+
+// normalizeUserLang maps a Telegram language_code (e.g. "ru", "ru-RU", "uz",
+// "en-US") to one of the UI/push languages we support ("ru" | "uz" | "en"), or
+// "" for anything else so we don't store a language we can't localize (push
+// then falls back to the Russian default for this SD fork).
+func normalizeUserLang(code string) string {
+	c := strings.ToLower(strings.TrimSpace(code))
+	switch {
+	case strings.HasPrefix(c, "ru"):
+		return "ru"
+	case strings.HasPrefix(c, "uz"):
+		return "uz"
+	case strings.HasPrefix(c, "en"):
+		return "en"
+	default:
+		return ""
+	}
 }

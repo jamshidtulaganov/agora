@@ -30,10 +30,11 @@ const initDataSecretKeyMessage = "WebAppData"
 // Only the fields the login flow consumes are modeled, mirroring the `From`
 // shape that telegramUpdate uses in the handler layer.
 type InitDataUser struct {
-	ID        int64  `json:"id"`
-	FirstName string `json:"first_name"`
-	LastName  string `json:"last_name"`
-	Username  string `json:"username"`
+	ID           int64  `json:"id"`
+	FirstName    string `json:"first_name"`
+	LastName     string `json:"last_name"`
+	Username     string `json:"username"`
+	LanguageCode string `json:"language_code"`
 }
 
 // Sentinel errors. Callers MUST collapse all of these to a single generic 401 at

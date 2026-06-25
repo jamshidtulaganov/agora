@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/handler"
@@ -44,6 +45,22 @@ func registerTelegramPushListeners(bus *events.Bus, h *handler.Handler) {
 		if issueID == "" {
 			return
 		}
-		h.SendIssueInboxDM(context.Background(), recipientType, recipientID, issueID, notifType, title)
+		// Enrichment fields — all optional (see SendIssueInboxDM). body carries
+		// the comment text; actor_* names who acted; details holds {from,to} for
+		// status/priority transitions.
+		body, _ := item["body"].(*string)
+		actorType := derefString(item["actor_type"])
+		actorID := derefString(item["actor_id"])
+		details, _ := item["details"].(json.RawMessage)
+		h.SendIssueInboxDM(context.Background(), recipientType, recipientID, issueID, notifType, title, body, actorType, actorID, details)
 	})
+}
+
+// derefString unwraps the *string values inboxItemToResponse stores for nullable
+// text columns (actor_type / actor_id), returning "" for nil or a non-string.
+func derefString(v any) string {
+	if p, ok := v.(*string); ok && p != nil {
+		return *p
+	}
+	return ""
 }
