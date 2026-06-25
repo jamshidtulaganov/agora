@@ -68,3 +68,6 @@ server/server
 data/
 .kilo
 .idea
+
+# Playwright MCP artifacts
+.playwright-mcp/

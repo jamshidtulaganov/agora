@@ -1,0 +1,51 @@
+# agora-backend — Go API (Chi + sqlc + websocket). Private, 6PN only.
+# Reached by the web app at: agora-backend.internal:8080  (no public IP).
+# Entrypoint runs `migrate up` then `server` on every boot.
+#
+# Build context MUST be the repo root (the Dockerfile copies server/), so deploy
+# from the repo root with an explicit --dockerfile:
+#
+#   fly deploy --config deploy/fly/backend/fly.toml --dockerfile Dockerfile .
+#
+# Secrets (set once, never commit) — see deploy/fly/secrets.example.env:
+#   DATABASE_URL JWT_SECRET SMTP_PASSWORD GOOGLE_CLIENT_SECRET
+
+app = "agora-backend"
+primary_region = "fra"
+
+# Local attachment storage (used when S3_* is unset). Single machine only.
+[mounts]
+  source = "agora_uploads"
+  destination = "/app/data/uploads"
+
+[env]
+  PORT = "8080"
+  APP_ENV = "production"
+  ALLOW_SIGNUP = "true"
+
+  # Public URLs all point at the web app (the only public surface). The backend
+  # is reached through the web app's same-origin /api, /ws, /auth, /uploads proxy.
+  FRONTEND_ORIGIN = "https://agora-web.fly.dev"
+  AGORA_APP_URL = "https://agora-web.fly.dev"
+  AGORA_PUBLIC_URL = "https://agora-web.fly.dev"
+  GOOGLE_REDIRECT_URI = "https://agora-web.fly.dev/auth/callback"
+
+  # Google OAuth client id is public (also served via /api/config); the secret
+  # is a fly secret, not here.
+  GOOGLE_CLIENT_ID = "508848888581-hnai5j6k8cr3662f210jad2o81ourpnb.apps.googleusercontent.com"
+
+  # Email via Gmail SMTP relay. Password is a fly secret.
+  SMTP_HOST = "smtp.gmail.com"
+  SMTP_PORT = "587"
+  SMTP_TLS = "starttls"
+  SMTP_USERNAME = "jamshid.swe@gmail.com"
+  RESEND_FROM_EMAIL = "jamshid.swe@gmail.com"
+  # smtp.gmail.com rejects the default "localhost" EHLO from a public source.
+  SMTP_EHLO_NAME = "agora-backend.fly.dev"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
+
+[[restart]]
+  policy = "always"

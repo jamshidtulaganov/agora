@@ -1,0 +1,33 @@
+# agora-web — Next.js (standalone). The ONLY public app.
+# Proxies /api, /ws, /auth, /uploads to the backend over the private network.
+# REMOTE_API_URL is read at runtime by next.config rewrites(), so it is a plain
+# env here (no rebuild needed to repoint the backend).
+#
+# Build context MUST be the repo root. Deploy from repo root:
+#
+#   fly deploy --config deploy/fly/web/fly.toml --dockerfile Dockerfile.web \
+#     --build-arg REMOTE_API_URL=http://agora-backend.internal:8080 .
+
+app = "agora-web"
+primary_region = "fra"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  HOSTNAME = "0.0.0.0"
+  # Private 6PN address of the backend — never leaves the org network.
+  REMOTE_API_URL = "http://agora-backend.internal:8080"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
+
+[[restart]]
+  policy = "always"
