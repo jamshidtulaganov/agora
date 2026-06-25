@@ -120,6 +120,59 @@ func TestReportModelListResult_PreservesDefault(t *testing.T) {
 	}
 }
 
+// TestReportModelListResult_PreservesAgoraFree guards the daemon → server
+// → UI wire format for the Agora free-model overlay. `free` and `category`
+// drive the "Free" badge and category tag in the picker; if they get
+// dropped on the wire the branding silently disappears (the #2143 class of
+// installed-app drift). A foreign model must NOT pick the fields up.
+func TestReportModelListResult_PreservesAgoraFree(t *testing.T) {
+	ctx := context.Background()
+	store := NewInMemoryModelListStore()
+	req, err := store.Create(ctx, "runtime-agora")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	body := map[string]any{
+		"status":    "completed",
+		"supported": true,
+		"models": []map[string]any{
+			{"id": "zhipuai/glm-4.5-flash", "label": "Agora", "provider": "Agora", "free": true, "category": "code"},
+			{"id": "anthropic/claude-sonnet-4-6", "label": "Claude Sonnet 4.6", "provider": "anthropic"},
+		},
+	}
+	raw, _ := json.Marshal(body)
+
+	var parsed struct {
+		Models []ModelEntry `json:"models"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		t.Fatalf("unmarshal report body: %v", err)
+	}
+	if err := store.Complete(ctx, req.ID, parsed.Models, true); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+
+	got, err := store.Get(ctx, req.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if len(got.Models) != 2 {
+		t.Fatalf("expected 2 models, got %d: %+v", len(got.Models), got.Models)
+	}
+	if !got.Models[0].Free || got.Models[0].Category != "code" {
+		t.Errorf("agora free fields dropped on the wire: %+v", got.Models[0])
+	}
+	if got.Models[1].Free || got.Models[1].Category != "" {
+		t.Errorf("foreign model wrongly gained agora fields: %+v", got.Models[1])
+	}
+
+	out, _ := json.Marshal(got)
+	if !bytes.Contains(out, []byte(`"free":true`)) || !bytes.Contains(out, []byte(`"category":"code"`)) {
+		t.Errorf(`expected "free":true and "category":"code" in JSON response, got: %s`, out)
+	}
+}
+
 // TestReportModelListResult_DecodesJSONBodyDefault verifies the
 // handler's request-body parsing accepts the `default` bool from
 // the daemon POST — not just through the store API.

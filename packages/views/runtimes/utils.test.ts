@@ -95,6 +95,19 @@ describe("estimateCost", () => {
     expect(cost).toBeCloseTo(18, 5);
   });
 
+  it("prices the Agora free GLM-4-Flash base at $0 (provider-prefixed)", () => {
+    // The overlay serves GLM-4-Flash (z.ai) as the free base. The
+    // `zhipuai/` provider prefix is stripped before lookup, so the row
+    // resolves to the pre-existing $0 catalog entry instead of unmapped.
+    const cost = estimateCost({
+      ...zeroUsage,
+      model: "zhipuai/glm-4.7-flash",
+      input_tokens: 5_000_000,
+      output_tokens: 5_000_000,
+    });
+    expect(cost).toBe(0);
+  });
+
   it("prices a Codex CLI session reporting gpt-5-codex", () => {
     const cost = estimateCost({
       ...zeroUsage,
@@ -364,6 +377,14 @@ describe("isModelPriced", () => {
     expect(isModelPriced("gpt-5-mini")).toBe(true);
     expect(isModelPriced("o3")).toBe(true);
     expect(isModelPriced("totally-made-up-model")).toBe(false);
+  });
+
+  it("recognises the Agora free GLM-4-Flash base, bare and provider-prefixed", () => {
+    // The free base must resolve (to $0) rather than surface as unmapped,
+    // in the forms opencode emits across z.ai gateways.
+    expect(isModelPriced("glm-4.7-flash")).toBe(true);
+    expect(isModelPriced("zhipuai/glm-4.7-flash")).toBe(true);
+    expect(isModelPriced("z-ai/glm-4.5-flash")).toBe(true);
   });
 
   it("recognises dotted Anthropic IDs as the same SKU as their dashed canonical form", () => {

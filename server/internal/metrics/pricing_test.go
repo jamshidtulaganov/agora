@@ -31,3 +31,32 @@ func TestPriceForModelAliasAnthropicFableAndOpus48(t *testing.T) {
 		}
 	}
 }
+
+// TestPriceForModelAliasAgoraFreeGLM guards that the Agora free GLM-4-Flash
+// base — bare and provider-prefixed, across z.ai gateway spellings —
+// resolves to a $0 price instead of the unmapped diagnostic.
+func TestPriceForModelAliasAgoraFreeGLM(t *testing.T) {
+	for _, model := range []string{
+		"glm-4-flash",
+		"glm-4.7-flash",
+		"zhipuai/glm-4.7-flash",
+		"z-ai/glm-4.5-flash",
+	} {
+		got, ok := PriceForModelAlias(model)
+		if !ok {
+			t.Fatalf("PriceForModelAlias(%q) did not resolve", model)
+		}
+		if got.InputPerM != 0 || got.OutputPerM != 0 || got.CacheReadPerM != 0 || got.CacheWritePerM != 0 {
+			t.Errorf("PriceForModelAlias(%q) = %+v, want all-zero free price", model, got)
+		}
+	}
+}
+
+// TestPriceForModelAliasGLMFlashxNotFree guards the \b boundary in the GLM
+// flash rule: the paid `glm-4.7-flashx` SKU must NOT be swept into the free
+// tier. It has no server-side price row, so it should stay unresolved.
+func TestPriceForModelAliasGLMFlashxNotFree(t *testing.T) {
+	if _, ok := PriceForModelAlias("glm-4.7-flashx"); ok {
+		t.Error("glm-4.7-flashx (paid) wrongly resolved via the free GLM-flash rule")
+	}
+}

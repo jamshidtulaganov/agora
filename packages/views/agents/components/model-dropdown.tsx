@@ -185,7 +185,19 @@ export function ModelDropdown({
                       }`}
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="truncate font-medium">{m.label}</div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate font-medium">{m.label}</span>
+                          {m.free && (
+                            <span className="shrink-0 rounded-sm bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                              {t(($) => $.pickers.model_free_badge)}
+                            </span>
+                          )}
+                          {m.category && (
+                            <span className="shrink-0 text-[10px] text-muted-foreground">
+                              {m.category}
+                            </span>
+                          )}
+                        </div>
                         {m.label !== m.id && (
                           <div className="truncate text-xs text-muted-foreground">
                             {m.id}

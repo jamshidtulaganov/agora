@@ -558,6 +558,15 @@ export interface RuntimeModel {
   provider?: string;
   default?: boolean;
   /**
+   * Agora free-model branding from the daemon's opencode overlay (see
+   * agent.annotateAgoraFree). `free` drives the "Free" badge and a $0
+   * price; `category` ("code" | "search" | "test" | "docs") tags the
+   * workflow the base is tuned for. Both display-only — older daemons
+   * omit them, which the UI treats as "ordinary paid model".
+   */
+  free?: boolean;
+  category?: string;
+  /**
    * Per-model reasoning/effort catalog discovered by the daemon. Currently
    * populated for claude, codex, and opencode runtimes; omitted (or undefined)
    * for every other provider, which the UI treats as "no thinking-level

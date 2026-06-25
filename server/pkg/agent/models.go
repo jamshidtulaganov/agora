@@ -31,6 +31,16 @@ type Model struct {
 	Label    string `json:"label"`
 	Provider string `json:"provider,omitempty"`
 	Default  bool   `json:"default,omitempty"`
+	// Free marks an Agora-curated free model — a zero-cost base served
+	// through opencode (e.g. a local Ollama Qwen3). The UI badges it
+	// "Free" and pricing resolves it to $0. Branding only: it has no
+	// effect at execution time, since the daemon still passes the
+	// underlying ID to the opencode CLI.
+	Free bool `json:"free,omitempty"`
+	// Category tags an Agora free model with the workflow it's tuned for
+	// ("code" | "search" | "test" | "docs") so the picker can recommend
+	// the right base for a purpose-built agent. Empty for non-Agora models.
+	Category string `json:"category,omitempty"`
 	// Thinking advertises the runtime's reasoning/effort catalog for this
 	// model. nil means the runtime/model has no thinking-level control
 	// (or the daemon couldn't discover one); the UI hides its picker. The
@@ -363,6 +373,55 @@ func isOpenAIReasoningSeriesID(id string) bool {
 // provider-specific reasoning-effort surface.
 // On any failure (CLI missing, parse error, timeout) we fall back to
 // an empty list so the creatable UI still works.
+// ── Agora free-model overlay ──
+
+// agoraBrand is the curated Agora branding applied to one
+// opencode-resolvable free model. Category is the workflow the base is
+// tuned for.
+type agoraBrand struct {
+	Label    string
+	Category string // "code" | "search" | "test" | "docs"
+}
+
+// agoraFreeModels maps the exact ID opencode emits (provider/model form,
+// e.g. "zhipuai/glm-4.5-flash") to its Agora branding. This is the single
+// edit point: swap these keys for the free IDs your opencode gateway
+// actually exposes. Cold-start base is GLM-4-Flash (z.ai) — free hosted,
+// open-weight, zero local RAM — so the daily machine running the daemon
+// isn't taxed. Multiple keys cover the spellings different gateways emit
+// (z.ai native `zhipuai/` or `z-ai/`); only the one your runtime actually
+// lists gets branded, the rest stay inert — the overlay never invents an
+// entry, so "dynamic discovery is truth" still holds (a model the runtime
+// can't run never appears in the picker).
+//
+// Category ("code" | "search" | "test" | "docs") stays empty while a
+// single base fronts every workflow; populate it once distinct per-purpose
+// bases diverge (e.g. a dedicated coder vs. researcher model).
+var agoraFreeModels = map[string]agoraBrand{
+	// glm-4.5-flash: confirmed live + free on api.z.ai (2026-06-25). Both
+	// prefixes kept until `opencode models` confirms which your gateway emits.
+	"zhipuai/glm-4.5-flash": {Label: "Agora"},
+	"z-ai/glm-4.5-flash":    {Label: "Agora"},
+}
+
+// annotateAgoraFree overlays Agora branding onto any discovered model
+// whose ID is in agoraFreeModels: it rewrites Label, regroups it under
+// the "Agora" provider, flags Free, and tags Category. Branding only —
+// the model still executes as its underlying opencode / Ollama ID.
+// Models absent from the map are left untouched.
+func annotateAgoraFree(models []Model) {
+	for i := range models {
+		brand, ok := agoraFreeModels[models[i].ID]
+		if !ok {
+			continue
+		}
+		models[i].Label = brand.Label
+		models[i].Provider = "Agora"
+		models[i].Free = true
+		models[i].Category = brand.Category
+	}
+}
+
 func discoverOpenCodeModels(ctx context.Context, executablePath string) ([]Model, error) {
 	if executablePath == "" {
 		executablePath = "opencode"
@@ -395,6 +454,7 @@ func discoverOpenCodeModels(ctx context.Context, executablePath string) ([]Model
 	if len(models) == 0 {
 		return []Model{}, nil
 	}
+	annotateAgoraFree(models)
 	return models, nil
 }
 

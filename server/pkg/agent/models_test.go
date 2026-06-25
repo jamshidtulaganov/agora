@@ -931,3 +931,46 @@ func TestCachedDiscovery(t *testing.T) {
 		t.Errorf("expected 1 underlying call due to cache, got %d", calls)
 	}
 }
+
+// TestAnnotateAgoraFree verifies the opencode free-model overlay: every
+// curated ID is rebranded (Label / Provider="Agora" / Free / Category)
+// while any other discovered model is left untouched. Iterating the map
+// keeps the test honest when the seed IDs are swapped for a real
+// opencode/Ollama catalog.
+func TestAnnotateAgoraFree(t *testing.T) {
+	const foreignID = "ollama/llama3.3"
+	models := []Model{{ID: foreignID, Label: foreignID, Provider: "ollama"}}
+	for id := range agoraFreeModels {
+		models = append(models, Model{ID: id, Label: id, Provider: "ollama"})
+	}
+
+	annotateAgoraFree(models)
+
+	validCategory := map[string]bool{"code": true, "search": true, "test": true, "docs": true}
+	for _, m := range models {
+		if m.ID == foreignID {
+			if m.Free || m.Category != "" || m.Provider != "ollama" {
+				t.Errorf("foreign model was mutated: %+v", m)
+			}
+			continue
+		}
+		brand := agoraFreeModels[m.ID]
+		if !m.Free {
+			t.Errorf("%s: Free not set", m.ID)
+		}
+		if m.Provider != "Agora" {
+			t.Errorf("%s: Provider = %q, want Agora", m.ID, m.Provider)
+		}
+		if m.Label != brand.Label {
+			t.Errorf("%s: Label = %q, want %q", m.ID, m.Label, brand.Label)
+		}
+		if m.Category != brand.Category {
+			t.Errorf("%s: Category = %q, want %q", m.ID, m.Category, brand.Category)
+		}
+		// Category is optional (empty while a single base fronts every
+		// workflow); when set it must be one of the documented values.
+		if brand.Category != "" && !validCategory[brand.Category] {
+			t.Errorf("%s: category %q outside the documented set", m.ID, brand.Category)
+		}
+	}
+}

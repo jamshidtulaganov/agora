@@ -181,6 +181,7 @@
     "model_custom_use": "使用\"{{value}}\"",
     "model_clear": "清除（使用提供方默认）",
     "model_clear_title": "清除并回退到运行时的提供方默认",
+    "model_free_badge": "免费",
     "thinking_default": "跟随 CLI 配置",
     "thinking_tooltip": "思考 · {{value}}",
     "thinking_clear": "跟随 CLI 配置",

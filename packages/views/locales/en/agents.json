@@ -186,6 +186,7 @@
     "model_custom_use": "Use \"{{value}}\"",
     "model_clear": "Clear (use provider default)",
     "model_clear_title": "Clear and fall back to the runtime's provider default",
+    "model_free_badge": "Free",
     "thinking_default": "Follow CLI config",
     "thinking_tooltip": "Thinking · {{value}}",
     "thinking_clear": "Follow CLI config",

@@ -155,7 +155,19 @@ export function ModelPicker({
                 `<span block text-left>` to keep layout deterministic —
                 matches the fix already applied in thinking-picker.tsx. */}
             <span className="block min-w-0 flex-1 text-left">
-              <span className="block truncate text-[13px] font-medium">{m.label}</span>
+              <span className="flex items-center gap-1.5">
+                <span className="truncate text-[13px] font-medium">{m.label}</span>
+                {m.free && (
+                  <span className="shrink-0 rounded-sm bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                    {t(($) => $.pickers.model_free_badge)}
+                  </span>
+                )}
+                {m.category && (
+                  <span className="shrink-0 text-[10px] text-muted-foreground">
+                    {m.category}
+                  </span>
+                )}
+              </span>
               {m.label !== m.id && (
                 <span className="mt-0.5 block truncate font-mono text-[10px] leading-snug text-muted-foreground">
                   {m.id}

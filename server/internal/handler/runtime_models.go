@@ -78,6 +78,11 @@ type ModelEntry struct {
 	Label    string         `json:"label"`
 	Provider string         `json:"provider,omitempty"`
 	Default  bool           `json:"default,omitempty"`
+	// Free / Category carry Agora free-model branding from the daemon's
+	// opencode overlay (see agent.annotateAgoraFree). The UI badges Free
+	// models and groups them by Category; both are display-only.
+	Free     bool           `json:"free,omitempty"`
+	Category string         `json:"category,omitempty"`
 	Thinking *ModelThinking `json:"thinking,omitempty"`
 }
 

@@ -36,6 +36,10 @@ var modelPrices = map[string]ModelPrice{
 	"google:gemini-3.1-pro":       {Provider: "google", Model: "gemini-3.1-pro", InputPerM: 2.00, CacheReadPerM: 0.20, CacheWritePerM: 2.00, OutputPerM: 12.00},
 	"google:gemini-2.5-pro":       {Provider: "google", Model: "gemini-2.5-pro", InputPerM: 1.25, CacheReadPerM: 0.31, CacheWritePerM: 1.25, OutputPerM: 10.00},
 	"google:gemini-2.5-flash":     {Provider: "google", Model: "gemini-2.5-flash", InputPerM: 0.30, CacheReadPerM: 0.03, CacheWritePerM: 0.30, OutputPerM: 2.50},
+	// Agora free base — GLM-4-Flash (z.ai), free hosted open-weight base
+	// served through opencode. Priced at 0 so usage rolls up as $0 instead
+	// of falling through to the unmapped diagnostic. See agent.annotateAgoraFree.
+	"zhipu:glm-4-flash":           {Provider: "zhipu", Model: "glm-4-flash", InputPerM: 0, CacheReadPerM: 0, CacheWritePerM: 0, OutputPerM: 0},
 }
 
 var modelAliasRules = []struct {
@@ -63,6 +67,10 @@ var modelAliasRules = []struct {
 	{regexp.MustCompile(`gemini-3[.]1-pro`), "google:gemini-3.1-pro"},
 	{regexp.MustCompile(`gemini-2[.]5-pro`), "google:gemini-2.5-pro"},
 	{regexp.MustCompile(`gemini-2[.]5-flash`), "google:gemini-2.5-flash"},
+	// GLM flash tiers (z.ai) are the free Agora base → $0. The trailing \b
+	// keeps it off the paid `glm-4.7-flashx` SKU. Last so it never shadows a
+	// more specific rule.
+	{regexp.MustCompile(`(^|[/:])glm-[0-9.]+-flash\b`), "zhipu:glm-4-flash"},
 }
 
 func PriceForModelAlias(model string) (ModelPrice, bool) {

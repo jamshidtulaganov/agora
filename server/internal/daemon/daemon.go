@@ -1500,6 +1500,8 @@ func (d *Daemon) handleModelList(ctx context.Context, rt Runtime, requestID stri
 		Label    string             `json:"label"`
 		Provider string             `json:"provider,omitempty"`
 		Default  bool               `json:"default,omitempty"`
+		Free     bool               `json:"free,omitempty"`
+		Category string             `json:"category,omitempty"`
 		Thinking *modelThinkingWire `json:"thinking,omitempty"`
 	}
 	wire := make([]modelWire, 0, len(models))
@@ -1509,6 +1511,8 @@ func (d *Daemon) handleModelList(ctx context.Context, rt Runtime, requestID stri
 			Label:    m.Label,
 			Provider: m.Provider,
 			Default:  m.Default,
+			Free:     m.Free,
+			Category: m.Category,
 		}
 		if m.Thinking != nil {
 			levels := make([]thinkingLevelWire, 0, len(m.Thinking.SupportedLevels))
