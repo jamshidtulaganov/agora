@@ -56,12 +56,9 @@ jobs:
 
   release:
     needs: verify
-    # Only run on the canonical upstream repo. Forks don't have the
-    # HOMEBREW_TAP_GITHUB_TOKEN secret and should not be publishing to
-    # `agora-ai/homebrew-tap` anyway. Without this guard, every fork's
-    # tag push fails this job (401 against the upstream tap), which makes
-    # downstream CI go red without affecting the actual artifact pipeline.
-    if: github.repository_owner == 'agora-ai'
+    # Run on this fork. GoReleaser publishes the CLI binaries to the public
+    # jamshidtulaganov/agora-cli distribution repo (see .goreleaser.yml release:).
+    if: github.repository_owner == 'jamshidtulaganov'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -81,8 +78,10 @@ jobs:
           version: "~> v2"
           args: release --clean
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          # PAT with contents:write on jamshidtulaganov/agora-cli (the release
+          # target). The default GITHUB_TOKEN only has access to THIS repo, not
+          # the separate public distribution repo.
+          GITHUB_TOKEN: ${{ secrets.AGORA_CLI_RELEASE_TOKEN }}
 
   # Multi-arch images are built natively per platform on dedicated runners
   # (amd64 on ubuntu-latest, arm64 on ubuntu-24.04-arm) and merged into a

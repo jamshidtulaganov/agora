@@ -2,6 +2,15 @@ version: 2
 
 project_name: agora
 
+# Source repo (jamshidtulaganov/agora) is PRIVATE, so the CLI release can't live
+# on its own releases page (it would be private too). Publish to the PUBLIC
+# distribution repo instead — multica releases to its own (public) repo; this is
+# the only adaptation needed for a private source.
+release:
+  github:
+    owner: jamshidtulaganov
+    name: agora-cli
+
 builds:
   - id: agora
     main: ./cmd/agora
@@ -56,20 +65,7 @@ changelog:
       - "^test:"
       - "^chore:"
 
-brews:
-  - name: agora
-    ids:
-      - versioned
-    repository:
-      owner: agora-ai
-      name: homebrew-tap
-      branch: main
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    directory: Formula
-    homepage: "https://github.com/multica-ai/multica"
-    description: "Agora CLI — local agent runtime and management tool for the Agora platform"
-    license: "Apache-2.0"
-    install: |
-      bin.install "agora"
-    test: |
-      system "#{bin}/agora", "version"
+# Homebrew tap disabled — agora-ai/homebrew-tap isn't ours. Distribution is via
+# the public agora-cli repo's release binaries (curl install.sh). To add
+# `brew install` later, create your own tap repo and re-add a `brews:` block
+# pointing at it (with a PAT in HOMEBREW_TAP_GITHUB_TOKEN).
