@@ -8,7 +8,7 @@
     "headline_line2": "in",
     "headline_emphasis": "one workspace.",
     "lede": "SalesDoctor is a multi-tenant Distribution CRM for field sales, van-selling, merchandising, and route accounting. Assign work to AI teammates like you'd assign a colleague — they pick it up, update status, and comment when done.",
-    "lede_web": "Desktop bundles the runtime — nothing to install. Continue on web to connect your own CLI.",
+    "lede_web": "Set up your workspace and start assigning work — to teammates or AI agents.",
     "lede_desktop": "By the end, a real agent will be replying to your first issue.",
     "download_desktop": "Download Desktop",
     "continue_on_web": "Continue on web",
@@ -255,14 +255,7 @@
     "creation_disabled_logout": "Log out",
     "creation_disabled_eyebrow_resume": "Your workspace",
     "creation_disabled_headline_resume": "Continue with {{name}}.",
-    "creation_disabled_lede_resume": "Workspace creation is disabled on this instance, so you'll continue into your existing workspace.",
-    "sd_primary_title": "Set up the SalesDoctor projects",
-    "sd_primary_subtitle": "Create one workspace for each sibling project. You'll land in sd-main.",
-    "sd_primary_cta": "Create all 3 workspaces",
-    "sd_primary_cta_pending": "Setting up workspaces…",
-    "sd_manual_divider": "Or set one up manually",
-    "locked_title": "Your SalesDoctor workspaces",
-    "locked_subtitle": "Workspace creation is disabled on this instance. You're already a member of these three workspaces — continue to get started."
+    "creation_disabled_lede_resume": "Workspace creation is disabled on this instance, so you'll continue into your existing workspace."
   },
   "step_runtime": {
     "scanning_headline": "Connecting this computer…",

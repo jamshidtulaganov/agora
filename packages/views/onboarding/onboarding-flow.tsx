@@ -35,14 +35,14 @@ import { useT } from "../i18n";
  *     the install-runtime / create-agent guide issues on landing.
  *   - Runtime-connected (runtime picked on Step 3): completeOnboarding
  *     marks onboarded; we push a {choice:"runtime", runtimeId} welcome
- *     signal and navigate. The welcome hook creates the SD Helper
- *     agent on the picked runtime and shows the starter-card Modal.
+ *     signal and navigate. The welcome hook creates the Helper agent on
+ *     the picked runtime and shows the starter-card Modal.
  *
  * V3 contract: this file never touches createAgent / createIssue. The
  * "what runs in the workspace shell after onboarding" decision is in
  * `packages/views/workspace/welcome-after-onboarding.tsx`.
  *
- * SD fork: the acquisition survey (source / role / use_case) was removed —
+ * The acquisition survey (source / role / use_case) was removed —
  * onboarding is "how to use + create agents", not a questionnaire. The
  * persisted flow is now just welcome → workspace → runtime.
  */
@@ -97,24 +97,6 @@ export function OnboardingFlow({
   // introducing a redundant prop.
   const isWeb = !!runtimeInstructions;
 
-  // Derive "what comes after `from`" from ONBOARDING_STEP_ORDER so
-  // inserting/reordering a persisted step only requires editing the
-  // canonical array. Returns null if `from` is the last persisted step
-  // or not in the array (callers fall back to bespoke routing).
-  const nextStep = useCallback((from: OnboardingStep): OnboardingStep | null => {
-    const idx = ONBOARDING_STEP_ORDER.indexOf(from);
-    if (idx < 0 || idx >= ONBOARDING_STEP_ORDER.length - 1) return null;
-    return ONBOARDING_STEP_ORDER[idx + 1]!;
-  }, []);
-
-  const advanceFrom = useCallback(
-    (from: OnboardingStep) => {
-      const next = nextStep(from);
-      if (next) setStep(next);
-    },
-    [nextStep],
-  );
-
   const handleWelcomeNext = useCallback(() => {
     // Welcome is intentionally not in ONBOARDING_STEP_ORDER (it's a
     // product intro, not a persisted step), so the first persisted
@@ -144,6 +126,8 @@ export function OnboardingFlow({
     (ws: Workspace) => {
       setWorkspace(ws);
       setCurrentWorkspace(ws.slug, ws.id);
+      // Full onboarding: advance to the runtime-connect step so each user
+      // sets up their own daemon (BYO Claude/Codex CLI on their machine).
       advanceFrom("workspace");
     },
     [advanceFrom],

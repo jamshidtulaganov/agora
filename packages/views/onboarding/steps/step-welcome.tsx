@@ -1,10 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRight, Download, Loader2 } from "lucide-react";
-import { Button, buttonVariants } from "@agora/ui/components/ui/button";
+import { ArrowRight, Loader2 } from "lucide-react";
+import { Button } from "@agora/ui/components/ui/button";
 import { AgoraIcon } from "@agora/ui/components/common/agora-icon";
-import { captureDownloadIntent } from "@agora/core/analytics";
 import { cn } from "@agora/ui/lib/utils";
 import { DragStrip } from "@agora/views/platform";
 import { STATUS_CONFIG } from "@agora/core/issues/config";
@@ -105,37 +104,17 @@ export function StepWelcome({
 
             <div className="flex flex-wrap items-center gap-3">
               {isWeb ? (
-                <>
-                  {/* `<a>` rather than `<Button onClick={window.open}>`
-                      so middle-click / cmd-click / "Copy link" all
-                      behave and screen readers announce it as a link
-                      (it navigates; `Continue on web` is the button
-                      that mutates flow state). New tab preserves this
-                      onboarding tab in case the desktop install
-                      stalls and the user falls back here. */}
-                  <a
-                    href="/download"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={() => captureDownloadIntent("welcome")}
-                    className={buttonVariants({ size: "lg" })}
-                  >
-                    <Download className="h-4 w-4" />
-                    {t(($) => $.welcome.download_desktop)}
-                  </a>
-                  <Button
-                    size="lg"
-                    variant="outline"
-                    onClick={handleNext}
-                    disabled={pending !== null}
-                  >
-                    {pending === "next" && (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    )}
-                    {t(($) => $.welcome.continue_on_web)}
-                    <ArrowRight className="h-4 w-4" />
-                  </Button>
-                </>
+                <Button
+                  size="lg"
+                  onClick={handleNext}
+                  disabled={pending !== null}
+                >
+                  {pending === "next" && (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )}
+                  {t(($) => $.welcome.continue_on_web)}
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
               ) : (
                 <Button
                   size="lg"

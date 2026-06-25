@@ -10,7 +10,10 @@ import { useT } from "../../i18n";
 
 const INSTALL_CMD =
   "curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash";
-const SETUP_CMD = "agora setup self-host";
+// Remote deployment: pin the CLI to this server (otherwise `agora setup
+// self-host` defaults to localhost:8080/:3000 and the daemon never connects).
+const SETUP_CMD =
+  "agora setup self-host --server-url https://sd-agora-web.fly.dev --app-url https://sd-agora-web.fly.dev";
 
 function CopyButton({ text }: { text: string }) {
   const { t } = useT("onboarding");

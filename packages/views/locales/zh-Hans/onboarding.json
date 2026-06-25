@@ -8,7 +8,7 @@
     "headline_line2": "在",
     "headline_emphasis": "同一个工作区。",
     "lede": "SalesDoctor 是面向外勤销售、车销、陈列与路线核算的多租户 Distribution CRM。像分配给同事一样把工作交给 AI 队友——它们会接手、推进状态、完成后留下评论。",
-    "lede_web": "桌面端自带运行时，无需安装。在 web 端继续可以连接你自己的 CLI。",
+    "lede_web": "设置你的工作区，开始把工作分配给同事或 AI 智能体。",
     "lede_desktop": "完成本流程后，真实的智能体会回复你创建的第一个 issue。",
     "download_desktop": "下载桌面端",
     "continue_on_web": "在 web 端继续",
@@ -255,14 +255,7 @@
     "creation_disabled_logout": "退出登录",
     "creation_disabled_eyebrow_resume": "你的工作区",
     "creation_disabled_headline_resume": "继续使用 {{name}}。",
-    "creation_disabled_lede_resume": "该实例已禁用创建工作区，继续进入你已有的工作区即可。",
-    "sd_primary_title": "设置 SalesDoctor 项目",
-    "sd_primary_subtitle": "为每个同级项目各创建一个 workspace。完成后将进入 sd-main。",
-    "sd_primary_cta": "创建全部 3 个 workspace",
-    "sd_primary_cta_pending": "正在创建 workspace…",
-    "sd_manual_divider": "或手动创建",
-    "locked_title": "你的 SalesDoctor workspace",
-    "locked_subtitle": "此实例已禁用 workspace 创建。你已是这三个 workspace 的成员 — 继续即可开始。"
+    "creation_disabled_lede_resume": "该实例已禁用创建工作区，继续进入你已有的工作区即可。"
   },
   "step_runtime": {
     "scanning_headline": "正在连接这台电脑…",

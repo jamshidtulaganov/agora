@@ -8,7 +8,7 @@
     "headline_line2": "bitta",
     "headline_emphasis": "ish maydonida.",
     "lede": "SalesDoctor — dala savdosi, furgondan sotish, merchandayzing va marshrut hisob-kitobi uchun ko‘p ijarali Distribyutsiya CRM tizimi. Ishni AI jamoadoshlarga huddi hamkasbingizga topshirgandek topshiring — ular uni qabul qiladi, holatni yangilaydi va tugatgach izoh qoldiradi.",
-    "lede_web": "Desktop runtime’ni o‘zi bilan birga keltiradi — hech narsa o‘rnatish shart emas. O‘zingizning CLI’ingizni ulash uchun vebda davom eting.",
+    "lede_web": "Ish maydoningizni sozlang va ishni topshirishni boshlang — hamkasblarga yoki AI agentlarga.",
     "lede_desktop": "Oxiriga kelib, haqiqiy agent sizning birinchi vazifangizga javob beradi.",
     "download_desktop": "Desktop’ni yuklab olish",
     "continue_on_web": "Vebda davom etish",
@@ -255,14 +255,7 @@
     "creation_disabled_logout": "Chiqish",
     "creation_disabled_eyebrow_resume": "Sizning ish maydoningiz",
     "creation_disabled_headline_resume": "{{name}} bilan davom eting.",
-    "creation_disabled_lede_resume": "Bu nusxada ish maydoni yaratish o‘chirilgan, shuning uchun siz mavjud ish maydoningizga o‘tasiz.",
-    "sd_primary_title": "SalesDoctor loyihalarini sozlang",
-    "sd_primary_subtitle": "Har bir qardosh loyiha uchun bitta ish maydoni yarating. Siz sd-main’ga tushasiz.",
-    "sd_primary_cta": "Barcha 3 ish maydonini yaratish",
-    "sd_primary_cta_pending": "Ish maydonlari sozlanmoqda…",
-    "sd_manual_divider": "Yoki bittasini qo‘lda sozlang",
-    "locked_title": "Sizning SalesDoctor ish maydonlaringiz",
-    "locked_subtitle": "Bu nusxada ish maydoni yaratish o‘chirilgan. Siz allaqachon ushbu uchta ish maydonining a’zosisiz — boshlash uchun davom eting."
+    "creation_disabled_lede_resume": "Bu nusxada ish maydoni yaratish o‘chirilgan, shuning uchun siz mavjud ish maydoningizga o‘tasiz."
   },
   "step_runtime": {
     "scanning_headline": "Bu kompyuter ulanmoqda…",
