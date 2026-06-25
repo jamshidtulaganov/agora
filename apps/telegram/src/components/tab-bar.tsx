@@ -2,21 +2,23 @@ import { Inbox, ListTodo, MessageSquare } from "lucide-react";
 import { useInboxUnreadCount } from "@agora/core/inbox/queries";
 import { useRouter, type Tab } from "../platform/navigation";
 import { haptic } from "../telegram/sdk";
+import { useT } from "../i18n";
 import { cn } from "../lib/cn";
 
-const TABS: { key: Tab; label: string; Icon: typeof Inbox }[] = [
-  { key: "inbox", label: "Inbox", Icon: Inbox },
-  { key: "issues", label: "Issues", Icon: ListTodo },
-  { key: "chat", label: "Chat", Icon: MessageSquare },
+const TABS: { key: Tab; Icon: typeof Inbox }[] = [
+  { key: "inbox", Icon: Inbox },
+  { key: "issues", Icon: ListTodo },
+  { key: "chat", Icon: MessageSquare },
 ];
 
 export function TabBar({ wsId }: { wsId: string }) {
   const { activeTab, openTab } = useRouter();
   const unread = useInboxUnreadCount(wsId);
+  const t = useT();
 
   return (
     <nav className="flex shrink-0 items-stretch border-t border-border bg-card pb-[env(safe-area-inset-bottom)]">
-      {TABS.map(({ key, label, Icon }) => {
+      {TABS.map(({ key, Icon }) => {
         const active = activeTab === key;
         return (
           <button
@@ -28,7 +30,7 @@ export function TabBar({ wsId }: { wsId: string }) {
             }}
             className={cn(
               "relative flex flex-1 flex-col items-center gap-1 py-2 text-[11px] font-medium transition-colors",
-              active ? "text-[var(--brand,theme(colors.blue.600))]" : "text-muted-foreground",
+              active ? "text-brand" : "text-muted-foreground",
             )}
           >
             <span className="relative">
@@ -39,7 +41,7 @@ export function TabBar({ wsId }: { wsId: string }) {
                 </span>
               )}
             </span>
-            {label}
+            {t(`tab.${key}`)}
           </button>
         );
       })}

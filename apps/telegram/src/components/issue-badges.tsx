@@ -1,9 +1,13 @@
 import { STATUS_CONFIG, PRIORITY_CONFIG } from "@agora/core/issues/config";
+import { StatusIcon } from "@agora/views/issues/components/status-icon";
+import { PriorityIcon } from "@agora/views/issues/components/priority-icon";
 import type { IssueStatus, IssuePriority } from "@agora/core/types";
 import { cn } from "../lib/cn";
 
-// Status dot + label, reusing the main app's STATUS_CONFIG colors so the Mini
-// App reads identically to web/desktop.
+// Thin wrappers over the main app's StatusIcon / PriorityIcon so the Mini App
+// renders the EXACT same status circles and priority bars as web/desktop — same
+// SVG glyphs, same per-status colors from STATUS_CONFIG / PRIORITY_CONFIG.
+
 export function StatusDot({
   status,
   className,
@@ -11,41 +15,35 @@ export function StatusDot({
   status: IssueStatus;
   className?: string;
 }) {
-  const cfg = STATUS_CONFIG[status];
-  return (
-    <span
-      className={cn("inline-block size-2.5 rounded-full", cfg.dividerColor, className)}
-      aria-label={cfg.label}
-    />
-  );
+  return <StatusIcon status={status} className={cn("size-4", className)} />;
 }
 
 export function StatusLabel({ status }: { status: IssueStatus }) {
   const cfg = STATUS_CONFIG[status];
   return (
     <span className="inline-flex items-center gap-1.5 text-sm">
-      <StatusDot status={status} />
+      <StatusIcon status={status} className="size-4" />
       <span className={cfg.iconColor}>{cfg.label}</span>
     </span>
   );
 }
 
-// Priority bars (0–4) mirroring the web priority glyph.
-export function PriorityBars({ priority }: { priority: IssuePriority }) {
+export function PriorityBars({
+  priority,
+  className,
+}: {
+  priority: IssuePriority;
+  className?: string;
+}) {
+  return <PriorityIcon priority={priority} className={cn("size-4", className)} />;
+}
+
+export function PriorityLabel({ priority }: { priority: IssuePriority }) {
   const cfg = PRIORITY_CONFIG[priority];
-  if (cfg.bars === 0) return null;
   return (
-    <span className={cn("inline-flex items-end gap-0.5", cfg.color)} aria-label={cfg.label}>
-      {[1, 2, 3, 4].map((b) => (
-        <span
-          key={b}
-          className={cn(
-            "w-0.5 rounded-sm bg-current",
-            b <= cfg.bars ? "opacity-100" : "opacity-25",
-          )}
-          style={{ height: `${3 + b * 2}px` }}
-        />
-      ))}
+    <span className="inline-flex items-center gap-1.5 text-sm">
+      <PriorityIcon priority={priority} className="size-4" />
+      <span className={cfg.color}>{cfg.label}</span>
     </span>
   );
 }

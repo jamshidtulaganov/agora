@@ -7,16 +7,12 @@ import {
   User as UserIcon,
   CircleSlash,
   Send,
+  Share2,
 } from "lucide-react";
 import { issueDetailOptions } from "@agora/core/issues/queries";
 import { useUpdateIssue } from "@agora/core/issues/mutations";
 import { memberListOptions, agentListOptions } from "@agora/core/workspace/queries";
-import {
-  STATUS_CONFIG,
-  ALL_STATUSES,
-  PRIORITY_CONFIG,
-  PRIORITY_ORDER,
-} from "@agora/core/issues/config";
+import { ALL_STATUSES, PRIORITY_ORDER } from "@agora/core/issues/config";
 import { getApi } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core/hooks";
 import type {
@@ -32,9 +28,10 @@ import { useRouter } from "../platform/navigation";
 import { CenterMessage } from "../components/center-message";
 import { BottomSheet } from "../components/bottom-sheet";
 import { StatusDot, PriorityBars } from "../components/issue-badges";
-import { formatRelative } from "../lib/time";
-import { haptic } from "../telegram/sdk";
-import { cn } from "../lib/cn";
+import { Avatar } from "../components/avatar";
+import { haptic, shareToTelegram } from "../telegram/sdk";
+import { encodeStartParam } from "../telegram/start-param";
+import { useT, useFormatRelative } from "../i18n";
 
 const commentsQueryKey = (issueId: string) => ["tg-issue-comments", issueId];
 
@@ -57,6 +54,7 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
   const update = useUpdateIssue();
   const { back } = useRouter();
   const qc = useQueryClient();
+  const t = useT();
   const [sheet, setSheet] = useState<Sheet>(null);
 
   const { data: comments = [] } = useQuery({
@@ -65,6 +63,12 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
     // WS keeps the main app's timeline fresh; poll here as a webview fallback so
     // agent replies and teammates' comments show up.
     refetchInterval: 5000,
+  });
+  // Bot username for building the share deep link (t.me/<bot>?startapp=…).
+  const { data: appConfig } = useQuery({
+    queryKey: ["app-config"],
+    queryFn: () => getApi().getConfig(),
+    staleTime: Infinity,
   });
   const [comment, setComment] = useState("");
   const [posting, setPosting] = useState(false);
@@ -86,13 +90,13 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
     }
   };
 
-  if (isLoading) return <CenterMessage spinner title="Loading…" />;
+  if (isLoading) return <CenterMessage spinner title={t("common.loading")} />;
   if (!issue) {
     return (
       <CenterMessage
-        title="Issue not found"
-        subtitle="It may have been deleted."
-        actionLabel="Back"
+        title={t("detail.notFound")}
+        subtitle={t("detail.deleted")}
+        actionLabel={t("common.back")}
         onAction={back}
       />
     );
@@ -104,7 +108,16 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
     setSheet(null);
   };
 
-  const assigneeLabel = resolveAssigneeLabel(issue, members, agents);
+  const shareIssue = () => {
+    haptic("light");
+    const bot = appConfig?.telegram_bot_username;
+    const link = bot
+      ? `https://t.me/${bot}?startapp=${encodeStartParam(issue.id)}`
+      : window.location.origin;
+    shareToTelegram(link, `${issue.identifier}: ${issue.title}`);
+  };
+
+  const assigneeLabel = resolveAssigneeLabel(issue, members, agents, t);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -119,6 +132,15 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
         <span className="font-mono text-xs text-muted-foreground">
           {issue.identifier}
         </span>
+        <div className="flex-1" />
+        <button
+          type="button"
+          onClick={shareIssue}
+          aria-label={t("detail.shareAria")}
+          className="px-2 py-1 text-muted-foreground transition-colors active:text-foreground"
+        >
+          <Share2 className="size-[18px]" />
+        </button>
       </header>
 
       <div className="flex-1 overflow-y-auto">
@@ -129,19 +151,19 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
         </div>
 
         <div className="divide-y divide-border border-y border-border">
-          <FieldRow label="Status" onClick={() => setSheet("status")}>
+          <FieldRow label={t("create.status")} onClick={() => setSheet("status")}>
             <span className="inline-flex items-center gap-1.5">
               <StatusDot status={issue.status} />
-              {STATUS_CONFIG[issue.status].label}
+              {t(`status.${issue.status}`)}
             </span>
           </FieldRow>
-          <FieldRow label="Priority" onClick={() => setSheet("priority")}>
+          <FieldRow label={t("create.priority")} onClick={() => setSheet("priority")}>
             <span className="inline-flex items-center gap-1.5">
               <PriorityBars priority={issue.priority} />
-              {PRIORITY_CONFIG[issue.priority].label}
+              {t(`priority.${issue.priority}`)}
             </span>
           </FieldRow>
-          <FieldRow label="Assignee" onClick={() => setSheet("assignee")}>
+          <FieldRow label={t("create.assignee")} onClick={() => setSheet("assignee")}>
             {assigneeLabel}
           </FieldRow>
         </div>
@@ -149,7 +171,7 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
         {issue.description && (
           <div className="px-4 py-4">
             <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Description
+              {t("detail.description")}
             </div>
             <p className="whitespace-pre-wrap break-words text-sm text-foreground">
               {issue.description}
@@ -159,10 +181,10 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
 
         <div className="border-t border-border px-4 py-3">
           <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Comments
+            {t("detail.comments")}
           </div>
           {comments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No comments yet.</p>
+            <p className="text-sm text-muted-foreground">{t("detail.noComments")}</p>
           ) : (
             <ul className="space-y-3">
               {comments.map((c) => (
@@ -184,7 +206,7 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
             }
           }}
           rows={1}
-          placeholder="Add a comment… use @agent to trigger"
+          placeholder={t("detail.commentPlaceholder")}
           className="max-h-32 flex-1 resize-none rounded-2xl bg-muted px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground"
         />
         <button
@@ -192,14 +214,14 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
           onClick={postComment}
           disabled={!comment.trim() || posting}
           aria-label="Send comment"
-          className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--brand,theme(colors.blue.600))] text-white disabled:opacity-40"
+          className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand text-brand-foreground disabled:opacity-40"
         >
           <Send className="size-4" />
         </button>
       </div>
 
       {/* Status picker */}
-      <BottomSheet open={sheet === "status"} onClose={() => setSheet(null)} title="Status">
+      <BottomSheet open={sheet === "status"} onClose={() => setSheet(null)} title={t("create.status")}>
         <ul className="pb-2">
           {ALL_STATUSES.map((s: IssueStatus) => (
             <OptionRow
@@ -208,14 +230,14 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
               onClick={() => apply({ status: s })}
             >
               <StatusDot status={s} />
-              {STATUS_CONFIG[s].label}
+              {t(`status.${s}`)}
             </OptionRow>
           ))}
         </ul>
       </BottomSheet>
 
       {/* Priority picker */}
-      <BottomSheet open={sheet === "priority"} onClose={() => setSheet(null)} title="Priority">
+      <BottomSheet open={sheet === "priority"} onClose={() => setSheet(null)} title={t("create.priority")}>
         <ul className="pb-2">
           {PRIORITY_ORDER.map((p: IssuePriority) => (
             <OptionRow
@@ -224,21 +246,21 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
               onClick={() => apply({ priority: p })}
             >
               <PriorityBars priority={p} />
-              {PRIORITY_CONFIG[p].label}
+              {t(`priority.${p}`)}
             </OptionRow>
           ))}
         </ul>
       </BottomSheet>
 
       {/* Assignee picker */}
-      <BottomSheet open={sheet === "assignee"} onClose={() => setSheet(null)} title="Assignee">
+      <BottomSheet open={sheet === "assignee"} onClose={() => setSheet(null)} title={t("create.assignee")}>
         <ul className="pb-2">
           <OptionRow
             selected={!issue.assignee_id}
             onClick={() => apply({ assignee_type: null, assignee_id: null })}
           >
             <CircleSlash className="size-4 text-muted-foreground" />
-            Unassigned
+            {t("common.unassigned")}
           </OptionRow>
           {members.map((m) => (
             <OptionRow
@@ -256,7 +278,7 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
               selected={issue.assignee_type === "agent" && issue.assignee_id === a.id}
               onClick={() => apply({ assignee_type: "agent", assignee_id: a.id })}
             >
-              <Bot className="size-4 text-[var(--brand,theme(colors.blue.600))]" />
+              <Bot className="size-4 text-brand" />
               {a.name}
             </OptionRow>
           ))}
@@ -306,7 +328,7 @@ function OptionRow({
         className="flex w-full items-center gap-2.5 px-4 py-3 text-left text-sm transition-colors active:bg-accent"
       >
         <span className="flex flex-1 items-center gap-2.5">{children}</span>
-        {selected && <Check className="size-4 text-[var(--brand,theme(colors.blue.600))]" />}
+        {selected && <Check className="size-4 text-brand" />}
       </button>
     </li>
   );
@@ -316,29 +338,32 @@ function resolveAssigneeLabel(
   issue: Issue,
   members: { user_id: string; name: string }[],
   agents: { id: string; name: string }[],
+  t: (key: string, vars?: Record<string, string | number>) => string,
 ): React.ReactNode {
   if (!issue.assignee_id || !issue.assignee_type) {
-    return <span className="text-muted-foreground">Unassigned</span>;
+    return <span className="text-muted-foreground">{t("common.unassigned")}</span>;
   }
   if (issue.assignee_type === "member") {
     const m = members.find((x) => x.user_id === issue.assignee_id);
+    const name = m?.name ?? t("common.member");
     return (
       <>
-        <UserIcon className="size-3.5 text-muted-foreground" />
-        {m?.name ?? "Member"}
+        <Avatar name={name} size={20} />
+        {name}
       </>
     );
   }
   if (issue.assignee_type === "agent") {
     const a = agents.find((x) => x.id === issue.assignee_id);
+    const name = a?.name ?? t("common.agent");
     return (
       <>
-        <Bot className="size-3.5 text-[var(--brand,theme(colors.blue.600))]" />
-        {a?.name ?? "Agent"}
+        <Avatar name={name} isAgent size={20} />
+        {name}
       </>
     );
   }
-  return <span className="text-muted-foreground">Assigned</span>;
+  return <span className="text-muted-foreground">{t("common.unassigned")}</span>;
 }
 
 function CommentItem({
@@ -350,29 +375,20 @@ function CommentItem({
   members: MemberWithUser[];
   agents: Agent[];
 }) {
+  const t = useT();
+  const fmt = useFormatRelative();
   const isAgent = comment.author_type === "agent";
   const name = isAgent
-    ? agents.find((a) => a.id === comment.author_id)?.name ?? "Agent"
-    : members.find((m) => m.user_id === comment.author_id)?.name ?? "Member";
+    ? agents.find((a) => a.id === comment.author_id)?.name ?? t("common.agent")
+    : members.find((m) => m.user_id === comment.author_id)?.name ?? t("common.member");
   return (
     <li className="flex gap-2.5">
-      <span
-        className={cn(
-          "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full",
-          isAgent ? "bg-[var(--brand,theme(colors.blue.600))]/10" : "bg-muted",
-        )}
-      >
-        {isAgent ? (
-          <Bot className="size-3.5 text-[var(--brand,theme(colors.blue.600))]" />
-        ) : (
-          <UserIcon className="size-3.5 text-muted-foreground" />
-        )}
-      </span>
+      <Avatar name={name} isAgent={isAgent} size={26} className="mt-0.5" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-foreground">{name}</span>
           <span className="text-[11px] text-muted-foreground">
-            {formatRelative(comment.created_at)}
+            {fmt(comment.created_at)}
           </span>
         </div>
         <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-foreground">

@@ -1,30 +1,62 @@
 import { useState } from "react";
-import { ChevronLeft, Check } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { ChevronLeft, Check, CircleSlash } from "lucide-react";
 import { useCreateIssue } from "@agora/core/issues/mutations";
-import {
-  STATUS_CONFIG,
-  BOARD_STATUSES,
-  PRIORITY_CONFIG,
-  PRIORITY_ORDER,
-} from "@agora/core/issues/config";
-import type { IssueStatus, IssuePriority } from "@agora/core/types";
+import { memberListOptions, agentListOptions } from "@agora/core/workspace/queries";
+import { BOARD_STATUSES, PRIORITY_ORDER } from "@agora/core/issues/config";
+import { useWorkspaceId } from "@agora/core/hooks";
+import type { IssueStatus, IssuePriority, IssueAssigneeType } from "@agora/core/types";
 import { useRouter } from "../platform/navigation";
 import { BottomSheet } from "../components/bottom-sheet";
 import { StatusDot, PriorityBars } from "../components/issue-badges";
+import { Avatar } from "../components/avatar";
 import { haptic } from "../telegram/sdk";
+import { useT } from "../i18n";
 
-type Sheet = "status" | "priority" | null;
+type Sheet = "status" | "priority" | "assignee" | null;
 
 export function CreateIssueScreen() {
+  const wsId = useWorkspaceId();
+  const t = useT();
   const create = useCreateIssue();
   const { back, navigate } = useRouter();
+  const { data: members = [] } = useQuery(memberListOptions(wsId));
+  const { data: agents = [] } = useQuery(agentListOptions(wsId));
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<IssueStatus>("todo");
   const [priority, setPriority] = useState<IssuePriority>("none");
+  const [assigneeType, setAssigneeType] = useState<IssueAssigneeType | null>(null);
+  const [assigneeId, setAssigneeId] = useState<string | null>(null);
   const [sheet, setSheet] = useState<Sheet>(null);
 
   const canSubmit = title.trim().length > 0 && !create.isPending;
+  const activeAgents = agents.filter((a) => !a.archived_at);
+
+  const assigneeNode = () => {
+    if (!assigneeId || !assigneeType) {
+      return <span className="text-muted-foreground">{t("common.unassigned")}</span>;
+    }
+    if (assigneeType === "member") {
+      const m = members.find((x) => x.user_id === assigneeId);
+      const name = m?.name ?? t("common.member");
+      return (
+        <>
+          <Avatar name={name} size={20} />
+          {name}
+        </>
+      );
+    }
+    const a = agents.find((x) => x.id === assigneeId);
+    const name = a?.name ?? t("common.agent");
+    return (
+      <>
+        <Avatar name={name} isAgent size={20} />
+        {name}
+      </>
+    );
+  };
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -35,6 +67,9 @@ export function CreateIssueScreen() {
         description: description.trim() || undefined,
         status,
         priority,
+        ...(assigneeType && assigneeId
+          ? { assignee_type: assigneeType, assignee_id: assigneeId }
+          : {}),
       });
       navigate({ name: "issue", id: issue.id });
     } catch {
@@ -52,14 +87,14 @@ export function CreateIssueScreen() {
         >
           <ChevronLeft className="size-5" />
         </button>
-        <span className="text-sm font-semibold">New issue</span>
+        <span className="text-sm font-semibold">{t("create.title")}</span>
         <button
           type="button"
           onClick={submit}
           disabled={!canSubmit}
-          className="rounded-full px-3 py-1.5 text-sm font-semibold text-[var(--brand,theme(colors.blue.600))] disabled:opacity-40"
+          className="rounded-full px-3 py-1.5 text-sm font-semibold text-brand disabled:opacity-40"
         >
-          {create.isPending ? "Saving…" : "Create"}
+          {create.isPending ? t("common.saving") : t("common.create")}
         </button>
       </header>
 
@@ -69,13 +104,13 @@ export function CreateIssueScreen() {
             autoFocus
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Issue title"
+            placeholder={t("create.issueTitle")}
             className="w-full bg-transparent text-base font-medium text-foreground outline-none placeholder:text-muted-foreground"
           />
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Add a description…"
+            placeholder={t("create.description")}
             rows={4}
             className="mt-3 w-full resize-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
@@ -83,81 +118,150 @@ export function CreateIssueScreen() {
 
         {create.isError && (
           <div className="px-4 pb-2 text-sm text-destructive">
-            Couldn’t create the issue. Try again.
+            {t("create.error")}
           </div>
         )}
 
         <div className="divide-y divide-border border-y border-border">
-          <button
-            type="button"
-            onClick={() => setSheet("status")}
-            className="flex w-full items-center justify-between gap-3 bg-card px-4 py-3 text-left active:bg-accent"
-          >
-            <span className="text-sm text-muted-foreground">Status</span>
-            <span className="flex items-center gap-1.5 text-sm font-medium">
-              <StatusDot status={status} />
-              {STATUS_CONFIG[status].label}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setSheet("priority")}
-            className="flex w-full items-center justify-between gap-3 bg-card px-4 py-3 text-left active:bg-accent"
-          >
-            <span className="text-sm text-muted-foreground">Priority</span>
-            <span className="flex items-center gap-1.5 text-sm font-medium">
-              <PriorityBars priority={priority} />
-              {PRIORITY_CONFIG[priority].label}
-            </span>
-          </button>
+          <FieldRow label={t("create.status")} onClick={() => setSheet("status")}>
+            <StatusDot status={status} />
+            {t(`status.${status}`)}
+          </FieldRow>
+          <FieldRow label={t("create.priority")} onClick={() => setSheet("priority")}>
+            <PriorityBars priority={priority} />
+            {t(`priority.${priority}`)}
+          </FieldRow>
+          <FieldRow label={t("create.assignee")} onClick={() => setSheet("assignee")}>
+            {assigneeNode()}
+          </FieldRow>
         </div>
       </div>
 
-      <BottomSheet open={sheet === "status"} onClose={() => setSheet(null)} title="Status">
+      <BottomSheet open={sheet === "status"} onClose={() => setSheet(null)} title={t("create.status")}>
         <ul className="pb-2">
           {BOARD_STATUSES.map((s: IssueStatus) => (
-            <li key={s}>
-              <button
-                type="button"
-                onClick={() => {
-                  setStatus(s);
-                  setSheet(null);
-                }}
-                className="flex w-full items-center gap-2.5 px-4 py-3 text-left text-sm active:bg-accent"
-              >
-                <span className="flex flex-1 items-center gap-2.5">
-                  <StatusDot status={s} />
-                  {STATUS_CONFIG[s].label}
-                </span>
-                {s === status && <Check className="size-4 text-[var(--brand,theme(colors.blue.600))]" />}
-              </button>
-            </li>
+            <OptionRow
+              key={s}
+              selected={s === status}
+              onClick={() => {
+                setStatus(s);
+                setSheet(null);
+              }}
+            >
+              <StatusDot status={s} />
+              {t(`status.${s}`)}
+            </OptionRow>
           ))}
         </ul>
       </BottomSheet>
 
-      <BottomSheet open={sheet === "priority"} onClose={() => setSheet(null)} title="Priority">
+      <BottomSheet open={sheet === "priority"} onClose={() => setSheet(null)} title={t("create.priority")}>
         <ul className="pb-2">
           {PRIORITY_ORDER.map((p: IssuePriority) => (
-            <li key={p}>
-              <button
-                type="button"
-                onClick={() => {
-                  setPriority(p);
-                  setSheet(null);
-                }}
-                className="flex w-full items-center gap-2.5 px-4 py-3 text-left text-sm active:bg-accent"
-              >
-                <span className="flex flex-1 items-center gap-2.5">
-                  <PriorityBars priority={p} />
-                  {PRIORITY_CONFIG[p].label}
-                </span>
-                {p === priority && <Check className="size-4 text-[var(--brand,theme(colors.blue.600))]" />}
-              </button>
-            </li>
+            <OptionRow
+              key={p}
+              selected={p === priority}
+              onClick={() => {
+                setPriority(p);
+                setSheet(null);
+              }}
+            >
+              <PriorityBars priority={p} />
+              {t(`priority.${p}`)}
+            </OptionRow>
+          ))}
+        </ul>
+      </BottomSheet>
+
+      <BottomSheet open={sheet === "assignee"} onClose={() => setSheet(null)} title={t("create.assignee")}>
+        <ul className="pb-2">
+          <OptionRow
+            selected={!assigneeId}
+            onClick={() => {
+              setAssigneeType(null);
+              setAssigneeId(null);
+              setSheet(null);
+            }}
+          >
+            <CircleSlash className="size-5 text-muted-foreground" />
+            {t("common.unassigned")}
+          </OptionRow>
+          {members.map((m) => (
+            <OptionRow
+              key={m.user_id}
+              selected={assigneeType === "member" && assigneeId === m.user_id}
+              onClick={() => {
+                setAssigneeType("member");
+                setAssigneeId(m.user_id);
+                setSheet(null);
+              }}
+            >
+              <Avatar name={m.name} size={24} />
+              {m.name}
+            </OptionRow>
+          ))}
+          {activeAgents.map((a) => (
+            <OptionRow
+              key={a.id}
+              selected={assigneeType === "agent" && assigneeId === a.id}
+              onClick={() => {
+                setAssigneeType("agent");
+                setAssigneeId(a.id);
+                setSheet(null);
+              }}
+            >
+              <Avatar name={a.name} isAgent size={24} />
+              {a.name}
+            </OptionRow>
           ))}
         </ul>
       </BottomSheet>
     </div>
+  );
+}
+
+function FieldRow({
+  label,
+  children,
+  onClick,
+}: {
+  label: string;
+  children: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center justify-between gap-3 bg-card px-4 py-3 text-left transition-colors active:bg-accent"
+    >
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+        {children}
+      </span>
+    </button>
+  );
+}
+
+function OptionRow({
+  children,
+  selected,
+  onClick,
+}: {
+  children: React.ReactNode;
+  selected?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex w-full items-center gap-2.5 px-4 py-3 text-left text-sm transition-colors active:bg-accent"
+      >
+        <span className="flex flex-1 items-center gap-2.5">{children}</span>
+        {selected && <Check className="size-4 text-brand" />}
+      </button>
+    </li>
   );
 }

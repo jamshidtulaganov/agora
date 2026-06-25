@@ -12,18 +12,20 @@ import { ChatScreen } from "../screens/chat-screen";
 import { ChatSessionScreen } from "../screens/chat-session-screen";
 import { IssueDetailScreen } from "../screens/issue-detail-screen";
 import { CreateIssueScreen } from "../screens/create-issue-screen";
+import { useT } from "../i18n";
 import { cn } from "../lib/cn";
 
 export function AppShell() {
   const { workspaces, active, isLoading, select } = useActiveWorkspace();
+  const t = useT();
 
   if (!active) {
     return isLoading ? (
-      <CenterMessage spinner title="Loading…" />
+      <CenterMessage spinner title={t("common.loading")} />
     ) : (
       <CenterMessage
-        title="No workspace"
-        subtitle="Your account isn’t a member of any workspace yet."
+        title={t("shell.noWorkspace")}
+        subtitle={t("shell.noWorkspaceSub")}
       />
     );
   }
@@ -48,6 +50,7 @@ function ShellInner({
 }) {
   const wsId = useWorkspaceId();
   const { route, activeTab, navigate } = useRouter();
+  const t = useT();
 
   let body: React.ReactNode;
   switch (route.name) {
@@ -87,7 +90,7 @@ function ShellInner({
                 className={cn(
                   "shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors",
                   w.id === active.id
-                    ? "bg-[var(--brand,theme(colors.blue.600))] text-white"
+                    ? "bg-brand text-brand-foreground"
                     : "bg-muted text-muted-foreground",
                 )}
               >
@@ -98,10 +101,10 @@ function ShellInner({
           <button
             type="button"
             onClick={() => navigate({ name: "create" })}
-            className="flex shrink-0 items-center gap-1 rounded-full bg-[var(--brand,theme(colors.blue.600))] px-3 py-1.5 text-xs font-semibold text-white"
+            className="flex shrink-0 items-center gap-1 rounded-full bg-brand px-3 py-1.5 text-xs font-semibold text-brand-foreground"
           >
             <Plus className="size-3.5" />
-            New
+            {t("shell.new")}
           </button>
         </header>
       )}

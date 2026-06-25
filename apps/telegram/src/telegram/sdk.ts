@@ -41,6 +41,8 @@ export interface TelegramWebApp {
   expand(): void;
   onEvent(event: string, handler: () => void): void;
   offEvent(event: string, handler: () => void): void;
+  openTelegramLink?(url: string): void;
+  openLink?(url: string): void;
   HapticFeedback?: {
     impactOccurred(style: "light" | "medium" | "heavy"): void;
     notificationOccurred(type: "error" | "success" | "warning"): void;
@@ -103,4 +105,16 @@ export function telegramReady(): void {
 
 export function haptic(style: "light" | "medium" | "heavy" = "light"): void {
   getWebApp()?.HapticFeedback?.impactOccurred(style);
+}
+
+/**
+ * Open Telegram's native "share to a chat" sheet for a URL, so the user can
+ * forward an issue deep-link to any Telegram chat. Falls back to a new window
+ * outside Telegram (browser preview).
+ */
+export function shareToTelegram(url: string, text: string): void {
+  const share = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
+  const wa = getWebApp();
+  if (wa?.openTelegramLink) wa.openTelegramLink(share);
+  else if (typeof window !== "undefined") window.open(share, "_blank");
 }

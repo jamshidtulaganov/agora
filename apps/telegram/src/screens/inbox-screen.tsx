@@ -7,8 +7,8 @@ import { useWorkspaceId } from "@agora/core/hooks";
 import type { InboxItem } from "@agora/core/types";
 import { useRouter } from "../platform/navigation";
 import { CenterMessage } from "../components/center-message";
-import { formatRelative } from "../lib/time";
 import { haptic } from "../telegram/sdk";
+import { useT, useFormatRelative } from "../i18n";
 import { cn } from "../lib/cn";
 
 export function InboxScreen() {
@@ -18,15 +18,11 @@ export function InboxScreen() {
   const archive = useArchiveInbox();
   const markAll = useMarkAllInboxRead();
   const { navigate } = useRouter();
+  const t = useT();
 
-  if (isLoading) return <CenterMessage spinner title="Loading inbox…" />;
+  if (isLoading) return <CenterMessage spinner title={t("inbox.loading")} />;
   if (items.length === 0) {
-    return (
-      <CenterMessage
-        title="You’re all caught up"
-        subtitle="Assignments, mentions and comments will show up here."
-      />
-    );
+    return <CenterMessage title={t("inbox.empty")} subtitle={t("inbox.emptySub")} />;
   }
 
   const hasUnread = items.some((i) => !i.read);
@@ -41,7 +37,7 @@ export function InboxScreen() {
             className="flex items-center gap-1 text-xs font-medium text-muted-foreground"
           >
             <Check className="size-3.5" />
-            Mark all read
+            {t("inbox.markAll")}
           </button>
         </div>
       )}
@@ -75,6 +71,8 @@ function InboxRow({
   onOpen: () => void;
   onArchive: () => void;
 }) {
+  const t = useT();
+  const fmt = useFormatRelative();
   return (
     <li className="flex items-stretch">
       <button
@@ -85,7 +83,7 @@ function InboxRow({
         <span
           className={cn(
             "mt-1.5 size-2 shrink-0 rounded-full",
-            item.read ? "bg-transparent" : "bg-[var(--brand,theme(colors.blue.600))]",
+            item.read ? "bg-transparent" : "bg-brand",
           )}
         />
         <div className="min-w-0 flex-1">
@@ -99,7 +97,7 @@ function InboxRow({
               {item.title}
             </span>
             <span className="shrink-0 text-[11px] text-muted-foreground">
-              {formatRelative(item.created_at)}
+              {fmt(item.created_at)}
             </span>
           </div>
           {item.body && (
@@ -112,7 +110,7 @@ function InboxRow({
       <button
         type="button"
         onClick={onArchive}
-        aria-label="Archive"
+        aria-label={t("inbox.archive")}
         className="flex shrink-0 items-center px-3 text-muted-foreground/60 transition-colors active:text-foreground"
       >
         <Archive className="size-4" />

@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
 import { useTelegramAuth } from "./use-telegram-auth";
 import { CenterMessage } from "../components/center-message";
+import { useT } from "../i18n";
 
 // Blocks the app until the Mini App has a session. Loading → spinner;
 // opened-outside-Telegram or auth failure → message (with retry on failure).
 export function AuthGate({ children }: { children: ReactNode }) {
   const { status, reason, retry } = useTelegramAuth();
+  const t = useT();
 
   if (status === "authed") return <>{children}</>;
 
@@ -13,20 +15,20 @@ export function AuthGate({ children }: { children: ReactNode }) {
     if (reason === "not-telegram") {
       return (
         <CenterMessage
-          title="Open in Telegram"
-          subtitle="This app signs you in automatically when opened from the Agora bot."
+          title={t("auth.openInTelegram")}
+          subtitle={t("auth.openInTelegramSub")}
         />
       );
     }
     return (
       <CenterMessage
-        title="Couldn’t sign you in"
-        subtitle="Your Telegram session may have expired. Try again."
-        actionLabel="Try again"
+        title={t("auth.failed")}
+        subtitle={t("auth.failedSub")}
+        actionLabel={t("common.tryAgain")}
         onAction={retry}
       />
     );
   }
 
-  return <CenterMessage spinner title="Signing in…" />;
+  return <CenterMessage spinner title={t("auth.signingIn")} />;
 }
