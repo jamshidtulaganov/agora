@@ -24,6 +24,15 @@ WHERE task_id = $1;
 -- name: GetAgentRunTraceByTask :one
 SELECT * FROM agent_run_trace WHERE task_id = $1;
 
+-- name: ListSettledPendingRunTraces :many
+-- Pending traces whose run finished before the settle cutoff, oldest first.
+-- The outcome backfill sweep claims these, derives a label from live signals,
+-- and writes it back via UpdateAgentRunTraceOutcome.
+SELECT * FROM agent_run_trace
+WHERE outcome_label = 'pending' AND created_at < $1
+ORDER BY created_at ASC
+LIMIT $2;
+
 -- name: ListAgentRunTraces :many
 SELECT * FROM agent_run_trace
 WHERE workspace_id = $1

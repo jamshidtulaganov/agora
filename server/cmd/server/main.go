@@ -394,6 +394,9 @@ func main() {
 	if err := schedulerMgr.Register(scheduler.TaskUsageHourlyJob(pool)); err != nil {
 		slog.Warn("scheduler: failed to register task_usage_hourly rollup job", "error", err)
 	} else {
+		if err := schedulerMgr.Register(scheduler.BackfillRunTraceOutcomesJob(pool)); err != nil {
+			slog.Warn("scheduler: failed to register backfill_run_trace_outcomes job", "error", err)
+		}
 		go func() {
 			_ = schedulerMgr.Run(sweepCtx)
 		}()

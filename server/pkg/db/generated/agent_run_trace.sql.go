@@ -85,6 +85,56 @@ func (q *Queries) ListAgentRunTraces(ctx context.Context, arg ListAgentRunTraces
 	return items, nil
 }
 
+const listSettledPendingRunTraces = `-- name: ListSettledPendingRunTraces :many
+SELECT id, task_id, workspace_id, agent_id, issue_id, task_status, issue_status_at_run, final_issue_status, human_revised, reopened, reaction_score, outcome_label, created_at, updated_at FROM agent_run_trace
+WHERE outcome_label = 'pending' AND created_at < $1
+ORDER BY created_at ASC
+LIMIT $2
+`
+
+type ListSettledPendingRunTracesParams struct {
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	Limit     int32              `json:"limit"`
+}
+
+// Pending traces whose run finished before the settle cutoff, oldest first.
+// The outcome backfill sweep claims these, derives a label from live signals,
+// and writes it back via UpdateAgentRunTraceOutcome.
+func (q *Queries) ListSettledPendingRunTraces(ctx context.Context, arg ListSettledPendingRunTracesParams) ([]AgentRunTrace, error) {
+	rows, err := q.db.Query(ctx, listSettledPendingRunTraces, arg.CreatedAt, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AgentRunTrace{}
+	for rows.Next() {
+		var i AgentRunTrace
+		if err := rows.Scan(
+			&i.ID,
+			&i.TaskID,
+			&i.WorkspaceID,
+			&i.AgentID,
+			&i.IssueID,
+			&i.TaskStatus,
+			&i.IssueStatusAtRun,
+			&i.FinalIssueStatus,
+			&i.HumanRevised,
+			&i.Reopened,
+			&i.ReactionScore,
+			&i.OutcomeLabel,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateAgentRunTraceOutcome = `-- name: UpdateAgentRunTraceOutcome :exec
 UPDATE agent_run_trace
 SET final_issue_status = $2,
