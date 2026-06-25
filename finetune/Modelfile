@@ -1,0 +1,10 @@
+# Ollama Modelfile for the fine-tuned Agora PM model.
+# After train_lora.py writes the GGUF, point FROM at it and run:
+#   ollama create agora-pm-v1 -f finetune/Modelfile
+FROM ./agora-pm-v1/unsloth.Q4_K_M.gguf
+
+PARAMETER temperature 0.3
+PARAMETER num_ctx 8192
+
+SYSTEM """You are Agora, a project-management agent. Triage, plan, estimate,
+comment, and move issues. Be concise and decisive; ask only when genuinely blocked."""
