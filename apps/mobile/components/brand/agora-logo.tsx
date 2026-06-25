@@ -6,7 +6,7 @@
  * `color` explicitly. For theme-aware usage, pair with `useColorScheme` +
  * `THEME` token from `@/lib/theme`.
  */
-import Svg, { Polygon } from "react-native-svg";
+import Svg, { Circle } from "react-native-svg";
 import { THEME } from "@/lib/theme";
 import { useColorScheme } from "@/lib/use-color-scheme";
 
@@ -22,10 +22,14 @@ export function AgoraLogo({ size = 48, color }: AgoraLogoProps) {
 
   return (
     <Svg width={size} height={size} viewBox="0 0 100 100">
-      <Polygon
-        fill={resolvedColor}
-        points="50,4 57.27,32.45 82.5,17.5 67.55,42.73 96,50 67.55,57.27 82.5,82.5 57.27,67.55 50,96 42.73,67.55 17.5,82.5 32.45,57.27 4,50 32.45,42.73 17.5,17.5 42.73,32.45"
-      />
+      <Circle cx="50" cy="50" r="29" fill="none" stroke={resolvedColor} strokeWidth={1.5} opacity={0.3} />
+      <Circle cx="50" cy="21" r="8.5" fill={resolvedColor} />
+      <Circle cx="75.1" cy="64.5" r="8.5" fill={resolvedColor} />
+      <Circle cx="24.9" cy="64.5" r="8.5" fill={resolvedColor} />
+      <Circle cx="75.1" cy="35.5" r="7" fill="none" stroke={resolvedColor} strokeWidth={3.5} />
+      <Circle cx="50" cy="79" r="7" fill="none" stroke={resolvedColor} strokeWidth={3.5} />
+      <Circle cx="24.9" cy="35.5" r="7" fill="none" stroke={resolvedColor} strokeWidth={3.5} />
+      <Circle cx="50" cy="50" r="10.5" fill="#2347E8" />
     </Svg>
   );
 }

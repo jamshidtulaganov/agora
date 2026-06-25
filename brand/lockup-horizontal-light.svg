@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 250 110" role="img" aria-label="agora">
+  <g transform="translate(6,21) scale(0.7)">
+    <circle cx="48" cy="48" r="28" fill="none" stroke="#18181B" stroke-width="1.4" opacity="0.28"/>
+    <circle cx="48" cy="20" r="8" fill="#18181B"/><circle cx="72.2" cy="62" r="8" fill="#18181B"/><circle cx="23.8" cy="62" r="8" fill="#18181B"/>
+    <circle cx="72.2" cy="34" r="6.5" fill="none" stroke="#18181B" stroke-width="3"/><circle cx="48" cy="76" r="6.5" fill="none" stroke="#18181B" stroke-width="3"/><circle cx="23.8" cy="34" r="6.5" fill="none" stroke="#18181B" stroke-width="3"/>
+    <circle cx="48" cy="48" r="10" fill="#2347E8"/>
+  </g>
+  <text x="86" y="75" font-family="'Source Serif 4', Georgia, 'Times New Roman', serif" font-size="54" font-weight="500" letter-spacing="-1" fill="#18181B">agora</text>
+</svg>

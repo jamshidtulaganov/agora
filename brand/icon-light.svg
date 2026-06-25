@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Agora">
+  <circle cx="48" cy="48" r="28" fill="none" stroke="#18181B" stroke-width="1.4" opacity="0.28"/>
+  <circle cx="48" cy="20" r="8" fill="#18181B"/>
+  <circle cx="72.2" cy="62" r="8" fill="#18181B"/>
+  <circle cx="23.8" cy="62" r="8" fill="#18181B"/>
+  <circle cx="72.2" cy="34" r="6.5" fill="none" stroke="#18181B" stroke-width="3"/>
+  <circle cx="48" cy="76" r="6.5" fill="none" stroke="#18181B" stroke-width="3"/>
+  <circle cx="23.8" cy="34" r="6.5" fill="none" stroke="#18181B" stroke-width="3"/>
+  <circle cx="48" cy="48" r="10" fill="#2347E8"/>
+</svg>

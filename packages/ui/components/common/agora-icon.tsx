@@ -26,11 +26,37 @@ const borderedSizes = {
   lg: { wrapper: "p-2.5", icon: "size-5" },
 };
 
+/** Brand accent on the shared-center node (ultramarine #2347E8). */
+const ACCENT = "#2347E8";
+
 /**
- * Pure CSS 8-point aperture star icon matching the Agora logo.
- * Uses currentColor so it adapts to light/dark themes automatically.
- * Clip-path polygon traced from the brand star SVG coordinates.
+ * Agora "assembly" mark — a ring of six participants gathered around a shared
+ * center: three filled nodes (people) and three outlined nodes (agents), with
+ * the center node in the brand accent (the shared work). The ring uses
+ * currentColor, so it inherits the surrounding text color and adapts to
+ * light/dark automatically. Replaces the old 8-point aperture star, which read
+ * too close to a generic AI "sparkle".
  */
+function AssemblyMark() {
+  return (
+    <svg
+      viewBox="0 0 96 96"
+      className="block size-full"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle cx="48" cy="48" r="28" fill="none" stroke="currentColor" strokeWidth="1.4" opacity={0.28} />
+      <circle cx="48" cy="20" r="8" fill="currentColor" />
+      <circle cx="72.2" cy="62" r="8" fill="currentColor" />
+      <circle cx="23.8" cy="62" r="8" fill="currentColor" />
+      <circle cx="72.2" cy="34" r="6.5" stroke="currentColor" strokeWidth="3" />
+      <circle cx="48" cy="76" r="6.5" stroke="currentColor" strokeWidth="3" />
+      <circle cx="23.8" cy="34" r="6.5" stroke="currentColor" strokeWidth="3" />
+      <circle cx="48" cy="48" r="10" fill={ACCENT} />
+    </svg>
+  );
+}
+
 export function AgoraIcon({
   className,
   animate = false,
@@ -46,13 +72,6 @@ export function AgoraIcon({
     const timer = setTimeout(() => setEntranceDone(true), 600);
     return () => clearTimeout(timer);
   }, [animate]);
-
-  const clipPath = `polygon(
-    50% 4%, 57.27% 32.45%, 82.5% 17.5%, 67.55% 42.73%,
-    96% 50%, 67.55% 57.27%, 82.5% 82.5%, 57.27% 67.55%,
-    50% 96%, 42.73% 67.55%, 17.5% 82.5%, 32.45% 57.27%,
-    4% 50%, 32.45% 42.73%, 17.5% 17.5%, 42.73% 32.45%
-  )`;
 
   if (bordered) {
     const sizeConfig = borderedSizes[size];
@@ -74,10 +93,7 @@ export function AgoraIcon({
             entranceDone && !noSpin && "hover:animate-spin"
           )}
         >
-          <span
-            className="block size-full bg-current"
-            style={{ clipPath }}
-          />
+          <AssemblyMark />
         </span>
       </span>
     );
@@ -94,10 +110,7 @@ export function AgoraIcon({
       aria-hidden="true"
       {...props}
     >
-      <span
-        className="block size-full bg-current"
-        style={{ clipPath }}
-      />
+      <AssemblyMark />
     </span>
   );
 }

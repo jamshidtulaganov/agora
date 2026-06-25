@@ -1,28 +1,28 @@
 import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
 import { ArrowUpRight } from "lucide-react";
 
-// Docs-local stateless Agora mark — matches @agora/ui's AgoraIcon
-// visually (same 8-pointed-asterisk clip-path), but without useState/
-// useEffect so it's safe to render from Server Components such as
-// layout.config.tsx / layout.tsx. Keep in sync with
-// packages/ui/components/common/agora-icon.tsx if the mark changes.
-const AGORA_CLIP = `polygon(
-  45% 62.1%, 45% 100%, 55% 100%, 55% 62.1%,
-  81.8% 88.9%, 88.9% 81.8%, 62.1% 55%, 100% 55%,
-  100% 45%, 62.1% 45%, 88.9% 18.2%, 81.8% 11.1%,
-  55% 37.9%, 55% 0%, 45% 0%, 45% 37.9%,
-  18.2% 11.1%, 11.1% 18.2%, 37.9% 45%, 0% 45%,
-  0% 55%, 37.9% 55%, 11.1% 81.8%, 18.2% 88.9%
-)`;
-
+// Docs-local stateless Agora mark — the "assembly" ring (matches @agora/ui's
+// AgoraIcon), stateless so it's safe to render from Server Components such as
+// layout.config.tsx / layout.tsx. Nodes inherit currentColor; the center keeps
+// the brand ultramarine. Keep in sync with
+// packages/ui/components/common/agora-icon.tsx and /brand if the mark changes.
 function AgoraMark() {
   return (
-    <span className="inline-block size-[1em]" aria-hidden="true">
-      <span
-        className="block size-full bg-current"
-        style={{ clipPath: AGORA_CLIP }}
-      />
-    </span>
+    <svg
+      viewBox="0 0 96 96"
+      className="inline-block size-[1em]"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle cx="48" cy="48" r="28" fill="none" stroke="currentColor" strokeWidth="1.4" opacity={0.28} />
+      <circle cx="48" cy="20" r="8" fill="currentColor" />
+      <circle cx="72.2" cy="62" r="8" fill="currentColor" />
+      <circle cx="23.8" cy="62" r="8" fill="currentColor" />
+      <circle cx="72.2" cy="34" r="6.5" stroke="currentColor" strokeWidth="3" />
+      <circle cx="48" cy="76" r="6.5" stroke="currentColor" strokeWidth="3" />
+      <circle cx="23.8" cy="34" r="6.5" stroke="currentColor" strokeWidth="3" />
+      <circle cx="48" cy="48" r="10" fill="#2347E8" />
+    </svg>
   );
 }
 

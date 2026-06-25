@@ -1,8 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Agora">
-  <rect width="100" height="100" fill="#2563EB"/>
-  <polygon
-    fill="#ffffff"
-    transform="translate(17,17) scale(0.66)"
-    points="50,4 57.27,32.45 82.5,17.5 67.55,42.73 96,50 67.55,57.27 82.5,82.5 57.27,67.55 50,96 42.73,67.55 17.5,82.5 32.45,57.27 4,50 32.45,42.73 17.5,17.5 42.73,32.45"
-  />
+  <rect width="100" height="100" fill="#2347E8"/>
+  <circle cx="50" cy="50" r="29" fill="none" stroke="#fff" stroke-width="2" opacity="0.4"/>
+  <g fill="#fff">
+    <circle cx="50" cy="23" r="8"/>
+    <circle cx="73.4" cy="63.5" r="8"/>
+    <circle cx="26.6" cy="63.5" r="8"/>
+    <circle cx="50" cy="50" r="10"/>
+  </g>
+  <g fill="#2347E8" stroke="#fff" stroke-width="3.4">
+    <circle cx="73.4" cy="36.5" r="6.6"/>
+    <circle cx="50" cy="77" r="6.6"/>
+    <circle cx="26.6" cy="36.5" r="6.6"/>
+  </g>
 </svg>
