@@ -1,5 +1,5 @@
-# agora-backend — Go API (Chi + sqlc + websocket). Private, 6PN only.
-# Reached by the web app at: agora-backend.internal:8080  (no public IP).
+# sd-agora-backend — Go API (Chi + sqlc + websocket). Private, 6PN only.
+# Reached by the web app at: sd-agora-backend.internal:8080  (no public IP).
 # Entrypoint runs `migrate up` then `server` on every boot.
 #
 # Build context MUST be the repo root (the Dockerfile copies server/), so deploy
@@ -10,7 +10,7 @@
 # Secrets (set once, never commit) — see deploy/fly/secrets.example.env:
 #   DATABASE_URL JWT_SECRET SMTP_PASSWORD GOOGLE_CLIENT_SECRET
 
-app = "agora-backend"
+app = "sd-agora-backend"
 primary_region = "fra"
 
 # Local attachment storage (used when S3_* is unset). Single machine only.
@@ -25,14 +25,12 @@ primary_region = "fra"
 
   # Public URLs all point at the web app (the only public surface). The backend
   # is reached through the web app's same-origin /api, /ws, /auth, /uploads proxy.
-  FRONTEND_ORIGIN = "https://agora-web.fly.dev"
-  AGORA_APP_URL = "https://agora-web.fly.dev"
-  AGORA_PUBLIC_URL = "https://agora-web.fly.dev"
-  GOOGLE_REDIRECT_URI = "https://agora-web.fly.dev/auth/callback"
+  FRONTEND_ORIGIN = "https://sd-agora-web.fly.dev"
+  AGORA_APP_URL = "https://sd-agora-web.fly.dev"
+  AGORA_PUBLIC_URL = "https://sd-agora-web.fly.dev"
 
-  # Google OAuth client id is public (also served via /api/config); the secret
-  # is a fly secret, not here.
-  GOOGLE_CLIENT_ID = "508848888581-hnai5j6k8cr3662f210jad2o81ourpnb.apps.googleusercontent.com"
+  # Telegram bot-OTP login. Token + webhook secret are fly secrets.
+  TELEGRAM_BOT_USERNAME = "agora_ai_pm_bot"
 
   # Email via Gmail SMTP relay. Password is a fly secret.
   SMTP_HOST = "smtp.gmail.com"
@@ -41,7 +39,7 @@ primary_region = "fra"
   SMTP_USERNAME = "jamshid.swe@gmail.com"
   RESEND_FROM_EMAIL = "jamshid.swe@gmail.com"
   # smtp.gmail.com rejects the default "localhost" EHLO from a public source.
-  SMTP_EHLO_NAME = "agora-backend.fly.dev"
+  SMTP_EHLO_NAME = "sd-agora-backend.fly.dev"
 
 [[vm]]
   size = "shared-cpu-1x"

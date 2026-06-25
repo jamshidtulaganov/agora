@@ -481,6 +481,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// /auth/verify-code).
 	r.With(authRL).Post("/auth/telegram/start", h.TelegramStart)
 	r.With(authVerifyRL).Post("/auth/telegram/verify", h.TelegramVerify)
+	// Mini App initData login: exchanges a signed window.Telegram.WebApp.initData
+	// for a session (authVerifyRL, same credential-exchange budget as verify).
+	r.With(authVerifyRL).Post("/auth/telegram/miniapp", h.TelegramMiniAppLogin)
 	r.Post("/auth/logout", h.Logout)
 
 	// Public API

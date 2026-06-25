@@ -41,6 +41,12 @@ type AppConfig struct {
 	// configured; empty/omitted when TELEGRAM_BOT_USERNAME is unset.
 	TelegramBotUsername string `json:"telegram_bot_username,omitempty"`
 
+	// TelegramMiniAppShortName is the @BotFather Mini App short name used to
+	// build https://t.me/<bot>/<shortName>?startapp=<payload> deep links (push
+	// DMs and the SPA's own links). Exposed (omitempty) only alongside
+	// TelegramBotUsername; empty/omitted when TELEGRAM_MINIAPP_SHORTNAME is unset.
+	TelegramMiniAppShortName string `json:"telegram_miniapp_shortname,omitempty"`
+
 	// PostHog public config for the frontend. The key is the same Project
 	// API Key the backend uses; returning it here (instead of baking it
 	// into the frontend bundle via NEXT_PUBLIC_*) means self-hosted
@@ -68,6 +74,7 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	config.DaemonServerURL, config.DaemonAppURL = daemonSetupURLsFromEnv()
 	if h.telegramLoginEnabled() {
 		config.TelegramBotUsername = telegramBotUsername()
+		config.TelegramMiniAppShortName = telegramMiniAppShortName()
 	}
 
 	// Re-read from env on every request so operators can rotate keys via

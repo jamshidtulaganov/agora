@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev:web": "turbo dev --filter=@agora/web",
+    "dev:telegram": "turbo dev --filter=@agora/telegram",
     "dev:docs": "turbo dev --filter=@agora/docs",
     "dev:desktop": "turbo dev --filter=@agora/desktop",
     "dev:desktop:staging": "turbo dev:staging --filter=@agora/desktop",

@@ -86,6 +86,21 @@ func telegramBotUsername() string {
 	return strings.TrimPrefix(strings.TrimSpace(os.Getenv("TELEGRAM_BOT_USERNAME")), "@")
 }
 
+// telegramBotToken returns the raw bot token from TELEGRAM_BOT_TOKEN. Used by the
+// Mini App initData verifier, which needs the token directly (the BotClient's
+// token field is unexported). Blank when unset; the Mini App handler 503s on a
+// nil bot client and VerifyInitData refuses a blank token regardless.
+func telegramBotToken() string {
+	return strings.TrimSpace(os.Getenv("TELEGRAM_BOT_TOKEN"))
+}
+
+// telegramMiniAppShortName returns the @BotFather Mini App short name from
+// TELEGRAM_MINIAPP_SHORTNAME, used to build https://t.me/<bot>/<short>?startapp=
+// deep links for push DMs and exposed via /api/config. Blank when unset.
+func telegramMiniAppShortName() string {
+	return strings.TrimSpace(os.Getenv("TELEGRAM_MINIAPP_SHORTNAME"))
+}
+
 // telegramLoginEnabled reports whether bot-OTP login is fully configured: both
 // a bot client (token) and a username (for the deep link) are required.
 func (h *Handler) telegramLoginEnabled() bool {
@@ -362,6 +377,19 @@ func (h *Handler) TelegramVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.telegramIssueSession(w, r, telegramID, firstName, "telegram")
+}
+
+// telegramIssueSession runs the canonical Telegram login tail shared by the
+// bot-OTP verify path (TelegramVerify) and the Mini App initData path
+// (TelegramMiniAppLogin): find-or-create the user by synthetic email, seed the
+// display name from first_name on first login, link the Telegram external
+// identity, auto-join the default SD workspaces, then issue the JWT + auth
+// cookies and write the LoginResponse. authMethod ("telegram" |
+// "telegram_miniapp") tags the signup analytics event. Both entry points share
+// this so the synthetic-email / link / auto-join / session behavior is provably
+// identical regardless of how the Telegram id was authenticated.
+func (h *Handler) telegramIssueSession(w http.ResponseWriter, r *http.Request, telegramID, firstName, authMethod string) {
 	email := telegramSyntheticEmail(telegramID)
 
 	user, isNew, err := h.findOrCreateUser(r.Context(), email)
@@ -376,7 +404,7 @@ func (h *Handler) TelegramVerify(w http.ResponseWriter, r *http.Request) {
 	}
 	if isNew {
 		evt := analytics.Signup(uuidToString(user.ID), user.Email, signupSourceFromRequest(r))
-		evt.Properties["auth_method"] = "telegram"
+		evt.Properties["auth_method"] = authMethod
 		obsmetrics.RecordEvent(h.Analytics, h.Metrics, evt)
 
 		// Seed the display name from the Telegram first_name on first login.
@@ -431,11 +459,61 @@ func (h *Handler) TelegramVerify(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	slog.Info("user logged in via telegram", append(logger.RequestAttrs(r), "user_id", uuidToString(user.ID), "email", user.Email)...)
+	slog.Info("user logged in via telegram", append(logger.RequestAttrs(r), "user_id", uuidToString(user.ID), "email", user.Email, "auth_method", authMethod)...)
 	writeJSON(w, http.StatusOK, LoginResponse{
 		Token: tokenString,
 		User:  userToResponse(user),
 	})
+}
+
+// telegramMiniAppInitDataTTL bounds replay of a captured initData string. The
+// signed payload is a bearer credential until it expires, so 24h caps the window
+// (combined with the per-IP authVerifyRL limiter). Not full single-use replay
+// protection — see the plan's out-of-scope note.
+const telegramMiniAppInitDataTTL = 24 * time.Hour
+
+type telegramMiniAppRequest struct {
+	InitData string `json:"init_data"`
+}
+
+// TelegramMiniAppLogin authenticates a Telegram Mini App from its signed
+// initData and issues the SAME session as TelegramVerify (via
+// telegramIssueSession). The Mini App is served cross-origin from the API and
+// stores the returned JWT for Authorization: Bearer; cookies are still set for
+// parity with the web flow.
+//
+// Unlike telegramLoginEnabled() this only requires the bot TOKEN (for the HMAC),
+// not the bot USERNAME — the Mini App never builds a t.me login deep link.
+// POST /auth/telegram/miniapp
+func (h *Handler) TelegramMiniAppLogin(w http.ResponseWriter, r *http.Request) {
+	if h.telegramBot == nil {
+		writeError(w, http.StatusServiceUnavailable, "Telegram login is not configured")
+		return
+	}
+
+	var req telegramMiniAppRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.InitData) == "" {
+		writeError(w, http.StatusBadRequest, "init_data is required")
+		return
+	}
+
+	user, err := telegram.VerifyInitData(telegramBotToken(), req.InitData, telegramMiniAppInitDataTTL)
+	if err != nil {
+		// Collapse every failure (bad hash, tampered field, expired, no user) to
+		// one 401 so the response is not a verification oracle. Log the specific
+		// sentinel for ops only.
+		slog.Warn("telegram miniapp: init data verification failed",
+			append(logger.RequestAttrs(r), "error", err)...)
+		writeError(w, http.StatusUnauthorized, "invalid or expired init data")
+		return
+	}
+
+	telegramID := strconv.FormatInt(user.ID, 10)
+	h.telegramIssueSession(w, r, telegramID, user.FirstName, "telegram_miniapp")
 }
 
 // defaultWorkspaceSlugs returns the workspace slugs every Telegram user is

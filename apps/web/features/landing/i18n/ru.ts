@@ -237,7 +237,6 @@ export function createRuDict(allowSignup: boolean): LandingDict {
           { label: "Руководство", href: "/guide" },
           { label: "Сценарии использования", href: "/usecases" },
           { label: "История изменений", href: "/changelog" },
-          { label: "Скачать", href: "/download" },
         ],
       },
       resources: {

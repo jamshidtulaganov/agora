@@ -1,17 +1,17 @@
-# agora-db — self-hosted Postgres with pgvector (private, 6PN only).
-# Reachable from the backend at: agora-db.internal:5432
+# sd-agora-db — self-hosted Postgres with pgvector (private, 6PN only).
+# Reachable from the backend at: sd-agora-db.internal:5432
 # Image is pulled directly (no build). Data lives on the mounted volume.
 #
 # One-time setup (run from repo root):
-#   fly apps create agora-db --org personal
-#   fly volumes create agora_pgdata --app agora-db --region fra --size 3
-#   fly secrets set POSTGRES_PASSWORD=<strong-pw> --app agora-db
+#   fly apps create sd-agora-db --org personal
+#   fly volumes create agora_pgdata --app sd-agora-db --region fra --size 3
+#   fly secrets set POSTGRES_PASSWORD=<strong-pw> --app sd-agora-db
 #   fly deploy --config deploy/fly/db/fly.toml
 #
 # NOTE: no [http_service] — Postgres is not HTTP and must never be public.
 # It has no public IP; only apps in this org's private network can reach it.
 
-app = "agora-db"
+app = "sd-agora-db"
 primary_region = "fra"
 
 [build]

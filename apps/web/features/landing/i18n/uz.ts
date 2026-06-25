@@ -237,7 +237,6 @@ export function createUzDict(allowSignup: boolean): LandingDict {
           { label: "Qo'llanma", href: "/guide" },
           { label: "Foydalanish holatlari", href: "/usecases" },
           { label: "O'zgarishlar", href: "/changelog" },
-          { label: "Yuklab olish", href: "/download" },
         ],
       },
       resources: {

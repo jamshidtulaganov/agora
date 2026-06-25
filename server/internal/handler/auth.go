@@ -265,6 +265,28 @@ func contains(slice []string, s string) bool {
 	return false
 }
 
+// reservedEmailTLDs are special-use top-level domains (RFC 2606 / 6761 / 6762)
+// that never resolve on the public internet, so any SMTP relay can only ever
+// bounce mail addressed to them. Dev/seed accounts use them (e.g.
+// dev@local.test), so we still accept the address and store a code — we just
+// skip the doomed send, otherwise every code request generates a bounce back
+// to the relay's own mailbox.
+var reservedEmailTLDs = []string{".test", ".example", ".invalid", ".localhost", ".local"}
+
+func isUndeliverableEmailDomain(email string) bool {
+	at := strings.LastIndex(email, "@")
+	if at < 0 {
+		return false
+	}
+	domain := strings.ToLower(strings.TrimSpace(email[at+1:]))
+	for _, tld := range reservedEmailTLDs {
+		if domain == strings.TrimPrefix(tld, ".") || strings.HasSuffix(domain, tld) {
+			return true
+		}
+	}
+	return false
+}
+
 func (h *Handler) SendCode(w http.ResponseWriter, r *http.Request) {
 	var req SendCodeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -335,7 +357,12 @@ func (h *Handler) SendCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.EmailService.SendVerificationCode(email, code); err != nil {
+	if isUndeliverableEmailDomain(email) {
+		// Reserved/undeliverable domain (e.g. dev@local.test). The code is
+		// already stored; log it for the dev/seed flow and skip the send that
+		// could only bounce.
+		slog.Info("verification code not emailed: reserved/undeliverable domain (would bounce)", "email", email, "code", code)
+	} else if err := h.EmailService.SendVerificationCode(email, code); err != nil {
 		slog.Error("failed to send verification code", "email", email, "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to send verification code")
 		return

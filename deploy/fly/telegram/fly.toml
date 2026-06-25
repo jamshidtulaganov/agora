@@ -1,0 +1,24 @@
+# sd-agora-tg — Telegram Mini App SPA (nginx). Public, HTTPS-only (Telegram
+# requires HTTPS). nginx reverse-proxies /api /ws /auth /uploads to the private
+# sd-agora-backend over 6PN, so the backend stays internal.
+#
+# Build context MUST be the repo root. Deploy from repo root:
+#
+#   fly deploy --config deploy/fly/telegram/fly.toml --dockerfile Dockerfile.telegram .
+
+app = "sd-agora-tg"
+primary_region = "fra"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+[[restart]]
+  policy = "always"

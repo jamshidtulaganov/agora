@@ -70,6 +70,26 @@ func (h *Handler) userIDByExternalIdentity(ctx context.Context, provider, extern
 	return userID, nil
 }
 
+// telegramIDByUserID returns the Telegram external_id linked to userID, or ""
+// when the user has no linked Telegram identity. The reverse of
+// userIDByExternalIdentity, used by the bot push path to find a recipient's
+// chat. Raw pgx (user_external_identity is intentionally outside the sqlc set).
+// A user has at most one telegram identity (the link-steal guard in
+// linkExternalIdentity prevents rebinding), so LIMIT 1 is belt-and-suspenders.
+func (h *Handler) telegramIDByUserID(ctx context.Context, userID string) (string, error) {
+	var externalID string
+	err := h.DB.QueryRow(ctx,
+		`SELECT external_id FROM user_external_identity WHERE provider = $1 AND user_id = $2::uuid LIMIT 1`,
+		providerTelegram, userID).Scan(&externalID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	return externalID, nil
+}
+
 type linkBitrixRequest struct {
 	BitrixUserID string `json:"bitrix_user_id"`
 }

@@ -22,9 +22,7 @@ import {
 } from "@agora/ui/components/ui/card";
 import { Button } from "@agora/ui/components/ui/button";
 import { Loader2 } from "lucide-react";
-import { captureDownloadIntent } from "@agora/core/analytics";
 import { setLoggedInCookie } from "@/features/auth/auth-cookie";
-import Link from "next/link";
 import { LoginPage, validateCliCallback } from "@agora/views/auth";
 import { AgoraIcon } from "@agora/ui/components/common/agora-icon";
 import { useT } from "@agora/views/i18n";
@@ -211,18 +209,6 @@ function LoginPageContent() {
           : undefined
       }
       onTokenObtained={setLoggedInCookie}
-      extra={
-        <span className="text-xs text-muted-foreground">
-          {t(($) => $.web.prefer_desktop)}{" "}
-          <Link
-            href="/download"
-            onClick={() => captureDownloadIntent("login")}
-            className="font-medium text-foreground underline decoration-foreground/30 underline-offset-4 hover:decoration-foreground/70"
-          >
-            {t(($) => $.web.download)}
-          </Link>
-        </span>
-      }
     />
   );
 }

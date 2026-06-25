@@ -449,6 +449,18 @@ export class ApiClient {
     });
   }
 
+  /**
+   * Telegram Mini App login: exchanges a signed window.Telegram.WebApp.initData
+   * string for a session. Same LoginResponse shape as the other login paths;
+   * the Mini App stores the returned token for Authorization: Bearer.
+   */
+  async telegramMiniAppLogin(initData: string): Promise<LoginResponse> {
+    return this.fetch("/auth/telegram/miniapp", {
+      method: "POST",
+      body: JSON.stringify({ init_data: initData }),
+    });
+  }
+
   async logout(): Promise<void> {
     await this.fetch("/auth/logout", { method: "POST" });
   }

@@ -237,7 +237,6 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           { label: "Guide", href: "/guide" },
           { label: "Use cases", href: "/usecases" },
           { label: "Changelog", href: "/changelog" },
-          { label: "Download", href: "/download" },
         ],
       },
       resources: {

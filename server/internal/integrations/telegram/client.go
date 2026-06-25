@@ -78,8 +78,20 @@ func (c *BotClient) httpClient() *http.Client {
 }
 
 type sendMessageRequest struct {
-	ChatID string `json:"chat_id"`
-	Text   string `json:"text"`
+	ChatID      string       `json:"chat_id"`
+	Text        string       `json:"text"`
+	ReplyMarkup *replyMarkup `json:"reply_markup,omitempty"`
+}
+
+// replyMarkup models the inline keyboard used by push DMs (a single URL button
+// that opens the Mini App). Only the subset we need is modeled.
+type replyMarkup struct {
+	InlineKeyboard [][]inlineButton `json:"inline_keyboard"`
+}
+
+type inlineButton struct {
+	Text string `json:"text"`
+	URL  string `json:"url"`
 }
 
 // telegramResponse is the common Bot API envelope. On failure Telegram returns
@@ -96,14 +108,31 @@ type telegramResponse struct {
 // decide whether a failed DM is fatal (verify still works without it) — the
 // login store already holds the code regardless of delivery.
 func (c *BotClient) SendMessage(ctx context.Context, chatID, text string) error {
+	return c.sendMessage(ctx, sendMessageRequest{ChatID: chatID, Text: text})
+}
+
+// SendMessageWithButton delivers text plus a single inline URL button (used by
+// push DMs to deep-link into the Mini App). A blank url degrades to a plain text
+// message. Separate from SendMessage so the OTP login path stays button-free.
+func (c *BotClient) SendMessageWithButton(ctx context.Context, chatID, text, buttonText, url string) error {
+	req := sendMessageRequest{ChatID: chatID, Text: text}
+	if strings.TrimSpace(url) != "" {
+		req.ReplyMarkup = &replyMarkup{
+			InlineKeyboard: [][]inlineButton{{{Text: buttonText, URL: url}}},
+		}
+	}
+	return c.sendMessage(ctx, req)
+}
+
+func (c *BotClient) sendMessage(ctx context.Context, reqBody sendMessageRequest) error {
 	if c.token == "" {
 		return ErrNoToken
 	}
-	if strings.TrimSpace(chatID) == "" {
+	if strings.TrimSpace(reqBody.ChatID) == "" {
 		return errors.New("telegram: chat id required")
 	}
 
-	body, err := json.Marshal(sendMessageRequest{ChatID: chatID, Text: text})
+	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("telegram: marshal sendMessage: %w", err)
 	}

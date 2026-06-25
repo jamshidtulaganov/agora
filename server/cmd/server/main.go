@@ -321,6 +321,11 @@ func main() {
 		HeartbeatScheduler: heartbeatScheduler,
 	})
 
+	// Telegram bot push: DM members on Telegram for each new inbox item (assign,
+	// mention, comment, …) with a Mini App deep link. No-op when the bot is
+	// unconfigured. Registered after h exists; shares the same bus instance.
+	registerTelegramPushListeners(bus, h)
+
 	srv := &http.Server{
 		Addr:    ":" + port,
 		Handler: r,

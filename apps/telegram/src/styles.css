@@ -1,0 +1,44 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@agora/ui/styles/tokens.css";
+@import "@agora/ui/styles/base.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Tailwind v4 scans these globs so class names used inside the shared packages
+   (which Vite compiles from source) are emitted. Mirrors apps/desktop's
+   globals.css @source block. */
+@source "../../../packages/ui/**/*.tsx";
+@source "../../../packages/core/**/*.{ts,tsx}";
+@source "../../../packages/views/**/*.{ts,tsx}";
+@source "./**/*.{ts,tsx}";
+
+:root {
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  /* Telegram themes map onto these via theme.ts (applyTelegramTheme). The
+     fallbacks keep the app readable outside Telegram (browser preview). */
+  background-color: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+/* Telegram opens the Mini App in a viewport that can be shorter than the
+   content; let the app own scrolling within the shell, not the body. */
+#root {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}

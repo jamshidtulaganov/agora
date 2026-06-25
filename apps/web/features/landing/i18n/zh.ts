@@ -237,7 +237,6 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           { label: "\u6307\u5357", href: "/guide" },
           { label: "\u6848\u4f8b", href: "/usecases" },
           { label: "更新日志", href: "/changelog" },
-          { label: "下载", href: "/download" },
         ],
       },
       resources: {
