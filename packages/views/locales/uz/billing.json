@@ -1,0 +1,75 @@
+{
+  "title": "To‘lov (test sahifasi)",
+  "subtitle": "agora-cloud’ning /api/v1/billing/* manziliga bevosita o‘tkazish. Tugallangan UI emas — faqat proksi + Stripe oqimini tekshirish uchun har bir endpoint bitta sahifaga joylangan.",
+  "endpoints": {
+    "balance": "GET /api/cloud-billing/balance",
+    "transactions": "GET /api/cloud-billing/transactions",
+    "batches": "GET /api/cloud-billing/batches",
+    "topups": "GET /api/cloud-billing/topups",
+    "buy": "GET /price-tiers · POST /checkout-sessions · POST /portal-sessions"
+  },
+  "balance": {
+    "title": "Balans",
+    "credits_suffix": "kredit",
+    "meta": "xom micro: {{micro}} · egasi: {{owner}}… · yangilangan {{updated}}"
+  },
+  "buy": {
+    "title": "Kredit sotib olish / To‘lovni boshqarish",
+    "no_tiers": "Narx darajalari sozlanmagan. Cloud’da Stripe kaliti o‘rnatilmagan bo‘lsa kerak — checkout 503 qaytaradi.",
+    "tier_money_to_credits": "{{money}} → {{credits}} kredit",
+    "tier_bonus": " + {{credits}} bonus",
+    "tier_bonus_with_expiry": " + {{credits}} bonus ({{expiry}})",
+    "tier_id": "id: {{id}}",
+    "open_portal": "Stripe To‘lov Portalini ochish",
+    "portal_hint": "Hali to‘lov qilmagan foydalanuvchilar uchun 400 kutiladi (Stripe mijoz yozuvi mavjud emas).",
+    "toast_no_url": "Cloud checkout URL’ini qaytarmadi",
+    "toast_checkout_failed": "Checkout muvaffaqiyatsiz tugadi",
+    "toast_no_portal_url": "Portal URL’i qaytarilmadi",
+    "toast_portal_failed": "Portal muvaffaqiyatsiz tugadi"
+  },
+  "checkout": {
+    "session_label": "Checkout sessiyasi {{prefix}}…",
+    "loading": "Buyurtma holati yuklanmoqda…",
+    "fetch_failed": "Holatni olib bo‘lmadi: {{error}}",
+    "fetch_failed_unknown": "noma’lum xatolik",
+    "final_status": "Yakuniy holat: {{status}}",
+    "polling_status": "Holat so‘ralmoqda… joriy: {{status}}",
+    "status_unknown": "noma’lum",
+    "label_order": "Buyurtma",
+    "label_tier": "Daraja",
+    "label_charged": "Hisobdan yechildi",
+    "charged_value": "{{money}} · {{credits}} kredit",
+    "charged_with_bonus": "{{money}} · {{credits}} kredit + {{bonus}} bonus",
+    "clear_url": "URL’dan tozalash"
+  },
+  "transactions": {
+    "title": "Tranzaksiyalar",
+    "empty": "Hali tranzaksiyalar yo‘q.",
+    "credits_value": "{{value}} kredit",
+    "row_meta": "{{date}} · keyingi balans: {{balance}} kredit · havola: {{ref}}",
+    "ref_empty": "—"
+  },
+  "batches": {
+    "title": "Kredit to‘plamlari",
+    "empty": "Hali to‘plamlar yo‘q.",
+    "remaining_over_total": "{{remaining}} / {{total}} kredit",
+    "id_suffix": "{{id}}…",
+    "consumed": "Sarflangan: {{value}} kredit",
+    "expires_suffix": " · {{value}} da muddati tugaydi",
+    "never_expires_suffix": " · muddati tugamaydi"
+  },
+  "topups": {
+    "title": "To‘ldirish buyurtmalari",
+    "empty": "Hali to‘ldirish buyurtmalari yo‘q.",
+    "amount_to_credits": "{{money}} → {{credits}} kredit",
+    "amount_to_credits_with_bonus": "{{money}} → {{credits}} kredit + {{bonus}} bonus",
+    "row_meta": "{{date}} · stripe: {{checkout}}",
+    "stripe_empty": "—"
+  },
+  "shared": {
+    "request_failed": "So‘rov muvaffaqiyatsiz tugadi",
+    "refresh": "Yangilash",
+    "paging": "{{page}} / {{totalPages}} sahifa · jami {{total}}",
+    "date_dash": "—"
+  }
+}

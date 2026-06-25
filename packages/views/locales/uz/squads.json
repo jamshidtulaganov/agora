@@ -1,0 +1,76 @@
+{
+  "page": {
+    "title": "Squad’lar",
+    "new_button": "Yangi Squad",
+    "empty_no_squads": "Hali Squad yo‘q. Boshlash uchun bittasini yarating.",
+    "empty_no_match": "Filtrlaringizga mos Squad yo‘q."
+  },
+  "inspector": {
+    "details_section": "Tafsilotlar",
+    "archive_button": "Arxivlash"
+  },
+  "archive_dialog": {
+    "title": "Bu Squad arxivlansinmi?",
+    "description": "\"{{name}}\" arxivlanadi. Hozir bu Squad’ga biriktirilgan vazifalar uning rahbariga o‘tkaziladi. Buni bekor qilib bo‘lmaydi — yo‘naltirishni qaytarish kerak bo‘lsa, yangi Squad yarating.",
+    "cancel": "Bekor qilish",
+    "confirm": "Arxivlash",
+    "archiving": "Arxivlanmoqda…"
+  },
+  "name_editor": {
+    "cancel": "Bekor qilish"
+  },
+  "add_member_dialog": {
+    "title": "A’zo qo‘shish",
+    "description": "Bu Squad’ga ish maydoni a’zosini yoki agentni qo‘shing.",
+    "label_member": "A’zo",
+    "label_role": "Rol",
+    "label_optional": "(ixtiyoriy)",
+    "placeholder_role_inline": "Rol qo‘shing…",
+    "cancel": "Bekor qilish"
+  },
+  "description_dialog": {
+    "title": "Tavsifni tahrirlash",
+    "placeholder_empty": "Tavsif qo‘shing",
+    "cancel": "Bekor qilish"
+  },
+  "discard_changes_dialog": {
+    "title": "Saqlanmagan o‘zgarishlar bekor qilinsinmi?",
+    "description": "Bu ko‘rinishda saqlanmagan o‘zgarishlaringiz bor. Ko‘rinishlarni almashtirish ularni bekor qiladi.",
+    "keep_editing": "Tahrirni davom ettirish",
+    "discard_button": "Bekor qilish"
+  },
+  "members_tab": {
+    "section_title": "A’zolar",
+    "section_count_one": "Bu Squad’da {{count}} a’zo",
+    "section_count_other": "Bu Squad’da {{count}} a’zo",
+    "add_member_button": "A’zo qo‘shish",
+    "create_agent_button": "Agent yaratish",
+    "leader_chip": "Rahbar",
+    "view_agent_tooltip": "Agent tafsilotini ochish",
+    "make_leader_tooltip": "Squad rahbari qilish",
+    "remove_member_tooltip": "Squad’dan olib tashlash",
+    "status_working": "Ishlamoqda",
+    "status_idle": "Bo‘sh",
+    "status_offline": "Oflayn",
+    "status_unstable": "Barqaror emas",
+    "status_archived": "Arxivlangan",
+    "issue_status_blocked": "to‘sib qo‘yilgan",
+    "active_issue_more": "va yana {{count}} ta",
+    "last_active_label": "oxirgi faollik {{time}}"
+  },
+  "profile_card": {
+    "unavailable": "Squad mavjud emas",
+    "detail_link": "Tafsilot →",
+    "archived": "Arxivlangan",
+    "member_count_one": "{{count}} a’zo",
+    "member_count_other": "{{count}} a’zo",
+    "members_section": "A’zolar",
+    "more_members_one": "+yana {{count}}",
+    "more_members_other": "+yana {{count}}"
+  },
+  "instructions_tab": {
+    "description": "Squad ko‘rsatmalari rahbar agent shu Squad’ga biriktirilgan vazifa ustida ishlaganida uning so‘roviga qo‘shiladi. Ulardan rahbarga butun Squad bo‘yicha yo‘riqnoma, ish kelishuvlari yoki har bir topshiriqda amal qilishi kerak bo‘lgan kontekst berish uchun foydalaning.",
+    "unsaved_changes": "Saqlanmagan o‘zgarishlar",
+    "save_button": "Saqlash"
+  }
+}

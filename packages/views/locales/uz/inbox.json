@@ -1,0 +1,71 @@
+{
+  "page": {
+    "title": "Kiruvchilar",
+    "back": "Kiruvchilar"
+  },
+  "menu": {
+    "mark_all_read": "Hammasini o‘qilgan deb belgilash",
+    "archive_all": "Hammasini arxivlash",
+    "archive_all_read": "O‘qilganlarni arxivlash",
+    "archive_completed": "Yakunlanganlarni arxivlash"
+  },
+  "list": {
+    "empty": "Bildirishnomalar yo‘q",
+    "mark_done_tooltip": "Bajarildi deb belgilash",
+    "archive_tooltip": "Arxivlash",
+    "time": {
+      "just_now": "hozirgina",
+      "minutes": "{{count}} daq",
+      "hours": "{{count}} soat",
+      "days": "{{count}} kun"
+    }
+  },
+  "detail": {
+    "select_prompt": "Tafsilotlarni ko‘rish uchun bildirishnomani tanlang",
+    "empty": "Kiruvchilaringiz bo‘sh",
+    "original_input": "Asl kiritma",
+    "edit_advanced": "Kengaytirilgan shakl sifatida tahrirlash",
+    "archive": "Arxivlash"
+  },
+  "types": {
+    "issue_assigned": "Biriktirilgan",
+    "unassigned": "Biriktirilmagan",
+    "assignee_changed": "Mas’ul o‘zgartirildi",
+    "status_changed": "Holat o‘zgartirildi",
+    "priority_changed": "Muhimlik o‘zgartirildi",
+    "start_date_changed": "Boshlanish sanasi o‘zgartirildi",
+    "due_date_changed": "Tugash sanasi o‘zgartirildi",
+    "new_comment": "Yangi izoh",
+    "mentioned": "Eslatildi",
+    "review_requested": "Ko‘rib chiqish so‘raldi",
+    "task_completed": "Topshiriq yakunlandi",
+    "task_failed": "Topshiriq muvaffaqiyatsiz tugadi",
+    "agent_blocked": "Agent to‘sib qo‘yildi",
+    "agent_completed": "Agent yakunladi",
+    "reaction_added": "Reaksiya bildirildi",
+    "quick_create_done": "Agent bilan yaratildi",
+    "quick_create_failed": "Agent bilan yaratish muvaffaqiyatsiz tugadi"
+  },
+  "labels": {
+    "set_status_to": "Holat o‘rnatildi",
+    "set_priority_to": "Muhimlik o‘rnatildi",
+    "assigned_to": "{{name}} ga biriktirildi",
+    "removed_assignee": "Mas’ul olib tashlandi",
+    "set_start_date_to": "Boshlanish sanasi {{date}} ga o‘rnatildi",
+    "removed_start_date": "Boshlanish sanasi olib tashlandi",
+    "set_due_date_to": "Tugash sanasi {{date}} ga o‘rnatildi",
+    "removed_due_date": "Tugash sanasi olib tashlandi",
+    "reacted_to_comment": "Izohingizga {{emoji}} reaksiyasi bildirildi",
+    "created_with_agent": "Agent bilan yaratildi: {{identifier}}",
+    "failed_with_detail": "Muvaffaqiyatsiz tugadi: {{detail}}"
+  },
+  "errors": {
+    "mark_read_failed": "O‘qilgan deb belgilab bo‘lmadi",
+    "archive_failed": "Arxivlab bo‘lmadi",
+    "mark_done_failed": "Bajarildi deb belgilab bo‘lmadi",
+    "mark_all_read_failed": "Hammasini o‘qilgan deb belgilab bo‘lmadi",
+    "archive_all_failed": "Hammasini arxivlab bo‘lmadi",
+    "archive_all_read_failed": "O‘qilgan elementlarni arxivlab bo‘lmadi",
+    "archive_completed_failed": "Yakunlanganlarni arxivlab bo‘lmadi"
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "header": {
+    "back": "Orqaga",
+    "log_out": "Chiqish"
+  },
+  "not_found": {
+    "title": "Taklif topilmadi",
+    "description": "Bu taklif muddati tugagan, bekor qilingan yoki sizning hisobingizga tegishli emas.",
+    "go_to_dashboard": "Boshqaruv paneliga o‘tish"
+  },
+  "accepted": {
+    "title": "Siz {{workspace_name}} ga qo‘shildingiz!",
+    "redirecting": "Ish maydoniga yo‘naltirilmoqda..."
+  },
+  "declined": {
+    "title": "Taklif rad etildi",
+    "description": "Siz bu ish maydoniga qo‘shilmaysiz.",
+    "go_to_dashboard": "Boshqaruv paneliga o‘tish"
+  },
+  "main": {
+    "join_title": "{{workspace_name}} ga qo‘shilish",
+    "fallback_workspace_name": "ish maydoni",
+    "invited_role_admin": "sizni admin sifatida qo‘shilishga taklif qildi.",
+    "invited_role_member": "sizni a’zo sifatida qo‘shilishga taklif qildi.",
+    "already_handled_accepted": "Bu taklif allaqachon qabul qilingan.",
+    "already_handled_declined": "Bu taklif allaqachon rad etilgan.",
+    "expired": "Bu taklif muddati tugagan.",
+    "decline": "Rad etish",
+    "declining": "Rad etilmoqda...",
+    "accept": "Qabul qilish va qo‘shilish",
+    "joining": "Qo‘shilmoqda..."
+  },
+  "errors": {
+    "accept_failed": "Taklifni qabul qilib bo‘lmadi",
+    "decline_failed": "Taklifni rad etib bo‘lmadi"
+  },
+  "batch": {
+    "log_out": "Chiqish",
+    "empty_title": "Kutilayotgan takliflar yo‘q",
+    "empty_hint": "O‘z ish maydoningizni sozlashga o‘ting.",
+    "empty_continue": "Sozlashga o‘tish",
+    "title": "Siz taklif qilindingiz",
+    "subtitle": "Qo‘shilmoqchi bo‘lgan ish maydonlarini tanlang. Qolganlarini keyin yon paneldan istalgan vaqtda hal qila olasiz.",
+    "submit_skip": "O‘tkazib yuborib, o‘z ish maydonimni sozlash",
+    "submit_join_one": "1 ish maydoniga qo‘shilish",
+    "submit_join_other": "{{count}} ish maydoniga qo‘shilish",
+    "joining": "Qo‘shilmoqda...",
+    "error_generic": "Takliflarni qayta ishlab bo‘lmadi. Iltimos, qayta urinib ko‘ring.",
+    "row_workspace_fallback": "Ish maydoni",
+    "row_inviter_fallback": "Kimdir",
+    "row_invited_admin": "{{inviter}} sizni admin sifatida taklif qildi",
+    "row_invited_member": "{{inviter}} sizni a’zo sifatida taklif qildi"
+  }
+}

@@ -2,9 +2,9 @@
 
 import { LandingHeader } from "./landing-header";
 import { LandingHero } from "./landing-hero";
+import { ProductDemo } from "./product-demo";
 import { FeaturesSection } from "./features-section";
 import { HowItWorksSection } from "./how-it-works-section";
-import { OpenSourceSection } from "./open-source-section";
 import { FAQSection } from "./faq-section";
 import { LandingFooter } from "./landing-footer";
 
@@ -16,9 +16,9 @@ export function AgoraLanding() {
         <LandingHero />
       </div>
 
+      <ProductDemo />
       <FeaturesSection />
       <HowItWorksSection />
-      <OpenSourceSection />
       <FAQSection />
       <LandingFooter />
     </>

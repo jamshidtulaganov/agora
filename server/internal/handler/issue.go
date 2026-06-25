@@ -2249,6 +2249,43 @@ type UpdateIssueRequest struct {
 	AttachmentIDs []string `json:"attachment_ids"`
 }
 
+// maybeEnqueueKnowledgeCapture fires a one-off knowledge-capture run when an
+// issue transitions INTO `done`. The workspace's designated KB-synthesizer
+// agent (opt-in, stored in workspace settings as `kb_synthesizer_agent_id` —
+// a free-model agent) is triggered on the issue to distill its durable
+// learnings into the per-project `<slug>-kb` knowledgebase skill. No-op unless
+// the workspace opted in AND the issue belongs to a project (the KB is
+// per-project). Best-effort: any failure degrades to "no capture" and never
+// blocks the status transition. Callers MUST only invoke this on a genuine
+// prev!=done -> done transition so it fires exactly once per completion.
+func (h *Handler) maybeEnqueueKnowledgeCapture(ctx context.Context, issue db.Issue) {
+	if !issue.ProjectID.Valid {
+		return // KB is per-project; skip project-less issues
+	}
+	ws, err := h.Queries.GetWorkspace(ctx, issue.WorkspaceID)
+	if err != nil {
+		return
+	}
+	var settings struct {
+		KBAgent string `json:"kb_synthesizer_agent_id"`
+	}
+	if len(ws.Settings) > 0 {
+		_ = json.Unmarshal(ws.Settings, &settings)
+	}
+	if strings.TrimSpace(settings.KBAgent) == "" {
+		return // workspace has not opted in
+	}
+	agentID, err := parseUUIDLoose(settings.KBAgent)
+	if err != nil || !agentID.Valid {
+		return
+	}
+	if _, err := h.TaskService.EnqueueTaskForMention(ctx, issue, agentID, pgtype.UUID{}); err != nil {
+		slog.Warn("knowledge-capture enqueue failed", "issue_id", uuidToString(issue.ID), "agent_id", settings.KBAgent, "error", err)
+		return
+	}
+	slog.Info("knowledge-capture enqueued on done", "issue_id", uuidToString(issue.ID), "agent_id", settings.KBAgent)
+}
+
 func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	prevIssue, ok := h.loadIssueForUser(w, r, id)
@@ -2501,6 +2538,14 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		if h.isSquadLeaderReady(r.Context(), issue) {
 			h.enqueueSquadLeaderTask(r.Context(), issue, pgtype.UUID{}, actorType, actorID)
 		}
+	}
+
+	// Auto knowledge-capture on completion: when an issue transitions into
+	// done, fire the workspace's KB synthesizer to distill it into the project
+	// knowledgebase. Guarded to a genuine prev!=done -> done transition so it
+	// runs exactly once per completion.
+	if statusChanged && issue.Status == "done" && prevIssue.Status != "done" {
+		h.maybeEnqueueKnowledgeCapture(r.Context(), issue)
 	}
 
 	// Cancel active tasks when the issue is cancelled by a user.
@@ -2985,6 +3030,11 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			if h.isSquadLeaderReady(r.Context(), issue) {
 				h.enqueueSquadLeaderTask(r.Context(), issue, pgtype.UUID{}, actorType, actorID)
 			}
+		}
+
+		// Auto knowledge-capture on completion (batch-path mirror of UpdateIssue).
+		if statusChanged && issue.Status == "done" && prevIssue.Status != "done" {
+			h.maybeEnqueueKnowledgeCapture(r.Context(), issue)
 		}
 
 		// Cancel active tasks when the issue is cancelled by a user.

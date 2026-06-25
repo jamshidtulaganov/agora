@@ -138,6 +138,7 @@ function CommentInput({ issueId, onSubmit }: CommentInputProps) {
             else clearDraft(draftKey);
           }}
           onSubmit={handleSubmit}
+          submitOnEnter
           onUploadFile={handleUpload}
           debounceMs={100}
           currentIssueId={issueId}

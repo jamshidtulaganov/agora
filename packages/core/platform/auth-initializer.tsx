@@ -106,7 +106,14 @@ export function AuthInitializer({
           qc.setQueryData(workspaceKeys.list(), wsList);
         })
         .catch((err) => {
-          logger.error("cookie auth init failed", err);
+          // A 401 here just means "no valid session" — the normal state for a
+          // logged-out visitor on a public page. Don't surface it as an error.
+          const status = (err as { status?: number } | null)?.status;
+          if (status === 401) {
+            logger.debug("cookie auth init: no active session");
+          } else {
+            logger.error("cookie auth init failed", err);
+          }
           onAuthFailure();
         });
       return;

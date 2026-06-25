@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useAuthStore } from "@agora/core/auth";
 import { docsHrefForLocale, useLocale } from "../i18n";
-import { GitHubMark, githubUrl, heroButtonClassName } from "./shared";
+import { heroButtonClassName } from "./shared";
+import { Reveal } from "./reveal";
 
 export function HowItWorksSection() {
   const { t, locale } = useLocale();
@@ -12,21 +13,22 @@ export function HowItWorksSection() {
   return (
     <section id="how-it-works" className="bg-[#05070b] text-white">
       <div className="mx-auto max-w-[1320px] px-4 py-24 sm:px-6 sm:py-32 lg:px-8 lg:py-40">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">
-          {t.howItWorks.label}
-        </p>
-        <h2 className="mt-4 font-[family-name:var(--font-serif)] text-[2.6rem] leading-[1.05] tracking-[-0.03em] sm:text-[3.4rem] lg:text-[4.2rem]">
-          {t.howItWorks.headlineMain}
-          <br />
-          <span className="text-white/40">{t.howItWorks.headlineFaded}</span>
-        </h2>
+        <Reveal>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">
+            {t.howItWorks.label}
+          </p>
+        </Reveal>
+        <Reveal delay={80}>
+          <h2 className="mt-4 font-[family-name:var(--font-serif)] text-[2.6rem] leading-[1.05] tracking-[-0.03em] sm:text-[3.4rem] lg:text-[4.2rem]">
+            {t.howItWorks.headlineMain}
+            <br />
+            <span className="text-white/40">{t.howItWorks.headlineFaded}</span>
+          </h2>
+        </Reveal>
 
         <div className="mt-20 grid gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 sm:grid-cols-2 lg:grid-cols-4">
           {t.howItWorks.steps.map((step, i) => (
-            <div
-              key={i}
-              className="flex flex-col bg-[#05070b] p-8 lg:p-10"
-            >
+            <div key={i} className="flex flex-col bg-[#05070b] p-8 lg:p-10">
               <span className="text-[13px] font-semibold tabular-nums text-white/28">
                 {String(i + 1).padStart(2, "0")}
               </span>
@@ -41,7 +43,10 @@ export function HowItWorksSection() {
         </div>
 
         <div className="mt-14 flex flex-wrap items-center gap-4">
-          <Link href={user ? "/" : "/login"} className={heroButtonClassName("solid")}>
+          <Link
+            href={user ? "/" : "/login"}
+            className={heroButtonClassName("solid")}
+          >
             {user ? t.header.dashboard : t.howItWorks.cta}
           </Link>
           <Link
@@ -49,15 +54,6 @@ export function HowItWorksSection() {
             className={heroButtonClassName("ghost")}
           >
             {t.howItWorks.ctaDocs}
-          </Link>
-          <Link
-            href={githubUrl}
-            target="_blank"
-            rel="noreferrer"
-            className={heroButtonClassName("ghost")}
-          >
-            <GitHubMark className="size-4" />
-            {t.howItWorks.ctaGithub}
           </Link>
         </div>
       </div>

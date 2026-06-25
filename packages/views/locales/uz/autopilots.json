@@ -1,0 +1,351 @@
+{
+  "page": {
+    "title": "Autopilot",
+    "new_autopilot": "Yangi autopilot",
+    "start_blank": "Noldan boshlash",
+    "table": {
+      "name": "Nom",
+      "agent": "Agent",
+      "created_by": "Yaratuvchi",
+      "mode": "Rejim",
+      "status": "Holat",
+      "last_run": "Oxirgi ishga tushirish"
+    },
+    "last_run_empty": "--",
+    "empty": {
+      "title": "Hozircha autopilot’lar yo‘q",
+      "hint": "AI agentlaringiz uchun takrorlanuvchi topshiriqlarni rejalashtiring. Shablon tanlang yoki noldan boshlang."
+    }
+  },
+  "status": {
+    "active": "Faol",
+    "paused": "To‘xtatilgan",
+    "archived": "Arxivlangan"
+  },
+  "execution_mode": {
+    "create_issue": "Vazifa yaratish",
+    "run_only": "Faqat ishga tushirish"
+  },
+  "relative_date": {
+    "today": "Bugun",
+    "one_day_ago": "1k oldin",
+    "days_ago": "{{count}}k oldin",
+    "months_ago": "{{count}}o oldin"
+  },
+  "templates": {
+    "daily_news": {
+      "title": "Kunlik yangiliklar dayjesti",
+      "summary": "Jamoa uchun bugungi yangiliklarni qidiring va umumlashtiring"
+    },
+    "pr_review": {
+      "title": "PR ko‘rib chiqish eslatmasi",
+      "summary": "Ko‘rib chiqishni talab qiladigan eskirgan pull request’larni belgilang"
+    },
+    "bug_triage": {
+      "title": "Bug triaji",
+      "summary": "Yangi bug hisobotlarini baholang va muhimligini belgilang"
+    },
+    "weekly_progress": {
+      "title": "Haftalik taraqqiyot hisoboti",
+      "summary": "Jamoa taraqqiyotining haftalik xulosasini tuzing"
+    },
+    "dependency_audit": {
+      "title": "Bog‘liqliklar auditi",
+      "summary": "Xavfsizlik zaifliklari va eskirgan paketlarni skanerlang"
+    },
+    "documentation_check": {
+      "title": "Hujjatlarni tekshirish",
+      "summary": "So‘nggi o‘zgarishlarni hujjatlardagi kamchiliklar uchun ko‘rib chiqing"
+    }
+  },
+  "detail": {
+    "not_found": "Autopilot topilmadi",
+    "pause_aria": "Autopilot’ni to‘xtatish",
+    "activate_aria": "Autopilot’ni faollashtirish",
+    "edit": "Tahrirlash",
+    "run_now": "Hozir ishga tushirish",
+    "running": "Ishlamoqda...",
+    "toast_triggered": "Autopilot ishga tushirildi",
+    "toast_trigger_failed": "Autopilot’ni ishga tushirishda xatolik",
+    "section_properties": "Xususiyatlar",
+    "section_triggers": "Triggerlar",
+    "section_run_history": "Ishga tushirish tarixi",
+    "section_danger": "Xavfli hudud",
+    "field_agent": "Agent",
+    "field_created_by": "Yaratuvchi",
+    "field_output_mode": "Chiqish rejimi",
+    "field_project": "Loyiha",
+    "no_project": "Loyiha yo‘q",
+    "project_unavailable": "Loyiha mavjud emas",
+    "field_prompt": "Prompt",
+    "add_trigger": "Trigger qo‘shish",
+    "no_triggers": "Triggerlar sozlanmagan. Avtomatik ishga tushirish uchun jadval qo‘shing.",
+    "no_runs": "Hozircha ishga tushirishlar yo‘q. Qo‘lda ishga tushirish uchun \"Hozir ishga tushirish\" ni bosing.",
+    "delete_button": "Autopilot’ni o‘chirish",
+    "toast_deleted": "Autopilot o‘chirildi",
+    "toast_delete_failed": "Autopilot’ni o‘chirishda xatolik",
+    "delete_dialog": {
+      "title": "Autopilot’ni o‘chirish",
+      "description": "Bu \"{{title}}\" ni triggerlari va ishga tushirish tarixi bilan birga butunlay o‘chiradi. Bu amalni ortga qaytarib bo‘lmaydi.",
+      "cancel": "Bekor qilish",
+      "confirm": "O‘chirish",
+      "deleting": "O‘chirilmoqda..."
+    }
+  },
+  "run_status": {
+    "issue_created": "Vazifa yaratildi",
+    "running": "Ishlamoqda",
+    "skipped": "O‘tkazib yuborildi",
+    "completed": "Bajarildi",
+    "failed": "Muvaffaqiyatsiz"
+  },
+  "run_source": {
+    "schedule": "Jadval",
+    "manual": "Qo‘lda",
+    "webhook": "Webhook",
+    "api": "API"
+  },
+  "run": {
+    "issue_linked": "Vazifa bog‘landi",
+    "view_log": "Bajarilish logini ko‘rish",
+    "skipped_group": {
+      "label": "O‘tkazib yuborildi",
+      "summary": "{{count}} ta o‘tkazib yuborilgan ishga tushirish"
+    }
+  },
+  "webhook_payload": {
+    "label": "Webhook hodisasi:",
+    "unknown_event": "webhook.received",
+    "payload": "Payload",
+    "content_type": "Content-Type: {{type}}",
+    "copy": "Nusxalash",
+    "copied": "Webhook payload nusxalandi",
+    "copied_short": "Nusxalandi",
+    "copy_failed": "Nusxalashda xatolik",
+    "truncated_marker": "[qisqartirilgan — to‘liq payload uchun Nusxalash’ni bosing]"
+  },
+  "trigger_kind": {
+    "schedule": "Jadval",
+    "webhook": "Webhook",
+    "api": "API"
+  },
+  "trigger_row": {
+    "disabled_badge": "O‘chirilgan",
+    "deprecated_badge": "Eskirgan",
+    "next_label": "Keyingi: {{date}}",
+    "webhook_url_label": "Webhook URL",
+    "copy_url": "URL nusxalash",
+    "url_copied": "Webhook URL nusxalandi",
+    "url_copy_failed": "Nusxalashda xatolik",
+    "rotate_url": "URL almashtirish",
+    "rotate_confirm_title": "Webhook URL almashtirish",
+    "rotate_confirm_description": "Joriy URL darhol ishlamay qoladi. Uni chaqirayotgan har qanday tashqi tizimlar yangi URL bilan yangilanishi kerak. Davom etilsinmi?",
+    "rotate_confirm_cancel": "Bekor qilish",
+    "rotate_confirm_action": "URL almashtirish",
+    "rotate_in_progress": "Almashtirilmoqda...",
+    "toast_rotated": "Webhook URL almashtirildi",
+    "toast_rotate_failed": "URL almashtirishda xatolik",
+    "toast_deleted": "Trigger o‘chirildi",
+    "toast_delete_failed": "Triggerni o‘chirishda xatolik",
+    "delete_dialog": {
+      "title": "Triggerni o‘chirish",
+      "description": "Bu trigger olib tashlanadi va autopilot bu jadval bo‘yicha ishga tushishni to‘xtatadi. Bu amalni ortga qaytarib bo‘lmaydi.",
+      "cancel": "Bekor qilish",
+      "confirm": "O‘chirish",
+      "deleting": "O‘chirilmoqda..."
+    }
+  },
+  "deliveries": {
+    "section_title": "Webhook yetkazib berishlari",
+    "empty": "Hozircha webhook yetkazib berishlari yo‘q. Bu yerda yozuvlarni ko‘rish uchun webhook URL’ga POST yuboring.",
+    "row": {
+      "attempts": "{{count}}× urinish",
+      "replay_badge": "Qayta o‘ynatish"
+    },
+    "status": {
+      "queued": "Navbatda",
+      "dispatched": "Yuborildi",
+      "rejected": "Rad etildi",
+      "ignored": "E’tiborsiz qoldirildi",
+      "failed": "Muvaffaqiyatsiz"
+    },
+    "signature": {
+      "not_required": "Imzo yo‘q",
+      "valid": "Imzo to‘g‘ri",
+      "invalid": "Imzo noto‘g‘ri",
+      "missing": "Imzo yo‘q"
+    },
+    "detail": {
+      "title": "Yetkazib berish",
+      "received_at": "Qabul qilingan",
+      "last_attempt_at": "Oxirgi urinish",
+      "attempt_count": "Urinishlar",
+      "response_status": "Javob",
+      "dedupe_key": "Dedupe kaliti",
+      "dedupe_source": "Dedupe manbasi",
+      "content_type": "Content-Type",
+      "replayed_from": "Qayta o‘ynatilgan manba",
+      "error_label": "Xatolik",
+      "raw_body": "Xom tana",
+      "selected_headers": "Sarlavhalar",
+      "response_body": "Javob tanasi"
+    },
+    "replay": {
+      "action": "Qayta o‘ynatish",
+      "in_progress": "Qayta o‘ynatilmoqda...",
+      "toast_success": "Yetkazib berish qayta o‘ynatildi",
+      "toast_failed": "Qayta o‘ynatish muvaffaqiyatsiz",
+      "disabled_invalid_signature": "Qayta o‘ynatib bo‘lmaydi — imzo noto‘g‘ri edi",
+      "disabled_rejected": "Rad etilgan yetkazib berishni qayta o‘ynatib bo‘lmaydi",
+      "disabled_queued": "Hali navbatda — barqarorlashgach qayta o‘ynating"
+    }
+  },
+  "add_trigger_dialog": {
+    "title": "Trigger qo‘shish",
+    "type_label": "Tur",
+    "type_schedule": "Jadval",
+    "type_webhook": "Webhook",
+    "label_field": "Yorliq (ixtiyoriy)",
+    "label_placeholder": "masalan, Ish kuni ertalab",
+    "webhook_help": "Agora saqlaganingizdan keyin webhook URL yaratadi. Bu autopilot’ni ishga tushirish uchun unga istalgan JSON’ni POST qiling.",
+    "submit": "Trigger qo‘shish",
+    "submitting": "Qo‘shilmoqda...",
+    "toast_added_schedule": "Jadval triggeri qo‘shildi",
+    "toast_added_webhook": "Webhook triggeri qo‘shildi",
+    "toast_add_failed": "Triggerni qo‘shishda xatolik"
+  },
+  "dialog": {
+    "sr_create": "Yangi Autopilot",
+    "sr_edit": "Autopilot’ni tahrirlash",
+    "header_create": "Yangi autopilot",
+    "header_edit": "Autopilot’ni tahrirlash",
+    "subtitle": "Takrorlanuvchi AI topshirig‘i",
+    "expand": "Yoyish",
+    "collapse": "Yig‘ish",
+    "close": "Yopish",
+    "title_placeholder": "Autopilot nomi",
+    "runbook_label": "Runbook",
+    "runbook_hint": "Har bir ishga tushirishda agent tomonidan o‘qiladi",
+    "description_placeholder": "# Maqsad\nAgent nimaga erishishi kerak?\n\n# Kontekst\nBu kim uchun? Qanday cheklovlar bor?\n\n# Qadamlar\n1. …\n2. …",
+    "auto_run_hint": "Saqlangandan so‘ng, to‘xtatilmaguncha avtomatik ishga tushadi.",
+    "cancel": "Bekor qilish",
+    "create": "Autopilot yaratish",
+    "save": "Saqlash",
+    "creating": "Yaratilmoqda...",
+    "saving": "Saqlanmoqda...",
+    "toast_created": "Autopilot yaratildi",
+    "toast_create_partial": "Autopilot yaratildi, lekin jadvalni saqlash muvaffaqiyatsiz bo‘ldi",
+    "toast_create_partial_with_reason": "Autopilot yaratildi, lekin jadvalni saqlash muvaffaqiyatsiz bo‘ldi: {{reason}}",
+    "toast_create_failed": "Autopilot’ni yaratishda xatolik",
+    "toast_updated": "Autopilot yangilandi",
+    "toast_update_partial": "Autopilot yangilandi, lekin jadvalni saqlash muvaffaqiyatsiz bo‘ldi",
+    "toast_update_partial_with_reason": "Autopilot yangilandi, lekin jadvalni saqlash muvaffaqiyatsiz bo‘ldi: {{reason}}",
+    "toast_update_failed": "Autopilot’ni yangilashda xatolik",
+    "section_agent": "Agent",
+    "section_assignee": "Mas’ul",
+    "select_agent": "Agent tanlang",
+    "select_assignee": "Agent yoki Squad tanlang",
+    "section_project": "Loyiha",
+    "no_project": "Loyiha yo‘q",
+    "section_output_mode": "Chiqish rejimi",
+    "section_schedule": "Jadval",
+    "section_trigger_kind": "Trigger",
+    "trigger_kind_schedule": "Jadval",
+    "trigger_kind_webhook": "Webhook",
+    "section_webhook": "Webhook",
+    "webhook_help_create": "Agora bu autopilot yaratilgandan keyin webhook URL yaratadi. Uni ishga tushirish uchun o‘sha URL’ga istalgan JSON’ni POST qiling.",
+    "webhook_help_edit": "Bu autopilot webhook orqali ishga tushiriladi. URL’ni (nusxalash / almashtirish) autopilot’ning tafsilotlar sahifasida boshqaring.",
+    "webhook_created_title": "Webhook autopilot tayyor",
+    "webhook_created_description": "Quyidagi URL’ga istalgan JSON’ni POST qiling va autopilot ishga tushadi. Uni hozir nusxalang — shuningdek, uni autopilot’ning tafsilotlar sahifasida topishingiz va almashtirishingiz mumkin.",
+    "webhook_created_warning": "Bu URL’ga parol kabi munosabatda bo‘ling. Unga ega bo‘lgan har kim autopilot’ni ishga tushira oladi.",
+    "webhook_created_done": "Tayyor",
+    "event_filter_label": "Hodisa filtrlari",
+    "event_filter_docs_link_label": "Hodisa filtrlari qanday ishlashini o‘rganing",
+    "event_filter_event_placeholder": "masalan, workflow_run",
+    "event_filter_actions_placeholder": "completed, failed",
+    "event_filter_hint": "Faqat shu hodisalarga mos webhook’larni qayta ishlang. Barchasini qabul qilish uchun bo‘sh qoldiring.",
+    "schedule_disabled_reason": "Bu autopilot’da bir nechta jadval bor — ularni tafsilotlar sahifasida tahrirlang.",
+    "next_run_label": "Keyingi ishga tushirish:",
+    "output_modes": {
+      "create_issue": {
+        "label": "Vazifa yaratish",
+        "description": "Har bir ishga tushirish kuzatiladigan vazifa yaratadi"
+      },
+      "run_only": {
+        "label": "Faqat ishga tushirish",
+        "description": "Jim ishga tushirish, vazifa yaratilmaydi"
+      }
+    },
+    "frequency_long": {
+      "hourly": "Har soat",
+      "daily": "Har kun",
+      "weekdays": "Har ish kuni",
+      "weekly": "Har hafta",
+      "custom": "Maxsus cron"
+    },
+    "days": {
+      "sunday": "Yakshanba",
+      "monday": "Dushanba",
+      "tuesday": "Seshanba",
+      "wednesday": "Chorshanba",
+      "thursday": "Payshanba",
+      "friday": "Juma",
+      "saturday": "Shanba"
+    }
+  },
+  "trigger_config": {
+    "frequencies": {
+      "hourly": "Soatlik",
+      "daily": "Kunlik",
+      "weekdays": "Ish kunlari",
+      "weekly": "Kunlar",
+      "custom": "Maxsus"
+    },
+    "days_short": {
+      "sun": "Yak",
+      "mon": "Dush",
+      "tue": "Sesh",
+      "wed": "Chor",
+      "thu": "Pay",
+      "fri": "Jum",
+      "sat": "Shan"
+    },
+    "cron_label": "Cron ifodasi",
+    "cron_hint": "Standart 5 maydonli cron (min soat dom oy dow)",
+    "minute_label": "Daqiqa",
+    "time_label": "Vaqt",
+    "timezone_label": "Vaqt mintaqasi",
+    "days_label": "Kunlar",
+    "summary": {
+      "hourly": "Soatlik · :{{min}}",
+      "daily": "Kunlik {{time}}",
+      "weekdays": "Ish kunlari {{time}}",
+      "weekly": "{{days}} {{time}}",
+      "custom": "Maxsus cron",
+      "no_days": "—"
+    },
+    "describe": {
+      "hourly": "Har soatda :{{min}} da ishlaydi",
+      "daily": "Har kuni {{time}} {{offset}} da ishlaydi",
+      "weekdays": "Ish kunlari {{time}} {{offset}} da ishlaydi",
+      "weekly": "Har {{days}} {{time}} {{offset}} da ishlaydi",
+      "custom": "Maxsus jadval: {{cron}}"
+    },
+    "countdown": {
+      "days_hours": "{{days}}k {{hours}}s",
+      "hours_minutes": "{{hours}}s {{minutes}}d",
+      "minutes": "{{minutes}}d",
+      "less_than_minute": "<1d"
+    }
+  },
+  "agent_picker": {
+    "filter_placeholder": "Agentlar yoki Squad’larni filtrlash...",
+    "select_agent": "Agent tanlang",
+    "select_assignee": "Agent yoki Squad tanlang",
+    "agents_group": "Agentlar",
+    "squads_group": "Squad’lar"
+  },
+  "timezone_picker": {
+    "search_placeholder": "Vaqt mintaqasini qidirish..."
+  }
+}

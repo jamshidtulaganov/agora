@@ -1,0 +1,45 @@
+{
+  "page": {
+    "breadcrumb": "Mening vazifalarim",
+    "workspace_fallback": "Ish maydoni",
+    "empty_title": "Sizga biriktirilgan vazifalar yo‘q",
+    "empty_description": "Siz yaratgan yoki sizga biriktirilgan vazifalar shu yerda paydo bo‘ladi."
+  },
+  "header": {
+    "scope": {
+      "all_label": "Barchasi",
+      "all_description": "Menga biriktirilgan, men yaratgan yoki agentlarim va Squad’larim ishtirokidagi",
+      "assigned_label": "Biriktirilgan",
+      "assigned_description": "Menga biriktirilgan vazifalar",
+      "created_label": "Yaratilgan",
+      "created_description": "Men yaratgan vazifalar",
+      "agents_label": "Mening agentlarim va Squad’larim",
+      "agents_description": "Mening agentlarimga biriktirilgan vazifalar"
+    },
+    "filter_button": "Filtr",
+    "filter_status": "Holat",
+    "filter_priority": "Muhimlik",
+    "issue_count_one": "{{count}} vazifa",
+    "issue_count_other": "{{count}} vazifa",
+    "reset_filters": "Barcha filtrlarni tiklash",
+    "display_settings": "Ko‘rsatish sozlamalari",
+    "grouping": "Guruhlash",
+    "group_status": "Holat",
+    "group_assignee": "Mas’ul",
+    "ordering": "Tartiblash",
+    "ascending": "O‘sish bo‘yicha",
+    "descending": "Kamayish bo‘yicha",
+    "card_properties": "Karta xossalari",
+    "view_board": "Doska ko‘rinishi",
+    "view_list": "Ro‘yxat ko‘rinishi",
+    "view_swimlane": "Swimlane ko‘rinishi",
+    "view_label": "Ko‘rinish",
+    "view_board_short": "Doska",
+    "view_list_short": "Ro‘yxat",
+    "view_swimlane_short": "Swimlane",
+    "sort_manual": "Qo‘lda"
+  },
+  "errors": {
+    "move_failed": "Vazifani ko‘chirib bo‘lmadi"
+  }
+}

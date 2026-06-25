@@ -1,0 +1,21 @@
+{
+  "role": {
+    "owner": "Egasi",
+    "admin": "Admin",
+    "member": "A’zo"
+  },
+  "card": {
+    "unavailable": "A’zo mavjud emas",
+    "agents_section": "Agentlar ({{count}})",
+    "detail_link": "Tafsilot →",
+    "more_agents_one": "va yana {{count}} agent",
+    "more_agents_other": "va yana {{count}} agent"
+  },
+  "detail": {
+    "workspace_fallback": "Ish maydoni",
+    "members_breadcrumb": "A’zolar",
+    "breadcrumb_fallback": "A’zo",
+    "not_found_title": "A’zo topilmadi",
+    "not_found_description": "Bu a’zo ish maydonidan chiqib ketgan bo‘lishi mumkin."
+  }
+}

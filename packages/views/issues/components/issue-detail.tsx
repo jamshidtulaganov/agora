@@ -55,11 +55,14 @@ import { SprintPicker } from "../../projects/components/sprint-picker";
 import { LocalDirectoryHint } from "../../projects/components/local-directory-hint";
 import { BitrixAssigneeChip } from "../../bitrix";
 import { CommentCard } from "./comment-card";
+import { CollapsibleDescription } from "./collapsible-description";
+import { LiveAgentChangesFeed } from "./live-agent-changes-feed";
 import { CommentInput } from "./comment-input";
 import { ResolvedThreadBar } from "./resolved-thread-bar";
 import { collectThreadReplies, deriveThreadResolution } from "./thread-utils";
 import { IssueAgentHeaderChip } from "./issue-agent-header-chip";
 import { ExecutionLogSection } from "./execution-log-section";
+import { AgentWorkingIndicator } from "./agent-working-indicator";
 import { SliceActionsSection } from "./slice-actions-section";
 import { PullRequestList } from "./pull-request-list";
 import { useGitHubSettings } from "@agora/core/github";
@@ -726,6 +729,25 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const [scrollContainerEl, setScrollContainerEl] = useState<HTMLDivElement | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
+  // "New since last visit" tint. Agora has no server-side per-user read state,
+  // so we keep a per-issue last-seen timestamp in localStorage: on mount read
+  // the prior value (frozen as the baseline for this view), tint every comment
+  // created after it, then stamp "now" so the next visit only highlights what
+  // arrived since. Starts at 0 so SSR + first client render match (no hydration
+  // mismatch); the post-mount effect sets the real baseline. Best-effort —
+  // disabled/again storage just degrades to no tint.
+  const [lastSeenAt, setLastSeenAt] = useState(0);
+  useEffect(() => {
+    let prev = 0;
+    try {
+      prev = Number(window.localStorage.getItem(`agora:issue-seen:${id}`)) || 0;
+      window.localStorage.setItem(`agora:issue-seen:${id}`, String(Date.now()));
+    } catch {
+      // storage unavailable — leave baseline at 0 (no tint).
+    }
+    setLastSeenAt(prev);
+  }, [id]);
+
   // Per-session: which resolved threads the user has temporarily expanded.
   // Not persisted (matches Linear) — reload collapses everything back to bars.
   const [expandedResolved, setExpandedResolved] = useState<Set<string>>(() => new Set());
@@ -976,7 +998,14 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // resolved thread). Kept in a useMemo so Virtuoso's data identity is stable
   // across unrelated re-renders.
   const items = useMemo<TimelineItem[]>(
-    () => flattenGroups(timelineView.groups, expandedResolved),
+    // Newest-first: reverse the chronological flatten so the latest comment /
+    // activity sits at the TOP of the feed. On a long thread this puts a new
+    // reply in view immediately instead of forcing a scroll to the bottom.
+    // Safe to reverse — every consumer is order-independent: `targetIdx` is a
+    // findIndex on this same array, deep-link scroll is by DOM id/position, and
+    // flattenGroups emits exactly one self-contained item per group (no
+    // resolved-bar/thread ordering pair to break).
+    () => flattenGroups(timelineView.groups, expandedResolved).reverse(),
     [timelineView.groups, expandedResolved],
   );
 
@@ -1202,6 +1231,12 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // so text/code attachments show an Eye before the bind round-trips.
   const [descPendingAttachments, setDescPendingAttachments] = useState<Attachment[]>([]);
   const descPendingAttachmentsRef = useRef<Attachment[]>([]);
+  // Focus state of the description editor — when the user is actively editing
+  // we must never clamp the body (the caret could land in hidden content), so
+  // CollapsibleDescription forces it fully open while this is true. Tracked via
+  // focus/blur capture on the wrapper rather than a new ContentEditor prop so
+  // the shared editor's API stays untouched.
+  const [descEditing, setDescEditing] = useState(false);
   const descEditorAttachments = descPendingAttachments.length > 0
     ? [...(issueAttachments ?? []), ...descPendingAttachments]
     : issueAttachments;
@@ -1567,6 +1602,12 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           draft surfaces below in the execution log. */}
       <SliceActionsSection issueId={id} />
 
+      {/* Chat-style "agent is working / typing…" row — appears the moment a
+          comment or assignment puts the issue's agent into a queued/running
+          task, disappears when the run ends. Self-contained; reuses the agent
+          task snapshot (WS-invalidated), so it tracks the conversation live. */}
+      <AgentWorkingIndicator issueId={id} />
+
       {/* Execution log — active runs + collapsed past runs. Self-contained;
           owns its own collapse state and WS subscriptions. Hides itself
           when there are no runs to show. */}
@@ -1657,8 +1698,16 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     }
     if (item.kind === "comment") {
       const isResolved = !!item.entry.resolved_at;
+      // Tint comments that arrived since the user's last visit (see lastSeenAt).
+      const isNew = lastSeenAt > 0 && new Date(item.entry.created_at).getTime() > lastSeenAt;
       return (
-        <div className="pb-3" id={`comment-${item.id}`}>
+        <div
+          className={cn(
+            "pb-3",
+            isNew && "-mx-3 rounded-lg bg-primary/[0.05] px-3 pt-2 ring-1 ring-inset ring-primary/10",
+          )}
+          id={`comment-${item.id}`}
+        >
           <CommentCard
             issueId={id}
             entry={item.entry}
@@ -1866,7 +1915,21 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             </AppLink>
           )}
 
-          <div {...descDropZoneProps} className="relative mt-5 rounded-lg">
+          <div
+            {...descDropZoneProps}
+            className="relative mt-5 rounded-lg"
+            // Focus/blur capture drives the description clamp's `editing`
+            // override: while the contenteditable (or any control inside the
+            // wrapper) holds focus, CollapsibleDescription stays fully open so
+            // the caret is never inside clamped-away content.
+            onFocusCapture={() => setDescEditing(true)}
+            onBlurCapture={() => setDescEditing(false)}
+          >
+            {/* key={id} resets the clamp state (expanded / measured height)
+                when navigating between issues — web's /issues/[id] route does
+                not remount, so without this the previous issue's "Show less"
+                state would leak onto the next issue's description. */}
+            <CollapsibleDescription key={id} editing={descEditing}>
             <ContentEditor
               ref={descEditorRef}
               key={id}
@@ -1904,6 +1967,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               currentIssueId={id}
               attachments={descEditorAttachments}
             />
+            </CollapsibleDescription>
 
             <div className="flex items-center gap-1 mt-3">
               <ReactionBar
@@ -2058,6 +2122,23 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
 
             <LocalDirectoryHint projectId={issue?.project_id} />
 
+            {/* Top comment input — pairs with the newest-first feed below so
+                you reply at the top and your comment appears right beneath the
+                composer instead of at the far end of a long thread.
+                key={id}: web's /issues/[id] route doesn't remount on issueId
+                change, so without an explicit key the editor keeps the previous
+                issue's in-memory draft. */}
+            <div className="my-4">
+              <CommentInput key={id} issueId={id} onSubmit={submitComment} />
+            </div>
+
+            {/* Live agent activity — the running agent's work (file-change
+                diffs, or a readable step trail for non-coding runs) shown as
+                the FIRST item in the activity feed, right after the task, so
+                "what's happening now" leads the timeline. Renders nothing when
+                no agent is running on this issue. */}
+            <LiveAgentChangesFeed issueId={id} />
+
             {/* The "agent is working" live signal now lives in the header
                 (IssueAgentHeaderChip) so it stays in one fixed place and
                 doesn't compete with sticky banners in this content column.
@@ -2127,15 +2208,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               )
             )}
 
-            {/* Bottom comment input — no avatar, full width */}
-            <div className="mt-4">
-              {/* key={id}: web's /issues/[id] route doesn't remount on
-                  issueId change, so without an explicit key the editor
-                  keeps the previous issue's in-memory content and the
-                  next keystroke would flush it into the new issue's
-                  draft key. */}
-              <CommentInput key={id} issueId={id} onSubmit={submitComment} />
-            </div>
+            {/* Comment input moved to the TOP of the activity column (just
+                below the description) to pair with the newest-first feed —
+                you reply at the top and your comment lands right below. */}
           </div>
         </div>
         </div>

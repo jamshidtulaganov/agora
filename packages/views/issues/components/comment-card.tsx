@@ -41,6 +41,7 @@ import { useCommentCollapseStore, useCommentDraftStore } from "@agora/core/issue
 import { useT } from "../../i18n";
 import { CommentsFoldBar } from "./resolved-thread-bar";
 import { deriveThreadResolution } from "./thread-utils";
+import { LiveAgentChangesFeed } from "./live-agent-changes-feed";
 
 const highlightedCommentBackgroundClass =
   "bg-[color-mix(in_srgb,var(--card)_95%,var(--brand)_5%)]";
@@ -558,6 +559,13 @@ function CommentRow({
             getActorName={getActorName}
             className="mt-1.5 pl-12 pr-4"
           />
+          {/* Live agent activity for the run THIS comment triggered (slice-action
+              / @mention) — rendered right under the comment so it's clear which
+              request the agent is working on. Renders nothing when no running
+              task points at this comment. */}
+          <div className="pl-12 pr-4">
+            <LiveAgentChangesFeed issueId={issueId} triggerCommentId={entry.id} />
+          </div>
         </>
       )}
     </div>

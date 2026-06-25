@@ -1,0 +1,58 @@
+{
+  "title": "Foydalanish",
+  "subtitle": "Bu ish maydoni bo‘yicha token sarfi va agent faolligi.",
+  "filter": {
+    "project_label": "Loyiha",
+    "all_projects": "Barcha loyihalar",
+    "period_label": "Davr"
+  },
+  "kpi": {
+    "cost_label": "Xarajat · {{days}}K",
+    "tokens_label": "Tokenlar · {{days}}K",
+    "tokens_hint": "Kirish {{input}} · Chiqish {{output}}",
+    "run_time_label": "Ishlash vaqti · {{days}}K",
+    "run_time_hint": "{{tasks}} topshiriq bo‘yicha",
+    "tasks_label": "Topshiriqlar · {{days}}K",
+    "tasks_hint": "{{failed}} muvaffaqiyatsiz"
+  },
+  "dim": {
+    "label": "O‘lcham",
+    "daily": "Kunlik",
+    "weekly": "Haftalik"
+  },
+  "daily": {
+    "title_cost": "Kunlik xarajat",
+    "title_tokens": "Kunlik tokenlar",
+    "title_time": "Kunlik ishlash vaqti",
+    "title_tasks": "Kunlik topshiriqlar",
+    "metric_cost": "Xarajat",
+    "metric_tokens": "Tokenlar",
+    "metric_time": "Vaqt",
+    "metric_tasks": "Topshiriqlar",
+    "no_data": "Bu oraliqda foydalanish yo‘q."
+  },
+  "weekly": {
+    "title_cost": "Haftalik xarajat",
+    "title_tokens": "Haftalik tokenlar",
+    "title_time": "Haftalik ishlash vaqti",
+    "title_tasks": "Haftalik topshiriqlar",
+    "partial_label": "{{range}} (qisman · {{covered}} / 7 kun)"
+  },
+  "leaderboard": {
+    "title": "Reyting",
+    "caption": "{{count}} agent",
+    "header_agent": "Agent",
+    "header_tokens": "Tokenlar",
+    "header_cost": "Xarajat",
+    "header_time": "Vaqt",
+    "header_tasks": "Topshiriqlar",
+    "no_data": "Bu oraliqda agent faolligi yo‘q."
+  },
+  "empty": {
+    "title": "Hali foydalanish yo‘q",
+    "body": "Agentlar bu yerda topshiriqlarni bajara boshlagach, ularning token sarfi va ishlash vaqti shu ko‘rinishda paydo bo‘ladi."
+  },
+  "duration": {
+    "less_than_minute": "<1 daq"
+  }
+}

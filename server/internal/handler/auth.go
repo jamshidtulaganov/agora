@@ -47,8 +47,8 @@ const devVerificationCodeEnv = "AGORA_DEV_VERIFICATION_CODE"
 var supportedLanguages = map[string]struct{}{
 	"en":      {},
 	"zh-Hans": {},
-	"ko":      {},
-	"ja":      {},
+	"uz":      {},
+	"ru":      {},
 }
 
 type UserResponse struct {

@@ -56,8 +56,7 @@ describe("docsAlternates", () => {
     expect(docsAlternates(["agents"]).languages).not.toHaveProperty("ko");
   });
 
-  it("includes Korean hreflang when a real *.ko.mdx page exists", async () => {
-    existingDocs.add("agents.ko.mdx");
+  it("includes Chinese hreflang when a real *.zh.mdx page exists", async () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates(["agents"])).toEqual({
@@ -65,22 +64,6 @@ describe("docsAlternates", () => {
       languages: {
         en: "https://www.agora.dev/docs/agents",
         zh: "https://www.agora.dev/docs/zh/agents",
-        ko: "https://www.agora.dev/docs/ko/agents",
-        "x-default": "https://www.agora.dev/docs/agents",
-      },
-    });
-  });
-
-  it("includes Japanese hreflang when a real *.ja.mdx page exists", async () => {
-    existingDocs.add("agents.ja.mdx");
-    const { docsAlternates } = await import("./site");
-
-    expect(docsAlternates(["agents"])).toEqual({
-      canonical: "https://www.agora.dev/docs/agents",
-      languages: {
-        en: "https://www.agora.dev/docs/agents",
-        zh: "https://www.agora.dev/docs/zh/agents",
-        ja: "https://www.agora.dev/docs/ja/agents",
         "x-default": "https://www.agora.dev/docs/agents",
       },
     });

@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { cn } from "@agora/ui/lib/utils";
 import { ImageIcon } from "./shared";
+import { Reveal } from "./reveal";
 import { useLocale } from "../i18n";
 import type { LandingDict } from "../i18n";
 import { StatusIcon, PriorityIcon } from "@agora/views/issues/components";
@@ -59,10 +60,18 @@ function MockAvatar({
 /*  Mock PropRow — mirrors the real PropRow from issue-detail           */
 /* ------------------------------------------------------------------ */
 
-function PropRow({ label, children }: { label: string; children: React.ReactNode }) {
+function PropRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex min-h-8 items-center gap-2 rounded-md px-2 -mx-2">
-      <span className="w-16 shrink-0 text-xs text-muted-foreground">{label}</span>
+      <span className="w-16 shrink-0 text-xs text-muted-foreground">
+        {label}
+      </span>
       <div className="flex min-w-0 flex-1 items-center gap-1.5 text-xs truncate">
         {children}
       </div>
@@ -137,8 +146,20 @@ const allAssignees: Assignee[] = [
   { type: "agent", id: "tina", name: "Tina-dev" },
 ];
 
-const statusCycle: IssueStatus[] = ["backlog", "todo", "in_progress", "in_review", "done"];
-const priorityCycle: IssuePriority[] = ["none", "low", "medium", "high", "urgent"];
+const statusCycle: IssueStatus[] = [
+  "backlog",
+  "todo",
+  "in_progress",
+  "in_review",
+  "done",
+];
+const priorityCycle: IssuePriority[] = [
+  "none",
+  "low",
+  "medium",
+  "high",
+  "urgent",
+];
 
 function TeammatesVisual() {
   const [status, setStatus] = useState<IssueStatus>("in_progress");
@@ -167,7 +188,9 @@ function TeammatesVisual() {
           <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />
           <span className="text-muted-foreground">MUL-18</span>
           <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />
-          <span className="truncate">Refactor API error handling middleware</span>
+          <span className="truncate">
+            Refactor API error handling middleware
+          </span>
         </div>
       </div>
 
@@ -192,12 +215,22 @@ function TeammatesVisual() {
             {mockTimeline.map((entry, i) => {
               if (entry.type === "activity") {
                 return (
-                  <div key={i} className="px-4 flex items-center text-xs text-muted-foreground">
+                  <div
+                    key={i}
+                    className="px-4 flex items-center text-xs text-muted-foreground"
+                  >
                     <div className="mr-2 flex w-4 shrink-0 justify-center">
                       {entry.statusIcon ? (
-                        <StatusIcon status={entry.statusIcon} className="h-4 w-4 shrink-0" />
+                        <StatusIcon
+                          status={entry.statusIcon}
+                          className="h-4 w-4 shrink-0"
+                        />
                       ) : (
-                        <MockAvatar type={entry.actorType} initials={entry.initials} size={16} />
+                        <MockAvatar
+                          type={entry.actorType}
+                          initials={entry.initials}
+                          size={16}
+                        />
                       )}
                     </div>
                     <div className="flex min-w-0 flex-1 items-center gap-1">
@@ -212,9 +245,15 @@ function TeammatesVisual() {
               return (
                 <div key={i} className="rounded-lg border bg-card px-4 py-2.5">
                   <div className="flex items-center gap-2.5">
-                    <MockAvatar type={entry.actorType} initials={entry.initials} size={22} />
+                    <MockAvatar
+                      type={entry.actorType}
+                      initials={entry.initials}
+                      size={22}
+                    />
                     <span className="text-sm font-medium">{entry.name}</span>
-                    <span className="text-xs text-muted-foreground">{entry.time}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {entry.time}
+                    </span>
                   </div>
                   <p className="mt-1 pl-8 text-sm leading-relaxed text-muted-foreground">
                     {entry.content}
@@ -240,9 +279,15 @@ function TeammatesVisual() {
                     <button
                       type="button"
                       className="flex items-center gap-1.5 cursor-pointer rounded px-1 -mx-1 hover:bg-accent/30 transition-colors"
-                      onClick={() => { setStatusOpen(!statusOpen); setPriorityOpen(false); }}
+                      onClick={() => {
+                        setStatusOpen(!statusOpen);
+                        setPriorityOpen(false);
+                      }}
                     >
-                      <StatusIcon status={status} className="h-3.5 w-3.5 shrink-0" />
+                      <StatusIcon
+                        status={status}
+                        className="h-3.5 w-3.5 shrink-0"
+                      />
                       <span>{STATUS_CONFIG[status].label}</span>
                     </button>
                   </PropRow>
@@ -256,11 +301,19 @@ function TeammatesVisual() {
                             "flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent transition-colors",
                             s === status && "bg-accent",
                           )}
-                          onClick={() => { setStatus(s); setStatusOpen(false); }}
+                          onClick={() => {
+                            setStatus(s);
+                            setStatusOpen(false);
+                          }}
                         >
-                          <StatusIcon status={s} className="h-3.5 w-3.5 shrink-0" />
+                          <StatusIcon
+                            status={s}
+                            className="h-3.5 w-3.5 shrink-0"
+                          />
                           {STATUS_CONFIG[s].label}
-                          {s === status && <Check className="ml-auto h-3.5 w-3.5" />}
+                          {s === status && (
+                            <Check className="ml-auto h-3.5 w-3.5" />
+                          )}
                         </button>
                       ))}
                     </div>
@@ -273,7 +326,10 @@ function TeammatesVisual() {
                     <button
                       type="button"
                       className="flex items-center gap-1.5 cursor-pointer rounded px-1 -mx-1 hover:bg-accent/30 transition-colors"
-                      onClick={() => { setPriorityOpen(!priorityOpen); setStatusOpen(false); }}
+                      onClick={() => {
+                        setPriorityOpen(!priorityOpen);
+                        setStatusOpen(false);
+                      }}
                     >
                       <PriorityIcon priority={priority} />
                       <span>{PRIORITY_CONFIG[priority].label}</span>
@@ -289,11 +345,16 @@ function TeammatesVisual() {
                             "flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent transition-colors",
                             p === priority && "bg-accent",
                           )}
-                          onClick={() => { setPriority(p); setPriorityOpen(false); }}
+                          onClick={() => {
+                            setPriority(p);
+                            setPriorityOpen(false);
+                          }}
                         >
                           <PriorityIcon priority={p} />
                           {PRIORITY_CONFIG[p].label}
-                          {p === priority && <Check className="ml-auto h-3.5 w-3.5" />}
+                          {p === priority && (
+                            <Check className="ml-auto h-3.5 w-3.5" />
+                          )}
                         </button>
                       ))}
                     </div>
@@ -305,11 +366,19 @@ function TeammatesVisual() {
                   <button
                     type="button"
                     className="flex items-center gap-1.5 cursor-pointer rounded px-1 -mx-1 hover:bg-accent/30 transition-colors"
-                    onClick={() => { setPickerOpen(!pickerOpen); setStatusOpen(false); setPriorityOpen(false); }}
+                    onClick={() => {
+                      setPickerOpen(!pickerOpen);
+                      setStatusOpen(false);
+                      setPriorityOpen(false);
+                    }}
                   >
                     {assignee.type ? (
                       <>
-                        <MockAvatar type={assignee.type} initials={assignee.initials} size={18} />
+                        <MockAvatar
+                          type={assignee.type}
+                          initials={assignee.initials}
+                          size={18}
+                        />
                         <span>{assignee.name}</span>
                       </>
                     ) : (
@@ -333,54 +402,81 @@ function TeammatesVisual() {
                       "flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs text-muted-foreground hover:bg-accent transition-colors",
                       !assignee.type && "bg-accent",
                     )}
-                    onClick={() => { setAssignee(allAssignees[0]!); setPickerOpen(false); }}
+                    onClick={() => {
+                      setAssignee(allAssignees[0]!);
+                      setPickerOpen(false);
+                    }}
                   >
                     <UserMinus className="h-3.5 w-3.5" />
                     <span>Unassigned</span>
-                    {!assignee.type && <Check className="ml-auto h-3.5 w-3.5" />}
+                    {!assignee.type && (
+                      <Check className="ml-auto h-3.5 w-3.5" />
+                    )}
                   </button>
                 </div>
                 <div className="px-3 py-0.5">
-                  <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Members</span>
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                    Members
+                  </span>
                 </div>
                 <div className="p-1 pt-0">
-                  {allAssignees.filter((a) => a.type === "member").map((m) => (
-                    <button
-                      type="button"
-                      key={m.id}
-                      className={cn(
-                        "flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs hover:bg-accent transition-colors",
-                        assignee.id === m.id && "bg-accent",
-                      )}
-                      onClick={() => { setAssignee(m); setPickerOpen(false); }}
-                    >
-                      <MockAvatar type="member" initials={m.initials} size={16} />
-                      <span>{m.name}</span>
-                      {assignee.id === m.id && <Check className="ml-auto h-3.5 w-3.5" />}
-                    </button>
-                  ))}
+                  {allAssignees
+                    .filter((a) => a.type === "member")
+                    .map((m) => (
+                      <button
+                        type="button"
+                        key={m.id}
+                        className={cn(
+                          "flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs hover:bg-accent transition-colors",
+                          assignee.id === m.id && "bg-accent",
+                        )}
+                        onClick={() => {
+                          setAssignee(m);
+                          setPickerOpen(false);
+                        }}
+                      >
+                        <MockAvatar
+                          type="member"
+                          initials={m.initials}
+                          size={16}
+                        />
+                        <span>{m.name}</span>
+                        {assignee.id === m.id && (
+                          <Check className="ml-auto h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    ))}
                 </div>
                 <div className="px-3 py-0.5">
-                  <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Agents</span>
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                    Agents
+                  </span>
                 </div>
                 <div className="p-1 pt-0">
-                  {allAssignees.filter((a) => a.type === "agent").map((a) => (
-                    <button
-                      type="button"
-                      key={a.id}
-                      className={cn(
-                        "flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs hover:bg-accent transition-colors",
-                        assignee.id === a.id && "bg-accent",
-                      )}
-                      onClick={() => { setAssignee(a); setPickerOpen(false); }}
-                    >
-                      <div className="inline-flex size-4 shrink-0 items-center justify-center rounded-full bg-info/10 text-info">
-                        <Bot className="size-2.5" />
-                      </div>
-                      <span>{a.name}</span>
-                      {assignee.id === a.id && <Check className="ml-auto h-3.5 w-3.5" />}
-                    </button>
-                  ))}
+                  {allAssignees
+                    .filter((a) => a.type === "agent")
+                    .map((a) => (
+                      <button
+                        type="button"
+                        key={a.id}
+                        className={cn(
+                          "flex w-full items-center gap-2 rounded-sm px-2 py-1 text-xs hover:bg-accent transition-colors",
+                          assignee.id === a.id && "bg-accent",
+                        )}
+                        onClick={() => {
+                          setAssignee(a);
+                          setPickerOpen(false);
+                        }}
+                      >
+                        <div className="inline-flex size-4 shrink-0 items-center justify-center rounded-full bg-info/10 text-info">
+                          <Bot className="size-2.5" />
+                        </div>
+                        <span>{a.name}</span>
+                        {assignee.id === a.id && (
+                          <Check className="ml-auto h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    ))}
                 </div>
               </div>
             )}
@@ -396,22 +492,72 @@ function TeammatesVisual() {
 /* ------------------------------------------------------------------ */
 
 const mockToolCalls = [
-  { type: "thinking" as const, content: "Analyzing the error handling patterns across all 14 handler files…" },
-  { type: "tool_use" as const, tool: "Read", summary: "server/internal/handler/issue.go" },
-  { type: "tool_result" as const, preview: "func (h *IssueHandler) Create(w http.ResponseWriter, r *http.Request) { …" },
-  { type: "tool_use" as const, tool: "Edit", summary: "server/internal/handler/issue.go — replace writeJSON error calls" },
-  { type: "tool_result" as const, preview: "Updated 3 error responses to use writeError() helper" },
-  { type: "thinking" as const, content: "Now checking handler/comment.go for the same inconsistent patterns…" },
-  { type: "tool_use" as const, tool: "Read", summary: "server/internal/handler/comment.go" },
-  { type: "tool_result" as const, preview: "func (h *CommentHandler) Create(w http.ResponseWriter, r *http.Request) { …" },
-  { type: "tool_use" as const, tool: "Bash", summary: "go test ./internal/handler/ -run TestErrorResponses" },
-  { type: "tool_result" as const, preview: "ok  \tgithub.com/agora/server/internal/handler\t0.847s" },
+  {
+    type: "thinking" as const,
+    content:
+      "Analyzing the error handling patterns across all 14 handler files…",
+  },
+  {
+    type: "tool_use" as const,
+    tool: "Read",
+    summary: "server/internal/handler/issue.go",
+  },
+  {
+    type: "tool_result" as const,
+    preview:
+      "func (h *IssueHandler) Create(w http.ResponseWriter, r *http.Request) { …",
+  },
+  {
+    type: "tool_use" as const,
+    tool: "Edit",
+    summary: "server/internal/handler/issue.go — replace writeJSON error calls",
+  },
+  {
+    type: "tool_result" as const,
+    preview: "Updated 3 error responses to use writeError() helper",
+  },
+  {
+    type: "thinking" as const,
+    content:
+      "Now checking handler/comment.go for the same inconsistent patterns…",
+  },
+  {
+    type: "tool_use" as const,
+    tool: "Read",
+    summary: "server/internal/handler/comment.go",
+  },
+  {
+    type: "tool_result" as const,
+    preview:
+      "func (h *CommentHandler) Create(w http.ResponseWriter, r *http.Request) { …",
+  },
+  {
+    type: "tool_use" as const,
+    tool: "Bash",
+    summary: "go test ./internal/handler/ -run TestErrorResponses",
+  },
+  {
+    type: "tool_result" as const,
+    preview: "ok  \tgithub.com/agora/server/internal/handler\t0.847s",
+  },
 ];
 
 const mockTaskHistory = [
-  { status: "completed" as const, title: "Set up error response types", duration: "2m 14s" },
-  { status: "completed" as const, title: "Migrate issue handler", duration: "3m 41s" },
-  { status: "running" as const, title: "Migrate comment handler", duration: "1m 22s" },
+  {
+    status: "completed" as const,
+    title: "Set up error response types",
+    duration: "2m 14s",
+  },
+  {
+    status: "completed" as const,
+    title: "Migrate issue handler",
+    duration: "3m 41s",
+  },
+  {
+    status: "running" as const,
+    title: "Migrate comment handler",
+    duration: "1m 22s",
+  },
 ];
 
 function AutonomousVisual() {
@@ -426,7 +572,9 @@ function AutonomousVisual() {
           <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />
           <span className="text-muted-foreground">MUL-18</span>
           <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />
-          <span className="truncate">Refactor API error handling middleware</span>
+          <span className="truncate">
+            Refactor API error handling middleware
+          </span>
         </div>
       </div>
 
@@ -442,7 +590,9 @@ function AutonomousVisual() {
               <Loader2 className="h-3 w-3 animate-spin text-info" />
               Agent is working
             </div>
-            <span className="ml-auto text-xs tabular-nums text-muted-foreground">7m 17s</span>
+            <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+              7m 17s
+            </span>
             <span className="text-xs text-muted-foreground">10 tool calls</span>
           </div>
 
@@ -459,9 +609,16 @@ function AutonomousVisual() {
                     className="flex w-full items-center gap-2 rounded px-2 py-1 text-xs hover:bg-info/5 transition-colors"
                     onClick={() => setExpanded(isExpanded ? null : i)}
                   >
-                    <ChevronRight className={cn("h-3 w-3 shrink-0 text-muted-foreground transition-transform", isExpanded && "rotate-90")} />
+                    <ChevronRight
+                      className={cn(
+                        "h-3 w-3 shrink-0 text-muted-foreground transition-transform",
+                        isExpanded && "rotate-90",
+                      )}
+                    />
                     <Brain className="h-3 w-3 shrink-0 text-info/60" />
-                    <span className="truncate italic text-muted-foreground">{item.content}</span>
+                    <span className="truncate italic text-muted-foreground">
+                      {item.content}
+                    </span>
                   </button>
                 );
               }
@@ -474,9 +631,16 @@ function AutonomousVisual() {
                     className="flex w-full items-center gap-2 rounded px-2 py-1 text-xs hover:bg-info/5 transition-colors"
                     onClick={() => setExpanded(isExpanded ? null : i)}
                   >
-                    <ChevronRight className={cn("h-3 w-3 shrink-0 text-muted-foreground transition-transform", isExpanded && "rotate-90")} />
+                    <ChevronRight
+                      className={cn(
+                        "h-3 w-3 shrink-0 text-muted-foreground transition-transform",
+                        isExpanded && "rotate-90",
+                      )}
+                    />
                     <span className="shrink-0 font-semibold">{item.tool}</span>
-                    <span className="truncate text-muted-foreground">{item.summary}</span>
+                    <span className="truncate text-muted-foreground">
+                      {item.summary}
+                    </span>
                   </button>
                 );
               }
@@ -489,9 +653,18 @@ function AutonomousVisual() {
                   className="flex w-full items-center gap-2 rounded px-2 py-1 text-xs hover:bg-accent/50 transition-colors"
                   onClick={() => setExpanded(isExpanded ? null : i)}
                 >
-                  <ChevronRight className={cn("h-3 w-3 shrink-0 text-muted-foreground transition-transform", isExpanded && "rotate-90")} />
-                  <span className="shrink-0 text-muted-foreground">result:</span>
-                  <span className="truncate text-muted-foreground">{item.preview}</span>
+                  <ChevronRight
+                    className={cn(
+                      "h-3 w-3 shrink-0 text-muted-foreground transition-transform",
+                      isExpanded && "rotate-90",
+                    )}
+                  />
+                  <span className="shrink-0 text-muted-foreground">
+                    result:
+                  </span>
+                  <span className="truncate text-muted-foreground">
+                    {item.preview}
+                  </span>
                 </button>
               );
             })}
@@ -500,7 +673,9 @@ function AutonomousVisual() {
 
         {/* Task run history */}
         <div className="mt-4">
-          <span className="text-xs font-medium text-muted-foreground">Task execution history</span>
+          <span className="text-xs font-medium text-muted-foreground">
+            Task execution history
+          </span>
           <div className="mt-2 space-y-1.5">
             {mockTaskHistory.map((task, i) => (
               <div key={i} className="flex items-center gap-2 text-xs">
@@ -509,10 +684,18 @@ function AutonomousVisual() {
                 ) : (
                   <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-info" />
                 )}
-                <span className={task.status === "running" ? "font-medium" : "text-muted-foreground"}>
+                <span
+                  className={
+                    task.status === "running"
+                      ? "font-medium"
+                      : "text-muted-foreground"
+                  }
+                >
                   {task.title}
                 </span>
-                <span className="ml-auto text-muted-foreground tabular-nums">{task.duration}</span>
+                <span className="ml-auto text-muted-foreground tabular-nums">
+                  {task.duration}
+                </span>
               </div>
             ))}
           </div>
@@ -527,10 +710,30 @@ function AutonomousVisual() {
 /* ------------------------------------------------------------------ */
 
 const mockSkills = [
-  { name: "Deploy to staging", description: "Run staging deploy pipeline", files: 3, selected: false },
-  { name: "Write migration", description: "Generate and validate SQL migration", files: 4, selected: true },
-  { name: "Review PR", description: "Code review with style guide checks", files: 2, selected: false },
-  { name: "Write tests", description: "Generate unit and integration tests", files: 3, selected: false },
+  {
+    name: "Deploy to staging",
+    description: "Run staging deploy pipeline",
+    files: 3,
+    selected: false,
+  },
+  {
+    name: "Write migration",
+    description: "Generate and validate SQL migration",
+    files: 4,
+    selected: true,
+  },
+  {
+    name: "Review PR",
+    description: "Code review with style guide checks",
+    files: 2,
+    selected: false,
+  },
+  {
+    name: "Write tests",
+    description: "Generate unit and integration tests",
+    files: 3,
+    selected: false,
+  },
 ];
 
 const mockFileTree = [
@@ -551,7 +754,10 @@ function SkillsVisual() {
         <div className="w-[200px] shrink-0 border-r flex flex-col">
           <div className="flex items-center justify-between border-b px-3 py-2">
             <span className="text-xs font-semibold">Skills</span>
-            <button type="button" className="rounded p-0.5 text-muted-foreground hover:bg-accent transition-colors">
+            <button
+              type="button"
+              className="rounded p-0.5 text-muted-foreground hover:bg-accent transition-colors"
+            >
               <Sparkles className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -570,8 +776,12 @@ function SkillsVisual() {
                   <Sparkles className="h-3 w-3 text-muted-foreground" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-xs font-medium">{skill.name}</div>
-                  <div className="truncate text-[10px] text-muted-foreground">{skill.description}</div>
+                  <div className="truncate text-xs font-medium">
+                    {skill.name}
+                  </div>
+                  <div className="truncate text-[10px] text-muted-foreground">
+                    {skill.description}
+                  </div>
                 </div>
               </button>
             ))}
@@ -583,8 +793,12 @@ function SkillsVisual() {
           {/* Skill header */}
           <div className="flex items-center gap-2 border-b px-4 py-2.5">
             <Sparkles className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <span className="text-sm font-medium">{mockSkills[selectedSkill]?.name}</span>
-            <span className="ml-2 text-xs text-muted-foreground">{mockSkills[selectedSkill]?.description}</span>
+            <span className="text-sm font-medium">
+              {mockSkills[selectedSkill]?.name}
+            </span>
+            <span className="ml-2 text-xs text-muted-foreground">
+              {mockSkills[selectedSkill]?.description}
+            </span>
           </div>
 
           {/* File browser */}
@@ -592,7 +806,9 @@ function SkillsVisual() {
             {/* File tree */}
             <div className="w-44 shrink-0 border-r">
               <div className="flex items-center justify-between border-b px-3 py-1.5">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Files</span>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Files
+                </span>
               </div>
               <div className="py-1">
                 {mockFileTree.map((f) => (
@@ -601,15 +817,32 @@ function SkillsVisual() {
                     key={f.name}
                     className={cn(
                       "flex w-full items-center gap-1.5 py-1 text-xs transition-colors",
-                      selectedFile === f.name && !f.isDir ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
+                      selectedFile === f.name && !f.isDir
+                        ? "bg-accent text-accent-foreground"
+                        : "hover:bg-accent/50",
                     )}
-                    style={{ paddingLeft: f.isDir ? f.depth * 12 + 8 : f.depth * 12 + 24 }}
-                    onClick={() => { if (!f.isDir) setSelectedFile(f.name); }}
+                    style={{
+                      paddingLeft: f.isDir
+                        ? f.depth * 12 + 8
+                        : f.depth * 12 + 24,
+                    }}
+                    onClick={() => {
+                      if (!f.isDir) setSelectedFile(f.name);
+                    }}
                   >
                     {f.isDir ? (
                       <>
-                        <ChevronRight className={cn("h-3 w-3 shrink-0 transition-transform", f.open && "rotate-90")} />
-                        {f.open ? <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+                        <ChevronRight
+                          className={cn(
+                            "h-3 w-3 shrink-0 transition-transform",
+                            f.open && "rotate-90",
+                          )}
+                        />
+                        {f.open ? (
+                          <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        ) : (
+                          <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        )}
                       </>
                     ) : f.icon === "md" ? (
                       <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -625,7 +858,9 @@ function SkillsVisual() {
             {/* File content viewer */}
             <div className="flex-1 flex flex-col min-w-0">
               <div className="flex h-8 items-center border-b px-3">
-                <span className="text-xs font-mono text-muted-foreground">{selectedFile}</span>
+                <span className="text-xs font-mono text-muted-foreground">
+                  {selectedFile}
+                </span>
               </div>
               <div className="flex-1 overflow-hidden p-4">
                 {selectedFile === "SKILL.md" ? (
@@ -633,18 +868,30 @@ function SkillsVisual() {
                     {/* Frontmatter */}
                     <div className="rounded-md border bg-muted/30 p-3">
                       <div className="grid grid-cols-[80px_1fr] gap-y-1">
-                        <span className="font-medium text-muted-foreground">name</span>
+                        <span className="font-medium text-muted-foreground">
+                          name
+                        </span>
                         <span>write-migration</span>
-                        <span className="font-medium text-muted-foreground">version</span>
+                        <span className="font-medium text-muted-foreground">
+                          version
+                        </span>
                         <span>1.2.0</span>
-                        <span className="font-medium text-muted-foreground">author</span>
+                        <span className="font-medium text-muted-foreground">
+                          author
+                        </span>
                         <span>Alex Rivera</span>
                       </div>
                     </div>
                     {/* Content */}
                     <div className="space-y-2 text-muted-foreground leading-relaxed">
-                      <p className="font-semibold text-foreground">Write Migration</p>
-                      <p>Generate a SQL migration file based on the requested schema changes. Validates against the current database state and generates both up and down migrations.</p>
+                      <p className="font-semibold text-foreground">
+                        Write Migration
+                      </p>
+                      <p>
+                        Generate a SQL migration file based on the requested
+                        schema changes. Validates against the current database
+                        state and generates both up and down migrations.
+                      </p>
                       <p className="font-medium text-foreground">Steps</p>
                       <ol className="list-decimal pl-4 space-y-0.5">
                         <li>Analyze the current schema from migrations/</li>
@@ -656,7 +903,7 @@ function SkillsVisual() {
                   </div>
                 ) : (
                   <pre className="text-xs font-mono text-muted-foreground">
-{`CREATE TABLE IF NOT EXISTS notifications (
+                    {`CREATE TABLE IF NOT EXISTS notifications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id),
   issue_id UUID REFERENCES issues(id),
@@ -680,28 +927,76 @@ function SkillsVisual() {
 /* ------------------------------------------------------------------ */
 
 const runtimeStatusConfig = {
-  idle: { label: "Idle", color: "text-muted-foreground", dot: "bg-muted-foreground" },
+  idle: {
+    label: "Idle",
+    color: "text-muted-foreground",
+    dot: "bg-muted-foreground",
+  },
   working: { label: "Working", color: "text-success", dot: "bg-success" },
   error: { label: "Error", color: "text-destructive", dot: "bg-destructive" },
-  offline: { label: "Offline", color: "text-muted-foreground/50", dot: "bg-muted-foreground/40" },
+  offline: {
+    label: "Offline",
+    color: "text-muted-foreground/50",
+    dot: "bg-muted-foreground/40",
+  },
 };
 
 const mockRuntimeList = [
-  { name: "MacBook Pro", mode: "local" as const, status: "online" as const, device: "arm64 / macOS 15.2", lastSeen: "Just now" },
-  { name: "Cloud (Anthropic)", mode: "cloud" as const, status: "online" as const, device: "api.anthropic.com", lastSeen: "Just now" },
-  { name: "Linux Server", mode: "local" as const, status: "offline" as const, device: "x86_64 / Ubuntu 24.04", lastSeen: "3h ago" },
+  {
+    name: "MacBook Pro",
+    mode: "local" as const,
+    status: "online" as const,
+    device: "arm64 / macOS 15.2",
+    lastSeen: "Just now",
+  },
+  {
+    name: "Cloud (Anthropic)",
+    mode: "cloud" as const,
+    status: "online" as const,
+    device: "api.anthropic.com",
+    lastSeen: "Just now",
+  },
+  {
+    name: "Linux Server",
+    mode: "local" as const,
+    status: "offline" as const,
+    device: "x86_64 / Ubuntu 24.04",
+    lastSeen: "3h ago",
+  },
 ];
 
 /* Mock usage data — deterministic seed values to avoid SSR/hydration mismatch */
 const USAGE_SEEDS = [
-  [72, 38, 54, 12], [45, 22, 41, 8], [88, 44, 63, 15], [61, 31, 48, 10],
-  [93, 47, 58, 14], [55, 28, 39, 9], [79, 40, 52, 13], [67, 34, 46, 11],
-  [84, 42, 60, 14], [50, 25, 35, 7], [91, 46, 57, 13], [58, 29, 43, 10],
-  [76, 38, 51, 12], [63, 32, 44, 9], [87, 44, 59, 14], [52, 26, 37, 8],
-  [95, 48, 62, 15], [70, 35, 49, 11], [82, 41, 55, 13], [48, 24, 33, 7],
-  [89, 45, 61, 14], [65, 33, 47, 10], [78, 39, 53, 12], [56, 28, 40, 9],
-  [92, 46, 58, 14], [60, 30, 42, 8], [85, 43, 56, 13], [73, 37, 50, 11],
-  [80, 40, 54, 12], [68, 34, 45, 10],
+  [72, 38, 54, 12],
+  [45, 22, 41, 8],
+  [88, 44, 63, 15],
+  [61, 31, 48, 10],
+  [93, 47, 58, 14],
+  [55, 28, 39, 9],
+  [79, 40, 52, 13],
+  [67, 34, 46, 11],
+  [84, 42, 60, 14],
+  [50, 25, 35, 7],
+  [91, 46, 57, 13],
+  [58, 29, 43, 10],
+  [76, 38, 51, 12],
+  [63, 32, 44, 9],
+  [87, 44, 59, 14],
+  [52, 26, 37, 8],
+  [95, 48, 62, 15],
+  [70, 35, 49, 11],
+  [82, 41, 55, 13],
+  [48, 24, 33, 7],
+  [89, 45, 61, 14],
+  [65, 33, 47, 10],
+  [78, 39, 53, 12],
+  [56, 28, 40, 9],
+  [92, 46, 58, 14],
+  [60, 30, 42, 8],
+  [85, 43, 56, 13],
+  [73, 37, 50, 11],
+  [80, 40, 54, 12],
+  [68, 34, 45, 10],
 ];
 const mockUsageData = USAGE_SEEDS.map((s, i) => ({
   date: `2026-03-${String(i + 2).padStart(2, "0")}`,
@@ -710,7 +1005,6 @@ const mockUsageData = USAGE_SEEDS.map((s, i) => ({
   cache_read_tokens: s[2]! * 1000,
   cache_write_tokens: s[3]! * 1000,
 }));
-
 
 /* Heatmap color helper — same as real ActivityHeatmap */
 function getHeatmapColor(level: number): string {
@@ -722,7 +1016,8 @@ function getHeatmapColor(level: number): string {
 /* Generate heatmap cells — simplified version of real ActivityHeatmap */
 function buildHeatmapCells() {
   const WEEKS = 13;
-  const cells: { week: number; day: number; level: number; date: string }[] = [];
+  const cells: { week: number; day: number; level: number; date: string }[] =
+    [];
   const today = new Date();
   const todayDay = today.getDay();
   const startOffset = todayDay + (WEEKS - 1) * 7;
@@ -737,7 +1032,9 @@ function buildHeatmapCells() {
     // Weekends (0=Sun, 6=Sat) get lower activity
     const isWeekend = day === 0 || day === 6;
     const level = isWeekend
-      ? seed[i % seed.length]! > 2 ? 1 : 0
+      ? seed[i % seed.length]! > 2
+        ? 1
+        : 0
       : seed[i % seed.length]!;
     cells.push({ week, day, level, date: d.toISOString().slice(0, 10) });
   }
@@ -763,7 +1060,11 @@ function DailyCostBars({ data }: { data: typeof mockUsageData }) {
   const barW = 100 / data.length;
   const chartH = 64;
   return (
-    <svg viewBox={`0 0 ${data.length * 10} ${chartH}`} className="h-[72px] w-full" preserveAspectRatio="none">
+    <svg
+      viewBox={`0 0 ${data.length * 10} ${chartH}`}
+      className="h-[72px] w-full"
+      preserveAspectRatio="none"
+    >
       {costs.map((cost, i) => {
         const h = maxCost > 0 ? (cost / maxCost) * (chartH - 4) : 0;
         return (
@@ -785,7 +1086,9 @@ function DailyCostBars({ data }: { data: typeof mockUsageData }) {
 function RuntimesVisual() {
   const [selectedRuntime, setSelectedRuntime] = useState(0);
   const [timeRange, setTimeRange] = useState<"7d" | "30d" | "90d">("30d");
-  const [heatmapCells, setHeatmapCells] = useState<ReturnType<typeof buildHeatmapCells>>([]);
+  const [heatmapCells, setHeatmapCells] = useState<
+    ReturnType<typeof buildHeatmapCells>
+  >([]);
 
   useEffect(() => {
     setHeatmapCells(buildHeatmapCells());
@@ -836,11 +1139,22 @@ function RuntimesVisual() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
-                    <span className="truncate text-xs font-medium">{rt.name}</span>
+                    <span className="truncate text-xs font-medium">
+                      {rt.name}
+                    </span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className={cn("h-1.5 w-1.5 rounded-full", rt.status === "online" ? "bg-success" : "bg-muted-foreground/40")} />
-                    <span className="text-[10px] text-muted-foreground">{rt.status}</span>
+                    <span
+                      className={cn(
+                        "h-1.5 w-1.5 rounded-full",
+                        rt.status === "online"
+                          ? "bg-success"
+                          : "bg-muted-foreground/40",
+                      )}
+                    />
+                    <span className="text-[10px] text-muted-foreground">
+                      {rt.status}
+                    </span>
                   </div>
                 </div>
               </button>
@@ -859,12 +1173,25 @@ function RuntimesVisual() {
                 <Monitor className="h-4 w-4 text-muted-foreground" />
               )}
             </div>
-            <span className="text-sm font-semibold">{mockRuntimeList[selectedRuntime]?.name}</span>
+            <span className="text-sm font-semibold">
+              {mockRuntimeList[selectedRuntime]?.name}
+            </span>
             <div className="flex items-center gap-1.5">
-              <span className={cn("h-1.5 w-1.5 rounded-full", mockRuntimeList[selectedRuntime]?.status === "online" ? "bg-success" : "bg-muted-foreground/40")} />
-              <span className="text-xs text-muted-foreground">{mockRuntimeList[selectedRuntime]?.status}</span>
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 rounded-full",
+                  mockRuntimeList[selectedRuntime]?.status === "online"
+                    ? "bg-success"
+                    : "bg-muted-foreground/40",
+                )}
+              />
+              <span className="text-xs text-muted-foreground">
+                {mockRuntimeList[selectedRuntime]?.status}
+              </span>
             </div>
-            <span className="text-xs text-muted-foreground">{mockRuntimeList[selectedRuntime]?.device}</span>
+            <span className="text-xs text-muted-foreground">
+              {mockRuntimeList[selectedRuntime]?.device}
+            </span>
           </div>
 
           {/* Usage content */}
@@ -896,11 +1223,18 @@ function RuntimesVisual() {
                 { label: "Input", value: formatTokens(totals.input) },
                 { label: "Output", value: formatTokens(totals.output) },
                 { label: "Cache Read", value: formatTokens(totals.cacheRead) },
-                { label: "Cache Write", value: formatTokens(totals.cacheWrite) },
+                {
+                  label: "Cache Write",
+                  value: formatTokens(totals.cacheWrite),
+                },
               ].map((card) => (
                 <div key={card.label} className="rounded-lg border px-3 py-2">
-                  <div className="text-[10px] text-muted-foreground">{card.label}</div>
-                  <div className="mt-0.5 text-sm font-semibold tabular-nums">{card.value}</div>
+                  <div className="text-[10px] text-muted-foreground">
+                    {card.label}
+                  </div>
+                  <div className="mt-0.5 text-sm font-semibold tabular-nums">
+                    {card.value}
+                  </div>
                 </div>
               ))}
             </div>
@@ -909,12 +1243,20 @@ function RuntimesVisual() {
             <div className="grid grid-cols-2 gap-3">
               {/* Activity Heatmap — mirrors real ActivityHeatmap */}
               <div className="rounded-lg border p-3">
-                <h4 className="text-[10px] font-medium text-muted-foreground mb-2">Activity</h4>
+                <h4 className="text-[10px] font-medium text-muted-foreground mb-2">
+                  Activity
+                </h4>
                 <div className="overflow-x-auto">
                   <svg width={svgWidth} height={svgHeight} className="block">
                     {["", "Mon", "", "Wed", "", "Fri", ""].map((label, i) =>
                       label ? (
-                        <text key={i} x={0} y={12 + i * (CELL_SIZE + CELL_GAP) + CELL_SIZE - 2} className="fill-muted-foreground" fontSize={8}>
+                        <text
+                          key={i}
+                          x={0}
+                          y={12 + i * (CELL_SIZE + CELL_GAP) + CELL_SIZE - 2}
+                          className="fill-muted-foreground"
+                          fontSize={8}
+                        >
                           {label}
                         </text>
                       ) : null,
@@ -935,7 +1277,11 @@ function RuntimesVisual() {
                 <div className="mt-1.5 flex items-center justify-end gap-1 text-[9px] text-muted-foreground">
                   <span>Less</span>
                   {[0, 1, 2, 3, 4].map((level) => (
-                    <div key={level} className="h-[8px] w-[8px] rounded-[2px]" style={{ backgroundColor: getHeatmapColor(level) }} />
+                    <div
+                      key={level}
+                      className="h-[8px] w-[8px] rounded-[2px]"
+                      style={{ backgroundColor: getHeatmapColor(level) }}
+                    />
                   ))}
                   <span>More</span>
                 </div>
@@ -943,10 +1289,14 @@ function RuntimesVisual() {
 
               {/* Daily Cost — SVG bar chart mirroring real DailyCostChart */}
               <div className="rounded-lg border p-3">
-                <h4 className="text-[10px] font-medium text-muted-foreground mb-2">Daily Cost</h4>
+                <h4 className="text-[10px] font-medium text-muted-foreground mb-2">
+                  Daily Cost
+                </h4>
                 <DailyCostBars data={mockUsageData.slice(-14)} />
                 <div className="mt-1.5 flex justify-between text-[8px] text-muted-foreground">
-                  <span>Mar 18</span><span>Mar 25</span><span>Mar 31</span>
+                  <span>Mar 18</span>
+                  <span>Mar 25</span>
+                  <span>Mar 31</span>
                 </div>
               </div>
             </div>
@@ -959,8 +1309,18 @@ function RuntimesVisual() {
 
 function buildFeatures(t: LandingDict) {
   const keys = ["teammates", "autonomous", "skills", "runtimes"] as const;
-  const visuals = [TeammatesVisual, AutonomousVisual, SkillsVisual, RuntimesVisual];
-  const bgImages = [undefined, "/images/feature-bg-2.jpg", "/images/feature-bg-3.jpg", "/images/feature-bg-4.jpg"];
+  const visuals = [
+    TeammatesVisual,
+    AutonomousVisual,
+    SkillsVisual,
+    RuntimesVisual,
+  ];
+  const bgImages = [
+    undefined,
+    "/images/feature-bg-2.jpg",
+    "/images/feature-bg-3.jpg",
+    "/images/feature-bg-4.jpg",
+  ];
 
   return keys.map((key, i) => ({
     ...t.features[key],
@@ -1003,7 +1363,7 @@ export function FeaturesSection() {
   };
 
   return (
-    <section id="features" className="bg-white text-[#0a0d12]">
+    <section id="features" className="bg-[#05060b] text-white">
       <div className="mx-auto max-w-[1320px] px-4 sm:px-6 lg:px-8">
         <div className="relative lg:flex lg:gap-20">
           {/* Sticky left nav */}
@@ -1017,14 +1377,14 @@ export function FeaturesSection() {
                   className={cn(
                     "group flex items-center gap-3 rounded-lg px-4 py-3 text-left text-[11px] font-semibold tracking-[0.12em] transition-colors",
                     i === activeIndex
-                      ? "text-[#0a0d12]"
-                      : "text-[#0a0d12]/36 hover:text-[#0a0d12]/60",
+                      ? "text-white"
+                      : "text-white/36 hover:text-white/60",
                   )}
                 >
                   <span
                     className={cn(
                       "size-2 shrink-0 rounded-full transition-colors",
-                      i === activeIndex ? "bg-[#0a0d12]" : "bg-transparent",
+                      i === activeIndex ? "bg-[#2563EB]" : "bg-transparent",
                     )}
                   />
                   {f.label}
@@ -1044,16 +1404,20 @@ export function FeaturesSection() {
                 data-index={i}
                 className={cn(
                   "py-20 lg:py-28",
-                  i < features.length - 1 && "border-b border-[#0a0d12]/8",
+                  i < features.length - 1 && "border-b border-white/8",
                 )}
               >
                 {/* Title + description */}
-                <h2 className="font-[family-name:var(--font-serif)] text-[2.6rem] leading-[1.05] tracking-[-0.03em] text-[#0a0d12] sm:text-[3.4rem] lg:text-[4.2rem]">
-                  {feature.title}
-                </h2>
-                <p className="mt-5 max-w-[640px] text-[15px] leading-7 text-[#0a0d12]/60 sm:text-[16px]">
-                  {feature.description}
-                </p>
+                <Reveal>
+                  <h2 className="font-[family-name:var(--font-serif)] text-[2.6rem] leading-[1.05] tracking-[-0.03em] text-white sm:text-[3.4rem] lg:text-[4.2rem]">
+                    {feature.title}
+                  </h2>
+                </Reveal>
+                <Reveal delay={80}>
+                  <p className="mt-5 max-w-[640px] text-[15px] leading-7 text-white/60 sm:text-[16px]">
+                    {feature.description}
+                  </p>
+                </Reveal>
 
                 {/* Visual */}
                 <div className="mt-14 sm:mt-18">
@@ -1072,14 +1436,14 @@ export function FeaturesSection() {
                       </div>
                     </div>
                   ) : (
-                    <div className="relative overflow-hidden border border-[#0a0d12]/8 bg-[#f5f5f5]">
+                    <div className="relative overflow-hidden border border-white/8 bg-[#f5f5f5]">
                       <div className="aspect-[16/9] w-full" />
                       <div className="absolute inset-0 flex items-center justify-center">
                         <div className="flex flex-col items-center gap-4 text-center">
-                          <div className="grid size-14 place-items-center rounded-2xl border border-[#0a0d12]/8 bg-white shadow-sm">
-                            <ImageIcon className="size-6 text-[#0a0d12]/30" />
+                          <div className="grid size-14 place-items-center rounded-2xl border border-white/8 bg-white shadow-sm">
+                            <ImageIcon className="size-6 text-white/30" />
                           </div>
-                          <p className="text-[13px] text-[#0a0d12]/36">
+                          <p className="text-[13px] text-white/36">
                             {feature.label.toLowerCase()} visual
                           </p>
                         </div>
@@ -1090,15 +1454,15 @@ export function FeaturesSection() {
 
                 {/* Feature cards */}
                 <div className="mt-14 grid gap-8 sm:mt-18 md:grid-cols-3 md:gap-10">
-                  {feature.cards.map((card) => (
-                    <div key={card.title}>
-                      <h3 className="text-[15px] font-semibold leading-snug text-[#0a0d12] sm:text-[16px]">
+                  {feature.cards.map((card, ci) => (
+                    <Reveal key={card.title} delay={ci * 100}>
+                      <h3 className="text-[15px] font-semibold leading-snug text-white sm:text-[16px]">
                         {card.title}
                       </h3>
-                      <p className="mt-2.5 text-[14px] leading-[1.7] text-[#0a0d12]/56 sm:text-[15px]">
+                      <p className="mt-2.5 text-[14px] leading-[1.7] text-white/56 sm:text-[15px]">
                         {card.description}
                       </p>
-                    </div>
+                    </Reveal>
                   ))}
                 </div>
               </div>

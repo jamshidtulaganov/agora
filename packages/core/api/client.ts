@@ -387,7 +387,10 @@ export class ApiClient {
     if (!res.ok) {
       if (res.status === 401) this.handleUnauthorized();
       const { message, body } = await this.parseErrorBody(res, `API error: ${res.status} ${res.statusText}`);
-      const logLevel = res.status === 404 ? "warn" : "error";
+      // 401 is an expected probe result on public/unauthenticated pages
+      // (e.g. GET /api/me on the landing page) and 404 is a benign miss —
+      // neither should surface as a console error.
+      const logLevel = res.status === 404 || res.status === 401 ? "warn" : "error";
       this.logger[logLevel](`← ${res.status} ${path}`, { rid, duration: `${Date.now() - start}ms`, error: message });
       throw new ApiError(message, res.status, res.statusText, body);
     }

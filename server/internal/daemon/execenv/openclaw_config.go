@@ -221,7 +221,7 @@ func prepareOpenclawConfig(envRoot, workDir string, opts OpenclawConfigPrep) (Op
 	// tuning still flows through.
 	snapshotPath := ""
 	if hasManagedMcp && exists {
-		resolved, ferr := openclawResolvedFullConfig(bin, timeout)
+		resolved, ferr := openclawResolvedFullConfig(activePath)
 		if ferr != nil {
 			return OpenclawConfigResult{}, fmt.Errorf("read openclaw resolved config: %w", ferr)
 		}
@@ -487,31 +487,42 @@ func openclawActiveConfigPath(bin string, timeout time.Duration) (string, bool, 
 	return path, true, nil
 }
 
-// openclawResolvedFullConfig fetches the user's fully resolved openclaw
-// config via `openclaw config get --json` (no key path — root). The CLI's
-// loader handles JSON5 / $include / env-substitution and emits a flat JSON
-// object, which is what we need to write a sanitized snapshot that the
-// wrapper can $include without inheriting the user's `mcp.servers`.
+// openclawResolvedFullConfig reads the user's active openclaw config file and
+// parses it. Used by the strict-replace mcp snapshot, which needs the user's
+// config minus `mcp.servers`.
 //
-// Returns (nil, nil) when the CLI prints empty / null output for the root
-// — interpreted as "no resolvable user config" by the caller, which then
-// falls through to the fresh-install code path. Any other failure
-// surfaces as an error so the daemon fails closed instead of silently
-// degrading to a leaky non-strict wrapper.
-func openclawResolvedFullConfig(bin string, timeout time.Duration) (map[string]any, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	out, err := openclawExec(ctx, bin, "config", "get", "--json")
+// Why read the file instead of asking the CLI: openclaw exposes NO resolved-
+// root dump. `openclaw config get` requires a <path> argument on every version
+// (2026.3.x–2026.6.x verified); the no-path / empty / "." forms are all
+// rejected ("missing required argument 'path'" / "Path is empty"), and there is
+// no `config export` / `config dump`. So the only way to get the whole config
+// is to read the file the CLI just located via `config file`. The earlier
+// `openclaw config get --json` (no path) form this used never worked against a
+// real binary — it only passed because the unit tests stubbed openclawExec.
+//
+// Caveat: this parses the file as strict JSON. The dominant self-host shape is
+// plain JSON and parses fine. A JSON5 (comments / trailing commas) or $include-
+// chained config fails to parse here and surfaces an error — the caller then
+// fails closed rather than emitting a strict-replace snapshot that silently
+// dropped data. The inherit path (no managed mcp_config) does NOT call this and
+// still $includes the live file, so openclaw's own loader handles JSON5 /
+// $include there. Only the strict-mcp-on-openclaw + JSON5 combination is
+// unsupported, and it fails loudly rather than leaking.
+//
+// Returns (nil, nil) for an empty file — treated as "no resolvable user config"
+// by the caller, which falls through to the fresh-install path.
+func openclawResolvedFullConfig(activePath string) (map[string]any, error) {
+	data, err := os.ReadFile(activePath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read openclaw config file %s: %w", activePath, err)
 	}
-	trimmed := strings.TrimSpace(out)
-	if trimmed == "" || trimmed == "null" {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 {
 		return nil, nil
 	}
 	var cfg map[string]any
-	if err := json.Unmarshal([]byte(trimmed), &cfg); err != nil {
-		return nil, fmt.Errorf("parse `openclaw config get --json` output: %w", err)
+	if err := json.Unmarshal(trimmed, &cfg); err != nil {
+		return nil, fmt.Errorf("parse openclaw config %s as JSON: %w", activePath, err)
 	}
 	return cfg, nil
 }
@@ -635,9 +646,10 @@ func isOpenclawKeyMissing(err error) bool {
 	if err == nil {
 		return false
 	}
-	msg := err.Error()
-	return strings.Contains(msg, "No value at ") ||
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no value at ") ||
 		strings.Contains(msg, "not set") ||
 		strings.Contains(msg, "missing key") ||
-		strings.Contains(msg, "Path not found")
+		// "Path not found" (older) and "Config path not found: <key>" (2026.6.x)
+		strings.Contains(msg, "path not found")
 }

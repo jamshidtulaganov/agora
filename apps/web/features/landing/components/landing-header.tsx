@@ -6,22 +6,20 @@ import { Menu, X } from "lucide-react";
 import { AgoraIcon } from "@agora/ui/components/common/agora-icon";
 import { cn } from "@agora/ui/lib/utils";
 import { useAuthStore } from "@agora/core/auth";
-import { docsHrefForLocale, useLocale } from "../i18n";
-import { GitHubMark, githubUrl, headerButtonClassName } from "./shared";
+import { useLocale } from "../i18n";
+import { headerButtonClassName } from "./shared";
 
 export function LandingHeader({
   variant = "dark",
 }: {
   variant?: "dark" | "light";
 }) {
-  const { t, locale } = useLocale();
+  const { t } = useLocale();
   const user = useAuthStore((s) => s.user);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const docsHref = docsHrefForLocale(locale);
   const navLinks = [
+    { href: "/guide", label: t.header.guide },
     { href: "/usecases", label: t.header.useCases },
-    { href: docsHref, label: t.header.docs },
-    { href: "/changelog", label: t.header.changelog },
   ];
   const ctaHref = user ? "/" : "/login";
   const ctaLabel = user ? t.header.dashboard : t.header.cta;
@@ -38,13 +36,7 @@ export function LandingHeader({
       <div className="mx-auto flex h-[76px] max-w-[1320px] items-center justify-between px-4 sm:px-6 lg:px-8">
         <div className="flex min-w-0 items-center gap-6 lg:gap-8">
           <Link href="/" className="flex shrink-0 items-center gap-3">
-            <AgoraIcon
-              className={cn(
-                "size-5",
-                variant === "dark" ? "text-white" : "text-[#0a0d12]",
-              )}
-              noSpin
-            />
+            <AgoraIcon className="size-5 text-[#2563EB]" noSpin />
             <span
               className={cn(
                 "text-[18px] font-semibold tracking-[0.04em] lowercase sm:text-[20px]",
@@ -89,18 +81,6 @@ export function LandingHeader({
             )}
           </button>
           <Link
-            href={githubUrl}
-            target="_blank"
-            rel="noreferrer"
-            className={cn(
-              headerButtonClassName("ghost", variant),
-              "hidden lg:inline-flex",
-            )}
-          >
-            <GitHubMark className="size-3.5" />
-            {t.header.github}
-          </Link>
-          <Link
             href={ctaHref}
             className={headerButtonClassName("solid", variant)}
           >
@@ -112,7 +92,7 @@ export function LandingHeader({
       {isMenuOpen ? (
         <div
           className={cn(
-            "absolute left-4 right-4 top-[calc(100%+8px)] z-50 rounded-[14px] border p-2 shadow-[0_18px_60px_rgba(0,0,0,0.18)] backdrop-blur-xl md:hidden",
+            "absolute left-4 right-4 top-[calc(100%+8px)] z-50 rounded-[14px] border p-2 shadow-[0_18px_60px_rgba(0,0,0,0.18)] md:hidden",
             variant === "dark"
               ? "border-white/14 bg-[#070a10]/95 text-white"
               : "border-[#0a0d12]/10 bg-white text-[#0a0d12]",
@@ -130,23 +110,6 @@ export function LandingHeader({
               </Link>
             ))}
           </nav>
-          <div
-            className={cn(
-              "mt-2 border-t pt-2",
-              variant === "dark" ? "border-white/10" : "border-[#0a0d12]/8",
-            )}
-          >
-            <Link
-              href={githubUrl}
-              target="_blank"
-              rel="noreferrer"
-              onClick={() => setIsMenuOpen(false)}
-              className={mobileNavLinkClassName(variant)}
-            >
-              <GitHubMark className="size-3.5" />
-              {t.header.github}
-            </Link>
-          </div>
         </div>
       ) : null}
     </header>

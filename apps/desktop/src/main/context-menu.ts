@@ -108,13 +108,13 @@ const labelsByLocale: Record<string, ContextMenuLabels> = {
     openLink: "在浏览器中打开链接",
     copyLinkAddress: "复制链接地址",
   },
-  ja: {
-    openLink: "ブラウザでリンクを開く",
-    copyLinkAddress: "リンクのアドレスをコピー",
+  uz: {
+    openLink: "Havolani brauzerda ochish",
+    copyLinkAddress: "Havola manzilini nusxalash",
   },
-  ko: {
-    openLink: "브라우저에서 링크 열기",
-    copyLinkAddress: "링크 주소 복사",
+  ru: {
+    openLink: "Открыть ссылку в браузере",
+    copyLinkAddress: "Скопировать адрес ссылки",
   },
 };
 
@@ -132,7 +132,7 @@ function pickLabels(): ContextMenuLabels {
     // worse than reading Simplified Chinese.
     return labelsByLocale["zh-Hans"];
   }
-  if (preferred.startsWith("ja")) return labelsByLocale.ja;
-  if (preferred.startsWith("ko")) return labelsByLocale.ko;
+  if (preferred.startsWith("uz")) return labelsByLocale.uz;
+  if (preferred.startsWith("ru")) return labelsByLocale.ru;
   return labelsByLocale.en;
 }

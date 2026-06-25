@@ -10,6 +10,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
     docs: "Docs",
     changelog: "Changelog",
     useCases: "Use cases",
+    guide: "Guide",
     navigation: "Primary navigation",
     openMenu: "Open navigation menu",
     closeMenu: "Close navigation menu",
@@ -225,7 +226,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
 
   footer: {
     tagline:
-      "Project management for human + agent teams. Open source, self-hostable, built for the future of work.",
+      "Project management for human + agent teams. Built for the future of work.",
     cta: "Get started",
     groups: {
       product: {
@@ -233,6 +234,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         links: [
           { label: "Features", href: "#features" },
           { label: "How it Works", href: "#how-it-works" },
+          { label: "Guide", href: "/guide" },
           { label: "Use cases", href: "/usecases" },
           { label: "Changelog", href: "/changelog" },
           { label: "Download", href: "/download" },

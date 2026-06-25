@@ -49,56 +49,56 @@ import zhHansUsage from "./zh-Hans/usage.json";
 import zhHansUi from "./zh-Hans/ui.json";
 import zhHansSquads from "./zh-Hans/squads.json";
 import zhHansBilling from "./zh-Hans/billing.json";
-import koCommon from "./ko/common.json";
-import koAuth from "./ko/auth.json";
-import koSettings from "./ko/settings.json";
-import koIssues from "./ko/issues.json";
-import koAgents from "./ko/agents.json";
-import koEditor from "./ko/editor.json";
-import koOnboarding from "./ko/onboarding.json";
-import koInvite from "./ko/invite.json";
-import koLabels from "./ko/labels.json";
-import koMembers from "./ko/members.json";
-import koMyIssues from "./ko/my-issues.json";
-import koSearch from "./ko/search.json";
-import koInbox from "./ko/inbox.json";
-import koWorkspace from "./ko/workspace.json";
-import koProjects from "./ko/projects.json";
-import koAutopilots from "./ko/autopilots.json";
-import koSkills from "./ko/skills.json";
-import koChat from "./ko/chat.json";
-import koModals from "./ko/modals.json";
-import koRuntimes from "./ko/runtimes.json";
-import koLayout from "./ko/layout.json";
-import koUsage from "./ko/usage.json";
-import koUi from "./ko/ui.json";
-import koSquads from "./ko/squads.json";
-import koBilling from "./ko/billing.json";
-import jaCommon from "./ja/common.json";
-import jaAuth from "./ja/auth.json";
-import jaSettings from "./ja/settings.json";
-import jaIssues from "./ja/issues.json";
-import jaAgents from "./ja/agents.json";
-import jaEditor from "./ja/editor.json";
-import jaOnboarding from "./ja/onboarding.json";
-import jaInvite from "./ja/invite.json";
-import jaLabels from "./ja/labels.json";
-import jaMembers from "./ja/members.json";
-import jaMyIssues from "./ja/my-issues.json";
-import jaSearch from "./ja/search.json";
-import jaInbox from "./ja/inbox.json";
-import jaWorkspace from "./ja/workspace.json";
-import jaProjects from "./ja/projects.json";
-import jaAutopilots from "./ja/autopilots.json";
-import jaSkills from "./ja/skills.json";
-import jaChat from "./ja/chat.json";
-import jaModals from "./ja/modals.json";
-import jaRuntimes from "./ja/runtimes.json";
-import jaLayout from "./ja/layout.json";
-import jaUsage from "./ja/usage.json";
-import jaUi from "./ja/ui.json";
-import jaSquads from "./ja/squads.json";
-import jaBilling from "./ja/billing.json";
+import uzCommon from "./uz/common.json";
+import uzAuth from "./uz/auth.json";
+import uzSettings from "./uz/settings.json";
+import uzIssues from "./uz/issues.json";
+import uzAgents from "./uz/agents.json";
+import uzEditor from "./uz/editor.json";
+import uzOnboarding from "./uz/onboarding.json";
+import uzInvite from "./uz/invite.json";
+import uzLabels from "./uz/labels.json";
+import uzMembers from "./uz/members.json";
+import uzMyIssues from "./uz/my-issues.json";
+import uzSearch from "./uz/search.json";
+import uzInbox from "./uz/inbox.json";
+import uzWorkspace from "./uz/workspace.json";
+import uzProjects from "./uz/projects.json";
+import uzAutopilots from "./uz/autopilots.json";
+import uzSkills from "./uz/skills.json";
+import uzChat from "./uz/chat.json";
+import uzModals from "./uz/modals.json";
+import uzRuntimes from "./uz/runtimes.json";
+import uzLayout from "./uz/layout.json";
+import uzUsage from "./uz/usage.json";
+import uzUi from "./uz/ui.json";
+import uzSquads from "./uz/squads.json";
+import uzBilling from "./uz/billing.json";
+import ruCommon from "./ru/common.json";
+import ruAuth from "./ru/auth.json";
+import ruSettings from "./ru/settings.json";
+import ruIssues from "./ru/issues.json";
+import ruAgents from "./ru/agents.json";
+import ruEditor from "./ru/editor.json";
+import ruOnboarding from "./ru/onboarding.json";
+import ruInvite from "./ru/invite.json";
+import ruLabels from "./ru/labels.json";
+import ruMembers from "./ru/members.json";
+import ruMyIssues from "./ru/my-issues.json";
+import ruSearch from "./ru/search.json";
+import ruInbox from "./ru/inbox.json";
+import ruWorkspace from "./ru/workspace.json";
+import ruProjects from "./ru/projects.json";
+import ruAutopilots from "./ru/autopilots.json";
+import ruSkills from "./ru/skills.json";
+import ruChat from "./ru/chat.json";
+import ruModals from "./ru/modals.json";
+import ruRuntimes from "./ru/runtimes.json";
+import ruLayout from "./ru/layout.json";
+import ruUsage from "./ru/usage.json";
+import ruUi from "./ru/ui.json";
+import ruSquads from "./ru/squads.json";
+import ruBilling from "./ru/billing.json";
 
 // Single source of truth for the resource bundle. Both apps (web layout +
 // desktop App.tsx) import from here so adding a locale or namespace happens
@@ -158,58 +158,58 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     squads: zhHansSquads,
     billing: zhHansBilling,
   },
-  ko: {
-    common: koCommon,
-    auth: koAuth,
-    settings: koSettings,
-    issues: koIssues,
-    agents: koAgents,
-    editor: koEditor,
-    onboarding: koOnboarding,
-    invite: koInvite,
-    labels: koLabels,
-    members: koMembers,
-    "my-issues": koMyIssues,
-    search: koSearch,
-    inbox: koInbox,
-    workspace: koWorkspace,
-    projects: koProjects,
-    autopilots: koAutopilots,
-    skills: koSkills,
-    chat: koChat,
-    modals: koModals,
-    runtimes: koRuntimes,
-    layout: koLayout,
-    usage: koUsage,
-    ui: koUi,
-    squads: koSquads,
-    billing: koBilling,
+  uz: {
+    common: uzCommon,
+    auth: uzAuth,
+    settings: uzSettings,
+    issues: uzIssues,
+    agents: uzAgents,
+    editor: uzEditor,
+    onboarding: uzOnboarding,
+    invite: uzInvite,
+    labels: uzLabels,
+    members: uzMembers,
+    "my-issues": uzMyIssues,
+    search: uzSearch,
+    inbox: uzInbox,
+    workspace: uzWorkspace,
+    projects: uzProjects,
+    autopilots: uzAutopilots,
+    skills: uzSkills,
+    chat: uzChat,
+    modals: uzModals,
+    runtimes: uzRuntimes,
+    layout: uzLayout,
+    usage: uzUsage,
+    ui: uzUi,
+    squads: uzSquads,
+    billing: uzBilling,
   },
-  ja: {
-    common: jaCommon,
-    auth: jaAuth,
-    settings: jaSettings,
-    issues: jaIssues,
-    agents: jaAgents,
-    editor: jaEditor,
-    onboarding: jaOnboarding,
-    invite: jaInvite,
-    labels: jaLabels,
-    members: jaMembers,
-    "my-issues": jaMyIssues,
-    search: jaSearch,
-    inbox: jaInbox,
-    workspace: jaWorkspace,
-    projects: jaProjects,
-    autopilots: jaAutopilots,
-    skills: jaSkills,
-    chat: jaChat,
-    modals: jaModals,
-    runtimes: jaRuntimes,
-    layout: jaLayout,
-    usage: jaUsage,
-    ui: jaUi,
-    squads: jaSquads,
-    billing: jaBilling,
+  ru: {
+    common: ruCommon,
+    auth: ruAuth,
+    settings: ruSettings,
+    issues: ruIssues,
+    agents: ruAgents,
+    editor: ruEditor,
+    onboarding: ruOnboarding,
+    invite: ruInvite,
+    labels: ruLabels,
+    members: ruMembers,
+    "my-issues": ruMyIssues,
+    search: ruSearch,
+    inbox: ruInbox,
+    workspace: ruWorkspace,
+    projects: ruProjects,
+    autopilots: ruAutopilots,
+    skills: ruSkills,
+    chat: ruChat,
+    modals: ruModals,
+    runtimes: ruRuntimes,
+    layout: ruLayout,
+    usage: ruUsage,
+    ui: ruUi,
+    squads: ruSquads,
+    billing: ruBilling,
   },
 };

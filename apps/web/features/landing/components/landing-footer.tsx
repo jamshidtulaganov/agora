@@ -5,13 +5,23 @@ import { AgoraIcon } from "@agora/ui/components/common/agora-icon";
 import { cn } from "@agora/ui/lib/utils";
 import { useAuthStore } from "@agora/core/auth";
 import { captureDownloadIntent } from "@agora/core/analytics";
-import { XMark, GitHubMark, githubUrl, twitterUrl } from "./shared";
+import { XMark, githubUrl, twitterUrl } from "./shared";
 import { useLocale, locales, localeLabels } from "../i18n";
 
 export function LandingFooter() {
   const { t, locale, setLocale } = useLocale();
   const user = useAuthStore((s) => s.user);
-  const groups = Object.values(t.footer.groups);
+  // New-startup posture: hide GitHub / open-source surfaces, plus links we
+  // don't surface yet (changelog, docs — also removed from the top nav).
+  const isHidden = (href: string) =>
+    href === githubUrl ||
+    href === "#open-source" ||
+    href === "/changelog" ||
+    href.startsWith("/docs");
+  const groups = Object.values(t.footer.groups).map((group) => ({
+    ...group,
+    links: group.links.filter((link) => !isHidden(link.href)),
+  }));
 
   return (
     <footer className="bg-[#0a0d12] text-white">
@@ -21,7 +31,7 @@ export function LandingFooter() {
           {/* Left — newsletter / CTA */}
           <div className="lg:w-[340px] lg:shrink-0">
             <Link href="#product" className="flex items-center gap-3">
-              <AgoraIcon className="size-5 text-white" noSpin />
+              <AgoraIcon className="size-5 text-[#2563EB]" noSpin />
               <span className="text-[18px] font-semibold tracking-[0.04em] lowercase">
                 agora
               </span>
@@ -38,19 +48,11 @@ export function LandingFooter() {
               >
                 <XMark className="size-4" />
               </Link>
-              <Link
-                href={githubUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-white/40 transition-colors hover:text-white"
-              >
-                <GitHubMark className="size-4" />
-              </Link>
             </div>
             <div className="mt-6">
               <Link
                 href={user ? "/" : "/login"}
-                className="inline-flex items-center justify-center rounded-[11px] bg-white px-5 py-2.5 text-[13px] font-semibold text-[#0a0d12] transition-colors hover:bg-white/88"
+                className="inline-flex items-center justify-center rounded-[11px] bg-[#2563EB] px-5 py-2.5 text-[13px] font-semibold text-white transition-colors hover:bg-[#2563EB]/88"
               >
                 {user ? t.header.dashboard : t.footer.cta}
               </Link>

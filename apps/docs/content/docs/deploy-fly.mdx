@@ -1,0 +1,138 @@
+---
+title: Deploy to Fly.io
+description: Run Agora on Fly.io as three apps — Postgres (pgvector), the Go backend, and the Next.js web app — with only the web app exposed publicly.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+This page deploys Agora to [Fly.io](https://fly.io) using the config that ships in
+the repo under [`deploy/fly/`](https://github.com/multica-ai/multica/tree/main/deploy/fly).
+It is the cloud equivalent of the [self-host quickstart](/self-host-quickstart):
+same backend, frontend, and PostgreSQL, but each runs as its own Fly app.
+
+Agent **execution** still relies on the [daemon](/daemon-runtimes) and the
+[AI coding tools](/providers) on the machine you run it from — Fly hosts the
+server layer, not the execution layer.
+
+## Architecture
+
+Three apps in one Fly organization and region:
+
+| App | What | Public? | Build source |
+| --- | --- | --- | --- |
+| `agora-db` | PostgreSQL + pgvector | No — private network only | `pgvector/pgvector:pg17` image |
+| `agora-backend` | Go API; runs `migrate up` then `server` | No — private network only | repo `Dockerfile` |
+| `agora-web` | Next.js (standalone) | **Yes** — `https://agora-web.fly.dev` | repo `Dockerfile.web` |
+
+Only `agora-web` gets a public IP, so it is the single attack surface. It proxies
+`/api`, `/ws`, `/auth`, and `/uploads` to the backend over Fly's private
+[6PN](https://fly.io/docs/networking/private-networking/) network at
+`agora-backend.internal:8080`. The backend reaches Postgres at
+`agora-db.internal:5432`. Nothing but the web app is reachable from the internet.
+
+<Callout type="info">
+The web app reads `REMOTE_API_URL` **at runtime** (in Next.js `rewrites()`), so you
+can repoint it at a different backend without rebuilding the image.
+</Callout>
+
+## Prerequisites
+
+- A [Fly.io](https://fly.io) account with billing enabled
+- [`flyctl`](https://fly.io/docs/flyctl/install/) installed and logged in (`fly auth login`)
+- A clone of the repo (the Dockerfiles build from the repo root)
+- A Google OAuth client and an email backend if you want those — see
+  [Sign-in configuration](/auth-setup)
+
+## 1. Fill in secrets
+
+The deploy script reads real secrets from `deploy/fly/secrets.env` (gitignored —
+never committed). Start from the example:
+
+```bash
+cp deploy/fly/secrets.example.env deploy/fly/secrets.env
+```
+
+Fill in:
+
+| Secret | Goes to | Notes |
+| --- | --- | --- |
+| `POSTGRES_PASSWORD` | `agora-db` | Postgres superuser password |
+| `JWT_SECRET` | `agora-backend` | Generate with `openssl rand -hex 32` |
+| `SMTP_PASSWORD` | `agora-backend` | Gmail app password (or your SMTP relay's) |
+| `GOOGLE_CLIENT_SECRET` | `agora-backend` | From your Google OAuth client |
+
+`DATABASE_URL` is derived from `POSTGRES_PASSWORD` by the script. Non-secret config
+(public URLs, `GOOGLE_CLIENT_ID`, SMTP host/user) lives in each app's
+`fly.toml` `[env]` block — edit those if your domain, sender, or region differ.
+
+<Callout type="warn">
+Change `app = "agora-..."`, `primary_region`, and the `https://agora-web.fly.dev`
+URLs in the three `fly.toml` files if you want different names. The web URL appears
+in the backend's `FRONTEND_ORIGIN`, `AGORA_APP_URL`, and `GOOGLE_REDIRECT_URI` — keep
+them consistent.
+</Callout>
+
+## 2. Deploy
+
+```bash
+fly auth login
+bash deploy/fly/deploy.sh
+```
+
+The script is idempotent — safe to re-run. It creates apps and volumes only if
+missing, stages secrets, and deploys in dependency order: **db → backend → web**.
+The backend's entrypoint runs database migrations automatically on every boot.
+
+Deploy a single tier when iterating:
+
+```bash
+bash deploy/fly/deploy.sh db        # just Postgres
+bash deploy/fly/deploy.sh backend   # just the API
+bash deploy/fly/deploy.sh web       # just the web app
+```
+
+When it finishes, the web app is live at `https://agora-web.fly.dev`.
+
+## 3. Wire up Google OAuth
+
+If you use Google sign-in, add the deployed URL to your OAuth client in the
+[Google Cloud Console](https://console.cloud.google.com) → **Credentials**:
+
+- Authorized JavaScript origin: `https://agora-web.fly.dev`
+- Authorized redirect URI: `https://agora-web.fly.dev/auth/callback`
+
+Local `http://localhost:3000/*` entries can stay alongside. See
+[Sign-in configuration](/auth-setup) for the full OAuth and email setup.
+
+## 4. First login
+
+Open `https://agora-web.fly.dev`, sign in with email + verification code (or
+Google), and create your first [workspace](/workspaces). From there it behaves
+exactly like any other Agora server — connect a [daemon](/daemon-runtimes) to run
+agents.
+
+## Operating notes
+
+- **Single machine for stateful apps.** `agora-db` (`agora_pgdata`) and
+  `agora-backend` (`agora_uploads`) use Fly volumes that are **not** shared across
+  machines. Don't scale either past one instance. To run the backend
+  multi-machine, set `S3_*` so attachments go to object storage instead of the
+  local volume — see [Environment variables](/environment-variables).
+- **Backups.** This is a self-hosted Postgres, not Fly Managed Postgres, so take
+  your own backups (e.g. `fly volumes snapshots` on `agora_pgdata`, or scheduled
+  `pg_dump`).
+- **`/docs`** rewrites to `DOCS_URL` (default `localhost:4000`) and will 404 unless
+  you deploy the docs site and set `DOCS_URL` in `deploy/fly/web/fly.toml`.
+- **Logs and status:** `fly logs -a agora-backend`, `fly status -a agora-web`.
+
+## Troubleshooting
+
+- **Login email never arrives** — the backend returns `200` only when the SMTP
+  relay accepts the message; check `fly logs -a agora-backend` for `smtp` errors.
+  Gmail collapses same-subject codes into one thread, so look at the newest message
+  in the existing thread. More in [Troubleshooting](/troubleshooting).
+- **Backend can't reach Postgres** — confirm `agora-db` is running
+  (`fly status -a agora-db`) and that `DATABASE_URL` points at
+  `agora-db.internal:5432` with `sslmode=disable` (6PN traffic is already private).
+- **`redirect_uri_mismatch` on Google login** — the redirect URI in Google Console
+  must exactly match `https://agora-web.fly.dev/auth/callback`.

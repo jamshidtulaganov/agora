@@ -1,0 +1,88 @@
+{
+  "bubble_menu": {
+    "bold": "Qalin",
+    "italic": "Kursiv",
+    "strikethrough": "Ustidan chizilgan",
+    "code": "Kod",
+    "highlight": "Ajratish",
+    "link": "Havola",
+    "list": "Ro‘yxat",
+    "quote": "Iqtibos",
+    "url_aria_label": "URL",
+    "heading_dropdown": {
+      "text": "Matn",
+      "normal_text": "Oddiy matn",
+      "heading_1": "Sarlavha 1",
+      "heading_2": "Sarlavha 2",
+      "heading_3": "Sarlavha 3"
+    },
+    "list_dropdown": {
+      "bullet_list": "Markerli ro‘yxat",
+      "ordered_list": "Tartibli ro‘yxat",
+      "task_list": "Vazifalar ro‘yxati"
+    },
+    "sub_issue": {
+      "tooltip": "Tanlangandan ichki vazifa yaratish",
+      "created": "{{identifier}} yaratildi",
+      "create_failed": "Ichki vazifa yaratib bo‘lmadi"
+    }
+  },
+  "image": {
+    "view": "Rasmni ko‘rish",
+    "download": "Yuklab olish",
+    "copy_link": "Havoladan nusxa olish",
+    "delete": "O‘chirish",
+    "link_copied": "Havola nusxalandi",
+    "copy_link_failed": "Havoladan nusxa olib bo‘lmadi"
+  },
+  "attachment": {
+    "download_failed": "Yuklab olish havolasini olib bo‘lmadi. Birozdan so‘ng qayta urinib ko‘ring.",
+    "preview": "Oldindan ko‘rish",
+    "preview_loading": "Oldindan ko‘rish yuklanmoqda…",
+    "preview_failed": "Oldindan ko‘rishni yuklab bo‘lmadi",
+    "preview_too_large": "Fayl oldindan ko‘rish uchun juda katta. Iltimos, yuklab oling.",
+    "preview_unsupported": "Bu fayl turini oldindan ko‘rib bo‘lmaydi.",
+    "close": "Yopish",
+    "open_in_new_tab": "Yangi ko‘rinishda ochish",
+    "remove": "Ilovani olib tashlash"
+  },
+  "link_hover": {
+    "copy_link": "Havoladan nusxa olish",
+    "open_link": "Havolani ochish",
+    "link_copied": "Havola nusxalandi",
+    "copy_failed": "Nusxa olib bo‘lmadi"
+  },
+  "mention": {
+    "group_users": "Foydalanuvchilar",
+    "group_issues": "Vazifalar",
+    "all_members": "Barcha a’zolar",
+    "searching": "Qidirilmoqda...",
+    "no_results": "Natija yo‘q",
+    "group_current": "Joriy sahifa",
+    "group_recent": "Yaqinda ko‘rilgan",
+    "group_search": "Qidiruv natijalari"
+  },
+  "slash_command": {
+    "no_skills_configured": "Skill’lar sozlanmagan",
+    "no_results": "Mos Skill topilmadi",
+    "commands": {
+      "note": "Eslatma qo‘shing — hech qaysi agentni ishga tushirmaydi"
+    }
+  },
+  "code_block": {
+    "copy_code": "Koddan nusxa olish",
+    "show_preview": "Oldindan ko‘rishni ko‘rsatish",
+    "show_source": "Manbani ko‘rsatish",
+    "fullscreen": "To‘liq ekran"
+  },
+  "file_card": {
+    "uploading": "{{filename}} yuklanmoqda"
+  },
+  "title_editor": {
+    "title_aria_label": "Sarlavha"
+  },
+  "mermaid": {
+    "render_error": "Mermaid diagrammasini chizib bo‘lmadi.",
+    "rendering": "Diagramma chizilmoqda…"
+  }
+}

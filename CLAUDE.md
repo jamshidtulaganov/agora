@@ -302,6 +302,12 @@ Every full-window desktop view (anything outside the dashboard shell) must mount
 - Pay close attention to **overflow** (truncate long text, scrollable containers), **alignment**, and **spacing** consistency.
 - **If a component is identical between web and desktop, it belongs in a shared package.** Do not copy-paste between apps.
 
+### Brand color
+
+The Agora brand accent is **royal blue `#2563EB`** (oklch `0.55 0.16 255` light / `0.65 0.16 255` dark). The single source of truth for app UI is the `--brand` token in `packages/ui/styles/tokens.css` — the logo (`AgoraIcon`, which renders `currentColor`/`--brand`), brand buttons, and brand-derived charts all flow from it. Change the brand color **there**, not per-component.
+
+The public marketing site (`apps/web/features/landing/`) currently hardcodes the same blue as a literal `#2563EB` (per-file `const ACCENT` + `shared.tsx` button helpers + the header/footer logo mark) because the landing renders in a `landing-light` scope outside the token system. When the brand color changes, update **both** the `--brand` token and the landing literals so the app and marketing site stay in sync. Earlier rebrand experiments (violet `#7c5cff`, emerald `#10b981`) were rejected — blue is final.
+
 ## Testing Rules
 
 ### Where to write tests

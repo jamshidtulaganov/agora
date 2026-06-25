@@ -24,13 +24,13 @@ import { RESOURCES } from "@agora/views/locales";
 // BCP-47 region tags for the <html lang> attribute, mirroring
 // apps/web/app/layout.tsx HTML_LANG. index.html ships a static lang="en";
 // we sync it to the resolved locale at boot so screen readers announce the
-// right language AND the Japanese-scoped CJK font override in globals.css
-// (`html[lang|="ja"]`) can take effect.
+// right language AND the Chinese-scoped CJK font override in globals.css
+// (`html[lang|="zh"]`) can take effect.
 const HTML_LANG: Record<SupportedLocale, string> = {
   en: "en",
   "zh-Hans": "zh-CN",
-  ko: "ko-KR",
-  ja: "ja-JP",
+  uz: "uz",
+  ru: "ru",
 };
 
 
@@ -317,10 +317,8 @@ export default function App() {
   );
 
   // Keep <html lang> in sync with the resolved locale (index.html hardcodes
-  // "en"). Drives the lang-scoped Japanese CJK font override and a11y.
-  // useLayoutEffect (not useEffect) so lang is committed before the first
-  // paint — otherwise Japanese users would see one frame of Kanji rendered
-  // with the Chinese-first fallback stack before the override kicks in.
+  // "en") for a11y / screen-reader announcement. useLayoutEffect (not
+  // useEffect) so lang is committed before the first paint.
   useLayoutEffect(() => {
     document.documentElement.lang = HTML_LANG[locale];
   }, [locale]);

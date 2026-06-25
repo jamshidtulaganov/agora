@@ -1,0 +1,45 @@
+{
+  "page": {
+    "breadcrumb": "Мои задачи",
+    "workspace_fallback": "Рабочее пространство",
+    "empty_title": "Вам не назначено задач",
+    "empty_description": "Задачи, которые вы создаёте или которые вам назначены, появятся здесь."
+  },
+  "header": {
+    "scope": {
+      "all_label": "Все",
+      "all_description": "Назначенные мне, созданные мной или с участием моих агентов и Squad’ов",
+      "assigned_label": "Назначенные",
+      "assigned_description": "Задачи, назначенные мне",
+      "created_label": "Созданные",
+      "created_description": "Задачи, созданные мной",
+      "agents_label": "Мои агенты и Squad’ы",
+      "agents_description": "Задачи, назначенные моим агентам"
+    },
+    "filter_button": "Фильтр",
+    "filter_status": "Статус",
+    "filter_priority": "Приоритет",
+    "issue_count_one": "{{count}} задача",
+    "issue_count_other": "{{count}} задач",
+    "reset_filters": "Сбросить все фильтры",
+    "display_settings": "Настройки отображения",
+    "grouping": "Группировка",
+    "group_status": "Статус",
+    "group_assignee": "Исполнитель",
+    "ordering": "Порядок",
+    "ascending": "По возрастанию",
+    "descending": "По убыванию",
+    "card_properties": "Свойства карточки",
+    "view_board": "Вид доски",
+    "view_list": "Вид списка",
+    "view_swimlane": "Вид Swimlane",
+    "view_label": "Вид",
+    "view_board_short": "Доска",
+    "view_list_short": "Список",
+    "view_swimlane_short": "Swimlane",
+    "sort_manual": "Вручную"
+  },
+  "errors": {
+    "move_failed": "Не удалось переместить задачу"
+  }
+}

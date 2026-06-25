@@ -226,17 +226,77 @@ func (s *EmailService) sendSMTP(to, subject, htmlBody string) error {
 	return c.Quit()
 }
 
+// appBaseURL returns the public app origin used to build links in emails,
+// falling back to the cloud default when FRONTEND_ORIGIN is unset.
+func appBaseURL() string {
+	appURL := strings.TrimSpace(os.Getenv("FRONTEND_ORIGIN"))
+	if appURL == "" {
+		appURL = "https://app.agora.dev"
+	}
+	return strings.TrimRight(appURL, "/")
+}
+
+// emailShell wraps content in a branded, email-client-safe HTML layout.
+// Uses table layout + inline styles (flexbox/grid and <style> blocks are
+// unreliable across Gmail/Outlook). The preheader is the muted preview line
+// shown in the inbox list next to the subject. contentHTML is injected verbatim,
+// so callers must HTML-escape any user-controlled values before passing them in.
+func emailShell(appURL, preheader, contentHTML string) string {
+	tmpl := `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+</head>
+<body style="margin:0;padding:0;background-color:#f4f4f5;">
+<span style="display:none;max-height:0;overflow:hidden;opacity:0;">{{PREHEADER}}</span>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f5;padding:24px 12px;">
+<tr><td align="center">
+<table role="presentation" width="420" cellpadding="0" cellspacing="0" style="width:420px;max-width:100%;background-color:#ffffff;border:1px solid #e4e4e7;border-radius:10px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+<tr><td style="padding:18px 22px 0 22px;">
+<a href="{{APP_URL}}" style="text-decoration:none;color:#2071cc;font-size:17px;font-weight:700;letter-spacing:-0.02em;">Agora</a>
+</td></tr>
+<tr><td style="padding:14px 22px 18px 22px;">
+{{CONTENT}}
+</td></tr>
+<tr><td style="padding:12px 22px;border-top:1px solid #f1f1f3;">
+<p style="margin:0;font-size:11px;color:#a1a1aa;line-height:1.6;">
+<a href="{{APP_URL}}" style="color:#2071cc;text-decoration:none;font-weight:500;">Open Agora</a>
+&nbsp;&middot;&nbsp;
+<a href="{{APP_URL}}/inbox" style="color:#2071cc;text-decoration:none;font-weight:500;">Inbox</a>
+&nbsp;&middot;&nbsp;
+<a href="{{APP_URL}}/settings" style="color:#2071cc;text-decoration:none;font-weight:500;">Settings</a>
+<br>Agora — AI-native task management.
+</p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>`
+	r := strings.NewReplacer(
+		"{{APP_URL}}", html.EscapeString(appURL),
+		"{{PREHEADER}}", html.EscapeString(preheader),
+		"{{CONTENT}}", contentHTML,
+	)
+	return r.Replace(tmpl)
+}
+
 // SendVerificationCode sends a one-time login code. The code is server-generated
 // (6-digit numeric) so no user-controlled text reaches the email body here.
 // Delivery priority: SMTP relay → Resend API → DEV stdout.
 func (s *EmailService) SendVerificationCode(to, code string) error {
-	body := fmt.Sprintf(
-		`<div style="font-family: sans-serif; max-width: 400px; margin: 0 auto;">
-			<h2>Your verification code</h2>
-			<p style="font-size: 32px; font-weight: bold; letter-spacing: 8px; margin: 24px 0;">%s</p>
-			<p>This code expires in 10 minutes.</p>
-			<p style="color: #666; font-size: 14px;">If you didn't request this code, you can safely ignore this email.</p>
-		</div>`, code)
+	content := fmt.Sprintf(
+		`<h1 style="margin:0 0 6px 0;font-size:17px;font-weight:600;color:#0a0d12;">Your verification code</h1>
+		<p style="margin:0 0 14px 0;font-size:13px;color:#52525b;line-height:1.5;">Enter this code to finish signing in.</p>
+		<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 14px 0;">
+		<tr><td style="background-color:#eff6ff;border:1px solid #2071cc;border-radius:8px;padding:12px 20px;font-size:28px;font-weight:700;letter-spacing:8px;color:#0a4da3;text-align:center;">%s</td></tr>
+		</table>
+		<p style="margin:0 0 3px 0;font-size:13px;color:#52525b;">This code expires in 10 minutes.</p>
+		<p style="margin:0;font-size:12px;color:#a1a1aa;line-height:1.5;">If you didn't request this code, you can safely ignore this email.</p>`,
+		code)
+	body := emailShell(appBaseURL(), "Your Agora verification code", content)
 
 	if s.smtpHost != "" {
 		return s.sendSMTP(to, "Your Agora verification code", body)
@@ -286,19 +346,22 @@ func buildInvitationParams(from, to, inviterName, workspaceName, inviteURL strin
 	subjectInviter := sanitizeSubjectField(inviterName)
 	subjectWorkspace := sanitizeSubjectField(workspaceName)
 
+	content := fmt.Sprintf(
+		`<h1 style="margin:0 0 6px 0;font-size:17px;font-weight:600;color:#0a0d12;">You're invited to join %s</h1>
+		<p style="margin:0 0 16px 0;font-size:13px;color:#52525b;line-height:1.5;"><strong style="color:#0a0d12;">%s</strong> invited you to collaborate in the <strong style="color:#0a0d12;">%s</strong> workspace on Agora.</p>
+		<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 16px 0;">
+		<tr><td style="background-color:#2071cc;border-radius:6px;">
+		<a href="%s" style="display:inline-block;padding:10px 22px;color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;">Accept invitation</a>
+		</td></tr>
+		</table>
+		<p style="margin:0;font-size:12px;color:#a1a1aa;line-height:1.5;">You'll need to log in to accept or decline the invitation.</p>`,
+		safeWorkspace, safeInviter, safeWorkspace, inviteURL)
+
 	return &resend.SendEmailRequest{
 		From:    from,
 		To:      []string{to},
 		Subject: fmt.Sprintf("%s invited you to %s on Agora", subjectInviter, subjectWorkspace),
-		Html: fmt.Sprintf(
-			`<div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
-				<h2>You're invited to join %s</h2>
-				<p><strong>%s</strong> invited you to collaborate in the <strong>%s</strong> workspace on Agora.</p>
-				<p style="margin: 24px 0;">
-					<a href="%s" style="display: inline-block; padding: 12px 24px; background: #000; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 500;">Accept invitation</a>
-				</p>
-				<p style="color: #666; font-size: 14px;">You'll need to log in to accept or decline the invitation.</p>
-			</div>`, safeWorkspace, safeInviter, safeWorkspace, inviteURL),
+		Html:    emailShell(appBaseURL(), fmt.Sprintf("%s invited you to %s on Agora", safeInviter, safeWorkspace), content),
 	}
 }
 

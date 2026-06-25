@@ -10,6 +10,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
     docs: "\u6587\u6863",
     changelog: "\u66f4\u65b0\u65e5\u5fd7",
     useCases: "\u6848\u4f8b",
+    guide: "\u6307\u5357",
     navigation: "\u4e3b\u5bfc\u822a",
     openMenu: "\u6253\u5f00\u5bfc\u822a\u83dc\u5355",
     closeMenu: "\u5173\u95ed\u5bfc\u822a\u83dc\u5355",
@@ -225,7 +226,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
 
   footer: {
     tagline:
-      "\u4eba\u7c7b + 智能体 \u56e2\u961f\u7684\u9879\u76ee\u7ba1\u7406\u3002\u5f00\u6e90\u3001\u53ef\u81ea\u6258\u7ba1\u3001\u4e3a\u672a\u6765\u7684\u5de5\u4f5c\u65b9\u5f0f\u800c\u5efa\u3002",
+      "\u4eba\u7c7b + 智能体 \u56e2\u961f\u7684\u9879\u76ee\u7ba1\u7406\u3002\u4e3a\u672a\u6765\u7684\u5de5\u4f5c\u65b9\u5f0f\u800c\u5efa\u3002",
     cta: "\u5f00\u59cb\u4f7f\u7528",
     groups: {
       product: {
@@ -233,6 +234,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         links: [
           { label: "\u529f\u80fd\u7279\u6027", href: "#features" },
           { label: "\u5982\u4f55\u5de5\u4f5c", href: "#how-it-works" },
+          { label: "\u6307\u5357", href: "/guide" },
           { label: "\u6848\u4f8b", href: "/usecases" },
           { label: "更新日志", href: "/changelog" },
           { label: "下载", href: "/download" },

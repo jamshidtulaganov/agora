@@ -14,6 +14,7 @@ import {
   FolderKanban,
   FolderMinus,
   List,
+  ListTree,
   SignalHigh,
   SlidersHorizontal,
   X,
@@ -591,10 +592,15 @@ function SprintSubContent({
 export function IssuesHeader({
   scopedIssues,
   allowGantt = false,
+  allowTree = false,
   projectId,
 }: {
   scopedIssues: Issue[];
   allowGantt?: boolean;
+  // Only sprint-mode project detail renders <SprintTreeView>; like Gantt the
+  // Tree option is opt-in so other surfaces don't expose a view they can't
+  // render. See the view-toggle fallback note below.
+  allowTree?: boolean;
   // When set, the filter menu gains a project-scoped Sprint section. Sprints
   // are project-scoped, so the global /issues + /my-issues headers omit this.
   projectId?: string;
@@ -694,7 +700,7 @@ export function IssuesHeader({
             onToggle={toggleAgentRunningFilter}
             scopedIssueIds={scopedIssueIds}
           />
-          <IssueDisplayControls scopedIssues={scopedIssues} allowGantt={allowGantt} projectId={projectId} />
+          <IssueDisplayControls scopedIssues={scopedIssues} allowGantt={allowGantt} allowTree={allowTree} projectId={projectId} />
         </div>
       </div>
     </div>
@@ -705,6 +711,7 @@ export function IssueDisplayControls({
   scopedIssues,
   hideViewToggle = false,
   allowGantt = false,
+  allowTree = false,
   projectId,
 }: {
   scopedIssues: Issue[];
@@ -713,6 +720,10 @@ export function IssueDisplayControls({
   // /my-issues, actor panel) ignore viewMode === "gantt" and would silently
   // fall back to List if the option were exposed there. Keep Gantt opt-in.
   allowGantt?: boolean;
+  // Same opt-in rule as Gantt: only sprint-mode project detail renders the
+  // Sprint Tree view, so non-project surfaces (and projects without sprint
+  // mode) omit the option and fall back to List for a persisted "tree".
+  allowTree?: boolean;
   // When set, the filter menu gains a project-scoped Sprint section. Sprints
   // are project-scoped, so non-project surfaces omit it.
   projectId?: string;
@@ -1185,9 +1196,9 @@ export function IssueDisplayControls({
           </PopoverContent>
         </Popover>
 
-        {/* View toggle. If a store has `viewMode === "gantt"` persisted but
-            this surface doesn't render Gantt, fall back to "list" so the
-            trigger icon matches what's actually on screen. */}
+        {/* View toggle. If a store has `viewMode === "gantt"` (or "tree")
+            persisted but this surface doesn't render it, fall back to "list"
+            so the trigger icon matches what's actually on screen. */}
         {!hideViewToggle && (
           <DropdownMenu>
             <Tooltip>
@@ -1202,6 +1213,8 @@ export function IssueDisplayControls({
                           <Waves className="size-3.5" />
                         ) : viewMode === "gantt" && allowGantt ? (
                           <ChartGantt className="size-3.5" />
+                        ) : viewMode === "tree" && allowTree ? (
+                          <ListTree className="size-3.5" />
                         ) : (
                           <List className="size-3.5" />
                         )}
@@ -1212,6 +1225,8 @@ export function IssueDisplayControls({
                             ? t(($) => $.view.swimlane)
                             : viewMode === "gantt" && allowGantt
                             ? t(($) => $.view.gantt)
+                            : viewMode === "tree" && allowTree
+                            ? t(($) => $.view.tree)
                             : t(($) => $.view.list)}
                         </span>
                       </Button>
@@ -1226,6 +1241,8 @@ export function IssueDisplayControls({
                   ? t(($) => $.view.tooltip_swimlane)
                   : viewMode === "gantt" && allowGantt
                   ? t(($) => $.view.tooltip_gantt)
+                  : viewMode === "tree" && allowTree
+                  ? t(($) => $.view.tooltip_tree)
                   : t(($) => $.view.tooltip_list)}
               </TooltipContent>
             </Tooltip>
@@ -1250,6 +1267,12 @@ export function IssueDisplayControls({
                   <DropdownMenuRadioItem value="gantt">
                     <ChartGantt />
                     {t(($) => $.view.gantt)}
+                  </DropdownMenuRadioItem>
+                )}
+                {allowTree && (
+                  <DropdownMenuRadioItem value="tree">
+                    <ListTree />
+                    {t(($) => $.view.tree)}
                   </DropdownMenuRadioItem>
                 )}
               </DropdownMenuRadioGroup>

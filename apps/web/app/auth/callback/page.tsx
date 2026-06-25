@@ -26,15 +26,18 @@ function CallbackContent() {
   const [desktopToken, setDesktopToken] = useState<string | null>(null);
 
   useEffect(() => {
-    const code = searchParams.get("code");
-    if (!code) {
-      setError("Missing authorization code");
-      return;
-    }
-
+    // Google reports user cancellation / consent failure via `error` and sends
+    // no `code`. Check it first, otherwise we'd mask "access_denied" with a
+    // misleading "Missing authorization code".
     const errorParam = searchParams.get("error");
     if (errorParam) {
       setError(errorParam === "access_denied" ? "Access denied" : errorParam);
+      return;
+    }
+
+    const code = searchParams.get("code");
+    if (!code) {
+      setError("Missing authorization code");
       return;
     }
 

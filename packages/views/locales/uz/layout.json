@@ -1,0 +1,45 @@
+{
+  "nav": {
+    "inbox": "Kiruvchilar",
+    "my_issues": "Mening vazifalarim",
+    "issues": "Vazifalar",
+    "projects": "Loyihalar",
+    "autopilots": "Autopilot",
+    "agents": "Agentlar",
+    "squads": "Squad’lar",
+    "usage": "Foydalanish",
+    "runtimes": "Runtime’lar",
+    "ai_accounts": "AI hisoblar",
+    "skills": "Skill’lar",
+    "plugins": "Plaginlar",
+    "mcp": "MCP serverlar",
+    "bitrix": "Bitrix",
+    "settings": "Sozlamalar"
+  },
+  "help": {
+    "trigger": "Yordam",
+    "docs": "Hujjatlar",
+    "changelog": "O‘zgarishlar tarixi",
+    "feedback": "Fikr-mulohaza"
+  },
+  "workspace_loader": {
+    "loading_workspace": "Ish maydoni yuklanmoqda…",
+    "loading_named_prefix": "Yuklanmoqda"
+  },
+  "sidebar": {
+    "unpin_tooltip": "Qadashdan chiqarish",
+    "workspaces_label": "Ish maydonlari",
+    "create_workspace": "Ish maydoni yaratish",
+    "pending_invitations_label": "Kutilayotgan takliflar",
+    "invitation_workspace_fallback": "Ish maydoni",
+    "invitation_join": "Qo‘shilish",
+    "invitation_decline": "Rad etish",
+    "log_out": "Chiqish",
+    "new_issue": "Yangi vazifa",
+    "new_issue_shortcut": "C",
+    "pinned_label": "Qadalgan",
+    "workspace_group": "Ish maydoni",
+    "configure_group": "Sozlash",
+    "unread_overflow": "99+"
+  }
+}

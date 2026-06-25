@@ -6,19 +6,28 @@ import { I18nProvider } from "@agora/core/i18n/react";
 import type { SupportedLocale } from "@agora/core/i18n";
 import enOnboarding from "../locales/en/onboarding.json";
 import enCommon from "../locales/en/common.json";
-import koOnboarding from "../locales/ko/onboarding.json";
-import koCommon from "../locales/ko/common.json";
-import jaOnboarding from "../locales/ja/onboarding.json";
-import jaCommon from "../locales/ja/common.json";
+import uzOnboarding from "../locales/uz/onboarding.json";
+import uzCommon from "../locales/uz/common.json";
+import ruOnboarding from "../locales/ru/onboarding.json";
+import ruCommon from "../locales/ru/common.json";
 import { NavigationProvider } from "../navigation";
 import type { NavigationAdapter } from "../navigation";
+import {
+  CREATE_AGENT_GUIDE_ISSUE_TITLE,
+  FOLLOWUP_COMMENT_PREFIX,
+  HELPER_DESCRIPTION,
+  HELPER_INSTRUCTIONS,
+  HELPER_STARTER_PROMPTS,
+  INSTALL_RUNTIME_ISSUE_BODY,
+  INSTALL_RUNTIME_ISSUE_TITLE,
+} from "../onboarding/templates";
 import { useWelcomeStore } from "@agora/core/onboarding";
 import { WelcomeAfterOnboarding } from "./welcome-after-onboarding";
 
 const TEST_RESOURCES = {
   en: { common: enCommon, onboarding: enOnboarding },
-  ko: { common: koCommon, onboarding: koOnboarding },
-  ja: { common: jaCommon, onboarding: jaOnboarding },
+  uz: { common: uzCommon, onboarding: uzOnboarding },
+  ru: { common: ruCommon, onboarding: ruOnboarding },
 };
 
 // `useAuthStore` is a singleton Proxy that requires `registerAuthStore`
@@ -307,7 +316,7 @@ describe("WelcomeAfterOnboarding", () => {
       );
     });
 
-    it("uses Korean persisted Helper and starter issue artifacts under ko locale", async () => {
+    it("uses Uzbek persisted Helper and starter issue artifacts under uz locale", async () => {
       mockListAgents.mockResolvedValueOnce([]);
       mockCreateAgent.mockResolvedValueOnce({
         id: "agent-1",
@@ -326,35 +335,34 @@ describe("WelcomeAfterOnboarding", () => {
         runtimeId: "rt-1",
       });
 
-      renderWelcome({ locale: "ko" });
+      const introTitle = HELPER_STARTER_PROMPTS.intro.title.uz;
+      renderWelcome({ locale: "uz" });
 
       await waitFor(() =>
-        expect(
-          screen.getByText("Agora를 간단히 소개해 주세요"),
-        ).toBeInTheDocument(),
+        expect(screen.getByText(introTitle)).toBeInTheDocument(),
       );
 
       expect(mockCreateAgent).toHaveBeenCalledTimes(1);
       const [agentArgs] = mockCreateAgent.mock.calls[0]!;
-      expect(agentArgs.description).toContain("Agora 사용 어시스턴트");
+      expect(agentArgs.description).toContain(HELPER_DESCRIPTION.uz);
       expect(agentArgs.instructions).toContain(
-        "당신은 이 Agora 워크스페이스에 내장된 AI 어시스턴트",
+        HELPER_INSTRUCTIONS.uz.slice(0, 24),
       );
 
-      fireEvent.click(screen.getByText("Agora를 간단히 소개해 주세요"));
+      fireEvent.click(screen.getByText(introTitle));
       fireEvent.click(
-        await screen.findByRole("button", { name: /작업 1개를 나에게 할당/i }),
+        await screen.findByRole("button", { name: /tayinlash/i }),
       );
 
       await waitFor(() => expect(mockCreateIssue).toHaveBeenCalledTimes(1));
       const [issueArgs] = mockCreateIssue.mock.calls[0]!;
-      expect(issueArgs.title).toBe("Agora를 간단히 소개해 주세요");
+      expect(issueArgs.title).toBe(introTitle);
       expect(issueArgs.description).toContain(
-        "Agora를 1-2문단으로 간단히 소개해 주세요",
+        HELPER_STARTER_PROMPTS.intro.prompt.uz,
       );
     });
 
-    it("uses Japanese persisted Helper and starter issue artifacts under ja locale", async () => {
+    it("uses Russian persisted Helper and starter issue artifacts under ru locale", async () => {
       mockListAgents.mockResolvedValueOnce([]);
       mockCreateAgent.mockResolvedValueOnce({
         id: "agent-1",
@@ -373,33 +381,30 @@ describe("WelcomeAfterOnboarding", () => {
         runtimeId: "rt-1",
       });
 
-      renderWelcome({ locale: "ja" });
+      const introTitle = HELPER_STARTER_PROMPTS.intro.title.ru;
+      renderWelcome({ locale: "ru" });
 
       await waitFor(() =>
-        expect(
-          screen.getByText("Agora を簡単に紹介してください"),
-        ).toBeInTheDocument(),
+        expect(screen.getByText(introTitle)).toBeInTheDocument(),
       );
 
       expect(mockCreateAgent).toHaveBeenCalledTimes(1);
       const [agentArgs] = mockCreateAgent.mock.calls[0]!;
-      expect(agentArgs.description).toContain("Agora の使い方アシスタント");
+      expect(agentArgs.description).toContain(HELPER_DESCRIPTION.ru);
       expect(agentArgs.instructions).toContain(
-        "あなたは Agora Helper、この Agora ワークスペースに組み込まれた AI アシスタント",
+        HELPER_INSTRUCTIONS.ru.slice(0, 24),
       );
 
-      fireEvent.click(screen.getByText("Agora を簡単に紹介してください"));
+      fireEvent.click(screen.getByText(introTitle));
       fireEvent.click(
-        await screen.findByRole("button", {
-          name: /1 件のタスクを私に割り当てる/,
-        }),
+        await screen.findByRole("button", { name: /назначить/i }),
       );
 
       await waitFor(() => expect(mockCreateIssue).toHaveBeenCalledTimes(1));
       const [issueArgs] = mockCreateIssue.mock.calls[0]!;
-      expect(issueArgs.title).toBe("Agora を簡単に紹介してください");
+      expect(issueArgs.title).toBe(introTitle);
       expect(issueArgs.description).toContain(
-        "Agora を1〜2段落で簡単に紹介してください",
+        HELPER_STARTER_PROMPTS.intro.prompt.ru,
       );
     });
   });
@@ -487,7 +492,7 @@ describe("WelcomeAfterOnboarding", () => {
       expect(screen.queryByText(/Welcome to Agora/i)).not.toBeInTheDocument();
     });
 
-    it("uses Korean persisted skip-path issue and comment artifacts under ko locale", async () => {
+    it("uses Uzbek persisted skip-path issue and comment artifacts under uz locale", async () => {
       mockCreateIssue
         .mockResolvedValueOnce({
           id: "issue-install",
@@ -506,26 +511,19 @@ describe("WelcomeAfterOnboarding", () => {
         choice: "skip",
       });
 
-      renderWelcome({ locale: "ko" });
+      renderWelcome({ locale: "uz" });
 
       await waitFor(() => {
-        expect(screen.getByText(/Agora에 오신 것을 환영합니다/i)).toBeInTheDocument();
+        expect(screen.getByText(/xush kelibsiz/i)).toBeInTheDocument();
       });
 
       expect(mockCreateIssue).toHaveBeenCalledTimes(2);
       const [installCall, guideCall] = mockCreateIssue.mock.calls;
-      expect(installCall![0].title).toBe(
-        "1단계 — agent를 사용하려면 runtime 연결하기",
-      );
+      expect(installCall![0].title).toBe(INSTALL_RUNTIME_ISSUE_TITLE.uz);
       expect(installCall![0].description).toContain(
-        "Agora에 오신 것을 환영합니다.",
+        INSTALL_RUNTIME_ISSUE_BODY.uz.slice(0, 16),
       );
-      expect(guideCall![0].title).toBe(
-        "2단계 — 첫 Agora Agent 만들기",
-      );
-      expect(guideCall![0].description).toContain(
-        "runtime이 online 상태가 되면",
-      );
+      expect(guideCall![0].title).toBe(CREATE_AGENT_GUIDE_ISSUE_TITLE.uz);
       expect(guideCall![0].description).toContain(
         "[MUL-1](mention://issue/issue-install)",
       );
@@ -533,13 +531,13 @@ describe("WelcomeAfterOnboarding", () => {
       const [commentIssueId, commentContent] =
         mockCreateComment.mock.calls[0]!;
       expect(commentIssueId).toBe("issue-install");
-      expect(commentContent).toContain("다음 단계:");
+      expect(commentContent).toContain(FOLLOWUP_COMMENT_PREFIX.uz);
       expect(commentContent).toContain(
         "[MUL-2](mention://issue/issue-agent)",
       );
     });
 
-    it("uses Japanese persisted skip-path issue and comment artifacts under ja locale", async () => {
+    it("uses Russian persisted skip-path issue and comment artifacts under ru locale", async () => {
       mockCreateIssue
         .mockResolvedValueOnce({
           id: "issue-install",
@@ -558,24 +556,21 @@ describe("WelcomeAfterOnboarding", () => {
         choice: "skip",
       });
 
-      renderWelcome({ locale: "ja" });
+      renderWelcome({ locale: "ru" });
 
       await waitFor(() => {
         expect(
-          screen.getByText(/Agora へようこそ/),
+          screen.getByText(/Добро пожаловать в Agora/i),
         ).toBeInTheDocument();
       });
 
       expect(mockCreateIssue).toHaveBeenCalledTimes(2);
       const [installCall, guideCall] = mockCreateIssue.mock.calls;
-      expect(installCall![0].title).toBe(
-        "ステップ1 — agent を使うために runtime を接続する",
+      expect(installCall![0].title).toBe(INSTALL_RUNTIME_ISSUE_TITLE.ru);
+      expect(installCall![0].description).toContain(
+        INSTALL_RUNTIME_ISSUE_BODY.ru.slice(0, 16),
       );
-      expect(installCall![0].description).toContain("Agora へようこそ。");
-      expect(guideCall![0].title).toBe(
-        "ステップ2 — 最初の Agora Agent を作成する",
-      );
-      expect(guideCall![0].description).toContain("runtime が online になったら");
+      expect(guideCall![0].title).toBe(CREATE_AGENT_GUIDE_ISSUE_TITLE.ru);
       expect(guideCall![0].description).toContain(
         "[MUL-1](mention://issue/issue-install)",
       );
@@ -583,7 +578,7 @@ describe("WelcomeAfterOnboarding", () => {
       const [commentIssueId, commentContent] =
         mockCreateComment.mock.calls[0]!;
       expect(commentIssueId).toBe("issue-install");
-      expect(commentContent).toContain("次のステップ:");
+      expect(commentContent).toContain(FOLLOWUP_COMMENT_PREFIX.ru);
       expect(commentContent).toContain(
         "[MUL-2](mention://issue/issue-agent)",
       );

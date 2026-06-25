@@ -17,8 +17,8 @@ export const STARTER_CARD_IDS = ["intro", "tour", "welcome_page"] as const;
 export type StarterCardId = (typeof STARTER_CARD_IDS)[number];
 
 interface StarterPrompt {
-  title: { en: string; zh: string; ko: string; ja: string };
-  prompt: { en: string; zh: string; ko: string; ja: string };
+  title: { en: string; zh: string; uz: string; ru: string };
+  prompt: { en: string; zh: string; uz: string; ru: string };
 }
 
 export const HELPER_STARTER_PROMPTS: Record<StarterCardId, StarterPrompt> = {
@@ -26,36 +26,36 @@ export const HELPER_STARTER_PROMPTS: Record<StarterCardId, StarterPrompt> = {
     title: {
       en: "Introduce Agora to me",
       zh: "简单介绍一下 Agora",
-      ko: "Agora를 간단히 소개해 주세요",
-      ja: "Agora を簡単に紹介してください",
+      uz: "Agora'ni menga tanishtiring",
+      ru: "Расскажите мне про Agora",
     },
     prompt: {
       en: "Introduce Agora to me in 1–2 paragraphs. Cover what it is, the core concepts (workspace / issue / agent / runtime), and how it differs from tools like Linear or Jira.",
       zh: "用 1-2 段话简单介绍 Agora 给我。讲清楚它是什么、核心概念有哪些(workspace / issue / agent / runtime)、和 Linear / Jira 之类的工具核心区别在哪。",
-      ko: "Agora를 1-2문단으로 간단히 소개해 주세요. 무엇인지, 핵심 개념(workspace / issue / agent / runtime)이 무엇인지, Linear나 Jira 같은 도구와 핵심적으로 어떻게 다른지 설명해 주세요.",
-      ja: "Agora を1〜2段落で簡単に紹介してください。何であるか、中心となる概念(workspace / issue / agent / runtime)、そして Linear や Jira のようなツールと根本的にどう違うのかを説明してください。",
+      uz: "Agora'ni menga 1-2 xatboshida qisqacha tanishtiring. U nima ekanligini, asosiy tushunchalarni (workspace / issue / agent / runtime) va u Linear yoki Jira kabi vositalardan qanday farq qilishini yoriting.",
+      ru: "Расскажите мне про Agora в 1–2 абзацах. Опишите, что это такое, ключевые концепции (workspace / issue / agent / runtime) и чем он отличается от таких инструментов, как Linear или Jira.",
     },
   },
   tour: {
     title: {
       en: "Walk me through the core features",
       zh: "带我熟悉每个功能",
-      ko: "핵심 기능을 안내해 주세요",
-      ja: "主要な機能を案内してください",
+      uz: "Asosiy imkoniyatlar boʻylab olib oʻting",
+      ru: "Проведите меня по ключевым возможностям",
     },
     prompt: {
       en: "Walk me through Agora's core features — issue, agent, squad, autopilot, chat. Pick one realistic scenario I might run into and explain how all these pieces fit together.",
       zh: "陪我熟悉 Agora 的每个核心功能 —— issue、agent、squad、autopilot、chat。挑一个我可能用得上的真实场景,讲讲这几个东西是怎么配合的。",
-      ko: "Agora의 핵심 기능인 issue, agent, squad, autopilot, chat을 안내해 주세요. 제가 실제로 겪을 만한 상황 하나를 골라 이 요소들이 어떻게 함께 작동하는지 설명해 주세요.",
-      ja: "Agora の主要な機能 — issue、agent、squad、autopilot、chat を案内してください。私が実際に遭遇しそうな現実的なシナリオを1つ選び、これらの要素がどう連携するのかを説明してください。",
+      uz: "Agora'ning asosiy imkoniyatlari —— issue, agent, squad, autopilot, chat boʻylab olib oʻting. Men duch kelishim mumkin boʻlgan bitta real vaziyatni tanlang va bu qismlar qanday birga ishlashini tushuntiring.",
+      ru: "Проведите меня по ключевым возможностям Agora —— issue, agent, squad, autopilot, chat. Выберите один реалистичный сценарий, с которым я могу столкнуться, и объясните, как все эти части сочетаются между собой.",
     },
   },
   welcome_page: {
     title: {
       en: "Show me what Agora can do for me — as slides",
       zh: "用 slides 介绍 Agora 能为我做什么",
-      ko: "Agora가 저에게 무엇을 해줄 수 있는지 슬라이드로 보여 주세요",
-      ja: "Agora が私に何をしてくれるのかをスライドで見せてください",
+      uz: "Agora men uchun nima qila olishini slaydlar koʻrinishida koʻrsating",
+      ru: "Покажите мне в виде слайдов, что Agora может сделать для меня",
     },
     prompt: {
       en: `Build me a single-file HTML slide deck that shows what Agora can do for me. Tailor it to my role and use case (see "About me" below). Paste the FULL HTML in a fenced \`\`\`html block in a comment on this issue so I can copy it straight out, save as \`agora-intro.html\`, and double-click to open it in a browser.
@@ -110,58 +110,58 @@ When done, also reply with a one-sentence summary of which scenarios you picked 
 - 左右方向键和空格切换,角落放一个小的页码指示。
 
 做完后再用一句话告诉我你为我挑了哪几个场景以及为什么。`,
-      ko: `Agora가 저에게 무엇을 해줄 수 있는지 보여주는 단일 파일 HTML 슬라이드 덱을 만들어 주세요. 제 역할과 사용 사례에 맞춰 주세요(아래 "내 정보" 참고). 전체 HTML을 이 issue의 댓글에 fenced \`\`\`html 코드 블록으로 붙여 주세요. 그대로 복사해 \`agora-intro.html\`로 저장하고 브라우저에서 더블클릭해 열 수 있어야 합니다.
+      uz: `Agora men uchun nima qila olishini koʻrsatadigan bitta faylli HTML slayd-deck yarating. Uni mening rolim va foydalanish holatimga moslang (quyidagi "Men haqimda" ga qarang). Toʻliq HTML'ni ushbu issue'ga izohda fenced \`\`\`html blokida joylang, shunda men uni toʻgʻridan-toʻgʻri nusxalab, \`agora-intro.html\` nomi bilan saqlab, brauzerda ochish uchun ikki marta bosa olaman.
 
-**출력 형식**
-- 하나의 self-contained .html 파일. CSS / JS는 모두 inline. 의존성, 빌드 도구, 외부 이미지는 쓰지 마세요(시각 요소는 CSS로 생성한 gradient, geometric shape, inline SVG를 사용).
-- 전체 5-8장:
-  1. 제목 — "[내 역할]에게 Agora가 해줄 수 있는 일"
-  2. 네 가지 핵심 개념 — workspace / issue / agent / runtime, 한 장
-  3-6. 제 사용 사례에 맞춘 구체적인 시나리오 3-4개. 각 시나리오는 "X를 하고 싶을 때 → Agora는 이렇게 처리합니다" 형식
-  7. 마무리 — 구체적인 다음 액션 하나
+**Format**
+- Bitta oʻzini oʻzi taʼminlovchi .html, barcha CSS / JS inline. Hech qanday bogʻliqlik, build vositalari yoki tashqi rasmlar yoʻq (CSS bilan yaratilgan vizuallardan foydalaning —— gradientlar, geometrik shakllar, inline SVG).
+- Jami 5-8 ta slayd:
+  1. Sarlavha —— "[mening rolim] uchun Agora nima qila oladi"
+  2. Toʻrtta asosiy tushuncha —— workspace / issue / agent / runtime, bitta slaydda
+  3-6. Mening foydalanish holatimga moslangan 3-4 ta aniq stsenariy, har biri "Siz X'ni xohlaganingizda → Agora buni shunday bajaradi" koʻrinishida
+  7. Yakun —— bitta aniq keyingi qadam amali
 
-**Viewport 규칙(반드시 지킬 것)**
-- 모든 \`.slide\`: \`height: 100vh; height: 100dvh; overflow: hidden;\`
-- 모든 font-size와 spacing 값은 \`clamp(min, preferred, max)\` 사용. 고정 px / rem 금지.
-- slide당 밀도: 제목 1개 + bullet 4개 이하, 또는 제목 1개 + 짧은 문단 2개. 넘치면 다음 slide로 분리.
-- \`prefers-reduced-motion: reduce\`를 존중해 animation을 끄세요.
+**Viewport qoidalari (muzokara qilinmaydi)**
+- Har bir \`.slide\`: \`height: 100vh; height: 100dvh; overflow: hidden;\`
+- Barcha font-size va spacing qiymatlari \`clamp(min, preferred, max)\` dan foydalanadi —— hech qachon qatʼiy px / rem emas.
+- Har slaydda zichlik: 1 sarlavha + ≤ 4 bullet, yoki 1 sarlavha + 2 ta qisqa xatboshi. Sigʻmasa → boshqa slaydga ajrating.
+- \`prefers-reduced-motion: reduce\` ni hisobga oling (animatsiyalarni oʻchiring).
 
-**미감(흔한 AI 결과물처럼 보이지 않게)**
-- Fontshare나 Google Fonts에서 개성 있는 typeface를 고르세요. Inter, Roboto, Arial, system font는 쓰지 마세요.
-- CSS variable로 일관된 palette를 정하세요: dominant color 하나 + sharp accent 하나. 흔한 "보라색 gradient + 흰 배경"은 피하세요.
-- 배경은 layered gradient나 geometric pattern으로 분위기를 만들고, flat white는 쓰지 마세요.
-- slide마다 한 번의 잘 짜인 load-in animation만 사용하세요(\`animation-delay\`로 stagger). CSS-only. 흩어진 micro-interaction은 금지.
+**Estetika (AI-slop koʻrinishidan qoching)**
+- Fontshare yoki Google Fonts'dan oʻziga xos shrift tanlang. Inter, Roboto, Arial yoki tizim shriftlaridan foydalanmang.
+- CSS oʻzgaruvchilari orqali yaxlit palitraga sodiq qoling: bitta dominant rang + bitta keskin accent. Klishe boʻlib qolgan "oq fonda binafsha gradient"dan qoching.
+- Fonlar: muhit uchun qatlamli gradientlar yoki geometrik naqshlar —— hech qachon tekis oq emas.
+- Animatsiya: har slaydda bitta yaxshi tartiblangan load-in, \`animation-delay\` bilan bosqichma-bosqich. Faqat CSS. Tarqoq mikro-oʻzaro taʼsirlar yoʻq.
 
-**Navigation**
-- ArrowLeft / ArrowRight와 Space로 이동. 모서리에 작은 page indicator를 두세요.
+**Navigatsiya**
+- Oldinga oʻtish uchun ArrowLeft / ArrowRight va Space. Burchakda kichik sahifa indikatori.
 
-완료 후, 어떤 시나리오를 골랐고 왜 골랐는지 한 문장으로 요약해 주세요.`,
-      ja: `Agora が私に何をしてくれるのかを示す、単一ファイルの HTML スライドデッキを作ってください。私の役割とユースケースに合わせてください(下の「私について」を参照)。完全な HTML を、この issue のコメントに fenced \`\`\`html コードブロックで貼り付けてください。そのままコピーして \`agora-intro.html\` として保存し、ブラウザでダブルクリックして開けるようにしてください。
+Tugatgach, men uchun qaysi stsenariylarni tanlaganingiz va nima uchun tanlaganingizni bir jumlada xulosa qiling.`,
+      ru: `Сделайте мне одностраничную HTML-презентацию (slide deck) в одном файле, которая покажет, что Agora может сделать для меня. Подстройте её под мою роль и сценарий использования (см. "Обо мне" ниже). Вставьте ПОЛНЫЙ HTML в виде fenced \`\`\`html блока в комментарии к этой issue, чтобы я мог скопировать его напрямую, сохранить как \`agora-intro.html\` и открыть двойным щелчком в браузере.
 
-**出力フォーマット**
-- 1つの self-contained な .html。CSS / JS はすべて inline。依存関係なし、ビルドツールなし、外部画像なし(視覚要素は CSS で生成 — グラデーション、幾何学的な図形、inline SVG を使用)。
-- 全体で5〜8枚のスライド:
-  1. タイトル — 「[私の役割] に Agora ができること」
-  2. 4つの中心概念 — workspace / issue / agent / runtime を1枚で
-  3〜6. 私のユースケースに合わせた具体的なシナリオを3〜4個。それぞれ「X をしたいとき → Agora はこう処理します」の形で
-  7. 締め — 具体的な次の一歩のアクション
+**Формат**
+- Один самодостаточный .html, весь CSS / JS встроены (inline). Никаких зависимостей, build-инструментов, внешних изображений (используйте визуалы, созданные средствами CSS —— градиенты, геометрические фигуры, inline SVG).
+- Всего 5-8 слайдов:
+  1. Титул —— "Что Agora может сделать для [моя роль]"
+  2. Четыре ключевые концепции —— workspace / issue / agent / runtime, на одном слайде
+  3-6. 3-4 конкретных сценария под мой случай использования, каждый в форме "Когда вы хотите X → вот как Agora это решает"
+  7. Заключение —— одно конкретное действие-следующий шаг
 
-**ビューポートのルール(必ず守ること)**
-- すべての \`.slide\`: \`height: 100vh; height: 100dvh; overflow: hidden;\`
-- すべての font-size と spacing は \`clamp(min, preferred, max)\` を使用。固定の px / rem は使わない。
-- 1枚あたりの密度: 見出し1つ + bullet 4つ以下、または見出し1つ + 短い段落2つ。あふれたら次のスライドに分ける。
-- \`prefers-reduced-motion: reduce\` を尊重する(アニメーションを無効化)。
+**Правила вьюпорта (не обсуждаются)**
+- Каждый \`.slide\`: \`height: 100vh; height: 100dvh; overflow: hidden;\`
+- Все значения font-size и spacing используют \`clamp(min, preferred, max)\` —— никогда фиксированные px / rem.
+- Плотность на слайд: 1 заголовок + ≤ 4 пунктов, ИЛИ 1 заголовок + 2 коротких абзаца. Не помещается → разбейте на ещё один слайд.
+- Учитывайте \`prefers-reduced-motion: reduce\` (отключайте анимации).
 
-**美しさ(ありがちな AI っぽい見た目を避ける)**
-- Fontshare か Google Fonts から個性のある typeface を選ぶ。Inter、Roboto、Arial、システムフォントは使わない。
-- CSS variable で一貫した palette を決める: 主となる色1つ + 鋭いアクセント1つ。ありがちな「紫のグラデーション + 白背景」は避ける。
-- 背景: 雰囲気を出すために重ねたグラデーションや幾何学パターンを使い、のっぺりした白は使わない。
-- アニメーション: スライドごとに、よく練られた load-in を1回だけ(\`animation-delay\` でずらす)。CSS のみ。散らばった micro-interaction は禁止。
+**Эстетика (избегайте типичного AI-вида)**
+- Выберите выразительный шрифт из Fontshare или Google Fonts. НЕ используйте Inter, Roboto, Arial или системные шрифты.
+- Придерживайтесь цельной палитры через CSS-переменные: один доминирующий цвет + один резкий accent. Избегайте заезженного "фиолетовый градиент на белом".
+- Фоны: многослойные градиенты или геометрические паттерны для атмосферы —— никогда плоский белый.
+- Анимация: одна хорошо срежиссированная load-in на слайд через ступенчатые \`animation-delay\`. Только CSS. Никаких разрозненных микро-взаимодействий.
 
-**ナビゲーション**
-- ArrowLeft / ArrowRight と Space で進む。隅に小さな page indicator を置く。
+**Навигация**
+- ArrowLeft / ArrowRight и Space для перехода вперёд. Небольшой индикатор страниц в углу.
 
-完成したら、私のためにどのシナリオを選び、なぜ選んだのかを一文で要約してください。`,
+По завершении также ответьте одним предложением с резюме: какие сценарии вы выбрали для меня и почему.`,
     },
   },
 };

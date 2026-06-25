@@ -22,12 +22,12 @@ const HELPER_AGENT_NAME = "Agora Helper";
 export const CREATE_AGENT_GUIDE_ISSUE_TITLE = {
   en: "Step 2 — Create your first Agora Agent",
   zh: "第 2 步 —— 创建你的第一个 Agora Agent",
-  ko: "2단계 — 첫 Agora Agent 만들기",
-  ja: "ステップ2 — 最初の Agora Agent を作成する",
+  uz: "2-qadam — Birinchi Agora Agent'ingizni yarating",
+  ru: "Шаг 2 — Создайте своего первого Agora Agent",
 } as const;
 
 interface BodyOpts {
-  lang: "en" | "zh" | "ko" | "ja";
+  lang: "en" | "zh" | "uz" | "ru";
   installRuntimeIdentifier: string;
   installRuntimeId: string;
 }
@@ -37,11 +37,11 @@ export function getCreateAgentGuideBody(opts: BodyOpts): string {
   if (opts.lang === "zh") {
     return zhBody(mention);
   }
-  if (opts.lang === "ko") {
-    return koBody(mention);
+  if (opts.lang === "uz") {
+    return uzBody(mention);
   }
-  if (opts.lang === "ja") {
-    return jaBody(mention);
+  if (opts.lang === "ru") {
+    return ruBody(mention);
   }
   return enBody(mention);
 }
@@ -130,18 +130,18 @@ ${HELPER_INSTRUCTIONS.zh}
 - **文档** —— https://agora.dev/docs。`;
 }
 
-function koBody(installRuntimeMention: string): string {
-  return `runtime이 online 상태가 되면(${installRuntimeMention} 참고), 첫 agent인 Agora Helper를 만드세요. 아래 prompt는 미리 작성되어 있으니 그대로 복사하면 됩니다.
+function uzBody(installRuntimeMention: string): string {
+  return `runtime online holatga oʻtgach (${installRuntimeMention} ga qarang), birinchi agent —— Agora Helper —— ni yarating. Quyidagi prompt oldindan yozilgan; shunchaki nusxa oling.
 
-## 1. 새 agent 화면 열기
+## 1. Yangi agent oynasini oching
 
-사이드바에서 **Agents**를 열고 **New Agent**를 클릭합니다.
+Yon panelda **Agents** ga oʻting → **New Agent** ni bosing.
 
-## 2. 방금 설치한 runtime 선택
+## 2. Endigina oʻrnatgan runtime'ni tanlang
 
-"Runtime"에서 해당 runtime을 선택합니다. 아무것도 보이지 않는다면 runtime이 아직 online이 아닙니다. ${installRuntimeMention}의 설치 단계를 먼저 끝내세요.
+"Runtime" ostida runtime'ni tanlang. Hech narsa koʻrinmasa, runtime hali online emas —— ${installRuntimeMention} dagi oʻrnatish qadamlarini tugating.
 
-## 3. 각 블록을 맞는 필드에 복사
+## 3. Har bir blokni tegishli maydonga nusxalang
 
 **Name**
 \`\`\`md
@@ -150,40 +150,40 @@ ${HELPER_AGENT_NAME}
 
 **Description**
 \`\`\`md
-${HELPER_DESCRIPTION.ko}
+${HELPER_DESCRIPTION.uz}
 \`\`\`
 
 **Instructions**
 \`\`\`md
-${HELPER_INSTRUCTIONS.ko}
+${HELPER_INSTRUCTIONS.uz}
 \`\`\`
 
-## 4. 저장 → issue 배정
+## 4. Saqlash → issue tayinlash
 
-**Create**를 누릅니다. 새 agent가 워크스페이스 agent 목록에 표시됩니다.
+**Create** ni bosing. Yangi agent workspace agent roʻyxatida paydo boʻladi.
 
-이제 issue를 만들거나 기존 issue를 다시 배정한 뒤 assignee를 Agora Helper로 설정하고 status를 **todo**로 바꾸세요. runtime이 몇 초 안에 작업을 가져가 실행을 시작합니다. 진행 상황은 issue의 task panel에서 볼 수 있습니다.
+Endi issue yarating (yoki mavjudini qayta tayinlang) → assignee = Agora Helper qiling → statusni **todo** ga oʻtkazing. runtime bir necha soniya ichida vazifani oladi va ishlay boshlaydi. Jarayonni issue'ning task panel'ida kuzating.
 
-## 다음에 볼 곳
+## Keyin qayerga borish kerak
 
-- **Skills** — 어떤 agent에도 붙일 수 있는 재사용 instruction pack입니다.
-- **Squads** — 함께 배정할 수 있는 agent 그룹입니다.
-- **Autopilots** — 예약 또는 webhook으로 실행되는 작업입니다.
-- **Docs** — https://agora.dev/docs.`;
+- **Skills** —— istalgan agent'ga biriktirsa boʻladigan qayta ishlatiladigan instruction paketlari.
+- **Squads** —— birga tayinlanishi mumkin boʻlgan agent guruhlari.
+- **Autopilots** —— rejalashtirilgan yoki webhook orqali ishga tushadigan jarayonlar.
+- **Docs** —— https://agora.dev/docs.`;
 }
 
-function jaBody(installRuntimeMention: string): string {
-  return `runtime が online になったら(${installRuntimeMention} を参照)、最初の agent である Agora Helper を作りましょう。下の prompt はあらかじめ書いてあるので、そのままコピーするだけです。
+function ruBody(installRuntimeMention: string): string {
+  return `Как только ваш runtime будет online (см. ${installRuntimeMention}), создайте первого agent —— Agora Helper. Промпт ниже уже написан; просто скопируйте его.
 
-## 1. 新しい agent の画面を開く
+## 1. Откройте экран нового agent
 
-サイドバーの **Agents** を開き、**New Agent** をクリックします。
+Перейдите в **Agents** на боковой панели → нажмите **New Agent**.
 
-## 2. さっきインストールした runtime を選ぶ
+## 2. Выберите только что установленный runtime
 
-"Runtime" でその runtime を選びます。何も表示されない場合は runtime がまだ online ではありません。${installRuntimeMention} のインストール手順を先に終わらせてください。
+Выберите runtime в разделе "Runtime". Если ничего не отображается, значит runtime ещё не online —— завершите шаги установки в ${installRuntimeMention}.
 
-## 3. 各ブロックを対応するフィールドにコピーする
+## 3. Скопируйте каждый блок в соответствующее поле
 
 **Name**
 \`\`\`md
@@ -192,24 +192,24 @@ ${HELPER_AGENT_NAME}
 
 **Description**
 \`\`\`md
-${HELPER_DESCRIPTION.ja}
+${HELPER_DESCRIPTION.ru}
 \`\`\`
 
 **Instructions**
 \`\`\`md
-${HELPER_INSTRUCTIONS.ja}
+${HELPER_INSTRUCTIONS.ru}
 \`\`\`
 
-## 4. 保存 → issue を割り当てる
+## 4. Сохраните → назначьте issue
 
-**Create** を押します。新しい agent がワークスペースの agent 一覧に表示されます。
+Нажмите **Create**. Новый agent появится в списке agent рабочего пространства.
 
-次に issue を作る(または既存の issue を割り当て直す)→ assignee を Agora Helper にする → status を **todo** にします。runtime が数秒以内にタスクを受け取って作業を始めます。進捗は issue の task panel で確認できます。
+Теперь создайте issue (или переназначьте существующую) → установите assignee = Agora Helper → переключите статус на **todo**. runtime подхватит задачу за несколько секунд и начнёт работу. Следите за прогрессом в task panel этой issue.
 
-## 次に見る場所
+## Куда двигаться дальше
 
-- **Skills** — どの agent にも付けられる、再利用可能な instruction パックです。
-- **Squads** — 一緒に割り当てられる agent のグループです。
-- **Autopilots** — スケジュールや webhook で実行される処理です。
-- **Docs** — https://agora.dev/docs。`;
+- **Skills** —— переиспользуемые наборы инструкций, которые можно прикрепить к любому agent.
+- **Squads** —— группы agent, которые можно назначать вместе.
+- **Autopilots** —— запуски по расписанию или по webhook.
+- **Docs** —— https://agora.dev/docs.`;
 }

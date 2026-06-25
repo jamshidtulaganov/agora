@@ -1,0 +1,76 @@
+{
+  "page": {
+    "title": "Squad’ы",
+    "new_button": "Новый Squad",
+    "empty_no_squads": "Squad’ов пока нет. Создайте один, чтобы начать.",
+    "empty_no_match": "Нет Squad’ов, соответствующих вашим фильтрам."
+  },
+  "inspector": {
+    "details_section": "Детали",
+    "archive_button": "Архивировать"
+  },
+  "archive_dialog": {
+    "title": "Архивировать этот Squad?",
+    "description": "«{{name}}» будет архивирован. Задачи, назначенные сейчас этому Squad, будут переданы его лидеру. Это нельзя отменить — создайте новый Squad, если маршрутизация снова понадобится.",
+    "cancel": "Отмена",
+    "confirm": "Архивировать",
+    "archiving": "Архивирование…"
+  },
+  "name_editor": {
+    "cancel": "Отмена"
+  },
+  "add_member_dialog": {
+    "title": "Добавить участника",
+    "description": "Добавьте участника рабочего пространства или агента в этот Squad.",
+    "label_member": "Участник",
+    "label_role": "Роль",
+    "label_optional": "(необязательно)",
+    "placeholder_role_inline": "Добавить роль…",
+    "cancel": "Отмена"
+  },
+  "description_dialog": {
+    "title": "Редактировать описание",
+    "placeholder_empty": "Добавить описание",
+    "cancel": "Отмена"
+  },
+  "discard_changes_dialog": {
+    "title": "Отменить несохранённые изменения?",
+    "description": "На этой вкладке есть несохранённые изменения. При переключении вкладок они будут потеряны.",
+    "keep_editing": "Продолжить редактирование",
+    "discard_button": "Отменить"
+  },
+  "members_tab": {
+    "section_title": "Участники",
+    "section_count_one": "{{count}} участник в этом Squad",
+    "section_count_other": "{{count}} участников в этом Squad",
+    "add_member_button": "Добавить участника",
+    "create_agent_button": "Создать агента",
+    "leader_chip": "Лидер",
+    "view_agent_tooltip": "Открыть детали агента",
+    "make_leader_tooltip": "Сделать лидером Squad",
+    "remove_member_tooltip": "Удалить из Squad",
+    "status_working": "Работает",
+    "status_idle": "Простаивает",
+    "status_offline": "Не в сети",
+    "status_unstable": "Нестабилен",
+    "status_archived": "Архивирован",
+    "issue_status_blocked": "заблокирована",
+    "active_issue_more": "и ещё {{count}}",
+    "last_active_label": "последняя активность {{time}}"
+  },
+  "profile_card": {
+    "unavailable": "Squad недоступен",
+    "detail_link": "Детали →",
+    "archived": "Архивирован",
+    "member_count_one": "{{count}} участник",
+    "member_count_other": "{{count}} участников",
+    "members_section": "Участники",
+    "more_members_one": "+ещё {{count}}",
+    "more_members_other": "+ещё {{count}}"
+  },
+  "instructions_tab": {
+    "description": "Инструкции Squad добавляются в запрос лидера-агента всякий раз, когда он работает над задачей, назначенной этому Squad. Используйте их, чтобы дать лидеру общие для Squad указания, рабочие договорённости или контекст, которому лидер должен следовать в каждом задании.",
+    "unsaved_changes": "Несохранённые изменения",
+    "save_button": "Сохранить"
+  }
+}

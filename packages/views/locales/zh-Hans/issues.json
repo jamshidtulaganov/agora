@@ -87,7 +87,9 @@
     "board": "看板",
     "list": "列表",
     "gantt": "甘特图",
-    "swimlane": "泳道"
+    "swimlane": "泳道",
+    "tree": "树形",
+    "tooltip_tree": "冲刺树视图"
   },
   "gantt": {
     "header_issue": "Issue",
@@ -220,7 +222,9 @@
     "link_copy_failed": "复制链接失败",
     "workdir_path_copied": "已复制本地 workdir 路径",
     "workdir_path_copy_failed": "复制本地 workdir 路径失败",
-    "workdir_path_unavailable": "暂无本地 workdir — 这个 issue 还没被本地 agent 运行过"
+    "workdir_path_unavailable": "暂无本地 workdir — 这个 issue 还没被本地 agent 运行过",
+    "description_show_more": "显示更多",
+    "description_show_less": "收起"
   },
   "timeline": {
     "loading": "加载中…"
@@ -332,6 +336,23 @@
     "stop_button": "停止",
     "stop_tooltip": "停止智能体",
     "cancel_failed": "取消 task 失败"
+  },
+  "live_activity": {
+    "verb": {
+      "reading": "正在读取",
+      "editing": "正在编辑",
+      "writing": "正在写入",
+      "searching": "正在搜索",
+      "running": "正在运行",
+      "fetching": "正在获取",
+      "browsing": "正在浏览",
+      "thinking": "正在思考",
+      "working": "正在工作"
+    },
+    "files_other": "{{count}} 个文件",
+    "working": "处理中…",
+    "more": "还有 {{count}} 个",
+    "show_less": "收起"
   },
   "execution_log": {
     "section": "执行日志",

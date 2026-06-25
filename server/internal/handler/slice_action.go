@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -164,6 +165,18 @@ func (h *Handler) sliceActionBranchInstruction(ctx context.Context, issue db.Iss
 	return branchInstructionFor(h.issueRepoIsGitLab(ctx, issue), branch)
 }
 
+// gitlabBaseBranch is the branch GitLab merge-request slice actions target +
+// branch from. Defaults to `main`; set AGORA_GITLAB_MR_TARGET (e.g. "dev") to
+// route agent MRs at a staging branch so their work does NOT auto-deploy to
+// prod every iteration (main → prod via deploy:main). The human then merges
+// the staging branch into main once, for a single prod deploy.
+func gitlabBaseBranch() string {
+	if b := strings.TrimSpace(os.Getenv("AGORA_GITLAB_MR_TARGET")); b != "" {
+		return b
+	}
+	return "main"
+}
+
 // branchInstructionFor is the pure text policy behind sliceActionBranchInstruction
 // (split out so it is unit-testable without a DB). GitLab → merge-request push
 // options against `main`; GitHub with a known branch → `gh` PR against `billing`;
@@ -174,9 +187,10 @@ func branchInstructionFor(isGitLab bool, branch string) string {
 		if name == "" {
 			name = "a short descriptive"
 		}
+		base := gitlabBaseBranch()
 		return " This is a GitLab repository — there is no `gh` or GitHub pull-request flow here. Create branch `" + name +
-			"` from `main`, commit your change, and push it WITH GitLab merge-request push options so a Merge Request opens automatically: " +
-			"`git push -o merge_request.create -o merge_request.target=main -o merge_request.remove_source_branch origin <branch>`. " +
+			"` from `" + base + "`, commit your change, and push it WITH GitLab merge-request push options so a Merge Request opens automatically: " +
+			"`git push -o merge_request.create -o merge_request.target=" + base + " -o merge_request.remove_source_branch origin <branch>`. " +
 			"Do NOT merge the merge request — leave that decision to the human reviewer."
 	}
 	if branch != "" {
@@ -184,6 +198,65 @@ func branchInstructionFor(isGitLab bool, branch string) string {
 			", branch it from `billing`, and open the pull request against the `billing` base branch (never master)."
 	}
 	return ""
+}
+
+// issueTaskType maps the issue's `type:*` label to a workflow mode: "bug",
+// "feature", or "chore" ("" when untyped). The human tags the type (no
+// auto-classify), so this just reflects their intent into how the agent works.
+func (h *Handler) issueTaskType(ctx context.Context, issue db.Issue) string {
+	labels, err := h.Queries.ListLabelsByIssue(ctx, db.ListLabelsByIssueParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		return ""
+	}
+	for _, l := range labels {
+		switch strings.ToLower(strings.TrimSpace(l.Name)) {
+		case "type:bug":
+			return "bug"
+		case "type:feature":
+			return "feature"
+		case "type:chore", "type:refactor":
+			return "chore"
+		}
+	}
+	return ""
+}
+
+// taskModeInstructionFor returns the type-specific approach appended to a
+// draft_code action so the agent works like a real engineer for that kind of
+// work: a BUG gets a reproduce → root-cause → verify debugger loop; a FEATURE
+// gets design-variants-first. PURE (unit-tested without a DB).
+func taskModeInstructionFor(taskType string) string {
+	switch taskType {
+	case "bug":
+		return " This is a BUG (type:bug) — work like a debugger, not a patcher: " +
+			"(1) REPRODUCE it first with a failing test or a concrete runnable repro that currently FAILS; " +
+			"(2) trace the ROOT CAUSE — and check the ACTUAL installed version of any library/framework you touch " +
+			"(read its types/docs) instead of assuming an API from memory; " +
+			"(3) apply the smallest fix that addresses the cause; " +
+			"(4) prove the failing test/repro now PASSES. Show failing-before / passing-after in the PR."
+	case "feature":
+		return " This is a FEATURE (type:feature) — work like a product engineer: " +
+			"(1) when any UI is involved, lay out 2-3 DESIGN VARIANTS (layout/interaction options + tradeoffs) and get " +
+			"the direction reviewed — defer to the designer agent's variants if one is already posted — before " +
+			"committing to a single build; (2) build the chosen approach; (3) verify the new behavior with a test that " +
+			"exercises it. Note which variant you built and why."
+	default:
+		return ""
+	}
+}
+
+// verifyGateInstruction is the universal "prove it works before you call it
+// done" clause for draft_code actions. Closes the recurring failure where an
+// agent reported success from code inspection and re-ran blindly because it
+// never actually exercised the change. PURE.
+func verifyGateInstruction() string {
+	return " VERIFY before opening the PR — never report success from inspection alone: add or run a test that " +
+		"exercises THIS change (for UI, a component test that drives the affected element and asserts the resulting " +
+		"state; for logic, a unit/integration test) AND run the build / type-check. State in the PR exactly what you " +
+		"ran and its result. If a check cannot run in your environment, say so explicitly rather than assuming it passes."
 }
 
 // sanitizeSliceScope neutralizes a caller-supplied scope so it can NEVER form a
@@ -292,6 +365,13 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 	// (gh pr list --head btx-<id>). Done in the handler, not in the pure
 	// buildSliceInstruction, because it depends on the issue's metadata.
 	if sliceActionOpensPR(req.Kind) {
+		// draft_code adapts to the issue's type label (bug → debugger loop,
+		// feature → design-variants-first) and always carries the verify gate
+		// so the agent proves the change works before opening the PR.
+		if req.Kind == sliceActionDraftCode {
+			instruction += taskModeInstructionFor(h.issueTaskType(r.Context(), issue))
+			instruction += verifyGateInstruction()
+		}
 		instruction += h.sliceActionBranchInstruction(r.Context(), issue)
 	}
 

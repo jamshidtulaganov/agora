@@ -12,8 +12,8 @@ import { useRouter } from "next/navigation";
 import { useConfigStore } from "@agora/core/config";
 import { createBrowserCookieLocaleAdapter } from "@agora/core/i18n/browser";
 import { createEnDict } from "./en";
-import { createJaDict } from "./ja";
-import { createKoDict } from "./ko";
+import { createRuDict } from "./ru";
+import { createUzDict } from "./uz";
 import { createZhDict } from "./zh";
 import {
   toLandingDictionaryLocale,
@@ -27,8 +27,8 @@ const dictionaryFactories: Record<
   (allowSignup: boolean) => LandingDict
 > = {
   en: createEnDict,
-  ja: createJaDict,
-  ko: createKoDict,
+  uz: createUzDict,
+  ru: createRuDict,
   zh: createZhDict,
 };
 

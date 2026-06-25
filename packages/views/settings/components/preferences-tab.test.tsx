@@ -110,21 +110,21 @@ describe("PreferencesTab — Language switcher", () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<PreferencesTab />, { wrapper: I18nWrapper });
 
-    await user.click(screen.getByRole("radio", { name: "한국어" }));
+    await user.click(screen.getByRole("radio", { name: "Oʻzbekcha" }));
 
-    expect(mockPersist).toHaveBeenCalledWith("ko");
+    expect(mockPersist).toHaveBeenCalledWith("uz");
     expect(mockUpdateMe).not.toHaveBeenCalled();
     expect(mockReload).toHaveBeenCalledTimes(1);
     expect(mockToastWarning).not.toHaveBeenCalled();
   });
 
-  it("when not logged in: selecting Japanese persists ja + reloads, no PATCH", async () => {
+  it("when not logged in: selecting Russian persists ru + reloads, no PATCH", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<PreferencesTab />, { wrapper: I18nWrapper });
 
-    await user.click(screen.getByRole("radio", { name: "日本語" }));
+    await user.click(screen.getByRole("radio", { name: "Русский" }));
 
-    expect(mockPersist).toHaveBeenCalledWith("ja");
+    expect(mockPersist).toHaveBeenCalledWith("ru");
     expect(mockUpdateMe).not.toHaveBeenCalled();
     expect(mockReload).toHaveBeenCalledTimes(1);
     expect(mockToastWarning).not.toHaveBeenCalled();

@@ -10,8 +10,8 @@
       "title": "语言",
       "english": "English",
       "chinese": "中文",
-      "korean": "한국어",
-      "japanese": "日本語",
+      "uzbek": "Oʻzbekcha",
+      "russian": "Русский",
       "sync_failed": "语言已在本设备保存，但同步到账号失败。其他设备可能仍显示旧语言。"
     },
     "timezone": {
@@ -138,7 +138,7 @@
     "name_label": "名称",
     "description_label": "描述",
     "description_placeholder": "这个工作区主要做什么？",
-    "context_label": "上下文",
+    "context_label": "知识库",
     "context_placeholder": "供工作区中的智能体参考的背景信息和上下文",
     "slug_label": "Slug",
     "issue_prefix_label": "Issue 前缀",

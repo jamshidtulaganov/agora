@@ -5,7 +5,8 @@ describe("docsHrefForLocale", () => {
   it("routes each supported locale to the matching docs entry", () => {
     expect(docsHrefForLocale("en")).toBe("/docs");
     expect(docsHrefForLocale("zh-Hans")).toBe("/docs/zh");
-    expect(docsHrefForLocale("ko")).toBe("/docs/ko");
-    expect(docsHrefForLocale("ja")).toBe("/docs/ja");
+    // uz/ru have no dedicated docs subsite yet — they fall back to /docs.
+    expect(docsHrefForLocale("uz")).toBe("/docs");
+    expect(docsHrefForLocale("ru")).toBe("/docs");
   });
 });

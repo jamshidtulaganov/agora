@@ -1,0 +1,44 @@
+{
+  "title": "Qidiruv",
+  "description": "Sahifalar, vazifalar, loyihalar va a’zolarni qidirish",
+  "placeholder": "Buyruq yozing yoki qidiring...",
+  "groups": {
+    "pages": "Sahifalar",
+    "commands": "Buyruqlar",
+    "members": "A’zolar",
+    "projects": "Loyihalar",
+    "issues": "Vazifalar",
+    "recent": "Yaqinda"
+  },
+  "pages": {
+    "inbox": "Kiruvchilar",
+    "my_issues": "Mening vazifalarim",
+    "issues": "Vazifalar",
+    "projects": "Loyihalar",
+    "agents": "Agentlar",
+    "runtimes": "Runtime’lar",
+    "skills": "Skill’lar",
+    "settings": "Sozlamalar"
+  },
+  "commands": {
+    "current_theme_aria": "Joriy mavzu",
+    "new_issue": "Yangi vazifa",
+    "new_project": "Yangi loyiha",
+    "copy_issue_link": "Vazifa havolasidan nusxa olish",
+    "copy_identifier": "Identifikatordan nusxa olish ({{identifier}})",
+    "switch_to_light": "Yorug‘ mavzuga o‘tish",
+    "switch_to_dark": "Qorong‘i mavzuga o‘tish",
+    "use_system_theme": "Tizim mavzusidan foydalanish"
+  },
+  "toast": {
+    "link_copied": "Havola nusxalandi",
+    "copied_identifier": "{{identifier}} nusxalandi"
+  },
+  "empty": {
+    "no_results": "Natija topilmadi.",
+    "type_to_search": "Vazifa va loyihalarni qidirish uchun yozing"
+  },
+  "trigger": {
+    "label": "Qidirish..."
+  }
+}

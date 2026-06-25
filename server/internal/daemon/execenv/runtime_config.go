@@ -520,6 +520,18 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 		b.WriteString("Do not compress a multi-paragraph answer into one line and do not rely on `\\n` escapes.\n\n")
 	}
 
+	// Showing Code Changes — a platform-wide output contract (all workspaces):
+	// whenever a task involved code changes, the agent's comment must surface
+	// the actual diff, not just prose, so a reviewer sees every changed line in
+	// the timeline without opening the repo. Always written so it applies across
+	// every trigger type (assignment, comment, autopilot) and provider.
+	b.WriteString("## Showing Code Changes\n\n")
+	b.WriteString("When your work for this task included **code changes** (you edited, added, or removed files in a checked-out repo), your final comment MUST show the actual change as a diff — not just a prose summary — so the reviewer sees every changed line without opening the repo.\n\n")
+	b.WriteString("- Include the diff in a fenced ```diff``` block: run `git --no-pager diff <base>...HEAD` (or `git --no-pager diff <base>...<branch>`). For a large diff, lead with `git --no-pager diff --stat`, then the meaningful hunks per file (not whole files).\n")
+	b.WriteString("- Add a one-line **per-file summary** (`path — what changed`) and the **before → after** for each behavioral change.\n")
+	b.WriteString("- If you pushed a branch, state the branch and that `git push` returned exit 0, and include the PR or compare URL.\n")
+	b.WriteString("- Never describe a code change without showing its lines. Docs/data-only and no-code tasks are exempt.\n\n")
+
 	// Inject available repositories section.
 	if len(ctx.Repos) > 0 {
 		b.WriteString("## Repositories\n\n")
@@ -647,10 +659,10 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 		}
 		fmt.Fprintf(&b, "4. Find the triggering comment (ID: `%s`) and understand what is being asked — do NOT confuse it with previous comments\n", ctx.TriggerCommentID)
 		if ctx.IsSquadLeader {
-			b.WriteString("5. **Decide whether a reply is warranted.** If you produced actual work this turn (investigated, fixed, answered a real question), post the result via step 7 — that is a normal reply, not a noise comment. If the triggering comment was a pure acknowledgment / thanks / sign-off from another agent AND you produced no work this turn, do NOT post a reply — and do NOT post a comment saying 'No reply needed' or similar. Simply exit with no output. Silence is a valid and preferred way to end agent-to-agent conversations.\n")
+			b.WriteString("5. **Decide whether a reply is warranted.** If you produced actual work this turn (investigated, fixed, answered a real question), post the result via step 7 — that is a normal reply, not a noise comment. **A comment from a human user (not another agent) ALWAYS warrants a reply: answer their question or request directly, in the language they used, and never stay silent on it — the silence option below applies ONLY to agent-to-agent exchanges.** If the triggering comment was a pure acknowledgment / thanks / sign-off from another agent AND you produced no work this turn, do NOT post a reply — and do NOT post a comment saying 'No reply needed' or similar. Simply exit with no output. Silence is a valid and preferred way to end agent-to-agent conversations.\n")
 			fmt.Fprintf(&b, "   - **Squad leader rule:** If your evaluation outcome is `no_action`, call `agora squad activity %s no_action --reason \"...\"` and then EXIT IMMEDIATELY. DO NOT post any comment whose only purpose is to announce that you are taking no action, exiting silently, or acknowledging another agent. A comment like \"No action needed\" or \"Exiting silently\" is noise — the `squad activity` call already records your decision in the timeline.\n", ctx.IssueID)
 		} else {
-			b.WriteString("5. **Decide whether a reply is warranted.** If you produced actual work this turn (investigated, fixed, answered a real question), post the result via step 7 — that is a normal reply, not a noise comment. If the triggering comment was a pure acknowledgment / thanks / sign-off from another agent AND you produced no work this turn, do NOT post a reply — and do NOT post a comment saying 'No reply needed' or similar. Simply exit with no output. Silence is a valid and preferred way to end agent-to-agent conversations.\n")
+			b.WriteString("5. **Decide whether a reply is warranted.** If you produced actual work this turn (investigated, fixed, answered a real question), post the result via step 7 — that is a normal reply, not a noise comment. **A comment from a human user (not another agent) ALWAYS warrants a reply: answer their question or request directly, in the language they used, and never stay silent on it — the silence option below applies ONLY to agent-to-agent exchanges.** If the triggering comment was a pure acknowledgment / thanks / sign-off from another agent AND you produced no work this turn, do NOT post a reply — and do NOT post a comment saying 'No reply needed' or similar. Simply exit with no output. Silence is a valid and preferred way to end agent-to-agent conversations.\n")
 		}
 		b.WriteString("6. If a reply IS warranted: do any requested work first, then **decide whether to include any `@mention` link.** The default is NO mention. Only mention when you are escalating to a human owner who is not yet involved, delegating a concrete new sub-task to another agent for the first time, or the user explicitly asked you to loop someone in. Never @mention the agent you are replying to as a thank-you or sign-off.\n")
 		b.WriteString("7. **If you reply, post it as a comment — this step is mandatory when you reply.** Text in your terminal or run logs is NOT delivered to the user. ")

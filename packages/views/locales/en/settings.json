@@ -10,8 +10,8 @@
       "title": "Language",
       "english": "English",
       "chinese": "中文",
-      "korean": "한국어",
-      "japanese": "日本語",
+      "uzbek": "Oʻzbekcha",
+      "russian": "Русский",
       "sync_failed": "Language saved on this device, but failed to sync to your account. Other devices may show the previous language."
     },
     "timezone": {
@@ -138,7 +138,7 @@
     "name_label": "Name",
     "description_label": "Description",
     "description_placeholder": "What does this workspace focus on?",
-    "context_label": "Context",
+    "context_label": "Knowledge Base",
     "context_placeholder": "Background information and context for AI agents working in this workspace",
     "slug_label": "Slug",
     "issue_prefix_label": "Issue prefix",

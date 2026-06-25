@@ -180,6 +180,41 @@ func TestInjectRuntimeConfigCommentTriggerUsesHelper(t *testing.T) {
 	}
 }
 
+// TestInjectRuntimeConfigShowsCodeChanges pins the platform-wide
+// "## Showing Code Changes" output contract: every agent brief — across all
+// workspaces, providers, and trigger types — must instruct the agent to
+// surface the actual git diff in its comment when the task involved code
+// changes. The section is written unconditionally (before the trigger-type
+// branch), so an assignment-triggered task carries it too.
+func TestInjectRuntimeConfigShowsCodeChanges(t *testing.T) {
+	saved := runtimeGOOS
+	t.Cleanup(func() { runtimeGOOS = saved })
+	runtimeGOOS = "linux"
+
+	dir := t.TempDir()
+	ctx := TaskContextForEnv{
+		IssueID: "11111111-1111-1111-1111-111111111111",
+	}
+	if _, err := InjectRuntimeConfig(dir, "claude", ctx); err != nil {
+		t.Fatalf("InjectRuntimeConfig failed: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("read CLAUDE.md: %v", err)
+	}
+	s := string(content)
+	for _, want := range []string{
+		"## Showing Code Changes",
+		"git --no-pager diff",
+		"```diff```",
+		"Never describe a code change without showing its lines",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("CLAUDE.md missing %q", want)
+		}
+	}
+}
+
 // TestInjectRuntimeConfigWindowsCommentTriggerHasNoStdin asserts the
 // end-to-end CLAUDE.md / AGENTS.md surface for a comment-triggered task on
 // a Windows daemon — across Codex and non-Codex providers — has no

@@ -1,0 +1,371 @@
+{
+  "page": {
+    "title": "Runtime",
+    "tagline": "Машины и облачные воркеры, запускающие CLI-сессии для ваших агентов.",
+    "learn_more": "Подробнее →",
+    "connect_remote": "Добавить компьютер",
+    "search_placeholder": "Поиск runtime…",
+    "scope_mine": "Мои",
+    "scope_all": "Все",
+    "live": "Live",
+    "live_tooltip": "Обновления в реальном времени · обнаружение оффлайна до 75 с",
+    "filter_all": "Все",
+    "filter_all_description": "Все runtime в этом представлении",
+    "empty": {
+      "title": "Пока нет runtime",
+      "hint": "Desktop автоматически сканирует этот компьютер. Чтобы использовать другую машину — сервер, dev-машину или любой компьютер с терминалом — добавьте её здесь."
+    },
+    "no_matches": {
+      "title": "Нет совпадений",
+      "with_query": "Нет runtime, соответствующих «{{query}}»{{filterSuffix}}.",
+      "with_query_filter_suffix": " в этом фильтре",
+      "no_query": "Нет runtime, соответствующих этому фильтру.",
+      "try_widening": " Попробуйте расширить область или сбросить фильтры."
+    },
+    "bootstrapping": {
+      "title": "Запуск локального runtime…",
+      "hint": "Обычно это занимает несколько секунд. Ваш daemon регистрируется в рабочем пространстве."
+    }
+  },
+  "machine": {
+    "search_placeholder": "Поиск машин…",
+    "filters": {
+      "all": "Все",
+      "online": "Онлайн",
+      "issues": "Проблемы"
+    },
+    "section_local": "Локальные",
+    "section_remote": "Удалённые",
+    "section_cloud": "Облачные",
+    "this_machine": "Это устройство",
+    "local_badge": "Локальная · эта машина",
+    "runtime_count_one": "{{count}} runtime",
+    "runtime_count_other": "{{count}} runtime",
+    "busy_count_one": "{{count}} занят",
+    "busy_count_other": "{{count}} занято",
+    "no_matches_title": "Нет машин",
+    "no_matches_hint": "Нет машин, соответствующих текущему поиску или фильтру.",
+    "select_machine": "Выберите машину, чтобы посмотреть её runtime.",
+    "metrics": {
+      "runtimes": "Runtime",
+      "runtimes_hint_one": "{{count}} онлайн",
+      "runtimes_hint_other": "{{count}} онлайн",
+      "health": "Состояние",
+      "health_clear": "Нет проблем",
+      "health_issues_one": "{{count}} проблема",
+      "health_issues_other": "{{count}} проблем",
+      "workload": "Нагрузка",
+      "workload_value_idle": "Простой",
+      "workload_idle": "Все простаивают",
+      "workload_hint": "{{running}} выполняется · {{queued}} в очереди",
+      "cli": "CLI",
+      "cloud_worker": "Облачный воркер",
+      "local_daemon": "Локальный daemon"
+    }
+  },
+  "health": {
+    "online": {
+      "label": "Онлайн",
+      "description": "Heartbeat получен за последние 45 с. Готов отправлять задания."
+    },
+    "recently_lost": {
+      "label": "Недавно потерян",
+      "description": "Связь потеряна менее 5 минут назад — часто кратковременный сбой сети."
+    },
+    "offline": {
+      "label": "Оффлайн",
+      "description": "Нет heartbeat 5+ минут. Перезапустите daemon или проверьте хост."
+    },
+    "about_to_gc": {
+      "label": "Скоро GC",
+      "description": "Оффлайн 6+ дней. Будет автоматически удалён через 7 дней, если не переподключится."
+    }
+  },
+  "detail": {
+    "all_runtimes": "Все runtime",
+    "read_only": "Только чтение",
+    "delete_button": "Удалить runtime",
+    "delete_disabled_tooltip": "Этот runtime управляется работающим локальным daemon и переригистрируется в течение нескольких секунд. Остановите процесс daemon, чтобы удалить его навсегда.",
+    "last_seen": "последний раз виден {{when}}",
+    "fact_owner": "Владелец",
+    "fact_device": "Устройство",
+    "fact_runtime": "Runtime",
+    "technical_details": "Технические детали",
+    "fact_daemon_cli": "Daemon CLI",
+    "fact_daemon_id": "Daemon ID",
+    "serving_title": "Обслуживает",
+    "serving_count_one": "{{count}} агент",
+    "serving_count_other": "{{count}} агентов",
+    "no_agents": "К этому runtime пока не привязан ни один агент.",
+    "diagnostics_title": "Диагностика",
+    "diagnostics_cli": "CLI",
+    "diagnostics_visibility": "Видимость",
+    "visibility_label": {
+      "private": "Приватный",
+      "public": "Публичный"
+    },
+    "visibility_hint": {
+      "private": "Создавать агентов на этом runtime можете только вы и администраторы рабочего пространства.",
+      "public": "Создавать агентов на этом runtime может любой участник рабочего пространства."
+    },
+    "visibility_toast_updated": "Видимость установлена на {{visibility}}",
+    "visibility_toast_failed": "Не удалось обновить видимость",
+    "delete_dialog": {
+      "light": {
+        "title": "Удалить runtime?",
+        "description": "Вы уверены, что хотите удалить «{{name}}»? Это действие нельзя отменить.",
+        "cancel": "Отмена",
+        "confirm": "Удалить runtime",
+        "submitting": "Удаление..."
+      },
+      "cascade": {
+        "title_one": "Архивировать {{count}} агента и удалить этот Runtime?",
+        "title_other": "Архивировать {{count}} агентов и удалить этот Runtime?",
+        "description": "Удалить «{{name}}». Агенты ниже будут архивированы и удалены из активных рабочих процессов; их задания в очереди или выполняемые будут отменены, после чего Runtime будет удалён.",
+        "warning": "Это деструктивное действие. Архивированные агенты будут удалены из активных рабочих процессов, а их задания в очереди или выполняемые будут отменены.",
+        "notice_runtime_has_active_agents": "Активные агенты были добавлены после открытия этого диалога. Просмотрите новый план и подтвердите.",
+        "notice_runtime_delete_plan_changed": "Набор активных агентов изменился, пока диалог был открыт. Просмотрите новый план и подтвердите.",
+        "checkbox_one": "Я понимаю, что этот {{count}} агент будет архивирован, а все задания в очереди или выполняемые будут отменены.",
+        "checkbox_other": "Я понимаю, что эти {{count}} агентов будут архивированы, а все задания в очереди или выполняемые будут отменены.",
+        "cancel": "Отмена",
+        "confirm_one": "Архивировать {{count}} агента и удалить runtime",
+        "confirm_other": "Архивировать {{count}} агентов и удалить runtime",
+        "submitting": "Архивирование и удаление...",
+        "self_healing_blocked_toast": "Этот runtime управляется работающим локальным daemon и переригистрируется сам.",
+        "delete_failed_toast": "Не удалось удалить runtime",
+        "table": {
+          "header_agent": "Агент",
+          "header_owner": "Владелец",
+          "header_status": "Статус",
+          "header_visibility": "Видимость",
+          "header_model": "Модель",
+          "owner_self": "Вы",
+          "owner_unassigned": "—",
+          "model_unset": "—",
+          "presence_unknown": "—",
+          "workload_idle": "Простой",
+          "workload_working": "Работает",
+          "workload_queued": "В очереди",
+          "visibility_workspace": "Рабочее пространство",
+          "visibility_private": "Приватный"
+        }
+      }
+    },
+    "toast_deleted": "Runtime удалён",
+    "toast_delete_failed": "Не удалось удалить runtime",
+    "running_chip_one": "· {{count}} выполняется",
+    "running_chip_other": "· {{count}} выполняется",
+    "queued_chip_one": "· {{count}} в очереди",
+    "queued_chip_other": "· {{count}} в очереди"
+  },
+  "detail_page": {
+    "not_found_title": "Runtime не найден",
+    "not_found_hint": "Возможно, он был удалён, или у вас нет доступа."
+  },
+  "running_one": "{{count}} выполняется",
+  "running_other": "{{count}} выполняется",
+  "queued_one": "{{count}} в очереди",
+  "queued_other": "{{count}} в очереди",
+  "connect": {
+    "title": "Добавить компьютер",
+    "description": "Выполните эти две команды на компьютере, который хотите добавить. Мы обнаружим его, как только daemon выйдет в сеть.",
+    "step1_label": "Установите Agora CLI",
+    "step2_label": "Запустите daemon",
+    "step2_hint": "Открывает браузер для входа, затем держит daemon работающим в фоне.",
+    "live_listening": "Ожидание вашего компьютера",
+    "live_listening_hint": "Мы обнаружим его, как только daemon запустится — обычно меньше чем за минуту.",
+    "troubleshooting": "Не можете открыть браузер на том компьютере?",
+    "trouble_intro": "Используйте токен вместо входа через браузер. Это заменяет шаг 2 и работает везде, где есть терминал.",
+    "trouble_token_hint_prefix": "Создайте токен в ",
+    "trouble_token_hint_destination": "Настройки → Токены",
+    "trouble_token_hint_suffix": ". Daemon делает только исходящие соединения — входящие порты не требуются.",
+    "trouble_check_status": "Проверить статус",
+    "trouble_view_logs": "Просмотреть логи",
+    "copy_aria": "Копировать",
+    "cancel": "Отмена",
+    "success_title": "Компьютер подключён",
+    "success_description": "Ваш компьютер в сети и готов. Создайте агента, и он сможет начать выполнять задания здесь.",
+    "view_runtime": "Просмотреть runtime",
+    "create_agent": "Создать агента"
+  },
+  "cloud_runtime": {
+    "action": "Cloud Runtime",
+    "title": "Cloud Runtime",
+    "description": "Запустите управляемый облачный узел и следите за его статусом Fleet.",
+    "create_title": "Новый узел",
+    "create_hint": "Выберите имя, тип инстанса и размер диска. Остальное применит Fleet.",
+    "nodes_title": "Узлы Fleet",
+    "refresh": "Обновить",
+    "nodes_empty": "Нет облачных узлов",
+    "nodes_failed": "Cloud Runtime недоступен",
+    "nodes_failed_hint": "Fleet не вернул список узлов.",
+    "node_fallback_name": "Облачный узел",
+    "create": "Создать узел",
+    "creating": "Создание...",
+    "cancel": "Отмена",
+    "toast_created": "Узел Cloud Runtime создан",
+    "toast_create_failed": "Не удалось создать узел Cloud Runtime",
+    "delete": "Удалить узел",
+    "delete_confirm": "Вы уверены, что хотите удалить этот облачный узел? Это действие нельзя отменить.",
+    "toast_deleted": "Облачный узел удалён",
+    "toast_delete_failed": "Не удалось удалить облачный узел",
+    "fields": {
+      "name": "Имя",
+      "instance_type": "Тип инстанса",
+      "region": "Регион",
+      "disk_size": "Размер диска ГиБ",
+      "image_id": "AMI ID",
+      "subnet_id": "Subnet ID",
+      "key_name": "Пара ключей",
+      "bootstrap_pat": "Bootstrap PAT"
+    },
+    "placeholders": {
+      "name": "cloud-dev-01",
+      "key_name": "dev-key"
+    },
+    "validation": {
+      "instance_type_required": "Тип инстанса обязателен",
+      "disk_size_invalid": "Размер диска должен быть положительным целым числом"
+    }
+  },
+  "update": {
+    "cli_version_label": "Версия CLI:",
+    "version_unknown": "неизвестно",
+    "managed_by_desktop": "Управляется Desktop",
+    "managed_by_desktop_title": "Бинарный файл CLI управляется Agora Desktop — обновите Desktop, чтобы обновить CLI.",
+    "latest": "Последняя",
+    "available": "доступно",
+    "action": "Обновить",
+    "retry": "Повторить",
+    "unknown_error": "Неизвестная ошибка",
+    "initiate_failed": "Не удалось запустить обновление",
+    "status": {
+      "pending": "Ожидание daemon...",
+      "running": "Обновление...",
+      "completed": "Обновление завершено. Daemon перезапускается...",
+      "failed": "Обновление не удалось",
+      "timeout": "Тайм-аут"
+    }
+  },
+  "ai_accounts": {
+    "title": "AI-аккаунты",
+    "subtitle": "Каждый агентский CLI входит как аккаунт — подписка, а не API-ключ. Здесь показано, какие провайдеры подключены на ваших машинах.",
+    "providers": {
+      "claude": "Claude",
+      "codex": "Codex",
+      "gemini": "Gemini",
+      "antigravity": "Antigravity"
+    },
+    "state": {
+      "connected": "Подключён",
+      "not_connected": "Не подключён",
+      "unknown": "Неизвестно",
+      "offline": "Оффлайн"
+    },
+    "account": {
+      "email_label": "Аккаунт",
+      "plan_label": "План",
+      "email_unknown": "Вход выполнен",
+      "plan_unknown": "—",
+      "runtimes_count_one": "{{count}} runtime",
+      "runtimes_count_other": "{{count}} runtime"
+    },
+    "status_hint": {
+      "connected": "Вход выполнен, готов выполнять задания.",
+      "not_connected": "У этого CLI пока нет сессии аккаунта — войдите ниже.",
+      "unknown": "Не удалось прочитать состояние входа этого CLI. Он может работать, или может потребоваться вход.",
+      "offline": "Нет онлайн-runtime для этого провайдера. Запустите daemon на машине, где установлен этот CLI."
+    },
+    "connect": {
+      "title": "Как подключить",
+      "claude": "Выполните `claude setup-token` на машине, затем перезапустите daemon.",
+      "codex": "Выполните `codex login` на машине, затем перезапустите daemon.",
+      "gemini": "Выполните `gemini auth login` на машине, затем перезапустите daemon.",
+      "antigravity": "Войдите в Antigravity (`agy`) на машине, затем перезапустите daemon.",
+      "generic": "Войдите в этот CLI на машине, затем перезапустите daemon с помощью `agora setup self-host`.",
+      "copy_aria": "Копировать команду"
+    },
+    "empty": {
+      "title": "AI-аккаунты не обнаружены",
+      "hint": "Добавьте компьютер с установленным агентским CLI, затем войдите в аккаунт этого CLI."
+    }
+  },
+  "charts": {
+    "heatmap_less": "Меньше",
+    "heatmap_more": "Больше",
+    "tooltip_total": "Всего"
+  },
+  "list": {
+    "col_runtime": "Runtime",
+    "col_health": "Состояние",
+    "col_owner": "Владелец",
+    "col_agents": "Агенты",
+    "col_workload": "Нагрузка",
+    "col_cost": "Стоимость · 7д",
+    "col_cli": "CLI",
+    "cost_delta_flat": "без изменений",
+    "cli_managed_badge": "Desktop",
+    "row_actions_aria": "Действия строки",
+    "delete_action": "Удалить",
+    "delete_permission_hint": "Удалять этот runtime могут только владелец runtime и администраторы рабочего пространства",
+    "delete_admin_hint": "Удалять runtime могут только владелец runtime и администраторы рабочего пространства."
+  },
+  "usage": {
+    "period_label": "Период",
+    "dimension_label": "Измерение",
+    "kpi_cost_label": "Стоимость · {{days}}Д",
+    "kpi_cost_delta": "{{sign}}{{pct}}% к пред.",
+    "kpi_cache_label": "Экономия кэша · {{days}}Д",
+    "kpi_cache_hint": "{{pct}}% попаданий · {{reads}} чтений",
+    "kpi_tokens_label": "Токены · {{days}}Д",
+    "kpi_tokens_hint": "вход {{input}} · выход {{output}}",
+    "when_title": "Когда этот runtime тратил",
+    "when_tab_daily": "По дням",
+    "when_tab_weekly": "По неделям",
+    "when_tab_heatmap": "Тепловая карта",
+    "daily_metric_cost": "Стоимость",
+    "daily_metric_tokens": "Токены",
+    "weekly_partial_label": "{{range}} (частично · {{covered}} / 7 дней)",
+    "heatmap_caption": "Последние 26 недель · дневная интенсивность $ (выбор периода здесь игнорируется)",
+    "legend_input": "Вход",
+    "legend_output": "Выход",
+    "legend_cache_read": "Чтение кэша",
+    "legend_cache_write": "Запись кэша",
+    "empty_no_usage": "Нет использования за этот период.",
+    "empty_pricing_missing": "Токены записаны, но отсутствует цена для:",
+    "empty_pricing_hint": "Задайте свою ставку, чтобы включить их в итоговую стоимость.",
+    "empty_zero_cost": "Токены записаны, но расчёт стоимости вернул $0.",
+    "unmapped_notice_one": "У {{count}} модели нет поддерживаемой цены — её токены исключены из итоговой стоимости.",
+    "unmapped_notice_other": "У {{count}} моделей нет поддерживаемой цены — их токены исключены из итоговой стоимости.",
+    "custom_pricing": {
+      "open_button": "Задать свои цены",
+      "title": "Свои цены моделей",
+      "description": "Введите ставки за миллион токенов, чтобы мы могли оценить модели, для которых не поставляется поддерживаемая ставка. Хранится локально на этой машине.",
+      "empty": "Сейчас ни одной модели не нужна своя цена.",
+      "field_input": "Вход",
+      "field_output": "Выход",
+      "field_cache_read": "Чтение кэша",
+      "field_cache_write": "Запись кэша",
+      "unit_hint": "Все ставки в USD за 1M токенов. Оставьте все поля пустыми, чтобы удалить переопределение.",
+      "remove_aria": "Удалить свою цену",
+      "cancel": "Отмена",
+      "save": "Сохранить"
+    },
+    "cost_by_title_agent": "Стоимость по агентам",
+    "cost_by_title_model": "Стоимость по моделям",
+    "cost_by_tab_agent": "По агентам",
+    "cost_by_tab_model": "По моделям",
+    "cost_by_caption_agent_one": "{{count}} агент на этом runtime",
+    "cost_by_caption_agent_other": "{{count}} агентов на этом runtime",
+    "cost_by_caption_model_one": "Использована {{count}} модель",
+    "cost_by_caption_model_other": "Использовано {{count}} моделей",
+    "daily_breakdown_toggle": "Таблица разбивки по дням",
+    "table_date": "Дата",
+    "table_model": "Модель",
+    "table_input": "Вход",
+    "table_output": "Выход",
+    "table_cache_r": "Кэш Ч",
+    "table_cache_w": "Кэш З",
+    "no_data": "Пока нет данных об использовании"
+  }
+}

@@ -83,10 +83,14 @@ export function ContactSalesPageClient() {
   const emailDomain = useMemo(() => {
     const at = form.businessEmail.lastIndexOf("@");
     if (at < 0) return "";
-    return form.businessEmail.slice(at + 1).trim().toLowerCase();
+    return form.businessEmail
+      .slice(at + 1)
+      .trim()
+      .toLowerCase();
   }, [form.businessEmail]);
 
-  const emailLooksFree = emailDomain !== "" && CLIENT_FREE_EMAIL_DOMAINS.has(emailDomain);
+  const emailLooksFree =
+    emailDomain !== "" && CLIENT_FREE_EMAIL_DOMAINS.has(emailDomain);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -269,7 +273,9 @@ function FormCard({
     >
       <div className="rounded-[12px] border border-[#0a0d12]/8 bg-[#f7f8fa] p-4 text-[13px] leading-[1.6] text-[#0a0d12]/72">
         <p className="font-semibold text-[#0a0d12]">
-          <span aria-hidden className="mr-1.5">📌</span>
+          <span aria-hidden className="mr-1.5">
+            📌
+          </span>
           {dict.notice.badge}
         </p>
         <p className="mt-1">{dict.notice.body}</p>
@@ -556,9 +562,7 @@ function ConsentBlock({
 }) {
   return (
     <div className="space-y-3 text-[13px] leading-[1.65] text-[#0a0d12]/70">
-      <p className="font-semibold text-[#0a0d12]">
-        {dict.consent.intro}
-      </p>
+      <p className="font-semibold text-[#0a0d12]">{dict.consent.intro}</p>
       <ConsentCheckbox
         id={outreachId}
         checked={form.consentOutreach}

@@ -1,0 +1,371 @@
+{
+  "page": {
+    "title": "Runtime’lar",
+    "tagline": "Agentlaringiz uchun CLI sessiyalarini ishlatadigan mashinalar va bulutli ishchilar.",
+    "learn_more": "Batafsil →",
+    "connect_remote": "Kompyuter qo‘shish",
+    "search_placeholder": "Runtime’larni qidirish…",
+    "scope_mine": "Meniki",
+    "scope_all": "Barchasi",
+    "live": "Jonli",
+    "live_tooltip": "Real vaqt yangilanishlari · 75s gacha oflayn aniqlash",
+    "filter_all": "Barchasi",
+    "filter_all_description": "Ushbu ko‘rinishdagi barcha runtime’lar",
+    "empty": {
+      "title": "Hozircha runtime’lar yo‘q",
+      "hint": "Desktop bu kompyuterni avtomatik skanerlaydi. Boshqa mashinadan — server, dev qutisi yoki terminali bo‘lgan istalgan kompyuterdan — foydalanish uchun uni shu yerda qo‘shing."
+    },
+    "no_matches": {
+      "title": "Mosliklar yo‘q",
+      "with_query": "\"{{query}}\"{{filterSuffix}} ga mos runtime’lar yo‘q.",
+      "with_query_filter_suffix": " bu filtrda",
+      "no_query": "Ushbu filtrga mos runtime’lar yo‘q.",
+      "try_widening": " Doirani kengaytirib ko‘ring yoki filtrlarni tozalang."
+    },
+    "bootstrapping": {
+      "title": "Lokal runtime ishga tushmoqda…",
+      "hint": "Bu odatda bir necha soniya oladi. Daemon’ingiz ish maydoniga ro‘yxatdan o‘tmoqda."
+    }
+  },
+  "machine": {
+    "search_placeholder": "Mashinalarni qidirish…",
+    "filters": {
+      "all": "Barchasi",
+      "online": "Onlayn",
+      "issues": "Muammolar"
+    },
+    "section_local": "Lokal",
+    "section_remote": "Masofaviy",
+    "section_cloud": "Bulut",
+    "this_machine": "Bu qurilma",
+    "local_badge": "Lokal · bu mashina",
+    "runtime_count_one": "{{count}} runtime",
+    "runtime_count_other": "{{count}} runtime",
+    "busy_count_one": "{{count}} band",
+    "busy_count_other": "{{count}} band",
+    "no_matches_title": "Mashinalar yo‘q",
+    "no_matches_hint": "Joriy qidiruv yoki filtrga mos mashinalar yo‘q.",
+    "select_machine": "Runtime’larini ko‘rish uchun mashinani tanlang.",
+    "metrics": {
+      "runtimes": "Runtime’lar",
+      "runtimes_hint_one": "{{count}} onlayn",
+      "runtimes_hint_other": "{{count}} onlayn",
+      "health": "Holat",
+      "health_clear": "Muammolar yo‘q",
+      "health_issues_one": "{{count}} muammo",
+      "health_issues_other": "{{count}} muammo",
+      "workload": "Yuklama",
+      "workload_value_idle": "Bo‘sh",
+      "workload_idle": "Hammasi bo‘sh",
+      "workload_hint": "{{running}} ishlamoqda · {{queued}} navbatda",
+      "cli": "CLI",
+      "cloud_worker": "Bulutli ishchi",
+      "local_daemon": "Lokal daemon"
+    }
+  },
+  "health": {
+    "online": {
+      "label": "Onlayn",
+      "description": "Oxirgi 45s ichida heartbeat olindi. Topshiriqlarni yuborishga tayyor."
+    },
+    "recently_lost": {
+      "label": "Yaqinda yo‘qoldi",
+      "description": "5 daqiqadan kam vaqt oldin aloqa yo‘qoldi — ko‘pincha qisqa tarmoq uzilishi."
+    },
+    "offline": {
+      "label": "Oflayn",
+      "description": "5+ daqiqa heartbeat yo‘q. Daemon’ni qayta ishga tushiring yoki hostni tekshiring."
+    },
+    "about_to_gc": {
+      "label": "GC arafasida",
+      "description": "6+ kun oflayn. Qayta ulanmasa, 7 kunda avtomatik o‘chiriladi."
+    }
+  },
+  "detail": {
+    "all_runtimes": "Barcha runtime’lar",
+    "read_only": "Faqat o‘qish",
+    "delete_button": "Runtime’ni o‘chirish",
+    "delete_disabled_tooltip": "Bu runtime ishlayotgan lokal daemon tomonidan boshqariladi va bir necha soniya ichida o‘zini qayta ro‘yxatdan o‘tkazadi. Uni butunlay olib tashlash uchun daemon jarayonini to‘xtating.",
+    "last_seen": "oxirgi marta ko‘rilgan {{when}}",
+    "fact_owner": "Ega",
+    "fact_device": "Qurilma",
+    "fact_runtime": "Runtime",
+    "technical_details": "Texnik tafsilotlar",
+    "fact_daemon_cli": "Daemon CLI",
+    "fact_daemon_id": "Daemon ID",
+    "serving_title": "Xizmat ko‘rsatmoqda",
+    "serving_count_one": "{{count}} agent",
+    "serving_count_other": "{{count}} agent",
+    "no_agents": "Hozircha bu runtime’ga hech qanday agent bog‘lanmagan.",
+    "diagnostics_title": "Diagnostika",
+    "diagnostics_cli": "CLI",
+    "diagnostics_visibility": "Ko‘rinish",
+    "visibility_label": {
+      "private": "Shaxsiy",
+      "public": "Ommaviy"
+    },
+    "visibility_hint": {
+      "private": "Faqat siz va ish maydoni adminlari bu runtime’da agentlar yarata oladi.",
+      "public": "Istalgan ish maydoni a’zosi bu runtime’da agentlar yarata oladi."
+    },
+    "visibility_toast_updated": "Ko‘rinish {{visibility}} ga o‘rnatildi",
+    "visibility_toast_failed": "Ko‘rinishni yangilashda xatolik",
+    "delete_dialog": {
+      "light": {
+        "title": "Runtime o‘chirilsinmi?",
+        "description": "\"{{name}}\" ni o‘chirishni xohlaysizmi? Bu amalni ortga qaytarib bo‘lmaydi.",
+        "cancel": "Bekor qilish",
+        "confirm": "Runtime’ni o‘chirish",
+        "submitting": "O‘chirilmoqda..."
+      },
+      "cascade": {
+        "title_one": "{{count}} agent arxivlansin va bu Runtime o‘chirilsinmi?",
+        "title_other": "{{count}} agent arxivlansin va bu Runtime o‘chirilsinmi?",
+        "description": "\"{{name}}\" ni o‘chirish. Quyidagi agentlar arxivlanadi va faol jarayonlardan olib tashlanadi; ularning navbatdagi yoki ishlayotgan topshiriqlari bekor qilinadi, so‘ng Runtime o‘chiriladi.",
+        "warning": "Bu buzg‘unchi amal. Arxivlangan agentlar faol jarayonlardan olib tashlanadi va ularning navbatdagi yoki ishlayotgan topshiriqlari bekor qilinadi.",
+        "notice_runtime_has_active_agents": "Bu dialogni ochganingizdan beri faol agentlar qo‘shildi. Yangi rejani ko‘rib chiqing va tasdiqlang.",
+        "notice_runtime_delete_plan_changed": "Bu dialog ochiq turganda faol agentlar to‘plami o‘zgardi. Yangi rejani ko‘rib chiqing va tasdiqlang.",
+        "checkbox_one": "Men bu {{count}} agent arxivlanishini va navbatdagi yoki ishlayotgan topshiriqlar bekor qilinishini tushunaman.",
+        "checkbox_other": "Men bu {{count}} agent arxivlanishini va navbatdagi yoki ishlayotgan topshiriqlar bekor qilinishini tushunaman.",
+        "cancel": "Bekor qilish",
+        "confirm_one": "{{count}} agentni arxivlash va runtime’ni o‘chirish",
+        "confirm_other": "{{count}} agentni arxivlash va runtime’ni o‘chirish",
+        "submitting": "Arxivlanmoqda va o‘chirilmoqda...",
+        "self_healing_blocked_toast": "Bu runtime ishlayotgan lokal daemon tomonidan boshqariladi va o‘zini qayta ro‘yxatdan o‘tkazadi.",
+        "delete_failed_toast": "Runtime’ni o‘chirishda xatolik",
+        "table": {
+          "header_agent": "Agent",
+          "header_owner": "Ega",
+          "header_status": "Holat",
+          "header_visibility": "Ko‘rinish",
+          "header_model": "Model",
+          "owner_self": "Siz",
+          "owner_unassigned": "—",
+          "model_unset": "—",
+          "presence_unknown": "—",
+          "workload_idle": "Bo‘sh",
+          "workload_working": "Ishlamoqda",
+          "workload_queued": "Navbatda",
+          "visibility_workspace": "Ish maydoni",
+          "visibility_private": "Shaxsiy"
+        }
+      }
+    },
+    "toast_deleted": "Runtime o‘chirildi",
+    "toast_delete_failed": "Runtime’ni o‘chirishda xatolik",
+    "running_chip_one": "· {{count}} ishlamoqda",
+    "running_chip_other": "· {{count}} ishlamoqda",
+    "queued_chip_one": "· {{count}} navbatda",
+    "queued_chip_other": "· {{count}} navbatda"
+  },
+  "detail_page": {
+    "not_found_title": "Runtime topilmadi",
+    "not_found_hint": "U o‘chirilgan bo‘lishi yoki sizda kirish huquqi bo‘lmasligi mumkin."
+  },
+  "running_one": "{{count}} ishlamoqda",
+  "running_other": "{{count}} ishlamoqda",
+  "queued_one": "{{count}} navbatda",
+  "queued_other": "{{count}} navbatda",
+  "connect": {
+    "title": "Kompyuter qo‘shish",
+    "description": "Qo‘shmoqchi bo‘lgan kompyuterda ushbu ikki buyruqni bajaring. Daemon onlayn bo‘lgan zahoti uni aniqlaymiz.",
+    "step1_label": "Agora CLI’ni o‘rnating",
+    "step2_label": "Daemon’ni ishga tushiring",
+    "step2_hint": "Tizimga kirish uchun brauzer ochadi, so‘ng daemon’ni orqa fonda ishlab turadi.",
+    "live_listening": "Kompyuteringiz kutilmoqda",
+    "live_listening_hint": "Daemon ishga tushishi bilanoq uni aniqlaymiz — odatda bir daqiqadan kam.",
+    "troubleshooting": "O‘sha kompyuterda brauzer ocholmayapsizmi?",
+    "trouble_intro": "Brauzer orqali kirish o‘rniga tokendan foydalaning. Bu 2-bosqichni almashtiradi va terminal mavjud bo‘lgan istalgan joyda ishlaydi.",
+    "trouble_token_hint_prefix": "Token yarating: ",
+    "trouble_token_hint_destination": "Sozlamalar → Tokenlar",
+    "trouble_token_hint_suffix": ". Daemon faqat chiquvchi ulanishlarni amalga oshiradi — kiruvchi portlar talab qilinmaydi.",
+    "trouble_check_status": "Holatni tekshirish",
+    "trouble_view_logs": "Loglarni ko‘rish",
+    "copy_aria": "Nusxalash",
+    "cancel": "Bekor qilish",
+    "success_title": "Kompyuter ulandi",
+    "success_description": "Kompyuteringiz onlayn va tayyor. Agent yarating, u shu yerda topshiriqlarni bajarishni boshlashi mumkin.",
+    "view_runtime": "Runtime’ni ko‘rish",
+    "create_agent": "Agent yaratish"
+  },
+  "cloud_runtime": {
+    "action": "Cloud Runtime",
+    "title": "Cloud Runtime",
+    "description": "Boshqariladigan bulut tugunini ishga tushiring va uning Fleet holatini kuzating.",
+    "create_title": "Yangi tugun",
+    "create_hint": "Nom, instans turi va disk hajmini tanlang. Qolganini Fleet qo‘llaydi.",
+    "nodes_title": "Fleet tugunlari",
+    "refresh": "Yangilash",
+    "nodes_empty": "Bulut tugunlari yo‘q",
+    "nodes_failed": "Cloud Runtime mavjud emas",
+    "nodes_failed_hint": "Fleet tugunlar ro‘yxatini qaytarmadi.",
+    "node_fallback_name": "Bulut tuguni",
+    "create": "Tugun yaratish",
+    "creating": "Yaratilmoqda...",
+    "cancel": "Bekor qilish",
+    "toast_created": "Cloud Runtime tuguni yaratildi",
+    "toast_create_failed": "Cloud Runtime tugunini yaratishda xatolik",
+    "delete": "Tugunni o‘chirish",
+    "delete_confirm": "Ushbu bulut tugunini o‘chirishni xohlaysizmi? Bu amalni ortga qaytarib bo‘lmaydi.",
+    "toast_deleted": "Bulut tuguni o‘chirildi",
+    "toast_delete_failed": "Bulut tugunini o‘chirishda xatolik",
+    "fields": {
+      "name": "Nom",
+      "instance_type": "Instans turi",
+      "region": "Region",
+      "disk_size": "Disk hajmi GiB",
+      "image_id": "AMI ID",
+      "subnet_id": "Subnet ID",
+      "key_name": "Kalit jufti",
+      "bootstrap_pat": "Bootstrap PAT"
+    },
+    "placeholders": {
+      "name": "cloud-dev-01",
+      "key_name": "dev-key"
+    },
+    "validation": {
+      "instance_type_required": "Instans turi talab qilinadi",
+      "disk_size_invalid": "Disk hajmi musbat butun son bo‘lishi kerak"
+    }
+  },
+  "update": {
+    "cli_version_label": "CLI versiyasi:",
+    "version_unknown": "noma’lum",
+    "managed_by_desktop": "Desktop tomonidan boshqariladi",
+    "managed_by_desktop_title": "CLI binar fayli Agora Desktop tomonidan boshqariladi — CLI’ni yangilash uchun Desktop’ni yangilang.",
+    "latest": "Eng so‘nggi",
+    "available": "mavjud",
+    "action": "Yangilash",
+    "retry": "Qayta urinish",
+    "unknown_error": "Noma’lum xatolik",
+    "initiate_failed": "Yangilashni boshlashda xatolik",
+    "status": {
+      "pending": "Daemon kutilmoqda...",
+      "running": "Yangilanmoqda...",
+      "completed": "Yangilash tugadi. Daemon qayta ishga tushmoqda...",
+      "failed": "Yangilash muvaffaqiyatsiz",
+      "timeout": "Vaqt tugadi"
+    }
+  },
+  "ai_accounts": {
+    "title": "AI hisoblari",
+    "subtitle": "Har bir agent CLI’si hisob sifatida tizimga kiradi — API kaliti emas, obuna. Bu mashinalaringizda qaysi provayderlar ulanganini ko‘rsatadi.",
+    "providers": {
+      "claude": "Claude",
+      "codex": "Codex",
+      "gemini": "Gemini",
+      "antigravity": "Antigravity"
+    },
+    "state": {
+      "connected": "Ulangan",
+      "not_connected": "Ulanmagan",
+      "unknown": "Noma’lum",
+      "offline": "Oflayn"
+    },
+    "account": {
+      "email_label": "Hisob",
+      "plan_label": "Reja",
+      "email_unknown": "Tizimga kirgan",
+      "plan_unknown": "—",
+      "runtimes_count_one": "{{count}} runtime",
+      "runtimes_count_other": "{{count}} runtime"
+    },
+    "status_hint": {
+      "connected": "Tizimga kirgan va topshiriqlarni bajarishga tayyor.",
+      "not_connected": "Bu CLI’da hali hisob sessiyasi yo‘q — quyida tizimga kiring.",
+      "unknown": "Bu CLI’ning kirish holatini o‘qib bo‘lmadi. U baribir ishlashi yoki tizimga kirish kerak bo‘lishi mumkin.",
+      "offline": "Bu provayder uchun onlayn runtime yo‘q. Bu CLI o‘rnatilgan mashinada daemon’ni ishga tushiring."
+    },
+    "connect": {
+      "title": "Qanday ulanish",
+      "claude": "Mashinada `claude setup-token` ni bajaring, so‘ng daemon’ni qayta ishga tushiring.",
+      "codex": "Mashinada `codex login` ni bajaring, so‘ng daemon’ni qayta ishga tushiring.",
+      "gemini": "Mashinada `gemini auth login` ni bajaring, so‘ng daemon’ni qayta ishga tushiring.",
+      "antigravity": "Mashinada Antigravity (`agy`) ga kiring, so‘ng daemon’ni qayta ishga tushiring.",
+      "generic": "Mashinada bu CLI’ga kiring, so‘ng `agora setup self-host` bilan daemon’ni qayta ishga tushiring.",
+      "copy_aria": "Buyruqni nusxalash"
+    },
+    "empty": {
+      "title": "AI hisoblari aniqlanmadi",
+      "hint": "Agent CLI’si o‘rnatilgan kompyuter qo‘shing, so‘ng o‘sha CLI’ni hisobiga kiriting."
+    }
+  },
+  "charts": {
+    "heatmap_less": "Kam",
+    "heatmap_more": "Ko‘p",
+    "tooltip_total": "Jami"
+  },
+  "list": {
+    "col_runtime": "Runtime",
+    "col_health": "Holat",
+    "col_owner": "Ega",
+    "col_agents": "Agentlar",
+    "col_workload": "Yuklama",
+    "col_cost": "Xarajat · 7k",
+    "col_cli": "CLI",
+    "cost_delta_flat": "o‘zgarishsiz",
+    "cli_managed_badge": "Desktop",
+    "row_actions_aria": "Qator amallari",
+    "delete_action": "O‘chirish",
+    "delete_permission_hint": "Bu runtime’ni faqat runtime egasi va ish maydoni adminlari o‘chira oladi",
+    "delete_admin_hint": "Runtime’ni faqat runtime egasi va ish maydoni adminlari o‘chira oladi."
+  },
+  "usage": {
+    "period_label": "Davr",
+    "dimension_label": "O‘lcham",
+    "kpi_cost_label": "Xarajat · {{days}}K",
+    "kpi_cost_delta": "{{sign}}{{pct}}% oldingiga nisbatan",
+    "kpi_cache_label": "Kesh tejamkorligi · {{days}}K",
+    "kpi_cache_hint": "{{pct}}% moslik · {{reads}} o‘qish",
+    "kpi_tokens_label": "Tokenlar · {{days}}K",
+    "kpi_tokens_hint": "kirish {{input}} · chiqish {{output}}",
+    "when_title": "Bu runtime qachon sarflagan",
+    "when_tab_daily": "Kunlik",
+    "when_tab_weekly": "Haftalik",
+    "when_tab_heatmap": "Issiqlik xaritasi",
+    "daily_metric_cost": "Xarajat",
+    "daily_metric_tokens": "Tokenlar",
+    "weekly_partial_label": "{{range}} (qisman · 7 kundan {{covered}})",
+    "heatmap_caption": "Oxirgi 26 hafta · kunlik $ intensivligi (davr tanlovi bu yerda e’tiborga olinmaydi)",
+    "legend_input": "Kirish",
+    "legend_output": "Chiqish",
+    "legend_cache_read": "Kesh o‘qish",
+    "legend_cache_write": "Kesh yozish",
+    "empty_no_usage": "Bu davrda foydalanish yo‘q.",
+    "empty_pricing_missing": "Tokenlar qayd etilgan, lekin quyidagilar uchun narx yo‘q:",
+    "empty_pricing_hint": "Ularni xarajat jamiga kiritish uchun maxsus narx belgilang.",
+    "empty_zero_cost": "Tokenlar qayd etilgan, lekin xarajat hisobi $0 qaytardi.",
+    "unmapped_notice_one": "{{count}} modelda saqlangan narx yo‘q — uning tokenlari xarajat jamidan chiqarib tashlanadi.",
+    "unmapped_notice_other": "{{count}} modelda saqlangan narx yo‘q — ularning tokenlari xarajat jamidan chiqarib tashlanadi.",
+    "custom_pricing": {
+      "open_button": "Maxsus narxlar belgilash",
+      "title": "Maxsus model narxlari",
+      "description": "Biz saqlangan narx taqdim etmaydigan modellarni narxlash uchun million tokenga to‘g‘ri keladigan stavkalarni kiriting. Bu mashinada lokal saqlanadi.",
+      "empty": "Hozir hech qaysi model uchun maxsus narx kerak emas.",
+      "field_input": "Kirish",
+      "field_output": "Chiqish",
+      "field_cache_read": "Kesh o‘qish",
+      "field_cache_write": "Kesh yozish",
+      "unit_hint": "Barcha stavkalar 1M token uchun USD da. Bekor qilish uchun har bir maydonni bo‘sh qoldiring.",
+      "remove_aria": "Maxsus narxni olib tashlash",
+      "cancel": "Bekor qilish",
+      "save": "Saqlash"
+    },
+    "cost_by_title_agent": "Agent bo‘yicha xarajat",
+    "cost_by_title_model": "Model bo‘yicha xarajat",
+    "cost_by_tab_agent": "Agent bo‘yicha",
+    "cost_by_tab_model": "Model bo‘yicha",
+    "cost_by_caption_agent_one": "Bu runtime’da {{count}} agent",
+    "cost_by_caption_agent_other": "Bu runtime’da {{count}} agent",
+    "cost_by_caption_model_one": "{{count}} model ishlatilgan",
+    "cost_by_caption_model_other": "{{count}} model ishlatilgan",
+    "daily_breakdown_toggle": "Kunlik taqsimot jadvali",
+    "table_date": "Sana",
+    "table_model": "Model",
+    "table_input": "Kirish",
+    "table_output": "Chiqish",
+    "table_cache_r": "Kesh O‘",
+    "table_cache_w": "Kesh Y",
+    "no_data": "Hozircha foydalanish ma’lumotlari yo‘q"
+  }
+}

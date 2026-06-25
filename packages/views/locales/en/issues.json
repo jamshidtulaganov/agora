@@ -89,7 +89,9 @@
     "board": "Board",
     "list": "List",
     "gantt": "Gantt",
-    "swimlane": "Swimlane"
+    "swimlane": "Swimlane",
+    "tree": "Tree",
+    "tooltip_tree": "Sprint tree view"
   },
   "gantt": {
     "header_issue": "Issue",
@@ -222,7 +224,9 @@
     "link_copy_failed": "Failed to copy link",
     "workdir_path_copied": "Workdir path copied",
     "workdir_path_copy_failed": "Failed to copy workdir path",
-    "workdir_path_unavailable": "No local workdir yet — issue has not been run by a local agent"
+    "workdir_path_unavailable": "No local workdir yet — issue has not been run by a local agent",
+    "description_show_more": "Show more",
+    "description_show_less": "Show less"
   },
   "timeline": {
     "loading": "Loading..."
@@ -342,6 +346,24 @@
     "stop_button": "Stop",
     "stop_tooltip": "Stop agent",
     "cancel_failed": "Failed to cancel task"
+  },
+  "live_activity": {
+    "verb": {
+      "reading": "is reading",
+      "editing": "is editing",
+      "writing": "is writing",
+      "searching": "is searching",
+      "running": "is running",
+      "fetching": "is fetching",
+      "browsing": "is browsing",
+      "thinking": "is thinking",
+      "working": "is working"
+    },
+    "files_one": "{{count}} file",
+    "files_other": "{{count}} files",
+    "working": "working…",
+    "more": "+{{count}} more",
+    "show_less": "Show less"
   },
   "execution_log": {
     "section": "Execution log",

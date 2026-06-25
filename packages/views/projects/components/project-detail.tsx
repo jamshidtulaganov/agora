@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
-import { Check, ChevronRight, Link2, ListTodo, MoreHorizontal, PanelRight, Pin, PinOff, Plus, Trash2, UserMinus } from "lucide-react";
+import { CalendarClock, Check, ChevronRight, Link2, ListTodo, MoreHorizontal, PanelRight, Pin, PinOff, Plus, Trash2, UserMinus } from "lucide-react";
 import { useQuery, type QueryKey } from "@tanstack/react-query";
 import { cn } from "@agora/ui/lib/utils";
 import { copyText } from "@agora/ui/lib/clipboard";
@@ -23,6 +23,7 @@ import {
   type MyIssuesFilter,
 } from "@agora/core/issues/queries";
 import { useUpdateIssue } from "@agora/core/issues/mutations";
+import { sprintListByProjectOptions } from "@agora/core/sprints/queries";
 import { useModalStore } from "@agora/core/modals";
 import { memberListOptions, agentListOptions } from "@agora/core/workspace/queries";
 import { agentTaskSnapshotOptions } from "@agora/core/agents";
@@ -49,6 +50,7 @@ import { BoardView } from "../../issues/components/board-view";
 import { ListView } from "../../issues/components/list-view";
 import { GanttView } from "../../issues/components/gantt-view";
 import { SwimLaneView } from "../../issues/components/swimlane-view";
+import { SprintTreeView } from "../../issues/components/sprint-tree-view";
 import { BatchActionToolbar } from "../../issues/components/batch-action-toolbar";
 import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import { Button } from "@agora/ui/components/ui/button";
@@ -126,6 +128,7 @@ function ProjectIssuesContent({
   filter,
   sort,
   ganttIssues,
+  sprintMode,
 }: {
   projectId: string;
   projectIssues: Issue[];
@@ -136,10 +139,16 @@ function ProjectIssuesContent({
   filter: MyIssuesFilter;
   sort?: IssueSortParam;
   ganttIssues: Issue[];
+  // Gates the Tree view (sprint-grouped). When a project leaves sprint mode
+  // with "tree" still persisted, fall back to List — mirrors the header's
+  // view-toggle fallback so what's on screen matches the trigger label.
+  sprintMode: boolean;
 }) {
   const { t } = useT("projects");
   const wsId = useWorkspaceId();
-  const viewMode = useViewStore((s) => s.viewMode);
+  const rawViewMode = useViewStore((s) => s.viewMode);
+  const viewMode = rawViewMode === "tree" && !sprintMode ? "list" : rawViewMode;
+  const setViewMode = useViewStore((s) => s.setViewMode);
   const statusFilters = useViewStore((s) => s.statusFilters);
   const priorityFilters = useViewStore((s) => s.priorityFilters);
   const assigneeFilters = useViewStore((s) => s.assigneeFilters);
@@ -203,6 +212,11 @@ function ProjectIssuesContent({
   );
 
   const { data: childProgressMap = new Map() } = useQuery(childIssueProgressOptions(wsId));
+
+  // Sprints for the tree view's section grouping. Project-scoped; shares the
+  // same query (and cache) as the sidebar sprints section + the header sprint
+  // filter, so this rides an already-warm cache on the project surface.
+  const { data: sprints = [] } = useQuery(sprintListByProjectOptions(wsId, projectId));
 
   const visibleStatuses = useMemo(() => {
     if (statusFilters.length > 0)
@@ -290,7 +304,36 @@ function ProjectIssuesContent({
           onMoveIssue={handleMoveIssue}
         />
       )}
-      {viewMode === "gantt" && <GanttView issues={filteredGanttIssues} />}
+      {viewMode === "tree" && (
+        <SprintTreeView
+          issues={issues}
+          sprints={sprints}
+          childProgressMap={childProgressMap}
+          projectId={projectId}
+        />
+      )}
+      {viewMode === "gantt" &&
+        (filteredGanttIssues.length === 0 && projectIssues.length > 0 ? (
+          // Non-empty project with nothing scheduled: the Gantt's own empty
+          // state ("No scheduled issues yet") reads as if the project itself
+          // were empty. Point the user at the unscheduled issues + a way out.
+          <div className="flex flex-1 min-h-0 flex-col items-center justify-center gap-3 text-muted-foreground">
+            <CalendarClock className="h-10 w-10 text-muted-foreground/40" />
+            <p className="text-sm">
+              {t(($) => $.detail.gantt_unscheduled_hint, { count: projectIssues.length })}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-1"
+              onClick={() => setViewMode("list")}
+            >
+              {t(($) => $.detail.gantt_view_as_list)}
+            </Button>
+          </div>
+        ) : (
+          <GanttView issues={filteredGanttIssues} />
+        ))}
       {viewMode === "swimlane" && (
         <SwimLaneView
           issues={issues}
@@ -397,7 +440,7 @@ function ProjectIssuesSurface({
 
   return (
     <>
-      <IssuesHeader scopedIssues={projectIssues} allowGantt projectId={sprintMode ? projectId : undefined} />
+      <IssuesHeader scopedIssues={projectIssues} allowGantt allowTree={sprintMode} projectId={sprintMode ? projectId : undefined} />
       <ProjectIssuesContent
         projectId={projectId}
         projectIssues={projectIssues}
@@ -408,6 +451,7 @@ function ProjectIssuesSurface({
         filter={filter}
         sort={sort}
         ganttIssues={ganttIssues}
+        sprintMode={sprintMode}
       />
       <BatchActionToolbar />
     </>

@@ -23,8 +23,8 @@
 export const INSTALL_RUNTIME_ISSUE_TITLE = {
   en: "Step 1 — Connect a runtime to start using agents",
   zh: "第 1 步 —— 连接运行时,开始使用 agent",
-  ko: "1단계 — agent를 사용하려면 runtime 연결하기",
-  ja: "ステップ1 — agent を使うために runtime を接続する",
+  uz: "1-qadam — agent'lardan foydalanish uchun runtime ulang",
+  ru: "Шаг 1 — Подключите runtime, чтобы начать использовать agent",
 } as const;
 
 const en = `Welcome to Agora.
@@ -106,85 +106,85 @@ Kimi CLI 官方文档:https://moonshotai.github.io/kimi-cli/zh/guides/getting-st
 
 运行时连上后,你就可以创建 Agora Helper,开始一次有智能体参与的上手引导。`;
 
-const ko = `Agora에 오신 것을 환영합니다.
+const uz = `Agora'ga xush kelibsiz.
 
-agent가 작업을 실행하려면 먼저 runtime이 필요합니다. runtime을 설치하는 동안에도 Agora를 가벼운 프로젝트 관리 워크스페이스로 먼저 사용할 수 있습니다.
+agent'lar ish bajarishidan oldin runtime kerak. Runtime oʻrnatayotganingizda ham Agora'dan yengil loyiha boshqaruvi workspace sifatida foydalanishingiz mumkin.
 
-## 먼저 Agora를 사용해 보기
+## Avval Agora'ni sinab koʻring
 
-runtime이 준비되기 전에는 다음을 해볼 수 있습니다:
+Runtime tayyor boʻlguncha quyidagilarni qila olasiz:
 
-1. 현재 작업을 위한 project를 만듭니다.
-2. issue 몇 개를 만들고 backlog, todo, in_progress, done 사이에서 이동해 봅니다.
-3. priority, label, comment, subscription을 추가합니다.
-4. Inbox에서 나에게 배정된 작업과 mention을 확인합니다.
+1. Joriy ishingiz uchun project yarating.
+2. Bir nechta issue yarating va ularni backlog, todo, in_progress va done orasida koʻchiring.
+3. priority, label, comment va subscription qoʻshing.
+4. Sizga tayinlangan ishlar va mention'larni kuzatish uchun Inbox'dan foydalaning.
 
-이렇게 프로젝트 관리 계층을 먼저 익힐 수 있습니다. runtime이 연결되면 agent가 같은 issue에서 바로 작업을 시작합니다.
+Bu sizga avval loyiha boshqaruvi qatlamini beradi. Runtime ulangach, agent'lar oʻsha issue'lardan ishlay boshlaydi.
 
-## 첫 agent runtime 설치하기
+## Birinchi agent runtime'ingizni oʻrnating
 
-전체 가이드: https://agora.dev/docs/install-agent-runtime
+Toʻliq qoʻllanma: https://agora.dev/docs/install-agent-runtime
 
-한국어 사용자는 Codex로 시작하는 것이 가장 빠릅니다:
+Oʻzbek tilidagi foydalanuvchilar uchun eng tez birinchi yoʻl —— Codex:
 
-1. Node.js가 설치되어 있는지 확인합니다.
-2. Codex를 설치합니다:
+1. Node.js oʻrnatilganiga ishonch hosil qiling.
+2. Codex'ni oʻrnating:
    npm i -g @openai/codex
-3. 로그인합니다:
+3. Tizimga kiring:
    codex
-4. 터미널에서 찾을 수 있는지 확인합니다:
+4. Terminal uni topa olishini tasdiqlang:
    which codex
    codex --version
-5. Agora daemon을 재시작합니다:
+5. Agora daemon'ini qayta ishga tushiring:
    agora daemon restart
-   데스크톱 앱을 사용한다면 앱을 재시작해도 됩니다.
-6. Runtimes로 돌아가 새로고침합니다. Codex runtime이 online으로 보여야 합니다.
-7. 해당 runtime으로 첫 agent를 만든 뒤 issue를 agent에게 배정하고 status를 todo로 바꿉니다.
+   Agar desktop app'dan foydalansangiz, app'ni qayta ishga tushirish kifoya.
+6. Runtimes'ga qayting va yangilang. Online holatdagi Codex runtime'ni koʻrishingiz kerak.
+7. Oʻsha runtime'dan birinchi agent'ingizni yarating, soʻng issue'ni agent'ga tayinlang va statusni todo qiling.
 
-Codex 참고 문서: https://developers.openai.com/codex/cli
+Codex maʼlumotnomasi: https://developers.openai.com/codex/cli
 
-runtime이 연결되면 Agora Helper를 만들어 안내를 받으며 첫 실행을 시작할 수 있습니다.`;
+Runtime ulangach, boshqariladigan birinchi ishga tushirish uchun Agora Helper'ni yaratishingiz mumkin.`;
 
-const ja = `Agora へようこそ。
+const ru = `Добро пожаловать в Agora.
 
-agent が作業を実行するには、まず runtime が必要です。runtime をインストールしている間も、Agora を軽量なプロジェクト管理ワークスペースとして先に使うことができます。
+agent'ам нужен runtime, прежде чем они смогут выполнять работу. Пока вы устанавливаете его, вы всё равно можете использовать Agora как лёгкий workspace для управления проектами.
 
-## まず Agora を使ってみる
+## Сначала попробуйте Agora
 
-runtime が準備できる前に、次のことを試せます:
+Пока runtime не готов, вы можете:
 
-1. いまの仕事のための project を作る。
-2. issue をいくつか作り、backlog、todo、in_progress、done の間で動かしてみる。
-3. priority、label、comment、subscription を追加する。
-4. Inbox で自分への割り当てや mention を確認する。
+1. Создать project для своей текущей работы.
+2. Создать несколько issue и перемещать их между backlog, todo, in_progress и done.
+3. Добавить priority, label, comment и subscription.
+4. Использовать Inbox, чтобы отслеживать назначения и mention.
 
-これでまずプロジェクト管理のレイヤーに慣れることができます。runtime を接続すると、agent が同じ issue から作業を始められます。
+Так вы сначала освоите слой управления проектами. Как только runtime будет подключён, agent'ы смогут начать работу с тех же issue.
 
-## 最初の agent runtime をインストールする
+## Установите свой первый agent runtime
 
-詳しいガイド: https://agora.dev/docs/install-agent-runtime
+Полное руководство: https://agora.dev/docs/install-agent-runtime
 
-日本語ユーザーには、Codex で始めるのが最も速い経路です:
+Для русскоязычных пользователей самый быстрый первый путь —— Codex:
 
-1. Node.js がインストールされていることを確認します。
-2. Codex をインストールします:
+1. Убедитесь, что установлен Node.js.
+2. Установите Codex:
    npm i -g @openai/codex
-3. サインインします:
+3. Войдите в систему:
    codex
-4. ターミナルから見つけられるか確認します:
+4. Убедитесь, что терминал его находит:
    which codex
    codex --version
-5. Agora daemon を再起動します:
+5. Перезапустите Agora daemon:
    agora daemon restart
-   デスクトップアプリを使っている場合は、アプリを再起動するだけで十分です。
-6. Runtimes に戻って再読み込みします。Codex runtime が online と表示されるはずです。
-7. その runtime から最初の agent を作り、issue を agent に割り当てて status を todo にします。
+   Если вы используете десктопное приложение, достаточно перезапустить его.
+6. Вернитесь в Runtimes и обновите страницу. Вы должны увидеть Codex runtime в статусе online.
+7. Создайте своего первого agent из этого runtime, затем назначьте issue на agent и установите статус todo.
 
-Codex のリファレンス: https://developers.openai.com/codex/cli
+Справка по Codex: https://developers.openai.com/codex/cli
 
-runtime が接続されたら、Agora Helper を作成して、案内付きの最初の実行を始められます。`;
+Когда runtime подключён, вы можете создать Agora Helper для пошагового первого запуска.`;
 
-export const INSTALL_RUNTIME_ISSUE_BODY = { en, zh, ko, ja } as const;
+export const INSTALL_RUNTIME_ISSUE_BODY = { en, zh, uz, ru } as const;
 
 /**
  * Prefix sentence for the follow-up comment posted on this issue (the one
@@ -198,6 +198,6 @@ export const INSTALL_RUNTIME_ISSUE_BODY = { en, zh, ko, ja } as const;
 export const FOLLOWUP_COMMENT_PREFIX = {
   en: "Your next step:",
   zh: "完成后的下一步：",
-  ko: "다음 단계:",
-  ja: "次のステップ:",
+  uz: "Keyingi qadamingiz:",
+  ru: "Ваш следующий шаг:",
 } as const;

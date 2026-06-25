@@ -1208,6 +1208,14 @@ func (h *Handler) advanceIssueToDone(ctx context.Context, issue db.Issue, worksp
 	// exists, parent not terminal), so calling it unconditionally is safe.
 	h.notifyParentOfChildDone(ctx, issue, updated, "system", "")
 
+	// Same prev!=done -> done transition the HTTP UpdateIssue path hooks: a
+	// merged PR ("Closes <key>") is the dominant way work actually completes,
+	// so distill the issue into its project knowledgebase here too. Guard on the
+	// pre-update status so a redundant done-set doesn't re-fire the synthesizer.
+	if issue.Status != "done" {
+		h.maybeEnqueueKnowledgeCapture(ctx, updated)
+	}
+
 	prefix := h.getIssuePrefix(ctx, issue.WorkspaceID)
 	resp := issueToResponse(updated, prefix)
 	h.publish(protocol.EventIssueUpdated, workspaceID, "system", "", map[string]any{

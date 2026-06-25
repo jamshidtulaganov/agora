@@ -63,11 +63,11 @@ func TestUpdateMeAcceptsLanguage(t *testing.T) {
 	}
 }
 
-func TestUpdateMeAcceptsKoreanLanguage(t *testing.T) {
-	userID := newLanguageTestUser(t, "lang-ko@agora.dev")
+func TestUpdateMeAcceptsUzbekLanguage(t *testing.T) {
+	userID := newLanguageTestUser(t, "lang-uz@agora.dev")
 
 	w := httptest.NewRecorder()
-	req := newPatchMeRequest(userID, `{"language":"ko"}`)
+	req := newPatchMeRequest(userID, `{"language":"uz"}`)
 	testHandler.UpdateMe(w, req)
 
 	if w.Code != http.StatusOK {
@@ -78,16 +78,16 @@ func TestUpdateMeAcceptsKoreanLanguage(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got, _ := resp["language"].(string); got != "ko" {
-		t.Fatalf("expected response language=ko, got %v", resp["language"])
+	if got, _ := resp["language"].(string); got != "uz" {
+		t.Fatalf("expected response language=uz, got %v", resp["language"])
 	}
 }
 
-func TestUpdateMeAcceptsJapaneseLanguage(t *testing.T) {
-	userID := newLanguageTestUser(t, "lang-ja@agora.dev")
+func TestUpdateMeAcceptsRussianLanguage(t *testing.T) {
+	userID := newLanguageTestUser(t, "lang-ru@agora.dev")
 
 	w := httptest.NewRecorder()
-	req := newPatchMeRequest(userID, `{"language":"ja"}`)
+	req := newPatchMeRequest(userID, `{"language":"ru"}`)
 	testHandler.UpdateMe(w, req)
 
 	if w.Code != http.StatusOK {
@@ -98,8 +98,8 @@ func TestUpdateMeAcceptsJapaneseLanguage(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got, _ := resp["language"].(string); got != "ja" {
-		t.Fatalf("expected response language=ja, got %v", resp["language"])
+	if got, _ := resp["language"].(string); got != "ru" {
+		t.Fatalf("expected response language=ru, got %v", resp["language"])
 	}
 }
 

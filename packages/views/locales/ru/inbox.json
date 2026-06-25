@@ -1,0 +1,71 @@
+{
+  "page": {
+    "title": "Входящие",
+    "back": "Входящие"
+  },
+  "menu": {
+    "mark_all_read": "Отметить все как прочитанные",
+    "archive_all": "Архивировать все",
+    "archive_all_read": "Архивировать прочитанные",
+    "archive_completed": "Архивировать завершённые"
+  },
+  "list": {
+    "empty": "Нет уведомлений",
+    "mark_done_tooltip": "Отметить как выполненное",
+    "archive_tooltip": "Архивировать",
+    "time": {
+      "just_now": "только что",
+      "minutes": "{{count}} мин",
+      "hours": "{{count}} ч",
+      "days": "{{count}} дн"
+    }
+  },
+  "detail": {
+    "select_prompt": "Выберите уведомление, чтобы просмотреть детали",
+    "empty": "Ваши входящие пусты",
+    "original_input": "Исходный ввод",
+    "edit_advanced": "Редактировать как расширенную форму",
+    "archive": "Архивировать"
+  },
+  "types": {
+    "issue_assigned": "Назначено",
+    "unassigned": "Снято назначение",
+    "assignee_changed": "Исполнитель изменён",
+    "status_changed": "Статус изменён",
+    "priority_changed": "Приоритет изменён",
+    "start_date_changed": "Дата начала изменена",
+    "due_date_changed": "Срок изменён",
+    "new_comment": "Новый комментарий",
+    "mentioned": "Упомянут",
+    "review_requested": "Запрошена проверка",
+    "task_completed": "Задание завершено",
+    "task_failed": "Задание не выполнено",
+    "agent_blocked": "Агент заблокирован",
+    "agent_completed": "Агент завершил",
+    "reaction_added": "Отреагировал",
+    "quick_create_done": "Создано с агентом",
+    "quick_create_failed": "Не удалось создать с агентом"
+  },
+  "labels": {
+    "set_status_to": "Установить статус",
+    "set_priority_to": "Установить приоритет",
+    "assigned_to": "Назначено {{name}}",
+    "removed_assignee": "Исполнитель снят",
+    "set_start_date_to": "Дата начала установлена на {{date}}",
+    "removed_start_date": "Дата начала удалена",
+    "set_due_date_to": "Срок установлен на {{date}}",
+    "removed_due_date": "Срок удалён",
+    "reacted_to_comment": "Отреагировал {{emoji}} на ваш комментарий",
+    "created_with_agent": "Создано с агентом: {{identifier}}",
+    "failed_with_detail": "Сбой: {{detail}}"
+  },
+  "errors": {
+    "mark_read_failed": "Не удалось отметить как прочитанное",
+    "archive_failed": "Не удалось архивировать",
+    "mark_done_failed": "Не удалось отметить как выполненное",
+    "mark_all_read_failed": "Не удалось отметить все как прочитанные",
+    "archive_all_failed": "Не удалось архивировать все",
+    "archive_all_read_failed": "Не удалось архивировать прочитанные элементы",
+    "archive_completed_failed": "Не удалось архивировать завершённые"
+  }
+}

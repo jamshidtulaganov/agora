@@ -1,0 +1,124 @@
+{
+  "fab": {
+    "running": "Agora ishlamoqda...",
+    "unread_one": "{{count}} o‘qilmagan suhbat",
+    "unread_other": "{{count}} o‘qilmagan suhbat",
+    "default": "Agora’dan so‘rang"
+  },
+  "input": {
+    "placeholder_no_agent": "Suhbatni boshlash uchun Agent yarating",
+    "placeholder_archived": "Bu sessiya arxivlangan",
+    "placeholder_named": "{{name}} ga xabar…",
+    "placeholder_default": "Xabar yozishni boshlang…",
+    "send_tooltip": "Yuborish",
+    "stop_tooltip": "To‘xtatish",
+    "send_failed_toast": "Xabar yuborib bo‘lmadi"
+  },
+  "message_list": {
+    "show_details": "Tafsilotlarni ko‘rsatish",
+    "replied_in": "{{elapsed}} ichida javob berildi",
+    "failed_after": "{{elapsed}} dan keyin muvaffaqiyatsiz tugadi",
+    "task_failed_fallback": "Topshiriq muvaffaqiyatsiz tugadi",
+    "tools_one": "{{count}} vosita",
+    "tools_other": "{{count}} vosita",
+    "tool_result_named": "{{tool}} natijasi: ",
+    "tool_result_unnamed": "natija: ",
+    "process_steps_one": "{{count}} qadam",
+    "process_steps_other": "{{count}} qadam",
+    "copy_action": "Nusxalash",
+    "copied_toast": "Nusxalandi",
+    "copy_failed_toast": "Nusxalab bo‘lmadi",
+    "loading_older": "Eski xabarlar yuklanmoqda…"
+  },
+  "session_history": {
+    "untitled": "Nomsiz",
+    "time": {
+      "just_now": "hozirgina",
+      "minutes": "{{count}} daq oldin",
+      "hours": "{{count}} soat oldin",
+      "days": "{{count}} kun oldin"
+    },
+    "row_delete_aria": "Suhbat sessiyasini o‘chirish",
+    "row_rename_aria": "Suhbat sessiyasini qayta nomlash",
+    "row_stop_aria": "Joriy ishni to‘xtatish",
+    "stop_action": "To‘xtatish",
+    "row_subtitle": {
+      "working": "Ishlamoqda",
+      "completed": "Yakunlandi",
+      "new_reply": "Yangi javob"
+    },
+    "stop_dialog": {
+      "title": "Bu ishni to‘xtatilsinmi?",
+      "description_with_title": "Bu \"{{title}}\" dagi joriy agent topshirig‘ini bekor qiladi. Qisman natija suhbatda qoladi.",
+      "description_default": "Bu joriy agent topshirig‘ini bekor qiladi. Qisman natija suhbatda qoladi.",
+      "cancel": "Davom etsin",
+      "confirm": "Ishni to‘xtatish",
+      "confirming": "To‘xtatilmoqda..."
+    },
+    "delete_dialog": {
+      "title": "Suhbat sessiyasini o‘chirish",
+      "description_with_title": "\"{{title}}\" va uning xabarlari butunlay o‘chiriladi. Bu amalni bekor qilib bo‘lmaydi.",
+      "description_default": "Bu suhbat sessiyasi va uning xabarlari butunlay o‘chiriladi. Bu amalni bekor qilib bo‘lmaydi.",
+      "cancel": "Bekor qilish",
+      "confirm": "O‘chirish",
+      "confirming": "O‘chirilmoqda..."
+    }
+  },
+  "window": {
+    "new_chat_tooltip": "Yangi suhbat",
+    "restore_tooltip": "Tiklash",
+    "expand_tooltip": "Yoyish",
+    "minimize_tooltip": "Yig‘ish",
+    "another_running": "Boshqa suhbat ishlamoqda",
+    "another_unread": "Boshqa suhbatda o‘qilmagan javoblar bor",
+    "running": "Ishlamoqda",
+    "unread": "O‘qilmagan",
+    "no_previous": "Avvalgi suhbatlar yo‘q",
+    "untitled": "Yangi suhbat",
+    "my_agents": "Mening agentlarim",
+    "others": "Boshqalar",
+    "no_agents": "Agentlar yo‘q",
+    "history_group": "Suhbatlar tarixi",
+    "agent_filter_placeholder": "Agentlarni qidirish..."
+  },
+  "empty_state": {
+    "first_time_title": "Agentlaringiz bilan suhbatlashing",
+    "first_time_intro": "✨ Ular sizning ish maydoningizni biladi —",
+    "first_time_pillars": "vazifalar, loyihalar, Skill’lar",
+    "first_time_pillars_suffix": ".",
+    "first_time_actions": "Xulosa so‘rang, kuningizni rejalang yoki tezkor topshiriq toping.",
+    "returning_title_named": "Salom, men {{name}}",
+    "returning_title_default": "Agora’ga xush kelibsiz",
+    "returning_subtitle": "So‘rab ko‘ring"
+  },
+  "starter_prompts": {
+    "list_open": "Ochiq vazifalarimni muhimlik bo‘yicha ro‘yxatla",
+    "summarize_today": "Bugun nima qilganimni xulosalab ber",
+    "plan_next": "Keyin nima ustida ishlashni rejalashtir"
+  },
+  "no_agent_banner": "Suhbatni boshlash uchun sizga Agent kerak.",
+  "offline_banner": {
+    "fallback_name": "agent",
+    "unstable": "{{name}}ning aloqasi barqaror emas — javoblar kechikishi mumkin.",
+    "offline": "{{name}} oflayn — xabaringiz u qaytganda yetkaziladi."
+  },
+  "status_pill": {
+    "stages": {
+      "offline": "Oflayn",
+      "reconnecting": "Qayta ulanmoqda",
+      "queued": "Navbatda",
+      "waiting_local_directory": "Lokal katalog kutilmoqda",
+      "starting_up": "Ishga tushirilmoqda",
+      "thinking": "O‘ylamoqda",
+      "typing": "Yozmoqda"
+    },
+    "tools": {
+      "running_command": "Buyruq bajarilmoqda",
+      "reading_files": "Fayllar o‘qilmoqda",
+      "searching_code": "Kod qidirilmoqda",
+      "making_edits": "Tahrirlar kiritilmoqda",
+      "searching_web": "Internet qidirilmoqda",
+      "fallback": "Ishlamoqda"
+    }
+  }
+}

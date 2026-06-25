@@ -1,0 +1,266 @@
+{
+  "page": {
+    "title": "Skill’lar",
+    "tagline": "Bu ish maydonidagi har bir agent foydalana oladigan ko‘rsatmalar.",
+    "learn_more": "Batafsil →",
+    "new_skill": "Yangi Skill",
+    "search_placeholder": "Skill’larni qidirish…",
+    "scopes": {
+      "all": { "label": "Barchasi", "description": "Bu ish maydonidagi barcha Skill’lar" },
+      "used": { "label": "Foydalanilmoqda", "description": "Kamida bitta agentga tayinlangan Skill’lar" },
+      "unused": { "label": "Foydalanilmagan", "description": "Hech bir agentga tayinlanmagan Skill’lar" },
+      "mine": { "label": "Men yaratganlar", "description": "Siz yaratgan Skill’lar" }
+    },
+    "empty": {
+      "title": "Hali Skill’lar yo‘q",
+      "description": "Birinchi Skill’ingizni yarating, URL’dan import qiling yoki ulangan runtime’dan nusxa oling — shunda ish maydonidagi har bir agent undan foydalana oladi."
+    },
+    "no_matches": {
+      "title": "Mosliklar yo‘q",
+      "with_query": "\"{{query}}\"{{filterSuffix}} ga mos Skill’lar yo‘q.",
+      "with_query_filter_suffix": " bu filtrda",
+      "filter_only": "Bu filtrga mos Skill’lar yo‘q.",
+      "try_different": " Boshqa so‘rovni sinab ko‘ring."
+    },
+    "intro_banner": {
+      "title": "Ish maydoningiz bilan ulashilgan.",
+      "body": "Har kim Skill yaratishi, URL’dan import qilishi yoki o‘zining lokal runtime’idan nusxa olishi mumkin — va har bir agent undan foydalana oladi.",
+      "highlight": "Lokal runtime Skill’lari siz bu yerga nusxa olmaguningizcha shaxsiy bo‘lib qoladi."
+    },
+    "list_error": {
+      "title": "Skill’larni yuklab bo‘lmadi",
+      "fallback": "Skill ro‘yxatini olishda nimadir noto‘g‘ri ketdi.",
+      "retry": "Qayta urinish"
+    },
+    "supporting_data_warning": "Ba’zi ish maydoni ma’lumotlari yuklanmadi. Muallif atributi, runtime nomlari yoki tahrirlash ruxsatlari to‘liq ko‘rinmasligi mumkin."
+  },
+  "table": {
+    "name": "Nom",
+    "used_by": "Kim foydalanmoqda",
+    "source": "Manba · Kim qo‘shgan",
+    "updated": "Yangilangan",
+    "no_description": "Tavsif yo‘q",
+    "lock_tooltip": "Faqat o‘qish uchun — faqat muallif yoki admin tahrirlay oladi",
+    "unused": "— foydalanilmagan",
+    "by_creator": "{{name}} tomonidan",
+    "source_manual": "Qo‘lda yaratilgan",
+    "source_runtime_named": "{{name}} dan",
+    "source_runtime_provider": "{{provider}} runtime’dan",
+    "source_runtime_unknown": "Runtime’dan",
+    "source_clawhub": "ClawHub’dan",
+    "source_skills_sh": "Skills.sh’dan",
+    "source_github": "GitHub’dan"
+  },
+  "detail": {
+    "all_skills": "Barcha Skill’lar",
+    "read_only": "Faqat o‘qish uchun",
+    "delete_aria": "Skill’ni o‘chirish",
+    "delete_tooltip": "Skill’ni o‘chirish",
+    "supporting_data_warning": "Ba’zi ish maydoni ma’lumotlari yuklanmadi. Muallif atributi, runtime nomlari yoki tahrirlash ruxsatlari keyingi yangilanishgacha to‘liq ko‘rinmasligi mumkin.",
+    "files_label": "Fayllar · {{count}}",
+    "add_file_aria": "Fayl qo‘shish",
+    "add_file_tooltip": "Fayl qo‘shish",
+    "delete_file": "Faylni o‘chirish",
+    "name_aria": "Skill nomi",
+    "name_placeholder": "skill-name",
+    "description_label": "Tavsif",
+    "description_placeholder": "Agent bu Skill’dan qachon foydalanishi kerakligini tasvirlovchi bitta jumla…",
+    "subline": {
+      "origin_runtime_named": "Lokal runtime · {{name}}",
+      "origin_runtime_provider": "Lokal runtime · {{provider}}",
+      "origin_runtime_unknown": "Lokal runtime",
+      "origin_clawhub": "Import qilingan · ClawHub",
+      "origin_skills_sh": "Import qilingan · Skills.sh",
+      "origin_github": "Import qilingan · GitHub",
+      "origin_workspace": "Ish maydoni",
+      "updated_label": "Yangilangan {{when}}",
+      "by_creator": "{{name}} tomonidan"
+    },
+    "conflict_banner": {
+      "title": "Kimdir bu Skill’ni yangiladi",
+      "body": "Sizning tahrirlaringiz saqlanadi. Ularning o‘zgarishlarini olish uchun Bekor qiling yoki ustiga yozish uchun Saqlang."
+    },
+    "save_bar": {
+      "unsaved": "Saqlanmagan o‘zgarishlar — saqlashda jonli Skill ustiga yoziladi",
+      "discard": "Bekor qilish",
+      "save": "O‘zgarishlarni saqlash",
+      "saving": "Saqlanmoqda…"
+    },
+    "sidebar": {
+      "metadata": "Metama’lumot",
+      "created": "Yaratilgan",
+      "updated": "Yangilangan",
+      "created_by": "Yaratuvchi",
+      "files": "Fayllar",
+      "id": "ID",
+      "origin": "Manba",
+      "used_by_one": "{{count}} agent foydalanmoqda",
+      "used_by_other": "{{count}} agent foydalanmoqda",
+      "permissions": "Ruxsatlar",
+      "permissions_owner": "Siz bu Skill’ni tahrirlashingiz va o‘chirishingiz mumkin. O‘zgarishlar keyingi agent topshirig‘ida kuchga kiradi.",
+      "permissions_locked_creator": "Bu Skill’ni faqat muallif ({{name}}) yoki ish maydoni admini tahrirlay oladi.",
+      "permissions_locked": "Bu Skill’ni faqat muallif yoki ish maydoni admini tahrirlay oladi.",
+      "used_by_empty": "Hali hech bir agentga tayinlanmagan. Tayinlash uchun agentning Skill’lar yorlig‘ini oching."
+    },
+    "origin_card": {
+      "imported_runtime": "Lokal runtime’dan import qilingan",
+      "imported_clawhub": "ClawHub’dan import qilingan",
+      "imported_skills_sh": "Skills.sh’dan import qilingan",
+      "imported_github": "GitHub’dan import qilingan",
+      "provider": "provayder · {{provider}}"
+    },
+    "not_found": {
+      "title": "Skill topilmadi",
+      "fallback": "Bu Skill o‘chirilgan bo‘lishi yoki siz unga kirish huquqini yo‘qotgan bo‘lishingiz mumkin.",
+      "back": "Skill’larga qaytish"
+    },
+    "toast_saved": "Skill saqlandi",
+    "toast_save_failed": "Skill’ni saqlab bo‘lmadi",
+    "toast_deleted": "Skill o‘chirildi",
+    "toast_delete_failed": "Skill’ni o‘chirib bo‘lmadi",
+    "delete_dialog": {
+      "title": "Skill o‘chirilsinmi?",
+      "description_with_agents_one": "Bu \"{{name}}\" ni butunlay o‘chiradi va uni hozir foydalanayotgan {{count}} agentdan olib tashlaydi.",
+      "description_with_agents_other": "Bu \"{{name}}\" ni butunlay o‘chiradi va uni hozir foydalanayotgan {{count}} agentdan olib tashlaydi.",
+      "description_no_agents": "Bu \"{{name}}\" ni butunlay o‘chiradi va uni barcha agentlardan olib tashlaydi.",
+      "warning": "Bu amalni bekor qilib bo‘lmaydi.",
+      "cancel": "Bekor qilish",
+      "confirm": "Butunlay o‘chirish",
+      "deleting": "O‘chirilmoqda…"
+    },
+    "add_file": {
+      "placeholder": "templates/review.md",
+      "add": "Qo‘shish",
+      "cancel": "Bekor qilish",
+      "errors": {
+        "empty": "Yo‘l bo‘sh bo‘lishi mumkin emas.",
+        "absolute": "Mutlaq yo‘llarga ruxsat berilmagan.",
+        "double_dot": "Yo‘llar \"..\" o‘z ichiga ololmaydi.",
+        "reserved": "SKILL.md asosiy fayl uchun band qilingan.",
+        "exists": "Bu yo‘ldagi fayl allaqachon mavjud."
+      }
+    }
+  },
+  "create": {
+    "back": "Orqaga",
+    "back_aria": "Usul tanlovchiga qaytish",
+    "close": "Yopish",
+    "close_aria": "Yopish",
+    "method": {
+      "chooser": {
+        "title": "Yangi Skill",
+        "desc": "Bu ish maydoniga Skill’ni qanday qo‘shishni tanlang."
+      },
+      "manual": {
+        "title": "Qo‘lda yaratish",
+        "desc": "Noldan yangi SKILL.md yozing."
+      },
+      "url": {
+        "title": "URL’dan import qilish",
+        "desc": "Nashr etilgan Skill’ni URL bo‘yicha oling. Fayllar server tomonida olinadi."
+      },
+      "runtime": {
+        "title": "Runtime’dan nusxa olish",
+        "desc": "Lokal runtime’ni skanerlang va uning diskdagi Skill’laridan birini bu ish maydoniga ko‘taring."
+      }
+    },
+    "method_card": {
+      "manual_title": "Qo‘lda yaratish",
+      "manual_desc": "Bo‘sh SKILL.md’dan boshlang va o‘z ko‘rsatmalaringizni yozing.",
+      "url_title": "URL’dan import qilish",
+      "url_desc": "Nashr etilgan Skill’ni ClawHub yoki Skills.sh’dan oling.",
+      "runtime_title": "Runtime’dan nusxa olish",
+      "runtime_desc": "Lokal runtime’ingizga allaqachon o‘rnatilgan Skill’ni ko‘taring."
+    },
+    "manual": {
+      "name_label": "Nom",
+      "name_placeholder": "masalan, review-helper",
+      "name_hint": "Ish maydoni ichida noyob bo‘lishi kerak.",
+      "description_label": "Tavsif",
+      "description_placeholder": "Bu Skill’ni agentga qachon tayinlash kerakligi haqida bitta jumla.",
+      "name_conflict_hint": " Boshqa nom sinab, qayta yuboring.",
+      "fallback_error": "Skill yaratib bo‘lmadi",
+      "cancel": "Bekor qilish",
+      "submit": "Skill yaratish",
+      "submitting": "Yaratilmoqda…",
+      "toast_created": "Skill yaratildi"
+    },
+    "url": {
+      "url_label": "Skill URL’i",
+      "supported_sources": "Qo‘llab-quvvatlanadigan manbalar",
+      "import": "Import qilish",
+      "importing": "Import qilinmoqda…",
+      "importing_clawhub": "ClawHub’dan import qilinmoqda…",
+      "importing_skills_sh": "Skills.sh’dan import qilinmoqda…",
+      "importing_github": "GitHub’dan import qilinmoqda…",
+      "name_conflict_hint": " Import qilingan Skill nomi allaqachon mavjud — qayta urinishdan oldin mavjudini o‘chiring.",
+      "fallback_error": "Import muvaffaqiyatsiz tugadi",
+      "cancel": "Bekor qilish",
+      "toast_imported": "Skill import qilindi"
+    }
+  },
+  "runtime_import": {
+    "runtime_label": "Runtime",
+    "runtime_placeholder": "Lokal runtime tanlang",
+    "no_local_runtimes_title": "Lokal runtime’lar mavjud emas",
+    "no_local_runtimes_hint": "Uning lokal Skill’larini ko‘rish va import qilish uchun lokal runtime ulang.",
+    "choose_runtime": "Davom etish uchun runtime tanlang",
+    "must_be_online": "Lokal Skill’larni ko‘rish uchun runtime onlayn bo‘lishi kerak.",
+    "load_failed": "Runtime lokal Skill’larini yuklab bo‘lmadi",
+    "not_supported": "Bu runtime provayderi hali lokal Skill ro‘yxatini ko‘rsatmaydi.",
+    "no_skills_title": "Lokal Skill’lar topilmadi",
+    "no_skills_hint": "Bu runtime’da hali topiladigan lokal Skill’lar yo‘q.",
+    "ignored_files_hint": "Simvolik havolalar, o‘qib bo‘lmaydigan fayllar, haddan tashqari katta fayllar va juda katta to‘plamlar import paytida e’tiborga olinmaydi.",
+    "ready": "Import qilishga tayyor",
+    "into_workspace": "bu ish maydoniga.",
+    "select_skill": "Davom etish uchun Skill tanlang.",
+    "import_button": "Ish maydoniga import qilish",
+    "importing": "Import qilinmoqda…",
+    "skill_files_one": "{{count}} fayl",
+    "skill_files_other": "{{count}} fayl",
+    "skill_name_label": "Ish maydoni Skill nomi",
+    "skill_description_label": "Tavsif",
+    "skill_description_placeholder": "Ixtiyoriy — agent bu Skill’dan qachon foydalanishi kerakligini tasvirlang.",
+    "toast_imported": "Skill import qilindi",
+    "toast_import_failed": "Skill’ni import qilib bo‘lmadi",
+    "select_all": "Barchasini tanlash ({{count}})",
+    "bulk_ready": "{{count}} Skill tanlandi",
+    "bulk_import_button": "{{count}} Skill import qilish",
+    "bulk_progress": "{{completed}} / {{total}} import qilinmoqda…",
+    "bulk_cancel_button": "Bekor qilish",
+    "bulk_complete_hint": "Import tugadi.",
+    "bulk_cancelled_hint": "Import bekor qilindi.",
+    "bulk_done_button": "Tayyor",
+    "bulk_summary_created": "Yaratildi",
+    "bulk_summary_updated": "Yangilandi",
+    "bulk_summary_conflicts": "Ziddiyatlar",
+    "bulk_summary_skipped": "O‘tkazib yuborildi",
+    "bulk_summary_failed": "Muvaffaqiyatsiz",
+    "conflict_single_title": "Bu nomdagi Skill allaqachon mavjud",
+    "conflict_bulk_title": "{{count}} Skill qaror talab qiladi",
+    "conflict_hint": "Mavjud ish maydoni Skill’i ustiga yozish, yangi nom bilan import qilish yoki o‘tkazib yuborishni tanlang.",
+    "conflict_locked_creator": "Bu Skill {{creator}} tomonidan yaratilgan. Uni lokal importdan faqat muallif ustiga yoza oladi; o‘zgartirish kerak bo‘lsa, Skill tafsiloti sahifasidan tahrirlang.",
+    "conflict_locked": "Bu Skill ustiga lokal importdan faqat muallif yoza oladi; o‘zgartirish kerak bo‘lsa, Skill tafsiloti sahifasidan tahrirlang.",
+    "conflict_overwrite": "Ustiga yozish",
+    "conflict_rename": "Nomini o‘zgartirish",
+    "conflict_skip": "O‘tkazib yuborish",
+    "conflict_cancel": "Bekor qilish",
+    "conflict_overwrite_all": "Hammasi ustiga yozish",
+    "conflict_skip_all": "Hammasini o‘tkazib yuborish",
+    "conflict_rename_label": "Yangi Skill nomi",
+    "conflict_footer": "{{count}} ziddiyat qarori kutilmoqda.",
+    "conflict_apply_button": "Qarorlarni qo‘llash",
+    "conflict_missing_resolution": "Bu ziddiyatni qanday hal qilishni tanlang.",
+    "conflict_name_still_exists": "Bu nom allaqachon mavjud. Boshqa nom tanlang yoki o‘tkazib yuboring."
+  },
+  "file_tree": {
+    "no_files": "Fayllar yo‘q"
+  },
+  "file_viewer": {
+    "edit_tooltip": "Tahrirlash",
+    "preview_tooltip": "Oldindan ko‘rish",
+    "no_content": "*Hali kontent yo‘q*",
+    "markdown_placeholder": "Markdown kontent yozing...",
+    "raw_placeholder": "Fayl kontenti..."
+  }
+}

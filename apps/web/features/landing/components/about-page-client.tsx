@@ -21,21 +21,13 @@ export function AboutPageClient() {
           <div className="mt-8 space-y-6 text-[15px] leading-[1.8] text-[#0a0d12]/70 sm:text-[16px]">
             <p>
               {n.prefix}
-              <strong className="font-semibold text-[#0a0d12]">
-                {n.mul}
-              </strong>
+              <strong className="font-semibold text-[#0a0d12]">{n.mul}</strong>
               {n.tiplexed}
-              <strong className="font-semibold text-[#0a0d12]">
-                {n.i}
-              </strong>
+              <strong className="font-semibold text-[#0a0d12]">{n.i}</strong>
               {n.nformationAnd}
-              <strong className="font-semibold text-[#0a0d12]">
-                {n.c}
-              </strong>
+              <strong className="font-semibold text-[#0a0d12]">{n.c}</strong>
               {n.omputing}
-              <strong className="font-semibold text-[#0a0d12]">
-                {n.a}
-              </strong>
+              <strong className="font-semibold text-[#0a0d12]">{n.a}</strong>
               {n.gent}
             </p>
             {t.about.paragraphs.map((p, i) => (

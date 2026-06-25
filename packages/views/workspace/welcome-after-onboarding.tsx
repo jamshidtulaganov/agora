@@ -343,7 +343,7 @@ function RuntimeWelcome({
       useCaseLabel: t(
         ($) => $.welcome_after_onboarding.user_context_use_case_label,
       ),
-      listSeparator: lang === "zh" || lang === "ja" ? "、" : ", ",
+      listSeparator: lang === "zh" ? "、" : ", ",
       role: {},
       useCase: {},
     };

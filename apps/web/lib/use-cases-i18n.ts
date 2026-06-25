@@ -33,24 +33,24 @@ export const useCaseText: Record<SupportedLocale, UseCaseText> = {
     cardReadMore: "阅读 →",
     tableOfContents: "目录",
   },
-  ko: {
-    indexTitle: "사용 사례",
+  uz: {
+    indexTitle: "Foydalanish holatlari",
     indexSubtitle:
-      "팀이 Agora로 사람과 에이전트를 함께 구성하는 방법을 확인해 보세요.",
-    indexMetadataTitle: "사용 사례",
+      "Jamoalar Agora bilan odamlar va agentlarni qanday birga tashkil qilishini ko‘ring.",
+    indexMetadataTitle: "Foydalanish holatlari",
     indexMetadataDescription:
-      "팀이 Agora로 사람과 에이전트를 함께 일하게 만드는 방법을 확인해 보세요.",
-    cardReadMore: "읽기 →",
-    tableOfContents: "이 페이지에서",
+      "Jamoalar Agora bilan odamlar va agentlarni birga ishlatishini ko‘ring.",
+    cardReadMore: "O‘qish →",
+    tableOfContents: "Ushbu sahifada",
   },
-  ja: {
-    indexTitle: "ユースケース",
+  ru: {
+    indexTitle: "Сценарии использования",
     indexSubtitle:
-      "チームが Agora で人とエージェントをどう組み合わせて動かしているかをご覧ください。",
-    indexMetadataTitle: "ユースケース",
+      "Узнайте, как команды объединяют людей и агентов с помощью Agora.",
+    indexMetadataTitle: "Сценарии использования",
     indexMetadataDescription:
-      "チームが Agora で人とエージェントを一緒に働かせる方法をご覧ください。",
-    cardReadMore: "続きを読む →",
-    tableOfContents: "このページの内容",
+      "Узнайте, как команды заставляют людей и агентов работать вместе с Agora.",
+    cardReadMore: "Читать →",
+    tableOfContents: "На этой странице",
   },
 };

@@ -1,0 +1,28 @@
+{
+  "save": "Saqlash",
+  "cancel": "Bekor qilish",
+  "delete": "O‘chirish",
+  "confirm": "Tasdiqlash",
+  "loading": "Yuklanmoqda...",
+  "time": {
+    "just_now": "hozirgina",
+    "minutes_ago": "{{count}} daq oldin",
+    "hours_ago": "{{count}} soat oldin",
+    "days_ago": "{{count}} kun oldin"
+  },
+  "lark_bind": {
+    "page_title": "Lark hisobingizni bog‘lang",
+    "redeeming": "Bog‘lash tokeni qabul qilinmoqda…",
+    "needs_auth_description": "Bog‘lashni yakunlash uchun Agora’ga kiring. Havoladagi token sizning Lark hisobingizni shu Agora foydalanuvchisiga bog‘laydi, shuning uchun avval tizimga kirgan bo‘lishingiz kerak.",
+    "sign_in": "Kirish",
+    "done_title": "Bog‘landingiz.",
+    "done_description": "Lark’dagi Bot’ga keyingi xabaringiz to‘g‘ridan-to‘g‘ri Agent’ga boradi. Bu ko‘rinishni yopishingiz mumkin.",
+    "error_title": "Bog‘lashni yakunlab bo‘lmadi",
+    "error_admin_hint": "Agar bu takrorlansa, ish maydoni adminidan bog‘lash havolasini Lark’dan qayta yuborishni so‘rang.",
+    "error_missing_token": "Havolada bog‘lash tokeni yo‘q. Bot’dan Lark’da yangisini yuborishni so‘rang.",
+    "error_expired": "Bu bog‘lash havolasi noto‘g‘ri yoki muddati tugagan (havolalar 15 daqiqa amal qiladi). Bot’dan yangisini yuborishni so‘rang.",
+    "error_already_bound": "Bu Lark hisobi allaqachon boshqa Agora foydalanuvchisiga bog‘langan. Hisobni o‘tkazish avval aniq uzishdan o‘tishi kerak.",
+    "error_not_member": "Siz bu ish maydoni a’zosi bo‘lmagan Agora hisobiga kirgansiz.",
+    "error_unknown": "Nimadir noto‘g‘ri ketdi. Qayta urinib ko‘ring, agar muammo davom etsa, ish maydoni admini bilan bog‘laning."
+  }
+}
