@@ -45,7 +45,10 @@ ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 ENV NEXT_PUBLIC_APP_VERSION=$NEXT_PUBLIC_APP_VERSION
 ENV STANDALONE=true
 
-# Build the web app (standalone output for minimal runtime)
+# Build the web app (standalone output for minimal runtime).
+# next.config experimental.cpus=1 caps static-gen to 1 worker (the real OOM fix).
+# Do NOT override --max-old-space-size here: forcing 4GB pushed V8 past the
+# builder's physical RAM and OOM-killed the compile. Default heap auto-sizes to fit.
 RUN pnpm --filter @agora/web build
 
 # --- Runtime ---

@@ -27,6 +27,12 @@ const allowedDevOrigins = process.env.CORS_ALLOWED_ORIGINS
 const nextConfig: NextConfig = {
   ...(process.env.STANDALONE === "true" ? { output: "standalone" as const } : {}),
   transpilePackages: ["@agora/core", "@agora/ui", "@agora/views"],
+  // Type-checking runs in CI, not in the production image build. Skipping it
+  // avoids the OOM (SIGKILL) the tsc pass hit on the Fly/Depot builder.
+  typescript: { ignoreBuildErrors: true },
+  // Static generation ("Collecting page data") with 3 parallel workers OOM-killed
+  // the memory-constrained builder. Pin to 1 worker to cap peak memory.
+  experimental: { cpus: 1 },
   ...(allowedDevOrigins && allowedDevOrigins.length > 0
     ? { allowedDevOrigins }
     : {}),
@@ -60,6 +66,11 @@ const nextConfig: NextConfig = {
         {
           source: "/auth/:path*",
           destination: `${remoteApiUrl}/auth/:path*`,
+        },
+        {
+          // Telegram posts bot updates here (backend route: /telegram/webhook).
+          source: "/telegram/:path*",
+          destination: `${remoteApiUrl}/telegram/:path*`,
         },
         {
           source: "/uploads/:path*",

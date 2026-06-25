@@ -1,10 +1,10 @@
-# Dependencies
-node_modules
-.pnpm-store
+# Dependencies (bare patterns only match root in Docker — use **/ for nested)
+**/node_modules
+**/.pnpm-store
 
-# Build outputs
-.next
-dist
+# Build outputs (any depth — apps/web/.next was leaking 1.8GB into context)
+**/.next
+**/dist
 server/bin
 server/tmp
 
@@ -36,3 +36,14 @@ docs/
 
 # Desktop app (not needed for web self-hosting)
 apps/desktop
+
+# Other apps not needed for web/backend image builds
+apps/mobile
+apps/docs
+
+# Compiled binaries (root) — build artifacts, rebuilt inside the image
+bin/
+
+# Tooling artifacts + TS incremental cache (never needed in a build)
+.playwright-mcp/
+**/*.tsbuildinfo
