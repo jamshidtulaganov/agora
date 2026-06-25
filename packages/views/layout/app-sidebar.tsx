@@ -37,7 +37,6 @@ import {
   Users,
   Plug,
   Boxes,
-  Building2,
 } from "lucide-react";
 import { WorkspaceAvatar } from "../workspace/workspace-avatar";
 import { ActorAvatar } from "@agora/ui/components/common/actor-avatar";
@@ -163,7 +162,7 @@ const configureNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[]
   { key: "skills", labelKey: "skills", icon: BookOpenText },
   { key: "plugins", labelKey: "plugins", icon: Boxes },
   { key: "mcp", labelKey: "mcp", icon: Plug },
-  { key: "bitrix", labelKey: "bitrix", icon: Building2 },
+  // Bitrix removed from sidebar — accessed via Settings → Integrations instead.
   { key: "settings", labelKey: "settings", icon: Settings },
 ];
 
