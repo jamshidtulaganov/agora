@@ -14,6 +14,8 @@ export const STRINGS: Record<Locale, Record<string, string>> = {
     "common.member": "Member",
     "common.agent": "Agent",
     "common.loading": "Loading…",
+    "row.done": "Done",
+    "row.assignMe": "To me",
 
     "tab.inbox": "Inbox",
     "tab.issues": "Issues",
@@ -68,6 +70,8 @@ export const STRINGS: Record<Locale, Record<string, string>> = {
     "detail.noComments": "No comments yet.",
     "detail.commentPlaceholder": "Add a comment… use @agent to trigger",
     "detail.shareAria": "Share to Telegram",
+    "detail.postFailed": "Couldn’t post the comment",
+    "detail.notInWorkspace": "This task is in another workspace — switch workspace to reply.",
 
     "chat.title": "Chats",
     "chat.new": "New chat",
@@ -112,6 +116,8 @@ export const STRINGS: Record<Locale, Record<string, string>> = {
     "common.member": "Участник",
     "common.agent": "Агент",
     "common.loading": "Загрузка…",
+    "row.done": "Готово",
+    "row.assignMe": "Мне",
 
     "tab.inbox": "Входящие",
     "tab.issues": "Задачи",
@@ -166,6 +172,8 @@ export const STRINGS: Record<Locale, Record<string, string>> = {
     "detail.noComments": "Пока нет комментариев.",
     "detail.commentPlaceholder": "Комментарий… @agent — вызвать агента",
     "detail.shareAria": "Поделиться в Telegram",
+    "detail.postFailed": "Не удалось отправить комментарий",
+    "detail.notInWorkspace": "Эта задача в другом пространстве — переключите пространство, чтобы ответить.",
 
     "chat.title": "Чаты",
     "chat.new": "Новый чат",
@@ -210,6 +218,8 @@ export const STRINGS: Record<Locale, Record<string, string>> = {
     "common.member": "A’zo",
     "common.agent": "Agent",
     "common.loading": "Yuklanmoqda…",
+    "row.done": "Bajarildi",
+    "row.assignMe": "Menga",
 
     "tab.inbox": "Kiruvchi",
     "tab.issues": "Vazifalar",
@@ -264,6 +274,8 @@ export const STRINGS: Record<Locale, Record<string, string>> = {
     "detail.noComments": "Hozircha izohlar yo‘q.",
     "detail.commentPlaceholder": "Izoh… agentni chaqirish uchun @agent",
     "detail.shareAria": "Telegramga ulashish",
+    "detail.postFailed": "Izoh yuborilmadi",
+    "detail.notInWorkspace": "Bu vazifa boshqa ish maydonida — javob berish uchun ish maydonini almashtiring.",
 
     "chat.title": "Chatlar",
     "chat.new": "Yangi chat",

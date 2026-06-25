@@ -13,7 +13,7 @@ import { issueDetailOptions } from "@agora/core/issues/queries";
 import { useUpdateIssue } from "@agora/core/issues/mutations";
 import { memberListOptions, agentListOptions } from "@agora/core/workspace/queries";
 import { ALL_STATUSES, PRIORITY_ORDER } from "@agora/core/issues/config";
-import { getApi } from "@agora/core/api";
+import { getApi, ApiError } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core/hooks";
 import type {
   Issue,
@@ -29,6 +29,8 @@ import { CenterMessage } from "../components/center-message";
 import { BottomSheet } from "../components/bottom-sheet";
 import { StatusDot, PriorityBars } from "../components/issue-badges";
 import { Avatar } from "../components/avatar";
+import { MentionComposer } from "../components/mention-composer";
+import { renderMentions } from "../lib/render-mentions";
 import { haptic, shareToTelegram } from "../telegram/sdk";
 import { encodeStartParam } from "../telegram/start-param";
 import { useT, useFormatRelative } from "../i18n";
@@ -72,19 +74,28 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
   });
   const [comment, setComment] = useState("");
   const [posting, setPosting] = useState(false);
+  const [commentError, setCommentError] = useState<string | null>(null);
 
   const postComment = async () => {
     const content = comment.trim();
     if (!content || posting) return;
     haptic("light");
     setPosting(true);
+    setCommentError(null);
     setComment("");
     try {
       // @mentions in the content trigger the mentioned agent's task server-side.
       await getApi().createComment(issueId, content);
       qc.invalidateQueries({ queryKey: commentsQueryKey(issueId) });
-    } catch {
-      setComment(content); // restore draft on failure
+    } catch (err) {
+      setComment(content); // restore the draft so the user can retry
+      if (err instanceof ApiError && err.status === 404) {
+        setCommentError(t("detail.notInWorkspace"));
+      } else if (err instanceof ApiError) {
+        setCommentError(`${t("detail.postFailed")} (${err.status})`);
+      } else {
+        setCommentError(t("detail.postFailed"));
+      }
     } finally {
       setPosting(false);
     }
@@ -174,7 +185,7 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
               {t("detail.description")}
             </div>
             <p className="whitespace-pre-wrap break-words text-sm text-foreground">
-              {issue.description}
+              {renderMentions(issue.description)}
             </p>
           </div>
         )}
@@ -195,29 +206,33 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
         </div>
       </div>
 
-      <div className="flex shrink-0 items-end gap-2 border-t border-border bg-card px-3 py-2 pb-[max(env(safe-area-inset-bottom),0.5rem)]">
-        <textarea
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              void postComment();
-            }
-          }}
-          rows={1}
-          placeholder={t("detail.commentPlaceholder")}
-          className="max-h-32 flex-1 resize-none rounded-2xl bg-muted px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground"
-        />
-        <button
-          type="button"
-          onClick={postComment}
-          disabled={!comment.trim() || posting}
-          aria-label="Send comment"
-          className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand text-brand-foreground disabled:opacity-40"
-        >
-          <Send className="size-4" />
-        </button>
+      <div className="shrink-0 border-t border-border bg-card pb-[max(env(safe-area-inset-bottom),0.5rem)]">
+        {commentError && (
+          <div className="px-4 pt-1.5 text-xs text-destructive">{commentError}</div>
+        )}
+        <div className="flex items-end gap-2 px-3 py-2">
+          <MentionComposer
+            value={comment}
+            onChange={(v) => {
+              setComment(v);
+              if (commentError) setCommentError(null);
+            }}
+            onSubmit={postComment}
+            members={members}
+            agents={agents}
+            placeholder={t("detail.commentPlaceholder")}
+            disabled={posting}
+          />
+          <button
+            type="button"
+            onClick={postComment}
+            disabled={!comment.trim() || posting}
+            aria-label="Send comment"
+            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand text-brand-foreground disabled:opacity-40"
+          >
+            <Send className="size-4" />
+          </button>
+        </div>
       </div>
 
       {/* Status picker */}
@@ -392,7 +407,7 @@ function CommentItem({
           </span>
         </div>
         <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-foreground">
-          {comment.content}
+          {renderMentions(comment.content)}
         </p>
       </div>
     </li>

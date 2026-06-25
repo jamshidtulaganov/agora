@@ -55,6 +55,20 @@ export interface TelegramWebApp {
     onClick(cb: () => void): void;
     offClick(cb: () => void): void;
   };
+  MainButton?: {
+    text: string;
+    isVisible: boolean;
+    isActive: boolean;
+    setText(text: string): void;
+    show(): void;
+    hide(): void;
+    enable(): void;
+    disable(): void;
+    onClick(cb: () => void): void;
+    offClick(cb: () => void): void;
+    showProgress(leaveActive?: boolean): void;
+    hideProgress(): void;
+  };
 }
 
 declare global {

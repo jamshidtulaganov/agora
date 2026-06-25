@@ -1,13 +1,15 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Search, X } from "lucide-react";
 import { issueListOptions } from "@agora/core/issues/queries";
+import { useUpdateIssue } from "@agora/core/issues/mutations";
+import { memberListOptions, agentListOptions } from "@agora/core/workspace/queries";
 import { STATUS_CONFIG, BOARD_STATUSES } from "@agora/core/issues/config";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { useAuthStore } from "@agora/core/auth";
 import type { Issue, IssueStatus } from "@agora/core/types";
 import { useRouter } from "../platform/navigation";
-import { IssueRow } from "../components/issue-row";
+import { IssueRow, type RowAssignee } from "../components/issue-row";
 import { CenterMessage } from "../components/center-message";
 import { useT } from "../i18n";
 import { cn } from "../lib/cn";
@@ -52,6 +54,9 @@ export function IssuesScreen() {
   const wsId = useWorkspaceId();
   const { data: issues = [], isLoading } = useQuery(issueListOptions(wsId));
   const myId = useAuthStore((s) => s.user?.id ?? "");
+  const { data: members = [] } = useQuery(memberListOptions(wsId));
+  const { data: agents = [] } = useQuery(agentListOptions(wsId));
+  const update = useUpdateIssue();
   const { navigate } = useRouter();
   const t = useT();
   const [filter, setFilter] = useState<Filter>("mine");
@@ -59,6 +64,38 @@ export function IssuesScreen() {
   const [searching, setSearching] = useState(false);
 
   const todayISO = new Date().toISOString().slice(0, 10);
+
+  // Resolve the assignee avatar + quick-action handlers passed to each row.
+  const assigneeOf = useCallback(
+    (issue: Issue): RowAssignee => {
+      if (!issue.assignee_id || !issue.assignee_type) return null;
+      if (issue.assignee_type === "member") {
+        const m = members.find((x) => x.user_id === issue.assignee_id);
+        return m ? { name: m.name, isAgent: false } : null;
+      }
+      if (issue.assignee_type === "agent") {
+        const a = agents.find((x) => x.id === issue.assignee_id);
+        return a ? { name: a.name, isAgent: true } : null;
+      }
+      return null;
+    },
+    [members, agents],
+  );
+  const onDone = useCallback(
+    (issue: Issue) => update.mutate({ id: issue.id, status: "done" }),
+    [update],
+  );
+  const onAssignMe = useCallback(
+    (issue: Issue) => {
+      if (myId) update.mutate({ id: issue.id, assignee_type: "member", assignee_id: myId });
+    },
+    [update, myId],
+  );
+  const showAssignMe = useCallback(
+    (issue: Issue) =>
+      !!myId && !(issue.assignee_type === "member" && issue.assignee_id === myId),
+    [myId],
+  );
 
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -147,6 +184,10 @@ export function IssuesScreen() {
               status={g.status}
               issues={g.issues}
               onOpen={(id) => navigate({ name: "issue", id })}
+              assigneeOf={assigneeOf}
+              onDone={onDone}
+              onAssignMe={onAssignMe}
+              showAssignMe={showAssignMe}
             />
           ))}
         </div>
@@ -159,10 +200,18 @@ function StatusGroup({
   status,
   issues,
   onOpen,
+  assigneeOf,
+  onDone,
+  onAssignMe,
+  showAssignMe,
 }: {
   status: IssueStatus;
   issues: Issue[];
   onOpen: (id: string) => void;
+  assigneeOf: (issue: Issue) => RowAssignee;
+  onDone: (issue: Issue) => void;
+  onAssignMe: (issue: Issue) => void;
+  showAssignMe: (issue: Issue) => boolean;
 }) {
   const cfg = STATUS_CONFIG[status];
   const t = useT();
@@ -176,7 +225,14 @@ function StatusGroup({
       <ul className="divide-y divide-border">
         {issues.map((issue) => (
           <li key={issue.id}>
-            <IssueRow issue={issue} onClick={() => onOpen(issue.id)} />
+            <IssueRow
+              issue={issue}
+              assignee={assigneeOf(issue)}
+              onClick={() => onOpen(issue.id)}
+              onDone={() => onDone(issue)}
+              onAssignMe={() => onAssignMe(issue)}
+              showAssignMe={showAssignMe(issue)}
+            />
           </li>
         ))}
       </ul>

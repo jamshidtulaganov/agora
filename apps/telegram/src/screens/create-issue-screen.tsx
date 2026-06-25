@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, Check, CircleSlash } from "lucide-react";
 import { useCreateIssue } from "@agora/core/issues/mutations";
@@ -11,6 +11,7 @@ import { BottomSheet } from "../components/bottom-sheet";
 import { StatusDot, PriorityBars } from "../components/issue-badges";
 import { Avatar } from "../components/avatar";
 import { haptic } from "../telegram/sdk";
+import { useMainButton } from "../telegram/native-buttons";
 import { useT } from "../i18n";
 
 type Sheet = "status" | "priority" | "assignee" | null;
@@ -58,8 +59,8 @@ export function CreateIssueScreen() {
     );
   };
 
-  const submit = async () => {
-    if (!canSubmit) return;
+  const submit = useCallback(async () => {
+    if (title.trim().length === 0 || create.isPending) return;
     haptic("medium");
     try {
       const issue = await create.mutateAsync({
@@ -75,11 +76,19 @@ export function CreateIssueScreen() {
     } catch {
       // Surface failure inline; keep the draft so the user can retry.
     }
-  };
+  }, [title, description, status, priority, assigneeType, assigneeId, create, navigate]);
+
+  // Telegram's native primary CTA at the bottom of the screen.
+  useMainButton({
+    text: create.isPending ? t("common.saving") : t("create.title"),
+    visible: true,
+    enabled: canSubmit,
+    onClick: submit,
+  });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex shrink-0 items-center justify-between border-b border-border bg-card px-2 py-2 pt-[max(env(safe-area-inset-top),0.5rem)]">
+      <header className="flex shrink-0 items-center gap-1 border-b border-border bg-card px-2 py-2 pt-[max(env(safe-area-inset-top),0.5rem)]">
         <button
           type="button"
           onClick={back}
@@ -88,14 +97,6 @@ export function CreateIssueScreen() {
           <ChevronLeft className="size-5" />
         </button>
         <span className="text-sm font-semibold">{t("create.title")}</span>
-        <button
-          type="button"
-          onClick={submit}
-          disabled={!canSubmit}
-          className="rounded-full px-3 py-1.5 text-sm font-semibold text-brand disabled:opacity-40"
-        >
-          {create.isPending ? t("common.saving") : t("common.create")}
-        </button>
       </header>
 
       <div className="flex-1 overflow-y-auto">
@@ -104,6 +105,12 @@ export function CreateIssueScreen() {
             autoFocus
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void submit();
+              }
+            }}
             placeholder={t("create.issueTitle")}
             className="w-full bg-transparent text-base font-medium text-foreground outline-none placeholder:text-muted-foreground"
           />

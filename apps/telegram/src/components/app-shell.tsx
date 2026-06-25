@@ -12,7 +12,9 @@ import { ChatScreen } from "../screens/chat-screen";
 import { ChatSessionScreen } from "../screens/chat-session-screen";
 import { IssueDetailScreen } from "../screens/issue-detail-screen";
 import { CreateIssueScreen } from "../screens/create-issue-screen";
+import { AgoraIcon } from "@agora/ui/components/common/agora-icon";
 import { useT } from "../i18n";
+import { useBackButton } from "../telegram/native-buttons";
 import { cn } from "../lib/cn";
 
 export function AppShell() {
@@ -49,8 +51,11 @@ function ShellInner({
   onSelect: (slug: string) => void;
 }) {
   const wsId = useWorkspaceId();
-  const { route, activeTab, navigate } = useRouter();
+  const { route, activeTab, navigate, back } = useRouter();
   const t = useT();
+
+  // Telegram's native top-left back button on every non-tab screen.
+  useBackButton(route.name !== "tab", back);
 
   let body: React.ReactNode;
   switch (route.name) {
@@ -81,6 +86,7 @@ function ShellInner({
     <div className="flex h-full min-h-0 flex-1 flex-col">
       {isRootTab && (
         <header className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 py-2 pt-[max(env(safe-area-inset-top),0.5rem)]">
+          <AgoraIcon className="size-5 shrink-0 text-foreground" noSpin />
           <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
             {workspaces.map((w) => (
               <button
