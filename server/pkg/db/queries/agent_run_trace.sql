@@ -1,0 +1,31 @@
+-- name: UpsertAgentRunTrace :one
+-- Anchor a terminal agent run. Upsert on task_id so a re-reported completion
+-- (parallel-agent race, daemon retry) refreshes the row instead of erroring.
+INSERT INTO agent_run_trace (
+    task_id, workspace_id, agent_id, issue_id, task_status, issue_status_at_run
+)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (task_id) DO UPDATE SET
+    task_status = EXCLUDED.task_status,
+    issue_status_at_run = EXCLUDED.issue_status_at_run,
+    updated_at = now()
+RETURNING *;
+
+-- name: UpdateAgentRunTraceOutcome :exec
+UPDATE agent_run_trace
+SET final_issue_status = $2,
+    human_revised = $3,
+    reopened = $4,
+    reaction_score = $5,
+    outcome_label = $6,
+    updated_at = now()
+WHERE task_id = $1;
+
+-- name: GetAgentRunTraceByTask :one
+SELECT * FROM agent_run_trace WHERE task_id = $1;
+
+-- name: ListAgentRunTraces :many
+SELECT * FROM agent_run_trace
+WHERE workspace_id = $1
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $3;

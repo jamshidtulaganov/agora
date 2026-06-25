@@ -167,6 +167,38 @@ func (s *TaskService) captureTaskCompleted(ctx context.Context, task db.AgentTas
 	}
 }
 
+// persistRunTrace anchors a terminal agent run in agent_run_trace — the seed of
+// the fine-tuning dataset. Best-effort: every failure is logged and swallowed so
+// it can never break task completion. The run's prompt/completion are NOT copied
+// here; they join back in from task_message / issue / agent / task_usage by
+// task_id. Outcome columns stay at their defaults and accrue later via event hooks.
+func (s *TaskService) persistRunTrace(ctx context.Context, task db.AgentTaskQueue) {
+	// workspace_id isn't on the task row — resolve it through the agent.
+	agent, err := s.Queries.GetAgent(ctx, task.AgentID)
+	if err != nil {
+		slog.Warn("run trace: resolve agent failed",
+			"task_id", util.UUIDToString(task.ID), "error", err)
+		return
+	}
+	var issueStatus pgtype.Text
+	if task.IssueID.Valid {
+		if issue, err := s.Queries.GetIssue(ctx, task.IssueID); err == nil {
+			issueStatus = pgtype.Text{String: issue.Status, Valid: true}
+		}
+	}
+	if _, err := s.Queries.UpsertAgentRunTrace(ctx, db.UpsertAgentRunTraceParams{
+		TaskID:           task.ID,
+		WorkspaceID:      agent.WorkspaceID,
+		AgentID:          task.AgentID,
+		IssueID:          task.IssueID,
+		TaskStatus:       task.Status,
+		IssueStatusAtRun: issueStatus,
+	}); err != nil {
+		slog.Warn("run trace: upsert failed",
+			"task_id", util.UUIDToString(task.ID), "error", err)
+	}
+}
+
 func (s *TaskService) captureTaskFailed(ctx context.Context, task db.AgentTaskQueue) {
 	failureReason := taskFailureReason(task)
 	if s.Metrics != nil {
@@ -1251,6 +1283,7 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 
 	slog.Info("task completed", "task_id", util.UUIDToString(task.ID), "issue_id", util.UUIDToString(task.IssueID))
 	s.captureTaskCompleted(ctx, task)
+	s.persistRunTrace(ctx, task)
 
 	// Invariant: every completed issue task must have at least one agent
 	// comment on the issue, so the user always sees something when a run

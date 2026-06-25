@@ -52,6 +52,23 @@ type AgentPlugin struct {
 	InstalledAt pgtype.Timestamptz `json:"installed_at"`
 }
 
+type AgentRunTrace struct {
+	ID               pgtype.UUID        `json:"id"`
+	TaskID           pgtype.UUID        `json:"task_id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	AgentID          pgtype.UUID        `json:"agent_id"`
+	IssueID          pgtype.UUID        `json:"issue_id"`
+	TaskStatus       string             `json:"task_status"`
+	IssueStatusAtRun pgtype.Text        `json:"issue_status_at_run"`
+	FinalIssueStatus pgtype.Text        `json:"final_issue_status"`
+	HumanRevised     bool               `json:"human_revised"`
+	Reopened         bool               `json:"reopened"`
+	ReactionScore    int32              `json:"reaction_score"`
+	OutcomeLabel     string             `json:"outcome_label"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
 type AgentRuntime struct {
 	ID             pgtype.UUID        `json:"id"`
 	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
