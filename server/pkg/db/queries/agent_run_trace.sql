@@ -38,3 +38,13 @@ SELECT * FROM agent_run_trace
 WHERE workspace_id = $1
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3;
+
+-- name: ListRunTracesForExport :many
+-- Dataset export feed: workspace-scoped traces, optionally filtered to one
+-- outcome label (NULL = all), newest first, paginated. Each row is assembled
+-- into a training example by joining issue + agent + task_message downstream.
+SELECT * FROM agent_run_trace
+WHERE workspace_id = sqlc.arg('workspace_id')
+  AND (sqlc.narg('outcome')::text IS NULL OR outcome_label = sqlc.narg('outcome'))
+ORDER BY created_at DESC
+LIMIT sqlc.arg('lim') OFFSET sqlc.arg('off');

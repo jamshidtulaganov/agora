@@ -85,6 +85,64 @@ func (q *Queries) ListAgentRunTraces(ctx context.Context, arg ListAgentRunTraces
 	return items, nil
 }
 
+const listRunTracesForExport = `-- name: ListRunTracesForExport :many
+SELECT id, task_id, workspace_id, agent_id, issue_id, task_status, issue_status_at_run, final_issue_status, human_revised, reopened, reaction_score, outcome_label, created_at, updated_at FROM agent_run_trace
+WHERE workspace_id = $1
+  AND ($2::text IS NULL OR outcome_label = $2)
+ORDER BY created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListRunTracesForExportParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Outcome     pgtype.Text `json:"outcome"`
+	Off         int32       `json:"off"`
+	Lim         int32       `json:"lim"`
+}
+
+// Dataset export feed: workspace-scoped traces, optionally filtered to one
+// outcome label (NULL = all), newest first, paginated. Each row is assembled
+// into a training example by joining issue + agent + task_message downstream.
+func (q *Queries) ListRunTracesForExport(ctx context.Context, arg ListRunTracesForExportParams) ([]AgentRunTrace, error) {
+	rows, err := q.db.Query(ctx, listRunTracesForExport,
+		arg.WorkspaceID,
+		arg.Outcome,
+		arg.Off,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AgentRunTrace{}
+	for rows.Next() {
+		var i AgentRunTrace
+		if err := rows.Scan(
+			&i.ID,
+			&i.TaskID,
+			&i.WorkspaceID,
+			&i.AgentID,
+			&i.IssueID,
+			&i.TaskStatus,
+			&i.IssueStatusAtRun,
+			&i.FinalIssueStatus,
+			&i.HumanRevised,
+			&i.Reopened,
+			&i.ReactionScore,
+			&i.OutcomeLabel,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSettledPendingRunTraces = `-- name: ListSettledPendingRunTraces :many
 SELECT id, task_id, workspace_id, agent_id, issue_id, task_status, issue_status_at_run, final_issue_status, human_revised, reopened, reaction_score, outcome_label, created_at, updated_at FROM agent_run_trace
 WHERE outcome_label = 'pending' AND created_at < $1
