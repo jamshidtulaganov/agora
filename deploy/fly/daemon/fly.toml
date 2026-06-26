@@ -1,0 +1,37 @@
+# sd-agora-daemon — always-on Agora daemon (cloud node). Private, no inbound.
+# Connects OUT to sd-agora-web.fly.dev and runs Claude Code as the agent
+# runtime, so a workspace's agents execute 24/7 regardless of any laptop.
+#
+# Build context MUST be the repo root (the Dockerfile copies server/):
+#   fly deploy --config deploy/fly/daemon/fly.toml --dockerfile Dockerfile.daemon .
+#
+# Secrets (set once, never commit) — see deploy/fly/secrets.example.env:
+#   AGORA_PAT  (mul_ user PAT from Settings -> Tokens)
+#   ANTHROPIC_API_KEY  OR  CLAUDE_CODE_OAUTH_TOKEN  (Claude auth, BYO key)
+
+app = "sd-agora-daemon"
+primary_region = "fra"
+
+# Persistent state: agora + claude config (HOME=/data) and the cloned
+# workspaces (AGORA_WORKSPACES_ROOT). Survives restarts so repos aren't
+# re-cloned on every boot.
+[mounts]
+  source = "agora_daemon_data"
+  destination = "/data"
+
+[env]
+  AGORA_SERVER_URL = "https://sd-agora-web.fly.dev"
+  AGORA_APP_URL = "https://sd-agora-web.fly.dev"
+  AGORA_WORKSPACES_ROOT = "/data/workspaces"
+  # The container image is immutable — disable the daemon's self-updater so it
+  # doesn't try to rewrite its own binary at runtime.
+  AGORA_DAEMON_AUTO_UPDATE = "false"
+
+# No [http_service]: the daemon is outbound-only (dials the backend), so there
+# is nothing to expose. The machine stays up via the always-restart policy.
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2048"
+
+[[restart]]
+  policy = "always"

@@ -1,0 +1,45 @@
+# Always-on Agora daemon (cloud node) for Fly.io.
+#
+# Runs `agora daemon` 24/7 so a workspace's agents execute even when the
+# owner's laptop is off/asleep. Authenticates to the backend with a user PAT
+# (mul_...) and runs Claude Code as the agent runtime (BYO key via
+# ANTHROPIC_API_KEY, or a `claude setup-token` OAuth token in
+# CLAUDE_CODE_OAUTH_TOKEN).
+#
+# Build context MUST be the repo root (the builder copies server/):
+#   fly deploy --config deploy/fly/daemon/fly.toml --dockerfile Dockerfile.daemon .
+
+# --- Build stage: agora CLI ---
+FROM golang:1.26-alpine AS builder
+RUN apk add --no-cache git
+WORKDIR /src
+COPY server/go.mod server/go.sum ./server/
+RUN cd server && go mod download
+COPY server/ ./server/
+ARG VERSION=daemon
+ARG COMMIT=unknown
+RUN cd server && CGO_ENABLED=0 go build \
+      -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
+      -o bin/agora ./cmd/agora
+
+# --- Runtime stage: Node + Claude Code + agora daemon ---
+FROM node:22-bookworm-slim
+
+# git: the daemon clones repos / manages worktrees for code tasks.
+# ripgrep: Claude Code's file search. ca-certificates: outbound TLS.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git ca-certificates ripgrep curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Claude Code CLI — the agent runtime the daemon spawns once per task.
+RUN npm install -g @anthropic-ai/claude-code
+
+COPY --from=builder /src/server/bin/agora /usr/local/bin/agora
+COPY deploy/fly/daemon/entrypoint.sh /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
+
+# HOME lives on the mounted volume so the agora config (~/.agora/config.json),
+# the Claude config (~/.claude), and the cloned workspaces all survive restarts.
+ENV HOME=/data
+WORKDIR /data
+ENTRYPOINT ["/entrypoint.sh"]

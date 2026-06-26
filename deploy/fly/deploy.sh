@@ -82,13 +82,30 @@ deploy_telegram() {
   echo "    TELEGRAM_MINIAPP_SHORTNAME in secrets.env and re-run: deploy.sh backend"
 }
 
+deploy_daemon() {
+  echo "==> sd-agora-daemon (always-on agent runtime)"
+  : "${AGORA_PAT:?set AGORA_PAT in secrets.env (mul_ user PAT from Settings -> Tokens)}"
+  claude_secret=""
+  [ -n "${ANTHROPIC_API_KEY:-}" ] && claude_secret="ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"
+  [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && claude_secret="CLAUDE_CODE_OAUTH_TOKEN=$CLAUDE_CODE_OAUTH_TOKEN"
+  : "${claude_secret:?set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN in secrets.env}"
+  ensure_app sd-agora-daemon
+  ensure_vol sd-agora-daemon agora_daemon_data 3
+  # shellcheck disable=SC2086
+  fly secrets set AGORA_PAT="$AGORA_PAT" $claude_secret --app sd-agora-daemon --stage
+  fly deploy --config "$FLYDIR/daemon/fly.toml" --app sd-agora-daemon \
+    --dockerfile Dockerfile.daemon --yes .
+  echo "daemon: running, dialing https://sd-agora-web.fly.dev (no public URL)"
+}
+
 case "${1:-all}" in
   db) deploy_db ;;
   backend) deploy_backend ;;
   web) deploy_web ;;
   telegram) deploy_telegram ;;
+  daemon) deploy_daemon ;;
   all) deploy_db; deploy_backend; deploy_web; deploy_telegram ;;
-  *) echo "usage: deploy.sh [db|backend|web|telegram|all]"; exit 1 ;;
+  *) echo "usage: deploy.sh [db|backend|web|telegram|daemon|all]"; exit 1 ;;
 esac
 
 echo "Done. Remember: add https://sd-agora-web.fly.dev/auth/callback to Google OAuth redirect URIs."
