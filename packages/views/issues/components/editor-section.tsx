@@ -30,9 +30,17 @@ export function EditorSection({ issueId }: EditorSectionProps) {
     setState("loading");
     setErr("");
     try {
-      const r = await fetch(`/api/issues/${issueId}/editor`, {
-        credentials: "include",
-      });
+      // The backend resolves the workspace from ?workspace_slug (the typed api
+      // client sets it via a header; this plain fetch passes it explicitly).
+      // The app routes under /{workspaceSlug}/… so it's the first path segment.
+      const slug =
+        typeof window !== "undefined"
+          ? window.location.pathname.split("/").filter(Boolean)[0]
+          : "";
+      const r = await fetch(
+        `/api/issues/${issueId}/editor${slug ? `?workspace_slug=${encodeURIComponent(slug)}` : ""}`,
+        { credentials: "include" },
+      );
       if (r.status === 404) {
         setState("none");
         return;

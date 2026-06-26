@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
 // daemonEditorBase is the local daemon health server the browser calls to launch
@@ -43,15 +44,32 @@ func daemonInternalAddr() string {
 // URL for the browser to launch directly; cloud launches on the daemon over 6PN
 // and returns a same-origin reverse-proxy URL the browser can iframe over https.
 func (h *Handler) GetIssueEditor(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	issue, ok := h.loadIssueForUser(w, r, id)
+	userID, ok := requireUserID(w, r)
 	if !ok {
 		return
 	}
-	userID := requestUserID(r)
+	issueUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "issue id")
+	if !ok {
+		return
+	}
+	issue, err := h.Queries.GetIssue(r.Context(), issueUUID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "issue not found")
+		return
+	}
+	// Resolve + authorize from the issue's own workspace — the endpoint takes
+	// only an issue id (no workspace_slug header/param needed); the user must be
+	// a member of that workspace.
+	if _, merr := h.Queries.GetMemberByUserAndWorkspace(r.Context(), db.GetMemberByUserAndWorkspaceParams{
+		UserID:      parseUUID(userID),
+		WorkspaceID: issue.WorkspaceID,
+	}); merr != nil {
+		writeError(w, http.StatusForbidden, "not a member of this workspace")
+		return
+	}
 
 	var workdir string
-	err := h.DB.QueryRow(r.Context(),
+	err = h.DB.QueryRow(r.Context(),
 		`SELECT work_dir FROM agent_task_queue
 		 WHERE issue_id = $1 AND work_dir IS NOT NULL AND work_dir <> ''
 		 ORDER BY COALESCE(completed_at, started_at, created_at) DESC
