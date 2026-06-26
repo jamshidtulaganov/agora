@@ -129,7 +129,7 @@ export function MentionComposer({
         rows={1}
         placeholder={placeholder}
         disabled={disabled}
-        className="max-h-32 w-full resize-none rounded-2xl bg-muted px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+        className="max-h-32 min-h-[42px] w-full resize-none rounded-2xl bg-muted px-3.5 py-2.5 text-[15px] text-foreground outline-none placeholder:text-muted-foreground"
       />
     </div>
   );

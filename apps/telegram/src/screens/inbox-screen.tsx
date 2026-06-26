@@ -78,11 +78,11 @@ function InboxRow({
       <button
         type="button"
         onClick={onOpen}
-        className="flex min-w-0 flex-1 items-start gap-2.5 px-4 py-3 text-left transition-colors active:bg-accent"
+        className="flex min-w-0 flex-1 items-start gap-3 px-4 py-4 text-left transition-colors active:bg-accent"
       >
         <span
           className={cn(
-            "mt-1.5 size-2 shrink-0 rounded-full",
+            "mt-2 size-2 shrink-0 rounded-full",
             item.read ? "bg-transparent" : "bg-brand",
           )}
         />
@@ -90,18 +90,18 @@ function InboxRow({
           <div className="flex items-center justify-between gap-2">
             <span
               className={cn(
-                "truncate text-sm",
+                "truncate text-[15px] leading-snug",
                 item.read ? "font-normal text-foreground" : "font-semibold text-foreground",
               )}
             >
               {item.title}
             </span>
-            <span className="shrink-0 text-[11px] text-muted-foreground">
+            <span className="shrink-0 text-xs text-muted-foreground">
               {fmt(item.created_at)}
             </span>
           </div>
           {item.body && (
-            <div className="mt-0.5 truncate text-xs text-muted-foreground">
+            <div className="mt-1 truncate text-[13px] text-muted-foreground">
               {item.body}
             </div>
           )}
@@ -111,9 +111,9 @@ function InboxRow({
         type="button"
         onClick={onArchive}
         aria-label={t("inbox.archive")}
-        className="flex shrink-0 items-center px-3 text-muted-foreground/60 transition-colors active:text-foreground"
+        className="flex shrink-0 items-center px-3.5 text-muted-foreground/60 transition-colors active:text-foreground"
       >
-        <Archive className="size-4" />
+        <Archive className="size-[18px]" />
       </button>
     </li>
   );

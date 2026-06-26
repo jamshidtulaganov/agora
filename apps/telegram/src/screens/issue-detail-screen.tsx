@@ -157,7 +157,7 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
 
       <div className="flex-1 overflow-y-auto">
         <div className="px-4 py-4">
-          <h1 className="text-lg font-semibold leading-snug text-foreground">
+          <h1 className="text-xl font-semibold leading-snug text-foreground">
             {issue.title}
           </h1>
         </div>
@@ -191,7 +191,7 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
             <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               {t("detail.description")}
             </div>
-            <p className="whitespace-pre-wrap break-words text-sm text-foreground">
+            <p className="whitespace-pre-wrap break-words text-[15px] leading-relaxed text-foreground">
               {renderMentions(issue.description)}
             </p>
           </div>
@@ -217,7 +217,7 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
         {commentError && (
           <div className="px-4 pt-1.5 text-xs text-destructive">{commentError}</div>
         )}
-        <div className="flex items-end gap-2 px-3 py-2">
+        <div className="flex items-end gap-2 px-3 py-2.5">
           <MentionComposer
             value={comment}
             onChange={(v) => {
@@ -235,9 +235,9 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
             onClick={postComment}
             disabled={!comment.trim() || posting}
             aria-label="Send comment"
-            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand text-brand-foreground disabled:opacity-40"
+            className="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand text-brand-foreground disabled:opacity-40"
           >
-            <Send className="size-4" />
+            <Send className="size-[18px]" />
           </button>
         </div>
       </div>
@@ -323,10 +323,10 @@ function FieldRow({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center justify-between gap-3 bg-card px-4 py-3 text-left transition-colors active:bg-accent"
+      className="flex w-full items-center justify-between gap-3 bg-card px-4 py-3.5 text-left transition-colors active:bg-accent"
     >
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+      <span className="text-[15px] text-muted-foreground">{label}</span>
+      <span className="flex items-center gap-1.5 text-[15px] font-medium text-foreground">
         {children}
       </span>
     </button>
@@ -347,7 +347,7 @@ function OptionRow({
       <button
         type="button"
         onClick={onClick}
-        className="flex w-full items-center gap-2.5 px-4 py-3 text-left text-sm transition-colors active:bg-accent"
+        className="flex w-full items-center gap-2.5 px-4 py-3.5 text-left text-[15px] transition-colors active:bg-accent"
       >
         <span className="flex flex-1 items-center gap-2.5">{children}</span>
         {selected && <Check className="size-4 text-brand" />}
@@ -413,7 +413,7 @@ function CommentItem({
             {fmt(comment.created_at)}
           </span>
         </div>
-        <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-foreground">
+        <p className="mt-1 whitespace-pre-wrap break-words text-[15px] leading-relaxed text-foreground">
           {renderMentions(comment.content)}
         </p>
       </div>

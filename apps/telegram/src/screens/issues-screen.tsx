@@ -120,14 +120,14 @@ export function IssuesScreen() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {searching ? (
-        <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
+        <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5">
           <Search className="size-4 shrink-0 text-muted-foreground" />
           <input
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t("issues.search")}
-            className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+            className="min-w-0 flex-1 bg-transparent text-[15px] text-foreground outline-none placeholder:text-muted-foreground"
           />
           <button
             type="button"
@@ -142,7 +142,7 @@ export function IssuesScreen() {
           </button>
         </div>
       ) : (
-        <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
+        <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5">
           <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
             {FILTER_ORDER.map((key) => (
               <button
@@ -150,7 +150,7 @@ export function IssuesScreen() {
                 type="button"
                 onClick={() => setFilter(key)}
                 className={cn(
-                  "shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                  "shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors",
                   filter === key
                     ? "bg-foreground text-background"
                     : "bg-muted text-muted-foreground",

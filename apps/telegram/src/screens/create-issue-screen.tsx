@@ -112,14 +112,14 @@ export function CreateIssueScreen() {
               }
             }}
             placeholder={t("create.issueTitle")}
-            className="w-full bg-transparent text-base font-medium text-foreground outline-none placeholder:text-muted-foreground"
+            className="w-full bg-transparent text-lg font-medium text-foreground outline-none placeholder:text-muted-foreground"
           />
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder={t("create.description")}
             rows={4}
-            className="mt-3 w-full resize-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+            className="mt-4 w-full resize-none bg-transparent text-[15px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground"
           />
         </div>
 
@@ -240,10 +240,10 @@ function FieldRow({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center justify-between gap-3 bg-card px-4 py-3 text-left transition-colors active:bg-accent"
+      className="flex w-full items-center justify-between gap-3 bg-card px-4 py-3.5 text-left transition-colors active:bg-accent"
     >
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+      <span className="text-[15px] text-muted-foreground">{label}</span>
+      <span className="flex items-center gap-1.5 text-[15px] font-medium text-foreground">
         {children}
       </span>
     </button>
@@ -264,7 +264,7 @@ function OptionRow({
       <button
         type="button"
         onClick={onClick}
-        className="flex w-full items-center gap-2.5 px-4 py-3 text-left text-sm transition-colors active:bg-accent"
+        className="flex w-full items-center gap-2.5 px-4 py-3.5 text-left text-[15px] transition-colors active:bg-accent"
       >
         <span className="flex flex-1 items-center gap-2.5">{children}</span>
         {selected && <Check className="size-4 text-brand" />}

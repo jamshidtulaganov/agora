@@ -110,15 +110,15 @@ export function IssueRow({
           transform: `translateX(${tx}px)`,
           transition: dragging ? "none" : "transform 0.18s ease",
         }}
-        className="relative flex w-full items-center gap-2.5 bg-background px-4 py-2.5 text-left active:bg-accent"
+        className="relative flex w-full items-center gap-3 bg-background px-4 py-3.5 text-left active:bg-accent"
       >
         <StatusDot status={issue.status} className="shrink-0" />
-        <span className="shrink-0 font-mono text-xs text-muted-foreground">{issue.identifier}</span>
-        <span className="min-w-0 flex-1 truncate text-sm text-foreground">{issue.title}</span>
+        <span className="shrink-0 font-mono text-[13px] text-muted-foreground">{issue.identifier}</span>
+        <span className="min-w-0 flex-1 truncate text-[15px] text-foreground">{issue.title}</span>
         <LabelDots labels={issue.labels} />
         <PriorityBars priority={issue.priority} className="shrink-0" />
         {assignee && (
-          <Avatar name={assignee.name} isAgent={assignee.isAgent} size={22} className="shrink-0" />
+          <Avatar name={assignee.name} isAgent={assignee.isAgent} size={26} className="shrink-0" />
         )}
       </button>
     </div>

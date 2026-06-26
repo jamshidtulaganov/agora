@@ -128,7 +128,7 @@ export function ChatSessionScreen({ sessionId }: { sessionId: string }) {
         )}
       </div>
 
-      <div className="flex shrink-0 items-end gap-2 border-t border-border bg-card px-3 py-2 pb-[max(env(safe-area-inset-bottom),0.5rem)]">
+      <div className="flex shrink-0 items-end gap-2 border-t border-border bg-card px-3 py-2.5 pb-[max(env(safe-area-inset-bottom),0.5rem)]">
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -140,16 +140,16 @@ export function ChatSessionScreen({ sessionId }: { sessionId: string }) {
           }}
           rows={1}
           placeholder={t("chat.messagePlaceholder", { agent: agentName })}
-          className="max-h-32 flex-1 resize-none rounded-2xl border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-ring"
+          className="max-h-32 min-h-[42px] flex-1 resize-none rounded-2xl border border-border bg-background px-3.5 py-2.5 text-[15px] text-foreground outline-none placeholder:text-muted-foreground focus:border-ring"
         />
         <button
           type="button"
           onClick={send}
           disabled={!input.trim() || sending}
           aria-label="Send"
-          className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand text-brand-foreground disabled:opacity-40"
+          className="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand text-brand-foreground disabled:opacity-40"
         >
-          <Send className="size-4" />
+          <Send className="size-[18px]" />
         </button>
       </div>
     </div>
