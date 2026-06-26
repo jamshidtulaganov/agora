@@ -34,9 +34,11 @@ export interface ActiveWorkspace {
 // and let them switch. Sets BOTH the api header source (setCurrentWorkspace, for
 // X-Workspace-Slug) and exposes the active workspace so the shell can mount
 // WorkspaceSlugProvider (for useWorkspaceId reactivity).
-export function useActiveWorkspace(): ActiveWorkspace {
+export function useActiveWorkspace(preferredSlug?: string | null): ActiveWorkspace {
   const { data: workspaces = [], isLoading } = useQuery(workspaceListOptions());
-  const [slug, setSlug] = useState<string | null>(readLastSlug);
+  // A deep-link workspace (from a bot button) wins on first launch over the
+  // last-used one, so the linked issue opens in its own workspace.
+  const [slug, setSlug] = useState<string | null>(() => preferredSlug ?? readLastSlug());
 
   const active =
     (slug ? workspaces.find((w) => w.slug === slug) : undefined) ??

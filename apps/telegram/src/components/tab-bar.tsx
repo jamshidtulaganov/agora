@@ -11,14 +11,16 @@ const TABS: { key: Tab; Icon: typeof Inbox }[] = [
   { key: "chat", Icon: MessageSquare },
 ];
 
-export function TabBar({ wsId }: { wsId: string }) {
+export function TabBar({ wsId, hasChat }: { wsId: string; hasChat: boolean }) {
   const { activeTab, openTab } = useRouter();
   const unread = useInboxUnreadCount(wsId);
   const t = useT();
 
+  const tabs = hasChat ? TABS : TABS.filter((tab) => tab.key !== "chat");
+
   return (
     <nav className="flex shrink-0 items-stretch border-t border-border bg-card pb-[env(safe-area-inset-bottom)]">
-      {TABS.map(({ key, Icon }) => {
+      {tabs.map(({ key, Icon }) => {
         const active = activeTab === key;
         return (
           <button

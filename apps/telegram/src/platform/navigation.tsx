@@ -24,7 +24,8 @@ export type Route =
   | { name: "tab"; tab: Tab }
   | { name: "issue"; id: string }
   | { name: "create" }
-  | { name: "chat-session"; id: string };
+  | { name: "chat-session"; id: string }
+  | { name: "settings" };
 
 interface RouterValue {
   route: Route;
@@ -103,6 +104,8 @@ function makeAdapter(router: RouterValue): NavigationAdapter {
         return "/issues/new";
       case "chat-session":
         return `/chat/${r.id}`;
+      case "settings":
+        return "/settings";
       case "tab":
         return `/${r.tab}`;
     }

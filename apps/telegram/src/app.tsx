@@ -24,13 +24,14 @@ function deriveWsUrl(): string {
   return `${proto}//${window.location.host}/ws`;
 }
 
-function initialRoute(): Route | undefined {
-  const issueId = decodeStartParam(getStartParam());
-  return issueId ? { name: "issue", id: issueId } : undefined;
-}
-
 export function App() {
   const locale = resolveLocale();
+  // A deep link may name both the issue and its workspace; switch to that
+  // workspace on launch so the (workspace-scoped) issue actually loads.
+  const target = decodeStartParam(getStartParam());
+  const initial: Route | undefined = target.issueId
+    ? { name: "issue", id: target.issueId }
+    : undefined;
 
   return (
     <CoreProvider
@@ -42,9 +43,9 @@ export function App() {
       locale={locale}
       resources={{ [locale]: RESOURCES[locale] }}
     >
-      <RouterProvider initialRoute={initialRoute()}>
+      <RouterProvider initialRoute={initial}>
         <AuthGate>
-          <AppShell />
+          <AppShell deepLinkSlug={target.wsSlug} />
         </AuthGate>
       </RouterProvider>
     </CoreProvider>

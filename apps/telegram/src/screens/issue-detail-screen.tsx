@@ -29,6 +29,7 @@ import { CenterMessage } from "../components/center-message";
 import { BottomSheet } from "../components/bottom-sheet";
 import { StatusDot, PriorityBars } from "../components/issue-badges";
 import { Avatar } from "../components/avatar";
+import { LabelChips } from "../components/label-chips";
 import { MentionComposer } from "../components/mention-composer";
 import { renderMentions } from "../lib/render-mentions";
 import { haptic, shareToTelegram } from "../telegram/sdk";
@@ -178,6 +179,12 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
             {assigneeLabel}
           </FieldRow>
         </div>
+
+        {issue.labels && issue.labels.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 px-4 py-3">
+            <LabelChips labels={issue.labels} />
+          </div>
+        )}
 
         {issue.description && (
           <div className="px-4 py-4">

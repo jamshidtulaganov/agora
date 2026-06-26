@@ -1,5 +1,7 @@
-import { Plus } from "lucide-react";
+import { Plus, Settings } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { WorkspaceSlugProvider } from "@agora/core/paths";
+import { agentListOptions } from "@agora/core/workspace/queries";
 import { useWorkspaceId } from "@agora/core/hooks";
 import type { Workspace } from "@agora/core/types";
 import { useActiveWorkspace } from "../workspace/use-active-workspace";
@@ -12,13 +14,14 @@ import { ChatScreen } from "../screens/chat-screen";
 import { ChatSessionScreen } from "../screens/chat-session-screen";
 import { IssueDetailScreen } from "../screens/issue-detail-screen";
 import { CreateIssueScreen } from "../screens/create-issue-screen";
+import { SettingsScreen } from "../screens/settings-screen";
 import { AgoraIcon } from "@agora/ui/components/common/agora-icon";
 import { useT } from "../i18n";
 import { useBackButton } from "../telegram/native-buttons";
 import { cn } from "../lib/cn";
 
-export function AppShell() {
-  const { workspaces, active, isLoading, select } = useActiveWorkspace();
+export function AppShell({ deepLinkSlug }: { deepLinkSlug?: string | null }) {
+  const { workspaces, active, isLoading, select } = useActiveWorkspace(deepLinkSlug);
   const t = useT();
 
   if (!active) {
@@ -54,6 +57,11 @@ function ShellInner({
   const { route, activeTab, navigate, back } = useRouter();
   const t = useT();
 
+  // Chat is only useful once the workspace has an AI agent — hide the tab
+  // otherwise so it isn't a dead end. Auto-appears when an agent is created.
+  const { data: agents = [] } = useQuery(agentListOptions(wsId));
+  const hasChat = agents.some((a) => !a.archived_at);
+
   // Telegram's native top-left back button on every non-tab screen.
   useBackButton(route.name !== "tab", back);
 
@@ -68,15 +76,18 @@ function ShellInner({
     case "chat-session":
       body = <ChatSessionScreen sessionId={route.id} />;
       break;
+    case "settings":
+      body = <SettingsScreen />;
+      break;
     case "tab":
     default:
       body =
-        activeTab === "inbox" ? (
-          <InboxScreen />
-        ) : activeTab === "issues" ? (
+        activeTab === "issues" ? (
           <IssuesScreen />
-        ) : (
+        ) : activeTab === "chat" && hasChat ? (
           <ChatScreen />
+        ) : (
+          <InboxScreen />
         );
   }
 
@@ -115,12 +126,20 @@ function ShellInner({
             <Plus className="size-3.5" />
             {t("shell.new")}
           </button>
+          <button
+            type="button"
+            onClick={() => navigate({ name: "settings" })}
+            aria-label={t("settings.title")}
+            className="flex shrink-0 items-center justify-center p-1 text-muted-foreground transition-colors active:text-foreground"
+          >
+            <Settings className="size-5" />
+          </button>
         </header>
       )}
 
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden">{body}</main>
 
-      {isRootTab && <TabBar wsId={wsId} />}
+      {isRootTab && <TabBar wsId={wsId} hasChat={hasChat} />}
     </div>
   );
 }

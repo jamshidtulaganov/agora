@@ -2,6 +2,7 @@ import { useRef, useState, type TouchEvent } from "react";
 import { Check, UserPlus } from "lucide-react";
 import type { Issue } from "@agora/core/types";
 import { StatusDot, PriorityBars } from "./issue-badges";
+import { LabelDots } from "./label-chips";
 import { Avatar } from "./avatar";
 import { haptic } from "../telegram/sdk";
 import { useT } from "../i18n";
@@ -114,6 +115,7 @@ export function IssueRow({
         <StatusDot status={issue.status} className="shrink-0" />
         <span className="shrink-0 font-mono text-xs text-muted-foreground">{issue.identifier}</span>
         <span className="min-w-0 flex-1 truncate text-sm text-foreground">{issue.title}</span>
+        <LabelDots labels={issue.labels} />
         <PriorityBars priority={issue.priority} className="shrink-0" />
         {assignee && (
           <Avatar name={assignee.name} isAgent={assignee.isAgent} size={22} className="shrink-0" />
