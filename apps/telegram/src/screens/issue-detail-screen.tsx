@@ -8,6 +8,8 @@ import {
   CircleSlash,
   Send,
   Share2,
+  Sparkles,
+  Loader2,
 } from "lucide-react";
 import { issueDetailOptions } from "@agora/core/issues/queries";
 import { useUpdateIssue } from "@agora/core/issues/mutations";
@@ -76,6 +78,30 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
   const [comment, setComment] = useState("");
   const [posting, setPosting] = useState(false);
   const [commentError, setCommentError] = useState<string | null>(null);
+
+  // AI comment-thread summary (free Agora base model). Lazy — only on tap.
+  const [summary, setSummary] = useState<string | null>(null);
+  const [summarizing, setSummarizing] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+
+  const summarize = async () => {
+    if (summarizing) return;
+    haptic("light");
+    setSummarizing(true);
+    setSummaryError(null);
+    try {
+      const { summary: text } = await getApi().summarizeComments(issueId);
+      setSummary(text || t("detail.summaryEmpty"));
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 503) {
+        setSummaryError(t("detail.summaryUnavailable"));
+      } else {
+        setSummaryError(t("detail.summaryFailed"));
+      }
+    } finally {
+      setSummarizing(false);
+    }
+  };
 
   const postComment = async () => {
     const content = comment.trim();
@@ -196,9 +222,40 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
         )}
 
         <div className="border-t border-border px-4 py-3">
-          <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {t("detail.comments")}
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {t("detail.comments")}
+            </span>
+            {comments.length > 0 && (
+              <button
+                type="button"
+                onClick={summarize}
+                disabled={summarizing}
+                className="flex items-center gap-1.5 rounded-lg bg-brand/10 px-2.5 py-1 text-xs font-semibold text-brand transition-colors active:bg-brand/20 disabled:opacity-60"
+              >
+                {summarizing ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="size-3.5" />
+                )}
+                {summarizing ? t("detail.summarizing") : t("detail.summarize")}
+              </button>
+            )}
           </div>
+
+          {summaryError && (
+            <div className="mb-2 text-xs text-destructive">{summaryError}</div>
+          )}
+          {summary !== null && !summaryError && (
+            <div className="mb-3 rounded-xl border border-brand/20 bg-brand/5 px-3 py-2.5">
+              <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-brand">
+                <Sparkles className="size-3.5" />
+                {t("detail.summaryTitle")}
+              </div>
+              <Markdown content={summary} className="text-[14px]" />
+            </div>
+          )}
+
           {comments.length === 0 ? (
             <p className="text-sm text-muted-foreground">{t("detail.noComments")}</p>
           ) : (

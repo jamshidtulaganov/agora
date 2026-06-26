@@ -1,5 +1,7 @@
 import type {
   Issue,
+  IssueMetadata,
+  IssueMetadataValue,
   CreateIssueRequest,
   UpdateIssueRequest,
   GroupedIssuesResponse,
@@ -646,6 +648,17 @@ export class ApiClient {
     });
   }
 
+  async setIssueMetadataKey(
+    id: string,
+    key: string,
+    value: IssueMetadataValue,
+  ): Promise<{ metadata: IssueMetadata }> {
+    return this.fetch(`/api/issues/${id}/metadata/${encodeURIComponent(key)}`, {
+      method: "PUT",
+      body: JSON.stringify({ value }),
+    });
+  }
+
   async listChildIssues(id: string): Promise<{ issues: Issue[] }> {
     const raw = await this.fetch<unknown>(`/api/issues/${id}/children`);
     return parseWithFallback(raw, ChildIssuesResponseSchema, { issues: [] }, {
@@ -714,6 +727,16 @@ export class ApiClient {
         ...(suppressAgentIds?.length ? { suppress_agent_ids: suppressAgentIds } : {}),
       }),
     });
+  }
+
+  // Summarizes an issue's comment thread with the free Agora base model.
+  // Returns { summary } — empty string when there's nothing to summarize.
+  async summarizeComments(issueId: string): Promise<{ summary: string }> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/comments/summarize`, {
+      method: "POST",
+    });
+    const obj = (raw ?? {}) as { summary?: unknown };
+    return { summary: typeof obj.summary === "string" ? obj.summary : "" };
   }
 
   // Fires a scoped AI slice-action against the issue's agent. The backend
