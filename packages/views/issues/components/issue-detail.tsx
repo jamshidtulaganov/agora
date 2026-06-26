@@ -62,6 +62,7 @@ import { ResolvedThreadBar } from "./resolved-thread-bar";
 import { collectThreadReplies, deriveThreadResolution } from "./thread-utils";
 import { IssueAgentHeaderChip } from "./issue-agent-header-chip";
 import { ExecutionLogSection } from "./execution-log-section";
+import { EditorSection } from "./editor-section";
 import { AgentWorkingIndicator } from "./agent-working-indicator";
 import { SliceActionsSection } from "./slice-actions-section";
 import { PullRequestList } from "./pull-request-list";
@@ -1612,6 +1613,10 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           owns its own collapse state and WS subscriptions. Hides itself
           when there are no runs to show. */}
       <ExecutionLogSection issueId={id} />
+
+      {/* Code editor — launches browser VS Code (code-server) on the agent's
+          worktree and iframes it. Lazy: only runs when the section is opened. */}
+      <EditorSection issueId={id} />
 
       {/* Token usage */}
       {usage && usage.task_count > 0 && (

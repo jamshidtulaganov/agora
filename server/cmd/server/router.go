@@ -775,6 +775,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/video-frames", h.ExtractIssueVideoFrames)
 					r.Get("/merge-readiness", h.MergeReadiness)
 					r.Get("/task-runs", h.ListTasksByIssue)
+					r.Get("/editor", h.GetIssueEditor)
 					r.Get("/usage", h.GetIssueUsage)
 					r.Post("/reactions", h.AddIssueReaction)
 					r.Delete("/reactions", h.RemoveIssueReaction)

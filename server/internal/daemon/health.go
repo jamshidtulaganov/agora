@@ -2,13 +2,20 @@ package daemon
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/daemon/repocache"
@@ -197,15 +204,146 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 		json.NewEncoder(w).Encode(result)
 	})
 
+	// --- live code editor (code-server) per task worktree ---
+	// Spawns a browser VS Code (code-server) bound to localhost, pointed at a
+	// task's workdir, so a human can watch + edit the agent's code live. The
+	// daemon, the browser and code-server are all on the same host for
+	// self-host, so the URL we return (127.0.0.1:<port>) is directly reachable.
+	// Reused per workdir. CORS is scoped to localhost origins (the Agora app).
+	type editorProc struct {
+		port int
+		cmd  *exec.Cmd
+	}
+	editors := make(map[string]*editorProc)
+	var editorsMu sync.Mutex
+
+	mux.HandleFunc("/editor/launch", func(w http.ResponseWriter, r *http.Request) {
+		if origin := r.Header.Get("Origin"); strings.HasPrefix(origin, "http://localhost") || strings.HasPrefix(origin, "http://127.0.0.1") {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		}
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			WorkDir string `json:"workdir"`
+			UserID  string `json:"user_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		workdir := strings.TrimSpace(req.WorkDir)
+		if workdir == "" {
+			http.Error(w, "workdir is required", http.StatusBadRequest)
+			return
+		}
+		// One code-server per (user, worktree): different humans on the same
+		// worktree each get an isolated VS Code (own --user-data-dir → own
+		// session/layout, no single-window blocking). They still share the
+		// files on disk (last-save-wins; VS Code reloads external changes).
+		key := strings.TrimSpace(req.UserID) + "\x00" + workdir
+		if info, err := os.Stat(workdir); err != nil || !info.IsDir() {
+			http.Error(w, "workdir does not exist", http.StatusBadRequest)
+			return
+		}
+
+		bin, err := exec.LookPath("code-server")
+		if err != nil {
+			http.Error(w, "code-server is not installed on the daemon host", http.StatusNotImplemented)
+			return
+		}
+
+		editorsMu.Lock()
+		defer editorsMu.Unlock()
+
+		// Reuse a still-running editor for this (user, workdir).
+		if e, ok := editors[key]; ok {
+			if e.cmd.ProcessState == nil {
+				writeEditorURL(w, e.port, workdir)
+				return
+			}
+			delete(editors, key)
+		}
+
+		// Allocate a free localhost port.
+		pl, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			http.Error(w, "failed to allocate a port", http.StatusInternalServerError)
+			return
+		}
+		port := pl.Addr().(*net.TCPAddr).Port
+		pl.Close()
+
+		userDataDir, err := editorUserDataDir(key)
+		if err != nil {
+			http.Error(w, "failed to prepare editor data dir: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		cmd := exec.Command(bin,
+			"--bind-addr", fmt.Sprintf("127.0.0.1:%d", port),
+			"--auth", "none",
+			"--user-data-dir", userDataDir,
+			workdir,
+		)
+		if err := cmd.Start(); err != nil {
+			http.Error(w, "failed to launch code-server: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		editors[key] = &editorProc{port: port, cmd: cmd}
+		d.logger.Info("launched code-server editor", "workdir", workdir, "port", port, "user", req.UserID)
+		writeEditorURL(w, port, workdir)
+	})
+
 	srv := &http.Server{Handler: mux}
 
 	go func() {
 		<-ctx.Done()
 		srv.Close()
+		// Best-effort: stop any editors we spawned.
+		editorsMu.Lock()
+		for _, e := range editors {
+			if e.cmd.Process != nil {
+				_ = e.cmd.Process.Kill()
+			}
+		}
+		editorsMu.Unlock()
 	}()
 
 	d.logger.Info("health server listening", "addr", ln.Addr().String())
 	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 		d.logger.Warn("health server error", "error", err)
 	}
+}
+
+// writeEditorURL replies with the localhost code-server URL for a workdir.
+func writeEditorURL(w http.ResponseWriter, port int, workdir string) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"url": fmt.Sprintf("http://127.0.0.1:%d/?folder=%s", port, url.QueryEscape(workdir)),
+	})
+}
+
+// editorUserDataDir returns a stable, isolated code-server --user-data-dir for a
+// (user, workdir) key, so concurrent editors never share a VS Code profile lock.
+// Hashed to keep the path short and filesystem-safe.
+func editorUserDataDir(key string) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256([]byte(key))
+	dir := filepath.Join(home, ".agora", "code-server", hex.EncodeToString(sum[:8]))
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	return dir, nil
 }
