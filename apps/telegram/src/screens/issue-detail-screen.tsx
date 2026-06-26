@@ -13,7 +13,11 @@ import {
 } from "lucide-react";
 import { issueDetailOptions } from "@agora/core/issues/queries";
 import { useUpdateIssue } from "@agora/core/issues/mutations";
-import { memberListOptions, agentListOptions } from "@agora/core/workspace/queries";
+import {
+  memberListOptions,
+  agentListOptions,
+  workspaceListOptions,
+} from "@agora/core/workspace/queries";
 import { ALL_STATUSES, PRIORITY_ORDER } from "@agora/core/issues/config";
 import { getApi, ApiError } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core/hooks";
@@ -132,12 +136,15 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
   if (isLoading) return <CenterMessage spinner title={t("common.loading")} />;
   if (!issue) {
     return (
-      <CenterMessage
-        title={t("detail.notFound")}
-        subtitle={t("detail.deleted")}
-        actionLabel={t("common.back")}
-        onAction={back}
-      />
+      <div className="flex flex-1 flex-col">
+        <NotFoundDiag issueId={issueId} wsId={wsId} />
+        <CenterMessage
+          title={t("detail.notFound")}
+          subtitle={t("detail.deleted")}
+          actionLabel={t("common.back")}
+          onAction={back}
+        />
+      </div>
     );
   }
 
@@ -364,6 +371,32 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
           ))}
         </ul>
       </BottomSheet>
+    </div>
+  );
+}
+
+// Temporary diagnostic on the not-found screen: shows the decoded issue id, the
+// active workspace, and what /locate says the issue's real workspace is. Lets us
+// tell apart "wrong workspace" vs "issue genuinely absent in this backend".
+function NotFoundDiag({ issueId, wsId }: { issueId: string; wsId: string }) {
+  const { data: workspaces = [] } = useQuery(workspaceListOptions());
+  const loc = useQuery({
+    queryKey: ["tg-locate-issue-diag", issueId],
+    queryFn: () => getApi().locateIssue(issueId),
+    staleTime: Infinity,
+  });
+  const activeSlug = workspaces.find((w) => w.id === wsId)?.slug ?? wsId.slice(0, 8);
+  const located = loc.isLoading
+    ? "…"
+    : loc.data?.workspace_slug
+      ? loc.data.workspace_slug
+      : "not found in any of your workspaces";
+  return (
+    <div className="border-b border-border bg-muted/40 px-4 py-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
+      <div>id: {issueId.slice(0, 8)}…</div>
+      <div>active ws: {activeSlug}</div>
+      <div>locate: {located}</div>
+      <div>ws list: {workspaces.map((w) => w.slug).join(", ") || "—"}</div>
     </div>
   );
 }
