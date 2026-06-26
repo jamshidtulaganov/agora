@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { getLocale } from "./locale";
 import { STRINGS } from "./strings";
 
-export { getLocale } from "./locale";
+export { getLocale, setLocaleOverride, LOCALES, LOCALE_NAMES } from "./locale";
 export type { Locale } from "./locale";
 
 type Vars = Record<string, string | number>;

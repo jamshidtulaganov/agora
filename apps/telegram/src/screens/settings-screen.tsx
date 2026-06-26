@@ -1,12 +1,14 @@
-import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft } from "lucide-react";
+import { useState } from "react";
+import { ChevronLeft, ChevronRight, Check } from "lucide-react";
 import { notificationPreferenceOptions } from "@agora/core/notification-preferences/queries";
 import { useUpdateNotificationPreferences } from "@agora/core/notification-preferences/mutations";
 import { useWorkspaceId } from "@agora/core/hooks";
+import { useQuery } from "@tanstack/react-query";
 import type { NotificationGroupKey, NotificationPreferences } from "@agora/core/types";
 import { useRouter } from "../platform/navigation";
+import { BottomSheet } from "../components/bottom-sheet";
 import { haptic } from "../telegram/sdk";
-import { getLocale, useT } from "../i18n";
+import { getLocale, setLocaleOverride, LOCALES, LOCALE_NAMES, useT } from "../i18n";
 import { cn } from "../lib/cn";
 
 const APP_VERSION = "0.1.0";
@@ -27,6 +29,8 @@ export function SettingsScreen() {
   const { data } = useQuery(notificationPreferenceOptions(wsId));
   const update = useUpdateNotificationPreferences();
   const prefs: NotificationPreferences = data?.preferences ?? {};
+  const [langOpen, setLangOpen] = useState(false);
+  const locale = getLocale();
 
   const isOn = (g: NotificationGroupKey) => prefs[g] !== "muted";
   const toggle = (g: NotificationGroupKey) => {
@@ -57,10 +61,44 @@ export function SettingsScreen() {
 
         <SectionTitle>{t("settings.about")}</SectionTitle>
         <div className="divide-y divide-border border-y border-border">
-          <InfoRow label={t("settings.language")} value={getLocale().toUpperCase()} />
+          <button
+            type="button"
+            onClick={() => setLangOpen(true)}
+            className="flex w-full items-center justify-between gap-3 bg-card px-4 py-3 text-left transition-colors active:bg-accent"
+          >
+            <span className="text-sm text-muted-foreground">{t("settings.language")}</span>
+            <span className="flex items-center gap-1 text-sm font-medium text-foreground">
+              {LOCALE_NAMES[locale]}
+              <ChevronRight className="size-4 text-muted-foreground/60" />
+            </span>
+          </button>
           <InfoRow label={t("settings.version")} value={APP_VERSION} />
         </div>
       </div>
+
+      <BottomSheet open={langOpen} onClose={() => setLangOpen(false)} title={t("settings.language")}>
+        <ul className="pb-2">
+          {LOCALES.map((l) => (
+            <li key={l}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (l === locale) {
+                    setLangOpen(false);
+                    return;
+                  }
+                  haptic("light");
+                  setLocaleOverride(l); // persists + reloads
+                }}
+                className="flex w-full items-center gap-2.5 px-4 py-3 text-left text-sm transition-colors active:bg-accent"
+              >
+                <span className="flex-1">{LOCALE_NAMES[l]}</span>
+                {l === locale && <Check className="size-4 text-brand" />}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </BottomSheet>
     </div>
   );
 }
@@ -82,6 +120,8 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+// A clean iOS-style switch: the knob sits inside a padded track, so it never
+// overflows on the right (the previous absolute-positioned version did).
 function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
   return (
     <button
@@ -90,14 +130,14 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void 
       aria-checked={checked}
       onClick={onChange}
       className={cn(
-        "relative h-6 w-10 shrink-0 rounded-full transition-colors",
+        "flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition-colors",
         checked ? "bg-brand" : "bg-muted",
       )}
     >
       <span
         className={cn(
-          "absolute top-0.5 size-5 rounded-full bg-white shadow-sm transition-transform",
-          checked ? "translate-x-[18px]" : "translate-x-0.5",
+          "size-5 rounded-full bg-white shadow-sm transition-transform",
+          checked ? "translate-x-5" : "translate-x-0",
         )}
       />
     </button>
