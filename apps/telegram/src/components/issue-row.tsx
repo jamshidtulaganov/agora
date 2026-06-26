@@ -1,5 +1,5 @@
 import { useRef, useState, type TouchEvent } from "react";
-import { Check, UserPlus } from "lucide-react";
+import { Check, UserPlus, User } from "lucide-react";
 import type { Issue } from "@agora/core/types";
 import { StatusDot, PriorityBars } from "./issue-badges";
 import { LabelDots } from "./label-chips";
@@ -8,7 +8,7 @@ import { haptic } from "../telegram/sdk";
 import { useT } from "../i18n";
 import { cn } from "../lib/cn";
 
-export type RowAssignee = { name: string; isAgent: boolean } | null;
+export type RowAssignee = { name: string; isAgent: boolean; avatarUrl?: string | null } | null;
 
 const ACTION_W = 76; // px per swipe action
 
@@ -117,8 +117,18 @@ export function IssueRow({
         <span className="min-w-0 flex-1 truncate text-[15px] leading-snug text-foreground">{issue.title}</span>
         <LabelDots labels={issue.labels} />
         <PriorityBars priority={issue.priority} className="shrink-0" />
-        {assignee && (
-          <Avatar name={assignee.name} isAgent={assignee.isAgent} size={26} className="shrink-0" />
+        {assignee ? (
+          <Avatar
+            name={assignee.name}
+            isAgent={assignee.isAgent}
+            avatarUrl={assignee.avatarUrl}
+            size={26}
+            className="shrink-0"
+          />
+        ) : (
+          <span className="flex size-[26px] shrink-0 items-center justify-center rounded-full border border-dashed border-muted-foreground/40">
+            <User className="size-3.5 text-muted-foreground/50" />
+          </span>
         )}
       </button>
     </div>

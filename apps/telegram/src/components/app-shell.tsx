@@ -1,5 +1,6 @@
 import { Plus, Settings } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
 import { WorkspaceSlugProvider } from "@agora/core/paths";
 import { agentListOptions } from "@agora/core/workspace/queries";
 import { useWorkspaceId } from "@agora/core/hooks";
@@ -41,6 +42,20 @@ export function AppShell({ deepLinkSlug }: { deepLinkSlug?: string | null }) {
     <WorkspaceSlugProvider key={active.slug} slug={active.slug}>
       <ShellInner workspaces={workspaces} active={active} onSelect={select} />
     </WorkspaceSlugProvider>
+  );
+}
+
+// Small round workspace logo for the header chips — image when the workspace
+// has an avatar (served same-origin via the SPA proxy), else its initial.
+function WorkspaceMark({ workspace }: { workspace: Workspace }) {
+  const url = resolvePublicFileUrl(workspace.avatar_url);
+  if (url) {
+    return <img src={url} alt="" className="size-5 shrink-0 rounded-full object-cover" />;
+  }
+  return (
+    <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-foreground/15 text-[10px] font-bold">
+      {workspace.name.charAt(0).toUpperCase()}
+    </span>
   );
 }
 
@@ -108,12 +123,13 @@ function ShellInner({
                 type="button"
                 onClick={() => onSelect(w.slug)}
                 className={cn(
-                  "shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                  "flex shrink-0 items-center gap-1.5 rounded-full py-1 pl-1 pr-3 text-xs font-medium transition-colors",
                   w.id === active.id
                     ? "bg-brand text-brand-foreground"
                     : "bg-muted text-muted-foreground",
                 )}
               >
+                <WorkspaceMark workspace={w} />
                 {w.name}
               </button>
             ))}

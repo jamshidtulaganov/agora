@@ -79,11 +79,11 @@ export function IssuesScreen() {
       if (!issue.assignee_id || !issue.assignee_type) return null;
       if (issue.assignee_type === "member") {
         const m = members.find((x) => x.user_id === issue.assignee_id);
-        return m ? { name: m.name, isAgent: false } : null;
+        return m ? { name: m.name, isAgent: false, avatarUrl: m.avatar_url } : null;
       }
       if (issue.assignee_type === "agent") {
         const a = agents.find((x) => x.id === issue.assignee_id);
-        return a ? { name: a.name, isAgent: true } : null;
+        return a ? { name: a.name, isAgent: true, avatarUrl: a.avatar_url } : null;
       }
       return null;
     },
