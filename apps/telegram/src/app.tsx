@@ -37,7 +37,7 @@ export function App() {
     >
       <RouterProvider initialRoute={initial}>
         <AuthGate>
-          <AppShell deepLinkSlug={target.wsSlug} />
+          <AppShell deepLinkSlug={target.wsSlug} deepLinkIssueId={target.issueId} />
         </AuthGate>
       </RouterProvider>
     </CoreProvider>

@@ -53,6 +53,15 @@ export function useActiveWorkspace(preferredSlug?: string | null): ActiveWorkspa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active?.id]);
 
+  // A deep-link workspace can resolve AFTER first render (e.g. a locate() call
+  // that derives the issue's workspace from its UUID). When it lands and the
+  // user belongs to it, switch — so a link opened in the wrong workspace heals.
+  useEffect(() => {
+    if (!preferredSlug || preferredSlug === slug) return;
+    if (workspaces.some((w) => w.slug === preferredSlug)) setSlug(preferredSlug);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preferredSlug, workspaces.length]);
+
   const select = (next: string) => {
     const ws = workspaces.find((w) => w.slug === next);
     if (!ws) return;

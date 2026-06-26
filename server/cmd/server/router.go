@@ -557,6 +557,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// --- User-scoped routes (no workspace context required) ---
 		r.Get("/api/me", h.GetMe)
 		r.Patch("/api/me", h.UpdateMe)
+		// Resolve an issue UUID to its workspace across the caller's memberships,
+		// WITHOUT the X-Workspace header needing to match first — lets a deep
+		// link opened in the wrong/last workspace switch to the right one.
+		r.Get("/api/issues/{id}/locate", h.LocateIssue)
 		// Live code editor reverse-proxy (cloud mode): /editor/proxy/{token}/*
 		// streams (HTTP + WebSocket) to the code-server the backend launched on
 		// the remote daemon for that token. Authed via the session cookie the
@@ -828,6 +832,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/resources", h.CreateProjectResource)
 					r.Put("/resources/{resourceId}", h.UpdateProjectResource)
 					r.Delete("/resources/{resourceId}", h.DeleteProjectResource)
+					r.Post("/knowledge/build", h.BuildProjectKnowledge)
 					// Sprints — a cycle layer under a project.
 					r.Get("/sprints", h.ListSprints)
 					r.Post("/sprints", h.CreateSprint)

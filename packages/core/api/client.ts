@@ -729,6 +729,27 @@ export class ApiClient {
     });
   }
 
+  // Resolves an issue UUID to the workspace it lives in (across the caller's
+  // memberships), independent of the current X-Workspace header. Lets a deep
+  // link opened in the wrong workspace switch before loading the issue.
+  async locateIssue(
+    issueId: string,
+  ): Promise<{ issue_id: string; workspace_id: string; workspace_slug: string } | null> {
+    try {
+      const raw = await this.fetch<unknown>(`/api/issues/${issueId}/locate`);
+      const o = (raw ?? {}) as { workspace_slug?: unknown; workspace_id?: unknown };
+      if (typeof o.workspace_slug !== "string" || !o.workspace_slug) return null;
+      return {
+        issue_id: issueId,
+        workspace_id: typeof o.workspace_id === "string" ? o.workspace_id : "",
+        workspace_slug: o.workspace_slug,
+      };
+    } catch {
+      // 404 (deleted / not a member / identifier not a UUID) — caller falls back.
+      return null;
+    }
+  }
+
   // Summarizes an issue's comment thread with the free Agora base model.
   // Returns { summary } — empty string when there's nothing to summarize.
   async summarizeComments(issueId: string): Promise<{ summary: string }> {
@@ -1916,6 +1937,14 @@ export class ApiClient {
 
   async deleteProject(id: string): Promise<void> {
     await this.fetch(`/api/projects/${id}`, { method: "DELETE" });
+  }
+
+  // Triggers the lead agent to study the project's connected repos and write
+  // the per-project `<slug>-kb` knowledge skill. 202 = queued.
+  async buildProjectKnowledge(id: string): Promise<{ status: string }> {
+    return this.fetch(`/api/projects/${id}/knowledge/build`, {
+      method: "POST",
+    });
   }
 
   // Project resources

@@ -6,6 +6,7 @@ import { agentListOptions } from "@agora/core/workspace/queries";
 import { useWorkspaceId } from "@agora/core/hooks";
 import type { Workspace } from "@agora/core/types";
 import { useActiveWorkspace } from "../workspace/use-active-workspace";
+import { useDeepLinkWorkspace } from "../workspace/use-deep-link-workspace";
 import { useRouter } from "../platform/navigation";
 import { CenterMessage } from "./center-message";
 import { TabBar } from "./tab-bar";
@@ -21,8 +22,17 @@ import { useT } from "../i18n";
 import { useBackButton } from "../telegram/native-buttons";
 import { cn } from "../lib/cn";
 
-export function AppShell({ deepLinkSlug }: { deepLinkSlug?: string | null }) {
-  const { workspaces, active, isLoading, select } = useActiveWorkspace(deepLinkSlug);
+export function AppShell({
+  deepLinkSlug,
+  deepLinkIssueId,
+}: {
+  deepLinkSlug?: string | null;
+  deepLinkIssueId?: string | null;
+}) {
+  // Resolve the issue's real workspace from its UUID (covers legacy links with
+  // no slug and last-workspace mismatches), falling back to the link's slug.
+  const resolvedSlug = useDeepLinkWorkspace(deepLinkIssueId, deepLinkSlug);
+  const { workspaces, active, isLoading, select } = useActiveWorkspace(resolvedSlug);
   const t = useT();
 
   if (!active) {
