@@ -21,7 +21,8 @@ import (
 const DefaultZhipuBaseURL = "https://open.bigmodel.cn/api/paas/v4"
 
 // FreeModel is the free Zhipu model used for summaries and other free features.
-const FreeModel = "glm-4-flash"
+// glm-4.5-flash is the current free tier (the older glm-4-flash was retired).
+const FreeModel = "glm-4.5-flash"
 
 // ErrNotConfigured is returned when no API key is set, so callers can map it to
 // a 503 (feature unavailable) instead of a hard error.
