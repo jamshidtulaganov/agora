@@ -34,6 +34,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Claude Code CLI — the agent runtime the daemon spawns once per task.
 RUN npm install -g @anthropic-ai/claude-code
 
+# code-server (browser VS Code) — the daemon spawns it on demand for the live
+# "Code" editor so a human can watch + edit an agent's worktree from the browser.
+RUN curl -fsSL https://code-server.dev/install.sh | sh
+
 COPY --from=builder /src/server/bin/agora /usr/local/bin/agora
 COPY deploy/fly/daemon/entrypoint.sh /entrypoint.sh
 RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh

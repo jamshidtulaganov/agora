@@ -73,6 +73,12 @@ const nextConfig: NextConfig = {
           destination: `${remoteApiUrl}/telegram/:path*`,
         },
         {
+          // Live code editor reverse-proxy (cloud) — backend /editor/proxy/{token}/*
+          // streams code-server (HTTP + WebSocket) from the remote daemon.
+          source: "/editor/:path*",
+          destination: `${remoteApiUrl}/editor/:path*`,
+        },
+        {
           source: "/uploads/:path*",
           destination: `${remoteApiUrl}/uploads/:path*`,
         },

@@ -557,6 +557,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// --- User-scoped routes (no workspace context required) ---
 		r.Get("/api/me", h.GetMe)
 		r.Patch("/api/me", h.UpdateMe)
+		// Live code editor reverse-proxy (cloud mode): /editor/proxy/{token}/*
+		// streams (HTTP + WebSocket) to the code-server the backend launched on
+		// the remote daemon for that token. Authed via the session cookie the
+		// iframe carries; the token is the per-session capability.
+		r.HandleFunc("/editor/proxy/{token}/*", h.ProxyEditor)
 		// SD: external-identity mapping (e.g. Bitrix RESPONSIBLE_ID -> member).
 		r.Get("/api/me/links", h.ListMyLinks)
 		r.Post("/api/me/links/bitrix", h.LinkBitrixIdentity)

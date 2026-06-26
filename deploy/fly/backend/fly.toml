@@ -29,6 +29,11 @@ primary_region = "fra"
   AGORA_APP_URL = "https://sd-agora-web.fly.dev"
   AGORA_PUBLIC_URL = "https://sd-agora-web.fly.dev"
 
+  # Live code editor — cloud mode: when set, the backend launches + reverse-
+  # proxies code-server on the remote daemon over 6PN (the browser can't reach
+  # the daemon's 127.0.0.1). Unset on self-host (browser launches directly).
+  AGORA_DAEMON_INTERNAL = "sd-agora-daemon.internal:19514"
+
   # Telegram bot-OTP login. Token + webhook secret are fly secrets.
   TELEGRAM_BOT_USERNAME = "agora_ai_pm_bot"
 

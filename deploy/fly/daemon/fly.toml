@@ -26,6 +26,11 @@ primary_region = "fra"
   # The container image is immutable — disable the daemon's self-updater so it
   # doesn't try to rewrite its own binary at runtime.
   AGORA_DAEMON_AUTO_UPDATE = "false"
+  # Live code editor: bind the health server + spawned code-servers to 0.0.0.0
+  # so the backend can reach them over the fly private network (6PN). Reachable
+  # only inside the org's 6PN + gated by the backend proxy — not public.
+  AGORA_EDITOR_BIND = "0.0.0.0"
+  AGORA_HEALTH_BIND = "0.0.0.0"
 
 # No [http_service]: the daemon is outbound-only (dials the backend), so there
 # is nothing to expose. The machine stays up via the always-restart policy.

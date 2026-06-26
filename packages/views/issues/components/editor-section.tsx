@@ -38,15 +38,27 @@ export function EditorSection({ issueId }: EditorSectionProps) {
         return;
       }
       if (!r.ok) throw new Error(`editor lookup failed (${r.status})`);
-      const { workdir, daemon_url, user_id } = (await r.json()) as {
-        workdir: string;
-        daemon_url: string;
-        user_id: string;
+      const data = (await r.json()) as {
+        mode?: string;
+        editor_url?: string;
+        workdir?: string;
+        daemon_url?: string;
+        user_id?: string;
       };
-      const lr = await fetch(`${daemon_url}/editor/launch`, {
+
+      // Cloud: the backend already launched code-server on the remote daemon and
+      // reverse-proxies it — iframe the same-origin url directly.
+      if (data.mode === "cloud" && data.editor_url) {
+        setUrl(data.editor_url);
+        setState("ready");
+        return;
+      }
+
+      // Self-host: the daemon is on this host — launch it from the browser.
+      const lr = await fetch(`${data.daemon_url}/editor/launch`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workdir, user_id }),
+        body: JSON.stringify({ workdir: data.workdir, user_id: data.user_id }),
       });
       if (!lr.ok) {
         throw new Error(

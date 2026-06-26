@@ -50,7 +50,11 @@ type healthWorkspace struct {
 // listenHealth binds the health port. Returns the listener or an error if
 // another daemon is already running (port taken).
 func (d *Daemon) listenHealth() (net.Listener, error) {
-	addr := fmt.Sprintf("127.0.0.1:%d", d.cfg.HealthPort)
+	host := "127.0.0.1"
+	if v := strings.TrimSpace(os.Getenv("AGORA_HEALTH_BIND")); v != "" {
+		host = v // cloud sets 0.0.0.0 so the backend can reach /editor/launch over 6PN
+	}
+	addr := fmt.Sprintf("%s:%d", host, d.cfg.HealthPort)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("another daemon is already running on %s: %w", addr, err)
@@ -289,7 +293,7 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 			return
 		}
 		cmd := exec.Command(bin,
-			"--bind-addr", fmt.Sprintf("127.0.0.1:%d", port),
+			"--bind-addr", fmt.Sprintf("%s:%d", editorBindHost(), port),
 			"--auth", "none",
 			"--user-data-dir", userDataDir,
 			workdir,
@@ -324,12 +328,26 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 	}
 }
 
-// writeEditorURL replies with the localhost code-server URL for a workdir.
+// writeEditorURL replies with the localhost code-server URL + the raw port. The
+// url is for self-host (browser hits 127.0.0.1 directly); the port lets the
+// cloud backend reverse-proxy to <daemon>.internal:<port> over the private net.
 func writeEditorURL(w http.ResponseWriter, port int, workdir string) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"url": fmt.Sprintf("http://127.0.0.1:%d/?folder=%s", port, url.QueryEscape(workdir)),
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"url":  fmt.Sprintf("http://127.0.0.1:%d/?folder=%s", port, url.QueryEscape(workdir)),
+		"port": port,
 	})
+}
+
+// editorBindHost is the host code-server binds to. Self-host = 127.0.0.1
+// (loopback). Cloud sets AGORA_EDITOR_BIND=0.0.0.0 so the backend can reach the
+// spawned code-server over the fly private network (6PN); access is gated by
+// the backend proxy + the org-private 6PN, not a public listener.
+func editorBindHost() string {
+	if v := strings.TrimSpace(os.Getenv("AGORA_EDITOR_BIND")); v != "" {
+		return v
+	}
+	return "127.0.0.1"
 }
 
 // editorUserDataDir returns a stable, isolated code-server --user-data-dir for a
