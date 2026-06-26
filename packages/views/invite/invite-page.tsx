@@ -65,14 +65,10 @@ export function InvitePage({ invitationId, onBack }: InvitePageProps) {
     setError(null);
     try {
       await api.acceptInvitation(invitationId);
-      // Belt to the backend's braces: AcceptInvitation already sets
-      // onboarded_at inside the same transaction, but explicitly calling
-      // markOnboardingComplete + refreshMe here keeps local user state in
-      // sync immediately so downstream guards don't see stale `null`.
-      await api.markOnboardingComplete({
-        completion_path: "invite_accept",
-        workspace_id: invitation?.workspace_id,
-      });
+      // AcceptInvitation deliberately does NOT mark the user onboarded — a
+      // brand-new invitee still needs the onboarding runtime step (connect
+      // their own Claude/Codex daemon). Refresh local user state so the
+      // onboarded_at check below sees the true value.
       await useAuthStore.getState().refreshMe();
       setDone("accepted");
       // Fetch the refreshed workspace list so we know the joined workspace's slug.
@@ -82,11 +78,17 @@ export function InvitePage({ invitationId, onBack }: InvitePageProps) {
       });
       const joined = nextList.find((w) => w.id === invitation?.workspace_id);
       qc.invalidateQueries({ queryKey: workspaceKeys.myInvitations() });
-      // Navigate into the joined workspace. The [workspaceSlug]/layout will
-      // sync api client, stores, and the last_workspace_slug cookie from the URL.
-      const dest = joined
-        ? paths.workspace(joined.slug).issues()
-        : fallbackDest;
+      // New invitees aren't onboarded yet → route them to the onboarding
+      // runtime step (StepWorkspace shows "Continue with <workspace>", then the
+      // daemon-connect step). Already-onboarded users joining an extra workspace
+      // land straight in it; the [workspaceSlug] layout syncs api client,
+      // stores, and the last_workspace_slug cookie from the URL.
+      const onboarded = useAuthStore.getState().user?.onboarded_at != null;
+      const dest = !onboarded
+        ? paths.onboarding()
+        : joined
+          ? paths.workspace(joined.slug).issues()
+          : fallbackDest;
       setTimeout(() => push(dest), 1000);
     } catch (e) {
       setError(e instanceof Error ? e.message : t(($) => $.errors.accept_failed));
