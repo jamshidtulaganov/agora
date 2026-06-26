@@ -15,13 +15,20 @@ import (
 // miniAppStartIssuePrefix tags a start_param that names an issue to open.
 const miniAppStartIssuePrefix = "i:"
 
-// MiniAppStartParam encodes an "open issue <issueID>" deep-link payload. A
-// 36-char UUID yields ~50 base64url chars — within Telegram's 64-char limit.
-// The payload is opaque-but-decodable, not encrypted: it only names an issue the
-// recipient is already authorized to see, and the SPA re-authenticates via
-// initData and the backend authorizes the issue per request.
-func MiniAppStartParam(issueID string) string {
-	return base64.RawURLEncoding.EncodeToString([]byte(miniAppStartIssuePrefix + issueID))
+// MiniAppStartParam encodes an "open issue <issueID> in workspace <wsSlug>"
+// deep-link payload as base64url of "i:<wsSlug>:<issueID>" (or "i:<issueID>"
+// when wsSlug is empty, which the SPA still decodes for backward compatibility).
+// The workspace slug lets the SPA switch to the issue's workspace before loading
+// it — the backend scopes issue lookups to the active workspace, so a deep link
+// to an issue in a different workspace would otherwise 404. ~within Telegram's
+// 64-char start_param limit. Opaque-but-decodable, not encrypted: it only names
+// an issue the recipient is already authorized to see.
+func MiniAppStartParam(wsSlug, issueID string) string {
+	payload := miniAppStartIssuePrefix + issueID
+	if wsSlug != "" {
+		payload = miniAppStartIssuePrefix + wsSlug + ":" + issueID
+	}
+	return base64.RawURLEncoding.EncodeToString([]byte(payload))
 }
 
 // MiniAppLink builds a Mini App deep link that opens the app at startParam.

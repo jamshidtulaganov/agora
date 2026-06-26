@@ -73,10 +73,16 @@ func (h *Handler) SendIssueInboxDM(ctx context.Context, recipientType, recipient
 		lang := h.recipientLang(bgctx, recipientID)
 
 		identifier := ""
+		wsSlug := ""
 		if issueUUID, perr := util.ParseUUID(issueID); perr == nil {
 			if issue, ierr := h.Queries.GetIssue(bgctx, issueUUID); ierr == nil {
 				if prefix := h.getIssuePrefix(bgctx, issue.WorkspaceID); prefix != "" {
 					identifier = prefix + "-" + strconv.Itoa(int(issue.Number))
+				}
+				// Carry the issue's workspace slug in the deep link so the Mini
+				// App opens it in the right workspace (issue lookups are scoped).
+				if ws, werr := h.Queries.GetWorkspace(bgctx, issue.WorkspaceID); werr == nil {
+					wsSlug = ws.Slug
 				}
 			}
 		}
@@ -86,7 +92,7 @@ func (h *Handler) SendIssueInboxDM(ctx context.Context, recipientType, recipient
 		link := telegram.MiniAppLink(
 			telegramBotUsername(),
 			telegramMiniAppShortName(),
-			telegram.MiniAppStartParam(issueID),
+			telegram.MiniAppStartParam(wsSlug, issueID),
 		)
 
 		if err := h.telegramBot.SendMessageWithButton(bgctx, tgID, text, dmOpenButton(lang), link); err != nil {

@@ -209,9 +209,15 @@ func (h *Handler) finalizeWizard(ctx context.Context, tgID, lang string) {
 		return
 	}
 
+	wsSlug := ""
+	if wsUUID, perr := util.ParseUUID(st.WorkspaceID); perr == nil {
+		if ws, werr := h.Queries.GetWorkspace(ctx, wsUUID); werr == nil {
+			wsSlug = ws.Slug
+		}
+	}
 	text := fmt.Sprintf("✅ <b>%s</b> %s",
 		html.EscapeString(identifier), html.EscapeString(st.Title))
-	link := telegram.MiniAppLink(telegramBotUsername(), telegramMiniAppShortName(), telegram.MiniAppStartParam(issueID))
+	link := telegram.MiniAppLink(telegramBotUsername(), telegramMiniAppShortName(), telegram.MiniAppStartParam(wsSlug, issueID))
 	if link == "" {
 		h.botSend(ctx, tgID, text)
 		return

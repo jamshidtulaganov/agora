@@ -8,7 +8,7 @@ import (
 
 func TestMiniAppStartParam_RoundTrips(t *testing.T) {
 	const issueID = "550e8400-e29b-41d4-a716-446655440000"
-	param := MiniAppStartParam(issueID)
+	param := MiniAppStartParam("sd-main", issueID)
 
 	// Telegram restricts startapp to [A-Za-z0-9_-] and ≤64 chars.
 	if len(param) > 64 {
@@ -25,9 +25,14 @@ func TestMiniAppStartParam_RoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode start param: %v", err)
 	}
-	want := miniAppStartIssuePrefix + issueID
-	if string(decoded) != want {
+	if want := "i:sd-main:" + issueID; string(decoded) != want {
 		t.Fatalf("decoded = %q, want %q", decoded, want)
+	}
+
+	// No slug → legacy "i:<id>" form.
+	noSlug, _ := base64.RawURLEncoding.DecodeString(MiniAppStartParam("", issueID))
+	if want := "i:" + issueID; string(noSlug) != want {
+		t.Fatalf("no-slug decoded = %q, want %q", noSlug, want)
 	}
 }
 
@@ -58,7 +63,7 @@ func TestMiniAppLink(t *testing.T) {
 }
 
 func TestMiniAppLink_UsesStartParamFromIssue(t *testing.T) {
-	link := MiniAppLink("agora_bot", "pm", MiniAppStartParam("issue-1"))
+	link := MiniAppLink("agora_bot", "pm", MiniAppStartParam("sd-main", "issue-1"))
 	if !strings.HasPrefix(link, "https://t.me/agora_bot/pm?startapp=") {
 		t.Fatalf("link = %q, missing startapp", link)
 	}
