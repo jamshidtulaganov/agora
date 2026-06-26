@@ -123,7 +123,7 @@ function ShellInner({
                 type="button"
                 onClick={() => onSelect(w.slug)}
                 className={cn(
-                  "flex shrink-0 items-center gap-1.5 rounded-full py-1 pl-1 pr-3 text-xs font-medium transition-colors",
+                  "flex shrink-0 items-center gap-1.5 rounded-lg py-1 pl-1 pr-3 text-xs font-medium transition-colors",
                   w.id === active.id
                     ? "bg-brand text-brand-foreground"
                     : "bg-muted text-muted-foreground",
@@ -137,7 +137,7 @@ function ShellInner({
           <button
             type="button"
             onClick={() => navigate({ name: "create" })}
-            className="flex shrink-0 items-center gap-1 rounded-full bg-brand px-3 py-1.5 text-xs font-semibold text-brand-foreground"
+            className="flex shrink-0 items-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-brand-foreground"
           >
             <Plus className="size-3.5" />
             {t("shell.new")}

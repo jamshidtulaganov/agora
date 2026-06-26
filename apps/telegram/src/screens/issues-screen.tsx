@@ -160,7 +160,7 @@ export function IssuesScreen() {
                 type="button"
                 onClick={() => setFilter(key)}
                 className={cn(
-                  "shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors",
+                  "shrink-0 rounded-lg px-3.5 py-1.5 text-[13px] font-medium transition-colors",
                   filter === key
                     ? "bg-brand text-brand-foreground"
                     : "bg-muted text-muted-foreground",
