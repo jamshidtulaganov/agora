@@ -1,5 +1,6 @@
 import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { sameOriginFileUrl } from "../lib/file-url";
 import { cn } from "../lib/cn";
 
 // Lightweight GFM markdown renderer for the Mini App. Deliberately NO katex /
@@ -27,6 +28,20 @@ const components: Components = {
         {...props}
       >
         {children}
+      </a>
+    );
+  },
+  img: ({ src, alt }) => {
+    const resolved = sameOriginFileUrl(typeof src === "string" ? src : "");
+    if (!resolved) return null;
+    return (
+      <a href={resolved} target="_blank" rel="noreferrer noopener" className="mt-1 block">
+        <img
+          src={resolved}
+          alt={alt ?? ""}
+          loading="lazy"
+          className="max-h-72 w-auto max-w-full rounded-lg border border-border object-contain"
+        />
       </a>
     );
   },

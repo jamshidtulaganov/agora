@@ -34,6 +34,7 @@ import { Avatar } from "../components/avatar";
 import { LabelChips } from "../components/label-chips";
 import { MentionComposer } from "../components/mention-composer";
 import { Markdown } from "../components/markdown";
+import { AttachmentList } from "../components/attachment-list";
 import { haptic, shareToTelegram } from "../telegram/sdk";
 import { encodeStartParam } from "../telegram/start-param";
 import { useT, useFormatRelative } from "../i18n";
@@ -471,6 +472,7 @@ function CommentItem({
           </span>
         </div>
         <Markdown content={comment.content} className="mt-1" />
+        <AttachmentList attachments={comment.attachments} />
       </div>
     </li>
   );
