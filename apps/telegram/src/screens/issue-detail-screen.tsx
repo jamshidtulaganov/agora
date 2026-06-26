@@ -31,7 +31,7 @@ import { StatusDot, PriorityBars } from "../components/issue-badges";
 import { Avatar } from "../components/avatar";
 import { LabelChips } from "../components/label-chips";
 import { MentionComposer } from "../components/mention-composer";
-import { renderMentions } from "../lib/render-mentions";
+import { Markdown } from "../components/markdown";
 import { haptic, shareToTelegram } from "../telegram/sdk";
 import { encodeStartParam } from "../telegram/start-param";
 import { useT, useFormatRelative } from "../i18n";
@@ -191,9 +191,7 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
             <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               {t("detail.description")}
             </div>
-            <p className="whitespace-pre-wrap break-words text-[15px] leading-relaxed text-foreground">
-              {renderMentions(issue.description)}
-            </p>
+            <Markdown content={issue.description} />
           </div>
         )}
 
@@ -205,7 +203,9 @@ export function IssueDetailScreen({ issueId }: { issueId: string }) {
             <p className="text-sm text-muted-foreground">{t("detail.noComments")}</p>
           ) : (
             <ul className="space-y-3">
-              {comments.map((c) => (
+              {/* Newest first — most recent activity reads at the top. The API
+                  returns comments oldest→newest, so reverse a shallow copy. */}
+              {[...comments].reverse().map((c) => (
                 <CommentItem key={c.id} comment={c} members={members} agents={agents} />
               ))}
             </ul>
@@ -413,9 +413,7 @@ function CommentItem({
             {fmt(comment.created_at)}
           </span>
         </div>
-        <p className="mt-1 whitespace-pre-wrap break-words text-[15px] leading-relaxed text-foreground">
-          {renderMentions(comment.content)}
-        </p>
+        <Markdown content={comment.content} className="mt-1" />
       </div>
     </li>
   );

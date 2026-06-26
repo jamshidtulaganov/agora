@@ -13,6 +13,7 @@ import type { ChatMessage } from "@agora/core/types";
 import { useRouter } from "../platform/navigation";
 import { CenterMessage } from "../components/center-message";
 import { Avatar } from "../components/avatar";
+import { Markdown } from "../components/markdown";
 import { haptic } from "../telegram/sdk";
 import { useT } from "../i18n";
 
@@ -170,8 +171,8 @@ function MessageBubble({ message, agentName }: { message: ChatMessage; agentName
   return (
     <div className="flex items-end gap-2">
       <Avatar name={agentName} isAgent size={24} className="mb-0.5" />
-      <div className="max-w-[82%] whitespace-pre-wrap break-words rounded-2xl rounded-bl-md bg-muted px-3 py-2 text-sm text-foreground ring-1 ring-foreground/5">
-        {message.content}
+      <div className="max-w-[82%] break-words rounded-2xl rounded-bl-md bg-muted px-3 py-2 text-foreground ring-1 ring-foreground/5">
+        <Markdown content={message.content} className="text-sm" />
       </div>
     </div>
   );
