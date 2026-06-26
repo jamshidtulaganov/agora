@@ -86,7 +86,10 @@ function ShellInner({
     <div className="flex h-full min-h-0 flex-1 flex-col">
       {isRootTab && (
         <header className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 py-2 pt-[max(env(safe-area-inset-top),0.5rem)]">
-          <AgoraIcon className="size-5 shrink-0 text-foreground" noSpin />
+          <div className="flex shrink-0 items-center gap-1.5">
+            <AgoraIcon className="size-5 text-foreground" noSpin />
+            <span className="text-sm font-semibold tracking-tight text-foreground">Agora</span>
+          </div>
           <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
             {workspaces.map((w) => (
               <button
