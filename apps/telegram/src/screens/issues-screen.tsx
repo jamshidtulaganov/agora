@@ -1,16 +1,19 @@
 import { useCallback, useMemo, useState } from "react";
+import { Search, X, SlidersHorizontal, Check, Folder } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Search, X } from "lucide-react";
 import { issueListOptions } from "@agora/core/issues/queries";
 import { useUpdateIssue } from "@agora/core/issues/mutations";
 import { memberListOptions, agentListOptions } from "@agora/core/workspace/queries";
-import { STATUS_CONFIG, BOARD_STATUSES } from "@agora/core/issues/config";
+import { projectListOptions } from "@agora/core/projects/queries";
+import { STATUS_CONFIG, BOARD_STATUSES, PRIORITY_ORDER } from "@agora/core/issues/config";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { useAuthStore } from "@agora/core/auth";
-import type { Issue, IssueStatus } from "@agora/core/types";
+import type { Issue, IssueStatus, IssuePriority } from "@agora/core/types";
 import { useRouter } from "../platform/navigation";
 import { IssueRow, type RowAssignee } from "../components/issue-row";
 import { CenterMessage } from "../components/center-message";
+import { BottomSheet } from "../components/bottom-sheet";
+import { PriorityBars } from "../components/issue-badges";
 import { useT } from "../i18n";
 import { cn } from "../lib/cn";
 
@@ -56,14 +59,19 @@ export function IssuesScreen() {
   const myId = useAuthStore((s) => s.user?.id ?? "");
   const { data: members = [] } = useQuery(memberListOptions(wsId));
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
+  const { data: projects = [] } = useQuery(projectListOptions(wsId));
   const update = useUpdateIssue();
   const { navigate } = useRouter();
   const t = useT();
   const [filter, setFilter] = useState<Filter>("active");
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [priority, setPriority] = useState<IssuePriority | null>(null);
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   const todayISO = new Date().toISOString().slice(0, 10);
+  const advancedCount = (projectId ? 1 : 0) + (priority ? 1 : 0);
 
   // Resolve the assignee avatar + quick-action handlers passed to each row.
   const assigneeOf = useCallback(
@@ -101,6 +109,8 @@ export function IssuesScreen() {
     const q = query.trim().toLowerCase();
     const visible = issues.filter((i) => {
       if (!matchesFilter(i, filter, myId, todayISO)) return false;
+      if (projectId && i.project_id !== projectId) return false;
+      if (priority && i.priority !== priority) return false;
       if (!q) return true;
       return (
         i.title.toLowerCase().includes(q) ||
@@ -111,7 +121,7 @@ export function IssuesScreen() {
       status,
       issues: visible.filter((i) => i.status === status),
     })).filter((g) => g.issues.length > 0);
-  }, [issues, filter, query, myId, todayISO]);
+  }, [issues, filter, projectId, priority, query, myId, todayISO]);
 
   const total = groups.reduce((n, g) => n + g.issues.length, 0);
 
@@ -152,7 +162,7 @@ export function IssuesScreen() {
                 className={cn(
                   "shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors",
                   filter === key
-                    ? "bg-foreground text-background"
+                    ? "bg-brand text-brand-foreground"
                     : "bg-muted text-muted-foreground",
                 )}
               >
@@ -162,11 +172,24 @@ export function IssuesScreen() {
           </div>
           <button
             type="button"
+            onClick={() => setSheetOpen(true)}
+            className="relative shrink-0 text-muted-foreground"
+            aria-label={t("filter.title")}
+          >
+            <SlidersHorizontal className="size-[18px]" />
+            {advancedCount > 0 && (
+              <span className="absolute -right-1.5 -top-1.5 flex size-4 items-center justify-center rounded-full bg-brand text-[10px] font-semibold text-brand-foreground">
+                {advancedCount}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
             onClick={() => setSearching(true)}
             className="shrink-0 text-muted-foreground"
             aria-label="Search"
           >
-            <Search className="size-4" />
+            <Search className="size-[18px]" />
           </button>
         </div>
       )}
@@ -192,7 +215,87 @@ export function IssuesScreen() {
           ))}
         </div>
       )}
+
+      <BottomSheet open={sheetOpen} onClose={() => setSheetOpen(false)} title={t("filter.title")}>
+        <div className="px-4 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {t("filter.project")}
+        </div>
+        <ul className="pb-1">
+          <FilterOption selected={!projectId} onClick={() => setProjectId(null)}>
+            <Folder className="size-[18px] text-muted-foreground" />
+            {t("filter.allProjects")}
+          </FilterOption>
+          {projects.map((p) => (
+            <FilterOption
+              key={p.id}
+              selected={projectId === p.id}
+              onClick={() => setProjectId(p.id)}
+            >
+              <span className="text-base leading-none">{p.icon || "📁"}</span>
+              <span className="truncate">{p.title}</span>
+            </FilterOption>
+          ))}
+        </ul>
+
+        <div className="px-4 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {t("filter.priority")}
+        </div>
+        <ul className="pb-1">
+          <FilterOption selected={!priority} onClick={() => setPriority(null)}>
+            <PriorityBars priority="none" />
+            {t("filter.allPriorities")}
+          </FilterOption>
+          {PRIORITY_ORDER.filter((p: IssuePriority) => p !== "none").map((p: IssuePriority) => (
+            <FilterOption
+              key={p}
+              selected={priority === p}
+              onClick={() => setPriority(p)}
+            >
+              <PriorityBars priority={p} />
+              {t(`priority.${p}`)}
+            </FilterOption>
+          ))}
+        </ul>
+
+        {advancedCount > 0 && (
+          <div className="px-4 py-3">
+            <button
+              type="button"
+              onClick={() => {
+                setProjectId(null);
+                setPriority(null);
+              }}
+              className="w-full rounded-xl bg-muted py-2.5 text-[15px] font-medium text-foreground active:bg-accent"
+            >
+              {t("filter.reset")}
+            </button>
+          </div>
+        )}
+      </BottomSheet>
     </div>
+  );
+}
+
+function FilterOption({
+  children,
+  selected,
+  onClick,
+}: {
+  children: React.ReactNode;
+  selected?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex w-full items-center gap-2.5 px-4 py-3 text-left text-[15px] transition-colors active:bg-accent"
+      >
+        <span className="flex flex-1 items-center gap-2.5 truncate">{children}</span>
+        {selected && <Check className="size-4 shrink-0 text-brand" />}
+      </button>
+    </li>
   );
 }
 
@@ -217,7 +320,7 @@ function StatusGroup({
   const t = useT();
   return (
     <section>
-      <div className="sticky top-0 z-10 flex items-center gap-2 bg-muted/80 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur">
+      <div className="sticky top-0 z-10 flex items-center gap-2 bg-muted/80 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur">
         <span className={cn("size-2 rounded-full", cfg.dividerColor)} />
         {t(`status.${status}`)}
         <span className="font-normal text-muted-foreground/70">{issues.length}</span>
