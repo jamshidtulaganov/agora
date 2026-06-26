@@ -17,8 +17,8 @@ import { cn } from "../lib/cn";
 type Filter = "active" | "mine" | "unassigned" | "blocked" | "overdue" | "all";
 
 const FILTER_ORDER: Filter[] = [
-  "mine",
   "active",
+  "mine",
   "unassigned",
   "blocked",
   "overdue",
@@ -59,7 +59,7 @@ export function IssuesScreen() {
   const update = useUpdateIssue();
   const { navigate } = useRouter();
   const t = useT();
-  const [filter, setFilter] = useState<Filter>("mine");
+  const [filter, setFilter] = useState<Filter>("active");
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
 
