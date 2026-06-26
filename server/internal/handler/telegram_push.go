@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"html"
 	"log/slog"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -89,16 +90,41 @@ func (h *Handler) SendIssueInboxDM(ctx context.Context, recipientType, recipient
 
 		actorName := h.resolveActorName(bgctx, actorType, actorID)
 		text := composeIssueDM(lang, notifType, identifier, title, body, actorName, details)
+		// Default: a Mini App deep link (t.me/<bot>?startapp=...). Instances whose
+		// bot has no Mini App (e.g. local dev on a separate bot) set
+		// TELEGRAM_DM_LINK_MODE=web to instead open the web app directly —
+		// otherwise the button would open the bot chat and do nothing.
 		link := telegram.MiniAppLink(
 			telegramBotUsername(),
 			telegramMiniAppShortName(),
 			telegram.MiniAppStartParam(wsSlug, issueID),
 		)
+		if web := h.webIssueLink(wsSlug, issueID); web != "" {
+			link = web
+		}
 
 		if err := h.telegramBot.SendMessageWithButton(bgctx, tgID, text, dmOpenButton(lang), link); err != nil {
 			slog.Warn("telegram push: DM failed", "error", err, "telegram_id", tgID)
 		}
 	}()
+}
+
+// webIssueLink returns an absolute web URL to the issue when the deploy opts
+// into web deep links via TELEGRAM_DM_LINK_MODE=web, else "". Base resolves from
+// AGORA_PUBLIC_URL, falling back to FRONTEND_ORIGIN (local dev). Needs wsSlug
+// because the web route is workspace-scoped (/<wsSlug>/issues/<id>).
+func (h *Handler) webIssueLink(wsSlug, issueID string) string {
+	if strings.TrimSpace(os.Getenv("TELEGRAM_DM_LINK_MODE")) != "web" || wsSlug == "" {
+		return ""
+	}
+	base := strings.TrimRight(h.cfg.PublicURL, "/")
+	if base == "" {
+		base = strings.TrimRight(strings.TrimSpace(os.Getenv("FRONTEND_ORIGIN")), "/")
+	}
+	if base == "" {
+		return ""
+	}
+	return base + "/" + wsSlug + "/issues/" + issueID
 }
 
 // recipientLang returns the recipient's push language ("ru" | "uz" | "en"),
