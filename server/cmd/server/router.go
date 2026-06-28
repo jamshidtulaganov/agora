@@ -782,6 +782,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/active-task", h.GetActiveTaskForIssue)
 					r.Post("/tasks/{taskId}/cancel", h.CancelTask)
 					r.Post("/rerun", h.RerunIssue)
+					r.Post("/steer", h.SteerIssue)
 					r.Post("/video-frames", h.ExtractIssueVideoFrames)
 					r.Get("/merge-readiness", h.MergeReadiness)
 					r.Get("/task-runs", h.ListTasksByIssue)
@@ -838,6 +839,18 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/sprints", h.CreateSprint)
 				})
 			})
+
+			// Remote Boxes (opt-in, additive) — onboard a developer's own
+			// remote dev server. Gated by AGORA_REMOTE_BOXES_ENABLED: when off the
+			// routes are not mounted at all, so the feature is fully inert for
+			// every existing deployment.
+			if strings.TrimSpace(os.Getenv("AGORA_REMOTE_BOXES_ENABLED")) == "true" {
+				r.Route("/api/remote-boxes", func(r chi.Router) {
+					r.Get("/", h.ListConnectedBoxes)
+					r.Post("/", h.CreateConnectedBox)
+					r.Delete("/{id}", h.DeleteConnectedBox)
+				})
+			}
 
 			// Sprints — direct access by id (the project-scoped list/create
 			// lives under /api/projects/{id}/sprints above).

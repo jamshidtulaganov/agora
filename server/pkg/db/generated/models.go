@@ -44,6 +44,7 @@ type Agent struct {
 	McpConfig          []byte             `json:"mcp_config"`
 	Model              pgtype.Text        `json:"model"`
 	ThinkingLevel      pgtype.Text        `json:"thinking_level"`
+	FallbackRuntimeID  pgtype.UUID        `json:"fallback_runtime_id"`
 }
 
 type AgentPlugin struct {
@@ -244,6 +245,23 @@ type CommentReaction struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type ConnectedBox struct {
+	ID              pgtype.UUID        `json:"id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	OwnerID         pgtype.UUID        `json:"owner_id"`
+	Label           string             `json:"label"`
+	SshHost         string             `json:"ssh_host"`
+	SshUser         string             `json:"ssh_user"`
+	SshPort         int32              `json:"ssh_port"`
+	DeployPubkey    string             `json:"deploy_pubkey"`
+	DaemonID        pgtype.UUID        `json:"daemon_id"`
+	Status          string             `json:"status"`
+	LastError       string             `json:"last_error"`
+	LastBootstrapAt pgtype.Timestamptz `json:"last_bootstrap_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
 type ContactSalesInquiry struct {
 	ID              pgtype.UUID        `json:"id"`
 	FirstName       string             `json:"first_name"`
@@ -326,6 +344,7 @@ type GithubPullRequest struct {
 	Additions       int32              `json:"additions"`
 	Deletions       int32              `json:"deletions"`
 	ChangedFiles    int32              `json:"changed_files"`
+	Provider        string             `json:"provider"`
 }
 
 type GithubPullRequestCheckSuite struct {
@@ -581,6 +600,7 @@ type Project struct {
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 	Priority    string             `json:"priority"`
 	Settings    []byte             `json:"settings"`
+	SquadID     pgtype.UUID        `json:"squad_id"`
 }
 
 type ProjectResource struct {
