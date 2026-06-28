@@ -197,6 +197,79 @@ func TestSanitizeSliceScope(t *testing.T) {
 	})
 }
 
+// TestBuildSliceInstructionAutoDocs covers the auto_docs kind: document a
+// change into a SEPARATE docs repo, open a PR there, never touch product code,
+// never merge — and skip if the change has no doc-worthy surface. Product-neutral.
+func TestBuildSliceInstructionAutoDocs(t *testing.T) {
+	if !isKnownSliceActionKind(sliceActionAutoDocs) {
+		t.Fatal("auto_docs must be a known slice-action kind")
+	}
+	got := buildSliceInstruction(sliceActionAutoDocs, "")
+	if got == "" {
+		t.Fatal("auto_docs instruction must not be empty")
+	}
+	lower := strings.ToLower(got)
+	for _, want := range []string{"document", "documentation", "pull request", "do not", "separate", "code"} {
+		if !strings.Contains(lower, want) {
+			t.Errorf("auto_docs instruction must mention %q, got: %s", want, got)
+		}
+	}
+	// Docs-only: must say not to change product code, and must not merge.
+	if !strings.Contains(lower, "not touch product code") && !strings.Contains(lower, "do not touch product code") {
+		t.Errorf("auto_docs must forbid touching product code, got: %s", got)
+	}
+	// It opens a PR against the DOCS repo, so it must NOT get the code-repo branch
+	// hint (that targets the project's code repo / billing base).
+	if sliceActionOpensPR(sliceActionAutoDocs) {
+		t.Error("auto_docs opens its PR against the docs repo; must be excluded from the code-repo branch-hint set")
+	}
+}
+
+// TestSliceActionDocsRepoContext covers the project-configurable docs target for
+// auto_docs (the docs_repo project setting), mirroring the QA smoke seam.
+func TestSliceActionDocsRepoContext(t *testing.T) {
+	ctx := context.Background()
+	newProject := func(settings string) pgtype.UUID {
+		w := httptest.NewRecorder()
+		req := newRequest("POST", "/api/projects?workspace_id="+testWorkspaceID, map[string]any{
+			"title": "docs-repo project " + time.Now().Format(time.RFC3339Nano),
+		})
+		testHandler.CreateProject(w, req)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("create project: %d", w.Code)
+		}
+		var p ProjectResponse
+		json.NewDecoder(w.Body).Decode(&p)
+		t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM project WHERE id = $1`, p.ID) })
+		if settings != "" {
+			testPool.Exec(ctx, `UPDATE project SET settings = $1 WHERE id = $2`, []byte(settings), p.ID)
+		}
+		return testUUID(p.ID)
+	}
+	issueIn := func(pid pgtype.UUID) db.Issue {
+		return db.Issue{ProjectID: pid, WorkspaceID: testUUID(testWorkspaceID)}
+	}
+
+	t.Run("repo_rendered_when_set", func(t *testing.T) {
+		pid := newProject(`{"docs_repo":"https://github.com/jamshidtulaganov/sd-doc.git"}`)
+		got := testHandler.sliceActionDocsRepoContext(ctx, issueIn(pid))
+		if !strings.Contains(got, "https://github.com/jamshidtulaganov/sd-doc.git") || !strings.Contains(got, "open the pull request against it") {
+			t.Errorf("docs repo context wrong: %q", got)
+		}
+	})
+	t.Run("empty_when_unset", func(t *testing.T) {
+		pid := newProject(`{}`)
+		if got := testHandler.sliceActionDocsRepoContext(ctx, issueIn(pid)); got != "" {
+			t.Errorf("no docs_repo must yield \"\", got: %q", got)
+		}
+	})
+	t.Run("no_project_empty", func(t *testing.T) {
+		if got := testHandler.sliceActionDocsRepoContext(ctx, db.Issue{}); got != "" {
+			t.Errorf("no project must yield \"\", got: %q", got)
+		}
+	})
+}
+
 // TestSliceActionQASmokeContext covers the generic QA gate's only
 // product-specific seam: the project-configurable smoke override
 // (qa_smoke_cmd / qa_smoke_url in project.settings) appended to a run_qa

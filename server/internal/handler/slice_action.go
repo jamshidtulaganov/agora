@@ -38,6 +38,7 @@ const (
 	sliceActionReviewPart = "review_part"
 	sliceActionRunQA      = "run_qa"
 	sliceActionRunCI      = "run_ci"
+	sliceActionAutoDocs   = "auto_docs"
 )
 
 // isKnownSliceActionKind reports whether kind is one of the supported scoped
@@ -45,7 +46,7 @@ const (
 // agent is resolved or any comment is written.
 func isKnownSliceActionKind(kind string) bool {
 	switch kind {
-	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunCI:
+	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunCI, sliceActionAutoDocs:
 		return true
 	default:
 		return false
@@ -144,6 +145,18 @@ func buildSliceInstruction(kind, scope string) string {
 			"exit status, and any failing output, then set the `ci:pass` label ONLY if every check " +
 			"exited 0, otherwise `ci:fail`. Do NOT change code or merge anything — the gate is a " +
 			"deterministic signal and the human decides what to do next."
+	case sliceActionAutoDocs:
+		base = "Document this issue's change in the project's DOCUMENTATION repository — a SEPARATE repo " +
+			"from the code (its URL is appended below when configured; if none is configured, stop and say so). " +
+			"(1) DETERMINE WHAT CHANGED from this issue (its diff / linked PR): new or changed modules, API " +
+			"endpoints, data-model fields, settings, behavior, or user-facing flows. Documentation-only — do NOT " +
+			"touch product code. (2) IN THE DOCS REPO, write or update the pages that cover what changed, following " +
+			"the repo's EXISTING structure and conventions (read neighboring pages first; match their headings, " +
+			"sidebar entries, and tone). Update the relevant reference page(s) and add a changelog entry; only add " +
+			"a new page when no existing one fits. Keep the canonical locale authoritative and leave translation " +
+			"scaffolds consistent with how the repo handles locales. (3) Open a PULL REQUEST against the docs repo " +
+			"with the doc changes for human review. Do NOT merge — the human decides. If the change is purely " +
+			"internal (no doc-worthy surface), say so in a comment and open nothing rather than inventing content."
 	default:
 		return ""
 	}
@@ -241,6 +254,34 @@ func (h *Handler) sliceActionQASmokeContext(ctx context.Context, issue db.Issue)
 	}
 	out += " use these instead of auto-detecting."
 	return out
+}
+
+// sliceActionDocsRepoContext appends the project's configured documentation repo
+// to an auto_docs instruction. A project may store `docs_repo` (the docs
+// repository URL, e.g. a Docusaurus site repo separate from the code) in
+// project.settings; when present the agent writes the docs there and opens the
+// PR against it. Returns "" when unset — the recipe then asks the agent to stop
+// (docs need an explicit target). Mirrors sliceActionQASmokeContext.
+func (h *Handler) sliceActionDocsRepoContext(ctx context.Context, issue db.Issue) string {
+	if !issue.ProjectID.Valid {
+		return ""
+	}
+	project, err := h.Queries.GetProject(ctx, issue.ProjectID)
+	if err != nil || len(project.Settings) == 0 {
+		return ""
+	}
+	var settings struct {
+		DocsRepo string `json:"docs_repo"`
+	}
+	if json.Unmarshal(project.Settings, &settings) != nil {
+		return ""
+	}
+	repo := strings.TrimSpace(settings.DocsRepo)
+	if repo == "" {
+		return ""
+	}
+	return " The documentation repository for this project is " + repo +
+		" — write the docs there and open the pull request against it."
 }
 
 // gitlabBaseBranch is the branch GitLab merge-request slice actions target +
@@ -455,6 +496,10 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 	// run_qa is project-configurable: append the project's smoke cmd/url when set.
 	if req.Kind == sliceActionRunQA {
 		instruction += h.sliceActionQASmokeContext(r.Context(), issue)
+	}
+	// auto_docs targets the project's configured docs repo when set.
+	if req.Kind == sliceActionAutoDocs {
+		instruction += h.sliceActionDocsRepoContext(r.Context(), issue)
 	}
 
 	// Build the @mention link the comment-trigger path keys off:

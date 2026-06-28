@@ -26,9 +26,11 @@ export function ProjectQASection({ projectId }: { projectId: string }) {
   const settings = project?.settings;
   const savedCmd = (settings?.qa_smoke_cmd ?? "") as string;
   const savedUrl = (settings?.qa_smoke_url ?? "") as string;
+  const savedDocsRepo = (settings?.docs_repo ?? "") as string;
 
   const [cmd, setCmd] = useState(savedCmd);
   const [url, setUrl] = useState(savedUrl);
+  const [docsRepo, setDocsRepo] = useState(savedDocsRepo);
 
   // Re-sync local drafts when the server value changes (e.g. another client, or
   // the initial load resolving after mount).
@@ -38,10 +40,13 @@ export function ProjectQASection({ projectId }: { projectId: string }) {
   useEffect(() => {
     setUrl(savedUrl);
   }, [savedUrl]);
+  useEffect(() => {
+    setDocsRepo(savedDocsRepo);
+  }, [savedDocsRepo]);
 
   // Persist a single key, merging into the current settings blob. Normalizes
   // whitespace-only input to "" so the backend treats it as "no override".
-  const saveKey = async (key: "qa_smoke_cmd" | "qa_smoke_url", value: string) => {
+  const saveKey = async (key: "qa_smoke_cmd" | "qa_smoke_url" | "docs_repo", value: string) => {
     if (!project) return;
     const next = value.trim();
     if ((((settings?.[key] ?? "") as string)) === next) return;
@@ -103,6 +108,22 @@ export function ProjectQASection({ projectId }: { projectId: string }) {
                 if (e.key === "Enter") (e.target as HTMLInputElement).blur();
               }}
               placeholder="http://localhost:5173"
+              className="h-7 w-full rounded-md border bg-transparent px-2 text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          </label>
+          <label className="block space-y-1 border-t pt-2">
+            <span className="text-[10px] font-medium text-muted-foreground">
+              Docs repo (auto-docs)
+            </span>
+            <input
+              type="text"
+              value={docsRepo}
+              onChange={(e) => setDocsRepo(e.target.value)}
+              onBlur={() => void saveKey("docs_repo", docsRepo)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              }}
+              placeholder="https://github.com/org/docs.git"
               className="h-7 w-full rounded-md border bg-transparent px-2 text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
             />
           </label>
