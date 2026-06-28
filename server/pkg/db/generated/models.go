@@ -263,6 +263,7 @@ type ConnectedBox struct {
 	RepoUrl         string             `json:"repo_url"`
 	WorkDir         string             `json:"work_dir"`
 	LastBranch      string             `json:"last_branch"`
+	ProjectID       pgtype.UUID        `json:"project_id"`
 }
 
 type ContactSalesInquiry struct {

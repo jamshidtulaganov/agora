@@ -10,6 +10,26 @@ import (
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
+// TestRepoBasename covers the fork/upstream-tolerant repo matching used to
+// resolve an issue's QA box: a project bound to one owner's repo must match a
+// box bound to a different owner's fork of the same repo, across https/ssh/.git
+// forms.
+func TestRepoBasename(t *testing.T) {
+	cases := map[string]string{
+		"https://github.com/jamshidtulaganov/sd-main.git": "sd-main",
+		"https://github.com/azizkh/sd.git":                "sd",
+		"git@github.com:jamshidtulaganov/cs3.git":         "cs3",
+		"https://gitlab.sdteam.uz/g/Repo":                 "repo",
+		"  HTTPS://github.com/x/SD-Main.GIT  ":            "sd-main",
+		"":                                                "",
+	}
+	for in, want := range cases {
+		if got := repoBasename(in); got != want {
+			t.Errorf("repoBasename(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 // TestConnectedBoxFeatureFlag pins the additive/opt-in contract: with the flag
 // OFF the endpoints fail closed (404), so the Remote Boxes feature is inert for
 // any deployment that hasn't enabled it.

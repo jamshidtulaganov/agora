@@ -774,6 +774,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/comments", h.CreateComment)
 					r.Post("/comments/summarize", h.SummarizeComments)
 					r.Post("/slice-actions", h.CreateSliceAction)
+					r.Post("/deploy-qa", h.DeployIssueQA)
 					r.Get("/comments", h.ListComments)
 					r.Get("/timeline", h.ListTimeline)
 					r.Get("/subscribers", h.ListIssueSubscribers)
@@ -849,6 +850,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/", h.ListConnectedBoxes)
 					r.Post("/", h.CreateConnectedBox)
 					r.Post("/{id}/sync", h.SyncConnectedBox)
+					r.Post("/{id}/bind", h.BindConnectedBox)
 					r.Delete("/{id}", h.DeleteConnectedBox)
 				})
 			}

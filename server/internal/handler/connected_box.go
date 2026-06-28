@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -43,6 +44,7 @@ type ConnectedBoxResponse struct {
 	RepoURL      string  `json:"repo_url"`
 	WorkDir      string  `json:"work_dir"`
 	LastBranch   string  `json:"last_branch"`
+	ProjectID    *string `json:"project_id"`
 	CreatedAt    string  `json:"created_at"`
 }
 
@@ -62,6 +64,7 @@ func connectedBoxToResponse(b db.ConnectedBox) ConnectedBoxResponse {
 		RepoURL:      b.RepoUrl,
 		WorkDir:      b.WorkDir,
 		LastBranch:   b.LastBranch,
+		ProjectID:    uuidToPtr(b.ProjectID),
 	}
 	if b.CreatedAt.Valid {
 		resp.CreatedAt = b.CreatedAt.Time.Format(time.RFC3339)
@@ -70,12 +73,13 @@ func connectedBoxToResponse(b db.ConnectedBox) ConnectedBoxResponse {
 }
 
 type CreateConnectedBoxRequest struct {
-	Label   string `json:"label"`
-	SSHHost string `json:"ssh_host"`
-	SSHUser string `json:"ssh_user"`
-	SSHPort int32  `json:"ssh_port"`
-	RepoURL string `json:"repo_url"`
-	WorkDir string `json:"work_dir"`
+	Label     string `json:"label"`
+	SSHHost   string `json:"ssh_host"`
+	SSHUser   string `json:"ssh_user"`
+	SSHPort   int32  `json:"ssh_port"`
+	RepoURL   string `json:"repo_url"`
+	WorkDir   string `json:"work_dir"`
+	ProjectID string `json:"project_id"`
 }
 
 // ListConnectedBoxes returns the workspace's remote boxes (tenancy-scoped).
@@ -143,6 +147,13 @@ func (h *Handler) CreateConnectedBox(w http.ResponseWriter, r *http.Request) {
 	if req.SSHPort <= 0 {
 		req.SSHPort = 22
 	}
+	var projectID pgtype.UUID
+	if pid := strings.TrimSpace(req.ProjectID); pid != "" {
+		var ok bool
+		if projectID, ok = parseUUIDOrBadRequest(w, pid, "project_id"); !ok {
+			return
+		}
+	}
 	box, err := h.Queries.CreateConnectedBox(r.Context(), db.CreateConnectedBoxParams{
 		WorkspaceID:  wsUUID,
 		OwnerID:      parseUUID(userID),
@@ -153,6 +164,7 @@ func (h *Handler) CreateConnectedBox(w http.ResponseWriter, r *http.Request) {
 		DeployPubkey: "",
 		RepoUrl:      strings.TrimSpace(req.RepoURL),
 		WorkDir:      strings.TrimSpace(req.WorkDir),
+		ProjectID:    projectID,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create remote box")
@@ -194,8 +206,196 @@ func (h *Handler) DeleteConnectedBox(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// repoBasename returns the bare repo name from a git URL (last path segment,
+// without .git), lowercased — so a project's bound repo matches a box's repo
+// regardless of fork/upstream owner or https/ssh form (e.g. both
+// github.com/azizkh/sd.git and github.com/jamshidtulaganov/sd-main.git differ in
+// owner, but a project bound to the fork matches the box bound to the fork).
+func repoBasename(u string) string {
+	u = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(u)), ".git")
+	if i := strings.LastIndexAny(u, "/:"); i >= 0 {
+		u = u[i+1:]
+	}
+	return u
+}
+
+// connectedBoxForIssue resolves the QA box for an issue. Primary match is the
+// EXPLICIT project binding (connected_box.project_id == issue.project_id) — the
+// box's repo (a fork) legitimately differs from the project's repo (upstream),
+// and a renamed fork breaks any name-based match, so the link must be explicit.
+// Fallback (for boxes not yet bound to a project) is a repo-name match against
+// the project's github_repo resource. ok=false when nothing resolves.
+func (h *Handler) connectedBoxForIssue(ctx context.Context, issue db.Issue) (db.ConnectedBox, bool) {
+	if !issue.ProjectID.Valid {
+		return db.ConnectedBox{}, false
+	}
+	boxes, err := h.Queries.ListConnectedBoxesByWorkspace(ctx, issue.WorkspaceID)
+	if err != nil {
+		return db.ConnectedBox{}, false
+	}
+	// 1. Explicit project binding.
+	for _, b := range boxes {
+		if b.ProjectID.Valid && b.ProjectID.Bytes == issue.ProjectID.Bytes {
+			return b, true
+		}
+	}
+	// 2. Fallback: repo-name match against the project's bound repo.
+	var projRepo string
+	for _, row := range h.listProjectResourcesForProject(ctx, issue.ProjectID) {
+		if row.ResourceType != "github_repo" {
+			continue
+		}
+		var ref struct {
+			URL string `json:"url"`
+		}
+		if json.Unmarshal(row.ResourceRef, &ref) == nil && strings.TrimSpace(ref.URL) != "" {
+			projRepo = ref.URL
+			break
+		}
+	}
+	if projRepo != "" {
+		want := repoBasename(projRepo)
+		for _, b := range boxes {
+			if b.RepoUrl != "" && repoBasename(b.RepoUrl) == want {
+				return b, true
+			}
+		}
+	}
+	return db.ConnectedBox{}, false
+}
+
+// performBoxSync runs a git-sync for a box and records the result, returning the
+// updated row, success, and token-redacted output. Shared by the box-id sync
+// endpoint and the issue deploy-qa endpoint.
+func (h *Handler) performBoxSync(ctx context.Context, box db.ConnectedBox, branch, keyPath string) (db.ConnectedBox, bool, string) {
+	out, syncErr := syncBoxBranch(ctx, box, branch, remoteBoxesGitToken(), keyPath, sshRunner{})
+	status := "online"
+	lastErr := ""
+	if syncErr != nil {
+		status = "error"
+		lastErr = redactGitToken(syncErr.Error())
+	}
+	updated, uerr := h.Queries.UpdateConnectedBoxSync(ctx, db.UpdateConnectedBoxSyncParams{
+		ID:          box.ID,
+		WorkspaceID: box.WorkspaceID,
+		Status:      status,
+		LastError:   lastErr,
+		LastBranch:  pgtype.Text{String: branch, Valid: true},
+	})
+	if uerr != nil {
+		updated = box
+	}
+	return updated, syncErr == nil, redactGitToken(out)
+}
+
 type SyncConnectedBoxRequest struct {
 	Branch string `json:"branch"`
+}
+
+type BindConnectedBoxRequest struct {
+	ProjectID string `json:"project_id"`
+}
+
+// BindConnectedBox binds (or, with an empty project_id, unbinds) a box to a
+// project so an issue in that project resolves to this box for deploy-qa.
+func (h *Handler) BindConnectedBox(w http.ResponseWriter, r *http.Request) {
+	if !remoteBoxesEnabled() {
+		writeError(w, http.StatusNotFound, "remote boxes are not enabled")
+		return
+	}
+	if _, ok := requireUserID(w, r); !ok {
+		return
+	}
+	wsID := h.resolveWorkspaceID(r)
+	if wsID == "" {
+		writeError(w, http.StatusBadRequest, "workspace required")
+		return
+	}
+	wsUUID, ok := parseUUIDOrBadRequest(w, wsID, "workspace_id")
+	if !ok {
+		return
+	}
+	boxUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "box id")
+	if !ok {
+		return
+	}
+	var req BindConnectedBoxRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	var projectID pgtype.UUID
+	if pid := strings.TrimSpace(req.ProjectID); pid != "" {
+		if projectID, ok = parseUUIDOrBadRequest(w, pid, "project_id"); !ok {
+			return
+		}
+	}
+	box, err := h.Queries.BindConnectedBoxProject(r.Context(), db.BindConnectedBoxProjectParams{
+		ID:          boxUUID,
+		WorkspaceID: wsUUID,
+		ProjectID:   projectID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "remote box not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, connectedBoxToResponse(box))
+}
+
+// DeployIssueQA resolves the QA box bound to an issue's project and checks the
+// given branch out onto it (git-sync), so the box serves the branch under
+// review and run_qa (with the project's qa_smoke_url pointed at the box) can
+// test it. The box is auto-resolved from the issue — the caller need only supply
+// the branch.
+func (h *Handler) DeployIssueQA(w http.ResponseWriter, r *http.Request) {
+	if !remoteBoxesEnabled() {
+		writeError(w, http.StatusNotFound, "remote boxes are not enabled")
+		return
+	}
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	issue, ok := h.loadIssueForUser(w, r, chi.URLParam(r, "id"))
+	if !ok {
+		return
+	}
+	_ = userID
+	var req SyncConnectedBoxRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	branch := strings.TrimSpace(req.Branch)
+	if branch == "" {
+		writeError(w, http.StatusBadRequest, "branch is required")
+		return
+	}
+	box, found := h.connectedBoxForIssue(r.Context(), issue)
+	if !found {
+		writeError(w, http.StatusNotFound, "no QA box is bound to this issue's project (no connected_box repo matches the project repo)")
+		return
+	}
+	if strings.TrimSpace(box.RepoUrl) == "" || strings.TrimSpace(box.WorkDir) == "" {
+		writeError(w, http.StatusBadRequest, "the resolved box has no repo_url / work_dir configured")
+		return
+	}
+	keyPath := remoteBoxesSSHKeyPath()
+	if keyPath == "" {
+		writeError(w, http.StatusServiceUnavailable, "remote box SSH key is not configured on the server")
+		return
+	}
+	updated, okSync, output := h.performBoxSync(r.Context(), box, branch, keyPath)
+	code := http.StatusOK
+	if !okSync {
+		code = http.StatusBadGateway
+	}
+	writeJSON(w, code, map[string]any{
+		"box":    connectedBoxToResponse(updated),
+		"branch": branch,
+		"ok":     okSync,
+		"output": output,
+	})
 }
 
 // SyncConnectedBox checks out a branch of the box's repo into its work_dir over
@@ -252,34 +452,15 @@ func (h *Handler) SyncConnectedBox(w http.ResponseWriter, r *http.Request) {
 
 	// The box fetches + checks out the branch (glue-preserving); the token lives
 	// only in the fetch argv, redacted before it is logged or stored.
-	out, syncErr := syncBoxBranch(r.Context(), box, branch, remoteBoxesGitToken(), keyPath, sshRunner{})
-
-	status := "online"
-	lastErr := ""
-	if syncErr != nil {
-		status = "error"
-		lastErr = redactGitToken(syncErr.Error())
-	}
-	updated, uerr := h.Queries.UpdateConnectedBoxSync(r.Context(), db.UpdateConnectedBoxSyncParams{
-		ID:          boxUUID,
-		WorkspaceID: wsUUID,
-		Status:      status,
-		LastError:   lastErr,
-		LastBranch:  pgtype.Text{String: branch, Valid: true},
-	})
-	if uerr != nil {
-		writeError(w, http.StatusInternalServerError, "sync ran but status update failed")
-		return
-	}
+	updated, okSync, output := h.performBoxSync(r.Context(), box, branch, keyPath)
 	code := http.StatusOK
-	if syncErr != nil {
+	if !okSync {
 		code = http.StatusBadGateway
 	}
 	writeJSON(w, code, map[string]any{
 		"box":    connectedBoxToResponse(updated),
 		"branch": branch,
-		"ok":     syncErr == nil,
-		// Remote git output, token-redacted, so the human sees what happened.
-		"output": redactGitToken(out),
+		"ok":     okSync,
+		"output": output,
 	})
 }

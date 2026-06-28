@@ -8,9 +8,16 @@ INSERT INTO connected_box (
     ssh_port,
     deploy_pubkey,
     repo_url,
-    work_dir
+    work_dir,
+    project_id
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, sqlc.narg(project_id))
+RETURNING *;
+
+-- name: BindConnectedBoxProject :one
+UPDATE connected_box
+SET project_id = sqlc.narg(project_id), updated_at = now()
+WHERE id = $1 AND workspace_id = $2
 RETURNING *;
 
 -- name: ListConnectedBoxesByWorkspace :many
