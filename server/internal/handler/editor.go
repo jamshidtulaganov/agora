@@ -34,6 +34,13 @@ type editorAgent struct {
 	// the daemon predates editor-port reporting — the handler falls back to the
 	// legacy 19514 default.
 	editorPort string
+	// editorAddr is the per-runtime address the BACKEND should dial to reach this
+	// daemon's /editor/launch when the box is not on loopback (from
+	// agent_runtime.metadata.editor_addr, e.g. a Remote Boxes SSH-tunnel
+	// endpoint). Non-empty ⇒ cloud-mode editor for THIS runtime; empty ⇒ fall
+	// back to the global AGORA_DAEMON_INTERNAL env (existing behavior). Internal
+	// routing only, never sent to the browser.
+	editorAddr string
 }
 
 // listIssueEditorAgents returns, for every agent that ran a NON-leader task with
@@ -44,11 +51,12 @@ type editorAgent struct {
 // wrote the code).
 func (h *Handler) listIssueEditorAgents(ctx context.Context, issueID pgtype.UUID) []editorAgent {
 	rows, err := h.DB.Query(ctx,
-		`SELECT agent_id, name, work_dir, status, editor_port FROM (
+		`SELECT agent_id, name, work_dir, status, editor_port, editor_addr FROM (
 			SELECT DISTINCT ON (atq.agent_id)
 			       atq.agent_id::text AS agent_id, COALESCE(a.name, '') AS name,
 			       atq.work_dir, atq.status,
 			       COALESCE(ar.metadata->>'editor_port', '') AS editor_port,
+			       COALESCE(ar.metadata->>'editor_addr', '') AS editor_addr,
 			       COALESCE(atq.completed_at, atq.started_at, atq.created_at) AS ts
 			FROM agent_task_queue atq
 			JOIN agent a ON a.id = atq.agent_id
@@ -81,7 +89,7 @@ func (h *Handler) listIssueEditorAgents(ctx context.Context, issueID pgtype.UUID
 	var out []editorAgent
 	for rows.Next() {
 		var a editorAgent
-		if err := rows.Scan(&a.AgentID, &a.AgentName, &a.WorkDir, &a.Status, &a.editorPort); err == nil {
+		if err := rows.Scan(&a.AgentID, &a.AgentName, &a.WorkDir, &a.Status, &a.editorPort, &a.editorAddr); err == nil {
 			out = append(out, a)
 		}
 	}
@@ -113,6 +121,22 @@ func daemonEditorBase(port string) string {
 // code-server on the daemon and reverse-proxies it. Empty = self-host.
 func daemonInternalAddr() string {
 	return strings.TrimSpace(os.Getenv("AGORA_DAEMON_INTERNAL"))
+}
+
+// resolveDaemonInternalAddr picks the address the BACKEND dials to reach a
+// daemon's /editor/launch, resolved PER-RUNTIME. A Remote Boxes runtime carries
+// its own reachable endpoint (e.g. an SSH-tunnel address) in
+// agent_runtime.metadata.editor_addr; when present it wins, so multiple boxes
+// each resolve to their own daemon. Empty ⇒ fall back to the process-wide
+// AGORA_DAEMON_INTERNAL env — the existing single-global-daemon (Fly 6PN)
+// behavior, UNCHANGED. Both empty ⇒ self-host. This keeps the cloud/self-host
+// decision identical for every existing deployment (no runtime sets editor_addr
+// until the Remote Boxes control-plane does) while making it per-runtime.
+func resolveDaemonInternalAddr(runtimeAddr string) string {
+	if a := strings.TrimSpace(runtimeAddr); a != "" {
+		return a
+	}
+	return daemonInternalAddr()
 }
 
 // GetIssueEditor resolves the issue's latest task worktree and prepares a live
@@ -153,9 +177,9 @@ func (h *Handler) GetIssueEditor(w http.ResponseWriter, r *http.Request) {
 	// agent chips let the human switch to any other agent's worktree to review.
 	latest := agents[0].WorkDir
 
-	if internal := daemonInternalAddr(); internal != "" {
-		// Cloud: the backend proxies a single code-server; launch the latest
-		// worktree (per-agent switching in cloud is a follow-up).
+	if internal := resolveDaemonInternalAddr(agents[0].editorAddr); internal != "" {
+		// Cloud / Remote Box: the backend proxies a single code-server; launch the
+		// latest worktree (per-agent switching in cloud is a follow-up).
 		port, lerr := launchEditorOnDaemon(r.Context(), internal, latest, userID)
 		if lerr != nil {
 			writeError(w, http.StatusBadGateway, "failed to launch editor on the daemon: "+lerr.Error())

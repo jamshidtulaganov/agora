@@ -38,3 +38,38 @@ func TestDaemonEditorBase(t *testing.T) {
 		}
 	})
 }
+
+// TestResolveDaemonInternalAddr covers the per-runtime cloud-address resolution
+// (Remote Boxes P1). The contract that protects existing deployments: a runtime
+// with NO editor_addr resolves EXACTLY to the global AGORA_DAEMON_INTERNAL env
+// (unchanged Fly-6PN behavior); only a runtime that carries its own editor_addr
+// (a managed remote box) overrides it. Pure (no DB).
+func TestResolveDaemonInternalAddr(t *testing.T) {
+	t.Run("runtime_addr_wins_over_global_env", func(t *testing.T) {
+		t.Setenv("AGORA_DAEMON_INTERNAL", "global.internal:19514")
+		if got := resolveDaemonInternalAddr("box-tunnel:40000"); got != "box-tunnel:40000" {
+			t.Errorf("per-runtime addr must win, got: %q", got)
+		}
+	})
+
+	t.Run("empty_runtime_addr_falls_back_to_global_env", func(t *testing.T) {
+		t.Setenv("AGORA_DAEMON_INTERNAL", "global.internal:19514")
+		if got := resolveDaemonInternalAddr(""); got != "global.internal:19514" {
+			t.Errorf("empty runtime addr must fall back to the global env (unchanged behavior), got: %q", got)
+		}
+	})
+
+	t.Run("whitespace_runtime_addr_falls_back", func(t *testing.T) {
+		t.Setenv("AGORA_DAEMON_INTERNAL", "global.internal:19514")
+		if got := resolveDaemonInternalAddr("   "); got != "global.internal:19514" {
+			t.Errorf("blank runtime addr must fall back, got: %q", got)
+		}
+	})
+
+	t.Run("both_empty_yields_self_host", func(t *testing.T) {
+		t.Setenv("AGORA_DAEMON_INTERNAL", "")
+		if got := resolveDaemonInternalAddr(""); got != "" {
+			t.Errorf("no addr anywhere must yield \"\" (self-host), got: %q", got)
+		}
+	})
+}
