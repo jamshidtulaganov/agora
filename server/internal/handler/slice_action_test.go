@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/util"
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
 // TestBuildSliceInstruction is a pure unit test of the single source of truth
@@ -75,10 +77,12 @@ func TestBuildSliceInstruction(t *testing.T) {
 	})
 }
 
-// TestBuildSliceInstructionRunQA covers the run_qa kind, whose contract differs
-// from the code/docs/tests/review kinds: it asks for a QA verdict on an existing
-// PR (no new PR), so it must reference the sddev-qa skill, the branch resolution,
-// the verdict, and the no-merge guardrail — and must NOT be a PR-opening action.
+// TestBuildSliceInstructionRunQA covers the run_qa kind: a GENERIC, deterministic
+// QA gate (no new PR). It must run the project's checks by exit code, smoke the
+// running app, set qa:pass/qa:fail, and carry the no-merge guardrail — and it
+// must NOT be a PR-opening action. The banned list is a regression guard: run_qa
+// must stay product-neutral (no SalesDoc "sd-qa-process" skill, no Bitrix "btx-"
+// branch, no "dev test box"); those once made the gate unusable off-SD.
 func TestBuildSliceInstructionRunQA(t *testing.T) {
 	if !isKnownSliceActionKind(sliceActionRunQA) {
 		t.Fatal("run_qa must be a known slice-action kind")
@@ -88,9 +92,24 @@ func TestBuildSliceInstructionRunQA(t *testing.T) {
 		t.Fatal("run_qa instruction must not be empty")
 	}
 	lower := strings.ToLower(got)
-	for _, want := range []string{"qa", "sd-qa-process", "verdict", "btx-", "do not"} {
+	for _, want := range []string{"qa:pass", "qa:fail", "exit code", "deterministic", "do not"} {
 		if !strings.Contains(lower, strings.ToLower(want)) {
 			t.Errorf("run_qa instruction must mention %q, got: %s", want, got)
+		}
+	}
+	// Baseline diffing (P0): the gate must judge the CHANGE, not the repo — a
+	// check already red on the base branch is pre-existing and must not fail the
+	// gate; only a NEW failure does. Regression guard so the recipe never reverts
+	// to "qa:pass ONLY if ALL checks passed", which mis-fires on a dirty repo
+	// (the SD-170 case: pre-existing build/lint/test red → no verdict at all).
+	for _, want := range []string{"baseline", "pre-existing", "new failure"} {
+		if !strings.Contains(lower, strings.ToLower(want)) {
+			t.Errorf("run_qa instruction must encode baseline diffing (%q), got: %s", want, got)
+		}
+	}
+	for _, banned := range []string{"sd-qa-process", "btx-", "dev test box"} {
+		if strings.Contains(lower, strings.ToLower(banned)) {
+			t.Errorf("run_qa instruction must stay product-neutral; found %q, got: %s", banned, got)
 		}
 	}
 	if sliceActionOpensPR(sliceActionRunQA) {
@@ -111,10 +130,13 @@ func TestBuildSliceInstructionRunCI(t *testing.T) {
 		t.Fatal("run_ci instruction must not be empty")
 	}
 	lower := strings.ToLower(got)
-	for _, want := range []string{"ci:pass", "ci:fail", "exit", "btx-", "do not"} {
+	for _, want := range []string{"ci:pass", "ci:fail", "exit", "do not"} {
 		if !strings.Contains(lower, strings.ToLower(want)) {
 			t.Errorf("run_ci instruction must mention %q, got: %s", want, got)
 		}
+	}
+	if strings.Contains(lower, "btx-") {
+		t.Errorf("run_ci instruction must stay product-neutral (no Bitrix btx- branch), got: %s", got)
 	}
 	if sliceActionOpensPR(sliceActionRunCI) {
 		t.Error("run_ci opens no PR; must be excluded from the branch-hint set")
@@ -171,6 +193,107 @@ func TestSanitizeSliceScope(t *testing.T) {
 		got := sanitizeSliceScope("a)(b]c mention://x")
 		if util.MentionRe.MatchString(got) || strings.Contains(got, "mention://") {
 			t.Errorf("partial tokens must be stripped, got: %q", got)
+		}
+	})
+}
+
+// TestSliceActionQASmokeContext covers the generic QA gate's only
+// product-specific seam: the project-configurable smoke override
+// (qa_smoke_cmd / qa_smoke_url in project.settings) appended to a run_qa
+// instruction. It is a regression guard for the SD-box-hardcoding removal —
+// the gate must stay generic, reading the smoke flow from project settings
+// instead of any one product's branch/skill. Asserts cmd-only, url-only, both,
+// empty settings, and no-project paths, plus that the override actually
+// concatenates onto the run_qa base instruction the agent receives.
+func TestSliceActionQASmokeContext(t *testing.T) {
+	ctx := context.Background()
+
+	// newProject creates a real project via the handler, optionally sets its
+	// settings JSON directly, registers cleanup, and returns its UUID.
+	newProject := func(settings string) pgtype.UUID {
+		w := httptest.NewRecorder()
+		req := newRequest("POST", "/api/projects?workspace_id="+testWorkspaceID, map[string]any{
+			"title": "qa-smoke project " + time.Now().Format(time.RFC3339Nano),
+		})
+		testHandler.CreateProject(w, req)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("create project: %d: %s", w.Code, w.Body.String())
+		}
+		var p ProjectResponse
+		if err := json.NewDecoder(w.Body).Decode(&p); err != nil {
+			t.Fatalf("decode project: %v", err)
+		}
+		t.Cleanup(func() {
+			testPool.Exec(ctx, `DELETE FROM project WHERE id = $1`, p.ID)
+		})
+		if settings != "" {
+			if _, err := testPool.Exec(ctx, `UPDATE project SET settings = $1 WHERE id = $2`, []byte(settings), p.ID); err != nil {
+				t.Fatalf("set settings: %v", err)
+			}
+		}
+		return testUUID(p.ID)
+	}
+
+	issueIn := func(projectID pgtype.UUID) db.Issue {
+		return db.Issue{ProjectID: projectID, WorkspaceID: testUUID(testWorkspaceID)}
+	}
+
+	t.Run("cmd_and_url_both_rendered", func(t *testing.T) {
+		pid := newProject(`{"qa_smoke_cmd":"pnpm dev","qa_smoke_url":"http://localhost:5173"}`)
+		got := testHandler.sliceActionQASmokeContext(ctx, issueIn(pid))
+		for _, want := range []string{"pnpm dev", "http://localhost:5173", "instead of auto-detecting"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("want %q in smoke context, got: %q", want, got)
+			}
+		}
+	})
+
+	t.Run("cmd_only_no_url_clause", func(t *testing.T) {
+		pid := newProject(`{"qa_smoke_cmd":"make run"}`)
+		got := testHandler.sliceActionQASmokeContext(ctx, issueIn(pid))
+		if !strings.Contains(got, "make run") || strings.Contains(got, "smoke it at") {
+			t.Errorf("cmd-only render wrong: %q", got)
+		}
+	})
+
+	t.Run("url_only_no_cmd_clause", func(t *testing.T) {
+		pid := newProject(`{"qa_smoke_url":"http://localhost:3000"}`)
+		got := testHandler.sliceActionQASmokeContext(ctx, issueIn(pid))
+		if !strings.Contains(got, "http://localhost:3000") || strings.Contains(got, "start the app") {
+			t.Errorf("url-only render wrong: %q", got)
+		}
+	})
+
+	t.Run("empty_settings_yields_nothing", func(t *testing.T) {
+		pid := newProject(`{}`)
+		if got := testHandler.sliceActionQASmokeContext(ctx, issueIn(pid)); got != "" {
+			t.Errorf("empty settings must yield \"\", got: %q", got)
+		}
+	})
+
+	t.Run("whitespace_only_values_yield_nothing", func(t *testing.T) {
+		pid := newProject(`{"qa_smoke_cmd":"   ","qa_smoke_url":"  "}`)
+		if got := testHandler.sliceActionQASmokeContext(ctx, issueIn(pid)); got != "" {
+			t.Errorf("whitespace-only settings must yield \"\", got: %q", got)
+		}
+	})
+
+	t.Run("no_project_yields_nothing", func(t *testing.T) {
+		if got := testHandler.sliceActionQASmokeContext(ctx, db.Issue{}); got != "" {
+			t.Errorf("no project must yield \"\", got: %q", got)
+		}
+	})
+
+	// Integration seam: the agent receives buildSliceInstruction(run_qa) with the
+	// smoke override concatenated. Verify both the deterministic gate text and the
+	// project override survive into the final instruction.
+	t.Run("appended_to_run_qa_instruction", func(t *testing.T) {
+		pid := newProject(`{"qa_smoke_cmd":"pnpm dev"}`)
+		full := buildSliceInstruction(sliceActionRunQA, "") + testHandler.sliceActionQASmokeContext(ctx, issueIn(pid))
+		for _, want := range []string{"qa:pass", "exit code", "pnpm dev"} {
+			if !strings.Contains(full, want) {
+				t.Errorf("run_qa + smoke must contain %q, got: %q", want, full)
+			}
 		}
 	})
 }

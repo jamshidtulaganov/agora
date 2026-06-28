@@ -86,15 +86,48 @@ func buildSliceInstruction(kind, scope string) string {
 			"the human to review. Do NOT make or merge any changes yourself — your review is " +
 			"advisory and the human reviewer decides what to do next."
 	case sliceActionRunQA:
-		base = "Run QA for this issue against the dev test box. Resolve the open pull request " +
-			"for this issue's branch (e.g. `gh pr list --head btx-<bitrix task id>`), then use " +
-			"the sd-qa-process skill to switch the box to that branch, run a smoke test against the " +
-			"live UI, and restore the base branch afterwards. Post the pass/fail verdict as a " +
-			"comment and set the `qa:pass` or `qa:fail` label. Do NOT make code changes or merge " +
-			"anything — your verdict is advisory and the human decides what to do next."
+		base = "Run QA for this issue as a DETERMINISTIC gate — report strictly by EXIT CODE, never by " +
+			"opinion, and do NOT weaken, skip, or delete any test to make it pass. Judge the CHANGE, not the " +
+			"repo: a check that is ALREADY red on the base branch is PRE-EXISTING and must NOT fail this gate — " +
+			"only a NEW failure this change introduces does. " +
+			"(1) BASELINE: check out the merge-base (the base branch this PR/MR targets, e.g. `main`) and run the " +
+			"SAME build + lint + test commands you will run below, recording each exit code. Every command that " +
+			"already fails here is pre-existing and out of scope for this gate. " +
+			"(2) CHECKS: on the change's branch, detect the project type and run its build + lint + tests, " +
+			"recording each command and its exit code — e.g. `pnpm build && pnpm lint && pnpm test` (JS/TS), " +
+			"`go build ./... && go test ./...` (Go), `php -l` on changed files plus phpunit/codeception (PHP). " +
+			"Diff against BASELINE: a command red on BOTH is pre-existing (note it, do not block); a command " +
+			"green on baseline but RED on the branch is a NEW failure this change caused — that fails the gate. " +
+			"(3) SMOKE: bring the app up and exercise it in a real browser. Prefer the co-code editor's " +
+			"embedded Chromium over CDP — get the preview URL and the Chromium CDP url from the local " +
+			"daemon's editor endpoints, then drive it with `playwright-core` `chromium.connectOverCDP(<cdp_url>)`; " +
+			"if you cannot reach the embedded browser, launch your own headless Chromium. Open the app's key " +
+			"pages and assert ALL of: (a) NO console errors AND no console warnings — in particular a " +
+			"vue-i18n / intlify \"Not found '<key>' key\" or any missing-translation warning is a FAIL; " +
+			"(b) no 4xx/5xx network responses; (c) the main UI renders; and (d) NO untranslated placeholder " +
+			"keys are visible in the rendered text — a raw i18n key showing through (a dotted identifier such " +
+			"as `section.tile.title` displayed verbatim) means a translation was never registered and is a " +
+			"FAIL, even when nothing logged. Apply the same baseline rule to smoke findings: a console error, " +
+			"network failure, or placeholder that ALSO reproduces on the unchanged base page is pre-existing; " +
+			"one that appears only after the change is a NEW failure. Capture screenshots (and a trace if " +
+			"available) as proof-of-work. " +
+			"(4) WRITE TEST CASES for the change: from this issue's DIFF, author tests that COVER what changed — " +
+			"unit tests for changed logic/functions in the project's existing framework (vitest/jest/phpunit/go " +
+			"test), and a Playwright/e2e case for changed UI driven against the running preview over the embedded " +
+			"Chromium. Follow the repo's existing test layout and mock external APIs (never hit live endpoints). " +
+			"Accept a new test ONLY if it BUILDS and PASSES — and for a bug fix, prove it FAILS on the pre-change " +
+			"behaviour and PASSES after (fail-before / pass-after). Commit the accepted tests onto the branch for " +
+			"the human to review. NEVER weaken, skip, or delete an existing test to go green. " +
+			"(5) VERDICT: post a comment with two sections — NEW (regressions this change introduced) and " +
+			"PRE-EXISTING (already red on baseline, out of scope) — listing every command with its baseline and " +
+			"branch exit code, the tests you added, and the screenshots. Set the `qa:pass` label when this change " +
+			"introduces NO new failure AND your new tests pass AND the smoke is clean — even if the repo carries " +
+			"pre-existing red. Set `qa:fail` ONLY when the change introduces or worsens a failure. Never fabricate " +
+			"a green result, but never blame the change for pre-existing breakage. Do NOT merge anything — your " +
+			"verdict is advisory and the human decides next."
 	case sliceActionRunCI:
-		base = "Run the CI gate for this issue's branch. Resolve the open pull request " +
-			"(e.g. `gh pr list --head btx-<bitrix task id>`) and check out its branch. Detect the " +
+		base = "Run the CI gate for this issue's branch. Find the issue's open pull/merge request for its " +
+			"branch and check out that branch. Detect the " +
 			"project's checks and run them, reporting strictly by EXIT CODE — not opinion: for PHP run " +
 			"`php -l` on every changed .php file plus any test suite (phpunit / codeception); for JS/TS " +
 			"run the lint and test scripts if present (e.g. `pnpm lint`, `pnpm test`); for Go run " +
@@ -163,6 +196,44 @@ func (h *Handler) sliceActionBranchInstruction(ctx context.Context, issue db.Iss
 		branch = "btx-" + tid
 	}
 	return branchInstructionFor(h.issueRepoIsGitLab(ctx, issue), branch)
+}
+
+// sliceActionQASmokeContext appends the project's configured QA smoke target to
+// a run_qa instruction when one is set. A project may store `qa_smoke_cmd` (how
+// to bring the app up, e.g. "pnpm dev") and/or `qa_smoke_url` (where it serves)
+// in project.settings; when present the agent uses them instead of guessing.
+// Returns "" when there is no project or no override — the generic recipe's
+// auto-detect path then applies. This is what makes the generic gate
+// project-configurable without hardcoding any one product's smoke flow.
+func (h *Handler) sliceActionQASmokeContext(ctx context.Context, issue db.Issue) string {
+	if !issue.ProjectID.Valid {
+		return ""
+	}
+	project, err := h.Queries.GetProject(ctx, issue.ProjectID)
+	if err != nil || len(project.Settings) == 0 {
+		return ""
+	}
+	var settings struct {
+		QASmokeCmd string `json:"qa_smoke_cmd"`
+		QASmokeURL string `json:"qa_smoke_url"`
+	}
+	if json.Unmarshal(project.Settings, &settings) != nil {
+		return ""
+	}
+	cmd := strings.TrimSpace(settings.QASmokeCmd)
+	url := strings.TrimSpace(settings.QASmokeURL)
+	if cmd == "" && url == "" {
+		return ""
+	}
+	out := " This project configures its QA smoke:"
+	if cmd != "" {
+		out += " start the app with `" + cmd + "`;"
+	}
+	if url != "" {
+		out += " smoke it at " + url + ";"
+	}
+	out += " use these instead of auto-detecting."
+	return out
 }
 
 // gitlabBaseBranch is the branch GitLab merge-request slice actions target +
@@ -373,6 +444,10 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 			instruction += verifyGateInstruction()
 		}
 		instruction += h.sliceActionBranchInstruction(r.Context(), issue)
+	}
+	// run_qa is project-configurable: append the project's smoke cmd/url when set.
+	if req.Kind == sliceActionRunQA {
+		instruction += h.sliceActionQASmokeContext(r.Context(), issue)
 	}
 
 	// Build the @mention link the comment-trigger path keys off:
