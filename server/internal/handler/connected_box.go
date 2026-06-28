@@ -250,17 +250,9 @@ func (h *Handler) SyncConnectedBox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The runner clones into a throwaway temp dir, then streams the tree to the
-	// box; the temp dir (and the token that briefly lived in its git config) is
-	// removed regardless of outcome.
-	tmpDir, terr := os.MkdirTemp("", "agora-sync-")
-	if terr != nil {
-		writeError(w, http.StatusInternalServerError, "failed to allocate a sync workspace")
-		return
-	}
-	defer os.RemoveAll(tmpDir)
-
-	syncErr := syncBoxBranch(r.Context(), box, branch, remoteBoxesGitToken(), keyPath, tmpDir, realDelivery{})
+	// The box fetches + checks out the branch (glue-preserving); the token lives
+	// only in the fetch argv, redacted before it is logged or stored.
+	out, syncErr := syncBoxBranch(r.Context(), box, branch, remoteBoxesGitToken(), keyPath, sshRunner{})
 
 	status := "online"
 	lastErr := ""
@@ -283,15 +275,11 @@ func (h *Handler) SyncConnectedBox(w http.ResponseWriter, r *http.Request) {
 	if syncErr != nil {
 		code = http.StatusBadGateway
 	}
-	output := "checked out " + branch
-	if syncErr != nil {
-		output = lastErr
-	}
 	writeJSON(w, code, map[string]any{
 		"box":    connectedBoxToResponse(updated),
 		"branch": branch,
 		"ok":     syncErr == nil,
-		// token-redacted detail so the human sees what happened.
-		"output": output,
+		// Remote git output, token-redacted, so the human sees what happened.
+		"output": redactGitToken(out),
 	})
 }
