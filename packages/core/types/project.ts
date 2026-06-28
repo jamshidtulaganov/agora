@@ -20,6 +20,10 @@ export interface ProjectSettings {
   // from the code (e.g. a Docusaurus site). When set, auto_docs writes the docs
   // there and opens a PR against it.
   docs_repo?: string;
+  // Agent UUID that runs auto_docs (the dedicated docs agent with the docs repo
+  // access + sd-docs-author skill). When unset, auto_docs falls back to the
+  // issue's assignee agent.
+  docs_agent?: string;
   [key: string]: unknown;
 }
 

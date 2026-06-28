@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/logger"
+	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -290,10 +291,40 @@ func autoDocsEnabled() bool {
 	return strings.TrimSpace(os.Getenv("AGORA_AUTO_DOCS_ENABLED")) == "true"
 }
 
+// projectDocsAgentID reads the project's configured docs agent (an agent UUID in
+// project.settings.docs_agent) — the dedicated agent that writes docs into the
+// docs repo. Empty when unset.
+func (h *Handler) projectDocsAgentID(ctx context.Context, issue db.Issue) string {
+	if !issue.ProjectID.Valid {
+		return ""
+	}
+	project, err := h.Queries.GetProject(ctx, issue.ProjectID)
+	if err != nil || len(project.Settings) == 0 {
+		return ""
+	}
+	var s struct {
+		DocsAgent string `json:"docs_agent"`
+	}
+	if json.Unmarshal(project.Settings, &s) != nil {
+		return ""
+	}
+	return strings.TrimSpace(s.DocsAgent)
+}
+
 // resolveAutoDocsAgent picks the agent to run an auto-fired auto_docs: the
-// issue's agent assignee (the squad working it) when resolvable, else the
-// qa:pass setter's own agent. ok=false when neither resolves.
+// project's configured docs agent (preferred — it has the docs repo + skill),
+// else the issue's agent assignee (the squad working it), else the qa:pass
+// setter's own agent. ok=false when none resolve.
 func (h *Handler) resolveAutoDocsAgent(ctx context.Context, issue db.Issue, userID string) (db.Agent, bool) {
+	if id := h.projectDocsAgentID(ctx, issue); id != "" {
+		if aid, err := util.ParseUUID(id); err == nil {
+			if agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
+				ID: aid, WorkspaceID: issue.WorkspaceID,
+			}); err == nil {
+				return agent, true
+			}
+		}
+	}
 	if issue.AssigneeType.Valid && issue.AssigneeType.String == "agent" && issue.AssigneeID.Valid {
 		if agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
 			ID: issue.AssigneeID, WorkspaceID: issue.WorkspaceID,
