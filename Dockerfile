@@ -28,7 +28,10 @@ FROM alpine:3.21
 # bug recording into still frames so agents can "see" it). When absent the sync
 # logs + skips frames rather than failing, so this is a soft dependency — but
 # shipping it in the image makes the feature work out of the box.
-RUN apk add --no-cache ca-certificates tzdata ffmpeg
+# openssh-client lets the backend reach Remote Boxes over SSH for git-sync
+# (the box runs git; the backend only runs `ssh`). Soft dependency — only used
+# when AGORA_REMOTE_BOXES_ENABLED is on and a sync is fired.
+RUN apk add --no-cache ca-certificates tzdata ffmpeg openssh-client
 
 WORKDIR /app
 

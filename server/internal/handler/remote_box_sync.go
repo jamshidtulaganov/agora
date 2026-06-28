@@ -69,7 +69,10 @@ func buildGitSyncScript(workDir, repoURL, branch, token string) string {
 		"set -e",
 		fmt.Sprintf("cd %s", dir),
 		fmt.Sprintf("if [ ! -d .git ]; then git init -q && git remote add origin %s; fi", tokenless),
-		fmt.Sprintf("git fetch --prune %s %s", authed, br),
+		// --depth 1: QA only needs the branch tip, and these repos can be large
+		// (sd-main has 685 branches). A shallow single-branch fetch is cheap and
+		// re-runs cleanly for any branch.
+		fmt.Sprintf("git fetch --depth 1 %s %s", authed, br),
 		fmt.Sprintf("git checkout -f -B %s FETCH_HEAD", br),
 	}, " && ")
 }
@@ -81,6 +84,10 @@ func sshArgs(host, user string, port int, keyPath, remoteCmd string) []string {
 		"-i", keyPath,
 		"-p", strconv.Itoa(port),
 		"-o", "StrictHostKeyChecking=accept-new",
+		// The backend container has no writable known_hosts; discard host keys
+		// rather than fail to persist them. (The reachability channel is the
+		// security boundary; host-key pinning is a hardening follow-up.)
+		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "BatchMode=yes",
 		"-o", "ConnectTimeout=15",
 		user + "@" + host,

@@ -43,7 +43,7 @@ func TestBuildGitSyncScript(t *testing.T) {
 	for _, want := range []string{
 		"cd '/var/www/agora.sdteam.uz'",
 		"if [ ! -d .git ]; then git init -q && git remote add origin 'https://github.com/jamshidtulaganov/sd-main.git'",
-		"git fetch --prune 'https://x-access-token:ghtok@github.com/jamshidtulaganov/sd-main.git' 'baxodir/btx-32077'",
+		"git fetch --depth 1 'https://x-access-token:ghtok@github.com/jamshidtulaganov/sd-main.git' 'baxodir/btx-32077'",
 		"git checkout -f -B 'baxodir/btx-32077' FETCH_HEAD",
 	} {
 		if !strings.Contains(script, want) {
