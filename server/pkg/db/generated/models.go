@@ -260,6 +260,9 @@ type ConnectedBox struct {
 	LastBootstrapAt pgtype.Timestamptz `json:"last_bootstrap_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	RepoUrl         string             `json:"repo_url"`
+	WorkDir         string             `json:"work_dir"`
+	LastBranch      string             `json:"last_branch"`
 }
 
 type ContactSalesInquiry struct {

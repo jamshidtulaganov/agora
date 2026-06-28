@@ -19,10 +19,12 @@ INSERT INTO connected_box (
     ssh_host,
     ssh_user,
     ssh_port,
-    deploy_pubkey
+    deploy_pubkey,
+    repo_url,
+    work_dir
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, workspace_id, owner_id, label, ssh_host, ssh_user, ssh_port, deploy_pubkey, daemon_id, status, last_error, last_bootstrap_at, created_at, updated_at
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, workspace_id, owner_id, label, ssh_host, ssh_user, ssh_port, deploy_pubkey, daemon_id, status, last_error, last_bootstrap_at, created_at, updated_at, repo_url, work_dir, last_branch
 `
 
 type CreateConnectedBoxParams struct {
@@ -33,6 +35,8 @@ type CreateConnectedBoxParams struct {
 	SshUser      string      `json:"ssh_user"`
 	SshPort      int32       `json:"ssh_port"`
 	DeployPubkey string      `json:"deploy_pubkey"`
+	RepoUrl      string      `json:"repo_url"`
+	WorkDir      string      `json:"work_dir"`
 }
 
 func (q *Queries) CreateConnectedBox(ctx context.Context, arg CreateConnectedBoxParams) (ConnectedBox, error) {
@@ -44,6 +48,8 @@ func (q *Queries) CreateConnectedBox(ctx context.Context, arg CreateConnectedBox
 		arg.SshUser,
 		arg.SshPort,
 		arg.DeployPubkey,
+		arg.RepoUrl,
+		arg.WorkDir,
 	)
 	var i ConnectedBox
 	err := row.Scan(
@@ -61,6 +67,9 @@ func (q *Queries) CreateConnectedBox(ctx context.Context, arg CreateConnectedBox
 		&i.LastBootstrapAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RepoUrl,
+		&i.WorkDir,
+		&i.LastBranch,
 	)
 	return i, err
 }
@@ -81,7 +90,7 @@ func (q *Queries) DeleteConnectedBox(ctx context.Context, arg DeleteConnectedBox
 }
 
 const getConnectedBox = `-- name: GetConnectedBox :one
-SELECT id, workspace_id, owner_id, label, ssh_host, ssh_user, ssh_port, deploy_pubkey, daemon_id, status, last_error, last_bootstrap_at, created_at, updated_at FROM connected_box
+SELECT id, workspace_id, owner_id, label, ssh_host, ssh_user, ssh_port, deploy_pubkey, daemon_id, status, last_error, last_bootstrap_at, created_at, updated_at, repo_url, work_dir, last_branch FROM connected_box
 WHERE id = $1 AND workspace_id = $2
 `
 
@@ -108,12 +117,15 @@ func (q *Queries) GetConnectedBox(ctx context.Context, arg GetConnectedBoxParams
 		&i.LastBootstrapAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RepoUrl,
+		&i.WorkDir,
+		&i.LastBranch,
 	)
 	return i, err
 }
 
 const listConnectedBoxesByWorkspace = `-- name: ListConnectedBoxesByWorkspace :many
-SELECT id, workspace_id, owner_id, label, ssh_host, ssh_user, ssh_port, deploy_pubkey, daemon_id, status, last_error, last_bootstrap_at, created_at, updated_at FROM connected_box
+SELECT id, workspace_id, owner_id, label, ssh_host, ssh_user, ssh_port, deploy_pubkey, daemon_id, status, last_error, last_bootstrap_at, created_at, updated_at, repo_url, work_dir, last_branch FROM connected_box
 WHERE workspace_id = $1
 ORDER BY created_at DESC
 `
@@ -142,6 +154,9 @@ func (q *Queries) ListConnectedBoxesByWorkspace(ctx context.Context, workspaceID
 			&i.LastBootstrapAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RepoUrl,
+			&i.WorkDir,
+			&i.LastBranch,
 		); err != nil {
 			return nil, err
 		}
@@ -161,7 +176,7 @@ SET status = $3,
     last_bootstrap_at = COALESCE($6, last_bootstrap_at),
     updated_at = now()
 WHERE id = $1 AND workspace_id = $2
-RETURNING id, workspace_id, owner_id, label, ssh_host, ssh_user, ssh_port, deploy_pubkey, daemon_id, status, last_error, last_bootstrap_at, created_at, updated_at
+RETURNING id, workspace_id, owner_id, label, ssh_host, ssh_user, ssh_port, deploy_pubkey, daemon_id, status, last_error, last_bootstrap_at, created_at, updated_at, repo_url, work_dir, last_branch
 `
 
 type UpdateConnectedBoxStatusParams struct {
@@ -198,6 +213,58 @@ func (q *Queries) UpdateConnectedBoxStatus(ctx context.Context, arg UpdateConnec
 		&i.LastBootstrapAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RepoUrl,
+		&i.WorkDir,
+		&i.LastBranch,
+	)
+	return i, err
+}
+
+const updateConnectedBoxSync = `-- name: UpdateConnectedBoxSync :one
+UPDATE connected_box
+SET status = $3,
+    last_error = $4,
+    last_branch = COALESCE($5, last_branch),
+    updated_at = now()
+WHERE id = $1 AND workspace_id = $2
+RETURNING id, workspace_id, owner_id, label, ssh_host, ssh_user, ssh_port, deploy_pubkey, daemon_id, status, last_error, last_bootstrap_at, created_at, updated_at, repo_url, work_dir, last_branch
+`
+
+type UpdateConnectedBoxSyncParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Status      string      `json:"status"`
+	LastError   string      `json:"last_error"`
+	LastBranch  pgtype.Text `json:"last_branch"`
+}
+
+func (q *Queries) UpdateConnectedBoxSync(ctx context.Context, arg UpdateConnectedBoxSyncParams) (ConnectedBox, error) {
+	row := q.db.QueryRow(ctx, updateConnectedBoxSync,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.Status,
+		arg.LastError,
+		arg.LastBranch,
+	)
+	var i ConnectedBox
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.OwnerID,
+		&i.Label,
+		&i.SshHost,
+		&i.SshUser,
+		&i.SshPort,
+		&i.DeployPubkey,
+		&i.DaemonID,
+		&i.Status,
+		&i.LastError,
+		&i.LastBootstrapAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RepoUrl,
+		&i.WorkDir,
+		&i.LastBranch,
 	)
 	return i, err
 }

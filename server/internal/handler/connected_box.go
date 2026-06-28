@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -39,6 +40,9 @@ type ConnectedBoxResponse struct {
 	DaemonID     *string `json:"daemon_id"`
 	Status       string  `json:"status"`
 	LastError    string  `json:"last_error"`
+	RepoURL      string  `json:"repo_url"`
+	WorkDir      string  `json:"work_dir"`
+	LastBranch   string  `json:"last_branch"`
 	CreatedAt    string  `json:"created_at"`
 }
 
@@ -55,6 +59,9 @@ func connectedBoxToResponse(b db.ConnectedBox) ConnectedBoxResponse {
 		DaemonID:     uuidToPtr(b.DaemonID),
 		Status:       b.Status,
 		LastError:    b.LastError,
+		RepoURL:      b.RepoUrl,
+		WorkDir:      b.WorkDir,
+		LastBranch:   b.LastBranch,
 	}
 	if b.CreatedAt.Valid {
 		resp.CreatedAt = b.CreatedAt.Time.Format(time.RFC3339)
@@ -67,6 +74,8 @@ type CreateConnectedBoxRequest struct {
 	SSHHost string `json:"ssh_host"`
 	SSHUser string `json:"ssh_user"`
 	SSHPort int32  `json:"ssh_port"`
+	RepoURL string `json:"repo_url"`
+	WorkDir string `json:"work_dir"`
 }
 
 // ListConnectedBoxes returns the workspace's remote boxes (tenancy-scoped).
@@ -142,6 +151,8 @@ func (h *Handler) CreateConnectedBox(w http.ResponseWriter, r *http.Request) {
 		SshUser:      req.SSHUser,
 		SshPort:      req.SSHPort,
 		DeployPubkey: "",
+		RepoUrl:      strings.TrimSpace(req.RepoURL),
+		WorkDir:      strings.TrimSpace(req.WorkDir),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create remote box")
@@ -181,4 +192,92 @@ func (h *Handler) DeleteConnectedBox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type SyncConnectedBoxRequest struct {
+	Branch string `json:"branch"`
+}
+
+// SyncConnectedBox checks out a branch of the box's repo into its work_dir over
+// SSH (git-sync), so the box serves that branch and QA can test it. The SSH key
+// + git token come from operator config (env); per-box secret storage is later.
+func (h *Handler) SyncConnectedBox(w http.ResponseWriter, r *http.Request) {
+	if !remoteBoxesEnabled() {
+		writeError(w, http.StatusNotFound, "remote boxes are not enabled")
+		return
+	}
+	if _, ok := requireUserID(w, r); !ok {
+		return
+	}
+	wsID := h.resolveWorkspaceID(r)
+	if wsID == "" {
+		writeError(w, http.StatusBadRequest, "workspace required")
+		return
+	}
+	wsUUID, ok := parseUUIDOrBadRequest(w, wsID, "workspace_id")
+	if !ok {
+		return
+	}
+	boxUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "box id")
+	if !ok {
+		return
+	}
+	var req SyncConnectedBoxRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	branch := strings.TrimSpace(req.Branch)
+	if branch == "" {
+		writeError(w, http.StatusBadRequest, "branch is required")
+		return
+	}
+	box, err := h.Queries.GetConnectedBox(r.Context(), db.GetConnectedBoxParams{
+		ID:          boxUUID,
+		WorkspaceID: wsUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "remote box not found")
+		return
+	}
+	if strings.TrimSpace(box.RepoUrl) == "" || strings.TrimSpace(box.WorkDir) == "" {
+		writeError(w, http.StatusBadRequest, "box has no repo_url / work_dir configured")
+		return
+	}
+	keyPath := remoteBoxesSSHKeyPath()
+	if keyPath == "" {
+		writeError(w, http.StatusServiceUnavailable, "remote box SSH key is not configured on the server")
+		return
+	}
+
+	out, syncErr := syncBoxBranch(r.Context(), box, branch, remoteBoxesGitToken(), keyPath, sshRunner{})
+
+	status := "online"
+	lastErr := ""
+	if syncErr != nil {
+		status = "error"
+		lastErr = redactGitToken(syncErr.Error())
+	}
+	updated, uerr := h.Queries.UpdateConnectedBoxSync(r.Context(), db.UpdateConnectedBoxSyncParams{
+		ID:          boxUUID,
+		WorkspaceID: wsUUID,
+		Status:      status,
+		LastError:   lastErr,
+		LastBranch:  pgtype.Text{String: branch, Valid: true},
+	})
+	if uerr != nil {
+		writeError(w, http.StatusInternalServerError, "sync ran but status update failed")
+		return
+	}
+	code := http.StatusOK
+	if syncErr != nil {
+		code = http.StatusBadGateway
+	}
+	writeJSON(w, code, map[string]any{
+		"box":    connectedBoxToResponse(updated),
+		"branch": branch,
+		"ok":     syncErr == nil,
+		// Remote output, token-redacted, so the human sees what git did.
+		"output": redactGitToken(out),
+	})
 }

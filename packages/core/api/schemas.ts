@@ -814,6 +814,9 @@ export const ConnectedBoxSchema = z.object({
   daemon_id: z.string().nullable().default(null),
   status: z.string().default("pending"),
   last_error: z.string().default(""),
+  repo_url: z.string().default(""),
+  work_dir: z.string().default(""),
+  last_branch: z.string().default(""),
   created_at: z.string().default(""),
 }).loose();
 

@@ -39,3 +39,17 @@ export function useDeleteRemoteBox(wsId: string) {
     },
   });
 }
+
+export function useSyncRemoteBox(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation<
+    Awaited<ReturnType<typeof api.syncRemoteBox>>,
+    Error,
+    { id: string; branch: string }
+  >({
+    mutationFn: ({ id, branch }) => api.syncRemoteBox(id, branch),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: remoteBoxKeys.all(wsId) });
+    },
+  });
+}

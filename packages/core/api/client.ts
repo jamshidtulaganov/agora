@@ -1200,6 +1200,19 @@ export class ApiClient {
     await this.fetch(`/api/remote-boxes/${id}`, { method: "DELETE" });
   }
 
+  // Check out a branch of the box's repo into its work_dir over SSH (git-sync),
+  // so the box serves that branch and QA can test it. Returns ok + the remote
+  // git output (token already redacted server-side).
+  async syncRemoteBox(
+    id: string,
+    branch: string,
+  ): Promise<{ ok: boolean; branch: string; output: string; box: ConnectedBox }> {
+    return this.fetch(`/api/remote-boxes/${id}/sync`, {
+      method: "POST",
+      body: JSON.stringify({ branch }),
+    });
+  }
+
   // Cascade variant of deleteRuntime. The strict DELETE refuses with
   // structured 409 (`code: "runtime_has_active_agents"`, body carries the
   // blocking agents) when active agents are bound; the front-end then opens

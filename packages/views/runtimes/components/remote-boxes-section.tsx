@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Server, Plus, Trash2, Loader2 } from "lucide-react";
+import { Server, Plus, Trash2, Loader2, GitBranch } from "lucide-react";
 import { toast } from "sonner";
 import {
   remoteBoxesOptions,
   useCreateRemoteBox,
   useDeleteRemoteBox,
+  useSyncRemoteBox,
 } from "@agora/core/runtimes";
 import type { ConnectedBox } from "@agora/core/types";
 import { Button } from "@agora/ui/components/ui/button";
@@ -35,6 +36,8 @@ export function RemoteBoxesSection({ wsId }: { wsId: string }) {
   const [label, setLabel] = useState("");
   const [host, setHost] = useState("");
   const [user, setUser] = useState("");
+  const [repoUrl, setRepoUrl] = useState("");
+  const [workDir, setWorkDir] = useState("");
 
   const canSubmit =
     label.trim() !== "" && host.trim() !== "" && user.trim() !== "" && !createBox.isPending;
@@ -46,10 +49,14 @@ export function RemoteBoxesSection({ wsId }: { wsId: string }) {
         label: label.trim(),
         ssh_host: host.trim(),
         ssh_user: user.trim(),
+        repo_url: repoUrl.trim() || undefined,
+        work_dir: workDir.trim() || undefined,
       });
       setLabel("");
       setHost("");
       setUser("");
+      setRepoUrl("");
+      setWorkDir("");
       toast.success("Remote box added");
     } catch (err) {
       toast.error(
@@ -78,38 +85,13 @@ export function RemoteBoxesSection({ wsId }: { wsId: string }) {
 
       {boxes.length === 0 ? (
         <p className="text-[11px] text-muted-foreground">
-          No remote boxes yet. Add a developer&apos;s server below — Agora installs a
-          native daemon on it over SSH.
+          No remote boxes yet. Add a developer&apos;s server below — Agora SSHes in
+          and checks out a branch so the box serves it (for QA / review).
         </p>
       ) : (
         <ul className="space-y-1.5">
           {boxes.map((box) => (
-            <li
-              key={box.id}
-              className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs group"
-            >
-              <span className="font-medium">{box.label}</span>
-              <span className="truncate font-mono text-[10.5px] text-muted-foreground">
-                {box.ssh_user}@{box.ssh_host}
-                {box.ssh_port !== 22 ? `:${box.ssh_port}` : ""}
-              </span>
-              <span
-                className={cn(
-                  "ml-auto text-[10.5px] font-medium",
-                  STATUS_STYLE[box.status] ?? "text-muted-foreground",
-                )}
-              >
-                {box.status}
-              </span>
-              <button
-                type="button"
-                aria-label={`Remove ${box.label}`}
-                onClick={() => void handleDelete(box)}
-                className="opacity-0 transition-opacity group-hover:opacity-100 rounded-sm p-0.5 hover:bg-accent"
-              >
-                <Trash2 className="size-3 text-muted-foreground" />
-              </button>
-            </li>
+            <BoxRow key={box.id} box={box} wsId={wsId} onRemove={() => void handleDelete(box)} />
           ))}
         </ul>
       )}
@@ -139,6 +121,22 @@ export function RemoteBoxesSection({ wsId }: { wsId: string }) {
           aria-label="SSH user"
           className="h-7 w-24 rounded-md border bg-transparent px-2 text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
         />
+        <input
+          type="text"
+          value={repoUrl}
+          onChange={(e) => setRepoUrl(e.target.value)}
+          placeholder="repo url (https://github.com/org/repo.git)"
+          aria-label="Repo URL"
+          className="h-7 w-56 rounded-md border bg-transparent px-2 text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+        />
+        <input
+          type="text"
+          value={workDir}
+          onChange={(e) => setWorkDir(e.target.value)}
+          placeholder="work dir (/var/www/site)"
+          aria-label="Work dir"
+          className="h-7 w-44 rounded-md border bg-transparent px-2 text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+        />
         <Button
           type="button"
           size="sm"
@@ -156,5 +154,90 @@ export function RemoteBoxesSection({ wsId }: { wsId: string }) {
         </Button>
       </div>
     </div>
+  );
+}
+
+// One box row: target + status + a branch-sync action (checkout a branch on the
+// box so it serves that branch) + remove.
+function BoxRow({
+  box,
+  wsId,
+  onRemove,
+}: {
+  box: ConnectedBox;
+  wsId: string;
+  onRemove: () => void;
+}) {
+  const syncBox = useSyncRemoteBox(wsId);
+  const [branch, setBranch] = useState(box.last_branch || "");
+
+  const handleSync = async () => {
+    const b = branch.trim();
+    if (!b || syncBox.isPending) return;
+    try {
+      const res = await syncBox.mutateAsync({ id: box.id, branch: b });
+      if (res.ok) toast.success(`Synced ${box.label} → ${b}`);
+      else toast.error(`Sync failed: ${res.output?.slice(0, 200) || "see box status"}`);
+    } catch (err) {
+      toast.error(
+        err instanceof Error && err.message ? err.message : "Failed to sync box",
+      );
+    }
+  };
+
+  const canSync = box.repo_url !== "" && box.work_dir !== "";
+
+  return (
+    <li className="rounded-md border px-2.5 py-1.5 text-xs group">
+      <div className="flex items-center gap-2">
+        <span className="font-medium">{box.label}</span>
+        <span className="truncate font-mono text-[10.5px] text-muted-foreground">
+          {box.ssh_user}@{box.ssh_host}
+          {box.ssh_port !== 22 ? `:${box.ssh_port}` : ""}
+        </span>
+        <span
+          className={cn(
+            "ml-auto text-[10.5px] font-medium",
+            STATUS_STYLE[box.status] ?? "text-muted-foreground",
+          )}
+        >
+          {box.status}
+        </span>
+        <button
+          type="button"
+          aria-label={`Remove ${box.label}`}
+          onClick={onRemove}
+          className="opacity-0 transition-opacity group-hover:opacity-100 rounded-sm p-0.5 hover:bg-accent"
+        >
+          <Trash2 className="size-3 text-muted-foreground" />
+        </button>
+      </div>
+      {canSync && (
+        <div className="mt-1.5 flex items-center gap-1.5">
+          <GitBranch className="size-3 shrink-0 text-muted-foreground" />
+          <input
+            type="text"
+            value={branch}
+            onChange={(e) => setBranch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void handleSync();
+            }}
+            placeholder="branch to check out"
+            aria-label={`Branch for ${box.label}`}
+            className="h-6 flex-1 rounded-md border bg-transparent px-2 font-mono text-[10.5px] outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-6 px-2 text-[10.5px]"
+            disabled={branch.trim() === "" || syncBox.isPending}
+            onClick={() => void handleSync()}
+          >
+            {syncBox.isPending ? <Loader2 className="size-3 animate-spin" /> : "Sync"}
+          </Button>
+        </div>
+      )}
+    </li>
   );
 }

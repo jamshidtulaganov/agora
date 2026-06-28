@@ -6,9 +6,11 @@ INSERT INTO connected_box (
     ssh_host,
     ssh_user,
     ssh_port,
-    deploy_pubkey
+    deploy_pubkey,
+    repo_url,
+    work_dir
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING *;
 
 -- name: ListConnectedBoxesByWorkspace :many
@@ -26,6 +28,15 @@ SET status = $3,
     last_error = $4,
     daemon_id = COALESCE(sqlc.narg(daemon_id), daemon_id),
     last_bootstrap_at = COALESCE(sqlc.narg(last_bootstrap_at), last_bootstrap_at),
+    updated_at = now()
+WHERE id = $1 AND workspace_id = $2
+RETURNING *;
+
+-- name: UpdateConnectedBoxSync :one
+UPDATE connected_box
+SET status = $3,
+    last_error = $4,
+    last_branch = COALESCE(sqlc.narg(last_branch), last_branch),
     updated_at = now()
 WHERE id = $1 AND workspace_id = $2
 RETURNING *;

@@ -8,6 +8,8 @@ const mutateCreate = vi.fn().mockResolvedValue({ id: "new" });
 const mutateDelete = vi.fn().mockResolvedValue(undefined);
 let boxesData: unknown[] = [];
 
+const mutateSync = vi.fn().mockResolvedValue({ ok: true, branch: "b", output: "", box: {} });
+
 vi.mock("@agora/core/runtimes", () => ({
   remoteBoxesOptions: (wsId: string) => ({
     queryKey: ["remote-boxes", wsId, "list"],
@@ -15,6 +17,7 @@ vi.mock("@agora/core/runtimes", () => ({
   }),
   useCreateRemoteBox: () => ({ mutateAsync: mutateCreate, isPending: false }),
   useDeleteRemoteBox: () => ({ mutateAsync: mutateDelete }),
+  useSyncRemoteBox: () => ({ mutateAsync: mutateSync, isPending: false }),
 }));
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -88,6 +91,39 @@ describe("RemoteBoxesSection", () => {
     fireEvent.change(screen.getByLabelText("SSH host"), { target: { value: "qa.sdteam.uz" } });
     fireEvent.change(screen.getByLabelText("SSH user"), { target: { value: "qa" } });
     expect(btn.disabled).toBe(false);
+  });
+
+  it("syncs a branch when the box has a repo + work_dir", async () => {
+    boxesData = [
+      {
+        id: "b1", workspace_id: "ws-1", owner_id: null, label: "jamshid",
+        ssh_host: "193.149.18.99", ssh_user: "jamshidfr", ssh_port: 33022,
+        deploy_pubkey: "", daemon_id: null, status: "online", last_error: "",
+        repo_url: "https://github.com/azizkh/sd.git", work_dir: "/var/www/site",
+        last_branch: "", created_at: "2026-06-29T00:00:00Z",
+      },
+    ];
+    renderSection();
+    const input = await screen.findByLabelText("Branch for jamshid");
+    fireEvent.change(input, { target: { value: "btx-32077" } });
+    fireEvent.click(screen.getByText("Sync"));
+    await waitFor(() =>
+      expect(mutateSync).toHaveBeenCalledWith({ id: "b1", branch: "btx-32077" }),
+    );
+  });
+
+  it("hides the sync row when the box has no repo configured", async () => {
+    boxesData = [
+      {
+        id: "b1", workspace_id: "ws-1", owner_id: null, label: "noconfig",
+        ssh_host: "h", ssh_user: "u", ssh_port: 22, deploy_pubkey: "",
+        daemon_id: null, status: "pending", last_error: "",
+        repo_url: "", work_dir: "", last_branch: "", created_at: "2026-06-29T00:00:00Z",
+      },
+    ];
+    renderSection();
+    await screen.findByText("noconfig");
+    expect(screen.queryByLabelText("Branch for noconfig")).toBeNull();
   });
 
   it("deletes a box", async () => {

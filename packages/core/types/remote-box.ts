@@ -18,6 +18,12 @@ export interface ConnectedBox {
    *  free string so a future status downgrades gracefully. */
   status: string;
   last_error: string;
+  /** https clone URL Agora fetches the branch from (token injected at sync). */
+  repo_url: string;
+  /** absolute path on the box where the branch is checked out (the served dir). */
+  work_dir: string;
+  /** most recently synced branch (for display). */
+  last_branch: string;
   created_at: string;
 }
 
@@ -26,4 +32,6 @@ export interface CreateRemoteBoxRequest {
   ssh_host: string;
   ssh_user: string;
   ssh_port?: number;
+  repo_url?: string;
+  work_dir?: string;
 }
