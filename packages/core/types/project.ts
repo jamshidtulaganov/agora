@@ -10,6 +10,12 @@ export interface ProjectSettings {
   // Per-project "sprint mode". Absent means ON (the historical default from the
   // old localStorage stub); explicit false hides the Sprints UI for the project.
   sprint_mode?: boolean;
+  // QA smoke configuration consumed by the run_qa slice action. qa_smoke_cmd is
+  // how to bring the app up (e.g. "pnpm dev"); qa_smoke_url is where it serves
+  // (e.g. "http://localhost:5173"). When set, the QA gate uses these instead of
+  // auto-detecting the smoke flow. Either may be set independently.
+  qa_smoke_cmd?: string;
+  qa_smoke_url?: string;
   [key: string]: unknown;
 }
 
@@ -23,6 +29,10 @@ export interface Project {
   priority: ProjectPriority;
   lead_type: "member" | "agent" | null;
   lead_id: string | null;
+  // When set, binds the project to a single squad: only that squad and its
+  // member agents (or its leader) may be assigned to the project's issues.
+  // null = unbound (any agent/squad may work it). Enforced server-side.
+  squad_id: string | null;
   settings: ProjectSettings;
   created_at: string;
   updated_at: string;
@@ -39,6 +49,8 @@ export interface CreateProjectRequest {
   priority?: ProjectPriority;
   lead_type?: "member" | "agent";
   lead_id?: string;
+  // Bind the new project to a squad (only that squad's agents work its issues).
+  squad_id?: string | null;
   // Resources to attach in the same transaction as the project. Server returns
   // 4xx (and rolls back) if any one is invalid or duplicate.
   resources?: CreateProjectResourceRequest[];
@@ -52,6 +64,8 @@ export interface UpdateProjectRequest {
   priority?: ProjectPriority;
   lead_type?: "member" | "agent" | null;
   lead_id?: string | null;
+  // Bind/unbind the project's squad. Send null to unbind; omit to leave as-is.
+  squad_id?: string | null;
   // When present, replaces the whole settings blob. Callers send the merged
   // object ({ ...project.settings, <changed key> }).
   settings?: ProjectSettings;

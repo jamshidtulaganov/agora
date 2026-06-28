@@ -82,6 +82,7 @@ export type {
 export type { StorageAdapter } from "./storage";
 export type {
   Project,
+  ProjectSettings,
   ProjectStatus,
   ProjectPriority,
   CreateProjectRequest,
@@ -114,6 +115,20 @@ export type {
   ListGitHubInstallationsResponse,
   GitHubConnectResponse,
 } from "./github";
+
+// Deterministic merge-readiness gate verdict (GET /api/issues/{id}/merge-readiness).
+export interface MergeGateStatus {
+  name: string; // "ci" | "qa" | "security" | "code-review"
+  status: "pass" | "fail" | "pending";
+}
+export interface MergeReadiness {
+  ready: boolean;
+  tier: "trivial" | "light" | "full";
+  gates: MergeGateStatus[];
+  blocked?: string[];
+  reviews: string[];
+}
+
 export type {
   LarkInstallation,
   ListLarkInstallationsResponse,
