@@ -284,6 +284,67 @@ func (h *Handler) sliceActionDocsRepoContext(ctx context.Context, issue db.Issue
 		" — write the docs there and open the pull request against it."
 }
 
+// autoDocsEnabled gates the qa:pass → auto_docs auto-trigger. Default off so the
+// behavior is opt-in and never fires for a deployment that hasn't enabled it.
+func autoDocsEnabled() bool {
+	return strings.TrimSpace(os.Getenv("AGORA_AUTO_DOCS_ENABLED")) == "true"
+}
+
+// resolveAutoDocsAgent picks the agent to run an auto-fired auto_docs: the
+// issue's agent assignee (the squad working it) when resolvable, else the
+// qa:pass setter's own agent. ok=false when neither resolves.
+func (h *Handler) resolveAutoDocsAgent(ctx context.Context, issue db.Issue, userID string) (db.Agent, bool) {
+	if issue.AssigneeType.Valid && issue.AssigneeType.String == "agent" && issue.AssigneeID.Valid {
+		if agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
+			ID: issue.AssigneeID, WorkspaceID: issue.WorkspaceID,
+		}); err == nil {
+			return agent, true
+		}
+	}
+	return h.resolveOwnAgent(ctx, issue.WorkspaceID, userID)
+}
+
+// maybeAutoDocsOnLabel fires an auto_docs run when the just-attached label is
+// qa:pass, the feature is enabled, and the project has a docs_repo configured.
+// This is the last link of the automation chain: implement → QA → (qa:pass) →
+// docs. Best-effort: any miss (disabled, wrong label, no docs repo, no agent)
+// silently no-ops, so a label attach never fails because of it. Run detached
+// (context.Background) by the caller so it doesn't block or get cancelled with
+// the request.
+func (h *Handler) maybeAutoDocsOnLabel(ctx context.Context, issue db.Issue, labelName, userID string) {
+	if !autoDocsEnabled() {
+		return
+	}
+	if strings.ToLower(strings.TrimSpace(labelName)) != "qa:pass" {
+		return
+	}
+	docsCtx := h.sliceActionDocsRepoContext(ctx, issue)
+	if docsCtx == "" {
+		return // no docs repo configured → auto_docs has no target
+	}
+	agent, ok := h.resolveAutoDocsAgent(ctx, issue, userID)
+	if !ok {
+		return
+	}
+	instruction := buildSliceInstruction(sliceActionAutoDocs, "") + docsCtx
+	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(agent.Name), uuidToString(agent.ID)) + instruction
+	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+		AuthorType:  "member",
+		AuthorID:    parseUUID(userID),
+		Content:     content,
+		Type:        "comment",
+		ParentID:    pgtype.UUID{Valid: false},
+	})
+	if err != nil {
+		slog.Warn("auto_docs: create comment failed", "error", err, "issue_id", uuidToString(issue.ID))
+		return
+	}
+	h.triggerTasksForComment(ctx, issue, comment, nil, "member", userID, nil)
+	slog.Info("auto_docs fired on qa:pass", "issue_id", uuidToString(issue.ID), "agent_id", uuidToString(agent.ID))
+}
+
 // gitlabBaseBranch is the branch GitLab merge-request slice actions target +
 // branch from. Defaults to `main`; set AGORA_GITLAB_MR_TARGET (e.g. "dev") to
 // route agent MRs at a staging branch so their work does NOT auto-deploy to

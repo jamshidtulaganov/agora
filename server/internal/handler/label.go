@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -351,9 +352,10 @@ func (h *Handler) AttachLabel(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if _, err := h.Queries.GetLabel(r.Context(), db.GetLabelParams{
+	label, err := h.Queries.GetLabel(r.Context(), db.GetLabelParams{
 		ID: labelID, WorkspaceID: issue.WorkspaceID,
-	}); err != nil {
+	})
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "label not found")
 			return
@@ -372,6 +374,11 @@ func (h *Handler) AttachLabel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to attach label")
 		return
 	}
+
+	// Automation chain: a qa:pass label fires an auto_docs run (when enabled +
+	// the project has a docs_repo). Detached + best-effort so it never delays or
+	// fails the label attach.
+	go h.maybeAutoDocsOnLabel(context.Background(), issue, label.Name, userID)
 
 	// Read the updated label list; on read failure, the attach is already
 	// committed — return success without a labels body (clients refetch via

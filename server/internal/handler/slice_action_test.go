@@ -197,6 +197,54 @@ func TestSanitizeSliceScope(t *testing.T) {
 	})
 }
 
+// TestAutoDocsEnabled pins the opt-in default: the qa:pass → auto_docs trigger
+// is off unless explicitly enabled.
+func TestAutoDocsEnabled(t *testing.T) {
+	t.Setenv("AGORA_AUTO_DOCS_ENABLED", "")
+	if autoDocsEnabled() {
+		t.Error("auto_docs must default to OFF")
+	}
+	t.Setenv("AGORA_AUTO_DOCS_ENABLED", "true")
+	if !autoDocsEnabled() {
+		t.Error("auto_docs must be ON when AGORA_AUTO_DOCS_ENABLED=true")
+	}
+}
+
+// TestMaybeAutoDocsOnLabelGating covers the safety gates: the trigger no-ops when
+// disabled, and (even enabled) when the attached label is not qa:pass — so a
+// label attach never queues a docs run it shouldn't.
+func TestMaybeAutoDocsOnLabelGating(t *testing.T) {
+	ctx := context.Background()
+	countComments := func(issueID string) int {
+		var n int
+		testPool.QueryRow(ctx, `SELECT count(*) FROM comment WHERE issue_id = $1`, issueID).Scan(&n)
+		return n
+	}
+	issueID := sliceActionTestIssue(t, "", "")
+	issue, err := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+	if err != nil {
+		t.Fatalf("load issue: %v", err)
+	}
+
+	t.Run("disabled_noop_even_on_qa_pass", func(t *testing.T) {
+		t.Setenv("AGORA_AUTO_DOCS_ENABLED", "")
+		before := countComments(issueID)
+		testHandler.maybeAutoDocsOnLabel(ctx, issue, "qa:pass", testUserID)
+		if got := countComments(issueID); got != before {
+			t.Errorf("disabled must not fire: comments %d → %d", before, got)
+		}
+	})
+
+	t.Run("wrong_label_noop_when_enabled", func(t *testing.T) {
+		t.Setenv("AGORA_AUTO_DOCS_ENABLED", "true")
+		before := countComments(issueID)
+		testHandler.maybeAutoDocsOnLabel(ctx, issue, "type:bug", testUserID)
+		if got := countComments(issueID); got != before {
+			t.Errorf("non-qa:pass label must not fire: comments %d → %d", before, got)
+		}
+	})
+}
+
 // TestBuildSliceInstructionAutoDocs covers the auto_docs kind: document a
 // change into a SEPARATE docs repo, open a PR there, never touch product code,
 // never merge — and skip if the change has no doc-worthy surface. Product-neutral.
