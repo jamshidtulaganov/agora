@@ -798,7 +798,12 @@ func (d *Daemon) registerRuntimesForWorkspace(ctx context.Context, workspaceID s
 		"device_name":       d.cfg.DeviceName,
 		"cli_version":       d.cfg.CLIVersion,
 		"launched_by":       d.cfg.LaunchedBy,
-		"runtimes":          runtimes,
+		// The local health/editor port this daemon serves /editor/launch on. The
+		// backend persists it per-runtime so the editor endpoint can point the
+		// browser at the RIGHT port instead of assuming the default 19514 — named
+		// profiles (and worktrees) are offset off 19514, so the assumption breaks.
+		"editor_port": d.cfg.HealthPort,
+		"runtimes":    runtimes,
 	}
 
 	resp, err := d.client.Register(ctx, req)
@@ -2220,6 +2225,24 @@ func (d *Daemon) watchTaskCancellation(ctx context.Context, taskID string, pollI
 	return cancelled
 }
 
+// ensureCoCodeBranch puts every git repo under workdir on branch (switching to
+// it if it exists, else creating it from the current HEAD), so an in_editor
+// agent's commits land on the feature branch instead of main. Best-effort and
+// idempotent — safe to call before every run.
+func (d *Daemon) ensureCoCodeBranch(workdir, branch string, log *slog.Logger) {
+	for _, repo := range gitReposUnder(workdir) {
+		if strings.TrimSpace(runGit(repo, "rev-parse", "--abbrev-ref", "HEAD")) == branch {
+			continue
+		}
+		if strings.TrimSpace(runGit(repo, "rev-parse", "--verify", "--quiet", branch)) != "" {
+			_ = runGit(repo, "checkout", branch)
+		} else {
+			_ = runGit(repo, "checkout", "-b", branch)
+		}
+		log.Info("co-code: worktree repo on feature branch", "repo", filepath.Base(repo), "branch", branch)
+	}
+}
+
 func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 	d.mu.Lock()
 	rt := d.runtimeIndex[task.RuntimeID]
@@ -2962,6 +2985,17 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	)
 	if task.PriorSessionID != "" {
 		taskLog.Info("resuming session", "session_id", task.PriorSessionID)
+	}
+
+	// Co-code branch isolation (in_editor): before the agent runs, put every
+	// repo in the worktree on the issue's dedicated feature branch so commits
+	// and pushes can NEVER land on main — the git-level guarantee behind the
+	// review gate. A resumed Claude session keeps its original system prompt, so
+	// instructions alone don't hold; forcing HEAD onto the branch here does.
+	// No-op on the full-pipeline path (CoCodeBranch empty) or before any repo is
+	// checked out (first run — the fresh-session instruction covers that turn).
+	if task.CoCodeBranch != "" && env.WorkDir != "" {
+		d.ensureCoCodeBranch(env.WorkDir, task.CoCodeBranch, taskLog)
 	}
 
 	taskStart := time.Now()

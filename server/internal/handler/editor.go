@@ -17,16 +17,92 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
+// editorAgent is one agent that has a worktree on an issue. The editor lists
+// these so a human can switch between each agent's worktree to review the work.
+type editorAgent struct {
+	AgentID   string `json:"agent_id"`
+	AgentName string `json:"agent_name"`
+	WorkDir   string `json:"work_dir"`
+	Status    string `json:"status"`
+	// editorPort is the local health/editor port the agent's runtime daemon
+	// reported at registration (from agent_runtime.metadata.editor_port).
+	// Unexported: internal routing only, never sent to the browser. Empty when
+	// the daemon predates editor-port reporting — the handler falls back to the
+	// legacy 19514 default.
+	editorPort string
+}
+
+// listIssueEditorAgents returns, for every agent that ran a NON-leader task with
+// a worktree on the issue, that agent's LATEST worktree — most-recently-active
+// agent first. Squad-leader tasks are excluded: the leader dispatches + stops
+// and never executes, so its worktree carries no reviewable changes (it would
+// just show up as an empty "no changes" chip alongside the members who actually
+// wrote the code).
+func (h *Handler) listIssueEditorAgents(ctx context.Context, issueID pgtype.UUID) []editorAgent {
+	rows, err := h.DB.Query(ctx,
+		`SELECT agent_id, name, work_dir, status, editor_port FROM (
+			SELECT DISTINCT ON (atq.agent_id)
+			       atq.agent_id::text AS agent_id, COALESCE(a.name, '') AS name,
+			       atq.work_dir, atq.status,
+			       COALESCE(ar.metadata->>'editor_port', '') AS editor_port,
+			       COALESCE(atq.completed_at, atq.started_at, atq.created_at) AS ts
+			FROM agent_task_queue atq
+			JOIN agent a ON a.id = atq.agent_id
+			LEFT JOIN agent_runtime ar ON ar.id = atq.runtime_id
+			WHERE atq.issue_id = $1 AND atq.agent_id IS NOT NULL
+			  AND atq.work_dir IS NOT NULL AND atq.work_dir <> ''
+			  AND atq.is_leader_task = false
+			  -- Exclude the squad LEADER entirely: it coordinates and never writes
+			  -- reviewable code, yet child-done / comment re-triggers enqueue it
+			  -- NON-leader tasks too (so is_leader_task alone can't hide it). The
+			  -- COALESCE keeps every agent when the issue isn't squad-assigned (no
+			  -- real agent has the zero UUID).
+			  AND atq.agent_id <> COALESCE(
+			      (SELECT s.leader_id FROM issue i
+			         JOIN squad s ON s.id = i.assignee_id
+			        WHERE i.id = $1 AND i.assignee_type = 'squad'),
+			      '00000000-0000-0000-0000-000000000000'::uuid)
+			  -- Exclude failed/cancelled runs: their worktree is stale/partial, so
+			  -- a chip for it (e.g. an agent that died on a usage limit before
+			  -- writing anything) just lets the reviewer open broken work. The
+			  -- DISTINCT ON then surfaces the agent's latest GOOD worktree, or
+			  -- drops the agent entirely if it only ever failed.
+			  AND atq.status NOT IN ('failed', 'cancelled')
+			ORDER BY atq.agent_id, (atq.status IN ('running','dispatched')) DESC, ts DESC
+		) sub ORDER BY ts DESC`, issueID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []editorAgent
+	for rows.Next() {
+		var a editorAgent
+		if err := rows.Scan(&a.AgentID, &a.AgentName, &a.WorkDir, &a.Status, &a.editorPort); err == nil {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
 // daemonEditorBase is the local daemon health server the browser calls to launch
 // code-server (self-host: daemon + browser + code-server share a host, so
-// 127.0.0.1:<health-port> is reachable directly). Override with
-// AGORA_DAEMON_EDITOR_URL.
-func daemonEditorBase() string {
+// 127.0.0.1:<health-port> is reachable directly).
+//
+// Resolution order: (1) AGORA_DAEMON_EDITOR_URL env wins outright — an explicit
+// operator override / escape hatch; (2) the port the agent's runtime daemon
+// reported at registration (named profiles + worktrees are offset off 19514, so
+// this is the only value that's correct for them); (3) the legacy 19514 default
+// for daemons that predate editor-port reporting.
+func daemonEditorBase(port string) string {
 	if v := strings.TrimSpace(os.Getenv("AGORA_DAEMON_EDITOR_URL")); v != "" {
 		return v
+	}
+	if p := strings.TrimSpace(port); p != "" {
+		return "http://127.0.0.1:" + p
 	}
 	return "http://127.0.0.1:19514"
 }
@@ -68,19 +144,19 @@ func (h *Handler) GetIssueEditor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var workdir string
-	err = h.DB.QueryRow(r.Context(),
-		`SELECT work_dir FROM agent_task_queue
-		 WHERE issue_id = $1 AND work_dir IS NOT NULL AND work_dir <> ''
-		 ORDER BY COALESCE(completed_at, started_at, created_at) DESC
-		 LIMIT 1`, issue.ID).Scan(&workdir)
-	if err != nil || strings.TrimSpace(workdir) == "" {
+	agents := h.listIssueEditorAgents(r.Context(), issue.ID)
+	if len(agents) == 0 {
 		writeError(w, http.StatusNotFound, "no worktree yet — assign an agent to this issue first")
 		return
 	}
+	// The most-recently-active agent's worktree is the default; the frontend's
+	// agent chips let the human switch to any other agent's worktree to review.
+	latest := agents[0].WorkDir
 
 	if internal := daemonInternalAddr(); internal != "" {
-		port, lerr := launchEditorOnDaemon(r.Context(), internal, workdir, userID)
+		// Cloud: the backend proxies a single code-server; launch the latest
+		// worktree (per-agent switching in cloud is a follow-up).
+		port, lerr := launchEditorOnDaemon(r.Context(), internal, latest, userID)
 		if lerr != nil {
 			writeError(w, http.StatusBadGateway, "failed to launch editor on the daemon: "+lerr.Error())
 			return
@@ -92,16 +168,20 @@ func (h *Handler) GetIssueEditor(w http.ResponseWriter, r *http.Request) {
 		tok := registerEditorTarget(fmt.Sprintf("%s:%d", host, port))
 		writeJSON(w, http.StatusOK, map[string]string{
 			"mode":       "cloud",
-			"editor_url": "/editor/proxy/" + tok + "/?folder=" + url.QueryEscape(workdir),
+			"editor_url": "/editor/proxy/" + tok + "/?folder=" + url.QueryEscape(latest),
 		})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{
+	// The default worktree is agents[0]'s, so address its runtime's daemon. All
+	// of an issue's agents are normally on the same local daemon (one port); if a
+	// future multi-daemon split makes that false, per-agent launch URLs are the
+	// follow-up — today the default agent's port is the right single answer.
+	writeJSON(w, http.StatusOK, map[string]any{
 		"mode":       "self-host",
-		"workdir":    workdir,
-		"daemon_url": daemonEditorBase(),
+		"daemon_url": daemonEditorBase(agents[0].editorPort),
 		"user_id":    userID,
+		"agents":     agents,
 	})
 }
 

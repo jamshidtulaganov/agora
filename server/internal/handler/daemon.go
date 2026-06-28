@@ -176,7 +176,13 @@ type DaemonRegisterRequest struct {
 	DeviceName      string   `json:"device_name"`
 	CLIVersion      string   `json:"cli_version"` // agora CLI version
 	LaunchedBy      string   `json:"launched_by"` // "desktop" when spawned by the Electron app
-	Runtimes        []struct {
+	// EditorPort is the local health/editor port this daemon serves
+	// /editor/launch on (default 19514; named profiles + worktrees are offset).
+	// Persisted per-runtime so the editor endpoint points the browser at the
+	// correct port. Zero from older daemons that don't report it — the editor
+	// endpoint then falls back to the legacy 19514 default.
+	EditorPort int `json:"editor_port"`
+	Runtimes   []struct {
 		Name    string `json:"name"`
 		Type    string `json:"type"`
 		Version string `json:"version"` // agent CLI version (claude/codex)
@@ -349,6 +355,12 @@ func (h *Handler) DaemonRegister(w http.ResponseWriter, r *http.Request) {
 			"cli_version": req.CLIVersion,
 			"launched_by": req.LaunchedBy,
 			"auth_state":  authState,
+		}
+		// Persist the daemon's editor port so the editor endpoint can address
+		// the right local port. Only when reported (>0) so an older daemon's
+		// register doesn't wipe a port a previous register stored.
+		if req.EditorPort > 0 {
+			metaMap["editor_port"] = req.EditorPort
 		}
 		if email := strings.TrimSpace(runtime.AccountEmail); email != "" {
 			metaMap["account_email"] = email
@@ -1310,6 +1322,22 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
+			// In-editor co-code mode: a human works alongside the agent in the
+			// live browser editor on this worktree — append guidance so the agent
+			// works incrementally and treats the human's edits as authoritative.
+			if resp.Agent != nil && metaString(issue.Metadata, "work_mode") == "in_editor" {
+				resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + inEditorCoCodeNote)
+				resp.CoCodeBranch = coCodeBranchName(issue.Number, resp.Agent.ID)
+			}
+
+			// Per-issue human context (the Context panel): rules, focus files,
+			// links, constraints — injected into every agent run on this issue.
+			if resp.Agent != nil {
+				if note := agentContextNote(metaString(issue.Metadata, "agent_context")); note != "" {
+					resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + note)
+				}
+			}
+
 			var projectRepos []RepoData
 			if issue.ProjectID.Valid {
 				resp.ProjectID = uuidToString(issue.ProjectID)
@@ -1356,6 +1384,14 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				if json.Unmarshal(ws.Repos, &repos) == nil && len(repos) > 0 {
 					resp.Repos = repos
 				}
+			}
+
+			// No repo to clone (neither the project nor the workspace has
+			// one) and no bound local directory → the agent will have no
+			// project code. Post a one-time, non-blocking nudge so the
+			// human connects a repo. Never blocks or fails the claim.
+			if issue.ProjectID.Valid && len(resp.Repos) == 0 && !projectResourcesHaveCode(resp.ProjectResources) {
+				h.postNoRepoBoundNudge(r.Context(), issue)
 			}
 		}
 
