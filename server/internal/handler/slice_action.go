@@ -123,8 +123,15 @@ func buildSliceInstruction(kind, scope string) string {
 			"branch exit code, the tests you added, and the screenshots. Set the `qa:pass` label when this change " +
 			"introduces NO new failure AND your new tests pass AND the smoke is clean — even if the repo carries " +
 			"pre-existing red. Set `qa:fail` ONLY when the change introduces or worsens a failure. Never fabricate " +
-			"a green result, but never blame the change for pre-existing breakage. Do NOT merge anything — your " +
-			"verdict is advisory and the human decides next."
+			"a green result, but never blame the change for pre-existing breakage. " +
+			"At the END of that comment, append a fenced ```qa-result code block containing ONLY a JSON object the " +
+			"editor's QA panel parses to render the result structured: " +
+			"`{\"verdict\":\"pass\"|\"fail\",\"summary\":\"<one line>\",\"commands\":[{\"cmd\":\"<command>\"," +
+			"\"baseline_exit\":<int|null>,\"branch_exit\":<int>,\"kind\":\"pass\"|\"new_failure\"|\"pre_existing\"}]," +
+			"\"screenshots\":[\"<path-or-url>\"]}` — `baseline_exit` is null for a command that only exists on the " +
+			"branch (e.g. your new tests); `kind` is `new_failure` only when baseline passed and the branch failed. " +
+			"The JSON must be valid and self-contained (the human-readable sections above stay as well). " +
+			"Do NOT merge anything — your verdict is advisory and the human decides next."
 	case sliceActionRunCI:
 		base = "Run the CI gate for this issue's branch. Find the issue's open pull/merge request for its " +
 			"branch and check out that branch. Detect the " +
