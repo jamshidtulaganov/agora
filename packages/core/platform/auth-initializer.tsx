@@ -62,6 +62,9 @@ export function AuthInitializer({
           // Old servers omit this field — treat that as "all methods enabled"
           // rather than hiding the email/Google paths.
           telegramOnly: cfg.telegram_only === true,
+          // Opt-in Remote Boxes UI. Omitted by servers without the feature →
+          // false → the runtimes page hides the onboarding section entirely.
+          remoteBoxesEnabled: cfg.remote_boxes_enabled === true,
         });
         configStore.getState().setDaemonConfig({
           daemonServerUrl: cfg.daemon_server_url,

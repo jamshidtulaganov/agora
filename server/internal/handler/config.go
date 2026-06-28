@@ -55,6 +55,12 @@ type AppConfig struct {
 	PosthogKey           string `json:"posthog_key"`
 	PosthogHost          string `json:"posthog_host"`
 	AnalyticsEnvironment string `json:"analytics_environment"`
+
+	// RemoteBoxesEnabled mirrors AGORA_REMOTE_BOXES_ENABLED so the web app shows
+	// the Remote Boxes onboarding UI only where the server has the feature on.
+	// Omitted when false to keep the response shape identical for every existing
+	// deployment.
+	RemoteBoxesEnabled bool `json:"remote_boxes_enabled,omitempty"`
 }
 
 // GetConfig is mounted on the public (unauthenticated) route group because
@@ -67,6 +73,7 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		GoogleClientID:            os.Getenv("GOOGLE_CLIENT_ID"),
 		WorkspaceCreationDisabled: os.Getenv("DISABLE_WORKSPACE_CREATION") == "true",
 		TelegramOnly:              os.Getenv("AGORA_TELEGRAM_ONLY") == "true",
+		RemoteBoxesEnabled:        os.Getenv("AGORA_REMOTE_BOXES_ENABLED") == "true",
 	}
 	if h.Storage != nil {
 		config.CdnDomain = h.Storage.CdnDomain()

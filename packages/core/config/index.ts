@@ -16,6 +16,10 @@ interface ConfigState {
   // email send-code form, the Google button, and the "or" divider are all
   // hidden. Defaults to false so unknown / older servers keep every method.
   telegramOnly: boolean;
+  // Remote Boxes (opt-in): when true, the runtimes page shows the onboarding UI
+  // for per-developer remote dev servers. Defaults to false so older servers
+  // (and deployments with the feature off) hide it entirely.
+  remoteBoxesEnabled: boolean;
   setCdnDomain: (domain: string) => void;
   setAuthConfig: (config: {
     allowSignup: boolean;
@@ -23,6 +27,7 @@ interface ConfigState {
     telegramBotUsername?: string;
     workspaceCreationDisabled?: boolean;
     telegramOnly?: boolean;
+    remoteBoxesEnabled?: boolean;
   }) => void;
   setDaemonConfig: (config: {
     daemonServerUrl?: string;
@@ -39,6 +44,7 @@ export const configStore = createStore<ConfigState>((set) => ({
   daemonAppUrl: "",
   workspaceCreationDisabled: false,
   telegramOnly: false,
+  remoteBoxesEnabled: false,
   setCdnDomain: (domain) => set({ cdnDomain: domain }),
   setAuthConfig: ({
     allowSignup,
@@ -46,6 +52,7 @@ export const configStore = createStore<ConfigState>((set) => ({
     telegramBotUsername = "",
     workspaceCreationDisabled = false,
     telegramOnly = false,
+    remoteBoxesEnabled = false,
   }) =>
     set({
       allowSignup,
@@ -53,6 +60,7 @@ export const configStore = createStore<ConfigState>((set) => ({
       telegramBotUsername,
       workspaceCreationDisabled,
       telegramOnly,
+      remoteBoxesEnabled,
     }),
   setDaemonConfig: ({ daemonServerUrl = "", daemonAppUrl = "" }) =>
     set({ daemonServerUrl, daemonAppUrl }),

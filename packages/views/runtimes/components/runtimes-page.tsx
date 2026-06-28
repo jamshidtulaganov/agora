@@ -30,6 +30,8 @@ import { cn } from "@agora/ui/lib/utils";
 import { PageHeader } from "../../layout/page-header";
 import { ConnectRemoteDialog } from "./connect-remote-dialog";
 import { CloudRuntimeDialog } from "./cloud-runtime-dialog";
+import { RemoteBoxesSection } from "./remote-boxes-section";
+import { useConfigStore } from "@agora/core/config";
 import { ProviderLogo } from "./provider-logo";
 import { RuntimeList, buildWorkloadIndex } from "./runtime-list";
 import {
@@ -92,6 +94,7 @@ export function RuntimesPage({
   const isLoading = useAuthStore((s) => s.isLoading);
   const currentUserId = useAuthStore((s) => s.user?.id);
   const wsId = useWorkspaceId();
+  const remoteBoxesEnabled = useConfigStore((s) => s.remoteBoxesEnabled);
   const qc = useQueryClient();
   const [machineFilter, setMachineFilter] =
     useState<RuntimeMachineFilter>("all");
@@ -198,6 +201,12 @@ export function RuntimesPage({
         cloudRuntimeEnabled={cloudRuntimeEnabled}
         onOpenCloudRuntime={() => setShowCloudRuntimeDialog(true)}
       />
+
+      {remoteBoxesEnabled && (
+        <div className="shrink-0 border-t bg-background px-5 py-3">
+          <RemoteBoxesSection wsId={wsId} />
+        </div>
+      )}
 
       {showEmpty ? (
         <div className="flex flex-1 items-center justify-center p-6">

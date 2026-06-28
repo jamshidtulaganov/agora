@@ -36,6 +36,7 @@ export interface AppConfigResponse {
   daemon_app_url?: string;
   workspace_creation_disabled?: boolean;
   telegram_only?: boolean;
+  remote_boxes_enabled?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -176,6 +177,7 @@ export const AppConfigSchema = z.object({
   daemon_app_url: OptionalStringSchema,
   workspace_creation_disabled: BooleanWithDefaultSchema(false).optional(),
   telegram_only: BooleanWithDefaultSchema(false).optional(),
+  remote_boxes_enabled: BooleanWithDefaultSchema(false).optional(),
 }).loose();
 
 export const EMPTY_APP_CONFIG: AppConfigResponse = {
@@ -795,6 +797,29 @@ export const EMPTY_USER: User = {
   created_at: "",
   updated_at: "",
 };
+
+// ---------------------------------------------------------------------------
+// Remote Boxes (connected_box) — a developer's onboarded remote dev server.
+// Lenient by design (`.loose()`, string status) so a future backend status
+// value downgrades gracefully and never white-screens the runtimes page.
+export const ConnectedBoxSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string().default(""),
+  owner_id: z.string().nullable().default(null),
+  label: z.string().default(""),
+  ssh_host: z.string().default(""),
+  ssh_user: z.string().default(""),
+  ssh_port: z.number().default(22),
+  deploy_pubkey: z.string().default(""),
+  daemon_id: z.string().nullable().default(null),
+  status: z.string().default("pending"),
+  last_error: z.string().default(""),
+  created_at: z.string().default(""),
+}).loose();
+
+export const ConnectedBoxListSchema = z.object({
+  boxes: z.array(ConnectedBoxSchema).default([]),
+}).loose();
 
 // ---------------------------------------------------------------------------
 // Billing schemas (cloud-billing proxy surface)

@@ -70,6 +70,8 @@ import type {
   SendChatMessageResponse,
   CancelTaskResponse,
   Project,
+  ConnectedBox,
+  CreateRemoteBoxRequest,
   CreateProjectRequest,
   UpdateProjectRequest,
   ListProjectsResponse,
@@ -107,6 +109,7 @@ import type {
   NotificationPreferenceResponse,
   NotificationPreferences,
   GitHubPullRequest,
+  MergeReadiness,
   ListGitHubInstallationsResponse,
   GitHubConnectResponse,
   ListLarkInstallationsResponse,
@@ -207,6 +210,7 @@ import {
   EMPTY_BILLING_CHECKOUT_SESSION_STATUS,
   EMPTY_CREATE_BILLING_PORTAL_SESSION_RESPONSE,
   EMPTY_CANCEL_TASK_RESPONSE,
+  ConnectedBoxListSchema,
 } from "./schemas";
 
 /** Identifies the calling client to the server.
@@ -766,13 +770,14 @@ export class ApiClient {
   // { kind, scope, instruction, agent_id, comment }.
   async sliceAction(
     issueId: string,
-    body: { kind: string; scope?: string },
+    body: { kind: string; scope?: string; agentId?: string },
   ): Promise<SliceActionResponse> {
     return this.fetch(`/api/issues/${issueId}/slice-actions`, {
       method: "POST",
       body: JSON.stringify({
         kind: body.kind,
         ...(body.scope ? { scope: body.scope } : {}),
+        ...(body.agentId ? { agent_id: body.agentId } : {}),
       }),
     });
   }
@@ -1173,6 +1178,28 @@ export class ApiClient {
     await this.fetch(`/api/runtimes/${runtimeId}`, { method: "DELETE" });
   }
 
+  // Remote Boxes (connected_box) — a developer's onboarded remote dev server.
+  // Gated behind AGORA_REMOTE_BOXES_ENABLED server-side (404 when off). The list
+  // is schema-parsed with a [] fallback so a contract drift degrades to "no
+  // boxes" instead of white-screening the runtimes page.
+  async listRemoteBoxes(): Promise<ConnectedBox[]> {
+    const raw = await this.fetch<unknown>("/api/remote-boxes");
+    return parseWithFallback(raw, ConnectedBoxListSchema, { boxes: [] as ConnectedBox[] }, {
+      endpoint: "GET /api/remote-boxes",
+    }).boxes;
+  }
+
+  async createRemoteBox(data: CreateRemoteBoxRequest): Promise<ConnectedBox> {
+    return this.fetch("/api/remote-boxes", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteRemoteBox(id: string): Promise<void> {
+    await this.fetch(`/api/remote-boxes/${id}`, { method: "DELETE" });
+  }
+
   // Cascade variant of deleteRuntime. The strict DELETE refuses with
   // structured 409 (`code: "runtime_has_active_agents"`, body carries the
   // blocking agents) when active agents are bound; the front-end then opens
@@ -1462,6 +1489,27 @@ export class ApiClient {
       method: "POST",
       body: JSON.stringify(taskId ? { task_id: taskId } : {}),
     });
+  }
+
+  // Queue a "steer" for an agent mid-task on the issue: force-enqueue a
+  // resuming follow-up (bypassing the in-flight mention dedupe) that the agent
+  // picks up the moment its current turn ends, keeping context. Post the
+  // steering message as a comment first and pass its id as commentId.
+  async steerIssue(
+    issueId: string,
+    agentId: string,
+    commentId?: string,
+  ): Promise<AgentTask> {
+    return this.fetch(`/api/issues/${issueId}/steer`, {
+      method: "POST",
+      body: JSON.stringify({ agent_id: agentId, comment_id: commentId }),
+    });
+  }
+
+  // Deterministic merge-readiness gate (ci/qa/security/code-review verdicts from
+  // labels, tiered by blast radius). Read-only.
+  async mergeReadiness(issueId: string): Promise<MergeReadiness> {
+    return this.fetch(`/api/issues/${issueId}/merge-readiness`);
   }
 
   // Inbox
