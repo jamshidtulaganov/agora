@@ -100,19 +100,28 @@ func buildSliceInstruction(kind, scope string) string {
 			"`go build ./... && go test ./...` (Go), `php -l` on changed files plus phpunit/codeception (PHP). " +
 			"Diff against BASELINE: a command red on BOTH is pre-existing (note it, do not block); a command " +
 			"green on baseline but RED on the branch is a NEW failure this change caused — that fails the gate. " +
-			"(3) SMOKE: bring the app up and exercise it in a real browser. Prefer the co-code editor's " +
-			"embedded Chromium over CDP — get the preview URL and the Chromium CDP url from the local " +
-			"daemon's editor endpoints, then drive it with `playwright-core` `chromium.connectOverCDP(<cdp_url>)`; " +
-			"if you cannot reach the embedded browser, launch your own headless Chromium. Open the app's key " +
-			"pages and assert ALL of: (a) NO console errors AND no console warnings — in particular a " +
-			"vue-i18n / intlify \"Not found '<key>' key\" or any missing-translation warning is a FAIL; " +
-			"(b) no 4xx/5xx network responses; (c) the main UI renders; and (d) NO untranslated placeholder " +
-			"keys are visible in the rendered text — a raw i18n key showing through (a dotted identifier such " +
-			"as `section.tile.title` displayed verbatim) means a translation was never registered and is a " +
-			"FAIL, even when nothing logged. Apply the same baseline rule to smoke findings: a console error, " +
-			"network failure, or placeholder that ALSO reproduces on the unchanged base page is pre-existing; " +
-			"one that appears only after the change is a NEW failure. Capture screenshots (and a trace if " +
-			"available) as proof-of-work. " +
+			"(3) SMOKE — DETERMINISTIC-FIRST, vision-last: decide the smoke verdict from DETERMINISTIC signals " +
+			"(HTTP status, console output, network responses, and asserted DOM / accessibility-tree TEXT), NEVER by " +
+			"visually judging a screenshot. If the project configures a smoke command (see its QA smoke below), RUN " +
+			"IT and take its EXIT CODE as the smoke verdict — a deterministic login-and-assert script (curl/CLI that " +
+			"checks status + page text and exits 0/1) is faster, cheaper, and more reliable than driving the UI by " +
+			"hand and consumes no vision tokens. Otherwise bring the app up and exercise it in a real browser — " +
+			"prefer the co-code editor's embedded Chromium over CDP (get the preview URL and the Chromium CDP url " +
+			"from the local daemon's editor endpoints, then drive it with `playwright-core` " +
+			"`chromium.connectOverCDP(<cdp_url>)`); if you cannot reach the embedded browser, launch your own " +
+			"headless Chromium. Read the page via its DOM / accessibility-tree snapshot (text), not a screenshot, " +
+			"and assert ALL of: (a) NO console errors AND no console warnings — in particular a vue-i18n / intlify " +
+			"\"Not found '<key>' key\" or any missing-translation warning is a FAIL; (b) no 4xx/5xx network " +
+			"responses; (c) the main UI renders — assert specific expected elements/text are PRESENT in the DOM or " +
+			"accessibility tree (assert on TEXT, not pixels); and (d) NO untranslated placeholder keys are visible " +
+			"in the rendered text — a raw i18n key showing through (a dotted identifier such as `section.tile.title` " +
+			"displayed verbatim) means a translation was never registered and is a FAIL, even when nothing logged. " +
+			"Apply the same baseline rule to smoke findings: a console error, network failure, or placeholder that " +
+			"ALSO reproduces on the unchanged base page is pre-existing; one that appears only after the change is a " +
+			"NEW failure. Capture a screenshot ONLY to DOCUMENT a failure you have already determined from the " +
+			"assertions above (attach it to the verdict for the human) — do NOT screenshot the happy path, and " +
+			"NEVER vision-analyze a screenshot to decide pass/fail; every smoke verdict must trace to a " +
+			"deterministic signal. " +
 			"(4) WRITE TEST CASES for the change: from this issue's DIFF, author tests that COVER what changed — " +
 			"unit tests for changed logic/functions in the project's existing framework (vitest/jest/phpunit/go " +
 			"test), and a Playwright/e2e case for changed UI driven against the running preview over the embedded " +

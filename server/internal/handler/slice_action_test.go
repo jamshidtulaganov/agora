@@ -147,6 +147,17 @@ func TestBuildSliceInstructionRunQA(t *testing.T) {
 			t.Errorf("run_qa instruction must encode baseline diffing (%q), got: %s", want, got)
 		}
 	}
+	// Deterministic-first smoke (speed): the gate must decide pass/fail from
+	// deterministic signals (status / console / network / DOM text), take a
+	// configured smoke command's EXIT CODE as the verdict, and capture a
+	// screenshot ONLY to document a failure — never vision-analyze a screenshot
+	// to decide. Regression guard so the smoke step never reverts to the slow
+	// per-step screenshot+vision loop (the QA-time-cost complaint).
+	for _, want := range []string{"deterministic-first", "vision", "screenshot only to document", "accessibility", "exit code"} {
+		if !strings.Contains(lower, strings.ToLower(want)) {
+			t.Errorf("run_qa smoke must be deterministic-first / vision-last (%q), got: %s", want, got)
+		}
+	}
 	for _, banned := range []string{"sd-qa-process", "btx-", "dev test box"} {
 		if strings.Contains(lower, strings.ToLower(banned)) {
 			t.Errorf("run_qa instruction must stay product-neutral; found %q, got: %s", banned, got)
