@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
@@ -189,6 +190,62 @@ func (h *issueCardActionHandler) patch(ctx context.Context, inst db.LarkInstalla
 		LarkCardMessageID: messageID,
 		CardJSON:          card,
 	})
+}
+
+// IssueActionCard builds the interactive confirmation card posted after /issue:
+// the new issue's identifier + title, status-transition buttons that mutate it
+// in place (handled by issueCardActionHandler), and an Open-in-Agora link.
+// identifier is the human key (e.g. MUL-42); issueID is the UUID the buttons
+// carry; issueURL is the absolute web link (empty omits the link button).
+func IssueActionCard(identifier, title, issueID, issueURL string) (string, error) {
+	header := "Created " + identifier
+	body := strings.TrimSpace(title)
+	if body == "" {
+		body = "_(no title)_"
+	}
+
+	buttons := []any{
+		statusButton("Mark In Review", "in_review", issueID),
+		statusButton("Done", "done", issueID),
+	}
+	if issueURL != "" {
+		buttons = append(buttons, map[string]any{
+			"tag":  "button",
+			"text": map[string]any{"tag": "plain_text", "content": "Open in Agora"},
+			"type": "default",
+			"url":  issueURL,
+		})
+	}
+
+	doc := map[string]any{
+		"config": map[string]any{"wide_screen_mode": true},
+		"header": map[string]any{
+			"template": "blue",
+			"title":    map[string]any{"tag": "plain_text", "content": header},
+		},
+		"elements": []any{
+			map[string]any{
+				"tag":  "div",
+				"text": map[string]any{"tag": "lark_md", "content": body},
+			},
+			map[string]any{"tag": "action", "actions": buttons},
+		},
+	}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
+// statusButton builds a request-button that sets an issue's status when tapped.
+func statusButton(label, status, issueID string) map[string]any {
+	return map[string]any{
+		"tag":   "button",
+		"text":  map[string]any{"tag": "plain_text", "content": label},
+		"type":  "primary",
+		"value": map[string]string{"action": "set_status", "status": status, "issue_id": issueID},
+	}
 }
 
 // humanStatus maps an issue status value to a readable label for card copy.

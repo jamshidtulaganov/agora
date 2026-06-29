@@ -288,15 +288,12 @@ func TestNoopReplierIsHandledByHub(t *testing.T) {
 	}
 }
 
-// TestLarkOutcomeReplierIssueCreatedSendsConfirmation pins the
-// recovered /issue confirmation path. Before the plain-text refactor
-// the design called for a "已创建 [MUL-xxx]" card; the refactor
-// dropped the whole card lifecycle, which had the side effect of
-// silently dropping the issue-created signal. Trump flagged it as a
-// blocker on PR #3277 review. Fix: OutcomeIngested with IssueID.Valid
-// triggers a plain text confirmation send via SendTextMessage,
-// composing the workspace-qualified identifier with the title and a
-// deep link back to Agora.
+// TestLarkOutcomeReplierIssueCreatedSendsConfirmation pins the /issue
+// confirmation path. OutcomeIngested with IssueID.Valid now sends an
+// INTERACTIVE ACTION CARD (SendInteractiveCard) rather than plain text: the
+// card carries the workspace-qualified identifier, the title, a deep link, and
+// status-transition request-buttons that move the issue without leaving Lark
+// (see IssueActionCard / issueCardActionHandler).
 func TestLarkOutcomeReplierIssueCreatedSendsConfirmation(t *testing.T) {
 	t.Parallel()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -323,26 +320,30 @@ func TestLarkOutcomeReplierIssueCreatedSendsConfirmation(t *testing.T) {
 
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
-	if len(stub.textOut) != 1 {
-		t.Fatalf("expected one SendTextMessage call, got %d", len(stub.textOut))
+	if len(stub.interactiveOut) != 1 {
+		t.Fatalf("expected one SendInteractiveCard call, got %d", len(stub.interactiveOut))
 	}
-	got := stub.textOut[0]
+	got := stub.interactiveOut[0]
 	if got.ChatID != "oc_chat_42" {
 		t.Errorf("ChatID = %q; want oc_chat_42", got.ChatID)
 	}
-	if !strings.Contains(got.Text, "MUL-42") {
-		t.Errorf("text should embed the workspace-qualified key; got %q", got.Text)
+	if !strings.Contains(got.CardJSON, "MUL-42") {
+		t.Errorf("card should embed the workspace-qualified key; got %q", got.CardJSON)
 	}
-	if !strings.Contains(got.Text, "fix login bug") {
-		t.Errorf("text should embed the issue title; got %q", got.Text)
+	if !strings.Contains(got.CardJSON, "fix login bug") {
+		t.Errorf("card should embed the issue title; got %q", got.CardJSON)
 	}
-	if !strings.Contains(got.Text, "https://agora.test/issues/MUL-42") {
-		t.Errorf("text should embed the deep link back to Agora; got %q", got.Text)
+	if !strings.Contains(got.CardJSON, "https://agora.test/issues/MUL-42") {
+		t.Errorf("card should embed the deep link back to Agora; got %q", got.CardJSON)
 	}
-	// No interactive card on this path — the confirmation must be
-	// plain text, matching how chat replies render.
-	if len(stub.interactiveOut) != 0 {
-		t.Errorf("issue-created confirmation must not send a card; got %d cards", len(stub.interactiveOut))
+	// The action buttons must carry a status mutation keyed on the issue UUID.
+	if !strings.Contains(got.CardJSON, "set_status") ||
+		!strings.Contains(got.CardJSON, "22222222-2222-2222-2222-222222222222") {
+		t.Errorf("card should embed status request-buttons for the issue; got %q", got.CardJSON)
+	}
+	// The confirmation is a card now, not plain text.
+	if len(stub.textOut) != 0 {
+		t.Errorf("issue-created confirmation must be a card, not text; got %d text sends", len(stub.textOut))
 	}
 }
 

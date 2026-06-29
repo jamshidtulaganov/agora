@@ -239,39 +239,30 @@ func (r *LarkOutcomeReplier) sendIssueCreated(ctx context.Context, inst db.LarkI
 	if err != nil {
 		return err
 	}
-	text := issueCreatedText(res, r.publicURL)
-	if _, err := r.client.SendTextMessage(ctx, SendTextParams{
-		InstallationID: creds,
-		ChatID:         msg.ChatID,
-		Text:           text,
-	}); err != nil {
-		return fmt.Errorf("send issue-created text: %w", err)
-	}
-	return nil
-}
-
-// issueCreatedText composes the user-facing confirmation. Identifier
-// always wins over a bare number — DispatchResult.IssueIdentifier
-// already encodes the workspace prefix when available. PublicURL is
-// optional: when empty (self-host operators who haven't configured
-// AGORA_PUBLIC_URL) the message still confirms the issue, just
-// without a deep link the user can tap.
-func issueCreatedText(res DispatchResult, publicURL string) string {
 	identifier := res.IssueIdentifier
 	if identifier == "" {
 		identifier = fmt.Sprintf("#%d", res.IssueNumber)
 	}
-	title := strings.TrimSpace(res.IssueTitle)
-	var line string
-	if title == "" {
-		line = fmt.Sprintf("Created %s", identifier)
-	} else {
-		line = fmt.Sprintf("Created %s — %s", identifier, title)
+	issueURL := ""
+	if r.publicURL != "" {
+		issueURL = r.publicURL + "/issues/" + identifier
 	}
-	if publicURL == "" {
-		return line
+	// Interactive action card (not plain text): the status buttons make the
+	// /issue confirmation a control surface — tap to move the issue without
+	// leaving Lark (handled by issueCardActionHandler). The Open-in-Agora
+	// link preserves the deep link the text version carried.
+	card, err := IssueActionCard(identifier, res.IssueTitle, uuidString(res.IssueID), issueURL)
+	if err != nil {
+		return fmt.Errorf("build issue-created card: %w", err)
 	}
-	return line + "\n" + strings.TrimRight(publicURL, "/") + "/issues/" + identifier
+	if _, err := r.client.SendInteractiveCard(ctx, SendCardParams{
+		InstallationID: creds,
+		ChatID:         msg.ChatID,
+		CardJSON:       card,
+	}); err != nil {
+		return fmt.Errorf("send issue-created card: %w", err)
+	}
+	return nil
 }
 
 // publicURLReachable reports whether the configured public base URL is
