@@ -14,6 +14,23 @@ type OpenID string
 // to one Agora chat_session via lark_chat_session_binding.
 type ChatID string
 
+// CardAction is a decoded `card.action.trigger` event: a member tapped a
+// `"type":"request"` button on one of the Bot's interactive cards. Value
+// carries the JSON payload attached to the button (e.g.
+// {"action":"set_status","issue_id":"...","status":"in_review"}). MessageID is
+// the card's open_message_id, used to patch the card in place after the action
+// runs. OperatorOpenID must resolve to a bound workspace member before any
+// mutation — an unbound tapper is rejected, same gate as inbound messages.
+type CardAction struct {
+	EventID        string
+	AppID          string
+	OperatorOpenID OpenID
+	ChatID         ChatID
+	MessageID      string // open_message_id — the card to patch
+	Token          string
+	Value          map[string]string
+}
+
 // ChatType discriminates p2p (single-user DM with the Bot) from group
 // chats. The DB column constraints lark_chat_session_binding.lark_chat_type
 // to the same two values.

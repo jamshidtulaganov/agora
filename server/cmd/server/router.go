@@ -274,7 +274,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// inbound messages will be silently dropped until the
 				// config is fixed, with the boot log labelling the mode
 				// "noop" so operators can spot it.
-				connectorFactory, connectorLabel := buildLarkConnectorFactory(installSvc, larkClient)
+				connectorFactory, connectorLabel := buildLarkConnectorFactory(installSvc, larkClient, queries, h)
 				h.LarkHub = lark.NewHub(queries, connectorFactory, dispatcher, lark.HubConfig{})
 				h.LarkHub.SetTypingIndicatorManager(typingIndicator)
 
@@ -1127,7 +1127,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 //
 // Returns the factory plus a short label for the boot log: "ws" in
 // the healthy case, "noop" in the fallback case.
-func buildLarkConnectorFactory(installSvc *lark.InstallationService, apiClient lark.APIClient) (lark.ConnectorFactory, string) {
+func buildLarkConnectorFactory(installSvc *lark.InstallationService, apiClient lark.APIClient, queries *db.Queries, updater lark.IssueStatusUpdater) (lark.ConnectorFactory, string) {
 	endpointFetcher, err := lark.NewHTTPConnectionTokenFetcher(lark.HTTPConnectionTokenConfig{
 		BaseURL: strings.TrimSpace(os.Getenv("AGORA_LARK_CALLBACK_BASE_URL")),
 		Logger:  slog.Default(),
@@ -1162,12 +1162,18 @@ func buildLarkConnectorFactory(installSvc *lark.InstallationService, apiClient l
 		RecentContextSize: lark.DefaultRecentContextSize,
 		Logger:            slog.Default(),
 	})
+	// Card actions: the production handler resolves the bound member, applies
+	// the requested issue mutation (status change), and patches the card.
+	// Optional — nil would drop card frames. The status change publishes the
+	// canonical EventIssueUpdated so notify-out / Bitrix / WS all fire.
+	cardActions := lark.NewIssueCardActionHandler(queries, updater, apiClient, credsProvider, slog.Default())
 	conn, err := lark.NewWSLongConnConnector(lark.WSConnectorConfig{
 		Dialer:              dialer,
 		EndpointFetcher:     endpointFetcher,
 		FrameDecoder:        decoder,
 		Enricher:            enricher,
 		CredentialsProvider: credsProvider,
+		CardActions:         cardActions,
 		Logger:              slog.Default(),
 	})
 	if err != nil {

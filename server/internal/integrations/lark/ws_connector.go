@@ -103,6 +103,15 @@ type WSConnectorConfig struct {
 	// Zero defaults to 2 seconds.
 	EnrichTimeout time.Duration
 
+	// CardActions optionally handles `card.action.trigger` frames — a
+	// member tapping a request-button on one of the Bot's cards. OPTIONAL
+	// (unlike the other deps): nil means card-action frames fall through to
+	// the same ACK-200-and-drop path as any other unhandled event, so a
+	// deployment without card buttons behaves exactly as before. When set,
+	// the FrameDecoder must also implement CardActionDecoder (the standard
+	// LarkJSONFrameDecoder does).
+	CardActions CardActionHandler
+
 	// CredentialsProvider returns the InstallationCredentials the
 	// EndpointFetcher needs. Typically wraps
 	// InstallationService.DecryptAppSecret so the plaintext secret
@@ -371,6 +380,29 @@ func (c *WSLongConnConnector) Run(ctx context.Context, inst db.LarkInstallation,
 			continue
 		}
 		if !ok {
+			// Decode (messages) declined the frame. Before treating it as an
+			// unhandled drop, try the card-action path: a button tap arrives
+			// as card.action.trigger on this same long-conn. Handled out of
+			// band (mutate + patch the card via the IM API), then ACK 200 —
+			// a handler error must NOT NACK, or the tap retry-storms.
+			if c.cfg.CardActions != nil {
+				if cad, okDec := c.cfg.FrameDecoder.(CardActionDecoder); okDec {
+					if action, isCard, cerr := cad.DecodeCardAction(payload, inst); cerr == nil && isCard {
+						if herr := c.cfg.CardActions.Handle(ctx, inst, action); herr != nil {
+							log.Warn("lark ws connector: card action handler failed",
+								"event_id", action.EventID, "err", herr.Error())
+						} else {
+							log.Info("lark ws connector: card action handled",
+								"event_id", action.EventID, "open_id", string(action.OperatorOpenID))
+						}
+						if werr := c.writeFrame(&writeMu, conn, NewAckFrame(frame, true)); werr != nil {
+							log.Warn("lark ws connector: ack-after-card-action write failed", "err", werr.Error())
+							return fmt.Errorf("write ack: %w", werr)
+						}
+						continue
+					}
+				}
+			}
 			// Heartbeat / unhandled event type. ACK 200 so the server
 			// stops sending it; the decoder owns the "what we handle"
 			// policy.

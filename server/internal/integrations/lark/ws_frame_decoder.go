@@ -114,6 +114,62 @@ func (d *LarkJSONFrameDecoder) Decode(payload []byte, inst db.LarkInstallation) 
 	return msg, true, nil
 }
 
+// larkCardActionEvent is the payload of a `card.action.trigger` push: a member
+// tapped a request-button on one of the Bot's cards. `action.value` is the
+// JSON we attached to the button verbatim; `context.open_message_id` is the
+// card to patch after the action runs.
+type larkCardActionEvent struct {
+	Operator struct {
+		OpenID string `json:"open_id"`
+	} `json:"operator"`
+	Token  string `json:"token"`
+	Action struct {
+		Value map[string]string `json:"value"`
+		Tag   string            `json:"tag"`
+	} `json:"action"`
+	Context struct {
+		OpenMessageID string `json:"open_message_id"`
+		OpenChatID    string `json:"open_chat_id"`
+	} `json:"context"`
+}
+
+// DecodeCardAction parses a `card.action.trigger` long-conn data frame into a
+// CardAction. Returns (zero, false, nil) for any other event_type, so the
+// connector can call it as the second decoder after Decode (messages) declines
+// a frame: an unrecognized event still ACKs 200 and is dropped. Mirrors
+// Decode's stateless, dependency-free contract.
+func (d *LarkJSONFrameDecoder) DecodeCardAction(payload []byte, inst db.LarkInstallation) (CardAction, bool, error) {
+	if len(payload) == 0 {
+		return CardAction{}, false, nil
+	}
+	var env larkEventEnvelope
+	if err := json.Unmarshal(payload, &env); err != nil {
+		return CardAction{}, false, fmt.Errorf("envelope: %w", err)
+	}
+	if env.Type != "" && env.Type != "event_callback" {
+		return CardAction{}, false, nil
+	}
+	if env.Header.EventType != "card.action.trigger" {
+		return CardAction{}, false, nil
+	}
+	if env.Event == nil {
+		return CardAction{}, false, errors.New("card.action.trigger with empty event payload")
+	}
+	var evt larkCardActionEvent
+	if err := json.Unmarshal(env.Event, &evt); err != nil {
+		return CardAction{}, false, fmt.Errorf("event: %w", err)
+	}
+	return CardAction{
+		EventID:        env.Header.EventID,
+		AppID:          env.Header.AppID,
+		OperatorOpenID: OpenID(evt.Operator.OpenID),
+		ChatID:         ChatID(evt.Context.OpenChatID),
+		MessageID:      evt.Context.OpenMessageID,
+		Token:          evt.Token,
+		Value:          evt.Action.Value,
+	}, true, nil
+}
+
 // larkEventEnvelope mirrors the outer JSON Lark wraps every push in.
 type larkEventEnvelope struct {
 	Schema string          `json:"schema"`
