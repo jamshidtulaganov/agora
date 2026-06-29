@@ -139,6 +139,18 @@ func resolveDaemonInternalAddr(runtimeAddr string) string {
 	return daemonInternalAddr()
 }
 
+// editorShouldFallBackToSelfHost reports whether a failed cloud-daemon editor
+// launch should degrade to self-host rather than returning a 502. True only
+// when BOTH hold: the runtime carried no per-runtime editor_addr (so we dialed
+// the global AGORA_DAEMON_INTERNAL fallback, not a Remote Box's own endpoint),
+// AND the daemon reported the worktree is missing ("workdir does not exist") —
+// meaning the agent ran on a different daemon (typically the user's local one).
+// A Remote Box with its own editor_addr that fails is a genuine error.
+func editorShouldFallBackToSelfHost(editorAddr, launchErr string) bool {
+	return strings.TrimSpace(editorAddr) == "" &&
+		strings.Contains(launchErr, "workdir does not exist")
+}
+
 // GetIssueEditor resolves the issue's latest task worktree and prepares a live
 // browser-VS-Code (code-server) for it. Self-host returns the workdir + daemon
 // URL for the browser to launch directly; cloud launches on the daemon over 6PN
@@ -181,20 +193,31 @@ func (h *Handler) GetIssueEditor(w http.ResponseWriter, r *http.Request) {
 		// Cloud / Remote Box: the backend proxies a single code-server; launch the
 		// latest worktree (per-agent switching in cloud is a follow-up).
 		port, lerr := launchEditorOnDaemon(r.Context(), internal, latest, userID)
-		if lerr != nil {
+		if lerr == nil {
+			host := internal
+			if i := strings.LastIndex(internal, ":"); i > 0 {
+				host = internal[:i] // strip the health port; keep just the daemon host
+			}
+			tok := registerEditorTarget(fmt.Sprintf("%s:%d", host, port))
+			writeJSON(w, http.StatusOK, map[string]string{
+				"mode":       "cloud",
+				"editor_url": "/editor/proxy/" + tok + "/?folder=" + url.QueryEscape(latest),
+			})
+			return
+		}
+		// Launch failed. When we dialed the GLOBAL fallback daemon (the runtime
+		// carried no per-runtime editor_addr) and it reports the worktree isn't
+		// there, the agent actually ran on a DIFFERENT daemon than the single
+		// cloud daemon — typically the user's own local daemon. Degrade to
+		// self-host so a browser that shares that daemon's host can reach its
+		// editor directly, instead of a dead 502. A Remote Box that carries its
+		// own editor_addr and still fails is a real error (it should hold the
+		// worktree), so that surfaces as a 502.
+		if !editorShouldFallBackToSelfHost(agents[0].editorAddr, lerr.Error()) {
 			writeError(w, http.StatusBadGateway, "failed to launch editor on the daemon: "+lerr.Error())
 			return
 		}
-		host := internal
-		if i := strings.LastIndex(internal, ":"); i > 0 {
-			host = internal[:i] // strip the health port; keep just the daemon host
-		}
-		tok := registerEditorTarget(fmt.Sprintf("%s:%d", host, port))
-		writeJSON(w, http.StatusOK, map[string]string{
-			"mode":       "cloud",
-			"editor_url": "/editor/proxy/" + tok + "/?folder=" + url.QueryEscape(latest),
-		})
-		return
+		// else: fall through to the self-host response below.
 	}
 
 	// The default worktree is agents[0]'s, so address its runtime's daemon. All

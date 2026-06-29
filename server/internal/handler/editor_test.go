@@ -2,6 +2,33 @@ package handler
 
 import "testing"
 
+// TestEditorShouldFallBackToSelfHost covers the cloud→self-host degrade for the
+// "worktree on a different daemon" 502: fall back ONLY when there is no
+// per-runtime editor_addr (global fallback) AND the daemon reported the workdir
+// is missing. A Remote Box (own editor_addr) or any other error must NOT fall
+// back — it stays a 502. Pure (no DB, no HTTP).
+func TestEditorShouldFallBackToSelfHost(t *testing.T) {
+	cases := []struct {
+		name       string
+		editorAddr string
+		launchErr  string
+		want       bool
+	}{
+		{"global_fallback_missing_workdir", "", "daemon 400: workdir does not exist", true},
+		{"global_fallback_whitespace_addr", "   ", "daemon 400: workdir does not exist", true},
+		{"remote_box_missing_workdir_is_error", "box.internal:19514", "daemon 400: workdir does not exist", false},
+		{"global_fallback_other_error_is_error", "", "daemon 500: internal error", false},
+		{"global_fallback_conn_refused_is_error", "", "connection refused", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := editorShouldFallBackToSelfHost(c.editorAddr, c.launchErr); got != c.want {
+				t.Errorf("editorShouldFallBackToSelfHost(%q, %q) = %v, want %v", c.editorAddr, c.launchErr, got, c.want)
+			}
+		})
+	}
+}
+
 // TestDaemonEditorBase covers the editor-base resolution order, the fix for the
 // hardcoded-19514 bug: the local --profile daemon (and worktrees) serve the
 // editor on a port offset off 19514, so the backend must use the port the
