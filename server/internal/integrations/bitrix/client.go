@@ -647,9 +647,16 @@ func (c *Client) GetTaskChatMessages(ctx context.Context, chatID string) ([]Comm
 	for _, m := range parsed.Result.Messages {
 		text := strings.TrimSpace(string(m.Text))
 		if text == "" {
-			continue // skip system/empty messages
+			continue
 		}
-		authorID := firstNonEmpty(m.AuthorID)
+		authorID := strings.TrimSpace(firstNonEmpty(m.AuthorID))
+		// Skip portal SYSTEM messages (author id 0) — these are the kanban
+		// stage-change / status notifications ("X изменил стадию на Y"), which
+		// are noise in Agora (the stage already drives the issue status) and
+		// would otherwise import attributed to no real person.
+		if authorID == "" || authorID == "0" {
+			continue
+		}
 		author := names[authorID]
 		if author == "" {
 			author = "user " + authorID
@@ -657,10 +664,11 @@ func (c *Client) GetTaskChatMessages(ctx context.Context, chatID string) ([]Comm
 		out = append(out, Comment{
 			// Namespace the id so a chat message can't collide with a
 			// commentitem id in the issue's synced-id dedup set.
-			ID:     "chat-" + firstNonEmpty(m.ID),
-			Author: author,
-			Date:   firstNonEmpty(m.Date),
-			Text:   text,
+			ID:       "chat-" + firstNonEmpty(m.ID),
+			Author:   author,
+			Date:     firstNonEmpty(m.Date),
+			Text:     text,
+			AuthorID: authorID,
 		})
 	}
 	return out, nil
@@ -674,6 +682,11 @@ type Comment struct {
 	Author string
 	Date   string
 	Text   string
+	// AuthorID is the Bitrix user id of the comment author, when known (chat
+	// messages carry it). Empty for the legacy commentitem feed. Lets the
+	// importer attribute the Agora comment to the real person instead of the
+	// workspace owner.
+	AuthorID string
 }
 
 // rawComment mirrors the SCREAMING_SNAKE fields task.commentitem.getlist

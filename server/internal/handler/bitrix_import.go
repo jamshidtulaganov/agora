@@ -386,11 +386,17 @@ func (h *Handler) importBitrixComments(ctx context.Context, wsID, issueID, owner
 		if strings.TrimSpace(content) == "" {
 			continue
 		}
+		// Attribute to the REAL Bitrix author (provisioned member) when we can
+		// resolve them; otherwise fall back to the workspace owner.
+		authorType, authorID := "member", ownerID
+		if ref := h.bitrixCommentAuthor(ctx, wsID, c.AuthorID, st); ref.Type.Valid {
+			authorType, authorID = ref.Type.String, ref.ID
+		}
 		if _, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 			IssueID:     issueID,
 			WorkspaceID: wsID,
-			AuthorType:  "member",
-			AuthorID:    ownerID,
+			AuthorType:  authorType,
+			AuthorID:    authorID,
 			Content:     content,
 			Type:        "comment",
 		}); err != nil {

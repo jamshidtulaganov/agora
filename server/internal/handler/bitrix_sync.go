@@ -322,6 +322,10 @@ type bitrixSyncState struct {
 	// lazily filled from user.get so a batch resolves each assignee once. A nil
 	// value caches a failed/unknown lookup so it isn't retried per task.
 	userCache map[string]*bitrix.User
+	// commentAuthors maps a Bitrix comment-author id -> the resolved Agora member
+	// (provisioned on first sight), so imported comments are attributed to the
+	// real author instead of the workspace owner. Resolved once per batch.
+	commentAuthors map[string]bitrixAuthorRef
 
 	// importContent toggles comment + attachment (and video-frame) import. The
 	// webhook + import paths both enable it; it exists so a future caller can
@@ -343,6 +347,7 @@ func (h *Handler) newBitrixSyncState() *bitrixSyncState {
 		groupNames:     map[string]string{},
 		stagesByGroup:  map[string]map[string]string{},
 		userCache:      map[string]*bitrix.User{},
+		commentAuthors: map[string]bitrixAuthorRef{},
 		projectByTitle: map[string]pgtype.UUID{},
 		routing:        map[string]bitrixRoutingConfig{},
 		importContent:  true,
@@ -984,6 +989,40 @@ func (h *Handler) bitrixResolveOrProvisionAssignee(ctx context.Context, wsID pgt
 		return h.provisionBitrixAssignee(ctx, wsID, responsibleID, u)
 	}
 	return pgtype.Text{}, pgtype.UUID{}
+}
+
+// bitrixAuthorRef is a resolved Agora author (member) for a Bitrix comment.
+type bitrixAuthorRef struct {
+	Type pgtype.Text
+	ID   pgtype.UUID
+}
+
+// bitrixCommentAuthor resolves a Bitrix comment-author id to an Agora member so
+// the imported comment shows the REAL author, not the workspace owner. It
+// provisions the author (shadow user + member, like an assignee) on first sight
+// and caches the result per batch. Returns an unset ref (caller falls back to
+// the owner) when there's no author id, provisioning is disabled for the
+// workspace, or the author can't be resolved.
+func (h *Handler) bitrixCommentAuthor(ctx context.Context, wsID pgtype.UUID, authorID string, st *bitrixSyncState) bitrixAuthorRef {
+	id := strings.TrimSpace(authorID)
+	if id == "" || id == "0" {
+		return bitrixAuthorRef{}
+	}
+	if cached, ok := st.commentAuthors[id]; ok {
+		return cached
+	}
+	ref := bitrixAuthorRef{}
+	if h.bitrixRoutingForWorkspace(ctx, wsID, st).ProvisionAssignees {
+		// Resolve (external-identity / email) first; provision only if needed.
+		u := h.bitrixResponsible(ctx, st, id)
+		if t, uid := h.bitrixResolveAssignee(ctx, wsID, id, u); t.Valid {
+			ref = bitrixAuthorRef{Type: t, ID: uid}
+		} else if t, uid := h.provisionBitrixAssignee(ctx, wsID, id, u); t.Valid {
+			ref = bitrixAuthorRef{Type: t, ID: uid}
+		}
+	}
+	st.commentAuthors[id] = ref
+	return ref
 }
 
 // provisionBitrixAssignee creates (or reuses) an Agora user + workspace member
