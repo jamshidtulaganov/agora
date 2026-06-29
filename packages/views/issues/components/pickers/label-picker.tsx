@@ -159,6 +159,9 @@ export function LabelPicker({
             <div className="flex flex-wrap items-center gap-1 cursor-pointer rounded px-1 -mx-1 hover:bg-accent/30 transition-colors" />
           ) : undefined
         }
+        // The chip-wrap triggerRender is a <div> (can't be a real button without
+        // nesting buttons in the chips); the default trigger is a native button.
+        nativeButton={hasLabels ? false : undefined}
         trigger={
           hasLabels ? (
             <>

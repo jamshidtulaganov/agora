@@ -27,6 +27,7 @@ export function PropertyPicker({
   onOpenChange,
   trigger,
   triggerRender,
+  nativeButton,
   width = "w-48",
   align = "end",
   side = "bottom",
@@ -42,6 +43,10 @@ export function PropertyPicker({
   onOpenChange: (v: boolean) => void;
   trigger: React.ReactNode;
   triggerRender?: React.ReactElement;
+  /** Whether the rendered trigger is a native <button>. Base UI defaults to
+   *  true; only pass false when triggerRender is a non-button element (e.g. a
+   *  <div> that can't be a real button). Forwarded to PopoverTrigger. */
+  nativeButton?: boolean;
   width?: string;
   align?: "start" | "center" | "end";
   side?: React.ComponentProps<typeof PopoverContent>["side"];
@@ -146,11 +151,11 @@ export function PropertyPicker({
   const popoverTrigger = (
     <PopoverTrigger
       className={triggerRender ? undefined : "flex items-center gap-1.5 cursor-pointer rounded px-1 -mx-1 hover:bg-accent/30 transition-colors overflow-hidden"}
-      // A custom triggerRender may be a non-<button> (e.g. LabelPicker's
-      // chip-wrap <div>, which can't be a real button without nesting buttons).
-      // Tell Base UI so it applies role/tabindex semantics instead of warning.
-      // No triggerRender → default native <button>, keep native semantics.
-      nativeButton={triggerRender ? false : undefined}
+      // Default (undefined) → Base UI treats the trigger as a native <button>,
+      // correct for the default trigger and the many callers whose triggerRender
+      // IS a <button>. Callers that render a non-button (e.g. LabelPicker's
+      // chip-wrap <div>) pass nativeButton={false} to get role/tabindex instead.
+      nativeButton={nativeButton}
       render={triggerRender}
     >
       {trigger}
