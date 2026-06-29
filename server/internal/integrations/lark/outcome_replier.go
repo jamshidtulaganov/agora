@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/url"
 	"strings"
 
@@ -200,8 +201,12 @@ func (r *LarkOutcomeReplier) sendBindingPrompt(ctx context.Context, inst db.Lark
 	if res.SenderOpenID == "" {
 		return errors.New("missing sender open_id")
 	}
-	if r.publicURL == "" {
-		return errors.New("public_url not configured")
+	// The bind link is opened on the member's PHONE (the Lark app), so a
+	// loopback / private-network AGORA_PUBLIC_URL (the common local-dev
+	// http://localhost:3000) produces a dead link AND burns the single-use
+	// token. Refuse with a clear error instead of sending an unusable prompt.
+	if !publicURLReachable(r.publicURL) {
+		return fmt.Errorf("public_url %q is not reachable from a phone; set AGORA_PUBLIC_URL to a public https host (use a tunnel for local dev)", r.publicURL)
 	}
 	token, err := r.bindingSvc.Mint(ctx, inst.WorkspaceID, inst.ID, res.SenderOpenID)
 	if err != nil {
@@ -267,6 +272,28 @@ func issueCreatedText(res DispatchResult, publicURL string) string {
 		return line
 	}
 	return line + "\n" + strings.TrimRight(publicURL, "/") + "/issues/" + identifier
+}
+
+// publicURLReachable reports whether the configured public base URL is
+// plausibly reachable from a member's phone (the bind-link target). Empty,
+// unparseable, loopback, private-network, link-local, or *.local hosts are
+// treated as unreachable — those are the local-dev configs that mint a dead
+// bind link. A public DNS host (the prod https URL) passes.
+func publicURLReachable(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" {
+		return false
+	}
+	host := u.Hostname()
+	if host == "" || host == "localhost" || strings.HasSuffix(host, ".local") {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *LarkOutcomeReplier) sendChatNotice(ctx context.Context, inst db.LarkInstallation, msg InboundMessage, body string) error {

@@ -291,7 +291,9 @@ func (p *Patcher) processEvent(ctx context.Context, e events.Event) error {
 	binding, err := p.queries.GetLarkChatSessionBindingBySession(ctx, chatSessionID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			// Web-only chat session — not a Lark target.
+			// Web-only chat session — not a Lark target. Common; Debug only.
+			p.cfg.Logger.Debug("lark patcher: no chat-session binding (web-only session)",
+				"chat_session_id", uuidString(chatSessionID), "event_type", e.Type)
 			return nil
 		}
 		return fmt.Errorf("lookup chat session binding: %w", err)
@@ -303,6 +305,9 @@ func (p *Patcher) processEvent(ctx context.Context, e events.Event) error {
 	}
 	if InstallationStatus(inst.Status) != InstallationActive {
 		// Revoked between trigger and event; nothing to patch.
+		p.cfg.Logger.Info("lark patcher: installation not active, skipping outbound",
+			"installation_id", uuidString(inst.ID), "status", inst.Status,
+			"chat_session_id", uuidString(chatSessionID))
 		return nil
 	}
 	creds, err := p.installationCredentials(inst)
@@ -357,6 +362,12 @@ func (p *Patcher) processEvent(ctx context.Context, e events.Event) error {
 func (p *Patcher) sendChatReply(ctx context.Context, creds InstallationCredentials, binding db.LarkChatSessionBinding, payload any) error {
 	content := chatDoneContent(payload)
 	if content == "" {
+		// Leading cause of a "bot never replied" report: the agent run
+		// produced no visible output, so there is nothing to send. Log it so
+		// non-delivery is distinguishable from a send failure.
+		p.cfg.Logger.Info("lark patcher: chat reply has empty content, nothing sent",
+			"chat_id", string(binding.LarkChatID),
+			"chat_session_id", uuidString(binding.ChatSessionID))
 		return nil
 	}
 	if containsMarkdown(content) {
@@ -367,6 +378,8 @@ func (p *Patcher) sendChatReply(ctx context.Context, creds InstallationCredentia
 		}); err != nil {
 			return fmt.Errorf("send markdown card: %w", err)
 		}
+		p.cfg.Logger.Info("lark patcher: chat reply sent",
+			"kind", "markdown_card", "chat_id", string(binding.LarkChatID), "bytes", len(content))
 		return nil
 	}
 	if _, err := p.client.SendTextMessage(ctx, SendTextParams{
@@ -376,6 +389,8 @@ func (p *Patcher) sendChatReply(ctx context.Context, creds InstallationCredentia
 	}); err != nil {
 		return fmt.Errorf("send text message: %w", err)
 	}
+	p.cfg.Logger.Info("lark patcher: chat reply sent",
+		"kind", "text", "chat_id", string(binding.LarkChatID), "bytes", len(content))
 	return nil
 }
 
