@@ -66,12 +66,40 @@ describe("IssueSchema (via ListIssuesResponseSchema)", () => {
     expect(parsed.issues[0]?.metadata).toEqual({});
   });
 
-  it("rejects metadata with non-primitive values (nested object)", () => {
+  // Metadata is a freeform JSON blob: the server stores rich shapes there (the
+  // Bitrix sync keeps ARRAY values for incremental dedup). A scalar-only schema
+  // rejected those and — because parseWithFallback fails the WHOLE response —
+  // collapsed the entire issue list to empty for any imported issue. Metadata
+  // must accept arbitrary values so a new shape can never white-screen the board.
+  it("accepts metadata with array values (Bitrix synced-id sets)", () => {
+    const payload = {
+      issues: [
+        {
+          ...baseIssue,
+          metadata: {
+            bitrix_task_id: "54657",
+            bitrix_synced_comment_ids: ["chat-2129963", "chat-2129967"],
+            bitrix_synced_file_ids: ["19683", "19685"],
+          },
+        },
+      ],
+      total: 1,
+    };
+    const res = ListIssuesResponseSchema.safeParse(payload);
+    expect(res.success).toBe(true);
+    expect(res.success && res.data.issues).toHaveLength(1);
+    expect(res.success && res.data.issues[0]?.metadata.bitrix_synced_comment_ids).toEqual([
+      "chat-2129963",
+      "chat-2129967",
+    ]);
+  });
+
+  it("accepts metadata with a nested object value", () => {
     const payload = {
       issues: [{ ...baseIssue, metadata: { nested: { x: 1 } } }],
       total: 1,
     };
-    expect(ListIssuesResponseSchema.safeParse(payload).success).toBe(false);
+    expect(ListIssuesResponseSchema.safeParse(payload).success).toBe(true);
   });
 });
 

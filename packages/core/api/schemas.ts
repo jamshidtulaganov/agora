@@ -221,7 +221,15 @@ export const CommentTriggerPreviewSchema = z.object({
 // Metadata is primitive-only by API/DB contract. Stay lenient on shape:
 // unknown keys land as `unknown` to a caller, but the field itself defaults
 // to {} so consumers never need to nil-guard `issue.metadata`.
-const IssueMetadataSchema = z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({});
+//
+// Values are intentionally `unknown` (not scalar-only): metadata is a freeform
+// JSON blob and the server stores rich shapes there — e.g. the Bitrix sync
+// keeps ARRAY values (bitrix_synced_comment_ids / _file_ids) for incremental
+// dedup. A scalar-only union rejected those, which (because parseWithFallback
+// fails the WHOLE response) collapsed the entire issue list to empty for any
+// imported issue. Keep this permissive so a new metadata shape can never
+// white-screen the board.
+const IssueMetadataSchema = z.record(z.string(), z.unknown()).default({});
 
 export const IssueSchema = z.object({
   id: z.string(),
