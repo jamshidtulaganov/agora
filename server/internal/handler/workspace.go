@@ -255,6 +255,21 @@ type workspaceRepoRef struct {
 	Description string `json:"description,omitempty"`
 }
 
+// normalizeGitRepoURL strips GitHub/GitLab web-view suffixes (…/tree/<ref>,
+// …/blob/…, GitLab /-/…) and a trailing slash so a pasted *browser* URL becomes
+// a cloneable repo URL. Mirrors the client-side normalizeRepoUrl so both layers
+// agree; without it, github.com/owner/repo/tree/branch saves a binding the
+// daemon can never clone (it 404s on the /tree path).
+func normalizeGitRepoURL(u string) string {
+	u = strings.TrimSpace(u)
+	for _, sep := range []string{"/tree/", "/blob/", "/commit/", "/commits/", "/pull/", "/-/"} {
+		if i := strings.Index(u, sep); i != -1 {
+			u = u[:i]
+		}
+	}
+	return strings.TrimRight(u, "/")
+}
+
 func validateAndNormalizeWorkspaceRepos(value any) ([]byte, error) {
 	raw, err := json.Marshal(value)
 	if err != nil {
@@ -269,7 +284,7 @@ func validateAndNormalizeWorkspaceRepos(value any) ([]byte, error) {
 	normalized := make([]workspaceRepoRef, 0, len(repos))
 	seen := make(map[string]struct{}, len(repos))
 	for i, repo := range repos {
-		repo.URL = strings.TrimSpace(repo.URL)
+		repo.URL = normalizeGitRepoURL(repo.URL)
 		repo.Description = strings.TrimSpace(repo.Description)
 		if repo.URL == "" {
 			return nil, fmt.Errorf("repos[%d]: url is required", i)

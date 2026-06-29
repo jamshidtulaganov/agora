@@ -29,6 +29,20 @@ function isDirty(local: WorkspaceRepo[], saved: WorkspaceRepo[]): boolean {
   return local.some((r, i) => r.url !== saved[i]?.url || (r.description ?? "") !== (saved[i]?.description ?? ""));
 }
 
+// Strip GitHub/GitLab web-view suffixes (…/tree/<branch>, …/blob/…, GitLab /-/…)
+// so a pasted *browser* URL becomes a cloneable repo URL, and trim trailing
+// slashes. Fixes the common "pasted the branch page URL" mistake — e.g.
+// github.com/owner/repo/tree/build → github.com/owner/repo — which otherwise
+// saves a binding the daemon can never clone (it 404s on the /tree path).
+function normalizeRepoUrl(url: string): string {
+  let u = url.trim();
+  for (const sep of ["/tree/", "/blob/", "/commit/", "/commits/", "/pull/", "/-/"]) {
+    const i = u.indexOf(sep);
+    if (i !== -1) u = u.slice(0, i);
+  }
+  return u.replace(/\/+$/, "");
+}
+
 export function RepositoriesTab() {
   const { t } = useT("settings");
   const user = useAuthStore((s) => s.user);
@@ -53,12 +67,19 @@ export function RepositoriesTab() {
 
   const handleSave = async () => {
     if (!workspace) return;
+    // Guard before the PATCH: normalize pasted browser URLs to clone URLs and
+    // drop blank rows, so we never persist a non-cloneable binding or fire a
+    // spurious 400 ("url is required") on an empty row the user just added.
+    const cleaned = repos
+      .map((r) => ({ ...r, url: normalizeRepoUrl(r.url) }))
+      .filter((r) => r.url !== "");
     setSaving(true);
     try {
-      const updated = await api.updateWorkspace(workspace.id, { repos });
+      const updated = await api.updateWorkspace(workspace.id, { repos: cleaned });
       qc.setQueryData(workspaceKeys.list(), (old: Workspace[] | undefined) =>
         old?.map((ws) => (ws.id === updated.id ? updated : ws)),
       );
+      setRepos(cleaned);
       setEditingIndices(new Set());
       toast.success(t(($) => $.repositories.toast_saved));
     } catch (e) {

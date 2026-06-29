@@ -305,6 +305,27 @@ VALUES ($1, $2, 'owner')
 	}
 }
 
+// TestNormalizeGitRepoURL covers the web-URL → clone-URL normalization that
+// auto-fixes a pasted browser URL (the …/tree/<branch> mistake that saved a
+// non-cloneable binding the daemon 404s on). Pure (no DB).
+func TestNormalizeGitRepoURL(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"https://github.com/o/r/tree/build", "https://github.com/o/r"},
+		{"https://github.com/o/r/blob/main/x.go", "https://github.com/o/r"},
+		{"https://gitlab.com/g/sub/r/-/tree/main", "https://gitlab.com/g/sub/r"},
+		{"https://github.com/o/r/", "https://github.com/o/r"},
+		{"  https://github.com/o/r  ", "https://github.com/o/r"},
+		{"https://github.com/o/r", "https://github.com/o/r"},
+		{"git@github.com:o/r.git", "git@github.com:o/r.git"},
+		{"ssh://git@ssh-gitlab.sdteam.uz:2222/o/r.git", "ssh://git@ssh-gitlab.sdteam.uz:2222/o/r.git"},
+	}
+	for _, c := range cases {
+		if got := normalizeGitRepoURL(c.in); got != c.want {
+			t.Errorf("normalizeGitRepoURL(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestUpdateWorkspace_ReposValidation(t *testing.T) {
 	ctx := context.Background()
 
