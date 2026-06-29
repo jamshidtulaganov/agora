@@ -158,6 +158,113 @@ func (h *Handler) resolveSdMainProject(ctx context.Context, workspaceID pgtype.U
 	return id, true
 }
 
+// --- title-prefix → project routing -----------------------------------------
+
+// bitrixPrefixRule routes a Bitrix task to a specific Agora project by a
+// case-insensitive prefix on the task TITLE — how a single combined Bitrix
+// workgroup is split across the workspace's product projects (sd-main / sd-cs /
+// sd-billing). Configured in workspace.settings.bitrix_project_prefixes as
+// [{"prefix":"CRM:","project":"sd-cs"}, ...].
+type bitrixPrefixRule struct {
+	Prefix  string `json:"prefix"`
+	Project string `json:"project"`
+}
+
+// bitrixRoutingConfig is the per-workspace project-routing config read from
+// workspace.settings. Prefixes split a combined workgroup by title; Default is
+// the project unmatched tasks land in (so the importer NEVER auto-creates a
+// project per Bitrix group). Either may be empty — empty Default falls back to
+// the legacy group-based path.
+type bitrixRoutingConfig struct {
+	Prefixes []bitrixPrefixRule
+	Default  string
+	// ProvisionAssignees, when true, makes the importer create an Agora user +
+	// workspace member for a Bitrix responsible who has no Agora account yet, so
+	// the imported task gets a REAL assignee (not just a metadata chip).
+	ProvisionAssignees bool
+}
+
+// configured reports whether the workspace opted into named-project routing
+// (any prefix rule or a default project). When true, the importer routes to
+// named projects only and skips the auto-create-per-group fallback.
+func (c bitrixRoutingConfig) configured() bool {
+	return len(c.Prefixes) > 0 || strings.TrimSpace(c.Default) != ""
+}
+
+// bitrixRoutingForWorkspace loads + caches the project-routing config from
+// workspace.settings (bitrix_project_prefixes + bitrix_default_project). Prefix
+// rules are sorted longest-prefix-first so the most specific prefix wins.
+func (h *Handler) bitrixRoutingForWorkspace(ctx context.Context, wsID pgtype.UUID, st *bitrixSyncState) bitrixRoutingConfig {
+	key := util.UUIDToString(wsID)
+	if cfg, ok := st.routing[key]; ok {
+		return cfg
+	}
+	var settings []byte
+	if err := h.DB.QueryRow(ctx, `SELECT settings FROM workspace WHERE id = $1`, wsID).Scan(&settings); err != nil {
+		st.routing[key] = bitrixRoutingConfig{}
+		return bitrixRoutingConfig{}
+	}
+	var parsed struct {
+		Rules     []bitrixPrefixRule `json:"bitrix_project_prefixes"`
+		Default   string             `json:"bitrix_default_project"`
+		Provision bool               `json:"bitrix_provision_assignees"`
+	}
+	if len(settings) == 0 || json.Unmarshal(settings, &parsed) != nil {
+		st.routing[key] = bitrixRoutingConfig{}
+		return bitrixRoutingConfig{}
+	}
+	rules := make([]bitrixPrefixRule, 0, len(parsed.Rules))
+	for _, r := range parsed.Rules {
+		prefix := strings.TrimSpace(r.Prefix)
+		project := strings.TrimSpace(r.Project)
+		if prefix != "" && project != "" {
+			rules = append(rules, bitrixPrefixRule{Prefix: prefix, Project: project})
+		}
+	}
+	sort.SliceStable(rules, func(i, j int) bool { return len(rules[i].Prefix) > len(rules[j].Prefix) })
+	cfg := bitrixRoutingConfig{Prefixes: rules, Default: strings.TrimSpace(parsed.Default), ProvisionAssignees: parsed.Provision}
+	st.routing[key] = cfg
+	return cfg
+}
+
+// matchBitrixPrefixRule returns the project title a task title routes to by
+// prefix, or "" when no rule matches. Case-insensitive; a leading "[", "#", "("
+// or whitespace on the title is tolerated so "[CRM] ..." matches a "CRM" prefix.
+// PURE — unit-tested without a DB.
+func matchBitrixPrefixRule(title string, rules []bitrixPrefixRule) string {
+	t := strings.ToLower(strings.TrimLeft(strings.TrimSpace(title), "[#( \t"))
+	for _, r := range rules {
+		if strings.HasPrefix(t, strings.ToLower(r.Prefix)) {
+			return r.Project
+		}
+	}
+	return ""
+}
+
+// resolveProjectByTitle resolves (and caches) a project id by its exact title in
+// the workspace. ok=false (no error surfaced for a plain miss) when no such
+// project exists, so the caller falls back to the group-based path.
+func (h *Handler) resolveProjectByTitle(ctx context.Context, wsID pgtype.UUID, title string, st *bitrixSyncState) (pgtype.UUID, bool) {
+	key := util.UUIDToString(wsID) + ":" + title
+	if id, ok := st.projectByTitle[key]; ok {
+		return id, id.Valid
+	}
+	var id pgtype.UUID
+	err := h.DB.QueryRow(ctx,
+		`SELECT id FROM project WHERE workspace_id = $1 AND title = $2 LIMIT 1`,
+		wsID, title).Scan(&id)
+	if err != nil {
+		st.projectByTitle[key] = pgtype.UUID{}
+		if err != pgx.ErrNoRows {
+			slog.Warn("bitrix sync: resolve project by title failed",
+				"title", title, "workspace_id", util.UUIDToString(wsID), "error", err)
+		}
+		return pgtype.UUID{}, false
+	}
+	st.projectByTitle[key] = id
+	return id, true
+}
+
 // getOrCreateBitrixSprint returns the Agora sprint id for a sprint-named Bitrix
 // workgroup, creating it under the sd-main project on first sight. It mirrors
 // getOrCreateBitrixProject exactly, but the durable "bitrix_group:<id>" marker

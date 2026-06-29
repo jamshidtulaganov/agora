@@ -287,6 +287,16 @@ type bitrixSyncState struct {
 	// groupNames maps Bitrix group id -> name, lazily filled from GetGroup so a
 	// batch doesn't re-query the same workgroup name.
 	groupNames map[string]string
+	// projectByTitle maps "<workspaceID>:<title>" -> project id (zero/Invalid
+	// when no such project), so title-prefix routing resolves each named product
+	// project (sd-main / sd-cs / sd-billing) once per batch.
+	projectByTitle map[string]pgtype.UUID
+	// routing maps "<workspaceID>" -> the project-routing config loaded from
+	// workspace.settings (title-prefix rules + default project). A present key
+	// means "loaded" (even when both fields are empty); absent triggers a load.
+	// Splits one combined Bitrix workgroup across the workspace's product
+	// projects instead of auto-creating a project per group.
+	routing map[string]bitrixRoutingConfig
 	// userCache maps Bitrix user id -> portal user (the task responsible),
 	// lazily filled from user.get so a batch resolves each assignee once. A nil
 	// value caches a failed/unknown lookup so it isn't retried per task.
@@ -307,11 +317,13 @@ func (h *Handler) newBitrixSyncState() *bitrixSyncState {
 	return &bitrixSyncState{
 		client:        bitrix.NewClient(bitrixWebhookURL()),
 		tag:           bitrixTaskTag(),
-		projectCache:  map[string]pgtype.UUID{},
-		sprintCache:   map[string]pgtype.UUID{},
-		groupNames:    map[string]string{},
-		userCache:     map[string]*bitrix.User{},
-		importContent: true,
+		projectCache:   map[string]pgtype.UUID{},
+		sprintCache:    map[string]pgtype.UUID{},
+		groupNames:     map[string]string{},
+		userCache:      map[string]*bitrix.User{},
+		projectByTitle: map[string]pgtype.UUID{},
+		routing:        map[string]bitrixRoutingConfig{},
+		importContent:  true,
 	}
 }
 
@@ -424,7 +436,7 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		// RAW bus-free update (no EventIssueUpdated publish, to avoid an
 		// outbound echo).
 		responsible := h.bitrixResponsible(ctx, st, task.ResponsibleID)
-		assigneeType, assigneeID := h.bitrixResolveAssignee(ctx, ws.ID, task.ResponsibleID, responsible)
+		assigneeType, assigneeID := h.bitrixResolveOrProvisionAssignee(ctx, ws.ID, task.ResponsibleID, responsible, st)
 		if !sameIssueAssignee(existing, assigneeType, assigneeID) {
 			if err := h.bitrixSetIssueAssignee(ctx, existing.ID, ws.ID, assigneeType, assigneeID); err != nil {
 				return fmt.Errorf("update issue assignee: %w", err)
@@ -505,7 +517,7 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 	draft := bitrix.MapTaskToIssue(task)
 
 	responsible := h.bitrixResponsible(ctx, st, task.ResponsibleID)
-	assigneeType, assigneeID := h.bitrixResolveAssignee(ctx, ws.ID, task.ResponsibleID, responsible)
+	assigneeType, assigneeID := h.bitrixResolveOrProvisionAssignee(ctx, ws.ID, task.ResponsibleID, responsible, st)
 
 	res, err := h.IssueService.Create(ctx, service.IssueCreateParams{
 		WorkspaceID:  ws.ID,
@@ -619,6 +631,34 @@ func bitrixGroupIsSprint(name string) bool {
 // than failing the sync — matching resolveBitrixProject. The returned sprintID is
 // the zero UUID (Valid=false) unless case (2) applies.
 func (h *Handler) resolveBitrixTarget(ctx context.Context, wsID pgtype.UUID, task *bitrix.Task, st *bitrixSyncState) (projectID pgtype.UUID, sprintID pgtype.UUID) {
+	// (0) Named-project routing. When the workspace configures any title-prefix
+	// rule or a default project, the importer routes EVERY task to a named
+	// product project (sd-main / sd-cs / sd-billing) and NEVER auto-creates a
+	// project per Bitrix group: a matched prefix wins, otherwise the default
+	// project catches it. This is what splits one combined workgroup ("Sprint 9")
+	// across the real projects instead of dumping it into an auto-made group
+	// project. Only an unconfigured workspace falls through to the legacy path.
+	if cfg := h.bitrixRoutingForWorkspace(ctx, wsID, st); cfg.configured() {
+		if projTitle := matchBitrixPrefixRule(task.Title, cfg.Prefixes); projTitle != "" {
+			if pid, ok := h.resolveProjectByTitle(ctx, wsID, projTitle, st); ok {
+				return pid, pgtype.UUID{}
+			}
+			slog.Warn("bitrix sync: title prefix matched a project that does not exist, trying default",
+				"prefix_project", projTitle, "task_id", task.ID, "workspace_id", util.UUIDToString(wsID))
+		}
+		if def := strings.TrimSpace(cfg.Default); def != "" {
+			if pid, ok := h.resolveProjectByTitle(ctx, wsID, def, st); ok {
+				return pid, pgtype.UUID{}
+			}
+			slog.Warn("bitrix sync: default project does not exist, leaving task unfiled",
+				"default_project", def, "task_id", task.ID, "workspace_id", util.UUIDToString(wsID))
+		}
+		// Configured but nothing resolved (default missing / prefix-only with no
+		// match) → leave unfiled rather than auto-creating a group project, which
+		// is exactly the behavior the named-routing mode exists to avoid.
+		return pgtype.UUID{}, pgtype.UUID{}
+	}
+
 	groupID := strings.TrimSpace(task.GroupID)
 	if groupID == "" {
 		return pgtype.UUID{}, pgtype.UUID{}
@@ -794,6 +834,88 @@ func (h *Handler) bitrixResolveAssignee(ctx context.Context, wsID pgtype.UUID, r
 		}
 	}
 	return none, pgtype.UUID{}
+}
+
+// bitrixResolveOrProvisionAssignee resolves the Bitrix responsible to an Agora
+// member assignee, and — when the workspace enables it
+// (settings.bitrix_provision_assignees) — PROVISIONS one if none exists yet:
+// creates a shadow Agora user + workspace member for the responsible so the
+// imported task gets a real assignee instead of only a metadata chip. Provision
+// is best-effort; on any failure it degrades to the unassigned pair (the
+// responsible name still lands in metadata via setBitrixResponsibleMetadata).
+func (h *Handler) bitrixResolveOrProvisionAssignee(ctx context.Context, wsID pgtype.UUID, responsibleID string, u *bitrix.User, st *bitrixSyncState) (pgtype.Text, pgtype.UUID) {
+	if t, uid := h.bitrixResolveAssignee(ctx, wsID, responsibleID, u); t.Valid {
+		return t, uid
+	}
+	if h.bitrixRoutingForWorkspace(ctx, wsID, st).ProvisionAssignees {
+		return h.provisionBitrixAssignee(ctx, wsID, responsibleID, u)
+	}
+	return pgtype.Text{}, pgtype.UUID{}
+}
+
+// provisionBitrixAssignee creates (or reuses) an Agora user + workspace member
+// for a Bitrix responsible, then links the Bitrix identity so later syncs
+// resolve directly. Idempotent: reuses an existing user-by-email and an existing
+// membership. Returns the unset pair when the responsible has no email (Agora
+// users are keyed by email, so a shadow account can't be made without one) or on
+// any error — the caller then leaves the issue unassigned.
+func (h *Handler) provisionBitrixAssignee(ctx context.Context, wsID pgtype.UUID, responsibleID string, u *bitrix.User) (pgtype.Text, pgtype.UUID) {
+	none := pgtype.Text{}
+	if u == nil {
+		return none, pgtype.UUID{}
+	}
+	email := strings.TrimSpace(u.Email)
+	if email == "" {
+		return none, pgtype.UUID{}
+	}
+
+	// Find or create the Agora user by email.
+	var userID pgtype.UUID
+	if existing, err := h.Queries.GetUserByEmail(ctx, email); err == nil {
+		userID = existing.ID
+	} else {
+		name := strings.TrimSpace(u.FullName())
+		if name == "" {
+			name = email
+		}
+		created, cerr := h.Queries.CreateUser(ctx, db.CreateUserParams{
+			Name:  name,
+			Email: email,
+		})
+		if cerr != nil {
+			slog.Warn("bitrix sync: provision assignee user failed", "email", email, "error", cerr)
+			return none, pgtype.UUID{}
+		}
+		userID = created.ID
+		slog.Info("bitrix sync: provisioned Agora user for Bitrix responsible",
+			"email", email, "user_id", util.UUIDToString(userID), "responsible_id", strings.TrimSpace(responsibleID))
+	}
+
+	// Ensure workspace membership (skip when already a member).
+	if _, err := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
+		UserID:      userID,
+		WorkspaceID: wsID,
+	}); err != nil {
+		if _, cerr := h.Queries.CreateMember(ctx, db.CreateMemberParams{
+			WorkspaceID: wsID,
+			UserID:      userID,
+			Role:        "member",
+		}); cerr != nil {
+			slog.Warn("bitrix sync: provision assignee member failed",
+				"user_id", util.UUIDToString(userID), "workspace_id", util.UUIDToString(wsID), "error", cerr)
+			return none, pgtype.UUID{}
+		}
+	}
+
+	// Link the Bitrix identity so future syncs resolve directly (and dedup).
+	if id := strings.TrimSpace(responsibleID); id != "" {
+		if err := h.linkExternalIdentity(ctx, providerBitrix, id, util.UUIDToString(userID)); err != nil {
+			slog.Debug("bitrix sync: link bitrix identity for provisioned user (non-fatal)",
+				"responsible_id", id, "error", err)
+		}
+	}
+
+	return pgtype.Text{String: "member", Valid: true}, userID
 }
 
 // assigneeIfMember returns ("member", uuid) when userID is a member of wsID,
