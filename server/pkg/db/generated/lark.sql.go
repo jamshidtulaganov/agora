@@ -687,6 +687,36 @@ func (q *Queries) GetLarkUserBindingByOpenID(ctx context.Context, arg GetLarkUse
 	return i, err
 }
 
+const getLarkUserBindingByUser = `-- name: GetLarkUserBindingByUser :one
+SELECT id, workspace_id, agora_user_id, installation_id, lark_open_id, union_id, bound_at FROM lark_user_binding
+WHERE installation_id = $1 AND agora_user_id = $2
+`
+
+type GetLarkUserBindingByUserParams struct {
+	InstallationID pgtype.UUID `json:"installation_id"`
+	AgoraUserID    pgtype.UUID `json:"agora_user_id"`
+}
+
+// The outbound notify lookup: given an installation and an Agora user, find
+// the user's open_id so a proactive card (e.g. "issue assigned to you") can be
+// DMed from that installation's Bot. Mirror of GetLarkUserBindingByOpenID in
+// reverse. No row means the user never bound their Lark identity to this Bot,
+// so there is nobody to message — the caller skips silently.
+func (q *Queries) GetLarkUserBindingByUser(ctx context.Context, arg GetLarkUserBindingByUserParams) (LarkUserBinding, error) {
+	row := q.db.QueryRow(ctx, getLarkUserBindingByUser, arg.InstallationID, arg.AgoraUserID)
+	var i LarkUserBinding
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.AgoraUserID,
+		&i.InstallationID,
+		&i.LarkOpenID,
+		&i.UnionID,
+		&i.BoundAt,
+	)
+	return i, err
+}
+
 const listActiveLarkInstallations = `-- name: ListActiveLarkInstallations :many
 SELECT id, workspace_id, agent_id, app_id, app_secret_encrypted, tenant_key, bot_open_id, installer_user_id, status, ws_lease_token, ws_lease_expires_at, installed_at, created_at, updated_at, bot_union_id, region FROM lark_installation
 WHERE status = 'active'

@@ -433,7 +433,7 @@ func (c *httpAPIClient) SendBindingPromptCard(ctx context.Context, p BindingProm
 	if p.BindURL == "" {
 		return errors.New("lark http client: missing bind url")
 	}
-	cardJSON, err := bindingPromptTemplate(p.BindURL)
+	cardJSON, err := bindingPromptTemplate(p.BindURL, p.InstallationID.Region)
 	if err != nil {
 		return fmt.Errorf("lark http client: render binding prompt: %w", err)
 	}
@@ -463,6 +463,48 @@ func (c *httpAPIClient) SendBindingPromptCard(ctx context.Context, p BindingProm
 		return fmt.Errorf("lark http client: send binding prompt: code=%d msg=%q", resp.Code, resp.Msg)
 	}
 	return nil
+}
+
+// SendCardToOpenID posts an interactive card straight to a user's open_id
+// (not a chat), used by the proactive notify path. Same open_id-targeted
+// transport as SendBindingPromptCard, but the card body is supplied by the
+// caller and the returned message_id lets a future patch target this card.
+func (c *httpAPIClient) SendCardToOpenID(ctx context.Context, p SendCardToOpenIDParams) (string, error) {
+	if p.OpenID == "" {
+		return "", errors.New("lark http client: missing open_id")
+	}
+	if p.CardJSON == "" {
+		return "", errors.New("lark http client: missing card json")
+	}
+	token, err := c.tenantAccessToken(ctx, p.InstallationID)
+	if err != nil {
+		return "", err
+	}
+	q := url.Values{}
+	q.Set("receive_id_type", "open_id")
+	body := map[string]string{
+		"receive_id": string(p.OpenID),
+		"msg_type":   "interactive",
+		"content":    p.CardJSON,
+	}
+	var resp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			MessageID string `json:"message_id"`
+		} `json:"data"`
+	}
+	path := "/open-apis/im/v1/messages?" + q.Encode()
+	if err := c.doJSON(ctx, c.resolveBaseURL(p.InstallationID), http.MethodPost, path, token, body, &resp); err != nil {
+		return "", fmt.Errorf("lark http client: send card to open_id: %w", err)
+	}
+	if resp.Code != 0 {
+		if isTokenError(resp.Code) {
+			c.invalidateToken(p.InstallationID.AppID)
+		}
+		return "", fmt.Errorf("lark http client: send card to open_id: code=%d msg=%q", resp.Code, resp.Msg)
+	}
+	return resp.Data.MessageID, nil
 }
 
 // GetBotInfo calls /open-apis/bot/v3/info to learn the Bot's
@@ -929,7 +971,8 @@ func truncate(s string, n int) string {
 // evolve independently of the streaming-status cards the Patcher
 // renders — they have different lifecycles (binding card is one-shot,
 // status cards are patched in place).
-func bindingPromptTemplate(bindURL string) (string, error) {
+func bindingPromptTemplate(bindURL string, region Region) (string, error) {
+	body, button := bindCardCopy(region)
 	doc := map[string]any{
 		"config": map[string]any{"wide_screen_mode": true},
 		"header": map[string]any{
@@ -941,7 +984,7 @@ func bindingPromptTemplate(bindURL string) (string, error) {
 				"tag": "div",
 				"text": map[string]any{
 					"tag":     "lark_md",
-					"content": "你还没有绑定 Agora 账户。点击下方按钮完成绑定后即可使用此 Agent。",
+					"content": body,
 				},
 			},
 			map[string]any{
@@ -949,7 +992,7 @@ func bindingPromptTemplate(bindURL string) (string, error) {
 				"actions": []any{
 					map[string]any{
 						"tag":  "button",
-						"text": map[string]any{"tag": "plain_text", "content": "去绑定"},
+						"text": map[string]any{"tag": "plain_text", "content": button},
 						"type": "primary",
 						"url":  bindURL,
 					},
@@ -962,4 +1005,18 @@ func bindingPromptTemplate(bindURL string) (string, error) {
 		return "", err
 	}
 	return string(raw), nil
+}
+
+// bindCardCopy returns the bind-prompt body text and button caption in the
+// cloud's default language: Chinese for mainland Feishu (open.feishu.cn),
+// English everywhere else. Lark International (open.larksuite.com) serves a
+// global, non-Chinese audience — SD's Russian/Uzbek team included — for whom a
+// Chinese-only onboarding gate is unreadable. Region is already on every
+// installation row, so it is the cheap, correct first cut; per-user locale is a
+// later refinement.
+func bindCardCopy(region Region) (body, button string) {
+	if RegionOrDefault(string(region)) == RegionFeishu {
+		return "你还没有绑定 Agora 账户。点击下方按钮完成绑定后即可使用此 Agent。", "去绑定"
+	}
+	return "You haven't linked your Agora account yet. Tap below to finish linking, then you can use this agent.", "Link account"
 }

@@ -34,6 +34,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Claude Code CLI — the agent runtime the daemon spawns once per task.
 RUN npm install -g @anthropic-ai/claude-code
 
+# Feishu/Lark OpenAPI MCP — pre-installed so agents with a Lark Bot bound get
+# the lark_* tools (messages, docs, calendar, Bitable) without a cold npx fetch
+# on first use. Credentials are injected per task via the MCP server's env
+# (APP_ID/APP_SECRET/LARK_DOMAIN), never baked into the image.
+RUN npm install -g @larksuiteoapi/lark-mcp
+
 # code-server (browser VS Code) — the daemon spawns it on demand for the live
 # "Code" editor so a human can watch + edit an agent's worktree from the browser.
 RUN curl -fsSL https://code-server.dev/install.sh | sh

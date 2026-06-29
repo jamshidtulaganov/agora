@@ -192,6 +192,15 @@ SELECT * FROM lark_user_binding
 WHERE installation_id = $1
 ORDER BY bound_at DESC;
 
+-- name: GetLarkUserBindingByUser :one
+-- The outbound notify lookup: given an installation and an Agora user, find
+-- the user's open_id so a proactive card (e.g. "issue assigned to you") can be
+-- DMed from that installation's Bot. Mirror of GetLarkUserBindingByOpenID in
+-- reverse. No row means the user never bound their Lark identity to this Bot,
+-- so there is nobody to message — the caller skips silently.
+SELECT * FROM lark_user_binding
+WHERE installation_id = $1 AND agora_user_id = $2;
+
 -- name: DeleteLarkUserBinding :exec
 DELETE FROM lark_user_binding WHERE id = $1;
 

@@ -1119,7 +1119,7 @@ func TestHTTPClient_TokenExpire_ClampedToSafety(t *testing.T) {
 }
 
 func TestBindingPromptTemplate_Shape(t *testing.T) {
-	raw, err := bindingPromptTemplate("https://agora.test/bind?token=abc")
+	raw, err := bindingPromptTemplate("https://agora.test/bind?token=abc", RegionLark)
 	if err != nil {
 		t.Fatalf("template: %v", err)
 	}

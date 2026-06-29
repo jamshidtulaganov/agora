@@ -122,6 +122,12 @@ export interface McpServerTemplate {
   argsText: string;
   /** Env keys the user is expected to fill; values start empty. */
   envKeys: string[];
+  /**
+   * For source-control servers (github/gitlab): the token permissions the
+   * operator must grant so agents can create branches and open PRs/MRs. Shown
+   * next to the template so the right scopes are requested at setup time.
+   */
+  scopeHint?: string;
 }
 
 /**
@@ -144,6 +150,19 @@ export const MCP_SERVER_TEMPLATES: McpServerTemplate[] = [
     command: "npx",
     argsText: "-y @modelcontextprotocol/server-github",
     envKeys: ["GITHUB_PERSONAL_ACCESS_TOKEN"],
+    scopeHint:
+      "Token needs Contents (read & write) + Pull requests (read & write) — fine-grained PAT, or the classic `repo` scope. Required to create branches and open PRs.",
+  },
+  {
+    id: "gitlab",
+    label: "GitLab",
+    name: "gitlab",
+    command: "npx",
+    argsText: "-y @modelcontextprotocol/server-gitlab",
+    // GITLAB_API_URL is optional (self-hosted GitLab); leave blank for gitlab.com.
+    envKeys: ["GITLAB_PERSONAL_ACCESS_TOKEN", "GITLAB_API_URL"],
+    scopeHint:
+      "Token needs the `api` scope (or `read_repository` + `write_repository`). Required to create branches and open merge requests.",
   },
   {
     id: "mysql",
@@ -152,5 +171,25 @@ export const MCP_SERVER_TEMPLATES: McpServerTemplate[] = [
     command: "mcp-server-mysql",
     argsText: "",
     envKeys: ["MYSQL_HOST", "MYSQL_DB", "MYSQL_USER", "MYSQL_PASS"],
+  },
+  {
+    id: "lark",
+    label: "Feishu / Lark",
+    name: "lark",
+    // -t preset.im.default scopes the agent to the IM toolset: group (chat)
+    // create/list, member management, and sending messages. Override via the
+    // LARK_TOOLS env (comma-separated tool ids or another preset, e.g.
+    // preset.doc.default / preset.calendar.default) to widen or narrow it.
+    command: "npx",
+    argsText: "-y @larksuiteoapi/lark-mcp mcp -t preset.im.default",
+    // APP_ID/APP_SECRET are the Bot app credentials; LARK_DOMAIN selects the
+    // cloud (https://open.feishu.cn mainland vs https://open.larksuite.com
+    // international). When an agent has a Lark Bot bound (scan-to-install),
+    // the daemon auto-injects these from the bound installation, so the
+    // operator can leave them blank — they only fill them for a standalone
+    // Lark app not tied to a bound Bot.
+    envKeys: ["APP_ID", "APP_SECRET", "LARK_DOMAIN", "LARK_TOKEN_MODE"],
+    scopeHint:
+      "Uses your Lark Bot app's credentials. For group management grant the Bot the im:chat and im:message scopes (create/manage groups, add members, send messages). Add docx / calendar scopes only if you widen LARK_TOOLS.",
   },
 ];
