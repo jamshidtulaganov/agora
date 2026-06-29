@@ -590,6 +590,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// inbound /bitrix/webhook uses. List groups + their routed workspace,
 		// list a group's tasks with already-synced state, and bulk-import.
 		r.Get("/api/bitrix/groups", h.ListBitrixGroups)
+		r.Get("/api/bitrix/users", h.ListBitrixUsers)
 		r.Get("/api/bitrix/tasks", h.ListBitrixTasks)
 		r.Post("/api/bitrix/import", h.ImportBitrixTasks)
 

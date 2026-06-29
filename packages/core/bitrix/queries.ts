@@ -8,6 +8,7 @@ import { api } from "../api";
 export const bitrixKeys = {
   all: ["bitrix"] as const,
   groups: () => [...bitrixKeys.all, "groups"] as const,
+  users: () => [...bitrixKeys.all, "users"] as const,
   tasks: (groupId: string) => [...bitrixKeys.all, "tasks", groupId] as const,
 };
 
@@ -16,6 +17,14 @@ export function bitrixGroupsOptions() {
   return queryOptions({
     queryKey: bitrixKeys.groups(),
     queryFn: () => api.listBitrixGroups(),
+  });
+}
+
+/** Bitrix portal users, for the "import by responsible" flow. */
+export function bitrixUsersOptions() {
+  return queryOptions({
+    queryKey: bitrixKeys.users(),
+    queryFn: () => api.listBitrixUsers(),
   });
 }
 

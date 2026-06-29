@@ -21,10 +21,22 @@ export interface BitrixTask {
   already_synced: boolean;
 }
 
-/** Import selector: every task in the given groups and/or the explicit task ids. */
+/** One Bitrix portal user, for the "import by responsible" picker. */
+export interface BitrixUser {
+  id: string;
+  name: string;
+  email: string;
+  position: string;
+}
+
+/**
+ * Import selector: every task in the given groups, owned by the given users,
+ * and/or the explicit task ids.
+ */
 export interface BitrixImportRequest {
   group_ids?: string[];
   task_ids?: string[];
+  user_ids?: string[];
 }
 
 /** Tally of an import run. */

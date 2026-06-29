@@ -74,6 +74,44 @@ func (h *Handler) ListBitrixGroups(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// --- GET /api/bitrix/users --------------------------------------------------
+
+// BitrixUserResponse is one portal user for the "import by responsible" picker.
+type BitrixUserResponse struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Email    string `json:"email"`
+	Position string `json:"position"`
+}
+
+// ListBitrixUsers returns the portal's active users so the import UI can offer
+// importing a specific responsible's tasks (alongside importing by group).
+func (h *Handler) ListBitrixUsers(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUserID(w, r); !ok {
+		return
+	}
+	if !bitrixEndpointsEnabled() {
+		writeError(w, http.StatusServiceUnavailable, "bitrix integration not configured")
+		return
+	}
+	client := bitrix.NewClient(bitrixWebhookURL())
+	users, err := client.ListUsers(r.Context())
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "failed to list bitrix users: "+err.Error())
+		return
+	}
+	resp := make([]BitrixUserResponse, 0, len(users))
+	for _, u := range users {
+		resp = append(resp, BitrixUserResponse{
+			ID:       u.ID,
+			Name:     u.FullName(),
+			Email:    u.Email,
+			Position: u.Position,
+		})
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 // --- GET /api/bitrix/tasks?group_id=<id> ------------------------------------
 
 // BitrixTaskResponse is one task in a group, with a resolved status, the
@@ -161,6 +199,9 @@ const bitrixImportMaxTasks = 200
 type BitrixImportRequest struct {
 	GroupIDs []string `json:"group_ids"`
 	TaskIDs  []string `json:"task_ids"`
+	// UserIDs imports every task a given Bitrix user is RESPONSIBLE for — the
+	// "import by user" flow, alongside group + explicit task selection.
+	UserIDs []string `json:"user_ids"`
 }
 
 // BitrixImportResponse tallies the run. The import is asynchronous: the request
@@ -240,6 +281,29 @@ func (h *Handler) ImportBitrixTasks(w http.ResponseWriter, r *http.Request) {
 			tasks, err := st.client.ListTasks(ctx, gid, st.tag)
 			if err != nil {
 				resp.Errors = append(resp.Errors, "list group "+gid+": "+err.Error())
+				continue
+			}
+			for i := range tasks {
+				if !addID(tasks[i].ID) {
+					withinCap = false
+					break
+				}
+			}
+			if !withinCap {
+				break
+			}
+		}
+	}
+	// Expand each selected responsible into the tasks they own.
+	if withinCap {
+		for _, uid := range req.UserIDs {
+			uid = strings.TrimSpace(uid)
+			if uid == "" {
+				continue
+			}
+			tasks, err := st.client.ListTasksByUser(ctx, uid, st.tag)
+			if err != nil {
+				resp.Errors = append(resp.Errors, "list user "+uid+": "+err.Error())
 				continue
 			}
 			for i := range tasks {

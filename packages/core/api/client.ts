@@ -132,6 +132,7 @@ import type {
 import type { OnboardingCompletionPath } from "../onboarding/types";
 import type {
   BitrixGroup,
+  BitrixUser,
   BitrixTask,
   BitrixImportRequest,
   BitrixImportResponse,
@@ -2135,6 +2136,10 @@ export class ApiClient {
   // these take no explicit workspace param.
   async listBitrixGroups(): Promise<BitrixGroup[]> {
     return this.fetch(`/api/bitrix/groups`);
+  }
+
+  async listBitrixUsers(): Promise<BitrixUser[]> {
+    return this.fetch(`/api/bitrix/users`);
   }
 
   async listBitrixTasks(groupId: string): Promise<BitrixTask[]> {

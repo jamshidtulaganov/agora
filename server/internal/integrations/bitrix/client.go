@@ -472,6 +472,100 @@ func (c *Client) ListTasks(ctx context.Context, groupID, tag string) ([]Task, er
 	return tasks, nil
 }
 
+// ListUsers returns the portal's active users so the importer can offer "import
+// by responsible". Bitrix user.get pages at 50; this fetches the first page
+// (ordered by surname), which covers a typical dev team — extend with `start`
+// paging if a portal needs more.
+func (c *Client) ListUsers(ctx context.Context) ([]User, error) {
+	if c.baseURL == "" {
+		return nil, errors.New("bitrix: empty base URL")
+	}
+	endpoint := c.baseURL + "user.get"
+	form := url.Values{}
+	form.Set("FILTER[ACTIVE]", "true")
+	form.Set("sort", "LAST_NAME")
+	form.Set("order", "asc")
+
+	body, err := c.post(ctx, endpoint, form)
+	if err != nil {
+		return nil, err
+	}
+	var parsed struct {
+		Result []struct {
+			ID           jsonStr `json:"ID"`
+			Name         jsonStr `json:"NAME"`
+			LastName     jsonStr `json:"LAST_NAME"`
+			Email        jsonStr `json:"EMAIL"`
+			WorkPosition jsonStr `json:"WORK_POSITION"`
+		} `json:"result"`
+		Error     string `json:"error"`
+		ErrorDesc string `json:"error_description"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("bitrix: decode user.get (list): %w", err)
+	}
+	if parsed.Error != "" {
+		return nil, fmt.Errorf("bitrix: user.get (list) error %s: %s", parsed.Error, parsed.ErrorDesc)
+	}
+	users := make([]User, 0, len(parsed.Result))
+	for _, r := range parsed.Result {
+		id := firstNonEmpty(r.ID)
+		if id == "" {
+			continue
+		}
+		users = append(users, User{
+			ID:       id,
+			Name:     firstNonEmpty(r.Name),
+			LastName: firstNonEmpty(r.LastName),
+			Email:    firstNonEmpty(r.Email),
+			Position: firstNonEmpty(r.WorkPosition),
+		})
+	}
+	return users, nil
+}
+
+// ListTasksByUser returns the tasks a given user is RESPONSIBLE for, for the
+// "import by responsible" flow. Mirrors ListTasks but filters on RESPONSIBLE_ID
+// instead of GROUP_ID. Capped at maxTasksPerGroup.
+func (c *Client) ListTasksByUser(ctx context.Context, userID, tag string) ([]Task, error) {
+	if c.baseURL == "" {
+		return nil, errors.New("bitrix: empty base URL")
+	}
+	if strings.TrimSpace(userID) == "" {
+		return nil, errors.New("bitrix: empty user id")
+	}
+	endpoint := c.baseURL + "tasks.task.list"
+	form := url.Values{}
+	form.Set("filter[RESPONSIBLE_ID]", strings.TrimSpace(userID))
+	if t := strings.TrimSpace(tag); t != "" {
+		form.Set("filter[TAG]", t)
+	}
+	for _, f := range []string{"ID", "TITLE", "DESCRIPTION", "GROUP_ID", "RESPONSIBLE_ID", "STATUS", "TAGS"} {
+		form.Add("select[]", f)
+	}
+	form.Set("order[ID]", "DESC")
+
+	body, err := c.post(ctx, endpoint, form)
+	if err != nil {
+		return nil, err
+	}
+	var parsed listTasksResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("bitrix: decode tasks.task.list (by user): %w", err)
+	}
+	if parsed.Error != "" {
+		return nil, fmt.Errorf("bitrix: tasks.task.list (by user) error %s: %s", parsed.Error, parsed.ErrorDesc)
+	}
+	tasks := make([]Task, 0, len(parsed.Result.Tasks))
+	for _, rt := range parsed.Result.Tasks {
+		tasks = append(tasks, rt.toTask())
+		if len(tasks) >= maxTasksPerGroup {
+			break
+		}
+	}
+	return tasks, nil
+}
+
 // Comment is the subset of a Bitrix task comment Agora mirrors into an issue
 // comment. Author/Date are normalized strings; Text is the raw POST_MESSAGE
 // (BB-code, left untouched — the handler renders it verbatim).

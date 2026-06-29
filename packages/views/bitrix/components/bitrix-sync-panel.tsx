@@ -2,54 +2,96 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { DatabaseZap, Loader2, RefreshCw } from "lucide-react";
+import { DatabaseZap, Loader2, RefreshCw, Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import {
   bitrixGroupsOptions,
+  bitrixUsersOptions,
   useImportBitrixTasks,
   type BitrixImportResponse,
 } from "@agora/core/bitrix";
 import { Button } from "@agora/ui/components/ui/button";
 import { Checkbox } from "@agora/ui/components/ui/checkbox";
 import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import { cn } from "@agora/ui/lib/utils";
 import { PageHeader } from "../../layout/page-header";
 
+type Mode = "groups" | "users";
+
 /**
- * Bitrix import browser: list workgroups (each annotated with the Agora
- * workspace it routes to), select groups, and bulk-import them. Each group
- * becomes a project; its tasks become enriched issues. Drives the
- * /api/bitrix/{groups,import} endpoints.
+ * Bitrix import browser. Import EITHER by workgroup (each group → a project,
+ * routed to its workspace) OR by responsible user (all the tasks that person
+ * owns). A filter box narrows the visible list; selected rows import in one
+ * call. Drives /api/bitrix/{groups,users,import}.
  */
 export function BitrixSyncPanel() {
-  const groupsQuery = useQuery(bitrixGroupsOptions());
-  const importMut = useImportBitrixTasks();
-  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [mode, setMode] = useState<Mode>("groups");
+  const [filter, setFilter] = useState("");
+  // Selections are kept per-mode so switching tabs doesn't mix groups + users.
+  const [selectedGroups, setSelectedGroups] = useState<Record<string, boolean>>({});
+  const [selectedUsers, setSelectedUsers] = useState<Record<string, boolean>>({});
   const [result, setResult] = useState<BitrixImportResponse | null>(null);
 
+  const groupsQuery = useQuery(bitrixGroupsOptions());
+  const usersQuery = useQuery(bitrixUsersOptions());
+  const importMut = useImportBitrixTasks();
+
   const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
-  const routable = useMemo(
-    () => groups.filter((g) => g.workspace_slug),
-    [groups],
+  const users = useMemo(() => usersQuery.data ?? [], [usersQuery.data]);
+
+  const q = filter.trim().toLowerCase();
+  const visibleGroups = useMemo(
+    () => (q ? groups.filter((g) => `${g.name} ${g.id}`.toLowerCase().includes(q)) : groups),
+    [groups, q],
   );
+  const visibleUsers = useMemo(
+    () =>
+      q
+        ? users.filter((u) => `${u.name} ${u.email} ${u.position} ${u.id}`.toLowerCase().includes(q))
+        : users,
+    [users, q],
+  );
+
+  const selected = mode === "groups" ? selectedGroups : selectedUsers;
+  const setSelected = mode === "groups" ? setSelectedGroups : setSelectedUsers;
   const selectedIds = Object.keys(selected).filter((id) => selected[id]);
-  const allSelected =
-    routable.length > 0 && selectedIds.length === routable.length;
+
+  // "Select all" acts on the currently-visible (filtered) rows; for groups only
+  // routable ones can be picked.
+  const selectable =
+    mode === "groups"
+      ? visibleGroups.filter((g) => g.workspace_slug).map((g) => g.id)
+      : visibleUsers.map((u) => u.id);
+  const allSelected = selectable.length > 0 && selectable.every((id) => selected[id]);
+
+  const loading = mode === "groups" ? groupsQuery.isLoading : usersQuery.isLoading;
+  const query = mode === "groups" ? groupsQuery : usersQuery;
 
   function toggle(id: string) {
     setSelected((s) => ({ ...s, [id]: !s[id] }));
   }
   function toggleAll() {
-    setSelected(
-      allSelected ? {} : Object.fromEntries(routable.map((g) => [g.id, true])),
-    );
+    setSelected((s) => {
+      if (allSelected) {
+        const next = { ...s };
+        selectable.forEach((id) => delete next[id]);
+        return next;
+      }
+      return { ...s, ...Object.fromEntries(selectable.map((id) => [id, true])) };
+    });
   }
   function runImport() {
     if (!selectedIds.length) return;
     setResult(null);
     importMut.mutate(
-      { group_ids: selectedIds },
+      mode === "groups" ? { group_ids: selectedIds } : { user_ids: selectedIds },
       { onSuccess: (r) => setResult(r) },
     );
+  }
+
+  function switchMode(next: Mode) {
+    setMode(next);
+    setFilter("");
   }
 
   return (
@@ -58,47 +100,64 @@ export function BitrixSyncPanel() {
         <div className="flex items-center gap-2">
           <DatabaseZap className="h-4 w-4 text-muted-foreground" />
           <h1 className="text-sm font-medium">Bitrix import</h1>
-          {groups.length > 0 && (
-            <span className="font-mono text-xs tabular-nums text-muted-foreground/70">
-              {groups.length}
-            </span>
-          )}
         </div>
         <div className="flex items-center gap-2">
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => groupsQuery.refetch()}
-            disabled={groupsQuery.isFetching}
+            onClick={() => query.refetch()}
+            disabled={query.isFetching}
             aria-label="Refresh"
           >
-            <RefreshCw
-              className={`h-4 w-4 ${groupsQuery.isFetching ? "animate-spin" : ""}`}
-            />
+            <RefreshCw className={`h-4 w-4 ${query.isFetching ? "animate-spin" : ""}`} />
           </Button>
-          <Button
-            size="sm"
-            onClick={runImport}
-            disabled={!selectedIds.length || importMut.isPending}
-          >
-            {importMut.isPending && (
-              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-            )}
+          <Button size="sm" onClick={runImport} disabled={!selectedIds.length || importMut.isPending}>
+            {importMut.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
             Import{selectedIds.length ? ` ${selectedIds.length}` : ""}
           </Button>
         </div>
       </PageHeader>
 
       <div className="flex-1 overflow-auto p-5">
+        {/* Mode tabs + filter */}
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <div className="inline-flex rounded-md border border-border p-0.5">
+            {(["groups", "users"] as Mode[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => switchMode(m)}
+                className={cn(
+                  "rounded px-3 py-1 text-xs font-medium capitalize transition-colors",
+                  mode === m ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {m === "groups" ? "By group" : "By user"}
+              </button>
+            ))}
+          </div>
+          <div className="relative min-w-48 flex-1">
+            <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder={mode === "groups" ? "Filter workgroups…" : "Filter users by name / email…"}
+              className="h-8 w-full rounded-md border bg-transparent pl-7 pr-2 text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          </div>
+        </div>
+
         <p className="mb-4 text-sm text-muted-foreground">
-          Select Bitrix workgroups to import. Each group becomes a project; its
-          tasks become issues with comments, attachments, and video frames.
+          {mode === "groups"
+            ? "Select Bitrix workgroups to import. Each group's tasks become issues with comments, attachments, and live status/stage sync."
+            : "Select Bitrix users to import every task they're responsible for — routed by the workspace's project rules."}
         </p>
 
-        {groupsQuery.isError && (
+        {query.isError && (
           <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-            Failed to load Bitrix groups — is the integration configured?{" "}
-            {(groupsQuery.error as Error)?.message}
+            Failed to load Bitrix {mode} — is the integration configured?{" "}
+            {(query.error as Error)?.message}
           </div>
         )}
 
@@ -106,15 +165,13 @@ export function BitrixSyncPanel() {
           <div className="mb-4 rounded-md border border-border bg-muted/40 p-3 text-sm">
             {result.accepted ? (
               <span>
-                <span className="font-medium">Import started:</span>{" "}
-                {result.accepted} task{result.accepted === 1 ? "" : "s"} queued —
-                issues appear on the board as they sync (videos download in the
-                background).
+                <span className="font-medium">Import started:</span> {result.accepted} task
+                {result.accepted === 1 ? "" : "s"} queued — issues appear on the board as they sync.
               </span>
             ) : (
               <span>
-                <span className="font-medium">Imported:</span> {result.created}{" "}
-                created, {result.updated} updated, {result.skipped} skipped.
+                <span className="font-medium">Imported:</span> {result.created} created, {result.updated} updated,{" "}
+                {result.skipped} skipped.
               </span>
             )}
             {result.errors?.length ? (
@@ -127,7 +184,7 @@ export function BitrixSyncPanel() {
           </div>
         )}
 
-        {groupsQuery.isLoading ? (
+        {loading ? (
           <div className="space-y-2">
             {Array.from({ length: 6 }).map((_, i) => (
               <Skeleton key={i} className="h-10 w-full" />
@@ -136,46 +193,53 @@ export function BitrixSyncPanel() {
         ) : (
           <div className="rounded-md border border-border">
             <div className="flex items-center gap-3 border-b border-border bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
-              <Checkbox
-                checked={allSelected}
-                onCheckedChange={toggleAll}
-                aria-label="Select all routable groups"
-              />
-              <span className="flex-1">Workgroup</span>
-              <span className="w-40">Workspace</span>
+              <Checkbox checked={allSelected} onCheckedChange={toggleAll} aria-label="Select all" />
+              <span className="flex-1">{mode === "groups" ? "Workgroup" : "User"}</span>
+              <span className="w-44">{mode === "groups" ? "Workspace" : "Email"}</span>
             </div>
-            {groups.map((g) => {
-              const isRoutable = Boolean(g.workspace_slug);
-              return (
-                <div
-                  key={g.id}
-                  className="flex items-center gap-3 border-b border-border px-3 py-2 last:border-0"
-                >
-                  <Checkbox
-                    checked={!!selected[g.id]}
-                    onCheckedChange={() => toggle(g.id)}
-                    disabled={!isRoutable}
-                    aria-label={`Select ${g.name}`}
-                  />
-                  <span className="flex-1 text-sm">
-                    {g.name}{" "}
-                    <span className="text-muted-foreground/60">#{g.id}</span>
-                  </span>
-                  <span className="w-40 text-xs">
-                    {isRoutable ? (
-                      <span className="rounded bg-primary/10 px-1.5 py-0.5 text-primary">
-                        {g.workspace_slug}
+
+            {mode === "groups"
+              ? visibleGroups.map((g) => {
+                  const isRoutable = Boolean(g.workspace_slug);
+                  return (
+                    <div key={g.id} className="flex items-center gap-3 border-b border-border px-3 py-2 last:border-0">
+                      <Checkbox
+                        checked={!!selected[g.id]}
+                        onCheckedChange={() => toggle(g.id)}
+                        disabled={!isRoutable}
+                        aria-label={`Select ${g.name}`}
+                      />
+                      <span className="flex-1 text-sm">
+                        {g.name} <span className="text-muted-foreground/60">#{g.id}</span>
                       </span>
-                    ) : (
-                      <span className="text-muted-foreground/60">unrouted</span>
-                    )}
-                  </span>
-                </div>
-              );
-            })}
-            {!groups.length && (
+                      <span className="w-44 text-xs">
+                        {isRoutable ? (
+                          <span className="rounded bg-primary/10 px-1.5 py-0.5 text-primary">{g.workspace_slug}</span>
+                        ) : (
+                          <span className="text-muted-foreground/60">unrouted</span>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })
+              : visibleUsers.map((u) => (
+                  <div key={u.id} className="flex items-center gap-3 border-b border-border px-3 py-2 last:border-0">
+                    <Checkbox
+                      checked={!!selected[u.id]}
+                      onCheckedChange={() => toggle(u.id)}
+                      aria-label={`Select ${u.name}`}
+                    />
+                    <span className="flex-1 text-sm">
+                      {u.name}
+                      {u.position ? <span className="text-muted-foreground/60"> · {u.position}</span> : null}
+                    </span>
+                    <span className="w-44 truncate text-xs text-muted-foreground">{u.email}</span>
+                  </div>
+                ))}
+
+            {((mode === "groups" && !visibleGroups.length) || (mode === "users" && !visibleUsers.length)) && (
               <div className="px-3 py-6 text-center text-sm text-muted-foreground">
-                No Bitrix groups found.
+                {q ? `No Bitrix ${mode} match "${filter}".` : `No Bitrix ${mode} found.`}
               </div>
             )}
           </div>
