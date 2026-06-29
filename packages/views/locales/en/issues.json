@@ -416,6 +416,7 @@
     "status": "Status",
     "priority": "Priority",
     "assignee": "Assignee",
+    "project": "Project",
     "delete": "Delete",
     "update_success_one": "Updated {{count}} issue",
     "update_success_other": "Updated {{count}} issues",

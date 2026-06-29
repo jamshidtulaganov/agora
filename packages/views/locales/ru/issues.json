@@ -416,6 +416,7 @@
     "status": "Статус",
     "priority": "Приоритет",
     "assignee": "Исполнитель",
+    "project": "Проект",
     "delete": "Удалить",
     "update_success_one": "Обновлена {{count}} задача",
     "update_success_other": "Обновлено {{count}} задач",

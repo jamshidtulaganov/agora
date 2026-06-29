@@ -416,6 +416,7 @@
     "status": "Holat",
     "priority": "Muhimlik",
     "assignee": "Mas’ul",
+    "project": "Loyiha",
     "delete": "O‘chirish",
     "update_success_one": "{{count}} ta vazifa yangilandi",
     "update_success_other": "{{count}} ta vazifa yangilandi",

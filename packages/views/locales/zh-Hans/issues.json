@@ -405,6 +405,7 @@
     "status": "状态",
     "priority": "优先级",
     "assignee": "负责人",
+    "project": "项目",
     "delete": "删除",
     "update_success_other": "已更新 {{count}} 个 issue",
     "update_failed": "更新 issue 失败",

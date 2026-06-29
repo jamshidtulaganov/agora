@@ -17,7 +17,7 @@ import {
 import type { UpdateIssueRequest } from "@agora/core/types";
 import { useIssueSelectionStore } from "@agora/core/issues/stores/selection-store";
 import { useBatchUpdateIssues, useBatchDeleteIssues } from "@agora/core/issues/mutations";
-import { StatusPicker, PriorityPicker, AssigneePicker } from "./pickers";
+import { StatusPicker, PriorityPicker, AssigneePicker, ProjectPicker } from "./pickers";
 import { useT } from "../../i18n";
 import { cn } from "@agora/ui/lib/utils";
 
@@ -40,6 +40,7 @@ export function BatchActionToolbar({
   const [statusOpen, setStatusOpen] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
   const [assigneeOpen, setAssigneeOpen] = useState(false);
+  const [projectOpen, setProjectOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const batchUpdate = useBatchUpdateIssues();
   const batchDelete = useBatchDeleteIssues();
@@ -130,6 +131,16 @@ export function BatchActionToolbar({
           onOpenChange={setAssigneeOpen}
           triggerRender={<Button variant="ghost" size="sm" disabled={loading} />}
           trigger={t(($) => $.batch.assignee)}
+          align="center"
+        />
+
+        {/* Project — move the selected issues into another project */}
+        <ProjectPicker
+          onUpdate={handleBatchUpdate}
+          open={projectOpen}
+          onOpenChange={setProjectOpen}
+          triggerRender={<Button variant="ghost" size="sm" disabled={loading} />}
+          trigger={t(($) => $.batch.project)}
           align="center"
         />
 
