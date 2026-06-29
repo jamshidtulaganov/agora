@@ -146,6 +146,11 @@ export function PropertyPicker({
   const popoverTrigger = (
     <PopoverTrigger
       className={triggerRender ? undefined : "flex items-center gap-1.5 cursor-pointer rounded px-1 -mx-1 hover:bg-accent/30 transition-colors overflow-hidden"}
+      // A custom triggerRender may be a non-<button> (e.g. LabelPicker's
+      // chip-wrap <div>, which can't be a real button without nesting buttons).
+      // Tell Base UI so it applies role/tabindex semantics instead of warning.
+      // No triggerRender → default native <button>, keep native semantics.
+      nativeButton={triggerRender ? false : undefined}
       render={triggerRender}
     >
       {trigger}
