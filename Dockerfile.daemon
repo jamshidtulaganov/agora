@@ -26,9 +26,11 @@ RUN cd server && CGO_ENABLED=0 go build \
 FROM node:22-bookworm-slim
 
 # git: the daemon clones repos / manages worktrees for code tasks.
+# openssh-client: clone/push private repos over SSH (self-hosted GitLab,
+# private GitHub) using a key provisioned by the entrypoint from DAEMON_SSH_KEY.
 # ripgrep: Claude Code's file search. ca-certificates: outbound TLS.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git ca-certificates ripgrep curl \
+      git openssh-client ca-certificates ripgrep curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Claude Code CLI — the agent runtime the daemon spawns once per task.
