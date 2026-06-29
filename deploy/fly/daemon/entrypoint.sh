@@ -7,25 +7,49 @@ set -eu
 
 mkdir -p "${AGORA_WORKSPACES_ROOT:-/data/workspaces}"
 
-# Provision SSH for git clone/push when a key is supplied. DAEMON_SSH_KEY is a
-# private key (OpenSSH/PEM, multi-line) set as a Fly secret; its PUBLIC half must
-# be registered on the git hosts the daemon pulls from (self-hosted GitLab account
-# SSH key + private GitHub). Without this the cloud daemon cannot clone private
-# SSH repos. known_hosts is pre-seeded so StrictHostKeyChecking stays on with no
-# interactive prompt. Idempotent: re-run on every boot.
+# Provision git auth for the cloud daemon. DAEMON_SSH_KEY is a private key (Fly
+# secret) whose PUBLIC half is registered on the git hosts. We configure this
+# SYSTEM-WIDE (under /etc, not $HOME) so it applies no matter what HOME the
+# daemon sets for the git/ssh child processes it spawns per task — relying on
+# $HOME/.ssh failed in practice ("Host key verification failed"). Idempotent.
 if [ -n "${DAEMON_SSH_KEY:-}" ]; then
-  mkdir -p "$HOME/.ssh"
-  chmod 700 "$HOME/.ssh"
-  printf '%s\n' "$DAEMON_SSH_KEY" > "$HOME/.ssh/id_ed25519"
-  chmod 600 "$HOME/.ssh/id_ed25519"
-  : > "$HOME/.ssh/known_hosts"
-  # Self-hosted GitLab SSH (port 2222) + GitHub. Extra hosts via DAEMON_SSH_KNOWN_HOSTS.
-  ssh-keyscan -p 2222 ssh-gitlab.sdteam.uz 2>/dev/null >> "$HOME/.ssh/known_hosts" || true
-  ssh-keyscan github.com 2>/dev/null >> "$HOME/.ssh/known_hosts" || true
+  KEYDIR=/etc/agora-ssh
+  mkdir -p "$KEYDIR" && chmod 700 "$KEYDIR"
+  printf '%s\n' "$DAEMON_SSH_KEY" > "$KEYDIR/id_ed25519"
+  chmod 600 "$KEYDIR/id_ed25519"
+  : > "$KEYDIR/known_hosts" && chmod 644 "$KEYDIR/known_hosts"
+  # Best-effort pre-seed; accept-new below covers any host this misses.
+  ssh-keyscan -p 2222 ssh-gitlab.sdteam.uz 2>/dev/null >> "$KEYDIR/known_hosts" || true
+  ssh-keyscan github.com 2>/dev/null >> "$KEYDIR/known_hosts" || true
   for h in ${DAEMON_SSH_KNOWN_HOSTS:-}; do
-    ssh-keyscan "$h" 2>/dev/null >> "$HOME/.ssh/known_hosts" || true
+    ssh-keyscan "$h" 2>/dev/null >> "$KEYDIR/known_hosts" || true
   done
-  chmod 644 "$HOME/.ssh/known_hosts"
+
+  # System SSH client config: use the daemon key for these hosts and auto-accept
+  # first-seen host keys (TOFU) so a failed/empty keyscan can't break clones.
+  mkdir -p /etc/ssh/ssh_config.d
+  cat > /etc/ssh/ssh_config.d/agora-daemon.conf <<EOF
+Host ssh-gitlab.sdteam.uz
+  Port 2222
+  IdentityFile $KEYDIR/id_ed25519
+  IdentitiesOnly yes
+  StrictHostKeyChecking accept-new
+  UserKnownHostsFile $KEYDIR/known_hosts
+Host github.com
+  IdentityFile $KEYDIR/id_ed25519
+  IdentitiesOnly yes
+  StrictHostKeyChecking accept-new
+  UserKnownHostsFile $KEYDIR/known_hosts
+EOF
+  # Append to the main config if it doesn't already Include ssh_config.d.
+  if ! grep -q "ssh_config.d/\*.conf" /etc/ssh/ssh_config 2>/dev/null; then
+    cat /etc/ssh/ssh_config.d/agora-daemon.conf >> /etc/ssh/ssh_config
+  fi
+
+  # System gitconfig (HOME-independent): rewrite HTTPS GitHub remotes to SSH so
+  # the daemon key authenticates them — HTTPS clones prompt for a username and
+  # fail headless ("could not read Username for https://github.com").
+  git config --system url."git@github.com:".insteadOf "https://github.com/" || true
 fi
 
 # Authenticate to the backend with the user PAT. resolveServerURL honors
