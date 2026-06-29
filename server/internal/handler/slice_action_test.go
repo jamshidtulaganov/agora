@@ -19,6 +19,46 @@ import (
 // kind it asserts the template asks the human to REVIEW and explicitly tells
 // the agent NOT to merge, that the optional scope is appended as a "Focus on:"
 // clause, and that an unknown kind renders nothing.
+//
+// TestDocsRepoInstruction is a pure unit test of the auto_docs target wording.
+// It asserts the docs repo is named, and that a GitLab docs repo (which has no
+// `gh`/pull-request flow) gets the merge-request push-option recipe while a
+// GitHub docs repo does not — keyed on the DOCS repo's host, independent of the
+// project's code repo.
+func TestDocsRepoInstruction(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		if got := docsRepoInstruction(""); got != "" {
+			t.Errorf("empty docs repo must yield empty instruction, got: %s", got)
+		}
+		if got := docsRepoInstruction("   "); got != "" {
+			t.Errorf("whitespace docs repo must yield empty instruction, got: %s", got)
+		}
+	})
+
+	t.Run("github_no_mr_flow", func(t *testing.T) {
+		got := docsRepoInstruction("https://github.com/org/docs.git")
+		if !strings.Contains(got, "https://github.com/org/docs.git") {
+			t.Errorf("must name the docs repo, got: %s", got)
+		}
+		if strings.Contains(got, "merge_request.create") {
+			t.Errorf("GitHub docs repo must NOT get the GitLab MR flow, got: %s", got)
+		}
+	})
+
+	t.Run("gitlab_gets_mr_flow", func(t *testing.T) {
+		got := docsRepoInstruction("https://gitlab.sdteam.uz/j.tulaganov/sales-doctor-docs.git")
+		if !strings.Contains(got, "sales-doctor-docs") {
+			t.Errorf("must name the docs repo, got: %s", got)
+		}
+		if !strings.Contains(got, "merge_request.create") {
+			t.Errorf("GitLab docs repo must get the merge-request push-option flow, got: %s", got)
+		}
+		if !strings.Contains(strings.ToLower(got), "gitlab") {
+			t.Errorf("GitLab docs repo instruction must mention GitLab, got: %s", got)
+		}
+	})
+}
+
 func TestBuildSliceInstruction(t *testing.T) {
 	kinds := []string{
 		sliceActionDraftCode,

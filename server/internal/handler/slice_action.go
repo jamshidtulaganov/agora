@@ -155,8 +155,9 @@ func buildSliceInstruction(kind, scope string) string {
 			"the repo's EXISTING structure and conventions (read neighboring pages first; match their headings, " +
 			"sidebar entries, and tone). Update the relevant reference page(s) and add a changelog entry; only add " +
 			"a new page when no existing one fits. Keep the canonical locale authoritative and leave translation " +
-			"scaffolds consistent with how the repo handles locales. (3) Open a PULL REQUEST against the docs repo " +
-			"with the doc changes for human review. Do NOT merge — the human decides. If the change is purely " +
+			"scaffolds consistent with how the repo handles locales. (3) Open a review request against the docs repo " +
+			"with the doc changes for human review — a GitHub pull request, or, for a GitLab docs repo, the " +
+			"merge-request push-option flow described below. Do NOT merge — the human decides. If the change is purely " +
 			"internal (no doc-worthy surface), say so in a comment and open nothing rather than inventing content."
 	default:
 		return ""
@@ -277,12 +278,27 @@ func (h *Handler) sliceActionDocsRepoContext(ctx context.Context, issue db.Issue
 	if json.Unmarshal(project.Settings, &settings) != nil {
 		return ""
 	}
-	repo := strings.TrimSpace(settings.DocsRepo)
+	return docsRepoInstruction(settings.DocsRepo)
+}
+
+// docsRepoInstruction is the pure text policy for an auto_docs target (split out
+// so it is unit-testable without a DB). It names the docs repo and, when that
+// repo is a GitLab URL, appends the merge-request push-option flow — keyed on
+// the DOCS repo's own host, not the issue's code repo. The two can differ: a
+// project's code may live on GitHub/Bitrix while its docs site is a self-hosted
+// GitLab repo (e.g. sales-doctor-docs on gitlab.sdteam.uz), which has no
+// `gh`/pull-request flow. Returns "" when no docs repo is set.
+func docsRepoInstruction(docsRepo string) string {
+	repo := strings.TrimSpace(docsRepo)
 	if repo == "" {
 		return ""
 	}
-	return " The documentation repository for this project is " + repo +
-		" — write the docs there and open the pull request against it."
+	out := " The documentation repository for this project is " + repo +
+		" — write the docs there and open the review request against it."
+	if strings.Contains(strings.ToLower(repo), "gitlab") {
+		out += branchInstructionFor(true, "")
+	}
+	return out
 }
 
 // autoDocsEnabled gates the qa:pass → auto_docs auto-trigger. Default off so the
