@@ -66,6 +66,9 @@ type Task struct {
 	Status        string
 	ResponsibleID string
 	GroupID       string
+	// StageID is the scrum/kanban STAGE_ID (the live kanban column), resolved to
+	// a human stage name via task.stages.get. Empty for tasks not on a kanban.
+	StageID string
 	// GroupName is the Bitrix workgroup name when the payload carried a nested
 	// group object (some tasks.task.get responses include {group:{id,name}}).
 	// Often empty — the handler resolves the name from GROUP_ID via a cached
@@ -126,6 +129,11 @@ type rawTask struct {
 	RespUpper   jsonStr `json:"RESPONSIBLE_ID"`
 	GroupID     jsonStr `json:"groupId"`
 	GroupUpper  jsonStr `json:"GROUP_ID"`
+	// Scrum/kanban STAGE_ID — the live kanban column the dev team moves the task
+	// through (Новые / Code Review / Testing / Сделаны …), distinct from STATUS
+	// (the coarse Bitrix task state). Resolved to a name via task.stages.get.
+	StageID    jsonStr `json:"stageId"`
+	StageUpper jsonStr `json:"STAGE_ID"`
 	// Group is the optional nested workgroup object Bitrix includes on some
 	// tasks.task.get responses ({"group":{"id":5,"name":"Sprint 12"}}). When
 	// present it lets us pick up the group NAME without a second sonet_group.get.
@@ -171,6 +179,7 @@ func (rt rawTask) toTask() Task {
 		Title:         firstNonEmpty(rt.Title, rt.TitleUpper),
 		Description:   firstNonEmpty(rt.Description, rt.DescUpper),
 		Status:        firstNonEmpty(rt.Status, rt.StatusUpper),
+		StageID:       firstNonEmpty(rt.StageID, rt.StageUpper),
 		ResponsibleID: firstNonEmpty(rt.Responsible, rt.RespUpper),
 		GroupID:       groupID,
 		GroupName:     firstNonEmpty(rt.Group.Name, rt.Group.NameUpper, rt.GroupUp.Name, rt.GroupUp.NameUpper),
@@ -301,7 +310,7 @@ func (c *Client) GetTask(ctx context.Context, taskID string) (*Task, error) {
 	form.Set("taskId", taskID)
 	// Ask Bitrix to return the fields we map. Bitrix ignores unknown select
 	// entries, so over-asking is safe and forward-compatible.
-	for _, f := range []string{"ID", "TITLE", "DESCRIPTION", "STATUS", "RESPONSIBLE_ID", "GROUP_ID", "TAGS"} {
+	for _, f := range []string{"ID", "TITLE", "DESCRIPTION", "STATUS", "STAGE_ID", "RESPONSIBLE_ID", "GROUP_ID", "TAGS"} {
 		form.Add("select[]", f)
 	}
 
@@ -801,6 +810,56 @@ func (c *Client) DownloadFile(ctx context.Context, fileURL string) (data []byte,
 // with FILTER[ID]. Returns ("", nil) when the group is not found (so the caller
 // can fall back to a placeholder name) and a non-nil error only on transport /
 // Bitrix-error failures. Used to label a Bitrix GROUP_ID when ListGroups hasn't
+// GetTaskStages resolves a scrum/kanban entity's stages (its columns) to an
+// id→title map via task.stages.get. entityID is the Bitrix workgroup id (the
+// kanban lives on the group). Bitrix returns result as an object keyed by stage
+// id: {"<id>":{"ID":..,"TITLE":"Code Review",..}}. Returns an empty map (no
+// error) when the entity has no kanban, so the caller degrades to STATUS-only.
+func (c *Client) GetTaskStages(ctx context.Context, entityID string) (map[string]string, error) {
+	if c.baseURL == "" {
+		return nil, errors.New("bitrix: empty base URL")
+	}
+	if strings.TrimSpace(entityID) == "" {
+		return map[string]string{}, nil
+	}
+	endpoint := c.baseURL + "task.stages.get"
+	form := url.Values{}
+	form.Set("entityId", strings.TrimSpace(entityID))
+
+	body, err := c.post(ctx, endpoint, form)
+	if err != nil {
+		return nil, err
+	}
+	var parsed struct {
+		Result    map[string]rawStage `json:"result"`
+		Error     string              `json:"error"`
+		ErrorDesc string              `json:"error_description"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("bitrix: decode task.stages.get: %w", err)
+	}
+	if parsed.Error != "" {
+		return nil, fmt.Errorf("bitrix: task.stages.get error %s: %s", parsed.Error, parsed.ErrorDesc)
+	}
+	out := make(map[string]string, len(parsed.Result))
+	for key, st := range parsed.Result {
+		id := firstNonEmpty(st.ID)
+		if id == "" {
+			id = key // the map key is the stage id when the body omits it
+		}
+		if title := firstNonEmpty(st.Title); id != "" && title != "" {
+			out[id] = title
+		}
+	}
+	return out, nil
+}
+
+// rawStage is one task.stages.get entry.
+type rawStage struct {
+	ID    jsonStr `json:"ID"`
+	Title jsonStr `json:"TITLE"`
+}
+
 // been cached.
 func (c *Client) GetGroup(ctx context.Context, groupID string) (Group, error) {
 	if c.baseURL == "" {

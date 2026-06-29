@@ -67,6 +67,49 @@ func MapStatus(bitrixStatus string) string {
 	}
 }
 
+// MapStage maps a Bitrix scrum/kanban STAGE name (the live column the dev team
+// drags a task through — Новые / Code Review / Testing / Сделаны …) to an Agora
+// status. Stages are matched by KEYWORD (substring, case-insensitive) because
+// the exact labels differ per sprint and mix Russian/English. Returns "" for an
+// empty or unrecognized stage so the caller falls back to the coarse STATUS
+// mapping. Order matters: more specific buckets (done/review/test) are checked
+// before the generic in-progress/todo ones.
+func MapStage(stage string) string {
+	s := strings.ToLower(strings.TrimSpace(stage))
+	if s == "" {
+		return ""
+	}
+	switch {
+	case containsAny(s, "сделан", "done", "complete", "завершен", "готов", "closed"):
+		return StatusDone
+	case containsAny(s, "fail", "cancel", "отмен", "отклон"):
+		return StatusCancelled
+	case containsAny(s, "review", "ревью", "ревю", "merg", "мерж"):
+		return StatusInReview
+	case containsAny(s, "test", "тест", "qa", "проверк"):
+		return StatusInReview
+	case containsAny(s, "выполня", "progress", "doing", "develop", "разработ", "в работе", "процесс"):
+		return StatusInProgress
+	case containsAny(s, "block", "блок"):
+		// No Agora "blocked" status — a blocked task is still actively worked.
+		return StatusInProgress
+	case containsAny(s, "нов", "new", "todo", "unready", "given", "backlog", "бэклог", "очеред"):
+		return StatusTodo
+	default:
+		return ""
+	}
+}
+
+// containsAny reports whether s contains any of the substrings.
+func containsAny(s string, subs ...string) bool {
+	for _, sub := range subs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
+}
+
 // BitrixStatusFromIssue is the inverse of MapStatus: it maps a Agora issue
 // status to the Bitrix status code used when mirroring a status change back to
 // the portal. It is intentionally NOT a perfect round-trip (Bitrix has more

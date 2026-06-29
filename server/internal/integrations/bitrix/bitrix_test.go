@@ -425,3 +425,34 @@ func TestNewClientTrailingSlash(t *testing.T) {
 		t.Fatalf("empty baseURL should stay empty, got %q", c.baseURL)
 	}
 }
+
+// TestMapStage covers the keyword stage→status mapping against the real Bitrix
+// kanban stages discovered on the SD portal (Новые / Blocker / Выполняются /
+// Code Review / Testing(Mobile|Web) / Сделаны) plus the English board variants
+// (Unready / Doing / Need Reviewing / Ready Merging / Completed / Failed). An
+// empty or unrecognized stage returns "" so the caller falls back to STATUS.
+func TestMapStage(t *testing.T) {
+	cases := map[string]string{
+		"Новые":                  StatusTodo,
+		"Blocker":                StatusInProgress,
+		"Выполняются":            StatusInProgress,
+		"Code Review":            StatusInReview,
+		"Reayd For Testing(Mobile)": StatusInReview,
+		"Ready For Testing (Web)": StatusInReview,
+		"Testing (Mobile)":       StatusInReview,
+		"Сделаны":                StatusDone,
+		"UNREADY TASKS":          StatusTodo,
+		"DOING":                  StatusInProgress,
+		"NEED REVIEWING":         StatusInReview,
+		"READY MERGING":          StatusInReview,
+		"COMPLETED":              StatusDone,
+		"FAILED":                 StatusCancelled,
+		"":                       "",
+		"Какой-то непонятный этап": "",
+	}
+	for stage, want := range cases {
+		if got := MapStage(stage); got != want {
+			t.Errorf("MapStage(%q) = %q, want %q", stage, got, want)
+		}
+	}
+}

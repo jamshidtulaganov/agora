@@ -182,6 +182,10 @@ type bitrixRoutingConfig struct {
 	// workspace member for a Bitrix responsible who has no Agora account yet, so
 	// the imported task gets a REAL assignee (not just a metadata chip).
 	ProvisionAssignees bool
+	// StageMap overrides the keyword stage→status default per workspace, keyed by
+	// the LOWERCASED Bitrix stage name (e.g. {"code review":"in_review"}). Empty
+	// → the bitrix.MapStage keyword default applies.
+	StageMap map[string]string
 }
 
 // configured reports whether the workspace opted into named-project routing
@@ -208,10 +212,20 @@ func (h *Handler) bitrixRoutingForWorkspace(ctx context.Context, wsID pgtype.UUI
 		Rules     []bitrixPrefixRule `json:"bitrix_project_prefixes"`
 		Default   string             `json:"bitrix_default_project"`
 		Provision bool               `json:"bitrix_provision_assignees"`
+		StageMap  map[string]string  `json:"bitrix_stage_map"`
 	}
 	if len(settings) == 0 || json.Unmarshal(settings, &parsed) != nil {
 		st.routing[key] = bitrixRoutingConfig{}
 		return bitrixRoutingConfig{}
+	}
+	var stageMap map[string]string
+	if len(parsed.StageMap) > 0 {
+		stageMap = make(map[string]string, len(parsed.StageMap))
+		for name, status := range parsed.StageMap {
+			if n := strings.TrimSpace(strings.ToLower(name)); n != "" {
+				stageMap[n] = strings.TrimSpace(status)
+			}
+		}
 	}
 	rules := make([]bitrixPrefixRule, 0, len(parsed.Rules))
 	for _, r := range parsed.Rules {
@@ -222,7 +236,7 @@ func (h *Handler) bitrixRoutingForWorkspace(ctx context.Context, wsID pgtype.UUI
 		}
 	}
 	sort.SliceStable(rules, func(i, j int) bool { return len(rules[i].Prefix) > len(rules[j].Prefix) })
-	cfg := bitrixRoutingConfig{Prefixes: rules, Default: strings.TrimSpace(parsed.Default), ProvisionAssignees: parsed.Provision}
+	cfg := bitrixRoutingConfig{Prefixes: rules, Default: strings.TrimSpace(parsed.Default), ProvisionAssignees: parsed.Provision, StageMap: stageMap}
 	st.routing[key] = cfg
 	return cfg
 }

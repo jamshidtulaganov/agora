@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -287,6 +288,10 @@ type bitrixSyncState struct {
 	// groupNames maps Bitrix group id -> name, lazily filled from GetGroup so a
 	// batch doesn't re-query the same workgroup name.
 	groupNames map[string]string
+	// stagesByGroup maps a Bitrix group id -> (stage id -> stage name), lazily
+	// filled from task.stages.get so a batch resolves each kanban's stages once.
+	// A nil inner map caches a failed/absent lookup so it isn't retried per task.
+	stagesByGroup map[string]map[string]string
 	// projectByTitle maps "<workspaceID>:<title>" -> project id (zero/Invalid
 	// when no such project), so title-prefix routing resolves each named product
 	// project (sd-main / sd-cs / sd-billing) once per batch.
@@ -320,6 +325,7 @@ func (h *Handler) newBitrixSyncState() *bitrixSyncState {
 		projectCache:   map[string]pgtype.UUID{},
 		sprintCache:    map[string]pgtype.UUID{},
 		groupNames:     map[string]string{},
+		stagesByGroup:  map[string]map[string]string{},
 		userCache:      map[string]*bitrix.User{},
 		projectByTitle: map[string]pgtype.UUID{},
 		routing:        map[string]bitrixRoutingConfig{},
@@ -412,7 +418,12 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		return fmt.Errorf("dedup lookup: %w", err)
 	}
 
-	mappedStatus := bitrix.MapStatus(task.Status)
+	// Status: prefer the live kanban STAGE (Стадия — the column the dev team
+	// drags the task through) over the coarse Bitrix STATUS, with the workspace's
+	// optional stage→status override applied. Falls back to STATUS when the task
+	// has no resolvable stage.
+	stageName := h.bitrixStageName(ctx, st, task.GroupID, task.StageID)
+	mappedStatus := resolveBitrixIssueStatus(stageName, task.Status, h.bitrixRoutingForWorkspace(ctx, ws.ID, st).StageMap)
 
 	if found {
 		// Already synced. Reconcile status AND assignee, doing both RAW (no bus
@@ -448,7 +459,19 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		// Always refresh the responsible's display metadata (name/email/position)
 		// so the assignee is visible even when they aren't an Agora member, and so
 		// older issues synced before this existed get backfilled on re-import.
-		h.setBitrixResponsibleMetadata(ctx, existing.ID, ws.ID, task.ResponsibleID, responsible)
+		h.setBitrixIssueMetadata(ctx, existing.ID, ws.ID, task.ResponsibleID, responsible, stageName, task.ID)
+
+		// Backfill the task's Bitrix comments (+ attachments) onto issues that were
+		// imported before content-import existed, or first created via this update
+		// path — so an existing issue gains its Bitrix discussion on the next sync
+		// instead of only brand-new imports getting it. One-shot: importBitrix*
+		// stamps a *_imported metadata flag, so a later re-sync skips the work.
+		if st.importContent && metaString(existing.Metadata, bitrixCommentsImportedMetaKey) == "" {
+			if ownerID, oerr := h.bitrixWorkspaceOwner(ctx, ws.ID); oerr == nil {
+				h.importBitrixComments(ctx, ws.ID, existing.ID, ownerID, task.ID, st)
+				h.importBitrixAttachments(ctx, ws.ID, existing.ID, ownerID, task.ID, st)
+			}
+		}
 
 		// Resolve the task's group to its Agora target (project + optional sprint).
 		// For a group already mapped to a project this returns that project with no
@@ -572,7 +595,7 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 
 	// Record the Bitrix responsible (name/email/position) so the assignee shows
 	// in the issue's Metadata panel even when they aren't an Agora member.
-	h.setBitrixResponsibleMetadata(ctx, res.Issue.ID, ws.ID, task.ResponsibleID, responsible)
+	h.setBitrixIssueMetadata(ctx, res.Issue.ID, ws.ID, task.ResponsibleID, responsible, stageName, task.ID)
 
 	slog.Info("bitrix sync: created issue from task",
 		"issue_id", util.UUIDToString(res.Issue.ID),
@@ -715,6 +738,50 @@ func (h *Handler) bitrixGroupName(ctx context.Context, groupID string, st *bitri
 	}
 	st.groupNames[groupID] = name
 	return name
+}
+
+// bitrixStageName resolves (and caches per group) a Bitrix STAGE_ID to its
+// kanban stage name via task.stages.get. Returns "" when the task is not on a
+// kanban, the lookup fails, or the id isn't in the group's stage set — the
+// caller then falls back to the coarse STATUS mapping.
+func (h *Handler) bitrixStageName(ctx context.Context, st *bitrixSyncState, groupID, stageID string) string {
+	groupID = strings.TrimSpace(groupID)
+	stageID = strings.TrimSpace(stageID)
+	if groupID == "" || stageID == "" {
+		return ""
+	}
+	stages, ok := st.stagesByGroup[groupID]
+	if !ok {
+		fetched, err := st.client.GetTaskStages(ctx, groupID)
+		if err != nil {
+			slog.Debug("bitrix sync: task.stages.get failed", "group_id", groupID, "error", err)
+			st.stagesByGroup[groupID] = nil // cache the miss
+			return ""
+		}
+		stages = fetched
+		st.stagesByGroup[groupID] = stages
+	}
+	return stages[stageID]
+}
+
+// resolveBitrixIssueStatus maps a Bitrix task to a Agora status, preferring the
+// live kanban STAGE (the column the dev team drags it through) over the coarse
+// STATUS. A workspace may override the stage→status mapping in
+// settings.bitrix_stage_map (exact stage name, case-insensitive); otherwise the
+// keyword default (bitrix.MapStage) applies. Falls back to MapStatus when the
+// task has no resolvable stage.
+func resolveBitrixIssueStatus(stageName, bitrixStatus string, stageMap map[string]string) string {
+	if name := strings.TrimSpace(stageName); name != "" {
+		if stageMap != nil {
+			if mapped, ok := stageMap[strings.ToLower(name)]; ok && strings.TrimSpace(mapped) != "" {
+				return mapped
+			}
+		}
+		if mapped := bitrix.MapStage(name); mapped != "" {
+			return mapped
+		}
+	}
+	return bitrix.MapStatus(bitrixStatus)
 }
 
 // findIssueByBitrixTaskID returns the issue in the workspace whose metadata
@@ -964,11 +1031,32 @@ func (h *Handler) bitrixResponsible(ctx context.Context, st *bitrixSyncState, re
 	return &cached
 }
 
-// setBitrixResponsibleMetadata records the Bitrix responsible's id, display
-// name, email and position on the issue metadata so the assignee is visible in
-// the issue's Metadata panel even when the person isn't an Agora member (and so
-// can't be the native assignee). Best-effort per key; runs on create + re-sync.
-func (h *Handler) setBitrixResponsibleMetadata(ctx context.Context, issueID, wsID pgtype.UUID, responsibleID string, u *bitrix.User) {
+// bitrixTaskURL builds the deep link back to a task in the Bitrix portal, e.g.
+// https://salesdoc.bitrix24.kz/company/personal/user/0/tasks/task/view/53733/.
+// The portal origin is parsed from BITRIX_WEBHOOK_URL; returns "" when that is
+// unset or unparseable, so the caller simply skips the link metadata.
+func bitrixTaskURL(taskID string) string {
+	id := strings.TrimSpace(taskID)
+	if id == "" {
+		return ""
+	}
+	raw := bitrixWebhookURL()
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host + "/company/personal/user/0/tasks/task/view/" + id + "/"
+}
+
+// setBitrixIssueMetadata records the Bitrix provenance on the issue metadata:
+// the responsible person (id/name/email/position — so the assignee is visible
+// even when they're not an Agora member), the live kanban STAGE name, and a
+// deep link back to the original Bitrix task. Best-effort per key; runs on
+// create + re-sync.
+func (h *Handler) setBitrixIssueMetadata(ctx context.Context, issueID, wsID pgtype.UUID, responsibleID string, u *bitrix.User, stageName, taskID string) {
 	kv := [][2]string{{"bitrix_responsible_id", strings.TrimSpace(responsibleID)}}
 	if u != nil {
 		kv = append(kv,
@@ -976,6 +1064,12 @@ func (h *Handler) setBitrixResponsibleMetadata(ctx context.Context, issueID, wsI
 			[2]string{"bitrix_responsible_email", strings.TrimSpace(u.Email)},
 			[2]string{"bitrix_responsible_position", strings.TrimSpace(u.Position)},
 		)
+	}
+	if s := strings.TrimSpace(stageName); s != "" {
+		kv = append(kv, [2]string{"bitrix_stage", s})
+	}
+	if link := bitrixTaskURL(taskID); link != "" {
+		kv = append(kv, [2]string{"bitrix_task_url", link})
 	}
 	for _, p := range kv {
 		if p[1] == "" {
