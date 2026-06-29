@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { BreadcrumbHeader, type BreadcrumbSegment } from "../../layout/breadcrumb-header";
 import { Skeleton } from "@agora/ui/components/ui/skeleton";
-import { Button } from "@agora/ui/components/ui/button";
+import { Button, buttonVariants } from "@agora/ui/components/ui/button";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@agora/ui/components/ui/resizable";
 import { Sheet, SheetContent } from "@agora/ui/components/ui/sheet";
 import { useIsMobile } from "@agora/ui/hooks/use-mobile";
@@ -53,7 +53,7 @@ import { IssueActionsDropdown, useIssueActions } from "../actions";
 import { ProjectPicker } from "../../projects/components/project-picker";
 import { SprintPicker } from "../../projects/components/sprint-picker";
 import { LocalDirectoryHint } from "../../projects/components/local-directory-hint";
-import { BitrixAssigneeChip } from "../../bitrix";
+import { BitrixAssigneeChip, BitrixTaskLink } from "../../bitrix";
 import { CommentCard } from "./comment-card";
 import { CollapsibleDescription } from "./collapsible-description";
 import { LiveAgentChangesFeed } from "./live-agent-changes-feed";
@@ -63,6 +63,8 @@ import { collectThreadReplies, deriveThreadResolution } from "./thread-utils";
 import { IssueAgentHeaderChip } from "./issue-agent-header-chip";
 import { ExecutionLogSection } from "./execution-log-section";
 import { EditorSection } from "./editor-section";
+import { IssueRepoSection } from "./issue-repo-section";
+import { WorkModeSwitch } from "./work-mode-switch";
 import { AgentWorkingIndicator } from "./agent-working-indicator";
 import { SliceActionsSection } from "./slice-actions-section";
 import { PullRequestList } from "./pull-request-list";
@@ -74,6 +76,7 @@ import { useActorName } from "@agora/core/workspace/hooks";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { useRecentContextStore } from "@agora/core/chat";
 import { issueListOptions, issueDetailOptions, childIssuesOptions, issueUsageOptions, issueAttachmentsOptions } from "@agora/core/issues/queries";
+import { getWorkMode, useSetWorkMode, type WorkMode } from "@agora/core/issues/work-mode";
 import { projectDetailOptions } from "@agora/core/projects/queries";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { issueLabelsOptions } from "@agora/core/labels";
@@ -1266,6 +1269,22 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const actions = useIssueActions(issue);
   const handleUpdateField = actions.updateField;
 
+  // Per-issue work mode (full_pipeline | in_editor) — stored in issue metadata.
+  const setWorkMode = useSetWorkMode(wsId, id);
+  const handleWorkModeChange = useCallback(
+    (mode: WorkMode) => {
+      setWorkMode.mutate(mode, {
+        onError: (err: unknown) =>
+          toast.error(
+            err instanceof Error && err.message
+              ? err.message
+              : "Failed to update mode",
+          ),
+      });
+    },
+    [setWorkMode],
+  );
+
   // Labels live in their own query (not on the issue body) — fetch the count
   // here so seeding can decide whether the "Labels" optional row should be
   // shown for an issue that already has labels attached.
@@ -1425,6 +1444,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               {!issue.assignee_id && (
                 <BitrixAssigneeChip metadata={issue.metadata as Record<string, unknown> | null | undefined} />
               )}
+              <BitrixTaskLink metadata={issue.metadata as Record<string, unknown> | null | undefined} />
             </div>
           </PropRow>
           <PropRow label={t(($) => $.detail.prop_project)}>
@@ -1598,10 +1618,42 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
         </div>}
       </div>
 
-      {/* AI slice-actions — the human-protagonist layer. Hand a slice of work
-          (draft code / docs / tests / review) to the issue's agent; the agent
-          draft surfaces below in the execution log. */}
-      <SliceActionsSection issueId={id} />
+      {/* Repository — which repo(s) the issue's project is bound to. Surfaces
+          the code source the moment a task starts; prompts to connect one when
+          none, so agents don't run in a slim worktree with no project code. */}
+      <IssueRepoSection projectId={issue.project_id} />
+
+      {/* How to work this issue — two modes. Prompts: hand the agent scoped
+          slice-actions. Editor: co-code live in the embedded editor. The choice
+          persists per issue (work_mode in metadata) and drives which agents do. */}
+      <div className="space-y-1.5">
+        <WorkModeSwitch
+          value={getWorkMode(issue)}
+          onChange={handleWorkModeChange}
+          disabled={setWorkMode.isPending}
+        />
+        <p className="px-1 text-[11px] leading-snug text-muted-foreground">
+          {getWorkMode(issue) === "in_editor"
+            ? "Co-code live in the editor — agents run on the worktree, you watch and edit."
+            : "Hand the agent scoped prompts — draft code, docs, tests, or review."}
+        </p>
+      </div>
+
+      {/* Prompts mode — AI slice-actions (draft code / docs / tests / review). */}
+      {getWorkMode(issue) === "full_pipeline" && (
+        <SliceActionsSection issueId={id} />
+      )}
+
+      {/* Editor mode — live browser VS Code on the agent's worktree. */}
+      {getWorkMode(issue) === "in_editor" && (
+        <EditorSection
+          issueId={id}
+          defaultOpen
+          coCode
+          issueKey={issue.identifier}
+          issueTitle={issue.title}
+        />
+      )}
 
       {/* Chat-style "agent is working / typing…" row — appears the moment a
           comment or assignment puts the issue's agent into a queued/running
@@ -1613,10 +1665,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           owns its own collapse state and WS subscriptions. Hides itself
           when there are no runs to show. */}
       <ExecutionLogSection issueId={id} />
-
-      {/* Code editor — launches browser VS Code (code-server) on the agent's
-          worktree and iframes it. Lazy: only runs when the section is opened. */}
-      <EditorSection issueId={id} />
 
       {/* Token usage */}
       {usage && usage.task_count > 0 && (
@@ -1801,50 +1849,32 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             {onDone && issue.status !== "done" && issue.status !== "cancelled" && (
               <Tooltip>
                 <TooltipTrigger
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="text-muted-foreground"
-                      onClick={() => { handleUpdateField({ status: "done" }); onDone?.(); }}
-                    >
-                      <CircleCheck />
-                    </Button>
-                  }
-                />
+                  className={buttonVariants({ variant: "ghost", size: "icon-sm", className: "text-muted-foreground" })}
+                  onClick={() => { handleUpdateField({ status: "done" }); onDone?.(); }}
+                >
+                  <CircleCheck />
+                </TooltipTrigger>
                 <TooltipContent side="bottom">{t(($) => $.detail.mark_done_tooltip)}</TooltipContent>
               </Tooltip>
             )}
             {onDone && issue.status === "done" && (
               <Tooltip>
                 <TooltipTrigger
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="text-muted-foreground"
-                      onClick={() => { onDone(); }}
-                    >
-                      <Archive />
-                    </Button>
-                  }
-                />
+                  className={buttonVariants({ variant: "ghost", size: "icon-sm", className: "text-muted-foreground" })}
+                  onClick={() => { onDone(); }}
+                >
+                  <Archive />
+                </TooltipTrigger>
                 <TooltipContent side="bottom">{t(($) => $.detail.archive_tooltip)}</TooltipContent>
               </Tooltip>
             )}
             <Tooltip>
               <TooltipTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className={cn("text-muted-foreground", actions.isPinned && "text-foreground")}
-                    onClick={actions.togglePin}
-                  >
-                    {actions.isPinned ? <PinOff /> : <Pin />}
-                  </Button>
-                }
-              />
+                className={buttonVariants({ variant: "ghost", size: "icon-sm", className: cn("text-muted-foreground", actions.isPinned && "text-foreground") })}
+                onClick={actions.togglePin}
+              >
+                {actions.isPinned ? <PinOff /> : <Pin />}
+              </TooltipTrigger>
               <TooltipContent side="bottom">{actions.isPinned ? t(($) => $.detail.unpin_tooltip) : t(($) => $.detail.pin_tooltip)}</TooltipContent>
             </Tooltip>
             <IssueActionsDropdown
@@ -1861,17 +1891,11 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             />
             <Tooltip>
               <TooltipTrigger
-                render={
-                  <Button
-                    variant={sidebarOpen ? "secondary" : "ghost"}
-                    size="icon-sm"
-                    className={sidebarOpen ? "" : "text-muted-foreground"}
-                    onClick={handleToggleSidebar}
-                  >
-                    <PanelRight />
-                  </Button>
-                }
-              />
+                className={buttonVariants({ variant: sidebarOpen ? "secondary" : "ghost", size: "icon-sm", className: sidebarOpen ? "" : "text-muted-foreground" })}
+                onClick={handleToggleSidebar}
+              >
+                <PanelRight />
+              </TooltipTrigger>
               <TooltipContent side="bottom">{t(($) => $.detail.sidebar_tooltip)}</TooltipContent>
             </Tooltip>
             </>
@@ -2044,17 +2068,12 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                   />
                   <Tooltip>
                     <TooltipTrigger
-                      render={
-                        <button
-                          type="button"
-                          className="ml-auto inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-                          onClick={() => actions.openCreateSubIssue()}
-                          aria-label={t(($) => $.detail.add_sub_issue_aria)}
-                        >
-                          <Plus className="h-4 w-4" />
-                        </button>
-                      }
-                    />
+                      className="ml-auto inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                      onClick={() => actions.openCreateSubIssue()}
+                      aria-label={t(($) => $.detail.add_sub_issue_aria)}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </TooltipTrigger>
                     <TooltipContent side="bottom">{t(($) => $.detail.add_sub_issue_tooltip)}</TooltipContent>
                   </Tooltip>
                 </div>
