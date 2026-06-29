@@ -76,7 +76,7 @@ const STEPS: Step[] = [
     description:
       "The assignee field is polymorphic. Drop in a teammate or a coding agent through the exact same picker. The agent starts the moment it's assigned.",
     points: [
-      "Agents render with a distinct emerald avatar.",
+      "Agents render with a distinct purple avatar.",
       "Reassign between human and agent at any point.",
       "Status moves to In Progress automatically when an agent picks up.",
     ],
