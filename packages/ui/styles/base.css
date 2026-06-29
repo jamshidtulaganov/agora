@@ -212,6 +212,76 @@
   }
 }
 
+/* Agora loader: the assembly mark in motion.
+ *  - the whole ring orbits slowly
+ *  - each participant node pulses in sequence, so a highlight travels around
+ *    the circle (stagger via per-node animation-delay set inline)
+ *  - the shared-center node breathes
+ *  - the connecting ring shimmers
+ * All node transforms scale about their own center via transform-box: fill-box. */
+.agora-loader-orbit {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: agora-loader-orbit 6s linear infinite;
+}
+
+.agora-loader-node {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: agora-loader-node 1.5s ease-in-out infinite;
+}
+
+.agora-loader-core {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: agora-loader-core 1.8s ease-in-out infinite;
+}
+
+.agora-loader-ring {
+  animation: agora-loader-ring 1.8s ease-in-out infinite;
+}
+
+@keyframes agora-loader-orbit {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes agora-loader-node {
+  0%, 100% { opacity: 0.35; transform: scale(0.78); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
+@keyframes agora-loader-core {
+  0%, 100% { opacity: 0.85; transform: scale(0.88); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
+@keyframes agora-loader-ring {
+  0%, 100% { opacity: 0.16; }
+  50% { opacity: 0.4; }
+}
+
+/* Wordmark under the loader: fades up once on mount, then holds. */
+.agora-loader-wordmark {
+  animation: agora-loader-wordmark 0.7s ease-out 0.15s both;
+}
+
+@keyframes agora-loader-wordmark {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agora-loader-orbit,
+  .agora-loader-node,
+  .agora-loader-core,
+  .agora-loader-ring {
+    animation: none;
+  }
+  .agora-loader-wordmark {
+    animation: none;
+  }
+}
+
 /* Sidebar: open triggers (dropdown/popover) get active background */
 [data-sidebar="menu-button"][data-popup-open] {
   background-color: var(--sidebar-accent);

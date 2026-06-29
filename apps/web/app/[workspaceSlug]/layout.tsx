@@ -9,7 +9,7 @@ import { setCurrentWorkspace } from "@agora/core/platform";
 import { useAuthStore } from "@agora/core/auth";
 import { NoAccessPage } from "@agora/views/workspace/no-access-page";
 import { WelcomeAfterOnboarding } from "@agora/views/workspace/welcome-after-onboarding";
-import { AgoraIcon } from "@agora/ui/components/common/agora-icon";
+import { AgoraLoader } from "@agora/ui/components/common/agora-loader";
 import { useWorkspaceSeen } from "@agora/views/workspace/use-workspace-seen";
 
 export default function WorkspaceLayout({
@@ -75,8 +75,8 @@ export default function WorkspaceLayout({
   const hasBeenSeen = useWorkspaceSeen(workspaceSlug, !!workspace);
 
   const loadingIndicator = (
-    <div className="flex h-svh items-center justify-center">
-      <AgoraIcon className="size-6 animate-pulse" />
+    <div className="flex h-svh items-center justify-center bg-background">
+      <AgoraLoader size={88} wordmark className="text-foreground" />
     </div>
   );
 

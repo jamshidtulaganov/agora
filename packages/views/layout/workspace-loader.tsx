@@ -1,6 +1,6 @@
 "use client";
 
-import { AgoraIcon } from "@agora/ui/components/common/agora-icon";
+import { AgoraLoader } from "@agora/ui/components/common/agora-loader";
 import { useT } from "../i18n";
 
 /**
@@ -21,8 +21,8 @@ export function WorkspaceLoader({ name }: { name?: string | null }) {
       aria-live="polite"
       role="status"
     >
-      <div className="flex flex-col items-center gap-4">
-        <AgoraIcon className="size-8 animate-pulse" />
+      <div className="flex flex-col items-center gap-5">
+        <AgoraLoader size={80} className="text-foreground" />
         {name ? (
           <p className="text-sm text-muted-foreground">
             {t(($) => $.workspace_loader.loading_named_prefix)}{" "}
