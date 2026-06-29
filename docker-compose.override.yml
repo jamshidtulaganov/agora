@@ -41,3 +41,13 @@ services:
       ZOHO_SPRINTS_TEAM: ${ZOHO_SPRINTS_TEAM:-}
       ZOHO_SPRINTS_ACCOUNTS_HOST: ${ZOHO_SPRINTS_ACCOUNTS_HOST:-}
       ZOHO_SPRINTS_API_HOST: ${ZOHO_SPRINTS_API_HOST:-}
+      # SD QA boxes: SSH git-sync (deploy-qa) to remote SalesDoctor target boxes.
+      # Backend SSHes into the box with AGORA_REMOTE_BOXES_SSH_KEY and fetches the
+      # PR branch with AGORA_REMOTE_BOXES_GIT_TOKEN injected ephemerally (never set-url'd).
+      AGORA_REMOTE_BOXES_ENABLED: ${AGORA_REMOTE_BOXES_ENABLED:-}
+      AGORA_REMOTE_BOXES_SSH_KEY: ${AGORA_REMOTE_BOXES_SSH_KEY:-}
+      AGORA_REMOTE_BOXES_GIT_TOKEN: ${AGORA_REMOTE_BOXES_GIT_TOKEN:-}
+    volumes:
+      # Control-plane private key (read-only) the backend uses to reach the QA
+      # boxes over SSH; in-container path must match AGORA_REMOTE_BOXES_SSH_KEY.
+      - ${AGORA_REMOTE_BOXES_SSH_KEY_HOST:-/Users/jamshid/.ssh/agora_remote_boxes}:/keys/agora_remote_boxes:ro
