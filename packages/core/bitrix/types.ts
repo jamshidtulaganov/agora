@@ -39,6 +39,13 @@ export interface BitrixImportRequest {
   user_ids?: string[];
 }
 
+/** Live progress of the most recent (background) import run. */
+export interface BitrixImportProgress {
+  total: number;
+  synced: number;
+  running: boolean;
+}
+
 /** Tally of an import run. */
 export interface BitrixImportResponse {
   created: number;

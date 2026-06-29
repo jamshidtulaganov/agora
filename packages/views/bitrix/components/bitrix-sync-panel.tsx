@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   bitrixGroupsOptions,
   bitrixUsersOptions,
+  bitrixImportProgressOptions,
   useImportBitrixTasks,
   type BitrixImportResponse,
 } from "@agora/core/bitrix";
@@ -35,6 +36,16 @@ export function BitrixSyncPanel() {
   const groupsQuery = useQuery(bitrixGroupsOptions());
   const usersQuery = useQuery(bitrixUsersOptions());
   const importMut = useImportBitrixTasks();
+
+  // Poll live import progress while a run is in flight (started this session).
+  const [polling, setPolling] = useState(false);
+  const progressQuery = useQuery(bitrixImportProgressOptions(polling));
+  const progress = progressQuery.data;
+  // Stop polling once the backend reports the run finished.
+  if (polling && progress && !progress.running) {
+    // defer state update out of render
+    queueMicrotask(() => setPolling(false));
+  }
 
   const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
   const users = useMemo(() => usersQuery.data ?? [], [usersQuery.data]);
@@ -91,7 +102,12 @@ export function BitrixSyncPanel() {
     setResult(null);
     importMut.mutate(
       { group_ids: selectedGroupIds, user_ids: selectedUserIds },
-      { onSuccess: (r) => setResult(r) },
+      {
+        onSuccess: (r) => {
+          setResult(r);
+          if (r.accepted) setPolling(true);
+        },
+      },
     );
   }
 
@@ -168,6 +184,27 @@ export function BitrixSyncPanel() {
           <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
             Failed to load Bitrix {mode} — is the integration configured?{" "}
             {(query.error as Error)?.message}
+          </div>
+        )}
+
+        {progress && progress.total > 0 && (polling || progress.running) && (
+          <div className="mb-4 rounded-md border border-border bg-muted/30 p-3">
+            <div className="mb-1.5 flex items-center justify-between text-xs">
+              <span className="font-medium">
+                {progress.running ? "Importing…" : "Import complete"}
+              </span>
+              <span className="font-mono tabular-nums text-muted-foreground">
+                {progress.synced}/{progress.total}
+              </span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary transition-all"
+                style={{
+                  width: `${progress.total ? Math.round((progress.synced / progress.total) * 100) : 0}%`,
+                }}
+              />
+            </div>
           </div>
         )}
 

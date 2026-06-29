@@ -136,6 +136,7 @@ import type {
   BitrixTask,
   BitrixImportRequest,
   BitrixImportResponse,
+  BitrixImportProgress,
 } from "../bitrix/types";
 import type { Plugin, CreatePluginRequest } from "../plugins/types";
 import type {
@@ -2140,6 +2141,10 @@ export class ApiClient {
 
   async listBitrixUsers(): Promise<BitrixUser[]> {
     return this.fetch(`/api/bitrix/users`);
+  }
+
+  async getBitrixImportProgress(): Promise<BitrixImportProgress> {
+    return this.fetch(`/api/bitrix/import/progress`);
   }
 
   async listBitrixTasks(groupId: string): Promise<BitrixTask[]> {

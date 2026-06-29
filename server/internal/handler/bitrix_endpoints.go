@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/integrations/bitrix"
@@ -366,18 +367,75 @@ func (h *Handler) ImportBitrixTasks(w http.ResponseWriter, r *http.Request) {
 
 	// Per-task sync (downloads + enrichment) runs in the background so a big or
 	// video-heavy group doesn't blow the request budget. The board updates live
-	// over the websocket as each issue is created/reconciled.
+	// over the websocket as each issue is created/reconciled. A lightweight
+	// in-memory progress tracker lets the import UI show a live "synced X/N".
+	bitrixImportProgressStart(len(taskIDs))
 	go func() {
 		defer cancel()
 		for _, id := range taskIDs {
 			if err := h.syncBitrixTaskWithState(ctx, id, cfg, st); err != nil {
 				slog.Warn("bitrix import: task sync failed", "task_id", id, "error", err)
 			}
+			bitrixImportProgressInc()
 		}
+		bitrixImportProgressFinish()
 		slog.Info("bitrix import: background sync finished",
 			"requested", len(taskIDs), "created", st.created, "updated", st.updated, "skipped", st.skipped)
 	}()
 
 	resp.Accepted = len(taskIDs)
 	writeJSON(w, http.StatusAccepted, resp)
+}
+
+// bitrixImportProgressState is a process-wide snapshot of the most recent import
+// run, so the UI can poll a live "synced X/N" while the background sync streams
+// issues onto the board. Single-run (imports are operator-driven + serial in
+// practice); a new run overwrites the previous snapshot.
+var bitrixImportProgressState struct {
+	sync.Mutex
+	Total   int
+	Synced  int
+	Running bool
+}
+
+func bitrixImportProgressStart(total int) {
+	bitrixImportProgressState.Lock()
+	bitrixImportProgressState.Total = total
+	bitrixImportProgressState.Synced = 0
+	bitrixImportProgressState.Running = total > 0
+	bitrixImportProgressState.Unlock()
+}
+
+func bitrixImportProgressInc() {
+	bitrixImportProgressState.Lock()
+	bitrixImportProgressState.Synced++
+	bitrixImportProgressState.Unlock()
+}
+
+func bitrixImportProgressFinish() {
+	bitrixImportProgressState.Lock()
+	bitrixImportProgressState.Running = false
+	bitrixImportProgressState.Unlock()
+}
+
+// BitrixImportProgressResponse mirrors the import progress for the UI poll.
+type BitrixImportProgressResponse struct {
+	Total   int  `json:"total"`
+	Synced  int  `json:"synced"`
+	Running bool `json:"running"`
+}
+
+// GetBitrixImportProgress returns the live progress of the most recent import.
+func (h *Handler) GetBitrixImportProgress(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUserID(w, r); !ok {
+		return
+	}
+	bitrixImportProgressState.Lock()
+	resp := BitrixImportProgressResponse{
+		Total:   bitrixImportProgressState.Total,
+		Synced:  bitrixImportProgressState.Synced,
+		Running: bitrixImportProgressState.Running,
+	}
+	bitrixImportProgressState.Unlock()
+	writeJSON(w, http.StatusOK, resp)
 }

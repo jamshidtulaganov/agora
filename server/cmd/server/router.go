@@ -593,6 +593,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Get("/api/bitrix/users", h.ListBitrixUsers)
 		r.Get("/api/bitrix/tasks", h.ListBitrixTasks)
 		r.Post("/api/bitrix/import", h.ImportBitrixTasks)
+		r.Get("/api/bitrix/import/progress", h.GetBitrixImportProgress)
 		r.Post("/api/bitrix/register-webhook", h.RegisterBitrixWebhook)
 
 		// SD: Zoho Projects importer (Phase 1, one-way Zoho -> Agora). Unlike

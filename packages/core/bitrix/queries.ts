@@ -28,6 +28,16 @@ export function bitrixUsersOptions() {
   });
 }
 
+/** Live progress of the most recent background import run. Poll while running. */
+export function bitrixImportProgressOptions(enabled: boolean) {
+  return queryOptions({
+    queryKey: [...bitrixKeys.all, "import-progress"] as const,
+    queryFn: () => api.getBitrixImportProgress(),
+    enabled,
+    refetchInterval: enabled ? 1500 : false,
+  });
+}
+
 /** Tasks in one Bitrix workgroup, with already-synced state. */
 export function bitrixTasksOptions(groupId: string) {
   return queryOptions({
