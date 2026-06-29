@@ -1,0 +1,236 @@
+---
+title: Protocol Families
+description: How Agora's 13 agent backends collapse into 4 stdio transport families, with the exact flags, frames, and watchdogs each one hardcodes.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Audience">
+**Developers.** This page is for engineers adding, debugging, or reasoning about an agent backend in `server/pkg/agent/`. Every backend implements the same `Backend` interface (see [/developers/agentic/backend-interface](/developers/agentic/backend-interface)) but speaks one of four wire protocols to its CLI subprocess. For how the daemon decides *which* backend to spawn see [/developers/agentic/agent-runtime-contract](/developers/agentic/agent-runtime-contract); for how MCP servers reach each family see [/developers/agentic/mcp-injection](/developers/agentic/mcp-injection); for the thinking-level / model knobs each family wires up see [/developers/agentic/models-and-thinking](/developers/agentic/models-and-thinking). To add a new backend, start at [/developers/agentic/add-a-backend](/developers/agentic/add-a-backend).
+</Callout>
+
+## The four families
+
+Agora ships 13 agent backends. They are not 13 unrelated integrations — they collapse into **four transport families**, where every member of a family drives its CLI subprocess over stdin/stdout with the same wire shape. The differences within a family are which flags get hardcoded and how MCP servers are delivered; the differences *between* families are how the prompt is sent, whether the process is one-shot or stateful, and how completion is detected.
+
+| Family | Transport | Members | Reference impl |
+|---|---|---|---|
+| 1. Bidirectional stream-json | NDJSON over stdin **and** stdout, prompt as a JSON user frame | `claude`, `codebuddy`, `cursor` | `claude.go` |
+| 2. One-shot stream-json (prompt as flag) | NDJSON on stdout, prompt passed via argv | `gemini` | `gemini.go` |
+| 3. One-shot JSON | a JSON blob (or NDJSON) on stdout, prompt as positional / flag, process exits | `opencode`, `openclaw`, `pi`, `copilot`, `antigravity` | `opencode.go`, `openclaw.go` |
+| 4. Stateful JSON-RPC / ACP | JSON-RPC 2.0 request/response over stdin/stdout, multi-step session lifecycle | `codex` (app-server), `hermes`, `kimi`, `kiro` (ACP) | `codex.go`, `hermes.go` |
+
+The reference implementations are `claude.go`, `gemini.go`, `opencode.go` + `openclaw.go`, and `codex.go` + `hermes.go`. The other members share each reference's transport code path with a different executable name and blocked-arg set.
+
+What is identical everywhere, regardless of family: the daemon runs agents **fully autonomously**. There is no human in the loop to approve a tool call, answer a permission prompt, or confirm a file write. Every family hardcodes whatever flag, env var, or RPC response its CLI needs to never block on a prompt — `--permission-mode bypassPermissions`, `--yolo`, `--dangerously-skip-permissions`, `HERMES_YOLO_MODE=1`, `decision: "accept"`. Those are covered per family below.
+
+<Mermaid chart={`flowchart TD
+  D[daemon dispatch] --> B{family}
+  B -->|1| F1["bidirectional stream-json<br/>claude / codebuddy / cursor"]
+  B -->|2| F2["one-shot stream-json flag<br/>gemini"]
+  B -->|3| F3["one-shot JSON<br/>opencode / openclaw / pi / copilot / antigravity"]
+  B -->|4| F4["stateful JSON-RPC / ACP<br/>codex / hermes / kimi / kiro"]
+  F1 --> S["Session{ Messages chan, Result chan }"]
+  F2 --> S
+  F3 --> S
+  F4 --> S
+`} />
+
+Every family's `Execute` returns the same `*Session` — a `Messages` channel of streaming events and a buffered `Result` channel of one final `Result`. The families differ only in how they fill those channels.
+
+## Family 1 — Bidirectional stream-json (`claude.go`)
+
+This is the only family that writes a continuous protocol stream to the child's **stdin** while reading from stdout. Members: `claude`, `codebuddy`, `cursor` (all three are Claude-Code-compatible CLIs).
+
+### Hardcoded launch flags
+
+`buildClaudeArgs` always emits this fixed prefix:
+
+```go
+args := []string{
+    "-p",
+    "--output-format", "stream-json",
+    "--input-format", "stream-json",
+    "--verbose",
+    "--strict-mcp-config",
+    "--permission-mode", "bypassPermissions",
+    "--disallowedTools", "AskUserQuestion",
+}
+```
+
+`-p` is non-interactive mode; `--output-format stream-json` + `--input-format stream-json` put both directions on the NDJSON protocol; `--permission-mode bypassPermissions` is what makes the run autonomous — no permission frame is ever raised. `--disallowedTools AskUserQuestion` removes Claude Code's built-in interactive question tool: the daemon has no UI for that prompt to render in, so a call would return an empty answer and the agent would silently "infer" (GitHub #2588); user-facing clarification belongs in an issue comment instead.
+
+Optional flags are appended only when set: `--model`, `--effort` (the thinking level — see [/developers/agentic/models-and-thinking](/developers/agentic/models-and-thinking)), `--max-turns`, `--append-system-prompt` (the runtime brief — see [/developers/agentic/brief-injection](/developers/agentic/brief-injection)), and `--resume`.
+
+These protocol-critical flags cannot be overridden by user-configured `custom_args`. `claudeBlockedArgs` lists them with a `blockedArgMode` (`-p`, `--output-format`, `--input-format`, `--permission-mode`, `--mcp-config`, `--effort`), and `filterCustomArgs` drops any user attempt to re-supply them, logging a warning. See [/developers/agentic/add-a-backend](/developers/agentic/add-a-backend) for the shared `filterCustomArgs` mechanism every family uses.
+
+### Prompt as a JSON user frame on a goroutine
+
+The prompt is not an argv string here — it is a single JSON `user` frame written to the child's stdin. `buildClaudeInput` marshals:
+
+```json
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"<prompt>"}]}}
+```
+
+followed by a newline. `writeClaudeInput` performs that single write, and it runs in **its own goroutine** (the `go func()` calling `writeClaudeInput(stdin, prompt)`).
+
+### The stdin/stdout deadlock fix
+
+The goroutine is not an optimization — it is a deadlock fix. With `--verbose --output-format stream-json` the CLI emits a startup banner to stdout *before* it reads its first stdin frame. If nothing is draining stdout while the daemon writes the prompt, Claude blocks writing stdout, never reads stdin, and the daemon's write blocks until `runCtx` fires at the per-task timeout. The field symptom was `write |1: The pipe has been ended.` surfacing exactly at the timeout. Writing the prompt on a separate goroutine lets the stdout scanner drain concurrently, so neither side blocks.
+
+stdin is deliberately **kept open** after the initial user frame. The stream-json protocol can emit `control_request` events mid-run and expects matching `control_response` frames on the same input stream; closing stdin early would leave the child stuck until its own fallback timeout. `closeStdin` (guarded by a `sync.Once`) is only called on a `result` event, on context cancel, or after the scanner loop ends.
+
+### SDK message event types
+
+The stdout scanner decodes each line into `claudeSDKMessage` and switches on `msg.Type`:
+
+- `system` — carries `session_id`; emits a `MessageStatus` of `"running"`.
+- `assistant` — `handleAssistant` walks `content[]` blocks: `text` → `MessageText` (also accumulated into `Result.Output`), `thinking` → `MessageThinking`, `tool_use` → `MessageToolUse` (with `block.Name`, `block.ID`, parsed `block.Input`). Per-model token usage is accumulated from `content.Usage`.
+- `user` — `handleUser` walks blocks for `tool_result` → `MessageToolResult` keyed by `block.ToolUseID`.
+- `result` — final frame: replaces `Result.Output` with `msg.ResultText`, pulls usage via `claudeResultUsage`, sets `failed` on `msg.IsError`, and calls `closeStdin`.
+- `log` → `MessageLog`; `control_request` → `handleControlRequest` (below).
+
+### `control_request` auto-approve
+
+`handleControlRequest` is how Family 1 stays autonomous mid-run. When the CLI raises a `control_request` (a tool-use approval), the daemon writes back a `control_response` with `behavior: "allow"` and echoes the tool input back as `updatedInput`:
+
+```json
+{"type":"control_response","response":{"subtype":"success","request_id":"<id>","response":{"behavior":"allow","updatedInput":{...}}}}
+```
+
+Combined with `--permission-mode bypassPermissions` at launch, this guarantees no tool call ever waits on a human.
+
+### MCP delivery: temp file
+
+Family 1 receives `opts.McpConfig` as raw JSON and writes it to a temp file via `writeMcpConfigToTemp` (an `agora-mcp-*.json` file), then appends `--mcp-config <path>`. Combined with the hardcoded `--strict-mcp-config`, the daemon's set is authoritative and the agent does not inherit MCP servers from the outer session. Temp-file ownership transfers to the reader goroutine once `cmd.Start()` succeeds; it is removed on exit. Full delivery details: [/developers/agentic/mcp-injection](/developers/agentic/mcp-injection).
+
+## Family 2 — One-shot stream-json, prompt as flag (`gemini.go`)
+
+Family 2 (member: `gemini`) is the bridge between Family 1's streaming protocol and Family 3's one-shot model. It still parses an NDJSON event stream from stdout, but the prompt goes in as an argv flag and **nothing is written to stdin** — the process is one-shot.
+
+`buildGeminiArgs` hardcodes:
+
+```go
+args := []string{
+    "-p", prompt,
+    "--yolo",
+    "-o", "stream-json",
+}
+```
+
+`-p <prompt>` carries the user task as a flag; `--yolo` auto-approves every tool execution (Family 2's autonomy switch, the analogue of `bypassPermissions`); `-o stream-json` selects the streaming NDJSON output. `--model` and `-r <session>` (resume) are appended when set. `geminiBlockedArgs` protects `-p`, `--yolo`, and `-o` from `custom_args` overrides.
+
+The stdout scanner decodes `geminiStreamEvent` and switches on `evt.Type`: `init` (captures `session_id`, emits `running`), `message` (assistant text → `MessageText`), `tool_use`, `tool_result`, `error`, and `result` (final status + per-model `stats` → usage via `accumulateUsage`).
+
+One Family-2-specific quirk: `buildGeminiEnv` defaults `GEMINI_CLI_TRUST_WORKSPACE=true` so gemini's folder-trust gate doesn't fail every headless daemon run with exit code 55 (`FatalUntrustedWorkspaceError`) when the worktree isn't pre-listed in `trustedFolders.json` (#2516). A caller-set value of the same key wins.
+
+## Family 3 — One-shot JSON (`opencode.go`, `openclaw.go`)
+
+Family 3 is the largest: `opencode`, `openclaw`, `pi`, `copilot`, `antigravity`. The shape is "spawn, pass the prompt positionally or via a flag, read structured JSON off stdout until the process exits." There is no stdin protocol and no session handshake.
+
+### OpenCode (`opencode run --format json`)
+
+`opencode.go` builds:
+
+```go
+args := []string{"run", "--format", "json", "--dangerously-skip-permissions"}
+```
+
+`--dangerously-skip-permissions` is the autonomy switch; `--format json` is the structured-output mode. The daemon then appends `--dir <cwd>` (anchors AGENTS.md / skill discovery at the task workdir), `--model`, `--variant <thinking_level>`, `--prompt <system prompt>`, and `--session <id>`, then the filtered `custom_args`, and finally the **prompt as a trailing positional argument**. `opencodeBlockedArgs` protects `--format`, `--dir`, `--variant`, and `--dangerously-skip-permissions`.
+
+`processEvents` scans NDJSON lines into `opencodeEvent` and switches on `event.Type`: `text` → `MessageText`, `tool_use` → `MessageToolUse` (+ `MessageToolResult` when `part.state.status == "completed"`), `error` → `MessageError` (OpenCode can exit RC=0 on errors, so the `error` event — not the exit code — is the reliable failure signal), `step_start` → `running`, `step_finish` → accumulates token usage.
+
+`--max-turns` is unsupported and logged-and-ignored. On Windows, `resolveOpenCodeNativeFromShim` swaps the `.cmd` shim for the bundled native `opencode.exe` because batch `%*` forwarding truncates multi-line argv at the first newline.
+
+### OpenClaw (`openclaw agent --json`)
+
+`openclaw.go` is the same family but illustrates the one-shot *blob* variant. `buildOpenclawArgs` produces `openclaw agent --local --json --session-id <id> [--timeout N] [--agent <model>] ... --message <prompt>`. Notable Family-3 specifics:
+
+- `--local` is dropped only when `opts.OpenclawMode == "gateway"` (issue #3260); it stays in `openclawBlockedArgs` so users can't smuggle it back via `custom_args`.
+- OpenClaw accepts **neither `--model` nor `--system-prompt`**: the model is bound at agent-registration time and selected at runtime via `--agent <id>`, and the system prompt is prepended inline into `--message`. Both are in `openclawBlockedArgs`.
+- `checkOpenclawVersion` fails fast below `minOpenclawVersion` (`2026.5.5`) — older builds wrote JSON to stderr, not stdout (PR #2101).
+- `processOutput` reads the **whole buffer first** (`io.ReadAll`) and tries a single whole-buffer parse against the final-result schema (`parseWholeBufferOpenclawResult`), because OpenClaw 2026.5.x emits one pretty-printed JSON blob; only if that fails does it fall through to the line-by-line NDJSON scanner. The canonical failure string `openclaw returned no parseable output` is depended on by external log-grep alerts — do not change it without updating those consumers.
+
+### MCP delivery: env var
+
+Family 3 generally delivers MCP via an environment variable rather than a flag or file. OpenCode receives the agent's `mcp_config` through `OPENCODE_CONFIG_CONTENT` (built by `buildOpenCodeMCPConfigContent`), which OpenCode deep-merges at "local" scope, leaving any `<workdir>/opencode.json` untouched. See [/developers/agentic/mcp-injection](/developers/agentic/mcp-injection) for the per-member channel.
+
+## Family 4 — Stateful JSON-RPC / ACP (`codex.go`, `hermes.go`)
+
+Family 4 is the only stateful family: a long-lived child driven by **JSON-RPC 2.0 over stdin/stdout**, with an explicit multi-step session lifecycle and watchdog timers, not a single prompt-and-wait. There are two dialects:
+
+- **Codex app-server** (`codex`) — `codex.go`, codex-specific JSON-RPC methods.
+- **ACP** (`hermes`, `kimi`, `kiro`) — `hermes.go`, the Agent Communication Protocol. All three share the ACP helpers in `hermes.go`.
+
+### Codex app-server
+
+`buildCodexArgs` launches `codex app-server --listen stdio://`. `codexBlockedArgs` protects `--listen` (the `stdio://` transport is the daemon-communication channel). When the agent has a managed MCP config, stray `-c mcp_servers.*` overrides in `custom_args` are also stripped (`filterCodexCustomConfigOverrides`) because Codex's `-c` is last-wins.
+
+The lifecycle goroutine drives, in order:
+
+1. `initialize` request, then an `initialized` notification.
+2. `thread/start` (or `thread/resume` for a prior session, with fallback to `thread/start` on failure — `startOrResumeThread`).
+3. `turn/start` with the prompt as `input: [{type:"text", text:<prompt>}]`.
+4. Loop on `turnDone`, semantic-activity, and watchdog timers until the turn completes.
+
+`codexClient.request` implements the JSON-RPC plumbing: it assigns an incrementing `id`, registers a `pendingRPC`, writes `{"jsonrpc":"2.0","id":...,"method":...,"params":...}\n` to stdin, and blocks on a per-request channel until `handleResponse` matches the `id` (or `ctx.Done()`). `handleLine` classifies each inbound line as a response (`id`+`result`/`error`), a server→client request (`id`+`method`), or a notification (`method`, no `id`).
+
+### Codex auto-approve
+
+`handleServerRequest` keeps Codex autonomous. For `item/commandExecution/requestApproval` / `execCommandApproval` and `item/fileChange/requestApproval` / `applyPatchApproval`, the daemon responds `{"decision":"accept"}`; for `mcpServer/elicitation/request` it responds `{"action":"accept",...}`. Anything else gets a JSON-RPC `-32601` "unhandled server request" so the agent never blocks waiting for the daemon.
+
+### Codex watchdogs
+
+Because the process is stateful and long-lived, a stalled turn would otherwise hang until the hard `opts.Timeout`. Codex adds two semantic watchdogs on top of that:
+
+- **Semantic inactivity timeout** (`defaultCodexSemanticInactivityTimeout`, 10 min) — resets on every observed semantic activity (tool use, status change, message). Firing yields `finalStatus = "timeout"` with the `CodexSemanticInactivityMarker` prefix.
+- **First-turn no-progress watchdog** (`defaultCodexFirstTurnNoProgressTimeout`, 30 s, scaled down from the inactivity timeout via `codexFirstTurnNoProgressTimeout`) — armed when the first `status:running` arrives, disarmed on the first real progress activity. It catches the app-server failure mode where Codex accepts a turn and then emits *no* item, message, tool, `turn/completed`, or error. Firing yields the `CodexFirstTurnNoProgressMarker`.
+
+On a clean finish the daemon closes stdin and waits up to `codexGracefulShutdownTimeout` (10 s) for codex to exit on its own — a clean exit lets codex flush its OTEL batch exporters; only if it doesn't exit does the daemon force a context-cancel kill. Usage is taken from JSON-RPC notifications first, falling back to scanning Codex session JSONL logs (`scanCodexSessionUsage`).
+
+### ACP (hermes / kimi / kiro)
+
+`hermes.go` launches `hermes acp` (the `acp` subcommand is in `hermesBlockedArgs`) and sets `HERMES_YOLO_MODE=1` in the env — that is the autonomy switch for this dialect. The lifecycle goroutine runs:
+
+1. `initialize` (with `protocolVersion: 1` and `clientCapabilities`). The response's `agentCapabilities.mcpCapabilities` decides which MCP transports the runtime accepts.
+2. `session/new` (or `session/resume` when resuming) — both carry the ACP-shaped `mcpServers` array. `session/new` returns the `sessionId`.
+3. `session/set_model` when `opts.Model` is set — this MUST fail the task on error, otherwise the run would silently use the wrong model.
+4. `session/prompt` with `prompt: [{type:"text", text:<prompt>}]`, then wait for the `PromptResponse` (`stopReason` + usage).
+
+Inbound notifications are `session/update` / `session/notification` messages; `normalizeACPUpdate` + `normalizeACPUpdateType` fold the various ACP serializations into canonical update types: `agent_message_chunk` → `MessageText`, `agent_thought_chunk` → `MessageThinking`, `tool_call` / `tool_call_update` → tool messages, `usage_update`, and `turn_end`. A `streamingCurrentTurn` gate drops history-replay chunks that Hermes flushes on resume so a prior answer isn't duplicated into output.
+
+ACP keeps itself autonomous from the *agent→client* direction too: `handleAgentRequest` answers `session/request_permission` with `outcome: "selected", optionId: "approve_for_session"` (used by kimi, which — unlike Hermes under yolo mode — does send these). `isACPSessionNotFound` matches the divergent ways Hermes (`-32603`), Kiro (`-32603` with detail in `data`), and kimi-cli (`-32602`) signal an unknown session, so a dead resumed session clears the id and the daemon retries fresh.
+
+ACP runtimes share one failure mode: `session/prompt` reports `stopReason=end_turn` even when the underlying LLM HTTP call returned 4xx/5xx. `acpProviderErrorSniffer` scans stderr for terminal failure markers, and `promoteACPResultOnProviderError` flips `completed` → `failed` so the daemon surfaces the real cause (#1952) instead of a misleading "empty output".
+
+### MCP delivery: ACP session param
+
+Family 4 delivers MCP differently per dialect. **Codex** materializes the agent's `mcp_config` into a daemon-managed `[mcp_servers.*]` block in the per-task `$CODEX_HOME/config.toml` (`ensureCodexMcpConfig` / `renderCodexMcpServersBlock`), written at `0o600` because `mcp_servers.<id>.env` may carry secrets — argv would leak them into `ps` and logs. **ACP** translates `mcp_config` into the array shape ACP's `session/new` / `session/resume` expects (`buildACPMcpServers`) and passes it as the `mcpServers` **session parameter**, after dropping remote (http/sse) entries the runtime didn't advertise via `mcpCapabilities` (`filterACPMcpServersByCapability`). Both are detailed in [/developers/agentic/mcp-injection](/developers/agentic/mcp-injection).
+
+## Why autonomy flags are hardcoded everywhere
+
+Across all four families the same decision repeats: the daemon is headless and runs agents with no human in the loop, so each backend hardcodes whatever its CLI needs to never block on a prompt.
+
+| Family | Member(s) | Autonomy mechanism |
+|---|---|---|
+| 1 | `claude` / `codebuddy` / `cursor` | `--permission-mode bypassPermissions` flag + `control_response` `behavior:"allow"` |
+| 2 | `gemini` | `--yolo` flag |
+| 3 | `opencode` | `--dangerously-skip-permissions` flag |
+| 4 | `codex` | server-request reply `{"decision":"accept"}` / `{"action":"accept"}` |
+| 4 | `hermes` (ACP) | `HERMES_YOLO_MODE=1` env + `session/request_permission` → `approve_for_session` |
+
+These are launch-time invariants of running inside Agora's daemon, which is why they live in each family's blocked-args set (or are env/RPC-level and therefore not user-reachable at all). A user's `custom_args` cannot turn them off — see `filterCustomArgs` and the per-backend `*BlockedArgs` maps in [/developers/agentic/add-a-backend](/developers/agentic/add-a-backend). Naming conventions for these symbols follow [/developers/conventions](/developers/conventions).
+
+## Source files
+
+| File | Symbols this page depends on |
+|---|---|
+| `server/pkg/agent/claude.go` | `claudeBackend.Execute`, `buildClaudeArgs`, `claudeBlockedArgs`, `buildClaudeInput`, `writeClaudeInput`, `handleControlRequest`, `handleAssistant`, `handleUser`, `claudeSDKMessage`, `writeMcpConfigToTemp`, `filterCustomArgs`, `blockedArgMode`, `closeStdin`, `resolveSessionID` |
+| `server/pkg/agent/gemini.go` | `geminiBackend.Execute`, `buildGeminiArgs`, `geminiBlockedArgs`, `geminiStreamEvent`, `buildGeminiEnv`, `accumulateUsage` |
+| `server/pkg/agent/opencode.go` | `opencodeBackend.Execute`, `opencodeBlockedArgs`, `processEvents`, `opencodeEvent`, `handleToolUseEvent`, `handleErrorEvent`, `resolveOpenCodeNativeFromShim` |
+| `server/pkg/agent/openclaw.go` | `openclawBackend.Execute`, `buildOpenclawArgs`, `openclawBlockedArgs`, `processOutput`, `parseWholeBufferOpenclawResult`, `checkOpenclawVersion`, `minOpenclawVersion`, `openclawNoParseableOutput` |
+| `server/pkg/agent/codex.go` | `codexBackend.Execute`, `buildCodexArgs`, `codexBlockedArgs`, `codexClient.request`, `handleServerRequest`, `startOrResumeThread`, `ensureCodexMcpConfig`, `renderCodexMcpServersBlock`, `CodexSemanticInactivityMarker`, `CodexFirstTurnNoProgressMarker`, `defaultCodexSemanticInactivityTimeout`, `defaultCodexFirstTurnNoProgressTimeout`, `codexGracefulShutdownTimeout`, `scanCodexSessionUsage` |
+| `server/pkg/agent/hermes.go` | `hermesBackend.Execute`, `hermesBlockedArgs`, `hermesClient.request`, `handleAgentRequest`, `buildACPMcpServers`, `buildHermesSessionParams`, `normalizeACPUpdate`, `isACPSessionNotFound`, `extractACPMcpCapabilities`, `filterACPMcpServersByCapability`, `acpProviderErrorSniffer`, `promoteACPResultOnProviderError` |
+
+**Same-PR drift rule:** if any documented symbol, flag, frame field, blocked-arg name, or timeout constant above moves or changes, update this page **and** its `references/protocol-families-source-map.md` sidecar in the same PR. These are source-traced contracts; if the code moves and the page doesn't, it silently teaches a stale transport.

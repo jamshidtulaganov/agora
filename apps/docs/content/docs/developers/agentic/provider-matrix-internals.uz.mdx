@@ -1,0 +1,119 @@
+---
+title: Provider Matrix Internals
+description: Har bir provayder uchun ichki jadval — runtime konfiguratsiya fayli nomi, tizim promptini inline tarzda kiritish va native skill-discovery yoʻli — daemon ularni aslida qanday ulashi.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Auditoriya">
+**dev.** Bu sahifa `server/internal/daemon/` va `server/pkg/agent/` ichida ishlaydigan backend muhandislari uchun. U daemon dispatch vaqtida har bir provayder boʻyicha tayanadigan uchta ichki kommutatorni hujjatlashtiradi: `InjectRuntimeConfig` qaysi faylga yozishi (`runtimeConfigPath`), qaysi provayderlar runtime briefni `--append-system-prompt` orqali inline tarzda olishi (`providerNeedsInlineSystemPrompt`) va har bir provayder skilllarni qayerdan topishi (`skillsDirPath`). Bu *implementatsiya* matritsasi boʻlib, [/providers](/providers) sahifasidagi foydalanuvchiga koʻrinadigan imkoniyatlar matritsasidan farq qiladi. Aloqador: [/developers/agentic/agent-runtime-contract](/developers/agentic/agent-runtime-contract), [/developers/agentic/brief-injection](/developers/agentic/brief-injection), [/developers/agentic/backend-interface](/developers/agentic/backend-interface) va [/developers/conventions](/developers/conventions) dagi nomlash qoidalari.
+</Callout>
+
+Agora qoʻllab-quvvatlaydigan har bir coding-agent runtime bir xil `agent.Backend` kontraktini amalga oshiradi (qarang [/developers/agentic/backend-interface](/developers/agentic/backend-interface)), biroq ularning har biri oʻz koʻrsatmalari va skilllarini turli native mexanizm orqali *topadi*. Uchta kichik Go kommutatori shu provayderlararo farqni kodlaydi. Ular maxsus ravishda mahsulotga qaragan imkoniyatlar matritsasidan ajratib qoʻyilgan, chunki ular boshqacha savolga javob beradi: "bu asbob nima qila oladi" emas, balki "daemon baytlarni qayerga qoʻyadiki, asbob ularni haqiqatan ham oʻqisin".
+
+## Uchta kommutator, bitta dispatch
+
+Daemon vazifani ishga tushirganda, har biri turli paketdagi uchta provayderga kalitlangan funksiyaga murojaat qiladi:
+
+<Mermaid chart={`flowchart TD
+  T["runTask(provider)"] --> RCP["runtimeConfigPath(workDir, provider)"]
+  T --> NIS["providerNeedsInlineSystemPrompt(provider)"]
+  T --> SDP["skillsDirPath(workDir, provider)"]
+  RCP -->|"CLAUDE.md / AGENTS.md / GEMINI.md / \"\""| FILE["file-based brief on disk"]
+  NIS -->|"openclaw, kiro, kimi → true"| INLINE["execOpts.SystemPrompt = runtimeBrief"]
+  SDP -->|".claude/skills, .pi/skills, ..."| SKILLS["native skill discovery dir"]
+`} />
+
+Birinchisi `server/internal/daemon/execenv/runtime_config.go` da, ikkinchisi `server/internal/daemon/daemon.go` da, uchinchisi `server/internal/daemon/execenv/context.go` da yashaydi. Quyidagi matritsadagi provayderning qatori — bu uchala javobning *kombinatsiyasi*.
+
+## Runtime konfiguratsiya fayli nomi — `runtimeConfigPath`
+
+`InjectRuntimeConfig` runtime briefni `buildMetaSkillContent` bilan quradi, soʻngra uni `runtimeConfigPath` qaytargan faylga yozadi. Ham `InjectRuntimeConfig`, ham `CleanupRuntimeConfig` bir xil `runtimeConfigPath` ga murojaat qiladi, shu sababli inject va cleanup hech qachon bir-biridan ajralib qola olmaydi. Moslashuv:
+
+| Provayder(lar) | `workDir` ostida yoziladigan fayl |
+|---|---|
+| `claude`, `codebuddy` | `CLAUDE.md` |
+| `codex`, `copilot`, `opencode`, `openclaw`, `hermes`, `pi`, `cursor`, `kimi`, `kiro`, `antigravity` | `AGENTS.md` |
+| `gemini` | `GEMINI.md` |
+| *boshqa har qanday narsa* | `""` (fayl yoʻq — faqat-prompt rejimi) |
+
+`""` qaytishi provayder file-based yoʻl uchun nomaʼlum ekanini bildiradi. `InjectRuntimeConfig` buni "konfiguratsiya injectionini oʻtkazib yubor, faqat-prompt rejimi" deb hisoblaydi va hech narsa yozmasdan brief mazmunini qaytaradi; `CleanupRuntimeConfig` esa `nil` qaytaradi (hech narsa qilmaydi).
+
+Yozishning oʻzi koʻr-koʻrona `os.WriteFile` emas. `writeRuntimeConfigFile` briefni `<!-- BEGIN MULTICA-RUNTIME (auto-managed; do not edit) -->` / `<!-- END MULTICA-RUNTIME -->` markerlariga oʻraydi, shu sababli u foydalanuvchi yozgan `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` ga uni buzmasdan qoʻsha oladi (va keyinchalik undan kesib ola oladi) — bu `local_directory` oqimi uchun zarur, bunda `workDir` foydalanuvchining oʻz repozitoriysidir. Toʻliq inject/cleanup borib-kelish kontrakti [/developers/agentic/brief-injection](/developers/agentic/brief-injection) da hujjatlashtirilgan; bu sahifa faqat provayder→fayl nomi marshrutlashni qamrab oladi.
+
+## Tizim promptini inline kiritish — `providerNeedsInlineSystemPrompt`
+
+Briefni diskka yozish faqat CLI shu faylni vazifaning `workDir` idan ishonchli yuklasagina ishlaydi. Uchta provayder buni qilmaydi, shu sababli daemon toʻliq briefni *qoʻshimcha ravishda* inline tarzda ham uzatadi. `providerNeedsInlineSystemPrompt` — bu darvoza:
+
+```go
+func providerNeedsInlineSystemPrompt(provider string) bool {
+	switch provider {
+	case "openclaw", "kiro", "kimi":
+		return true
+	default:
+		return false
+	}
+}
+```
+
+U `true` qaytarganda, `runTask` `execOpts.SystemPrompt = runtimeBrief` ni oʻrnatadi — bu file-based runtimelar diskdan oladigan oʻsha payload (`buildMetaSkillContent`: CLI katalogi + workflow qadamlari + agent identifikatori/personasi + skilllar + loyiha konteksti). Daemon buning sodir boʻlgan-boʻlmaganini `invoking backend` debug satridagi `inline_system_prompt` maydoni orqali jurnalga yozadi.
+
+Nega aynan shu uchtasi:
+
+- **`openclaw`** — har bir vazifa uchun sintezlangan `openclaw-config.json` (`prepareOpenclawConfig`) orqali vazifaning `workDir` iga mahkamlangan, shu sababli workdir dagi `AGENTS.md` / `.agent_context/` *oʻqib olinadi*. Inline injection eski relizlar uchun ehtiyot chorasi sifatida saqlanib turibdi, toki shu yuklash yoʻli ishlab chiqarishda barqarorlashguncha.
+- **`kiro`** va **`kimi`** — oʻzlarining cwd ishlashi shunchalik noaniq boʻlgan CLI lar orqali oʻraladiki, file-based yoʻlga ishonib boʻlmaydi. Inline brief boʻlmasa, ular workflow boʻlimini jimgina oʻtkazib yuboradi va hech qachon `agora issue status` / `agora issue comment add` ni chaqirmaydi, natijada issuelar `todo` da qotib qoladi.
+
+### Backend `SystemPrompt` ni qanday isteʼmol qiladi
+
+Qoʻshimcha tizim-prompti flagini qoʻllab-quvvatlovchi har bir backend bir xil bir qatorli mantiqni aks ettiradi: agar `opts.SystemPrompt != ""` boʻlsa, `--append-system-prompt` va qiymatni qoʻshadi. Etalon `claude` backendida (`claude.go` dagi `buildClaudeArgs`):
+
+```go
+if opts.SystemPrompt != "" {
+	args = append(args, "--append-system-prompt", opts.SystemPrompt)
+}
+```
+
+`codebuddy.go` va `pi.go` baytma-bayt aynan shu naqshni olib yuradi. Demak, Claude (`claude`) yuqoridagi inline toʻplamda *boʻlmasa-da*, `--append-system-prompt` yoʻli umumiy mexanizm: daemon `execOpts.SystemPrompt` ni faqat uchta inline provayder uchun toʻldiradi, va flagga egalik qiluvchi har qanday backend u mavjud boʻlganda uni uzatadi.
+
+<Callout title="Nega Hermes chiqarib tashlangan">
+`hermes` qolgan `AGENTS.md` guruhi singari `AGENTS.md` yozadi, biroq u `providerNeedsInlineSystemPrompt` da **ataylab yoʻq**. Hermes ACP ustida ishlaydi: uning sessiyalari vazifaning cwd ida boshlanadi va u `AGENTS.md` / `.agent_context` ni oʻzi yuklaydi. Toʻliq runtime briefni ACP foydalanuvchi promptiga oldindan qoʻyish shu kontekstni takrorlar, har bir navbatni shishirar va zararsiz vazifalarda upstream xavfsizlik filtrlarini ishga tushirgan. Shu sababli Hermes faylni oladi, lekin hech qachon inline nusxani olmaydi.
+</Callout>
+
+## Native skill-discovery yoʻli — `skillsDirPath`
+
+Uchinchi kommutator skilllar qayerga yozilishini hal qiladi, toki provayderning oʻz skaneri ularni topsin. `resolveSkillsDir` `skillsDirPath` ni `MkdirAll`/manifest hisob-kitobi bilan oʻraydi; yalangʻoch moslashuv quyidagicha:
+
+| Provayder(lar) | `workDir` ostidagi skilllar katalogi |
+|---|---|
+| `claude`, `codebuddy` | `.claude/skills` |
+| `copilot` | `.github/skills` |
+| `opencode` | `.opencode/skills` |
+| `openclaw` | `skills` (workdir ildizi; CLI `<workspaceDir>/skills/` ni skanerlaydi) |
+| `pi` | `.pi/skills` |
+| `cursor` | `.cursor/skills` |
+| `kimi` | `.kimi/skills` |
+| `kiro` | `.kiro/skills` |
+| `antigravity` | `.agents/skills` |
+| *fallback (jumladan `gemini`, `hermes`)* | `.agent_context/skills` |
+
+`gemini` va `hermes` da har bir provayder uchun ulanган native skill-discovery katalogi yoʻq, shu sababli ular `default` shoxiga tushadi va `.agent_context/skills/` ga joylashadi. Bu `buildMetaSkillContent` shu ikki provayderga skilllarni qanday taʼriflashiga mos keladi: `## Skills` boʻlimi `gemini`/`hermes` ga "Detailed skill instructions are in `.agent_context/skills/`," deydi, holbuki nativ tarzda topadigan provayderlarga skilllar "discovered automatically" deb aytiladi. `openclaw` qatori — eʼtibor berishga arzigulik: uning skaneri workdir-ildizidagi `skills/` katalogini (nuqtali yoʻlni emas) oʻqiydi, har bir vazifa uchun `openclaw-config.json` dagi `agents.defaults.workspace` mahkamlovi bilan juftlashgan.
+
+Bu yoʻllarning foydalanuvchiga koʻrinadigan koʻrinishi uchun (har bir asbob uchun bitta qator, sessiya tiklash va MCP qoʻllab-quvvatlashi bilan birga) [/providers](/providers) dagi "Skill injection path" ustuniga qarang.
+
+## Bu matritsa imkoniyatlar matritsasi emas
+
+Ikkalasini ajratib turing. [/providers](/providers) dagi **mahsulotga qaragan imkoniyatlar matritsasi** har bir asbob uchun foydalanuvchi-qarori savollariga javob beradi: sessiya tiklash haqiqatan ishlaydimi, MCP qoʻllab-quvvatlanadimi, modellar qanday tanlanadi. Bu sahifadagi **ichki matritsa** esa daemon-ulanishi savollariga javob beradi: qaysi fayl nomi yoziladi, brief inline tarzda ham kiritiladimi, skill skaneri qaysi katalogni oʻqiydi. Ular faqat skill yoʻli ustunida kesishadi va boshqa hech qayerda — asbob imkoniyat oʻqida istalgan joyda turishi mumkin (toʻliq MCP, dinamik model topish) va shu bilan birga hech qanday shunday imkoniyatga ega boʻlmagan asbob bilan aynan bir xil ichki marshrutlashni (`AGENTS.md` + `.agent_context/skills`) baham koʻrishi mumkin. Provayder qoʻshganingizda, bu sahifadagi uchta kommutatorga tegasiz; imkoniyatlar matritsasi esa asbob nima qila olishini taʼriflash uchun alohida yangilanadi.
+
+## Source files
+
+| Fayl | Bu sahifa tayanadigan simvollar |
+|---|---|
+| `server/internal/daemon/execenv/runtime_config.go` | `InjectRuntimeConfig`, `runtimeConfigPath`, `CleanupRuntimeConfig`, `writeRuntimeConfigFile`, `buildMetaSkillContent`, `runtimeMarkerBegin`, `runtimeMarkerEnd` |
+| `server/internal/daemon/daemon.go` | `providerNeedsInlineSystemPrompt`, `runTask`, `execOpts.SystemPrompt`, `runtimeBrief`, `inline_system_prompt` log maydoni |
+| `server/pkg/agent/claude.go` | `buildClaudeArgs`, `ExecOptions.SystemPrompt`, `--append-system-prompt` |
+| `server/pkg/agent/codebuddy.go` | `opts.SystemPrompt` ni `--append-system-prompt` orqali uzatish |
+| `server/pkg/agent/pi.go` | `opts.SystemPrompt` ni `--append-system-prompt` orqali uzatish |
+| `server/internal/daemon/execenv/context.go` | `skillsDirPath`, `resolveSkillsDir` |
+
+Agar yuqorida hujjatlashtirilgan biron simvol, flag yoki provayder satri koʻchirilsa yoki qayta nomlansa, bu sahifani **va** uning source-map yondosh faylini (`provider-matrix-internals-source-map.md`) **bir xil PR** da yangilang — matritsa source-traced kontrakt boʻlib, eskirgan qator jimgina notoʻgʻri marshrutlashga oʻrgatadi.

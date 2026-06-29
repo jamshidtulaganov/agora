@@ -1,0 +1,119 @@
+---
+title: Provider Matrix Internals
+description: The per-provider internal table — runtime config filename, inline system-prompt injection, and native skill-discovery path — as the daemon actually wires them.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Audience">
+**dev.** This page is for backend engineers working in `server/internal/daemon/` and `server/pkg/agent/`. It documents the three internal per-provider switches the daemon keys on at dispatch time: which file `InjectRuntimeConfig` writes (`runtimeConfigPath`), which providers receive the runtime brief inline through `--append-system-prompt` (`providerNeedsInlineSystemPrompt`), and where each provider discovers skills (`skillsDirPath`). This is the *implementation* matrix, distinct from the user-facing capability matrix at [/providers](/providers). Related: [/developers/agentic/agent-runtime-contract](/developers/agentic/agent-runtime-contract), [/developers/agentic/brief-injection](/developers/agentic/brief-injection), [/developers/agentic/backend-interface](/developers/agentic/backend-interface), and the naming rules in [/developers/conventions](/developers/conventions).
+</Callout>
+
+Every coding-agent runtime Agora supports implements the same `agent.Backend` contract (see [/developers/agentic/backend-interface](/developers/agentic/backend-interface)), but each one *finds* its instructions and skills through a different native mechanism. Three small Go switches encode that per-provider divergence. They are deliberately kept separate from the product-facing capability matrix because they answer a different question: not "what can this tool do" but "where does the daemon put the bytes so the tool actually reads them."
+
+## Three switches, one dispatch
+
+When the daemon runs a task it consults three provider-keyed functions, each in a different package:
+
+<Mermaid chart={`flowchart TD
+  T["runTask(provider)"] --> RCP["runtimeConfigPath(workDir, provider)"]
+  T --> NIS["providerNeedsInlineSystemPrompt(provider)"]
+  T --> SDP["skillsDirPath(workDir, provider)"]
+  RCP -->|"CLAUDE.md / AGENTS.md / GEMINI.md / \"\""| FILE["file-based brief on disk"]
+  NIS -->|"openclaw, kiro, kimi → true"| INLINE["execOpts.SystemPrompt = runtimeBrief"]
+  SDP -->|".claude/skills, .pi/skills, ..."| SKILLS["native skill discovery dir"]
+`} />
+
+The first lives in `server/internal/daemon/execenv/runtime_config.go`, the second in `server/internal/daemon/daemon.go`, the third in `server/internal/daemon/execenv/context.go`. A provider's row in the matrix below is the *combination* of all three answers.
+
+## Runtime config filename — `runtimeConfigPath`
+
+`InjectRuntimeConfig` builds the runtime brief with `buildMetaSkillContent`, then writes it to the file `runtimeConfigPath` returns. Both `InjectRuntimeConfig` and `CleanupRuntimeConfig` consult the same `runtimeConfigPath` so inject and cleanup can never drift apart. The mapping:
+
+| Provider(s) | File written under `workDir` |
+|---|---|
+| `claude`, `codebuddy` | `CLAUDE.md` |
+| `codex`, `copilot`, `opencode`, `openclaw`, `hermes`, `pi`, `cursor`, `kimi`, `kiro`, `antigravity` | `AGENTS.md` |
+| `gemini` | `GEMINI.md` |
+| *anything else* | `""` (no file — prompt-only mode) |
+
+A `""` return means the provider is unknown to the file-based path. `InjectRuntimeConfig` treats that as "skip config injection, prompt-only mode" and returns the brief content without writing anything; `CleanupRuntimeConfig` returns `nil` (no-op).
+
+The write itself is not a blind `os.WriteFile`. `writeRuntimeConfigFile` wraps the brief in the markers `<!-- BEGIN MULTICA-RUNTIME (auto-managed; do not edit) -->` / `<!-- END MULTICA-RUNTIME -->` so it can append to (and later excise from) a user-authored `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` without clobbering it — required for the `local_directory` flow where `workDir` is the user's own repo. The full inject/cleanup round-trip contract is documented in [/developers/agentic/brief-injection](/developers/agentic/brief-injection); this page only covers the provider→filename routing.
+
+## Inline system-prompt injection — `providerNeedsInlineSystemPrompt`
+
+Writing the brief to disk only works if the CLI reliably loads that file from the task `workDir`. Three providers do not, so the daemon *also* passes the full brief inline. `providerNeedsInlineSystemPrompt` is the gate:
+
+```go
+func providerNeedsInlineSystemPrompt(provider string) bool {
+	switch provider {
+	case "openclaw", "kiro", "kimi":
+		return true
+	default:
+		return false
+	}
+}
+```
+
+When it returns `true`, `runTask` sets `execOpts.SystemPrompt = runtimeBrief` — the same payload (`buildMetaSkillContent`: CLI catalog + workflow steps + agent identity/persona + skills + project context) that file-based runtimes pick up from disk. The daemon logs whether this happened via the `inline_system_prompt` field on the `invoking backend` debug line.
+
+Why these three:
+
+- **`openclaw`** — pinned to the task `workDir` via the per-task synthesized `openclaw-config.json` (`prepareOpenclawConfig`), so the workdir `AGENTS.md` / `.agent_context/` *are* picked up. Inline injection is retained as a belt-and-suspenders for older releases until that load path stabilises in production.
+- **`kiro`** and **`kimi`** — wrapped through their own CLIs whose cwd handling is opaque enough that the file-based path can't be trusted. Without the inline brief they silently miss the workflow section and never call `agora issue status` / `agora issue comment add`, leaving issues stuck in `todo`.
+
+### How the backend consumes `SystemPrompt`
+
+Each backend that supports an extra-system-prompt flag mirrors the same one-liner: if `opts.SystemPrompt != ""`, append `--append-system-prompt` plus the value. In the reference `claude` backend (`buildClaudeArgs` in `claude.go`):
+
+```go
+if opts.SystemPrompt != "" {
+	args = append(args, "--append-system-prompt", opts.SystemPrompt)
+}
+```
+
+`codebuddy.go` and `pi.go` carry the byte-identical pattern. So even though Claude (`claude`) is *not* in the inline set above, the `--append-system-prompt` path is shared machinery: the daemon only populates `execOpts.SystemPrompt` for the three inline providers, and any backend that owns the flag forwards it when present.
+
+<Callout title="Why Hermes is excluded">
+`hermes` writes `AGENTS.md` like the rest of the `AGENTS.md` group, but it is **intentionally not** in `providerNeedsInlineSystemPrompt`. Hermes runs over ACP: its sessions start in the task cwd and it loads `AGENTS.md` / `.agent_context` itself. Prepending the full runtime brief into the ACP user prompt would duplicate that context, bloat every turn, and has triggered upstream safety filters on harmless tasks. So Hermes gets the file but never the inline copy.
+</Callout>
+
+## Native skill-discovery path — `skillsDirPath`
+
+The third switch decides where skills are written so the provider's own scanner finds them. `resolveSkillsDir` wraps `skillsDirPath` with `MkdirAll`/manifest bookkeeping; the bare mapping is:
+
+| Provider(s) | Skills dir under `workDir` |
+|---|---|
+| `claude`, `codebuddy` | `.claude/skills` |
+| `copilot` | `.github/skills` |
+| `opencode` | `.opencode/skills` |
+| `openclaw` | `skills` (workdir root; CLI scans `<workspaceDir>/skills/`) |
+| `pi` | `.pi/skills` |
+| `cursor` | `.cursor/skills` |
+| `kimi` | `.kimi/skills` |
+| `kiro` | `.kiro/skills` |
+| `antigravity` | `.agents/skills` |
+| *fallback (incl. `gemini`, `hermes`)* | `.agent_context/skills` |
+
+`gemini` and `hermes` have no native per-provider skill-discovery directory wired up, so they hit the `default` branch and land in `.agent_context/skills/`. This matches how `buildMetaSkillContent` describes skills to those two providers: the `## Skills` section tells `gemini`/`hermes` that "Detailed skill instructions are in `.agent_context/skills/`," whereas the natively-discovering providers are told skills are "discovered automatically." The `openclaw` row is the one to watch — its scanner reads the workdir-root `skills/` directory (not a dotted path), paired with the `agents.defaults.workspace` pin in the per-task `openclaw-config.json`.
+
+For the user-facing view of these paths (one row per tool, alongside session-resumption and MCP support), see the "Skill injection path" column at [/providers](/providers).
+
+## This matrix is not the capability matrix
+
+Keep the two separate. The **product-facing capability matrix** at [/providers](/providers) answers user-decision questions per tool: does session resumption actually work, is MCP supported, how are models selected. The **internal matrix on this page** answers daemon-plumbing questions: which filename gets written, whether the brief is also injected inline, which directory the skill scanner reads. They overlap on the skill path column and nowhere else — a tool can sit anywhere on the capability axis (full MCP, dynamic model discovery) while sharing the exact same internal routing (`AGENTS.md` + `.agent_context/skills`) with a tool that has none of those capabilities. When you add a provider, you touch the three switches on this page; the capability matrix is updated separately to describe what the tool can do.
+
+## Source files
+
+| File | Symbols this page depends on |
+|---|---|
+| `server/internal/daemon/execenv/runtime_config.go` | `InjectRuntimeConfig`, `runtimeConfigPath`, `CleanupRuntimeConfig`, `writeRuntimeConfigFile`, `buildMetaSkillContent`, `runtimeMarkerBegin`, `runtimeMarkerEnd` |
+| `server/internal/daemon/daemon.go` | `providerNeedsInlineSystemPrompt`, `runTask`, `execOpts.SystemPrompt`, `runtimeBrief`, `inline_system_prompt` log field |
+| `server/pkg/agent/claude.go` | `buildClaudeArgs`, `ExecOptions.SystemPrompt`, `--append-system-prompt` |
+| `server/pkg/agent/codebuddy.go` | `--append-system-prompt` forwarding of `opts.SystemPrompt` |
+| `server/pkg/agent/pi.go` | `--append-system-prompt` forwarding of `opts.SystemPrompt` |
+| `server/internal/daemon/execenv/context.go` | `skillsDirPath`, `resolveSkillsDir` |
+
+If any documented symbol, flag, or provider string above moves or is renamed, update this page **and** its source-map sidecar (`provider-matrix-internals-source-map.md`) in the **same PR** — the matrix is a source-traced contract and a stale row silently teaches the wrong routing.

@@ -1,0 +1,242 @@
+---
+title: Add a Backend
+description: Пошаговое руководство по регистрации нового бэкенда CLI-агента в server/pkg/agent — структура, switch, заголовок запуска, каталог моделей и обязательный шаблонный код для подпроцесса.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Аудитория">
+**оба.** Эта страница — конкретный чек-лист для добавления нового CLI кодинг-агента в `server/pkg/agent/`. Она написана для backend-инженеров и для агентов, работающих над слоем рантайма. Сначала прочитайте [/developers/agentic/backend-interface](/developers/agentic/backend-interface) — там описан контракт `Backend`/`Session`, который эта страница предполагает уже известным, затем [/developers/agentic/protocol-families](/developers/agentic/protocol-families), чтобы понять, к какому транспортному семейству относится ваш CLI, и [/developers/agentic/models-and-thinking](/developers/agentic/models-and-thinking) — про каталог моделей и поверхности управления усилием рассуждения, на которые ссылаются шаг 4 и опциональные разделы. Правила именования и границ пакетов: [/developers/conventions](/developers/conventions).
+</Callout>
+
+Никакого **реестра плагинов нет.** Новый бэкенд подключается ручным редактированием switch в `agent.New` и добавлением записей в несколько map уровня пакета. Это сделано намеренно — набор поддерживаемых CLI невелик, проходит аудит и привязан к версиям, поэтому switch на этапе компиляции лучше реестра времени выполнения. Вся работа сводится к следующему: написать один файл `xxx.go`, добавить его в четыре места и (опционально) научить версионный gate и обнаружение уровней рассуждения о нём.
+
+Используйте `gemini.go` как **минимальный шаблон** (одноразовый подпроцесс, читающий NDJSON из stdout) и `claude.go` как **полный справочный пример** (протокол через stdin, инъекция MCP-конфигурации, авто-одобрение control-request, хвост stderr, разрешение возобновления сессии).
+
+## Карта работы
+
+<Mermaid chart={`flowchart TD
+  A["Step 1: xxx.go\nxxxBackend struct + Execute"] --> B["Step 2: agent.New switch\n+ error string list"]
+  B --> C["Step 3: launchHeaders entry"]
+  C --> D["Step 4: ListModels case\nstatic catalog OR discoverXxx"]
+  D --> E["Optional: MinVersions\nthinking discovery"]
+`} />
+
+## Шаг 1 — создайте `xxx.go` со структурой бэкенда и методом `Execute`
+
+Каждый бэкенд — это структура, хранящая только `Config` плюс метод, удовлетворяющий интерфейсу `Backend`:
+
+```go
+type Backend interface {
+	Execute(ctx context.Context, prompt string, opts ExecOptions) (*Session, error)
+}
+```
+
+Минимальная форма (по образцу `geminiBackend`):
+
+```go
+type xxxBackend struct {
+	cfg Config
+}
+
+func (b *xxxBackend) Execute(ctx context.Context, prompt string, opts ExecOptions) (*Session, error) {
+	execPath := b.cfg.ExecutablePath
+	if execPath == "" {
+		execPath = "xxx"
+	}
+	if _, err := exec.LookPath(execPath); err != nil {
+		return nil, fmt.Errorf("xxx executable not found at %q: %w", execPath, err)
+	}
+
+	timeout := opts.Timeout
+	runCtx, cancel := runContext(ctx, timeout)
+
+	args := buildXxxArgs(prompt, opts, b.cfg.Logger)
+	cmd := exec.CommandContext(runCtx, execPath, args...)
+	hideAgentWindow(cmd)
+	cmd.WaitDelay = 10 * time.Second
+	if opts.Cwd != "" {
+		cmd.Dir = opts.Cwd
+	}
+	cmd.Env = buildEnv(b.cfg.Env)
+	// ... wire stdout pipe, start, spawn the reader goroutine, return *Session ...
+}
+```
+
+Временной контракт не подлежит обсуждению и описан в [backend-interface](/developers/agentic/backend-interface): `Execute` возвращается быстро с ненулевым `*Session`, после чего CLI выполняется внутри горутин. Возвращённый `error` означает, что запуск так и не начался и `*Session` равен `nil`.
+
+### Что вам дают `Config` и горутина
+
+`Config` несёт `ExecutablePath`, `Env` (`map[string]string`) и `Logger` (`*slog.Logger`). Горутина-читатель накапливает `output strings.Builder`, `sessionID`, `finalStatus` с начальным значением `"completed"`, `finalError` и `usage map[string]TokenUsage`, затем отправляет ровно один `Result` в `resCh` перед закрытием обоих каналов.
+
+`Result.Status` принимает одно из значений `"completed"`, `"failed"`, `"aborted"`, `"timeout"`, `"cancelled"`. Стандартное сопоставление после `cmd.Wait()`, скопированное дословно из бэкендов, решает, какое из них применяется:
+
+```go
+if runCtx.Err() == context.DeadlineExceeded {
+	finalStatus = "timeout"
+	finalError = fmt.Sprintf("xxx timed out after %s", timeout)
+} else if runCtx.Err() == context.Canceled {
+	finalStatus = "aborted"
+	finalError = "execution cancelled"
+} else if waitErr != nil && finalStatus == "completed" {
+	finalStatus = "failed"
+	finalError = fmt.Sprintf("xxx exited with error: %v", waitErr)
+}
+```
+
+Отправляйте потоковые события через `trySend(msgCh, Message{...})`, используя константы `MessageType` (`MessageText`, `MessageThinking`, `MessageToolUse`, `MessageToolResult`, `MessageStatus`, `MessageError`, `MessageLog`). `trySend` отбрасывает сообщение, если канал переполнен — финальный текст восстанавливается из `output` в `Result.Output`, поэтому затрагиваются только живые потоковые потребители.
+
+## Шаг 2 — зарегистрируйте в switch `agent.New` (два правки)
+
+`New(agentType string, cfg Config) (Backend, error)` — это switch, редактируемый вручную. Добавьте **и** case, **и** список поддерживаемых типов в строке ошибки `default` — это две отдельные правки в одной и той же функции, и в CI нет ничего, что поддерживало бы их синхронизированными за вас:
+
+```go
+case "xxx":
+	return &xxxBackend{cfg: cfg}, nil
+```
+
+```go
+default:
+	return nil, fmt.Errorf("unknown agent type: %q (supported: claude, codebuddy, codex, copilot, opencode, openclaw, hermes, gemini, pi, cursor, kimi, kiro, antigravity, xxx)", agentType)
+```
+
+<Callout title="Две правки, а не одна">
+Если забыть про вторую правку, вы выпустите бэкенд, который работает, но чьё сообщение об ошибке врёт о поддерживаемом наборе. Обновите doc-комментарий пакета на `New` (строку `// Supported types:`) и комментарий уровня пакета в начале `agent.go` в том же изменении, чтобы задокументированный список оставался правдивым.
+</Callout>
+
+## Шаг 3 — добавьте запись в `launchHeaders`
+
+`launchHeaders` — это `map[string]string`, сопоставляющая каждому типу агента видимый пользователю скелет запуска — команду плюс подкоманду или короткую метку режима — который рендерит демон, чтобы пользователи понимали, к чему добавляются их `custom_args`. Он намеренно минимален: никаких внутренних флагов, транспортных значений или переменных окружения.
+
+```go
+var launchHeaders = map[string]string{
+	// ...
+	"xxx": "xxx run (stream-json)",
+}
+```
+
+`LaunchHeader(agentType)` возвращает запись или `""` для неизвестного типа. Отсутствующая запись не приводит к падению — она просто рендерит пустой превью, так что не пропускайте этот шаг.
+
+## Шаг 4 — добавьте case в `ListModels`
+
+`ListModels(ctx, providerType, executablePath string) ([]Model, error)` — это второй редактируемый вручную switch (в `models.go`), чей `default` возвращает `unknown agent type: %q`. Выберите одну из двух форм:
+
+### Статический каталог
+
+Если у CLI нет команды `models list`, поставляйте встроенный `[]Model`. Следуйте `geminiStaticModels`:
+
+```go
+case "xxx":
+	return xxxStaticModels(), nil
+```
+
+`Model` — это `{ID, Label, Provider, Default, Free, Category, Thinking}`. `Default` — это **только подсказка для отображения**, помеченная значком запись. Он **не влияет на выполнение**: когда `agent.model` пуст, демон передаёт `""` в бэкенд, и CLI разрешает свой собственный дефолт. Держите статические списки короткими и актуальными.
+
+### Динамическое обнаружение
+
+Если CLI умеет перечислять модели, напишите `discoverXxxModels(ctx, executablePath)` и оберните его в `cachedDiscovery` (TTL 60с через `modelCacheTTL`, ключ по `providerType`; пустые результаты никогда не кэшируются, поэтому временный сбой повторяется немедленно):
+
+```go
+case "xxx":
+	return cachedDiscovery(providerType, func() ([]Model, error) {
+		return discoverXxxModels(ctx, executablePath)
+	})
+```
+
+Внутри `discoverXxxModels`: задайте дефолтный путь, защита `exec.LookPath` (при отсутствии возвращайте пустой список, а не ошибку, чтобы UI откатился к ручному вводу), `context.WithTimeout` (15с соответствует сетевым путям обнаружения), `hideAgentWindow(cmd)`, затем разбор `cmd.Output()`. Для CLI, говорящих на ACP (`initialize` + `session/new`, объявляющие `availableModels`/`currentModelId`), не дублируйте цикл — добавьте `acpDiscoveryProvider` и вызовите `discoverACPModels`, так же как это делают `discoverHermesModels`, `discoverKimiModels` и `discoverKiroModels`.
+
+`ModelSelectionSupported` сейчас безусловно возвращает `true`; вы трогаете его только если ваш рантайм действительно не имеет моделей.
+
+## Опционально — `MinVersions`
+
+Если ваш CLI получил протокол, от которого вы зависите, в известной версии, добавьте запись в `MinVersions` (в `version.go`). Регистрация запускает `CheckMinVersion(agentType, detectedVersion)`, который ничего не делает, когда тип отсутствует в map, и в противном случае отклоняет демоны ниже порога:
+
+```go
+var MinVersions = map[string]string{
+	"claude":  "2.0.0",
+	"codex":   "0.100.0",
+	"copilot": "1.0.0",
+	"xxx":     "1.2.0", // <feature> added in 1.2.0
+}
+```
+
+Само определение версии (`DetectVersion` → `detectCLIVersion` → `extractVersionLine`) уже обрабатывает ваш CLI — оно запускает `xxx --version` и извлекает первую строку в форме semver, терпимо относясь к шуму shell.
+
+## Опционально — обнаружение уровней рассуждения
+
+Если ваш CLI предоставляет управление рассуждением/усилием, представьте его как `Model.Thinking` (`*ModelThinking` с `SupportedLevels []ThinkingLevel` и опциональным `DefaultLevel`). Селектор передаёт выбранное значение обратно как `opts.ThinkingLevel`, которое вы инжектируете **только через собственный флаг CLI**.
+
+В `thinking.go` есть два стиля обнаружения, оба кэшируются по `(provider, executablePath, cliVersion)` на `thinkingDiscoveryTTL` (10 мин):
+
+- **Разбор `--help`** — Claude (`claudeEffortRe` извлекает список значений `--effort`) и CodeBuddy (`codebuddyEffortRe`). Используйте это, когда набор уровней живёт в тексте справки.
+- **Структурированная подкоманда** — Codex (`codex debug models --bundled`, разбирается `parseCodexDebugModels`). Предпочитайте это, когда CLI выдаёт JSON-каталог по моделям.
+
+Подключите свой аннотатор в case `ListModels` (`annotateClaudeThinking` / `annotateCodexThinking` / `annotateCodebuddyThinking` — это шаблоны) и добавьте фиксированный словарь вашего провайдера в `providerThinkingEnums`, чтобы синхронный gate сервера `IsKnownThinkingValue` принимал сохранённые значения. Сбои обнаружения должны оставлять `Thinking == nil` — тогда UI просто скрывает селектор.
+
+## Чек-лист обязательного шаблонного кода
+
+Каждый супервизирующий бэкенд подключает одни и те же примитивы. Пропустите один — и вы снова внесёте баг, который существующие бэкенды уже исправили.
+
+| Примитив | Зачем | Источник |
+| --- | --- | --- |
+| Защита `exec.LookPath(execPath)` | Вернуть чистую ошибку «executable not found» вместо загадочного сбоя exec. | `claude.go`, `gemini.go` |
+| `runContext(ctx, opts.Timeout)` | `Timeout > 0` ⇒ жёсткий дедлайн; `<= 0` ⇒ **нет дедлайна**, контроль живости остаётся за watchdog'ом бездействия демона (MUL-3064). Возвращённый `cancel` — ваша ответственность. | `agent.go` |
+| `buildEnv(b.cfg.Env)` | Слить `os.Environ()` с `cfg.Env`, удаляя внутренние маркеры сессии Claude Code через `isFilteredChildEnvKey`, чтобы дочерний процесс не принял себя за вложенную сессию. Gemini оборачивает это как `buildGeminiEnv`, чтобы задать дефолт `GEMINI_CLI_TRUST_WORKSPACE`. | `claude.go` |
+| `hideAgentWindow(cmd)` | No-op вне Windows; скрывает окно консоли в Windows. Вызывайте его на **каждом** `exec.Cmd`, который вы создаёте, включая пробы обнаружения. | `proc_windows.go` / `proc_other.go` |
+| `cmd.WaitDelay = 10 * time.Second` | Ограничивает, как долго `cmd.Wait()` блокируется после отмены контекста, пока pipe'ы опустошаются. | `claude.go`, `gemini.go` |
+| хвост stderr | Оберните `cmd.Stderr` в `newStderrTail(newLogWriter(...), agentStderrTailBytes)` (2048 байт) и при сбое вложите `stderrBuf.Tail()` в `finalError` через `withAgentStderr(finalError, "xxx", ...)`. Без этого падение читается как голый `exit status N`. | `stderr_tail.go`, `claude.go` |
+| закрытие stdout при отмене | Запустите горутину, которая закрывает stdout, когда срабатывает `runCtx.Done()`, чтобы `bufio.Scanner` разблокировался. | `claude.go`, `gemini.go` |
+
+Шаблон `gemini.go` подключает каждую строку, кроме протокола stdin и инъекции MCP; обращайтесь к `claude.go`, когда они вам нужны.
+
+## Фильтруйте пользовательские аргументы через `filterCustomArgs`
+
+Определите `xxxBlockedArgs map[string]blockedArgMode`, перечисляющий флаги, которые ваш демон жёстко задаёт — те, которые, если бы пользователь их переопределил, сломали бы протокол демон↔агент. Каждое значение — это `blockedWithValue` (флаг потребляет следующий аргумент) или `blockedStandalone` (булев). Набор Gemini — минимальная иллюстрация:
+
+```go
+var xxxBlockedArgs = map[string]blockedArgMode{
+	"-p": blockedWithValue,  // the prompt
+	"-o": blockedWithValue,  // output format
+}
+```
+
+Затем при сборке argv прогоните через фильтр **оба** источника аргументов. Порядок такой: `ExtraArgs` (общие для демона дефолты) перед `CustomArgs` (для конкретного агента), каждый отфильтрован:
+
+```go
+args = append(args, filterCustomArgs(opts.ExtraArgs, xxxBlockedArgs, logger)...)
+args = append(args, filterCustomArgs(opts.CustomArgs, xxxBlockedArgs, logger)...)
+```
+
+`filterCustomArgs` отбрасывает любой заблокированный флаг (логируя предупреждение), пропускает его значение, когда режим — `blockedWithValue`, и снимает один слой shell-кавычек с каждого аргумента через `unshellQuoteArg`. Набор блокировки намеренно узок — только критичные для протокола флаги, поскольку участникам рабочего пространства доверяют настраивать агентов разумно. Обратите внимание: `gemini` читает только `CustomArgs`; `claude` читает и `ExtraArgs`, и `CustomArgs` — подключайте то, что нужно вашему CLI, но всегда через фильтр.
+
+## Соблюдайте `opts.Model` только через флаг CLI — никогда через дефолт на стороне Go
+
+Это регрессия, на которую напоролся бэкенд `cursor`, и правило абсолютно: когда `opts.Model` непуст, передавайте его через флаг модели CLI; когда он пуст, не передавайте ничего и дайте CLI разрешить свой собственный дефолт.
+
+```go
+if opts.Model != "" {
+	args = append(args, "-m", opts.Model)
+}
+```
+
+**Не** подставляйте жёстко заданную строку модели, когда `opts.Model == ""`. Дефолт на стороне Go всегда хуже угадывает, чем собственное разрешение CLI, которое знает аккаунт пользователя, учётные данные и окружение. Флаг `Model.Default` в каталоге — это значок для отображения, а не дефолт выполнения — см. [models-and-thinking](/developers/agentic/models-and-thinking).
+
+## Неподдерживаемые поля `ExecOptions` молча игнорируются
+
+`ExecOptions` несёт поля, которые ни один отдельный бэкенд не потребляет полностью: `SystemPrompt`, `ThreadName`, `MaxTurns`, `SemanticInactivityTimeout`, `ResumeSessionID`, `ExtraArgs`, `McpConfig`, `ThinkingLevel`, `OpenclawMode`. Бэкенд читает те поля, которые понимает его CLI, и **игнорирует остальные** — он не выдаёт ошибку на поле, которое не может соблюсти. Именно это позволяет новым опциям появляться, не ломая несвязанные агенты (паттерн, под который были добавлены и `ThinkingLevel`, и `OpenclawMode`). Так что если у вашего CLI нет `--resume`, просто не читайте `opts.ResumeSessionID`; не добавляйте guard, который его отклоняет.
+
+## Исходные файлы
+
+| Файл | Символы, от которых зависит эта страница |
+| --- | --- |
+| `server/pkg/agent/agent.go` | `Backend`, `Execute`, `ExecOptions` (`Cwd`, `Model`, `SystemPrompt`, `MaxTurns`, `Timeout`, `ResumeSessionID`, `ExtraArgs`, `CustomArgs`, `McpConfig`, `ThinkingLevel`, `OpenclawMode`), `runContext`, `Session`, `Message`, `MessageType` (`MessageText`/`MessageThinking`/`MessageToolUse`/`MessageToolResult`/`MessageStatus`/`MessageError`/`MessageLog`), `Result` (`Status` values `completed`/`failed`/`aborted`/`timeout`/`cancelled`), `TokenUsage`, `Config`, `New`, `DetectVersion`, `launchHeaders`, `LaunchHeader` |
+| `server/pkg/agent/gemini.go` | `geminiBackend`, `buildGeminiArgs`, `buildGeminiEnv`, `geminiBlockedArgs`, `accumulateUsage` |
+| `server/pkg/agent/claude.go` | `claudeBackend`, `buildClaudeArgs`, `claudeBlockedArgs`, `filterCustomArgs`, `unshellQuoteArg`, `blockedArgMode` (`blockedWithValue`/`blockedStandalone`), `buildEnv`, `mergeEnv`, `isFilteredChildEnvKey`, `trySend`, `detectCLIVersion`, `extractVersionLine`, `newLogWriter` |
+| `server/pkg/agent/models.go` | `ListModels`, `Model` (`ID`/`Label`/`Provider`/`Default`/`Free`/`Category`/`Thinking`), `ModelThinking`, `ThinkingLevel`, `ModelSelectionSupported`, `cachedDiscovery`, `modelCacheTTL`, `claudeStaticModels`, `geminiStaticModels`, `discoverACPModels`, `acpDiscoveryProvider` |
+| `server/pkg/agent/version.go` | `MinVersions`, `CheckMinVersion`, `parseSemver`, `versionRe`, `extractVersionLine` |
+| `server/pkg/agent/thinking.go` | `annotateClaudeThinking`, `annotateCodexThinking`, `annotateCodebuddyThinking`, `claudeEffortRe`, `codebuddyEffortRe`, `parseCodexDebugModels`, `codexDebugModelsArgs`, `thinkingDiscoveryTTL`, `providerThinkingEnums`, `IsKnownThinkingValue`, `ValidateThinkingLevel` |
+| `server/pkg/agent/stderr_tail.go` | `agentStderrTailBytes`, `newStderrTail`, `stderrTail.Tail`, `withAgentStderr` |
+| `server/pkg/agent/proc_windows.go`, `server/pkg/agent/proc_other.go` | `hideAgentWindow` |
+
+**Правило дрейфа в рамках одного PR:** если любой задокументированный символ, флаг CLI, значение `Result.Status` или поле `ExecOptions` выше переименовано, перемещено или меняет поведение, обновите эту страницу **и** её sidecar `references/add-a-backend-source-map.md` в том же PR. Страница — это контракт, прослеженный до исходного кода — устаревшая документация молча учит неправильному способу регистрации бэкенда.

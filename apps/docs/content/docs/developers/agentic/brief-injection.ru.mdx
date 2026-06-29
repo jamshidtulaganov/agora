@@ -1,0 +1,216 @@
+---
+title: Brief Injection
+description: Как демон идемпотентно записывает runtime-бриф Agora в конфигурационный файл провайдера, очищает его побайтово-точно и переходит к inline-доставке как к запасному варианту.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Аудитория">
+**Разработчики.** Эта страница документирует `InjectRuntimeConfig` / `writeRuntimeConfigFile` / `CleanupRuntimeConfig` в `server/internal/daemon/execenv/runtime_config.go` и места их вызова в `server/internal/daemon/daemon.go` — механизм, который доставляет runtime-бриф CLI-агенту, не уничтожая собственный `CLAUDE.md` пользователя. *Содержимое* брифа (что именно написано в markdown) описано в [/developers/agentic/brief-anatomy](/developers/agentic/brief-anatomy); как бриф встраивается в общий промпт — в [/developers/agentic/prompt-layers](/developers/agentic/prompt-layers); контракт, который агент обязан соблюдать, — в [/developers/agentic/agent-runtime-contract](/developers/agentic/agent-runtime-contract). Различия в поведении от провайдера к провайдеру — в [/developers/agentic/provider-matrix-internals](/developers/agentic/provider-matrix-internals).
+</Callout>
+
+## Что такое brief injection
+
+Каждый CLI-бэкенд агента (Claude Code, Codex, Gemini CLI, …) узнаёт инструкции уровня проекта из нативного конфигурационного файла в своём рабочем каталоге. Демон Agora рассказывает агенту о его runtime — про CLI `agora`, рабочий процесс назначения задач, идентичность агента, прикреплённые навыки и контекст проекта — записывая этот бриф в нативный файл провайдера. Это содержимое «мета-навыка», производимое функцией `buildMetaSkillContent`.
+
+Точка входа — `InjectRuntimeConfig(workDir, provider string, ctx TaskContextForEnv) (string, error)`. Она формирует содержимое, разрешает целевой путь для провайдера и записывает файл. Она возвращает строку брифа независимо от того, был ли записан файл, поэтому провайдер без целевого файла всё равно получает доставку только через промпт:
+
+```go
+func InjectRuntimeConfig(workDir, provider string, ctx TaskContextForEnv) (string, error) {
+	content := buildMetaSkillContent(provider, ctx)
+	path := runtimeConfigPath(workDir, provider)
+	if path == "" {
+		// Unknown provider — skip config injection, prompt-only mode.
+		return content, nil
+	}
+	return content, writeRuntimeConfigFile(path, content)
+}
+```
+
+`runTask` в `daemon.go` вызывает её сразу после `StartTask`, и ошибка инъекции **не является фатальной** — она логирует предупреждение и продолжает работу:
+
+```go
+runtimeBrief, err := execenv.InjectRuntimeConfig(env.WorkDir, provider, taskCtx)
+if err != nil {
+	d.logger.Warn("execenv: inject runtime config failed (non-fatal)", "error", err)
+}
+```
+
+## Таблица провайдер → имя файла
+
+`runtimeConfigPath` — единая таблица сопоставления. Её централизация держит Inject и Cleanup синхронизированными — обе обращаются к одной и той же функции, так что новый провайдер, добавленный с одной стороны, не может разойтись с другой.
+
+| Провайдер | Целевой файл |
+| --- | --- |
+| `claude`, `codebuddy` | `CLAUDE.md` |
+| `codex`, `copilot`, `opencode`, `openclaw`, `hermes`, `pi`, `cursor`, `kimi`, `kiro`, `antigravity` | `AGENTS.md` |
+| `gemini` | `GEMINI.md` |
+| что-либо ещё | `""` (нет целевого файла — только промпт) |
+
+Возврат `""` — это сигнал «у данного провайдера нет файлового конфигурационного назначения»; и Inject, и Cleanup трактуют его как no-op для записи в файл.
+
+## Идемпотентная замена, а не перезапись
+
+Изначальная реализация безусловно вызывала `os.WriteFile`. В первый раз, когда агент был направлен на собственный репозиторий пользователя через поток ресурса проекта `local_directory`, это **молча обнуляло собственный `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` репозитория** — инцидент, отслеживаемый как **MUL-2753**. Исправление — `writeRuntimeConfigFile`, которое сохраняет любое содержимое, написанное пользователем, и заменяет только управляемую Agora область.
+
+### Маркеры
+
+Управляемая область ограничена двумя маркерами в виде HTML-комментариев, заданными как константы:
+
+```go
+runtimeMarkerBegin = "<!-- BEGIN MULTICA-RUNTIME (auto-managed; do not edit) -->"
+runtimeMarkerEnd   = "<!-- END MULTICA-RUNTIME -->"
+```
+
+HTML-комментарии используются для того, чтобы маркеры были инертны в любом рендерере Markdown и безвредны, когда подаются агенту как инструкции. **Изменение текста маркера — это ломающее изменение** для любого файла, который уже несёт прежние маркеры — файл с устаревшим маркером больше не будет распознан, поэтому следующая инъекция добавит свежий блок рядом с осиротевшим. Меняйте константы осознанно.
+
+Записываемый блок оборачивает бриф и завершается единственным переводом строки:
+
+```go
+block := runtimeMarkerBegin + "\n" + strings.TrimRight(brief, "\n") + "\n" + runtimeMarkerEnd + "\n"
+```
+
+### Три состояния файла
+
+`writeRuntimeConfigFile` ветвится по текущему состоянию файла:
+
+1. **Файл отсутствует** → создать его, содержащим только блок маркеров, **без ведущего разделителя**. Cleanup позднее обнаруживает отсутствие разделителя и восстанавливает состояние «файл отсутствует», удаляя файл.
+2. **Файл присутствует, блока маркеров нет** (любое содержимое, включая пустое) → дописать `runtimeManagedSeparator` + блок. Разделитель — это `"\n\n"`, и его байты считаются частью управляемой области.
+3. **Файл присутствует, блок маркеров уже есть** → заменить тело между маркерами на месте, чтобы повторные запуски в том же рабочем каталоге не наращивали файл безгранично. Всё, что находится перед блоком (включая любой управляемый разделитель от первой инъекции), сохраняется дословно.
+
+```go
+existing, err := os.ReadFile(path)
+if errors.Is(err, fs.ErrNotExist) {
+	return os.WriteFile(path, []byte(block), 0o644)
+}
+// ...
+if start, end, ok := locateMarkerBlock(existingStr); ok {
+	newContent := existingStr[:start] + block + existingStr[end:]
+	return os.WriteFile(path, []byte(newContent), 0o644)
+}
+return os.WriteFile(path, []byte(existingStr+runtimeManagedSeparator+block), 0o644)
+```
+
+`runtimeManagedSeparator` добавляется **безусловно** при дописывании — даже для файлов, которые уже заканчиваются двумя или более переводами строк. Это делает байтовую границу между пользовательским содержимым и управляемой областью детерминированной, что как раз и позволяет Cleanup откатить к исходным байтам пользователя без ренормализации завершающих переводов строк. Без разделителя фиксированной ширины путь очистки оставлял бы тонкий, но реальный diff на каждом запуске (см. ревью MUL-2753 в PR #3438).
+
+## locateMarkerBlock: выживание при некорректных файлах
+
+`locateMarkerBlock(content string) (start, end int, found bool)` находит байтовый диапазон `[start, end)` управляемого блока. Возвращаемый `end` находится на одну позицию за завершающим переводом строки блока (если он есть), чтобы блок можно было вырезать, не оставив осиротевшей пустой строки.
+
+Конечный маркер ищется **строго после** начального маркера. Два некорректных случая, которые наивная пара `strings.Index` обработала бы неверно:
+
+- **Случайный конечный маркер перед любым начальным.** Пользовательское содержимое может нести буквальный `<!-- END MULTICA-RUNTIME -->` (например, фрагмент документации, показывающий формат на проводе). Наивный парсер нашёл бы этот конец, отверг блок и добавлял бы свежий блок на каждом запуске — наращивая файл безгранично, потому что случайный конец остаётся на месте.
+- **Сбой между началом и концом.** Если предыдущий запуск умер после записи начала, но до конца, файл содержит половину блока. Когда после начала конец не найден, `locateMarkerBlock` трактует остаток файла как блок (`return start, len(content), true`), так что следующая запись **заменяет полублок на месте**, а не складывает новый блок под ним.
+
+```go
+endRel := strings.Index(content[afterBegin:], runtimeMarkerEnd)
+if endRel < 0 {
+	// Malformed — no end marker after begin. Treat the rest of the file
+	// as the block so the next write replaces it cleanly.
+	return start, len(content), true
+}
+end = afterBegin + endRel + len(runtimeMarkerEnd)
+if end < len(content) && content[end] == '\n' {
+	end++
+}
+```
+
+<Mermaid chart={`flowchart TD
+  A[writeRuntimeConfigFile] --> B{os.ReadFile}
+  B -- fs.ErrNotExist --> C[Write block only, no separator]
+  B -- other error --> D[return wrapped error]
+  B -- file read --> E{locateMarkerBlock}
+  E -- found --> F[Splice block in place, preserve pre and post bytes]
+  E -- not found --> G[Append runtimeManagedSeparator + block]
+`} />
+
+## CleanupRuntimeConfig: побайтово-точный откат
+
+`CleanupRuntimeConfig(workDir, provider string) error` — вторая половина контракта. Вместе с `writeRuntimeConfigFile` эти две функции должны давать круговой обход (round-trip) конфигурации локального репозитория пользователя через любое число запусков Agora, не трогая ни одного неуправляемого байта. Функция зеркалит три состояния Inject:
+
+- **Нет блока маркеров** → no-op (сюда ничего никогда не инъектировалось).
+- **Блок в начале файла, без предшествующего управляемого разделителя** → файл был создан Inject из состояния «файл отсутствует»; удалить файл целиком, чтобы листинг каталога после очистки был побайтово идентичен листингу до Inject.
+- **Блоку предшествует фиксированный управляемый разделитель** → удалить разделитель вместе с блоком; всё, что остаётся (пустое, состоящее только из пробелов или произвольное пользовательское содержимое), записывается обратно дословно, **без** нормализации завершающих переводов строк и **без** эвристики удаления файла на основе TrimSpace. Оба этих момента были источниками тонкого diff в ревью PR #3438.
+
+Различие «созданный файл» против «уже существовавший файл» полностью переносится наличием `runtimeManagedSeparator` перед блоком:
+
+```go
+hadManagedSeparator := strings.HasSuffix(pre, runtimeManagedSeparator)
+if hadManagedSeparator {
+	pre = pre[:len(pre)-len(runtimeManagedSeparator)]
+}
+remainder := pre + post
+
+if !hadManagedSeparator && remainder == "" {
+	// Inject created the file. Restore the missing-file state.
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("remove runtime config %s: %w", path, err)
+	}
+	return nil
+}
+return os.WriteFile(path, []byte(remainder), 0o644)
+```
+
+Отсутствие разделителя — *единственное* условие, при котором Cleanup имеет право удалить файл. Уже существовавший пустой файл даёт пустой `remainder`, и Cleanup всё равно записывает этот нулевой по размеру файл обратно, чтобы сохранить существование файла. Отсутствующие файлы, неизвестные провайдеры (`runtimeConfigPath` возвращает `""`) и файлы без блока маркеров — все они no-op; Cleanup безопасно вызывать защитно.
+
+## Cleanup выполняется только для задач local_directory
+
+Cleanup откладывается (deferred) в `runTask` **только** когда рабочий каталог задачи — это собственный репозиторий пользователя — `env.LocalDirectory`:
+
+```go
+if env.LocalDirectory {
+	defer func() {
+		if cerr := execenv.CleanupRuntimeConfig(env.WorkDir, provider); cerr != nil {
+			d.logger.Warn("execenv: cleanup runtime config failed (non-fatal)", "error", cerr)
+		}
+		if cerr := execenv.CleanupSidecars(env.RootDir); cerr != nil {
+			d.logger.Warn("execenv: cleanup sidecars failed (non-fatal)", "error", cerr)
+		}
+	}()
+}
+```
+
+Для облачных / временных (scratch) рабочих каталогов бриф остаётся на месте: рабочий каталог — это временное пространство демона под `/agora_workspaces/...`, оно сохраняется для **переиспользования** будущими задачами на той же паре `(agent, issue)` (путь проходит круговой обход через `PriorWorkDir` при следующем claim), а цикл GC удаляет эти рабочие каталоги **целиком**. Переписывание блока маркеров на месте — правильное поведение там, так что очистка была бы бессмысленной работой.
+
+Случай local_directory отличается: без очистки бриф продолжал бы жить внутри репозитория пользователя, и более поздний ручной запуск `claude` / `codex` / `gemini`, начатый пользователем в том же каталоге, подхватил бы устаревшие инструкции Agora (id задачи предыдущей задачи, id триггерного комментария и правила ответа) и начал бы действовать в неправильном контексте. `CleanupRuntimeConfig` вырезает бриф из `CLAUDE.md` / `AGENTS.md` / `GEMINI.md`; родственная `CleanupSidecars` удаляет остаток дерева (`.agent_context/`, `.agora/`, каталоги навыков провайдера), который Prepare записал в репозиторий (см. MUL-2784).
+
+## Inline- против файловой доставки
+
+Нескольким провайдерам нельзя доверить надёжную загрузку файлового брифа, поэтому демон **также** доставляет полный runtime-бриф inline. `providerNeedsInlineSystemPrompt` — это шлюз:
+
+```go
+func providerNeedsInlineSystemPrompt(provider string) bool {
+	switch provider {
+	case "openclaw", "kiro", "kimi":
+		return true
+	default:
+		return false
+	}
+}
+```
+
+Когда она возвращает true, `runTask` устанавливает бриф в опциях выполнения:
+
+```go
+if providerNeedsInlineSystemPrompt(provider) {
+	execOpts.SystemPrompt = runtimeBrief
+}
+```
+
+`execOpts.SystemPrompt` — это та же строка `runtimeBrief`, которую вернула `InjectRuntimeConfig`, поэтому inline-провайдеры получают идентичную нагрузку, которую файловые runtime подхватывают с диска (каталог CLI, шаги рабочего процесса, идентичность/персона, навыки, контекст проекта). Без этого такие провайдеры молча пропускали бы секцию рабочего процесса и никогда не вызывали бы `agora issue status` / `agora issue comment add`, оставляя задачи застрявшими в `todo`.
+
+Как каждый бэкенд потребляет `ExecOptions.SystemPrompt` — специфично для бэкенда: `openclaw` и `kimi` добавляют его в начало пользовательского сообщения, тогда как другие бэкенды, которые его принимают (например, `pi`, `codebuddy`), пробрасывают его через CLI-флаг `--append-system-prompt`. Три провайдера в `providerNeedsInlineSystemPrompt` всё равно **также** получают записанный файл, потому что `runtimeConfigPath` сопоставляет их всех с `AGENTS.md` — inline-доставка это подстраховка (belt-and-suspenders), а не замена.
+
+**Hermes намеренно исключён.** ACP-сессии Hermes стартуют в cwd задачи, и Hermes сам загружает `AGENTS.md` / `.agent_context`, поэтому добавление полного брифа в начало пользовательского промпта ACP дублировало бы этот контекст, раздувало бы каждый ход и уже вызывало срабатывание апстрим-фильтров безопасности на безобидных задачах. Бэкенд Hermes явно игнорирует `ExecOptions.SystemPrompt`.
+
+См. [/developers/agentic/protocol-families](/developers/agentic/protocol-families), чтобы понять, почему ACP (Hermes) отличается от семейств CLI на основе stdin/JSON, и [/developers/conventions](/developers/conventions) — про правила именования для любого нового провайдера, который вы добавляете через [/developers/agentic/add-a-backend](/developers/agentic/add-a-backend).
+
+## Source files
+
+| Файл | Символы, от которых зависит эта страница |
+| --- | --- |
+| `server/internal/daemon/execenv/runtime_config.go` | `runtimeMarkerBegin`, `runtimeMarkerEnd`, `runtimeManagedSeparator`, `InjectRuntimeConfig`, `runtimeConfigPath`, `writeRuntimeConfigFile`, `locateMarkerBlock`, `CleanupRuntimeConfig`, `buildMetaSkillContent` |
+| `server/internal/daemon/daemon.go` | `runTask`, `providerNeedsInlineSystemPrompt`, место вызова `InjectRuntimeConfig` (`runtimeBrief`), `defer` очистки `env.LocalDirectory`, `execenv.CleanupRuntimeConfig`, `execenv.CleanupSidecars`, `execOpts.SystemPrompt` |
+
+Если документированный выше символ, флаг или поле перемещается или меняется, обновите эту страницу **и** её sidecar с картой источников (`brief-injection-source-map.md`) в том же PR — страница является контрактом, отслеживаемым к исходному коду, и молчаливое расхождение научило бы устаревшему поведению.

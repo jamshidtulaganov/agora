@@ -1,0 +1,136 @@
+---
+title: Prompt Layers
+description: Daemon vazifasi koding agentga qanday qilib ikki qatlam orqali tasvirlanadi — yupqa, har bir navbatda oʻzgaruvchan xabar va katta, barqaror runtime-config karkasi.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Auditoriya">
+Auditoriya: **ikkalasi ham** — daemonning prompt kodini tahrirlovchi backend muhandislari hamda vazifa nega aynan shunday tarzda oʻzlariga tasvirlanganini mulohaza qiladigan agentlar. Agar siz yangi vazifa turini qoʻshayotgan boʻlsangiz, agentga ishga tushirish buyurilgan CLI flagini oʻzgartirayotgan boʻlsangiz yoki javob qoidalari nega ikki joyda paydo boʻlishini hayron boʻlsangiz — bu sahifa aynan siz uchun. Shuningdek qarang: [/developers/agentic/task-kinds](/developers/agentic/prompt-layers), [/developers/agentic/runtime-config](/developers/agentic/prompt-layers) va [/developers/conventions](/developers/conventions).
+</Callout>
+
+Daemon vazifani koding-agent CLI’siga joʻnatganida, uni **ikki qatlam** orqali tasvirlaydi; bu qatlamlar ikki xil faylda joylashgan ikki xil funksiya tomonidan yoziladi. Ajratishni toʻgʻri bajarish — har bir navbatdagi xabarni arzon, doimiy koʻrsatmalarni esa barqaror saqlaydigan narsa.
+
+- **1-qatlam — har bir navbatda oʻzgaruvchan xabar.** `server/internal/daemon/prompt.go` ichidagi `BuildPrompt` agentga foydalanuvchi navbati sifatida beriladigan qisqa satrni qaytaradi. U har bir navbatda oʻzgaradi: shu izoh, shu trigger ID’si, shu chat xabari.
+- **2-qatlam — barqaror runtime-config karkasi.** `server/internal/daemon/execenv/runtime_config.go` ichidagi `buildMetaSkillContent` uzun markdown brifini qaytaradi; uni `InjectRuntimeConfig` provayderning oʻziga xos config fayliga (`CLAUDE.md` / `AGENTS.md` / `GEMINI.md`) yozadi. Bu — agentning shu ish davomidagi doimiy ish qoʻllanmasi.
+
+## Ajratish: oʻzgaruvchan vs barqaror
+
+Ikki qatlam shuning uchun mavjudki, har bir fakt aynan bitta joyda yashaydi va u qanchalik tez-tez oʻzgarishiga qarab joylanadi.
+
+| | 1-qatlam — `BuildPrompt` | 2-qatlam — `buildMetaSkillContent` |
+|---|---|---|
+| Fayl | `server/internal/daemon/prompt.go` | `server/internal/daemon/execenv/runtime_config.go` |
+| Chiqish | har bir navbatdagi xabar satri | markdown brif |
+| Qayerga yoziladi | agentning foydalanuvchi navbati | `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` |
+| Yashash muddati | **oʻzgaruvchan** — har bir navbatda qayta quriladi | **barqaror** — ish davomidagi doimiy karkas |
+| Nimani olib yuradi | shu izoh matni, shu trigger ID’si, shu chat xabari, shu quick-create kiritmasi | identifikatsiya, ish maydoni konteksti, mavjud buyruqlar, ish jarayoni (workflow), mention/biriktirma qoidalari |
+
+Qoida shunday: **har bir navbatda oʻzgaradigan fakt 1-qatlamga tegishli; butun ish davomida oʻzgarmaydigan fakt 2-qatlamga tegishli.** Triggerlovchi izoh matni oʻzgaruvchan, shuning uchun `buildCommentPrompt` uni toʻgʻridan-toʻgʻri ichiga joylaydi (`> %s`) — shunda agent "qayta ishlatilgan workdir’da eskirgan chiqish fayllari boʻlganda ham uni oʻtkazib yubora olmaydi". `agora` CLI buyruqlari roʻyxati esa barqaror, shuning uchun u har bir navbatda qaytadan chiqarilish oʻrniga `buildMetaSkillContent` ichida `## Available Commands` ostida bir marta yashaydi.
+
+<Mermaid chart={`flowchart TD
+  T[Task dispatched] --> P[BuildPrompt task, provider]
+  T --> I[InjectRuntimeConfig workDir, provider, ctx]
+  P -->|volatile per-turn message| AG[Agent user turn]
+  I -->|calls| M[buildMetaSkillContent provider, ctx]
+  M -->|stable brief| F[CLAUDE.md / AGENTS.md / GEMINI.md]
+  F --> AG`} />
+
+## 1-qatlam: `BuildPrompt` va beshta vazifa-turi tarmogʻi
+
+`BuildPrompt(task Task, provider string) string` — yupqa dispetcher. U vazifani tekshiradi va aynan shu tartibda beshta quruvchidan biriga yoʻnaltiradi:
+
+1. `task.ChatSessionID != ""` → `buildChatPrompt(task)`
+2. `task.TriggerCommentID != ""` → `buildCommentPrompt(task, provider)`
+3. `task.AutopilotRunID != ""` → `buildAutopilotPrompt(task)`
+4. `task.QuickCreatePrompt != ""` → `buildQuickCreatePrompt(task)`
+5. aks holda → ichki **assignment** tarmogʻi (yordamchisiz; `BuildPrompt` uni toʻgʻridan-toʻgʻri quradi)
+
+`BuildPrompt` ustidagi doc-izoh butun qatlam uchun shartnomani bayon qiladi: *"Keep this minimal — detailed instructions live in CLAUDE.md / AGENTS.md injected by `execenv.InjectRuntimeConfig`."* Har bir tarmoq faqat oʻsha tur uchun oʻzgaruvchan boʻlgan narsani chiqaradi:
+
+- **chat** (`buildChatPrompt`) — `task.ChatMessage`, aniq tanlangan har qanday `/`-skill’larni va har bir xabar uchun `task.ChatMessageAttachments`’ni chiqaradi (`id`/`filename` boʻyicha sanab beriladi, shunda agent ularni eskirgan CDN URL orqali emas, `agora attachment download <id>` orqali yuklab oladi).
+- **comment** (`buildCommentPrompt`) — `task.TriggerCommentContent`’ni blok-iqtibos sifatida, muallif yorligʻini hamda *aynan shu* trigger uchun izohni oʻqish va javob berish koʻrsatmalarini joylaydi. `provider` faqat shuning uchun uzatiladiki, javob shabloni platformaga bogʻliq.
+- **autopilot** (`buildAutopilotPrompt`) — faqat shu ishga tegishli autopilotning ID’lari, sarlavhasi, manbai, trigger yuklamasi va tavsifini chiqaradi. Aniq qilib `Do not run agora issue get; this run does not have an issue ID.` bilan tugaydi.
+- **quick-create** (`buildQuickCreatePrompt`) — foydalanuvchining `task.QuickCreatePrompt`’ini hamda toʻliq maydon/chiqish qoidalarini chiqaradi (quyidagi istisnoga qarang).
+- **assignment** (yiqilib oʻtuvchi holat) — barchasidan eng yupqasi: `Your assigned issue ID is: %s` hamda `agora issue get %s --output json`’ga koʻrsatkich va izohlar tarixi qoidasi. Batafsil qadam-baqadam ish jarayoni butunlay 2-qatlamda yashaydi.
+
+## 2-qatlam: `buildMetaSkillContent` va runtime config fayli
+
+`InjectRuntimeConfig(workDir, provider string, ctx TaskContextForEnv)` `buildMetaSkillContent(provider, ctx)`’ni chaqiradi va natijani `runtimeConfigPath` orqali provayderning oʻziga xos config fayliga yozadi:
+
+- `claude`, `codebuddy` → `CLAUDE.md`
+- `codex`, `copilot`, `opencode`, `openclaw`, `hermes`, `pi`, `cursor`, `kimi`, `kiro`, `antigravity` → `AGENTS.md`
+- `gemini` → `GEMINI.md`
+- nomaʼlum provayder → `""` (faqat-prompt rejimi, hech qanday fayl yozilmaydi)
+
+Brif — bitta katta, asosan statik markdown hujjat. U `# Agora Agent Runtime` bilan ochiladi, soʻngra `ctx`’dan boʻlimlarni yigʻadi: `## Agent Identity`, `## Requesting User`, `## Task Initiator`, `## Workspace Context`, `## Available Commands`, `## Comment Formatting`, `## Showing Code Changes`, `## Repositories`, `## Project Context`, `## Issue Metadata`, `### Workflow` bloki, `## Mentions`, `## Attachments` va `## Output`. `### Workflow` bloki oʻzi ham vazifa turiga qarab tarmoqlanadi (chat / quick-create / autopilot / comment / assignment) — biroq bu **doimiy** koʻrsatmalar boʻlib, shu navbatdagi maʼlumotlar emas.
+
+`InjectRuntimeConfig` foydalanuvchining oʻz config faylini buzib tashlamaydi. U brifni marker izohlarga (`runtimeMarkerBegin` / `runtimeMarkerEnd`) oʻraydi va `writeRuntimeConfigFile` yo faylni yaratadi, yo qatʼiy `runtimeManagedSeparator`’dan keyin qoʻshib qoʻyadi, yo mavjud blokni oʻrnida almashtiradi. `CleanupRuntimeConfig` buni aynan teskari — bayt-bama-bayt — bekor qiladi; bu esa `WorkDir` foydalanuvchining oʻz repozitoriysi boʻlgan `local_directory` oqimi uchun muhim.
+
+## Ajratish nega muhokama qilinmaydi: yagona haqiqat manbai
+
+Ajratishning mohiyati — **har bir fakt uchun bitta yozuvchi**. Oʻzgaruvchan faktlarning aynan bitta yozuvchisi bor (`BuildPrompt`); barqaror faktlarning aynan bitta yozuvchisi bor (`buildMetaSkillContent`). Bir koʻrsatma *ikkala* sirtda ham paydo boʻlishi kerak boʻlsa, u **ikki tomondan ham chaqiriladigan bitta umumiy quruvchi** tomonidan generatsiya qilinadi — hech qachon ikki marta ichiga yozilmaydi.
+
+Bu — drift’ga qarshi qoida boʻlib, `server/internal/daemon/execenv/reply_instructions.go` aynan shu qoida amalga oshiriladigan joy. U yerda toʻrtta quruvchi yashaydi va har biri 1-qatlamdan ham, 2-qatlamdan ham chaqiriladi:
+
+- `BuildNewCommentsHint(issueID, triggerCommentID, triggerThreadID, newCommentsSince string, newCommentCount int)`
+- `BuildResumedCommentsHint(issueID, triggerCommentID, triggerThreadID string)`
+- `BuildColdCommentsHint(issueID, triggerCommentID, triggerThreadID string)`
+- `BuildCommentReplyInstructions(provider, issueID, triggerCommentID string)`
+
+Masalan, `buildCommentPrompt` (1-qatlam) `b.WriteString(execenv.BuildCommentReplyInstructions(provider, task.IssueID, task.TriggerCommentID))` bilan tugaydi, `buildMetaSkillContent`’ning comment tarmogʻi (2-qatlam) esa 7-qadamda aynan oʻsha `BuildCommentReplyInstructions(provider, ctx.IssueID, ctx.TriggerCommentID)`’ni chaqiradi. Ikkala sirt ham bir xil javob shablonini chiqaradi — Linux/macOS’da quoted-HEREDOC, Windows’da `--content-file` — va bir xil izoh-oʻqish maslahatini beradi. Quruvchilarning doc-izohlari bu talabni aniq bayon qiladi: *"Both surfaces call this so the cold fallback cannot drift between them"* va *"Both the per-turn prompt (`daemon.buildCommentPrompt`) and the CLAUDE.md workflow (`InjectRuntimeConfig`) call this so the two surfaces cannot drift (hard requirement from PR #2816)."*
+
+<Callout title="Qoida">
+Agar biror gap ham har bir navbatdagi xabarda, ham runtime brifida paydo boʻlishi kerak boʻlsa, uni `reply_instructions.go` ichidagi quruvchida bir marta yozing va oʻsha quruvchini ham `prompt.go`, ham `runtime_config.go`’dan chaqiring. Matnni hech qachon ikkalasiga nusxa-koʻchirib qoʻymang — nusxalar driftga uchraydi va agent qarama-qarshi koʻrsatmalar oladi (eskirgan `--parent` UUID — klassik nosozlik).
+</Callout>
+
+## Quick-create istisnosi
+
+Quick-create "batafsil qoidalar 2-qatlamda yashaydi" naqshini ataylab buzadi. Toʻliq maydon qoidalari (title, description, priority, assignee, project, parent, status, attachments) va qatʼiy chiqish shartnomasi (`Run exactly one agora issue create --output json invocation`) brifda emas, **1-qatlamda** — `buildQuickCreatePrompt` ichida — yashaydi.
+
+Sababi `buildMetaSkillContent`’ning quick-create `### Workflow` tarmogʻidagi kod izohida: quick-create **bir martalik (one-shot)**, shuning uchun har bir navbatdagi xabar doim mavjud boʻladi va shu yerda unga yagona haqiqat manbaini beradi. 2-qatlam faqat qatʼiy himoya choralarini saqlab qoladi — shunda foydalanuvchi xabarini oʻzining ishchi kontekstiga uzatmaydigan provayder (yoki qayta tiklangan sessiya) ham assignment ish jarayonini boʻsh issue ID’ga qarshi ishga tushirishdan saqlanadi:
+
+```text
+**This task was triggered by quick-create.** There is NO existing Agora issue.
+Follow the field and output rules in the user message you just received; ignore
+the default assignment-task workflow.
+```
+
+Shunday qilib, odatdagi ajratish (oʻzgaruvchan 1-qatlamda, barqaror 2-qatlamda) bu yerda teskari boʻladi: batafsil qoidalar oʻzgaruvchan-yondosh (ular *aynan shu* bir kiritmani qanday qayta ishlashni tasvirlaydi) va bir martalik tabiat har bir navbatdagi xabarning doim oʻqilishini kafolatlaydi.
+
+## `TaskContextForEnv`: umumiy oʻzgaruvchan struct
+
+Ikkala qatlam ham vazifa kontekstidan oʻqiydi. 2-qatlam `TaskContextForEnv`’dan oʻqiydi (`server/internal/daemon/execenv/execenv.go` ichida belgilangan); 1-qatlam esa daemonning `Task`’idan oʻqiydi. Vazifa turini ajratuvchi maydonlar ikkala tomonda ham bir xil toʻplam: `ChatSessionID`, `TriggerCommentID`, `AutopilotRunID`, `QuickCreatePrompt` hamda `IssueID`.
+
+Aynan shuning uchun **yangi vazifa turi ikkala qatlamga ham tegadi**. Bittasini qoʻshish uchun siz quyidagilarni bajarishingiz shart:
+
+1. `Task`’ga va `TaskContextForEnv`’ga ajratuvchi maydon qoʻshing.
+2. Har bir navbatda oʻzgaruvchan xabar uchun `BuildPrompt`’ga (1-qatlam) tarmoq qoʻshing.
+3. `buildMetaSkillContent`’dagi (2-qatlam) `### Workflow` blokiga tarmoq qoʻshing va `hasIssueContext` / `isAssignmentTriggered` himoyalarini yangilang — shunda yangi tur tasodifan issue-markazli yoʻlga tushib qolmaydi.
+
+2-qadamni yoki 3-qadamni oʻtkazib yuborish yarim ulangan tur hosil qiladi: toʻgʻri har bir navbatdagi xabar, ammo notoʻgʻri doimiy ish jarayoni, yoki aksincha. Mavjud himoyalar buni aniq koʻrsatadi — `hasIssueContext := ctx.ChatSessionID == "" && ctx.QuickCreatePrompt == "" && ctx.AutopilotRunID == ""` va `isAssignmentTriggered := ... && ctx.TriggerCommentID == ""` ikkalasi ham har bir assignment boʻlmagan turni sanab oʻtadi, shuning uchun ularga qoʻshilmagan yangi tur notoʻgʻri tasniflanadi.
+
+## Squad-leader aniqlash qatlamga qarab farq qiladi
+
+Squad-leader xatti-harakati (agent sukut bilan chiqib ketishi va izoh joʻnatish oʻrniga `agora squad activity <issue-id> no_action`’ni yozib qoʻyishi mumkin) har bir qatlamda boshqacha tarzda boshqariladi va bu farqni bilish foydali:
+
+- **2-qatlam** `TaskContextForEnv`’dagi oldindan hisoblangan `ctx.IsSquadLeader` mantiqiy qiymatini oʻqiydi (*"true when the agent is acting as a squad leader (may exit silently on no_action)"* deb izohlangan). `### Workflow` va `## Output` boʻlimlari shu qiymatga qarab tarmoqlanadi.
+- **1-qatlam**, `buildCommentPrompt` ichida, buni **protokol satrini quyi-satr boʻyicha moslashtirib** ichida aniqlaydi: `task.Agent != nil && strings.Contains(task.Agent.Instructions, "## Squad Operating Protocol")`. Oʻsha quyi-satr mavjud boʻlganda u har bir navbatdagi xabarga squad-leader `no_action` qoidasini chiqaradi.
+
+Demak, squad-leader shartnomasining ikkita triggeri bor: 2-qatlamda struct mantiqiy qiymati va 1-qatlamda agent koʻrsatmalariga qarshi soʻzma-soʻz satr mosligi. Agar siz `## Squad Operating Protocol` sarlavhasini qayta nomlasangiz, 1-qatlamdagi aniqlash sukut bilan ishlamay qoladi — shu satrni shartnoma deb hisoblang.
+
+## Prompt-kesh oqibati (qisqacha)
+
+Barqaror-birinchi tartiblash — shuningdek keshlash optimizatsiyasi. Uzun `buildMetaSkillContent` brifi navbatlar boʻyicha barqaror, qisqa `BuildPrompt` xabari esa oʻzgaradigan narsa boʻlgani uchun, promptni prefiks-keshlovchi provayderlar katta barqaror karkasda kesh-hit oladi va har bir navbatda faqat kichik oʻzgaruvchan dum uchun ishlov haqini toʻlaydi. Oʻzgaruvchan kontentni brifdan tashqarida — va barqaror kontentdan oldin chiqib turmaydigan tartibda — saqlash aynan oʻsha kesh chegarasini saqlaydi. Bu — ajratishning oqibati, uning asosiy maqsadi emas; asosiy maqsad — yagona haqiqat manbai.
+
+## Source files
+
+| Fayl | Bu sahifa bogʻliq boʻlgan simvollar |
+|---|---|
+| `server/internal/daemon/prompt.go` | `BuildPrompt`, `buildChatPrompt`, `buildCommentPrompt`, `buildAutopilotPrompt`, `buildQuickCreatePrompt`; vazifa-turi ajratuvchilari `ChatSessionID` / `TriggerCommentID` / `AutopilotRunID` / `QuickCreatePrompt`; `strings.Contains(task.Agent.Instructions, "## Squad Operating Protocol")` |
+| `server/internal/daemon/execenv/runtime_config.go` | `buildMetaSkillContent`, `InjectRuntimeConfig`, `runtimeConfigPath`, `writeRuntimeConfigFile`, `CleanupRuntimeConfig`, `runtimeMarkerBegin`, `runtimeMarkerEnd`, `runtimeManagedSeparator`; himoyalar `hasIssueContext`, `isAssignmentTriggered`; `ctx.IsSquadLeader` ishlatilishi |
+| `server/internal/daemon/execenv/reply_instructions.go` | `BuildNewCommentsHint`, `BuildResumedCommentsHint`, `BuildColdCommentsHint`, `BuildCommentReplyInstructions` (ikkala qatlamdan chaqiriladigan umumiy quruvchilar) |
+| `server/internal/daemon/execenv/execenv.go` | `TaskContextForEnv` va uning ajratuvchi maydonlari (`IssueID`, `ChatSessionID`, `TriggerCommentID`, `AutopilotRunID`, `QuickCreatePrompt`, `IsSquadLeader`); `InjectRuntimeConfig` chaqiruv joyi konteksti |
+
+Yuqoridagi har qanday hujjatlashtirilgan simvol, maydon, flag yoki sarlavha satri koʻchirilsa yoki qayta nomlansa, bu sahifani **hamda** uning source-map yondosh faylini (`references/prompt-layers-source-map.md`) bir xil PR’da yangilang — oʻrnatilgan skill’lar manbasiga izlanadigan shartnomalar boʻlib, driftga uchragan sahifa sukut bilan eskirgan daemon xatti-harakatini oʻrgatadi.

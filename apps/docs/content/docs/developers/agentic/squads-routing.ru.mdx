@@ -1,0 +1,155 @@
+---
+title: Squads & Routing
+description: Squad — это объект маршрутизации: каждый путь входа разрешается в одну задачу leader_id, и никогда не порождает веер задач по участникам.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Аудитория">
+Эта страница предназначена **и** для инженеров, **и** для агентов, работающих над поведением squad. Это авторитетное объяснение того, почему squad является объектом *маршрутизации*, а не исполнителем, и как все четыре пути входа схлопываются в единственную задачу лидера. Агенты, разбирающиеся в вопросе «почему мой squad запустился / не запустился», должны читать её вместе со встроенным навыком `agora-squads`. Связанные материалы: /developers/agentic/autopilot, [/developers/agentic/agent-tasks](/developers/architecture), [/developers/conventions](/developers/conventions). Границы пакетов регулируются файлом CLAUDE.md в корне репозитория.
+</Callout>
+
+## Единственное правило
+
+Squad — это **объект маршрутизации и координации уровня workspace**, а не агент. Он никогда не выполняет работу сам по себе. Каждый путь, который мог бы «запустить squad», разрешает `leader_id` этого squad и ставит в очередь **ровно одну задачу лидера**. Нигде в кодовой базе нет веера задач по участникам — назначение, упоминание, autopilot или сигнал о завершении дочерней задачи запускают лидера и только лидера.
+
+Дальше лидер *координирует*, делегируя участникам через комментарии-`@mention`. Эти упоминания являются обычными триггерами по упоминанию — они не являются механизмом squad. Единственная задача squad: разрешиться в лидера, передать лидеру брифинг и не вмешиваться.
+
+<Callout type="warn" title="Неправильная ментальная модель">
+«Squad — это команда агентов, которые все запускаются, когда приходит работа.» Это неверно. `squad.instructions` — это содержимое **брифинга лидера**, а не промпт для каждого участника. `role` — это метка в составе, а не планировщик. Участники — это записи в составе, которым лидер *может* делегировать; их никогда не диспетчеризуют автоматически.
+</Callout>
+
+## Четыре пути входа
+
+Любой способ, которым работа достигает squad, сводится в `EnqueueTaskForSquadLeader` (`server/internal/service/task.go`), который является вариантом `enqueueMentionTask` для роли лидера. Все четыре разделяют один и тот же гейт готовности, один и тот же страж дедупликации и одну и ту же провенанс-метку `is_leader_task=true`.
+
+<Mermaid chart={`flowchart TD
+  A["Assignment / backlog-promotion<br/>shouldEnqueueSquadLeaderOnAssign"] --> R
+  M["@mention of squad<br/>computeCommentAgentTriggers"] --> R
+  P["Autopilot (assignee_type=squad)<br/>resolveAutopilotLeader"] --> R
+  C["Child-done signal<br/>triggerChildDoneSquad"] --> R
+  R["Resolve squad.leader_id"] --> G{"Leader ready?<br/>not archived · runtime bound · runtime online"}
+  G -- no --> X["Fail CLOSED — no task enqueued"]
+  G -- yes --> D{"HasPendingTaskForIssueAndAgent?"}
+  D -- yes --> S["Skip — dedup"]
+  D -- no --> E["EnqueueTaskForSquadLeader<br/>is_leader_task = true"]
+`} />
+
+### 1. Назначение (и продвижение из backlog)
+
+`shouldEnqueueSquadLeaderOnAssign` (`server/internal/handler/squad.go`) зеркалит `shouldEnqueueAgentTask`: issue в статусе `backlog` откладывается (возвращается `false`), иначе управление передаётся `isSquadLeaderReady`. Перемещение issue, назначенного на squad, *из* backlog само по себе является триггером. `enqueueSquadLeaderTask` разрешает squad, прогоняет гейты доступа и дедупликации и вызывает `TaskService.EnqueueTaskForSquadLeader`. Он «не ставит в очередь каждого участника squad».
+
+### 2. @mention squad
+
+Упоминание `[@Squad Name](mention://squad/<squad-id>)` разрешает squad, читает `leader_id` и ставит в очередь задачу лидера, используя текущий комментарий как триггерный комментарий. Триггеры по пути комментариев проходят через `computeCommentAgentTriggers`, поэтому предпросмотр и создание разделяют один и тот же набор триггеров. Та же маршрутизация — только лидер.
+
+### 3. Autopilot
+
+Для `assignee_type = "squad"` функция `resolveAutopilotLeader` (`server/internal/service/autopilot.go`) возвращает `squad.LeaderID` как исполняющего агента; проверки допуска и готовности выполняются против лидера. Для autopilot'ов типа `create_issue` созданный issue сохраняет `assignee_type = "squad"` / `assignee_id = <squad-id>`, тогда как *исполняющим* агентом является разрешённый лидер. Задача лидера ставится в очередь через тот же `EnqueueTaskForSquadLeader` (см. прямой вызов в `autopilot.go`).
+
+### 4. Child-done
+
+Когда дочерний issue переходит в `done`, цепочка `notifyParentOfChildDone` → `triggerChildDoneSquad` (`server/internal/handler/issue_child_done.go`) публикует системный комментарий на родителе и ставит в очередь задачу лидера. Child-done — это «координационный сигнал, лидер решает, действовать ли». Он несёт выделенные защиты от циклов: он пропускается, когда дочерний issue назначен на *тот же* squad, или когда `effectiveChildAgentOwner` дочернего issue совпадает с `leader_id` этого squad (цикл общего лидера).
+
+## Автоматическое членство лидера
+
+Лидер всегда является также **участником** squad. При `CreateSquad` (`server/internal/handler/squad.go`) бэкенд автоматически добавляет лидера как участника с `Role: "leader"`. При `UpdateSquad`, если задан новый `leader_id` и этот агент ещё не является участником, он автоматически добавляется с ролью `leader`. `RemoveSquadMember` отказывается удалять лидера (`"cannot remove the squad leader; change leader first"`).
+
+Проверка валидности лидера при создании/обновлении лишь подтверждает, что агент **существует** в workspace — она **не** отклоняет архивированного лидера. Архивированный лидер отклоняется позже, на этапе диспетчеризации (см. ниже).
+
+## Брифинг лидера
+
+`squad.instructions` — это содержимое брифинга лидера. Оно собирается в полный системный брифинг функцией `buildSquadLeaderBriefing` (`server/internal/handler/squad_briefing.go`), которая конкатенирует три раздела:
+
+1. **`squadOperatingProtocol`** — константа, системный блок только на английском языке. Он указывает лидеру координировать (не выполнять), делегировать через `@mention`, фиксировать оценку на каждом ходу и **останавливаться после диспетчеризации**.
+2. **Squad Roster** — собирается `buildSquadRoster`: строка самого лидера плюс одна `renderMemberRow` на каждого неархивированного участника, каждая с буквальной, готовой к вставке markdown-разметкой упоминания. Архивированные участники-агенты и неразрешимые записи тихо пропускаются (`renderMemberRow` возвращает `""`).
+3. **Squad Instructions** — пользовательские `squad.instructions`, добавляются **только когда непусто** (чтобы не было висящего заголовка).
+
+### Инъекция происходит во время claim, а не enqueue
+
+Брифинг **не** хранится в задаче. Он собирается и добавляется к `Instructions` агента в обработчике claim (`ClaimTaskByRuntime` в `server/internal/handler/daemon.go`), под защитой условий: issue назначен на squad **и** `squad.LeaderID == resp.Agent.ID`. Он **добавляется** (`Instructions + "\n\n" + briefing`), никогда не заменяется, поэтому инструкции конкретного агента остаются авторитетными для общего поведения, а брифинг squad наслаивается сверху как контекст, специфичный для задачи. Та же инъекция выполняется на пути claim при быстром создании.
+
+Эта композиция во время claim — причина, по которой состав всегда свежий: добавьте участника, измените `instructions`, архивируйте участника — следующий claim подхватит это без повторной постановки в очередь.
+
+### formatMention должна совершать round-trip через ParseMentions
+
+Ценность состава целиком зависит от того, способен ли лидер *вставить* упоминание, которое действительно сработает. `formatMention` выдаёт `[@<name>](mention://<type>/<id>)`. Эта строка **должна** совершать round-trip через `util.ParseMentions` — обычный `@name` никого не триггерит, и Operating Protocol заявляет это в безоговорочных формулировках («нет ссылки-упоминания = нет делегирования»). Участники-люди используют `member` + `user_id`; агенты используют `agent` + id агента.
+
+<Callout type="warn" title="Опасность дрейфа">
+Если вы меняете форму вывода `formatMention` или принимаемую форму `util.MentionRe` / `util.ParseMentions`, вы обязаны менять их вместе. Рассогласование означает, что лидер вставляет markdown-упоминание, которое парсится в ничто, и каждое делегирование тихо обращается в no-op, пока issue простаивает.
+</Callout>
+
+## Флаг is_leader_task
+
+`EnqueueTaskForSquadLeader` устанавливает `IsLeaderTask: pgtype.Bool{Bool: isLeader, Valid: isLeader}` в строке задачи (`enqueueMentionTask`). Флаг существует, чтобы защиты от самотриггера могли различать комментарий, который агент опубликовал **как лидер** (пропустить — это собственное делегирование лидера), и тот, который он опубликовал **как исполнитель** (не пропускать). Это важно, когда один агент одновременно является лидером и исполнителем одного и того же squad. `lastTaskWasLeader` / `GetLatestTaskIsLeaderForIssueAndAgent` читают флаг самой последней задачи агента на issue, чтобы принять это решение.
+
+### Повторные попытки ОБЯЗАНЫ наследовать флаг
+
+Повторно поставленная задача, потерявшая `is_leader_task`, была бы неверно классифицирована защитой от самотриггера и могла бы перенаправиться неправильно. Каждый путь клонирования сохраняет его:
+
+| Путь клонирования | Источник | Наследование |
+|---|---|---|
+| `CreateRetryTask` (`server/pkg/db/queries/agent.sql`) | повтор на том же runtime | выбирает `p.is_leader_task` |
+| `CreateFailoverTask` (`agent.sql`) | маршрут на резервный runtime | выбирает `p.is_leader_task` |
+| `RerunIssue` / `enqueueRerunTask` (`task.go`) | пользовательский перезапуск | `isLeader = sourceTask.IsLeaderTask`; запасной вариант для squad-назначения устанавливает `isLeader = true` |
+
+Комментарий в SQL у `CreateRetryTask` заявляет это явно: `is_leader_task` «inherited so the retried task keeps the same squad-role provenance as its parent and the self-trigger guard … continues to recognise it as a leader task».
+
+## Архивированный лидер: fail CLOSED при диспетчеризации
+
+Поскольку создание/обновление никогда не отклоняют архивированного лидера, поза fail-closed живёт на **каждом пути маршрутизации/диспетчеризации** вместо этого — все они отклоняют архивированного (или лишённого runtime, или offline) лидера **до** того, как какая-либо задача будет поставлена в очередь:
+
+- **Назначение / продвижение из backlog** — `isSquadLeaderReady` (`squad.go`) загружает лидера и прогоняет `service.AgentReadiness`; любой путь с ошибкой возвращает `false` («Fail closed when we can't tell»).
+- **Упоминание / child-done** — `enqueueMentionTask` отклоняет архивированного агента (`agent is archived`); `triggerChildDoneSquad` и `maybeReTriggerSquadLeaderOnMemberFailure` оба проверяют `agent.ArchivedAt.Valid` и `!agent.RuntimeID.Valid` перед постановкой в очередь.
+- **Autopilot** — `resolveAutopilotLeader` возвращает `errSquadArchived` для архивированного squad; `formatAdmissionReason` переписывает причину пропуска с префиксом `"squad leader "`, так что архивированный/offline лидер всплывает как `squad leader agent is archived` / `… at dispatch time` в `failure_reason`.
+
+`DeleteSquad` также проактивно переписывает уцелевшие autopilot'ы на лидера (`TransferSquadAutopilotsToLeader`) и переносит назначенцев issue (`TransferSquadAssignees`), но гейт всё равно fail-closed для любой строки, которая обходит обработчик.
+
+## Протокол no_action
+
+Operating Protocol делает фиксацию оценки **обязательной на каждом ходу**, даже когда ничего не сделано. Лидер вызывает:
+
+```bash
+agora squad activity <issue-id> action|no_action|failed --reason "<why>"
+```
+
+Это попадает в `RecordSquadLeaderEvaluation` (`server/internal/handler/squad.go`), который:
+
+- валидирует `outcome ∈ {action, no_action, failed}`;
+- требует, чтобы issue был назначен на squad;
+- **обеспечивает, что только агент-лидер squad** может фиксировать (`actorType == "agent" && actorID == squad.LeaderID`, иначе `403`);
+- требует валидный заголовок `X-Task-ID`, чья задача принадлежит issue;
+- записывает активность `squad_leader_evaluated` в `activity_log` с `details.outcome`, `details.task_id`, `details.squad_id`, `details.reason`.
+
+### Подавление no_action на уровне задачи
+
+Когда лидер фиксирует `no_action`, он явно решил, что ничего не требуется — поэтому система **не должна** синтезировать запасной комментарий «done» для этой задачи. При завершении задачи `CompleteTask` (`task.go`) вызывает `HasSquadLeaderNoActionEvaluationForTask` (`server/internal/service/squad_no_action.go`) и пропускает запасной комментарий, когда тот возвращает true (`!suppressNoActionComment && !agentCommented`). Запрос (`server/pkg/db/queries/activity.sql`) ключуется по `issue_id` + `agent_id` + `action = 'squad_leader_evaluated'` + `details->>'outcome' = 'no_action'` + `details->>'task_id' = @task_id` — подавление ограничено **точной задачей**, поэтому последующий триггер на том же issue не затрагивается.
+
+### Ответ 409 на ручной комментарий после no_action
+
+Та же запись no_action на уровне задачи также блокирует комментарии, привязанные к этой задаче. В обработчике комментариев (`server/internal/handler/comment.go`) агент, публикующий из задачи, для которой лидер уже зафиксировал `no_action`, получает отказ:
+
+```
+409 Conflict — "squad leader recorded no_action; comments are not allowed for this task"
+```
+
+Это соседствует со стражем parent-id для возобновлённой сессии (тоже `409`) и использует ту же проверку `HasSquadLeaderNoActionEvaluationForTask`. Это не даёт возобновлённой сессии лидера противоречить собственному зафиксированному решению no_action, добавляя комментарий под закрытой задачей.
+
+## Файлы-источники
+
+| Файл | Символы, от которых зависит эта страница |
+|---|---|
+| `server/internal/handler/squad.go` | `CreateSquad` (автоматическое членство лидера, роль `"leader"`), `UpdateSquad` (автодобавление нового лидера), `RemoveSquadMember` (блокировка удаления лидера), `shouldEnqueueSquadLeaderOnAssign`, `isSquadLeaderReady`, `enqueueSquadLeaderTask`, `lastTaskWasLeader`, `RecordSquadLeaderEvaluation`, `commentMentionsAnyone` |
+| `server/internal/handler/squad_briefing.go` | `buildSquadLeaderBriefing`, `squadOperatingProtocol`, `buildSquadRoster`, `renderMemberRow`, `formatRosterRow`, `formatMention` |
+| `server/internal/handler/daemon.go` | `ClaimTaskByRuntime` (инъекция брифинга лидера squad во время claim, страж `squad.LeaderID == resp.Agent.ID`, добавление-не-замена) |
+| `server/internal/service/squad_no_action.go` | `HasSquadLeaderNoActionEvaluationForTask` |
+| `server/internal/service/task.go` | `EnqueueTaskForSquadLeader`, `enqueueMentionTask` (`IsLeaderTask`, отклонение архивированного агента), `CompleteTask` (подавление запасного комментария при no_action), `RerunIssue` / `enqueueRerunTask` (наследование `isLeader`), `maybeReTriggerSquadLeaderOnMemberFailure` |
+| `server/internal/service/autopilot.go` | `resolveAutopilotLeader`, `errSquadArchived`, `formatAdmissionReason` (префикс `"squad leader "`), прямой вызов `EnqueueTaskForSquadLeader` |
+| `server/internal/handler/issue_child_done.go` | `notifyParentOfChildDone`, `triggerChildDoneSquad`, `effectiveChildAgentOwner` |
+| `server/internal/handler/comment.go` | `computeCommentAgentTriggers`, страж `409` «squad leader recorded no_action» |
+| `server/pkg/db/queries/agent.sql` | `CreateRetryTask` / `CreateFailoverTask` (наследование `is_leader_task`), `GetLatestTaskIsLeaderForIssueAndAgent`, `HasPendingTaskForIssueAndAgent` |
+| `server/pkg/db/queries/activity.sql` | `HasSquadLeaderNoActionEvaluationForTask` (поиск `no_action` на уровне задачи) |
+| `server/internal/service/builtin_skills/agora-squads/SKILL.md` | контракт squad, обращённый к агентам, с которым эта страница должна оставаться синхронной |
+
+Когда любой задокументированный выше символ, флаг, поле или форма CLI перемещается или меняет форму, обновляйте **эту страницу и её source-map-приложение (`references/squads-routing-source-map.md`) в том же PR** — встроенный навык `agora-squads` является контрактом с прослеживаемым источником, поставляемым агентам, поэтому устаревшая документация тихо обучает неправильному поведению squad.

@@ -1,0 +1,242 @@
+---
+title: Add a Backend
+description: Step-by-step guide to registering a new CLI agent backend in server/pkg/agent — the struct, the switch, the launch header, the model catalog, and the mandatory subprocess boilerplate.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Audience">
+**both.** This page is the concrete checklist for adding a new coding-agent CLI to `server/pkg/agent/`. It is written for backend engineers and for agents working on the runtime layer. Read [/developers/agentic/backend-interface](/developers/agentic/backend-interface) first for the `Backend`/`Session` contract this page assumes, then [/developers/agentic/protocol-families](/developers/agentic/protocol-families) for which transport family your CLI belongs to, and [/developers/agentic/models-and-thinking](/developers/agentic/models-and-thinking) for the model-catalog and reasoning-effort surfaces referenced in steps 4 and the optional sections. Naming and package-boundary rules: [/developers/conventions](/developers/conventions).
+</Callout>
+
+There is **no plugin registry.** A new backend is wired in by hand-editing a switch in `agent.New` and adding entries to a few package-level maps. This is deliberate — the set of supported CLIs is small, audited, and version-gated, so a compile-time switch beats a runtime registry. The whole job is: write one `xxx.go` file, add it to four places, and (optionally) teach the version gate and the thinking-level discovery about it.
+
+Use `gemini.go` as the **minimal template** (a one-shot subprocess that reads NDJSON off stdout) and `claude.go` as the **full reference** (stdin protocol, MCP config injection, control-request auto-approval, stderr tail, session-resume resolution).
+
+## Map of the work
+
+<Mermaid chart={`flowchart TD
+  A["Step 1: xxx.go\nxxxBackend struct + Execute"] --> B["Step 2: agent.New switch\n+ error string list"]
+  B --> C["Step 3: launchHeaders entry"]
+  C --> D["Step 4: ListModels case\nstatic catalog OR discoverXxx"]
+  D --> E["Optional: MinVersions\nthinking discovery"]
+`} />
+
+## Step 1 — create `xxx.go` with a backend struct and `Execute`
+
+Every backend is a struct holding only a `Config` plus a method satisfying the `Backend` interface:
+
+```go
+type Backend interface {
+	Execute(ctx context.Context, prompt string, opts ExecOptions) (*Session, error)
+}
+```
+
+The minimal shape (modeled on `geminiBackend`):
+
+```go
+type xxxBackend struct {
+	cfg Config
+}
+
+func (b *xxxBackend) Execute(ctx context.Context, prompt string, opts ExecOptions) (*Session, error) {
+	execPath := b.cfg.ExecutablePath
+	if execPath == "" {
+		execPath = "xxx"
+	}
+	if _, err := exec.LookPath(execPath); err != nil {
+		return nil, fmt.Errorf("xxx executable not found at %q: %w", execPath, err)
+	}
+
+	timeout := opts.Timeout
+	runCtx, cancel := runContext(ctx, timeout)
+
+	args := buildXxxArgs(prompt, opts, b.cfg.Logger)
+	cmd := exec.CommandContext(runCtx, execPath, args...)
+	hideAgentWindow(cmd)
+	cmd.WaitDelay = 10 * time.Second
+	if opts.Cwd != "" {
+		cmd.Dir = opts.Cwd
+	}
+	cmd.Env = buildEnv(b.cfg.Env)
+	// ... wire stdout pipe, start, spawn the reader goroutine, return *Session ...
+}
+```
+
+The timing contract is non-negotiable and lives in [backend-interface](/developers/agentic/backend-interface): `Execute` returns fast with a non-nil `*Session`, then the CLI runs inside goroutines. A returned `error` means the run never started and `*Session` is `nil`.
+
+### What `Config` and the goroutine give you
+
+`Config` carries `ExecutablePath`, `Env` (`map[string]string`), and `Logger` (`*slog.Logger`). The reader goroutine accumulates an `output strings.Builder`, a `sessionID`, a `finalStatus` starting at `"completed"`, a `finalError`, and a `usage map[string]TokenUsage`, then sends exactly one `Result` on `resCh` before closing both channels.
+
+`Result.Status` is one of `"completed"`, `"failed"`, `"aborted"`, `"timeout"`, `"cancelled"`. The standard post-`cmd.Wait()` mapping, copied verbatim from the backends, decides which one applies:
+
+```go
+if runCtx.Err() == context.DeadlineExceeded {
+	finalStatus = "timeout"
+	finalError = fmt.Sprintf("xxx timed out after %s", timeout)
+} else if runCtx.Err() == context.Canceled {
+	finalStatus = "aborted"
+	finalError = "execution cancelled"
+} else if waitErr != nil && finalStatus == "completed" {
+	finalStatus = "failed"
+	finalError = fmt.Sprintf("xxx exited with error: %v", waitErr)
+}
+```
+
+Emit streaming events through `trySend(msgCh, Message{...})` using the `MessageType` constants (`MessageText`, `MessageThinking`, `MessageToolUse`, `MessageToolResult`, `MessageStatus`, `MessageError`, `MessageLog`). `trySend` drops the message if the channel is full — final text is reconstructed from `output` in `Result.Output`, so only live streaming consumers are affected.
+
+## Step 2 — register in the `agent.New` switch (two edits)
+
+`New(agentType string, cfg Config) (Backend, error)` is a hand-edited switch. Add **both** the case and the supported-types list in the `default` error string — they are two separate edits in the same function and CI has nothing that keeps them in sync for you:
+
+```go
+case "xxx":
+	return &xxxBackend{cfg: cfg}, nil
+```
+
+```go
+default:
+	return nil, fmt.Errorf("unknown agent type: %q (supported: claude, codebuddy, codex, copilot, opencode, openclaw, hermes, gemini, pi, cursor, kimi, kiro, antigravity, xxx)", agentType)
+```
+
+<Callout title="Two edits, not one">
+Forgetting the second edit ships a backend that works but whose error message lies about the supported set. Update the package doc comment on `New` (the `// Supported types:` line) and the package-level comment at the top of `agent.go` in the same change so the documented list stays truthful.
+</Callout>
+
+## Step 3 — add a `launchHeaders` entry
+
+`launchHeaders` is a `map[string]string` mapping each agent type to the user-visible launch skeleton — the command plus subcommand or a short mode label — that the daemon renders so users understand what their `custom_args` get appended to. It is intentionally minimal: no internal flags, transport values, or env vars.
+
+```go
+var launchHeaders = map[string]string{
+	// ...
+	"xxx": "xxx run (stream-json)",
+}
+```
+
+`LaunchHeader(agentType)` returns the entry, or `""` for an unknown type. A missing entry is not a crash — it just renders an empty preview, so do not skip this.
+
+## Step 4 — add a `ListModels` case
+
+`ListModels(ctx, providerType, executablePath string) ([]Model, error)` is a second hand-edited switch (in `models.go`) whose `default` returns `unknown agent type: %q`. Pick one of two shapes:
+
+### Static catalog
+
+If the CLI has no `models list` command, ship a baked-in `[]Model`. Follow `geminiStaticModels`:
+
+```go
+case "xxx":
+	return xxxStaticModels(), nil
+```
+
+A `Model` is `{ID, Label, Provider, Default, Free, Category, Thinking}`. `Default` is a **display hint only** — the badged entry. It has **no effect at execution time**: when `agent.model` is empty the daemon passes `""` to the backend and the CLI resolves its own default. Keep static lists short and current.
+
+### Dynamic discovery
+
+If the CLI can enumerate models, write a `discoverXxxModels(ctx, executablePath)` and wrap it in `cachedDiscovery` (60s TTL via `modelCacheTTL`, keyed on `providerType`; empty results are never cached so a transient failure retries immediately):
+
+```go
+case "xxx":
+	return cachedDiscovery(providerType, func() ([]Model, error) {
+		return discoverXxxModels(ctx, executablePath)
+	})
+```
+
+Inside `discoverXxxModels`: default the path, `exec.LookPath` guard (return an empty list, not an error, when missing so the UI falls back to manual entry), a `context.WithTimeout` (15s matches the network-backed discovery paths), `hideAgentWindow(cmd)`, then parse `cmd.Output()`. For ACP-speaking CLIs (`initialize` + `session/new` advertising `availableModels`/`currentModelId`), do not duplicate the loop — add an `acpDiscoveryProvider` and call `discoverACPModels`, the way `discoverHermesModels`, `discoverKimiModels`, and `discoverKiroModels` do.
+
+`ModelSelectionSupported` currently returns `true` unconditionally; you only touch it if your runtime is genuinely model-less.
+
+## Optional — `MinVersions`
+
+If your CLI gained the protocol you depend on at a known version, add a `MinVersions` entry (in `version.go`). Registration runs `CheckMinVersion(agentType, detectedVersion)`, which is a no-op when the type is absent from the map and otherwise rejects daemons below the floor:
+
+```go
+var MinVersions = map[string]string{
+	"claude":  "2.0.0",
+	"codex":   "0.100.0",
+	"copilot": "1.0.0",
+	"xxx":     "1.2.0", // <feature> added in 1.2.0
+}
+```
+
+Version detection itself (`DetectVersion` → `detectCLIVersion` → `extractVersionLine`) already handles your CLI — it runs `xxx --version` and pulls the first semver-shaped line, tolerating shell noise.
+
+## Optional — thinking-level discovery
+
+If your CLI exposes a reasoning/effort control, surface it as `Model.Thinking` (`*ModelThinking` with `SupportedLevels []ThinkingLevel` and an optional `DefaultLevel`). The picker passes the chosen value back as `opts.ThinkingLevel`, which you inject **only via the CLI's own flag**.
+
+There are two discovery styles in `thinking.go`, both cached on `(provider, executablePath, cliVersion)` for `thinkingDiscoveryTTL` (10 min):
+
+- **Parse `--help`** — Claude (`claudeEffortRe` extracts the `--effort` value list) and CodeBuddy (`codebuddyEffortRe`). Use this when the level set lives in help text.
+- **Structured subcommand** — Codex (`codex debug models --bundled`, parsed by `parseCodexDebugModels`). Prefer this when the CLI emits a per-model JSON catalog.
+
+Wire your annotator into the `ListModels` case (`annotateClaudeThinking` / `annotateCodexThinking` / `annotateCodebuddyThinking` are the templates), and add your provider's fixed vocabulary to `providerThinkingEnums` so the server's synchronous `IsKnownThinkingValue` gate accepts persisted values. Discovery failures must leave `Thinking == nil` — the UI then simply hides the picker.
+
+## Mandatory boilerplate checklist
+
+Every supervising backend wires the same primitives. Miss one and you reintroduce a bug the existing backends already fixed.
+
+| Primitive | Why | Source |
+| --- | --- | --- |
+| `exec.LookPath(execPath)` guard | Return a clean "executable not found" error instead of a cryptic exec failure. | `claude.go`, `gemini.go` |
+| `runContext(ctx, opts.Timeout)` | `Timeout > 0` ⇒ hard deadline; `<= 0` ⇒ **no deadline**, liveness left to the daemon's inactivity watchdog (MUL-3064). You own the returned `cancel`. | `agent.go` |
+| `buildEnv(b.cfg.Env)` | Merge `os.Environ()` with `cfg.Env`, stripping internal Claude Code session markers via `isFilteredChildEnvKey` so the child doesn't mistake itself for a nested session. Gemini wraps this as `buildGeminiEnv` to default `GEMINI_CLI_TRUST_WORKSPACE`. | `claude.go` |
+| `hideAgentWindow(cmd)` | No-op off Windows; hides the console window on Windows. Call it on **every** `exec.Cmd` you create, including discovery probes. | `proc_windows.go` / `proc_other.go` |
+| `cmd.WaitDelay = 10 * time.Second` | Bounds how long `cmd.Wait()` blocks after context cancellation while pipes drain. | `claude.go`, `gemini.go` |
+| stderr tail | Wrap `cmd.Stderr` in `newStderrTail(newLogWriter(...), agentStderrTailBytes)` (2048 bytes) and, on failure, fold `stderrBuf.Tail()` into `finalError` with `withAgentStderr(finalError, "xxx", ...)`. Without it a crash reads as a bare `exit status N`. | `stderr_tail.go`, `claude.go` |
+| close stdout on cancel | Spawn a goroutine that closes stdout when `runCtx.Done()` fires so the `bufio.Scanner` unblocks. | `claude.go`, `gemini.go` |
+
+The `gemini.go` template wires every row except the stdin protocol and MCP injection; reach for `claude.go` when you need those.
+
+## Filter custom args through `filterCustomArgs`
+
+Define a `xxxBlockedArgs map[string]blockedArgMode` listing the flags your daemon hardcodes — the ones that, if a user overrode them, would break the daemon↔agent protocol. Each value is `blockedWithValue` (the flag consumes the next arg) or `blockedStandalone` (boolean). Gemini's set is the minimal illustration:
+
+```go
+var xxxBlockedArgs = map[string]blockedArgMode{
+	"-p": blockedWithValue,  // the prompt
+	"-o": blockedWithValue,  // output format
+}
+```
+
+Then run **both** arg sources through the filter when assembling argv. The order is `ExtraArgs` (daemon-wide defaults) before `CustomArgs` (per-agent), each filtered:
+
+```go
+args = append(args, filterCustomArgs(opts.ExtraArgs, xxxBlockedArgs, logger)...)
+args = append(args, filterCustomArgs(opts.CustomArgs, xxxBlockedArgs, logger)...)
+```
+
+`filterCustomArgs` drops any blocked flag (logging a warning), skips its value when the mode is `blockedWithValue`, and strips a single layer of shell quoting from each arg via `unshellQuoteArg`. The block set is intentionally narrow — only protocol-critical flags, since workspace members are trusted to configure agents sensibly. Note `gemini` reads `CustomArgs` only; `claude` reads both `ExtraArgs` and `CustomArgs` — wire whichever your CLI needs, but always through the filter.
+
+## Honor `opts.Model` only via the CLI flag — never a Go-side default
+
+This is the regression the `cursor` backend hit, and the rule is absolute: when `opts.Model` is non-empty, pass it through the CLI's model flag; when it is empty, pass nothing and let the CLI resolve its own default.
+
+```go
+if opts.Model != "" {
+	args = append(args, "-m", opts.Model)
+}
+```
+
+Do **not** substitute a hardcoded model string when `opts.Model == ""`. A Go-side default is always a worse guess than the CLI's own resolution, which knows the user's account, credentials, and environment. The `Model.Default` flag in the catalog is a display badge, not an execution default — see [models-and-thinking](/developers/agentic/models-and-thinking).
+
+## Unsupported `ExecOptions` fields are silently ignored
+
+`ExecOptions` carries fields no single backend consumes in full: `SystemPrompt`, `ThreadName`, `MaxTurns`, `SemanticInactivityTimeout`, `ResumeSessionID`, `ExtraArgs`, `McpConfig`, `ThinkingLevel`, `OpenclawMode`. A backend reads the fields its CLI understands and **ignores the rest** — it does not error on a field it can't honor. This is what lets new options land without breaking unrelated agents (the pattern `ThinkingLevel` and `OpenclawMode` were both added under). So if your CLI has no `--resume`, simply don't read `opts.ResumeSessionID`; do not add a guard that rejects it.
+
+## Source files
+
+| File | Symbols this page depends on |
+| --- | --- |
+| `server/pkg/agent/agent.go` | `Backend`, `Execute`, `ExecOptions` (`Cwd`, `Model`, `SystemPrompt`, `MaxTurns`, `Timeout`, `ResumeSessionID`, `ExtraArgs`, `CustomArgs`, `McpConfig`, `ThinkingLevel`, `OpenclawMode`), `runContext`, `Session`, `Message`, `MessageType` (`MessageText`/`MessageThinking`/`MessageToolUse`/`MessageToolResult`/`MessageStatus`/`MessageError`/`MessageLog`), `Result` (`Status` values `completed`/`failed`/`aborted`/`timeout`/`cancelled`), `TokenUsage`, `Config`, `New`, `DetectVersion`, `launchHeaders`, `LaunchHeader` |
+| `server/pkg/agent/gemini.go` | `geminiBackend`, `buildGeminiArgs`, `buildGeminiEnv`, `geminiBlockedArgs`, `accumulateUsage` |
+| `server/pkg/agent/claude.go` | `claudeBackend`, `buildClaudeArgs`, `claudeBlockedArgs`, `filterCustomArgs`, `unshellQuoteArg`, `blockedArgMode` (`blockedWithValue`/`blockedStandalone`), `buildEnv`, `mergeEnv`, `isFilteredChildEnvKey`, `trySend`, `detectCLIVersion`, `extractVersionLine`, `newLogWriter` |
+| `server/pkg/agent/models.go` | `ListModels`, `Model` (`ID`/`Label`/`Provider`/`Default`/`Free`/`Category`/`Thinking`), `ModelThinking`, `ThinkingLevel`, `ModelSelectionSupported`, `cachedDiscovery`, `modelCacheTTL`, `claudeStaticModels`, `geminiStaticModels`, `discoverACPModels`, `acpDiscoveryProvider` |
+| `server/pkg/agent/version.go` | `MinVersions`, `CheckMinVersion`, `parseSemver`, `versionRe`, `extractVersionLine` |
+| `server/pkg/agent/thinking.go` | `annotateClaudeThinking`, `annotateCodexThinking`, `annotateCodebuddyThinking`, `claudeEffortRe`, `codebuddyEffortRe`, `parseCodexDebugModels`, `codexDebugModelsArgs`, `thinkingDiscoveryTTL`, `providerThinkingEnums`, `IsKnownThinkingValue`, `ValidateThinkingLevel` |
+| `server/pkg/agent/stderr_tail.go` | `agentStderrTailBytes`, `newStderrTail`, `stderrTail.Tail`, `withAgentStderr` |
+| `server/pkg/agent/proc_windows.go`, `server/pkg/agent/proc_other.go` | `hideAgentWindow` |
+
+**Same-PR drift rule:** if any documented symbol, CLI flag, `Result.Status` value, or `ExecOptions` field above is renamed, moved, or changes behavior, update this page **and** its `references/add-a-backend-source-map.md` sidecar in the same PR. The page is a source-traced contract — stale docs silently teach a wrong way to register a backend.

@@ -1,0 +1,171 @@
+---
+title: MCP Injection
+description: Agora bitta agentga tegishli mcp_config ustunini har bir agent backendi boʻylab har bir runtimega xos MCP ulanishiga qanday aylantiradi, hamda strict-mode, uch holatli, fail-closed va redaksiya shartnomalari.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Auditoriya">
+**Ikkalasi ham** — dev va agent. Agar siz agent backendi qoʻshayotgan boʻlsangiz, `mcp_config` shaklini oʻzgartirayotgan boʻlsangiz, biror server nega runtimega yetib bormayotganini debug qilayotgan boʻlsangiz yoki oʻzingizning MCP sirlaringizni nega oʻqiy olmayotganingiz haqida mulohaza yuritayotgan agent boʻlsangiz — buni oʻqing. Qardosh sahifalar: [agentic overview](/developers/architecture) va [conventions glossary](/developers/conventions). Paket chegaralari repo-root CLAUDE.md tomonidan boshqariladi.
+</Callout>
+
+## Bitta ustun
+
+Har bir agent yagona JSONB ustunini, `agent.mcp_config`ni olib yuradi. Uning diskdagi kanonik shakli Claude uslubidadir:
+
+```json
+{
+  "mcpServers": {
+    "<name>": { "command": "...", "args": ["..."], "env": { "KEY": "..." } }
+  }
+}
+```
+
+Server yozuvi `command` oʻrniga remote MCP serveri uchun `url` (va ixtiyoriy `headers`) olib yurishi mumkin. TypeScript shartnomasi `packages/core/mcp/types.ts`da joylashgan:
+
+- `McpConfig` — `{ mcpServers: Record<string, McpServerEntry> }`
+- `McpServerEntry` — `{ command: string; args?: string[]; env?: Record<string, string> }`
+- `readMcpServers(config)` / `listMcpServers(config)` — himoyaviy toraytiruvchi oʻqishlar; `mcpServers` xaritasiga ega oddiy obyekt boʻlmagan har qanday qiymat `{}`ga toraytiriladi (serverlarsiz).
+- `upsertMcpServer` / `removeMcpServer` — admin UI tomonidan ishlatiladigan, butun obyektni oʻqish-oʻzgartirish-yozish yordamchilari. Ular boshqa har bir serverni saqlab qoladi: UI hech qachon bitta kalitni qisman patch qilmaydi, u butun obyektni oʻqiydi, `mcpServers` ostida bitta yozuvni oʻrnatadi/oʻchiradi va butun obyektni qaytarib yozadi.
+
+Daemon vazifa joʻnatganda bu ustunni aynan oʻzicha `ExecOptions.McpConfig`ga (`json.RawMessage`) nusxalaydi. U yerdan `server/pkg/agent/`dagi har bir backend uni ostidagi CLI tushunadigan koʻrinishga aylantiradi.
+
+## Ikki injeksiya qatlami
+
+`mcp_config` CLIga yetib boradigan ikkita aniq usul mavjud va provayder qaysi birini ishlatishi CLIga ishga tushirilishi paytida MCP haqida aytib boʻlishi mumkinligiga yoki avval diskka materializatsiya qilingan config talab qilinishiga bogʻliq.
+
+<Mermaid chart={`
+flowchart TD
+  COL["agent.mcp_config (JSONB)"] --> EXEC["ExecOptions.McpConfig (json.RawMessage)"]
+  EXEC --> L1["Layer 1: server/pkg/agent backends"]
+  EXEC --> L2["Layer 2: server/internal/daemon/execenv preparers"]
+  L1 --> CLAUDE["claude / codebuddy: --mcp-config file"]
+  L1 --> CODEX["codex: CODEX_HOME/config.toml block"]
+  L1 --> OPENCODE["opencode: OPENCODE_CONFIG_CONTENT env"]
+  L1 --> ACP["hermes / kimi / kiro: ACP session array"]
+  L2 --> CURSOR["cursor: .cursor/mcp.json sidecar"]
+  L2 --> OPENCLAW["openclaw: wrapper config (mcp block)"]
+`} />
+
+**Qatlam 1 — agent backendlari** `opts.McpConfig`ni toʻgʻridan-toʻgʻri oʻqiydi va uni spawn paytida shakllantiradi.
+
+**Qatlam 2 — execenv preparerlari** MCP configni muhit sozlamasi davomida diskka materializatsiya qiladi, chunki CLI MCPni ishga tushirish bayrogʻidan yoki env oʻzgaruvchisidan emas, balki workdir/home dagi fayllardan aniqlaydi. Preparerlar xuddi shu `params.McpConfig`ni qabul qiladi (`execenv.go`ga qarang, u yerda `McpConfig` `EnvParams`ga uzatiladi va muhit qayta ishlatilganda qayta foydalaniladi).
+
+## Har bir provayderga xos mexanizm
+
+| Provayder | Qatlam | Mexanizm | Manba simvoli |
+|---|---|---|---|
+| `claude` | backend | Configni vaqtinchalik faylga yozadi, `--mcp-config <path>` + `--strict-mcp-config` qoʻshadi | `claudeBackend.Execute`, `writeMcpConfigToTemp`, `buildClaudeArgs` (`claude.go`) |
+| `codebuddy` | backend | claude bilan bir xil — vaqtinchalik fayl + `--mcp-config <path>` + `--strict-mcp-config` | `codebuddyBackend.Execute`, `buildCodebuddyArgs` (`codebuddy.go`) |
+| `codex` | backend | `$CODEX_HOME/config.toml`ga `[mcp_servers.*]` TOML blokini renderlaydi | `ensureCodexMcpConfig`, `renderCodexMcpServersBlock` (`codex.go`) |
+| `opencode` | backend | OpenCode ning `mcp` slice iga aylantiradi, `OPENCODE_CONFIG_CONTENT` env orqali injeksiya qiladi | `buildOpenCodeMCPConfigContent`, `translateMCPConfigForOpenCode` (`opencode_mcp.go`) |
+| `hermes` | backend | ACP ning `session/new` `mcpServers` massiviga aylantiradi | `buildACPMcpServers`, `convertACPMcpServer` (`hermes.go`) |
+| `kimi` | backend | Umumiy yordamchi orqali xuddi shu ACP massivi | `buildACPMcpServers` (`kimi.go`da chaqiriladi) |
+| `kiro` | backend | Umumiy yordamchi orqali xuddi shu ACP massivi | `buildACPMcpServers` (`kiro.go`da chaqiriladi) |
+| `cursor` | execenv | `.cursor/mcp.json` sidecar + `CURSOR_DATA_DIR` yozadi | `prepareCursorMcpConfig` (`execenv/cursor_mcp.go`) |
+| `openclaw` | execenv | Wrapper config ning `mcp` blokini qayta yozadi | `execenv/openclaw_config.go` |
+
+### claude / codebuddy
+
+`claudeBackend.Execute` xom config JSONini `writeMcpConfigToTemp` orqali vaqtinchalik faylga yozadi (`os.CreateTemp` bilan `agora-mcp-*.json` sifatida yaratiladi), soʻngra `--mcp-config <path>` qoʻshadi. Vaqtinchalik fayl lifecycle goroutinasi egalik qilganidan keyin oʻchiriladi. `buildClaudeArgs` har doim `--strict-mcp-config` bilan ishga tushadi, shuning uchun daemon yozgan toʻplam istalgan global Claude MCP configni almashtiradi — hech qachon u bilan birlashtirmaydi. `codebuddy` (Claude Code forki) `buildCodebuddyArgs`da bayt-baytga bir xil modeldir.
+
+Ikkala backendda ham `--mcp-config` `blockedArgMode` xaritasida (`claudeBlockedArgs` / `codebuddyBlockedArgs`, rejim `blockedWithValue`), shuning uchun foydalanuvchi bergan `custom_args: ["--mcp-config", "..."]` `filterCustomArgs` tomonidan olib tashlanadi va logga yoziladi — bu bayroqqa daemon egalik qiladi.
+
+### codex
+
+`ensureCodexMcpConfig` `$CODEX_HOME/config.toml`ga marker bilan ajratilgan blokni yozadi:
+
+```
+# BEGIN agora-managed mcp_servers (do not edit; regenerated by daemon)
+[mcp_servers.<name>]
+command = "..."
+# END agora-managed mcp_servers
+```
+
+Markerlar `agoraCodexMcpBeginMarker` / `agoraCodexMcpEndMarker`. Har bir ishga tushishda avvalgi boshqariladigan blok birinchi boʻlib olib tashlanadi (`codexMcpBlockRe`), shunda qayta ishga tushishlar bir-biriga muvofiq keladi. Boshqariladigan config mavjud boʻlganda, `stripCodexUserMcpServerTables` ham `~/.codex/config.toml`dan meros qilib olingan har qanday foydalanuvchi tomonidan belgilangan `[mcp_servers.*]` jadvallarini olib tashlaydi — bu codex ning Claude `--strict-mcp-config` ekvivalenti. Birlashtira olmasligining ikki sababi bor: TOML bir xil jadvalni qayta belgilashni rad etadi, va aniq roʻyxat saqlagan admin aks holda global serverlar jimgina qoʻshilganini koʻradi. Fayl yoziladi va `0o600`ga `chmod` qilinadi, chunki `mcp_servers.<id>.env` qiymatlari sirlar olib yurishi mumkin, va argv/`ps`/log satrlari ularni oʻz ichiga olmasligi kerak.
+
+`custom_args`dagi foydalanuvchi `-c mcp_servers.…` / `--config mcp_servers.…` oʻzgartirishlari `filterCodexCustomConfigOverrides` tomonidan tashlab yuboriladi (codex ning `-c` bayrogʻi oxirgisi gʻolib boʻladi, shuning uchun ular aks holda boshqariladigan blokni qayta soyalab qoʻyar edi). Kalit logga yoziladi, qiymat esa hech qachon.
+
+### opencode
+
+`buildOpenCodeMCPConfigContent` configni OpenCode sxemasining faqat `mcp` slice iga aylantiradi va uni `OPENCODE_CONFIG_CONTENT` env oʻzgaruvchisi orqali injeksiya qiladi (`<workdir>/opencode.json` yozish oʻrniga env injeksiyasi, shunda agentning oʻsha fayldagi shaxsiy model/tools sozlamalari hech qachon buzilmaydi). `translateMCPConfigForOpenCode` ham Claude uslubidagi `mcpServers`, ham OpenCode-native `mcp` shakllarini qabul qiladi, `command`+`args`ni bitta massivga va `env`ni `environment`ga majburlaydi. Har bir yozuv — shu jumladan aylantirilganlari ham — `validateOpenCodeNativeMCPEntry` orqali qayta tekshiriladi, u sxemaning `additionalProperties: false`ini majbur qilish uchun `DisallowUnknownFields` (`strictDecode`) bilan qatʼiy dekodlaydi. Agar `custom_env` allaqachon `OPENCODE_CONFIG_CONTENT`ni oʻrnatgan boʻlsa, `agent.mcp_config` ustunlikka ega va ogohlantirish logga yoziladi.
+
+### hermes / kimi / kiro (ACP)
+
+`buildACPMcpServers` Claude uslubidagi obyektlar-obyektini ACP ning `session/new` / `session/resume` kutadigan massiv shakliga aylantiradi. `convertACPMcpServer` har bir yozuvni tasniflaydi: `command` yozuvi stdio boʻladi (`{name, command, args, env:[{name,value}]}`, `type`siz); `url` yozuvi esa `{type, name, url, headers:[...]}` boʻladi, `type` `http`ga default boʻladi (`sse` qabul qilinadi). Chiqish deterministik tarzda saralanadi. `initialize` qoʻl berishuvidan keyin `filterACPMcpServersByCapability` runtime `agentCapabilities.mcpCapabilities`da eʼlon qilmagan transportga ega remote (`http`/`sse`) yozuvlarini tashlab yuboradi — eʼlon qilinmagan transportni yuborish ACP protokoli buzilishi boʻlib, butun `session/new`ni rad etadi.
+
+### cursor / openclaw (execenv)
+
+`prepareCursorMcpConfig` Cursor-native `.cursor/mcp.json` sidecar ini yozadi va faqat agent aniq boshqariladigan configga ega boʻlganda (`hasManagedCursorMcpConfig`) `CURSOR_DATA_DIR`ni oʻrnatadi; nil/null config "Cursor normal harakat qilsin" degani boʻlib, hech qanday sidecar yozilmaydi. `openclaw_config.go` xuddi shu boshqariladigan-config tekshiruvidan openclaw wrapper config ning `mcp` blokini qayta yozadi.
+
+## Strict-mode shartnomasi
+
+Boshqariladigan config runtime ning global serverlarini **almashtiradi**; u hech qachon ular bilan birlashmaydi. Har bir provayder buni oʻz uslubida majbur qiladi:
+
+- claude / codebuddy → `--strict-mcp-config`.
+- codex → `stripCodexUserMcpServerTables` boshqariladigan toʻplam mavjud boʻlganda meros qilib olingan `[mcp_servers.*]` jadvallarini olib tashlaydi; `ensureCodexMcpConfig`dagi izoh aniq ravishda u "Claude ning `--strict-mcp-config`ini aks ettiradi" deb bildiradi.
+- opencode → `OPENCODE_CONFIG_CONTENT` OpenCode ning "local" qamrovida, eng soʻnggi birlashtirish pozitsiyasida birlashadi, daemon yozuvlariga xuddi shu kalitli foydalanuvchi yozuvlaridan ustunlik beradi.
+
+Mahsulot qoidasi: agar admin MCP tabida aniq roʻyxat saqlasa, agent koʻradigan narsa aynan oʻsha roʻyxatdir — global/foydalanuvchi-config serverlari jimgina qoʻshilmaydi.
+
+## Uch holatli semantika
+
+`mcp_config` haqiqiy uch holatli maydon boʻlib, API chegarasida ajratiladi, qisib birlashtirilmaydi:
+
+| Holat | Wire qiymat | Maʼnosi |
+|---|---|---|
+| Mavjud emas | SQL `NULL` / JSON `null` | CLI default — runtime ning oʻz MCP sozlamasiga qaytadi |
+| Boʻsh boshqariladigan | `{}` yoki `{"mcpServers":{}}` | Qatʼiy boʻsh — admin nol serverli boshqariladigan toʻplam saqlagan; global zaxira yoʻq |
+| Toʻldirilgan | `{"mcpServers":{...}}` | Qatʼiy — aynan shu serverlar |
+
+`hasManagedCodexMcpConfig` kanonik Go predikatidir: kesib boʻshatilgan yoki literal `null` qiymat **mavjud emas**; qolgan hammasi (shu jumladan `{}` va `{"mcpServers":{}}`) **mavjud**dir. codex uchun "boshqariladigan, lekin boʻsh" baribir orasida hech qanday jadvalsiz BEGIN/END marker blokini yozadi, boʻsh niyatni diskda mahkamlaydi va ops uchun grep qilinadigan qiladi. Handler tomonida (`agent.go`), update tanasidagi `mcp_config: null` `ClearAgentMcpConfig`ga yoʻnaltiriladi (ustunni NULLga oʻrnatadi), null boʻlmagan har qanday qiymat esa aynan oʻzicha saqlanadi — `shouldClearMcpConfig` ikki yoʻlni boshqaradi.
+
+## Buzilganida fail-closed
+
+Buzilgan `mcp_config` barcha serverlarni jimgina tashlab, hostning global MCP sozlamasini meros qilib olish oʻrniga ishga tushirishni bekor qiladi — bu "saqlangan config qoʻllanildi" dan farqsiz koʻrinardi, bu esa aynan MCP tab bartaraf qilish uchun mavjud boʻlgan kutilmaganlikdir.
+
+- codex → `ensureCodexMcpConfig` xato qaytaradi va `codexBackend.Execute` bekor qiladi va `apply codex mcp_config: …` qaytaradi. Agar boshqariladigan config oʻrnatilgan boʻlsa, lekin `CODEX_HOME` oʻrnatilmagan boʻlsa ham xato beradi.
+- hermes / kimi / kiro → `buildACPMcpServers` buzilgan yuqori darajadagi JSONda xato qaytaradi va backend `invalid mcp_config` qaytaradi. (Na `command`, na `url` boʻlmagan alohida yozuv ogohlantirish bilan oʻtkazib yuboriladi, shunda bitta yomon yozuv ishga tushirishni oʻldira olmaydi.)
+- opencode → `validateOpenCodeNativeMCPEntry` config CLIga yetib borishidan oldin nomaʼlum maydonlarni, yomon `type`ni, yoʻq `command`/`url`ni, musbat boʻlmagan `timeout`ni va buzilgan `oauth`ni rad etadi.
+
+## Redaksiya: agentlar oʻzlarining mcp_config ini oʻqiy olmaydi
+
+MCP server configlari muntazam ravishda uchinchi tomon API tokenlarini oʻrnatadi. `redactMcpConfig` (`agent.go`) javobda `mcp_config` maydonini nullga aylantiradi va `mcp_config_redacted: true` oʻrnatadi, shunda UI "redacted" koʻrsatkichini koʻrsata oladi. `ListAgents`, `GetAgent` va mutatsiya javob yoʻlida qoʻllaniladigan darvoza:
+
+- **Agent aktyorlari HECH QACHON `mcp_config`ni koʻrmaydi**, hatto hostning PATi egasi/admin roli darvozasini qanoatlantirsa ham. Bu MUL-2600 `custom_env` uchun yopgan xuddi shu lateral-harakat vektorini yopadi: egasining daemoni ostida ishlayotgan agent aks holda boshqa agentlarning MCP sirlarini oʻqiy olardi.
+- Aʼzolar uni faqat `canViewAgentSecrets` oʻtganda va workspace ning `workspaceAlwaysRedactSecrets` sozlamasi oʻchirilgan boʻlganda koʻradilar.
+
+Daemon baribir haqiqiy sir olib yuruvchi configni spawn qilingan CLIga injeksiya qiladi — redaksiya oʻqish-yoʻliga oid masala, joʻnatishga oid emas.
+
+## Tuzatilishi kerak boʻlgan drift bug: codebuddy MCP_SUPPORTED_PROVIDERS da yoʻq
+
+`packages/core/agents/mcp-support.ts`dagi `MCP_SUPPORTED_PROVIDERS` provayder uchun MCP config tabi koʻrsatilishini hal qiladigan frontend allowlist idir. Hozir u quyidagilarni oʻz ichiga oladi:
+
+```
+claude, codex, cursor, hermes, kimi, kiro, opencode, openclaw
+```
+
+Lekin `codebuddy` **`--mcp-config`ni hurmat qiladi** — `codebuddyBackend.Execute` vaqtinchalik faylni yozadi va bayroqni aynan claude kabi qoʻshadi, va `codebuddyBlockedArgs` `--mcp-config`ni daemon uchun zaxiralaydi. Chunki `codebuddy` toʻplamda yoʻq, `providerSupportsMcpConfig("codebuddy")` `false` qaytaradi va MCP tab codebuddy agentlari uchun yashiriladi — shuning uchun operator backend bemalol qoʻllaydigan MCP serverlarini sozlay olmaydi.
+
+**Tuzatish:** `MCP_SUPPORTED_PROVIDERS`ga `"codebuddy"` qoʻshing.
+
+<Callout type="warn" title="Bir-PR da sinxronlash qoidasi">
+`MCP_SUPPORTED_PROVIDERS` va `ExecOptions.McpConfig`ni oʻqiydigan `server/pkg/agent/`dagi backendlar toʻplami (plus `server/internal/daemon/execenv/`dagi execenv preparerlari) **ikki tilga boʻlingan bitta shartnoma**dir. Faylning oʻz sarlavha izohi shunday deydi: bu roʻyxatni `ExecOptions.McpConfig`ni oʻqiydigan backendlar bilan, plus execenv preparerlari MCP configni materializatsiya qiladigan provayderlar bilan sinxronlashtiring. Goda provayderning MCP qoʻllab-quvvatlashini qoʻshganingizda yoki olib tashlaganingizda, `mcp-support.ts`ni **xuddi shu PR**da yangilang — aks holda foydalanuvchi yo runtime eʼtibor bermaydigan qiymatni saqlashi mumkin (provayder ortiqcha roʻyxatlangan), yo runtime hurmat qiladigan tabdan mahrum boʻlishi mumkin (provayder kam roʻyxatlangan, codebuddy holati).
+</Callout>
+
+## Source files
+
+| Fayl | Bu sahifa bogʻliq boʻlgan simvollar |
+|---|---|
+| `packages/core/mcp/types.ts` | `McpConfig`, `McpServerEntry`, `NamedMcpServer`, `readMcpServers`, `listMcpServers`, `upsertMcpServer`, `removeMcpServer`, `buildServerEntry`, `MCP_SERVER_TEMPLATES` |
+| `packages/core/agents/mcp-support.ts` | `MCP_SUPPORTED_PROVIDERS`, `providerSupportsMcpConfig` |
+| `server/pkg/agent/claude.go` | `claudeBackend.Execute`, `buildClaudeArgs`, `claudeBlockedArgs`, `writeMcpConfigToTemp`, `filterCustomArgs`, `--mcp-config`, `--strict-mcp-config` |
+| `server/pkg/agent/codebuddy.go` | `codebuddyBackend.Execute`, `buildCodebuddyArgs`, `codebuddyBlockedArgs`, `--mcp-config`, `--strict-mcp-config` |
+| `server/pkg/agent/codex.go` | `ensureCodexMcpConfig`, `renderCodexMcpServersBlock`, `hasManagedCodexMcpConfig`, `stripCodexUserMcpServerTables`, `filterCodexCustomConfigOverrides`, `agoraCodexMcpBeginMarker`, `agoraCodexMcpEndMarker`, `codexMcpBlockRe`, `codexBackend.Execute` |
+| `server/pkg/agent/opencode_mcp.go` | `buildOpenCodeMCPConfigContent`, `translateMCPConfigForOpenCode`, `validateOpenCodeNativeMCPEntry`, `strictDecode`, `validateOpenCodeOAuth`, `OPENCODE_CONFIG_CONTENT` |
+| `server/pkg/agent/hermes.go` | `buildACPMcpServers`, `convertACPMcpServer`, `filterACPMcpServersByCapability`, `buildHermesSessionParams`, `hermesBackend.Execute` |
+| `server/internal/handler/agent.go` | `redactMcpConfig`, `canViewAgentSecrets`, `workspaceAlwaysRedactSecrets`, `ClearAgentMcpConfig`, `shouldClearMcpConfig`, `McpConfigRedacted`, `AgentResponse.McpConfig` |
+| `server/internal/daemon/execenv/execenv.go` (+ `cursor_mcp.go`, `openclaw_config.go`) | `EnvParams.McpConfig`, `prepareCursorMcpConfig`, `hasManagedCursorMcpConfig` |
+
+Yuqoridagi har qanday hujjatlashtirilgan simvol, bayroq, maydon yoki marker koʻchsa yoki shaklini oʻzgartirsa, bu sahifani **va** uning source-map sidecar ini (`references/mcp-injection-source-map.md`) **xuddi shu PR**da yangilang — bu built-in-skills source-traced-contract qoidasidir. Eskirgan sahifa agentga notoʻgʻri injeksiya mexanizmini jimgina oʻrgatadi.

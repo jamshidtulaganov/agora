@@ -1,0 +1,179 @@
+---
+title: Architecture
+description: Карта системы, которая нужна контрибьютору перед глубоким погружением в агентную часть, — форма бэкенда, жизненный цикл задачи, агентный SDK, демон, направление зависимостей фронтенда и мультитенантность.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Аудитория">
+**Аудитория: оба (разработчик + агент).** Это страница для первоначального ознакомления для всех — будь то контрибьютор-человек или кодирующий агент, — кто впервые попадает в кодовую базу Agora. Она описывает подвижные части системы и их расположение, а затем передаёт эстафету глубоким погружениям в агентную часть. Об именовании, i18n и глоссарии переводов см. [/developers/conventions](/developers/conventions) — это единственный источник истины, и здесь он не пересказывается. О границах пакетов (что и что может импортировать) авторитетным источником является корневой `CLAUDE.md`.
+</Callout>
+
+## Форма системы в одном предложении
+
+Agora — это **Go-бэкенд** (роутер Chi, доступ к БД, сгенерированный `sqlc`, `gorilla/websocket` для реального времени), общающийся с **PostgreSQL**, перед которым стоит **монорепозиторий на pnpm + Turborepo** из TypeScript-приложений, разделяющих headless-логику, и который питается **агентным демоном**, опрашивающим бэкенд на предмет работы и запускающим CLI кодирующих агентов локально.
+
+<Mermaid chart={`
+flowchart LR
+  FE["Next.js / Electron / Expo<br/>(apps)"] -->|REST| API["Go backend<br/>Chi + sqlc"]
+  API -->|WS broadcast| FE
+  API --> PG[("PostgreSQL<br/>pgvector")]
+  DA["Agent daemon<br/>(your machine)"] -->|claim / start / complete| API
+  DA -->|spawn| CLI["Claude / Codex / OpenClaw / …"]
+`} />
+
+## Форма Go-бэкенда
+
+Бэкенд живёт в `server/`. Два факта задают ориентацию для всего остального:
+
+- **Роутер — это Chi.** `server/cmd/server/router.go` строит его через `chi.NewRouter()` и монтирует доменные маршруты — эндпоинты демона под `r.Route("/api/daemon", …)`, вебхуки на верхнем уровне и workspace-scoped API за middleware аутентификации.
+- **Доступ к БД сгенерирован `sqlc`.** SQL живёт в `server/pkg/db/queries/`; `make sqlc` регенерирует типизированный Go в `server/pkg/db/generated/`. Хендлеры и сервисы вызывают методы `Queries.*` (например, `Queries.GetAgent`, `Queries.CreateAgentTask`) — но никогда не самописный SQL.
+
+**Один хендлер на домен.** В `server/internal/handler/` по одному файлу на область ответственности — `issue.go`, `comment.go`, `agent.go`, `daemon.go`, `chat.go`, `autopilot.go`, `project.go` и так далее. Хендлеры разбирают и валидируют границы запроса, а затем делегируют бизнес-логику в `server/internal/service/`. Когда хендлер разрешает UUID для записывающего запроса, он обязан следовать соглашению **Backend Handler UUID Parsing Convention** в `CLAUDE.md` (`parseUUIDOrBadRequest` / loaders / `parseUUID`) — это соглашение существует потому, что однажды тихий нулевой UUID заставил `DELETE` вернуть 204, не затронув при этом ни одной строки.
+
+Обновления в реальном времени расходятся через хаб: `server/cmd/server/main.go` конструирует `realtime.NewHub()` (WS-клиенты рабочего пространства) и отдельный `daemonws.NewHub()` (WS-подключения демона). Сервисы транслируют протокольные события (`protocol.EventTaskQueued`, `protocol.EventTaskRunning`, …), а фронтенд инвалидирует свой кэш запросов при их получении — события никогда не пишут в клиентские стораджи напрямую.
+
+## Жизненный цикл задачи
+
+`server/internal/service/task.go` владеет конечным автоматом агентных задач на таблице `agent_task_queue`. Задача проходит через **enqueue → claim → start → complete/fail** (с отменой как терминальной ветвью в любой точке). Это хребет каждого запуска агента.
+
+<Mermaid chart={`
+sequenceDiagram
+  participant API as Backend (TaskService)
+  participant PG as agent_task_queue
+  participant D as Daemon
+  API->>PG: CreateAgentTask (status=queued)
+  API->>D: NotifyTaskEnqueued (WS wakeup)
+  D->>API: POST /runtimes/{id}/tasks/claim
+  API->>PG: ClaimAgentTask (queued→dispatched)
+  API-->>D: task row
+  D->>API: POST /tasks/{id}/start
+  API->>PG: StartAgentTask (dispatched→running)
+  D->>D: handleTask → executeAndDrain (agent runs)
+  D->>API: POST /tasks/{id}/complete (or /fail)
+  API->>PG: CompleteAgentTask (running→completed)
+`} />
+
+### Enqueue
+
+Несколько точек входа создают задачу, и все они сходятся к вызову `Queries.Create*Task`, за которым следует WS-пробуждение:
+
+- `EnqueueTaskForIssue` — задача (issue), назначенная агенту. Снимок контекста не сохраняется; агент во время выполнения получает то, что ему нужно, через CLI `agora`.
+- `EnqueueTaskForMention` / `EnqueueTaskForSquadLeader` — агент, упомянутый в комментарии (вариант для лидера отряда проставляет `is_leader_task=true`).
+- `EnqueueChatTask` — сессия чата (без `issue_id`). Возвращает sentinel-ошибки `ErrChatTaskAgentArchived` / `ErrChatTaskAgentNoRuntime` для отклонений, которые можно продуктизировать.
+- `EnqueueQuickCreateTask` — промпт на естественном языке без привязки к issue/чату/автопилоту, сохраняемый как JSON-полезная нагрузка `QuickCreateContext` (`Type: QuickCreateContextType`).
+
+Каждый путь обеспечивает одни и те же предусловия (агент не архивирован, `agent.RuntimeID` задан), транслирует `protocol.EventTaskQueued`, а затем вызывает `NotifyTaskEnqueued`, чтобы демон забрал задачу сразу, а не ждал следующего тика опроса. Порядок намеренный: трансляция **перед** уведомлением, потому что путь уведомления триггерит событие dispatch, и при переставленном порядке клиенты увидели бы «dispatched» раньше «queued».
+
+### Claim
+
+Демон опрашивает `POST /api/daemon/runtimes/{runtimeId}/tasks/claim`, обрабатываемый `ClaimTaskByRuntime`, который вызывает `TaskService.ClaimTaskForRuntime`. Этот метод:
+
+1. Сначала выполняет `ReclaimStaleDispatchedTaskForRuntime` (восстанавливает задачу, чей ответ на claim был потерян — см. `claimResponseRecoveryWindow`, 90s).
+2. Сверяется с опциональным быстрым путём `EmptyClaimCache`, чтобы пропустить сканирование Postgres в установившемся пустом случае.
+3. Перечисляет queued-кандидатов и вызывает `ClaimTask(agentID)` для каждого отдельного агента.
+
+`ClaimTask` — это атомарное ядро: оно проверяет `CountRunningTasks` против `agent.MaxConcurrentTasks`, выполняет `ClaimAgentTask` (переход `queued → dispatched`), согласует статус агента и транслирует `task:dispatch`. И отсутствие свободной ёмкости, и отсутствие задач возвращают `(nil, nil)` — не ошибку.
+
+### Start, complete, fail
+
+- `StartTask` выполняет `StartAgentTask` (`dispatched → running`) и транслирует `protocol.EventTaskRunning`. **Статус issue здесь не меняется** — агент управляет им через CLI.
+- `CompleteTask` выполняет `CompleteAgentTask` (`running → completed`) внутри транзакции. Для задач чата та же транзакция обновляет указатель возобновления `chat_session`, закрывая гонку, в которой следующее сообщение могло бы возобновиться на устаревшей сессии. Операция **идемпотентна**: если параллельный агент уже финализировал строку, условие `WHERE status = 'running'` не находит совпадений, и существующая строка возвращается как успех.
+- Сбой и отмена переиспользуют ту же форму трансляции/согласования; отмена также отзывает любые токены задачи `mat_`, выпущенные для запуска.
+
+## Агентный SDK
+
+`server/pkg/agent/` — это headless-пакет (ноль демона, ноль HTTP), который абстрагирует каждый CLI кодирующего агента за единым интерфейсом.
+
+```go
+type Backend interface {
+    Execute(ctx context.Context, prompt string, opts ExecOptions) (*Session, error)
+}
+```
+
+`Execute` возвращает `Session`, чей канал `Messages` стримит события `Message` (`MessageText`, `MessageThinking`, `MessageToolUse`, `MessageToolResult`, `MessageStatus`, `MessageError`, `MessageLog`), а чей канал `Result` доставляет ровно один финальный `Result`. Поле `Result.Status` — это контракт для итога запуска — одно из значений `"completed"`, `"failed"`, `"aborted"`, `"timeout"`, `"cancelled"`.
+
+`agent.New(agentType, cfg)` — это switch по **13 бэкендам**: `claude`, `codebuddy`, `codex`, `copilot`, `opencode`, `openclaw`, `hermes`, `gemini`, `pi`, `cursor`, `kimi`, `kiro`, `antigravity`. Неизвестный тип возвращает ошибку, перечисляющую поддерживаемый набор. Каждый бэкенд (`claude.go`, `codex.go`, …) транслирует унифицированные `ExecOptions` (`Cwd`, `Model`, `SystemPrompt`, `MaxTurns`, `Timeout`, `ResumeSessionID`, `ThinkingLevel`, `OpenclawMode`, `ExtraArgs`/`CustomArgs`, …) в собственные флаги этого CLI. Не каждый бэкенд учитывает каждую опцию — `ThinkingLevel`, `OpenclawMode` и `ExtraArgs` точно документируют, какие бэкенды их потребляют, а какие тихо игнорируют, так что поддержка может расти инкрементально, не ломая несвязанные агенты.
+
+`LaunchHeader(agentType)` возвращает видимый пользователю скелет команды (например, `"claude (stream-json)"`), который UI показывает как предпросмотр того, к чему дописываются пользовательские `custom_args`.
+
+## Демон: продакшен-вызыватель
+
+`server/internal/daemon/daemon.go` — это локальный рантайм, превращающий заclaimленные задачи в работающих агентов. `Daemon.New` подключает `runner = d.runTask`; `Daemon.Run` исполняет стартовый танец — `resolveAuth`, `preflightAuth` (обновить PAT, затем начальная синхронизация рабочего пространства), регистрирует рантаймы по рабочим пространствам, запускает фоновые циклы (`workspaceSyncLoop`, `taskWakeupLoop`, `heartbeatLoop`, `gcLoop`, `autoUpdateLoop`, `tokenRenewalLoop`), переключает `/health` в состояние ready, а затем входит в `pollLoop`.
+
+Когда поллер заclaimил задачу, он передаёт её в `handleTask`, который:
+
+1. Захватывает блокировку пути `local_directory`, если задача нацелена на закреплённый за демоном `project_resource` (так что серверный статус идёт `dispatched → waiting_local_directory → running`, никогда не назад).
+2. Помечает корень окружения активным, чтобы цикл GC никогда не освобождал живую рабочую директорию.
+3. Запускает `watchTaskCancellation`, чтобы серверная отмена/удаление прерывали запуск.
+4. Вызывает `d.runner.run` → `runTask`, который подготавливает окружение и в конечном счёте вызывает **`executeAndDrain`** — функцию, которая реально управляет `agent.Backend`.
+
+`executeAndDrain(ctx, backend, prompt, opts, taskLog, taskID)` — это продакшен-вызыватель агентного SDK. Он:
+
+- вызывает `backend.Execute`, затем дренирует `session.Messages`, батча текст/размышления и пересылая события tool-use/tool-result на сервер через `ReportTaskMessages`;
+- рано фиксирует id сессии агента (`PinTaskSession`), так что падение демона посреди запуска сохраняет указатель возобновления;
+- запускает **сторожевой таймер простоя** (idle watchdog), прерывающий молчащего агента, с большим бюджетом, пока инструмент в работе (долгий `npm install` — это не зависание);
+- возвращает финальный `agent.Result` плюс счётчик инструментов.
+
+Затем `handleTask` отчитывается об использовании и маршрутизирует исход через `reportTaskResult`, который **fail closed** (отказывает безопасно): только `result.Status == "completed"` вызывает `d.client.CompleteTask`; любой другой статус — включая любой будущий, который никто не перечислил, — проходит через `d.client.FailTask`, так что запуск, который никогда не дал реального результата, никогда не может быть показан как «Completed».
+
+## Направление зависимостей фронтенда
+
+Монорепозиторий обеспечивает строгий, однонаправленный граф зависимостей. Правило: **`views → core + ui`**, где `core` и `ui` независимы друг от друга.
+
+<Mermaid chart={`
+flowchart TD
+  app["apps/web · apps/desktop"] --> views["packages/views<br/>(shared business UI)"]
+  views --> core["packages/core<br/>(headless logic + stores)"]
+  views --> ui["packages/ui<br/>(atomic components)"]
+  app --> core
+  app --> ui
+`} />
+
+- `packages/core/` — headless бизнес-логика и **все** Zustand-стораджи. Ноль `react-dom`, ноль `localStorage`, ноль `next/*`, ноль UI-библиотек.
+- `packages/ui/` — атомарные компоненты на основе shadcn. Ноль импортов `@agora/core`.
+- `packages/views/` — общие бизнес-страницы/компоненты. Ноль `next/*`, ноль `react-router-dom` — маршрутизация идёт через `NavigationAdapter`.
+
+Серверное состояние и клиентское состояние разделены с той же строгостью: **TanStack Query** владеет всем, что получено из API (с ключом по `wsId` для workspace-scoped запросов), **Zustand** владеет клиентским/UI-состоянием, а **WS-события инвалидируют запросы**, а не пишут в стораджи. Полное обоснование и подводные камни живут в `CLAUDE.md`; эта страница лишь называет направление.
+
+## Мультитенантность
+
+Каждый запрос фильтруется по `workspace_id`; проверки членства гейтят доступ; заголовок `X-Workspace-ID` маршрутизирует запрос в правильное рабочее пространство. Workspace-scoped запросы фронтенда имеют ключ `wsId`, так что переключение рабочих пространств автоматически подменяет кэш.
+
+**Назначенцы (assignees) полиморфны.** Issue несёт `assignee_type` + `assignee_id` (см. `server/internal/handler/issue.go`), где `assignee_type` — одно из `member`, `agent` или `squad`. Путь агента (`assignee_type == "agent"`) — это то, что делает issue пригодным для `EnqueueTaskForIssue`; путь отряда (squad) разворачивается в агентов этого отряда. Именно из-за этого полиморфизма жизненный цикл задачи разрешает агента через назначенца issue, а не предполагает человека.
+
+## Карта подсистем
+
+| Подсистема | Где | Точка входа |
+|---|---|---|
+| HTTP-маршрутизация | `server/cmd/server/router.go` | `chi.NewRouter()` |
+| Доменные хендлеры | `server/internal/handler/*.go` | один файл на домен |
+| Жизненный цикл задачи | `server/internal/service/task.go` | `TaskService` |
+| Агентный SDK | `server/pkg/agent/agent.go` | `Backend`, `agent.New` |
+| Локальный рантайм | `server/internal/daemon/daemon.go` | `Daemon`, `executeAndDrain` |
+| Реальное время | `server/internal/realtime/` | `realtime.NewHub()` |
+| Доступ к БД | `server/pkg/db/` | сгенерированный `sqlc` `Queries` |
+| Общая логика / стораджи | `packages/core/` | Zustand + TanStack Query |
+| Общий UI | `packages/views/`, `packages/ui/` | `NavigationAdapter` |
+
+## Рекомендуемый порядок чтения
+
+1. **Эта страница** — карта системы (вы здесь).
+2. [/developers/agentic/task-lifecycle](/developers/architecture) — машина enqueue → claim → start → complete во всех деталях, включая reclaim и идемпотентность.
+3. [/developers/agentic/agent-sdk](/developers/agentic/backend-interface) — интерфейс `Backend` и то, как каждый из 13 бэкендов отображает `ExecOptions` на флаги CLI.
+4. [/developers/agentic/daemon](/developers/architecture) — регистрация, опрос, сторожевые таймеры и внутренности `executeAndDrain`.
+5. [/developers/conventions](/developers/conventions) — именование, глоссарий i18n и китайский стиль (читать перед написанием любого кода, маршрута или перевода).
+
+## Source files
+
+| Файл | Символы, от которых зависит эта страница |
+|---|---|
+| `server/internal/service/task.go` | `TaskService`, `EnqueueTaskForIssue`, `EnqueueTaskForMention`, `EnqueueTaskForSquadLeader`, `EnqueueChatTask`, `EnqueueQuickCreateTask`, `QuickCreateContext`, `QuickCreateContextType`, `ErrChatTaskAgentArchived`, `ErrChatTaskAgentNoRuntime`, `ClaimTask`, `ClaimTaskForRuntime`, `claimResponseRecoveryWindow`, `StartTask`, `CompleteTask`, `NotifyTaskEnqueued` |
+| `server/pkg/agent/agent.go` | `Backend`, `Execute`, `ExecOptions`, `Session`, `Message`, `MessageType` values, `Result`, `Result.Status` (`completed`/`failed`/`aborted`/`timeout`/`cancelled`), `New` (13-backend switch), `LaunchHeader` |
+| `server/internal/daemon/daemon.go` | `Daemon`, `Daemon.New`, `Daemon.Run`, `handleTask`, `runTask`, `executeAndDrain`, `reportTaskResult` |
+| `server/cmd/server/router.go` | `chi.NewRouter()`, `r.Route("/api/daemon", …)`, `ClaimTaskByRuntime`, `StartTask`, `CompleteTask`, `FailTask` |
+| `server/cmd/server/main.go` | `realtime.NewHub()`, `daemonws.NewHub()` |
+| `server/internal/handler/issue.go` | `assignee_type` / `assignee_id` (полиморфные назначенцы: `member`/`agent`/`squad`) |
+
+Когда документированный символ, флаг или поле выше перемещается или меняется, обновите эту страницу **и** её sidecar-карту источников (`references/architecture-source-map.md`) в том же PR — то самое правило «дрейф в том же PR», которое держит source-traced контракты встроенных скиллов честными.

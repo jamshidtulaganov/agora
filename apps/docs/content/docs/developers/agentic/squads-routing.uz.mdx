@@ -1,0 +1,155 @@
+---
+title: Squads & Routing
+description: Squad — bu yoʻnaltirish obyekti; har bir kirish yoʻli bitta leader_id tas+ ga taqaladi, hech qachon aʼzolarga tarqalmaydi.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Kimlar uchun">
+Bu sahifa squad xatti-harakatlari ustida ishlayotgan **ham** muhandislar, **ham** agentlar uchun. U nima uchun squad bajaruvchi emas, balki *yoʻnaltirish* obyekti ekanini va toʻrtta kirish yoʻlining barchasi qanday qilib bitta leader tas-ga jamlanishini tushuntiruvchi asosiy hujjatdir. "Nega mening squadim ishladi / ishlamadi" degan savolni tahlil qilayotgan agentlar buni oʻrnatilgan `agora-squads` skili bilan birga oʻqishi kerak. Aloqador: /developers/agentic/autopilot, [/developers/agentic/agent-tasks](/developers/architecture), [/developers/conventions](/developers/conventions). Paketlar oraligʻidagi chegaralar repo ildizidagi CLAUDE.md orqali boshqariladi.
+</Callout>
+
+## Yagona qoida
+
+Squad — bu agent emas, balki **ish maydoni boʻyicha yoʻnaltirish va muvofiqlashtirish obyekti**. U hech qachon ishni oʻzi bajarmaydi. "Squadni ishga tushirishi" mumkin boʻlgan har bir yoʻl squadning `leader_id` ini aniqlaydi va **roppa-rosa bitta leader tas** ni navbatga qoʻyadi. Kodbazada hech qayerda aʼzolarga tarqatish (member fan-out) yoʻq — squadni biriktirish, eslab oʻtish (mention), autopilot qilish yoki child-done signalini berish faqat va faqat leaderni ishga tushiradi.
+
+Keyin leader `@mention` izohlari orqali aʼzolarga vakolat berib *muvofiqlashtiradi*. Bu mentionlar oddiy mention triggerlaridir — ular squad mexanizmi emas. Squadning yagona vazifasi: leaderni aniqlash, leaderga briefing topshirish va yoʻldan chetga turish.
+
+<Callout type="warn" title="Notoʻgʻri fikrlash modeli">
+"Squad — bu ish kelganda hammasi ishga tushadigan agentlar jamoasi." Bu notoʻgʻri. `squad.instructions` — bu **leaderga briefing** mazmuni, har bir aʼzo uchun moʻljallangan prompt emas. `role` — bu rostr yorligʻi, planlovchi emas. Aʼzolar — leader *vakolat berishi mumkin* boʻlgan rostr yozuvlari; ular hech qachon avtomatik joʻnatilmaydi.
+</Callout>
+
+## Toʻrtta kirish yoʻli
+
+Ishning squadga yetib borishidagi har bir yoʻl `EnqueueTaskForSquadLeader` (`server/internal/service/task.go`) ga jamlanadi; bu `enqueueMentionTask` ning leader-rol variantidir. Toʻrttasi ham bir xil tayyorlik darvozasini (readiness gate), bir xil dublikatdan himoyani (dedup guard) va bir xil `is_leader_task=true` kelib chiqishini (provenance) baham koʻradi.
+
+<Mermaid chart={`flowchart TD
+  A["Assignment / backlog-promotion<br/>shouldEnqueueSquadLeaderOnAssign"] --> R
+  M["@mention of squad<br/>computeCommentAgentTriggers"] --> R
+  P["Autopilot (assignee_type=squad)<br/>resolveAutopilotLeader"] --> R
+  C["Child-done signal<br/>triggerChildDoneSquad"] --> R
+  R["Resolve squad.leader_id"] --> G{"Leader ready?<br/>not archived · runtime bound · runtime online"}
+  G -- no --> X["Fail CLOSED — no task enqueued"]
+  G -- yes --> D{"HasPendingTaskForIssueAndAgent?"}
+  D -- yes --> S["Skip — dedup"]
+  D -- no --> E["EnqueueTaskForSquadLeader<br/>is_leader_task = true"]
+`} />
+
+### 1. Biriktirish (va backlogdan koʻtarish)
+
+`shouldEnqueueSquadLeaderOnAssign` (`server/internal/handler/squad.go`) `shouldEnqueueAgentTask` ni aks ettiradi: `backlog` dagi issue toʻxtatib qoʻyiladi (`false` qaytaradi), aks holda u `isSquadLeaderReady` ga topshiriladi. Squadga biriktirilgan issue ni backlogdan *tashqariga* koʻchirishning oʻzi trigger boʻladi. `enqueueSquadLeaderTask` squadni aniqlaydi, kirish + dedup darvozalarini ishga soladi va `TaskService.EnqueueTaskForSquadLeader` ni chaqiradi. U "har bir squad aʼzosini navbatga qoʻymaydi".
+
+### 2. Squadni @mention qilish
+
+`[@Squad Name](mention://squad/<squad-id>)` mentioni squadni aniqlaydi, `leader_id` ni oʻqiydi va joriy izohni trigger izoh sifatida ishlatib leader tasni navbatga qoʻyadi. Izoh yoʻli triggerlari `computeCommentAgentTriggers` orqali oʻtadi, shunda preview va create bir xil trigger toʻplamini baham koʻradi. Yoʻnaltirish bir xil — faqat leader.
+
+### 3. Autopilot
+
+`assignee_type = "squad"` uchun `resolveAutopilotLeader` (`server/internal/service/autopilot.go`) bajaruvchi agent sifatida `squad.LeaderID` ni qaytaradi; kirish/tayyorlik tekshiruvlari leaderga nisbatan ishlaydi. `create_issue` autopilotlari uchun yaratilgan issue `assignee_type = "squad"` / `assignee_id = <squad-id>` ni saqlab qoladi, *bajaruvchi* agent esa aniqlangan leader boʻladi. Leader tas xuddi shu `EnqueueTaskForSquadLeader` orqali navbatga qoʻyiladi (`autopilot.go` dagi toʻgʻridan-toʻgʻri chaqiruvga qarang).
+
+### 4. Child-done
+
+Bola (child) issue `done` holatiga oʻtganda, `notifyParentOfChildDone` → `triggerChildDoneSquad` (`server/internal/handler/issue_child_done.go`) ota issue ga tizim izohini joylaydi va leader tasni navbatga qoʻyadi. Child-done — "muvofiqlashtirish signali, harakat qilish-qilmaslikni leader hal qiladi". U maxsus sikl himoyalarini olib yuradi: bola *xuddi shu* squadga biriktirilgan boʻlsa yoki bolaning `effectiveChildAgentOwner` qiymati ushbu squadning `leader_id` iga teng boʻlsa (umumiy-leader sikli) — oʻtkazib yuboradi.
+
+## Leaderning avtomatik aʼzoligi
+
+Leader doim shu bilan birga squad **aʼzosi** hamdir. `CreateSquad` (`server/internal/handler/squad.go`) da backend leaderni `Role: "leader"` bilan aʼzo sifatida avtomatik qoʻshadi. `UpdateSquad` da yangi `leader_id` oʻrnatilsa va u agent hali aʼzo boʻlmasa, u `leader` roli bilan avtomatik qoʻshiladi. `RemoveSquadMember` leaderni olib tashlashdan bosh tortadi (`"cannot remove the squad leader; change leader first"`).
+
+Yaratish/yangilashdagi leaderning yaroqliligini tekshirish faqat agentning ish maydonida **mavjudligini** tasdiqlaydi — u arxivlangan leaderni **rad etmaydi**. Arxivlangan leader keyinroq, joʻnatish (dispatch) bosqichida rad etiladi (quyiga qarang).
+
+## Leader briefing
+
+`squad.instructions` — leaderga briefing mazmuni. U `buildSquadLeaderBriefing` (`server/internal/handler/squad_briefing.go`) tomonidan toʻliq tizim briefingiga jamlanadi; u uchta boʻlimni birlashtiradi:
+
+1. **`squadOperatingProtocol`** — oʻzgarmas (konstanta), faqat inglizcha, tizim darajasidagi blok. U leaderga muvofiqlashtirishni (bajarish emas), `@mention` orqali vakolat berishni, har bir navbatda baholashni yozib qoldirishni va **joʻnatgandan keyin toʻxtashni** buyuradi.
+2. **Squad Roster** — `buildSquadRoster` tomonidan quriladi: leaderning oʻz qatori (self-row) hamda har bir arxivlanmagan aʼzo uchun bittadan `renderMemberRow`, har biri toʻgʻridan-toʻgʻri qoʻyib (paste) ishlatishga tayyor mention markdown bilan. Arxivlangan agent aʼzolar va aniqlab boʻlmaydigan yozuvlar jimgina oʻtkazib yuboriladi (`renderMemberRow` `""` qaytaradi).
+3. **Squad Instructions** — foydalanuvchi belgilagan `squad.instructions`, **faqat boʻsh boʻlmaganda** qoʻshiladi (shunda osilib qolgan sarlavha boʻlmaydi).
+
+### Inʼeksiya navbatga qoʻyishda emas, claim vaqtida sodir boʻladi
+
+Briefing tasda **saqlanmaydi**. U claim handlerida (`ClaimTaskByRuntime`, `server/internal/handler/daemon.go`) agentning `Instructions` iga jamlanib qoʻshiladi; bu quyidagi shart bilan himoyalangan: issue squadga biriktirilgan **va** `squad.LeaderID == resp.Agent.ID`. U **qoʻshiladi** (`Instructions + "\n\n" + briefing`), hech qachon almashtirilmaydi, shunda har bir agentga xos koʻrsatmalar umumiy xatti-harakat uchun yetakchi boʻlib qoladi, squad briefingi esa ustiga tasga xos kontekst sifatida joylashadi. Xuddi shu inʼeksiya quick-create claim yoʻlida ham ishlaydi.
+
+Aynan shu claim-vaqtidagi jamlash tufayli rostr har doim yangi boʻladi: aʼzo qoʻshing, `instructions` ni oʻzgartiring, aʼzoni arxivlang — keyingi claim buni qayta navbatga qoʻymasdan oʻzi oladi.
+
+### formatMention ParseMentions orqali toʻliq qaytib aylanishi shart
+
+Rostrning qiymati toʻliqligicha leaderning haqiqatan ishlaydigan mentionni *qoʻya olishiga* bogʻliq. `formatMention` `[@<name>](mention://<type>/<id>)` ni chiqaradi. Bu satr `util.ParseMentions` orqali **toʻliq qaytib aylanishi** shart — oddiy `@name` hech kimni ishga tushirmaydi, va Operating Protocol buni murosasiz tarzda aytadi ("no mention link = no delegation"). Inson aʼzolar `member` + `user_id` dan foydalanadi; agentlar `agent` + agent id dan foydalanadi.
+
+<Callout type="warn" title="Drift xavfi">
+Agar siz `formatMention` ning chiqish shaklini yoki `util.MentionRe` / `util.ParseMentions` qabul qiladigan shaklni oʻzgartirsangiz, ularni birgalikda oʻzgartirishingiz shart. Nomuvofiqlik shuni anglatadiki, leader hech narsaga parslanmaydigan mention markdownni qoʻyadi, va har bir vakolat berish jimgina hech narsa qilmaydi (no-op), issue esa qotib qoladi.
+</Callout>
+
+## is_leader_task bayrogʻi
+
+`EnqueueTaskForSquadLeader` tas qatoriga `IsLeaderTask: pgtype.Bool{Bool: isLeader, Valid: isLeader}` ni oʻrnatadi (`enqueueMentionTask`). Bu bayroq oʻz-oʻzini ishga tushirish himoyalari (self-trigger guards) agent **leader sifatida** joylagan izohni (oʻtkazib yuborish — bu leaderning oʻz vakolat berishi) va u **ishchi sifatida** joylagan izohni (oʻtkazib yubormaslik) bir-biridan ajrata olishi uchun mavjud. Bu bitta agent bir vaqtning oʻzida xuddi shu squadning ham leaderi, ham ishchisi boʻlganda muhim ahamiyatga ega. `lastTaskWasLeader` / `GetLatestTaskIsLeaderForIssueAndAgent` ushbu qarorni boshqarish uchun agentning issue boʻyicha eng soʻnggi tasining bayrogʻini oʻqiydi.
+
+### Qayta urinishlar bayroqni meros qilib olishi SHART
+
+`is_leader_task` ni yoʻqotgan qayta urinilgan tas self-trigger himoyasi tomonidan notoʻgʻri tasniflanadi va notoʻgʻri qayta yoʻnaltirilishi mumkin. Har bir klon yoʻli uni saqlab qoladi:
+
+| Klon yoʻli | Manba | Meros qilib olish |
+|---|---|---|
+| `CreateRetryTask` (`server/pkg/db/queries/agent.sql`) | xuddi shu runtimedagi qayta urinish | `p.is_leader_task` ni tanlaydi |
+| `CreateFailoverTask` (`agent.sql`) | zaxira-runtime yoʻnaltirish | `p.is_leader_task` ni tanlaydi |
+| `RerunIssue` / `enqueueRerunTask` (`task.go`) | foydalanuvchi qayta ishga tushirishi | `isLeader = sourceTask.IsLeaderTask`; squad-assignee zaxirasi `isLeader = true` ni oʻrnatadi |
+
+`CreateRetryTask` SQL izohi buni ochiq aytadi: `is_leader_task` "qayta urinilgan tas oʻz ota-tasi bilan bir xil squad-rol kelib chiqishini saqlab qolishi va self-trigger himoyasi … uni leader tas sifatida tan olishda davom etishi uchun meros qilib olinadi".
+
+## Arxivlangan leader joʻnatishda CLOSED tarzida fail boʻladi
+
+Yaratish/yangilash hech qachon arxivlangan leaderni rad etmagani uchun, fail-closed pozitsiyasi buning oʻrniga **har bir yoʻnaltirish/joʻnatish yoʻlida** yashaydi — ular har qanday tas navbatga qoʻyilishidan **oldin** arxivlangan (yoki runtimesiz, yoki oflayn) leaderni rad etadi:
+
+- **Biriktirish / backlogdan koʻtarish** — `isSquadLeaderReady` (`squad.go`) leaderni yuklaydi va `service.AgentReadiness` ni ishga soladi; har qanday xato yoʻli `false` qaytaradi ("Aniqlay olmaganimizda fail closed boʻl").
+- **Mention / child-done** — `enqueueMentionTask` arxivlangan agentni rad etadi (`agent is archived`); `triggerChildDoneSquad` va `maybeReTriggerSquadLeaderOnMemberFailure` ikkalasi ham navbatga qoʻyishdan oldin `agent.ArchivedAt.Valid` va `!agent.RuntimeID.Valid` ni tekshiradi.
+- **Autopilot** — `resolveAutopilotLeader` arxivlangan squad uchun `errSquadArchived` qaytaradi; `formatAdmissionReason` oʻtkazib yuborish sababini `"squad leader "` prefiksi bilan qayta yozadi, shunda arxivlangan/oflayn leader `failure_reason` da `squad leader agent is archived` / `… at dispatch time` koʻrinishida yuzaga chiqadi.
+
+`DeleteSquad` shuningdek omon qolgan autopilotlarni leaderga proaktiv qayta yozadi (`TransferSquadAutopilotsToLeader`) va issue assignee larini koʻchiradi (`TransferSquadAssignees`), ammo darvoza handlerni chetlab oʻtgan har qanday qator uchun baribir fail closed boʻladi.
+
+## no_action protokoli
+
+Operating Protocol baholashni yozib qoldirishni **har bir navbatda majburiy** qiladi, hatto hech narsa qilinmasa ham. Leader quyidagini chaqiradi:
+
+```bash
+agora squad activity <issue-id> action|no_action|failed --reason "<why>"
+```
+
+Bu `RecordSquadLeaderEvaluation` (`server/internal/handler/squad.go`) ga keladi, u:
+
+- `outcome ∈ {action, no_action, failed}` ni tekshiradi;
+- issue squadga biriktirilgan boʻlishini talab qiladi;
+- **faqat squad leader agenti** yozib qoldira olishini taʼminlaydi (`actorType == "agent" && actorID == squad.LeaderID`, aks holda `403`);
+- tasi issue ga tegishli boʻlgan yaroqli `X-Task-ID` sarlavhasini talab qiladi;
+- `activity_log` ga `details.outcome`, `details.task_id`, `details.squad_id`, `details.reason` bilan `squad_leader_evaluated` faoliyatini yozadi.
+
+### Har bir tas uchun no_action ni bostirish
+
+Leader `no_action` ni yozib qoldirsa, u hech narsa kerak emasligini ochiq hal qilgan boʻladi — shuning uchun tizim oʻsha tas uchun zaxira "done" izohini **sintez qilmasligi** kerak. Tas tugallanganda `CompleteTask` (`task.go`) `HasSquadLeaderNoActionEvaluationForTask` (`server/internal/service/squad_no_action.go`) ni chaqiradi va u `true` qaytarsa zaxira izohni oʻtkazib yuboradi (`!suppressNoActionComment && !agentCommented`). Soʻrov (`server/pkg/db/queries/activity.sql`) `issue_id` + `agent_id` + `action = 'squad_leader_evaluated'` + `details->>'outcome' = 'no_action'` + `details->>'task_id' = @task_id` boʻyicha kalitlanadi — bostirish **aniq tas** bilan chegaralangan, shunda xuddi shu issue boʻyicha keyingi trigger taʼsirlanmaydi.
+
+### no_action dan keyingi qoʻlda izohga 409
+
+Xuddi shu har bir tas uchun no_action yozuvi oʻsha tasga bogʻliq izohlarni ham bloklaydi. Izoh handlerida (`server/internal/handler/comment.go`), leaderi oʻsha tas uchun allaqachon `no_action` yozib qoʻygan tas ichidan izoh joylayotgan agent rad etiladi:
+
+```
+409 Conflict — "squad leader recorded no_action; comments are not allowed for this task"
+```
+
+Bu davom ettirilgan sessiyaning parent-id himoyasi (u ham `409`) yonida turadi va xuddi shu `HasSquadLeaderNoActionEvaluationForTask` tekshiruvidan foydalanadi. U davom ettirilgan leader sessiyasining yopilgan tas ostiga izoh qoʻshib, oʻzining yozib qoldirilgan no_action qaroriga zid kelishining oldini oladi.
+
+## Manba fayllar
+
+| Fayl | Sahifa bogʻliq boʻlgan simvollar |
+|---|---|
+| `server/internal/handler/squad.go` | `CreateSquad` (leaderning avtomatik aʼzoligi, `"leader"` roli), `UpdateSquad` (yangi-leaderni avtomatik qoʻshish), `RemoveSquadMember` (leaderni olib tashlashni bloklash), `shouldEnqueueSquadLeaderOnAssign`, `isSquadLeaderReady`, `enqueueSquadLeaderTask`, `lastTaskWasLeader`, `RecordSquadLeaderEvaluation`, `commentMentionsAnyone` |
+| `server/internal/handler/squad_briefing.go` | `buildSquadLeaderBriefing`, `squadOperatingProtocol`, `buildSquadRoster`, `renderMemberRow`, `formatRosterRow`, `formatMention` |
+| `server/internal/handler/daemon.go` | `ClaimTaskByRuntime` (claim-vaqtidagi squad-leader briefing inʼeksiyasi, `squad.LeaderID == resp.Agent.ID` himoyasi, qoʻshish-almashtirmaslik) |
+| `server/internal/service/squad_no_action.go` | `HasSquadLeaderNoActionEvaluationForTask` |
+| `server/internal/service/task.go` | `EnqueueTaskForSquadLeader`, `enqueueMentionTask` (`IsLeaderTask`, arxivlangan-agentni rad etish), `CompleteTask` (zaxira izohni no_action bilan bostirish), `RerunIssue` / `enqueueRerunTask` (`isLeader` merosi), `maybeReTriggerSquadLeaderOnMemberFailure` |
+| `server/internal/service/autopilot.go` | `resolveAutopilotLeader`, `errSquadArchived`, `formatAdmissionReason` (`"squad leader "` prefiksi), toʻgʻridan-toʻgʻri `EnqueueTaskForSquadLeader` chaqiruvi |
+| `server/internal/handler/issue_child_done.go` | `notifyParentOfChildDone`, `triggerChildDoneSquad`, `effectiveChildAgentOwner` |
+| `server/internal/handler/comment.go` | `computeCommentAgentTriggers`, `409` "squad leader recorded no_action" himoyasi |
+| `server/pkg/db/queries/agent.sql` | `CreateRetryTask` / `CreateFailoverTask` (`is_leader_task` merosi), `GetLatestTaskIsLeaderForIssueAndAgent`, `HasPendingTaskForIssueAndAgent` |
+| `server/pkg/db/queries/activity.sql` | `HasSquadLeaderNoActionEvaluationForTask` (har bir tas uchun `no_action` qidiruvi) |
+| `server/internal/service/builtin_skills/agora-squads/SKILL.md` | bu sahifa sinxron qolishi shart boʻlgan agentga qaratilgan squad shartnomasi |
+
+Yuqorida hujjatlashtirilgan har qanday simvol, bayroq, maydon yoki CLI shakli koʻchsa yoki shaklini oʻzgartirsa, **bu sahifani va uning manba-xarita yoʻldoshini (`references/squads-routing-source-map.md`) xuddi shu PR da yangilang** — oʻrnatilgan `agora-squads` skili agentlarga yetkaziladigan manbaga taqalgan shartnoma, shuning uchun eskirgan hujjatlar jimgina notoʻgʻri squad xatti-harakatini oʻrgatadi.

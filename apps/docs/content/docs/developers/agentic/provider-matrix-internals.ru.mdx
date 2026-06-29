@@ -1,0 +1,119 @@
+---
+title: Provider Matrix Internals
+description: Внутренняя таблица по каждому провайдеру — имя файла runtime-конфига, инлайн-инъекция системного промпта и нативный путь обнаружения навыков — в том виде, в каком их реально связывает daemon.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Аудитория">
+**dev.** Эта страница предназначена для backend-инженеров, работающих в `server/internal/daemon/` и `server/pkg/agent/`. Она документирует три внутренних переключателя по каждому провайдеру, на которые daemon опирается в момент диспетчеризации: какой файл записывает `InjectRuntimeConfig` (`runtimeConfigPath`), какие провайдеры получают runtime-бриф инлайн через `--append-system-prompt` (`providerNeedsInlineSystemPrompt`) и где каждый провайдер обнаруживает навыки (`skillsDirPath`). Это матрица *реализации*, отличная от пользовательской матрицы возможностей на [/providers](/providers). Связанные страницы: [/developers/agentic/agent-runtime-contract](/developers/agentic/agent-runtime-contract), [/developers/agentic/brief-injection](/developers/agentic/brief-injection), [/developers/agentic/backend-interface](/developers/agentic/backend-interface), а также правила именования в [/developers/conventions](/developers/conventions).
+</Callout>
+
+Каждый runtime кодинг-агента, поддерживаемый Agora, реализует один и тот же контракт `agent.Backend` (см. [/developers/agentic/backend-interface](/developers/agentic/backend-interface)), но каждый из них *находит* свои инструкции и навыки через собственный нативный механизм. Это межпровайдерное расхождение закодировано в трёх небольших Go-переключателях. Они намеренно держатся отдельно от продуктовой матрицы возможностей, потому что отвечают на другой вопрос: не «что умеет этот инструмент», а «куда daemon кладёт байты, чтобы инструмент действительно их прочитал».
+
+## Три переключателя, одна диспетчеризация
+
+Когда daemon запускает задачу, он обращается к трём функциям, ключованным по провайдеру, каждая в своём пакете:
+
+<Mermaid chart={`flowchart TD
+  T["runTask(provider)"] --> RCP["runtimeConfigPath(workDir, provider)"]
+  T --> NIS["providerNeedsInlineSystemPrompt(provider)"]
+  T --> SDP["skillsDirPath(workDir, provider)"]
+  RCP -->|"CLAUDE.md / AGENTS.md / GEMINI.md / \"\""| FILE["file-based brief on disk"]
+  NIS -->|"openclaw, kiro, kimi → true"| INLINE["execOpts.SystemPrompt = runtimeBrief"]
+  SDP -->|".claude/skills, .pi/skills, ..."| SKILLS["native skill discovery dir"]
+`} />
+
+Первая живёт в `server/internal/daemon/execenv/runtime_config.go`, вторая в `server/internal/daemon/daemon.go`, третья в `server/internal/daemon/execenv/context.go`. Строка провайдера в матрице ниже — это *комбинация* всех трёх ответов.
+
+## Имя файла runtime-конфига — `runtimeConfigPath`
+
+`InjectRuntimeConfig` строит runtime-бриф через `buildMetaSkillContent`, затем записывает его в файл, который возвращает `runtimeConfigPath`. И `InjectRuntimeConfig`, и `CleanupRuntimeConfig` обращаются к одному и тому же `runtimeConfigPath`, так что инъекция и очистка никогда не могут разойтись. Соответствие:
+
+| Провайдер(ы) | Записываемый файл в `workDir` |
+|---|---|
+| `claude`, `codebuddy` | `CLAUDE.md` |
+| `codex`, `copilot`, `opencode`, `openclaw`, `hermes`, `pi`, `cursor`, `kimi`, `kiro`, `antigravity` | `AGENTS.md` |
+| `gemini` | `GEMINI.md` |
+| *всё остальное* | `""` (нет файла — режим только-промпт) |
+
+Возврат `""` означает, что провайдер неизвестен file-based пути. `InjectRuntimeConfig` трактует это как «пропустить инъекцию конфига, режим только-промпт» и возвращает содержимое брифа, ничего не записывая; `CleanupRuntimeConfig` возвращает `nil` (no-op).
+
+Сама запись — не слепой `os.WriteFile`. `writeRuntimeConfigFile` оборачивает бриф в маркеры `<!-- BEGIN MULTICA-RUNTIME (auto-managed; do not edit) -->` / `<!-- END MULTICA-RUNTIME -->`, чтобы можно было дописать его в авторский `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` пользователя (и позже вырезать) без затирания — это нужно для потока `local_directory`, где `workDir` является собственным репозиторием пользователя. Полный контракт цикла инъекция/очистка документирован в [/developers/agentic/brief-injection](/developers/agentic/brief-injection); эта страница покрывает только маршрутизацию провайдер→имя файла.
+
+## Инлайн-инъекция системного промпта — `providerNeedsInlineSystemPrompt`
+
+Запись брифа на диск работает только в том случае, если CLI надёжно загружает этот файл из `workDir` задачи. Три провайдера этого не делают, поэтому daemon *также* передаёт полный бриф инлайн. `providerNeedsInlineSystemPrompt` — это шлюз:
+
+```go
+func providerNeedsInlineSystemPrompt(provider string) bool {
+	switch provider {
+	case "openclaw", "kiro", "kimi":
+		return true
+	default:
+		return false
+	}
+}
+```
+
+Когда функция возвращает `true`, `runTask` устанавливает `execOpts.SystemPrompt = runtimeBrief` — ту же полезную нагрузку (`buildMetaSkillContent`: каталог CLI + шаги воркфлоу + идентичность/персона агента + навыки + контекст проекта), которую file-based runtime подхватывают с диска. Daemon логирует, произошло ли это, через поле `inline_system_prompt` в отладочной строке `invoking backend`.
+
+Почему именно эти три:
+
+- **`openclaw`** — привязан к `workDir` задачи через синтезированный для каждой задачи `openclaw-config.json` (`prepareOpenclawConfig`), так что `AGENTS.md` / `.agent_context/` из workdir *подхватываются*. Инлайн-инъекция сохраняется как страховка (belt-and-suspenders) для старых релизов, пока этот путь загрузки не стабилизируется в продакшене.
+- **`kiro`** и **`kimi`** — обёрнуты через собственные CLI, чья обработка cwd достаточно непрозрачна, чтобы file-based пути нельзя было доверять. Без инлайн-брифа они молча пропускают секцию воркфлоу и никогда не вызывают `agora issue status` / `agora issue comment add`, оставляя задачи застрявшими в `todo`.
+
+### Как backend потребляет `SystemPrompt`
+
+Каждый backend, поддерживающий флаг дополнительного системного промпта, зеркалит одну и ту же однострочную логику: если `opts.SystemPrompt != ""`, добавить `--append-system-prompt` плюс значение. В референсном backend `claude` (`buildClaudeArgs` в `claude.go`):
+
+```go
+if opts.SystemPrompt != "" {
+	args = append(args, "--append-system-prompt", opts.SystemPrompt)
+}
+```
+
+`codebuddy.go` и `pi.go` несут побайтово идентичный паттерн. Поэтому, хотя Claude (`claude`) *не* входит в набор инлайн-провайдеров выше, путь `--append-system-prompt` — это общая механика: daemon заполняет `execOpts.SystemPrompt` только для трёх инлайн-провайдеров, а любой backend, владеющий этим флагом, пробрасывает его, когда он присутствует.
+
+<Callout title="Почему Hermes исключён">
+`hermes` записывает `AGENTS.md`, как и остальная часть группы `AGENTS.md`, но он **намеренно не** включён в `providerNeedsInlineSystemPrompt`. Hermes работает через ACP: его сессии стартуют в cwd задачи, и он сам загружает `AGENTS.md` / `.agent_context`. Подстановка полного runtime-брифа в пользовательский промпт ACP продублировала бы этот контекст, раздула бы каждый ход и приводила к срабатыванию upstream-фильтров безопасности на безобидных задачах. Поэтому Hermes получает файл, но никогда инлайн-копию.
+</Callout>
+
+## Нативный путь обнаружения навыков — `skillsDirPath`
+
+Третий переключатель решает, куда записываются навыки, чтобы их нашёл собственный сканер провайдера. `resolveSkillsDir` оборачивает `skillsDirPath` логикой `MkdirAll`/учёта манифеста; голое соответствие такое:
+
+| Провайдер(ы) | Каталог навыков в `workDir` |
+|---|---|
+| `claude`, `codebuddy` | `.claude/skills` |
+| `copilot` | `.github/skills` |
+| `opencode` | `.opencode/skills` |
+| `openclaw` | `skills` (корень workdir; CLI сканирует `<workspaceDir>/skills/`) |
+| `pi` | `.pi/skills` |
+| `cursor` | `.cursor/skills` |
+| `kimi` | `.kimi/skills` |
+| `kiro` | `.kiro/skills` |
+| `antigravity` | `.agents/skills` |
+| *fallback (вкл. `gemini`, `hermes`)* | `.agent_context/skills` |
+
+У `gemini` и `hermes` нет подключённого нативного каталога обнаружения навыков для конкретного провайдера, поэтому они попадают в ветку `default` и приземляются в `.agent_context/skills/`. Это соответствует тому, как `buildMetaSkillContent` описывает навыки этим двум провайдерам: секция `## Skills` сообщает `gemini`/`hermes`, что «Detailed skill instructions are in `.agent_context/skills/`», тогда как провайдерам с нативным обнаружением говорится, что навыки «discovered automatically». Строка `openclaw` — та, за которой стоит следить: её сканер читает каталог `skills/` в корне workdir (не путь с точкой), в паре с привязкой `agents.defaults.workspace` в `openclaw-config.json` для конкретной задачи.
+
+Пользовательское представление этих путей (по строке на инструмент, рядом с возобновлением сессии и поддержкой MCP) см. в колонке «Skill injection path» на [/providers](/providers).
+
+## Эта матрица — не матрица возможностей
+
+Держите их раздельно. **Продуктовая матрица возможностей** на [/providers](/providers) отвечает на вопросы пользовательского решения по каждому инструменту: реально ли работает возобновление сессии, поддерживается ли MCP, как выбираются модели. **Внутренняя матрица на этой странице** отвечает на вопросы daemon-обвязки: какое имя файла записывается, инъецируется ли бриф также инлайн, какой каталог читает сканер навыков. Они пересекаются только в колонке пути навыков и больше нигде — инструмент может находиться где угодно по оси возможностей (полный MCP, динамическое обнаружение моделей), разделяя при этом ровно ту же внутреннюю маршрутизацию (`AGENTS.md` + `.agent_context/skills`) с инструментом, не имеющим ни одной из этих возможностей. Когда вы добавляете провайдера, вы трогаете три переключателя на этой странице; матрица возможностей обновляется отдельно, чтобы описать, что инструмент умеет.
+
+## Source files
+
+| Файл | Символы, от которых зависит эта страница |
+|---|---|
+| `server/internal/daemon/execenv/runtime_config.go` | `InjectRuntimeConfig`, `runtimeConfigPath`, `CleanupRuntimeConfig`, `writeRuntimeConfigFile`, `buildMetaSkillContent`, `runtimeMarkerBegin`, `runtimeMarkerEnd` |
+| `server/internal/daemon/daemon.go` | `providerNeedsInlineSystemPrompt`, `runTask`, `execOpts.SystemPrompt`, `runtimeBrief`, лог-поле `inline_system_prompt` |
+| `server/pkg/agent/claude.go` | `buildClaudeArgs`, `ExecOptions.SystemPrompt`, `--append-system-prompt` |
+| `server/pkg/agent/codebuddy.go` | проброс `opts.SystemPrompt` через `--append-system-prompt` |
+| `server/pkg/agent/pi.go` | проброс `opts.SystemPrompt` через `--append-system-prompt` |
+| `server/internal/daemon/execenv/context.go` | `skillsDirPath`, `resolveSkillsDir` |
+
+Если какой-либо задокументированный символ, флаг или строка провайдера выше перемещается или переименовывается, обновите эту страницу **и** её сопроводительную карту источников (`provider-matrix-internals-source-map.md`) в **том же PR** — матрица является source-traced контрактом, и устаревшая строка молча обучает неверной маршрутизации.

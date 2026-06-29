@@ -1,0 +1,199 @@
+---
+title: Models and Thinking
+description: Daemon har bir provayder uchun model kataloglarini va reasoning-effort darajalarini qanday aniqlashi, hamda ularni bajarishdan oldin qanday tekshirib hal qilishi.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Kim uchun">
+**Ham** dasturchilar, **ham** agentlar uchun. Model va thinking darajasi `agent.model` / `agent.thinking_level` dan boshlab aniqlash (discovery), ikki bosqichli tekshiruv orqali o‘tib CLI chaqiruviga qanday yetib borishini tushunish uchun shuni o‘qing. Quyidagilar bilan birga keladi: [provider-matrix-internals](/developers/agentic/provider-matrix-internals) (har bir provayder bo‘yicha flag jadvali), [protocol-families](/developers/agentic/protocol-families) (CLI va ACP transportlari), [add-a-backend](/developers/agentic/add-a-backend) va [agent-runtime-contract](/developers/agentic/agent-runtime-contract).
+</Callout>
+
+Ushbu sahifadagi hamma narsa `server/pkg/agent/` ostidagi ikki faylda (`models.go`, `thinking.go`) hamda `server/internal/daemon/daemon.go` dagi yig‘ish (assembly) joyida joylashgan. Daemon foydalanuvchining mashinasida, ya’ni provayder CLI’lari o‘rnatilgan joyda ishlaydi, shu sababli aynan u — server emas — CLI’dan u aslida nimani qo‘llab-quvvatlashini so‘ray oladigan yagona joy hisoblanadi.
+
+## Ma’lumotlar modeli
+
+Provayderning katalogi `Model` larning slice’i hisoblanadi. Har bir yozuv ixtiyoriy ravishda `*ModelThinking` ni olib yuradi, u esa o‘z navbatida `ThinkingLevel` ro‘yxatini saqlaydi.
+
+```go
+type Model struct {
+	ID       string
+	Label    string
+	Provider string
+	Default  bool
+	Free     bool
+	Category string
+	Thinking *ModelThinking
+}
+
+type ModelThinking struct {
+	SupportedLevels []ThinkingLevel
+	DefaultLevel    string
+}
+
+type ThinkingLevel struct {
+	Value       string
+	Label       string
+	Description string
+}
+```
+
+Maydon hujjat-izohlaridan ko‘chirilgan asosiy semantika:
+
+- `Default` — bu **faqat ko‘rsatish uchun maslahat (display hint)**. U runtime o‘zining afzal tanlovi sifatida e’lon qiladigan yozuvni belgilab qo‘yadi (Claude Code yetkazib beradigan default, hermes’ning `currentModelId`). Bajarilish vaqtida uning **hech qanday ta’siri yo‘q** — `agent.model` bo‘sh bo‘lganda daemon `""` uzatadi, shunda har bir provayderning o‘z CLI’si o‘z default’ini hal qiladi.
+- `Free` va `Category` — **faqat brending uchun** (Agora bepul-model overlay’i, quyiga qarang). Ular CLI’ga qaysi ID jo‘natilishini o‘zgartirmaydi.
+- `Thinking == nil` — “bu runtime/modelda thinking boshqaruvi yo‘q, yoki daemon uni aniqlay olmadi” degani — UI tanlagichni yashiradi. Katalog **har bir model bo‘yicha (per-model)**, chunki Codex’ning `codex debug models` per-model, Claude’ning `--effort` supersetida esa per-model bo‘shliqlar mavjud (`xhigh` faqat Opus’da, `max` faqat session’da — MUL-2339 ga qarang).
+- `ModelThinking.SupportedLevels` qiymatlari **runtime-native** bo‘lib, qanday bo‘lsa shundayligicha ko‘rsatiladi. Codex `none|minimal|low|medium|high|xhigh` chiqaradi; Claude `low|medium|high|xhigh|max` chiqaradi. Ular ataylab umumiy enum’ga **birlashtirilmaydi**.
+- `ThinkingLevel.Value` — bu CLI’ga uzatiladigan aniq token (Claude `--effort <value>`, Codex `model_reasoning_effort=<value>`).
+
+## ListModels: aniqlashning uchta strategiyasi
+
+`ListModels(ctx, providerType, executablePath)` `providerType` bo‘yicha tarmoqlanadi va har bir provayderni uchta strategiyadan aynan bittasiga yo‘naltiradi. `executablePath` chaqiruvchiga default bo‘lmagan binary’ga ko‘rsatish imkonini beradi; `""` esa provayderning PATH’dagi default nomidan foydalanadi.
+
+<Mermaid chart={`flowchart TD
+  A["ListModels(providerType, executablePath)"] --> B{providerType}
+  B -->|claude| C["claudeStaticModels() + annotateClaudeThinking"]
+  B -->|codex| D["codexStaticModels() + annotateCodexThinking"]
+  B -->|gemini| E["geminiStaticModels()"]
+  B -->|cursor / copilot / hermes / kimi / kiro / opencode / pi / openclaw / antigravity / codebuddy| F["cachedDiscovery(key, fn)"]
+  F --> G["CLI text/JSON parse (opencode, pi, cursor, antigravity, openclaw, codebuddy)"]
+  F --> H["discoverACPModels: initialize + session/new (hermes, kimi, kiro, copilot)"]
+`} />
+
+### 1. Statik kataloglar — claude, codex, gemini
+
+`claudeStaticModels()`, `codexStaticModels()` va `geminiStaticModels()` ichiga joylangan (baked-in) `[]Model` qaytaradi. Bular har bir CLI’ning `--model` flag’i qabul qiladigan qiymatlardir. Masalan, `claudeStaticModels()` standart sifatida `claude-sonnet-4-6` ni oladi (Sonnet — asosiy ishchi kuch; Opus advisor oqimlari uchun ajratilgan). Gemini statik, chunki Gemini CLI’da `models list` quyi buyrug‘i **yo‘q** — buning o‘rniga u CLI’ning o‘z taxalluslarini (`auto`, `pro`, `flash`, `flash-lite`, `auto-gemini-*` oilasi) ochib beradi, shunda yangi relizlar Agora’ni qayta deploy qilmasdan ham yonadi.
+
+Claude va codex **model ro‘yxati uchun** statik, biroq dinamik thinking aniqlash bilan to‘ldiriladi (keyingi bo‘limga qarang).
+
+### 2. Dinamik CLI aniqlash — text/JSON parse qilish
+
+`antigravity`, `cursor`, `copilot`, `hermes`, `kimi`, `kiro`, `opencode`, `pi`, `openclaw` va `codebuddy` `cachedDiscovery(key, fn)` orqali yo‘naltiriladi. `fn` CLI’ga shell orqali murojaat qiladi va uning chiqishini parse qiladi:
+
+- **`discoverOpenCodeModels`** `opencode models --verbose` ni ishga tushiradi, `provider/model` qatorlarini hamda per-model JSON metama’lumotlarini parse qiladi. Modelning `variants`’lari thinking darajalariga aylanadi (`opencode run --variant` orqali proyeksiya qilinadi). Bo‘sh verbose chiqishida u oddiy `opencode models` ni qayta urinib ko‘radi. Timeout `15 * time.Second`, chunki yangiroq opencode hostlangan bepul-model katalogini tarmoq orqali sinxronlaydi (~6s).
+- **`discoverPiModels`** `pi --list-models` ni ishga tushiradi, ham eski `provider:model` ni, ham yangiroq ko‘p-ustunli jadvalni `provider/model` ko‘rinishiga normallashtiradi. `isPiDiscoveryNoise` diagnostik qatorlarni filtrlaydi, shunda matn soxta modellarga aylanib qolmaydi.
+- **`discoverCursorModels`** `cursor-agent --list-models` ni ishga tushiradi (`id - Label` qatorlari), binary mavjud bo‘lmaganda yoki chiqish bo‘sh bo‘lganda `cursorStaticModels()` ga (faqat `auto`) qaytadi.
+- **`discoverAntigravityModels`** `agy models` ni ishga tushiradi — har bir qatorda bitta ko‘rsatish nomi, bunda nomning o‘zi `--model` qiymati **hisoblanadi**. Ataylab **statik fallback yo‘q**: `agy` tanilmagan `--model` qiymatlarida jimgina hech narsa qilmaydi, shu sababli taxmin qilingan ro‘yxat xato yozilgan token “muvaffaqiyatli” bo‘sh ishga aylanib ketish xavfini tug‘diradi.
+- **`discoverOpenclawAgents`** oldindan ro‘yxatdan o‘tgan agentlarni sanaydi (`openclaw agents list --json`, so‘ng matnli fallback) — OpenClaw’da model tanlash agent darajasida joylashgan.
+- **`discoverCodebuddyModels`** `codebuddy --help` ni `codebuddyModelRe` orqali parse qiladi, `codebuddyStaticModels()` ga qaytadi; shuningdek `annotateCodebuddyThinking` ni ham ishga tushiradi.
+
+### 3. ACP-handshake aniqlash — discoverACPModels
+
+`hermes`, `kimi`, `kiro` va `copilot` o‘z kataloglarini Agent Client Protocol orqali gaplashib aniqlaydi. Ular bitta umumiy yordamchi — `discoverACPModels(ctx, executablePath, p acpDiscoveryProvider)` — orqali o‘tadi, u har bir provayder uchun `acpDiscoveryProvider` orqali sozlanadi (`defaultBin`, `clientName`, `extraEnv`, `tmpdirPrefix`, `acpArgs`).
+
+Yordamchi bir martalik ACP jarayonini ishga tushiradi va minimal handshake’ni boshqaradi:
+
+1. `initialize` jo‘nat (jsonrpc id `1`).
+2. `session/new` jo‘nat (id `2`) vaqtinchalik `cwd` bilan (daemon workdir’i emas — u vazifa o‘rtasida bo‘lishi mumkin) va bo‘sh `mcpServers` bilan.
+3. id `2` natijasi kelguncha javoblarni o‘qi, so‘ng `parseACPSessionNewModels` ni chaqir.
+
+`parseACPSessionNewModels` `models.availableModels` / `models.currentModelId` blokini ajratib oladi (u ham camelCase, ham snake_case kalitlarini qabul qiladi), `modelId == currentModelId` bo‘lgan yozuvda `Default` ni o‘rnatadi va struktura mavjud bo‘lmaganda bo‘sh slice emas, balki `nil` qaytaradi, shunda chaqiruvchi “model yo‘q” ni “parse qilib bo‘lmadi” dan ajrata oladi. Binary’ni ACP rejimiga o‘tkazadigan argv har xil bo‘ladi: ko‘pchiligi `acp` dan foydalanadi, Copilot `--acp` dan foydalanadi (`acpArgs` orqali o‘rnatiladi). Handshake muvaffaqiyatsiz bo‘lganda `copilotStaticModels()` fallback hisoblanadi; `inferCopilotProvider` vendor’ni ID prefiksidan teglaydi, chunki ACP payload’i uni tashlab ketadi.
+
+### Agora bepul-model overlay’i
+
+opencode aniqlanganidan so‘ng `annotateAgoraFree(models)` ID’si `agoraFreeModels` dagi kalitlardan biri bo‘lgan har qanday topilgan modelga (masalan `zhipuai/glm-4.5-flash`, `z-ai/glm-4.5-flash`) Agora brendingini qo‘yadi. U `Label` ni qayta yozadi, `"Agora"` provayderi ostiga qayta guruhlaydi, `Free = true` ni o‘rnatadi va `Category` ni teglaydi. Bu **faqat brending** — model baribir o‘zining asosiy opencode/Ollama ID’si sifatida bajariladi va overlay hech qachon runtime ishlata olmaydigan yozuvni o‘ylab topmaydi, shu sababli “dinamik aniqlash — bu haqiqat” qoidasi saqlanib qoladi.
+
+## Turli umrga ega ikkita kesh
+
+### modelCache — 60s, faqat bo‘sh bo‘lmagan
+
+`cachedDiscovery` aniqlash natijalarini `modelCache` da `modelCacheTTL = 60 * time.Second` davomida xotirada saqlaydi. Ikkita qoida muhim:
+
+- **U hech qachon bo‘sh natijani keshlamaydi.** Nol model deyarli har doim vaqtinchalik nosozlik (CLI timeout, tizimga kirilmaganligi, tarmoq uzilishi). Uni keshlash tanlagichni sabab bartaraf bo‘lganidan keyin ham to‘liq TTL davomida bo‘sh saqlab turardi; keshni o‘tkazib yuborish keyingi so‘rovga darhol qayta urinish imkonini beradi (#3729).
+- Kesh kaliti aksariyat provayderlar uchun `providerType`. Faqat opencode `discoveryCacheKey(providerType, executablePath)` dan foydalanadi (u bo‘sh bo‘lmaganda `:executablePath` ni qo‘shadi), shunda default bo‘lmagan binary yo‘li default bilan to‘qnashmaydi.
+
+### thinkingCache — 10 daqiqa, (provider, path, cliVersion) bo‘yicha kalitlangan
+
+Thinking-darajasini aniqlash (Claude/Codex/CodeBuddy) `thinkingCache` da `thinkingDiscoveryTTL = 10 * time.Minute` davomida keshlanadi. Kalit — bu `thinkingCacheKey{provider, executablePath, cliVersion}` strukturasi. `cliVersion` komponenti (`DetectVersion` dan) yuk ko‘taruvchi (load-bearing) ahamiyatga ega: **lokal CLI’ni yangilash yozuvni bekor qiladi**, bu esa Anthropic/OpenAI bir darajani qo‘shganda yoki olib tashlaganda yuzaga keladigan aynan o‘sha nosozlik rejimidir. `resetThinkingCacheForTests` — TTL’dan tashqaridagi yagona bekor qilish ilgagi; production TTL’ga yoki jarayon qayta ishga tushishiga tayanadi.
+
+## Har bir provayder bo‘yicha thinking aniqlash
+
+| Provayder | Aniqlash manbai | Darajalar qanday keltirib chiqariladi |
+| --- | --- | --- |
+| claude | `claude --help` `--effort` qatori | `claudeEffortSuperset` supersetni `claudeEffortRe` orqali parse qiladi, so‘ng `projectClaudeLevels` har bir model bo‘yicha `claudeModelEffortAllow` orqali filtrlaydi. `DefaultLevel` qattiq `"medium"` ga o‘rnatilgan. |
+| codex | `codex debug models --bundled` (JSON) | `parseCodexDebugModels` har bir model bo‘yicha `supported_reasoning_levels` + `default_reasoning_level` ni o‘qiydi. `--bundled` tarmoqli yangilanishni o‘tkazib yuboradi. |
+| opencode | `opencode models --verbose` variantlari | `annotateOpenCodeModelMetadata` model `variants`’larini darajalarga proyeksiya qiladi (faqat `reasoning` true bo‘lganda yoki variantlar reasoning’ga o‘xshab ko‘ringanda). |
+| codebuddy | `codebuddy --help` `--effort` qatori | `codebuddyEffortSuperset` (`max` yo‘q); barcha modellar bir xil to‘plamni baham ko‘radi, `DefaultLevel` `"medium"`. |
+
+Claude’ning parse yo‘lida bosqichli fallback’lar mavjud: CLI xatosida `claudeStaticEffortFallback` = `{"low", "medium", "high"}`; help-format siljishida (regex topa olmasa) `claudeStaticEffortFullSuperset` = `{"low", "medium", "high", "xhigh", "max"}` — u sun’iy ravishda bloklashdan ko‘ra **ko‘proq taklif qilib, CLI’ga rad etishga ruxsat berishni** afzal ko‘radi. Daemon o‘rgatilmagan yangi tokenlar `strings.Title`-cased label oladi va xom holatda ko‘rsatiladi.
+
+Codex uchun aniqlash muvaffaqiyatsiz bo‘lganda `loadCodexThinkingByModel` **bo‘sh** map’ni keshlaydi, shunda takroriy UI so‘rovlari mavjud bo‘lmagan binary’ga qayta shell qilmaydi; TTL oxir-oqibat qayta urinadi.
+
+To‘rtala annotator ham xatolarni jimgina yutib yuboradi: mavjud bo‘lmagan CLI har bir yozuvda `Thinking == nil` qoldiradi, buni UI model tanlashni bloklash o‘rniga “bu model uchun tanlagich yo‘q” deb o‘qiydi.
+
+## Ikki bosqichli thinking-daraja tekshiruvi
+
+Saqlangan `thinking_level` ikki xil qatlamda ikki xil funksiya bilan tekshiriladi. Bu bo‘linish ataylab qilingan (MUL-2339): **serverda** lokal CLI binary’lari yo‘q, shu sababli u faqat arzon enum tekshiruvini bajara oladi; **daemon**da binary’lar bor, shu sababli u jonli per-model katalog tekshiruvini bajaradi.
+
+### 1-bosqich — IsKnownThinkingValue (arzon enum, server tomonida)
+
+`IsKnownThinkingValue(providerType, value)` — bu server `CreateAgent` / `UpdateAgent` da foydalanadigan sinxron bosqich. U jonli katalogga yoki birorta per-model qism-to‘plamga **murojaat qilmaydi**:
+
+- Bo‘sh `value` har doim qabul qilinadi (“runtime default’dan foydalan” degani).
+- `opencode` har qanday to‘g‘ri tuzilgan variant nomini `isValidOpenCodeVariantName` orqali qabul qiladi (≤64 belgi, identifikator uchun xavfsiz, boshida ajratuvchi yo‘q) — chunki opencode’ning `--variant` qiymatlari lokal katalogdan keladi va maxsus `opencode.json` yangilarini belgilashi mumkin.
+- Boshqa barcha provayderlar `providerThinkingEnums` da qidiriladi. Faqat `claude`, `codex` va `codebuddy` da yozuvlar bor. **Yozuvi yo‘q provayder faqat bo‘sh satrni qabul qiladi** — “bu runtime’da thinking tushunchasi yo‘q” shu tarzda ifodalanadi. Bu ro‘yxatlar ataylab yumshoq: “bu runtime koinotidagi ma’lum token” tekshiruvi, “bu model uchun to‘g‘ri daraja” tekshiruvi emas. Literal-noto‘g‘rida har doim 400.
+
+### 2-bosqich — ValidateThinkingLevel (per-(model,provider) katalog, daemon tomonida)
+
+`ValidateThinkingLevel(ctx, providerType, executablePath, model, value)` — bu per-model qo‘riqchi. Bo‘sh `value` har doim haqiqiy (valid). Aks holda u `ListModels` ni chaqiradi (shunda u **joriy** CLI katalogini ko‘radi, jumladan dinamik codex aniqlashni) va:
+
+- Agar `model == ""` bo‘lsa, u katalogning `Default`-belgilangan yozuvini hal qiladi. Agar hech biri belgilanmagan bo‘lsa: `opencode` uchun u `anyModelSupportsThinkingValue` ga qaytadi (har qanday model qiymatni qo‘llab-quvvatlaydi); boshqa barcha provayderlar uchun u `false` qaytaradi (fail closed — taxmin qilishdan ko‘ra noma’lum model).
+- So‘ng u maqsadli modelni topadi va `value` `m.Thinking.SupportedLevels` ichidami yoki yo‘qligini tekshiradi. `m.Thinking == nil` → `false`.
+
+Muhimi, 2-bosqich noto‘g‘ri deganda daemon **vazifani muvaffaqiyatsizlikka uchratmaydi** — u ogohlantirish yozadi va darajani tushiradi. Keyingi bo‘limga qarang.
+
+<Callout title="Nega ikki bosqich">
+Server bosqichi literal-noto‘g‘ri tokenda 400 bilan **closed** holatda muvaffaqiyatsiz bo‘ladi (saqlangan agent holatidan kombinatsiya-noto‘g‘ri qiymatni hech qachon avtomatik tozalamaydi). Daemon bosqichi kombinatsiya-noto‘g‘ri tokenda **soft** holatda muvaffaqiyatsiz bo‘ladi (yozadi va in’ektsiyani o‘tkazib yuboradi). Bu API xulq-atvorini izchil saqlaydi: literal-noto‘g‘rida har doim 400, kombinatsiya-noto‘g‘rida hech qachon avtomatik tozalamaslik.
+</Callout>
+
+## daemon.go dagi yig‘ish (assembly)
+
+Daemon vazifani tayyorlaganda `agent.ExecOptions` ni yig‘adi. Tegishli hal qilish, hammasi `daemon.go` da:
+
+**Model — statik-default yo‘q qoidasi.** Ikki bosqichli hal qilish: o‘rnatilgan bo‘lsa `task.Agent.Model` g‘alaba qozonadi, aks holda daemon bo‘yicha `entry.Model` (`AGORA_<PROVIDER>_MODEL` dan). Agar ikkalasi ham bo‘sh bo‘lsa, daemon ataylab `model = ""` ni `ExecOptions.Model` ga uzatadi, shunda har bir backend **`--model` ni tashlab ketadi** va provayder o‘z default’ini tanlaydi. Koddagi izoh aniq ko‘rsatadiki, Go tomonida “tavsiya etilgan default” ni qotirib qo‘yish cursor regressiyasi qanday sodir bo‘lganini ko‘rsatadi — statik taxminlar upstream CLI qabul qiladigan narsadan siljiydi.
+
+**Thinking — avval tekshir, keyin in’ektsiya qil.** `thinkingLevel` `task.Agent.ThinkingLevel` dan o‘qiladi. Agar bo‘sh bo‘lmasa, daemon `agent.ValidateThinkingLevel(ctx, provider, entry.Path, model, thinkingLevel)` ni chaqiradi:
+
+- Qidirishda **xato** bo‘lganda u `"thinking_level: catalog lookup failed; passing through"` ni yozadi va darajani saqlab qoladi (fail **open** — CLI har qanday e’tirozni o‘zi ko‘rsatsin).
+- `ok == false` bo‘lganda u `"thinking_level: not valid for this (provider, model); skipping injection"` ni yozadi va `thinkingLevel = ""` ni o‘rnatadi.
+
+Tekshirilgan `model` va `thinkingLevel` so‘ng `agent.ExecOptions{ Model: model, ThinkingLevel: thinkingLevel, ... }` ichiga joylashtiriladi.
+
+<Mermaid chart={`sequenceDiagram
+  participant T as task.Agent
+  participant D as daemon.go
+  participant V as ValidateThinkingLevel
+  participant E as ExecOptions
+  T->>D: Model, ThinkingLevel
+  D->>D: model = Agent.Model || entry.Model || ""
+  alt thinkingLevel != ""
+    D->>V: validate(provider, path, model, level)
+    V-->>D: ok / err
+    Note over D: err -> keep level (pass through)<br/>!ok -> drop level (log + skip)
+  end
+  D->>E: ExecOptions{Model, ThinkingLevel}
+`} />
+
+## ModelSelectionSupported har doim true
+
+`ModelSelectionSupported(providerType)` shartsiz ravishda `true` qaytaradi — endi har bir o‘rnatilgan (built-in) provayder `opts.Model` ni boshidan oxirigacha hisobga oladi. Daemon uni baribir model-ro‘yxat javobida ko‘rsatadi (`"supported": agent.ModelSelectionSupported(rt.Provider)`); ilgak inline qilinmasdan saqlab qolingan, shunda kelajakdagi modelsiz runtime bitta joyda voz kechishi mumkin (o‘chirilgan “Managed by runtime” tanlagichini ko‘rsatib).
+
+Biroq **“qo‘llab-quvvatlanadi” “hamma joyda bir xil ma’no” degani emas.** `agent.model` har bir provayder uchun boshqacha identifikator:
+
+- Claude / Codex / Cursor / Gemini / Copilot / Kimi / Kiro / OpenCode / Pi / Antigravity uni flag yoki session config orqali uzatadi (Antigravity `--model` ni agy 1.0.6 da oldi, MUL-3125).
+- Hermes uni har bir prompt’dan oldin ACP `session/set_model` RPC orqali yo‘naltiradi.
+- OpenClaw uchun `agent.model` — bu model nomi emas, **agent id** (`openclaw agent --agent <id>`) — aniqlash agentlarni sanaydi, chunki OpenClaw’da model bog‘lanishi aynan shu yerda joylashgan.
+- Antigravity uchun qiymat — bu inson o‘qiydigan ko‘rsatish satri (masalan `Claude Opus 4.6 (Thinking)`), so‘zma-so‘z yetkaziladi.
+
+Shunday qilib, bitta provayder uchun toza model slug bo‘lgan qiymat boshqasi uchun marshrutlash kaliti yoki ko‘rsatish yorlig‘i bo‘ladi. `agent.model` ni ko‘chma model nomi emas, balki provayder doirasidagi shaffof bo‘lmagan (opaque) identifikator sifatida qabul qiling.
+
+## Source files
+
+| Fayl | Ushbu sahifa bog‘liq bo‘lgan simvollar |
+| --- | --- |
+| `server/pkg/agent/models.go` | `Model`, `ModelThinking`, `ThinkingLevel`, `ListModels`, `ModelSelectionSupported`, `cachedDiscovery`, `modelCache`, `modelCacheTTL`, `discoveryCacheKey`, `claudeStaticModels`, `codexStaticModels`, `geminiStaticModels`, `cursorStaticModels`, `copilotStaticModels`, `discoverOpenCodeModels`, `discoverPiModels`, `discoverCursorModels`, `discoverAntigravityModels`, `discoverOpenclawAgents`, `discoverCodebuddyModels`, `codebuddyStaticModels`, `discoverHermesModels`, `discoverKimiModels`, `discoverKiroModels`, `discoverCopilotModels`, `acpDiscoveryProvider`, `discoverACPModels`, `parseACPSessionNewModels`, `inferCopilotProvider`, `agoraFreeModels`, `annotateAgoraFree` |
+| `server/pkg/agent/thinking.go` | `thinkingCacheKey`, `thinkingCacheEntry`, `thinkingDiscoveryTTL`, `thinkingCache`, `resetThinkingCacheForTests`, `claudeEffortRe`, `claudeModelEffortAllow`, `claudeStaticEffortFallback`, `claudeStaticEffortFullSuperset`, `annotateClaudeThinking`, `claudeEffortSuperset`, `projectClaudeLevels`, `codexDebugModelsArgs`, `parseCodexDebugModels`, `annotateCodexThinking`, `annotateCodebuddyThinking`, `codebuddyEffortSuperset`, `providerThinkingEnums`, `IsKnownThinkingValue`, `isValidOpenCodeVariantName`, `ValidateThinkingLevel`, `anyModelSupportsThinkingValue` |
+| `server/internal/daemon/daemon.go` | `agent.ListModels` (model-ro‘yxat javobi), `agent.ModelSelectionSupported`, `agent.ValidateThinkingLevel`, `agent.ExecOptions` (`Model`, `ThinkingLevel`), `task.Agent.Model`, `task.Agent.ThinkingLevel`, `entry.Model` |
+
+**Siljish (drift) qoidasi:** yuqorida sanab o‘tilgan har qanday simvol, flag, maydon yoki qiymatga o‘zgartirish — funksiyani qayta nomlash, `ListModels` ga provayder holatini qo‘shish, TTL konstantasini o‘zgartirish, `providerThinkingEnums` to‘plamini o‘zgartirish yoki `daemon.go` dagi model-hal qilish mantig‘ini ko‘chirish — ushbu sahifani **hamda** uning `models-and-thinking-source-map.md` sidecar’ini bitta PR ichida yangilashi shart.

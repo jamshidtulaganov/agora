@@ -1,0 +1,136 @@
+---
+title: Prompt Layers
+description: Как задача демона описывается кодирующему агенту через два слоя — тонкое изменчивое сообщение на каждый ход и объёмный стабильный каркас runtime-конфигурации.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Аудитория">
+Аудитория: **обе** — backend-инженеры, которые правят код промптов демона, и агенты, которые осмысляют, почему задача описана им именно так. Если вы добавляете новый вид задачи, меняете флаг CLI, который агенту велено запустить, или гадаете, почему правила ответа фигурируют в двух местах, — это ваша страница. См. также [/developers/agentic/task-kinds](/developers/agentic/prompt-layers), [/developers/agentic/runtime-config](/developers/agentic/prompt-layers) и [/developers/conventions](/developers/conventions).
+</Callout>
+
+Когда демон отправляет задачу в CLI кодирующего агента, он описывает эту задачу через **два слоя**, которые пишутся двумя разными функциями в двух разных файлах. Правильное разделение между ними — это то, что удерживает сообщение на каждый ход дешёвым, а постоянные инструкции стабильными.
+
+- **Слой 1 — изменчивое сообщение на каждый ход.** `BuildPrompt` в `server/internal/daemon/prompt.go` возвращает короткую строку, передаваемую агенту как пользовательский ход. Она меняется на каждом ходу: этот комментарий, этот ID триггера, это сообщение чата.
+- **Слой 2 — стабильный каркас runtime-конфигурации.** `buildMetaSkillContent` в `server/internal/daemon/execenv/runtime_config.go` возвращает длинный markdown-бриф, который `InjectRuntimeConfig` записывает в нативный конфигурационный файл провайдера (`CLAUDE.md` / `AGENTS.md` / `GEMINI.md`). Это постоянное руководство по эксплуатации для агента на весь прогон.
+
+## Разделение: изменчивое против стабильного
+
+Два слоя существуют для того, чтобы каждый факт жил ровно в одном месте, привязанный к тому, как часто он меняется.
+
+| | Слой 1 — `BuildPrompt` | Слой 2 — `buildMetaSkillContent` |
+|---|---|---|
+| Файл | `server/internal/daemon/prompt.go` | `server/internal/daemon/execenv/runtime_config.go` |
+| Вывод | строка-сообщение на каждый ход | markdown-бриф |
+| Записывается в | пользовательский ход агента | `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` |
+| Время жизни | **изменчивое** — пересобирается на каждом ходу | **стабильное** — постоянный каркас прогона |
+| Несёт | тело этого комментария, этот ID триггера, это сообщение чата, этот ввод быстрого создания | идентичность, контекст рабочего пространства, доступные команды, рабочий процесс, правила упоминаний/вложений |
+
+Правило таково: **факт, меняющийся на каждом ходу, принадлежит Слою 1; факт, действующий на весь прогон, принадлежит Слою 2.** Тело комментария-триггера изменчиво, поэтому `buildCommentPrompt` встраивает его напрямую (`> %s`), чтобы агент "не смог его пропустить, даже когда в переиспользуемой рабочей директории присутствуют устаревшие выходные файлы". Список команд CLI `agora` стабилен, поэтому он живёт один раз в `buildMetaSkillContent` под `## Available Commands` вместо того, чтобы переизлучаться на каждом ходу.
+
+<Mermaid chart={`flowchart TD
+  T[Task dispatched] --> P[BuildPrompt task, provider]
+  T --> I[InjectRuntimeConfig workDir, provider, ctx]
+  P -->|volatile per-turn message| AG[Agent user turn]
+  I -->|calls| M[buildMetaSkillContent provider, ctx]
+  M -->|stable brief| F[CLAUDE.md / AGENTS.md / GEMINI.md]
+  F --> AG`} />
+
+## Слой 1: `BuildPrompt` и пять ветвей по виду задачи
+
+`BuildPrompt(task Task, provider string) string` — это тонкий диспетчер. Он инспектирует задачу и направляет её к одному из пяти построителей, в точно таком порядке:
+
+1. `task.ChatSessionID != ""` → `buildChatPrompt(task)`
+2. `task.TriggerCommentID != ""` → `buildCommentPrompt(task, provider)`
+3. `task.AutopilotRunID != ""` → `buildAutopilotPrompt(task)`
+4. `task.QuickCreatePrompt != ""` → `buildQuickCreatePrompt(task)`
+5. иначе → встроенная ветвь **назначения** (без вспомогательной функции; `BuildPrompt` строит её напрямую)
+
+Doc-комментарий к `BuildPrompt` формулирует контракт для всего слоя: *"Keep this minimal — detailed instructions live in CLAUDE.md / AGENTS.md injected by `execenv.InjectRuntimeConfig`."* Каждая ветвь излучает лишь то, что изменчиво для своего вида:
+
+- **chat** (`buildChatPrompt`) — излучает `task.ChatMessage`, любые явно выбранные `/`-навыки и `task.ChatMessageAttachments` для каждого сообщения (перечисленные по `id`/`filename`, чтобы агент забирал их через `agora attachment download <id>`, а не по протухшему URL CDN).
+- **comment** (`buildCommentPrompt`) — встраивает `task.TriggerCommentContent` как блок-цитату, метку автора и инструкции по чтению комментария и ответу для *этого* триггера. `provider` пробрасывается лишь потому, что шаблон ответа зависит от платформы.
+- **autopilot** (`buildAutopilotPrompt`) — излучает ID, заголовок, источник, payload триггера и описание автопилота, существующего только в рамках прогона. Явно заканчивается на `Do not run agora issue get; this run does not have an issue ID.`
+- **quick-create** (`buildQuickCreatePrompt`) — излучает пользовательский `task.QuickCreatePrompt` плюс полные правила полей/вывода (см. исключение ниже).
+- **assignment** (ветвь по умолчанию) — самая тонкая из всех: `Your assigned issue ID is: %s` плюс указатель на `agora issue get %s --output json` и правило истории комментариев. Детальный пошаговый рабочий процесс целиком живёт в Слое 2.
+
+## Слой 2: `buildMetaSkillContent` и файл runtime-конфигурации
+
+`InjectRuntimeConfig(workDir, provider string, ctx TaskContextForEnv)` вызывает `buildMetaSkillContent(provider, ctx)` и записывает результат в нативный конфигурационный файл провайдера через `runtimeConfigPath`:
+
+- `claude`, `codebuddy` → `CLAUDE.md`
+- `codex`, `copilot`, `opencode`, `openclaw`, `hermes`, `pi`, `cursor`, `kimi`, `kiro`, `antigravity` → `AGENTS.md`
+- `gemini` → `GEMINI.md`
+- неизвестный провайдер → `""` (режим только-промпт, файл не пишется)
+
+Бриф — это один объёмный, по большей части статичный markdown-документ. Он открывается с `# Agora Agent Runtime`, затем собирает секции из `ctx`: `## Agent Identity`, `## Requesting User`, `## Task Initiator`, `## Workspace Context`, `## Available Commands`, `## Comment Formatting`, `## Showing Code Changes`, `## Repositories`, `## Project Context`, `## Issue Metadata`, блок `### Workflow`, `## Mentions`, `## Attachments` и `## Output`. Сам блок `### Workflow` ветвится по виду задачи (chat / quick-create / autopilot / comment / assignment) — но это **постоянные** инструкции, а не данные текущего хода.
+
+`InjectRuntimeConfig` не затирает собственный конфиг пользователя. Он оборачивает бриф в маркерные комментарии (`runtimeMarkerBegin` / `runtimeMarkerEnd`), а `writeRuntimeConfigFile` либо создаёт файл, либо дописывает после фиксированного `runtimeManagedSeparator`, либо заменяет существующий блок на месте. `CleanupRuntimeConfig` разворачивает это в точности — байт в байт — что важно для потока `local_directory`, где `WorkDir` — это собственный репозиторий пользователя.
+
+## Почему разделение неоспоримо: единый источник истины
+
+Смысл разделения — **один писатель на факт**. У изменчивых фактов ровно один писатель (`BuildPrompt`); у стабильных фактов ровно один писатель (`buildMetaSkillContent`). Когда одна и та же инструкция должна появиться в *обеих* поверхностях, она генерируется **одним общим построителем, вызываемым с обеих сторон** — никогда не встраивается дважды.
+
+Это правило против дрейфа, и `server/internal/daemon/execenv/reply_instructions.go` — место, где оно соблюдается. Там живут четыре построителя, и каждый вызывается как из Слоя 1, так и из Слоя 2:
+
+- `BuildNewCommentsHint(issueID, triggerCommentID, triggerThreadID, newCommentsSince string, newCommentCount int)`
+- `BuildResumedCommentsHint(issueID, triggerCommentID, triggerThreadID string)`
+- `BuildColdCommentsHint(issueID, triggerCommentID, triggerThreadID string)`
+- `BuildCommentReplyInstructions(provider, issueID, triggerCommentID string)`
+
+Например, `buildCommentPrompt` (Слой 1) заканчивается на `b.WriteString(execenv.BuildCommentReplyInstructions(provider, task.IssueID, task.TriggerCommentID))`, а ветвь комментариев в `buildMetaSkillContent` (Слой 2) вызывает идентичный `BuildCommentReplyInstructions(provider, ctx.IssueID, ctx.TriggerCommentID)` на шаге 7. Обе поверхности излучают один и тот же шаблон ответа — quoted-HEREDOC на Linux/macOS, `--content-file` на Windows — и одну и ту же подсказку по чтению комментариев. Doc-комментарии построителей формулируют это требование явно: *"Both surfaces call this so the cold fallback cannot drift between them"* и *"Both the per-turn prompt (`daemon.buildCommentPrompt`) and the CLAUDE.md workflow (`InjectRuntimeConfig`) call this so the two surfaces cannot drift (hard requirement from PR #2816)."*
+
+<Callout title="Правило">
+Если предложение должно появиться и в сообщении на каждый ход, и в runtime-брифе, напишите его один раз в построителе в `reply_instructions.go` и вызывайте этот построитель и из `prompt.go`, и из `runtime_config.go`. Никогда не копируйте текст в оба места — копии дрейфуют, и агент получает противоречивые инструкции (устаревший UUID в `--parent` — классический сбой).
+</Callout>
+
+## Исключение для быстрого создания
+
+Быстрое создание (quick-create) намеренно нарушает паттерн "детальные правила живут в Слое 2". Полные правила полей (title, description, priority, assignee, project, parent, status, attachments) и строгий контракт вывода (`Run exactly one agora issue create --output json invocation`) живут в **Слое 1** — `buildQuickCreatePrompt` — а не в брифе.
+
+Причина — в комментарии к коду в ветви `### Workflow` для quick-create внутри `buildMetaSkillContent`: быстрое создание — это **одноразовая операция**, поэтому сообщение на каждый ход всегда присутствует, что даёт ему единый источник истины именно там. Слой 2 хранит лишь жёсткие ограничители, чтобы провайдер, не пробрасывающий пользовательское сообщение в свой рабочий контекст (или возобновлённая сессия), всё равно избежал запуска рабочего процесса назначения с пустым issue ID:
+
+```text
+**This task was triggered by quick-create.** There is NO existing Agora issue.
+Follow the field and output rules in the user message you just received; ignore
+the default assignment-task workflow.
+```
+
+Так что обычное разделение (изменчивое в Слое 1, стабильное в Слое 2) здесь инвертируется: детальные правила примыкают к изменчивому (они описывают, как обработать *этот* единственный ввод), а одноразовая природа гарантирует, что сообщение на каждый ход всегда прочитано.
+
+## `TaskContextForEnv`: общая изменчивая структура
+
+Оба слоя читают из контекста задачи. Слой 2 читает `TaskContextForEnv` (определён в `server/internal/daemon/execenv/execenv.go`); Слой 1 читает `Task` демона. Поля, различающие вид задачи, — один и тот же набор с обеих сторон: `ChatSessionID`, `TriggerCommentID`, `AutopilotRunID`, `QuickCreatePrompt`, плюс `IssueID`.
+
+Вот почему **новый вид задачи затрагивает оба слоя**. Чтобы добавить один, вы должны:
+
+1. Добавить поле-дискриминатор в `Task` и в `TaskContextForEnv`.
+2. Добавить ветвь в `BuildPrompt` (Слой 1) для изменчивого сообщения на каждый ход.
+3. Добавить ветвь в блок `### Workflow` внутри `buildMetaSkillContent` (Слой 2) и обновить ограничители `hasIssueContext` / `isAssignmentTriggered`, чтобы новый вид случайно не попал в issue-центричный путь.
+
+Пропуск шага 2 или шага 3 порождает наполовину подключённый вид: правильное сообщение на каждый ход с неправильным постоянным рабочим процессом, или наоборот. Существующие ограничители делают это наглядным — `hasIssueContext := ctx.ChatSessionID == "" && ctx.QuickCreatePrompt == "" && ctx.AutopilotRunID == ""` и `isAssignmentTriggered := ... && ctx.TriggerCommentID == ""` оба перечисляют каждый не-assignment вид, так что новый вид, не добавленный в них, классифицируется неверно.
+
+## Определение лидера сквада различается по слоям
+
+Поведение лидера сквада (агент может молча выйти и записать `agora squad activity <issue-id> no_action` вместо публикации комментария) гейтится в каждом слое по-разному, и эту разницу стоит знать:
+
+- **Слой 2** читает предвычисленный булев `ctx.IsSquadLeader` на `TaskContextForEnv` (с комментарием *"true when the agent is acting as a squad leader (may exit silently on no_action)"*). Секции `### Workflow` и `## Output` ветвятся по нему.
+- **Слой 1**, в `buildCommentPrompt`, определяет это инлайн через **сопоставление подстроки протокольной строки**: `task.Agent != nil && strings.Contains(task.Agent.Instructions, "## Squad Operating Protocol")`. Когда эта подстрока присутствует, он излучает правило `no_action` лидера сквада в сообщение на каждый ход.
+
+Таким образом, у контракта лидера сквада два триггера: булев в структуре в Слое 2 и буквальное совпадение строки с инструкциями агента в Слое 1. Если вы переименуете заголовок `## Squad Operating Protocol`, определение в Слое 1 молча перестанет срабатывать — относитесь к этой строке как к контракту.
+
+## Влияние на кеш промптов (кратко)
+
+Упорядочивание "сначала стабильное" — это ещё и оптимизация кеширования. Поскольку длинный бриф `buildMetaSkillContent` стабилен между ходами, а меняется именно короткое сообщение `BuildPrompt`, провайдеры, использующие префиксное кеширование промпта, получают попадание в кеш на большом стабильном каркасе и платят лишь за обработку небольшого изменчивого хвоста на каждом ходу. Удержание изменчивого содержимого вне брифа — и вне порядка, перед стабильным содержимым — это то, что сохраняет границу кеша. Это следствие разделения, а не его главная мотивация; главная мотивация — единый источник истины.
+
+## Source files
+
+| Файл | Символы, от которых зависит эта страница |
+|---|---|
+| `server/internal/daemon/prompt.go` | `BuildPrompt`, `buildChatPrompt`, `buildCommentPrompt`, `buildAutopilotPrompt`, `buildQuickCreatePrompt`; дискриминаторы вида задачи `ChatSessionID` / `TriggerCommentID` / `AutopilotRunID` / `QuickCreatePrompt`; `strings.Contains(task.Agent.Instructions, "## Squad Operating Protocol")` |
+| `server/internal/daemon/execenv/runtime_config.go` | `buildMetaSkillContent`, `InjectRuntimeConfig`, `runtimeConfigPath`, `writeRuntimeConfigFile`, `CleanupRuntimeConfig`, `runtimeMarkerBegin`, `runtimeMarkerEnd`, `runtimeManagedSeparator`; ограничители `hasIssueContext`, `isAssignmentTriggered`; использование `ctx.IsSquadLeader` |
+| `server/internal/daemon/execenv/reply_instructions.go` | `BuildNewCommentsHint`, `BuildResumedCommentsHint`, `BuildColdCommentsHint`, `BuildCommentReplyInstructions` (общие построители, вызываемые из обоих слоёв) |
+| `server/internal/daemon/execenv/execenv.go` | `TaskContextForEnv` и её поля-дискриминаторы (`IssueID`, `ChatSessionID`, `TriggerCommentID`, `AutopilotRunID`, `QuickCreatePrompt`, `IsSquadLeader`); контекст места вызова `InjectRuntimeConfig` |
+
+Когда любой задокументированный символ, поле, флаг или строка заголовка выше перемещается или переименовывается, обновите эту страницу **и** её сопутствующий source-map (`references/prompt-layers-source-map.md`) в том же PR — встроенные навыки являются контрактами с трассировкой до исходников, и сдрейфовавшая страница молча обучает устаревшему поведению демона.

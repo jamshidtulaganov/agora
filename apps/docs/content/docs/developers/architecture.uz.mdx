@@ -1,0 +1,179 @@
+---
+title: Architecture
+description: Agentik chuqur tahlillarga kirishishdan oldin hissa qoʻshuvchiga zarur boʻlgan tizim xaritasi — backend tuzilishi, vazifa hayot tsikli, agent SDK, daemon, frontend bogʻliqlik yoʻnalishi va koʻp-ijarachilik.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Auditoriya">
+**Auditoriya: ikkalasi ham (dev + agent).** Bu sahifa Agora kod bazasiga birinchi marta kelgan har bir kishi uchun — inson hissa qoʻshuvchi yoki kodlovchi agent — moʻljal olish sahifasi. U harakatlanuvchi qismlarni va ular qayerda joylashganini xaritalaydi, soʻngra agentik chuqur tahlillarga estafetani topshiradi. Nomlash, i18n va tarjima lugʻati uchun [/developers/conventions](/developers/conventions) sahifasiga qarang — bu yagona haqiqat manbai boʻlib, bu yerda qayta keltirilmaydi. Paket chegaralari uchun (nima nimani import qila olishi), ildizdagi `CLAUDE.md` hal qiluvchi manba hisoblanadi.
+</Callout>
+
+## Tuzilish bir jumlada
+
+Agora — bu **PostgreSQL** bilan muloqot qiluvchi **Go backend** (Chi router, `sqlc`-yaratilgan DB kirishi, real vaqt uchun `gorilla/websocket`), oldida boshsiz mantiqni bahamlashuvchi TypeScript ilovalarining **pnpm + Turborepo monorepo**si turadi va backendni ish uchun soʻrab turuvchi hamda kodlovchi-agent CLIlarni lokal ishga tushiruvchi **agent daemon** bilan taʼminlanadi.
+
+<Mermaid chart={`
+flowchart LR
+  FE["Next.js / Electron / Expo<br/>(apps)"] -->|REST| API["Go backend<br/>Chi + sqlc"]
+  API -->|WS broadcast| FE
+  API --> PG[("PostgreSQL<br/>pgvector")]
+  DA["Agent daemon<br/>(your machine)"] -->|claim / start / complete| API
+  DA -->|spawn| CLI["Claude / Codex / OpenClaw / …"]
+`} />
+
+## Go backend tuzilishi
+
+Backend `server/` ichida joylashgan. Ikki fakt hamma narsaga moʻljal beradi:
+
+- **Router — bu Chi.** `server/cmd/server/router.go` uni `chi.NewRouter()` bilan quradi va domen marshrutlarini ulaydi — daemon endpointlari `r.Route("/api/daemon", …)` ostida, webhooklar yuqori darajada va auth middleware ortidagi workspace-koʻlamidagi API.
+- **DB kirishi `sqlc`-yaratilgan.** SQL `server/pkg/db/queries/` ichida yashaydi; `make sqlc` `server/pkg/db/generated/` ichida tiplangan Go kodini qayta yaratadi. Handlerlar va servislar `Queries.*` metodlarini chaqiradi (masalan, `Queries.GetAgent`, `Queries.CreateAgentTask`) — hech qachon qoʻlda yozilgan SQLni emas.
+
+**Domen-boshiga-handler.** `server/internal/handler/` har bir masala uchun bitta fayl saqlaydi — `issue.go`, `comment.go`, `agent.go`, `daemon.go`, `chat.go`, `autopilot.go`, `project.go` va hokazo. Handlerlar soʻrov chegaralarini tahlil qiladi va tekshiradi, soʻngra biznes mantiqni `server/internal/service/` ga topshiradi. Handler yozish soʻrovi uchun UUIDni hal qilganda, u `CLAUDE.md` dagi **Backend Handler UUID Parsing Convention** ga amal qilishi shart (`parseUUIDOrBadRequest` / loaderlar / `parseUUID`) — bu konvensiya mavjud, chunki bir paytlar jim nol-UUID `DELETE` ning 204 qaytarib, ayni paytda nol qatorga mos kelishiga sabab boʻlgan edi.
+
+Real vaqtdagi yangilanishlar hub orqali tarqaladi: `server/cmd/server/main.go` `realtime.NewHub()` (workspace WS mijozlari) va alohida `daemonws.NewHub()` (daemon WS ulanishlari) ni quradi. Servislar protokol hodisalarini (`protocol.EventTaskQueued`, `protocol.EventTaskRunning`, …) tarqatadi va frontend qabul qilingach oʻzining query keshini bekor qiladi — hodisalar hech qachon mijoz storelariga toʻgʻridan-toʻgʻri yozmaydi.
+
+## Vazifa hayot tsikli
+
+`server/internal/service/task.go` `agent_task_queue` jadvalidagi agent-vazifa holat mashinasiga egalik qiladi. Vazifa **enqueue → claim → start → complete/fail** orqali harakatlanadi (bekor qilish istalgan nuqtada terminal shox boʻladi). Bu har bir agent ishining oʻzagi.
+
+<Mermaid chart={`
+sequenceDiagram
+  participant API as Backend (TaskService)
+  participant PG as agent_task_queue
+  participant D as Daemon
+  API->>PG: CreateAgentTask (status=queued)
+  API->>D: NotifyTaskEnqueued (WS wakeup)
+  D->>API: POST /runtimes/{id}/tasks/claim
+  API->>PG: ClaimAgentTask (queued→dispatched)
+  API-->>D: task row
+  D->>API: POST /tasks/{id}/start
+  API->>PG: StartAgentTask (dispatched→running)
+  D->>D: handleTask → executeAndDrain (agent runs)
+  D->>API: POST /tasks/{id}/complete (or /fail)
+  API->>PG: CompleteAgentTask (running→completed)
+`} />
+
+### Enqueue
+
+Bir nechta kirish nuqtasi vazifa yaratadi, hammasi `Queries.Create*Task` chaqiruviga, soʻngra WS wakeupga yaqinlashadi:
+
+- `EnqueueTaskForIssue` — agentga biriktirilgan issue. Kontekst surati saqlanmaydi; agent oʻziga kerakli narsani ish vaqtida `agora` CLI orqali oladi.
+- `EnqueueTaskForMention` / `EnqueueTaskForSquadLeader` — sharhda eslatilgan agent (squad-leader variant `is_leader_task=true` ni belgilaydi).
+- `EnqueueChatTask` — chat sessiyasi (`issue_id` siz). Mahsulotlashtirilishi mumkin boʻlgan rad etishlar uchun `ErrChatTaskAgentArchived` / `ErrChatTaskAgentNoRuntime` qoʻriqchi xatolarini qaytaradi.
+- `EnqueueQuickCreateTask` — issue/chat/autopilot bogʻlanishisiz tabiiy-til soʻrovi, `QuickCreateContext` JSON yuki sifatida saqlanadi (`Type: QuickCreateContextType`).
+
+Har bir yoʻl bir xil oldindan shartlarni majburlaydi (agent arxivlanmagan, `agent.RuntimeID` oʻrnatilgan), `protocol.EventTaskQueued` ni tarqatadi, soʻngra `NotifyTaskEnqueued` ni chaqiradi, shunda daemon keyingi poll urinishini kutib oʻtirmasdan vazifani tezda claim qiladi. Tartib ataylab: tarqatish **notify dan oldin**, chunki notify yoʻli dispatch hodisasini ishga tushiradi va tartibi buzilgan navbat mijozlarga "queued" dan oldin "dispatched" ni koʻrsatishiga yoʻl qoʻyardi.
+
+### Claim
+
+Daemon `POST /api/daemon/runtimes/{runtimeId}/tasks/claim` ni poll qiladi, bu `ClaimTaskByRuntime` tomonidan ishlanadi, u `TaskService.ClaimTaskForRuntime` ni chaqiradi. Bu metod:
+
+1. Avval `ReclaimStaleDispatchedTaskForRuntime` ni ishga tushiradi (claim javobi yoʻqolgan vazifani tiklaydi — `claimResponseRecoveryWindow`, 90s ga qarang).
+2. Barqaror holatdagi boʻsh holatda Postgres skanini oʻtkazib yuborish uchun ixtiyoriy `EmptyClaimCache` tezkor yoʻlini koʻrib chiqadi.
+3. Navbatdagi nomzodlarni roʻyxatlaydi va har bir alohida agent uchun `ClaimTask(agentID)` ni chaqiradi.
+
+`ClaimTask` atomik oʻzak: u `CountRunningTasks` ni `agent.MaxConcurrentTasks` ga qarshi tekshiradi, `ClaimAgentTask` (`queued → dispatched` oʻtishi) ni ishga tushiradi, agent holatini moslashtiradi va `task:dispatch` ni tarqatadi. Sigʻim yoʻq yoki vazifalar yoʻq — ikkalasi ham `(nil, nil)` qaytaradi — xato emas.
+
+### Start, complete, fail
+
+- `StartTask` `StartAgentTask` (`dispatched → running`) ni ishga tushiradi va `protocol.EventTaskRunning` ni tarqatadi. **Issue holati bu yerda oʻzgartirilmaydi** — agent uni CLI orqali boshqaradi.
+- `CompleteTask` `CompleteAgentTask` (`running → completed`) ni tranzaksiya ichida ishga tushiradi. Chat vazifalari uchun bir xil tranzaksiya `chat_session` davom etish koʻrsatkichini yangilaydi va keyingi xabar eskirgan sessiyaga qarshi davom etishi mumkin boʻlgan poygani yopadi. U **idempotent**: agar parallel agent qatorni allaqachon yakunlagan boʻlsa, `WHERE status = 'running'` hech narsaga mos kelmaydi va mavjud qator muvaffaqiyat sifatida qaytariladi.
+- Muvaffaqiyatsizlik va bekor qilish bir xil tarqatish/moslashtirish shaklini qayta ishlatadi; bekor qilish shuningdek ish uchun yaratilgan har qanday `mat_` vazifa tokenlarini bekor qiladi.
+
+## Agent SDK
+
+`server/pkg/agent/` — boshsiz paket — daemonsiz, HTTPsiz — har bir kodlovchi-agent CLIni bitta interfeys ortida abstraktlashtiradi.
+
+```go
+type Backend interface {
+    Execute(ctx context.Context, prompt string, opts ExecOptions) (*Session, error)
+}
+```
+
+`Execute` `Session` ni qaytaradi, uning `Messages` kanali `Message` hodisalarini (`MessageText`, `MessageThinking`, `MessageToolUse`, `MessageToolResult`, `MessageStatus`, `MessageError`, `MessageLog`) oqim qiladi va uning `Result` kanali aniq bitta yakuniy `Result` ni yetkazadi. `Result.Status` maydoni ishning natijasi uchun shartnoma — `"completed"`, `"failed"`, `"aborted"`, `"timeout"`, `"cancelled"` dan biri.
+
+`agent.New(agentType, cfg)` — **13 ta backend** ustidagi switch: `claude`, `codebuddy`, `codex`, `copilot`, `opencode`, `openclaw`, `hermes`, `gemini`, `pi`, `cursor`, `kimi`, `kiro`, `antigravity`. Nomaʼlum tip qoʻllab-quvvatlanadigan toʻplamni sanab xato qaytaradi. Har bir backend (`claude.go`, `codex.go`, …) yagonalashtirilgan `ExecOptions` (`Cwd`, `Model`, `SystemPrompt`, `MaxTurns`, `Timeout`, `ResumeSessionID`, `ThinkingLevel`, `OpenclawMode`, `ExtraArgs`/`CustomArgs`, …) ni oʻsha CLIning oʻz bayroqlariga tarjima qiladi. Har bir backend har bir opsiyani hurmat qilmaydi — `ThinkingLevel`, `OpenclawMode` va `ExtraArgs` qaysi backendlar ularni isteʼmol qilishi va qaysilari jimgina eʼtiborsiz qoldirishini aniq hujjatlashtiradi, shunda qoʻllab-quvvatlash bogʻliq boʻlmagan agentlarni buzmasdan bosqichma-bosqich oʻsishi mumkin.
+
+`LaunchHeader(agentType)` foydalanuvchiga koʻrinadigan buyruq skeletini (masalan, `"claude (stream-json)"`) qaytaradi, UI buni foydalanuvchining `custom_args` qaysiga qoʻshilishini koʻrsatuvchi koʻrinish sifatida koʻrsatadi.
+
+## Daemon: ishlab chiqarish chaqiruvchisi
+
+`server/internal/daemon/daemon.go` — claim qilingan vazifalarni ishlayotgan agentlarga aylantiruvchi lokal runtime. `Daemon.New` `runner = d.runTask` ni ulaydi; `Daemon.Run` ishga tushirish raqsini bajaradi — `resolveAuth`, `preflightAuth` (PATni yangilash, soʻngra dastlabki workspace sinxronizatsiyasi), har bir workspace uchun runtimelarni roʻyxatdan oʻtkazish, fon tsikllarini ishga tushirish (`workspaceSyncLoop`, `taskWakeupLoop`, `heartbeatLoop`, `gcLoop`, `autoUpdateLoop`, `tokenRenewalLoop`), `/health` ni tayyor holatga oʻtkazish, soʻngra `pollLoop` ga kirish.
+
+Poller vazifani claim qilganda u `handleTask` ga topshiradi, u:
+
+1. Agar vazifa daemon-biriktirilgan `project_resource` ga moʻljallangan boʻlsa, `local_directory` yoʻl qulfini oladi (shunda server tomonidagi holat `dispatched → waiting_local_directory → running`, hech qachon orqaga emas).
+2. GC tsikli hech qachon jonli workdirni qayta egallamasligi uchun env ildizini faol deb belgilaydi.
+3. `watchTaskCancellation` ni boshlaydi, shunda server tomonidagi cancel/delete ishni uzadi.
+4. `d.runner.run` → `runTask` ni chaqiradi, u muhitni tayyorlaydi va oxir-oqibat **`executeAndDrain`** ni chaqiradi — `agent.Backend` ni haqiqatan ham boshqaruvchi funksiya.
+
+`executeAndDrain(ctx, backend, prompt, opts, taskLog, taskID)` — agent SDKning ishlab chiqarish chaqiruvchisi. U:
+
+- `backend.Execute` ni chaqiradi, soʻngra `session.Messages` ni quritadi, matn/fikrlashni partiyalaydi va tool-use/tool-result hodisalarini `ReportTaskMessages` orqali serverga uzatadi;
+- agent sessiya idini erta biriktiradi (`PinTaskSession`), shunda daemon ish oʻrtasida nosoz boʻlsa ham davom etish koʻrsatkichini saqlaydi;
+- jim agentni uzuvchi **idle watchdog** ni ishga tushiradi, tool bajarilayotgan paytda kattaroq byudjet bilan (uzoq `npm install` osilib qolish emas);
+- yakuniy `agent.Result` ni va tool sonini qaytaradi.
+
+`handleTask` soʻngra foydalanishni xabar qiladi va natijani `reportTaskResult` orqali yoʻnaltiradi, u **yopiq holda muvaffaqiyatsiz boʻladi**: faqat `result.Status == "completed"` `d.client.CompleteTask` ni chaqiradi; har qanday boshqa holat — jumladan hech kim sanab oʻtmagan kelajakdagi har qanday holat — `d.client.FailTask` orqali oʻtadi, shunda haqiqiy natija ishlab chiqarmagan ish hech qachon "Completed" sifatida koʻrsatilmaydi.
+
+## Frontend bogʻliqlik yoʻnalishi
+
+Monorepo qatʼiy, bir tomonlama bogʻliqlik grafini majburlaydi. Qoida: **`views → core + ui`**, bunda `core` va `ui` bir-biridan mustaqil.
+
+<Mermaid chart={`
+flowchart TD
+  app["apps/web · apps/desktop"] --> views["packages/views<br/>(shared business UI)"]
+  views --> core["packages/core<br/>(headless logic + stores)"]
+  views --> ui["packages/ui<br/>(atomic components)"]
+  app --> core
+  app --> ui
+`} />
+
+- `packages/core/` — boshsiz biznes mantiq va **barcha** Zustand storelari. `react-dom` siz, `localStorage` siz, `next/*` siz, UI kutubxonalarisiz.
+- `packages/ui/` — atomik shadcn-asosidagi komponentlar. `@agora/core` importlarisiz.
+- `packages/views/` — bahamlashilgan biznes sahifalari/komponentlari. `next/*` siz, `react-router-dom` siz — marshrutlash `NavigationAdapter` orqali oʻtadi.
+
+Server holati va mijoz holati teng qatʼiylik bilan ajratiladi: **TanStack Query** APIdan olingan hamma narsaga egalik qiladi (workspace-koʻlamidagi soʻrovlar uchun `wsId` boʻyicha kalitlangan), **Zustand** mijoz/UI holatiga egalik qiladi va **WS hodisalari storelarga yozish oʻrniga soʻrovlarni bekor qiladi**. Toʻliq asoslar va xavfli nuqtalar `CLAUDE.md` da yashaydi; bu sahifa faqat yoʻnalishni nomlaydi.
+
+## Koʻp-ijarachilik
+
+Har bir soʻrov `workspace_id` boʻyicha filtrlaydi; aʼzolik tekshiruvlari kirishni nazorat qiladi; `X-Workspace-ID` sarlavhasi soʻrovni toʻgʻri workspace ga yoʻnaltiradi. Workspace-koʻlamidagi frontend soʻrovlari `wsId` boʻyicha kalitlanadi, shunda workspacelarni almashtirish keshni avtomatik ravishda almashtiradi.
+
+**Biriktirilganlar polimorf.** Issue `assignee_type` + `assignee_id` ni olib yuradi (`server/internal/handler/issue.go` ga qarang), bunda `assignee_type` `member`, `agent` yoki `squad` dan biri. Agent yoʻli (`assignee_type == "agent"`) issueni `EnqueueTaskForIssue` uchun yaroqli qiladigan narsadir; squad yoʻli squadning agentlariga kengayadi. Aynan shu polimorfizm tufayli vazifa hayot tsikli insonni taxmin qilish oʻrniga agentni issue biriktirilgani orqali hal qiladi.
+
+## Quyi tizimlar xaritasi
+
+| Quyi tizim | Qayerda | Kirish belgisi |
+|---|---|---|
+| HTTP marshrutlash | `server/cmd/server/router.go` | `chi.NewRouter()` |
+| Domen handlerlari | `server/internal/handler/*.go` | har bir domen uchun bitta fayl |
+| Vazifa hayot tsikli | `server/internal/service/task.go` | `TaskService` |
+| Agent SDK | `server/pkg/agent/agent.go` | `Backend`, `agent.New` |
+| Lokal runtime | `server/internal/daemon/daemon.go` | `Daemon`, `executeAndDrain` |
+| Real vaqt | `server/internal/realtime/` | `realtime.NewHub()` |
+| DB kirishi | `server/pkg/db/` | `sqlc`-yaratilgan `Queries` |
+| Bahamlashilgan mantiq / storelar | `packages/core/` | Zustand + TanStack Query |
+| Bahamlashilgan UI | `packages/views/`, `packages/ui/` | `NavigationAdapter` |
+
+## Tavsiya etilgan oʻqish tartibi
+
+1. **Bu sahifa** — tizim xaritasi (siz shu yerdasiz).
+2. [/developers/agentic/task-lifecycle](/developers/architecture) — enqueue → claim → start → complete mashinasi chuqurroq, jumladan reclaim va idempotentlik.
+3. [/developers/agentic/agent-sdk](/developers/agentic/backend-interface) — `Backend` interfeysi va 13 ta backendning har biri `ExecOptions` ni CLI bayroqlariga qanday moslashtirishi.
+4. [/developers/agentic/daemon](/developers/architecture) — roʻyxatdan oʻtkazish, poll qilish, watchdoglar va `executeAndDrain` ichki tuzilishi.
+5. [/developers/conventions](/developers/conventions) — nomlash, i18n lugʻati va xitoycha ovoz (har qanday kod, marshrut yoki tarjima yozishdan oldin oʻqing).
+
+## Source files
+
+| Fayl | Bu sahifa bogʻliq boʻlgan belgilar |
+|---|---|
+| `server/internal/service/task.go` | `TaskService`, `EnqueueTaskForIssue`, `EnqueueTaskForMention`, `EnqueueTaskForSquadLeader`, `EnqueueChatTask`, `EnqueueQuickCreateTask`, `QuickCreateContext`, `QuickCreateContextType`, `ErrChatTaskAgentArchived`, `ErrChatTaskAgentNoRuntime`, `ClaimTask`, `ClaimTaskForRuntime`, `claimResponseRecoveryWindow`, `StartTask`, `CompleteTask`, `NotifyTaskEnqueued` |
+| `server/pkg/agent/agent.go` | `Backend`, `Execute`, `ExecOptions`, `Session`, `Message`, `MessageType` values, `Result`, `Result.Status` (`completed`/`failed`/`aborted`/`timeout`/`cancelled`), `New` (13-backend switch), `LaunchHeader` |
+| `server/internal/daemon/daemon.go` | `Daemon`, `Daemon.New`, `Daemon.Run`, `handleTask`, `runTask`, `executeAndDrain`, `reportTaskResult` |
+| `server/cmd/server/router.go` | `chi.NewRouter()`, `r.Route("/api/daemon", …)`, `ClaimTaskByRuntime`, `StartTask`, `CompleteTask`, `FailTask` |
+| `server/cmd/server/main.go` | `realtime.NewHub()`, `daemonws.NewHub()` |
+| `server/internal/handler/issue.go` | `assignee_type` / `assignee_id` (polimorf biriktirilganlar: `member`/`agent`/`squad`) |
+
+Yuqoridagi hujjatlashtirilgan belgi, bayroq yoki maydon koʻchganda yoki oʻzgarganda, bu sahifani **va** uning source-map sidecar faylini (`references/architecture-source-map.md`) bir xil PR da yangilang — bu oʻsha-PR drift qoidasi oʻrnatilgan skilllarning source-tracedshartnomalarini halol saqlaydi.

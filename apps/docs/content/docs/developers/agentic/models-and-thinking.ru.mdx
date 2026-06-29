@@ -1,0 +1,199 @@
+---
+title: Models and Thinking
+description: Как демон обнаруживает каталоги моделей для каждого провайдера и уровни усилий рассуждения, и как он проверяет и разрешает их перед выполнением.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Аудитория">
+Для **и** разработчиков, **и** агентов. Прочитайте это, чтобы понять, как модель и уровень рассуждения проходят путь от `agent.model` / `agent.thinking_level` через обнаружение, двухшлюзовую валидацию и попадают в вызов CLI. Дополняет [provider-matrix-internals](/developers/agentic/provider-matrix-internals) (таблица флагов по провайдерам), [protocol-families](/developers/agentic/protocol-families) (транспорты CLI и ACP), [add-a-backend](/developers/agentic/add-a-backend) и [agent-runtime-contract](/developers/agentic/agent-runtime-contract).
+</Callout>
+
+Всё на этой странице находится в двух файлах в `server/pkg/agent/` (`models.go`, `thinking.go`) плюс место сборки в `server/internal/daemon/daemon.go`. Демон работает на машине пользователя, где установлены CLI провайдеров, поэтому именно он — а не сервер — это единственное место, которое может спросить у CLI, что тот на самом деле поддерживает.
+
+## Модель данных
+
+Каталог провайдера — это срез `Model`. Каждая запись опционально несёт `*ModelThinking`, который, в свою очередь, содержит список `ThinkingLevel`.
+
+```go
+type Model struct {
+	ID       string
+	Label    string
+	Provider string
+	Default  bool
+	Free     bool
+	Category string
+	Thinking *ModelThinking
+}
+
+type ModelThinking struct {
+	SupportedLevels []ThinkingLevel
+	DefaultLevel    string
+}
+
+type ThinkingLevel struct {
+	Value       string
+	Label       string
+	Description string
+}
+```
+
+Ключевая семантика, скопированная из doc-комментариев к полям:
+
+- `Default` — это **только подсказка для отображения**. Она помечает запись, которую рантайм рекламирует как предпочтительный выбор (поставляемый по умолчанию у Claude Code, `currentModelId` у hermes). Она **не влияет на момент выполнения** — когда `agent.model` пуст, демон передаёт `""`, так что CLI каждого провайдера разрешает свой собственный default.
+- `Free` и `Category` — это **только брендинг** (наложение бесплатной модели Agora, см. ниже). Они не меняют, какой ID отправляется в CLI.
+- `Thinking == nil` означает «у этого рантайма/модели нет управления рассуждением, либо демон не смог его обнаружить» — UI скрывает выбор. Каталог построен **по моделям**, потому что `codex debug models` у Codex работает по моделям, а у супермножества `--effort` Claude есть пробелы по моделям (`xhigh` только для Opus, `max` только для сессии — см. MUL-2339).
+- Значения `ModelThinking.SupportedLevels` **нативны для рантайма** и отображаются как есть. Codex выдаёт `none|minimal|low|medium|high|xhigh`; Claude выдаёт `low|medium|high|xhigh|max`. Они намеренно **не** сведены к общему перечислению.
+- `ThinkingLevel.Value` — это буквальный токен, передаваемый в CLI (Claude `--effort <value>`, Codex `model_reasoning_effort=<value>`).
+
+## ListModels: три стратегии обнаружения
+
+`ListModels(ctx, providerType, executablePath)` ветвится по `providerType` и направляет каждого провайдера ровно к одной из трёх стратегий. `executablePath` позволяет вызывающему указать на нестандартный бинарник; `""` использует имя провайдера по умолчанию из PATH.
+
+<Mermaid chart={`flowchart TD
+  A["ListModels(providerType, executablePath)"] --> B{providerType}
+  B -->|claude| C["claudeStaticModels() + annotateClaudeThinking"]
+  B -->|codex| D["codexStaticModels() + annotateCodexThinking"]
+  B -->|gemini| E["geminiStaticModels()"]
+  B -->|cursor / copilot / hermes / kimi / kiro / opencode / pi / openclaw / antigravity / codebuddy| F["cachedDiscovery(key, fn)"]
+  F --> G["CLI text/JSON parse (opencode, pi, cursor, antigravity, openclaw, codebuddy)"]
+  F --> H["discoverACPModels: initialize + session/new (hermes, kimi, kiro, copilot)"]
+`} />
+
+### 1. Статические каталоги — claude, codex, gemini
+
+`claudeStaticModels()`, `codexStaticModels()` и `geminiStaticModels()` возвращают зашитый `[]Model`. Это значения, которые принимает флаг `--model` соответствующего CLI. Например, `claudeStaticModels()` по умолчанию выдаёт `claude-sonnet-4-6` (Sonnet — рабочая лошадка; Opus зарезервирован для advisor-потоков). Gemini статичен, потому что у Gemini CLI **нет** подкоманды `models list` — вместо этого он выставляет собственные псевдонимы CLI (`auto`, `pro`, `flash`, `flash-lite`, семейство `auto-gemini-*`), так что новые релизы появляются без передеплоя Agora.
+
+Claude и codex статичны **для списка моделей**, но дополнены динамическим обнаружением рассуждения (следующий раздел).
+
+### 2. Динамическое обнаружение через CLI — разбор text/JSON
+
+`antigravity`, `cursor`, `copilot`, `hermes`, `kimi`, `kiro`, `opencode`, `pi`, `openclaw` и `codebuddy` маршрутизируются через `cachedDiscovery(key, fn)`. Функция `fn` вызывает CLI через shell и разбирает его вывод:
+
+- **`discoverOpenCodeModels`** запускает `opencode models --verbose`, разбирает строки `provider/model` плюс JSON-метаданные по моделям. `variants` модели становятся уровнями рассуждения (проецируются через `opencode run --variant`). При пустом verbose-выводе повторяет с обычным `opencode models`. Таймаут — `15 * time.Second`, потому что новые версии opencode синхронизируют размещённый каталог бесплатных моделей по сети (~6 с).
+- **`discoverPiModels`** запускает `pi --list-models`, нормализуя и легаси-формат `provider:model`, и новую многоколоночную таблицу к `provider/model`. `isPiDiscoveryNoise` фильтрует диагностические строки, чтобы проза не превращалась в фиктивные модели.
+- **`discoverCursorModels`** запускает `cursor-agent --list-models` (строки `id - Label`), откатываясь к `cursorStaticModels()` (просто `auto`), когда бинарник отсутствует или вывод пуст.
+- **`discoverAntigravityModels`** запускает `agy models` — одно отображаемое имя на строку, где имя **и есть** значение `--model`. Намеренно **без** статического отката: `agy` молча выполняет no-op на нераспознанных значениях `--model`, так что угаданный список рисковал бы тем, что опечатка превратится в «успешный» пустой запуск.
+- **`discoverOpenclawAgents`** перечисляет предварительно зарегистрированных агентов (`openclaw agents list --json`, затем текстовый откат) — в OpenClaw выбор модели живёт на уровне агента.
+- **`discoverCodebuddyModels`** разбирает `codebuddy --help` через `codebuddyModelRe`, откатываясь к `codebuddyStaticModels()`; он также запускает `annotateCodebuddyThinking`.
+
+### 3. Обнаружение через ACP-рукопожатие — discoverACPModels
+
+`hermes`, `kimi`, `kiro` и `copilot` обнаруживают свой каталог, говоря на Agent Client Protocol. Они проходят через один общий хелпер, `discoverACPModels(ctx, executablePath, p acpDiscoveryProvider)`, сконфигурированный для каждого провайдера через `acpDiscoveryProvider` (`defaultBin`, `clientName`, `extraEnv`, `tmpdirPrefix`, `acpArgs`).
+
+Хелпер порождает одноразовый ACP-процесс и проводит минимальное рукопожатие:
+
+1. Отправить `initialize` (jsonrpc id `1`).
+2. Отправить `session/new` (id `2`) с временным `cwd` (не рабочей директорией демона — она может быть в середине задачи) и пустым `mcpServers`.
+3. Читать ответы, пока не придёт результат с id `2`, затем вызвать `parseACPSessionNewModels`.
+
+`parseACPSessionNewModels` извлекает блок `models.availableModels` / `models.currentModelId` (он допускает и camelCase, и snake_case ключи), устанавливает `Default` на запись, у которой `modelId == currentModelId`, и возвращает `nil` (не пустой срез), когда структура отсутствует, чтобы вызывающий мог различить «нет моделей» и «не удалось разобрать». Argv, который переводит бинарник в режим ACP, варьируется: большинство используют `acp`, Copilot использует `--acp` (задаётся через `acpArgs`). `copilotStaticModels()` — это откат, когда рукопожатие не удаётся; `inferCopilotProvider` помечает вендора по префиксу ID, потому что ACP-нагрузка его опускает.
+
+### Наложение бесплатной модели Agora
+
+После обнаружения opencode `annotateAgoraFree(models)` накладывает брендинг Agora на любую обнаруженную модель, чей ID является ключом в `agoraFreeModels` (например, `zhipuai/glm-4.5-flash`, `z-ai/glm-4.5-flash`). Он переписывает `Label`, перегруппировывает под провайдером `"Agora"`, устанавливает `Free = true` и помечает `Category`. Это **только брендинг** — модель по-прежнему выполняется как её базовый opencode/Ollama ID, и наложение никогда не выдумывает запись, которую рантайм не может запустить, так что принцип «динамическое обнаружение — это истина» сохраняется.
+
+## Два кэша с разным временем жизни
+
+### modelCache — 60 с, только непустые
+
+`cachedDiscovery` мемоизирует результаты обнаружения в `modelCache` на `modelCacheTTL = 60 * time.Second`. Важны два правила:
+
+- **Он никогда не кэширует пустой результат.** Ноль моделей почти всегда означает временный сбой (таймаут CLI, не выполнен вход, сетевой сбой). Кэширование держало бы выбор пустым на весь TTL даже после устранения причины; пропуск кэша позволяет следующему запросу немедленно повторить попытку (#3729).
+- Ключ кэша — `providerType` для большинства провайдеров. Только opencode использует `discoveryCacheKey(providerType, executablePath)` (который добавляет `:executablePath`, когда тот непуст), чтобы нестандартный путь к бинарнику не сталкивался с путём по умолчанию.
+
+### thinkingCache — 10 мин, по ключу (provider, path, cliVersion)
+
+Обнаружение уровней рассуждения (Claude/Codex/CodeBuddy) кэшируется в `thinkingCache` на `thinkingDiscoveryTTL = 10 * time.Minute`. Ключ — это структура `thinkingCacheKey{provider, executablePath, cliVersion}`. Компонент `cliVersion` (из `DetectVersion`) несёт нагрузку: **обновление локального CLI инвалидирует запись**, что и есть тот самый режим сбоя, который возникает, когда Anthropic/OpenAI добавляют или убирают уровень. `resetThinkingCacheForTests` — единственный хук инвалидации помимо TTL; продакшен полагается на TTL или перезапуск процесса.
+
+## Обнаружение рассуждения по провайдерам
+
+| Провайдер | Источник обнаружения | Как выводятся уровни |
+| --- | --- | --- |
+| claude | строка `--effort` из `claude --help` | `claudeEffortSuperset` разбирает супермножество через `claudeEffortRe`, затем `projectClaudeLevels` фильтрует по модели через `claudeModelEffortAllow`. `DefaultLevel` жёстко задан как `"medium"`. |
+| codex | `codex debug models --bundled` (JSON) | `parseCodexDebugModels` читает по моделям `supported_reasoning_levels` + `default_reasoning_level`. `--bundled` пропускает сетевое обновление. |
+| opencode | варианты из `opencode models --verbose` | `annotateOpenCodeModelMetadata` проецирует `variants` модели в уровни (только когда `reasoning` истинно или варианты выглядят похожими на рассуждение). |
+| codebuddy | строка `--effort` из `codebuddy --help` | `codebuddyEffortSuperset` (без `max`); все модели делят один и тот же набор, `DefaultLevel` `"medium"`. |
+
+У пути разбора Claude есть градуированные откаты: при ошибке CLI `claudeStaticEffortFallback` = `{"low", "medium", "high"}`; при дрейфе формата help (regex не сработал) `claudeStaticEffortFullSuperset` = `{"low", "medium", "high", "xhigh", "max"}` — он предпочитает **предложить больше и дать CLI отклонить**, чем искусственно блокировать. Новые токены, которым демон не обучен, получают метку, отформатированную через `strings.Title`, и выдаются в сыром виде.
+
+Для codex, когда обнаружение не удаётся, `loadCodexThinkingByModel` кэширует **пустую** карту, чтобы повторные опросы UI не вызывали заново отсутствующий бинарник через shell; TTL в конце концов повторит попытку.
+
+Все четыре аннотатора молча поглощают ошибки: отсутствующий CLI оставляет `Thinking == nil` на каждой записи, что UI читает как «нет выбора для этой модели», а не как блокировку выбора модели.
+
+## Двухшлюзовая валидация уровня рассуждения
+
+Сохранённый `thinking_level` проверяется на двух разных слоях двумя разными функциями. Разделение намеренное (MUL-2339): у **сервера** нет локальных CLI-бинарников, поэтому он может выполнить только дешёвую проверку перечисления; у **демона** бинарники есть, поэтому он делает живую проверку каталога по моделям.
+
+### Шлюз 1 — IsKnownThinkingValue (дешёвое перечисление, на стороне сервера)
+
+`IsKnownThinkingValue(providerType, value)` — это синхронный шлюз, который сервер использует на `CreateAgent` / `UpdateAgent`. Он **не** обращается к живому каталогу или какому-либо подмножеству по моделям:
+
+- Пустое `value` всегда принимается (означает «использовать default рантайма»).
+- `opencode` принимает любое корректно сформированное имя варианта через `isValidOpenCodeVariantName` (≤64 символов, безопасное для идентификатора, без ведущего разделителя) — потому что значения `--variant` у opencode берутся из локального каталога, а кастомный `opencode.json` может определять новые.
+- Каждый другой провайдер ищется в `providerThinkingEnums`. Только `claude`, `codex` и `codebuddy` имеют записи. **Провайдер без записи принимает только пустую строку** — так выражается «у этого рантайма нет концепции рассуждения». Эти списки намеренно либеральны: проверка «известный токен во вселенной этого рантайма», а не «правильный уровень для этой модели». Всегда 400 на буквально-невалидном.
+
+### Шлюз 2 — ValidateThinkingLevel (каталог по (модель, провайдер), на стороне демона)
+
+`ValidateThinkingLevel(ctx, providerType, executablePath, model, value)` — это страж по моделям. Пустое `value` всегда валидно. Иначе он вызывает `ListModels` (так что видит **текущий** каталог CLI, включая динамическое обнаружение codex) и:
+
+- Если `model == ""`, он разрешает запись каталога, помеченную `Default`. Если ни одна не помечена: для `opencode` он откатывается к `anyModelSupportsThinkingValue` (любая модель поддерживает значение); для каждого другого провайдера возвращает `false` (fail closed — неизвестная модель, а не угадывание).
+- Затем он находит целевую модель и проверяет, есть ли `value` в `m.Thinking.SupportedLevels`. `m.Thinking == nil` → `false`.
+
+Что важно, когда шлюз 2 говорит «невалидно», демон **не проваливает задачу** — он логирует предупреждение и отбрасывает уровень. См. следующий раздел.
+
+<Callout title="Почему два шлюза">
+Серверный шлюз проваливается **закрыто** с 400 на буквально-невалидном токене (никогда не очищает автоматически невалидную-в-комбинации значение из сохранённого состояния агента). Шлюз демона проваливается **мягко** на невалидном-в-комбинации токене (логирует и пропускает инъекцию). Это сохраняет поведение API консистентным: всегда 400 на буквально-невалидном, никогда не очищать автоматически на невалидном-в-комбинации.
+</Callout>
+
+## Сборка в daemon.go
+
+Когда демон готовит задачу, он собирает `agent.ExecOptions`. Соответствующее разрешение, всё в `daemon.go`:
+
+**Модель — правило отсутствия статического default.** Двухуровневое разрешение: `task.Agent.Model` побеждает, если задано, иначе общедемонный `entry.Model` (из `AGORA_<PROVIDER>_MODEL`). Если оба пусты, демон намеренно передаёт `model = ""` в `ExecOptions.Model`, так что каждый бэкенд **опускает `--model`**, и провайдер выбирает свой собственный default. Комментарий в коде явно указывает, что зашивание Go-стороннего «рекомендуемого default» — это то, как произошла регрессия cursor: статические догадки расходятся с тем, что на самом деле принимает вышестоящий CLI.
+
+**Рассуждение — сначала валидация, затем инъекция.** `thinkingLevel` читается из `task.Agent.ThinkingLevel`. Если непусто, демон вызывает `agent.ValidateThinkingLevel(ctx, provider, entry.Path, model, thinkingLevel)`:
+
+- При **ошибке** поиска он логирует `"thinking_level: catalog lookup failed; passing through"` и сохраняет уровень (fail **open** — пусть CLI озвучит любое возражение).
+- При `ok == false` он логирует `"thinking_level: not valid for this (provider, model); skipping injection"` и устанавливает `thinkingLevel = ""`.
+
+Проверенные `model` и `thinkingLevel` затем помещаются в `agent.ExecOptions{ Model: model, ThinkingLevel: thinkingLevel, ... }`.
+
+<Mermaid chart={`sequenceDiagram
+  participant T as task.Agent
+  participant D as daemon.go
+  participant V as ValidateThinkingLevel
+  participant E as ExecOptions
+  T->>D: Model, ThinkingLevel
+  D->>D: model = Agent.Model || entry.Model || ""
+  alt thinkingLevel != ""
+    D->>V: validate(provider, path, model, level)
+    V-->>D: ok / err
+    Note over D: err -> keep level (pass through)<br/>!ok -> drop level (log + skip)
+  end
+  D->>E: ExecOptions{Model, ThinkingLevel}
+`} />
+
+## ModelSelectionSupported всегда true
+
+`ModelSelectionSupported(providerType)` возвращает `true` безусловно — каждый встроенный провайдер теперь сквозно учитывает `opts.Model`. Демон по-прежнему выставляет это в ответе со списком моделей (`"supported": agent.ModelSelectionSupported(rt.Provider)`); хук сохранён, а не встроен инлайн, чтобы будущий рантайм без моделей мог отказаться в одном месте (отображая отключённый выбор «Managed by runtime»).
+
+Но **«поддерживается» не означает «одно и то же значение везде».** `agent.model` — это разный идентификатор у разных провайдеров:
+
+- Claude / Codex / Cursor / Gemini / Copilot / Kimi / Kiro / OpenCode / Pi / Antigravity передают его через флаг или конфигурацию сессии (Antigravity получил `--model` в agy 1.0.6, MUL-3125).
+- Hermes маршрутизирует его через ACP RPC `session/set_model` перед каждым промптом.
+- Для OpenClaw `agent.model` — это **agent id** (`openclaw agent --agent <id>`), а не имя модели — обнаружение перечисляет агентов, потому что именно там в OpenClaw живёт привязка модели.
+- Для Antigravity значение — это человекочитаемая отображаемая строка (например, `Claude Opus 4.6 (Thinking)`), отправляемая дословно.
+
+Так что значение, которое для одного провайдера является чистым слагом модели, для другого — ключом маршрутизации или отображаемой меткой. Относитесь к `agent.model` как к непрозрачному идентификатору в области провайдера, а не как к переносимому имени модели.
+
+## Source files
+
+| Файл | Символы, от которых зависит эта страница |
+| --- | --- |
+| `server/pkg/agent/models.go` | `Model`, `ModelThinking`, `ThinkingLevel`, `ListModels`, `ModelSelectionSupported`, `cachedDiscovery`, `modelCache`, `modelCacheTTL`, `discoveryCacheKey`, `claudeStaticModels`, `codexStaticModels`, `geminiStaticModels`, `cursorStaticModels`, `copilotStaticModels`, `discoverOpenCodeModels`, `discoverPiModels`, `discoverCursorModels`, `discoverAntigravityModels`, `discoverOpenclawAgents`, `discoverCodebuddyModels`, `codebuddyStaticModels`, `discoverHermesModels`, `discoverKimiModels`, `discoverKiroModels`, `discoverCopilotModels`, `acpDiscoveryProvider`, `discoverACPModels`, `parseACPSessionNewModels`, `inferCopilotProvider`, `agoraFreeModels`, `annotateAgoraFree` |
+| `server/pkg/agent/thinking.go` | `thinkingCacheKey`, `thinkingCacheEntry`, `thinkingDiscoveryTTL`, `thinkingCache`, `resetThinkingCacheForTests`, `claudeEffortRe`, `claudeModelEffortAllow`, `claudeStaticEffortFallback`, `claudeStaticEffortFullSuperset`, `annotateClaudeThinking`, `claudeEffortSuperset`, `projectClaudeLevels`, `codexDebugModelsArgs`, `parseCodexDebugModels`, `annotateCodexThinking`, `annotateCodebuddyThinking`, `codebuddyEffortSuperset`, `providerThinkingEnums`, `IsKnownThinkingValue`, `isValidOpenCodeVariantName`, `ValidateThinkingLevel`, `anyModelSupportsThinkingValue` |
+| `server/internal/daemon/daemon.go` | `agent.ListModels` (ответ со списком моделей), `agent.ModelSelectionSupported`, `agent.ValidateThinkingLevel`, `agent.ExecOptions` (`Model`, `ThinkingLevel`), `task.Agent.Model`, `task.Agent.ThinkingLevel`, `entry.Model` |
+
+**Правило дрейфа:** любое изменение символа, флага, поля или значения, перечисленного выше — переименование функции, добавление кейса провайдера в `ListModels`, изменение константы TTL, изменение набора `providerThinkingEnums` или перенос логики разрешения модели в `daemon.go` — должно обновить эту страницу **и** её сопроводительный файл `models-and-thinking-source-map.md` в том же PR.

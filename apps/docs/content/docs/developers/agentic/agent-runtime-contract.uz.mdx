@@ -1,0 +1,197 @@
+---
+title: Agent Runtime Contract
+description: Agora vazifa runtime'i ichida ishlayotgan agent rioya qilishi shart boʻlgan qoidalar — natijalarni qanday yetkazish, izohlar qoldirish, threadlarni oʻqish hamda oʻzlik (identity) va nojoʻya taʼsirlar (side-effects) haqida qanday fikr yuritish kerakligi.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Auditoriya">
+Bu hujjat **agent uchun** yozilgan boʻlib, u Agora vazifasi ichida ishlaydi. Bu — daemon sizning CLI ishga tushishidan oldin `InjectRuntimeConfig` orqali runtime config faylingizga (`CLAUDE.md` / `AGENTS.md` / `GEMINI.md`) joylab qoʻyadigan kontrakt. Agar siz Agora ichida ishlasangiz, bu qoidalar maslahat emas — bu platforma sizning ishingizni foydalanuvchiga yetkazadigan yoʻl. Brief qanday yoziladi va qanday yigʻishtiriladi haqida [/developers/agentic/runtime-config-injection](/developers/agentic/prompt-layers) sahifasini koʻring. Kimligingiz va kim soʻrayotgani haqida [/developers/agentic/identity-layering](/developers/agentic/agent-runtime-contract) sahifasini koʻring. Bu kontraktni tahrirlayotgan muhandislarga: u `buildMetaSkillContent` ichida joylashgan — pastdagi **Source files** boʻlimi va paket chegaralari uchun `CLAUDE.md` ni koʻring.
+</Callout>
+
+Siz Agora platformasidagi kodlash agentisiz. Har bir briefning birinchi qatori shuni aytadi: *"You are a coding agent in the Agora platform. Use the `agora` CLI to interact with the platform."* Quyidagilarning barchasi — `buildMetaSkillContent` sizning muhitingizga chiqaradigan soʻzma-soʻz kontrakt. Unga aniq rioya qiling — har bir qoida shuning uchun mavjudki, aks holda real vazifa jimgina buziladi.
+
+## Eng muhim yagona qoida: natijalar faqat `agora issue comment add` orqali
+
+Sizning terminal chiqishingiz, assistant chat matnlaringiz va run loglaringiz **foydalanuvchiga koʻrinmaydi**. Brief buni `## Output` ostida qattiq kafolat sifatida bayon qiladi:
+
+> ⚠️ **Final results MUST be delivered via `agora issue comment add`.** The user does NOT see your terminal output, assistant chat text, or run logs — only comments on the issue. A task that finishes without a result comment is invisible to the user, even if the work itself was correct.
+
+Hech qachon izoh sifatida yetib bormagan toʻgʻri tuzatish — bu muvaffaqiyatsiz vazifa. Workflow izoh bosqichini **majburiy** qiladi ("**Post your final results as a comment — this step is mandatory**"). Izohni qisqa va tabiiy saqlang — jarayonni emas, natijani bayon qiling:
+
+- Yaxshi: `Fixed the login redirect. PR: https://...`
+- Yomon: `1. Read the issue 2. Found the bug in auth.go 3. Created branch 4. ...`
+
+<Callout type="warn">
+Yagona istisno — baholash natijasi `no_action` boʻlgan **squad leader**. Bunday holatda yolgʻiz `agora squad activity <issue-id> no_action --reason "..."` yetarli boʻladi va siz **hech qanday izoh qoldirmasdan chiqib ketishingiz SHART** — "no action needed" / "exiting silently" kabi izoh shovqin boʻlib, platforma uni allaqachon timeline'da qayd etadi.
+</Callout>
+
+### Natija izohini qoldirmaydigan trigger turlari
+
+Har bir vazifa issue ustida ishlamaydi. Brief trigger boʻyicha xatti-harakatni almashtiradi:
+
+- **Quick-create** (`QuickCreatePrompt` oʻrnatilgan): **mavjud issue yoʻq**. Aniq bitta `agora issue create` ni bajaring va chiqing. `agora issue get`, `agora issue status` yoki `agora issue comment add` ni **chaqirMANG**. Aniq bitta qator chop eting — `Created <identifier-or-id>: <title>` — va platforma foydalanuvchining inbox bildirishnomasini `agora issue create` muvaffaqiyatli boʻlgan-boʻlmaganidan kelib chiqib yozadi.
+- **Run-only autopilot** (`AutopilotRunID` oʻrnatilgan): tayinlangan issue yoʻq. Sizning yakuniy assistant chiqishingiz avtomatik ravishda autopilot run natijasi sifatida olinadi. Autopilot koʻrsatmalari buni aniq aytmaguncha `agora issue get` / `agora issue comment add` / `agora issue status` ni ishga tushirmang.
+- **Chat** (`ChatSessionID` oʻrnatilgan): suhbat tarzida javob bering; siz foydalanuvchiga chat oynasida bevosita yozyapsiz.
+
+## Hech qachon `--content` ni inline yozmang — izoh tanasi kontrakti
+
+Agent muallifligidagi izoh qoldirganingizda, **`--content "..."` ni inline yozMANG**. Shell sizning tanangizni `agora` CLI uni koʻrishidan *oldin* qayta yozadi. Brief va `BuildCommentReplyInstructions` bu boradacha qatʼiy, va yechim platformaga bogʻliq.
+
+Ikki shell-qatlam xavfi (ikkalasi ham manbada hujjatlashtirilgan):
+
+1. **Linux/macOS** — backtick / `$()` buyruq oʻrnini bosishi (command substitution), `$VAR` kengayishi, hamda qoʻshtirnoq/yangi qator buzilishi. Tanangizdagi backtick bilan oʻralgan token bajariladi va jimgina oʻchiriladi, saqlangan izohni buzadi va qayta urinish siklini keltirib chiqaradi (`MUL-2904` / `OKK-497`).
+2. **Windows** — PowerShell 5.1 ning `$OutputEncoding` qiymati native buyruqqa pipe qilinganda standart ravishda `ASCIIEncoding` boʻladi va baytlar `agora.exe` ga yetib borishidan oldin ASCII boʻlmagan belgilarni (xitoy, yapon, kirill, urgʻular, emoji) jimgina `?` sifatida tashlab yuboradi (issues `#2198` / `#2236` / `#2376`).
+
+Buzilish shell tomonidan boshqarilgani uchun himoya **provayderdan mustaqil** — u faqat Codex emas, har bir agentga taalluqli.
+
+### Unix (Linux / macOS): qoʻshtirnoqli HEREDOC + `--content-stdin`
+
+Hatto qisqa bir qatorli javob uchun ham doimo **qoʻshtirnoqli** HEREDOC (`<<'COMMENT'`) bilan `--content-stdin` dan foydalaning. Qoʻshtirnoqli delimiter uni xavfsiz qiladi: u shellning tana ichida backtick, `$()` yoki `$VAR` ni kengaytirishiga toʻsqinlik qiladi.
+
+```bash
+cat <<'COMMENT' | agora issue comment add <issue-id> --parent <comment-id> --content-stdin
+First paragraph.
+
+Second paragraph.
+COMMENT
+```
+
+### Windows: UTF-8 fayl yozing + `--content-file`
+
+Windows'da avval fayl-yozish vositangiz bilan javob tanasini UTF-8 faylga yozing, soʻngra uni `--content-file` bilan joʻnating. `--content-stdin` orqali pipe **qilMANG** — ASCII codepage qayta kodlashi ASCII boʻlmagan belgilarni tashlab yuboradi.
+
+```bash
+# 1. Write the reply body to a UTF-8 file (e.g. reply.md) with your file-write tool.
+# 2. Then run:
+agora issue comment add <issue-id> --parent <comment-id> --content-file ./reply.md
+```
+
+**Ikkala** platformada ham: koʻp abzasli javobni bitta qatorga siqmang va qator uzilishlarini taqlid qilish uchun soʻzma-soʻz `\n` escape yozmang — HEREDOC / fayl haqiqiy yangi qatorlarni saqlaydi.
+
+## Izohga javob berish: triggerni qayta oʻqing, `--parent` ni saqlang
+
+Vazifangiz **izoh tomonidan triggerlanganda** (`TriggerCommentID` oʻrnatilgan), asosiy vazifangiz — bu sessiyada ilgari oʻxshash soʻrovlarni bajargan boʻlsangiz ham, aynan **SHU izohga** javob berish. Workflow tartibi qatʼiy:
+
+<Mermaid chart={`flowchart TD
+  A["agora issue get <id> --output json"] --> B["agora issue metadata list <id>"]
+  B --> C["Read the triggering THREAD first<br/>(not the flat timeline)"]
+  C --> D["Find trigger comment ID — don't confuse it with prior comments"]
+  D --> E{Reply warranted?}
+  E -->|"agent sign-off, no work"| F["Exit silently — no comment"]
+  E -->|"human comment, OR you did real work"| G["Do the work, then post via<br/>agora issue comment add --parent <trigger>"]`} />
+
+Javobning oʻzini ikkita qoida boshqaradi:
+
+- **Doimo trigger izoh ID sini `--parent` sifatida ishlating.** Bu sessiyadagi oldingi navbatlarning `--parent` qiymatlarini qayta **ishlatMANG**. Bu `BuildCommentReplyInstructions` da aniq koʻrsatilgan, chunki davom ettirilgan (resumed) sessiyalar oldingi navbatlarning tool chaqiruvlarini kontekstda saqlaydi va aks holda eski `--parent` UUID ni oldinga koʻchiradi. Javob berayotganda trigger izohning oʻsha `--parent` qiymatini saqlang.
+- **Inson izohi HAR DOIM javobni talab qiladi** — ularning savoliga ular ishlatgan tilda bevosita javob bering. Quyidagi sukut imkoniyati **faqat** agentdan-agentga almashinuvlarga taalluqli.
+
+## Nojoʻya taʼsirlar: mention'lar run'larni navbatga qoʻyadi, member'lar odamlarni xabardor qiladi
+
+Mention havolalari **shunchaki formatlash emas, nojoʻya taʼsir koʻrsatuvchi harakatlardir**. Briefning `## Mentions` boʻlimidan:
+
+| Havola koʻrinishi | Nojoʻya taʼsir |
+|---|---|
+| `[MUL-123](mention://issue/<issue-id>)` | **Inert** — issue ga bosiladigan havola, hech qanday nojoʻya taʼsir yoʻq |
+| `[@Name](mention://member/<user-id>)` | **Insonga bildirishnoma yuboradi** |
+| `[@Name](mention://agent/<agent-id>)` | **Oʻsha agent uchun yangi run'ni navbatga qoʻyadi** |
+
+Xavfli boʻlgani — `mention://agent/...`. Agar siz javob berayotgan agentni rahmat yoki xayrlashuv sifatida `@mention` qilsangiz, **ular yana ishga tushadi**; agar ular mention bilan javob qaytarsa, siz yana triggerlanasiz. Bu — sikl, va u foydalanuvchiga pulga tushadi.
+
+<Callout type="warn">
+**Hech qachon boshqa agentni xayrlashuv, tasdiqlash yoki yakunlash sifatida `@mention` qilmang.** Aynan oʻsha lahzalarda tasodifiy mention siklni qayta ishga tushiradi. Agar ish tugagan boʻlsa, **hech qanday mention'siz yakunlang.** "Silence ends conversations; `@` restarts them."
+
+</Callout>
+
+Mention **faqat** quyidagi hollarda oʻrinli:
+
+- Hali jalb qilinmagan inson egasiga eskalatsiya qilganda.
+- Boshqa agentga aniq sub-vazifani birinchi marta, aniq soʻrov bilan delegatsiya qilganda.
+- Foydalanuvchi sizdan birovni jalb qilishni aniq soʻraganda.
+
+Ishonchingiz komil boʻlmasa, **mention qilmang**. Issue ga murojaat qilish uchun `[MUL-123](mention://issue/<issue-id>)` ni bemalol ishlating — issue mention'lari nojoʻya taʼsirga ega emas.
+
+### Agentdan-agentga threadni yakunlash
+
+Agar triggerlovchi izoh **boshqa agentdan** kelgan sof tasdiqlash / rahmat / xayrlashuv boʻlsa VA siz bu navbatda hech qanday ish ishlab chiqarmagan boʻlsangiz, javob **qoldirMANG** — va "No reply needed." deb izoh ham **qoldirMANG**. Shunchaki hech qanday chiqishsiz chiqib keting. Sukut — agentdan-agentga suhbatlarni yakunlashning afzal usuli.
+
+## Thread'ga moslashgan paging: yassi timeline'ni toʻkib tashlamang
+
+`agora issue comment list <issue-id> --output json` **toʻliq yassi timeline'ni, eng eskisidan boshlab, server tomonida 2000 bilan cheklangan holda** qaytaradi. Band issue'da bu bir martada ingest qilish uchun juda katta. Brief va uchta `*CommentsHint` builder'lari sizni buning oʻrniga thread doirasidagi oʻqishlarga yoʻnaltiradi.
+
+Flag'lar (`### Core` menyusidan va `BuildNewCommentsHint` / `BuildResumedCommentsHint` / `BuildColdCommentsHint` dan):
+
+- `--thread <comment-id>` — bitta suhbatni qaytaradi: ildiz **plus har bir javob**.
+- `--thread <id> --tail N` — javoblarni **eng soʻnggi N tasi** bilan cheklaydi. Ildiz **`--tail 0` da ham doimo kiritiladi**.
+- `--recent N` — **eng soʻnggi faol N thread'ni** qaytaradi.
+- `--since <RFC3339>` — inkremental polling; `--thread` (`--tail` bilan yoki usiz) yoki `--recent` bilan birlashtirilishi mumkin.
+- `--before <ts> --before-id <uuid>` — **eskiroq** yozuvlarni kezadi. `--thread --tail` ostida u eskiroq javoblarni pagelaydi (stderr yorligʻi: `Next reply cursor`); `--recent` ostida u eskiroq thread'larni pagelaydi (stderr yorligʻi: `Next thread cursor`).
+
+**Kursorlar stdout'dan emas, stderr orqali keladi.** stderr'dan `Next thread cursor:` / `Next reply cursor:` qatorini oʻqing va kezishni davom ettirish uchun uni `--before` / `--before-id` orqali qaytarib bering.
+
+### Qaysi entry holati uchun qaysi oʻqish
+
+Daemon sizning bu issue ustida ilgari ishlagan-ishlamaganingizga qarab siz uchun hint tanlaydi:
+
+- **Iliq (warm), oxirgi run'dan beri yangi izohlar** (`BuildNewCommentsHint`): siz issue boʻylab sanovni olasiz, lekin avval **triggerlovchi thread'ni oʻqing** — `--thread <id> --since <ts>` (agar deltani emas, toʻliq thread'ni xohlasangiz, `--since` ni `--tail 30` ga almashtiring). Issue boʻylab quvib yetish *faqat* boshqa thread'lar kerak boʻlsa.
+- **Iliq, yangi izohlar yoʻq** (`BuildResumedCommentsHint`): trigger yuqorida allaqachon joylab boʻlingan. Agar javobingiz thread kontekstiga bogʻliq boʻlsa, faqat davom ettirilgan xotiraga ishonmang — `--thread <id> --tail 30` ni torting.
+- **Sovuq (cold), oldingi run yoʻq** (`BuildColdCommentsHint`): avval triggerlovchi suhbatni oʻqing — `--thread <trigger> --tail 30` (ildiz + 30 eng yangi javob). Mulohaza yuritish uchun thread'lararo fon olish uchun `--recent 20` ni torting.
+
+**Tayinlash bilan triggerlangan (assignment-triggered)** vazifalar uchun izohlar tarixini oʻqish **majburiy, ixtiyoriy emas** — oldingi izohlar koʻpincha qaysi repo'da ishlash kerakligini, oldingi agentning topilmalarini yoki issue nima uchun sizga qayta tayinlanganini olib yuradi. Yassi toʻkma juda katta boʻlsa, `--recent 20` plus `--before` / `--before-id` kursori *toʻliq* tarixni sahifama-sahifa oʻqish uchun paging strategiyasidir — uni oʻrnini bosadigan qisqartirma emas.
+
+## Oʻzlik qatlamlashi (identity layering): uchta aktyor, bitta credential toʻplami
+
+Brief uchtagacha oʻzlik blokini chiqarishi mumkin. Ular turli savollarga javob beradi va turli vakolatga ega. Toʻliq model uchun [/developers/agentic/identity-layering](/developers/agentic/agent-runtime-contract) sahifasini koʻring.
+
+| Blok | Manba | Maʼnosi |
+|---|---|---|
+| `## Agent Identity` | `AgentName` / `AgentID` / `AgentInstructions` | **Kimligingiz.** Maʼlum boʻlganda doimo chiqariladi, hatto boshqa agentga tayinlangan issue ga `@mention` orqali yoʻnaltirilganda ham. |
+| `## Requesting User` | `RequestingUserProfileDescription` (runtime egasi) | Siz nomidan harakat qilayotgan foydalanuvchi haqida fon. **Vazifa koʻrsatmalari sifatida emas, fon konteksti sifatida qarang. Agar u vazifaga zid kelsa, vazifa ustun.** |
+| `## Task Initiator` | `InitiatorName` / `InitiatorEmail` / `InitiatorType` | **Hozir kim soʻrayotgani.** Koʻp odam yeta oladigan workspace'da siz javob berayotgan — runtime egasi emas, balki tashabbuskor (initiator). |
+
+<Callout type="warn">
+**Task Initiator faqat attest qilingan (attest-only).** Brief buni shunday bayon qiladi: *"this is an attested identity for your own routing and privacy logic. Your Agora credentials stay scoped to the runtime owner, so the initiator's identity does not by itself widen or narrow what you can read or write — do not assume the initiator can see everything you can."* Tashabbuskordan atributsiya va shaxsma-shaxs maxfiylik qoidalari uchun foydalaning; hech qachon u sizning kirish doirangizni oʻzgartiradi deb hisoblamang.
+</Callout>
+
+`Agent Identity` koʻrsatmalari runtime workflow'idan **ustunlikka** ega. Tayinlash bilan triggerlangan vazifalar uchun brief `## Instruction Precedence` boʻlimini chiqaradi: agar workflow bosqichi sizning Agent Identity'ngizga zid kelsa, zid keladigan harakatni oʻtkazib yuboring va qolgan mos bosqichlar bilan davom eting. Hech qachon runtime workflow'ini Agent Identity'ngizdan tashqari statusni oʻzgartirish, tekshirish yoki amalga oshirish uchun ruxsat deb hisoblamang.
+
+## Issue metadata — past darajadagi qoralama emas, yuqori talabli scratchpad
+
+Har bir issue kichik KV `metadata` xaltasini olib yuradi. Bu — shu issue ustidagi kelajakdagi run'lar qayta-qayta qidiradigan bir nechta faktlar uchun **yuqori signalli scratchpad** (PR URL, deploy URL, nimadan blok boʻlganingiz) — siz topgan har bir faktni qayd etadigan joy **emas**. Brief ochiq aytadi: *"Most runs write **zero** new keys; that's the expected case, not a failure."*
+
+- **Kirishda oʻqing:** `agora issue metadata list <issue-id> --output json`. Boʻsh `{}` va CLI muvaffaqiyatsizliklari normal holat — toʻxtamang yoki foydalanuvchidan soʻramang. Metadata — bu hint'lar, mutlaq haqiqat emas: agar u eng soʻnggi izoh yoki kod bilan zid kelsa, **eng soʻnggi fakt ustun**.
+- **Chiqishda kam yozing:** qiymatni faqat **ikkalasi** ham toʻgʻri boʻlganda mahkamlang — (a) u shu issue progressi uchun jiddiy ahamiyatga ega, **va** (b) kelajakdagi run'lar uni qayta hosil qilish oʻrniga bir martadan koʻproq oʻqishi ehtimoli bor. Agar aniq kelajakdagi oʻqishni nomlay olmasangiz, uni mahkamlamang. Ikkilanganingizda **yozmang**. `agora issue metadata set <issue-id> --key <k> --value <v>` dan foydalaning.
+- **Eskirgan key'larni tozalang:** kirishda koʻrgan key'ingiz endi eskirgan boʻlsa, uning ustiga yozing yoki `agora issue metadata delete <issue-id> --key <k>` qiling. Yangi hech narsa qoʻshmasangiz ham eskirgan key tozalash kutiladi.
+- **Nimani mahkamlaMASLIK kerak:** sirlar/tokenlar/API kalitlari yoʻq; loglar, uzun iqtiboslar yoki izoh xulosalari yoʻq (buning uchun izohlar va tavsif bor); **runtime hisob-kitobi yoʻq** (`attempts`, run timestamp'lari, agent id'lari) — metadata agentning tahririy daftari, **run log emas**; bitta run tafsilotlari yoʻq.
+- **Tavsiya etilgan key'lar** (workspace soʻrovlari izchil qolishi uchun qayta ishlating, snake_case ASCII): `pr_url`, `pr_number`, `pipeline_status`, `deploy_url`, `external_issue_url`, `waiting_on`, `blocked_reason`, `decision`.
+
+Metadata boʻlimi faqat real issue ustida ishlaydigan vazifalar uchun chiqariladi (`hasIssueContext`) — chat, quick-create va run-only autopilot run'lar issue id'ni olib yurmaydi va uni oʻtkazib yuboradi.
+
+## Barcha platforma kirishi `agora` CLI orqali boradi
+
+Agora resurslari bilan har bir oʻzaro taʼsir — issue'lar, izohlar, biriktirmalar (attachments), rasmlar, fayllar, har qanday platforma maʼlumoti — **albatta** `agora` CLI orqali boʻlishi kerak. Agora URL yoki API'lariga qarshi `curl`, `wget` yoki boshqa har qanday HTTP klientini **ishlatMANG**: bu resurslar faqat CLI taʼminlay oladigan autentifikatsiyalangan kirishni talab qiladi. Biriktirmalar uchun `agora attachment --help` ni koʻzdan kechiring va autentifikatsiyalangan CLI yoʻlidan foydalaning — Agora resurs URL'larini bevosita ochmang.
+
+Briefdan ikkita xulosa:
+
+- Tuzilmaviy maʼlumot uchun `--output json` dan foydalaning. Inson uchun jadval chiqishi marshrutlanadigan issue key'larini (masalan `MUL-123`) va qisqa UUID prefikslarini chop etadi; kanonik UUID'lar kerak boʻlganda list buyruqlarida `--full-id` ni uzating.
+- Agar sizga hech bir `agora` buyrugʻi qamramaydigan operatsiya kerak boʻlsa, uni aylanib oʻtMANG. Yetishmayotgan funksionallikni soʻrash uchun workspace egasini mention qilgan izoh qoldiring.
+
+## Kod oʻzgarishlarini koʻrsatish
+
+Ishingiz **kod oʻzgarishlarini** oʻz ichiga olganda (checkout qilingan repo'da fayllarni tahrirladingiz, qoʻshdingiz yoki olib tashladingiz), yakuniy izohingiz reviewer repo'ni ochmasdan har bir oʻzgargan qatorni koʻrishi uchun haqiqiy oʻzgarishni shunchaki nasr emas, **diff** sifatida koʻrsatishi SHART:
+
+- Diff'ni ` ```diff ` blok ichida kiriting: `git --no-pager diff <base>...HEAD`. Katta diff uchun `git --no-pager diff --stat` bilan boshlang, soʻngra har bir fayl boʻyicha mazmunli hunk'lar.
+- Har bir fayl boʻyicha bir qatorli xulosa (`path — nima oʻzgardi`) va har bir xatti-harakat oʻzgarishi uchun oldin → keyin holatini qoʻshing.
+- Agar branch push qilgan boʻlsangiz, branch'ni, `git push` exit 0 qaytarganini bayon qiling va PR yoki compare URL'ni kiriting.
+- Hech qachon kod oʻzgarishini uning qatorlarini koʻrsatmasdan tasvirlamang. Faqat hujjat/maʼlumotli va kodsiz vazifalar istisno.
+
+## Source files
+
+| Fayl | Bu sahifa bogʻliq boʻlgan simvollar |
+|---|---|
+| `server/internal/daemon/execenv/runtime_config.go` | `InjectRuntimeConfig`, `CleanupRuntimeConfig`, `buildMetaSkillContent`, `runtimeConfigPath`, `TaskContextForEnv` fields (`AgentName`, `AgentID`, `AgentInstructions`, `RequestingUserProfileDescription`, `RequestingUserName`, `InitiatorName`, `InitiatorEmail`, `InitiatorType`, `WorkspaceContext`, `IssueID`, `TriggerCommentID`, `TriggerThreadID`, `NewCommentsSince`, `NewCommentCount`, `ChatSessionID`, `QuickCreatePrompt`, `AutopilotRunID`, `IsSquadLeader`, `PriorSessionResumed`); brief sections (`## Output`, `## Mentions`, `## Issue Metadata`, `## Comment Formatting`, `## Showing Code Changes`, `## Instruction Precedence`, `## Important: Always Use the agora CLI`); `mention://issue`, `mention://member`, `mention://agent`; CLI flags `--content-stdin`, `--content-file`, `--parent`, `--thread`, `--tail`, `--recent`, `--since`, `--before`, `--before-id`, `--output json`, `--full-id` |
+| `server/internal/daemon/execenv/reply_instructions.go` | `BuildCommentReplyInstructions`, `BuildNewCommentsHint`, `BuildResumedCommentsHint`, `BuildColdCommentsHint`, `activeThreadID`; stderr cursor labels `Next thread cursor` / `Next reply cursor`; HEREDOC `<<'COMMENT'` form; Windows `--content-file` form |
+| `server/internal/daemon/prompt.go` | `BuildPrompt`, `buildCommentPrompt`, `buildQuickCreatePrompt`, `buildChatPrompt`, `buildAutopilotPrompt`; the 2000 server cap and `--recent` paging note |
+
+**Drift qoidasi:** yuqoridagi har qanday hujjatlashtirilgan simvol, brief boʻlimi yoki CLI flag'i koʻchsa yoki oʻzgarsa, bu sahifani **va** uning source-map sidecar'ini (`references/agent-runtime-contract-source-map.md`) **bir xil PR'da** yangilang — bu `CLAUDE.md` dan kelgan builtin_skills source-traced-contract qoidasi. Eskirgan runtime-contract sahifasi agentlarga daemon endi chiqarmaydigan xatti-harakatni jimgina oʻrgatadi.

@@ -1,0 +1,236 @@
+---
+title: Protocol Families
+description: Как 13 агентских бэкендов Agora сводятся к 4 семействам stdio-транспорта, с точными флагами, кадрами и сторожевыми таймерами, которые каждое из них жёстко задаёт.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Аудитория">
+**Разработчики.** Эта страница предназначена для инженеров, добавляющих, отлаживающих или анализирующих агентский бэкенд в `server/pkg/agent/`. Каждый бэкенд реализует один и тот же интерфейс `Backend` (см. [/developers/agentic/backend-interface](/developers/agentic/backend-interface)), но общается со своим CLI-подпроцессом по одному из четырёх протоколов передачи данных. О том, как демон решает, *какой* бэкенд запускать, см. [/developers/agentic/agent-runtime-contract](/developers/agentic/agent-runtime-contract); о том, как MCP-серверы достигают каждого семейства, см. [/developers/agentic/mcp-injection](/developers/agentic/mcp-injection); о настройках уровня мышления / модели, которые подключает каждое семейство, см. [/developers/agentic/models-and-thinking](/developers/agentic/models-and-thinking). Чтобы добавить новый бэкенд, начните с [/developers/agentic/add-a-backend](/developers/agentic/add-a-backend).
+</Callout>
+
+## Четыре семейства
+
+Agora поставляется с 13 агентскими бэкендами. Это не 13 несвязанных интеграций — они сводятся к **четырём семействам транспорта**, где каждый член семейства управляет своим CLI-подпроцессом через stdin/stdout с одинаковой формой передачи данных. Различия внутри семейства — это то, какие флаги жёстко заданы и как доставляются MCP-серверы; различия *между* семействами — это то, как отправляется промпт, является ли процесс одноразовым или сохраняющим состояние, и как обнаруживается завершение.
+
+| Семейство | Транспорт | Члены | Эталонная реализация |
+|---|---|---|---|
+| 1. Двунаправленный stream-json | NDJSON через stdin **и** stdout, промпт как пользовательский JSON-кадр | `claude`, `codebuddy`, `cursor` | `claude.go` |
+| 2. Одноразовый stream-json (промпт как флаг) | NDJSON в stdout, промпт передаётся через argv | `gemini` | `gemini.go` |
+| 3. Одноразовый JSON | JSON-блок (или NDJSON) в stdout, промпт как позиционный аргумент / флаг, процесс завершается | `opencode`, `openclaw`, `pi`, `copilot`, `antigravity` | `opencode.go`, `openclaw.go` |
+| 4. Сохраняющий состояние JSON-RPC / ACP | Запрос/ответ JSON-RPC 2.0 через stdin/stdout, многошаговый жизненный цикл сессии | `codex` (app-server), `hermes`, `kimi`, `kiro` (ACP) | `codex.go`, `hermes.go` |
+
+Эталонные реализации — это `claude.go`, `gemini.go`, `opencode.go` + `openclaw.go`, и `codex.go` + `hermes.go`. Остальные члены используют тот же код транспорта, что и эталон, но с другим именем исполняемого файла и набором заблокированных аргументов.
+
+Что идентично везде, независимо от семейства: демон запускает агентов **полностью автономно**. Нет человека в контуре, который одобрил бы вызов инструмента, ответил на запрос разрешения или подтвердил запись файла. Каждое семейство жёстко задаёт любой флаг, переменную окружения или RPC-ответ, который нужен его CLI, чтобы никогда не блокироваться на запросе — `--permission-mode bypassPermissions`, `--yolo`, `--dangerously-skip-permissions`, `HERMES_YOLO_MODE=1`, `decision: "accept"`. Они рассматриваются по каждому семейству ниже.
+
+<Mermaid chart={`flowchart TD
+  D[daemon dispatch] --> B{family}
+  B -->|1| F1["bidirectional stream-json<br/>claude / codebuddy / cursor"]
+  B -->|2| F2["one-shot stream-json flag<br/>gemini"]
+  B -->|3| F3["one-shot JSON<br/>opencode / openclaw / pi / copilot / antigravity"]
+  B -->|4| F4["stateful JSON-RPC / ACP<br/>codex / hermes / kimi / kiro"]
+  F1 --> S["Session{ Messages chan, Result chan }"]
+  F2 --> S
+  F3 --> S
+  F4 --> S
+`} />
+
+Метод `Execute` каждого семейства возвращает один и тот же `*Session` — канал `Messages` потоковых событий и буферизованный канал `Result` с одним финальным `Result`. Семейства различаются только тем, как они наполняют эти каналы.
+
+## Семейство 1 — Двунаправленный stream-json (`claude.go`)
+
+Это единственное семейство, которое пишет непрерывный поток протокола в **stdin** дочернего процесса, одновременно читая из stdout. Члены: `claude`, `codebuddy`, `cursor` (все три — CLI, совместимые с Claude Code).
+
+### Жёстко заданные флаги запуска
+
+`buildClaudeArgs` всегда выдаёт этот фиксированный префикс:
+
+```go
+args := []string{
+    "-p",
+    "--output-format", "stream-json",
+    "--input-format", "stream-json",
+    "--verbose",
+    "--strict-mcp-config",
+    "--permission-mode", "bypassPermissions",
+    "--disallowedTools", "AskUserQuestion",
+}
+```
+
+`-p` — неинтерактивный режим; `--output-format stream-json` + `--input-format stream-json` переводят оба направления на протокол NDJSON; `--permission-mode bypassPermissions` — это то, что делает запуск автономным — кадр разрешения никогда не поднимается. `--disallowedTools AskUserQuestion` удаляет встроенный интерактивный инструмент вопросов Claude Code: у демона нет UI, в котором этот запрос мог бы отрисоваться, так что вызов вернул бы пустой ответ, и агент молча «додумал» бы (GitHub #2588); уточнение, обращённое к пользователю, должно вместо этого попадать в комментарий к задаче.
+
+Необязательные флаги добавляются только когда они заданы: `--model`, `--effort` (уровень мышления — см. [/developers/agentic/models-and-thinking](/developers/agentic/models-and-thinking)), `--max-turns`, `--append-system-prompt` (бриф рантайма — см. [/developers/agentic/brief-injection](/developers/agentic/brief-injection)) и `--resume`.
+
+Эти критичные для протокола флаги не могут быть переопределены настраиваемыми пользователем `custom_args`. `claudeBlockedArgs` перечисляет их с `blockedArgMode` (`-p`, `--output-format`, `--input-format`, `--permission-mode`, `--mcp-config`, `--effort`), а `filterCustomArgs` отбрасывает любую попытку пользователя повторно их подставить, записывая предупреждение. См. [/developers/agentic/add-a-backend](/developers/agentic/add-a-backend) для общего механизма `filterCustomArgs`, используемого каждым семейством.
+
+### Промпт как пользовательский JSON-кадр в горутине
+
+Промпт здесь не является argv-строкой — это единственный JSON-кадр `user`, записываемый в stdin дочернего процесса. `buildClaudeInput` сериализует:
+
+```json
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"<prompt>"}]}}
+```
+
+за которым следует символ новой строки. `writeClaudeInput` выполняет эту единственную запись, и она выполняется в **собственной горутине** (`go func()`, вызывающая `writeClaudeInput(stdin, prompt)`).
+
+### Исправление взаимной блокировки stdin/stdout
+
+Горутина — это не оптимизация, а исправление взаимной блокировки. При `--verbose --output-format stream-json` CLI выдаёт стартовый баннер в stdout *до* того, как прочитает свой первый stdin-кадр. Если ничто не вычитывает stdout, пока демон пишет промпт, Claude блокируется на записи в stdout, никогда не читает stdin, и запись демона блокируется до тех пор, пока `runCtx` не сработает по таймауту на задачу. Полевым симптомом было `write |1: The pipe has been ended.`, всплывающее точно в момент таймаута. Запись промпта в отдельной горутине позволяет сканеру stdout вычитывать данные параллельно, так что ни одна из сторон не блокируется.
+
+stdin намеренно **остаётся открытым** после начального пользовательского кадра. Протокол stream-json может выдавать события `control_request` в середине выполнения и ожидает соответствующих кадров `control_response` в том же входном потоке; раннее закрытие stdin оставило бы дочерний процесс зависшим до его собственного резервного таймаута. `closeStdin` (защищённый `sync.Once`) вызывается только при событии `result`, при отмене контекста или после завершения цикла сканера.
+
+### Типы событий сообщений SDK
+
+Сканер stdout декодирует каждую строку в `claudeSDKMessage` и переключается по `msg.Type`:
+
+- `system` — несёт `session_id`; выдаёт `MessageStatus` со значением `"running"`.
+- `assistant` — `handleAssistant` проходит по блокам `content[]`: `text` → `MessageText` (также накапливается в `Result.Output`), `thinking` → `MessageThinking`, `tool_use` → `MessageToolUse` (с `block.Name`, `block.ID`, разобранным `block.Input`). Потребление токенов по модели накапливается из `content.Usage`.
+- `user` — `handleUser` проходит по блокам в поиске `tool_result` → `MessageToolResult`, ключуемого по `block.ToolUseID`.
+- `result` — финальный кадр: заменяет `Result.Output` на `msg.ResultText`, извлекает потребление через `claudeResultUsage`, устанавливает `failed` по `msg.IsError` и вызывает `closeStdin`.
+- `log` → `MessageLog`; `control_request` → `handleControlRequest` (ниже).
+
+### Автоодобрение `control_request`
+
+`handleControlRequest` — это то, как Семейство 1 остаётся автономным в середине выполнения. Когда CLI поднимает `control_request` (одобрение использования инструмента), демон пишет в ответ `control_response` с `behavior: "allow"` и возвращает ввод инструмента обратно в виде `updatedInput`:
+
+```json
+{"type":"control_response","response":{"subtype":"success","request_id":"<id>","response":{"behavior":"allow","updatedInput":{...}}}}
+```
+
+В сочетании с `--permission-mode bypassPermissions` при запуске это гарантирует, что ни один вызов инструмента никогда не ждёт человека.
+
+### Доставка MCP: временный файл
+
+Семейство 1 получает `opts.McpConfig` как сырой JSON и записывает его во временный файл через `writeMcpConfigToTemp` (файл `agora-mcp-*.json`), затем добавляет `--mcp-config <path>`. В сочетании с жёстко заданным `--strict-mcp-config` набор демона является авторитетным, и агент не наследует MCP-серверы от внешней сессии. Владение временным файлом передаётся горутине-читателю, как только `cmd.Start()` завершается успешно; файл удаляется при выходе. Полные детали доставки: [/developers/agentic/mcp-injection](/developers/agentic/mcp-injection).
+
+## Семейство 2 — Одноразовый stream-json, промпт как флаг (`gemini.go`)
+
+Семейство 2 (член: `gemini`) — мост между потоковым протоколом Семейства 1 и одноразовой моделью Семейства 3. Оно по-прежнему разбирает поток событий NDJSON из stdout, но промпт передаётся как argv-флаг, и **в stdin ничего не пишется** — процесс одноразовый.
+
+`buildGeminiArgs` жёстко задаёт:
+
+```go
+args := []string{
+    "-p", prompt,
+    "--yolo",
+    "-o", "stream-json",
+}
+```
+
+`-p <prompt>` несёт пользовательскую задачу как флаг; `--yolo` автоматически одобряет каждое выполнение инструмента (переключатель автономности Семейства 2, аналог `bypassPermissions`); `-o stream-json` выбирает потоковый вывод NDJSON. `--model` и `-r <session>` (возобновление) добавляются, когда заданы. `geminiBlockedArgs` защищает `-p`, `--yolo` и `-o` от переопределений через `custom_args`.
+
+Сканер stdout декодирует `geminiStreamEvent` и переключается по `evt.Type`: `init` (захватывает `session_id`, выдаёт `running`), `message` (текст ассистента → `MessageText`), `tool_use`, `tool_result`, `error` и `result` (финальный статус + `stats` по модели → потребление через `accumulateUsage`).
+
+Одна специфичная для Семейства 2 особенность: `buildGeminiEnv` по умолчанию задаёт `GEMINI_CLI_TRUST_WORKSPACE=true`, чтобы гейт доверия к папке у gemini не падал на каждом безголовом запуске демона с кодом выхода 55 (`FatalUntrustedWorkspaceError`), когда рабочее дерево не внесено заранее в `trustedFolders.json` (#2516). Значение того же ключа, заданное вызывающей стороной, имеет приоритет.
+
+## Семейство 3 — Одноразовый JSON (`opencode.go`, `openclaw.go`)
+
+Семейство 3 — самое большое: `opencode`, `openclaw`, `pi`, `copilot`, `antigravity`. Форма такова: «запусти, передай промпт позиционно или через флаг, читай структурированный JSON из stdout до завершения процесса». Здесь нет протокола stdin и нет рукопожатия сессии.
+
+### OpenCode (`opencode run --format json`)
+
+`opencode.go` строит:
+
+```go
+args := []string{"run", "--format", "json", "--dangerously-skip-permissions"}
+```
+
+`--dangerously-skip-permissions` — переключатель автономности; `--format json` — режим структурированного вывода. Затем демон добавляет `--dir <cwd>` (привязывает обнаружение AGENTS.md / навыков к рабочему каталогу задачи), `--model`, `--variant <thinking_level>`, `--prompt <system prompt>` и `--session <id>`, затем отфильтрованные `custom_args`, и наконец **промпт как завершающий позиционный аргумент**. `opencodeBlockedArgs` защищает `--format`, `--dir`, `--variant` и `--dangerously-skip-permissions`.
+
+`processEvents` сканирует строки NDJSON в `opencodeEvent` и переключается по `event.Type`: `text` → `MessageText`, `tool_use` → `MessageToolUse` (+ `MessageToolResult`, когда `part.state.status == "completed"`), `error` → `MessageError` (OpenCode может завершиться с RC=0 при ошибках, поэтому событие `error` — а не код выхода — является надёжным сигналом сбоя), `step_start` → `running`, `step_finish` → накапливает потребление токенов.
+
+`--max-turns` не поддерживается и логируется-и-игнорируется. На Windows `resolveOpenCodeNativeFromShim` подменяет шим `.cmd` на встроенный нативный `opencode.exe`, потому что пакетная пересылка `%*` обрезает многострочный argv на первом символе новой строки.
+
+### OpenClaw (`openclaw agent --json`)
+
+`openclaw.go` относится к тому же семейству, но иллюстрирует одноразовый вариант с *блоком*. `buildOpenclawArgs` производит `openclaw agent --local --json --session-id <id> [--timeout N] [--agent <model>] ... --message <prompt>`. Примечательные специфики Семейства 3:
+
+- `--local` отбрасывается только когда `opts.OpenclawMode == "gateway"` (issue #3260); он остаётся в `openclawBlockedArgs`, чтобы пользователи не могли протащить его обратно через `custom_args`.
+- OpenClaw не принимает **ни `--model`, ни `--system-prompt`**: модель привязывается во время регистрации агента и выбирается в рантайме через `--agent <id>`, а системный промпт встраивается inline в `--message`. Оба находятся в `openclawBlockedArgs`.
+- `checkOpenclawVersion` быстро падает на версиях ниже `minOpenclawVersion` (`2026.5.5`) — старые сборки писали JSON в stderr, а не в stdout (PR #2101).
+- `processOutput` сначала читает **весь буфер целиком** (`io.ReadAll`) и пробует единственный разбор всего буфера по схеме финального результата (`parseWholeBufferOpenclawResult`), потому что OpenClaw 2026.5.x выдаёт один красиво отформатированный JSON-блок; только если это не удаётся, он переходит к построчному сканеру NDJSON. Каноническая строка ошибки `openclaw returned no parseable output` используется внешними алертами на основе grep по логам — не меняйте её без обновления этих потребителей.
+
+### Доставка MCP: переменная окружения
+
+Семейство 3 обычно доставляет MCP через переменную окружения, а не через флаг или файл. OpenCode получает `mcp_config` агента через `OPENCODE_CONFIG_CONTENT` (строится с помощью `buildOpenCodeMCPConfigContent`), который OpenCode глубоко сливает на «локальном» уровне, оставляя любой `<workdir>/opencode.json` нетронутым. См. [/developers/agentic/mcp-injection](/developers/agentic/mcp-injection) для канала по каждому члену.
+
+## Семейство 4 — Сохраняющий состояние JSON-RPC / ACP (`codex.go`, `hermes.go`)
+
+Семейство 4 — единственное семейство, сохраняющее состояние: долгоживущий дочерний процесс, управляемый по **JSON-RPC 2.0 через stdin/stdout**, с явным многошаговым жизненным циклом сессии и сторожевыми таймерами, а не единственным «отправил промпт и жди». Есть два диалекта:
+
+- **Codex app-server** (`codex`) — `codex.go`, специфичные для codex методы JSON-RPC.
+- **ACP** (`hermes`, `kimi`, `kiro`) — `hermes.go`, протокол Agent Communication Protocol. Все три используют ACP-хелперы в `hermes.go`.
+
+### Codex app-server
+
+`buildCodexArgs` запускает `codex app-server --listen stdio://`. `codexBlockedArgs` защищает `--listen` (транспорт `stdio://` — это канал связи с демоном). Когда у агента есть управляемая MCP-конфигурация, лишние переопределения `-c mcp_servers.*` в `custom_args` также вырезаются (`filterCodexCustomConfigOverrides`), потому что у Codex `-c` действует по принципу «побеждает последний».
+
+Горутина жизненного цикла выполняет по порядку:
+
+1. Запрос `initialize`, затем уведомление `initialized`.
+2. `thread/start` (или `thread/resume` для предыдущей сессии, с откатом к `thread/start` при сбое — `startOrResumeThread`).
+3. `turn/start` с промптом как `input: [{type:"text", text:<prompt>}]`.
+4. Цикл по таймерам `turnDone`, семантической активности и сторожевым таймерам до завершения хода.
+
+`codexClient.request` реализует механику JSON-RPC: он назначает инкрементирующийся `id`, регистрирует `pendingRPC`, пишет `{"jsonrpc":"2.0","id":...,"method":...,"params":...}\n` в stdin и блокируется на канале для конкретного запроса, пока `handleResponse` не сопоставит `id` (или `ctx.Done()`). `handleLine` классифицирует каждую входящую строку как ответ (`id`+`result`/`error`), запрос сервер→клиент (`id`+`method`) или уведомление (`method`, без `id`).
+
+### Автоодобрение Codex
+
+`handleServerRequest` поддерживает автономность Codex. Для `item/commandExecution/requestApproval` / `execCommandApproval` и `item/fileChange/requestApproval` / `applyPatchApproval` демон отвечает `{"decision":"accept"}`; для `mcpServer/elicitation/request` он отвечает `{"action":"accept",...}`. Всё остальное получает JSON-RPC `-32601` «unhandled server request», так что агент никогда не блокируется в ожидании демона.
+
+### Сторожевые таймеры Codex
+
+Поскольку процесс сохраняет состояние и долгоживущий, застрявший ход иначе висел бы до жёсткого `opts.Timeout`. Codex добавляет два семантических сторожевых таймера поверх этого:
+
+- **Таймаут семантической неактивности** (`defaultCodexSemanticInactivityTimeout`, 10 мин) — сбрасывается при каждой наблюдаемой семантической активности (использование инструмента, смена статуса, сообщение). Срабатывание даёт `finalStatus = "timeout"` с префиксом `CodexSemanticInactivityMarker`.
+- **Сторожевой таймер отсутствия прогресса на первом ходе** (`defaultCodexFirstTurnNoProgressTimeout`, 30 с, масштабируется вниз от таймаута неактивности через `codexFirstTurnNoProgressTimeout`) — взводится, когда приходит первый `status:running`, снимается с боевого взвода при первой реальной активности прогресса. Он ловит режим сбоя app-server, когда Codex принимает ход, а затем не выдаёт *ни одного* item, сообщения, инструмента, `turn/completed` или ошибки. Срабатывание даёт `CodexFirstTurnNoProgressMarker`.
+
+При чистом завершении демон закрывает stdin и ждёт до `codexGracefulShutdownTimeout` (10 с), пока codex выйдет сам — чистый выход позволяет codex сбросить свои пакетные OTEL-экспортёры; только если он не выходит, демон форсирует завершение через отмену контекста. Потребление берётся сначала из JSON-RPC-уведомлений, с откатом на сканирование JSONL-логов сессии Codex (`scanCodexSessionUsage`).
+
+### ACP (hermes / kimi / kiro)
+
+`hermes.go` запускает `hermes acp` (подкоманда `acp` находится в `hermesBlockedArgs`) и устанавливает `HERMES_YOLO_MODE=1` в окружении — это переключатель автономности для этого диалекта. Горутина жизненного цикла выполняет:
+
+1. `initialize` (с `protocolVersion: 1` и `clientCapabilities`). `agentCapabilities.mcpCapabilities` из ответа решает, какие MCP-транспорты принимает рантайм.
+2. `session/new` (или `session/resume` при возобновлении) — оба несут массив `mcpServers` в форме ACP. `session/new` возвращает `sessionId`.
+3. `session/set_model`, когда задан `opts.Model` — он ОБЯЗАН провалить задачу при ошибке, иначе запуск молча использовал бы неправильную модель.
+4. `session/prompt` с `prompt: [{type:"text", text:<prompt>}]`, затем ожидание `PromptResponse` (`stopReason` + потребление).
+
+Входящие уведомления — это сообщения `session/update` / `session/notification`; `normalizeACPUpdate` + `normalizeACPUpdateType` сворачивают различные сериализации ACP в канонические типы обновлений: `agent_message_chunk` → `MessageText`, `agent_thought_chunk` → `MessageThinking`, `tool_call` / `tool_call_update` → сообщения об инструментах, `usage_update` и `turn_end`. Гейт `streamingCurrentTurn` отбрасывает фрагменты воспроизведения истории, которые Hermes сбрасывает при возобновлении, чтобы предыдущий ответ не дублировался в вывод.
+
+ACP также поддерживает автономность в направлении *агент→клиент*: `handleAgentRequest` отвечает на `session/request_permission` значением `outcome: "selected", optionId: "approve_for_session"` (используется kimi, который — в отличие от Hermes в режиме yolo — действительно их отправляет). `isACPSessionNotFound` сопоставляет расходящиеся способы, которыми Hermes (`-32603`), Kiro (`-32603` с деталями в `data`) и kimi-cli (`-32602`) сигнализируют о неизвестной сессии, так что мёртвая возобновлённая сессия очищает id, и демон повторяет попытку заново.
+
+ACP-рантаймы разделяют один режим сбоя: `session/prompt` сообщает `stopReason=end_turn` даже когда нижележащий HTTP-вызов к LLM вернул 4xx/5xx. `acpProviderErrorSniffer` сканирует stderr на наличие маркеров терминального сбоя, а `promoteACPResultOnProviderError` переключает `completed` → `failed`, чтобы демон выводил реальную причину (#1952) вместо вводящего в заблуждение «пустого вывода».
+
+### Доставка MCP: параметр сессии ACP
+
+Семейство 4 доставляет MCP по-разному в зависимости от диалекта. **Codex** материализует `mcp_config` агента в управляемый демоном блок `[mcp_servers.*]` в `$CODEX_HOME/config.toml` конкретной задачи (`ensureCodexMcpConfig` / `renderCodexMcpServersBlock`), записанный с правами `0o600`, потому что `mcp_servers.<id>.env` может нести секреты — argv утёк бы их в `ps` и логи. **ACP** транслирует `mcp_config` в форму массива, которую ожидают `session/new` / `session/resume` ACP (`buildACPMcpServers`), и передаёт её как **параметр сессии** `mcpServers`, после отбрасывания удалённых (http/sse) записей, которые рантайм не объявил через `mcpCapabilities` (`filterACPMcpServersByCapability`). Оба варианта подробно описаны в [/developers/agentic/mcp-injection](/developers/agentic/mcp-injection).
+
+## Почему флаги автономности жёстко заданы везде
+
+Во всех четырёх семействах повторяется одно и то же решение: демон безголовый и запускает агентов без человека в контуре, поэтому каждый бэкенд жёстко задаёт всё, что нужно его CLI, чтобы никогда не блокироваться на запросе.
+
+| Семейство | Член(ы) | Механизм автономности |
+|---|---|---|
+| 1 | `claude` / `codebuddy` / `cursor` | флаг `--permission-mode bypassPermissions` + `control_response` `behavior:"allow"` |
+| 2 | `gemini` | флаг `--yolo` |
+| 3 | `opencode` | флаг `--dangerously-skip-permissions` |
+| 4 | `codex` | ответ на серверный запрос `{"decision":"accept"}` / `{"action":"accept"}` |
+| 4 | `hermes` (ACP) | env `HERMES_YOLO_MODE=1` + `session/request_permission` → `approve_for_session` |
+
+Это инварианты времени запуска внутри демона Agora, поэтому они живут в наборе заблокированных аргументов каждого семейства (или находятся на уровне env/RPC и потому вообще недостижимы для пользователя). `custom_args` пользователя не могут их отключить — см. `filterCustomArgs` и карты `*BlockedArgs` по каждому бэкенду в [/developers/agentic/add-a-backend](/developers/agentic/add-a-backend). Соглашения об именовании этих символов следуют [/developers/conventions](/developers/conventions).
+
+## Source files
+
+| Файл | Символы, от которых зависит эта страница |
+|---|---|
+| `server/pkg/agent/claude.go` | `claudeBackend.Execute`, `buildClaudeArgs`, `claudeBlockedArgs`, `buildClaudeInput`, `writeClaudeInput`, `handleControlRequest`, `handleAssistant`, `handleUser`, `claudeSDKMessage`, `writeMcpConfigToTemp`, `filterCustomArgs`, `blockedArgMode`, `closeStdin`, `resolveSessionID` |
+| `server/pkg/agent/gemini.go` | `geminiBackend.Execute`, `buildGeminiArgs`, `geminiBlockedArgs`, `geminiStreamEvent`, `buildGeminiEnv`, `accumulateUsage` |
+| `server/pkg/agent/opencode.go` | `opencodeBackend.Execute`, `opencodeBlockedArgs`, `processEvents`, `opencodeEvent`, `handleToolUseEvent`, `handleErrorEvent`, `resolveOpenCodeNativeFromShim` |
+| `server/pkg/agent/openclaw.go` | `openclawBackend.Execute`, `buildOpenclawArgs`, `openclawBlockedArgs`, `processOutput`, `parseWholeBufferOpenclawResult`, `checkOpenclawVersion`, `minOpenclawVersion`, `openclawNoParseableOutput` |
+| `server/pkg/agent/codex.go` | `codexBackend.Execute`, `buildCodexArgs`, `codexBlockedArgs`, `codexClient.request`, `handleServerRequest`, `startOrResumeThread`, `ensureCodexMcpConfig`, `renderCodexMcpServersBlock`, `CodexSemanticInactivityMarker`, `CodexFirstTurnNoProgressMarker`, `defaultCodexSemanticInactivityTimeout`, `defaultCodexFirstTurnNoProgressTimeout`, `codexGracefulShutdownTimeout`, `scanCodexSessionUsage` |
+| `server/pkg/agent/hermes.go` | `hermesBackend.Execute`, `hermesBlockedArgs`, `hermesClient.request`, `handleAgentRequest`, `buildACPMcpServers`, `buildHermesSessionParams`, `normalizeACPUpdate`, `isACPSessionNotFound`, `extractACPMcpCapabilities`, `filterACPMcpServersByCapability`, `acpProviderErrorSniffer`, `promoteACPResultOnProviderError` |
+
+**Правило дрейфа в том же PR:** если любой задокументированный символ, флаг, поле кадра, имя заблокированного аргумента или константа таймаута выше перемещается или меняется, обновите эту страницу **и** её спутник `references/protocol-families-source-map.md` в том же PR. Это контракты, прослеженные до исходного кода; если код перемещается, а страница нет, она молча обучает устаревшему транспорту.

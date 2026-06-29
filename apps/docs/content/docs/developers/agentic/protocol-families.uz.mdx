@@ -1,0 +1,236 @@
+---
+title: Protocol Families
+description: Agoraning 13 ta agent backendi qanday qilib 4 ta stdio transport oilasiga jamlanadi — har biri qattiq belgilab qoʻyadigan aniq flaglar, freymlar va watchdoglar bilan.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Auditoriya">
+**Dasturchilar.** Ushbu sahifa `server/pkg/agent/` ichida agent backendini qoʻshadigan, debug qiladigan yoki ular haqida fikr yuritadigan muhandislar uchun. Har bir backend bir xil `Backend` interfeysini amalga oshiradi (qarang: [/developers/agentic/backend-interface](/developers/agentic/backend-interface)), biroq oʻzining CLI subprotsessiga toʻrtta wire protokoldan birida gaplashadi. Daemon *qaysi* backendni ishga tushirishni qanday hal qilishi haqida qarang: [/developers/agentic/agent-runtime-contract](/developers/agentic/agent-runtime-contract); MCP serverlari har bir oilaga qanday yetib borishi haqida qarang: [/developers/agentic/mcp-injection](/developers/agentic/mcp-injection); har bir oila ulaydigan fikrlash darajasi / model sozlamalari haqida qarang: [/developers/agentic/models-and-thinking](/developers/agentic/models-and-thinking). Yangi backend qoʻshish uchun bu yerdan boshlang: [/developers/agentic/add-a-backend](/developers/agentic/add-a-backend).
+</Callout>
+
+## Toʻrtta oila
+
+Agora 13 ta agent backendi bilan yetkaziladi. Bular 13 ta bir-biriga bogʻliq boʻlmagan integratsiya emas — ular **toʻrtta transport oilasiga** jamlanadi, bu yerda oilaning har bir aʼzosi oʻzining CLI subprotsessini stdin/stdout orqali bir xil wire shaklda boshqaradi. Oila ichidagi farqlar — qaysi flaglar qattiq belgilab qoʻyilgani va MCP serverlari qanday yetkazib berilishi; oilalar *oʻrtasidagi* farqlar esa — prompt qanday yuborilishi, protsess bir martalik (one-shot) yoki holatli (stateful) ekani, va bajarilish qanday aniqlanishi.
+
+| Oila | Transport | Aʼzolar | Tayanch implementatsiya |
+|---|---|---|---|
+| 1. Ikki tomonlama stream-json | stdin **va** stdout orqali NDJSON, prompt JSON user freymi sifatida | `claude`, `codebuddy`, `cursor` | `claude.go` |
+| 2. Bir martalik stream-json (prompt flag sifatida) | stdout orqali NDJSON, prompt argv orqali uzatiladi | `gemini` | `gemini.go` |
+| 3. Bir martalik JSON | stdout orqali JSON blob (yoki NDJSON), prompt pozitsion / flag sifatida, protsess chiqib ketadi | `opencode`, `openclaw`, `pi`, `copilot`, `antigravity` | `opencode.go`, `openclaw.go` |
+| 4. Holatli JSON-RPC / ACP | stdin/stdout orqali JSON-RPC 2.0 soʻrov/javob, koʻp bosqichli sessiya hayot sikli | `codex` (app-server), `hermes`, `kimi`, `kiro` (ACP) | `codex.go`, `hermes.go` |
+
+Tayanch implementatsiyalar `claude.go`, `gemini.go`, `opencode.go` + `openclaw.go`, va `codex.go` + `hermes.go`. Boshqa aʼzolar har bir tayanchning transport kod yoʻlini boshqacha bajariluvchi fayl nomi va bloklangan argumentlar toʻplami bilan baham koʻradi.
+
+Oiladan qatʼi nazar hamma joyda bir xil boʻlgan narsa: daemon agentlarni **toʻliq avtonom** ishga tushiradi. Tool chaqiruvini tasdiqlash, ruxsat soʻroviga javob berish yoki fayl yozishni maʼqullash uchun jarayonda hech qanday inson yoʻq. Har bir oila oʻzining CLI'si promptda hech qachon bloklanmasligi uchun zarur boʻlgan har qanday flag, env oʻzgaruvchisi yoki RPC javobini qattiq belgilab qoʻyadi — `--permission-mode bypassPermissions`, `--yolo`, `--dangerously-skip-permissions`, `HERMES_YOLO_MODE=1`, `decision: "accept"`. Bular quyida har bir oila uchun yoritilgan.
+
+<Mermaid chart={`flowchart TD
+  D[daemon dispatch] --> B{family}
+  B -->|1| F1["bidirectional stream-json<br/>claude / codebuddy / cursor"]
+  B -->|2| F2["one-shot stream-json flag<br/>gemini"]
+  B -->|3| F3["one-shot JSON<br/>opencode / openclaw / pi / copilot / antigravity"]
+  B -->|4| F4["stateful JSON-RPC / ACP<br/>codex / hermes / kimi / kiro"]
+  F1 --> S["Session{ Messages chan, Result chan }"]
+  F2 --> S
+  F3 --> S
+  F4 --> S
+`} />
+
+Har bir oilaning `Execute`'si bir xil `*Session` qaytaradi — stream hodisalari uchun `Messages` kanali va bitta yakuniy `Result` uchun buferlangan `Result` kanali. Oilalar faqat bu kanallarni qanday toʻldirishi bilan farqlanadi.
+
+## Oila 1 — Ikki tomonlama stream-json (`claude.go`)
+
+Bu — bola protsessining **stdin**'iga uzluksiz protokol streamini yozadigan, ayni paytda stdout'dan oʻqiydigan yagona oila. Aʼzolar: `claude`, `codebuddy`, `cursor` (uchchalasi ham Claude-Code bilan mos CLI'lar).
+
+### Qattiq belgilab qoʻyilgan ishga tushirish flaglari
+
+`buildClaudeArgs` har doim ushbu qatʼiy prefiksni chiqaradi:
+
+```go
+args := []string{
+    "-p",
+    "--output-format", "stream-json",
+    "--input-format", "stream-json",
+    "--verbose",
+    "--strict-mcp-config",
+    "--permission-mode", "bypassPermissions",
+    "--disallowedTools", "AskUserQuestion",
+}
+```
+
+`-p` interaktiv boʻlmagan rejim; `--output-format stream-json` + `--input-format stream-json` ikkala yoʻnalishni ham NDJSON protokoliga oʻtkazadi; `--permission-mode bypassPermissions` esa ishni avtonom qiladigan narsa — hech qachon ruxsat freymi koʻtarilmaydi. `--disallowedTools AskUserQuestion` Claude Code'ning oʻrnatilgan interaktiv savol toolini olib tashlaydi: daemonda bu prompt render qilinadigan UI yoʻq, shuning uchun chaqiruv boʻsh javob qaytarar va agent jimgina "taxmin" qilib qoʻyardi (GitHub #2588); foydalanuvchiga yoʻnaltirilgan aniqlik kiritish esa issue izohiga tegishli.
+
+Ixtiyoriy flaglar faqat oʻrnatilganda qoʻshiladi: `--model`, `--effort` (fikrlash darajasi — qarang: [/developers/agentic/models-and-thinking](/developers/agentic/models-and-thinking)), `--max-turns`, `--append-system-prompt` (runtime brifingi — qarang: [/developers/agentic/brief-injection](/developers/agentic/brief-injection)), va `--resume`.
+
+Bu protokol uchun muhim flaglarni foydalanuvchi sozlagan `custom_args` bilan bekor qilib boʻlmaydi. `claudeBlockedArgs` ularni `blockedArgMode` bilan roʻyxatlaydi (`-p`, `--output-format`, `--input-format`, `--permission-mode`, `--mcp-config`, `--effort`), va `filterCustomArgs` foydalanuvchining ularni qayta uzatishga urinishini tashlab yuboradi hamda ogohlantirish loglaydi. Har bir oila ishlatadigan umumiy `filterCustomArgs` mexanizmi haqida qarang: [/developers/agentic/add-a-backend](/developers/agentic/add-a-backend).
+
+### Prompt goroutine'da JSON user freymi sifatida
+
+Bu yerda prompt argv satri emas — bu bola protsessining stdin'iga yoziladigan bitta JSON `user` freymi. `buildClaudeInput` quyidagini marshal qiladi:
+
+```json
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"<prompt>"}]}}
+```
+
+ortidan yangi qator. `writeClaudeInput` shu bitta yozishni bajaradi va u **oʻzining goroutine'ida** ishlaydi (`writeClaudeInput(stdin, prompt)`'ni chaqiruvchi `go func()`).
+
+### stdin/stdout deadlock tuzatuvi
+
+Goroutine optimallashtirish emas — bu deadlock tuzatuvi. `--verbose --output-format stream-json` bilan CLI birinchi stdin freymini oʻqishdan *oldin* stdout'ga ishga tushirish banneri chiqaradi. Agar daemon promptni yozayotgan paytda stdout'ni hech narsa boʻshatmasa, Claude stdout'ga yozishda bloklanadi, hech qachon stdin'ni oʻqimaydi, va daemon'ning yozishi `runCtx` har bir vazifa taymautida ishga tushgunicha bloklanadi. Maydon belgisi aynan taymautda paydo boʻladigan `write |1: The pipe has been ended.` edi. Promptni alohida goroutine'da yozish stdout skanerining bir vaqtning oʻzida boʻshatishiga imkon beradi, shuning uchun hech qaysi tomon bloklanmaydi.
+
+stdin boshlangʻich user freymidan keyin ataylab **ochiq qoldiriladi**. stream-json protokoli ish jarayonida `control_request` hodisalarini chiqarishi mumkin va ayni input streamida mos `control_response` freymlarini kutadi; stdin'ni erta yopish bolani oʻzining zaxira taymautigacha qotib qoladigan holatda qoldirardi. `closeStdin` (`sync.Once` bilan himoyalangan) faqat `result` hodisasida, kontekst bekor qilinganida yoki skaner sikli tugaganidan keyin chaqiriladi.
+
+### SDK xabar hodisa turlari
+
+stdout skaneri har bir qatorni `claudeSDKMessage`'ga dekod qiladi va `msg.Type` boʻyicha tarmoqlanadi:
+
+- `system` — `session_id`'ni olib yuradi; `"running"` qiymatli `MessageStatus` chiqaradi.
+- `assistant` — `handleAssistant` `content[]` bloklarini aylanib chiqadi: `text` → `MessageText` (shuningdek `Result.Output`'ga toʻplanadi), `thinking` → `MessageThinking`, `tool_use` → `MessageToolUse` (`block.Name`, `block.ID`, parslangan `block.Input` bilan). Har bir model uchun token foydalanishi `content.Usage`'dan toʻplanadi.
+- `user` — `handleUser` bloklarni `tool_result` uchun aylanib chiqadi → `block.ToolUseID` bilan kalitlangan `MessageToolResult`.
+- `result` — yakuniy freym: `Result.Output`'ni `msg.ResultText` bilan almashtiradi, `claudeResultUsage` orqali usage'ni oladi, `msg.IsError`'da `failed`'ni oʻrnatadi va `closeStdin`'ni chaqiradi.
+- `log` → `MessageLog`; `control_request` → `handleControlRequest` (quyida).
+
+### `control_request` avto-tasdiqlash
+
+`handleControlRequest` — Oila 1 ish jarayonida qanday avtonom qolishi. CLI `control_request` (tool-use tasdigi) koʻtarganda, daemon `behavior: "allow"` bilan `control_response` qaytarib yozadi va tool inputini `updatedInput` sifatida qaytarib aks ettiradi:
+
+```json
+{"type":"control_response","response":{"subtype":"success","request_id":"<id>","response":{"behavior":"allow","updatedInput":{...}}}}
+```
+
+Ishga tushirishdagi `--permission-mode bypassPermissions` bilan birgalikda, bu hech qanday tool chaqiruvi hech qachon insonni kutmasligini kafolatlaydi.
+
+### MCP yetkazib berish: vaqtinchalik fayl
+
+Oila 1 `opts.McpConfig`'ni xom JSON sifatida qabul qiladi va uni `writeMcpConfigToTemp` orqali vaqtinchalik faylga yozadi (`agora-mcp-*.json` fayli), soʻngra `--mcp-config <path>` qoʻshadi. Qattiq belgilab qoʻyilgan `--strict-mcp-config` bilan birgalikda, daemon'ning toʻplami obroʻli boʻladi va agent MCP serverlarini tashqi sessiyadan meros qilib olmaydi. Vaqtinchalik fayl egaligi `cmd.Start()` muvaffaqiyatli boʻlgach oʻquvchi goroutine'ga oʻtadi; u chiqishda oʻchiriladi. Toʻliq yetkazib berish tafsilotlari: [/developers/agentic/mcp-injection](/developers/agentic/mcp-injection).
+
+## Oila 2 — Bir martalik stream-json, prompt flag sifatida (`gemini.go`)
+
+Oila 2 (aʼzo: `gemini`) — Oila 1'ning stream protokoli bilan Oila 3'ning bir martalik modeli oʻrtasidagi koʻprik. U hali ham stdout'dan NDJSON hodisa streamini parslaydi, biroq prompt argv flagi sifatida kiritiladi va **stdin'ga hech narsa yozilmaydi** — protsess bir martalik.
+
+`buildGeminiArgs` quyidagilarni qattiq belgilab qoʻyadi:
+
+```go
+args := []string{
+    "-p", prompt,
+    "--yolo",
+    "-o", "stream-json",
+}
+```
+
+`-p <prompt>` foydalanuvchi vazifasini flag sifatida olib yuradi; `--yolo` har bir tool bajarilishini avto-tasdiqlaydi (Oila 2'ning avtonomlik kaliti, `bypassPermissions`'ning analogi); `-o stream-json` stream NDJSON chiqishini tanlaydi. `--model` va `-r <session>` (resume) oʻrnatilganda qoʻshiladi. `geminiBlockedArgs` `-p`, `--yolo`, va `-o`'ni `custom_args` bekor qilishlaridan himoya qiladi.
+
+stdout skaneri `geminiStreamEvent`'ni dekod qiladi va `evt.Type` boʻyicha tarmoqlanadi: `init` (`session_id`'ni oladi, `running` chiqaradi), `message` (assistant matni → `MessageText`), `tool_use`, `tool_result`, `error`, va `result` (yakuniy status + har model `stats` → `accumulateUsage` orqali usage).
+
+Oila 2'ga xos bir oʻ ziga xoslik: `buildGeminiEnv` `GEMINI_CLI_TRUST_WORKSPACE=true`'ni standart qilib qoʻyadi, shunda worktree `trustedFolders.json`'da oldindan roʻyxatga olinmagan boʻlsa, gemini'ning papkaga ishonch darvozasi har bir headless daemon ishga tushishini 55-chiqish kodi (`FatalUntrustedWorkspaceError`) bilan barbod qilmaydi (#2516). Chaqiruvchi oʻrnatgan ayni kalit qiymati ustun keladi.
+
+## Oila 3 — Bir martalik JSON (`opencode.go`, `openclaw.go`)
+
+Oila 3 — eng kattasi: `opencode`, `openclaw`, `pi`, `copilot`, `antigravity`. Shakli: "ishga tushir, promptni pozitsion yoki flag orqali uzat, protsess chiqib ketgunicha stdout'dan strukturalangan JSON oʻqi." Bu yerda stdin protokoli ham, sessiya handshake'i ham yoʻq.
+
+### OpenCode (`opencode run --format json`)
+
+`opencode.go` quyidagini quradi:
+
+```go
+args := []string{"run", "--format", "json", "--dangerously-skip-permissions"}
+```
+
+`--dangerously-skip-permissions` — avtonomlik kaliti; `--format json` — strukturalangan chiqish rejimi. Soʻngra daemon `--dir <cwd>` (AGENTS.md / skill aniqlashni vazifa ish katalogiga bogʻlaydi), `--model`, `--variant <thinking_level>`, `--prompt <system prompt>`, va `--session <id>`'ni qoʻshadi, keyin filtrlangan `custom_args`'ni, va nihoyat **promptni oxirgi pozitsion argument** sifatida qoʻshadi. `opencodeBlockedArgs` `--format`, `--dir`, `--variant`, va `--dangerously-skip-permissions`'ni himoya qiladi.
+
+`processEvents` NDJSON qatorlarini `opencodeEvent`'ga skanerlaydi va `event.Type` boʻyicha tarmoqlanadi: `text` → `MessageText`, `tool_use` → `MessageToolUse` (+ `part.state.status == "completed"` boʻlganda `MessageToolResult`), `error` → `MessageError` (OpenCode xatolarda RC=0 bilan chiqishi mumkin, shuning uchun chiqish kodi emas, `error` hodisasi ishonchli muvaffaqiyatsizlik signali), `step_start` → `running`, `step_finish` → token foydalanishini toʻplaydi.
+
+`--max-turns` qoʻllab-quvvatlanmaydi, loglanib va eʼtiborsiz qoldiriladi. Windows'da `resolveOpenCodeNativeFromShim` `.cmd` shimini paketlangan native `opencode.exe`'ga almashtiradi, chunki batch `%*` uzatishi koʻp qatorli argv'ni birinchi yangi qatorda qirqib tashlaydi.
+
+### OpenClaw (`openclaw agent --json`)
+
+`openclaw.go` ayni oilada, biroq bir martalik *blob* variantini koʻrsatadi. `buildOpenclawArgs` `openclaw agent --local --json --session-id <id> [--timeout N] [--agent <model>] ... --message <prompt>`'ni ishlab chiqaradi. Eʼtiborga molik Oila 3 xususiyatlari:
+
+- `--local` faqat `opts.OpenclawMode == "gateway"` boʻlganda tashlanadi (issue #3260); u `openclawBlockedArgs`'da qoladi, shunda foydalanuvchilar uni `custom_args` orqali yashirincha qaytara olmaydi.
+- OpenClaw **na `--model`, na `--system-prompt`'ni** qabul qiladi: model agentni roʻyxatga olish vaqtida bogʻlanadi va ish jarayonida `--agent <id>` orqali tanlanadi, system prompt esa `--message`'ga inline tarzda old qoʻshiladi. Ikkalasi ham `openclawBlockedArgs`'da.
+- `checkOpenclawVersion` `minOpenclawVersion`'dan (`2026.5.5`) past versiyada tezda muvaffaqiyatsiz tugaydi — eskiroq build'lar JSON'ni stdout emas, stderr'ga yozardi (PR #2101).
+- `processOutput` avval **butun buferni oʻqiydi** (`io.ReadAll`) va yakuniy-natija sxemasiga qarshi bitta butun-bufer parsini sinab koʻradi (`parseWholeBufferOpenclawResult`), chunki OpenClaw 2026.5.x bitta chiroyli formatlangan JSON blob chiqaradi; faqat u muvaffaqiyatsiz boʻlsagina qator-baqator NDJSON skaneriga oʻtadi. `openclaw returned no parseable output` kanonik muvaffaqiyatsizlik satriga tashqi log-grep ogohlantirishlari bogʻliq — uni iste'molchilarni yangilamasdan oʻzgartirmang.
+
+### MCP yetkazib berish: env oʻzgaruvchisi
+
+Oila 3 odatda MCP'ni flag yoki fayl emas, balki muhit oʻzgaruvchisi orqali yetkazib beradi. OpenCode agentning `mcp_config`'ini `OPENCODE_CONFIG_CONTENT` orqali oladi (`buildOpenCodeMCPConfigContent` tomonidan quriladi), uni OpenCode "local" doirada chuqur birlashtiradi (deep-merge), har qanday `<workdir>/opencode.json`'ni tegmagan holda qoldiradi. Har bir aʼzo kanali uchun qarang: [/developers/agentic/mcp-injection](/developers/agentic/mcp-injection).
+
+## Oila 4 — Holatli JSON-RPC / ACP (`codex.go`, `hermes.go`)
+
+Oila 4 — yagona holatli oila: **stdin/stdout orqali JSON-RPC 2.0** bilan boshqariladigan uzoq yashovchi bola, aniq koʻp bosqichli sessiya hayot sikli va watchdog taymerlari bilan, bitta prompt-va-kutish emas. Ikkita dialekt mavjud:
+
+- **Codex app-server** (`codex`) — `codex.go`, codex'ga xos JSON-RPC metodlari.
+- **ACP** (`hermes`, `kimi`, `kiro`) — `hermes.go`, Agent Communication Protocol. Uchchalasi ham `hermes.go`'dagi ACP yordamchilarini baham koʻradi.
+
+### Codex app-server
+
+`buildCodexArgs` `codex app-server --listen stdio://`'ni ishga tushiradi. `codexBlockedArgs` `--listen`'ni himoya qiladi (`stdio://` transporti daemon-bilan-aloqa kanali). Agent boshqariladigan MCP konfiguratsiyasiga ega boʻlganda, `custom_args`'dagi adashgan `-c mcp_servers.*` bekor qilishlari ham olib tashlanadi (`filterCodexCustomConfigOverrides`), chunki Codex'ning `-c`'si oxirgi-yutadi (last-wins).
+
+Hayot sikli goroutine'i quyidagi tartibda boshqaradi:
+
+1. `initialize` soʻrovi, soʻngra `initialized` xabarnomasi.
+2. `thread/start` (yoki oldingi sessiya uchun `thread/resume`, muvaffaqiyatsizlikda `thread/start`'ga qaytish bilan — `startOrResumeThread`).
+3. `turn/start`, prompt `input: [{type:"text", text:<prompt>}]` sifatida.
+4. Burilish tugaguncha `turnDone`, semantik-faollik va watchdog taymerlari boʻyicha sikl.
+
+`codexClient.request` JSON-RPC plumbing'ini amalga oshiradi: u oʻsib boruvchi `id` belgilaydi, `pendingRPC`'ni roʻyxatga oladi, `{"jsonrpc":"2.0","id":...,"method":...,"params":...}\n`'ni stdin'ga yozadi va `handleResponse` `id`'ga mos kelguncha (yoki `ctx.Done()`) har bir soʻrov kanalida bloklanadi. `handleLine` har bir kiruvchi qatorni javob (`id`+`result`/`error`), server→klient soʻrovi (`id`+`method`) yoki xabarnoma (`method`, `id` yoʻq) sifatida tasniflaydi.
+
+### Codex avto-tasdiqlash
+
+`handleServerRequest` Codex'ni avtonom saqlaydi. `item/commandExecution/requestApproval` / `execCommandApproval` va `item/fileChange/requestApproval` / `applyPatchApproval` uchun daemon `{"decision":"accept"}` bilan javob beradi; `mcpServer/elicitation/request` uchun esa `{"action":"accept",...}` bilan javob beradi. Boshqa har qanday narsa JSON-RPC `-32601` "unhandled server request" oladi, shunda agent hech qachon daemon'ni kutib bloklanmaydi.
+
+### Codex watchdoglari
+
+Protsess holatli va uzoq yashovchi boʻlgani uchun, qotib qolgan burilish aks holda qattiq `opts.Timeout`'gacha osilib qolardi. Codex buning ustiga ikkita semantik watchdog qoʻshadi:
+
+- **Semantik faolsizlik taymauti** (`defaultCodexSemanticInactivityTimeout`, 10 daqiqa) — har bir kuzatilgan semantik faollikda (tool ishlatish, status oʻzgarishi, xabar) qayta tiklanadi. Ishga tushishi `CodexSemanticInactivityMarker` prefiksi bilan `finalStatus = "timeout"` beradi.
+- **Birinchi-burilish hech-progress-yoʻq watchdogi** (`defaultCodexFirstTurnNoProgressTimeout`, 30 s, faolsizlik taymautidan `codexFirstTurnNoProgressTimeout` orqali kichraytirilgan) — birinchi `status:running` kelganda qurollanadi, birinchi haqiqiy progress faolligida qurolsizlanadi. U Codex burilishni qabul qilib, soʻngra *hech qanday* element, xabar, tool, `turn/completed` yoki xato chiqarmaydigan app-server muvaffaqiyatsizlik holatini ushlaydi. Ishga tushishi `CodexFirstTurnNoProgressMarker` beradi.
+
+Toza tugashda daemon stdin'ni yopadi va codex oʻzicha chiqishi uchun `codexGracefulShutdownTimeout`'gacha (10 s) kutadi — toza chiqish codex'ga oʻzining OTEL batch eksportyorlarini boʻshatishga imkon beradi; faqat u chiqmasa, daemon kontekst-bekor qilish bilan majburiy oʻldiradi. Usage avval JSON-RPC xabarnomalaridan olinadi, Codex sessiya JSONL loglarini skanerlashga qaytish bilan (`scanCodexSessionUsage`).
+
+### ACP (hermes / kimi / kiro)
+
+`hermes.go` `hermes acp`'ni ishga tushiradi (`acp` subbuyrugʻi `hermesBlockedArgs`'da) va env'da `HERMES_YOLO_MODE=1`'ni oʻrnatadi — bu shu dialektning avtonomlik kaliti. Hayot sikli goroutine'i quyidagini bajaradi:
+
+1. `initialize` (`protocolVersion: 1` va `clientCapabilities` bilan). Javobning `agentCapabilities.mcpCapabilities`'i runtime qaysi MCP transportlarini qabul qilishini hal qiladi.
+2. `session/new` (yoki tiklashda `session/resume`) — ikkalasi ham ACP-shaklidagi `mcpServers` massivini olib yuradi. `session/new` `sessionId`'ni qaytaradi.
+3. `session/set_model` `opts.Model` oʻrnatilganda — bu xatoda vazifani MAJBURIY barbod qilishi kerak, aks holda ish jimgina notoʻgʻri modelni ishlatardi.
+4. `session/prompt`, `prompt: [{type:"text", text:<prompt>}]` bilan, soʻngra `PromptResponse`'ni kutish (`stopReason` + usage).
+
+Kiruvchi xabarnomalar `session/update` / `session/notification` xabarlari; `normalizeACPUpdate` + `normalizeACPUpdateType` turli ACP serializatsiyalarini kanonik yangilanish turlariga buklaydi: `agent_message_chunk` → `MessageText`, `agent_thought_chunk` → `MessageThinking`, `tool_call` / `tool_call_update` → tool xabarlari, `usage_update`, va `turn_end`. `streamingCurrentTurn` darvozasi Hermes tiklashda boʻshatadigan tarix-qayta-ijro boʻlaklarini tashlab yuboradi, shunda oldingi javob chiqishga takrorlanmaydi.
+
+ACP oʻzini *agent→klient* yoʻnalishidan ham avtonom saqlaydi: `handleAgentRequest` `session/request_permission`'ga `outcome: "selected", optionId: "approve_for_session"` bilan javob beradi (kimi tomonidan ishlatiladi, u — yolo rejimidagi Hermes'dan farqli oʻlaroq — bularni yuboradi). `isACPSessionNotFound` Hermes (`-32603`), Kiro (`-32603`, tafsiloti `data`'da) va kimi-cli (`-32602`)'ning nomaʼlum sessiyani belgilashining turli usullariga mos keladi, shunda oʻlik tiklangan sessiya id'ni tozalaydi va daemon yangidan qayta urinadi.
+
+ACP runtime'lari bitta muvaffaqiyatsizlik holatini baham koʻradi: asosiy LLM HTTP chaqiruvi 4xx/5xx qaytarganda ham `session/prompt` `stopReason=end_turn`'ni xabar qiladi. `acpProviderErrorSniffer` stderr'ni terminal muvaffaqiyatsizlik belgilariga skanerlaydi, va `promoteACPResultOnProviderError` `completed` → `failed`'ni aylantiradi, shunda daemon yanglish "boʻsh chiqish" oʻrniga haqiqiy sababni yuzaga chiqaradi (#1952).
+
+### MCP yetkazib berish: ACP sessiya parametri
+
+Oila 4 MCP'ni har bir dialekt boʻyicha boshqacha yetkazib beradi. **Codex** agentning `mcp_config`'ini har bir vazifa uchun `$CODEX_HOME/config.toml`'dagi daemon-boshqaruvidagi `[mcp_servers.*]` blokiga moddiylashtiradi (`ensureCodexMcpConfig` / `renderCodexMcpServersBlock`), `0o600`'da yoziladi, chunki `mcp_servers.<id>.env` sirlarni olib yurishi mumkin — argv ularni `ps`'ga va loglarga oqizib yuborardi. **ACP** `mcp_config`'ni ACP'ning `session/new` / `session/resume` kutadigan massiv shakliga oʻgiradi (`buildACPMcpServers`) va uni `mcpServers` **sessiya parametri** sifatida uzatadi, runtime `mcpCapabilities` orqali eʼlon qilmagan masofaviy (http/sse) yozuvlarni tashlab yuborgandan keyin (`filterACPMcpServersByCapability`). Ikkalasi ham bu yerda batafsil yoritilgan: [/developers/agentic/mcp-injection](/developers/agentic/mcp-injection).
+
+## Nega avtonomlik flaglari hamma joyda qattiq belgilab qoʻyilgan
+
+Toʻrtta oilaning hammasida bir xil qaror takrorlanadi: daemon headless va agentlarni jarayonda hech qanday insonsiz ishga tushiradi, shuning uchun har bir backend oʻzining CLI'si promptda hech qachon bloklanmasligi uchun zarur boʻlgan har qanday narsani qattiq belgilab qoʻyadi.
+
+| Oila | Aʼzo(lar) | Avtonomlik mexanizmi |
+|---|---|---|
+| 1 | `claude` / `codebuddy` / `cursor` | `--permission-mode bypassPermissions` flagi + `control_response` `behavior:"allow"` |
+| 2 | `gemini` | `--yolo` flagi |
+| 3 | `opencode` | `--dangerously-skip-permissions` flagi |
+| 4 | `codex` | server-soʻrov javobi `{"decision":"accept"}` / `{"action":"accept"}` |
+| 4 | `hermes` (ACP) | `HERMES_YOLO_MODE=1` env + `session/request_permission` → `approve_for_session` |
+
+Bular Agora daemoni ichida ishlashning ishga tushirish vaqtidagi invariantlari, shuning uchun ular har bir oilaning bloklangan-argumentlar toʻplamida yashaydi (yoki env/RPC darajasida boʻlib, shuning uchun foydalanuvchi uchun umuman yetib boʻlmaydigan). Foydalanuvchining `custom_args`'i ularni oʻchira olmaydi — qarang: `filterCustomArgs` va har bir backend `*BlockedArgs` xaritalari [/developers/agentic/add-a-backend](/developers/agentic/add-a-backend). Bu simvollar uchun nomlash konvensiyalari quyidagiga amal qiladi: [/developers/conventions](/developers/conventions).
+
+## Source files
+
+| Fayl | Ushbu sahifa bogʻliq boʻlgan simvollar |
+|---|---|
+| `server/pkg/agent/claude.go` | `claudeBackend.Execute`, `buildClaudeArgs`, `claudeBlockedArgs`, `buildClaudeInput`, `writeClaudeInput`, `handleControlRequest`, `handleAssistant`, `handleUser`, `claudeSDKMessage`, `writeMcpConfigToTemp`, `filterCustomArgs`, `blockedArgMode`, `closeStdin`, `resolveSessionID` |
+| `server/pkg/agent/gemini.go` | `geminiBackend.Execute`, `buildGeminiArgs`, `geminiBlockedArgs`, `geminiStreamEvent`, `buildGeminiEnv`, `accumulateUsage` |
+| `server/pkg/agent/opencode.go` | `opencodeBackend.Execute`, `opencodeBlockedArgs`, `processEvents`, `opencodeEvent`, `handleToolUseEvent`, `handleErrorEvent`, `resolveOpenCodeNativeFromShim` |
+| `server/pkg/agent/openclaw.go` | `openclawBackend.Execute`, `buildOpenclawArgs`, `openclawBlockedArgs`, `processOutput`, `parseWholeBufferOpenclawResult`, `checkOpenclawVersion`, `minOpenclawVersion`, `openclawNoParseableOutput` |
+| `server/pkg/agent/codex.go` | `codexBackend.Execute`, `buildCodexArgs`, `codexBlockedArgs`, `codexClient.request`, `handleServerRequest`, `startOrResumeThread`, `ensureCodexMcpConfig`, `renderCodexMcpServersBlock`, `CodexSemanticInactivityMarker`, `CodexFirstTurnNoProgressMarker`, `defaultCodexSemanticInactivityTimeout`, `defaultCodexFirstTurnNoProgressTimeout`, `codexGracefulShutdownTimeout`, `scanCodexSessionUsage` |
+| `server/pkg/agent/hermes.go` | `hermesBackend.Execute`, `hermesBlockedArgs`, `hermesClient.request`, `handleAgentRequest`, `buildACPMcpServers`, `buildHermesSessionParams`, `normalizeACPUpdate`, `isACPSessionNotFound`, `extractACPMcpCapabilities`, `filterACPMcpServersByCapability`, `acpProviderErrorSniffer`, `promoteACPResultOnProviderError` |
+
+**Bir-xil-PR drift qoidasi:** agar yuqorida hujjatlashtirilgan biror simvol, flag, freym maydoni, bloklangan-argument nomi yoki taymaut konstantasi koʻchsa yoki oʻzgarsa, ushbu sahifani **va** uning `references/protocol-families-source-map.md` sidecarini ayni PR'da yangilang. Bular manbaga-bogʻlangan kontraktlar; agar kod koʻchsa-yu sahifa koʻchmasa, u jimgina eskirgan transportni oʻrgatadi.

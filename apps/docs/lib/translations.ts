@@ -16,12 +16,38 @@ export const uiTranslations: Partial<Record<Lang, Partial<Translations>>> = {
     chooseTheme: "切换主题",
     editOnGithub: "在 GitHub 上编辑",
   },
+  ru: {
+    search: "Поиск",
+    searchNoResult: "Ничего не найдено",
+    toc: "Содержание",
+    tocNoHeadings: "Нет разделов",
+    lastUpdate: "Последнее обновление",
+    chooseLanguage: "Выберите язык",
+    nextPage: "Следующая",
+    previousPage: "Предыдущая",
+    chooseTheme: "Сменить тему",
+    editOnGithub: "Редактировать на GitHub",
+  },
+  uz: {
+    search: "Qidirish",
+    searchNoResult: "Hech narsa topilmadi",
+    toc: "Mundarija",
+    tocNoHeadings: "Boʻlimlar yoʻq",
+    lastUpdate: "Oxirgi yangilanish",
+    chooseLanguage: "Tilni tanlang",
+    nextPage: "Keyingi",
+    previousPage: "Oldingi",
+    chooseTheme: "Mavzuni almashtirish",
+    editOnGithub: "GitHub'da tahrirlash",
+  },
 };
 
 // Display name shown in the LanguageToggle dropdown.
 export const localeLabels: Record<Lang, string> = {
   en: "English",
   zh: "简体中文",
+  ru: "Русский",
+  uz: "Oʻzbekcha",
 };
 
 // Copy for the welcome page (Hero + Byline). Pages are translated as MDX;
@@ -38,5 +64,17 @@ export const homeCopy = {
     titleLead: "人与智能体，",
     titleAccent: "共处一方。",
     byline: ["开始使用", "2026 年 4 月更新", "阅读约 6 分钟"],
+  },
+  ru: {
+    eyebrow: "Документация Agora",
+    titleLead: "Люди и агенты —",
+    titleAccent: "в одном месте.",
+    byline: ["Начало работы", "Обновлено в апреле 2026", "6 мин чтения"],
+  },
+  uz: {
+    eyebrow: "Agora hujjatlari",
+    titleLead: "Odamlar va agentlar —",
+    titleAccent: "bir joyda.",
+    byline: ["Boshlash", "2026-yil aprelda yangilangan", "6 daqiqa oʻqish"],
   },
 } as const satisfies Record<Lang, unknown>;

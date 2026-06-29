@@ -1,0 +1,199 @@
+---
+title: Models and Thinking
+description: How the daemon discovers per-provider model catalogs and reasoning-effort levels, and how it validates and resolves them before execution.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Audience">
+For **both** developers and agents. Read this to understand how a model and a thinking level travel from `agent.model` / `agent.thinking_level` through discovery, two-gate validation, and into the CLI invocation. Pairs with [provider-matrix-internals](/developers/agentic/provider-matrix-internals) (the per-provider flag table), [protocol-families](/developers/agentic/protocol-families) (CLI vs ACP transports), [add-a-backend](/developers/agentic/add-a-backend), and the [agent-runtime-contract](/developers/agentic/agent-runtime-contract).
+</Callout>
+
+Everything on this page lives in two files under `server/pkg/agent/` (`models.go`, `thinking.go`) plus the assembly site in `server/internal/daemon/daemon.go`. The daemon runs on the user's machine where the provider CLIs are installed, so it — not the server — is the only place that can ask a CLI what it actually supports.
+
+## The data model
+
+A provider's catalog is a slice of `Model`. Each entry optionally carries a `*ModelThinking`, which in turn holds a list of `ThinkingLevel`.
+
+```go
+type Model struct {
+	ID       string
+	Label    string
+	Provider string
+	Default  bool
+	Free     bool
+	Category string
+	Thinking *ModelThinking
+}
+
+type ModelThinking struct {
+	SupportedLevels []ThinkingLevel
+	DefaultLevel    string
+}
+
+type ThinkingLevel struct {
+	Value       string
+	Label       string
+	Description string
+}
+```
+
+Key semantics, copied from the field doc comments:
+
+- `Default` is a **display hint only**. It badges the entry a runtime advertises as its preferred pick (Claude Code's shipped default, hermes' `currentModelId`). It has **no effect at execution time** — when `agent.model` is empty the daemon passes `""` so each provider's own CLI resolves its own default.
+- `Free` and `Category` are **branding only** (the Agora free-model overlay, see below). They don't change which ID is shipped to the CLI.
+- `Thinking == nil` means "this runtime/model has no thinking control, or the daemon couldn't discover one" — the UI hides the picker. The catalog is **per-model** because Codex's `codex debug models` is per-model and Claude's `--effort` superset has per-model gaps (`xhigh` is Opus-only, `max` is session-only — see MUL-2339).
+- `ModelThinking.SupportedLevels` values are **runtime-native** and rendered as-is. Codex emits `none|minimal|low|medium|high|xhigh`; Claude emits `low|medium|high|xhigh|max`. They are deliberately **not** flattened onto a shared enum.
+- `ThinkingLevel.Value` is the literal token passed to the CLI (Claude `--effort <value>`, Codex `model_reasoning_effort=<value>`).
+
+## ListModels: three discovery strategies
+
+`ListModels(ctx, providerType, executablePath)` switches on `providerType` and routes each provider to exactly one of three strategies. `executablePath` lets the caller point at a non-default binary; `""` uses the provider's default name on PATH.
+
+<Mermaid chart={`flowchart TD
+  A["ListModels(providerType, executablePath)"] --> B{providerType}
+  B -->|claude| C["claudeStaticModels() + annotateClaudeThinking"]
+  B -->|codex| D["codexStaticModels() + annotateCodexThinking"]
+  B -->|gemini| E["geminiStaticModels()"]
+  B -->|cursor / copilot / hermes / kimi / kiro / opencode / pi / openclaw / antigravity / codebuddy| F["cachedDiscovery(key, fn)"]
+  F --> G["CLI text/JSON parse (opencode, pi, cursor, antigravity, openclaw, codebuddy)"]
+  F --> H["discoverACPModels: initialize + session/new (hermes, kimi, kiro, copilot)"]
+`} />
+
+### 1. Static catalogs — claude, codex, gemini
+
+`claudeStaticModels()`, `codexStaticModels()`, and `geminiStaticModels()` return baked-in `[]Model`. These are the values each CLI's `--model` flag accepts. For example, `claudeStaticModels()` defaults to `claude-sonnet-4-6` (Sonnet is the workhorse; Opus is reserved for advisor flows). Gemini is static because the Gemini CLI has **no** `models list` subcommand — instead it exposes the CLI's own aliases (`auto`, `pro`, `flash`, `flash-lite`, the `auto-gemini-*` family) so new releases light up without an Agora redeploy.
+
+Claude and codex are static **for the model list** but augmented with dynamic thinking discovery (next section).
+
+### 2. Dynamic CLI discovery — text/JSON parsing
+
+`antigravity`, `cursor`, `copilot`, `hermes`, `kimi`, `kiro`, `opencode`, `pi`, `openclaw`, and `codebuddy` route through `cachedDiscovery(key, fn)`. The `fn` shells out to the CLI and parses its output:
+
+- **`discoverOpenCodeModels`** runs `opencode models --verbose`, parses `provider/model` rows plus per-model JSON metadata. A model's `variants` become thinking levels (projected through `opencode run --variant`). On empty verbose output it retries the plain `opencode models`. Timeout is `15 * time.Second` because newer opencode syncs a hosted free-model catalog over the network (~6s).
+- **`discoverPiModels`** runs `pi --list-models`, normalizing both legacy `provider:model` and the newer multi-column table to `provider/model`. `isPiDiscoveryNoise` filters diagnostic lines so prose isn't coined into bogus models.
+- **`discoverCursorModels`** runs `cursor-agent --list-models` (`id - Label` rows), falling back to `cursorStaticModels()` (just `auto`) when the binary is missing or output is empty.
+- **`discoverAntigravityModels`** runs `agy models` — one display name per line, where the name **is** the `--model` value. Deliberately **no** static fallback: `agy` silently no-ops on unrecognized `--model` values, so a guessed list would risk a typo turning into a "successful" empty run.
+- **`discoverOpenclawAgents`** enumerates pre-registered agents (`openclaw agents list --json`, then text fallback) — in OpenClaw, model selection lives at the agent level.
+- **`discoverCodebuddyModels`** parses `codebuddy --help` via `codebuddyModelRe`, falling back to `codebuddyStaticModels()`; it also runs `annotateCodebuddyThinking`.
+
+### 3. ACP-handshake discovery — discoverACPModels
+
+`hermes`, `kimi`, `kiro`, and `copilot` discover their catalog by speaking the Agent Client Protocol. They funnel through one shared helper, `discoverACPModels(ctx, executablePath, p acpDiscoveryProvider)`, configured per provider via `acpDiscoveryProvider` (`defaultBin`, `clientName`, `extraEnv`, `tmpdirPrefix`, `acpArgs`).
+
+The helper spawns a throwaway ACP process and drives the minimal handshake:
+
+1. Send `initialize` (jsonrpc id `1`).
+2. Send `session/new` (id `2`) with a temp `cwd` (not the daemon workdir — that might be mid-task) and an empty `mcpServers`.
+3. Read responses until the id `2` result arrives, then call `parseACPSessionNewModels`.
+
+`parseACPSessionNewModels` extracts the `models.availableModels` / `models.currentModelId` block (it tolerates both camelCase and snake_case keys), sets `Default` on the entry whose `modelId == currentModelId`, and returns `nil` (not an empty slice) when the structure is absent so the caller can distinguish "no models" from "couldn't parse". The argv that puts the binary in ACP mode varies: most use `acp`, Copilot uses `--acp` (set via `acpArgs`). `copilotStaticModels()` is the fallback when the handshake fails; `inferCopilotProvider` tags vendor from the ID prefix because the ACP payload omits it.
+
+### The Agora free-model overlay
+
+After opencode discovery, `annotateAgoraFree(models)` overlays Agora branding onto any discovered model whose ID is a key in `agoraFreeModels` (e.g. `zhipuai/glm-4.5-flash`, `z-ai/glm-4.5-flash`). It rewrites `Label`, regroups under provider `"Agora"`, sets `Free = true`, and tags `Category`. This is **branding only** — the model still executes as its underlying opencode/Ollama ID, and the overlay never invents an entry the runtime can't run, so "dynamic discovery is truth" holds.
+
+## Two caches with different lifetimes
+
+### modelCache — 60s, non-empty only
+
+`cachedDiscovery` memoizes discovery results in `modelCache` for `modelCacheTTL = 60 * time.Second`. Two rules matter:
+
+- **It never caches an empty result.** Zero models is almost always a transient failure (CLI timeout, not-logged-in, network blip). Caching it would keep the picker blank for the full TTL even after the cause clears; skipping the cache lets the next request retry immediately (#3729).
+- The cache key is `providerType` for most providers. Only opencode uses `discoveryCacheKey(providerType, executablePath)` (which appends `:executablePath` when non-empty) so a non-default binary path doesn't collide with the default.
+
+### thinkingCache — 10 min, keyed on (provider, path, cliVersion)
+
+Thinking-level discovery (Claude/Codex/CodeBuddy) caches in `thinkingCache` for `thinkingDiscoveryTTL = 10 * time.Minute`. The key is the struct `thinkingCacheKey{provider, executablePath, cliVersion}`. The `cliVersion` component (from `DetectVersion`) is load-bearing: **bumping the local CLI invalidates the entry**, which is exactly the failure mode hit when Anthropic/OpenAI add or remove a level. `resetThinkingCacheForTests` is the only invalidation hook outside the TTL; production relies on TTL or process restart.
+
+## Thinking discovery per provider
+
+| Provider | Discovery source | How levels are derived |
+| --- | --- | --- |
+| claude | `claude --help` `--effort` line | `claudeEffortSuperset` parses the superset via `claudeEffortRe`, then `projectClaudeLevels` filters per model through `claudeModelEffortAllow`. `DefaultLevel` is hard-set to `"medium"`. |
+| codex | `codex debug models --bundled` (JSON) | `parseCodexDebugModels` reads per-model `supported_reasoning_levels` + `default_reasoning_level`. `--bundled` skips a network refresh. |
+| opencode | `opencode models --verbose` variants | `annotateOpenCodeModelMetadata` projects model `variants` into levels (only when `reasoning` is true or variants look reasoning-like). |
+| codebuddy | `codebuddy --help` `--effort` line | `codebuddyEffortSuperset` (no `max`); all models share the same set, `DefaultLevel` `"medium"`. |
+
+Claude's parse path has graded fallbacks: on a CLI error, `claudeStaticEffortFallback` = `{"low", "medium", "high"}`; on a help-format drift (regex misses), `claudeStaticEffortFullSuperset` = `{"low", "medium", "high", "xhigh", "max"}` — it prefers to **over-offer and let the CLI reject** rather than artificially block. New tokens the daemon hasn't been taught get a `strings.Title`-cased label and are surfaced raw.
+
+For codex, when discovery fails, `loadCodexThinkingByModel` caches the **empty** map so repeated UI polls don't re-shell a missing binary; the TTL eventually retries.
+
+All four annotators absorb errors silently: a missing CLI leaves `Thinking == nil` on each entry, which the UI reads as "no picker for this model" rather than blocking model selection.
+
+## Two-gate thinking-level validation
+
+A persisted `thinking_level` is checked at two different layers with two different functions. The split is deliberate (MUL-2339): the **server** has no local CLI binaries, so it can only do a cheap enum check; the **daemon** has the binaries, so it does the live per-model catalog check.
+
+### Gate 1 — IsKnownThinkingValue (cheap enum, server-side)
+
+`IsKnownThinkingValue(providerType, value)` is the synchronous gate the server uses on `CreateAgent` / `UpdateAgent`. It does **not** consult the live catalog or any per-model subset:
+
+- Empty `value` is always accepted (means "use runtime default").
+- `opencode` accepts any well-formed variant name via `isValidOpenCodeVariantName` (≤64 chars, identifier-safe, no leading separator) — because opencode's `--variant` values come from the local catalog and custom `opencode.json` can define new ones.
+- Every other provider is looked up in `providerThinkingEnums`. Only `claude`, `codex`, and `codebuddy` have entries. **A provider with no entry accepts only the empty string** — that is how "this runtime has no thinking concept" is expressed. These lists are deliberately permissive: a "known token in this runtime's universe" check, not a "right level for this model" check. Always 400 on literal-invalid.
+
+### Gate 2 — ValidateThinkingLevel (per-(model,provider) catalog, daemon-side)
+
+`ValidateThinkingLevel(ctx, providerType, executablePath, model, value)` is the per-model guard. Empty `value` is always valid. Otherwise it calls `ListModels` (so it sees the **current** CLI catalog, including dynamic codex discovery) and:
+
+- If `model == ""`, it resolves the catalog's `Default`-flagged entry. If none is flagged: for `opencode` it falls back to `anyModelSupportsThinkingValue` (any model supports the value); for every other provider it returns `false` (fail closed — unknown model rather than guessing).
+- It then finds the target model and checks whether `value` is in `m.Thinking.SupportedLevels`. `m.Thinking == nil` → `false`.
+
+Crucially, when gate 2 says invalid, the daemon **does not fail the task** — it logs a warning and drops the level. See the next section.
+
+<Callout title="Why two gates">
+The server gate fails **closed** with a 400 on a literally-invalid token (never auto-clears a combination-invalid value from persisted agent state). The daemon gate fails **soft** on a combination-invalid token (logs and skips injection). This keeps API behaviour consistent: always 400 on literal-invalid, never auto-clear on combination-invalid.
+</Callout>
+
+## Assembly in daemon.go
+
+When the daemon prepares a task it assembles `agent.ExecOptions`. The relevant resolution, all in `daemon.go`:
+
+**Model — the no-static-default rule.** Two-tier resolution: `task.Agent.Model` wins if set, else the daemon-wide `entry.Model` (from `AGORA_<PROVIDER>_MODEL`). If both are empty, the daemon deliberately passes `model = ""` through to `ExecOptions.Model`, so each backend **omits `--model`** and the provider picks its own default. The code comment is explicit that baking a Go-side "recommended default" is how the cursor regression happened — static guesses drift from whatever the upstream CLI accepts.
+
+**Thinking — validate then inject.** `thinkingLevel` is read from `task.Agent.ThinkingLevel`. If non-empty, the daemon calls `agent.ValidateThinkingLevel(ctx, provider, entry.Path, model, thinkingLevel)`:
+
+- On a lookup **error** it logs `"thinking_level: catalog lookup failed; passing through"` and keeps the level (fail **open** — let the CLI surface any objection).
+- On `ok == false` it logs `"thinking_level: not valid for this (provider, model); skipping injection"` and sets `thinkingLevel = ""`.
+
+The validated `model` and `thinkingLevel` are then placed into `agent.ExecOptions{ Model: model, ThinkingLevel: thinkingLevel, ... }`.
+
+<Mermaid chart={`sequenceDiagram
+  participant T as task.Agent
+  participant D as daemon.go
+  participant V as ValidateThinkingLevel
+  participant E as ExecOptions
+  T->>D: Model, ThinkingLevel
+  D->>D: model = Agent.Model || entry.Model || ""
+  alt thinkingLevel != ""
+    D->>V: validate(provider, path, model, level)
+    V-->>D: ok / err
+    Note over D: err -> keep level (pass through)<br/>!ok -> drop level (log + skip)
+  end
+  D->>E: ExecOptions{Model, ThinkingLevel}
+`} />
+
+## ModelSelectionSupported is always true
+
+`ModelSelectionSupported(providerType)` returns `true` unconditionally — every built-in provider now honours `opts.Model` end-to-end. The daemon still surfaces it in the model-list response (`"supported": agent.ModelSelectionSupported(rt.Provider)`); the hook is retained rather than inlined so a future model-less runtime can opt out in one place (rendering a disabled "Managed by runtime" picker).
+
+But **"supported" does not mean "same meaning everywhere."** `agent.model` is a different identifier per provider:
+
+- Claude / Codex / Cursor / Gemini / Copilot / Kimi / Kiro / OpenCode / Pi / Antigravity pass it via a flag or session config (Antigravity gained `--model` in agy 1.0.6, MUL-3125).
+- Hermes routes it through the ACP `session/set_model` RPC before each prompt.
+- For OpenClaw, `agent.model` is an **agent id** (`openclaw agent --agent <id>`), not a model name — discovery enumerates agents because that is where model binding lives in OpenClaw.
+- For Antigravity, the value is the human display string (e.g. `Claude Opus 4.6 (Thinking)`), shipped verbatim.
+
+So a value that is a clean model slug for one provider is a routing key or a display label for another. Treat `agent.model` as an opaque provider-scoped identifier, not a portable model name.
+
+## Source files
+
+| File | Symbols this page depends on |
+| --- | --- |
+| `server/pkg/agent/models.go` | `Model`, `ModelThinking`, `ThinkingLevel`, `ListModels`, `ModelSelectionSupported`, `cachedDiscovery`, `modelCache`, `modelCacheTTL`, `discoveryCacheKey`, `claudeStaticModels`, `codexStaticModels`, `geminiStaticModels`, `cursorStaticModels`, `copilotStaticModels`, `discoverOpenCodeModels`, `discoverPiModels`, `discoverCursorModels`, `discoverAntigravityModels`, `discoverOpenclawAgents`, `discoverCodebuddyModels`, `codebuddyStaticModels`, `discoverHermesModels`, `discoverKimiModels`, `discoverKiroModels`, `discoverCopilotModels`, `acpDiscoveryProvider`, `discoverACPModels`, `parseACPSessionNewModels`, `inferCopilotProvider`, `agoraFreeModels`, `annotateAgoraFree` |
+| `server/pkg/agent/thinking.go` | `thinkingCacheKey`, `thinkingCacheEntry`, `thinkingDiscoveryTTL`, `thinkingCache`, `resetThinkingCacheForTests`, `claudeEffortRe`, `claudeModelEffortAllow`, `claudeStaticEffortFallback`, `claudeStaticEffortFullSuperset`, `annotateClaudeThinking`, `claudeEffortSuperset`, `projectClaudeLevels`, `codexDebugModelsArgs`, `parseCodexDebugModels`, `annotateCodexThinking`, `annotateCodebuddyThinking`, `codebuddyEffortSuperset`, `providerThinkingEnums`, `IsKnownThinkingValue`, `isValidOpenCodeVariantName`, `ValidateThinkingLevel`, `anyModelSupportsThinkingValue` |
+| `server/internal/daemon/daemon.go` | `agent.ListModels` (model-list response), `agent.ModelSelectionSupported`, `agent.ValidateThinkingLevel`, `agent.ExecOptions` (`Model`, `ThinkingLevel`), `task.Agent.Model`, `task.Agent.ThinkingLevel`, `entry.Model` |
+
+**Drift rule:** any change to a symbol, flag, field, or value listed above — renaming a function, adding a provider case to `ListModels`, changing a TTL constant, altering a `providerThinkingEnums` set, or moving the model-resolution logic in `daemon.go` — must update this page **and** its `models-and-thinking-source-map.md` sidecar in the same PR.

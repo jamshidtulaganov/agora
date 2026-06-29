@@ -1,0 +1,242 @@
+---
+title: Add a Backend
+description: server/pkg/agent ichida yangi CLI agent backendini roʻyxatdan oʻtkazish boʻyicha bosqichma-bosqich qoʻllanma — struct, switch, ishga tushirish sarlavhasi, model katalogi va majburiy subprocess boilerplate kodi.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Auditoriya">
+**ikkalasi ham.** Bu sahifa `server/pkg/agent/` ga yangi coding-agent CLI qoʻshish boʻyicha aniq nazorat roʻyxati. U backend muhandislari uchun ham, runtime qatlamida ishlayotgan agentlar uchun ham yozilgan. Avval [/developers/agentic/backend-interface](/developers/agentic/backend-interface) ni oʻqing — bu sahifa nazarda tutgan `Backend`/`Session` shartnomasi shu yerda, soʻngra CLI'ngiz qaysi transport oilasiga tegishli ekanini bilish uchun [/developers/agentic/protocol-families](/developers/agentic/protocol-families), va 4-bosqichda hamda ixtiyoriy boʻlimlarda havola qilingan model-katalogi va reasoning-effort sirtlari uchun [/developers/agentic/models-and-thinking](/developers/agentic/models-and-thinking) ni oʻqing. Nomlash va paket-chegarasi qoidalari: [/developers/conventions](/developers/conventions).
+</Callout>
+
+Bu yerda **plagin reestri yoʻq.** Yangi backend `agent.New` ichidagi switch'ni qoʻlda tahrirlash va bir nechta paket darajasidagi map'larga yozuvlar qoʻshish orqali ulanadi. Bu ataylab shunday qilingan — qoʻllab-quvvatlanadigan CLI'lar toʻplami kichik, auditdan oʻtgan va versiyaga bogʻlangan, shuning uchun kompilyatsiya vaqtidagi switch runtime reestridan ustun turadi. Ishning hammasi: bitta `xxx.go` faylini yozish, uni toʻrtta joyga qoʻshish va (ixtiyoriy) versiya darvozasi hamda thinking-level aniqlanishiga u haqda oʻrgatish.
+
+`gemini.go` ni **minimal shablon** sifatida ishlating (stdout'dan NDJSON oʻqiydigan bir martalik subprocess), `claude.go` ni esa **toʻliq maʼlumotnoma** sifatida (stdin protokoli, MCP konfiguratsiyasini inʼektsiya qilish, control-request avto-tasdiqlash, stderr quyrugʻi, session-resume hal qilish).
+
+## Ish xaritasi
+
+<Mermaid chart={`flowchart TD
+  A["Step 1: xxx.go\nxxxBackend struct + Execute"] --> B["Step 2: agent.New switch\n+ error string list"]
+  B --> C["Step 3: launchHeaders entry"]
+  C --> D["Step 4: ListModels case\nstatic catalog OR discoverXxx"]
+  D --> E["Optional: MinVersions\nthinking discovery"]
+`} />
+
+## 1-bosqich — backend struct va `Execute` bilan `xxx.go` yarating
+
+Har bir backend faqat bitta `Config` ni saqlovchi struct boʻlib, `Backend` interfeysini qanoatlantiruvchi metodga ega:
+
+```go
+type Backend interface {
+	Execute(ctx context.Context, prompt string, opts ExecOptions) (*Session, error)
+}
+```
+
+Minimal shakl (`geminiBackend` asosida modellashtirilgan):
+
+```go
+type xxxBackend struct {
+	cfg Config
+}
+
+func (b *xxxBackend) Execute(ctx context.Context, prompt string, opts ExecOptions) (*Session, error) {
+	execPath := b.cfg.ExecutablePath
+	if execPath == "" {
+		execPath = "xxx"
+	}
+	if _, err := exec.LookPath(execPath); err != nil {
+		return nil, fmt.Errorf("xxx executable not found at %q: %w", execPath, err)
+	}
+
+	timeout := opts.Timeout
+	runCtx, cancel := runContext(ctx, timeout)
+
+	args := buildXxxArgs(prompt, opts, b.cfg.Logger)
+	cmd := exec.CommandContext(runCtx, execPath, args...)
+	hideAgentWindow(cmd)
+	cmd.WaitDelay = 10 * time.Second
+	if opts.Cwd != "" {
+		cmd.Dir = opts.Cwd
+	}
+	cmd.Env = buildEnv(b.cfg.Env)
+	// ... wire stdout pipe, start, spawn the reader goroutine, return *Session ...
+}
+```
+
+Vaqtlash shartnomasi muzokara qilinmaydi va [backend-interface](/developers/agentic/backend-interface) da yashaydi: `Execute` tezda nil boʻlmagan `*Session` qaytaradi, soʻngra CLI goroutine'lar ichida ishlaydi. Qaytarilgan `error` ishga tushirish hech qachon boshlanmaganini va `*Session` ning `nil` ekanini bildiradi.
+
+### `Config` va goroutine sizga nimani beradi
+
+`Config` `ExecutablePath`, `Env` (`map[string]string`) va `Logger` (`*slog.Logger`) ni olib yuradi. Oʻquvchi goroutine `output strings.Builder`, `sessionID`, `"completed"` dan boshlanadigan `finalStatus`, `finalError` va `usage map[string]TokenUsage` ni jamlaydi, soʻngra ikkala kanalni yopishdan oldin `resCh` ga aynan bitta `Result` yuboradi.
+
+`Result.Status` quyidagilardan biri: `"completed"`, `"failed"`, `"aborted"`, `"timeout"`, `"cancelled"`. Backend'lardan soʻzma-soʻz koʻchirilgan standart `cmd.Wait()` dan keyingi moslash qaysi biri qoʻllanishini hal qiladi:
+
+```go
+if runCtx.Err() == context.DeadlineExceeded {
+	finalStatus = "timeout"
+	finalError = fmt.Sprintf("xxx timed out after %s", timeout)
+} else if runCtx.Err() == context.Canceled {
+	finalStatus = "aborted"
+	finalError = "execution cancelled"
+} else if waitErr != nil && finalStatus == "completed" {
+	finalStatus = "failed"
+	finalError = fmt.Sprintf("xxx exited with error: %v", waitErr)
+}
+```
+
+Striming hodisalarini `MessageType` konstantalari (`MessageText`, `MessageThinking`, `MessageToolUse`, `MessageToolResult`, `MessageStatus`, `MessageError`, `MessageLog`) yordamida `trySend(msgCh, Message{...})` orqali chiqaring. Kanal toʻla boʻlsa `trySend` xabarni tashlab yuboradi — yakuniy matn `Result.Output` da `output` dan qayta tiklanadi, shuning uchun faqat jonli striming isteʼmolchilari taʼsirlanadi.
+
+## 2-bosqich — `agent.New` switch'ida roʻyxatdan oʻtkazing (ikkita tahrir)
+
+`New(agentType string, cfg Config) (Backend, error)` qoʻlda tahrirlangan switch. `default` xato satridagi **ham** case'ni **ham** qoʻllab-quvvatlanadigan turlar roʻyxatini qoʻshing — ular bir xil funksiya ichidagi ikki alohida tahrir va CI ularni siz uchun sinxron saqlovchi hech narsaga ega emas:
+
+```go
+case "xxx":
+	return &xxxBackend{cfg: cfg}, nil
+```
+
+```go
+default:
+	return nil, fmt.Errorf("unknown agent type: %q (supported: claude, codebuddy, codex, copilot, opencode, openclaw, hermes, gemini, pi, cursor, kimi, kiro, antigravity, xxx)", agentType)
+```
+
+<Callout title="Bitta emas, ikkita tahrir">
+Ikkinchi tahrirni unutish — ishlaydigan, ammo xato xabari qoʻllab-quvvatlanadigan toʻplam haqida yolgʻon gapiradigan backend'ni yetkazib beradi. `New` dagi paket hujjat izohini (`// Supported types:` satrini) va `agent.go` yuqorisidagi paket darajasidagi izohni shu oʻzgarish ichida yangilang, toki hujjatlashtirilgan roʻyxat haqqoniy qolsin.
+</Callout>
+
+## 3-bosqich — `launchHeaders` yozuvini qoʻshing
+
+`launchHeaders` — `map[string]string` boʻlib, har bir agent turini foydalanuvchiga koʻrinadigan ishga tushirish skeletiga — buyruq plyus subbuyruq yoki qisqa rejim yorligʻiga — moslashtiradi, daemon buni render qiladi, toki foydalanuvchilar ularning `custom_args` nimaga qoʻshilishini tushunsin. U ataylab minimal: ichki bayroqlar, transport qiymatlari yoki env oʻzgaruvchilari yoʻq.
+
+```go
+var launchHeaders = map[string]string{
+	// ...
+	"xxx": "xxx run (stream-json)",
+}
+```
+
+`LaunchHeader(agentType)` yozuvni qaytaradi, yoki nomaʼlum tur uchun `""` qaytaradi. Yetishmayotgan yozuv qulash emas — u shunchaki boʻsh oldindan koʻrish render qiladi, shuning uchun buni tashlab oʻtmang.
+
+## 4-bosqich — `ListModels` case'ini qoʻshing
+
+`ListModels(ctx, providerType, executablePath string) ([]Model, error)` — ikkinchi qoʻlda tahrirlangan switch (`models.go` da), uning `default` i `unknown agent type: %q` qaytaradi. Ikki shakldan birini tanlang:
+
+### Statik katalog
+
+Agar CLI'da `models list` buyrugʻi boʻlmasa, ichki oʻrnatilgan `[]Model` yetkazib bering. `geminiStaticModels` ga ergashing:
+
+```go
+case "xxx":
+	return xxxStaticModels(), nil
+```
+
+`Model` — bu `{ID, Label, Provider, Default, Free, Category, Thinking}`. `Default` — bu **faqat koʻrsatish maslahati** — nishonli yozuv. Uning bajarish vaqtida **hech qanday taʼsiri yoʻq**: `agent.model` boʻsh boʻlganda daemon backend'ga `""` uzatadi va CLI oʻzining standart qiymatini hal qiladi. Statik roʻyxatlarni qisqa va dolzarb saqlang.
+
+### Dinamik aniqlash
+
+Agar CLI modellarni sanab oʻta olsa, `discoverXxxModels(ctx, executablePath)` yozing va uni `cachedDiscovery` ga oʻrang (`modelCacheTTL` orqali 60s TTL, `providerType` boʻyicha kalitlangan; boʻsh natijalar hech qachon keshlanmaydi, shuning uchun oʻtkinchi nosozlik darhol qayta urinadi):
+
+```go
+case "xxx":
+	return cachedDiscovery(providerType, func() ([]Model, error) {
+		return discoverXxxModels(ctx, executablePath)
+	})
+```
+
+`discoverXxxModels` ichida: yoʻlni standart qilish, `exec.LookPath` himoyasi (yetishmaganda xato emas, boʻsh roʻyxat qaytaring, toki UI qoʻlda kiritishga qaytsin), `context.WithTimeout` (15s tarmoqqa asoslangan aniqlash yoʻllariga mos keladi), `hideAgentWindow(cmd)`, soʻngra `cmd.Output()` ni parse qiling. ACP'da soʻzlashuvchi CLI'lar uchun (`availableModels`/`currentModelId` ni eʼlon qiluvchi `initialize` + `session/new`), siklni takrorlamang — `acpDiscoveryProvider` qoʻshing va `discoverACPModels` ni chaqiring, xuddi `discoverHermesModels`, `discoverKimiModels` va `discoverKiroModels` qilgani kabi.
+
+`ModelSelectionSupported` hozircha shartsiz `true` qaytaradi; agar runtime'ingiz haqiqatan ham modelsiz boʻlsagina unga tegasiz.
+
+## Ixtiyoriy — `MinVersions`
+
+Agar CLI'ngiz siz tayanadigan protokolni maʼlum versiyada olgan boʻlsa, `MinVersions` yozuvini qoʻshing (`version.go` da). Roʻyxatdan oʻtkazish `CheckMinVersion(agentType, detectedVersion)` ni ishga tushiradi, bu tur map'da yoʻq boʻlganda hech narsa qilmaydi, aks holda esa pol qiymatidan past daemon'larni rad etadi:
+
+```go
+var MinVersions = map[string]string{
+	"claude":  "2.0.0",
+	"codex":   "0.100.0",
+	"copilot": "1.0.0",
+	"xxx":     "1.2.0", // <feature> added in 1.2.0
+}
+```
+
+Versiyani aniqlashning oʻzi (`DetectVersion` → `detectCLIVersion` → `extractVersionLine`) CLI'ngizni allaqachon ishlaydi — u `xxx --version` ni ishga tushiradi va birinchi semver shaklidagi satrni ajratib oladi, shell shovqinini hisobga olib.
+
+## Ixtiyoriy — thinking-level aniqlash
+
+Agar CLI'ngiz reasoning/effort boshqaruvini ochsa, uni `Model.Thinking` sifatida (`SupportedLevels []ThinkingLevel` va ixtiyoriy `DefaultLevel` bilan `*ModelThinking`) yuzaga chiqaring. Tanlovchi tanlangan qiymatni `opts.ThinkingLevel` sifatida qaytaradi, uni esa siz **faqat CLI'ning oʻz bayrogʻi orqali** inʼektsiya qilasiz.
+
+`thinking.go` da ikki aniqlash uslubi bor, ikkalasi ham `(provider, executablePath, cliVersion)` boʻyicha `thinkingDiscoveryTTL` (10 daqiqa) uchun keshlanadi:
+
+- **`--help` ni parse qilish** — Claude (`claudeEffortRe` `--effort` qiymatlar roʻyxatini ajratib oladi) va CodeBuddy (`codebuddyEffortRe`). Buni level toʻplami yordam matnida joylashgan boʻlganda ishlating.
+- **Strukturali subbuyruq** — Codex (`codex debug models --bundled`, `parseCodexDebugModels` tomonidan parse qilinadi). CLI har bir model uchun JSON katalog chiqarganda buni afzal koʻring.
+
+Annotatoringizni `ListModels` case'iga ulang (`annotateClaudeThinking` / `annotateCodexThinking` / `annotateCodebuddyThinking` — shablonlar), va provayderingizning belgilangan lugʻatini `providerThinkingEnums` ga qoʻshing, toki serverning sinxron `IsKnownThinkingValue` darvozasi saqlangan qiymatlarni qabul qilsin. Aniqlash nosozliklari `Thinking == nil` ni qoldirishi shart — UI shunda shunchaki tanlovchini yashiradi.
+
+## Majburiy boilerplate nazorat roʻyxati
+
+Har bir nazorat qiluvchi backend bir xil primitivlarni ulaydi. Bittasini oʻtkazib yuborsangiz, mavjud backend'lar allaqachon tuzatgan xatoni qayta kiritasiz.
+
+| Primitiv | Nima uchun | Manba |
+| --- | --- | --- |
+| `exec.LookPath(execPath)` himoyasi | Tushunarsiz exec nosozligi oʻrniga toza "executable not found" xatosini qaytarish. | `claude.go`, `gemini.go` |
+| `runContext(ctx, opts.Timeout)` | `Timeout > 0` ⇒ qatʼiy muddat; `<= 0` ⇒ **muddat yoʻq**, tiriklik daemon'ning faolsizlik kuzatuvchisiga qoldiriladi (MUL-3064). Qaytarilgan `cancel` sizniki. | `agent.go` |
+| `buildEnv(b.cfg.Env)` | `os.Environ()` ni `cfg.Env` bilan birlashtiradi, ichki Claude Code session markerlarini `isFilteredChildEnvKey` orqali olib tashlaydi, toki bola oʻzini ichki session deb adashtirmasin. Gemini buni `buildGeminiEnv` sifatida oʻraydi, toki `GEMINI_CLI_TRUST_WORKSPACE` standart qilinsin. | `claude.go` |
+| `hideAgentWindow(cmd)` | Windows'dan tashqarida hech narsa qilmaydi; Windows'da konsol oynasini yashiradi. Uni siz yaratgan **har bir** `exec.Cmd` da chaqiring, jumladan aniqlash probalari. | `proc_windows.go` / `proc_other.go` |
+| `cmd.WaitDelay = 10 * time.Second` | Kontekst bekor qilingandan keyin quvurlar boʻshayotganda `cmd.Wait()` qancha bloklanishini chegaralaydi. | `claude.go`, `gemini.go` |
+| stderr quyrugʻi | `cmd.Stderr` ni `newStderrTail(newLogWriter(...), agentStderrTailBytes)` (2048 bayt) ga oʻrang va nosozlikda `stderrBuf.Tail()` ni `withAgentStderr(finalError, "xxx", ...)` orqali `finalError` ga buklang. Usiz qulash yalangʻoch `exit status N` sifatida oʻqiladi. | `stderr_tail.go`, `claude.go` |
+| bekor qilishda stdout'ni yopish | `runCtx.Done()` ishga tushganda stdout'ni yopadigan goroutine yarating, toki `bufio.Scanner` bloklanishdan chiqsin. | `claude.go`, `gemini.go` |
+
+`gemini.go` shabloni stdin protokoli va MCP inʼektsiyasidan tashqari har bir qatorni ulaydi; ularga ehtiyoj boʻlganda `claude.go` ga murojaat qiling.
+
+## Maxsus argumentlarni `filterCustomArgs` orqali filtrlang
+
+Daemoningiz qattiq kodlangan bayroqlarni — agar foydalanuvchi ularni bekor qilsa, daemon↔agent protokolini buzadiganlarini — sanab oʻtuvchi `xxxBlockedArgs map[string]blockedArgMode` ni aniqlang. Har bir qiymat `blockedWithValue` (bayroq keyingi argumentni isteʼmol qiladi) yoki `blockedStandalone` (mantiqiy). Gemini'ning toʻplami minimal illyustratsiya:
+
+```go
+var xxxBlockedArgs = map[string]blockedArgMode{
+	"-p": blockedWithValue,  // the prompt
+	"-o": blockedWithValue,  // output format
+}
+```
+
+Soʻngra argv'ni yigʻishda **ikkala** argument manbasini filtr orqali oʻtkazing. Tartib: `ExtraArgs` (daemon boʻylab standartlar) `CustomArgs` (har bir agent uchun) dan oldin, har biri filtrlangan:
+
+```go
+args = append(args, filterCustomArgs(opts.ExtraArgs, xxxBlockedArgs, logger)...)
+args = append(args, filterCustomArgs(opts.CustomArgs, xxxBlockedArgs, logger)...)
+```
+
+`filterCustomArgs` har qanday bloklangan bayroqni tashlaydi (ogohlantirish loglab), rejim `blockedWithValue` boʻlganda uning qiymatini oʻtkazib yuboradi, va `unshellQuoteArg` orqali har bir argumentdan bitta qatlam shell qoʻshtirnoqlarini olib tashlaydi. Blok toʻplami ataylab tor — faqat protokol uchun muhim bayroqlar, chunki ishchi maydon aʼzolari agentlarni oqilona sozlash uchun ishonchli. Eʼtibor bering: `gemini` faqat `CustomArgs` ni oʻqiydi; `claude` ham `ExtraArgs` ni, ham `CustomArgs` ni oʻqiydi — CLI'ngiz qaysi biriga muhtoj boʻlsa shuni ulang, ammo doim filtr orqali.
+
+## `opts.Model` ni faqat CLI bayrogʻi orqali hurmat qiling — hech qachon Go tomonidagi standart orqali emas
+
+Bu `cursor` backend duch kelgan regressiya, va qoida mutlaq: `opts.Model` boʻsh boʻlmaganda, uni CLI'ning model bayrogʻi orqali uzating; u boʻsh boʻlganda hech narsa uzatmang va CLI oʻzining standart qiymatini hal qilsin.
+
+```go
+if opts.Model != "" {
+	args = append(args, "-m", opts.Model)
+}
+```
+
+`opts.Model == ""` boʻlganda qattiq kodlangan model satrini **almashtirmang**. Go tomonidagi standart har doim CLI'ning oʻz hal qilishidan koʻra yomonroq taxmin, chunki CLI foydalanuvchining hisobi, hisob maʼlumotlari va muhitini biladi. Katalogdagi `Model.Default` bayrogʻi koʻrsatish nishoni, bajarish standarti emas — qarang [models-and-thinking](/developers/agentic/models-and-thinking).
+
+## Qoʻllab-quvvatlanmaydigan `ExecOptions` maydonlari jimgina eʼtiborsiz qoldiriladi
+
+`ExecOptions` hech bir backend toʻliq isteʼmol qilmaydigan maydonlarni olib yuradi: `SystemPrompt`, `ThreadName`, `MaxTurns`, `SemanticInactivityTimeout`, `ResumeSessionID`, `ExtraArgs`, `McpConfig`, `ThinkingLevel`, `OpenclawMode`. Backend oʻz CLI'si tushunadigan maydonlarni oʻqiydi va **qolganini eʼtiborsiz qoldiradi** — u bajara olmaydigan maydonda xato bermaydi. Aynan shu yangi opsiyalarning aloqasiz agentlarni buzmasdan tushishiga imkon beradi (`ThinkingLevel` va `OpenclawMode` ikkalasi ham shu naqsh ostida qoʻshilgan). Shunday qilib, agar CLI'ngizda `--resume` boʻlmasa, shunchaki `opts.ResumeSessionID` ni oʻqimang; uni rad etadigan himoya qoʻshmang.
+
+## Manba fayllar
+
+| Fayl | Bu sahifa bogʻliq boʻlgan ramzlar |
+| --- | --- |
+| `server/pkg/agent/agent.go` | `Backend`, `Execute`, `ExecOptions` (`Cwd`, `Model`, `SystemPrompt`, `MaxTurns`, `Timeout`, `ResumeSessionID`, `ExtraArgs`, `CustomArgs`, `McpConfig`, `ThinkingLevel`, `OpenclawMode`), `runContext`, `Session`, `Message`, `MessageType` (`MessageText`/`MessageThinking`/`MessageToolUse`/`MessageToolResult`/`MessageStatus`/`MessageError`/`MessageLog`), `Result` (`Status` qiymatlari `completed`/`failed`/`aborted`/`timeout`/`cancelled`), `TokenUsage`, `Config`, `New`, `DetectVersion`, `launchHeaders`, `LaunchHeader` |
+| `server/pkg/agent/gemini.go` | `geminiBackend`, `buildGeminiArgs`, `buildGeminiEnv`, `geminiBlockedArgs`, `accumulateUsage` |
+| `server/pkg/agent/claude.go` | `claudeBackend`, `buildClaudeArgs`, `claudeBlockedArgs`, `filterCustomArgs`, `unshellQuoteArg`, `blockedArgMode` (`blockedWithValue`/`blockedStandalone`), `buildEnv`, `mergeEnv`, `isFilteredChildEnvKey`, `trySend`, `detectCLIVersion`, `extractVersionLine`, `newLogWriter` |
+| `server/pkg/agent/models.go` | `ListModels`, `Model` (`ID`/`Label`/`Provider`/`Default`/`Free`/`Category`/`Thinking`), `ModelThinking`, `ThinkingLevel`, `ModelSelectionSupported`, `cachedDiscovery`, `modelCacheTTL`, `claudeStaticModels`, `geminiStaticModels`, `discoverACPModels`, `acpDiscoveryProvider` |
+| `server/pkg/agent/version.go` | `MinVersions`, `CheckMinVersion`, `parseSemver`, `versionRe`, `extractVersionLine` |
+| `server/pkg/agent/thinking.go` | `annotateClaudeThinking`, `annotateCodexThinking`, `annotateCodebuddyThinking`, `claudeEffortRe`, `codebuddyEffortRe`, `parseCodexDebugModels`, `codexDebugModelsArgs`, `thinkingDiscoveryTTL`, `providerThinkingEnums`, `IsKnownThinkingValue`, `ValidateThinkingLevel` |
+| `server/pkg/agent/stderr_tail.go` | `agentStderrTailBytes`, `newStderrTail`, `stderrTail.Tail`, `withAgentStderr` |
+| `server/pkg/agent/proc_windows.go`, `server/pkg/agent/proc_other.go` | `hideAgentWindow` |
+
+**Bir xil PR drift qoidasi:** agar yuqoridagi har qanday hujjatlashtirilgan ramz, CLI bayrogʻi, `Result.Status` qiymati yoki `ExecOptions` maydoni qayta nomlansa, koʻchirilsa yoki xatti-harakatini oʻzgartirsa, bu sahifani **va** uning `references/add-a-backend-source-map.md` yon faylini bir xil PR ichida yangilang. Bu sahifa manba izlangan shartnoma — eskirgan hujjatlar backend'ni roʻyxatdan oʻtkazishning notoʻgʻri usulini jimgina oʻrgatadi.

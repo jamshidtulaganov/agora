@@ -1,0 +1,216 @@
+---
+title: Brief Injection
+description: Daemon Agora runtime briefini provayderning config fayliga qanday idempotent tarzda yozishi, uni bayt aniqligida tozalashi va inline yetkazib berishga qaytishi.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Auditoriya">
+**Dasturchilar.** Bu sahifa `server/internal/daemon/execenv/runtime_config.go` dagi `InjectRuntimeConfig` / `writeRuntimeConfigFile` / `CleanupRuntimeConfig` ni va ularning `server/internal/daemon/daemon.go` dagi chaqiruv joylarini hujjatlashtiradi — bu mexanizm runtime briefini CLI agentga foydalanuvchining shaxsiy `CLAUDE.md` faylini buzmasdan yetkazadi. Briefning *mazmuni* (markdown nima deyishi) [/developers/agentic/brief-anatomy](/developers/agentic/brief-anatomy) da yoritilgan; briefning umumiy promptga qanday joylashishi [/developers/agentic/prompt-layers](/developers/agentic/prompt-layers) da; agent rioya qilishi shart bo'lgan kelishuv [/developers/agentic/agent-runtime-contract](/developers/agentic/agent-runtime-contract) da. Provayderdan provayderga xulq-atvor farqlari [/developers/agentic/provider-matrix-internals](/developers/agentic/provider-matrix-internals) da.
+</Callout>
+
+## Brief injection nima
+
+Har bir CLI agent backendi (Claude Code, Codex, Gemini CLI, …) loyiha darajasidagi ko'rsatmalarni o'zining ish katalogidagi native config fayldan topadi. Agora daemoni agentga uning runtime'i haqida — `agora` CLI, tayinlash jarayoni, agentning shaxsiyati, biriktirilgan skill'lar va loyiha konteksti haqida — shu briefni provayderning native fayliga yozish orqali o'rgatadi. Bu `buildMetaSkillContent` tomonidan ishlab chiqariladigan "meta skill" mazmunidir.
+
+Kirish nuqtasi `InjectRuntimeConfig(workDir, provider string, ctx TaskContextForEnv) (string, error)`. U mazmunni quradi, provayder uchun maqsadli yo'lni aniqlaydi va faylni yozadi. U fayl yozilgan-yozilmaganidan qat'i nazar brief satrini qaytaradi, shuning uchun fayl maqsadi bo'lmagan provayder ham faqat-prompt yetkazilishini oladi:
+
+```go
+func InjectRuntimeConfig(workDir, provider string, ctx TaskContextForEnv) (string, error) {
+	content := buildMetaSkillContent(provider, ctx)
+	path := runtimeConfigPath(workDir, provider)
+	if path == "" {
+		// Unknown provider — skip config injection, prompt-only mode.
+		return content, nil
+	}
+	return content, writeRuntimeConfigFile(path, content)
+}
+```
+
+`daemon.go` dagi `runTask` uni `StartTask` dan keyin darhol chaqiradi va injection xatosi **fatal emas** — u ogohlantirish yozadi va davom etadi:
+
+```go
+runtimeBrief, err := execenv.InjectRuntimeConfig(env.WorkDir, provider, taskCtx)
+if err != nil {
+	d.logger.Warn("execenv: inject runtime config failed (non-fatal)", "error", err)
+}
+```
+
+## Provayder → fayl nomi jadvali
+
+`runtimeConfigPath` yagona moslashtirish jadvalidir. Uni markazlashtirish Inject va Cleanup'ni bir maromda ushlab turadi — ikkalasi ham bir xil funksiyaga murojaat qiladi, shuning uchun bir tomonga qo'shilgan yangi provayder boshqasidan oldinga siljiy olmaydi.
+
+| Provayder | Maqsadli fayl |
+| --- | --- |
+| `claude`, `codebuddy` | `CLAUDE.md` |
+| `codex`, `copilot`, `opencode`, `openclaw`, `hermes`, `pi`, `cursor`, `kimi`, `kiro`, `antigravity` | `AGENTS.md` |
+| `gemini` | `GEMINI.md` |
+| boshqa har qanday narsa | `""` (fayl maqsadi yo'q — faqat-prompt) |
+
+`""` qaytishi "bu provayderda faylga asoslangan config maqsadi yo'q" degan signaldir; Inject ham, Cleanup ham buni fayl yozish uchun no-op deb hisoblaydi.
+
+## Idempotent almashtirish, ustiga yozish emas
+
+Dastlabki amalga oshirilishi `os.WriteFile` ni shartsiz chaqirardi. Agent `local_directory` loyiha resurs oqimi orqali foydalanuvchining shaxsiy repozitoriysiga birinchi marta yo'naltirilganda, bu **repozitoriyaning o'z `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` faylini sukutona qisqartirib tashladi** — bu hodisa **MUL-2753** sifatida kuzatilgan. Tuzatish — `writeRuntimeConfigFile`, u foydalanuvchi tomonidan yozilgan har qanday mazmunni saqlab qoladi va faqat Agora boshqaradigan hududni almashtiradi.
+
+### Markerlar
+
+Boshqariladigan hudud ikkita HTML-comment markeri bilan chegaralanadi, ular konstanta sifatida aniqlangan:
+
+```go
+runtimeMarkerBegin = "<!-- BEGIN MULTICA-RUNTIME (auto-managed; do not edit) -->"
+runtimeMarkerEnd   = "<!-- END MULTICA-RUNTIME -->"
+```
+
+HTML kommentlari ishlatiladi, chunki markerlar har bir Markdown renderda inert bo'ladi va agentga ko'rsatma sifatida berilganda zararsiz. **Marker matnini o'zgartirish** oldingi markerlarni allaqachon olib yurgan har qanday fayl uchun **buzilishga olib keladigan o'zgarish** — eskirgan markerli fayl endi tanib olinmaydi, shuning uchun keyingi inject yetim qolgan bloknning yoniga yangi blok qo'shadi. Konstantalarni ataylab bilib o'zgartiring.
+
+Yoziladigan blok briefni o'rab oladi va undan keyin bitta yakuniy yangi satr keladi:
+
+```go
+block := runtimeMarkerBegin + "\n" + strings.TrimRight(brief, "\n") + "\n" + runtimeMarkerEnd + "\n"
+```
+
+### Uchta fayl holati
+
+`writeRuntimeConfigFile` faylning joriy holatiga qarab tarmoqlanadi:
+
+1. **Fayl yo'q** → uni faqat marker blokini o'z ichiga olgan holda, **boshlang'ich ajratuvchisiz** yaratadi. Cleanup keyinchalik ajratuvchining yo'qligini aniqlaydi va faylni o'chirib, fayl-yo'q holatini tiklaydi.
+2. **Fayl bor, marker bloki yo'q** (har qanday mazmun, jumladan bo'sh) → `runtimeManagedSeparator` + blokni qo'shadi. Ajratuvchi `"\n\n"` va uning baytlari boshqariladigan hududning bir qismi deb hisoblanadi.
+3. **Fayl bor, marker bloki allaqachon mavjud** → markerlar orasidagi tanani joyida almashtiradi, shuning uchun bir xil workdir'da takroriy ishga tushirishlar faylni cheksiz o'stirmaydi. Blokdan oldingi hamma narsa (birinchi inject'dagi har qanday boshqariladigan ajratuvchi ham) aynan saqlanadi.
+
+```go
+existing, err := os.ReadFile(path)
+if errors.Is(err, fs.ErrNotExist) {
+	return os.WriteFile(path, []byte(block), 0o644)
+}
+// ...
+if start, end, ok := locateMarkerBlock(existingStr); ok {
+	newContent := existingStr[:start] + block + existingStr[end:]
+	return os.WriteFile(path, []byte(newContent), 0o644)
+}
+return os.WriteFile(path, []byte(existingStr+runtimeManagedSeparator+block), 0o644)
+```
+
+Qo'shish paytida `runtimeManagedSeparator` **shartsizdir** — hatto ikki yoki undan ortiq yangi satr bilan tugaydigan fayllar uchun ham. Bu foydalanuvchi mazmuni va boshqariladigan hudud o'rtasidagi bayt chegarasini deterministik qiladi, bu esa aynan Cleanup'ga foydalanuvchining asl baytlariga yakuniy-yangi-satr qayta normalizatsiyasisiz qaytishga imkon beradi. Belgilangan kenglikdagi ajratuvchisiz cleanup yo'li har bir ishda nozik, ammo real diff qoldirardi (PR #3438 dagi MUL-2753 ko'rib chiqishiga qarang).
+
+## locateMarkerBlock: noto'g'ri shakllangan fayllardan omon qolish
+
+`locateMarkerBlock(content string) (start, end int, found bool)` boshqariladigan blokning `[start, end)` bayt diapazonini topadi. Qaytarilgan `end` blokning yakuniy yangi satridan (agar bor bo'lsa) bitta keyin bo'ladi, shuning uchun blokni yetim bo'sh satr qoldirmasdan kesib olib tashlash mumkin.
+
+Tugash markeri begin markeridan **qat'iy keyin** qidiriladi. Sodda `strings.Index` jufti noto'g'ri ishlatadigan ikkita noto'g'ri shakllangan holat:
+
+- **Har qanday begin'dan oldingi adashgan end marker.** Foydalanuvchi mazmuni so'zma-so'z `<!-- END MULTICA-RUNTIME -->` ni olib yurishi mumkin (masalan, wire formatini ko'rsatadigan hujjat snippeti). Sodda parser bu end'ni topadi, blokni rad etadi va har bir ishda yangi blok qo'shadi — faylni cheksiz o'stiradi, chunki adashgan end joyida qoladi.
+- **Begin va end o'rtasidagi nosozlik.** Agar oldingi ish begin'ni yozgandan keyin, lekin end'dan oldin to'xtab qolsa, fayl yarim-blokni saqlaydi. Begin'dan keyin end topilmasa, `locateMarkerBlock` faylning qolgan qismini blok deb hisoblaydi (`return start, len(content), true`), shuning uchun keyingi yozuv yangi blokni ostiga qalashtirib qo'yish o'rniga **yarim-blokni joyida almashtiradi**.
+
+```go
+endRel := strings.Index(content[afterBegin:], runtimeMarkerEnd)
+if endRel < 0 {
+	// Malformed — no end marker after begin. Treat the rest of the file
+	// as the block so the next write replaces it cleanly.
+	return start, len(content), true
+}
+end = afterBegin + endRel + len(runtimeMarkerEnd)
+if end < len(content) && content[end] == '\n' {
+	end++
+}
+```
+
+<Mermaid chart={`flowchart TD
+  A[writeRuntimeConfigFile] --> B{os.ReadFile}
+  B -- fs.ErrNotExist --> C[Write block only, no separator]
+  B -- other error --> D[return wrapped error]
+  B -- file read --> E{locateMarkerBlock}
+  E -- found --> F[Splice block in place, preserve pre and post bytes]
+  E -- not found --> G[Append runtimeManagedSeparator + block]
+`} />
+
+## CleanupRuntimeConfig: bayt-aniq orqaga qaytarish
+
+`CleanupRuntimeConfig(workDir, provider string) error` kelishuvning ikkinchi yarmidir. `writeRuntimeConfigFile` bilan birgalikda, bu ikkisi foydalanuvchining lokal repozitoriy configini istalgan miqdordagi Agora ishlari davomida bironta ham boshqarilmaydigan baytga tegmasdan to'liq aylanish (round-trip) qildirishi kerak. U Inject'ning uchta holatini aks ettiradi:
+
+- **Marker bloki yo'q** → no-op (bu yerga hech qachon hech narsa inject qilinmagan).
+- **Blok faylning boshida, oldingi boshqariladigan ajratuvchi yo'q** → fayl Inject tomonidan fayl-yo'q holatidan yaratilgan; faylni butunlay o'chiradi, shunda cleanup'dan keyingi katalog ro'yxati Inject'dan oldingisiga bayt-aniq bir xil bo'ladi.
+- **Blokdan oldida belgilangan boshqariladigan ajratuvchi bor** → ajratuvchini blok bilan birga olib tashlaydi; qolgan narsa (bo'sh, faqat-bo'shliq yoki ixtiyoriy foydalanuvchi mazmuni) aynan qayta yoziladi, yakuniy-yangi-satr normalizatsiyasi **siz** va TrimSpace'ga asoslangan fayl-o'chirish evristikasi **siz**. Bularning ikkalasi ham PR #3438 ko'rib chiqishida nozik diff manbalari edi.
+
+Yaratilgan-fayl va oldindan-mavjud-fayl o'rtasidagi farq to'liq blokdan oldidagi `runtimeManagedSeparator` ning mavjudligi bilan ifodalanadi:
+
+```go
+hadManagedSeparator := strings.HasSuffix(pre, runtimeManagedSeparator)
+if hadManagedSeparator {
+	pre = pre[:len(pre)-len(runtimeManagedSeparator)]
+}
+remainder := pre + post
+
+if !hadManagedSeparator && remainder == "" {
+	// Inject created the file. Restore the missing-file state.
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("remove runtime config %s: %w", path, err)
+	}
+	return nil
+}
+return os.WriteFile(path, []byte(remainder), 0o644)
+```
+
+Ajratuvchining yo'qligi — Cleanup'ga faylni o'chirishga ruxsat beriladigan *yagona* shart. Oldindan mavjud bo'sh fayl bo'sh `remainder` ishlab chiqaradi va Cleanup baribir o'sha nol-baytli faylni qayta yozadi, shunda faylning mavjudligi saqlanadi. Yo'q fayllar, noma'lum provayderlar (`runtimeConfigPath` `""` qaytaradi) va marker bloki bo'lmagan fayllar — bularning barchasi no-op'lardir — Cleanup'ni mudofaa tariqasida chaqirish xavfsizdir.
+
+## Cleanup faqat local_directory vazifalari uchun ishlaydi
+
+Cleanup `runTask` da **faqat** vazifaning workdir'i foydalanuvchining shaxsiy repozitoriysi bo'lganda — `env.LocalDirectory` — kechiktiriladi:
+
+```go
+if env.LocalDirectory {
+	defer func() {
+		if cerr := execenv.CleanupRuntimeConfig(env.WorkDir, provider); cerr != nil {
+			d.logger.Warn("execenv: cleanup runtime config failed (non-fatal)", "error", cerr)
+		}
+		if cerr := execenv.CleanupSidecars(env.RootDir); cerr != nil {
+			d.logger.Warn("execenv: cleanup sidecars failed (non-fatal)", "error", cerr)
+		}
+	}()
+}
+```
+
+Cloud / vaqtinchalik (scratch) workdir'lar uchun brief joyida qoldiriladi: workdir `/agora_workspaces/...` ostidagi daemon scratch'i bo'lib, u bir xil `(agent, issue)` juftligidagi kelajakdagi vazifalar tomonidan **qayta foydalanish** uchun saqlanadi (yo'l keyingi da'voda `PriorWorkDir` orqali aylanib qaytadi) va GC sikli bu workdir'larni **butunlay** o'chiradi. U yerda marker blokini joyida qayta yozish to'g'ri xulq, shuning uchun cleanup keraksiz ish bo'lardi.
+
+local_directory holati boshqacha: cleanup'siz brief foydalanuvchining repozitoriysi ichida yashashda davom etadi va foydalanuvchi tomonidan o'sha katalogda keyinroq qo'lda ishga tushirilgan `claude` / `codex` / `gemini` ishi eskirgan Agora ko'rsatmalarini (oldingi vazifaning issue id'si, trigger comment id'si va javob qoidalari) qabul qilib, noto'g'ri kontekst ustida harakat qila boshlaydi. `CleanupRuntimeConfig` briefni `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` dan kesib oladi; uning sherigi `CleanupSidecars` esa Prepare repozitoriyga yozgan daraxtning qolgan qismini (`.agent_context/`, `.agora/`, provayder skill kataloglari) olib tashlaydi (MUL-2784 ga qarang).
+
+## Inline va fayl orqali yetkazib berish
+
+Bir nechta provayderlarga faylga asoslangan briefni ishonchli yuklashga ishonib bo'lmaydi, shuning uchun daemon to'liq runtime briefni **shuningdek** inline tarzda yetkazadi. `providerNeedsInlineSystemPrompt` darvozadir:
+
+```go
+func providerNeedsInlineSystemPrompt(provider string) bool {
+	switch provider {
+	case "openclaw", "kiro", "kimi":
+		return true
+	default:
+		return false
+	}
+}
+```
+
+U true qaytarganda, `runTask` exec opsiyalariga briefni o'rnatadi:
+
+```go
+if providerNeedsInlineSystemPrompt(provider) {
+	execOpts.SystemPrompt = runtimeBrief
+}
+```
+
+`execOpts.SystemPrompt` — `InjectRuntimeConfig` qaytargan o'sha `runtimeBrief` satridir, shuning uchun inline qilingan provayderlar faylga asoslangan runtime'lar diskdan oladigan bir xil yukni oladi (CLI katalogi, workflow qadamlari, shaxsiyat/persona, skill'lar, loyiha konteksti). Busiz bu provayderlar workflow bo'limini sukutona o'tkazib yuboradi va hech qachon `agora issue status` / `agora issue comment add` ni chaqirmaydi, issue'larni `todo` da qotirib qoldiradi.
+
+Har bir backend `ExecOptions.SystemPrompt` ni qanday iste'mol qilishi backendga xosdir: `openclaw` va `kimi` uni foydalanuvchi xabarining oldiga qo'shadi, qabul qiluvchi boshqa backendlar esa (masalan, `pi`, `codebuddy`) uni `--append-system-prompt` CLI bayrog'i sifatida o'tkazadi. `providerNeedsInlineSystemPrompt` dagi uchta provayder baribir **shuningdek** fayl yozilganini oladi, chunki `runtimeConfigPath` ularning barchasini `AGENTS.md` ga moslashtiradi — inline yetkazish belt-and-suspenders (qo'shimcha kafolat), almashtirish emas.
+
+**Hermes ataylab istisno qilingan.** Hermes ACP sessiyalari vazifa cwd'sida boshlanadi va Hermes `AGENTS.md` / `.agent_context` ni o'zi yuklaydi, shuning uchun to'liq briefni ACP foydalanuvchi promptiga oldiga qo'shish bu kontekstni takrorlaydi, har bir navbatni shishiradi va zararsiz vazifalarda yuqori oqimdagi xavfsizlik filtrlarini ishga tushirgan. Hermes backendi `ExecOptions.SystemPrompt` ni ochiqdan-ochiq e'tiborsiz qoldiradi.
+
+ACP (Hermes) stdin/JSON CLI oilalaridan nega farq qilishi haqida [/developers/agentic/protocol-families](/developers/agentic/protocol-families) ga, [/developers/agentic/add-a-backend](/developers/agentic/add-a-backend) orqali qo'shadigan har qanday yangi provayderning nomlash qoidalari uchun esa [/developers/conventions](/developers/conventions) ga qarang.
+
+## Source files
+
+| Fayl | Bu sahifa bog'liq bo'lgan simvollar |
+| --- | --- |
+| `server/internal/daemon/execenv/runtime_config.go` | `runtimeMarkerBegin`, `runtimeMarkerEnd`, `runtimeManagedSeparator`, `InjectRuntimeConfig`, `runtimeConfigPath`, `writeRuntimeConfigFile`, `locateMarkerBlock`, `CleanupRuntimeConfig`, `buildMetaSkillContent` |
+| `server/internal/daemon/daemon.go` | `runTask`, `providerNeedsInlineSystemPrompt`, `InjectRuntimeConfig` chaqiruv joyi (`runtimeBrief`), `env.LocalDirectory` cleanup `defer`, `execenv.CleanupRuntimeConfig`, `execenv.CleanupSidecars`, `execOpts.SystemPrompt` |
+
+Agar yuqorida hujjatlashtirilgan simvol, bayroq yoki maydon ko'chsa yoki o'zgarsa, bu sahifani **va** uning source-map sherigini (`brief-injection-source-map.md`) bir xil PR'da yangilang — sahifa manbaga izlangan kelishuv bo'lib, sukutona siljish eskirgan xulqni o'rgatadi.

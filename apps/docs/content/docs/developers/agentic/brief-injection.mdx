@@ -1,0 +1,216 @@
+---
+title: Brief Injection
+description: How the daemon writes the Agora runtime brief into a provider's config file idempotently, cleans it up byte-exact, and falls back to inline delivery.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Audience">
+**Developers.** This page documents `InjectRuntimeConfig` / `writeRuntimeConfigFile` / `CleanupRuntimeConfig` in `server/internal/daemon/execenv/runtime_config.go` and their call sites in `server/internal/daemon/daemon.go` — the mechanism that delivers the runtime brief to a CLI agent without destroying a user's own `CLAUDE.md`. The brief's *content* (what the markdown says) is covered by [/developers/agentic/brief-anatomy](/developers/agentic/brief-anatomy); how the brief fits the overall prompt is [/developers/agentic/prompt-layers](/developers/agentic/prompt-layers); the contract the agent must honor is [/developers/agentic/agent-runtime-contract](/developers/agentic/agent-runtime-contract). Provider-by-provider behavior differences are [/developers/agentic/provider-matrix-internals](/developers/agentic/provider-matrix-internals).
+</Callout>
+
+## What brief injection is
+
+Every CLI agent backend (Claude Code, Codex, Gemini CLI, …) discovers project-level instructions from a native config file in its working directory. The Agora daemon teaches the agent about its runtime — the `agora` CLI, the assignment workflow, the agent's identity, attached skills and project context — by writing that brief into the provider's native file. This is the "meta skill" content produced by `buildMetaSkillContent`.
+
+The entry point is `InjectRuntimeConfig(workDir, provider string, ctx TaskContextForEnv) (string, error)`. It builds the content, resolves the target path for the provider, and writes the file. It returns the brief string regardless of whether a file was written, so a provider with no file target still gets prompt-only delivery:
+
+```go
+func InjectRuntimeConfig(workDir, provider string, ctx TaskContextForEnv) (string, error) {
+	content := buildMetaSkillContent(provider, ctx)
+	path := runtimeConfigPath(workDir, provider)
+	if path == "" {
+		// Unknown provider — skip config injection, prompt-only mode.
+		return content, nil
+	}
+	return content, writeRuntimeConfigFile(path, content)
+}
+```
+
+`runTask` in `daemon.go` calls it right after `StartTask`, and an injection error is **non-fatal** — it logs a warning and continues:
+
+```go
+runtimeBrief, err := execenv.InjectRuntimeConfig(env.WorkDir, provider, taskCtx)
+if err != nil {
+	d.logger.Warn("execenv: inject runtime config failed (non-fatal)", "error", err)
+}
+```
+
+## The provider → filename table
+
+`runtimeConfigPath` is the single mapping table. Centralising it keeps Inject and Cleanup in lockstep — both consult the same function, so a new provider added to one side cannot drift past the other.
+
+| Provider | Target file |
+| --- | --- |
+| `claude`, `codebuddy` | `CLAUDE.md` |
+| `codex`, `copilot`, `opencode`, `openclaw`, `hermes`, `pi`, `cursor`, `kimi`, `kiro`, `antigravity` | `AGENTS.md` |
+| `gemini` | `GEMINI.md` |
+| anything else | `""` (no file target — prompt-only) |
+
+A `""` return is the signal for "this provider has no file-based config target"; both Inject and Cleanup treat it as a no-op for file writes.
+
+## Idempotent replace, not overwrite
+
+The original implementation called `os.WriteFile` unconditionally. The first time an agent was pointed at a user's own repository through the `local_directory` project resource flow, that **silently truncated the repository's own `CLAUDE.md` / `AGENTS.md` / `GEMINI.md`** — the incident tracked as **MUL-2753**. The fix is `writeRuntimeConfigFile`, which preserves any user-authored content and replaces only the Agora-managed region.
+
+### The markers
+
+The managed region is delimited by two HTML-comment markers, defined as constants:
+
+```go
+runtimeMarkerBegin = "<!-- BEGIN MULTICA-RUNTIME (auto-managed; do not edit) -->"
+runtimeMarkerEnd   = "<!-- END MULTICA-RUNTIME -->"
+```
+
+HTML comments are used so the markers are inert in every Markdown renderer and harmless when fed to the agent as instructions. **Changing the marker text is a breaking change** for any file that already carries the previous markers — a stale-marker file would no longer be recognised, so the next inject would append a fresh block beside the orphaned one. Bump the constants deliberately.
+
+The block that gets written wraps the brief and is followed by a single trailing newline:
+
+```go
+block := runtimeMarkerBegin + "\n" + strings.TrimRight(brief, "\n") + "\n" + runtimeMarkerEnd + "\n"
+```
+
+### Three file states
+
+`writeRuntimeConfigFile` branches on the file's current state:
+
+1. **File missing** → create it containing only the marker block, with **no leading separator**. Cleanup later detects the absence of the separator and restores the missing-file state by deleting the file.
+2. **File present, no marker block** (any content, including empty) → append `runtimeManagedSeparator` + the block. The separator is `"\n\n"` and its bytes are considered part of the managed region.
+3. **File present, marker block already there** → replace the body between the markers in place, so repeated runs in the same workdir don't grow the file unboundedly. Everything before the block (including any managed separator from the first inject) is preserved verbatim.
+
+```go
+existing, err := os.ReadFile(path)
+if errors.Is(err, fs.ErrNotExist) {
+	return os.WriteFile(path, []byte(block), 0o644)
+}
+// ...
+if start, end, ok := locateMarkerBlock(existingStr); ok {
+	newContent := existingStr[:start] + block + existingStr[end:]
+	return os.WriteFile(path, []byte(newContent), 0o644)
+}
+return os.WriteFile(path, []byte(existingStr+runtimeManagedSeparator+block), 0o644)
+```
+
+The `runtimeManagedSeparator` is **unconditional** when appending — even for files that already end in two or more newlines. That makes the byte boundary between user content and the managed region deterministic, which is exactly what lets Cleanup roll back to the user's original bytes with no trailing-newline renormalisation. Without a fixed-width separator the cleanup path would leave a subtle but real diff every run (see the MUL-2753 review on PR #3438).
+
+## locateMarkerBlock: surviving malformed files
+
+`locateMarkerBlock(content string) (start, end int, found bool)` finds the `[start, end)` byte range of the managed block. The returned `end` is one past the block's trailing newline (if any) so the block can be spliced out without leaving an orphan blank line.
+
+The end marker is searched for **strictly after** the begin marker. Two malformed cases a naive `strings.Index` pair would mishandle:
+
+- **Stray end marker before any begin.** User content may carry a literal `<!-- END MULTICA-RUNTIME -->` (e.g. a docs snippet showing the wire format). A naive parser would find that end, reject the block, and append a fresh block every run — growing the file unboundedly because the stray end stays in place.
+- **Crash between begin and end.** If a previous run died after writing begin but before end, the file holds a half-block. When no end is found after begin, `locateMarkerBlock` treats the rest of the file as the block (`return start, len(content), true`) so the next write **replaces the half-block in place** instead of stacking a new block beneath it.
+
+```go
+endRel := strings.Index(content[afterBegin:], runtimeMarkerEnd)
+if endRel < 0 {
+	// Malformed — no end marker after begin. Treat the rest of the file
+	// as the block so the next write replaces it cleanly.
+	return start, len(content), true
+}
+end = afterBegin + endRel + len(runtimeMarkerEnd)
+if end < len(content) && content[end] == '\n' {
+	end++
+}
+```
+
+<Mermaid chart={`flowchart TD
+  A[writeRuntimeConfigFile] --> B{os.ReadFile}
+  B -- fs.ErrNotExist --> C[Write block only, no separator]
+  B -- other error --> D[return wrapped error]
+  B -- file read --> E{locateMarkerBlock}
+  E -- found --> F[Splice block in place, preserve pre and post bytes]
+  E -- not found --> G[Append runtimeManagedSeparator + block]
+`} />
+
+## CleanupRuntimeConfig: byte-exact rollback
+
+`CleanupRuntimeConfig(workDir, provider string) error` is the second half of the contract. Together with `writeRuntimeConfigFile`, the two must round-trip a user's local repository config across any number of Agora runs without touching a single non-managed byte. It mirrors the three Inject states:
+
+- **No marker block** → no-op (nothing was ever injected here).
+- **Block at start of file, no preceding managed separator** → the file was created by Inject from a missing-file state; remove the file outright so the post-cleanup directory listing is byte-identical to the pre-Inject one.
+- **Block preceded by the fixed managed separator** → strip the separator together with the block; whatever remains (empty, whitespace-only, or arbitrary user content) is written back verbatim, with **no** trailing-newline normalisation and **no** TrimSpace-based file-removal heuristic. Both of those were sources of subtle diff in PR #3438 review.
+
+The created-file vs. pre-existing-file distinction is carried entirely by the presence of `runtimeManagedSeparator` in front of the block:
+
+```go
+hadManagedSeparator := strings.HasSuffix(pre, runtimeManagedSeparator)
+if hadManagedSeparator {
+	pre = pre[:len(pre)-len(runtimeManagedSeparator)]
+}
+remainder := pre + post
+
+if !hadManagedSeparator && remainder == "" {
+	// Inject created the file. Restore the missing-file state.
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("remove runtime config %s: %w", path, err)
+	}
+	return nil
+}
+return os.WriteFile(path, []byte(remainder), 0o644)
+```
+
+The absence of the separator is the *only* condition under which Cleanup is allowed to delete the file. A pre-existing empty file produces an empty `remainder`, and Cleanup still writes that zero-byte file back so the file's existence is preserved. Missing files, unknown providers (`runtimeConfigPath` returns `""`), and files without a marker block are all no-ops — Cleanup is safe to call defensively.
+
+## Cleanup only runs for local_directory tasks
+
+Cleanup is deferred in `runTask` **only** when the task's workdir is the user's own repo — `env.LocalDirectory`:
+
+```go
+if env.LocalDirectory {
+	defer func() {
+		if cerr := execenv.CleanupRuntimeConfig(env.WorkDir, provider); cerr != nil {
+			d.logger.Warn("execenv: cleanup runtime config failed (non-fatal)", "error", cerr)
+		}
+		if cerr := execenv.CleanupSidecars(env.RootDir); cerr != nil {
+			d.logger.Warn("execenv: cleanup sidecars failed (non-fatal)", "error", cerr)
+		}
+	}()
+}
+```
+
+For cloud / scratch workdirs the brief is left in place: the workdir is daemon scratch under `/agora_workspaces/...`, it is preserved for **reuse** by future tasks on the same `(agent, issue)` pair (the path is round-tripped via `PriorWorkDir` on the next claim), and the GC loop deletes those workdirs **wholesale**. Rewriting the marker block in place is the right behavior there, so cleanup would be pointless work.
+
+The local_directory case is different: without cleanup the brief would live on inside the user's repository, and a later manual `claude` / `codex` / `gemini` run started by the user in that same directory would pick up stale Agora instructions (the previous task's issue id, trigger comment id, and reply rules) and start acting on the wrong context. `CleanupRuntimeConfig` excises the brief from `CLAUDE.md` / `AGENTS.md` / `GEMINI.md`; the sibling `CleanupSidecars` removes the rest of the tree (`.agent_context/`, `.agora/`, provider skill dirs) Prepare wrote into the repo (see MUL-2784).
+
+## Inline vs. file delivery
+
+A few providers can't be trusted to load the file-based brief reliably, so the daemon **also** delivers the full runtime brief inline. `providerNeedsInlineSystemPrompt` is the gate:
+
+```go
+func providerNeedsInlineSystemPrompt(provider string) bool {
+	switch provider {
+	case "openclaw", "kiro", "kimi":
+		return true
+	default:
+		return false
+	}
+}
+```
+
+When it returns true, `runTask` sets the brief on the exec options:
+
+```go
+if providerNeedsInlineSystemPrompt(provider) {
+	execOpts.SystemPrompt = runtimeBrief
+}
+```
+
+`execOpts.SystemPrompt` is the same `runtimeBrief` string `InjectRuntimeConfig` returned, so the inlined providers receive the identical payload that file-based runtimes pick up from disk (CLI catalog, workflow steps, identity/persona, skills, project context). Without this, those providers silently miss the workflow section and never call `agora issue status` / `agora issue comment add`, leaving issues stuck in `todo`.
+
+How each backend consumes `ExecOptions.SystemPrompt` is backend-specific: `openclaw` and `kimi` prepend it to the user message, while other backends that accept it (e.g. `pi`, `codebuddy`) pass it through as the `--append-system-prompt` CLI flag. The three providers in `providerNeedsInlineSystemPrompt` still **also** get the file written, because `runtimeConfigPath` maps all of them to `AGENTS.md` — inline delivery is belt-and-suspenders, not a replacement.
+
+**Hermes is intentionally excluded.** Hermes ACP sessions start in the task cwd and Hermes loads `AGENTS.md` / `.agent_context` itself, so prepending the full brief into the ACP user prompt would duplicate that context, bloat every turn, and has triggered upstream safety filters on harmless tasks. The Hermes backend explicitly ignores `ExecOptions.SystemPrompt`.
+
+See [/developers/agentic/protocol-families](/developers/agentic/protocol-families) for why ACP (Hermes) differs from the stdin/JSON CLI families, and [/developers/conventions](/developers/conventions) for naming rules on any new provider you add via [/developers/agentic/add-a-backend](/developers/agentic/add-a-backend).
+
+## Source files
+
+| File | Symbols this page depends on |
+| --- | --- |
+| `server/internal/daemon/execenv/runtime_config.go` | `runtimeMarkerBegin`, `runtimeMarkerEnd`, `runtimeManagedSeparator`, `InjectRuntimeConfig`, `runtimeConfigPath`, `writeRuntimeConfigFile`, `locateMarkerBlock`, `CleanupRuntimeConfig`, `buildMetaSkillContent` |
+| `server/internal/daemon/daemon.go` | `runTask`, `providerNeedsInlineSystemPrompt`, `InjectRuntimeConfig` call site (`runtimeBrief`), `env.LocalDirectory` cleanup `defer`, `execenv.CleanupRuntimeConfig`, `execenv.CleanupSidecars`, `execOpts.SystemPrompt` |
+
+If a documented symbol, flag, or field above moves or changes, update this page **and** its source-map sidecar (`brief-injection-source-map.md`) in the same PR — the page is a source-traced contract and a silent drift would teach stale behavior.

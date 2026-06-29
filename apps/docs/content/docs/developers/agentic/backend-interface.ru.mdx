@@ -1,0 +1,290 @@
+---
+title: Backend Interface
+description: Контракт agent.Backend, протокол каналов Session и то, как демон опустошает его под управлением сторожевого таймера простоя.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Аудитория">
+**dev.** Эта страница предназначена для backend-инженеров, которые пишут или сопровождают бэкенд агента в `server/pkg/agent/`, либо работают над циклом выполнения задач демона в `server/internal/daemon/`. Здесь описаны интерфейс `agent.Backend`, протокол каналов `Session`, на котором обязан говорить каждый бэкенд, и то, как `Daemon.executeAndDrain` потребляет этот протокол. О том, как задача вообще маршрутизируется на runtime, см. [/developers/agentic/daemon](/developers/architecture). О правилах именования и границах пакетов см. [/developers/conventions](/developers/conventions) и `CLAUDE.md` в корне репозитория.
+</Callout>
+
+Пакет `agent` (`server/pkg/agent/`) предоставляет один интерфейс — `Backend`, — который реализует каждый runtime coding-агента (Claude Code, Codex, Copilot, OpenCode и остальные). Демон общается со всеми ними через этот единственный контракт, поэтому добавление нового агента означает реализацию `Backend.Execute` и ничего больше. На этой странице описан этот контракт на примере бэкенда `claude` (`claude.go`) как эталонной реализации, после чего показано, как демон опустошает результат.
+
+## Интерфейс Backend
+
+```go
+type Backend interface {
+	// Execute runs a prompt and returns a Session for streaming results.
+	Execute(ctx context.Context, prompt string, opts ExecOptions) (*Session, error)
+}
+```
+
+У `Execute` есть строгий контракт по времени, который и есть сердце всего этого замысла: **быстро вернуть ненулевой `*Session`, а затем выполнять CLI в горутинах.** `Execute` делает синхронную работу, которая может сразу же завершиться неудачей, — находит бинарник, собирает аргументы, запускает подпроцесс, подключает пайпы, — и в тот момент, когда `cmd.Start()` успешно отрабатывает, он порождает горутины, читающие stdout, пишущие в stdin и ожидающие завершения, после чего возвращает `Session`. Вызывающая сторона никогда не блокируется внутри `Execute` в ожидании завершения агента; вместо этого она ждёт на каналах `Session`.
+
+Возвращённая `error` означает, что запуск так и не стартовал (бинарник не найден, не удалось создать пайп, `cmd.Start()` завершился неудачей). В этом случае `*Session` равен `nil` и опустошать нечего. Если `Execute` возвращает ненулевой `*Session`, ошибка равна `nil`, и вызывающая сторона **обязана** потребить каналы.
+
+## ExecOptions
+
+`ExecOptions` настраивает одно выполнение. Бэкенды потребляют только те поля, которые имеют смысл для их CLI; неизвестные данному бэкенду поля молча игнорируются, а не приводят к ошибке, так что новые опции можно добавлять, не ломая несвязанных агентов. Поля, которые читает бэкенд `claude`:
+
+| Поле | Тип | Значение |
+| --- | --- | --- |
+| `Cwd` | `string` | рабочий каталог подпроцесса (`cmd.Dir`) |
+| `Model` | `string` | становится `--model`, если непустое |
+| `SystemPrompt` | `string` | становится `--append-system-prompt`, если непустое |
+| `MaxTurns` | `int` | становится `--max-turns`, если `> 0` |
+| `Timeout` | `time.Duration` | ограничение по «настенному» времени; `<= 0` означает **отсутствие крайнего срока** (только сторожевой таймер) |
+| `ResumeSessionID` | `string` | становится `--resume`, если непустое |
+| `ExtraArgs` | `[]string` | общедемонные CLI-аргументы по умолчанию, добавляются перед `CustomArgs` |
+| `CustomArgs` | `[]string` | CLI-аргументы для конкретного агента, добавляются после `ExtraArgs` |
+| `McpConfig` | `json.RawMessage` | если не nil, записывается во временный файл и передаётся через `--mcp-config` |
+| `ThinkingLevel` | `string` | становится `--effort`, если непустое (пустое = значение CLI по умолчанию) |
+
+`Timeout` заслуживает особого внимания. `runContext` в `agent.go` превращает его в контекст подпроцесса:
+
+```go
+func runContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout > 0 {
+		return context.WithTimeout(ctx, timeout)
+	}
+	return context.WithCancel(ctx)
+}
+```
+
+Положительный `Timeout` накладывает жёсткий крайний срок по «настенному» времени. Нулевой или отрицательный `Timeout` **не** накладывает крайнего срока — живучесть полностью оставлена на сторожевой таймер неактивности демона, так что сессия, которая продолжает испускать события, никогда не убивается лишь за то, что работает долго (MUL-3064).
+
+## Протокол каналов Session
+
+`Execute` возвращает `Session`, содержащий два канала только для приёма:
+
+```go
+type Session struct {
+	// Messages streams events as the agent works. The channel is closed
+	// when the agent finishes (before Result is sent).
+	Messages <-chan Message
+	// Result receives exactly one value — the final outcome — then closes.
+	Result <-chan Result
+}
+```
+
+Протокол, которому обязана подчиняться горутина-производитель, точен, и `claude.go` — его каноническая реализация:
+
+1. `Messages` — **буферизованный канал ёмкостью 256** (`make(chan Message, 256)`).
+2. `Result` — **буферизованный канал ёмкостью 1** (`make(chan Result, 1)`).
+3. По мере работы агента горутина отправляет значения `Message` в `Messages`.
+4. Когда агент завершается, горутина **сначала закрывает `Messages`**, затем отправляет **ровно один** `Result` в `Result`, затем закрывает `Result`.
+
+В `claude.go` порядок обеспечивается составленными в стек `defer`-вызовами в рабочей горутине. Отложенные функции выполняются в порядке LIFO, поэтому порядок регистрации
+
+```go
+defer cancel()
+defer close(msgCh)
+defer close(resCh)
+```
+
+означает, что `resCh` закрывается последним. Единственный `Result` отправляется (`resCh <- Result{...}`) как последний оператор тела горутины, после того как цикл сканирования и `cmd.Wait()` завершились, — так что к моменту отправки `Result` канал `Messages` уже закрыт отложенным `close(msgCh)`. Поскольку `Result` имеет ёмкость 1, эта отправка никогда не блокируется, даже если ещё никто не читает.
+
+<Mermaid chart={`sequenceDiagram
+    participant C as Caller (executeAndDrain)
+    participant E as Execute
+    participant G as worker goroutine
+    participant CLI as agent CLI
+    C->>E: Execute(ctx, prompt, opts)
+    E->>CLI: cmd.Start()
+    E->>G: spawn (stdout reader / waiter)
+    E-->>C: *Session (fast return)
+    loop streaming
+        CLI->>G: stream-json line
+        G->>C: Message on Messages (cap 256, trySend)
+    end
+    CLI->>G: process exit
+    G->>C: close(Messages)
+    G->>C: Result on Result (cap 1)
+    G->>C: close(Result)`} />
+
+### Почему именно такая форма
+
+Порядок «сначала закрыть `Messages`, потом отправить `Result`» позволяет потребителю использовать закрытие канала как сигнал «агент закончил стримить», а затем переключиться на ожидание `Result` для финального исхода — никогда не рискуя пропустить `Result` или попасть в дедлок. Канал `Result` ёмкостью 1 гарантирует, что производитель может положить исход и выйти, даже если потребитель в этот момент занят; потребитель заберёт его позже.
+
+## Message и MessageType
+
+`Message` — это единый событие стрима. `MessageType` — это перечисление строкового типа с семью значениями, все объявлены как Go-константы в `agent.go`:
+
+```go
+const (
+	MessageText       MessageType = "text"
+	MessageThinking   MessageType = "thinking"
+	MessageToolUse    MessageType = "tool-use"
+	MessageToolResult MessageType = "tool-result"
+	MessageStatus     MessageType = "status"
+	MessageError      MessageType = "error"
+	MessageLog        MessageType = "log"
+)
+```
+
+Структура `Message` несёт один набор полей; какие именно поля заполнены, зависит от `Type`:
+
+| Поле | Заполняется для |
+| --- | --- |
+| `Content` | `MessageText`, `MessageError`, `MessageLog` |
+| `Tool` | `MessageToolUse`, `MessageToolResult` |
+| `CallID` | `MessageToolUse`, `MessageToolResult` |
+| `Input` (`map[string]any`) | `MessageToolUse` |
+| `Output` | `MessageToolResult` |
+| `Status` | `MessageStatus` |
+| `Level` | `MessageLog` |
+| `SessionID` | `MessageStatus` (ранняя фиксация указателя resume) |
+
+### Ограниченная отправка: trySend отбрасывает, но не блокирует
+
+Бэкенды отправляют в `Messages` через общий помощник `trySend`, никогда не голым отправлением в канал:
+
+```go
+func trySend(ch chan<- Message, msg Message) {
+	select {
+	case ch <- msg:
+	default:
+		// Channel full — drop message. Final output is accumulated
+		// separately in Result.Output, so only streaming consumers are
+		// affected.
+	}
+}
+```
+
+Это вторая половина контракта ёмкости 256. Буфер поглощает всплески, а когда он заполнен, `trySend` **отбрасывает** сообщение, а не блокирует сканер stdout. Заблокированный сканер создал бы обратное давление на пайп stdout у CLI и привёл бы к дедлоку запуска. Поэтому потребители стрима могут пропускать промежуточные сообщения под нагрузкой — это сделано намеренно, — но авторитетный финальный текст накапливается отдельно в `Result.Output`, так что при отбрасывании сообщения стрима ничего из видимого пользователю не теряется.
+
+## Result и перечисление статусов
+
+`Result` — единый финальный исход:
+
+```go
+type Result struct {
+	Status     string // "completed", "failed", "aborted", "timeout", "cancelled"
+	Output     string // accumulated text output
+	Error      string // error message if failed
+	DurationMs int64
+	SessionID  string
+	Usage      map[string]TokenUsage // keyed by model name
+}
+```
+
+`Status` — это **закрытое перечисление, выраженное строковыми литералами**, — Go-констант для этих значений намеренно нет. Пять значений, которые бэкенд может установить, — это `"completed"`, `"failed"`, `"aborted"`, `"timeout"` и `"cancelled"`. Бэкенд `claude` присваивает их в своей завершающей логике после `cmd.Wait()`:
+
+| `Status` | Когда бэкенд `claude` его устанавливает |
+| --- | --- |
+| `"completed"` | по умолчанию; пришло событие `result` без ошибки |
+| `"failed"` | CLI сообщил об ошибке, запись промпта не удалась до получения какого-либо результата, или процесс завершился с ненулевым кодом |
+| `"timeout"` | `runCtx.Err() == context.DeadlineExceeded` (сработал крайний срок `Timeout`) |
+| `"aborted"` | `runCtx.Err() == context.Canceled` (контекст был отменён, например, через `agentCancel` сторожевого таймера простоя) |
+| `"cancelled"` | синтезируется демоном (см. ниже), а не классификатором завершения бэкенда `claude` |
+
+<Callout type="warn">
+Поскольку `Status` — свободная строка, любой потребитель, который делает по нему `switch`, обязан иметь ветку `default`. Демон добавляет ниже по потоку ещё два исхода — `"idle_watchdog"` и `"cancelled"`, — которые ни один бэкенд никогда не испускает. Относитесь к перечислению как к открытому на границе потребителя, даже если бэкенды всегда записывают только пять канонических значений.
+</Callout>
+
+### TokenUsage и Result.Usage
+
+Учёт токенов ведётся по моделям. `Result.Usage` ключуется по имени модели, так что один запуск, охватывающий более одной модели, сообщает потребление каждой модели отдельно:
+
+```go
+type TokenUsage struct {
+	InputTokens      int64
+	OutputTokens     int64
+	CacheReadTokens  int64
+	CacheWriteTokens int64
+}
+```
+
+Бэкенд `claude` накапливает потребление по мере поступления сообщений `assistant` (суммируя в запись соответствующей модели в карте `usage`) и предпочитает авторитетный блок `modelUsage` из финального события `result`, когда тот присутствует (`claudeResultUsage`).
+
+## Как демон потребляет каналы
+
+`Daemon.executeAndDrain` (`server/internal/daemon/daemon.go`) — это продакшен-потребитель. Он вызывает `backend.Execute`, опустошает `Session.Messages`, пересылая события на сервер, и ждёт на `Session.Result` — всё это под сторожевым таймером простоя/инструментов.
+
+Скелет:
+
+```go
+agentCtx, agentCancel := context.WithCancel(ctx)
+defer agentCancel()
+
+session, err := backend.Execute(agentCtx, prompt, opts)
+if err != nil {
+	return agent.Result{}, 0, err
+}
+```
+
+`executeAndDrain` оборачивает `ctx` вызывающей стороны в `agentCtx`, так что один вызов `agentCancel()` прерывает **и** подпроцесс (сторожевой таймер отменяет контекст, переданный в `Execute`), **и** цикл опустошения. Затем он:
+
+1. **Рассчитывает крайний срок опустошения исходя из `opts.Timeout`.** При положительном `Timeout` контекст опустошения получает `Timeout + 30s` (дополнительное окно позволяет ему всё же собрать собственный `Result` со статусом `"timeout"` от бэкенда, если stdout застрял). При `Timeout <= 0` контекст опустошения **не имеет крайнего срока** — сторожевой таймер неактивности остаётся единственной страховкой живучести, что совпадает с собственным поведением бэкенда без крайнего срока (MUL-3064).
+2. **Запускает сторожевой таймер простоя** (когда `AgentIdleWatchdog > 0`) через `runIdleWatchdog`.
+3. **Выполняет горутину опустошения** — `for`/`select` по `session.Messages` (и `drainCtx.Done()`), пакетируя сообщения `text`/`thinking`/`tool_use`/`tool_result`/`error` и сбрасывая их на сервер каждые 500 мс через `d.client.ReportTaskMessages`.
+4. **Ждёт на `session.Result`** во внешнем `select`.
+
+Цикл опустошения завершается, когда `session.Messages` **закрыт** (`case msg, ok := <-session.Messages: if !ok { goto drainDone }`) — ровно то закрытие, которое протокол бэкенда обещает перед отправкой `Result`. Затем внешний select принимает единственный `Result`:
+
+```go
+select {
+case result := <-session.Result:
+	if idleWatchdogFired.Load() {
+		result.Status = "idle_watchdog"
+		...
+	}
+	return result, toolCount.Load(), nil
+case <-drainCtx.Done():
+	...
+}
+```
+
+### Сторожевой таймер простоя / инструментов
+
+`runIdleWatchdog` — это то, что делает режим без крайнего срока по «настенному» времени безопасным. Цикл опустошения штампует `lastActivityAt` (unix-наносекунды) каждый раз, когда приходит сообщение. Сторожевой таймер тикает и принудительно останавливает запуск, когда бэкенд молчит дольше применимого бюджета:
+
+- **Ни один инструмент не в работе** → молчание дольше `AgentIdleWatchdog` (`window`) — это зависание.
+- **Инструмент в работе** (`tool_use` без пока что соответствующего `tool_result`, отслеживается счётчиком `inFlightTools`) → применяется больший `AgentToolWatchdog` (`toolWindow`), потому что настоящий `npm install` / `docker build` законно работает молча минутами. `toolWindow <= 0` полностью отключает ограничение по работающим инструментам.
+
+В **обоих** случаях сторожевой таймер также требует `len(session.Messages) == 0` перед срабатыванием — буферизованное, но не опустошённое сообщение означает, что отстаёт цикл опустошения, а не бэкенд, поэтому он ждёт ещё один тик. При срабатывании он записывает, какой порог был превышен, устанавливает `idleWatchdogFired` и вызывает `agentCancel()`. Эта отмена распространяется в бэкенд (который переводит итоговый `context.Canceled` в `Status: "aborted"`); обратно в `executeAndDrain` проверка `idleWatchdogFired` **переразмечает** исход в `"idle_watchdog"`, так что задача маршрутизируется через специальную причину сбоя вместо общего ведра aborted.
+
+`executeAndDrain` также синтезирует статусы `"cancelled"` и `"timeout"`, существующие только на стороне демона, на ветке `drainCtx.Done()`, отличая восходящую отмену (`context.Canceled` → `"cancelled"`) от подлинного истечения крайнего срока опустошения (`context.DeadlineExceeded` → `"timeout"`).
+
+## Обязательный шаблонный код бэкенда
+
+Каждый бэкенд, который надзирает за дочерним CLI, обязан подключить одну и ту же надзорную обвязку. Пропуск любой её части заново вносит баг, который мы уже исправили. Используя `claude.go` как эталон:
+
+| Шаг | Вызов | Почему он обязателен |
+| --- | --- | --- |
+| Найти бинарник | `exec.LookPath(execPath)` | быстро завершиться неудачей (и из `Execute`, до любой горутины), когда CLI отсутствует, вернув ошибку + `nil`-Session |
+| Вывести контекст запуска | `runContext(ctx, opts.Timeout)` | положительный timeout → жёсткий крайний срок; неположительный → только сторожевой таймер (MUL-3064) |
+| Собрать окружение дочернего процесса | `cmd.Env = buildEnv(b.cfg.Env)` | объединяет `os.Environ()` с дополнительными переменными и **вырезает внутренние маркеры сессии Claude Code** (`isFilteredChildEnvKey`), чтобы дочерний процесс не принял себя за вложенную/возобновлённую сессию |
+| Скрыть окно консоли | `hideAgentWindow(cmd)` | предотвращает мелькание окна консоли в Windows |
+| Ограничить очистку при принудительном завершении | `cmd.WaitDelay = 10 * time.Second` | после отмены контекста даёт процессу 10 с на выход, прежде чем его I/O-пайпы будут принудительно закрыты, так что `cmd.Wait()` не может зависнуть навсегда на застрявшем дочернем процессе |
+| Захватить ограниченный stderr | `newStderrTail(newLogWriter(...), agentStderrTailBytes)` в качестве `cmd.Stderr` | удерживает последние 2048 байт stderr, так что падение CLI показывает реальную причину вместо просто `exit status N` |
+| Прикрепить хвост при сбое | `withAgentStderr(finalError, "claude", stderrBuf.Tail())` | добавляет этот хвост к `Result.Error`, так что сбои можно докопаться до первопричины, не перелопачивая логи демона |
+
+### stderrTail подробно
+
+`stderr_tail.go` определяет потокобезопасный writer, который пересылает каждый байт в лог демона **и** удерживает ограниченный хвост:
+
+```go
+const agentStderrTailBytes = 2048
+```
+
+`stderrTail.Write` дописывает во внутренний буфер под мьютексом и обрезает его обратно до `max` байт с конца, так что память остаётся ограниченной независимо от того, сколько пишет CLI. `Tail()` возвращает содержимое с обрезанными пробельными символами; `withAgentStderr(msg, label, tail)` составляет финальную строку ошибки (`msg + "; " + label + " stderr: " + tail`), возвращая `msg` без изменений, когда хвост пуст.
+
+Бэкенд `claude` сэмплирует `stderrBuf.Tail()` только **после** возврата `cmd.Wait()` — в этот момент горутина копирования stderr из `os/exec` наблюдала каждый байт, написанный CLI, так что хвост полон, а чтение свободно от гонок.
+
+<Callout type="warn">
+Всё перечисленное выше не является опциональным. Вырезание окружения, `WaitDelay` и обвязка `stderrTail` каждое восходит к конкретному продакшен-инциденту. Когда добавляете новый бэкенд, копируйте надзорную форму из `claude.go`, а не выводите её заново.
+</Callout>
+
+## Source files
+
+| Файл | Символы, от которых зависит эта страница |
+| --- | --- |
+| `server/pkg/agent/agent.go` | `Backend`, `Backend.Execute`, `ExecOptions` (и его поля `Cwd`, `Model`, `SystemPrompt`, `MaxTurns`, `Timeout`, `ResumeSessionID`, `ExtraArgs`, `CustomArgs`, `McpConfig`, `ThinkingLevel`), `runContext`, `Session`, `Session.Messages`, `Session.Result`, `MessageType`, `MessageText`, `MessageThinking`, `MessageToolUse`, `MessageToolResult`, `MessageStatus`, `MessageError`, `MessageLog`, `Message` (поля `Type`, `Content`, `Tool`, `CallID`, `Input`, `Output`, `Status`, `Level`, `SessionID`), `TokenUsage`, `Result` (поля `Status`, `Output`, `Error`, `DurationMs`, `SessionID`, `Usage`), литералы `Result.Status` `"completed"`/`"failed"`/`"aborted"`/`"timeout"`/`"cancelled"` |
+| `server/pkg/agent/claude.go` | `claudeBackend.Execute`, `msgCh` (cap 256), `resCh` (cap 1), порядок отложенных `cancel`/`close(msgCh)`/`close(resCh)`, `trySend`, `buildEnv`, `mergeEnv`, `isFilteredChildEnvKey`, `cmd.WaitDelay`, `hideAgentWindow`, `newStderrTail`/`agentStderrTailBytes`, `withAgentStderr`, `claudeResultUsage`, `exec.LookPath` |
+| `server/pkg/agent/stderr_tail.go` | `agentStderrTailBytes` (2048), `stderrTail`, `newStderrTail`, `stderrTail.Write`, `stderrTail.Tail`, `withAgentStderr` |
+| `server/internal/daemon/daemon.go` | `Daemon.executeAndDrain`, `agentCtx`/`agentCancel`, `drainCtx` (`opts.Timeout + 30s` против отсутствия крайнего срока), опустошение `session.Messages` (`goto drainDone`), `d.client.ReportTaskMessages`, select по `session.Result`, `runIdleWatchdog`, `idleWatchdogReason`, `idleWatchdogFired`, `lastActivityAt`, `inFlightTools`, `AgentIdleWatchdog`, `AgentToolWatchdog`, синтезированные демоном статусы `"idle_watchdog"`/`"cancelled"`/`"timeout"` |
+
+Когда любой задокументированный символ, поле, литерал статуса или CLI-флаг выше перемещается или меняется, обновите эту страницу **и** её sidecar-карту источников (`references/backend-interface-source-map.md`) в **том же PR** — эти документы являются контрактом, прослеживаемым до исходников (правило дрейфа builtin_skills); изменение кода, попавшее без изменения документа, молча учит устаревшему поведению.
