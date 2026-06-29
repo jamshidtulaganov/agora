@@ -220,7 +220,11 @@
  *  - the connecting ring shimmers
  * All node transforms scale about their own center via transform-box: fill-box. */
 .agora-loader-orbit {
-  transform-box: fill-box;
+  /* Rotate about the viewBox center (48,48), NOT the group's bounding box:
+   * the nodes have asymmetric radii (r8 vs r6.5) so the bbox center is offset,
+   * and transform-box: fill-box on a <g> is unreliable — either makes the ring
+   * orbit off-center and drift away from the core. view-box => origin (48,48). */
+  transform-box: view-box;
   transform-origin: center;
   animation: agora-loader-orbit 6s linear infinite;
 }
