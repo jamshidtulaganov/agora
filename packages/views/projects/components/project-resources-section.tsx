@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  BookOpen,
   ChevronRight,
   FolderGit,
   FolderOpen,
@@ -19,6 +20,7 @@ import {
   useUpdateProjectResource,
 } from "@agora/core/projects";
 import { useWorkspaceId } from "@agora/core/hooks";
+import { api } from "@agora/core/api";
 import { useCurrentWorkspace } from "@agora/core/paths";
 import type {
   GithubRepoResourceRef,
@@ -76,9 +78,35 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
   const { data: resources = [] } = useQuery(
     projectResourcesOptions(wsId, projectId),
   );
+  // Primary repo = the first github_repo by position (the order the backend
+  // hands the agent; the human reorders to choose which an agent works in).
+  const githubRepos = resources.filter(isGithubRef);
+  const githubRepoCount = githubRepos.length;
+  const firstGithubRepoId = githubRepos[0]?.id;
   const createResource = useCreateProjectResource(wsId, projectId);
   const updateResource = useUpdateProjectResource(wsId, projectId);
   const deleteResource = useDeleteProjectResource(wsId, projectId);
+  const [buildingKb, setBuildingKb] = useState(false);
+
+  // Trigger the lead agent to study the connected repos and write the project's
+  // <slug>-kb knowledge skill. Backend validates lead-is-agent + has-repo.
+  const handleBuildKnowledge = async () => {
+    setBuildingKb(true);
+    try {
+      await api.buildProjectKnowledge(projectId);
+      toast.success(
+        "Knowledge build started — the lead agent will study the repos.",
+      );
+    } catch (err) {
+      toast.error(
+        err instanceof Error && err.message
+          ? err.message
+          : "Failed to start knowledge build",
+      );
+    } finally {
+      setBuildingKb(false);
+    }
+  };
 
   // Desktop-only entry points. We hide (not just disable) on web so users
   // there don't see an action they can never complete — the spec calls for
@@ -244,9 +272,11 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
       {open && (
         <div className="pl-2 space-y-1.5">
           {resources.length === 0 && (
-            <p className="text-xs text-muted-foreground">
-              {t(($) => $.resources.empty)}
-            </p>
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-2">
+              <p className="text-xs text-muted-foreground">
+                {t(($) => $.resources.empty)}
+              </p>
+            </div>
           )}
           {resources.length > 0 && (
             <div className="max-h-64 space-y-1.5 overflow-y-auto pr-1">
@@ -254,6 +284,14 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
                 <ResourceRow
                   key={resource.id}
                   resource={resource}
+                  // The first github_repo (resources are position-ordered) is the
+                  // PRIMARY: where an agent opens its PR/MR when the project binds
+                  // several repos. Surfacing it tells the human the order matters.
+                  isPrimaryRepo={
+                    isGithubRef(resource) &&
+                    resource.id === firstGithubRepoId
+                  }
+                  hasMultipleRepos={githubRepoCount > 1}
                   localDaemonId={localDaemonId}
                   canEdit={desktopMode}
                   onRemove={() => handleRemove(resource)}
@@ -381,6 +419,18 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
               )}
             </div>
           )}
+          {resources.some((r) => r.resource_type === "github_repo") && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-full justify-start px-2 text-xs text-muted-foreground hover:text-foreground"
+              disabled={buildingKb}
+              onClick={() => void handleBuildKnowledge()}
+            >
+              <BookOpen className="size-3" />
+              {buildingKb ? "Starting…" : "Build knowledge base"}
+            </Button>
+          )}
         </div>
       )}
     </div>
@@ -391,6 +441,8 @@ interface ResourceRowProps {
   resource: ProjectResource;
   localDaemonId: string | null;
   canEdit: boolean;
+  isPrimaryRepo?: boolean;
+  hasMultipleRepos?: boolean;
   onRemove: () => void;
   onRenameLocalDirectory: (
     resource: ProjectResource & { resource_ref: LocalDirectoryResourceRef },
@@ -402,6 +454,8 @@ function ResourceRow({
   resource,
   localDaemonId,
   canEdit,
+  isPrimaryRepo,
+  hasMultipleRepos,
   onRemove,
   onRenameLocalDirectory,
 }: ResourceRowProps) {
@@ -426,6 +480,14 @@ function ResourceRow({
           />
           <TooltipContent side="top">{ref.url}</TooltipContent>
         </Tooltip>
+        {hasMultipleRepos && isPrimaryRepo && (
+          <span
+            className="shrink-0 rounded bg-primary/10 px-1 py-0.5 text-[9px] font-medium text-primary"
+            title="Primary repo — agents open their PR/MR here"
+          >
+            primary
+          </span>
+        )}
         <button
           type="button"
           onClick={onRemove}

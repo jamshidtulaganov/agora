@@ -1203,6 +1203,11 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		if agent.McpConfig != nil {
 			mcpConfig = json.RawMessage(agent.McpConfig)
 		}
+		// Fill the Lark MCP server's app credentials from the agent's bound
+		// Bot installation (the daemon can't decrypt app_secret; only the
+		// backend holds the key). No-op unless the agent configured a "lark"
+		// server and has an active installation. See injectLarkMcpCreds.
+		mcpConfig = h.injectLarkMcpCreds(r.Context(), agent, mcpConfig)
 		// runtime_config is stored as JSONB and may legitimately be the
 		// empty object `{}` for agents that haven't opted into any
 		// provider-specific tuning. Forward only non-empty payloads so the
@@ -1384,6 +1389,26 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				if json.Unmarshal(ws.Repos, &repos) == nil && len(repos) > 0 {
 					resp.Repos = repos
 				}
+			}
+
+			// When a project binds MORE THAN ONE repo, the agent would otherwise
+			// guess which to use and can open an MR against the wrong one
+			// (issue 122eff42). Name the PRIMARY repo — the first by resource
+			// position, which the human controls — and forbid pushing to the
+			// others unless this issue explicitly targets them.
+			if resp.Agent != nil && len(projectRepos) > 1 {
+				others := make([]string, 0, len(projectRepos)-1)
+				for _, rp := range projectRepos[1:] {
+					if u := strings.TrimSpace(rp.URL); u != "" {
+						others = append(others, u)
+					}
+				}
+				note := " This project binds MULTIPLE repositories. The PRIMARY repository is " +
+					projectRepos[0].URL + " — make your change there and open the pull/merge request " +
+					"against it ONLY. The other repositories (" + strings.Join(others, ", ") +
+					") are reference-only; do NOT branch, push, or open a PR against them unless THIS " +
+					"issue explicitly names one of them as the target."
+				resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + note)
 			}
 
 			// No repo to clone (neither the project nor the workspace has
