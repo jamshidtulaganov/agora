@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -395,6 +396,107 @@ func (h *Handler) DeployIssueQA(w http.ResponseWriter, r *http.Request) {
 		"branch": branch,
 		"ok":     okSync,
 		"output": output,
+	})
+}
+
+// sprintBranchName is the git branch a sprint's work lives on — one branch per
+// sprint (`sprint/<sprintId>`), per the QA-process design. Single source of
+// truth so the handler, the autopilot sprint-end dispatch, and any future
+// caller all agree on the exact ref.
+func sprintBranchName(sprintID pgtype.UUID) string {
+	return "sprint/" + uuidToString(sprintID)
+}
+
+// DeploySprintBranch resolves a sprint's project → its EXPLICITLY bound QA box
+// and git-syncs the sprint branch (`sprint/<sprintId>`) onto that box, so the
+// box serves the whole sprint's accumulated change for the sprint-end
+// regression. Unlike connectedBoxForIssue this does ONLY the explicit
+// project_id match — a sprint's project binding is authoritative, no repo-name
+// fallback. Callable from the autopilot sprint-end dispatch (no http.Request),
+// which is why it is exported. Returns the updated box, whether the sync
+// succeeded, and any resolution error (a resolution failure is distinct from a
+// sync that ran but failed).
+func (h *Handler) DeploySprintBranch(ctx context.Context, sprintID, wsID pgtype.UUID) (db.ConnectedBox, bool, error) {
+	sprint, err := h.Queries.GetSprint(ctx, db.GetSprintParams{
+		ID:          sprintID,
+		WorkspaceID: wsID,
+	})
+	if err != nil {
+		return db.ConnectedBox{}, false, fmt.Errorf("sprint not found: %w", err)
+	}
+	if !sprint.ProjectID.Valid {
+		return db.ConnectedBox{}, false, fmt.Errorf("sprint has no project")
+	}
+
+	boxes, err := h.Queries.ListConnectedBoxesByWorkspace(ctx, wsID)
+	if err != nil {
+		return db.ConnectedBox{}, false, fmt.Errorf("list connected boxes: %w", err)
+	}
+	var box db.ConnectedBox
+	found := false
+	for _, b := range boxes {
+		if b.ProjectID.Valid && b.ProjectID.Bytes == sprint.ProjectID.Bytes {
+			box = b
+			found = true
+			break
+		}
+	}
+	if !found {
+		return db.ConnectedBox{}, false, fmt.Errorf("no QA box is bound to the sprint's project")
+	}
+	if strings.TrimSpace(box.RepoUrl) == "" || strings.TrimSpace(box.WorkDir) == "" {
+		return db.ConnectedBox{}, false, fmt.Errorf("the resolved box has no repo_url / work_dir configured")
+	}
+	keyPath := remoteBoxesSSHKeyPath()
+	if keyPath == "" {
+		return db.ConnectedBox{}, false, fmt.Errorf("remote box SSH key is not configured on the server")
+	}
+
+	updated, okSync, _ := h.performBoxSync(ctx, box, sprintBranchName(sprintID), keyPath)
+	return updated, okSync, nil
+}
+
+// DeploySprintQA is the sprint-level counterpart to DeployIssueQA: it resolves
+// the sprint's project-bound QA box and git-syncs the sprint branch onto it.
+// POST /api/sprints/{id}/deploy-qa. The box is auto-resolved from the sprint's
+// project — the caller supplies nothing but the sprint id in the path.
+func (h *Handler) DeploySprintQA(w http.ResponseWriter, r *http.Request) {
+	if !remoteBoxesEnabled() {
+		writeError(w, http.StatusNotFound, "remote boxes are not enabled")
+		return
+	}
+	if _, ok := requireUserID(w, r); !ok {
+		return
+	}
+	wsID := h.resolveWorkspaceID(r)
+	if wsID == "" {
+		writeError(w, http.StatusBadRequest, "workspace required")
+		return
+	}
+	wsUUID, ok := parseUUIDOrBadRequest(w, wsID, "workspace_id")
+	if !ok {
+		return
+	}
+	sprintUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "sprint id")
+	if !ok {
+		return
+	}
+
+	updated, okSync, err := h.DeploySprintBranch(r.Context(), sprintUUID, wsUUID)
+	if err != nil {
+		// Resolution failures (sprint/box/config missing) are a 404 — there is
+		// nothing to sync, mirroring DeployIssueQA's "no box bound" path.
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	code := http.StatusOK
+	if !okSync {
+		code = http.StatusBadGateway
+	}
+	writeJSON(w, code, map[string]any{
+		"box":    connectedBoxToResponse(updated),
+		"branch": sprintBranchName(sprintUUID),
+		"ok":     okSync,
 	})
 }
 

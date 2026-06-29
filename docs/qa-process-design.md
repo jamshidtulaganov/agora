@@ -30,23 +30,55 @@ deploy-qa, the agent/skill fleet), not a parallel system.
 6. **Self-improving.** Every confirmed bug becomes a permanent fail-before/pass-after
    regression test, captured into a workspace skill so the whole squad inherits it.
 
-## Cadence model (the refined decision)
+## Cadence model — one branch per sprint (this team)
 
-QA cadence is tied to Agora's work units (task, sprint), not wall-clock — with one
-cheap backstop so cross-task regressions don't hide until sprint close.
+The team runs **one git branch per sprint** (`sprint/<sprintId>`, cut from `main`/`billing`
+at sprint start); ALL tasks for the sprint commit onto that shared branch — there is no
+per-task PR branch. Sprints are 2 weeks; at sprint end the whole branch gets a **full
+regression**, then a human merges it. The cadence has three tiers:
 
-| Cadence | Runs | Purpose | Gate |
-|---|---|---|---|
-| **Per TASK** (every issue/PR) | FAST PATH: `run_ci` (lint+build+test by exit code; any test weakening/deletion/skip = fail) ∥ `run_qa` smoke (deterministic baseline-diff) + a fail-before/pass-after regression test for the change | fast feedback; the task's own regressions caught immediately | `ci:pass` + `qa:pass` (blocks merge) |
-| **Merge → main** (cheap backstop) | regression **suite** re-run — exit-code only, NO browser/perf | catch **cross-task** regressions within a day, not at sprint end | `regression:fail` (advisory) |
-| **Per SPRINT** (sprint close) | FULL PATH: full regression + integration + e2e + performance + security + accessibility across the sprint's integrated changes, on the deployed QA box | sprint / release gate | `release` tier (`ci+qa+security+code-review`) |
+| Cadence | Trigger | Branch | Runs | Baseline | Gate |
+|---|---|---|---|---|---|
+| **Per task** | issue → `in_review` / slice done (`run_qa`) | sprint tip | `run_qa scope=task`: deterministic build+lint+test diff + smoke (`qa_smoke_cmd`/`url`) + the task's FE/BE unit + API tests | **`refs/sprint/<id>/last-green`** (moving) — diff last-green → tip attributes a NEW failure to *this* task's commits | `ci:pass` + `qa:pass` on the issue |
+| **Daily backstop** | cron `0 8 * * 1-5` (run_only autopilot → QA squad) | sprint tip | `run_qa scope=regression` (full suite + smoke) — no issue, posts a sprint-level qa-result | **sprint-root** (`merge-base main..sprint/<id>`, fixed) — whole-branch-vs-base catches **cross-task** drift | `sprint:regression:fail` (advisory; blocks close on final day) |
+| **Sprint end** | autopilot polls sprints `status='active' AND end_date<=now()` | sprint tip → merge | FULL: regression + integration + e2e + perf + security + a11y, Lead QA orchestrates the squad; deploy-qa syncs the sprint branch to the box first | **sprint-root** — the entire sprint's net change vs the real merge target | `sprint:qa:pass` → merge-ready (human merges) |
 
-Self-improvement happens **per task** (each bug → a regression test); its payoff
-shows at the **merge** + **sprint** cadences, which re-run the growing suite.
+### The `last-green` ref — shared-branch attribution
 
-Why not per-task-full or nightly-only: per-task full is too slow (the pain);
-nightly-only hides cross-task regressions on a wall-clock that's meaningless to a
-task board. Task=fast / merge=cheap-backstop / sprint=full is the balance.
+On a shared sprint branch the stock baseline (`merge-base main..sprint/<id>`) freezes at
+sprint start, so after task 1 you can't tell which task turned a check red. Fix: a
+**moving `refs/sprint/<id>/last-green`** — created at sprint start (= sprint-root), advanced
+to the tested SHA **only after a fully-green run**, never backward. It's a git ref (survives
+across agent runs + boxes; no DB state).
+
+- **Per-task baseline = last-green** → diff isolates *exactly what landed since last-known-good* = this task. `green-on-last-green + red-on-tip` = NEW (blocks); `red-on-both` = pre-existing (advisory).
+- **Whole-branch baseline = sprint-root** (daily + sprint-end) → answers "is the accumulated sprint healthy vs the base we'll merge into" — the cross-task question.
+- Run the per-task gate **eagerly** (on each `in_review`) so last-green advances often and each delta stays one-task-sized. Force-push that orphans last-green falls back to sprint-root (coarser for one run) — note it in the verdict.
+
+## Test strategy — per-task tests, golden paths, analytics-driven
+
+**1. Per task: FE + BE unit + API tests (mandatory).** Every task's `run_qa` WRITE-TESTS
+step adds/updates tests covering the diff, and the gate rejects a task with no coverage for
+its change:
+- **FE unit** — sd-bridge: vitest (changed component/logic).
+- **BE unit** — sd-main/cs3: phpunit/codeception (changed function).
+- **API tests** — request→response contract (status, schema, auth) for changed/new endpoints.
+- Bug fix → fail-before/pass-after proof; test-weakening/skip/coverage-drop → gate fail.
+
+**2. Golden paths — the daily-critical flows (permanent, release-blocking).** The features
+clients use every day form a permanent e2e + API regression suite that ALWAYS runs at
+sprint-end (and a subset daily):
+- **Create order** · **Kassa (cash/payments)** · **Warehouses**
+- Deterministic e2e: login → create order → assert; kassa payment → assert; warehouse stock
+  → assert — plus API tests on the underlying endpoints. A regression here = `sprint:qa:fail`
+  (blocks merge), non-negotiable. Configured as `project.settings.qa_critical_paths`.
+
+**3. Analytics-driven prioritization (Google Analytics).** Beyond the known golden paths,
+rank the regression/e2e suite by **real usage** from GA4 — test what's used most and breaks
+most painfully (data-driven, risk-based). The Lead QA Engineer pulls GA top-flows
+(monthly/per-sprint) and scopes the regression to: golden paths (always) + the top-N
+most-used flows. Wiring: a GA4 read (property + service-account) → a ranked
+`qa_critical_paths` list the sprint-end regression iterates.
 
 ## Test matrix
 
@@ -91,6 +123,14 @@ Hard invariants: `ci:fail`/`ci:pending` always blocks; test-weakening forces `ci
 even when exit codes are green; advisory gates never flip `ready=false` on their own;
 a human clicks Merge.
 
+**Sprint-level gate (sprint-branch model).** Two altitudes: per-ISSUE gates (above) gate
+each task; a new **`sprint:qa:pass`/`fail`/`pending`** gate (set by the Lead QA at the
+sprint-end regression) gates the SPRINT BRANCH. A `SprintReadiness` aggregation makes the
+sprint merge-ready only when `sprint:qa:pass` **AND** every constituent issue is `qa:pass`.
+The daily backstop's `sprint:regression:fail` is advisory but blocks close on the final day.
+`sprint:qa:pass` is advisory merge-readiness — never wire an auto-merge to it; a human merges
+sprint → main.
+
 ## Mapping to Agora primitives
 
 - **`slice_action.go`** — NO new slice-action kinds (set stays closed). Extend the
@@ -111,9 +151,20 @@ a human clicks Merge.
 - **`project.settings`** — existing: `qa_smoke_cmd`, `qa_smoke_url`, `docs_repo`,
   `docs_agent`. Add (parsed via `parseWithFallback`): `qa_perf_threshold`,
   `qa_visual_enabled`, `qa_a11y_enabled`, `qa_box_id`, `qa_auto_create_gates`.
-- **Autopilot** — nightly/sprint heavy suite = a scheduled autopilot (`run_only`,
-  QA Tester assignee, `scope=regression`); `shouldSkipDispatch` pre-flight guards
-  the offline-daemon SPOF. Merge backstop hangs off a merge-to-main event.
+- **Sprint-branch wiring** — branch `sprint/<sprintId>` (cut from base at sprint start);
+  `refs/sprint/<id>/last-green` created = sprint-root, advanced by the agent (`git update-ref`)
+  after each green run. `run_qa scope` ∈ `task` (baseline=last-green) / `regression`
+  (baseline=sprint-root); each scope encodes its baseline ref in the instruction. A thin
+  `DeploySprintQA` wrapper resolves the sprint's project box and passes the sprint branch to
+  `DeployIssueQA` (already takes an explicit `{branch}`) — zero transport change.
+- **Autopilot** — daily backstop = `run_only` autopilot, assignee=**QA squad**, schedule
+  cron `0 8 * * 1-5`, payload `{scope:regression, branch:sprint/<active>, baseline:sprint-root}`.
+  Sprint-end = a frequent (hourly) `run_only` autopilot whose dispatch resolves sprints
+  `status='active' AND end_date<=now()` (no fixed 2-week cron — sprints start on arbitrary
+  dates), runs `scope=regression`, marks the sprint completed. **Required Phase-1 change:**
+  extend `DispatchAutopilot`'s `TriggerPayload`→instruction rendering from webhook-only to
+  the `schedule` source so the agent sees `scope/branch/baseline`. `resolveAutopilotLeader`
+  routes the squad to the Lead QA Engineer. `shouldSkipDispatch` guards the offline-daemon SPOF.
 - **deploy-qa** — `DeployIssueQA` + `remote_box_sync.buildGitSyncScript` (SSH
   git-sync, ephemeral token, glue-preserving force-checkout) already wired + verified.
 

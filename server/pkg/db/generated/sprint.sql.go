@@ -115,6 +115,51 @@ func (q *Queries) GetSprintForIssue(ctx context.Context, issueID pgtype.UUID) (S
 	return i, err
 }
 
+const listDueSprints = `-- name: ListDueSprints :many
+SELECT id, workspace_id, project_id, name, goal, status, start_date, end_date, created_at, updated_at FROM sprint
+WHERE status = 'active'
+  AND end_date IS NOT NULL
+  AND end_date <= now()
+ORDER BY end_date ASC
+`
+
+// Sprint-end QA dispatch: sprints whose window has closed but are still marked
+// active. The scheduler polls this (sprints start on arbitrary dates, so a fixed
+// cron can't express "2 weeks after THIS sprint's start"), dispatches the
+// sprint-end regression, then flips status to 'completed' so the row stops
+// matching here on the next tick. No project filter — the scheduler is global
+// and resolves each sprint's project from sprint.project_id.
+func (q *Queries) ListDueSprints(ctx context.Context) ([]Sprint, error) {
+	rows, err := q.db.Query(ctx, listDueSprints)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Sprint{}
+	for rows.Next() {
+		var i Sprint
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.ProjectID,
+			&i.Name,
+			&i.Goal,
+			&i.Status,
+			&i.StartDate,
+			&i.EndDate,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listIssuesBySprint = `-- name: ListIssuesBySprint :many
 SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority, i.assignee_type, i.assignee_id, i.creator_type, i.creator_id, i.parent_issue_id, i.acceptance_criteria, i.context_refs, i.position, i.due_date, i.created_at, i.updated_at, i.number, i.project_id, i.origin_type, i.origin_id, i.first_executed_at, i.start_date, i.metadata FROM issue i JOIN issue_to_sprint x ON x.issue_id = i.id WHERE x.sprint_id = $1 ORDER BY i.created_at
 `
@@ -232,6 +277,40 @@ func (q *Queries) ListSprintsByProject(ctx context.Context, projectID pgtype.UUI
 		return nil, err
 	}
 	return items, nil
+}
+
+const markSprintCompleted = `-- name: MarkSprintCompleted :one
+UPDATE sprint SET status = 'completed', updated_at = now()
+WHERE id = $1 AND workspace_id = $2 AND status = 'active'
+RETURNING id, workspace_id, project_id, name, goal, status, start_date, end_date, created_at, updated_at
+`
+
+type MarkSprintCompletedParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// Flip a due sprint to 'completed' after its sprint-end QA has been dispatched,
+// so ListDueSprints stops matching it on the next scheduler tick (otherwise an
+// active+past-end_date sprint would re-dispatch every ~30s). Guarded by
+// workspace_id for tenancy and by status='active' so two concurrent ticks can't
+// both dispatch — only the first UPDATE matches a row.
+func (q *Queries) MarkSprintCompleted(ctx context.Context, arg MarkSprintCompletedParams) (Sprint, error) {
+	row := q.db.QueryRow(ctx, markSprintCompleted, arg.ID, arg.WorkspaceID)
+	var i Sprint
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ProjectID,
+		&i.Name,
+		&i.Goal,
+		&i.Status,
+		&i.StartDate,
+		&i.EndDate,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const removeIssueSprint = `-- name: RemoveIssueSprint :exec

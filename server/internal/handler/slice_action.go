@@ -143,6 +143,9 @@ func buildSliceInstruction(kind, scope string) string {
 			"branch (e.g. your new tests); `kind` is `new_failure` only when baseline passed and the branch failed. " +
 			"The JSON must be valid and self-contained (the human-readable sections above stay as well). " +
 			"Do NOT merge anything — your verdict is advisory and the human decides next."
+		if guidance := qaBaselineGuidanceFor(strings.ToLower(strings.TrimSpace(scope))); guidance != "" {
+			base += guidance
+		}
 	case sliceActionRunCI:
 		base = "Run the CI gate for this issue's branch. Find the issue's open pull/merge request for its " +
 			"branch and check out that branch. Detect the " +
@@ -493,6 +496,55 @@ func verifyGateInstruction() string {
 		"exercises THIS change (for UI, a component test that drives the affected element and asserts the resulting " +
 		"state; for logic, a unit/integration test) AND run the build / type-check. State in the PR exactly what you " +
 		"ran and its result. If a check cannot run in your environment, say so explicitly rather than assuming it passes."
+}
+
+// qaBaselineGuidanceFor returns the scope-keyed baseline guidance appended to a
+// run_qa instruction. On a shared sprint branch the stock merge-base baseline
+// freezes at sprint start, so it can no longer attribute a NEW failure to one
+// task; the scope token selects which baseline ref the gate should diff against:
+//
+//   - "task"       — baseline is the MOVING per-sprint last-green ref. The gate
+//     diffs last-green → branch tip so a NEW failure is attributed to exactly
+//     the commits that landed since the last fully-green run (this task). After
+//     a fully-green run the agent advances the ref forward (never backward) so
+//     the next task's delta stays one-task-sized. If the ref is missing (e.g. a
+//     force-push orphaned it), fall back to the sprint-root baseline for that
+//     one run and note the coarser attribution in the verdict.
+//   - "regression" — baseline is the FIXED sprint-root: the merge-base of the
+//     sprint branch against the branch it will merge into. Diffing the whole
+//     sprint branch against sprint-root answers "is the accumulated sprint
+//     healthy vs the base we'll merge into", catching cross-task drift. Used by
+//     the daily backstop and the sprint-end full regression.
+//   - "" or unknown — no extra guidance; the instruction keeps its original
+//     merge-base wording (backward-compatible default path).
+//
+// PURE — no I/O, no handler state — so it is unit-testable without a database.
+// The wording is product-neutral: it names only git refs (last-green, sprint
+// root, merge-base) and never a product, box, or branch prefix.
+func qaBaselineGuidanceFor(scope string) string {
+	switch scope {
+	case "task":
+		return " SPRINT-BRANCH BASELINE (scope=task): this runs on a SHARED sprint branch where the plain " +
+			"merge-base froze at sprint start and can no longer tell which task turned a check red. For the BASELINE " +
+			"step above, diff against the MOVING last-green ref for this sprint instead of the merge-base — read its SHA " +
+			"with `git rev-parse refs/sprint/<sprintId>/last-green` (the orchestrator provides <sprintId>) and check that " +
+			"SHA out as the baseline. The delta from last-green to the branch tip is exactly what landed since the last " +
+			"fully-green run, so a NEW failure is attributable to THIS task. If the ref is missing (never created, or a " +
+			"force-push orphaned it), fall back to the sprint-root merge-base for this one run and NOTE the coarser " +
+			"attribution in the verdict. After a FULLY-GREEN run — every check green and your new tests passing — advance " +
+			"the ref to the tested SHA with `git update-ref refs/sprint/<sprintId>/last-green <testedSha>` (only ever " +
+			"FORWARD, never backward) so the next task diffs from this known-good point."
+	case "regression":
+		return " SPRINT-BRANCH BASELINE (scope=regression): this is a WHOLE-BRANCH regression on the shared sprint " +
+			"branch, not a single task. For the BASELINE step above, use the FIXED sprint-root — the merge-base of the " +
+			"sprint branch against the branch it will merge into (`git merge-base <baseBranch> <sprintBranch>`, the " +
+			"orchestrator provides both refs). Diff the entire sprint branch against sprint-root so the verdict answers " +
+			"\"is the accumulated sprint healthy vs the base we'll merge into\" and catches CROSS-TASK drift that a " +
+			"per-task baseline would miss. Run the full suite (build + lint + every test tier + smoke); do NOT advance " +
+			"the last-green ref from a regression run — last-green only ever moves forward off a per-task scope=task run."
+	default:
+		return ""
+	}
 }
 
 // sanitizeSliceScope neutralizes a caller-supplied scope so it can NEVER form a

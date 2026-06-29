@@ -166,6 +166,42 @@ func TestBuildSliceInstructionRunQA(t *testing.T) {
 	if sliceActionOpensPR(sliceActionRunQA) {
 		t.Error("run_qa opens no PR; must be excluded from the branch-hint set")
 	}
+
+	// Default (empty) scope must NOT append any sprint-branch baseline guidance —
+	// the original merge-base wording is the backward-compatible path. The phrases
+	// below only appear when scope is task/regression.
+	defaultLower := strings.ToLower(buildSliceInstruction(sliceActionRunQA, ""))
+	for _, mustNotAppear := range []string{"last-green", "sprint-root", "scope=task", "scope=regression"} {
+		if strings.Contains(defaultLower, strings.ToLower(mustNotAppear)) {
+			t.Errorf("default-scope run_qa must NOT carry sprint-branch guidance %q, got: %s", mustNotAppear, defaultLower)
+		}
+	}
+
+	// scope=task → the MOVING last-green ref baseline (per-task attribution on a
+	// shared sprint branch) plus the git update-ref advance after a green run.
+	taskScope := strings.ToLower(buildSliceInstruction(sliceActionRunQA, "task"))
+	for _, want := range []string{"last-green", "update-ref", "scope=task"} {
+		if !strings.Contains(taskScope, strings.ToLower(want)) {
+			t.Errorf("run_qa scope=task must encode the last-green baseline (%q), got: %s", want, taskScope)
+		}
+	}
+
+	// scope=regression → the FIXED sprint-root merge-base baseline (whole-branch,
+	// cross-task drift) used by the daily backstop + sprint-end regression.
+	regScope := strings.ToLower(buildSliceInstruction(sliceActionRunQA, "regression"))
+	for _, want := range []string{"sprint-root", "merge-base", "scope=regression"} {
+		if !strings.Contains(regScope, strings.ToLower(want)) {
+			t.Errorf("run_qa scope=regression must encode the sprint-root baseline (%q), got: %s", want, regScope)
+		}
+	}
+
+	// Product neutrality must survive the new guidance: no product/box/branch-prefix
+	// names leak into either scope's baseline text.
+	for _, banned := range []string{"sd-qa-process", "btx-", "dev test box", "salesdoc", "bitrix"} {
+		if strings.Contains(taskScope, strings.ToLower(banned)) || strings.Contains(regScope, strings.ToLower(banned)) {
+			t.Errorf("sprint-branch baseline guidance must stay product-neutral; found %q", banned)
+		}
+	}
 }
 
 // TestBuildSliceInstructionRunCI covers the run_ci kind: a deterministic gate on

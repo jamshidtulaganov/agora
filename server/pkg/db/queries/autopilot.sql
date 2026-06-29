@@ -12,6 +12,18 @@ ORDER BY created_at DESC;
 SELECT * FROM autopilot
 WHERE id = $1;
 
+-- name: ListActiveRunOnlyAutopilotsForProject :many
+-- Sprint-end dispatch: the active, run-only autopilots bound to a project. The
+-- scheduler picks one of these as the project's sprint-end QA runner when a
+-- sprint in that project becomes due (status='active' AND end_date<=now()).
+-- Ordered oldest-first so the choice is stable across ticks.
+SELECT * FROM autopilot
+WHERE workspace_id = $1
+  AND project_id = $2
+  AND status = 'active'
+  AND execution_mode = 'run_only'
+ORDER BY created_at ASC;
+
 -- name: GetAutopilotInWorkspace :one
 SELECT * FROM autopilot
 WHERE id = $1 AND workspace_id = $2;

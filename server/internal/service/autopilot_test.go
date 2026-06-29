@@ -169,15 +169,60 @@ func TestBuildIssueDescription_WebhookSourceMissingEnvelope(t *testing.T) {
 	}
 }
 
-func TestBuildIssueDescription_NonWebhookSourceWithPayloadIgnored(t *testing.T) {
-	// Manual / schedule with a payload should not get a webhook block.
+func TestBuildIssueDescription_ManualSourceWithPayloadIgnored(t *testing.T) {
+	// A manual run with a payload gets no trigger block — only webhook and
+	// schedule sources render the payload inline.
 	s := &AutopilotService{}
 	ap := db.Autopilot{Description: pgtype.Text{String: "thing", Valid: true}}
 	run := db.AutopilotRun{Source: "manual", TriggerPayload: []byte(`{"event":"x.y"}`), TriggeredAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}}
 
 	got := s.buildIssueDescription(ap, run, "UTC")
-	if strings.Contains(got.String, "Webhook event") {
-		t.Fatalf("non-webhook source should not include webhook block: %q", got.String)
+	if strings.Contains(got.String, "Webhook event") || strings.Contains(got.String, "Trigger payload") {
+		t.Fatalf("manual source should not include any trigger block: %q", got.String)
+	}
+}
+
+func TestBuildIssueDescription_WithSchedulePayload(t *testing.T) {
+	// Phase-1: a scheduled run (e.g. sprint-end QA) carries a flat
+	// {scope,branch,baseline} payload — no {event,eventPayload} envelope. It
+	// must be rendered inline as a "Trigger payload" block (NOT a "Webhook"
+	// block) so the agent reads the QA directive verbatim.
+	s := &AutopilotService{}
+	ap := db.Autopilot{Description: pgtype.Text{String: "sprint-end QA", Valid: true}}
+	payload := []byte(`{"scope":"regression","branch":"sprint/abc","baseline":"sprint-root"}`)
+	run := db.AutopilotRun{Source: "schedule", TriggerPayload: payload, TriggeredAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}}
+
+	got := s.buildIssueDescription(ap, run, "UTC")
+	if !strings.HasPrefix(got.String, "sprint-end QA") {
+		t.Fatalf("user description not preserved: %q", got.String)
+	}
+	if !strings.Contains(got.String, "Trigger payload") {
+		t.Fatalf("schedule run should render a Trigger payload block: %q", got.String)
+	}
+	if strings.Contains(got.String, "Webhook") {
+		t.Fatalf("schedule run must not be labelled as a webhook: %q", got.String)
+	}
+	for _, want := range []string{"regression", "sprint/abc", "sprint-root"} {
+		if !strings.Contains(got.String, want) {
+			t.Fatalf("schedule payload should include %q: %q", want, got.String)
+		}
+	}
+	// The italic triggered-at line still precedes the payload block.
+	if i, j := strings.Index(got.String, "*Autopilot run triggered"), strings.Index(got.String, "Trigger payload"); i < 0 || j < 0 || i > j {
+		t.Fatalf("italic line should precede the trigger payload block: %q", got.String)
+	}
+}
+
+func TestBuildIssueDescription_ScheduleSourceEmptyPayloadNoBlock(t *testing.T) {
+	// A scheduled run with no payload (a plain cron backstop) renders no block —
+	// only the autopilot description + the triggered-at line.
+	s := &AutopilotService{}
+	ap := db.Autopilot{Description: pgtype.Text{String: "daily", Valid: true}}
+	run := db.AutopilotRun{Source: "schedule", TriggeredAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}}
+
+	got := s.buildIssueDescription(ap, run, "UTC")
+	if strings.Contains(got.String, "Trigger payload") {
+		t.Fatalf("empty-payload schedule run must not render a payload block: %q", got.String)
 	}
 }
 

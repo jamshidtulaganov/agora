@@ -1047,9 +1047,12 @@ func autopilotTriggerLocation(timezone string) (*time.Location, string) {
 
 // buildIssueDescription appends an autopilot system instruction to the
 // user-provided description, asking the agent to rename the issue after
-// it understands the actual work. For webhook-sourced runs, also appends
-// a payload section so the agent has the event context inline (otherwise
-// the agent only sees the issue body, never the run's trigger_payload).
+// it understands the actual work. For webhook- AND schedule-sourced runs it
+// also appends the run's trigger payload inline, so the agent has the trigger
+// context (a webhook event, or a scheduled run's {scope, branch, baseline} QA
+// directive) in the issue body — otherwise it would only ever see the autopilot
+// description, never the per-run payload. Schedule was added in Phase-1 so a
+// scheduled sprint-QA autopilot's payload reaches the agent instruction.
 func (s *AutopilotService) buildIssueDescription(ap db.Autopilot, run db.AutopilotRun, triggerTimezone string) pgtype.Text {
 	triggeredAt := formatAutopilotRunTimestamp(run, triggerTimezone)
 	var b strings.Builder
@@ -1058,20 +1061,29 @@ func (s *AutopilotService) buildIssueDescription(ap db.Autopilot, run db.Autopil
 	b.WriteString(triggeredAt)
 	b.WriteString(". After starting work, rename this issue to accurately reflect what you are doing.*")
 
-	if run.Source == "webhook" && len(run.TriggerPayload) > 0 {
-		event := "webhook.received"
+	if (run.Source == "webhook" || run.Source == "schedule") && len(run.TriggerPayload) > 0 {
+		// Webhook payloads arrive wrapped in a {event, eventPayload} envelope;
+		// schedule payloads are a flat JSON object ({scope, branch, baseline}).
+		// Unwrap the envelope only for webhook; for schedule render the payload
+		// as-is so the agent reads the QA directive verbatim.
+		label := "Trigger"
+		event := ""
 		var payloadJSON []byte
-		var env struct {
-			Event        string          `json:"event"`
-			EventPayload json.RawMessage `json:"eventPayload"`
-		}
-		if err := json.Unmarshal(run.TriggerPayload, &env); err == nil {
-			if env.Event != "" {
-				event = env.Event
+		if run.Source == "webhook" {
+			label = "Webhook"
+			event = "webhook.received"
+			var env struct {
+				Event        string          `json:"event"`
+				EventPayload json.RawMessage `json:"eventPayload"`
 			}
-			if len(env.EventPayload) > 0 {
-				if pretty, err := prettifyJSON(env.EventPayload); err == nil {
-					payloadJSON = pretty
+			if err := json.Unmarshal(run.TriggerPayload, &env); err == nil {
+				if env.Event != "" {
+					event = env.Event
+				}
+				if len(env.EventPayload) > 0 {
+					if pretty, err := prettifyJSON(env.EventPayload); err == nil {
+						payloadJSON = pretty
+					}
 				}
 			}
 		}
@@ -1082,9 +1094,15 @@ func (s *AutopilotService) buildIssueDescription(ap db.Autopilot, run db.Autopil
 				payloadJSON = run.TriggerPayload
 			}
 		}
-		b.WriteString("\n\nWebhook event: ")
-		b.WriteString(event)
-		b.WriteString("\n\nWebhook payload:\n```json\n")
+		if event != "" {
+			b.WriteString("\n\n")
+			b.WriteString(label)
+			b.WriteString(" event: ")
+			b.WriteString(event)
+		}
+		b.WriteString("\n\n")
+		b.WriteString(label)
+		b.WriteString(" payload:\n```json\n")
 		b.Write(payloadJSON)
 		b.WriteString("\n```")
 	}

@@ -574,6 +574,60 @@ func (q *Queries) GetWebhookTriggerByToken(ctx context.Context, webhookToken pgt
 	return i, err
 }
 
+const listActiveRunOnlyAutopilotsForProject = `-- name: ListActiveRunOnlyAutopilotsForProject :many
+SELECT id, workspace_id, title, description, assignee_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, assignee_type, project_id FROM autopilot
+WHERE workspace_id = $1
+  AND project_id = $2
+  AND status = 'active'
+  AND execution_mode = 'run_only'
+ORDER BY created_at ASC
+`
+
+type ListActiveRunOnlyAutopilotsForProjectParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
+
+// Sprint-end dispatch: the active, run-only autopilots bound to a project. The
+// scheduler picks one of these as the project's sprint-end QA runner when a
+// sprint in that project becomes due (status='active' AND end_date<=now()).
+// Ordered oldest-first so the choice is stable across ticks.
+func (q *Queries) ListActiveRunOnlyAutopilotsForProject(ctx context.Context, arg ListActiveRunOnlyAutopilotsForProjectParams) ([]Autopilot, error) {
+	rows, err := q.db.Query(ctx, listActiveRunOnlyAutopilotsForProject, arg.WorkspaceID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Autopilot{}
+	for rows.Next() {
+		var i Autopilot
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Title,
+			&i.Description,
+			&i.AssigneeID,
+			&i.Status,
+			&i.ExecutionMode,
+			&i.IssueTitleTemplate,
+			&i.CreatedByType,
+			&i.CreatedByID,
+			&i.LastRunAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AssigneeType,
+			&i.ProjectID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAutopilotRuns = `-- name: ListAutopilotRuns :many
 SELECT id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, squad_id FROM autopilot_run
 WHERE autopilot_id = $1

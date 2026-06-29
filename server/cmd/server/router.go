@@ -877,6 +877,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Put("/", h.UpdateSprint)
 					r.Delete("/", h.DeleteSprint)
 					r.Get("/issues", h.ListSprintIssues)
+					r.Post("/deploy-qa", h.DeploySprintQA)
 				})
 			})
 

@@ -357,6 +357,7 @@ func main() {
 	go runRuntimeSweeper(sweepCtx, queries, liveness, taskSvc, bus)
 	go heartbeatScheduler.Run(sweepCtx)
 	go runAutopilotScheduler(autopilotCtx, queries, autopilotSvc)
+	go runSprintEndScheduler(autopilotCtx, queries, autopilotSvc, h)
 	go runAutopilotFailureMonitor(autopilotCtx, queries, bus, envFailureMonitorConfig())
 	go runBitrixSyncPoll(sweepCtx, h)
 	go runDBStatsLogger(sweepCtx, pool)
