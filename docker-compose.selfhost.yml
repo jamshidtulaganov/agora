@@ -134,6 +134,9 @@ services:
       AGORA_LARK_SECRET_KEY: ${AGORA_LARK_SECRET_KEY:-}
       AGORA_LARK_HTTP_BASE_URL: ${AGORA_LARK_HTTP_BASE_URL:-}
       AGORA_LARK_CALLBACK_BASE_URL: ${AGORA_LARK_CALLBACK_BASE_URL:-}
+      # Per-workspace git credentials (multi-account): base64 32-byte key that
+      # seals stored PATs. Unset = the git-credentials endpoints fail closed.
+      AGORA_GIT_SECRET_KEY: ${AGORA_GIT_SECRET_KEY:-}
     restart: unless-stopped
 
   frontend:
