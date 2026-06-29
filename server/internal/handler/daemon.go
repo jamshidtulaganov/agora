@@ -1332,7 +1332,8 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 			// works incrementally and treats the human's edits as authoritative.
 			if resp.Agent != nil && metaString(issue.Metadata, "work_mode") == "in_editor" {
 				resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + inEditorCoCodeNote)
-				resp.CoCodeBranch = coCodeBranchName(issue.Number, resp.Agent.ID)
+				issueKey := fmt.Sprintf("%s-%d", h.getIssuePrefix(r.Context(), issue.WorkspaceID), issue.Number)
+				resp.CoCodeBranch = coCodeBranchName(issueKey, issue.Title)
 			}
 
 			// Per-issue human context (the Context panel): rules, focus files,

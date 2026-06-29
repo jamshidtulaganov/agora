@@ -34,13 +34,30 @@ func agentContextNote(raw string) string {
 // coCodeBranchName is the dedicated feature branch the daemon forces an
 // in_editor worktree onto before the agent runs, so co-code commits can never
 // land on main (the git-level guarantee behind the review gate — instructions
-// alone don't survive a resumed Claude session). Deterministic per (issue,
-// agent) so the branch is stable across the agent's turns and accumulates one
-// reviewable PR.
-func coCodeBranchName(issueNumber int32, agentID string) string {
-	a := strings.ReplaceAll(agentID, "-", "")
-	if len(a) > 8 {
-		a = a[:8]
+// alone don't survive a resumed Claude session).
+//
+// Built from the issue key + title so it is human-readable in the PR list and in
+// GitHub's branch-derived PR title — e.g. "cocode/oct-967-add-wex-application-
+// endpoint" instead of the opaque "cocode/issue-967-b5c0be3a". Deterministic per
+// issue so the branch stays stable across the agent's turns and accumulates one
+// reviewable PR. Degrades gracefully when the key or title is empty.
+func coCodeBranchName(issueKey, issueTitle string) string {
+	key := slugifyProjectName(issueKey)
+	if key == "" {
+		key = "issue"
 	}
-	return fmt.Sprintf("cocode/issue-%d-%s", issueNumber, a)
+	title := slugifyProjectName(issueTitle)
+	// Bound the title slug so the branch (and the PR title GitHub derives from
+	// it) stays readable; cut on a word boundary, not mid-word.
+	const maxTitle = 40
+	if len(title) > maxTitle {
+		title = title[:maxTitle]
+		if i := strings.LastIndex(title, "-"); i > 0 {
+			title = title[:i]
+		}
+	}
+	if title == "" {
+		return fmt.Sprintf("cocode/%s", key)
+	}
+	return fmt.Sprintf("cocode/%s-%s", key, title)
 }
