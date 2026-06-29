@@ -1,0 +1,172 @@
+---
+title: No-Action Protocol
+description: Squad leader qanday qilib action | no_action | failed yozuvini qayd etadi va no_action o'sha aniq vazifa uchun ham sintezlangan zaxira izohni, ham har qanday qo'lda yozilgan izohni qanday bostiradi.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Auditoriya">
+Ikkalasi ham. Birinchi yarmi (`agora squad activity` shartnomasi, avtorizatsiya, `X-Task-ID` talabi) — bu **squad leader agentiga** to'g'ri ishlash uchun kerak bo'lgan narsa. Ikkinchi yarmi (`HasSquadLeaderNoActionEvaluationForTask` predikati va u boshqaradigan ikkita bostirish) — **dasturchi** ichki mexanizmlari. Agentlar: "Agentlar uchun ko'rsatma" qismiga o'ting — qoida bir qatordan iborat.
+</Callout>
+
+Squad leader squad'ga biriktirilgan masalaga yetib boradigan har bir tashqi signal bo'yicha ishga tushiriladi (qarang [squads-routing](/developers/agentic/squads-routing) va [comment-trigger-pipeline](/developers/agentic/comment-trigger-pipeline)). Ko'pincha to'g'ri javob "bu yerda qiladigan hech narsa yo'q" bo'ladi. No-action protokoli leaderga aynan shuni aytish imkonini beradi — qarorni qayd etish, hech qanday izoh joylamaslik va chiqish — platformaning "har bir tugatilgan vazifa izoh oladi" invariantining bu sukunatni shovqinga aylantirishiga yo'l qo'ymasdan.
+
+## Shartnoma: `agora squad activity`
+
+Leader har bir trigger uchun bitta baholash yozadi:
+
+```bash
+agora squad activity <issue-id> <outcome> --reason "<short explanation>"
+```
+
+`<outcome>` aniq uchta qiymatdan biri bo'lishi shart. CLI tarmoqqa yetib bormasdan oldin boshqa har qanday narsani rad etadi (`server/cmd/agora/cmd_squad.go` faylidagi `runSquadActivity`):
+
+| `outcome`   | Ma'nosi                                          |
+| ----------- | ------------------------------------------------ |
+| `action`    | leader vazifani topshirdi yoki harakat qildi     |
+| `no_action` | leader baholadi va hech qanday harakat kerak emas deb qaror qildi |
+| `failed`    | leader xatoga duch keldi                          |
+
+`--reason` — erkin matnli satr; u ixtiyoriy va sukut bo'yicha bo'sh bo'ladi.
+
+Buyruq masala ma'lumotnomasini hal qiladi (shuning uchun `MUL-123` ham, UUID ham ishlaydi) va `/api/issues/{id}/squad-evaluated` manziliga `POST` so'rovini yuboradi. Bu endpoint `server/internal/handler/squad.go` faylidagi `RecordSquadLeaderEvaluation` tomonidan boshqariladi.
+
+## Handler nimani majburiy qiladi
+
+`RecordSquadLeaderEvaluation` — bu qator-qator himoyalardan iborat sinov maydoni. Har biri o'ziga xos status kodi bilan yopiq holatda muvaffaqiyatsizlikka uchraydi — ularni tartibda o'qing, chunki agent ularning barchasini qondirishi kerak:
+
+1. **`400` — yomon outcome.** `req.Outcome` server tomonida qayta tekshiriladi: `action`, `no_action` yoki `failed`dan boshqa har qanday narsa `"outcome must be 'action', 'no_action', or 'failed'"` qaytaradi. CLI tekshiruvi yagona darvoza sifatida ishonchli deb hisoblanmaydi.
+2. **`400` — masala squad'ga biriktirilmagan.** Agar `issue.AssigneeType` `"squad"` bo'lmasa (yoki `AssigneeID` null bo'lsa), handler `"issue is not assigned to a squad"` qaytaradi. Protokol squad bo'lmagan masalada ma'nosizdir.
+3. **`404` — squad topilmadi.** Squad `issue.WorkspaceID` doirasida `GetSquadInWorkspace` orqali yuklanadi.
+4. **`403` — aktor joriy leader emas.** `resolveActor` so'rovdan `(actorType, actorID)`ni oladi. Tekshiruv aniq:
+
+   ```go
+   if actorType != "agent" || actorID != uuidToString(squad.LeaderID) {
+       writeError(w, http.StatusForbidden, "only the squad leader agent can record evaluations")
+       return
+   }
+   ```
+
+   A'zo, leader bo'lmagan squad agenti yoki leader vazifa topshirgan ishchi — barchasi `403` oladi. Faqat id'si `squad.LeaderID`ga *ayni hozir* teng bo'lgan agent qayd etishi mumkin.
+5. **`X-Task-ID` sarlavhasi talab qilinadi.** Handler `r.Header.Get("X-Task-ID")`ni o'qiydi va uni `parseUUIDOrBadRequest` orqali o'tkazadi — yo'q yoki noto'g'ri shakllangan sarlavha `400`dir. CLI agent dispetcherlangan vazifa ichida ishlaganda bu sarlavhani avtomatik ravishda qo'yadi (`server/internal/cli/client.go` faylidagi `client.TaskID` → `X-Task-ID`).
+6. **`400` — masalalararo soxtalashtirish rad etiladi.** `X-Task-ID` tomonidan nomlangan vazifa `GetAgentTask` bilan yuklanadi va uning `IssueID`si URL'dagi masala bilan taqqoslanadi:
+
+   ```go
+   if err != nil || !task.IssueID.Valid || uuidToString(task.IssueID) != uuidToString(issue.ID) {
+       writeError(w, http.StatusBadRequest, "task does not belong to issue")
+       return
+   }
+   ```
+
+   B vazifasining id'sini uzatib turib A masalasi uchun baholash qayd eta olmaysiz. `(task, issue)` jufti o'z-o'ziga mos bo'lishi kerak.
+
+Faqat oltitasidan keyingina handler `CreateActivity` orqali `Action: "squad_leader_evaluated"` va `squad_id`, `task_id`, `outcome` hamda `reason`ni olib yuruvchi JSON `Details` bloki bilan bitta `activity_log` qatorini yozadi. Keyin u `EventActivityCreated`ni e'lon qiladi va activity id bilan `201` qaytaradi. **Hech qanday izoh yaratilmaydi** — qator sof timeline/qaror yozuvidir.
+
+<Callout type="warn" title="details'dagi task_id bostirish kalitidir">
+`details`ga yozilgan `task_id` — bu `X-Task-ID` qiymati, masala emas. Bu maydon quyidagi predikatning butun asosidir. Bitta vazifa uchun qayd etilgan `no_action` o'sha masaladagi *boshqa* vazifa uchun hech narsani bostirmaydi.
+</Callout>
+
+<Mermaid chart={`sequenceDiagram
+    participant L as Squad Leader (agent)
+    participant CLI as agora squad activity
+    participant H as RecordSquadLeaderEvaluation
+    participant DB as activity_log
+    L->>CLI: activity MUL-123 no_action --reason "..."
+    CLI->>H: POST /squad-evaluated (X-Task-ID: T)
+    H->>H: outcome valid? squad-assigned? leader == actor?
+    H->>H: task T belongs to issue MUL-123?
+    H->>DB: CreateActivity action=squad_leader_evaluated<br/>details.outcome=no_action details.task_id=T
+    H-->>CLI: 201 (no comment created)
+    L->>L: EXIT — post nothing
+`} />
+
+## Predikat: `HasSquadLeaderNoActionEvaluationForTask`
+
+Quyi oqimdagi hamma narsa `server/internal/service/squad_no_action.go` faylidagi bitta yordamchidan kelib chiqadi:
+
+```go
+func HasSquadLeaderNoActionEvaluationForTask(ctx context.Context, q *db.Queries, task db.AgentTaskQueue) (bool, error)
+```
+
+U nil/noto'g'ri kiritishdan himoyalanadi (agar `q` nil bo'lsa yoki `task.ID` / `task.IssueID` / `task.AgentID` noto'g'ri bo'lsa `false, nil` qaytaradi) va aks holda generatsiya qilingan `HasSquadLeaderNoActionEvaluationForTask` so'roviga topshiradi, bu `activity_log` ustidagi `EXISTS`dir:
+
+```sql
+SELECT EXISTS (
+  SELECT 1
+  FROM activity_log
+  WHERE issue_id = @issue_id
+    AND actor_type = 'agent'
+    AND actor_id = @agent_id
+    AND action = 'squad_leader_evaluated'
+    AND details->>'outcome' = 'no_action'
+    AND details->>'task_id' = @task_id::text
+) AS exists;
+```
+
+Predikat `(issue_id, leader agent_id, task_id)` uchligi bo'yicha kalitlangan. Go o'rovchisi ularni vazifaning o'zidan beradi: `task.IssueID`, `task.AgentID` va `util.UUIDToString(task.ID)`. `details->>'outcome' = 'no_action'` shartiga e'tibor bering — `action` va `failed` qatorlari xuddi shu `activity_log`da mavjud, lekin hech qachon mos kelmaydi, shuning uchun ular hech narsani bostirmaydi.
+
+<Callout title="Har bir vazifa bo'yicha, masala bo'yicha emas">
+`details->>'task_id' = @task_id::text` sharti buni bitta vazifaga doiralashtiradigan narsadir. Leader bugun T1 vazifasini `no_action` qilishi va shu bilan birga ertaga o'sha masala uchun keyingi trigger (T2 vazifasi) bo'yicha odatdagidek izoh berishda erkin bo'lishi mumkin. Masala bo'yicha o'chirish yo'q — faqat vazifa bo'yicha.
+</Callout>
+
+## Bostirish #1 — sintezlangan tugallanish zaxira izohi
+
+Platforma har bir tugatilgan masala vazifasi kamida bitta agent izohi qoldirishini kafolatlaydi, shunda foydalanuvchi ish tugaganda har doim *biror narsa* ko'radi. Bu mantiq `task.go`da (tugallanish yo'lida) yashaydi: agar agent ish davomida hech qanday izoh joylamagan bo'lsa (`HasAgentCommentedSince` false), platforma vazifaning yakuniy chiqishidan bittasini sintez qiladi.
+
+No-action predikati bu sintezni qisqa tutashtiradi. `server/internal/service/task.go`da:
+
+```go
+suppressNoActionComment, err := HasSquadLeaderNoActionEvaluationForTask(ctx, s.Queries, task)
+// ...
+agentCommented, _ := s.Queries.HasAgentCommentedSince(ctx, ...)
+if !suppressNoActionComment && !agentCommented {
+    // synthesize fallback comment from payload.Output
+}
+```
+
+Leader aynan shu vazifa uchun `no_action` qayd etganda, `suppressNoActionComment` `true` bo'ladi, `if` o'tkazib yuboriladi va **hech qanday zaxira izoh yozilmaydi**. "Har doim izoh berish" invarianti ataylab qilingan no-op uchun bilib turib bekor qilinadi — sukunatning maqsadi shu. (Agar predikat qidiruvi xato qilsa, u ogohlantirish qayd etadi va `suppressNoActionComment`ni o'zining nol qiymati `false`da qoldiradi, ya'ni chiqishni yutib yuborish o'rniga odatdagi zaxira xatti-harakatga *ochiq* holatda muvaffaqiyatsizlikka uchraydi.)
+
+## Bostirish #2 — o'sha vazifa uchun har qanday qo'lda yozilgan izohga `409`
+
+Avtomatik sintezlangan izohni bostirish yetarli emas: leader (yoki uning qayta tiklangan sessiyasi) baribir qo'lda izoh `POST` qilishga urinishi mumkin. Izoh handleri bu eshikni yopadi. `server/internal/handler/comment.go`da, `X-Task-ID`ni masalaga qarshi allaqachon tekshiradigan agent-muallif tarmog'i ichida:
+
+```go
+noAction, checkErr := service.HasSquadLeaderNoActionEvaluationForTask(r.Context(), h.Queries, task)
+if checkErr != nil {
+    // log warning, fall through
+} else if noAction {
+    writeError(w, http.StatusConflict, "squad leader recorded no_action; comments are not allowed for this task")
+    return
+}
+```
+
+Vazifa uchun `no_action` qayd etilgandan so'ng, agent o'sha `X-Task-ID` ostida joylashtirishga urinadigan **har qanday** izoh `409 Conflict` va `"squad leader recorded no_action; comments are not allowed for this task"` xabari bilan rad etiladi. Bu himoya qayta tiklangan sessiyaning `parent_id` himoyasi yonida joylashgan (uning o'zi izohning `parent_id`si vazifaning trigger izohiga teng bo'lmaganda `409` qaytaradi) — ikkalasi ham sukut saqlashi kerak bo'lgan vazifaga yozadigan siljigan/qayta tiklangan agent sessiyalaridan himoya qiladi.
+
+Ikkala bostirish birgalikda `no_action`ni qattiq majburiyatga aylantiradi: uni e'lon qilgandan so'ng, leader o'sha vazifada qaytadan gapira olmaydi — avtomatik zaxira orqali bo'ladimi yoki qo'lda bo'ladimi.
+
+## Agentlar uchun ko'rsatma
+
+Agar siz squad leader bo'lsangiz va bu trigger uchun qiladigan hech narsa yo'q deb qaror qilgan bo'lsangiz:
+
+1. `agora squad activity <issue-id> no_action --reason "<why>"`ni ishga tushiring.
+2. **Hech qanday izoh joylamang.** Keyin `agora comment ...`ni chaqirmang — u `409` qaytaradi.
+3. **Chiqing.** Baholash qatori bu trigger uchun butun chiqishingizdir.
+
+Topshirgan yoki ish qilgan vaqtingizda `action` qayd eting (bu sizning izohlaringizni **bostirmaydi** — odatdagidek izoh bering) va xatoga duch kelganingizda `failed` qayd eting. Faqat `no_action` bostirishni ishga tushiradi. Uni noto'g'ri masala uchun yoki CLI avtomatik beradigan vazifa konteksti bo'lmasdan qayd etish rad etiladi (`403`/`400`) — buyruqni dispetcherlangan vazifangiz ichidan ishga tushiring, shunda `X-Task-ID` siz uchun qo'yiladi.
+
+Shuningdek qarang [loop-prevention](/developers/agentic/loop-prevention) — o'z-o'zidan ishga tushirilgan qayta kirish leaderdan qanday tashqarida tutilishi haqida, va [squads-routing](/developers/agentic/squads-routing) — birinchi navbatda leaderga nima yetib borishi haqida.
+
+## Source files
+
+| File | Symbols this page depends on |
+| ---- | ---------------------------- |
+| `server/internal/service/squad_no_action.go` | `HasSquadLeaderNoActionEvaluationForTask` (nil/noto'g'ri himoya + `task.IssueID`, `task.AgentID`, `util.UUIDToString(task.ID)` bo'yicha kalitlangan topshirish) |
+| `server/internal/handler/squad.go` | `RecordSquadLeaderEvaluation` — `outcome` tekshiruvi (`action`/`no_action`/`failed`, `400`), squad-biriktirish tekshiruvi (`400`), `GetSquadInWorkspace` (`404`), `resolveActor` + faqat-leader tekshiruvi (`403`), `parseUUIDOrBadRequest` orqali `X-Task-ID`, `GetAgentTask` masalalararo tekshiruvi (`400`), `Action: "squad_leader_evaluated"` + `details` (`squad_id`/`task_id`/`outcome`/`reason`) bilan `CreateActivity` |
+| `server/internal/service/task.go` | tugallanish yo'lidagi `suppressNoActionComment` darvozasi; `HasSquadLeaderNoActionEvaluationForTask`, `HasAgentCommentedSince` — bostirish #1 (sintezlangan zaxira izohi) |
+| `server/internal/handler/comment.go` | agent-muallif tarmog'i: `service.HasSquadLeaderNoActionEvaluationForTask` → `http.StatusConflict` `"squad leader recorded no_action; comments are not allowed for this task"` — bostirish #2 |
+| `server/pkg/db/queries/activity.sql` | `HasSquadLeaderNoActionEvaluationForTask` `EXISTS` so'rovi — `(issue_id, actor_id, action='squad_leader_evaluated', details->>'outcome'='no_action', details->>'task_id')` predikati |
+| `server/cmd/agora/cmd_squad.go` | `squadActivityCmd` (`Use: "activity <issue-id> <outcome>"`), `runSquadActivity`, `--reason` flag, `POST /api/issues/{id}/squad-evaluated` |
+| `server/internal/cli/client.go` | `client.TaskID` → `X-Task-ID` sarlavha kiritishi |
+
+**Bir-PR siljish qoidasi:** agar siz `outcome` enum'ini, `squad_leader_evaluated` action satrini, `details` JSON kalitlarini, `X-Task-ID` talabini, faqat-leader `403` tekshiruvini yoki har qanday bostirishning status kodi/xabarini o'zgartirsangiz, ushbu sahifani va uning `references/no-action-protocol-source-map.md`ini bir PRda yangilang — bu simvollar sanab o'tilgan fayllardan so'zma-so'z nusxa olingan va eskirgan sahifa agentlarni protokolni buzishga jimgina o'rgatadi.

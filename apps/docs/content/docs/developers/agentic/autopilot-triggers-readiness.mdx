@@ -1,0 +1,252 @@
+---
+title: Autopilot Triggers & Readiness
+description: How scheduled and webhook triggers fire autopilots, and the admission gate that turns an offline runtime into a skipped run instead of a doomed task.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Audience">
+This page is for **both** engineers and agents working on autopilot trigger plumbing. It is the authoritative explanation of how a schedule trigger is atomically claimed and advanced, how the unauthenticated webhook ingress persists and dispatches a delivery, what the readiness admission gate (`shouldSkipDispatch`) does and why a `skipped` run is not a `failed` run, and how the failure monitor auto-pauses runaway autopilots. Related: [/developers/agentic/autopilot-internals](/developers/agentic/autopilot-internals), [/developers/agentic/squads-routing](/developers/agentic/squads-routing), [/developers/agentic/agent-runtime-contract](/developers/agentic/agent-runtime-contract), [/developers/conventions](/developers/conventions).
+</Callout>
+
+## The two ingress paths
+
+An autopilot fires from exactly one of two trigger sources. Both converge on the same execution entry point, `AutopilotService.DispatchAutopilot`, with a different `source` string:
+
+- **Schedule** — a background poller (`runAutopilotScheduler`) ticks every 30s, claims due triggers, and calls `DispatchAutopilot(..., "schedule", nil)`.
+- **Webhook** — the public HTTP handler `HandleAutopilotWebhook` receives a provider POST, normalizes and persists the delivery, then calls `DispatchAutopilot(..., "webhook", envelopeBytes)`.
+
+Everything downstream of `DispatchAutopilot` (admission gate, run creation, issue/task creation) is shared. The two sections below cover only the ingress-specific machinery.
+
+## Schedule trigger lifecycle
+
+The scheduler lives in `server/cmd/server/autopilot_scheduler.go`. It is a single goroutine driving a `time.NewTicker` at `schedulerInterval = 30 * time.Second`.
+
+<Mermaid chart={`
+flowchart TD
+  A["runAutopilotScheduler"] --> B["recoverLostTriggers (once, at startup)"]
+  B --> C["ticker every 30s"]
+  C --> D["tickScheduledAutopilots"]
+  D --> E["ClaimDueScheduleTriggers (atomic: set next_run_at = NULL)"]
+  E --> F{"any claimed?"}
+  F -- no --> C
+  F -- yes --> G["for each trigger"]
+  G --> H["GetAutopilot"]
+  H --> I["DispatchAutopilot(..., 'schedule', nil)"]
+  I --> J["advanceNextRun -> ComputeNextRun -> AdvanceTriggerNextRun"]
+  J --> C
+`} />
+
+### Atomic claim — `next_run_at = NULL` is the claim token
+
+`tickScheduledAutopilots` calls `queries.ClaimDueScheduleTriggers(ctx)`. The query is a single `UPDATE ... RETURNING`:
+
+```sql
+UPDATE autopilot_trigger t
+SET next_run_at = NULL
+FROM autopilot a
+WHERE t.autopilot_id = a.id
+  AND t.kind = 'schedule'
+  AND t.enabled = true
+  AND t.next_run_at IS NOT NULL
+  AND t.next_run_at <= now()
+  AND a.status = 'active'
+RETURNING t.*, a.workspace_id AS autopilot_workspace_id;
+```
+
+Setting `next_run_at = NULL` **is** the claim. Because the `UPDATE` is atomic and the `WHERE` requires `next_run_at IS NOT NULL`, two server replicas ticking at the same time cannot both claim the same trigger — the first `UPDATE` nulls the column, so the second replica's `WHERE` no longer matches it and it returns zero rows for that trigger. No advisory lock, no `SKIP LOCKED` needed: the predicate itself is the mutual-exclusion mechanism. The join on `autopilot a` with `a.status = 'active'` means paused or archived autopilots are never claimed.
+
+### Advancing — `advanceNextRun`
+
+After dispatching each claimed trigger, `advanceNextRun` recomputes the next fire time via `service.ComputeNextRun(t.CronExpression.String, tz)` and writes it back with `queries.AdvanceTriggerNextRun`. The timezone defaults to `service.DefaultAutopilotTriggerTimezone` (`"UTC"`) and is overridden only when `t.Timezone` is valid and non-empty. A trigger with an invalid or empty `CronExpression` is skipped (its `next_run_at` stays `NULL`).
+
+### Crash recovery — `recoverLostTriggers`
+
+A claimed trigger is in a window where `next_run_at = NULL` but the next fire time has not yet been written. If the process crashes inside that window, the trigger is stuck `NULL` forever and would never fire again. `recoverLostTriggers` runs **once at scheduler startup** (before the ticker loop) and heals these:
+
+```sql
+SELECT t.*, a.workspace_id AS autopilot_workspace_id
+FROM autopilot_trigger t
+JOIN autopilot a ON t.autopilot_id = a.id
+WHERE t.kind = 'schedule'
+  AND t.enabled = true
+  AND t.next_run_at IS NULL
+  AND t.cron_expression IS NOT NULL
+  AND a.status = 'active';
+```
+
+For each recovered row it recomputes `ComputeNextRun` and calls `AdvanceTriggerNextRun`, restoring a valid future fire time. It does **not** dispatch the missed run — recovery only re-arms the schedule.
+
+<Callout type="warn" title="A live-but-claimed trigger looks identical to a crash-orphaned one">
+`recoverLostTriggers` runs only at startup, so it cannot race the live tick loop within a single process. A trigger that is `NULL` because the *current* tick claimed it microseconds ago is not visited — recovery has already finished before the first `ticker.C` fires.
+</Callout>
+
+### Cron parsing — `ComputeNextRun`
+
+`server/internal/service/cron.go` uses `github.com/robfig/cron/v3`. The parser is constructed for **standard 5-field** cron only:
+
+```go
+var cronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+```
+
+`ComputeNextRun` parses the expression, loads the IANA location via `time.LoadLocation(timezone)`, and returns `sched.Next(time.Now().In(loc))`. Both an unparseable cron expression and an unrecognized timezone return an error (no fallback inside this function — the *callers* in the scheduler supply the `"UTC"` default). `ValidateTimezone` is the standalone validator used at trigger-creation time.
+
+## Webhook ingress
+
+`HandleAutopilotWebhook` in `server/internal/handler/autopilot_webhook.go` is **the only unauthenticated autopilot path**. It runs outside the authenticated route group: the `awt_`-prefixed bearer token in the URL path **is** the credential. A token is `"awt_"` + URL-safe base64 of 32 random bytes (`generateWebhookToken`), 47 chars total.
+
+### Flow: persist-first, sync-dispatch
+
+The handler is deliberately **persist-first** — it records a `webhook_delivery` row before doing any expensive work, so every accepted request is auditable even if dispatch later fails. The ordered steps (verbatim from the handler doc comment and code):
+
+1. **Per-IP rate limit** (`WebhookIPRateLimiter`) before any DB I/O — bounds the blast radius of a token-spray attack. Over budget → `429`.
+2. **Token lookup** (`GetWebhookTriggerByToken`). `pgx.ErrNoRows` → `404 "webhook not found"`; any other DB error → `500`. The no-row/DB-error split matters because providers like GitHub don't retry on `404`, so collapsing a transient blip to `404` would silently drop real deliveries.
+3. **Per-token rate limit** (`WebhookRateLimiter`). Over budget → `429`.
+4. **Read body, capped** at `maxWebhookBodyBytes` (256 KiB) via `http.MaxBytesReader`. Oversized → `413`.
+5. **Autopilot + workspace consistency check** (`GetAutopilot`, then compare `autopilot.WorkspaceID` to `trigRow.AutopilotWorkspaceID`) before persisting — `webhook_delivery.workspace_id` is `NOT NULL`, so a stale FK would otherwise fail the INSERT after the body read.
+6. **Normalize** the body into a `WebhookEnvelope` (`normalizeWebhookPayload`). Invalid/scalar/empty JSON → `400` with **no persistence** — there is no trustworthy dedupe identifier in an unparsable body.
+7. **Extract dedupe key** (`extractDedupeKey`) and **verify signature** (`verifyWebhookSignatureForProvider`).
+8. **INSERT `webhook_delivery`** (`persistInboundDelivery`, status `queued`). On a `(trigger_id, dedupe_key)` unique violation, treat as a duplicate: bump `attempt_count` on the existing row and return its `delivery_id` + `run_id` with `200 {"status":"duplicate"}`.
+9. **Signature invalid/missing** → UPDATE delivery to `rejected`, return `401`.
+10. **Trigger disabled / autopilot archived / autopilot paused** → UPDATE delivery to `ignored`, return `200` (so the sender's retry machinery stops hammering).
+11. **Event-filter scope** (`webhookEventAllowedByTriggerScope`) → out-of-scope event → `ignored`, `200`, no run created.
+12. **Dispatch synchronously** via `AutopilotService.DispatchAutopilot(..., "webhook", envelopeBytes)`.
+13. **`TouchAutopilotTriggerFiredAt`** after dispatch returns — including the skipped path — so `last_fired_at` is accurate.
+
+### Payload normalization → `WebhookEnvelope`
+
+`normalizeWebhookPayload` collapses arbitrary provider bodies into one stable shape so downstream consumers (the `run_only` daemon prompt, the `create_issue` description appendix) never branch per-provider:
+
+```go
+type WebhookEnvelope struct {
+	Event        string          `json:"event"`
+	EventPayload json.RawMessage `json:"eventPayload"`
+	Request      WebhookRequest  `json:"request"`
+}
+```
+
+The body must be a JSON object or array — bare scalars are rejected (a `"hello"` body is valid JSON but useless as a webhook payload and would land verbatim in the agent prompt). If the caller already supplies an `event` string envelope, it is preserved as-is; otherwise the event is inferred from headers/body via `inferEvent` (`X-GitHub-Event` combined with `body.action`, then `X-Gitlab-Event`, `X-Event-Type`, `body.event`, `body.type`, `body.action`), defaulting to `webhook.received`.
+
+### Dedupe and HMAC verification
+
+`extractDedupeKey` reads the provider-specific idempotency header — `X-GitHub-Delivery` for `github`, `Idempotency-Key` generically — and returns the key plus a source tag. `verifyWebhookSignatureForProvider` returns one of four `signature_status` values mirroring the `webhook_delivery` CHECK constraint:
+
+| Value | Meaning |
+| --- | --- |
+| `sigStatusNotRequired` (`not_required`) | No `SigningSecret` configured — bearer-token-only auth. |
+| `sigStatusValid` (`valid`) | HMAC matched. |
+| `sigStatusInvalid` (`invalid`) | Header present, HMAC mismatch → `rejected` + `401`. |
+| `sigStatusMissing` (`missing`) | Secret configured but no `X-Hub-Signature-256` header → `rejected` + `401`. |
+
+`verifyHubSignature` implements the GitHub scheme `X-Hub-Signature-256: sha256=<hex>` and uses `hmac.Equal` for a constant-time compare. The raw signature value is **never** persisted — `selectedHeadersJSON` records only `x-hub-signature-256-present: true`.
+
+### Event filters fail **closed**
+
+`webhookEventAllowedByTriggerScope` is the read-path matcher. Write-time validation (`validateWebhookEventFilters`) keeps malformed shapes out of the JSONB column, but if a corrupt `event_filters` blob somehow exists, the matcher fails closed:
+
+```go
+if err := json.Unmarshal(eventFilters, &filters); err != nil {
+	slog.Warn("webhook: malformed event_filters, denying", "error", err)
+	return false
+}
+```
+
+A NULL/empty filter list allows every event. A non-empty list requires the incoming envelope to match at least one declared filter. The matcher keeps scanning all filters even after an event-name hit (it does not short-circuit), because the UI permits multiple filters sharing one event name covering disjoint actions — short-circuiting would let one row silently shadow the others.
+
+<Callout type="warn" title="Delivery status vs. response status">
+The `webhook_delivery` row is recorded `dispatched` once dispatch returns a run — even when the *run* was admission-skipped. From the ingress's perspective the payload was handed to the autopilot machinery and a run id came back. `skipped` and `duplicate` are **response** statuses (HTTP body), not delivery statuses. `run.status` is the source of truth for what the run actually did.
+</Callout>
+
+## The readiness admission gate
+
+`DispatchAutopilot` calls `shouldSkipDispatch(ctx, autopilot)` **before** creating any run or task. This is the "触发时准入" gate (MUL-1899): without it, a paused laptop or offline daemon causes scheduled autopilots to pile thousands of doomed tasks onto `agent_task_queue`.
+
+### Leader resolution — `resolveAutopilotLeader`
+
+The gate runs against the agent that will actually execute the work, resolved by `resolveAutopilotLeader`:
+
+- `assignee_type` of `""` or `"agent"` → the assignee agent itself (`GetAgent`).
+- `assignee_type = "squad"` → the squad's `LeaderID` (Path A from MUL-2429: *Autopilot-on-squad ≈ Autopilot-on-leader*). An archived squad (`squad.ArchivedAt.Valid`) returns the sentinel `errSquadArchived`.
+
+See [/developers/agentic/squads-routing](/developers/agentic/squads-routing) for why a squad resolves to a single leader task.
+
+### Readiness — `AgentReadiness`
+
+`AgentReadiness` (`server/internal/service/agent_ready.go`) is the single source of truth shared by the autopilot gate, `dispatchRunOnly`, and the handler's `isSquadLeaderReady`. An agent is **ready** when:
+
+1. `agent.ArchivedAt` is NULL — else reason `agent is archived`.
+2. `agent.RuntimeID` is valid — else reason `agent has no runtime bound`.
+3. The bound runtime's `Status` is `online` — else reason `agent runtime is <status>`.
+
+`AgentReadiness` returns a non-nil `err` only on a DB lookup failure for the runtime row; callers decide how to treat that.
+
+### Skip vs. fail classification
+
+This is the load-bearing distinction. `shouldSkipDispatch` splits errors into two classes:
+
+- **Hard skip** — `pgx.ErrNoRows` (assignee/squad/leader row truly gone) or `errSquadArchived`. Retrying cannot change the outcome, so the gate returns `(reason, true)` and the dispatch is recorded as a `skipped` run via `recordSkippedRun`. Concrete reasons: `assignee squad is archived`, `assignee squad cannot be resolved`, `assignee agent no longer exists`, `autopilot has no assignee`.
+- **Fail-open (transient)** — any other DB error (connection drop, statement timeout). The gate logs and returns `("", false)` so the run proceeds; a transient DB hiccup must never silently swallow a scheduled run. The next scheduler tick gets another chance.
+
+A private-agent visibility check also runs here: if the autopilot's `created_by` member can no longer reach a now-private target agent, the dispatch is recorded `skipped` (`autopilot creator lacks access to private assignee agent`). Loading the member fails closed.
+
+`formatAdmissionReason` rewrites the raw `AgentReadiness` reason into the stable phrasing that dashboards group on (squad autopilots get a `squad leader ` prefix; runtime-status reasons keep the legacy `at dispatch time` suffix so existing MUL-1899 alert queries don't change).
+
+### Post-admission skip — `errDispatchSkipped`
+
+Even after the gate passes, the leader can go offline between admission and task creation. `dispatchRunOnly` re-runs `resolveAutopilotLeader` + `AgentReadiness` as belt-and-braces and returns the sentinel `errDispatchSkipped` for late regressions. `handleDispatchSkip` recognizes it via `errors.As` and rewrites the **already-created** run from `running`/`issue_created` to `skipped` (instead of `failed`) using `UpdateAutopilotRunSkipped`. Without the sentinel, the `failRun` path would mark these races as failures and bubble a `500` out of the manual-trigger handler — wrong (no one is at fault) and noisy (the failure monitor would auto-pause a flaky-runtime autopilot).
+
+Both skip paths (`recordSkippedRun` pre-flight and `handleDispatchSkip` post-admission) bump `UpdateAutopilotLastRunAt` and publish `EventAutopilotRunDone` with status `skipped`, so the scheduler advances and the UI's "last seen" stays accurate even on a no-op tick.
+
+## The failure monitor
+
+`runAutopilotFailureMonitor` (`server/cmd/server/autopilot_failure_monitor.go`) is the safety net that auto-pauses runaway autopilots. The canonical offender (MUL-1336) was an autopilot scheduled every 5 min that failed ~1,475 / 1,476 runs over 7 days while still firing.
+
+### Defaults (`defaultFailureMonitorConfig`)
+
+| Field | Default | Env override |
+| --- | --- | --- |
+| `Interval` | `24 * time.Hour` | `AUTOPILOT_FAIL_MONITOR_INTERVAL` (`0` disables) |
+| `Lookback` | `7 * 24 * time.Hour` | `AUTOPILOT_FAIL_MONITOR_LOOKBACK` |
+| `MinRuns` | `50` | `AUTOPILOT_FAIL_MONITOR_MIN_RUNS` |
+| `FailRatio` | `0.9` | `AUTOPILOT_FAIL_MONITOR_FAIL_RATIO` |
+| `StartupDelay` | `1 * time.Minute` | `AUTOPILOT_FAIL_MONITOR_STARTUP_DELAY` |
+
+The monitor staggers a `StartupDelay` (to avoid a fleet rolling-restart thundering herd), runs one sweep immediately after the delay, then ticks on `Interval`. Setting `Interval <= 0` disables it entirely.
+
+### Sweep — `tickAutopilotFailureMonitor`
+
+Each sweep calls `SelectAutopilotsExceedingFailureThreshold` with `since = now - Lookback`, `MinRuns`, and `FailRatio`. The ratio is computed over **real terminal runs only**:
+
+```sql
+count(*) FILTER (WHERE status IN ('completed', 'failed')) AS total,
+count(*) FILTER (WHERE status = 'failed') AS failed
+```
+
+`skipped` runs are excluded from **both** numerator and denominator — an admission-skipped run (offline runtime, MUL-1899) is neither a success nor a failure, so it must not dilute the ratio (which would let a 100%-failing autopilot hide behind a wall of skips) nor inflate it. `issue_created`/`running` are excluded too so in-flight work isn't penalized. A candidate must be `status = 'active'`, have `total >= min_runs`, and `failed / total >= fail_ratio_threshold`.
+
+For each candidate the monitor calls `SystemPauseAutopilot` (an `UPDATE ... WHERE status = 'active' RETURNING`). `pgx.ErrNoRows` here means another caller (manual UI action or a concurrent monitor) already paused it — a benign no-op, `continue`. On success it:
+
+1. Emits inbox notifications (`emitAutopilotPausedNotifications`) of `Type: "autopilot_paused"`, `Severity: "attention"`.
+2. Publishes `EventAutopilotUpdated` with `reason: "auto_paused_high_failure_rate"`.
+
+### Notification recipients — `resolveAutopilotPausedRecipients`
+
+So a *human* learns the auto-pause happened:
+
+- If the autopilot's `CreatedByType == "member"` → notify that member.
+- If the creator is an agent → resolve the agent's `OwnerID` to a workspace member and notify them. If the agent has no owner (or it doesn't resolve to a member), the inbox notification is skipped silently — the `EventAutopilotUpdated` WS event still updates any open UI.
+
+## Source files
+
+| File | Symbols this page depends on |
+| --- | --- |
+| `server/cmd/server/autopilot_scheduler.go` | `runAutopilotScheduler`, `schedulerInterval`, `recoverLostTriggers`, `tickScheduledAutopilots`, `advanceNextRun` |
+| `server/internal/service/cron.go` | `cronParser`, `ComputeNextRun`, `ValidateTimezone` |
+| `server/internal/handler/autopilot_webhook.go` | `HandleAutopilotWebhook`, `generateWebhookToken`, `webhookTokenPrefix`, `maxWebhookBodyBytes`, `normalizeWebhookPayload`, `WebhookEnvelope`, `inferEvent`, `extractDedupeKey`, `verifyWebhookSignatureForProvider`, `verifyHubSignature`, `webhookEventAllowedByTriggerScope`, `validateWebhookEventFilters`, `persistInboundDelivery`, `finaliseDeliveryWithRun`, `sigStatus*`, `deliveryStatus*` |
+| `server/internal/service/autopilot.go` | `DispatchAutopilot`, `DefaultAutopilotTriggerTimezone`, `shouldSkipDispatch`, `resolveAutopilotLeader`, `errSquadArchived`, `errDispatchSkipped`, `handleDispatchSkip`, `recordSkippedRun`, `dispatchRunOnly`, `formatAdmissionReason` |
+| `server/internal/service/agent_ready.go` | `AgentReadiness` |
+| `server/cmd/server/autopilot_failure_monitor.go` | `runAutopilotFailureMonitor`, `tickAutopilotFailureMonitor`, `defaultFailureMonitorConfig`, `failureMonitorConfig`, `emitAutopilotPausedNotifications`, `resolveAutopilotPausedRecipients` |
+| `server/pkg/db/queries/autopilot.sql` | `ClaimDueScheduleTriggers`, `RecoverLostTriggers`, `AdvanceTriggerNextRun`, `SelectAutopilotsExceedingFailureThreshold`, `SystemPauseAutopilot`, `UpdateAutopilotRunSkipped` |
+
+**Same-PR drift rule:** if you change any symbol above — the scheduler interval, the claim/recover SQL, the webhook flow ordering, a `signature_status`/delivery status enum, the skip-vs-fail classification, the readiness gates, or the failure-monitor thresholds — update this page in the **same PR**. These are source-traced contracts; if the code moves and this page doesn't, it silently teaches stale behavior.

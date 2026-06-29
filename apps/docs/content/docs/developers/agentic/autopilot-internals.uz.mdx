@@ -1,0 +1,170 @@
+---
+title: Autopilot Internals
+description: How DispatchAutopilot turns a trigger into a run, then into an issue or a bare agent task, and keeps run status in sync.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Auditoriya">
+Ikkalasi ham. Ushbu sahifa `AutopilotService` ustida ishlovchi muhandislar uchun va autopilot ishga tushirishi nega tiqilib qolgani, oʻtkazib yuborilgani yoki muvaffaqiyatsiz tugagani haqida fikr yurituvchi agentlar uchun moʻljallangan. Bu yerdagi hamma narsa `server/internal/service/autopilot.go` va `server/pkg/db/queries/autopilot.sql` fayllariga bogʻlangan.
+</Callout>
+
+Autopilot — bu agent emas. Bu shunday qoidaki, trigger ishga tushganda ishni agentga (yoki squadning leader agentiga) yoʻnaltiradi. Yoʻnaltirish yoʻli bitta funksiyadan iborat: `DispatchAutopilot`. Trigger tomoni (schedule/webhook/manual manbalari, tayyorlik/qabul qilish darvozalari) uchun [autopilot-triggers-readiness](/developers/agentic/autopilot-triggers-readiness) sahifasiga qarang.
+
+## DispatchAutopilot — yagona kirish nuqtasi
+
+`DispatchAutopilot(ctx, autopilot, triggerID, source, payload)` — uchchala trigger manbasi uchun yagona kod yoʻli. `source` qatori (`"schedule"`, `"webhook"`, `"manual"`) ishga tushishda saqlanadi, lekin yoʻnaltirish mantigʻini tarmoqlamaydi — buni faqat `execution_mode` qiladi. Triggerni nima ishga tushirgan boʻlishidan qatʼi nazar, ish shu yerdan oʻtadi.
+
+Zanjir quyidagicha:
+
+`trigger ishga tushadi` → `autopilot_run` qatori → `execution_mode` chiqishni hal qiladi → assignee tayyorligi → issue/task → run-status sinxronizatsiyasi.
+
+<Mermaid chart={`flowchart TD
+  T["trigger fires (schedule | webhook | manual)"] --> D["DispatchAutopilot"]
+  D --> G{"shouldSkipDispatch?"}
+  G -- "skip" --> SK["recordSkippedRun (status=skipped)"]
+  G -- "pass" --> CR["CreateAutopilotRun"]
+  CR --> M{"execution_mode"}
+  M -- "create_issue" --> CI["dispatchCreateIssue"]
+  M -- "run_only" --> RO["dispatchRunOnly"]
+  M -- "other" --> UF["failRun: unknown execution_mode"]
+  CI --> ISS["issue + task (issue_created)"]
+  RO --> TSK["bare agent_task_queue row (running)"]
+`}/>
+
+### Avval pre-flight qabul qilish, soʻngra run qatori
+
+`DispatchAutopilot` qiladigan birinchi narsa — `shouldSkipDispatch` chaqirish. Agar u `skip` qaytarsa, ishli run yaratilmaydi — buning oʻrniga `recordSkippedRun` sababni olib yuruvchi `skipped` run yozadi va `(run, nil)` qaytaradi. Chaqiruvchilar skip-ni muvaffaqiyatli no-op tick sifatida qabul qiladi. Tayyorlik/qabul qilish mexanizmi [autopilot-triggers-readiness](/developers/agentic/autopilot-triggers-readiness) sahifasida hujjatlashtirilgan.
+
+Darvozadan oʻtgach, `CreateAutopilotRun` run-ni qoʻshadi. Boshlangʻich status rejimga bogʻliq:
+
+- `create_issue` → `"issue_created"`
+- `run_only` → `"running"`
+
+`autopilotSquadAttribution` run-ning `squad_id` qiymatini faqat `assignee_type='squad'` boʻlganda oʻrnatadi — bu attribution hook boʻlib, hisobotlar `autopilot`ga qaytib join qilmasdan squad boʻyicha guruhlashi mumkin.
+
+### Muhim: nil boʻlmagan run nil boʻlmagan error bilan qaytishi mumkin
+
+`DispatchAutopilot` `(*db.AutopilotRun, error)` qaytaradi. Yoʻnaltirish muvaffaqiyatsiz tarmoqlarida u **ham** nil boʻlmagan run, **ham** nil boʻlmagan error qaytaradi:
+
+```go
+s.failRun(ctx, run.ID, err.Error())
+s.captureAutopilotRunFailed(autopilot, run, source, err.Error())
+return &run, fmt.Errorf("dispatch create_issue: %w", err)
+```
+
+Run yaratilgan va keyin `failed` deb belgilangan; error chaqiruvchining logging/HTTP javobi uchun. Chaqiruvchilar `err != nil` boʻlganda `run == nil` deb **faraz qilmasligi** kerak. Yagona haqiqiy `(nil, err)` holatlari — `CreateAutopilotRun`ning muvaffaqiyatsizligi va `recordSkippedRun`ning create muvaffaqiyatsizligi.
+
+## create_issue va run_only
+
+`execution_mode` — yagona kalit. Default tarmoq (`"create_issue"` ham, `"run_only"` ham boʻlmagan har qanday qiymat) `failRun`ni `"unknown execution_mode: " + mode` bilan chaqiradi va error qaytaradi — bu `autopilotErrorType` tomonidan `configuration` error sifatida tasniflanadi.
+
+### create_issue → dispatchCreateIssue (kuzatiladigan issue)
+
+`dispatchCreateIssue` haqiqiy Agora issue hosil qiladi, shuning uchun run issue holati sifatida koʻrinadi. Ketma-ketlik:
+
+1. `resolveAutopilotLeader` bajaruvchi agentni aniqlaydi (`agent` uchun assignee, `squad` uchun squadning `leader_id`).
+2. `projectSquadAllows` — agar autopilot squadga bogʻlangan projectni nishonga olsa, lekin assignee oʻsha squadda boʻlmasa, u `errDispatchSkipped` qaytaradi (skip, fail emas, shuning uchun notoʻgʻri sozlanish failure monitorini ishga tushirmaydi).
+3. Tranzaksiyada: `IncrementIssueCounter`, `issueposition.NextTopPosition`, soʻngra `CreateIssueWithOrigin` `OriginType="autopilot"` va `OriginID=ap.ID` bilan. Issue-ning `CreatorType="agent"` / `CreatorID=leader.ID` — bajaruvchi agent yaratuvchi hisoblanadi, autopilotni sozlagan inson **emas** (oʻsha inson `origin_type`/`origin_id` orqali qayd etiladi).
+4. Commit-dan soʻng, `UpdateAutopilotRunIssueCreated` run-ni issue-ga bogʻlaydi (status `issue_created` boʻlib qoladi).
+5. `protocol.EventIssueCreated` nashr etiladi, shunda mavjud listener zanjiri ishga tushadi. Squad autopilotlari uchun aynan shu `shouldEnqueueSquadLeaderOnAssign` → `enqueueSquadLeaderTask`ni ishga tushiradi — bu yerda alohida squad-routing kodi yoʻq.
+6. Taskni navbatga qoʻyadi: squadlar uchun `EnqueueTaskForSquadLeader`, aks holda `EnqueueTaskForIssue`. Ikkalasi ham `agent_task_queue`ga `agent_id = leader` bilan tushadi.
+
+Yaratilgan issue-ning statusi shundan keyin run-ni boshqaradi. `SyncRunFromIssue` `done`/`in_review` → tugallangan run-ga, `cancelled`/`blocked` → muvaffaqiyatsiz run-ga moslaydi.
+
+### run_only → dispatchRunOnly (yalangʻoch task, issue yoʻq)
+
+`dispatchRunOnly` issue-siz toʻgʻridan-toʻgʻri agent taskni navbatga qoʻyadi. Har qanday doimiy hisobot joylashuvi task kontekstidan yoki koʻrsatmalardan kelishi kerak — qaraydigan issue yoʻq. Ketma-ketlik:
+
+1. `resolveAutopilotLeader`. Agar qator yoʻqolgan boʻlsa yoki squad qabul qilish va yoʻnaltirish oʻrtasida arxivlangan boʻlsa (`pgx.ErrNoRows` / `errSquadArchived`), `errDispatchSkipped` qaytaring — kechikkan race fail emas, skip hisoblanadi.
+2. `AgentReadiness` bu yerda qayta tekshiriladi (ikki tomonlama kafolat); tayyor emas → `errDispatchSkipped`.
+3. Squad autopilotlari uchun `canCreatorAccessPrivateLeader` orqali Private-leader darvozasi.
+4. `CreateAutopilotTask` yalangʻoch `agent_task_queue` qatorini qoʻshadi: `issue_id = NULL`, `status='queued'`, `autopilot_run_id = run.ID`, va autopilot sarlavhasining `trigger_summary` snapshoti.
+5. `UpdateAutopilotRunRunning` run-ning `task_id`ini oʻrnatadi (status `running`).
+
+#### run_only MUST NotifyTaskEnqueued chaqirishi kerak, aks holda daemon hech qachon uygʻonmaydi
+
+Bu yuk koʻtaruvchi tafsilot. `dispatchRunOnly` task qatorini bevosita `Queries.CreateAutopilotTask` orqali qoʻshadi, **`TaskService.Enqueue*`ni chetlab oʻtib**. Navbatga qoʻyish yordamchilari odatda runtime-ni uygʻotadi va empty-claim keshini tozalaydi. run_only ularni oʻtkazib yuborganligi sababli, u bu ishni oʻzi bajarishi kerak:
+
+```go
+// Drop the empty-claim cache and wake the daemon.
+s.TaskSvc.NotifyTaskEnqueued(ctx, task)
+```
+
+Bu chaqiruvsiz runtime hech qanday uygʻotish olmaydi va har qanday keshlangan "empty" hukm taskni TTL muddati tugaguncha tiqilib qoldiradi. Agar siz `agent_task_queue`ga bevosita qoʻshadigan yana bir yoʻl qoʻshsangiz, u ham `NotifyTaskEnqueued` chaqirishi kerak.
+
+<Callout title="create_issue yoʻli NotifyTaskEnqueued chaqirmaydi">
+`dispatchCreateIssue` `EnqueueTaskForSquadLeader` / `EnqueueTaskForIssue` orqali oʻtadi, ular allaqachon daemon-ni uygʻotadi. Faqat chetlab oʻtuvchi run_only yoʻli aniq notify-ga muhtoj.
+</Callout>
+
+## task ↔ run bogʻlanishining uchta yoʻli
+
+Run-ning yakuniy holati taskning qanday bogʻlanganiga qarab uchta turli sinxronizatsiya funksiyasidan kelishi mumkin. Ulardan birortasini oʻtkazib yuborish run-larni tiqilib qolishiga olib keladi — yagona umumiy ushlovchi yoʻq.
+
+| Sinxronizatsiya funksiyasi | Bogʻlanish | Ishga tushish sharti | Nima qiladi |
+|---|---|---|---|
+| `SyncRunFromTask` | `task.AutopilotRunID` (run_only) | task `completed` / `failed` / `cancelled` | `UpdateAutopilotRunCompleted` (`task.Result`ni olib yuradi) yoki `UpdateAutopilotRunFailed` |
+| `SyncRunFromLinkedIssueTask` | `task.IssueID` (create_issue) | task `failed`, issue uchun aktiv task qolmagan | issue task-ning muvaffaqiyatsizlik sababi bilan `UpdateAutopilotRunFailed` |
+| `SyncRunFromIssue` | `OriginType='autopilot'` orqali `issue.ID` | issue yakuniy statusga yetadi | `done`/`in_review`da completed, `cancelled`/`blocked`da failed |
+
+Nega uchta:
+
+- **run_only** tasklari `autopilot_run_id`ni olib yuradi, shuning uchun `SyncRunFromTask` run-ni `GetAutopilotRun` orqali bevosita topadi. create_issue tasklari `autopilot_run_id`ni olib yur**maydi** (ularning `CreateAutopilotTask`-ekvivalenti `issue_id` orqali bogʻlanadi), shuning uchun `SyncRunFromTask` ularga koʻr — u `!task.AutopilotRunID.Valid` boʻlganda erta qaytadi.
+- **create_issue** tasklari `issue_id` orqali bogʻlanadi. Odatda issue-ning oʻz statusi run-ni boshqaradi (`SyncRunFromIssue`). Lekin task issue yakuniy statusga yetishidan *oldin* yakuniy ravishda muvaffaqiyatsiz boʻlishi mumkin — `SyncRunFromLinkedIssueTask`siz run abadiy `issue_created`da osilib qolardi. Va failure-rate auto-pause monitori `issue_created`/`running` run-larni istisno qilganligi sababli, doimiy ravishda muvaffaqiyatsiz boʻlayotgan autopilot hech qachon auto-pause ham boʻlmasdi.
+- `SyncRunFromLinkedIssueTask` qayta urinishlarga ehtiyotkor: `FailTask` infra-shaklidagi muvaffaqiyatsizliklar uchun broadcast qilishdan *oldin* auto-retry-ni navbatga qoʻyadi, shuning uchun u `HasActiveTaskForIssue`ni tekshiradi va boshqa urinish jarayonda boʻlsa **kutadi**. U run-ni faqat qayta urinishlar tugagandan keyin muvaffaqiyatsiz qiladi, `taskFailureReasonForAutopilotRun(task)`ni olib yuradi (`task.Error`ni afzal koʻradi, soʻngra `task.FailureReason`, aks holda `"task failed"`).
+
+`GetAutopilotRunByIssue` (ikkala issue-tomoni sinxronizatsiyasi tomonidan ishlatiladi) faqat `status IN ('issue_created', 'running')`dagi run-larni moslaydi — oʻsha issue uchun aktiv run-da `LIMIT 1`. Allaqachon yakuniy boʻlgan run-lar qayta tegilmaydi.
+
+## Run status holatlar mashinasi
+
+`autopilot_run.status` qiymatlari, ularni oʻrnatadigan querilar bilan:
+
+<Mermaid chart={`stateDiagram-v2
+  [*] --> skipped: recordSkippedRun (pre-flight admission)
+  [*] --> issue_created: create_issue start
+  [*] --> running: run_only start
+  issue_created --> completed: issue done/in_review
+  issue_created --> failed: issue cancelled/blocked, linked task failed, dispatch error
+  issue_created --> skipped: handleDispatchSkip (post-admission race)
+  running --> completed: task completed
+  running --> failed: task failed/cancelled, dispatch error
+  running --> skipped: handleDispatchSkip (post-admission race)
+  completed --> [*]
+  failed --> [*]
+  skipped --> [*]
+`}/>
+
+| Status | Query | Oʻrnatadi |
+|---|---|---|
+| `issue_created` | `UpdateAutopilotRunIssueCreated` | `issue_id` |
+| `running` | `UpdateAutopilotRunRunning` | `task_id` |
+| `completed` | `UpdateAutopilotRunCompleted` | `completed_at`, ixtiyoriy `result` |
+| `failed` | `UpdateAutopilotRunFailed` | `completed_at`, `failure_reason` |
+| `skipped` | `UpdateAutopilotRunSkipped` | `completed_at`, `failure_reason` |
+
+Sinxronizatsiya uchligidan tashqarida yana ikkita yakuniy oʻtish mavjud: `FailAutopilotRunsByIssue` bogʻlangan issue oʻchirilganda aktiv run-larni (`issue_created`/`running`) muvaffaqiyatsiz qiladi — u oʻchirishdan *oldin* ishlashi kerak, chunki `ON DELETE SET NULL` `issue_id`ni tozalaydi. Shuningdek `UpdateAutopilotRunSkippedWithResult` ham bor.
+
+### Skip muvaffaqiyat ham, muvaffaqiyatsizlik ham emas
+
+`SelectAutopilotsExceedingFailureThreshold` faqat `status IN ('completed','failed')`ni sanaydi. `skipped` numerator va denominatorning ikkalasidan ham istisno qilinadi, `issue_created`/`running` esa istisno qilinadi, shunda jarayondagi ish jazolanmaydi. Aynan shuning uchun qabul qilishdan keyingi tayyorlik regresslari `failed` emas, balki `skipped` sifatida (jarayondagi run-ni qayta yozadigan `handleDispatchSkip` orqali) qayd etiladi — beqaror runtime aks holda sogʻlom boʻlgan autopilotni auto-pause qilmasligi kerak.
+
+### run.source qiymatlari
+
+`source` `DispatchAutopilot` argumentidan soʻzma-soʻz oʻrnatiladi va run-da saqlanadi. Tizim boʻylab qiymatlar `"schedule"`, `"webhook"` va `"manual"`. `webhook` run-lari uchun `buildIssueDescription` qoʻshimcha ravishda trigger payload-ini issue tanasiga inline qiladi (konvertdan `event` / `eventPayload`ni parse qilib), shunda agent hodisa kontekstini koʻradi, aks holda hech qachon koʻrmasdi.
+
+## issue_title_template faqat {{date}}ni qoʻllab-quvvatlaydi
+
+`ValidateIssueTitleTemplate` qoʻllab-quvvatlanadigan toʻplamdan tashqaridagi har qanday `{{...}}` tokenni rad etadi. `SupportedIssueTitleTemplateVariables` aynan `["date"]`. Boʻsh shablon yaroqli (autopilot oʻzining `Title`iga qaytadi).
+
+Render vaqtida `interpolateTemplate` `{{date}}`ni (`issueTitleTemplateTokenRE` orqali `{{ date }}` kabi ichki boʻshliqlarga toqat qilib) `formatAutopilotRunDate` bilan almashtiradi, trigger-ning vaqt zonasida (`resolveAutopilotTriggerTimezone`, `DefaultAutopilotTriggerTimezone = "UTC"`ga qaytadi) `2006-01-02` formatida formatlanadi. Boshqa har qanday token literal sifatida qoldiriladi. `{{trigger_id}}`, `{{branch}}` yoki boshqa biror narsani **oʻylab topmang** — validatsiya buni rad etadi, agar oʻtib ketsa, u soʻzma-soʻz render boʻlardi.
+
+## Source files
+
+| File | Symbols this page depends on |
+|---|---|
+| `server/internal/service/autopilot.go` | `DispatchAutopilot`, `dispatchCreateIssue`, `dispatchRunOnly`, `SyncRunFromTask`, `SyncRunFromLinkedIssueTask`, `SyncRunFromIssue`, `shouldSkipDispatch`, `recordSkippedRun`, `handleDispatchSkip`, `failRun`, `resolveAutopilotLeader`, `projectSquadAllows`, `autopilotSquadAttribution`, `errDispatchSkipped`, `taskFailureReasonForAutopilotRun`, `interpolateTemplate`, `ValidateIssueTitleTemplate`, `SupportedIssueTitleTemplateVariables`, `buildIssueDescription`, `DefaultAutopilotTriggerTimezone`, `autopilotErrorType`, `NotifyTaskEnqueued` (call site) |
+| `server/pkg/db/queries/autopilot.sql` | `CreateAutopilotRun`, `UpdateAutopilotRunIssueCreated`, `UpdateAutopilotRunRunning`, `UpdateAutopilotRunCompleted`, `UpdateAutopilotRunFailed`, `UpdateAutopilotRunSkipped`, `UpdateAutopilotRunSkippedWithResult`, `GetAutopilotRunByIssue`, `GetAutopilotRun`, `CreateAutopilotTask`, `FailAutopilotRunsByIssue`, `SelectAutopilotsExceedingFailureThreshold` |
+| `server/internal/service/builtin_skills/agora-autopilots/SKILL.md` | execution-mode modeli, `issue-title-template` `{{date}}` cheklovi, trigger→run→issue/task zanjiri |
+
+Bir-PR drift qoidasi: yuqoridagi biror symbolni oʻzgartirsangiz — run status qiymatini, sync bogʻlanishini, shablon oʻzgaruvchilari toʻplamini, `NotifyTaskEnqueued` talabini yoki `(run, err)` qaytarish kontraktini — ushbu sahifani **va** `agora-autopilots` `SKILL.md`ni (uning `references/autopilots-source-map.md`i bilan birga) bir PR ichida yangilang, aks holda sahifa jimgina eskirgan xatti-harakatni oʻrgatadi.

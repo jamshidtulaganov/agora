@@ -1,0 +1,170 @@
+---
+title: Autopilot Internals
+description: Как DispatchAutopilot превращает триггер в запуск, затем в issue или в простую agent-задачу, и поддерживает синхронизацию статуса запуска.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Аудитория">
+Оба. Эта страница предназначена для инженеров, работающих над `AutopilotService`, и для агентов, рассуждающих о том, почему запуск autopilot завис, пропущен или провалился. Всё здесь прослеживается до `server/internal/service/autopilot.go` и `server/pkg/db/queries/autopilot.sql`.
+</Callout>
+
+Autopilot — это не агент. Это правило, которое при срабатывании триггера направляет работу агенту (или ведущему агенту squad'а). Путь диспетчеризации — это единственная функция: `DispatchAutopilot`. По стороне триггеров (источники schedule/webhook/manual, gating по готовности/допуску) см. [autopilot-triggers-readiness](/developers/agentic/autopilot-triggers-readiness).
+
+## DispatchAutopilot — единственная точка входа
+
+`DispatchAutopilot(ctx, autopilot, triggerID, source, payload)` — это единственный путь кода для всех трёх источников триггеров. Строка `source` (`"schedule"`, `"webhook"`, `"manual"`) сохраняется в запуске, но не разветвляет логику диспетчеризации — это делает только `execution_mode`. Что бы ни запустило триггер, работа сходится сюда.
+
+Цепочка такая:
+
+`срабатывает триггер` → строка `autopilot_run` → `execution_mode` определяет вывод → готовность assignee → issue/задача → синхронизация статуса запуска.
+
+<Mermaid chart={`flowchart TD
+  T["trigger fires (schedule | webhook | manual)"] --> D["DispatchAutopilot"]
+  D --> G{"shouldSkipDispatch?"}
+  G -- "skip" --> SK["recordSkippedRun (status=skipped)"]
+  G -- "pass" --> CR["CreateAutopilotRun"]
+  CR --> M{"execution_mode"}
+  M -- "create_issue" --> CI["dispatchCreateIssue"]
+  M -- "run_only" --> RO["dispatchRunOnly"]
+  M -- "other" --> UF["failRun: unknown execution_mode"]
+  CI --> ISS["issue + task (issue_created)"]
+  RO --> TSK["bare agent_task_queue row (running)"]
+`}/>
+
+### Предполётный допуск, затем строка запуска
+
+Первое, что делает `DispatchAutopilot`, — вызывает `shouldSkipDispatch`. Если она возвращает `skip`, запуск с работой не создаётся — вместо этого `recordSkippedRun` записывает запуск `skipped`, несущий причину, и возвращает `(run, nil)`. Вызывающий код трактует skip как успешный no-op tick. Механика готовности/допуска задокументирована на [autopilot-triggers-readiness](/developers/agentic/autopilot-triggers-readiness).
+
+Пройдя через гейт, `CreateAutopilotRun` вставляет запуск. Начальный статус зависит от режима:
+
+- `create_issue` → `"issue_created"`
+- `run_only` → `"running"`
+
+`autopilotSquadAttribution` устанавливает `squad_id` запуска только когда `assignee_type='squad'` — хук атрибуции, чтобы отчёты могли группироваться по squad без обратного join'а к `autopilot`.
+
+### Важно: не-nil запуск может вернуться с не-nil ошибкой
+
+`DispatchAutopilot` возвращает `(*db.AutopilotRun, error)`. На ветках сбоя диспетчеризации он возвращает **оба** — не-nil запуск и не-nil ошибку:
+
+```go
+s.failRun(ctx, run.ID, err.Error())
+s.captureAutopilotRunFailed(autopilot, run, source, err.Error())
+return &run, fmt.Errorf("dispatch create_issue: %w", err)
+```
+
+Запуск был создан, а затем помечен `failed`; ошибка предназначена для логирования/HTTP-ответа вызывающего кода. Вызывающий код **не должен** предполагать `run == nil` при `err != nil`. Единственные истинные случаи `(nil, err)` — это сбой `CreateAutopilotRun` и сбой создания в `recordSkippedRun`.
+
+## create_issue vs run_only
+
+`execution_mode` — единственный переключатель. Ветка по умолчанию (любое значение, которое не является ни `"create_issue"`, ни `"run_only"`) вызывает `failRun` с `"unknown execution_mode: " + mode` и возвращает ошибку — она классифицируется как ошибка `configuration` функцией `autopilotErrorType`.
+
+### create_issue → dispatchCreateIssue (отслеживаемая issue)
+
+`dispatchCreateIssue` создаёт настоящую Agora issue, так что запуск виден как состояние issue. Последовательность:
+
+1. `resolveAutopilotLeader` разрешает исполняющего агента (assignee для `agent`, `leader_id` squad'а для `squad`).
+2. `projectSquadAllows` — если autopilot нацелен на проект, привязанный к squad, но assignee не входит в этот squad, она возвращает `errDispatchSkipped` (skip, а не fail, чтобы неверная конфигурация не срабатывала на мониторе сбоев).
+3. В транзакции: `IncrementIssueCounter`, `issueposition.NextTopPosition`, затем `CreateIssueWithOrigin` с `OriginType="autopilot"` и `OriginID=ap.ID`. У issue `CreatorType="agent"` / `CreatorID=leader.ID` — создателем является исполняющий агент, **а не** человек, который настроил autopilot (этот человек фиксируется через `origin_type`/`origin_id`).
+4. После commit'а `UpdateAutopilotRunIssueCreated` связывает запуск с issue (статус остаётся `issue_created`).
+5. Публикует `protocol.EventIssueCreated`, чтобы сработала существующая цепочка слушателей. Для squad-autopilot'ов именно это запускает `shouldEnqueueSquadLeaderOnAssign` → `enqueueSquadLeaderTask` — отдельного кода маршрутизации squad здесь нет.
+6. Ставит задачу в очередь: `EnqueueTaskForSquadLeader` для squad'ов, `EnqueueTaskForIssue` в остальных случаях. Обе попадают в `agent_task_queue` с `agent_id = leader`.
+
+С этого момента статус созданной issue управляет запуском. `SyncRunFromIssue` отображает `done`/`in_review` → завершённый запуск, `cancelled`/`blocked` → проваленный запуск.
+
+### run_only → dispatchRunOnly (простая задача, без issue)
+
+`dispatchRunOnly` ставит в очередь прямую agent-задачу без issue. Любое долговременное место для отчёта должно браться из контекста задачи или инструкций — issue, на которую можно посмотреть, нет. Последовательность:
+
+1. `resolveAutopilotLeader`. Если строка исчезла или squad был заархивирован между допуском и диспетчеризацией (`pgx.ErrNoRows` / `errSquadArchived`), вернуть `errDispatchSkipped` — поздняя гонка является skip, а не сбоем.
+2. `AgentReadiness` перепроверяется здесь (на всякий случай); не готов → `errDispatchSkipped`.
+3. Гейт private-leader для squad-autopilot'ов через `canCreatorAccessPrivateLeader`.
+4. `CreateAutopilotTask` вставляет простую строку `agent_task_queue`: `issue_id = NULL`, `status='queued'`, `autopilot_run_id = run.ID`, и снимок `trigger_summary` заголовка autopilot.
+5. `UpdateAutopilotRunRunning` устанавливает `task_id` запуска (статус `running`).
+
+#### run_only ОБЯЗАН вызвать NotifyTaskEnqueued, иначе daemon никогда не проснётся
+
+Это несущая деталь. `dispatchRunOnly` вставляет строку задачи напрямую через `Queries.CreateAutopilotTask`, **минуя `TaskService.Enqueue*`**. Помощники enqueue обычно будят runtime и сбрасывают кэш пустых claim'ов. Поскольку run_only их пропускает, он должен выполнить эту работу сам:
+
+```go
+// Drop the empty-claim cache and wake the daemon.
+s.TaskSvc.NotifyTaskEnqueued(ctx, task)
+```
+
+Без этого вызова runtime не получает пробуждения, и любой закэшированный вердикт "empty" задерживает задачу до истечения TTL. Если вы добавляете другой путь, который вставляет напрямую в `agent_task_queue`, он тоже должен вызывать `NotifyTaskEnqueued`.
+
+<Callout title="Путь create_issue не вызывает NotifyTaskEnqueued">
+`dispatchCreateIssue` проходит через `EnqueueTaskForSquadLeader` / `EnqueueTaskForIssue`, которые уже будят daemon. Только обходной путь run_only нуждается в явном notify.
+</Callout>
+
+## Три пути связывания task ↔ run
+
+Терминальное состояние запуска может прийти от трёх разных функций синхронизации, в зависимости от того, как связана задача. Пропуск любой из них оставляет запуски зависшими — единого универсального обработчика нет.
+
+| Функция синхронизации | Связывание | Условие срабатывания | Что делает |
+|---|---|---|---|
+| `SyncRunFromTask` | `task.AutopilotRunID` (run_only) | задача `completed` / `failed` / `cancelled` | `UpdateAutopilotRunCompleted` (несёт `task.Result`) или `UpdateAutopilotRunFailed` |
+| `SyncRunFromLinkedIssueTask` | `task.IssueID` (create_issue) | задача `failed`, активных задач для issue не осталось | `UpdateAutopilotRunFailed` с причиной сбоя задачи |
+| `SyncRunFromIssue` | `issue.ID` через `OriginType='autopilot'` | issue достигает терминального статуса | completed при `done`/`in_review`, failed при `cancelled`/`blocked` |
+
+Почему три:
+
+- Задачи **run_only** несут `autopilot_run_id`, поэтому `SyncRunFromTask` находит запуск напрямую через `GetAutopilotRun`. Задачи create_issue **не** несут `autopilot_run_id` (их эквивалент `CreateAutopilotTask` связывается через `issue_id`), поэтому `SyncRunFromTask` их не видит — она возвращается раньше времени, когда `!task.AutopilotRunID.Valid`.
+- Задачи **create_issue** связаны через `issue_id`. Обычно запуском управляет собственный статус issue (`SyncRunFromIssue`). Но задача может терминально провалиться *до* того, как issue достигнет терминального статуса — без `SyncRunFromLinkedIssueTask` запуск завис бы в `issue_created` навсегда. И поскольку монитор авто-паузы по частоте сбоев исключает запуски `issue_created`/`running`, стабильно проваливающийся autopilot никогда бы и не поставился на авто-паузу.
+- `SyncRunFromLinkedIssueTask` аккуратна с повторными попытками: `FailTask` ставит авто-ретрай в очередь для сбоев инфраструктурного характера *перед* broadcast'ом, поэтому она проверяет `HasActiveTaskForIssue` и **ждёт**, если другая попытка находится в полёте. Она проваливает запуск только когда повторные попытки исчерпаны, неся `taskFailureReasonForAutopilotRun(task)` (предпочитает `task.Error`, затем `task.FailureReason`, иначе `"task failed"`).
+
+`GetAutopilotRunByIssue` (используется обеими синхронизациями со стороны issue) сопоставляет только запуски в `status IN ('issue_created', 'running')` — `LIMIT 1` на активный запуск для этой issue. Уже терминальные запуски повторно не трогаются.
+
+## Конечный автомат статусов запуска
+
+Значения `autopilot_run.status` с запросами, которые их устанавливают:
+
+<Mermaid chart={`stateDiagram-v2
+  [*] --> skipped: recordSkippedRun (pre-flight admission)
+  [*] --> issue_created: create_issue start
+  [*] --> running: run_only start
+  issue_created --> completed: issue done/in_review
+  issue_created --> failed: issue cancelled/blocked, linked task failed, dispatch error
+  issue_created --> skipped: handleDispatchSkip (post-admission race)
+  running --> completed: task completed
+  running --> failed: task failed/cancelled, dispatch error
+  running --> skipped: handleDispatchSkip (post-admission race)
+  completed --> [*]
+  failed --> [*]
+  skipped --> [*]
+`}/>
+
+| Статус | Запрос | Устанавливает |
+|---|---|---|
+| `issue_created` | `UpdateAutopilotRunIssueCreated` | `issue_id` |
+| `running` | `UpdateAutopilotRunRunning` | `task_id` |
+| `completed` | `UpdateAutopilotRunCompleted` | `completed_at`, опциональный `result` |
+| `failed` | `UpdateAutopilotRunFailed` | `completed_at`, `failure_reason` |
+| `skipped` | `UpdateAutopilotRunSkipped` | `completed_at`, `failure_reason` |
+
+Существуют ещё два терминальных перехода вне триады синхронизации: `FailAutopilotRunsByIssue` проваливает активные запуски (`issue_created`/`running`), когда их связанная issue удаляется — она должна выполниться *до* удаления, потому что `ON DELETE SET NULL` обнуляет `issue_id`. Есть также `UpdateAutopilotRunSkippedWithResult`.
+
+### Skip — это ни успех, ни сбой
+
+`SelectAutopilotsExceedingFailureThreshold` считает только `status IN ('completed','failed')`. `skipped` исключён и из числителя, и из знаменателя, а `issue_created`/`running` исключены, чтобы работа в полёте не штрафовалась. Именно поэтому регрессии готовности после допуска записываются как `skipped` (через `handleDispatchSkip`, переписывающий запуск в полёте), а не как `failed` — нестабильный runtime не должен ставить на авто-паузу в остальном здоровый autopilot.
+
+### Значения run.source
+
+`source` устанавливается дословно из аргумента `DispatchAutopilot` и сохраняется в запуске. По всей системе значения таковы: `"schedule"`, `"webhook"` и `"manual"`. Для запусков `webhook` `buildIssueDescription` дополнительно встраивает payload триггера в тело issue (разбирая `event` / `eventPayload` из конверта), чтобы агент видел контекст события, который иначе он никогда бы не увидел.
+
+## issue_title_template поддерживает только {{date}}
+
+`ValidateIssueTitleTemplate` отклоняет любой токен `{{...}}` вне поддерживаемого набора. `SupportedIssueTitleTemplateVariables` — это в точности `["date"]`. Пустой шаблон допустим (autopilot откатывается к собственному `Title`).
+
+Во время рендеринга `interpolateTemplate` подставляет `{{date}}` (допуская внутренние пробелы вроде `{{ date }}` через `issueTitleTemplateTokenRE`) на `formatAutopilotRunDate`, отформатированный как `2006-01-02` в часовом поясе триггера (`resolveAutopilotTriggerTimezone`, с откатом на `DefaultAutopilotTriggerTimezone = "UTC"`). Любой другой токен остаётся литералом. **Не** изобретайте `{{trigger_id}}`, `{{branch}}` или что-либо ещё — валидация это отклонит, а если бы оно проскользнуло, оно бы отрендерилось дословно.
+
+## Source files
+
+| File | Symbols this page depends on |
+|---|---|
+| `server/internal/service/autopilot.go` | `DispatchAutopilot`, `dispatchCreateIssue`, `dispatchRunOnly`, `SyncRunFromTask`, `SyncRunFromLinkedIssueTask`, `SyncRunFromIssue`, `shouldSkipDispatch`, `recordSkippedRun`, `handleDispatchSkip`, `failRun`, `resolveAutopilotLeader`, `projectSquadAllows`, `autopilotSquadAttribution`, `errDispatchSkipped`, `taskFailureReasonForAutopilotRun`, `interpolateTemplate`, `ValidateIssueTitleTemplate`, `SupportedIssueTitleTemplateVariables`, `buildIssueDescription`, `DefaultAutopilotTriggerTimezone`, `autopilotErrorType`, `NotifyTaskEnqueued` (call site) |
+| `server/pkg/db/queries/autopilot.sql` | `CreateAutopilotRun`, `UpdateAutopilotRunIssueCreated`, `UpdateAutopilotRunRunning`, `UpdateAutopilotRunCompleted`, `UpdateAutopilotRunFailed`, `UpdateAutopilotRunSkipped`, `UpdateAutopilotRunSkippedWithResult`, `GetAutopilotRunByIssue`, `GetAutopilotRun`, `CreateAutopilotTask`, `FailAutopilotRunsByIssue`, `SelectAutopilotsExceedingFailureThreshold` |
+| `server/internal/service/builtin_skills/agora-autopilots/SKILL.md` | модель execution-mode, ограничение `issue-title-template` `{{date}}`, цепочка trigger→run→issue/task |
+
+Правило дрейфа в рамках одного PR: если вы меняете любой символ выше — значение статуса запуска, связывание синхронизации, набор переменных шаблона, требование `NotifyTaskEnqueued` или контракт возврата `(run, err)` — обновите эту страницу **и** `SKILL.md` для `agora-autopilots` (плюс его `references/autopilots-source-map.md`) в том же PR, иначе страница молча будет учить устаревшему поведению.

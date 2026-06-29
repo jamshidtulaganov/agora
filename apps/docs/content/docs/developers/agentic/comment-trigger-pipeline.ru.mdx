@@ -1,0 +1,182 @@
+---
+title: Comment Trigger Pipeline
+description: Как комментарий разворачивается в задачи для агентов — три источника триггеров, подавление и шлюз блокировки комментариев no_action.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Аудитория">
+Эта страница предназначена **как** для инженеров, так и для агентов, работающих над запуском задач по комментариям. Это авторитетное объяснение того, как `triggerTasksForComment` превращает один комментарий в ноль или более задач для агентов, почему пробуждение исполнителя иногда подавляется и почему то же самое вычисление лежит в основе чипов `/comments/trigger-preview`. Агентам, отлаживающим «почему мой комментарий разбудил / не разбудил агента», следует читать это вместе с /developers/agentic/mention-contract и /developers/agentic/squads-routing. См. также: /developers/agentic/no-action-protocol, /developers/agentic/loop-prevention, /developers/conventions.
+</Callout>
+
+## Единственная точка входа
+
+Каждый комментарий, попадающий на issue, проходит через `triggerTasksForComment` (`server/internal/handler/comment.go`). Он вызывается в конце `CreateComment` и снова из `UpdateComment`, когда отредактированное содержимое действительно изменилось. Он выполняет три вещи по порядку:
+
+```go
+func (h *Handler) triggerTasksForComment(ctx context.Context, issue db.Issue, comment db.Comment, parentComment *db.Comment, actorType, actorID string, suppressAgentIDs []pgtype.UUID) {
+	if isNoteComment(comment.Content) {
+		return
+	}
+	triggers := h.computeCommentAgentTriggers(ctx, issue, comment.Content, parentComment, actorType, actorID)
+	triggers = filterSuppressedCommentAgentTriggers(triggers, suppressAgentIDs)
+	h.enqueueCommentAgentTriggers(ctx, issue, comment.ID, triggers)
+}
+```
+
+Префикс `/note` (`isNoteComment`, `noteCommentPrefix = "/note"`) — это жёсткий ранний выход: комментарий, чей первый разделённый пробелами токен — `/note` (без учёта регистра), сохраняется как любой другой комментарий, но никогда не запускает агента. `computeCommentAgentTriggers` независимо повторно проверяет `isNoteComment` в самом начале, поэтому путь предпросмотра тоже покрыт.
+
+<Mermaid chart={`flowchart TD
+  C["Comment created / edited"] --> N{"isNoteComment?"}
+  N -- yes --> STOP["return — no triggers"]
+  N -- no --> T["computeCommentAgentTriggers<br/>(folds 3 sources, dedupes by agent.ID)"]
+  T --> F["filterSuppressedCommentAgentTriggers<br/>(drop suppress_agent_ids)"]
+  F --> E["enqueueCommentAgentTriggers<br/>(switch on Source)"]
+  E --> A["EnqueueTaskForIssue"]
+  E --> L["EnqueueTaskForSquadLeader"]
+  E --> M["EnqueueTaskForMention"]
+`} />
+
+## Свёртка трёх источников
+
+`computeCommentAgentTriggers` строит упорядоченный список значений `commentAgentTrigger` с дедупликацией по агентам. Локальное замыкание `add` использует ключ `uuidToString(trigger.Agent.ID)` в map `seen`, поэтому **первый** источник, заявивший права на агента, побеждает, а более поздние источники для того же агента отбрасываются. Три источника сворачиваются в этом фиксированном порядке:
+
+1. **Пробуждение исполнителя issue** (`commentTriggerSourceIssueAssignee`)
+2. **Пробуждение лидера назначенного squad** (тоже `commentTriggerSourceIssueAssignee`, но несёт ненулевой `Squad`)
+3. **Упомянутые агенты** (`commentTriggerSourceMentionAgent` / `commentTriggerSourceMentionSquadLeader`)
+
+```go
+type commentAgentTriggerSource string
+
+const (
+	commentTriggerSourceIssueAssignee      commentAgentTriggerSource = "issue_assignee"
+	commentTriggerSourceMentionAgent       commentAgentTriggerSource = "mention_agent"
+	commentTriggerSourceMentionSquadLeader commentAgentTriggerSource = "mention_squad_leader"
+)
+
+type commentAgentTrigger struct {
+	Agent  db.Agent
+	Source commentAgentTriggerSource
+	Squad  *db.Squad
+}
+```
+
+### Источник 1 — пробуждение исполнителя issue
+
+Авто-триггер исполнителя срабатывает только тогда, когда выполняются **все** из этих условий:
+
+- `actorType == "member"` — агенты никогда не пробуждают исполнителя автоматически через этот путь (источники упоминаний/squad обрабатывают взаимодействие агент-агент).
+- `h.shouldEnqueueOnComment(ctx, issue, actorType, actorID)` — issue назначен `agent` (а не squad/участнику), у агента есть runtime и он не заархивирован, участник проходит `canAccessPrivateAgent`, и **нет** существующей ожидающей задачи для `(issue, agent)` (`HasPendingTaskForIssueAndAgent` — естественная дедупликация для частых комментариев). См. `server/internal/handler/issue.go`.
+- `!h.commentMentionsOthersButNotAssignee(content, issue)` — см. [Упоминания, направленные другим](#other-directed-mentions-suppress-the-assignee) ниже.
+- `!h.isReplyToMemberThread(ctx, parentComment, content, issue)` — ответ участника внутри ветки, начатой участником, трактуется как человеческий разговор, а не запрос на работу, если только ответ или корень ветки не @-упоминают исполнителя, либо исполнитель уже ответил в этой ветке.
+
+Когда все шлюзы пройдены, агент-исполнитель загружается через `GetAgentInWorkspace` и добавляется с `Source: commentTriggerSourceIssueAssignee` и нулевым `Squad`.
+
+### Источник 2 — пробуждение лидера назначенного squad
+
+`computeAssignedSquadLeaderCommentTrigger` обрабатывает случай, когда issue назначен **squad**, а не агенту. Он возвращает `(commentAgentTrigger{}, false)`, если только `issue.AssigneeType.String == "squad"` и `issue.AssigneeID` валиден. Затем он разрешает squad через `GetSquadInWorkspace` и применяет по порядку:
+
+- **Защита от самотриггера (агент-автор):** если `authorType == "agent"` и автор — это `LeaderID` squad **и** `h.lastTaskWasLeader(ctx, issue.ID, squad.LeaderID)` истинно, возвращается false. Агент, выполняющий одновременно роли лидера и работника, всё равно пробуждает свою роль лидера после комментария из задачи работника — защита срабатывает только когда *последняя задача агента на этом issue была задачей лидера*.
+- **Защита от упоминаний для автора-участника:** `if authorType == "member" && commentMentionsAnyone(content) { return false }`. См. ниже.
+- **Готовность:** агент-лидер загружается через `GetAgentInWorkspace`; отклоняется, если `err != nil || !agent.RuntimeID.Valid || agent.ArchivedAt.Valid`.
+- **Видимость:** для автора должен пройти `canAccessPrivateAgent`.
+- **Дедупликация:** `HasPendingTaskForIssueAndAgent` для `(issue, leader)` должен быть false.
+
+В случае успеха он возвращает триггер с `Source: commentTriggerSourceIssueAssignee` и **ненулевым** указателем `Squad` — именно этот указатель маршрутизирует его в `EnqueueTaskForSquadLeader` на этапе постановки в очередь.
+
+<Callout type="warn" title="Защита от упоминаний для автора-участника">
+`commentMentionsAnyone` (`server/internal/handler/squad.go`) возвращает true для любого маршрутизирующего упоминания типа `agent`, `member`, `squad` или `all` (перекрёстные ссылки на issue игнорируются). Поэтому **комментарий участника, @-упоминающий кого угодно, не пробуждает лидера squad** через путь назначенного squad. Логика: если участник адресует комментарий конкретному участнику, то именно источники упоминаний (Источник 3) решают, кто запускается — широкое авто-пробуждение «squad владеет этим issue, разбуди лидера» отступает. Инспектируется только *текущий* комментарий; упоминания из родителя (корня ветки) здесь не наследуются.
+</Callout>
+
+### Источник 3 — упомянутые агенты
+
+`computeMentionedAgentCommentTriggers` парсит `@mentions` из тела комментария. Ответ с **нулём** собственных упоминаний может унаследовать упоминания корня ветки (`shouldInheritParentMentions`: у ответа нет упоминаний, автор ответа — участник, автор родителя — участник). Для каждого упоминания:
+
+- `@squad` → разрешает squad и добавляет **лидера** с `Source: commentTriggerSourceMentionSquadLeader` (с учётом тех же шлюзов самотриггера, готовности, видимости и дедупликации).
+- `@agent` → добавляет агента с `Source: commentTriggerSourceMentionAgent`.
+
+У триггеров по упоминаниям **нет шлюза по статусу issue** — @-упоминание работает даже на issue со статусом `done`/`cancelled`. Полная семантика упоминаний (шлюзы приватных агентов, самоупоминание, наследование от родителя) — предмет /developers/agentic/mention-contract; эта страница описывает только то, как эти триггеры сворачиваются в пайплайн комментариев.
+
+## Упоминания, направленные другим, подавляют исполнителя
+
+`commentMentionsOthersButNotAssignee` — это шлюз, который позволяет участнику поделиться результатами с коллегой или передать дело другому агенту, не пробуждая ложно собственного исполнителя issue. Он парсит упоминания, отбрасывает перекрёстные ссылки типа `issue`, затем:
+
+- Нет оставшихся упоминаний → возвращает `false` (нормальное поведение по комментарию; пробуждение исполнителя продолжается).
+- Присутствует `@all` (`util.HasMentionAll`) → возвращает `true`. `@all` — это **широковещание**, а не запрос на работу — авто-триггер исполнителя подавляется.
+- Упоминания есть, но у issue нет валидного `AssigneeID` → возвращает `true` (упоминания нацелены на других).
+- Id исполнителя присутствует среди упоминаний → возвращает `false` (исполнитель явно адресован — разрешить пробуждение).
+- Иначе (упомянуты другие, исполнитель — нет) → возвращает `true` (подавить).
+
+Это управляет только **Источником 1**. @-упомянутый агент всё равно получает собственную задачу из Источника 3 — подавление пробуждения исполнителя не подавляет пробуждение по упоминанию.
+
+## Подавление: `suppress_agent_ids`
+
+`CreateComment` принимает поле `suppress_agent_ids []string` в `CreateCommentRequest`. После вычисления набора триггеров `filterSuppressedCommentAgentTriggers` отбрасывает любой триггер, чей `Agent.ID` входит в этот набор:
+
+```go
+func filterSuppressedCommentAgentTriggers(triggers []commentAgentTrigger, suppressAgentIDs []pgtype.UUID) []commentAgentTrigger {
+	if len(triggers) == 0 || len(suppressAgentIDs) == 0 {
+		return triggers
+	}
+	// ... build a set of valid suppressed ids, skip matching triggers
+}
+```
+
+Это серверное соблюдение чипов предпросмотра, которые пользователь явно снял: клиент показывает агентов, которые были бы запущены (из эндпоинта предпросмотра), пользователь снимает галочки с некоторых, и эти id передаются как `suppress_agent_ids`, чтобы путь создания пропустил именно этих агентов. Подавление выполняется **после** вычисления, поэтому оно может удалить агента из любого источника, не меняя того, как были выведены остальные. `UpdateComment` вызывает `triggerTasksForComment` с подавлением `nil`.
+
+## Постановка в очередь: диспетчеризация по источнику
+
+`enqueueCommentAgentTriggers` переключается по `trigger.Source`, чтобы выбрать правильную точку входа `TaskService` (все в `server/internal/service/task.go`):
+
+| Source | `Squad` | Вызов постановки в очередь | Происхождение задачи |
+|---|---|---|---|
+| `commentTriggerSourceIssueAssignee` | ненулевой | `EnqueueTaskForSquadLeader` | `is_leader_task = true` |
+| `commentTriggerSourceIssueAssignee` | nil | `EnqueueTaskForIssue` | производное от `issue.AssigneeID` |
+| `commentTriggerSourceMentionSquadLeader` | (н/п) | `EnqueueTaskForSquadLeader` | `is_leader_task = true` |
+| `commentTriggerSourceMentionAgent` | (н/п) | `EnqueueTaskForMention` | явный id агента |
+
+`EnqueueTaskForSquadLeader` — это вариант `enqueueMentionTask` для роли лидера: он проставляет `IsLeaderTask`, чтобы нижестоящие защиты от самотриггера (проверка `lastTaskWasLeader` выше) могли отличить комментарий, оставленный в роли лидера, от оставленного в роли работника. Каждый вызов постановки в очередь проставляет триггерящий комментарий как `TriggerCommentID` и строит `TriggerSummary` (усечённое до `triggerSummaryMaxLen` рун через `truncateForSummary`). Каждая постановка в очередь выполняется по принципу best-effort: сбой логируется через `slog.Warn`, и цикл продолжается к следующему триггеру.
+
+## Эндпоинт предпросмотра использует то же вычисление
+
+`PreviewCommentTriggers` (`POST /comments/trigger-preview`, запрос `CommentTriggerPreviewRequest`) существует, чтобы чипы клиента «эти агенты будут уведомлены» вычислялись **тем же кодом**, что выполняет путь создания — они не могут разойтись. Он:
+
+1. Загружает issue, разрешает актора через `resolveActor` (как при создании).
+2. Раскрывает голые идентификаторы issue через `mention.ExpandIssueIdentifiers` (как при создании). Пустое содержимое замыкается накоротко на пустой список агентов.
+3. Вызывает `h.computeCommentAgentTriggers(...)` — идентичную свёртку, описанную выше, включая ранний выход `/note` и шлюзы всех трёх источников.
+4. Маппит каждый триггер в `CommentTriggerAgentResponse`, несущий `source` и человекочитаемую `reason` (`commentAgentTriggerReason`).
+
+Единственное, что предпросмотр **не** выполняет — это `filterSuppressedCommentAgentTriggers`: задача предпросмотра — показать полный набор потенциальных триггеров, чтобы пользователь мог выбрать, что подавить. Поскольку оба пути используют общий `computeCommentAgentTriggers`, каждый шлюз (подавление исполнителя, ответ в ветке участника, дедупликация, видимость, готовность) отражается в чипах ещё до того, как комментарий опубликован.
+
+<Callout title="Preview = create, минус подавление и постановка в очередь">
+Если чип показывает агента, путь создания поставит этого агента в очередь, **если только** его id не отправлен в `suppress_agent_ids`. Если чип отсутствует, никакое значение `suppress_agent_ids` не вернёт его обратно — агент уже был отсеян выше по потоку.
+</Callout>
+
+## Шлюз блокировки комментариев `no_action` (409)
+
+Когда **агент** публикует комментарий (`authorType == "agent"`) изнутри задачи, запущенной комментарием, `CreateComment` выполняет две защиты, привязанные к заголовку `X-Task-ID` — но только когда `IssueID` задачи совпадает с issue, к которому пишется комментарий (CLI проставляет `X-Task-ID` в каждый запрос, поэтому агент, легитимно комментирующий *другой* issue, не должен блокироваться):
+
+1. **Защита от дрейфа родителя:** если у задачи есть `TriggerCommentID`, то `parent_id` запроса должен ему равняться, иначе `409 Conflict` («parent_id must equal this task's trigger comment id (...)»). Это защищает от возобновлённой сессии Claude, несущей устаревший UUID `--parent`.
+
+2. **Блок `no_action`:** `service.HasSquadLeaderNoActionEvaluationForTask(ctx, h.Queries, task)` сообщает, записала ли эта точная комбинация `(issue, agent, task)` уже оценку `no_action` от лидера squad. Если да, комментарий отклоняется с:
+
+```text
+409 Conflict — squad leader recorded no_action; comments are not allowed for this task
+```
+
+Это обеспечивает соблюдение протокола no-action на границе комментариев: как только лидер squad формально объявил «здесь нечего делать» для задачи, эта задача не может продолжать публиковать комментарии (что иначе повторно запустило бы пайплайн и сожгло циклы). Ошибка проверки логируется, но **не** блокирует комментарий — шлюз открывается при собственных инфраструктурных ошибках (fail open) и закрывается только при подтверждённой записи `no_action` (fail closed). Сам протокол задокументирован в /developers/agentic/no-action-protocol; сжигание циклов, которое это предотвращает, описано в /developers/agentic/loop-prevention.
+
+## Source files
+
+| Файл | Символы, от которых зависит эта страница |
+|---|---|
+| `server/internal/handler/comment.go` | `triggerTasksForComment`, `computeCommentAgentTriggers`, `computeAssignedSquadLeaderCommentTrigger`, `computeMentionedAgentCommentTriggers`, `commentMentionsOthersButNotAssignee`, `isReplyToMemberThread`, `shouldInheritParentMentions`, `filterSuppressedCommentAgentTriggers`, `enqueueCommentAgentTriggers`, `isNoteComment`, `noteCommentPrefix`, `commentAgentTrigger`, `commentAgentTriggerSource`, `commentTriggerSourceIssueAssignee`, `commentTriggerSourceMentionAgent`, `commentTriggerSourceMentionSquadLeader`, `commentAgentTriggerReason`, `CreateComment`, `UpdateComment`, `PreviewCommentTriggers`, `CreateCommentRequest`, `CommentTriggerPreviewRequest`, `CommentTriggerAgentResponse` |
+| `server/internal/service/task.go` | `EnqueueTaskForIssue`, `EnqueueTaskForMention`, `EnqueueTaskForSquadLeader`, `enqueueMentionTask`, `buildCommentTriggerSummary`, `truncateForSummary`, `triggerSummaryMaxLen` |
+| `server/internal/handler/issue.go` | `shouldEnqueueOnComment` |
+| `server/internal/handler/squad.go` | `lastTaskWasLeader`, `commentMentionsAnyone` |
+| `server/internal/handler/agent_access.go` | `canAccessPrivateAgent` |
+| `server/internal/service/squad_no_action.go` | `HasSquadLeaderNoActionEvaluationForTask` |
+| `server/internal/util/mention.go` | `ParseMentions`, `HasMentionAll`, `Mention` |
+
+Если вы меняете источник триггера, правило подавления, шлюзы 409 для `no_action`/дрейфа родителя или контракт preview/create, обновите эту страницу в том же PR. Эндпоинт `/comments/trigger-preview` и путь создания используют общий `computeCommentAgentTriggers` по замыслу — если вы разветвите это вычисление, утверждение этой страницы «preview = create» станет ложью, и чипы клиента молча разойдутся с тем, что на самом деле ставится в очередь.

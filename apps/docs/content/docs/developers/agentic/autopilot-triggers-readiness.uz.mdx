@@ -1,0 +1,252 @@
+---
+title: Autopilot Triggers & Readiness
+description: Rejalashtirilgan va webhook triggerlari autopilotlarni qanday ishga tushiradi va offline runtime'ni mahkumlikka mahkum task o'rniga o'tkazib yuborilgan ishga aylantiradigan qabul darvozasi.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Auditoriya">
+Bu sahifa autopilot trigger infratuzilmasi ustida ishlayotgan **ham** muhandislar **ham** agentlar uchun. U schedule trigger qanday atomik tarzda da'vo qilinishi va oldinga suriliishi, autentifikatsiyasiz webhook ingress yetkazib berilgan ma'lumotni qanday saqlash va yuborishi, tayyorlik qabul darvozasi (`shouldSkipDispatch`) nima qilishi va nima uchun `skipped` run `failed` run emasligini, hamda nosozlik monitori nazoratdan chiqqan autopilotlarni qanday avtomatik pauzaga olishini tushuntiruvchi vakolatli manbadir. Aloqador: [/developers/agentic/autopilot-internals](/developers/agentic/autopilot-internals), [/developers/agentic/squads-routing](/developers/agentic/squads-routing), [/developers/agentic/agent-runtime-contract](/developers/agentic/agent-runtime-contract), [/developers/conventions](/developers/conventions).
+</Callout>
+
+## Ikki ingress yo'li
+
+Autopilot aniq ikki trigger manbasidan birortasidan ishga tushadi. Ikkalasi ham bir xil bajarish kirish nuqtasiga, `AutopilotService.DispatchAutopilot`'ga, har xil `source` qatori bilan birlashadi:
+
+- **Schedule** — fon poller'i (`runAutopilotScheduler`) har 30s da bir marta ishlaydi, muddati kelgan triggerlarni da'vo qiladi va `DispatchAutopilot(..., "schedule", nil)`'ni chaqiradi.
+- **Webhook** — ommaviy HTTP handler `HandleAutopilotWebhook` provayder POST'ini qabul qiladi, yetkazib berilgan ma'lumotni normallashtiradi va saqlaydi, so'ngra `DispatchAutopilot(..., "webhook", envelopeBytes)`'ni chaqiradi.
+
+`DispatchAutopilot`'dan keyingi hamma narsa (qabul darvozasi, run yaratish, issue/task yaratish) umumiy. Quyidagi ikki bo'lim faqat ingress'ga xos mexanizmlarni qamrab oladi.
+
+## Schedule trigger hayot tsikli
+
+Scheduler `server/cmd/server/autopilot_scheduler.go`'da joylashgan. U `schedulerInterval = 30 * time.Second`'da `time.NewTicker`'ni boshqaruvchi bitta goroutine.
+
+<Mermaid chart={`
+flowchart TD
+  A["runAutopilotScheduler"] --> B["recoverLostTriggers (once, at startup)"]
+  B --> C["ticker every 30s"]
+  C --> D["tickScheduledAutopilots"]
+  D --> E["ClaimDueScheduleTriggers (atomic: set next_run_at = NULL)"]
+  E --> F{"any claimed?"}
+  F -- no --> C
+  F -- yes --> G["for each trigger"]
+  G --> H["GetAutopilot"]
+  H --> I["DispatchAutopilot(..., 'schedule', nil)"]
+  I --> J["advanceNextRun -> ComputeNextRun -> AdvanceTriggerNextRun"]
+  J --> C
+`} />
+
+### Atomik da'vo — `next_run_at = NULL` bu da'vo tokeni
+
+`tickScheduledAutopilots` `queries.ClaimDueScheduleTriggers(ctx)`'ni chaqiradi. So'rov bitta `UPDATE ... RETURNING`:
+
+```sql
+UPDATE autopilot_trigger t
+SET next_run_at = NULL
+FROM autopilot a
+WHERE t.autopilot_id = a.id
+  AND t.kind = 'schedule'
+  AND t.enabled = true
+  AND t.next_run_at IS NOT NULL
+  AND t.next_run_at <= now()
+  AND a.status = 'active'
+RETURNING t.*, a.workspace_id AS autopilot_workspace_id;
+```
+
+`next_run_at = NULL`'ni o'rnatish **bu** da'vodir. `UPDATE` atomik bo'lgani va `WHERE` `next_run_at IS NOT NULL`'ni talab qilgani uchun, bir vaqtda ishlayotgan ikki server replikasi bir xil triggerni ikkalasi ham da'vo qila olmaydi — birinchi `UPDATE` ustunni null qiladi, shu sababli ikkinchi replikaning `WHERE`'si endi unga mos kelmaydi va u shu trigger uchun nol qator qaytaradi. Hech qanday advisory lock, hech qanday `SKIP LOCKED` kerak emas: predikatning o'zi o'zaro istisno mexanizmidir. `a.status = 'active'` bilan `autopilot a`'ga join qilish pauzaga olingan yoki arxivlangan autopilotlar hech qachon da'vo qilinmasligini bildiradi.
+
+### Oldinga surish — `advanceNextRun`
+
+Har bir da'vo qilingan triggerni yuborgandan so'ng, `advanceNextRun` keyingi ishga tushish vaqtini `service.ComputeNextRun(t.CronExpression.String, tz)` orqali qayta hisoblaydi va uni `queries.AdvanceTriggerNextRun` bilan qaytarib yozadi. Vaqt zonasi standart bo'yicha `service.DefaultAutopilotTriggerTimezone` (`"UTC"`) ga teng bo'ladi va faqat `t.Timezone` haqiqiy va bo'sh bo'lmagan holatda almashtiriladi. Yaroqsiz yoki bo'sh `CronExpression`'ga ega trigger o'tkazib yuboriladi (uning `next_run_at`'i `NULL` bo'lib qoladi).
+
+### Avariyadan tiklanish — `recoverLostTriggers`
+
+Da'vo qilingan trigger `next_run_at = NULL` bo'lgan, lekin keyingi ishga tushish vaqti hali yozilmagan oynada bo'ladi. Agar jarayon shu oyna ichida avariya holatiga tushsa, trigger abadiy `NULL` holatida tiqilib qoladi va hech qachon yana ishga tushmaydi. `recoverLostTriggers` scheduler ishga tushganda **bir marta** (ticker tsiklidan oldin) ishlaydi va bularni davolaydi:
+
+```sql
+SELECT t.*, a.workspace_id AS autopilot_workspace_id
+FROM autopilot_trigger t
+JOIN autopilot a ON t.autopilot_id = a.id
+WHERE t.kind = 'schedule'
+  AND t.enabled = true
+  AND t.next_run_at IS NULL
+  AND t.cron_expression IS NOT NULL
+  AND a.status = 'active';
+```
+
+Har bir tiklangan qator uchun u `ComputeNextRun`'ni qayta hisoblaydi va `AdvanceTriggerNextRun`'ni chaqiradi, haqiqiy kelajakdagi ishga tushish vaqtini tiklaydi. U o'tkazib yuborilgan run'ni **yubormaydi** — tiklanish faqat jadvalni qayta yoqadi.
+
+<Callout type="warn" title="Tirik-lekin-da'vo-qilingan trigger avariyada yetim qolganidan ajralib turmaydi">
+`recoverLostTriggers` faqat ishga tushishda ishlaydi, shuning uchun u bitta jarayon ichida tirik tick tsikli bilan poyga qila olmaydi. *Joriy* tick uni mikrosekundlar oldin da'vo qilgani uchun `NULL` bo'lgan trigger ko'rib chiqilmaydi — birinchi `ticker.C` ishga tushishidan oldin tiklanish allaqachon tugagan.
+</Callout>
+
+### Cron tahlili — `ComputeNextRun`
+
+`server/internal/service/cron.go` `github.com/robfig/cron/v3`'dan foydalanadi. Parser faqat **standart 5-maydonli** cron uchun qurilgan:
+
+```go
+var cronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+```
+
+`ComputeNextRun` ifodani tahlil qiladi, IANA joylashuvini `time.LoadLocation(timezone)` orqali yuklaydi va `sched.Next(time.Now().In(loc))`'ni qaytaradi. Tahlil qilib bo'lmaydigan cron ifodasi ham, tanilmaydigan vaqt zonasi ham xato qaytaradi (bu funksiya ichida fallback yo'q — scheduler'dagi *chaqiruvchilar* `"UTC"` standartini ta'minlaydi). `ValidateTimezone` trigger yaratish vaqtida ishlatiladigan mustaqil validator.
+
+## Webhook ingress
+
+`server/internal/handler/autopilot_webhook.go`'dagi `HandleAutopilotWebhook` **yagona autentifikatsiyasiz autopilot yo'li**. U autentifikatsiya qilingan route guruhi tashqarisida ishlaydi: URL yo'lidagi `awt_` prefiksli bearer token **bu** hisob ma'lumotidir. Token bu `"awt_"` + 32 tasodifiy baytning URL-xavfsiz base64'i (`generateWebhookToken`), jami 47 belgi.
+
+### Oqim: avval-saqla, sinxron-yubor
+
+Handler ataylab **avval-saqlash** tamoyiliga asoslangan — u har qanday qimmat ishni bajarishdan oldin `webhook_delivery` qatorini yozib qo'yadi, shuning uchun qabul qilingan har bir so'rov keyinroq yuborish muvaffaqiyatsiz bo'lsa ham auditga yaroqli bo'ladi. Tartiblangan bosqichlar (handler doc kommentariyasi va koddan so'zma-so'z):
+
+1. **Har-IP uchun rate limit** (`WebhookIPRateLimiter`) har qanday DB I/O dan oldin — token-spray hujumning portlash radiusini cheklaydi. Byudjetdan oshib ketsa → `429`.
+2. **Token qidiruvi** (`GetWebhookTriggerByToken`). `pgx.ErrNoRows` → `404 "webhook not found"`; har qanday boshqa DB xatosi → `500`. Qator-yo'q/DB-xatosi ajratimi muhim, chunki GitHub kabi provayderlar `404` da qayta urinmaydi, shuning uchun vaqtinchalik nosozlikni `404` ga aylantirish haqiqiy yetkazib berishlarni jimgina tushirib yuboradi.
+3. **Har-token uchun rate limit** (`WebhookRateLimiter`). Byudjetdan oshib ketsa → `429`.
+4. **Tanani o'qish, cheklangan** `maxWebhookBodyBytes` (256 KiB) gacha `http.MaxBytesReader` orqali. Hajmi katta → `413`.
+5. **Autopilot + workspace muvofiqlik tekshiruvi** (`GetAutopilot`, so'ngra `autopilot.WorkspaceID`'ni `trigRow.AutopilotWorkspaceID` bilan solishtirish) saqlashdan oldin — `webhook_delivery.workspace_id` `NOT NULL`, shuning uchun eskirgan FK aks holda tanani o'qishdan keyin INSERT'ni muvaffaqiyatsiz qilardi.
+6. **Tanani normallashtirish** `WebhookEnvelope`'ga (`normalizeWebhookPayload`). Yaroqsiz/skalyar/bo'sh JSON → `400` **saqlashsiz** — tahlil qilib bo'lmaydigan tanada ishonchli dedupe identifikatori yo'q.
+7. **Dedupe kalitini ajratib olish** (`extractDedupeKey`) va **imzoni tekshirish** (`verifyWebhookSignatureForProvider`).
+8. **`webhook_delivery`'ni INSERT qilish** (`persistInboundDelivery`, status `queued`). `(trigger_id, dedupe_key)` noyob buzilishida, takror sifatida ko'rib chiqing: mavjud qatorda `attempt_count`'ni oshiring va uning `delivery_id` + `run_id`'sini `200 {"status":"duplicate"}` bilan qaytaring.
+9. **Imzo yaroqsiz/yo'q** → yetkazib berishni `rejected`'ga UPDATE qiling, `401` qaytaring.
+10. **Trigger o'chirilgan / autopilot arxivlangan / autopilot pauzada** → yetkazib berishni `ignored`'ga UPDATE qiling, `200` qaytaring (shunda yuboruvchining qayta urinish mexanizmi to'xtaydi).
+11. **Hodisa-filtri ko'lami** (`webhookEventAllowedByTriggerScope`) → ko'lamdan tashqaridagi hodisa → `ignored`, `200`, run yaratilmaydi.
+12. **Sinxron yuborish** `AutopilotService.DispatchAutopilot(..., "webhook", envelopeBytes)` orqali.
+13. **`TouchAutopilotTriggerFiredAt`** yuborish qaytgandan so'ng — o'tkazib yuborilgan yo'lni ham qo'shganda — shunda `last_fired_at` aniq bo'ladi.
+
+### Payload normalizatsiyasi → `WebhookEnvelope`
+
+`normalizeWebhookPayload` ixtiyoriy provayder tanalarini bitta barqaror shaklga jamlaydi, shunda quyi oqim iste'molchilari (`run_only` daemon prompt'i, `create_issue` tavsif ilovasi) hech qachon har-provayder uchun shoxlanmaydi:
+
+```go
+type WebhookEnvelope struct {
+	Event        string          `json:"event"`
+	EventPayload json.RawMessage `json:"eventPayload"`
+	Request      WebhookRequest  `json:"request"`
+}
+```
+
+Tana JSON obyekti yoki massivi bo'lishi kerak — yalang'och skalyarlar rad etiladi (`"hello"` tanasi yaroqli JSON, lekin webhook payload sifatida foydasiz va agent prompt'iga so'zma-so'z tushib qolardi). Agar chaqiruvchi allaqachon `event` qator envelopini ta'minlasa, u o'zgartirilmasdan saqlanadi; aks holda hodisa sarlavhalar/tanadan `inferEvent` orqali xulosa qilinadi (`X-GitHub-Event` `body.action` bilan birlashtirilgan, so'ngra `X-Gitlab-Event`, `X-Event-Type`, `body.event`, `body.type`, `body.action`), standart bo'yicha `webhook.received`.
+
+### Dedupe va HMAC tekshiruvi
+
+`extractDedupeKey` provayderga xos idempotentlik sarlavhasini o'qiydi — `github` uchun `X-GitHub-Delivery`, umumiy holatda `Idempotency-Key` — va kalit hamda manba tegini qaytaradi. `verifyWebhookSignatureForProvider` `webhook_delivery` CHECK cheklovini aks ettiruvchi to'rtta `signature_status` qiymatidan birini qaytaradi:
+
+| Qiymat | Ma'nosi |
+| --- | --- |
+| `sigStatusNotRequired` (`not_required`) | `SigningSecret` sozlanmagan — faqat bearer-token autentifikatsiyasi. |
+| `sigStatusValid` (`valid`) | HMAC mos keldi. |
+| `sigStatusInvalid` (`invalid`) | Sarlavha mavjud, HMAC mos kelmadi → `rejected` + `401`. |
+| `sigStatusMissing` (`missing`) | Maxfiy sozlangan, lekin `X-Hub-Signature-256` sarlavhasi yo'q → `rejected` + `401`. |
+
+`verifyHubSignature` GitHub sxemasini `X-Hub-Signature-256: sha256=<hex>` amalga oshiradi va doimiy-vaqtli solishtirish uchun `hmac.Equal`'dan foydalanadi. Xom imzo qiymati **hech qachon** saqlanmaydi — `selectedHeadersJSON` faqat `x-hub-signature-256-present: true`'ni yozadi.
+
+### Hodisa filtrlari **yopiq** holatda muvaffaqiyatsiz bo'ladi
+
+`webhookEventAllowedByTriggerScope` o'qish-yo'li mosligini topuvchisidir. Yozish-vaqti validatsiyasi (`validateWebhookEventFilters`) JSONB ustunidan buzilgan shakllarni saqlab qoladi, lekin agar buzilgan `event_filters` blobi qandaydir tarzda mavjud bo'lsa, mosligini topuvchi yopiq holatda muvaffaqiyatsiz bo'ladi:
+
+```go
+if err := json.Unmarshal(eventFilters, &filters); err != nil {
+	slog.Warn("webhook: malformed event_filters, denying", "error", err)
+	return false
+}
+```
+
+NULL/bo'sh filtr ro'yxati har bir hodisaga ruxsat beradi. Bo'sh bo'lmagan ro'yxat kiruvchi envelopdan kamida bitta e'lon qilingan filtrga mos kelishni talab qiladi. Mosligini topuvchi hodisa-nomi topilgandan keyin ham barcha filtrlarni skanerlashda davom etadi (u qisqa tutashuv qilmaydi), chunki UI bir hodisa nomini ulashuvchi va ajralgan harakatlarni qamrab oluvchi bir nechta filtrlarga ruxsat beradi — qisqa tutashuv bitta qatorga boshqalarni jimgina to'sib qo'yishga imkon berardi.
+
+<Callout type="warn" title="Yetkazib berish statusi javob statusiga qarama-qarshi">
+`webhook_delivery` qatori yuborish run qaytarganidan keyin `dispatched` deb yoziladi — hatto *run* qabul-o'tkazib-yuborilgan bo'lsa ham. Ingress nuqtai nazaridan payload autopilot mexanizmiga topshirildi va run id qaytib keldi. `skipped` va `duplicate` bu **javob** statuslari (HTTP tanasi), yetkazib berish statuslari emas. `run.status` run aslida nima qilganining haqiqat manbasidir.
+</Callout>
+
+## Tayyorlik qabul darvozasi
+
+`DispatchAutopilot` har qanday run yoki task yaratishdan **oldin** `shouldSkipDispatch(ctx, autopilot)`'ni chaqiradi. Bu "触发时准入" darvozasi (MUL-1899): usiz, pauzaga olingan noutbuk yoki offline daemon rejalashtirilgan autopilotlarni `agent_task_queue`'ga minglab mahkumlikka mahkum tasklarni to'plashga olib keladi.
+
+### Leader hal qilish — `resolveAutopilotLeader`
+
+Darvoza ishni aslida bajaradigan agentga qarshi ishlaydi, u `resolveAutopilotLeader` orqali hal qilinadi:
+
+- `assignee_type` `""` yoki `"agent"` → tayinlanuvchi agentning o'zi (`GetAgent`).
+- `assignee_type = "squad"` → squad'ning `LeaderID`'si (MUL-2429'dan A yo'li: *Autopilot-squad-ustida ≈ Autopilot-leader-ustida*). Arxivlangan squad (`squad.ArchivedAt.Valid`) `errSquadArchived` sentinelini qaytaradi.
+
+Nima uchun squad bitta leader task'iga hal qilinishi haqida [/developers/agentic/squads-routing](/developers/agentic/squads-routing)'ga qarang.
+
+### Tayyorlik — `AgentReadiness`
+
+`AgentReadiness` (`server/internal/service/agent_ready.go`) autopilot darvozasi, `dispatchRunOnly` va handler'ning `isSquadLeaderReady`'si tomonidan ulashilgan yagona haqiqat manbasidir. Agent **tayyor** bo'ladi qachonki:
+
+1. `agent.ArchivedAt` NULL bo'lsa — aks holda sabab `agent is archived`.
+2. `agent.RuntimeID` haqiqiy bo'lsa — aks holda sabab `agent has no runtime bound`.
+3. Bog'langan runtime'ning `Status`'i `online` bo'lsa — aks holda sabab `agent runtime is <status>`.
+
+`AgentReadiness` faqat runtime qatorini DB qidiruvida muvaffaqiyatsizlikda nil bo'lmagan `err`'ni qaytaradi; chaqiruvchilar uni qanday ko'rib chiqishni hal qiladi.
+
+### O'tkazib yuborish vs. muvaffaqiyatsizlik tasnifi
+
+Bu yuk ko'taruvchi farq. `shouldSkipDispatch` xatolarni ikki sinfga ajratadi:
+
+- **Qattiq o'tkazib yuborish** — `pgx.ErrNoRows` (tayinlanuvchi/squad/leader qatori chindan ham yo'qolgan) yoki `errSquadArchived`. Qayta urinish natijani o'zgartira olmaydi, shuning uchun darvoza `(reason, true)`'ni qaytaradi va yuborish `recordSkippedRun` orqali `skipped` run sifatida yoziladi. Aniq sabablar: `assignee squad is archived`, `assignee squad cannot be resolved`, `assignee agent no longer exists`, `autopilot has no assignee`.
+- **Ochiq-muvaffaqiyatsizlik (vaqtinchalik)** — har qanday boshqa DB xatosi (ulanish uzilishi, statement timeout). Darvoza loglaydi va `("", false)`'ni qaytaradi, shunda run davom etadi; vaqtinchalik DB nosozligi hech qachon rejalashtirilgan run'ni jimgina yutib yubormasligi kerak. Keyingi scheduler tick'i yana bir imkoniyat oladi.
+
+Bu yerda shaxsiy-agent ko'rinish tekshiruvi ham ishlaydi: agar autopilot'ning `created_by` a'zosi endi shaxsiy bo'lib qolgan maqsad agentga yetib bora olmasa, yuborish `skipped` deb yoziladi (`autopilot creator lacks access to private assignee agent`). A'zoni yuklash yopiq holatda muvaffaqiyatsiz bo'ladi.
+
+`formatAdmissionReason` xom `AgentReadiness` sababini dashboard'lar guruhlaydigan barqaror iboraga qayta yozadi (squad autopilotlari `squad leader ` prefiksini oladi; runtime-status sabablari eski `at dispatch time` qo'shimchasini saqlaydi, shunda mavjud MUL-1899 ogohlantirish so'rovlari o'zgarmaydi).
+
+### Qabuldan keyingi o'tkazib yuborish — `errDispatchSkipped`
+
+Darvoza o'tgandan keyin ham, leader qabul va task yaratish o'rtasida offline bo'lib qolishi mumkin. `dispatchRunOnly` `resolveAutopilotLeader` + `AgentReadiness`'ni ehtiyot chorasi sifatida qayta ishga tushiradi va kechki regressiyalar uchun `errDispatchSkipped` sentinelini qaytaradi. `handleDispatchSkip` uni `errors.As` orqali tanib oladi va **allaqachon yaratilgan** run'ni `running`/`issue_created`'dan `skipped`'ga (`failed` o'rniga) `UpdateAutopilotRunSkipped` yordamida qayta yozadi. Sentinelsiz, `failRun` yo'li bu poygalarni muvaffaqiyatsizlik deb belgilab, qo'lda-trigger handler'idan `500`'ni ko'tarib chiqarardi — noto'g'ri (hech kim aybdor emas) va shovqinli (nosozlik monitori beqaror-runtime autopilotini avtomatik pauzaga olardi).
+
+Ikkala o'tkazib yuborish yo'li ham (`recordSkippedRun` oldindan-tekshiruv va `handleDispatchSkip` qabuldan-keyin) `UpdateAutopilotLastRunAt`'ni oshiradi va `EventAutopilotRunDone`'ni `skipped` statusi bilan e'lon qiladi, shunda scheduler oldinga suriladi va UI'ning "oxirgi ko'rilgan" vaqti hech qanday-amalsiz tick'da ham aniq qoladi.
+
+## Nosozlik monitori
+
+`runAutopilotFailureMonitor` (`server/cmd/server/autopilot_failure_monitor.go`) nazoratdan chiqqan autopilotlarni avtomatik pauzaga oluvchi xavfsizlik to'ridir. Kanonik aybdor (MUL-1336) har 5 minutda rejalashtirilgan autopilot edi, u 7 kun davomida ~1,475 / 1,476 run muvaffaqiyatsizlikka uchragan, lekin ishlashda davom etgan.
+
+### Standartlar (`defaultFailureMonitorConfig`)
+
+| Maydon | Standart | Env almashtirish |
+| --- | --- | --- |
+| `Interval` | `24 * time.Hour` | `AUTOPILOT_FAIL_MONITOR_INTERVAL` (`0` o'chiradi) |
+| `Lookback` | `7 * 24 * time.Hour` | `AUTOPILOT_FAIL_MONITOR_LOOKBACK` |
+| `MinRuns` | `50` | `AUTOPILOT_FAIL_MONITOR_MIN_RUNS` |
+| `FailRatio` | `0.9` | `AUTOPILOT_FAIL_MONITOR_FAIL_RATIO` |
+| `StartupDelay` | `1 * time.Minute` | `AUTOPILOT_FAIL_MONITOR_STARTUP_DELAY` |
+
+Monitor `StartupDelay`'ni siljitadi (flot rolling-restart momaqaldiroq podasidan qochish uchun), kechikishdan keyin darhol bitta supurish o'tkazadi, so'ngra `Interval`'da tick qiladi. `Interval <= 0` o'rnatish uni butunlay o'chiradi.
+
+### Supurish — `tickAutopilotFailureMonitor`
+
+Har bir supurish `SelectAutopilotsExceedingFailureThreshold`'ni `since = now - Lookback`, `MinRuns` va `FailRatio` bilan chaqiradi. Nisbat **faqat haqiqiy terminal run'lar** bo'yicha hisoblanadi:
+
+```sql
+count(*) FILTER (WHERE status IN ('completed', 'failed')) AS total,
+count(*) FILTER (WHERE status = 'failed') AS failed
+```
+
+`skipped` run'lar **ham** numerator **ham** denominator'dan chiqarib tashlanadi — qabul-o'tkazib-yuborilgan run (offline runtime, MUL-1899) na muvaffaqiyat na muvaffaqiyatsizlikdir, shuning uchun u nisbatni suyultirmasligi (bu 100%-muvaffaqiyatsiz autopilotning o'tkazib yuborishlar devori orqasiga yashirinishiga imkon berardi) ham, oshirmasligi ham kerak. `issue_created`/`running` ham chiqarib tashlanadi, shunda jarayonda bo'lgan ish jazolanmaydi. Nomzod `status = 'active'` bo'lishi, `total >= min_runs`'ga ega bo'lishi va `failed / total >= fail_ratio_threshold` bo'lishi kerak.
+
+Har bir nomzod uchun monitor `SystemPauseAutopilot`'ni (`UPDATE ... WHERE status = 'active' RETURNING`) chaqiradi. Bu yerda `pgx.ErrNoRows` boshqa chaqiruvchi (qo'lda UI harakati yoki bir vaqtdagi monitor) uni allaqachon pauzaga olganini bildiradi — zararsiz hech qanday-amal, `continue`. Muvaffaqiyatda u:
+
+1. `Type: "autopilot_paused"`, `Severity: "attention"` bo'lgan inbox bildirishnomalarini (`emitAutopilotPausedNotifications`) chiqaradi.
+2. `EventAutopilotUpdated`'ni `reason: "auto_paused_high_failure_rate"` bilan e'lon qiladi.
+
+### Bildirishnoma qabul qiluvchilari — `resolveAutopilotPausedRecipients`
+
+Shunda *inson* avtomatik-pauza yuz berganini bilib oladi:
+
+- Agar autopilot'ning `CreatedByType == "member"` bo'lsa → o'sha a'zoni xabardor qiling.
+- Agar yaratuvchi agent bo'lsa → agentning `OwnerID`'sini workspace a'zosiga hal qiling va ularni xabardor qiling. Agar agentning egasi bo'lmasa (yoki u a'zoga hal qilinmasa), inbox bildirishnomasi jimgina o'tkazib yuboriladi — `EventAutopilotUpdated` WS hodisasi hali ham har qanday ochiq UI'ni yangilaydi.
+
+## Source files
+
+| Fayl | Bu sahifa bog'liq bo'lgan simvollar |
+| --- | --- |
+| `server/cmd/server/autopilot_scheduler.go` | `runAutopilotScheduler`, `schedulerInterval`, `recoverLostTriggers`, `tickScheduledAutopilots`, `advanceNextRun` |
+| `server/internal/service/cron.go` | `cronParser`, `ComputeNextRun`, `ValidateTimezone` |
+| `server/internal/handler/autopilot_webhook.go` | `HandleAutopilotWebhook`, `generateWebhookToken`, `webhookTokenPrefix`, `maxWebhookBodyBytes`, `normalizeWebhookPayload`, `WebhookEnvelope`, `inferEvent`, `extractDedupeKey`, `verifyWebhookSignatureForProvider`, `verifyHubSignature`, `webhookEventAllowedByTriggerScope`, `validateWebhookEventFilters`, `persistInboundDelivery`, `finaliseDeliveryWithRun`, `sigStatus*`, `deliveryStatus*` |
+| `server/internal/service/autopilot.go` | `DispatchAutopilot`, `DefaultAutopilotTriggerTimezone`, `shouldSkipDispatch`, `resolveAutopilotLeader`, `errSquadArchived`, `errDispatchSkipped`, `handleDispatchSkip`, `recordSkippedRun`, `dispatchRunOnly`, `formatAdmissionReason` |
+| `server/internal/service/agent_ready.go` | `AgentReadiness` |
+| `server/cmd/server/autopilot_failure_monitor.go` | `runAutopilotFailureMonitor`, `tickAutopilotFailureMonitor`, `defaultFailureMonitorConfig`, `failureMonitorConfig`, `emitAutopilotPausedNotifications`, `resolveAutopilotPausedRecipients` |
+| `server/pkg/db/queries/autopilot.sql` | `ClaimDueScheduleTriggers`, `RecoverLostTriggers`, `AdvanceTriggerNextRun`, `SelectAutopilotsExceedingFailureThreshold`, `SystemPauseAutopilot`, `UpdateAutopilotRunSkipped` |
+
+**Bir-xil-PR drift qoidasi:** agar yuqoridagi biror simvolni o'zgartirsangiz — scheduler intervali, da'vo/tiklanish SQL'i, webhook oqimi tartibi, `signature_status`/yetkazib berish statusi enum'i, o'tkazib-yuborish-vs-muvaffaqiyatsizlik tasnifi, tayyorlik darvozalari yoki nosozlik-monitori chegaralari — bu sahifani **bir xil PR**'da yangilang. Bular manbaga-bog'langan kontraktlar; agar kod ko'chsa va bu sahifa ko'chmasa, u jimgina eskirgan xatti-harakatni o'rgatadi.

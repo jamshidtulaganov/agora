@@ -1,0 +1,182 @@
+---
+title: Comment Trigger Pipeline
+description: How a comment fans out into agent tasks — three trigger sources, suppression, and the no_action comment-block gate.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Audience">
+This page is for **both** engineers and agents working on comment-driven task triggering. It is the authoritative explanation of how `triggerTasksForComment` turns one comment into zero-or-more agent tasks, why the assignee wake is sometimes suppressed, and why the same computation backs the `/comments/trigger-preview` chips. Agents debugging "why did my comment wake / not wake an agent" should read this alongside /developers/agentic/mention-contract and /developers/agentic/squads-routing. Related: /developers/agentic/no-action-protocol, /developers/agentic/loop-prevention, /developers/conventions.
+</Callout>
+
+## The one entry point
+
+Every comment that lands on an issue runs through `triggerTasksForComment` (`server/internal/handler/comment.go`). It is called at the tail of `CreateComment` and again from `UpdateComment` when the edited content actually changed. It does three things, in order:
+
+```go
+func (h *Handler) triggerTasksForComment(ctx context.Context, issue db.Issue, comment db.Comment, parentComment *db.Comment, actorType, actorID string, suppressAgentIDs []pgtype.UUID) {
+	if isNoteComment(comment.Content) {
+		return
+	}
+	triggers := h.computeCommentAgentTriggers(ctx, issue, comment.Content, parentComment, actorType, actorID)
+	triggers = filterSuppressedCommentAgentTriggers(triggers, suppressAgentIDs)
+	h.enqueueCommentAgentTriggers(ctx, issue, comment.ID, triggers)
+}
+```
+
+The `/note` prefix (`isNoteComment`, `noteCommentPrefix = "/note"`) is a hard early-out: a comment whose first whitespace-delimited token is `/note` (case-insensitive) is stored like any other comment but never triggers an agent. `computeCommentAgentTriggers` independently re-checks `isNoteComment` at its own top, so the preview path is covered too.
+
+<Mermaid chart={`flowchart TD
+  C["Comment created / edited"] --> N{"isNoteComment?"}
+  N -- yes --> STOP["return — no triggers"]
+  N -- no --> T["computeCommentAgentTriggers<br/>(folds 3 sources, dedupes by agent.ID)"]
+  T --> F["filterSuppressedCommentAgentTriggers<br/>(drop suppress_agent_ids)"]
+  F --> E["enqueueCommentAgentTriggers<br/>(switch on Source)"]
+  E --> A["EnqueueTaskForIssue"]
+  E --> L["EnqueueTaskForSquadLeader"]
+  E --> M["EnqueueTaskForMention"]
+`} />
+
+## Folding three sources
+
+`computeCommentAgentTriggers` builds an ordered, agent-deduplicated list of `commentAgentTrigger` values. A local `add` closure keys on `uuidToString(trigger.Agent.ID)` into a `seen` map, so the **first** source to claim an agent wins and later sources for the same agent are dropped. The three sources are folded in this fixed order:
+
+1. **Issue-assignee wake** (`commentTriggerSourceIssueAssignee`)
+2. **Assigned-squad-leader wake** (also `commentTriggerSourceIssueAssignee`, but carries a non-nil `Squad`)
+3. **Mentioned agents** (`commentTriggerSourceMentionAgent` / `commentTriggerSourceMentionSquadLeader`)
+
+```go
+type commentAgentTriggerSource string
+
+const (
+	commentTriggerSourceIssueAssignee      commentAgentTriggerSource = "issue_assignee"
+	commentTriggerSourceMentionAgent       commentAgentTriggerSource = "mention_agent"
+	commentTriggerSourceMentionSquadLeader commentAgentTriggerSource = "mention_squad_leader"
+)
+
+type commentAgentTrigger struct {
+	Agent  db.Agent
+	Source commentAgentTriggerSource
+	Squad  *db.Squad
+}
+```
+
+### Source 1 — issue-assignee wake
+
+The assignee auto-trigger fires only when **all** of these hold:
+
+- `actorType == "member"` — agents never auto-wake the assignee via this path (mention/squad sources handle agent-to-agent).
+- `h.shouldEnqueueOnComment(ctx, issue, actorType, actorID)` — the issue is assigned to an `agent` (not a squad/member), the agent has a runtime and is not archived, the member passes `canAccessPrivateAgent`, and there is **no** existing pending task for `(issue, agent)` (`HasPendingTaskForIssueAndAgent` — the natural dedup for rapid-fire comments). See `server/internal/handler/issue.go`.
+- `!h.commentMentionsOthersButNotAssignee(content, issue)` — see [Other-directed mentions](#other-directed-mentions-suppress-the-assignee) below.
+- `!h.isReplyToMemberThread(ctx, parentComment, content, issue)` — a member reply inside a member-started thread is treated as human conversation, not a work request, unless the reply or thread root @mentions the assignee, or the assignee has already replied in the thread.
+
+When all gates pass, the assignee agent is loaded via `GetAgentInWorkspace` and added with `Source: commentTriggerSourceIssueAssignee` and a nil `Squad`.
+
+### Source 2 — assigned-squad-leader wake
+
+`computeAssignedSquadLeaderCommentTrigger` handles the case where the issue is assigned to a **squad** rather than an agent. It returns `(commentAgentTrigger{}, false)` unless `issue.AssigneeType.String == "squad"` and `issue.AssigneeID` is valid. Then it resolves the squad via `GetSquadInWorkspace` and applies, in order:
+
+- **Self-trigger guard (agent author):** if `authorType == "agent"` and the author is the squad's `LeaderID` **and** `h.lastTaskWasLeader(ctx, issue.ID, squad.LeaderID)` is true, return false. An agent that holds both leader and worker roles still wakes its leader role after commenting from a worker task — the guard only fires when the agent's *last task on this issue was itself a leader task*.
+- **Member-author mention guard:** `if authorType == "member" && commentMentionsAnyone(content) { return false }`. See below.
+- **Readiness:** leader agent loaded via `GetAgentInWorkspace`; rejected if `err != nil || !agent.RuntimeID.Valid || agent.ArchivedAt.Valid`.
+- **Visibility:** `canAccessPrivateAgent` must pass for the author.
+- **Dedup:** `HasPendingTaskForIssueAndAgent` for `(issue, leader)` must be false.
+
+On success it returns a trigger with `Source: commentTriggerSourceIssueAssignee` and a **non-nil** `Squad` pointer — that pointer is what routes it to `EnqueueTaskForSquadLeader` at enqueue time.
+
+<Callout type="warn" title="The member-author mention guard">
+`commentMentionsAnyone` (`server/internal/handler/squad.go`) returns true for any routing-style mention of type `agent`, `member`, `squad`, or `all` (issue cross-references are ignored). So **a member comment that @mentions anyone does not wake the squad leader** via the assigned-squad path. The reasoning: if the member is directing the comment at a specific participant, the mention sources (Source 3) decide who runs — the broad "the squad owns this issue, wake the leader" auto-wake stands down. Only the *current* comment is inspected; parent (thread root) mentions are not inherited here.
+</Callout>
+
+### Source 3 — mentioned agents
+
+`computeMentionedAgentCommentTriggers` parses `@mentions` from the comment body. A reply with **zero** mentions of its own may inherit the thread root's mentions (`shouldInheritParentMentions`: reply has no mentions, reply author is a member, parent author is a member). For each mention:
+
+- `@squad` → resolves the squad and adds the **leader** with `Source: commentTriggerSourceMentionSquadLeader` (subject to the same self-trigger, readiness, visibility, and dedup gates).
+- `@agent` → adds the agent with `Source: commentTriggerSourceMentionAgent`.
+
+Mention triggers have **no issue-status gate** — an @mention works even on `done`/`cancelled` issues. The full mention semantics (private-agent gates, self-mention, parent inheritance) are the subject of /developers/agentic/mention-contract; this page only covers how those triggers fold into the comment pipeline.
+
+## Other-directed mentions suppress the assignee
+
+`commentMentionsOthersButNotAssignee` is the gate that lets a member share results with a colleague or hand off to a different agent without spuriously waking the issue's own assignee. It parses mentions, drops `issue`-type cross-references, then:
+
+- No remaining mentions → returns `false` (normal on-comment behavior; the assignee wake proceeds).
+- `@all` present (`util.HasMentionAll`) → returns `true`. `@all` is a **broadcast**, not a work request — the assignee auto-trigger is suppressed.
+- Mentions exist but the issue has no valid `AssigneeID` → returns `true` (mentions target others).
+- The assignee's id appears among the mentions → returns `false` (assignee explicitly addressed — allow the wake).
+- Otherwise (others mentioned, assignee not) → returns `true` (suppress).
+
+This only governs **Source 1**. An `@`-mentioned agent still gets its own task from Source 3 — suppressing the assignee wake does not suppress the mention wake.
+
+## Suppression: `suppress_agent_ids`
+
+`CreateComment` accepts a `suppress_agent_ids []string` field on `CreateCommentRequest`. After the trigger set is computed, `filterSuppressedCommentAgentTriggers` drops any trigger whose `Agent.ID` is in that set:
+
+```go
+func filterSuppressedCommentAgentTriggers(triggers []commentAgentTrigger, suppressAgentIDs []pgtype.UUID) []commentAgentTrigger {
+	if len(triggers) == 0 || len(suppressAgentIDs) == 0 {
+		return triggers
+	}
+	// ... build a set of valid suppressed ids, skip matching triggers
+}
+```
+
+This is the server-side honoring of the preview chips a user explicitly de-selected: the client shows the would-trigger agents (from the preview endpoint), the user unchecks some, and those ids ride along as `suppress_agent_ids` so the create path skips exactly those agents. Suppression runs **after** computation, so it can remove an agent from any source without changing how the rest were derived. `UpdateComment` calls `triggerTasksForComment` with `nil` suppression.
+
+## Enqueue: dispatch by source
+
+`enqueueCommentAgentTriggers` switches on `trigger.Source` to pick the right `TaskService` entry point (all in `server/internal/service/task.go`):
+
+| Source | `Squad` | Enqueue call | Task provenance |
+|---|---|---|---|
+| `commentTriggerSourceIssueAssignee` | non-nil | `EnqueueTaskForSquadLeader` | `is_leader_task = true` |
+| `commentTriggerSourceIssueAssignee` | nil | `EnqueueTaskForIssue` | derived from `issue.AssigneeID` |
+| `commentTriggerSourceMentionSquadLeader` | (n/a) | `EnqueueTaskForSquadLeader` | `is_leader_task = true` |
+| `commentTriggerSourceMentionAgent` | (n/a) | `EnqueueTaskForMention` | explicit agent id |
+
+`EnqueueTaskForSquadLeader` is the leader-role variant of `enqueueMentionTask` — it stamps `IsLeaderTask` so downstream self-trigger guards (the `lastTaskWasLeader` check above) can distinguish a comment posted while acting as leader from one posted while acting as a worker. Every enqueue call stamps the triggering comment as `TriggerCommentID` and builds a `TriggerSummary` (truncated to `triggerSummaryMaxLen` runes via `truncateForSummary`). Each enqueue is best-effort: a failure is logged with `slog.Warn` and the loop continues to the next trigger.
+
+## The preview endpoint shares the computation
+
+`PreviewCommentTriggers` (`POST /comments/trigger-preview`, request `CommentTriggerPreviewRequest`) exists so the client's "these agents will be notified" chips are computed by the **same code** that the create path runs — they cannot drift. It:
+
+1. Loads the issue, resolves the actor with `resolveActor` (same as create).
+2. Expands bare issue identifiers with `mention.ExpandIssueIdentifiers` (same as create). Empty content short-circuits to an empty agent list.
+3. Calls `h.computeCommentAgentTriggers(...)` — the identical fold described above, including the `/note` early-out and all three sources' gates.
+4. Maps each trigger to a `CommentTriggerAgentResponse` carrying `source` and a human `reason` (`commentAgentTriggerReason`).
+
+The one thing preview does **not** run is `filterSuppressedCommentAgentTriggers` — preview's job is to show the full would-trigger set so the user can choose what to suppress. Because both paths share `computeCommentAgentTriggers`, every gate (assignee suppression, member-thread reply, dedup, visibility, readiness) is reflected in the chips before the comment is even posted.
+
+<Callout title="Preview = create, minus suppression and enqueue">
+If a chip shows an agent, the create path will enqueue that agent **unless** its id is sent in `suppress_agent_ids`. If a chip is absent, no `suppress_agent_ids` value can bring it back — the agent was already gated out upstream.
+</Callout>
+
+## The `no_action` comment-block gate (409)
+
+When an **agent** posts a comment (`authorType == "agent"`) from inside a comment-triggered task, `CreateComment` runs two guards keyed off the `X-Task-ID` header — but only when the task's `IssueID` matches the issue being commented on (the CLI stamps `X-Task-ID` on every request, so an agent legitimately commenting on a *different* issue must not be blocked):
+
+1. **Parent-drift guard:** if the task has a `TriggerCommentID`, the request's `parent_id` must equal it, else `409 Conflict` ("parent_id must equal this task's trigger comment id (...)"). This defends against a resumed Claude session carrying a stale `--parent` UUID.
+
+2. **`no_action` block:** `service.HasSquadLeaderNoActionEvaluationForTask(ctx, h.Queries, task)` reports whether this exact `(issue, agent, task)` already recorded a squad-leader `no_action` evaluation. If so, the comment is rejected with:
+
+```text
+409 Conflict — squad leader recorded no_action; comments are not allowed for this task
+```
+
+This enforces the no-action protocol at the comment boundary: once a squad leader has formally declared "nothing to do here" for a task, that task may not keep posting comments (which would otherwise re-trigger the pipeline and burn loops). A check error is logged but does **not** block the comment — the gate fails open on its own infrastructure errors, fail-closed only on a confirmed `no_action` record. The protocol itself is documented in /developers/agentic/no-action-protocol; the loop-burn this prevents is covered in /developers/agentic/loop-prevention.
+
+## Source files
+
+| File | Symbols this page depends on |
+|---|---|
+| `server/internal/handler/comment.go` | `triggerTasksForComment`, `computeCommentAgentTriggers`, `computeAssignedSquadLeaderCommentTrigger`, `computeMentionedAgentCommentTriggers`, `commentMentionsOthersButNotAssignee`, `isReplyToMemberThread`, `shouldInheritParentMentions`, `filterSuppressedCommentAgentTriggers`, `enqueueCommentAgentTriggers`, `isNoteComment`, `noteCommentPrefix`, `commentAgentTrigger`, `commentAgentTriggerSource`, `commentTriggerSourceIssueAssignee`, `commentTriggerSourceMentionAgent`, `commentTriggerSourceMentionSquadLeader`, `commentAgentTriggerReason`, `CreateComment`, `UpdateComment`, `PreviewCommentTriggers`, `CreateCommentRequest`, `CommentTriggerPreviewRequest`, `CommentTriggerAgentResponse` |
+| `server/internal/service/task.go` | `EnqueueTaskForIssue`, `EnqueueTaskForMention`, `EnqueueTaskForSquadLeader`, `enqueueMentionTask`, `buildCommentTriggerSummary`, `truncateForSummary`, `triggerSummaryMaxLen` |
+| `server/internal/handler/issue.go` | `shouldEnqueueOnComment` |
+| `server/internal/handler/squad.go` | `lastTaskWasLeader`, `commentMentionsAnyone` |
+| `server/internal/handler/agent_access.go` | `canAccessPrivateAgent` |
+| `server/internal/service/squad_no_action.go` | `HasSquadLeaderNoActionEvaluationForTask` |
+| `server/internal/util/mention.go` | `ParseMentions`, `HasMentionAll`, `Mention` |
+
+If you change a trigger source, a suppression rule, the `no_action`/parent-drift 409 gates, or the preview/create contract, update this page in the same PR. The `/comments/trigger-preview` endpoint and the create path share `computeCommentAgentTriggers` by design — if you fork that computation, this page's "preview = create" claim becomes a lie, and the client chips will silently disagree with what actually gets enqueued.

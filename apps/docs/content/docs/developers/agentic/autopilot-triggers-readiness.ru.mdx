@@ -1,0 +1,252 @@
+---
+title: Autopilot Triggers & Readiness
+description: Как запланированные и webhook-триггеры запускают автопилоты, и как шлюз допуска превращает офлайновый рантайм в пропущенный запуск вместо обречённой задачи.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Аудитория">
+Эта страница предназначена **одновременно** для инженеров и агентов, работающих с инфраструктурой триггеров автопилота. Это авторитетное объяснение того, как триггер по расписанию атомарно захватывается и продвигается, как неаутентифицированный webhook-ingress сохраняет и диспетчеризирует доставку, что делает шлюз допуска по готовности (`shouldSkipDispatch`) и почему `skipped`-запуск — это не `failed`-запуск, а также как монитор сбоев автоматически ставит на паузу разбушевавшиеся автопилоты. Связанное: [/developers/agentic/autopilot-internals](/developers/agentic/autopilot-internals), [/developers/agentic/squads-routing](/developers/agentic/squads-routing), [/developers/agentic/agent-runtime-contract](/developers/agentic/agent-runtime-contract), [/developers/conventions](/developers/conventions).
+</Callout>
+
+## Два пути входа
+
+Автопилот срабатывает ровно от одного из двух источников триггера. Оба сходятся в одной точке входа исполнения, `AutopilotService.DispatchAutopilot`, с разной строкой `source`:
+
+- **Расписание** — фоновый поллер (`runAutopilotScheduler`) тикает каждые 30 с, захватывает наступившие триггеры и вызывает `DispatchAutopilot(..., "schedule", nil)`.
+- **Webhook** — публичный HTTP-обработчик `HandleAutopilotWebhook` получает POST от провайдера, нормализует и сохраняет доставку, затем вызывает `DispatchAutopilot(..., "webhook", envelopeBytes)`.
+
+Всё, что находится ниже по потоку от `DispatchAutopilot` (шлюз допуска, создание запуска, создание issue/task), является общим. Два раздела ниже описывают только машинерию, специфичную для входа.
+
+## Жизненный цикл триггера по расписанию
+
+Планировщик находится в `server/cmd/server/autopilot_scheduler.go`. Это одна горутина, управляющая `time.NewTicker` с `schedulerInterval = 30 * time.Second`.
+
+<Mermaid chart={`
+flowchart TD
+  A["runAutopilotScheduler"] --> B["recoverLostTriggers (once, at startup)"]
+  B --> C["ticker every 30s"]
+  C --> D["tickScheduledAutopilots"]
+  D --> E["ClaimDueScheduleTriggers (atomic: set next_run_at = NULL)"]
+  E --> F{"any claimed?"}
+  F -- no --> C
+  F -- yes --> G["for each trigger"]
+  G --> H["GetAutopilot"]
+  H --> I["DispatchAutopilot(..., 'schedule', nil)"]
+  I --> J["advanceNextRun -> ComputeNextRun -> AdvanceTriggerNextRun"]
+  J --> C
+`} />
+
+### Атомарный захват — `next_run_at = NULL` это токен захвата
+
+`tickScheduledAutopilots` вызывает `queries.ClaimDueScheduleTriggers(ctx)`. Запрос — это единственный `UPDATE ... RETURNING`:
+
+```sql
+UPDATE autopilot_trigger t
+SET next_run_at = NULL
+FROM autopilot a
+WHERE t.autopilot_id = a.id
+  AND t.kind = 'schedule'
+  AND t.enabled = true
+  AND t.next_run_at IS NOT NULL
+  AND t.next_run_at <= now()
+  AND a.status = 'active'
+RETURNING t.*, a.workspace_id AS autopilot_workspace_id;
+```
+
+Установка `next_run_at = NULL` **и есть** захват. Поскольку `UPDATE` атомарен, а `WHERE` требует `next_run_at IS NOT NULL`, две реплики сервера, тикающие одновременно, не могут обе захватить один и тот же триггер — первый `UPDATE` обнуляет столбец, поэтому `WHERE` второй реплики больше не совпадает с ним и для этого триггера она возвращает ноль строк. Не нужны ни advisory-блокировка, ни `SKIP LOCKED`: сам предикат является механизмом взаимного исключения. Соединение с `autopilot a` по условию `a.status = 'active'` означает, что приостановленные или архивированные автопилоты никогда не захватываются.
+
+### Продвижение — `advanceNextRun`
+
+После диспетчеризации каждого захваченного триггера `advanceNextRun` пересчитывает время следующего срабатывания через `service.ComputeNextRun(t.CronExpression.String, tz)` и записывает его обратно с помощью `queries.AdvanceTriggerNextRun`. Часовой пояс по умолчанию равен `service.DefaultAutopilotTriggerTimezone` (`"UTC"`) и переопределяется только тогда, когда `t.Timezone` валиден и непуст. Триггер с невалидным или пустым `CronExpression` пропускается (его `next_run_at` остаётся `NULL`).
+
+### Восстановление после сбоя — `recoverLostTriggers`
+
+Захваченный триггер находится в окне, где `next_run_at = NULL`, но время следующего срабатывания ещё не записано. Если процесс падает внутри этого окна, триггер навсегда застревает в состоянии `NULL` и больше никогда не сработает. `recoverLostTriggers` запускается **один раз при старте планировщика** (до цикла тикера) и исцеляет такие триггеры:
+
+```sql
+SELECT t.*, a.workspace_id AS autopilot_workspace_id
+FROM autopilot_trigger t
+JOIN autopilot a ON t.autopilot_id = a.id
+WHERE t.kind = 'schedule'
+  AND t.enabled = true
+  AND t.next_run_at IS NULL
+  AND t.cron_expression IS NOT NULL
+  AND a.status = 'active';
+```
+
+Для каждой восстановленной строки он пересчитывает `ComputeNextRun` и вызывает `AdvanceTriggerNextRun`, восстанавливая валидное будущее время срабатывания. Он **не** диспетчеризирует пропущенный запуск — восстановление только перевзводит расписание.
+
+<Callout type="warn" title="Живой-но-захваченный триггер выглядит идентично осиротевшему после сбоя">
+`recoverLostTriggers` запускается только при старте, поэтому он не может пересечься с живым циклом тиков в рамках одного процесса. Триггер, который имеет `NULL`, потому что его захватил *текущий* тик микросекунды назад, не посещается — восстановление уже завершилось до того, как сработал первый `ticker.C`.
+</Callout>
+
+### Парсинг cron — `ComputeNextRun`
+
+`server/internal/service/cron.go` использует `github.com/robfig/cron/v3`. Парсер сконструирован только для **стандартного 5-полевого** cron:
+
+```go
+var cronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+```
+
+`ComputeNextRun` парсит выражение, загружает IANA-локацию через `time.LoadLocation(timezone)` и возвращает `sched.Next(time.Now().In(loc))`. И непарсируемое cron-выражение, и нераспознанный часовой пояс возвращают ошибку (внутри этой функции нет fallback'а — *вызывающие стороны* в планировщике подставляют значение по умолчанию `"UTC"`). `ValidateTimezone` — это отдельный валидатор, используемый во время создания триггера.
+
+## Webhook-ingress
+
+`HandleAutopilotWebhook` в `server/internal/handler/autopilot_webhook.go` — это **единственный неаутентифицированный путь автопилота**. Он работает вне аутентифицированной группы маршрутов: bearer-токен с префиксом `awt_` в пути URL **и есть** учётные данные. Токен — это `"awt_"` + URL-safe base64 от 32 случайных байтов (`generateWebhookToken`), всего 47 символов.
+
+### Поток: сначала сохранить, потом синхронно диспетчеризировать
+
+Обработчик намеренно работает по принципу **сначала-сохранить** — он записывает строку `webhook_delivery` до выполнения любой дорогостоящей работы, так что каждый принятый запрос поддаётся аудиту, даже если диспетчеризация позже завершится сбоем. Упорядоченные шаги (дословно из doc-комментария обработчика и кода):
+
+1. **Per-IP rate limit** (`WebhookIPRateLimiter`) до любого DB I/O — ограничивает радиус поражения атакой методом перебора токенов. Превышение бюджета → `429`.
+2. **Поиск токена** (`GetWebhookTriggerByToken`). `pgx.ErrNoRows` → `404 "webhook not found"`; любая другая ошибка DB → `500`. Разделение «нет строки» / «ошибка DB» важно, потому что провайдеры вроде GitHub не повторяют запрос при `404`, так что сворачивание временного сбоя в `404` молча отбрасывало бы реальные доставки.
+3. **Per-token rate limit** (`WebhookRateLimiter`). Превышение бюджета → `429`.
+4. **Чтение тела с ограничением** в `maxWebhookBodyBytes` (256 KiB) через `http.MaxBytesReader`. Превышение размера → `413`.
+5. **Проверка консистентности автопилота + workspace** (`GetAutopilot`, затем сравнение `autopilot.WorkspaceID` с `trigRow.AutopilotWorkspaceID`) до сохранения — `webhook_delivery.workspace_id` имеет ограничение `NOT NULL`, так что устаревший FK иначе провалил бы INSERT после чтения тела.
+6. **Нормализация** тела в `WebhookEnvelope` (`normalizeWebhookPayload`). Невалидный/скалярный/пустой JSON → `400` **без сохранения** — в непарсируемом теле нет надёжного идентификатора для дедупликации.
+7. **Извлечение ключа дедупликации** (`extractDedupeKey`) и **проверка подписи** (`verifyWebhookSignatureForProvider`).
+8. **INSERT `webhook_delivery`** (`persistInboundDelivery`, статус `queued`). При нарушении уникальности `(trigger_id, dedupe_key)` это трактуется как дубликат: инкрементируется `attempt_count` в существующей строке и возвращается её `delivery_id` + `run_id` с `200 {"status":"duplicate"}`.
+9. **Подпись невалидна/отсутствует** → UPDATE доставки в `rejected`, возврат `401`.
+10. **Триггер отключён / автопилот архивирован / автопилот на паузе** → UPDATE доставки в `ignored`, возврат `200` (чтобы машинерия повторов отправителя перестала долбить).
+11. **Область фильтра событий** (`webhookEventAllowedByTriggerScope`) → событие вне области → `ignored`, `200`, запуск не создаётся.
+12. **Синхронная диспетчеризация** через `AutopilotService.DispatchAutopilot(..., "webhook", envelopeBytes)`.
+13. **`TouchAutopilotTriggerFiredAt`** после возврата из диспетчеризации — включая путь пропуска — чтобы `last_fired_at` был точным.
+
+### Нормализация payload → `WebhookEnvelope`
+
+`normalizeWebhookPayload` сворачивает произвольные тела провайдеров в одну стабильную форму, так что потребители ниже по потоку (промпт демона `run_only`, добавление в описание `create_issue`) никогда не ветвятся по провайдеру:
+
+```go
+type WebhookEnvelope struct {
+	Event        string          `json:"event"`
+	EventPayload json.RawMessage `json:"eventPayload"`
+	Request      WebhookRequest  `json:"request"`
+}
+```
+
+Тело должно быть JSON-объектом или массивом — голые скаляры отвергаются (тело `"hello"` является валидным JSON, но бесполезно как webhook-payload и попало бы дословно в промпт агента). Если вызывающая сторона уже предоставляет envelope со строкой `event`, он сохраняется как есть; иначе событие выводится из заголовков/тела через `inferEvent` (`X-GitHub-Event` в сочетании с `body.action`, затем `X-Gitlab-Event`, `X-Event-Type`, `body.event`, `body.type`, `body.action`), по умолчанию `webhook.received`.
+
+### Дедупликация и проверка HMAC
+
+`extractDedupeKey` читает специфичный для провайдера заголовок идемпотентности — `X-GitHub-Delivery` для `github`, `Idempotency-Key` в общем случае — и возвращает ключ плюс тег источника. `verifyWebhookSignatureForProvider` возвращает одно из четырёх значений `signature_status`, отражающих CHECK-ограничение `webhook_delivery`:
+
+| Значение | Смысл |
+| --- | --- |
+| `sigStatusNotRequired` (`not_required`) | `SigningSecret` не настроен — аутентификация только по bearer-токену. |
+| `sigStatusValid` (`valid`) | HMAC совпал. |
+| `sigStatusInvalid` (`invalid`) | Заголовок присутствует, HMAC не совпал → `rejected` + `401`. |
+| `sigStatusMissing` (`missing`) | Секрет настроен, но нет заголовка `X-Hub-Signature-256` → `rejected` + `401`. |
+
+`verifyHubSignature` реализует схему GitHub `X-Hub-Signature-256: sha256=<hex>` и использует `hmac.Equal` для сравнения за константное время. Сырое значение подписи **никогда** не сохраняется — `selectedHeadersJSON` записывает только `x-hub-signature-256-present: true`.
+
+### Фильтры событий отказывают **закрыто**
+
+`webhookEventAllowedByTriggerScope` — это сопоставитель на пути чтения. Валидация на пути записи (`validateWebhookEventFilters`) не пускает некорректные формы в JSONB-столбец, но если повреждённый blob `event_filters` каким-то образом существует, сопоставитель отказывает закрыто:
+
+```go
+if err := json.Unmarshal(eventFilters, &filters); err != nil {
+	slog.Warn("webhook: malformed event_filters, denying", "error", err)
+	return false
+}
+```
+
+NULL/пустой список фильтров разрешает любое событие. Непустой список требует, чтобы входящий envelope совпал хотя бы с одним объявленным фильтром. Сопоставитель продолжает сканировать все фильтры даже после попадания по имени события (он не делает короткого замыкания), потому что UI разрешает несколько фильтров, разделяющих одно имя события и покрывающих непересекающиеся действия — короткое замыкание позволило бы одной строке молча затенить остальные.
+
+<Callout type="warn" title="Статус доставки против статуса ответа">
+Строка `webhook_delivery` записывается как `dispatched`, как только диспетчеризация возвращает запуск — даже когда *запуск* был пропущен на этапе допуска. С точки зрения ingress payload был передан машинерии автопилота и id запуска вернулся обратно. `skipped` и `duplicate` — это статусы **ответа** (HTTP-тело), а не статусы доставки. `run.status` — источник истины о том, что запуск на самом деле сделал.
+</Callout>
+
+## Шлюз допуска по готовности
+
+`DispatchAutopilot` вызывает `shouldSkipDispatch(ctx, autopilot)` **до** создания любого запуска или задачи. Это шлюз «触发时准入» (MUL-1899): без него приостановленный ноутбук или офлайновый демон приводят к тому, что запланированные автопилоты накапливают тысячи обречённых задач в `agent_task_queue`.
+
+### Разрешение лидера — `resolveAutopilotLeader`
+
+Шлюз работает против агента, который фактически выполнит работу, разрешённого через `resolveAutopilotLeader`:
+
+- `assignee_type` равный `""` или `"agent"` → сам агент-исполнитель (`GetAgent`).
+- `assignee_type = "squad"` → `LeaderID` сквада (Path A из MUL-2429: *Autopilot-on-squad ≈ Autopilot-on-leader*). Архивированный сквад (`squad.ArchivedAt.Valid`) возвращает sentinel `errSquadArchived`.
+
+См. [/developers/agentic/squads-routing](/developers/agentic/squads-routing), чтобы понять, почему сквад разрешается в одну задачу лидера.
+
+### Готовность — `AgentReadiness`
+
+`AgentReadiness` (`server/internal/service/agent_ready.go`) — это единый источник истины, разделяемый шлюзом автопилота, `dispatchRunOnly` и обработчиком `isSquadLeaderReady`. Агент **готов**, когда:
+
+1. `agent.ArchivedAt` равен NULL — иначе причина `agent is archived`.
+2. `agent.RuntimeID` валиден — иначе причина `agent has no runtime bound`.
+3. `Status` привязанного рантайма равен `online` — иначе причина `agent runtime is <status>`.
+
+`AgentReadiness` возвращает ненулевой `err` только при сбое поиска в DB строки рантайма; вызывающие стороны решают, как это трактовать.
+
+### Классификация skip против fail
+
+Это несущее различие. `shouldSkipDispatch` разделяет ошибки на два класса:
+
+- **Жёсткий skip** — `pgx.ErrNoRows` (строка исполнителя/сквада/лидера действительно исчезла) или `errSquadArchived`. Повтор не может изменить исход, так что шлюз возвращает `(reason, true)` и диспетчеризация записывается как `skipped`-запуск через `recordSkippedRun`. Конкретные причины: `assignee squad is archived`, `assignee squad cannot be resolved`, `assignee agent no longer exists`, `autopilot has no assignee`.
+- **Fail-open (временный)** — любая другая ошибка DB (обрыв соединения, тайм-аут оператора). Шлюз логирует и возвращает `("", false)`, чтобы запуск продолжился; временный сбой DB никогда не должен молча проглатывать запланированный запуск. Следующий тик планировщика получает новый шанс.
+
+Здесь также выполняется проверка видимости приватного агента: если участник `created_by` автопилота больше не может достичь ставшего приватным целевого агента, диспетчеризация записывается как `skipped` (`autopilot creator lacks access to private assignee agent`). Загрузка участника отказывает закрыто.
+
+`formatAdmissionReason` переписывает сырую причину `AgentReadiness` в стабильную формулировку, по которой группируются дашборды (squad-автопилоты получают префикс `squad leader `; причины со статусом рантайма сохраняют легаси-суффикс `at dispatch time`, чтобы существующие запросы алертов MUL-1899 не менялись).
+
+### Skip после допуска — `errDispatchSkipped`
+
+Даже после прохождения шлюза лидер может уйти в офлайн между допуском и созданием задачи. `dispatchRunOnly` повторно прогоняет `resolveAutopilotLeader` + `AgentReadiness` для подстраховки и возвращает sentinel `errDispatchSkipped` для поздних регрессий. `handleDispatchSkip` распознаёт его через `errors.As` и переписывает **уже созданный** запуск из `running`/`issue_created` в `skipped` (вместо `failed`) с помощью `UpdateAutopilotRunSkipped`. Без sentinel путь `failRun` пометил бы эти гонки как сбои и вытолкнул бы `500` из обработчика ручного триггера — неправильно (никто не виноват) и шумно (монитор сбоев автоматически поставил бы на паузу автопилот с нестабильным рантаймом).
+
+Оба пути пропуска (`recordSkippedRun` до запуска и `handleDispatchSkip` после допуска) инкрементируют `UpdateAutopilotLastRunAt` и публикуют `EventAutopilotRunDone` со статусом `skipped`, так что планировщик продвигается, а «last seen» в UI остаётся точным даже на холостом тике.
+
+## Монитор сбоев
+
+`runAutopilotFailureMonitor` (`server/cmd/server/autopilot_failure_monitor.go`) — это страховочная сетка, которая автоматически ставит на паузу разбушевавшиеся автопилоты. Канонический нарушитель (MUL-1336) — это автопилот, запланированный каждые 5 минут, который провалил ~1 475 / 1 476 запусков за 7 дней, продолжая срабатывать.
+
+### Значения по умолчанию (`defaultFailureMonitorConfig`)
+
+| Поле | По умолчанию | Переопределение через env |
+| --- | --- | --- |
+| `Interval` | `24 * time.Hour` | `AUTOPILOT_FAIL_MONITOR_INTERVAL` (`0` отключает) |
+| `Lookback` | `7 * 24 * time.Hour` | `AUTOPILOT_FAIL_MONITOR_LOOKBACK` |
+| `MinRuns` | `50` | `AUTOPILOT_FAIL_MONITOR_MIN_RUNS` |
+| `FailRatio` | `0.9` | `AUTOPILOT_FAIL_MONITOR_FAIL_RATIO` |
+| `StartupDelay` | `1 * time.Minute` | `AUTOPILOT_FAIL_MONITOR_STARTUP_DELAY` |
+
+Монитор разносит `StartupDelay` (чтобы избежать «громового стада» при пакетном перезапуске флота), запускает один проход сразу после задержки, затем тикает по `Interval`. Установка `Interval <= 0` полностью отключает его.
+
+### Проход — `tickAutopilotFailureMonitor`
+
+Каждый проход вызывает `SelectAutopilotsExceedingFailureThreshold` с `since = now - Lookback`, `MinRuns` и `FailRatio`. Соотношение вычисляется **только по реальным терминальным запускам**:
+
+```sql
+count(*) FILTER (WHERE status IN ('completed', 'failed')) AS total,
+count(*) FILTER (WHERE status = 'failed') AS failed
+```
+
+`skipped`-запуски исключаются **и** из числителя, **и** из знаменателя — пропущенный на этапе допуска запуск (офлайновый рантайм, MUL-1899) не является ни успехом, ни сбоем, так что он не должен ни разбавлять соотношение (что позволило бы автопилоту со 100%-сбоями спрятаться за стеной пропусков), ни раздувать его. `issue_created`/`running` тоже исключаются, чтобы выполняющаяся работа не штрафовалась. Кандидат должен иметь `status = 'active'`, `total >= min_runs` и `failed / total >= fail_ratio_threshold`.
+
+Для каждого кандидата монитор вызывает `SystemPauseAutopilot` (`UPDATE ... WHERE status = 'active' RETURNING`). `pgx.ErrNoRows` здесь означает, что другой вызывающий (ручное действие в UI или конкурентный монитор) уже поставил его на паузу — безвредный холостой ход, `continue`. При успехе он:
+
+1. Эмитит inbox-уведомления (`emitAutopilotPausedNotifications`) с `Type: "autopilot_paused"`, `Severity: "attention"`.
+2. Публикует `EventAutopilotUpdated` с `reason: "auto_paused_high_failure_rate"`.
+
+### Получатели уведомлений — `resolveAutopilotPausedRecipients`
+
+Чтобы *человек* узнал, что произошла авто-пауза:
+
+- Если у автопилота `CreatedByType == "member"` → уведомить этого участника.
+- Если создатель — агент → разрешить `OwnerID` агента в участника workspace и уведомить его. Если у агента нет владельца (или он не разрешается в участника), inbox-уведомление молча пропускается — WS-событие `EventAutopilotUpdated` всё равно обновляет любой открытый UI.
+
+## Source files
+
+| File | Symbols this page depends on |
+| --- | --- |
+| `server/cmd/server/autopilot_scheduler.go` | `runAutopilotScheduler`, `schedulerInterval`, `recoverLostTriggers`, `tickScheduledAutopilots`, `advanceNextRun` |
+| `server/internal/service/cron.go` | `cronParser`, `ComputeNextRun`, `ValidateTimezone` |
+| `server/internal/handler/autopilot_webhook.go` | `HandleAutopilotWebhook`, `generateWebhookToken`, `webhookTokenPrefix`, `maxWebhookBodyBytes`, `normalizeWebhookPayload`, `WebhookEnvelope`, `inferEvent`, `extractDedupeKey`, `verifyWebhookSignatureForProvider`, `verifyHubSignature`, `webhookEventAllowedByTriggerScope`, `validateWebhookEventFilters`, `persistInboundDelivery`, `finaliseDeliveryWithRun`, `sigStatus*`, `deliveryStatus*` |
+| `server/internal/service/autopilot.go` | `DispatchAutopilot`, `DefaultAutopilotTriggerTimezone`, `shouldSkipDispatch`, `resolveAutopilotLeader`, `errSquadArchived`, `errDispatchSkipped`, `handleDispatchSkip`, `recordSkippedRun`, `dispatchRunOnly`, `formatAdmissionReason` |
+| `server/internal/service/agent_ready.go` | `AgentReadiness` |
+| `server/cmd/server/autopilot_failure_monitor.go` | `runAutopilotFailureMonitor`, `tickAutopilotFailureMonitor`, `defaultFailureMonitorConfig`, `failureMonitorConfig`, `emitAutopilotPausedNotifications`, `resolveAutopilotPausedRecipients` |
+| `server/pkg/db/queries/autopilot.sql` | `ClaimDueScheduleTriggers`, `RecoverLostTriggers`, `AdvanceTriggerNextRun`, `SelectAutopilotsExceedingFailureThreshold`, `SystemPauseAutopilot`, `UpdateAutopilotRunSkipped` |
+
+**Правило дрейфа в рамках одного PR:** если вы меняете любой символ выше — интервал планировщика, SQL захвата/восстановления, порядок webhook-потока, enum `signature_status`/статуса доставки, классификацию skip-vs-fail, шлюзы готовности или пороги монитора сбоев — обновите эту страницу в **том же PR**. Это контракты, прослеженные до исходного кода; если код двигается, а эта страница нет, она молча обучает устаревшему поведению.

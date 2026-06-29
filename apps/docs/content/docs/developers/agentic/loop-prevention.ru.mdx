@@ -1,0 +1,209 @@
+---
+title: Loop Prevention
+description: Многослойная защита, не дающая агентам Agora будить самих себя (или друг друга) в неограниченном цикле комментариев.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Аудитория">
+Оба. Backend-инженерам, поддерживающим конвейер триггеров, нужно знать, зачем существует каждая защита и где её можно безопасно изменить; авторам агентов нужно знать, какие случаи беззвучного no-op рантайм ожидает от них соблюсти — и никогда не обходить повторными попытками.
+</Callout>
+
+Agora будит агентов по комментариям и по завершению дочерних задач. Каждый путь пробуждения, в принципе, может породить новый комментарий, который сам по себе является путём пробуждения — поэтому платформе нужны явные защиты, чтобы разорвать цикл. Защиты живут в трёх файлах-обработчиках (`comment.go`, `issue_child_done.go`, `squad.go`) плюс одно правило промпта в рантайме (`prompt.go`). Они многослойны: агент, проскользнувший мимо одной, обычно отлавливается следующей. На этой странице каждый слой разбирается на исходном коде.
+
+Два повторяющихся примитива стоит назвать сразу:
+
+- **Разрешение ролей** — `lastTaskWasLeader`, опирающийся на `GetLatestTaskIsLeaderForIssueAndAgent`. Агент может одновременно иметь роль лидера сквада и роль воркера; защита различает их, так что комментарий воркера может разбудить роль лидера, но лидер не может разбудить сам себя.
+- **Дедупликация ожидающих задач** — `HasPendingTaskForIssueAndAgent`. Универсальный страховочный механизм идемпотентности. Почти каждый путь триггера завершается этой проверкой, поэтому цель, у которой уже есть поставленная в очередь/отправленная задача по задаче, беззвучно пропускается, а не ставится в очередь повторно.
+
+<Mermaid chart={`flowchart TD
+  C[New comment] --> G1{Guard 1: lastTaskWasLeader<br/>leader self-loop?}
+  G1 -- yes --> X[skip]
+  G1 -- no --> G3{Guard 3: @all / other-mention<br/>assignee suppression}
+  G3 -- suppress --> X
+  G3 -- allow --> G2{Guard 2: HasPendingTaskForIssueAndAgent<br/>already queued?}
+  G2 -- pending --> X
+  G2 -- none --> E[enqueue task]
+  E --> R[Guard 5: runtime prompt rules<br/>silence-on-ack / no_action]
+  CD[Child issue → done] --> G4{Guard 4: same-squad /<br/>shared-leader guard}
+  G4 -- squad path blocked --> X
+  G4 -- agent path: no self-guard --> G2`} />
+
+## Guard 1 — разрешение ролей лидера/воркера
+
+Лидер сквада и воркер могут быть одним и тем же агентом. Когда этот агент публикует комментарий по задаче воркера, мы *хотим*, чтобы его роль лидера проснулась и скоординировала работу; когда он публикует комментарий по задаче лидера, повторное пробуждение лидера — это самозацикливание. `lastTaskWasLeader` в `server/internal/handler/squad.go` различает эти два случая, читая роль самой свежей задачи агента по данной задаче:
+
+```go
+func (h *Handler) lastTaskWasLeader(ctx context.Context, issueID, agentID pgtype.UUID) bool {
+	flag, err := h.Queries.GetLatestTaskIsLeaderForIssueAndAgent(ctx, ...)
+	if err != nil {
+		return false
+	}
+	return flag
+}
+```
+
+Doc-комментарий точно формулирует контракт: *"Когда у агента нет предыдущей задачи по этой задаче, роль не определена, и мы трактуем её как не-лидерскую, чтобы совершенно новый внешний триггер всё же мог достичь лидера."* Возврат `false` при ошибке или отсутствии — намеренный: он отказывает *в сторону открытости*, пропуская внешнее пробуждение, а не подавляя его.
+
+Эту защиту применяют два места вызова, оба под условием `authorType == "agent"` и того, что автор является лидером:
+
+- Путь **назначенного сквада**, `computeAssignedSquadLeaderCommentTrigger`:
+
+  ```go
+  if authorType == "agent" && authorID == uuidToString(squad.LeaderID) &&
+      h.lastTaskWasLeader(ctx, issue.ID, squad.LeaderID) {
+      return commentAgentTrigger{}, false
+  }
+  ```
+
+- Путь **@squad-упоминания**, внутри `computeMentionedAgentCommentTriggers`:
+
+  ```go
+  if authorType == "agent" && authorID == uuidToString(leaderID) &&
+      h.lastTaskWasLeader(ctx, issue.ID, leaderID) {
+      continue
+  }
+  ```
+
+Чистый эффект: агент-лидер+воркер **может** разбудить свою роль лидера из комментария воркера, но **не может** зациклить лидер→сам-себя. См. [squads-routing](/developers/agentic/squads-routing) о том, как роль лидера диспетчеризуется изначально.
+
+## Guard 2 — дедупликация `HasPendingTaskForIssueAndAgent`
+
+Страховочный механизм идемпотентности. Если у целевого агента уже есть поставленная в очередь или отправленная задача по данной задаче, второй триггер отбрасывается — существующая задача прочитает новый комментарий, когда выполнится. Это та защита, на которую опираются остальные слои, когда *намеренно отказываются* добавлять более строгую самозащиту (см. Guard 4 и замечание о самотриггере по @упоминанию ниже).
+
+Она появляется в хвосте практически каждого пути постановки в очередь:
+
+- `computeAssignedSquadLeaderCommentTrigger` (`comment.go`) — перед возвратом триггера для назначенного.
+- `computeMentionedAgentCommentTriggers` (`comment.go`) — один раз на каждое упоминание `@agent` и один раз на каждого лидера `@squad`.
+- `enqueueSquadLeaderTask` (`squad.go`) — путь назначения / продвижения из бэклога.
+- `triggerChildDoneAgent` и `triggerChildDoneSquad` (`issue_child_done.go`).
+
+Форма везде одинакова — обратите внимание, что ошибка трактуется так же, как ожидающая задача (отказ в сторону закрытости, не ставить в очередь):
+
+```go
+hasPending, err := h.Queries.HasPendingTaskForIssueAndAgent(ctx, db.HasPendingTaskForIssueAndAgentParams{
+	IssueID: issue.ID,
+	AgentID: squad.LeaderID,
+})
+if err != nil || hasPending {
+	return
+}
+```
+
+Поскольку ключом является `(IssueID, AgentID)`, быстрые серии постановок в очередь — две дочерние задачи, завершающиеся одна за другой, комментарий и завершение дочерней задачи, прилетевшие вместе — сливаются в одну уже-ожидающую задачу вместо нагромождения.
+
+## Guard 3 — подавление триггера назначенного при `@all` и упоминании других
+
+Триггер назначенного по комментарию срабатывает только тогда, когда участник правдоподобно обращается *к* назначенному. Два помощника в `comment.go` подавляют его в противном случае, и оба являются предусловиями в `computeCommentAgentTriggers`:
+
+```go
+if actorType == "member" && h.shouldEnqueueOnComment(ctx, issue, actorType, actorID) &&
+    !h.commentMentionsOthersButNotAssignee(content, issue) &&
+    !h.isReplyToMemberThread(ctx, parentComment, content, issue) {
+    // ... enqueue assignee trigger
+}
+```
+
+`commentMentionsOthersButNotAssignee` возвращает `true` (подавить), когда:
+
+- Комментарий `@упоминает` кого-либо (перекрёстные ссылки на задачи отфильтровываются первыми — они не направлены на участника).
+- **Присутствует `@all`** — трактуется как широковещательное объявление, а не запрос на работу: `if util.HasMentionAll(mentions) { return true }`.
+- Или упоминания существуют, но ни одно из них не относится к назначенному.
+
+Он возвращает `false` (разрешить) только тогда, когда назначенный явно присутствует среди упоминаний. Независимо от этого, `computeAssignedSquadLeaderCommentTrigger` применяет ту же логику к назначенному скваду: комментарий участника, упоминающий кого-либо (`commentMentionsAnyone`), подавляет неявное пробуждение лидера, потому что явное упоминание `@squad` вместо этого направится по пути упоминания.
+
+`isReplyToMemberThread` — это сопутствующая защита для тредовых ответов: ответ участника внутри треда, начатого участником, трактуется как разговор человек-человек и подавляет триггер назначенного — *кроме случая*, когда ответ или корень треда `@упоминает` назначенного (`util.ParseMentions`), или агент-назначенный уже ответил в треде (`HasAgentRepliedInThread`). Обратите внимание, что префикс `/note` (`isNoteComment`) короткозамыкает всё это раньше: комментарий, первый токен которого — `/note`, никогда не триггерит ни одного агента. Полный порядок этих проверок рассмотрен в [comment-trigger-pipeline](/developers/agentic/comment-trigger-pipeline), а семантика упоминаний — в [mention-contract](/developers/agentic/mention-contract).
+
+## Guard 4 — защиты завершения дочерней задачи: тот же сквад и общий лидер
+
+Когда дочерняя задача переходит в `done`, `notifyParentOfChildDone` (`issue_child_done.go`) публикует `system`-комментарий на родительской задаче и затем вызывает `dispatchParentAssigneeTrigger`, чтобы разбудить назначенного родительской задачи. Системный комментарий вставляется напрямую через `db.Queries`, а путь слушателя короткозамыкается на `author_type='system'`, так что *единственное* пробуждение — это явная диспетчеризация, где и живут защиты от циклов.
+
+Диспетчеризация разветвляется по типу назначенного родительской задачи. Путь **сквада**, `triggerChildDoneSquad`, применяет двустороннюю самозащиту:
+
+```go
+// Same-squad child → leader already observed the work via its own cycle.
+if childAssigneeIsSquad(child, parent.AssigneeID) {
+	return
+}
+// Shared-leader loop: child driven by this squad's leader, or by another
+// squad whose leader is the same agent.
+if owner := h.effectiveChildAgentOwner(ctx, child); owner.Valid &&
+    uuidToString(owner) == uuidToString(squad.LeaderID) {
+	return
+}
+```
+
+- `childAssigneeIsSquad` возвращает `true` только тогда, когда назначенный дочерней задачи — это *тот же самый сквад* — лидер уже видел эту работу через свой собственный цикл координации, поэтому повторное срабатывание на родительской задаче не добавляет сигнала.
+- `effectiveChildAgentOwner` разрешает дочернюю задачу до её эффективного действующего агента: агент-назначенный отображается сам на себя, сквад-назначенный отображается на *лидера этого сквада*, а всё остальное (участник, отсутствие назначенного, отсутствующая строка) возвращает невалидный UUID, означающий "нет общего владельца для сравнения". Равенство с лидером родительского сквада означает, что тот же агент был бы поставлен в очередь повторно — межсквадовый цикл общего лидера — поэтому он пропускается.
+
+### Намеренное отсутствие самозащиты на пути агента (MUL-2808)
+
+Путь **агента**, `triggerChildDoneAgent`, **не имеет** самозащиты для того же агента, и это отсутствие намеренно и задокументировано в исходном коде:
+
+> There is intentionally NO same-agent self-trigger guard here, unlike the squad path. Waking the parent agent when one of its children finishes is a serial sub-task handoff between two DIFFERENT issues, which the platform loop model treats as legitimate ("not a loop and must fire" — see `isAgentRunningOnIssue`); only re-entering the SAME issue is a loop.
+
+Логика такова: одиночный агент, декомпозирующий свою родительскую задачу на подзадачи, которыми владеет сам, не имеет другого пути пробуждения. Старая защита "владелец дочерней задачи == агент родительской" беззвучно оставляла такие родительские задачи в подвешенном состоянии (MUL-2808). Дочерняя задача, завершающаяся и будящая агента родительской задачи, — это **последовательная передача между двумя разными задачами**, а не самозацикливание — и это согласуется с путём самотриггера по `@упоминанию` в `computeMentionedAgentCommentTriggers`, который тоже допускает самоупоминания. Безудержное повторное триггерение ограничивается не подавлением триггера, а **Guard 2** (`HasPendingTaskForIssueAndAgent`) — ровно так, как и полагается пути агента:
+
+```go
+func (h *Handler) triggerChildDoneAgent(ctx context.Context, parent db.Issue, triggerCommentID pgtype.UUID) {
+	agent, err := h.Queries.GetAgentInWorkspace(ctx, ...)
+	if err != nil || !agent.RuntimeID.Valid || agent.ArchivedAt.Valid {
+		return
+	}
+	hasPending, err := h.Queries.HasPendingTaskForIssueAndAgent(ctx, ...)
+	if err != nil || hasPending {
+		return
+	}
+	// ... EnqueueTaskForMention
+}
+```
+
+Та же диспетчеризация завершения дочерней задачи `@squad` будит **только лидера** сквада — она *не* раздаётся участникам сквада, в отличие от человеческого упоминания `@squad`. Завершение дочерней задачи — это координационный сигнал; лидер решает, будить ли остальную часть сквада.
+
+## Guard 5 — правила промпта рантайма: молчание при подтверждении и `no_action` лидера сквада
+
+Финальный слой — это не серверная проверка, а поведенческое правило, встроенное в промпт задачи, триггеренной комментарием, функцией `buildCommentPrompt` в `server/internal/daemon/prompt.go`. Сервер может остановить *постановку в очередь* циклов; только агент может остановить *генерацию* комментариев, которые их питают.
+
+### Молчание при подтверждении
+
+Когда триггерящий комментарий был опубликован другим агентом (`task.TriggerAuthorType == "agent"`), промпт внедряет правило, отличающее реальную работу от шума:
+
+> If the triggering comment was a pure acknowledgment, thanks, or sign-off AND you produced no work this turn, do NOT reply — and do NOT post a comment saying 'No reply needed' or similar. Simply exit with no output. Silence is the preferred way to end agent-to-agent threads. If you do reply, do not @mention the other agent as a sign-off (that re-triggers them and starts a loop).
+
+Сразу адресуются два вектора цикла: комментарий "No reply needed" (сам по себе событие пробуждения) и завершающее `@упоминание` (которое повторно триггерит другого агента через путь упоминания). Если агент *действительно* произвёл работу, обычный ответ корректен и ожидаем.
+
+### Напоминание `no_action` лидера сквада, привязанное к подстроке протокола
+
+Более строгое правило выдаётся **только** тогда, когда инструкции агента содержат буквальный маркер `## Squad Operating Protocol`:
+
+```go
+if task.Agent != nil && strings.Contains(task.Agent.Instructions, "## Squad Operating Protocol") {
+	fmt.Fprintf(&b, "⚠️ **Squad leader no_action rule:** If you decide no action is needed, call `agora squad activity %s no_action --reason \"...\"` and EXIT. DO NOT post any comment — not even one that says \"no action needed\" or \"exiting silently\". The squad activity call records your decision; a comment is redundant noise.\n\n", task.IssueID)
+}
+```
+
+Лидер сквада, решивший, что ничего не нужно, записывает решение через `agora squad activity <issue> no_action` (эндпоинт `RecordSquadLeaderEvaluation` в `squad.go`, который пишет активность `squad_leader_evaluated`) — **а не** через комментарий. Привязка по подстроке важна: напоминание актуально только для лидеров, а лидер опознаётся по маркеру протокола в его внедрённых инструкциях. Запись `no_action` также возвращается обратно на сервер: `CreateComment` вызывает `HasSquadLeaderNoActionEvaluationForTask` и возвращает `409 Conflict` ("squad leader recorded no_action; comments are not allowed for this task"), если лидер, записавший `no_action`, затем всё равно пытается оставить комментарий. См. [no-action-protocol](/developers/agentic/no-action-protocol) о полном контракте оценки и [prompt-layers](/developers/agentic/prompt-layers) о том, где эти правила располагаются относительно остальной части промпта.
+
+## Случаи беззвучного no-op, которые агент не должен повторять
+
+Несколько исходов намеренно беззвучны — платформа дедуплицировала, подавила или записала no-op, и **повторять нечего**. Агент, зацикливающийся на них, воссоздаёт тот самый цикл, который защиты предотвращают:
+
+- **Комментарий воркера не разбудил повторно вашу роль лидера.** Guard 1 подавил его, потому что ваша последняя задача по этой задаче уже была задачей лидера. Не комментируйте повторно, чтобы "подтолкнуть" лидера — существующая задача лидера уже имеет контекст.
+- **Комментарий `@all` или нацеленный на других не триггернул вас.** Guard 3 прочитал его как широковещание или сообщение кому-то другому. Не публикуйте повторно, чтобы вынудить триггер.
+- **Завершение дочерней задачи не разбудило вас второй раз.** Guard 2 обнаружил, что у вас уже есть ожидающая задача по родительской задаче; эта задача прочитает комментарий о завершении дочерней. Повторная постановка в очередь невозможна, а повторный комментарий — шум.
+- **Вы решили, что действие не требуется (лидер сквада).** Вызовите `no_action` и **выйдите**. Не публикуйте комментарий — а если вы уже записали `no_action`, сервер отклонит ваш комментарий с `409`. Повтор комментария — гарантированный провал.
+- **Триггерящий комментарий был чистым подтверждением, и вы не сделали работы.** Выйдите без вывода. Не публикуйте "No reply needed" и не делайте завершающее `@упоминание` другого агента.
+
+Объединяющее правило: **молчание — это валидное, часто предпочтительное, терминальное состояние.** No-op не является ошибкой и не должен повторяться.
+
+## Source files
+
+| Файл | Символы, от которых зависит эта страница |
+| --- | --- |
+| `server/internal/handler/comment.go` | `computeCommentAgentTriggers`, `computeAssignedSquadLeaderCommentTrigger`, `computeMentionedAgentCommentTriggers`, `commentMentionsOthersButNotAssignee`, `isReplyToMemberThread`, `shouldInheritParentMentions`, `isNoteComment`, `HasPendingTaskForIssueAndAgent`, `HasAgentRepliedInThread`, `commentTriggerSourceMentionSquadLeader`, `HasSquadLeaderNoActionEvaluationForTask` (место вызова) |
+| `server/internal/handler/squad.go` | `lastTaskWasLeader`, `GetLatestTaskIsLeaderForIssueAndAgent`, `commentMentionsAnyone`, `enqueueSquadLeaderTask`, `RecordSquadLeaderEvaluation`, `HasPendingTaskForIssueAndAgent` |
+| `server/internal/handler/issue_child_done.go` | `notifyParentOfChildDone`, `dispatchParentAssigneeTrigger`, `triggerChildDoneAgent`, `triggerChildDoneSquad`, `childAssigneeIsSquad`, `effectiveChildAgentOwner`, `HasPendingTaskForIssueAndAgent` |
+| `server/internal/daemon/prompt.go` | `BuildPrompt`, `buildCommentPrompt`, правило молчания при авторе-агенте, привязка по подстроке `## Squad Operating Protocol` для напоминания `no_action` |
+
+Эти файлы образуют единый контракт: изменение любого пути триггера, проверки роли или правила промпта должно вноситься вместе с его собратьями здесь в **том же PR**, иначе многослойные защиты расходятся, и цикл агента вновь открывается между файлом, который изменился, и файлом, который — нет.

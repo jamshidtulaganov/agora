@@ -1,0 +1,209 @@
+---
+title: Loop Prevention
+description: The layered guards that stop Agora agents from waking themselves (or each other) in an unbounded comment loop.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Audience">
+Both. Backend engineers maintaining the trigger pipeline need to know why each guard exists and where it can be safely modified; agent authors need to know which silent no-op cases the runtime expects them to honor — and never retry around.
+</Callout>
+
+Agora wakes agents from comments and from child-issue completions. Every wake path can, in principle, produce a new comment, which is itself a wake path — so the platform needs explicit guards to break the cycle. The guards live in three handler files (`comment.go`, `issue_child_done.go`, `squad.go`) plus one prompt rule in the runtime (`prompt.go`). They are layered: an agent that slips past one is usually caught by the next. This page walks each layer against the source.
+
+The two recurring primitives are worth naming up front:
+
+- **Role disambiguation** — `lastTaskWasLeader`, backed by `GetLatestTaskIsLeaderForIssueAndAgent`. An agent can hold both a squad-leader role and a worker role; the guard tells those apart so a worker comment can wake the leader role but the leader cannot wake itself.
+- **Pending-task dedup** — `HasPendingTaskForIssueAndAgent`. The universal idempotency backstop. Almost every trigger path ends with this check, so a target that already has a queued/dispatched task on the issue is silently skipped rather than double-enqueued.
+
+<Mermaid chart={`flowchart TD
+  C[New comment] --> G1{Guard 1: lastTaskWasLeader<br/>leader self-loop?}
+  G1 -- yes --> X[skip]
+  G1 -- no --> G3{Guard 3: @all / other-mention<br/>assignee suppression}
+  G3 -- suppress --> X
+  G3 -- allow --> G2{Guard 2: HasPendingTaskForIssueAndAgent<br/>already queued?}
+  G2 -- pending --> X
+  G2 -- none --> E[enqueue task]
+  E --> R[Guard 5: runtime prompt rules<br/>silence-on-ack / no_action]
+  CD[Child issue → done] --> G4{Guard 4: same-squad /<br/>shared-leader guard}
+  G4 -- squad path blocked --> X
+  G4 -- agent path: no self-guard --> G2`} />
+
+## Guard 1 — leader/worker role disambiguation
+
+A squad leader and a worker can be the same agent. When that agent posts a worker-task comment, we *want* its leader role to wake and coordinate; when it posts a leader-task comment, waking the leader again is a self-loop. `lastTaskWasLeader` in `server/internal/handler/squad.go` distinguishes the two by reading the role of the agent's most recent task on the issue:
+
+```go
+func (h *Handler) lastTaskWasLeader(ctx context.Context, issueID, agentID pgtype.UUID) bool {
+	flag, err := h.Queries.GetLatestTaskIsLeaderForIssueAndAgent(ctx, ...)
+	if err != nil {
+		return false
+	}
+	return flag
+}
+```
+
+The doc comment states the contract precisely: *"When the agent has no prior task on this issue the role is undetermined and we treat it as non-leader so a brand-new external trigger can still reach the leader."* Returning `false` on error or absence is deliberate — it fails *open* toward letting an external wake through, not toward suppressing it.
+
+Two call sites apply this guard, both gated on `authorType == "agent"` and the author being the leader:
+
+- The **assigned-squad** path, `computeAssignedSquadLeaderCommentTrigger`:
+
+  ```go
+  if authorType == "agent" && authorID == uuidToString(squad.LeaderID) &&
+      h.lastTaskWasLeader(ctx, issue.ID, squad.LeaderID) {
+      return commentAgentTrigger{}, false
+  }
+  ```
+
+- The **@squad-mention** path, inside `computeMentionedAgentCommentTriggers`:
+
+  ```go
+  if authorType == "agent" && authorID == uuidToString(leaderID) &&
+      h.lastTaskWasLeader(ctx, issue.ID, leaderID) {
+      continue
+  }
+  ```
+
+The net effect: a leader+worker agent **can** wake its leader role from a worker comment, but **cannot** leader→self-loop. See [squads-routing](/developers/agentic/squads-routing) for how the leader role is dispatched in the first place.
+
+## Guard 2 — `HasPendingTaskForIssueAndAgent` dedup
+
+The idempotency backstop. If the target agent already has a queued or dispatched task on the issue, a second trigger is dropped — the existing task will read the new comment when it runs. This is the guard the other layers lean on when they *deliberately decline* to add a stricter self-guard (see Guards 4 and the @mention self-trigger note below).
+
+It appears at the tail of essentially every enqueue path:
+
+- `computeAssignedSquadLeaderCommentTrigger` (`comment.go`) — before returning the assignee trigger.
+- `computeMentionedAgentCommentTriggers` (`comment.go`) — once per `@agent` mention and once per `@squad` leader.
+- `enqueueSquadLeaderTask` (`squad.go`) — assign / backlog-promotion path.
+- `triggerChildDoneAgent` and `triggerChildDoneSquad` (`issue_child_done.go`).
+
+The shape is identical everywhere — note that an error is treated the same as a pending task (fail closed, do not enqueue):
+
+```go
+hasPending, err := h.Queries.HasPendingTaskForIssueAndAgent(ctx, db.HasPendingTaskForIssueAndAgentParams{
+	IssueID: issue.ID,
+	AgentID: squad.LeaderID,
+})
+if err != nil || hasPending {
+	return
+}
+```
+
+Because it keys on `(IssueID, AgentID)`, rapid-fire enqueues — two children finishing back-to-back, a comment and a child-done landing together — coalesce onto the one already-pending task instead of stacking.
+
+## Guard 3 — `@all` and other-mention assignee suppression
+
+The on-comment assignee trigger only fires when the member is plausibly talking *to* the assignee. Two helpers in `comment.go` suppress it otherwise, and both are pre-conditions in `computeCommentAgentTriggers`:
+
+```go
+if actorType == "member" && h.shouldEnqueueOnComment(ctx, issue, actorType, actorID) &&
+    !h.commentMentionsOthersButNotAssignee(content, issue) &&
+    !h.isReplyToMemberThread(ctx, parentComment, content, issue) {
+    // ... enqueue assignee trigger
+}
+```
+
+`commentMentionsOthersButNotAssignee` returns `true` (suppress) when:
+
+- The comment `@mentions` anyone (issue cross-references are filtered out first — they are not directed at a participant).
+- **`@all` is present** — treated as a broadcast announcement, not a work request: `if util.HasMentionAll(mentions) { return true }`.
+- Or mentions exist but none of them is the assignee.
+
+It returns `false` (allow) only when the assignee is explicitly among the mentions. Independently, `computeAssignedSquadLeaderCommentTrigger` applies the same logic to a squad assignee: a member comment that mentions anyone (`commentMentionsAnyone`) suppresses the implicit leader wake, because an explicit `@squad` mention will route through the mention path instead.
+
+`isReplyToMemberThread` is the companion guard for threaded replies: a member reply inside a member-started thread is treated as human-to-human conversation and suppresses the assignee trigger — *unless* the reply or the thread root `@mentions` the assignee (`util.ParseMentions`), or the assignee agent has already replied in the thread (`HasAgentRepliedInThread`). Note the `/note` prefix (`isNoteComment`) short-circuits all of this earlier: a comment whose first token is `/note` never triggers any agent. The full ordering of these checks is covered in [comment-trigger-pipeline](/developers/agentic/comment-trigger-pipeline) and the mention semantics in [mention-contract](/developers/agentic/mention-contract).
+
+## Guard 4 — child-done same-squad and shared-leader guards
+
+When a child issue transitions into `done`, `notifyParentOfChildDone` (`issue_child_done.go`) posts a `system` comment on the parent and then calls `dispatchParentAssigneeTrigger` to wake the parent assignee. The system comment is inserted directly via `db.Queries` and the listener path short-circuits on `author_type='system'`, so the *only* wake is the explicit dispatch — which is where the loop guards live.
+
+The dispatch splits by parent assignee type. The **squad** path, `triggerChildDoneSquad`, applies a two-pronged self-guard:
+
+```go
+// Same-squad child → leader already observed the work via its own cycle.
+if childAssigneeIsSquad(child, parent.AssigneeID) {
+	return
+}
+// Shared-leader loop: child driven by this squad's leader, or by another
+// squad whose leader is the same agent.
+if owner := h.effectiveChildAgentOwner(ctx, child); owner.Valid &&
+    uuidToString(owner) == uuidToString(squad.LeaderID) {
+	return
+}
+```
+
+- `childAssigneeIsSquad` returns `true` only when the child's assignee is *this same squad* — the leader has already seen that work through its own coordination cycle, so re-firing on the parent adds no signal.
+- `effectiveChildAgentOwner` resolves the child to its effective acting agent: an agent assignee maps to itself, a squad assignee maps to *that squad's leader*, and anything else (member, no assignee, missing row) returns an invalid UUID meaning "no shared owner to compare." Equality with the parent squad's leader means the same agent would be re-enqueued — the cross-squad shared-leader loop — so it is skipped.
+
+### The deliberate absence of an agent-path self-guard (MUL-2808)
+
+The **agent** path, `triggerChildDoneAgent`, has **no** same-agent self-guard, and that absence is intentional and documented in the source:
+
+> There is intentionally NO same-agent self-trigger guard here, unlike the squad path. Waking the parent agent when one of its children finishes is a serial sub-task handoff between two DIFFERENT issues, which the platform loop model treats as legitimate ("not a loop and must fire" — see `isAgentRunningOnIssue`); only re-entering the SAME issue is a loop.
+
+The reasoning: a lone agent that decomposes its parent into sub-issues it owns itself has no other wake path. The old "child owner == parent agent" guard silently stranded those parents (MUL-2808). A child finishing and waking the parent agent is a **serial handoff across two different issues**, not a self-loop — and it is consistent with the `@mention` self-trigger path in `computeMentionedAgentCommentTriggers`, which also allows self-mentions. Runaway re-triggering is bounded not by suppressing the trigger but by **Guard 2** (`HasPendingTaskForIssueAndAgent`) — exactly as the agent path relies on:
+
+```go
+func (h *Handler) triggerChildDoneAgent(ctx context.Context, parent db.Issue, triggerCommentID pgtype.UUID) {
+	agent, err := h.Queries.GetAgentInWorkspace(ctx, ...)
+	if err != nil || !agent.RuntimeID.Valid || agent.ArchivedAt.Valid {
+		return
+	}
+	hasPending, err := h.Queries.HasPendingTaskForIssueAndAgent(ctx, ...)
+	if err != nil || hasPending {
+		return
+	}
+	// ... EnqueueTaskForMention
+}
+```
+
+The same `@squad` child-done dispatch wakes the squad **leader only** — it does *not* fan out to squad members, unlike a human `@squad` mention. Child-done is a coordination signal; the leader decides whether to wake the rest of the squad.
+
+## Guard 5 — runtime prompt rules: silence on acknowledgment and squad-leader `no_action`
+
+The final layer is not a server check — it is a behavioral rule baked into the comment-triggered task prompt by `buildCommentPrompt` in `server/internal/daemon/prompt.go`. The server can stop *enqueuing* loops; only the agent can stop *generating* the comments that feed them.
+
+### Silence-on-acknowledgment
+
+When the triggering comment was posted by another agent (`task.TriggerAuthorType == "agent"`), the prompt injects a rule that distinguishes real work from noise:
+
+> If the triggering comment was a pure acknowledgment, thanks, or sign-off AND you produced no work this turn, do NOT reply — and do NOT post a comment saying 'No reply needed' or similar. Simply exit with no output. Silence is the preferred way to end agent-to-agent threads. If you do reply, do not @mention the other agent as a sign-off (that re-triggers them and starts a loop).
+
+Two loop vectors are addressed at once: the "No reply needed" comment (itself a wake event) and the sign-off `@mention` (which re-triggers the other agent via the mention path). If the agent *did* produce work, a normal reply is correct and expected.
+
+### Squad-leader `no_action` reminder, gated on the protocol substring
+
+A stronger rule is emitted **only** when the agent's instructions contain the literal marker `## Squad Operating Protocol`:
+
+```go
+if task.Agent != nil && strings.Contains(task.Agent.Instructions, "## Squad Operating Protocol") {
+	fmt.Fprintf(&b, "⚠️ **Squad leader no_action rule:** If you decide no action is needed, call `agora squad activity %s no_action --reason \"...\"` and EXIT. DO NOT post any comment — not even one that says \"no action needed\" or \"exiting silently\". The squad activity call records your decision; a comment is redundant noise.\n\n", task.IssueID)
+}
+```
+
+A squad leader that decides nothing is needed records the decision via `agora squad activity <issue> no_action` (the `RecordSquadLeaderEvaluation` endpoint in `squad.go`, which writes a `squad_leader_evaluated` activity) — **not** via a comment. The substring gate matters: the reminder is only relevant to leaders, and a leader is identified by the protocol marker in its injected instructions. The `no_action` record also feeds back into the server: `CreateComment` calls `HasSquadLeaderNoActionEvaluationForTask` and returns `409 Conflict` ("squad leader recorded no_action; comments are not allowed for this task") if a leader that recorded `no_action` then tries to comment anyway. See [no-action-protocol](/developers/agentic/no-action-protocol) for the full evaluation contract and [prompt-layers](/developers/agentic/prompt-layers) for where these rules sit relative to the rest of the prompt.
+
+## Silent no-op cases an agent must not retry
+
+Several outcomes are intentionally silent — the platform deduped, suppressed, or recorded a no-op, and there is **nothing to retry**. An agent that loops on these recreates the very loop the guards prevent:
+
+- **A worker comment did not re-wake your leader role.** Guard 1 suppressed it because your last task on the issue was already a leader task. Do not re-comment to "nudge" the leader — the existing leader task already has the context.
+- **An `@all` or other-targeted comment did not trigger you.** Guard 3 read it as a broadcast or a message to someone else. Do not re-post to force a trigger.
+- **A child-done did not wake you a second time.** Guard 2 found you already have a pending task on the parent; that task will read the child-done comment. Re-enqueueing is impossible and re-commenting is noise.
+- **You decided no action is needed (squad leader).** Call `no_action` and **exit**. Do not post a comment — and if you already recorded `no_action`, the server will reject your comment with `409`. Retrying the comment is a guaranteed failure.
+- **The triggering comment was a pure acknowledgment and you did no work.** Exit with no output. Do not post "No reply needed," and do not `@mention` the other agent as a sign-off.
+
+The unifying rule: **silence is a valid, often preferred, terminal state.** A no-op is not an error and must not be retried.
+
+## Source files
+
+| File | Symbols this page depends on |
+| --- | --- |
+| `server/internal/handler/comment.go` | `computeCommentAgentTriggers`, `computeAssignedSquadLeaderCommentTrigger`, `computeMentionedAgentCommentTriggers`, `commentMentionsOthersButNotAssignee`, `isReplyToMemberThread`, `shouldInheritParentMentions`, `isNoteComment`, `HasPendingTaskForIssueAndAgent`, `HasAgentRepliedInThread`, `commentTriggerSourceMentionSquadLeader`, `HasSquadLeaderNoActionEvaluationForTask` (call site) |
+| `server/internal/handler/squad.go` | `lastTaskWasLeader`, `GetLatestTaskIsLeaderForIssueAndAgent`, `commentMentionsAnyone`, `enqueueSquadLeaderTask`, `RecordSquadLeaderEvaluation`, `HasPendingTaskForIssueAndAgent` |
+| `server/internal/handler/issue_child_done.go` | `notifyParentOfChildDone`, `dispatchParentAssigneeTrigger`, `triggerChildDoneAgent`, `triggerChildDoneSquad`, `childAssigneeIsSquad`, `effectiveChildAgentOwner`, `HasPendingTaskForIssueAndAgent` |
+| `server/internal/daemon/prompt.go` | `BuildPrompt`, `buildCommentPrompt`, the agent-author silence rule, the `## Squad Operating Protocol` substring gate on the `no_action` reminder |
+
+These files form one contract: a change to any trigger path, role check, or prompt rule must be made together with its siblings here in the **same PR**, or the layered guards drift apart and an agent loop reopens between the file that changed and the file that didn't.

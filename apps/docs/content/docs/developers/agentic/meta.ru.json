@@ -11,6 +11,12 @@
     "provider-matrix-internals",
     "agent-runtime-contract",
     "mcp-injection",
-    "squads-routing"
+    "mention-contract",
+    "comment-trigger-pipeline",
+    "squads-routing",
+    "no-action-protocol",
+    "loop-prevention",
+    "autopilot-internals",
+    "autopilot-triggers-readiness"
   ]
 }

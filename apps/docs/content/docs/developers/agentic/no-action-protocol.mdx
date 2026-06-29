@@ -1,0 +1,172 @@
+---
+title: No-Action Protocol
+description: How a squad leader records action | no_action | failed and how no_action suppresses both the synthesized fallback comment and any manual comment for that exact task.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Audience">
+Both. The first half (the `agora squad activity` contract, authorization, the `X-Task-ID` requirement) is what a **squad leader agent** needs to behave correctly. The second half (the `HasSquadLeaderNoActionEvaluationForTask` predicate and the two suppressions it drives) is **developer** internals. Agents: skip to "Agent guidance" — the rule is one line.
+</Callout>
+
+A squad leader is triggered on every external signal that reaches a squad-assigned issue (see [squads-routing](/developers/agentic/squads-routing) and the [comment-trigger-pipeline](/developers/agentic/comment-trigger-pipeline)). Most of the time the right answer is "nothing to do here." The no-action protocol gives the leader a way to say exactly that — record the decision, post no comment, and exit — without the platform's "every completed task gets a comment" invariant turning that silence into noise.
+
+## The contract: `agora squad activity`
+
+The leader records one evaluation per trigger with:
+
+```bash
+agora squad activity <issue-id> <outcome> --reason "<short explanation>"
+```
+
+`<outcome>` must be exactly one of three values. The CLI rejects anything else before it ever hits the network (`runSquadActivity` in `server/cmd/agora/cmd_squad.go`):
+
+| `outcome`   | Meaning                                          |
+| ----------- | ------------------------------------------------ |
+| `action`    | leader delegated or took action                  |
+| `no_action` | leader evaluated and decided no action is needed |
+| `failed`    | leader encountered an error                      |
+
+`--reason` is a free-text string; it is optional and defaults to empty.
+
+The command resolves the issue ref (so `MUL-123` or a UUID both work) and `POST`s to `/api/issues/{id}/squad-evaluated`. That endpoint is handled by `RecordSquadLeaderEvaluation` in `server/internal/handler/squad.go`.
+
+## What the handler enforces
+
+`RecordSquadLeaderEvaluation` is a gauntlet of guards. Each one fails closed with a distinct status code — read them in order, because the agent has to satisfy all of them:
+
+1. **`400` — bad outcome.** `req.Outcome` is re-validated server-side: anything other than `action`, `no_action`, or `failed` returns `"outcome must be 'action', 'no_action', or 'failed'"`. The CLI check is not trusted as the only gate.
+2. **`400` — issue not squad-assigned.** If `issue.AssigneeType` is not `"squad"` (or `AssigneeID` is null), the handler returns `"issue is not assigned to a squad"`. The protocol is meaningless on a non-squad issue.
+3. **`404` — squad not found.** The squad is loaded via `GetSquadInWorkspace` scoped to `issue.WorkspaceID`.
+4. **`403` — actor is not the current leader.** `resolveActor` derives `(actorType, actorID)` from the request. The check is exact:
+
+   ```go
+   if actorType != "agent" || actorID != uuidToString(squad.LeaderID) {
+       writeError(w, http.StatusForbidden, "only the squad leader agent can record evaluations")
+       return
+   }
+   ```
+
+   A member, a non-leader squad agent, or a worker the leader delegated to all get `403`. Only the agent whose id equals `squad.LeaderID` *right now* may record.
+5. **`X-Task-ID` header required.** The handler reads `r.Header.Get("X-Task-ID")` and runs it through `parseUUIDOrBadRequest` — a missing or malformed header is a `400`. The CLI stamps this header automatically when the agent runs inside a dispatched task (`client.TaskID` → `X-Task-ID` in `server/internal/cli/client.go`).
+6. **`400` — cross-issue spoofing rejected.** The task named by `X-Task-ID` is loaded with `GetAgentTask` and its `IssueID` is compared to the issue in the URL:
+
+   ```go
+   if err != nil || !task.IssueID.Valid || uuidToString(task.IssueID) != uuidToString(issue.ID) {
+       writeError(w, http.StatusBadRequest, "task does not belong to issue")
+       return
+   }
+   ```
+
+   You cannot record an evaluation for issue A while passing task B's id. The `(task, issue)` pair must be self-consistent.
+
+Only after all six does the handler write a single `activity_log` row via `CreateActivity` with `Action: "squad_leader_evaluated"` and a JSON `Details` blob carrying `squad_id`, `task_id`, `outcome`, and `reason`. It then publishes `EventActivityCreated` and returns `201` with the activity id. **No comment is created** — the row is purely a timeline/decision record.
+
+<Callout type="warn" title="The task_id in details is the suppression key">
+The `task_id` written into `details` is the `X-Task-ID` value, not the issue. That field is the entire basis for the predicate below. A `no_action` recorded for one task does not suppress anything for a *different* task on the same issue.
+</Callout>
+
+<Mermaid chart={`sequenceDiagram
+    participant L as Squad Leader (agent)
+    participant CLI as agora squad activity
+    participant H as RecordSquadLeaderEvaluation
+    participant DB as activity_log
+    L->>CLI: activity MUL-123 no_action --reason "..."
+    CLI->>H: POST /squad-evaluated (X-Task-ID: T)
+    H->>H: outcome valid? squad-assigned? leader == actor?
+    H->>H: task T belongs to issue MUL-123?
+    H->>DB: CreateActivity action=squad_leader_evaluated<br/>details.outcome=no_action details.task_id=T
+    H-->>CLI: 201 (no comment created)
+    L->>L: EXIT — post nothing
+`} />
+
+## The predicate: `HasSquadLeaderNoActionEvaluationForTask`
+
+Everything downstream keys off one helper in `server/internal/service/squad_no_action.go`:
+
+```go
+func HasSquadLeaderNoActionEvaluationForTask(ctx context.Context, q *db.Queries, task db.AgentTaskQueue) (bool, error)
+```
+
+It guards against nil/invalid input (returns `false, nil` if `q` is nil or `task.ID` / `task.IssueID` / `task.AgentID` is invalid) and otherwise delegates to the generated query `HasSquadLeaderNoActionEvaluationForTask`, which is an `EXISTS` over `activity_log`:
+
+```sql
+SELECT EXISTS (
+  SELECT 1
+  FROM activity_log
+  WHERE issue_id = @issue_id
+    AND actor_type = 'agent'
+    AND actor_id = @agent_id
+    AND action = 'squad_leader_evaluated'
+    AND details->>'outcome' = 'no_action'
+    AND details->>'task_id' = @task_id::text
+) AS exists;
+```
+
+The predicate is keyed on the triple `(issue_id, leader agent_id, task_id)`. The Go wrapper supplies them from the task itself: `task.IssueID`, `task.AgentID`, and `util.UUIDToString(task.ID)`. Note the `details->>'outcome' = 'no_action'` clause — `action` and `failed` rows exist in the same `activity_log` but never match, so they suppress nothing.
+
+<Callout title="Per-task, not per-issue">
+The `details->>'task_id' = @task_id::text` clause is what makes this scoped to a single task. The leader can `no_action` task T1 today and still be free to comment normally on the next trigger (task T2) for the same issue tomorrow. There is no per-issue mute — only a per-task one.
+</Callout>
+
+## Suppression #1 — the synthesized completion fallback comment
+
+The platform guarantees that every completed issue task leaves at least one agent comment, so the user always sees *something* when a run ends. That logic lives in `task.go` (the completion path): if the agent posted no comment during the run (`HasAgentCommentedSince` is false), the platform synthesizes one from the task's final output.
+
+The no-action predicate short-circuits that synthesis. In `server/internal/service/task.go`:
+
+```go
+suppressNoActionComment, err := HasSquadLeaderNoActionEvaluationForTask(ctx, s.Queries, task)
+// ...
+agentCommented, _ := s.Queries.HasAgentCommentedSince(ctx, ...)
+if !suppressNoActionComment && !agentCommented {
+    // synthesize fallback comment from payload.Output
+}
+```
+
+When the leader recorded `no_action` for this exact task, `suppressNoActionComment` is `true`, the `if` is skipped, and **no fallback comment is written**. The "always comment" invariant is intentionally waived for a deliberate no-op — silence is the point. (If the predicate lookup errors, it logs a warning and leaves `suppressNoActionComment` at its zero value `false`, i.e. it fails *open* to the normal fallback behavior rather than swallowing output.)
+
+## Suppression #2 — `409` on any manual comment for that task
+
+Suppressing the auto-synthesized comment is not enough: a leader (or a resumed session of it) could still try to `POST` a comment manually. The comment handler closes that door. In `server/internal/handler/comment.go`, inside the agent-author branch that already validates `X-Task-ID` against the issue:
+
+```go
+noAction, checkErr := service.HasSquadLeaderNoActionEvaluationForTask(r.Context(), h.Queries, task)
+if checkErr != nil {
+    // log warning, fall through
+} else if noAction {
+    writeError(w, http.StatusConflict, "squad leader recorded no_action; comments are not allowed for this task")
+    return
+}
+```
+
+Once `no_action` is on record for the task, **any** comment the agent tries to post under that `X-Task-ID` is rejected with `409 Conflict` and the message `"squad leader recorded no_action; comments are not allowed for this task"`. This guard sits next to the resumed-session `parent_id` guard (which itself returns `409` when a comment's `parent_id` does not equal the task's trigger comment) — both protect against drifted/resumed agent sessions writing into a task they should have left silent.
+
+Together the two suppressions make `no_action` a hard commitment: having declared it, the leader cannot speak on that task again, whether by the automatic fallback or by hand.
+
+## Agent guidance
+
+If you are the squad leader and you have decided there is nothing to do for this trigger:
+
+1. Run `agora squad activity <issue-id> no_action --reason "<why>"`.
+2. **Post no comment.** Do not call `agora comment ...` afterward — it will come back `409`.
+3. **Exit.** The evaluation row is your entire output for this trigger.
+
+Record `action` when you delegated or did work (this does **not** suppress your comments — comment normally), and `failed` when you hit an error. Only `no_action` triggers suppression. Recording it for the wrong issue, or without the task context the CLI supplies automatically, will be rejected (`403`/`400`) — run the command from inside your dispatched task so `X-Task-ID` is stamped for you.
+
+See also [loop-prevention](/developers/agentic/loop-prevention) for how self-triggered re-entry is kept out of the leader, and [squads-routing](/developers/agentic/squads-routing) for what reaches the leader in the first place.
+
+## Source files
+
+| File | Symbols this page depends on |
+| ---- | ---------------------------- |
+| `server/internal/service/squad_no_action.go` | `HasSquadLeaderNoActionEvaluationForTask` (nil/invalid guard + delegation keyed on `task.IssueID`, `task.AgentID`, `util.UUIDToString(task.ID)`) |
+| `server/internal/handler/squad.go` | `RecordSquadLeaderEvaluation` — `outcome` validation (`action`/`no_action`/`failed`, `400`), squad-assignment check (`400`), `GetSquadInWorkspace` (`404`), `resolveActor` + leader-only check (`403`), `X-Task-ID` via `parseUUIDOrBadRequest`, `GetAgentTask` cross-issue check (`400`), `CreateActivity` with `Action: "squad_leader_evaluated"` + `details` (`squad_id`/`task_id`/`outcome`/`reason`) |
+| `server/internal/service/task.go` | completion-path `suppressNoActionComment` gate; `HasSquadLeaderNoActionEvaluationForTask`, `HasAgentCommentedSince` — suppression #1 (synthesized fallback comment) |
+| `server/internal/handler/comment.go` | agent-author branch: `service.HasSquadLeaderNoActionEvaluationForTask` → `http.StatusConflict` `"squad leader recorded no_action; comments are not allowed for this task"` — suppression #2 |
+| `server/pkg/db/queries/activity.sql` | `HasSquadLeaderNoActionEvaluationForTask` `EXISTS` query — the `(issue_id, actor_id, action='squad_leader_evaluated', details->>'outcome'='no_action', details->>'task_id')` predicate |
+| `server/cmd/agora/cmd_squad.go` | `squadActivityCmd` (`Use: "activity <issue-id> <outcome>"`), `runSquadActivity`, `--reason` flag, `POST /api/issues/{id}/squad-evaluated` |
+| `server/internal/cli/client.go` | `client.TaskID` → `X-Task-ID` header injection |
+
+**Same-PR drift rule:** if you change the `outcome` enum, the `squad_leader_evaluated` action string, the `details` JSON keys, the `X-Task-ID` requirement, the leader-only `403` check, or either suppression's status code/message, update this page and its `references/no-action-protocol-source-map.md` in the same PR — these symbols are copied verbatim from the listed files and a stale page silently teaches agents to break the protocol.

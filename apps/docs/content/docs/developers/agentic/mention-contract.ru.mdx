@@ -1,0 +1,130 @@
+---
+title: Mention Contract
+description: Сетевой формат @упоминания, единственное регулярное выражение, которое его разбирает, и точное описание того, что ставит в очередь каждый из пяти типов.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Аудитория">
+Эта страница предназначена **как** для инженеров, **так и** для агентов. Это авторитетный бэкенд-контракт для того, что ссылка-упоминание *представляет собой* и что она *делает*: точный сетевой формат Markdown, единственный парсер (`util.MentionRe`) и поведение постановки в очередь для каждого типа. Она **не** описывает, *стоит ли* вам упоминать (избегание циклов, сохранение тишины при подтверждениях) — это относится к рантайм-брифу и встроенному навыку `agora-mentioning`. См. также: [/developers/agentic/comment-trigger-pipeline](/developers/agentic/comment-trigger-pipeline), [/developers/agentic/squads-routing](/developers/agentic/squads-routing).
+</Callout>
+
+## Сетевой формат
+
+Упоминание — это **не** простой `@name`. Бэкенд распознаёт упоминание только через одну форму Markdown-ссылки:
+
+```
+[@Label](mention://<type>/<id>)
+```
+
+- `<type>` — это одно из `member`, `agent`, `squad`, `issue` или маркер широковещания `all`.
+- `<id>` — это шестнадцатеричный UUID (только hex-символы и дефисы) **или** буквальная строка `all`.
+- `Label` — это произвольный отображаемый текст; сюда идёт читаемое человеком имя, но никогда не в id.
+
+Текст `@name`, набранный в прозе без ссылки `mention://`, не парсится ни во что. Он молча мертв: ни ошибки, ни запуска, никто не получает уведомления.
+
+## `util.MentionRe` — единственный парсер
+
+Каждый потребитель упоминаний проходит через одно регулярное выражение в `server/internal/util/mention.go`. Никакого второго парсера нигде нет.
+
+```go
+var MentionRe = regexp.MustCompile(`\[@?(.+?)\]\(mention://(member|agent|squad|issue|all)/([0-9a-fA-F-]+|all)\)`)
+```
+
+Свойства, которые напрямую следуют из шаблона:
+
+- **Символ `@` опционален** (`@?`), поэтому перекрёстные ссылки на задачи вроде `[MUL-123](mention://issue/...)` совпадают без ведущего `@`.
+- **Метка нежадная** (`.+?`), поэтому метка, содержащая квадратные скобки (например, `David[TF]`), сопоставляется корректно — якорь `](mention://` достаточно специфичен, чтобы остановить избыточное сопоставление.
+- **Группа id — это `([0-9a-fA-F-]+|all)`** — hex плюс дефисы, или буквальное `all`. Имя с не-hex буквами (`mention://member/Alice`) приводит к тому, что весь шаблон не совпадает, поэтому парсер не возвращает ничего.
+
+`ParseMentions(content string) []Mention` запускает `MentionRe.FindAllStringSubmatch`, дедуплицирует по `m[2] + ":" + m[3]` (тип + id) и возвращает срез `Mention{Type, ID}`, где `Type` — это `m[2]`, а `ID` — это `m[3]`. `HasMentionAll(mentions)` сообщает, имеет ли какое-либо разобранное упоминание `Type == "all"`; метод `Mention.IsMentionAll()` — это проверка для отдельного упоминания.
+
+<Callout type="warn" title="Док-комментарий недосчитывает типы — доверяйте регулярному выражению">
+Док-комментарий структуры `Mention` в `mention.go` перечисляет только `"member"`, `"agent"`, `"issue"` или `"all"` — он **пропускает `squad`**. Альтернация `(member|agent|squad|issue|all)` в регулярном выражении — это настоящий контракт, и она принимает пять значений. Когда комментарий и регулярное выражение расходятся, побеждает регулярное выражение. Упоминания `squad` парсятся и маршрутизируются лидеру сквада (ниже).
+</Callout>
+
+## Что ставит в очередь каждый тип
+
+Разбор упоминания отделён от *действия* по нему. Логика действия находится в `computeMentionedAgentCommentTriggers` (`server/internal/handler/comment.go`), результат которой вливается в `computeCommentAgentTriggers` и диспетчеризуется через `enqueueCommentAgentTriggers`. Эта функция ветвится только по двум типам:
+
+1. Ветвь `squad` разрешает лидера сквада и добавляет лидера в набор триггеров.
+2. После ветви `squad` всё, что не является `agent`, пропускается буквальной защитой:
+
+```go
+if m.Type != "agent" {
+    continue
+}
+```
+
+3. Уцелевшая ветвь `agent` добавляет этого агента в набор триггеров.
+
+Упоминание `member` или `issue` не достигает **ни одной** из ветвей — ветвь `squad` совпадает только с `squad`, а защита `!= "agent"` отбрасывает всё остальное. Поэтому такие упоминания отображают ссылку и не ставят в очередь никакой задачи.
+
+| Чтобы… | type | источник uuid | Что делает бэкенд |
+| --- | --- | --- | --- |
+| запустить агента | `agent` | `agent.id` | добавляет триггер `mention_agent`; ставит запуск в очередь через `EnqueueTaskForMention` |
+| передать работу скваду | `squad` | `squad.id` | разрешает `LeaderID` сквада, добавляет триггер `mention_squad_leader`; ставит в очередь запуск **лидера** через `EnqueueTaskForSquadLeader` |
+| сослаться на человека | `member` | `user_id` | отображает ссылку; не ставит в очередь **ничего** — запуска агента нет |
+| сослаться на задачу | `issue` | `issue.id` | отображает ссылку; не ставит в очередь **ничего** — всегда безопасно |
+| оповестить всех | `all` | буквальное `all` | отображает широковещание; не ставит ничего в очередь и **подавляет** автотриггер исполнителя (ниже) |
+
+Два источника постановки в очередь отображаются на перечисление trigger-source: `commentTriggerSourceMentionAgent` → `EnqueueTaskForMention`, `commentTriggerSourceMentionSquadLeader` → `EnqueueTaskForSquadLeader`. (Третий источник, `commentTriggerSourceIssueAssignee`, — это путь назначения, а не путь упоминания.)
+
+<Mermaid chart={`flowchart TD
+  P["util.ParseMentions(content)"] --> L["for each Mention m"]
+  L --> SQ{"m.Type == squad?"}
+  SQ -- yes --> SL["resolve squad.LeaderID<br/>add mention_squad_leader<br/>EnqueueTaskForSquadLeader"]
+  SQ -- no --> AG{"m.Type == agent?"}
+  AG -- no --> SKIP["continue<br/>(member / issue / all → no run)"]
+  AG -- yes --> AT["add mention_agent<br/>EnqueueTaskForMention"]
+`} />
+
+## `@all` — это широковещательный тип
+
+`@all` всегда использует буквальное `all` **как** в слоте типа, **так и** в слоте id — никогда UUID:
+
+```
+[@all](mention://all/all)
+```
+
+Оно адресуется всем по задаче и **не запускает никакого конкретного агента** (это ни `squad`, ни `agent`, поэтому оно попадает на пропуск `continue`). Оно также особенное во время триггера: в `commentMentionsOthersButNotAssignee` (`server/internal/handler/comment.go`) комментарий, несущий упоминание `@all`, трактуется как широковещание, которое **подавляет автоматический on-comment триггер исполнителя задачи** — проверка возвращает `true` через `util.HasMentionAll(mentions)`. Используйте `@all`, чтобы объявлять, а не чтобы запрашивать работу у исполнителя.
+
+## Находите правильный UUID для каждой сущности
+
+Цель ссылки — это реальный UUID сущности, никогда не отображаемое имя. Сначала разрешите имя в UUID с помощью соответствующей команды списка с `--output json`:
+
+| Упоминание | Команда | Поле для использования |
+| --- | --- | --- |
+| человек (`member`) | `agora workspace member list --output json` | `user_id` — **НЕ** id строки членства |
+| агент (`agent`) | `agora agent list --output json` | `id` |
+| сквад (`squad`) | `agora squad list --output json` | `id` |
+
+Для `member` id упоминания — это `user_id`, а не id членства. Собственный форматтер ростера бэкенда (`formatMention` в `server/internal/handler/squad_briefing.go`) выдаёт `[@<name>](mention://member/<user_id>)` для упоминаний участников, поэтому ссылка на участника, построенная из id членства, не разрешится в этого человека. Сопоставляйте по отображаемому имени; если имя неоднозначно или отсутствует, не гадайте — скажите об этом в комментарии вместо того, чтобы выдавать сломанную ссылку.
+
+## Случаи молчаливого no-op
+
+Все они не дают ни ошибки, ни запуска. Первый — это сбой разбора; остальные парсятся нормально, а затем являются no-op ниже по цепочке.
+
+- **Имя там, где должен быть UUID.** `mention://member/Alice` мёртв — группа id отвергает не-hex буквы, шаблон не совпадает, `ParseMentions` не возвращает ничего.
+- **UUID правильной формы, но неизвестный.** Корректно сформированный UUID, которым не владеет ни одна сущность, *действительно* парсится, затем промахивается при поиске: `GetAgentInWorkspace` / `GetSquadInWorkspace` возвращает ошибку, и цикл делает `continue`. Тот же видимый результат (ничего не срабатывает), другой механизм (промах поиска, а не сбой разбора).
+- **Уже ожидающая задача.** Даже корректный `@agent` / `@squad` пропускается, когда у цели уже есть ожидающая задача по этой задаче — `HasPendingTaskForIssueAndAgent` возвращает true, и цикл делает `continue`. Это защита от циклов; не повторяйте попытку.
+- **Заархивированный агент / нет рантайма** или сквад, чей лидер заархивирован: пропускается, когда `RuntimeID` невалиден или установлен `ArchivedAt`.
+- **Приватный агент, к которому актор не имеет доступа:** пропускается — путь упоминания напрямую проверяет `canAccessPrivateAgent` как для `@agent`, так и для `@squad`.
+
+## Предпросмотр и подавление для отдельного комментария
+
+Клиенты могут вызвать `POST /api/issues/{id}/comments/trigger-preview` перед отправкой. Обработчик `PreviewCommentTriggers` раскрывает идентификаторы задач, затем вызывает **тот же** `computeCommentAgentTriggers`, который используется в `CreateComment`, поэтому предпросматриваемые чипы агентов берутся из правил бэкенда, а не из клиентской переимплементации. Ответ несёт для каждого агента `id`, `name`, опциональный `avatar_url`, `source` и человекочитаемый `reason`.
+
+При создании клиенты могут отправить опциональный массив `suppress_agent_ids` в `CreateCommentRequest`. Сервер сначала вычисляет **полный** набор триггеров, затем удаляет эти id как пост-фильтр через `filterSuppressedCommentAgentTriggers`. Отсутствующее или пустое поле сохраняет поведение по умолчанию; валидный UUID, не входящий в вычисленный набор, является no-op; некорректный UUID отвергается на границе запроса через `parseUUIDSliceOrBadRequest`.
+
+## Source files
+
+| File | Symbols this page depends on |
+| --- | --- |
+| `server/internal/util/mention.go` | `MentionRe`, `Mention` (структура + док-комментарий, который пропускает `squad`), `ParseMentions`, `HasMentionAll`, `Mention.IsMentionAll` |
+| `server/internal/handler/comment.go` | `computeMentionedAgentCommentTriggers`, `if m.Type != "agent" { continue }`, `computeCommentAgentTriggers`, `enqueueCommentAgentTriggers`, `commentTriggerSourceMentionAgent`, `commentTriggerSourceMentionSquadLeader`, `EnqueueTaskForMention`, `EnqueueTaskForSquadLeader`, `HasPendingTaskForIssueAndAgent`, `canAccessPrivateAgent`, `commentMentionsOthersButNotAssignee`, `PreviewCommentTriggers`, `CreateCommentRequest.SuppressAgentIDs`, `filterSuppressedCommentAgentTriggers` |
+| `server/internal/handler/squad_briefing.go` | `formatMention` (упоминание участника использует `user_id`) |
+| `server/internal/service/builtin_skills/agora-mentioning/SKILL.md` | контракт для агентов, который зеркалит эта страница |
+
+Эти четыре источника — это один контракт. Если вы меняете регулярное выражение, ветвь триггера, вызов постановки в очередь или отображение источника id, обновите эту страницу **и** `agora-mentioning` SKILL.md (плюс его `references/mentioning-source-map.md`) в **том же PR** — встроенный навык поставляется агентам и молча учит устаревшему поведению, если код смещается без него.

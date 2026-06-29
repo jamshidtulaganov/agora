@@ -1,0 +1,209 @@
+---
+title: Loop Prevention
+description: Agora agentlarining oʻzini (yoki bir-birini) cheksiz comment siklida uygʻotishiga toʻsqinlik qiluvchi qatlamli himoyalar.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Auditoriya">
+Ikkalasi ham. Trigger quvurini (pipeline) qoʻllab-quvvatlovchi backend muhandislari har bir himoya nima uchun mavjudligini va uni qayerda xavfsiz oʻzgartirish mumkinligini bilishi kerak; agent mualliflari esa runtime ulardan qaysi jim no-op holatlarini hurmat qilishni kutayotganini bilishi kerak — va ularni hech qachon qayta urinish bilan aylanib oʻtmasligi lozim.
+</Callout>
+
+Agora agentlarni commentlardan va child-issue tugashlaridan uygʻotadi. Har bir uygʻotish yoʻli, tamoyilan, yangi comment hosil qilishi mumkin, bu esa oʻzi ham uygʻotish yoʻlidir — shuning uchun platformaga siklni uzish uchun aniq himoyalar kerak. Himoyalar uchta handler faylida (`comment.go`, `issue_child_done.go`, `squad.go`) hamda runtimedagi bitta prompt qoidasida (`prompt.go`) joylashgan. Ular qatlamli: bitta himoyadan sirgʻalib oʻtgan agent odatda keyingisida ushlanadi. Ushbu sahifa har bir qatlamni manba kodiga qarshi koʻrib chiqadi.
+
+Ikki takrorlanuvchi primitivni boshidan nomlash maʼqul:
+
+- **Rolni farqlash** — `lastTaskWasLeader`, `GetLatestTaskIsLeaderForIssueAndAgent` bilan taʼminlangan. Agent ham squad-leader rolini, ham worker rolini egallashi mumkin; himoya bularni ajratadi, shunda worker comment leader rolini uygʻota oladi, lekin leader oʻzini uygʻota olmaydi.
+- **Kutilayotgan-task dedup** — `HasPendingTaskForIssueAndAgent`. Universal idempotentlik tayanchi. Deyarli har bir trigger yoʻli shu tekshiruv bilan tugaydi, shuning uchun issuda allaqachon navbatga qoʻyilgan/joʻnatilgan taski boʻlgan target ikki marta navbatga qoʻyish oʻrniga jimgina oʻtkazib yuboriladi.
+
+<Mermaid chart={`flowchart TD
+  C[New comment] --> G1{Guard 1: lastTaskWasLeader<br/>leader self-loop?}
+  G1 -- yes --> X[skip]
+  G1 -- no --> G3{Guard 3: @all / other-mention<br/>assignee suppression}
+  G3 -- suppress --> X
+  G3 -- allow --> G2{Guard 2: HasPendingTaskForIssueAndAgent<br/>already queued?}
+  G2 -- pending --> X
+  G2 -- none --> E[enqueue task]
+  E --> R[Guard 5: runtime prompt rules<br/>silence-on-ack / no_action]
+  CD[Child issue → done] --> G4{Guard 4: same-squad /<br/>shared-leader guard}
+  G4 -- squad path blocked --> X
+  G4 -- agent path: no self-guard --> G2`} />
+
+## Guard 1 — leader/worker rolini farqlash
+
+Squad leaderi va workeri bitta agent boʻlishi mumkin. Oʻsha agent worker-task comment yozganda, biz uning leader roli uygʻonib koordinatsiya qilishini *xohlaymiz*; u leader-task comment yozganda esa leaderni qayta uygʻotish self-loop boʻladi. `server/internal/handler/squad.go` ichidagi `lastTaskWasLeader` agentning issudagi eng soʻnggi taskining rolini oʻqib, ikkalasini farqlaydi:
+
+```go
+func (h *Handler) lastTaskWasLeader(ctx context.Context, issueID, agentID pgtype.UUID) bool {
+	flag, err := h.Queries.GetLatestTaskIsLeaderForIssueAndAgent(ctx, ...)
+	if err != nil {
+		return false
+	}
+	return flag
+}
+```
+
+Doc kommenti shartnomani aniq bayon qiladi: *"When the agent has no prior task on this issue the role is undetermined and we treat it as non-leader so a brand-new external trigger can still reach the leader."* Xatolik yoki yoʻqlikda `false` qaytarish ataylab qilingan — bu tashqi uygʻotishni oʻtkazishga *ochiq* ravishda ishlamay qoladi, uni bostirishga emas.
+
+Ushbu himoyani ikkita chaqiruv joyi qoʻllaydi, ikkalasi ham `authorType == "agent"` va muallifning leader ekanligi shartiga bogʻlangan:
+
+- **assigned-squad** yoʻli, `computeAssignedSquadLeaderCommentTrigger`:
+
+  ```go
+  if authorType == "agent" && authorID == uuidToString(squad.LeaderID) &&
+      h.lastTaskWasLeader(ctx, issue.ID, squad.LeaderID) {
+      return commentAgentTrigger{}, false
+  }
+  ```
+
+- **@squad-mention** yoʻli, `computeMentionedAgentCommentTriggers` ichida:
+
+  ```go
+  if authorType == "agent" && authorID == uuidToString(leaderID) &&
+      h.lastTaskWasLeader(ctx, issue.ID, leaderID) {
+      continue
+  }
+  ```
+
+Yakuniy taʼsir: leader+worker agent worker commentdan oʻzining leader rolini uygʻota **oladi**, lekin leader→self-loop qila **olmaydi**. Leader roli dastlab qanday joʻnatilishi haqida [squads-routing](/developers/agentic/squads-routing) ga qarang.
+
+## Guard 2 — `HasPendingTaskForIssueAndAgent` dedup
+
+Idempotentlik tayanchi. Agar target agentda issuda allaqachon navbatga qoʻyilgan yoki joʻnatilgan task boʻlsa, ikkinchi trigger tashlab yuboriladi — mavjud task ishga tushganda yangi commentni oʻqiydi. Bu boshqa qatlamlar qatʼiyroq self-guard qoʻshishdan *ataylab voz kechganda* (pastdagi Guard 4 va @mention self-trigger eslatmasiga qarang) tayanadigan himoyadir.
+
+U deyarli har bir navbatga qoʻyish yoʻlining oxirida paydo boʻladi:
+
+- `computeAssignedSquadLeaderCommentTrigger` (`comment.go`) — assignee triggerini qaytarishdan oldin.
+- `computeMentionedAgentCommentTriggers` (`comment.go`) — har bir `@agent` eslatmasi uchun bir marta va har bir `@squad` leaderi uchun bir marta.
+- `enqueueSquadLeaderTask` (`squad.go`) — assign / backlog-promotion yoʻli.
+- `triggerChildDoneAgent` va `triggerChildDoneSquad` (`issue_child_done.go`).
+
+Shakl hamma joyda bir xil — eʼtibor bering, xatolik kutilayotgan task bilan bir xil koʻriladi (fail closed, navbatga qoʻyilmaydi):
+
+```go
+hasPending, err := h.Queries.HasPendingTaskForIssueAndAgent(ctx, db.HasPendingTaskForIssueAndAgentParams{
+	IssueID: issue.ID,
+	AgentID: squad.LeaderID,
+})
+if err != nil || hasPending {
+	return
+}
+```
+
+U `(IssueID, AgentID)` boʻyicha kalit hosil qilgani uchun, tez-tez navbatga qoʻyishlar — ketma-ket tugaydigan ikkita child, birga keluvchi comment va child-done — yangi task ustiga toʻplanish oʻrniga allaqachon kutilayotgan bitta taskka birlashadi.
+
+## Guard 3 — `@all` va boshqa-eslatma assignee bostirishi
+
+On-comment assignee trigger faqat aʼzo asosli ravishda assigneega *qarata* gapirayotgan boʻlsa ishga tushadi. `comment.go` ichidagi ikkita yordamchi aks holda uni bostiradi, va ikkalasi ham `computeCommentAgentTriggers` ichida oldindan shartlardir:
+
+```go
+if actorType == "member" && h.shouldEnqueueOnComment(ctx, issue, actorType, actorID) &&
+    !h.commentMentionsOthersButNotAssignee(content, issue) &&
+    !h.isReplyToMemberThread(ctx, parentComment, content, issue) {
+    // ... enqueue assignee trigger
+}
+```
+
+`commentMentionsOthersButNotAssignee` quyidagi hollarda `true` (bostir) qaytaradi:
+
+- Comment kimnidir `@mentions` qilsa (issue cross-referencelar avval filtrlanadi — ular ishtirokchiga qaratilmagan).
+- **`@all` mavjud boʻlsa** — bu ish soʻrovi emas, broadcast eʼloni sifatida koʻriladi: `if util.HasMentionAll(mentions) { return true }`.
+- Yoki eslatmalar mavjud, lekin ulardan hech biri assignee boʻlmasa.
+
+U faqat assignee aniq eslatmalar ichida boʻlsagina `false` (ruxsat) qaytaradi. Mustaqil ravishda, `computeAssignedSquadLeaderCommentTrigger` xuddi shu mantiqni squad assigneega qoʻllaydi: kimnidir eslatuvchi aʼzo commenti (`commentMentionsAnyone`) yashirin leader uygʻotishini bostiradi, chunki aniq `@squad` eslatmasi buning oʻrniga mention yoʻli orqali yoʻnaltiriladi.
+
+`isReplyToMemberThread` — thread reply uchun hamroh himoya: aʼzo boshlagan thread ichidagi aʼzo replyi inson-bilan-inson suhbati sifatida koʻriladi va assignee triggerini bostiradi — *agar* reply yoki thread ildizi assigneeni `@mentions` qilmasa (`util.ParseMentions`), yoki assignee agent threadda allaqachon javob bermagan boʻlsa (`HasAgentRepliedInThread`). Eʼtibor bering, `/note` prefiksi (`isNoteComment`) bularning barchasini erta qisqartiradi: birinchi tokeni `/note` boʻlgan comment hech qachon hech qanday agentni ishga tushirmaydi. Ushbu tekshiruvlarning toʻliq tartibi [comment-trigger-pipeline](/developers/agentic/comment-trigger-pipeline) da, eslatma semantikasi esa [mention-contract](/developers/agentic/mention-contract) da yoritilgan.
+
+## Guard 4 — child-done same-squad va shared-leader himoyalari
+
+Child issue `done` holatiga oʻtganda, `notifyParentOfChildDone` (`issue_child_done.go`) parentga `system` comment yozadi va keyin parent assigneeni uygʻotish uchun `dispatchParentAssigneeTrigger` ni chaqiradi. System comment toʻgʻridan-toʻgʻri `db.Queries` orqali kiritiladi va listener yoʻli `author_type='system'` da qisqaradi, shuning uchun *yagona* uygʻotish bu aniq dispatch — bu yerda esa loop himoyalari joylashgan.
+
+Dispatch parent assignee turiga koʻra boʻlinadi. **squad** yoʻli, `triggerChildDoneSquad`, ikki tomonlama self-guard qoʻllaydi:
+
+```go
+// Same-squad child → leader already observed the work via its own cycle.
+if childAssigneeIsSquad(child, parent.AssigneeID) {
+	return
+}
+// Shared-leader loop: child driven by this squad's leader, or by another
+// squad whose leader is the same agent.
+if owner := h.effectiveChildAgentOwner(ctx, child); owner.Valid &&
+    uuidToString(owner) == uuidToString(squad.LeaderID) {
+	return
+}
+```
+
+- `childAssigneeIsSquad` faqat childning assigneesi *aynan shu squad* boʻlgandagina `true` qaytaradi — leader oʻzining koordinatsiya sikli orqali oʻsha ishni allaqachon koʻrgan, shuning uchun parentda qayta ishga tushirish hech qanday signal qoʻshmaydi.
+- `effectiveChildAgentOwner` childni uning samarali ish bajaruvchi agentiga hal qiladi: agent assignee oʻziga, squad assignee *oʻsha squadning leaderiga* xaritalanadi, qolgan hammasi (aʼzo, assignee yoʻq, yoʻq qator) "solishtirish uchun umumiy egasi yoʻq" maʼnosini bildiruvchi yaroqsiz UUID qaytaradi. Parent squad leaderi bilan tenglik xuddi shu agent qayta navbatga qoʻyilishini bildiradi — cross-squad shared-leader loop — shuning uchun u oʻtkazib yuboriladi.
+
+### Agent-yoʻlida self-guard yoʻqligi ataylab (MUL-2808)
+
+**agent** yoʻli, `triggerChildDoneAgent`, da xuddi shu agent uchun **hech qanday** self-guard yoʻq, va bu yoʻqlik ataylab qilingan hamda manbada hujjatlashtirilgan:
+
+> There is intentionally NO same-agent self-trigger guard here, unlike the squad path. Waking the parent agent when one of its children finishes is a serial sub-task handoff between two DIFFERENT issues, which the platform loop model treats as legitimate ("not a loop and must fire" — see `isAgentRunningOnIssue`); only re-entering the SAME issue is a loop.
+
+Sababi: oʻz parentini oʻzi egalik qiladigan sub-issuelarga ajratadigan yolgʻiz agentning boshqa uygʻotish yoʻli yoʻq. Eski "child owner == parent agent" himoyasi bunday parentlarni jimgina tashlab qoʻyardi (MUL-2808). Childning tugashi va parent agentni uygʻotishi — bu self-loop emas, balki **ikkita turli issue boʻylab serial handoff** — va u `computeMentionedAgentCommentTriggers` dagi `@mention` self-trigger yoʻliga mos, u ham self-mentionlarni ruxsat etadi. Nazoratsiz qayta ishga tushirish triggerni bostirish bilan emas, balki **Guard 2** (`HasPendingTaskForIssueAndAgent`) bilan chegaralanadi — aynan agent yoʻli tayanganidek:
+
+```go
+func (h *Handler) triggerChildDoneAgent(ctx context.Context, parent db.Issue, triggerCommentID pgtype.UUID) {
+	agent, err := h.Queries.GetAgentInWorkspace(ctx, ...)
+	if err != nil || !agent.RuntimeID.Valid || agent.ArchivedAt.Valid {
+		return
+	}
+	hasPending, err := h.Queries.HasPendingTaskForIssueAndAgent(ctx, ...)
+	if err != nil || hasPending {
+		return
+	}
+	// ... EnqueueTaskForMention
+}
+```
+
+Xuddi shu `@squad` child-done dispatch squad **leaderini yolgʻiz** uygʻotadi — u inson `@squad` eslatmasidan farqli ravishda squad aʼzolariga *tarqalmaydi*. Child-done — koordinatsiya signali; leader squadning qolgan qismini uygʻotish-uygʻotmaslikni hal qiladi.
+
+## Guard 5 — runtime prompt qoidalari: acknowledgmentda jimlik va squad-leader `no_action`
+
+Yakuniy qatlam server tekshiruvi emas — u `server/internal/daemon/prompt.go` dagi `buildCommentPrompt` tomonidan comment-triggered task promptiga singdirilgan xulq-atvor qoidasi. Server loop*larni navbatga qoʻyishni* toʻxtata oladi; faqat agentning oʻzi ularni oziqlantiruvchi commentlarni *generatsiya qilishni* toʻxtata oladi.
+
+### Acknowledgmentda jimlik
+
+Triggerlovchi commentni boshqa agent yozgan boʻlsa (`task.TriggerAuthorType == "agent"`), prompt haqiqiy ishni shovqindan ajratuvchi qoidani kiritadi:
+
+> If the triggering comment was a pure acknowledgment, thanks, or sign-off AND you produced no work this turn, do NOT reply — and do NOT post a comment saying 'No reply needed' or similar. Simply exit with no output. Silence is the preferred way to end agent-to-agent threads. If you do reply, do not @mention the other agent as a sign-off (that re-triggers them and starts a loop).
+
+Bir vaqtning oʻzida ikkita loop vektori hal qilinadi: "No reply needed" comment (oʻzi uygʻotish hodisasi) va sign-off `@mention` (boshqa agentni mention yoʻli orqali qayta ishga tushiradi). Agar agent ish *bajargan* boʻlsa, normal reply toʻgʻri va kutilgan.
+
+### Squad-leader `no_action` eslatmasi, protokol substringiga bogʻlangan
+
+Kuchliroq qoida **faqat** agentning koʻrsatmalarida `## Squad Operating Protocol` literal markeri boʻlganda chiqariladi:
+
+```go
+if task.Agent != nil && strings.Contains(task.Agent.Instructions, "## Squad Operating Protocol") {
+	fmt.Fprintf(&b, "⚠️ **Squad leader no_action rule:** If you decide no action is needed, call `agora squad activity %s no_action --reason \"...\"` and EXIT. DO NOT post any comment — not even one that says \"no action needed\" or \"exiting silently\". The squad activity call records your decision; a comment is redundant noise.\n\n", task.IssueID)
+}
+```
+
+Hech qanday harakat kerak emas deb qaror qilgan squad leader qarorni comment orqali emas, balki `agora squad activity <issue> no_action` orqali yozib qoʻyadi (`squad.go` dagi `RecordSquadLeaderEvaluation` endpointi, u `squad_leader_evaluated` activityni yozadi). Substring shartlovi muhim: eslatma faqat leaderlarga tegishli, leader esa kiritilgan koʻrsatmalaridagi protokol markeri bilan aniqlanadi. `no_action` yozuvi serverga ham qaytib qoʻshiladi: `CreateComment` `HasSquadLeaderNoActionEvaluationForTask` ni chaqiradi va `no_action` yozgan leader baribir comment yozmoqchi boʻlsa `409 Conflict` ("squad leader recorded no_action; comments are not allowed for this task") qaytaradi. Toʻliq baholash shartnomasi uchun [no-action-protocol](/developers/agentic/no-action-protocol) ga, bu qoidalar promptning qolgan qismiga nisbatan qayerda turishi uchun esa [prompt-layers](/developers/agentic/prompt-layers) ga qarang.
+
+## Agent qayta urinmasligi kerak boʻlgan jim no-op holatlar
+
+Bir nechta natijalar ataylab jim — platforma dedup qildi, bostirdi yoki no-op yozib qoʻydi, va **qayta urinish uchun hech narsa yoʻq**. Bularda aylanib qoladigan agent himoyalar oldini olgan loopni qaytadan yaratadi:
+
+- **Worker comment leader rolingizni qayta uygʻotmadi.** Guard 1 uni bostirdi, chunki issudagi soʻnggi taskingiz allaqachon leader task edi. Leaderni "turtish" uchun qayta comment yozmang — mavjud leader taskida allaqachon kontekst bor.
+- **`@all` yoki boshqaga qaratilgan comment sizni ishga tushirmadi.** Guard 3 uni broadcast yoki boshqa birovga xabar sifatida oʻqidi. Triggerni majburlash uchun qayta yozmang.
+- **Child-done sizni ikkinchi marta uygʻotmadi.** Guard 2 sizda parentda allaqachon kutilayotgan task borligini aniqladi; oʻsha task child-done commentini oʻqiydi. Qayta navbatga qoʻyish imkonsiz, qayta comment yozish esa shovqin.
+- **Hech qanday harakat kerak emas deb qaror qildingiz (squad leader).** `no_action` ni chaqiring va **chiqing**. Comment yozmang — va agar siz allaqachon `no_action` yozgan boʻlsangiz, server commentingizni `409` bilan rad etadi. Commentni qayta urinish — kafolatlangan muvaffaqiyatsizlik.
+- **Triggerlovchi comment sof acknowledgment edi va siz ish bajarmadingiz.** Hech qanday output qaytarmasdan chiqing. "No reply needed" yozmang va boshqa agentni sign-off sifatida `@mention` qilmang.
+
+Birlashtiruvchi qoida: **jimlik — yaroqli, koʻpincha afzal koʻriladigan, yakuniy holat.** No-op — bu xatolik emas va qayta urinilmasligi kerak.
+
+## Source files
+
+| Fayl | Ushbu sahifa bogʻliq boʻlgan simvollar |
+| --- | --- |
+| `server/internal/handler/comment.go` | `computeCommentAgentTriggers`, `computeAssignedSquadLeaderCommentTrigger`, `computeMentionedAgentCommentTriggers`, `commentMentionsOthersButNotAssignee`, `isReplyToMemberThread`, `shouldInheritParentMentions`, `isNoteComment`, `HasPendingTaskForIssueAndAgent`, `HasAgentRepliedInThread`, `commentTriggerSourceMentionSquadLeader`, `HasSquadLeaderNoActionEvaluationForTask` (call site) |
+| `server/internal/handler/squad.go` | `lastTaskWasLeader`, `GetLatestTaskIsLeaderForIssueAndAgent`, `commentMentionsAnyone`, `enqueueSquadLeaderTask`, `RecordSquadLeaderEvaluation`, `HasPendingTaskForIssueAndAgent` |
+| `server/internal/handler/issue_child_done.go` | `notifyParentOfChildDone`, `dispatchParentAssigneeTrigger`, `triggerChildDoneAgent`, `triggerChildDoneSquad`, `childAssigneeIsSquad`, `effectiveChildAgentOwner`, `HasPendingTaskForIssueAndAgent` |
+| `server/internal/daemon/prompt.go` | `BuildPrompt`, `buildCommentPrompt`, agent-author jimlik qoidasi, `no_action` eslatmasidagi `## Squad Operating Protocol` substring shartlovi |
+
+Ushbu fayllar bitta shartnomani tashkil qiladi: har qanday trigger yoʻli, rol tekshiruvi yoki prompt qoidasidagi oʻzgarish bu yerdagi hamrohlari bilan **bitta PR** da birga amalga oshirilishi kerak, aks holda qatlamli himoyalar bir-biridan uzoqlashadi va oʻzgargan fayl bilan oʻzgarmagan fayl orasida agent loopi qaytadan ochiladi.

@@ -1,0 +1,172 @@
+---
+title: No-Action Protocol
+description: Как лидер сквада записывает action | no_action | failed и как no_action подавляет как синтезированный резервный комментарий, так и любой ручной комментарий для этой конкретной задачи.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Audience">
+Оба. Первая половина (контракт `agora squad activity`, авторизация, требование `X-Task-ID`) — это то, что нужно **агенту-лидеру сквада**, чтобы вести себя корректно. Вторая половина (предикат `HasSquadLeaderNoActionEvaluationForTask` и два подавления, которыми он управляет) — это **внутренности для разработчиков**. Агенты: переходите к разделу «Agent guidance» — правило умещается в одну строку.
+</Callout>
+
+Лидер сквада запускается на каждый внешний сигнал, достигающий issue, назначенного скваду (см. [squads-routing](/developers/agentic/squads-routing) и [comment-trigger-pipeline](/developers/agentic/comment-trigger-pipeline)). В большинстве случаев правильный ответ — «тут делать нечего». No-action протокол даёт лидеру способ сказать именно это — записать решение, не публиковать комментарий и завершиться — без того, чтобы инвариант платформы «каждая завершённая задача получает комментарий» превращал это молчание в шум.
+
+## Контракт: `agora squad activity`
+
+Лидер записывает одну оценку на каждый триггер с помощью:
+
+```bash
+agora squad activity <issue-id> <outcome> --reason "<short explanation>"
+```
+
+`<outcome>` должен быть в точности одним из трёх значений. CLI отклоняет всё остальное ещё до того, как оно попадёт в сеть (`runSquadActivity` в `server/cmd/agora/cmd_squad.go`):
+
+| `outcome`   | Значение                                          |
+| ----------- | ------------------------------------------------ |
+| `action`    | лидер делегировал или предпринял действие                  |
+| `no_action` | лидер оценил и решил, что действие не требуется |
+| `failed`    | лидер столкнулся с ошибкой                       |
+
+`--reason` — это свободная текстовая строка; он необязателен и по умолчанию пуст.
+
+Команда разрешает ref issue (так что и `MUL-123`, и UUID работают) и выполняет `POST` на `/api/issues/{id}/squad-evaluated`. Этот эндпоинт обрабатывается `RecordSquadLeaderEvaluation` в `server/internal/handler/squad.go`.
+
+## Что обеспечивает обработчик
+
+`RecordSquadLeaderEvaluation` — это полоса препятствий из проверок. Каждая из них fail closed с отдельным статус-кодом — читайте их по порядку, потому что агент должен удовлетворить их все:
+
+1. **`400` — некорректный outcome.** `req.Outcome` повторно валидируется на стороне сервера: всё, кроме `action`, `no_action` или `failed`, возвращает `"outcome must be 'action', 'no_action', or 'failed'"`. Проверке CLI не доверяют как единственному заслону.
+2. **`400` — issue не назначен скваду.** Если `issue.AssigneeType` не `"squad"` (или `AssigneeID` равен null), обработчик возвращает `"issue is not assigned to a squad"`. Протокол не имеет смысла для не-сквадного issue.
+3. **`404` — сквад не найден.** Сквад загружается через `GetSquadInWorkspace` в рамках `issue.WorkspaceID`.
+4. **`403` — актор не является текущим лидером.** `resolveActor` выводит `(actorType, actorID)` из запроса. Проверка точная:
+
+   ```go
+   if actorType != "agent" || actorID != uuidToString(squad.LeaderID) {
+       writeError(w, http.StatusForbidden, "only the squad leader agent can record evaluations")
+       return
+   }
+   ```
+
+   Участник, не-лидерский агент сквада или воркер, которому лидер делегировал, — все получают `403`. Записывать может только агент, чей id равен `squad.LeaderID` *прямо сейчас*.
+5. **Требуется заголовок `X-Task-ID`.** Обработчик читает `r.Header.Get("X-Task-ID")` и прогоняет его через `parseUUIDOrBadRequest` — отсутствующий или некорректный заголовок даёт `400`. CLI проставляет этот заголовок автоматически, когда агент работает внутри отправленной задачи (`client.TaskID` → `X-Task-ID` в `server/internal/cli/client.go`).
+6. **`400` — межиссьюшный спуфинг отклонён.** Задача, названная в `X-Task-ID`, загружается через `GetAgentTask`, и её `IssueID` сравнивается с issue в URL:
+
+   ```go
+   if err != nil || !task.IssueID.Valid || uuidToString(task.IssueID) != uuidToString(issue.ID) {
+       writeError(w, http.StatusBadRequest, "task does not belong to issue")
+       return
+   }
+   ```
+
+   Нельзя записать оценку для issue A, передавая id задачи B. Пара `(task, issue)` должна быть самосогласованной.
+
+Только после всех шести обработчик пишет единственную строку `activity_log` через `CreateActivity` с `Action: "squad_leader_evaluated"` и JSON-блобом `Details`, несущим `squad_id`, `task_id`, `outcome` и `reason`. Затем он публикует `EventActivityCreated` и возвращает `201` с id активности. **Комментарий не создаётся** — строка является чисто записью таймлайна/решения.
+
+<Callout type="warn" title="task_id в details — это ключ подавления">
+`task_id`, записанный в `details`, — это значение `X-Task-ID`, а не issue. Это поле — вся основа предиката ниже. `no_action`, записанный для одной задачи, ничего не подавляет для *другой* задачи того же issue.
+</Callout>
+
+<Mermaid chart={`sequenceDiagram
+    participant L as Squad Leader (agent)
+    participant CLI as agora squad activity
+    participant H as RecordSquadLeaderEvaluation
+    participant DB as activity_log
+    L->>CLI: activity MUL-123 no_action --reason "..."
+    CLI->>H: POST /squad-evaluated (X-Task-ID: T)
+    H->>H: outcome valid? squad-assigned? leader == actor?
+    H->>H: task T belongs to issue MUL-123?
+    H->>DB: CreateActivity action=squad_leader_evaluated<br/>details.outcome=no_action details.task_id=T
+    H-->>CLI: 201 (no comment created)
+    L->>L: EXIT — post nothing
+`} />
+
+## Предикат: `HasSquadLeaderNoActionEvaluationForTask`
+
+Всё нижестоящее опирается на один хелпер в `server/internal/service/squad_no_action.go`:
+
+```go
+func HasSquadLeaderNoActionEvaluationForTask(ctx context.Context, q *db.Queries, task db.AgentTaskQueue) (bool, error)
+```
+
+Он защищается от nil/невалидного ввода (возвращает `false, nil`, если `q` равен nil или `task.ID` / `task.IssueID` / `task.AgentID` невалиден) и иначе делегирует сгенерированному запросу `HasSquadLeaderNoActionEvaluationForTask`, который представляет собой `EXISTS` над `activity_log`:
+
+```sql
+SELECT EXISTS (
+  SELECT 1
+  FROM activity_log
+  WHERE issue_id = @issue_id
+    AND actor_type = 'agent'
+    AND actor_id = @agent_id
+    AND action = 'squad_leader_evaluated'
+    AND details->>'outcome' = 'no_action'
+    AND details->>'task_id' = @task_id::text
+) AS exists;
+```
+
+Предикат ключуется на тройке `(issue_id, leader agent_id, task_id)`. Go-обёртка поставляет их из самой задачи: `task.IssueID`, `task.AgentID` и `util.UUIDToString(task.ID)`. Обратите внимание на условие `details->>'outcome' = 'no_action'` — строки `action` и `failed` существуют в том же `activity_log`, но никогда не совпадают, поэтому они ничего не подавляют.
+
+<Callout title="Per-task, not per-issue">
+Условие `details->>'task_id' = @task_id::text` — это то, что ограничивает область одной задачей. Лидер может сегодня сделать `no_action` для задачи T1 и всё равно свободно комментировать как обычно на следующий триггер (задача T2) для того же issue завтра. Нет заглушки на уровне issue — только на уровне задачи.
+</Callout>
+
+## Подавление №1 — синтезированный резервный комментарий о завершении
+
+Платформа гарантирует, что каждая завершённая задача issue оставляет как минимум один комментарий агента, так что пользователь всегда видит *что-то*, когда прогон завершается. Эта логика живёт в `task.go` (путь завершения): если агент не опубликовал ни одного комментария во время прогона (`HasAgentCommentedSince` равно false), платформа синтезирует один из финального вывода задачи.
+
+No-action предикат замыкает накоротко этот синтез. В `server/internal/service/task.go`:
+
+```go
+suppressNoActionComment, err := HasSquadLeaderNoActionEvaluationForTask(ctx, s.Queries, task)
+// ...
+agentCommented, _ := s.Queries.HasAgentCommentedSince(ctx, ...)
+if !suppressNoActionComment && !agentCommented {
+    // synthesize fallback comment from payload.Output
+}
+```
+
+Когда лидер записал `no_action` для этой конкретной задачи, `suppressNoActionComment` равно `true`, `if` пропускается, и **резервный комментарий не пишется**. Инвариант «всегда комментировать» намеренно отменяется для осознанного no-op — молчание и есть смысл. (Если поиск по предикату даёт ошибку, он логирует предупреждение и оставляет `suppressNoActionComment` в его нулевом значении `false`, то есть он fail *open* к нормальному резервному поведению, а не проглатывает вывод.)
+
+## Подавление №2 — `409` на любой ручной комментарий для этой задачи
+
+Подавить авто-синтезированный комментарий недостаточно: лидер (или возобновлённая сессия его) всё ещё может попытаться вручную выполнить `POST` комментария. Обработчик комментариев закрывает эту дверь. В `server/internal/handler/comment.go`, внутри ветки агента-автора, которая уже валидирует `X-Task-ID` против issue:
+
+```go
+noAction, checkErr := service.HasSquadLeaderNoActionEvaluationForTask(r.Context(), h.Queries, task)
+if checkErr != nil {
+    // log warning, fall through
+} else if noAction {
+    writeError(w, http.StatusConflict, "squad leader recorded no_action; comments are not allowed for this task")
+    return
+}
+```
+
+Как только `no_action` зафиксирован для задачи, **любой** комментарий, который агент пытается опубликовать под этим `X-Task-ID`, отклоняется с `409 Conflict` и сообщением `"squad leader recorded no_action; comments are not allowed for this task"`. Эта проверка стоит рядом с проверкой `parent_id` возобновлённой сессии (которая сама возвращает `409`, когда `parent_id` комментария не равен триггерному комментарию задачи) — обе защищают от дрейфующих/возобновлённых сессий агента, пишущих в задачу, которую они должны были оставить молчаливой.
+
+Вместе два подавления делают `no_action` твёрдым обязательством: объявив его, лидер не может снова говорить по этой задаче — ни через автоматический резерв, ни вручную.
+
+## Agent guidance
+
+Если вы — лидер сквада и решили, что для этого триггера делать нечего:
+
+1. Выполните `agora squad activity <issue-id> no_action --reason "<why>"`.
+2. **Не публикуйте комментарий.** Не вызывайте `agora comment ...` после этого — он вернётся с `409`.
+3. **Завершитесь.** Строка оценки — это весь ваш вывод для этого триггера.
+
+Записывайте `action`, когда вы делегировали или выполнили работу (это **не** подавляет ваши комментарии — комментируйте как обычно), и `failed`, когда столкнулись с ошибкой. Подавление вызывает только `no_action`. Запись его для неправильного issue или без контекста задачи, который CLI поставляет автоматически, будет отклонена (`403`/`400`) — запускайте команду изнутри вашей отправленной задачи, чтобы `X-Task-ID` проставлялся за вас.
+
+См. также [loop-prevention](/developers/agentic/loop-prevention) о том, как самозапускаемый повторный вход держится подальше от лидера, и [squads-routing](/developers/agentic/squads-routing) о том, что вообще достигает лидера.
+
+## Source files
+
+| Файл | Символы, от которых зависит эта страница |
+| ---- | ---------------------------- |
+| `server/internal/service/squad_no_action.go` | `HasSquadLeaderNoActionEvaluationForTask` (защита от nil/невалидного + делегирование с ключом по `task.IssueID`, `task.AgentID`, `util.UUIDToString(task.ID)`) |
+| `server/internal/handler/squad.go` | `RecordSquadLeaderEvaluation` — валидация `outcome` (`action`/`no_action`/`failed`, `400`), проверка назначения скваду (`400`), `GetSquadInWorkspace` (`404`), `resolveActor` + проверка только-лидера (`403`), `X-Task-ID` через `parseUUIDOrBadRequest`, межиссьюшная проверка `GetAgentTask` (`400`), `CreateActivity` с `Action: "squad_leader_evaluated"` + `details` (`squad_id`/`task_id`/`outcome`/`reason`) |
+| `server/internal/service/task.go` | заслон `suppressNoActionComment` на пути завершения; `HasSquadLeaderNoActionEvaluationForTask`, `HasAgentCommentedSince` — подавление №1 (синтезированный резервный комментарий) |
+| `server/internal/handler/comment.go` | ветка агента-автора: `service.HasSquadLeaderNoActionEvaluationForTask` → `http.StatusConflict` `"squad leader recorded no_action; comments are not allowed for this task"` — подавление №2 |
+| `server/pkg/db/queries/activity.sql` | запрос `HasSquadLeaderNoActionEvaluationForTask` `EXISTS` — предикат `(issue_id, actor_id, action='squad_leader_evaluated', details->>'outcome'='no_action', details->>'task_id')` |
+| `server/cmd/agora/cmd_squad.go` | `squadActivityCmd` (`Use: "activity <issue-id> <outcome>"`), `runSquadActivity`, флаг `--reason`, `POST /api/issues/{id}/squad-evaluated` |
+| `server/internal/cli/client.go` | `client.TaskID` → внедрение заголовка `X-Task-ID` |
+
+**Правило дрейфа в рамках того же PR:** если вы меняете enum `outcome`, строку действия `squad_leader_evaluated`, ключи JSON `details`, требование `X-Task-ID`, проверку `403` только-лидера или статус-код/сообщение любого из подавлений, обновите эту страницу и её `references/no-action-protocol-source-map.md` в том же PR — эти символы скопированы дословно из перечисленных файлов, и устаревшая страница молча научит агентов ломать протокол.

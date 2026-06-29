@@ -1,0 +1,182 @@
+---
+title: Comment Trigger Pipeline
+description: Bitta izoh qanday qilib agent vazifalariga tarmoqlanadi — uchta trigger manbasi, bostirish va no_action izoh-bloklash darvozasi.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Auditoriya">
+Bu sahifa izohga asoslangan vazifa triggeri ustida ishlaydigan **ham** muhandislar **ham** agentlar uchun. U `triggerTasksForComment` bitta izohni nol yoki undan ortiq agent vazifasiga qanday aylantirishini, nima uchun ba'zan assignee uyg'otilishi bostirilishini va nima uchun aynan shu hisoblash `/comments/trigger-preview` chiplarini ta'minlashini tushuntiruvchi vakolatli manbadir. "Nega mening izohim agentni uyg'otdi / uyg'otmadi" muammosini hal qilayotgan agentlar buni /developers/agentic/mention-contract va /developers/agentic/squads-routing bilan birga o'qishlari kerak. Aloqador: /developers/agentic/no-action-protocol, /developers/agentic/loop-prevention, /developers/conventions.
+</Callout>
+
+## Yagona kirish nuqtasi
+
+Issue ustiga tushgan har bir izoh `triggerTasksForComment` (`server/internal/handler/comment.go`) orqali o'tadi. U `CreateComment` oxirida va tahrirlangan kontent haqiqatan o'zgargan bo'lsa, yana `UpdateComment` dan chaqiriladi. U ketma-ket uchta ishni bajaradi:
+
+```go
+func (h *Handler) triggerTasksForComment(ctx context.Context, issue db.Issue, comment db.Comment, parentComment *db.Comment, actorType, actorID string, suppressAgentIDs []pgtype.UUID) {
+	if isNoteComment(comment.Content) {
+		return
+	}
+	triggers := h.computeCommentAgentTriggers(ctx, issue, comment.Content, parentComment, actorType, actorID)
+	triggers = filterSuppressedCommentAgentTriggers(triggers, suppressAgentIDs)
+	h.enqueueCommentAgentTriggers(ctx, issue, comment.ID, triggers)
+}
+```
+
+`/note` prefiksi (`isNoteComment`, `noteCommentPrefix = "/note"`) qat'iy erta chiqish nuqtasidir: birinchi bo'sh joy bilan ajratilgan tokeni `/note` (registrdan qat'i nazar) bo'lgan izoh har qanday boshqa izoh kabi saqlanadi, lekin hech qachon agentni ishga tushirmaydi. `computeCommentAgentTriggers` o'zining boshida `isNoteComment` ni mustaqil ravishda qayta tekshiradi, shuning uchun preview yo'li ham qamrab olinadi.
+
+<Mermaid chart={`flowchart TD
+  C["Comment created / edited"] --> N{"isNoteComment?"}
+  N -- yes --> STOP["return — no triggers"]
+  N -- no --> T["computeCommentAgentTriggers<br/>(folds 3 sources, dedupes by agent.ID)"]
+  T --> F["filterSuppressedCommentAgentTriggers<br/>(drop suppress_agent_ids)"]
+  F --> E["enqueueCommentAgentTriggers<br/>(switch on Source)"]
+  E --> A["EnqueueTaskForIssue"]
+  E --> L["EnqueueTaskForSquadLeader"]
+  E --> M["EnqueueTaskForMention"]
+`} />
+
+## Uchta manbani birlashtirish
+
+`computeCommentAgentTriggers` `commentAgentTrigger` qiymatlarining tartiblangan, agent bo'yicha takrorlanmaydigan ro'yxatini quradi. Lokal `add` closure `uuidToString(trigger.Agent.ID)` ni `seen` map ga kalit qiladi, shuning uchun agentni da'vo qilgan **birinchi** manba g'olib bo'ladi va xuddi shu agent uchun keyingi manbalar tashlab yuboriladi. Uchta manba shu belgilangan tartibda birlashtiriladi:
+
+1. **Issue-assignee uyg'otish** (`commentTriggerSourceIssueAssignee`)
+2. **Tayinlangan squad-leader uyg'otish** (yana `commentTriggerSourceIssueAssignee`, lekin nil bo'lmagan `Squad` ni olib yuradi)
+3. **Eslatilgan agentlar** (`commentTriggerSourceMentionAgent` / `commentTriggerSourceMentionSquadLeader`)
+
+```go
+type commentAgentTriggerSource string
+
+const (
+	commentTriggerSourceIssueAssignee      commentAgentTriggerSource = "issue_assignee"
+	commentTriggerSourceMentionAgent       commentAgentTriggerSource = "mention_agent"
+	commentTriggerSourceMentionSquadLeader commentAgentTriggerSource = "mention_squad_leader"
+)
+
+type commentAgentTrigger struct {
+	Agent  db.Agent
+	Source commentAgentTriggerSource
+	Squad  *db.Squad
+}
+```
+
+### Manba 1 — issue-assignee uyg'otish
+
+Assignee avto-trigger faqat quyidagilarning **barchasi** bajarilganda ishga tushadi:
+
+- `actorType == "member"` — agentlar bu yo'l orqali hech qachon assignee'ni avtomatik uyg'otmaydi (mention/squad manbalari agentdan-agentga holatini boshqaradi).
+- `h.shouldEnqueueOnComment(ctx, issue, actorType, actorID)` — issue `agent` ga tayinlangan (squad/member emas), agentning runtime'i bor va arxivlanmagan, member `canAccessPrivateAgent` dan o'tadi va `(issue, agent)` uchun mavjud kutilayotgan vazifa **yo'q** (`HasPendingTaskForIssueAndAgent` — tez ketma-ket izohlar uchun tabiiy dedup). `server/internal/handler/issue.go` ga qarang.
+- `!h.commentMentionsOthersButNotAssignee(content, issue)` — quyidagi [Boshqalarga yo'naltirilgan eslatmalar](#other-directed-mentions-suppress-the-assignee) ga qarang.
+- `!h.isReplyToMemberThread(ctx, parentComment, content, issue)` — member boshlagan thread ichidagi member javobi inson suhbati sifatida qaraladi, ish so'rovi sifatida emas — agar javob yoki thread ildizi assignee'ni @mention qilmasa yoki assignee thread'da allaqachon javob bermagan bo'lsa.
+
+Barcha darvozalar o'tganda, assignee agenti `GetAgentInWorkspace` orqali yuklanadi va `Source: commentTriggerSourceIssueAssignee` hamda nil `Squad` bilan qo'shiladi.
+
+### Manba 2 — tayinlangan squad-leader uyg'otish
+
+`computeAssignedSquadLeaderCommentTrigger` issue agentga emas, balki **squad** ga tayinlangan holatni boshqaradi. U `issue.AssigneeType.String == "squad"` va `issue.AssigneeID` to'g'ri bo'lmasa, `(commentAgentTrigger{}, false)` ni qaytaradi. Keyin u squad'ni `GetSquadInWorkspace` orqali aniqlaydi va ketma-ket qo'llaydi:
+
+- **O'z-o'zini ishga tushirish himoyasi (agent muallif):** agar `authorType == "agent"` bo'lsa va muallif squad'ning `LeaderID` si bo'lsa **va** `h.lastTaskWasLeader(ctx, issue.ID, squad.LeaderID)` rost bo'lsa, false qaytariladi. Ham leader ham worker rollarini egallagan agent worker vazifasidan izoh berganidan keyin ham o'zining leader rolini uyg'otadi — himoya faqat agentning *bu issue'dagi oxirgi vazifasi o'zi leader vazifasi bo'lganda* ishga tushadi.
+- **Member-muallif eslatma himoyasi:** `if authorType == "member" && commentMentionsAnyone(content) { return false }`. Quyiga qarang.
+- **Tayyorlik:** leader agenti `GetAgentInWorkspace` orqali yuklanadi; agar `err != nil || !agent.RuntimeID.Valid || agent.ArchivedAt.Valid` bo'lsa, rad etiladi.
+- **Ko'rinish:** muallif uchun `canAccessPrivateAgent` o'tishi kerak.
+- **Dedup:** `(issue, leader)` uchun `HasPendingTaskForIssueAndAgent` false bo'lishi kerak.
+
+Muvaffaqiyatli bo'lganda u `Source: commentTriggerSourceIssueAssignee` va **nil bo'lmagan** `Squad` ko'rsatkichi bilan trigger qaytaradi — aynan o'sha ko'rsatkich uni enqueue vaqtida `EnqueueTaskForSquadLeader` ga yo'naltiradi.
+
+<Callout type="warn" title="Member-muallif eslatma himoyasi">
+`commentMentionsAnyone` (`server/internal/handler/squad.go`) `agent`, `member`, `squad` yoki `all` turidagi har qanday routing uslubidagi eslatma uchun rost qaytaradi (issue o'zaro havolalari e'tiborga olinmaydi). Demak, **kimnidir @mention qilgan member izohi** tayinlangan-squad yo'li orqali squad leaderni uyg'otmaydi. Sababi: agar member izohni muayyan ishtirokchiga yo'naltirayotgan bo'lsa, mention manbalari (Manba 3) kim ishlashini hal qiladi — keng "squad bu issue'ga egalik qiladi, leaderni uyg'oting" avto-uyg'otish chetlanadi. Faqat *joriy* izoh tekshiriladi; parent (thread ildizi) eslatmalari bu yerda meros qilib olinmaydi.
+</Callout>
+
+### Manba 3 — eslatilgan agentlar
+
+`computeMentionedAgentCommentTriggers` izoh tanasidan `@mentions` larni tahlil qiladi. O'zining **nol** eslatmasi bo'lgan javob thread ildizining eslatmalarini meros qilib olishi mumkin (`shouldInheritParentMentions`: javobda eslatma yo'q, javob muallifi member, parent muallifi member). Har bir eslatma uchun:
+
+- `@squad` → squad'ni aniqlaydi va **leader** ni `Source: commentTriggerSourceMentionSquadLeader` bilan qo'shadi (xuddi shu o'z-o'zini ishga tushirish, tayyorlik, ko'rinish va dedup darvozalariga bo'ysunadi).
+- `@agent` → agentni `Source: commentTriggerSourceMentionAgent` bilan qo'shadi.
+
+Mention triggerlarida **issue-status darvozasi yo'q** — @mention hatto `done`/`cancelled` issue'larda ham ishlaydi. To'liq mention semantikasi (private-agent darvozalari, o'z-o'zini eslatish, parent meros) /developers/agentic/mention-contract mavzusidir; bu sahifa faqat o'sha triggerlar izoh pipeline'iga qanday birlashishini qamrab oladi.
+
+## Boshqalarga yo'naltirilgan eslatmalar assignee'ni bostiradi
+
+`commentMentionsOthersButNotAssignee` — bu member'ga issue'ning o'z assignee'sini behuda uyg'otmasdan natijalarni hamkasb bilan baham ko'rish yoki boshqa agentga topshirish imkonini beruvchi darvozadir. U eslatmalarni tahlil qiladi, `issue` turidagi o'zaro havolalarni tashlaydi, keyin:
+
+- Qolgan eslatma yo'q → `false` qaytaradi (oddiy izohdagi xatti-harakat; assignee uyg'otish davom etadi).
+- `@all` mavjud (`util.HasMentionAll`) → `true` qaytaradi. `@all` — bu **broadcast**, ish so'rovi emas — assignee avto-trigger bostiriladi.
+- Eslatmalar mavjud, lekin issue'da to'g'ri `AssigneeID` yo'q → `true` qaytaradi (eslatmalar boshqalarni nishonga oladi).
+- Assignee'ning id'si eslatmalar orasida paydo bo'ladi → `false` qaytaradi (assignee aniq murojaat qilingan — uyg'otishga ruxsat bering).
+- Aks holda (boshqalar eslatilgan, assignee emas) → `true` qaytaradi (bostirish).
+
+Bu faqat **Manba 1** ni boshqaradi. `@`-mention qilingan agent hali ham Manba 3 dan o'z vazifasini oladi — assignee uyg'otishni bostirish mention uyg'otishni bostirmaydi.
+
+## Bostirish: `suppress_agent_ids`
+
+`CreateComment` `CreateCommentRequest` da `suppress_agent_ids []string` maydonini qabul qiladi. Trigger to'plami hisoblanganidan keyin, `filterSuppressedCommentAgentTriggers` `Agent.ID` si o'sha to'plamda bo'lgan har qanday triggerni tashlaydi:
+
+```go
+func filterSuppressedCommentAgentTriggers(triggers []commentAgentTrigger, suppressAgentIDs []pgtype.UUID) []commentAgentTrigger {
+	if len(triggers) == 0 || len(suppressAgentIDs) == 0 {
+		return triggers
+	}
+	// ... build a set of valid suppressed ids, skip matching triggers
+}
+```
+
+Bu foydalanuvchi aniq tanlovdan chiqargan preview chiplarini server tomonida hisobga olishdir: klient ishga tushishi mumkin bo'lgan agentlarni (preview endpoint'idan) ko'rsatadi, foydalanuvchi ba'zilarini belgini olib tashlaydi va o'sha id'lar `suppress_agent_ids` sifatida birga keladi, shunda create yo'li aynan o'sha agentlarni o'tkazib yuboradi. Bostirish hisoblashdan **keyin** ishlaydi, shuning uchun u qolganlari qanday olingani o'zgartirmasdan har qanday manbadan agentni olib tashlashi mumkin. `UpdateComment` `triggerTasksForComment` ni `nil` bostirish bilan chaqiradi.
+
+## Enqueue: manba bo'yicha taqsimlash
+
+`enqueueCommentAgentTriggers` to'g'ri `TaskService` kirish nuqtasini tanlash uchun `trigger.Source` bo'yicha switch qiladi (barchasi `server/internal/service/task.go` da):
+
+| Manba | `Squad` | Enqueue chaqiruvi | Vazifa kelib chiqishi |
+|---|---|---|---|
+| `commentTriggerSourceIssueAssignee` | nil emas | `EnqueueTaskForSquadLeader` | `is_leader_task = true` |
+| `commentTriggerSourceIssueAssignee` | nil | `EnqueueTaskForIssue` | `issue.AssigneeID` dan olingan |
+| `commentTriggerSourceMentionSquadLeader` | (n/a) | `EnqueueTaskForSquadLeader` | `is_leader_task = true` |
+| `commentTriggerSourceMentionAgent` | (n/a) | `EnqueueTaskForMention` | aniq agent id |
+
+`EnqueueTaskForSquadLeader` — bu `enqueueMentionTask` ning leader-rol varianti — u `IsLeaderTask` ni belgilaydi, shunday qilib quyi oqimdagi o'z-o'zini ishga tushirish himoyalari (yuqoridagi `lastTaskWasLeader` tekshiruvi) leader sifatida harakat qilayotganda joylashtirilgan izohni worker sifatida harakat qilayotganda joylashtirilganidan ajrata oladi. Har bir enqueue chaqiruvi ishga tushiruvchi izohni `TriggerCommentID` sifatida belgilaydi va `TriggerSummary` quradi (`truncateForSummary` orqali `triggerSummaryMaxLen` runega qisqartirilgan). Har bir enqueue eng yaxshi harakat asosida: muvaffaqiyatsizlik `slog.Warn` bilan loglanadi va sikl keyingi triggerga davom etadi.
+
+## Preview endpoint hisoblashni ulashadi
+
+`PreviewCommentTriggers` (`POST /comments/trigger-preview`, so'rov `CommentTriggerPreviewRequest`) klientning "bu agentlar xabardor qilinadi" chiplari create yo'li ishga tushiradigan **xuddi shu kod** tomonidan hisoblanishi uchun mavjud — ular bir-biridan og'a olmaydi. U:
+
+1. Issue'ni yuklaydi, aktyorni `resolveActor` bilan aniqlaydi (create bilan bir xil).
+2. Yalang'och issue identifikatorlarini `mention.ExpandIssueIdentifiers` bilan kengaytiradi (create bilan bir xil). Bo'sh kontent bo'sh agent ro'yxatiga qisqa tutashadi.
+3. `h.computeCommentAgentTriggers(...)` ni chaqiradi — yuqorida tasvirlangan bir xil birlashtirish, jumladan `/note` erta chiqishi va barcha uchta manbaning darvozalari.
+4. Har bir triggerni `source` va inson `reason` (`commentAgentTriggerReason`) ni olib yuruvchi `CommentTriggerAgentResponse` ga moslaydi.
+
+Preview ishga tushirmaydigan yagona narsa `filterSuppressedCommentAgentTriggers` — preview'ning vazifasi to'liq ishga tushishi mumkin bo'lgan to'plamni ko'rsatish, shunda foydalanuvchi nimani bostirishni tanlashi mumkin. Ikkala yo'l ham `computeCommentAgentTriggers` ni ulashgani sababli, har bir darvoza (assignee bostirish, member-thread javobi, dedup, ko'rinish, tayyorlik) izoh joylashtirilmasidan oldin chiplarda aks ettiriladi.
+
+<Callout title="Preview = create, minus bostirish va enqueue">
+Agar chip agentni ko'rsatsa, create yo'li o'sha agentni enqueue qiladi — **agar** uning id'si `suppress_agent_ids` da yuborilmasa. Agar chip yo'q bo'lsa, hech qanday `suppress_agent_ids` qiymati uni qaytara olmaydi — agent allaqachon yuqori oqimda darvozadan chiqarib yuborilgan.
+</Callout>
+
+## `no_action` izoh-bloklash darvozasi (409)
+
+**Agent** izoh-ishga tushirilgan vazifa ichidan izoh joylashtirsa (`authorType == "agent"`), `CreateComment` `X-Task-ID` sarlavhasiga asoslangan ikkita himoyani ishga tushiradi — lekin faqat vazifaning `IssueID` izoh berilayotgan issue'ga mos kelganda (CLI har bir so'rovda `X-Task-ID` ni belgilaydi, shuning uchun *boshqa* issue'da qonuniy ravishda izoh berayotgan agent bloklanmasligi kerak):
+
+1. **Parent-drift himoyasi:** agar vazifada `TriggerCommentID` bo'lsa, so'rovning `parent_id` unga teng bo'lishi kerak, aks holda `409 Conflict` ("parent_id must equal this task's trigger comment id (...)"). Bu eskirgan `--parent` UUID ni olib yurgan qayta tiklangan Claude sessiyasidan himoya qiladi.
+
+2. **`no_action` blok:** `service.HasSquadLeaderNoActionEvaluationForTask(ctx, h.Queries, task)` aynan shu `(issue, agent, task)` allaqachon squad-leader `no_action` baholashini qayd etganmi yoki yo'qligini xabar qiladi. Agar shunday bo'lsa, izoh quyidagicha rad etiladi:
+
+```text
+409 Conflict — squad leader recorded no_action; comments are not allowed for this task
+```
+
+Bu izoh chegarasida no-action protokolini amalga oshiradi: squad leader vazifa uchun rasman "bu yerda qiladigan ish yo'q" deb e'lon qilganidan keyin, o'sha vazifa izoh joylashtirishni davom ettira olmaydi (aks holda bu pipeline'ni qayta ishga tushirib, sikllarni yoqib yuborardi). Tekshiruv xatosi loglanadi, lekin izohni **bloklamaydi** — darvoza o'zining infratuzilma xatolarida ochiq holda muvaffaqiyatsizlanadi, faqat tasdiqlangan `no_action` yozuvida yopiq holda muvaffaqiyatsizlanadi. Protokolning o'zi /developers/agentic/no-action-protocol da hujjatlashtirilgan; bu oldini olgan sikl-yonishi /developers/agentic/loop-prevention da qamrab olingan.
+
+## Source files
+
+| File | Symbols this page depends on |
+|---|---|
+| `server/internal/handler/comment.go` | `triggerTasksForComment`, `computeCommentAgentTriggers`, `computeAssignedSquadLeaderCommentTrigger`, `computeMentionedAgentCommentTriggers`, `commentMentionsOthersButNotAssignee`, `isReplyToMemberThread`, `shouldInheritParentMentions`, `filterSuppressedCommentAgentTriggers`, `enqueueCommentAgentTriggers`, `isNoteComment`, `noteCommentPrefix`, `commentAgentTrigger`, `commentAgentTriggerSource`, `commentTriggerSourceIssueAssignee`, `commentTriggerSourceMentionAgent`, `commentTriggerSourceMentionSquadLeader`, `commentAgentTriggerReason`, `CreateComment`, `UpdateComment`, `PreviewCommentTriggers`, `CreateCommentRequest`, `CommentTriggerPreviewRequest`, `CommentTriggerAgentResponse` |
+| `server/internal/service/task.go` | `EnqueueTaskForIssue`, `EnqueueTaskForMention`, `EnqueueTaskForSquadLeader`, `enqueueMentionTask`, `buildCommentTriggerSummary`, `truncateForSummary`, `triggerSummaryMaxLen` |
+| `server/internal/handler/issue.go` | `shouldEnqueueOnComment` |
+| `server/internal/handler/squad.go` | `lastTaskWasLeader`, `commentMentionsAnyone` |
+| `server/internal/handler/agent_access.go` | `canAccessPrivateAgent` |
+| `server/internal/service/squad_no_action.go` | `HasSquadLeaderNoActionEvaluationForTask` |
+| `server/internal/util/mention.go` | `ParseMentions`, `HasMentionAll`, `Mention` |
+
+Agar siz trigger manbasini, bostirish qoidasini, `no_action`/parent-drift 409 darvozalarini yoki preview/create kontraktini o'zgartirsangiz, bu sahifani xuddi shu PR da yangilang. `/comments/trigger-preview` endpoint'i va create yo'li dizayn bo'yicha `computeCommentAgentTriggers` ni ulashadi — agar siz o'sha hisoblashni ajratib yuborsangiz, bu sahifaning "preview = create" da'vosi yolg'onga aylanadi va klient chiplari haqiqatda nima enqueue qilinishi bilan jimgina kelishmaydi.

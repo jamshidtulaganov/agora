@@ -1,0 +1,170 @@
+---
+title: Autopilot Internals
+description: How DispatchAutopilot turns a trigger into a run, then into an issue or a bare agent task, and keeps run status in sync.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Audience">
+Both. This page is for engineers working on `AutopilotService` and for agents reasoning about why an autopilot run is stuck, skipped, or failed. Everything here is traced to `server/internal/service/autopilot.go` and `server/pkg/db/queries/autopilot.sql`.
+</Callout>
+
+An autopilot is not an agent. It is a rule that, when a trigger fires, dispatches work to an agent (or to a squad's leader agent). The dispatch path is a single function: `DispatchAutopilot`. For the trigger side (schedule/webhook/manual sources, readiness/admission gating) see [autopilot-triggers-readiness](/developers/agentic/autopilot-triggers-readiness).
+
+## DispatchAutopilot is the single entry point
+
+`DispatchAutopilot(ctx, autopilot, triggerID, source, payload)` is the one code path for all three trigger sources. The `source` string (`"schedule"`, `"webhook"`, `"manual"`) is stored on the run but does not branch the dispatch logic — only `execution_mode` does. Whatever fired the trigger, the work funnels through here.
+
+The chain is:
+
+`trigger fires` → `autopilot_run` row → `execution_mode` decides output → assignee readiness → issue/task → run-status sync.
+
+<Mermaid chart={`flowchart TD
+  T["trigger fires (schedule | webhook | manual)"] --> D["DispatchAutopilot"]
+  D --> G{"shouldSkipDispatch?"}
+  G -- "skip" --> SK["recordSkippedRun (status=skipped)"]
+  G -- "pass" --> CR["CreateAutopilotRun"]
+  CR --> M{"execution_mode"}
+  M -- "create_issue" --> CI["dispatchCreateIssue"]
+  M -- "run_only" --> RO["dispatchRunOnly"]
+  M -- "other" --> UF["failRun: unknown execution_mode"]
+  CI --> ISS["issue + task (issue_created)"]
+  RO --> TSK["bare agent_task_queue row (running)"]
+`}/>
+
+### Pre-flight admission, then the run row
+
+The first thing `DispatchAutopilot` does is call `shouldSkipDispatch`. If it returns `skip`, no run with work is created — instead `recordSkippedRun` writes a `skipped` run carrying the reason and returns `(run, nil)`. Callers treat a skip as a successful no-op tick. The readiness/admission machinery is documented on [autopilot-triggers-readiness](/developers/agentic/autopilot-triggers-readiness).
+
+Past the gate, `CreateAutopilotRun` inserts the run. The initial status depends on the mode:
+
+- `create_issue` → `"issue_created"`
+- `run_only` → `"running"`
+
+`autopilotSquadAttribution` sets the run's `squad_id` only when `assignee_type='squad'` — an attribution hook so reports can group by squad without joining back to `autopilot`.
+
+### Important: a non-nil run can come back with a non-nil error
+
+`DispatchAutopilot` returns `(*db.AutopilotRun, error)`. On the dispatch-failure branches it returns **both** a non-nil run and a non-nil error:
+
+```go
+s.failRun(ctx, run.ID, err.Error())
+s.captureAutopilotRunFailed(autopilot, run, source, err.Error())
+return &run, fmt.Errorf("dispatch create_issue: %w", err)
+```
+
+The run was created and then marked `failed`; the error is for the caller's logging/HTTP response. Callers must **not** assume `run == nil` when `err != nil`. The only true `(nil, err)` cases are `CreateAutopilotRun` failing and `recordSkippedRun`'s create failing.
+
+## create_issue vs run_only
+
+`execution_mode` is the only switch. Default branch (any value that is neither `"create_issue"` nor `"run_only"`) calls `failRun` with `"unknown execution_mode: " + mode` and returns an error — this is classified as a `configuration` error by `autopilotErrorType`.
+
+### create_issue → dispatchCreateIssue (tracked issue)
+
+`dispatchCreateIssue` produces a real Agora issue, so the run is visible as issue state. Sequence:
+
+1. `resolveAutopilotLeader` resolves the executing agent (the assignee for `agent`, the squad's `leader_id` for `squad`).
+2. `projectSquadAllows` — if the autopilot targets a squad-bound project but the assignee is not in that squad, it returns an `errDispatchSkipped` (skip, not fail, so the misconfiguration does not trip the failure monitor).
+3. In a transaction: `IncrementIssueCounter`, `issueposition.NextTopPosition`, then `CreateIssueWithOrigin` with `OriginType="autopilot"` and `OriginID=ap.ID`. The issue's `CreatorType="agent"` / `CreatorID=leader.ID` — the executing agent is the creator, **not** the human who configured the autopilot (that human is captured via `origin_type`/`origin_id`).
+4. After commit, `UpdateAutopilotRunIssueCreated` links the run to the issue (status stays `issue_created`).
+5. Publishes `protocol.EventIssueCreated` so the existing listener chain fires. For squad autopilots this is what triggers `shouldEnqueueSquadLeaderOnAssign` → `enqueueSquadLeaderTask` — no separate squad-routing code here.
+6. Enqueues the task: `EnqueueTaskForSquadLeader` for squads, `EnqueueTaskForIssue` otherwise. Both land in `agent_task_queue` with `agent_id = leader`.
+
+The created issue's status drives the run from then on. `SyncRunFromIssue` maps `done`/`in_review` → completed run, `cancelled`/`blocked` → failed run.
+
+### run_only → dispatchRunOnly (bare task, no issue)
+
+`dispatchRunOnly` enqueues a direct agent task with no issue. Any durable report location has to come from task context or instructions — there is no issue to look at. Sequence:
+
+1. `resolveAutopilotLeader`. If the row vanished or the squad was archived between admission and dispatch (`pgx.ErrNoRows` / `errSquadArchived`), return `errDispatchSkipped` — a late race is a skip, not a failure.
+2. `AgentReadiness` re-checked here (belt-and-braces); not ready → `errDispatchSkipped`.
+3. Private-leader gate for squad autopilots via `canCreatorAccessPrivateLeader`.
+4. `CreateAutopilotTask` inserts a bare `agent_task_queue` row: `issue_id = NULL`, `status='queued'`, `autopilot_run_id = run.ID`, and a `trigger_summary` snapshot of the autopilot title.
+5. `UpdateAutopilotRunRunning` sets the run's `task_id` (status `running`).
+
+#### run_only MUST call NotifyTaskEnqueued or the daemon never wakes
+
+This is the load-bearing detail. `dispatchRunOnly` inserts the task row directly via `Queries.CreateAutopilotTask`, **bypassing `TaskService.Enqueue*`**. The enqueue helpers normally wake the runtime and clear the empty-claim cache. Because run_only skips them, it must do that work itself:
+
+```go
+// Drop the empty-claim cache and wake the daemon.
+s.TaskSvc.NotifyTaskEnqueued(ctx, task)
+```
+
+Without this call the runtime gets no wakeup and any cached "empty" verdict stalls the task until the TTL expires. If you add another path that inserts directly into `agent_task_queue`, it must call `NotifyTaskEnqueued` too.
+
+<Callout title="The create_issue path does not call NotifyTaskEnqueued">
+`dispatchCreateIssue` goes through `EnqueueTaskForSquadLeader` / `EnqueueTaskForIssue`, which already wake the daemon. Only the bypassing run_only path needs the explicit notify.
+</Callout>
+
+## The three task ↔ run linkage paths
+
+A run's terminal state can arrive from three different sync functions, depending on how the task is linked. Missing any one leaves runs stuck — there is no single catch-all.
+
+| Sync function | Linkage | Trigger condition | What it does |
+|---|---|---|---|
+| `SyncRunFromTask` | `task.AutopilotRunID` (run_only) | task `completed` / `failed` / `cancelled` | `UpdateAutopilotRunCompleted` (carries `task.Result`) or `UpdateAutopilotRunFailed` |
+| `SyncRunFromLinkedIssueTask` | `task.IssueID` (create_issue) | task `failed`, no active task left for the issue | `UpdateAutopilotRunFailed` with the task's failure reason |
+| `SyncRunFromIssue` | `issue.ID` via `OriginType='autopilot'` | issue reaches terminal status | completed on `done`/`in_review`, failed on `cancelled`/`blocked` |
+
+Why three:
+
+- **run_only** tasks carry `autopilot_run_id`, so `SyncRunFromTask` finds the run directly via `GetAutopilotRun`. create_issue tasks do **not** carry `autopilot_run_id` (their `CreateAutopilotTask`-equivalent links by `issue_id`), so `SyncRunFromTask` is blind to them — it returns early when `!task.AutopilotRunID.Valid`.
+- **create_issue** tasks are linked through `issue_id`. Normally the issue's own status drives the run (`SyncRunFromIssue`). But a task can fail terminally *before* the issue reaches a terminal status — without `SyncRunFromLinkedIssueTask` the run would hang in `issue_created` forever. And because the failure-rate auto-pause monitor excludes `issue_created`/`running` runs, a consistently failing autopilot would never auto-pause either.
+- `SyncRunFromLinkedIssueTask` is careful about retries: `FailTask` enqueues an auto-retry for infra-shaped failures *before* broadcasting, so it checks `HasActiveTaskForIssue` and **waits** if another attempt is in flight. It only fails the run once retries are exhausted, carrying `taskFailureReasonForAutopilotRun(task)` (prefers `task.Error`, then `task.FailureReason`, else `"task failed"`).
+
+`GetAutopilotRunByIssue` (used by both issue-side syncs) only matches runs in `status IN ('issue_created', 'running')` — a `LIMIT 1` on the active run for that issue. Already-terminal runs are not re-touched.
+
+## Run status state machine
+
+`autopilot_run.status` values, with the queries that set them:
+
+<Mermaid chart={`stateDiagram-v2
+  [*] --> skipped: recordSkippedRun (pre-flight admission)
+  [*] --> issue_created: create_issue start
+  [*] --> running: run_only start
+  issue_created --> completed: issue done/in_review
+  issue_created --> failed: issue cancelled/blocked, linked task failed, dispatch error
+  issue_created --> skipped: handleDispatchSkip (post-admission race)
+  running --> completed: task completed
+  running --> failed: task failed/cancelled, dispatch error
+  running --> skipped: handleDispatchSkip (post-admission race)
+  completed --> [*]
+  failed --> [*]
+  skipped --> [*]
+`}/>
+
+| Status | Query | Sets |
+|---|---|---|
+| `issue_created` | `UpdateAutopilotRunIssueCreated` | `issue_id` |
+| `running` | `UpdateAutopilotRunRunning` | `task_id` |
+| `completed` | `UpdateAutopilotRunCompleted` | `completed_at`, optional `result` |
+| `failed` | `UpdateAutopilotRunFailed` | `completed_at`, `failure_reason` |
+| `skipped` | `UpdateAutopilotRunSkipped` | `completed_at`, `failure_reason` |
+
+Two more terminal transitions exist outside the sync trio: `FailAutopilotRunsByIssue` fails active runs (`issue_created`/`running`) when their linked issue is deleted — it must run *before* deletion because `ON DELETE SET NULL` clears `issue_id`. There is also `UpdateAutopilotRunSkippedWithResult`.
+
+### Skip is neither success nor failure
+
+`SelectAutopilotsExceedingFailureThreshold` counts only `status IN ('completed','failed')`. `skipped` is excluded from both numerator and denominator, and `issue_created`/`running` are excluded so in-flight work is not penalised. This is why post-admission readiness regressions are recorded as `skipped` (via `handleDispatchSkip` rewriting the in-flight run) rather than `failed` — a flaky runtime must not auto-pause an otherwise-healthy autopilot.
+
+### run.source values
+
+`source` is set verbatim from the `DispatchAutopilot` argument and stored on the run. Across the system the values are `"schedule"`, `"webhook"`, and `"manual"`. For `webhook` runs, `buildIssueDescription` additionally inlines the trigger payload into the issue body (parsing `event` / `eventPayload` from the envelope) so the agent sees the event context, which it otherwise never would.
+
+## issue_title_template supports only {{date}}
+
+`ValidateIssueTitleTemplate` rejects any `{{...}}` token outside the supported set. `SupportedIssueTitleTemplateVariables` is exactly `["date"]`. An empty template is valid (the autopilot falls back to its own `Title`).
+
+At render time, `interpolateTemplate` substitutes `{{date}}` (tolerating inner whitespace like `{{ date }}` via `issueTitleTemplateTokenRE`) with `formatAutopilotRunDate`, formatted `2006-01-02` in the trigger's timezone (`resolveAutopilotTriggerTimezone`, falling back to `DefaultAutopilotTriggerTimezone = "UTC"`). Any other token is left as a literal. Do **not** invent `{{trigger_id}}`, `{{branch}}`, or anything else — validation rejects it, and if it slipped through it would render verbatim.
+
+## Source files
+
+| File | Symbols this page depends on |
+|---|---|
+| `server/internal/service/autopilot.go` | `DispatchAutopilot`, `dispatchCreateIssue`, `dispatchRunOnly`, `SyncRunFromTask`, `SyncRunFromLinkedIssueTask`, `SyncRunFromIssue`, `shouldSkipDispatch`, `recordSkippedRun`, `handleDispatchSkip`, `failRun`, `resolveAutopilotLeader`, `projectSquadAllows`, `autopilotSquadAttribution`, `errDispatchSkipped`, `taskFailureReasonForAutopilotRun`, `interpolateTemplate`, `ValidateIssueTitleTemplate`, `SupportedIssueTitleTemplateVariables`, `buildIssueDescription`, `DefaultAutopilotTriggerTimezone`, `autopilotErrorType`, `NotifyTaskEnqueued` (call site) |
+| `server/pkg/db/queries/autopilot.sql` | `CreateAutopilotRun`, `UpdateAutopilotRunIssueCreated`, `UpdateAutopilotRunRunning`, `UpdateAutopilotRunCompleted`, `UpdateAutopilotRunFailed`, `UpdateAutopilotRunSkipped`, `UpdateAutopilotRunSkippedWithResult`, `GetAutopilotRunByIssue`, `GetAutopilotRun`, `CreateAutopilotTask`, `FailAutopilotRunsByIssue`, `SelectAutopilotsExceedingFailureThreshold` |
+| `server/internal/service/builtin_skills/agora-autopilots/SKILL.md` | execution-mode model, `issue-title-template` `{{date}}` constraint, trigger→run→issue/task chain |
+
+Same-PR drift rule: if you change any symbol above — a run status value, a sync linkage, the template variable set, the `NotifyTaskEnqueued` requirement, or the `(run, err)` return contract — update this page **and** the `agora-autopilots` `SKILL.md` (plus its `references/autopilots-source-map.md`) in the same PR, or the page silently teaches stale behavior.

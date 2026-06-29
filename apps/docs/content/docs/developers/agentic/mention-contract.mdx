@@ -1,0 +1,130 @@
+---
+title: Mention Contract
+description: The wire format for an @mention, the single regex that parses it, and exactly what each of the five types enqueues.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Audience">
+This page is for **both** engineers and agents. It is the authoritative backend contract for what a mention link *is* and what it *does*: the exact Markdown wire format, the single parser (`util.MentionRe`), and the per-type enqueue behavior. It does **not** cover *whether* you should mention (loop avoidance, staying silent on acknowledgements) — that lives in the runtime brief and the built-in `agora-mentioning` skill. Related: [/developers/agentic/comment-trigger-pipeline](/developers/agentic/comment-trigger-pipeline), [/developers/agentic/squads-routing](/developers/agentic/squads-routing).
+</Callout>
+
+## The wire format
+
+A mention is **not** a plain `@name`. The backend recognizes a mention only through one Markdown link shape:
+
+```
+[@Label](mention://<type>/<id>)
+```
+
+- `<type>` is one of `member`, `agent`, `squad`, `issue`, or the broadcast sentinel `all`.
+- `<id>` is a hex UUID (hex characters and dashes only) **or** the literal string `all`.
+- `Label` is free display text — the human-readable name goes here, never in the id.
+
+A `@name` typed in prose with no `mention://` link parses to nothing. It is silently dead: no error, no run, nobody reached.
+
+## `util.MentionRe` is the single parser
+
+Every consumer of mentions goes through one regex in `server/internal/util/mention.go`. There is no second parser anywhere.
+
+```go
+var MentionRe = regexp.MustCompile(`\[@?(.+?)\]\(mention://(member|agent|squad|issue|all)/([0-9a-fA-F-]+|all)\)`)
+```
+
+Properties that follow directly from the pattern:
+
+- **The `@` is optional** (`@?`) so issue cross-references like `[MUL-123](mention://issue/...)` match without a leading `@`.
+- **The label is non-greedy** (`.+?`) so a label containing square brackets (e.g. `David[TF]`) is matched correctly — the `](mention://` anchor is specific enough to stop over-matching.
+- **The id group is `([0-9a-fA-F-]+|all)`** — hex plus dashes, or the literal `all`. A name with non-hex letters (`mention://member/Alice`) makes the whole pattern fail to match, so the parser returns nothing.
+
+`ParseMentions(content string) []Mention` runs `MentionRe.FindAllStringSubmatch`, dedups on `m[2] + ":" + m[3]` (type + id), and returns a slice of `Mention{Type, ID}` where `Type` is `m[2]` and `ID` is `m[3]`. `HasMentionAll(mentions)` reports whether any parsed mention has `Type == "all"`; the method `Mention.IsMentionAll()` is the per-mention check.
+
+<Callout type="warn" title="The doc comment undercounts the types — trust the regex">
+The `Mention` struct's doc comment in `mention.go` lists only `"member"`, `"agent"`, `"issue"`, or `"all"` — it **omits `squad`**. The regex's `(member|agent|squad|issue|all)` alternation is the real contract and accepts five values. When the comment and the regex disagree, the regex wins. `squad` mentions parse and route to the squad leader (below).
+</Callout>
+
+## What each type enqueues
+
+Parsing a mention is separate from *acting* on it. The acting logic lives in `computeMentionedAgentCommentTriggers` (`server/internal/handler/comment.go`), whose result is folded into `computeCommentAgentTriggers` and dispatched by `enqueueCommentAgentTriggers`. That function branches on only two types:
+
+1. The `squad` branch resolves the squad's leader and adds the leader to the trigger set.
+2. After the squad branch, anything that is not `agent` is skipped by the literal guard:
+
+```go
+if m.Type != "agent" {
+    continue
+}
+```
+
+3. The surviving `agent` branch adds that agent to the trigger set.
+
+A `member` or `issue` mention reaches **neither** branch — the squad branch only matches `squad`, and the `!= "agent"` guard drops everything else. So those mentions render a link and enqueue no task.
+
+| To… | type | uuid source | What the backend does |
+| --- | --- | --- | --- |
+| trigger an agent | `agent` | `agent.id` | adds a `mention_agent` trigger; enqueues a run via `EnqueueTaskForMention` |
+| hand work to a squad | `squad` | `squad.id` | resolves the squad's `LeaderID`, adds a `mention_squad_leader` trigger; enqueues a **leader** run via `EnqueueTaskForSquadLeader` |
+| link a person | `member` | `user_id` | renders a link; enqueues **nothing** — no agent run |
+| reference an issue | `issue` | `issue.id` | renders a link; enqueues **nothing** — always safe |
+| broadcast to everyone | `all` | the literal `all` | renders a broadcast; enqueues nothing, and **suppresses** the assignee auto-trigger (below) |
+
+The two enqueue sources map to the trigger-source enum: `commentTriggerSourceMentionAgent` → `EnqueueTaskForMention`, `commentTriggerSourceMentionSquadLeader` → `EnqueueTaskForSquadLeader`. (A third source, `commentTriggerSourceIssueAssignee`, is the assignment path, not a mention path.)
+
+<Mermaid chart={`flowchart TD
+  P["util.ParseMentions(content)"] --> L["for each Mention m"]
+  L --> SQ{"m.Type == squad?"}
+  SQ -- yes --> SL["resolve squad.LeaderID<br/>add mention_squad_leader<br/>EnqueueTaskForSquadLeader"]
+  SQ -- no --> AG{"m.Type == agent?"}
+  AG -- no --> SKIP["continue<br/>(member / issue / all → no run)"]
+  AG -- yes --> AT["add mention_agent<br/>EnqueueTaskForMention"]
+`} />
+
+## `@all` is the broadcast type
+
+`@all` always uses the literal `all` in **both** the type and the id slot — never a UUID:
+
+```
+[@all](mention://all/all)
+```
+
+It addresses everyone on the issue and makes **no specific agent run** (it is neither `squad` nor `agent`, so it hits the `continue` skip). It is also special at trigger time: in `commentMentionsOthersButNotAssignee` (`server/internal/handler/comment.go`), a comment carrying an `@all` mention is treated as a broadcast that **suppresses the issue assignee's automatic on-comment trigger** — the check returns `true` via `util.HasMentionAll(mentions)`. Use `@all` to announce, not to request work from the assignee.
+
+## Look up the correct UUID per entity
+
+The link target is a real entity UUID, never a display name. Resolve the name to a UUID first, from the matching list command with `--output json`:
+
+| Mention | Command | Field to use |
+| --- | --- | --- |
+| a person (`member`) | `agora workspace member list --output json` | `user_id` — **NOT** the membership-row id |
+| an agent (`agent`) | `agora agent list --output json` | `id` |
+| a squad (`squad`) | `agora squad list --output json` | `id` |
+
+For a `member`, the mention id is the `user_id`, not the membership id. The backend's own roster formatter (`formatMention` in `server/internal/handler/squad_briefing.go`) emits `[@<name>](mention://member/<user_id>)` for member mentions, so a member link built from the membership id will not resolve to that person. Match by display name; if the name is ambiguous or absent, do not guess — say so in the comment instead of emitting a broken link.
+
+## Silent no-op cases
+
+These all produce no error and no run. The first is a parse failure; the rest parse fine and then no-op downstream.
+
+- **A name where a UUID belongs.** `mention://member/Alice` is dead — the id group rejects the non-hex letters, the pattern fails to match, `ParseMentions` returns nothing.
+- **A hex-shaped but unknown UUID.** A well-formed UUID that no entity owns *does* parse, then misses at lookup: `GetAgentInWorkspace` / `GetSquadInWorkspace` returns an error and the loop `continue`s. Same visible result (nothing fires), different mechanism (lookup miss, not parse failure).
+- **An already-pending task.** Even a correct `@agent` / `@squad` is skipped when the target already has a pending task on this issue — `HasPendingTaskForIssueAndAgent` returns true and the loop `continue`s. This is the loop guard; do not retry.
+- **An archived agent / no runtime**, or a squad whose leader is archived: skipped when `RuntimeID` is invalid or `ArchivedAt` is set.
+- **A private agent the actor cannot access:** skipped — the mention path gates on `canAccessPrivateAgent` directly for both `@agent` and `@squad`.
+
+## Preview and per-comment suppression
+
+Clients can call `POST /api/issues/{id}/comments/trigger-preview` before submitting. The handler `PreviewCommentTriggers` expands issue identifiers, then calls the **same** `computeCommentAgentTriggers` used by `CreateComment`, so the previewed agent chips come from backend rules, not a client reimplementation. The response carries each agent's `id`, `name`, optional `avatar_url`, `source`, and a human `reason`.
+
+On create, clients may send an optional `suppress_agent_ids` array on `CreateCommentRequest`. The server computes the **full** trigger set first, then removes those ids as a post-filter via `filterSuppressedCommentAgentTriggers`. A missing or empty field preserves default behavior; a valid UUID not in the computed set is a no-op; a malformed UUID is rejected at the request boundary by `parseUUIDSliceOrBadRequest`.
+
+## Source files
+
+| File | Symbols this page depends on |
+| --- | --- |
+| `server/internal/util/mention.go` | `MentionRe`, `Mention` (struct + doc comment that omits `squad`), `ParseMentions`, `HasMentionAll`, `Mention.IsMentionAll` |
+| `server/internal/handler/comment.go` | `computeMentionedAgentCommentTriggers`, `if m.Type != "agent" { continue }`, `computeCommentAgentTriggers`, `enqueueCommentAgentTriggers`, `commentTriggerSourceMentionAgent`, `commentTriggerSourceMentionSquadLeader`, `EnqueueTaskForMention`, `EnqueueTaskForSquadLeader`, `HasPendingTaskForIssueAndAgent`, `canAccessPrivateAgent`, `commentMentionsOthersButNotAssignee`, `PreviewCommentTriggers`, `CreateCommentRequest.SuppressAgentIDs`, `filterSuppressedCommentAgentTriggers` |
+| `server/internal/handler/squad_briefing.go` | `formatMention` (member mention uses `user_id`) |
+| `server/internal/service/builtin_skills/agora-mentioning/SKILL.md` | the agent-facing contract this page mirrors |
+
+These four sources are one contract. If you change the regex, a trigger branch, an enqueue call, or the id-source mapping, update this page **and** the `agora-mentioning` SKILL.md (plus its `references/mentioning-source-map.md`) in the **same PR** — the built-in skill is shipped to agents and silently teaches stale behavior if the code moves without it.

@@ -1,0 +1,130 @@
+---
+title: Mention Contract
+description: Bir @mention uchun simli format, uni tahlil qiluvchi yagona regex va beshta turdan har biri aniq nimani navbatga qoʻyishi.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Auditoriya">
+Bu sahifa **ham** muhandislar, **ham** agentlar uchun. U mention havolasi *nima ekanligi* va *nima qilishi* boʻyicha vakolatli backend kontraktidir: aniq Markdown simli formati, yagona parser (`util.MentionRe`) va har bir tur boʻyicha navbatga qoʻyish xatti-harakati. U mention qilish *kerakmi yoki yoʻq* (sikldan qochish, tasdiqlashlarda jim qolish) masalasini **qamramaydi** — bu runtime brifida va oʻrnatilgan `agora-mentioning` skilida yashaydi. Aloqador: [/developers/agentic/comment-trigger-pipeline](/developers/agentic/comment-trigger-pipeline), [/developers/agentic/squads-routing](/developers/agentic/squads-routing).
+</Callout>
+
+## Simli format
+
+Mention bu **oddiy** `@name` **emas**. Backend mentionni faqat bitta Markdown havola shakli orqali taniydi:
+
+```
+[@Label](mention://<type>/<id>)
+```
+
+- `<type>` quyidagilardan biri: `member`, `agent`, `squad`, `issue` yoki broadcast sentineli `all`.
+- `<id>` — hex UUID (faqat hex belgilari va tirelar) **yoki** soʻzma-soʻz `all` satri.
+- `Label` — erkin koʻrsatiladigan matn — odam oʻqiy oladigan nom shu yerga yoziladi, hech qachon id ichiga emas.
+
+Nasrda `mention://` havolasisiz terilgan `@name` hech narsaga tahlil qilinmaydi. U jimgina oʻlik: xato yoʻq, ishga tushirish yoʻq, hech kimga yetib bormaydi.
+
+## `util.MentionRe` — yagona parser
+
+Mentionlarning har bir isteʼmolchisi `server/internal/util/mention.go` dagi bitta regex orqali oʻtadi. Hech qayerda ikkinchi parser yoʻq.
+
+```go
+var MentionRe = regexp.MustCompile(`\[@?(.+?)\]\(mention://(member|agent|squad|issue|all)/([0-9a-fA-F-]+|all)\)`)
+```
+
+Patterndan bevosita kelib chiqadigan xususiyatlar:
+
+- **`@` ixtiyoriy** (`@?`), shuning uchun `[MUL-123](mention://issue/...)` kabi issue oʻzaro havolalari oldidagi `@` siz ham mos keladi.
+- **Label ochkoʻz emas** (`.+?`), shuning uchun kvadrat qavslarni oʻz ichiga olgan label (masalan, `David[TF]`) toʻgʻri moslanadi — `](mention://` ankori ortiqcha moslashni toʻxtatishga yetarlicha aniq.
+- **id guruhi `([0-9a-fA-F-]+|all)`** — hex plyus tirelar, yoki soʻzma-soʻz `all`. Hex boʻlmagan harflarni oʻz ichiga olgan nom (`mention://member/Alice`) butun patternni moslashdan chiqaradi, shuning uchun parser hech narsa qaytarmaydi.
+
+`ParseMentions(content string) []Mention` `MentionRe.FindAllStringSubmatch` ni ishga tushiradi, `m[2] + ":" + m[3]` (tur + id) boʻyicha takrorlarni olib tashlaydi va `Mention{Type, ID}` slaysini qaytaradi, bu yerda `Type` — `m[2]` va `ID` — `m[3]`. `HasMentionAll(mentions)` har qanday tahlil qilingan mention `Type == "all"` ga ega yoki yoʻqligini bildiradi; `Mention.IsMentionAll()` metodi esa har bir mention boʻyicha tekshiruvdir.
+
+<Callout type="warn" title="Hujjat izohi turlarni kam sanaydi — regexga ishoning">
+`mention.go` dagi `Mention` strukturasining hujjat izohi faqat `"member"`, `"agent"`, `"issue"` yoki `"all"` ni sanaydi — u **`squad` ni tushirib qoldiradi**. Regexning `(member|agent|squad|issue|all)` alternatsiyasi haqiqiy kontrakt boʻlib, beshta qiymatni qabul qiladi. Izoh va regex bir-biriga zid kelganda, regex gʻolib chiqadi. `squad` mentionlari tahlil qilinadi va squad leaderiga yoʻnaltiriladi (quyida).
+</Callout>
+
+## Har bir tur nimani navbatga qoʻyadi
+
+Mentionni tahlil qilish unga *amal qilish*dan alohida narsa. Amal qilish mantigʻi `computeMentionedAgentCommentTriggers` (`server/internal/handler/comment.go`) ichida yashaydi, uning natijasi `computeCommentAgentTriggers` ga qoʻshiladi va `enqueueCommentAgentTriggers` tomonidan joʻnatiladi. Bu funksiya faqat ikki turga koʻra tarmoqlanadi:
+
+1. `squad` tarmogʻi squadning leaderini aniqlaydi va leaderni trigger toʻplamiga qoʻshadi.
+2. `squad` tarmogʻidan keyin `agent` boʻlmagan har qanday narsa soʻzma-soʻz qoʻriqchi tomonidan oʻtkazib yuboriladi:
+
+```go
+if m.Type != "agent" {
+    continue
+}
+```
+
+3. Saqlanib qolgan `agent` tarmogʻi oʻsha agentni trigger toʻplamiga qoʻshadi.
+
+`member` yoki `issue` mentioni **ikkala** tarmoqqa ham yetib bormaydi — `squad` tarmogʻi faqat `squad` ga moslanadi, `!= "agent"` qoʻriqchisi esa boshqa hamma narsani tushirib yuboradi. Shunday qilib, bu mentionlar havola koʻrsatadi va hech qanday vazifani navbatga qoʻymaydi.
+
+| Kimni… | tur | uuid manbasi | Backend nima qiladi |
+| --- | --- | --- | --- |
+| agentni ishga tushirish | `agent` | `agent.id` | `mention_agent` triggerini qoʻshadi; `EnqueueTaskForMention` orqali ishga tushirishni navbatga qoʻyadi |
+| ishni squadga topshirish | `squad` | `squad.id` | squadning `LeaderID` sini aniqlaydi, `mention_squad_leader` triggerini qoʻshadi; `EnqueueTaskForSquadLeader` orqali **leader** ishga tushirishni navbatga qoʻyadi |
+| odamga havola berish | `member` | `user_id` | havola koʻrsatadi; **hech narsani** navbatga qoʻymaydi — agent ishga tushishi yoʻq |
+| issuega murojaat qilish | `issue` | `issue.id` | havola koʻrsatadi; **hech narsani** navbatga qoʻymaydi — har doim xavfsiz |
+| hammaga eʼlon qilish | `all` | soʻzma-soʻz `all` | broadcast koʻrsatadi; hech narsani navbatga qoʻymaydi va assignee avto-triggerini **bostiradi** (quyida) |
+
+Ikki navbatga qoʻyish manbasi trigger-source enumiga moslanadi: `commentTriggerSourceMentionAgent` → `EnqueueTaskForMention`, `commentTriggerSourceMentionSquadLeader` → `EnqueueTaskForSquadLeader`. (Uchinchi manba, `commentTriggerSourceIssueAssignee`, biriktirish yoʻli, mention yoʻli emas.)
+
+<Mermaid chart={`flowchart TD
+  P["util.ParseMentions(content)"] --> L["for each Mention m"]
+  L --> SQ{"m.Type == squad?"}
+  SQ -- yes --> SL["resolve squad.LeaderID<br/>add mention_squad_leader<br/>EnqueueTaskForSquadLeader"]
+  SQ -- no --> AG{"m.Type == agent?"}
+  AG -- no --> SKIP["continue<br/>(member / issue / all → no run)"]
+  AG -- yes --> AT["add mention_agent<br/>EnqueueTaskForMention"]
+`} />
+
+## `@all` — broadcast turi
+
+`@all` har doim **ham** tur, **ham** id uyasida soʻzma-soʻz `all` dan foydalanadi — hech qachon UUID emas:
+
+```
+[@all](mention://all/all)
+```
+
+U issuedagi har bir kishiga murojaat qiladi va **hech qanday aniq agentni ishga tushirmaydi** (u na `squad`, na `agent`, shuning uchun `continue` oʻtkazib yuborishiga tushadi). U trigger vaqtida ham maxsus: `commentMentionsOthersButNotAssignee` (`server/internal/handler/comment.go`) da `@all` mentionini olib yuradigan izoh broadcast sifatida koʻriladi va u **issue assigneesining avtomatik on-comment triggerini bostiradi** — tekshiruv `util.HasMentionAll(mentions)` orqali `true` qaytaradi. `@all` dan assigneedan ish soʻrash uchun emas, balki eʼlon qilish uchun foydalaning.
+
+## Har bir obyekt uchun toʻgʻri UUID ni qidiring
+
+Havola obyekti haqiqiy obyekt UUID si, hech qachon koʻrsatiladigan nom emas. Nomni avval UUID ga aniqlang, mos roʻyxat buyrugʻidan `--output json` bilan:
+
+| Mention | Buyruq | Ishlatiladigan maydon |
+| --- | --- | --- |
+| odam (`member`) | `agora workspace member list --output json` | `user_id` — aʼzolik-qator id si **EMAS** |
+| agent (`agent`) | `agora agent list --output json` | `id` |
+| squad (`squad`) | `agora squad list --output json` | `id` |
+
+`member` uchun mention id si `user_id`, aʼzolik id si emas. Backendning oʻzining roster formatlovchisi (`server/internal/handler/squad_briefing.go` dagi `formatMention`) aʼzo mentionlari uchun `[@<name>](mention://member/<user_id>)` chiqaradi, shuning uchun aʼzolik id sidan qurilgan aʼzo havolasi oʻsha shaxsga aniqlanmaydi. Koʻrsatiladigan nom boʻyicha moslang; agar nom noaniq yoki yoʻq boʻlsa, taxmin qilmang — buzilgan havola chiqarish oʻrniga buni izohda ayting.
+
+## Jim no-op holatlar
+
+Bularning hammasi hech qanday xato va hech qanday ishga tushirish ishlab chiqarmaydi. Birinchisi tahlil xatosi; qolganlari yaxshi tahlil qilinadi, soʻngra quyi oqimda no-op boʻladi.
+
+- **UUID kerak boʻlgan joyda nom.** `mention://member/Alice` oʻlik — id guruhi hex boʻlmagan harflarni rad etadi, pattern moslashmaydi, `ParseMentions` hech narsa qaytarmaydi.
+- **Hex shaklidagi, ammo nomaʼlum UUID.** Hech qanday obyekt egalik qilmaydigan toʻgʻri shakllangan UUID *tahlil qilinadi*, soʻngra qidiruvda xato qiladi: `GetAgentInWorkspace` / `GetSquadInWorkspace` xato qaytaradi va sikl `continue` qiladi. Bir xil koʻrinadigan natija (hech narsa ishga tushmaydi), boshqa mexanizm (qidiruvdagi xato, tahlil xatosi emas).
+- **Allaqachon kutilayotgan vazifa.** Hatto toʻgʻri `@agent` / `@squad` ham nishon allaqachon ushbu issueda kutilayotgan vazifaga ega boʻlganda oʻtkazib yuboriladi — `HasPendingTaskForIssueAndAgent` true qaytaradi va sikl `continue` qiladi. Bu sikl qoʻriqchisi; qayta urinmang.
+- **Arxivlangan agent / runtime yoʻq**, yoki leaderi arxivlangan squad: `RuntimeID` yaroqsiz yoki `ArchivedAt` oʻrnatilgan boʻlsa oʻtkazib yuboriladi.
+- **Aktor kira olmaydigan maxfiy agent:** oʻtkazib yuboriladi — mention yoʻli `@agent` va `@squad` ikkalasi uchun ham bevosita `canAccessPrivateAgent` da darvozalanadi.
+
+## Oldindan koʻrish va har bir izoh boʻyicha bostirish
+
+Mijozlar topshirishdan oldin `POST /api/issues/{id}/comments/trigger-preview` ni chaqirishi mumkin. `PreviewCommentTriggers` handleri issue identifikatorlarini kengaytiradi, soʻngra `CreateComment` tomonidan ishlatiladigan **xuddi shu** `computeCommentAgentTriggers` ni chaqiradi, shuning uchun oldindan koʻrilgan agent chiplari mijoz tomonidan qayta amalga oshirishdan emas, balki backend qoidalaridan keladi. Javob har bir agentning `id`, `name`, ixtiyoriy `avatar_url`, `source` va odam oʻqiy oladigan `reason` ni olib yuradi.
+
+Yaratishda mijozlar `CreateCommentRequest` da ixtiyoriy `suppress_agent_ids` massivini yuborishi mumkin. Server avval **toʻliq** trigger toʻplamini hisoblaydi, soʻngra `filterSuppressedCommentAgentTriggers` orqali post-filtr sifatida oʻsha id larni olib tashlaydi. Yoʻq yoki boʻsh maydon standart xatti-harakatni saqlaydi; hisoblangan toʻplamda boʻlmagan yaroqli UUID — no-op; nuqsonli UUID soʻrov chegarasida `parseUUIDSliceOrBadRequest` tomonidan rad etiladi.
+
+## Source files
+
+| Fayl | Bu sahifa bogʻliq boʻlgan simvollar |
+| --- | --- |
+| `server/internal/util/mention.go` | `MentionRe`, `Mention` (struktura + `squad` ni tushirib qoldiradigan hujjat izohi), `ParseMentions`, `HasMentionAll`, `Mention.IsMentionAll` |
+| `server/internal/handler/comment.go` | `computeMentionedAgentCommentTriggers`, `if m.Type != "agent" { continue }`, `computeCommentAgentTriggers`, `enqueueCommentAgentTriggers`, `commentTriggerSourceMentionAgent`, `commentTriggerSourceMentionSquadLeader`, `EnqueueTaskForMention`, `EnqueueTaskForSquadLeader`, `HasPendingTaskForIssueAndAgent`, `canAccessPrivateAgent`, `commentMentionsOthersButNotAssignee`, `PreviewCommentTriggers`, `CreateCommentRequest.SuppressAgentIDs`, `filterSuppressedCommentAgentTriggers` |
+| `server/internal/handler/squad_briefing.go` | `formatMention` (aʼzo mentioni `user_id` dan foydalanadi) |
+| `server/internal/service/builtin_skills/agora-mentioning/SKILL.md` | bu sahifa aks ettiradigan agentga qaratilgan kontrakt |
+
+Bu toʻrtta manba bitta kontrakt. Agar regexni, trigger tarmogʻini, navbatga qoʻyish chaqiruvini yoki id-manba moslamasini oʻzgartirsangiz, bu sahifani **va** `agora-mentioning` SKILL.md ni (plyus uning `references/mentioning-source-map.md` ni) **bitta PR** da yangilang — oʻrnatilgan skil agentlarga joʻnatiladi va agar kod usiz koʻchsa, jimgina eskirgan xatti-harakatni oʻrgatadi.
