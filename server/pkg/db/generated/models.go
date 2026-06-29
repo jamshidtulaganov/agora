@@ -312,6 +312,20 @@ type Feedback struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type GitCredential struct {
+	ID              pgtype.UUID        `json:"id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	Label           string             `json:"label"`
+	Provider        string             `json:"provider"`
+	Host            string             `json:"host"`
+	Owner           string             `json:"owner"`
+	Username        string             `json:"username"`
+	AuthKind        string             `json:"auth_kind"`
+	SecretEncrypted []byte             `json:"secret_encrypted"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	CreatedBy       pgtype.UUID        `json:"created_by"`
+}
+
 type GithubInstallation struct {
 	ID               pgtype.UUID        `json:"id"`
 	WorkspaceID      pgtype.UUID        `json:"workspace_id"`

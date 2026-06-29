@@ -666,6 +666,17 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Delete("/github/installations/{installationId}", h.DeleteGitHubInstallation)
 				})
 
+				// Git credentials — per-workspace PATs so the daemon can clone
+				// private repos across several git accounts (e.g. two companies /
+				// two GitHub accounts). Admin-only; the sealed token is never
+				// returned by the list endpoint.
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))
+					r.Get("/git-credentials", h.ListGitCredentials)
+					r.Post("/git-credentials", h.CreateGitCredential)
+					r.Delete("/git-credentials/{credId}", h.DeleteGitCredential)
+				})
+
 				// Lark integration. Listing is member-visible (same
 				// rationale as GitHub: the Integrations tab must
 				// render for non-admins so they see "wired up by whom").
