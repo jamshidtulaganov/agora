@@ -1,7 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { CircleStop, Send } from "lucide-react";
+import { api } from "@agora/core/api";
+import { issueKeys } from "@agora/core/issues/queries";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { useActorName } from "@agora/core/workspace/hooks";
 import { agentTaskSnapshotOptions } from "@agora/core/agents";
@@ -24,12 +27,22 @@ import { useT } from "../../i18n";
 
 interface AgentWorkingIndicatorProps {
   issueId: string;
+  /** Show a Stop button that cancels the running agent — the "kill switch"
+   * a developer who wants to stay in control needs when a run goes wrong. */
+  allowStop?: boolean;
 }
 
-export function AgentWorkingIndicator({ issueId }: AgentWorkingIndicatorProps) {
+export function AgentWorkingIndicator({
+  issueId,
+  allowStop = false,
+}: AgentWorkingIndicatorProps) {
   const { t } = useT("issues");
   const wsId = useWorkspaceId();
+  const qc = useQueryClient();
   const { getActorName } = useActorName();
+  const [stopping, setStopping] = useState(false);
+  const [steerText, setSteerText] = useState("");
+  const [steering, setSteering] = useState(false);
   const { data: snapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
 
   const { running, queued } = useMemo(() => {
@@ -56,6 +69,42 @@ export function AgentWorkingIndicator({ issueId }: AgentWorkingIndicatorProps) {
 
   const active = [...running, ...queued];
   const agentIds = [...new Set(active.map((tk) => tk.agent_id))];
+
+  // Cancel every in-flight task for this issue. The daemon polls for
+  // server-side cancellation mid-run, so this actually halts the agent.
+  const stopAll = async () => {
+    setStopping(true);
+    try {
+      await Promise.allSettled(
+        active.map((tk) => api.cancelTask(issueId, tk.id)),
+      );
+      qc.invalidateQueries({
+        queryKey: agentTaskSnapshotOptions(wsId).queryKey,
+      });
+    } finally {
+      setStopping(false);
+    }
+  };
+
+  // Steer: post the message + force-enqueue a resuming follow-up for the running
+  // agent. Applied the moment the current turn ends, keeping context.
+  const steer = async () => {
+    const msg = steerText.trim();
+    const agentId = agentIds[0];
+    if (!msg || !agentId) return;
+    setSteering(true);
+    try {
+      const c = await api.createComment(issueId, `↪ Steer: ${msg}`);
+      await api.steerIssue(issueId, agentId, c?.id);
+      setSteerText("");
+      qc.invalidateQueries({ queryKey: issueKeys.timeline(issueId) });
+      qc.invalidateQueries({
+        queryKey: agentTaskSnapshotOptions(wsId).queryKey,
+      });
+    } finally {
+      setSteering(false);
+    }
+  };
   const anyRunning = running.length > 0;
   const isSingle = agentIds.length === 1;
 
@@ -75,28 +124,65 @@ export function AgentWorkingIndicator({ issueId }: AgentWorkingIndicatorProps) {
       );
 
   return (
-    <div
-      className="flex items-center gap-2 px-1 py-2 text-xs"
-      aria-live="polite"
-    >
-      <AgentAvatarStack
-        agentIds={agentIds}
-        size={18}
-        max={3}
-        opacity={anyRunning ? "full" : "half"}
-      />
-      <span className={anyRunning ? "text-info" : "text-muted-foreground"}>
-        {label}
-      </span>
-      {/* Chat-style "typing…" dots — only while genuinely running, so queued
-          state stays calm (matches the header chip reserving motion for live
-          work). Three staggered bouncing dots is the universal typing motif. */}
-      {anyRunning && (
-        <span className="inline-flex items-center gap-0.5" aria-hidden="true">
-          <span className="size-1 rounded-full bg-info animate-bounce [animation-delay:-0.3s]" />
-          <span className="size-1 rounded-full bg-info animate-bounce [animation-delay:-0.15s]" />
-          <span className="size-1 rounded-full bg-info animate-bounce" />
+    <div className="px-1 py-2 text-xs">
+      <div className="flex items-center gap-2" aria-live="polite">
+        <AgentAvatarStack
+          agentIds={agentIds}
+          size={18}
+          max={3}
+          opacity={anyRunning ? "full" : "half"}
+        />
+        <span className={anyRunning ? "text-info" : "text-muted-foreground"}>
+          {label}
         </span>
+        {/* Chat-style "typing…" dots — only while genuinely running, so queued
+            state stays calm. Three staggered bouncing dots = the typing motif. */}
+        {anyRunning && (
+          <span className="inline-flex items-center gap-0.5" aria-hidden="true">
+            <span className="size-1 rounded-full bg-info animate-bounce [animation-delay:-0.3s]" />
+            <span className="size-1 rounded-full bg-info animate-bounce [animation-delay:-0.15s]" />
+            <span className="size-1 rounded-full bg-info animate-bounce" />
+          </span>
+        )}
+        {allowStop && (
+          <button
+            type="button"
+            onClick={() => void stopAll()}
+            disabled={stopping}
+            title="Stop the agent"
+            className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+          >
+            <CircleStop className="h-3 w-3" />
+            {stopping ? "Stopping…" : "Stop"}
+          </button>
+        )}
+      </div>
+      {/* Steer: course-correct without stopping — queued, applied the moment the
+          current turn ends, keeping the agent's context. */}
+      {allowStop && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void steer();
+          }}
+          className="mt-1.5 flex items-center gap-1"
+        >
+          <input
+            value={steerText}
+            onChange={(e) => setSteerText(e.target.value)}
+            placeholder="Steer the agent (applied after this turn)…"
+            className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] outline-none focus:border-primary/50"
+          />
+          <button
+            type="submit"
+            disabled={steering || !steerText.trim()}
+            title="Queue a steering message for the running agent"
+            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+          >
+            <Send className="h-3 w-3" />
+            {steering ? "Steering…" : "Steer"}
+          </button>
+        </form>
       )}
     </div>
   );

@@ -1,0 +1,395 @@
+package daemon
+
+import (
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"net"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	"github.com/gorilla/websocket"
+)
+
+// Embedded browser ("general browser pane"): the daemon runs a headless Chromium
+// and bridges Chrome DevTools Protocol (CDP) screencast frames + input to the
+// Agora app over a WebSocket. The app renders the frames and forwards
+// clicks/keys, so a human gets an interactive browser inside the editor that can
+// (a) load the dev-server preview URL or any URL, and (b) be the Chromium an
+// automation script attaches to via `connectOverCDP(<cdp_url>)`, so you watch
+// the automation run. Self-host only (browser ↔ daemon on the same host).
+
+type chromeInstance struct {
+	dbgPort     int
+	cmd         *exec.Cmd
+	pageWSURL   string
+	userDataDir string
+	done        chan struct{}
+}
+
+func (c *chromeInstance) running() bool {
+	select {
+	case <-c.done:
+		return false
+	default:
+		return true
+	}
+}
+
+type browserManager struct {
+	mu        sync.Mutex
+	instances map[string]*chromeInstance // key = workdir
+	logger    *slog.Logger
+}
+
+func newBrowserManager(logger *slog.Logger) *browserManager {
+	return &browserManager{instances: make(map[string]*chromeInstance), logger: logger}
+}
+
+var browserUpgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		o := r.Header.Get("Origin")
+		return o == "" || strings.HasPrefix(o, "http://localhost") || strings.HasPrefix(o, "http://127.0.0.1")
+	},
+}
+
+func browserCORS(w http.ResponseWriter, r *http.Request) bool {
+	if origin := r.Header.Get("Origin"); strings.HasPrefix(origin, "http://localhost") || strings.HasPrefix(origin, "http://127.0.0.1") {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Vary", "Origin")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	}
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return false
+	}
+	return true
+}
+
+// detectChromium finds a Chromium/Chrome executable, preferring a Playwright
+// chromium (the common automation build), then the system browsers.
+func detectChromium() string {
+	if home, err := os.UserHomeDir(); err == nil {
+		globs := []string{
+			filepath.Join(home, "Library/Caches/ms-playwright/chromium-*/chrome-mac/Chromium.app/Contents/MacOS/Chromium"),
+			filepath.Join(home, ".cache/ms-playwright/chromium-*/chrome-linux/chrome"),
+			filepath.Join(home, ".cache/puppeteer/chrome/*/chrome-*/Google Chrome for Testing"),
+		}
+		for _, g := range globs {
+			if m, _ := filepath.Glob(g); len(m) > 0 {
+				sort.Strings(m)
+				return m[len(m)-1]
+			}
+		}
+	}
+	for _, c := range []string{
+		"/Applications/Chromium.app/Contents/MacOS/Chromium",
+		"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+	} {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	for _, n := range []string{"chromium", "chromium-browser", "google-chrome", "google-chrome-stable"} {
+		if p, err := exec.LookPath(n); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
+// ensureChrome launches (or reuses) a headless Chromium for key and returns it.
+func (bm *browserManager) ensureChrome(key string) (*chromeInstance, error) {
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
+	if inst, ok := bm.instances[key]; ok && inst.running() {
+		return inst, nil
+	}
+	bin := detectChromium()
+	if bin == "" {
+		return nil, fmt.Errorf("no Chromium/Chrome found on this host")
+	}
+	pl, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, err
+	}
+	port := pl.Addr().(*net.TCPAddr).Port
+	pl.Close()
+	udd, err := os.MkdirTemp("", "agora-browser-")
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(bin,
+		"--headless=new",
+		fmt.Sprintf("--remote-debugging-port=%d", port),
+		"--remote-debugging-address=127.0.0.1",
+		"--user-data-dir="+udd,
+		"--no-first-run",
+		"--no-default-browser-check",
+		"--hide-scrollbars",
+		"--disable-gpu",
+		"--window-size=1280,800",
+		"about:blank",
+	)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		os.RemoveAll(udd)
+		return nil, err
+	}
+	inst := &chromeInstance{dbgPort: port, cmd: cmd, userDataDir: udd, done: make(chan struct{})}
+	go func() {
+		_ = cmd.Wait()
+		close(inst.done)
+		os.RemoveAll(udd)
+	}()
+	pageWS, err := waitForPageWS(port, 12*time.Second)
+	if err != nil {
+		killProcessGroup(cmd)
+		return nil, err
+	}
+	inst.pageWSURL = pageWS
+	bm.instances[key] = inst
+	if bm.logger != nil {
+		bm.logger.Info("launched embedded browser", "key", key, "dbg_port", port, "bin", bin)
+	}
+	return inst, nil
+}
+
+// waitForPageWS polls the CDP /json endpoint until a page target's debugger
+// WebSocket URL is available.
+func waitForPageWS(dbgPort int, timeout time.Duration) (string, error) {
+	deadline := time.Now().Add(timeout)
+	url := fmt.Sprintf("http://127.0.0.1:%d/json", dbgPort)
+	for time.Now().Before(deadline) {
+		if resp, err := http.Get(url); err == nil {
+			var targets []struct {
+				Type                 string `json:"type"`
+				WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
+			}
+			_ = json.NewDecoder(resp.Body).Decode(&targets)
+			resp.Body.Close()
+			for _, t := range targets {
+				if t.Type == "page" && t.WebSocketDebuggerURL != "" {
+					return t.WebSocketDebuggerURL, nil
+				}
+			}
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return "", fmt.Errorf("chromium devtools did not become ready")
+}
+
+func (bm *browserManager) cdpURL(key string) string {
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
+	if inst, ok := bm.instances[key]; ok && inst.running() {
+		return fmt.Sprintf("http://127.0.0.1:%d", inst.dbgPort)
+	}
+	return ""
+}
+
+func (bm *browserManager) handleStart(w http.ResponseWriter, r *http.Request) {
+	if !browserCORS(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		WorkDir string `json:"workdir"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	key := strings.TrimSpace(req.WorkDir)
+	if key == "" {
+		http.Error(w, "workdir is required", http.StatusBadRequest)
+		return
+	}
+	inst, err := bm.ensureChrome(key)
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ready":   true,
+		"cdp_url": fmt.Sprintf("http://127.0.0.1:%d", inst.dbgPort),
+	})
+}
+
+func (bm *browserManager) handleStop(w http.ResponseWriter, r *http.Request) {
+	if !browserCORS(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		WorkDir string `json:"workdir"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	key := strings.TrimSpace(req.WorkDir)
+	bm.mu.Lock()
+	if inst, ok := bm.instances[key]; ok {
+		killProcessGroup(inst.cmd)
+		delete(bm.instances, key)
+	}
+	bm.mu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"stopped": true})
+}
+
+// handleStream upgrades to a WebSocket and bridges CDP screencast ⇄ the app:
+// frames flow daemon→app, input + navigation flow app→daemon.
+func (bm *browserManager) handleStream(w http.ResponseWriter, r *http.Request) {
+	key := strings.TrimSpace(r.URL.Query().Get("workdir"))
+	if key == "" {
+		http.Error(w, "workdir is required", http.StatusBadRequest)
+		return
+	}
+	inst, err := bm.ensureChrome(key)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	client, err := browserUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer client.Close()
+
+	cdp, _, err := websocket.DefaultDialer.Dial(inst.pageWSURL, nil)
+	if err != nil {
+		_ = client.WriteJSON(map[string]any{"type": "error", "message": "cdp dial failed: " + err.Error()})
+		return
+	}
+	defer cdp.Close()
+
+	var cdpWriteMu sync.Mutex
+	var idCounter int64
+	sendCDP := func(method string, params map[string]any) {
+		cdpWriteMu.Lock()
+		defer cdpWriteMu.Unlock()
+		idCounter++
+		_ = cdp.WriteJSON(map[string]any{"id": idCounter, "method": method, "params": params})
+	}
+
+	sendCDP("Page.enable", nil)
+	sendCDP("Emulation.setDeviceMetricsOverride", map[string]any{
+		"width": 1280, "height": 800, "deviceScaleFactor": 1, "mobile": false,
+	})
+	sendCDP("Page.startScreencast", map[string]any{
+		"format": "jpeg", "quality": 60, "maxWidth": 1280, "maxHeight": 800, "everyNthFrame": 1,
+	})
+
+	// CDP → app: relay screencast frames, ack each.
+	go func() {
+		for {
+			var msg struct {
+				Method string `json:"method"`
+				Params struct {
+					Data      string `json:"data"`
+					SessionID int    `json:"sessionId"`
+					Metadata  struct {
+						DeviceWidth  float64 `json:"deviceWidth"`
+						DeviceHeight float64 `json:"deviceHeight"`
+					} `json:"metadata"`
+				} `json:"params"`
+			}
+			if err := cdp.ReadJSON(&msg); err != nil {
+				client.Close()
+				return
+			}
+			if msg.Method == "Page.screencastFrame" {
+				_ = client.WriteJSON(map[string]any{
+					"type": "frame", "data": msg.Params.Data,
+					"w": msg.Params.Metadata.DeviceWidth, "h": msg.Params.Metadata.DeviceHeight,
+				})
+				sendCDP("Page.screencastFrameAck", map[string]any{"sessionId": msg.Params.SessionID})
+			}
+		}
+	}()
+
+	// App → CDP: input + navigation.
+	for {
+		var in struct {
+			Type       string  `json:"type"`
+			URL        string  `json:"url"`
+			X          float64 `json:"x"`
+			Y          float64 `json:"y"`
+			Button     string  `json:"button"`
+			ClickCount int     `json:"clickCount"`
+			DeltaX     float64 `json:"deltaX"`
+			DeltaY     float64 `json:"deltaY"`
+			CdpType    string  `json:"cdpType"`
+			Text       string  `json:"text"`
+			Key        string  `json:"key"`
+			Code       string  `json:"code"`
+			KeyCode    int     `json:"keyCode"`
+		}
+		if err := client.ReadJSON(&in); err != nil {
+			return
+		}
+		switch in.Type {
+		case "navigate":
+			if u := strings.TrimSpace(in.URL); u != "" {
+				sendCDP("Page.navigate", map[string]any{"url": u})
+			}
+		case "reload":
+			sendCDP("Page.reload", nil)
+		case "mouse":
+			button := in.Button
+			if button == "" {
+				button = "none"
+			}
+			sendCDP("Input.dispatchMouseEvent", map[string]any{
+				"type": in.CdpType, "x": in.X, "y": in.Y,
+				"button": button, "clickCount": in.ClickCount,
+			})
+		case "wheel":
+			sendCDP("Input.dispatchMouseEvent", map[string]any{
+				"type": "mouseWheel", "x": in.X, "y": in.Y,
+				"deltaX": in.DeltaX, "deltaY": in.DeltaY,
+			})
+		case "key":
+			params := map[string]any{"type": in.CdpType}
+			if in.Text != "" {
+				params["text"] = in.Text
+			}
+			if in.Key != "" {
+				params["key"] = in.Key
+			}
+			if in.Code != "" {
+				params["code"] = in.Code
+			}
+			if in.KeyCode != 0 {
+				params["windowsVirtualKeyCode"] = in.KeyCode
+				params["nativeVirtualKeyCode"] = in.KeyCode
+			}
+			sendCDP("Input.dispatchKeyEvent", params)
+		}
+	}
+}
+
+func (bm *browserManager) shutdown() {
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
+	for _, inst := range bm.instances {
+		killProcessGroup(inst.cmd)
+	}
+}

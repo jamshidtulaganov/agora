@@ -68,6 +68,9 @@ func TestClassifyRules(t *testing.T) {
 		{"balance is too low", "balance is too low to make this request", ReasonAgentProviderQuotaLimit},
 		{"monthly usage limit", "You've hit your org's monthly usage limit", ReasonAgentProviderQuotaLimit},
 		{"usage limit", "Account exceeded the daily usage limit", ReasonAgentProviderQuotaLimit},
+		// Claude Code's exact subscription-limit message — "weekly" splits the
+		// "you've hit your limit" pattern, so this must match on "weekly limit".
+		{"weekly limit", "You've hit your weekly limit · resets 7pm (Asia/Tashkent)", ReasonAgentProviderQuotaLimit},
 		{"hit your limit ascii", "you've hit your limit; upgrade to continue", ReasonAgentProviderQuotaLimit},
 		{"hit your limit curly", "you\u2019ve hit your limit", ReasonAgentProviderQuotaLimit},
 		{"credits", "Your account has 0 credits remaining", ReasonAgentProviderQuotaLimit},

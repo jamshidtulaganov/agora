@@ -32,6 +32,7 @@ UPDATE agent SET
     runtime_config = COALESCE(sqlc.narg('runtime_config'), runtime_config),
     runtime_mode = COALESCE(sqlc.narg('runtime_mode'), runtime_mode),
     runtime_id = COALESCE(sqlc.narg('runtime_id'), runtime_id),
+    fallback_runtime_id = COALESCE(sqlc.narg('fallback_runtime_id'), fallback_runtime_id),
     visibility = COALESCE(sqlc.narg('visibility'), visibility),
     status = COALESCE(sqlc.narg('status'), status),
     max_concurrent_tasks = COALESCE(sqlc.narg('max_concurrent_tasks'), max_concurrent_tasks),
@@ -191,6 +192,29 @@ SELECT
     p.is_leader_task
 FROM agent_task_queue p
 WHERE p.id = $1
+RETURNING *;
+
+-- name: CreateFailoverTask :one
+-- Clones a parent task onto a DIFFERENT runtime (the agent's configured
+-- fallback) after the primary runtime hit a provider usage/rate limit. Always a
+-- FRESH session — session_id/work_dir are NOT carried forward, because the
+-- resume pointer is pinned to the primary runtime's account and a different
+-- account cannot resume it. `attempt` is NOT incremented: this is a routing
+-- change, not a same-runtime retry, so it does not spend the retry budget.
+-- max_attempts / trigger / role provenance are inherited.
+INSERT INTO agent_task_queue (
+    agent_id, runtime_id, issue_id, chat_session_id, autopilot_run_id,
+    status, priority, trigger_comment_id, trigger_summary, context,
+    attempt, max_attempts, parent_task_id, force_fresh_session, is_leader_task
+)
+SELECT
+    p.agent_id, sqlc.arg('runtime_id'), p.issue_id, p.chat_session_id, p.autopilot_run_id,
+    'queued', p.priority, p.trigger_comment_id, p.trigger_summary, p.context,
+    p.attempt, p.max_attempts, p.id,
+    true,
+    p.is_leader_task
+FROM agent_task_queue p
+WHERE p.id = sqlc.arg('parent_id')
 RETURNING *;
 
 -- name: CancelAgentTasksByIssue :many

@@ -1479,6 +1479,14 @@ func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 	// runtime_recovery). The helper itself enforces attempt < max_attempts
 	// and only triggers for issue/chat tasks.
 	retried, _ := s.MaybeRetryFailedTask(ctx, task)
+	// Provider usage/rate limit (weekly quota, exhausted 429): the same runtime
+	// will keep failing, so instead of a same-runtime retry, route the task onto
+	// the agent's configured fallback runtime. Treated like a retry below so the
+	// generic failure comment / chat fallback is suppressed (failover posts its
+	// own note).
+	if retried == nil {
+		retried, _ = s.maybeFailoverToFallbackRuntime(ctx, task, failureReason)
+	}
 
 	// Skip the per-failure system comment when we'll immediately retry —
 	// the new task will surface its own status to the user, and we don't
@@ -1629,6 +1637,72 @@ func (s *TaskService) MaybeRetryFailedTask(ctx context.Context, parent db.AgentT
 	// Retry creates a fresh queued row, same status transition (∅ → queued)
 	// as EnqueueTaskFor*. Broadcast queued first, then notify the daemon —
 	// see EnqueueTaskForIssue for ordering rationale.
+	s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, child)
+	s.NotifyTaskEnqueued(ctx, child)
+	return &child, nil
+}
+
+// maybeFailoverToFallbackRuntime re-dispatches a task onto the agent's
+// configured fallback runtime when the PRIMARY runtime hit a provider USAGE/RATE
+// LIMIT (a weekly/monthly quota, or an exhausted 429). Without it, one account's
+// weekly limit dead-stops the agent — and the whole squad it sits in — until the
+// limit resets. Returns the failover child when one was enqueued.
+//
+// Guards, bounded to a single failover: only provider-limit reasons; the agent
+// must have a fallback runtime that is online and is NOT the runtime that just
+// failed (so a task already running on the fallback never loops back to it);
+// autopilot tasks are skipped (the scheduler owns their retry cadence); and an
+// issue with an in-flight PR is left alone (work already delivered).
+func (s *TaskService) maybeFailoverToFallbackRuntime(ctx context.Context, parent db.AgentTaskQueue, reason string) (*db.AgentTaskQueue, error) {
+	if reason != taskfailure.ReasonAgentProviderQuotaLimit.String() &&
+		reason != taskfailure.ReasonAgentProviderCapacityOrRateLimit.String() {
+		return nil, nil
+	}
+	if parent.AutopilotRunID.Valid {
+		return nil, nil
+	}
+	if !parent.IssueID.Valid && !parent.ChatSessionID.Valid {
+		return nil, nil
+	}
+	agent, err := s.Queries.GetAgent(ctx, parent.AgentID)
+	if err != nil || !agent.FallbackRuntimeID.Valid {
+		return nil, nil
+	}
+	// Already on the fallback (or fallback == primary) → don't loop back to it.
+	if parent.RuntimeID.Valid && agent.FallbackRuntimeID.Bytes == parent.RuntimeID.Bytes {
+		return nil, nil
+	}
+	fallback, err := s.Queries.GetAgentRuntime(ctx, agent.FallbackRuntimeID)
+	if err != nil || fallback.Status != "online" {
+		slog.Info("failover skipped: fallback runtime unavailable",
+			"task_id", util.UUIDToString(parent.ID),
+			"agent_id", util.UUIDToString(parent.AgentID))
+		return nil, nil
+	}
+	if parent.IssueID.Valid && s.issueHasInFlightPR(ctx, parent.IssueID) {
+		return nil, nil
+	}
+
+	child, err := s.Queries.CreateFailoverTask(ctx, db.CreateFailoverTaskParams{
+		RuntimeID: agent.FallbackRuntimeID,
+		ParentID:  parent.ID,
+	})
+	if err != nil {
+		slog.Warn("failover enqueue failed",
+			"parent_task_id", util.UUIDToString(parent.ID), "error", err)
+		return nil, err
+	}
+
+	if parent.IssueID.Valid {
+		s.createAgentComment(ctx, parent.IssueID, parent.AgentID,
+			"↪️ Primary runtime hit a provider usage/rate limit — failed over to this agent's fallback runtime for this task.",
+			"system", parent.TriggerCommentID)
+	}
+	slog.Info("task failed over to fallback runtime",
+		"parent_task_id", util.UUIDToString(parent.ID),
+		"child_task_id", util.UUIDToString(child.ID),
+		"fallback_runtime_id", util.UUIDToString(agent.FallbackRuntimeID),
+		"reason", reason)
 	s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, child)
 	s.NotifyTaskEnqueued(ctx, child)
 	return &child, nil
@@ -1785,6 +1859,103 @@ func (s *TaskService) enqueueRerunTask(ctx context.Context, issue db.Issue, agen
 // All callers that surface a task as failed — sweepers, FailTask,
 // recover-orphans — funnel through here so the same UI-consistency
 // guarantees apply on every code path.
+// maybeReTriggerSquadLeaderOnMemberFailure re-engages the squad leader when a
+// non-leader (member) task fails on a squad-assigned issue. Without it, a member
+// hitting a rate/weekly limit or crashing leaves the issue stalled — the leader
+// that owns coordination is never told, so it can never route around the
+// failure. We post a system note describing the failure (so the leader routes to
+// a different member instead of re-dispatching the one that just failed) and
+// enqueue a fresh leader task. Returns true when a leader task was enqueued.
+//
+// Loop guards: skips when the failed task is the leader's own, the issue is not
+// squad-assigned, the failed agent IS the leader, the leader already has a
+// pending task on the issue, or the leader is not runnable.
+func (s *TaskService) maybeReTriggerSquadLeaderOnMemberFailure(ctx context.Context, task db.AgentTaskQueue, issue db.Issue, failureReason string) bool {
+	if task.IsLeaderTask {
+		return false
+	}
+	if !issue.AssigneeType.Valid || issue.AssigneeType.String != "squad" || !issue.AssigneeID.Valid {
+		return false
+	}
+	// Issue already closed — re-engaging the leader would just post noise onto a
+	// done/cancelled issue and spin up a pointless run.
+	if issue.Status == "done" || issue.Status == "cancelled" {
+		return false
+	}
+	squad, err := s.Queries.GetSquad(ctx, issue.AssigneeID)
+	if err != nil {
+		return false
+	}
+	if task.AgentID.Valid && task.AgentID.Bytes == squad.LeaderID.Bytes {
+		return false
+	}
+	if pending, err := s.Queries.HasPendingTaskForIssueAndAgent(ctx, db.HasPendingTaskForIssueAndAgentParams{
+		IssueID: issue.ID,
+		AgentID: squad.LeaderID,
+	}); err != nil || pending {
+		return false
+	}
+	leader, err := s.Queries.GetAgent(ctx, squad.LeaderID)
+	if err != nil || leader.ArchivedAt.Valid || !leader.RuntimeID.Valid {
+		return false
+	}
+
+	memberName := "A squad member"
+	if failed, err := s.Queries.GetAgent(ctx, task.AgentID); err == nil && failed.Name != "" {
+		memberName = failed.Name
+	}
+	body := fmt.Sprintf(
+		"⚠️ %s could not finish its task (%s). Squad lead: re-route this — pick a different member or adjust the plan, and do NOT re-dispatch the same agent if this is a hard rate/usage limit.",
+		memberName, failureReason,
+	)
+	// triggerCommentID links the leader's re-trigger to the failure note below,
+	// so the leader run carries the "a member just failed" context instead of
+	// re-reading the issue cold (mirrors the child-done re-trigger path).
+	var triggerCommentID pgtype.UUID
+	if comment, err := s.Queries.CreateComment(ctx, db.CreateCommentParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+		AuthorType:  "system",
+		AuthorID:    pgtype.UUID{Valid: true},
+		Content:     body,
+		Type:        "system",
+		ParentID:    pgtype.UUID{Valid: false},
+	}); err == nil {
+		triggerCommentID = comment.ID
+		s.Bus.Publish(events.Event{
+			Type:        protocol.EventCommentCreated,
+			WorkspaceID: util.UUIDToString(issue.WorkspaceID),
+			ActorType:   "system",
+			Payload: map[string]any{
+				"comment": map[string]any{
+					"id":          util.UUIDToString(comment.ID),
+					"issue_id":    util.UUIDToString(comment.IssueID),
+					"author_type": comment.AuthorType,
+					"author_id":   util.UUIDToString(comment.AuthorID),
+					"content":     comment.Content,
+					"type":        comment.Type,
+					"parent_id":   util.UUIDToPtr(comment.ParentID),
+					"created_at":  comment.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+				},
+				"issue_title":  issue.Title,
+				"issue_status": issue.Status,
+			},
+		})
+	}
+
+	if _, err := s.EnqueueTaskForSquadLeader(ctx, issue, squad.LeaderID, triggerCommentID); err != nil {
+		slog.Warn("squad member failure: re-trigger leader failed",
+			"issue_id", util.UUIDToString(issue.ID), "error", err)
+		return false
+	}
+	slog.Info("squad member failure: re-triggered leader",
+		"issue_id", util.UUIDToString(issue.ID),
+		"leader_id", util.UUIDToString(squad.LeaderID),
+		"failed_agent_id", util.UUIDToString(task.AgentID),
+		"reason", failureReason)
+	return true
+}
+
 func (s *TaskService) HandleFailedTasks(ctx context.Context, tasks []db.AgentTaskQueue) int {
 	if len(tasks) == 0 {
 		return 0
@@ -1818,6 +1989,12 @@ func (s *TaskService) HandleFailedTasks(ctx context.Context, tasks []db.AgentTas
 				// Reset stuck in_progress issues only when no other active
 				// task exists for the issue and no retry was just enqueued.
 				issueKey := util.UUIDToString(t.IssueID)
+				// A squad member's task failed → re-engage the leader so it can
+				// route around the failure. Counts as a retry for the stall-reset
+				// guard below: coordination is active, don't also bounce to todo.
+				if !retriedIssues[issueKey] && s.maybeReTriggerSquadLeaderOnMemberFailure(ctx, t, issue, failureReason) {
+					retriedIssues[issueKey] = true
+				}
 				if issue.Status == "in_progress" && !processedIssues[issueKey] && !retriedIssues[issueKey] {
 					processedIssues[issueKey] = true
 					hasActive, checkErr := s.Queries.HasActiveTaskForIssue(ctx, t.IssueID)

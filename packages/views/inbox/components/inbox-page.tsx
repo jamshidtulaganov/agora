@@ -35,7 +35,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import type { InboxItem } from "@agora/core/types";
-import { Button } from "@agora/ui/components/ui/button";
+import { Button, buttonVariants } from "@agora/ui/components/ui/button";
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -234,13 +234,7 @@ export function InboxPage() {
       </div>
       <DropdownMenu>
         <DropdownMenuTrigger
-          render={
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-muted-foreground"
-            />
-          }
+          className={buttonVariants({ variant: "ghost", size: "icon-sm", className: "text-muted-foreground" })}
         >
           <MoreHorizontal className="h-4 w-4" />
         </DropdownMenuTrigger>

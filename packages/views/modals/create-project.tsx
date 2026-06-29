@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { ChevronRight, FolderOpen, Maximize2, Minimize2, Search, X as XIcon, UserMinus } from "lucide-react";
+import { ChevronRight, FolderOpen, Maximize2, Minimize2, Search, X as XIcon, UserMinus, Users } from "lucide-react";
 
 /**
  * GitHub mark — lucide-react v1 dropped brand icons, so we inline the
@@ -31,7 +31,7 @@ import {
 } from "@agora/core/projects/config";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { useCurrentWorkspace, useWorkspacePaths } from "@agora/core/paths";
-import { memberListOptions, agentListOptions } from "@agora/core/workspace/queries";
+import { memberListOptions, agentListOptions, squadListOptions } from "@agora/core/workspace/queries";
 import { useActorName } from "@agora/core/workspace/hooks";
 import type { ProjectStatus, ProjectPriority } from "@agora/core/types";
 import { cn } from "@agora/ui/lib/utils";
@@ -119,6 +119,7 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
   const wsId = useWorkspaceId();
   const { data: members = [] } = useQuery(memberListOptions(wsId));
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
+  const { data: squads = [] } = useQuery(squadListOptions(wsId));
   const { getActorName } = useActorName();
   const projectStatusLabels = useProjectStatusLabels();
   const projectPriorityLabels = useProjectPriorityLabels();
@@ -133,6 +134,8 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
   const [priority, setPriority] = useState<ProjectPriority>(draft.priority);
   const [leadType, setLeadType] = useState<"member" | "agent" | undefined>(draft.leadType);
   const [leadId, setLeadId] = useState<string | undefined>(draft.leadId);
+  const [squadId, setSquadId] = useState<string | undefined>(draft.squadId);
+  const [squadOpen, setSquadOpen] = useState(false);
   const [icon, setIcon] = useState<string | undefined>(draft.icon);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -211,6 +214,10 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
     setLeadType(type); setLeadId(id);
     setDraft({ leadType: type, leadId: id });
   };
+  const updateSquad = (id?: string) => {
+    setSquadId(id);
+    setDraft({ squadId: id });
+  };
   const updateIcon = (v: string | undefined) => { setIcon(v); setDraft({ icon: v }); };
 
   const [leadOpen, setLeadOpen] = useState(false);
@@ -266,6 +273,8 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
         priority,
         lead_type: leadType,
         lead_id: leadId,
+        // Bind the project to a squad: only that squad's agents work its issues.
+        squad_id: squadId,
         // Server attaches these in the same transaction as the project.
         resources,
       });
@@ -538,6 +547,52 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
             </PopoverContent>
           </Popover>
 
+          <Popover open={squadOpen} onOpenChange={setSquadOpen}>
+            <PopoverTrigger
+              render={
+                <PillButton>
+                  <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                  {squadId ? (
+                    <span>{squads.find((s) => s.id === squadId)?.name ?? "Squad"}</span>
+                  ) : (
+                    <span className="text-muted-foreground">Squad</span>
+                  )}
+                </PillButton>
+              }
+            />
+            <PopoverContent align="start" className="w-52 p-0">
+              <div className="p-1 max-h-60 overflow-y-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    updateSquad(undefined);
+                    setSquadOpen(false);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent transition-colors"
+                >
+                  <UserMinus className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-muted-foreground">No squad</span>
+                </button>
+                {squads
+                  .filter((s) => !s.archived_at)
+                  .map((s) => (
+                    <button
+                      type="button"
+                      key={s.id}
+                      onClick={() => {
+                        updateSquad(s.id);
+                        setSquadOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent transition-colors"
+                    >
+                      <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="truncate">{s.name}</span>
+                    </button>
+                  ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+
           <Popover
             open={repoPopoverOpen}
             onOpenChange={(v) => {
@@ -797,6 +852,12 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
             {submitting ? t(($) => $.create_project.submitting) : t(($) => $.create_project.submit)}
           </Button>
         </div>
+        {selectedRepos.length === 0 && !selectedLocalPath && (
+          <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-[11px] leading-snug text-muted-foreground">
+            Connect a repository (the pill above) so agents have code to work
+            on. You can add more later in project settings.
+          </p>
+        )}
       </DialogContent>
     </Dialog>
   );

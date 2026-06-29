@@ -1127,7 +1127,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 //
 // Returns the factory plus a short label for the boot log: "ws" in
 // the healthy case, "noop" in the fallback case.
-func buildLarkConnectorFactory(installSvc *lark.InstallationService, apiClient lark.APIClient, queries *db.Queries, updater lark.IssueStatusUpdater) (lark.ConnectorFactory, string) {
+func buildLarkConnectorFactory(installSvc *lark.InstallationService, apiClient lark.APIClient, queries *db.Queries, updater lark.IssueCardActions) (lark.ConnectorFactory, string) {
 	endpointFetcher, err := lark.NewHTTPConnectionTokenFetcher(lark.HTTPConnectionTokenConfig{
 		BaseURL: strings.TrimSpace(os.Getenv("AGORA_LARK_CALLBACK_BASE_URL")),
 		Logger:  slog.Default(),

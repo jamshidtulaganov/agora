@@ -53,6 +53,9 @@ export function McpServersPanel() {
   const [argsText, setArgsText] = useState("");
   const [env, setEnv] = useState<EnvRow[]>([{ key: "", value: "" }]);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
+  // Required-scope hint for source-control templates (github/gitlab), shown
+  // once a template that declares one is applied. Null = no hint to show.
+  const [scopeHint, setScopeHint] = useState<string | null>(null);
 
   const selectedIds = Object.keys(selected).filter((id) => selected[id]);
   const allSelected =
@@ -88,6 +91,7 @@ export function McpServersPanel() {
         ? tpl.envKeys.map((key) => ({ key, value: "" }))
         : [{ key: "", value: "" }],
     );
+    setScopeHint(tpl.scopeHint ?? null);
   }
 
   function resetForm() {
@@ -96,6 +100,7 @@ export function McpServersPanel() {
     setArgsText("");
     setEnv([{ key: "", value: "" }]);
     setSelected({});
+    setScopeHint(null);
   }
 
   const canSubmit =
@@ -198,6 +203,12 @@ export function McpServersPanel() {
                 </Button>
               ))}
             </div>
+
+            {scopeHint && (
+              <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground">
+                {scopeHint}
+              </div>
+            )}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">

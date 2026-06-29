@@ -105,12 +105,14 @@ func noticeCard(headerColor, body string) (string, error) {
 	return string(raw), nil
 }
 
-// IssueStatusUpdater applies a card-action status change in the Agora core,
-// attributed to a bound member. Implemented in the handler package (which owns
-// the issue update + EventIssueUpdated publish); injected here so the lark
-// package stays free of handler/HTTP coupling.
-type IssueStatusUpdater interface {
+// IssueCardActions applies card-action mutations in the Agora core, attributed
+// to a bound member. Implemented in the handler package (which owns the issue
+// update + EventIssueUpdated publish + the qa:pass auto_docs automation);
+// injected here so the lark package stays free of handler/HTTP coupling.
+type IssueCardActions interface {
 	UpdateIssueStatusForLark(ctx context.Context, issueID, newStatus, actorUserID string) error
+	AttachLabelByNameForLark(ctx context.Context, issueID, labelName, actorUserID string) error
+	AssignIssueToMemberForLark(ctx context.Context, issueID, memberUserID string) error
 }
 
 // CardActionQueries is the narrow DB surface the issue card-action handler
@@ -125,14 +127,14 @@ type CardActionQueries interface {
 // mutation through IssueStatusUpdater, and patches the card to the new state.
 type issueCardActionHandler struct {
 	queries CardActionQueries
-	updater IssueStatusUpdater
+	updater IssueCardActions
 	api     APIClient
 	creds   CredentialsProvider
 	log     *slog.Logger
 }
 
 // NewIssueCardActionHandler wires the production handler.
-func NewIssueCardActionHandler(queries CardActionQueries, updater IssueStatusUpdater, api APIClient, creds CredentialsProvider, log *slog.Logger) CardActionHandler {
+func NewIssueCardActionHandler(queries CardActionQueries, updater IssueCardActions, api APIClient, creds CredentialsProvider, log *slog.Logger) CardActionHandler {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -157,17 +159,39 @@ func (h *issueCardActionHandler) Handle(ctx context.Context, inst db.LarkInstall
 	}
 	actorUserID := uuidString(binding.AgoraUserID)
 
+	if issueID == "" {
+		return h.patch(ctx, inst, action.MessageID, "red", "❌ Missing issue.")
+	}
+
 	switch cmd {
 	case "set_status":
 		newStatus := action.Value["status"]
-		if newStatus == "" || issueID == "" {
-			return h.patch(ctx, inst, action.MessageID, "red", "❌ Missing status or issue.")
+		if newStatus == "" {
+			return h.patch(ctx, inst, action.MessageID, "red", "❌ Missing status.")
 		}
 		if err := h.updater.UpdateIssueStatusForLark(ctx, issueID, newStatus, actorUserID); err != nil {
 			h.log.Warn("lark card action: status update failed", "issue_id", issueID, "err", err.Error())
 			return h.patch(ctx, inst, action.MessageID, "red", "❌ Couldn't update status.")
 		}
 		return h.patch(ctx, inst, action.MessageID, "green", "✅ Status updated to **"+humanStatus(newStatus)+"**")
+	case "qa_pass":
+		if err := h.updater.AttachLabelByNameForLark(ctx, issueID, "qa:pass", actorUserID); err != nil {
+			h.log.Warn("lark card action: qa:pass failed", "issue_id", issueID, "err", err.Error())
+			return h.patch(ctx, inst, action.MessageID, "red", "❌ Couldn't apply QA pass.")
+		}
+		return h.patch(ctx, inst, action.MessageID, "green", "✅ QA passed")
+	case "qa_fail":
+		if err := h.updater.AttachLabelByNameForLark(ctx, issueID, "qa:fail", actorUserID); err != nil {
+			h.log.Warn("lark card action: qa:fail failed", "issue_id", issueID, "err", err.Error())
+			return h.patch(ctx, inst, action.MessageID, "red", "❌ Couldn't apply QA fail.")
+		}
+		return h.patch(ctx, inst, action.MessageID, "red", "❌ QA failed")
+	case "assign_me":
+		if err := h.updater.AssignIssueToMemberForLark(ctx, issueID, actorUserID); err != nil {
+			h.log.Warn("lark card action: assign failed", "issue_id", issueID, "err", err.Error())
+			return h.patch(ctx, inst, action.MessageID, "red", "❌ Couldn't assign.")
+		}
+		return h.patch(ctx, inst, action.MessageID, "green", "✅ Assigned to you")
 	default:
 		return h.patch(ctx, inst, action.MessageID, "grey", "Unknown action.")
 	}
@@ -207,6 +231,9 @@ func IssueActionCard(identifier, title, issueID, issueURL string) (string, error
 	buttons := []any{
 		statusButton("Mark In Review", "in_review", issueID),
 		statusButton("Done", "done", issueID),
+		actionButton("Assign to me", "default", map[string]string{"action": "assign_me", "issue_id": issueID}),
+		actionButton("QA ✅", "default", map[string]string{"action": "qa_pass", "issue_id": issueID}),
+		actionButton("QA ❌", "default", map[string]string{"action": "qa_fail", "issue_id": issueID}),
 	}
 	if issueURL != "" {
 		buttons = append(buttons, map[string]any{
@@ -240,11 +267,17 @@ func IssueActionCard(identifier, title, issueID, issueURL string) (string, error
 
 // statusButton builds a request-button that sets an issue's status when tapped.
 func statusButton(label, status, issueID string) map[string]any {
+	return actionButton(label, "primary", map[string]string{"action": "set_status", "status": status, "issue_id": issueID})
+}
+
+// actionButton builds a request-button carrying an arbitrary card-action value
+// payload (handled by issueCardActionHandler).
+func actionButton(label, btnType string, value map[string]string) map[string]any {
 	return map[string]any{
 		"tag":   "button",
 		"text":  map[string]any{"tag": "plain_text", "content": label},
-		"type":  "primary",
-		"value": map[string]string{"action": "set_status", "status": status, "issue_id": issueID},
+		"type":  btnType,
+		"value": value,
 	}
 }
 

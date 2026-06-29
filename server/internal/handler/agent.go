@@ -32,17 +32,20 @@ import (
 const maxAgentDescriptionLength = 255
 
 type AgentResponse struct {
-	ID            string          `json:"id"`
-	WorkspaceID   string          `json:"workspace_id"`
-	RuntimeID     string          `json:"runtime_id"`
-	Name          string          `json:"name"`
-	Description   string          `json:"description"`
-	Instructions  string          `json:"instructions"`
-	AvatarURL     *string         `json:"avatar_url"`
-	RuntimeMode   string          `json:"runtime_mode"`
-	RuntimeConfig any             `json:"runtime_config"`
-	CustomArgs    []string        `json:"custom_args"`
-	McpConfig     json.RawMessage `json:"mcp_config"`
+	ID          string `json:"id"`
+	WorkspaceID string `json:"workspace_id"`
+	RuntimeID   string `json:"runtime_id"`
+	// FallbackRuntimeID is the runtime tasks fail over to on a provider
+	// usage/rate limit. null when unset.
+	FallbackRuntimeID *string         `json:"fallback_runtime_id"`
+	Name              string          `json:"name"`
+	Description       string          `json:"description"`
+	Instructions      string          `json:"instructions"`
+	AvatarURL         *string         `json:"avatar_url"`
+	RuntimeMode       string          `json:"runtime_mode"`
+	RuntimeConfig     any             `json:"runtime_config"`
+	CustomArgs        []string        `json:"custom_args"`
+	McpConfig         json.RawMessage `json:"mcp_config"`
 	// custom_env is intentionally NOT serialized on agent resources. The
 	// agent_list/get/create/update/archive/restore responses and WS events
 	// only expose coarse metadata (has_custom_env, custom_env_key_count) so
@@ -121,6 +124,7 @@ func agentToResponse(a db.Agent) AgentResponse {
 		ID:                 uuidToString(a.ID),
 		WorkspaceID:        uuidToString(a.WorkspaceID),
 		RuntimeID:          uuidToString(a.RuntimeID),
+		FallbackRuntimeID:  uuidToPtr(a.FallbackRuntimeID),
 		Name:               a.Name,
 		Description:        a.Description,
 		Instructions:       a.Instructions,
@@ -254,6 +258,7 @@ type AgentTaskResponse struct {
 	CreatedAt        string                `json:"created_at"`
 	PriorSessionID   string                `json:"prior_session_id,omitempty"` // session ID from a previous task on same issue
 	PriorWorkDir     string                `json:"prior_work_dir,omitempty"`   // work_dir from a previous task on same issue
+	CoCodeBranch     string                `json:"cocode_branch,omitempty"`    // in_editor: feature branch the daemon forces the worktree onto (never main)
 	WorkDir          string                `json:"work_dir,omitempty"`         // local working directory pinned for this task; populated once the daemon reports it
 	// RelativeWorkDir is a privacy-safe display form of WorkDir intended for
 	// the UI. For standard tasks it strips the daemon's workspaces root so
@@ -858,12 +863,16 @@ func (h *Handler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 type UpdateAgentRequest struct {
-	Name          *string `json:"name"`
-	Description   *string `json:"description"`
-	Instructions  *string `json:"instructions"`
-	AvatarURL     *string `json:"avatar_url"`
-	RuntimeID     *string `json:"runtime_id"`
-	RuntimeConfig any     `json:"runtime_config"`
+	Name         *string `json:"name"`
+	Description  *string `json:"description"`
+	Instructions *string `json:"instructions"`
+	AvatarURL    *string `json:"avatar_url"`
+	RuntimeID    *string `json:"runtime_id"`
+	// FallbackRuntimeID, when set, is the runtime a task fails over to when the
+	// primary runtime hits a provider usage/rate limit (removes the
+	// single-account SPOF). Validated like runtime_id; COALESCE-updated.
+	FallbackRuntimeID *string `json:"fallback_runtime_id"`
+	RuntimeConfig     any     `json:"runtime_config"`
 	// custom_env is intentionally NOT updatable through this endpoint.
 	// Use `PUT /api/agents/{id}/env` for env changes — that path is
 	// owner/admin-only, denies agent actors, and writes a persisted
@@ -1086,6 +1095,31 @@ func (h *Handler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 		params.RuntimeID = runtime.ID
 		params.RuntimeMode = pgtype.Text{String: runtime.RuntimeMode, Valid: true}
 		targetRuntimeID = runtime.ID
+	}
+	if req.FallbackRuntimeID != nil {
+		fallbackUUID, ok := parseUUIDOrBadRequest(w, *req.FallbackRuntimeID, "fallback_runtime_id")
+		if !ok {
+			return
+		}
+		fallbackRuntime, err := h.Queries.GetAgentRuntimeForWorkspace(r.Context(), db.GetAgentRuntimeForWorkspaceParams{
+			ID:          fallbackUUID,
+			WorkspaceID: existing.WorkspaceID,
+		})
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid fallback_runtime_id")
+			return
+		}
+		// Same private-runtime gate as runtime_id: don't let the fallback be a
+		// quiet end-run onto someone else's private runtime.
+		member, ok := h.workspaceMember(w, r, uuidToString(existing.WorkspaceID))
+		if !ok {
+			return
+		}
+		if !canUseRuntimeForAgent(member, fallbackRuntime) {
+			writeError(w, http.StatusForbidden, "this runtime is private; only its owner or a workspace admin can use it as a fallback")
+			return
+		}
+		params.FallbackRuntimeID = fallbackRuntime.ID
 	}
 	if req.Visibility != nil {
 		params.Visibility = pgtype.Text{String: *req.Visibility, Valid: true}

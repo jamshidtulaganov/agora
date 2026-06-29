@@ -27,15 +27,19 @@ type ProjectResponse struct {
 	Priority    string  `json:"priority"`
 	LeadType    *string `json:"lead_type"`
 	LeadID      *string `json:"lead_id"`
+	// SquadID, when set, binds the project to a single squad: only that squad
+	// and its member agents (or its leader) may be assigned to the project's
+	// issues. null = unbound (any agent/squad may work it).
+	SquadID *string `json:"squad_id"`
 	// Settings is the project's preferences blob (project.settings jsonb),
 	// mirroring WorkspaceResponse.Settings. Always an object — empty rows and
 	// nulls normalize to {} so clients can read keys (e.g. sprint_mode)
 	// without a null guard.
-	Settings    any    `json:"settings"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
-	IssueCount  int64  `json:"issue_count"`
-	DoneCount   int64  `json:"done_count"`
+	Settings   any    `json:"settings"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
+	IssueCount int64  `json:"issue_count"`
+	DoneCount  int64  `json:"done_count"`
 	// ResourceCount is a breadcrumb pointing at the sub-collection at
 	// /api/projects/{id}/resources. Resources themselves stay out of this
 	// payload to keep parent metadata and child collections separate; clients
@@ -61,6 +65,7 @@ func projectToResponse(p db.Project) ProjectResponse {
 		Priority:    p.Priority,
 		LeadType:    textToPtr(p.LeadType),
 		LeadID:      uuidToPtr(p.LeadID),
+		SquadID:     uuidToPtr(p.SquadID),
 		Settings:    settings,
 		CreatedAt:   timestampToString(p.CreatedAt),
 		UpdatedAt:   timestampToString(p.UpdatedAt),
@@ -83,6 +88,33 @@ func (h *Handler) loadProjectResourceCount(ctx context.Context, projectID pgtype
 	return rows[0].ResourceCount
 }
 
+// resolveProjectSquadID validates an optional project→squad binding: the
+// squad must exist in the same workspace and not be archived. A nil pointer
+// means "unbound" and returns an invalid UUID (clears the column). On bad
+// input it writes the HTTP error and returns ok=false so the caller returns.
+func (h *Handler) resolveProjectSquadID(w http.ResponseWriter, r *http.Request, wsUUID pgtype.UUID, squadIDPtr *string) (pgtype.UUID, bool) {
+	if squadIDPtr == nil {
+		return pgtype.UUID{Valid: false}, true
+	}
+	squadUUID, ok := parseUUIDOrBadRequest(w, *squadIDPtr, "squad_id")
+	if !ok {
+		return pgtype.UUID{}, false
+	}
+	squad, err := h.Queries.GetSquadInWorkspace(r.Context(), db.GetSquadInWorkspaceParams{
+		ID:          squadUUID,
+		WorkspaceID: wsUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "squad_id does not refer to a squad in this workspace")
+		return pgtype.UUID{}, false
+	}
+	if squad.ArchivedAt.Valid {
+		writeError(w, http.StatusBadRequest, "cannot bind a project to an archived squad")
+		return pgtype.UUID{}, false
+	}
+	return squadUUID, true
+}
+
 type CreateProjectRequest struct {
 	Title       string                                `json:"title"`
 	Description *string                               `json:"description"`
@@ -91,6 +123,7 @@ type CreateProjectRequest struct {
 	Priority    string                                `json:"priority"`
 	LeadType    *string                               `json:"lead_type"`
 	LeadID      *string                               `json:"lead_id"`
+	SquadID     *string                               `json:"squad_id"`
 	Resources   []CreateProjectResourceRequestPayload `json:"resources,omitempty"`
 }
 
@@ -112,6 +145,7 @@ type UpdateProjectRequest struct {
 	Priority    *string `json:"priority"`
 	LeadType    *string `json:"lead_type"`
 	LeadID      *string `json:"lead_id"`
+	SquadID     *string `json:"squad_id"`
 	// Settings, when present, replaces the whole project.settings blob
 	// (PUT {"settings": {...}}). Mirrors UpdateWorkspaceRequest.Settings:
 	// the client sends the merged object, the server stores it verbatim.
@@ -280,6 +314,10 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	squadID, ok := h.resolveProjectSquadID(w, r, wsUUID, req.SquadID)
+	if !ok {
+		return
+	}
 
 	// Pre-validate every resource payload before opening a transaction so an
 	// invalid ref produces a clean 400 with no DB work. For local_directory we
@@ -326,6 +364,7 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		LeadType:    leadType,
 		LeadID:      leadID,
 		Priority:    priority,
+		SquadID:     squadID,
 	}
 
 	// Without resources, keep the simple non-tx path.
@@ -390,6 +429,11 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to commit project create")
 		return
 	}
+
+	// Kick off the lead agent's project knowledge build (study the connected
+	// repos → write the <slug>-kb skill). Best-effort; never blocks create, and
+	// no-ops unless the lead is an agent and a repo is attached.
+	h.maybeEnqueueProjectStudy(r.Context(), project, userID)
 
 	resourceResp := make([]ProjectResourceResponse, len(resourceRows))
 	for i, row := range resourceRows {
@@ -457,6 +501,7 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		Icon:        prevProject.Icon,
 		LeadType:    prevProject.LeadType,
 		LeadID:      prevProject.LeadID,
+		SquadID:     prevProject.SquadID,
 	}
 	if req.Title != nil {
 		params.Title = pgtype.Text{String: *req.Title, Valid: true}
@@ -504,6 +549,15 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		} else {
 			params.LeadID = pgtype.UUID{Valid: false}
 		}
+	}
+	if _, ok := rawFields["squad_id"]; ok {
+		// resolveProjectSquadID validates existence/archived; a null pointer
+		// unbinds (Valid=false). On bad input it has written the error already.
+		squadID, ok2 := h.resolveProjectSquadID(w, r, wsUUID, req.SquadID)
+		if !ok2 {
+			return
+		}
+		params.SquadID = squadID
 	}
 	// settings: mirror UpdateWorkspace — marshal the request blob and let the
 	// query's COALESCE($settings, settings) replace the column. Omitted

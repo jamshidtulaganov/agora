@@ -2077,6 +2077,12 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		}
 		projectID = id
 	}
+	// Project↔squad binding: if the target project is squad-bound, the assignee
+	// must belong to that squad (validateAssigneePair only checks workspace).
+	if status, msg := h.enforceProjectSquadAssignee(r.Context(), projectID, wsUUID, assigneeType, assigneeID); status != 0 {
+		writeError(w, status, msg)
+		return
+	}
 	if req.ParentIssueID != nil {
 		id, ok := parseUUIDOrBadRequest(w, *req.ParentIssueID, "parent_issue_id")
 		if !ok {
@@ -2438,8 +2444,22 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	// caller is not changing it.
 	_, touchedType := rawFields["assignee_type"]
 	_, touchedID := rawFields["assignee_id"]
+	_, touchedProject := rawFields["project_id"]
 	if touchedType || touchedID {
 		if status, msg := h.validateAssigneePair(r.Context(), r, workspaceID, params.AssigneeType, params.AssigneeID); status != 0 {
+			writeError(w, status, msg)
+			return
+		}
+	}
+	// Project↔squad binding: re-check on any assignee OR project change, so
+	// neither swapping the assignee nor moving the issue into a squad-bound
+	// project can smuggle in an out-of-squad agent.
+	if touchedType || touchedID || touchedProject {
+		wsUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace_id")
+		if !ok {
+			return
+		}
+		if status, msg := h.enforceProjectSquadAssignee(r.Context(), params.ProjectID, wsUUID, params.AssigneeType, params.AssigneeID); status != 0 {
 			writeError(w, status, msg)
 			return
 		}
@@ -2638,6 +2658,53 @@ func (h *Handler) validateAssigneePair(ctx context.Context, r *http.Request, wor
 	default:
 		return http.StatusBadRequest, "assignee_type must be 'member', 'agent', or 'squad'"
 	}
+}
+
+// enforceProjectSquadAssignee gates issue assignment by the project↔squad
+// binding (project.squad_id). When a project is bound to a squad, "only that
+// squad and its agents do that project's tasks": a squad assignee must BE the
+// bound squad, and an agent assignee must be a member of it (or its leader).
+// Human (member) assignees and unassigned issues are unconstrained — the
+// binding governs the automated workforce, not people. No-op when the project
+// has no binding, or there is no project / no assignee. Returns (status, msg)
+// like validateAssigneePair: (0, "") allows.
+func (h *Handler) enforceProjectSquadAssignee(ctx context.Context, projectID, wsUUID pgtype.UUID, assigneeType pgtype.Text, assigneeID pgtype.UUID) (int, string) {
+	if !projectID.Valid || !assigneeType.Valid || !assigneeID.Valid {
+		return 0, ""
+	}
+	if assigneeType.String == "member" {
+		return 0, ""
+	}
+	project, err := h.Queries.GetProjectInWorkspace(ctx, db.GetProjectInWorkspaceParams{
+		ID:          projectID,
+		WorkspaceID: wsUUID,
+	})
+	if err != nil || !project.SquadID.Valid {
+		return 0, ""
+	}
+	switch assigneeType.String {
+	case "squad":
+		if assigneeID.Bytes == project.SquadID.Bytes {
+			return 0, ""
+		}
+		return http.StatusForbidden, "this project is bound to a different squad; assign its squad or one of its member agents"
+	case "agent":
+		isMember, err := h.Queries.IsSquadMember(ctx, db.IsSquadMemberParams{
+			SquadID:    project.SquadID,
+			MemberType: "agent",
+			MemberID:   assigneeID,
+		})
+		if err == nil && isMember {
+			return 0, ""
+		}
+		// The leader may not carry a squad_member row in every setup; accept it
+		// explicitly so a project can always be driven by its squad's leader.
+		if squad, err := h.Queries.GetSquad(ctx, project.SquadID); err == nil && assigneeID.Bytes == squad.LeaderID.Bytes {
+			return 0, ""
+		}
+		return http.StatusForbidden, "this project is bound to a squad; only that squad's agents may be assigned"
+	}
+	return 0, ""
 }
 
 // shouldEnqueueAgentTask returns true when an issue creation or assignment
@@ -2979,9 +3046,19 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		// either assignee field. Skip the issue silently on failure.
 		_, batchTouchedType := rawUpdates["assignee_type"]
 		_, batchTouchedID := rawUpdates["assignee_id"]
+		_, batchTouchedProject := rawUpdates["project_id"]
 		if batchTouchedType || batchTouchedID {
 			if status, _ := h.validateAssigneePair(r.Context(), r, workspaceID, params.AssigneeType, params.AssigneeID); status != 0 {
 				continue
+			}
+		}
+		// Project↔squad binding: skip the issue if the resulting assignee is not
+		// allowed on a squad-bound project (assignee or project changed).
+		if batchTouchedType || batchTouchedID || batchTouchedProject {
+			if wsUUID, werr := util.ParseUUID(workspaceID); werr == nil {
+				if status, _ := h.enforceProjectSquadAssignee(r.Context(), params.ProjectID, wsUUID, params.AssigneeType, params.AssigneeID); status != 0 {
+					continue
+				}
 			}
 		}
 

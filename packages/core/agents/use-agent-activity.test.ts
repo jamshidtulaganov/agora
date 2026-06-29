@@ -32,6 +32,7 @@ const fullHistoryAgent: Agent = {
   id: "a1",
   workspace_id: "w",
   runtime_id: "r1",
+  fallback_runtime_id: null,
   name: "Old Agent",
   description: "",
   instructions: "",

@@ -1197,6 +1197,61 @@ func (q *Queries) UpdateIssue(ctx context.Context, arg UpdateIssueParams) (Issue
 	return i, err
 }
 
+const updateIssueAssignee = `-- name: UpdateIssueAssignee :one
+UPDATE issue SET
+    assignee_type = $2,
+    assignee_id = $3,
+    updated_at = now()
+WHERE id = $1 AND workspace_id = $4
+RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata
+`
+
+type UpdateIssueAssigneeParams struct {
+	ID           pgtype.UUID `json:"id"`
+	AssigneeType pgtype.Text `json:"assignee_type"`
+	AssigneeID   pgtype.UUID `json:"assignee_id"`
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+}
+
+// Focused assignee change (e.g. the Lark "assign to me" card action). Both
+// fields move together; pass NULL/NULL to unassign. Workspace_id guards tenancy.
+func (q *Queries) UpdateIssueAssignee(ctx context.Context, arg UpdateIssueAssigneeParams) (Issue, error) {
+	row := q.db.QueryRow(ctx, updateIssueAssignee,
+		arg.ID,
+		arg.AssigneeType,
+		arg.AssigneeID,
+		arg.WorkspaceID,
+	)
+	var i Issue
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Title,
+		&i.Description,
+		&i.Status,
+		&i.Priority,
+		&i.AssigneeType,
+		&i.AssigneeID,
+		&i.CreatorType,
+		&i.CreatorID,
+		&i.ParentIssueID,
+		&i.AcceptanceCriteria,
+		&i.ContextRefs,
+		&i.Position,
+		&i.DueDate,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Number,
+		&i.ProjectID,
+		&i.OriginType,
+		&i.OriginID,
+		&i.FirstExecutedAt,
+		&i.StartDate,
+		&i.Metadata,
+	)
+	return i, err
+}
+
 const updateIssueStatus = `-- name: UpdateIssueStatus :one
 UPDATE issue SET
     status = $2,

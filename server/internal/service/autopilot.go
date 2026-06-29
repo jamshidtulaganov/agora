@@ -131,6 +131,40 @@ func (s *AutopilotService) DispatchAutopilot(
 	return &run, nil
 }
 
+// projectSquadAllows reports whether the autopilot's assignee may work its
+// bound project. Mirrors Handler.enforceProjectSquadAssignee: a squad assignee
+// must BE the bound squad; an agent assignee must be a member of it (or its
+// leader). An unbound project — or no project / no assignee — always allows.
+func (s *AutopilotService) projectSquadAllows(ctx context.Context, ap db.Autopilot) bool {
+	if !ap.ProjectID.Valid || !ap.AssigneeID.Valid {
+		return true
+	}
+	project, err := s.Queries.GetProjectInWorkspace(ctx, db.GetProjectInWorkspaceParams{
+		ID:          ap.ProjectID,
+		WorkspaceID: ap.WorkspaceID,
+	})
+	if err != nil || !project.SquadID.Valid {
+		return true
+	}
+	switch ap.AssigneeType {
+	case "squad":
+		return ap.AssigneeID.Bytes == project.SquadID.Bytes
+	case "agent":
+		if isMember, err := s.Queries.IsSquadMember(ctx, db.IsSquadMemberParams{
+			SquadID:    project.SquadID,
+			MemberType: "agent",
+			MemberID:   ap.AssigneeID,
+		}); err == nil && isMember {
+			return true
+		}
+		if squad, err := s.Queries.GetSquad(ctx, project.SquadID); err == nil && ap.AssigneeID.Bytes == squad.LeaderID.Bytes {
+			return true
+		}
+		return false
+	}
+	return true
+}
+
 // dispatchCreateIssue creates an issue and enqueues a task for the agent.
 //
 // When the autopilot is assigned to a squad (Path A from MUL-2429), the
@@ -146,6 +180,14 @@ func (s *AutopilotService) dispatchCreateIssue(ctx context.Context, ap db.Autopi
 	leader, _, err := s.resolveAutopilotLeader(ctx, ap)
 	if err != nil {
 		return fmt.Errorf("resolve leader: %w", err)
+	}
+
+	// Project↔squad binding: if this autopilot targets a squad-bound project but
+	// its assignee is not in that squad, skip rather than create an issue that
+	// violates the binding. Skipped (not failed) — the misconfiguration is the
+	// autopilot's, and a skip keeps the failure-rate monitor from auto-pausing.
+	if !s.projectSquadAllows(ctx, ap) {
+		return &errDispatchSkipped{reason: formatAdmissionReason(ap, "assignee is not in the project's bound squad")}
 	}
 
 	tx, err := s.TxStarter.Begin(ctx)

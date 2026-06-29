@@ -13,6 +13,7 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
     id: "agent-1",
     workspace_id: "ws-1",
     runtime_id: "rt-1",
+    fallback_runtime_id: null,
     name: "Test Agent",
     description: "",
     instructions: "",

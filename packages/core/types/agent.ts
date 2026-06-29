@@ -144,6 +144,11 @@ export interface Agent {
   id: string;
   workspace_id: string;
   runtime_id: string;
+  // Runtime a task fails over to when the primary runtime hits a provider
+  // usage/rate limit. null when unset; optional so an older backend that
+  // predates the field still parses (API-compat: treat every field as
+  // possibly missing).
+  fallback_runtime_id?: string | null;
   name: string;
   description: string;
   instructions: string;
@@ -322,6 +327,8 @@ export interface UpdateAgentRequest {
   instructions?: string;
   avatar_url?: string;
   runtime_id?: string;
+  // Set the runtime tasks fail over to on a provider usage/rate limit.
+  fallback_runtime_id?: string;
   runtime_config?: Record<string, unknown>;
   /**
    * NOTE: `custom_env` is intentionally NOT updatable through this

@@ -1,0 +1,1164 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e22]:
+    - generic [ref=e25]:
+      - generic [ref=e26]:
+        - list [ref=e27]:
+          - listitem [ref=e28]:
+            - button "Sales Doctor Sales Doctor" [ref=e29]:
+              - img "Sales Doctor" [ref=e31]
+              - generic [ref=e32]: Sales Doctor
+              - img [ref=e33]
+        - list [ref=e35]:
+          - listitem [ref=e36]:
+            - button "Search... ⌘ K" [ref=e37]:
+              - img [ref=e38]
+              - generic [ref=e41]: Search...
+              - generic:
+                - generic: ⌘
+                - text: K
+          - listitem [ref=e42]:
+            - button "New Issue C" [ref=e43]:
+              - img [ref=e45]
+              - generic [ref=e48]: New Issue
+              - generic: C
+      - generic [ref=e49]:
+        - list [ref=e52]:
+          - listitem [ref=e53]:
+            - link "Inbox" [ref=e54] [cursor=pointer]:
+              - /url: /sd-main/inbox
+              - img [ref=e55]
+              - generic [ref=e58]: Inbox
+          - listitem [ref=e59]:
+            - link "My Issues" [ref=e60] [cursor=pointer]:
+              - /url: /sd-main/my-issues
+              - img [ref=e61]
+              - generic [ref=e65]: My Issues
+        - generic [ref=e67]:
+          - button "Pinned 1" [expanded] [ref=e68] [cursor=pointer]:
+            - generic [ref=e69]: Pinned
+            - img [ref=e70]
+            - generic [ref=e72]: "1"
+          - generic [ref=e74]:
+            - list [ref=e75]:
+              - button "SD-169 Distributors details pagedagi 'Settings' tabda, bu distributor qaysi regionlar bilan ishlashi belgilab olishi kerak" [ref=e76]:
+                - link "SD-169 Distributors details pagedagi 'Settings' tabda, bu distributor qaysi regionlar bilan ishlashi belgilab olishi kerak" [ref=e77] [cursor=pointer]:
+                  - /url: /sd-main/issues/7b2fec44-7057-42e2-9fc3-8d148321eb15
+                  - img [ref=e78]
+                  - generic [ref=e82]: SD-169 Distributors details pagedagi 'Settings' tabda, bu distributor qaysi regionlar bilan ishlashi belgilab olishi kerak
+            - status [ref=e83]
+        - generic [ref=e84]:
+          - generic [ref=e85]: Workspace
+          - list [ref=e87]:
+            - listitem [ref=e88]:
+              - link "Issues" [ref=e89] [cursor=pointer]:
+                - /url: /sd-main/issues
+                - img [ref=e90]
+                - generic [ref=e93]: Issues
+            - listitem [ref=e94]:
+              - link "Projects" [ref=e95] [cursor=pointer]:
+                - /url: /sd-main/projects
+                - img [ref=e96]
+                - generic [ref=e98]: Projects
+            - listitem [ref=e99]:
+              - link "Autopilot" [ref=e100] [cursor=pointer]:
+                - /url: /sd-main/autopilots
+                - img [ref=e101]
+                - generic [ref=e103]: Autopilot
+            - listitem [ref=e104]:
+              - link "Agents" [ref=e105] [cursor=pointer]:
+                - /url: /sd-main/agents
+                - img [ref=e106]
+                - generic [ref=e109]: Agents
+            - listitem [ref=e110]:
+              - link "Squads" [ref=e111] [cursor=pointer]:
+                - /url: /sd-main/squads
+                - img [ref=e112]
+                - generic [ref=e117]: Squads
+            - listitem [ref=e118]:
+              - link "Usage" [ref=e119] [cursor=pointer]:
+                - /url: /sd-main/usage
+                - img [ref=e120]
+                - generic [ref=e122]: Usage
+        - generic [ref=e123]:
+          - generic [ref=e124]: Configure
+          - list [ref=e126]:
+            - listitem [ref=e127]:
+              - link "Runtimes" [ref=e128] [cursor=pointer]:
+                - /url: /sd-main/runtimes
+                - img [ref=e129]
+                - generic [ref=e131]: Runtimes
+            - listitem [ref=e133]:
+              - link "AI accounts" [ref=e134] [cursor=pointer]:
+                - /url: /sd-main/ai-accounts
+                - img [ref=e135]
+                - generic [ref=e138]: AI accounts
+            - listitem [ref=e139]:
+              - link "Skills" [ref=e140] [cursor=pointer]:
+                - /url: /sd-main/skills
+                - img [ref=e141]
+                - generic [ref=e143]: Skills
+            - listitem [ref=e144]:
+              - link "Plugins" [ref=e145] [cursor=pointer]:
+                - /url: /sd-main/plugins
+                - img [ref=e146]
+                - generic [ref=e156]: Plugins
+            - listitem [ref=e157]:
+              - link "MCP servers" [ref=e158] [cursor=pointer]:
+                - /url: /sd-main/mcp
+                - img [ref=e159]
+                - generic [ref=e161]: MCP servers
+            - listitem [ref=e162]:
+              - link "Settings" [ref=e163] [cursor=pointer]:
+                - /url: /sd-main/settings
+                - img [ref=e164]
+                - generic [ref=e167]: Settings
+      - button "Help" [ref=e170] [cursor=pointer]:
+        - img [ref=e171]
+      - button "Toggle Sidebar" [ref=e174]
+    - main [ref=e175]:
+      - generic [ref=e176]:
+        - generic [ref=e179]:
+          - generic [ref=e180]:
+            - heading "Inbox" [level=1] [ref=e182]
+            - button [ref=e183]:
+              - img
+          - generic [ref=e185]:
+            - button [ref=e186]:
+              - link "sd-bridge-lead" [ref=e188] [cursor=pointer]:
+                - generic "sd-bridge-lead" [ref=e189]:
+                  - img "sd-bridge-lead" [ref=e190]
+              - generic [ref=e191]:
+                - generic [ref=e192]:
+                  - generic [ref=e194]: SD Bridge project uchun documentation(technial yozishimiz kerak)
+                  - img [ref=e196]
+                - generic [ref=e199]:
+                  - paragraph [ref=e200]: "**Full pipeline complete — all 4 stages green.** [SD-175](mention://issue/2fdcd760-f846-4835-9821-4488cd4bf732) → **in_review**. | Stage | Owner | Result | |---|---|---| | 1. Assess + implement | Developer | ✅ MR !25 @ `035debb` (3 commits) | | 2. Code review | Reviewer | ✅ Approved — 1 non-blocking import-order nit only | | 3. QA gate | QA | ✅ PASS — both bugs fixed, docs pages 0 console errors/warnings | | 4. Lead → in_review | — | ✅ done | **Human action — open & merge:** https://gitlab.sdteam.uz/salesdoctor/sd-bridge/sd-bridge-admin-dashboard/-/merge_requests/25 (`cocode/SD-175` → `main`, HEAD `035debb`). **Delivered ([SD-175](mention://issue/2fdcd760-f846-4835-9821-4488cd4bf732) acceptance):** Documentation in its own menu/route (`SOON` removed, navigates to `/docs`); new `/docs/technical` Technical Reference — complete (overview, tech-stack, folder structure, FE↔Spring adapter rules, build/MR conventions); **3 mermaid diagrams** (system architecture, FE↔Spring adapter, distributor workflow); i18n en/uz/ru clean. **Process-test notes:** - Pipeline ran clean end-to-end; review caught only cosmetic formatter noise (single-quote flips in the uzbekistan coverage data + a couple of distributor import reshuffles) — non-blocking. - One out-of-scope item correctly fenced off the whole way through: `/docs/features` raw i18n keys are **pre-existing on `main`** — split into [SD-177](mention://issue/1258f2aa-81b9-4142-9c68-77617b57b0ff) (assigned to Developer) so this MR stays unblocked. Done follows your merge — `Closes SD-175` will auto-advance it."
+                  - generic [ref=e201]: 6m
+            - button [ref=e202]:
+              - link "sd-bridge-lead" [ref=e204] [cursor=pointer]:
+                - generic "sd-bridge-lead" [ref=e205]:
+                  - img "sd-bridge-lead" [ref=e206]
+              - generic [ref=e207]:
+                - generic [ref=e208]:
+                  - generic [ref=e210]: Build sd-bridge knowledge base and persist it as the 'sd-bridge-kb' workspace skill
+                  - img [ref=e212]
+                - generic [ref=e215]:
+                  - paragraph [ref=e216]: "**QA gate: N/A — no code changes to gate.** This issue ([SD-174](mention://issue/7292a19c-bf75-47f7-9186-91a396ef68ba)) produced **no repository diff**. Its only deliverable was the workspace skill `sd-bridge-kb` (`bb60a41d-515a-4815-adc5-c2357952e63b`) — a knowledge-base artifact persisted via the `agora skill` CLI, not a change to `sd-bridge-admin-dashboard`. Verified against the checked-out worktree: ``` $ git status --short # (empty — clean) exit 0 $ git --no-pager diff main...HEAD --stat # (empty — 0 files changed) exit 0 $ git --no-pager log --oneline -1 b1e05a2 fix(integration): persist configured step 2 across refresh + fix Sync switch # pre-existing main HEAD ``` There are zero changed files, so build/lint/test/browser-smoke have nothing to exercise for *this* issue — running them would only test unrelated upstream `main`, not this issue's work, and a skill is not part of the repo build. Per the gate's own rule (report strictly by what exists, never weaken or fabricate a result), I am **not** setting `qa:pass` or `qa:fail`: neither verdict is truthful when there is no code under test. If you intended a different branch/MR to be QA'd, point me at it (branch name or MR URL) and I'll run the full deterministic gate against it."
+                  - generic [ref=e217]: 22h
+            - button "Smoke test — Agora free model Set status to In Review 3d" [ref=e218]:
+              - link [ref=e220] [cursor=pointer]:
+                - generic "Agora" [ref=e221]:
+                  - img [ref=e222]
+              - generic [ref=e225]:
+                - generic [ref=e226]:
+                  - generic [ref=e228]: Smoke test — Agora free model
+                  - img [ref=e230]
+                - generic [ref=e233]:
+                  - paragraph [ref=e234]:
+                    - generic [ref=e235]:
+                      - text: Set status to
+                      - img [ref=e236]
+                      - text: In Review
+                  - generic [ref=e239]: 3d
+            - 'button "Distributors details pagedagi ''Settings'' tabda, bu distributor qaysi regionlar bilan ishlashi belgilab olishi kerak Created sd-bridge-kb skill with key learnings from this implementation: - Distributor coverage areas implementation with cascade selection - Backend API gap (no region/district list endpoints) - i18n handling for 3 locales with fallbacks - Component design patterns and checkbox event handling fixes Skill location: ~/.agents/skills/sd-bridge-kb/SKILL.md 3d" [ref=e240]':
+              - link [ref=e242] [cursor=pointer]:
+                - generic "KB Synthesizer" [ref=e243]:
+                  - img [ref=e244]
+              - generic [ref=e247]:
+                - generic [ref=e248]:
+                  - generic [ref=e250]: Distributors details pagedagi 'Settings' tabda, bu distributor qaysi regionlar bilan ishlashi belgilab olishi kerak
+                  - img [ref=e252]
+                - generic [ref=e256]:
+                  - paragraph [ref=e257]: "Created sd-bridge-kb skill with key learnings from this implementation: - Distributor coverage areas implementation with cascade selection - Backend API gap (no region/district list endpoints) - i18n handling for 3 locales with fallbacks - Component design patterns and checkbox event handling fixes Skill location: ~/.agents/skills/sd-bridge-kb/SKILL.md"
+                  - generic [ref=e258]: 3d
+            - button "OpenClaw runtime smoke test Set status to In Review 3d" [ref=e259]:
+              - link [ref=e261] [cursor=pointer]:
+                - generic "openclaw-test" [ref=e262]:
+                  - img [ref=e263]
+              - generic [ref=e266]:
+                - generic [ref=e267]:
+                  - generic [ref=e269]: OpenClaw runtime smoke test
+                  - img [ref=e271]
+                - generic [ref=e274]:
+                  - paragraph [ref=e275]:
+                    - generic [ref=e276]:
+                      - text: Set status to
+                      - img [ref=e277]
+                      - text: In Review
+                  - generic [ref=e280]: 3d
+            - button [ref=e281]:
+              - link "Developer" [ref=e283] [cursor=pointer]:
+                - generic "Developer" [ref=e284]:
+                  - img "Developer" [ref=e285]
+              - generic [ref=e286]:
+                - generic [ref=e287]:
+                  - generic [ref=e289]: change the base api url from app.sdteam.uz to api.sdteam.uz
+                  - img [ref=e291]
+                - generic [ref=e294]:
+                  - paragraph [ref=e295]: "Scope kengaytirildi — butun kodbeyz audit qilindi, hammasi shu MR ichida. Push exit 0. **Env / config audit (app.sdteam.uz vs api.sdteam.uz)** — barchasi allaqachon `api.sdteam.uz` ga qaratilgan, hardcoded host yo'q: - `.env`: `VITE_API_BASE_URL=https://api.sdteam.uz`, `VITE_WS_URL=wss://api.sdteam.uz/ws` ✓ - `vite.config.ts` proxy target, `Dockerfile` (ARG/ENV), `.gitlab-ci.yml` build-args ✓ - `app.sdteam.uz` faqat **kommentlar/CORS izohlar/docs** da uchraydi (`.gitlab-ci.yml` CORS note, `geo/routes.ts` legacy-bookmark komment, `docs/backend-needed/...`) — hech qaysi real base/asset URL emas. **Asosiy topilma — relative asset URL klassi distributor logodan kengroq.** Backend yuklangan assetlarni (distributor logo `/logos/{key}`, product image/thumbnail `/api/v1/products/images/{key}`, category icon) **relative** qaytaradi (`productImagesApi.ts:13` buni tasdiqlaydi). Raw `<img src>` page-origin (`app.sdteam.uz`) ga nisbatan resolve bo'ladi → prodda 404. Faqat ba'zi product komponentlari resolve qilardi; ko'plari raw bind qilgan. **Fix** — bitta canonical, dependency-free resolver `src/shared/utils/assetUrl.ts` `resolveAssetUrl()`: ```ts export function resolveAssetUrl(url: string | undefined | null): string { if (!url) return ''; if (url.startsWith('http') || url.startsWith('data:')) return url; const base = (import.meta.env.VITE_API_BASE_URL as string)?.replace('/api/v1', '') ?? ''; return `${base}${url}`; } ``` Idempotent (absolute URL o'zgarmasdan o'tadi), shuning uchun istalgan bindingni wrap qilish xavfsiz. Distributor `resolveLogoUrl` endi shunga delegate qiladi. Qo'llanган render-sitelar (raw BE field bind qilganlar): - Product thumbnails: `ProductsTable` (cell + `SdProductCard` grid), `ProductOverviewTab`, `ProductMergeDialog`, `ProductListPage` (cell + lightbox), `ProductQuickView`, `ProductDetailInfo` (gallery computed), `ProductEditModal` (thumb + distributor avatar). - Category icons: `CategorySettingsPage` (parent + child satrlar), `CategoryForm` preview. **Muhim qaror — resolution RENDER da, adapterda emas** (product `thumbnailUrl` + category `iconUrl` uchun): bu ikkalasi **PATCH write-back** maydonlari (`PATCH /products/:id` thumbnailUrl ni qabul qiladi). Agar adapterda absolute saqlasak, update BE ga absolute URL yuborib storage key ni buzadi. Distributor avatar adapterda resolve qilindi (logo write alohida multipart orqali, avatar hech qachon qaytarib yuborilmaydi) — xavfsiz. Namuna diff (to'liq 12 fayl MR da): ```diff --- a/src/features/products/components/ProductsTable.vue +++ b/src/features/products/components/ProductsTable.vue - :image-url=\"p.image\" - :images=\"p.images\" + :image-url=\"resolveAssetUrl(p.image)\" + :images=\"p.images?.map(resolveAssetUrl)\" @@ - :src=\"item.image\" + :src=\"resolveAssetUrl(item.image)\" --- a/src/features/settings/pages/CategorySettingsPage.vue +++ b/src/features/settings/pages/CategorySettingsPage.vue - :src=\"cat.icon_url\" + :src=\"resolveAssetUrl(cat.icon_url)\" --- a/src/features/products/components/ProductDetailInfo.vue +++ b/src/features/products/components/ProductDetailInfo.vue - if (Array.isArray(extra) && extra.length > 0) return extra; - return props.product.image ? [props.product.image] : []; + const raw = Array.isArray(extra) && extra.length > 0 ? extra + : props.product.image ? [props.product.image] : []; + return raw.map(resolveAssetUrl); ``` Per-file (diff --stat, base `main`): ``` src/shared/utils/assetUrl.ts | 26 + (new — canonical resolver) src/shared/utils/assetUrl.spec.ts | 57 + (new — 7 cases) distributors/api/logoUrl.ts | 11 (delegate to assetUrl) products/components/ProductsTable.vue | 7 products/components/ProductDetailInfo.vue| 12 products/components/ProductQuickView.vue | 5 products/pages/ProductListPage.vue | 5 products/components/ProductEditModal.vue | 4 products/components/ProductOverviewTab.vue| 4 products/components/ProductMergeDialog.vue| 3 settings/pages/CategorySettingsPage.vue | 5 settings/categories/components/CategoryForm.vue | 3 ``` + oldingi commit: `distributorApi.ts` + `logoUrl.spec.ts`. **Verify** — `vue-tsc --noEmit`: exit 0, 0 error. Unit: `assetUrl.spec.ts` + `logoUrl.spec.ts` = **12/12 passed** (relative→absolute, /api/v1 strip, idempotent absolute, http/data passthrough, null/empty). `eslint --fix`: exit 0. `imageUrl` (banner) tegilmadi — `bannersApi.ts` BE kontrakti uni absolute deb hujjatlaydi (\"caller renders as-is\"). Branch: `fix/distributor-logo-api-base-url` (base `main` — repo da `billing` yo'q). MR: https://gitlab.sdteam.uz/salesdoctor/sd-bridge/sd-bridge-admin-dashboard/-/merge_requests/new?merge_request%5Bsource_branch%5D=fix%2Fdistributor-logo-api-base-url"
+                  - generic [ref=e296]: 4d
+            - 'button "sd-bridge-designer Fix merge conflict on MR #8 (geo Settings-layout) Set status to In Review 5d" [ref=e297]':
+              - link "sd-bridge-designer" [ref=e299] [cursor=pointer]:
+                - generic "sd-bridge-designer" [ref=e300]:
+                  - img "sd-bridge-designer" [ref=e301]
+              - generic [ref=e302]:
+                - generic [ref=e303]:
+                  - generic [ref=e305]: "Fix merge conflict on MR #8 (geo Settings-layout)"
+                  - img [ref=e307]
+                - generic [ref=e311]:
+                  - paragraph [ref=e312]:
+                    - generic [ref=e313]:
+                      - text: Set status to
+                      - img [ref=e314]
+                      - text: In Review
+                  - generic [ref=e317]: 5d
+            - button "sd-bridge-designer Audit + document the FULL sd-bridge design system (pages/cards/components/dialogs) → docs/design-system.md Set status to In Review 5d" [ref=e318]:
+              - link "sd-bridge-designer" [ref=e320] [cursor=pointer]:
+                - generic "sd-bridge-designer" [ref=e321]:
+                  - img "sd-bridge-designer" [ref=e322]
+              - generic [ref=e323]:
+                - generic [ref=e324]:
+                  - generic [ref=e326]: Audit + document the FULL sd-bridge design system (pages/cards/components/dialogs) → docs/design-system.md
+                  - img [ref=e328]
+                - generic [ref=e332]:
+                  - paragraph [ref=e333]:
+                    - generic [ref=e334]:
+                      - text: Set status to
+                      - img [ref=e335]
+                      - text: In Review
+                  - generic [ref=e338]: 5d
+            - 'button "sd-bridge-qa Fix duplicate map icon — distinct icons for the 2 Geo Settings nav items ### Local: Bulk ZIP import result — Processed:2 Created:1 Updated:1 Errors:0 5d" [ref=e339]':
+              - link "sd-bridge-qa" [ref=e341] [cursor=pointer]:
+                - generic "sd-bridge-qa" [ref=e342]:
+                  - img "sd-bridge-qa" [ref=e343]
+              - generic [ref=e344]:
+                - generic [ref=e345]:
+                  - generic [ref=e347]: Fix duplicate map icon — distinct icons for the 2 Geo Settings nav items
+                  - img [ref=e349]
+                - generic [ref=e353]:
+                  - paragraph [ref=e354]: "### Local: Bulk ZIP import result — Processed:2 Created:1 Updated:1 Errors:0"
+                  - generic [ref=e355]: 5d
+            - 'button "sd-bridge-reviewer GitLab MCP verify + review MR #6 (via MCP) Set status to In Review 5d" [ref=e356]':
+              - link "sd-bridge-reviewer" [ref=e358] [cursor=pointer]:
+                - generic "sd-bridge-reviewer" [ref=e359]:
+                  - img "sd-bridge-reviewer" [ref=e360]
+              - generic [ref=e361]:
+                - generic [ref=e362]:
+                  - generic [ref=e364]: "GitLab MCP verify + review MR #6 (via MCP)"
+                  - img [ref=e366]
+                - generic [ref=e370]:
+                  - paragraph [ref=e371]:
+                    - generic [ref=e372]:
+                      - text: Set status to
+                      - img [ref=e373]
+                      - text: In Review
+                  - generic [ref=e376]: 5d
+            - button "sd-bridge-designer Geo Import — move from sidebar to Settings (IA decision) Set status to In Review 5d" [ref=e377]:
+              - link "sd-bridge-designer" [ref=e379] [cursor=pointer]:
+                - generic "sd-bridge-designer" [ref=e380]:
+                  - img "sd-bridge-designer" [ref=e381]
+              - generic [ref=e382]:
+                - generic [ref=e383]:
+                  - generic [ref=e385]: Geo Import — move from sidebar to Settings (IA decision)
+                  - img [ref=e387]
+                - generic [ref=e391]:
+                  - paragraph [ref=e392]:
+                    - generic [ref=e393]:
+                      - text: Set status to
+                      - img [ref=e394]
+                      - text: In Review
+                  - generic [ref=e397]: 5d
+            - button [ref=e398]:
+              - link "sd-bridge-reviewer" [ref=e400] [cursor=pointer]:
+                - generic "sd-bridge-reviewer" [ref=e401]:
+                  - img "sd-bridge-reviewer" [ref=e402]
+              - generic [ref=e403]:
+                - generic [ref=e404]:
+                  - generic [ref=e406]: "Admin Panel — Импорт KML района: бриф для frontend"
+                  - img [ref=e408]
+                - generic [ref=e412]:
+                  - paragraph [ref=e413]: "## MR #5 — Geo KML Import review Branch `sdm-162/geo-kml-import` already merged into `main` (commit `4855b36`). Reviewed via `git show 4855b36`. --- ### ✅ Passes - **No thin wrappers** — `Button`, `Input`, `Label`, `Select`, `Checkbox` used directly from shadcn-vue throughout. - **No list pages** — correctly deferred per brief §12; no `useDistrictTable` needed. - **i18n ×3** — `public/locales/{en,uz,ru}/geo.json` and `common.json` nav keys are all present and symmetric across locales. - **Data-honesty** — every displayed field is bound to a real BE response field; no fake rows or mock arrays. - **FormData multipart** — `httpClient.ts` patch correctly skips `Content-Type` for `FormData` bodies so the browser sets the correct boundary automatically. - **RFC 7807 `errorCode`** — surfaced on the thrown error by the `httpClient.ts` patch; all expected codes handled in catch blocks. - **90 s timeout** — `AbortSignal.timeout(90_000)` on bulk ZIP; `TimeoutError`/`AbortError` caught and shown as `geo.errors.timeout`. - **UPPERCASE enums** — `regionCode` values are all UPPERCASE (`ANDIJON`, `BUXORO`, …); `stopOnFail` sent as `\"true\"`/`\"false\"` strings, valid for Spring `@RequestParam Boolean`. - **`requiresSuperAdmin: true`** — consumed by `src/core/auth/authGuard.ts:29`; guard confirmed present. ✅ - **Icons** — `map`, `checkCircle`, `chevronRight` all exist in `SdIcon.vue` PATHS. ✅ - **Feature structure** — `src/features/geo/{api,pages,components,types,routes}.ts` matches the brief's prescribed layout. --- ### 🔴 Bug — English locale shows Russian region names **`src/features/geo/pages/ImportDistrictKmlPage.vue:39`** ```vue {{ locale === 'uz' ? r.labelUz : r.labelRu }} ``` When `locale === 'en'` this falls through to `labelRu` and all 14 regions display in Russian. `REGION_CODES` in `geoApi.ts` has no `labelEn` field. **Fix** — add `labelEn` to each entry in `REGION_CODES` and update the template expression: ```ts // geoApi.ts — add labelEn to every entry, e.g.: { code: 'ANDIJON', labelRu: 'Андижанская обл.', labelUz: 'Andijon viloyati', labelEn: 'Andijan region' }, ``` ```vue <!-- ImportDistrictKmlPage.vue:39 --> {{ locale === 'uz' ? r.labelUz : locale === 'en' ? r.labelEn : r.labelRu }} ``` --- ### 🟡 Orphan i18n keys Two keys are defined in all three `geo.json` files but never referenced in any component catch block: - `geo.errors.forbidden` - `geo.errors.invalidPath` `FORBIDDEN` and `INVALID_PATH` are not handled in either page's `switch`. Either add case handlers or remove the keys to keep the locales clean. --- ### 🟡 No form reset after success `fileInputRef` is declared in both pages but is never read in `<script setup>` — it exists only as a template binding and goes unused. After a successful import the form retains all its state (file input still shows the filename, text fields still populated), so the admin must manually clear fields before a second import. `fileInputRef` was presumably intended for this reset. Suggested addition in the `try` block of `handleSubmit`: ```ts // after result.value is set: fileInputRef.value!.value = ''; selectedFile.value = null; // for ImportDistrictKmlPage also reset form.value fields if desired ``` --- ### ℹ️ Notes (not blocking) - `default: notify.error(err.message ?? t('geo.errors.invalidKml'))` — the `t('geo.errors.invalidKml')` fallback is unreachable in practice since `apiFetch` always sets `err.message` from `errorBody.message ?? response.statusText`. Harmless but the fallback key is misleading if it ever fires; a generic `geo.errors.unknown` key would be cleaner. - `INVALID_ARGUMENT` (sent when region/district code fails backend regex) has no dedicated case — falls to `default: err.message`, which is fine since the backend `detail` is human-readable. --- **Summary:** one real bug (English locale → Russian labels), two convention violations (orphan keys, missing reset). The httpClient patch, multipart handling, timeout, auth guard, and i18n completeness are all correct."
+                  - generic [ref=e414]: 5d
+            - button "sd-bridge-reviewer GitLab PAT verify — MRs + pipeline Set status to Blocked 5d" [ref=e415]:
+              - link "sd-bridge-reviewer" [ref=e417] [cursor=pointer]:
+                - generic "sd-bridge-reviewer" [ref=e418]:
+                  - img "sd-bridge-reviewer" [ref=e419]
+              - generic [ref=e420]:
+                - generic [ref=e421]:
+                  - generic [ref=e423]: GitLab PAT verify — MRs + pipeline
+                  - img [ref=e425]
+                - generic [ref=e428]:
+                  - paragraph [ref=e429]:
+                    - generic [ref=e430]:
+                      - text: Set status to
+                      - img [ref=e431]
+                      - text: Blocked
+                  - generic [ref=e434]: 5d
+            - button "sd-bridge-designer Figma PAT verify — read node 746-28716 Set status to In Review 5d" [ref=e435]:
+              - link "sd-bridge-designer" [ref=e437] [cursor=pointer]:
+                - generic "sd-bridge-designer" [ref=e438]:
+                  - img "sd-bridge-designer" [ref=e439]
+              - generic [ref=e440]:
+                - generic [ref=e441]:
+                  - generic [ref=e443]: Figma PAT verify — read node 746-28716
+                  - img [ref=e445]
+                - generic [ref=e449]:
+                  - paragraph [ref=e450]:
+                    - generic [ref=e451]:
+                      - text: Set status to
+                      - img [ref=e452]
+                      - text: In Review
+                  - generic [ref=e455]: 5d
+            - button "sd-bridge-designer Figma OAuth — definitive post-auth read (746-28716) Set status to In Review 5d" [ref=e456]:
+              - link "sd-bridge-designer" [ref=e458] [cursor=pointer]:
+                - generic "sd-bridge-designer" [ref=e459]:
+                  - img "sd-bridge-designer" [ref=e460]
+              - generic [ref=e461]:
+                - generic [ref=e462]:
+                  - generic [ref=e464]: Figma OAuth — definitive post-auth read (746-28716)
+                  - img [ref=e466]
+                - generic [ref=e470]:
+                  - paragraph [ref=e471]:
+                    - generic [ref=e472]:
+                      - text: Set status to
+                      - img [ref=e473]
+                      - text: In Review
+                  - generic [ref=e476]: 5d
+            - button "sd-bridge-designer Figma OAuth retry — read node 746-28716 Set status to Blocked 5d" [ref=e477]:
+              - link "sd-bridge-designer" [ref=e479] [cursor=pointer]:
+                - generic "sd-bridge-designer" [ref=e480]:
+                  - img "sd-bridge-designer" [ref=e481]
+              - generic [ref=e482]:
+                - generic [ref=e483]:
+                  - generic [ref=e485]: Figma OAuth retry — read node 746-28716
+                  - img [ref=e487]
+                - generic [ref=e490]:
+                  - paragraph [ref=e491]:
+                    - generic [ref=e492]:
+                      - text: Set status to
+                      - img [ref=e493]
+                      - text: Blocked
+                  - generic [ref=e496]: 5d
+            - button "sd-bridge-designer Figma OAuth MCP connectivity test Set status to Blocked 5d" [ref=e497]:
+              - link "sd-bridge-designer" [ref=e499] [cursor=pointer]:
+                - generic "sd-bridge-designer" [ref=e500]:
+                  - img "sd-bridge-designer" [ref=e501]
+              - generic [ref=e502]:
+                - generic [ref=e503]:
+                  - generic [ref=e505]: Figma OAuth MCP connectivity test
+                  - img [ref=e507]
+                - generic [ref=e510]:
+                  - paragraph [ref=e511]:
+                    - generic [ref=e512]:
+                      - text: Set status to
+                      - img [ref=e513]
+                      - text: Blocked
+                  - generic [ref=e516]: 5d
+            - button "sd-bridge-designer Verify figma MCP — read node 746-28716 Set status to Blocked 5d" [ref=e517]:
+              - link "sd-bridge-designer" [ref=e519] [cursor=pointer]:
+                - generic "sd-bridge-designer" [ref=e520]:
+                  - img "sd-bridge-designer" [ref=e521]
+              - generic [ref=e522]:
+                - generic [ref=e523]:
+                  - generic [ref=e525]: Verify figma MCP — read node 746-28716
+                  - img [ref=e527]
+                - generic [ref=e530]:
+                  - paragraph [ref=e531]:
+                    - generic [ref=e532]:
+                      - text: Set status to
+                      - img [ref=e533]
+                      - text: Blocked
+                  - generic [ref=e536]: 5d
+            - button "sd-bridge-reviewer Verify gitlab MCP — list MRs + pipeline Set status to In Review 5d" [ref=e537]:
+              - link "sd-bridge-reviewer" [ref=e539] [cursor=pointer]:
+                - generic "sd-bridge-reviewer" [ref=e540]:
+                  - img "sd-bridge-reviewer" [ref=e541]
+              - generic [ref=e542]:
+                - generic [ref=e543]:
+                  - generic [ref=e545]: Verify gitlab MCP — list MRs + pipeline
+                  - img [ref=e547]
+                - generic [ref=e550]:
+                  - paragraph [ref=e551]:
+                    - generic [ref=e552]:
+                      - text: Set status to
+                      - img [ref=e553]
+                      - text: In Review
+                  - generic [ref=e556]: 5d
+            - 'button "sd-bridge-qa Smoke-test deployed dev (app.sdteam.uz) — squad routing test ### ❌ navigation /marketing + DashboardLayout failures — \"Login failed\" alert visible on login page; api.sdteam.uz gateway rejects concurrent login attempts when 7 workers hit loginAsAdmin simultaneously; this is the shared root cause of all 8 non-strict-mode failures 5d" [ref=e557]':
+              - link "sd-bridge-qa" [ref=e559] [cursor=pointer]:
+                - generic "sd-bridge-qa" [ref=e560]:
+                  - img "sd-bridge-qa" [ref=e561]
+              - generic [ref=e562]:
+                - generic [ref=e563]:
+                  - generic [ref=e565]: Smoke-test deployed dev (app.sdteam.uz) — squad routing test
+                  - img [ref=e567]
+                - generic [ref=e571]:
+                  - paragraph [ref=e572]: "### ❌ navigation /marketing + DashboardLayout failures — \"Login failed\" alert visible on login page; api.sdteam.uz gateway rejects concurrent login attempts when 7 workers hit loginAsAdmin simultaneously; this is the shared root cause of all 8 non-strict-mode failures"
+                  - generic [ref=e573]: 5d
+            - 'button "sd-bridge-developer CI: qa:dev stage — trigger Agora DEV QA webhook after deploy:main Acknowledged. Issue cancelled, stale `pr_url`/`pr_number` metadata cleared. No CI/CD changes going forward. 5d" [ref=e574]':
+              - link "sd-bridge-developer" [ref=e576] [cursor=pointer]:
+                - generic "sd-bridge-developer" [ref=e577]:
+                  - img "sd-bridge-developer" [ref=e578]
+              - generic [ref=e579]:
+                - generic [ref=e580]:
+                  - generic [ref=e582]: "CI: qa:dev stage — trigger Agora DEV QA webhook after deploy:main"
+                  - img [ref=e584]
+                - generic [ref=e587]:
+                  - paragraph [ref=e588]: "Acknowledged. Issue cancelled, stale `pr_url`/`pr_number` metadata cleared. No CI/CD changes going forward."
+                  - generic [ref=e589]: 5d
+            - button [ref=e590]:
+              - link "sd-bridge-qa" [ref=e592] [cursor=pointer]:
+                - generic "sd-bridge-qa" [ref=e593]:
+                  - img "sd-bridge-qa" [ref=e594]
+              - generic [ref=e595]:
+                - generic [ref=e596]:
+                  - generic [ref=e598]: "[pipeline] Refresh stale api-integration-status docs (GitLab MR loop test)"
+                  - img [ref=e600]
+                - generic [ref=e604]:
+                  - paragraph [ref=e605]: "## QA — deployed dev (`https://app.sdteam.uz`) @ main `9e81e61` **Mode:** deployed-dev (remote baseURL, no local server) **Spec scope:** `tests/e2e/smoke.spec.ts` + `tests/e2e/cross/` **Result: 16 passed / 6 failed (22 total)** --- ### Verdict **Deployed dev SOGLOM.** Barcha cross/ spec'lar yashil — real login, token, nav, locale, search, loading hammasi ishlaydi. Smoke.spec.ts'dagi 6 failure real product bug EMAS — ularning barchasi eskirgan test selectorlari (Vuetify davri, hozir Tailwind+shadcn-vue'ga o'tilgan). --- ### Cross specs — 16/16 ✅ | Spec | Natija | |---|---| | `cross/auth.spec.ts` (4 ta) | ✅ hammasi o'tdi | | `cross/locale.spec.ts` (1 ta) | ✅ | | `cross/loading.spec.ts` (1 ta) | ✅ | | `cross/navigation.spec.ts` (8 ta) | ✅ hammasi o'tdi | | `cross/search.spec.ts` (2 ta) | ✅ | **Auth tasdiqlandi:** seed admin `admin@marketplace.local` login qiladi, dashboard'ga redirect bo'ladi, token localStorage'ga tushadi, refresh ishlaydi. --- ### Smoke.spec.ts — 0/6 ❌ (barchasi stale test, real bug YO'Q) **1. `AuthLayout - login page renders` (smoke.spec.ts:20)** Muammo: test to'g'ridan-to'g'ri `page.getByLabel(/password/i)` ishlatadi — bu endi 2 ta elementga (password input + \"Show password\" tugmasi) tushadi, strict mode xato beradi. Note: `auth.ts` helperi allaqachon tuzatilgan (`page.locator('input#login-pwd')` ishlatiladi) — lekin `smoke.spec.ts:20` yangilanmagan. Fix: `smoke.spec.ts:20,23`da `page.getByLabel(/password/i)` → `page.locator('input#login-pwd')` yoki `page.getByRole('textbox', { name: /password/i })`. **2–6. DashboardLayout — 5 ta failure (30s timeout + element not found)** Asosiy sabab: testlar Vuetify davridagi CSS classlarni qidiradi: - `.v-navigation-drawer` — bu Vuetify classi, hozirgi Tailwind sidebar'da yo'q - `.topbar` — deployed app'da bu class yo'q - `.side-collapse` — yo'q - `.search-modal__input` — yo'q Screenshot tasdiqlamoqda: deployed app to'liq ishlayapti (Dashboard page ochilgan, real ma'lumotlar — Orders: 42, Clients: 46, Distributors: 18, sidebar va topbar ko'rinib turibdi). Faqat test selectorlari eskirgan. **Fix (dev uchun):** `smoke.spec.ts` DashboardLayout testlarini hozirgi HTML strukturaga moslashtirish kerak. Masalan: `.v-navigation-drawer` → `.v-navigation-drawer` o'rniga real sidebar selectori; `.topbar` → real topbar selectori (CLAUDE.md'dan: `--topbar-h` token ishlatiladi). --- ### Buyruqlar ``` git checkout main && git fetch origin && git reset --hard origin/main npm ci # (chromium allaqachon bor edi — install o'tkazib yuborildi) # playwright.dev.config.ts yozildi (transient, commit qilinmagan): # baseURL: 'https://app.sdteam.uz', webServer: undefined npx playwright test --config=playwright.dev.config.ts tests/e2e/smoke.spec.ts tests/e2e/cross/ ```"
+                  - generic [ref=e606]: 5d
+        - separator
+        - generic [ref=e610]:
+          - generic [ref=e613]:
+            - generic [ref=e614]:
+              - generic [ref=e615]:
+                - link "Sales Doctor Bridge" [ref=e616] [cursor=pointer]:
+                  - /url: /sd-main/projects/432b1786-e107-41c4-a93c-fde71f3125b6
+                  - generic [ref=e617]: 📁
+                  - generic [ref=e618]: Sales Doctor Bridge
+                - img [ref=e619]
+                - link "SD-170 change the base api url from app.sdteam.uz to api.sdteam.uz" [ref=e621] [cursor=pointer]:
+                  - /url: /sd-main/issues/cc862c6d-4b4e-4798-860d-fa703232d20b
+                  - generic [ref=e622]: SD-170 change the base api url from app.sdteam.uz to api.sdteam.uz
+              - generic [ref=e623]:
+                - button "sd-bridge-qa is working" [ref=e625]:
+                  - generic "sd-bridge-qa" [ref=e628]:
+                    - img "sd-bridge-qa" [ref=e629]
+                  - generic [ref=e630]: sd-bridge-qa is working
+                - button [ref=e632]:
+                  - img
+                - button [ref=e633]:
+                  - img
+                - button [ref=e635]:
+                  - img
+                - button [ref=e636]:
+                  - img
+            - generic [ref=e638]:
+              - textbox "Issue title" [ref=e640]:
+                - paragraph [ref=e641]: change the base api url from app.sdteam.uz to api.sdteam.uz
+              - generic [ref=e642]:
+                - paragraph [ref=e649]: "[Bug] webda distributor logoni app.sdteam .... dan olgan ekansiz, api.sdteam ... dan olishiz kerak edi, hozir claude web bilan backenddagi buglarni izlayotgan edim chiqib qoldi"
+                - generic [ref=e650]:
+                  - button [ref=e652]:
+                    - img [ref=e653]
+                  - button "Attach file" [ref=e656]:
+                    - img [ref=e657]
+              - button "Add sub-issues" [ref=e660]:
+                - img [ref=e661]
+                - generic [ref=e662]: Add sub-issues
+              - generic [ref=e664]:
+                - generic [ref=e665]:
+                  - heading "Activity" [level=2] [ref=e667]
+                  - generic [ref=e668]:
+                    - button "Unsubscribe" [ref=e669]
+                    - button "Jamshid sd-bridge-lead Developer" [ref=e670] [cursor=pointer]:
+                      - generic [ref=e671]:
+                        - link "Jamshid" [ref=e673]:
+                          - generic "Jamshid" [ref=e674]:
+                            - img "Jamshid" [ref=e675]
+                        - link "sd-bridge-lead" [ref=e677]:
+                          - generic "sd-bridge-lead" [ref=e678]:
+                            - img "sd-bridge-lead" [ref=e679]
+                        - link "Developer" [ref=e681]:
+                          - generic "Developer" [ref=e682]:
+                            - img "Developer" [ref=e683]
+                - generic [ref=e685]:
+                  - paragraph [ref=e690]: Leave a comment...
+                  - generic [ref=e691]:
+                    - button "Attach file" [ref=e692]:
+                      - img [ref=e693]
+                    - button [disabled]:
+                      - img
+                - generic [ref=e695]:
+                  - generic [ref=e698]:
+                    - generic [ref=e699]:
+                      - generic [ref=e702]:
+                        - button [expanded] [ref=e703]:
+                          - img [ref=e704]
+                        - link "Jamshid" [ref=e707] [cursor=pointer]:
+                          - generic "Jamshid" [ref=e708]:
+                            - img "Jamshid" [ref=e709]
+                        - generic [ref=e710] [cursor=pointer]: Jamshid
+                        - generic [ref=e711]: 20m ago
+                        - button [ref=e713]:
+                          - img
+                      - generic [ref=e715]:
+                        - paragraph [ref=e718]:
+                          - text: "@sd-bridge-qa Run QA for this issue as a DETERMINISTIC gate — report strictly by EXIT CODE, never by opinion, and do NOT weaken, skip, or delete any test to make it pass. (1) CHECKS: detect the project type and run its build + lint + tests, recording each command and its exit code — e.g."
+                          - code [ref=e719]: pnpm build && pnpm lint && pnpm test
+                          - text: (JS/TS),
+                          - code [ref=e720]: go build ./... && go test ./...
+                          - text: (Go),
+                          - code [ref=e721]: php -l
+                          - text: "on changed files plus phpunit/codeception (PHP). (2) SMOKE: bring the app up and exercise it in a real browser. Prefer the co-code editor's embedded Chromium over CDP — get the preview URL and the Chromium CDP url from the local daemon's editor endpoints, then drive it with"
+                          - code [ref=e722]: playwright-core
+                          - code [ref=e723]: chromium.connectOverCDP(<cdp_url>)
+                          - text: "; if you cannot reach the embedded browser, launch your own headless Chromium. Open the app's key pages and assert ALL of: (a) NO console errors AND no console warnings — in particular a vue-i18n / intlify \"Not found '' key\" or any missing-translation warning is a FAIL; (b) no 4xx/5xx network responses; (c) the main UI renders; and (d) NO untranslated placeholder keys are visible in the rendered text — a raw i18n key showing through (a dotted identifier such as"
+                          - code [ref=e724]: section.tile.title
+                          - text: "displayed verbatim) means a translation was never registered and is a FAIL, even when nothing logged. Capture screenshots (and a trace if available) as proof-of-work. (3) WRITE TEST CASES for the change: from this issue's DIFF, author tests that COVER what changed — unit tests for changed logic/functions in the project's existing framework (vitest/jest/phpunit/go test), and a Playwright/e2e case for changed UI driven against the running preview over the embedded Chromium. Follow the repo's existing test layout and mock external APIs (never hit live endpoints). Accept a new test ONLY if it BUILDS and PASSES — and for a bug fix, prove it FAILS on the pre-change behaviour and PASSES after (fail-before / pass-after). Commit the accepted tests onto the branch for the human to review. NEVER weaken, skip, or delete an existing test to go green. (4) VERDICT: post a comment listing every command with its exit code, the tests you added, and the screenshots, then set the"
+                          - code [ref=e725]: qa:pass
+                          - text: label ONLY if ALL checks passed (including your new tests), otherwise
+                          - code [ref=e726]: qa:fail
+                          - text: . Do NOT merge anything — your verdict is advisory and the human decides next.
+                        - button [ref=e728]:
+                          - img [ref=e729]
+                    - generic [ref=e733]:
+                      - link "Jamshid" [ref=e734] [cursor=pointer]:
+                        - generic "Jamshid" [ref=e735]:
+                          - img "Jamshid" [ref=e736]
+                      - generic [ref=e737]:
+                        - paragraph [ref=e742]: Leave a reply...
+                        - generic [ref=e743]:
+                          - button "Attach file" [ref=e744]:
+                            - img [ref=e745]
+                          - button [disabled]:
+                            - img
+                  - generic [ref=e747]:
+                    - button "5 activities" [ref=e748]:
+                      - img [ref=e749]
+                      - generic [ref=e751]: 5 activities
+                    - generic [ref=e752]:
+                      - link "sd-bridge-lead" [ref=e754] [cursor=pointer]:
+                        - generic "sd-bridge-lead" [ref=e755]:
+                          - img "sd-bridge-lead" [ref=e756]
+                      - generic [ref=e757]:
+                        - generic [ref=e758]: sd-bridge-lead
+                        - generic [ref=e759]: completed the task
+                        - generic [ref=e760]: 4d ago
+                    - generic [ref=e761]:
+                      - link "Developer" [ref=e763] [cursor=pointer]:
+                        - generic "Developer" [ref=e764]:
+                          - img "Developer" [ref=e765]
+                      - generic [ref=e766]:
+                        - generic [ref=e767]: Developer
+                        - generic [ref=e768]: completed the task
+                        - generic [ref=e769]: 4d ago
+                    - generic [ref=e770]:
+                      - link "sd-bridge-lead" [ref=e772] [cursor=pointer]:
+                        - generic "sd-bridge-lead" [ref=e773]:
+                          - img "sd-bridge-lead" [ref=e774]
+                      - generic [ref=e775]:
+                        - generic [ref=e776]: sd-bridge-lead
+                        - generic [ref=e777]: completed the task
+                        - generic [ref=e778]: 4d ago
+                    - generic [ref=e779]:
+                      - link "Developer" [ref=e781] [cursor=pointer]:
+                        - generic "Developer" [ref=e782]:
+                          - img "Developer" [ref=e783]
+                      - generic [ref=e784]:
+                        - generic [ref=e785]: Developer
+                        - generic [ref=e786]: completed the task
+                        - generic [ref=e787]: 4d ago
+                    - generic [ref=e788]:
+                      - img [ref=e790]
+                      - generic [ref=e793]:
+                        - generic [ref=e794]: Jamshid
+                        - generic [ref=e795]: changed status from In Progress to In Review
+                        - generic [ref=e796]: 4d ago
+                  - generic [ref=e799]:
+                    - generic [ref=e800]:
+                      - generic [ref=e803]:
+                        - button [expanded] [ref=e804]:
+                          - img [ref=e805]
+                        - link "Jamshid" [ref=e808] [cursor=pointer]:
+                          - generic "Jamshid" [ref=e809]:
+                            - img "Jamshid" [ref=e810]
+                        - generic [ref=e811] [cursor=pointer]: Jamshid
+                        - generic [ref=e812]: 4d ago
+                        - button [ref=e814]:
+                          - img
+                      - generic [ref=e816]:
+                        - paragraph [ref=e819]: "@sd-bridge-lead buni debug qilish kere"
+                        - button [ref=e821]:
+                          - img [ref=e822]
+                    - generic [ref=e826]:
+                      - generic [ref=e828]:
+                        - 'link "sd-bridge-lead Status: Online" [ref=e830] [cursor=pointer]':
+                          - generic [ref=e831]:
+                            - generic "sd-bridge-lead" [ref=e832]:
+                              - img "sd-bridge-lead" [ref=e833]
+                            - 'generic "Status: Online" [ref=e834]'
+                        - generic [ref=e835] [cursor=pointer]: sd-bridge-lead
+                        - generic [ref=e836]: 4d ago
+                        - button [ref=e838]:
+                          - img
+                      - paragraph [ref=e841]:
+                        - text: Тушунарли. Distributor logo
+                        - code [ref=e842]: app.sdteam.uz
+                        - text: дан олиняпти,
+                        - code [ref=e843]: api.sdteam.uz
+                        - text: дан олиниши керак. Debug + fix учун @Developer га топширдим — root cause топиб, base API URL/logo манбасини текширади ва фикс билан MR очади.
+                      - button [ref=e845]:
+                        - img [ref=e846]
+                    - generic [ref=e850]:
+                      - generic [ref=e852]:
+                        - 'link "Developer Status: Online" [ref=e854] [cursor=pointer]':
+                          - generic [ref=e855]:
+                            - generic "Developer" [ref=e856]:
+                              - img "Developer" [ref=e857]
+                            - 'generic "Status: Online" [ref=e858]'
+                        - generic [ref=e859] [cursor=pointer]: Developer
+                        - generic [ref=e860]: 4d ago
+                        - button [ref=e862]:
+                          - img
+                      - generic [ref=e864]:
+                        - paragraph [ref=e865]: Root cause topildi, fix tayyor.
+                        - paragraph [ref=e866]:
+                          - strong [ref=e867]: Symptom
+                          - text: — distributor logo
+                          - code [ref=e868]: app.sdteam.uz
+                          - text: (frontend host) dan yuklanyapti,
+                          - code [ref=e869]: api.sdteam.uz
+                          - text: (API host) dan yuklanishi kerak.
+                        - paragraph [ref=e870]:
+                          - strong [ref=e871]: Root cause
+                          - text: —
+                          - code [ref=e872]: src/features/distributors/api/distributorApi.ts:166
+                          - text: (
+                          - code [ref=e873]: adaptDistributorSync
+                          - text: ). Backend
+                          - code [ref=e874]: brandLogoUrl
+                          - text: ni relative
+                          - code [ref=e875]: "/logos/{key}"
+                          - text: yo'l qilib qaytaradi (gateway root da xizmat qiladi,
+                          - code [ref=e876]: /api/v1
+                          - text: ostida emas). FE uni
+                          - code [ref=e877]: avatar
+                          - text: ga raw qo'yardi. Brauzer relative
+                          - code [ref=e878]: <img src="/logos/…">
+                          - text: ni
+                          - strong [ref=e879]: page origin
+                          - text: (
+                          - code [ref=e880]: app.sdteam.uz
+                          - text: ) ga nisbatan resolve qiladi — u yerda bunday route yo'q. Product rasmlar allaqachon gateway base ni prepend qiladi (
+                          - code [ref=e881]: ProductImagesGallery
+                          - text: /
+                          - code [ref=e882]: ProductDetailHero
+                          - text: ), lekin distributor logo bu qadamni o'tkazib yuborgan.
+                        - paragraph [ref=e883]:
+                          - strong [ref=e884]: Fix
+                          - text: — yangi
+                          - code [ref=e885]: resolveLogoUrl()
+                          - text: "leaf util: relative yo'lga gateway origin ("
+                          - code [ref=e886]: VITE_API_BASE_URL
+                          - text: minus
+                          - code [ref=e887]: /api/v1
+                          - text: ) prepend qiladi, absolute
+                          - code [ref=e888]: http(s)
+                          - text: va
+                          - code [ref=e889]: "data:"
+                          - text: URL larni o'zgartirmasdan o'tkazadi (dicebear fallback + optimistic upload preview). Har ikkala list/detail va logo upload yo'li
+                          - code [ref=e890]: adaptDistributorSync
+                          - text: orqali o'tadi, shuning uchun bitta joy hammasini qoplaydi.
+                        - code [ref=e892]: "diff --git a/src/features/distributors/api/distributorApi.ts b/src/features/distributors/api/distributorApi.ts @@ import { apiFetch } from '@/core/api/httpClient'; + +import { resolveLogoUrl } from './logoUrl'; @@ function adaptDistributorSync(live: LiveDistributor, categories: CategoryRef[]): Distributor { return { avatar: - live.brandLogoUrl || + resolveLogoUrl(live.brandLogoUrl) || `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(live.companyName)}`,"
+                        - code [ref=e894]:
+                          - text: // src/features/distributors/api/logoUrl.ts (yangi) export function resolveLogoUrl(
+                          - generic [ref=e895]: "url: string | undefined"
+                          - text: "): string { if (!url) return ''; if (url.startsWith('http') || url.startsWith('data:')) return url; const base = (import.meta.env.VITE_API_BASE_URL as string)?.replace('/api/v1', '') ?? ''; return"
+                          - generic [ref=e896]: "`${base}${url}`"
+                          - text: "; }"
+                        - paragraph [ref=e897]: "Per-file:"
+                        - list [ref=e898]:
+                          - listitem [ref=e899]:
+                            - code [ref=e900]: distributorApi.ts
+                            - text: — logo avatar endi
+                            - code [ref=e901]: resolveLogoUrl
+                            - text: "orqali o'tadi (before → after:"
+                            - code [ref=e902]: /logos/x.png
+                            - text: →
+                            - code [ref=e903]: https://api.sdteam.uz/logos/x.png
+                            - text: ).
+                          - listitem [ref=e904]:
+                            - code [ref=e905]: logoUrl.ts
+                            - text: — yangi dependency-free resolver (router/i18n import chain siz unit-testable bo'lishi uchun alohida leaf).
+                          - listitem [ref=e906]:
+                            - code [ref=e907]: logoUrl.spec.ts
+                            - text: — yangi unit test (5 case).
+                        - paragraph [ref=e908]:
+                          - strong [ref=e909]: Test
+                          - text: —
+                          - code [ref=e910]: logoUrl.spec.ts
+                          - text: ", 5/5 passed. Buggy versiyada (raw passthrough) relative-path case"
+                          - strong [ref=e911]: fail
+                          - text: ", fix bilan"
+                          - strong [ref=e912]: pass
+                          - text: "— fail-before/pass-after isbotlandi:"
+                        - code [ref=e914]: Tests 1 failed | 4 passed (5) <- raw passthrough (bug) Tests 5 passed (5) <- fix
+                        - paragraph [ref=e915]:
+                          - code [ref=e916]: vue-tsc --noEmit
+                          - text: ": distributor fayllarda error yo'q."
+                        - paragraph [ref=e917]:
+                          - text: "Eslatma: loyiha unit-test muhitida pre-existing breakage bor — Node 22 native experimental"
+                          - code [ref=e918]: localStorage
+                          - text: (
+                          - code [ref=e919]: "--localstorage-file"
+                          - text: valid path siz) happy-dom niki ustidan soya soladi, shuning uchun router/i18n import qiladigan testlar import paytida
+                          - code [ref=e920]: localStorage.getItem is not a function
+                          - text: bilan crash bo'ladi (mavjud
+                          - code [ref=e921]: tests/unit/dashboard-layout.test.ts
+                          - text: ham). Bu fix scope dan tashqari; yangi resolver ni leaf modul qilib bu zanjirdan qochdim. Alohida issue qilsa bo'ladi.
+                        - paragraph [ref=e922]:
+                          - text: "Branch:"
+                          - code [ref=e923]: fix/distributor-logo-api-base-url
+                          - text: (
+                          - code [ref=e924]: git push
+                          - text: exit 0).
+                          - text: MR och (base
+                          - code [ref=e925]: main
+                          - text: — bu repo da
+                          - code [ref=e926]: billing
+                          - text: branch yo'q, default
+                          - code [ref=e927]: main
+                          - text: "):"
+                          - link "https://gitlab.sdteam.uz/salesdoctor/sd-bridge/sd-bridge-admin-dashboard/-/merge_requests/new?merge_request%5Bsource_branch%5D=fix%2Fdistributor-logo-api-base-url" [ref=e928] [cursor=pointer]:
+                            - /url: https://gitlab.sdteam.uz/salesdoctor/sd-bridge/sd-bridge-admin-dashboard/-/merge_requests/new?merge_request%5Bsource_branch%5D=fix%2Fdistributor-logo-api-base-url
+                        - paragraph [ref=e929]:
+                          - text: "Savol: konvensiya"
+                          - code [ref=e930]: billing
+                          - text: ga target qil deydi, lekin admin-dashboard repo da
+                          - code [ref=e931]: billing
+                          - text: branch yo'q (faqat
+                          - code [ref=e932]: main
+                          - text: + feature branchlar).
+                          - code [ref=e933]: main
+                          - text: ga ochdim. Agar boshqa integration branch kerak bo'lsa ayting.
+                      - button [ref=e935]:
+                        - img [ref=e936]
+                    - generic [ref=e940]:
+                      - generic [ref=e942]:
+                        - link "Jamshid" [ref=e944] [cursor=pointer]:
+                          - generic "Jamshid" [ref=e945]:
+                            - img "Jamshid" [ref=e946]
+                        - generic [ref=e947] [cursor=pointer]: Jamshid
+                        - generic [ref=e948]: 4d ago
+                        - button [ref=e950]:
+                          - img
+                      - paragraph [ref=e953]:
+                        - text: full projectda base url =
+                        - link "api.sdteam.uz" [ref=e954] [cursor=pointer]:
+                          - /url: http://team.uz
+                        - text: bo’lishi kerak @sd-bridge-lead
+                      - button [ref=e956]:
+                        - img [ref=e957]
+                    - generic [ref=e961]:
+                      - generic [ref=e963]:
+                        - 'link "sd-bridge-lead Status: Online" [ref=e965] [cursor=pointer]':
+                          - generic [ref=e966]:
+                            - generic "sd-bridge-lead" [ref=e967]:
+                              - img "sd-bridge-lead" [ref=e968]
+                            - 'generic "Status: Online" [ref=e969]'
+                        - generic [ref=e970] [cursor=pointer]: sd-bridge-lead
+                        - generic [ref=e971]: 4d ago
+                        - button [ref=e973]:
+                          - img
+                      - generic [ref=e975]:
+                        - paragraph [ref=e976]:
+                          - text: "Тушундим — scope кенгайди: фақат distributor logo эмас, бутун лойиҳада base URL ="
+                          - code [ref=e977]: api.sdteam.uz
+                          - text: бўлиши керак.
+                        - paragraph [ref=e978]: "@Developer — пастдагини шу MR ичида давом эттир:"
+                        - list [ref=e979]:
+                          - listitem [ref=e980]:
+                            - text: Бутун кодбейзни
+                            - code [ref=e981]: app.sdteam.uz
+                            - text: ва hardcoded host ишлатишга текшир (env, config, axios/fetch base, hardcoded URL, asset/logo prepend).
+                          - listitem [ref=e982]:
+                            - code [ref=e983]: VITE_API_BASE_URL
+                            - text: ва барча env файллар (
+                            - code [ref=e984]: .env
+                            - text: ","
+                            - code [ref=e985]: .env.production
+                            - text: ", dev/staging)"
+                            - code [ref=e986]: api.sdteam.uz
+                            - text: га қаратилганини текшир.
+                          - listitem [ref=e987]:
+                            - text: Page-origin га нисбатан resolve бўладиган қолган relative asset йўллари борми —
+                            - code [ref=e988]: resolveLogoUrl
+                            - text: каби gateway origin prepend қилинсин.
+                          - listitem [ref=e989]: Топилган ўзгаришларни diff билан кўрсат, MR ни янгила.
+                      - button [ref=e991]:
+                        - img [ref=e992]
+                    - generic [ref=e996]:
+                      - generic [ref=e998]:
+                        - 'link "Developer Status: Online" [ref=e1000] [cursor=pointer]':
+                          - generic [ref=e1001]:
+                            - generic "Developer" [ref=e1002]:
+                              - img "Developer" [ref=e1003]
+                            - 'generic "Status: Online" [ref=e1004]'
+                        - generic [ref=e1005] [cursor=pointer]: Developer
+                        - generic [ref=e1006]: 4d ago
+                        - button [ref=e1008]:
+                          - img
+                      - generic [ref=e1010]:
+                        - paragraph [ref=e1011]: Scope kengaytirildi — butun kodbeyz audit qilindi, hammasi shu MR ichida. Push exit 0.
+                        - paragraph [ref=e1012]:
+                          - strong [ref=e1013]:
+                            - text: Env / config audit (
+                            - link "app.sdteam.uz" [ref=e1014] [cursor=pointer]:
+                              - /url: http://app.sdteam.uz
+                            - text: vs
+                            - link "api.sdteam.uz" [ref=e1015] [cursor=pointer]:
+                              - /url: http://api.sdteam.uz
+                            - text: )
+                          - text: — barchasi allaqachon
+                          - code [ref=e1016]: api.sdteam.uz
+                          - text: "ga qaratilgan, hardcoded host yo'q:"
+                        - list [ref=e1017]:
+                          - listitem [ref=e1018]:
+                            - code [ref=e1019]: .env
+                            - text: ":"
+                            - code [ref=e1020]: VITE_API_BASE_URL=https://api.sdteam.uz
+                            - text: ","
+                            - code [ref=e1021]: VITE_WS_URL=wss://api.sdteam.uz/ws
+                            - text: ✓
+                          - listitem [ref=e1022]:
+                            - code [ref=e1023]: vite.config.ts
+                            - text: proxy target,
+                            - code [ref=e1024]: Dockerfile
+                            - text: (ARG/ENV),
+                            - code [ref=e1025]: .gitlab-ci.yml
+                            - text: build-args ✓
+                          - listitem [ref=e1026]:
+                            - code [ref=e1027]: app.sdteam.uz
+                            - text: faqat
+                            - strong [ref=e1028]: kommentlar/CORS izohlar/docs
+                            - text: da uchraydi (
+                            - code [ref=e1029]: .gitlab-ci.yml
+                            - text: CORS note,
+                            - code [ref=e1030]: geo/routes.ts
+                            - text: legacy-bookmark komment,
+                            - code [ref=e1031]: docs/backend-needed/...
+                            - text: ) — hech qaysi real base/asset URL emas.
+                        - paragraph [ref=e1032]:
+                          - strong [ref=e1033]: Asosiy topilma — relative asset URL klassi distributor logodan kengroq.
+                          - text: Backend yuklangan assetlarni (distributor logo
+                          - code [ref=e1034]: "/logos/{key}"
+                          - text: ", product image/thumbnail"
+                          - code [ref=e1035]: "/api/v1/products/images/{key}"
+                          - text: ", category icon)"
+                          - strong [ref=e1036]: relative
+                          - text: qaytaradi (
+                          - code [ref=e1037]: productImagesApi.ts:13
+                          - text: buni tasdiqlaydi). Raw
+                          - code [ref=e1038]: <img src>
+                          - text: page-origin (
+                          - code [ref=e1039]: app.sdteam.uz
+                          - text: ) ga nisbatan resolve bo'ladi → prodda 404. Faqat ba'zi product komponentlari resolve qilardi; ko'plari raw bind qilgan.
+                        - paragraph [ref=e1040]:
+                          - strong [ref=e1041]: Fix
+                          - text: — bitta canonical, dependency-free resolver
+                          - code [ref=e1042]: src/shared/utils/assetUrl.ts
+                          - code [ref=e1043]: resolveAssetUrl()
+                          - text: ":"
+                        - code [ref=e1045]:
+                          - text: export function resolveAssetUrl(
+                          - generic [ref=e1046]: "url: string | undefined | null"
+                          - text: "): string { if (!url) return ''; if (url.startsWith('http') || url.startsWith('data:')) return url; const base = (import.meta.env.VITE_API_BASE_URL as string)?.replace('/api/v1', '') ?? ''; return"
+                          - generic [ref=e1047]: "`${base}${url}`"
+                          - text: "; }"
+                        - paragraph [ref=e1048]:
+                          - text: Idempotent (absolute URL o'zgarmasdan o'tadi), shuning uchun istalgan bindingni wrap qilish xavfsiz. Distributor
+                          - code [ref=e1049]: resolveLogoUrl
+                          - text: endi shunga delegate qiladi.
+                        - paragraph [ref=e1050]: "Qo'llanган render-sitelar (raw BE field bind qilganlar):"
+                        - list [ref=e1051]:
+                          - listitem [ref=e1052]:
+                            - text: "Product thumbnails:"
+                            - code [ref=e1053]: ProductsTable
+                            - text: (cell +
+                            - code [ref=e1054]: SdProductCard
+                            - text: grid),
+                            - code [ref=e1055]: ProductOverviewTab
+                            - text: ","
+                            - code [ref=e1056]: ProductMergeDialog
+                            - text: ","
+                            - code [ref=e1057]: ProductListPage
+                            - text: (cell + lightbox),
+                            - code [ref=e1058]: ProductQuickView
+                            - text: ","
+                            - code [ref=e1059]: ProductDetailInfo
+                            - text: (gallery computed),
+                            - code [ref=e1060]: ProductEditModal
+                            - text: (thumb + distributor avatar).
+                          - listitem [ref=e1061]:
+                            - text: "Category icons:"
+                            - code [ref=e1062]: CategorySettingsPage
+                            - text: (parent + child satrlar),
+                            - code [ref=e1063]: CategoryForm
+                            - text: preview.
+                        - paragraph [ref=e1064]:
+                          - strong [ref=e1065]: Muhim qaror — resolution RENDER da, adapterda emas
+                          - text: (product
+                          - code [ref=e1066]: thumbnailUrl
+                          - text: + category
+                          - code [ref=e1067]: iconUrl
+                          - text: "uchun): bu ikkalasi"
+                          - strong [ref=e1068]: PATCH write-back
+                          - text: maydonlari (
+                          - code [ref=e1069]: PATCH /products/:id
+                          - text: thumbnailUrl ni qabul qiladi). Agar adapterda absolute saqlasak, update BE ga absolute URL yuborib storage key ni buzadi. Distributor avatar adapterda resolve qilindi (logo write alohida multipart orqali, avatar hech qachon qaytarib yuborilmaydi) — xavfsiz.
+                        - paragraph [ref=e1070]: "Namuna diff (to'liq 12 fayl MR da):"
+                        - code [ref=e1072]: "--- a/src/features/products/components/ProductsTable.vue +++ b/src/features/products/components/ProductsTable.vue - :image-url=\"p.image\" - :images=\"p.images\" + :image-url=\"resolveAssetUrl(p.image)\" + :images=\"p.images?.map(resolveAssetUrl)\" @@ - :src=\"item.image\" + :src=\"resolveAssetUrl(item.image)\" --- a/src/features/settings/pages/CategorySettingsPage.vue +++ b/src/features/settings/pages/CategorySettingsPage.vue - :src=\"cat.icon_url\" + :src=\"resolveAssetUrl(cat.icon_url)\" --- a/src/features/products/components/ProductDetailInfo.vue +++ b/src/features/products/components/ProductDetailInfo.vue - if (Array.isArray(extra) && extra.length > 0) return extra; - return props.product.image ? [props.product.image] : []; + const raw = Array.isArray(extra) && extra.length > 0 ? extra + : props.product.image ? [props.product.image] : []; + return raw.map(resolveAssetUrl);"
+                        - paragraph [ref=e1073]:
+                          - text: Per-file (diff --stat, base
+                          - code [ref=e1074]: main
+                          - text: "):"
+                        - code [ref=e1076]: src/shared/utils/assetUrl.ts | 26 + (new — canonical resolver) src/shared/utils/assetUrl.spec.ts | 57 + (new — 7 cases) distributors/api/logoUrl.ts | 11 (delegate to assetUrl) products/components/ProductsTable.vue | 7 products/components/ProductDetailInfo.vue| 12 products/components/ProductQuickView.vue | 5 products/pages/ProductListPage.vue | 5 products/components/ProductEditModal.vue | 4 products/components/ProductOverviewTab.vue| 4 products/components/ProductMergeDialog.vue| 3 settings/pages/CategorySettingsPage.vue | 5 settings/categories/components/CategoryForm.vue | 3
+                        - list [ref=e1077]:
+                          - listitem [ref=e1078]:
+                            - text: "oldingi commit:"
+                            - code [ref=e1079]: distributorApi.ts
+                            - text: +
+                            - code [ref=e1080]: logoUrl.spec.ts
+                            - text: .
+                        - paragraph [ref=e1081]:
+                          - strong [ref=e1082]: Verify
+                          - text: —
+                          - code [ref=e1083]: vue-tsc --noEmit
+                          - text: ": exit 0, 0 error. Unit:"
+                          - code [ref=e1084]: assetUrl.spec.ts
+                          - text: +
+                          - code [ref=e1085]: logoUrl.spec.ts
+                          - text: =
+                          - strong [ref=e1086]: 12/12 passed
+                          - text: (relative→absolute, /api/v1 strip, idempotent absolute, http/data passthrough, null/empty).
+                          - code [ref=e1087]: eslint --fix
+                          - text: ": exit 0."
+                        - paragraph [ref=e1088]:
+                          - code [ref=e1089]: imageUrl
+                          - text: (banner) tegilmadi —
+                          - code [ref=e1090]: bannersApi.ts
+                          - text: BE kontrakti uni absolute deb hujjatlaydi ("caller renders as-is").
+                        - paragraph [ref=e1091]:
+                          - text: "Branch:"
+                          - code [ref=e1092]: fix/distributor-logo-api-base-url
+                          - text: (base
+                          - code [ref=e1093]: main
+                          - text: — repo da
+                          - code [ref=e1094]: billing
+                          - text: "yo'q). MR:"
+                          - link "https://gitlab.sdteam.uz/salesdoctor/sd-bridge/sd-bridge-admin-dashboard/-/merge_requests/new?merge_request%5Bsource_branch%5D=fix%2Fdistributor-logo-api-base-url" [ref=e1095] [cursor=pointer]:
+                            - /url: https://gitlab.sdteam.uz/salesdoctor/sd-bridge/sd-bridge-admin-dashboard/-/merge_requests/new?merge_request%5Bsource_branch%5D=fix%2Fdistributor-logo-api-base-url
+                      - button [ref=e1097]:
+                        - img [ref=e1098]
+                    - generic [ref=e1102]:
+                      - link "Jamshid" [ref=e1103] [cursor=pointer]:
+                        - generic "Jamshid" [ref=e1104]:
+                          - img "Jamshid" [ref=e1105]
+                      - generic [ref=e1106]:
+                        - paragraph [ref=e1111]: Leave a reply...
+                        - generic [ref=e1112]:
+                          - button "Attach file" [ref=e1113]:
+                            - img [ref=e1114]
+                          - button [disabled]:
+                            - img
+                  - button "2 activities" [ref=e1117]:
+                    - img [ref=e1118]
+                    - generic [ref=e1120]: 2 activities
+          - separator
+          - generic [ref=e1122]:
+            - generic:
+              - generic:
+                - button "Properties" [ref=e1123]:
+                  - text: Properties
+                  - img [ref=e1124]
+                - generic [ref=e1126]:
+                  - generic [ref=e1127]:
+                    - generic [ref=e1128]: Status
+                    - button "In Review" [ref=e1129] [cursor=pointer]:
+                      - img [ref=e1130]
+                      - generic: In Review
+                  - generic [ref=e1133]:
+                    - generic [ref=e1134]: Assignee
+                    - 'button "Planner Status: Online Planner" [ref=e1136] [cursor=pointer]':
+                      - 'link "Planner Status: Online" [ref=e1138]':
+                        - generic [ref=e1139]:
+                          - generic "Planner" [ref=e1140]:
+                            - img "Planner" [ref=e1141]
+                          - 'generic "Status: Online" [ref=e1142]'
+                      - generic [ref=e1143]: Planner
+                  - generic [ref=e1144]:
+                    - generic [ref=e1145]: Project
+                    - button "Sales Doctor Bridge" [ref=e1146] [cursor=pointer]:
+                      - generic [ref=e1147]: 📁
+                      - generic: Sales Doctor Bridge
+                  - generic [ref=e1148]:
+                    - generic [ref=e1149]: Sprint
+                    - button "No sprint" [ref=e1150] [cursor=pointer]:
+                      - img [ref=e1151]
+                      - generic: No sprint
+                  - button "Add property" [ref=e1157]:
+                    - img [ref=e1158]
+                    - generic [ref=e1159]: Add property
+              - generic:
+                - button "Pull requests" [ref=e1160]:
+                  - text: Pull requests
+                  - img [ref=e1161]
+                - paragraph [ref=e1164]: No linked pull requests yet. Reference this issue's identifier in a PR's branch name, title, or body to auto-link it.
+              - generic:
+                - button "Details" [ref=e1165]:
+                  - text: Details
+                  - img [ref=e1166]
+                - generic [ref=e1168]:
+                  - generic [ref=e1169]:
+                    - generic [ref=e1170]: Created by
+                    - generic:
+                      - link "Jamshid" [ref=e1172] [cursor=pointer]:
+                        - generic "Jamshid" [ref=e1173]:
+                          - img "Jamshid" [ref=e1174]
+                      - generic: Jamshid
+                  - generic [ref=e1175]:
+                    - generic [ref=e1176]: Created
+                    - generic [ref=e1177]: Jun 24
+                  - generic [ref=e1178]:
+                    - generic [ref=e1179]: Updated
+                    - generic [ref=e1180]: Jun 24
+              - generic:
+                - button "Repository" [ref=e1181]:
+                  - text: Repository
+                  - img [ref=e1182]
+                - generic [ref=e1184]:
+                  - generic:
+                    - generic:
+                      - img [ref=e1185]
+                      - 'link "sd-bridge frontend — WORK HERE: make changes and open the Merge Request in this repo"':
+                        - /url: ssh://git@ssh-gitlab.sdteam.uz:2222/salesdoctor/sd-bridge/sd-bridge-admin-dashboard.git
+                      - img [ref=e1188]
+                    - generic:
+                      - img [ref=e1192]
+                      - 'link "sd-bridge-backend — READ-ONLY reference: pull for API context, do NOT modify or open an MR here"':
+                        - /url: ssh://git@ssh-gitlab.sdteam.uz:2222/salesdoctor/sd-bridge/sd-bridge-backend.git
+                      - img [ref=e1195]
+                  - button "Connect another" [ref=e1199]:
+                    - img
+                    - text: Connect another
+              - generic:
+                - tablist "Work mode" [ref=e1200]:
+                  - tab "Prompts" [selected] [ref=e1201]:
+                    - img [ref=e1202]
+                    - text: Prompts
+                  - tab "Editor" [ref=e1206]:
+                    - img [ref=e1207]
+                    - text: Editor
+                - paragraph [ref=e1211]: Hand the agent scoped prompts — draft code, docs, tests, or review.
+              - generic:
+                - button "AI actions" [ref=e1212]:
+                  - text: AI actions
+                  - img [ref=e1213]
+                - generic [ref=e1215]:
+                  - textbox "Scope (optional) — e.g. the login form" [ref=e1216]
+                  - generic:
+                    - button "Draft code" [ref=e1217]:
+                      - img
+                      - generic: Draft code
+                    - button "Write docs" [ref=e1218]:
+                      - img
+                      - generic: Write docs
+                    - button "Write tests" [ref=e1219]:
+                      - img
+                      - generic: Write tests
+                    - button "Review a part" [ref=e1220]:
+                      - img
+                      - generic: Review a part
+              - generic [ref=e1221]:
+                - generic:
+                  - generic "sd-bridge-qa" [ref=e1224]:
+                    - img "sd-bridge-qa" [ref=e1225]
+                  - generic [ref=e1226]: sd-bridge-qa is working
+              - generic:
+                - button "Execution log 1" [ref=e1231]:
+                  - text: Execution log
+                  - img [ref=e1232]
+                  - generic [ref=e1236]: "1"
+                - generic [ref=e1237]:
+                  - generic [ref=e1238]:
+                    - link "sd-bridge-qa" [ref=e1240] [cursor=pointer]:
+                      - generic "sd-bridge-qa" [ref=e1241]:
+                        - img "sd-bridge-qa" [ref=e1242]
+                    - generic: "@sd-bridge-qa Run QA for this issue as a DETERMINISTIC gate — report strictly by EXIT CODE, never by opinion, and do NOT weaken, skip, or delete…"
+                    - generic "Working" [ref=e1243]:
+                      - generic [ref=e1244]: 12m 45s
+                      - generic [ref=e1245]: Working
+                  - button "Show past runs (5)" [ref=e1246]:
+                    - img [ref=e1247]
+                    - text: Show past runs (5)
+              - generic:
+                - button "Token usage" [ref=e1249]:
+                  - text: Token usage
+                  - img [ref=e1250]
+                - generic [ref=e1252]:
+                  - generic [ref=e1253]:
+                    - generic [ref=e1254]: Input
+                    - generic [ref=e1255]: 51.9k
+                  - generic [ref=e1256]:
+                    - generic [ref=e1257]: Output
+                    - generic [ref=e1258]: 67.4k
+                  - generic [ref=e1259]:
+                    - generic [ref=e1260]: Cache
+                    - generic [ref=e1261]: 13.7M read / 315.1k write
+                  - generic [ref=e1262]:
+                    - generic [ref=e1263]: Runs
+                    - generic [ref=e1264]: "4"
+              - button "Metadata · 2" [ref=e1265]:
+                - text: Metadata
+                - generic [ref=e1266]: · 2
+      - generic:
+        - generic:
+          - generic:
+            - button:
+              - img
+            - generic:
+              - button "New chat":
+                - generic: New chat
+                - img
+          - generic:
+            - button:
+              - img
+            - button:
+              - img
+        - generic:
+          - generic:
+            - heading "Hi, I'm Planner" [level=3]
+            - paragraph: Try asking
+          - generic:
+            - button "📋List my open tasks by priority"
+            - button "📝Summarize what I did today"
+            - button "💡Plan what to work on next"
+        - generic:
+          - generic:
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - paragraph: Start a message…
+            - generic:
+              - 'button "Planner Status: Online Planner"':
+                - generic:
+                  - 'link "Planner Status: Online"':
+                    - generic:
+                      - generic "Planner":
+                        - img "Planner"
+                      - 'generic "Status: Online"'
+                - generic: Planner
+                - img
+            - generic:
+              - button "Attach file":
+                - img
+              - button [disabled]:
+                - img
+      - button [ref=e1267] [cursor=pointer]:
+        - img [ref=e1268]
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=e18] [cursor=pointer]:
+    - img [ref=e19]
+  - alert [ref=e1270]

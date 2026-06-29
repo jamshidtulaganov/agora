@@ -107,6 +107,16 @@ UPDATE issue SET
 WHERE id = $1 AND workspace_id = $3
 RETURNING *;
 
+-- name: UpdateIssueAssignee :one
+-- Focused assignee change (e.g. the Lark "assign to me" card action). Both
+-- fields move together; pass NULL/NULL to unassign. Workspace_id guards tenancy.
+UPDATE issue SET
+    assignee_type = $2,
+    assignee_id = $3,
+    updated_at = now()
+WHERE id = $1 AND workspace_id = $4
+RETURNING *;
+
 -- name: CreateIssueWithOrigin :one
 INSERT INTO issue (
     workspace_id, title, description, status, priority,

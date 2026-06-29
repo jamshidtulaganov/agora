@@ -165,8 +165,16 @@ export function OpenCodeLogo({ className }: { className?: string }) {
 
 export function headerButtonClassName(
   tone: "ghost" | "solid",
-  variant: "dark" | "light" = "dark",
+  variant: "dark" | "light" | "auto" = "dark",
 ) {
+  if (variant === "auto") {
+    return cn(
+      "inline-flex items-center justify-center gap-2 rounded-[11px] px-4 py-2.5 text-[13px] font-semibold transition-colors",
+      tone === "solid"
+        ? "bg-[#2563EB] text-white hover:bg-[#2563EB]/90"
+        : "border border-[#0a0d12]/12 bg-[#0a0d12]/[0.03] text-[#0a0d12] hover:bg-[#0a0d12]/5 dark:border-white/18 dark:bg-black/16 dark:text-white dark:hover:bg-black/24",
+    );
+  }
   return cn(
     "inline-flex items-center justify-center gap-2 rounded-[11px] px-4 py-2.5 text-[13px] font-semibold transition-colors",
     variant === "dark"

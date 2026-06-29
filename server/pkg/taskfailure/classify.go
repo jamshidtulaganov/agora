@@ -107,6 +107,13 @@ func Classify(rawError string) Reason {
 		"balance is too low",
 		"monthly usage limit",
 		"usage limit",
+		// Claude Code's exact subscription-limit copy is "You've hit your
+		// weekly limit · resets <time>" — the "weekly"/"daily" word splits the
+		// "you've hit your limit" pattern, so match the "<period> limit" form
+		// directly or it falls through to agent_error.unknown (then no retry and
+		// no fallback-runtime failover, which keys on this quota reason).
+		"weekly limit",
+		"daily limit",
 		"you've hit your limit",
 		// Curly apostrophe variant: providers and copy-pasted error
 		// strings sometimes use U+2019 instead of ASCII '. SQL ILIKE
