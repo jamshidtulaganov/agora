@@ -55,6 +55,16 @@ services:
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:${FRONTEND_PORT:-3000}}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
       AGORA_GITLAB_MR_TARGET: ${AGORA_GITLAB_MR_TARGET:-}
+      # Bitrix24 sync (inbound webhook + import browser + outbound status push).
+      # Declared in the BASE compose so they survive a backend recreate that does
+      # NOT include docker-compose.override.yml — a missing BITRIX_WEBHOOK_URL
+      # makes the whole /api/bitrix/* surface return 503 "not configured".
+      BITRIX_WEBHOOK_URL: ${BITRIX_WEBHOOK_URL:-}
+      BITRIX_SYNC_WORKSPACE_SLUG: ${BITRIX_SYNC_WORKSPACE_SLUG:-}
+      BITRIX_GROUP_MAP: ${BITRIX_GROUP_MAP:-}
+      BITRIX_INBOUND_SECRET: ${BITRIX_INBOUND_SECRET:-}
+      BITRIX_PUSH_STATUS: ${BITRIX_PUSH_STATUS:-}
+      BITRIX_TASK_TAG: ${BITRIX_TASK_TAG:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-noreply@agora.dev}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -86,6 +96,11 @@ services:
       APP_ENV: ${APP_ENV:-production}
       AGORA_DEV_VERIFICATION_CODE: ${AGORA_DEV_VERIFICATION_CODE:-}
       AGORA_APP_URL: ${AGORA_APP_URL:-http://localhost:${FRONTEND_PORT:-3000}}
+      # Self-host live editor: the URL the BROWSER uses to reach the daemon's
+      # /editor/launch. Empty → backend default 127.0.0.1:19514. Set this when
+      # the daemon runs under an isolated `--profile` on a different health port
+      # (e.g. `agora --profile local` binds 127.0.0.1:20038).
+      AGORA_DAEMON_EDITOR_URL: ${AGORA_DAEMON_EDITOR_URL:-}
       ALLOW_SIGNUP: ${ALLOW_SIGNUP:-true}
       ALLOWED_EMAILS: ${ALLOWED_EMAILS:-}
       ALLOWED_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:-}

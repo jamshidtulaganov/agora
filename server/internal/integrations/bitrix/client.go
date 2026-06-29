@@ -152,6 +152,24 @@ type rawGroupRef struct {
 	NameUpper jsonStr `json:"NAME"`
 }
 
+// UnmarshalJSON tolerates Bitrix's two shapes for the nested group: an object
+// ({"id":5,"name":"Sprint 9"}) on a grouped task, OR an array ([] when the task
+// has no workgroup — seen in tasks.task.list filtered by RESPONSIBLE_ID). The
+// array form decodes to the zero value rather than erroring the whole response.
+func (g *rawGroupRef) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 || trimmed[0] == '[' || string(trimmed) == "null" {
+		return nil // array / empty / null → no embedded group
+	}
+	type alias rawGroupRef
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	*g = rawGroupRef(a)
+	return nil
+}
+
 // firstNonEmpty returns the first non-empty value among the candidates,
 // letting us tolerate Bitrix returning either camelCase or SCREAMING_SNAKE
 // keys depending on the API version / scope.

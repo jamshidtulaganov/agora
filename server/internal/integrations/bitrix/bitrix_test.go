@@ -456,3 +456,32 @@ func TestMapStage(t *testing.T) {
 		}
 	}
 }
+
+// TestRawTaskGroupAsArray guards the rawGroupRef decoder against Bitrix's two
+// shapes for the nested "group": an object on a grouped task, OR an array ([])
+// when the task has no workgroup — the form tasks.task.list returns when
+// filtered by RESPONSIBLE_ID. The array form must decode to the zero value, not
+// error the whole response (the bug that broke "import by user").
+func TestRawTaskGroupAsArray(t *testing.T) {
+	t.Run("group as empty array does not error", func(t *testing.T) {
+		var rt rawTask
+		if err := json.Unmarshal([]byte(`{"id":"7","title":"x","group":[]}`), &rt); err != nil {
+			t.Fatalf("group-as-array must decode, got error: %v", err)
+		}
+		task := rt.toTask()
+		if task.GroupID != "" {
+			t.Errorf("no-group task must have empty GroupID, got %q", task.GroupID)
+		}
+	})
+
+	t.Run("group as object still parses", func(t *testing.T) {
+		var rt rawTask
+		if err := json.Unmarshal([]byte(`{"id":"7","title":"x","group":{"id":"9","name":"Sprint 9"}}`), &rt); err != nil {
+			t.Fatalf("group-as-object must decode: %v", err)
+		}
+		task := rt.toTask()
+		if task.GroupID != "9" || task.GroupName != "Sprint 9" {
+			t.Errorf("group object must parse, got id=%q name=%q", task.GroupID, task.GroupName)
+		}
+	})
+}

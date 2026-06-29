@@ -54,7 +54,13 @@ export function BitrixSyncPanel() {
 
   const selected = mode === "groups" ? selectedGroups : selectedUsers;
   const setSelected = mode === "groups" ? setSelectedGroups : setSelectedUsers;
-  const selectedIds = Object.keys(selected).filter((id) => selected[id]);
+
+  // Selections from BOTH tabs import together — a run can mix workgroups and
+  // responsibles. The visible checkboxes track the active mode; the Import
+  // button + request carry both.
+  const selectedGroupIds = Object.keys(selectedGroups).filter((id) => selectedGroups[id]);
+  const selectedUserIds = Object.keys(selectedUsers).filter((id) => selectedUsers[id]);
+  const totalSelected = selectedGroupIds.length + selectedUserIds.length;
 
   // "Select all" acts on the currently-visible (filtered) rows; for groups only
   // routable ones can be picked.
@@ -81,10 +87,10 @@ export function BitrixSyncPanel() {
     });
   }
   function runImport() {
-    if (!selectedIds.length) return;
+    if (!totalSelected) return;
     setResult(null);
     importMut.mutate(
-      mode === "groups" ? { group_ids: selectedIds } : { user_ids: selectedIds },
+      { group_ids: selectedGroupIds, user_ids: selectedUserIds },
       { onSuccess: (r) => setResult(r) },
     );
   }
@@ -111,9 +117,9 @@ export function BitrixSyncPanel() {
           >
             <RefreshCw className={`h-4 w-4 ${query.isFetching ? "animate-spin" : ""}`} />
           </Button>
-          <Button size="sm" onClick={runImport} disabled={!selectedIds.length || importMut.isPending}>
+          <Button size="sm" onClick={runImport} disabled={!totalSelected || importMut.isPending}>
             {importMut.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
-            Import{selectedIds.length ? ` ${selectedIds.length}` : ""}
+            Import{totalSelected ? ` ${totalSelected}` : ""}
           </Button>
         </div>
       </PageHeader>
@@ -122,19 +128,23 @@ export function BitrixSyncPanel() {
         {/* Mode tabs + filter */}
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <div className="inline-flex rounded-md border border-border p-0.5">
-            {(["groups", "users"] as Mode[]).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => switchMode(m)}
-                className={cn(
-                  "rounded px-3 py-1 text-xs font-medium capitalize transition-colors",
-                  mode === m ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {m === "groups" ? "By group" : "By user"}
-              </button>
-            ))}
+            {(["groups", "users"] as Mode[]).map((m) => {
+              const count = m === "groups" ? selectedGroupIds.length : selectedUserIds.length;
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => switchMode(m)}
+                  className={cn(
+                    "rounded px-3 py-1 text-xs font-medium transition-colors",
+                    mode === m ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {m === "groups" ? "By group" : "By user"}
+                  {count > 0 ? <span className="ml-1 opacity-70">({count})</span> : null}
+                </button>
+              );
+            })}
           </div>
           <div className="relative min-w-48 flex-1">
             <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
