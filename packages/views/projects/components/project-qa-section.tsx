@@ -6,6 +6,8 @@ import { ChevronRight, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { projectDetailOptions } from "@agora/core/projects/queries";
 import { useUpdateProject } from "@agora/core/projects/mutations";
+import { remoteBoxesOptions, useBindRemoteBox } from "@agora/core/runtimes";
+import { useConfigStore } from "@agora/core/config";
 import { useWorkspaceId } from "@agora/core/hooks";
 import type { ProjectSettings } from "@agora/core/types";
 
@@ -22,6 +24,32 @@ export function ProjectQASection({ projectId }: { projectId: string }) {
   const { data: project } = useQuery(projectDetailOptions(wsId, projectId));
   const updateProject = useUpdateProject();
   const [open, setOpen] = useState(false);
+
+  // QA box binding (opt-in). Gated behind the same flag RemoteBoxesSection uses
+  // — the whole control hides when the feature is off (the list also falls back
+  // to [] server-side when disabled, so this is belt-and-suspenders).
+  const remoteBoxesEnabled = useConfigStore((s) => s.remoteBoxesEnabled);
+  const { data: boxes = [] } = useQuery({
+    ...remoteBoxesOptions(wsId),
+    enabled: remoteBoxesEnabled,
+  });
+  const bindBox = useBindRemoteBox(wsId);
+  const boundBox = boxes.find((b) => b.project_id === projectId) ?? null;
+
+  const handleBindChange = async (boxId: string) => {
+    try {
+      if (boxId === "") {
+        // Unbind: clear the currently-bound box (empty project_id unbinds).
+        if (boundBox) await bindBox.mutateAsync({ id: boundBox.id, projectId: "" });
+        return;
+      }
+      await bindBox.mutateAsync({ id: boxId, projectId });
+    } catch (err) {
+      toast.error(
+        err instanceof Error && err.message ? err.message : "Failed to set QA box",
+      );
+    }
+  };
 
   const settings = project?.settings;
   const savedCmd = (settings?.qa_smoke_cmd ?? "") as string;
@@ -127,6 +155,31 @@ export function ProjectQASection({ projectId }: { projectId: string }) {
               className="h-7 w-full rounded-md border bg-transparent px-2 text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
             />
           </label>
+          {remoteBoxesEnabled && (
+            <label className="block space-y-1 border-t pt-2">
+              <span className="text-[10px] font-medium text-muted-foreground">
+                QA box
+              </span>
+              <select
+                value={boundBox?.id ?? ""}
+                onChange={(e) => void handleBindChange(e.target.value)}
+                disabled={bindBox.isPending}
+                className="h-7 w-full rounded-md border bg-transparent px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+              >
+                <option value="">No QA box (deploy-qa off)</option>
+                {boxes.map((box) => (
+                  <option key={box.id} value={box.id}>
+                    {box.label} ({box.ssh_host})
+                  </option>
+                ))}
+              </select>
+              <p className="text-[10px] text-muted-foreground">
+                Remote box that serves this project&apos;s branches for QA.
+                Issues in this project can deploy their branch here from the
+                editor.
+              </p>
+            </label>
+          )}
         </div>
       )}
     </div>

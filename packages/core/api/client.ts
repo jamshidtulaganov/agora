@@ -72,6 +72,7 @@ import type {
   Project,
   ConnectedBox,
   CreateRemoteBoxRequest,
+  RemoteBoxSyncResult,
   CreateProjectRequest,
   UpdateProjectRequest,
   ListProjectsResponse,
@@ -213,6 +214,9 @@ import {
   EMPTY_CREATE_BILLING_PORTAL_SESSION_RESPONSE,
   EMPTY_CANCEL_TASK_RESPONSE,
   ConnectedBoxListSchema,
+  ConnectedBoxSchema,
+  RemoteBoxSyncResultSchema,
+  EMPTY_CONNECTED_BOX,
 } from "./schemas";
 
 /** Identifies the calling client to the server.
@@ -1205,14 +1209,45 @@ export class ApiClient {
   // Check out a branch of the box's repo into its work_dir over SSH (git-sync),
   // so the box serves that branch and QA can test it. Returns ok + the remote
   // git output (token already redacted server-side).
-  async syncRemoteBox(
-    id: string,
-    branch: string,
-  ): Promise<{ ok: boolean; branch: string; output: string; box: ConnectedBox }> {
-    return this.fetch(`/api/remote-boxes/${id}/sync`, {
+  async syncRemoteBox(id: string, branch: string): Promise<RemoteBoxSyncResult> {
+    const raw = await this.fetch<unknown>(`/api/remote-boxes/${id}/sync`, {
       method: "POST",
       body: JSON.stringify({ branch }),
     });
+    return parseWithFallback(
+      raw,
+      RemoteBoxSyncResultSchema,
+      { ok: false, branch, output: "", box: EMPTY_CONNECTED_BOX },
+      { endpoint: "POST /api/remote-boxes/{id}/sync" },
+    );
+  }
+
+  // Bind (project_id set) or unbind (empty project_id) a box to a project so an
+  // issue in that project resolves to this box for deploy-qa.
+  async bindConnectedBox(id: string, projectId: string): Promise<ConnectedBox> {
+    const raw = await this.fetch<unknown>(`/api/remote-boxes/${id}/bind`, {
+      method: "POST",
+      body: JSON.stringify({ project_id: projectId }),
+    });
+    return parseWithFallback(raw, ConnectedBoxSchema, EMPTY_CONNECTED_BOX, {
+      endpoint: "POST /api/remote-boxes/{id}/bind",
+    });
+  }
+
+  // Check the given branch out onto the QA box bound to the issue's project
+  // (git-sync), so the box serves the branch under review for QA. The box is
+  // auto-resolved server-side from the issue.
+  async deployIssueQA(issueId: string, branch: string): Promise<RemoteBoxSyncResult> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/deploy-qa`, {
+      method: "POST",
+      body: JSON.stringify({ branch }),
+    });
+    return parseWithFallback(
+      raw,
+      RemoteBoxSyncResultSchema,
+      { ok: false, branch, output: "", box: EMPTY_CONNECTED_BOX },
+      { endpoint: "POST /api/issues/{id}/deploy-qa" },
+    );
   }
 
   // Cascade variant of deleteRuntime. The strict DELETE refuses with

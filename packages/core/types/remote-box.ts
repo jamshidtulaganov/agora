@@ -24,6 +24,9 @@ export interface ConnectedBox {
   work_dir: string;
   /** most recently synced branch (for display). */
   last_branch: string;
+  /** Project this box is bound to as its QA target; null when unbound. An issue
+   *  in that project resolves to this box for deploy-qa. */
+  project_id: string | null;
   created_at: string;
 }
 
@@ -34,4 +37,14 @@ export interface CreateRemoteBoxRequest {
   ssh_port?: number;
   repo_url?: string;
   work_dir?: string;
+}
+
+// Result of a git-sync onto a box (branch sync / issue deploy-qa). ok is the
+// remote git exit status; output is the remote git output (token redacted
+// server-side).
+export interface RemoteBoxSyncResult {
+  ok: boolean;
+  branch: string;
+  output: string;
+  box: ConnectedBox;
 }

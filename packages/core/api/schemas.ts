@@ -825,11 +825,43 @@ export const ConnectedBoxSchema = z.object({
   repo_url: z.string().default(""),
   work_dir: z.string().default(""),
   last_branch: z.string().default(""),
+  project_id: z.string().nullable().default(null),
   created_at: z.string().default(""),
 }).loose();
 
 export const ConnectedBoxListSchema = z.object({
   boxes: z.array(ConnectedBoxSchema).default([]),
+}).loose();
+
+// Fallback box for endpoints whose contract returns a single box (bind) or
+// embeds one (sync result). All fields defaulted so a degraded response yields
+// a benign empty box rather than a throw.
+export const EMPTY_CONNECTED_BOX = {
+  id: "",
+  workspace_id: "",
+  owner_id: null,
+  label: "",
+  ssh_host: "",
+  ssh_user: "",
+  ssh_port: 22,
+  deploy_pubkey: "",
+  daemon_id: null,
+  status: "pending",
+  last_error: "",
+  repo_url: "",
+  work_dir: "",
+  last_branch: "",
+  project_id: null,
+  created_at: "",
+} as const;
+
+// Result of a box git-sync (branch sync / issue deploy-qa). Lenient + defaulted
+// so a degraded response renders "deploy failed" rather than white-screening.
+export const RemoteBoxSyncResultSchema = z.object({
+  ok: z.boolean().default(false),
+  branch: z.string().default(""),
+  output: z.string().default(""),
+  box: ConnectedBoxSchema,
 }).loose();
 
 // ---------------------------------------------------------------------------

@@ -1652,6 +1652,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           coCode
           issueKey={issue.identifier}
           issueTitle={issue.title}
+          projectId={issue.project_id}
         />
       )}
 

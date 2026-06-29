@@ -53,3 +53,31 @@ export function useSyncRemoteBox(wsId: string) {
     },
   });
 }
+
+// Bind/unbind a box to a project (project_id == "" unbinds). Invalidates the
+// list so the bound-box badge and any deploy-qa affordance reflect it.
+export function useBindRemoteBox(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation<ConnectedBox, Error, { id: string; projectId: string }>({
+    mutationFn: ({ id, projectId }) => api.bindConnectedBox(id, projectId),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: remoteBoxKeys.all(wsId) });
+    },
+  });
+}
+
+// Deploy an issue's branch to its project's bound QA box (git-sync). Keyed by
+// issue; invalidates the box list so last_branch/status stay fresh.
+export function useDeployIssueQA(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation<
+    Awaited<ReturnType<typeof api.deployIssueQA>>,
+    Error,
+    { issueId: string; branch: string }
+  >({
+    mutationFn: ({ issueId, branch }) => api.deployIssueQA(issueId, branch),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: remoteBoxKeys.all(wsId) });
+    },
+  });
+}

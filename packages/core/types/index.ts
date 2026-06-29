@@ -195,4 +195,8 @@ export type {
   BillingCheckoutSessionStatus,
   CreateBillingPortalSessionResponse,
 } from "./billing";
-export type { ConnectedBox, CreateRemoteBoxRequest } from "./remote-box";
+export type {
+  ConnectedBox,
+  CreateRemoteBoxRequest,
+  RemoteBoxSyncResult,
+} from "./remote-box";

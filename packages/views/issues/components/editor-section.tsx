@@ -35,7 +35,9 @@ import { EditorVariantsDialog } from "./editor-variants-dialog";
 import { EditorAskBar } from "./editor-ask-bar";
 import { EditorChangesList } from "./editor-changes-list";
 import { EditorRunQA } from "./editor-run-qa";
+import { EditorDeployQA } from "./editor-deploy-qa";
 import { EditorTestsPanel } from "./editor-tests-panel";
+import { useWorkspaceId } from "@agora/core/hooks";
 
 // Right-panel "Code" section: launches a browser VS Code (code-server) on the
 // issue's agent worktree and iframes it, so a human can watch + edit the live
@@ -108,6 +110,8 @@ interface EditorSectionProps {
   issueKey?: string;
   /** Issue title — used for the Accept→PR title. */
   issueTitle?: string;
+  /** Issue's parent project — resolves the bound QA box for the deploy action. */
+  projectId?: string | null;
 }
 
 export function EditorSection({
@@ -116,7 +120,9 @@ export function EditorSection({
   coCode = false,
   issueKey,
   issueTitle,
+  projectId = null,
 }: EditorSectionProps) {
+  const wsId = useWorkspaceId();
   const [open, setOpen] = useState(defaultOpen);
   const [state, setState] = useState<LaunchState>("idle");
   const [url, setUrl] = useState<string | null>(null);
@@ -361,6 +367,7 @@ export function EditorSection({
   const editorActions = (
     <div className="flex items-center gap-3">
       <EditorRunQA issueId={issueId} agent={selectedAgent} />
+      <EditorDeployQA issueId={issueId} wsId={wsId} projectId={projectId} />
       <button
         type="button"
         onClick={() => setVariantsOpen(true)}
