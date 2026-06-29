@@ -158,13 +158,19 @@ function ProjectIssuesContent({
   const labelFilters = useViewStore((s) => s.labelFilters);
   const sprintFilters = useViewStore((s) => s.sprintFilters);
   const agentRunningFilter = useViewStore((s) => s.agentRunningFilter);
-  // When sprints are OFF for this project, ignore any persisted sprint filter —
-  // it would otherwise hide every issue that isn't in a sprint (e.g. imported
-  // Bitrix tasks), leaving the board looking empty even in list/board view.
-  const effectiveSprintFilters = useMemo(
-    () => (sprintMode ? sprintFilters : []),
-    [sprintMode, sprintFilters],
-  );
+  // Project sprints (also used by the tree view + header sprint filter below).
+  // Fetched here so the sprint-filter sanitization can reference it.
+  const { data: sprints = [] } = useQuery(sprintListByProjectOptions(wsId, projectId));
+  // Sanitize the persisted sprint filter against THIS project: sprints off →
+  // drop it entirely (it would hide every sprint-less issue, e.g. imported Bitrix
+  // tasks); sprints on → keep only filters matching an EXISTING project sprint,
+  // so a leftover filter pointing at a deleted / other-project sprint (e.g. after
+  // deleting a project) can't leave the board permanently empty.
+  const effectiveSprintFilters = useMemo(() => {
+    if (!sprintMode) return [];
+    const valid = new Set(sprints.map((s) => s.id));
+    return sprintFilters.filter((id) => valid.has(id));
+  }, [sprintMode, sprintFilters, sprints]);
 
   const { data: snapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
   const runningIssueIds = useMemo(() => {
@@ -220,11 +226,6 @@ function ProjectIssuesContent({
   );
 
   const { data: childProgressMap = new Map() } = useQuery(childIssueProgressOptions(wsId));
-
-  // Sprints for the tree view's section grouping. Project-scoped; shares the
-  // same query (and cache) as the sidebar sprints section + the header sprint
-  // filter, so this rides an already-warm cache on the project surface.
-  const { data: sprints = [] } = useQuery(sprintListByProjectOptions(wsId, projectId));
 
   const visibleStatuses = useMemo(() => {
     if (statusFilters.length > 0)
