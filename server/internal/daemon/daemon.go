@@ -3693,7 +3693,14 @@ func mergeUsage(a, b map[string]agent.TokenUsage) map[string]agent.TokenUsage {
 func repoDataToInfo(repos []RepoData) []repocache.RepoInfo {
 	info := make([]repocache.RepoInfo, len(repos))
 	for i, r := range repos {
-		info[i] = repocache.RepoInfo{URL: r.URL}
+		ri := repocache.RepoInfo{URL: r.URL}
+		// Carry a resolved per-repo token (multi-account support) into the cache
+		// so the clone/fetch authenticates as the matching account.
+		if r.Auth != nil && r.Auth.Kind == "token" {
+			ri.Username = r.Auth.Username
+			ri.Token = r.Auth.Token
+		}
+		info[i] = ri
 	}
 	return info
 }

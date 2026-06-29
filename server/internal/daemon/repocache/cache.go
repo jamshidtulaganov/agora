@@ -3,6 +3,7 @@
 package repocache
 
 import (
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -14,7 +15,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
 )
 
 // gitEnv returns an environment for git subprocesses that contact remotes.
@@ -27,7 +27,7 @@ import (
 // caches and worktrees, so the ownership check adds no security value
 // and breaks CI environments where the runner UID differs from the
 // directory owner.
-func gitEnv() []string {
+func gitEnv(extra ...[2]string) []string {
 	base := os.Environ()
 
 	// Find the existing GIT_CONFIG_COUNT so we append at the next index
@@ -42,13 +42,52 @@ func gitEnv() []string {
 		}
 	}
 
-	idx := strconv.Itoa(existing)
-	return append(base,
+	pairs := append([][2]string{{"safe.directory", "*"}}, extra...)
+	out := append(base,
 		"GIT_TERMINAL_PROMPT=0",
-		"GIT_CONFIG_COUNT="+strconv.Itoa(existing+1),
-		"GIT_CONFIG_KEY_"+idx+"=safe.directory",
-		"GIT_CONFIG_VALUE_"+idx+"=*",
+		"GIT_CONFIG_COUNT="+strconv.Itoa(existing+len(pairs)),
 	)
+	for i, p := range pairs {
+		idx := strconv.Itoa(existing + i)
+		out = append(out,
+			"GIT_CONFIG_KEY_"+idx+"="+p[0],
+			"GIT_CONFIG_VALUE_"+idx+"="+p[1],
+		)
+	}
+	return out
+}
+
+// tokenAuthConfig builds a git config pair that injects an Authorization header
+// for the given host, so a clone/fetch authenticates with a token without the
+// token appearing in the URL, process args, or logs. ok=false when no token.
+func tokenAuthConfig(host, username, token string) ([2]string, bool) {
+	if strings.TrimSpace(token) == "" {
+		return [2]string{}, false
+	}
+	if username == "" {
+		username = "x-access-token"
+	}
+	if host == "" {
+		host = "github.com"
+	}
+	hdr := "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+token))
+	return [2]string{"http.https://" + host + "/.extraheader", hdr}, true
+}
+
+// repoHostFromURL extracts the lowercased host from a git URL (https/ssh/scp).
+func repoHostFromURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if strings.HasPrefix(raw, "git@") && !strings.Contains(raw, "://") {
+		rest := strings.TrimPrefix(raw, "git@")
+		if i := strings.Index(rest, ":"); i != -1 {
+			return strings.ToLower(rest[:i])
+		}
+		return ""
+	}
+	if u, err := url.Parse(raw); err == nil {
+		return strings.ToLower(u.Hostname())
+	}
+	return ""
 }
 
 var agentGitExcludePatterns = []string{".agent_context", "CLAUDE.md", "AGENTS.md", ".claude", ".opencode"}
@@ -56,6 +95,11 @@ var agentGitExcludePatterns = []string{".agent_context", "CLAUDE.md", "AGENTS.md
 // RepoInfo describes a repository to cache.
 type RepoInfo struct {
 	URL string
+	// Username/Token: optional per-repo git credential (multi-account support).
+	// When Token is set, clone/fetch authenticate with it via an injected
+	// Authorization header instead of the daemon's ambient git auth.
+	Username string
+	Token    string
 }
 
 // CachedRepo describes a cached bare clone ready for worktree creation.
@@ -113,12 +157,19 @@ func (c *Cache) Sync(workspaceID string, repos []RepoInfo) error {
 		}
 		barePath := filepath.Join(wsDir, bareDirName(repo.URL))
 
+		// Resolve a per-repo token credential (multi-account support) into a
+		// git config header; empty when the repo has no bound credential.
+		var auth [][2]string
+		if pair, ok := tokenAuthConfig(repoHostFromURL(repo.URL), repo.Username, repo.Token); ok {
+			auth = append(auth, pair)
+		}
+
 		repoLock := c.lockForRepo(barePath)
 		repoLock.Lock()
 		if isBareRepo(barePath) {
 			// Already cached — fetch latest.
 			c.logger.Info("repo cache: fetching", "url", repo.URL, "path", barePath)
-			if err := gitFetch(barePath); err != nil {
+			if err := gitFetch(barePath, auth...); err != nil {
 				c.logger.Warn("repo cache: fetch failed", "url", repo.URL, "error", err)
 				if firstErr == nil {
 					firstErr = err
@@ -127,7 +178,7 @@ func (c *Cache) Sync(workspaceID string, repos []RepoInfo) error {
 		} else {
 			// Not cached — bare clone.
 			c.logger.Info("repo cache: cloning", "url", repo.URL, "path", barePath)
-			if err := gitCloneBare(repo.URL, barePath); err != nil {
+			if err := gitCloneBare(repo.URL, barePath, auth...); err != nil {
 				c.logger.Error("repo cache: clone failed", "url", repo.URL, "error", err)
 				if firstErr == nil {
 					firstErr = err
@@ -253,9 +304,9 @@ func isBareRepo(path string) bool {
 // refs and abort the entire fetch.
 const modernFetchRefspec = "+refs/heads/*:refs/remotes/origin/*"
 
-func gitCloneBare(url, dest string) error {
+func gitCloneBare(url, dest string, auth ...[2]string) error {
 	cmd := exec.Command("git", "clone", "--bare", url, dest)
-	cmd.Env = gitEnv()
+	cmd.Env = gitEnv(auth...)
 
 	if out, err := cmd.CombinedOutput(); err != nil {
 		// Clean up partial clone.
@@ -282,11 +333,11 @@ func gitCloneBare(url, dest string) error {
 // touches that symref on its own, so without this call an existing cache
 // would keep basing new worktrees on the original default branch forever
 // after the remote flipped.
-func gitFetch(barePath string) error {
+func gitFetch(barePath string, auth ...[2]string) error {
 	if err := ensureRemoteTrackingLayout(barePath); err != nil {
 		return fmt.Errorf("ensure refspec: %w", err)
 	}
-	if err := runGitFetch(barePath); err != nil {
+	if err := runGitFetch(barePath, auth...); err != nil {
 		return err
 	}
 	// Refresh refs/remotes/origin/HEAD after every successful fetch.
@@ -296,7 +347,7 @@ func gitFetch(barePath string) error {
 	// path (the only path that can't be recovered any other way) relies
 	// on this call.
 	cmd := exec.Command("git", "-C", barePath, "remote", "set-head", "origin", "--auto")
-	cmd.Env = gitEnv()
+	cmd.Env = gitEnv(auth...)
 
 	_ = cmd.Run()
 	return nil
@@ -304,9 +355,9 @@ func gitFetch(barePath string) error {
 
 // runGitFetch is the raw `git fetch origin` wrapper. Callers should go through
 // gitFetch, which migrates legacy caches first.
-func runGitFetch(barePath string) error {
+func runGitFetch(barePath string, auth ...[2]string) error {
 	cmd := exec.Command("git", "-C", barePath, "fetch", "origin")
-	cmd.Env = gitEnv()
+	cmd.Env = gitEnv(auth...)
 
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git fetch: %s: %w", strings.TrimSpace(string(out)), err)

@@ -210,6 +210,18 @@ func preserveMaskedGatewayToken(incoming any, persistedRuntimeConfig []byte) {
 type RepoData struct {
 	URL         string `json:"url"`
 	Description string `json:"description,omitempty"`
+	// Auth is the per-repo git credential resolved by the backend from the
+	// workspace's git_credentials (matched by host+owner). Present only when a
+	// matching credential exists; the daemon clones with it. The token is
+	// decrypted server-side and travels the authenticated daemon channel.
+	Auth *RepoAuth `json:"auth,omitempty"`
+}
+
+// RepoAuth carries a resolved git credential for a single repo.
+type RepoAuth struct {
+	Kind     string `json:"kind"`               // token (ssh later)
+	Username string `json:"username,omitempty"` // git auth username (default x-access-token)
+	Token    string `json:"token,omitempty"`    // decrypted PAT
 }
 
 // ProjectResourceData is the wire shape for a project resource included in a

@@ -1,12 +1,15 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/util/secretbox"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
@@ -169,6 +172,79 @@ func (h *Handler) CreateGitCredential(w http.ResponseWriter, r *http.Request) {
 		AuthKind:  row.AuthKind,
 		CreatedAt: timestampToString(row.CreatedAt),
 	})
+}
+
+// firstPathSeg returns the first path segment (the repo owner/org).
+func firstPathSeg(p string) string {
+	p = strings.TrimPrefix(p, "/")
+	if i := strings.Index(p, "/"); i != -1 {
+		return p[:i]
+	}
+	return p
+}
+
+// parseRepoHostOwner extracts the lowercased host + owner from a git repo URL,
+// handling https://host/owner/repo, ssh://git@host[:port]/owner/repo, and the
+// scp form git@host:owner/repo. Returns empty strings when it can't parse.
+func parseRepoHostOwner(raw string) (host, owner string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", ""
+	}
+	// scp-like: git@github.com:owner/repo.git
+	if strings.HasPrefix(raw, "git@") && !strings.Contains(raw, "://") {
+		rest := strings.TrimPrefix(raw, "git@")
+		if i := strings.Index(rest, ":"); i != -1 {
+			return strings.ToLower(rest[:i]), strings.ToLower(firstPathSeg(rest[i+1:]))
+		}
+		return "", ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "", ""
+	}
+	return strings.ToLower(u.Hostname()), strings.ToLower(firstPathSeg(u.Path))
+}
+
+// attachRepoAuth resolves each repo to a workspace git credential (by host+owner)
+// and attaches the decrypted token so the daemon can clone private repos across
+// several accounts. No-op (repos returned unchanged) when no credentials exist
+// or AGORA_GIT_SECRET_KEY is unset — the daemon then falls back to its ambient
+// git auth, preserving today's behavior.
+func (h *Handler) attachRepoAuth(ctx context.Context, wsUUID pgtype.UUID, repos []RepoData) []RepoData {
+	if len(repos) == 0 {
+		return repos
+	}
+	creds, err := h.Queries.GetGitCredentialsForWorkspace(ctx, wsUUID)
+	if err != nil || len(creds) == 0 {
+		return repos
+	}
+	box, err := gitCredentialBox()
+	if err != nil {
+		return repos
+	}
+	type authVal struct{ username, token string }
+	idx := make(map[string]authVal, len(creds))
+	for _, c := range creds {
+		if c.AuthKind != "token" {
+			continue
+		}
+		plain, err := box.Open(c.SecretEncrypted)
+		if err != nil {
+			continue
+		}
+		idx[c.Host+"|"+c.Owner] = authVal{username: c.Username, token: string(plain)}
+	}
+	for i := range repos {
+		host, owner := parseRepoHostOwner(repos[i].URL)
+		if host == "" || owner == "" {
+			continue
+		}
+		if v, ok := idx[host+"|"+owner]; ok {
+			repos[i].Auth = &RepoAuth{Kind: "token", Username: v.username, Token: v.token}
+		}
+	}
+	return repos
 }
 
 // DeleteGitCredential removes a credential by id (scoped to the workspace).

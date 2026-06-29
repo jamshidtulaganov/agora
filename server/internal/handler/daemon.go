@@ -556,7 +556,11 @@ func (h *Handler) GetDaemonWorkspaceRepos(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	writeJSON(w, http.StatusOK, workspaceReposResponse(workspaceID, ws.Repos, ws.Settings))
+	resp := workspaceReposResponse(workspaceID, ws.Repos, ws.Settings)
+	// Resolve per-repo git credentials (multi-account support) before handing the
+	// list to the daemon; no-op when none are configured.
+	resp.Repos = h.attachRepoAuth(r.Context(), parseUUID(workspaceID), resp.Repos)
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // DaemonDeregister marks runtimes as offline when the daemon shuts down.

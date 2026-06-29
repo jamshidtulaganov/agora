@@ -18,8 +18,17 @@ type Runtime struct {
 
 // RepoData holds repository information from the workspace.
 type RepoData struct {
-	URL         string `json:"url"`
-	Description string `json:"description,omitempty"`
+	URL         string    `json:"url"`
+	Description string    `json:"description,omitempty"`
+	Auth        *RepoAuth `json:"auth,omitempty"`
+}
+
+// RepoAuth mirrors handler.RepoAuth — a per-repo git credential resolved by the
+// backend so the daemon can clone private repos across several accounts.
+type RepoAuth struct {
+	Kind     string `json:"kind"`
+	Username string `json:"username,omitempty"`
+	Token    string `json:"token,omitempty"`
 }
 
 // ProjectResourceData mirrors handler.ProjectResourceData — a single project
