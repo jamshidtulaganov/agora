@@ -593,6 +593,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Get("/api/bitrix/users", h.ListBitrixUsers)
 		r.Get("/api/bitrix/tasks", h.ListBitrixTasks)
 		r.Post("/api/bitrix/import", h.ImportBitrixTasks)
+		r.Post("/api/bitrix/register-webhook", h.RegisterBitrixWebhook)
 
 		// SD: Zoho Projects importer (Phase 1, one-way Zoho -> Agora). Unlike
 		// the Bitrix browser these are workspace-scoped + role-gated: the

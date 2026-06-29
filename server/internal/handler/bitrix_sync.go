@@ -92,6 +92,13 @@ func bitrixWebhookURL() string { return strings.TrimSpace(os.Getenv("BITRIX_WEBH
 // webhook requires a matching ?secret= or X-Bitrix-Secret header.
 func bitrixInboundSecret() string { return strings.TrimSpace(os.Getenv("BITRIX_INBOUND_SECRET")) }
 
+// bitrixWebhookPublicURL is the PUBLIC base URL at which Bitrix can reach this
+// backend's /bitrix/webhook (e.g. https://api.example.com). Required to register
+// event handlers on the portal — Bitrix calls out to it, so localhost won't do.
+func bitrixWebhookPublicURL() string {
+	return strings.TrimRight(strings.TrimSpace(os.Getenv("BITRIX_WEBHOOK_PUBLIC_URL")), "/")
+}
+
 // bitrixTaskTag is the OPTIONAL tag filter for imports. Empty (the default)
 // means import ALL tasks; when set, only tasks carrying this tag
 // (case-insensitive) are synced. Replaces the old hard "ai"-only gate so the
@@ -348,6 +355,57 @@ func (h *Handler) newBitrixSyncState() *bitrixSyncState {
 // single-task entry point (webhook); it allocates a fresh per-call state.
 func (h *Handler) syncBitrixTask(ctx context.Context, taskID string, cfg bitrix.RouteConfig) error {
 	return h.syncBitrixTaskWithState(ctx, taskID, cfg, h.newBitrixSyncState())
+}
+
+// bitrixPollBatchSize bounds how many tracked tasks a single poll tick re-syncs,
+// so the safety-net poll never floods the Bitrix REST API.
+const bitrixPollBatchSize = 200
+
+// PollBitrixActiveTasks re-syncs the Bitrix tasks behind ACTIVE tracked issues
+// (status not done/cancelled), stalest-first and bounded — the periodic
+// "always sync" safety net that keeps status, stage, comments and attachments
+// fresh even when a webhook was missed or never registered. No-op when Bitrix
+// is not configured. A single shared sync state resolves each workgroup once.
+func (h *Handler) PollBitrixActiveTasks(ctx context.Context) {
+	cfg := bitrixRouteConfig()
+	if !bitrixInboundEnabled(cfg) {
+		return
+	}
+	rows, err := h.DB.Query(ctx,
+		`SELECT metadata->>'bitrix_task_id'
+		   FROM issue
+		  WHERE metadata ? 'bitrix_task_id'
+		    AND status NOT IN ('done', 'cancelled')
+		  ORDER BY updated_at ASC
+		  LIMIT $1`, bitrixPollBatchSize)
+	if err != nil {
+		slog.Warn("bitrix poll: list tracked tasks failed", "error", err)
+		return
+	}
+	defer rows.Close()
+	var taskIDs []string
+	for rows.Next() {
+		var id string
+		if rows.Scan(&id) == nil && strings.TrimSpace(id) != "" {
+			taskIDs = append(taskIDs, strings.TrimSpace(id))
+		}
+	}
+	if len(taskIDs) == 0 {
+		return
+	}
+	st := h.newBitrixSyncState()
+	synced := 0
+	for _, tid := range taskIDs {
+		if ctx.Err() != nil {
+			return
+		}
+		if err := h.syncBitrixTaskWithState(ctx, tid, cfg, st); err != nil {
+			slog.Debug("bitrix poll: sync task failed", "task_id", tid, "error", err)
+			continue
+		}
+		synced++
+	}
+	slog.Info("bitrix poll: tick complete", "candidates", len(taskIDs), "synced", synced)
 }
 
 // syncBitrixTaskWithState is the batched core of the inbound sync. It reuses the

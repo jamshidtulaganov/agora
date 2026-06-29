@@ -1129,6 +1129,66 @@ func (c *Client) UpdateTaskStatus(ctx context.Context, taskID, bitrixStatus stri
 	return checkError(body)
 }
 
+// BindEvent registers an outbound event handler on the portal via event.bind,
+// so Bitrix calls handlerURL whenever `event` fires (e.g. ONTASKUPDATE). Bitrix
+// dedups by (event, handler) so re-binding the same pair is a harmless no-op.
+func (c *Client) BindEvent(ctx context.Context, event, handlerURL string) error {
+	if c.baseURL == "" {
+		return errors.New("bitrix: empty base URL")
+	}
+	if strings.TrimSpace(event) == "" || strings.TrimSpace(handlerURL) == "" {
+		return errors.New("bitrix: empty event or handler url")
+	}
+	endpoint := c.baseURL + "event.bind"
+	form := url.Values{}
+	form.Set("event", strings.TrimSpace(event))
+	form.Set("handler", strings.TrimSpace(handlerURL))
+	body, err := c.post(ctx, endpoint, form)
+	if err != nil {
+		return err
+	}
+	return checkError(body)
+}
+
+// ListBoundEvents returns the (event → handler URL) bindings currently
+// registered on the portal via event.get, so the registration endpoint can
+// report what is already wired.
+func (c *Client) ListBoundEvents(ctx context.Context) ([]EventBinding, error) {
+	if c.baseURL == "" {
+		return nil, errors.New("bitrix: empty base URL")
+	}
+	endpoint := c.baseURL + "event.get"
+	body, err := c.post(ctx, endpoint, url.Values{})
+	if err != nil {
+		return nil, err
+	}
+	var parsed struct {
+		Result []struct {
+			Event   jsonStr `json:"event"`
+			Handler jsonStr `json:"handler"`
+		} `json:"result"`
+		Error     string `json:"error"`
+		ErrorDesc string `json:"error_description"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("bitrix: decode event.get: %w", err)
+	}
+	if parsed.Error != "" {
+		return nil, fmt.Errorf("bitrix: event.get error %s: %s", parsed.Error, parsed.ErrorDesc)
+	}
+	out := make([]EventBinding, 0, len(parsed.Result))
+	for _, b := range parsed.Result {
+		out = append(out, EventBinding{Event: string(b.Event), Handler: string(b.Handler)})
+	}
+	return out, nil
+}
+
+// EventBinding is one portal event→handler registration.
+type EventBinding struct {
+	Event   string `json:"event"`
+	Handler string `json:"handler"`
+}
+
 // post issues an x-www-form-urlencoded POST and returns the raw body.
 func (c *Client) post(ctx context.Context, endpoint string, form url.Values) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))

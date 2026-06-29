@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -110,6 +111,51 @@ func (h *Handler) ListBitrixUsers(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// --- POST /api/bitrix/register-webhook --------------------------------------
+
+// RegisterBitrixWebhook binds the task event handlers (ONTASKADD/UPDATE +
+// comment events) on the portal so inbound sync fires in REAL TIME. The handler
+// URL is <BITRIX_WEBHOOK_PUBLIC_URL>/bitrix/webhook(+?secret=). Requires a
+// public URL — Bitrix calls out to it, so this can't be done against localhost.
+func (h *Handler) RegisterBitrixWebhook(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUserID(w, r); !ok {
+		return
+	}
+	if !bitrixEndpointsEnabled() {
+		writeError(w, http.StatusServiceUnavailable, "bitrix integration not configured")
+		return
+	}
+	base := bitrixWebhookPublicURL()
+	if base == "" {
+		writeError(w, http.StatusBadRequest,
+			"set BITRIX_WEBHOOK_PUBLIC_URL to a public https base — Bitrix must be able to reach this backend's /bitrix/webhook")
+		return
+	}
+	handlerURL := base + "/bitrix/webhook"
+	if secret := bitrixInboundSecret(); secret != "" {
+		handlerURL += "?secret=" + url.QueryEscape(secret)
+	}
+
+	client := bitrix.NewClient(bitrixWebhookURL())
+	events := []string{"ONTASKADD", "ONTASKUPDATE", "ONTASKCOMMENTADD", "ONTASKCOMMENTUPDATE"}
+	bound := make([]string, 0, len(events))
+	errs := make([]string, 0)
+	for _, ev := range events {
+		if err := client.BindEvent(r.Context(), ev, handlerURL); err != nil {
+			errs = append(errs, ev+": "+err.Error())
+			continue
+		}
+		bound = append(bound, ev)
+	}
+	all, _ := client.ListBoundEvents(r.Context())
+	writeJSON(w, http.StatusOK, map[string]any{
+		"handler_url":  handlerURL,
+		"bound":        bound,
+		"errors":       errs,
+		"all_bindings": all,
+	})
 }
 
 // --- GET /api/bitrix/tasks?group_id=<id> ------------------------------------

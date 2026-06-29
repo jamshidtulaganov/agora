@@ -325,6 +325,10 @@ func main() {
 	// mention, comment, …) with a Mini App deep link. No-op when the bot is
 	// unconfigured. Registered after h exists; shares the same bus instance.
 	registerTelegramPushListeners(bus, h)
+	// Lark bot push: DM members a card from the issue's assigned-agent bot for
+	// each new inbox item. No-op unless Lark is wired and the recipient bound
+	// their Lark identity. Shares the same bus instance.
+	registerLarkPushListeners(bus, h)
 
 	srv := &http.Server{
 		Addr:    ":" + port,
@@ -354,6 +358,7 @@ func main() {
 	go heartbeatScheduler.Run(sweepCtx)
 	go runAutopilotScheduler(autopilotCtx, queries, autopilotSvc)
 	go runAutopilotFailureMonitor(autopilotCtx, queries, bus, envFailureMonitorConfig())
+	go runBitrixSyncPoll(sweepCtx, h)
 	go runDBStatsLogger(sweepCtx, pool)
 
 	// Lark inbound supervisor: holds the §4.4 WS lease per installation
