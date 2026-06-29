@@ -14,6 +14,7 @@ import { memberListOptions, workspaceKeys } from "@agora/core/workspace/queries"
 import { api } from "@agora/core/api";
 import type { Workspace, WorkspaceRepo } from "@agora/core/types";
 import { useT } from "../../i18n";
+import { GitAccountsSection } from "./git-accounts-section";
 
 function dropAndShiftIndex(set: Set<number>, removed: number): Set<number> {
   const next = new Set<number>();
@@ -258,6 +259,8 @@ export function RepositoriesTab() {
           </CardContent>
         </Card>
       </section>
+
+      {canManageWorkspace && <GitAccountsSection workspaceId={workspace.id} />}
     </div>
   );
 }

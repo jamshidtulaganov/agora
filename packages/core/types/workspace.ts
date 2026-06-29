@@ -5,6 +5,19 @@ export interface WorkspaceRepo {
   description?: string;
 }
 
+// A per-workspace git credential (e.g. a GitHub PAT) the daemon uses to clone
+// private repos for the matching host+owner. The secret is never returned.
+export interface GitCredential {
+  id: string;
+  label: string;
+  provider: string;
+  host: string;
+  owner: string;
+  username: string;
+  auth_kind: string;
+  created_at: string;
+}
+
 export interface Workspace {
   id: string;
   name: string;

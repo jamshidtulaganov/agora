@@ -34,6 +34,7 @@ import type {
   IssueReaction,
   Workspace,
   WorkspaceRepo,
+  GitCredential,
   MemberWithUser,
   User,
   Skill,
@@ -2452,6 +2453,28 @@ export class ApiClient {
 
   async deleteGitHubInstallation(workspaceId: string, installationId: string): Promise<void> {
     await this.fetch(`/api/workspaces/${workspaceId}/github/installations/${installationId}`, {
+      method: "DELETE",
+    });
+  }
+
+  // Git credentials — per-workspace PATs for cloning private repos across
+  // several accounts. The secret (token) is write-only; the list never returns it.
+  async listGitCredentials(workspaceId: string): Promise<GitCredential[]> {
+    return this.fetch(`/api/workspaces/${workspaceId}/git-credentials`);
+  }
+
+  async addGitCredential(
+    workspaceId: string,
+    data: { label?: string; provider?: string; host?: string; owner: string; username?: string; secret: string },
+  ): Promise<GitCredential> {
+    return this.fetch(`/api/workspaces/${workspaceId}/git-credentials`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteGitCredential(workspaceId: string, credentialId: string): Promise<void> {
+    await this.fetch(`/api/workspaces/${workspaceId}/git-credentials/${credentialId}`, {
       method: "DELETE",
     });
   }
