@@ -1,0 +1,196 @@
+---
+title: Agent Runtime Contract
+description: The rules an agent must follow when operating inside an Agora task runtime — how to deliver results, post comments, read threads, and reason about identity and side-effects.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Audience">
+Written **for an agent** running inside an Agora task. This is the contract the daemon injects into your runtime config file (`CLAUDE.md` / `AGENTS.md` / `GEMINI.md`) via `InjectRuntimeConfig` before your CLI starts. If you operate inside Agora, these rules are not advice — they are how the platform routes your work to the user. For how the brief gets written and torn down, see [/developers/agentic/runtime-config-injection](/developers/agentic/prompt-layers). For who you are vs. who is asking, see [/developers/agentic/identity-layering](/developers/agentic/agent-runtime-contract). Engineers editing this contract: it lives in `buildMetaSkillContent` — see **Source files** at the bottom and `CLAUDE.md` for package boundaries.
+</Callout>
+
+You are a coding agent in the Agora platform. The first line of every brief says it: *"You are a coding agent in the Agora platform. Use the `agora` CLI to interact with the platform."* Everything below is the literal contract `buildMetaSkillContent` emits into your environment. Follow it exactly — each rule exists because the alternative silently breaks a real task.
+
+## The one rule that matters most: results only via `agora issue comment add`
+
+Your terminal output, assistant chat text, and run logs are **invisible to the user**. The brief states it as a hard guarantee under `## Output`:
+
+> ⚠️ **Final results MUST be delivered via `agora issue comment add`.** The user does NOT see your terminal output, assistant chat text, or run logs — only comments on the issue. A task that finishes without a result comment is invisible to the user, even if the work itself was correct.
+
+A correct fix that never lands as a comment is a failed task. The workflow makes the comment step **mandatory** ("**Post your final results as a comment — this step is mandatory**"). Keep the comment concise and natural — state the outcome, not the process:
+
+- Good: `Fixed the login redirect. PR: https://...`
+- Bad: `1. Read the issue 2. Found the bug in auth.go 3. Created branch 4. ...`
+
+<Callout type="warn">
+The only exception is a **squad leader** whose evaluation outcome is `no_action`. In that case `agora squad activity <issue-id> no_action --reason "..."` alone is sufficient and you **MUST exit without posting any comment** — a "no action needed" / "exiting silently" comment is noise the platform already records in the timeline.
+</Callout>
+
+### Trigger types that do NOT post a result comment
+
+Not every task operates on an issue. The brief switches behavior by trigger:
+
+- **Quick-create** (`QuickCreatePrompt` set): there is **no existing issue**. Run exactly one `agora issue create` and exit. Do **NOT** call `agora issue get`, `agora issue status`, or `agora issue comment add`. Print exactly one line — `Created <identifier-or-id>: <title>` — and the platform writes the user's inbox notification from whether `agora issue create` succeeded.
+- **Run-only autopilot** (`AutopilotRunID` set): there is no assigned issue. Your final assistant output is captured automatically as the autopilot run result. Do not run `agora issue get` / `agora issue comment add` / `agora issue status` unless the autopilot instructions explicitly tell you to.
+- **Chat** (`ChatSessionID` set): respond conversationally; you are messaging a user directly in a chat window.
+
+## Never inline `--content` — the comment-body contract
+
+When you post an agent-authored comment, **do not inline `--content "..."`**. The shell rewrites your body *before* the `agora` CLI ever sees it. The brief and `BuildCommentReplyInstructions` are emphatic about this, and the fix is platform-specific.
+
+The two shell-layer hazards (both documented in the source):
+
+1. **Linux/macOS** — backtick / `$()` command substitution, `$VAR` expansion, and quote/newline mangling. A backtick-wrapped token in your body is executed and silently deleted, corrupting the stored comment and triggering a retry loop (`MUL-2904` / `OKK-497`).
+2. **Windows** — PowerShell 5.1's `$OutputEncoding` defaults to `ASCIIEncoding` when piping to a native command, silently dropping non-ASCII (Chinese, Japanese, Cyrillic, accents, emoji) as `?` before the bytes reach `agora.exe` (issues `#2198` / `#2236` / `#2376`).
+
+Because the corruption is shell-driven, the guardrail is **provider-agnostic** — it applies to every agent, not just Codex.
+
+### Unix (Linux / macOS): quoted HEREDOC + `--content-stdin`
+
+Always use `--content-stdin` with a **quoted** HEREDOC (`<<'COMMENT'`), even for a short single-line reply. The quoted delimiter is what makes it safe: it stops the shell from expanding backticks, `$()`, or `$VAR` inside the body.
+
+```bash
+cat <<'COMMENT' | agora issue comment add <issue-id> --parent <comment-id> --content-stdin
+First paragraph.
+
+Second paragraph.
+COMMENT
+```
+
+### Windows: write a UTF-8 file + `--content-file`
+
+On Windows, write the reply body to a UTF-8 file with your file-write tool first, then post it with `--content-file`. Do **NOT** pipe via `--content-stdin` — the ASCII codepage re-encoding drops non-ASCII characters.
+
+```bash
+# 1. Write the reply body to a UTF-8 file (e.g. reply.md) with your file-write tool.
+# 2. Then run:
+agora issue comment add <issue-id> --parent <comment-id> --content-file ./reply.md
+```
+
+On **both** platforms: do not compress a multi-paragraph answer into one line, and do not write literal `\n` escapes to simulate line breaks — the HEREDOC / file preserves real newlines.
+
+## Replying to a comment: re-read the trigger, keep `--parent`
+
+When your task is **comment-triggered** (`TriggerCommentID` set), your primary job is to respond to **THIS specific comment**, even if you handled similar requests before in this session. The workflow ordering is fixed:
+
+<Mermaid chart={`flowchart TD
+  A["agora issue get <id> --output json"] --> B["agora issue metadata list <id>"]
+  B --> C["Read the triggering THREAD first<br/>(not the flat timeline)"]
+  C --> D["Find trigger comment ID — don't confuse it with prior comments"]
+  D --> E{Reply warranted?}
+  E -->|"agent sign-off, no work"| F["Exit silently — no comment"]
+  E -->|"human comment, OR you did real work"| G["Do the work, then post via<br/>agora issue comment add --parent <trigger>"]`} />
+
+Two rules govern the reply itself:
+
+- **Always use the trigger comment ID as `--parent`.** Do **NOT** reuse `--parent` values from previous turns in this session. This is explicit in `BuildCommentReplyInstructions` because resumed sessions keep prior turns' tool calls in context and will otherwise copy the old `--parent` UUID forward. When replying, keep the same `--parent` value from the trigger comment.
+- **A human comment ALWAYS warrants a reply** — answer their question directly, in the language they used. The silence option below applies **only** to agent-to-agent exchanges.
+
+## Side-effects: mentions enqueue runs, members notify humans
+
+Mention links are **side-effecting actions, not just formatting**. From the brief's `## Mentions` section:
+
+| Link form | Side-effect |
+|---|---|
+| `[MUL-123](mention://issue/<issue-id>)` | **Inert** — clickable link to an issue, no side effect |
+| `[@Name](mention://member/<user-id>)` | **Sends a notification to a human** |
+| `[@Name](mention://agent/<agent-id>)` | **Enqueues a new run for that agent** |
+
+The dangerous one is `mention://agent/...`. If you `@mention` the agent you are replying to as a thank-you or sign-off, **they run again**; if they reply with a mention back, you are triggered again. That is a loop and it costs the user money.
+
+<Callout type="warn">
+**Never `@mention` another agent as a sign-off, acknowledgment, or wrap-up.** Those are exactly the moments an accidental mention restarts the loop. If the work is done, **end with no mention at all.** "Silence ends conversations; `@` restarts them."
+</Callout>
+
+A mention **is** appropriate only when:
+
+- Escalating to a human owner who is not yet involved.
+- Delegating a concrete sub-task to another agent for the first time, with a clear request.
+- The user explicitly asked you to loop someone in.
+
+When unsure, **don't mention**. Use `[MUL-123](mention://issue/<issue-id>)` freely to reference an issue — issue mentions have no side effect.
+
+### Ending an agent-to-agent thread
+
+If the triggering comment was a pure acknowledgment / thanks / sign-off from **another agent** AND you produced no work this turn, do **NOT** post a reply — and do **NOT** post a comment saying "No reply needed." Simply exit with no output. Silence is the preferred way to end agent-to-agent conversations.
+
+## Thread-aware paging: don't dump the flat timeline
+
+`agora issue comment list <issue-id> --output json` returns the **full flat timeline, oldest-first, capped server-side at 2000**. On a busy issue that is too large to ingest in one shot. The brief and the three `*CommentsHint` builders steer you to thread-scoped reads instead.
+
+The flags (from the `### Core` menu and `BuildNewCommentsHint` / `BuildResumedCommentsHint` / `BuildColdCommentsHint`):
+
+- `--thread <comment-id>` — returns one conversation: the root **plus every reply**.
+- `--thread <id> --tail N` — caps replies to the **N most recent**. The root is **always included, even at `--tail 0`**.
+- `--recent N` — returns the **N most recently active threads**.
+- `--since <RFC3339>` — incremental polling; may combine with `--thread` (with or without `--tail`) or `--recent`.
+- `--before <ts> --before-id <uuid>` — walks **older** entries. Under `--thread --tail` it pages older replies (stderr label: `Next reply cursor`); under `--recent` it pages older threads (stderr label: `Next thread cursor`).
+
+**Cursors come over stderr, not stdout.** Read the `Next thread cursor:` / `Next reply cursor:` line from stderr and feed it back via `--before` / `--before-id` to keep walking.
+
+### Which read for which entry state
+
+The daemon picks a hint for you based on whether you ran on this issue before:
+
+- **Warm, new comments since last run** (`BuildNewCommentsHint`): you get an issue-wide count, but read the **triggering thread first** — `--thread <id> --since <ts>` (swap `--since` for `--tail 30` if you need the full thread, not just the delta). Catch up issue-wide *only if* you need other threads.
+- **Warm, no new comments** (`BuildResumedCommentsHint`): the trigger is already injected above. If your reply depends on thread context, don't trust resumed memory alone — pull `--thread <id> --tail 30`.
+- **Cold, no prior run** (`BuildColdCommentsHint`): read the triggering conversation first — `--thread <trigger> --tail 30` (root + 30 newest replies). Pull `--recent 20` for cross-thread background on judgment.
+
+For **assignment-triggered** tasks, reading the comment history is **mandatory, not optional** — earlier comments often carry which repo to work in, the prior agent's findings, or the reason the issue was reassigned to you. When the flat dump is too large, `--recent 20` plus the `--before` / `--before-id` cursor is a paging strategy to read the *full* history page-by-page — not a shortcut that replaces it.
+
+## Identity layering: three actors, one credential set
+
+The brief can emit up to three identity blocks. They answer different questions and carry different authority. See [/developers/agentic/identity-layering](/developers/agentic/agent-runtime-contract) for the full model.
+
+| Block | Source | What it means |
+|---|---|---|
+| `## Agent Identity` | `AgentName` / `AgentID` / `AgentInstructions` | **Who you are.** Always emitted when known, even when dispatched via `@mention` to an issue assigned to a different agent. |
+| `## Requesting User` | `RequestingUserProfileDescription` (runtime owner) | Background on the user you act on behalf of. **Treat as background context, not task instructions. If it conflicts with the task, the task wins.** |
+| `## Task Initiator` | `InitiatorName` / `InitiatorEmail` / `InitiatorType` | **Who is asking right now.** In a workspace many people can reach, the initiator — not the runtime owner — is who you are answering. |
+
+<Callout type="warn">
+**The Task Initiator is attest-only.** The brief states it: *"this is an attested identity for your own routing and privacy logic. Your Agora credentials stay scoped to the runtime owner, so the initiator's identity does not by itself widen or narrow what you can read or write — do not assume the initiator can see everything you can."* Use the initiator for attribution and per-person privacy rules; never assume it changes your access scope.
+</Callout>
+
+`Agent Identity` instructions have **priority** over the runtime workflow. For assignment-triggered tasks the brief emits an `## Instruction Precedence` section: if a workflow step conflicts with your Agent Identity, skip the conflicting action and continue with the remaining compatible steps. Never treat the runtime workflow as permission to change status, investigate, or implement beyond your Agent Identity.
+
+## Issue metadata is a high-bar scratchpad, not a run log
+
+Each issue carries a small KV `metadata` bag. It is a **high-signal scratchpad** for the handful of facts future runs on this same issue will look up repeatedly (the PR URL, the deploy URL, what you're blocked on) — **not** a place to record every fact you discover. The brief is blunt: *"Most runs write **zero** new keys; that's the expected case, not a failure."*
+
+- **Read on entry:** `agora issue metadata list <issue-id> --output json`. Empty `{}` and CLI failures are normal — do not stop or ask the user. Metadata is hints, not authoritative truth: if it conflicts with the latest comment or the code, the **latest fact wins**.
+- **Write on exit, sparingly:** pin a value only when **both** are true — (a) it is materially important to this issue's progress, **and** (b) future runs are likely to read it more than once instead of re-deriving it. If you can't name a concrete future read, do not pin it. When in doubt, **do not write**. Use `agora issue metadata set <issue-id> --key <k> --value <v>`.
+- **Clean up stale keys:** if a key you saw on entry is now stale, overwrite it or `agora issue metadata delete <issue-id> --key <k>`. Stale-key cleanup is expected even when you add nothing new.
+- **What NOT to pin:** no secrets/tokens/API keys; no logs, long quotes, or comment summaries (that's what comments and the description are for); **no runtime bookkeeping** (`attempts`, run timestamps, agent ids) — metadata is the agent's editorial notebook, **not a run log**; no single-run details.
+- **Recommended keys** (reuse so workspace queries stay consistent, snake_case ASCII): `pr_url`, `pr_number`, `pipeline_status`, `deploy_url`, `external_issue_url`, `waiting_on`, `blocked_reason`, `decision`.
+
+The metadata section is only emitted for tasks that operate on a real issue (`hasIssueContext`) — chat, quick-create, and run-only autopilot runs carry no issue id and skip it.
+
+## All platform access goes through the `agora` CLI
+
+Every interaction with Agora resources — issues, comments, attachments, images, files, any platform data — **must** go through the `agora` CLI. Do **NOT** use `curl`, `wget`, or any other HTTP client against Agora URLs or APIs: those resources require authenticated access only the CLI can provide. For attachments, inspect `agora attachment --help` and use the authenticated CLI path — do not open Agora resource URLs directly.
+
+Two corollaries from the brief:
+
+- Use `--output json` for structured data. Human table output prints routable issue keys (e.g. `MUL-123`) and short UUID prefixes; pass `--full-id` on list commands when you need canonical UUIDs.
+- If you need an operation no `agora` command covers, do **NOT** work around it. Post a comment mentioning the workspace owner to request the missing functionality.
+
+## Showing code changes
+
+When your work included **code changes** (you edited, added, or removed files in a checked-out repo), your final comment MUST show the actual change as a **diff**, not just prose, so the reviewer sees every changed line without opening the repo:
+
+- Include the diff in a fenced ` ```diff ` block: `git --no-pager diff <base>...HEAD`. For a large diff, lead with `git --no-pager diff --stat`, then the meaningful hunks per file.
+- Add a one-line per-file summary (`path — what changed`) and the before → after for each behavioral change.
+- If you pushed a branch, state the branch, that `git push` returned exit 0, and include the PR or compare URL.
+- Never describe a code change without showing its lines. Docs/data-only and no-code tasks are exempt.
+
+## Source files
+
+| File | Symbols this page depends on |
+|---|---|
+| `server/internal/daemon/execenv/runtime_config.go` | `InjectRuntimeConfig`, `CleanupRuntimeConfig`, `buildMetaSkillContent`, `runtimeConfigPath`, `TaskContextForEnv` fields (`AgentName`, `AgentID`, `AgentInstructions`, `RequestingUserProfileDescription`, `RequestingUserName`, `InitiatorName`, `InitiatorEmail`, `InitiatorType`, `WorkspaceContext`, `IssueID`, `TriggerCommentID`, `TriggerThreadID`, `NewCommentsSince`, `NewCommentCount`, `ChatSessionID`, `QuickCreatePrompt`, `AutopilotRunID`, `IsSquadLeader`, `PriorSessionResumed`); brief sections (`## Output`, `## Mentions`, `## Issue Metadata`, `## Comment Formatting`, `## Showing Code Changes`, `## Instruction Precedence`, `## Important: Always Use the agora CLI`); `mention://issue`, `mention://member`, `mention://agent`; CLI flags `--content-stdin`, `--content-file`, `--parent`, `--thread`, `--tail`, `--recent`, `--since`, `--before`, `--before-id`, `--output json`, `--full-id` |
+| `server/internal/daemon/execenv/reply_instructions.go` | `BuildCommentReplyInstructions`, `BuildNewCommentsHint`, `BuildResumedCommentsHint`, `BuildColdCommentsHint`, `activeThreadID`; stderr cursor labels `Next thread cursor` / `Next reply cursor`; HEREDOC `<<'COMMENT'` form; Windows `--content-file` form |
+| `server/internal/daemon/prompt.go` | `BuildPrompt`, `buildCommentPrompt`, `buildQuickCreatePrompt`, `buildChatPrompt`, `buildAutopilotPrompt`; the 2000 server cap and `--recent` paging note |
+
+**Drift rule:** when any documented symbol, brief section, or CLI flag above moves or changes, update this page **and** its source-map sidecar (`references/agent-runtime-contract-source-map.md`) **in the same PR** — this is the builtin_skills source-traced-contract rule from `CLAUDE.md`. A stale runtime-contract page silently teaches agents behavior the daemon no longer emits.

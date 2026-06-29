@@ -1,4 +1,8 @@
 {
   "title": "Developers",
-  "pages": ["conventions"]
+  "pages": [
+    "architecture",
+    "conventions",
+    "agentic"
+  ]
 }

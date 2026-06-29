@@ -1,0 +1,179 @@
+---
+title: Architecture
+description: The system map a contributor needs before the agentic deep-dives — backend shape, task lifecycle, agent SDK, daemon, frontend dependency direction, and multi-tenancy.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Audience">
+**Audience: both (dev + agent).** This is the orientation page for anyone — human contributor or coding agent — landing in the Agora codebase for the first time. It maps the moving parts and where they live, then hands off to the agentic deep-dives. For naming, i18n, and the translation glossary, see [/developers/conventions](/developers/conventions) — that is the single source of truth and is not restated here. For package boundaries (what may import what), the root `CLAUDE.md` is authoritative.
+</Callout>
+
+## The shape in one sentence
+
+Agora is a **Go backend** (Chi router, `sqlc`-generated DB access, `gorilla/websocket` for real-time) talking to **PostgreSQL**, fronted by a **pnpm + Turborepo monorepo** of TypeScript apps that share headless logic, and fed by an **agent daemon** that polls the backend for work and runs coding-agent CLIs locally.
+
+<Mermaid chart={`
+flowchart LR
+  FE["Next.js / Electron / Expo<br/>(apps)"] -->|REST| API["Go backend<br/>Chi + sqlc"]
+  API -->|WS broadcast| FE
+  API --> PG[("PostgreSQL<br/>pgvector")]
+  DA["Agent daemon<br/>(your machine)"] -->|claim / start / complete| API
+  DA -->|spawn| CLI["Claude / Codex / OpenClaw / …"]
+`} />
+
+## Go backend shape
+
+The backend lives in `server/`. Two facts orient everything:
+
+- **The router is Chi.** `server/cmd/server/router.go` builds it with `chi.NewRouter()` and mounts domain routes — daemon endpoints under `r.Route("/api/daemon", …)`, webhooks at the top level, and the workspace-scoped API behind auth middleware.
+- **DB access is `sqlc`-generated.** SQL lives in `server/pkg/db/queries/`; `make sqlc` regenerates typed Go in `server/pkg/db/generated/`. Handlers and services call `Queries.*` methods (e.g. `Queries.GetAgent`, `Queries.CreateAgentTask`) — never hand-rolled SQL.
+
+**Handler-per-domain.** `server/internal/handler/` has one file per concern — `issue.go`, `comment.go`, `agent.go`, `daemon.go`, `chat.go`, `autopilot.go`, `project.go`, and so on. Handlers parse and validate request boundaries, then delegate business logic to `server/internal/service/`. When a handler resolves a UUID for a write query, it must follow the **Backend Handler UUID Parsing Convention** in `CLAUDE.md` (`parseUUIDOrBadRequest` / loaders / `parseUUID`) — that convention exists because a silent zero-UUID once made a `DELETE` return 204 while matching zero rows.
+
+Real-time updates fan out through a hub: `server/cmd/server/main.go` constructs `realtime.NewHub()` (workspace WS clients) and a separate `daemonws.NewHub()` (daemon WS connections). Services broadcast protocol events (`protocol.EventTaskQueued`, `protocol.EventTaskRunning`, …) and the frontend invalidates its query cache on receipt — events never write to client stores directly.
+
+## The task lifecycle
+
+`server/internal/service/task.go` owns the agent-task state machine on the `agent_task_queue` table. A task moves through **enqueue → claim → start → complete/fail** (with cancellation as a terminal branch at any point). This is the spine of every agent run.
+
+<Mermaid chart={`
+sequenceDiagram
+  participant API as Backend (TaskService)
+  participant PG as agent_task_queue
+  participant D as Daemon
+  API->>PG: CreateAgentTask (status=queued)
+  API->>D: NotifyTaskEnqueued (WS wakeup)
+  D->>API: POST /runtimes/{id}/tasks/claim
+  API->>PG: ClaimAgentTask (queued→dispatched)
+  API-->>D: task row
+  D->>API: POST /tasks/{id}/start
+  API->>PG: StartAgentTask (dispatched→running)
+  D->>D: handleTask → executeAndDrain (agent runs)
+  D->>API: POST /tasks/{id}/complete (or /fail)
+  API->>PG: CompleteAgentTask (running→completed)
+`} />
+
+### Enqueue
+
+Several entry points create a task, all converging on a `Queries.Create*Task` call followed by a WS wakeup:
+
+- `EnqueueTaskForIssue` — an agent-assigned issue. No context snapshot is stored; the agent fetches what it needs at runtime via the `agora` CLI.
+- `EnqueueTaskForMention` / `EnqueueTaskForSquadLeader` — an agent mentioned in a comment (the squad-leader variant stamps `is_leader_task=true`).
+- `EnqueueChatTask` — a chat session (no `issue_id`). Returns the sentinel errors `ErrChatTaskAgentArchived` / `ErrChatTaskAgentNoRuntime` for productizable rejections.
+- `EnqueueQuickCreateTask` — a natural-language prompt with no issue/chat/autopilot link, stored as a `QuickCreateContext` JSON payload (`Type: QuickCreateContextType`).
+
+Every path enforces the same preconditions (agent not archived, `agent.RuntimeID` set), broadcasts `protocol.EventTaskQueued`, then calls `NotifyTaskEnqueued` so the daemon claims promptly instead of waiting for its next poll tick. Ordering is deliberate: broadcast **before** notify, because the notify path triggers the dispatch event and a reordered queue would let clients see "dispatched" before "queued".
+
+### Claim
+
+The daemon polls `POST /api/daemon/runtimes/{runtimeId}/tasks/claim`, handled by `ClaimTaskByRuntime`, which calls `TaskService.ClaimTaskForRuntime`. That method:
+
+1. First runs `ReclaimStaleDispatchedTaskForRuntime` (recovers a task whose claim response was lost — see `claimResponseRecoveryWindow`, 90s).
+2. Consults the optional `EmptyClaimCache` fast path to skip a Postgres scan on the steady-state empty case.
+3. Lists queued candidates and calls `ClaimTask(agentID)` per distinct agent.
+
+`ClaimTask` is the atomic core: it checks `CountRunningTasks` against `agent.MaxConcurrentTasks`, runs `ClaimAgentTask` (the `queued → dispatched` transition), reconciles agent status, and broadcasts `task:dispatch`. No capacity or no tasks both return `(nil, nil)` — not an error.
+
+### Start, complete, fail
+
+- `StartTask` runs `StartAgentTask` (`dispatched → running`) and broadcasts `protocol.EventTaskRunning`. **Issue status is not changed here** — the agent manages it through the CLI.
+- `CompleteTask` runs `CompleteAgentTask` (`running → completed`) inside a transaction. For chat tasks the same tx updates the `chat_session` resume pointer, closing a race where the next message could resume against a stale session. It is **idempotent**: if a parallel agent already finalized the row, the `WHERE status = 'running'` matches nothing and the existing row is returned as success.
+- Failure and cancellation reuse the same broadcast/reconcile shape; cancellation also revokes any `mat_` task tokens minted for the run.
+
+## The agent SDK
+
+`server/pkg/agent/` is a headless package — zero daemon, zero HTTP — that abstracts every coding-agent CLI behind one interface.
+
+```go
+type Backend interface {
+    Execute(ctx context.Context, prompt string, opts ExecOptions) (*Session, error)
+}
+```
+
+`Execute` returns a `Session` whose `Messages` channel streams `Message` events (`MessageText`, `MessageThinking`, `MessageToolUse`, `MessageToolResult`, `MessageStatus`, `MessageError`, `MessageLog`) and whose `Result` channel delivers exactly one final `Result`. The `Result.Status` field is the contract for the run's disposition — one of `"completed"`, `"failed"`, `"aborted"`, `"timeout"`, `"cancelled"`.
+
+`agent.New(agentType, cfg)` is a switch over **13 backends**: `claude`, `codebuddy`, `codex`, `copilot`, `opencode`, `openclaw`, `hermes`, `gemini`, `pi`, `cursor`, `kimi`, `kiro`, `antigravity`. An unknown type returns an error listing the supported set. Each backend (`claude.go`, `codex.go`, …) translates the unified `ExecOptions` (`Cwd`, `Model`, `SystemPrompt`, `MaxTurns`, `Timeout`, `ResumeSessionID`, `ThinkingLevel`, `OpenclawMode`, `ExtraArgs`/`CustomArgs`, …) into that CLI's own flags. Not every backend honours every option — `ThinkingLevel`, `OpenclawMode`, and `ExtraArgs` document exactly which backends consume them and which silently ignore them, so support can grow incrementally without breaking unrelated agents.
+
+`LaunchHeader(agentType)` returns the user-visible command skeleton (e.g. `"claude (stream-json)"`) that the UI shows as a preview of what a user's `custom_args` get appended to.
+
+## The daemon: the production caller
+
+`server/internal/daemon/daemon.go` is the local runtime that turns claimed tasks into running agents. `Daemon.New` wires `runner = d.runTask`; `Daemon.Run` does the startup dance — `resolveAuth`, `preflightAuth` (renew PAT, then initial workspace sync), register runtimes per workspace, launch the background loops (`workspaceSyncLoop`, `taskWakeupLoop`, `heartbeatLoop`, `gcLoop`, `autoUpdateLoop`, `tokenRenewalLoop`), flip `/health` to ready, then enter `pollLoop`.
+
+When a poller claims a task it hands off to `handleTask`, which:
+
+1. Acquires the `local_directory` path lock if the task targets a daemon-pinned `project_resource` (so the server-side status is `dispatched → waiting_local_directory → running`, never backwards).
+2. Marks the env root active so the GC loop never reclaims a live workdir.
+3. Starts `watchTaskCancellation` so a server-side cancel/delete interrupts the run.
+4. Calls `d.runner.run` → `runTask`, which prepares the environment and ultimately calls **`executeAndDrain`** — the function that actually drives an `agent.Backend`.
+
+`executeAndDrain(ctx, backend, prompt, opts, taskLog, taskID)` is the production caller of the agent SDK. It:
+
+- calls `backend.Execute`, then drains `session.Messages`, batching text/thinking and forwarding tool-use/tool-result events to the server via `ReportTaskMessages`;
+- pins the agent session id early (`PinTaskSession`) so a daemon crash mid-run keeps a resume pointer;
+- runs an **idle watchdog** that interrupts a silent agent, with a larger budget while a tool is in flight (a long `npm install` is not a hang);
+- returns the final `agent.Result` plus a tool count.
+
+`handleTask` then reports usage and routes the outcome through `reportTaskResult`, which **fails closed**: only `result.Status == "completed"` calls `d.client.CompleteTask`; every other status — including any future one nobody enumerated — goes through `d.client.FailTask`, so a run that never produced a real result can never be displayed as "Completed".
+
+## Frontend dependency direction
+
+The monorepo enforces a strict, one-way dependency graph. The rule: **`views → core + ui`**, with `core` and `ui` independent of each other.
+
+<Mermaid chart={`
+flowchart TD
+  app["apps/web · apps/desktop"] --> views["packages/views<br/>(shared business UI)"]
+  views --> core["packages/core<br/>(headless logic + stores)"]
+  views --> ui["packages/ui<br/>(atomic components)"]
+  app --> core
+  app --> ui
+`} />
+
+- `packages/core/` — headless business logic and **all** Zustand stores. Zero `react-dom`, zero `localStorage`, zero `next/*`, zero UI libraries.
+- `packages/ui/` — atomic shadcn-based components. Zero `@agora/core` imports.
+- `packages/views/` — shared business pages/components. Zero `next/*`, zero `react-router-dom` — routing goes through a `NavigationAdapter`.
+
+Server state vs. client state is split with equal strictness: **TanStack Query** owns everything fetched from the API (keyed on `wsId` for workspace-scoped queries), **Zustand** owns client/UI state, and **WS events invalidate queries** rather than writing to stores. The full rationale and footguns live in `CLAUDE.md`; this page just names the direction.
+
+## Multi-tenancy
+
+Every query filters by `workspace_id`; membership checks gate access; the `X-Workspace-ID` header routes a request to the correct workspace. Workspace-scoped frontend queries key on `wsId` so switching workspaces swaps the cache automatically.
+
+**Assignees are polymorphic.** An issue carries `assignee_type` + `assignee_id` (see `server/internal/handler/issue.go`), where `assignee_type` is one of `member`, `agent`, or `squad`. The agent path (`assignee_type == "agent"`) is what makes an issue eligible for `EnqueueTaskForIssue`; the squad path expands to the squad's agents. This polymorphism is why the task lifecycle resolves the agent through the issue assignee rather than assuming a human.
+
+## Subsystem map
+
+| Subsystem | Where | Entry symbol |
+|---|---|---|
+| HTTP routing | `server/cmd/server/router.go` | `chi.NewRouter()` |
+| Domain handlers | `server/internal/handler/*.go` | one file per domain |
+| Task lifecycle | `server/internal/service/task.go` | `TaskService` |
+| Agent SDK | `server/pkg/agent/agent.go` | `Backend`, `agent.New` |
+| Local runtime | `server/internal/daemon/daemon.go` | `Daemon`, `executeAndDrain` |
+| Real-time | `server/internal/realtime/` | `realtime.NewHub()` |
+| DB access | `server/pkg/db/` | `sqlc`-generated `Queries` |
+| Shared logic / stores | `packages/core/` | Zustand + TanStack Query |
+| Shared UI | `packages/views/`, `packages/ui/` | `NavigationAdapter` |
+
+## Recommended reading order
+
+1. **This page** — the system map (you are here).
+2. [/developers/agentic/task-lifecycle](/developers/architecture) — the enqueue → claim → start → complete machine in depth, including reclaim and idempotency.
+3. [/developers/agentic/agent-sdk](/developers/agentic/backend-interface) — the `Backend` interface and how each of the 13 backends maps `ExecOptions` to CLI flags.
+4. [/developers/agentic/daemon](/developers/architecture) — registration, polling, watchdogs, and `executeAndDrain` internals.
+5. [/developers/conventions](/developers/conventions) — naming, i18n glossary, and Chinese voice (read before writing any code, route, or translation).
+
+## Source files
+
+| File | Symbols this page depends on |
+|---|---|
+| `server/internal/service/task.go` | `TaskService`, `EnqueueTaskForIssue`, `EnqueueTaskForMention`, `EnqueueTaskForSquadLeader`, `EnqueueChatTask`, `EnqueueQuickCreateTask`, `QuickCreateContext`, `QuickCreateContextType`, `ErrChatTaskAgentArchived`, `ErrChatTaskAgentNoRuntime`, `ClaimTask`, `ClaimTaskForRuntime`, `claimResponseRecoveryWindow`, `StartTask`, `CompleteTask`, `NotifyTaskEnqueued` |
+| `server/pkg/agent/agent.go` | `Backend`, `Execute`, `ExecOptions`, `Session`, `Message`, `MessageType` values, `Result`, `Result.Status` (`completed`/`failed`/`aborted`/`timeout`/`cancelled`), `New` (13-backend switch), `LaunchHeader` |
+| `server/internal/daemon/daemon.go` | `Daemon`, `Daemon.New`, `Daemon.Run`, `handleTask`, `runTask`, `executeAndDrain`, `reportTaskResult` |
+| `server/cmd/server/router.go` | `chi.NewRouter()`, `r.Route("/api/daemon", …)`, `ClaimTaskByRuntime`, `StartTask`, `CompleteTask`, `FailTask` |
+| `server/cmd/server/main.go` | `realtime.NewHub()`, `daemonws.NewHub()` |
+| `server/internal/handler/issue.go` | `assignee_type` / `assignee_id` (polymorphic assignees: `member`/`agent`/`squad`) |
+
+When a documented symbol, flag, or field above moves or changes, update this page **and** its source-map sidecar (`references/architecture-source-map.md`) in the same PR — the same-PR drift rule that keeps the built-in skills' source-traced contracts honest.

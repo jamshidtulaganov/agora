@@ -1,0 +1,136 @@
+---
+title: Prompt Layers
+description: How a daemon task is described to a coding agent through two layers — a thin volatile per-turn message and a fat stable runtime-config scaffold.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Audience">
+Audience: **both** — backend engineers who edit the daemon's prompt code, and agents reasoning about why a task is described to them the way it is. If you are adding a new task kind, changing a CLI flag an agent is told to run, or wondering why the reply rules appear in two places, this is your page. See also [/developers/agentic/task-kinds](/developers/agentic/prompt-layers), [/developers/agentic/runtime-config](/developers/agentic/prompt-layers), and [/developers/conventions](/developers/conventions).
+</Callout>
+
+When the daemon dispatches a task to a coding-agent CLI, it describes that task through **two layers**, written by two different functions in two different files. Getting the split right is what keeps the per-turn message cheap and the standing instructions stable.
+
+- **Layer 1 — the volatile per-turn message.** `BuildPrompt` in `server/internal/daemon/prompt.go` returns a short string handed to the agent as the user turn. It changes every turn: this comment, this trigger ID, this chat message.
+- **Layer 2 — the stable runtime-config scaffold.** `buildMetaSkillContent` in `server/internal/daemon/execenv/runtime_config.go` returns a long markdown brief that `InjectRuntimeConfig` writes to the provider's native config file (`CLAUDE.md` / `AGENTS.md` / `GEMINI.md`). It is the agent's standing operating manual for the run.
+
+## The split: volatile vs stable
+
+The two layers exist so each fact lives in exactly one place, keyed on how often it changes.
+
+| | Layer 1 — `BuildPrompt` | Layer 2 — `buildMetaSkillContent` |
+|---|---|---|
+| File | `server/internal/daemon/prompt.go` | `server/internal/daemon/execenv/runtime_config.go` |
+| Output | per-turn message string | markdown brief |
+| Written to | the agent's user turn | `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` |
+| Lifetime | **volatile** — rebuilt every turn | **stable** — the run's standing scaffold |
+| Carries | this comment body, this trigger ID, this chat message, this quick-create input | identity, workspace context, available commands, the workflow, mentions/attachments rules |
+
+The rule is: **a fact that changes per turn belongs in Layer 1; a fact that holds for the whole run belongs in Layer 2.** The triggering comment body is volatile, so `buildCommentPrompt` embeds it directly (`> %s`) so the agent "cannot miss it, even when stale output files exist in a reused workdir." The list of `agora` CLI commands is stable, so it lives once in `buildMetaSkillContent` under `## Available Commands` instead of being re-emitted on every turn.
+
+<Mermaid chart={`flowchart TD
+  T[Task dispatched] --> P[BuildPrompt task, provider]
+  T --> I[InjectRuntimeConfig workDir, provider, ctx]
+  P -->|volatile per-turn message| AG[Agent user turn]
+  I -->|calls| M[buildMetaSkillContent provider, ctx]
+  M -->|stable brief| F[CLAUDE.md / AGENTS.md / GEMINI.md]
+  F --> AG`} />
+
+## Layer 1: `BuildPrompt` and the five task-kind branches
+
+`BuildPrompt(task Task, provider string) string` is a thin dispatcher. It inspects the task and routes to one of five builders, in this exact order:
+
+1. `task.ChatSessionID != ""` → `buildChatPrompt(task)`
+2. `task.TriggerCommentID != ""` → `buildCommentPrompt(task, provider)`
+3. `task.AutopilotRunID != ""` → `buildAutopilotPrompt(task)`
+4. `task.QuickCreatePrompt != ""` → `buildQuickCreatePrompt(task)`
+5. otherwise → the inline **assignment** branch (no helper; `BuildPrompt` builds it directly)
+
+The doc comment on `BuildPrompt` states the contract for the whole layer: *"Keep this minimal — detailed instructions live in CLAUDE.md / AGENTS.md injected by `execenv.InjectRuntimeConfig`."* Each branch emits only what is volatile for that kind:
+
+- **chat** (`buildChatPrompt`) — emits `task.ChatMessage`, any explicitly selected `/`-skills, and per-message `task.ChatMessageAttachments` (listed by `id`/`filename` so the agent fetches them via `agora attachment download <id>` rather than an expired CDN URL).
+- **comment** (`buildCommentPrompt`) — embeds `task.TriggerCommentContent` as a blockquote, an author label, and the comment-reading + reply instructions for *this* trigger. `provider` is threaded in only because the reply template is platform-aware.
+- **autopilot** (`buildAutopilotPrompt`) — emits the run-only autopilot's IDs, title, source, trigger payload, and description. Explicitly ends with `Do not run agora issue get; this run does not have an issue ID.`
+- **quick-create** (`buildQuickCreatePrompt`) — emits the user's `task.QuickCreatePrompt` plus the full field/output rules (see the exception below).
+- **assignment** (the fallthrough) — the thinnest of all: `Your assigned issue ID is: %s` plus a pointer to `agora issue get %s --output json` and the comment-history rule. The detailed step-by-step workflow lives entirely in Layer 2.
+
+## Layer 2: `buildMetaSkillContent` and the runtime config file
+
+`InjectRuntimeConfig(workDir, provider string, ctx TaskContextForEnv)` calls `buildMetaSkillContent(provider, ctx)` and writes the result to the provider's native config file via `runtimeConfigPath`:
+
+- `claude`, `codebuddy` → `CLAUDE.md`
+- `codex`, `copilot`, `opencode`, `openclaw`, `hermes`, `pi`, `cursor`, `kimi`, `kiro`, `antigravity` → `AGENTS.md`
+- `gemini` → `GEMINI.md`
+- unknown provider → `""` (prompt-only mode, no file written)
+
+The brief is one fat, mostly-static markdown document. It opens with `# Agora Agent Runtime`, then assembles sections from `ctx`: `## Agent Identity`, `## Requesting User`, `## Task Initiator`, `## Workspace Context`, `## Available Commands`, `## Comment Formatting`, `## Showing Code Changes`, `## Repositories`, `## Project Context`, `## Issue Metadata`, a `### Workflow` block, `## Mentions`, `## Attachments`, and `## Output`. The `### Workflow` block itself branches on task kind (chat / quick-create / autopilot / comment / assignment) — but with **standing** instructions, not this-turn data.
+
+`InjectRuntimeConfig` does not clobber a user's own config. It wraps the brief in marker comments (`runtimeMarkerBegin` / `runtimeMarkerEnd`) and `writeRuntimeConfigFile` either creates the file, appends after a fixed `runtimeManagedSeparator`, or replaces the existing block in place. `CleanupRuntimeConfig` reverses that exactly — byte-for-byte — which matters for the `local_directory` flow where `WorkDir` is the user's own repo.
+
+## Why the split is non-negotiable: single source of truth
+
+The point of the split is **one writer per fact**. Volatile facts have exactly one writer (`BuildPrompt`); stable facts have exactly one writer (`buildMetaSkillContent`). When the same instruction must appear in *both* surfaces, it is generated by **one shared builder called from both sides** — never inlined twice.
+
+This is the anti-drift rule, and `server/internal/daemon/execenv/reply_instructions.go` is where it is enforced. Four builders live there, and each is called from both Layer 1 and Layer 2:
+
+- `BuildNewCommentsHint(issueID, triggerCommentID, triggerThreadID, newCommentsSince string, newCommentCount int)`
+- `BuildResumedCommentsHint(issueID, triggerCommentID, triggerThreadID string)`
+- `BuildColdCommentsHint(issueID, triggerCommentID, triggerThreadID string)`
+- `BuildCommentReplyInstructions(provider, issueID, triggerCommentID string)`
+
+For example, `buildCommentPrompt` (Layer 1) ends with `b.WriteString(execenv.BuildCommentReplyInstructions(provider, task.IssueID, task.TriggerCommentID))`, and the comment branch of `buildMetaSkillContent` (Layer 2) calls the identical `BuildCommentReplyInstructions(provider, ctx.IssueID, ctx.TriggerCommentID)` in step 7. Both surfaces emit the same reply template — quoted-HEREDOC on Linux/macOS, `--content-file` on Windows — and the same comment-reading hint. The builder doc comments state this requirement explicitly: *"Both surfaces call this so the cold fallback cannot drift between them"* and *"Both the per-turn prompt (`daemon.buildCommentPrompt`) and the CLAUDE.md workflow (`InjectRuntimeConfig`) call this so the two surfaces cannot drift (hard requirement from PR #2816)."*
+
+<Callout title="The rule">
+If a sentence must appear in both the per-turn message and the runtime brief, write it once in a builder in `reply_instructions.go` and call that builder from both `prompt.go` and `runtime_config.go`. Never copy-paste the text into both — the copies drift, and the agent gets contradictory instructions (a stale `--parent` UUID is the classic failure).
+</Callout>
+
+## The quick-create exception
+
+Quick-create breaks the "detailed rules live in Layer 2" pattern on purpose. The full field rules (title, description, priority, assignee, project, parent, status, attachments) and the strict output contract (`Run exactly one agora issue create --output json invocation`) live in **Layer 1** — `buildQuickCreatePrompt` — not in the brief.
+
+The reason is in the code comment in the quick-create `### Workflow` branch of `buildMetaSkillContent`: quick-create is **one-shot**, so the per-turn message is always present, giving it a single source of truth there. Layer 2 keeps only the hard guardrails so a provider that doesn't propagate the user message into its working context (or a resumed session) still avoids running the assignment workflow against an empty issue ID:
+
+```text
+**This task was triggered by quick-create.** There is NO existing Agora issue.
+Follow the field and output rules in the user message you just received; ignore
+the default assignment-task workflow.
+```
+
+So the normal split (volatile in Layer 1, stable in Layer 2) inverts here: the detailed rules are volatile-adjacent (they describe how to process *this* one input) and the one-shot nature guarantees the per-turn message is always read.
+
+## `TaskContextForEnv`: the shared volatile struct
+
+Both layers read from task context. Layer 2 reads `TaskContextForEnv` (defined in `server/internal/daemon/execenv/execenv.go`); Layer 1 reads the daemon's `Task`. The fields that discriminate task kind are the same set on both sides: `ChatSessionID`, `TriggerCommentID`, `AutopilotRunID`, `QuickCreatePrompt`, plus `IssueID`.
+
+This is why **a new task kind touches both layers**. To add one you must:
+
+1. Add a discriminator field to `Task` and to `TaskContextForEnv`.
+2. Add a branch to `BuildPrompt` (Layer 1) for the volatile per-turn message.
+3. Add a branch to the `### Workflow` block in `buildMetaSkillContent` (Layer 2), and update the `hasIssueContext` / `isAssignmentTriggered` guards so the new kind doesn't accidentally fall into the issue-centric path.
+
+Skipping step 2 or step 3 produces a half-wired kind: the right per-turn message with the wrong standing workflow, or vice versa. The existing guards make this concrete — `hasIssueContext := ctx.ChatSessionID == "" && ctx.QuickCreatePrompt == "" && ctx.AutopilotRunID == ""` and `isAssignmentTriggered := ... && ctx.TriggerCommentID == ""` both enumerate every non-assignment kind, so a new kind that isn't added to them mis-classifies.
+
+## Squad-leader detection differs by layer
+
+Squad-leader behavior (the agent may exit silently and record `agora squad activity <issue-id> no_action` instead of posting a comment) is gated differently in each layer, and the difference is worth knowing:
+
+- **Layer 2** reads the precomputed boolean `ctx.IsSquadLeader` on `TaskContextForEnv` (commented *"true when the agent is acting as a squad leader (may exit silently on no_action)"*). The `### Workflow` and `## Output` sections branch on it.
+- **Layer 1**, in `buildCommentPrompt`, detects it inline by **substring-matching the protocol string**: `task.Agent != nil && strings.Contains(task.Agent.Instructions, "## Squad Operating Protocol")`. When that substring is present it emits the squad-leader `no_action` rule into the per-turn message.
+
+So the squad-leader contract has two triggers: a struct boolean in Layer 2 and a literal-string match against the agent's instructions in Layer 1. If you rename the `## Squad Operating Protocol` heading, the Layer 1 detection silently stops firing — treat that string as a contract.
+
+## Prompt-cache implication (brief)
+
+The stable-first ordering is also a caching optimization. Because the long `buildMetaSkillContent` brief is stable across turns and the short `BuildPrompt` message is what changes, providers that prefix-cache the prompt get a cache hit on the large stable scaffold and only pay to process the small volatile tail each turn. Keeping volatile content out of the brief — and out of order ahead of stable content — is what preserves that cache boundary. This is a consequence of the split, not its primary motivation; the primary motivation is single-source-of-truth.
+
+## Source files
+
+| File | Symbols this page depends on |
+|---|---|
+| `server/internal/daemon/prompt.go` | `BuildPrompt`, `buildChatPrompt`, `buildCommentPrompt`, `buildAutopilotPrompt`, `buildQuickCreatePrompt`; task-kind discriminators `ChatSessionID` / `TriggerCommentID` / `AutopilotRunID` / `QuickCreatePrompt`; `strings.Contains(task.Agent.Instructions, "## Squad Operating Protocol")` |
+| `server/internal/daemon/execenv/runtime_config.go` | `buildMetaSkillContent`, `InjectRuntimeConfig`, `runtimeConfigPath`, `writeRuntimeConfigFile`, `CleanupRuntimeConfig`, `runtimeMarkerBegin`, `runtimeMarkerEnd`, `runtimeManagedSeparator`; guards `hasIssueContext`, `isAssignmentTriggered`; `ctx.IsSquadLeader` usage |
+| `server/internal/daemon/execenv/reply_instructions.go` | `BuildNewCommentsHint`, `BuildResumedCommentsHint`, `BuildColdCommentsHint`, `BuildCommentReplyInstructions` (the shared builders called from both layers) |
+| `server/internal/daemon/execenv/execenv.go` | `TaskContextForEnv` and its discriminator fields (`IssueID`, `ChatSessionID`, `TriggerCommentID`, `AutopilotRunID`, `QuickCreatePrompt`, `IsSquadLeader`); `InjectRuntimeConfig` call site context |
+
+When any documented symbol, field, flag, or heading string above moves or is renamed, update this page **and** its source-map sidecar (`references/prompt-layers-source-map.md`) in the same PR — the built-in skills are source-traced contracts, and a drifted page silently teaches stale daemon behavior.

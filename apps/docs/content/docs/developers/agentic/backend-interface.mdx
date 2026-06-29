@@ -1,0 +1,290 @@
+---
+title: Backend Interface
+description: The agent.Backend contract, the Session channel protocol, and how the daemon drains it under the idle watchdog.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Audience">
+**dev.** This page is for backend engineers writing or maintaining an agent backend in `server/pkg/agent/`, or working on the daemon's task-execution loop in `server/internal/daemon/`. It documents the `agent.Backend` interface, the `Session` channel protocol every backend must speak, and how `Daemon.executeAndDrain` consumes that protocol. For how a task gets routed to a runtime in the first place, see [/developers/agentic/daemon](/developers/architecture). For naming and package-boundary rules, see [/developers/conventions](/developers/conventions) and the repo-root `CLAUDE.md`.
+</Callout>
+
+The `agent` package (`server/pkg/agent/`) provides one interface — `Backend` — that every coding-agent runtime (Claude Code, Codex, Copilot, OpenCode, and the rest) implements. The daemon talks to all of them through this single contract, so adding a new agent means implementing `Backend.Execute` and nothing else. This page describes that contract using the `claude` backend (`claude.go`) as the reference implementation, then shows how the daemon drains the result.
+
+## The Backend interface
+
+```go
+type Backend interface {
+	// Execute runs a prompt and returns a Session for streaming results.
+	Execute(ctx context.Context, prompt string, opts ExecOptions) (*Session, error)
+}
+```
+
+`Execute` has a strict timing contract that is the heart of this whole design: **return fast with a non-nil `*Session`, then run the CLI in goroutines.** `Execute` does the synchronous, can-fail-immediately work — locate the binary, build args, start the subprocess, wire up pipes — and the moment `cmd.Start()` succeeds it spawns the goroutines that read stdout, write stdin, and wait for exit, then returns the `Session`. The caller never blocks inside `Execute` waiting for the agent to finish; it waits on the `Session`'s channels instead.
+
+A returned `error` means the run never started (binary not found, pipe creation failed, `cmd.Start()` failed). In that case the `*Session` is `nil` and there is nothing to drain. If `Execute` returns a non-nil `*Session`, the error is `nil` and the caller **must** consume the channels.
+
+## ExecOptions
+
+`ExecOptions` configures a single execution. Backends consume only the fields that make sense for their CLI; unknown-to-this-backend fields are silently ignored rather than erroring, so new options can be added without breaking unrelated agents. The fields the `claude` backend reads are:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `Cwd` | `string` | working directory for the subprocess (`cmd.Dir`) |
+| `Model` | `string` | becomes `--model` when non-empty |
+| `SystemPrompt` | `string` | becomes `--append-system-prompt` when non-empty |
+| `MaxTurns` | `int` | becomes `--max-turns` when `> 0` |
+| `Timeout` | `time.Duration` | wall-clock cap; `<= 0` means **no deadline** (watchdog only) |
+| `ResumeSessionID` | `string` | becomes `--resume` when non-empty |
+| `ExtraArgs` | `[]string` | daemon-wide default CLI args, appended before `CustomArgs` |
+| `CustomArgs` | `[]string` | per-agent CLI args, appended after `ExtraArgs` |
+| `McpConfig` | `json.RawMessage` | when non-nil, written to a temp file and passed via `--mcp-config` |
+| `ThinkingLevel` | `string` | becomes `--effort` when non-empty (empty = CLI default) |
+
+`Timeout` deserves emphasis. `runContext` in `agent.go` turns it into the subprocess context:
+
+```go
+func runContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout > 0 {
+		return context.WithTimeout(ctx, timeout)
+	}
+	return context.WithCancel(ctx)
+}
+```
+
+A positive `Timeout` imposes a hard wall-clock deadline. A zero or negative `Timeout` imposes **no** deadline — liveness is left entirely to the daemon's inactivity watchdog so a session that keeps emitting events is never killed merely for running long (MUL-3064).
+
+## The Session channel protocol
+
+`Execute` returns a `Session` holding two receive-only channels:
+
+```go
+type Session struct {
+	// Messages streams events as the agent works. The channel is closed
+	// when the agent finishes (before Result is sent).
+	Messages <-chan Message
+	// Result receives exactly one value — the final outcome — then closes.
+	Result <-chan Result
+}
+```
+
+The protocol the producing goroutine must obey is exact, and `claude.go` is the canonical implementation:
+
+1. `Messages` is a **buffered channel of capacity 256** (`make(chan Message, 256)`).
+2. `Result` is a **buffered channel of capacity 1** (`make(chan Result, 1)`).
+3. As the agent works, the goroutine sends `Message` values on `Messages`.
+4. When the agent finishes, the goroutine **closes `Messages` first**, then sends **exactly one** `Result` on `Result`, then closes `Result`.
+
+In `claude.go` the ordering is enforced by stacked `defer`s in the worker goroutine. Deferred functions run LIFO, so the registration order
+
+```go
+defer cancel()
+defer close(msgCh)
+defer close(resCh)
+```
+
+means `resCh` is closed last. The single `Result` is sent (`resCh <- Result{...}`) as the final statement of the goroutine body, after the scan loop and `cmd.Wait()` have completed — so by the time `Result` is sent, `Messages` has already been closed by the deferred `close(msgCh)`. Because `Result` has capacity 1, that send never blocks even if no one is reading yet.
+
+<Mermaid chart={`sequenceDiagram
+    participant C as Caller (executeAndDrain)
+    participant E as Execute
+    participant G as worker goroutine
+    participant CLI as agent CLI
+    C->>E: Execute(ctx, prompt, opts)
+    E->>CLI: cmd.Start()
+    E->>G: spawn (stdout reader / waiter)
+    E-->>C: *Session (fast return)
+    loop streaming
+        CLI->>G: stream-json line
+        G->>C: Message on Messages (cap 256, trySend)
+    end
+    CLI->>G: process exit
+    G->>C: close(Messages)
+    G->>C: Result on Result (cap 1)
+    G->>C: close(Result)`} />
+
+### Why this exact shape
+
+The closed `Messages`-then-`Result` ordering lets the consumer use channel closure as its "agent is done streaming" signal, then switch to waiting on `Result` for the final disposition — without ever risking a missed `Result` or a deadlock. The cap-1 `Result` channel guarantees the producer can deposit the outcome and exit even if the consumer is momentarily busy; the consumer picks it up afterward.
+
+## Message and MessageType
+
+`Message` is the unified streaming event. `MessageType` is a string-typed enum with seven values, all declared as Go constants in `agent.go`:
+
+```go
+const (
+	MessageText       MessageType = "text"
+	MessageThinking   MessageType = "thinking"
+	MessageToolUse    MessageType = "tool-use"
+	MessageToolResult MessageType = "tool-result"
+	MessageStatus     MessageType = "status"
+	MessageError      MessageType = "error"
+	MessageLog        MessageType = "log"
+)
+```
+
+The `Message` struct carries one set of fields; which fields are populated depends on `Type`:
+
+| Field | Populated for |
+| --- | --- |
+| `Content` | `MessageText`, `MessageError`, `MessageLog` |
+| `Tool` | `MessageToolUse`, `MessageToolResult` |
+| `CallID` | `MessageToolUse`, `MessageToolResult` |
+| `Input` (`map[string]any`) | `MessageToolUse` |
+| `Output` | `MessageToolResult` |
+| `Status` | `MessageStatus` |
+| `Level` | `MessageLog` |
+| `SessionID` | `MessageStatus` (early resume-pointer pinning) |
+
+### Bounded send: trySend drops, never blocks
+
+Backends send on `Messages` through the shared `trySend` helper, never with a bare channel send:
+
+```go
+func trySend(ch chan<- Message, msg Message) {
+	select {
+	case ch <- msg:
+	default:
+		// Channel full — drop message. Final output is accumulated
+		// separately in Result.Output, so only streaming consumers are
+		// affected.
+	}
+}
+```
+
+This is the second half of the cap-256 contract. The buffer absorbs bursts, and when it is full `trySend` **drops** the message rather than blocking the stdout scanner. A blocked scanner would back-pressure the CLI's stdout pipe and deadlock the run. Streaming consumers may therefore miss intermediate messages under load — that is by design — but the authoritative final text is accumulated separately into `Result.Output`, so nothing user-facing is lost when a streaming message is dropped.
+
+## Result and the status enum
+
+`Result` is the single final outcome:
+
+```go
+type Result struct {
+	Status     string // "completed", "failed", "aborted", "timeout", "cancelled"
+	Output     string // accumulated text output
+	Error      string // error message if failed
+	DurationMs int64
+	SessionID  string
+	Usage      map[string]TokenUsage // keyed by model name
+}
+```
+
+`Status` is a **closed enum expressed as string literals** — there are deliberately no Go constants for the values. The five values a backend may set are `"completed"`, `"failed"`, `"aborted"`, `"timeout"`, and `"cancelled"`. The `claude` backend assigns them in its tail logic after `cmd.Wait()`:
+
+| `Status` | When the `claude` backend sets it |
+| --- | --- |
+| `"completed"` | default; a `result` event arrived with no error |
+| `"failed"` | the CLI reported an error, the prompt write failed before any result, or the process exited non-zero |
+| `"timeout"` | `runCtx.Err() == context.DeadlineExceeded` (the `Timeout` deadline fired) |
+| `"aborted"` | `runCtx.Err() == context.Canceled` (the context was cancelled, e.g. by the idle watchdog's `agentCancel`) |
+| `"cancelled"` | synthesized by the daemon (see below), not by the `claude` backend's exit classifier |
+
+<Callout type="warn">
+Because `Status` is a free string, any consumer that switches on it must have a `default` branch. The daemon adds two more dispositions downstream — `"idle_watchdog"` and `"cancelled"` — that no backend ever emits. Treat the enum as open at the consumer boundary even though backends only ever write the five canonical values.
+</Callout>
+
+### TokenUsage and Result.Usage
+
+Token accounting is per-model. `Result.Usage` is keyed by model name, so a single run that spans more than one model reports each model's consumption separately:
+
+```go
+type TokenUsage struct {
+	InputTokens      int64
+	OutputTokens     int64
+	CacheReadTokens  int64
+	CacheWriteTokens int64
+}
+```
+
+The `claude` backend accumulates usage as `assistant` messages arrive (summing into the per-model entry in the `usage` map), and prefers the authoritative `modelUsage` block from the final `result` event when present (`claudeResultUsage`).
+
+## How the daemon consumes the channels
+
+`Daemon.executeAndDrain` (`server/internal/daemon/daemon.go`) is the production consumer. It calls `backend.Execute`, drains `Session.Messages` while forwarding events to the server, and waits on `Session.Result` — all under the idle/tool watchdog.
+
+The skeleton:
+
+```go
+agentCtx, agentCancel := context.WithCancel(ctx)
+defer agentCancel()
+
+session, err := backend.Execute(agentCtx, prompt, opts)
+if err != nil {
+	return agent.Result{}, 0, err
+}
+```
+
+`executeAndDrain` wraps the caller's `ctx` in `agentCtx` so a single `agentCancel()` interrupts **both** the subprocess (the watchdog cancels the context handed to `Execute`) and the drain loop. It then:
+
+1. **Sizes the drain deadline off `opts.Timeout`.** With a positive `Timeout`, the drain context gets `Timeout + 30s` (the extra window lets it still collect the backend's own `"timeout"` `Result` if stdout is stuck). With `Timeout <= 0`, the drain context has **no deadline** — the inactivity watchdog is the only liveness net, matching the backend's own no-deadline behavior (MUL-3064).
+2. **Starts the idle watchdog** (when `AgentIdleWatchdog > 0`) via `runIdleWatchdog`.
+3. **Runs the drain goroutine** — a `for`/`select` over `session.Messages` (and `drainCtx.Done()`), batching `text`/`thinking`/`tool_use`/`tool_result`/`error` messages and flushing them to the server every 500 ms via `d.client.ReportTaskMessages`.
+4. **Waits on `session.Result`** in the outer `select`.
+
+The drain loop exits when `session.Messages` is **closed** (`case msg, ok := <-session.Messages: if !ok { goto drainDone }`) — exactly the closure the backend protocol promises before sending `Result`. The outer select then receives the single `Result`:
+
+```go
+select {
+case result := <-session.Result:
+	if idleWatchdogFired.Load() {
+		result.Status = "idle_watchdog"
+		...
+	}
+	return result, toolCount.Load(), nil
+case <-drainCtx.Done():
+	...
+}
+```
+
+### The idle / tool watchdog
+
+`runIdleWatchdog` is what makes the no-wall-clock-deadline mode safe. The drain loop stamps `lastActivityAt` (unix nanos) every time a message lands. The watchdog ticks and force-stops the run when the backend has been silent past the applicable budget:
+
+- **No tool in flight** → silence past `AgentIdleWatchdog` (`window`) is a hang.
+- **A tool in flight** (a `tool_use` with no matching `tool_result` yet, tracked by the `inFlightTools` counter) → the larger `AgentToolWatchdog` (`toolWindow`) applies, because a real `npm install` / `docker build` legitimately runs silently for minutes. `toolWindow <= 0` disables the in-flight bound entirely.
+
+In **both** cases the watchdog also requires `len(session.Messages) == 0` before firing — a buffered-but-undrained message means the drain loop is behind, not the backend, so it waits one more tick. On firing it records which threshold tripped, sets `idleWatchdogFired`, and calls `agentCancel()`. That cancellation propagates into the backend (which translates the resulting `context.Canceled` into `Status: "aborted"`); back in `executeAndDrain`, the `idleWatchdogFired` check **re-tags** the disposition to `"idle_watchdog"` so the task is routed through a dedicated failure reason instead of the generic aborted bucket.
+
+`executeAndDrain` also synthesizes the daemon-only `"cancelled"` and `"timeout"` statuses on the `drainCtx.Done()` path, distinguishing upstream cancellation (`context.Canceled` → `"cancelled"`) from a genuine drain-deadline expiry (`context.DeadlineExceeded` → `"timeout"`).
+
+## Mandatory backend boilerplate
+
+Every backend that supervises a child CLI must wire up the same supervisory plumbing. Skipping any of it reintroduces a bug we already fixed. Using `claude.go` as the reference:
+
+| Step | Call | Why it is mandatory |
+| --- | --- | --- |
+| Resolve the binary | `exec.LookPath(execPath)` | fail fast (and from `Execute`, before any goroutine) when the CLI is missing, returning an error + `nil` Session |
+| Derive the run context | `runContext(ctx, opts.Timeout)` | positive timeout → hard deadline; non-positive → watchdog-only (MUL-3064) |
+| Build child env | `cmd.Env = buildEnv(b.cfg.Env)` | merges `os.Environ()` with extra vars and **strips internal Claude Code session markers** (`isFilteredChildEnvKey`) so the child doesn't mistake itself for a nested/resumed session |
+| Hide the console window | `hideAgentWindow(cmd)` | prevents a flashing console window on Windows |
+| Bound forced-kill cleanup | `cmd.WaitDelay = 10 * time.Second` | after context cancel, gives the process 10 s to exit before its I/O pipes are force-closed, so `cmd.Wait()` can't hang forever on a stuck child |
+| Capture bounded stderr | `newStderrTail(newLogWriter(...), agentStderrTailBytes)` as `cmd.Stderr` | retains the last 2048 bytes of stderr so a CLI crash surfaces a real reason instead of just `exit status N` |
+| Attach the tail on failure | `withAgentStderr(finalError, "claude", stderrBuf.Tail())` | appends that tail to `Result.Error` so failures are root-causable without crawling daemon logs |
+
+### stderrTail in detail
+
+`stderr_tail.go` defines a thread-safe writer that forwards every byte to the daemon log **and** retains a bounded tail:
+
+```go
+const agentStderrTailBytes = 2048
+```
+
+`stderrTail.Write` appends to an internal buffer under a mutex and trims it back to `max` bytes from the end, so memory stays bounded no matter how much the CLI writes. `Tail()` returns the trimmed-whitespace contents; `withAgentStderr(msg, label, tail)` composes the final error string (`msg + "; " + label + " stderr: " + tail`), returning `msg` unchanged when the tail is empty.
+
+The `claude` backend only samples `stderrBuf.Tail()` **after** `cmd.Wait()` returns — at that point `os/exec`'s stderr copy goroutine has observed every byte the CLI wrote, so the tail is complete and the read is race-free.
+
+<Callout type="warn">
+All of the above is non-optional. The env-stripping, `WaitDelay`, and `stderrTail` wiring each trace to a concrete production incident. When you add a new backend, copy the supervisory shape from `claude.go` rather than rederiving it.
+</Callout>
+
+## Source files
+
+| File | Symbols this page depends on |
+| --- | --- |
+| `server/pkg/agent/agent.go` | `Backend`, `Backend.Execute`, `ExecOptions` (and its fields `Cwd`, `Model`, `SystemPrompt`, `MaxTurns`, `Timeout`, `ResumeSessionID`, `ExtraArgs`, `CustomArgs`, `McpConfig`, `ThinkingLevel`), `runContext`, `Session`, `Session.Messages`, `Session.Result`, `MessageType`, `MessageText`, `MessageThinking`, `MessageToolUse`, `MessageToolResult`, `MessageStatus`, `MessageError`, `MessageLog`, `Message` (fields `Type`, `Content`, `Tool`, `CallID`, `Input`, `Output`, `Status`, `Level`, `SessionID`), `TokenUsage`, `Result` (fields `Status`, `Output`, `Error`, `DurationMs`, `SessionID`, `Usage`), `Result.Status` literals `"completed"`/`"failed"`/`"aborted"`/`"timeout"`/`"cancelled"` |
+| `server/pkg/agent/claude.go` | `claudeBackend.Execute`, `msgCh` (cap 256), `resCh` (cap 1), deferred `cancel`/`close(msgCh)`/`close(resCh)` ordering, `trySend`, `buildEnv`, `mergeEnv`, `isFilteredChildEnvKey`, `cmd.WaitDelay`, `hideAgentWindow`, `newStderrTail`/`agentStderrTailBytes`, `withAgentStderr`, `claudeResultUsage`, `exec.LookPath` |
+| `server/pkg/agent/stderr_tail.go` | `agentStderrTailBytes` (2048), `stderrTail`, `newStderrTail`, `stderrTail.Write`, `stderrTail.Tail`, `withAgentStderr` |
+| `server/internal/daemon/daemon.go` | `Daemon.executeAndDrain`, `agentCtx`/`agentCancel`, `drainCtx` (`opts.Timeout + 30s` vs no deadline), `session.Messages` drain (`goto drainDone`), `d.client.ReportTaskMessages`, `session.Result` select, `runIdleWatchdog`, `idleWatchdogReason`, `idleWatchdogFired`, `lastActivityAt`, `inFlightTools`, `AgentIdleWatchdog`, `AgentToolWatchdog`, daemon-synthesized `"idle_watchdog"`/`"cancelled"`/`"timeout"` statuses |
+
+When any documented symbol, field, status literal, or CLI flag above moves or changes, update this page **and** its source-map sidecar (`references/backend-interface-source-map.md`) in the **same PR** — these docs are a source-traced contract (the builtin_skills drift rule); a code change that lands without the doc change silently teaches stale behavior.

@@ -1,0 +1,10 @@
+{
+  "title": "智能体引擎",
+  "pages": [
+    "backend-interface",
+    "prompt-layers",
+    "agent-runtime-contract",
+    "mcp-injection",
+    "squads-routing"
+  ]
+}

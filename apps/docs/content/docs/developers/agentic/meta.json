@@ -1,0 +1,10 @@
+{
+  "title": "Agentic engine",
+  "pages": [
+    "backend-interface",
+    "prompt-layers",
+    "agent-runtime-contract",
+    "mcp-injection",
+    "squads-routing"
+  ]
+}

@@ -1,0 +1,155 @@
+---
+title: Squads & Routing
+description: A squad is a routing object — every entry path resolves to one leader_id task, never a member fan-out.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Audience">
+This page is for **both** engineers and agents working on squad behavior. It is the authoritative explanation of why a squad is a *routing* object and not an executor, and how the four entry paths all collapse to a single leader task. Agents debugging "why did my squad run / not run" should read this alongside the built-in `agora-squads` skill. Related: /developers/agentic/autopilot, [/developers/agentic/agent-tasks](/developers/architecture), [/developers/conventions](/developers/conventions). Package boundaries are governed by the repo-root CLAUDE.md.
+</Callout>
+
+## The one rule
+
+A squad is a **workspace routing and coordination object**, not an agent. It never runs work by itself. Every path that could "trigger a squad" resolves the squad's `leader_id` and enqueues **exactly one leader task**. There is no member fan-out anywhere in the codebase — assigning, mentioning, autopiloting, or signalling child-done to a squad fires the leader and only the leader.
+
+The leader then *coordinates* by delegating to members via `@mention` comments. Those mentions are ordinary mention triggers — they are not a squad mechanism. The squad's only job is: resolve to a leader, hand the leader a briefing, stay out of the way.
+
+<Callout type="warn" title="The wrong mental model">
+"A squad is a team of agents that all run when work arrives." This is false. `squad.instructions` is **leader-briefing** content, not a per-member prompt. `role` is a roster label, not a scheduler. Members are roster entries the leader *may* delegate to — they are never auto-dispatched.
+</Callout>
+
+## The four entry paths
+
+Every way work reaches a squad funnels into `EnqueueTaskForSquadLeader` (`server/internal/service/task.go`), which is the leader-role variant of `enqueueMentionTask`. All four share the same readiness gate, the same dedup guard, and the same `is_leader_task=true` provenance.
+
+<Mermaid chart={`flowchart TD
+  A["Assignment / backlog-promotion<br/>shouldEnqueueSquadLeaderOnAssign"] --> R
+  M["@mention of squad<br/>computeCommentAgentTriggers"] --> R
+  P["Autopilot (assignee_type=squad)<br/>resolveAutopilotLeader"] --> R
+  C["Child-done signal<br/>triggerChildDoneSquad"] --> R
+  R["Resolve squad.leader_id"] --> G{"Leader ready?<br/>not archived · runtime bound · runtime online"}
+  G -- no --> X["Fail CLOSED — no task enqueued"]
+  G -- yes --> D{"HasPendingTaskForIssueAndAgent?"}
+  D -- yes --> S["Skip — dedup"]
+  D -- no --> E["EnqueueTaskForSquadLeader<br/>is_leader_task = true"]
+`} />
+
+### 1. Assignment (and backlog promotion)
+
+`shouldEnqueueSquadLeaderOnAssign` (`server/internal/handler/squad.go`) mirrors `shouldEnqueueAgentTask`: a `backlog` issue is parked (returns `false`), otherwise it defers to `isSquadLeaderReady`. Moving a squad-assigned issue *out* of backlog is itself a trigger. `enqueueSquadLeaderTask` resolves the squad, runs the access + dedup gates, and calls `TaskService.EnqueueTaskForSquadLeader`. It "does not enqueue every squad member."
+
+### 2. @mention of the squad
+
+A mention `[@Squad Name](mention://squad/<squad-id>)` resolves the squad, reads `leader_id`, and enqueues a leader task using the current comment as the trigger comment. Comment-path triggers go through `computeCommentAgentTriggers` so preview and create share the same trigger set. Same routing — leader only.
+
+### 3. Autopilot
+
+For `assignee_type = "squad"`, `resolveAutopilotLeader` (`server/internal/service/autopilot.go`) returns `squad.LeaderID` as the executing agent; admission/readiness run against the leader. For `create_issue` autopilots the created issue keeps `assignee_type = "squad"` / `assignee_id = <squad-id>` while the *executing* agent is the resolved leader. The leader task is enqueued via the same `EnqueueTaskForSquadLeader` (see the direct call at `autopilot.go`).
+
+### 4. Child-done
+
+When a child issue transitions into `done`, `notifyParentOfChildDone` → `triggerChildDoneSquad` (`server/internal/handler/issue_child_done.go`) posts a system comment on the parent and enqueues a leader task. Child-done is "a coordination signal, the leader decides whether" to act. It carries dedicated loop guards: it skips when the child is assigned to the *same* squad, or when the child's `effectiveChildAgentOwner` equals this squad's `leader_id` (the shared-leader loop).
+
+## Leader auto-membership
+
+The leader is always also a squad **member**. On `CreateSquad` (`server/internal/handler/squad.go`) the backend auto-adds the leader as a member with `Role: "leader"`. On `UpdateSquad`, if a new `leader_id` is set and that agent is not already a member, it is auto-added with role `leader`. `RemoveSquadMember` refuses to remove the leader (`"cannot remove the squad leader; change leader first"`).
+
+The leader validity check on create/update only verifies the agent **exists** in the workspace — it does **not** reject an archived leader. An archived leader is rejected later, at dispatch (see below).
+
+## The leader briefing
+
+`squad.instructions` is leader-briefing content. It is composed into a full system briefing by `buildSquadLeaderBriefing` (`server/internal/handler/squad_briefing.go`), which concatenates three sections:
+
+1. **`squadOperatingProtocol`** — a constant, English-only, system-level block. It tells the leader to coordinate (not execute), delegate by `@mention`, record an evaluation every turn, and **stop after dispatching**.
+2. **Squad Roster** — built by `buildSquadRoster`: a leader self-row plus one `renderMemberRow` per non-archived member, each with literal paste-ready mention markdown. Archived agent members and unresolvable records are skipped silently (`renderMemberRow` returns `""`).
+3. **Squad Instructions** — the user-defined `squad.instructions`, appended **only when non-empty** (so there is no dangling heading).
+
+### Injection happens at claim time, not enqueue time
+
+The briefing is **not** stored on the task. It is composed and appended to the agent's `Instructions` in the claim handler (`ClaimTaskByRuntime` in `server/internal/handler/daemon.go`), guarded by: the issue is squad-assigned **and** `squad.LeaderID == resp.Agent.ID`. It is **appended** (`Instructions + "\n\n" + briefing`), never replaced, so per-agent instructions stay authoritative for general behavior and the squad briefing stacks on top as task-specific context. The same injection runs on the quick-create claim path.
+
+This claim-time composition is why the roster is always fresh: add a member, change `instructions`, archive a member — the next claim picks it up without re-enqueuing.
+
+### formatMention must round-trip through ParseMentions
+
+The roster's value depends entirely on the leader being able to *paste* a mention that actually fires. `formatMention` emits `[@<name>](mention://<type>/<id>)`. This string **must** round-trip through `util.ParseMentions` — a plain `@name` does not trigger anyone, and the Operating Protocol says so in non-negotiable terms ("no mention link = no delegation"). Human members use `member` + the `user_id`; agents use `agent` + the agent id.
+
+<Callout type="warn" title="Drift hazard">
+If you change `formatMention`'s output shape, or `util.MentionRe` / `util.ParseMentions`'s accepted shape, you must change them together. A mismatch means the leader pastes mention markdown that parses to nothing, and every delegation silently no-ops while the issue stalls.
+</Callout>
+
+## The is_leader_task flag
+
+`EnqueueTaskForSquadLeader` sets `IsLeaderTask: pgtype.Bool{Bool: isLeader, Valid: isLeader}` on the task row (`enqueueMentionTask`). The flag exists so self-trigger guards can tell apart a comment an agent posted **as leader** (skip — it is the leader's own delegation) from one it posted **as a worker** (do not skip). This matters when one agent is simultaneously the leader and a worker of the same squad. `lastTaskWasLeader` / `GetLatestTaskIsLeaderForIssueAndAgent` read the flag of the agent's most recent task on the issue to drive that decision.
+
+### Retries MUST inherit the flag
+
+A retried task that loses `is_leader_task` would be mis-classified by the self-trigger guard and could re-route incorrectly. Every clone path preserves it:
+
+| Clone path | Source | Inheritance |
+|---|---|---|
+| `CreateRetryTask` (`server/pkg/db/queries/agent.sql`) | same-runtime retry | selects `p.is_leader_task` |
+| `CreateFailoverTask` (`agent.sql`) | fallback-runtime route | selects `p.is_leader_task` |
+| `RerunIssue` / `enqueueRerunTask` (`task.go`) | user rerun | `isLeader = sourceTask.IsLeaderTask`; squad-assignee fallback sets `isLeader = true` |
+
+The `CreateRetryTask` SQL comment states this explicitly: `is_leader_task` is "inherited so the retried task keeps the same squad-role provenance as its parent and the self-trigger guard … continues to recognise it as a leader task."
+
+## Archived-leader fails CLOSED at dispatch
+
+Because create/update never reject an archived leader, the fail-closed posture lives at **every routing/dispatch path** instead — they all reject an archived (or runtime-less, or offline) leader **before** any task is enqueued:
+
+- **Assignment / backlog promotion** — `isSquadLeaderReady` (`squad.go`) loads the leader and runs `service.AgentReadiness`; any error path returns `false` ("Fail closed when we can't tell").
+- **Mention / child-done** — `enqueueMentionTask` rejects an archived agent (`agent is archived`); `triggerChildDoneSquad` and `maybeReTriggerSquadLeaderOnMemberFailure` both check `agent.ArchivedAt.Valid` and `!agent.RuntimeID.Valid` before enqueueing.
+- **Autopilot** — `resolveAutopilotLeader` returns `errSquadArchived` for an archived squad; `formatAdmissionReason` rewrites the skip reason with a `"squad leader "` prefix so an archived/offline leader surfaces as `squad leader agent is archived` / `… at dispatch time` in `failure_reason`.
+
+`DeleteSquad` also proactively rewrites surviving autopilots to the leader (`TransferSquadAutopilotsToLeader`) and transfers issue assignees (`TransferSquadAssignees`), but the gate still fails closed for any row that bypasses the handler.
+
+## The no_action protocol
+
+The Operating Protocol makes recording an evaluation **mandatory on every turn**, even when nothing is done. The leader calls:
+
+```bash
+agora squad activity <issue-id> action|no_action|failed --reason "<why>"
+```
+
+This hits `RecordSquadLeaderEvaluation` (`server/internal/handler/squad.go`), which:
+
+- validates `outcome ∈ {action, no_action, failed}`;
+- requires the issue to be squad-assigned;
+- **enforces that only the squad leader agent** can record (`actorType == "agent" && actorID == squad.LeaderID`, else `403`);
+- requires a valid `X-Task-ID` header whose task belongs to the issue;
+- writes a `squad_leader_evaluated` activity into `activity_log` with `details.outcome`, `details.task_id`, `details.squad_id`, `details.reason`.
+
+### Per-task no_action suppression
+
+When the leader records `no_action`, it has explicitly decided nothing is needed — so the system must **not** synthesize a fallback "done" comment for that task. On task completion, `CompleteTask` (`task.go`) calls `HasSquadLeaderNoActionEvaluationForTask` (`server/internal/service/squad_no_action.go`) and skips the fallback comment when it returns true (`!suppressNoActionComment && !agentCommented`). The query (`server/pkg/db/queries/activity.sql`) is keyed on `issue_id` + `agent_id` + `action = 'squad_leader_evaluated'` + `details->>'outcome' = 'no_action'` + `details->>'task_id' = @task_id` — suppression is scoped to the **exact task**, so a later trigger on the same issue is unaffected.
+
+### The 409 on manual comment after no_action
+
+The same per-task no_action record also blocks comments tied to that task. In the comment handler (`server/internal/handler/comment.go`), an agent posting from inside a task whose leader already recorded `no_action` for that task is rejected:
+
+```
+409 Conflict — "squad leader recorded no_action; comments are not allowed for this task"
+```
+
+This sits next to the resumed-session parent-id guard (also a `409`), and uses the same `HasSquadLeaderNoActionEvaluationForTask` check. It prevents a resumed leader session from contradicting its own recorded no_action decision by appending a comment under the closed-out task.
+
+## Source files
+
+| File | Symbols this page depends on |
+|---|---|
+| `server/internal/handler/squad.go` | `CreateSquad` (leader auto-membership, role `"leader"`), `UpdateSquad` (new-leader auto-add), `RemoveSquadMember` (leader-removal block), `shouldEnqueueSquadLeaderOnAssign`, `isSquadLeaderReady`, `enqueueSquadLeaderTask`, `lastTaskWasLeader`, `RecordSquadLeaderEvaluation`, `commentMentionsAnyone` |
+| `server/internal/handler/squad_briefing.go` | `buildSquadLeaderBriefing`, `squadOperatingProtocol`, `buildSquadRoster`, `renderMemberRow`, `formatRosterRow`, `formatMention` |
+| `server/internal/handler/daemon.go` | `ClaimTaskByRuntime` (claim-time squad-leader briefing injection, `squad.LeaderID == resp.Agent.ID` guard, append-not-replace) |
+| `server/internal/service/squad_no_action.go` | `HasSquadLeaderNoActionEvaluationForTask` |
+| `server/internal/service/task.go` | `EnqueueTaskForSquadLeader`, `enqueueMentionTask` (`IsLeaderTask`, archived-agent reject), `CompleteTask` (no_action suppression of fallback comment), `RerunIssue` / `enqueueRerunTask` (`isLeader` inheritance), `maybeReTriggerSquadLeaderOnMemberFailure` |
+| `server/internal/service/autopilot.go` | `resolveAutopilotLeader`, `errSquadArchived`, `formatAdmissionReason` (`"squad leader "` prefix), direct `EnqueueTaskForSquadLeader` call |
+| `server/internal/handler/issue_child_done.go` | `notifyParentOfChildDone`, `triggerChildDoneSquad`, `effectiveChildAgentOwner` |
+| `server/internal/handler/comment.go` | `computeCommentAgentTriggers`, the `409` "squad leader recorded no_action" guard |
+| `server/pkg/db/queries/agent.sql` | `CreateRetryTask` / `CreateFailoverTask` (`is_leader_task` inheritance), `GetLatestTaskIsLeaderForIssueAndAgent`, `HasPendingTaskForIssueAndAgent` |
+| `server/pkg/db/queries/activity.sql` | `HasSquadLeaderNoActionEvaluationForTask` (per-task `no_action` lookup) |
+| `server/internal/service/builtin_skills/agora-squads/SKILL.md` | the agent-facing squad contract this page must stay in sync with |
+
+When any documented symbol, flag, field, or CLI form above moves or changes shape, update **this page and its source-map sidecar (`references/squads-routing-source-map.md`) in the same PR** — the built-in `agora-squads` skill is a source-traced contract shipped to agents, so stale docs silently teach wrong squad behavior.

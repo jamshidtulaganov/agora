@@ -1,0 +1,155 @@
+---
+title: Squad 与路由
+description: squad 是一个路由对象 —— 每条入口路径都解析为唯一的 leader_id task，从不向成员扇出。
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout title="Audience">
+本页面面向**同时**处理 squad 行为的工程师和智能体。它是关于为何 squad 是一个*路由*对象而非执行器、以及四条入口路径如何全部收敛为单个 leader task 的权威说明。调试"为什么我的 squad 运行了／没运行"的智能体应将本页与内置 `agora-squads` skill 一起阅读。相关：/developers/agentic/autopilot、[/developers/agentic/agent-tasks](/developers/architecture)、[/developers/conventions](/developers/conventions)。包边界由仓库根目录的 CLAUDE.md 管辖。
+</Callout>
+
+## 唯一规则
+
+squad 是一个**工作区路由与协调对象**，而非智能体。它从不自行运行工作。每条可能"触发 squad"的路径都会解析该 squad 的 `leader_id` 并**精确入队一个 leader task**。代码库中任何地方都不存在向成员扇出的逻辑 —— 对 squad 的指派、提及、自动化或发送 child-done 信号，触发的只有 leader，且仅有 leader。
+
+随后 leader 通过 `@mention` 评论委派给成员来进行*协调*。这些提及是普通的提及触发器 —— 它们不是一种 squad 机制。squad 的唯一职责是：解析为 leader，向 leader 交付一份简报，然后退出舞台。
+
+<Callout type="warn" title="The wrong mental model">
+"squad 是一队智能体，工作到来时它们全部运行。"这是错误的。`squad.instructions` 是 **leader 简报**内容，而非逐成员提示词。`role` 是一个花名册标签，而非调度器。成员是 leader *可以*委派的花名册条目 —— 它们从不被自动派发。
+</Callout>
+
+## 四条入口路径
+
+工作到达 squad 的每一种方式都汇入 `EnqueueTaskForSquadLeader`（`server/internal/service/task.go`），它是 `enqueueMentionTask` 的 leader 角色变体。四者共享相同的就绪门控、相同的去重守卫，以及相同的 `is_leader_task=true` 溯源。
+
+<Mermaid chart={`flowchart TD
+  A["Assignment / backlog-promotion<br/>shouldEnqueueSquadLeaderOnAssign"] --> R
+  M["@mention of squad<br/>computeCommentAgentTriggers"] --> R
+  P["Autopilot (assignee_type=squad)<br/>resolveAutopilotLeader"] --> R
+  C["Child-done signal<br/>triggerChildDoneSquad"] --> R
+  R["Resolve squad.leader_id"] --> G{"Leader ready?<br/>not archived · runtime bound · runtime online"}
+  G -- no --> X["Fail CLOSED — no task enqueued"]
+  G -- yes --> D{"HasPendingTaskForIssueAndAgent?"}
+  D -- yes --> S["Skip — dedup"]
+  D -- no --> E["EnqueueTaskForSquadLeader<br/>is_leader_task = true"]
+`} />
+
+### 1. 指派（以及 backlog 提升）
+
+`shouldEnqueueSquadLeaderOnAssign`（`server/internal/handler/squad.go`）与 `shouldEnqueueAgentTask` 对应：`backlog` 状态的 issue 被搁置（返回 `false`），否则交由 `isSquadLeaderReady` 处理。把一个指派给 squad 的 issue *移出* backlog 本身就是一个触发器。`enqueueSquadLeaderTask` 解析 squad，运行访问 + 去重门控，并调用 `TaskService.EnqueueTaskForSquadLeader`。它"不会为每个 squad 成员入队"。
+
+### 2. 对 squad 的 @mention
+
+提及 `[@Squad Name](mention://squad/<squad-id>)` 解析 squad，读取 `leader_id`，并以当前评论作为触发评论入队一个 leader task。评论路径触发器经过 `computeCommentAgentTriggers`，使预览和创建共享同一组触发集。相同的路由 —— 仅 leader。
+
+### 3. Autopilot
+
+对于 `assignee_type = "squad"`，`resolveAutopilotLeader`（`server/internal/service/autopilot.go`）返回 `squad.LeaderID` 作为执行智能体；准入／就绪检查针对 leader 运行。对于 `create_issue` 自动化，所创建的 issue 保持 `assignee_type = "squad"` ／ `assignee_id = <squad-id>`，而*执行*智能体是解析出的 leader。leader task 通过同一个 `EnqueueTaskForSquadLeader` 入队（见 `autopilot.go` 中的直接调用）。
+
+### 4. Child-done
+
+当一个子 issue 转入 `done` 时，`notifyParentOfChildDone` → `triggerChildDoneSquad`（`server/internal/handler/issue_child_done.go`）在父 issue 上发布一条系统评论并入队一个 leader task。Child-done 是"一个协调信号，由 leader 决定是否"采取行动。它带有专门的循环守卫：当子 issue 指派给*同一个* squad，或子 issue 的 `effectiveChildAgentOwner` 等于本 squad 的 `leader_id`（共享 leader 循环）时，它会跳过。
+
+## Leader 自动成员资格
+
+leader 始终也是 squad 的**成员**。在 `CreateSquad`（`server/internal/handler/squad.go`）时，后端会自动以 `Role: "leader"` 将 leader 添加为成员。在 `UpdateSquad` 时，如果设置了新的 `leader_id` 且该智能体尚不是成员，则以角色 `leader` 自动添加。`RemoveSquadMember` 拒绝移除 leader（`"cannot remove the squad leader; change leader first"`）。
+
+创建／更新时的 leader 有效性检查仅验证该智能体在工作区中**存在** —— 它**不会**拒绝一个已归档的 leader。已归档的 leader 会在稍后的派发阶段被拒绝（见下文）。
+
+## Leader 简报
+
+`squad.instructions` 是 leader 简报内容。它由 `buildSquadLeaderBriefing`（`server/internal/handler/squad_briefing.go`）组合成一份完整的系统简报，该函数拼接三个部分：
+
+1. **`squadOperatingProtocol`** —— 一个常量、仅英文、系统级的块。它告诉 leader 去协调（而非执行）、通过 `@mention` 委派、每一轮都记录一次评估，并在**派发之后停止**。
+2. **Squad Roster** —— 由 `buildSquadRoster` 构建：一个 leader 自身行，外加每个未归档成员一个 `renderMemberRow`，每行都带有可直接粘贴的字面提及 markdown。已归档的智能体成员和无法解析的记录会被静默跳过（`renderMemberRow` 返回 `""`）。
+3. **Squad Instructions** —— 用户定义的 `squad.instructions`，**仅在非空时**追加（这样就不会出现悬空的标题）。
+
+### 注入发生在认领时，而非入队时
+
+简报**不会**存储在 task 上。它在认领处理器（`server/internal/handler/daemon.go` 中的 `ClaimTaskByRuntime`）中被组合并追加到智能体的 `Instructions`，受以下条件守卫：issue 指派给 squad **且** `squad.LeaderID == resp.Agent.ID`。它是被**追加**的（`Instructions + "\n\n" + briefing`），从不被替换，因此逐智能体的指令对通用行为仍是权威的，而 squad 简报作为任务专属上下文叠加在其之上。同样的注入也在快速创建认领路径上运行。
+
+这种认领时组合正是花名册始终保持新鲜的原因：添加成员、修改 `instructions`、归档成员 —— 下一次认领就会获取到，无需重新入队。
+
+### formatMention 必须能往返通过 ParseMentions
+
+花名册的价值完全取决于 leader 能否*粘贴*一个真正能触发的提及。`formatMention` 输出 `[@<name>](mention://<type>/<id>)`。这个字符串**必须**能往返通过 `util.ParseMentions` —— 纯文本 `@name` 不会触发任何人，而 Operating Protocol 以不可协商的措辞如此规定（"无提及链接 = 无委派"）。人类成员使用 `member` + `user_id`；智能体使用 `agent` + 智能体 id。
+
+<Callout type="warn" title="Drift hazard">
+如果你更改 `formatMention` 的输出形状，或 `util.MentionRe` ／ `util.ParseMentions` 接受的形状，你必须一并更改它们。不匹配意味着 leader 粘贴的提及 markdown 解析为空，而每次委派都会静默地无操作，同时 issue 陷入停滞。
+</Callout>
+
+## is_leader_task 标志
+
+`EnqueueTaskForSquadLeader` 在 task 行上设置 `IsLeaderTask: pgtype.Bool{Bool: isLeader, Valid: isLeader}`（`enqueueMentionTask`）。该标志的存在是为了让自触发守卫能够区分智能体**作为 leader** 发布的评论（跳过 —— 这是 leader 自己的委派）和**作为 worker** 发布的评论（不跳过）。当一个智能体同时是同一 squad 的 leader 和 worker 时，这一点很重要。`lastTaskWasLeader` ／ `GetLatestTaskIsLeaderForIssueAndAgent` 读取该智能体在该 issue 上最近一个 task 的标志来驱动这一决策。
+
+### 重试必须继承该标志
+
+一个丢失了 `is_leader_task` 的重试 task 会被自触发守卫错误分类，并可能错误地重新路由。每条克隆路径都保留它：
+
+| 克隆路径 | 来源 | 继承方式 |
+|---|---|---|
+| `CreateRetryTask`（`server/pkg/db/queries/agent.sql`） | 同运行时重试 | 选取 `p.is_leader_task` |
+| `CreateFailoverTask`（`agent.sql`） | 回退运行时路由 | 选取 `p.is_leader_task` |
+| `RerunIssue` ／ `enqueueRerunTask`（`task.go`） | 用户重跑 | `isLeader = sourceTask.IsLeaderTask`；squad 指派回退设置 `isLeader = true` |
+
+`CreateRetryTask` 的 SQL 注释明确说明了这一点：`is_leader_task` 是"继承的，以便重试的 task 保持与其父 task 相同的 squad 角色溯源，并且自触发守卫……继续将其识别为一个 leader task。"
+
+## 已归档 leader 在派发时 fail CLOSED
+
+由于创建／更新从不拒绝已归档的 leader，fail-closed 姿态便存在于**每条路由／派发路径**上 —— 它们都在任何 task 入队**之前**拒绝一个已归档（或无运行时、或离线）的 leader：
+
+- **指派 ／ backlog 提升** —— `isSquadLeaderReady`（`squad.go`）加载 leader 并运行 `service.AgentReadiness`；任何错误路径都返回 `false`（"无法判断时 fail closed"）。
+- **提及 ／ child-done** —— `enqueueMentionTask` 拒绝已归档的智能体（`agent is archived`）；`triggerChildDoneSquad` 和 `maybeReTriggerSquadLeaderOnMemberFailure` 都在入队前检查 `agent.ArchivedAt.Valid` 和 `!agent.RuntimeID.Valid`。
+- **Autopilot** —— `resolveAutopilotLeader` 对已归档的 squad 返回 `errSquadArchived`；`formatAdmissionReason` 用 `"squad leader "` 前缀重写跳过原因，使已归档／离线的 leader 在 `failure_reason` 中呈现为 `squad leader agent is archived` ／ `… at dispatch time`。
+
+`DeleteSquad` 还主动将存留的自动化重写到 leader（`TransferSquadAutopilotsToLeader`）并转移 issue 指派对象（`TransferSquadAssignees`），但对于任何绕过处理器的行，门控仍然 fail closed。
+
+## no_action 协议
+
+Operating Protocol 使记录评估在**每一轮都是强制的**，即便什么都没做。leader 调用：
+
+```bash
+agora squad activity <issue-id> action|no_action|failed --reason "<why>"
+```
+
+这会命中 `RecordSquadLeaderEvaluation`（`server/internal/handler/squad.go`），它：
+
+- 校验 `outcome ∈ {action, no_action, failed}`；
+- 要求 issue 指派给 squad；
+- **强制只有 squad leader 智能体**才能记录（`actorType == "agent" && actorID == squad.LeaderID`，否则 `403`）；
+- 要求一个有效的 `X-Task-ID` 头，其 task 属于该 issue；
+- 向 `activity_log` 写入一条 `squad_leader_evaluated` 活动，带有 `details.outcome`、`details.task_id`、`details.squad_id`、`details.reason`。
+
+### 逐 task 的 no_action 抑制
+
+当 leader 记录 `no_action` 时，它已明确判定无需任何操作 —— 因此系统**不得**为该 task 合成一条回退的"done"评论。在 task 完成时，`CompleteTask`（`task.go`）调用 `HasSquadLeaderNoActionEvaluationForTask`（`server/internal/service/squad_no_action.go`），当其返回 true 时跳过回退评论（`!suppressNoActionComment && !agentCommented`）。该查询（`server/pkg/db/queries/activity.sql`）以 `issue_id` + `agent_id` + `action = 'squad_leader_evaluated'` + `details->>'outcome' = 'no_action'` + `details->>'task_id' = @task_id` 为键 —— 抑制被限定在**确切的那个 task**，因此同一 issue 上稍后的触发不受影响。
+
+### no_action 之后手动评论时的 409
+
+同一条逐 task 的 no_action 记录也会阻止与该 task 关联的评论。在评论处理器（`server/internal/handler/comment.go`）中，一个智能体从内部 task 发布评论、而该 task 的 leader 已为它记录了 `no_action`，会被拒绝：
+
+```
+409 Conflict — "squad leader recorded no_action; comments are not allowed for this task"
+```
+
+这与恢复会话的父级 id 守卫（同样是 `409`）相邻，并使用同一个 `HasSquadLeaderNoActionEvaluationForTask` 检查。它防止一个已恢复的 leader 会话通过在已收尾的 task 下追加评论来与其自己记录的 no_action 决策相矛盾。
+
+## 源文件
+
+| 文件 | 本页依赖的符号 |
+|---|---|
+| `server/internal/handler/squad.go` | `CreateSquad`（leader 自动成员资格，角色 `"leader"`）、`UpdateSquad`（新 leader 自动添加）、`RemoveSquadMember`（leader 移除阻止）、`shouldEnqueueSquadLeaderOnAssign`、`isSquadLeaderReady`、`enqueueSquadLeaderTask`、`lastTaskWasLeader`、`RecordSquadLeaderEvaluation`、`commentMentionsAnyone` |
+| `server/internal/handler/squad_briefing.go` | `buildSquadLeaderBriefing`、`squadOperatingProtocol`、`buildSquadRoster`、`renderMemberRow`、`formatRosterRow`、`formatMention` |
+| `server/internal/handler/daemon.go` | `ClaimTaskByRuntime`（认领时的 squad leader 简报注入、`squad.LeaderID == resp.Agent.ID` 守卫、追加而非替换） |
+| `server/internal/service/squad_no_action.go` | `HasSquadLeaderNoActionEvaluationForTask` |
+| `server/internal/service/task.go` | `EnqueueTaskForSquadLeader`、`enqueueMentionTask`（`IsLeaderTask`、已归档智能体拒绝）、`CompleteTask`（回退评论的 no_action 抑制）、`RerunIssue` ／ `enqueueRerunTask`（`isLeader` 继承）、`maybeReTriggerSquadLeaderOnMemberFailure` |
+| `server/internal/service/autopilot.go` | `resolveAutopilotLeader`、`errSquadArchived`、`formatAdmissionReason`（`"squad leader "` 前缀）、直接的 `EnqueueTaskForSquadLeader` 调用 |
+| `server/internal/handler/issue_child_done.go` | `notifyParentOfChildDone`、`triggerChildDoneSquad`、`effectiveChildAgentOwner` |
+| `server/internal/handler/comment.go` | `computeCommentAgentTriggers`、`409` "squad leader recorded no_action" 守卫 |
+| `server/pkg/db/queries/agent.sql` | `CreateRetryTask` ／ `CreateFailoverTask`（`is_leader_task` 继承）、`GetLatestTaskIsLeaderForIssueAndAgent`、`HasPendingTaskForIssueAndAgent` |
+| `server/pkg/db/queries/activity.sql` | `HasSquadLeaderNoActionEvaluationForTask`（逐 task 的 `no_action` 查找） |
+| `server/internal/service/builtin_skills/agora-squads/SKILL.md` | 本页必须与之保持同步的面向智能体的 squad 契约 |
+
+当上述任何记录在案的符号、标志、字段或 CLI 形式移动或改变形状时，**在同一个 PR 中更新本页及其 source-map 配套文件（`references/squads-routing-source-map.md`）** —— 内置 `agora-squads` skill 是一份溯源到源码、交付给智能体的契约，因此过时的文档会静默地教授错误的 squad 行为。
