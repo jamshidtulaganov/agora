@@ -350,11 +350,23 @@ func (h *Handler) getOrCreateBitrixSprint(ctx context.Context, workspaceID, sdMa
 // integration has no member of its own) with a clear provenance header.
 // Bounded by the client (maxCommentsPerTask) and idempotent via the
 // bitrix_comments_imported metadata flag. All failures are logged, never fatal.
-func (h *Handler) importBitrixComments(ctx context.Context, wsID, issueID, ownerID pgtype.UUID, taskID string, st *bitrixSyncState) {
+func (h *Handler) importBitrixComments(ctx context.Context, wsID, issueID, ownerID pgtype.UUID, taskID, chatID string, st *bitrixSyncState) {
 	comments, err := st.client.GetTaskComments(ctx, taskID)
 	if err != nil {
 		slog.Warn("bitrix sync: fetch comments failed", "task_id", taskID, "error", err)
-		return
+		comments = nil // chat below may still have the discussion
+	}
+	// Newer Bitrix tasks keep their discussion in the task CHAT, not the legacy
+	// commentitem feed (which returns 0 for them). Pull the chat messages too and
+	// merge — the incremental dedup below keys on the (namespaced) message id, so
+	// commentitem + chat never double-import.
+	if chatID != "" {
+		if chatMsgs, cerr := st.client.GetTaskChatMessages(ctx, chatID); cerr != nil {
+			slog.Debug("bitrix sync: fetch chat messages failed",
+				"task_id", taskID, "chat_id", chatID, "error", cerr)
+		} else if len(chatMsgs) > 0 {
+			comments = append(comments, chatMsgs...)
+		}
 	}
 	if len(comments) == 0 {
 		return

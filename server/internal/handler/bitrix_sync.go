@@ -534,7 +534,7 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		// working the task in Bitrix — not frozen at import time.
 		if st.importContent {
 			if ownerID, oerr := h.bitrixWorkspaceOwner(ctx, ws.ID); oerr == nil {
-				h.importBitrixComments(ctx, ws.ID, existing.ID, ownerID, task.ID, st)
+				h.importBitrixComments(ctx, ws.ID, existing.ID, ownerID, task.ID, task.ChatID, st)
 				h.importBitrixAttachments(ctx, ws.ID, existing.ID, ownerID, task.ID, st)
 			}
 		}
@@ -674,7 +674,7 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 	// Only on first create (the dedup branch above returns before reaching here),
 	// so a re-sync doesn't duplicate comments/files.
 	if st.importContent {
-		h.importBitrixComments(ctx, ws.ID, res.Issue.ID, ownerID, task.ID, st)
+		h.importBitrixComments(ctx, ws.ID, res.Issue.ID, ownerID, task.ID, task.ChatID, st)
 		h.embedInlineDiskImages(ctx, ws.ID, res.Issue.ID, ownerID, st)
 		h.importBitrixAttachments(ctx, ws.ID, res.Issue.ID, ownerID, task.ID, st)
 	}

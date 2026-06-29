@@ -69,6 +69,9 @@ type Task struct {
 	// StageID is the scrum/kanban STAGE_ID (the live kanban column), resolved to
 	// a human stage name via task.stages.get. Empty for tasks not on a kanban.
 	StageID string
+	// ChatID is the task's comment-chat id (newer tasks); the chat dialog is
+	// "chat<ChatID>", read via im.dialog.messages.get.
+	ChatID string
 	// GroupName is the Bitrix workgroup name when the payload carried a nested
 	// group object (some tasks.task.get responses include {group:{id,name}}).
 	// Often empty — the handler resolves the name from GROUP_ID via a cached
@@ -134,6 +137,10 @@ type rawTask struct {
 	// (the coarse Bitrix task state). Resolved to a name via task.stages.get.
 	StageID    jsonStr `json:"stageId"`
 	StageUpper jsonStr `json:"STAGE_ID"`
+	// Task comment CHAT id — newer tasks keep discussion in a chat dialog
+	// (chat<ChatID>) rather than the legacy task.commentitem feed.
+	ChatID    jsonStr `json:"chatId"`
+	ChatUpper jsonStr `json:"CHAT_ID"`
 	// Group is the optional nested workgroup object Bitrix includes on some
 	// tasks.task.get responses ({"group":{"id":5,"name":"Sprint 12"}}). When
 	// present it lets us pick up the group NAME without a second sonet_group.get.
@@ -198,6 +205,7 @@ func (rt rawTask) toTask() Task {
 		Description:   firstNonEmpty(rt.Description, rt.DescUpper),
 		Status:        firstNonEmpty(rt.Status, rt.StatusUpper),
 		StageID:       firstNonEmpty(rt.StageID, rt.StageUpper),
+		ChatID:        firstNonEmpty(rt.ChatID, rt.ChatUpper),
 		ResponsibleID: firstNonEmpty(rt.Responsible, rt.RespUpper),
 		GroupID:       groupID,
 		GroupName:     firstNonEmpty(rt.Group.Name, rt.Group.NameUpper, rt.GroupUp.Name, rt.GroupUp.NameUpper),
@@ -328,7 +336,7 @@ func (c *Client) GetTask(ctx context.Context, taskID string) (*Task, error) {
 	form.Set("taskId", taskID)
 	// Ask Bitrix to return the fields we map. Bitrix ignores unknown select
 	// entries, so over-asking is safe and forward-compatible.
-	for _, f := range []string{"ID", "TITLE", "DESCRIPTION", "STATUS", "STAGE_ID", "RESPONSIBLE_ID", "GROUP_ID", "TAGS"} {
+	for _, f := range []string{"ID", "TITLE", "DESCRIPTION", "STATUS", "STAGE_ID", "CHAT_ID", "RESPONSIBLE_ID", "GROUP_ID", "TAGS"} {
 		form.Add("select[]", f)
 	}
 
@@ -582,6 +590,80 @@ func (c *Client) ListTasksByUser(ctx context.Context, userID, tag string) ([]Tas
 		}
 	}
 	return tasks, nil
+}
+
+// GetTaskChatMessages fetches a task's comment-CHAT messages (im.dialog.messages
+// .get on dialog "chat<chatID>") — how NEWER Bitrix tasks store their discussion
+// (the legacy task.commentitem feed is empty for them). Returns each message as
+// a Comment (id/author/date/text). Empty + nil error when chatID is blank; an
+// error (often a permission/scope error if the webhook lacks `im`) when the call
+// fails, which the caller logs and treats as "no chat comments".
+func (c *Client) GetTaskChatMessages(ctx context.Context, chatID string) ([]Comment, error) {
+	if c.baseURL == "" {
+		return nil, errors.New("bitrix: empty base URL")
+	}
+	chatID = strings.TrimSpace(chatID)
+	if chatID == "" {
+		return nil, nil
+	}
+	endpoint := c.baseURL + "im.dialog.messages.get"
+	form := url.Values{}
+	form.Set("DIALOG_ID", "chat"+chatID)
+	form.Set("LIMIT", "50")
+
+	body, err := c.post(ctx, endpoint, form)
+	if err != nil {
+		return nil, err
+	}
+	var parsed struct {
+		Result struct {
+			Messages []struct {
+				ID       jsonStr `json:"id"`
+				AuthorID jsonStr `json:"author_id"`
+				Date     jsonStr `json:"date"`
+				Text     jsonStr `json:"text"`
+			} `json:"messages"`
+			Users []struct {
+				ID   jsonStr `json:"id"`
+				Name jsonStr `json:"name"`
+			} `json:"users"`
+		} `json:"result"`
+		Error     string `json:"error"`
+		ErrorDesc string `json:"error_description"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("bitrix: decode im.dialog.messages.get: %w", err)
+	}
+	if parsed.Error != "" {
+		return nil, fmt.Errorf("bitrix: im.dialog.messages.get error %s: %s", parsed.Error, parsed.ErrorDesc)
+	}
+	names := make(map[string]string, len(parsed.Result.Users))
+	for _, u := range parsed.Result.Users {
+		if id := firstNonEmpty(u.ID); id != "" {
+			names[id] = firstNonEmpty(u.Name)
+		}
+	}
+	out := make([]Comment, 0, len(parsed.Result.Messages))
+	for _, m := range parsed.Result.Messages {
+		text := strings.TrimSpace(string(m.Text))
+		if text == "" {
+			continue // skip system/empty messages
+		}
+		authorID := firstNonEmpty(m.AuthorID)
+		author := names[authorID]
+		if author == "" {
+			author = "user " + authorID
+		}
+		out = append(out, Comment{
+			// Namespace the id so a chat message can't collide with a
+			// commentitem id in the issue's synced-id dedup set.
+			ID:     "chat-" + firstNonEmpty(m.ID),
+			Author: author,
+			Date:   firstNonEmpty(m.Date),
+			Text:   text,
+		})
+	}
+	return out, nil
 }
 
 // Comment is the subset of a Bitrix task comment Agora mirrors into an issue
