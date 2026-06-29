@@ -37,10 +37,19 @@ import (
 // instead of spawning duplicates.
 const bitrixTaskIDMetaKey = "bitrix_task_id"
 
-// bitrixCommentsImportedMetaKey marks an issue whose Bitrix comments have
-// already been mirrored, so a re-sync (ONTASKUPDATE) doesn't duplicate them.
-// Comments are imported once, on first issue creation.
+// bitrixCommentsImportedMetaKey marks an issue whose Bitrix comments have been
+// mirrored at least once (legacy/first-sync flag, kept for back-compat).
 const bitrixCommentsImportedMetaKey = "bitrix_comments_imported"
+
+// bitrixSyncedCommentIDsKey / bitrixSyncedFileIDsKey hold the arrays of Bitrix
+// comment / file ids already mirrored onto an issue, so each sync (webhook
+// ONTASKUPDATE / ONTASKCOMMENTADD or a periodic poll) imports only the NEW ones
+// — keeping the issue's discussion + files LIVE as the dev team keeps working
+// the task in Bitrix, instead of a one-shot import frozen at creation time.
+const (
+	bitrixSyncedCommentIDsKey = "bitrix_synced_comment_ids"
+	bitrixSyncedFileIDsKey    = "bitrix_synced_file_ids"
+)
 
 // bitrixFilesImportedMetaKey marks an issue whose Bitrix attachments (and any
 // extracted video frames) have already been imported, so a re-sync doesn't
@@ -461,12 +470,11 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		// older issues synced before this existed get backfilled on re-import.
 		h.setBitrixIssueMetadata(ctx, existing.ID, ws.ID, task.ResponsibleID, responsible, stageName, task.ID)
 
-		// Backfill the task's Bitrix comments (+ attachments) onto issues that were
-		// imported before content-import existed, or first created via this update
-		// path — so an existing issue gains its Bitrix discussion on the next sync
-		// instead of only brand-new imports getting it. One-shot: importBitrix*
-		// stamps a *_imported metadata flag, so a later re-sync skips the work.
-		if st.importContent && metaString(existing.Metadata, bitrixCommentsImportedMetaKey) == "" {
+		// LIVE content sync: on every update, mirror any Bitrix comments +
+		// attachments ADDED since the last sync (importBitrix* dedups by item id),
+		// so an issue's discussion and files stay current while the dev team keeps
+		// working the task in Bitrix — not frozen at import time.
+		if st.importContent {
 			if ownerID, oerr := h.bitrixWorkspaceOwner(ctx, ws.ID); oerr == nil {
 				h.importBitrixComments(ctx, ws.ID, existing.ID, ownerID, task.ID, st)
 				h.importBitrixAttachments(ctx, ws.ID, existing.ID, ownerID, task.ID, st)

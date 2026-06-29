@@ -360,8 +360,16 @@ func (h *Handler) importBitrixComments(ctx context.Context, wsID, issueID, owner
 		return
 	}
 
+	// Incremental: import only comments not already mirrored (dedup by Bitrix
+	// comment id), so a re-sync picks up the discussion ADDED in Bitrix since the
+	// last sync instead of either duplicating the feed or skipping it entirely.
+	seen := h.bitrixSyncedIDSet(ctx, issueID, bitrixSyncedCommentIDsKey)
 	imported := 0
 	for _, c := range comments {
+		cid := strings.TrimSpace(c.ID)
+		if cid != "" && seen[cid] {
+			continue // already synced
+		}
 		content := formatBitrixComment(c)
 		if strings.TrimSpace(content) == "" {
 			continue
@@ -378,13 +386,19 @@ func (h *Handler) importBitrixComments(ctx context.Context, wsID, issueID, owner
 				"task_id", taskID, "issue_id", util.UUIDToString(issueID), "error", err)
 			continue
 		}
+		if cid != "" {
+			seen[cid] = true
+		}
 		imported++
 	}
 
-	// Mark done so a re-sync (ONTASKUPDATE) doesn't duplicate the feed.
+	if imported > 0 {
+		h.setBitrixSyncedIDSet(ctx, wsID, issueID, bitrixSyncedCommentIDsKey, seen)
+	}
+	// Keep the legacy first-sync flag for back-compat (UI / older checks).
 	h.setBitrixImportFlag(ctx, wsID, issueID, bitrixCommentsImportedMetaKey)
 	slog.Info("bitrix sync: imported comments",
-		"task_id", taskID, "issue_id", util.UUIDToString(issueID), "count", imported)
+		"task_id", taskID, "issue_id", util.UUIDToString(issueID), "new", imported, "total", len(seen))
 }
 
 // formatBitrixComment renders a Bitrix comment as an Agora issue-comment body
@@ -433,9 +447,17 @@ func (h *Handler) importBitrixAttachments(ctx context.Context, wsID, issueID, ow
 		return
 	}
 
+	// Incremental: only download + store files not already mirrored (dedup by
+	// Bitrix file id), so a re-sync pulls in files ATTACHED in Bitrix since the
+	// last sync without re-downloading the whole set.
+	seen := h.bitrixSyncedIDSet(ctx, issueID, bitrixSyncedFileIDsKey)
 	stored := 0
 	var embeds []bitrixEmbed
 	for _, f := range files {
+		fid := strings.TrimSpace(f.ID)
+		if fid != "" && seen[fid] {
+			continue // already synced
+		}
 		data, ctype, err := st.client.DownloadFile(ctx, f.URL)
 		if err != nil {
 			slog.Warn("bitrix sync: download attachment failed",
@@ -449,6 +471,9 @@ func (h *Handler) importBitrixAttachments(ctx context.Context, wsID, issueID, ow
 				"task_id", taskID, "name", f.Name, "error", err)
 			continue
 		}
+		if fid != "" {
+			seen[fid] = true
+		}
 		stored++
 		embeds = append(embeds, bitrixEmbed{url: url, name: f.Name, contentType: contentType})
 		// Videos are stored as-is and surfaced as a link; frame extraction
@@ -458,13 +483,16 @@ func (h *Handler) importBitrixAttachments(ctx context.Context, wsID, issueID, ow
 		// ffmpeg on the stored video via extractAndStoreFrames-equivalent).
 	}
 
-	// Surface every stored file inline in the issue description (videos as 🎬 links).
+	// Surface every newly stored file inline in the issue description.
 	h.appendBitrixAttachmentsToDescription(ctx, wsID, issueID, embeds)
 
+	if stored > 0 {
+		h.setBitrixSyncedIDSet(ctx, wsID, issueID, bitrixSyncedFileIDsKey, seen)
+	}
 	h.setBitrixImportFlag(ctx, wsID, issueID, bitrixFilesImportedMetaKey)
 	slog.Info("bitrix sync: imported attachments",
 		"task_id", taskID, "issue_id", util.UUIDToString(issueID),
-		"files", stored)
+		"new", stored, "total", len(seen))
 }
 
 // storeBitrixAttachment uploads bytes to Storage and records the attachment row
@@ -803,5 +831,50 @@ func (h *Handler) setBitrixImportFlag(ctx context.Context, wsID, issueID pgtype.
 		Value:       val,
 	}); err != nil {
 		slog.Debug("bitrix sync: set import flag failed", "key", key, "error", err)
+	}
+}
+
+// bitrixSyncedIDSet reads the set of already-synced Bitrix item ids (comment or
+// file ids) from an issue-metadata array key, so a re-sync mirrors only NEW
+// items rather than re-importing the whole feed. Empty set on any miss.
+func (h *Handler) bitrixSyncedIDSet(ctx context.Context, issueID pgtype.UUID, key string) map[string]bool {
+	set := map[string]bool{}
+	var raw []byte
+	if err := h.DB.QueryRow(ctx, `SELECT metadata FROM issue WHERE id = $1`, issueID).Scan(&raw); err != nil || len(raw) == 0 {
+		return set
+	}
+	var meta map[string]json.RawMessage
+	if json.Unmarshal(raw, &meta) != nil {
+		return set
+	}
+	if arr, ok := meta[key]; ok {
+		var ids []string
+		if json.Unmarshal(arr, &ids) == nil {
+			for _, id := range ids {
+				if s := strings.TrimSpace(id); s != "" {
+					set[s] = true
+				}
+			}
+		}
+	}
+	return set
+}
+
+// setBitrixSyncedIDSet persists the merged synced-id set back onto the issue
+// metadata (sorted for a stable value). Best-effort.
+func (h *Handler) setBitrixSyncedIDSet(ctx context.Context, wsID, issueID pgtype.UUID, key string, set map[string]bool) {
+	ids := make([]string, 0, len(set))
+	for id := range set {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	val, err := json.Marshal(ids)
+	if err != nil {
+		return
+	}
+	if _, err := h.Queries.SetIssueMetadataKey(ctx, db.SetIssueMetadataKeyParams{
+		ID: issueID, WorkspaceID: wsID, Key: key, Value: val,
+	}); err != nil {
+		slog.Debug("bitrix sync: set synced-id set failed", "key", key, "error", err)
 	}
 }

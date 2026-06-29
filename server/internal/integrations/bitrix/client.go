@@ -1097,7 +1097,10 @@ func errorMessage(body []byte) string {
 func ParseWebhookEvent(values url.Values) (event string, taskID string, ok bool) {
 	event = strings.ToUpper(strings.TrimSpace(values.Get("event")))
 	switch event {
-	case "ONTASKADD", "ONTASKUPDATE":
+	case "ONTASKADD", "ONTASKUPDATE",
+		// Comment events keep the imported issue's discussion LIVE: a comment
+		// added/edited in Bitrix re-syncs the task, mirroring the new comment.
+		"ONTASKCOMMENTADD", "ONTASKCOMMENTUPDATE":
 	default:
 		return event, "", false
 	}
@@ -1107,6 +1110,10 @@ func ParseWebhookEvent(values url.Values) (event string, taskID string, ok bool)
 		"data[FIELDS_BEFORE][ID]",
 		"data[fields_after][id]",
 		"DATA[FIELDS_AFTER][ID]",
+		// Comment events carry the parent task id under TASK_ID, not ID.
+		"data[FIELDS_AFTER][TASK_ID]",
+		"data[fields_after][task_id]",
+		"DATA[FIELDS_AFTER][TASK_ID]",
 	} {
 		if id := strings.TrimSpace(values.Get(key)); id != "" {
 			// Bitrix occasionally pads ids; strconv round-trip normalizes
