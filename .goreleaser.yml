@@ -4,7 +4,7 @@ project_name: agora
 
 # Source repo (jamshidtulaganov/agora) is PRIVATE, so the CLI release can't live
 # on its own releases page (it would be private too). Publish to the PUBLIC
-# distribution repo instead — multica releases to its own (public) repo; this is
+# distribution repo instead — agora releases to its own (public) repo; this is
 # the only adaptation needed for a private source.
 release:
   github:

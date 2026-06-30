@@ -14,7 +14,7 @@ brew install agora-ai/tap/agora
 ### Build from Source
 
 ```bash
-git clone https://github.com/multica-ai/multica.git
+git clone https://github.com/jamshidtulaganov/agora.git
 cd agora
 make build
 cp server/bin/agora /usr/local/bin/agora
@@ -34,11 +34,11 @@ if [ "$ARCH" = "x86_64" ]; then
 fi
 
 # Get the latest release tag from GitHub
-LATEST=$(curl -sI https://github.com/multica-ai/multica/releases/latest \
+LATEST=$(curl -sI https://github.com/jamshidtulaganov/agora/releases/latest \
   | grep -i '^location:' | sed 's/.*tag\///' | tr -d '\r\n')
 
 # Download and extract
-curl -sL "https://github.com/multica-ai/multica/releases/download/${LATEST}/agora_${OS}_${ARCH}.tar.gz" \
+curl -sL "https://github.com/jamshidtulaganov/agora/releases/download/${LATEST}/agora_${OS}_${ARCH}.tar.gz" \
   -o /tmp/agora.tar.gz
 tar -xzf /tmp/agora.tar.gz -C /tmp agora
 sudo mv /tmp/agora /usr/local/bin/agora

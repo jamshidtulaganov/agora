@@ -4,7 +4,7 @@ This document is the source of truth for the analytics events Agora ships
 to PostHog. Events feed the acquisition → activation → expansion funnel that
 drives our weekly Active Workspaces (WAW) north-star metric.
 
-See [MUL-1122](https://github.com/multica-ai/multica) for the design context.
+See [MUL-1122](https://github.com/jamshidtulaganov/agora) for the design context.
 
 > **PostHog is reserved for user/product-behaviour events.** High-volume
 > operational / execution-lifecycle telemetry — runtime lifecycle

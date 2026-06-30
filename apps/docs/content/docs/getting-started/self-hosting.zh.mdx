@@ -25,7 +25,7 @@ Two commands to set up everything:
 
 ```bash
 # Install CLI + provision self-host server
-curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash -s -- --with-server
+curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.sh | bash -s -- --with-server
 
 # Configure CLI, authenticate, and start the daemon
 agora setup self-host
@@ -46,7 +46,7 @@ For a step-by-step setup, see below.
 ### Step 1 — Start the Server
 
 ```bash
-git clone https://github.com/multica-ai/multica.git
+git clone https://github.com/jamshidtulaganov/agora.git
 cd agora
 make selfhost
 ```
@@ -149,7 +149,7 @@ SELECT plan_time, status, attempt, runner_id,
 ```
 
 <Callout>
-**Upgrading from `v0.3.4` to `v0.3.5+`?** As of MUL-2957 the `migrate up` command runs an idempotent monthly-slice backfill automatically right before applying migration `103`, so the upgrade completes in a single invocation — no operator step required. If you are on a pre-MUL-2957 binary or the auto-hook fails for an environmental reason, run `backfill_task_usage_hourly` against the same database and re-run the upgrade. Full recovery flow lives in [`SELF_HOSTING_ADVANCED.md → Usage Dashboard Rollup`](https://github.com/multica-ai/multica/blob/main/SELF_HOSTING_ADVANCED.md#usage-dashboard-rollup).
+**Upgrading from `v0.3.4` to `v0.3.5+`?** As of MUL-2957 the `migrate up` command runs an idempotent monthly-slice backfill automatically right before applying migration `103`, so the upgrade completes in a single invocation — no operator step required. If you are on a pre-MUL-2957 binary or the auto-hook fails for an environmental reason, run `backfill_task_usage_hourly` against the same database and re-run the upgrade. Full recovery flow lives in [`SELF_HOSTING_ADVANCED.md → Usage Dashboard Rollup`](https://github.com/jamshidtulaganov/agora/blob/main/SELF_HOSTING_ADVANCED.md#usage-dashboard-rollup).
 </Callout>
 
 ### Compatibility paths (existing deployments only)
@@ -180,7 +180,7 @@ If you already have a `pg_cron` job in production and want to retire it, the saf
 
 External cron / systemd timer / Kubernetes `CronJob` setups that call `SELECT rollup_task_usage_hourly()` directly can be retired the same way — once `sys_cron_executions` shows steady SUCCESS rows from the in-process scheduler, the external job is redundant and can be removed.
 
-Full reference (audit table semantics, advisory lock 4246, the standalone backfill command, flag descriptions, the migration auto-hook) lives in [`SELF_HOSTING_ADVANCED.md → Usage Dashboard Rollup`](https://github.com/multica-ai/multica/blob/main/SELF_HOSTING_ADVANCED.md#usage-dashboard-rollup).
+Full reference (audit table semantics, advisory lock 4246, the standalone backfill command, flag descriptions, the migration auto-hook) lives in [`SELF_HOSTING_ADVANCED.md → Usage Dashboard Rollup`](https://github.com/jamshidtulaganov/agora/blob/main/SELF_HOSTING_ADVANCED.md#usage-dashboard-rollup).
 
 ## Stopping Services
 
@@ -226,7 +226,7 @@ All configuration is done via environment variables. Copy `.env.example` as a st
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string. Keep the password segment in sync with `POSTGRES_PASSWORD`. | `postgres://agora:<postgres-password>@localhost:5432/multica?sslmode=disable` |
+| `DATABASE_URL` | PostgreSQL connection string. Keep the password segment in sync with `POSTGRES_PASSWORD`. | `postgres://agora:<postgres-password>@localhost:5432/agora?sslmode=disable` |
 | `POSTGRES_PASSWORD` | **Must change from default.** Password used by the bundled Postgres container. Keep it in sync with `DATABASE_URL`. | `openssl rand -hex 24` |
 | `JWT_SECRET` | **Must change from default.** Secret key for signing JWT tokens. Use a long random string. | `openssl rand -hex 32` |
 | `FRONTEND_ORIGIN` | URL where the frontend is served (used for CORS) | `https://app.example.com` |

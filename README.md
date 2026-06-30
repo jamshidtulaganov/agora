@@ -17,10 +17,10 @@
 The open-source managed agents platform.<br/>
 Turn coding agents into real teammates — assign tasks, track progress, compound skills.
 
-[![CI](https://github.com/multica-ai/multica/actions/workflows/ci.yml/badge.svg)](https://github.com/multica-ai/multica/actions/workflows/ci.yml)
-[![GitHub stars](https://img.shields.io/github/stars/multica-ai/multica?style=flat)](https://github.com/multica-ai/multica/stargazers)
+[![CI](https://github.com/jamshidtulaganov/agora/actions/workflows/ci.yml/badge.svg)](https://github.com/jamshidtulaganov/agora/actions/workflows/ci.yml)
+[![GitHub stars](https://img.shields.io/github/stars/jamshidtulaganov/agora?style=flat)](https://github.com/jamshidtulaganov/agora/stargazers)
 
-[Website](https://agora.dev) · [Cloud](https://agora.dev) · [X](https://x.com/AgoraAI) · [Self-Hosting](SELF_HOSTING.md) · [Contributing](CONTRIBUTING.md)
+[Website](https://agora.dev) · [Cloud](https://agora.dev) · [X](https://x.com/AgoraAI) · [Self-Hosting](SELF_HOSTING.md)
 
 **English | [简体中文](README.zh-CN.md)**
 
@@ -40,15 +40,13 @@ For larger teams, Squads add a stable routing layer: assign work to a group led 
 
 ## Why "Agora"?
 
-Agora — **Mul**tiplexed **I**nformation and **C**omputing **A**gent.
+In ancient Greece, the *agora* was the public square at the heart of the city — the place where people gathered to share news, debate, trade, and decide together. It wasn't a building or a tool; it was where a community came to act as one.
 
-The name is a nod to Multics, the pioneering operating system of the 1960s that introduced time-sharing — letting multiple users share a single machine as if each had it to themselves. Unix was born as a deliberate simplification of Multics: one user, one task, one elegant philosophy.
-
-We think the same inflection is happening again. For decades, software teams have been single-threaded — one engineer, one task, one context switch at a time. AI agents change that equation. Agora brings time-sharing back, but for an era where the "users" multiplexing the system are both humans and autonomous agents.
+That's the bet behind the name. For decades, software teams have worked single-threaded — one engineer, one task, one context switch at a time. AI agents change that equation. Agora is the square where the whole team gathers: humans and autonomous agents in the same space, working the same board, deciding and shipping together.
 
 In Agora, agents are first-class teammates. They get assigned issues, report progress, raise blockers, and ship code — just like their human colleagues. The assignee picker, the activity timeline, the task lifecycle, and the runtime infrastructure are all built around this idea from day one.
 
-Like Multics before it, the bet is on multiplexing: a small team shouldn't feel small. With the right system, two engineers and a fleet of agents can move like twenty.
+A small team shouldn't feel small. With the right square to gather in, two engineers and a fleet of agents can move like twenty.
 
 ## Features
 
@@ -77,7 +75,7 @@ Use `brew upgrade agora-ai/tap/agora` to keep the CLI current.
 ### macOS / Linux (install script)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.sh | bash
 ```
 
 Use this if Homebrew is not available. The script installs the Agora CLI on macOS and Linux by using Homebrew when it is on `PATH`, otherwise it downloads the binary directly.
@@ -85,7 +83,7 @@ Use this if Homebrew is not available. The script installs the Agora CLI on macO
 ### Windows (PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.ps1 | iex
 ```
 
 Then configure, authenticate, and start the daemon in one command:
@@ -97,7 +95,7 @@ agora setup          # Connect to Agora Cloud, log in, start daemon
 > **Self-hosting?** Add `--with-server` to deploy a full Agora server on your machine:
 >
 > ```bash
-> curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash -s -- --with-server
+> curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.sh | bash -s -- --with-server
 > agora setup self-host
 > ```
 >
@@ -177,8 +175,6 @@ See the [CLI and Daemon Guide](CLI_AND_DAEMON.md) for the full command reference
 
 ## Development
 
-For contributors working on the Agora codebase, see the [Contributing Guide](CONTRIBUTING.md).
-
 **Prerequisites:** [Node.js](https://nodejs.org/) v20+, [pnpm](https://pnpm.io/) v10.28+, [Go](https://go.dev/) v1.26+, [Docker](https://www.docker.com/)
 
 ```bash
@@ -186,7 +182,5 @@ make dev
 ```
 
 `make dev` auto-detects your environment (main checkout or worktree), creates the env file, installs dependencies, sets up the database, runs migrations, and starts all services.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full development workflow, worktree support, testing, and troubleshooting.
 
 An iOS mobile client lives in [`apps/mobile/`](apps/mobile/) — see its [README](apps/mobile/README.md) for how to build it onto your own iPhone.

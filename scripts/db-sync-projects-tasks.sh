@@ -24,7 +24,7 @@ set -euo pipefail
 cd "$(cd "$(dirname "$0")/.." && pwd)"
 
 WS="'b231c11f-ae45-4aab-8f31-0f5cfac6ddd7','356e2301-64fd-440b-ab68-7fcfa76088b1'"
-C=multica-postgres-1
+C=agora-postgres-1
 OUT="$HOME/agora-db-migrate"; mkdir -p "$OUT"
 TS=$(date +%Y%m%d_%H%M%S)
 
@@ -37,8 +37,8 @@ fly proxy 16432:5432 -a sd-agora-db >/dev/null 2>&1 & PXP=$!
 trap 'kill $PXP 2>/dev/null || true' EXIT
 sleep 5
 
-LP(){ docker exec -i -e PGPASSWORD="$LOCAL_PW" $C psql -U multica -d multica "$@"; }
-PP(){ docker exec -i -e PGPASSWORD="$PROD_PW" $C psql -h host.docker.internal -p 16432 -U multica -d multica "$@"; }
+LP(){ docker exec -i -e PGPASSWORD="$LOCAL_PW" $C psql -U agora -d agora "$@"; }
+PP(){ docker exec -i -e PGPASSWORD="$PROD_PW" $C psql -h host.docker.internal -p 16432 -U agora -d agora "$@"; }
 
 echo "=== PROD counts BEFORE (the 2 workspaces) ==="
 PP -c "select 'project' t,count(*) n from project where workspace_id in ($WS)
@@ -53,7 +53,7 @@ read -r -p "Add local projects+tasks to prod (ADDITIVE, never overwrites)? type 
 # Fresh full prod backup as an undo point (additive is low risk, but cheap insurance).
 BAK="$OUT/prod_presync_$TS.dump"
 echo "Backing up prod -> $BAK"
-docker exec -e PGPASSWORD="$PROD_PW" $C pg_dump -h host.docker.internal -p 16432 -U multica -d multica -Fc > "$BAK"
+docker exec -e PGPASSWORD="$PROD_PW" $C pg_dump -h host.docker.internal -p 16432 -U agora -d agora -Fc > "$BAK"
 SZ=$(stat -f%z "$BAK" 2>/dev/null || stat -c%s "$BAK")
 [ "$SZ" -gt 10000 ] || { echo "backup too small ($SZ) — ABORT"; exit 1; }
 echo "  backup ok ($SZ bytes)"

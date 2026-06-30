@@ -1292,3 +1292,80 @@ func TestWriteRuntimeConfigFileAlwaysInsertsFixedManagedSeparator(t *testing.T) 
 		})
 	}
 }
+
+// A file written by a pre-rebrand daemon carries the legacy MULTICA-RUNTIME
+// markers. The next Inject must replace that block in place (and upgrade it to
+// the AGORA-RUNTIME markers) rather than orphan it beneath a fresh block —
+// otherwise the file grows unboundedly across the rename, exactly the failure
+// the marker-agnostic locateMarkerBlock exists to prevent.
+func TestWriteRuntimeConfigFileReplacesLegacyMarkerBlock(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "AGENTS.md")
+
+	const userTop = "# Repo AGENTS.md\n\nrules above\n\n"
+	legacyBlock := legacyRuntimeMarkerBegin + "\nstale brief from old daemon\n" + legacyRuntimeMarkerEnd + "\n"
+	if err := os.WriteFile(path, []byte(userTop+legacyBlock), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	const newBrief = "fresh brief"
+	if err := writeRuntimeConfigFile(path, newBrief); err != nil {
+		t.Fatalf("writeRuntimeConfigFile: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	s := string(got)
+	if strings.Contains(s, "stale brief from old daemon") {
+		t.Errorf("legacy block body must be replaced, got:\n%s", s)
+	}
+	if strings.Contains(s, legacyRuntimeMarkerBegin) || strings.Contains(s, legacyRuntimeMarkerEnd) {
+		t.Errorf("legacy markers must be upgraded away, got:\n%s", s)
+	}
+	if got, want := strings.Count(s, runtimeMarkerBegin), 1; got != want {
+		t.Errorf("expected exactly %d AGORA begin marker, got %d:\n%s", want, got, s)
+	}
+	if got, want := strings.Count(s, runtimeMarkerEnd), 1; got != want {
+		t.Errorf("expected exactly %d AGORA end marker, got %d:\n%s", want, got, s)
+	}
+	if !strings.HasPrefix(s, userTop) {
+		t.Errorf("user content above the legacy block must be preserved, got:\n%s", s)
+	}
+	if !strings.Contains(s, newBrief) {
+		t.Errorf("new brief body missing from output:\n%s", s)
+	}
+}
+
+// Cleanup must also excise a legacy MULTICA-RUNTIME block (left by a
+// pre-rebrand daemon) so a user's local_directory config rolls back to its
+// original bytes after the rename, not just for newly written blocks.
+func TestCleanupRuntimeConfigExcisesLegacyMarkerBlock(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "CLAUDE.md")
+
+	const userBefore = "# Repo CLAUDE.md\n\nuser line above\n"
+	legacyBlock := legacyRuntimeMarkerBegin + "\nstale brief\n" + legacyRuntimeMarkerEnd + "\n"
+	// Mirror the production separator Inject puts before an appended block so
+	// Cleanup recognises this as a pre-existing (not Inject-created) file.
+	if err := os.WriteFile(path, []byte(userBefore+runtimeManagedSeparator+legacyBlock), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if err := CleanupRuntimeConfig(dir, "claude"); err != nil {
+		t.Fatalf("CleanupRuntimeConfig: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	s := string(got)
+	if strings.Contains(s, legacyRuntimeMarkerBegin) || strings.Contains(s, legacyRuntimeMarkerEnd) {
+		t.Errorf("legacy marker block must be removed, got:\n%s", s)
+	}
+	if s != userBefore {
+		t.Errorf("user content must be restored byte-for-byte\n got:\n%q\nwant:\n%q", s, userBefore)
+	}
+}

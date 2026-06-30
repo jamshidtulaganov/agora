@@ -59,8 +59,8 @@ The original implementation called `os.WriteFile` unconditionally. The first tim
 The managed region is delimited by two HTML-comment markers, defined as constants:
 
 ```go
-runtimeMarkerBegin = "<!-- BEGIN MULTICA-RUNTIME (auto-managed; do not edit) -->"
-runtimeMarkerEnd   = "<!-- END MULTICA-RUNTIME -->"
+runtimeMarkerBegin = "<!-- BEGIN AGORA-RUNTIME (auto-managed; do not edit) -->"
+runtimeMarkerEnd   = "<!-- END AGORA-RUNTIME -->"
 ```
 
 HTML comments are used so the markers are inert in every Markdown renderer and harmless when fed to the agent as instructions. **Changing the marker text is a breaking change** for any file that already carries the previous markers — a stale-marker file would no longer be recognised, so the next inject would append a fresh block beside the orphaned one. Bump the constants deliberately.
@@ -100,7 +100,7 @@ The `runtimeManagedSeparator` is **unconditional** when appending — even for f
 
 The end marker is searched for **strictly after** the begin marker. Two malformed cases a naive `strings.Index` pair would mishandle:
 
-- **Stray end marker before any begin.** User content may carry a literal `<!-- END MULTICA-RUNTIME -->` (e.g. a docs snippet showing the wire format). A naive parser would find that end, reject the block, and append a fresh block every run — growing the file unboundedly because the stray end stays in place.
+- **Stray end marker before any begin.** User content may carry a literal `<!-- END AGORA-RUNTIME -->` (e.g. a docs snippet showing the wire format). A naive parser would find that end, reject the block, and append a fresh block every run — growing the file unboundedly because the stray end stays in place.
 - **Crash between begin and end.** If a previous run died after writing begin but before end, the file holds a half-block. When no end is found after begin, `locateMarkerBlock` treats the rest of the file as the block (`return start, len(content), true`) so the next write **replaces the half-block in place** instead of stacking a new block beneath it.
 
 ```go

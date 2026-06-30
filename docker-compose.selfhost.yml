@@ -16,15 +16,15 @@
 # Frontend: http://localhost:${FRONTEND_PORT:-3000}
 # Backend:  http://localhost:${BACKEND_PORT:-${API_PORT:-${SERVER_PORT:-${PORT:-8080}}}}
 
-name: multica
+name: agora
 
 services:
   postgres:
     image: pgvector/pgvector:pg17
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-multica}
-      POSTGRES_USER: ${POSTGRES_USER:-multica}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-multica}
+      POSTGRES_DB: ${POSTGRES_DB:-agora}
+      POSTGRES_USER: ${POSTGRES_USER:-agora}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agora}
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
@@ -32,14 +32,14 @@ services:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER:-multica} -d ${POSTGRES_DB:-multica}",
+          "pg_isready -U ${POSTGRES_USER:-agora} -d ${POSTGRES_DB:-agora}",
         ]
       interval: 5s
       timeout: 5s
       retries: 5
 
   backend:
-    image: ${AGORA_BACKEND_IMAGE:-ghcr.io/multica-ai/multica-backend}:${AGORA_IMAGE_TAG:-latest}
+    image: ${AGORA_BACKEND_IMAGE:-ghcr.io/jamshidtulaganov/agora-backend}:${AGORA_IMAGE_TAG:-latest}
     depends_on:
       postgres:
         condition: service_healthy
@@ -48,7 +48,7 @@ services:
     volumes:
       - backend_uploads:/app/data/uploads
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-multica}:${POSTGRES_PASSWORD:-multica}@postgres:5432/${POSTGRES_DB:-multica}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-agora}:${POSTGRES_PASSWORD:-agora}@postgres:5432/${POSTGRES_DB:-agora}?sslmode=disable
       PORT: "8080"
       METRICS_ADDR: ${METRICS_ADDR:-}
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
@@ -140,7 +140,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ${AGORA_WEB_IMAGE:-ghcr.io/multica-ai/multica-web}:${AGORA_IMAGE_TAG:-latest}
+    image: ${AGORA_WEB_IMAGE:-ghcr.io/jamshidtulaganov/agora-web}:${AGORA_IMAGE_TAG:-latest}
     depends_on:
       - backend
     ports:

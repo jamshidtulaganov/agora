@@ -8,7 +8,7 @@ version: 0.1.0
 appVersion: "latest"
 home: https://agora.dev
 sources:
-  - https://github.com/multica-ai/multica
+  - https://github.com/jamshidtulaganov/agora
 keywords:
   - agora
   - issue-tracker

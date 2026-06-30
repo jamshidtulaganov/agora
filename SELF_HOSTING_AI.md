@@ -12,7 +12,7 @@ This document is designed for AI agents to execute. Follow these steps exactly t
 
 ```bash
 # Install CLI + provision self-host server
-curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash -s -- --with-server
+curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.sh | bash -s -- --with-server
 
 # Configure CLI for localhost, authenticate, and start daemon
 agora setup self-host
@@ -28,7 +28,7 @@ Wait for the server output `✓ Agora server is running and CLI is ready!` befor
 ## Alternative: Manual Setup
 
 ```bash
-git clone https://github.com/multica-ai/multica.git
+git clone https://github.com/jamshidtulaganov/agora.git
 cd agora
 make selfhost
 brew install agora-ai/tap/agora

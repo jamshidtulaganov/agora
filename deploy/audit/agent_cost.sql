@@ -1,9 +1,9 @@
 -- Agent cost audit — per-issue / per-model token spend with a $ estimate.
 --
 -- Run:
---   docker exec -i multica-postgres-1 psql -U multica -d multica -v days=30 -f - < deploy/audit/agent_cost.sql
+--   docker exec -i agora-postgres-1 psql -U agora -d agora -v days=30 -f - < deploy/audit/agent_cost.sql
 -- or pick a window inline:
---   docker exec -i multica-postgres-1 psql -U multica -d multica -v days=7  -f - < deploy/audit/agent_cost.sql
+--   docker exec -i agora-postgres-1 psql -U agora -d agora -v days=7  -f - < deploy/audit/agent_cost.sql
 --
 -- WHY: small tasks were observed costing opus[1m] money (a CSS block-align fix
 -- ran at ~$2.82). This is the standing instrument to (a) confirm task_usage is

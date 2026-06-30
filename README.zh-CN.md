@@ -17,10 +17,10 @@
 开源的 Managed Agents 平台。<br/>
 将编码 Agent 变成真正的队友——分配任务、跟踪进度、积累技能。
 
-[![CI](https://github.com/multica-ai/multica/actions/workflows/ci.yml/badge.svg)](https://github.com/multica-ai/multica/actions/workflows/ci.yml)
-[![GitHub stars](https://img.shields.io/github/stars/multica-ai/multica?style=flat)](https://github.com/multica-ai/multica/stargazers)
+[![CI](https://github.com/jamshidtulaganov/agora/actions/workflows/ci.yml/badge.svg)](https://github.com/jamshidtulaganov/agora/actions/workflows/ci.yml)
+[![GitHub stars](https://img.shields.io/github/stars/jamshidtulaganov/agora?style=flat)](https://github.com/jamshidtulaganov/agora/stargazers)
 
-[官网](https://agora.dev) · [云服务](https://agora.dev) · [X](https://x.com/AgoraAI) · [自部署指南](SELF_HOSTING.md) · [参与贡献](CONTRIBUTING.md)
+[官网](https://agora.dev) · [云服务](https://agora.dev) · [X](https://x.com/AgoraAI) · [自部署指南](SELF_HOSTING.md)
 
 **[English](README.md) | 简体中文**
 
@@ -40,15 +40,13 @@ Agora 将编码 Agent 变成真正的队友。像分配给同事一样分配给 
 
 ## 为什么叫 "Agora"？
 
-Agora——**Mul**tiplexed **I**nformation and **C**omputing **A**gent。
+在古希腊，*agora*（阿戈拉）是城邦中心的公共广场——人们在这里交流消息、辩论、交易、共同决策。它不是某座建筑或某件工具，而是一个社群聚到一起、作为整体行动的地方。
 
-这个名字是在向 20 世纪 60 年代具有开创意义的操作系统 Multics 致意。Multics 首创了分时系统，让多个用户能够共享同一台机器，同时又像各自独占它一样使用。Unix 则是在有意简化 Multics 的基础上诞生的，强调一个用户、一个任务、一种优雅的哲学。
-
-我们认为，类似的转折点正在再次出现。几十年来，软件团队一直处于一种单线程的工作模式，一个工程师处理一个任务，一次只专注于一个上下文。AI agents 改变了这个等式。Agora 将"分时"重新带回这个时代，只不过今天在系统中进行多路复用的"用户"，既包括人类，也包括自主代理。
+这正是这个名字背后的判断。几十年来，软件团队一直处于单线程的工作模式：一个工程师、一个任务、一次只专注于一个上下文。AI agents 改变了这个等式。Agora 就是让整个团队聚集的广场：人类与自主 agents 处在同一个空间，共用同一块看板，一起决策、一起交付。
 
 在 Agora 中，agents 是一级团队成员。它们会被分配 issue，汇报进展，提出阻塞，并交付代码，就像人类同事一样。任务分配、活动时间线、任务生命周期，以及运行时基础设施，Agora 从第一天起就是围绕这一理念构建的。
 
-和当年的 Multics 一样，这一判断建立在"多路复用"之上。一个小团队不该因为人数少就显得能力有限。有了合适的系统，两名工程师加上一组 agents，就能发挥出二十人团队的推进速度。
+一个小团队不该因为人数少就显得能力有限。有了合适的聚集之地，两名工程师加上一组 agents，就能发挥出二十人团队的推进速度。
 
 ## 功能特性
 
@@ -77,7 +75,7 @@ brew install agora-ai/tap/agora
 ### macOS / Linux（安装脚本）
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.sh | bash
 ```
 
 如果没有 Homebrew，可以使用安装脚本。脚本会安装 Agora CLI：检测到 `brew` 时通过 Homebrew 安装，否则直接下载二进制。
@@ -85,7 +83,7 @@ curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/ins
 ### Windows (PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.ps1 | iex
 ```
 
 安装完成后，一条命令完成配置、认证和启动：
@@ -97,7 +95,7 @@ agora setup          # 连接 Agora Cloud，登录，启动 daemon
 > **自部署？** 加上 `--with-server` 在本地部署完整的 Agora 服务：
 >
 > ```bash
-> curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash -s -- --with-server
+> curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.sh | bash -s -- --with-server
 > agora setup self-host
 > ```
 >
@@ -159,8 +157,6 @@ daemon 在后台运行，保持你的机器与 Agora 的连接。它会自动检
 
 ## 开发
 
-参与 Agora 代码贡献，请参阅 [贡献指南](CONTRIBUTING.md)。
-
 **环境要求：** [Node.js](https://nodejs.org/) v20+, [pnpm](https://pnpm.io/) v10.28+, [Go](https://go.dev/) v1.26+, [Docker](https://www.docker.com/)
 
 ```bash
@@ -169,8 +165,6 @@ cp .env.example .env
 make setup
 make start
 ```
-
-完整的开发流程、worktree 支持、测试和问题排查请参阅 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 iOS 移动端代码位于 [`apps/mobile/`](apps/mobile/)，自己编译装到手机的方法见 [README](apps/mobile/README.md)。
 

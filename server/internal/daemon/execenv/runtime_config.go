@@ -25,10 +25,22 @@ import (
 // HTML comments are used so the markers are inert in every Markdown renderer
 // and harmless when fed to the agent as instructions. Changing the marker
 // text is a breaking change for any file that already carries the previous
-// markers — bump deliberately.
+// markers — bump deliberately. The markers were renamed from the pre-rebrand
+// MULTICA-RUNTIME form (see legacyRuntimeMarker*); locateMarkerBlock still
+// recognises the legacy pair so old user files round-trip cleanly across the
+// rename instead of accumulating duplicate blocks.
 const (
-	runtimeMarkerBegin = "<!-- BEGIN MULTICA-RUNTIME (auto-managed; do not edit) -->"
-	runtimeMarkerEnd   = "<!-- END MULTICA-RUNTIME -->"
+	runtimeMarkerBegin = "<!-- BEGIN AGORA-RUNTIME (auto-managed; do not edit) -->"
+	runtimeMarkerEnd   = "<!-- END AGORA-RUNTIME -->"
+
+	// legacyRuntimeMarkerBegin / legacyRuntimeMarkerEnd are the pre-rebrand
+	// markers. Files written by an older daemon still carry these. They are
+	// never written anymore — only located — so an existing block is
+	// replaced (Inject) or excised (Cleanup) by the marker-agnostic
+	// locateMarkerBlock instead of orphaning beneath a fresh AGORA-RUNTIME
+	// block.
+	legacyRuntimeMarkerBegin = "<!-- BEGIN MULTICA-RUNTIME (auto-managed; do not edit) -->"
+	legacyRuntimeMarkerEnd   = "<!-- END MULTICA-RUNTIME -->"
 
 	// runtimeManagedSeparator is the fixed separator inserted between any
 	// pre-existing user content and the marker block whenever Inject
@@ -249,7 +261,7 @@ func writeRuntimeConfigFile(path, brief string) error {
 // matters for two malformed cases that the previous naive `strings.Index`
 // pair would mishandle:
 //
-//   - User content carries a stray `<!-- END MULTICA-RUNTIME -->` (e.g. a
+//   - User content carries a stray `<!-- END AGORA-RUNTIME -->` (e.g. a
 //     documentation snippet showing what the wire format looks like) before
 //     any begin marker. The naive parser would find that end and reject the
 //     block (`endIdx > startIdx` false), then append a fresh block — and
@@ -260,24 +272,35 @@ func writeRuntimeConfigFile(path, brief string) error {
 //     through to the append branch, and stack a new block after the
 //     half-block. Treating "begin found, no end after" as "the block ends
 //     at EOF" makes the next write replace the half-block in place.
+// The current AGORA-RUNTIME markers are tried first; if no begin marker is
+// present the legacy MULTICA-RUNTIME pair is tried so files written before the
+// rebrand are still located (and thus replaced on Inject / excised on Cleanup)
+// rather than orphaned beneath a fresh block.
 func locateMarkerBlock(content string) (start, end int, found bool) {
-	start = strings.Index(content, runtimeMarkerBegin)
+	if start, end, ok := locateMarkerBlockWith(content, runtimeMarkerBegin, runtimeMarkerEnd); ok {
+		return start, end, true
+	}
+	return locateMarkerBlockWith(content, legacyRuntimeMarkerBegin, legacyRuntimeMarkerEnd)
+}
+
+func locateMarkerBlockWith(content, begin, end string) (int, int, bool) {
+	start := strings.Index(content, begin)
 	if start < 0 {
 		return 0, 0, false
 	}
-	afterBegin := start + len(runtimeMarkerBegin)
-	endRel := strings.Index(content[afterBegin:], runtimeMarkerEnd)
+	afterBegin := start + len(begin)
+	endRel := strings.Index(content[afterBegin:], end)
 	if endRel < 0 {
 		// Malformed — no end marker after begin. Treat the rest of the file
 		// as the block so the next write replaces it cleanly instead of
 		// stacking another block beneath the half-block.
 		return start, len(content), true
 	}
-	end = afterBegin + endRel + len(runtimeMarkerEnd)
-	if end < len(content) && content[end] == '\n' {
-		end++
+	blockEnd := afterBegin + endRel + len(end)
+	if blockEnd < len(content) && content[blockEnd] == '\n' {
+		blockEnd++
 	}
-	return start, end, true
+	return start, blockEnd, true
 }
 
 // CleanupRuntimeConfig excises the Agora marker block from the runtime

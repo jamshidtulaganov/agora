@@ -40,7 +40,7 @@ Birinchisi `server/internal/daemon/execenv/runtime_config.go` da, ikkinchisi `se
 
 `""` qaytishi provayder file-based yoʻl uchun nomaʼlum ekanini bildiradi. `InjectRuntimeConfig` buni "konfiguratsiya injectionini oʻtkazib yubor, faqat-prompt rejimi" deb hisoblaydi va hech narsa yozmasdan brief mazmunini qaytaradi; `CleanupRuntimeConfig` esa `nil` qaytaradi (hech narsa qilmaydi).
 
-Yozishning oʻzi koʻr-koʻrona `os.WriteFile` emas. `writeRuntimeConfigFile` briefni `<!-- BEGIN MULTICA-RUNTIME (auto-managed; do not edit) -->` / `<!-- END MULTICA-RUNTIME -->` markerlariga oʻraydi, shu sababli u foydalanuvchi yozgan `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` ga uni buzmasdan qoʻsha oladi (va keyinchalik undan kesib ola oladi) — bu `local_directory` oqimi uchun zarur, bunda `workDir` foydalanuvchining oʻz repozitoriysidir. Toʻliq inject/cleanup borib-kelish kontrakti [/developers/agentic/brief-injection](/developers/agentic/brief-injection) da hujjatlashtirilgan; bu sahifa faqat provayder→fayl nomi marshrutlashni qamrab oladi.
+Yozishning oʻzi koʻr-koʻrona `os.WriteFile` emas. `writeRuntimeConfigFile` briefni `<!-- BEGIN AGORA-RUNTIME (auto-managed; do not edit) -->` / `<!-- END AGORA-RUNTIME -->` markerlariga oʻraydi, shu sababli u foydalanuvchi yozgan `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` ga uni buzmasdan qoʻsha oladi (va keyinchalik undan kesib ola oladi) — bu `local_directory` oqimi uchun zarur, bunda `workDir` foydalanuvchining oʻz repozitoriysidir. Toʻliq inject/cleanup borib-kelish kontrakti [/developers/agentic/brief-injection](/developers/agentic/brief-injection) da hujjatlashtirilgan; bu sahifa faqat provayder→fayl nomi marshrutlashni qamrab oladi.
 
 ## Tizim promptini inline kiritish — `providerNeedsInlineSystemPrompt`
 

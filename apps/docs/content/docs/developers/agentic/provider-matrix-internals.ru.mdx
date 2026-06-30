@@ -40,7 +40,7 @@ import { Mermaid } from "@/components/mermaid";
 
 Возврат `""` означает, что провайдер неизвестен file-based пути. `InjectRuntimeConfig` трактует это как «пропустить инъекцию конфига, режим только-промпт» и возвращает содержимое брифа, ничего не записывая; `CleanupRuntimeConfig` возвращает `nil` (no-op).
 
-Сама запись — не слепой `os.WriteFile`. `writeRuntimeConfigFile` оборачивает бриф в маркеры `<!-- BEGIN MULTICA-RUNTIME (auto-managed; do not edit) -->` / `<!-- END MULTICA-RUNTIME -->`, чтобы можно было дописать его в авторский `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` пользователя (и позже вырезать) без затирания — это нужно для потока `local_directory`, где `workDir` является собственным репозиторием пользователя. Полный контракт цикла инъекция/очистка документирован в [/developers/agentic/brief-injection](/developers/agentic/brief-injection); эта страница покрывает только маршрутизацию провайдер→имя файла.
+Сама запись — не слепой `os.WriteFile`. `writeRuntimeConfigFile` оборачивает бриф в маркеры `<!-- BEGIN AGORA-RUNTIME (auto-managed; do not edit) -->` / `<!-- END AGORA-RUNTIME -->`, чтобы можно было дописать его в авторский `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` пользователя (и позже вырезать) без затирания — это нужно для потока `local_directory`, где `workDir` является собственным репозиторием пользователя. Полный контракт цикла инъекция/очистка документирован в [/developers/agentic/brief-injection](/developers/agentic/brief-injection); эта страница покрывает только маршрутизацию провайдер→имя файла.
 
 ## Инлайн-инъекция системного промпта — `providerNeedsInlineSystemPrompt`
 

@@ -59,8 +59,8 @@ Dastlabki amalga oshirilishi `os.WriteFile` ni shartsiz chaqirardi. Agent `local
 Boshqariladigan hudud ikkita HTML-comment markeri bilan chegaralanadi, ular konstanta sifatida aniqlangan:
 
 ```go
-runtimeMarkerBegin = "<!-- BEGIN MULTICA-RUNTIME (auto-managed; do not edit) -->"
-runtimeMarkerEnd   = "<!-- END MULTICA-RUNTIME -->"
+runtimeMarkerBegin = "<!-- BEGIN AGORA-RUNTIME (auto-managed; do not edit) -->"
+runtimeMarkerEnd   = "<!-- END AGORA-RUNTIME -->"
 ```
 
 HTML kommentlari ishlatiladi, chunki markerlar har bir Markdown renderda inert bo'ladi va agentga ko'rsatma sifatida berilganda zararsiz. **Marker matnini o'zgartirish** oldingi markerlarni allaqachon olib yurgan har qanday fayl uchun **buzilishga olib keladigan o'zgarish** — eskirgan markerli fayl endi tanib olinmaydi, shuning uchun keyingi inject yetim qolgan bloknning yoniga yangi blok qo'shadi. Konstantalarni ataylab bilib o'zgartiring.
@@ -100,7 +100,7 @@ Qo'shish paytida `runtimeManagedSeparator` **shartsizdir** — hatto ikki yoki u
 
 Tugash markeri begin markeridan **qat'iy keyin** qidiriladi. Sodda `strings.Index` jufti noto'g'ri ishlatadigan ikkita noto'g'ri shakllangan holat:
 
-- **Har qanday begin'dan oldingi adashgan end marker.** Foydalanuvchi mazmuni so'zma-so'z `<!-- END MULTICA-RUNTIME -->` ni olib yurishi mumkin (masalan, wire formatini ko'rsatadigan hujjat snippeti). Sodda parser bu end'ni topadi, blokni rad etadi va har bir ishda yangi blok qo'shadi — faylni cheksiz o'stiradi, chunki adashgan end joyida qoladi.
+- **Har qanday begin'dan oldingi adashgan end marker.** Foydalanuvchi mazmuni so'zma-so'z `<!-- END AGORA-RUNTIME -->` ni olib yurishi mumkin (masalan, wire formatini ko'rsatadigan hujjat snippeti). Sodda parser bu end'ni topadi, blokni rad etadi va har bir ishda yangi blok qo'shadi — faylni cheksiz o'stiradi, chunki adashgan end joyida qoladi.
 - **Begin va end o'rtasidagi nosozlik.** Agar oldingi ish begin'ni yozgandan keyin, lekin end'dan oldin to'xtab qolsa, fayl yarim-blokni saqlaydi. Begin'dan keyin end topilmasa, `locateMarkerBlock` faylning qolgan qismini blok deb hisoblaydi (`return start, len(content), true`), shuning uchun keyingi yozuv yangi blokni ostiga qalashtirib qo'yish o'rniga **yarim-blokni joyida almashtiradi**.
 
 ```go

@@ -23,8 +23,8 @@ Built a full **co-code editor** (human + AI agent co-code on an issue) + started
 7. **Prod deploy** (the big remaining): web + backend + daemon to fly + cloud editor-proxy for the browser/preview panes (127.0.0.1 iframe → backend proxy). Local-first was the user's call.
 
 ## RESUME GUIDE (how to operate)
-- **Stack:** ~/Projects/agora, docker `COMPOSE_PROJECT_NAME=multica`, web :3000 / backend :8080, DB creds multica/multica.
-- **Build+deploy a service:** `COMPOSE_PROJECT_NAME=multica docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml build <frontend|backend> && … up -d <svc>`. (frontend=agora-web:dev, backend=agora-backend:dev. `--progress` is a build flag, NOT valid on `up`.)
+- **Stack:** ~/Projects/agora, docker `COMPOSE_PROJECT_NAME=agora`, web :3000 / backend :8080, DB creds agora/agora.
+- **Build+deploy a service:** `COMPOSE_PROJECT_NAME=agora docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml build <frontend|backend> && … up -d <svc>`. (frontend=agora-web:dev, backend=agora-backend:dev. `--progress` is a build flag, NOT valid on `up`.)
 - **Go compile-check (no deploy):** `docker run --rm -v "$PWD/server":/src -v agora_gomod:/go/pkg/mod -v agora_gobuild:/root/.cache/go-build -w /src golang:1.26.1 sh -c "gofmt -w <files> && go build ./..."`.
 - **Frontend typecheck:** `pnpm --filter @agora/core --filter @agora/views typecheck`.
 - **Editor/QA daemon:** `agora --profile local` on **127.0.0.1:20038** (endpoints in `health.go` + `browser.go`: /editor/launch,/changes,/open-pr,/discard,/preview{,/stop,/status},/browser/{start,stop,stream}; backend merge-readiness GET /api/issues/{id}/merge-readiness).

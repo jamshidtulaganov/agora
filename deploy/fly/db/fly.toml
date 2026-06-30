@@ -18,8 +18,8 @@ primary_region = "fra"
   image = "pgvector/pgvector:pg17"
 
 [env]
-  POSTGRES_DB = "multica"
-  POSTGRES_USER = "multica"
+  POSTGRES_DB = "agora"
+  POSTGRES_USER = "agora"
   # initdb refuses a non-empty dir; the volume root holds lost+found, so point
   # PGDATA at a subdir of the mount.
   PGDATA = "/var/lib/postgresql/data/pgdata"

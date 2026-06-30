@@ -2,10 +2,10 @@
 # Agora installer — installs the CLI and optionally provisions a self-host server.
 #
 # Install / upgrade CLI only:
-#   curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.sh | bash
 #
 # Install CLI + provision self-host server:
-#   curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash -s -- --with-server
+#   curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.sh | bash -s -- --with-server
 #
 # After installation, run `agora setup` to configure your environment.
 #
@@ -14,8 +14,8 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-REPO_URL="https://github.com/multica-ai/multica.git"
-REPO_WEB_URL="https://github.com/multica-ai/multica"  # without .git, for GitHub web APIs
+REPO_URL="https://github.com/jamshidtulaganov/agora.git"
+REPO_WEB_URL="https://github.com/jamshidtulaganov/agora"  # without .git, for GitHub web APIs
 INSTALL_DIR="${AGORA_INSTALL_DIR:-$HOME/.agora/server}"
 BREW_PACKAGE="agora-ai/tap/agora"
 
@@ -87,7 +87,7 @@ detect_os() {
     Linux)  OS="linux" ;;
     MINGW*|MSYS*|CYGWIN*)
             fail "This script does not support Windows. Use the PowerShell installer instead:
-  irm https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.ps1 | iex" ;;
+  irm https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.ps1 | iex" ;;
     *)      fail "Unsupported operating system: $(uname -s). Agora supports macOS, Linux, and Windows." ;;
   esac
 
@@ -149,7 +149,7 @@ install_cli_binary() {
   fi
 
   local version="${latest#v}"
-  local url="https://github.com/multica-ai/multica/releases/download/${latest}/agora-cli-${version}-${OS}-${ARCH}.tar.gz"
+  local url="https://github.com/jamshidtulaganov/agora/releases/download/${latest}/agora-cli-${version}-${OS}-${ARCH}.tar.gz"
   local tmp_dir
   tmp_dir=$(mktemp -d)
 
@@ -427,7 +427,7 @@ run_default() {
   printf "     ${CYAN}agora setup self-host${RESET}       # Connect to a self-hosted server\n"
   printf "\n"
   printf "  ${BOLD}Self-hosting?${RESET} Install the server first:\n"
-  printf "     curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash -s -- --with-server\n"
+  printf "     curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.sh | bash -s -- --with-server\n"
   printf "\n"
 }
 
@@ -465,7 +465,7 @@ run_with_server() {
   printf "  or read the generated code from backend logs when Resend is unset.\n"
   printf "\n"
   printf "  ${BOLD}To stop all services:${RESET}\n"
-  printf "     curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash -s -- --stop\n"
+  printf "     curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.sh | bash -s -- --stop\n"
   printf "\n"
 }
 

@@ -1,7 +1,7 @@
 # Shared local development env derivation. Source this after loading .env.
 
-POSTGRES_DB="${POSTGRES_DB:-multica}"
-POSTGRES_USER="${POSTGRES_USER:-multica}"
+POSTGRES_DB="${POSTGRES_DB:-agora}"
+POSTGRES_USER="${POSTGRES_USER:-agora}"
 POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 
 PORT="${BACKEND_PORT:-${API_PORT:-${SERVER_PORT:-${PORT:-8080}}}}"

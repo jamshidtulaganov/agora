@@ -1,6 +1,6 @@
 import { cn } from "@agora/ui/lib/utils";
 
-export const githubUrl = "https://github.com/multica-ai/multica";
+export const githubUrl = "https://github.com/jamshidtulaganov/agora";
 export const twitterUrl = "https://x.com/AgoraAI";
 
 export function GitHubMark({ className }: { className?: string }) {

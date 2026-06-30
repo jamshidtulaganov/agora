@@ -11,7 +11,7 @@ import { mkdirSync } from "node:fs";
 
 const FRONTEND = process.env.FRONTEND_ORIGIN || "http://localhost:13101";
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:18181";
-const DB = process.env.DATABASE_URL || "postgres://multica:multica@localhost:5432/multica_multica_101?sslmode=disable";
+const DB = process.env.DATABASE_URL || "postgres://agora:agora@localhost:5432/agora_agora_101?sslmode=disable";
 const EMAIL = "dev@localhost";
 const SLUG = "dev";
 const ISSUES = [2, 3, 4, 5, 6, 7];

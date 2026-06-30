@@ -93,8 +93,8 @@ selfhost: ## Create .env if needed, then pull and start the official self-hosted
 		echo "  Frontend: http://localhost:$${FRONTEND_PORT:-3000}"; \
 		echo "  Backend:  http://localhost:$${PORT:-8080}"; \
 		echo ""; \
-		echo "Images: $${AGORA_BACKEND_IMAGE:-ghcr.io/multica-ai/multica-backend}:$${AGORA_IMAGE_TAG:-latest}"; \
-		echo "        $${AGORA_WEB_IMAGE:-ghcr.io/multica-ai/multica-web}:$${AGORA_IMAGE_TAG:-latest}"; \
+		echo "Images: $${AGORA_BACKEND_IMAGE:-ghcr.io/jamshidtulaganov/agora-backend}:$${AGORA_IMAGE_TAG:-latest}"; \
+		echo "        $${AGORA_WEB_IMAGE:-ghcr.io/jamshidtulaganov/agora-web}:$${AGORA_IMAGE_TAG:-latest}"; \
 		echo ""; \
 		echo "Log in: configure RESEND_API_KEY in .env for email codes,"; \
 		echo "        or read the generated code from backend logs when Resend is unset."; \

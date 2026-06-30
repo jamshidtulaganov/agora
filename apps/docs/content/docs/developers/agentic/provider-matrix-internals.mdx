@@ -40,7 +40,7 @@ The first lives in `server/internal/daemon/execenv/runtime_config.go`, the secon
 
 A `""` return means the provider is unknown to the file-based path. `InjectRuntimeConfig` treats that as "skip config injection, prompt-only mode" and returns the brief content without writing anything; `CleanupRuntimeConfig` returns `nil` (no-op).
 
-The write itself is not a blind `os.WriteFile`. `writeRuntimeConfigFile` wraps the brief in the markers `<!-- BEGIN MULTICA-RUNTIME (auto-managed; do not edit) -->` / `<!-- END MULTICA-RUNTIME -->` so it can append to (and later excise from) a user-authored `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` without clobbering it — required for the `local_directory` flow where `workDir` is the user's own repo. The full inject/cleanup round-trip contract is documented in [/developers/agentic/brief-injection](/developers/agentic/brief-injection); this page only covers the provider→filename routing.
+The write itself is not a blind `os.WriteFile`. `writeRuntimeConfigFile` wraps the brief in the markers `<!-- BEGIN AGORA-RUNTIME (auto-managed; do not edit) -->` / `<!-- END AGORA-RUNTIME -->` so it can append to (and later excise from) a user-authored `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` without clobbering it — required for the `local_directory` flow where `workDir` is the user's own repo. The full inject/cleanup round-trip contract is documented in [/developers/agentic/brief-injection](/developers/agentic/brief-injection); this page only covers the provider→filename routing.
 
 ## Inline system-prompt injection — `providerNeedsInlineSystemPrompt`
 

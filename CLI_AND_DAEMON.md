@@ -13,7 +13,7 @@ brew install agora-ai/tap/agora
 ### Build from Source
 
 ```bash
-git clone https://github.com/multica-ai/multica.git
+git clone https://github.com/jamshidtulaganov/agora.git
 cd agora
 make build
 cp server/bin/agora /usr/local/bin/agora

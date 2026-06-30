@@ -45,7 +45,7 @@ deploy_backend() {
   echo "==> sd-agora-backend"
   ensure_app sd-agora-backend
   ensure_vol sd-agora-backend agora_uploads 1
-  local dburl="postgres://multica:${POSTGRES_PASSWORD}@sd-agora-db.internal:5432/multica?sslmode=disable"
+  local dburl="postgres://agora:${POSTGRES_PASSWORD}@sd-agora-db.internal:5432/agora?sslmode=disable"
   fly secrets set \
     DATABASE_URL="$dburl" \
     JWT_SECRET="$JWT_SECRET" \
