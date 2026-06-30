@@ -655,7 +655,9 @@ describe("LoginPage", () => {
     expect(
       screen.getByRole("button", { name: /continue with google/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/^or$/i)).toBeInTheDocument();
+    // With Google AND Telegram both present, a divider separates each
+    // alternative auth method: email-form │ or │ Google │ or │ Telegram.
+    expect(screen.getAllByText(/^or$/i)).toHaveLength(2);
     expect(
       screen.getByRole("button", { name: /continue with telegram/i }),
     ).toBeInTheDocument();

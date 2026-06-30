@@ -229,7 +229,7 @@
     "perk_invite": "Jamoadoshlarni taklif qiling — ular faqat shu ish maydonini ko‘radi",
     "perk_switch": "Yuqori chap burchakdan istalgan vaqtda boshqa ish maydonlariga o‘ting",
     "next_runtime": "Agentlaringiz ishlaydigan joyga ega bo‘lishi uchun kompyuter ulang",
-    "next_agent": "Ulangan runtime’ingizdan SD Helper yarating",
+    "next_agent": "Ulangan runtime’ingizdan Agora Helper yarating",
     "next_starter": "Keyingi qadamingiz uchun bitta onboarding vazifasini oching",
     "preview": {
       "inbox_label": "Kiruvchilar",

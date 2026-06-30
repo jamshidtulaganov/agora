@@ -177,7 +177,7 @@ describe("WelcomeAfterOnboarding", () => {
       mockListAgents.mockResolvedValueOnce([]);
       mockCreateAgent.mockResolvedValueOnce({
         id: "agent-1",
-        name: "SD Helper",
+        name: "Agora Helper",
         description: "Built-in workspace assistant.",
         avatar_url: null,
         visibility: "workspace",
@@ -199,8 +199,8 @@ describe("WelcomeAfterOnboarding", () => {
       expect(mockCreateAgent).toHaveBeenCalledTimes(1);
       const [agentArgs] = mockCreateAgent.mock.calls[0]!;
       expect(agentArgs.runtime_id).toBe("rt-1");
-      expect(agentArgs.name).toBe("SD Helper");
-      expect(agentArgs.instructions).toContain("SD Helper");
+      expect(agentArgs.name).toBe("Agora Helper");
+      expect(agentArgs.instructions).toContain("Agora Helper");
 
       // 3 starter card titles come from HELPER_STARTER_PROMPTS (TS const,
       // EN under the test's en locale).
@@ -215,11 +215,11 @@ describe("WelcomeAfterOnboarding", () => {
       ).toBeInTheDocument();
     });
 
-    it("reuses an existing SD Helper agent instead of creating duplicates", async () => {
+    it("reuses an existing Agora Helper agent instead of creating duplicates", async () => {
       mockListAgents.mockResolvedValueOnce([
         {
           id: "agent-existing",
-          name: "SD Helper",
+          name: "Agora Helper",
           description: "",
           avatar_url: null,
           visibility: "workspace",
@@ -244,7 +244,7 @@ describe("WelcomeAfterOnboarding", () => {
       mockListAgents.mockResolvedValueOnce([]);
       mockCreateAgent.mockResolvedValueOnce({
         id: "agent-1",
-        name: "SD Helper",
+        name: "Agora Helper",
         description: "",
         avatar_url: null,
         visibility: "workspace",
@@ -320,7 +320,7 @@ describe("WelcomeAfterOnboarding", () => {
       mockListAgents.mockResolvedValueOnce([]);
       mockCreateAgent.mockResolvedValueOnce({
         id: "agent-1",
-        name: "SD Helper",
+        name: "Agora Helper",
         description: "",
         avatar_url: null,
         visibility: "workspace",
@@ -366,7 +366,7 @@ describe("WelcomeAfterOnboarding", () => {
       mockListAgents.mockResolvedValueOnce([]);
       mockCreateAgent.mockResolvedValueOnce({
         id: "agent-1",
-        name: "SD Helper",
+        name: "Agora Helper",
         description: "",
         avatar_url: null,
         visibility: "workspace",

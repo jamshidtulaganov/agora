@@ -229,7 +229,7 @@
     "perk_invite": "邀请同事 —— 他们只会看到这个工作区",
     "perk_switch": "随时从左上角切换到其他工作区",
     "next_runtime": "连接一台电脑，给智能体一个跑的地方",
-    "next_agent": "用你连接的运行时创建 SD Helper",
+    "next_agent": "用你连接的运行时创建 Agora Helper",
     "next_starter": "打开一个上手引导 issue，继续下一步",
     "preview": {
       "inbox_label": "收件箱",
