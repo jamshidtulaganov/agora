@@ -54,6 +54,13 @@ vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
+// GitAccountsSection renders its own input fields (owner/host/username/label)
+// and is a separate concern from the repository rows under test here. Stub it
+// so the textbox-count assertions reflect only the repo rows.
+vi.mock("./git-accounts-section", () => ({
+  GitAccountsSection: () => null,
+}));
+
 import { RepositoriesTab } from "./repositories-tab";
 
 const TEST_RESOURCES = {
