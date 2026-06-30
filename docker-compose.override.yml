@@ -47,6 +47,18 @@ services:
       AGORA_REMOTE_BOXES_ENABLED: ${AGORA_REMOTE_BOXES_ENABLED:-}
       AGORA_REMOTE_BOXES_SSH_KEY: ${AGORA_REMOTE_BOXES_SSH_KEY:-}
       AGORA_REMOTE_BOXES_GIT_TOKEN: ${AGORA_REMOTE_BOXES_GIT_TOKEN:-}
+      # QA host: the shared parent server per-developer QA boxes are carved out of
+      # as wildcard subdomains (<handle>.<base-domain>). The provisioner reuses
+      # the remote-boxes SSH key + git token above; the DB clone uses the box's
+      # own local mysql auth, so no DB password is passed here.
+      AGORA_QA_HOST_SSH_HOST: ${AGORA_QA_HOST_SSH_HOST:-}
+      AGORA_QA_HOST_SSH_USER: ${AGORA_QA_HOST_SSH_USER:-}
+      AGORA_QA_HOST_SSH_PORT: ${AGORA_QA_HOST_SSH_PORT:-}
+      AGORA_QA_HOST_BASE_DOMAIN: ${AGORA_QA_HOST_BASE_DOMAIN:-}
+      AGORA_QA_HOST_WEB_ROOT: ${AGORA_QA_HOST_WEB_ROOT:-}
+      AGORA_QA_HOST_REPO_URL: ${AGORA_QA_HOST_REPO_URL:-}
+      AGORA_QA_HOST_SEED_DIR: ${AGORA_QA_HOST_SEED_DIR:-}
+      AGORA_QA_HOST_SEED_DB: ${AGORA_QA_HOST_SEED_DB:-}
     volumes:
       # Control-plane private key (read-only) the backend uses to reach the QA
       # boxes over SSH; in-container path must match AGORA_REMOTE_BOXES_SSH_KEY.
