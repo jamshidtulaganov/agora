@@ -47,6 +47,10 @@ services:
       AGORA_REMOTE_BOXES_ENABLED: ${AGORA_REMOTE_BOXES_ENABLED:-}
       AGORA_REMOTE_BOXES_SSH_KEY: ${AGORA_REMOTE_BOXES_SSH_KEY:-}
       AGORA_REMOTE_BOXES_GIT_TOKEN: ${AGORA_REMOTE_BOXES_GIT_TOKEN:-}
+      # QA-team automation: auto-fire the QA squad's run_qa when an issue enters
+      # in_review (and auto_docs on qa:pass). Opt-in, default off.
+      AGORA_AUTO_QA_ENABLED: ${AGORA_AUTO_QA_ENABLED:-}
+      AGORA_AUTO_DOCS_ENABLED: ${AGORA_AUTO_DOCS_ENABLED:-}
       # QA host: the shared parent server per-developer QA boxes are carved out of
       # as wildcard subdomains (<handle>.<base-domain>). The provisioner reuses
       # the remote-boxes SSH key + git token above; the DB clone uses the box's
