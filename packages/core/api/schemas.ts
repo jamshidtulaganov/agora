@@ -894,6 +894,56 @@ export const EMPTY_PROVISION_RESULT = {
 } as const;
 
 // ---------------------------------------------------------------------------
+// Policy Agent — fleet watchdog. Lenient + defaulted (arrays default to []) so a
+// degraded response renders an empty cockpit rather than white-screening.
+export const PolicyFleetHealthSchema = z.object({
+  stall_minutes: z.number().default(20),
+  loop_threshold: z.number().default(4),
+  agents: z.array(z.object({
+    agent_id: z.string().default(""),
+    agent_name: z.string().default(""),
+    task_count: z.number().default(0),
+    failed_count: z.number().default(0),
+    avg_run_seconds: z.number().default(0),
+    p95_run_seconds: z.number().default(0),
+    avg_queue_seconds: z.number().default(0),
+  }).loose()).default([]),
+  stalled: z.array(z.object({
+    task_id: z.string().default(""),
+    agent_id: z.string().default(""),
+    agent_name: z.string().default(""),
+    issue_id: z.string().default(""),
+    started_at: z.string().nullable().default(null),
+    attempt: z.number().default(1),
+  }).loose()).default([]),
+  recent_failures: z.array(z.object({
+    task_id: z.string().default(""),
+    agent_id: z.string().default(""),
+    agent_name: z.string().default(""),
+    issue_id: z.string().default(""),
+    failure_reason: z.string().default(""),
+    error: z.string().default(""),
+    started_at: z.string().nullable().default(null),
+    completed_at: z.string().nullable().default(null),
+    attempt: z.number().default(1),
+  }).loose()).default([]),
+  looping: z.array(z.object({
+    issue_id: z.string().default(""),
+    task_count: z.number().default(0),
+    last_task_at: z.string().nullable().default(null),
+  }).loose()).default([]),
+}).loose();
+
+export const EMPTY_POLICY_FLEET_HEALTH = {
+  stall_minutes: 20,
+  loop_threshold: 4,
+  agents: [],
+  stalled: [],
+  recent_failures: [],
+  looping: [],
+};
+
+// ---------------------------------------------------------------------------
 // Billing schemas (cloud-billing proxy surface)
 //
 // All billing JSON we receive comes from agora-cloud verbatim — we proxy

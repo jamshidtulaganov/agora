@@ -202,3 +202,10 @@ export type {
   ProvisionBoxRequest,
   ProvisionBoxResult,
 } from "./remote-box";
+export type {
+  PolicyFleetHealth,
+  PolicyAgentSpeed,
+  PolicyStalledTask,
+  PolicyFailedTask,
+  PolicyLoopingIssue,
+} from "./policy";

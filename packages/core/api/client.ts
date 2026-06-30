@@ -76,6 +76,7 @@ import type {
   RemoteBoxSyncResult,
   ProvisionBoxRequest,
   ProvisionBoxResult,
+  PolicyFleetHealth,
   CreateProjectRequest,
   UpdateProjectRequest,
   ListProjectsResponse,
@@ -222,6 +223,8 @@ import {
   RemoteBoxSyncResultSchema,
   ProvisionBoxResultSchema,
   EMPTY_PROVISION_RESULT,
+  PolicyFleetHealthSchema,
+  EMPTY_POLICY_FLEET_HEALTH,
   EMPTY_CONNECTED_BOX,
 } from "./schemas";
 
@@ -2222,6 +2225,15 @@ export class ApiClient {
   async syncBitrixProject(projectId: string): Promise<BitrixSyncResult> {
     return this.fetch(`/api/projects/${projectId}/bitrix/sync`, {
       method: "POST",
+    });
+  }
+
+  // Policy Agent — the workspace's agent-fleet speed + health (per-agent run
+  // duration / queue wait, stalled / failed / looping tasks).
+  async getPolicyFleetHealth(): Promise<PolicyFleetHealth> {
+    const raw = await this.fetch<unknown>("/api/policy/fleet-health");
+    return parseWithFallback(raw, PolicyFleetHealthSchema, EMPTY_POLICY_FLEET_HEALTH, {
+      endpoint: "GET /api/policy/fleet-health",
     });
   }
 

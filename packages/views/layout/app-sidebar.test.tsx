@@ -87,6 +87,7 @@ vi.mock("@agora/core/paths", () => ({
     inbox: () => "/acme/inbox",
     myIssues: () => "/acme/my-issues",
     qa: () => "/acme/qa",
+    policy: () => "/acme/policy",
     issues: () => "/acme/issues",
     projects: () => "/acme/projects",
     autopilots: () => "/acme/autopilots",

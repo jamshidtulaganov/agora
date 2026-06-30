@@ -29,6 +29,7 @@ import {
   Check,
   BookOpenText,
   SquarePen,
+  Activity,
   CircleUser,
   ShieldCheck,
   FolderKanban,
@@ -112,6 +113,7 @@ type NavKey =
   | "inbox"
   | "myIssues"
   | "qa"
+  | "policy"
   | "issues"
   | "projects"
   | "autopilots"
@@ -131,6 +133,7 @@ type NavLabelKey =
   | "inbox"
   | "my_issues"
   | "qa"
+  | "policy"
   | "issues"
   | "projects"
   | "autopilots"
@@ -149,6 +152,7 @@ const personalNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[] 
   { key: "inbox", labelKey: "inbox", icon: Inbox },
   { key: "myIssues", labelKey: "my_issues", icon: CircleUser },
   { key: "qa", labelKey: "qa", icon: ShieldCheck },
+  { key: "policy", labelKey: "policy", icon: Activity },
 ];
 
 const workspaceNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[] = [

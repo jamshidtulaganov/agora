@@ -20,6 +20,7 @@ import { DashboardPage } from "@agora/views/dashboard";
 import { AutopilotsPage } from "@agora/views/autopilots/components";
 import { MyIssuesPage } from "@agora/views/my-issues";
 import { QAPage } from "@agora/views/qa";
+import { PolicyPage } from "@agora/views/policy";
 import { SkillsPage } from "@agora/views/skills";
 import { DesktopRuntimesPage } from "./components/desktop-runtimes-page";
 import { DesktopAgentsPage } from "./components/desktop-agents-page";
@@ -157,6 +158,11 @@ export const appRoutes: RouteObject[] = [
             path: "qa",
             element: <QAPage />,
             handle: { title: "QA" },
+          },
+          {
+            path: "policy",
+            element: <PolicyPage />,
+            handle: { title: "Policy" },
           },
           {
             path: "runtimes",

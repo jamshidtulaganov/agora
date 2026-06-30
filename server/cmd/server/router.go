@@ -885,6 +885,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				})
 			})
 
+			// Policy Agent — fleet watchdog (agent speed + stalled/failed/looping).
+			r.Get("/api/policy/fleet-health", h.GetPolicyFleetHealth)
+
 			// Squads
 			r.Route("/api/squads", func(r chi.Router) {
 				r.Get("/", h.ListSquads)
