@@ -63,6 +63,7 @@ import { collectThreadReplies, deriveThreadResolution } from "./thread-utils";
 import { IssueAgentHeaderChip } from "./issue-agent-header-chip";
 import { ExecutionLogSection } from "./execution-log-section";
 import { EditorSection } from "./editor-section";
+import { QAEvidenceSection } from "./qa-evidence-section";
 import { IssueRepoSection } from "./issue-repo-section";
 import { WorkModeSwitch } from "./work-mode-switch";
 import { AgentWorkingIndicator } from "./agent-working-indicator";
@@ -1655,6 +1656,11 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           projectId={issue.project_id}
         />
       )}
+
+      {/* QA evidence — the frozen run_qa verdict (command table + new-failure
+          attribution) read from one indexed row. Self-gating: hides unless the
+          issue is in_review or already has a captured verdict. */}
+      <QAEvidenceSection issueId={id} status={issue.status} />
 
       {/* Chat-style "agent is working / typing…" row — appears the moment a
           comment or assignment puts the issue's agent into a queued/running

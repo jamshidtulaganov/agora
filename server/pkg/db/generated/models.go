@@ -633,6 +633,19 @@ type ProjectResource struct {
 	CreatedBy    pgtype.UUID        `json:"created_by"`
 }
 
+type QaEvidence struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	IssueID     pgtype.UUID        `json:"issue_id"`
+	BaselineRef string             `json:"baseline_ref"`
+	BranchSha   string             `json:"branch_sha"`
+	Verdict     string             `json:"verdict"`
+	Summary     string             `json:"summary"`
+	ResultJson  []byte             `json:"result_json"`
+	CapturedAt  pgtype.Timestamptz `json:"captured_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type Skill struct {
 	ID          pgtype.UUID        `json:"id"`
 	WorkspaceID pgtype.UUID        `json:"workspace_id"`

@@ -404,6 +404,17 @@
     "toast_fired": "AI amali yuborildi — qoralama bajarilish jurnalida paydo bo‘ladi.",
     "toast_failed": "AI amalini yuborib bo‘lmadi"
   },
+  "qa_evidence": {
+    "section": "QA tekshiruvi",
+    "empty": "Hali QA verdikti yo'q.",
+    "empty_hint": "Deterministik verdikt olish uchun QA ishga tushiring.",
+    "rerun": "QA ni qayta ishga tushirish",
+    "rerunning": "Bajarilmoqda…",
+    "verdict_pass": "O'tdi",
+    "verdict_fail": "O'tmadi",
+    "verdict_unknown": "Kutilmoqda",
+    "captured": "Olingan"
+  },
   "terminate_dialog": {
     "title": "Bu topshiriqni to‘xtatasizmi?",
     "body": "Topshiriq bekor qilinadi va uni davom ettirib bo‘lmaydi.",

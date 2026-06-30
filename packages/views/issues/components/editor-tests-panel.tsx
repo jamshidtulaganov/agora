@@ -18,7 +18,7 @@ import { useState } from "react";
 import { api } from "@agora/core/api";
 import { issueTimelineOptions } from "@agora/core/issues/queries";
 import { cn } from "@agora/ui/lib/utils";
-import type { TimelineEntry } from "@agora/core/types";
+import type { TimelineEntry, QACommand, QAResult } from "@agora/core/types";
 
 // Tests panel for the editor right sidebar. Shows:
 //  1. Merge-readiness gate chips (ci / qa) — live, polled every 15s.
@@ -184,22 +184,10 @@ function isQAComment(content: string): boolean {
   );
 }
 
-// Structured result the run_qa recipe appends as a fenced ```qa-result JSON
-// block. Parsed deterministically when present (renders the command table +
-// baseline diff); falls back to the keyword heuristic + raw output when absent
-// or malformed.
-interface QACommand {
-  cmd: string;
-  baseline_exit: number | null;
-  branch_exit: number;
-  kind: "pass" | "new_failure" | "pre_existing";
-}
-interface QAResult {
-  verdict: "pass" | "fail";
-  summary: string;
-  commands: QACommand[];
-  screenshots: string[];
-}
+// QACommand / QAResult are the structured result the run_qa recipe appends as a
+// fenced ```qa-result JSON block (now shared from @agora/core/types so the QA
+// evidence section renders the SAME shape). Parsed deterministically when present
+// (command table + baseline diff); falls back to the keyword heuristic otherwise.
 
 // Extract + validate the ```qa-result block. The content is agent-authored, so
 // every field is treated as possibly missing or wrong (parse, don't trust):
@@ -253,7 +241,8 @@ const CMD_KIND_STYLE: Record<QACommand["kind"], { label: string; cls: string }> 
 // Structured command table — cmd, baseline exit, branch exit, and the
 // baseline-diff classification (pre-existing failures are visually de-emphasized
 // so a NEW failure stands out as the thing that actually blocks the gate).
-function StructuredResult({ result }: { result: QAResult }) {
+// Exported so the top-level QA evidence section renders the identical table.
+export function StructuredResult({ result }: { result: QAResult }) {
   return (
     <div className="space-y-2 px-3 pb-2.5 pt-2">
       <div className="overflow-hidden rounded border border-border/60">

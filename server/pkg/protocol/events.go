@@ -95,6 +95,9 @@ const (
 	EventSprintDeleted      = "sprint:deleted"
 	EventIssueSprintChanged = "issue_sprint:changed"
 
+	// QA evidence — a run_qa verdict was parsed + persisted for an issue.
+	EventQAEvidenceReady = "qa_evidence:ready"
+
 	// Pin events
 	EventPinCreated   = "pin:created"
 	EventPinDeleted   = "pin:deleted"

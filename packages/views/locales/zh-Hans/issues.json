@@ -393,6 +393,17 @@
     "toast_fired": "AI 操作已发送 — 草稿将显示在执行日志中。",
     "toast_failed": "发送 AI 操作失败"
   },
+  "qa_evidence": {
+    "section": "QA 验证",
+    "empty": "尚未捕获 QA 结论。",
+    "empty_hint": "运行 QA 以生成确定性结论。",
+    "rerun": "重新运行 QA",
+    "rerunning": "运行中…",
+    "verdict_pass": "通过",
+    "verdict_fail": "未通过",
+    "verdict_unknown": "待定",
+    "captured": "捕获于"
+  },
   "terminate_dialog": {
     "title": "确定停止该 task？",
     "body": "Task 会被取消且无法恢复。",

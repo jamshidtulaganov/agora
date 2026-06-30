@@ -788,6 +788,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/comments", h.CreateComment)
 					r.Post("/comments/summarize", h.SummarizeComments)
 					r.Post("/slice-actions", h.CreateSliceAction)
+					r.Get("/qa-evidence", h.GetIssueQAEvidence)
 					r.Post("/deploy-qa", h.DeployIssueQA)
 					r.Get("/comments", h.ListComments)
 					r.Get("/timeline", h.ListTimeline)

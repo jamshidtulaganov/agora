@@ -2418,6 +2418,10 @@ func (s *TaskService) createAgentComment(ctx context.Context, issueID, agentID p
 		},
 	})
 	s.AutoUnresolveThreadOnReply(ctx, rootComment, util.UUIDToString(issue.WorkspaceID), "agent", util.UUIDToString(agentID))
+
+	// Persist a run_qa verdict's structured ```qa-result``` block as durable QA
+	// evidence so the issue's QA section reads one indexed row, not the timeline.
+	s.captureQAEvidence(ctx, issue, content)
 }
 
 // AutoUnresolveThreadOnReply clears resolved_at on the thread root when a

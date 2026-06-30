@@ -77,6 +77,7 @@ import type {
   ProvisionBoxRequest,
   ProvisionBoxResult,
   PolicyFleetHealth,
+  QAEvidence,
   CreateProjectRequest,
   UpdateProjectRequest,
   ListProjectsResponse,
@@ -225,6 +226,7 @@ import {
   EMPTY_PROVISION_RESULT,
   PolicyFleetHealthSchema,
   EMPTY_POLICY_FLEET_HEALTH,
+  QAEvidenceSchema,
   EMPTY_CONNECTED_BOX,
 } from "./schemas";
 
@@ -2234,6 +2236,15 @@ export class ApiClient {
     const raw = await this.fetch<unknown>("/api/policy/fleet-health");
     return parseWithFallback(raw, PolicyFleetHealthSchema, EMPTY_POLICY_FLEET_HEALTH, {
       endpoint: "GET /api/policy/fleet-health",
+    });
+  }
+
+  // The QA section's evidence-first read: one indexed row, or null when no
+  // run_qa verdict has been captured yet (the section then prompts a re-run).
+  async getQAEvidence(issueId: string): Promise<QAEvidence | null> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/qa-evidence`);
+    return parseWithFallback(raw, QAEvidenceSchema.nullable(), null, {
+      endpoint: "GET /api/issues/:id/qa-evidence",
     });
   }
 

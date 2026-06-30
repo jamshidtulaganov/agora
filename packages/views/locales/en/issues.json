@@ -404,6 +404,17 @@
     "toast_fired": "AI action sent — the draft will appear in the execution log.",
     "toast_failed": "Failed to send AI action"
   },
+  "qa_evidence": {
+    "section": "QA Evidence",
+    "empty": "No QA verdict captured yet.",
+    "empty_hint": "Run QA to generate a deterministic verdict.",
+    "rerun": "Re-run QA",
+    "rerunning": "Running…",
+    "verdict_pass": "Passed",
+    "verdict_fail": "Failed",
+    "verdict_unknown": "Pending",
+    "captured": "Captured"
+  },
   "terminate_dialog": {
     "title": "Stop this task?",
     "body": "The task will be cancelled and cannot be resumed.",

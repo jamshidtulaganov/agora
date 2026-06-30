@@ -7,6 +7,7 @@ import {
   DuplicateIssueErrorBodySchema,
   EMPTY_USER,
   ListIssuesResponseSchema,
+  QAEvidenceSchema,
   RuntimeHourlyActivityListSchema,
   RuntimeUsageByAgentListSchema,
   RuntimeUsageByHourListSchema,
@@ -335,5 +336,45 @@ describe("ConnectedBoxListSchema (Remote Boxes)", () => {
 
   it("defaults a missing boxes array to []", () => {
     expect(ConnectedBoxListSchema.parse({}).boxes).toEqual([]);
+  });
+});
+
+describe("QAEvidenceSchema (evidence-first QA)", () => {
+  it("parses a well-formed evidence row including the command table", () => {
+    const parsed = QAEvidenceSchema.parse({
+      id: "e1",
+      issue_id: "i1",
+      baseline_ref: "",
+      branch_sha: "",
+      verdict: "fail",
+      summary: "1 new failure",
+      result: {
+        verdict: "fail",
+        summary: "1 new failure",
+        commands: [
+          { cmd: "go test ./...", baseline_exit: 0, branch_exit: 1, kind: "new_failure" },
+        ],
+        screenshots: ["/var/www/x.png"],
+      },
+      captured_at: "2026-06-30T00:00:00Z",
+    });
+    expect(parsed.verdict).toBe("fail");
+    expect(parsed.result?.commands[0]!.kind).toBe("new_failure");
+  });
+
+  it("falls back to null on a malformed body instead of throwing", () => {
+    // The endpoint returns null when no evidence exists — the client parses
+    // against a nullable schema with a null fallback.
+    const nullable = QAEvidenceSchema.nullable();
+    expect(parseWithFallback(null, nullable, null, { endpoint: "t" })).toBeNull();
+    expect(parseWithFallback("nope", nullable, null, { endpoint: "t" })).toBeNull();
+    expect(parseWithFallback({ result: { commands: "bad" } }, nullable, null, { endpoint: "t" })).toBeNull();
+  });
+
+  it("tolerates a missing/partial result block (parse, don't trust)", () => {
+    const parsed = QAEvidenceSchema.parse({ id: "e1", issue_id: "i1", verdict: "pass" });
+    expect(parsed.result).toBeNull();
+    expect(parsed.summary).toBe("");
+    expect(parsed.captured_at).toBe("");
   });
 });

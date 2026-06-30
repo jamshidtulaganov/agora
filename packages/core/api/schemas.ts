@@ -943,6 +943,33 @@ export const EMPTY_POLICY_FLEET_HEALTH = {
   looping: [],
 };
 
+// QA evidence — the durable run_qa verdict for an issue. Lenient: the command
+// table is agent-authored, so every field defaults and the whole `result` block
+// is nullable. The endpoint returns null when no evidence exists yet, so the
+// client parses against `.nullable()` with a null fallback (see getQAEvidence).
+export const QAResultSchema = z.object({
+  verdict: z.string().default("unknown"),
+  summary: z.string().default(""),
+  commands: z.array(z.object({
+    cmd: z.string().default(""),
+    baseline_exit: z.number().nullable().default(null),
+    branch_exit: z.number().default(0),
+    kind: z.string().default("pass"),
+  }).loose()).default([]),
+  screenshots: z.array(z.string()).default([]),
+}).loose();
+
+export const QAEvidenceSchema = z.object({
+  id: z.string().default(""),
+  issue_id: z.string().default(""),
+  baseline_ref: z.string().default(""),
+  branch_sha: z.string().default(""),
+  verdict: z.string().default(""),
+  summary: z.string().default(""),
+  result: QAResultSchema.nullable().default(null),
+  captured_at: z.string().default(""),
+}).loose();
+
 // ---------------------------------------------------------------------------
 // Billing schemas (cloud-billing proxy surface)
 //

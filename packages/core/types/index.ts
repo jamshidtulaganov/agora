@@ -209,3 +209,4 @@ export type {
   PolicyFailedTask,
   PolicyLoopingIssue,
 } from "./policy";
+export type { QACommand, QAResult, QAEvidence } from "./qa-evidence";
