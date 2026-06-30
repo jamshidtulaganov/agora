@@ -627,7 +627,25 @@ func (h *Handler) maybeGenTestsOnInReview(ctx context.Context, issue db.Issue, a
 	if len(agents) == 0 {
 		return
 	}
-	runner := h.pickLeastBusyQAAgent(ctx, agents)
+	// Pick a QA agent that does NOT already have a pending task on this issue —
+	// run_qa fired first (sequenced by the caller) and took one agent, so this
+	// excludes it and gen_test_cases lands on a different agent instead of being
+	// deduped away. If every QA agent is busy on this issue, skip (the gate is
+	// the priority; cases can be authored on demand).
+	var free []db.Agent
+	for _, a := range agents {
+		pending, err := h.Queries.HasPendingTaskForIssueAndAgent(ctx, db.HasPendingTaskForIssueAndAgentParams{
+			IssueID: issue.ID,
+			AgentID: a.ID,
+		})
+		if err == nil && !pending {
+			free = append(free, a)
+		}
+	}
+	if len(free) == 0 {
+		return
+	}
+	runner := h.pickLeastBusyQAAgent(ctx, free)
 
 	instruction := buildSliceInstruction(sliceActionGenTests, "") +
 		qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)

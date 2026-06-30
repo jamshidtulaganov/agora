@@ -953,7 +953,11 @@ export const QAResultSchema = z.object({
   commands: z.array(z.object({
     cmd: z.string().default(""),
     baseline_exit: z.number().nullable().default(null),
-    branch_exit: z.number().default(0),
+    // Nullable + symmetric with baseline_exit: a command that ran on only ONE
+    // side reports null for the other (real agents emit branch_exit:null for a
+    // baseline-only command). A non-nullable number here rejected the whole
+    // verdict — found in the demo run, SD-320.
+    branch_exit: z.number().nullable().default(null),
     kind: z.string().default("pass"),
   }).loose()).default([]),
   screenshots: z.array(z.string()).default([]),

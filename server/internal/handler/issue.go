@@ -2574,10 +2574,15 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	// (AGORA_AUTO_QA_ENABLED); guarded to a genuine prev!=in_review→in_review
 	// transition so it runs once per entry.
 	if statusChanged && issue.Status == "in_review" && prevIssue.Status != "in_review" {
-		go h.maybeRunQAOnInReview(context.Background(), issue, actorType, actorID)
-		// Proactively author the test suite too — the QA Squad writes cases the
-		// moment dev hands off, not on a human click (idempotent: skips if cases exist).
-		go h.maybeGenTestsOnInReview(context.Background(), issue, actorType, actorID)
+		// Sequential in ONE goroutine: run_qa (the gate) fires FIRST and enqueues
+		// a task for its QA agent; gen_test_cases then picks a DIFFERENT QA agent
+		// (one with no pending task on this issue) so the per-(issue,agent) dedup
+		// no longer drops one of them. Found in the demo run (SD-320): both raced
+		// to the same agent and the gate verdict was silently suppressed.
+		go func() {
+			h.maybeRunQAOnInReview(context.Background(), issue, actorType, actorID)
+			h.maybeGenTestsOnInReview(context.Background(), issue, actorType, actorID)
+		}()
 	}
 
 	// Cancel active tasks when the issue is cancelled by a user.

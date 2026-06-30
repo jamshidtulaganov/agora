@@ -8,7 +8,9 @@
 export interface QACommand {
   cmd: string;
   baseline_exit: number | null;
-  branch_exit: number;
+  // Nullable, symmetric with baseline_exit — null when the command ran on the
+  // baseline side only (a real run_qa agent emits this).
+  branch_exit: number | null;
   kind: "pass" | "new_failure" | "pre_existing";
 }
 

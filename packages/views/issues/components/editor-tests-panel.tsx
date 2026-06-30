@@ -211,7 +211,7 @@ export function parseQAResultBlock(content: string): QAResult | null {
     .map((c): QACommand => ({
       cmd: typeof c.cmd === "string" ? c.cmd : "",
       baseline_exit: typeof c.baseline_exit === "number" ? c.baseline_exit : null,
-      branch_exit: typeof c.branch_exit === "number" ? c.branch_exit : 0,
+      branch_exit: typeof c.branch_exit === "number" ? c.branch_exit : null,
       kind:
         c.kind === "new_failure"
           ? "new_failure"
@@ -267,7 +267,7 @@ export function StructuredResult({ result }: { result: QAResult }) {
                     {c.baseline_exit === null ? "—" : c.baseline_exit}
                   </td>
                   <td className="px-1.5 py-1 text-center text-foreground/70">
-                    {c.branch_exit}
+                    {c.branch_exit === null ? "—" : c.branch_exit}
                   </td>
                   <td className={cn("px-2 py-1 text-right font-sans", style.cls)}>
                     {style.label}
