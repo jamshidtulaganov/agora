@@ -135,6 +135,30 @@ func (q *Queries) GetLabel(ctx context.Context, arg GetLabelParams) (IssueLabel,
 	return i, err
 }
 
+const getLabelByName = `-- name: GetLabelByName :one
+SELECT id, workspace_id, name, color, created_at, updated_at FROM issue_label
+WHERE workspace_id = $1 AND name = $2
+`
+
+type GetLabelByNameParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Name        string      `json:"name"`
+}
+
+func (q *Queries) GetLabelByName(ctx context.Context, arg GetLabelByNameParams) (IssueLabel, error) {
+	row := q.db.QueryRow(ctx, getLabelByName, arg.WorkspaceID, arg.Name)
+	var i IssueLabel
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.Color,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listLabels = `-- name: ListLabels :many
 SELECT id, workspace_id, name, color, created_at, updated_at FROM issue_label
 WHERE workspace_id = $1
@@ -256,6 +280,61 @@ func (q *Queries) ListLabelsForIssues(ctx context.Context, arg ListLabelsForIssu
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStaleUnverifiedQAGates = `-- name: ListStaleUnverifiedQAGates :many
+SELECT i.id, i.workspace_id, i.title
+FROM issue i
+WHERE i.status = 'in_review'
+  AND i.updated_at < now() - make_interval(mins => $1::int)
+  AND i.updated_at > now() - make_interval(hours => $2::int)
+  AND NOT EXISTS (
+    SELECT 1 FROM issue_to_label il JOIN issue_label l ON l.id = il.label_id
+    WHERE il.issue_id = i.id AND l.name IN ('qa:pass', 'qa:fail')
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM agent_task_queue t
+    WHERE t.issue_id = i.id AND t.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+  )
+ORDER BY i.updated_at ASC
+LIMIT 100
+`
+
+type ListStaleUnverifiedQAGatesParams struct {
+	Column1 int32 `json:"column_1"`
+	Column2 int32 `json:"column_2"`
+}
+
+type ListStaleUnverifiedQAGatesRow struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Title       string      `json:"title"`
+}
+
+// The silent-failure watchdog. An issue that is in_review, has gone stale (no
+// activity for $1 minutes), carries NO qa:pass/qa:fail verdict, and has NO live
+// task = a QA gate that fired but produced no verdict (agent died / hit a limit /
+// was never dispatched). When auto-QA is enabled every in_review issue is gated,
+// so this is the silent-green set: surface them so "didn't run" blocks, not reads
+// as passed.
+func (q *Queries) ListStaleUnverifiedQAGates(ctx context.Context, arg ListStaleUnverifiedQAGatesParams) ([]ListStaleUnverifiedQAGatesRow, error) {
+	rows, err := q.db.Query(ctx, listStaleUnverifiedQAGates, arg.Column1, arg.Column2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListStaleUnverifiedQAGatesRow{}
+	for rows.Next() {
+		var i ListStaleUnverifiedQAGatesRow
+		if err := rows.Scan(&i.ID, &i.WorkspaceID, &i.Title); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

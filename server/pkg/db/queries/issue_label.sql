@@ -7,6 +7,33 @@ ORDER BY LOWER(name) ASC;
 SELECT * FROM issue_label
 WHERE id = $1 AND workspace_id = $2;
 
+-- name: GetLabelByName :one
+SELECT * FROM issue_label
+WHERE workspace_id = $1 AND name = $2;
+
+-- name: ListStaleUnverifiedQAGates :many
+-- The silent-failure watchdog. An issue that is in_review, has gone stale (no
+-- activity for $1 minutes), carries NO qa:pass/qa:fail verdict, and has NO live
+-- task = a QA gate that fired but produced no verdict (agent died / hit a limit /
+-- was never dispatched). When auto-QA is enabled every in_review issue is gated,
+-- so this is the silent-green set: surface them so "didn't run" blocks, not reads
+-- as passed.
+SELECT i.id, i.workspace_id, i.title
+FROM issue i
+WHERE i.status = 'in_review'
+  AND i.updated_at < now() - make_interval(mins => $1::int)
+  AND i.updated_at > now() - make_interval(hours => $2::int)
+  AND NOT EXISTS (
+    SELECT 1 FROM issue_to_label il JOIN issue_label l ON l.id = il.label_id
+    WHERE il.issue_id = i.id AND l.name IN ('qa:pass', 'qa:fail')
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM agent_task_queue t
+    WHERE t.issue_id = i.id AND t.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+  )
+ORDER BY i.updated_at ASC
+LIMIT 100;
+
 -- name: CreateLabel :one
 INSERT INTO issue_label (workspace_id, name, color)
 VALUES ($1, $2, $3)
