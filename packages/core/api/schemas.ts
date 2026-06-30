@@ -991,6 +991,7 @@ export const TestCaseSchema = z.object({
     status: z.string().default(""),
     run_source: z.string().default(""),
     created_at: z.string().default(""),
+    output: z.string().default(""),
   }).loose().nullable().default(null),
 }).loose();
 

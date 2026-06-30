@@ -6,6 +6,7 @@ export interface TestRunLite {
   status: string; // pass | fail | skip | blocked
   run_source: string; // human | agent
   created_at: string;
+  output: string; // agent's one-line evidence/reason; empty for human-recorded runs
 }
 
 export interface TestCase {

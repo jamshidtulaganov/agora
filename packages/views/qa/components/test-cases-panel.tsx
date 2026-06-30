@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { Sparkles, Plus, Bot, User, Loader2, FlaskConical, Play } from "lucide-react";
+import { Sparkles, Plus, Bot, User, Loader2, FlaskConical, Play, CircleSlash } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@agora/core/api";
 import { issueKeys, testCasesOptions } from "@agora/core/issues/queries";
@@ -135,6 +135,13 @@ function CaseRow({
   const { t } = useT("issues");
   const [open, setOpen] = useState(false);
   const status = c.latest_run?.status;
+  // "blocked"/"skip" only ever comes from the agent's run_test_cases protocol
+  // (the human Pass/Fail buttons only ever write pass/fail) — it means the
+  // agent attempted this case and could NOT exercise it (no reachable
+  // browser, missing data/route), which reads very differently from "never
+  // attempted" (no latest_run at all). c.latest_run?.output carries the
+  // agent's one-line reason, surfaced as a tooltip.
+  const isBlocked = status === "blocked" || status === "skip";
   return (
     <li className="px-3 py-2">
       <div className="flex items-center gap-2">
@@ -150,6 +157,10 @@ function CaseRow({
         </Badge>
         {status === "pass" || status === "fail" ? (
           verdictIcon(status, "size-4")
+        ) : isBlocked ? (
+          <span title={c.latest_run?.output || t(($) => $.test_cases.blocked)}>
+            <CircleSlash className="size-4 text-amber-600 dark:text-amber-400" />
+          </span>
         ) : (
           <span className="text-[10px] text-muted-foreground">—</span>
         )}

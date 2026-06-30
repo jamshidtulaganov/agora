@@ -230,7 +230,8 @@ SELECT DISTINCT ON (r.test_case_id)
     r.test_case_id,
     r.status,
     r.run_source,
-    r.created_at
+    r.created_at,
+    r.output
 FROM test_run r
 JOIN test_case c ON c.id = r.test_case_id
 WHERE c.issue_id = $1 AND c.workspace_id = $2
@@ -247,6 +248,7 @@ type ListLatestRunsForIssueCasesRow struct {
 	Status     string             `json:"status"`
 	RunSource  string             `json:"run_source"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	Output     string             `json:"output"`
 }
 
 // The latest run per test case for an issue (drives each case's status chip).
@@ -264,6 +266,7 @@ func (q *Queries) ListLatestRunsForIssueCases(ctx context.Context, arg ListLates
 			&i.Status,
 			&i.RunSource,
 			&i.CreatedAt,
+			&i.Output,
 		); err != nil {
 			return nil, err
 		}

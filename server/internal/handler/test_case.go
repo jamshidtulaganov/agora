@@ -15,9 +15,13 @@ import (
 // slice action, captured server-side). A run records one execution's verdict.
 
 type TestRunLite struct {
-	Status     string `json:"status"`
-	RunSource  string `json:"run_source"`
-	CreatedAt  string `json:"created_at"`
+	Status    string `json:"status"`
+	RunSource string `json:"run_source"`
+	CreatedAt string `json:"created_at"`
+	// Output is the one-line evidence an agent reports per case (e.g. "embedded
+	// browser unreachable") via the run_test_cases test-runs protocol. Surfaced
+	// so a "blocked" verdict tells QA WHY, not just that it didn't run.
+	Output string `json:"output,omitempty"`
 }
 
 type TestCaseResponse struct {
@@ -76,6 +80,7 @@ func (h *Handler) GetIssueTestCases(w http.ResponseWriter, r *http.Request) {
 			Status:    run.Status,
 			RunSource: run.RunSource,
 			CreatedAt: run.CreatedAt.Time.Format(time.RFC3339),
+			Output:    run.Output,
 		}
 	}
 	resp := ListTestCasesResponse{TestCases: make([]TestCaseResponse, 0, len(cases))}

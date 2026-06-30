@@ -454,6 +454,7 @@
     "cancel": "Cancel",
     "run_pass": "Pass",
     "run_fail": "Fail",
+    "blocked": "Blocked",
     "empty": "No test cases yet.",
     "empty_hint": "Add one, or let the QA Squad generate them from the ticket.",
     "generated_toast": "QA agent is writing test cases…",
