@@ -36,7 +36,9 @@ export function resolvePostAuthDestination(
   }
   const first = workspaces[0];
   if (first) {
-    return paths.workspace(first.slug).issues();
+    // Land on "my issues" (assigned-to-me by default), not the all-issues list —
+    // a user should see their own work first on login, not the whole workspace.
+    return paths.workspace(first.slug).myIssues();
   }
   return paths.newWorkspace();
 }

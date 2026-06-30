@@ -73,9 +73,11 @@ export function proxy(req: NextRequest) {
   }
 
   // --- Root path: redirect logged-in users to their last workspace ---
+  // Land on "my issues" (assigned-to-me) — the user's own work first, mirroring
+  // resolvePostAuthDestination so the server-side primary and client fallback agree.
   if (pathname === "/" && hasSession && lastSlug) {
     const url = req.nextUrl.clone();
-    url.pathname = `/${lastSlug}/issues`;
+    url.pathname = `/${lastSlug}/my-issues`;
     return NextResponse.redirect(url);
   }
 
