@@ -817,6 +817,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Put("/metadata/{key}", h.SetIssueMetadataKey)
 					r.Delete("/metadata/{key}", h.DeleteIssueMetadataKey)
 					r.Get("/pull-requests", h.ListPullRequestsForIssue)
+					r.Post("/run-regression", h.RunIssueSprintRegression)
 					// Sprint assignment (an issue belongs to at most one sprint).
 					r.Get("/sprint", h.GetIssueSprint)
 					r.Put("/sprint", h.SetIssueSprint)

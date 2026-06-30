@@ -82,6 +82,7 @@ import type {
   ListTestCasesResponse,
   CreateTestCaseRequest,
   CreateTestRunRequest,
+  GetIssueEditorResponse,
   CreateProjectRequest,
   UpdateProjectRequest,
   ListProjectsResponse,
@@ -234,6 +235,8 @@ import {
   ListTestCasesResponseSchema,
   EMPTY_LIST_TEST_CASES,
   EMPTY_CONNECTED_BOX,
+  GetIssueEditorResponseSchema,
+  EMPTY_ISSUE_EDITOR,
 } from "./schemas";
 
 /** Identifies the calling client to the server.
@@ -2243,6 +2246,33 @@ export class ApiClient {
     return parseWithFallback(raw, PolicyFleetHealthSchema, EMPTY_POLICY_FLEET_HEALTH, {
       endpoint: "GET /api/policy/fleet-health",
     });
+  }
+
+  // Resolves where to reach a live view of an issue's worktree — self-host
+  // (daemon_url + agents, most-recent first) or cloud (a proxied editor_url).
+  // 404 means no agent has a worktree on this issue yet, a benign/expected
+  // state (e.g. before the first dev task runs) — degrades to the empty
+  // fallback (mode: "") rather than throwing, so a QA-page consumer can just
+  // check `mode` instead of try/catching a routine 404.
+  async getIssueEditor(issueId: string): Promise<GetIssueEditorResponse> {
+    try {
+      const raw = await this.fetch<unknown>(`/api/issues/${issueId}/editor`);
+      return parseWithFallback(raw, GetIssueEditorResponseSchema, EMPTY_ISSUE_EDITOR, {
+        endpoint: "GET /api/issues/:id/editor",
+      });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return EMPTY_ISSUE_EDITOR;
+      throw e;
+    }
+  }
+
+  // Fires the SAME whole-branch regression (scope=regression vs sprint-root)
+  // the sprint-end scheduler runs automatically — manually, from wherever a
+  // human is already looking at one of the sprint's issues. The response body
+  // (an autopilot-run record) carries nothing the UI renders — only success
+  // vs failure matters here — so it's intentionally left unparsed.
+  async runIssueSprintRegression(issueId: string): Promise<void> {
+    await this.fetch(`/api/issues/${issueId}/run-regression`, { method: "POST" });
   }
 
   // The QA section's evidence-first read: one indexed row, or null when no

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, CheckCircle2, XCircle, RefreshCw, ExternalLink, Loader2, Bug } from "lucide-react";
+import { ArrowLeft, CheckCircle2, XCircle, RefreshCw, ExternalLink, Loader2, Bug, GitBranch } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core";
@@ -14,6 +14,9 @@ import { useT } from "../../i18n";
 import { AppLink } from "../../navigation";
 import { StructuredResult } from "../../issues/components/editor-tests-panel";
 import { IssueAgentHeaderChip } from "../../issues/components/issue-agent-header-chip";
+import { PullRequestList } from "../../issues/components/pull-request-list";
+import { QALiveBrowser } from "./qa-live-browser";
+import { QALiveProgress } from "./qa-live-progress";
 import { TestCasesPanel } from "./test-cases-panel";
 import { verdictIcon, verdictTone } from "./verdict";
 import { FileBugSheet } from "./file-bug-sheet";
@@ -82,6 +85,21 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
     onError: (e) => toast.error(e instanceof Error ? e.message : t(($) => $.slice_actions.toast_failed)),
   });
 
+  // Fires the SAME whole-branch regression the sprint-end scheduler runs
+  // automatically, manually — from this issue's sprint, without navigating
+  // to a separate sprint admin surface. 404 (issue not on a sprint, or no
+  // sprint-end autopilot configured) surfaces via the error toast; the button
+  // doesn't pre-check sprint membership to avoid an extra round trip for a
+  // state the toast already explains clearly.
+  const runRegression = useMutation({
+    mutationFn: () => api.runIssueSprintRegression(issueId),
+    onSuccess: () => toast.success(t(($) => $.qa_review.run_regression_fired)),
+    onError: (e) =>
+      toast.error(
+        e instanceof Error && e.message ? e.message : t(($) => $.qa_review.run_regression_failed),
+      ),
+  });
+
   const verdict = evidence?.verdict ?? "";
   const verdictLabel =
     verdict === "pass"
@@ -121,6 +139,17 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
             <h1 className="text-lg font-semibold leading-tight">{issue.title}</h1>
           </header>
 
+          {/* Pull requests — dev-side state (checks, conflicts, merge status)
+              right alongside QA's own verdict, not a separate tab to chase. */}
+          <section>
+            <div className="mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
+              {t(($) => $.detail.section_pull_requests)}
+            </div>
+            <div className="rounded-lg border px-2 py-1.5">
+              <PullRequestList issueId={issueId} />
+            </div>
+          </section>
+
           {/* Verdict hero */}
           <div className={cn("rounded-xl border px-4 py-3", verdictTone(verdict))}>
             <div className="flex items-center gap-2.5">
@@ -136,6 +165,11 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
               <p className="mt-1.5 text-[12px] text-muted-foreground">{evidence.summary}</p>
             )}
           </div>
+
+          {/* Live progress — terminal-style feed of what the QA agent is doing
+              right now, while run_qa / run_test_cases is actively running.
+              Renders nothing when idle. */}
+          <QALiveProgress issueId={issueId} />
 
           {/* Checks */}
           {evidence?.result && evidence.result.commands.length > 0 ? (
@@ -153,6 +187,9 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
               <p className="mt-0.5 text-[11px] text-muted-foreground/70">{t(($) => $.qa_evidence.empty_hint)}</p>
             </div>
           )}
+
+          {/* Live browser — reproduce or sanity-check directly, right here. */}
+          <QALiveBrowser issueId={issueId} />
 
           {/* Triage bar — the QA team's verdict + actions. */}
           <div className="flex flex-wrap items-center gap-2 border-t pt-4">
@@ -201,6 +238,21 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
               size="sm"
               variant="outline"
               className="ml-auto h-8 gap-1.5 text-[12px]"
+              disabled={runRegression.isPending}
+              onClick={() => runRegression.mutate()}
+            >
+              {runRegression.isPending ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <GitBranch className="size-3.5" />
+              )}
+              {t(($) => $.qa_review.run_regression)}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 gap-1.5 text-[12px]"
               disabled={rerun.isPending}
               onClick={() => rerun.mutate()}
             >

@@ -418,11 +418,18 @@
   "qa_review": {
     "back": "Back to QA queue",
     "open_full": "Open full issue",
+    "live_browser": "Live browser",
+    "live_browser_hint": "Reproduce or sanity-check directly against the running app",
+    "live_browser_loading": "Connecting…",
+    "live_browser_unavailable": "No live worktree to preview yet — assign an agent to this issue first.",
     "checks": "Checks",
     "pass": "Pass",
     "fail": "Fail",
     "marked_pass": "Marked qa:pass",
-    "marked_fail": "Marked qa:fail"
+    "marked_fail": "Marked qa:fail",
+    "run_regression": "Run sprint regression",
+    "run_regression_fired": "Whole-branch regression fired against the sprint",
+    "run_regression_failed": "Couldn't fire regression"
   },
   "qa_bug": {
     "file_bug": "File bug",

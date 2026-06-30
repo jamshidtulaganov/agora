@@ -418,11 +418,18 @@
   "qa_review": {
     "back": "Назад к очереди QA",
     "open_full": "Открыть задачу",
+    "live_browser": "Живой браузер",
+    "live_browser_hint": "Воспроизведите баг или проверьте фикс прямо в запущенном приложении",
+    "live_browser_loading": "Подключение…",
+    "live_browser_unavailable": "Пока нет живого воркдира для просмотра — сначала назначьте агента на эту задачу.",
     "checks": "Проверки",
     "pass": "Пройдено",
     "fail": "Провалено",
     "marked_pass": "Отмечено qa:pass",
-    "marked_fail": "Отмечено qa:fail"
+    "marked_fail": "Отмечено qa:fail",
+    "run_regression": "Запустить регрессию спринта",
+    "run_regression_fired": "Регрессия всей ветки спринта запущена",
+    "run_regression_failed": "Не удалось запустить регрессию"
   },
   "qa_bug": {
     "file_bug": "Завести баг",

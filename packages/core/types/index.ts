@@ -217,3 +217,4 @@ export type {
   CreateTestCaseRequest,
   CreateTestRunRequest,
 } from "./test-case";
+export type { EditorAgent, GetIssueEditorResponse } from "./editor-live";

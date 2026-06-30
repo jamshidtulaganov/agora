@@ -418,11 +418,18 @@
   "qa_review": {
     "back": "QA navbatiga qaytish",
     "open_full": "Vazifani ochish",
+    "live_browser": "Jonli brauzer",
+    "live_browser_hint": "Ishlab turgan ilovada bugni qayta hosil qiling yoki tuzatishni tekshiring",
+    "live_browser_loading": "Ulanmoqda…",
+    "live_browser_unavailable": "Hali ko'rsatish uchun jonli worktree yo'q — avval bu vazifaga agent biriktiring.",
     "checks": "Tekshiruvlar",
     "pass": "O'tdi",
     "fail": "O'tmadi",
     "marked_pass": "qa:pass belgilandi",
-    "marked_fail": "qa:fail belgilandi"
+    "marked_fail": "qa:fail belgilandi",
+    "run_regression": "Sprint regressiyasini ishga tushirish",
+    "run_regression_fired": "Sprint butun branchi bo'yicha regressiya ishga tushirildi",
+    "run_regression_failed": "Regressiyani ishga tushirib bo'lmadi"
   },
   "qa_bug": {
     "file_bug": "Bag ochish",

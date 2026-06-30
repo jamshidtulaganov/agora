@@ -1001,6 +1001,29 @@ export const ListTestCasesResponseSchema = z.object({
 
 export const EMPTY_LIST_TEST_CASES = { test_cases: [] };
 
+// GET /api/issues/:id/editor — resolves where (and how) to reach a live view
+// of an issue's worktree. Two real shapes share one endpoint: self-host (a
+// daemon_url + the agents that have a worktree, most-recent first) or cloud
+// (a single proxied editor_url). `mode` is the discriminant; everything else
+// is optional so an unrecognized/future mode degrades to "nothing to show"
+// instead of crashing a consumer that only handles one mode.
+export const EditorAgentSchema = z.object({
+  agent_id: z.string().default(""),
+  agent_name: z.string().default(""),
+  work_dir: z.string().default(""),
+  status: z.string().default(""),
+}).loose();
+
+export const GetIssueEditorResponseSchema = z.object({
+  mode: z.string().default(""),
+  daemon_url: z.string().default(""),
+  user_id: z.string().default(""),
+  agents: z.array(EditorAgentSchema).default([]),
+  editor_url: z.string().default(""),
+}).loose();
+
+export const EMPTY_ISSUE_EDITOR = { mode: "", daemon_url: "", user_id: "", agents: [], editor_url: "" };
+
 // ---------------------------------------------------------------------------
 // Billing schemas (cloud-billing proxy surface)
 //

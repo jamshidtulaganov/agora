@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -706,6 +707,98 @@ func (h *Handler) DeploySprintBranch(ctx context.Context, sprintID, wsID pgtype.
 
 	updated, okSync, _ := h.performBoxSync(ctx, box, SprintBranchFor(sprint), keyPath)
 	return updated, okSync, nil
+}
+
+// sprintRegressionPayload is the trigger payload a sprint regression run's
+// agent receives — the QA directive: a whole-branch regression of the sprint
+// branch against sprint-root. Same shape whether the scheduler or a human
+// fired it; only AutopilotRun.Source differs ("schedule" vs "manual").
+type sprintRegressionPayload struct {
+	Scope    string `json:"scope"`
+	Branch   string `json:"branch"`
+	Baseline string `json:"baseline"`
+	SprintID string `json:"sprint_id"`
+}
+
+// DispatchSprintRegression deploys the sprint branch to its project's bound QA
+// box, then dispatches the project's sprint-end (run-only) autopilot with a
+// scope=regression / baseline=sprint-root payload — a whole-branch regression,
+// distinct from the per-task scope=task QA that fires on each issue's
+// in_review transition. Shared by the sprint-end scheduler (source="schedule",
+// cmd/server/sprint_end_scheduler.go) and a human-triggered re-run from the QA
+// review page (source="manual", RunIssueSprintRegression below) — same
+// deploy+dispatch logic, different provenance on the resulting run. Best-effort
+// on the deploy (a sync failure is logged, not fatal: the regression still
+// runs, just possibly against a stale box) but returns an error when no
+// run-only autopilot is bound to the project — the caller can't dispatch
+// nothing, unlike the scheduler's tick which just skips and logs.
+func (h *Handler) DispatchSprintRegression(ctx context.Context, sprintID, wsID pgtype.UUID, source string) (db.AutopilotRun, error) {
+	sprint, err := h.Queries.GetSprint(ctx, db.GetSprintParams{ID: sprintID, WorkspaceID: wsID})
+	if err != nil {
+		return db.AutopilotRun{}, fmt.Errorf("sprint not found: %w", err)
+	}
+	branch := SprintBranchFor(sprint)
+
+	if _, ok, derr := h.DeploySprintBranch(ctx, sprint.ID, sprint.WorkspaceID); derr != nil {
+		slog.Warn("sprint regression: deploy sprint branch failed", "sprint_id", uuidToString(sprint.ID), "error", derr)
+	} else if !ok {
+		slog.Warn("sprint regression: sprint branch sync reported failure", "sprint_id", uuidToString(sprint.ID), "branch", branch)
+	}
+
+	autopilots, err := h.Queries.ListActiveRunOnlyAutopilotsForProject(ctx, db.ListActiveRunOnlyAutopilotsForProjectParams{
+		WorkspaceID: sprint.WorkspaceID,
+		ProjectID:   sprint.ProjectID,
+	})
+	if err != nil {
+		return db.AutopilotRun{}, fmt.Errorf("list sprint-end autopilots: %w", err)
+	}
+	if len(autopilots) == 0 {
+		return db.AutopilotRun{}, fmt.Errorf("no sprint-end (run-only) autopilot is bound to this sprint's project")
+	}
+
+	payload, err := json.Marshal(sprintRegressionPayload{
+		Scope: "regression", Branch: branch, Baseline: "sprint-root", SprintID: uuidToString(sprint.ID),
+	})
+	if err != nil {
+		return db.AutopilotRun{}, fmt.Errorf("marshal payload: %w", err)
+	}
+
+	ap := autopilots[0]
+	run, err := h.AutopilotService.DispatchAutopilot(ctx, ap, pgtype.UUID{}, source, payload)
+	if err != nil {
+		return db.AutopilotRun{}, fmt.Errorf("dispatch regression: %w", err)
+	}
+	return *run, nil
+}
+
+// RunIssueSprintRegression lets a human fire the SAME whole-branch regression
+// the sprint-end scheduler runs automatically, from wherever they're already
+// looking at one of the sprint's issues (the QA review page) — without
+// requiring them to know the sprint id or navigate to a separate sprint admin
+// surface. Resolves the issue's sprint via GetSprintForIssue; 404 when the
+// issue isn't on a sprint (the regression concept doesn't apply) or no
+// sprint-end autopilot is configured. POST /api/issues/{id}/run-regression.
+func (h *Handler) RunIssueSprintRegression(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUserID(w, r); !ok {
+		return
+	}
+	issue, ok := h.loadIssueForUser(w, r, chi.URLParam(r, "id"))
+	if !ok {
+		return
+	}
+
+	sprint, err := h.Queries.GetSprintForIssue(r.Context(), issue.ID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "this issue is not part of a sprint")
+		return
+	}
+
+	run, err := h.DispatchSprintRegression(r.Context(), sprint.ID, issue.WorkspaceID, "manual")
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, runToResponse(run))
 }
 
 // DeploySprintQA is the sprint-level counterpart to DeployIssueQA: it resolves

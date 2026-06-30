@@ -1061,11 +1061,15 @@ func (s *AutopilotService) buildIssueDescription(ap db.Autopilot, run db.Autopil
 	b.WriteString(triggeredAt)
 	b.WriteString(". After starting work, rename this issue to accurately reflect what you are doing.*")
 
-	if (run.Source == "webhook" || run.Source == "schedule") && len(run.TriggerPayload) > 0 {
+	if (run.Source == "webhook" || run.Source == "schedule" || run.Source == "manual") && len(run.TriggerPayload) > 0 {
 		// Webhook payloads arrive wrapped in a {event, eventPayload} envelope;
-		// schedule payloads are a flat JSON object ({scope, branch, baseline}).
-		// Unwrap the envelope only for webhook; for schedule render the payload
-		// as-is so the agent reads the QA directive verbatim.
+		// schedule/manual payloads are a flat JSON object ({scope, branch,
+		// baseline}) — manual is a human re-firing the same sprint-regression
+		// directive (DispatchSprintRegression), so it renders identically to
+		// schedule. Every OTHER manual trigger (TriggerAutopilot) passes a nil
+		// payload, so this branch is a no-op for them — len(...) > 0 guards it.
+		// Unwrap the envelope only for webhook; for schedule/manual render the
+		// payload as-is so the agent reads the QA directive verbatim.
 		label := "Trigger"
 		event := ""
 		var payloadJSON []byte

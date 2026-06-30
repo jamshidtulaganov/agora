@@ -357,7 +357,7 @@ func main() {
 	go runRuntimeSweeper(sweepCtx, queries, liveness, taskSvc, bus)
 	go heartbeatScheduler.Run(sweepCtx)
 	go runAutopilotScheduler(autopilotCtx, queries, autopilotSvc)
-	go runSprintEndScheduler(autopilotCtx, queries, autopilotSvc, h)
+	go runSprintEndScheduler(autopilotCtx, queries, h)
 	// Silent-failure watchdog: escalate in_review issues whose QA gate fired but
 	// produced no verdict (agent died / usage limit) so they block, not read green.
 	go runQAWatchdogScheduler(autopilotCtx, queries, h)
