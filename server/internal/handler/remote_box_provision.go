@@ -76,14 +76,22 @@ func boxWorkDir(p provisionParams) string {
 	return strings.TrimRight(p.WebRoot, "/") + "/" + boxSubdomain(p)
 }
 
-// buildProvisionScript renders the box-side /bin/sh runbook. The git token is
-// injected into the clone URL ONLY (ephemeral; redacted before the output is
-// logged/stored), exactly like buildGitSyncScript. Every interpolated value is
-// shellQuote'd, so a handle/seed carrying a shell metacharacter cannot break out
-// of its argument. IDEMPOTENT + NON-DESTRUCTIVE by construction: each step guards
-// on absence (`[ ! -d .git ]`, `[ ! -f ]`, `[ -e framework ]`) so a re-run on an
-// existing box is a safe no-op. It runs NO database commands — the box inherits
-// the seed's DB config as copied.
+// buildProvisionScript renders the box-side /bin/sh runbook as a sequence of
+// newline-separated statements under `set -e`. The git token is injected into the
+// clone URL ONLY (ephemeral; redacted before the output is logged/stored), exactly
+// like buildGitSyncScript. Every interpolated value is shellQuote'd, so a
+// handle/seed carrying a shell metacharacter cannot break out of its argument.
+//
+// WHY newline-separated, not one ` && ` chain: in an `a && b && c` chain, `set -e`
+// does NOT abort on a non-final failure, and a trailing `cmd || fallback` re-runs
+// later steps even after an earlier step failed — so a failed clone would skip
+// `cd` yet still run `mkdir/cp/chmod` in the WRONG cwd ($HOME) and report success.
+// Separate statements under `set -e` abort at the first failure (a failed clone or
+// `cd` stops the run cleanly), and every conditional is a real `if` (no `||`
+// fallthrough). IDEMPOTENT + NON-DESTRUCTIVE: each mutating step is guarded on
+// absence (`[ ! -d .git ]`, `[ ! -f ]`, `[ ! -e framework ]`), so a re-run is a
+// safe no-op. It runs NO database commands — the box inherits the seed's DB config
+// as copied.
 func buildProvisionScript(p provisionParams, token string) string {
 	dirQ := shellQuote(boxWorkDir(p))
 	authed := shellQuote(authedRepoURL(p.RepoURL, token))
@@ -92,18 +100,20 @@ func buildProvisionScript(p provisionParams, token string) string {
 	return strings.Join([]string{
 		"set -e",
 		// 1. checkout the repo into the served dir — first run only; a re-run never
-		//    re-clones over a dev's working copy.
-		fmt.Sprintf("if [ ! -d %s/.git ]; then mkdir -p %s && git clone --depth 1 %s %s; fi", dirQ, dirQ, authed, dirQ),
+		//    re-clones over a dev's working copy. A clone failure aborts here (set -e).
+		fmt.Sprintf("if [ ! -d %s/.git ]; then mkdir -p %s; git clone --depth 1 %s %s; fi", dirQ, dirQ, authed, dirQ),
+		// cd must succeed or the run aborts — never run later steps in the wrong dir.
 		fmt.Sprintf("cd %s", dirQ),
 		// 2. gitignored deploy glue (incl. the DB config) + the shared Yii framework,
 		//    copied from the seed site ONLY when absent here AND present there. The box
 		//    inherits the seed's DB config verbatim — no DB is created, cloned, or
-		//    renamed ("keep each box's existing DB"). A seed that lacks an optional file
+		//    renamed ("keep each box's existing DB"). A seed missing an optional file
 		//    (e.g. no db.php) is skipped, never an abort.
 		fmt.Sprintf("for f in index.php protected/config/main.php protected/config/db.php; do "+
-			"if [ ! -f \"$f\" ] && [ -f %s/\"$f\" ]; then mkdir -p \"$(dirname \"$f\")\" && cp %s/\"$f\" \"$f\"; fi; done", seedQ, seedQ),
-		fmt.Sprintf("[ -e framework ] || cp -a %s/framework framework 2>/dev/null || true", seedQ),
+			"if [ ! -f \"$f\" ] && [ -f %s/\"$f\" ]; then mkdir -p \"$(dirname \"$f\")\"; cp %s/\"$f\" \"$f\"; fi; done", seedQ, seedQ),
+		fmt.Sprintf("if [ ! -e framework ] && [ -e %s/framework ]; then cp -a %s/framework framework; fi", seedQ, seedQ),
 		// 3. writable runtime dirs (relative to the work dir we cd'd into).
-		"mkdir -p protected/runtime assets && chmod -R 0777 protected/runtime assets",
-	}, " && ")
+		"mkdir -p protected/runtime assets",
+		"chmod -R 0777 protected/runtime assets",
+	}, "\n")
 }

@@ -50,10 +50,15 @@ func TestBuildProvisionScript(t *testing.T) {
 	}
 
 	// Idempotent + NON-DESTRUCTIVE guards: every mutating step is gated on absence.
-	for _, want := range []string{"[ ! -d", "[ ! -f", "[ -e framework"} {
+	for _, want := range []string{"[ ! -d", "[ ! -f", "[ ! -e framework"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("script must guard step with %q (idempotency), got: %s", want, s)
 		}
+	}
+	// Robustness: a sequence under set -e (not one && chain), so a failed clone/cd
+	// aborts cleanly instead of falling through to later steps in the wrong cwd.
+	if !strings.HasPrefix(s, "set -e\n") {
+		t.Errorf("script must run statements under set -e, got: %s", s)
 	}
 
 	// The box INHERITS the seed's DB config ("keep each box's existing DB"): the
