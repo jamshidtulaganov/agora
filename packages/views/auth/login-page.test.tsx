@@ -454,15 +454,19 @@ describe("LoginPage", () => {
       expect(screen.getByText(/sign in with telegram/i)).toBeInTheDocument();
     });
 
-    // Deep-link button rendered as an anchor pointing at deep_link, with the
-    // bot username interpolated into the label.
-    const openLink = screen.getByRole("link", {
-      name: /open @agora_bot in telegram/i,
-    });
-    expect(openLink).toHaveAttribute(
-      "href",
-      "https://t.me/agora_bot?start=nonce-123",
+    // Deep-link rendered as a button that opens the bot deep_link in a
+    // popup window (not an anchor), with the bot username interpolated into
+    // the label. Assert the window.open target.
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+    await user.click(
+      screen.getByRole("button", { name: /open @agora_bot in telegram/i }),
     );
+    expect(openSpy).toHaveBeenCalledWith(
+      "https://t.me/agora_bot?start=nonce-123",
+      expect.any(String),
+      expect.any(String),
+    );
+    openSpy.mockRestore();
     // The 6-digit OTP input is present.
     expect(getOTPInput()).toBeInTheDocument();
   });
