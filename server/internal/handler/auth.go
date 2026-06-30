@@ -421,11 +421,12 @@ func (h *Handler) VerifyCode(w http.ResponseWriter, r *http.Request) {
 		obsmetrics.RecordEvent(h.Analytics, h.Metrics, analytics.Signup(uuidToString(user.ID), user.Email, signupSourceFromRequest(r)))
 	}
 
-	// Auto-join the configured default workspaces (AGORA_DEFAULT_WORKSPACE_SLUGS),
-	// mirroring the Telegram verify path — so email signups land in the team's
-	// existing workspace instead of an empty "start fresh" state. Idempotent and
-	// best-effort: it also back-fills membership for users created before this.
-	h.ensureDefaultWorkspaceMemberships(r.Context(), user.ID)
+	// NOTE: email/web logins do NOT auto-join the default workspaces. That
+	// blanket back-fill (every login → all AGORA_DEFAULT_WORKSPACE_SLUGS) put
+	// invited users into the whole org instead of just the workspace their
+	// invite link names. Email/web membership now comes only from an accepted
+	// invitation or creating a workspace. The Telegram path keeps the auto-join
+	// (the SD Mini App intends every Telegram user to land in the SD workspaces).
 
 	tokenString, err := h.issueJWT(user)
 	if err != nil {
