@@ -170,6 +170,7 @@ const mockViewState = {
   projectFilters: [] as string[],
   includeNoProject: false,
   labelFilters: [] as string[],
+  sprintFilters: [] as string[],
   sortBy: "position" as const,
   sortDirection: "asc" as const,
   cardProperties: { priority: true, description: true, assignee: true, dueDate: true, project: true, childProgress: true, labels: true },
