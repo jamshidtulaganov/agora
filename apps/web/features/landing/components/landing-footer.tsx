@@ -5,23 +5,29 @@ import { AgoraIcon } from "@agora/ui/components/common/agora-icon";
 import { cn } from "@agora/ui/lib/utils";
 import { useAuthStore } from "@agora/core/auth";
 import { captureDownloadIntent } from "@agora/core/analytics";
-import { XMark, githubUrl, twitterUrl } from "./shared";
+import { githubUrl, twitterUrl } from "./shared";
 import { useLocale, locales, localeLabels } from "../i18n";
 
 export function LandingFooter() {
   const { t, locale, setLocale } = useLocale();
   const user = useAuthStore((s) => s.user);
-  // New-startup posture: hide GitHub / open-source surfaces, plus links we
-  // don't surface yet (changelog, docs — also removed from the top nav).
+  // New-startup posture: hide GitHub / open-source surfaces, social, and the
+  // company/about pages, plus links we don't surface yet (changelog, docs —
+  // also removed from the top nav). Groups left with no links are dropped.
   const isHidden = (href: string) =>
     href === githubUrl ||
+    href === twitterUrl ||
     href === "#open-source" ||
+    href === "/about" ||
+    href === "/contact-sales" ||
     href === "/changelog" ||
     href.startsWith("/docs");
-  const groups = Object.values(t.footer.groups).map((group) => ({
-    ...group,
-    links: group.links.filter((link) => !isHidden(link.href)),
-  }));
+  const groups = Object.values(t.footer.groups)
+    .map((group) => ({
+      ...group,
+      links: group.links.filter((link) => !isHidden(link.href)),
+    }))
+    .filter((group) => group.links.length > 0);
 
   return (
     <footer className="bg-white text-[#18181B] dark:bg-[#0a0d12] dark:text-white">
@@ -39,16 +45,6 @@ export function LandingFooter() {
             <p className="mt-4 max-w-[300px] text-[14px] leading-[1.7] text-[#71717A] dark:text-white/50 sm:text-[15px]">
               {t.footer.tagline}
             </p>
-            <div className="mt-4 flex items-center gap-3">
-              <Link
-                href={twitterUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-[#71717A] transition-colors hover:text-[#18181B] dark:text-white/40 dark:hover:text-white"
-              >
-                <XMark className="size-4" />
-              </Link>
-            </div>
             <div className="mt-6">
               <Link
                 href={user ? "/" : "/login"}
