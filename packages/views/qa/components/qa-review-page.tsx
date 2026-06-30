@@ -13,6 +13,7 @@ import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
 import { AppLink } from "../../navigation";
 import { StructuredResult } from "../../issues/components/editor-tests-panel";
+import { IssueAgentHeaderChip } from "../../issues/components/issue-agent-header-chip";
 import { TestCasesPanel } from "./test-cases-panel";
 import { verdictIcon, verdictTone } from "./verdict";
 import { FileBugSheet } from "./file-bug-sheet";
@@ -106,13 +107,16 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
           <header className="space-y-1.5">
             <div className="flex items-center gap-2">
               <span className="font-mono text-xs text-muted-foreground">{issue.identifier}</span>
-              <AppLink
-                href={wp.issueDetail(issueId)}
-                className="ml-auto flex items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground"
-              >
-                {t(($) => $.qa_review.open_full)}
-                <ExternalLink className="size-3" />
-              </AppLink>
+              <div className="ml-auto flex items-center gap-2">
+                <IssueAgentHeaderChip issueId={issueId} />
+                <AppLink
+                  href={wp.issueDetail(issueId)}
+                  className="flex items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground"
+                >
+                  {t(($) => $.qa_review.open_full)}
+                  <ExternalLink className="size-3" />
+                </AppLink>
+              </div>
             </div>
             <h1 className="text-lg font-semibold leading-tight">{issue.title}</h1>
           </header>

@@ -31,13 +31,19 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
 
   const generate = useMutation({
     mutationFn: () => api.generateTestCases(issueId),
-    onSuccess: () => toast.success(t(($) => $.test_cases.generated_toast)),
+    onSuccess: () => {
+      toast.success(t(($) => $.test_cases.generated_toast));
+      invalidate();
+    },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
   const runAll = useMutation({
     mutationFn: () => api.runTestCases(issueId),
-    onSuccess: () => toast.success(t(($) => $.test_cases.run_all_toast)),
+    onSuccess: () => {
+      toast.success(t(($) => $.test_cases.run_all_toast));
+      invalidate();
+    },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 

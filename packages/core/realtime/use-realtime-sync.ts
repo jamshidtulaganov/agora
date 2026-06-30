@@ -504,6 +504,14 @@ export function useRealtimeSync(
         // every list-of-tasks query stale" so cache stays fresh even
         // when the relevant component isn't currently mounted.
         qc.invalidateQueries({ queryKey: ["issues", "tasks"] });
+        // QA review page (test cases + evidence verdict): a run_qa /
+        // run_test_cases task is invisible there otherwise — dispatch only
+        // resolves the POST, never the agent's actual completion. Same
+        // blanket-prefix contract as the tasks invalidation above (no
+        // issue_id on this payload to filter by), so the mounted review
+        // page picks up new results the moment the agent's task transitions.
+        qc.invalidateQueries({ queryKey: issueKeys.testCasesAll() });
+        qc.invalidateQueries({ queryKey: issueKeys.qaEvidenceAll() });
         // Per-issue token usage card (issue-detail right rail). Same
         // shape as the tasks invalidation above — any task lifecycle
         // event shifts the aggregated usage numbers.
