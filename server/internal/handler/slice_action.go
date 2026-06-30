@@ -443,6 +443,74 @@ func (h *Handler) qaSquadLeader(ctx context.Context, wsID pgtype.UUID) (db.Agent
 	return db.Agent{}, false
 }
 
+// qaSquadAgents returns ALL ready agents of the QA squad — its leader plus its
+// agent members — so auto-QA can fan across the whole roster instead of funneling
+// every in_review issue through one leader (the hard throughput ceiling). Each is
+// non-archived + has a runtime (sliceAgentReady). Empty when there's no QA squad
+// or no ready agent.
+func (h *Handler) qaSquadAgents(ctx context.Context, wsID pgtype.UUID) []db.Agent {
+	squads, err := h.Queries.ListSquads(ctx, wsID)
+	if err != nil {
+		return nil
+	}
+	var squad db.Squad
+	found := false
+	for _, s := range squads {
+		if strings.Contains(strings.ToLower(s.Name), "qa") {
+			squad = s
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil
+	}
+	seen := map[string]bool{}
+	var agents []db.Agent
+	add := func(id pgtype.UUID) {
+		if !id.Valid {
+			return
+		}
+		k := uuidToString(id)
+		if seen[k] {
+			return
+		}
+		seen[k] = true
+		a, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{ID: id, WorkspaceID: wsID})
+		if err == nil && !a.ArchivedAt.Valid && sliceAgentReady(a) {
+			agents = append(agents, a)
+		}
+	}
+	add(squad.LeaderID)
+	if members, err := h.Queries.ListSquadMembers(ctx, squad.ID); err == nil {
+		for _, m := range members {
+			if m.MemberType == "agent" {
+				add(m.MemberID)
+			}
+		}
+	}
+	return agents
+}
+
+// pickLeastBusyQAAgent spreads QA across the roster: the agent with the fewest
+// in-flight tasks (first-min wins, so a stable order tie-breaks deterministically).
+// Concurrent dispatches each see the prior pick's task counted, so load spreads.
+func (h *Handler) pickLeastBusyQAAgent(ctx context.Context, agents []db.Agent) db.Agent {
+	best := agents[0]
+	bestN := int64(1) << 62
+	for _, a := range agents {
+		n, err := h.Queries.CountRunningTasks(ctx, a.ID)
+		if err != nil {
+			n = 0
+		}
+		if n < bestN {
+			bestN = n
+			best = a
+		}
+	}
+	return best
+}
+
 // maybeRunQAOnInReview fires the QA squad's run_qa when an issue enters
 // in_review — automating the QA team's previously-manual smoke (deterministic
 // smoke on the assignee developer's box + plan-driven tests). Best-effort +
@@ -454,10 +522,15 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	if !autoQAEnabled() {
 		return
 	}
-	leader, ok := h.qaSquadLeader(ctx, issue.WorkspaceID)
-	if !ok {
+	// Fan across the WHOLE QA roster (not just the leader) + pick the least-busy
+	// ready agent, so many in_review issues run QA concurrently instead of queuing
+	// behind one agent. The per-box sync lock keeps concurrent runs on the shared
+	// sprint branch safe.
+	agents := h.qaSquadAgents(ctx, issue.WorkspaceID)
+	if len(agents) == 0 {
 		return
 	}
+	runner := h.pickLeastBusyQAAgent(ctx, agents)
 
 	// Shared-sprint-branch model: when the issue belongs to a sprint, QA runs on
 	// the SPRINT branch (the integrated tip), not an isolated per-task branch.
@@ -493,7 +566,7 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	instruction += h.sliceActionQASmokeContext(ctx, issue)
 	instruction += qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
 
-	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(leader.Name), uuidToString(leader.ID)) + instruction
+	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID:     issue.ID,
 		WorkspaceID: issue.WorkspaceID,
@@ -509,7 +582,8 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	}
 	h.triggerTasksForComment(ctx, issue, comment, nil, actorType, actorID, nil)
 	slog.Info("auto run_qa fired on in_review",
-		"issue_id", uuidToString(issue.ID), "agent_id", uuidToString(leader.ID))
+		"issue_id", uuidToString(issue.ID), "agent_id", uuidToString(runner.ID),
+		"qa_agents", len(agents))
 }
 
 // gitlabBaseBranch is the branch GitLab merge-request slice actions target +

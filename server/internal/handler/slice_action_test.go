@@ -296,6 +296,31 @@ func TestQASquadLeader(t *testing.T) {
 	}
 }
 
+// TestQASquadAgents: the roster resolver returns the QA squad's leader + agent
+// members (deduped, ready-filtered) so auto-QA can fan across them.
+func TestQASquadAgents(t *testing.T) {
+	ctx := context.Background()
+	agentID, _, _ := privateAgentTestFixture(t)
+
+	var squadID string
+	if err := testPool.QueryRow(ctx,
+		`INSERT INTO squad (workspace_id, name, description, leader_id, creator_id)
+		 VALUES ($1, 'QA Squad', '', $2, $2) RETURNING id`,
+		testWorkspaceID, agentID).Scan(&squadID); err != nil {
+		t.Fatalf("create QA squad: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM squad WHERE id=$1`, squadID) })
+	// Also list the same agent as a member — exercises leader+member collection + dedup.
+	testPool.Exec(ctx,
+		`INSERT INTO squad_member (squad_id, member_type, member_id, role) VALUES ($1,'agent',$2,'')
+		 ON CONFLICT DO NOTHING`, squadID, agentID)
+
+	agents := testHandler.qaSquadAgents(ctx, testUUID(testWorkspaceID))
+	if len(agents) != 1 || uuidToString(agents[0].ID) != agentID {
+		t.Errorf("qaSquadAgents = %d agents, want exactly [%s]", len(agents), agentID)
+	}
+}
+
 // TestMaybeRunQAOnInReviewDisabled: with AGORA_AUTO_QA_ENABLED unset the auto-QA
 // trigger is inert (posts no comment), so the behavior is strictly opt-in.
 func TestMaybeRunQAOnInReviewDisabled(t *testing.T) {

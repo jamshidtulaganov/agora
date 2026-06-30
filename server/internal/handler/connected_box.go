@@ -493,6 +493,24 @@ func boxSmokeURL(box db.ConnectedBox) string {
 // updated row, success, and token-redacted output. Shared by the box-id sync
 // endpoint and the issue deploy-qa endpoint.
 func (h *Handler) performBoxSync(ctx context.Context, box db.ConnectedBox, branch, keyPath string) (db.ConnectedBox, bool, string) {
+	// Serialize git-sync per box so concurrent fetch+checkout into the box's one
+	// served work_dir can't interleave (one session's fetch updating FETCH_HEAD
+	// while another checks it out → a half-checked-out tree). Use a NON-BLOCKING
+	// box-scoped advisory lock: if another sync of this box is already in flight,
+	// SKIP the redundant fetch+checkout rather than block (and hold a pooled
+	// connection) — in the shared-sprint-branch model every QA task syncs the SAME
+	// branch, so the in-flight sync already converges the box on the right tip. The
+	// lock is held (tx open) across the SSH sync and released on tx rollback at
+	// return. Best-effort: a lock-infra error proceeds unlocked rather than fail.
+	if lockTx, err := h.TxStarter.Begin(ctx); err == nil {
+		defer func() { _ = lockTx.Rollback(ctx) }()
+		var got bool
+		if qerr := lockTx.QueryRow(ctx,
+			`SELECT pg_try_advisory_xact_lock(hashtext($1))`,
+			"connected_box:"+uuidToString(box.ID)).Scan(&got); qerr == nil && !got {
+			return box, true, "(box sync already in progress for the same branch; skipped redundant sync)"
+		}
+	}
 	out, syncErr := syncBoxBranch(ctx, box, branch, remoteBoxesGitToken(), keyPath, sshRunner{})
 	status := "online"
 	lastErr := ""
