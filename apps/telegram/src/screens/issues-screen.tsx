@@ -19,9 +19,13 @@ import { cn } from "../lib/cn";
 
 type Filter = "active" | "mine" | "unassigned" | "blocked" | "overdue" | "all";
 
+// "mine" first + default: every Telegram user is auto-joined to the shared SD
+// workspaces, so the board holds the whole team's issues. The Mini App is a
+// personal companion — it must open on the user's OWN work, not the common
+// board. The broader views stay available behind the other tabs.
 const FILTER_ORDER: Filter[] = [
-  "active",
   "mine",
+  "active",
   "unassigned",
   "blocked",
   "overdue",
@@ -39,7 +43,12 @@ function matchesFilter(issue: Issue, filter: Filter, myId: string, todayISO: str
     case "active":
       return ACTIVE_STATUSES.includes(issue.status);
     case "mine":
-      return issue.assignee_type === "member" && issue.assignee_id === myId;
+      // The user's own work: assigned to them, OR created by them (Telegram
+      // users mostly delegate to agents, so created-by-me is the bulk of it).
+      return (
+        (issue.assignee_type === "member" && issue.assignee_id === myId) ||
+        (issue.creator_type === "member" && issue.creator_id === myId)
+      );
     case "unassigned":
       return !issue.assignee_id && !CLOSED_STATUSES.includes(issue.status);
     case "blocked":
@@ -63,7 +72,7 @@ export function IssuesScreen() {
   const update = useUpdateIssue();
   const { navigate } = useRouter();
   const t = useT();
-  const [filter, setFilter] = useState<Filter>("active");
+  const [filter, setFilter] = useState<Filter>("mine");
   const [projectId, setProjectId] = useState<string | null>(null);
   const [priority, setPriority] = useState<IssuePriority | null>(null);
   const [query, setQuery] = useState("");
