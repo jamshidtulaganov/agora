@@ -132,6 +132,7 @@
     "no_dates": "No dates",
     "date_range": "{{start}} – {{end}}",
     "delete_action": "Delete sprint",
+    "edit_action": "Edit sprint",
     "toast_deleted": "Sprint deleted",
     "toast_delete_failed": "Failed to delete sprint",
     "delete_dialog_title": "Delete sprint",

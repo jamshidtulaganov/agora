@@ -139,6 +139,20 @@
     "toast_created": "Спринт создан",
     "toast_failed": "Не удалось создать спринт"
   },
+  "edit_sprint": {
+    "title": "Изменить спринт",
+    "title_breadcrumb": "Изменить спринт",
+    "name_placeholder": "Название спринта",
+    "goal_placeholder": "Цель спринта (необязательно)…",
+    "status_label": "Статус",
+    "start_date_label": "Дата начала",
+    "end_date_label": "Дата окончания",
+    "clear_date": "Очистить дату",
+    "submit": "Сохранить",
+    "submitting": "Сохранение…",
+    "toast_failed": "Не удалось обновить спринт",
+    "toast_saved": "Спринт обновлён"
+  },
   "create_issue": {
     "sr_manual": "Новая задача",
     "sr_agent": "Быстрое создание задачи",

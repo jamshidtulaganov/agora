@@ -132,6 +132,7 @@
     "no_dates": "Нет дат",
     "date_range": "{{start}} – {{end}}",
     "delete_action": "Удалить спринт",
+    "edit_action": "Изменить спринт",
     "toast_deleted": "Спринт удалён",
     "toast_delete_failed": "Не удалось удалить спринт",
     "delete_dialog_title": "Удалить спринт",

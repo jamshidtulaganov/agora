@@ -139,6 +139,20 @@
     "toast_created": "Sprint created",
     "toast_failed": "Failed to create sprint"
   },
+  "edit_sprint": {
+    "title": "Edit sprint",
+    "title_breadcrumb": "Edit sprint",
+    "name_placeholder": "Sprint name",
+    "goal_placeholder": "Sprint goal (optional)…",
+    "status_label": "Status",
+    "start_date_label": "Start date",
+    "end_date_label": "End date",
+    "clear_date": "Clear date",
+    "submit": "Save",
+    "submitting": "Saving…",
+    "toast_failed": "Failed to update sprint",
+    "toast_saved": "Sprint updated"
+  },
   "create_issue": {
     "sr_manual": "新建 issue",
     "sr_agent": "快速创建 issue",

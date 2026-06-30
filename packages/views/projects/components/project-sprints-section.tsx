@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CalendarClock, ChevronRight, Plus, Trash2 } from "lucide-react";
+import { CalendarClock, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { sprintListByProjectOptions } from "@agora/core/sprints/queries";
 import { useDeleteSprint } from "@agora/core/sprints/mutations";
@@ -190,6 +190,23 @@ export function ProjectSprintsSection({
                       </div>
                     </div>
                   </button>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          onClick={() =>
+                            useModalStore.getState().open("edit-sprint", { sprint_id: sprint.id })
+                          }
+                          className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+                          aria-label={t(($) => $.sprints.edit_action)}
+                        >
+                          <Pencil className="size-3.5" />
+                        </button>
+                      }
+                    />
+                    <TooltipContent side="bottom">{t(($) => $.sprints.edit_action)}</TooltipContent>
+                  </Tooltip>
                   <Tooltip>
                     <TooltipTrigger
                       render={

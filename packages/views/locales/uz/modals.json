@@ -139,6 +139,20 @@
     "toast_created": "Sprint yaratildi",
     "toast_failed": "Sprint yaratib bo‘lmadi"
   },
+  "edit_sprint": {
+    "title": "Sprintni tahrirlash",
+    "title_breadcrumb": "Sprintni tahrirlash",
+    "name_placeholder": "Sprint nomi",
+    "goal_placeholder": "Sprint maqsadi (ixtiyoriy)…",
+    "status_label": "Holat",
+    "start_date_label": "Boshlanish sanasi",
+    "end_date_label": "Tugash sanasi",
+    "clear_date": "Sanani tozalash",
+    "submit": "Saqlash",
+    "submitting": "Saqlanmoqda…",
+    "toast_failed": "Sprintni yangilab bo‘lmadi",
+    "toast_saved": "Sprint yangilandi"
+  },
   "create_issue": {
     "sr_manual": "Yangi vazifa",
     "sr_agent": "Tezkor vazifa yaratish",

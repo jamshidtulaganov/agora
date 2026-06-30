@@ -132,6 +132,7 @@
     "no_dates": "Sanalar yo‘q",
     "date_range": "{{start}} – {{end}}",
     "delete_action": "Sprintni o‘chirish",
+    "edit_action": "Sprintni tahrirlash",
     "toast_deleted": "Sprint o‘chirildi",
     "toast_delete_failed": "Sprintni o‘chirib bo‘lmadi",
     "delete_dialog_title": "Sprintni o‘chirish",
