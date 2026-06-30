@@ -2568,6 +2568,15 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		h.maybeEnqueueKnowledgeCapture(r.Context(), issue)
 	}
 
+	// Auto-QA on in_review: when an issue enters in_review, fire the QA squad's
+	// run_qa (deterministic smoke on the assignee dev's box + plan-driven tests)
+	// — automating the QA team's previously-manual smoke. Detached + best-effort
+	// (AGORA_AUTO_QA_ENABLED); guarded to a genuine prev!=in_review→in_review
+	// transition so it runs once per entry.
+	if statusChanged && issue.Status == "in_review" && prevIssue.Status != "in_review" {
+		go h.maybeRunQAOnInReview(context.Background(), issue, actorType, actorID)
+	}
+
 	// Cancel active tasks when the issue is cancelled by a user.
 	// This is distinct from agent-managed status transitions — cancellation
 	// is a user-initiated terminal action that should stop execution.

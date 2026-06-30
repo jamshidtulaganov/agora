@@ -274,6 +274,48 @@ func TestQAPlanContext(t *testing.T) {
 	}
 }
 
+// TestQASquadLeader covers resolving the QA squad's leader agent (the runner for
+// an auto-fired in_review run_qa): a squad whose name contains "qa" resolves to
+// its leader; the leader must have a runtime + not be archived.
+func TestQASquadLeader(t *testing.T) {
+	ctx := context.Background()
+	agentID, _, _ := privateAgentTestFixture(t)
+
+	var squadID string
+	if err := testPool.QueryRow(ctx,
+		`INSERT INTO squad (workspace_id, name, description, leader_id, creator_id)
+		 VALUES ($1, 'QA Squad', '', $2, $2) RETURNING id`,
+		testWorkspaceID, agentID).Scan(&squadID); err != nil {
+		t.Fatalf("create QA squad: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM squad WHERE id=$1`, squadID) })
+
+	leader, ok := testHandler.qaSquadLeader(ctx, testUUID(testWorkspaceID))
+	if !ok || uuidToString(leader.ID) != agentID {
+		t.Errorf("qaSquadLeader = (%s, %v), want (%s, true)", uuidToString(leader.ID), ok, agentID)
+	}
+}
+
+// TestMaybeRunQAOnInReviewDisabled: with AGORA_AUTO_QA_ENABLED unset the auto-QA
+// trigger is inert (posts no comment), so the behavior is strictly opt-in.
+func TestMaybeRunQAOnInReviewDisabled(t *testing.T) {
+	t.Setenv("AGORA_AUTO_QA_ENABLED", "")
+	ctx := context.Background()
+	issueID := sliceActionTestIssue(t, "", "")
+	issue, err := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+	if err != nil {
+		t.Fatalf("load issue: %v", err)
+	}
+	var before int
+	testPool.QueryRow(ctx, `SELECT count(*) FROM comment WHERE issue_id=$1`, issue.ID).Scan(&before)
+	testHandler.maybeRunQAOnInReview(ctx, issue, "member", testUserID)
+	var after int
+	testPool.QueryRow(ctx, `SELECT count(*) FROM comment WHERE issue_id=$1`, issue.ID).Scan(&after)
+	if after != before {
+		t.Errorf("disabled auto-QA must not post a comment: %d -> %d", before, after)
+	}
+}
+
 // TestBuildSliceInstructionRunCI covers the run_ci kind: a deterministic gate on
 // an existing PR branch (no new PR). It must run the checks and report by exit
 // code, set the ci:pass/ci:fail label, reference branch resolution + the no-merge

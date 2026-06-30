@@ -331,6 +331,12 @@ func autoDocsEnabled() bool {
 	return strings.TrimSpace(os.Getenv("AGORA_AUTO_DOCS_ENABLED")) == "true"
 }
 
+// autoQAEnabled gates the in_review → run_qa auto-trigger (the QA squad smokes a
+// dev's work the moment it's ready for review). Default off — opt-in.
+func autoQAEnabled() bool {
+	return strings.TrimSpace(os.Getenv("AGORA_AUTO_QA_ENABLED")) == "true"
+}
+
 // projectDocsAgentID reads the project's configured docs agent (an agent UUID in
 // project.settings.docs_agent) — the dedicated agent that writes docs into the
 // docs repo. Empty when unset.
@@ -414,6 +420,71 @@ func (h *Handler) maybeAutoDocsOnLabel(ctx context.Context, issue db.Issue, labe
 	}
 	h.triggerTasksForComment(ctx, issue, comment, nil, "member", userID, nil)
 	slog.Info("auto_docs fired on qa:pass", "issue_id", uuidToString(issue.ID), "agent_id", uuidToString(agent.ID))
+}
+
+// qaSquadLeader resolves the QA squad's leader agent for a workspace — the squad
+// whose name contains "qa" (case-insensitive), e.g. "QA" / "QA Squad". The leader
+// agent is what runs an auto-fired run_qa. ok=false when there is no QA squad, it
+// has no leader, or the leader agent is archived / not ready.
+func (h *Handler) qaSquadLeader(ctx context.Context, wsID pgtype.UUID) (db.Agent, bool) {
+	squads, err := h.Queries.ListSquads(ctx, wsID)
+	if err != nil {
+		return db.Agent{}, false
+	}
+	for _, s := range squads {
+		if !strings.Contains(strings.ToLower(s.Name), "qa") || !s.LeaderID.Valid {
+			continue
+		}
+		leader, err := h.Queries.GetAgent(ctx, s.LeaderID)
+		if err == nil && !leader.ArchivedAt.Valid && sliceAgentReady(leader) {
+			return leader, true
+		}
+	}
+	return db.Agent{}, false
+}
+
+// maybeRunQAOnInReview fires the QA squad's run_qa when an issue enters
+// in_review — automating the QA team's previously-manual smoke (deterministic
+// smoke on the assignee developer's box + plan-driven tests). Best-effort +
+// detached (mirrors maybeAutoDocsOnLabel): any miss (disabled, no QA squad, no
+// ready leader) silently no-ops, so a status change never fails because of it.
+// Gated by AGORA_AUTO_QA_ENABLED; the caller guards the prev!=in_review→in_review
+// transition so it runs once per entry.
+func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, actorType, actorID string) {
+	if !autoQAEnabled() {
+		return
+	}
+	leader, ok := h.qaSquadLeader(ctx, issue.WorkspaceID)
+	if !ok {
+		return
+	}
+	// Assemble the run_qa instruction exactly as the manual slice action does:
+	// the deterministic+plan-driven gate, smoked against the assignee dev's box.
+	instruction := buildSliceInstruction(sliceActionRunQA, "")
+	if url := h.devBoxSmokeURL(ctx, issue); url != "" {
+		instruction += " SMOKE TARGET: the assignee developer's QA box serves this branch at " + url +
+			" — deploy the branch to it (the deploy-qa git-sync) and smoke THAT url. It OVERRIDES any project smoke url below."
+	}
+	instruction += h.sliceActionQASmokeContext(ctx, issue)
+	instruction += qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
+
+	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(leader.Name), uuidToString(leader.ID)) + instruction
+	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+		AuthorType:  actorType,
+		AuthorID:    parseUUID(actorID),
+		Content:     content,
+		Type:        "comment",
+		ParentID:    pgtype.UUID{Valid: false},
+	})
+	if err != nil {
+		slog.Warn("auto run_qa: create comment failed", "error", err, "issue_id", uuidToString(issue.ID))
+		return
+	}
+	h.triggerTasksForComment(ctx, issue, comment, nil, actorType, actorID, nil)
+	slog.Info("auto run_qa fired on in_review",
+		"issue_id", uuidToString(issue.ID), "agent_id", uuidToString(leader.ID))
 }
 
 // gitlabBaseBranch is the branch GitLab merge-request slice actions target +
