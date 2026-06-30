@@ -271,6 +271,7 @@ type AgentTaskResponse struct {
 	PriorSessionID   string                `json:"prior_session_id,omitempty"` // session ID from a previous task on same issue
 	PriorWorkDir     string                `json:"prior_work_dir,omitempty"`   // work_dir from a previous task on same issue
 	CoCodeBranch     string                `json:"cocode_branch,omitempty"`    // in_editor: feature branch the daemon forces the worktree onto (never main)
+	SprintBranch     string                `json:"sprint_branch,omitempty"`    // sprint-worktree: shared remote sprint branch the daemon tracks via a per-task alias (see daemon Task.SprintBranch); gated by AGORA_SPRINT_WORKTREE_ENABLED
 	WorkDir          string                `json:"work_dir,omitempty"`         // local working directory pinned for this task; populated once the daemon reports it
 	// RelativeWorkDir is a privacy-safe display form of WorkDir intended for
 	// the UI. For standard tasks it strips the daemon's workspaces root so

@@ -871,6 +871,14 @@ func openWorktreePR(workdir, title, body, base string) []prOpenResult {
 	for _, repo := range gitReposUnder(workdir) {
 		branch := strings.TrimSpace(runGit(repo, "rev-parse", "--abbrev-ref", "HEAD"))
 		res := prOpenResult{Repo: filepath.Base(repo), Branch: branch}
+		// Sprint-worktree mode: a per-task alias (sprint-wt-*) tracking the
+		// SHARED origin/<sprintBranch>. Accept = push the task's commits straight
+		// onto the integration branch (no per-task PR); the sprint branch itself
+		// merges to main via the sprint-end QA/deploy flow.
+		if sprintBranch, ok := sprintUpstreamBranch(repo, branch); ok {
+			out = append(out, pushToSprintBranch(repo, branch, sprintBranch))
+			continue
+		}
 		defBranch := strings.TrimPrefix(strings.TrimSpace(runGit(repo, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")), "origin/")
 		if branch == "" || branch == "HEAD" || (defBranch != "" && branch == defBranch) {
 			res.Skipped = "not on a feature branch"
@@ -921,6 +929,59 @@ func openWorktreePR(workdir, title, body, base string) []prOpenResult {
 		out = append(out, res)
 	}
 	return out
+}
+
+// sprintUpstreamBranch returns the SHARED sprint branch a per-task alias tracks,
+// when this repo is in sprint-worktree mode. The alias is sprint-wt-<taskID> and
+// its upstream is origin/<sprintBranch> (set by ensureSprintBranch); the shared
+// branch name is what we push to. ok=false for any non-sprint worktree.
+func sprintUpstreamBranch(repo, branch string) (string, bool) {
+	if !strings.HasPrefix(branch, "sprint-wt-") {
+		return "", false
+	}
+	up := strings.TrimSpace(runGit(repo, "rev-parse", "--abbrev-ref", branch+"@{upstream}"))
+	up = strings.TrimPrefix(up, "origin/")
+	if up == "" {
+		return "", false
+	}
+	return up, true
+}
+
+// pushToSprintBranch commits pending edits and pushes the task's commits onto the
+// SHARED sprint branch. On a non-fast-forward (a teammate pushed first) it
+// rebases onto the updated tip and retries once — last writer rebases, never
+// force-push (which would clobber teammates). A rebase conflict is surfaced as an
+// error so the human/agent resolves it; the daemon never drops or force-pushes.
+func pushToSprintBranch(repo, alias, sprintBranch string) prOpenResult {
+	res := prOpenResult{Repo: filepath.Base(repo), Branch: sprintBranch}
+	// Commit any uncommitted edits (e.g. the human's live code-server edits).
+	if strings.TrimSpace(runGit(repo, "status", "--porcelain")) != "" {
+		_ = runGit(repo, "add", "-A")
+		_, _ = runInDir(repo, "git", "commit", "-m", "Co-code changes (Agora)")
+	}
+	if baseSHA := strings.TrimSpace(runGit(repo, "merge-base", "HEAD", "origin/"+sprintBranch)); baseSHA != "" {
+		if ahead := strings.TrimSpace(runGit(repo, "rev-list", "--count", baseSHA+"..HEAD")); ahead == "" || ahead == "0" {
+			res.Skipped = "no changes vs sprint branch"
+			return res
+		}
+	}
+	push := func() (string, error) { return runInDir(repo, "git", "push", "origin", "HEAD:"+sprintBranch) }
+	if pout, err := push(); err != nil {
+		// Non-fast-forward (or other reject): rebase onto the shared tip, retry once.
+		_ = runGit(repo, "fetch", "origin", sprintBranch)
+		_ = runGit(repo, "rebase", "origin/"+sprintBranch)
+		if strings.TrimSpace(runGit(repo, "rev-parse", "--abbrev-ref", "HEAD")) != alias {
+			_ = runGit(repo, "rebase", "--abort")
+			res.Error = "push rejected; rebase onto origin/" + sprintBranch + " conflicted (resolve before accept): " + firstLine(pout)
+			return res
+		}
+		if pout2, err2 := push(); err2 != nil {
+			res.Error = "push failed after rebase: " + firstLine(pout2)
+			return res
+		}
+	}
+	// Landed on the integration branch — no PR is opened for a sprint commit.
+	return res
 }
 
 // discardWorktreeChanges resets each repo under the worktree to its base and

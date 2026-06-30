@@ -62,6 +62,7 @@ type Task struct {
 	PriorSessionID           string                `json:"prior_session_id,omitempty"`            // Claude session ID from a previous task on this issue
 	PriorWorkDir             string                `json:"prior_work_dir,omitempty"`              // work_dir from a previous task on this issue
 	CoCodeBranch             string                `json:"cocode_branch,omitempty"`               // in_editor: feature branch the daemon forces each worktree repo onto before running (never main)
+	SprintBranch             string                `json:"sprint_branch,omitempty"`               // sprint-worktree: SHARED remote branch (origin/<branch>) the daemon puts each worktree on via a per-task local alias so N concurrent tasks share one sprint branch; commits track this shared upstream. Set only when AGORA_SPRINT_WORKTREE_ENABLED and the issue's sprint has a branch. Old daemons ignore it (omitempty) and keep forking per-task branches.
 	TriggerCommentID         string                `json:"trigger_comment_id,omitempty"`          // comment that triggered this task
 	TriggerThreadID          string                `json:"trigger_thread_id,omitempty"`           // root comment ID for the triggering thread; falls back to trigger_comment_id on old servers
 	TriggerCommentContent    string                `json:"trigger_comment_content,omitempty"`     // content of the triggering comment

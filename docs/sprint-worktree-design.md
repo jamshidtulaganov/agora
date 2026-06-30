@@ -53,3 +53,19 @@ Smallest shippable slice = "shared-branch worktree, fork-model parity otherwise,
 
 ## Verification (the demo found per-task isolated worktrees today)
 Key precedent: the existing `CoCodeBranch` claim→force-branch path (handler/daemon.go:1340 sets it; daemon.go:2232 `ensureCoCodeBranch` forces every worktree onto it). Sprint mode generalizes that one branch to a shared remote-tracked branch. `SprintBranchFor` (connected_box.go:655) already resolves the branch and is the QA/deploy single source of truth.
+
+## Implementation notes (what actually shipped, all behind `AGORA_SPRINT_WORKTREE_ENABLED`, default OFF)
+
+Slices 1–3 are implemented. Three deliberate divergences from the plan above, each lower-risk than the original:
+
+1. **Branch force is daemon-side, not threaded through `WorktreeParams`.** Rather than thread `SprintBranch` through the server→CLI `/repo/checkout` chain into `repocache.CreateWorktree`, slice 1 mirrors `ensureCoCodeBranch` exactly: `daemon.ensureSprintBranch` (daemon.go) runs in `runTask` after the worktree exists and puts each repo on a per-task LOCAL alias `sprint-wt-<shortTaskID>` whose UPSTREAM is `origin/<sprintBranch>` (git rejects two worktrees on one branch name; the alias sidesteps that with a single shared upstream), then rebases (pull-before-work). The server only adds `SprintBranch` to the claim response (`handler/daemon.go`, gated, via `GetSprintForIssue`→`SprintBranchFor`). No execenv relayout — the source tree is small; only deps are the N× disk cost.
+
+2. **Shared deps are install-once-then-symlink at the daemon, not a CreateWorktree install.** `daemon.linkSharedSprintDeps` (sprint_shareddeps.go) shares each repo's deps dir at `{wsRoot}/{wsID}/.sprint-deps/{branch}/{repo}/{lockDigest}/{depDir}` — a stable path OUTSIDE any task env root (so per-task GC never reclaims it). First task installs in its worktree and the result is MOVED to the shared dir; later tasks symlink to it (race-free via a per-target `Daemon.sharedDepLocks` mutex). Providers: Node (`node_modules`) + Composer (`vendor`). `lockDigest = sha256(lockfile)` forks a fresh shared dir on a dep change.
+
+3. **GC is safe-by-construction — no branch-protection code needed.** The shared sprint branch is a remote-tracking ref (`origin/<sprint>`), never a local `refs/heads/*`, so the existing `agent/*`-only branch sweep never touches it. The only addition (gc.go) reclaims leaked `sprint-wt-*` aliases (mirrors the agent-branch sweep, with an in-use guard); sprint worktree DIRS are normal task dirs already reclaimed by the existing task-dir TTL GC + `worktree prune`, so no new TTL knob shipped.
+
+**Accept** (`health.go openWorktreePR`): a `sprint-wt-*` alias pushes its commits straight to `HEAD:<sprintBranch>` (no per-task PR); on a non-fast-forward it rebases onto the shared tip and retries the push once (last writer rebases, never force-pushes). The sprint branch itself merges to main via the existing sprint-end QA/deploy flow.
+
+**Tests** (no DB, git+fs only): `sprint_worktree_test.go` (coexist + rebase + conflict-abort), `sprint_shareddeps_test.go` (provider/digest + share-once + adopt-existing), `sprint_accept_test.go` (upstream-resolve + direct-push + non-ff rebase-retry + GC reclaims stale aliases / keeps shared branch). The existing `agent/*` GC tests still pass unchanged.
+
+**Not yet verified live** — these need a daemon rebuild + a flag-on sprint, deferred so as not to interrupt a running sprint: the eager first-install timing, symlink tolerance of the real pnpm/composer toolchains, and the dev-server-per-worktree path. Enable with `AGORA_SPRINT_WORKTREE_ENABLED=true` on a daemon bound to a non-prod box.

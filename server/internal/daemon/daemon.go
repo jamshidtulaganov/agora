@@ -106,6 +106,11 @@ type Daemon struct {
 	versionsMu    sync.RWMutex      // guards agentVersions
 	agentVersions map[string]string // provider -> detected CLI version (set during registration)
 
+	// sharedDepLocks guards each sprint shared-deps target path so two
+	// concurrent sprint tasks never populate the same shared install at once.
+	// Keyed by absolute target path → *sync.Mutex. See linkSharedSprintDeps.
+	sharedDepLocks sync.Map
+
 	wsHBMu      sync.RWMutex         // guards wsHBLastAck
 	wsHBLastAck map[string]time.Time // runtime_id -> last successful WS heartbeat ack timestamp
 
@@ -2243,6 +2248,51 @@ func (d *Daemon) ensureCoCodeBranch(workdir, branch string, log *slog.Logger) {
 	}
 }
 
+// ensureSprintBranch puts every git repo under workdir onto a per-task LOCAL
+// branch (sprint-wt-<shortTaskID>) whose UPSTREAM is the SHARED remote sprint
+// branch (origin/<sprintBranch>), then rebases onto that branch's tip
+// (pull-before-work). Unlike ensureCoCodeBranch — one local feature branch per
+// issue — the sprint branch is shared by N concurrent tasks, and git rejects
+// two worktrees checked out on the same local branch name; the per-task alias
+// sidesteps that while keeping a single shared upstream so commits/pulls target
+// the team's branch. Best-effort + idempotent. SAFETY: never auto-creates or
+// pushes the remote branch (prod-box safe) — when origin/<sprintBranch> is
+// absent it logs and leaves the worktree on its fork-model branch.
+func (d *Daemon) ensureSprintBranch(workdir, sprintBranch, shortTaskID string, log *slog.Logger) {
+	remoteRef := "origin/" + sprintBranch
+	alias := "sprint-wt-" + shortTaskID
+	for _, repo := range gitReposUnder(workdir) {
+		// Refresh the shared branch (covers reused / long-lived worktrees; the
+		// first checkout was already fetched by repocache.CreateWorktree).
+		_ = runGit(repo, "fetch", "origin", sprintBranch)
+		if strings.TrimSpace(runGit(repo, "rev-parse", "--verify", "--quiet", remoteRef)) == "" {
+			log.Warn("sprint-worktree: shared branch absent on remote; keeping fork-model branch",
+				"repo", filepath.Base(repo), "branch", sprintBranch)
+			continue
+		}
+		// Put HEAD on the per-task alias based at the shared tip (idempotent).
+		if strings.TrimSpace(runGit(repo, "rev-parse", "--abbrev-ref", "HEAD")) != alias {
+			_ = runGit(repo, "checkout", "-B", alias, remoteRef)
+		}
+		// Track the shared branch so a later push/pull targets it (slice 3).
+		_ = runGit(repo, "branch", "--set-upstream-to="+remoteRef, alias)
+		// Pull-before-work: rebase onto the shared tip so this task builds on
+		// teammates' merged commits. A conflict leaves a detached HEAD mid-rebase
+		// (abbrev-ref != alias); abort it — the alias keeps this task's own
+		// commits, just un-rebased — and surface a warning so the human/agent
+		// resolves, rather than the daemon silently dropping work.
+		_ = runGit(repo, "rebase", remoteRef)
+		if strings.TrimSpace(runGit(repo, "rev-parse", "--abbrev-ref", "HEAD")) != alias {
+			_ = runGit(repo, "rebase", "--abort")
+			log.Warn("sprint-worktree: rebase onto shared branch hit a conflict; aborted (worktree keeps your commits, not yet rebased — resolve before accept)",
+				"repo", filepath.Base(repo), "branch", sprintBranch)
+			continue
+		}
+		log.Info("sprint-worktree: repo synced to shared sprint branch",
+			"repo", filepath.Base(repo), "branch", sprintBranch, "alias", alias)
+	}
+}
+
 func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 	d.mu.Lock()
 	rt := d.runtimeIndex[task.RuntimeID]
@@ -2996,6 +3046,20 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// checked out (first run — the fresh-session instruction covers that turn).
 	if task.CoCodeBranch != "" && env.WorkDir != "" {
 		d.ensureCoCodeBranch(env.WorkDir, task.CoCodeBranch, taskLog)
+	}
+
+	// Sprint-worktree sync: put every repo on a per-task local alias tracking the
+	// SHARED origin/<sprintBranch> and rebase onto its tip (pull-before-work) so
+	// this task builds on teammates' merged commits. The same CI-on-shared-branch
+	// guarantee as CoCodeBranch above, generalized to a branch shared by N tasks.
+	// No-op unless the server enabled sprint-worktree mode for this issue.
+	if task.SprintBranch != "" && env.WorkDir != "" {
+		d.ensureSprintBranch(env.WorkDir, task.SprintBranch, shortID(task.ID), taskLog)
+		// Share each repo's installed-deps dir across all worktrees on this
+		// sprint branch so N co-editors don't cost N× node_modules/vendor on
+		// disk (the reason sprint mode exists). Best-effort; a failure leaves a
+		// normal per-task install.
+		d.linkSharedSprintDeps(env.WorkDir, task.WorkspaceID, task.SprintBranch, taskLog)
 	}
 
 	taskStart := time.Now()

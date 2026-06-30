@@ -651,10 +651,32 @@ func (d *Daemon) pruneWorktreeLocked(barePath string) {
 		}
 		deleted++
 	}
+
+	// Sprint-worktree aliases (sprint-wt-*) are local per-task branches tracking
+	// the SHARED origin/<sprint> branch. When their worktree is gone they leak as
+	// tiny refs; reclaim the inactive ones exactly like agent/*. The shared sprint
+	// branch is a REMOTE-tracking ref (origin/<sprint>), never a local
+	// refs/heads/* branch, so it is never a deletion candidate here.
+	if activeSprint, err := sprintWorktreeBranches(barePath); err == nil {
+		if sprintBranches, err := listSprintWorktreeBranches(barePath); err == nil {
+			for _, branch := range sprintBranches {
+				if _, ok := activeSprint[branch]; ok {
+					continue
+				}
+				if out, err := runGitGCCommand(barePath, "branch", "-D", "--", branch); err != nil {
+					d.logger.Warn("gc: sprint branch delete failed",
+						"repo", barePath, "branch", branch, "output", out, "error", err)
+					continue
+				}
+				deleted++
+			}
+		}
+	}
+
 	if deleted == 0 {
 		return
 	}
-	d.logger.Info("gc: deleted stale agent branches", "repo", barePath, "count", deleted)
+	d.logger.Info("gc: deleted stale agent/sprint branches", "repo", barePath, "count", deleted)
 
 	// Heavier maintenance only runs when we actually removed refs, so we don't
 	// turn every GC tick into a full `git gc --prune` on every cached repo. The
@@ -729,6 +751,53 @@ func listAgentBranches(barePath string) ([]string, error) {
 	for _, line := range strings.Split(out, "\n") {
 		branch := strings.TrimSpace(line)
 		if branch == "" {
+			continue
+		}
+		branches = append(branches, branch)
+	}
+	return branches, nil
+}
+
+// sprintWorktreeBranches returns the sprint-wt-* local branches currently CHECKED
+// OUT by a live worktree — these must never be deleted while in use. Mirrors
+// agentWorktreeBranches for the sprint-worktree alias namespace.
+func sprintWorktreeBranches(barePath string) (map[string]struct{}, error) {
+	out, err := runGitGCCommand(barePath, "worktree", "list", "--porcelain")
+	if err != nil {
+		return nil, err
+	}
+
+	branches := make(map[string]struct{})
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "branch refs/heads/") {
+			continue
+		}
+		branch := strings.TrimPrefix(line, "branch refs/heads/")
+		if strings.HasPrefix(branch, "sprint-wt-") {
+			branches[branch] = struct{}{}
+		}
+	}
+	return branches, nil
+}
+
+// listSprintWorktreeBranches lists every local sprint-wt-* branch. The "*" glob
+// (not a trailing-slash namespace) is required because sprint-wt- is a name
+// prefix, not a path component; the HasPrefix re-check guards against any looser
+// match.
+func listSprintWorktreeBranches(barePath string) ([]string, error) {
+	out, err := runGitGCCommand(barePath, "for-each-ref", "--format=%(refname:short)", "refs/heads/sprint-wt-*")
+	if err != nil {
+		return nil, err
+	}
+	if out == "" {
+		return nil, nil
+	}
+
+	var branches []string
+	for _, line := range strings.Split(out, "\n") {
+		branch := strings.TrimSpace(line)
+		if branch == "" || !strings.HasPrefix(branch, "sprint-wt-") {
 			continue
 		}
 		branches = append(branches, branch)

@@ -1340,6 +1340,21 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				resp.CoCodeBranch = coCodeBranchName(issueKey, issue.Title)
 			}
 
+			// Sprint-worktree mode (gated, default OFF): when the issue belongs
+			// to a sprint with a branch, hand the daemon the SHARED sprint branch
+			// so N concurrent tasks check out onto it (each via a per-task local
+			// alias) instead of forking a per-task branch. Old daemons ignore the
+			// field (omitempty) and keep forking — fully reversible. The CoCode
+			// branch above takes precedence for in_editor single-issue work; sprint
+			// mode is for the many-tasks-one-sprint-branch model.
+			if resp.Agent != nil && resp.CoCodeBranch == "" && sprintWorktreeEnabled() {
+				if sprint, err := h.Queries.GetSprintForIssue(r.Context(), issue.ID); err == nil {
+					if b := SprintBranchFor(sprint); b != "" {
+						resp.SprintBranch = b
+					}
+				}
+			}
+
 			// Per-issue human context (the Context panel): rules, focus files,
 			// links, constraints — injected into every agent run on this issue.
 			if resp.Agent != nil {

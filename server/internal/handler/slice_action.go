@@ -358,6 +358,15 @@ func autoQAEnabled() bool {
 	return strings.TrimSpace(os.Getenv("AGORA_AUTO_QA_ENABLED")) == "true"
 }
 
+// sprintWorktreeEnabled gates the shared-sprint-branch worktree model
+// (worktree-per-task on one sprint branch, so N users work one sprint branch in
+// parallel each with their own co-editor). Default OFF — the per-task fork model
+// stays the default and the migration is fully reversible by unsetting the flag.
+// See docs/sprint-worktree-design.md.
+func sprintWorktreeEnabled() bool {
+	return strings.TrimSpace(os.Getenv("AGORA_SPRINT_WORKTREE_ENABLED")) == "true"
+}
+
 // projectDocsAgentID reads the project's configured docs agent (an agent UUID in
 // project.settings.docs_agent) — the dedicated agent that writes docs into the
 // docs repo. Empty when unset.
