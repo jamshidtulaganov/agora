@@ -57,13 +57,23 @@ across agent runs + boxes; no DB state).
 
 ## Test strategy — per-task tests, golden paths, analytics-driven
 
-**1. Per task: FE + BE unit + API tests (mandatory).** Every task's `run_qa` WRITE-TESTS
-step adds/updates tests covering the diff, and the gate rejects a task with no coverage for
-its change:
+**1. Per task: FE + BE unit + API tests (mandatory) — derived from the PLAN, not the diff.**
+Every task's `run_qa` WRITE-TESTS step authors tests that assert the task's **intended behavior**,
+read from the issue's **acceptance criteria + description** (injected into the `run_qa` instruction
+via `qaPlanContext`, since the task-claim brief otherwise carries only the title + trigger comment).
+The gate rejects a task with no coverage for its plan:
+- **Source of truth = the plan, not the implementation.** The diff tells you WHERE the behavior
+  lives; the acceptance criteria tell you WHAT is correct. Each criterion → at least one test. If
+  the implementation diverges from the plan, the test must **fail** (a real bug surfaced) — never
+  rewrite or weaken a test to match the code. Deriving tests from the diff is circular: the same
+  agent that wrote the code then writes tests that only confirm "the code does what the code does",
+  so a mis-implementation is encoded as a passing test instead of caught. A criterion with no
+  covering test is a coverage gap, reported in the verdict.
 - **FE unit** — sd-bridge: vitest (changed component/logic).
 - **BE unit** — sd-main/cs3: phpunit/codeception (changed function).
 - **API tests** — request→response contract (status, schema, auth) for changed/new endpoints.
-- Bug fix → fail-before/pass-after proof; test-weakening/skip/coverage-drop → gate fail.
+- Bug fix → the criterion is "the bug no longer reproduces": fail-before/pass-after proof;
+  test-weakening/skip/coverage-drop → gate fail.
 
 **2. Golden paths — the daily-critical flows (permanent, release-blocking).** The features
 clients use every day form a permanent e2e + API regression suite that ALWAYS runs at

@@ -158,6 +158,22 @@ func TestBuildSliceInstructionRunQA(t *testing.T) {
 			t.Errorf("run_qa smoke must be deterministic-first / vision-last (%q), got: %s", want, got)
 		}
 	}
+	// Plan-driven test derivation (Feature 2): step 4 must author tests from the
+	// TASK PLAN (acceptance criteria + description), asserting INTENDED behavior —
+	// NOT re-derive them from the diff it is judging (which is circular: the agent
+	// that wrote the code then writes tests that only confirm the code does what
+	// the code does). A plan↔implementation divergence must make the test FAIL,
+	// never be rewritten to match the code.
+	for _, want := range []string{"task plan", "intended behavior", "acceptance criteri", "match the code", "coverage gap"} {
+		if !strings.Contains(lower, strings.ToLower(want)) {
+			t.Errorf("run_qa step 4 must be plan-driven (%q), got: %s", want, got)
+		}
+	}
+	// Regression guard: the recipe must no longer derive tests FROM THE DIFF (the
+	// circular pre-Feature-2 wording).
+	if strings.Contains(lower, "from this issue's diff") {
+		t.Errorf("run_qa step 4 must not derive tests from the diff (circular); got: %s", got)
+	}
 	for _, banned := range []string{"sd-qa-process", "btx-", "dev test box"} {
 		if strings.Contains(lower, strings.ToLower(banned)) {
 			t.Errorf("run_qa instruction must stay product-neutral; found %q, got: %s", banned, got)
@@ -201,6 +217,60 @@ func TestBuildSliceInstructionRunQA(t *testing.T) {
 		if strings.Contains(taskScope, strings.ToLower(banned)) || strings.Contains(regScope, strings.ToLower(banned)) {
 			t.Errorf("sprint-branch baseline guidance must stay product-neutral; found %q", banned)
 		}
+	}
+}
+
+// TestQAPlanContext covers the pure plan-context helper appended to a run_qa
+// instruction: it must render the issue's description + acceptance criteria so
+// the QA agent tests INTENDED behavior, parse the criteria JSONB defensively
+// (string array, object array, empty), stay silent when there is no plan, and
+// be rune-safe on an oversized non-ASCII description.
+func TestQAPlanContext(t *testing.T) {
+	// No-plan inputs → empty (the recipe's description-fallback then applies).
+	for _, raw := range [][]byte{nil, []byte(""), []byte("[]"), []byte("null"), []byte("   ")} {
+		if got := qaPlanContext("", raw); got != "" {
+			t.Errorf("empty plan must yield no context, got: %q", got)
+		}
+	}
+
+	// Description-only → renders the Plan line, omits the criteria section.
+	descOnly := qaPlanContext("Add a logout button to the header", []byte("[]"))
+	if !strings.Contains(descOnly, "TASK PLAN") || !strings.Contains(descOnly, "Add a logout button") {
+		t.Errorf("description-only must render the plan line, got: %q", descOnly)
+	}
+	if strings.Contains(descOnly, "Acceptance criteria:") {
+		t.Errorf("no criteria must omit the criteria section, got: %q", descOnly)
+	}
+
+	// []string criteria → enumerated.
+	strCrit := qaPlanContext("", []byte(`["totals are correct","receipt prints"]`))
+	for _, want := range []string{"Acceptance criteria:", "(1) totals are correct", "(2) receipt prints"} {
+		if !strings.Contains(strCrit, want) {
+			t.Errorf("string criteria must enumerate (%q), got: %q", want, strCrit)
+		}
+	}
+
+	// []object criteria → pull the text-ish field (text / title / …).
+	objCrit := qaPlanContext("", []byte(`[{"text":"order appears in list"},{"title":"balance updates"}]`))
+	for _, want := range []string{"(1) order appears in list", "(2) balance updates"} {
+		if !strings.Contains(objCrit, want) {
+			t.Errorf("object criteria must pull the text field (%q), got: %q", want, objCrit)
+		}
+	}
+
+	// The block always carries the anti-circular directive.
+	if !strings.Contains(strCrit, "never rewrite the test to match the code") {
+		t.Errorf("plan context must carry the anti-circular directive, got: %q", strCrit)
+	}
+
+	// Oversized non-ASCII description → truncated with an ellipsis, rune-safe.
+	long := strings.Repeat("ы", 4000) // Cyrillic, 2 bytes each → exercises the rune cut
+	big := qaPlanContext(long, nil)
+	if !strings.Contains(big, "…") {
+		t.Errorf("oversized description must be truncated with an ellipsis")
+	}
+	if n := len([]rune(big)); n > 1900 {
+		t.Errorf("oversized description must be capped near 1500 runes, got %d", n)
 	}
 }
 
@@ -388,7 +458,7 @@ func TestSliceActionDocsRepoContext(t *testing.T) {
 	t.Run("repo_rendered_when_set", func(t *testing.T) {
 		pid := newProject(`{"docs_repo":"https://github.com/jamshidtulaganov/sd-doc.git"}`)
 		got := testHandler.sliceActionDocsRepoContext(ctx, issueIn(pid))
-		if !strings.Contains(got, "https://github.com/jamshidtulaganov/sd-doc.git") || !strings.Contains(got, "open the pull request against it") {
+		if !strings.Contains(got, "https://github.com/jamshidtulaganov/sd-doc.git") || !strings.Contains(got, "open the review request against it") {
 			t.Errorf("docs repo context wrong: %q", got)
 		}
 	})

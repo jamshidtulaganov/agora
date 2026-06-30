@@ -122,19 +122,31 @@ func buildSliceInstruction(kind, scope string) string {
 			"assertions above (attach it to the verdict for the human) — do NOT screenshot the happy path, and " +
 			"NEVER vision-analyze a screenshot to decide pass/fail; every smoke verdict must trace to a " +
 			"deterministic signal. " +
-			"(4) WRITE TEST CASES for the change: from this issue's DIFF, author tests that COVER what changed — " +
-			"unit tests for changed logic/functions in the project's existing framework (vitest/jest/phpunit/go " +
-			"test), and a Playwright/e2e case for changed UI driven against the running preview over the embedded " +
-			"Chromium. Follow the repo's existing test layout and mock external APIs (never hit live endpoints). " +
-			"Accept a new test ONLY if it BUILDS and PASSES — and for a bug fix, prove it FAILS on the pre-change " +
-			"behaviour and PASSES after (fail-before / pass-after). Commit the accepted tests onto the branch for " +
-			"the human to review. NEVER weaken, skip, or delete an existing test to go green. " +
+			"(4) WRITE TEST CASES that assert the task's INTENDED behavior — derived from the TASK PLAN (this " +
+			"issue's acceptance criteria + description, appended below), NOT from the diff. The diff tells you WHERE " +
+			"the behavior lives (which files/functions/UI to target); the PLAN tells you WHAT the correct behavior " +
+			"is. For EACH acceptance criterion, author at least one test asserting that criterion's expected " +
+			"outcome — unit tests for the relevant logic/functions in the project's existing framework " +
+			"(vitest/jest/phpunit/go test), and a Playwright/e2e case for UI driven against the running preview " +
+			"over the embedded Chromium. If no acceptance criteria are listed, derive the intended behavior from " +
+			"the issue description. CRITICAL: a test encodes what the PLAN says SHOULD happen — if the " +
+			"implementation diverges from the plan, the test MUST FAIL (you have surfaced a real bug); never " +
+			"rewrite, weaken, or shape a test to match the code to go green. Follow the repo's existing test layout " +
+			"and mock external APIs (never hit live endpoints). Commit a new test when it BUILDS and faithfully " +
+			"asserts the plan: if it then PASSES on the branch the implementation meets that criterion; if it FAILS " +
+			"on the branch (and the criterion is not already broken on baseline) that is a NEW failure — report " +
+			"`qa:fail` and KEEP the test. For a bug fix the criterion is 'the bug no longer reproduces': the test " +
+			"must FAIL on the pre-change behaviour and PASS after (fail-before / pass-after). A criterion with NO " +
+			"covering test is a coverage GAP — list it in the verdict. NEVER weaken, skip, or delete an existing " +
+			"test to go green. " +
 			"(5) VERDICT: post a comment with two sections — NEW (regressions this change introduced) and " +
 			"PRE-EXISTING (already red on baseline, out of scope) — listing every command with its baseline and " +
-			"branch exit code, the tests you added, and the screenshots. Set the `qa:pass` label when this change " +
-			"introduces NO new failure AND your new tests pass AND the smoke is clean — even if the repo carries " +
-			"pre-existing red. Set `qa:fail` ONLY when the change introduces or worsens a failure. Never fabricate " +
-			"a green result, but never blame the change for pre-existing breakage. " +
+			"branch exit code, the tests you added and WHICH acceptance criterion each one covers (plus any " +
+			"criterion left uncovered), and the screenshots. Set the `qa:pass` label when this change introduces " +
+			"NO new failure AND your plan-driven tests pass (the implementation meets every criterion) AND the " +
+			"smoke is clean — even if the repo carries pre-existing red. Set `qa:fail` when the change introduces " +
+			"or worsens a failure OR an implemented criterion's test fails. Never fabricate a green result, but " +
+			"never blame the change for pre-existing breakage. " +
 			"At the END of that comment, append a fenced ```qa-result code block containing ONLY a JSON object the " +
 			"editor's QA panel parses to render the result structured: " +
 			"`{\"verdict\":\"pass\"|\"fail\",\"summary\":\"<one line>\",\"commands\":[{\"cmd\":\"<command>\"," +
@@ -547,6 +559,86 @@ func qaBaselineGuidanceFor(scope string) string {
 	}
 }
 
+// qaPlanContext renders the issue's PLAN — description + acceptance criteria —
+// as a block appended to a run_qa instruction, so the QA agent authors tests
+// against the INTENDED behavior rather than re-deriving them from the diff it is
+// judging (the task-claim brief carries only the title + trigger comment, never
+// the description / acceptance_criteria). PURE — reads only the passed
+// description and raw acceptance_criteria JSON, so it is unit-testable without a
+// DB. Returns "" when there is no plan to add (blank description AND empty /
+// `[]` / `null` acceptance_criteria); the recipe's "derive intent from the
+// description" fallback then applies with whatever the agent fetches itself.
+func qaPlanContext(description string, acceptanceCriteria []byte) string {
+	desc := strings.TrimSpace(description)
+	// Cap on RUNES (content is often Cyrillic/Uzbek) so a huge description can't
+	// blow the comment size and we never split a multi-byte rune.
+	const maxDescRunes = 1500
+	if r := []rune(desc); len(r) > maxDescRunes {
+		desc = string(r[:maxDescRunes]) + "…"
+	}
+	criteria := parseAcceptanceCriteria(acceptanceCriteria)
+	if desc == "" && len(criteria) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(" TASK PLAN — author tests against THIS intended behavior, not the diff.")
+	if desc != "" {
+		b.WriteString(" Plan/description: ")
+		b.WriteString(desc)
+		if !strings.HasSuffix(desc, ".") {
+			b.WriteString(".")
+		}
+	}
+	if len(criteria) > 0 {
+		b.WriteString(" Acceptance criteria:")
+		for i, c := range criteria {
+			b.WriteString(fmt.Sprintf(" (%d) %s;", i+1, c))
+		}
+	}
+	b.WriteString(" A test must assert what the plan says SHOULD happen; if the implementation " +
+		"diverges, the test FAILS (a real bug) — never rewrite the test to match the code.")
+	return b.String()
+}
+
+// parseAcceptanceCriteria defensively extracts human-readable criterion strings
+// from the issue's acceptance_criteria JSONB, whose shape is importer-written and
+// not guaranteed: it may be a JSON array of strings, an array of objects (with a
+// text-ish field), or something else. Unknown / empty shapes yield nil so the
+// caller omits the criteria line rather than dumping raw JSON noise into the
+// prompt.
+func parseAcceptanceCriteria(raw []byte) []string {
+	s := strings.TrimSpace(string(raw))
+	if s == "" || s == "[]" || s == "null" {
+		return nil
+	}
+	// 1. ["criterion a", "criterion b"]
+	var strs []string
+	if json.Unmarshal(raw, &strs) == nil {
+		out := make([]string, 0, len(strs))
+		for _, v := range strs {
+			if t := strings.TrimSpace(v); t != "" {
+				out = append(out, t)
+			}
+		}
+		return out
+	}
+	// 2. [{"text": "…"}] / {"title": …} / {"description": …}
+	var objs []map[string]any
+	if json.Unmarshal(raw, &objs) == nil {
+		out := make([]string, 0, len(objs))
+		for _, o := range objs {
+			for _, k := range []string{"text", "title", "description", "criterion", "name"} {
+				if v, ok := o[k].(string); ok && strings.TrimSpace(v) != "" {
+					out = append(out, strings.TrimSpace(v))
+					break
+				}
+			}
+		}
+		return out
+	}
+	return nil
+}
+
 // sanitizeSliceScope neutralizes a caller-supplied scope so it can NEVER form a
 // parsable mention once embedded in the slice-action comment body. The comment
 // is re-parsed by triggerTasksForComment via util.ParseMentions, whose
@@ -662,9 +754,13 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 		}
 		instruction += h.sliceActionBranchInstruction(r.Context(), issue)
 	}
-	// run_qa is project-configurable: append the project's smoke cmd/url when set.
+	// run_qa is project-configurable: append the project's smoke cmd/url when set,
+	// and the issue's PLAN (description + acceptance criteria) so the agent authors
+	// tests against the INTENDED behavior rather than re-deriving them from the diff
+	// it is judging (the task-claim brief carries only the title + trigger comment).
 	if req.Kind == sliceActionRunQA {
 		instruction += h.sliceActionQASmokeContext(r.Context(), issue)
+		instruction += qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
 	}
 	// auto_docs targets the project's configured docs repo when set.
 	if req.Kind == sliceActionAutoDocs {
