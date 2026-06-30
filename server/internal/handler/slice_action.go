@@ -458,12 +458,37 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	if !ok {
 		return
 	}
-	// Assemble the run_qa instruction exactly as the manual slice action does:
-	// the deterministic+plan-driven gate, smoked against the assignee dev's box.
-	instruction := buildSliceInstruction(sliceActionRunQA, "")
-	if url := h.devBoxSmokeURL(ctx, issue); url != "" {
-		instruction += " SMOKE TARGET: the assignee developer's QA box serves this branch at " + url +
-			" — deploy the branch to it (the deploy-qa git-sync) and smoke THAT url. It OVERRIDES any project smoke url below."
+
+	// Shared-sprint-branch model: when the issue belongs to a sprint, QA runs on
+	// the SPRINT branch (the integrated tip), not an isolated per-task branch.
+	// scope=task attributes a failure to this task's delta via the last-green ref;
+	// deploy the sprint branch to the project's sprint box so the smoke hits the
+	// integrated state. No sprint → fall back to the generic gate + the dev box.
+	scope := ""
+	smokeURL := ""
+	sprintNote := ""
+	// An issue's sprint is the issue_to_sprint join (no column on issue).
+	if sprint, err := h.Queries.GetSprintForIssue(ctx, issue.ID); err == nil {
+		scope = "task"
+		sid := uuidToString(sprint.ID)
+		if box, synced, derr := h.DeploySprintBranch(ctx, sprint.ID, issue.WorkspaceID); derr != nil {
+			slog.Warn("auto run_qa: deploy sprint branch failed", "sprint_id", sid, "error", derr)
+		} else {
+			if !synced {
+				slog.Warn("auto run_qa: sprint branch sync reported failure", "sprint_id", sid)
+			}
+			smokeURL = boxSmokeURL(box)
+		}
+		sprintNote = " SPRINT CONTEXT: this task is on the shared sprint branch " + sprintBranchName(sprint.ID) +
+			"; for the scope=task baseline use <sprintId>=" + sid + " (refs/sprint/" + sid + "/last-green)."
+	} else {
+		smokeURL = h.devBoxSmokeURL(ctx, issue)
+	}
+
+	instruction := buildSliceInstruction(sliceActionRunQA, scope) + sprintNote
+	if smokeURL != "" {
+		instruction += " SMOKE TARGET: the branch is served at " + smokeURL +
+			" — smoke THAT url. It OVERRIDES any project smoke url below."
 	}
 	instruction += h.sliceActionQASmokeContext(ctx, issue)
 	instruction += qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)

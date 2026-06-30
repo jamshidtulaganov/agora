@@ -472,6 +472,12 @@ func (h *Handler) devBoxSmokeURL(ctx context.Context, issue db.Issue) string {
 	if !ok {
 		return ""
 	}
+	return boxSmokeURL(box)
+}
+
+// boxSmokeURL derives the https URL a box serves from its work_dir
+// (/var/www/<subdomain> → https://<subdomain>). "" when the box has no work_dir.
+func boxSmokeURL(box db.ConnectedBox) string {
 	wd := strings.TrimRight(strings.TrimSpace(box.WorkDir), "/")
 	if wd == "" {
 		return ""
