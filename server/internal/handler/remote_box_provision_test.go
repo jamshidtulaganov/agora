@@ -32,16 +32,6 @@ func TestSanitizeHandle(t *testing.T) {
 	}
 }
 
-func TestHandleDBName(t *testing.T) {
-	// Hyphens (valid in DNS/paths) must become underscores for an unquoted MySQL
-	// identifier.
-	for in, want := range map[string]string{"shakhzod": "dbt_shakhzod", "aziz-k": "dbt_aziz_k"} {
-		if got := handleDBName(in); got != want {
-			t.Errorf("handleDBName(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 func TestBuildProvisionScript(t *testing.T) {
 	p := provisionParams{
 		Handle:     "shakhzod",
@@ -49,34 +39,31 @@ func TestBuildProvisionScript(t *testing.T) {
 		WebRoot:    "/var/www",
 		RepoURL:    "https://github.com/x/sd.git",
 		SeedDir:    "/var/www/agora.sdteam.uz",
-		SeedDB:     "dbt_agora",
 	}
 	s := buildProvisionScript(p, "secrettoken")
 
 	// Placement is derived from handle + base domain + web root.
-	for _, want := range []string{"set -e", "/var/www/shakhzod.sdteam.uz", "dbt_shakhzod"} {
+	for _, want := range []string{"set -e", "/var/www/shakhzod.sdteam.uz", "git clone --depth 1"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("script must contain %q, got: %s", want, s)
 		}
 	}
 
 	// Idempotent + NON-DESTRUCTIVE guards: every mutating step is gated on absence.
-	for _, want := range []string{"[ ! -d", "[ -f", "[ -e framework", "CREATE DATABASE IF NOT EXISTS", "SHOW TABLES FROM"} {
+	for _, want := range []string{"[ ! -d", "[ ! -f", "[ -e framework"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("script must guard step with %q (idempotency), got: %s", want, s)
 		}
 	}
 
-	// Word-boundary sed so renaming the seed DB never partial-matches a sibling
-	// (dbt_agora must NOT also rewrite dbt_agora_cs — the #2192-class bug).
-	if !strings.Contains(s, `\bdbt_agora\b`) {
-		t.Errorf("DB-name rewrite must be word-boundary-anchored, got: %s", s)
-	}
-
-	// A provision is fill-what's-missing — never a wipe.
-	for _, banned := range []string{"rm -rf", "DROP DATABASE", "git clean", "checkout -f", "rm -f"} {
+	// The box INHERITS the seed's DB config ("keep each box's existing DB"): the
+	// runbook must run NO database commands at all, and never anything destructive.
+	for _, banned := range []string{
+		"mysql", "mysqldump", "CREATE DATABASE", "DROP DATABASE",
+		"rm -rf", "git clean", "checkout -f", "rm -f",
+	} {
 		if strings.Contains(s, banned) {
-			t.Errorf("provision must be non-destructive; found %q", banned)
+			t.Errorf("provision must touch no DB and stay non-destructive; found %q", banned)
 		}
 	}
 
@@ -100,7 +87,6 @@ func TestBuildProvisionScriptInjectionSafe(t *testing.T) {
 		WebRoot:    "/w",
 		RepoURL:    "https://h/r.git",
 		SeedDir:    `/seed'; touch /tmp/pwned; echo '`,
-		SeedDB:     "dbt_s",
 	}
 	s := buildProvisionScript(p, "")
 	// shellQuote escapes an embedded single quote as '\'' — its presence proves

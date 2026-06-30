@@ -262,15 +262,16 @@ func (h *Handler) ProvisionConnectedBoxForMember(w http.ResponseWriter, r *http.
 		WebRoot:    qaHostWebRoot(),
 		RepoURL:    qaHostRepoURL(),
 		SeedDir:    qaHostSeedDir(),
-		SeedDB:     qaHostSeedDB(),
 	}
 	resp := ProvisionConnectedBoxResponse{
 		Handle:    handle,
 		Subdomain: boxSubdomain(p),
 		WorkDir:   boxWorkDir(p),
-		Database:  handleDBName(handle),
-		Script:    redactGitToken(buildProvisionScript(p, remoteBoxesGitToken())),
-		DryRun:    req.DryRun,
+		// The box inherits the seed's DB config verbatim ("keep each box's
+		// existing DB"); report which DB that is, for the operator's review.
+		Database: qaHostSeedDB(),
+		Script:   redactGitToken(buildProvisionScript(p, remoteBoxesGitToken())),
+		DryRun:   req.DryRun,
 	}
 	// Dry run is the review gate: return the exact runbook + placement, touch
 	// nothing on the host, register no row.

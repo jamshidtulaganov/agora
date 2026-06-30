@@ -76,13 +76,15 @@ func TestProvisionConnectedBoxDryRun(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if resp.Subdomain != "shakhzod.sdteam.uz" || resp.WorkDir != "/var/www/shakhzod.sdteam.uz" || resp.Database != "dbt_shakhzod" {
+	// The box inherits the seed's DB (dbt_agora from qaHostEnv) — "keep each box's
+	// existing DB", no isolated clone.
+	if resp.Subdomain != "shakhzod.sdteam.uz" || resp.WorkDir != "/var/www/shakhzod.sdteam.uz" || resp.Database != "dbt_agora" {
 		t.Errorf("wrong placement: %+v", resp)
 	}
 	if resp.Box != nil || resp.Ran {
 		t.Errorf("dry-run must neither run nor create a box: ran=%v box=%v", resp.Ran, resp.Box)
 	}
-	for _, want := range []string{"/var/www/shakhzod.sdteam.uz", "CREATE DATABASE IF NOT EXISTS"} {
+	for _, want := range []string{"/var/www/shakhzod.sdteam.uz", "git clone --depth 1"} {
 		if !strings.Contains(resp.Script, want) {
 			t.Errorf("script missing %q: %s", want, resp.Script)
 		}
