@@ -60,3 +60,11 @@ export interface BitrixImportResponse {
   accepted?: number;
   errors: string[];
 }
+
+/** Result of an on-demand per-project Bitrix re-sync. The sync is asynchronous
+ * (202 + background); `accepted` is how many tasks were enqueued and
+ * `bitrix_synced_at` is the RFC3339 timestamp stamped on the project. */
+export interface BitrixSyncResult {
+  accepted: number;
+  bitrix_synced_at: string;
+}

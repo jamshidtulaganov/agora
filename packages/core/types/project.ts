@@ -24,6 +24,9 @@ export interface ProjectSettings {
   // access + sd-docs-author skill). When unset, auto_docs falls back to the
   // issue's assignee agent.
   docs_agent?: string;
+  // RFC3339 timestamp of the last Bitrix sync for a Bitrix-linked project (set
+  // by the per-project sync endpoint). Absent until the project is first synced.
+  bitrix_synced_at?: string;
   [key: string]: unknown;
 }
 

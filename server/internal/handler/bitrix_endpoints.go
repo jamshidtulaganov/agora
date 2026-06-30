@@ -10,7 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/multica-ai/multica/server/internal/integrations/bitrix"
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
 // Authenticated Bitrix import-browser endpoints. These power a UI that lets an
@@ -369,22 +371,101 @@ func (h *Handler) ImportBitrixTasks(w http.ResponseWriter, r *http.Request) {
 	// video-heavy group doesn't blow the request budget. The board updates live
 	// over the websocket as each issue is created/reconciled. A lightweight
 	// in-memory progress tracker lets the import UI show a live "synced X/N".
-	bitrixImportProgressStart(len(taskIDs))
-	go func() {
-		defer cancel()
-		for _, id := range taskIDs {
-			if err := h.syncBitrixTaskWithState(ctx, id, cfg, st); err != nil {
-				slog.Warn("bitrix import: task sync failed", "task_id", id, "error", err)
-			}
-			bitrixImportProgressInc()
-		}
-		bitrixImportProgressFinish()
-		slog.Info("bitrix import: background sync finished",
-			"requested", len(taskIDs), "created", st.created, "updated", st.updated, "skipped", st.skipped)
-	}()
+	h.startBitrixTaskSync(ctx, cancel, taskIDs, cfg, st)
 
 	resp.Accepted = len(taskIDs)
 	writeJSON(w, http.StatusAccepted, resp)
+}
+
+// SyncBitrixProject re-syncs a single Bitrix-linked project on demand: it pulls
+// the project's workgroup tasks (new + changed) through the same per-task sync
+// the bulk import + webhook use, then stamps project.settings.bitrix_synced_at so
+// the UI can show "last synced". POST /api/projects/{id}/bitrix/sync. Returns 202
+// (the per-task sync streams onto the board over the websocket) + the timestamp.
+func (h *Handler) SyncBitrixProject(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUserID(w, r); !ok {
+		return
+	}
+	if !bitrixEndpointsEnabled() {
+		writeError(w, http.StatusServiceUnavailable, "bitrix integration not configured")
+		return
+	}
+	wsID := h.resolveWorkspaceID(r)
+	if wsID == "" {
+		writeError(w, http.StatusBadRequest, "workspace required")
+		return
+	}
+	wsUUID, ok := parseUUIDOrBadRequest(w, wsID, "workspace_id")
+	if !ok {
+		return
+	}
+	projectUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "project id")
+	if !ok {
+		return
+	}
+	project, err := h.Queries.GetProjectInWorkspace(r.Context(), db.GetProjectInWorkspaceParams{
+		ID:          projectUUID,
+		WorkspaceID: wsUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	groupID := bitrixGroupIDFromDescription(project.Description.String)
+	if groupID == "" {
+		writeError(w, http.StatusBadRequest, "this project is not linked to a Bitrix workgroup")
+		return
+	}
+
+	cfg := bitrixRouteConfig()
+	st := h.newBitrixSyncState()
+	// Detached context so the per-task sync runs to completion even if the client
+	// disconnects (cancel() fires in the background goroutine).
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+
+	tasks, err := st.client.ListTasks(ctx, groupID, st.tag)
+	if err != nil {
+		cancel()
+		writeError(w, http.StatusBadGateway, "failed to list Bitrix tasks: "+err.Error())
+		return
+	}
+	// Dedup + cap, mirroring the bulk import.
+	seen := map[string]bool{}
+	taskIDs := make([]string, 0, len(tasks))
+	for i := range tasks {
+		id := strings.TrimSpace(tasks[i].ID)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		taskIDs = append(taskIDs, id)
+		if len(taskIDs) >= bitrixImportMaxTasks {
+			break
+		}
+	}
+
+	h.startBitrixTaskSync(ctx, cancel, taskIDs, cfg, st)
+
+	// Stamp the last-sync time now (the sync is enqueued + streams in over the
+	// websocket). Mirrors the Zoho zoho_synced_at settings merge. A fresh short
+	// context — the detached ctx above is cancelled when the goroutine ends.
+	syncedAt := time.Now().UTC().Format(time.RFC3339)
+	stampCtx, stampCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer stampCancel()
+	if _, err := h.DB.Exec(stampCtx,
+		`UPDATE project
+		    SET settings = COALESCE(settings, '{}'::jsonb) || jsonb_build_object('bitrix_synced_at', $2::text),
+		        updated_at = now()
+		  WHERE id = $1`,
+		projectUUID, syncedAt); err != nil {
+		slog.Warn("bitrix sync: failed to stamp bitrix_synced_at",
+			"project_id", uuidToString(projectUUID), "error", err)
+	}
+
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"accepted":         len(taskIDs),
+		"bitrix_synced_at": syncedAt,
+	})
 }
 
 // bitrixImportProgressState is a process-wide snapshot of the most recent import

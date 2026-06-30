@@ -141,6 +141,7 @@ import type {
   BitrixImportRequest,
   BitrixImportResponse,
   BitrixImportProgress,
+  BitrixSyncResult,
 } from "../bitrix/types";
 import type { Plugin, CreatePluginRequest } from "../plugins/types";
 import type {
@@ -2212,6 +2213,15 @@ export class ApiClient {
     return this.fetch(`/api/bitrix/import`, {
       method: "POST",
       body: JSON.stringify(req),
+    });
+  }
+
+  // Re-sync a single Bitrix-linked project on demand (pulls new + changed tasks;
+  // stamps project.settings.bitrix_synced_at). Async on the server (202); the
+  // refreshed project carries the new last-sync timestamp.
+  async syncBitrixProject(projectId: string): Promise<BitrixSyncResult> {
+    return this.fetch(`/api/projects/${projectId}/bitrix/sync`, {
+      method: "POST",
     });
   }
 

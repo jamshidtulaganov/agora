@@ -340,8 +340,8 @@ type bitrixSyncState struct {
 
 func (h *Handler) newBitrixSyncState() *bitrixSyncState {
 	return &bitrixSyncState{
-		client:        bitrix.NewClient(bitrixWebhookURL()),
-		tag:           bitrixTaskTag(),
+		client:         bitrix.NewClient(bitrixWebhookURL()),
+		tag:            bitrixTaskTag(),
 		projectCache:   map[string]pgtype.UUID{},
 		sprintCache:    map[string]pgtype.UUID{},
 		groupNames:     map[string]string{},
@@ -411,6 +411,29 @@ func (h *Handler) PollBitrixActiveTasks(ctx context.Context) {
 		synced++
 	}
 	slog.Info("bitrix poll: tick complete", "candidates", len(taskIDs), "synced", synced)
+}
+
+// startBitrixTaskSync runs the per-task sync (REST + downloads + enrichment) for
+// a resolved task-id set in a detached background goroutine — streaming issues
+// onto the board live over the websocket and updating the import-progress tracker
+// — so a big / video-heavy batch never blows the request budget. The CALLER owns
+// ctx + cancel (it also used ctx to resolve the task ids); this helper invokes
+// cancel() once the goroutine finishes. Shared by the bulk import
+// (ImportBitrixTasks) and the per-project sync (SyncBitrixProject).
+func (h *Handler) startBitrixTaskSync(ctx context.Context, cancel context.CancelFunc, taskIDs []string, cfg bitrix.RouteConfig, st *bitrixSyncState) {
+	bitrixImportProgressStart(len(taskIDs))
+	go func() {
+		defer cancel()
+		for _, id := range taskIDs {
+			if err := h.syncBitrixTaskWithState(ctx, id, cfg, st); err != nil {
+				slog.Warn("bitrix sync: task sync failed", "task_id", id, "error", err)
+			}
+			bitrixImportProgressInc()
+		}
+		bitrixImportProgressFinish()
+		slog.Info("bitrix sync: background sync finished",
+			"requested", len(taskIDs), "created", st.created, "updated", st.updated, "skipped", st.skipped)
+	}()
 }
 
 // syncBitrixTaskWithState is the batched core of the inbound sync. It reuses the

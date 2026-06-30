@@ -33,6 +33,24 @@ import (
 
 // --- group → project --------------------------------------------------------
 
+// bitrixGroupIDFromDescription extracts the Bitrix workgroup id from a project's
+// durable "bitrix_group:<id>" description marker — the inverse of the marker that
+// getOrCreateBitrixProject writes. Returns "" when the project carries no marker
+// (i.e. it is not Bitrix-linked). Bitrix group ids are numeric, so the id runs
+// from just after the prefix up to the first non-digit.
+func bitrixGroupIDFromDescription(description string) string {
+	i := strings.Index(description, bitrixProjectMarkerPrefix)
+	if i < 0 {
+		return ""
+	}
+	rest := description[i+len(bitrixProjectMarkerPrefix):]
+	end := 0
+	for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
+		end++
+	}
+	return rest[:end]
+}
+
 // getOrCreateBitrixProject returns the Agora project id for a Bitrix workgroup
 // in the given workspace, creating it on first sight. Dedup is durable: the
 // project's description carries a "bitrix_group:<id>" marker, and an existing

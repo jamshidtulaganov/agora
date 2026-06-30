@@ -852,6 +852,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// Sprints — a cycle layer under a project.
 					r.Get("/sprints", h.ListSprints)
 					r.Post("/sprints", h.CreateSprint)
+					// On-demand Bitrix re-sync for a Bitrix-linked project (pulls
+					// new + changed tasks; stamps project.settings.bitrix_synced_at).
+					r.Post("/bitrix/sync", h.SyncBitrixProject)
 				})
 			})
 
