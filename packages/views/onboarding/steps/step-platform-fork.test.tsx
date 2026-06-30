@@ -76,9 +76,11 @@ describe("StepPlatformFork", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders the three fork options at rest", () => {
+  it("renders the fork options at rest", () => {
     renderFork();
-    expect(screen.getByText(/^use this computer$/i)).toBeInTheDocument();
+    // The download-desktop card was removed (SD self-host ships no desktop
+    // app) — the two surviving options are the terminal path and the cloud
+    // "Coming soon" preview.
     expect(screen.getByText(/^connect from the terminal$/i)).toBeInTheDocument();
     expect(screen.getByText(/^use a cloud computer$/i)).toBeInTheDocument();
     // Cloud option is a "Coming soon" preview — not yet wired up.
@@ -113,30 +115,13 @@ describe("StepPlatformFork", () => {
     expect(onNext).toHaveBeenCalledWith(null);
   });
 
-  it("opens the download page and flips the card to a post-click state", async () => {
-    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
-    const user = userEvent.setup();
-    renderFork();
-
-    await user.click(screen.getByText(/^use this computer$/i));
-
-    // Routes to the new /download page (not GitHub releases) so the
-    // user lands on the OS auto-detect surface.
-    expect(openSpy).toHaveBeenCalledWith(
-      "/download",
-      "_blank",
-      "noopener,noreferrer",
-    );
-    expect(
-      screen.getByText(/opening the download page/i),
-    ).toBeInTheDocument();
-  });
-
   it("CLI dialog: opens with instructions + 'waiting' and a disabled Connect button", async () => {
     const user = userEvent.setup();
     renderFork();
 
-    await user.click(screen.getByRole("button", { name: /show steps/i }));
+    await user.click(
+      screen.getByRole("button", { name: /connect from the terminal/i }),
+    );
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByTestId("cli-instructions")).toBeInTheDocument();
@@ -160,7 +145,9 @@ describe("StepPlatformFork", () => {
     const user = userEvent.setup();
     const { onNext } = renderFork();
 
-    await user.click(screen.getByRole("button", { name: /show steps/i }));
+    await user.click(
+      screen.getByRole("button", { name: /connect from the terminal/i }),
+    );
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(/1 computer connected/i)).toBeInTheDocument();

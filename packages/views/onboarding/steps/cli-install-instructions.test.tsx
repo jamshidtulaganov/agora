@@ -20,6 +20,10 @@ describe("CliInstallInstructions", () => {
       </I18nProvider>,
     );
 
-    expect(screen.getByText("agora setup")).toHaveClass(...ligatureClasses);
+    // The CLI command renders as a single <code> node — the setup command is
+    // the full `agora setup self-host …` string, so match it by prefix.
+    expect(screen.getByText(/^agora setup self-host/)).toHaveClass(
+      ...ligatureClasses,
+    );
   });
 });

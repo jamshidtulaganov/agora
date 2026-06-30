@@ -53,6 +53,7 @@ vi.mock("@agora/core/paths", () => ({
 vi.mock("@agora/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"], queryFn: vi.fn() }),
   agentListOptions: () => ({ queryKey: ["agents"], queryFn: vi.fn() }),
+  squadListOptions: () => ({ queryKey: ["squads"], queryFn: vi.fn() }),
 }));
 
 vi.mock("@agora/core/workspace/hooks", () => ({

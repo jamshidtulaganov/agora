@@ -50,7 +50,7 @@ import { useT } from "../../i18n";
 // Mainland Feishu is unaffected and keeps its bind entry. Existing
 // installations (either cloud) stay fully manageable. Flip this back to
 // `true` to restore the "Bind to Lark" CTA; nothing else needs to change.
-const LARK_INTL_CONNECT_ENABLED: boolean = true;
+const LARK_INTL_CONNECT_ENABLED: boolean = false;
 
 // LarkTab is the workspace settings panel for Lark Bot installations.
 // Listing is member-visible; the disconnect action is admin-only (the
