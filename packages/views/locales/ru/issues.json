@@ -415,6 +415,15 @@
     "verdict_unknown": "Ожидает",
     "captured": "Получено"
   },
+  "qa_review": {
+    "back": "Назад к очереди QA",
+    "open_full": "Открыть задачу",
+    "checks": "Проверки",
+    "pass": "Пройдено",
+    "fail": "Провалено",
+    "marked_pass": "Отмечено qa:pass",
+    "marked_fail": "Отмечено qa:fail"
+  },
   "terminate_dialog": {
     "title": "Остановить это задание?",
     "body": "Задание будет отменено и не может быть возобновлено.",

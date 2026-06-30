@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ShieldAlert, ShieldCheck, ShieldQuestion } from "lucide-react";
+import { ShieldAlert, ShieldCheck, ShieldQuestion, List, LayoutGrid } from "lucide-react";
 import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core";
 import { useWorkspacePaths } from "@agora/core/paths";
@@ -11,14 +11,17 @@ import { cn } from "@agora/ui/lib/utils";
 import { AppLink } from "../../navigation";
 
 // QA cockpit — the QA team's triage view. The in_review queue (every project)
-// grouped by QA verdict so the team sees, at a glance, what needs them.
+// grouped by QA verdict so the team sees, at a glance, what needs them. Two
+// layouts: a dense list and a Kanban board (verdict columns), like the issues
+// board.
 //
 // A qa:fail task's outcome (the team's rule): hotfix it in the same sprint —
 // which on the next in_review re-fires the auto-QA (the prev!=in_review guard
-// means it re-runs) — OR move it to the next sprint. Both are done from the
-// issue itself; this view is the queue + the verdict.
+// means it re-runs) — OR move it to the next sprint. Done from the QA review
+// page; this view is the queue + the verdict.
 
 type QAStatus = "fail" | "pending" | "pass";
+type ViewMode = "list" | "board";
 
 function qaStatusOf(issue: Issue): QAStatus {
   const names = (issue.labels ?? []).map((l) => l.name);
@@ -27,9 +30,34 @@ function qaStatusOf(issue: Issue): QAStatus {
   return "pending";
 }
 
+const LANES = [
+  {
+    key: "fail" as const,
+    icon: ShieldAlert,
+    iconClass: "text-destructive",
+    title: "Needs fix",
+    subtitle: "qa:fail — hotfix in this sprint (re-QA runs on re-review) or move to the next sprint",
+  },
+  {
+    key: "pending" as const,
+    icon: ShieldQuestion,
+    iconClass: "text-muted-foreground",
+    title: "Pending QA",
+    subtitle: "in review — awaiting or running QA",
+  },
+  {
+    key: "pass" as const,
+    icon: ShieldCheck,
+    iconClass: "text-muted-foreground",
+    title: "Passed",
+    subtitle: "qa:pass — ready to merge",
+  },
+];
+
 export function QAPage() {
   const wsId = useWorkspaceId();
   const wp = useWorkspacePaths();
+  const [view, setView] = useState<ViewMode>("list");
   const { data, isLoading } = useQuery({
     queryKey: ["qa-cockpit", wsId],
     queryFn: () => api.listIssues({ status: "in_review", limit: 200 }),
@@ -38,60 +66,72 @@ export function QAPage() {
 
   const issues = data?.issues ?? [];
   const lanes = useMemo(() => {
-    const fail: Issue[] = [];
-    const pending: Issue[] = [];
-    const pass: Issue[] = [];
-    for (const i of issues) {
-      const s = qaStatusOf(i);
-      (s === "fail" ? fail : s === "pass" ? pass : pending).push(i);
-    }
-    return { fail, pending, pass };
+    const by: Record<QAStatus, Issue[]> = { fail: [], pending: [], pass: [] };
+    for (const i of issues) by[qaStatusOf(i)].push(i);
+    return by;
   }, [issues]);
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-8">
-      <header className="space-y-1">
-        <h1 className="text-lg font-semibold">QA</h1>
-        <p className="text-sm text-muted-foreground">
-          The review queue across all projects, by QA verdict. {issues.length} in review
-          {" · "}
-          <span className="text-destructive">{lanes.fail.length} need fix</span>
-          {" · "}
-          {lanes.pending.length} pending · {lanes.pass.length} passed
-        </p>
+    <div className="flex w-full flex-col gap-6 px-8 py-8">
+      <header className="flex items-start gap-4">
+        <div className="space-y-1">
+          <h1 className="text-lg font-semibold">QA</h1>
+          <p className="text-sm text-muted-foreground">
+            The review queue across all projects, by QA verdict. {issues.length} in review
+            {" · "}
+            <span className="text-destructive">{lanes.fail.length} need fix</span>
+            {" · "}
+            {lanes.pending.length} pending · {lanes.pass.length} passed
+          </p>
+        </div>
+        <div className="ml-auto flex items-center gap-1 rounded-md border p-0.5">
+          <ViewToggle active={view === "list"} onClick={() => setView("list")} icon={List} label="List" />
+          <ViewToggle active={view === "board"} onClick={() => setView("board")} icon={LayoutGrid} label="Board" />
+        </div>
       </header>
 
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : (
+      ) : view === "list" ? (
         <div className="space-y-5">
-          <Lane
-            icon={ShieldAlert}
-            iconClass="text-destructive"
-            title="Needs fix"
-            subtitle="qa:fail — hotfix in this sprint (re-QA runs on re-review) or move to the next sprint"
-            issues={lanes.fail}
-            issueHref={(id) => wp.issueDetail(id)}
-          />
-          <Lane
-            icon={ShieldQuestion}
-            iconClass="text-muted-foreground"
-            title="Pending QA"
-            subtitle="in review — awaiting or running QA"
-            issues={lanes.pending}
-            issueHref={(id) => wp.issueDetail(id)}
-          />
-          <Lane
-            icon={ShieldCheck}
-            iconClass="text-muted-foreground"
-            title="Passed"
-            subtitle="qa:pass — ready to merge"
-            issues={lanes.pass}
-            issueHref={(id) => wp.issueDetail(id)}
-          />
+          {LANES.map(({ key, ...lane }) => (
+            <Lane key={key} {...lane} issues={lanes[key]} href={wp.qaDetail} />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          {LANES.map(({ key, ...lane }) => (
+            <BoardColumn key={key} {...lane} issues={lanes[key]} href={wp.qaDetail} />
+          ))}
         </div>
       )}
     </div>
+  );
+}
+
+function ViewToggle({
+  active,
+  onClick,
+  icon: Icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: typeof List;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-1.5 rounded px-2 py-1 text-[12px] transition-colors",
+        active ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <Icon className="size-3.5" />
+      {label}
+    </button>
   );
 }
 
@@ -101,23 +141,21 @@ function Lane({
   title,
   subtitle,
   issues,
-  issueHref,
+  href,
 }: {
   icon: typeof ShieldAlert;
   iconClass: string;
   title: string;
   subtitle: string;
   issues: Issue[];
-  issueHref: (id: string) => string;
+  href: (id: string) => string;
 }) {
   return (
     <section className="rounded-lg border">
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <Icon className={cn("size-4 shrink-0", iconClass)} />
         <span className="text-sm font-medium">{title}</span>
-        <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
-          {issues.length}
-        </span>
+        <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{issues.length}</span>
         <span className="ml-2 truncate text-[11px] text-muted-foreground">{subtitle}</span>
       </div>
       {issues.length === 0 ? (
@@ -127,7 +165,7 @@ function Lane({
           {issues.map((issue) => (
             <li key={issue.id}>
               <AppLink
-                href={issueHref(issue.id)}
+                href={href(issue.id)}
                 className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent/60"
               >
                 <span className="truncate">{issue.title}</span>
@@ -136,6 +174,48 @@ function Lane({
           ))}
         </ul>
       )}
+    </section>
+  );
+}
+
+function BoardColumn({
+  icon: Icon,
+  iconClass,
+  title,
+  issues,
+  href,
+}: {
+  icon: typeof ShieldAlert;
+  iconClass: string;
+  title: string;
+  subtitle: string;
+  issues: Issue[];
+  href: (id: string) => string;
+}) {
+  return (
+    <section className="flex min-h-[200px] flex-col rounded-lg border bg-muted/20">
+      <div className="flex items-center gap-2 border-b px-3 py-2">
+        <Icon className={cn("size-4 shrink-0", iconClass)} />
+        <span className="text-sm font-medium">{title}</span>
+        <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+          {issues.length}
+        </span>
+      </div>
+      <div className="flex flex-col gap-2 p-2">
+        {issues.length === 0 ? (
+          <p className="px-1 py-2 text-[12px] text-muted-foreground">Nothing here.</p>
+        ) : (
+          issues.map((issue) => (
+            <AppLink
+              key={issue.id}
+              href={href(issue.id)}
+              className="rounded-md border bg-background px-3 py-2 text-[13px] hover:border-border-strong hover:bg-accent/50"
+            >
+              <span className="line-clamp-2">{issue.title}</span>
+            </AppLink>
+          ))
+        )}
+      </div>
     </section>
   );
 }

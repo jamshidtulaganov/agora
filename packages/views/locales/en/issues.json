@@ -415,6 +415,15 @@
     "verdict_unknown": "Pending",
     "captured": "Captured"
   },
+  "qa_review": {
+    "back": "Back to QA queue",
+    "open_full": "Open full issue",
+    "checks": "Checks",
+    "pass": "Pass",
+    "fail": "Fail",
+    "marked_pass": "Marked qa:pass",
+    "marked_fail": "Marked qa:fail"
+  },
   "terminate_dialog": {
     "title": "Stop this task?",
     "body": "The task will be cancelled and cannot be resumed.",

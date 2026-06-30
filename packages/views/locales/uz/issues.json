@@ -415,6 +415,15 @@
     "verdict_unknown": "Kutilmoqda",
     "captured": "Olingan"
   },
+  "qa_review": {
+    "back": "QA navbatiga qaytish",
+    "open_full": "Vazifani ochish",
+    "checks": "Tekshiruvlar",
+    "pass": "O'tdi",
+    "fail": "O'tmadi",
+    "marked_pass": "qa:pass belgilandi",
+    "marked_fail": "qa:fail belgilandi"
+  },
   "terminate_dialog": {
     "title": "Bu topshiriqni to‘xtatasizmi?",
     "body": "Topshiriq bekor qilinadi va uni davom ettirib bo‘lmaydi.",
