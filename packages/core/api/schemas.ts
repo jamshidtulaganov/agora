@@ -959,6 +959,9 @@ export const QAResultSchema = z.object({
     // verdict — found in the demo run, SD-320.
     branch_exit: z.number().nullable().default(null),
     kind: z.string().default("pass"),
+    // Short failure reason (stderr tail / assertion message) — optional, only
+    // older/non-conforming agents omit it; empty string degrades cleanly.
+    error: z.string().default(""),
   }).loose()).default([]),
   screenshots: z.array(z.string()).default([]),
 }).loose();

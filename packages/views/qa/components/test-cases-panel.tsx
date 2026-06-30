@@ -13,6 +13,7 @@ import { Textarea } from "@agora/ui/components/ui/textarea";
 import { Badge } from "@agora/ui/components/ui/badge";
 import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
+import { useRunningTestCaseId } from "./qa-live-progress";
 import { verdictIcon } from "./verdict";
 
 // The QA team's Test-cases instrument. Lists an issue's cases (authored by a QA
@@ -26,6 +27,7 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
   const { data } = useQuery(testCasesOptions(issueId));
   const cases = data?.test_cases ?? [];
   const [adding, setAdding] = useState(false);
+  const runningCaseId = useRunningTestCaseId(issueId);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: issueKeys.testCases(issueId) });
 
@@ -115,6 +117,7 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
               c={c}
               busy={recordRun.isPending}
               onRun={(status) => recordRun.mutate({ caseId: c.id, status })}
+              isRunning={c.id === runningCaseId}
             />
           ))}
         </ul>
@@ -127,21 +130,32 @@ function CaseRow({
   c,
   busy,
   onRun,
+  isRunning,
 }: {
   c: TestCase;
   busy: boolean;
   onRun: (status: "pass" | "fail") => void;
+  // Jest-style "RUNS <spec>" — true while the live agent stream's most recent
+  // `RUNNING test_case:<id>` marker (see useRunningTestCaseId) names THIS case.
+  // Takes priority over the persisted latest_run status, which is correct: a
+  // case being re-run right now should show as running, not as its stale
+  // previous verdict.
+  isRunning: boolean;
 }) {
   const { t } = useT("issues");
-  const [open, setOpen] = useState(false);
   const status = c.latest_run?.status;
   // "blocked"/"skip" only ever comes from the agent's run_test_cases protocol
   // (the human Pass/Fail buttons only ever write pass/fail) — it means the
   // agent attempted this case and could NOT exercise it (no reachable
   // browser, missing data/route), which reads very differently from "never
   // attempted" (no latest_run at all). c.latest_run?.output carries the
-  // agent's one-line reason, surfaced as a tooltip.
+  // agent's one-line reason.
   const isBlocked = status === "blocked" || status === "skip";
+  const hasReason = !isRunning && (status === "fail" || isBlocked) && !!c.latest_run?.output;
+  // Jest-style: a failing/blocked case opens itself so the reason is visible
+  // without an extra click — the whole point of asking "which failed and why"
+  // is to NOT have to hunt for it. A passing/never-run case stays collapsed.
+  const [open, setOpen] = useState(hasReason);
   return (
     <li className="px-3 py-2">
       <div className="flex items-center gap-2">
@@ -155,8 +169,15 @@ function CaseRow({
         <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">
           {c.kind === "automated" ? t(($) => $.test_cases.kind_automated) : t(($) => $.test_cases.kind_manual)}
         </Badge>
-        {status === "pass" || status === "fail" ? (
-          verdictIcon(status, "size-4")
+        {isRunning ? (
+          <span className="flex items-center gap-1 text-[10px] font-medium text-info">
+            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-info motion-safe:animate-pulse" />
+            {t(($) => $.test_cases.runs_now)}
+          </span>
+        ) : status === "pass" || status === "fail" ? (
+          <span title={status === "fail" ? c.latest_run?.output || undefined : undefined}>
+            {verdictIcon(status, "size-4")}
+          </span>
         ) : isBlocked ? (
           <span title={c.latest_run?.output || t(($) => $.test_cases.blocked)}>
             <CircleSlash className="size-4 text-amber-600 dark:text-amber-400" />
@@ -187,6 +208,18 @@ function CaseRow({
           </Button>
         </div>
       </div>
+      {open && hasReason && (
+        <div
+          className={cn(
+            "mt-1.5 rounded border-l-2 px-2 py-1.5 text-[11px]",
+            status === "fail"
+              ? "border-destructive/50 bg-destructive/5 text-destructive/90"
+              : "border-amber-500/50 bg-amber-500/5 text-amber-700 dark:text-amber-400",
+          )}
+        >
+          <pre className="whitespace-pre-wrap break-words font-mono">{c.latest_run?.output}</pre>
+        </div>
+      )}
       {open && (c.steps || c.expected) && (
         <div className="mt-1.5 space-y-1 pl-1 text-[12px] text-muted-foreground">
           {c.steps && <pre className="whitespace-pre-wrap font-sans">{c.steps}</pre>}

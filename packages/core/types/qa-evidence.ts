@@ -12,6 +12,10 @@ export interface QACommand {
   // baseline side only (a real run_qa agent emits this).
   branch_exit: number | null;
   kind: "pass" | "new_failure" | "pre_existing";
+  // Short failure reason (stderr tail / assertion message) the agent reports
+  // for a non-passing command — empty for "pass". The deterministic exit code
+  // is still the source of truth for pass/fail; this is WHY, not a re-judgment.
+  error: string;
 }
 
 // The structured payload from the ```qa-result``` block: the verdict + command

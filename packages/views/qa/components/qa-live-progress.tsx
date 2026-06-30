@@ -1,13 +1,14 @@
 "use client";
 
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { TerminalSquare } from "lucide-react";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { useActorName } from "@agora/core/workspace/hooks";
 import { agentTaskSnapshotOptions } from "@agora/core/agents";
 import { taskMessagesOptions } from "@agora/core/chat/queries";
 import type { AgentTask } from "@agora/core/types";
+import type { TaskMessagePayload } from "@agora/core/types/events";
 import { buildTimeline } from "../../common/task-transcript";
 import { deriveActivitySteps, type ActivityStep } from "../../issues/components/live-agent-activity";
 import { useT } from "../../i18n";
@@ -42,19 +43,70 @@ export function QALiveProgress({ issueId }: { issueId: string }) {
   return (
     <div className="flex flex-col gap-2">
       {runningTasks.map((task) => (
-        <QATerminalPanel key={task.id} task={task} />
+        <QATerminalPanel key={task.id} task={task} issueId={issueId} />
       ))}
     </div>
   );
 }
 
-function QATerminalPanel({ task }: { task: AgentTask }) {
+// Jest-style "RUNS <spec>" — the run_test_cases instruction requires the agent
+// to print `RUNNING test_case:<id>` immediately before driving each case's
+// steps (slice_action.go, sliceActionRunTests). This is the ONLY place that
+// signal is parsed; it's written into a small manually-managed query cache (no
+// queryFn — mirrors the chatKeys.pendingTask pattern) so TestCasesPanel can
+// read "which case is running right now" without itself subscribing to every
+// running task's message stream.
+const RUNNING_CASE_RE = /RUNNING test_case:([0-9a-fA-F-]{8,})/;
+
+function runningCaseQueryKey(issueId: string) {
+  return ["qa-running-case", issueId] as const;
+}
+
+export function useRunningTestCaseId(issueId: string): string | null {
+  const { data } = useQuery({
+    queryKey: runningCaseQueryKey(issueId),
+    queryFn: () => null as string | null,
+    enabled: false,
+    initialData: null,
+    staleTime: Infinity,
+  });
+  return data ?? null;
+}
+
+function extractRunningCaseId(messages: TaskMessagePayload[]): string | null {
+  let found: string | null = null;
+  for (const m of messages) {
+    if (!m.content) continue;
+    const match = m.content.match(RUNNING_CASE_RE);
+    // A later message's marker always wins — messages arrive seq-ordered, so
+    // the last match across the whole stream is the most recent one.
+    if (match) found = match[1]!;
+  }
+  return found;
+}
+
+function QATerminalPanel({ task, issueId }: { task: AgentTask; issueId: string }) {
   const { t } = useT("issues");
   const { getActorName } = useActorName();
+  const qc = useQueryClient();
   const { data: messages = [] } = useQuery(taskMessagesOptions(task.id));
 
   const timeline = useMemo(() => buildTimeline(messages), [messages]);
   const steps = useMemo(() => deriveActivitySteps(timeline), [timeline]);
+  const runningCaseId = useMemo(() => extractRunningCaseId(messages), [messages]);
+
+  useEffect(() => {
+    qc.setQueryData(runningCaseQueryKey(issueId), runningCaseId);
+    return () => {
+      // Clear on unmount (task left the running set) — but only if nothing
+      // newer already overwrote it, so a second concurrent QA task's marker
+      // (or a fresh run) is never clobbered by this panel's own teardown.
+      qc.setQueryData(runningCaseQueryKey(issueId), (old: string | null | undefined) =>
+        old === runningCaseId ? null : old,
+      );
+    };
+  }, [qc, issueId, runningCaseId]);
+
   const agentName = getActorName("agent", task.agent_id);
   // Newest-first feed, like a terminal scrolling — the latest command is the
   // one a reviewer cares about ("what is it doing RIGHT NOW").

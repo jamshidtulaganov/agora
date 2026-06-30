@@ -469,7 +469,8 @@
     "src_human": "qo'lda",
     "run_all": "Hammasini ishga tushirish (agent)",
     "running_all": "Bajarilmoqda…",
-    "run_all_toast": "QA agent avtotestlarni bajarmoqda…"
+    "run_all_toast": "QA agent avtotestlarni bajarmoqda…",
+    "runs_now": "BAJARILMOQDA"
   },
   "terminate_dialog": {
     "title": "Bu topshiriqni to‘xtatasizmi?",

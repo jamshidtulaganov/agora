@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   CheckCircle2,
@@ -218,6 +219,7 @@ export function parseQAResultBlock(content: string): QAResult | null {
           : c.kind === "pre_existing"
             ? "pre_existing"
             : "pass",
+      error: typeof c.error === "string" ? c.error : "",
     }))
     .filter((c) => c.cmd.length > 0);
   const screenshots = (Array.isArray(o.screenshots) ? o.screenshots : []).filter(
@@ -259,20 +261,32 @@ export function StructuredResult({ result }: { result: QAResult }) {
             {result.commands.map((c, i) => {
               const style = CMD_KIND_STYLE[c.kind];
               return (
-                <tr key={i} className="border-t border-border/40">
-                  <td className="max-w-[180px] truncate px-2 py-1 text-foreground/80" title={c.cmd}>
-                    {c.cmd}
-                  </td>
-                  <td className="px-1.5 py-1 text-center text-muted-foreground">
-                    {c.baseline_exit === null ? "—" : c.baseline_exit}
-                  </td>
-                  <td className="px-1.5 py-1 text-center text-foreground/70">
-                    {c.branch_exit === null ? "—" : c.branch_exit}
-                  </td>
-                  <td className={cn("px-2 py-1 text-right font-sans", style.cls)}>
-                    {style.label}
-                  </td>
-                </tr>
+                <Fragment key={i}>
+                  <tr className="border-t border-border/40">
+                    <td className="max-w-[180px] truncate px-2 py-1 text-foreground/80" title={c.cmd}>
+                      {c.cmd}
+                    </td>
+                    <td className="px-1.5 py-1 text-center text-muted-foreground">
+                      {c.baseline_exit === null ? "—" : c.baseline_exit}
+                    </td>
+                    <td className="px-1.5 py-1 text-center text-foreground/70">
+                      {c.branch_exit === null ? "—" : c.branch_exit}
+                    </td>
+                    <td className={cn("px-2 py-1 text-right font-sans", style.cls)}>
+                      {style.label}
+                    </td>
+                  </tr>
+                  {/* WHY it failed — the agent's short reason, Jest-style: a
+                      failing line is useless without the assertion/stderr that
+                      explains it. Only rendered when the agent reported one. */}
+                  {c.kind === "new_failure" && c.error && (
+                    <tr className="border-t border-border/20 bg-destructive/5">
+                      <td colSpan={4} className="px-2 py-1 font-sans text-[10px] text-destructive/90">
+                        <pre className="whitespace-pre-wrap break-words">{c.error}</pre>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               );
             })}
           </tbody>

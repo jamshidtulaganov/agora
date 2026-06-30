@@ -469,7 +469,8 @@
     "src_human": "manual",
     "run_all": "Run all (agent)",
     "running_all": "Running…",
-    "run_all_toast": "QA agent is running the automated cases…"
+    "run_all_toast": "QA agent is running the automated cases…",
+    "runs_now": "RUNS"
   },
   "terminate_dialog": {
     "title": "Stop this task?",

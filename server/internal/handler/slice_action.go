@@ -152,11 +152,15 @@ func buildSliceInstruction(kind, scope string) string {
 			"At the END of that comment, append a fenced ```qa-result code block containing ONLY a JSON object the " +
 			"editor's QA panel parses to render the result structured: " +
 			"`{\"verdict\":\"pass\"|\"fail\",\"summary\":\"<one line>\",\"commands\":[{\"cmd\":\"<command>\"," +
-			"\"baseline_exit\":<int|null>,\"branch_exit\":<int>,\"kind\":\"pass\"|\"new_failure\"|\"pre_existing\"}]," +
-			"\"screenshots\":[\"<path-or-url>\"]}` — `baseline_exit` is null for a command that only exists on the " +
-			"branch (e.g. your new tests); `kind` is `new_failure` only when baseline passed and the branch failed. " +
-			"The JSON must be valid and self-contained (the human-readable sections above stay as well). " +
-			"Do NOT merge anything — your verdict is advisory and the human decides next."
+			"\"baseline_exit\":<int|null>,\"branch_exit\":<int>,\"kind\":\"pass\"|\"new_failure\"|\"pre_existing\"," +
+			"\"error\":\"<short reason, ONLY for new_failure>\"}],\"screenshots\":[\"<path-or-url>\"]}` — " +
+			"`baseline_exit` is null for a command that only exists on the branch (e.g. your new tests); `kind` is " +
+			"`new_failure` only when baseline passed and the branch failed. For EVERY `new_failure` command, set " +
+			"`error` to the ONE line that actually explains it — the failing assertion message or the last " +
+			"non-empty stderr line (e.g. `expected 200, got 500` or `AssertionError: title not trimmed`), NOT the " +
+			"full stack trace and NOT a restatement of the exit code. Omit `error` (or leave it empty) for `pass` " +
+			"and `pre_existing` commands. The JSON must be valid and self-contained (the human-readable sections " +
+			"above stay as well). Do NOT merge anything — your verdict is advisory and the human decides next."
 		if guidance := qaBaselineGuidanceFor(strings.ToLower(strings.TrimSpace(scope))); guidance != "" {
 			base += guidance
 		}
@@ -197,13 +201,19 @@ func buildSliceInstruction(kind, scope string) string {
 			"specific. The JSON must be valid and self-contained; a short human-readable summary may precede it."
 	case sliceActionRunTests:
 		base = "Run this issue's AUTOMATED QA test cases as a DETERMINISTIC check — you are the QA Squad's automation " +
-			"engineer. The cases (id · title · steps · expected) are listed below. For EACH, drive its steps against the " +
+			"engineer. The cases (id · title · steps · expected) are listed below. BEFORE you start driving EACH case's " +
+			"steps, output the line `RUNNING test_case:<the case's id>` on its own — the QA panel watches your live " +
+			"output for this exact marker to show which case is in flight, the way a test runner's terminal shows the " +
+			"currently-running spec; skipping it just means that case never shows as \"running\" live, so always include " +
+			"it, one per case, right before you start that case. Then, for EACH case, drive its steps against the " +
 			"running app — a deterministic HTTP / DOM-text smoke, or the embedded browser; NEVER an external playwright/" +
 			"chrome — and judge the EXPECTED result by SIGNAL (status code, DOM text, exit code), never by opinion. Do NOT " +
 			"modify code. At the END of your comment, append a fenced ```test-runs code block with ONLY a JSON array the QA " +
 			"panel parses: `[{\"test_case_id\":\"<the id from the list>\",\"status\":\"pass\"|\"fail\"|\"blocked\"," +
-			"\"output\":\"<one-line evidence: the url/assertion + what you observed>\"}]` — one entry per case you ran. Use " +
-			"`blocked` if a case could not be exercised (missing data/route). The JSON must be valid and self-contained."
+			"\"output\":\"<one-line evidence — for fail/blocked this IS the human-readable reason shown to the QA " +
+			"reviewer, e.g. the failing assertion or HTTP status; for pass, what you observed>\"}]` — one entry per case " +
+			"you ran. Use `blocked` if a case could not be exercised (missing data/route). The JSON must be valid and " +
+			"self-contained."
 	default:
 		return ""
 	}
