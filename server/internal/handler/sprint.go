@@ -105,9 +105,13 @@ func parseSprintDate(raw *string, field string) (pgtype.Timestamptz, error) {
 	}
 	t, err := time.Parse(time.RFC3339Nano, s)
 	if err != nil {
-		t, err = time.Parse(time.RFC3339, s)
-		if err != nil {
-			return pgtype.Timestamptz{}, fmt.Errorf("invalid %s; expected an RFC3339 timestamp", field)
+		if t, err = time.Parse(time.RFC3339, s); err != nil {
+			// The sprint UI (create/edit modals) serializes calendar dates as
+			// date-only "YYYY-MM-DD" (toDateOnly) — accept that too, parsed at
+			// UTC midnight. Without this the modal save 400s.
+			if t, err = time.Parse("2006-01-02", s); err != nil {
+				return pgtype.Timestamptz{}, fmt.Errorf("invalid %s; expected an RFC3339 timestamp or a YYYY-MM-DD date", field)
+			}
 		}
 	}
 	return pgtype.Timestamptz{Time: t, Valid: true}, nil
