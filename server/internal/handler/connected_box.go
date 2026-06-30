@@ -459,6 +459,30 @@ func (h *Handler) connectedBoxForIssue(ctx context.Context, issue db.Issue) (db.
 	return db.ConnectedBox{}, false
 }
 
+// devBoxSmokeURL returns the https URL the issue's resolved QA box serves
+// (https://<subdomain>, derived from the box's work_dir /var/www/<subdomain>),
+// so run_qa can smoke the ASSIGNEE DEVELOPER'S own box instead of a single
+// project-wide URL. "" when remote boxes are off, no box resolves, or the box
+// has no work_dir — the run_qa smoke then falls back to the project qa_smoke_url.
+func (h *Handler) devBoxSmokeURL(ctx context.Context, issue db.Issue) string {
+	if !remoteBoxesEnabled() {
+		return ""
+	}
+	box, ok := h.connectedBoxForIssue(ctx, issue)
+	if !ok {
+		return ""
+	}
+	wd := strings.TrimRight(strings.TrimSpace(box.WorkDir), "/")
+	if wd == "" {
+		return ""
+	}
+	sub := wd[strings.LastIndex(wd, "/")+1:]
+	if sub == "" {
+		return ""
+	}
+	return "https://" + sub
+}
+
 // performBoxSync runs a git-sync for a box and records the result, returning the
 // updated row, success, and token-redacted output. Shared by the box-id sync
 // endpoint and the issue deploy-qa endpoint.

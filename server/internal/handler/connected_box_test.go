@@ -149,6 +149,43 @@ func TestConnectedBoxForIssuePerDeveloper(t *testing.T) {
 	}
 }
 
+// TestDevBoxSmokeURL: run_qa smokes the assignee developer's own box — the URL
+// is derived from the resolved box's work_dir (/var/www/<subdomain>).
+func TestDevBoxSmokeURL(t *testing.T) {
+	t.Setenv("AGORA_REMOTE_BOXES_ENABLED", "true")
+	ctx := context.Background()
+	agentID, ownerID, _ := privateAgentTestFixture(t)
+
+	box, err := testHandler.Queries.CreateConnectedBox(ctx, db.CreateConnectedBoxParams{
+		WorkspaceID: testUUID(testWorkspaceID),
+		OwnerID:     testUUID(ownerID),
+		Label:       "shahzod", SshHost: "193.149.18.99", SshUser: "deploy", SshPort: 22,
+		RepoUrl: "https://github.com/x/sd.git", WorkDir: "/var/www/shahzod.sdteam.uz",
+	})
+	if err != nil {
+		t.Fatalf("create box: %v", err)
+	}
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `DELETE FROM connected_box WHERE id=$1`, uuidToString(box.ID))
+	})
+
+	issue := db.Issue{
+		WorkspaceID:  testUUID(testWorkspaceID),
+		ProjectID:    testUUID(testWorkspaceID),
+		AssigneeType: pgtype.Text{String: "agent", Valid: true},
+		AssigneeID:   testUUID(agentID),
+	}
+	if got := testHandler.devBoxSmokeURL(ctx, issue); got != "https://shahzod.sdteam.uz" {
+		t.Errorf("devBoxSmokeURL = %q, want https://shahzod.sdteam.uz", got)
+	}
+
+	// Flag off → no dev-box smoke override (falls back to project qa_smoke_url).
+	t.Setenv("AGORA_REMOTE_BOXES_ENABLED", "")
+	if got := testHandler.devBoxSmokeURL(ctx, issue); got != "" {
+		t.Errorf("flag off must yield no dev-box url, got %q", got)
+	}
+}
+
 // TestConnectedBoxFeatureFlag pins the additive/opt-in contract: with the flag
 // OFF the endpoints fail closed (404), so the Remote Boxes feature is inert for
 // any deployment that hasn't enabled it.

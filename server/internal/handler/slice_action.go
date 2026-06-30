@@ -759,6 +759,13 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 	// tests against the INTENDED behavior rather than re-deriving them from the diff
 	// it is judging (the task-claim brief carries only the title + trigger comment).
 	if req.Kind == sliceActionRunQA {
+		// Smoke the ASSIGNEE DEVELOPER'S own QA box when one resolves, so each dev's
+		// branch is verified on their isolated environment (https://<handle>.<host>)
+		// rather than a shared project URL. Overrides the project qa_smoke_url below.
+		if url := h.devBoxSmokeURL(r.Context(), issue); url != "" {
+			instruction += " SMOKE TARGET: the assignee developer's QA box serves this branch at " + url +
+				" — deploy the branch to it (the deploy-qa git-sync) and smoke THAT url. It OVERRIDES any project smoke url below."
+		}
 		instruction += h.sliceActionQASmokeContext(r.Context(), issue)
 		instruction += qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
 	}
