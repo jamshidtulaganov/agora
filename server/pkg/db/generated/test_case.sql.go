@@ -27,6 +27,23 @@ func (q *Queries) ArchiveTestCase(ctx context.Context, arg ArchiveTestCaseParams
 	return err
 }
 
+const countActiveTestCasesForIssue = `-- name: CountActiveTestCasesForIssue :one
+SELECT count(*) FROM test_case
+WHERE issue_id = $1 AND workspace_id = $2 AND archived_at IS NULL
+`
+
+type CountActiveTestCasesForIssueParams struct {
+	IssueID     pgtype.UUID `json:"issue_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) CountActiveTestCasesForIssue(ctx context.Context, arg CountActiveTestCasesForIssueParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveTestCasesForIssue, arg.IssueID, arg.WorkspaceID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createTestCase = `-- name: CreateTestCase :one
 
 INSERT INTO test_case (
@@ -159,6 +176,53 @@ func (q *Queries) GetTestCase(ctx context.Context, arg GetTestCaseParams) (TestC
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const listAutomatedTestCasesForIssue = `-- name: ListAutomatedTestCasesForIssue :many
+SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at FROM test_case
+WHERE issue_id = $1 AND workspace_id = $2 AND archived_at IS NULL AND kind = 'automated'
+ORDER BY created_at ASC
+`
+
+type ListAutomatedTestCasesForIssueParams struct {
+	IssueID     pgtype.UUID `json:"issue_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// Automated cases an agent can drive deterministically (run_test_cases).
+func (q *Queries) ListAutomatedTestCasesForIssue(ctx context.Context, arg ListAutomatedTestCasesForIssueParams) ([]TestCase, error) {
+	rows, err := q.db.Query(ctx, listAutomatedTestCasesForIssue, arg.IssueID, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TestCase{}
+	for rows.Next() {
+		var i TestCase
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.IssueID,
+			&i.ProjectID,
+			&i.Title,
+			&i.Steps,
+			&i.Expected,
+			&i.Kind,
+			&i.Source,
+			&i.AuthorType,
+			&i.AuthorID,
+			&i.ArchivedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listLatestRunsForIssueCases = `-- name: ListLatestRunsForIssueCases :many

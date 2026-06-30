@@ -18,6 +18,16 @@ import (
 // agent appends when authoring cases (the gen_test_cases slice action).
 var testCasesBlockRe = regexp.MustCompile("(?s)```test-cases\\s*\\n(.*?)```")
 
+// testRunsBlockRe extracts the ```test-runs``` array a QA agent appends when it
+// RUNS the automated cases (the run_test_cases slice action).
+var testRunsBlockRe = regexp.MustCompile("(?s)```test-runs\\s*\\n(.*?)```")
+
+type genTestRun struct {
+	TestCaseID string `json:"test_case_id"`
+	Status     string `json:"status"`
+	Output     string `json:"output"`
+}
+
 type genTestCase struct {
 	Title    string `json:"title"`
 	Steps    string `json:"steps"`
@@ -89,4 +99,64 @@ func (s *TaskService) CaptureTestCases(ctx context.Context, issue db.Issue, cont
 		Payload:     map[string]any{"issue_id": util.UUIDToString(issue.ID)},
 	})
 	slog.Info("agent test cases captured", "issue_id", util.UUIDToString(issue.ID), "count", inserted)
+}
+
+// CaptureTestRuns persists a run_test_cases agent's ```test-runs``` block as
+// test_run rows. Each entry names a test_case_id we handed the agent; we verify
+// the case belongs to THIS issue+workspace before writing (an agent can't post
+// runs for another issue's case). Best-effort + detached. Exported so the HTTP
+// comment handler can call it too (agents post via POST /comments).
+func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, content string, agentID pgtype.UUID) {
+	m := testRunsBlockRe.FindStringSubmatch(content)
+	if m == nil {
+		return
+	}
+	var runs []genTestRun
+	if err := json.Unmarshal([]byte(strings.TrimSpace(m[1])), &runs); err != nil {
+		return
+	}
+
+	inserted := 0
+	for _, r := range runs {
+		status := r.Status
+		switch status {
+		case "pass", "fail", "skip", "blocked":
+		default:
+			continue
+		}
+		caseID, err := util.ParseUUID(r.TestCaseID)
+		if err != nil {
+			continue
+		}
+		tc, err := s.Queries.GetTestCase(ctx, db.GetTestCaseParams{ID: caseID, WorkspaceID: issue.WorkspaceID})
+		if err != nil || util.UUIDToString(tc.IssueID) != util.UUIDToString(issue.ID) {
+			continue
+		}
+		if _, err := s.Queries.CreateTestRun(ctx, db.CreateTestRunParams{
+			WorkspaceID: issue.WorkspaceID,
+			TestCaseID:  tc.ID,
+			IssueID:     issue.ID,
+			Status:      status,
+			Output:      strings.TrimSpace(r.Output),
+			RunSource:   "agent",
+			RunByType:   "agent",
+			RunByID:     agentID,
+		}); err != nil {
+			slog.Warn("capture test runs: insert failed", "error", err, "issue_id", util.UUIDToString(issue.ID))
+			continue
+		}
+		inserted++
+	}
+	if inserted == 0 {
+		return
+	}
+
+	s.Bus.Publish(events.Event{
+		Type:        protocol.EventTestCasesChanged,
+		WorkspaceID: util.UUIDToString(issue.WorkspaceID),
+		ActorType:   "agent",
+		ActorID:     util.UUIDToString(agentID),
+		Payload:     map[string]any{"issue_id": util.UUIDToString(issue.ID)},
+	})
+	slog.Info("agent test runs captured", "issue_id", util.UUIDToString(issue.ID), "count", inserted)
 }

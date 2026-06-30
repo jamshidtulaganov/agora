@@ -41,6 +41,7 @@ const (
 	sliceActionRunCI      = "run_ci"
 	sliceActionAutoDocs   = "auto_docs"
 	sliceActionGenTests   = "gen_test_cases"
+	sliceActionRunTests   = "run_test_cases"
 )
 
 // isKnownSliceActionKind reports whether kind is one of the supported scoped
@@ -48,7 +49,7 @@ const (
 // agent is resolved or any comment is written.
 func isKnownSliceActionKind(kind string) bool {
 	switch kind {
-	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunCI, sliceActionAutoDocs, sliceActionGenTests:
+	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunCI, sliceActionAutoDocs, sliceActionGenTests, sliceActionRunTests:
 		return true
 	default:
 		return false
@@ -194,6 +195,15 @@ func buildSliceInstruction(kind, scope string) string {
 			"\"<expected result>\",\"kind\":\"manual\"|\"automated\"}]` — `automated` for a case a script/HTTP/DOM " +
 			"smoke can run deterministically, `manual` for one a human must click through. Keep titles unique and " +
 			"specific. The JSON must be valid and self-contained; a short human-readable summary may precede it."
+	case sliceActionRunTests:
+		base = "Run this issue's AUTOMATED QA test cases as a DETERMINISTIC check — you are the QA Squad's automation " +
+			"engineer. The cases (id · title · steps · expected) are listed below. For EACH, drive its steps against the " +
+			"running app — a deterministic HTTP / DOM-text smoke, or the embedded browser; NEVER an external playwright/" +
+			"chrome — and judge the EXPECTED result by SIGNAL (status code, DOM text, exit code), never by opinion. Do NOT " +
+			"modify code. At the END of your comment, append a fenced ```test-runs code block with ONLY a JSON array the QA " +
+			"panel parses: `[{\"test_case_id\":\"<the id from the list>\",\"status\":\"pass\"|\"fail\"|\"blocked\"," +
+			"\"output\":\"<one-line evidence: the url/assertion + what you observed>\"}]` — one entry per case you ran. Use " +
+			"`blocked` if a case could not be exercised (missing data/route). The JSON must be valid and self-contained."
 	default:
 		return ""
 	}
@@ -597,6 +607,48 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 		"qa_agents", len(agents))
 }
 
+// maybeGenTestsOnInReview fires the QA squad's gen_test_cases when an issue
+// enters in_review, so the QA Squad authors the test suite proactively the
+// moment dev hands off — no human click. Idempotent: skips if the issue already
+// has test cases (a re-review after a hotfix won't duplicate them). Best-effort
+// + detached, gated by AGORA_AUTO_QA_ENABLED, mirrors maybeRunQAOnInReview.
+func (h *Handler) maybeGenTestsOnInReview(ctx context.Context, issue db.Issue, actorType, actorID string) {
+	if !autoQAEnabled() {
+		return
+	}
+	// Already have cases (authored earlier, or by a prior in_review) → don't dup.
+	if n, err := h.Queries.CountActiveTestCasesForIssue(ctx, db.CountActiveTestCasesForIssueParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+	}); err != nil || n > 0 {
+		return
+	}
+	agents := h.qaSquadAgents(ctx, issue.WorkspaceID)
+	if len(agents) == 0 {
+		return
+	}
+	runner := h.pickLeastBusyQAAgent(ctx, agents)
+
+	instruction := buildSliceInstruction(sliceActionGenTests, "") +
+		qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
+	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
+	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+		AuthorType:  actorType,
+		AuthorID:    parseUUID(actorID),
+		Content:     content,
+		Type:        "comment",
+		ParentID:    pgtype.UUID{Valid: false},
+	})
+	if err != nil {
+		slog.Warn("auto gen_test_cases: create comment failed", "error", err, "issue_id", uuidToString(issue.ID))
+		return
+	}
+	h.triggerTasksForComment(ctx, issue, comment, nil, actorType, actorID, nil)
+	slog.Info("auto gen_test_cases fired on in_review", "issue_id", uuidToString(issue.ID), "agent_id", uuidToString(runner.ID))
+}
+
 // gitlabBaseBranch is the branch GitLab merge-request slice actions target +
 // branch from. Defaults to `main`; set AGORA_GITLAB_MR_TARGET (e.g. "dev") to
 // route agent MRs at a staging branch so their work does NOT auto-deploy to
@@ -781,6 +833,27 @@ func qaPlanContext(description string, acceptanceCriteria []byte) string {
 	return b.String()
 }
 
+// sliceActionTestCasesContext lists the issue's AUTOMATED test cases (id · title ·
+// steps · expected) for run_test_cases, so the agent drives each one and reports
+// a verdict per case keyed by the id we hand it.
+func (h *Handler) sliceActionTestCasesContext(ctx context.Context, issue db.Issue) string {
+	cases, err := h.Queries.ListAutomatedTestCasesForIssue(ctx, db.ListAutomatedTestCasesForIssueParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil || len(cases) == 0 {
+		return " NOTE: this issue has no automated test cases yet — author them first (gen_test_cases) or add some, then re-run."
+	}
+	var b strings.Builder
+	b.WriteString(" AUTOMATED TEST CASES TO RUN (report a verdict for each by its id):")
+	for _, c := range cases {
+		steps := strings.ReplaceAll(strings.TrimSpace(c.Steps), "\n", " ")
+		b.WriteString(fmt.Sprintf(" [id=%s] %s — steps: %s; expected: %s.",
+			uuidToString(c.ID), c.Title, steps, strings.TrimSpace(c.Expected)))
+	}
+	return b.String()
+}
+
 // parseAcceptanceCriteria defensively extracts human-readable criterion strings
 // from the issue's acceptance_criteria JSONB, whose shape is importer-written and
 // not guaranteed: it may be a JSON array of strings, an array of objects (with a
@@ -957,6 +1030,15 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 	// gen_test_cases authors cases from the issue's plan (description + criteria).
 	if req.Kind == sliceActionGenTests {
 		instruction += qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
+	}
+	// run_test_cases drives the issue's automated cases against the box — same
+	// smoke target as run_qa, plus the cases (id/title/steps/expected) to run.
+	if req.Kind == sliceActionRunTests {
+		if url := h.devBoxSmokeURL(r.Context(), issue); url != "" {
+			instruction += " SMOKE TARGET: the app is served at " + url + " — run the cases against THAT url."
+		}
+		instruction += h.sliceActionQASmokeContext(r.Context(), issue)
+		instruction += h.sliceActionTestCasesContext(r.Context(), issue)
 	}
 
 	// Build the @mention link the comment-trigger path keys off:

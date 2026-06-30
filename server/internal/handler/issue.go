@@ -2575,6 +2575,9 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	// transition so it runs once per entry.
 	if statusChanged && issue.Status == "in_review" && prevIssue.Status != "in_review" {
 		go h.maybeRunQAOnInReview(context.Background(), issue, actorType, actorID)
+		// Proactively author the test suite too — the QA Squad writes cases the
+		// moment dev hands off, not on a human click (idempotent: skips if cases exist).
+		go h.maybeGenTestsOnInReview(context.Background(), issue, actorType, actorID)
 	}
 
 	// Cancel active tasks when the issue is cancelled by a user.

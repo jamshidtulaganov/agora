@@ -2422,8 +2422,10 @@ func (s *TaskService) createAgentComment(ctx context.Context, issueID, agentID p
 	// Persist a run_qa verdict's structured ```qa-result``` block as durable QA
 	// evidence so the issue's QA section reads one indexed row, not the timeline.
 	s.CaptureQAEvidence(ctx, issue, content)
-	// Persist a gen_test_cases agent's ```test-cases``` block as test_case rows.
+	// Persist a gen_test_cases agent's ```test-cases``` block as test_case rows,
+	// and a run_test_cases agent's ```test-runs``` block as test_run rows.
 	s.CaptureTestCases(ctx, issue, content, agentID)
+	s.CaptureTestRuns(ctx, issue, content, agentID)
 }
 
 // AutoUnresolveThreadOnReply clears resolved_at on the thread root when a

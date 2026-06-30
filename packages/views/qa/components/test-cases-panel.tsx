@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { Sparkles, Plus, CheckCircle2, XCircle, Bot, User, Loader2, FlaskConical } from "lucide-react";
+import { Sparkles, Plus, CheckCircle2, XCircle, Bot, User, Loader2, FlaskConical, Play } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@agora/core/api";
 import { issueKeys, testCasesOptions } from "@agora/core/issues/queries";
@@ -32,6 +32,14 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
+  const runAll = useMutation({
+    mutationFn: () => api.runTestCases(issueId),
+    onSuccess: () => toast.success(t(($) => $.test_cases.run_all_toast)),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
+
+  const hasAutomated = cases.some((c) => c.kind === "automated");
+
   const recordRun = useMutation({
     mutationFn: ({ caseId, status }: { caseId: string; status: "pass" | "fail" }) =>
       api.recordTestCaseRun(caseId, { status }),
@@ -46,6 +54,19 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
         <span className="text-sm font-medium">{t(($) => $.test_cases.section)}</span>
         <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{cases.length}</span>
         <div className="ml-auto flex items-center gap-1.5">
+          {hasAutomated && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5 text-[12px]"
+              disabled={runAll.isPending}
+              onClick={() => runAll.mutate()}
+            >
+              {runAll.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
+              {runAll.isPending ? t(($) => $.test_cases.running_all) : t(($) => $.test_cases.run_all)}
+            </Button>
+          )}
           <Button
             type="button"
             size="sm"

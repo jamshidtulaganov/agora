@@ -2285,6 +2285,12 @@ export class ApiClient {
     return this.sliceAction(issueId, { kind: "gen_test_cases" });
   }
 
+  // Fire a QA-Squad agent to RUN the issue's automated cases on the box
+  // (run_test_cases) — results land as test_run rows via the capture path.
+  async runTestCases(issueId: string): Promise<unknown> {
+    return this.sliceAction(issueId, { kind: "run_test_cases" });
+  }
+
   async updateLabel(id: string, data: UpdateLabelRequest): Promise<Label> {
     return this.fetch(`/api/labels/${id}`, {
       method: "PUT",

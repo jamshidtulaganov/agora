@@ -17,6 +17,16 @@ ORDER BY created_at DESC;
 SELECT * FROM test_case
 WHERE id = $1 AND workspace_id = $2;
 
+-- name: CountActiveTestCasesForIssue :one
+SELECT count(*) FROM test_case
+WHERE issue_id = $1 AND workspace_id = $2 AND archived_at IS NULL;
+
+-- name: ListAutomatedTestCasesForIssue :many
+-- Automated cases an agent can drive deterministically (run_test_cases).
+SELECT * FROM test_case
+WHERE issue_id = $1 AND workspace_id = $2 AND archived_at IS NULL AND kind = 'automated'
+ORDER BY created_at ASC;
+
 -- name: ArchiveTestCase :exec
 UPDATE test_case
 SET archived_at = now(), updated_at = now()

@@ -442,7 +442,10 @@
     "empty_hint": "Keys qo'shing yoki QA Squad'ga ticketdan yaratishni topshiring.",
     "generated_toast": "QA agent test-keyslar yozmoqda…",
     "src_agent": "agent",
-    "src_human": "qo'lda"
+    "src_human": "qo'lda",
+    "run_all": "Hammasini ishga tushirish (agent)",
+    "running_all": "Bajarilmoqda…",
+    "run_all_toast": "QA agent avtotestlarni bajarmoqda…"
   },
   "terminate_dialog": {
     "title": "Bu topshiriqni to‘xtatasizmi?",
