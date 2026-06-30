@@ -112,8 +112,12 @@ func buildProvisionScript(p provisionParams, token string) string {
 		fmt.Sprintf("for f in index.php protected/config/main.php protected/config/db.php; do "+
 			"if [ ! -f \"$f\" ] && [ -f %s/\"$f\" ]; then mkdir -p \"$(dirname \"$f\")\"; cp %s/\"$f\" \"$f\"; fi; done", seedQ, seedQ),
 		fmt.Sprintf("if [ ! -e framework ] && [ -e %s/framework ]; then cp -a %s/framework framework; fi", seedQ, seedQ),
-		// 3. writable runtime dirs (relative to the work dir we cd'd into).
+		// 3. writable runtime dirs (relative to the work dir we cd'd into). The chmod
+		//    is BEST-EFFORT: when provisioning over a pre-existing box, runtime/assets
+		//    may be owned by www-data/root (the app user) where the deploy user cannot
+		//    chmod — but they are already app-writable, so a chmod failure must not
+		//    fail the provision. (Terminal `|| true` — no fallthrough risk.)
 		"mkdir -p protected/runtime assets",
-		"chmod -R 0777 protected/runtime assets",
+		"chmod -R 0777 protected/runtime assets 2>/dev/null || true",
 	}, "\n")
 }
