@@ -1033,6 +1033,16 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 
 	h.triggerTasksForComment(r.Context(), issue, comment, parentComment, authorType, authorID, suppressAgentIDs)
 
+	// Real agents (daemon/CLI) post their structured output via THIS HTTP path,
+	// not the internal createAgentComment path — so the QA captures must run here
+	// too. Best-effort: a run_qa verdict's ```qa-result``` block becomes durable
+	// evidence; a gen_test_cases agent's ```test-cases``` block becomes test_case
+	// rows. No-ops for ordinary comments.
+	if authorType == "agent" {
+		h.TaskService.CaptureQAEvidence(r.Context(), issue, comment.Content)
+		h.TaskService.CaptureTestCases(r.Context(), issue, comment.Content, parseUUID(authorID))
+	}
+
 	writeJSON(w, http.StatusCreated, resp)
 }
 

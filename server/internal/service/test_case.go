@@ -41,7 +41,10 @@ func parseTestCasesBlock(content string) (cases []genTestCase, ok bool) {
 	return cases, true
 }
 
-func (s *TaskService) captureTestCases(ctx context.Context, issue db.Issue, content string, agentID pgtype.UUID) {
+// CaptureTestCases is exported so the HTTP comment handler can call it too:
+// real agents (daemon/CLI) post their cases via POST /comments, not the internal
+// createAgentComment path.
+func (s *TaskService) CaptureTestCases(ctx context.Context, issue db.Issue, content string, agentID pgtype.UUID) {
 	cases, ok := parseTestCasesBlock(content)
 	if !ok {
 		return

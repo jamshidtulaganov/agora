@@ -53,7 +53,10 @@ func parseQAResultBlock(content string) (raw string, p qaResultPayload, ok bool)
 	return raw, p, true
 }
 
-func (s *TaskService) captureQAEvidence(ctx context.Context, issue db.Issue, content string) {
+// CaptureQAEvidence is exported so the HTTP comment handler can call it too:
+// real agents (daemon/CLI) post their verdict via POST /comments, not the
+// internal createAgentComment path.
+func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, content string) {
 	raw, p, ok := parseQAResultBlock(content)
 	if !ok {
 		return
