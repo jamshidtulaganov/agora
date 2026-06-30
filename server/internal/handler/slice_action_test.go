@@ -542,6 +542,63 @@ func TestSliceActionDocsRepoContext(t *testing.T) {
 	})
 }
 
+// TestSliceActionQADocsContext covers the READ-side counterpart to
+// sliceActionDocsRepoContext: run_qa / run_test_cases / gen_test_cases must be
+// told to consult the project's docs repo as real context, not just write to
+// it (which only auto_docs does). Same project-settings seam, same empty/
+// no-project degrade — the QA-flavored wording differs (judging, not writing).
+func TestSliceActionQADocsContext(t *testing.T) {
+	ctx := context.Background()
+	newProject := func(settings string) pgtype.UUID {
+		w := httptest.NewRecorder()
+		req := newRequest("POST", "/api/projects?workspace_id="+testWorkspaceID, map[string]any{
+			"title": "qa-docs project " + time.Now().Format(time.RFC3339Nano),
+		})
+		testHandler.CreateProject(w, req)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("create project: %d", w.Code)
+		}
+		var p ProjectResponse
+		json.NewDecoder(w.Body).Decode(&p)
+		t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM project WHERE id = $1`, p.ID) })
+		if settings != "" {
+			testPool.Exec(ctx, `UPDATE project SET settings = $1 WHERE id = $2`, []byte(settings), p.ID)
+		}
+		return testUUID(p.ID)
+	}
+	issueIn := func(pid pgtype.UUID) db.Issue {
+		return db.Issue{ProjectID: pid, WorkspaceID: testUUID(testWorkspaceID)}
+	}
+
+	t.Run("repo_rendered_when_set", func(t *testing.T) {
+		pid := newProject(`{"docs_repo":"https://github.com/jamshidtulaganov/sd-doc.git"}`)
+		got := testHandler.sliceActionQADocsContext(ctx, issueIn(pid))
+		if !strings.Contains(got, "https://github.com/jamshidtulaganov/sd-doc.git") {
+			t.Errorf("docs repo URL missing: %q", got)
+		}
+		if !strings.Contains(got, "REAL source of") || !strings.Contains(got, "disagree") {
+			t.Errorf("expected judging-context wording (REAL source / disagree), got: %q", got)
+		}
+		// This is the READ seam — must never carry the write-side ("open the
+		// review request") instruction, or a QA run would think it's supposed
+		// to edit the docs repo.
+		if strings.Contains(got, "open the review request against it") {
+			t.Errorf("QA docs context must not carry the write-side auto_docs instruction: %q", got)
+		}
+	})
+	t.Run("empty_when_unset", func(t *testing.T) {
+		pid := newProject(`{}`)
+		if got := testHandler.sliceActionQADocsContext(ctx, issueIn(pid)); got != "" {
+			t.Errorf("no docs_repo must yield \"\", got: %q", got)
+		}
+	})
+	t.Run("no_project_empty", func(t *testing.T) {
+		if got := testHandler.sliceActionQADocsContext(ctx, db.Issue{}); got != "" {
+			t.Errorf("no project must yield \"\", got: %q", got)
+		}
+	})
+}
+
 // TestSliceActionQASmokeContext covers the generic QA gate's only
 // product-specific seam: the project-configurable smoke override
 // (qa_smoke_cmd / qa_smoke_url in project.settings) appended to a run_qa

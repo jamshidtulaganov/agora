@@ -336,6 +336,41 @@ func (h *Handler) sliceActionDocsRepoContext(ctx context.Context, issue db.Issue
 	return docsRepoInstruction(settings.DocsRepo)
 }
 
+// sliceActionQADocsContext is the READ-side counterpart to
+// sliceActionDocsRepoContext: auto_docs WRITES the project's docs repo after a
+// pass; this tells run_qa / run_test_cases / gen_test_cases to READ it (and the
+// already-injected workspace.context system prompt) as REAL context BEFORE
+// judging — the documented/expected behavior, not just the ticket's acceptance
+// criteria, which the implementer wrote and may have gotten wrong. Returns ""
+// when the project has no docs_repo configured (workspace.context alone is
+// already part of every agent's brief regardless of this helper, so there is
+// nothing to add when the per-project repo is unset).
+func (h *Handler) sliceActionQADocsContext(ctx context.Context, issue db.Issue) string {
+	if !issue.ProjectID.Valid {
+		return ""
+	}
+	project, err := h.Queries.GetProject(ctx, issue.ProjectID)
+	if err != nil || len(project.Settings) == 0 {
+		return ""
+	}
+	var settings struct {
+		DocsRepo string `json:"docs_repo"`
+	}
+	if json.Unmarshal(project.Settings, &settings) != nil {
+		return ""
+	}
+	repo := strings.TrimSpace(settings.DocsRepo)
+	if repo == "" {
+		return ""
+	}
+	return " PROJECT DOCUMENTATION: this project's documentation repository is " + repo +
+		" — clone/read it (and the Workspace Context above, when present) as the REAL source of " +
+		"intended behavior, alongside this issue's acceptance criteria. When the implementation, the " +
+		"acceptance criteria, and the documented behavior disagree, treat the DISAGREEMENT itself as " +
+		"something to surface in your verdict/comment (do not silently pick one to trust) — note which " +
+		"one the code actually matches and which it contradicts, so the human resolves it."
+}
+
 // docsRepoInstruction is the pure text policy for an auto_docs target (split out
 // so it is unit-testable without a DB). It names the docs repo and, when that
 // repo is a GitLab URL, appends the merge-request push-option flow — keyed on
@@ -604,6 +639,7 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 			" — smoke THAT url. It OVERRIDES any project smoke url below."
 	}
 	instruction += h.sliceActionQASmokeContext(ctx, issue)
+	instruction += h.sliceActionQADocsContext(ctx, issue)
 	instruction += qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
 
 	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
@@ -667,6 +703,7 @@ func (h *Handler) maybeGenTestsOnInReview(ctx context.Context, issue db.Issue, a
 	runner := h.pickLeastBusyQAAgent(ctx, free)
 
 	instruction := buildSliceInstruction(sliceActionGenTests, "") +
+		h.sliceActionQADocsContext(ctx, issue) +
 		qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
 	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
@@ -1058,6 +1095,7 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 				" — deploy the branch to it (the deploy-qa git-sync) and smoke THAT url. It OVERRIDES any project smoke url below."
 		}
 		instruction += h.sliceActionQASmokeContext(r.Context(), issue)
+		instruction += h.sliceActionQADocsContext(r.Context(), issue)
 		instruction += qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
 	}
 	// auto_docs targets the project's configured docs repo when set.
@@ -1066,6 +1104,7 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 	}
 	// gen_test_cases authors cases from the issue's plan (description + criteria).
 	if req.Kind == sliceActionGenTests {
+		instruction += h.sliceActionQADocsContext(r.Context(), issue)
 		instruction += qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
 	}
 	// run_test_cases drives the issue's automated cases against the box — same
@@ -1075,6 +1114,7 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 			instruction += " SMOKE TARGET: the app is served at " + url + " — run the cases against THAT url."
 		}
 		instruction += h.sliceActionQASmokeContext(r.Context(), issue)
+		instruction += h.sliceActionQADocsContext(r.Context(), issue)
 		instruction += h.sliceActionTestCasesContext(r.Context(), issue)
 	}
 
