@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -27,6 +29,121 @@ func TestRepoBasename(t *testing.T) {
 		if got := repoBasename(in); got != want {
 			t.Errorf("repoBasename(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// qaHostEnv sets a complete QA-host control-plane config for a provision test.
+func qaHostEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("AGORA_QA_HOST_SSH_HOST", "qa.sdteam.uz")
+	t.Setenv("AGORA_QA_HOST_SSH_USER", "deploy")
+	t.Setenv("AGORA_QA_HOST_BASE_DOMAIN", "sdteam.uz")
+	t.Setenv("AGORA_QA_HOST_WEB_ROOT", "/var/www")
+	t.Setenv("AGORA_QA_HOST_REPO_URL", "https://github.com/x/sd.git")
+	t.Setenv("AGORA_QA_HOST_SEED_DIR", "/var/www/agora.sdteam.uz")
+	t.Setenv("AGORA_QA_HOST_SEED_DB", "dbt_agora")
+}
+
+// TestProvisionConnectedBoxDryRun covers the review gate: a dry run returns the
+// exact runbook + computed placement, touches the host nothing, and registers no
+// box row (the host is a real prod server — nothing runs until the operator has
+// seen the script).
+func TestProvisionConnectedBoxDryRun(t *testing.T) {
+	t.Setenv("AGORA_REMOTE_BOXES_ENABLED", "true")
+	qaHostEnv(t)
+	ctx := context.Background()
+
+	member, err := testHandler.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
+		UserID:      testUUID(testUserID),
+		WorkspaceID: testUUID(testWorkspaceID),
+	})
+	if err != nil {
+		t.Fatalf("get member: %v", err)
+	}
+
+	var before int
+	testPool.QueryRow(ctx, `SELECT count(*) FROM connected_box WHERE workspace_id=$1`, testUUID(testWorkspaceID)).Scan(&before)
+
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/api/remote-boxes/provision?workspace_id="+testWorkspaceID, map[string]any{
+		"member_id": uuidToString(member.ID), "handle": "shakhzod", "dry_run": true,
+	})
+	testHandler.ProvisionConnectedBoxForMember(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("dry-run: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp ProvisionConnectedBoxResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Subdomain != "shakhzod.sdteam.uz" || resp.WorkDir != "/var/www/shakhzod.sdteam.uz" || resp.Database != "dbt_shakhzod" {
+		t.Errorf("wrong placement: %+v", resp)
+	}
+	if resp.Box != nil || resp.Ran {
+		t.Errorf("dry-run must neither run nor create a box: ran=%v box=%v", resp.Ran, resp.Box)
+	}
+	for _, want := range []string{"/var/www/shakhzod.sdteam.uz", "CREATE DATABASE IF NOT EXISTS"} {
+		if !strings.Contains(resp.Script, want) {
+			t.Errorf("script missing %q: %s", want, resp.Script)
+		}
+	}
+	var after int
+	testPool.QueryRow(ctx, `SELECT count(*) FROM connected_box WHERE workspace_id=$1`, testUUID(testWorkspaceID)).Scan(&after)
+	if after != before {
+		t.Errorf("dry-run must not create a box row: %d -> %d", before, after)
+	}
+}
+
+// TestProvisionConnectedBoxRequiresQAHost: with the QA host unconfigured the
+// endpoint fails closed (503) so a half-configured deployment can't provision.
+func TestProvisionConnectedBoxRequiresQAHost(t *testing.T) {
+	t.Setenv("AGORA_REMOTE_BOXES_ENABLED", "true")
+	for _, k := range []string{
+		"AGORA_QA_HOST_SSH_HOST", "AGORA_QA_HOST_SSH_USER", "AGORA_QA_HOST_BASE_DOMAIN",
+		"AGORA_QA_HOST_WEB_ROOT", "AGORA_QA_HOST_REPO_URL", "AGORA_QA_HOST_SEED_DIR", "AGORA_QA_HOST_SEED_DB",
+	} {
+		t.Setenv(k, "")
+	}
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/api/remote-boxes/provision?workspace_id="+testWorkspaceID, map[string]any{
+		"member_id": testUserID, "dry_run": true,
+	})
+	testHandler.ProvisionConnectedBoxForMember(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unconfigured QA host: expected 503, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestConnectedBoxForIssuePerDeveloper: the box owned by the developer behind an
+// issue (its assignee agent's owner) wins over any project-bound box, so the
+// dev's branch deploys to their own isolated box.
+func TestConnectedBoxForIssuePerDeveloper(t *testing.T) {
+	ctx := context.Background()
+	agentID, ownerID, _ := privateAgentTestFixture(t)
+
+	devBox, err := testHandler.Queries.CreateConnectedBox(ctx, db.CreateConnectedBoxParams{
+		WorkspaceID: testUUID(testWorkspaceID),
+		OwnerID:     testUUID(ownerID),
+		Label:       "dev", SshHost: "qa.sdteam.uz", SshUser: "deploy", SshPort: 22,
+	})
+	if err != nil {
+		t.Fatalf("create dev box: %v", err)
+	}
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `DELETE FROM connected_box WHERE id=$1`, uuidToString(devBox.ID))
+	})
+
+	// Issue assigned to that agent. ProjectID need only be Valid for the resolver
+	// to proceed; the dev-axis matches on owner before any project binding.
+	issue := db.Issue{
+		WorkspaceID:  testUUID(testWorkspaceID),
+		ProjectID:    testUUID(testWorkspaceID), // any valid uuid; not a real project
+		AssigneeType: pgtype.Text{String: "agent", Valid: true},
+		AssigneeID:   testUUID(agentID),
+	}
+	box, ok := testHandler.connectedBoxForIssue(ctx, issue)
+	if !ok || uuidToString(box.ID) != uuidToString(devBox.ID) {
+		t.Errorf("expected the dev box %s, got ok=%v id=%s", uuidToString(devBox.ID), ok, uuidToString(box.ID))
 	}
 }
 

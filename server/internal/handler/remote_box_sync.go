@@ -155,8 +155,47 @@ func redactUserToken(s, prefix string) string {
 // the Remote Boxes control plane (v1): the deploy private key the runner SSHes
 // to the box with, and the git token injected into the box's fetch URL for the
 // private repo. Per-box encrypted storage is a later hardening step.
-func remoteBoxesSSHKeyPath() string { return strings.TrimSpace(os.Getenv("AGORA_REMOTE_BOXES_SSH_KEY")) }
-func remoteBoxesGitToken() string   { return strings.TrimSpace(os.Getenv("AGORA_REMOTE_BOXES_GIT_TOKEN")) }
+func remoteBoxesSSHKeyPath() string {
+	return strings.TrimSpace(os.Getenv("AGORA_REMOTE_BOXES_SSH_KEY"))
+}
+func remoteBoxesGitToken() string {
+	return strings.TrimSpace(os.Getenv("AGORA_REMOTE_BOXES_GIT_TOKEN"))
+}
+
+// QA-host control plane (v1, operator env). The QA host is the SHARED parent
+// server that per-developer QA boxes are carved out of as wildcard subdomains
+// (`<handle>.<baseDomain>`, e.g. shakhzod.sdteam.uz). This config lives in env —
+// NOT workspace.settings — because the parent SSH target + provisioning routing
+// must not ride in GET /workspace (returned to every client); it mirrors the
+// AGORA_REMOTE_BOXES_SSH_KEY / _GIT_TOKEN secrets above. The provisioner reuses
+// the same deploy key + git token; the per-box DB clone uses the box's OWN local
+// mysql auth, so no database password is ever an Agora-held secret.
+func qaHostSSHHost() string    { return strings.TrimSpace(os.Getenv("AGORA_QA_HOST_SSH_HOST")) }
+func qaHostSSHUser() string    { return strings.TrimSpace(os.Getenv("AGORA_QA_HOST_SSH_USER")) }
+func qaHostBaseDomain() string { return strings.TrimSpace(os.Getenv("AGORA_QA_HOST_BASE_DOMAIN")) }
+func qaHostWebRoot() string    { return strings.TrimSpace(os.Getenv("AGORA_QA_HOST_WEB_ROOT")) }
+func qaHostRepoURL() string    { return strings.TrimSpace(os.Getenv("AGORA_QA_HOST_REPO_URL")) }
+func qaHostSeedDir() string    { return strings.TrimSpace(os.Getenv("AGORA_QA_HOST_SEED_DIR")) }
+func qaHostSeedDB() string     { return strings.TrimSpace(os.Getenv("AGORA_QA_HOST_SEED_DB")) }
+
+// qaHostSSHPort is the parent host's SSH port (AGORA_QA_HOST_SSH_PORT); default 22.
+func qaHostSSHPort() int {
+	if v := strings.TrimSpace(os.Getenv("AGORA_QA_HOST_SSH_PORT")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 22
+}
+
+// qaHostConfigured reports whether the QA-host control plane has the minimum
+// config to provision a box: where to reach the host, where it serves from, what
+// repo to check out, and a known-good seed site/DB to copy glue + data from.
+// Provision returns 503 when this is false.
+func qaHostConfigured() bool {
+	return qaHostSSHHost() != "" && qaHostSSHUser() != "" && qaHostBaseDomain() != "" &&
+		qaHostWebRoot() != "" && qaHostRepoURL() != "" && qaHostSeedDir() != "" && qaHostSeedDB() != ""
+}
 
 // shellQuote single-quotes a string for safe embedding in a remote /bin/sh
 // command (defends a path/branch with spaces or shell metacharacters from

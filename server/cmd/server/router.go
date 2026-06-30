@@ -863,6 +863,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Route("/api/remote-boxes", func(r chi.Router) {
 					r.Get("/", h.ListConnectedBoxes)
 					r.Post("/", h.CreateConnectedBox)
+					r.Post("/provision", h.ProvisionConnectedBoxForMember)
 					r.Post("/{id}/sync", h.SyncConnectedBox)
 					r.Post("/{id}/bind", h.BindConnectedBox)
 					r.Delete("/{id}", h.DeleteConnectedBox)

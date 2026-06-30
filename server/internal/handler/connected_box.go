@@ -174,6 +174,166 @@ func (h *Handler) CreateConnectedBox(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, connectedBoxToResponse(box))
 }
 
+// ProvisionConnectedBoxRequest provisions a per-developer QA box for a workspace
+// member. handle is optional — it defaults to a slug of the member's email local
+// part. dry_run returns the exact runbook + computed placement WITHOUT touching
+// the host, so the operator reviews it before the real run (the host is a real
+// prod server).
+type ProvisionConnectedBoxRequest struct {
+	MemberID string `json:"member_id"`
+	Handle   string `json:"handle"`
+	DryRun   bool   `json:"dry_run"`
+}
+
+// ProvisionConnectedBoxResponse reports the computed placement + the (token-
+// redacted) runbook, and — on a real run — the created box row and the redacted
+// host output. On a dry run Box is nil and Ran is false.
+type ProvisionConnectedBoxResponse struct {
+	Handle    string                `json:"handle"`
+	Subdomain string                `json:"subdomain"`
+	WorkDir   string                `json:"work_dir"`
+	Database  string                `json:"database"`
+	Script    string                `json:"script"`
+	DryRun    bool                  `json:"dry_run"`
+	Ran       bool                  `json:"ran"`
+	OK        bool                  `json:"ok"`
+	Output    string                `json:"output"`
+	Box       *ConnectedBoxResponse `json:"box"`
+}
+
+// ProvisionConnectedBoxForMember carves a per-developer QA box out of the shared
+// QA host (POST /api/remote-boxes/provision): it resolves the member's user,
+// derives a safe handle, and either returns the runbook for review (dry_run) or
+// runs it over SSH and registers the resulting connected_box owned by that user.
+func (h *Handler) ProvisionConnectedBoxForMember(w http.ResponseWriter, r *http.Request) {
+	if !remoteBoxesEnabled() {
+		writeError(w, http.StatusNotFound, "remote boxes are not enabled")
+		return
+	}
+	if _, ok := requireUserID(w, r); !ok {
+		return
+	}
+	wsID := h.resolveWorkspaceID(r)
+	if wsID == "" {
+		writeError(w, http.StatusBadRequest, "workspace required")
+		return
+	}
+	wsUUID, ok := parseUUIDOrBadRequest(w, wsID, "workspace_id")
+	if !ok {
+		return
+	}
+	if !qaHostConfigured() {
+		writeError(w, http.StatusServiceUnavailable, "the QA host is not configured (set AGORA_QA_HOST_*)")
+		return
+	}
+	var req ProvisionConnectedBoxRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	memberUUID, ok := parseUUIDOrBadRequest(w, strings.TrimSpace(req.MemberID), "member_id")
+	if !ok {
+		return
+	}
+	member, err := h.Queries.GetMember(r.Context(), memberUUID)
+	if err != nil || member.WorkspaceID.Bytes != wsUUID.Bytes {
+		writeError(w, http.StatusNotFound, "member not found in this workspace")
+		return
+	}
+
+	// Derive the handle: explicit wins; otherwise slug the member's email local
+	// part. Either way it must survive sanitizeHandle (the subdomain/path/DB-name
+	// security boundary).
+	rawHandle := strings.TrimSpace(req.Handle)
+	if rawHandle == "" {
+		if user, uerr := h.Queries.GetUser(r.Context(), member.UserID); uerr == nil {
+			rawHandle = user.Email
+		}
+	}
+	handle := sanitizeHandle(rawHandle)
+	if handle == "" {
+		writeError(w, http.StatusBadRequest, "could not derive a valid handle (allowed: a-z, 0-9, hyphen); pass an explicit handle")
+		return
+	}
+
+	p := provisionParams{
+		Handle:     handle,
+		BaseDomain: qaHostBaseDomain(),
+		WebRoot:    qaHostWebRoot(),
+		RepoURL:    qaHostRepoURL(),
+		SeedDir:    qaHostSeedDir(),
+		SeedDB:     qaHostSeedDB(),
+	}
+	resp := ProvisionConnectedBoxResponse{
+		Handle:    handle,
+		Subdomain: boxSubdomain(p),
+		WorkDir:   boxWorkDir(p),
+		Database:  handleDBName(handle),
+		Script:    redactGitToken(buildProvisionScript(p, remoteBoxesGitToken())),
+		DryRun:    req.DryRun,
+	}
+	// Dry run is the review gate: return the exact runbook + placement, touch
+	// nothing on the host, register no row.
+	if req.DryRun {
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+
+	keyPath := remoteBoxesSSHKeyPath()
+	if keyPath == "" {
+		writeError(w, http.StatusServiceUnavailable, "remote box SSH key is not configured on the server")
+		return
+	}
+
+	// Register the box first (owner = the member's user) so a row exists even if
+	// the runbook fails partway — its status then carries the error for the operator.
+	box, err := h.Queries.CreateConnectedBox(r.Context(), db.CreateConnectedBoxParams{
+		WorkspaceID:  wsUUID,
+		OwnerID:      member.UserID,
+		Label:        handle,
+		SshHost:      qaHostSSHHost(),
+		SshUser:      qaHostSSHUser(),
+		SshPort:      int32(qaHostSSHPort()),
+		DeployPubkey: "",
+		RepoUrl:      qaHostRepoURL(),
+		WorkDir:      boxWorkDir(p),
+		ProjectID:    pgtype.UUID{},
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to register the box")
+		return
+	}
+
+	out, runErr := sshRunner{}.Run(r.Context(), qaHostSSHHost(), qaHostSSHUser(), qaHostSSHPort(), keyPath,
+		buildProvisionScript(p, remoteBoxesGitToken()))
+	status := "online"
+	lastErr := ""
+	if runErr != nil {
+		status = "error"
+		lastErr = redactGitToken(runErr.Error())
+	}
+	updated, uerr := h.Queries.UpdateConnectedBoxStatus(r.Context(), db.UpdateConnectedBoxStatusParams{
+		ID:              box.ID,
+		WorkspaceID:     wsUUID,
+		Status:          status,
+		LastError:       lastErr,
+		LastBootstrapAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	})
+	if uerr != nil {
+		updated = box
+	}
+	boxResp := connectedBoxToResponse(updated)
+	resp.Box = &boxResp
+	resp.Ran = true
+	resp.OK = runErr == nil
+	resp.Output = redactGitToken(out)
+	code := http.StatusCreated
+	if runErr != nil {
+		code = http.StatusBadGateway
+	}
+	writeJSON(w, code, resp)
+}
+
 // DeleteConnectedBox removes a remote box (tenancy-scoped). Deprovisioning the
 // box's daemon/key is a control-plane step layered on later.
 func (h *Handler) DeleteConnectedBox(w http.ResponseWriter, r *http.Request) {
@@ -220,6 +380,27 @@ func repoBasename(u string) string {
 	return u
 }
 
+// developerUserForIssue resolves the human developer (a user id) behind an
+// issue's work, for per-developer QA box routing. The work is done by an AGENT,
+// so an agent assignee maps to its owner user (`agent.owner_id`); that user id is
+// what a per-dev `connected_box.owner_id` matches. Member/squad assignees fall
+// through (they route to the project box). ok=false when no developer resolves.
+func (h *Handler) developerUserForIssue(ctx context.Context, issue db.Issue) (pgtype.UUID, bool) {
+	if !issue.AssigneeType.Valid || !issue.AssigneeID.Valid {
+		return pgtype.UUID{}, false
+	}
+	if issue.AssigneeType.String == "agent" {
+		agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
+			ID:          issue.AssigneeID,
+			WorkspaceID: issue.WorkspaceID,
+		})
+		if err == nil && agent.OwnerID.Valid {
+			return agent.OwnerID, true
+		}
+	}
+	return pgtype.UUID{}, false
+}
+
 // connectedBoxForIssue resolves the QA box for an issue. Primary match is the
 // EXPLICIT project binding (connected_box.project_id == issue.project_id) — the
 // box's repo (a fork) legitimately differs from the project's repo (upstream),
@@ -233,6 +414,18 @@ func (h *Handler) connectedBoxForIssue(ctx context.Context, issue db.Issue) (db.
 	boxes, err := h.Queries.ListConnectedBoxesByWorkspace(ctx, issue.WorkspaceID)
 	if err != nil {
 		return db.ConnectedBox{}, false
+	}
+	// 0. Per-developer box (highest priority): the developer behind this issue's
+	//    work gets their OWN box (owner_id match), so their branch deploys to their
+	//    own isolated environment instead of colliding with other devs on the
+	//    shared project box. Only the per-task deploy-qa path uses this resolver;
+	//    the sprint-end regression keeps its own project-only box resolution.
+	if devUser, ok := h.developerUserForIssue(ctx, issue); ok {
+		for _, b := range boxes {
+			if b.OwnerID.Valid && b.OwnerID.Bytes == devUser.Bytes {
+				return b, true
+			}
+		}
 	}
 	// 1. Explicit project binding.
 	for _, b := range boxes {
