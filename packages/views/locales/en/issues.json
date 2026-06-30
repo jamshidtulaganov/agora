@@ -424,6 +424,22 @@
     "marked_pass": "Marked qa:pass",
     "marked_fail": "Marked qa:fail"
   },
+  "qa_bug": {
+    "file_bug": "File bug",
+    "from_evidence": "From",
+    "title_label": "Title",
+    "severity_label": "Severity",
+    "sev_blocker": "Blocker",
+    "sev_major": "Major",
+    "sev_minor": "Minor",
+    "evidence_label": "Evidence snapshot",
+    "frozen": "frozen",
+    "no_evidence": "No failing checks captured — filing from the ticket.",
+    "cancel": "Cancel",
+    "filed_toast": "Bug filed",
+    "open_bug": "Open bug",
+    "filed_chip": "Filed"
+  },
   "test_cases": {
     "section": "Test cases",
     "generate": "Generate via agent",

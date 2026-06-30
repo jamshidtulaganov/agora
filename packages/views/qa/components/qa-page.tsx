@@ -2,13 +2,16 @@
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ShieldAlert, ShieldCheck, ShieldQuestion, List, LayoutGrid } from "lucide-react";
+import { ShieldAlert, ShieldCheck, ShieldQuestion, List, LayoutGrid, Bug } from "lucide-react";
 import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core";
 import { useWorkspacePaths } from "@agora/core/paths";
 import type { Issue } from "@agora/core/types";
+import { Button } from "@agora/ui/components/ui/button";
 import { cn } from "@agora/ui/lib/utils";
 import { AppLink } from "../../navigation";
+import { Lane } from "./qa-lane";
+import { BugsLens } from "./bugs-lens";
 
 // QA cockpit — the QA team's triage view. The in_review queue (every project)
 // grouped by QA verdict so the team sees, at a glance, what needs them. Two
@@ -21,7 +24,7 @@ import { AppLink } from "../../navigation";
 // page; this view is the queue + the verdict.
 
 type QAStatus = "fail" | "pending" | "pass";
-type ViewMode = "list" | "board";
+type ViewMode = "list" | "board" | "bugs";
 
 function qaStatusOf(issue: Issue): QAStatus {
   const names = (issue.labels ?? []).map((l) => l.name);
@@ -87,10 +90,13 @@ export function QAPage() {
         <div className="ml-auto flex items-center gap-1 rounded-md border p-0.5">
           <ViewToggle active={view === "list"} onClick={() => setView("list")} icon={List} label="List" />
           <ViewToggle active={view === "board"} onClick={() => setView("board")} icon={LayoutGrid} label="Board" />
+          <ViewToggle active={view === "bugs"} onClick={() => setView("bugs")} icon={Bug} label="Bugs" />
         </div>
       </header>
 
-      {isLoading ? (
+      {view === "bugs" ? (
+        <BugsLens />
+      ) : isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : view === "list" ? (
         <div className="space-y-5">
@@ -121,60 +127,19 @@ function ViewToggle({
   label: string;
 }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="sm"
       onClick={onClick}
       className={cn(
-        "flex items-center gap-1.5 rounded px-2 py-1 text-[12px] transition-colors",
+        "h-7 gap-1.5 px-2 text-[12px]",
         active ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
       )}
     >
       <Icon className="size-3.5" />
       {label}
-    </button>
-  );
-}
-
-function Lane({
-  icon: Icon,
-  iconClass,
-  title,
-  subtitle,
-  issues,
-  href,
-}: {
-  icon: typeof ShieldAlert;
-  iconClass: string;
-  title: string;
-  subtitle: string;
-  issues: Issue[];
-  href: (id: string) => string;
-}) {
-  return (
-    <section className="rounded-lg border">
-      <div className="flex items-center gap-2 border-b px-3 py-2">
-        <Icon className={cn("size-4 shrink-0", iconClass)} />
-        <span className="text-sm font-medium">{title}</span>
-        <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{issues.length}</span>
-        <span className="ml-2 truncate text-[11px] text-muted-foreground">{subtitle}</span>
-      </div>
-      {issues.length === 0 ? (
-        <p className="px-3 py-2 text-[12px] text-muted-foreground">Nothing here.</p>
-      ) : (
-        <ul className="divide-y">
-          {issues.map((issue) => (
-            <li key={issue.id}>
-              <AppLink
-                href={href(issue.id)}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent/60"
-              >
-                <span className="truncate">{issue.title}</span>
-              </AppLink>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+    </Button>
   );
 }
 

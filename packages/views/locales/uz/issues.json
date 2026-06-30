@@ -424,6 +424,22 @@
     "marked_pass": "qa:pass belgilandi",
     "marked_fail": "qa:fail belgilandi"
   },
+  "qa_bug": {
+    "file_bug": "Bag ochish",
+    "from_evidence": "Manba",
+    "title_label": "Sarlavha",
+    "severity_label": "Jiddiylik",
+    "sev_blocker": "Bloker",
+    "sev_major": "Jiddiy",
+    "sev_minor": "Kichik",
+    "evidence_label": "Dalil tasviri",
+    "frozen": "muzlatilgan",
+    "no_evidence": "Yiqilgan tekshiruvlar yo'q — ticketdan ochilyapti.",
+    "cancel": "Bekor qilish",
+    "filed_toast": "Bag ochildi",
+    "open_bug": "Bagni ochish",
+    "filed_chip": "Ochilgan"
+  },
   "test_cases": {
     "section": "Test-keyslar",
     "generate": "Agent orqali yaratish",

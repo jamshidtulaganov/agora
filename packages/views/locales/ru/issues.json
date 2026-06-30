@@ -424,6 +424,22 @@
     "marked_pass": "Отмечено qa:pass",
     "marked_fail": "Отмечено qa:fail"
   },
+  "qa_bug": {
+    "file_bug": "Завести баг",
+    "from_evidence": "Из",
+    "title_label": "Заголовок",
+    "severity_label": "Серьёзность",
+    "sev_blocker": "Блокер",
+    "sev_major": "Существенная",
+    "sev_minor": "Незначительная",
+    "evidence_label": "Снимок доказательств",
+    "frozen": "заморожено",
+    "no_evidence": "Проваленных проверок нет — заводим из задачи.",
+    "cancel": "Отмена",
+    "filed_toast": "Баг заведён",
+    "open_bug": "Открыть баг",
+    "filed_chip": "Заведён"
+  },
   "test_cases": {
     "section": "Тест-кейсы",
     "generate": "Сгенерировать агентом",

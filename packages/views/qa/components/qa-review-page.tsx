@@ -1,15 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import {
-  ArrowLeft,
-  CheckCircle2,
-  XCircle,
-  ShieldQuestion,
-  RefreshCw,
-  ExternalLink,
-  Loader2,
-} from "lucide-react";
+import { ArrowLeft, CheckCircle2, XCircle, RefreshCw, ExternalLink, Loader2, Bug } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core";
@@ -21,6 +14,8 @@ import { useT } from "../../i18n";
 import { AppLink } from "../../navigation";
 import { StructuredResult } from "../../issues/components/editor-tests-panel";
 import { TestCasesPanel } from "./test-cases-panel";
+import { verdictIcon, verdictTone } from "./verdict";
+import { FileBugSheet } from "./file-bug-sheet";
 
 // The QA team's own instrument surface — a DEDICATED page (not the dev-oriented
 // issue detail). Reached from the QA cockpit: a row opens /qa/<issueId> here.
@@ -41,6 +36,7 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
   const wp = useWorkspacePaths();
   const qc = useQueryClient();
   const { t } = useT("issues");
+  const [bugOpen, setBugOpen] = useState(false);
 
   const { data: issue, isLoading } = useQuery(issueDetailOptions(wsId, issueId));
   const { data: evidence } = useQuery(qaEvidenceOptions(issueId));
@@ -86,14 +82,6 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
   });
 
   const verdict = evidence?.verdict ?? "";
-  const verdictIcon = (cls: string) =>
-    verdict === "pass" ? (
-      <CheckCircle2 className={cn("text-emerald-600 dark:text-emerald-400", cls)} />
-    ) : verdict === "fail" ? (
-      <XCircle className={cn("text-destructive", cls)} />
-    ) : (
-      <ShieldQuestion className={cn("text-muted-foreground", cls)} />
-    );
   const verdictLabel =
     verdict === "pass"
       ? t(($) => $.qa_evidence.verdict_pass)
@@ -130,18 +118,9 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
           </header>
 
           {/* Verdict hero */}
-          <div
-            className={cn(
-              "rounded-xl border px-4 py-3",
-              verdict === "fail"
-                ? "border-destructive/30 bg-destructive/5"
-                : verdict === "pass"
-                  ? "border-emerald-600/30 bg-emerald-600/5"
-                  : "border-border bg-muted/20",
-            )}
-          >
+          <div className={cn("rounded-xl border px-4 py-3", verdictTone(verdict))}>
             <div className="flex items-center gap-2.5">
-              {verdictIcon("size-5 shrink-0")}
+              {verdictIcon(verdict, "size-5 shrink-0")}
               <span className="text-base font-medium">{verdictLabel}</span>
               {evidence?.captured_at && (
                 <span className="ml-auto text-[11px] text-muted-foreground">
@@ -201,6 +180,18 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
               <XCircle className="size-3.5" />
               {t(($) => $.qa_review.fail)}
             </Button>
+            {verdict === "fail" && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5 text-[12px]"
+                onClick={() => setBugOpen(true)}
+              >
+                <Bug className="size-3.5 text-destructive" />
+                {t(($) => $.qa_bug.file_bug)}
+              </Button>
+            )}
             <Button
               type="button"
               size="sm"
@@ -216,6 +207,16 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
 
           {/* Test cases — the QA team's instruments (author / generate / run). */}
           <TestCasesPanel issueId={issueId} />
+
+          <FileBugSheet
+            open={bugOpen}
+            onOpenChange={setBugOpen}
+            sourceId={issueId}
+            sourceTitle={issue.title}
+            identifier={issue.identifier}
+            projectId={issue.project_id}
+            evidence={evidence}
+          />
         </>
       )}
     </div>

@@ -413,6 +413,22 @@
     "marked_pass": "已标记 qa:pass",
     "marked_fail": "已标记 qa:fail"
   },
+  "qa_bug": {
+    "file_bug": "提交缺陷",
+    "from_evidence": "来源",
+    "title_label": "标题",
+    "severity_label": "严重程度",
+    "sev_blocker": "阻断",
+    "sev_major": "严重",
+    "sev_minor": "轻微",
+    "evidence_label": "证据快照",
+    "frozen": "已冻结",
+    "no_evidence": "未捕获失败检查 — 从工单创建。",
+    "cancel": "取消",
+    "filed_toast": "已提交缺陷",
+    "open_bug": "打开缺陷",
+    "filed_chip": "已提交"
+  },
   "test_cases": {
     "section": "测试用例",
     "generate": "用代理生成",
