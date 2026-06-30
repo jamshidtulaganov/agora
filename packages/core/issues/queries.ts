@@ -91,6 +91,9 @@ export const issueKeys = {
   qaEvidenceAll: () => ["issues", "qa-evidence"] as const,
   /** Latest persisted run_qa verdict for an issue (the QA section reads this). */
   qaEvidence: (issueId: string) => [...issueKeys.qaEvidenceAll(), issueId] as const,
+  testCasesAll: () => ["issues", "test-cases"] as const,
+  /** QA test cases for an issue (the Test-cases panel reads this). */
+  testCases: (issueId: string) => [...issueKeys.testCasesAll(), issueId] as const,
   attachmentsAll: () => ["issues", "attachments"] as const,
   /** Issue-level attachments — used by the description editor so its
    *  inline file-card / image NodeViews can re-sign download URLs at
@@ -521,6 +524,12 @@ export function qaEvidenceOptions(issueId: string) {
   return queryOptions({
     queryKey: issueKeys.qaEvidence(issueId),
     queryFn: () => api.getQAEvidence(issueId),
+  });
+}
+export function testCasesOptions(issueId: string) {
+  return queryOptions({
+    queryKey: issueKeys.testCases(issueId),
+    queryFn: () => api.getIssueTestCases(issueId),
   });
 }
 

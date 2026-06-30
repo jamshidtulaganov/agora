@@ -413,6 +413,26 @@
     "marked_pass": "已标记 qa:pass",
     "marked_fail": "已标记 qa:fail"
   },
+  "test_cases": {
+    "section": "测试用例",
+    "generate": "用代理生成",
+    "generating": "生成中…",
+    "add": "添加用例",
+    "title_ph": "测试用例标题",
+    "steps_ph": "步骤（每行一个）",
+    "expected_ph": "预期结果",
+    "kind_manual": "手动",
+    "kind_automated": "自动",
+    "save": "保存",
+    "cancel": "取消",
+    "run_pass": "通过",
+    "run_fail": "未通过",
+    "empty": "暂无测试用例。",
+    "empty_hint": "添加用例，或让 QA 小队从工单生成。",
+    "generated_toast": "QA 代理正在编写测试用例…",
+    "src_agent": "代理",
+    "src_human": "手动"
+  },
   "terminate_dialog": {
     "title": "确定停止该 task？",
     "body": "Task 会被取消且无法恢复。",

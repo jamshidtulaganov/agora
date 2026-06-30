@@ -98,6 +98,9 @@ const (
 	// QA evidence — a run_qa verdict was parsed + persisted for an issue.
 	EventQAEvidenceReady = "qa_evidence:ready"
 
+	// QA test cases changed for an issue (agent authored, or a run recorded).
+	EventTestCasesChanged = "test_cases:changed"
+
 	// Pin events
 	EventPinCreated   = "pin:created"
 	EventPinDeleted   = "pin:deleted"

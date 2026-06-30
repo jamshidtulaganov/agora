@@ -69,6 +69,7 @@ export type WSEventType =
   | "issue_labels:changed"
   | "issue_metadata:changed"
   | "qa_evidence:ready"
+  | "test_cases:changed"
   | "pin:created"
   | "pin:deleted"
   | "pin:reordered"

@@ -210,3 +210,10 @@ export type {
   PolicyLoopingIssue,
 } from "./policy";
 export type { QACommand, QAResult, QAEvidence } from "./qa-evidence";
+export type {
+  TestRunLite,
+  TestCase,
+  ListTestCasesResponse,
+  CreateTestCaseRequest,
+  CreateTestRunRequest,
+} from "./test-case";

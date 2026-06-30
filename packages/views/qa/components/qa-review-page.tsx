@@ -20,6 +20,7 @@ import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
 import { AppLink } from "../../navigation";
 import { StructuredResult } from "../../issues/components/editor-tests-panel";
+import { TestCasesPanel } from "./test-cases-panel";
 
 // The QA team's own instrument surface — a DEDICATED page (not the dev-oriented
 // issue detail). Reached from the QA cockpit: a row opens /qa/<issueId> here.
@@ -212,6 +213,9 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
               {t(($) => $.qa_evidence.rerun)}
             </Button>
           </div>
+
+          {/* Test cases — the QA team's instruments (author / generate / run). */}
+          <TestCasesPanel issueId={issueId} />
         </>
       )}
     </div>

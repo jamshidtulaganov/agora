@@ -789,6 +789,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/comments/summarize", h.SummarizeComments)
 					r.Post("/slice-actions", h.CreateSliceAction)
 					r.Get("/qa-evidence", h.GetIssueQAEvidence)
+					r.Get("/test-cases", h.GetIssueTestCases)
+					r.Post("/test-cases", h.CreateIssueTestCase)
 					r.Post("/deploy-qa", h.DeployIssueQA)
 					r.Get("/comments", h.ListComments)
 					r.Get("/timeline", h.ListTimeline)
@@ -888,6 +890,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 			// Policy Agent — fleet watchdog (agent speed + stalled/failed/looping).
 			r.Get("/api/policy/fleet-health", h.GetPolicyFleetHealth)
+
+			// QA test cases — run + archive by case id (list/create are issue-scoped).
+			r.Route("/api/test-cases/{id}", func(r chi.Router) {
+				r.Post("/runs", h.CreateTestCaseRun)
+				r.Post("/archive", h.ArchiveTestCaseHandler)
+			})
 
 			// Squads
 			r.Route("/api/squads", func(r chi.Router) {

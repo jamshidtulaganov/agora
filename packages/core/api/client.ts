@@ -78,6 +78,10 @@ import type {
   ProvisionBoxResult,
   PolicyFleetHealth,
   QAEvidence,
+  TestCase,
+  ListTestCasesResponse,
+  CreateTestCaseRequest,
+  CreateTestRunRequest,
   CreateProjectRequest,
   UpdateProjectRequest,
   ListProjectsResponse,
@@ -227,6 +231,8 @@ import {
   PolicyFleetHealthSchema,
   EMPTY_POLICY_FLEET_HEALTH,
   QAEvidenceSchema,
+  ListTestCasesResponseSchema,
+  EMPTY_LIST_TEST_CASES,
   EMPTY_CONNECTED_BOX,
 } from "./schemas";
 
@@ -2246,6 +2252,37 @@ export class ApiClient {
     return parseWithFallback(raw, QAEvidenceSchema.nullable(), null, {
       endpoint: "GET /api/issues/:id/qa-evidence",
     });
+  }
+
+  // QA test cases — the QA team's test-management instruments.
+  async getIssueTestCases(issueId: string): Promise<ListTestCasesResponse> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/test-cases`);
+    return parseWithFallback(raw, ListTestCasesResponseSchema, EMPTY_LIST_TEST_CASES, {
+      endpoint: "GET /api/issues/:id/test-cases",
+    });
+  }
+
+  async createIssueTestCase(issueId: string, data: CreateTestCaseRequest): Promise<TestCase> {
+    return this.fetch(`/api/issues/${issueId}/test-cases`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async recordTestCaseRun(caseId: string, data: CreateTestRunRequest): Promise<unknown> {
+    return this.fetch(`/api/test-cases/${caseId}/runs`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async archiveTestCase(caseId: string): Promise<void> {
+    await this.fetch(`/api/test-cases/${caseId}/archive`, { method: "POST" });
+  }
+
+  // Fire a QA-Squad agent to author test cases for the issue (gen_test_cases).
+  async generateTestCases(issueId: string): Promise<unknown> {
+    return this.sliceAction(issueId, { kind: "gen_test_cases" });
   }
 
   async updateLabel(id: string, data: UpdateLabelRequest): Promise<Label> {

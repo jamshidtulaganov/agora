@@ -544,6 +544,7 @@ export function useRealtimeSync(
       "issue_reaction:added", "issue_reaction:removed",
       "subscriber:added", "subscriber:removed",
       "qa_evidence:ready",
+      "test_cases:changed",
       "daemon:heartbeat",
       // Chat events are handled explicitly below; do not double-invalidate.
       "chat:message", "chat:done", "chat:session_read", "chat:session_deleted",
@@ -625,6 +626,12 @@ export function useRealtimeSync(
     const unsubQAEvidenceReady = ws.on("qa_evidence:ready", (p) => {
       const { issue_id } = p as { issue_id?: string };
       if (issue_id) qc.invalidateQueries({ queryKey: issueKeys.qaEvidence(issue_id) });
+    });
+
+    // Test cases changed (agent authored, or a run recorded) — refresh the panel.
+    const unsubTestCasesChanged = ws.on("test_cases:changed", (p) => {
+      const { issue_id } = p as { issue_id?: string };
+      if (issue_id) qc.invalidateQueries({ queryKey: issueKeys.testCases(issue_id) });
     });
 
     // --- Timeline event handlers (global fallback) ---
@@ -1079,6 +1086,7 @@ export function useRealtimeSync(
       unsubIssueMetadataChanged();
       unsubInboxNew();
       unsubQAEvidenceReady();
+      unsubTestCasesChanged();
       unsubCommentCreated();
       unsubCommentUpdated();
       unsubCommentDeleted();

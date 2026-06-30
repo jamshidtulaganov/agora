@@ -970,6 +970,32 @@ export const QAEvidenceSchema = z.object({
   captured_at: z.string().default(""),
 }).loose();
 
+// QA test cases — agent- or human-authored, with the latest run's verdict.
+// Lenient: status/kind/source are plain strings (enum drift downgrades), and a
+// degraded response yields an empty list rather than white-screening the panel.
+export const TestCaseSchema = z.object({
+  id: z.string().default(""),
+  issue_id: z.string().default(""),
+  title: z.string().default(""),
+  steps: z.string().default(""),
+  expected: z.string().default(""),
+  kind: z.string().default("manual"),
+  source: z.string().default("human"),
+  author_type: z.string().default(""),
+  created_at: z.string().default(""),
+  latest_run: z.object({
+    status: z.string().default(""),
+    run_source: z.string().default(""),
+    created_at: z.string().default(""),
+  }).loose().nullable().default(null),
+}).loose();
+
+export const ListTestCasesResponseSchema = z.object({
+  test_cases: z.array(TestCaseSchema).default([]),
+}).loose();
+
+export const EMPTY_LIST_TEST_CASES = { test_cases: [] };
+
 // ---------------------------------------------------------------------------
 // Billing schemas (cloud-billing proxy surface)
 //

@@ -40,6 +40,7 @@ const (
 	sliceActionRunQA      = "run_qa"
 	sliceActionRunCI      = "run_ci"
 	sliceActionAutoDocs   = "auto_docs"
+	sliceActionGenTests   = "gen_test_cases"
 )
 
 // isKnownSliceActionKind reports whether kind is one of the supported scoped
@@ -47,7 +48,7 @@ const (
 // agent is resolved or any comment is written.
 func isKnownSliceActionKind(kind string) bool {
 	switch kind {
-	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunCI, sliceActionAutoDocs:
+	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunCI, sliceActionAutoDocs, sliceActionGenTests:
 		return true
 	default:
 		return false
@@ -183,6 +184,16 @@ func buildSliceInstruction(kind, scope string) string {
 			"with the doc changes for human review — a GitHub pull request, or, for a GitLab docs repo, the " +
 			"merge-request push-option flow described below. Do NOT merge — the human decides. If the change is purely " +
 			"internal (no doc-worthy surface), say so in a comment and open nothing rather than inventing content."
+	case sliceActionGenTests:
+		base = "Author QA test cases for this issue — you are the QA Squad's automation engineer. Derive cases " +
+			"from the issue's PLAN (its description + acceptance criteria, appended below) and, when a diff / linked PR " +
+			"exists, the actual change. Cover the golden path, the key edge cases, and any regression risk the change " +
+			"introduces. Do NOT run anything and do NOT touch code — only WRITE the cases. " +
+			"At the END of your comment, append a fenced ```test-cases code block containing ONLY a JSON array the QA " +
+			"panel parses: `[{\"title\":\"<short>\",\"steps\":\"<numbered steps, newline-separated>\",\"expected\":" +
+			"\"<expected result>\",\"kind\":\"manual\"|\"automated\"}]` — `automated` for a case a script/HTTP/DOM " +
+			"smoke can run deterministically, `manual` for one a human must click through. Keep titles unique and " +
+			"specific. The JSON must be valid and self-contained; a short human-readable summary may precede it."
 	default:
 		return ""
 	}
@@ -942,6 +953,10 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 	// auto_docs targets the project's configured docs repo when set.
 	if req.Kind == sliceActionAutoDocs {
 		instruction += h.sliceActionDocsRepoContext(r.Context(), issue)
+	}
+	// gen_test_cases authors cases from the issue's plan (description + criteria).
+	if req.Kind == sliceActionGenTests {
+		instruction += qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
 	}
 
 	// Build the @mention link the comment-trigger path keys off:
