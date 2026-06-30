@@ -1,6 +1,11 @@
 import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
-import type { ConnectedBox, CreateRemoteBoxRequest } from "../types";
+import type {
+  ConnectedBox,
+  CreateRemoteBoxRequest,
+  ProvisionBoxRequest,
+  ProvisionBoxResult,
+} from "../types";
 
 // Remote Boxes query/mutation hooks. The server gates the endpoints behind
 // AGORA_REMOTE_BOXES_ENABLED (404 when off); the client list method falls back
@@ -60,6 +65,19 @@ export function useBindRemoteBox(wsId: string) {
   const qc = useQueryClient();
   return useMutation<ConnectedBox, Error, { id: string; projectId: string }>({
     mutationFn: ({ id, projectId }) => api.bindConnectedBox(id, projectId),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: remoteBoxKeys.all(wsId) });
+    },
+  });
+}
+
+// Provision a per-developer QA box for a member. A dry run touches nothing and
+// returns the runbook for review; a real run registers a box, so invalidate the
+// list onSettled to surface it (a dry run just no-ops the refetch).
+export function useProvisionRemoteBox(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation<ProvisionBoxResult, Error, ProvisionBoxRequest>({
+    mutationFn: (data) => api.provisionRemoteBox(data),
     onSettled: () => {
       qc.invalidateQueries({ queryKey: remoteBoxKeys.all(wsId) });
     },

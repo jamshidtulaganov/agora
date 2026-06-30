@@ -2,15 +2,17 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Server, Plus, Trash2, Loader2, GitBranch } from "lucide-react";
+import { Server, Plus, Trash2, Loader2, GitBranch, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import {
   remoteBoxesOptions,
   useCreateRemoteBox,
   useDeleteRemoteBox,
   useSyncRemoteBox,
+  useProvisionRemoteBox,
 } from "@agora/core/runtimes";
-import type { ConnectedBox } from "@agora/core/types";
+import { memberListOptions } from "@agora/core/workspace/queries";
+import type { ConnectedBox, ProvisionBoxResult } from "@agora/core/types";
 import { Button } from "@agora/ui/components/ui/button";
 import { cn } from "@agora/ui/lib/utils";
 
@@ -153,6 +155,124 @@ export function RemoteBoxesSection({ wsId }: { wsId: string }) {
           Add box
         </Button>
       </div>
+
+      <ProvisionBoxForm wsId={wsId} />
+    </div>
+  );
+}
+
+// Provision a per-developer QA box: pick a member, optionally name the handle,
+// PREVIEW the exact runbook (dry-run — touches nothing), then provision for
+// real. The box is carved out of the shared QA host (AGORA_QA_HOST_*) as
+// `<handle>.<base-domain>` and registered owned by that member, so the member's
+// branches deploy to their own isolated environment.
+function ProvisionBoxForm({ wsId }: { wsId: string }) {
+  const { data: members = [] } = useQuery(memberListOptions(wsId));
+  const provision = useProvisionRemoteBox(wsId);
+  const [memberId, setMemberId] = useState("");
+  const [handle, setHandle] = useState("");
+  const [preview, setPreview] = useState<ProvisionBoxResult | null>(null);
+
+  const run = async (dryRun: boolean) => {
+    if (!memberId || provision.isPending) return;
+    try {
+      const res = await provision.mutateAsync({
+        member_id: memberId,
+        handle: handle.trim() || undefined,
+        dry_run: dryRun,
+      });
+      if (dryRun) {
+        setPreview(res);
+        return;
+      }
+      setPreview(null);
+      setHandle("");
+      if (res.ok) toast.success(`Provisioned ${res.subdomain}`);
+      else toast.error(`Provision failed: ${res.output?.slice(0, 200) || "see box status"}`);
+    } catch (err) {
+      toast.error(err instanceof Error && err.message ? err.message : "Provision failed");
+    }
+  };
+
+  return (
+    <div className="space-y-2 rounded-md border border-dashed p-2.5">
+      <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+        <UserPlus className="size-3.5" />
+        Provision a per-developer box
+      </div>
+      <p className="text-[10.5px] text-muted-foreground">
+        Carves <span className="font-mono">{"<handle>.<qa-host>"}</span> out of the shared QA host
+        for a member. Preview shows the exact runbook before anything runs.
+      </p>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <select
+          value={memberId}
+          onChange={(e) => {
+            setMemberId(e.target.value);
+            setPreview(null);
+          }}
+          aria-label="Member"
+          className="h-7 w-44 rounded-md border bg-transparent px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          <option value="">Select member…</option>
+          {members.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.name || m.email}
+            </option>
+          ))}
+        </select>
+        <input
+          type="text"
+          value={handle}
+          onChange={(e) => {
+            setHandle(e.target.value);
+            setPreview(null);
+          }}
+          placeholder="handle (optional, e.g. shakhzod)"
+          aria-label="Box handle"
+          className="h-7 w-52 rounded-md border bg-transparent px-2 text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+        />
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-7 px-2 text-xs"
+          disabled={!memberId || provision.isPending}
+          onClick={() => void run(true)}
+        >
+          {provision.isPending && !preview ? <Loader2 className="size-3 animate-spin" /> : "Preview"}
+        </Button>
+      </div>
+
+      {preview && (
+        <div className="space-y-1.5">
+          <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[10.5px]">
+            <span className="text-muted-foreground">Subdomain</span>
+            <span className="font-mono">{preview.subdomain}</span>
+            <span className="text-muted-foreground">Work dir</span>
+            <span className="font-mono">{preview.work_dir}</span>
+            <span className="text-muted-foreground">Database</span>
+            <span className="font-mono">{preview.database}</span>
+          </div>
+          <pre className="max-h-48 overflow-auto rounded-md border bg-muted/40 p-2 text-[10px] leading-relaxed whitespace-pre-wrap break-all">
+            {preview.script}
+          </pre>
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              disabled={provision.isPending}
+              onClick={() => void run(false)}
+            >
+              {provision.isPending ? <Loader2 className="size-3 animate-spin" /> : "Provision for real"}
+            </Button>
+            <span className="text-[10.5px] text-muted-foreground">
+              Runs the runbook above on the QA host.
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

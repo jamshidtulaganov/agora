@@ -864,6 +864,35 @@ export const RemoteBoxSyncResultSchema = z.object({
   box: ConnectedBoxSchema,
 }).loose();
 
+// Result of a per-developer box provision (or a dry-run preview). Lenient +
+// defaulted so a degraded response renders a benign empty preview rather than
+// white-screening. box is nullable (null on a dry run, before any row exists).
+export const ProvisionBoxResultSchema = z.object({
+  handle: z.string().default(""),
+  subdomain: z.string().default(""),
+  work_dir: z.string().default(""),
+  database: z.string().default(""),
+  script: z.string().default(""),
+  dry_run: z.boolean().default(false),
+  ran: z.boolean().default(false),
+  ok: z.boolean().default(false),
+  output: z.string().default(""),
+  box: ConnectedBoxSchema.nullable().default(null),
+}).loose();
+
+export const EMPTY_PROVISION_RESULT = {
+  handle: "",
+  subdomain: "",
+  work_dir: "",
+  database: "",
+  script: "",
+  dry_run: false,
+  ran: false,
+  ok: false,
+  output: "",
+  box: null,
+} as const;
+
 // ---------------------------------------------------------------------------
 // Billing schemas (cloud-billing proxy surface)
 //

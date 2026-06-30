@@ -199,4 +199,6 @@ export type {
   ConnectedBox,
   CreateRemoteBoxRequest,
   RemoteBoxSyncResult,
+  ProvisionBoxRequest,
+  ProvisionBoxResult,
 } from "./remote-box";

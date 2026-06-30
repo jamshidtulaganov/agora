@@ -9,6 +9,18 @@ const mutateDelete = vi.fn().mockResolvedValue(undefined);
 let boxesData: unknown[] = [];
 
 const mutateSync = vi.fn().mockResolvedValue({ ok: true, branch: "b", output: "", box: {} });
+const mutateProvision = vi.fn().mockResolvedValue({
+  handle: "shakhzod",
+  subdomain: "shakhzod.sdteam.uz",
+  work_dir: "/var/www/shakhzod.sdteam.uz",
+  database: "dbt_shakhzod",
+  script: "set -e && echo provisioning",
+  dry_run: true,
+  ran: false,
+  ok: false,
+  output: "",
+  box: null,
+});
 
 vi.mock("@agora/core/runtimes", () => ({
   remoteBoxesOptions: (wsId: string) => ({
@@ -18,6 +30,17 @@ vi.mock("@agora/core/runtimes", () => ({
   useCreateRemoteBox: () => ({ mutateAsync: mutateCreate, isPending: false }),
   useDeleteRemoteBox: () => ({ mutateAsync: mutateDelete }),
   useSyncRemoteBox: () => ({ mutateAsync: mutateSync, isPending: false }),
+  useProvisionRemoteBox: () => ({ mutateAsync: mutateProvision, isPending: false }),
+}));
+
+vi.mock("@agora/core/workspace/queries", () => ({
+  memberListOptions: (wsId: string) => ({
+    queryKey: ["members", wsId],
+    queryFn: () =>
+      Promise.resolve([
+        { id: "m1", workspace_id: wsId, user_id: "u1", role: "member", created_at: "", name: "Shakhzod", email: "s@x.io", avatar_url: null },
+      ]),
+  }),
 }));
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -37,6 +60,7 @@ describe("RemoteBoxesSection", () => {
   beforeEach(() => {
     mutateCreate.mockClear();
     mutateDelete.mockClear();
+    mutateProvision.mockClear();
     boxesData = [];
   });
 
@@ -124,6 +148,25 @@ describe("RemoteBoxesSection", () => {
     renderSection();
     await screen.findByText("noconfig");
     expect(screen.queryByLabelText("Branch for noconfig")).toBeNull();
+  });
+
+  it("previews a per-developer box provision (dry-run) and shows the runbook", async () => {
+    renderSection();
+    // Wait for the async member list so the option exists before selecting it.
+    await screen.findByRole("option", { name: "Shakhzod" });
+    fireEvent.change(screen.getByLabelText("Member"), { target: { value: "m1" } });
+    fireEvent.click(screen.getByText("Preview"));
+    await waitFor(() =>
+      expect(mutateProvision).toHaveBeenCalledWith({
+        member_id: "m1",
+        handle: undefined,
+        dry_run: true,
+      }),
+    );
+    // The dry-run preview surfaces the computed placement + the runbook for review.
+    expect(await screen.findByText("shakhzod.sdteam.uz")).toBeTruthy();
+    expect(screen.getByText(/echo provisioning/)).toBeTruthy();
+    expect(screen.getByText("Provision for real")).toBeTruthy();
   });
 
   it("deletes a box", async () => {

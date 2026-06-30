@@ -48,3 +48,29 @@ export interface RemoteBoxSyncResult {
   output: string;
   box: ConnectedBox;
 }
+
+// Provision a per-developer QA box for a workspace member. handle is optional —
+// it defaults server-side to a slug of the member's email local part. dry_run
+// returns the runbook + placement WITHOUT touching the host (the review gate).
+export interface ProvisionBoxRequest {
+  member_id: string;
+  handle?: string;
+  dry_run?: boolean;
+}
+
+// Result of a provision (or a dry-run preview). On a dry run `ran` is false and
+// `box` is null — only the computed placement + the (token-redacted) `script`
+// are returned for review. On a real run `box` is the registered box and
+// `output` is the redacted host output.
+export interface ProvisionBoxResult {
+  handle: string;
+  subdomain: string;
+  work_dir: string;
+  database: string;
+  script: string;
+  dry_run: boolean;
+  ran: boolean;
+  ok: boolean;
+  output: string;
+  box: ConnectedBox | null;
+}

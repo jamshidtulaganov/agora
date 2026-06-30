@@ -74,6 +74,8 @@ import type {
   ConnectedBox,
   CreateRemoteBoxRequest,
   RemoteBoxSyncResult,
+  ProvisionBoxRequest,
+  ProvisionBoxResult,
   CreateProjectRequest,
   UpdateProjectRequest,
   ListProjectsResponse,
@@ -217,6 +219,8 @@ import {
   ConnectedBoxListSchema,
   ConnectedBoxSchema,
   RemoteBoxSyncResultSchema,
+  ProvisionBoxResultSchema,
+  EMPTY_PROVISION_RESULT,
   EMPTY_CONNECTED_BOX,
 } from "./schemas";
 
@@ -1232,6 +1236,19 @@ export class ApiClient {
     });
     return parseWithFallback(raw, ConnectedBoxSchema, EMPTY_CONNECTED_BOX, {
       endpoint: "POST /api/remote-boxes/{id}/bind",
+    });
+  }
+
+  // Provision a per-developer QA box for a workspace member. With dry_run the
+  // server returns the runbook + computed placement WITHOUT touching the host
+  // (the review gate); a real run SSHes the QA host and registers the box.
+  async provisionRemoteBox(data: ProvisionBoxRequest): Promise<ProvisionBoxResult> {
+    const raw = await this.fetch<unknown>("/api/remote-boxes/provision", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(raw, ProvisionBoxResultSchema, EMPTY_PROVISION_RESULT, {
+      endpoint: "POST /api/remote-boxes/provision",
     });
   }
 
