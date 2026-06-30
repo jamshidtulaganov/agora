@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -484,4 +485,75 @@ func TestRawTaskGroupAsArray(t *testing.T) {
 			t.Errorf("group object must parse, got id=%q name=%q", task.GroupID, task.GroupName)
 		}
 	})
+}
+
+// --- ListTasks pagination ---------------------------------------------------
+
+// Bitrix returns 50 tasks per page and signals more via a top-level `next`
+// offset. ListTasks must follow `next` across every page so a group with more
+// than 50 tasks imports in full — the regression that left SD tasks missing
+// was a hard 50-cap with no paging.
+func TestListTasksPaginatesAllPages(t *testing.T) {
+	writePage := func(w http.ResponseWriter, from, count int, next *int) {
+		var b strings.Builder
+		b.WriteString(`{"result":{"tasks":[`)
+		for i := 0; i < count; i++ {
+			if i > 0 {
+				b.WriteString(",")
+			}
+			id := strconv.Itoa(from + i)
+			b.WriteString(`{"id":"` + id + `","title":"T` + id + `","GROUP_ID":"153"}`)
+		}
+		b.WriteString(`]}`)
+		if next != nil {
+			b.WriteString(`,"next":` + strconv.Itoa(*next))
+		}
+		b.WriteString(`}`)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, b.String())
+	}
+
+	var reqs int
+	var sawGroup string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		reqs++
+		sawGroup = r.PostForm.Get("filter[GROUP_ID]")
+		switch r.PostForm.Get("start") {
+		case "", "0":
+			n := 50
+			writePage(w, 1, 50, &n) // ids 1..50, more pages follow
+		case "50":
+			writePage(w, 51, 10, nil) // ids 51..60, final page (no next)
+		default:
+			t.Errorf("unexpected start offset %q", r.PostForm.Get("start"))
+			writePage(w, 0, 0, nil)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	tasks, err := c.ListTasks(context.Background(), "153", "")
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(tasks) != 60 {
+		t.Errorf("expected all 60 tasks across both pages, got %d (50-cap regression?)", len(tasks))
+	}
+	if reqs != 2 {
+		t.Errorf("expected 2 paged requests, got %d", reqs)
+	}
+	if sawGroup != "153" {
+		t.Errorf("group filter = %q, want 153", sawGroup)
+	}
+	// Spot-check that a task from beyond the first page made it through.
+	var has60 bool
+	for _, tk := range tasks {
+		if tk.ID == "60" {
+			has60 = true
+		}
+	}
+	if !has60 {
+		t.Error("task id 60 (page 2) missing — pagination dropped the tail")
+	}
 }

@@ -438,25 +438,37 @@ func (c *Client) ListGroups(ctx context.Context) ([]Group, error) {
 	return groups, nil
 }
 
-// listTasksResponse is the envelope for tasks.task.list: {"result":{"tasks":[...]}}.
+// listTasksResponse is the envelope for tasks.task.list:
+// {"result":{"tasks":[...]}, "total":N, "next":M}. Total is the group's full
+// task count; Next is the offset to pass as `start` for the following page.
+// Bitrix omits Next on the final page, which is how pagination terminates.
 type listTasksResponse struct {
 	Result struct {
 		Tasks []rawTask `json:"tasks"`
 	} `json:"result"`
+	Total     *int   `json:"total"`
+	Next      *int   `json:"next"`
 	Error     string `json:"error"`
 	ErrorDesc string `json:"error_description"`
 }
 
-// maxTasksPerGroup caps a single ListTasks page. Bitrix returns 50 per page;
-// the import browser shows one page (the newest tasks) rather than paginating,
-// matching the legacy dashboard's per-group view.
-const maxTasksPerGroup = 50
+// Bitrix tasks.task.list returns up to 50 tasks per page. ListTasks paginates
+// through every page (following the response's `next` offset) so a full import
+// captures the entire group, not just the newest 50. bitrixTaskPageSize is the
+// fixed Bitrix page size; bitrixMaxTasksPerImport is a runaway safety cap.
+const (
+	bitrixTaskPageSize      = 50
+	bitrixMaxTasksPerImport = 5000
+)
 
-// ListTasks returns the tasks in a Bitrix workgroup, newest first. It POSTs
+// ListTasks returns ALL tasks in a Bitrix workgroup, newest first. It POSTs
 // tasks.task.list filtered by GROUP_ID (and TAG when tag != ""), selecting the
-// fields Agora maps. Reuses the same rawTask → Task parsing as GetTask so a
-// task's id/title/status/etc. decode identically regardless of Bitrix's
-// number-vs-string quirks.
+// fields Agora maps, and follows the response's `next` offset across every page
+// (Bitrix returns 50 per page). Reuses the same rawTask → Task parsing as
+// GetTask so a task's id/title/status/etc. decode identically regardless of
+// Bitrix's number-vs-string quirks. A safety cap (bitrixMaxTasksPerImport)
+// bounds pathological groups; the page loop also breaks on an empty page or a
+// non-advancing `next` so a misbehaving portal can't spin forever.
 func (c *Client) ListTasks(ctx context.Context, groupID, tag string) ([]Task, error) {
 	if c.baseURL == "" {
 		return nil, errors.New("bitrix: empty base URL")
@@ -465,35 +477,47 @@ func (c *Client) ListTasks(ctx context.Context, groupID, tag string) ([]Task, er
 		return nil, errors.New("bitrix: empty group id")
 	}
 	endpoint := c.baseURL + "tasks.task.list"
-	form := url.Values{}
-	form.Set("filter[GROUP_ID]", strings.TrimSpace(groupID))
-	if t := strings.TrimSpace(tag); t != "" {
-		form.Set("filter[TAG]", t)
-	}
-	for _, f := range []string{"ID", "TITLE", "DESCRIPTION", "GROUP_ID", "RESPONSIBLE_ID", "STATUS", "TAGS"} {
-		form.Add("select[]", f)
-	}
-	form.Set("order[ID]", "DESC")
 
-	body, err := c.post(ctx, endpoint, form)
-	if err != nil {
-		return nil, err
-	}
+	tasks := make([]Task, 0, bitrixTaskPageSize)
+	start := 0
+	for {
+		form := url.Values{}
+		form.Set("filter[GROUP_ID]", strings.TrimSpace(groupID))
+		if t := strings.TrimSpace(tag); t != "" {
+			form.Set("filter[TAG]", t)
+		}
+		for _, f := range []string{"ID", "TITLE", "DESCRIPTION", "GROUP_ID", "RESPONSIBLE_ID", "STATUS", "TAGS"} {
+			form.Add("select[]", f)
+		}
+		form.Set("order[ID]", "DESC")
+		if start > 0 {
+			form.Set("start", strconv.Itoa(start))
+		}
 
-	var parsed listTasksResponse
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return nil, fmt.Errorf("bitrix: decode tasks.task.list: %w", err)
-	}
-	if parsed.Error != "" {
-		return nil, fmt.Errorf("bitrix: tasks.task.list error %s: %s", parsed.Error, parsed.ErrorDesc)
-	}
+		body, err := c.post(ctx, endpoint, form)
+		if err != nil {
+			return nil, err
+		}
 
-	tasks := make([]Task, 0, len(parsed.Result.Tasks))
-	for _, rt := range parsed.Result.Tasks {
-		tasks = append(tasks, rt.toTask())
-		if len(tasks) >= maxTasksPerGroup {
+		var parsed listTasksResponse
+		if err := json.Unmarshal(body, &parsed); err != nil {
+			return nil, fmt.Errorf("bitrix: decode tasks.task.list: %w", err)
+		}
+		if parsed.Error != "" {
+			return nil, fmt.Errorf("bitrix: tasks.task.list error %s: %s", parsed.Error, parsed.ErrorDesc)
+		}
+
+		for _, rt := range parsed.Result.Tasks {
+			tasks = append(tasks, rt.toTask())
+		}
+
+		// Terminate: no further page (Bitrix omits `next` on the last page),
+		// an empty page, the safety cap, or a `next` that doesn't advance the
+		// offset (defensive against a portal echoing the same start).
+		if parsed.Next == nil || len(parsed.Result.Tasks) == 0 || len(tasks) >= bitrixMaxTasksPerImport || *parsed.Next <= start {
 			break
 		}
+		start = *parsed.Next
 	}
 	return tasks, nil
 }
@@ -550,9 +574,9 @@ func (c *Client) ListUsers(ctx context.Context) ([]User, error) {
 	return users, nil
 }
 
-// ListTasksByUser returns the tasks a given user is RESPONSIBLE for, for the
+// ListTasksByUser returns ALL tasks a given user is RESPONSIBLE for, for the
 // "import by responsible" flow. Mirrors ListTasks but filters on RESPONSIBLE_ID
-// instead of GROUP_ID. Capped at maxTasksPerGroup.
+// instead of GROUP_ID, paginating through every page the same way.
 func (c *Client) ListTasksByUser(ctx context.Context, userID, tag string) ([]Task, error) {
 	if c.baseURL == "" {
 		return nil, errors.New("bitrix: empty base URL")
@@ -561,33 +585,41 @@ func (c *Client) ListTasksByUser(ctx context.Context, userID, tag string) ([]Tas
 		return nil, errors.New("bitrix: empty user id")
 	}
 	endpoint := c.baseURL + "tasks.task.list"
-	form := url.Values{}
-	form.Set("filter[RESPONSIBLE_ID]", strings.TrimSpace(userID))
-	if t := strings.TrimSpace(tag); t != "" {
-		form.Set("filter[TAG]", t)
-	}
-	for _, f := range []string{"ID", "TITLE", "DESCRIPTION", "GROUP_ID", "RESPONSIBLE_ID", "STATUS", "TAGS"} {
-		form.Add("select[]", f)
-	}
-	form.Set("order[ID]", "DESC")
 
-	body, err := c.post(ctx, endpoint, form)
-	if err != nil {
-		return nil, err
-	}
-	var parsed listTasksResponse
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return nil, fmt.Errorf("bitrix: decode tasks.task.list (by user): %w", err)
-	}
-	if parsed.Error != "" {
-		return nil, fmt.Errorf("bitrix: tasks.task.list (by user) error %s: %s", parsed.Error, parsed.ErrorDesc)
-	}
-	tasks := make([]Task, 0, len(parsed.Result.Tasks))
-	for _, rt := range parsed.Result.Tasks {
-		tasks = append(tasks, rt.toTask())
-		if len(tasks) >= maxTasksPerGroup {
+	tasks := make([]Task, 0, bitrixTaskPageSize)
+	start := 0
+	for {
+		form := url.Values{}
+		form.Set("filter[RESPONSIBLE_ID]", strings.TrimSpace(userID))
+		if t := strings.TrimSpace(tag); t != "" {
+			form.Set("filter[TAG]", t)
+		}
+		for _, f := range []string{"ID", "TITLE", "DESCRIPTION", "GROUP_ID", "RESPONSIBLE_ID", "STATUS", "TAGS"} {
+			form.Add("select[]", f)
+		}
+		form.Set("order[ID]", "DESC")
+		if start > 0 {
+			form.Set("start", strconv.Itoa(start))
+		}
+
+		body, err := c.post(ctx, endpoint, form)
+		if err != nil {
+			return nil, err
+		}
+		var parsed listTasksResponse
+		if err := json.Unmarshal(body, &parsed); err != nil {
+			return nil, fmt.Errorf("bitrix: decode tasks.task.list (by user): %w", err)
+		}
+		if parsed.Error != "" {
+			return nil, fmt.Errorf("bitrix: tasks.task.list (by user) error %s: %s", parsed.Error, parsed.ErrorDesc)
+		}
+		for _, rt := range parsed.Result.Tasks {
+			tasks = append(tasks, rt.toTask())
+		}
+		if parsed.Next == nil || len(parsed.Result.Tasks) == 0 || len(tasks) >= bitrixMaxTasksPerImport || *parsed.Next <= start {
 			break
 		}
+		start = *parsed.Next
 	}
 	return tasks, nil
 }
