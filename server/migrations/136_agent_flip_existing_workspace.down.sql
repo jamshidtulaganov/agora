@@ -1,0 +1,2 @@
+-- Irreversible: the pre-flip visibility of each agent is not recorded, so the
+-- private/workspace split cannot be restored. Intentionally a no-op.
