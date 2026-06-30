@@ -111,9 +111,11 @@ func buildProvisionScript(p provisionParams, token string) string {
 		fmt.Sprintf("if [ ! -d %s/.git ]; then mkdir -p %s && git clone --depth 1 %s %s; fi", dirQ, dirQ, authed, dirQ),
 		fmt.Sprintf("cd %s", dirQ),
 		// 2. gitignored deploy glue + the (shared) Yii framework: copy from the seed
-		//    site only when absent here.
+		//    site only when absent here AND the seed actually has it (some sites keep
+		//    the DB config inside main.php and have no db.php — a missing seed file is
+		//    skipped, never an abort).
 		fmt.Sprintf("for f in index.php protected/config/main.php protected/config/db.php; do "+
-			"[ -f \"$f\" ] || { mkdir -p \"$(dirname \"$f\")\" && cp %s/\"$f\" \"$f\"; }; done", seedQ),
+			"if [ ! -f \"$f\" ] && [ -f %s/\"$f\" ]; then mkdir -p \"$(dirname \"$f\")\" && cp %s/\"$f\" \"$f\"; fi; done", seedQ, seedQ),
 		fmt.Sprintf("[ -e framework ] || cp -a %s/framework framework 2>/dev/null || true", seedQ),
 		// 3. isolate this box onto its OWN database name inside the copied config
 		//    (seedDB -> dbt_<handle>), scoped to protected/config only.
