@@ -21,7 +21,6 @@ const jsonLd = {
       "@type": "Organization",
       name: "Agora",
       url: "https://www.agora.dev",
-      sameAs: ["https://github.com/multica-ai/multica"],
     },
     {
       "@type": "SoftwareApplication",
@@ -29,7 +28,7 @@ const jsonLd = {
       applicationCategory: "ProjectManagement",
       operatingSystem: "Web",
       description:
-        "Open-source project management platform that turns coding agents into real teammates.",
+        "AI-native project management platform that turns coding agents into real teammates.",
       offers: {
         "@type": "Offer",
         price: "0",

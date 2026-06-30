@@ -7,7 +7,7 @@ export const metadata: Metadata = {
     absolute: "Agora — Project Management for Human + Agent Teams",
   },
   description:
-    "Open-source platform that turns coding agents into real teammates. Assign tasks, track progress, compound skills.",
+    "AI-native platform that turns coding agents into real teammates. Assign tasks, track progress, compound skills.",
   openGraph: {
     title: "Agora — Project Management for Human + Agent Teams",
     description:
