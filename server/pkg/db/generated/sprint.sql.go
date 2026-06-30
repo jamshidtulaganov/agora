@@ -12,8 +12,8 @@ import (
 )
 
 const createSprint = `-- name: CreateSprint :one
-INSERT INTO sprint (workspace_id, project_id, name, goal, status, start_date, end_date)
-VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, workspace_id, project_id, name, goal, status, start_date, end_date, created_at, updated_at
+INSERT INTO sprint (workspace_id, project_id, name, goal, status, start_date, end_date, branch)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, workspace_id, project_id, name, goal, status, start_date, end_date, created_at, updated_at, branch
 `
 
 type CreateSprintParams struct {
@@ -24,6 +24,7 @@ type CreateSprintParams struct {
 	Status      string             `json:"status"`
 	StartDate   pgtype.Timestamptz `json:"start_date"`
 	EndDate     pgtype.Timestamptz `json:"end_date"`
+	Branch      string             `json:"branch"`
 }
 
 func (q *Queries) CreateSprint(ctx context.Context, arg CreateSprintParams) (Sprint, error) {
@@ -35,6 +36,7 @@ func (q *Queries) CreateSprint(ctx context.Context, arg CreateSprintParams) (Spr
 		arg.Status,
 		arg.StartDate,
 		arg.EndDate,
+		arg.Branch,
 	)
 	var i Sprint
 	err := row.Scan(
@@ -48,6 +50,7 @@ func (q *Queries) CreateSprint(ctx context.Context, arg CreateSprintParams) (Spr
 		&i.EndDate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Branch,
 	)
 	return i, err
 }
@@ -67,7 +70,7 @@ func (q *Queries) DeleteSprint(ctx context.Context, arg DeleteSprintParams) erro
 }
 
 const getSprint = `-- name: GetSprint :one
-SELECT id, workspace_id, project_id, name, goal, status, start_date, end_date, created_at, updated_at FROM sprint WHERE id = $1 AND workspace_id = $2
+SELECT id, workspace_id, project_id, name, goal, status, start_date, end_date, created_at, updated_at, branch FROM sprint WHERE id = $1 AND workspace_id = $2
 `
 
 type GetSprintParams struct {
@@ -89,12 +92,13 @@ func (q *Queries) GetSprint(ctx context.Context, arg GetSprintParams) (Sprint, e
 		&i.EndDate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Branch,
 	)
 	return i, err
 }
 
 const getSprintForIssue = `-- name: GetSprintForIssue :one
-SELECT s.id, s.workspace_id, s.project_id, s.name, s.goal, s.status, s.start_date, s.end_date, s.created_at, s.updated_at FROM sprint s JOIN issue_to_sprint i ON i.sprint_id = s.id WHERE i.issue_id = $1
+SELECT s.id, s.workspace_id, s.project_id, s.name, s.goal, s.status, s.start_date, s.end_date, s.created_at, s.updated_at, s.branch FROM sprint s JOIN issue_to_sprint i ON i.sprint_id = s.id WHERE i.issue_id = $1
 `
 
 func (q *Queries) GetSprintForIssue(ctx context.Context, issueID pgtype.UUID) (Sprint, error) {
@@ -111,12 +115,13 @@ func (q *Queries) GetSprintForIssue(ctx context.Context, issueID pgtype.UUID) (S
 		&i.EndDate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Branch,
 	)
 	return i, err
 }
 
 const listDueSprints = `-- name: ListDueSprints :many
-SELECT id, workspace_id, project_id, name, goal, status, start_date, end_date, created_at, updated_at FROM sprint
+SELECT id, workspace_id, project_id, name, goal, status, start_date, end_date, created_at, updated_at, branch FROM sprint
 WHERE status = 'active'
   AND end_date IS NOT NULL
   AND end_date <= now()
@@ -149,6 +154,7 @@ func (q *Queries) ListDueSprints(ctx context.Context) ([]Sprint, error) {
 			&i.EndDate,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Branch,
 		); err != nil {
 			return nil, err
 		}
@@ -245,7 +251,7 @@ func (q *Queries) ListSprintIdsForIssues(ctx context.Context, issueIds []pgtype.
 }
 
 const listSprintsByProject = `-- name: ListSprintsByProject :many
-SELECT id, workspace_id, project_id, name, goal, status, start_date, end_date, created_at, updated_at FROM sprint WHERE project_id = $1 ORDER BY COALESCE(start_date, created_at) DESC
+SELECT id, workspace_id, project_id, name, goal, status, start_date, end_date, created_at, updated_at, branch FROM sprint WHERE project_id = $1 ORDER BY COALESCE(start_date, created_at) DESC
 `
 
 func (q *Queries) ListSprintsByProject(ctx context.Context, projectID pgtype.UUID) ([]Sprint, error) {
@@ -268,6 +274,7 @@ func (q *Queries) ListSprintsByProject(ctx context.Context, projectID pgtype.UUI
 			&i.EndDate,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Branch,
 		); err != nil {
 			return nil, err
 		}
@@ -282,7 +289,7 @@ func (q *Queries) ListSprintsByProject(ctx context.Context, projectID pgtype.UUI
 const markSprintCompleted = `-- name: MarkSprintCompleted :one
 UPDATE sprint SET status = 'completed', updated_at = now()
 WHERE id = $1 AND workspace_id = $2 AND status = 'active'
-RETURNING id, workspace_id, project_id, name, goal, status, start_date, end_date, created_at, updated_at
+RETURNING id, workspace_id, project_id, name, goal, status, start_date, end_date, created_at, updated_at, branch
 `
 
 type MarkSprintCompletedParams struct {
@@ -309,6 +316,7 @@ func (q *Queries) MarkSprintCompleted(ctx context.Context, arg MarkSprintComplet
 		&i.EndDate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Branch,
 	)
 	return i, err
 }
@@ -338,8 +346,8 @@ func (q *Queries) SetIssueSprint(ctx context.Context, arg SetIssueSprintParams) 
 }
 
 const updateSprint = `-- name: UpdateSprint :one
-UPDATE sprint SET name = $3, goal = $4, status = $5, start_date = $6, end_date = $7, updated_at = now()
-WHERE id = $1 AND workspace_id = $2 RETURNING id, workspace_id, project_id, name, goal, status, start_date, end_date, created_at, updated_at
+UPDATE sprint SET name = $3, goal = $4, status = $5, start_date = $6, end_date = $7, branch = $8, updated_at = now()
+WHERE id = $1 AND workspace_id = $2 RETURNING id, workspace_id, project_id, name, goal, status, start_date, end_date, created_at, updated_at, branch
 `
 
 type UpdateSprintParams struct {
@@ -350,6 +358,7 @@ type UpdateSprintParams struct {
 	Status      string             `json:"status"`
 	StartDate   pgtype.Timestamptz `json:"start_date"`
 	EndDate     pgtype.Timestamptz `json:"end_date"`
+	Branch      string             `json:"branch"`
 }
 
 func (q *Queries) UpdateSprint(ctx context.Context, arg UpdateSprintParams) (Sprint, error) {
@@ -361,6 +370,7 @@ func (q *Queries) UpdateSprint(ctx context.Context, arg UpdateSprintParams) (Spr
 		arg.Status,
 		arg.StartDate,
 		arg.EndDate,
+		arg.Branch,
 	)
 	var i Sprint
 	err := row.Scan(
@@ -374,6 +384,7 @@ func (q *Queries) UpdateSprint(ctx context.Context, arg UpdateSprintParams) (Spr
 		&i.EndDate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Branch,
 	)
 	return i, err
 }

@@ -94,6 +94,7 @@ function EditSprintForm({ sprint, onClose }: { sprint: Sprint; onClose: () => vo
   const [status, setStatus] = useState<SprintStatus>(sprint.status);
   const [startDate, setStartDate] = useState<string | null>(dateOnlyPart(sprint.start_date));
   const [endDate, setEndDate] = useState<string | null>(dateOnlyPart(sprint.end_date));
+  const [branch, setBranch] = useState(sprint.branch ?? "");
   const [startOpen, setStartOpen] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -111,6 +112,7 @@ function EditSprintForm({ sprint, onClose }: { sprint: Sprint; onClose: () => vo
         status,
         start_date: startDate,
         end_date: endDate,
+        branch: branch.trim(),
       });
       onClose();
       toast.success(t(($) => $.edit_sprint.toast_saved));
@@ -173,13 +175,25 @@ function EditSprintForm({ sprint, onClose }: { sprint: Sprint; onClose: () => vo
           />
         </div>
 
-        <div className="px-5 pb-3 shrink-0">
+        <div className="px-5 pb-2 shrink-0">
           <input
             type="text"
             value={goal}
             onChange={(e) => setGoal(e.target.value)}
             placeholder={t(($) => $.edit_sprint.goal_placeholder)}
             className="w-full bg-transparent text-sm placeholder:text-muted-foreground outline-none"
+          />
+        </div>
+
+        {/* QA branch — the shared integration branch QA deploys + smokes this sprint. */}
+        <div className="px-5 pb-3 shrink-0">
+          <input
+            type="text"
+            value={branch}
+            onChange={(e) => setBranch(e.target.value)}
+            placeholder="QA branch (e.g. billing)"
+            aria-label="QA branch"
+            className="w-full bg-transparent font-mono text-xs placeholder:text-muted-foreground outline-none"
           />
         </div>
 

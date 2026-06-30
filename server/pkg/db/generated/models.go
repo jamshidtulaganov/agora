@@ -665,6 +665,7 @@ type Sprint struct {
 	EndDate     pgtype.Timestamptz `json:"end_date"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	Branch      string             `json:"branch"`
 }
 
 type Squad struct {

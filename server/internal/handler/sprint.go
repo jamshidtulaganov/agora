@@ -31,8 +31,11 @@ type SprintResponse struct {
 	Status      string  `json:"status"`
 	StartDate   *string `json:"start_date"`
 	EndDate     *string `json:"end_date"`
-	CreatedAt   string  `json:"created_at"`
-	UpdatedAt   string  `json:"updated_at"`
+	// Branch is the sprint's shared integration branch QA deploys + smokes (e.g.
+	// "billing"). Empty = the code falls back to the sprint/<id> convention.
+	Branch    string `json:"branch"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 func sprintToResponse(s db.Sprint) SprintResponse {
@@ -45,6 +48,7 @@ func sprintToResponse(s db.Sprint) SprintResponse {
 		Status:      s.Status,
 		StartDate:   timestampToPtr(s.StartDate),
 		EndDate:     timestampToPtr(s.EndDate),
+		Branch:      s.Branch,
 		CreatedAt:   timestampToString(s.CreatedAt),
 		UpdatedAt:   timestampToString(s.UpdatedAt),
 	}
@@ -56,6 +60,7 @@ type CreateSprintRequest struct {
 	Status    string  `json:"status"`
 	StartDate *string `json:"start_date"`
 	EndDate   *string `json:"end_date"`
+	Branch    *string `json:"branch"`
 }
 
 type UpdateSprintRequest struct {
@@ -64,6 +69,7 @@ type UpdateSprintRequest struct {
 	Status    *string `json:"status"`
 	StartDate *string `json:"start_date"`
 	EndDate   *string `json:"end_date"`
+	Branch    *string `json:"branch"`
 }
 
 type SetIssueSprintRequest struct {
@@ -211,6 +217,10 @@ func (h *Handler) CreateSprint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	branch := ""
+	if req.Branch != nil {
+		branch = strings.TrimSpace(*req.Branch)
+	}
 	sprint, err := h.Queries.CreateSprint(r.Context(), db.CreateSprintParams{
 		WorkspaceID: wsUUID,
 		ProjectID:   projUUID,
@@ -219,6 +229,7 @@ func (h *Handler) CreateSprint(w http.ResponseWriter, r *http.Request) {
 		Status:      status,
 		StartDate:   startDate,
 		EndDate:     endDate,
+		Branch:      branch,
 	})
 	if err != nil {
 		if isCheckViolation(err) {
@@ -311,6 +322,7 @@ func (h *Handler) UpdateSprint(w http.ResponseWriter, r *http.Request) {
 		Status:      prev.Status,
 		StartDate:   prev.StartDate,
 		EndDate:     prev.EndDate,
+		Branch:      prev.Branch,
 	}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
@@ -344,6 +356,9 @@ func (h *Handler) UpdateSprint(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		params.EndDate = endDate
+	}
+	if req.Branch != nil {
+		params.Branch = strings.TrimSpace(*req.Branch)
 	}
 
 	sprint, err := h.Queries.UpdateSprint(r.Context(), params)

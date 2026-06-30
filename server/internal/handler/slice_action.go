@@ -479,7 +479,7 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 			}
 			smokeURL = boxSmokeURL(box)
 		}
-		sprintNote = " SPRINT CONTEXT: this task is on the shared sprint branch " + sprintBranchName(sprint.ID) +
+		sprintNote = " SPRINT CONTEXT: this task is on the shared sprint branch " + SprintBranchFor(sprint) +
 			"; for the scope=task baseline use <sprintId>=" + sid + " (refs/sprint/" + sid + "/last-green)."
 	} else {
 		smokeURL = h.devBoxSmokeURL(ctx, issue)

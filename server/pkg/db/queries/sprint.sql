@@ -1,6 +1,6 @@
 -- name: CreateSprint :one
-INSERT INTO sprint (workspace_id, project_id, name, goal, status, start_date, end_date)
-VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *;
+INSERT INTO sprint (workspace_id, project_id, name, goal, status, start_date, end_date, branch)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *;
 
 -- name: GetSprint :one
 SELECT * FROM sprint WHERE id = $1 AND workspace_id = $2;
@@ -9,7 +9,7 @@ SELECT * FROM sprint WHERE id = $1 AND workspace_id = $2;
 SELECT * FROM sprint WHERE project_id = $1 ORDER BY COALESCE(start_date, created_at) DESC;
 
 -- name: UpdateSprint :one
-UPDATE sprint SET name = $3, goal = $4, status = $5, start_date = $6, end_date = $7, updated_at = now()
+UPDATE sprint SET name = $3, goal = $4, status = $5, start_date = $6, end_date = $7, branch = $8, updated_at = now()
 WHERE id = $1 AND workspace_id = $2 RETURNING *;
 
 -- name: DeleteSprint :exec

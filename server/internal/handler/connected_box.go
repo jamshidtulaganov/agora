@@ -623,12 +623,22 @@ func (h *Handler) DeployIssueQA(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// sprintBranchName is the git branch a sprint's work lives on — one branch per
-// sprint (`sprint/<sprintId>`), per the QA-process design. Single source of
-// truth so the handler, the autopilot sprint-end dispatch, and any future
-// caller all agree on the exact ref.
+// sprintBranchName is the FALLBACK git branch convention for a sprint
+// (`sprint/<sprintId>`) when no explicit branch is set. Single source of truth
+// for the convention.
 func sprintBranchName(sprintID pgtype.UUID) string {
 	return "sprint/" + uuidToString(sprintID)
+}
+
+// SprintBranchFor returns the real git branch a sprint's work lives on: the
+// branch the team set on the sprint (e.g. "billing" or "sprint-9"), or the
+// sprint/<id> convention when unset. The QA tiers (per-task / daily / sprint-end)
+// + deploy all resolve the branch through this so they agree.
+func SprintBranchFor(sprint db.Sprint) string {
+	if b := strings.TrimSpace(sprint.Branch); b != "" {
+		return b
+	}
+	return sprintBranchName(sprint.ID)
 }
 
 // DeploySprintBranch resolves a sprint's project → its EXPLICITLY bound QA box
@@ -676,7 +686,7 @@ func (h *Handler) DeploySprintBranch(ctx context.Context, sprintID, wsID pgtype.
 		return db.ConnectedBox{}, false, fmt.Errorf("remote box SSH key is not configured on the server")
 	}
 
-	updated, okSync, _ := h.performBoxSync(ctx, box, sprintBranchName(sprintID), keyPath)
+	updated, okSync, _ := h.performBoxSync(ctx, box, SprintBranchFor(sprint), keyPath)
 	return updated, okSync, nil
 }
 

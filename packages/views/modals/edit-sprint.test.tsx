@@ -17,6 +17,7 @@ const sprint = {
   // full RFC3339 (SQL-created) — the modal must reduce to date-only for the API.
   start_date: "2026-06-30T00:00:00Z",
   end_date: "2026-07-14T00:00:00Z",
+  branch: "billing",
   created_at: "",
   updated_at: "",
 };
@@ -112,6 +113,7 @@ describe("EditSprintModal", () => {
       // full RFC3339 reduced to the date part (matches the create-sprint contract)
       start_date: "2026-06-30",
       end_date: "2026-07-14",
+      branch: "billing",
     });
   });
 });

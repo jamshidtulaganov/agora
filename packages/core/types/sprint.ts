@@ -11,6 +11,9 @@ export interface Sprint {
   // the backend owns the canonical values.
   start_date: string | null;
   end_date: string | null;
+  // The shared integration branch QA deploys + smokes for this sprint (e.g.
+  // "billing"). Empty until set; the backend falls back to a sprint/<id> convention.
+  branch: string;
   created_at: string;
   updated_at: string;
 }
@@ -21,16 +24,18 @@ export interface CreateSprintRequest {
   status?: SprintStatus;
   start_date?: string | null;
   end_date?: string | null;
+  branch?: string;
 }
 
 // PUT replaces the editable fields wholesale (matches the backend contract:
-// `{name, goal, status, start_date, end_date}`).
+// `{name, goal, status, start_date, end_date, branch}`).
 export interface UpdateSprintRequest {
   name: string;
   goal: string | null;
   status: SprintStatus;
   start_date: string | null;
   end_date: string | null;
+  branch: string;
 }
 
 export interface ListSprintsResponse {

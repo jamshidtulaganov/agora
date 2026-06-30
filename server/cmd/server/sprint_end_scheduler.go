@@ -93,7 +93,7 @@ func tickSprintEnd(ctx context.Context, queries *db.Queries, svc *service.Autopi
 // or a missing autopilot logs a warning but does not undo the completion — the
 // sprint window is genuinely over, and the human can re-run QA manually.
 func dispatchSprintEnd(ctx context.Context, queries *db.Queries, svc *service.AutopilotService, h *handler.Handler, sprint db.Sprint) {
-	branch := "sprint/" + util.UUIDToString(sprint.ID)
+	branch := handler.SprintBranchFor(sprint)
 
 	// Deploy the sprint branch to the bound QA box FIRST so the box serves the
 	// sprint's accumulated change before the regression runs. A deploy failure
