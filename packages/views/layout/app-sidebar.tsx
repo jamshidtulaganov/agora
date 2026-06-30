@@ -30,6 +30,7 @@ import {
   BookOpenText,
   SquarePen,
   CircleUser,
+  ShieldCheck,
   FolderKanban,
   BarChart3,
   X,
@@ -110,6 +111,7 @@ const EMPTY_INBOX: Awaited<ReturnType<typeof api.listInbox>> = [];
 type NavKey =
   | "inbox"
   | "myIssues"
+  | "qa"
   | "issues"
   | "projects"
   | "autopilots"
@@ -128,6 +130,7 @@ type NavKey =
 type NavLabelKey =
   | "inbox"
   | "my_issues"
+  | "qa"
   | "issues"
   | "projects"
   | "autopilots"
@@ -145,6 +148,7 @@ type NavLabelKey =
 const personalNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[] = [
   { key: "inbox", labelKey: "inbox", icon: Inbox },
   { key: "myIssues", labelKey: "my_issues", icon: CircleUser },
+  { key: "qa", labelKey: "qa", icon: ShieldCheck },
 ];
 
 const workspaceNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[] = [

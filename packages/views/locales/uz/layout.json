@@ -2,6 +2,7 @@
   "nav": {
     "inbox": "Kiruvchilar",
     "my_issues": "Mening vazifalarim",
+    "qa": "QA",
     "issues": "Vazifalar",
     "projects": "Loyihalar",
     "autopilots": "Autopilot",

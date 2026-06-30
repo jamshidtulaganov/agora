@@ -25,6 +25,7 @@
     "./modals/registry": "./modals/registry.tsx",
     "./modals/create-issue": "./modals/create-issue.tsx",
     "./my-issues": "./my-issues/index.ts",
+    "./qa": "./qa/index.ts",
     "./skills": "./skills/index.ts",
     "./bitrix": "./bitrix/index.ts",
     "./mcp": "./mcp/index.ts",

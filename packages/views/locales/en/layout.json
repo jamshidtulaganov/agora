@@ -2,6 +2,7 @@
   "nav": {
     "inbox": "Inbox",
     "my_issues": "My Issues",
+    "qa": "QA",
     "issues": "Issues",
     "projects": "Projects",
     "autopilots": "Autopilot",
