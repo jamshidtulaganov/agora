@@ -6,8 +6,16 @@ import { ShieldAlert, ShieldCheck, ShieldQuestion, List, LayoutGrid, Bug } from 
 import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core";
 import { useWorkspacePaths } from "@agora/core/paths";
+import { projectListOptions } from "@agora/core/projects/queries";
 import type { Issue } from "@agora/core/types";
 import { Button } from "@agora/ui/components/ui/button";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@agora/ui/components/ui/select";
 import { cn } from "@agora/ui/lib/utils";
 import { AppLink } from "../../navigation";
 import { Lane } from "./qa-lane";
@@ -61,9 +69,13 @@ export function QAPage() {
   const wsId = useWorkspaceId();
   const wp = useWorkspacePaths();
   const [view, setView] = useState<ViewMode>("list");
+  const [project, setProject] = useState("all");
+  const { data: projectData } = useQuery(projectListOptions(wsId));
+  const projects = projectData ?? [];
   const { data, isLoading } = useQuery({
-    queryKey: ["qa-cockpit", wsId],
-    queryFn: () => api.listIssues({ status: "in_review", limit: 200 }),
+    queryKey: ["qa-cockpit", wsId, project],
+    queryFn: () =>
+      api.listIssues({ status: "in_review", limit: 200, ...(project !== "all" ? { project_id: project } : {}) }),
     staleTime: 15_000,
   });
 
@@ -80,14 +92,31 @@ export function QAPage() {
         <div className="space-y-1">
           <h1 className="text-lg font-semibold">QA</h1>
           <p className="text-sm text-muted-foreground">
-            The review queue across all projects, by QA verdict. {issues.length} in review
+            The review queue
+            {project === "all"
+              ? " across all projects"
+              : ` for ${projects.find((p) => p.id === project)?.title ?? "this project"}`}
+            , by QA verdict. {issues.length} in review
             {" · "}
             <span className="text-destructive">{lanes.fail.length} need fix</span>
             {" · "}
             {lanes.pending.length} pending · {lanes.pass.length} passed
           </p>
         </div>
-        <div className="ml-auto flex items-center gap-1 rounded-md border p-0.5">
+        <Select value={project} onValueChange={(v) => setProject(v ?? "all")}>
+          <SelectTrigger className="h-8 w-48 text-[13px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All projects</SelectItem>
+            {projects.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.title}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="flex items-center gap-1 rounded-md border p-0.5">
           <ViewToggle active={view === "list"} onClick={() => setView("list")} icon={List} label="List" />
           <ViewToggle active={view === "board"} onClick={() => setView("board")} icon={LayoutGrid} label="Board" />
           <ViewToggle active={view === "bugs"} onClick={() => setView("bugs")} icon={Bug} label="Bugs" />

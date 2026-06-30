@@ -90,7 +90,7 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
         : t(($) => $.qa_evidence.verdict_unknown);
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-6 py-6">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-8 py-6">
       <AppLink
         href={wp.qa()}
         className="flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground"
