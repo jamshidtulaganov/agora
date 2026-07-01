@@ -1417,6 +1417,23 @@ func TestRemoveCoAuthoredByHookPreservesUserHook(t *testing.T) {
 // either, the resolver must refuse to guess and return "". The caller
 // surfaces this as a hard error instead of silently basing new agent work
 // on an arbitrary refname-order-first candidate.
+func TestSanitizeName(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		input, want string
+	}{
+		{"hello world", "hello-world"},
+		{"hello/world", "hello-world"},
+		{"", "agent"},
+		{"helloworld", "helloworld"},
+	}
+	for _, tt := range tests {
+		if got := sanitizeName(tt.input); got != tt.want {
+			t.Errorf("sanitizeName(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
 func TestGetRemoteDefaultBranchAmbiguousOriginReturnsEmpty(t *testing.T) {
 	t.Parallel()
 	sourceRepo := createTestRepo(t)
