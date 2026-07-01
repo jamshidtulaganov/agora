@@ -171,11 +171,6 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
               )}
             </div>
 
-            {/* Live progress — terminal-style feed of what the QA agent is doing
-                right now, while run_qa / run_test_cases is actively running.
-                Renders nothing when idle. */}
-            <QALiveProgress issueId={issueId} />
-
             {/* Checks */}
             {evidence?.result && evidence.result.commands.length > 0 ? (
               <section>
@@ -270,10 +265,16 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
             </div>
           </div>
 
-          {/* ── Live testing bay ────────────────────────────────────────────
-              Pinned beside the evidence: the running app, watched and driven
-              in place. Stacks under the rail below lg. */}
-          <aside className="mt-5 h-[440px] lg:sticky lg:top-6 lg:mt-0 lg:h-[calc(100vh-6.5rem)]">
+          {/* ── Live bay ─────────────────────────────────────────────────
+              Both "live" surfaces pinned together beside the evidence: the
+              terminal feed of what the QA agent is doing right now, and the
+              running app itself, watched and driven in place. The terminal
+              renders nothing when idle, so an idle issue's bay is just the
+              browser. Stacks under the rail below lg. */}
+          <aside className="mt-5 flex h-[440px] flex-col gap-3 lg:sticky lg:top-6 lg:mt-0 lg:h-[calc(100vh-6.5rem)]">
+            <div className="shrink-0 max-h-[45%] overflow-y-auto">
+              <QALiveProgress issueId={issueId} />
+            </div>
             <QALiveBrowser issueId={issueId} />
           </aside>
 

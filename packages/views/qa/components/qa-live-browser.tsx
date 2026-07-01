@@ -36,7 +36,7 @@ export function QALiveBrowser({ issueId }: { issueId: string }) {
   const streaming = started && available && !!data;
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border bg-card">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card">
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <Globe className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="text-[12px] font-medium">{t(($) => $.qa_review.live_testing)}</span>
