@@ -30,9 +30,51 @@ func TestMetaString(t *testing.T) {
 			want: "",
 		},
 		{
-			name: "non-string value",
+			name: "non-string value number",
 			raw:  marshal(map[string]any{"count": 42}),
 			key:  "count",
+			want: "",
+		},
+		{
+			name: "key present as boolean",
+			raw:  marshal(map[string]any{"active": true}),
+			key:  "active",
+			want: "",
+		},
+		{
+			name: "key present as null",
+			raw:  marshal(map[string]any{"status": nil}),
+			key:  "status",
+			want: "",
+		},
+		{
+			name: "key present as nested object",
+			raw:  marshal(map[string]any{"meta": map[string]any{"foo": "bar"}}),
+			key:  "meta",
+			want: "",
+		},
+		{
+			name: "empty byte slice",
+			raw:  []byte{},
+			key:  "status",
+			want: "",
+		},
+		{
+			name: "nil bytes",
+			raw:  nil,
+			key:  "status",
+			want: "",
+		},
+		{
+			name: "invalid JSON",
+			raw:  []byte(`{not valid json`),
+			key:  "status",
+			want: "",
+		},
+		{
+			name: "empty string value for present key",
+			raw:  marshal(map[string]any{"status": ""}),
+			key:  "status",
 			want: "",
 		},
 	}
