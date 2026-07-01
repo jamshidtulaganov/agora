@@ -27,7 +27,7 @@ export
 
 AGORA_ARGS ?= $(ARGS)
 
-COMPOSE := docker compose
+COMPOSE := docker compose -f docker-compose.yml
 
 define REQUIRE_ENV
 	@if [ ! -f "$(ENV_FILE)" ]; then \

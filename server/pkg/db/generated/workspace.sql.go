@@ -111,13 +111,28 @@ func (q *Queries) GetWorkspaceBySlug(ctx context.Context, slug string) (Workspac
 }
 
 const incrementIssueCounter = `-- name: IncrementIssueCounter :one
-UPDATE workspace SET issue_counter = issue_counter + 1
+UPDATE workspace SET issue_counter = GREATEST(
+        issue_counter + 1,
+        COALESCE((SELECT MAX(number) FROM issue WHERE workspace_id = $1), 0) + 1
+    )
 WHERE id = $1
 RETURNING issue_counter
 `
 
-func (q *Queries) IncrementIssueCounter(ctx context.Context, id pgtype.UUID) (int32, error) {
-	row := q.db.QueryRow(ctx, incrementIssueCounter, id)
+// Hand out the next free issue number for a workspace. We take GREATEST of the
+// naive counter+1 and (max existing number)+1 so the counter self-heals when it
+// lags behind a number already present in the issue table. That drift happens
+// when issues land with numbers the counter never advanced past — e.g. a bulk
+// data load / DB restore that preserved external (Bitrix) numbering. Without the
+// GREATEST, a lagging counter hands out a number that already exists and every
+// CreateIssue fails on uq_issue_workspace_number (SQLSTATE 23505) until the
+// counter is manually bumped (sd-main hit this: counter 179 vs max number 319).
+// The UPDATE row-lock on `workspace` serializes concurrent creates in the same
+// workspace, so the MAX subquery never races a sibling insert; the unique
+// constraint remains the ultimate backstop. The (workspace_id, number) index
+// makes the MAX a cheap reverse index scan.
+func (q *Queries) IncrementIssueCounter(ctx context.Context, workspaceID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, incrementIssueCounter, workspaceID)
 	var issue_counter int32
 	err := row.Scan(&issue_counter)
 	return issue_counter, err

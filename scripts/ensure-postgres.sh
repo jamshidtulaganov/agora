@@ -68,20 +68,22 @@ is_local() {
 
 if is_local; then
   # ---------- Local: use Docker ----------
+  # Use -f explicitly so docker-compose.override.yml (selfhost-only) is not auto-loaded.
+  DC="docker compose -f docker-compose.yml"
   echo "==> Ensuring shared PostgreSQL container is running on localhost:5432..."
-  docker compose up -d postgres
+  $DC up -d postgres
 
   echo "==> Waiting for PostgreSQL to be ready..."
-  until docker compose exec -T postgres pg_isready -U "$POSTGRES_USER" -d postgres > /dev/null 2>&1; do
+  until $DC exec -T postgres pg_isready -U "$POSTGRES_USER" -d postgres > /dev/null 2>&1; do
     sleep 1
   done
 
   echo "==> Ensuring database '$POSTGRES_DB' exists..."
-  db_exists="$(docker compose exec -T postgres \
+  db_exists="$($DC exec -T postgres \
     psql -U "$POSTGRES_USER" -d postgres -Atqc "SELECT 1 FROM pg_database WHERE datname = '$POSTGRES_DB'")"
 
   if [ "$db_exists" != "1" ]; then
-    docker compose exec -T postgres \
+    $DC exec -T postgres \
       psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 \
       -c "CREATE DATABASE \"$POSTGRES_DB\"" \
       > /dev/null
