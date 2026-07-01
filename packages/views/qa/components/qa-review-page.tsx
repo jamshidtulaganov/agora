@@ -127,14 +127,29 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
       {isLoading || !issue ? (
         <p className="text-sm text-muted-foreground">{t(($) => $.timeline.loading)}</p>
       ) : (
-        // Cockpit split: a narrow, fixed-width review rail (evidence you read +
-        // the call you make) on the left; the Live testing bay takes ALL
-        // remaining width on the right — it drives a real Chromium pinned at a
-        // 1280×800 CDP frame, so it needs the room, not a squeezed sidebar.
-        // Below lg the bay stacks under the rail (evidence-first on mobile).
-        <div className="lg:grid lg:grid-cols-[400px_minmax(0,1fr)] lg:items-start lg:gap-6">
+        // Cockpit split, matching the issue detail page's own convention: the
+        // Live testing bay takes ALL remaining width on the LEFT (it drives a
+        // real Chromium pinned at a 1280×800 CDP frame, so it needs the room,
+        // not a squeezed sidebar) — a narrow, fixed-width review rail
+        // (evidence you read, test cases, the call you make) sits on the
+        // RIGHT, same as Properties/Details/Prompts on the issue page. Below
+        // lg the bay stacks ABOVE the rail (what's running first, then what
+        // you decide).
+        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start lg:gap-6">
+          {/* ── Live bay ─────────────────────────────────────────────────
+              Both "live" surfaces together: the terminal feed of what the QA
+              agent is doing right now, and the running app itself, watched
+              and driven in place. The terminal renders nothing when idle, so
+              an idle issue's bay is just the browser. */}
+          <aside className="order-2 flex h-[440px] flex-col gap-3 lg:sticky lg:top-6 lg:order-1 lg:h-[calc(100vh-6.5rem)]">
+            <div className="shrink-0 max-h-[45%] overflow-y-auto">
+              <QALiveProgress issueId={issueId} />
+            </div>
+            <QALiveBrowser issueId={issueId} />
+          </aside>
+
           {/* ── Review rail ─────────────────────────────────────────────── */}
-          <div className="flex min-w-0 flex-col gap-5">
+          <div className="order-1 mt-5 flex min-w-0 flex-col gap-5 lg:order-2 lg:mt-0">
             <header className="space-y-1.5">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-xs text-muted-foreground">{issue.identifier}</span>
@@ -272,19 +287,6 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
             </Button>
             </div>
           </div>
-
-          {/* ── Live bay ─────────────────────────────────────────────────
-              Both "live" surfaces pinned together beside the evidence: the
-              terminal feed of what the QA agent is doing right now, and the
-              running app itself, watched and driven in place. The terminal
-              renders nothing when idle, so an idle issue's bay is just the
-              browser. Stacks under the rail below lg. */}
-          <aside className="mt-5 flex h-[440px] flex-col gap-3 lg:sticky lg:top-6 lg:mt-0 lg:h-[calc(100vh-6.5rem)]">
-            <div className="shrink-0 max-h-[45%] overflow-y-auto">
-              <QALiveProgress issueId={issueId} />
-            </div>
-            <QALiveBrowser issueId={issueId} />
-          </aside>
 
           <FileBugSheet
             open={bugOpen}
