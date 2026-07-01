@@ -91,7 +91,10 @@ happens in the CLI, not the create handler.
 `thinking_level` is validated only at the provider level: an unrecognized
 literal returns 400, but a value that is valid for the provider yet
 unsupported for the chosen model is NOT rejected here — that gap surfaces as a
-daemon-side task error at execution time.
+daemon-side task error at execution time. Both `agora agent create` and
+`agora agent update` expose it as `--thinking-level` (alongside `--model`);
+on update it is tri-state — omit to leave unchanged, pass `""` to clear back
+to the runtime default, pass a value to set.
 
 ### model vs custom_args
 

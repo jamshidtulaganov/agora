@@ -291,15 +291,24 @@ skills bound explicitly — creation does not bind any), pick an MCP config via
 own squad as a member so it's covered by the same routing/roster, and archive
 it when the task is done rather than leaving idle agents around.
 
-**Model/difficulty selection is currently a leader judgment call, not full
-automation.** `applyIssueCostTier` (`server/internal/handler/daemon.go`)
-already downgrades the model automatically for two label tiers —
-`tier:trivial` → haiku, `tier:light` → sonnet — and leaves everything else at
-the agent's configured default. That covers only the cheap end. For anything
-above `tier:light`, or for a subagent the leader is creating fresh, the
-leader must choose `--model` itself based on the task's actual difficulty
-(e.g. a mechanical rename vs. a cross-service architecture change) — don't
-assume the platform picks the right tier beyond those two labels.
+**Model/difficulty selection — label the issue or set the agent directly.**
+`applyIssueCostTier` (`server/internal/handler/daemon.go`) resolves a task's
+model+thinking from the issue's tier labels at claim time:
+
+- `tier:trivial` → haiku, no thinking
+- `tier:light` → sonnet, no thinking
+- `tier:heavy` → opus, high thinking (the one tier that RAISES capability)
+- no tier → the agent's own configured model/thinking
+
+Labels are the race-free, per-issue lever: a lead can tier an issue up or
+down without mutating a shared agent's config. Beyond those labels, or for a
+subagent the lead creates fresh, set the agent directly — both `agora agent
+create` and `agora agent update` take `--model` AND `--thinking-level`
+(e.g. `--model claude-opus-4-8 --thinking-level high` for the hardest work,
+`--model claude-sonnet-5` for fast execution). Note the timing: model and
+thinking are read at task CLAIM time, so a change applies to the subagent's
+NEXT task, never mid-run — tier the issue/agent BEFORE delegating, not while
+a task is running.
 
 ## Autopilot behavior
 

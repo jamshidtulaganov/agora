@@ -1109,6 +1109,7 @@ func logClaimEndpointSlow(runtimeID, outcome string, start time.Time, authMs, cl
 //
 //	tier:trivial -> haiku, no thinking
 //	tier:light   -> sonnet, no thinking
+//	tier:heavy   -> opus, high thinking  (the only tier that RAISES capability)
 //	(no tier)    -> the agent's own model/thinking, unchanged
 //
 // On top of the family choice, the 1M context window is OPT-IN: the [1m] suffix
@@ -1124,6 +1125,11 @@ func applyIssueCostTier(model, thinking string, labels map[string]bool) (string,
 		model, thinking = "claude-haiku-4-5-20251001", ""
 	case labels["tier:light"]:
 		model, thinking = "claude-sonnet-4-6", ""
+	case labels["tier:heavy"]:
+		// The only tier that RAISES capability: hardest tasks get the top model
+		// with extended thinking. Lets a lead label a genuinely hard issue up,
+		// not just cheap ones down (the trivial/light tiers only downgrade).
+		model, thinking = "claude-opus-4-8", "high"
 	}
 	if !labels["context:large"] {
 		model = strings.TrimSuffix(model, "[1m]")

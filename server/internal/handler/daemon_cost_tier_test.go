@@ -18,6 +18,8 @@ func TestApplyIssueCostTier(t *testing.T) {
 		{"tier:trivial -> haiku, no thinking", "claude-opus-4-8", "high", []string{"tier:trivial"}, "claude-haiku-4-5-20251001", ""},
 		{"trivial beats light", "claude-opus-4-8[1m]", "high", []string{"tier:light", "tier:trivial"}, "claude-haiku-4-5-20251001", ""},
 		{"light + context:large keeps sonnet (no 1m to strip)", "claude-opus-4-8[1m]", "high", []string{"tier:light", "context:large"}, "claude-sonnet-4-6", ""},
+		{"tier:heavy -> opus, high thinking (raises from sonnet)", "claude-sonnet-4-6", "", []string{"tier:heavy"}, "claude-opus-4-8", "high"},
+		{"trivial beats heavy (most specific first)", "claude-sonnet-4-6", "", []string{"tier:heavy", "tier:trivial"}, "claude-haiku-4-5-20251001", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
