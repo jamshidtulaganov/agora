@@ -45,7 +45,15 @@ deploy_backend() {
   echo "==> sd-agora-backend"
   ensure_app sd-agora-backend
   ensure_vol sd-agora-backend agora_uploads 1
-  local dburl="postgres://agora:${POSTGRES_PASSWORD}@sd-agora-db.internal:5432/agora?sslmode=disable"
+  # The prod db volume was initialized under the OLD repo name — role + database
+  # are BOTH "multica", not "agora" (postgres runs initdb once; POSTGRES_USER/DB
+  # changes in db/fly.toml after that are ignored). DATABASE_URL must match the
+  # real names, or the backend crash-loops on FATAL: role "agora" does not exist.
+  # Override via POSTGRES_USER / POSTGRES_DB in secrets.env if the volume is ever
+  # re-initialized under a different name.
+  local dbuser="${POSTGRES_USER:-multica}"
+  local dbname="${POSTGRES_DB:-multica}"
+  local dburl="postgres://${dbuser}:${POSTGRES_PASSWORD}@sd-agora-db.internal:5432/${dbname}?sslmode=disable"
   fly secrets set \
     DATABASE_URL="$dburl" \
     JWT_SECRET="$JWT_SECRET" \
