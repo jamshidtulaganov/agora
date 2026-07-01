@@ -167,6 +167,52 @@ func (q *Queries) ListMembersWithUser(ctx context.Context, workspaceID pgtype.UU
 	return items, nil
 }
 
+const listWorkspaceActorDirectory = `-- name: ListWorkspaceActorDirectory :many
+SELECT DISTINCT u.id, u.name, u.avatar_url
+FROM "user" u
+WHERE u.id IN (
+    SELECT c.author_id FROM comment c
+      WHERE c.workspace_id = $1 AND c.author_type = 'member' AND c.author_id IS NOT NULL
+    UNION
+    SELECT i.assignee_id FROM issue i
+      WHERE i.workspace_id = $1 AND i.assignee_type = 'member' AND i.assignee_id IS NOT NULL
+    UNION
+    SELECT i.creator_id FROM issue i
+      WHERE i.workspace_id = $1 AND i.creator_type = 'member' AND i.creator_id IS NOT NULL
+)
+`
+
+type ListWorkspaceActorDirectoryRow struct {
+	ID        pgtype.UUID `json:"id"`
+	Name      string      `json:"name"`
+	AvatarUrl pgtype.Text `json:"avatar_url"`
+}
+
+// Display info (name, avatar) for every user referenced in a workspace: comment
+// authors, issue assignees/creators, and members. Lets the UI render a real
+// name + avatar for people who are no longer (or never were) team members —
+// e.g. an imported Bitrix comment's author who is not in the team. Display only;
+// the member list still gates pickers and assignment.
+func (q *Queries) ListWorkspaceActorDirectory(ctx context.Context, workspaceID pgtype.UUID) ([]ListWorkspaceActorDirectoryRow, error) {
+	rows, err := q.db.Query(ctx, listWorkspaceActorDirectory, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListWorkspaceActorDirectoryRow{}
+	for rows.Next() {
+		var i ListWorkspaceActorDirectoryRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.AvatarUrl); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateMemberRole = `-- name: UpdateMemberRole :one
 UPDATE member SET role = $2
 WHERE id = $1

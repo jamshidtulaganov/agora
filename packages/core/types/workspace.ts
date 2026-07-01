@@ -87,6 +87,17 @@ export interface MemberWithUser {
   avatar_url: string | null;
 }
 
+// ActorDirectoryEntry is a displayable user (name + avatar) referenced anywhere
+// in the workspace — comment authors, assignees, creators, members — including
+// people who are no longer, or never were, team members. Used only to resolve
+// names/avatars for display (e.g. an imported Bitrix comment author who isn't on
+// the team); it does NOT feed pickers, so the team roster stays the member list.
+export interface ActorDirectoryEntry {
+  user_id: string;
+  name: string;
+  avatar_url: string | null;
+}
+
 export interface Invitation {
   id: string;
   workspace_id: string;

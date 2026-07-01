@@ -36,6 +36,7 @@ import type {
   WorkspaceRepo,
   GitCredential,
   MemberWithUser,
+  ActorDirectoryEntry,
   User,
   Skill,
   SkillSummary,
@@ -1682,6 +1683,13 @@ export class ApiClient {
   // Members
   async listMembers(workspaceId: string): Promise<MemberWithUser[]> {
     return this.fetch(`/api/workspaces/${workspaceId}/members`);
+  }
+
+  // Display info for every user referenced in the workspace (comment authors,
+  // assignees, creators, members) — including people no longer on the team. Used
+  // only for name/avatar resolution, never for pickers.
+  async listActorDirectory(workspaceId: string): Promise<ActorDirectoryEntry[]> {
+    return this.fetch(`/api/workspaces/${workspaceId}/actor-directory`);
   }
 
   async createMember(workspaceId: string, data: CreateMemberRequest): Promise<Invitation> {

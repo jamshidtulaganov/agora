@@ -434,6 +434,45 @@ func (h *Handler) ListMembersWithUser(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// ActorDirectoryEntry is one displayable user (name + avatar) referenced
+// anywhere in the workspace — including people who are no longer, or never
+// were, team members (e.g. the author of an imported Bitrix comment). The
+// frontend merges this into actor-name resolution so such authors render with
+// a real name/avatar instead of "Unknown"; it does NOT feed pickers, so the
+// team roster stays exactly the member list.
+type ActorDirectoryEntry struct {
+	UserID    string  `json:"user_id"`
+	Name      string  `json:"name"`
+	AvatarURL *string `json:"avatar_url"`
+}
+
+// ListActorDirectory returns display info for every user referenced in the
+// workspace (comment authors, assignees, creators, members).
+func (h *Handler) ListActorDirectory(w http.ResponseWriter, r *http.Request) {
+	workspaceID := workspaceIDFromURL(r, "id")
+	wsUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace id")
+	if !ok {
+		return
+	}
+
+	rows, err := h.Queries.ListWorkspaceActorDirectory(r.Context(), wsUUID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list actor directory")
+		return
+	}
+
+	resp := make([]ActorDirectoryEntry, len(rows))
+	for i, u := range rows {
+		resp[i] = ActorDirectoryEntry{
+			UserID:    uuidToString(u.ID),
+			Name:      u.Name,
+			AvatarURL: textToPtr(u.AvatarUrl),
+		}
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
 type CreateMemberRequest struct {
 	Email string `json:"email"`
 	Role  string `json:"role"`

@@ -3,7 +3,7 @@
 import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useWorkspaceId } from "../hooks";
-import { memberListOptions, agentListOptions, squadListOptions } from "./queries";
+import { memberListOptions, agentListOptions, squadListOptions, actorDirectoryOptions } from "./queries";
 import { resolvePublicFileUrl } from "./avatar-url";
 
 export function useActorName() {
@@ -11,11 +11,15 @@ export function useActorName() {
   const { data: members = [] } = useQuery(memberListOptions(wsId));
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
   const { data: squads = [] } = useQuery(squadListOptions(wsId));
+  // Display-only fallback for users not on the team (e.g. imported Bitrix
+  // comment authors). Never feeds pickers — those read `members` directly.
+  const { data: directory = [] } = useQuery(actorDirectoryOptions(wsId));
 
   const getMemberName = useCallback((userId: string) => {
     const m = members.find((m) => m.user_id === userId);
-    return m?.name ?? "Unknown";
-  }, [members]);
+    if (m) return m.name;
+    return directory.find((d) => d.user_id === userId)?.name ?? "Unknown";
+  }, [members, directory]);
 
   const getAgentName = useCallback((agentId: string) => {
     const a = agents.find((a) => a.id === agentId);
@@ -46,11 +50,16 @@ export function useActorName() {
   }, [getActorName]);
 
   const getActorAvatarUrl = useCallback((type: string, id: string): string | null => {
-    if (type === "member") return resolvePublicFileUrl(members.find((m) => m.user_id === id)?.avatar_url);
+    if (type === "member") {
+      const avatar =
+        members.find((m) => m.user_id === id)?.avatar_url ??
+        directory.find((d) => d.user_id === id)?.avatar_url;
+      return resolvePublicFileUrl(avatar);
+    }
     if (type === "agent") return resolvePublicFileUrl(agents.find((a) => a.id === id)?.avatar_url);
     if (type === "squad") return resolvePublicFileUrl(squads.find((s) => s.id === id)?.avatar_url);
     return null;
-  }, [agents, members, squads]);
+  }, [agents, members, squads, directory]);
 
   return useMemo(
     () => ({
