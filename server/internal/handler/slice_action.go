@@ -319,6 +319,96 @@ func (h *Handler) sliceActionQASmokeContext(ctx context.Context, issue db.Issue)
 	return out
 }
 
+// qaManifestRoute is one named path in the project QA manifest.
+type qaManifestFlow struct {
+	Name   string   `json:"name"`
+	Path   string   `json:"path"`
+	Steps  []string `json:"steps"`
+	Assert string   `json:"assert"`
+}
+
+// qaManifest is the project's KNOWN navigation + golden-path map (stored in
+// project.settings.qa_manifest). It exists so a QA/test agent goes STRAIGHT to
+// the right page and flow instead of exploring the app by hand every run — the
+// slow part of driving a Chromium against a big legacy monolith. Authored ONCE
+// per project (from the app + docs) and reused by every QA run.
+type qaManifest struct {
+	BaseURL string `json:"base_url"`
+	Auth    struct {
+		LoginPath       string `json:"login_path"`
+		UserField       string `json:"user_field"`
+		PassField       string `json:"pass_field"`
+		Username        string `json:"username"`
+		Password        string `json:"password"`
+		SuccessContains string `json:"success_contains"`
+	} `json:"auth"`
+	Routes map[string]string `json:"routes"`
+	Flows  []qaManifestFlow  `json:"flows"`
+}
+
+// sliceActionQAManifestContext injects the project QA manifest + critical paths
+// so the agent NAVIGATES by a known map (routes, auth, golden flows) instead of
+// exploring — the single biggest speed win for QA on a large legacy app. Also
+// folds in the previously-dead `qa_critical_paths` config. Returns "" when the
+// project configures neither.
+func (h *Handler) sliceActionQAManifestContext(ctx context.Context, issue db.Issue) string {
+	if !issue.ProjectID.Valid {
+		return ""
+	}
+	project, err := h.Queries.GetProject(ctx, issue.ProjectID)
+	if err != nil || len(project.Settings) == 0 {
+		return ""
+	}
+	var settings struct {
+		Manifest      *qaManifest `json:"qa_manifest"`
+		CriticalPaths []struct {
+			Name   string `json:"name"`
+			Assert string `json:"assert"`
+			Why    string `json:"why"`
+		} `json:"qa_critical_paths"`
+	}
+	if json.Unmarshal(project.Settings, &settings) != nil {
+		return ""
+	}
+	var b strings.Builder
+	if m := settings.Manifest; m != nil && (m.Auth.LoginPath != "" || len(m.Routes) > 0 || len(m.Flows) > 0) {
+		b.WriteString(" PROJECT QA MANIFEST — the app's navigation is KNOWN; go straight to these instead of exploring/auto-detecting (only fall back to discovery if a path 404s).")
+		if m.Auth.LoginPath != "" {
+			b.WriteString(fmt.Sprintf(" AUTH: log in at %s%s with %s=%s and %s=%s", m.BaseURL, m.Auth.LoginPath, m.Auth.UserField, m.Auth.Username, m.Auth.PassField, m.Auth.Password))
+			if m.Auth.SuccessContains != "" {
+				b.WriteString(fmt.Sprintf("; success when the page contains %q", m.Auth.SuccessContains))
+			}
+			b.WriteString(".")
+		}
+		if len(m.Routes) > 0 {
+			b.WriteString(" ROUTES:")
+			for name, path := range m.Routes {
+				b.WriteString(" " + name + "=" + path + ";")
+			}
+		}
+		for _, f := range m.Flows {
+			b.WriteString(" FLOW " + f.Name)
+			if f.Path != "" {
+				b.WriteString(" (go to " + f.Path + ")")
+			}
+			if len(f.Steps) > 0 {
+				b.WriteString(" — steps: " + strings.Join(f.Steps, " → "))
+			}
+			if f.Assert != "" {
+				b.WriteString("; assert: " + f.Assert)
+			}
+			b.WriteString(".")
+		}
+	}
+	if len(settings.CriticalPaths) > 0 {
+		b.WriteString(" CRITICAL (daily-critical golden paths — always smoke these):")
+		for _, c := range settings.CriticalPaths {
+			b.WriteString(" " + c.Name + " (assert: " + c.Assert + ");")
+		}
+	}
+	return b.String()
+}
+
 // sliceActionDocsRepoContext appends the project's configured documentation repo
 // to an auto_docs instruction. A project may store `docs_repo` (the docs
 // repository URL, e.g. a Docusaurus site repo separate from the code) in
@@ -436,6 +526,61 @@ func (h *Handler) projectDocsAgentID(ctx context.Context, issue db.Issue) string
 		return ""
 	}
 	return strings.TrimSpace(s.DocsAgent)
+}
+
+// projectSprintModeEnabled reads the project's `sprint_mode` flag
+// (project.settings.sprint_mode). In sprint mode ALL of a sprint's work lands on
+// one shared sprint branch and NO per-task PR is opened — the branch is reviewed
+// and merged to base once, by a human, at sprint end. Unset defaults to false
+// here (the caller ALSO requires sprintWorktreeEnabled() as the workspace
+// kill-switch and the issue actually being in a sprint), so a project that never
+// opted in keeps the per-task branch + PR flow.
+func (h *Handler) projectSprintModeEnabled(ctx context.Context, issue db.Issue) bool {
+	if !issue.ProjectID.Valid {
+		return false
+	}
+	project, err := h.Queries.GetProject(ctx, issue.ProjectID)
+	if err != nil || len(project.Settings) == 0 {
+		return false
+	}
+	var s struct {
+		SprintMode bool `json:"sprint_mode"`
+	}
+	if json.Unmarshal(project.Settings, &s) != nil {
+		return false
+	}
+	return s.SprintMode
+}
+
+// sliceActionSprintContext resolves the shared sprint branch a PR-producing slice
+// must commit to instead of opening a per-task PR. ok=true only when the whole
+// sprint-mode contract holds: the workspace kill-switch is on, the project is in
+// sprint mode, the issue is IN a sprint, and that sprint resolves a branch. When
+// ok, the caller emits sprintCommitInstruction(branch) and SKIPS the per-task
+// branch/PR instruction; when not, the per-task PR flow is unchanged.
+func (h *Handler) sliceActionSprintContext(ctx context.Context, issue db.Issue) (string, bool) {
+	if !sprintWorktreeEnabled() || !h.projectSprintModeEnabled(ctx, issue) {
+		return "", false
+	}
+	sprint, err := h.Queries.GetSprintForIssue(ctx, issue.ID)
+	if err != nil {
+		return "", false
+	}
+	branch := SprintBranchFor(sprint)
+	if branch == "" {
+		return "", false
+	}
+	return branch, true
+}
+
+// sprintCommitInstruction is the pure "commit to the shared sprint branch, no PR"
+// directive. It is appended AFTER (and explicitly SUPERSEDES) the slice base
+// wording that tells the agent to open a pull request, so a sprint-mode dev task
+// lands on the one shared branch instead of forking a per-task PR.
+func sprintCommitInstruction(branch string) string {
+	return " SPRINT MODE — DO NOT OPEN A PULL REQUEST. This project is running a sprint: every task's work lands on the ONE shared sprint branch `" + branch +
+		"`, which is already checked out in your worktree. Commit your change directly to `" + branch + "` and push it there. Do NOT create a new branch, and do NOT open a pull/merge request. " +
+		"This SUPERSEDES any 'open a pull request' wording above. The whole sprint branch is reviewed and merged to the base branch ONCE, by a human, at sprint end."
 }
 
 // resolveAutoDocsAgent picks the agent to run an auto-fired auto_docs: the
@@ -960,16 +1105,17 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	if sprint, err := h.Queries.GetSprintForIssue(ctx, issue.ID); err == nil {
 		scope = "task"
 		sid := uuidToString(sprint.ID)
-		if box, synced, derr := h.DeploySprintBranch(ctx, sprint.ID, issue.WorkspaceID); derr != nil {
-			slog.Warn("auto run_qa: deploy sprint branch failed", "sprint_id", sid, "error", derr)
-		} else {
-			if !synced {
-				slog.Warn("auto run_qa: sprint branch sync reported failure", "sprint_id", sid)
-			}
-			smokeURL = boxSmokeURL(box)
-		}
 		sprintNote = " SPRINT CONTEXT: this task is on the shared sprint branch " + SprintBranchFor(sprint) +
 			"; for the scope=task baseline use <sprintId>=" + sid + " (refs/sprint/" + sid + "/last-green)."
+		if box, synced, derr := h.DeploySprintBranch(ctx, sprint.ID, issue.WorkspaceID); derr != nil || !synced {
+			// Fail CLOSED: the sprint branch is NOT confirmed live on the QA box,
+			// so smoking it would judge STALE code and let a false qa:pass stand.
+			// Withhold the smoke target and tell the gate to block, not pass.
+			slog.Warn("auto run_qa: sprint branch not deployed — blocking QA", "sprint_id", sid, "error", derr, "synced", synced)
+			sprintNote += " QA BLOCKED — the sprint branch could not be deployed to the QA box (it is not serving this branch), so QA cannot judge the real change. Do NOT smoke a stale environment and do NOT set qa:pass; set the `qa:blocked` label and report that the box is not serving the sprint branch."
+		} else {
+			smokeURL = boxSmokeURL(box)
+		}
 	} else {
 		smokeURL = h.devBoxSmokeURL(ctx, issue)
 	}
@@ -980,7 +1126,9 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 			" — smoke THAT url. It OVERRIDES any project smoke url below."
 	}
 	instruction += h.sliceActionQASmokeContext(ctx, issue)
+	instruction += h.sliceActionQAManifestContext(ctx, issue)
 	instruction += h.sliceActionQADocsContext(ctx, issue)
+	instruction += h.sliceActionProjectBaseSuiteContext(ctx, issue)
 	instruction += qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
 
 	// When this routed to the QA LEAD (orchestrated dev side), the lead should
@@ -1063,6 +1211,7 @@ func (h *Handler) maybeGenTestsOnInReview(ctx context.Context, issue db.Issue, a
 	runner := h.pickLeastBusyQAAgent(ctx, free)
 
 	instruction := buildSliceInstruction(sliceActionGenTests, "") +
+		h.sliceActionQAManifestContext(ctx, issue) +
 		h.sliceActionQADocsContext(ctx, issue) +
 		qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
 	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
@@ -1269,17 +1418,57 @@ func qaPlanContext(description string, acceptanceCriteria []byte) string {
 
 // sliceActionTestCasesContext lists the issue's AUTOMATED test cases (id · title ·
 // steps · expected) for run_test_cases, so the agent drives each one and reports
-// a verdict per case keyed by the id we hand it.
-func (h *Handler) sliceActionTestCasesContext(ctx context.Context, issue db.Issue) string {
+// a verdict per case keyed by the id we hand it. hasBaseSuite tells the no-cases
+// note whether a PROJECT BASE SCRIPTS block follows: when it does, the note must
+// NOT read as terminal ("author first, then re-run") — an agent following that
+// directive would abort without running the standing regression suite.
+func (h *Handler) sliceActionTestCasesContext(ctx context.Context, issue db.Issue, hasBaseSuite bool) string {
 	cases, err := h.Queries.ListAutomatedTestCasesForIssue(ctx, db.ListAutomatedTestCasesForIssueParams{
 		IssueID:     issue.ID,
 		WorkspaceID: issue.WorkspaceID,
 	})
 	if err != nil || len(cases) == 0 {
+		if hasBaseSuite {
+			return " NOTE: this issue has no issue-specific automated test cases — still run the PROJECT BASE SCRIPTS below (author issue-level cases via gen_test_cases when needed)."
+		}
 		return " NOTE: this issue has no automated test cases yet — author them first (gen_test_cases) or add some, then re-run."
 	}
 	var b strings.Builder
 	b.WriteString(" AUTOMATED TEST CASES TO RUN (report a verdict for each by its id):")
+	for _, c := range cases {
+		steps := strings.ReplaceAll(strings.TrimSpace(c.Steps), "\n", " ")
+		b.WriteString(fmt.Sprintf(" [id=%s] %s — steps: %s; expected: %s.",
+			uuidToString(c.ID), c.Title, steps, strings.TrimSpace(c.Expected)))
+	}
+	return b.String()
+}
+
+// sliceActionProjectBaseSuiteContext lists the project's STANDING automated
+// base scripts (golden-path regression cases stored with project_id set and
+// issue_id NULL), so every run_qa / run_test_cases executes the known suite
+// instead of re-inventing checks. Mirrors sliceActionTestCasesContext's
+// id/title/steps/expected line format. Returns "" when the issue has no
+// project or the project has no base cases.
+func (h *Handler) sliceActionProjectBaseSuiteContext(ctx context.Context, issue db.Issue) string {
+	if !issue.ProjectID.Valid {
+		return ""
+	}
+	cases, err := h.Queries.ListAutomatedTestCasesForProject(ctx, db.ListAutomatedTestCasesForProjectParams{
+		ProjectID:   issue.ProjectID,
+		WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil || len(cases) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	// The wording self-describes the test-runs JSON format because run_qa's base
+	// instruction never defines it — only run_test_cases' base does.
+	b.WriteString(" PROJECT BASE SCRIPTS — the project's STANDING golden-path regression suite (not this issue's cases). " +
+		"Run them EVERY time, in order, exactly as written — do not invent replacements. Report a verdict for EACH by its id " +
+		"in the fenced ```test-runs code block at the END of your comment: a JSON array " +
+		"`[{\"test_case_id\":\"<id>\",\"status\":\"pass\"|\"fail\"|\"blocked\",\"output\":\"<one-line evidence>\"}]` " +
+		"(the same block/format as issue test cases — merge both suites' entries into ONE block). " +
+		"A base-script failure is a REGRESSION and blocks qa:pass even when this issue's own change looks fine:")
 	for _, c := range cases {
 		steps := strings.ReplaceAll(strings.TrimSpace(c.Steps), "\n", " ")
 		b.WriteString(fmt.Sprintf(" [id=%s] %s — steps: %s; expected: %s.",
@@ -1440,7 +1629,14 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 			instruction += taskModeInstructionFor(h.issueTaskType(r.Context(), issue))
 			instruction += verifyGateInstruction()
 		}
-		instruction += h.sliceActionBranchInstruction(r.Context(), issue)
+		// Sprint mode: commit to the ONE shared sprint branch, no per-task PR
+		// (the directive supersedes the base "open a pull request" wording).
+		// Otherwise keep the per-task branch + PR instruction.
+		if branch, ok := h.sliceActionSprintContext(r.Context(), issue); ok {
+			instruction += sprintCommitInstruction(branch)
+		} else {
+			instruction += h.sliceActionBranchInstruction(r.Context(), issue)
+		}
 	}
 	// run_qa is project-configurable: append the project's smoke cmd/url when set,
 	// and the issue's PLAN (description + acceptance criteria) so the agent authors
@@ -1455,15 +1651,19 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 				" — deploy the branch to it (the deploy-qa git-sync) and smoke THAT url. It OVERRIDES any project smoke url below."
 		}
 		instruction += h.sliceActionQASmokeContext(r.Context(), issue)
+		instruction += h.sliceActionQAManifestContext(r.Context(), issue)
 		instruction += h.sliceActionQADocsContext(r.Context(), issue)
+		instruction += h.sliceActionProjectBaseSuiteContext(r.Context(), issue)
 		instruction += qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
 	}
 	// auto_docs targets the project's configured docs repo when set.
 	if req.Kind == sliceActionAutoDocs {
 		instruction += h.sliceActionDocsRepoContext(r.Context(), issue)
 	}
-	// gen_test_cases authors cases from the issue's plan (description + criteria).
+	// gen_test_cases authors cases from the issue's plan (description + criteria)
+	// and the QA manifest so authored cases target KNOWN routes/flows, not guesses.
 	if req.Kind == sliceActionGenTests {
+		instruction += h.sliceActionQAManifestContext(r.Context(), issue)
 		instruction += h.sliceActionQADocsContext(r.Context(), issue)
 		instruction += qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
 	}
@@ -1474,8 +1674,13 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 			instruction += " SMOKE TARGET: the app is served at " + url + " — run the cases against THAT url."
 		}
 		instruction += h.sliceActionQASmokeContext(r.Context(), issue)
+		instruction += h.sliceActionQAManifestContext(r.Context(), issue)
 		instruction += h.sliceActionQADocsContext(r.Context(), issue)
-		instruction += h.sliceActionTestCasesContext(r.Context(), issue)
+		// Compute the base suite FIRST: the no-cases note's wording depends on
+		// whether the project's standing scripts follow it.
+		baseSuite := h.sliceActionProjectBaseSuiteContext(r.Context(), issue)
+		instruction += h.sliceActionTestCasesContext(r.Context(), issue, baseSuite != "")
+		instruction += baseSuite
 	}
 
 	// Build the @mention link the comment-trigger path keys off:
