@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -18,6 +19,14 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// browserIdleTTL: a warm Chromium with no active stream is reaped after this
+// long idle. Long enough that reopening the same box/worktree within a work
+// session reuses the warm instance (instant frames, no respawn); short enough
+// that abandoned instances don't accumulate. An instance with a live stream is
+// never reaped regardless of TTL (streams counter, not frame cadence — a static
+// page emits no frames but is still being watched).
+const browserIdleTTL = 15 * time.Minute
+
 // Embedded browser ("general browser pane"): the daemon runs a headless Chromium
 // and bridges Chrome DevTools Protocol (CDP) screencast frames + input to the
 // Agora app over a WebSocket. The app renders the frames and forwards
@@ -32,6 +41,12 @@ type chromeInstance struct {
 	pageWSURL   string
 	userDataDir string
 	done        chan struct{}
+	// lastUsed + streams gate the idle reaper (both guarded by browserManager.mu).
+	// streams is the count of live screencast connections; while > 0 the instance
+	// is in use and never reaped. lastUsed marks the last connect/disconnect so a
+	// zero-stream instance is reaped only after browserIdleTTL of true idleness.
+	lastUsed time.Time
+	streams  int
 }
 
 func (c *chromeInstance) running() bool {
@@ -50,7 +65,34 @@ type browserManager struct {
 }
 
 func newBrowserManager(logger *slog.Logger) *browserManager {
-	return &browserManager{instances: make(map[string]*chromeInstance), logger: logger}
+	bm := &browserManager{instances: make(map[string]*chromeInstance), logger: logger}
+	go bm.reapIdle()
+	return bm
+}
+
+// reapIdle kills warm Chromium instances that have had no active stream for
+// browserIdleTTL, so abandoned browsers don't leak. Runs for the daemon's life.
+func (bm *browserManager) reapIdle() {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for range t.C {
+		now := time.Now()
+		bm.mu.Lock()
+		for key, inst := range bm.instances {
+			if !inst.running() {
+				delete(bm.instances, key)
+				continue
+			}
+			if inst.streams == 0 && now.Sub(inst.lastUsed) > browserIdleTTL {
+				killProcessGroup(inst.cmd)
+				delete(bm.instances, key)
+				if bm.logger != nil {
+					bm.logger.Info("reaped idle embedded browser", "key", key, "idle", now.Sub(inst.lastUsed).String())
+				}
+			}
+		}
+		bm.mu.Unlock()
+	}
 }
 
 var browserUpgrader = websocket.Upgrader{
@@ -111,6 +153,7 @@ func (bm *browserManager) ensureChrome(key string) (*chromeInstance, error) {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 	if inst, ok := bm.instances[key]; ok && inst.running() {
+		inst.lastUsed = time.Now()
 		return inst, nil
 	}
 	bin := detectChromium()
@@ -144,7 +187,7 @@ func (bm *browserManager) ensureChrome(key string) (*chromeInstance, error) {
 		os.RemoveAll(udd)
 		return nil, err
 	}
-	inst := &chromeInstance{dbgPort: port, cmd: cmd, userDataDir: udd, done: make(chan struct{})}
+	inst := &chromeInstance{dbgPort: port, cmd: cmd, userDataDir: udd, done: make(chan struct{}), lastUsed: time.Now()}
 	go func() {
 		_ = cmd.Wait()
 		close(inst.done)
@@ -273,6 +316,20 @@ func (bm *browserManager) handleStream(w http.ResponseWriter, r *http.Request) {
 	}
 	defer client.Close()
 
+	// Mark the instance in-use for the life of this stream so the idle reaper
+	// never kills a browser someone is actively watching (a static page emits no
+	// frames, so frame cadence alone can't tell "idle" from "watching").
+	bm.mu.Lock()
+	inst.streams++
+	inst.lastUsed = time.Now()
+	bm.mu.Unlock()
+	defer func() {
+		bm.mu.Lock()
+		inst.streams--
+		inst.lastUsed = time.Now()
+		bm.mu.Unlock()
+	}()
+
 	cdp, _, err := websocket.DefaultDialer.Dial(inst.pageWSURL, nil)
 	if err != nil {
 		_ = client.WriteJSON(map[string]any{"type": "error", "message": "cdp dial failed: " + err.Error()})
@@ -316,10 +373,15 @@ func (bm *browserManager) handleStream(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if msg.Method == "Page.screencastFrame" {
-				_ = client.WriteJSON(map[string]any{
-					"type": "frame", "data": msg.Params.Data,
-					"w": msg.Params.Metadata.DeviceWidth, "h": msg.Params.Metadata.DeviceHeight,
-				})
+				// Relay the JPEG as a BINARY frame, not base64-in-JSON: ~33%
+				// fewer bytes and the browser decodes it natively from a Blob
+				// URL (no base64→dataURL string alloc per frame). The client is
+				// the only writer on this goroutine, so no write mutex is needed.
+				// Frame w/h are omitted — the app maps clicks off the fixed
+				// 1280×800 device metrics, not per-frame dimensions.
+				if raw, derr := base64.StdEncoding.DecodeString(msg.Params.Data); derr == nil {
+					_ = client.WriteMessage(websocket.BinaryMessage, raw)
+				}
 				sendCDP("Page.screencastFrameAck", map[string]any{"sessionId": msg.Params.SessionID})
 			}
 		}

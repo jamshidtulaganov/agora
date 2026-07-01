@@ -19,11 +19,18 @@ type StreamState = "connecting" | "live" | "error" | "closed";
 export function EditorBrowserPane({
   daemonUrl,
   workdir,
+  initialUrl,
 }: {
   daemonUrl: string;
   workdir: string;
+  // When set, the browser navigates straight here on connect instead of
+  // showing the blank "type a URL" state. Used by QA to point the CDP
+  // Chromium at a deployed target (e.g. agora.sdteam.uz) that a plain iframe
+  // can't embed (its CSP frame-ancestors blanks cross-origin embeds; a real
+  // top-level navigation isn't subject to it).
+  initialUrl?: string;
 }) {
-  const [address, setAddress] = useState("");
+  const [address, setAddress] = useState(initialUrl ?? "");
   const [state, setState] = useState<StreamState>("connecting");
   const [err, setErr] = useState("");
   const [cdpUrl, setCdpUrl] = useState("");
@@ -34,6 +41,11 @@ export function EditorBrowserPane({
   const [note, setNote] = useState("");
   const wsRef = useRef<WebSocket | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
+  // Latest frame's object URL. Frames arrive as binary JPEG Blobs; each becomes
+  // an object URL for the <img>. Held in a ref so the previous URL is revoked
+  // when the next frame lands (and on teardown) — otherwise every frame leaks a
+  // blob for the tab's lifetime.
+  const frameUrlRef = useRef("");
 
   const send = useCallback((obj: unknown) => {
     const ws = wsRef.current;
@@ -74,20 +86,32 @@ export function EditorBrowserPane({
       ws.onopen = () => {
         if (closed) return;
         setState("live");
-        // Clean first-load: blank the page so we never flash Chromium's
-        // startup / error page before the user navigates anywhere.
-        ws.send(JSON.stringify({ type: "navigate", url: "about:blank" }));
+        // With an initialUrl (QA: point straight at the deployed target),
+        // navigate there on connect. Otherwise blank the page so we never
+        // flash Chromium's startup / error page before the user navigates.
+        const target = initialUrl?.trim();
+        if (target) {
+          setHasNavigated(true);
+          ws.send(JSON.stringify({ type: "navigate", url: target }));
+        } else {
+          ws.send(JSON.stringify({ type: "navigate", url: "about:blank" }));
+        }
       };
+      ws.binaryType = "blob";
       ws.onmessage = (ev) => {
+        // Binary payload = a JPEG screencast frame. Turn it into an object URL,
+        // revoking the previous one so blobs don't accumulate.
+        if (typeof ev.data !== "string") {
+          const url = URL.createObjectURL(ev.data as Blob);
+          if (frameUrlRef.current) URL.revokeObjectURL(frameUrlRef.current);
+          frameUrlRef.current = url;
+          setFrame(url);
+          return;
+        }
+        // Text payload = a JSON control message (currently only errors).
         try {
-          const m = JSON.parse(ev.data as string) as {
-            type: string;
-            data?: string;
-            message?: string;
-          };
-          if (m.type === "frame" && m.data) {
-            setFrame(`data:image/jpeg;base64,${m.data}`);
-          } else if (m.type === "error") {
+          const m = JSON.parse(ev.data) as { type: string; message?: string };
+          if (m.type === "error") {
             setState("error");
             setErr(m.message || "browser error");
           }
@@ -109,8 +133,12 @@ export function EditorBrowserPane({
       closed = true;
       wsRef.current?.close();
       wsRef.current = null;
+      if (frameUrlRef.current) {
+        URL.revokeObjectURL(frameUrlRef.current);
+        frameUrlRef.current = "";
+      }
     };
-  }, [daemonUrl, workdir, nonce]);
+  }, [daemonUrl, workdir, nonce, initialUrl]);
 
   const toCdp = (e: React.MouseEvent) => {
     const img = imgRef.current;

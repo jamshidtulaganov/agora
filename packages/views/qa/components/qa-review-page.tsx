@@ -2,19 +2,22 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, CheckCircle2, XCircle, RefreshCw, ExternalLink, Loader2, Bug, GitBranch } from "lucide-react";
+import { CheckCircle2, XCircle, RefreshCw, Loader2, Bug, GitBranch, Pin, PinOff, MoreHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core";
 import { useWorkspacePaths } from "@agora/core/paths";
 import { issueDetailOptions, qaEvidenceOptions, issueKeys } from "@agora/core/issues/queries";
-import { Button } from "@agora/ui/components/ui/button";
+import { Button, buttonVariants } from "@agora/ui/components/ui/button";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@agora/ui/components/ui/tooltip";
 import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
 import { AppLink } from "../../navigation";
+import { BreadcrumbHeader, type BreadcrumbSegment } from "../../layout/breadcrumb-header";
 import { StructuredResult } from "../../issues/components/editor-tests-panel";
 import { IssueAgentHeaderChip } from "../../issues/components/issue-agent-header-chip";
 import { PullRequestList } from "../../issues/components/pull-request-list";
+import { useIssueActions, IssueActionsDropdown } from "../../issues/actions";
 import { QALiveBrowser } from "./qa-live-browser";
 import { QALiveProgress } from "./qa-live-progress";
 import { TestCasesPanel } from "./test-cases-panel";
@@ -43,6 +46,7 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
   const [bugOpen, setBugOpen] = useState(false);
 
   const { data: issue, isLoading } = useQuery(issueDetailOptions(wsId, issueId));
+  const actions = useIssueActions(issue ?? null);
   const { data: evidence } = useQuery(qaEvidenceOptions(issueId));
   const { data: labelCatalog } = useQuery({
     queryKey: ["labels", wsId],
@@ -114,16 +118,67 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
         ? t(($) => $.qa_evidence.verdict_fail)
         : t(($) => $.qa_evidence.verdict_unknown);
 
-  return (
-    <div className="mx-auto w-full max-w-[1800px] px-6 py-6">
-      <AppLink
-        href={wp.qa()}
-        className="mb-5 inline-flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-3.5" />
-        {t(($) => $.qa_review.back)}
-      </AppLink>
+  const breadcrumbSegments: BreadcrumbSegment[] = [
+    { href: wp.qa(), label: t(($) => $.qa_review.queue_crumb) },
+  ];
 
+  return (
+    <div className="flex w-full flex-col">
+      {/* Same top bar as the issue detail page — breadcrumb, identifier + title
+          as the clickable leaf (opens the full issue), pin / actions menu. QA
+          is a dedicated surface for the same issue, not a different entity, so
+          its chrome should read identically. */}
+      <BreadcrumbHeader
+        segments={breadcrumbSegments}
+        leaf={
+          issue ? (
+            <AppLink
+              href={wp.issueDetail(issueId)}
+              className="flex min-w-0 transition-opacity hover:opacity-80"
+            >
+              <span className="truncate font-medium text-foreground">
+                {issue.identifier} {issue.title}
+              </span>
+            </AppLink>
+          ) : (
+            <span className="truncate text-muted-foreground">{t(($) => $.timeline.loading)}</span>
+          )
+        }
+        actions={
+          issue ? (
+            <>
+              <IssueAgentHeaderChip issueId={issueId} />
+              <Tooltip>
+                <TooltipTrigger
+                  className={buttonVariants({
+                    variant: "ghost",
+                    size: "icon-sm",
+                    className: cn("text-muted-foreground", actions.isPinned && "text-foreground"),
+                  })}
+                  onClick={actions.togglePin}
+                >
+                  {actions.isPinned ? <PinOff /> : <Pin />}
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  {actions.isPinned ? t(($) => $.detail.unpin_tooltip) : t(($) => $.detail.pin_tooltip)}
+                </TooltipContent>
+              </Tooltip>
+              <IssueActionsDropdown
+                issue={issue}
+                align="end"
+                onDeletedNavigateTo={wp.qa()}
+                trigger={
+                  <Button variant="ghost" size="icon-sm" className="text-muted-foreground">
+                    <MoreHorizontal />
+                  </Button>
+                }
+              />
+            </>
+          ) : undefined
+        }
+      />
+
+      <div className="mx-auto w-full max-w-[1800px] px-6 py-6">
       {isLoading || !issue ? (
         <p className="text-sm text-muted-foreground">{t(($) => $.timeline.loading)}</p>
       ) : (
@@ -153,27 +208,12 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
               issue detail page's Properties/Details/Repository grouping —
               NOT a flex gap alone, which read as one undifferentiated block
               at this width. */}
-          <div className="order-1 mt-5 flex min-w-0 flex-col lg:order-2 lg:mt-0">
-            <header className="space-y-1.5 pb-4">
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-xs text-muted-foreground">{issue.identifier}</span>
-                <div className="ml-auto flex items-center gap-2">
-                  <IssueAgentHeaderChip issueId={issueId} />
-                  <AppLink
-                    href={wp.issueDetail(issueId)}
-                    className="flex items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground"
-                  >
-                    {t(($) => $.qa_review.open_full)}
-                    <ExternalLink className="size-3" />
-                  </AppLink>
-                </div>
-              </div>
-              <h1 className="text-xl font-semibold leading-tight tracking-tight">{issue.title}</h1>
-            </header>
-
+          <div className="order-1 flex min-w-0 flex-col lg:order-2">
             {/* Pull requests — dev-side state (checks, conflicts, merge status)
-                right alongside QA's own verdict, not a separate tab to chase. */}
-            <section className="border-t pt-4 pb-4">
+                right alongside QA's own verdict, not a separate tab to chase.
+                First item in the rail now (title moved to the page's top bar),
+                so no top divider. */}
+            <section className="pb-4">
               <div className="mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
                 {t(($) => $.detail.section_pull_requests)}
               </div>
@@ -315,6 +355,7 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
           />
         </div>
       )}
+      </div>
     </div>
   );
 }

@@ -8,6 +8,7 @@ import {
   Loader2,
   HelpCircle,
   Layers,
+  Globe,
 } from "lucide-react";
 import {
   Dialog,
@@ -99,6 +100,13 @@ function agentChipColor(id: string) {
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
   return AGENT_CHIP_COLORS[h % AGENT_CHIP_COLORS.length]!;
 }
+
+// Browser-tab empty states (no live worktree / daemon). Plain TS literals so the
+// jsx-text-only i18n rule lets them through, matching this file's raw-string
+// convention (it doesn't use useT()).
+const BROWSER_STARTING_LABEL = "starting browser…";
+const BROWSER_UNAVAILABLE_LABEL =
+  "Live browser unavailable — no live worktree yet. Assign an agent or wait for the daemon to come online, then reopen this tab.";
 
 interface EditorSectionProps {
   issueId: string;
@@ -562,14 +570,33 @@ export function EditorSection({
                         />
                       </div>
                     )}
-                    {leftPane === "browser" && daemon && selectedAgent && (
-                      <div className="absolute inset-0 flex">
-                        <EditorBrowserPane
-                          daemonUrl={daemon.url}
-                          workdir={selectedAgent.work_dir}
-                        />
-                      </div>
-                    )}
+                    {leftPane === "browser" &&
+                      (daemon && selectedAgent ? (
+                        <div className="absolute inset-0 flex">
+                          <EditorBrowserPane
+                            daemonUrl={daemon.url}
+                            workdir={selectedAgent.work_dir}
+                          />
+                        </div>
+                      ) : (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
+                          {state === "loading" ? (
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              {BROWSER_STARTING_LABEL}
+                            </div>
+                          ) : (
+                            <>
+                              <span className="flex size-11 items-center justify-center rounded-full bg-muted">
+                                <Globe className="size-5 text-muted-foreground/60" />
+                              </span>
+                              <p className="max-w-[260px] text-[11px] leading-relaxed text-muted-foreground">
+                                {BROWSER_UNAVAILABLE_LABEL}
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      ))}
                   </div>
                 </div>
                 <div className="flex h-full w-[360px] shrink-0 flex-col border-l border-border bg-background">

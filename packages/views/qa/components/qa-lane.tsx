@@ -2,6 +2,24 @@ import type { LucideIcon } from "lucide-react";
 import type { Issue } from "@agora/core/types";
 import { cn } from "@agora/ui/lib/utils";
 import { AppLink } from "../../navigation";
+import { ActorAvatar } from "../../common/actor-avatar";
+import { PriorityIcon } from "../../issues/components/priority-icon";
+
+// The identifier + priority + title + assignee row shared by the QA cockpit's
+// list lanes and board cards, so both read as the same surface and carry the
+// same "who owns this" signal at a glance.
+export function QAIssueRow({ issue }: { issue: Issue }) {
+  return (
+    <>
+      <PriorityIcon priority={issue.priority} className="shrink-0" />
+      <span className="w-14 shrink-0 text-xs text-muted-foreground">{issue.identifier}</span>
+      <span className="min-w-0 flex-1 truncate">{issue.title}</span>
+      {issue.assignee_type && issue.assignee_id && (
+        <ActorAvatar actorType={issue.assignee_type} actorId={issue.assignee_id} size={20} enableHoverCard />
+      )}
+    </>
+  );
+}
 
 // A QA cockpit lane — a titled, counted list of issue rows. Shared by the QA
 // cockpit (verdict lanes) and the Bugs lens (bug lifecycle lanes) so both read
@@ -39,7 +57,7 @@ export function Lane({
                 href={href(issue.id)}
                 className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent/60"
               >
-                <span className="truncate">{issue.title}</span>
+                <QAIssueRow issue={issue} />
               </AppLink>
             </li>
           ))}
