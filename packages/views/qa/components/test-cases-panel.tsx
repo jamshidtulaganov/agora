@@ -12,7 +12,7 @@ import { Input } from "@agora/ui/components/ui/input";
 import { Textarea } from "@agora/ui/components/ui/textarea";
 import { Badge } from "@agora/ui/components/ui/badge";
 import { cn } from "@agora/ui/lib/utils";
-import { useT } from "../../i18n";
+import { useT, useTimeAgo } from "../../i18n";
 import { useRunningTestCaseId } from "./qa-live-progress";
 import { verdictIcon } from "./verdict";
 
@@ -143,6 +143,7 @@ function CaseRow({
   isRunning: boolean;
 }) {
   const { t } = useT("issues");
+  const timeAgo = useTimeAgo();
   const status = c.latest_run?.status;
   // "blocked"/"skip" only ever comes from the agent's run_test_cases protocol
   // (the human Pass/Fail buttons only ever write pass/fail) — it means the
@@ -160,7 +161,20 @@ function CaseRow({
     <li className="px-3 py-2">
       <div className="flex items-center gap-2">
         <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setOpen((v) => !v)}>
-          <span className="truncate text-[13px]">{c.title}</span>
+          <span className="block truncate text-[13px]">{c.title}</span>
+          {/* When it last ran, and whether an agent or a human ran it — the two
+              things a reviewer needs to trust a verdict that isn't running right
+              now. Omitted while isRunning (the RUNS badge already says "now"). */}
+          {!isRunning && c.latest_run && (
+            <span className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground/70">
+              {c.latest_run.run_source === "agent" ? (
+                <Bot className="size-2.5 shrink-0" />
+              ) : (
+                <User className="size-2.5 shrink-0" />
+              )}
+              {timeAgo(c.latest_run.created_at)}
+            </span>
+          )}
         </button>
         <Badge variant="secondary" className="gap-1 text-[10px] font-normal">
           {c.source === "agent" ? <Bot className="size-3" /> : <User className="size-3" />}
