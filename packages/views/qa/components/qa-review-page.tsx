@@ -101,6 +101,12 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
   });
 
   const verdict = evidence?.verdict ?? "";
+  // Pre-select the triage button matching the AGENT's automated verdict when a
+  // human hasn't decided yet — so a reviewer sees "Passed" already reflected at
+  // the bottom instead of two blank buttons after the checks already ran. A
+  // human click still writes the real qa:pass/qa:fail label and takes over
+  // (humanVerdict, once set, always wins over the agent's suggestion).
+  const suggestedVerdict = humanVerdict !== "pending" ? humanVerdict : verdict;
   const verdictLabel =
     verdict === "pass"
       ? t(($) => $.qa_evidence.verdict_pass)
@@ -203,7 +209,7 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
               size="sm"
               className={cn(
                 "h-8 gap-1.5 text-[12px]",
-                humanVerdict === "pass" && "border-emerald-600/40 bg-emerald-600/10 text-emerald-700 dark:text-emerald-300",
+                suggestedVerdict === "pass" && "border-emerald-600/40 bg-emerald-600/10 text-emerald-700 dark:text-emerald-300",
               )}
               variant="outline"
               disabled={setVerdict.isPending}
@@ -217,7 +223,7 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
               size="sm"
               className={cn(
                 "h-8 gap-1.5 text-[12px]",
-                humanVerdict === "fail" && "border-destructive/40 bg-destructive/10 text-destructive",
+                suggestedVerdict === "fail" && "border-destructive/40 bg-destructive/10 text-destructive",
               )}
               variant="outline"
               disabled={setVerdict.isPending}
