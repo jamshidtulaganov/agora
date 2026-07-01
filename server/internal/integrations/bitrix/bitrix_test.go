@@ -557,3 +557,72 @@ func TestListTasksPaginatesAllPages(t *testing.T) {
 		t.Error("task id 60 (page 2) missing — pagination dropped the tail")
 	}
 }
+
+// --- department parsing + subtree resolution --------------------------------
+
+// UF_DEPARTMENT arrives from Bitrix in several shapes across portals; deptIDs
+// must normalise every one to a clean, zero-free []string.
+func TestDeptIDsUnmarshal(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []string
+	}{
+		{`[152,153]`, []string{"152", "153"}},
+		{`["152","153"]`, []string{"152", "153"}},
+		{`[]`, nil},
+		{`[0]`, nil},
+		{`""`, nil},
+		{`null`, nil},
+		{`false`, nil},
+		{`152`, []string{"152"}},
+		{`"152"`, []string{"152"}},
+		{`0`, nil},
+	}
+	for _, c := range cases {
+		var d deptIDs
+		if err := json.Unmarshal([]byte(c.in), &d); err != nil {
+			t.Errorf("Unmarshal(%s): %v", c.in, err)
+			continue
+		}
+		if strings.Join([]string(d), ",") != strings.Join(c.want, ",") {
+			t.Errorf("Unmarshal(%s) = %v, want %v", c.in, []string(d), c.want)
+		}
+	}
+}
+
+// ResolveDepartmentSubtree matches a department by name (case-insensitive) and
+// expands to its descendants, so "SD Разработка" also captures its sub-teams —
+// and never leaks a sibling department the responsible filter must exclude.
+func TestResolveDepartmentSubtree(t *testing.T) {
+	depts := []Department{
+		{ID: "1", Name: "Company", Parent: "0"},
+		{ID: "10", Name: "SD Разработка", Parent: "1"},
+		{ID: "11", Name: "Frontend", Parent: "10"},   // child of SD Разработка
+		{ID: "12", Name: "Backend", Parent: "10"},     // child of SD Разработка
+		{ID: "13", Name: "Web UI", Parent: "11"},      // grandchild
+		{ID: "20", Name: "Sales", Parent: "1"},        // sibling — must NOT match
+		{ID: "21", Name: "QA", Parent: "20"},          // under Sales — must NOT match
+	}
+	got := ResolveDepartmentSubtree(depts, []string{"sd разработка"}) // case-insensitive
+	want := map[string]bool{"10": true, "11": true, "12": true, "13": true}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for id := range want {
+		if !got[id] {
+			t.Errorf("expected department %s in the SD Разработка subtree", id)
+		}
+	}
+	if got["20"] || got["21"] {
+		t.Error("Sales / QA leaked into the SD Разработка subtree")
+	}
+
+	// No matching name → empty set (callers read this as "no filter").
+	if ids := ResolveDepartmentSubtree(depts, []string{"Nonexistent"}); len(ids) != 0 {
+		t.Errorf("unmatched name must yield empty set, got %v", ids)
+	}
+	// No names → empty set.
+	if ids := ResolveDepartmentSubtree(depts, nil); len(ids) != 0 {
+		t.Errorf("no names must yield empty set, got %v", ids)
+	}
+}

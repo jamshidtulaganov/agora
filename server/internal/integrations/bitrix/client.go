@@ -1140,6 +1140,55 @@ type User struct {
 	LastName string
 	Email    string
 	Position string
+	// Department is the user's UF_DEPARTMENT — the numeric ids (as strings) of
+	// the Bitrix departments (Отдел) the user belongs to. Used to gate which
+	// responsibles get provisioned as workspace members (team = a specific
+	// department only). Empty when the portal doesn't expose it.
+	Department []string
+}
+
+// deptIDs decodes Bitrix's UF_DEPARTMENT. It is normally an array of numeric
+// department ids (e.g. [152]) but portals have been seen to return "", null, or
+// a bare scalar when a user has no/one department — all of which decode to a
+// clean []string of non-zero ids.
+type deptIDs []string
+
+func (d *deptIDs) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 {
+		*d = nil
+		return nil
+	}
+	switch string(b) {
+	case "null", `""`, "false", "0":
+		*d = nil
+		return nil
+	}
+	appendID := func(out []string, s string) []string {
+		s = strings.TrimSpace(s)
+		if s != "" && s != "0" {
+			out = append(out, s)
+		}
+		return out
+	}
+	if b[0] == '[' {
+		var raw []json.Number
+		if err := json.Unmarshal(b, &raw); err != nil {
+			return err
+		}
+		out := make([]string, 0, len(raw))
+		for _, n := range raw {
+			out = appendID(out, n.String())
+		}
+		*d = out
+		return nil
+	}
+	var one jsonStr
+	if err := json.Unmarshal(b, &one); err != nil {
+		return err
+	}
+	*d = appendID(nil, string(one))
+	return nil
 }
 
 // FullName joins the given and family name, trimmed. Falls back to the email,
@@ -1180,6 +1229,7 @@ func (c *Client) GetUser(ctx context.Context, userID string) (User, error) {
 			LastName     jsonStr `json:"LAST_NAME"`
 			Email        jsonStr `json:"EMAIL"`
 			WorkPosition jsonStr `json:"WORK_POSITION"`
+			Department   deptIDs `json:"UF_DEPARTMENT"`
 		} `json:"result"`
 		Error     string `json:"error"`
 		ErrorDesc string `json:"error_description"`
@@ -1195,12 +1245,118 @@ func (c *Client) GetUser(ctx context.Context, userID string) (User, error) {
 	}
 	r := parsed.Result[0]
 	return User{
-		ID:       firstNonEmpty(r.ID, jsonStr(id)),
-		Name:     firstNonEmpty(r.Name),
-		LastName: firstNonEmpty(r.LastName),
-		Email:    firstNonEmpty(r.Email),
-		Position: firstNonEmpty(r.WorkPosition),
+		ID:         firstNonEmpty(r.ID, jsonStr(id)),
+		Name:       firstNonEmpty(r.Name),
+		LastName:   firstNonEmpty(r.LastName),
+		Email:      firstNonEmpty(r.Email),
+		Position:   firstNonEmpty(r.WorkPosition),
+		Department: r.Department,
 	}, nil
+}
+
+// Department is one Bitrix department (Отдел) from department.get: its numeric
+// id, display name, and parent id ("0"/"" for the company root). Parent lets a
+// caller expand a named department to its whole subtree.
+type Department struct {
+	ID     string
+	Name   string
+	Parent string
+}
+
+// ListDepartments returns ALL departments in the portal via department.get,
+// following the response's `next` offset across every page. Used to resolve a
+// team department by name (e.g. "SD Разработка") to its id — and, with Parent,
+// to that department's descendants — so member provisioning can be gated to a
+// single org unit.
+func (c *Client) ListDepartments(ctx context.Context) ([]Department, error) {
+	if c.baseURL == "" {
+		return nil, errors.New("bitrix: empty base URL")
+	}
+	endpoint := c.baseURL + "department.get"
+
+	depts := make([]Department, 0, bitrixTaskPageSize)
+	start := 0
+	for {
+		form := url.Values{}
+		if start > 0 {
+			form.Set("start", strconv.Itoa(start))
+		}
+		body, err := c.post(ctx, endpoint, form)
+		if err != nil {
+			return nil, err
+		}
+		var parsed struct {
+			Result []struct {
+				ID     jsonStr `json:"ID"`
+				Name   jsonStr `json:"NAME"`
+				Parent jsonStr `json:"PARENT"`
+			} `json:"result"`
+			Next      *int   `json:"next"`
+			Error     string `json:"error"`
+			ErrorDesc string `json:"error_description"`
+		}
+		if err := json.Unmarshal(body, &parsed); err != nil {
+			return nil, fmt.Errorf("bitrix: decode department.get: %w", err)
+		}
+		if parsed.Error != "" {
+			return nil, fmt.Errorf("bitrix: department.get error %s: %s", parsed.Error, parsed.ErrorDesc)
+		}
+		for _, r := range parsed.Result {
+			depts = append(depts, Department{
+				ID:     strings.TrimSpace(string(r.ID)),
+				Name:   strings.TrimSpace(string(r.Name)),
+				Parent: strings.TrimSpace(string(r.Parent)),
+			})
+		}
+		if parsed.Next == nil || len(parsed.Result) == 0 || len(depts) >= bitrixMaxTasksPerImport || *parsed.Next <= start {
+			break
+		}
+		start = *parsed.Next
+	}
+	return depts, nil
+}
+
+// ResolveDepartmentSubtree returns the set of department ids whose name matches
+// any of `names` (case-insensitive, whitespace-trimmed) PLUS every descendant
+// department, so a team named "SD Разработка" also captures its sub-teams. The
+// returned set is empty when no name matches (caller decides whether that means
+// "no filter" or "empty team").
+func ResolveDepartmentSubtree(depts []Department, names []string) map[string]bool {
+	want := make(map[string]bool, len(names))
+	for _, n := range names {
+		if t := strings.ToLower(strings.TrimSpace(n)); t != "" {
+			want[t] = true
+		}
+	}
+	if len(want) == 0 {
+		return map[string]bool{}
+	}
+	// Seed with the departments whose name matches.
+	matched := map[string]bool{}
+	for _, d := range depts {
+		if d.ID != "" && want[strings.ToLower(d.Name)] {
+			matched[d.ID] = true
+		}
+	}
+	// Expand to descendants: repeatedly add any dept whose parent is already
+	// matched, until the set stops growing (org trees are shallow, so a bounded
+	// pass over the slice per iteration is fine).
+	for {
+		grew := false
+		for _, d := range depts {
+			if d.ID == "" || matched[d.ID] {
+				continue
+			}
+			if d.Parent != "" && matched[d.Parent] {
+				matched[d.ID] = true
+				grew = true
+			}
+		}
+		if !grew {
+			break
+		}
+	}
+	return matched
 }
 
 // AddTaskComment posts a comment to a task's comment feed via

@@ -105,6 +105,26 @@ func bitrixWebhookPublicURL() string {
 // integration mirrors a whole Bitrix workgroup, not just AI-flagged tasks.
 func bitrixTaskTag() string { return strings.TrimSpace(os.Getenv("BITRIX_TASK_TAG")) }
 
+// bitrixTeamDepartments returns the department names (Отдел) whose members may
+// be provisioned as workspace members, from BITRIX_TEAM_DEPARTMENTS (comma-
+// separated, e.g. "SD Разработка"). Empty = no filter: any responsible/comment
+// author is provisioned (the pre-department behaviour). Names are resolved to
+// department ids — and their sub-departments — at sync time via department.get.
+func bitrixTeamDepartments() []string {
+	raw := strings.TrimSpace(os.Getenv("BITRIX_TEAM_DEPARTMENTS"))
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	names := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if n := strings.TrimSpace(p); n != "" {
+			names = append(names, n)
+		}
+	}
+	return names
+}
+
 // bitrixTaskHasTag reports whether the task carries the given tag
 // (case-insensitive, whitespace-trimmed). An empty tag always matches (the
 // "import everything" default).
@@ -326,6 +346,17 @@ type bitrixSyncState struct {
 	// (provisioned on first sight), so imported comments are attributed to the
 	// real author instead of the workspace owner. Resolved once per batch.
 	commentAuthors map[string]bitrixAuthorRef
+
+	// teamDeptIDs is the set of Bitrix department ids whose members may be
+	// provisioned as workspace members — BITRIX_TEAM_DEPARTMENTS resolved to ids
+	// via department.get, including sub-departments. Resolved once per batch;
+	// teamDeptResolved guards the one-time load. An empty set with
+	// teamDeptResolved=true means "no department filter" (unconfigured, or the
+	// configured name didn't resolve / the API failed) so provisioning is not
+	// blocked — the filter only ever restricts, never silently drops every
+	// assignee on a transient error.
+	teamDeptIDs      map[string]bool
+	teamDeptResolved bool
 
 	// importContent toggles comment + attachment (and video-frame) import. The
 	// webhook + import paths both enable it; it exists so a future caller can
@@ -1008,10 +1039,64 @@ func (h *Handler) bitrixResolveOrProvisionAssignee(ctx context.Context, wsID pgt
 	if t, uid := h.bitrixResolveAssignee(ctx, wsID, responsibleID, u); t.Valid {
 		return t, uid
 	}
-	if h.bitrixRoutingForWorkspace(ctx, wsID, st).ProvisionAssignees {
+	// Auto-provisioning is gated by the team-department filter: a responsible
+	// from outside the configured department(s) is NOT added to the workspace —
+	// the task still imports, just unassigned. Existing members (resolved above)
+	// are never affected. No filter configured → provision as before.
+	if h.bitrixRoutingForWorkspace(ctx, wsID, st).ProvisionAssignees && h.bitrixUserInTeam(ctx, st, u) {
 		return h.provisionBitrixAssignee(ctx, wsID, responsibleID, u)
 	}
 	return pgtype.Text{}, pgtype.UUID{}
+}
+
+// bitrixUserInTeam reports whether a Bitrix user may be provisioned as a
+// workspace member, per the BITRIX_TEAM_DEPARTMENTS filter. It returns true (no
+// restriction) when no team departments are configured or the configured names
+// can't be resolved to ids — the filter only ever restricts, it never drops
+// every assignee on a config/API problem. Otherwise the user must belong to one
+// of the team departments (or a sub-department).
+func (h *Handler) bitrixUserInTeam(ctx context.Context, st *bitrixSyncState, u *bitrix.User) bool {
+	ids := h.bitrixTeamDeptIDs(ctx, st)
+	if len(ids) == 0 {
+		return true // no active filter
+	}
+	if u == nil {
+		return false
+	}
+	for _, d := range u.Department {
+		if ids[strings.TrimSpace(d)] {
+			return true
+		}
+	}
+	return false
+}
+
+// bitrixTeamDeptIDs resolves BITRIX_TEAM_DEPARTMENTS (names) to the set of
+// department ids (including sub-departments) once per batch, caching on st.
+// Returns an empty set — which callers read as "no filter" — when nothing is
+// configured, department.get fails, or no configured name matches.
+func (h *Handler) bitrixTeamDeptIDs(ctx context.Context, st *bitrixSyncState) map[string]bool {
+	if st.teamDeptResolved {
+		return st.teamDeptIDs
+	}
+	st.teamDeptResolved = true
+	st.teamDeptIDs = map[string]bool{}
+
+	names := bitrixTeamDepartments()
+	if len(names) == 0 {
+		return st.teamDeptIDs
+	}
+	depts, err := st.client.ListDepartments(ctx)
+	if err != nil {
+		slog.Warn("bitrix sync: department.get failed; team-department filter disabled for this batch", "error", err)
+		return st.teamDeptIDs
+	}
+	ids := bitrix.ResolveDepartmentSubtree(depts, names)
+	if len(ids) == 0 {
+		slog.Warn("bitrix sync: BITRIX_TEAM_DEPARTMENTS matched no department; filter disabled", "names", names)
+	}
+	st.teamDeptIDs = ids
+	return st.teamDeptIDs
 }
 
 // bitrixAuthorRef is a resolved Agora author (member) for a Bitrix comment.
@@ -1037,11 +1122,16 @@ func (h *Handler) bitrixCommentAuthor(ctx context.Context, wsID pgtype.UUID, aut
 	ref := bitrixAuthorRef{}
 	if h.bitrixRoutingForWorkspace(ctx, wsID, st).ProvisionAssignees {
 		// Resolve (external-identity / email) first; provision only if needed.
+		// Provisioning a new author is gated by the same team-department filter
+		// as assignees — a comment author from outside the team isn't added to
+		// the workspace (the comment then falls back to the owner).
 		u := h.bitrixResponsible(ctx, st, id)
 		if t, uid := h.bitrixResolveAssignee(ctx, wsID, id, u); t.Valid {
 			ref = bitrixAuthorRef{Type: t, ID: uid}
-		} else if t, uid := h.provisionBitrixAssignee(ctx, wsID, id, u); t.Valid {
-			ref = bitrixAuthorRef{Type: t, ID: uid}
+		} else if h.bitrixUserInTeam(ctx, st, u) {
+			if t, uid := h.provisionBitrixAssignee(ctx, wsID, id, u); t.Valid {
+				ref = bitrixAuthorRef{Type: t, ID: uid}
+			}
 		}
 	}
 	st.commentAuthors[id] = ref
