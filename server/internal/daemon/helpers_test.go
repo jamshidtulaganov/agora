@@ -34,6 +34,24 @@ func TestParseFlexDuration(t *testing.T) {
 	}
 }
 
+func TestShortID(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"550e8400-e29b-41d4-a716-446655440000", "550e8400"},
+		{"short", "short"},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		got := shortID(tc.in)
+		if got != tc.want {
+			t.Errorf("shortID(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestParseFlexDuration_Invalid(t *testing.T) {
 	t.Parallel()
 	for _, in := range []string{
