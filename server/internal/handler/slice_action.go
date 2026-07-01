@@ -582,6 +582,145 @@ func (h *Handler) enforceQAGateBeforeDone(ctx context.Context, issue db.Issue, p
 	return "in_review", true
 }
 
+// squadFailureRecoveryMarker tags the recovery comment so repeated failures on
+// the same issue can be capped (a broken member re-delegated to forever would
+// otherwise loop). Kept out of the visible text via an HTML comment.
+const squadFailureRecoveryMarker = "<!-- squad-failure-recovery -->"
+
+// maxSquadFailureRecoveries bounds how many times a single issue may be
+// auto-recovered before it's left for a human — enough to route around a
+// transient/one-off provider hiccup, not enough to spin forever on a member
+// that fails every time.
+const maxSquadFailureRecoveries = 3
+
+// squadFailureRecoveryEnabled gates the delegated-sub-task failure recovery.
+// Default off — opt-in, matching every other auto-* gate in this file.
+func squadFailureRecoveryEnabled() bool {
+	return strings.TrimSpace(os.Getenv("AGORA_SQUAD_FAILURE_RECOVERY_ENABLED")) == "true"
+}
+
+// maybeRecoverSquadTaskFailure re-wakes the squad LEADER when a delegated
+// member task dies (timeout, idle/startup watchdog, provider crash) so a
+// squad-orchestrated issue doesn't wedge silently — the exact gap the
+// concurrency stress test surfaced (issue 388: its only delegation went to a
+// hung opencode dev, the dev task failed, and the Dev Lead was never
+// re-triggered, so the issue sat in in_progress with no recovery).
+//
+// A failed task posts no completion signal, so nothing normally wakes the
+// orchestrator. This closes that hole: on a recoverable failure of a
+// squad-member task, post an @-mention comment to the leader carrying the
+// failure reason (the comment IS the re-trigger) so it can re-delegate to a
+// different member or handle it. Best-effort + detached, gated by
+// AGORA_SQUAD_FAILURE_RECOVERY_ENABLED.
+//
+// Guards (each a real no-op case, not paranoia):
+//   - no issue (chat task) → nothing to recover;
+//   - clean cancellation → the user stopped it on purpose;
+//   - issue already past dev (in_review/done/cancelled) → the work landed
+//     elsewhere (a sibling delegation won the race), recovery is redundant;
+//   - failing agent is in no squad → solo agent, today's manual flow stands;
+//   - failing agent IS the leader → re-triggering the orchestrator from its
+//     own failure risks a self-loop; leave it;
+//   - the issue already has a pending/running task → it's being worked, don't
+//     stack another leader task on top;
+//   - recovery already fired maxSquadFailureRecoveries times → give up and
+//     leave it for a human rather than loop on a member that always fails.
+func (h *Handler) maybeRecoverSquadTaskFailure(ctx context.Context, task db.AgentTaskQueue, failureReason string) {
+	if !squadFailureRecoveryEnabled() {
+		return
+	}
+	if !task.IssueID.Valid || !task.AgentID.Valid {
+		return
+	}
+	// A deliberate stop is not a failure to route around.
+	switch strings.ToLower(strings.TrimSpace(failureReason)) {
+	case "cancelled", "canceled", "superseded":
+		return
+	}
+
+	issue, err := h.Queries.GetIssue(ctx, task.IssueID)
+	if err != nil {
+		return
+	}
+	switch issue.Status {
+	case "in_review", "done", "cancelled":
+		return // already progressed past dev — a sibling delegation succeeded
+	}
+
+	// A leader's own failed task must not re-spawn the leader (self-loop).
+	squads, err := h.Queries.ListSquadsByMember(ctx, db.ListSquadsByMemberParams{
+		WorkspaceID: issue.WorkspaceID, MemberType: "agent", MemberID: task.AgentID,
+	})
+	if err != nil || len(squads) == 0 {
+		return
+	}
+	leaderID := squads[0].LeaderID
+	if !leaderID.Valid || uuidToString(leaderID) == uuidToString(task.AgentID) {
+		return
+	}
+	leader, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
+		ID: leaderID, WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil || leader.ArchivedAt.Valid {
+		return
+	}
+
+	// Something is already queued/running on this issue → don't stack.
+	if pending, err := h.Queries.HasPendingTaskForIssue(ctx, issue.ID); err == nil && pending {
+		return
+	}
+
+	// Cap retries: count prior recovery markers on this issue.
+	if comments, err := h.Queries.ListCommentsForIssue(ctx, db.ListCommentsForIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID, Limit: 200,
+	}); err == nil {
+		n := 0
+		for _, c := range comments {
+			if strings.Contains(c.Content, squadFailureRecoveryMarker) {
+				n++
+			}
+		}
+		if n >= maxSquadFailureRecoveries {
+			return
+		}
+	}
+
+	failingName := "a delegated agent"
+	if a, err := h.Queries.GetAgent(ctx, task.AgentID); err == nil && strings.TrimSpace(a.Name) != "" {
+		failingName = a.Name
+	}
+	reason := strings.TrimSpace(failureReason)
+	if reason == "" {
+		reason = "the task failed"
+	}
+
+	// Attribute the recovery comment to the issue's creator (member or agent) —
+	// there is no human actor on the daemon's fail-report path.
+	authorType := issue.CreatorType
+	if authorType != "member" && authorType != "agent" {
+		authorType = "member"
+	}
+	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(leader.Name), uuidToString(leader.ID)) +
+		fmt.Sprintf("The delegated task for **%s** did not complete (%s). Re-triage: re-delegate this to a "+
+			"different squad member or handle it yourself, then move the issue forward. ", sanitizeMentionLabel(failingName), reason) +
+		squadFailureRecoveryMarker
+	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+		AuthorType: authorType, AuthorID: issue.CreatorID,
+		Content: content, Type: "comment", ParentID: pgtype.UUID{Valid: false},
+	})
+	if err != nil {
+		slog.Warn("squad failure recovery: create comment failed", "error", err, "issue_id", uuidToString(issue.ID))
+		return
+	}
+	h.triggerTasksForComment(ctx, issue, comment, nil, authorType, uuidToString(issue.CreatorID), nil)
+	slog.Info("squad failure recovery: re-woke squad lead after a member task failure",
+		"issue_id", uuidToString(issue.ID),
+		"failed_agent_id", uuidToString(task.AgentID),
+		"lead_agent_id", uuidToString(leaderID),
+		"failure_reason", reason)
+}
+
 // maybeRouteToDevLeadOnQAFail closes the QA<->dev loop automatically: when an
 // issue gains qa:fail, find the FAILING dev agent's squad (if any) and hand the
 // issue to that squad's LEADER — the orchestrator who triages and re-delegates
@@ -782,11 +921,13 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	// behind one agent — this branch never touches that path.
 	var runner db.Agent
 	var agents []db.Agent
+	routedToLead := false
 	devOrchestrated := h.issueDevOrchestrated(ctx, issue)
 	if devOrchestrated {
 		if leader, ok := h.qaSquadLeader(ctx, issue.WorkspaceID); ok {
 			runner = leader
 			agents = []db.Agent{leader}
+			routedToLead = true
 		}
 	}
 	if runner.ID == (pgtype.UUID{}) {
@@ -835,6 +976,19 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	instruction += h.sliceActionQASmokeContext(ctx, issue)
 	instruction += h.sliceActionQADocsContext(ctx, issue)
 	instruction += qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
+
+	// When this routed to the QA LEAD (orchestrated dev side), the lead should
+	// ORCHESTRATE, not execute: delegate the actual gate run to a QA member so
+	// the fast execution model does the mechanical work while the lead keeps the
+	// dev-lead↔QA-lead coordination and owns the qa:pass/qa:fail rollup. The lead
+	// running run_qa itself is the wall-clock bottleneck (a heavy model doing
+	// mechanical smoke). Falls back to self-run only if no member is available.
+	if routedToLead {
+		instruction = "As the QA LEAD, DELEGATE this QA gate to a QA squad member via @mention (they " +
+			"execute it on a faster model) and coordinate the result — do NOT run the gate yourself unless " +
+			"no member is available. You own the qa:pass/qa:fail rollup and stay in sync with the dev lead. " +
+			"The gate to delegate: " + instruction
+	}
 
 	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{

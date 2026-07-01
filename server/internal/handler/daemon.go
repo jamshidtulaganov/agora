@@ -2201,6 +2201,12 @@ func (h *Handler) FailTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("task failed", "task_id", taskID, "agent_id", uuidToString(task.AgentID), "task_error", req.Error, "failure_reason", req.FailureReason)
+
+	// Failure recovery: a dead delegated sub-task posts no completion signal, so
+	// a squad-orchestrated issue would otherwise wedge with no one re-triggered.
+	// Detached + best-effort; self-gates when not a recoverable squad failure.
+	go h.maybeRecoverSquadTaskFailure(context.Background(), *task, req.FailureReason)
+
 	writeJSON(w, http.StatusOK, taskToResponse(*task, workspaceID))
 }
 

@@ -203,6 +203,26 @@ manual/load-balanced behavior when there's no squad on one side — e.g. a
 solo dev agent with no squad keeps the old flow; a squad dev with no QA
 squad in the workspace falls through to the generic roster pick.
 
+When auto-QA routes to the QA LEAD (dev side orchestrated), the instruction
+is framed as a DELEGATION directive: the QA lead is told to hand the actual
+gate run to a QA member (executed on a faster model) and own the
+qa:pass/qa:fail rollup, rather than run the mechanical gate itself. The lead
+orchestrates; a member executes.
+
+### Delegated sub-task failure recovery
+
+A failed agent task posts NO completion signal, so an orchestrated issue
+would otherwise wedge silently when a delegated member's task dies (timeout,
+idle/startup watchdog, provider crash). Gated by
+`AGORA_SQUAD_FAILURE_RECOVERY_ENABLED`, the fail path re-wakes the squad
+LEADER with an @-mention comment carrying the failure reason so it can
+re-delegate to a different member or handle it. It self-limits: it no-ops for
+a clean cancellation, a solo agent (no squad), the leader's own task failing
+(no self-loop), an issue that already progressed past dev (a sibling
+delegation won), or once it has already fired a small number of times on the
+same issue (a member that always fails is left for a human rather than looped
+on forever).
+
 ### Structural QA gate (in_review is not skippable)
 
 A third, related mechanism enforces the "always in communication" rule

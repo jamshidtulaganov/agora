@@ -246,6 +246,38 @@ Contracts:
   slice_action.go:402) gates `maybeRunQAOnInReview`;
   `AGORA_QA_FAIL_AUTOROUTE_ENABLED` (qaFailAutorouteEnabled,
   slice_action.go:502-503) gates the fail-autoroute.
+- when `maybeRunQAOnInReview` routes to the QA lead (`routedToLead`), the
+  instruction is reframed as a delegation directive so the Opus lead delegates
+  the gate to a member instead of executing it (slice_action.go, in
+  `maybeRunQAOnInReview` just before the comment is built).
+
+## Delegated Sub-task Failure Recovery
+
+Source:
+
+```text
+server/internal/handler/slice_action.go   # squadFailureRecoveryEnabled,
+                                           # maybeRecoverSquadTaskFailure (near maybeRouteToDevLeadOnQAFail),
+                                           # squadFailureRecoveryMarker, maxSquadFailureRecoveries
+server/internal/handler/daemon.go          # FailTask handler dispatches
+                                           # `go h.maybeRecoverSquadTaskFailure(...)` after recording the failure
+```
+
+Contracts:
+
+- gated by `AGORA_SQUAD_FAILURE_RECOVERY_ENABLED` (default off);
+- fires from the daemon fail-report path (`FailTask`), detached, after the
+  task row is marked failed;
+- no-ops when: the task has no issue/agent; the failure reason is a clean
+  cancel (`cancelled`/`canceled`/`superseded`); the issue is already
+  `in_review`/`done`/`cancelled`; the failing agent is in no squad; the
+  failing agent IS the squad leader (self-loop guard); the issue already has a
+  pending/running task (`HasPendingTaskForIssue`); or the issue already has
+  `maxSquadFailureRecoveries` (=3) recovery markers
+  (`squadFailureRecoveryMarker`, counted via `ListCommentsForIssue`);
+- otherwise posts an `@leader` comment (authored by the issue's creator
+  type/id) carrying the failure reason and re-triggers via
+  `triggerTasksForComment` — the comment IS the leader re-wake signal.
 
 ## Structural QA Gate
 

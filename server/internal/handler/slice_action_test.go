@@ -987,6 +987,137 @@ func TestMaybeRouteToDevLeadOnQAFail_Gating(t *testing.T) {
 	})
 }
 
+// TestMaybeRecoverSquadTaskFailure_ReTriggersLeader is the BUG-2 happy path: a
+// squad-member dev task dies (idle_watchdog) on a still-in-progress issue with
+// nothing else queued → the squad LEADER is re-woken with an @-mention carrying
+// the failure reason, so the wedged issue gets re-triaged instead of stalling.
+func TestMaybeRecoverSquadTaskFailure_ReTriggersLeader(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	t.Setenv("AGORA_SQUAD_FAILURE_RECOVERY_ENABLED", "true")
+
+	devAgentID, leaderAgentID := qaFailAutorouteFixture(t, ctx, true)
+	issueID := sliceActionTestIssue(t, "", "") // in_progress, no assignee/pending task
+	task := db.AgentTaskQueue{IssueID: testUUID(issueID), AgentID: testUUID(devAgentID)}
+
+	testHandler.maybeRecoverSquadTaskFailure(ctx, task, "idle_watchdog")
+
+	var content string
+	if err := testPool.QueryRow(ctx, `
+		SELECT content FROM comment WHERE issue_id = $1 ORDER BY created_at DESC LIMIT 1
+	`, issueID).Scan(&content); err != nil {
+		t.Fatalf("load recovery comment: %v", err)
+	}
+	if !strings.Contains(content, "mention://agent/"+leaderAgentID) {
+		t.Errorf("recovery comment does not @-mention the leader: %q", content)
+	}
+	if !strings.Contains(content, "idle_watchdog") {
+		t.Errorf("recovery comment does not carry the failure reason: %q", content)
+	}
+	if !strings.Contains(content, squadFailureRecoveryMarker) {
+		t.Errorf("recovery comment missing the retry-cap marker: %q", content)
+	}
+}
+
+// TestMaybeRecoverSquadTaskFailure_Gating covers every no-op path: disabled,
+// clean cancel, solo agent (no squad), the failing agent IS the leader, the
+// issue already progressed past dev, and the retry cap reached.
+func TestMaybeRecoverSquadTaskFailure_Gating(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+
+	commentCount := func(issueID string) int {
+		var n int
+		if err := testPool.QueryRow(ctx, `SELECT count(*) FROM comment WHERE issue_id = $1`, issueID).Scan(&n); err != nil {
+			t.Fatalf("count comments: %v", err)
+		}
+		return n
+	}
+
+	t.Run("disabled noop", func(t *testing.T) {
+		t.Setenv("AGORA_SQUAD_FAILURE_RECOVERY_ENABLED", "")
+		devAgentID, _ := qaFailAutorouteFixture(t, ctx, true)
+		issueID := sliceActionTestIssue(t, "", "")
+		task := db.AgentTaskQueue{IssueID: testUUID(issueID), AgentID: testUUID(devAgentID)}
+		testHandler.maybeRecoverSquadTaskFailure(ctx, task, "idle_watchdog")
+		if commentCount(issueID) != 0 {
+			t.Error("disabled gate must not post a comment")
+		}
+	})
+
+	t.Run("clean cancel noop", func(t *testing.T) {
+		t.Setenv("AGORA_SQUAD_FAILURE_RECOVERY_ENABLED", "true")
+		devAgentID, _ := qaFailAutorouteFixture(t, ctx, true)
+		issueID := sliceActionTestIssue(t, "", "")
+		task := db.AgentTaskQueue{IssueID: testUUID(issueID), AgentID: testUUID(devAgentID)}
+		testHandler.maybeRecoverSquadTaskFailure(ctx, task, "cancelled")
+		if commentCount(issueID) != 0 {
+			t.Error("a clean cancellation must not trigger recovery")
+		}
+	})
+
+	t.Run("solo agent noop", func(t *testing.T) {
+		t.Setenv("AGORA_SQUAD_FAILURE_RECOVERY_ENABLED", "true")
+		devAgentID, _ := qaFailAutorouteFixture(t, ctx, false) // no squad
+		issueID := sliceActionTestIssue(t, "", "")
+		task := db.AgentTaskQueue{IssueID: testUUID(issueID), AgentID: testUUID(devAgentID)}
+		testHandler.maybeRecoverSquadTaskFailure(ctx, task, "idle_watchdog")
+		if commentCount(issueID) != 0 {
+			t.Error("a solo agent (no squad) must not trigger recovery")
+		}
+	})
+
+	t.Run("failing agent is leader noop", func(t *testing.T) {
+		t.Setenv("AGORA_SQUAD_FAILURE_RECOVERY_ENABLED", "true")
+		_, leaderAgentID := qaFailAutorouteFixture(t, ctx, true)
+		issueID := sliceActionTestIssue(t, "", "")
+		task := db.AgentTaskQueue{IssueID: testUUID(issueID), AgentID: testUUID(leaderAgentID)}
+		testHandler.maybeRecoverSquadTaskFailure(ctx, task, "idle_watchdog")
+		if commentCount(issueID) != 0 {
+			t.Error("the leader failing its own task must not self-loop")
+		}
+	})
+
+	t.Run("issue past dev noop", func(t *testing.T) {
+		t.Setenv("AGORA_SQUAD_FAILURE_RECOVERY_ENABLED", "true")
+		devAgentID, _ := qaFailAutorouteFixture(t, ctx, true)
+		issueID := sliceActionTestIssue(t, "", "")
+		if _, err := testPool.Exec(ctx, `UPDATE issue SET status='in_review' WHERE id=$1`, issueID); err != nil {
+			t.Fatalf("set in_review: %v", err)
+		}
+		task := db.AgentTaskQueue{IssueID: testUUID(issueID), AgentID: testUUID(devAgentID)}
+		testHandler.maybeRecoverSquadTaskFailure(ctx, task, "idle_watchdog")
+		if commentCount(issueID) != 0 {
+			t.Error("an issue already in_review must not trigger recovery (work landed elsewhere)")
+		}
+	})
+
+	t.Run("retry cap reached noop", func(t *testing.T) {
+		t.Setenv("AGORA_SQUAD_FAILURE_RECOVERY_ENABLED", "true")
+		devAgentID, _ := qaFailAutorouteFixture(t, ctx, true)
+		issueID := sliceActionTestIssue(t, "", "")
+		// Pre-seed maxSquadFailureRecoveries recovery markers → cap hit.
+		for i := 0; i < maxSquadFailureRecoveries; i++ {
+			if _, err := testPool.Exec(ctx, `
+				INSERT INTO comment (issue_id, workspace_id, author_type, author_id, content, type)
+				VALUES ($1, $2, 'member', $3, $4, 'comment')
+			`, issueID, testWorkspaceID, testUserID, "prior recovery "+squadFailureRecoveryMarker); err != nil {
+				t.Fatalf("seed marker: %v", err)
+			}
+		}
+		before := commentCount(issueID)
+		task := db.AgentTaskQueue{IssueID: testUUID(issueID), AgentID: testUUID(devAgentID)}
+		testHandler.maybeRecoverSquadTaskFailure(ctx, task, "idle_watchdog")
+		if commentCount(issueID) != before {
+			t.Error("recovery must stop once the retry cap is reached")
+		}
+	})
+}
+
 // TestBuildSliceInstructionAutoDocs covers the auto_docs kind: document a
 // change into a SEPARATE docs repo, open a PR there, never touch product code,
 // never merge — and skip if the change has no doc-worthy surface. Product-neutral.
