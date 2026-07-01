@@ -223,6 +223,76 @@ func TestBuildSquadLeaderBriefing_MentionsRoundTrip(t *testing.T) {
 	}
 }
 
+// TestRenderMemberRow_RoleFormatting covers three table cases for renderMemberRow:
+// non-empty role, empty role, and archived agent.
+func TestRenderMemberRow_RoleFormatting(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+
+	agentWithRole := createHandlerTestAgent(t, "Role Agent", []byte("[]"))
+	agentNoRole := createHandlerTestAgent(t, "No Role Agent", []byte("[]"))
+	agentArchived := createHandlerTestAgent(t, "Archived Agent", []byte("[]"))
+	if _, err := testPool.Exec(ctx,
+		`UPDATE agent SET archived_at = now(), archived_by = $1 WHERE id = $2`,
+		testUserID, agentArchived,
+	); err != nil {
+		t.Fatalf("archive agent: %v", err)
+	}
+
+	cases := []struct {
+		name       string
+		memberID   string
+		role       string
+		wantEmpty  bool
+		wantSubstr string
+		wantAbsent string
+	}{
+		{
+			name:       "non-empty role appears in row",
+			memberID:   agentWithRole,
+			role:       "implementer",
+			wantSubstr: `role: "implementer"`,
+		},
+		{
+			name:       "empty role produces no dangling separator",
+			memberID:   agentNoRole,
+			role:       "",
+			wantAbsent: `role: ""`,
+		},
+		{
+			name:      "archived agent skipped",
+			memberID:  agentArchived,
+			role:      "",
+			wantEmpty: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := db.SquadMember{
+				MemberType: "agent",
+				MemberID:   util.MustParseUUID(tc.memberID),
+				Role:       tc.role,
+			}
+			got := renderMemberRow(ctx, testHandler.Queries, m)
+			if tc.wantEmpty {
+				if got != "" {
+					t.Errorf("expected empty row for archived agent, got %q", got)
+				}
+				return
+			}
+			if tc.wantSubstr != "" && !strings.Contains(got, tc.wantSubstr) {
+				t.Errorf("expected row to contain %q; got %q", tc.wantSubstr, got)
+			}
+			if tc.wantAbsent != "" && strings.Contains(got, tc.wantAbsent) {
+				t.Errorf("expected row NOT to contain %q; got %q", tc.wantAbsent, got)
+			}
+		})
+	}
+}
+
 // claimAndDecodeAgent runs ClaimTaskByRuntime for the given runtime and
 // returns the agent block of the response. Fails the test on non-200.
 func claimAndDecodeAgent(t *testing.T, runtimeID string) *TaskAgentData {
