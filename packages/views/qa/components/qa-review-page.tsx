@@ -109,90 +109,98 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
         : t(($) => $.qa_evidence.verdict_unknown);
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-8 py-6">
+    <div className="mx-auto w-full max-w-[1400px] px-6 py-6">
       <AppLink
         href={wp.qa()}
-        className="flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground"
+        className="mb-5 inline-flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-3.5" />
         {t(($) => $.qa_review.back)}
       </AppLink>
 
       {isLoading || !issue ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <p className="text-sm text-muted-foreground">{t(($) => $.timeline.loading)}</p>
       ) : (
-        <>
-          <header className="space-y-1.5">
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-xs text-muted-foreground">{issue.identifier}</span>
-              <div className="ml-auto flex items-center gap-2">
-                <IssueAgentHeaderChip issueId={issueId} />
-                <AppLink
-                  href={wp.issueDetail(issueId)}
-                  className="flex items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground"
-                >
-                  {t(($) => $.qa_review.open_full)}
-                  <ExternalLink className="size-3" />
-                </AppLink>
+        // Cockpit split: the review rail (evidence you read + the call you make)
+        // on the left; the pinned Live testing bay (the app you watch and drive)
+        // on the right. Below lg the bay stacks under the rail.
+        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(380px,440px)] lg:items-start lg:gap-6">
+          {/* ── Review rail ─────────────────────────────────────────────── */}
+          <div className="flex min-w-0 flex-col gap-5">
+            <header className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs text-muted-foreground">{issue.identifier}</span>
+                <div className="ml-auto flex items-center gap-2">
+                  <IssueAgentHeaderChip issueId={issueId} />
+                  <AppLink
+                    href={wp.issueDetail(issueId)}
+                    className="flex items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground"
+                  >
+                    {t(($) => $.qa_review.open_full)}
+                    <ExternalLink className="size-3" />
+                  </AppLink>
+                </div>
               </div>
-            </div>
-            <h1 className="text-lg font-semibold leading-tight">{issue.title}</h1>
-          </header>
+              <h1 className="text-xl font-semibold leading-tight tracking-tight">{issue.title}</h1>
+            </header>
 
-          {/* Pull requests — dev-side state (checks, conflicts, merge status)
-              right alongside QA's own verdict, not a separate tab to chase. */}
-          <section>
-            <div className="mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
-              {t(($) => $.detail.section_pull_requests)}
-            </div>
-            <div className="rounded-lg border px-2 py-1.5">
-              <PullRequestList issueId={issueId} />
-            </div>
-          </section>
-
-          {/* Verdict hero */}
-          <div className={cn("rounded-xl border px-4 py-3", verdictTone(verdict))}>
-            <div className="flex items-center gap-2.5">
-              {verdictIcon(verdict, "size-5 shrink-0")}
-              <span className="text-base font-medium">{verdictLabel}</span>
-              {evidence?.captured_at && (
-                <span className="ml-auto text-[11px] text-muted-foreground">
-                  {t(($) => $.qa_evidence.captured)} {new Date(evidence.captured_at).toLocaleString()}
-                </span>
-              )}
-            </div>
-            {evidence?.summary && (
-              <p className="mt-1.5 text-[12px] text-muted-foreground">{evidence.summary}</p>
-            )}
-          </div>
-
-          {/* Live progress — terminal-style feed of what the QA agent is doing
-              right now, while run_qa / run_test_cases is actively running.
-              Renders nothing when idle. */}
-          <QALiveProgress issueId={issueId} />
-
-          {/* Checks */}
-          {evidence?.result && evidence.result.commands.length > 0 ? (
+            {/* Pull requests — dev-side state (checks, conflicts, merge status)
+                right alongside QA's own verdict, not a separate tab to chase. */}
             <section>
               <div className="mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
-                {t(($) => $.qa_review.checks)}
+                {t(($) => $.detail.section_pull_requests)}
               </div>
-              <div className="rounded-lg border">
-                <StructuredResult result={evidence.result} />
+              <div className="rounded-lg border px-2 py-1.5">
+                <PullRequestList issueId={issueId} />
               </div>
             </section>
-          ) : (
-            <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-5 text-center">
-              <p className="text-[12px] text-muted-foreground">{t(($) => $.qa_evidence.empty)}</p>
-              <p className="mt-0.5 text-[11px] text-muted-foreground/70">{t(($) => $.qa_evidence.empty_hint)}</p>
+
+            {/* Verdict hero */}
+            <div className={cn("rounded-xl border px-4 py-3", verdictTone(verdict))}>
+              <div className="flex items-center gap-2.5">
+                {verdictIcon(verdict, "size-5 shrink-0")}
+                <span className="text-base font-medium">{verdictLabel}</span>
+                {evidence?.captured_at && (
+                  <span className="ml-auto text-[11px] text-muted-foreground">
+                    {t(($) => $.qa_evidence.captured)} {new Date(evidence.captured_at).toLocaleString()}
+                  </span>
+                )}
+              </div>
+              {evidence?.summary && (
+                <p className="mt-1.5 text-[12px] text-muted-foreground">{evidence.summary}</p>
+              )}
             </div>
-          )}
 
-          {/* Live browser — reproduce or sanity-check directly, right here. */}
-          <QALiveBrowser issueId={issueId} />
+            {/* Live progress — terminal-style feed of what the QA agent is doing
+                right now, while run_qa / run_test_cases is actively running.
+                Renders nothing when idle. */}
+            <QALiveProgress issueId={issueId} />
 
-          {/* Triage bar — the QA team's verdict + actions. */}
-          <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+            {/* Checks */}
+            {evidence?.result && evidence.result.commands.length > 0 ? (
+              <section>
+                <div className="mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
+                  {t(($) => $.qa_review.checks)}
+                </div>
+                <div className="rounded-lg border">
+                  <StructuredResult result={evidence.result} />
+                </div>
+              </section>
+            ) : (
+              <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-5 text-center">
+                <p className="text-[12px] text-muted-foreground">{t(($) => $.qa_evidence.empty)}</p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground/70">{t(($) => $.qa_evidence.empty_hint)}</p>
+              </div>
+            )}
+
+            {/* Test cases — the QA team's instruments (author / generate / run). */}
+            <TestCasesPanel issueId={issueId} />
+
+            {/* Triage bar — the QA team's verdict + actions. Sticks to the bottom
+                of the rail so the pass/fail call is always within reach while
+                scrolling the evidence (bounded to the rail; releases before the
+                live bay on mobile). */}
+            <div className="sticky bottom-0 z-10 mt-1 flex flex-wrap items-center gap-2 border-t bg-background/95 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
             <Button
               type="button"
               size="sm"
@@ -259,10 +267,15 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
               {rerun.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
               {t(($) => $.qa_evidence.rerun)}
             </Button>
+            </div>
           </div>
 
-          {/* Test cases — the QA team's instruments (author / generate / run). */}
-          <TestCasesPanel issueId={issueId} />
+          {/* ── Live testing bay ────────────────────────────────────────────
+              Pinned beside the evidence: the running app, watched and driven
+              in place. Stacks under the rail below lg. */}
+          <aside className="mt-5 h-[440px] lg:sticky lg:top-6 lg:mt-0 lg:h-[calc(100vh-6.5rem)]">
+            <QALiveBrowser issueId={issueId} />
+          </aside>
 
           <FileBugSheet
             open={bugOpen}
@@ -273,7 +286,7 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
             projectId={issue.project_id}
             evidence={evidence}
           />
-        </>
+        </div>
       )}
     </div>
   );
