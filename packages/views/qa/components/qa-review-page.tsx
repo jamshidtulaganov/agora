@@ -148,9 +148,13 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
             <QALiveBrowser issueId={issueId} />
           </aside>
 
-          {/* ── Review rail ─────────────────────────────────────────────── */}
-          <div className="order-1 mt-5 flex min-w-0 flex-col gap-5 lg:order-2 lg:mt-0">
-            <header className="space-y-1.5">
+          {/* ── Review rail ───────────────────────────────────────────────
+              Sections separated by hairlines (border-t + pt), matching the
+              issue detail page's Properties/Details/Repository grouping —
+              NOT a flex gap alone, which read as one undifferentiated block
+              at this width. */}
+          <div className="order-1 mt-5 flex min-w-0 flex-col lg:order-2 lg:mt-0">
+            <header className="space-y-1.5 pb-4">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-xs text-muted-foreground">{issue.identifier}</span>
                 <div className="ml-auto flex items-center gap-2">
@@ -169,7 +173,7 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
 
             {/* Pull requests — dev-side state (checks, conflicts, merge status)
                 right alongside QA's own verdict, not a separate tab to chase. */}
-            <section>
+            <section className="border-t pt-4 pb-4">
               <div className="mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
                 {t(($) => $.detail.section_pull_requests)}
               </div>
@@ -179,112 +183,124 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
             </section>
 
             {/* Verdict hero */}
-            <div className={cn("rounded-xl border px-4 py-3", verdictTone(verdict))}>
-              <div className="flex items-center gap-2.5">
-                {verdictIcon(verdict, "size-5 shrink-0")}
-                <span className="text-base font-medium">{verdictLabel}</span>
+            <div className="border-t pt-4 pb-4">
+              <div className={cn("rounded-xl border px-4 py-3", verdictTone(verdict))}>
+                <div className="flex items-center gap-2.5">
+                  {verdictIcon(verdict, "size-5 shrink-0")}
+                  <span className="text-base font-medium">{verdictLabel}</span>
+                </div>
                 {evidence?.captured_at && (
-                  <span className="ml-auto text-[11px] text-muted-foreground">
+                  <p className="mt-1 text-[11px] text-muted-foreground">
                     {t(($) => $.qa_evidence.captured)} {new Date(evidence.captured_at).toLocaleString()}
-                  </span>
+                  </p>
+                )}
+                {evidence?.summary && (
+                  <p className="mt-1.5 text-[12px] text-muted-foreground">{evidence.summary}</p>
                 )}
               </div>
-              {evidence?.summary && (
-                <p className="mt-1.5 text-[12px] text-muted-foreground">{evidence.summary}</p>
-              )}
             </div>
 
             {/* Checks */}
-            {evidence?.result && evidence.result.commands.length > 0 ? (
-              <section>
-                <div className="mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
-                  {t(($) => $.qa_review.checks)}
+            <div className="border-t pt-4 pb-4">
+              {evidence?.result && evidence.result.commands.length > 0 ? (
+                <section>
+                  <div className="mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
+                    {t(($) => $.qa_review.checks)}
+                  </div>
+                  <div className="rounded-lg border">
+                    <StructuredResult result={evidence.result} />
+                  </div>
+                </section>
+              ) : (
+                <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-5 text-center">
+                  <p className="text-[12px] text-muted-foreground">{t(($) => $.qa_evidence.empty)}</p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground/70">{t(($) => $.qa_evidence.empty_hint)}</p>
                 </div>
-                <div className="rounded-lg border">
-                  <StructuredResult result={evidence.result} />
-                </div>
-              </section>
-            ) : (
-              <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-5 text-center">
-                <p className="text-[12px] text-muted-foreground">{t(($) => $.qa_evidence.empty)}</p>
-                <p className="mt-0.5 text-[11px] text-muted-foreground/70">{t(($) => $.qa_evidence.empty_hint)}</p>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Test cases — the QA team's instruments (author / generate / run). */}
-            <TestCasesPanel issueId={issueId} />
+            <div className="border-t pt-4 pb-4">
+              <TestCasesPanel issueId={issueId} />
+            </div>
 
             {/* Triage bar — the QA team's verdict + actions. Sticks to the bottom
                 of the rail so the pass/fail call is always within reach while
                 scrolling the evidence (bounded to the rail; releases before the
-                live bay on mobile). */}
-            <div className="sticky bottom-0 z-10 mt-1 flex flex-wrap items-center gap-2 border-t bg-background/95 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-            <Button
-              type="button"
-              size="sm"
-              className={cn(
-                "h-8 gap-1.5 text-[12px]",
-                suggestedVerdict === "pass" && "border-emerald-600/40 bg-emerald-600/10 text-emerald-700 dark:text-emerald-300",
+                live bay on mobile). Two explicit rows — Pass/Fail primary,
+                Regression/Re-run secondary — instead of flex-wrap, which at
+                400px wrapped unpredictably into 3+ uneven rows. */}
+            <div className="sticky bottom-0 z-10 space-y-1.5 border-t bg-background/95 pt-4 pb-1 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+              <div className="grid grid-cols-2 gap-1.5">
+                <Button
+                  type="button"
+                  size="sm"
+                  className={cn(
+                    "h-8 gap-1.5 text-[12px]",
+                    suggestedVerdict === "pass" && "border-emerald-600/40 bg-emerald-600/10 text-emerald-700 dark:text-emerald-300",
+                  )}
+                  variant="outline"
+                  disabled={setVerdict.isPending}
+                  onClick={() => setVerdict.mutate("pass")}
+                >
+                  <CheckCircle2 className="size-3.5" />
+                  {t(($) => $.qa_review.pass)}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  className={cn(
+                    "h-8 gap-1.5 text-[12px]",
+                    suggestedVerdict === "fail" && "border-destructive/40 bg-destructive/10 text-destructive",
+                  )}
+                  variant="outline"
+                  disabled={setVerdict.isPending}
+                  onClick={() => setVerdict.mutate("fail")}
+                >
+                  <XCircle className="size-3.5" />
+                  {t(($) => $.qa_review.fail)}
+                </Button>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 gap-1.5 text-[12px]"
+                  disabled={runRegression.isPending}
+                  onClick={() => runRegression.mutate()}
+                >
+                  {runRegression.isPending ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <GitBranch className="size-3.5" />
+                  )}
+                  {t(($) => $.qa_review.run_regression)}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 gap-1.5 text-[12px]"
+                  disabled={rerun.isPending}
+                  onClick={() => rerun.mutate()}
+                >
+                  {rerun.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+                  {t(($) => $.qa_evidence.rerun)}
+                </Button>
+              </div>
+              {verdict === "fail" && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 w-full gap-1.5 text-[12px]"
+                  onClick={() => setBugOpen(true)}
+                >
+                  <Bug className="size-3.5 text-destructive" />
+                  {t(($) => $.qa_bug.file_bug)}
+                </Button>
               )}
-              variant="outline"
-              disabled={setVerdict.isPending}
-              onClick={() => setVerdict.mutate("pass")}
-            >
-              <CheckCircle2 className="size-3.5" />
-              {t(($) => $.qa_review.pass)}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              className={cn(
-                "h-8 gap-1.5 text-[12px]",
-                suggestedVerdict === "fail" && "border-destructive/40 bg-destructive/10 text-destructive",
-              )}
-              variant="outline"
-              disabled={setVerdict.isPending}
-              onClick={() => setVerdict.mutate("fail")}
-            >
-              <XCircle className="size-3.5" />
-              {t(($) => $.qa_review.fail)}
-            </Button>
-            {verdict === "fail" && (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8 gap-1.5 text-[12px]"
-                onClick={() => setBugOpen(true)}
-              >
-                <Bug className="size-3.5 text-destructive" />
-                {t(($) => $.qa_bug.file_bug)}
-              </Button>
-            )}
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="ml-auto h-8 gap-1.5 text-[12px]"
-              disabled={runRegression.isPending}
-              onClick={() => runRegression.mutate()}
-            >
-              {runRegression.isPending ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <GitBranch className="size-3.5" />
-              )}
-              {t(($) => $.qa_review.run_regression)}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8 gap-1.5 text-[12px]"
-              disabled={rerun.isPending}
-              onClick={() => rerun.mutate()}
-            >
-              {rerun.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
-              {t(($) => $.qa_evidence.rerun)}
-            </Button>
             </div>
           </div>
 
