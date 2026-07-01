@@ -411,6 +411,7 @@
     "live_testing": "实时测试",
     "live_browser_start": "启动实时浏览器",
     "live_on": "实时",
+    "live_preview_open": "打开",
     "live_browser_hint": "直接在运行中的应用上复现问题或验证修复",
     "live_browser_loading": "连接中…",
     "live_browser_unavailable": "暂无可预览的实时工作目录——请先为此任务分配一个代理。",

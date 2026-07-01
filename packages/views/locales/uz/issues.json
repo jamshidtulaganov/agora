@@ -422,6 +422,7 @@
     "live_testing": "Jonli test",
     "live_browser_start": "Brauzerni ochish",
     "live_on": "Jonli",
+    "live_preview_open": "Ochish",
     "live_browser_hint": "Ishlab turgan ilovada bugni qayta hosil qiling yoki tuzatishni tekshiring",
     "live_browser_loading": "Ulanmoqda…",
     "live_browser_unavailable": "Hali ko'rsatish uchun jonli worktree yo'q — avval bu vazifaga agent biriktiring.",

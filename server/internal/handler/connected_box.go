@@ -911,3 +911,61 @@ func (h *Handler) SyncConnectedBox(w http.ResponseWriter, r *http.Request) {
 		"output": output,
 	})
 }
+
+// resolveQAPreviewURL is the same resolution devBoxSmokeURL feeds into the
+// run_qa instruction, just returned as a plain URL instead of prose: the
+// issue's resolved connected box (per-developer, else project-bound), else
+// the project's configured qa_smoke_url. "" when neither resolves — e.g. an
+// Agora-self-repo issue with only a per-task daemon worktree and no deployed
+// box, which is what GetIssueEditor's CDP-driven browser covers instead.
+func (h *Handler) resolveQAPreviewURL(ctx context.Context, issue db.Issue) string {
+	if url := h.devBoxSmokeURL(ctx, issue); url != "" {
+		return url
+	}
+	if !issue.ProjectID.Valid {
+		return ""
+	}
+	project, err := h.Queries.GetProject(ctx, issue.ProjectID)
+	if err != nil || len(project.Settings) == 0 {
+		return ""
+	}
+	var settings struct {
+		QASmokeURL string `json:"qa_smoke_url"`
+	}
+	if json.Unmarshal(project.Settings, &settings) != nil {
+		return ""
+	}
+	return strings.TrimSpace(settings.QASmokeURL)
+}
+
+// GetIssueQAPreviewURL exposes resolveQAPreviewURL to the frontend so the QA
+// review page's Live testing bay can embed a project's deployed QA target
+// (e.g. a connected box like agora.sdteam.uz) DIRECTLY — no daemon, no CDP
+// screencast, no per-task worktree required. This is the fallback for
+// workspaces whose QA target is a standing deployed environment rather than
+// an Agora-managed per-issue worktree (a PHP monolith QA'd by deploying a
+// branch to a box, not by an agent driving its own Chromium). Always 200;
+// "url": "" means nothing resolves and the frontend shows its own empty state.
+func (h *Handler) GetIssueQAPreviewURL(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	issueUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "issue id")
+	if !ok {
+		return
+	}
+	issue, err := h.Queries.GetIssue(r.Context(), issueUUID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "issue not found")
+		return
+	}
+	if _, merr := h.Queries.GetMemberByUserAndWorkspace(r.Context(), db.GetMemberByUserAndWorkspaceParams{
+		UserID:      parseUUID(userID),
+		WorkspaceID: issue.WorkspaceID,
+	}); merr != nil {
+		writeError(w, http.StatusForbidden, "not a member of this workspace")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"url": h.resolveQAPreviewURL(r.Context(), issue)})
+}

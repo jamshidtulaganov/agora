@@ -422,6 +422,7 @@
     "live_testing": "Live testing",
     "live_browser_start": "Start live browser",
     "live_on": "Live",
+    "live_preview_open": "Open",
     "live_browser_hint": "Reproduce or sanity-check directly against the running app",
     "live_browser_loading": "Connecting…",
     "live_browser_unavailable": "No live worktree to preview yet — assign an agent to this issue first.",

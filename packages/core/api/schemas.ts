@@ -1027,6 +1027,16 @@ export const GetIssueEditorResponseSchema = z.object({
 
 export const EMPTY_ISSUE_EDITOR = { mode: "", daemon_url: "", user_id: "", agents: [], editor_url: "" };
 
+// The issue's resolved QA preview target — a deployed connected box (e.g. a
+// per-developer or per-project QA box) or the project's configured
+// qa_smoke_url. "" means nothing resolves; the frontend shows its own empty
+// state rather than treating that as an error.
+export const IssueQAPreviewURLResponseSchema = z.object({
+  url: z.string().default(""),
+}).loose();
+
+export const EMPTY_ISSUE_QA_PREVIEW_URL = { url: "" };
+
 // ---------------------------------------------------------------------------
 // Billing schemas (cloud-billing proxy surface)
 //

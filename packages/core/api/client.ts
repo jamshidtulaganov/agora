@@ -84,6 +84,7 @@ import type {
   CreateTestCaseRequest,
   CreateTestRunRequest,
   GetIssueEditorResponse,
+  IssueQAPreviewURLResponse,
   CreateProjectRequest,
   UpdateProjectRequest,
   ListProjectsResponse,
@@ -246,6 +247,8 @@ import {
   EMPTY_CONNECTED_BOX,
   GetIssueEditorResponseSchema,
   EMPTY_ISSUE_EDITOR,
+  IssueQAPreviewURLResponseSchema,
+  EMPTY_ISSUE_QA_PREVIEW_URL,
 } from "./schemas";
 
 /** Identifies the calling client to the server.
@@ -2305,6 +2308,17 @@ export class ApiClient {
       if (e instanceof ApiError && e.status === 404) return EMPTY_ISSUE_EDITOR;
       throw e;
     }
+  }
+
+  // Resolves the issue's deployed QA target (a connected box or the project's
+  // qa_smoke_url) — the Live testing bay's fallback for workspaces without a
+  // per-issue daemon worktree. Always 200 with url: "" when nothing resolves,
+  // so a QA-page consumer just checks `url` rather than try/catching.
+  async getIssueQAPreviewURL(issueId: string): Promise<IssueQAPreviewURLResponse> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/qa-preview-url`);
+    return parseWithFallback(raw, IssueQAPreviewURLResponseSchema, EMPTY_ISSUE_QA_PREVIEW_URL, {
+      endpoint: "GET /api/issues/:id/qa-preview-url",
+    });
   }
 
   // Fires the SAME whole-branch regression (scope=regression vs sprint-root)

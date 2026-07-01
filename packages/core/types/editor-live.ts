@@ -16,3 +16,12 @@ export interface GetIssueEditorResponse {
   agents: EditorAgent[]; // self-host only, most-recently-active first
   editor_url: string; // cloud only
 }
+
+// GET /api/issues/:id/qa-preview-url — the issue's resolved QA target (a
+// deployed connected box, or the project's configured qa_smoke_url), for
+// workspaces whose QA target is a standing deployed environment rather than
+// a per-issue daemon worktree (e.g. a monolith QA'd by deploying a branch to
+// a box). "" means nothing resolves.
+export interface IssueQAPreviewURLResponse {
+  url: string;
+}
