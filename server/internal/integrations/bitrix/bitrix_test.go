@@ -626,3 +626,71 @@ func TestResolveDepartmentSubtree(t *testing.T) {
 		t.Errorf("no names must yield empty set, got %v", ids)
 	}
 }
+
+// ListUsers must paginate user.get so the "import by responsible" picker lists
+// every active user — a portal with hundreds of users used to hide anyone past
+// #50, so a high-id responsible (e.g. 525) never appeared and their tasks
+// couldn't be imported.
+func TestListUsersPaginatesAllUsers(t *testing.T) {
+	writeUserPage := func(w http.ResponseWriter, ids []int, next *int) {
+		var b strings.Builder
+		b.WriteString(`{"result":[`)
+		for i, id := range ids {
+			if i > 0 {
+				b.WriteString(",")
+			}
+			s := strconv.Itoa(id)
+			b.WriteString(`{"ID":"` + s + `","NAME":"User` + s + `","LAST_NAME":"L` + s + `","EMAIL":"u` + s + `@salesdoc.io","UF_DEPARTMENT":[10]}`)
+		}
+		b.WriteString(`]`)
+		if next != nil {
+			b.WriteString(`,"next":` + strconv.Itoa(*next))
+		}
+		b.WriteString(`}`)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, b.String())
+	}
+
+	page1 := make([]int, 0, 50)
+	for i := 1; i <= 50; i++ {
+		page1 = append(page1, i)
+	}
+	page2 := []int{501, 510, 525} // 525 == the previously-hidden responsible
+
+	var reqs int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		reqs++
+		if r.PostForm.Get("start") == "" {
+			n := 50
+			writeUserPage(w, page1, &n)
+		} else {
+			writeUserPage(w, page2, nil)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	users, err := c.ListUsers(context.Background())
+	if err != nil {
+		t.Fatalf("ListUsers: %v", err)
+	}
+	if len(users) != 53 {
+		t.Errorf("expected 53 users across both pages, got %d", len(users))
+	}
+	if reqs != 2 {
+		t.Errorf("expected 2 paged requests, got %d", reqs)
+	}
+	var found525 bool
+	for _, u := range users {
+		if u.ID == "525" {
+			found525 = true
+			if len(u.Department) != 1 || u.Department[0] != "10" {
+				t.Errorf("user 525 department = %v, want [10]", u.Department)
+			}
+		}
+	}
+	if !found525 {
+		t.Error("user 525 (page 2) missing — the picker would still hide them")
+	}
+}

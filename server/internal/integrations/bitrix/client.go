@@ -522,54 +522,69 @@ func (c *Client) ListTasks(ctx context.Context, groupID, tag string) ([]Task, er
 	return tasks, nil
 }
 
-// ListUsers returns the portal's active users so the importer can offer "import
-// by responsible". Bitrix user.get pages at 50; this fetches the first page
-// (ordered by surname), which covers a typical dev team — extend with `start`
-// paging if a portal needs more.
+// ListUsers returns ALL of the portal's active users so the importer's "import
+// by responsible" picker lists everyone, not just the first page. Bitrix
+// user.get pages at 50; this follows the `next` offset across every page —
+// without it a portal with hundreds of users hid anyone past user #50 from the
+// picker, so their tasks couldn't be imported by responsible.
 func (c *Client) ListUsers(ctx context.Context) ([]User, error) {
 	if c.baseURL == "" {
 		return nil, errors.New("bitrix: empty base URL")
 	}
 	endpoint := c.baseURL + "user.get"
-	form := url.Values{}
-	form.Set("FILTER[ACTIVE]", "true")
-	form.Set("sort", "LAST_NAME")
-	form.Set("order", "asc")
 
-	body, err := c.post(ctx, endpoint, form)
-	if err != nil {
-		return nil, err
-	}
-	var parsed struct {
-		Result []struct {
-			ID           jsonStr `json:"ID"`
-			Name         jsonStr `json:"NAME"`
-			LastName     jsonStr `json:"LAST_NAME"`
-			Email        jsonStr `json:"EMAIL"`
-			WorkPosition jsonStr `json:"WORK_POSITION"`
-		} `json:"result"`
-		Error     string `json:"error"`
-		ErrorDesc string `json:"error_description"`
-	}
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return nil, fmt.Errorf("bitrix: decode user.get (list): %w", err)
-	}
-	if parsed.Error != "" {
-		return nil, fmt.Errorf("bitrix: user.get (list) error %s: %s", parsed.Error, parsed.ErrorDesc)
-	}
-	users := make([]User, 0, len(parsed.Result))
-	for _, r := range parsed.Result {
-		id := firstNonEmpty(r.ID)
-		if id == "" {
-			continue
+	users := make([]User, 0, bitrixTaskPageSize)
+	start := 0
+	for {
+		form := url.Values{}
+		form.Set("FILTER[ACTIVE]", "true")
+		form.Set("sort", "LAST_NAME")
+		form.Set("order", "asc")
+		if start > 0 {
+			form.Set("start", strconv.Itoa(start))
 		}
-		users = append(users, User{
-			ID:       id,
-			Name:     firstNonEmpty(r.Name),
-			LastName: firstNonEmpty(r.LastName),
-			Email:    firstNonEmpty(r.Email),
-			Position: firstNonEmpty(r.WorkPosition),
-		})
+
+		body, err := c.post(ctx, endpoint, form)
+		if err != nil {
+			return nil, err
+		}
+		var parsed struct {
+			Result []struct {
+				ID           jsonStr `json:"ID"`
+				Name         jsonStr `json:"NAME"`
+				LastName     jsonStr `json:"LAST_NAME"`
+				Email        jsonStr `json:"EMAIL"`
+				WorkPosition jsonStr `json:"WORK_POSITION"`
+				Department   deptIDs `json:"UF_DEPARTMENT"`
+			} `json:"result"`
+			Next      *int   `json:"next"`
+			Error     string `json:"error"`
+			ErrorDesc string `json:"error_description"`
+		}
+		if err := json.Unmarshal(body, &parsed); err != nil {
+			return nil, fmt.Errorf("bitrix: decode user.get (list): %w", err)
+		}
+		if parsed.Error != "" {
+			return nil, fmt.Errorf("bitrix: user.get (list) error %s: %s", parsed.Error, parsed.ErrorDesc)
+		}
+		for _, r := range parsed.Result {
+			id := firstNonEmpty(r.ID)
+			if id == "" {
+				continue
+			}
+			users = append(users, User{
+				ID:         id,
+				Name:       firstNonEmpty(r.Name),
+				LastName:   firstNonEmpty(r.LastName),
+				Email:      firstNonEmpty(r.Email),
+				Position:   firstNonEmpty(r.WorkPosition),
+				Department: r.Department,
+			})
+		}
+		if parsed.Next == nil || len(parsed.Result) == 0 || len(users) >= bitrixMaxTasksPerImport || *parsed.Next <= start {
+			break
+		}
+		start = *parsed.Next
 	}
 	return users, nil
 }
