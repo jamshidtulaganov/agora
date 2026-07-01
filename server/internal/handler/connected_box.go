@@ -1015,16 +1015,35 @@ func cachedURLAllowsFraming(ctx context.Context, target string) bool {
 
 // responseBlocksFraming reports whether a single response's headers forbid
 // cross-origin framing: X-Frame-Options deny/sameorigin, or a CSP
-// frame-ancestors directive that isn't a bare wildcard (present-but-narrow
-// means some allowlist we can't confirm includes Agora's origin, which
-// varies per deployment).
+// frame-ancestors directive that isn't the bare wildcard source `*`.
+//
+// Tokenizes the directive's source list rather than substring-matching for
+// "*" — a real bug caught during live testing against sd-main's box: its
+// CSP is `frame-ancestors 'self' https://web.telegram.org
+// https://*.telegram.org`, a SCOPED subdomain wildcard inside one source
+// value, not the CSP special token `*` (any origin). A naive
+// strings.Contains(directive, "*") matches that substring and wrongly
+// concludes the policy is wide open — exactly backwards, since this policy
+// explicitly does NOT permit Agora's origin. Only an exact `*` TOKEN in the
+// source list means "any origin may frame this."
 func responseBlocksFraming(h http.Header) bool {
 	if xfo := strings.ToLower(strings.TrimSpace(h.Get("X-Frame-Options"))); xfo == "deny" || xfo == "sameorigin" {
 		return true
 	}
 	for _, directive := range strings.Split(h.Get("Content-Security-Policy"), ";") {
 		directive = strings.TrimSpace(directive)
-		if strings.HasPrefix(strings.ToLower(directive), "frame-ancestors") && !strings.Contains(directive, "*") {
+		fields := strings.Fields(directive)
+		if len(fields) == 0 || strings.ToLower(fields[0]) != "frame-ancestors" {
+			continue
+		}
+		openToAll := false
+		for _, source := range fields[1:] {
+			if source == "*" {
+				openToAll = true
+				break
+			}
+		}
+		if !openToAll {
 			return true
 		}
 	}
