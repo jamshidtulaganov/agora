@@ -76,7 +76,7 @@ export default function WorkspaceLayout({
 
   const loadingIndicator = (
     <div className="flex h-svh items-center justify-center bg-background">
-      <AgoraLoader size={88} wordmark className="text-foreground" />
+      <AgoraLoader size={88} className="text-foreground" />
     </div>
   );
 

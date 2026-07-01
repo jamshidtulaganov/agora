@@ -153,7 +153,7 @@ export function GuidePageClient() {
   };
 
   return (
-    <div className="bg-[#05060b] text-white">
+    <div className="bg-white dark:bg-[#05060b] text-[#0a0d12] dark:text-white">
       <div className="relative">
         <LandingHeader variant="dark" />
 
@@ -162,8 +162,8 @@ export function GuidePageClient() {
           <GuideBackdrop />
           <div className="relative z-10 mx-auto max-w-[1120px] px-4 pb-16 pt-32 text-center sm:px-6 sm:pt-40 lg:px-8 lg:pb-24">
             <Reveal from="none">
-              <p className="text-[12px] font-medium uppercase tracking-[0.34em] text-white/40">
-                Getting started <span className="text-white/25">·</span>{" "}
+              <p className="text-[12px] font-medium uppercase tracking-[0.34em] text-[#0a0d12]/45 dark:text-white/40">
+                Getting started <span className="text-[#0a0d12]/30 dark:text-white/25">·</span>{" "}
                 <span style={{ color: ACCENT }}>7 steps</span>
               </p>
             </Reveal>
@@ -173,7 +173,7 @@ export function GuidePageClient() {
               </h1>
             </Reveal>
             <Reveal delay={160}>
-              <p className="mx-auto mt-6 max-w-[640px] text-[15px] leading-7 text-white/80 sm:text-[17px]">
+              <p className="mx-auto mt-6 max-w-[640px] text-[15px] leading-7 text-[#0a0d12]/85 dark:text-white/80 sm:text-[17px]">
                 From an empty workspace to a coding agent shipping a pull
                 request — here&apos;s the whole loop, end to end.
               </p>
@@ -182,7 +182,7 @@ export function GuidePageClient() {
               <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
                 <Link
                   href={user ? "/" : "/login"}
-                  className="group inline-flex items-center justify-center gap-2 rounded-[12px] px-5 py-3 text-[14px] font-semibold text-white shadow-[0_14px_40px_-12px_rgba(37,99,235,0.7)] transition-transform hover:-translate-y-0.5"
+                  className="group inline-flex items-center justify-center gap-2 rounded-[12px] px-5 py-3 text-[14px] font-semibold text-[#0a0d12] dark:text-white shadow-[0_14px_40px_-12px_rgba(37,99,235,0.7)] transition-transform hover:-translate-y-0.5"
                   style={{ backgroundColor: ACCENT }}
                 >
                   {user ? "Open dashboard" : "Start free"}
@@ -193,7 +193,7 @@ export function GuidePageClient() {
                 </Link>
                 <Link
                   href="#step-0"
-                  className="inline-flex items-center justify-center rounded-[12px] border border-white/14 bg-white/[0.04] px-5 py-3 text-[14px] font-semibold text-white/85 transition-colors hover:bg-white/[0.08] hover:text-white"
+                  className="inline-flex items-center justify-center rounded-[12px] border border-[#0a0d12]/12 dark:border-white/14 bg-[#0a0d12]/[0.04] dark:bg-white/[0.04] px-5 py-3 text-[14px] font-semibold text-[#0a0d12]/85 dark:text-white/85 transition-colors hover:bg-[#0a0d12]/[0.06] dark:hover:bg-white/[0.08] hover:text-[#0a0d12] dark:hover:text-white"
                 >
                   Read the guide
                 </Link>
@@ -204,7 +204,7 @@ export function GuidePageClient() {
       </div>
 
       {/* Steps */}
-      <section className="relative border-t border-white/8">
+      <section className="relative border-t border-[#0a0d12]/10 dark:border-white/8">
         <div className="mx-auto max-w-[1320px] px-4 sm:px-6 lg:px-8">
           <div className="relative lg:flex lg:gap-20">
             {/* Sticky step rail */}
@@ -218,16 +218,16 @@ export function GuidePageClient() {
                     className={cn(
                       "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[12px] font-medium transition-colors",
                       i === activeIndex
-                        ? "text-white"
-                        : "text-white/35 hover:text-white/65",
+                        ? "text-[#0a0d12] dark:text-white"
+                        : "text-[#0a0d12]/40 dark:text-white/35 hover:text-[#0a0d12]/65 dark:hover:text-white/65",
                     )}
                   >
                     <span
                       className={cn(
                         "grid size-6 shrink-0 place-items-center rounded-md text-[11px] font-semibold tabular-nums transition-colors",
                         i === activeIndex
-                          ? "text-white"
-                          : "bg-white/[0.06] text-white/45",
+                          ? "text-[#0a0d12] dark:text-white"
+                          : "bg-[#0a0d12]/[0.05] dark:bg-white/[0.06] text-[#0a0d12]/48 dark:text-white/45",
                       )}
                       style={
                         i === activeIndex

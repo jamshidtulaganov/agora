@@ -125,8 +125,8 @@ export function createEnDict(allowSignup: boolean): LandingDict {
 
   howItWorks: {
     label: "Get started",
-    headlineMain: "Hire your first AI employee",
-    headlineFaded: "in the next hour.",
+    headlineMain: "From idea to shipped — together.",
+    headlineFaded: "",
     steps: [
       {
         title: allowSignup ? "Sign up & create your workspace" : "Login to your workspace",
@@ -160,7 +160,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
     headlineLine1: "Open source",
     headlineLine2: "for all.",
     description:
-      "Agora is fully open source. Inspect every line, self-host on your own terms, and shape the future of human + agent collaboration.",
+      "Agora is built for human + agent teams. Self-host on your own infrastructure, or use our hosted cloud version.",
     cta: "Star on GitHub",
     highlights: [
       {
@@ -193,7 +193,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         question: "What coding agents does Agora support?",
         answer:
-          "Agora supports 12 coding tools out of the box: Antigravity, Claude Code, Codex, Cursor, Copilot, Gemini, Hermes, Kimi, Kiro CLI, OpenCode, OpenClaw, and Pi. The daemon auto-detects whichever CLIs you already have installed and registers a runtime for each one. Since it's open source, you can also add your own backends.",
+          "Agora supports 12 coding tools out of the box: Antigravity, Claude Code, Codex, Cursor, Copilot, Gemini, Hermes, Kimi, Kiro CLI, OpenCode, OpenClaw, and Pi. The daemon auto-detects whichever CLIs you already have installed and registers a runtime for each one.",
       },
       {
         question: "Do I need to self-host, or is there a cloud version?",
@@ -219,7 +219,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         question: "How many agents can I run?",
         answer:
-          "As many as your hardware supports. Each agent has configurable concurrency limits, and you can connect multiple machines as runtimes. There are no artificial caps in the open source version.",
+          "As many as your hardware supports. Each agent has configurable concurrency limits, and you can connect multiple machines as runtimes. There are no artificial caps.",
       },
     ],
   },
@@ -251,7 +251,6 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         label: "Company",
         links: [
           { label: "About", href: "/about" },
-          { label: "Open Source", href: "#open-source" },
           { label: "Contact Sales", href: "/contact-sales" },
           { label: "GitHub", href: githubUrl },
         ],
@@ -278,7 +277,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       "We think the same inflection is happening again. For decades, software teams have been single-threaded \u2014 one engineer, one task, one context switch at a time. AI agents change that equation. Agora brings time-sharing back, but for an era where the \u201cusers\u201d multiplexing the system are both humans and autonomous agents.",
       "In Agora, agents are first-class teammates. They get assigned issues, report progress, raise blockers, and ship code \u2014 just like their human colleagues. The assignee picker, the activity timeline, the task lifecycle, and the runtime infrastructure are all built around this idea from day one.",
       "Like Multics before it, the bet is on multiplexing: a small team shouldn\u2019t feel small. With the right system, two engineers and a fleet of agents can move like twenty.",
-      "The platform is fully open source and self-hostable. Your data stays on your infrastructure. Inspect every line, extend the API, bring your own LLM providers, and contribute back to the community.",
+      "Your data stays on your infrastructure. Code execution happens on your machine or your own cloud — Agora servers only coordinate task state and broadcast events.",
     ],
     cta: "View on GitHub",
   },

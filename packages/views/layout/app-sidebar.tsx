@@ -5,6 +5,7 @@ import { cn } from "@agora/ui/lib/utils";
 import { useScrollFade } from "@agora/ui/hooks/use-scroll-fade";
 import { AppLink, useNavigation } from "../navigation";
 import { HelpLauncher } from "./help-launcher";
+import { ThemeToggle } from "@agora/ui/components/common/theme-toggle";
 import {
   DndContext,
   PointerSensor,
@@ -755,7 +756,8 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
         </SidebarContent>
 
         <SidebarFooter className="p-2">
-          <div className="flex justify-end">
+          <div className="flex items-center justify-end gap-1">
+            <ThemeToggle className="size-7 rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground [&_svg]:size-3.5" />
             <HelpLauncher />
           </div>
         </SidebarFooter>

@@ -47,13 +47,14 @@ export function CapabilitiesSection() {
           </p>
         </Reveal>
         <div className="mt-16 grid gap-px overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-200 dark:border-white/10 dark:bg-white/10 sm:grid-cols-2 lg:grid-cols-4">
-          {capabilities.map((c) => (
-            <div
+          {capabilities.map((c, i) => (
+            <Reveal
               key={c.title}
-              className="flex flex-col gap-4 bg-white p-7 dark:bg-[#05070b]"
+              delay={i * 80}
+              className="group flex flex-col gap-4 bg-white p-7 transition-shadow duration-300 hover:shadow-[0_8px_32px_-8px_rgba(37,99,235,0.15)] dark:bg-[#05070b]"
             >
               <div
-                className="grid size-11 place-items-center rounded-xl"
+                className="grid size-11 place-items-center rounded-xl transition-transform duration-300 group-hover:scale-110"
                 style={{ backgroundColor: `${ACCENT}14`, color: ACCENT }}
               >
                 <c.icon className="size-5" strokeWidth={1.75} />
@@ -62,7 +63,7 @@ export function CapabilitiesSection() {
               <p className="text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
                 {c.body}
               </p>
-            </div>
+            </Reveal>
           ))}
         </div>
       </div>

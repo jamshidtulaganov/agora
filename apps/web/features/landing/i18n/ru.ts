@@ -125,8 +125,8 @@ export function createRuDict(allowSignup: boolean): LandingDict {
 
   howItWorks: {
     label: "Начало работы",
-    headlineMain: "Наймите своего первого AI-сотрудника",
-    headlineFaded: "уже в ближайший час.",
+    headlineMain: "От идеи до релиза — вместе.",
+    headlineFaded: "",
     steps: [
       {
         title: allowSignup ? "Зарегистрируйтесь и создайте рабочее пространство" : "Войдите в своё рабочее пространство",
@@ -251,7 +251,6 @@ export function createRuDict(allowSignup: boolean): LandingDict {
         label: "Компания",
         links: [
           { label: "О нас", href: "/about" },
-          { label: "Открытый исходный код", href: "#open-source" },
           { label: "Связаться с отделом продаж", href: "/contact-sales" },
           { label: "GitHub", href: githubUrl },
         ],

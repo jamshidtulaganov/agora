@@ -32,6 +32,18 @@ export function LandingHero() {
         >
           <div className="mx-auto max-w-[1120px] text-center">
             <Reveal from="none">
+              {/* "New feature" badge */}
+              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#2563EB]/20 bg-[#2563EB]/[0.06] px-3.5 py-1.5 dark:border-[#2563EB]/30 dark:bg-[#2563EB]/[0.1]">
+                <span className="relative flex size-2">
+                  <span className="absolute inline-flex size-full animate-ping rounded-full opacity-60" style={{ backgroundColor: ACCENT }} />
+                  <span className="relative inline-flex size-2 rounded-full" style={{ backgroundColor: ACCENT }} />
+                </span>
+                <span className="text-[12px] font-semibold" style={{ color: ACCENT }}>
+                  New: Cloud Agents — always-on, no laptop needed
+                </span>
+              </div>
+            </Reveal>
+            <Reveal from="none">
               <p className="text-[12px] font-medium uppercase tracking-[0.34em] text-[#71717A] dark:text-white/40">
                 One board <span className="text-[#A1A1AA] dark:text-white/25">·</span>{" "}
                 <span style={{ color: ACCENT }}>Humans + Agents</span>

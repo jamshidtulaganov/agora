@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
 import { AgoraIcon } from "@agora/ui/components/common/agora-icon";
+import { ThemeToggle } from "@agora/ui/components/common/theme-toggle";
 import { cn } from "@agora/ui/lib/utils";
 import { useAuthStore } from "@agora/core/auth";
 import { useLocale } from "../i18n";
@@ -68,6 +69,19 @@ export function LandingHeader({
         </div>
 
         <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
+          {/* Hardcoded classes (not tokens): the landing tree pins tokens to
+              light via `.landing-light`, so a token-styled control would stay
+              light even in dark mode. These mirror the header's auto variant. */}
+          <ThemeToggle
+            className={cn(
+              "border-transparent bg-transparent",
+              variant === "auto"
+                ? "text-[#0a0d12]/70 hover:bg-[#0a0d12]/5 hover:text-[#0a0d12] dark:text-white/80 dark:hover:bg-white/8 dark:hover:text-white"
+                : variant === "dark"
+                  ? "text-white/80 hover:bg-white/8 hover:text-white"
+                  : "text-[#0a0d12]/70 hover:bg-[#0a0d12]/5 hover:text-[#0a0d12]",
+            )}
+          />
           <button
             type="button"
             aria-label={isMenuOpen ? t.header.closeMenu : t.header.openMenu}

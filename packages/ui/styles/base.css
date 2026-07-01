@@ -264,24 +264,11 @@
   50% { opacity: 0.4; }
 }
 
-/* Wordmark under the loader: fades up once on mount, then holds. */
-.agora-loader-wordmark {
-  animation: agora-loader-wordmark 0.7s ease-out 0.15s both;
-}
-
-@keyframes agora-loader-wordmark {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .agora-loader-orbit,
   .agora-loader-node,
   .agora-loader-core,
   .agora-loader-ring {
-    animation: none;
-  }
-  .agora-loader-wordmark {
     animation: none;
   }
 }

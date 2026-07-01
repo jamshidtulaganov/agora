@@ -251,7 +251,6 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         label: "\u5173\u4e8e",
         links: [
           { label: "\u5173\u4e8e\u6211\u4eec", href: "/about" },
-          { label: "\u5f00\u6e90", href: "#open-source" },
           { label: "\u8054\u7cfb\u5546\u52a1", href: "/contact-sales" },
           { label: "GitHub", href: githubUrl },
         ],

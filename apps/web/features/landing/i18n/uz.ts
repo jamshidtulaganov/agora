@@ -125,8 +125,8 @@ export function createUzDict(allowSignup: boolean): LandingDict {
 
   howItWorks: {
     label: "Boshlash",
-    headlineMain: "Birinchi AI xodimingizni yollang",
-    headlineFaded: "keyingi bir soat ichida.",
+    headlineMain: "G'oyadan yetkazib berishgacha — birga.",
+    headlineFaded: "",
     steps: [
       {
         title: allowSignup ? "Ro'yxatdan o'ting va ish maydoni yarating" : "Ish maydoningizga kiring",
@@ -251,7 +251,6 @@ export function createUzDict(allowSignup: boolean): LandingDict {
         label: "Kompaniya",
         links: [
           { label: "Biz haqimizda", href: "/about" },
-          { label: "Ochiq kod", href: "#open-source" },
           { label: "Savdo bilan bog'lanish", href: "/contact-sales" },
           { label: "GitHub", href: githubUrl },
         ],

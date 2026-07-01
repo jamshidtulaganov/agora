@@ -21,15 +21,16 @@ export function HowItWorksSection() {
         <Reveal delay={80}>
           <h2 className="mt-4 font-[family-name:var(--font-serif)] text-[2.6rem] leading-[1.05] tracking-[-0.03em] sm:text-[3.4rem] lg:text-[4.2rem]">
             {t.howItWorks.headlineMain}
-            <br />
-            <span className="text-[#A1A1AA] dark:text-white/40">{t.howItWorks.headlineFaded}</span>
           </h2>
         </Reveal>
 
         <div className="mt-20 grid gap-px overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-200 dark:border-white/10 dark:bg-white/10 sm:grid-cols-2 lg:grid-cols-4">
           {t.howItWorks.steps.map((step, i) => (
-            <div key={i} className="flex flex-col bg-white p-8 dark:bg-[#05070b] lg:p-10">
-              <span className="text-[13px] font-semibold tabular-nums text-[#A1A1AA] dark:text-white/28">
+            <Reveal key={i} delay={i * 90} className="flex flex-col bg-white p-8 dark:bg-[#05070b] lg:p-10">
+              <span
+                className="text-[13px] font-semibold tabular-nums"
+                style={{ color: "#2563EB", opacity: 0.55 }}
+              >
                 {String(i + 1).padStart(2, "0")}
               </span>
               <h3 className="mt-4 text-[17px] font-semibold leading-snug text-[#18181B] dark:text-white sm:text-[18px]">
@@ -38,7 +39,7 @@ export function HowItWorksSection() {
               <p className="mt-3 text-[14px] leading-[1.7] text-[#71717A] dark:text-white/50 sm:text-[15px]">
                 {step.description}
               </p>
-            </div>
+            </Reveal>
           ))}
         </div>
 

@@ -93,9 +93,9 @@ function ChangeList({ items }: { items: string[] }) {
       {items.map((change) => (
         <li
           key={change}
-          className="flex items-start gap-2.5 text-[14px] leading-[1.7] text-[#0a0d12]/60 sm:text-[15px]"
+          className="flex items-start gap-2.5 text-[14px] leading-[1.7] text-[#0a0d12]/60 dark:text-white/65 sm:text-[15px]"
         >
-          <span className="mt-2.5 h-1 w-1 shrink-0 rounded-full bg-[#0a0d12]/30" />
+          <span className="mt-2.5 h-1 w-1 shrink-0 rounded-full bg-[#0a0d12]/30 dark:bg-white/45" />
           {change}
         </li>
       ))}
@@ -175,7 +175,7 @@ export function ChangelogPageClient() {
   return (
     <>
       <LandingHeader variant="light" />
-      <main className="bg-white text-[#0a0d12]">
+      <main className="bg-white text-[#0a0d12] dark:bg-white/[0.03] dark:text-white">
         <div className="mx-auto max-w-[1080px] px-4 py-16 sm:px-6 sm:py-20 lg:py-24">
           <div className="lg:grid lg:grid-cols-[200px_minmax(0,1fr)] lg:gap-16">
             <aside className="hidden lg:block">
@@ -183,20 +183,20 @@ export function ChangelogPageClient() {
                 aria-label={t.changelog.toc}
                 className="sticky top-28 max-h-[calc(100vh-8rem)] overflow-y-auto pb-8 pr-2"
               >
-                <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#0a0d12]/50">
+                <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#0a0d12]/50 dark:text-white/45">
                   {t.changelog.toc}
                 </h3>
 
                 <div className="relative mt-5">
                   <span
                     aria-hidden="true"
-                    className="pointer-events-none absolute left-[4px] top-7 bottom-2 w-px bg-[#0a0d12]/10"
+                    className="pointer-events-none absolute left-[4px] top-7 bottom-2 w-px bg-[#0a0d12]/10 dark:bg-white/10"
                   />
 
                   <ol className="space-y-5">
                     {groups.map((group) => (
                       <li key={group.key}>
-                        <p className="ml-6 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#0a0d12]/45">
+                        <p className="ml-6 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#0a0d12]/45 dark:text-white/45">
                           {monthYearLabel(group.year, group.month, locale)}
                         </p>
 
@@ -213,8 +213,8 @@ export function ChangelogPageClient() {
                                   className={[
                                     "group relative flex items-center gap-3 rounded-md py-1 pr-2 text-[13px] transition-colors",
                                     isActive
-                                      ? "text-[#0a0d12]"
-                                      : "text-[#0a0d12]/55 hover:text-[#0a0d12]/80",
+                                      ? "text-[#0a0d12] dark:text-white"
+                                      : "text-[#0a0d12]/55 hover:text-[#0a0d12]/80 dark:text-white/45 dark:hover:text-white/65",
                                   ].join(" ")}
                                 >
                                   <span
@@ -222,8 +222,8 @@ export function ChangelogPageClient() {
                                     className={[
                                       "relative z-10 block size-[9px] shrink-0 rounded-full border transition-all duration-200",
                                       isActive
-                                        ? "border-[#0a0d12] bg-[#0a0d12] ring-4 ring-[#0a0d12]/8"
-                                        : "border-[#0a0d12]/25 bg-white group-hover:border-[#0a0d12]/60",
+                                        ? "border-[#0a0d12] bg-[#0a0d12] ring-4 ring-[#0a0d12]/8 dark:border-white dark:bg-white dark:ring-white/10"
+                                        : "border-[#0a0d12]/25 bg-white group-hover:border-[#0a0d12]/60 dark:border-white/25 dark:bg-white/[0.03] dark:group-hover:border-white/60",
                                     ].join(" ")}
                                   />
                                   <span
@@ -236,7 +236,7 @@ export function ChangelogPageClient() {
                                   >
                                     {day}
                                   </span>
-                                  <span className="tabular-nums text-[11px] text-[#0a0d12]/35">
+                                  <span className="tabular-nums text-[11px] text-[#0a0d12]/35 dark:text-white/45">
                                     v{release.version}
                                   </span>
                                 </a>
@@ -255,7 +255,7 @@ export function ChangelogPageClient() {
               <h1 className="font-[family-name:var(--font-serif)] text-[2.6rem] leading-[1.05] tracking-[-0.03em] sm:text-[3.4rem]">
                 {t.changelog.title}
               </h1>
-              <p className="mt-4 text-[15px] leading-7 text-[#0a0d12]/60 sm:text-[16px]">
+              <p className="mt-4 text-[15px] leading-7 text-[#0a0d12]/60 dark:text-white/65 sm:text-[16px]">
                 {t.changelog.subtitle}
               </p>
 
@@ -274,7 +274,7 @@ export function ChangelogPageClient() {
                         <span className="text-[13px] font-semibold tabular-nums">
                           v{release.version}
                         </span>
-                        <span className="text-[13px] text-[#0a0d12]/40">
+                        <span className="text-[13px] text-[#0a0d12]/40 dark:text-white/45">
                           {fullDateLabel(release.date, locale)}
                         </span>
                       </div>
@@ -286,7 +286,7 @@ export function ChangelogPageClient() {
                         <div className="mt-4 space-y-5">
                           {release.features && release.features.length > 0 && (
                             <div>
-                              <h3 className="text-[13px] font-semibold uppercase tracking-wide text-[#0a0d12]/50">
+                              <h3 className="text-[13px] font-semibold uppercase tracking-wide text-[#0a0d12]/50 dark:text-white/45">
                                 {categoryLabels.features}
                               </h3>
                               <ChangeList items={release.features} />
@@ -295,7 +295,7 @@ export function ChangelogPageClient() {
                           {release.improvements &&
                             release.improvements.length > 0 && (
                               <div>
-                                <h3 className="text-[13px] font-semibold uppercase tracking-wide text-[#0a0d12]/50">
+                                <h3 className="text-[13px] font-semibold uppercase tracking-wide text-[#0a0d12]/50 dark:text-white/45">
                                   {categoryLabels.improvements}
                                 </h3>
                                 <ChangeList items={release.improvements} />
@@ -303,7 +303,7 @@ export function ChangelogPageClient() {
                             )}
                           {release.fixes && release.fixes.length > 0 && (
                             <div>
-                              <h3 className="text-[13px] font-semibold uppercase tracking-wide text-[#0a0d12]/50">
+                              <h3 className="text-[13px] font-semibold uppercase tracking-wide text-[#0a0d12]/50 dark:text-white/45">
                                 {categoryLabels.fixes}
                               </h3>
                               <ChangeList items={release.fixes} />

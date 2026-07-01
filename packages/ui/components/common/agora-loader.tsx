@@ -17,11 +17,9 @@ const NODES = [
   { cx: 23.8, cy: 34, r: 6.5, filled: false },
 ];
 
-interface AgoraLoaderProps extends React.ComponentProps<"div"> {
+interface AgoraLoaderProps extends React.ComponentProps<"span"> {
   /** Pixel size of the animated mark. Defaults to 80. */
   size?: number;
-  /** Render the "Agora" wordmark fading up under the mark. */
-  wordmark?: boolean;
 }
 
 /**
@@ -29,56 +27,44 @@ interface AgoraLoaderProps extends React.ComponentProps<"div"> {
  * geometry as <AgoraIcon /> but in motion: the ring orbits, each participant
  * node pulses in sequence (a highlight travelling the circle), and the
  * shared-center node breathes. The mark uses currentColor for the ring nodes,
- * so it adapts to light/dark; pass `wordmark` to show the "Agora" label fading
- * up beneath it.
+ * so it adapts to light/dark; size comes from the `size` prop (px).
  */
-export function AgoraLoader({
-  className,
-  size = 80,
-  wordmark = false,
-  ...props
-}: AgoraLoaderProps) {
+export function AgoraLoader({ className, size = 80, ...props }: AgoraLoaderProps) {
   return (
-    <div
-      className={cn("flex flex-col items-center gap-4", className)}
+    <span
+      className={cn("inline-block", className)}
+      style={{ width: size, height: size }}
       role="status"
       aria-label="Loading"
       {...props}
     >
-      <span className="inline-block" style={{ width: size, height: size }}>
-        <svg viewBox="0 0 96 96" className="block size-full" fill="none" aria-hidden="true">
-          <g className="agora-loader-orbit">
+      <svg viewBox="0 0 96 96" className="block size-full" fill="none" aria-hidden="true">
+        <g className="agora-loader-orbit">
+          <circle
+            className="agora-loader-ring"
+            cx="48"
+            cy="48"
+            r="28"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+          />
+          {NODES.map((n, i) => (
             <circle
-              className="agora-loader-ring"
-              cx="48"
-              cy="48"
-              r="28"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.4"
+              key={i}
+              className="agora-loader-node"
+              cx={n.cx}
+              cy={n.cy}
+              r={n.r}
+              fill={n.filled ? "currentColor" : "none"}
+              stroke={n.filled ? undefined : "currentColor"}
+              strokeWidth={n.filled ? undefined : 3}
+              style={{ animationDelay: `${i * 0.18}s` }}
             />
-            {NODES.map((n, i) => (
-              <circle
-                key={i}
-                className="agora-loader-node"
-                cx={n.cx}
-                cy={n.cy}
-                r={n.r}
-                fill={n.filled ? "currentColor" : "none"}
-                stroke={n.filled ? undefined : "currentColor"}
-                strokeWidth={n.filled ? undefined : 3}
-                style={{ animationDelay: `${i * 0.18}s` }}
-              />
-            ))}
-          </g>
-          <circle className="agora-loader-core" cx="48" cy="48" r="10" fill={ACCENT} />
-        </svg>
-      </span>
-      {wordmark ? (
-        <span className="agora-loader-wordmark text-lg font-medium tracking-tight text-foreground">
-          Agora
-        </span>
-      ) : null}
-    </div>
+          ))}
+        </g>
+        <circle className="agora-loader-core" cx="48" cy="48" r="10" fill={ACCENT} />
+      </svg>
+    </span>
   );
 }
