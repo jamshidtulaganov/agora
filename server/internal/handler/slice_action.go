@@ -497,6 +497,99 @@ func (h *Handler) maybeAutoDocsOnLabel(ctx context.Context, issue db.Issue, labe
 	slog.Info("auto_docs fired on qa:pass", "issue_id", uuidToString(issue.ID), "agent_id", uuidToString(agent.ID))
 }
 
+// qaFailAutorouteEnabled gates the qa:fail -> dev-lead auto-reassignment.
+// Default off — opt-in, matching every other auto-* gate in this file.
+func qaFailAutorouteEnabled() bool {
+	return strings.TrimSpace(os.Getenv("AGORA_QA_FAIL_AUTOROUTE_ENABLED")) == "true"
+}
+
+// maybeRouteToDevLeadOnQAFail closes the QA<->dev loop automatically: when an
+// issue gains qa:fail, find the FAILING dev agent's squad (if any) and hand the
+// issue to that squad's LEADER — the orchestrator who triages and re-delegates
+// — instead of leaving it for a human to notice and manually reassign. The
+// reassignment moves the issue back to "todo" so the leader's claim fires
+// through the normal agent-assignment dispatch path (same as any fresh
+// assignment) — the dev board picks it back up automatically.
+//
+// The comment this posts IS the QA<->dev communication: it lands in the
+// issue's ONE shared timeline, so the dev-facing Issue Detail (which already
+// renders QAEvidenceSection) and the QA review page (which links to "Open
+// full issue") both read the same story — no separate channel to keep in
+// sync, and the QA verdict's summary travels WITH the reassignment instead of
+// requiring the lead to go hunt for why.
+//
+// Degrades to a no-op, past the label + agent-assignee gate, when: the
+// failing agent isn't in any squad (no lead to route to — a solo-agent setup
+// keeps today's manual triage), or the squad's leader IS the failing agent
+// itself (reassigning to itself teaches nothing).
+func (h *Handler) maybeRouteToDevLeadOnQAFail(ctx context.Context, issue db.Issue, labelName, userID string) {
+	if !qaFailAutorouteEnabled() {
+		return
+	}
+	if strings.ToLower(strings.TrimSpace(labelName)) != "qa:fail" {
+		return
+	}
+	if !issue.AssigneeType.Valid || issue.AssigneeType.String != "agent" || !issue.AssigneeID.Valid {
+		return // nothing to route from — no failing dev agent to find a lead for
+	}
+	failingAgentID := issue.AssigneeID
+
+	squads, err := h.Queries.ListSquadsByMember(ctx, db.ListSquadsByMemberParams{
+		WorkspaceID: issue.WorkspaceID, MemberType: "agent", MemberID: failingAgentID,
+	})
+	if err != nil || len(squads) == 0 {
+		return // solo agent, no squad -> no lead to route to; today's manual flow stands
+	}
+	leaderID := squads[0].LeaderID
+	if !leaderID.Valid || uuidToString(leaderID) == uuidToString(failingAgentID) {
+		return // the failing agent IS the leader -> reassigning to itself teaches nothing
+	}
+	leader, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
+		ID: leaderID, WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		return
+	}
+
+	summary := "QA failed."
+	if evidence, err := h.Queries.GetLatestQAEvidenceForIssue(ctx, db.GetLatestQAEvidenceForIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+	}); err == nil && strings.TrimSpace(evidence.Summary) != "" {
+		summary = "QA failed: " + strings.TrimSpace(evidence.Summary)
+	}
+
+	if _, err := h.Queries.UpdateIssueAssignee(ctx, db.UpdateIssueAssigneeParams{
+		ID: issue.ID, AssigneeType: pgtype.Text{String: "agent", Valid: true},
+		AssigneeID: leaderID, WorkspaceID: issue.WorkspaceID,
+	}); err != nil {
+		slog.Warn("qa-fail autoroute: reassign failed", "error", err, "issue_id", uuidToString(issue.ID))
+		return
+	}
+	if _, err := h.Queries.UpdateIssueStatus(ctx, db.UpdateIssueStatusParams{
+		ID: issue.ID, Status: "todo", WorkspaceID: issue.WorkspaceID,
+	}); err != nil {
+		slog.Warn("qa-fail autoroute: status reset failed", "error", err, "issue_id", uuidToString(issue.ID))
+	}
+
+	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(leader.Name), uuidToString(leader.ID)) +
+		summary + " Reassigned back to you for triage — re-delegate to a dev agent or fix it yourself, " +
+		"then move this to in_review to re-fire QA."
+	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+		AuthorType: "member", AuthorID: parseUUID(userID),
+		Content: content, Type: "comment", ParentID: pgtype.UUID{Valid: false},
+	})
+	if err != nil {
+		slog.Warn("qa-fail autoroute: create comment failed", "error", err, "issue_id", uuidToString(issue.ID))
+		return
+	}
+	h.triggerTasksForComment(ctx, issue, comment, nil, "member", userID, nil)
+	slog.Info("qa-fail autoroute: reassigned to squad lead",
+		"issue_id", uuidToString(issue.ID),
+		"failing_agent_id", uuidToString(failingAgentID),
+		"lead_agent_id", uuidToString(leaderID))
+}
+
 // qaSquadLeader resolves the QA squad's leader agent for a workspace — the squad
 // whose name contains "qa" (case-insensitive), e.g. "QA" / "QA Squad". The leader
 // agent is what runs an auto-fired run_qa. ok=false when there is no QA squad, it

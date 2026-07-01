@@ -469,6 +469,175 @@ func TestMaybeAutoDocsOnLabelGating(t *testing.T) {
 	})
 }
 
+// qaFailAutorouteFixture creates a runtime + two agents (a failing dev and a
+// squad leader). withSquad puts the dev in a squad led by the leader agent —
+// the minimal setup maybeRouteToDevLeadOnQAFail needs to find a lead.
+func qaFailAutorouteFixture(t *testing.T, ctx context.Context, withSquad bool) (devAgentID, leaderAgentID string) {
+	t.Helper()
+	runtimeID := createClaimReclaimRuntime(t, ctx, "qa-fail-autoroute runtime")
+
+	insertAgent := func(name string) string {
+		var id string
+		if err := testPool.QueryRow(ctx, `
+			INSERT INTO agent (workspace_id, name, description, runtime_mode, runtime_config, runtime_id, visibility, max_concurrent_tasks, owner_id)
+			VALUES ($1, $2, '', 'cloud', '{}'::jsonb, $3, 'private', 1, $4)
+			RETURNING id
+		`, testWorkspaceID, name, runtimeID, testUserID).Scan(&id); err != nil {
+			t.Fatalf("setup: create agent %s: %v", name, err)
+		}
+		t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM agent WHERE id = $1`, id) })
+		return id
+	}
+	devAgentID = insertAgent("qa-fail-autoroute dev " + time.Now().Format(time.RFC3339Nano))
+	leaderAgentID = insertAgent("qa-fail-autoroute lead " + time.Now().Format(time.RFC3339Nano))
+
+	if !withSquad {
+		return devAgentID, leaderAgentID
+	}
+
+	var squadID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO squad (workspace_id, name, description, leader_id, creator_id)
+		VALUES ($1, 'qa-fail-autoroute squad', '', $2, $3)
+		RETURNING id
+	`, testWorkspaceID, leaderAgentID, testUserID).Scan(&squadID); err != nil {
+		t.Fatalf("setup: create squad: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM squad WHERE id = $1`, squadID) })
+
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO squad_member (squad_id, member_type, member_id, role)
+		VALUES ($1, 'agent', $2, 'member')
+	`, squadID, devAgentID); err != nil {
+		t.Fatalf("setup: add dev to squad: %v", err)
+	}
+	return devAgentID, leaderAgentID
+}
+
+// TestMaybeRouteToDevLeadOnQAFail_ReassignsToSquadLeader is the happy path:
+// a squad-member dev's issue gains qa:fail -> the issue moves to the squad
+// LEADER (not the dev, not a random member), status resets to "todo" so the
+// leader's claim fires the normal dispatch path, and a comment mentioning
+// the leader carries the QA verdict — the actual QA<->dev communication.
+func TestMaybeRouteToDevLeadOnQAFail_ReassignsToSquadLeader(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	t.Setenv("AGORA_QA_FAIL_AUTOROUTE_ENABLED", "true")
+
+	devAgentID, leaderAgentID := qaFailAutorouteFixture(t, ctx, true)
+	issueID := sliceActionTestIssue(t, "agent", devAgentID)
+
+	// A captured verdict so the routing comment has something to quote —
+	// mirrors what a real run_qa failure leaves behind.
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO qa_evidence (workspace_id, issue_id, baseline_ref, branch_sha, verdict, summary, result_json)
+		VALUES ($1, $2, '', '', 'fail', 'the new endpoint returns 500', '{}'::jsonb)
+	`, testWorkspaceID, issueID); err != nil {
+		t.Fatalf("setup: insert qa_evidence: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM qa_evidence WHERE issue_id = $1`, issueID) })
+
+	issue, err := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+	if err != nil {
+		t.Fatalf("load issue: %v", err)
+	}
+
+	testHandler.maybeRouteToDevLeadOnQAFail(ctx, issue, "qa:fail", testUserID)
+
+	updated, err := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+	if err != nil {
+		t.Fatalf("reload issue: %v", err)
+	}
+	if !updated.AssigneeID.Valid || uuidToString(updated.AssigneeID) != leaderAgentID {
+		t.Errorf("assignee_id = %v, want leader %s (not the failing dev %s)", updated.AssigneeID, leaderAgentID, devAgentID)
+	}
+	if updated.AssigneeType.String != "agent" {
+		t.Errorf("assignee_type = %q, want agent", updated.AssigneeType.String)
+	}
+	if updated.Status != "todo" {
+		t.Errorf("status = %q, want todo (back on the dev board for the leader's claim to fire)", updated.Status)
+	}
+
+	var commentContent string
+	if err := testPool.QueryRow(ctx, `
+		SELECT content FROM comment WHERE issue_id = $1 ORDER BY created_at DESC LIMIT 1
+	`, issueID).Scan(&commentContent); err != nil {
+		t.Fatalf("load routing comment: %v", err)
+	}
+	if !strings.Contains(commentContent, "mention://agent/"+leaderAgentID) {
+		t.Errorf("routing comment does not @-mention the leader: %q", commentContent)
+	}
+	if !strings.Contains(commentContent, "the new endpoint returns 500") {
+		t.Errorf("routing comment does not carry the QA verdict summary: %q", commentContent)
+	}
+}
+
+// TestMaybeRouteToDevLeadOnQAFail_Gating covers every no-op path: disabled,
+// wrong label, no squad (solo agent — today's manual triage stands), and the
+// failing agent IS the leader (reassigning to itself teaches nothing).
+func TestMaybeRouteToDevLeadOnQAFail_Gating(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+
+	reassigned := func(issueID string) bool {
+		issue, err := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+		if err != nil {
+			t.Fatalf("load issue: %v", err)
+		}
+		return issue.Status == "todo"
+	}
+
+	t.Run("disabled_noop", func(t *testing.T) {
+		t.Setenv("AGORA_QA_FAIL_AUTOROUTE_ENABLED", "")
+		devAgentID, _ := qaFailAutorouteFixture(t, ctx, true)
+		issueID := sliceActionTestIssue(t, "agent", devAgentID)
+		issue, _ := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+		testHandler.maybeRouteToDevLeadOnQAFail(ctx, issue, "qa:fail", testUserID)
+		if reassigned(issueID) {
+			t.Error("disabled must not reassign")
+		}
+	})
+
+	t.Run("wrong_label_noop", func(t *testing.T) {
+		t.Setenv("AGORA_QA_FAIL_AUTOROUTE_ENABLED", "true")
+		devAgentID, _ := qaFailAutorouteFixture(t, ctx, true)
+		issueID := sliceActionTestIssue(t, "agent", devAgentID)
+		issue, _ := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+		testHandler.maybeRouteToDevLeadOnQAFail(ctx, issue, "qa:pass", testUserID)
+		if reassigned(issueID) {
+			t.Error("non-qa:fail label must not reassign")
+		}
+	})
+
+	t.Run("no_squad_noop", func(t *testing.T) {
+		t.Setenv("AGORA_QA_FAIL_AUTOROUTE_ENABLED", "true")
+		devAgentID, _ := qaFailAutorouteFixture(t, ctx, false) // no squad membership
+		issueID := sliceActionTestIssue(t, "agent", devAgentID)
+		issue, _ := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+		testHandler.maybeRouteToDevLeadOnQAFail(ctx, issue, "qa:fail", testUserID)
+		if reassigned(issueID) {
+			t.Error("a solo agent with no squad must not be reassigned (no lead to route to)")
+		}
+	})
+
+	t.Run("failing_agent_is_leader_noop", func(t *testing.T) {
+		t.Setenv("AGORA_QA_FAIL_AUTOROUTE_ENABLED", "true")
+		_, leaderAgentID := qaFailAutorouteFixture(t, ctx, true)
+		// The LEADER itself is assigned (and somehow fails) — reassigning it to
+		// itself would be a no-op that still burns a comment; skip entirely.
+		issueID := sliceActionTestIssue(t, "agent", leaderAgentID)
+		issue, _ := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+		testHandler.maybeRouteToDevLeadOnQAFail(ctx, issue, "qa:fail", testUserID)
+		if reassigned(issueID) {
+			t.Error("the leader failing its own issue must not self-reassign")
+		}
+	})
+}
+
 // TestBuildSliceInstructionAutoDocs covers the auto_docs kind: document a
 // change into a SEPARATE docs repo, open a PR there, never touch product code,
 // never merge — and skip if the change has no doc-worthy surface. Product-neutral.
