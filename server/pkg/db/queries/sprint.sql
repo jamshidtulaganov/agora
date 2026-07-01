@@ -15,6 +15,16 @@ WHERE id = $1 AND workspace_id = $2 RETURNING *;
 -- name: DeleteSprint :exec
 DELETE FROM sprint WHERE id = $1 AND workspace_id = $2;
 
+-- name: DeleteIssuesInSprint :execrows
+-- Delete every issue attached to a sprint (child rows cascade via their FKs).
+-- Used by DeleteSprint so a sprint's tasks go WITH it instead of being orphaned
+-- to the backlog. Tenancy-guarded by workspace_id. Returns the count deleted.
+DELETE FROM issue
+USING issue_to_sprint its
+WHERE its.issue_id = issue.id
+  AND its.sprint_id = $1
+  AND issue.workspace_id = $2;
+
 -- name: MarkSprintCompleted :one
 -- Flip a due sprint to 'completed' after its sprint-end QA has been dispatched,
 -- so ListDueSprints stops matching it on the next scheduler tick (otherwise an

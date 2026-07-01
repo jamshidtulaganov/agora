@@ -55,6 +55,30 @@ func (q *Queries) CreateSprint(ctx context.Context, arg CreateSprintParams) (Spr
 	return i, err
 }
 
+const deleteIssuesInSprint = `-- name: DeleteIssuesInSprint :execrows
+DELETE FROM issue
+USING issue_to_sprint its
+WHERE its.issue_id = issue.id
+  AND its.sprint_id = $1
+  AND issue.workspace_id = $2
+`
+
+type DeleteIssuesInSprintParams struct {
+	SprintID    pgtype.UUID `json:"sprint_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// Delete every issue attached to a sprint (child rows cascade via their FKs).
+// Used by DeleteSprint so a sprint's tasks go WITH it instead of being orphaned
+// to the backlog. Tenancy-guarded by workspace_id. Returns the count deleted.
+func (q *Queries) DeleteIssuesInSprint(ctx context.Context, arg DeleteIssuesInSprintParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteIssuesInSprint, arg.SprintID, arg.WorkspaceID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteSprint = `-- name: DeleteSprint :exec
 DELETE FROM sprint WHERE id = $1 AND workspace_id = $2
 `

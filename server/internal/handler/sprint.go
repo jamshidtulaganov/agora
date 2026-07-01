@@ -454,6 +454,18 @@ func (h *Handler) DeleteSprint(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Delete the sprint's tasks WITH it — a deleted sprint takes its issues,
+	// they are not orphaned to the backlog. Child rows (comments, tasks, labels,
+	// qa_evidence, ...) cascade via their FKs. Runs before the sprint delete so
+	// the issue_to_sprint join is still intact.
+	deleted, derr := h.Queries.DeleteIssuesInSprint(r.Context(), db.DeleteIssuesInSprintParams{
+		SprintID: sprint.ID, WorkspaceID: sprint.WorkspaceID,
+	})
+	if derr != nil {
+		slog.Error("DeleteSprint: delete issues failed", append(logger.RequestAttrs(r), "error", derr)...)
+		writeError(w, http.StatusInternalServerError, "failed to delete sprint")
+		return
+	}
 	if err := h.Queries.DeleteSprint(r.Context(), db.DeleteSprintParams{
 		ID: sprint.ID, WorkspaceID: sprint.WorkspaceID,
 	}); err != nil {
@@ -461,6 +473,7 @@ func (h *Handler) DeleteSprint(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to delete sprint")
 		return
 	}
+	slog.Info("sprint deleted with its tasks", "sprint_id", uuidToString(sprint.ID), "issues_deleted", deleted)
 	h.publish(protocol.EventSprintDeleted, workspaceID, "member", userID, map[string]any{"sprint_id": uuidToString(sprint.ID)})
 	w.WriteHeader(http.StatusNoContent)
 }
