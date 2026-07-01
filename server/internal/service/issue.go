@@ -167,6 +167,14 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 	// WorkspaceID — there is no path from this service to a row in a
 	// foreign workspace.
 	projectID := p.ProjectID
+	// inheritSprintID: a sub-task belongs to the SAME sprint as its parent. The
+	// daemon forces the shared sprint branch only for issues that are IN the
+	// sprint (GetSprintForIssue), so a leader-created child dev task that is NOT
+	// in the sprint silently falls back to a per-task branch + PR. Inheriting the
+	// parent's sprint here is what keeps the whole delegation flow on the one
+	// shared sprint branch. Best-effort: no parent, or parent has no sprint => no
+	// inheritance (zero UUID).
+	var inheritSprintID pgtype.UUID
 	if p.ParentIssueID.Valid {
 		parent, err := qtx.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{
 			ID:          p.ParentIssueID,
@@ -180,6 +188,9 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 		// sub-issue inherits its parent's project unless overridden.
 		if !projectID.Valid {
 			projectID = parent.ProjectID
+		}
+		if sp, serr := qtx.GetSprintForIssue(ctx, p.ParentIssueID); serr == nil && sp.ID.Valid {
+			inheritSprintID = sp.ID
 		}
 	}
 	if projectID.Valid {
@@ -261,6 +272,17 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 	}
 	if err != nil {
 		return IssueCreateResult{}, fmt.Errorf("create issue: %w", err)
+	}
+
+	// A sub-task joins its parent's sprint (see inheritSprintID above) so the
+	// shared-sprint-branch model reaches leader-delegated dev tasks.
+	if inheritSprintID.Valid {
+		if err := qtx.SetIssueSprint(ctx, db.SetIssueSprintParams{
+			IssueID:  issue.ID,
+			SprintID: inheritSprintID,
+		}); err != nil {
+			return IssueCreateResult{}, fmt.Errorf("inherit parent sprint: %w", err)
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
