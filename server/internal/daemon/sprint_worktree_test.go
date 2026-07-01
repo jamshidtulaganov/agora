@@ -179,3 +179,55 @@ func TestEnsureSprintBranch_ConflictAbortsNonDestructively(t *testing.T) {
 		t.Fatalf("expected a conflict warning in the log, got: %s", logBuf.String())
 	}
 }
+
+// TestEnsureSprintBranch_OverridesForkBranch is the SD-342 regression guard: on
+// a FRESH task workdir the agent's first `agora repo checkout` runs
+// repocache.CreateWorktree, which puts HEAD on a per-agent fork branch
+// (agent/<name>/<taskid>). The /repo/checkout handler then calls
+// ensureSprintBranch, which must SUPERSEDE that fork branch — re-pointing the
+// worktree onto the shared sprint alias tracking origin/<sprintBranch> — and
+// carry this task's own commit forward, so a sprint dev's work lands on the
+// team's shared branch instead of stranded on a personal branch.
+func TestEnsureSprintBranch_OverridesForkBranch(t *testing.T) {
+	t.Setenv("GIT_AUTHOR_NAME", "test")
+	t.Setenv("GIT_AUTHOR_EMAIL", "test@test.com")
+	t.Setenv("GIT_COMMITTER_NAME", "test")
+	t.Setenv("GIT_COMMITTER_EMAIL", "test@test.com")
+
+	bare, branch := setupSprintRemote(t)
+	d := &Daemon{}
+	log := slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))
+
+	wd, repo := cloneWorktree(t, bare, "fork-task")
+	// Faithful first-touch sequence: repocache.CreateWorktree puts HEAD on a
+	// per-agent fork branch (agent/<name>/<taskid>) at the shared tip — the
+	// SD-342 failure shape — BEFORE the agent has done any work.
+	sprintGit(t, repo, "checkout", "-b", "agent/stress-dev-1/e6b88a8d", "origin/sprint-x")
+
+	// The /repo/checkout handler then runs ensureSprintBranch, synchronously,
+	// before returning to the agent — so it must supersede the fork branch here,
+	// while the agent still hasn't committed anything.
+	d.ensureSprintBranch(wd, branch, "e6b88a8d", log)
+
+	if got := sprintHead(t, repo); got != "sprint-wt-e6b88a8d" {
+		t.Fatalf("HEAD = %q, want sprint-wt-e6b88a8d — fork branch was not superseded (SD-342 regression)", got)
+	}
+	if up := sprintGit(t, repo, "rev-parse", "--abbrev-ref", "sprint-wt-e6b88a8d@{upstream}"); up != "origin/sprint-x" {
+		t.Fatalf("upstream = %q, want origin/sprint-x — commits/pushes would not target the shared branch", up)
+	}
+
+	// NOW the agent does its work + commits — it must land on the shared alias,
+	// and a push must target the shared branch (not the abandoned fork branch).
+	sprintWrite(t, repo, "feature.txt", "dev work\n")
+	sprintGit(t, repo, "add", ".")
+	sprintGit(t, repo, "commit", "-m", "dev: add feature.txt")
+	sprintGit(t, repo, "push", "origin", "HEAD:"+branch)
+
+	// A fresh clone of the shared branch must now carry this task's commit —
+	// proving the work reached the team's branch, not a personal island.
+	_, verify := cloneWorktree(t, bare, "verify")
+	sprintGit(t, verify, "checkout", "-B", "sprint-x", "origin/sprint-x")
+	if !sprintHas(t, verify, "feature.txt") {
+		t.Fatal("shared branch missing feature.txt — the dev's commit never reached the team branch (SD-342 regression)")
+	}
+}

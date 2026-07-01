@@ -2948,6 +2948,13 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		"AGORA_TASK_ID":      task.ID,
 		"AGORA_TASK_SLOT":    strconv.Itoa(slot),
 	}
+	// Sprint-worktree: hand the agent's `agora repo checkout` the shared sprint
+	// branch so the FIRST checkout (on a fresh workdir, before ensureSprintBranch
+	// at runTask has any repo to act on) lands the worktree on the shared branch
+	// instead of a per-agent fork branch. See the /repo/checkout handler.
+	if task.SprintBranch != "" {
+		agentEnv["AGORA_SPRINT_BRANCH"] = task.SprintBranch
+	}
 	if task.AutopilotRunID != "" {
 		agentEnv["AGORA_AUTOPILOT_RUN_ID"] = task.AutopilotRunID
 	}

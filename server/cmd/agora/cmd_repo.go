@@ -342,6 +342,9 @@ func runRepoCheckout(cmd *cobra.Command, args []string) error {
 	workspaceID := os.Getenv("AGORA_WORKSPACE_ID")
 	agentName := os.Getenv("AGORA_AGENT_NAME")
 	taskID := os.Getenv("AGORA_TASK_ID")
+	// Set by the daemon only for sprint tasks — the shared sprint branch the
+	// worktree should track instead of a per-agent fork branch.
+	sprintBranch := os.Getenv("AGORA_SPRINT_BRANCH")
 
 	// Use current working directory as the checkout target.
 	workDir, err := os.Getwd()
@@ -350,12 +353,13 @@ func runRepoCheckout(cmd *cobra.Command, args []string) error {
 	}
 
 	reqBody := map[string]string{
-		"url":          repoURL,
-		"workspace_id": workspaceID,
-		"workdir":      workDir,
-		"ref":          repoCheckoutRef,
-		"agent_name":   agentName,
-		"task_id":      taskID,
+		"url":           repoURL,
+		"workspace_id":  workspaceID,
+		"workdir":       workDir,
+		"ref":           repoCheckoutRef,
+		"agent_name":    agentName,
+		"task_id":       taskID,
+		"sprint_branch": sprintBranch,
 	}
 
 	data, err := json.Marshal(reqBody)

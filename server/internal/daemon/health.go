@@ -68,12 +68,13 @@ func (d *Daemon) listenHealth() (net.Listener, error) {
 
 // repoCheckoutRequest is the body of a POST /repo/checkout request.
 type repoCheckoutRequest struct {
-	URL         string `json:"url"`
-	WorkspaceID string `json:"workspace_id"`
-	WorkDir     string `json:"workdir"`
-	Ref         string `json:"ref,omitempty"`
-	AgentName   string `json:"agent_name"`
-	TaskID      string `json:"task_id"`
+	URL          string `json:"url"`
+	WorkspaceID  string `json:"workspace_id"`
+	WorkDir      string `json:"workdir"`
+	Ref          string `json:"ref,omitempty"`
+	AgentName    string `json:"agent_name"`
+	TaskID       string `json:"task_id"`
+	SprintBranch string `json:"sprint_branch,omitempty"`
 }
 
 // healthHandler returns the /health HTTP handler. Extracted from serveHealth
@@ -206,6 +207,26 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 			d.logger.Error("repo checkout failed", "url", req.URL, "error", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+
+		// Sprint-worktree: the worktree CreateWorktree just made is on a
+		// per-agent fork branch (agent/<name>/<taskid>). For a sprint task,
+		// re-point it onto the SHARED sprint branch so every dev's commits and
+		// pushes target the team's one branch. This is the first-touch mirror of
+		// the reused-workdir path (runTask → ensureSprintBranch): on a fresh
+		// workdir that call no-ops because no repo exists yet at task start, so
+		// the actual first checkout — here — must apply it. ensureSprintBranch is
+		// idempotent and only re-points when origin/<branch> exists (prod-safe).
+		if req.SprintBranch != "" {
+			d.ensureSprintBranch(req.WorkDir, req.SprintBranch, shortID(req.TaskID), d.logger)
+			// Report the shared-branch alias the worktree now sits on, not the
+			// abandoned fork branch, so the agent's checkout output is accurate.
+			for _, repo := range gitReposUnder(req.WorkDir) {
+				if b := strings.TrimSpace(runGit(repo, "rev-parse", "--abbrev-ref", "HEAD")); b != "" {
+					result.BranchName = b
+					break
+				}
+			}
 		}
 
 		w.Header().Set("Content-Type", "application/json")
