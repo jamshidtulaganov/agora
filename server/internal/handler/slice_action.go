@@ -690,15 +690,46 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	if !autoQAEnabled() {
 		return
 	}
-	// Fan across the WHOLE QA roster (not just the leader) + pick the least-busy
-	// ready agent, so many in_review issues run QA concurrently instead of queuing
-	// behind one agent. The per-box sync lock keeps concurrent runs on the shared
-	// sprint branch safe.
-	agents := h.qaSquadAgents(ctx, issue.WorkspaceID)
-	if len(agents) == 0 {
-		return
+
+	// Orchestrator-to-orchestrator (product rule: "the QA lead and dev lead must
+	// always be in communication"): when the DEV side is squad-managed — the
+	// issue is assigned straight to a squad, or to an agent who belongs to
+	// one — route QA to the QA squad's LEADER specifically, not a load-balanced
+	// roster pick, so the two leads are always the ones talking to each other on
+	// orchestrator-managed work. qaSquadLeader already existed for exactly this
+	// (previously unused in production — see its own unit test). Solo-agent /
+	// non-squad assignments are UNCHANGED below: they still fan across the whole
+	// QA roster so many in_review issues run QA concurrently instead of queuing
+	// behind one agent — this branch never touches that path.
+	var runner db.Agent
+	var agents []db.Agent
+	devOrchestrated := false
+	if issue.AssigneeType.Valid && issue.AssigneeType.String == "agent" && issue.AssigneeID.Valid {
+		if squads, err := h.Queries.ListSquadsByMember(ctx, db.ListSquadsByMemberParams{
+			WorkspaceID: issue.WorkspaceID, MemberType: "agent", MemberID: issue.AssigneeID,
+		}); err == nil && len(squads) > 0 {
+			devOrchestrated = true
+		}
+	} else if issue.AssigneeType.Valid && issue.AssigneeType.String == "squad" {
+		devOrchestrated = true
 	}
-	runner := h.pickLeastBusyQAAgent(ctx, agents)
+	if devOrchestrated {
+		if leader, ok := h.qaSquadLeader(ctx, issue.WorkspaceID); ok {
+			runner = leader
+			agents = []db.Agent{leader}
+		}
+	}
+	if runner.ID == (pgtype.UUID{}) {
+		// Fan across the WHOLE QA roster (not just the leader) + pick the least-busy
+		// ready agent, so many in_review issues run QA concurrently instead of queuing
+		// behind one agent. The per-box sync lock keeps concurrent runs on the shared
+		// sprint branch safe.
+		agents = h.qaSquadAgents(ctx, issue.WorkspaceID)
+		if len(agents) == 0 {
+			return
+		}
+		runner = h.pickLeastBusyQAAgent(ctx, agents)
+	}
 
 	// Shared-sprint-branch model: when the issue belongs to a sprint, QA runs on
 	// the SPRINT branch (the integrated tip), not an isolated per-task branch.

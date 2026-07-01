@@ -1,6 +1,6 @@
 ---
 name: agora-squads
-description: "Use when creating, inspecting, updating, assigning, mentioning, or debugging Agora squads. Explains what squads are, squad/member fields, CLI commands, leader routing, issue assignment, comments, mentions, autopilot behavior, leader briefing, side effects, and product-gap handling."
+description: "Use when creating, inspecting, updating, assigning, mentioning, or debugging Agora squads. Explains what squads are, squad/member fields, CLI commands, leader routing, issue assignment, comments, mentions, autopilot behavior, leader briefing, the QA-lead/dev-lead orchestrator pattern (sibling leads, dynamic subagent creation, model selection), side effects, and product-gap handling."
 user-invocable: false
 allowed-tools: Bash(agora *)
 ---
@@ -177,6 +177,92 @@ Current behavior: resolve the squad, read `leader_id`, enqueue a leader task,
 and use the current comment as the trigger comment. It does not enqueue every
 squad member.
 
+## QA squad leader routing
+
+The auto-QA trigger (`in_review`) and the QA-fail auto-reassignment both prefer
+squad LEADERS over individual agents when the work is squad-orchestrated —
+this is the "dev lead and QA lead are always in communication" product rule,
+not a general squad behavior. Two separate mechanisms:
+
+- **`in_review` → auto `run_qa`.** If the issue's assignee is a squad, or an
+  agent who belongs to any squad, the trigger routes to the QA squad's LEADER
+  specifically (matched by squad name containing "qa", case-insensitive) —
+  not the least-busy pick from the whole QA roster. Solo-agent / non-squad
+  assignments are unchanged: they still fan across the whole QA roster so
+  many `in_review` issues run concurrently.
+- **`qa:fail` label → auto-reassignment.** The issue is handed back to the
+  FAILING dev agent's squad leader (not the failing agent itself, not a
+  human), status resets to `todo`, and a comment carrying the QA verdict
+  summary is posted with an `@leader` mention — that comment IS the QA↔dev
+  communication; it lands in the issue's one shared timeline so both the
+  dev-facing Issue Detail and the QA review page read the same story.
+
+Both are opt-in behind env gates (`AGORA_AUTO_QA_ENABLED`,
+`AGORA_QA_FAIL_AUTOROUTE_ENABLED`) and both degrade silently to today's
+manual/load-balanced behavior when there's no squad on one side — e.g. a
+solo dev agent with no squad keeps the old flow; a squad dev with no QA
+squad in the workspace falls through to the generic roster pick.
+
+## Lead Orchestrator pattern
+
+A squad leader is not just a routing target — when a squad is used as the
+dev/QA pairing for a body of work, its leader is expected to act as an
+**orchestrator**: it personally decides which agent handles a task, which
+skills and MCP servers that agent needs, and which model fits the task's
+difficulty, and it can create or archive its own subagents to do that. This
+section is product guidance for briefing a leader this way; it does not
+change squad's routing mechanics above (routing to `leader_id` only).
+
+**Dev lead and QA lead are siblings, not a hierarchy.** Structure work as two
+squads per unit of work — one dev squad, one QA squad — each with its own
+leader. Neither leader is subordinate to the other. The main rule: **the two
+leads must always be in communication.** In practice this means every
+handoff between dev and QA happens through an `@mention` comment on the
+shared issue (see *QA squad leader routing* above for the two automated
+paths) — never a silent status change with no comment, on either side. If a
+leader needs to hand work to its counterpart for a reason the automation
+doesn't already cover, it should mention the other squad
+(`[@Squad Name](mention://squad/<squad-id>)`) directly rather than escalate
+to a human.
+
+**Every task goes to an orchestrator, not a bare agent.** When wiring up a
+squad-based workflow, assign issues with `assignee_type="squad"` (routes to
+`leader_id`) rather than `assignee_type="agent"` pointed at an individual —
+even if today only one agent exists to do the work. This keeps the leader in
+the loop on every task by construction, so it can decide delegation instead
+of being bypassed.
+
+**Leaders create and archive their own subagents at runtime.** A running
+agent's task-token authenticates the same `agora agent` CLI a human uses —
+there is no separate "leader" capability tier. A leader can:
+
+```bash
+agora agent create --name <name> --runtime-id <runtime-id> \
+  --description "<catalog summary>" --instructions "<runtime contract>" \
+  --model <model> --output json
+agora agent skills set <agent-id> --skill-ids <id1>,<id2> --output json
+agora squad member add <squad-id> --member-id <new-agent-id> --type agent --role <role> --output json
+agora agent update <agent-id> --archived true    # retire a subagent once its task is done
+```
+
+See `agora-creating-agents` for the full field contract (what's validated,
+what the daemon actually reads, env/secret handling). A leader choosing to
+spin up a subagent should: pick skills via `agent skills set` (workspace
+skills bound explicitly — creation does not bind any), pick an MCP config via
+`--mcp-config-*` if the task needs external tools, add the new agent to its
+own squad as a member so it's covered by the same routing/roster, and archive
+it when the task is done rather than leaving idle agents around.
+
+**Model/difficulty selection is currently a leader judgment call, not full
+automation.** `applyIssueCostTier` (`server/internal/handler/daemon.go`)
+already downgrades the model automatically for two label tiers —
+`tier:trivial` → haiku, `tier:light` → sonnet — and leaves everything else at
+the agent's configured default. That covers only the cheap end. For anything
+above `tier:light`, or for a subagent the leader is creating fresh, the
+leader must choose `--model` itself based on the task's actual difficulty
+(e.g. a mechanical rename vs. a cross-service architecture change) — don't
+assume the platform picks the right tier beyond those two labels.
+
 ## Autopilot behavior
 
 Autopilots can be assigned to squads. For `assignee_type = "squad"`:
@@ -240,6 +326,14 @@ authorizes them.
 - `description` is not proven runtime prompt content.
 - `role` is roster context, not automatic scheduling.
 - Backlog assignment does not immediately start work.
+- QA auto-trigger prefers the QA squad leader only when the dev side is
+  squad-orchestrated — a solo dev agent still gets the load-balanced roster
+  pick, not the leader.
+- A squad leader is not capability-restricted — its task-token can create,
+  configure, and archive other agents via the same `agora agent` CLI a human
+  uses. Nothing special has to be granted for "leader" behavior.
+- `tier:trivial`/`tier:light` labels are the ONLY automatic model selection.
+  Everything above that is a leader judgment call, not the platform choosing.
 
 ## References
 

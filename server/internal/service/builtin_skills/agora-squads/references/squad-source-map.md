@@ -205,6 +205,82 @@ Contracts:
   into `enqueueSquadLeaderTask`, which denies the enqueue when the actor cannot
   access the leader (squad.go:1037).
 
+## QA Squad Leader Routing
+
+Source:
+
+```text
+server/internal/handler/slice_action.go   # qaSquadLeader ~597-611, qaSquadAgents ~619-660,
+                                           # pickLeastBusyQAAgent ~666-679,
+                                           # maybeRunQAOnInReview devOrchestrated branch ~704-732,
+                                           # maybeRouteToDevLeadOnQAFail ~525-591,
+                                           # qaFailAutorouteEnabled ~502-503, autoQAEnabled ~402
+server/internal/handler/label.go          # AttachLabel wires maybeRouteToDevLeadOnQAFail alongside
+                                           # maybeAutoDocsOnLabel
+```
+
+Contracts:
+
+- `maybeRunQAOnInReview` computes `devOrchestrated` before picking a runner:
+  true when the issue's assignee is `agent` and that agent belongs to any
+  squad (`ListSquadsByMember`), or when the assignee is `squad` directly
+  (slice_action.go:706-715);
+- when `devOrchestrated`, the runner is `qaSquadLeader` — the workspace squad
+  whose name contains "qa" (case-insensitive), leader must be non-archived
+  and ready (slice_action.go:597-611, 717-721);
+- when not orchestrated, OR no QA squad/leader exists, falls back to the
+  pre-existing load-balanced pick across `qaSquadAgents` (leader + agent
+  members, each ready) via `pickLeastBusyQAAgent` — fewest in-flight tasks
+  wins (slice_action.go:619-680, 722-732);
+- `maybeRouteToDevLeadOnQAFail` fires from `AttachLabel` only for label name
+  `qa:fail` (case-insensitive) and only when the issue's current assignee is
+  a solo `agent` (slice_action.go:529-534);
+- it resolves the failing agent's squad via `ListSquadsByMember`, no-ops if
+  the agent is in no squad or if the squad's leader IS the failing agent
+  itself (slice_action.go:537-546);
+- reassigns via `UpdateIssueAssignee` to the leader, resets status to `todo`
+  via `UpdateIssueStatus`, then posts an `@leader` mention comment carrying
+  the latest QA evidence summary and re-triggers tasks for that comment
+  (slice_action.go:561-586);
+- both paths are opt-in: `AGORA_AUTO_QA_ENABLED` (autoQAEnabled,
+  slice_action.go:402) gates `maybeRunQAOnInReview`;
+  `AGORA_QA_FAIL_AUTOROUTE_ENABLED` (qaFailAutorouteEnabled,
+  slice_action.go:502-503) gates the fail-autoroute.
+
+## Lead Orchestrator / Dynamic Subagent Management
+
+Source:
+
+```text
+server/internal/handler/agent.go          # CreateAgent, UpdateAgent, skills set/add handlers
+server/internal/handler/daemon.go         # applyIssueCostTier ~1121 (tier:trivial -> haiku,
+                                           # tier:light -> sonnet, else unchanged)
+server/internal/service/builtin_skills/agora-creating-agents/SKILL.md
+```
+
+Contracts:
+
+- an agent's own `mat_` task token authenticates the same `agora agent`
+  CLI/API surface a human member uses: the auth middleware sets `X-User-ID`
+  from the token's bound `UserID` for agent traffic exactly like it does for
+  human sessions (auth middleware, `mat_` branch), so `requireUserID` +
+  `workspaceMember` resolve normally — there is no actor-type check in
+  `CreateAgent`/`UpdateAgent`/skills set/add that rejects agent callers;
+- the only gate `CreateAgent` applies is `canUseRuntimeForAgent(member,
+  runtime)` (agent.go:775-778) — a private runtime can only be used by its
+  owner or a workspace admin — and this is the SAME check for every caller,
+  human or agent; it depends on the role of the member the task token
+  resolves to, not on actor type;
+- `agent env get`/`set` are the one endpoint pair with an explicit
+  actor-type deny (owner/admin-only, agent actors rejected regardless of
+  role) per `agora-creating-agents/SKILL.md` — create/update/skills have no
+  equivalent deny;
+- `applyIssueCostTier` is the ONLY automatic model/thinking-level selection
+  in the codebase today, and it only fires for two label values
+  (daemon.go:1121); every other model choice — including a leader picking a
+  model for a subagent it just created — is a manual `--model` flag, not
+  platform-driven.
+
 ## Tests
 
 Relevant test groups:

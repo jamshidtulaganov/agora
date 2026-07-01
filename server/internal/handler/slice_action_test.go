@@ -341,6 +341,200 @@ func TestMaybeRunQAOnInReviewDisabled(t *testing.T) {
 	}
 }
 
+// leadOrchestratorTestFixture creates a runtime + a QA squad (leader
+// qaLeaderID) + a dev squad (leader devLeaderID, one member devMemberID) —
+// the minimal orchestrator-pair setup for the leader-to-leader routing tests.
+func leadOrchestratorTestFixture(t *testing.T, ctx context.Context, name string) (qaLeaderID, devLeaderID, devMemberID string) {
+	t.Helper()
+	runtimeID := createClaimReclaimRuntime(t, ctx, name+" runtime")
+
+	insertAgent := func(label string) string {
+		var id string
+		if err := testPool.QueryRow(ctx, `
+			INSERT INTO agent (workspace_id, name, description, runtime_mode, runtime_config, runtime_id, visibility, max_concurrent_tasks, owner_id)
+			VALUES ($1, $2, '', 'cloud', '{}'::jsonb, $3, 'private', 1, $4)
+			RETURNING id
+		`, testWorkspaceID, name+" "+label+" "+time.Now().Format(time.RFC3339Nano), runtimeID, testUserID).Scan(&id); err != nil {
+			t.Fatalf("setup: create agent %s: %v", label, err)
+		}
+		t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM agent WHERE id = $1`, id) })
+		return id
+	}
+	qaLeaderID = insertAgent("qa-lead")
+	devLeaderID = insertAgent("dev-lead")
+	devMemberID = insertAgent("dev-member")
+
+	var qaSquadID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO squad (workspace_id, name, description, leader_id, creator_id)
+		VALUES ($1, $2, '', $3, $4) RETURNING id
+	`, testWorkspaceID, name+" QA Squad", qaLeaderID, testUserID).Scan(&qaSquadID); err != nil {
+		t.Fatalf("setup: create QA squad: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM squad WHERE id = $1`, qaSquadID) })
+
+	var devSquadID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO squad (workspace_id, name, description, leader_id, creator_id)
+		VALUES ($1, $2, '', $3, $4) RETURNING id
+	`, testWorkspaceID, name+" Dev Squad", devLeaderID, testUserID).Scan(&devSquadID); err != nil {
+		t.Fatalf("setup: create dev squad: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM squad WHERE id = $1`, devSquadID) })
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO squad_member (squad_id, member_type, member_id, role) VALUES ($1, 'agent', $2, 'member')
+	`, devSquadID, devMemberID); err != nil {
+		t.Fatalf("setup: add dev member: %v", err)
+	}
+	return qaLeaderID, devLeaderID, devMemberID
+}
+
+// TestMaybeRunQAOnInReview_RoutesToQALeadWhenDevOrchestrated is the
+// leader-to-leader regression guard: when the dev side is squad-managed
+// (assigned to a squad member, or directly to a squad), auto-QA must go
+// straight to the QA squad's LEADER — not a load-balanced roster pick — so
+// the two orchestrators are always the ones talking to each other.
+func TestMaybeRunQAOnInReview_RoutesToQALeadWhenDevOrchestrated(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	t.Setenv("AGORA_AUTO_QA_ENABLED", "true")
+
+	qaLeaderID, _, devMemberID := leadOrchestratorTestFixture(t, ctx, "lead-routing-member")
+	issueID := sliceActionTestIssue(t, "agent", devMemberID)
+	issue, err := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+	if err != nil {
+		t.Fatalf("load issue: %v", err)
+	}
+
+	testHandler.maybeRunQAOnInReview(ctx, issue, "member", testUserID)
+
+	var commentContent string
+	if err := testPool.QueryRow(ctx, `
+		SELECT content FROM comment WHERE issue_id = $1 ORDER BY created_at DESC LIMIT 1
+	`, issueID).Scan(&commentContent); err != nil {
+		t.Fatalf("load auto-QA comment: %v", err)
+	}
+	if !strings.Contains(commentContent, "mention://agent/"+qaLeaderID) {
+		t.Errorf("auto-QA comment does not @-mention the QA lead %s (dev side is squad-managed): %q", qaLeaderID, commentContent)
+	}
+}
+
+// TestMaybeRunQAOnInReview_SquadAssigneeRoutesToQALead covers the other
+// devOrchestrated path: the issue is assigned directly to a squad (not one of
+// its members) — must also route to the QA lead.
+func TestMaybeRunQAOnInReview_SquadAssigneeRoutesToQALead(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	t.Setenv("AGORA_AUTO_QA_ENABLED", "true")
+
+	qaLeaderID, devLeaderID, _ := leadOrchestratorTestFixture(t, ctx, "lead-routing-squad")
+	var devSquadID string
+	if err := testPool.QueryRow(ctx, `SELECT id FROM squad WHERE leader_id = $1`, devLeaderID).Scan(&devSquadID); err != nil {
+		t.Fatalf("find dev squad: %v", err)
+	}
+	issueID := sliceActionTestIssue(t, "squad", devSquadID)
+	issue, err := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+	if err != nil {
+		t.Fatalf("load issue: %v", err)
+	}
+
+	testHandler.maybeRunQAOnInReview(ctx, issue, "member", testUserID)
+
+	var commentContent string
+	if err := testPool.QueryRow(ctx, `
+		SELECT content FROM comment WHERE issue_id = $1 ORDER BY created_at DESC LIMIT 1
+	`, issueID).Scan(&commentContent); err != nil {
+		t.Fatalf("load auto-QA comment: %v", err)
+	}
+	if !strings.Contains(commentContent, "mention://agent/"+qaLeaderID) {
+		t.Errorf("auto-QA comment does not @-mention the QA lead %s (issue assigned to a squad): %q", qaLeaderID, commentContent)
+	}
+}
+
+// TestMaybeRunQAOnInReview_SoloAgentKeepsLoadBalancedRoster is the regression
+// guard for the OTHER direction: a plain solo-agent assignment (no squad on
+// either side) must keep today's roster load-balance — the precedence reorder
+// must not accidentally force EVERY auto-QA through a leader. The QA squad's
+// LEADER is deliberately made busier (one running task) than a non-leader
+// member (zero) — if the reorder incorrectly treated this issue as
+// dev-orchestrated, the comment would mention the leader regardless of load;
+// picking the genuinely-idle non-leader member proves pickLeastBusyQAAgent's
+// existing logic actually ran, not just that "a QA agent" got mentioned.
+func TestMaybeRunQAOnInReview_SoloAgentKeepsLoadBalancedRoster(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	t.Setenv("AGORA_AUTO_QA_ENABLED", "true")
+
+	runtimeID := createClaimReclaimRuntime(t, ctx, "solo-roster runtime")
+	insertAgent := func(label string) string {
+		var id string
+		if err := testPool.QueryRow(ctx, `
+			INSERT INTO agent (workspace_id, name, description, runtime_mode, runtime_config, runtime_id, visibility, max_concurrent_tasks, owner_id)
+			VALUES ($1, $2, '', 'cloud', '{}'::jsonb, $3, 'private', 1, $4)
+			RETURNING id
+		`, testWorkspaceID, "solo-roster "+label+" "+time.Now().Format(time.RFC3339Nano), runtimeID, testUserID).Scan(&id); err != nil {
+			t.Fatalf("setup: create agent %s: %v", label, err)
+		}
+		t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM agent WHERE id = $1`, id) })
+		return id
+	}
+	leaderID := insertAgent("qa-leader")
+	idleMemberID := insertAgent("qa-idle-member")
+
+	var qaSquadID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO squad (workspace_id, name, description, leader_id, creator_id)
+		VALUES ($1, 'Solo Roster QA Squad', '', $2, $3) RETURNING id
+	`, testWorkspaceID, leaderID, testUserID).Scan(&qaSquadID); err != nil {
+		t.Fatalf("create QA squad: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM squad WHERE id=$1`, qaSquadID) })
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO squad_member (squad_id, member_type, member_id, role) VALUES ($1, 'agent', $2, 'member')
+	`, qaSquadID, idleMemberID); err != nil {
+		t.Fatalf("add idle member: %v", err)
+	}
+
+	// Bias the leader busier than the idle member: one running task for the
+	// leader, none for the member.
+	busyIssueID := sliceActionTestIssue(t, "", "")
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority, dispatched_at, started_at)
+		VALUES ($1, $2, $3, 'running', 0, now(), now())
+	`, leaderID, runtimeID, busyIssueID); err != nil {
+		t.Fatalf("bias leader running task: %v", err)
+	}
+
+	// A plain solo dev agent — no squad membership anywhere.
+	solo, _, _ := privateAgentTestFixture(t)
+	issueID := sliceActionTestIssue(t, "agent", solo)
+	issue, err := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+	if err != nil {
+		t.Fatalf("load issue: %v", err)
+	}
+
+	testHandler.maybeRunQAOnInReview(ctx, issue, "member", testUserID)
+
+	var commentContent string
+	if err := testPool.QueryRow(ctx, `
+		SELECT content FROM comment WHERE issue_id = $1 ORDER BY created_at DESC LIMIT 1
+	`, issueID).Scan(&commentContent); err != nil {
+		t.Fatalf("load auto-QA comment: %v", err)
+	}
+	if !strings.Contains(commentContent, "mention://agent/"+idleMemberID) {
+		t.Errorf("auto-QA comment should mention the idle non-leader member %s (existing load-balance), got: %q", idleMemberID, commentContent)
+	}
+	if strings.Contains(commentContent, "mention://agent/"+leaderID) {
+		t.Errorf("auto-QA comment must NOT mention the busier leader %s when dev side is a solo agent: %q", leaderID, commentContent)
+	}
+}
+
 // TestBuildSliceInstructionRunCI covers the run_ci kind: a deterministic gate on
 // an existing PR branch (no new PR). It must run the checks and report by exit
 // code, set the ci:pass/ci:fail label, reference branch resolution + the no-merge
