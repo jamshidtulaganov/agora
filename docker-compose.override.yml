@@ -66,6 +66,11 @@ services:
       # Sprint-worktree: N tasks share one sprint git branch instead of forking
       # per-task branches. Opt-in, default off — see docs/sprint-worktree-design.md.
       AGORA_SPRINT_WORKTREE_ENABLED: ${AGORA_SPRINT_WORKTREE_ENABLED:-}
+      # Branch names a sprint may NOT use as its integration branch (comma list).
+      # "billing" is SalesDoctor's PROD branch; a sprint pointed at it would make
+      # agents commit onto + QA deploy production. master/main/production/prod are
+      # always rejected as a backstop even when this is empty.
+      AGORA_PROTECTED_SPRINT_BRANCHES: ${AGORA_PROTECTED_SPRINT_BRANCHES:-billing}
       # QA host: the shared parent server per-developer QA boxes are carved out of
       # as wildcard subdomains (<handle>.<base-domain>). The provisioner reuses
       # the remote-boxes SSH key + git token above; the DB clone uses the box's

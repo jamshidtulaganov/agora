@@ -42,6 +42,13 @@ primary_region = "fra"
   BITRIX_SYNC_WORKSPACE_SLUG = "sd-main"
   BITRIX_GROUP_MAP = "153:sd-main"
 
+  # A sprint's integration branch may never be one of these. "billing" is
+  # SalesDoctor's PROD branch — a sprint pointed at it would make agents commit
+  # onto, and QA deploy, production. Sprints get a dedicated branch cut off prod;
+  # a human merges it back at sprint end. master/main/production/prod are always
+  # rejected as a backstop even without this list.
+  AGORA_PROTECTED_SPRINT_BRANCHES = "billing"
+
   # Email via Gmail SMTP relay. Password is a fly secret.
   SMTP_HOST = "smtp.gmail.com"
   SMTP_PORT = "587"

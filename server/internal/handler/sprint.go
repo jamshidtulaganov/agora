@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -31,11 +32,42 @@ type SprintResponse struct {
 	Status      string  `json:"status"`
 	StartDate   *string `json:"start_date"`
 	EndDate     *string `json:"end_date"`
-	// Branch is the sprint's shared integration branch QA deploys + smokes (e.g.
-	// "billing"). Empty = the code falls back to the sprint/<id> convention.
+	// Branch is the sprint's OWN dedicated integration branch — cut off the prod
+	// branch, worked by the sprint's agents, and merged back to prod by a human
+	// at sprint end. It must NOT be a protected/prod branch (see
+	// sprintBranchRejected). Empty = the code falls back to the sprint/<id>
+	// convention.
 	Branch    string `json:"branch"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
+}
+
+// protectedSprintBranches is the set of branch names a sprint may NOT use as
+// its integration branch — the production / long-lived branches sprint work
+// must never target directly (agents would commit onto, and QA would deploy,
+// the prod branch). Sprints get their OWN dedicated branch cut off the prod
+// branch; a human merges that sprint branch back into prod at sprint end.
+// Configured via AGORA_PROTECTED_SPRINT_BRANCHES (comma-separated, e.g.
+// "billing"); the common prod names are always included as a backstop.
+func protectedSprintBranches() map[string]bool {
+	set := map[string]bool{"master": true, "main": true, "production": true, "prod": true}
+	for _, b := range strings.Split(os.Getenv("AGORA_PROTECTED_SPRINT_BRANCHES"), ",") {
+		if b = strings.ToLower(strings.TrimSpace(b)); b != "" {
+			set[b] = true
+		}
+	}
+	return set
+}
+
+// sprintBranchRejected reports whether `branch` is a protected prod branch that
+// must not be set as a sprint's integration branch. Case-insensitive; empty is
+// allowed (falls back to the sprint/<id> convention).
+func sprintBranchRejected(branch string) bool {
+	b := strings.ToLower(strings.TrimSpace(branch))
+	if b == "" {
+		return false
+	}
+	return protectedSprintBranches()[b]
 }
 
 func sprintToResponse(s db.Sprint) SprintResponse {
@@ -225,6 +257,10 @@ func (h *Handler) CreateSprint(w http.ResponseWriter, r *http.Request) {
 	if req.Branch != nil {
 		branch = strings.TrimSpace(*req.Branch)
 	}
+	if sprintBranchRejected(branch) {
+		writeError(w, http.StatusBadRequest, "sprint branch cannot be a protected/production branch ("+branch+") — cut a dedicated sprint branch off it and set that instead")
+		return
+	}
 	sprint, err := h.Queries.CreateSprint(r.Context(), db.CreateSprintParams{
 		WorkspaceID: wsUUID,
 		ProjectID:   projUUID,
@@ -363,6 +399,10 @@ func (h *Handler) UpdateSprint(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Branch != nil {
 		params.Branch = strings.TrimSpace(*req.Branch)
+		if sprintBranchRejected(params.Branch) {
+			writeError(w, http.StatusBadRequest, "sprint branch cannot be a protected/production branch ("+params.Branch+") — cut a dedicated sprint branch off it and set that instead")
+			return
+		}
 	}
 
 	sprint, err := h.Queries.UpdateSprint(r.Context(), params)
