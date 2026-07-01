@@ -25,6 +25,10 @@ services:
       BITRIX_GROUP_MAP: ${BITRIX_GROUP_MAP:-}
       BITRIX_INBOUND_SECRET: ${BITRIX_INBOUND_SECRET:-}
       BITRIX_PUSH_STATUS: ${BITRIX_PUSH_STATUS:-}
+      # Restrict Bitrix member provisioning to a department (Отдел), comma-
+      # separated names — e.g. "SD Разработка". Empty = provision every
+      # responsible (pre-department behaviour).
+      BITRIX_TEAM_DEPARTMENTS: ${BITRIX_TEAM_DEPARTMENTS:-}
       # Zoho Projects importer (Phase 1 one-way import + Phase 2 sync/status)
       ZOHO_PROJECTS_CLIENT_ID: ${ZOHO_PROJECTS_CLIENT_ID:-}
       ZOHO_PROJECTS_CLIENT_SECRET: ${ZOHO_PROJECTS_CLIENT_SECRET:-}
@@ -51,6 +55,9 @@ services:
       # in_review (and auto_docs on qa:pass). Opt-in, default off.
       AGORA_AUTO_QA_ENABLED: ${AGORA_AUTO_QA_ENABLED:-}
       AGORA_AUTO_DOCS_ENABLED: ${AGORA_AUTO_DOCS_ENABLED:-}
+      # Sprint-worktree: N tasks share one sprint git branch instead of forking
+      # per-task branches. Opt-in, default off — see docs/sprint-worktree-design.md.
+      AGORA_SPRINT_WORKTREE_ENABLED: ${AGORA_SPRINT_WORKTREE_ENABLED:-}
       # QA host: the shared parent server per-developer QA boxes are carved out of
       # as wildcard subdomains (<handle>.<base-domain>). The provisioner reuses
       # the remote-boxes SSH key + git token above; the DB clone uses the box's
