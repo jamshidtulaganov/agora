@@ -41,6 +41,18 @@ const (
 	// truly stuck runs (dockerd hang) while leaving headroom for long writes.
 	// Set AGORA_AGENT_IDLE_WATCHDOG=0 to disable.
 	DefaultAgentIdleWatchdog = 30 * time.Minute
+	// DefaultAgentStartupWatchdog is a SHORTER liveness net that applies only
+	// until the backend emits its FIRST message. A healthy provider streams a
+	// first token within seconds; a provider that produces nothing at all is
+	// hung at startup (bad binary, wedged sandbox, unreachable model) and there
+	// is no point waiting the full idle window for it. Without this, a fully
+	// silent backend sits at "running" for the entire AgentIdleWatchdog (30 min)
+	// before the idle net trips — that is exactly what happened to the opencode
+	// runtime in the concurrency stress test (3 tasks each burned 30 min before
+	// failing). Once the first message arrives the normal AgentIdleWatchdog
+	// takes over, so long single-message writes are unaffected. Set
+	// AGORA_AGENT_STARTUP_WATCHDOG=0 to disable.
+	DefaultAgentStartupWatchdog = 5 * time.Minute
 	// DefaultAgentToolWatchdog bounds how long a single tool call may stay in
 	// flight (tool_use emitted, no tool_result and no other message) before the
 	// idle watchdog force-stops the run. The idle watchdog ignores its normal
@@ -98,6 +110,7 @@ type Config struct {
 	AgentTimeout                   time.Duration
 	CodexSemanticInactivityTimeout time.Duration
 	AgentIdleWatchdog              time.Duration // force-stop a run when the backend goes silent this long with an empty queue (0 = disabled)
+	AgentStartupWatchdog           time.Duration // force-stop a run that has emitted NO message yet after this long (0 = disabled); fail-fast for a provider hung at startup
 	AgentToolWatchdog              time.Duration // force-stop a run when a single tool call stays in flight (silent) this long (0 = disabled); backstop for hung tools now that there is no wall-clock cap
 	ClaudeArgs                     []string
 	CodexArgs                      []string
@@ -348,6 +361,13 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		return Config{}, err
 	}
 
+	// AGORA_AGENT_STARTUP_WATCHDOG=0 disables the first-message fail-fast; any
+	// positive duration overrides DefaultAgentStartupWatchdog.
+	agentStartupWatchdog, err := durationFromEnv("AGORA_AGENT_STARTUP_WATCHDOG", DefaultAgentStartupWatchdog)
+	if err != nil {
+		return Config{}, err
+	}
+
 	maxConcurrentTasks, err := intFromEnv("AGORA_DAEMON_MAX_CONCURRENT_TASKS", DefaultMaxConcurrentTasks)
 	if err != nil {
 		return Config{}, err
@@ -496,6 +516,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		AgentTimeout:                   agentTimeout,
 		CodexSemanticInactivityTimeout: codexSemanticInactivityTimeout,
 		AgentIdleWatchdog:              agentIdleWatchdog,
+		AgentStartupWatchdog:           agentStartupWatchdog,
 		AgentToolWatchdog:              agentToolWatchdog,
 		ClaudeArgs:                     claudeArgs,
 		CodexArgs:                      codexArgs,

@@ -3422,6 +3422,11 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 	// message also trips the watchdog.
 	var lastActivityAt atomic.Int64
 	lastActivityAt.Store(time.Now().UnixNano())
+	// sawFirstMessage flips true the moment the backend emits its FIRST message.
+	// Until then the watchdog applies the shorter AgentStartupWatchdog so a
+	// provider that produces nothing at all fails fast instead of burning the
+	// full idle window (see runIdleWatchdog).
+	var sawFirstMessage atomic.Bool
 	// inFlightTools counts tool_use messages that haven't yet been paired
 	// with a matching tool_result. A non-zero count means the agent is
 	// legitimately waiting on a tool (e.g. `npm install`, `docker build`)
@@ -3436,8 +3441,11 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 	var idleWatchdogThreshold atomic.Int64
 	idleWatchdogThreshold.Store(int64(d.cfg.AgentIdleWatchdog))
 	idleWindow := d.cfg.AgentIdleWatchdog
-	if idleWindow > 0 {
-		go d.runIdleWatchdog(agentCtx, idleWindow, d.cfg.AgentToolWatchdog, &lastActivityAt, &inFlightTools, &idleWatchdogFired, &idleWatchdogThreshold, agentCancel, session.Messages, taskLog, taskID)
+	startupWindow := d.cfg.AgentStartupWatchdog
+	// Run the watchdog whenever EITHER net is armed: the startup net can fire
+	// even when the idle net is disabled (idleWindow == 0).
+	if idleWindow > 0 || startupWindow > 0 {
+		go d.runIdleWatchdog(agentCtx, idleWindow, startupWindow, d.cfg.AgentToolWatchdog, &lastActivityAt, &sawFirstMessage, &inFlightTools, &idleWatchdogFired, &idleWatchdogThreshold, agentCancel, session.Messages, taskLog, taskID)
 	}
 
 	go func() {
@@ -3511,6 +3519,9 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 				// slow downstream call (mu.Lock contention, batch resize)
 				// can't be misattributed to backend silence.
 				lastActivityAt.Store(time.Now().UnixNano())
+				// First message seen → hand off from the short startup net to
+				// the normal idle net (long single-message writes are fine).
+				sawFirstMessage.Store(true)
 				switch msg.Type {
 				case agent.MessageStatus:
 					// Persist the session/work_dir as soon as the backend
@@ -3686,13 +3697,19 @@ func idleWatchdogReason(window time.Duration) string {
 // Tick interval is window/2 (floored at 30 s in production, but the floor only
 // kicks in for windows >= 1 min so tests can pass tiny windows like 50 ms and
 // see the watchdog fire within a few ticks).
-func (d *Daemon) runIdleWatchdog(agentCtx context.Context, window, toolWindow time.Duration, lastActivityAt *atomic.Int64, inFlightTools *atomic.Int32, fired *atomic.Bool, firedThreshold *atomic.Int64, cancel context.CancelFunc, messages <-chan agent.Message, taskLog *slog.Logger, taskID string) {
-	interval := window / 2
-	if window >= time.Minute && interval < 30*time.Second {
+func (d *Daemon) runIdleWatchdog(agentCtx context.Context, window, startupWindow, toolWindow time.Duration, lastActivityAt *atomic.Int64, sawFirstMessage *atomic.Bool, inFlightTools *atomic.Int32, fired *atomic.Bool, firedThreshold *atomic.Int64, cancel context.CancelFunc, messages <-chan agent.Message, taskLog *slog.Logger, taskID string) {
+	// Tick fast enough to honour whichever net is armed (the startup net is
+	// usually the shorter of the two).
+	base := window
+	if startupWindow > 0 && (base <= 0 || startupWindow < base) {
+		base = startupWindow
+	}
+	interval := base / 2
+	if base >= time.Minute && interval < 30*time.Second {
 		interval = 30 * time.Second
 	}
 	if interval <= 0 {
-		interval = window
+		interval = base
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -3712,6 +3729,21 @@ func (d *Daemon) runIdleWatchdog(agentCtx context.Context, window, toolWindow ti
 					continue
 				}
 				threshold = toolWindow
+			} else if startupWindow > 0 && !sawFirstMessage.Load() {
+				// No message has arrived yet — a provider hung at startup.
+				// Apply the SHORTER of the startup net and the idle net so it
+				// fails fast instead of waiting out the full idle window. When
+				// the idle net is disabled (window <= 0) the startup net is the
+				// only bound. (A tool can't be in flight before the first
+				// message, so this never shadows toolWindow.)
+				if threshold <= 0 || startupWindow < threshold {
+					threshold = startupWindow
+				}
+			}
+			// window == 0 disables the idle net; with only the startup net
+			// armed, stop bounding once the first message has landed.
+			if threshold <= 0 {
+				continue
 			}
 			last := time.Unix(0, lastActivityAt.Load())
 			idleFor := time.Since(last)

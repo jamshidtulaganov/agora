@@ -1263,6 +1263,65 @@ func TestExecuteAndDrain_IdleWatchdog_FiresWhenNoMessageEverArrives(t *testing.T
 	}
 }
 
+// TestExecuteAndDrain_StartupWatchdog_FiresFastWhenNoOutput is the BUG-1
+// regression guard: a provider that emits NOTHING must be force-stopped by the
+// SHORT startup net, even when the (much longer) idle net hasn't elapsed. This
+// is the opencode-hung-at-startup case from the concurrency stress test — it
+// used to burn the full 30-min idle window.
+func TestExecuteAndDrain_StartupWatchdog_FiresFastWhenNoOutput(t *testing.T) {
+	t.Parallel()
+
+	d := newTestDaemon(t)
+	d.cfg.AgentIdleWatchdog = 10 * time.Second   // long: must NOT be what fires
+	d.cfg.AgentStartupWatchdog = 50 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	start := time.Now()
+	result, _, err := d.executeAndDrain(ctx, idleWatchdogBackend{emitOne: false}, "p", agent.ExecOptions{}, slog.Default(), "t-startup")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Status != "idle_watchdog" {
+		t.Fatalf("expected status=idle_watchdog (startup net), got %q (err=%q)", result.Status, result.Error)
+	}
+	// Must fire off the SHORT startup window, not wait out the 10s idle window.
+	if elapsed := time.Since(start); elapsed > d.cfg.AgentIdleWatchdog {
+		t.Fatalf("startup watchdog didn't fire fast: %s (idle window=%s)", elapsed, d.cfg.AgentIdleWatchdog)
+	}
+}
+
+// TestExecuteAndDrain_StartupWatchdog_YieldsToIdleAfterFirstMessage proves the
+// startup net disarms once the backend has spoken: a run that emits a first
+// message then goes silent must be bounded by the (longer) idle net, NOT killed
+// prematurely by the short startup window — otherwise long single-message
+// writes would be cut off.
+func TestExecuteAndDrain_StartupWatchdog_YieldsToIdleAfterFirstMessage(t *testing.T) {
+	t.Parallel()
+
+	d := newTestDaemon(t)
+	d.cfg.AgentIdleWatchdog = 0                   // idle net OFF — only the startup net is armed
+	d.cfg.AgentStartupWatchdog = 60 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(300*time.Millisecond, cancel)
+
+	// emitOne=true: the backend speaks once, so the startup net must disarm and
+	// (with the idle net off) nothing should force-stop the run — it ends only
+	// when the parent ctx cancels.
+	result, _, err := d.executeAndDrain(ctx, idleWatchdogBackend{emitOne: true}, "p", agent.ExecOptions{}, slog.Default(), "t-startup-yield")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Status == "idle_watchdog" {
+		t.Fatalf("startup net fired after a first message arrived; want it disarmed, got status=%q", result.Status)
+	}
+	if result.Status != "cancelled" {
+		t.Fatalf("expected status=cancelled (parent ctx fired), got %q", result.Status)
+	}
+}
+
 func TestExecuteAndDrain_IdleWatchdog_DisabledWhenZero(t *testing.T) {
 	t.Parallel()
 
