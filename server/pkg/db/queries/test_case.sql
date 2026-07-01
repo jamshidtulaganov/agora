@@ -2,9 +2,9 @@
 
 -- name: CreateTestCase :one
 INSERT INTO test_case (
-    workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id
+    workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, category
 )
-VALUES ($1, sqlc.narg(issue_id), sqlc.narg(project_id), $2, $3, $4, $5, $6, $7, sqlc.narg(author_id))
+VALUES ($1, sqlc.narg(issue_id), sqlc.narg(project_id), $2, $3, $4, $5, $6, $7, sqlc.narg(author_id), $8)
 RETURNING *;
 
 -- name: ListTestCasesForIssue :many

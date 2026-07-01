@@ -989,6 +989,7 @@ export const TestCaseSchema = z.object({
   kind: z.string().default("manual"),
   source: z.string().default("human"),
   author_type: z.string().default(""),
+  category: z.string().default("positive"),
   created_at: z.string().default(""),
   latest_run: z.object({
     status: z.string().default(""),

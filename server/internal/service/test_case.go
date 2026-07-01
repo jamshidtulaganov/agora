@@ -33,6 +33,7 @@ type genTestCase struct {
 	Steps    string `json:"steps"`
 	Expected string `json:"expected"`
 	Kind     string `json:"kind"`
+	Category string `json:"category"` // positive | negative
 }
 
 // captureTestCases persists a gen_test_cases agent comment's ```test-cases```
@@ -70,6 +71,10 @@ func (s *TaskService) CaptureTestCases(ctx context.Context, issue db.Issue, cont
 		if c.Kind == "automated" {
 			kind = "automated"
 		}
+		category := "positive"
+		if c.Category == "negative" {
+			category = "negative"
+		}
 		if _, err := s.Queries.CreateTestCase(ctx, db.CreateTestCaseParams{
 			WorkspaceID: issue.WorkspaceID,
 			IssueID:     issue.ID,
@@ -81,6 +86,7 @@ func (s *TaskService) CaptureTestCases(ctx context.Context, issue db.Issue, cont
 			Source:      "agent",
 			AuthorType:  "agent",
 			AuthorID:    agentID,
+			Category:    category,
 		}); err != nil {
 			slog.Warn("capture test cases: insert failed", "error", err, "issue_id", util.UUIDToString(issue.ID))
 			continue

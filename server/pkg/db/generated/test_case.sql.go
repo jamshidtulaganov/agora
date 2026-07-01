@@ -47,10 +47,10 @@ func (q *Queries) CountActiveTestCasesForIssue(ctx context.Context, arg CountAct
 const createTestCase = `-- name: CreateTestCase :one
 
 INSERT INTO test_case (
-    workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id
+    workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, category
 )
-VALUES ($1, $8, $9, $2, $3, $4, $5, $6, $7, $10)
-RETURNING id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at
+VALUES ($1, $9, $10, $2, $3, $4, $5, $6, $7, $11, $8)
+RETURNING id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category
 `
 
 type CreateTestCaseParams struct {
@@ -61,6 +61,7 @@ type CreateTestCaseParams struct {
 	Kind        string      `json:"kind"`
 	Source      string      `json:"source"`
 	AuthorType  string      `json:"author_type"`
+	Category    string      `json:"category"`
 	IssueID     pgtype.UUID `json:"issue_id"`
 	ProjectID   pgtype.UUID `json:"project_id"`
 	AuthorID    pgtype.UUID `json:"author_id"`
@@ -76,6 +77,7 @@ func (q *Queries) CreateTestCase(ctx context.Context, arg CreateTestCaseParams) 
 		arg.Kind,
 		arg.Source,
 		arg.AuthorType,
+		arg.Category,
 		arg.IssueID,
 		arg.ProjectID,
 		arg.AuthorID,
@@ -96,6 +98,7 @@ func (q *Queries) CreateTestCase(ctx context.Context, arg CreateTestCaseParams) 
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Category,
 	)
 	return i, err
 }
@@ -147,7 +150,7 @@ func (q *Queries) CreateTestRun(ctx context.Context, arg CreateTestRunParams) (T
 }
 
 const getTestCase = `-- name: GetTestCase :one
-SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at FROM test_case
+SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category FROM test_case
 WHERE id = $1 AND workspace_id = $2
 `
 
@@ -174,12 +177,13 @@ func (q *Queries) GetTestCase(ctx context.Context, arg GetTestCaseParams) (TestC
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Category,
 	)
 	return i, err
 }
 
 const listAutomatedTestCasesForIssue = `-- name: ListAutomatedTestCasesForIssue :many
-SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at FROM test_case
+SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category FROM test_case
 WHERE issue_id = $1 AND workspace_id = $2 AND archived_at IS NULL AND kind = 'automated'
 ORDER BY created_at ASC
 `
@@ -214,6 +218,7 @@ func (q *Queries) ListAutomatedTestCasesForIssue(ctx context.Context, arg ListAu
 			&i.ArchivedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Category,
 		); err != nil {
 			return nil, err
 		}
@@ -279,7 +284,7 @@ func (q *Queries) ListLatestRunsForIssueCases(ctx context.Context, arg ListLates
 }
 
 const listTestCasesForIssue = `-- name: ListTestCasesForIssue :many
-SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at FROM test_case
+SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category FROM test_case
 WHERE issue_id = $1 AND workspace_id = $2 AND archived_at IS NULL
 ORDER BY created_at DESC
 `
@@ -314,6 +319,7 @@ func (q *Queries) ListTestCasesForIssue(ctx context.Context, arg ListTestCasesFo
 			&i.ArchivedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Category,
 		); err != nil {
 			return nil, err
 		}

@@ -33,6 +33,7 @@ type TestCaseResponse struct {
 	Kind       string       `json:"kind"`
 	Source     string       `json:"source"`
 	AuthorType string       `json:"author_type"`
+	Category   string       `json:"category"` // positive | negative
 	CreatedAt  string       `json:"created_at"`
 	LatestRun  *TestRunLite `json:"latest_run"`
 }
@@ -51,6 +52,7 @@ func testCaseToResponse(c db.TestCase, latest *TestRunLite) TestCaseResponse {
 		Kind:       c.Kind,
 		Source:     c.Source,
 		AuthorType: c.AuthorType,
+		Category:   c.Category,
 		CreatedAt:  c.CreatedAt.Time.Format(time.RFC3339),
 		LatestRun:  latest,
 	}
@@ -95,6 +97,7 @@ type CreateTestCaseRequest struct {
 	Steps    string `json:"steps"`
 	Expected string `json:"expected"`
 	Kind     string `json:"kind"`
+	Category string `json:"category"` // positive | negative; defaults to positive
 }
 
 // CreateIssueTestCase authors a manual test case for an issue (source=human).
@@ -120,6 +123,10 @@ func (h *Handler) CreateIssueTestCase(w http.ResponseWriter, r *http.Request) {
 	if req.Kind == "automated" {
 		kind = "automated"
 	}
+	category := "positive"
+	if req.Category == "negative" {
+		category = "negative"
+	}
 	c, err := h.Queries.CreateTestCase(r.Context(), db.CreateTestCaseParams{
 		WorkspaceID: issue.WorkspaceID,
 		IssueID:     issue.ID,
@@ -131,6 +138,7 @@ func (h *Handler) CreateIssueTestCase(w http.ResponseWriter, r *http.Request) {
 		Source:      "human",
 		AuthorType:  "member",
 		AuthorID:    parseUUID(userID),
+		Category:    category,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create test case")

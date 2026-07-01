@@ -18,6 +18,7 @@ export interface TestCase {
   kind: string; // manual | automated
   source: string; // human | agent
   author_type: string;
+  category: string; // positive | negative
   created_at: string;
   latest_run: TestRunLite | null;
 }
@@ -31,6 +32,7 @@ export interface CreateTestCaseRequest {
   steps?: string;
   expected?: string;
   kind?: string;
+  category?: string; // positive | negative; server defaults to positive
 }
 
 export interface CreateTestRunRequest {

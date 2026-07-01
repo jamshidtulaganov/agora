@@ -50,6 +50,11 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
   });
 
   const hasAutomated = cases.some((c) => c.kind === "automated");
+  // Coverage at a glance: a senior QA reviewer's first question is "do we have
+  // both?" — a case pile that's all positive has no evidence anything fails
+  // safely. Counted here once so the header doesn't scan the list twice.
+  const negativeCount = cases.filter((c) => c.category === "negative").length;
+  const positiveCount = cases.length - negativeCount;
 
   const recordRun = useMutation({
     mutationFn: ({ caseId, status }: { caseId: string; status: "pass" | "fail" }) =>
@@ -64,6 +69,21 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
         <FlaskConical className="size-4 text-muted-foreground" />
         <span className="text-sm font-medium">{t(($) => $.test_cases.section)}</span>
         <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{cases.length}</span>
+        {cases.length > 0 && (
+          <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <span>
+              {positiveCount} {t(($) => $.test_cases.category_positive)}
+            </span>
+            <span
+              className={cn(
+                negativeCount === 0 && "font-medium text-amber-600 dark:text-amber-400",
+              )}
+              title={negativeCount === 0 ? t(($) => $.test_cases.category_negative_missing_hint) : undefined}
+            >
+              · {negativeCount} {t(($) => $.test_cases.category_negative)}
+            </span>
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-1.5">
           {hasAutomated && (
             <Button
@@ -183,6 +203,17 @@ function CaseRow({
         <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">
           {c.kind === "automated" ? t(($) => $.test_cases.kind_automated) : t(($) => $.test_cases.kind_manual)}
         </Badge>
+        <Badge
+          variant="outline"
+          className={cn(
+            "text-[10px] font-normal",
+            c.category === "negative"
+              ? "border-amber-500/40 text-amber-700 dark:text-amber-400"
+              : "text-muted-foreground",
+          )}
+        >
+          {c.category === "negative" ? t(($) => $.test_cases.category_negative) : t(($) => $.test_cases.category_positive)}
+        </Badge>
         {isRunning ? (
           <span className="flex items-center gap-1 text-[10px] font-medium text-info">
             <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-info motion-safe:animate-pulse" />
@@ -255,9 +286,10 @@ function AddCaseForm({ issueId, onDone }: { issueId: string; onDone: () => void 
   const [steps, setSteps] = useState("");
   const [expected, setExpected] = useState("");
   const [kind, setKind] = useState<"manual" | "automated">("manual");
+  const [category, setCategory] = useState<"positive" | "negative">("positive");
 
   const save = useMutation({
-    mutationFn: () => api.createIssueTestCase(issueId, { title: title.trim(), steps, expected, kind }),
+    mutationFn: () => api.createIssueTestCase(issueId, { title: title.trim(), steps, expected, kind, category }),
     onSuccess: onDone,
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
@@ -299,6 +331,23 @@ function AddCaseForm({ issueId, onDone }: { issueId: string; onDone: () => void 
               )}
             >
               {k === "manual" ? t(($) => $.test_cases.kind_manual) : t(($) => $.test_cases.kind_automated)}
+            </Button>
+          ))}
+        </div>
+        <div className="flex rounded-md border p-0.5">
+          {(["positive", "negative"] as const).map((cat) => (
+            <Button
+              key={cat}
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setCategory(cat)}
+              className={cn(
+                "h-6 px-2 text-[11px]",
+                category === cat ? "bg-muted font-medium text-foreground" : "text-muted-foreground",
+              )}
+            >
+              {cat === "positive" ? t(($) => $.test_cases.category_positive) : t(($) => $.test_cases.category_negative)}
             </Button>
           ))}
         </div>

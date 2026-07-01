@@ -190,15 +190,21 @@ func buildSliceInstruction(kind, scope string) string {
 			"merge-request push-option flow described below. Do NOT merge — the human decides. If the change is purely " +
 			"internal (no doc-worthy surface), say so in a comment and open nothing rather than inventing content."
 	case sliceActionGenTests:
-		base = "Author QA test cases for this issue — you are the QA Squad's automation engineer. Derive cases " +
-			"from the issue's PLAN (its description + acceptance criteria, appended below) and, when a diff / linked PR " +
-			"exists, the actual change. Cover the golden path, the key edge cases, and any regression risk the change " +
-			"introduces. Do NOT run anything and do NOT touch code — only WRITE the cases. " +
+		base = "Author QA test cases for this issue — you are the QA Squad's automation engineer, and you write cases " +
+			"like a senior QA engineer: BOTH categories, deliberately, not just a pile of edge cases with no structure. " +
+			"Derive cases from the issue's PLAN (its description + acceptance criteria, appended below) and, when a " +
+			"diff / linked PR exists, the actual change. For EVERY case, decide its category: `positive` — the golden " +
+			"path, valid input, the feature working as intended; `negative` — invalid, malformed, boundary, or " +
+			"adversarial input the system must reject or degrade on gracefully (empty/null, wrong type, out-of-range, " +
+			"unauthorized, duplicate, conflicting state). A change with only positive cases has NO evidence it fails " +
+			"safely — always include negative cases for user-controlled input, permission boundaries, and error paths, " +
+			"not just the happy path. Do NOT run anything and do NOT touch code — only WRITE the cases. " +
 			"At the END of your comment, append a fenced ```test-cases code block containing ONLY a JSON array the QA " +
 			"panel parses: `[{\"title\":\"<short>\",\"steps\":\"<numbered steps, newline-separated>\",\"expected\":" +
-			"\"<expected result>\",\"kind\":\"manual\"|\"automated\"}]` — `automated` for a case a script/HTTP/DOM " +
-			"smoke can run deterministically, `manual` for one a human must click through. Keep titles unique and " +
-			"specific. The JSON must be valid and self-contained; a short human-readable summary may precede it."
+			"\"<expected result>\",\"kind\":\"manual\"|\"automated\",\"category\":\"positive\"|\"negative\"}]` — " +
+			"`automated` for a case a script/HTTP/DOM smoke can run deterministically, `manual` for one a human must " +
+			"click through. Keep titles unique and specific. The JSON must be valid and self-contained; a short " +
+			"human-readable summary may precede it."
 	case sliceActionRunTests:
 		base = "Run this issue's AUTOMATED QA test cases as a DETERMINISTIC check — you are the QA Squad's automation " +
 			"engineer. The cases (id · title · steps · expected) are listed below. BEFORE you start driving EACH case's " +
