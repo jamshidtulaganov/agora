@@ -1331,27 +1331,35 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			// In-editor co-code mode: a human works alongside the agent in the
-			// live browser editor on this worktree — append guidance so the agent
-			// works incrementally and treats the human's edits as authoritative.
-			if resp.Agent != nil && metaString(issue.Metadata, "work_mode") == "in_editor" {
-				resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + inEditorCoCodeNote)
-				issueKey := fmt.Sprintf("%s-%d", h.getIssuePrefix(r.Context(), issue.WorkspaceID), issue.Number)
-				resp.CoCodeBranch = coCodeBranchName(issueKey, issue.Title)
-			}
-
 			// Sprint-worktree mode (gated, default OFF): when the issue belongs
 			// to a sprint with a branch, hand the daemon the SHARED sprint branch
 			// so N concurrent tasks check out onto it (each via a per-task local
-			// alias) instead of forking a per-task branch. Old daemons ignore the
-			// field (omitempty) and keep forking — fully reversible. The CoCode
-			// branch above takes precedence for in_editor single-issue work; sprint
-			// mode is for the many-tasks-one-sprint-branch model.
-			if resp.Agent != nil && resp.CoCodeBranch == "" && sprintWorktreeEnabled() {
+			// alias) instead of forking a per-task branch. Checked BEFORE the
+			// in_editor block below and takes precedence over it: sprint-worktree's
+			// whole target scenario IS in_editor co-code (N developers, each with
+			// their own live editor, on the SAME sprint branch) — not a separate
+			// non-editor mode, so it must win the branch-force, not lose to it.
+			// Old daemons ignore the field (omitempty) and keep forking — fully
+			// reversible.
+			if resp.Agent != nil && sprintWorktreeEnabled() {
 				if sprint, err := h.Queries.GetSprintForIssue(r.Context(), issue.ID); err == nil {
 					if b := SprintBranchFor(sprint); b != "" {
 						resp.SprintBranch = b
 					}
+				}
+			}
+
+			// In-editor co-code mode: a human works alongside the agent in the
+			// live browser editor on this worktree — append guidance so the agent
+			// works incrementally and treats the human's edits as authoritative.
+			// The branch force (CoCodeBranch) is skipped when sprint-worktree
+			// already claimed the branch above — forcing BOTH would race two
+			// different git-branch mechanisms on the same worktree.
+			if resp.Agent != nil && metaString(issue.Metadata, "work_mode") == "in_editor" {
+				resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + inEditorCoCodeNote)
+				if resp.SprintBranch == "" {
+					issueKey := fmt.Sprintf("%s-%d", h.getIssuePrefix(r.Context(), issue.WorkspaceID), issue.Number)
+					resp.CoCodeBranch = coCodeBranchName(issueKey, issue.Title)
 				}
 			}
 

@@ -423,6 +423,152 @@ func TestClaimTaskByRuntime_WorkspaceContextEmptyWhenUnset(t *testing.T) {
 	}
 }
 
+// claimSprintBranchPrecedenceFixture creates a runtime+agent+issue (in_editor
+// metadata) plus, when withSprint is true, a real project+sprint(branch) linked
+// to the issue. Returns the runtime/agent/issue ids and the sprint's branch
+// (empty when withSprint is false). Found via the agora-dev stress-test sprint
+// (2026-07-01): sprint-worktree silently lost to the pre-existing in_editor
+// CoCodeBranch force because both wrote the SAME response field slot and the
+// in_editor check ran first — a live 10-agent run on the real repo caught it
+// (every worktree stayed on its own fork-model branch instead of the shared
+// sprint branch) before it shipped further.
+func claimSprintBranchPrecedenceFixture(t *testing.T, ctx context.Context, name string, withSprint bool) (runtimeID, agentID, issueID, branch string) {
+	t.Helper()
+	runtimeID = createClaimReclaimRuntime(t, ctx, name+" runtime")
+	agentID, issueID = createClaimReclaimAgentAndIssue(t, ctx, runtimeID, name+" agent")
+
+	if _, err := testPool.Exec(ctx, `UPDATE issue SET metadata = '{"work_mode":"in_editor"}'::jsonb WHERE id = $1`, issueID); err != nil {
+		t.Fatalf("setup: set work_mode=in_editor: %v", err)
+	}
+	if !withSprint {
+		return runtimeID, agentID, issueID, ""
+	}
+
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/api/projects?workspace_id="+testWorkspaceID, map[string]any{
+		"title": name + " project " + time.Now().Format(time.RFC3339Nano),
+	})
+	testHandler.CreateProject(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create project: %d: %s", w.Code, w.Body.String())
+	}
+	var proj ProjectResponse
+	if err := json.NewDecoder(w.Body).Decode(&proj); err != nil {
+		t.Fatalf("decode project: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM project WHERE id = $1`, proj.ID) })
+
+	branch = "sprint/precedence-test-" + uuid.NewString()[:8]
+	w = httptest.NewRecorder()
+	req = newRequest("POST", "/api/projects/"+proj.ID+"/sprints", map[string]any{
+		"name": "precedence sprint", "status": "active", "branch": branch,
+	})
+	req = withURLParam(req, "id", proj.ID)
+	testHandler.CreateSprint(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create sprint: %d: %s", w.Code, w.Body.String())
+	}
+	var sprint struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&sprint); err != nil {
+		t.Fatalf("decode sprint: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM sprint WHERE id = $1`, sprint.ID) })
+
+	w = httptest.NewRecorder()
+	req = newRequest("PUT", "/api/issues/"+issueID+"/sprint", map[string]any{"sprint_id": sprint.ID})
+	req = withURLParam(req, "id", issueID)
+	testHandler.SetIssueSprint(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("set issue sprint: %d: %s", w.Code, w.Body.String())
+	}
+	return runtimeID, agentID, issueID, branch
+}
+
+func claimSprintPrecedenceRespFields(t *testing.T, w *httptest.ResponseRecorder, taskID string) (sprintBranch, coCodeBranch string) {
+	t.Helper()
+	var resp struct {
+		Task *struct {
+			ID           string `json:"id"`
+			SprintBranch string `json:"sprint_branch"`
+			CoCodeBranch string `json:"cocode_branch"`
+		} `json:"task"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode claim response: %v", err)
+	}
+	if resp.Task == nil || resp.Task.ID != taskID {
+		t.Fatalf("expected task %s claimed, got: %s", taskID, w.Body.String())
+	}
+	return resp.Task.SprintBranch, resp.Task.CoCodeBranch
+}
+
+// TestClaimTaskByRuntime_SprintWorktreeWinsOverCoCodeBranch is the regression
+// guard for the precedence bug above: when sprint-worktree is enabled AND the
+// issue is on a sprint with a branch, the claim response must carry
+// sprint_branch (so N tasks share the sprint branch) and must NOT also carry
+// cocode_branch — forcing a worktree onto two different branches would race.
+func TestClaimTaskByRuntime_SprintWorktreeWinsOverCoCodeBranch(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	t.Setenv("AGORA_SPRINT_WORKTREE_ENABLED", "true")
+
+	runtimeID, agentID, issueID, branch := claimSprintBranchPrecedenceFixture(t, ctx, "sprint-worktree-wins", true)
+	taskID := createDispatchedClaimFixtureTask(t, ctx, agentID, runtimeID, issueID, "120 seconds", false)
+
+	w := httptest.NewRecorder()
+	req := newDaemonTokenRequest("POST", "/api/daemon/runtimes/"+runtimeID+"/tasks/claim", nil,
+		testWorkspaceID, "sprint-worktree-wins-claim")
+	req = withURLParam(req, "runtimeId", runtimeID)
+	testHandler.ClaimTaskByRuntime(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("ClaimTaskByRuntime: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	sprintBranch, coCodeBranch := claimSprintPrecedenceRespFields(t, w, taskID)
+	if sprintBranch != branch {
+		t.Errorf("sprint_branch = %q, want %q — sprint-worktree must win over in_editor's CoCodeBranch", sprintBranch, branch)
+	}
+	if coCodeBranch != "" {
+		t.Errorf("cocode_branch = %q, want \"\" when sprint-worktree already claimed the branch", coCodeBranch)
+	}
+}
+
+// TestClaimTaskByRuntime_CoCodeBranchStillAppliesWithoutSprint is the other
+// half of the guard: an in_editor issue with NO sprint (or sprint-worktree
+// disabled) must still get its per-issue CoCodeBranch forced exactly as before
+// — the precedence reorder must not silently drop this pre-existing path.
+func TestClaimTaskByRuntime_CoCodeBranchStillAppliesWithoutSprint(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	t.Setenv("AGORA_SPRINT_WORKTREE_ENABLED", "true") // even enabled, no sprint on the issue -> no-op
+
+	runtimeID, agentID, issueID, _ := claimSprintBranchPrecedenceFixture(t, ctx, "cocode-still-works", false)
+	taskID := createDispatchedClaimFixtureTask(t, ctx, agentID, runtimeID, issueID, "120 seconds", false)
+
+	w := httptest.NewRecorder()
+	req := newDaemonTokenRequest("POST", "/api/daemon/runtimes/"+runtimeID+"/tasks/claim", nil,
+		testWorkspaceID, "cocode-still-works-claim")
+	req = withURLParam(req, "runtimeId", runtimeID)
+	testHandler.ClaimTaskByRuntime(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("ClaimTaskByRuntime: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	sprintBranch, coCodeBranch := claimSprintPrecedenceRespFields(t, w, taskID)
+	if sprintBranch != "" {
+		t.Errorf("sprint_branch = %q, want \"\" (issue has no sprint)", sprintBranch)
+	}
+	if coCodeBranch == "" {
+		t.Error("cocode_branch is empty, want a forced branch — in_editor must still work when there is no sprint to defer to")
+	}
+}
+
 func TestDaemonRegister_WithDaemonToken(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
