@@ -209,6 +209,18 @@ gate run to a QA member (executed on a faster model) and own the
 qa:pass/qa:fail rollup, rather than run the mechanical gate itself. The lead
 orchestrates; a member executes.
 
+Before delegating, the lead is instructed to determine the PROJECT's own
+stack and testing tooling itself (read package.json/go.mod/composer.json,
+existing test dirs, CI config — never assume) and tell the delegate which
+tooling applies: a JS/TS repo with Jest/Vitest gets `npm test`/`vitest run`,
+a Go repo gets `go test ./...`, and a monolith with no unit-test layer (a
+PHP/Yii1 backend with a mixed jQuery/Vue2/Vue3/Angular frontend, for
+example) has no build/test command at all — for that stack the rendered
+page IS the contract, so the lead routes to browser-driven verification
+against the deployed QA box instead of a nonexistent test suite. This keeps
+the tooling decision an explicit judgment call the orchestrator makes per
+project, not a hardcoded one-size-fits-all recipe.
+
 ### Delegated sub-task failure recovery
 
 A failed agent task posts NO completion signal, so an orchestrated issue

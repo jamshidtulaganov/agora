@@ -990,9 +990,15 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	// running run_qa itself is the wall-clock bottleneck (a heavy model doing
 	// mechanical smoke). Falls back to self-run only if no member is available.
 	if routedToLead {
-		instruction = "As the QA LEAD, DELEGATE this QA gate to a QA squad member via @mention (they " +
-			"execute it on a faster model) and coordinate the result — do NOT run the gate yourself unless " +
-			"no member is available. You own the qa:pass/qa:fail rollup and stay in sync with the dev lead. " +
+		instruction = "As the QA LEAD, FIRST determine THIS project's stack and testing tooling yourself — read " +
+			"the repo (package.json/go.mod/composer.json, existing test dirs, CI config) rather than assuming; a " +
+			"Jest/Vitest project needs `npm test`/`vitest run`, a Go repo needs `go test ./...`, a PHP monolith with " +
+			"no unit-test layer (e.g. Yii1 with a mixed jQuery/Vue2/Vue3/Angular frontend) has no build/test command " +
+			"at all — for that stack the rendered page IS the contract, so route the delegate to browser-driven " +
+			"verification (deterministic HTTP/DOM assertions against the deployed QA box) instead of a nonexistent " +
+			"test suite. Then DELEGATE this QA gate to a QA squad member via @mention, TELLING them which tooling " +
+			"you determined applies (they execute it on a faster model) — do NOT run the gate yourself unless no " +
+			"member is available. You own the qa:pass/qa:fail rollup and stay in sync with the dev lead. " +
 			"The gate to delegate: " + instruction
 	}
 
