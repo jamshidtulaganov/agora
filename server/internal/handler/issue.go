@@ -2292,6 +2292,33 @@ func (h *Handler) maybeEnqueueKnowledgeCapture(ctx context.Context, issue db.Iss
 	slog.Info("knowledge-capture enqueued on done", "issue_id", uuidToString(issue.ID), "agent_id", settings.KBAgent)
 }
 
+// maybePromoteTestCasesOnDone grows the project's QA base suite from finished
+// work: on a genuine ->done transition, the issue's automated test cases are
+// copied into the project's standing base scripts ("[KEY] <title>", issue_id
+// NULL), so every future run_qa / run_test_cases regression-tests this feature
+// or fix. Deterministic server-side copy — no agent run, no fabrication risk.
+// Dedupe lives in the SQL (re-fires are no-ops); best-effort like its sibling
+// maybeEnqueueKnowledgeCapture.
+func (h *Handler) maybePromoteTestCasesOnDone(ctx context.Context, issue db.Issue) {
+	if !issue.ProjectID.Valid {
+		return
+	}
+	issueKey := fmt.Sprintf("%s-%d", h.getIssuePrefix(ctx, issue.WorkspaceID), issue.Number)
+	promoted, err := h.Queries.PromoteIssueTestCasesToProject(ctx, db.PromoteIssueTestCasesToProjectParams{
+		IssueID:   issue.ID,
+		ProjectID: issue.ProjectID,
+		IssueKey:  issueKey,
+	})
+	if err != nil {
+		slog.Warn("test-case promotion failed", "issue_id", uuidToString(issue.ID), "error", err)
+		return
+	}
+	if promoted > 0 {
+		slog.Info("promoted issue test cases to project base suite",
+			"issue_id", uuidToString(issue.ID), "issue_key", issueKey, "count", promoted)
+	}
+}
+
 func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	prevIssue, ok := h.loadIssueForUser(w, r, id)
@@ -2575,6 +2602,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	// runs exactly once per completion.
 	if statusChanged && issue.Status == "done" && prevIssue.Status != "done" {
 		h.maybeEnqueueKnowledgeCapture(r.Context(), issue)
+		h.maybePromoteTestCasesOnDone(r.Context(), issue)
 	}
 
 	// Auto-QA on in_review: when an issue enters in_review, fire the QA squad's
@@ -3146,6 +3174,7 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		// Auto knowledge-capture on completion (batch-path mirror of UpdateIssue).
 		if statusChanged && issue.Status == "done" && prevIssue.Status != "done" {
 			h.maybeEnqueueKnowledgeCapture(r.Context(), issue)
+			h.maybePromoteTestCasesOnDone(r.Context(), issue)
 		}
 
 		// Auto-QA on in_review (batch-path mirror of UpdateIssue). Also fires when

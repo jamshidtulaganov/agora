@@ -855,6 +855,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Put("/resources/{resourceId}", h.UpdateProjectResource)
 					r.Delete("/resources/{resourceId}", h.DeleteProjectResource)
 					r.Post("/knowledge/build", h.BuildProjectKnowledge)
+					// QA base scripts — the project's STANDING regression suite
+					// (test cases with issue_id NULL, injected into every
+					// run_qa / run_test_cases on the project's issues).
+					r.Get("/test-cases", h.GetProjectTestCases)
+					r.Post("/test-cases", h.CreateProjectTestCase)
 					// Sprints — a cycle layer under a project.
 					r.Get("/sprints", h.ListSprints)
 					r.Post("/sprints", h.CreateSprint)
@@ -894,7 +899,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// Policy Agent — fleet watchdog (agent speed + stalled/failed/looping).
 			r.Get("/api/policy/fleet-health", h.GetPolicyFleetHealth)
 
-			// QA test cases — run + archive by case id (list/create are issue-scoped).
+			// QA test cases — run + archive by case id (list/create are
+			// issue-scoped, or project-scoped for standing base scripts).
 			r.Route("/api/test-cases/{id}", func(r chi.Router) {
 				r.Post("/runs", h.CreateTestCaseRun)
 				r.Post("/archive", h.ArchiveTestCaseHandler)

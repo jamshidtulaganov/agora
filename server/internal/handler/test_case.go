@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -59,6 +60,9 @@ func testCaseToResponse(c db.TestCase, latest *TestRunLite) TestCaseResponse {
 }
 
 // GetIssueTestCases lists an issue's active test cases, each with its latest run.
+// Project base scripts (issue_id NULL) run against this issue are appended after
+// the issue's own cases — their verdicts (a FAIL is a regression) must render on
+// the issue's QA panel, not vanish. Base cases carry issue_id "" in the response.
 func (h *Handler) GetIssueTestCases(w http.ResponseWriter, r *http.Request) {
 	issue, ok := h.loadIssueForUser(w, r, chi.URLParam(r, "id"))
 	if !ok {
@@ -71,6 +75,13 @@ func (h *Handler) GetIssueTestCases(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load test cases")
 		return
+	}
+	if issue.ProjectID.Valid {
+		baseCases, _ := h.Queries.ListAutomatedTestCasesForProject(r.Context(), db.ListAutomatedTestCasesForProjectParams{
+			ProjectID:   issue.ProjectID,
+			WorkspaceID: issue.WorkspaceID,
+		})
+		cases = append(cases, baseCases...)
 	}
 	runs, _ := h.Queries.ListLatestRunsForIssueCases(r.Context(), db.ListLatestRunsForIssueCasesParams{
 		IssueID:     issue.ID,
@@ -146,6 +157,119 @@ func (h *Handler) CreateIssueTestCase(w http.ResponseWriter, r *http.Request) {
 	}
 	h.publish(protocol.EventTestCasesChanged, uuidToString(issue.WorkspaceID), "member", userID, map[string]any{
 		"issue_id": uuidToString(issue.ID),
+	})
+	writeJSON(w, http.StatusCreated, testCaseToResponse(c, nil))
+}
+
+// GetProjectTestCases lists a project's STANDING base test cases (issue_id
+// NULL — the golden-path regression suite injected into every run_qa /
+// run_test_cases), each with its latest run across all issues.
+func (h *Handler) GetProjectTestCases(w http.ResponseWriter, r *http.Request) {
+	wsUUID, ok := parseUUIDOrBadRequest(w, h.resolveWorkspaceID(r), "workspace id")
+	if !ok {
+		return
+	}
+	projUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "project id")
+	if !ok {
+		return
+	}
+	project, err := h.Queries.GetProjectInWorkspace(r.Context(), db.GetProjectInWorkspaceParams{
+		ID: projUUID, WorkspaceID: wsUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	cases, err := h.Queries.ListTestCasesForProject(r.Context(), db.ListTestCasesForProjectParams{
+		ProjectID:   project.ID,
+		WorkspaceID: project.WorkspaceID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load test cases")
+		return
+	}
+	runs, _ := h.Queries.ListLatestRunsForProjectBaseCases(r.Context(), db.ListLatestRunsForProjectBaseCasesParams{
+		ProjectID:   project.ID,
+		WorkspaceID: project.WorkspaceID,
+	})
+	latest := make(map[string]*TestRunLite, len(runs))
+	for _, run := range runs {
+		latest[uuidToString(run.TestCaseID)] = &TestRunLite{
+			Status:    run.Status,
+			RunSource: run.RunSource,
+			CreatedAt: run.CreatedAt.Time.Format(time.RFC3339),
+			Output:    run.Output,
+		}
+	}
+	resp := ListTestCasesResponse{TestCases: make([]TestCaseResponse, 0, len(cases))}
+	for _, c := range cases {
+		resp.TestCases = append(resp.TestCases, testCaseToResponse(c, latest[uuidToString(c.ID)]))
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// CreateProjectTestCase authors a standing base test case for a project —
+// issue_id stays NULL, which is what ListAutomatedTestCasesForProject keys on.
+// This is the ONLY write path that can produce base-suite rows: the issue-scoped
+// create always pins issue_id. Kind defaults to "automated" (not "manual" like
+// the issue endpoint) because only automated base cases are injected into
+// run_qa / run_test_cases — a default-manual base case would be silently inert.
+func (h *Handler) CreateProjectTestCase(w http.ResponseWriter, r *http.Request) {
+	wsUUID, ok := parseUUIDOrBadRequest(w, h.resolveWorkspaceID(r), "workspace id")
+	if !ok {
+		return
+	}
+	projUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "project id")
+	if !ok {
+		return
+	}
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	project, err := h.Queries.GetProjectInWorkspace(r.Context(), db.GetProjectInWorkspaceParams{
+		ID: projUUID, WorkspaceID: wsUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	var req CreateTestCaseRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Title == "" {
+		writeError(w, http.StatusBadRequest, "title is required")
+		return
+	}
+	kind := "automated"
+	if req.Kind == "manual" {
+		kind = "manual"
+	}
+	category := "positive"
+	if req.Category == "negative" {
+		category = "negative"
+	}
+	c, err := h.Queries.CreateTestCase(r.Context(), db.CreateTestCaseParams{
+		WorkspaceID: project.WorkspaceID,
+		IssueID:     pgtype.UUID{}, // NULL — a base case belongs to the project, not an issue
+		ProjectID:   project.ID,
+		Title:       req.Title,
+		Steps:       req.Steps,
+		Expected:    req.Expected,
+		Kind:        kind,
+		Source:      "human",
+		AuthorType:  "member",
+		AuthorID:    parseUUID(userID),
+		Category:    category,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create test case")
+		return
+	}
+	h.publish(protocol.EventTestCasesChanged, uuidToString(project.WorkspaceID), "member", userID, map[string]any{
+		"project_id": uuidToString(project.ID),
 	})
 	writeJSON(w, http.StatusCreated, testCaseToResponse(c, nil))
 }

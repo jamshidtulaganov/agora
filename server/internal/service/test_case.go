@@ -109,8 +109,9 @@ func (s *TaskService) CaptureTestCases(ctx context.Context, issue db.Issue, cont
 
 // CaptureTestRuns persists a run_test_cases agent's ```test-runs``` block as
 // test_run rows. Each entry names a test_case_id we handed the agent; we verify
-// the case belongs to THIS issue+workspace before writing (an agent can't post
-// runs for another issue's case). Best-effort + detached. Exported so the HTTP
+// the case belongs to THIS issue — or is the issue's project's standing base
+// script — within the same workspace before writing (an agent can't post runs
+// for another issue's case). Best-effort + detached. Exported so the HTTP
 // comment handler can call it too (agents post via POST /comments).
 func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, content string, agentID pgtype.UUID) {
 	m := testRunsBlockRe.FindStringSubmatch(content)
@@ -135,7 +136,15 @@ func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, conte
 			continue
 		}
 		tc, err := s.Queries.GetTestCase(ctx, db.GetTestCaseParams{ID: caseID, WorkspaceID: issue.WorkspaceID})
-		if err != nil || util.UUIDToString(tc.IssueID) != util.UUIDToString(issue.ID) {
+		if err != nil {
+			continue
+		}
+		// Accept the issue's own cases AND the project's standing base scripts
+		// (issue_id NULL, same project) — QA runs execute both suites.
+		sameIssue := util.UUIDToString(tc.IssueID) == util.UUIDToString(issue.ID)
+		projectBase := !tc.IssueID.Valid && tc.ProjectID.Valid && issue.ProjectID.Valid &&
+			util.UUIDToString(tc.ProjectID) == util.UUIDToString(issue.ProjectID)
+		if !sameIssue && !projectBase {
 			continue
 		}
 		if _, err := s.Queries.CreateTestRun(ctx, db.CreateTestRunParams{

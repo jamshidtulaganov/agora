@@ -230,6 +230,56 @@ func (q *Queries) ListAutomatedTestCasesForIssue(ctx context.Context, arg ListAu
 	return items, nil
 }
 
+const listAutomatedTestCasesForProject = `-- name: ListAutomatedTestCasesForProject :many
+SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category FROM test_case
+WHERE project_id = $1 AND workspace_id = $2
+  AND issue_id IS NULL AND kind = 'automated' AND archived_at IS NULL
+ORDER BY created_at ASC
+`
+
+type ListAutomatedTestCasesForProjectParams struct {
+	ProjectID   pgtype.UUID `json:"project_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// The project's STANDING base scripts: automated golden-path regression cases
+// pinned to the project (no issue) — injected into EVERY run_qa / run_test_cases.
+func (q *Queries) ListAutomatedTestCasesForProject(ctx context.Context, arg ListAutomatedTestCasesForProjectParams) ([]TestCase, error) {
+	rows, err := q.db.Query(ctx, listAutomatedTestCasesForProject, arg.ProjectID, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TestCase{}
+	for rows.Next() {
+		var i TestCase
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.IssueID,
+			&i.ProjectID,
+			&i.Title,
+			&i.Steps,
+			&i.Expected,
+			&i.Kind,
+			&i.Source,
+			&i.AuthorType,
+			&i.AuthorID,
+			&i.ArchivedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Category,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLatestRunsForIssueCases = `-- name: ListLatestRunsForIssueCases :many
 SELECT DISTINCT ON (r.test_case_id)
     r.test_case_id,
@@ -239,7 +289,8 @@ SELECT DISTINCT ON (r.test_case_id)
     r.output
 FROM test_run r
 JOIN test_case c ON c.id = r.test_case_id
-WHERE c.issue_id = $1 AND c.workspace_id = $2
+WHERE c.workspace_id = $2
+  AND (c.issue_id = $1 OR (c.issue_id IS NULL AND r.issue_id = $1))
 ORDER BY r.test_case_id, r.created_at DESC
 `
 
@@ -257,6 +308,9 @@ type ListLatestRunsForIssueCasesRow struct {
 }
 
 // The latest run per test case for an issue (drives each case's status chip).
+// Covers the issue's OWN cases plus project base scripts (issue_id NULL) whose
+// runs were recorded against this issue — a base-script FAIL is a regression
+// verdict and must render on the issue, not vanish.
 func (q *Queries) ListLatestRunsForIssueCases(ctx context.Context, arg ListLatestRunsForIssueCasesParams) ([]ListLatestRunsForIssueCasesRow, error) {
 	rows, err := q.db.Query(ctx, listLatestRunsForIssueCases, arg.IssueID, arg.WorkspaceID)
 	if err != nil {
@@ -266,6 +320,60 @@ func (q *Queries) ListLatestRunsForIssueCases(ctx context.Context, arg ListLates
 	items := []ListLatestRunsForIssueCasesRow{}
 	for rows.Next() {
 		var i ListLatestRunsForIssueCasesRow
+		if err := rows.Scan(
+			&i.TestCaseID,
+			&i.Status,
+			&i.RunSource,
+			&i.CreatedAt,
+			&i.Output,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLatestRunsForProjectBaseCases = `-- name: ListLatestRunsForProjectBaseCases :many
+SELECT DISTINCT ON (r.test_case_id)
+    r.test_case_id,
+    r.status,
+    r.run_source,
+    r.created_at,
+    r.output
+FROM test_run r
+JOIN test_case c ON c.id = r.test_case_id
+WHERE c.project_id = $1 AND c.workspace_id = $2 AND c.issue_id IS NULL
+ORDER BY r.test_case_id, r.created_at DESC
+`
+
+type ListLatestRunsForProjectBaseCasesParams struct {
+	ProjectID   pgtype.UUID `json:"project_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+type ListLatestRunsForProjectBaseCasesRow struct {
+	TestCaseID pgtype.UUID        `json:"test_case_id"`
+	Status     string             `json:"status"`
+	RunSource  string             `json:"run_source"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	Output     string             `json:"output"`
+}
+
+// The latest run per project base case across ALL issues' runs (status chips
+// for the project-level base-suite list).
+func (q *Queries) ListLatestRunsForProjectBaseCases(ctx context.Context, arg ListLatestRunsForProjectBaseCasesParams) ([]ListLatestRunsForProjectBaseCasesRow, error) {
+	rows, err := q.db.Query(ctx, listLatestRunsForProjectBaseCases, arg.ProjectID, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLatestRunsForProjectBaseCasesRow{}
+	for rows.Next() {
+		var i ListLatestRunsForProjectBaseCasesRow
 		if err := rows.Scan(
 			&i.TestCaseID,
 			&i.Status,
@@ -297,6 +405,57 @@ type ListTestCasesForIssueParams struct {
 // Active (non-archived) cases for an issue, newest first.
 func (q *Queries) ListTestCasesForIssue(ctx context.Context, arg ListTestCasesForIssueParams) ([]TestCase, error) {
 	rows, err := q.db.Query(ctx, listTestCasesForIssue, arg.IssueID, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TestCase{}
+	for rows.Next() {
+		var i TestCase
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.IssueID,
+			&i.ProjectID,
+			&i.Title,
+			&i.Steps,
+			&i.Expected,
+			&i.Kind,
+			&i.Source,
+			&i.AuthorType,
+			&i.AuthorID,
+			&i.ArchivedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Category,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTestCasesForProject = `-- name: ListTestCasesForProject :many
+SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category FROM test_case
+WHERE project_id = $1 AND workspace_id = $2
+  AND issue_id IS NULL AND archived_at IS NULL
+ORDER BY created_at DESC
+`
+
+type ListTestCasesForProjectParams struct {
+	ProjectID   pgtype.UUID `json:"project_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// The project's standing base cases (issue_id NULL), newest first — the
+// project-level base-suite list. All kinds; only automated ones are injected
+// into run_qa / run_test_cases.
+func (q *Queries) ListTestCasesForProject(ctx context.Context, arg ListTestCasesForProjectParams) ([]TestCase, error) {
+	rows, err := q.db.Query(ctx, listTestCasesForProject, arg.ProjectID, arg.WorkspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -373,4 +532,36 @@ func (q *Queries) ListTestRunsForCase(ctx context.Context, arg ListTestRunsForCa
 		return nil, err
 	}
 	return items, nil
+}
+
+const promoteIssueTestCasesToProject = `-- name: PromoteIssueTestCasesToProject :execrows
+INSERT INTO test_case
+  (workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, category)
+SELECT tc.workspace_id, NULL, $2, '[' || $3::text || '] ' || tc.title,
+       tc.steps, tc.expected, 'automated', 'promoted', tc.author_type, tc.author_id, tc.category
+FROM test_case tc
+WHERE tc.issue_id = $1 AND tc.kind = 'automated' AND tc.archived_at IS NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM test_case e
+    WHERE e.project_id = $2 AND e.issue_id IS NULL AND e.archived_at IS NULL
+      AND lower(e.title) = lower('[' || $3::text || '] ' || tc.title)
+  )
+`
+
+type PromoteIssueTestCasesToProjectParams struct {
+	IssueID   pgtype.UUID `json:"issue_id"`
+	ProjectID pgtype.UUID `json:"project_id"`
+	IssueKey  string      `json:"issue_key"`
+}
+
+// Self-growing base suite: when an issue completes, COPY its automated cases
+// into the project's standing base scripts (issue_id NULL) with a "[KEY] "
+// title prefix, so every future QA run regression-tests the finished work.
+// Dedupe by prefixed title against live base rows — re-fires are no-ops.
+func (q *Queries) PromoteIssueTestCasesToProject(ctx context.Context, arg PromoteIssueTestCasesToProjectParams) (int64, error) {
+	result, err := q.db.Exec(ctx, promoteIssueTestCasesToProject, arg.IssueID, arg.ProjectID, arg.IssueKey)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
