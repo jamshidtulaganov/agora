@@ -47,6 +47,13 @@ export function QALiveBrowser({ issueId }: { issueId: string }) {
   const available = data?.mode === "self-host" && !!data.daemon_url && !!agent;
   const streaming = started && available && !!data;
   const previewUrl = preview?.url ?? "";
+  // Server-checked: an iframe embed is only attempted when we've confirmed the
+  // target's response headers actually allow cross-origin framing. A CSP
+  // frame-ancestors or X-Frame-Options block renders an iframe silently
+  // blank — no JS error to detect after the fact — so this MUST be decided
+  // before attempting the embed, not discovered from a failed render.
+  const previewEmbeddable = !!preview?.embeddable && !!previewUrl;
+  const previewLinkOnly = !isLoading && !available && previewUrl && !previewEmbeddable;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card">
@@ -65,7 +72,7 @@ export function QALiveBrowser({ issueId }: { issueId: string }) {
         <div className="min-h-0 flex-1">
           <EditorBrowserPane daemonUrl={data.daemon_url} workdir={agent!.work_dir} />
         </div>
-      ) : !isLoading && !available && previewUrl ? (
+      ) : previewEmbeddable ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center gap-2 border-b bg-muted/20 px-3 py-1.5">
             <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
@@ -86,6 +93,27 @@ export function QALiveBrowser({ issueId }: { issueId: string }) {
             title={t(($) => $.qa_review.live_testing)}
             className="min-h-0 flex-1 border-0 bg-white"
           />
+        </div>
+      ) : previewLinkOnly ? (
+        // The target's own headers block cross-origin framing (checked
+        // server-side) — an iframe here would just render blank. Show a
+        // real, working affordance instead of a broken embed.
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-10 text-center">
+          <span className="flex size-11 items-center justify-center rounded-full bg-muted">
+            <Globe className="size-5 text-muted-foreground" aria-hidden />
+          </span>
+          <p className="max-w-[260px] text-[11px] leading-relaxed text-muted-foreground">
+            {t(($) => $.qa_review.live_preview_not_embeddable)}
+          </p>
+          <a
+            href={previewUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-[12px] font-medium hover:bg-accent"
+          >
+            {previewUrl}
+            <ExternalLink className="size-3.5" />
+          </a>
         </div>
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-10 text-center">

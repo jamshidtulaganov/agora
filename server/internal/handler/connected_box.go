@@ -967,5 +967,52 @@ func (h *Handler) GetIssueQAPreviewURL(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "not a member of this workspace")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"url": h.resolveQAPreviewURL(r.Context(), issue)})
+	url := h.resolveQAPreviewURL(r.Context(), issue)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"url":        url,
+		"embeddable": url != "" && urlAllowsFraming(r.Context(), url),
+	})
+}
+
+// urlAllowsFraming reports whether url's response headers permit embedding it
+// in a cross-origin iframe — the Live testing bay iframe would otherwise
+// render silently blank (a CSP frame-ancestors or X-Frame-Options block fires
+// no JS error event, so the frontend has no way to detect it after the fact).
+// Checked server-side because the outbound request needs no CORS exemption
+// here, unlike a browser fetch. Any signal we can't positively clear —
+// request failure, timeout, X-Frame-Options: deny/sameorigin, or a
+// Content-Security-Policy frame-ancestors directive that isn't a bare
+// wildcard — returns false: the caller shows an "Open" link instead of a
+// guaranteed-blank iframe. False positives (looks embeddable, isn't) are far
+// worse for a first impression than false negatives (embeddable, we just
+// offer a link instead).
+func urlAllowsFraming(ctx context.Context, target string) bool {
+	reqCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodHead, target, nil)
+	if err != nil {
+		return false
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	if xfo := strings.ToLower(strings.TrimSpace(resp.Header.Get("X-Frame-Options"))); xfo == "deny" || xfo == "sameorigin" {
+		return false
+	}
+	csp := resp.Header.Get("Content-Security-Policy")
+	for _, directive := range strings.Split(csp, ";") {
+		directive = strings.TrimSpace(directive)
+		if !strings.HasPrefix(strings.ToLower(directive), "frame-ancestors") {
+			continue
+		}
+		// Present and not a bare wildcard -> some allowlist we can't confirm
+		// includes Agora's origin (which varies per deployment) -> blocked.
+		if !strings.Contains(directive, "*") {
+			return false
+		}
+	}
+	return true
 }

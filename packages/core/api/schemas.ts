@@ -1034,9 +1034,12 @@ export const EMPTY_ISSUE_EDITOR = { mode: "", daemon_url: "", user_id: "", agent
 // state rather than treating that as an error.
 export const IssueQAPreviewURLResponseSchema = z.object({
   url: z.string().default(""),
+  // Server-checked (X-Frame-Options / CSP frame-ancestors) so the frontend
+  // never attempts an iframe embed that would render silently blank.
+  embeddable: z.boolean().default(false),
 }).loose();
 
-export const EMPTY_ISSUE_QA_PREVIEW_URL = { url: "" };
+export const EMPTY_ISSUE_QA_PREVIEW_URL = { url: "", embeddable: false };
 
 // ---------------------------------------------------------------------------
 // Billing schemas (cloud-billing proxy surface)

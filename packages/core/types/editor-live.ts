@@ -24,4 +24,8 @@ export interface GetIssueEditorResponse {
 // a box). "" means nothing resolves.
 export interface IssueQAPreviewURLResponse {
   url: string;
+  // Server-checked (X-Frame-Options / CSP frame-ancestors) — false means an
+  // iframe embed would render blank; the caller should offer an "Open" link
+  // instead of attempting to embed it.
+  embeddable: boolean;
 }
