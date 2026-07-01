@@ -151,6 +151,14 @@ import type {
   BitrixImportProgress,
   BitrixSyncResult,
 } from "../bitrix/types";
+import type {
+  ZohoProject,
+  ZohoImportRequest,
+  ZohoImportResponse,
+  ZohoSprintsProject,
+  ZohoSprintsImportRequest,
+  ZohoSprintsImportResponse,
+} from "../zoho/types";
 import type { Plugin, CreatePluginRequest } from "../plugins/types";
 import type {
   CloudRuntimeNode,
@@ -2244,6 +2252,31 @@ export class ApiClient {
   async syncBitrixProject(projectId: string): Promise<BitrixSyncResult> {
     return this.fetch(`/api/projects/${projectId}/bitrix/sync`, {
       method: "POST",
+    });
+  }
+
+  // --- Zoho import browser (Projects + Sprints channels) ---
+  async listZohoProjects(): Promise<ZohoProject[]> {
+    return this.fetch(`/api/zoho-projects/projects`);
+  }
+
+  async importZohoProjects(req: ZohoImportRequest): Promise<ZohoImportResponse> {
+    return this.fetch(`/api/zoho-projects/import`, {
+      method: "POST",
+      body: JSON.stringify(req),
+    });
+  }
+
+  async listZohoSprintsProjects(): Promise<ZohoSprintsProject[]> {
+    return this.fetch(`/api/zoho-sprints/projects`);
+  }
+
+  async importZohoSprintsProjects(
+    req: ZohoSprintsImportRequest,
+  ): Promise<ZohoSprintsImportResponse> {
+    return this.fetch(`/api/zoho-sprints/import`, {
+      method: "POST",
+      body: JSON.stringify(req),
     });
   }
 

@@ -2,6 +2,7 @@
 
 import { LarkTab } from "./lark-tab";
 import { BitrixTab } from "./bitrix-tab";
+import { ZohoTab } from "./zoho-tab";
 import { McpServersTab } from "./mcp-servers-tab";
 import { useT } from "../../i18n";
 
@@ -20,6 +21,7 @@ export function IntegrationsTab() {
         <LarkTab />
       </section>
       <BitrixTab />
+      <ZohoTab />
       <McpServersTab />
     </div>
   );

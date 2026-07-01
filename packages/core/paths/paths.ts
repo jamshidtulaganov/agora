@@ -42,6 +42,7 @@ function workspaceScoped(slug: string) {
     skillDetail: (id: string) => `${ws}/skills/${encode(id)}`,
     settings: () => `${ws}/settings`,
     bitrix: () => `${ws}/bitrix`,
+    zoho: () => `${ws}/zoho`,
     mcp: () => `${ws}/mcp`,
     plugins: () => `${ws}/plugins`,
     attachmentPreview: (id: string) => `${ws}/attachments/${encode(id)}/preview`,

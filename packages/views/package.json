@@ -29,6 +29,7 @@
     "./policy": "./policy/index.ts",
     "./skills": "./skills/index.ts",
     "./bitrix": "./bitrix/index.ts",
+    "./zoho": "./zoho/index.ts",
     "./mcp": "./mcp/index.ts",
     "./plugins": "./plugins/index.ts",
     "./agents": "./agents/index.ts",

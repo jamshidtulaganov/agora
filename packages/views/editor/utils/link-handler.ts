@@ -29,6 +29,7 @@ const WORKSPACE_ROUTE_SEGMENTS = new Set([
   "runtimes",
   "skills",
   "bitrix",
+  "zoho",
   "mcp",
   "plugins",
   "settings",
