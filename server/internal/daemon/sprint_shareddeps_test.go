@@ -73,6 +73,25 @@ func TestSprintDepDigest(t *testing.T) {
 	}
 }
 
+func TestSanitizeBranchForPath(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"feat/sprint-x", "feat-sprint-x"},
+		{"my branch name", "my-branch-name"},
+		{"fix..regression", "fix-regression"},
+		{"main", "main"},
+	}
+	for _, c := range cases {
+		t.Run(c.input, func(t *testing.T) {
+			if got := sanitizeBranchForPath(c.input); got != c.want {
+				t.Fatalf("sanitizeBranchForPath(%q) = %q, want %q", c.input, got, c.want)
+			}
+		})
+	}
+}
+
 // TestLinkSharedSprintDeps_ShareAcrossWorktrees proves the disk bound: two
 // worktrees on one sprint branch share a SINGLE installed-deps dir — install
 // runs once, the second worktree symlinks to the first's shared install, and the
