@@ -136,7 +136,7 @@
     "toast_deleted": "Спринт удалён",
     "toast_delete_failed": "Не удалось удалить спринт",
     "delete_dialog_title": "Удалить спринт",
-    "delete_dialog_description": "Это удалит спринт. Задачи не будут удалены, но будут отвязаны от него.",
+    "delete_dialog_description": "Это удалит спринт и все его задачи. Это действие необратимо.",
     "delete_dialog_confirm": "Удалить",
     "delete_dialog_cancel": "Отмена",
     "no_sprint": "Нет спринта",

@@ -136,7 +136,7 @@
     "toast_deleted": "Sprint deleted",
     "toast_delete_failed": "Failed to delete sprint",
     "delete_dialog_title": "Delete sprint",
-    "delete_dialog_description": "This will delete the sprint. Issues will not be deleted but will be unassigned from it.",
+    "delete_dialog_description": "这将删除该冲刺及其所有任务。此操作无法撤销。",
     "delete_dialog_confirm": "Delete",
     "delete_dialog_cancel": "Cancel",
     "no_sprint": "无冲刺",

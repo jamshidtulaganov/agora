@@ -136,7 +136,7 @@
     "toast_deleted": "Sprint o‘chirildi",
     "toast_delete_failed": "Sprintni o‘chirib bo‘lmadi",
     "delete_dialog_title": "Sprintni o‘chirish",
-    "delete_dialog_description": "Bu sprintni o‘chiradi. Vazifalar o‘chirilmaydi, lekin ulardan ajratiladi.",
+    "delete_dialog_description": "Bu sprintni va uning barcha vazifalarini o‘chiradi. Buni qaytarib bo‘lmaydi.",
     "delete_dialog_confirm": "O‘chirish",
     "delete_dialog_cancel": "Bekor qilish",
     "no_sprint": "Sprint yo‘q",
