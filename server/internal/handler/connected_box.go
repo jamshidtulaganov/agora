@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -1011,45 +1013,80 @@ func cachedURLAllowsFraming(ctx context.Context, target string) bool {
 	return result
 }
 
+// responseBlocksFraming reports whether a single response's headers forbid
+// cross-origin framing: X-Frame-Options deny/sameorigin, or a CSP
+// frame-ancestors directive that isn't a bare wildcard (present-but-narrow
+// means some allowlist we can't confirm includes Agora's origin, which
+// varies per deployment).
+func responseBlocksFraming(h http.Header) bool {
+	if xfo := strings.ToLower(strings.TrimSpace(h.Get("X-Frame-Options"))); xfo == "deny" || xfo == "sameorigin" {
+		return true
+	}
+	for _, directive := range strings.Split(h.Get("Content-Security-Policy"), ";") {
+		directive = strings.TrimSpace(directive)
+		if strings.HasPrefix(strings.ToLower(directive), "frame-ancestors") && !strings.Contains(directive, "*") {
+			return true
+		}
+	}
+	return false
+}
+
 // urlAllowsFraming reports whether url's response headers permit embedding it
 // in a cross-origin iframe — the Live testing bay iframe would otherwise
 // render silently blank (a CSP frame-ancestors or X-Frame-Options block fires
 // no JS error event, so the frontend has no way to detect it after the fact).
 // Checked server-side because the outbound request needs no CORS exemption
-// here, unlike a browser fetch. Any signal we can't positively clear —
-// request failure, timeout, X-Frame-Options: deny/sameorigin, or a
-// Content-Security-Policy frame-ancestors directive that isn't a bare
-// wildcard — returns false: the caller shows an "Open" link instead of a
-// guaranteed-blank iframe. False positives (looks embeddable, isn't) are far
-// worse for a first impression than false negatives (embeddable, we just
-// offer a link instead).
+// here, unlike a browser fetch.
+//
+// Uses GET (not HEAD) and walks redirects MANUALLY, checking headers at
+// EVERY hop, instead of trusting Go's default client to auto-follow and
+// report only the final response — a real iframe navigation is a GET, and
+// an intermediate redirect can legitimately carry its own restrictive
+// headers even when the final destination's happen to look permissive.
+// Bounded to 5 hops. Any signal we can't positively clear — request
+// failure, timeout, too many redirects, or a block seen at ANY hop —
+// returns false: the caller shows an "Open" link instead of a gambled
+// iframe. False positives (looks embeddable, isn't) are far worse for a
+// first impression than false negatives (embeddable, we just offer a link
+// instead).
 func urlAllowsFraming(ctx context.Context, target string) bool {
-	reqCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	reqCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodHead, target, nil)
-	if err != nil {
-		return false
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
 
-	if xfo := strings.ToLower(strings.TrimSpace(resp.Header.Get("X-Frame-Options"))); xfo == "deny" || xfo == "sameorigin" {
-		return false
+	client := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
-	csp := resp.Header.Get("Content-Security-Policy")
-	for _, directive := range strings.Split(csp, ";") {
-		directive = strings.TrimSpace(directive)
-		if !strings.HasPrefix(strings.ToLower(directive), "frame-ancestors") {
-			continue
-		}
-		// Present and not a bare wildcard -> some allowlist we can't confirm
-		// includes Agora's origin (which varies per deployment) -> blocked.
-		if !strings.Contains(directive, "*") {
+
+	next := target
+	for hop := 0; hop < 5; hop++ {
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, next, nil)
+		if err != nil {
 			return false
 		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return false
+		}
+		blocked := responseBlocksFraming(resp.Header)
+		location := resp.Header.Get("Location")
+		_, _ = io.CopyN(io.Discard, resp.Body, 4096) // drain a little so keep-alive can reuse the conn
+		resp.Body.Close()
+
+		if blocked {
+			return false
+		}
+		if resp.StatusCode < 300 || resp.StatusCode >= 400 || location == "" {
+			return true // terminal response, no block seen at this or any prior hop
+		}
+		redirectURL, err := url.Parse(location)
+		if err != nil {
+			return false
+		}
+		base, err := url.Parse(next)
+		if err != nil {
+			return false
+		}
+		next = base.ResolveReference(redirectURL).String()
 	}
-	return true
+	return false // too many redirects — can't confirm, fail closed
 }
