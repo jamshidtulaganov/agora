@@ -2337,7 +2337,16 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		params.Description = pgtype.Text{String: *req.Description, Valid: true}
 	}
 	if req.Status != nil {
-		params.Status = pgtype.Text{String: *req.Status, Valid: true}
+		// Structural QA gate: a squad-orchestrated issue can't skip in_review on
+		// its way to done without a qa:pass sign-off — redirect the write to
+		// in_review so the QA lead runs first (no-op unless AGORA_QA_GATE_ENFORCED).
+		target := *req.Status
+		if newStatus, redirected := h.enforceQAGateBeforeDone(r.Context(), prevIssue, prevIssue.Status, target); redirected {
+			target = newStatus
+			slog.Info("qa-gate: redirected direct →done to →in_review",
+				append(logger.RequestAttrs(r), "issue_id", uuidToString(prevIssue.ID), "requested", *req.Status)...)
+		}
+		params.Status = pgtype.Text{String: target, Valid: true}
 	}
 	if req.Priority != nil {
 		params.Priority = pgtype.Text{String: *req.Priority, Valid: true}
@@ -2959,7 +2968,15 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			params.Description = pgtype.Text{String: *req.Updates.Description, Valid: true}
 		}
 		if req.Updates.Status != nil {
-			params.Status = pgtype.Text{String: *req.Updates.Status, Valid: true}
+			// Structural QA gate (batch-path mirror of UpdateIssue): a
+			// squad-orchestrated issue can't skip in_review to done without qa:pass.
+			target := *req.Updates.Status
+			if newStatus, redirected := h.enforceQAGateBeforeDone(r.Context(), prevIssue, prevIssue.Status, target); redirected {
+				target = newStatus
+				slog.Info("qa-gate: redirected direct →done to →in_review (batch)",
+					"issue_id", uuidToString(prevIssue.ID), "requested", *req.Updates.Status)
+			}
+			params.Status = pgtype.Text{String: target, Valid: true}
 		}
 		if req.Updates.Priority != nil {
 			params.Priority = pgtype.Text{String: *req.Updates.Priority, Valid: true}
@@ -3129,6 +3146,17 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		// Auto knowledge-capture on completion (batch-path mirror of UpdateIssue).
 		if statusChanged && issue.Status == "done" && prevIssue.Status != "done" {
 			h.maybeEnqueueKnowledgeCapture(r.Context(), issue)
+		}
+
+		// Auto-QA on in_review (batch-path mirror of UpdateIssue). Also fires when
+		// the QA gate above redirects a board drag-to-done into in_review, so a
+		// squad-orchestrated issue always reaches the QA lead regardless of path.
+		if statusChanged && issue.Status == "in_review" && prevIssue.Status != "in_review" {
+			issueCopy := issue
+			go func() {
+				h.maybeRunQAOnInReview(context.Background(), issueCopy, actorType, actorID)
+				h.maybeGenTestsOnInReview(context.Background(), issueCopy, actorType, actorID)
+			}()
 		}
 
 		// Cancel active tasks when the issue is cancelled by a user.

@@ -503,6 +503,85 @@ func qaFailAutorouteEnabled() bool {
 	return strings.TrimSpace(os.Getenv("AGORA_QA_FAIL_AUTOROUTE_ENABLED")) == "true"
 }
 
+// qaGateEnforced gates the STRUCTURAL QA gate: when on, a squad-orchestrated
+// issue cannot jump straight to `done` without a QA sign-off — a direct
+// →done transition is redirected to →in_review (which fires the QA lead via
+// maybeRunQAOnInReview) unless the issue already carries qa:pass. This turns
+// "the dev lead and QA lead are always in communication" from an instruction
+// the leader might omit into a platform guarantee. Default off — opt-in,
+// matching every other auto-* gate in this file.
+func qaGateEnforced() bool {
+	return strings.TrimSpace(os.Getenv("AGORA_QA_GATE_ENFORCED")) == "true"
+}
+
+// issueDevOrchestrated reports whether the issue's dev-side assignee is
+// squad-managed — assigned straight to a squad, or to an agent that belongs
+// to at least one squad. This is the signal that the work is run by a lead
+// orchestrator (dev lead) rather than a solo agent, so both the auto-QA
+// leader routing and the structural QA gate key off it.
+func (h *Handler) issueDevOrchestrated(ctx context.Context, issue db.Issue) bool {
+	if !issue.AssigneeType.Valid {
+		return false
+	}
+	switch issue.AssigneeType.String {
+	case "squad":
+		return true
+	case "agent":
+		if !issue.AssigneeID.Valid {
+			return false
+		}
+		squads, err := h.Queries.ListSquadsByMember(ctx, db.ListSquadsByMemberParams{
+			WorkspaceID: issue.WorkspaceID, MemberType: "agent", MemberID: issue.AssigneeID,
+		})
+		return err == nil && len(squads) > 0
+	}
+	return false
+}
+
+// issueHasLabel reports whether the issue currently carries the named label
+// (case-insensitive match). Best-effort: a query error reports false.
+func (h *Handler) issueHasLabel(ctx context.Context, issue db.Issue, name string) bool {
+	labels, err := h.Queries.ListLabelsByIssue(ctx, db.ListLabelsByIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		return false
+	}
+	want := strings.ToLower(strings.TrimSpace(name))
+	for _, l := range labels {
+		if strings.ToLower(strings.TrimSpace(l.Name)) == want {
+			return true
+		}
+	}
+	return false
+}
+
+// enforceQAGateBeforeDone decides the status a write should actually land on.
+// When the QA gate is enforced and a squad-orchestrated issue is being moved
+// directly into `done` without a qa:pass sign-off — and it isn't already in
+// in_review — the target is rewritten to `in_review` so the QA lead runs
+// before the issue can complete. Once qa:pass is present the →done write
+// passes through untouched, so the loop (dev → in_review → QA → qa:pass →
+// done) always converges. Returns (statusToWrite, redirected).
+//
+// Applies uniformly to every actor (agent or human): a squad's work is QA
+// work, and a human who genuinely wants to bypass can apply qa:pass first.
+func (h *Handler) enforceQAGateBeforeDone(ctx context.Context, issue db.Issue, prevStatus, targetStatus string) (string, bool) {
+	if !qaGateEnforced() {
+		return targetStatus, false
+	}
+	if targetStatus != "done" || prevStatus == "done" || prevStatus == "in_review" {
+		return targetStatus, false
+	}
+	if !h.issueDevOrchestrated(ctx, issue) {
+		return targetStatus, false
+	}
+	if h.issueHasLabel(ctx, issue, "qa:pass") {
+		return targetStatus, false
+	}
+	return "in_review", true
+}
+
 // maybeRouteToDevLeadOnQAFail closes the QA<->dev loop automatically: when an
 // issue gains qa:fail, find the FAILING dev agent's squad (if any) and hand the
 // issue to that squad's LEADER — the orchestrator who triages and re-delegates
@@ -703,16 +782,7 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	// behind one agent — this branch never touches that path.
 	var runner db.Agent
 	var agents []db.Agent
-	devOrchestrated := false
-	if issue.AssigneeType.Valid && issue.AssigneeType.String == "agent" && issue.AssigneeID.Valid {
-		if squads, err := h.Queries.ListSquadsByMember(ctx, db.ListSquadsByMemberParams{
-			WorkspaceID: issue.WorkspaceID, MemberType: "agent", MemberID: issue.AssigneeID,
-		}); err == nil && len(squads) > 0 {
-			devOrchestrated = true
-		}
-	} else if issue.AssigneeType.Valid && issue.AssigneeType.String == "squad" {
-		devOrchestrated = true
-	}
+	devOrchestrated := h.issueDevOrchestrated(ctx, issue)
 	if devOrchestrated {
 		if leader, ok := h.qaSquadLeader(ctx, issue.WorkspaceID); ok {
 			runner = leader

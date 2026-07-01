@@ -203,6 +203,24 @@ manual/load-balanced behavior when there's no squad on one side — e.g. a
 solo dev agent with no squad keeps the old flow; a squad dev with no QA
 squad in the workspace falls through to the generic roster pick.
 
+### Structural QA gate (in_review is not skippable)
+
+A third, related mechanism enforces the "always in communication" rule
+STRUCTURALLY rather than by instruction: when `AGORA_QA_GATE_ENFORCED` is on,
+a squad-orchestrated issue **cannot** be moved straight to `done`. A direct
+`→done` write (from any actor, agent or human) is rewritten to `→in_review`
+when all of these hold: the dev side is squad-orchestrated, the issue does
+NOT already carry `qa:pass`, and it isn't already in `in_review`. The
+redirect fires `maybeRunQAOnInReview` (routing to the QA lead), so the loop
+is dev → in_review → QA → `qa:pass` → done. Once `qa:pass` is present, the
+`→done` write passes through untouched, so the loop always converges. This
+means a dev lead that "self-approves" its own subordinate's work and jumps
+to `done` is silently routed through QA instead of bypassing it. The gate
+applies on both the single-issue update and the board batch-update paths.
+When the gate is off (default), status transitions are unvalidated — any
+status can be set from any other, and routing through `in_review` is purely
+a matter of the leader's instructions.
+
 ## Lead Orchestrator pattern
 
 A squad leader is not just a routing target — when a squad is used as the

@@ -535,6 +535,161 @@ func TestMaybeRunQAOnInReview_SoloAgentKeepsLoadBalancedRoster(t *testing.T) {
 	}
 }
 
+// attachLabelDirect inserts a workspace label (idempotent by name) and attaches
+// it to an issue, bypassing the API — for setting up qa:pass state in tests.
+func attachLabelDirect(t *testing.T, ctx context.Context, issueID, name string) {
+	t.Helper()
+	var labelID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO issue_label (workspace_id, name, color)
+		VALUES ($1, $2, '#22c55e')
+		ON CONFLICT (workspace_id, lower(name)) DO UPDATE SET color = EXCLUDED.color
+		RETURNING id
+	`, testWorkspaceID, name).Scan(&labelID); err != nil {
+		t.Fatalf("setup: upsert label %q: %v", name, err)
+	}
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO issue_to_label (issue_id, label_id) VALUES ($1, $2)
+		ON CONFLICT DO NOTHING
+	`, issueID, labelID); err != nil {
+		t.Fatalf("setup: attach label %q: %v", name, err)
+	}
+	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM issue_to_label WHERE issue_id = $1 AND label_id = $2`, issueID, labelID) })
+}
+
+// TestEnforceQAGateBeforeDone is the truth table for the structural QA gate:
+// a squad-orchestrated issue must be redirected from a direct →done to
+// →in_review (so the QA lead runs first) unless it already carries qa:pass,
+// is already in in_review, or the target isn't done — and nothing is
+// redirected at all when the gate env is off or the dev side is a solo agent.
+func TestEnforceQAGateBeforeDone(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+
+	// A squad-orchestrated issue: assigned directly to a dev squad.
+	_, devLeaderID, _ := leadOrchestratorTestFixture(t, ctx, "qa-gate")
+	var devSquadID string
+	if err := testPool.QueryRow(ctx, `SELECT id FROM squad WHERE leader_id = $1`, devLeaderID).Scan(&devSquadID); err != nil {
+		t.Fatalf("find dev squad: %v", err)
+	}
+	squadIssueID := sliceActionTestIssue(t, "squad", devSquadID)
+	squadIssue, err := testHandler.Queries.GetIssue(ctx, testUUID(squadIssueID))
+	if err != nil {
+		t.Fatalf("load squad issue: %v", err)
+	}
+
+	// A solo-agent issue: no squad on either side.
+	solo, _, _ := privateAgentTestFixture(t)
+	soloIssueID := sliceActionTestIssue(t, "agent", solo)
+	soloIssue, err := testHandler.Queries.GetIssue(ctx, testUUID(soloIssueID))
+	if err != nil {
+		t.Fatalf("load solo issue: %v", err)
+	}
+
+	t.Run("gate off → passthrough even for squad done", func(t *testing.T) {
+		t.Setenv("AGORA_QA_GATE_ENFORCED", "")
+		got, redirected := testHandler.enforceQAGateBeforeDone(ctx, squadIssue, "in_progress", "done")
+		if redirected || got != "done" {
+			t.Errorf("gate off must passthrough, got (%q, %v)", got, redirected)
+		}
+	})
+
+	t.Run("gate on + squad + direct done → redirect to in_review", func(t *testing.T) {
+		t.Setenv("AGORA_QA_GATE_ENFORCED", "true")
+		got, redirected := testHandler.enforceQAGateBeforeDone(ctx, squadIssue, "in_progress", "done")
+		if !redirected || got != "in_review" {
+			t.Errorf("expected redirect to in_review, got (%q, %v)", got, redirected)
+		}
+	})
+
+	t.Run("gate on + already in_review → passthrough (allow done)", func(t *testing.T) {
+		t.Setenv("AGORA_QA_GATE_ENFORCED", "true")
+		got, redirected := testHandler.enforceQAGateBeforeDone(ctx, squadIssue, "in_review", "done")
+		if redirected || got != "done" {
+			t.Errorf("done from in_review must passthrough, got (%q, %v)", got, redirected)
+		}
+	})
+
+	t.Run("gate on + target not done → passthrough", func(t *testing.T) {
+		t.Setenv("AGORA_QA_GATE_ENFORCED", "true")
+		got, redirected := testHandler.enforceQAGateBeforeDone(ctx, squadIssue, "todo", "in_progress")
+		if redirected || got != "in_progress" {
+			t.Errorf("non-done target must passthrough, got (%q, %v)", got, redirected)
+		}
+	})
+
+	t.Run("gate on + solo agent → passthrough", func(t *testing.T) {
+		t.Setenv("AGORA_QA_GATE_ENFORCED", "true")
+		got, redirected := testHandler.enforceQAGateBeforeDone(ctx, soloIssue, "in_progress", "done")
+		if redirected || got != "done" {
+			t.Errorf("solo-agent issue must passthrough, got (%q, %v)", got, redirected)
+		}
+	})
+
+	t.Run("gate on + squad + qa:pass present → passthrough", func(t *testing.T) {
+		t.Setenv("AGORA_QA_GATE_ENFORCED", "true")
+		attachLabelDirect(t, ctx, squadIssueID, "qa:pass")
+		got, redirected := testHandler.enforceQAGateBeforeDone(ctx, squadIssue, "in_progress", "done")
+		if redirected || got != "done" {
+			t.Errorf("qa:pass present must passthrough, got (%q, %v)", got, redirected)
+		}
+	})
+}
+
+// TestUpdateIssue_QAGateRedirectsSquadDoneToInReview is the end-to-end guard:
+// a real PUT /api/issues/{id} that tries to move a squad-orchestrated issue
+// straight to done must LAND on in_review (the QA-lead handoff) when the gate
+// env is on, and must go straight to done for a solo agent. Exercises the full
+// UpdateIssue handler, not just the helper.
+func TestUpdateIssue_QAGateRedirectsSquadDoneToInReview(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	t.Setenv("AGORA_QA_GATE_ENFORCED", "true")
+	t.Setenv("AGORA_AUTO_QA_ENABLED", "") // isolate the gate; don't fire the async QA task
+
+	_, devLeaderID, _ := leadOrchestratorTestFixture(t, ctx, "qa-gate-e2e")
+	var devSquadID string
+	if err := testPool.QueryRow(ctx, `SELECT id FROM squad WHERE leader_id = $1`, devLeaderID).Scan(&devSquadID); err != nil {
+		t.Fatalf("find dev squad: %v", err)
+	}
+
+	drive := func(issueID, status string) string {
+		w := httptest.NewRecorder()
+		req := newRequest("PUT", "/api/issues/"+issueID, map[string]any{"status": status})
+		req = withURLParam(req, "id", issueID)
+		testHandler.UpdateIssue(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("UpdateIssue status=%q: expected 200, got %d: %s", status, w.Code, w.Body.String())
+		}
+		var got string
+		if err := testPool.QueryRow(ctx, `SELECT status FROM issue WHERE id = $1`, issueID).Scan(&got); err != nil {
+			t.Fatalf("read back status: %v", err)
+		}
+		return got
+	}
+
+	// Squad-orchestrated issue: done request must be redirected to in_review.
+	squadIssueID := sliceActionTestIssue(t, "squad", devSquadID)
+	if got := drive(squadIssueID, "done"); got != "in_review" {
+		t.Errorf("squad-orchestrated done must redirect to in_review, got %q", got)
+	}
+	// Second hop: from in_review, done is now allowed through (prev==in_review).
+	if got := drive(squadIssueID, "done"); got != "done" {
+		t.Errorf("done from in_review must pass through, got %q", got)
+	}
+
+	// Solo-agent issue: done is never gated.
+	solo, _, _ := privateAgentTestFixture(t)
+	soloIssueID := sliceActionTestIssue(t, "agent", solo)
+	if got := drive(soloIssueID, "done"); got != "done" {
+		t.Errorf("solo-agent done must pass through, got %q", got)
+	}
+}
+
 // TestBuildSliceInstructionRunCI covers the run_ci kind: a deterministic gate on
 // an existing PR branch (no new PR). It must run the checks and report by exit
 // code, set the ci:pass/ci:fail label, reference branch resolution + the no-merge

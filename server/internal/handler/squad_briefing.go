@@ -86,7 +86,16 @@ Hard rules:
   work, the agent runs twice in parallel (once from the mention, once
   from the assignment). Pick exactly one path: either delegate by
   @mention on this issue, or create a ` + "`" + `todo` + "`" + ` child issue assigned to
-  them. Never both for the same work.`
+  them. Never both for the same work.
+- **Route completed work through ` + "`" + `in_review` + "`" + `, never straight to ` + "`" + `done` + "`" + `.**
+  When a member reports the work finished, move the issue to ` + "`" + `in_review` + "`" + ` —
+  that is the handoff to the QA lead, who runs the QA gate and applies
+  ` + "`" + `qa:pass` + "`" + ` / ` + "`" + `qa:fail` + "`" + `. Do NOT self-approve and close the issue
+  yourself: the QA lead and you (the dev lead) must stay in communication on
+  every task, and skipping ` + "`" + `in_review` + "`" + ` bypasses QA entirely. Mark ` + "`" + `done` + "`" + `
+  only after ` + "`" + `qa:pass` + "`" + ` is on the issue. If QA returns ` + "`" + `qa:fail` + "`" + `, it
+  routes the issue back to you — triage, re-delegate or fix, then return it
+  to ` + "`" + `in_review` + "`" + ` so QA re-runs.`
 
 // buildSquadLeaderBriefing composes the full system briefing appended to a
 // squad leader's Instructions when it claims a task on a squad-assigned

@@ -247,6 +247,43 @@ Contracts:
   `AGORA_QA_FAIL_AUTOROUTE_ENABLED` (qaFailAutorouteEnabled,
   slice_action.go:502-503) gates the fail-autoroute.
 
+## Structural QA Gate
+
+Source:
+
+```text
+server/internal/handler/slice_action.go   # qaGateEnforced, issueDevOrchestrated,
+                                           # issueHasLabel, enforceQAGateBeforeDone (near qaFailAutorouteEnabled)
+server/internal/handler/issue.go          # UpdateIssue status-set (single path) + BatchUpdateIssues
+                                           # status-set (batch path) both call enforceQAGateBeforeDone;
+                                           # batch path also mirrors the maybeRunQAOnInReview hook
+server/internal/handler/squad_briefing.go # squadOperatingProtocol carries the "route through in_review,
+                                           # never straight to done" hard rule for every squad leader
+```
+
+Contracts:
+
+- `enforceQAGateBeforeDone(ctx, issue, prevStatus, target)` returns
+  `(in_review, true)` — redirecting the write — only when `qaGateEnforced()`
+  (env `AGORA_QA_GATE_ENFORCED == "true"`) AND target==`done` AND
+  prevStatus is neither `done` nor `in_review` AND `issueDevOrchestrated`
+  AND NOT `issueHasLabel(qa:pass)`; otherwise returns `(target, false)`
+  (no-op passthrough);
+- `issueDevOrchestrated` is the shared helper (also used by
+  `maybeRunQAOnInReview`): true when the assignee is a squad, or an agent
+  in ≥1 squad (`ListSquadsByMember`);
+- the redirect is applied at the `req.Status` set point in `UpdateIssue`
+  (before the `UpdateIssue` DB write) and at `req.Updates.Status` in
+  `BatchUpdateIssues`; because the written status becomes `in_review`, the
+  existing prev!=in_review→in_review hook fires and routes to the QA lead;
+- the batch path previously had NO `maybeRunQAOnInReview` hook (only
+  knowledge-capture on done) — it now mirrors the single path's in_review
+  hook so a gate-redirect there also reaches the QA lead;
+- when the gate is OFF (default), there is NO status-transition validation
+  anywhere: `UpdateIssue`/`UpdateIssueStatus` accept any→any within the
+  status CHECK constraint (issue.sql), and routing through `in_review` is
+  purely instruction-driven via `squadOperatingProtocol`.
+
 ## Lead Orchestrator / Dynamic Subagent Management
 
 Source:
