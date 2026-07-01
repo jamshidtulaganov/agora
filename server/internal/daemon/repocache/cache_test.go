@@ -1422,10 +1422,10 @@ func TestSanitizeName(t *testing.T) {
 	tests := []struct {
 		input, want string
 	}{
-		{"hello world", "hello-world"},
-		{"hello/world", "hello-world"},
+		{"My Agent", "my-agent"},
+		{"feature/branch", "feature-branch"},
 		{"", "agent"},
-		{"helloworld", "helloworld"},
+		{"myagent123", "myagent123"},
 	}
 	for _, tt := range tests {
 		if got := sanitizeName(tt.input); got != tt.want {
