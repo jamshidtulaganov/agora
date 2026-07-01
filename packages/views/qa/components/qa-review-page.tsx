@@ -109,7 +109,7 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
         : t(($) => $.qa_evidence.verdict_unknown);
 
   return (
-    <div className="mx-auto w-full max-w-[1400px] px-6 py-6">
+    <div className="mx-auto w-full max-w-[1800px] px-6 py-6">
       <AppLink
         href={wp.qa()}
         className="mb-5 inline-flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground"
@@ -121,10 +121,12 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
       {isLoading || !issue ? (
         <p className="text-sm text-muted-foreground">{t(($) => $.timeline.loading)}</p>
       ) : (
-        // Cockpit split: the review rail (evidence you read + the call you make)
-        // on the left; the pinned Live testing bay (the app you watch and drive)
-        // on the right. Below lg the bay stacks under the rail.
-        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(380px,440px)] lg:items-start lg:gap-6">
+        // Cockpit split: a narrow, fixed-width review rail (evidence you read +
+        // the call you make) on the left; the Live testing bay takes ALL
+        // remaining width on the right — it drives a real Chromium pinned at a
+        // 1280×800 CDP frame, so it needs the room, not a squeezed sidebar.
+        // Below lg the bay stacks under the rail (evidence-first on mobile).
+        <div className="lg:grid lg:grid-cols-[400px_minmax(0,1fr)] lg:items-start lg:gap-6">
           {/* ── Review rail ─────────────────────────────────────────────── */}
           <div className="flex min-w-0 flex-col gap-5">
             <header className="space-y-1.5">
