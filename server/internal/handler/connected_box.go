@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -970,8 +971,44 @@ func (h *Handler) GetIssueQAPreviewURL(w http.ResponseWriter, r *http.Request) {
 	url := h.resolveQAPreviewURL(r.Context(), issue)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"url":        url,
-		"embeddable": url != "" && urlAllowsFraming(r.Context(), url),
+		"embeddable": url != "" && cachedURLAllowsFraming(r.Context(), url),
 	})
+}
+
+// frameCheckTTL bounds how long a cached embeddability verdict is trusted.
+// CSP/X-Frame-Options headers change on infra changes, not per-request — an
+// hour avoids re-probing the target on every QA-page load (the real network
+// hop took ~1.2s even when healthy) while still catching a config change
+// within a working session.
+const frameCheckTTL = time.Hour
+
+type frameCheckResult struct {
+	embeddable bool
+	expires    time.Time
+}
+
+var (
+	frameCheckMu    sync.Mutex
+	frameCheckCache = map[string]frameCheckResult{}
+)
+
+// cachedURLAllowsFraming wraps urlAllowsFraming with a per-URL TTL cache —
+// every QA review page load for the same project resolves the same box URL,
+// so without caching each one would pay the full outbound HEAD round trip.
+func cachedURLAllowsFraming(ctx context.Context, target string) bool {
+	frameCheckMu.Lock()
+	if cached, ok := frameCheckCache[target]; ok && time.Now().Before(cached.expires) {
+		frameCheckMu.Unlock()
+		return cached.embeddable
+	}
+	frameCheckMu.Unlock()
+
+	result := urlAllowsFraming(ctx, target)
+
+	frameCheckMu.Lock()
+	frameCheckCache[target] = frameCheckResult{embeddable: result, expires: time.Now().Add(frameCheckTTL)}
+	frameCheckMu.Unlock()
+	return result
 }
 
 // urlAllowsFraming reports whether url's response headers permit embedding it
