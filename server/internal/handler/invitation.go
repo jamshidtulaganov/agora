@@ -264,9 +264,10 @@ func (h *Handler) RevokeInvitation(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 func (h *Handler) GetMyInvitation(w http.ResponseWriter, r *http.Request) {
-	// Auth required, but the user identity is intentionally not matched against
-	// the invite — see the bearer-link note below.
-	if _, ok := requireUserID(w, r); !ok {
+	// Auth required. The invite itself stays bearer-viewable (the UUID is the
+	// secret), but we capture the caller to gate third-party PII below (F9).
+	userID, ok := requireUserID(w, r)
+	if !ok {
 		return
 	}
 
@@ -282,18 +283,35 @@ func (h *Handler) GetMyInvitation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Shareable-link (bearer) model: the invitation UUID is the secret, so any
-	// authenticated link-holder may view the invite. Required for Telegram-OTP
+	// authenticated link-holder may VIEW the invite (required for Telegram-OTP
 	// users, whose synthetic tg<chatid>@telegram.local address never matches
-	// invitee_email; they open invites shared out-of-band (e.g. over Telegram).
+	// invitee_email; they open invites shared out-of-band). But the inviter's
+	// real email is third-party PII that must NOT leak to a link-holder who is
+	// neither the invitee nor a member of the workspace (F9) — so gate it.
+	isAudience := false
+	if u, uerr := h.Queries.GetUser(r.Context(), parseUUID(userID)); uerr == nil {
+		if strings.ToLower(u.Email) == inv.InviteeEmail || uuidToString(inv.InviteeUserID) == userID {
+			isAudience = true
+		}
+	}
+	if !isAudience {
+		if _, merr := h.getWorkspaceMember(r.Context(), userID, uuidToString(inv.WorkspaceID)); merr == nil {
+			isAudience = true
+		}
+	}
+
 	resp := invitationToResponse(inv)
 
-	// Enrich with workspace name and inviter name.
+	// Enrich with workspace name + inviter name; the inviter's real email is
+	// disclosed only to the intended audience.
 	if ws, err := h.Queries.GetWorkspace(r.Context(), inv.WorkspaceID); err == nil {
 		resp.WorkspaceName = ws.Name
 	}
 	if inviter, err := h.Queries.GetUser(r.Context(), inv.InviterID); err == nil {
 		resp.InviterName = inviter.Name
-		resp.InviterEmail = inviter.Email
+		if isAudience {
+			resp.InviterEmail = inviter.Email
+		}
 	}
 
 	writeJSON(w, http.StatusOK, resp)
