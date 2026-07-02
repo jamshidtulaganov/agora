@@ -441,7 +441,19 @@
     "marked_fail": "qa:fail belgilandi",
     "run_regression": "Sprint regressiyasini ishga tushirish",
     "run_regression_fired": "Sprint butun branchi bo'yicha regressiya ishga tushirildi",
-    "run_regression_failed": "Regressiyani ishga tushirib bo'lmadi"
+    "run_regression_failed": "Regressiyani ishga tushirib bo'lmadi",
+    "design_heading": "Dizayn",
+    "design_pass": "mos",
+    "design_fail": "nomuvofiqlik",
+    "design_skipped": "o'tkazildi",
+    "design_skipped_reason": "Figma bilan aloqa bo'lmadi — dizayn solishtiruvi o'tkazildi (gate'ga ta'sir qilmaydi).",
+    "design_no_mismatches": "Dizayn nomuvofiqliklari topilmadi.",
+    "mismatch_kind_color": "rang",
+    "mismatch_kind_typography": "shrift",
+    "mismatch_kind_spacing": "oraliq",
+    "mismatch_kind_layout": "joylashuv",
+    "mismatch_kind_missing_element": "yo'q",
+    "mismatch_kind_generic": "boshqa"
   },
   "qa_bug": {
     "file_bug": "Bag ochish",

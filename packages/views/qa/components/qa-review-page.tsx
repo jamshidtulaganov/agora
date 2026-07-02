@@ -20,6 +20,7 @@ import { PullRequestList } from "../../issues/components/pull-request-list";
 import { useIssueActions, IssueActionsDropdown } from "../../issues/actions";
 import { QALiveBrowser } from "./qa-live-browser";
 import { QALiveProgress } from "./qa-live-progress";
+import { QADesignCompare } from "./qa-design-compare";
 import { TestCasesPanel } from "./test-cases-panel";
 import { verdictIcon, verdictTone } from "./verdict";
 import { FileBugSheet } from "./file-bug-sheet";
@@ -285,14 +286,23 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
 
             {/* Checks */}
             <div className="border-t pt-4 pb-4">
-              {evidence?.result && evidence.result.commands.length > 0 ? (
+              {evidence?.result && (evidence.result.commands.length > 0 || evidence.result.design) ? (
                 <section>
-                  <div className="mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
-                    {t(($) => $.qa_review.checks)}
-                  </div>
-                  <div className="rounded-lg border">
-                    <StructuredResult result={evidence.result} />
-                  </div>
+                  {evidence.result.commands.length > 0 && (
+                    <>
+                      <div className="mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
+                        {t(($) => $.qa_review.checks)}
+                      </div>
+                      <div className="rounded-lg border">
+                        <StructuredResult result={evidence.result} />
+                      </div>
+                    </>
+                  )}
+                  {evidence.result.design && (
+                    <div className={evidence.result.commands.length > 0 ? "mt-3" : ""}>
+                      <QADesignCompare design={evidence.result.design} />
+                    </div>
+                  )}
                 </section>
               ) : (
                 <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-5 text-center">

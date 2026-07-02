@@ -441,7 +441,19 @@
     "marked_fail": "Marked qa:fail",
     "run_regression": "Run sprint regression",
     "run_regression_fired": "Whole-branch regression fired against the sprint",
-    "run_regression_failed": "Couldn't fire regression"
+    "run_regression_failed": "Couldn't fire regression",
+    "design_heading": "Design",
+    "design_pass": "matches",
+    "design_fail": "mismatch",
+    "design_skipped": "skipped",
+    "design_skipped_reason": "Figma was unreachable — design comparison skipped (does not fail the gate).",
+    "design_no_mismatches": "No design mismatches found.",
+    "mismatch_kind_color": "color",
+    "mismatch_kind_typography": "type",
+    "mismatch_kind_spacing": "spacing",
+    "mismatch_kind_layout": "layout",
+    "mismatch_kind_missing_element": "missing",
+    "mismatch_kind_generic": "other"
   },
   "qa_bug": {
     "file_bug": "File bug",

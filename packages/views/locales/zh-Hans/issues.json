@@ -430,7 +430,19 @@
     "marked_fail": "已标记 qa:fail",
     "run_regression": "运行 Sprint 回归测试",
     "run_regression_fired": "已对 Sprint 整个分支发起回归测试",
-    "run_regression_failed": "无法发起回归测试"
+    "run_regression_failed": "无法发起回归测试",
+    "design_heading": "设计",
+    "design_pass": "匹配",
+    "design_fail": "不匹配",
+    "design_skipped": "已跳过",
+    "design_skipped_reason": "无法连接 Figma——已跳过设计比对（不影响门禁）。",
+    "design_no_mismatches": "未发现设计不匹配。",
+    "mismatch_kind_color": "颜色",
+    "mismatch_kind_typography": "字体",
+    "mismatch_kind_spacing": "间距",
+    "mismatch_kind_layout": "布局",
+    "mismatch_kind_missing_element": "缺失",
+    "mismatch_kind_generic": "其他"
   },
   "qa_bug": {
     "file_bug": "提交缺陷",

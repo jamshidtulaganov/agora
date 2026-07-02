@@ -441,7 +441,19 @@
     "marked_fail": "Отмечено qa:fail",
     "run_regression": "Запустить регрессию спринта",
     "run_regression_fired": "Регрессия всей ветки спринта запущена",
-    "run_regression_failed": "Не удалось запустить регрессию"
+    "run_regression_failed": "Не удалось запустить регрессию",
+    "design_heading": "Дизайн",
+    "design_pass": "совпадает",
+    "design_fail": "расхождение",
+    "design_skipped": "пропущено",
+    "design_skipped_reason": "Figma недоступна — сравнение дизайна пропущено (не влияет на гейт).",
+    "design_no_mismatches": "Расхождений с дизайном не найдено.",
+    "mismatch_kind_color": "цвет",
+    "mismatch_kind_typography": "шрифт",
+    "mismatch_kind_spacing": "отступы",
+    "mismatch_kind_layout": "верстка",
+    "mismatch_kind_missing_element": "отсутствует",
+    "mismatch_kind_generic": "другое"
   },
   "qa_bug": {
     "file_bug": "Завести баг",

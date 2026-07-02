@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -213,4 +214,91 @@ func (h *Handler) designManifestSource(ctx context.Context, issue db.Issue) stri
 		return ""
 	}
 	return m.Source
+}
+
+// sliceActionDesignCompareContext appends an ADVISORY design-verification
+// section to a run_qa instruction when the issue implements a Figma design and
+// the workspace Figma credential is usable. It teaches DETERMINISTIC
+// DOM/getComputedStyle comparison against the manifest tokens + the referenced
+// Figma node values — never pixel-diffing. Returns "" otherwise. Consistent
+// with the repo's anti-vision QA doctrine.
+func (h *Handler) sliceActionDesignCompareContext(ctx context.Context, issue db.Issue) string {
+	if len(issueFigmaRefs(issue)) == 0 {
+		return ""
+	}
+	if _, _, ok := h.decryptWorkspaceFigmaToken(ctx, issue.WorkspaceID); !ok {
+		return "" // no readable design to compare against
+	}
+	return " DESIGN VERIFICATION (this issue implements a Figma design — ADVISORY): after the functional checks, " +
+		"(1) download the reference render(s) for the design node(s) referenced by this issue " +
+		"(download_figma_images, pngScale=2). (2) Open the implemented screen in the embedded Chromium over CDP (or a " +
+		"headless Chromium) at the smoke URL. (3) Compare DETERMINISTICALLY, NOT by pixels: from the Figma node tree " +
+		"and the PROJECT DESIGN SYSTEM (above), assert in the LIVE DOM — text content present, element inventory/order, " +
+		"and key colors / font-sizes / spacing via getComputedStyle. (4) Screenshot both sides and attach them as " +
+		"evidence. (5) Extend your qa-result JSON with a `design` object: " +
+		"`\"design\":{\"verdict\":\"pass\"|\"fail\"|\"skipped\",\"reference_node\":\"208:5147\",\"mismatches\":" +
+		"[{\"kind\":\"color\"|\"typography\"|\"spacing\"|\"layout\"|\"missing_element\"|\"other\",\"selector\":\"…\"," +
+		"\"expected\":\"…\",\"actual\":\"…\"}]}`. Sub-pixel and font-rendering differences are NOT mismatches; a " +
+		"deviation the design proposal explicitly approved is NOT a mismatch; design debt predating this task's diff is " +
+		"OUT of scope — note it, don't fail on it. The design verdict is ADVISORY: apply qa:fail ONLY when functional " +
+		"checks fail OR the mismatches are severe (missing elements, wrong colors on primary surfaces). If Figma is " +
+		"unreachable (429 after one Retry-After, 403, expired credential), set verdict:\"skipped\" with the reason — " +
+		"NEVER fail the issue for an infra reason."
+}
+
+// designGateEnforced reports whether an issue carrying design context must have
+// a passing/skipped design verdict before it can move to done. Opt-in, default
+// off — ships dark until the false-fail rate is observed.
+func designGateEnforced() bool {
+	return strings.TrimSpace(os.Getenv("AGORA_DESIGN_GATE_ENFORCED")) == "true"
+}
+
+// enforceDesignGateBeforeDone redirects a design-decomposed issue's direct
+// →done write to →in_review when its latest QA verdict has no passing/skipped
+// design result. Advisory + opt-in (AGORA_DESIGN_GATE_ENFORCED, default off);
+// a `skipped` design verdict (Figma unreachable) NEVER blocks, and a human
+// qa:pass label is always an override. Returns (statusToWrite, redirected).
+func (h *Handler) enforceDesignGateBeforeDone(ctx context.Context, issue db.Issue, prevStatus, targetStatus string) (string, bool) {
+	if !designGateEnforced() {
+		return targetStatus, false
+	}
+	if targetStatus != "done" || prevStatus == "done" || prevStatus == "in_review" {
+		return targetStatus, false
+	}
+	// Only issues that implement an approved design proposal are gated.
+	if metaString(issue.Metadata, designMetaKeyCommentID) == "" {
+		return targetStatus, false
+	}
+	if h.issueHasLabel(ctx, issue, "qa:pass") {
+		return targetStatus, false // human override
+	}
+	ev, err := h.Queries.GetLatestQAEvidenceForIssue(ctx, db.GetLatestQAEvidenceForIssueParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		return "in_review", true // no verdict at all → gate
+	}
+	switch designVerdictOf(ev.ResultJson) {
+	case "pass", "skipped":
+		return targetStatus, false
+	default:
+		return "in_review", true
+	}
+}
+
+// designVerdictOf extracts result_json.design.verdict; "" when absent/malformed.
+func designVerdictOf(resultJSON []byte) string {
+	if len(resultJSON) == 0 {
+		return ""
+	}
+	var r struct {
+		Design *struct {
+			Verdict string `json:"verdict"`
+		} `json:"design"`
+	}
+	if json.Unmarshal(resultJSON, &r) != nil || r.Design == nil {
+		return ""
+	}
+	return r.Design.Verdict
 }

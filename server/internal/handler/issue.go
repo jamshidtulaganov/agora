@@ -2373,6 +2373,13 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 			slog.Info("qa-gate: redirected direct →done to →in_review",
 				append(logger.RequestAttrs(r), "issue_id", uuidToString(prevIssue.ID), "requested", *req.Status)...)
 		}
+		// Design gate (opt-in, default off): a design-decomposed issue can't skip
+		// in_review to done without a passing/skipped design verdict.
+		if newStatus, redirected := h.enforceDesignGateBeforeDone(r.Context(), prevIssue, prevIssue.Status, target); redirected {
+			target = newStatus
+			slog.Info("design-gate: redirected direct →done to →in_review",
+				append(logger.RequestAttrs(r), "issue_id", uuidToString(prevIssue.ID), "requested", *req.Status)...)
+		}
 		params.Status = pgtype.Text{String: target, Valid: true}
 	}
 	if req.Priority != nil {
@@ -3012,6 +3019,13 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			if newStatus, redirected := h.enforceQAGateBeforeDone(r.Context(), prevIssue, prevIssue.Status, target); redirected {
 				target = newStatus
 				slog.Info("qa-gate: redirected direct →done to →in_review (batch)",
+					"issue_id", uuidToString(prevIssue.ID), "requested", *req.Updates.Status)
+			}
+			// Design gate (batch-path mirror): a design-decomposed issue can't
+			// reach done without a passing/skipped design verdict. Opt-in, dark.
+			if newStatus, redirected := h.enforceDesignGateBeforeDone(r.Context(), prevIssue, prevIssue.Status, target); redirected {
+				target = newStatus
+				slog.Info("design-gate: redirected direct →done to →in_review (batch)",
 					"issue_id", uuidToString(prevIssue.ID), "requested", *req.Updates.Status)
 			}
 			params.Status = pgtype.Text{String: target, Valid: true}

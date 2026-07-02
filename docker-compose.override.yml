@@ -63,6 +63,9 @@ services:
       # Structural QA gate: squad-orchestrated issues can't skip in_review to
       # done without qa:pass — direct done is redirected to in_review. Opt-in.
       AGORA_QA_GATE_ENFORCED: ${AGORA_QA_GATE_ENFORCED:-}
+      # Design gate: a design-decomposed issue can't reach done without a
+      # passing/skipped design verdict (or a qa:pass override). Opt-in, dark.
+      AGORA_DESIGN_GATE_ENFORCED: ${AGORA_DESIGN_GATE_ENFORCED:-}
       # Re-wake the squad lead when a delegated member task dies, so an
       # orchestrated issue doesn't wedge with no recovery. Opt-in.
       AGORA_SQUAD_FAILURE_RECOVERY_ENABLED: ${AGORA_SQUAD_FAILURE_RECOVERY_ENABLED:-}

@@ -10,6 +10,7 @@ import { Button } from "@agora/ui/components/ui/button";
 import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
 import { StructuredResult } from "./editor-tests-panel";
+import { QADesignCompare } from "../../qa/components/qa-design-compare";
 
 // Evidence-first QA section. Opening an in-review task shows its frozen run_qa
 // verdict — the command table with new-failure attribution — read from ONE
@@ -117,6 +118,11 @@ export function QAEvidenceSection({ issueId, status }: QAEvidenceSectionProps) {
               )}
               {evidence.result && evidence.result.commands.length > 0 && (
                 <StructuredResult result={evidence.result} />
+              )}
+              {evidence.result?.design && (
+                <div className="mt-2">
+                  <QADesignCompare design={evidence.result.design} />
+                </div>
               )}
             </div>
           ) : (

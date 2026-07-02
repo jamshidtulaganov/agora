@@ -379,6 +379,37 @@ describe("QAEvidenceSchema (evidence-first QA)", () => {
     expect(parsed.summary).toBe("");
     expect(parsed.captured_at).toBe("");
   });
+
+  it("parses a well-formed design result", () => {
+    const parsed = QAEvidenceSchema.parse({
+      id: "e1", issue_id: "i1", verdict: "pass",
+      result: {
+        verdict: "pass", summary: "", commands: [], screenshots: [],
+        design: { verdict: "fail", reference_node: "208:5147", mismatches: [{ kind: "color", selector: ".btn", expected: "#2563EB", actual: "#333" }] },
+      },
+      captured_at: "2026-06-30T00:00:00Z",
+    });
+    expect(parsed.result?.design?.verdict).toBe("fail");
+    expect(parsed.result?.design?.mismatches[0]!.kind).toBe("color");
+  });
+
+  it("degrades a MALFORMED design block to null WITHOUT nuking the whole result", () => {
+    // An agent emits a wrong-typed design (string shorthand). The verdict +
+    // commands must survive; only the design sub-section drops (.catch(null)).
+    const parsed = QAEvidenceSchema.parse({
+      id: "e1", issue_id: "i1", verdict: "fail",
+      result: {
+        verdict: "fail", summary: "1 fail",
+        commands: [{ cmd: "go test ./...", baseline_exit: 0, branch_exit: 1, kind: "new_failure" }],
+        screenshots: [],
+        design: "pass", // malformed — should be an object
+      },
+      captured_at: "2026-06-30T00:00:00Z",
+    });
+    expect(parsed.result?.verdict).toBe("fail");
+    expect(parsed.result?.commands).toHaveLength(1);
+    expect(parsed.result?.design).toBeNull();
+  });
 });
 
 describe("FigmaCredentialStatusSchema", () => {

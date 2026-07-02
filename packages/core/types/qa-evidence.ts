@@ -18,6 +18,24 @@ export interface QACommand {
   error: string;
 }
 
+// One design mismatch — an implemented value that diverges from the Figma
+// reference / design-manifest token. Deterministic (getComputedStyle / DOM),
+// never a pixel diff.
+export interface QADesignMismatch {
+  kind: "color" | "typography" | "spacing" | "layout" | "missing_element" | "other";
+  selector: string;
+  expected: string;
+  actual: string;
+}
+
+// Advisory design-verification result for a design-implementing issue. `skipped`
+// (Figma unreachable) never fails the gate.
+export interface QADesignResult {
+  verdict: "pass" | "fail" | "skipped";
+  reference_node: string;
+  mismatches: QADesignMismatch[];
+}
+
 // The structured payload from the ```qa-result``` block: the verdict + command
 // table + captured screenshots. Stored verbatim as qa_evidence.result_json.
 export interface QAResult {
@@ -25,6 +43,8 @@ export interface QAResult {
   summary: string;
   commands: QACommand[];
   screenshots: string[];
+  // Present only for design-implementing issues (design-aware QA).
+  design?: QADesignResult | null;
 }
 
 // A persisted evidence row. result is the parsed QAResult (null only if a future

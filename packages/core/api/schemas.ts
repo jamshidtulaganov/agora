@@ -965,6 +965,21 @@ export const QAResultSchema = z.object({
     error: z.string().default(""),
   }).loose()).default([]),
   screenshots: z.array(z.string()).default([]),
+  // Optional design-verification result (design-aware QA): present only when the
+  // issue implements a Figma design. Advisory — a `skipped` verdict never fails
+  // the gate. The agent emits this freehand, so a wrong-typed design block must
+  // degrade to null WITHOUT rejecting the whole qa-result (which would hide the
+  // verdict, commands, and screenshots that parsed fine) — hence `.catch(null)`.
+  design: z.object({
+    verdict: z.string().default("skipped"),
+    reference_node: z.string().default(""),
+    mismatches: z.array(z.object({
+      kind: z.string().default("other"),
+      selector: z.string().default(""),
+      expected: z.string().default(""),
+      actual: z.string().default(""),
+    }).loose()).default([]),
+  }).loose().nullable().catch(null).default(null),
 }).loose();
 
 export const QAEvidenceSchema = z.object({

@@ -128,6 +128,25 @@ The `design_proposal` action also lazy-bootstraps a manifest: if no PROJECT
 DESIGN SYSTEM context is provided, emit a ```design-manifest``` block before your
 proposal.
 
+## Design-aware QA (run_qa)
+
+When a `run_qa` gate fires on an issue that implements a Figma design, your
+context carries a DESIGN VERIFICATION appendix. After the functional checks:
+download the reference render(s), open the implemented screen in the embedded
+Chromium over CDP, and compare DETERMINISTICALLY — from the Figma node tree +
+the PROJECT DESIGN SYSTEM, assert text/inventory/order and key colors, font
+sizes, spacing via `getComputedStyle`. NEVER pixel-diff a screenshot.
+
+Extend your `qa-result` JSON with a `design` object:
+`"design":{"verdict":"pass"|"fail"|"skipped","reference_node":"208:5147","mismatches":[{"kind":"color"|"typography"|"spacing"|"layout"|"missing_element"|"other","selector":"…","expected":"…","actual":"…"}]}`.
+
+The design verdict is ADVISORY: sub-pixel/font-rendering differences and
+proposal-approved deviations are NOT mismatches; predating design debt is out of
+scope. Apply `qa:fail` only when functional checks fail OR mismatches are severe
+(missing elements, wrong colors on primary surfaces). If Figma is unreachable
+(429 after one Retry-After, 403, expired credential) set `verdict:"skipped"`
+with the reason — never fail the issue for an infra reason.
+
 ## What the platform does for you (don't redo it)
 
 - Detects figma.com links in the issue (metadata stamp + live extraction).
