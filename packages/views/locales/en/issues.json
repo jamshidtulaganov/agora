@@ -646,6 +646,9 @@
     "toast_fire_failed": "Failed to request design proposal",
     "toast_approved": "Design approved",
     "toast_changes_requested": "Changes requested",
-    "toast_review_failed": "Review action failed"
+    "toast_review_failed": "Review action failed",
+    "already_decomposed": "This proposal was already decomposed into sub-issues.",
+    "previous_decomposition_body": "An earlier proposal already created sub-issues. Supersede it? The old sub-issues stay — cancel obsolete ones yourself.",
+    "supersede_confirm": "Supersede & create"
   }
 }

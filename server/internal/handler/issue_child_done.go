@@ -49,6 +49,13 @@ import (
 // notification on the side of a successful status update; failing it must
 // not roll back the user's status change.
 func (h *Handler) notifyParentOfChildDone(ctx context.Context, prev, issue db.Issue, actorType, actorID string) {
+	// Design-dependency promotion runs FIRST, before every early return below:
+	// a design-decomposed child's done event must promote its waiting `backlog`
+	// siblings regardless of who the parent is assigned to (Bitrix epics are
+	// human-assigned, which the member-assignee guard below would skip). No-op
+	// unless the child carries design_plan_index metadata.
+	h.promoteDesignDependents(ctx, prev, issue, actorType, actorID)
+
 	if !issue.ParentIssueID.Valid {
 		return
 	}
@@ -83,10 +90,22 @@ func (h *Handler) notifyParentOfChildDone(ctx context.Context, prev, issue db.Is
 	// agent the workspace lost track of, etc.).
 	mentionPrefix := h.buildParentAssigneeMention(ctx, parent)
 
-	content := fmt.Sprintf(
-		"%sSub-issue [%s](mention://issue/%s) — \"%s\" — is done. Before promoting any waiting `backlog` sub-issue, read each sibling's description and only promote items whose stated dependencies are already satisfied — do not rely on this parent's higher-level breakdown alone. If a sibling's description conflicts with that breakdown (e.g. it lists a prerequisite the parent treats as parallel), do NOT change its status — leave it `backlog` and post a comment to confirm first.",
-		mentionPrefix, identifier, childID, title,
-	)
+	// Design-decomposed children are promoted by the platform
+	// (promoteDesignDependents, fired above) — so the parent must NOT touch
+	// sibling statuses, or it would double-promote / promote unsatisfied
+	// dependents. Every other child keeps the read-the-descriptions guidance.
+	var content string
+	if childDesignPlanOf(issue).present {
+		content = fmt.Sprintf(
+			"%sSub-issue [%s](mention://issue/%s) — \"%s\" — is done. Its dependent sub-issues are promoted automatically by the platform — do NOT change any sibling's status yourself.",
+			mentionPrefix, identifier, childID, title,
+		)
+	} else {
+		content = fmt.Sprintf(
+			"%sSub-issue [%s](mention://issue/%s) — \"%s\" — is done. Before promoting any waiting `backlog` sub-issue, read each sibling's description and only promote items whose stated dependencies are already satisfied — do not rely on this parent's higher-level breakdown alone. If a sibling's description conflicts with that breakdown (e.g. it lists a prerequisite the parent treats as parallel), do NOT change its status — leave it `backlog` and post a comment to confirm first.",
+			mentionPrefix, identifier, childID, title,
+		)
+	}
 
 	// author_type='system', author_id=zero UUID. The zero UUID is a valid 16
 	// byte value and the column is NOT NULL; frontend code should branch on

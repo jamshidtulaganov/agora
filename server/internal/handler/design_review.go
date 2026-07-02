@@ -37,6 +37,11 @@ type createDesignReviewRequest struct {
 	Action            string                   `json:"action"` // approve | request_changes
 	Note              string                   `json:"note"`
 	SubIssueOverrides []designSubIssueOverride `json:"sub_issue_overrides"`
+	// SupersedePrevious lets an approve of a REVISED proposal proceed even when
+	// an earlier proposal already decomposed this issue — it creates the new
+	// batch and leaves the old children untouched (the human cancels obsolete
+	// ones through normal issue ops).
+	SupersedePrevious bool `json:"supersede_previous"`
 }
 
 // CreateDesignReview handles POST /api/issues/{id}/design-review.
@@ -93,6 +98,19 @@ func (h *Handler) approveDesignProposal(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
+	// Preflight the decomposition state BEFORE swapping the label, so a repeat
+	// approve or a revised-proposal approve returns a clean 409 instead of a
+	// half-applied state.
+	plan := buildEffectiveDesignPlan(proposal, req.SubIssueOverrides)
+	switch h.designDecompositionPreflight(r.Context(), issue, uuidToString(sourceCommentID), plan, req.SupersedePrevious) {
+	case "already_decomposed":
+		writeError(w, http.StatusConflict, "already_decomposed: this proposal has already been decomposed into sub-issues")
+		return
+	case "previous_decomposition_exists":
+		writeError(w, http.StatusConflict, "previous_decomposition_exists: an earlier proposal already created sub-issues — re-approve with supersede_previous:true to create the new batch and keep the old children")
+		return
+	}
+
 	if err := h.TaskService.SetDesignStateLabel(r.Context(), issue, service.DesignLabelApproved); err != nil {
 		slog.Warn("design review: set approved label failed", append(logger.RequestAttrs(r), "error", err, "issue_id", uuidToString(issue.ID))...)
 		writeError(w, http.StatusInternalServerError, "failed to update design state")
@@ -113,8 +131,7 @@ func (h *Handler) approveDesignProposal(w http.ResponseWriter, r *http.Request, 
 	}
 	h.postDesignSystemComment(r, issue, sysBody)
 
-	// Decomposition seam: Phase 4 turns the approved (override-filtered) proposal
-	// into real sub-issues here. No-op until then.
+	// Turn the approved (override-filtered) proposal into real sub-issues.
 	h.decomposeApprovedProposal(r, issue, userID, proposal, sourceCommentID, req.SubIssueOverrides)
 
 	writeJSON(w, http.StatusOK, map[string]any{"action": "approve", "state": "design:approved"})
@@ -190,11 +207,4 @@ func (h *Handler) postDesignSystemComment(r *http.Request, issue db.Issue, body 
 	h.publish(protocol.EventCommentCreated, uuidToString(issue.WorkspaceID), "system", "", map[string]any{
 		"comment": commentToResponse(comment, nil, nil),
 	})
-}
-
-// decomposeApprovedProposal is the seam Phase 4 fills to create sub-issues from
-// the approved, override-filtered proposal. No-op in Phase 2 so the approval
-// flow ships end-to-end (label + notification + audit) before decomposition.
-func (h *Handler) decomposeApprovedProposal(r *http.Request, issue db.Issue, userID string, proposal service.DesignProposal, sourceCommentID pgtype.UUID, overrides []designSubIssueOverride) {
-	// Intentionally empty until Phase 4.
 }

@@ -631,6 +631,9 @@
     "toast_fire_failed": "请求设计方案失败",
     "toast_approved": "设计已批准",
     "toast_changes_requested": "已请求修改",
-    "toast_review_failed": "评审操作失败"
+    "toast_review_failed": "评审操作失败",
+    "already_decomposed": "该方案已拆分为子 issue。",
+    "previous_decomposition_body": "较早的方案已创建了子 issue。要取代它吗？旧的子 issue 会保留——请自行取消过时项。",
+    "supersede_confirm": "取代并创建"
   }
 }

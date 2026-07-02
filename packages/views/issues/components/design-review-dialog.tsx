@@ -54,6 +54,7 @@ export function DesignReviewDialog({ issueId, versions, onClose }: DesignReviewD
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState<"approve" | "request_changes" | null>(null);
   const [confirmApprove, setConfirmApprove] = useState(false);
+  const [supersedePrompt, setSupersedePrompt] = useState(false);
 
   // Per-sub-issue overrides, keyed by index; default include=true with the
   // agent's original text.
@@ -71,9 +72,11 @@ export function DesignReviewDialog({ issueId, versions, onClose }: DesignReviewD
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: issueKeys.timeline(issueId) });
     void qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, issueId) });
+    // Approval decomposes into sub-issues — refresh the parent's children panel.
+    void qc.invalidateQueries({ queryKey: issueKeys.children(wsId, issueId) });
   };
 
-  const submit = async (action: "approve" | "request_changes") => {
+  const submit = async (action: "approve" | "request_changes", supersede = false) => {
     if (submitting) return;
     if (action === "request_changes" && !note.trim()) {
       toast.error(t(($) => $.design_proposal.changes_note_required));
@@ -96,6 +99,7 @@ export function DesignReviewDialog({ issueId, versions, onClose }: DesignReviewD
       await api.createDesignReview(issueId, {
         action,
         note: note.trim() || undefined,
+        ...(supersede ? { supersede_previous: true } : {}),
         ...(sub_issue_overrides ? { sub_issue_overrides } : {}),
       });
       refresh();
@@ -106,7 +110,17 @@ export function DesignReviewDialog({ issueId, versions, onClose }: DesignReviewD
       );
       onClose();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t(($) => $.design_proposal.toast_review_failed));
+      const msg = e instanceof Error ? e.message : "";
+      if (msg.includes("already_decomposed")) {
+        toast.message(t(($) => $.design_proposal.already_decomposed));
+        refresh();
+        onClose();
+      } else if (msg.includes("previous_decomposition_exists")) {
+        // Offer to supersede the prior batch.
+        setSupersedePrompt(true);
+      } else {
+        toast.error(msg || t(($) => $.design_proposal.toast_review_failed));
+      }
     } finally {
       setSubmitting(null);
     }
@@ -316,7 +330,21 @@ export function DesignReviewDialog({ issueId, versions, onClose }: DesignReviewD
             placeholder={t(($) => $.design_proposal.changes_note_placeholder)}
             className="min-h-[2.5rem] text-xs"
           />
-          {confirmApprove ? (
+          {supersedePrompt ? (
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-amber-700 dark:text-amber-400">
+                {t(($) => $.design_proposal.previous_decomposition_body)}
+              </span>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setSupersedePrompt(false)} disabled={!!submitting}>
+                  {t(($) => $.design_proposal.cancel)}
+                </Button>
+                <Button size="sm" onClick={() => void submit("approve", true)} disabled={!!submitting}>
+                  {submitting === "approve" ? <Loader2 className="size-3.5 animate-spin" /> : t(($) => $.design_proposal.supersede_confirm)}
+                </Button>
+              </div>
+            </div>
+          ) : confirmApprove ? (
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs text-muted-foreground">{t(($) => $.design_proposal.approve_confirm_body)}</span>
               <div className="flex gap-2">

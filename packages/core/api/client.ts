@@ -2726,6 +2726,7 @@ export class ApiClient {
     body: {
       action: "approve" | "request_changes";
       note?: string;
+      supersede_previous?: boolean;
       sub_issue_overrides?: {
         index: number;
         include: boolean;

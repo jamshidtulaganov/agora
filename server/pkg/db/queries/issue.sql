@@ -107,6 +107,18 @@ UPDATE issue SET
 WHERE id = $1 AND workspace_id = $3
 RETURNING *;
 
+-- name: PromoteIssueFromBacklog :one
+-- Compare-and-swap promotion out of backlog: flips status to 'todo' ONLY when
+-- the issue is still 'backlog'. Returns the row when it wins the swap; ErrNoRows
+-- when another concurrent promoter already moved it (or it was never backlog).
+-- Serializes the design-dependency promotion so two prerequisite siblings
+-- finishing at once cannot both promote + double-enqueue the same dependent.
+UPDATE issue SET
+    status = 'todo',
+    updated_at = now()
+WHERE id = $1 AND workspace_id = $2 AND status = 'backlog'
+RETURNING *;
+
 -- name: UpdateIssueAssignee :one
 -- Focused assignee change (e.g. the Lark "assign to me" card action). Both
 -- fields move together; pass NULL/NULL to unassign. Workspace_id guards tenancy.

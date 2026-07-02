@@ -1062,6 +1062,56 @@ func (q *Queries) MarkIssueFirstExecuted(ctx context.Context, id pgtype.UUID) (M
 	return i, err
 }
 
+const promoteIssueFromBacklog = `-- name: PromoteIssueFromBacklog :one
+UPDATE issue SET
+    status = 'todo',
+    updated_at = now()
+WHERE id = $1 AND workspace_id = $2 AND status = 'backlog'
+RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata
+`
+
+type PromoteIssueFromBacklogParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// Compare-and-swap promotion out of backlog: flips status to 'todo' ONLY when
+// the issue is still 'backlog'. Returns the row when it wins the swap; ErrNoRows
+// when another concurrent promoter already moved it (or it was never backlog).
+// Serializes the design-dependency promotion so two prerequisite siblings
+// finishing at once cannot both promote + double-enqueue the same dependent.
+func (q *Queries) PromoteIssueFromBacklog(ctx context.Context, arg PromoteIssueFromBacklogParams) (Issue, error) {
+	row := q.db.QueryRow(ctx, promoteIssueFromBacklog, arg.ID, arg.WorkspaceID)
+	var i Issue
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Title,
+		&i.Description,
+		&i.Status,
+		&i.Priority,
+		&i.AssigneeType,
+		&i.AssigneeID,
+		&i.CreatorType,
+		&i.CreatorID,
+		&i.ParentIssueID,
+		&i.AcceptanceCriteria,
+		&i.ContextRefs,
+		&i.Position,
+		&i.DueDate,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Number,
+		&i.ProjectID,
+		&i.OriginType,
+		&i.OriginID,
+		&i.FirstExecutedAt,
+		&i.StartDate,
+		&i.Metadata,
+	)
+	return i, err
+}
+
 const setIssueMetadataKey = `-- name: SetIssueMetadataKey :one
 
 UPDATE issue SET

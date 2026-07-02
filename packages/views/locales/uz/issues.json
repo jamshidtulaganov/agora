@@ -646,6 +646,9 @@
     "toast_fire_failed": "Dizayn taklifini so'rab bo'lmadi",
     "toast_approved": "Dizayn tasdiqlandi",
     "toast_changes_requested": "O'zgartirish so'raldi",
-    "toast_review_failed": "Ko'rib chiqish amali bajarilmadi"
+    "toast_review_failed": "Ko'rib chiqish amali bajarilmadi",
+    "already_decomposed": "Bu taklif allaqachon kichik vazifalarga bo'lingan.",
+    "previous_decomposition_body": "Oldingi taklif allaqachon kichik vazifalar yaratgan. Uni almashtirasizmi? Eski kichik vazifalar qoladi — eskilarini o'zingiz bekor qiling.",
+    "supersede_confirm": "Almashtirish va yaratish"
   }
 }

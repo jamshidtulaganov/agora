@@ -158,6 +158,15 @@ Current behavior:
 - changing assignee cancels existing tasks for the issue before enqueueing the
   new assignee path.
 
+**Design-decomposed sub-issues promote themselves — do NOT touch their status.**
+When a parent's sub-issues came from an approved *design proposal* (each carries
+a `design_plan_index` in its metadata and a "Design context" section in its
+description), the platform promotes the waiting `backlog` siblings automatically
+the moment their prerequisites finish. The child-done system comment on such a
+parent says so explicitly. As leader, never flip a design sub-issue's status
+yourself — you would double-promote or start a sub-issue whose dependencies are
+not yet met. Just work the sub-issues that are already `todo`.
+
 Assignment validation rejects a missing type/id pair, non-existent squad,
 archived squad, archived leader, and private leader when the actor cannot access
 it.

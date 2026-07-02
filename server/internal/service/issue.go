@@ -69,6 +69,14 @@ type IssueCreateParams struct {
 	OriginID       pgtype.UUID
 	AttachmentIDs  []pgtype.UUID
 	AllowDuplicate bool
+	// Metadata, when set, stamps issue-metadata keys atomically INSIDE the
+	// create transaction (before commit). Values must be primitive scalars per
+	// the metadata V1 contract (string / number / bool) — a post-create
+	// round-trip would let a crash between create and stamp leave a child
+	// invisible to the design-decomposition dedup. Used by the design
+	// decomposition to stamp design_proposal_comment_id / design_plan_index /
+	// design_depends_on.
+	Metadata map[string]any
 }
 
 // IssueCreateOpts groups optional knobs for IssueService.Create. Most
@@ -307,6 +315,30 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 					issue = updated
 				}
 			}
+		}
+	}
+
+	// Stamp caller-supplied metadata keys atomically inside the tx (primitive
+	// scalars only — the V1 contract). Non-primitive values are skipped rather
+	// than failing the create. Used by design decomposition so a child is
+	// dedup-visible the instant it exists.
+	for key, val := range p.Metadata {
+		switch val.(type) {
+		case string, bool, float64, int, int64:
+		default:
+			continue
+		}
+		value, merr := json.Marshal(val)
+		if merr != nil {
+			continue
+		}
+		if updated, serr := qtx.SetIssueMetadataKey(ctx, db.SetIssueMetadataKeyParams{
+			ID:          issue.ID,
+			WorkspaceID: issue.WorkspaceID,
+			Key:         key,
+			Value:       value,
+		}); serr == nil {
+			issue = updated
 		}
 	}
 

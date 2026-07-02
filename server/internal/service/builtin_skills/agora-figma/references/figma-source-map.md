@@ -60,6 +60,17 @@ PR). Re-confirm exact lines after later phases move code.
 | Agent-generation trigger `POST /api/projects/{id}/design-manifest/sync` (chore issue + fire designer) | `server/internal/handler/design_manifest.go` (`SyncProjectDesignManifest`) |
 | Lazy bootstrap inside design_proposal | `server/internal/handler/slice_action.go` (design_proposal recipe BOOTSTRAP clause) |
 
+## decomposition + promotion (Phase 4)
+
+| Behavior | File:line |
+|---|---|
+| Approve preflight (409 already_decomposed / previous_decomposition_exists) before label swap | `server/internal/handler/design_review.go` (`approveDesignProposal`, `designDecompositionPreflight`) |
+| Deterministic sub-issue creation from the override-filtered plan; flat metadata keys design_proposal_comment_id/design_plan_index/design_depends_on stamped inside the create tx | `server/internal/handler/design_decompose.go` (`decomposeApprovedProposal`, `buildEffectiveDesignPlan`); `server/internal/service/issue.go` (`IssueCreateParams.Metadata`) |
+| "Design context" child description (Figma links + component verdicts + parent pointer) | `server/internal/handler/design_decompose.go` (`composeDesignChildDescription`) |
+| Dependency promotion on child-done (before notifyParentOfChildDone early returns; enqueues + publishes EventIssueUpdated; no env flag) | `server/internal/handler/design_decompose.go` (`promoteDesignDependents`); wired at top of `issue_child_done.go` (`notifyParentOfChildDone`) |
+| Variant child-done comment ("promoted automatically — do not change sibling statuses") | `server/internal/handler/issue_child_done.go` (design-child branch) + `agora-squads/SKILL.md` |
+| Supersede a prior decomposition (supersede_previous) | `server/internal/handler/design_review.go` (`createDesignReviewRequest.SupersedePrevious`) |
+
 ## External facts (not in-repo)
 
 - Figma PATs hard-cap at 90 days (policy change 2025-04-28); View/Collab-seat
