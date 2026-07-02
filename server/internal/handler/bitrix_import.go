@@ -404,11 +404,16 @@ func (h *Handler) importBitrixComments(ctx context.Context, wsID, issueID, owner
 		if strings.TrimSpace(content) == "" {
 			continue
 		}
-		// Attribute to the REAL Bitrix author (provisioned member) when we can
-		// resolve them; otherwise fall back to the workspace owner.
+		// Attribute to the REAL Bitrix author when we can resolve them to an
+		// Agora member; otherwise to the dedicated "Bitrix" import identity —
+		// NOT the workspace owner, which mis-showed every external author as the
+		// operator who ran the import (the reported bug). The real name is still
+		// in the comment body's "**Bitrix — <author>**" provenance header.
 		authorType, authorID := "member", ownerID
 		if ref := h.bitrixCommentAuthor(ctx, wsID, c.AuthorID, st); ref.Type.Valid {
 			authorType, authorID = ref.Type.String, ref.ID
+		} else if bid, ok := h.ensureBitrixAuthorMember(ctx, wsID); ok {
+			authorType, authorID = "member", bid
 		}
 		if _, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 			IssueID:     issueID,
@@ -435,6 +440,51 @@ func (h *Handler) importBitrixComments(ctx context.Context, wsID, issueID, owner
 	h.setBitrixImportFlag(ctx, wsID, issueID, bitrixCommentsImportedMetaKey)
 	slog.Info("bitrix sync: imported comments",
 		"task_id", taskID, "issue_id", util.UUIDToString(issueID), "new", imported, "total", len(seen))
+}
+
+// bitrixAuthorUserEmail / bitrixAuthorUserName identify the single global
+// "Bitrix" system user that owns import-attributed comments across workspaces.
+// The .local domain is undeliverable and can never log in (email-code login
+// rejects synthetic domains), so it is a pure attribution identity.
+const (
+	bitrixAuthorUserEmail = "bitrix-import@bitrix.local"
+	bitrixAuthorUserName  = "Bitrix"
+)
+
+// ensureBitrixAuthorMember returns the id of the dedicated "Bitrix" import
+// identity (a single global system user, added as a member of wsID) used to
+// attribute a Bitrix comment whose real author can't be resolved to an Agora
+// member. This keeps external Bitrix authors off the workspace owner — who
+// merely ran the import — while the real name stays in the comment's
+// "**Bitrix — <author>**" provenance header. Best-effort: ok=false on any error
+// so the caller falls back to the owner rather than dropping the comment.
+func (h *Handler) ensureBitrixAuthorMember(ctx context.Context, wsID pgtype.UUID) (pgtype.UUID, bool) {
+	var userID pgtype.UUID
+	if u, err := h.Queries.GetUserByEmail(ctx, bitrixAuthorUserEmail); err == nil {
+		userID = u.ID
+	} else {
+		created, cerr := h.Queries.CreateUser(ctx, db.CreateUserParams{
+			Name:  bitrixAuthorUserName,
+			Email: bitrixAuthorUserEmail,
+		})
+		if cerr != nil {
+			return pgtype.UUID{}, false
+		}
+		userID = created.ID
+	}
+	if _, err := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
+		UserID:      userID,
+		WorkspaceID: wsID,
+	}); err != nil {
+		if _, cerr := h.Queries.CreateMember(ctx, db.CreateMemberParams{
+			WorkspaceID: wsID,
+			UserID:      userID,
+			Role:        "member",
+		}); cerr != nil {
+			return pgtype.UUID{}, false
+		}
+	}
+	return userID, true
 }
 
 // formatBitrixComment renders a Bitrix comment as an Agora issue-comment body

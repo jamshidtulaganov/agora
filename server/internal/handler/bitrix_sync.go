@@ -1120,18 +1120,20 @@ func (h *Handler) bitrixCommentAuthor(ctx context.Context, wsID pgtype.UUID, aut
 		return cached
 	}
 	ref := bitrixAuthorRef{}
-	if h.bitrixRoutingForWorkspace(ctx, wsID, st).ProvisionAssignees {
-		// Resolve (external-identity / email) first; provision only if needed.
-		// Provisioning a new author is gated by the same team-department filter
-		// as assignees — a comment author from outside the team isn't added to
-		// the workspace (the comment then falls back to the owner).
-		u := h.bitrixResponsible(ctx, st, id)
-		if t, uid := h.bitrixResolveAssignee(ctx, wsID, id, u); t.Valid {
+	u := h.bitrixResponsible(ctx, st, id)
+	// Always resolve to an EXISTING Agora identity (external-identity link or a
+	// shared-email member) — safe, creates no users. This lets a Bitrix comment
+	// written by an SD staffer who IS an Agora member be attributed to THEM
+	// instead of collapsing onto the workspace owner. Previously the whole
+	// resolve was gated behind ProvisionAssignees, so with provisioning off
+	// (prod default) every Bitrix comment fell back to the owner.
+	if t, uid := h.bitrixResolveAssignee(ctx, wsID, id, u); t.Valid {
+		ref = bitrixAuthorRef{Type: t, ID: uid}
+	} else if h.bitrixRoutingForWorkspace(ctx, wsID, st).ProvisionAssignees && h.bitrixUserInTeam(ctx, st, u) {
+		// Provision a NEW shadow member only when the workspace opted in and the
+		// author is inside the team-department allowlist.
+		if t, uid := h.provisionBitrixAssignee(ctx, wsID, id, u); t.Valid {
 			ref = bitrixAuthorRef{Type: t, ID: uid}
-		} else if h.bitrixUserInTeam(ctx, st, u) {
-			if t, uid := h.provisionBitrixAssignee(ctx, wsID, id, u); t.Valid {
-				ref = bitrixAuthorRef{Type: t, ID: uid}
-			}
 		}
 	}
 	st.commentAuthors[id] = ref
