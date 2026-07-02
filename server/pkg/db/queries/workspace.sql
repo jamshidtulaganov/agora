@@ -71,3 +71,13 @@ RETURNING *;
 UPDATE workspace SET default_mcp_config = NULL, updated_at = now()
 WHERE id = $1
 RETURNING *;
+
+-- name: SetWorkspaceSettingKey :one
+-- KEY-SCOPED write of a single workspace.settings key via jsonb_set — the same
+-- clobber-safe pattern as SetProjectSettingKey. Used for the workspace-level
+-- design manifest (the shared design system projects inherit).
+UPDATE workspace SET
+    settings = jsonb_set(COALESCE(settings, '{}'::jsonb), ARRAY[sqlc.arg('key')::text], sqlc.arg('value')::jsonb, true),
+    updated_at = now()
+WHERE id = sqlc.arg('id')
+RETURNING *;

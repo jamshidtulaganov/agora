@@ -160,7 +160,69 @@ func (h *Handler) setProjectDesignScalar(w http.ResponseWriter, r *http.Request,
 // currentDesignManifestMeta reads the project's current manifest source +
 // revision. ("", 0) when there is no manifest.
 func (h *Handler) currentDesignManifestMeta(project db.Project) (source string, revision int) {
-	if len(project.Settings) == 0 {
+	return h.currentDesignManifestMetaFromSettings(project.Settings)
+}
+
+// PutWorkspaceDesignManifest handles PUT /api/workspaces/{id}/design-manifest —
+// the WORKSPACE-level shared design system every project inherits (admin-gated
+// via the router group). Key-scoped jsonb_set (never clobbers other workspace
+// settings); stamps source="manual" + revision+1.
+func (h *Handler) PutWorkspaceDesignManifest(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	wsUUID, ok := parseUUIDOrBadRequest(w, workspaceIDFromURL(r, "id"), "workspace id")
+	if !ok {
+		return
+	}
+	raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to read body")
+		return
+	}
+	var body struct {
+		Manifest json.RawMessage `json:"manifest"`
+	}
+	if err := json.Unmarshal(raw, &body); err != nil || len(body.Manifest) == 0 {
+		writeError(w, http.StatusBadRequest, "manifest is required")
+		return
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(body.Manifest, &obj); err != nil || obj == nil {
+		writeError(w, http.StatusBadRequest, "manifest must be a JSON object")
+		return
+	}
+
+	// Bump revision from the current workspace manifest.
+	rev := 0
+	if ws, gerr := h.Queries.GetWorkspace(r.Context(), wsUUID); gerr == nil {
+		_, rev = h.currentDesignManifestMetaFromSettings(ws.Settings)
+	}
+	obj["source"] = "manual"
+	obj["revision"] = rev + 1
+	obj["updated_at"] = nowRFC3339()
+	manifestJSON, err := json.Marshal(obj)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to encode manifest")
+		return
+	}
+	if _, err := h.Queries.SetWorkspaceSettingKey(r.Context(), db.SetWorkspaceSettingKeyParams{
+		ID:    wsUUID,
+		Key:   "design_manifest",
+		Value: manifestJSON,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to save workspace design manifest")
+		return
+	}
+	slog.Info("workspace design manifest saved", "workspace_id", uuidToString(wsUUID), "by", userID, "revision", rev+1)
+	writeJSON(w, http.StatusOK, map[string]any{"status": "saved", "revision": rev + 1})
+}
+
+// currentDesignManifestMetaFromSettings reads source+revision from a raw
+// settings blob (workspace or project). ("", 0) when absent.
+func (h *Handler) currentDesignManifestMetaFromSettings(settings []byte) (source string, revision int) {
+	if len(settings) == 0 {
 		return "", 0
 	}
 	var s struct {
@@ -169,7 +231,7 @@ func (h *Handler) currentDesignManifestMeta(project db.Project) (source string, 
 			Revision int    `json:"revision"`
 		} `json:"design_manifest"`
 	}
-	if json.Unmarshal(project.Settings, &s) != nil || s.Manifest == nil {
+	if json.Unmarshal(settings, &s) != nil || s.Manifest == nil {
 		return "", 0
 	}
 	return s.Manifest.Source, s.Manifest.Revision

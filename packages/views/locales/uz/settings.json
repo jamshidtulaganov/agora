@@ -407,5 +407,16 @@
     "toast_save_failed": "Figma tokenni saqlab bo'lmadi",
     "toast_remove_failed": "Figma tokenni o'chirib bo'lmadi",
     "error_invalid_token": "Figma bu tokenni rad etdi. Tekshirib, qayta urinib ko'ring."
+  },
+  "workspace_design": {
+    "title": "Umumiy dizayn tizimi",
+    "description": "Har bir loyiha baza sifatida meros oladigan workspace-darajali dizayn tizimi — barcha ilovalar bitta tizimga yaqinlashadi, har loyiha faqat o'zining xususiyatlarini qayta belgilaydi. Har bir dizayner va implementatsiya ishga tushishiga kiritiladi.",
+    "kind_tokens": "tokenlar",
+    "kind_inventory": "inventar",
+    "components_count": "{{count}} ta komponent",
+    "revision": "rev",
+    "invalid_json": "Manifest to'g'ri JSON bo'lishi kerak",
+    "save": "Saqlash",
+    "saved_toast": "Umumiy dizayn tizimi saqlandi"
   }
 }

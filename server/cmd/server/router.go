@@ -732,6 +732,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))
 					r.Put("/figma-credential", h.PutFigmaCredential)
 					r.Delete("/figma-credential", h.DeleteFigmaCredential)
+					// Workspace-level shared design manifest — the base every
+					// project in the workspace inherits.
+					r.Put("/design-manifest", h.PutWorkspaceDesignManifest)
 				})
 
 				// Lark integration. Listing is member-visible (same

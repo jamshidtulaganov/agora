@@ -37,6 +37,20 @@ func TestRenderDesignManifestContext(t *testing.T) {
 	}
 }
 
+func TestRenderDesignManifestContextLabeled(t *testing.T) {
+	var m designManifest
+	m.Kind = "tokens"
+	m.Revision = 2
+	got := renderDesignManifestContextLabeled(m, "WORKSPACE DESIGN SYSTEM (shared)")
+	if !strings.Contains(got, "WORKSPACE DESIGN SYSTEM (shared) (rev 2, kind=tokens)") {
+		t.Errorf("labeled render missing the custom label:\n%s", got)
+	}
+	// The default renderer keeps the PROJECT label (back-compat).
+	if !strings.Contains(renderDesignManifestContext(m), "PROJECT DESIGN SYSTEM (rev 2") {
+		t.Error("default render must keep the PROJECT label")
+	}
+}
+
 func TestRenderDesignManifestContext_ComponentCap(t *testing.T) {
 	var m designManifest
 	m.Kind = "inventory"

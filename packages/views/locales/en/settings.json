@@ -407,5 +407,16 @@
     "toast_save_failed": "Failed to save Figma token",
     "toast_remove_failed": "Failed to remove Figma token",
     "error_invalid_token": "Figma rejected this token. Check it and try again."
+  },
+  "workspace_design": {
+    "title": "Shared design system",
+    "description": "The workspace-level design system every project inherits as its base — so all your apps converge on one system, each project overriding only its specifics. Injected into every designer and implementation run.",
+    "kind_tokens": "tokens",
+    "kind_inventory": "inventory",
+    "components_count": "{{count}} components",
+    "revision": "rev",
+    "invalid_json": "Manifest must be valid JSON",
+    "save": "Save",
+    "saved_toast": "Shared design system saved"
   }
 }

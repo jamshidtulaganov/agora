@@ -226,6 +226,44 @@ func (q *Queries) ListWorkspaces(ctx context.Context, userID pgtype.UUID) ([]Wor
 	return items, nil
 }
 
+const setWorkspaceSettingKey = `-- name: SetWorkspaceSettingKey :one
+UPDATE workspace SET
+    settings = jsonb_set(COALESCE(settings, '{}'::jsonb), ARRAY[$1::text], $2::jsonb, true),
+    updated_at = now()
+WHERE id = $3
+RETURNING id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, default_mcp_config
+`
+
+type SetWorkspaceSettingKeyParams struct {
+	Key   string      `json:"key"`
+	Value []byte      `json:"value"`
+	ID    pgtype.UUID `json:"id"`
+}
+
+// KEY-SCOPED write of a single workspace.settings key via jsonb_set — the same
+// clobber-safe pattern as SetProjectSettingKey. Used for the workspace-level
+// design manifest (the shared design system projects inherit).
+func (q *Queries) SetWorkspaceSettingKey(ctx context.Context, arg SetWorkspaceSettingKeyParams) (Workspace, error) {
+	row := q.db.QueryRow(ctx, setWorkspaceSettingKey, arg.Key, arg.Value, arg.ID)
+	var i Workspace
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.Description,
+		&i.Settings,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Context,
+		&i.Repos,
+		&i.IssuePrefix,
+		&i.IssueCounter,
+		&i.AvatarUrl,
+		&i.DefaultMcpConfig,
+	)
+	return i, err
+}
+
 const updateWorkspace = `-- name: UpdateWorkspace :one
 UPDATE workspace SET
     name = COALESCE($2, name),

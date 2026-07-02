@@ -5,6 +5,7 @@ import { BitrixTab } from "./bitrix-tab";
 import { ZohoTab } from "./zoho-tab";
 import { McpServersTab } from "./mcp-servers-tab";
 import { FigmaIntegrationSection } from "./figma-integration-section";
+import { WorkspaceDesignSection } from "./workspace-design-section";
 import { useT } from "../../i18n";
 
 // Integrations is the umbrella tab for third-party platform connections.
@@ -24,6 +25,7 @@ export function IntegrationsTab() {
       <BitrixTab />
       <ZohoTab />
       <FigmaIntegrationSection />
+      <WorkspaceDesignSection />
       <McpServersTab />
     </div>
   );

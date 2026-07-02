@@ -146,24 +146,52 @@ func (h *Handler) projectDesignManifest(ctx context.Context, issue db.Issue) (de
 	return *settings.Manifest, true
 }
 
-// sliceActionDesignManifestContext injects the project's design system
-// (project.settings.design_manifest) into the design_proposal / implementation
-// prompts so the designer maps against a KNOWN component inventory instead of
-// re-discovering it every run. Returns "" when the project configures none.
-// Mirrors sliceActionQAManifestContext.
-func (h *Handler) sliceActionDesignManifestContext(ctx context.Context, issue db.Issue) string {
-	m, ok := h.projectDesignManifest(ctx, issue)
-	if !ok {
-		return ""
+// workspaceDesignManifest reads the WORKSPACE-level shared design manifest
+// (workspace.settings.design_manifest) — the base every project in the
+// workspace inherits (e.g. one SalesDoctor design system across sd-cs / sd-main
+// / sd-billing). ok=false when unset/unparseable.
+func (h *Handler) workspaceDesignManifest(ctx context.Context, wsID pgtype.UUID) (designManifest, bool) {
+	ws, err := h.Queries.GetWorkspace(ctx, wsID)
+	if err != nil || len(ws.Settings) == 0 {
+		return designManifest{}, false
 	}
-	return renderDesignManifestContext(m)
+	var settings struct {
+		Manifest *designManifest `json:"design_manifest"`
+	}
+	if json.Unmarshal(ws.Settings, &settings) != nil || settings.Manifest == nil {
+		return designManifest{}, false
+	}
+	return *settings.Manifest, true
 }
 
-// renderDesignManifestContext is the pure renderer — separated so the prompt
-// wording is unit-tested without a database.
-func renderDesignManifestContext(m designManifest) string {
+// sliceActionDesignManifestContext injects the design system into the
+// design_proposal / implementation prompts so the agent maps against a KNOWN
+// component inventory instead of re-discovering it. Renders the WORKSPACE base
+// (shared across projects) first, then the PROJECT override — so the 3 SD apps
+// converge on one system while each keeps its own specifics. Returns "" when
+// neither is configured. Mirrors sliceActionQAManifestContext.
+func (h *Handler) sliceActionDesignManifestContext(ctx context.Context, issue db.Issue) string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf(" PROJECT DESIGN SYSTEM (rev %d, kind=%s) — build against THIS, do not re-invent it.", m.Revision, m.Kind))
+	if wm, ok := h.workspaceDesignManifest(ctx, issue.WorkspaceID); ok {
+		b.WriteString(renderDesignManifestContextLabeled(wm, "WORKSPACE DESIGN SYSTEM (shared across this workspace's projects — the base every project inherits)"))
+	}
+	if pm, ok := h.projectDesignManifest(ctx, issue); ok {
+		b.WriteString(renderDesignManifestContextLabeled(pm, "PROJECT DESIGN SYSTEM (this project's specifics — take precedence over the workspace base)"))
+	}
+	return b.String()
+}
+
+// renderDesignManifestContext renders with the default PROJECT label — kept for
+// the unit tests and any single-manifest caller.
+func renderDesignManifestContext(m designManifest) string {
+	return renderDesignManifestContextLabeled(m, "PROJECT DESIGN SYSTEM")
+}
+
+// renderDesignManifestContextLabeled is the pure renderer — separated so the
+// prompt wording is unit-tested without a database.
+func renderDesignManifestContextLabeled(m designManifest, label string) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf(" %s (rev %d, kind=%s) — build against THIS, do not re-invent it.", label, m.Revision, m.Kind))
 	if len(m.Tokens.Colors) > 0 || len(m.Tokens.Typography) > 0 || len(m.Tokens.Spacing) > 0 {
 		b.WriteString(" TOKENS:")
 		for name, v := range m.Tokens.Colors {

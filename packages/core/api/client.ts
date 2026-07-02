@@ -2802,6 +2802,17 @@ export class ApiClient {
     });
   }
 
+  // Workspace-level shared design manifest — the base every project inherits.
+  async putWorkspaceDesignManifest(
+    workspaceId: string,
+    manifest: Record<string, unknown>,
+  ): Promise<{ status: string; revision: number }> {
+    return this.fetch(`/api/workspaces/${workspaceId}/design-manifest`, {
+      method: "PUT",
+      body: JSON.stringify({ manifest }),
+    });
+  }
+
   // Apply one design-audit finding: create a codemod issue (adopt a token or
   // extract a component) from the audit block on the given issue. Returns the
   // new implementation issue.

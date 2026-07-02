@@ -407,5 +407,16 @@
     "toast_save_failed": "Figma 令牌保存失败",
     "toast_remove_failed": "Figma 令牌移除失败",
     "error_invalid_token": "Figma 拒绝了该令牌，请检查后重试。"
+  },
+  "workspace_design": {
+    "title": "共享设计系统",
+    "description": "工作区级设计系统，每个项目都以它为基础继承——让所有应用收敛到一套系统，各项目只覆盖自身特有部分。注入到每次设计与实现运行中。",
+    "kind_tokens": "tokens",
+    "kind_inventory": "清单",
+    "components_count": "{{count}} 个组件",
+    "revision": "版本",
+    "invalid_json": "清单必须是有效的 JSON",
+    "save": "保存",
+    "saved_toast": "共享设计系统已保存"
   }
 }
