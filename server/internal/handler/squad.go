@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -264,6 +265,17 @@ func (h *Handler) CreateSquad(w http.ResponseWriter, r *http.Request) {
 		Role:       "leader",
 	})
 
+	// The leader IS the squad's orchestrator, so seed the default orchestration
+	// brief — a new squad behaves as an auto-orchestrator instead of a blank
+	// routing target. Best-effort: a failure here must not fail squad creation.
+	// UpdateSquad COALESCEs every column, so only instructions is written.
+	if updated, uerr := h.Queries.UpdateSquad(r.Context(), db.UpdateSquadParams{
+		ID:           squad.ID,
+		Instructions: pgtype.Text{String: defaultOrchestratorInstructions, Valid: true},
+	}); uerr == nil {
+		squad = updated
+	}
+
 	resp, err := h.squadToResponseWithPreview(r.Context(), squad)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load squad member preview")
@@ -354,6 +366,14 @@ func (h *Handler) UpdateSquad(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 		params.LeaderID = lid
+
+		// Promoting/setting a leader on a squad that has no orchestration brief
+		// yet auto-seeds the default (the leader IS the orchestrator). Only when
+		// the caller isn't setting instructions in this same request and the
+		// squad's current instructions are blank — never overwrite a custom brief.
+		if req.Instructions == nil && strings.TrimSpace(squad.Instructions) == "" {
+			params.Instructions = pgtype.Text{String: defaultOrchestratorInstructions, Valid: true}
+		}
 	}
 
 	updated, err := h.Queries.UpdateSquad(r.Context(), params)
