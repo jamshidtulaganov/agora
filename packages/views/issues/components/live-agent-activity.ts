@@ -62,6 +62,61 @@ const TOOL_VERB: Record<string, ActivityVerbKey> = {
 // so the strip and the full transcript agree on what "the target" is.
 const PATH_KEYS = ["file_path", "path", "notebook_path"] as const;
 
+// Playwright MCP browser tools arrive as raw tool names — "mcp__playwright__
+// browser_click", "mcp__plugin_playwright_playwright__browser_navigate",
+// "mcp__MCP_DOCKER__browser_snapshot", etc. Without translation the QA live
+// feed reads as a wall of "mcp__…__browser_snapshot" tool ids, so a reviewer
+// can't tell what the browser is actually doing. Turn each into a short human
+// action ("open /user/login", "click Войти", "fill form", "read console") that
+// renders as a null-verbKey rawVerb + target. Returns null for non-browser
+// tools so the normal TOOL_VERB path handles them. Pure + testable.
+function pwStr(v: unknown): string {
+  if (typeof v === "string" && v.trim()) return clamp(v.trim(), 50);
+  if (typeof v === "number") return String(v);
+  return "";
+}
+
+export function playwrightAction(
+  toolName: string,
+  input: Record<string, unknown> | undefined,
+): { verb: string; target: string } | null {
+  const lower = toolName.toLowerCase();
+  if (!lower.startsWith("mcp__")) return null;
+  const m = lower.match(/browser_([a-z_]+)$/);
+  if (!m) return null;
+  const action = m[1]!;
+  const el =
+    pwStr(input?.element) ||
+    pwStr(input?.selector) ||
+    pwStr(input?.ref) ||
+    pwStr(input?.text);
+  switch (action) {
+    case "navigate": return { verb: "open", target: pwStr(input?.url) };
+    case "navigate_back": return { verb: "go back", target: "" };
+    case "click": return { verb: "click", target: el };
+    case "type": return { verb: "type", target: pwStr(input?.text) || el };
+    case "fill_form": return { verb: "fill", target: "form" };
+    case "fill": return { verb: "fill", target: el };
+    case "select_option": return { verb: "select", target: el };
+    case "press_key": return { verb: "press", target: pwStr(input?.key) };
+    case "hover": return { verb: "hover", target: el };
+    case "drag": return { verb: "drag", target: el };
+    case "snapshot": return { verb: "read page", target: "" };
+    case "take_screenshot": return { verb: "screenshot", target: "" };
+    case "console_messages": return { verb: "read console", target: pwStr(input?.level) };
+    case "network_requests":
+    case "network_request": return { verb: "check network", target: "" };
+    case "wait_for": return { verb: "wait", target: pwStr(input?.text) || pwStr(input?.time) };
+    case "evaluate":
+    case "run_code":
+    case "run_code_unsafe": return { verb: "run JS", target: "" };
+    case "tabs": return { verb: "switch tab", target: "" };
+    case "handle_dialog": return { verb: "dialog", target: "" };
+    case "file_upload": return { verb: "upload", target: "" };
+    default: return { verb: action.replace(/_/g, " "), target: el };
+  }
+}
+
 /**
  * Collapse a long absolute path to its last two segments (".../dir/file.ts")
  * for compact display. Exported so the changes feed can shorten the path it
@@ -121,6 +176,8 @@ export function deriveCurrentActivity(items: TimelineItem[]): ActivityLine | nul
     const item = items[i]!;
     if (item.type === "tool_use") {
       const toolName = (item.tool ?? "").trim();
+      const pw = playwrightAction(toolName, item.input);
+      if (pw) return { verbKey: null, rawVerb: pw.verb, target: pw.target };
       const key = TOOL_VERB[toolName.toLowerCase()];
       return {
         verbKey: key ?? null,
@@ -354,7 +411,10 @@ export function deriveActivitySteps(items: TimelineItem[]): ActivityStep[] {
     const tool = toolName.toLowerCase();
 
     let step: ActivityStep;
-    if (tool === "bash" || tool === "shell") {
+    const pw = playwrightAction(toolName, item.input);
+    if (pw) {
+      step = { key: `idx-${i}`, verbKey: null, rawVerb: pw.verb, target: pw.target };
+    } else if (tool === "bash" || tool === "shell") {
       const command =
         typeof item.input?.command === "string" ? item.input.command : "";
       step = {

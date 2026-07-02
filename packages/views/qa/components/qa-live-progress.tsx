@@ -57,9 +57,17 @@ export function QALiveProgress({ issueId }: { issueId: string }) {
 // read "which case is running right now" without itself subscribing to every
 // running task's message stream.
 const RUNNING_CASE_RE = /RUNNING test_case:([0-9a-fA-F-]{8,})/;
+// Per-case live verdict — the run_test_cases recipe requires the agent (or its
+// compiled script) to print `QA_RESULT test_case:<id> pass|fail` the instant a
+// case finishes, so the panel flips that row's ✓/✗ live DURING the run instead
+// of only after the whole run persists its test_run rows at the end.
+const CASE_RESULT_RE = /QA_RESULT test_case:([0-9a-fA-F-]{8,})\s+(pass|fail)/gi;
 
 function runningCaseQueryKey(issueId: string) {
   return ["qa-running-case", issueId] as const;
+}
+function caseVerdictsQueryKey(issueId: string) {
+  return ["qa-live-case-verdicts", issueId] as const;
 }
 
 export function useRunningTestCaseId(issueId: string): string | null {
@@ -71,6 +79,20 @@ export function useRunningTestCaseId(issueId: string): string | null {
     staleTime: Infinity,
   });
   return data ?? null;
+}
+
+// Live per-case verdicts parsed from the running stream (id → "pass"|"fail").
+// Empty until the first QA_RESULT marker; cleared when the run's task leaves the
+// running set (the persisted test_run rows take over as the source of truth).
+export function useLiveCaseVerdicts(issueId: string): Record<string, "pass" | "fail"> {
+  const { data } = useQuery({
+    queryKey: caseVerdictsQueryKey(issueId),
+    queryFn: () => ({}) as Record<string, "pass" | "fail">,
+    enabled: false,
+    initialData: {} as Record<string, "pass" | "fail">,
+    staleTime: Infinity,
+  });
+  return data ?? {};
 }
 
 function extractRunningCaseId(messages: TaskMessagePayload[]): string | null {
@@ -85,6 +107,18 @@ function extractRunningCaseId(messages: TaskMessagePayload[]): string | null {
   return found;
 }
 
+function extractCaseVerdicts(messages: TaskMessagePayload[]): Record<string, "pass" | "fail"> {
+  const out: Record<string, "pass" | "fail"> = {};
+  for (const m of messages) {
+    if (!m.content) continue;
+    for (const match of m.content.matchAll(CASE_RESULT_RE)) {
+      // A later marker for the same case wins (a re-run within the same stream).
+      out[match[1]!] = match[2]!.toLowerCase() as "pass" | "fail";
+    }
+  }
+  return out;
+}
+
 function QATerminalPanel({ task, issueId }: { task: AgentTask; issueId: string }) {
   const { t } = useT("issues");
   const { getActorName } = useActorName();
@@ -94,6 +128,7 @@ function QATerminalPanel({ task, issueId }: { task: AgentTask; issueId: string }
   const timeline = useMemo(() => buildTimeline(messages), [messages]);
   const steps = useMemo(() => deriveActivitySteps(timeline), [timeline]);
   const runningCaseId = useMemo(() => extractRunningCaseId(messages), [messages]);
+  const caseVerdicts = useMemo(() => extractCaseVerdicts(messages), [messages]);
 
   useEffect(() => {
     qc.setQueryData(runningCaseQueryKey(issueId), runningCaseId);
@@ -106,6 +141,21 @@ function QATerminalPanel({ task, issueId }: { task: AgentTask; issueId: string }
       );
     };
   }, [qc, issueId, runningCaseId]);
+
+  useEffect(() => {
+    // Merge this task's parsed verdicts into the shared live map (never clobber
+    // another concurrent QA task's entries). Cleared on unmount so the persisted
+    // test_run rows become the source of truth once the run ends.
+    if (Object.keys(caseVerdicts).length > 0) {
+      qc.setQueryData(caseVerdictsQueryKey(issueId), (old: Record<string, "pass" | "fail"> | undefined) => ({
+        ...(old ?? {}),
+        ...caseVerdicts,
+      }));
+    }
+    return () => {
+      qc.setQueryData(caseVerdictsQueryKey(issueId), {} as Record<string, "pass" | "fail">);
+    };
+  }, [qc, issueId, caseVerdicts]);
 
   const agentName = getActorName("agent", task.agent_id);
   // Newest-first feed, like a terminal scrolling — the latest command is the

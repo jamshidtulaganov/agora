@@ -12,7 +12,7 @@ import { Input } from "@agora/ui/components/ui/input";
 import { Textarea } from "@agora/ui/components/ui/textarea";
 import { cn } from "@agora/ui/lib/utils";
 import { useT, useTimeAgo } from "../../i18n";
-import { useRunningTestCaseId } from "./qa-live-progress";
+import { useRunningTestCaseId, useLiveCaseVerdicts } from "./qa-live-progress";
 import { verdictIcon } from "./verdict";
 
 // The QA team's Test-cases instrument. Lists an issue's cases (authored by a QA
@@ -35,6 +35,7 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
   const cases = data?.test_cases ?? [];
   const [adding, setAdding] = useState(false);
   const runningCaseId = useRunningTestCaseId(issueId);
+  const liveVerdicts = useLiveCaseVerdicts(issueId);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: issueKeys.testCases(issueId) });
 
@@ -148,6 +149,7 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
               busy={recordRun.isPending}
               onRun={(status) => recordRun.mutate({ caseId: c.id, status })}
               isRunning={c.id === runningCaseId}
+              liveVerdict={liveVerdicts[c.id]}
             />
           ))}
         </ul>
@@ -161,6 +163,7 @@ function CaseRow({
   busy,
   onRun,
   isRunning,
+  liveVerdict,
 }: {
   c: TestCase;
   busy: boolean;
@@ -171,10 +174,17 @@ function CaseRow({
   // case being re-run right now should show as running, not as its stale
   // previous verdict.
   isRunning: boolean;
+  // Live verdict parsed from the running stream's `QA_RESULT test_case:<id>`
+  // marker — the case just finished THIS run but its test_run row hasn't
+  // persisted yet. Shown as ✓/✗ with a "live" pulse so the panel updates in
+  // real time; superseded by the persisted status once the run ends.
+  liveVerdict?: "pass" | "fail";
 }) {
   const { t } = useT("issues");
   const timeAgo = useTimeAgo();
-  const status = c.latest_run?.status;
+  // Precedence: running now > this run's just-finished live verdict > persisted.
+  const status = isRunning ? undefined : liveVerdict ?? c.latest_run?.status;
+  const isLive = !isRunning && !!liveVerdict && liveVerdict === status && !c.latest_run;
   // "blocked"/"skip" only ever comes from the agent's run_test_cases protocol
   // (the human Pass/Fail buttons only ever write pass/fail) — it means the
   // agent attempted this case and could NOT exercise it (no reachable
@@ -226,7 +236,16 @@ function CaseRow({
               {t(($) => $.test_cases.runs_now)}
             </span>
           ) : status === "pass" || status === "fail" ? (
-            <span title={status === "fail" ? c.latest_run?.output || undefined : undefined}>
+            <span
+              className={cn(isLive && "motion-safe:animate-pulse")}
+              title={
+                isLive
+                  ? t(($) => $.test_cases.runs_now)
+                  : status === "fail"
+                    ? c.latest_run?.output || undefined
+                    : undefined
+              }
+            >
               {verdictIcon(status, "size-4")}
             </span>
           ) : isBlocked ? (

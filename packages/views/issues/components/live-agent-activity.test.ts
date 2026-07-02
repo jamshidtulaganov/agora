@@ -248,4 +248,24 @@ describe("deriveActivitySteps", () => {
     const [s] = deriveActivitySteps([tool(1, "Deploy", { description: "ship it" })]);
     expect(s).toMatchObject({ verbKey: null, rawVerb: "Deploy", target: "ship it" });
   });
+
+  it("translates Playwright MCP browser tools into human actions (not raw tool ids)", () => {
+    const steps = deriveActivitySteps([
+      tool(1, "mcp__playwright__browser_navigate", { url: "https://agora-cs.sdteam.uz/user/login" }),
+      tool(2, "mcp__plugin_playwright_playwright__browser_fill_form", { fields: [] }),
+      tool(3, "mcp__playwright__browser_click", { element: "Voyti submit button" }),
+      tool(4, "mcp__MCP_DOCKER__browser_snapshot", {}),
+      tool(5, "mcp__playwright__browser_console_messages", { level: "error" }),
+    ]);
+    // newest-first
+    expect(steps.map((s) => [s.rawVerb, s.target])).toEqual([
+      ["read console", "error"],
+      ["read page", ""],
+      ["click", "Voyti submit button"],
+      ["fill", "form"],
+      ["open", "https://agora-cs.sdteam.uz/user/login"],
+    ]);
+    expect(steps.every((s) => !(s.rawVerb ?? "").includes("mcp__"))).toBe(true);
+    expect(steps.every((s) => s.verbKey === null)).toBe(true);
+  });
 });

@@ -235,6 +235,9 @@ func buildSliceInstruction(kind, scope string) string {
 			"output for this exact marker to show which case is in flight, the way a test runner's terminal shows the " +
 			"currently-running spec; skipping it just means that case never shows as \"running\" live, so always include " +
 			"it, one per case, right before you start that case. " +
+			"The MOMENT a case finishes, output the line `QA_RESULT test_case:<id> pass` or `QA_RESULT test_case:<id> fail` " +
+			"on its own — the panel flips that row's ✓/✗ live from this marker, before the final block persists; emit it " +
+			"for every case right after you judge it. " +
 			"For EACH case: if the case LISTING below includes a COMPILED SCRIPT for that id, do NOT drive the browser " +
 			"action-by-action — instead WRITE that script verbatim to a temp file `/tmp/case-<id>.mjs` and RUN it with " +
 			"`node /tmp/case-<id>.mjs`; take the process EXIT CODE as the verdict (0 = pass, non-zero = fail) and use the " +
