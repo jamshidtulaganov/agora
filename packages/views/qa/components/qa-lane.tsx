@@ -8,12 +8,22 @@ import { PriorityIcon } from "../../issues/components/priority-icon";
 // The identifier + priority + title + assignee row shared by the QA cockpit's
 // list lanes and board cards, so both read as the same surface and carry the
 // same "who owns this" signal at a glance.
-export function QAIssueRow({ issue }: { issue: Issue }) {
+export function QAIssueRow({ issue, isLive = false }: { issue: Issue; isLive?: boolean }) {
   return (
     <>
       <PriorityIcon priority={issue.priority} className="shrink-0" />
       <span className="w-14 shrink-0 text-xs text-muted-foreground">{issue.identifier}</span>
       <span className="min-w-0 flex-1 truncate">{issue.title}</span>
+      {/* Live QA indicator: a QA run is executing on this issue right now. */}
+      {isLive && (
+        <span
+          className="flex shrink-0 items-center gap-1 rounded-full bg-info/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-info"
+          title="QA is running on this issue now"
+        >
+          <span aria-hidden className="size-1.5 rounded-full bg-info motion-safe:animate-pulse" />
+          live
+        </span>
+      )}
       {issue.assignee_type && issue.assignee_id && (
         <ActorAvatar actorType={issue.assignee_type} actorId={issue.assignee_id} size={20} enableHoverCard />
       )}
@@ -31,6 +41,7 @@ export function Lane({
   subtitle,
   issues,
   href,
+  liveIssueIds,
 }: {
   icon: LucideIcon;
   iconClass: string;
@@ -38,6 +49,7 @@ export function Lane({
   subtitle: string;
   issues: Issue[];
   href: (id: string) => string;
+  liveIssueIds?: Set<string>;
 }) {
   return (
     <section className="rounded-lg border">
@@ -57,7 +69,7 @@ export function Lane({
                 href={href(issue.id)}
                 className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent/60"
               >
-                <QAIssueRow issue={issue} />
+                <QAIssueRow issue={issue} isLive={liveIssueIds?.has(issue.id)} />
               </AppLink>
             </li>
           ))}
