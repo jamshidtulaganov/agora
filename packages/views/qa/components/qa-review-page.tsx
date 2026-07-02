@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { CheckCircle2, XCircle, RefreshCw, Loader2, Bug, GitBranch, Pin, PinOff, MoreHorizontal } from "lucide-react";
+import { CheckCircle2, XCircle, RefreshCw, Loader2, Bug, GitBranch, Pin, PinOff, MoreHorizontal, PanelRightOpen, PanelRightClose } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core";
@@ -44,6 +44,12 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
   const qc = useQueryClient();
   const { t } = useT("issues");
   const [bugOpen, setBugOpen] = useState(false);
+  // Review rail is collapsed by default — the live browser is the star of this
+  // page and needs the full width to render its CDP frame near native 1280px
+  // (a squeezed sidebar shrank it well below that). QA opens the rail on demand
+  // to read evidence and mark the verdict; the toggle carries a verdict dot so
+  // the pass/fail state stays legible even while it's closed.
+  const [railOpen, setRailOpen] = useState(false);
 
   const { data: issue, isLoading } = useQuery(issueDetailOptions(wsId, issueId));
   const actions = useIssueActions(issue ?? null);
@@ -147,6 +153,31 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
         actions={
           issue ? (
             <>
+              <Tooltip>
+                <TooltipTrigger
+                  className={buttonVariants({
+                    variant: railOpen ? "secondary" : "ghost",
+                    size: "sm",
+                    className: "gap-1.5 text-muted-foreground",
+                  })}
+                  onClick={() => setRailOpen((v) => !v)}
+                >
+                  {railOpen ? <PanelRightClose /> : <PanelRightOpen />}
+                  <span className="text-[12px]">{t(($) => $.qa_review.review_panel)}</span>
+                  {!railOpen && suggestedVerdict !== "pending" && (
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "size-1.5 rounded-full",
+                        suggestedVerdict === "pass" ? "bg-emerald-500" : "bg-destructive",
+                      )}
+                    />
+                  )}
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  {railOpen ? t(($) => $.qa_review.review_panel_hide) : t(($) => $.qa_review.review_panel_show)}
+                </TooltipContent>
+              </Tooltip>
               <IssueAgentHeaderChip issueId={issueId} />
               <Tooltip>
                 <TooltipTrigger
@@ -190,7 +221,12 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
         // RIGHT, same as Properties/Details/Prompts on the issue page. Below
         // lg the bay stacks ABOVE the rail (what's running first, then what
         // you decide).
-        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start lg:gap-6">
+        <div
+          className={cn(
+            "lg:grid lg:items-start lg:gap-6",
+            railOpen ? "lg:grid-cols-[minmax(0,1fr)_420px]" : "lg:grid-cols-1",
+          )}
+        >
           {/* ── Live bay ─────────────────────────────────────────────────
               Both "live" surfaces together: the terminal feed of what the QA
               agent is doing right now, and the running app itself, watched
@@ -204,11 +240,18 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
           </aside>
 
           {/* ── Review rail ───────────────────────────────────────────────
-              Sections separated by hairlines (border-t + pt), matching the
-              issue detail page's Properties/Details/Repository grouping —
-              NOT a flex gap alone, which read as one undifferentiated block
-              at this width. */}
-          <div className="order-1 flex min-w-0 flex-col lg:order-2">
+              Collapsed by default (see railOpen); the header toggle opens it.
+              A fixed-height flex column on lg (matching the live bay): one
+              scroll region holds PRs/verdict/checks/test-cases, the triage bar
+              pins to the bottom. Sections separated by hairlines (border-t +
+              pt), matching the issue detail page's grouping. */}
+          {railOpen && (
+          <div className="order-1 flex min-w-0 flex-col lg:order-2 lg:sticky lg:top-6 lg:h-[calc(100vh-6.5rem)] lg:min-h-0">
+            {/* Single scroll region above the triage bar — a long (27-case)
+                list or a tall checks table scrolls here instead of pushing the
+                pass/fail buttons off-screen. Capped on mobile, where the rail
+                isn't height-bounded. */}
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pr-0.5 max-lg:max-h-[65vh]">
             {/* Pull requests — dev-side state (checks, conflicts, merge status)
                 right alongside QA's own verdict, not a separate tab to chase.
                 First item in the rail now (title moved to the page's top bar),
@@ -263,14 +306,14 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
             <div className="border-t pt-4 pb-4">
               <TestCasesPanel issueId={issueId} />
             </div>
+            </div>{/* /scroll region */}
 
-            {/* Triage bar — the QA team's verdict + actions. Sticks to the bottom
-                of the rail so the pass/fail call is always within reach while
-                scrolling the evidence (bounded to the rail; releases before the
-                live bay on mobile). Two explicit rows — Pass/Fail primary,
-                Regression/Re-run secondary — instead of flex-wrap, which at
-                400px wrapped unpredictably into 3+ uneven rows. */}
-            <div className="sticky bottom-0 z-10 space-y-1.5 border-t bg-background/95 pt-4 pb-1 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+            {/* Triage bar — the QA team's verdict + actions. Pinned to the
+                bottom of the rail (flex, shrink-0) so the pass/fail call is
+                always within reach while the region above scrolls. Two explicit
+                rows — Pass/Fail primary, Regression/Re-run secondary — instead
+                of flex-wrap, which at this width wrapped unpredictably. */}
+            <div className="shrink-0 space-y-1.5 border-t bg-background pt-4 pb-1">
               <div className="grid grid-cols-2 gap-1.5">
                 <Button
                   type="button"
@@ -343,6 +386,7 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
               )}
             </div>
           </div>
+          )}
 
           <FileBugSheet
             open={bugOpen}

@@ -418,6 +418,9 @@
   "qa_review": {
     "back": "QA navbatiga qaytish",
     "queue_crumb": "QA navbati",
+    "review_panel": "Ko'rib chiqish",
+    "review_panel_show": "Ko'rib chiqish panelini ochish",
+    "review_panel_hide": "Ko'rib chiqish panelini yashirish",
     "open_full": "Vazifani ochish",
     "live_browser": "Jonli brauzer",
     "live_testing": "Jonli test",

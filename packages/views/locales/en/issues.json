@@ -418,6 +418,9 @@
   "qa_review": {
     "back": "Back to QA queue",
     "queue_crumb": "QA queue",
+    "review_panel": "Review",
+    "review_panel_show": "Show the review panel",
+    "review_panel_hide": "Hide the review panel",
     "open_full": "Open full issue",
     "live_browser": "Live browser",
     "live_testing": "Live testing",

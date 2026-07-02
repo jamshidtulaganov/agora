@@ -418,6 +418,9 @@
   "qa_review": {
     "back": "Назад к очереди QA",
     "queue_crumb": "Очередь QA",
+    "review_panel": "Обзор",
+    "review_panel_show": "Показать панель обзора",
+    "review_panel_hide": "Скрыть панель обзора",
     "open_full": "Открыть задачу",
     "live_browser": "Живой браузер",
     "live_testing": "Живое тестирование",
