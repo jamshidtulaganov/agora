@@ -19,7 +19,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/daemon/repocache"
@@ -1320,7 +1319,7 @@ func runProjectTests(repoDir, command string, timeout time.Duration) (string, in
 	cmd := exec.CommandContext(ctx, shell, "-lc", command)
 	cmd.Dir = repoDir
 	cmd.Env = append(os.Environ(), "CI=1", "FORCE_COLOR=0", "NO_COLOR=1", "BROWSER=none")
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	setProcessGroup(cmd)
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
 		return tailLog(ansiRe.ReplaceAllString(string(out), "")) + "\n\n[timed out]", -1
@@ -1383,7 +1382,7 @@ func startPreview(repoDir, command string, hintPort int) (*previewProc, error) {
 		"FORCE_COLOR=0",
 		"NO_COLOR=1",
 	)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	setProcessGroup(cmd)
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
@@ -1430,14 +1429,9 @@ func scanPreviewPort(p *previewProc, timeout time.Duration) int {
 	return 0
 }
 
-// killProcessGroup terminates the dev server and every child it spawned.
-func killProcessGroup(cmd *exec.Cmd) {
-	if cmd == nil || cmd.Process == nil {
-		return
-	}
-	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
-	_ = cmd.Process.Kill()
-}
+// killProcessGroup lives in procgroup_unix.go / procgroup_windows.go so the
+// CLI (which embeds this package) cross-compiles for Windows, where the Unix
+// process-group syscalls don't exist.
 
 // tailLog returns the last ~2KB of captured output for an error response.
 func tailLog(s string) string {

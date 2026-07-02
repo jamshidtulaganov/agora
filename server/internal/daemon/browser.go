@@ -13,7 +13,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -182,7 +181,7 @@ func (bm *browserManager) ensureChrome(key string) (*chromeInstance, error) {
 		"--window-size=1280,800",
 		"about:blank",
 	)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	setProcessGroup(cmd)
 	if err := cmd.Start(); err != nil {
 		os.RemoveAll(udd)
 		return nil, err
