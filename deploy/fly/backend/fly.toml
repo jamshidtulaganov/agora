@@ -22,6 +22,9 @@ primary_region = "fra"
   PORT = "8080"
   APP_ENV = "production"
   ALLOW_SIGNUP = "true"
+  # Login page offers Telegram only (email/password form hidden) — the team
+  # authenticates through @agora_ai_pm_bot; flip to "false" to restore email.
+  AGORA_TELEGRAM_ONLY = "true"
 
   # Public URLs all point at the web app (the only public surface). The backend
   # is reached through the web app's same-origin /api, /ws, /auth, /uploads proxy.
