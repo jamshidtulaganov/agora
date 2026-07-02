@@ -41,6 +41,10 @@ primary_region = "fra"
   # are fly secrets; the routing below is plain env.
   BITRIX_SYNC_WORKSPACE_SLUG = "sd-main"
   BITRIX_GROUP_MAP = "153:sd-main"
+  # Safety-net poll: re-sync tracked Bitrix tasks (status/stage/comments/
+  # attachments) every interval so imported issues stay live even if a webhook
+  # is missed. Empty/invalid/<=0 disables it — sync then rides webhooks alone.
+  BITRIX_SYNC_POLL_INTERVAL = "5m"
 
   # A sprint's integration branch may never be one of these. "billing" is
   # SalesDoctor's PROD branch — a sprint pointed at it would make agents commit
