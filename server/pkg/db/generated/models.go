@@ -312,6 +312,23 @@ type Feedback struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type FigmaCredential struct {
+	ID               pgtype.UUID        `json:"id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	Label            string             `json:"label"`
+	TokenEncrypted   []byte             `json:"token_encrypted"`
+	TokenLast4       string             `json:"token_last4"`
+	TokenKind        string             `json:"token_kind"`
+	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
+	SeatProbe        string             `json:"seat_probe"`
+	ProbeStatus      string             `json:"probe_status"`
+	ProbedAt         pgtype.Timestamptz `json:"probed_at"`
+	ExpiryNotifiedAt pgtype.Timestamptz `json:"expiry_notified_at"`
+	CreatedBy        pgtype.UUID        `json:"created_by"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
 type GitCredential struct {
 	ID              pgtype.UUID        `json:"id"`
 	WorkspaceID     pgtype.UUID        `json:"workspace_id"`

@@ -378,5 +378,34 @@
         "description": "Vazifalar yaratish va ular ustida ishlash"
       }
     }
+  },
+  "figma": {
+    "section_title": "Figma",
+    "description": "Workspace uchun bitta token — agentlar issue'larda ko'rsatilgan Figma maketlarini o'qiy oladi. Issue Figma faylga havola qilsa, agent MCP konfiguratsiyasi task berilganda avtomatik to'ldiriladi — har bir agent uchun alohida sozlash shart emas.",
+    "token_label": "Personal access token",
+    "token_placeholder": "figd_… (Dev/Full seat; File content: read)",
+    "label_label": "Nomi",
+    "label_placeholder": "masalan, SalesDoctor dizayn akkaunti",
+    "expires_label": "Token muddati",
+    "expires_hint": "Figma PAT ko'pi bilan 90 kun amal qiladi — yangilash ogohlantirishi uchun sanani kiriting.",
+    "probe_file_label": "Tekshiruv fayl kaliti (ixtiyoriy)",
+    "probe_file_hint": "Token o'qiy oladigan fayl kaliti; seat-cheklangan tokenlarni aniqlash uchun bir marta ishlatiladi.",
+    "save": "Tokenni saqlash",
+    "saving": "Saqlanmoqda…",
+    "remove": "O'chirish",
+    "configured_as": "Sozlangan",
+    "not_configured": "Figma token sozlanmagan. Agentlar bog'langan maketlarni o'qiy olmaydi.",
+    "expires_on": "muddati: {{date}}",
+    "expiring_soon": "Muddati yaqin",
+    "seat_warning": "Bu token seat bo'yicha cheklanganga o'xshaydi (~oyiga 6 so'rov). Dev yoki Full seat'dagi tokendan foydalaning.",
+    "status_ok": "Token yaroqli",
+    "status_invalid": "Token yaroqsiz",
+    "status_expired": "Token muddati tugagan",
+    "status_unreachable": "Saqlash vaqtida Figma bilan aloqa bo'lmadi",
+    "toast_saved": "Figma token saqlandi",
+    "toast_removed": "Figma token o'chirildi",
+    "toast_save_failed": "Figma tokenni saqlab bo'lmadi",
+    "toast_remove_failed": "Figma tokenni o'chirib bo'lmadi",
+    "error_invalid_token": "Figma bu tokenni rad etdi. Tekshirib, qayta urinib ko'ring."
   }
 }

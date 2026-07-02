@@ -14,6 +14,7 @@ import type {
   CreateAgentFromTemplateResponse,
   CreateBillingCheckoutSessionResponse,
   CreateBillingPortalSessionResponse,
+  FigmaCredentialStatus,
   GroupedIssuesResponse,
   ListIssuesResponse,
   ListWebhookDeliveriesResponse,
@@ -1339,4 +1340,32 @@ export const CreateBillingPortalSessionResponseSchema = z.object({
 
 export const EMPTY_CREATE_BILLING_PORTAL_SESSION_RESPONSE: CreateBillingPortalSessionResponse = {
   url: "",
+};
+
+// Workspace Figma credential status (`GET /api/workspaces/{id}/figma-credential`).
+// Everything beyond `configured` defaults so an older server shape degrades to
+// a "not configured" style rendering instead of knocking the settings section
+// into an error. Check `configured === true` explicitly downstream.
+export const FigmaCredentialStatusSchema = z.object({
+  configured: z.boolean().default(false),
+  label: z.string().default(""),
+  token_last4: z.string().default(""),
+  token_kind: z.string().default(""),
+  expires_at: z.string().default(""),
+  expiring_soon: z.boolean().default(false),
+  seat_probe: z.string().default(""),
+  probe_status: z.string().default(""),
+  probed_at: z.string().default(""),
+}).loose();
+
+export const EMPTY_FIGMA_CREDENTIAL_STATUS: FigmaCredentialStatus = {
+  configured: false,
+  label: "",
+  token_last4: "",
+  token_kind: "",
+  expires_at: "",
+  expiring_soon: false,
+  seat_probe: "",
+  probe_status: "",
+  probed_at: "",
 };

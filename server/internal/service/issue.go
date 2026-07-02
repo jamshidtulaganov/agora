@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -9,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/analytics"
 	"github.com/multica-ai/multica/server/internal/events"
+	"github.com/multica-ai/multica/server/internal/figma"
 	"github.com/multica-ai/multica/server/internal/issueguard"
 	"github.com/multica-ai/multica/server/internal/issueposition"
 	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
@@ -145,7 +147,7 @@ type IssueCreateResult struct {
 //  8. Publish EventIssueCreated to the bus (payload via opts.BroadcastPayload).
 //  9. Capture the IssueCreated analytics event.
 //  10. Enqueue an agent task or trigger the squad leader when the issue is
-//      assigned and not in `backlog`.
+//     assigned and not in `backlog`.
 //
 // Validation that lives in the service (parent existence, project
 // workspace membership, parent → project back-fill) is enforced here so
@@ -282,6 +284,29 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 			SprintID: inheritSprintID,
 		}); err != nil {
 			return IssueCreateResult{}, fmt.Errorf("inherit parent sprint: %w", err)
+		}
+	}
+
+	// Stamp Figma design references found in the description under the
+	// `figma_links` metadata key (a JSON-encoded string — the metadata V1
+	// contract is primitive scalars only). The stamp is an optimization and
+	// a stable anchor for downstream design-stage machinery; readers union
+	// it with a live extraction, so a failed or skipped stamp never hides a
+	// link. Best-effort inside the tx: an encoding-side "" (no refs / too
+	// large) simply skips the write.
+	if p.Description.Valid {
+		if v := figma.LinksMetadataValue(figma.RefsFrom(p.Description.String)); v != "" {
+			value, merr := json.Marshal(v)
+			if merr == nil {
+				if updated, serr := qtx.SetIssueMetadataKey(ctx, db.SetIssueMetadataKeyParams{
+					ID:          issue.ID,
+					WorkspaceID: issue.WorkspaceID,
+					Key:         "figma_links",
+					Value:       value,
+				}); serr == nil {
+					issue = updated
+				}
+			}
 		}
 	}
 

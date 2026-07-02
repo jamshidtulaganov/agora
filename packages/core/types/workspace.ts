@@ -18,6 +18,21 @@ export interface GitCredential {
   created_at: string;
 }
 
+// Status of the workspace's single Figma credential (the PAT agents use to
+// read Figma designs referenced by issues). Token material is never returned
+// — token_last4 only. All fields beyond `configured` are display metadata.
+export interface FigmaCredentialStatus {
+  configured: boolean;
+  label: string;
+  token_last4: string;
+  token_kind: string;
+  expires_at: string;
+  expiring_soon: boolean;
+  seat_probe: string;
+  probe_status: string;
+  probed_at: string;
+}
+
 export interface Workspace {
   id: string;
   name: string;

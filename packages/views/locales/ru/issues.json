@@ -601,5 +601,10 @@
     "dont_show_again": "Больше не показывать",
     "keep_in_backlog": "Оставить в Бэклоге",
     "move_to_todo": "Переместить в «К выполнению»"
+  },
+  "figma_links": {
+    "chip_label": "Привязан макет Figma",
+    "chip_label_n": "Привязаны макеты Figma ({{count}})",
+    "open_in_figma": "Открыть в Figma"
   }
 }

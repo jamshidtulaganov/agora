@@ -586,5 +586,10 @@
     "dont_show_again": "不再提示",
     "keep_in_backlog": "保持在 Backlog",
     "move_to_todo": "移到 Todo"
+  },
+  "figma_links": {
+    "chip_label": "已关联 Figma 设计稿",
+    "chip_label_n": "已关联 {{count}} 个 Figma 设计稿",
+    "open_in_figma": "在 Figma 中打开"
   }
 }

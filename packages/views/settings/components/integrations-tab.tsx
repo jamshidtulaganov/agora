@@ -4,6 +4,7 @@ import { LarkTab } from "./lark-tab";
 import { BitrixTab } from "./bitrix-tab";
 import { ZohoTab } from "./zoho-tab";
 import { McpServersTab } from "./mcp-servers-tab";
+import { FigmaIntegrationSection } from "./figma-integration-section";
 import { useT } from "../../i18n";
 
 // Integrations is the umbrella tab for third-party platform connections.
@@ -22,6 +23,7 @@ export function IntegrationsTab() {
       </section>
       <BitrixTab />
       <ZohoTab />
+      <FigmaIntegrationSection />
       <McpServersTab />
     </div>
   );

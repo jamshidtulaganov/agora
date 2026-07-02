@@ -1390,6 +1390,22 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				if note := h.sliceActionQADocsContext(r.Context(), issue); note != "" {
 					resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + strings.TrimSpace(note))
 				}
+				// Figma access rides along on every claim whose issue
+				// references a design: fill (or auto-provision) the figma MCP
+				// server from the workspace credential and teach the agent to
+				// read the linked nodes node-scoped. The how-to note is gated
+				// on the tools ACTUALLY being available this run — otherwise
+				// the agent gets a credential-state note instead of ready-made
+				// calls to tools that don't exist. See injectFigmaMcpCreds.
+				figmaRes := h.injectFigmaMcpCreds(r.Context(), resp.Agent.ID, issue, resp.Agent.McpConfig)
+				resp.Agent.McpConfig = figmaRes.Config
+				if figmaRes.Available {
+					if note := figmaContextForIssue(issueFigmaRefs(issue)); note != "" {
+						resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + note)
+					}
+				} else if figmaRes.Note != "" {
+					resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + figmaRes.Note)
+				}
 			}
 
 			var projectRepos []RepoData

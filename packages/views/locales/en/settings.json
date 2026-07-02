@@ -378,5 +378,34 @@
         "description": "Create and work on issues"
       }
     }
+  },
+  "figma": {
+    "section_title": "Figma",
+    "description": "One workspace token that lets agents read Figma designs referenced by issues. When an issue links a Figma file, the agent's MCP config is filled automatically at claim time — no per-agent setup.",
+    "token_label": "Personal access token",
+    "token_placeholder": "figd_… (Dev/Full seat; File content: read)",
+    "label_label": "Label",
+    "label_placeholder": "e.g. SalesDoctor design account",
+    "expires_label": "Token expiry",
+    "expires_hint": "Figma PATs expire after at most 90 days — set this so you get a renewal warning.",
+    "probe_file_label": "Probe file key (optional)",
+    "probe_file_hint": "A file key the token can read; used once to detect seat-limited tokens.",
+    "save": "Save token",
+    "saving": "Saving…",
+    "remove": "Remove",
+    "configured_as": "Configured",
+    "not_configured": "No Figma token configured. Agents cannot read linked designs.",
+    "expires_on": "expires {{date}}",
+    "expiring_soon": "Expires soon",
+    "seat_warning": "This token looks seat-limited (~6 requests/month). Use a token from a Dev or Full seat.",
+    "status_ok": "Token OK",
+    "status_invalid": "Token invalid",
+    "status_expired": "Token expired",
+    "status_unreachable": "Figma unreachable at save time",
+    "toast_saved": "Figma token saved",
+    "toast_removed": "Figma token removed",
+    "toast_save_failed": "Failed to save Figma token",
+    "toast_remove_failed": "Failed to remove Figma token",
+    "error_invalid_token": "Figma rejected this token. Check it and try again."
   }
 }

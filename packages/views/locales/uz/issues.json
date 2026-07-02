@@ -601,5 +601,10 @@
     "dont_show_again": "Buni boshqa ko‘rsatma",
     "keep_in_backlog": "Rejada saqlash",
     "move_to_todo": "Bajariladi ga ko‘chirish"
+  },
+  "figma_links": {
+    "chip_label": "Figma maket bog'langan",
+    "chip_label_n": "Figma maketlar bog'langan ({{count}})",
+    "open_in_figma": "Figma'da ochish"
   }
 }

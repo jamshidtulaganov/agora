@@ -642,6 +642,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// the handler strips the management handle and adds a
 					// can_manage hint so the UI can gate connect/disconnect.
 					r.Get("/github/installations", h.ListGitHubInstallations)
+					// Figma credential status is member-visible for the same
+					// reason; it never returns token material (last4 only).
+					r.Get("/figma-credential", h.GetFigmaCredentialStatus)
 				})
 				// Admin-level access
 				r.Group(func(r chi.Router) {
@@ -676,6 +679,16 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/git-credentials", h.ListGitCredentials)
 					r.Post("/git-credentials", h.CreateGitCredential)
 					r.Delete("/git-credentials/{credId}", h.DeleteGitCredential)
+				})
+
+				// Figma credential — one PAT per workspace so agents can read
+				// Figma designs referenced by issues. Writes are admin-only;
+				// the member-visible status endpoint lives in the member group
+				// above. The token is sealed at rest and never echoed back.
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))
+					r.Put("/figma-credential", h.PutFigmaCredential)
+					r.Delete("/figma-credential", h.DeleteFigmaCredential)
 				})
 
 				// Lark integration. Listing is member-visible (same

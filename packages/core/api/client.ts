@@ -35,6 +35,7 @@ import type {
   Workspace,
   WorkspaceRepo,
   GitCredential,
+  FigmaCredentialStatus,
   MemberWithUser,
   ActorDirectoryEntry,
   User,
@@ -255,6 +256,8 @@ import {
   SprintReadinessResponseSchema,
   EMPTY_SPRINT_READINESS,
   type SprintReadinessResponse,
+  FigmaCredentialStatusSchema,
+  EMPTY_FIGMA_CREDENTIAL_STATUS,
 } from "./schemas";
 
 /** Identifies the calling client to the server.
@@ -2683,6 +2686,34 @@ export class ApiClient {
 
   async deleteGitCredential(workspaceId: string, credentialId: string): Promise<void> {
     await this.fetch(`/api/workspaces/${workspaceId}/git-credentials/${credentialId}`, {
+      method: "DELETE",
+    });
+  }
+
+  // Figma credential — one PAT per workspace so agents can read Figma designs
+  // referenced by issues. The token is write-only; status carries last4 only.
+  async getFigmaCredentialStatus(workspaceId: string): Promise<FigmaCredentialStatus> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/figma-credential`);
+    return parseWithFallback(raw, FigmaCredentialStatusSchema, EMPTY_FIGMA_CREDENTIAL_STATUS, {
+      endpoint: "GET /api/workspaces/{id}/figma-credential",
+    });
+  }
+
+  async putFigmaCredential(
+    workspaceId: string,
+    data: { token: string; label?: string; expires_at?: string; probe_file_key?: string },
+  ): Promise<FigmaCredentialStatus> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/figma-credential`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(raw, FigmaCredentialStatusSchema, EMPTY_FIGMA_CREDENTIAL_STATUS, {
+      endpoint: "PUT /api/workspaces/{id}/figma-credential",
+    });
+  }
+
+  async deleteFigmaCredential(workspaceId: string): Promise<void> {
+    await this.fetch(`/api/workspaces/${workspaceId}/figma-credential`, {
       method: "DELETE",
     });
   }

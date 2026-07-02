@@ -140,8 +140,14 @@ export const MCP_SERVER_TEMPLATES: McpServerTemplate[] = [
     label: "Figma",
     name: "figma",
     command: "npx",
-    argsText: "-y figma-developer-mcp --stdio",
+    // Pinned — keep in sync with figmaMcpVersion in
+    // server/internal/handler/figma_mcp.go and the Dockerfile.daemon
+    // preinstall. The backend auto-provisions this exact entry at claim time
+    // when an issue references Figma and the agent has none configured.
+    argsText: "-y figma-developer-mcp@0.13.2 --stdio --no-telemetry",
     envKeys: ["FIGMA_API_KEY"],
+    scopeHint:
+      "PAT from a Dev/Full seat with File content (read) scope. View/Collab-seat tokens are rate-limited to ~6 requests/month and will not work. Leave the key blank to use the workspace credential from Settings → Integrations → Figma.",
   },
   {
     id: "github",

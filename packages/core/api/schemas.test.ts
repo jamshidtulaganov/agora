@@ -5,7 +5,9 @@ import {
   DashboardUsageByAgentListSchema,
   DashboardUsageDailyListSchema,
   DuplicateIssueErrorBodySchema,
+  EMPTY_FIGMA_CREDENTIAL_STATUS,
   EMPTY_USER,
+  FigmaCredentialStatusSchema,
   ListIssuesResponseSchema,
   QAEvidenceSchema,
   RuntimeHourlyActivityListSchema,
@@ -376,5 +378,74 @@ describe("QAEvidenceSchema (evidence-first QA)", () => {
     expect(parsed.result).toBeNull();
     expect(parsed.summary).toBe("");
     expect(parsed.captured_at).toBe("");
+  });
+});
+
+describe("FigmaCredentialStatusSchema", () => {
+  const endpoint = { endpoint: "GET /api/workspaces/{id}/figma-credential" };
+
+  it("parses a full status payload", () => {
+    const parsed = parseWithFallback(
+      {
+        configured: true,
+        label: "SD design",
+        token_last4: "ab12",
+        token_kind: "pat",
+        expires_at: "2026-09-30T00:00:00Z",
+        expiring_soon: false,
+        seat_probe: "ok",
+        probe_status: "ok",
+        probed_at: "2026-07-02T00:00:00Z",
+      },
+      FigmaCredentialStatusSchema,
+      EMPTY_FIGMA_CREDENTIAL_STATUS,
+      endpoint,
+    );
+    expect(parsed.configured).toBe(true);
+    expect(parsed.token_last4).toBe("ab12");
+  });
+
+  it("defaults every missing field (older server shape)", () => {
+    const parsed = parseWithFallback(
+      { configured: true },
+      FigmaCredentialStatusSchema,
+      EMPTY_FIGMA_CREDENTIAL_STATUS,
+      endpoint,
+    );
+    expect(parsed.configured).toBe(true);
+    expect(parsed.expiring_soon).toBe(false);
+    expect(parsed.probe_status).toBe("");
+  });
+
+  it("falls back on wrong-typed fields", () => {
+    const parsed = parseWithFallback(
+      { configured: "yes", expires_at: 123 },
+      FigmaCredentialStatusSchema,
+      EMPTY_FIGMA_CREDENTIAL_STATUS,
+      endpoint,
+    );
+    expect(parsed).toEqual(EMPTY_FIGMA_CREDENTIAL_STATUS);
+  });
+
+  it("falls back on null / non-object bodies", () => {
+    for (const body of [null, [], "nope"]) {
+      const parsed = parseWithFallback(
+        body,
+        FigmaCredentialStatusSchema,
+        EMPTY_FIGMA_CREDENTIAL_STATUS,
+        endpoint,
+      );
+      expect(parsed.configured).toBe(false);
+    }
+  });
+
+  it("passes unknown future fields through (loose)", () => {
+    const parsed = parseWithFallback(
+      { configured: true, some_future_field: 1 },
+      FigmaCredentialStatusSchema,
+      EMPTY_FIGMA_CREDENTIAL_STATUS,
+      endpoint,
+    ) as unknown as Record<string, unknown>;
+    expect(parsed.some_future_field).toBe(1);
   });
 });

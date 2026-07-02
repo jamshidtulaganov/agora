@@ -69,6 +69,7 @@ import { WorkModeSwitch } from "./work-mode-switch";
 import { AgentWorkingIndicator } from "./agent-working-indicator";
 import { SliceActionsSection } from "./slice-actions-section";
 import { PullRequestList } from "./pull-request-list";
+import { FigmaLinksSection } from "./figma-links-section";
 import { useGitHubSettings } from "@agora/core/github";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@agora/core/auth";
@@ -1594,6 +1595,10 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           {pullRequestsOpen && <div className="pl-2"><PullRequestList issueId={id} /></div>}
         </div>
       )}
+
+      {/* Figma designs referenced by the description (client-side extraction;
+          renders nothing when the issue links no designs). */}
+      <FigmaLinksSection description={issue.description} />
 
       {/* Details */}
       <div>

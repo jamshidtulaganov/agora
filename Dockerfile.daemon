@@ -42,6 +42,14 @@ RUN npm install -g @anthropic-ai/claude-code
 # (APP_ID/APP_SECRET/LARK_DOMAIN), never baked into the image.
 RUN npm install -g @larksuiteoapi/lark-mcp
 
+# Framelink Figma MCP — pre-installed (pinned; keep in sync with
+# figmaMcpVersion in server/internal/handler/figma_mcp.go and the preset in
+# packages/core/mcp/types.ts) so agents whose issues reference Figma designs
+# get get_figma_data/download_figma_images without a cold npx fetch. The
+# FIGMA_API_KEY is injected per task from the workspace credential, never
+# baked into the image.
+RUN npm install -g figma-developer-mcp@0.13.2
+
 # code-server (browser VS Code) — the daemon spawns it on demand for the live
 # "Code" editor so a human can watch + edit an agent's worktree from the browser.
 RUN curl -fsSL https://code-server.dev/install.sh | sh
