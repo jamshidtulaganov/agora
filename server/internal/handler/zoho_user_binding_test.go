@@ -39,6 +39,11 @@ func zohoBindingStub(t *testing.T, rejectCode bool) *httptest.Server {
 			{"id": "77", "full_name": "Test Person", "email": "person@octanefuel.com"},
 		}})
 	})
+	mux.HandleFunc("/crm/v8/settings/modules", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"modules": []map[string]any{
+			{"api_name": "CustomModule34", "module_name": "Tickets", "generated_type": "custom", "api_supported": true},
+		}})
+	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv

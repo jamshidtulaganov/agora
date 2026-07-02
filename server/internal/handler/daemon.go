@@ -1914,6 +1914,16 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		resp.AuthToken = tokenStr
 	}
 
+	// Auto-provision the Agora-hosted Zoho MCP proxy for workspaces with a
+	// Zoho connection. Must run after the mat_ mint above — the proxy entry's
+	// only credential is that task token, so the agent's Zoho calls act as
+	// the resolved user with zero Zoho secrets leaving the server. No-op
+	// without a token (ownerless runtimes), without AGORA_PUBLIC_URL, or when
+	// the agent already declares a "zoho" server.
+	if resp.Agent != nil && resp.AuthToken != "" {
+		resp.Agent.McpConfig = h.injectZohoMcpProxy(r.Context(), parseUUID(resp.WorkspaceID), resp.Agent.McpConfig, resp.AuthToken)
+	}
+
 	slog.Info("task claimed by runtime", "task_id", uuidToString(task.ID), "runtime_id", runtimeID, "agent_id", uuidToString(task.AgentID), "prior_session", resp.PriorSessionID)
 	writeJSON(w, http.StatusOK, map[string]any{"task": resp})
 }
