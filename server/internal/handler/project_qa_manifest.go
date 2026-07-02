@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -46,6 +47,19 @@ NEVER invent routes you did not see in code or verify live. An honest small mani
 
 func buildQAManifestPrompt(title string, projectID pgtype.UUID) string {
 	return fmt.Sprintf(qaManifestBuildPromptTmpl, title, uuidToString(projectID))
+}
+
+// projectBuildLocks serializes the per-project background-build trigger
+// (knowledge base + QA manifest) WITHIN this process, so concurrent first-repo
+// attaches don't both observe (or both miss) the count==1 transition and
+// double-fire or drop the build. Single instance only.
+var projectBuildLocks sync.Map // projectID string -> *sync.Mutex
+
+func lockProjectBuild(projectID string) func() {
+	m, _ := projectBuildLocks.LoadOrStore(projectID, &sync.Mutex{})
+	mu := m.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
 }
 
 // projectHasQAManifest reports whether project.settings already carries a
@@ -200,9 +214,23 @@ func (h *Handler) SetProjectQAManifest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to encode settings")
 		return
 	}
+	// UpdateProject does NOT COALESCE-guard description/icon/lead_type/lead_id/
+	// squad_id, so any field left at its zero value writes SQL NULL and wipes
+	// that column. Seed every non-settings field from the loaded row (mirrors
+	// the regular UpdateProject handler in project.go) so a manifest save only
+	// changes settings — otherwise the first save on an agent-led project wipes
+	// its lead/squad and the background build never fires again.
+	// Title/Status/Priority are COALESCE-guarded in the query, so leaving them
+	// zero preserves them. Description/Icon/LeadType/LeadID/SquadID are NOT
+	// guarded, so seed them from the loaded row or they write NULL.
 	if _, err := h.Queries.UpdateProject(r.Context(), db.UpdateProjectParams{
-		ID:       project.ID,
-		Settings: blob,
+		ID:          project.ID,
+		Description: project.Description,
+		Icon:        project.Icon,
+		LeadType:    project.LeadType,
+		LeadID:      project.LeadID,
+		SquadID:     project.SquadID,
+		Settings:    blob,
 	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to save qa manifest")
 		return

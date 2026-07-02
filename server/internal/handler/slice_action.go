@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -1108,6 +1109,25 @@ func (h *Handler) pickLeastBusyQAAgent(ctx context.Context, agents []db.Agent) d
 	return best
 }
 
+// issueQALocks serializes the auto-QA triggers (run_qa / gen_test_cases) per
+// issue WITHIN this backend process. The status write is a read-modify-write
+// with no row lock, so two concurrent transitions into the same state both see
+// the old prevStatus and both launch the detached trigger goroutine; their
+// per-agent / existing-cases guards then race (neither has enqueued yet) and
+// each posts a duplicate @QA trigger comment. Holding a per-issue lock around
+// the check+enqueue makes the second goroutine observe the first's queued task
+// (HasPendingTaskForIssueAndAgent) and bail, so exactly one fires. Single
+// instance only — a multi-replica deployment would still need a DB guard, but
+// the self-host backend is one process.
+var issueQALocks sync.Map // issueID string -> *sync.Mutex
+
+func lockIssueQA(issueID string) func() {
+	m, _ := issueQALocks.LoadOrStore(issueID, &sync.Mutex{})
+	mu := m.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
+
 // maybeRunQAOnInReview fires the QA squad's run_qa when an issue enters
 // in_review — automating the QA team's previously-manual smoke (deterministic
 // smoke on the assignee developer's box + plan-driven tests). Best-effort +
@@ -1119,6 +1139,7 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	if !autoQAEnabled() {
 		return
 	}
+	defer lockIssueQA(uuidToString(issue.ID))()
 
 	// Orchestrator-to-orchestrator (product rule: "the QA lead and dev lead must
 	// always be in communication"): when the DEV side is squad-managed — the
@@ -1248,6 +1269,7 @@ func (h *Handler) maybeGenTests(ctx context.Context, issue db.Issue, actorType, 
 	if !autoQAEnabled() {
 		return
 	}
+	defer lockIssueQA(uuidToString(issue.ID))()
 	// Already have cases (authored earlier, or by a prior in_review) → don't dup.
 	if n, err := h.Queries.CountActiveTestCasesForIssue(ctx, db.CountActiveTestCasesForIssueParams{
 		IssueID:     issue.ID,
@@ -1265,14 +1287,26 @@ func (h *Handler) maybeGenTests(ctx context.Context, issue db.Issue, actorType, 
 	// deduped away. If every QA agent is busy on this issue, skip (the gate is
 	// the priority; cases can be authored on demand).
 	var free []db.Agent
+	anyPending := false
 	for _, a := range agents {
 		pending, err := h.Queries.HasPendingTaskForIssueAndAgent(ctx, db.HasPendingTaskForIssueAndAgentParams{
 			IssueID: issue.ID,
 			AgentID: a.ID,
 		})
+		if err == nil && pending {
+			anyPending = true
+		}
 		if err == nil && !pending {
 			free = append(free, a)
 		}
+	}
+	// SHIFT-LEFT PREP fires standalone (no run_qa precedes it), so it must fire
+	// EXACTLY ONCE per issue. If any QA agent already has a pending task on this
+	// issue, authoring is already in flight (a prior prep goroutine, held off
+	// only by the per-issue lock above) — bail instead of posting a duplicate
+	// trigger comment. The in_review path keeps the different-agent behavior.
+	if prep && anyPending {
+		return
 	}
 	if len(free) == 0 {
 		return

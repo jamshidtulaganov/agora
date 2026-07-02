@@ -330,7 +330,13 @@ func (h *Handler) CreateProjectResource(w http.ResponseWriter, r *http.Request) 
 	// it starts with a repo. Only on the FIRST github_repo — later repos would
 	// duplicate in-flight builds; a human re-triggers explicitly via the
 	// knowledge/build and qa-manifest/build endpoints when the repo set grows.
+	// The count-then-fire is read-after-write, so serialize it per project: two
+	// concurrent first-repo attaches could otherwise both see count==2 (drop the
+	// build) or both fire it. The enqueue helpers themselves are idempotent
+	// (no-clobber manifest guard), but the lock makes the count observation
+	// well-defined so exactly the count==1 attach triggers.
 	if req.ResourceType == "github_repo" {
+		unlock := lockProjectBuild(uuidToString(project.ID))
 		repoCount := 0
 		for _, row := range h.listProjectResourcesForProject(r.Context(), project.ID) {
 			if row.ResourceType == "github_repo" {
@@ -341,6 +347,7 @@ func (h *Handler) CreateProjectResource(w http.ResponseWriter, r *http.Request) 
 			h.maybeEnqueueProjectStudy(r.Context(), project, userID)
 			h.maybeEnqueueQAManifestBuild(r.Context(), project, userID)
 		}
+		unlock()
 	}
 	writeJSON(w, http.StatusCreated, resp)
 }
