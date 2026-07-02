@@ -17,11 +17,15 @@ import (
 
 // Authenticated Bitrix import-browser endpoints. These power a UI that lets an
 // operator inspect Bitrix workgroups + tasks and trigger a bulk import, on top
-// of the per-task webhook sync. They are login-gated (any authenticated user;
-// the repo has no platform-admin role) and operate ACROSS workspaces — the
-// destination workspace for each task is decided by the same routing config the
-// webhook uses (BITRIX_GROUP_MAP / BITRIX_SYNC_WORKSPACE_SLUG / tag slugs), not
-// by request headers.
+// of the per-task webhook sync. They operate ACROSS workspaces — the destination
+// workspace for each task is decided by the routing config the webhook uses
+// (BITRIX_GROUP_MAP / BITRIX_SYNC_WORKSPACE_SLUG / tag slugs), not by request
+// headers. Because there is no caller-supplied workspace to scope to, and no
+// platform-admin role in this repo, access is gated by requireBitrixOperator:
+// the caller must be an owner/admin of EVERY workspace the current config can
+// route into. A plain member (or a Telegram Mini-App signup) that merely holds
+// an account must NOT be able to inject/mutate issues — or provision members —
+// into a tenant it doesn't administer.
 //
 // Every endpoint 503s when the integration is unconfigured (no
 // BITRIX_WEBHOOK_URL) so a self-hosted deployment without Bitrix gets a clear
@@ -32,6 +36,48 @@ import (
 // URL is present). Routing is NOT required here — listing groups/tasks is useful
 // before any group mapping exists.
 func bitrixEndpointsEnabled() bool { return bitrixWebhookURL() != "" }
+
+// requireBitrixOperator authorizes the cross-workspace Bitrix import-browser
+// endpoints. Unlike the per-request Zoho importers (scoped to the caller's
+// X-Workspace-Slug), Bitrix routes tasks into workspaces chosen by the server's
+// env config, so there is no caller-supplied workspace to gate on. Instead,
+// require the caller to be an owner/admin of EVERY workspace the current routing
+// config can write into (cfg.DefaultSlug + each cfg.GroupMap value) — the full
+// set of tenants Bitrix data can land in. Fails closed: writes a 403 and returns
+// false when no route is configured or the caller doesn't administer all targets.
+func (h *Handler) requireBitrixOperator(w http.ResponseWriter, r *http.Request) bool {
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return false
+	}
+	cfg := bitrixRouteConfig()
+	targets := map[string]bool{}
+	if s := strings.ToLower(strings.TrimSpace(cfg.DefaultSlug)); s != "" {
+		targets[s] = true
+	}
+	for _, s := range cfg.GroupMap {
+		if s = strings.ToLower(strings.TrimSpace(s)); s != "" {
+			targets[s] = true
+		}
+	}
+	if len(targets) == 0 {
+		writeError(w, http.StatusForbidden, "bitrix routing is not configured for any workspace")
+		return false
+	}
+	for slug := range targets {
+		ws, err := h.Queries.GetWorkspaceBySlug(r.Context(), slug)
+		if err != nil {
+			writeError(w, http.StatusForbidden, "you must administer the Bitrix target workspace")
+			return false
+		}
+		m, err := h.getWorkspaceMember(r.Context(), userID, uuidToString(ws.ID))
+		if err != nil || (m.Role != "owner" && m.Role != "admin") {
+			writeError(w, http.StatusForbidden, "you must be an owner or admin of the Bitrix target workspace")
+			return false
+		}
+	}
+	return true
+}
 
 // --- GET /api/bitrix/groups -------------------------------------------------
 
@@ -47,7 +93,7 @@ type BitrixGroupResponse struct {
 // ListBitrixGroups returns the active Bitrix workgroups, each annotated with the
 // workspace slug it would route to under the current config.
 func (h *Handler) ListBitrixGroups(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUserID(w, r); !ok {
+	if !h.requireBitrixOperator(w, r) {
 		return
 	}
 	if !bitrixEndpointsEnabled() {
@@ -91,7 +137,7 @@ type BitrixUserResponse struct {
 // ListBitrixUsers returns the portal's active users so the import UI can offer
 // importing a specific responsible's tasks (alongside importing by group).
 func (h *Handler) ListBitrixUsers(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUserID(w, r); !ok {
+	if !h.requireBitrixOperator(w, r) {
 		return
 	}
 	if !bitrixEndpointsEnabled() {
@@ -123,7 +169,7 @@ func (h *Handler) ListBitrixUsers(w http.ResponseWriter, r *http.Request) {
 // URL is <BITRIX_WEBHOOK_PUBLIC_URL>/bitrix/webhook(+?secret=). Requires a
 // public URL — Bitrix calls out to it, so this can't be done against localhost.
 func (h *Handler) RegisterBitrixWebhook(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUserID(w, r); !ok {
+	if !h.requireBitrixOperator(w, r) {
 		return
 	}
 	if !bitrixEndpointsEnabled() {
@@ -179,7 +225,7 @@ type BitrixTaskResponse struct {
 // by BITRIX_TASK_TAG), each annotated with its routed workspace and whether an
 // issue already exists for it there.
 func (h *Handler) ListBitrixTasks(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUserID(w, r); !ok {
+	if !h.requireBitrixOperator(w, r) {
 		return
 	}
 	if !bitrixEndpointsEnabled() {
@@ -271,7 +317,7 @@ type BitrixImportResponse struct {
 // syncBitrixTask path the webhook uses. Capped at bitrixImportMaxTasks. Per-task
 // errors are collected (not fatal) so one bad task doesn't abort the batch.
 func (h *Handler) ImportBitrixTasks(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUserID(w, r); !ok {
+	if !h.requireBitrixOperator(w, r) {
 		return
 	}
 	if !bitrixEndpointsEnabled() {
