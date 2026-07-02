@@ -172,6 +172,16 @@ agent-level entry with the same server name wins. So an agent with
 setting a same-named server on the agent overrides the default. The stored
 `agent.mcp_config` value is NOT modified by this merge — it happens per task.
 
+**Auto-provisioned "zoho" server.** When the workspace has a Zoho connection
+configured, every claimed task also receives a `zoho` MCP server entry
+pointing at the Agora-hosted Zoho proxy (`/mcp/zoho`), authenticated with the
+task's own token. Its tools (`zoho_whoami`, `zoho_crm_modules`,
+`zoho_crm_fields`, `zoho_crm_search`, `zoho_crm_get_record`,
+`zoho_crm_create_record`, `zoho_crm_update_record`) act AS the human behind
+the task when that person has bound their Zoho account (workspace settings →
+Zoho), falling back to the workspace's org-level connection. An agent-level
+`zoho` server entry suppresses the auto-provisioned one.
+
 ## Skill binding
 
 Creating an agent does NOT bind any workspace skill — binding is a separate

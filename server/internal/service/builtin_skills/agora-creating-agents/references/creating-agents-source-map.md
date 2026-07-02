@@ -84,6 +84,14 @@ only.
 | Shape validation | 223 | object with an `mcpServers` object; non-empty names; object definitions — else 400 |
 | Claim-time merge | 194 (+ `daemon.go` 1221) | `applyWorkspaceDefaultMcpServers` merges default servers into the per-task config; agent-level entry wins on name collision; failures never block the claim; stored `agent.mcp_config` is untouched |
 
+## Zoho MCP proxy — `server/internal/handler/zoho_mcp_proxy.go`
+
+| Contract | Line | Behavior |
+|---|---|---|
+| `ZohoMcpProxy` endpoint | ~160 | POST /mcp/zoho, task-token actors only (403 otherwise); minimal MCP Streamable-HTTP subset (initialize/ping/tools list+call; notifications 202; GET 405) |
+| Acting identity | ~134 | task initiator binding → runtime owner binding → workspace connection fallback; no identity → isError tool result telling the agent to bind |
+| Claim-time auto-provision | ~330 (+ `daemon.go` after mat_ mint) | `injectZohoMcpProxy` adds the `zoho` entry with the task's own token; agent-defined `zoho` entry wins; no-op without AGORA_PUBLIC_URL or a workspace connection |
+
 ## Routes — `server/cmd/server/router.go`
 
 | Contract | Line | Behavior |

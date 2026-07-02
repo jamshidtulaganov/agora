@@ -10,6 +10,7 @@
 package zohocrm
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -187,21 +188,77 @@ func (c *Client) getJSON(ctx context.Context, path string, out any) error {
 }
 
 func (c *Client) doGet(ctx context.Context, path, token string) (int, []byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.apiBase+path, nil)
+	return c.doRequest(ctx, http.MethodGet, path, token, nil)
+}
+
+// doRequest is the shared authenticated transport for every verb. A nil body
+// sends no payload; a non-nil body is sent as application/json.
+func (c *Client) doRequest(ctx context.Context, method, path, token string, body []byte) (int, []byte, error) {
+	var rdr io.Reader
+	if body != nil {
+		rdr = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.apiBase+path, rdr)
 	if err != nil {
 		return 0, nil, err
 	}
 	req.Header.Set("Authorization", "Zoho-oauthtoken "+token)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	resp, err := c.httpc.Do(req)
 	if err != nil {
 		return 0, nil, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
 		return 0, nil, err
 	}
-	return resp.StatusCode, body, nil
+	return resp.StatusCode, respBody, nil
+}
+
+// doJSON performs an authenticated request with an optional JSON payload,
+// mirroring getJSON's discipline: one forced token refresh on 401, 204
+// tolerated as "empty" (out left untouched), non-2xx surfaced with a
+// truncated body excerpt.
+func (c *Client) doJSON(ctx context.Context, method, path string, payload, out any) error {
+	var body []byte
+	if payload != nil {
+		b, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("zohocrm: encode %s %s payload: %w", method, path, err)
+		}
+		body = b
+	}
+	token, err := c.AccessToken(ctx)
+	if err != nil {
+		return err
+	}
+	status, respBody, err := c.doRequest(ctx, method, path, token, body)
+	if err != nil {
+		return err
+	}
+	if status == http.StatusUnauthorized {
+		if token, err = c.forceRefresh(ctx, token); err != nil {
+			return err
+		}
+		if status, respBody, err = c.doRequest(ctx, method, path, token, body); err != nil {
+			return err
+		}
+	}
+	// 204: Zoho returns No Content for empty result sets (e.g. a COQL query
+	// matching nothing). Leave out untouched.
+	if status == http.StatusNoContent {
+		return nil
+	}
+	if status < 200 || status > 299 {
+		return fmt.Errorf("zohocrm: %s %s: http %d: %s", method, path, status, truncate(respBody, 300))
+	}
+	if out == nil {
+		return nil
+	}
+	return json.Unmarshal(respBody, out)
 }
 
 func truncate(b []byte, n int) string {
@@ -295,4 +352,68 @@ func (c *Client) ListFields(ctx context.Context, module string) ([]Field, error)
 		return nil, err
 	}
 	return out.Fields, nil
+}
+
+// --- record surface (D2 sync engine) ----------------------------------------
+
+// Query executes a COQL select and returns the raw records plus whether Zoho
+// reports more pages (info.more_records). A query matching nothing comes back
+// as 204 No Content — an empty slice, not an error. The caller owns COQL
+// safety: build queries only from validated identifiers and server-side
+// formatted literals (docs/zoho-dynamic-integration.md §4).
+func (c *Client) Query(ctx context.Context, coql string) ([]map[string]any, bool, error) {
+	var out struct {
+		Data []map[string]any `json:"data"`
+		Info struct {
+			MoreRecords bool `json:"more_records"`
+		} `json:"info"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/crm/v8/coql", map[string]string{"select_query": coql}, &out); err != nil {
+		return nil, false, err
+	}
+	return out.Data, out.Info.MoreRecords, nil
+}
+
+// GetRecord fetches a single record of a module by id.
+func (c *Client) GetRecord(ctx context.Context, module, id string) (map[string]any, error) {
+	var out struct {
+		Data []map[string]any `json:"data"`
+	}
+	path := "/crm/v8/" + url.PathEscape(module) + "/" + url.PathEscape(id)
+	if err := c.getJSON(ctx, path, &out); err != nil {
+		return nil, err
+	}
+	if len(out.Data) == 0 {
+		return nil, fmt.Errorf("zohocrm: record %s/%s not found", module, id)
+	}
+	return out.Data[0], nil
+}
+
+// UpdateRecord updates the given fields of one record. Zoho wraps per-record
+// outcomes inside a 2xx envelope, so the record's own status is checked — a
+// blueprint/validation rejection surfaces as an error even though the HTTP
+// call "succeeded".
+func (c *Client) UpdateRecord(ctx context.Context, module, id string, fields map[string]any) error {
+	record := map[string]any{"id": id}
+	for k, v := range fields {
+		record[k] = v
+	}
+	payload := map[string]any{"data": []map[string]any{record}}
+	var out struct {
+		Data []struct {
+			Status  string `json:"status"`
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"data"`
+	}
+	if err := c.doJSON(ctx, http.MethodPut, "/crm/v8/"+url.PathEscape(module), payload, &out); err != nil {
+		return err
+	}
+	if len(out.Data) == 0 {
+		return fmt.Errorf("zohocrm: update %s/%s: empty response", module, id)
+	}
+	if out.Data[0].Status != "success" {
+		return fmt.Errorf("zohocrm: update %s/%s: %s: %s", module, id, out.Data[0].Code, out.Data[0].Message)
+	}
+	return nil
 }

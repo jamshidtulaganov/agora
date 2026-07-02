@@ -400,6 +400,11 @@ func main() {
 	// to sweepCtx so it drains with the other background workers.
 	go h.RunZohoSyncPoller(sweepCtx)
 
+	// Dynamic Zoho CRM engine (D2): periodic COQL sweep of every enabled
+	// zoho_sync_config row across all workspaces. Idle unless
+	// ZOHO_DYN_SYNC_INTERVAL is a positive duration (opt-in, default off).
+	go h.RunZohoDynSyncPoller(sweepCtx)
+
 	// MUL-2957: DB-backed execution scheduler. The scheduler turns the
 	// `sys_cron_executions` table into the distributed lease + audit
 	// log for internal periodic jobs. The first job is

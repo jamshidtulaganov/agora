@@ -232,6 +232,9 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 	// Zoho Projects outbound status mirror (Phase 2, bidirectional). No-op unless
 	// the integration is configured and ZOHO_PROJECTS_PUSH_STATUS is on.
 	h.registerZohoOutbound()
+	// Dynamic Zoho CRM outbound status mirror (D3). No-op unless ZOHO_DYN_PUSH
+	// is on — writing to a live CRM is opt-in.
+	h.registerZohoDynOutbound()
 	return h
 }
 

@@ -557,6 +557,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// --- User-scoped routes (no workspace context required) ---
 		r.Get("/api/me", h.GetMe)
 		r.Patch("/api/me", h.UpdateMe)
+		// Agora-hosted Zoho MCP server (Streamable HTTP). Agents reach it
+		// with their task-scoped mat_ token — the handler enforces
+		// X-Actor-Source=task_token and resolves the acting Zoho identity
+		// server-side; no workspace header needed (the token carries it).
+		r.HandleFunc("/mcp/zoho", h.ZohoMcpProxy)
 		// Resolve an issue UUID to its workspace across the caller's memberships,
 		// WITHOUT the X-Workspace header needing to match first — lets a deep
 		// link opened in the wrong/last workspace switch to the right one.
@@ -694,6 +699,14 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Delete("/zoho-connection", h.DeleteZohoConnection)
 					r.Get("/zoho/crm/modules", h.ListZohoCRMModules)
 					r.Get("/zoho/crm/fields", h.ListZohoCRMFields)
+					// Per-module sync configs for the dynamic engine (D2):
+					// which CRM modules sync, where, and with what field /
+					// status maps. Same contract as the connection endpoints
+					// (agent actors rejected, mutations audited).
+					r.Get("/zoho/sync-configs", h.ListZohoSyncConfigs)
+					r.Post("/zoho/sync-configs", h.CreateZohoSyncConfig)
+					r.Put("/zoho/sync-configs/{configId}", h.UpdateZohoSyncConfig)
+					r.Delete("/zoho/sync-configs/{configId}", h.DeleteZohoSyncConfig)
 					r.Post("/members", h.CreateInvitation)
 					r.Route("/members/{memberId}", func(r chi.Router) {
 						r.Patch("/", h.UpdateMember)
