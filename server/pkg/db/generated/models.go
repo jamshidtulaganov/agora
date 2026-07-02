@@ -961,3 +961,36 @@ type ZohoConnection struct {
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 }
+
+type ZohoSyncConfig struct {
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	ConnectionID   pgtype.UUID        `json:"connection_id"`
+	Channel        string             `json:"channel"`
+	ModuleApiName  string             `json:"module_api_name"`
+	ProjectID      pgtype.UUID        `json:"project_id"`
+	Enabled        bool               `json:"enabled"`
+	Direction      string             `json:"direction"`
+	FieldMap       []byte             `json:"field_map"`
+	StatusMap      []byte             `json:"status_map"`
+	FilterCoql     string             `json:"filter_coql"`
+	Cursor         pgtype.Timestamptz `json:"cursor"`
+	WatchChannelID string             `json:"watch_channel_id"`
+	WatchExpiresAt pgtype.Timestamptz `json:"watch_expires_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ZohoUserBinding struct {
+	ID                    pgtype.UUID        `json:"id"`
+	WorkspaceID           pgtype.UUID        `json:"workspace_id"`
+	UserID                pgtype.UUID        `json:"user_id"`
+	ConnectionID          pgtype.UUID        `json:"connection_id"`
+	RefreshTokenEncrypted []byte             `json:"refresh_token_encrypted"`
+	Scopes                string             `json:"scopes"`
+	ZohoUserEmail         string             `json:"zoho_user_email"`
+	ProbeStatus           string             `json:"probe_status"`
+	ProbedAt              pgtype.Timestamptz `json:"probed_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+}

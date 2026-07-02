@@ -667,6 +667,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// Zoho connection status is member-visible likewise; it
 					// never returns secret material (dc / client_id / probe).
 					r.Get("/zoho-connection", h.GetZohoConnectionStatus)
+					// Per-user Zoho identity binding is SELF-SERVICE: any
+					// member manages their own (and only their own) binding,
+					// so these live in the member group, not the admin group.
+					// Handlers reject agent actors and never return secrets.
+					r.Get("/zoho-user-binding", h.GetZohoUserBindingStatus)
+					r.Put("/zoho-user-binding", h.PutZohoUserBinding)
+					r.Delete("/zoho-user-binding", h.DeleteZohoUserBinding)
 				})
 				// Admin-level access
 				r.Group(func(r chi.Router) {
