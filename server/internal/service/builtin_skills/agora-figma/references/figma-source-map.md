@@ -48,6 +48,18 @@ PR). Re-confirm exact lines after later phases move code.
 | Review endpoint `POST /api/issues/{id}/design-review` (approve / request_changes + overrides; 404/409 matrix) | `server/internal/handler/design_review.go` (`CreateDesignReview`); route in `cmd/server/router.go` |
 | Filename contract `figma-<node-id-dashed>.png` pairs a screen render to its comment attachment | recipe + `packages/views/issues/components/design-review-dialog.tsx` |
 
+## design manifest (Phase 3)
+
+| Behavior | File:line |
+|---|---|
+| `gen_design_manifest` slice-action kind + recipe (tokens vs inventory, legacy frequency-rank, 150-line cap, Variables-API prohibition) | `server/internal/handler/slice_action.go` (`sliceActionGenDesignManifest`, `buildSliceInstruction`) |
+| Manifest context injector (rendered into designer + draft_code + every claim) | `server/internal/handler/design_action.go` (`sliceActionDesignManifestContext`, `renderDesignManifestContext`); wired in `slice_action.go` + `daemon.go` |
+| Capture onto project.settings.design_manifest (key-scoped jsonb_set; manual-source → propose-via-comment) | `server/internal/service/design_manifest.go` (`CaptureDesignManifest`); wired at `comment.go` + `task.go` |
+| Key-scoped write queries (never clobber sibling settings) | `server/pkg/db/queries/project.sql` (`SetProjectDesignManifest`, `SetProjectSettingKey`) |
+| Human editor endpoint `PUT /api/projects/{id}/design-manifest` (manifest source=manual, design_agent, design_auto) | `server/internal/handler/design_manifest.go` (`PutProjectDesignManifest`) |
+| Agent-generation trigger `POST /api/projects/{id}/design-manifest/sync` (chore issue + fire designer) | `server/internal/handler/design_manifest.go` (`SyncProjectDesignManifest`) |
+| Lazy bootstrap inside design_proposal | `server/internal/handler/slice_action.go` (design_proposal recipe BOOTSTRAP clause) |
+
 ## External facts (not in-repo)
 
 - Figma PATs hard-cap at 90 days (policy change 2025-04-28); View/Collab-seat

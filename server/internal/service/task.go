@@ -2431,6 +2431,9 @@ func (s *TaskService) createAgentComment(ctx context.Context, issueID, agentID p
 	// Persist a design_proposal agent's ```design-proposal``` block: attach the
 	// design:proposed label + notify the issue's humans.
 	s.CaptureDesignProposal(ctx, issue, comment, agentID)
+	// Persist a gen_design_manifest agent's ```design-manifest``` block onto the
+	// project (key-scoped; never clobbers a human-curated manifest).
+	s.CaptureDesignManifest(ctx, issue, comment, agentID)
 }
 
 // AutoUnresolveThreadOnReply clears resolved_at on the thread root when a

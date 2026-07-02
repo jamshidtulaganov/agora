@@ -876,6 +876,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// (CLI: agora project qa-manifest set).
 					r.Post("/qa-manifest/build", h.BuildProjectQAManifest)
 					r.Put("/qa-manifest", h.SetProjectQAManifest)
+					// Design manifest — the project's known design system,
+					// injected into designer + implementation runs. PUT is the
+					// human editor (key-scoped, never clobbers sibling settings);
+					// sync fires the designer agent to (re)generate it.
+					r.Put("/design-manifest", h.PutProjectDesignManifest)
+					r.Post("/design-manifest/sync", h.SyncProjectDesignManifest)
 					// QA base scripts — the project's STANDING regression suite
 					// (test cases with issue_id NULL, injected into every
 					// run_qa / run_test_cases on the project's issues).

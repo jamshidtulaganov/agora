@@ -8,3 +8,10 @@ export {
   type DesignProposalParseState,
   type DesignVerdict,
 } from "./proposal";
+export {
+  DesignManifestSchema,
+  parseDesignManifest,
+  type DesignManifest,
+  type DesignManifestKind,
+  type DesignManifestSource,
+} from "./manifest";

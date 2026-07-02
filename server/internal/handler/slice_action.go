@@ -34,17 +34,18 @@ import (
 // handler) makes buildSliceInstruction the SINGLE place that decides what an
 // agent is told to do.
 const (
-	sliceActionDraftCode      = "draft_code"
-	sliceActionWriteDocs      = "write_docs"
-	sliceActionWriteTests     = "write_tests"
-	sliceActionReviewPart     = "review_part"
-	sliceActionRunQA          = "run_qa"
-	sliceActionRunCI          = "run_ci"
-	sliceActionAutoDocs       = "auto_docs"
-	sliceActionGenTests       = "gen_test_cases"
-	sliceActionRunTests       = "run_test_cases"
-	sliceActionCompileTests   = "compile_tests"
-	sliceActionDesignProposal = "design_proposal"
+	sliceActionDraftCode         = "draft_code"
+	sliceActionWriteDocs         = "write_docs"
+	sliceActionWriteTests        = "write_tests"
+	sliceActionReviewPart        = "review_part"
+	sliceActionRunQA             = "run_qa"
+	sliceActionRunCI             = "run_ci"
+	sliceActionAutoDocs          = "auto_docs"
+	sliceActionGenTests          = "gen_test_cases"
+	sliceActionRunTests          = "run_test_cases"
+	sliceActionCompileTests      = "compile_tests"
+	sliceActionDesignProposal    = "design_proposal"
+	sliceActionGenDesignManifest = "gen_design_manifest"
 )
 
 // isKnownSliceActionKind reports whether kind is one of the supported scoped
@@ -52,7 +53,7 @@ const (
 // agent is resolved or any comment is written.
 func isKnownSliceActionKind(kind string) bool {
 	switch kind {
-	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunCI, sliceActionAutoDocs, sliceActionGenTests, sliceActionRunTests, sliceActionCompileTests, sliceActionDesignProposal:
+	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunCI, sliceActionAutoDocs, sliceActionGenTests, sliceActionRunTests, sliceActionCompileTests, sliceActionDesignProposal, sliceActionGenDesignManifest:
 		return true
 	default:
 		return false
@@ -319,7 +320,33 @@ func buildSliceInstruction(kind, scope string) string {
 			"\"color\"|\"typography\"|\"spacing\"|\"other\",\"figma_value\":\"\",\"project_value\":\"\",\"question\":" +
 			"\"\"}],\"sub_issues\":[{\"title\":\"\",\"description\":\"\",\"screens\":[\"\"],\"node_ids\":[\"\"]," +
 			"\"depends_on\":[0]}],\"open_questions\":[\"\"]}`. The JSON must be valid and self-contained. Budget: one " +
-			"structured read per frame, one batched image download — stay within the Figma rate budget."
+			"structured read per frame, one batched image download — stay within the Figma rate budget. " +
+			"BOOTSTRAP: if NO PROJECT DESIGN SYSTEM context was provided below, first derive one from the repo " +
+			"(read-only): detect tokens vs a legacy inventory, enumerate the shared components, and emit ONE fenced " +
+			"```design-manifest block (kind/tokens/components/conventions/anti_patterns/legacy_notes) BEFORE your " +
+			"proposal — the platform captures it onto the project so future runs are faster."
+	case sliceActionGenDesignManifest:
+		base = "Build or refresh this project's DESIGN MANIFEST — the project's known design-system map that is " +
+			"injected into every designer + implementation run so agents build against the KNOWN system instead of " +
+			"re-discovering it. Work AUTONOMOUSLY (no questions) and inspect the repository READ-ONLY (do not push, do " +
+			"not open a PR). " +
+			"(1) REPO CENSUS: detect the stack. TOKEN-BASED repos (tokens.css / a tailwind or theme config / CSS custom " +
+			"properties): read the token files and enumerate the shared component library → set kind=\"tokens\". " +
+			"LEGACY MONOLITHS (PHP/Yii + Vue like sd-main — no formal token system): DERIVE the de-facto one — enumerate " +
+			"the Vue SFCs, Yii widgets/partials, and layout templates; frequency-rank the top ~20 colors, font stacks, " +
+			"and spacing values from the shared CSS as de-facto tokens; record the conventions and anti-patterns; write " +
+			"honest legacy_notes (e.g. 'no tokens — copy markup from protected/views/...') → set kind=\"inventory\". " +
+			"(2) FIGMA CENSUS (only if a library file key is configured in your context): read the published styles + " +
+			"component names NODE-SCOPED and map them to repo components by name similarity; leave figma_node_id blank " +
+			"when unsure — never invent a mapping. Do NOT attempt the Figma Variables API (enterprise-only). " +
+			"(3) OUTPUT exactly ONE fenced ```design-manifest code block containing ONLY a JSON object with this shape: " +
+			"`{\"kind\":\"tokens\"|\"inventory\",\"figma\":{\"library_file_key\":\"\",\"notes\":\"\"},\"tokens\":" +
+			"{\"colors\":{\"name\":\"#hex\"},\"typography\":{\"name\":\"…\"},\"spacing\":{\"name\":\"…\"}},\"components\":" +
+			"[{\"name\":\"\",\"code_ref\":\"path\",\"figma_node_id\":null|\"\",\"usage\":\"\"}],\"conventions\":[\"\"]," +
+			"\"anti_patterns\":[\"\"],\"legacy_notes\":\"\",\"screens_reference\":\"\"}`. Keep it UNDER ~150 lines — this " +
+			"is a MAP injected into prompts, not documentation. The existing manifest (if any) is in your context: " +
+			"UPDATE it and PRESERVE any human-added entries. The server captures this block onto the project; you do " +
+			"NOT need to run any command."
 	default:
 		return ""
 	}
@@ -2014,6 +2041,9 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 			// do, the same spec QA later judges it against (closes the dev/QA
 			// docs asymmetry).
 			instruction += h.sliceActionQADocsContext(r.Context(), issue)
+			// A UI change builds against the project's known design system, so
+			// reuse beats re-inventing components. "" when no manifest.
+			instruction += h.sliceActionDesignManifestContext(r.Context(), issue)
 		}
 		// Sprint mode: commit to the ONE shared sprint branch, no per-task PR
 		// (the directive supersedes the base "open a pull request" wording).
@@ -2078,8 +2108,17 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 	}
 	// design_proposal reads the issue's Figma designs and maps them against the
 	// project's design system. Append the Figma how-to (fileKey/nodeId calls) and
-	// the project design manifest (Phase 3 fills it; "" until then).
+	// the project design manifest.
 	if req.Kind == sliceActionDesignProposal {
+		if note := figmaContextForIssue(issueFigmaRefs(issue)); note != "" {
+			instruction += "\n\n" + note
+		}
+		instruction += h.sliceActionDesignManifestContext(r.Context(), issue)
+	}
+	// gen_design_manifest builds/refreshes the project design system. Hand the
+	// agent the CURRENT manifest so it updates (not clobbers) human entries, and
+	// the Figma how-to when the issue references a library file.
+	if req.Kind == sliceActionGenDesignManifest {
 		if note := figmaContextForIssue(issueFigmaRefs(issue)); note != "" {
 			instruction += "\n\n" + note
 		}

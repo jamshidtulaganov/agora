@@ -2744,6 +2744,29 @@ export class ApiClient {
     return this.fetch(`/api/issues/${issueId}/pull-requests`);
   }
 
+  // Project design manifest — key-scoped writes (never clobber sibling settings).
+  // Any subset of {manifest, design_agent, design_auto} may be sent.
+  async putDesignManifest(
+    projectId: string,
+    body: {
+      manifest?: Record<string, unknown>;
+      design_agent?: string;
+      design_auto?: string;
+    },
+  ): Promise<Project> {
+    return this.fetch(`/api/projects/${projectId}/design-manifest`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+  }
+
+  // Fire the designer agent to (re)generate the project's design manifest.
+  async syncDesignManifest(projectId: string): Promise<{ status: string; issue_id: string }> {
+    return this.fetch(`/api/projects/${projectId}/design-manifest/sync`, {
+      method: "POST",
+    });
+  }
+
   // Lark integration
   async listLarkInstallations(workspaceId: string): Promise<ListLarkInstallationsResponse> {
     return this.fetch(`/api/workspaces/${workspaceId}/lark/installations`);

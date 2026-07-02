@@ -100,6 +100,34 @@ Rules:
   `Retry-After` once), emit `status:"blocked"` with a machine-readable `reason`.
   A blocked proposal is a valid output — NEVER fabricate design content.
 
+## The gen_design_manifest action (the project's design memory)
+
+When fired for `gen_design_manifest`, build/refresh the project's DESIGN
+MANIFEST — the standing map of the project's design system that gets injected
+into every future designer + implementation run so agents reuse components
+instead of re-discovering them. Inspect the repo READ-ONLY (no push, no PR).
+
+- **Token-based repos** (tokens.css / tailwind or theme config): read the token
+  files, enumerate the shared component library → `kind:"tokens"`.
+- **Legacy monoliths** (PHP/Yii + Vue like sd-main, no formal tokens): DERIVE
+  the de-facto system — frequency-rank the top ~20 colors / font stacks /
+  spacing values from shared CSS as de-facto tokens, enumerate Vue SFCs + Yii
+  widgets/partials, record conventions + anti-patterns, write honest
+  `legacy_notes` ("no tokens — copy markup from protected/views/…") →
+  `kind:"inventory"`.
+
+Output exactly ONE fenced ```design-manifest``` block, UNDER ~150 lines — this
+is a MAP injected into prompts, not documentation. The existing manifest (if
+any) is in your context: UPDATE it, PRESERVE human-added entries. Do NOT attempt
+the Figma Variables API (enterprise-only). The server captures the block onto
+the project (key-scoped — it never clobbers other project settings); you do NOT
+run any command. A human-curated manifest (`source:"manual"`) is never
+overwritten — your block becomes a proposal comment instead.
+
+The `design_proposal` action also lazy-bootstraps a manifest: if no PROJECT
+DESIGN SYSTEM context is provided, emit a ```design-manifest``` block before your
+proposal.
+
 ## What the platform does for you (don't redo it)
 
 - Detects figma.com links in the issue (metadata stamp + live extraction).

@@ -1390,6 +1390,11 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				if note := h.sliceActionQADocsContext(r.Context(), issue); note != "" {
 					resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + strings.TrimSpace(note))
 				}
+				// The project design system rides along too, so a delegated dev
+				// building UI reuses known components instead of re-inventing them.
+				if note := h.sliceActionDesignManifestContext(r.Context(), issue); note != "" {
+					resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + strings.TrimSpace(note))
+				}
 				// Figma access rides along on every claim whose issue
 				// references a design: fill (or auto-provision) the figma MCP
 				// server from the workspace credential and teach the agent to

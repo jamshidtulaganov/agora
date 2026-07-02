@@ -45,6 +45,7 @@ import { TitleEditor, ContentEditor, type ContentEditorRef } from "../../editor"
 import { PriorityIcon } from "../../issues/components/priority-icon";
 import { ProjectResourcesSection } from "./project-resources-section";
 import { ProjectQASection } from "./project-qa-section";
+import { ProjectDesignSection } from "./project-design-section";
 import { ProjectBitrixSection } from "./project-bitrix-section";
 import { ProjectSprintsSection } from "./project-sprints-section";
 import { IssuesHeader } from "../../issues/components/issues-header";
@@ -856,6 +857,9 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
 
       {/* QA smoke configuration (run_qa gate) */}
       <ProjectQASection projectId={projectId} />
+
+      {/* Design system manifest (designer + implementation runs) */}
+      <ProjectDesignSection projectId={projectId} />
 
       {/* Bitrix sync — last-sync time + manual re-sync (Bitrix-linked projects only) */}
       <ProjectBitrixSection projectId={projectId} />
