@@ -71,6 +71,7 @@
   "instructions_tab": {
     "description": "Squad ko‘rsatmalari rahbar agent shu Squad’ga biriktirilgan vazifa ustida ishlaganida uning so‘roviga qo‘shiladi. Ulardan rahbarga butun Squad bo‘yicha yo‘riqnoma, ish kelishuvlari yoki har bir topshiriqda amal qilishi kerak bo‘lgan kontekst berish uchun foydalaning.",
     "unsaved_changes": "Saqlanmagan o‘zgarishlar",
-    "save_button": "Saqlash"
+    "save_button": "Saqlash",
+    "tailor": "Squad’ga moslashtir"
   }
 }

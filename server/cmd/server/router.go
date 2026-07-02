@@ -664,6 +664,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// Figma credential status is member-visible for the same
 					// reason; it never returns token material (last4 only).
 					r.Get("/figma-credential", h.GetFigmaCredentialStatus)
+					// Zoho connection status is member-visible likewise; it
+					// never returns secret material (dc / client_id / probe).
+					r.Get("/zoho-connection", h.GetZohoConnectionStatus)
 				})
 				// Admin-level access
 				r.Group(func(r chi.Router) {
@@ -676,6 +679,14 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// response; handlers additionally reject agent actors.
 					r.Get("/default-mcp-config", h.GetWorkspaceDefaultMcpConfig)
 					r.Put("/default-mcp-config", h.UpdateWorkspaceDefaultMcpConfig)
+					// Dynamic Zoho integration: sealed per-workspace OAuth
+					// connection + runtime module/field discovery
+					// (docs/zoho-dynamic-integration.md). Handlers additionally
+					// reject agent actors.
+					r.Put("/zoho-connection", h.PutZohoConnection)
+					r.Delete("/zoho-connection", h.DeleteZohoConnection)
+					r.Get("/zoho/crm/modules", h.ListZohoCRMModules)
+					r.Get("/zoho/crm/fields", h.ListZohoCRMFields)
 					r.Post("/members", h.CreateInvitation)
 					r.Route("/members/{memberId}", func(r chi.Router) {
 						r.Patch("/", h.UpdateMember)
@@ -992,6 +1003,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/members", h.AddSquadMember)
 					r.Delete("/members", h.RemoveSquadMember)
 					r.Patch("/members/role", h.UpdateSquadMemberRole)
+					// Tailor: return a roster-aware orchestrator brief for the
+					// squad's Instructions field (does not persist; the frontend
+					// fills the editable textarea with it).
+					r.Post("/suggest-instructions", h.SuggestSquadInstructions)
 				})
 			})
 

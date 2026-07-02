@@ -17,7 +17,7 @@ import { useNavigation } from "../../navigation";
 import { AppLink } from "../../navigation";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { PageHeader } from "../../layout/page-header";
-import { Users, Plus, Trash2, ArrowUpRight, Crown, Camera, Loader2, Pencil, FileText, Save } from "lucide-react";
+import { Users, Plus, Trash2, ArrowUpRight, Crown, Camera, Loader2, Pencil, FileText, Save, Sparkles } from "lucide-react";
 import { Button } from "@agora/ui/components/ui/button";
 import { Input } from "@agora/ui/components/ui/input";
 import { Label } from "@agora/ui/components/ui/label";
@@ -1355,6 +1355,10 @@ function SquadInstructionsTab({
   const { t } = useT("squads");
   const [value, setValue] = useState(squad.instructions ?? "");
   const [saving, setSaving] = useState(false);
+  const [tailoring, setTailoring] = useState(false);
+  // ContentEditor reads defaultValue only on mount (keyed by squad.id); bump a
+  // nonce to remount it so a freshly tailored brief actually appears.
+  const [editorNonce, setEditorNonce] = useState(0);
   const isDirty = value !== (squad.instructions ?? "");
 
   useEffect(() => {
@@ -1376,6 +1380,23 @@ function SquadInstructionsTab({
     }
   };
 
+  // Fill the editor with a roster-aware orchestrator brief (default policy +
+  // this squad's real members). Does not save — the human reviews then hits Save.
+  const handleTailor = async () => {
+    setTailoring(true);
+    try {
+      const suggested = await api.suggestSquadInstructions(squad.id);
+      if (suggested) {
+        setValue(suggested);
+        setEditorNonce((n) => n + 1);
+      }
+    } catch {
+      // best-effort; leave the current text untouched on failure
+    } finally {
+      setTailoring(false);
+    }
+  };
+
   return (
     <div className="flex h-full flex-col gap-4">
       <p className="text-xs text-muted-foreground">
@@ -1384,7 +1405,7 @@ function SquadInstructionsTab({
 
       <div className="flex-1 min-h-0 overflow-y-auto rounded-md border bg-background px-4 py-3 transition-colors focus-within:border-input">
         <ContentEditor
-          key={squad.id}
+          key={`${squad.id}:${editorNonce}`}
           defaultValue={value}
           onUpdate={setValue}
           placeholder="e.g. Always start by writing a failing test. Prefer small, atomic commits."
@@ -1394,18 +1415,28 @@ function SquadInstructionsTab({
         />
       </div>
 
-      <div className="flex items-center justify-end gap-3">
-        {isDirty && (
-          <span className="text-xs text-muted-foreground">{t(($) => $.instructions_tab.unsaved_changes)}</span>
-        )}
-        <Button size="sm" onClick={handleSave} disabled={!isDirty || saving}>
-          {saving ? (
+      <div className="flex items-center justify-between gap-3">
+        <Button variant="outline" size="sm" onClick={() => void handleTailor()} disabled={tailoring || saving}>
+          {tailoring ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
-            <Save className="h-3.5 w-3.5" />
+            <Sparkles className="h-3.5 w-3.5" />
           )}
-          {t(($) => $.instructions_tab.save_button)}
+          {t(($) => $.instructions_tab.tailor)}
         </Button>
+        <div className="flex items-center gap-3">
+          {isDirty && (
+            <span className="text-xs text-muted-foreground">{t(($) => $.instructions_tab.unsaved_changes)}</span>
+          )}
+          <Button size="sm" onClick={handleSave} disabled={!isDirty || saving}>
+            {saving ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Save className="h-3.5 w-3.5" />
+            )}
+            {t(($) => $.instructions_tab.save_button)}
+          </Button>
+        </div>
       </div>
     </div>
   );
