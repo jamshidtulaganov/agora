@@ -681,6 +681,16 @@ func telegramSyntheticEmail(telegramID string) string {
 	return strings.ToLower(fmt.Sprintf("tg%s@%s", telegramID, telegramSyntheticEmailDomain))
 }
 
+// isTelegramSyntheticEmail reports whether email is a derived Telegram identity
+// (tg<id>@telegram.local) rather than a real, deliverable address. Used to (a)
+// keep the out-of-band Telegram invite flow link-bearer while every other
+// invite is identity-checked, and (b) reject the synthetic domain at the
+// email-code login gate so one auth method can't enter the keyspace the other
+// exclusively owns.
+func isTelegramSyntheticEmail(email string) bool {
+	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(email)), "@"+telegramSyntheticEmailDomain)
+}
+
 // normalizeUserLang maps a Telegram language_code (e.g. "ru", "ru-RU", "uz",
 // "en-US") to one of the UI/push languages we support ("ru" | "uz" | "en"), or
 // "" for anything else so we don't store a language we can't localize (push

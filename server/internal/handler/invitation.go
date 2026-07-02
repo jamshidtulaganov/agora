@@ -369,13 +369,24 @@ func (h *Handler) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Shareable-link (bearer) model: any authenticated link-holder may accept
-	// and is recorded as the member. Lets Telegram-OTP users (whose synthetic
-	// tg<chatid>@telegram.local address never matches invitee_email) join via a
-	// link shared out-of-band. Pending + expiry checks below still gate it.
+	// Bearer link, but NOT a blank check. A TARGETED invite — one with a pinned
+	// invitee_user_id or a real invitee_email — must be claimed by that person;
+	// otherwise any authenticated user who obtains a forwarded/leaked link
+	// (email, URL bar, referer, logs) hijacks the workspace membership at the
+	// invited role, attributed to the wrong identity. The ONE bearer exception
+	// is the documented out-of-band Telegram flow: an invite addressed to a
+	// synthetic tg<id>@telegram.local address, whose Telegram accepter's
+	// synthetic email never matches, stays link-bearer. DeclineInvitation
+	// enforces the identical identity check.
 	user, err := h.Queries.GetUser(r.Context(), parseUUID(userID))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load user")
+		return
+	}
+	if !isTelegramSyntheticEmail(inv.InviteeEmail) &&
+		strings.ToLower(user.Email) != inv.InviteeEmail &&
+		uuidToString(inv.InviteeUserID) != userID {
+		writeError(w, http.StatusForbidden, "invitation was issued to a different account")
 		return
 	}
 
