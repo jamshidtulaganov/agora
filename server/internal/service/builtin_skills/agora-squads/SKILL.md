@@ -190,6 +190,12 @@ not a general squad behavior. Two separate mechanisms:
   not the least-busy pick from the whole QA roster. Solo-agent / non-squad
   assignments are unchanged: they still fan across the whole QA roster so
   many `in_review` issues run concurrently.
+- **Manual QA actions → QA lead, never the dev.** A manually-fired QA-family
+  slice action (`run_qa` / `gen_test_cases` / `run_test_cases`, e.g. the QA
+  review page's "Re-run QA") with no explicit agent defaults to the QA squad
+  LEADER — not the issue's dev assignee. QA validation is owned by QA, never by
+  the developer whose work is under test. Falls back to the assignee/own-agent
+  only when the workspace has no ready QA squad leader.
 - **`in_progress` → shift-left QA prep.** The moment a task enters
   `in_progress`, a QA agent gets a background `gen_test_cases` task: author
   the cases AND compile their Playwright scripts against the project QA
