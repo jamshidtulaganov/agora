@@ -70,6 +70,7 @@ import { AgentWorkingIndicator } from "./agent-working-indicator";
 import { SliceActionsSection } from "./slice-actions-section";
 import { PullRequestList } from "./pull-request-list";
 import { FigmaLinksSection } from "./figma-links-section";
+import { DesignProposalSection } from "./design-proposal-section";
 import { useGitHubSettings } from "@agora/core/github";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@agora/core/auth";
@@ -1599,6 +1600,10 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       {/* Figma designs referenced by the description (client-side extraction;
           renders nothing when the issue links no designs). */}
       <FigmaLinksSection description={issue.description} />
+
+      {/* Design stage: proposal state, summary, and the review entry point.
+          Renders nothing unless the issue is design-relevant. */}
+      <DesignProposalSection issueId={id} />
 
       {/* Details */}
       <div>

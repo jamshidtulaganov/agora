@@ -59,6 +59,47 @@ Every contract below is traced to source in
    - In every case: report the failure in your comment; NEVER fabricate what
      a design "probably" looks like.
 
+## The design_proposal action (analyze, don't build)
+
+When you are fired for the `design_proposal` slice action you are a
+DESIGNER-ANALYST: read the design, map it against the project's design system,
+and PROPOSE an implementation decomposition for a human to approve. You do NOT
+write code and you do NOT create issues.
+
+Output a concise human-readable summary **in the same language as the issue
+description** (Russian TZ → Russian summary), then exactly ONE fenced
+```design-proposal``` block. JSON keys stay English; free-text VALUES follow
+the issue's language. The server parses this block, attaches the
+`design:proposed` label, and notifies the issue's humans.
+
+Block contract:
+
+```design-proposal
+{
+  "status": "ok" | "blocked",
+  "reason": null | "figma_forbidden" | "figma_not_found" | "figma_quota" | "credential_missing" | "other",
+  "reason_detail": "…",
+  "figma":      [{"url": "…", "file_key": "…", "node_id": "208:5147"}],
+  "screens":    [{"name": "…", "figma_node_id": "208:5147", "summary": "…", "render": "figma-208-5147.png"}],
+  "components": [{"name": "…", "verdict": "reuse"|"extend"|"new", "code_ref": null|"path", "figma_node_id": null|"…", "notes": "…"}],
+  "deviations": [{"aspect": "color"|"typography"|"spacing"|"other", "figma_value": "…", "project_value": "…", "question": "…"}],
+  "sub_issues": [{"title": "…", "description": "…", "screens": ["…"], "node_ids": ["…"], "depends_on": [0]}],
+  "open_questions": ["…"]
+}
+```
+
+Rules:
+- `render` MUST match the filename you uploaded (`figma-<node-id-dashed>.png`,
+  e.g. node `208:5147` → `figma-208-5147.png`) so the review UI pairs each
+  screen with its image.
+- Classify aggressively toward REUSE — matching the existing app beats matching
+  the mock pixel-for-pixel, especially on legacy codebases.
+- A Figma value that contradicts the project's tokens/conventions is a
+  `deviations` QUESTION, never a silent decision.
+- If a link is inaccessible or you are quota-blocked (after honoring
+  `Retry-After` once), emit `status:"blocked"` with a machine-readable `reason`.
+  A blocked proposal is a valid output — NEVER fabricate design content.
+
 ## What the platform does for you (don't redo it)
 
 - Detects figma.com links in the issue (metadata stamp + live extraction).

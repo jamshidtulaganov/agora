@@ -19,7 +19,9 @@ export type InboxItemType =
   | "agent_completed"
   | "reaction_added"
   | "quick_create_done"
-  | "quick_create_failed";
+  | "quick_create_failed"
+  | "design_proposal_ready"
+  | "design_proposal_blocked";
 
 export interface InboxItem {
   id: string;

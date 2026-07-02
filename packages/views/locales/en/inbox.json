@@ -44,7 +44,9 @@
     "agent_completed": "Agent completed",
     "reaction_added": "Reacted",
     "quick_create_done": "Created with agent",
-    "quick_create_failed": "Create with agent failed"
+    "quick_create_failed": "Create with agent failed",
+    "design_proposal_ready": "Design proposal ready",
+    "design_proposal_blocked": "Design proposal blocked"
   },
   "labels": {
     "set_status_to": "Set status to",

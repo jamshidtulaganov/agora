@@ -2718,6 +2718,28 @@ export class ApiClient {
     });
   }
 
+  // Design review — approve or request changes on an issue's design proposal.
+  // sub_issue_overrides trims/edits the proposed sub-issues (applied at
+  // decomposition, Phase 4). Returns the resulting design state.
+  async createDesignReview(
+    issueId: string,
+    body: {
+      action: "approve" | "request_changes";
+      note?: string;
+      sub_issue_overrides?: {
+        index: number;
+        include: boolean;
+        title?: string;
+        description?: string;
+      }[];
+    },
+  ): Promise<{ action: string; state: string }> {
+    return this.fetch(`/api/issues/${issueId}/design-review`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
   async listIssuePullRequests(issueId: string): Promise<{ pull_requests: GitHubPullRequest[] }> {
     return this.fetch(`/api/issues/${issueId}/pull-requests`);
   }

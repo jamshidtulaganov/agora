@@ -1043,6 +1043,7 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 		h.TaskService.CaptureTestCases(r.Context(), issue, comment.Content, parseUUID(authorID))
 		h.TaskService.CaptureTestRuns(r.Context(), issue, comment.Content, parseUUID(authorID))
 		h.TaskService.CaptureCompiledScripts(r.Context(), issue, comment.Content, parseUUID(authorID))
+		h.TaskService.CaptureDesignProposal(r.Context(), issue, comment, parseUUID(authorID))
 	}
 
 	writeJSON(w, http.StatusCreated, resp)

@@ -44,7 +44,9 @@
     "agent_completed": "智能体已完成",
     "reaction_added": "添加了表情反应",
     "quick_create_done": "通过智能体创建",
-    "quick_create_failed": "通过智能体创建失败"
+    "quick_create_failed": "通过智能体创建失败",
+    "design_proposal_ready": "设计方案已就绪",
+    "design_proposal_blocked": "设计方案受阻"
   },
   "labels": {
     "set_status_to": "状态设为",

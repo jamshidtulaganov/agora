@@ -34,16 +34,17 @@ import (
 // handler) makes buildSliceInstruction the SINGLE place that decides what an
 // agent is told to do.
 const (
-	sliceActionDraftCode    = "draft_code"
-	sliceActionWriteDocs    = "write_docs"
-	sliceActionWriteTests   = "write_tests"
-	sliceActionReviewPart   = "review_part"
-	sliceActionRunQA        = "run_qa"
-	sliceActionRunCI        = "run_ci"
-	sliceActionAutoDocs     = "auto_docs"
-	sliceActionGenTests     = "gen_test_cases"
-	sliceActionRunTests     = "run_test_cases"
-	sliceActionCompileTests = "compile_tests"
+	sliceActionDraftCode      = "draft_code"
+	sliceActionWriteDocs      = "write_docs"
+	sliceActionWriteTests     = "write_tests"
+	sliceActionReviewPart     = "review_part"
+	sliceActionRunQA          = "run_qa"
+	sliceActionRunCI          = "run_ci"
+	sliceActionAutoDocs       = "auto_docs"
+	sliceActionGenTests       = "gen_test_cases"
+	sliceActionRunTests       = "run_test_cases"
+	sliceActionCompileTests   = "compile_tests"
+	sliceActionDesignProposal = "design_proposal"
 )
 
 // isKnownSliceActionKind reports whether kind is one of the supported scoped
@@ -51,7 +52,7 @@ const (
 // agent is resolved or any comment is written.
 func isKnownSliceActionKind(kind string) bool {
 	switch kind {
-	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunCI, sliceActionAutoDocs, sliceActionGenTests, sliceActionRunTests, sliceActionCompileTests:
+	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunCI, sliceActionAutoDocs, sliceActionGenTests, sliceActionRunTests, sliceActionCompileTests, sliceActionDesignProposal:
 		return true
 	default:
 		return false
@@ -282,6 +283,43 @@ func buildSliceInstruction(kind, scope string) string {
 			"AUTHOR the scripts. At the END of your comment, append a fenced ```scripts code block containing ONLY a JSON " +
 			"array the server parses: `[{\"id\":\"<the case id from the list>\",\"script\":\"<the full Playwright module>\"}]` " +
 			"— one entry per case you compiled. The JSON must be valid and self-contained."
+	case sliceActionDesignProposal:
+		base = "You are acting as a DESIGNER-ANALYST. Analyze the design(s) linked from this issue against this " +
+			"project's existing design system and produce a decomposition proposal for a human to approve. Do NOT " +
+			"write implementation code and do NOT create issues — you only READ, ANALYZE, and PROPOSE. " +
+			"(1) READ: for each Figma link referenced by this issue (listed in your context), call " +
+			"get_figma_data(fileKey, nodeId) NODE-SCOPED — never fetch a whole file. Download a PNG render of each " +
+			"top-level frame with download_figma_images (pngScale=2), name each file `figma-<node-id-with-dashes>.png` " +
+			"(e.g. node 208:5147 → figma-208-5147.png), and UPLOAD them as attachments on your reply comment (Figma " +
+			"render URLs expire — never hot-link them). " +
+			"(2) INVENTORY: list every distinct screen / state — name, Figma node id, one-line purpose, and the visible " +
+			"elements, INCLUDING empty / loading / error states, not just the happy path. " +
+			"(3) MAP against the PROJECT DESIGN SYSTEM context below. If none is provided, first inspect the " +
+			"repository READ-ONLY (do not push, do not open a PR) to enumerate existing components / partials / shared " +
+			"styles. Classify EVERY element as REUSE (name the exact existing component / file), EXTEND (an existing " +
+			"component plus what must change), or NEW (justify why nothing existing fits). Prefer reuse aggressively — " +
+			"on a legacy codebase, matching the existing app beats matching the mock pixel-for-pixel. " +
+			"(4) FLAG DEVIATIONS: a Figma value that contradicts the project's tokens / conventions (a one-off color, " +
+			"an off-scale spacing, a font the system doesn't use) is a QUESTION for the human, never a silent decision. " +
+			"(5) PROPOSE SUB-ISSUES: one per coherent, independently shippable slice, each with a title, a 2-4 sentence " +
+			"description that EMBEDS its Figma URL(s) with node-ids and the component decisions that apply, and a " +
+			"`depends_on` list of the indices of sibling sub-issues that must ship first. " +
+			"(6) OUTPUT a concise human-readable summary WRITTEN IN THE SAME LANGUAGE AS THE ISSUE DESCRIPTION, then " +
+			"exactly ONE fenced ```design-proposal code block containing ONLY a JSON object (schema below). JSON keys " +
+			"stay in English; free-text field VALUES follow the issue's language. " +
+			"(7) If any Figma link is inaccessible (403 / 404) or you are quota-blocked after honoring Retry-After once, " +
+			"emit the block with `status:\"blocked\"` and a machine-readable `reason` — a blocked proposal is a valid, " +
+			"useful output. NEVER fabricate design content you could not read. " +
+			"The ```design-proposal block schema: " +
+			"`{\"status\":\"ok\"|\"blocked\",\"reason\":null|\"figma_forbidden\"|\"figma_not_found\"|\"figma_quota\"|" +
+			"\"credential_missing\"|\"other\",\"reason_detail\":\"<short>\",\"figma\":[{\"url\":\"\",\"file_key\":\"\"," +
+			"\"node_id\":\"\"}],\"screens\":[{\"name\":\"\",\"figma_node_id\":\"\",\"summary\":\"\",\"render\":" +
+			"\"figma-208-5147.png\"}],\"components\":[{\"name\":\"\",\"verdict\":\"reuse\"|\"extend\"|\"new\"," +
+			"\"code_ref\":null|\"<path>\",\"figma_node_id\":null|\"\",\"notes\":\"\"}],\"deviations\":[{\"aspect\":" +
+			"\"color\"|\"typography\"|\"spacing\"|\"other\",\"figma_value\":\"\",\"project_value\":\"\",\"question\":" +
+			"\"\"}],\"sub_issues\":[{\"title\":\"\",\"description\":\"\",\"screens\":[\"\"],\"node_ids\":[\"\"]," +
+			"\"depends_on\":[0]}],\"open_questions\":[\"\"]}`. The JSON must be valid and self-contained. Budget: one " +
+			"structured read per frame, one batched image download — stay within the Figma rate budget."
 	default:
 		return ""
 	}
@@ -2038,6 +2076,15 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 		instruction += h.sliceActionQADocsContext(r.Context(), issue)
 		instruction += h.sliceActionUncompiledCasesContext(r.Context(), issue)
 	}
+	// design_proposal reads the issue's Figma designs and maps them against the
+	// project's design system. Append the Figma how-to (fileKey/nodeId calls) and
+	// the project design manifest (Phase 3 fills it; "" until then).
+	if req.Kind == sliceActionDesignProposal {
+		if note := figmaContextForIssue(issueFigmaRefs(issue)); note != "" {
+			instruction += "\n\n" + note
+		}
+		instruction += h.sliceActionDesignManifestContext(r.Context(), issue)
+	}
 
 	// Build the @mention link the comment-trigger path keys off:
 	// [@Name](mention://agent/<id>). The label is human-display only — the
@@ -2149,6 +2196,17 @@ func (h *Handler) resolveSliceActionAgent(w http.ResponseWriter, r *http.Request
 	if isQASliceAction(kind) {
 		if leader, ok := h.qaSquadLeader(r.Context(), issue.WorkspaceID); ok {
 			return leader, true
+		}
+	}
+
+	// (a.6) design_proposal is the designer-analyst's job. Without an explicit
+	// agent, resolve the project's configured design agent, else a "design"
+	// squad's leader — the same way QA routes to its squad. Falls through to the
+	// assignee / own-agent defaults when neither resolves.
+	if kind == sliceActionDesignProposal {
+		if designer, ok := h.resolveDesignerAgent(r.Context(), issue); ok &&
+			h.canAccessPrivateAgent(r.Context(), designer, "member", userID, workspaceID) {
+			return designer, true
 		}
 	}
 

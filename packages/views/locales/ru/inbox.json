@@ -44,7 +44,9 @@
     "agent_completed": "Агент завершил",
     "reaction_added": "Отреагировал",
     "quick_create_done": "Создано с агентом",
-    "quick_create_failed": "Не удалось создать с агентом"
+    "quick_create_failed": "Не удалось создать с агентом",
+    "design_proposal_ready": "Дизайн-предложение готово",
+    "design_proposal_blocked": "Дизайн-предложение заблокировано"
   },
   "labels": {
     "set_status_to": "Установить статус",

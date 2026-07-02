@@ -93,6 +93,7 @@
     "./lark": "./lark/index.ts",
     "./lark/queries": "./lark/queries.ts",
     "./figma": "./figma/index.ts",
+    "./design": "./design/index.ts",
     "./feedback": "./feedback/index.ts",
     "./feedback/mutations": "./feedback/mutations.ts",
     "./realtime": "./realtime/index.ts",

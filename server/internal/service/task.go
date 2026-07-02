@@ -2428,6 +2428,9 @@ func (s *TaskService) createAgentComment(ctx context.Context, issueID, agentID p
 	s.CaptureTestRuns(ctx, issue, content, agentID)
 	// Persist a compile_tests agent's ```scripts``` block onto the named cases.
 	s.CaptureCompiledScripts(ctx, issue, content, agentID)
+	// Persist a design_proposal agent's ```design-proposal``` block: attach the
+	// design:proposed label + notify the issue's humans.
+	s.CaptureDesignProposal(ctx, issue, comment, agentID)
 }
 
 // AutoUnresolveThreadOnReply clears resolved_at on the thread root when a

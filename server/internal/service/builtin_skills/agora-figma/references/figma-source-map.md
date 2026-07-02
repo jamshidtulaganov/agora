@@ -35,6 +35,19 @@ PR). Re-confirm exact lines after later phases move code.
 | `GET /api/workspaces/{id}/figma-credential` — member-visible status, never token material | `server/cmd/server/router.go` (member group); `figma_credential.go` (`GetFigmaCredentialStatus`) |
 | `PUT` / `DELETE /api/workspaces/{id}/figma-credential` — admin-only | `server/cmd/server/router.go` (admin group); `figma_credential.go` |
 
+## design_proposal action (Phase 2)
+
+| Behavior | File:line |
+|---|---|
+| `design_proposal` slice-action kind + recipe (analyze-not-build, node-scoped, block schema, language rule, blocked protocol) | `server/internal/handler/slice_action.go` (`sliceActionDesignProposal`, `buildSliceInstruction`) |
+| Recipe assembly appends Figma how-to + design-manifest context | `server/internal/handler/slice_action.go` (`CreateSliceAction` design_proposal branch) |
+| Designer-agent resolution (project.settings.design_agent → design squad leader) | `server/internal/handler/design_action.go` (`resolveDesignerAgent`); routed in `resolveSliceActionAgent` |
+| Block parse (none/invalid/ok/blocked, fail-closed) | `server/internal/service/design_proposal.go` (`ParseDesignProposalBlock`) |
+| Server-side capture: attach `design:proposed`, activity, inbox notify — both agent-comment ingest points | `server/internal/service/design_proposal.go` (`CaptureDesignProposal`); wired at `comment.go` + `task.go` |
+| Design-state labels (mutually exclusive, publish EventIssueLabelsChanged) | `server/internal/service/design_proposal.go` (`SetDesignStateLabel`, `DesignLabel*`) |
+| Review endpoint `POST /api/issues/{id}/design-review` (approve / request_changes + overrides; 404/409 matrix) | `server/internal/handler/design_review.go` (`CreateDesignReview`); route in `cmd/server/router.go` |
+| Filename contract `figma-<node-id-dashed>.png` pairs a screen render to its comment attachment | recipe + `packages/views/issues/components/design-review-dialog.tsx` |
+
 ## External facts (not in-repo)
 
 - Figma PATs hard-cap at 90 days (policy change 2025-04-28); View/Collab-seat

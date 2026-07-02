@@ -44,7 +44,9 @@
     "agent_completed": "Agent yakunladi",
     "reaction_added": "Reaksiya bildirildi",
     "quick_create_done": "Agent bilan yaratildi",
-    "quick_create_failed": "Agent bilan yaratish muvaffaqiyatsiz tugadi"
+    "quick_create_failed": "Agent bilan yaratish muvaffaqiyatsiz tugadi",
+    "design_proposal_ready": "Dizayn taklifi tayyor",
+    "design_proposal_blocked": "Dizayn taklifi bloklandi"
   },
   "labels": {
     "set_status_to": "Holat o‘rnatildi",
