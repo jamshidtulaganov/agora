@@ -668,5 +668,14 @@
     "already_decomposed": "This proposal was already decomposed into sub-issues.",
     "previous_decomposition_body": "An earlier proposal already created sub-issues. Supersede it? The old sub-issues stay — cancel obsolete ones yourself.",
     "supersede_confirm": "Supersede & create"
+  },
+  "design_audit": {
+    "title": "Design audit",
+    "clean": "No design-system issues found.",
+    "off_token": "Off-token values",
+    "duplicates": "Duplicated markup",
+    "unmanaged": "Unmanaged components",
+    "proposed_tokens": "Proposed tokens",
+    "replaces": "replaces {{count}}"
   }
 }

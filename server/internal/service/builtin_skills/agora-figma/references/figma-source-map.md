@@ -71,6 +71,15 @@ PR). Re-confirm exact lines after later phases move code.
 | Variant child-done comment ("promoted automatically — do not change sibling statuses") | `server/internal/handler/issue_child_done.go` (design-child branch) + `agora-squads/SKILL.md` |
 | Supersede a prior decomposition (supersede_previous) | `server/internal/handler/design_review.go` (`createDesignReviewRequest.SupersedePrevious`) |
 
+## design_audit (design-system building)
+
+| Behavior | File:line |
+|---|---|
+| `design_audit` slice-action kind + recipe (off-token / duplicates / unmanaged / proposed_tokens; read-only; no fabrication) | `server/internal/handler/slice_action.go` (`sliceActionDesignAudit`, `buildSliceInstruction`) |
+| Project trigger `POST /api/projects/{id}/design-audit` (shared chore-issue helper with manifest sync) | `server/internal/handler/design_manifest.go` (`SyncProjectDesignAudit`, `fireProjectDesignChore`); route in `cmd/server/router.go` |
+| Audit block schema + extractor (lenient, agent-only, newest wins) | `packages/core/design/audit.ts` (`DesignAuditSchema`, `latestDesignAudit`) |
+| Read-only audit report render on the chore issue | `packages/views/issues/components/design-audit-section.tsx`; "Audit" button in `project-design-section.tsx` |
+
 ## External facts (not in-repo)
 
 - Figma PATs hard-cap at 90 days (policy change 2025-04-28); View/Collab-seat

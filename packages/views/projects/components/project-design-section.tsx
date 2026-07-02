@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Palette, Loader2 } from "lucide-react";
+import { ChevronRight, Palette, Loader2, ClipboardList } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@agora/core/api";
 import { projectDetailOptions } from "@agora/core/projects/queries";
@@ -27,6 +27,7 @@ export function ProjectDesignSection({ projectId }: { projectId: string }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [auditing, setAuditing] = useState(false);
 
   const settings = project?.settings;
   const manifest = useMemo(() => parseDesignManifest(settings?.design_manifest), [settings?.design_manifest]);
@@ -87,9 +88,23 @@ export function ProjectDesignSection({ projectId }: { projectId: string }) {
       toast.success(t(($) => $.design.generate_fired_toast));
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";
-      toast.error(msg.includes("sync_already_running") ? t(($) => $.design.sync_running) : msg || t(($) => $.design.invalid_json));
+      toast.error(msg.includes("already_running") ? t(($) => $.design.sync_running) : msg || t(($) => $.design.invalid_json));
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const audit = async () => {
+    if (auditing) return;
+    setAuditing(true);
+    try {
+      await api.syncDesignAudit(projectId);
+      toast.success(t(($) => $.design.audit_fired_toast));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      toast.error(msg.includes("already_running") ? t(($) => $.design.audit_running) : msg || t(($) => $.design.invalid_json));
+    } finally {
+      setAuditing(false);
     }
   };
 
@@ -183,6 +198,15 @@ export function ProjectDesignSection({ projectId }: { projectId: string }) {
             >
               {syncing ? <Loader2 className="size-3.5 animate-spin" /> : <Palette className="size-3.5" />}
               {t(($) => $.design.generate_button)}
+            </button>
+            <button
+              type="button"
+              onClick={() => void audit()}
+              disabled={auditing}
+              className="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs hover:bg-accent/70 disabled:opacity-50"
+            >
+              {auditing ? <Loader2 className="size-3.5 animate-spin" /> : <ClipboardList className="size-3.5" />}
+              {t(($) => $.design.audit_button)}
             </button>
           </div>
         </div>

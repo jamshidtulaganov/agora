@@ -174,6 +174,9 @@
     "generate_button": "用智能体生成",
     "generate_fired_toast": "已排队生成清单",
     "sync_running": "清单同步已在进行中",
-    "empty_state": "尚无设计清单。用设计智能体生成，或在下方粘贴。"
+    "empty_state": "尚无设计清单。用设计智能体生成，或在下方粘贴。",
+    "audit_button": "审计",
+    "audit_fired_toast": "已排队设计审计",
+    "audit_running": "审计已在进行中"
   }
 }

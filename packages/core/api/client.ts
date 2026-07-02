@@ -2781,6 +2781,15 @@ export class ApiClient {
     });
   }
 
+  // Fire a design-system audit: the designer agent scans the repo against the
+  // manifest and reports off-token values, duplicated markup, and proposed
+  // tokens. Returns the chore issue id where the report is posted.
+  async syncDesignAudit(projectId: string): Promise<{ status: string; issue_id: string }> {
+    return this.fetch(`/api/projects/${projectId}/design-audit`, {
+      method: "POST",
+    });
+  }
+
   // Lark integration
   async listLarkInstallations(workspaceId: string): Promise<ListLarkInstallationsResponse> {
     return this.fetch(`/api/workspaces/${workspaceId}/lark/installations`);

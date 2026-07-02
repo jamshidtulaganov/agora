@@ -71,6 +71,7 @@ import { SliceActionsSection } from "./slice-actions-section";
 import { PullRequestList } from "./pull-request-list";
 import { FigmaLinksSection } from "./figma-links-section";
 import { DesignProposalSection } from "./design-proposal-section";
+import { DesignAuditSection } from "./design-audit-section";
 import { useGitHubSettings } from "@agora/core/github";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@agora/core/auth";
@@ -1604,6 +1605,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       {/* Design stage: proposal state, summary, and the review entry point.
           Renders nothing unless the issue is design-relevant. */}
       <DesignProposalSection issueId={id} />
+
+      {/* Design-system audit report (renders only on an issue carrying one). */}
+      <DesignAuditSection issueId={id} />
 
       {/* Details */}
       <div>

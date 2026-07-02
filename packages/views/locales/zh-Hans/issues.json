@@ -653,5 +653,14 @@
     "already_decomposed": "该方案已拆分为子 issue。",
     "previous_decomposition_body": "较早的方案已创建了子 issue。要取代它吗？旧的子 issue 会保留——请自行取消过时项。",
     "supersede_confirm": "取代并创建"
+  },
+  "design_audit": {
+    "title": "设计审计",
+    "clean": "未发现设计系统问题。",
+    "off_token": "非 token 值",
+    "duplicates": "重复标记",
+    "unmanaged": "未纳管组件",
+    "proposed_tokens": "建议的 token",
+    "replaces": "替换 {{count}} 个"
   }
 }

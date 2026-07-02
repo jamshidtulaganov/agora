@@ -190,6 +190,25 @@ func (h *Handler) broadcastProjectUpdated(r *http.Request, project db.Project, u
 // comment is captured onto the project. The chore issue makes the sync visible
 // and auditable; the duplicate guard blocks a second sync while one is open.
 func (h *Handler) SyncProjectDesignManifest(w http.ResponseWriter, r *http.Request) {
+	h.fireProjectDesignChore(w, r, sliceActionGenDesignManifest, "Design manifest sync — ",
+		"Auto-created chore: refresh the project design manifest. The designer agent scans the repo (and Figma library if configured) and posts an updated ```design-manifest``` block, which the platform captures onto the project.")
+}
+
+// SyncProjectDesignAudit fires a design-system audit on the project: the
+// designer agent scans the repo against the manifest and reports off-token
+// values, duplicated markup, unmanaged components, and proposed tokens.
+func (h *Handler) SyncProjectDesignAudit(w http.ResponseWriter, r *http.Request) {
+	h.fireProjectDesignChore(w, r, sliceActionDesignAudit, "Design system audit — ",
+		"Auto-created chore: audit the project's design-system health. The designer agent scans the repo against the design manifest and posts a ```design-audit``` block (off-token values, duplicated markup, proposed tokens).")
+}
+
+// fireProjectDesignChore is the shared trigger for the project-level design
+// actions (manifest sync, audit): it resolves the designer (private-agent
+// gated), creates a chore issue in the project (409 on an already-open one),
+// and fires the slice action on it via a mention comment. Both actions post a
+// fenced block that the platform captures/renders; the chore issue makes the
+// run visible + auditable.
+func (h *Handler) fireProjectDesignChore(w http.ResponseWriter, r *http.Request, kind, titlePrefix, description string) {
 	userID, ok := requireUserID(w, r)
 	if !ok {
 		return
@@ -211,10 +230,9 @@ func (h *Handler) SyncProjectDesignManifest(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Resolve the designer via a synthetic project-bound issue (resolveDesignerAgent
-	// keys off issue.ProjectID + WorkspaceID). Gate a private designer the caller
-	// can't access exactly like design_review's request_changes: never write its
-	// name/UUID into a caller-readable comment. Treat inaccessible as "none".
+	// Resolve the designer via a synthetic project-bound issue. Gate a private
+	// designer the caller can't access (never write its name/UUID into a
+	// caller-readable comment) — treat inaccessible as "none".
 	seed := db.Issue{ProjectID: pgtype.UUID{Bytes: project.ID.Bytes, Valid: true}, WorkspaceID: project.WorkspaceID}
 	designer, ok := h.resolveDesignerAgent(r.Context(), seed)
 	if !ok || !h.canAccessPrivateAgent(r.Context(), designer, "member", userID, uuidToString(project.WorkspaceID)) {
@@ -222,11 +240,10 @@ func (h *Handler) SyncProjectDesignManifest(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	title := "Design manifest sync — " + project.Title
 	res, err := h.IssueService.Create(r.Context(), service.IssueCreateParams{
 		WorkspaceID:  project.WorkspaceID,
-		Title:        title,
-		Description:  pgtype.Text{String: "Auto-created chore: refresh the project design manifest. The designer agent scans the repo (and Figma library if configured) and posts an updated ```design-manifest``` block, which the platform captures onto the project.", Valid: true},
+		Title:        titlePrefix + project.Title,
+		Description:  pgtype.Text{String: description, Valid: true},
 		Status:       "todo",
 		Priority:     "none",
 		AssigneeType: pgtype.Text{String: "agent", Valid: true},
@@ -236,19 +253,16 @@ func (h *Handler) SyncProjectDesignManifest(w http.ResponseWriter, r *http.Reque
 		ProjectID:    pgtype.UUID{Bytes: project.ID.Bytes, Valid: true},
 	}, service.IssueCreateOpts{ActorID: userID})
 	if errors.Is(err, service.ErrActiveDuplicate) {
-		writeError(w, http.StatusConflict, "sync_already_running: a design manifest sync is already open for this project")
+		writeError(w, http.StatusConflict, "already_running: a "+kind+" chore is already open for this project")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to create sync chore: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "failed to create chore: "+err.Error())
 		return
 	}
 	issue := res.Issue
 
-	// Fire gen_design_manifest on the chore issue: post the recipe as a mention
-	// comment to the designer + route through the canonical trigger path (mirrors
-	// the qa-fail autoroute). The agent's reply block is then captured.
-	instruction := buildSliceInstruction(sliceActionGenDesignManifest, "")
+	instruction := buildSliceInstruction(kind, "")
 	if note := h.sliceActionDesignManifestContext(r.Context(), issue); note != "" {
 		instruction += note
 	}
@@ -263,11 +277,11 @@ func (h *Handler) SyncProjectDesignManifest(w http.ResponseWriter, r *http.Reque
 		ParentID:    pgtype.UUID{Valid: false},
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to fire manifest build")
+		writeError(w, http.StatusInternalServerError, "failed to fire "+kind)
 		return
 	}
 	h.triggerTasksForComment(r.Context(), issue, comment, nil, "member", userID, nil)
-	slog.Info("design manifest sync fired", append(logger.RequestAttrs(r),
-		"project_id", uuidToString(project.ID), "issue_id", uuidToString(issue.ID), "agent_id", uuidToString(designer.ID))...)
+	slog.Info("project design chore fired", append(logger.RequestAttrs(r),
+		"kind", kind, "project_id", uuidToString(project.ID), "issue_id", uuidToString(issue.ID), "agent_id", uuidToString(designer.ID))...)
 	writeJSON(w, http.StatusAccepted, map[string]any{"status": "queued", "issue_id": uuidToString(issue.ID)})
 }

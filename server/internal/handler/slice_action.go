@@ -46,6 +46,7 @@ const (
 	sliceActionCompileTests      = "compile_tests"
 	sliceActionDesignProposal    = "design_proposal"
 	sliceActionGenDesignManifest = "gen_design_manifest"
+	sliceActionDesignAudit       = "design_audit"
 )
 
 // isKnownSliceActionKind reports whether kind is one of the supported scoped
@@ -53,7 +54,7 @@ const (
 // agent is resolved or any comment is written.
 func isKnownSliceActionKind(kind string) bool {
 	switch kind {
-	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunCI, sliceActionAutoDocs, sliceActionGenTests, sliceActionRunTests, sliceActionCompileTests, sliceActionDesignProposal, sliceActionGenDesignManifest:
+	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunCI, sliceActionAutoDocs, sliceActionGenTests, sliceActionRunTests, sliceActionCompileTests, sliceActionDesignProposal, sliceActionGenDesignManifest, sliceActionDesignAudit:
 		return true
 	default:
 		return false
@@ -376,6 +377,30 @@ func buildSliceInstruction(kind, scope string) string {
 			"is a MAP injected into prompts, not documentation. The existing manifest (if any) is in your context: " +
 			"UPDATE it and PRESERVE any human-added entries. The server captures this block onto the project; you do " +
 			"NOT need to run any command."
+	case sliceActionDesignAudit:
+		base = "AUDIT this project's design-system HEALTH — find where the code diverges from the design system and " +
+			"where the de-facto system should be formalized, so the team can BUILD a real design system out of a " +
+			"legacy codebase. Inspect the repository READ-ONLY (do not push, do not open a PR). The PROJECT DESIGN " +
+			"SYSTEM manifest (if any) is in your context below — audit AGAINST it. " +
+			"(1) OFF-TOKEN VALUES: find hardcoded values that SHOULD be design tokens — raw hex/rgb colors, off-scale " +
+			"spacing (px values that don't fit a 4/8px scale), one-off font sizes/families. Frequency-rank them: a " +
+			"color hardcoded in 14 places is a missing token; a color used once is a smell. For each, suggest the token " +
+			"name it maps to (an existing manifest token, or a proposed new one) and cite a few sample file refs. " +
+			"(2) DUPLICATED MARKUP: find the SAME UI structure copy-pasted across files (a table, a card, a modal, a " +
+			"form row) that should be ONE shared component — cite occurrences and a suggested component name. " +
+			"(3) UNMANAGED COMPONENTS: shared components that exist in code but are NOT in the manifest (the manifest is " +
+			"blind to them). (4) PROPOSED TOKENS: from the frequency-ranked off-token colors/spacing, propose the " +
+			"concrete token set the project should adopt (name + value + the raw values it would replace) — this is the " +
+			"seed of a real tokens file. Prefer the FEWEST tokens that cover the most usage. " +
+			"OUTPUT a human-readable summary IN THE SAME LANGUAGE AS THE ISSUE, then exactly ONE fenced " +
+			"```design-audit code block (JSON keys English, free-text in the issue's language): " +
+			"`{\"summary\":\"\",\"off_token\":[{\"kind\":\"color\"|\"spacing\"|\"typography\",\"value\":\"\"," +
+			"\"occurrences\":0,\"suggested_token\":\"\",\"sample_refs\":[\"path:line\"]}],\"duplicates\":[{\"pattern\":" +
+			"\"\",\"occurrences\":0,\"suggested_component\":\"\",\"sample_refs\":[\"\"]}],\"unmanaged_components\":" +
+			"[{\"name\":\"\",\"code_ref\":\"\",\"note\":\"\"}],\"proposed_tokens\":[{\"name\":\"\",\"value\":\"\"," +
+			"\"replaces\":[\"\"]}]}`. Report only REAL findings you saw in the code — never invent counts or refs. The " +
+			"JSON must be valid and self-contained. You do NOT change code; a human turns the proposed tokens into a " +
+			"`draft_code` task if they accept them."
 	default:
 		return ""
 	}
@@ -2172,6 +2197,10 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 		if note := figmaContextForIssue(issueFigmaRefs(issue)); note != "" {
 			instruction += "\n\n" + note
 		}
+		instruction += h.sliceActionDesignManifestContext(r.Context(), issue)
+	}
+	// design_audit scans the repo against the project design manifest.
+	if req.Kind == sliceActionDesignAudit {
 		instruction += h.sliceActionDesignManifestContext(r.Context(), issue)
 	}
 

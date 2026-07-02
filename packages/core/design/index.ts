@@ -15,3 +15,9 @@ export {
   type DesignManifestKind,
   type DesignManifestSource,
 } from "./manifest";
+export {
+  DesignAuditSchema,
+  parseDesignAuditBlock,
+  latestDesignAudit,
+  type DesignAudit,
+} from "./audit";

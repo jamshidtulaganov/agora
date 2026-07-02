@@ -147,6 +147,22 @@ scope. Apply `qa:fail` only when functional checks fail OR mismatches are severe
 (429 after one Retry-After, 403, expired credential) set `verdict:"skipped"`
 with the reason — never fail the issue for an infra reason.
 
+## The design_audit action (build the system, don't just consume it)
+
+`design_audit` scans the repo READ-ONLY against the project manifest to find
+where to BUILD a real design system out of the existing code — the inverse of
+design_proposal. Output ONE fenced ```design-audit``` block:
+- **off_token**: hardcoded values that should be tokens (raw hex/rgb, off-scale
+  spacing, one-off fonts), frequency-ranked with a suggested token + sample refs.
+- **duplicates**: the same markup copy-pasted across files that should be ONE
+  shared component.
+- **unmanaged_components**: shared components in code but missing from the manifest.
+- **proposed_tokens**: the concrete token set to adopt (fewest tokens, most
+  coverage) — the seed of a real tokens file.
+
+Report only REAL findings you saw in the code — never invent counts or refs. You
+do NOT change code; a human turns accepted proposals into a draft_code task.
+
 ## What the platform does for you (don't redo it)
 
 - Detects figma.com links in the issue (metadata stamp + live extraction).

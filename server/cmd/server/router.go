@@ -910,6 +910,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// sync fires the designer agent to (re)generate it.
 					r.Put("/design-manifest", h.PutProjectDesignManifest)
 					r.Post("/design-manifest/sync", h.SyncProjectDesignManifest)
+					// Design-system audit: scan the repo against the manifest for
+					// off-token values, duplicated markup, and proposed tokens.
+					r.Post("/design-audit", h.SyncProjectDesignAudit)
 					// QA base scripts — the project's STANDING regression suite
 					// (test cases with issue_id NULL, injected into every
 					// run_qa / run_test_cases on the project's issues).
