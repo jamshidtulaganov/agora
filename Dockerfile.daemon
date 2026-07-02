@@ -46,6 +46,15 @@ RUN npm install -g @larksuiteoapi/lark-mcp
 # "Code" editor so a human can watch + edit an agent's worktree from the browser.
 RUN curl -fsSL https://code-server.dev/install.sh | sh
 
+# Playwright — for `playwright show-trace`, the QA trace viewer the daemon serves
+# on /trace/launch. Installed GLOBALLY so `npx playwright show-trace` resolves
+# from any cwd (the viewer is launched from the trace file's dir, e.g. /tmp).
+# NO browsers are downloaded here (PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD): show-trace
+# serves a static viewer app and its OS-level open() is a harmless no-op on this
+# headless box; run_test_cases installs chromium-headless-shell per box when it
+# actually needs to DRIVE a browser.
+RUN PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install -g playwright
+
 COPY --from=builder /src/server/bin/agora /usr/local/bin/agora
 COPY deploy/fly/daemon/entrypoint.sh /entrypoint.sh
 RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
