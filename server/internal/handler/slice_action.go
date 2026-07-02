@@ -226,7 +226,13 @@ func buildSliceInstruction(kind, scope string) string {
 			"perform the case's steps, ASSERT the expected result by deterministic signal (HTTP status, response shape, " +
 			"DOM/accessibility-tree TEXT — never a screenshot), then `process.exit(0)` on pass and `process.exit(1)` on " +
 			"ANY failed assertion or thrown error (wrap the body in try/catch and exit(1) in catch; always close the " +
-			"browser in finally). No test-runner harness, no external config, no CLI args — the script is the whole test. " +
+			"browser in finally). For [e2e] cases, open pages from an explicit context " +
+			"(`const context = await browser.newContext();`) and add Playwright TRACING so a QA reviewer can replay the " +
+			"run step-by-step in-app: when `process.env.TRACE_PATH` is set, `await context.tracing.start({ screenshots: " +
+			"true, snapshots: true, sources: true });` after creating the context and " +
+			"`await context.tracing.stop({ path: process.env.TRACE_PATH });` in the `finally` before closing the browser " +
+			"(guard both on `process.env.TRACE_PATH`). [api]/fetch cases have no browser and capture no trace. " +
+			"No test-runner harness, no external config, no CLI args — the script is the whole test. " +
 			"Omit `script` for [unit]/[smoke]/manual cases (those stay hand-driven)."
 	case sliceActionRunTests:
 		base = "Run this issue's AUTOMATED QA test cases as a DETERMINISTIC check — you are the QA Squad's automation " +
@@ -240,20 +246,27 @@ func buildSliceInstruction(kind, scope string) string {
 			"for every case right after you judge it. " +
 			"For EACH case: if the case LISTING below includes a COMPILED SCRIPT for that id, do NOT drive the browser " +
 			"action-by-action — instead WRITE that script verbatim to a temp file `/tmp/case-<id>.mjs` and RUN it with " +
-			"`node /tmp/case-<id>.mjs`; take the process EXIT CODE as the verdict (0 = pass, non-zero = fail) and use the " +
-			"script's stdout/stderr as the one-line `output` evidence. This is deterministic and needs no per-action " +
-			"reasoning — that is the whole point. Playwright must be available to `node`: if `node -e \"import('playwright')\"` " +
+			"`TRACE_PATH=/tmp/trace-<id>.zip node /tmp/case-<id>.mjs`; take the process EXIT CODE as the verdict (0 = pass, " +
+			"non-zero = fail) and use the script's stdout/stderr as the one-line `output` evidence. This is deterministic and " +
+			"needs no per-action reasoning — that is the whole point. TRACE (time-travel debugging): the compiled script " +
+			"records a Playwright trace (DOM snapshots + screenshots + sources per step) to the `TRACE_PATH` you set here, so " +
+			"a QA reviewer can replay the run step-by-step in-app. Give each case a DISTINCT `TRACE_PATH` keyed by its id " +
+			"(`/tmp/trace-<id>.zip`) so concurrent cases never overwrite each other's trace. After the run, if that trace " +
+			"file exists, report its ABSOLUTE path as the case's `trace_path` in the test-runs JSON below; omit `trace_path` " +
+			"when no trace was produced. Playwright must be available to `node`: if `node -e \"import('playwright')\"` " +
 			"fails, run ONCE `npm i playwright && npx playwright install chromium-headless-shell` in the box (reuse the box's " +
 			"existing install when present — do not reinstall per case). Still emit the `RUNNING test_case:<id>` marker before " +
 			"each scripted case. ONLY cases with NO compiled script are hand-driven the old way (deterministic HTTP/DOM smoke " +
-			"or the embedded browser). " +
+			"or the embedded browser) — those produce no trace. " +
 			"Then, for EACH case, drive its steps against the " +
 			"running app — a deterministic HTTP / DOM-text smoke, or the embedded browser; NEVER an external playwright/" +
 			"chrome — and judge the EXPECTED result by SIGNAL (status code, DOM text, exit code), never by opinion. Do NOT " +
 			"modify code. At the END of your comment, append a fenced ```test-runs code block with ONLY a JSON array the QA " +
 			"panel parses: `[{\"test_case_id\":\"<the id from the list>\",\"status\":\"pass\"|\"fail\"|\"blocked\"," +
 			"\"output\":\"<one-line evidence — for fail/blocked this IS the human-readable reason shown to the QA " +
-			"reviewer, e.g. the failing assertion or HTTP status; for pass, what you observed>\"}]` — one entry per case " +
+			"reviewer, e.g. the failing assertion or HTTP status; for pass, what you observed>\",\"trace_path\":\"<optional: " +
+			"the ABSOLUTE path of the Playwright trace .zip this case produced, e.g. /tmp/trace-<id>.zip; omit when no " +
+			"trace was captured (hand-driven cases)>\"}]` — one entry per case " +
 			"you ran. Use `blocked` if a case could not be exercised (missing data/route). The JSON must be valid and " +
 			"self-contained."
 	case sliceActionCompileTests:
@@ -261,10 +274,18 @@ func buildSliceInstruction(kind, scope string) string {
 			"Squad's automation engineer. The cases that STILL NEED a script (id · title · steps · expected) are listed " +
 			"below, along with the PROJECT QA MANIFEST (base_url, auth, routes, flows). For EACH case, author a COMPLETE, " +
 			"self-contained Playwright ESM module that runs with plain `node`: `import { chromium } from \"playwright\";`, " +
-			"log in via the manifest auth, perform the steps against the manifest base_url/routes, ASSERT the expected " +
+			"create an explicit context (`const browser = await chromium.launch(); const context = await " +
+			"browser.newContext();`) and open pages from THAT context, log in via the manifest auth, perform the steps " +
+			"against the manifest base_url/routes, ASSERT the expected " +
 			"result by deterministic signal (HTTP status, response shape, DOM/accessibility-tree TEXT — never a " +
 			"screenshot), then `process.exit(0)` on pass / `process.exit(1)` on any failed assertion or thrown error " +
-			"(try/catch → exit(1); close the browser in finally). Do NOT run anything and do NOT touch product code — only " +
+			"(try/catch → exit(1); close the browser in finally). " +
+			"TRACING (so a reviewer can time-travel the run in Agora): the script MUST honor `process.env.TRACE_PATH` — " +
+			"when it is set, call `await context.tracing.start({ screenshots: true, snapshots: true, sources: true });` " +
+			"right after creating the context, and in the `finally` block call " +
+			"`await context.tracing.stop({ path: process.env.TRACE_PATH });` BEFORE closing the browser (guard both on " +
+			"`process.env.TRACE_PATH` so the script still runs when it's unset). Do NOT run anything and do NOT touch " +
+			"product code — only " +
 			"AUTHOR the scripts. At the END of your comment, append a fenced ```scripts code block containing ONLY a JSON " +
 			"array the server parses: `[{\"id\":\"<the case id from the list>\",\"script\":\"<the full Playwright module>\"}]` " +
 			"— one entry per case you compiled. The JSON must be valid and self-contained."
