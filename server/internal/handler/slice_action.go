@@ -307,12 +307,29 @@ func buildSliceInstruction(kind, scope string) string {
 		return ""
 	}
 
+	// LIVE WATCH — for the browser-driving QA actions, connect to the SHARED
+	// review browser instead of launching a private one, so a QA reviewer watches
+	// the run in real time in the review page's live pane (they attach to the
+	// SAME Chromium). The agent already has AGORA_DAEMON_PORT in its env; the
+	// daemon serves the shared browser on that port keyed by workdir. The pane
+	// keys it `qa-target:<previewUrl>`, so the agent must use the same key (the QA
+	// target base URL it is testing) to share one browser. connectOverCDP coexists
+	// with the pane's screencast and with trace capture on the same context
+	// (verified). Hand-driven HTTP/DOM smokes that open no browser skip this.
+	if kind == sliceActionRunQA || kind == sliceActionRunTests {
+		base += qaLiveWatchClause
+	}
+
 	scope = strings.TrimSpace(scope)
 	if scope != "" {
 		base += " Focus on: " + scope
 	}
 	return base
 }
+
+// qaLiveWatchClause tells a browser-driving QA run to attach to the shared
+// review browser (see buildSliceInstruction) so the reviewer watches live.
+const qaLiveWatchClause = " LIVE WATCH (so a QA reviewer can watch you drive the browser in real time): when you drive a real browser, do NOT launch your own — attach to the SHARED review browser. With AGORA_DAEMON_PORT set, POST http://127.0.0.1:$AGORA_DAEMON_PORT/editor/browser/start with body {\"workdir\":\"qa-target:<THE QA TARGET BASE URL you are testing, e.g. the manifest base_url>\"}; it returns {\"cdp_url\":\"http://127.0.0.1:<port>\"}. Then in your Playwright script use `const browser = await chromium.connectOverCDP(cdp_url); const context = browser.contexts()[0] ?? await browser.newContext(); const page = context.pages()[0] ?? await context.newPage();` INSTEAD of chromium.launch(). Use the SAME `qa-target:<url>` key the review pane uses (the exact QA target base URL) so you and the reviewer share ONE browser and they see your actions live. Tracing (TRACE_PATH) still works on this connected context. Fall back to chromium.launch() ONLY if that POST fails or AGORA_DAEMON_PORT is unset."
 
 // sliceActionOpensPR reports whether a slice-action kind produces a pull request
 // (and so benefits from a deterministic, QA-resolvable branch name). review_part
