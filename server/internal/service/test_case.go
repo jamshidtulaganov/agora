@@ -30,6 +30,12 @@ type genTestRun struct {
 	TestCaseID string `json:"test_case_id"`
 	Status     string `json:"status"`
 	Output     string `json:"output"`
+	// TracePath is the local path (on the agent's runtime box) of the Playwright
+	// trace .zip the compiled script captured for this case, if any. Optional —
+	// only scripted cases that ran with tracing produce one. The trace-viewer
+	// launch endpoint (GET /api/qa/trace/:runId) reads it to spawn `playwright
+	// show-trace` on that daemon and reverse-proxy the viewer in-app.
+	TracePath string `json:"trace_path"`
 }
 
 type genCompiledScript struct {
@@ -173,6 +179,7 @@ func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, conte
 			RunSource:   "agent",
 			RunByType:   "agent",
 			RunByID:     agentID,
+			TracePath:   strings.TrimSpace(r.TracePath),
 		}); err != nil {
 			slog.Warn("capture test runs: insert failed", "error", err, "issue_id", util.UUIDToString(issue.ID))
 			continue
