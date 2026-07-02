@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Palette, Loader2 } from "lucide-react";
 import { api } from "@agora/core/api";
 import { useCurrentWorkspace } from "@agora/core/paths";
+import { workspaceKeys } from "@agora/core/workspace/queries";
 import { parseDesignManifest } from "@agora/core/design";
 import { Card, CardContent } from "@agora/ui/components/ui/card";
 import { Button } from "@agora/ui/components/ui/button";
@@ -16,6 +18,7 @@ import { useT } from "../../i18n";
 // Admin-gated write via the key-scoped PUT endpoint. Read-only for non-admins.
 export function WorkspaceDesignSection() {
   const { t } = useT("settings");
+  const qc = useQueryClient();
   const workspace = useCurrentWorkspace();
   const wsId = workspace?.id ?? "";
 
@@ -44,6 +47,11 @@ export function WorkspaceDesignSection() {
     setSaving(true);
     try {
       await api.putWorkspaceDesignManifest(wsId, obj);
+      // Refetch the workspace list (which backs useCurrentWorkspace) so the
+      // rev/kind badge and the editor's baseline reflect the saved manifest
+      // without a navigate-away; the backend also broadcasts workspace:updated
+      // for other clients.
+      await qc.invalidateQueries({ queryKey: workspaceKeys.list() });
       toast.success(t(($) => $.workspace_design.saved_toast));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t(($) => $.workspace_design.invalid_json));

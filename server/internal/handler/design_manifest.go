@@ -207,14 +207,19 @@ func (h *Handler) PutWorkspaceDesignManifest(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusInternalServerError, "failed to encode manifest")
 		return
 	}
-	if _, err := h.Queries.SetWorkspaceSettingKey(r.Context(), db.SetWorkspaceSettingKeyParams{
+	ws, err := h.Queries.SetWorkspaceSettingKey(r.Context(), db.SetWorkspaceSettingKeyParams{
 		ID:    wsUUID,
 		Key:   "design_manifest",
 		Value: manifestJSON,
-	}); err != nil {
+	})
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to save workspace design manifest")
 		return
 	}
+	// Broadcast workspace:updated so every client's cached workspace list —
+	// which backs the settings editor and the inherited-manifest injector —
+	// refreshes, mirroring UpdateWorkspace and the project-manifest broadcast.
+	h.publish(protocol.EventWorkspaceUpdated, uuidToString(ws.ID), "member", userID, map[string]any{"workspace": workspaceToResponse(ws)})
 	slog.Info("workspace design manifest saved", "workspace_id", uuidToString(wsUUID), "by", userID, "revision", rev+1)
 	writeJSON(w, http.StatusOK, map[string]any{"status": "saved", "revision": rev + 1})
 }
