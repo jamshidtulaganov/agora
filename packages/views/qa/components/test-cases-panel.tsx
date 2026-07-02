@@ -298,12 +298,20 @@ function CaseRow({
   return (
     <li
       className={cn(
-        "px-3 py-2 transition-colors",
-        // The case executing RIGHT NOW is unmistakable: tinted row + a left
-        // accent bar + a spinning marker on the title (below). Jest-runner feel.
-        isRunning && "border-l-2 border-info bg-info/5",
+        "relative px-3 py-2 transition-colors",
+        // The case executing RIGHT NOW is unmistakable: a tinted row + a spinning
+        // marker on the title (below) + an ANIMATED border — a pulsing inset ring
+        // that breathes so the eye is pulled to the running case. The ring is a
+        // separate overlay so only the border animates, not the row content.
+        isRunning && "bg-info/5",
       )}
     >
+      {isRunning && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-10 rounded-md ring-2 ring-inset ring-info/70 motion-safe:animate-pulse"
+        />
+      )}
       <div className="flex items-start gap-2">
         <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setOpen((v) => !v)}>
           <span
