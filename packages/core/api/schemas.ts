@@ -979,6 +979,14 @@ export const QAResultSchema = z.object({
       expected: z.string().default(""),
       actual: z.string().default(""),
     }).loose()).default([]),
+    // Diff-scoped design-system lint findings (design_lint): values/components
+    // the CHANGE introduced that erode the design system.
+    lint: z.array(z.object({
+      kind: z.string().default("other"),
+      where: z.string().default(""),
+      issue: z.string().default(""),
+      severity: z.string().default("warn"),
+    }).loose()).default([]),
   }).loose().nullable().catch(null).default(null),
 }).loose();
 

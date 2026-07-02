@@ -454,7 +454,10 @@
     "mismatch_kind_spacing": "oraliq",
     "mismatch_kind_layout": "joylashuv",
     "mismatch_kind_missing_element": "yo'q",
-    "mismatch_kind_generic": "boshqa"
+    "mismatch_kind_generic": "boshqa",
+    "design_lint_heading": "Dizayn-tizim lint",
+    "design_lint_block": "blok",
+    "design_lint_warn": "ogoh"
   },
   "qa_bug": {
     "file_bug": "Bag ochish",

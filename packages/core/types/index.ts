@@ -209,7 +209,7 @@ export type {
   PolicyFailedTask,
   PolicyLoopingIssue,
 } from "./policy";
-export type { QACommand, QAResult, QAEvidence, QADesignResult, QADesignMismatch } from "./qa-evidence";
+export type { QACommand, QAResult, QAEvidence, QADesignResult, QADesignMismatch, QADesignLint } from "./qa-evidence";
 export type {
   TestRunLite,
   TestCase,

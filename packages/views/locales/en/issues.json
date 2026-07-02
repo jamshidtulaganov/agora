@@ -454,7 +454,10 @@
     "mismatch_kind_spacing": "spacing",
     "mismatch_kind_layout": "layout",
     "mismatch_kind_missing_element": "missing",
-    "mismatch_kind_generic": "other"
+    "mismatch_kind_generic": "other",
+    "design_lint_heading": "Design-system lint",
+    "design_lint_block": "block",
+    "design_lint_warn": "warn"
   },
   "qa_bug": {
     "file_bug": "File bug",

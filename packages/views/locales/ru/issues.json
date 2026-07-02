@@ -454,7 +454,10 @@
     "mismatch_kind_spacing": "отступы",
     "mismatch_kind_layout": "верстка",
     "mismatch_kind_missing_element": "отсутствует",
-    "mismatch_kind_generic": "другое"
+    "mismatch_kind_generic": "другое",
+    "design_lint_heading": "Линт дизайн-системы",
+    "design_lint_block": "блок",
+    "design_lint_warn": "предупр"
   },
   "qa_bug": {
     "file_bug": "Завести баг",

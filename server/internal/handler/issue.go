@@ -2380,6 +2380,13 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 			slog.Info("design-gate: redirected direct →done to →in_review",
 				append(logger.RequestAttrs(r), "issue_id", uuidToString(prevIssue.ID), "requested", *req.Status)...)
 		}
+		// Design-lint gate (opt-in): a change that eroded the design system
+		// (block-severity lint finding) can't skip in_review to done.
+		if newStatus, redirected := h.enforceDesignLintGateBeforeDone(r.Context(), prevIssue, prevIssue.Status, target); redirected {
+			target = newStatus
+			slog.Info("design-lint-gate: redirected direct →done to →in_review",
+				append(logger.RequestAttrs(r), "issue_id", uuidToString(prevIssue.ID), "requested", *req.Status)...)
+		}
 		params.Status = pgtype.Text{String: target, Valid: true}
 	}
 	if req.Priority != nil {
@@ -3046,6 +3053,11 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			if newStatus, redirected := h.enforceDesignGateBeforeDone(r.Context(), prevIssue, prevIssue.Status, target); redirected {
 				target = newStatus
 				slog.Info("design-gate: redirected direct →done to →in_review (batch)",
+					"issue_id", uuidToString(prevIssue.ID), "requested", *req.Updates.Status)
+			}
+			if newStatus, redirected := h.enforceDesignLintGateBeforeDone(r.Context(), prevIssue, prevIssue.Status, target); redirected {
+				target = newStatus
+				slog.Info("design-lint-gate: redirected direct →done to →in_review (batch)",
 					"issue_id", uuidToString(prevIssue.ID), "requested", *req.Updates.Status)
 			}
 			params.Status = pgtype.Text{String: target, Valid: true}

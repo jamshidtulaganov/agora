@@ -163,6 +163,19 @@ design_proposal. Output ONE fenced ```design-audit``` block:
 Report only REAL findings you saw in the code — never invent counts or refs. You
 do NOT change code; a human turns accepted proposals into a draft_code task.
 
+## Design-system lint (run_qa, manifest projects)
+
+When a `run_qa` gate fires on a project that has a design manifest, your context
+carries a DESIGN-SYSTEM LINT appendix. If your diff touches UI, check whether the
+CHANGE erodes the design system relative to the manifest — a raw hardcoded value
+where a token exists, or a NEW component duplicating one the system provides.
+Flag ONLY what the change introduces (pre-existing debt is out of scope). Record
+findings under the qa-result `design.lint` array:
+`{"kind":"off_token"|"duplicate_component"|"other","where":"path:line","issue":"…","severity":"warn"|"block"}`.
+Use `block` only for a clear regression. A lint finding does not by itself set
+the verdict — the platform gates on `block` findings when
+AGORA_DESIGN_LINT_ENFORCED is on.
+
 ## What the platform does for you (don't redo it)
 
 - Detects figma.com links in the issue (metadata stamp + live extraction).

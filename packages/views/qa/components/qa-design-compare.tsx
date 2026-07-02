@@ -54,15 +54,18 @@ export function QADesignCompare({ design }: { design: QADesignResult | null | un
         )}
       </div>
 
-      {design.verdict === "skipped" ? (
+      {/* Figma-compare status only when there's a real compare (reference node
+          or mismatches); a lint-only result skips this so it doesn't read as
+          "Figma unreachable". */}
+      {design.verdict === "skipped" && (design.reference_node || (design.lint ?? []).length === 0) ? (
         <p className="rounded-lg border border-dashed bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
           {t(($) => $.qa_review.design_skipped_reason)}
         </p>
-      ) : design.mismatches.length === 0 ? (
+      ) : design.verdict !== "skipped" && design.mismatches.length === 0 ? (
         <p className="rounded-lg border bg-muted/10 px-3 py-2 text-[11px] text-muted-foreground">
           {t(($) => $.qa_review.design_no_mismatches)}
         </p>
-      ) : (
+      ) : design.mismatches.length > 0 ? (
         <ul className="divide-y divide-border rounded-lg border">
           {design.mismatches.map((m, i) => (
             <li key={i} className="flex flex-col gap-0.5 px-3 py-1.5 text-[11px]">
@@ -80,6 +83,34 @@ export function QADesignCompare({ design }: { design: QADesignResult | null | un
             </li>
           ))}
         </ul>
+      ) : null}
+
+      {/* Diff-scoped design-system lint — what the change eroded. */}
+      {design.lint && design.lint.length > 0 && (
+        <div className="mt-2">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {t(($) => $.qa_review.design_lint_heading)}
+          </div>
+          <ul className="divide-y divide-border rounded-lg border">
+            {design.lint.map((l, i) => (
+              <li key={i} className="flex flex-col gap-0.5 px-3 py-1.5 text-[11px]">
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={`rounded px-1 py-0.5 text-[9px] font-medium uppercase ${
+                      l.severity === "block"
+                        ? "bg-destructive/15 text-destructive"
+                        : "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                    }`}
+                  >
+                    {l.severity === "block" ? t(($) => $.qa_review.design_lint_block) : t(($) => $.qa_review.design_lint_warn)}
+                  </span>
+                  {l.where && <code className="truncate text-muted-foreground">{l.where}</code>}
+                </div>
+                {l.issue && <span className="text-muted-foreground">{l.issue}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </section>
   );

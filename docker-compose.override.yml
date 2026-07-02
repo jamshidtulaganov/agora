@@ -66,6 +66,9 @@ services:
       # Design gate: a design-decomposed issue can't reach done without a
       # passing/skipped design verdict (or a qa:pass override). Opt-in, dark.
       AGORA_DESIGN_GATE_ENFORCED: ${AGORA_DESIGN_GATE_ENFORCED:-}
+      # Design-lint gate: a change that eroded the design system (block-severity
+      # lint finding on a manifest project) can't skip in_review to done. Opt-in.
+      AGORA_DESIGN_LINT_ENFORCED: ${AGORA_DESIGN_LINT_ENFORCED:-}
       # Re-wake the squad lead when a delegated member task dies, so an
       # orchestrated issue doesn't wedge with no recovery. Opt-in.
       AGORA_SQUAD_FAILURE_RECOVERY_ENABLED: ${AGORA_SQUAD_FAILURE_RECOVERY_ENABLED:-}

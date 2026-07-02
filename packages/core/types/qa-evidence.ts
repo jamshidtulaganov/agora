@@ -28,12 +28,24 @@ export interface QADesignMismatch {
   actual: string;
 }
 
+// One diff-scoped design-system lint finding: something the CHANGE introduced
+// that erodes the design system (a hardcoded value where a token exists, a
+// duplicate of an existing component).
+export interface QADesignLint {
+  kind: "off_token" | "duplicate_component" | "other";
+  where: string;
+  issue: string;
+  severity: "warn" | "block";
+}
+
 // Advisory design-verification result for a design-implementing issue. `skipped`
 // (Figma unreachable) never fails the gate.
 export interface QADesignResult {
   verdict: "pass" | "fail" | "skipped";
   reference_node: string;
   mismatches: QADesignMismatch[];
+  // Diff-scoped design-system lint findings (present on manifest projects).
+  lint?: QADesignLint[];
 }
 
 // The structured payload from the ```qa-result``` block: the verdict + command

@@ -1366,6 +1366,7 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	instruction += h.sliceActionProjectBaseSuiteContext(ctx, issue)
 	instruction += qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
 	instruction += h.sliceActionDesignCompareContext(ctx, issue)
+	instruction += h.sliceActionDesignLintContext(ctx, issue)
 
 	// When this routed to the QA LEAD (orchestrated dev side), the lead should
 	// ORCHESTRATE, not execute: delegate the actual gate run to a QA member so
@@ -2146,6 +2147,7 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 		instruction += h.sliceActionProjectBaseSuiteContext(r.Context(), issue)
 		instruction += qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
 		instruction += h.sliceActionDesignCompareContext(r.Context(), issue)
+		instruction += h.sliceActionDesignLintContext(r.Context(), issue)
 	}
 	// auto_docs targets the project's configured docs repo when set.
 	if req.Kind == sliceActionAutoDocs {

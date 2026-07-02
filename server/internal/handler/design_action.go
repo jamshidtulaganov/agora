@@ -281,6 +281,89 @@ func designGateEnforced() bool {
 	return strings.TrimSpace(os.Getenv("AGORA_DESIGN_GATE_ENFORCED")) == "true"
 }
 
+// issueHasDesignManifest reports whether the issue's project OR workspace
+// configures a design manifest — the condition for design-lint to run.
+func (h *Handler) issueHasDesignManifest(ctx context.Context, issue db.Issue) bool {
+	if _, ok := h.projectDesignManifest(ctx, issue); ok {
+		return true
+	}
+	_, ok := h.workspaceDesignManifest(ctx, issue.WorkspaceID)
+	return ok
+}
+
+// sliceActionDesignLintContext appends a DIFF-SCOPED design-system lint to a
+// run_qa instruction when the project (or workspace) has a design manifest. It
+// checks whether the CHANGE erodes the design system — introduces off-token
+// values or a new component that duplicates one the system already has — the
+// governance counterpart to the whole-repo design_audit. Returns "" when there
+// is no manifest to lint against.
+func (h *Handler) sliceActionDesignLintContext(ctx context.Context, issue db.Issue) string {
+	if !h.issueHasDesignManifest(ctx, issue) {
+		return ""
+	}
+	return " DESIGN-SYSTEM LINT (this project has a design system — lint the CHANGE, not the whole repo): if your diff touches UI, check whether it ERODES the design system relative to the PROJECT/WORKSPACE DESIGN SYSTEM above. Flag ONLY things this change INTRODUCES: a raw hardcoded value where a token exists (a hex color / off-scale spacing / one-off font that the manifest already has a token for), or a NEW component that duplicates one the system already provides (it should reuse the existing component). Pre-existing debt the diff did not touch is OUT of scope. Record findings in the qa-result `design` object under a `lint` array: `\"lint\":[{\"kind\":\"off_token\"|\"duplicate_component\"|\"other\",\"where\":\"path:line or selector\",\"issue\":\"…\",\"severity\":\"warn\"|\"block\"}]`. Use `block` ONLY for a clear regression (a token exists and the change hardcoded its value anyway; a shared component exists and the change re-implemented it). A lint finding does NOT by itself set the qa verdict — report it; the platform decides whether to gate."
+}
+
+// designLintEnforced gates the design-lint blocking behavior. Opt-in, dark.
+func designLintEnforced() bool {
+	return strings.TrimSpace(os.Getenv("AGORA_DESIGN_LINT_ENFORCED")) == "true"
+}
+
+// enforceDesignLintGateBeforeDone redirects an issue's direct →done write to
+// →in_review when its project has a design manifest and the latest qa-result
+// carries a `block`-severity design.lint finding — the change eroded the design
+// system. Opt-in (AGORA_DESIGN_LINT_ENFORCED, default off); a qa:pass label is
+// always an override. Returns (statusToWrite, redirected).
+func (h *Handler) enforceDesignLintGateBeforeDone(ctx context.Context, issue db.Issue, prevStatus, targetStatus string) (string, bool) {
+	if !designLintEnforced() {
+		return targetStatus, false
+	}
+	if targetStatus != "done" || prevStatus == "done" || prevStatus == "in_review" {
+		return targetStatus, false
+	}
+	if !h.issueHasDesignManifest(ctx, issue) {
+		return targetStatus, false
+	}
+	if h.issueHasLabel(ctx, issue, "qa:pass") {
+		return targetStatus, false // human override
+	}
+	ev, err := h.Queries.GetLatestQAEvidenceForIssue(ctx, db.GetLatestQAEvidenceForIssueParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		return targetStatus, false // no verdict yet — lint can't block what didn't run
+	}
+	if designLintHasBlock(ev.ResultJson) {
+		return "in_review", true
+	}
+	return targetStatus, false
+}
+
+// designLintHasBlock reports whether result_json.design.lint has a
+// severity=="block" finding.
+func designLintHasBlock(resultJSON []byte) bool {
+	if len(resultJSON) == 0 {
+		return false
+	}
+	var r struct {
+		Design *struct {
+			Lint []struct {
+				Severity string `json:"severity"`
+			} `json:"lint"`
+		} `json:"design"`
+	}
+	if json.Unmarshal(resultJSON, &r) != nil || r.Design == nil {
+		return false
+	}
+	for _, l := range r.Design.Lint {
+		if l.Severity == "block" {
+			return true
+		}
+	}
+	return false
+}
+
 // enforceDesignGateBeforeDone redirects a design-decomposed issue's direct
 // →done write to →in_review when its latest QA verdict has no passing/skipped
 // design result. Advisory + opt-in (AGORA_DESIGN_GATE_ENFORCED, default off);
