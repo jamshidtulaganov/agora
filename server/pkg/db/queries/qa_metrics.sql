@@ -1,0 +1,62 @@
+-- QA speed / regression metrics — aggregates for the QA Metrics page.
+
+-- name: QAMetricsRunTotals :one
+-- Regression run totals over the window: how much the suite runs and how green.
+SELECT count(*)                                   AS total,
+       count(*) FILTER (WHERE status = 'pass')    AS passed,
+       count(*) FILTER (WHERE status = 'fail')    AS failed,
+       count(*) FILTER (WHERE status IN ('skip','blocked')) AS skipped
+FROM test_run
+WHERE workspace_id = $1 AND created_at > now() - interval '30 days';
+
+-- name: QAMetricsRunsByDay :many
+-- Daily regression volume + failures for the trend strip (last 14 days).
+SELECT date_trunc('day', created_at)::date        AS day,
+       count(*)                                   AS total,
+       count(*) FILTER (WHERE status = 'fail')    AS failed
+FROM test_run
+WHERE workspace_id = $1 AND created_at > now() - interval '14 days'
+GROUP BY 1 ORDER BY 1;
+
+-- name: QAMetricsAgentDurations :many
+-- Per-QA-agent task wall-clock (created -> completed) over the window: the
+-- agent-driven QA cost the compiled-script model is shrinking. QA agents =
+-- members (or leader) of the workspace's squad named 'QA'.
+SELECT a.name                                                        AS agent,
+       count(*)                                                      AS runs,
+       round(avg(EXTRACT(EPOCH FROM (atq.completed_at - atq.created_at))))::int AS avg_sec,
+       round(min(EXTRACT(EPOCH FROM (atq.completed_at - atq.created_at))))::int AS min_sec,
+       round(max(EXTRACT(EPOCH FROM (atq.completed_at - atq.created_at))))::int AS max_sec
+FROM agent_task_queue atq
+JOIN agent a ON a.id = atq.agent_id
+WHERE a.workspace_id = $1
+  AND atq.status = 'completed' AND atq.completed_at IS NOT NULL
+  AND atq.created_at > now() - interval '30 days'
+  AND atq.agent_id IN (
+    SELECT sm.member_id FROM squad_member sm
+    JOIN squad s ON s.id = sm.squad_id
+    WHERE s.workspace_id = $1 AND s.name = 'QA' AND sm.member_type = 'agent'
+    UNION
+    SELECT s.leader_id FROM squad s WHERE s.workspace_id = $1 AND s.name = 'QA'
+  )
+GROUP BY a.name ORDER BY avg_sec DESC;
+
+-- name: QAMetricsScriptCoverage :one
+-- Compiled-script adoption: automated cases carrying a runnable script run
+-- deterministically (~seconds) instead of being LLM-driven (~minutes).
+SELECT count(*) FILTER (WHERE kind = 'automated')                    AS automated,
+       count(*) FILTER (WHERE kind = 'automated' AND script <> '')   AS scripted
+FROM test_case
+WHERE workspace_id = $1 AND archived_at IS NULL;
+
+-- name: QAMetricsRecentRuns :many
+-- Latest regression verdicts with their case + issue for the runs table.
+SELECT r.id, r.status, r.created_at, r.run_source,
+       c.title AS case_title,
+       i.number AS issue_number
+FROM test_run r
+JOIN test_case c ON c.id = r.test_case_id
+LEFT JOIN issue i ON i.id = r.issue_id
+WHERE r.workspace_id = $1
+ORDER BY r.created_at DESC
+LIMIT 25;

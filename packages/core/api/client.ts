@@ -249,6 +249,12 @@ import {
   EMPTY_ISSUE_EDITOR,
   IssueQAPreviewURLResponseSchema,
   EMPTY_ISSUE_QA_PREVIEW_URL,
+  QAMetricsResponseSchema,
+  EMPTY_QA_METRICS,
+  type QAMetricsResponse,
+  SprintReadinessResponseSchema,
+  EMPTY_SPRINT_READINESS,
+  type SprintReadinessResponse,
 } from "./schemas";
 
 /** Identifies the calling client to the server.
@@ -2319,6 +2325,30 @@ export class ApiClient {
     return parseWithFallback(raw, IssueQAPreviewURLResponseSchema, EMPTY_ISSUE_QA_PREVIEW_URL, {
       endpoint: "GET /api/issues/:id/qa-preview-url",
     });
+  }
+
+  // QA speed / regression metrics for the workspace (the QA Metrics page):
+  // run totals + daily trend + per-QA-agent durations + script coverage.
+  async getQAMetrics(): Promise<QAMetricsResponse> {
+    const raw = await this.fetch<unknown>(`/api/qa/metrics`);
+    return parseWithFallback(raw, QAMetricsResponseSchema, EMPTY_QA_METRICS, {
+      endpoint: "GET /api/qa/metrics",
+    });
+  }
+
+  // Per-active-sprint QA readiness (the QA cockpit Sprint tab): each sprint's
+  // issue rows by verdict + a mergeable rollup.
+  async getSprintReadiness(): Promise<SprintReadinessResponse> {
+    const raw = await this.fetch<unknown>(`/api/qa/sprint-readiness`);
+    return parseWithFallback(raw, SprintReadinessResponseSchema, EMPTY_SPRINT_READINESS, {
+      endpoint: "GET /api/qa/sprint-readiness",
+    });
+  }
+
+  // Fire the whole-branch regression for a sprint (the Sprint tab's action).
+  // The response (an autopilot-run record) carries nothing the UI renders.
+  async runSprintRegression(sprintId: string): Promise<void> {
+    await this.fetch(`/api/sprints/${sprintId}/run-regression`, { method: "POST" });
   }
 
   // Fires the SAME whole-branch regression (scope=regression vs sprint-root)

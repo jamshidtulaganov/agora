@@ -990,6 +990,7 @@ export const TestCaseSchema = z.object({
   source: z.string().default("human"),
   author_type: z.string().default(""),
   category: z.string().default("positive"),
+  script: z.string().optional(),
   created_at: z.string().default(""),
   latest_run: z.object({
     status: z.string().default(""),
@@ -1040,6 +1041,135 @@ export const IssueQAPreviewURLResponseSchema = z.object({
 }).loose();
 
 export const EMPTY_ISSUE_QA_PREVIEW_URL = { url: "", embeddable: false };
+
+// QA speed / regression metrics (the QA Metrics page). Every section defaults
+// to empty so a partial/older backend payload still renders.
+export const QAMetricsResponseSchema = z
+  .object({
+    totals: z
+      .object({
+        total: z.number().default(0),
+        passed: z.number().default(0),
+        failed: z.number().default(0),
+        skipped: z.number().default(0),
+      })
+      .loose()
+      .default({ total: 0, passed: 0, failed: 0, skipped: 0 }),
+    by_day: z
+      .array(
+        z
+          .object({
+            day: z.string().default(""),
+            total: z.number().default(0),
+            failed: z.number().default(0),
+          })
+          .loose(),
+      )
+      .default([]),
+    agents: z
+      .array(
+        z
+          .object({
+            agent: z.string().default(""),
+            runs: z.number().default(0),
+            avg_sec: z.number().default(0),
+            min_sec: z.number().default(0),
+            max_sec: z.number().default(0),
+          })
+          .loose(),
+      )
+      .default([]),
+    coverage: z
+      .object({
+        automated: z.number().default(0),
+        scripted: z.number().default(0),
+      })
+      .loose()
+      .default({ automated: 0, scripted: 0 }),
+    recent_runs: z
+      .array(
+        z
+          .object({
+            id: z.string().default(""),
+            status: z.string().default(""),
+            created_at: z.string().default(""),
+            run_source: z.string().default(""),
+            case_title: z.string().default(""),
+            issue_number: z.number().nullable().default(null),
+          })
+          .loose(),
+      )
+      .default([]),
+  })
+  .loose();
+
+export type QAMetricsResponse = z.infer<typeof QAMetricsResponseSchema>;
+
+export const EMPTY_QA_METRICS: QAMetricsResponse = {
+  totals: { total: 0, passed: 0, failed: 0, skipped: 0 },
+  by_day: [],
+  agents: [],
+  coverage: { automated: 0, scripted: 0 },
+  recent_runs: [],
+};
+
+// Sprint QA-readiness — per-active-sprint mergeable rollup + issue rows.
+export const SprintReadinessResponseSchema = z
+  .object({
+    sprints: z
+      .array(
+        z
+          .object({
+            sprint_id: z.string().default(""),
+            name: z.string().default(""),
+            branch: z.string().default(""),
+            project_id: z.string().default(""),
+            project_title: z.string().default(""),
+            total: z.number().default(0),
+            passed: z.number().default(0),
+            failed: z.number().default(0),
+            pending: z.number().default(0),
+            no_qa: z.number().default(0),
+            mergeable: z.boolean().default(false),
+            regression: z
+              .object({
+                status: z.string().default(""),
+                source: z.string().default(""),
+                triggered_at: z.string().default(""),
+                completed_at: z.string().default(""),
+                reason: z.string().default(""),
+              })
+              .loose()
+              .nullable()
+              .default(null),
+            issues: z
+              .array(
+                z
+                  .object({
+                    id: z.string().default(""),
+                    number: z.number().default(0),
+                    title: z.string().default(""),
+                    status: z.string().default(""),
+                    qa_pass: z.boolean().default(false),
+                    qa_fail: z.boolean().default(false),
+                    runs_pass: z.number().default(0),
+                    runs_fail: z.number().default(0),
+                    runs_total: z.number().default(0),
+                    verdict: z.string().default("pending"),
+                  })
+                  .loose(),
+              )
+              .default([]),
+          })
+          .loose(),
+      )
+      .default([]),
+  })
+  .loose();
+
+export type SprintReadinessResponse = z.infer<typeof SprintReadinessResponseSchema>;
+
+export const EMPTY_SPRINT_READINESS: SprintReadinessResponse = { sprints: [] };
 
 // ---------------------------------------------------------------------------
 // Billing schemas (cloud-billing proxy surface)

@@ -9,6 +9,8 @@ import {
   List,
   LayoutGrid,
   Bug,
+  Gauge,
+  Rocket,
   ListFilter,
   User,
   X,
@@ -42,6 +44,8 @@ import { ActorAvatar } from "../../common/actor-avatar";
 import { PriorityIcon } from "../../issues/components/priority-icon";
 import { AppLink } from "../../navigation";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
+import { QAMetricsView } from "./qa-metrics-view";
+import { QASprintReadinessView } from "./qa-sprint-readiness-view";
 import { Lane, QAIssueRow } from "./qa-lane";
 import { BugsLens } from "./bugs-lens";
 
@@ -57,7 +61,7 @@ import { BugsLens } from "./bugs-lens";
 // page; this view is the queue + the verdict.
 
 type QAStatus = "fail" | "pending" | "pass";
-type ViewMode = "list" | "board" | "bugs";
+type ViewMode = "list" | "board" | "bugs" | "sprint" | "metrics";
 type AssigneeKey = `${string}:${string}`;
 
 function qaStatusOf(issue: Issue): QAStatus {
@@ -146,10 +150,17 @@ export function QAPage() {
             <ViewToggle active={view === "list"} onClick={() => setView("list")} icon={List} label="List" />
             <ViewToggle active={view === "board"} onClick={() => setView("board")} icon={LayoutGrid} label="Board" />
             <ViewToggle active={view === "bugs"} onClick={() => setView("bugs")} icon={Bug} label="Bugs" />
+            <ViewToggle active={view === "sprint"} onClick={() => setView("sprint")} icon={Rocket} label="Sprint" />
+            <ViewToggle active={view === "metrics"} onClick={() => setView("metrics")} icon={Gauge} label="Metrics" />
           </div>
         }
       />
 
+      {view === "metrics" ? (
+        <QAMetricsView />
+      ) : view === "sprint" ? (
+        <QASprintReadinessView />
+      ) : (
       <div className="flex w-full flex-col gap-4 px-8 py-6">
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
@@ -221,6 +232,7 @@ export function QAPage() {
         </div>
       )}
       </div>
+      )}
     </div>
   );
 }

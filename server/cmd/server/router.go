@@ -855,6 +855,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Put("/resources/{resourceId}", h.UpdateProjectResource)
 					r.Delete("/resources/{resourceId}", h.DeleteProjectResource)
 					r.Post("/knowledge/build", h.BuildProjectKnowledge)
+					// QA manifest — the app's known navigation map injected into
+					// every QA run. Built by the lead agent in the background
+					// (project create / first repo attach) or re-derived on
+					// demand; PUT is the agent's persistence endpoint
+					// (CLI: agora project qa-manifest set).
+					r.Post("/qa-manifest/build", h.BuildProjectQAManifest)
+					r.Put("/qa-manifest", h.SetProjectQAManifest)
 					// QA base scripts — the project's STANDING regression suite
 					// (test cases with issue_id NULL, injected into every
 					// run_qa / run_test_cases on the project's issues).
@@ -893,11 +900,17 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Delete("/", h.DeleteSprint)
 					r.Get("/issues", h.ListSprintIssues)
 					r.Post("/deploy-qa", h.DeploySprintQA)
+					r.Post("/run-regression", h.RunSprintRegression)
 				})
 			})
 
 			// Policy Agent — fleet watchdog (agent speed + stalled/failed/looping).
 			r.Get("/api/policy/fleet-health", h.GetPolicyFleetHealth)
+
+			// QA speed / regression metrics (the QA Metrics page).
+			r.Get("/api/qa/metrics", h.GetQAMetrics)
+			// Sprint QA-readiness — per-active-sprint mergeable rollup + rows.
+			r.Get("/api/qa/sprint-readiness", h.GetSprintReadiness)
 
 			// QA test cases — run + archive by case id (list/create are
 			// issue-scoped, or project-scoped for standing base scripts).
