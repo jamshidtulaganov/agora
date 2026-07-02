@@ -1154,9 +1154,23 @@ func (h *Handler) provisionBitrixAssignee(ctx context.Context, wsID pgtype.UUID,
 		return none, pgtype.UUID{}
 	}
 
-	// Find or create the Agora user by email.
+	// Resolve or shadow-create the Agora user for this Bitrix responsible.
 	var userID pgtype.UUID
 	if existing, err := h.Queries.GetUserByEmail(ctx, email); err == nil {
+		// F10: the Bitrix EMAIL field is unverified and GetUserByEmail is
+		// global, so a match may be a real, pre-existing account in ANOTHER
+		// tenant. Only resolve it when it is ALREADY a member of this workspace
+		// — never silently fold a non-member existing account in on an
+		// unverified inbound email (that would let whoever controls the Bitrix
+		// side grant workspace membership to an arbitrary existing user). A
+		// non-member collision is a no-op → the caller falls back to a plain
+		// metadata chip.
+		if _, merr := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
+			UserID:      existing.ID,
+			WorkspaceID: wsID,
+		}); merr != nil {
+			return none, pgtype.UUID{}
+		}
 		userID = existing.ID
 	} else {
 		name := strings.TrimSpace(u.FullName())
