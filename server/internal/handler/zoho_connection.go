@@ -158,8 +158,12 @@ func (h *Handler) PutZohoConnection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Probe via CurrentUser, not /org: the recommended scope superset grants
+	// ZohoCRM.users.READ but not ZohoCRM.org.READ, so an /org probe reports a
+	// perfectly valid grant as "unreachable" (OAUTH_SCOPE_MISMATCH is an HTTP
+	// 401, indistinguishable from an outage at this layer).
 	probeCtx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	_, probeErr := client.GetOrganization(probeCtx)
+	_, probeErr := client.GetCurrentUser(probeCtx)
 	cancel()
 	probeStatus, credInvalid := classifyZohoProbe(probeErr)
 	if credInvalid {

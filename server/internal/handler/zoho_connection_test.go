@@ -27,6 +27,11 @@ func zohoConnStub(t *testing.T, rejectAuth bool) *httptest.Server {
 	mux.HandleFunc("/crm/v8/org", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{"org": []map[string]any{{"id": "42"}}})
 	})
+	mux.HandleFunc("/crm/v8/users", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"users": []map[string]any{
+			{"id": "77", "full_name": "Conn Probe", "email": "probe@octanefuel.com"},
+		}})
+	})
 	mux.HandleFunc("/crm/v8/settings/modules", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{"modules": []map[string]any{
 			{"api_name": "CustomModule34", "module_name": "Tickets", "generated_type": "custom", "api_supported": true},
