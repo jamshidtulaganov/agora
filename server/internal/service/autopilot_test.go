@@ -169,16 +169,30 @@ func TestBuildIssueDescription_WebhookSourceMissingEnvelope(t *testing.T) {
 	}
 }
 
-func TestBuildIssueDescription_ManualSourceWithPayloadIgnored(t *testing.T) {
-	// A manual run with a payload gets no trigger block — only webhook and
-	// schedule sources render the payload inline.
+func TestBuildIssueDescription_ManualSourceRendersPayload(t *testing.T) {
+	// A manual run that carries a payload is a human re-firing the sprint-
+	// regression directive (DispatchSprintRegression); it renders identically
+	// to a schedule run — a "Trigger payload" block (never a "Webhook" block)
+	// so the agent reads the directive verbatim. A manual run with NO payload
+	// (the ordinary TriggerAutopilot case) renders no trigger block at all.
 	s := &AutopilotService{}
 	ap := db.Autopilot{Description: pgtype.Text{String: "thing", Valid: true}}
-	run := db.AutopilotRun{Source: "manual", TriggerPayload: []byte(`{"event":"x.y"}`), TriggeredAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}}
 
-	got := s.buildIssueDescription(ap, run, "UTC")
-	if strings.Contains(got.String, "Webhook event") || strings.Contains(got.String, "Trigger payload") {
-		t.Fatalf("manual source should not include any trigger block: %q", got.String)
+	withPayload := db.AutopilotRun{Source: "manual", TriggerPayload: []byte(`{"event":"x.y"}`), TriggeredAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}}
+	got := s.buildIssueDescription(ap, withPayload, "UTC")
+	if !strings.Contains(got.String, "Trigger payload") {
+		t.Fatalf("manual run with a payload should render a Trigger payload block: %q", got.String)
+	}
+	if strings.Contains(got.String, "Webhook") {
+		t.Fatalf("manual run must not be labelled as a webhook: %q", got.String)
+	}
+	if !strings.Contains(got.String, "x.y") {
+		t.Fatalf("manual payload contents should be rendered inline: %q", got.String)
+	}
+
+	noPayload := db.AutopilotRun{Source: "manual", TriggeredAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}}
+	if got := s.buildIssueDescription(ap, noPayload, "UTC"); strings.Contains(got.String, "Trigger payload") || strings.Contains(got.String, "Webhook") {
+		t.Fatalf("manual run with no payload must render no trigger block: %q", got.String)
 	}
 }
 
