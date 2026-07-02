@@ -3,6 +3,7 @@
 import { useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { TerminalSquare } from "lucide-react";
+import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { useActorName } from "@agora/core/workspace/hooks";
 import { agentTaskSnapshotOptions } from "@agora/core/agents";
@@ -33,9 +34,42 @@ export function QALiveProgress({ issueId }: { issueId: string }) {
   const wsId = useWorkspaceId();
   const { data: snapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
 
+  // QA agents only — the review page's feed is about what QA is doing, so a
+  // knowledge-capture (KB Synthesizer) or dev task that happens to be running
+  // on the same issue must NOT clutter it. Resolve the QA squad's agent ids
+  // (leader + agent members of any squad whose name contains "qa"). Cached; a
+  // workspace with no QA squad yields an empty set → no filtering (show all),
+  // so smaller setups still see their runs.
+  const { data: qaAgentIds } = useQuery({
+    queryKey: ["qa-squad-agent-ids", wsId],
+    queryFn: async () => {
+      const ids = new Set<string>();
+      const squads = await api.listSquads();
+      for (const s of squads) {
+        if (!s.name?.toLowerCase().includes("qa")) continue;
+        if (s.leader_id) ids.add(s.leader_id);
+        try {
+          for (const m of await api.listSquadMembers(s.id)) {
+            if (m.member_type === "agent") ids.add(m.member_id);
+          }
+        } catch {
+          // best-effort; leader alone still filters most noise
+        }
+      }
+      return ids;
+    },
+    staleTime: 300_000,
+  });
+
   const runningTasks = useMemo(
-    () => snapshot.filter((task) => task.issue_id === issueId && task.status === "running"),
-    [snapshot, issueId],
+    () =>
+      snapshot.filter(
+        (task) =>
+          task.issue_id === issueId &&
+          task.status === "running" &&
+          (!qaAgentIds || qaAgentIds.size === 0 || qaAgentIds.has(task.agent_id)),
+      ),
+    [snapshot, issueId, qaAgentIds],
   );
 
   if (runningTasks.length === 0) return null;
