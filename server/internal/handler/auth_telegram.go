@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -105,6 +106,18 @@ func telegramMiniAppShortName() string {
 // a bot client (token) and a username (for the deep link) are required.
 func (h *Handler) telegramLoginEnabled() bool {
 	return h.telegramBot != nil && telegramBotUsername() != ""
+}
+
+// isLocalhostURL reports whether rawURL resolves to a loopback host (localhost,
+// 127.0.0.1, ::1). Used to decide whether AGORA_PUBLIC_URL is actually reachable
+// by external services like Telegram's webhook delivery.
+func isLocalhostURL(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	h := strings.ToLower(u.Hostname())
+	return h == "localhost" || h == "127.0.0.1" || h == "::1"
 }
 
 // generateLoginNonce returns a 128-bit URL-safe random nonce for the deep link.
@@ -308,9 +321,13 @@ func (h *Handler) RunTelegramLoginPoller(ctx context.Context) {
 	if !h.telegramLoginEnabled() {
 		return
 	}
-	if strings.TrimSpace(os.Getenv("AGORA_PUBLIC_URL")) != "" {
-		// Public URL present → webhook mode is viable; don't poll, and don't
+	if pubURL := strings.TrimSpace(os.Getenv("AGORA_PUBLIC_URL")); pubURL != "" && !isLocalhostURL(pubURL) {
+		// Genuinely public URL → webhook mode is viable; don't poll and don't
 		// clear a webhook the operator may have registered.
+		// localhost / 127.0.0.1 URLs are NOT reachable by Telegram, so we
+		// fall through and start the poller even when AGORA_PUBLIC_URL is set
+		// to a local address (common in self-host dev where the same var also
+		// drives the daemon-setup instructions in /api/config).
 		return
 	}
 
