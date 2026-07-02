@@ -164,11 +164,17 @@ install_cli_binary() {
   # Try /usr/local/bin first, fall back to ~/.local/bin. Tests and scripted
   # installs can override the first choice with AGORA_BIN_DIR.
   local bin_dir="${AGORA_BIN_DIR:-/usr/local/bin}"
+  # Apple Silicon Macs ship WITHOUT /usr/local/bin (Homebrew lives in
+  # /opt/homebrew), so the target dir may not exist yet. Create it before the
+  # move — otherwise `mv` fails with "No such file or directory" and, because
+  # sudo is present, we never reach the ~/.local/bin fallback below.
+  if [ ! -d "$bin_dir" ]; then
+    mkdir -p "$bin_dir" 2>/dev/null || (command_exists sudo && sudo mkdir -p "$bin_dir") || true
+  fi
   if [ -w "$bin_dir" ]; then
     mv "$tmp_dir/agora" "$bin_dir/agora"
   elif command_exists sudo; then
     sudo mv "$tmp_dir/agora" "$bin_dir/agora"
-  else
     bin_dir="$HOME/.local/bin"
     mkdir -p "$bin_dir"
     mv "$tmp_dir/agora" "$bin_dir/agora"
