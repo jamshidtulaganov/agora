@@ -267,6 +267,21 @@ func (h *Handler) ProvisionConnectedBoxForMember(w http.ResponseWriter, r *http.
 		RepoURL:    qaHostRepoURL(),
 		SeedDir:    qaHostSeedDir(),
 	}
+
+	// Opt-in, DEFAULT-OFF safety rails — both are no-ops unless a deployment
+	// explicitly sets the corresponding env var, so the real sd-main flow
+	// (agora.sdteam.uz / dbt_agora) is unaffected. They run BEFORE any
+	// SSH/mutation, ahead of dry_run too, so a misconfigured non-prod
+	// deployment can't even preview a script targeting the real host.
+	if err := qaHostCheckTarget(qaHostSSHHost(), p); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	if err := qaHostCheckDBPrefix(qaHostSeedDB()); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+
 	resp := ProvisionConnectedBoxResponse{
 		Handle:    handle,
 		Subdomain: boxSubdomain(p),

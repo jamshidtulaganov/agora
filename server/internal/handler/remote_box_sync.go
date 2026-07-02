@@ -197,6 +197,87 @@ func qaHostConfigured() bool {
 		qaHostWebRoot() != "" && qaHostRepoURL() != "" && qaHostSeedDir() != "" && qaHostSeedDB() != ""
 }
 
+// qaHostAllowedTargetSuffix / qaHostRequireDBPrefix are OPT-IN, DEFAULT-OFF
+// safety rails for non-prod (e.g. demo) deployments of this same provisioner.
+// Both are "" unless a deployment explicitly sets them, so the real sd-main
+// provisioning flow (AGORA_QA_HOST_SSH_HOST=agora.sdteam.uz, seed DB
+// dbt_agora) is completely unaffected — see qaHostCheckTarget /
+// qaHostCheckDBPrefix for why they exist.
+func qaHostAllowedTargetSuffix() string {
+	return strings.TrimSpace(os.Getenv("AGORA_QA_HOST_ALLOWED_TARGET_SUFFIX"))
+}
+func qaHostRequireDBPrefix() string {
+	return strings.TrimSpace(os.Getenv("AGORA_QA_HOST_REQUIRE_DB_PREFIX"))
+}
+
+// qaHostCheckTarget is an opt-in guard (AGORA_QA_HOST_ALLOWED_TARGET_SUFFIX):
+// this provisioner has NO host allowlist and copies the seed's db.php verbatim,
+// so a misconfigured demo deployment (wrong/typo'd AGORA_QA_HOST_SSH_HOST or
+// AGORA_QA_HOST_BASE_DOMAIN) can silently SSH into and mutate the REAL prod QA
+// host (agora.sdteam.uz). When the env var is empty this is a no-op — current
+// behavior for the real sd-main flow is byte-for-byte unchanged. When set, a
+// demo deployment can pin it to e.g. "demo.sdteam.uz" so any resolved target
+// that doesn't end with that suffix is refused before any SSH/mutation.
+func qaHostCheckTarget(sshHost string, p provisionParams) error {
+	return qaHostCheckTargetWithSuffix(qaHostAllowedTargetSuffix(), sshHost, p)
+}
+
+// qaHostCheckTargetWithSuffix is the pure core of qaHostCheckTarget (suffix
+// passed explicitly, not read from env), so it can be unit-tested without
+// mutating process env. Compares case-insensitively (hostnames/domains are
+// not case sensitive).
+func qaHostCheckTargetWithSuffix(suffix, sshHost string, p provisionParams) error {
+	if suffix == "" {
+		return nil
+	}
+	suffixLower := strings.ToLower(suffix)
+	targets := map[string]string{
+		"SSH host":      sshHost,
+		"base domain":   p.BaseDomain,
+		"box subdomain": boxSubdomain(p),
+	}
+	for label, val := range targets {
+		if !strings.HasSuffix(strings.ToLower(val), suffixLower) {
+			return fmt.Errorf("refusing to provision: %s %q does not end with the allowed target suffix %q (AGORA_QA_HOST_ALLOWED_TARGET_SUFFIX)", label, val, suffix)
+		}
+	}
+	return nil
+}
+
+// qaHostCheckDBPrefix is an opt-in guard (AGORA_QA_HOST_REQUIRE_DB_PREFIX):
+// this provisioner copies the seed site's protected/config/db.php VERBATIM
+// (see buildProvisionScript) — it never reads or validates the DB name that
+// file actually binds to, because that value only exists on the remote host.
+// The only LOCAL signal we have is AGORA_QA_HOST_SEED_DB (the operator-declared
+// seed DB, reported back to the caller for review). When the env var is empty
+// this is a no-op — current behavior is unchanged. When set, a demo deployment
+// can require e.g. "demo_" so a seed DB name that isn't clearly non-prod is
+// refused before any SSH/mutation.
+//
+// RESIDUAL GAP: this does NOT prove the seed's remote db.php binds to a
+// demo_-prefixed database — only that the operator's declared AGORA_QA_HOST_SEED_DB
+// value matches. If AGORA_QA_HOST_SEED_DB is misconfigured (or the remote
+// db.php has drifted from it), this check cannot catch that; closing that gap
+// needs a remote SSH read of the seed's db.php, which is intentionally out of
+// scope for this pass.
+func qaHostCheckDBPrefix(seedDB string) error {
+	return qaHostCheckDBPrefixWithPrefix(qaHostRequireDBPrefix(), seedDB)
+}
+
+// qaHostCheckDBPrefixWithPrefix is the pure core of qaHostCheckDBPrefix
+// (prefix passed explicitly, not read from env), so it can be unit-tested
+// without mutating process env. The prefix compare is case-sensitive — unlike
+// hostnames, DB names are.
+func qaHostCheckDBPrefixWithPrefix(prefix, seedDB string) error {
+	if prefix == "" {
+		return nil
+	}
+	if !strings.HasPrefix(seedDB, prefix) {
+		return fmt.Errorf("refusing to provision: seed DB %q does not start with the required prefix %q (AGORA_QA_HOST_REQUIRE_DB_PREFIX)", seedDB, prefix)
+	}
+	return nil
+}
+
 // shellQuote single-quotes a string for safe embedding in a remote /bin/sh
 // command (defends a path/branch with spaces or shell metacharacters from
 // breaking or injecting into the command).
