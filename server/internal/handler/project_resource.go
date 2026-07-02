@@ -324,6 +324,24 @@ func (h *Handler) CreateProjectResource(w http.ResponseWriter, r *http.Request) 
 		userID,
 		map[string]any{"resource": resp, "project_id": uuidToString(project.ID)},
 	)
+
+	// First repo attached to the project → kick off the lead agent's background
+	// builds (knowledge base + QA manifest), exactly as project-create does when
+	// it starts with a repo. Only on the FIRST github_repo — later repos would
+	// duplicate in-flight builds; a human re-triggers explicitly via the
+	// knowledge/build and qa-manifest/build endpoints when the repo set grows.
+	if req.ResourceType == "github_repo" {
+		repoCount := 0
+		for _, row := range h.listProjectResourcesForProject(r.Context(), project.ID) {
+			if row.ResourceType == "github_repo" {
+				repoCount++
+			}
+		}
+		if repoCount == 1 {
+			h.maybeEnqueueProjectStudy(r.Context(), project, userID)
+			h.maybeEnqueueQAManifestBuild(r.Context(), project, userID)
+		}
+	}
 	writeJSON(w, http.StatusCreated, resp)
 }
 

@@ -42,6 +42,9 @@ agora project resource add <project-id> --type github_repo --url <github-url> --
 agora project resource add <project-id> --type local_directory --local-path <abs-path> --daemon-id <daemon-id> --output json
 agora project resource update <project-id> <resource-id> --url <new-github-url> --output json
 agora project resource remove <project-id> <resource-id> --output json
+agora project qa-manifest get <project-id>
+agora project qa-manifest set <project-id> --file manifest.json
+agora project qa-manifest build <project-id>
 ```
 
 Use `--ref '<json>'` only for resource types or payloads not covered by shortcuts.
@@ -63,8 +66,26 @@ is task-local checkout state.
 5. If resources match the expected task context, inspect runtime/repo checkout
    path next.
 
+## QA manifest
+
+`project.settings.qa_manifest` is the app's KNOWN navigation map for QA agents
+(`base_url`, `auth` login recipe, verified `routes`, golden-path `flows`,
+`known_issues`, `notes`). It is injected into every QA run and daemon claim on
+the project, so agents navigate by map instead of exploring.
+
+- Built automatically in the background by the project's lead agent when a
+  project is created with a repo or when the FIRST `github_repo` resource is
+  attached (skipped if a manifest already exists — a curated manifest is never
+  clobbered).
+- `qa-manifest build` re-queues the derivation on demand (even when a manifest
+  exists). `qa-manifest set` persists a manifest JSON — this is the required
+  final step of a manifest-build task; writing a file in the worktree does NOT
+  persist anything.
+- Only include routes you saw in code or verified live; dead or role-gated
+  paths belong in `known_issues`, never in `routes`.
+
 ## Side effects
 
-Project create/update/delete/status and project resource add/update/remove mutate durable workspace state and affect future tasks. Ask before changing `local_directory` unless the user explicitly requested that exact local path.
+Project create/update/delete/status, project resource add/update/remove, and `qa-manifest set` mutate durable workspace state and affect future tasks. Creating a project with a repo (or attaching the first repo) also queues background knowledge-base and QA-manifest builds for an agent lead. Ask before changing `local_directory` unless the user explicitly requested that exact local path.
 
 More source-backed details: `references/projects-and-resources-source-map.md`.

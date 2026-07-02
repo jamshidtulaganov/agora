@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"strings"
@@ -115,6 +116,12 @@ func init() {
 	projectCmd.AddCommand(projectDeleteCmd)
 	projectCmd.AddCommand(projectStatusCmd)
 	projectCmd.AddCommand(projectResourceCmd)
+	projectCmd.AddCommand(projectQAManifestCmd)
+
+	projectQAManifestCmd.AddCommand(projectQAManifestGetCmd)
+	projectQAManifestCmd.AddCommand(projectQAManifestSetCmd)
+	projectQAManifestCmd.AddCommand(projectQAManifestBuildCmd)
+	projectQAManifestSetCmd.Flags().String("file", "", "Path to the manifest JSON (defaults to stdin)")
 
 	projectResourceCmd.AddCommand(projectResourceListCmd)
 	projectResourceCmd.AddCommand(projectResourceAddCmd)
@@ -900,4 +907,117 @@ func formatLead(project map[string]any, actors actorDisplayLookup) string {
 		return ""
 	}
 	return actors.actor(lType, lID)
+}
+
+// ---------------------------------------------------------------------------
+// project qa-manifest — the project's QA navigation map (see
+// project.settings.qa_manifest on the server). `set` is the persistence step
+// of the background QA-manifest build: the lead agent derives the manifest
+// from the repo + live target, then saves it here so every QA run is briefed
+// with it.
+// ---------------------------------------------------------------------------
+
+var projectQAManifestCmd = &cobra.Command{
+	Use:   "qa-manifest",
+	Short: "Work with a project's QA manifest (navigation map for QA agents)",
+}
+
+var projectQAManifestGetCmd = &cobra.Command{
+	Use:   "get <project>",
+	Short: "Print the project's QA manifest JSON",
+	Args:  exactArgs(1),
+	RunE:  runProjectQAManifestGet,
+}
+
+var projectQAManifestSetCmd = &cobra.Command{
+	Use:   "set <project>",
+	Short: "Save the QA manifest from a JSON file (--file) or stdin",
+	Args:  exactArgs(1),
+	RunE:  runProjectQAManifestSet,
+}
+
+var projectQAManifestBuildCmd = &cobra.Command{
+	Use:   "build <project>",
+	Short: "Queue the lead agent to (re-)derive the QA manifest from the repo + live target",
+	Args:  exactArgs(1),
+	RunE:  runProjectQAManifestBuild,
+}
+
+func runProjectQAManifestGet(cmd *cobra.Command, args []string) error {
+	client, err := newAPIClient(cmd)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := cli.APIContext(context.Background())
+	defer cancel()
+	projectRef, err := resolveProjectID(ctx, client, args[0])
+	if err != nil {
+		return fmt.Errorf("resolve project: %w", err)
+	}
+	var project map[string]any
+	if err := client.GetJSON(ctx, "/api/projects/"+projectRef.ID, &project); err != nil {
+		return fmt.Errorf("get project: %w", err)
+	}
+	settings, _ := project["settings"].(map[string]any)
+	manifest, ok := settings["qa_manifest"]
+	if !ok {
+		return fmt.Errorf("project has no qa_manifest yet — run `agora project qa-manifest build %s` or `set --file`", args[0])
+	}
+	return cli.PrintJSON(os.Stdout, manifest)
+}
+
+func runProjectQAManifestSet(cmd *cobra.Command, args []string) error {
+	client, err := newAPIClient(cmd)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := cli.APIContext(context.Background())
+	defer cancel()
+	projectRef, err := resolveProjectID(ctx, client, args[0])
+	if err != nil {
+		return fmt.Errorf("resolve project: %w", err)
+	}
+
+	file, _ := cmd.Flags().GetString("file")
+	var raw []byte
+	if file != "" {
+		raw, err = os.ReadFile(file)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", file, err)
+		}
+	} else {
+		raw, err = io.ReadAll(os.Stdin)
+		if err != nil {
+			return fmt.Errorf("read stdin: %w", err)
+		}
+	}
+	// Fail on malformed JSON locally — a clearer error than the server's 400.
+	var manifest map[string]any
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return fmt.Errorf("manifest is not valid JSON: %w", err)
+	}
+
+	var out map[string]any
+	if err := client.PutJSON(ctx, "/api/projects/"+projectRef.ID+"/qa-manifest", manifest, &out); err != nil {
+		return fmt.Errorf("save qa manifest: %w", err)
+	}
+	return cli.PrintJSON(os.Stdout, out)
+}
+
+func runProjectQAManifestBuild(cmd *cobra.Command, args []string) error {
+	client, err := newAPIClient(cmd)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := cli.APIContext(context.Background())
+	defer cancel()
+	projectRef, err := resolveProjectID(ctx, client, args[0])
+	if err != nil {
+		return fmt.Errorf("resolve project: %w", err)
+	}
+	var out map[string]any
+	if err := client.PostJSON(ctx, "/api/projects/"+projectRef.ID+"/qa-manifest/build", map[string]any{}, &out); err != nil {
+		return fmt.Errorf("queue qa-manifest build: %w", err)
+	}
+	return cli.PrintJSON(os.Stdout, out)
 }

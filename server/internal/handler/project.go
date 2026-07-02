@@ -430,10 +430,13 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Kick off the lead agent's project knowledge build (study the connected
-	// repos → write the <slug>-kb skill). Best-effort; never blocks create, and
-	// no-ops unless the lead is an agent and a repo is attached.
+	// Kick off the lead agent's background builds: the project knowledge base
+	// (study the connected repos → write the <slug>-kb skill) and the QA
+	// manifest (derive + verify the app's navigation map → save it on the
+	// project). Both best-effort; never block create, and no-op unless the
+	// lead is an agent and a repo is attached.
 	h.maybeEnqueueProjectStudy(r.Context(), project, userID)
+	h.maybeEnqueueQAManifestBuild(r.Context(), project, userID)
 
 	resourceResp := make([]ProjectResourceResponse, len(resourceRows))
 	for i, row := range resourceRows {
