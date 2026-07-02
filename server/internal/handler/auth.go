@@ -299,6 +299,14 @@ func (h *Handler) SendCode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "email is required")
 		return
 	}
+	// The Telegram synthetic domain (tg<id>@telegram.local) is owned by the
+	// proof-of-Telegram-control login path. Minting an email-code for it would
+	// let the email method enter that keyspace and take over a Telegram user's
+	// account (esp. non-prod, where a universal dev code is accepted). F5.
+	if isTelegramSyntheticEmail(email) {
+		writeError(w, http.StatusBadRequest, "this address cannot be used for email login")
+		return
+	}
 
 	// Check signup restrictions before sending magic link
 	_, err := h.Queries.GetUserByEmail(r.Context(), email)
@@ -386,6 +394,12 @@ func (h *Handler) VerifyCode(w http.ResponseWriter, r *http.Request) {
 
 	if email == "" || code == "" {
 		writeError(w, http.StatusBadRequest, "email and code are required")
+		return
+	}
+	// Same guard as SendCode — the Telegram synthetic domain is not a valid
+	// email-login identity, so a code can never be verified against it. F5.
+	if isTelegramSyntheticEmail(email) {
+		writeError(w, http.StatusBadRequest, "this address cannot be used for email login")
 		return
 	}
 
@@ -493,6 +507,13 @@ type googleUserInfo struct {
 	Email   string `json:"email"`
 	Name    string `json:"name"`
 	Picture string `json:"picture"`
+	// VerifiedEmail gates account keying. Email is the sole cross-provider
+	// account key (email-code, Telegram, Google all resolve to the same record),
+	// so we must not trust a Google-supplied email as identity unless Google
+	// marked it verified — otherwise a controlled Google/Workspace account whose
+	// unverified email field equals a victim's Agora email takes over that
+	// account. Pointer so a missing field reads as "unknown" and fails closed.
+	VerifiedEmail *bool `json:"verified_email"`
 }
 
 func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
@@ -577,6 +598,13 @@ func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 
 	if gUser.Email == "" {
 		writeError(w, http.StatusBadRequest, "Google account has no email")
+		return
+	}
+	// Email is the sole cross-provider account key, so a Google email is only
+	// trustworthy as identity when Google marked it verified. Missing field =>
+	// fail closed. Closes the unverified-email account-takeover class (F7).
+	if gUser.VerifiedEmail == nil || !*gUser.VerifiedEmail {
+		writeError(w, http.StatusForbidden, "your Google email address is not verified")
 		return
 	}
 
