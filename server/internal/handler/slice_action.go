@@ -58,6 +58,20 @@ func isKnownSliceActionKind(kind string) bool {
 	}
 }
 
+// isQASliceAction reports whether kind is a QA-family action — the QA gate
+// (run_qa) or the test authoring/execution slices. These are QA's job to run,
+// NOT the developer whose work is under test, so when fired without an explicit
+// agent they default to the QA squad leader rather than the issue's dev
+// assignee (see resolveSliceActionAgent).
+func isQASliceAction(kind string) bool {
+	switch kind {
+	case sliceActionRunQA, sliceActionGenTests, sliceActionRunTests:
+		return true
+	default:
+		return false
+	}
+}
+
 // buildSliceInstruction renders the English instruction the resolved agent
 // receives for a scoped action. It is PURE — no I/O, no handler state — so it
 // is the single source of truth for slice-action wording and is exhaustively
@@ -1930,7 +1944,7 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agent, ok := h.resolveSliceActionAgent(w, r, issue, userID, strings.TrimSpace(req.AgentID))
+	agent, ok := h.resolveSliceActionAgent(w, r, issue, userID, strings.TrimSpace(req.AgentID), req.Kind)
 	if !ok {
 		return
 	}
@@ -2096,7 +2110,7 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 //  3. resolveOwnAgent — the caller's first ready, user-owned agent.
 //
 // Returns 400 with an explanatory message when nothing resolves.
-func (h *Handler) resolveSliceActionAgent(w http.ResponseWriter, r *http.Request, issue db.Issue, userID, agentID string) (db.Agent, bool) {
+func (h *Handler) resolveSliceActionAgent(w http.ResponseWriter, r *http.Request, issue db.Issue, userID, agentID, kind string) (db.Agent, bool) {
 	workspaceID := uuidToString(issue.WorkspaceID)
 
 	// (a) Explicit agent_id.
@@ -2122,6 +2136,20 @@ func (h *Handler) resolveSliceActionAgent(w http.ResponseWriter, r *http.Request
 			return db.Agent{}, false
 		}
 		return agent, true
+	}
+
+	// (a.5) QA-family actions (run_qa / gen_test_cases / run_test_cases) are the
+	// QA team's responsibility, NOT the developer whose work is under test.
+	// Without an explicit agent, default to the QA squad LEADER — the same
+	// routing the auto-QA trigger uses — so a manual "Re-run QA" is owned by QA
+	// validation, never routed to the issue's dev assignee (which produced
+	// "@Developer 3 Run QA" on a dev-assigned issue). Falls through to the
+	// assignee/own-agent defaults below only when the workspace has no ready QA
+	// squad leader, so a setup without a QA squad still works.
+	if isQASliceAction(kind) {
+		if leader, ok := h.qaSquadLeader(r.Context(), issue.WorkspaceID); ok {
+			return leader, true
+		}
 	}
 
 	// (b) The issue's agent assignee. Treat an inaccessible private assignee as

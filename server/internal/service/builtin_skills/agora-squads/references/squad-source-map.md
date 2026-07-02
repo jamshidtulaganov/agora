@@ -374,3 +374,7 @@ go test ./internal/handler -run 'Test.*Squad|Test.*squad|Test.*Autopilot.*Squad|
 - `server/internal/handler/issue.go` fires `maybeGenTests(..., prep=true)` on a genuine `prev != in_progress → in_progress` transition (both the single-update and batch paths), detached goroutine, gated by `AGORA_AUTO_QA_ENABLED`.
 - `server/internal/handler/slice_action.go` (`maybeGenTests`) serves both triggers: `prep=true` (dev start — appends the SHIFT-LEFT PREP instruction: no diff, no execution, mandatory Playwright `script` per automatable case, targets the project QA manifest) and `prep=false` (in_review backfill). Idempotent via `CountActiveTestCasesForIssue > 0` skip.
 - Net effect: while dev agents implement, the QA suite (cases + compiled scripts) is authored in the background; the `in_review` gate (`maybeRunTestsOnInReview`) only executes it.
+
+## Manual QA slice actions route to the QA lead
+
+- `server/internal/handler/slice_action.go` `resolveSliceActionAgent(...)` takes the slice `kind`; for `isQASliceAction(kind)` (run_qa / gen_test_cases / run_test_cases) with no explicit `agent_id` it resolves to `qaSquadLeader(...)` BEFORE the issue's dev assignee — so a manual "Re-run QA" is owned by QA validation, not the developer under test. Falls through to assignee/own-agent only when there is no ready QA squad leader (setups without a QA squad still work).
