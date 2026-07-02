@@ -102,6 +102,70 @@ func TestSendMessageTelegramError(t *testing.T) {
 	}
 }
 
+func TestSetWebhookHitsMockServer(t *testing.T) {
+	var (
+		gotPath string
+		gotBody setWebhookRequest
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"ok":true,"result":true,"description":"Webhook was set"}`)
+	}))
+	defer srv.Close()
+
+	c := NewBotClient("TESTTOKEN")
+	c.BaseURL = srv.URL
+	c.HTTPClient = srv.Client()
+
+	err := c.SetWebhook(context.Background(), "https://app.example.com/telegram/webhook", "s3cr3t", []string{"message"})
+	if err != nil {
+		t.Fatalf("SetWebhook: unexpected error: %v", err)
+	}
+	if want := "/botTESTTOKEN/setWebhook"; gotPath != want {
+		t.Fatalf("request path = %q, want %q", gotPath, want)
+	}
+	if gotBody.URL != "https://app.example.com/telegram/webhook" {
+		t.Fatalf("url = %q, want the webhook url", gotBody.URL)
+	}
+	if gotBody.SecretToken != "s3cr3t" {
+		t.Fatalf("secret_token = %q, want s3cr3t", gotBody.SecretToken)
+	}
+	if len(gotBody.AllowedUpdates) != 1 || gotBody.AllowedUpdates[0] != "message" {
+		t.Fatalf("allowed_updates = %v, want [message]", gotBody.AllowedUpdates)
+	}
+}
+
+func TestSetWebhookEmptyURL(t *testing.T) {
+	c := NewBotClient("TESTTOKEN")
+	if err := c.SetWebhook(context.Background(), "  ", "secret", []string{"message"}); err == nil {
+		t.Fatal("SetWebhook: expected error on blank url, got nil")
+	}
+}
+
+func TestSetWebhookTelegramError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		io.WriteString(w, `{"ok":false,"error_code":400,"description":"Bad Request: bad webhook: HTTPS url must be provided"}`)
+	}))
+	defer srv.Close()
+
+	c := NewBotClient("TESTTOKEN")
+	c.BaseURL = srv.URL
+	c.HTTPClient = srv.Client()
+
+	err := c.SetWebhook(context.Background(), "http://insecure.example.com/telegram/webhook", "", nil)
+	if err == nil {
+		t.Fatal("SetWebhook: expected error on ok=false response, got nil")
+	}
+	if !strings.Contains(err.Error(), "HTTPS") {
+		t.Fatalf("SetWebhook error = %v, want Telegram description", err)
+	}
+}
+
 func TestSendMessageNoToken(t *testing.T) {
 	c := NewBotClient("   ")
 	if err := c.SendMessage(context.Background(), "1", "x"); err != ErrNoToken {

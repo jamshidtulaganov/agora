@@ -375,6 +375,39 @@ func (h *Handler) RunTelegramLoginPoller(ctx context.Context) {
 	}
 }
 
+// EnsureLoginWebhook is the public-deployment counterpart to
+// RunTelegramLoginPoller. When the backend is reachable at a genuine public URL,
+// Telegram delivers "/start login_<nonce>" via a webhook rather than long-poll —
+// but nothing else registers that webhook, so a manually-set one silently
+// vanishes if Telegram drops a failing endpoint, leaving login broken with no
+// recovery (exactly how it broke once in prod). This (re)registers
+// <AGORA_PUBLIC_URL>/telegram/webhook, guarded by TELEGRAM_WEBHOOK_SECRET, on
+// every boot so the webhook self-heals. No-op unless telegram login is enabled
+// AND AGORA_PUBLIC_URL is genuinely public — a localhost/empty URL is the
+// poller's job (see RunTelegramLoginPoller), and the two are mutually exclusive
+// on that same isLocalhostURL condition so they never fight over the bot.
+// Best-effort: a failure is logged, not fatal.
+func (h *Handler) EnsureLoginWebhook(ctx context.Context) {
+	if !h.telegramLoginEnabled() {
+		return
+	}
+	pubURL := strings.TrimSpace(os.Getenv("AGORA_PUBLIC_URL"))
+	if pubURL == "" || isLocalhostURL(pubURL) {
+		// Not publicly reachable → the long-poll fallback owns delivery.
+		return
+	}
+	webhookURL := strings.TrimRight(pubURL, "/") + "/telegram/webhook"
+	secret := strings.TrimSpace(os.Getenv("TELEGRAM_WEBHOOK_SECRET"))
+	// allowed_updates=["message"] mirrors the poller: the login flow only needs
+	// the "/start login_<nonce>" DM, and narrowing it keeps unrelated update
+	// types off the endpoint.
+	if err := h.telegramBot.SetWebhook(ctx, webhookURL, secret, []string{"message"}); err != nil {
+		slog.Warn("telegram login: setWebhook failed (login unavailable until it succeeds)", "error", err, "url", webhookURL)
+		return
+	}
+	slog.Info("telegram login webhook registered", "url", webhookURL, "secret_set", secret != "")
+}
+
 type telegramVerifyRequest struct {
 	Nonce string `json:"nonce"`
 	Code  string `json:"code"`

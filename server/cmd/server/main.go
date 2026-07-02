@@ -383,6 +383,12 @@ func main() {
 	// sweepCtx so it drains with the other background workers.
 	go h.RunTelegramLoginPoller(sweepCtx)
 
+	// Public deployments deliver bot updates via a webhook instead of the poller
+	// above; (re)register it on every boot so it self-heals if Telegram ever
+	// dropped it. One-shot, best-effort; no-op unless AGORA_PUBLIC_URL is genuinely
+	// public (the poller and this are mutually exclusive on that condition).
+	go h.EnsureLoginWebhook(sweepCtx)
+
 	// Register the bot's command menu (/start /new /tasks /help). One-shot,
 	// best-effort; no-op when the bot is unconfigured.
 	go h.RegisterBotCommands(sweepCtx)

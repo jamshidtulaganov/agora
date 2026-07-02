@@ -347,6 +347,34 @@ func (c *BotClient) DeleteWebhook(ctx context.Context) error {
 	return nil
 }
 
+// setWebhookRequest is the JSON body for setWebhook. secret_token is echoed
+// back by Telegram in the X-Telegram-Bot-Api-Secret-Token header on every
+// delivered update; the webhook handler compares it against
+// TELEGRAM_WEBHOOK_SECRET to reject forged calls. Empty fields are omitted so
+// Telegram keeps its defaults.
+type setWebhookRequest struct {
+	URL            string   `json:"url"`
+	SecretToken    string   `json:"secret_token,omitempty"`
+	AllowedUpdates []string `json:"allowed_updates,omitempty"`
+}
+
+// SetWebhook registers webhookURL as the bot's update-delivery endpoint — the
+// inverse of DeleteWebhook. A public deployment calls this on startup so
+// Telegram POSTs "/start login_<nonce>" updates to the backend instead of the
+// long-poll fallback. secretToken is validated by the webhook handler;
+// allowedUpdates narrows delivered update types (["message"] is all the login
+// flow needs). Idempotent — re-registering the same URL is a no-op on Telegram.
+func (c *BotClient) SetWebhook(ctx context.Context, webhookURL, secretToken string, allowedUpdates []string) error {
+	if strings.TrimSpace(webhookURL) == "" {
+		return errors.New("telegram: webhook url required")
+	}
+	return c.call(ctx, "setWebhook", setWebhookRequest{
+		URL:            webhookURL,
+		SecretToken:    secretToken,
+		AllowedUpdates: allowedUpdates,
+	})
+}
+
 // ParseStartPayload extracts the login nonce from a "/start login_<nonce>"
 // message. It tolerates surrounding whitespace and an optional "@botname"
 // suffix on the command (Telegram appends it in group chats, e.g.
