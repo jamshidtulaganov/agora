@@ -2476,6 +2476,20 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
+			// Validate the project belongs to THIS issue's workspace. issue.project_id
+			// is a plain FK with no same-workspace constraint (migration 034), so
+			// without this a caller could re-point their own issue at another
+			// tenant's project — folding it into that project's cross-tenant issue
+			// stats and leaking its configured qa_smoke_url back via
+			// /qa-preview-url. Mirrors the parent_issue_id guard above and the
+			// identical check CreateIssue already performs.
+			if _, err := h.Queries.GetProjectInWorkspace(r.Context(), db.GetProjectInWorkspaceParams{
+				ID:          projectUUID,
+				WorkspaceID: prevIssue.WorkspaceID,
+			}); err != nil {
+				writeError(w, http.StatusBadRequest, "project not found in this workspace")
+				return
+			}
 			params.ProjectID = projectUUID
 		} else {
 			params.ProjectID = pgtype.UUID{Valid: false}
@@ -3126,6 +3140,16 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			if req.Updates.ProjectID != nil {
 				projectUUID, err := util.ParseUUID(*req.Updates.ProjectID)
 				if err != nil {
+					continue
+				}
+				// Same-workspace guard as UpdateIssue: skip this issue if the
+				// project belongs to another tenant, else a batch could
+				// re-point issues at a foreign project (cross-workspace stats
+				// fold + qa_smoke_url leak via /qa-preview-url).
+				if _, err := h.Queries.GetProjectInWorkspace(r.Context(), db.GetProjectInWorkspaceParams{
+					ID:          projectUUID,
+					WorkspaceID: prevIssue.WorkspaceID,
+				}); err != nil {
 					continue
 				}
 				params.ProjectID = projectUUID
