@@ -603,16 +603,17 @@ func (h *Handler) TelegramMiniAppLogin(w http.ResponseWriter, r *http.Request) {
 
 // defaultWorkspaceSlugs returns the workspace slugs every Telegram user is
 // auto-joined to, read from AGORA_DEFAULT_WORKSPACE_SLUGS (comma-separated).
-// Falls back to the three SalesDoctor workspaces when the env var is unset or
-// blank. Each slug is lowercased + trimmed and de-duplicated, mirroring the
-// BITRIX_WORKSPACE_SLUGS parsing style.
+// Unset/blank → EMPTY: no blanket auto-join, so Telegram membership comes only
+// from an accepted invite or creating a workspace, and a workspace invite
+// scopes the user to exactly that workspace. (Previously this fell back to the
+// three SalesDoctor workspaces, which force-joined every Mini App login into
+// all of them regardless of the invite — a cross-workspace leak.) Set the env
+// var explicitly to opt back into a blanket join. Each slug is lowercased +
+// trimmed and de-duplicated, mirroring the BITRIX_WORKSPACE_SLUGS parsing style.
 func defaultWorkspaceSlugs() []string {
 	raw := strings.TrimSpace(os.Getenv("AGORA_DEFAULT_WORKSPACE_SLUGS"))
-	if raw == "" {
-		raw = "sd-main,sd-cs,sd-billing"
-	}
 	seen := map[string]bool{}
-	slugs := make([]string, 0, 3)
+	slugs := make([]string, 0)
 	for _, s := range strings.Split(raw, ",") {
 		s = strings.ToLower(strings.TrimSpace(s))
 		if s == "" || seen[s] {
@@ -625,11 +626,12 @@ func defaultWorkspaceSlugs() []string {
 }
 
 // ensureDefaultWorkspaceMemberships makes the user a 'member' of each default
-// workspace (defaultWorkspaceSlugs) it isn't already in, so a Telegram-only
-// account lands in the three SalesDoctor workspaces and never needs to create
-// its own. Fully best-effort: a missing workspace, an existing membership, or
-// any transient DB error is logged and skipped — it must NEVER fail the login,
-// so it returns nothing and callers do not branch on it.
+// workspace (defaultWorkspaceSlugs) it isn't already in. With no
+// AGORA_DEFAULT_WORKSPACE_SLUGS configured this is a no-op (empty list), so
+// membership stays invite/create-scoped; set the env var to opt into a blanket
+// join. Fully best-effort: a missing workspace, an existing membership, or any
+// transient DB error is logged and skipped — it must NEVER fail the login, so
+// it returns nothing and callers do not branch on it.
 func (h *Handler) ensureDefaultWorkspaceMemberships(ctx context.Context, userID pgtype.UUID) {
 	for _, slug := range defaultWorkspaceSlugs() {
 		ws, err := h.Queries.GetWorkspaceBySlug(ctx, slug)

@@ -384,6 +384,28 @@ func TestTelegramVerifyNewUserGetsFirstName(t *testing.T) {
 	}
 }
 
+// TestDefaultWorkspaceSlugsEmptyMeansNoAutoJoin locks in the invite-scoping
+// fix: with AGORA_DEFAULT_WORKSPACE_SLUGS unset/blank there is NO blanket
+// auto-join, so a Telegram login joins only the workspace an invite names. A
+// hardcoded fallback here previously force-joined every Mini App user into all
+// three SD workspaces regardless of the invite (the cross-workspace leak).
+func TestDefaultWorkspaceSlugsEmptyMeansNoAutoJoin(t *testing.T) {
+	t.Setenv("AGORA_DEFAULT_WORKSPACE_SLUGS", "")
+	if got := defaultWorkspaceSlugs(); len(got) != 0 {
+		t.Fatalf("unset env should yield no default slugs (no blanket auto-join), got %v", got)
+	}
+	t.Setenv("AGORA_DEFAULT_WORKSPACE_SLUGS", "   ")
+	if got := defaultWorkspaceSlugs(); len(got) != 0 {
+		t.Fatalf("blank env should yield no default slugs, got %v", got)
+	}
+	// Explicit opt-in still works (comma-separated, lowercased, trimmed, deduped).
+	t.Setenv("AGORA_DEFAULT_WORKSPACE_SLUGS", " sd-main , SD-main ,sd-cs ")
+	got := defaultWorkspaceSlugs()
+	if len(got) != 2 || got[0] != "sd-main" || got[1] != "sd-cs" {
+		t.Fatalf("explicit slugs should parse/dedup to [sd-main sd-cs], got %v", got)
+	}
+}
+
 // TestTelegramVerifyAutoJoinsDefaultWorkspaces is the regression for the SD
 // fork auto-join: a Telegram verify for a fresh user results in a 'member'
 // membership in every seeded default workspace. Hermetic — it seeds its own
