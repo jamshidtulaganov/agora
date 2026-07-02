@@ -30,7 +30,6 @@ import {
   Check,
   BookOpenText,
   SquarePen,
-  Activity,
   CircleUser,
   ShieldCheck,
   FolderKanban,
@@ -153,7 +152,8 @@ const personalNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[] 
   { key: "inbox", labelKey: "inbox", icon: Inbox },
   { key: "myIssues", labelKey: "my_issues", icon: CircleUser },
   { key: "qa", labelKey: "qa", icon: ShieldCheck },
-  { key: "policy", labelKey: "policy", icon: Activity },
+  // "policy" (fleet cockpit) removed from the nav — the route stays reachable by
+  // URL; agent fleet health/details will live inside the agent detail page.
 ];
 
 const workspaceNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[] = [
