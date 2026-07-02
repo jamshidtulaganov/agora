@@ -91,7 +91,7 @@ func (h *Handler) LaunchTrace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "failed to launch trace viewer on the daemon: "+lerr.Error())
 		return
 	}
-	tok := registerTraceTarget(fmt.Sprintf("%s:%d", proxyHost, port))
+	tok := registerTraceTarget(fmt.Sprintf("%s:%d", proxyHost, port), uuidToString(issue.WorkspaceID))
 	writeJSON(w, http.StatusOK, map[string]string{
 		"trace_url": "/trace/proxy/" + tok + "/",
 	})
@@ -171,8 +171,12 @@ func launchTraceOnDaemon(ctx context.Context, base, tracePath string) (int, erro
 // a trace session and an editor session never collide on a token.
 
 type traceTarget struct {
-	addr    string // host:port of `playwright show-trace` on the daemon
-	expires time.Time
+	addr string // host:port of `playwright show-trace` on the daemon
+	// workspaceID binds the token to its workspace so ProxyTrace re-checks the
+	// caller's membership on every request (F8) — the token is minted behind a
+	// membership check but rides the 8h iframe URL and leaks via referer/logs.
+	workspaceID string
+	expires     time.Time
 }
 
 var (
@@ -180,24 +184,24 @@ var (
 	traceTargets   = map[string]traceTarget{}
 )
 
-func registerTraceTarget(addr string) string {
+func registerTraceTarget(addr, workspaceID string) string {
 	var buf [16]byte
 	_, _ = rand.Read(buf[:])
 	tok := hex.EncodeToString(buf[:])
 	traceTargetsMu.Lock()
-	traceTargets[tok] = traceTarget{addr: addr, expires: time.Now().Add(8 * time.Hour)}
+	traceTargets[tok] = traceTarget{addr: addr, workspaceID: workspaceID, expires: time.Now().Add(8 * time.Hour)}
 	traceTargetsMu.Unlock()
 	return tok
 }
 
-func lookupTraceTarget(tok string) (string, bool) {
+func lookupTraceTarget(tok string) (traceTarget, bool) {
 	traceTargetsMu.Lock()
 	defer traceTargetsMu.Unlock()
 	t, ok := traceTargets[tok]
 	if !ok || time.Now().After(t.expires) {
-		return "", false
+		return traceTarget{}, false
 	}
-	return t.addr, true
+	return t, true
 }
 
 // ProxyTrace reverse-proxies /trace/proxy/{token}/* (HTTP + WebSocket) to the
@@ -206,11 +210,23 @@ func lookupTraceTarget(tok string) (string, bool) {
 // the capability that maps to a specific viewer. Identical model to ProxyEditor.
 func (h *Handler) ProxyTrace(w http.ResponseWriter, r *http.Request) {
 	tok := chi.URLParam(r, "token")
-	addr, ok := lookupTraceTarget(tok)
+	t, ok := lookupTraceTarget(tok)
 	if !ok {
 		writeError(w, http.StatusNotFound, "trace session not found or expired")
 		return
 	}
+	// Re-verify workspace membership on every proxied request (F8): a
+	// leaked/referer-logged trace token must not let a non-member reach another
+	// tenant's trace viewer (which renders that run's pages + network).
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	if _, err := h.getWorkspaceMember(r.Context(), userID, t.workspaceID); err != nil {
+		writeError(w, http.StatusForbidden, "not a member of this workspace")
+		return
+	}
+	addr := t.addr
 	prefix := "/trace/proxy/" + tok
 	proxy := httputil.NewSingleHostReverseProxy(&url.URL{Scheme: "http", Host: addr})
 	orig := proxy.Director

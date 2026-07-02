@@ -198,7 +198,7 @@ func (h *Handler) GetIssueEditor(w http.ResponseWriter, r *http.Request) {
 			if i := strings.LastIndex(internal, ":"); i > 0 {
 				host = internal[:i] // strip the health port; keep just the daemon host
 			}
-			tok := registerEditorTarget(fmt.Sprintf("%s:%d", host, port))
+			tok := registerEditorTarget(fmt.Sprintf("%s:%d", host, port), uuidToString(issue.WorkspaceID))
 			writeJSON(w, http.StatusOK, map[string]string{
 				"mode":       "cloud",
 				"editor_url": "/editor/proxy/" + tok + "/?folder=" + url.QueryEscape(latest),
@@ -265,8 +265,14 @@ func launchEditorOnDaemon(ctx context.Context, internal, workdir, userID string)
 // --- cloud reverse-proxy: token -> code-server address on the daemon ---
 
 type editorTarget struct {
-	addr    string // host:port of code-server on the daemon (6PN-reachable)
-	expires time.Time
+	addr string // host:port of code-server on the daemon (6PN-reachable)
+	// workspaceID binds the token to its workspace so ProxyEditor re-checks the
+	// caller's membership on every request (F8). The token is minted only after
+	// a membership check, but it lives 8h in the iframe URL and leaks via
+	// referer/history/logs — without this bind a non-member who captures it
+	// could proxy into another tenant's code-server.
+	workspaceID string
+	expires     time.Time
 }
 
 var (
@@ -274,24 +280,24 @@ var (
 	editorTargets   = map[string]editorTarget{}
 )
 
-func registerEditorTarget(addr string) string {
+func registerEditorTarget(addr, workspaceID string) string {
 	var buf [16]byte
 	_, _ = rand.Read(buf[:])
 	tok := hex.EncodeToString(buf[:])
 	editorTargetsMu.Lock()
-	editorTargets[tok] = editorTarget{addr: addr, expires: time.Now().Add(8 * time.Hour)}
+	editorTargets[tok] = editorTarget{addr: addr, workspaceID: workspaceID, expires: time.Now().Add(8 * time.Hour)}
 	editorTargetsMu.Unlock()
 	return tok
 }
 
-func lookupEditorTarget(tok string) (string, bool) {
+func lookupEditorTarget(tok string) (editorTarget, bool) {
 	editorTargetsMu.Lock()
 	defer editorTargetsMu.Unlock()
 	t, ok := editorTargets[tok]
 	if !ok || time.Now().After(t.expires) {
-		return "", false
+		return editorTarget{}, false
 	}
-	return t.addr, true
+	return t, true
 }
 
 // ProxyEditor reverse-proxies /editor/proxy/{token}/* (HTTP + WebSocket) to the
@@ -300,11 +306,24 @@ func lookupEditorTarget(tok string) (string, bool) {
 // maps to a specific code-server instance.
 func (h *Handler) ProxyEditor(w http.ResponseWriter, r *http.Request) {
 	tok := chi.URLParam(r, "token")
-	addr, ok := lookupEditorTarget(tok)
+	t, ok := lookupEditorTarget(tok)
 	if !ok {
 		writeError(w, http.StatusNotFound, "editor session not found or expired")
 		return
 	}
+	// Re-verify workspace membership on every proxied request (F8): the token is
+	// minted behind a membership check but rides the iframe URL, so a
+	// leaked/referer-logged token must not let a non-member reach the
+	// code-server of a workspace they're not in.
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	if _, err := h.getWorkspaceMember(r.Context(), userID, t.workspaceID); err != nil {
+		writeError(w, http.StatusForbidden, "not a member of this workspace")
+		return
+	}
+	addr := t.addr
 	prefix := "/editor/proxy/" + tok
 	proxy := httputil.NewSingleHostReverseProxy(&url.URL{Scheme: "http", Host: addr})
 	orig := proxy.Director
