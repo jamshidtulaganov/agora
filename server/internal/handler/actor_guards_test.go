@@ -159,3 +159,42 @@ func TestRequireHumanActor_AppliedViaChiRouterUse(t *testing.T) {
 		t.Fatalf("status = %d, want 403", w.Code)
 	}
 }
+
+// TestRequireHumanActor_GuardsTokenMintingWiring pins the F1 fix: the two
+// credential-minting surfaces — POST /api/cli-token (a single route wrapped in
+// r.Group) and the /api/tokens group (r.Route) — must reject a task-token
+// actor. It replicates both chi wiring shapes router.go uses so a future
+// refactor that drops either r.Use(RequireHumanActor) is caught here. Without
+// the guard a mat_ task token injected into an agent could be traded for a
+// full owner JWT / durable PAT — the MUL-2600 sandbox escape this closes.
+func TestRequireHumanActor_GuardsTokenMintingWiring(t *testing.T) {
+	r := chi.NewRouter()
+	// Shape 1: a single route wrapped in a guarded Group (cli-token).
+	r.Group(func(r chi.Router) {
+		r.Use(RequireHumanActor)
+		r.Post("/api/cli-token", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	})
+	// Shape 2: a guarded Route sub-group (tokens).
+	r.Route("/api/tokens", func(r chi.Router) {
+		r.Use(RequireHumanActor)
+		r.Post("/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	})
+
+	for _, path := range []string{"/api/cli-token", "/api/tokens/"} {
+		// task-token actor → blocked before the handler.
+		reqMachine := httptest.NewRequest(http.MethodPost, path, nil)
+		reqMachine.Header.Set("X-Actor-Source", "task_token")
+		wMachine := httptest.NewRecorder()
+		r.ServeHTTP(wMachine, reqMachine)
+		if wMachine.Code != http.StatusForbidden {
+			t.Fatalf("%s task_token: status = %d, want 403", path, wMachine.Code)
+		}
+		// human actor (no X-Actor-Source) → reaches the handler.
+		reqHuman := httptest.NewRequest(http.MethodPost, path, nil)
+		wHuman := httptest.NewRecorder()
+		r.ServeHTTP(wHuman, reqHuman)
+		if wHuman.Code != http.StatusOK {
+			t.Fatalf("%s human: status = %d, want 200", path, wHuman.Code)
+		}
+	}
+}

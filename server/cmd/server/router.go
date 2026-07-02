@@ -590,7 +590,16 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// server/internal/handler/onboarding_shim.go.
 		r.Post("/api/me/onboarding/runtime-bootstrap", h.BootstrapOnboardingRuntime)
 		r.Post("/api/me/onboarding/no-runtime-bootstrap", h.BootstrapOnboardingNoRuntime)
-		r.Post("/api/cli-token", h.IssueCliToken)
+		// Human-only. IssueCliToken mints a full-scope owner JWT (valid across
+		// EVERY workspace the owner belongs to, ~30d) — far broader than a
+		// task token's task+workspace scope. Without this guard a mat_ task
+		// token injected into an agent could be POSTed here to escalate into a
+		// durable owner credential (MUL-2600 escape). Same guard as
+		// /api/tokens + /api/cloud-billing.
+		r.Group(func(r chi.Router) {
+			r.Use(handler.RequireHumanActor)
+			r.Post("/api/cli-token", h.IssueCliToken)
+		})
 		r.Post("/api/upload-file", h.UploadFile)
 		r.Post("/api/feedback", h.CreateFeedback)
 
@@ -740,6 +749,15 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/api/invitations/{id}/decline", h.DeclineInvitation)
 
 		r.Route("/api/tokens", func(r chi.Router) {
+			// Human-only. These mint/manage durable 90-day PATs — far broader
+			// than a task token's task+workspace scope. The Auth middleware
+			// turns an mat_ task token into a normal X-User-ID stamp, so without
+			// this guard a compromised/prompt-injected agent could trade its
+			// scoped token for a durable owner credential (MUL-2600 escape).
+			// RequireHumanActor 403s any task-token/cloud-pat actor — same guard
+			// as /api/cloud-billing below. See actor_guards.go.
+			r.Use(handler.RequireHumanActor)
+
 			r.Get("/", h.ListPersonalAccessTokens)
 			r.Post("/", h.CreatePersonalAccessToken)
 			r.Post("/current/renew", h.RenewCurrentPersonalAccessToken)
