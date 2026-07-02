@@ -942,3 +942,22 @@ type WorkspaceInvitation struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
 }
+
+type ZohoConnection struct {
+	ID                    pgtype.UUID        `json:"id"`
+	WorkspaceID           pgtype.UUID        `json:"workspace_id"`
+	Dc                    string             `json:"dc"`
+	ClientID              string             `json:"client_id"`
+	ClientSecretEncrypted []byte             `json:"client_secret_encrypted"`
+	RefreshTokenEncrypted []byte             `json:"refresh_token_encrypted"`
+	Scopes                string             `json:"scopes"`
+	CrmOrgID              string             `json:"crm_org_id"`
+	DeskOrgID             string             `json:"desk_org_id"`
+	ProjectsPortalID      string             `json:"projects_portal_id"`
+	SprintsTeamID         string             `json:"sprints_team_id"`
+	ProbeStatus           string             `json:"probe_status"`
+	ProbedAt              pgtype.Timestamptz `json:"probed_at"`
+	CreatedBy             pgtype.UUID        `json:"created_by"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+}
