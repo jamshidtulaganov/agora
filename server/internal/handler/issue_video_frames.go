@@ -30,16 +30,12 @@ const frameExtractTimeout = 15 * time.Minute
 // the planning-time counterpart to the import, which no longer extracts frames
 // (it only downloads the video) — see importBitrixAttachments.
 func (h *Handler) ExtractIssueVideoFrames(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUserID(w, r); !ok {
-		return
-	}
-	id, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "id")
+	// loadIssueForUser resolves {id} (UUID or MUL-N) AND gates it to a workspace
+	// the caller is a member of. Without it this fired a background mutation
+	// (ffmpeg → issue description + attachments) on ANY issue by raw UUID across
+	// tenants, and doubled as a 202/404 existence oracle for arbitrary ids (F6).
+	issue, ok := h.loadIssueForUser(w, r, chi.URLParam(r, "id"))
 	if !ok {
-		return
-	}
-	issue, err := h.Queries.GetIssue(r.Context(), id)
-	if err != nil || !issue.ID.Valid {
-		writeError(w, http.StatusNotFound, "issue not found")
 		return
 	}
 	h.kickVideoFrameExtraction(issue)
