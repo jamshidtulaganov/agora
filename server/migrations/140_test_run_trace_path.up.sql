@@ -1,4 +1,4 @@
--- 139_test_run_trace_path.up.sql
+-- 140_test_run_trace_path.up.sql
 -- Playwright trace: a run_test_cases execution MAY capture a full Playwright
 -- trace (DOM snapshots + screenshots + sources per step) as a .zip on the
 -- agent's runtime box. The path is local to the daemon that produced it; the
