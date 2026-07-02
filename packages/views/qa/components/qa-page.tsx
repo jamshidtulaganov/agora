@@ -147,7 +147,10 @@ export function QAPage() {
   const hasFilters = assigneeFilter.length > 0 || priorityFilter.length > 0;
 
   return (
-    <div className="flex w-full flex-col">
+    // Fill the (overflow-hidden) <main> and own our scroll: the header stays
+    // pinned, the content below scrolls — otherwise a long verdict lane is
+    // clipped with no way to reach the bottom rows.
+    <div className="flex h-full min-h-0 w-full flex-col">
       {/* Same top bar as the issue / QA review pages — a fixed leaf (this is
           a root surface, no ancestor to crumb to) with the view switch as the
           right-side action. */}
@@ -165,6 +168,7 @@ export function QAPage() {
         }
       />
 
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       {view === "metrics" ? (
         <QAMetricsView />
       ) : view === "sprint" ? (
@@ -250,6 +254,7 @@ export function QAPage() {
       )}
       </div>
       )}
+      </div>{/* /scroll region */}
     </div>
   );
 }
