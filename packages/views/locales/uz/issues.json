@@ -418,6 +418,7 @@
   "qa_review": {
     "back": "QA navbatiga qaytish",
     "queue_crumb": "QA navbati",
+    "running_qa": "QA ketmoqda…",
     "review_panel": "Ko'rib chiqish",
     "review_panel_show": "Ko'rib chiqish panelini ochish",
     "review_panel_hide": "Ko'rib chiqish panelini yashirish",

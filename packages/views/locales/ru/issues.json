@@ -418,6 +418,7 @@
   "qa_review": {
     "back": "Назад к очереди QA",
     "queue_crumb": "Очередь QA",
+    "running_qa": "Идёт QA…",
     "review_panel": "Обзор",
     "review_panel_show": "Показать панель обзора",
     "review_panel_hide": "Скрыть панель обзора",

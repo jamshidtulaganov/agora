@@ -407,6 +407,7 @@
   "qa_review": {
     "back": "返回 QA 队列",
     "queue_crumb": "QA 队列",
+    "running_qa": "QA 运行中…",
     "review_panel": "评审",
     "review_panel_show": "显示评审面板",
     "review_panel_hide": "隐藏评审面板",

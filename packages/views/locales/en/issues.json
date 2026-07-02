@@ -418,6 +418,7 @@
   "qa_review": {
     "back": "Back to QA queue",
     "queue_crumb": "QA queue",
+    "running_qa": "Running QA…",
     "review_panel": "Review",
     "review_panel_show": "Show the review panel",
     "review_panel_hide": "Hide the review panel",
