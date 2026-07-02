@@ -239,25 +239,30 @@ func (q *Queries) ListZohoSyncConfigsForWorkspace(ctx context.Context, workspace
 
 const updateZohoSyncConfig = `-- name: UpdateZohoSyncConfig :one
 UPDATE zoho_sync_config SET
-    project_id = COALESCE($2, project_id),
-    enabled = COALESCE($3, enabled),
-    direction = COALESCE($4, direction),
-    field_map = COALESCE($5, field_map),
-    status_map = COALESCE($6, status_map),
-    filter_coql = COALESCE($7, filter_coql),
+    -- clear_project_id lets a caller explicitly NULL the destination project
+    -- (COALESCE alone cannot express "clear"); the engine re-creates the
+    -- default module project on the next sweep.
+    project_id = CASE WHEN $2::bool THEN NULL
+                      ELSE COALESCE($3, project_id) END,
+    enabled = COALESCE($4, enabled),
+    direction = COALESCE($5, direction),
+    field_map = COALESCE($6, field_map),
+    status_map = COALESCE($7, status_map),
+    filter_coql = COALESCE($8, filter_coql),
     updated_at = now()
 WHERE id = $1
 RETURNING id, workspace_id, connection_id, channel, module_api_name, project_id, enabled, direction, field_map, status_map, filter_coql, cursor, watch_channel_id, watch_expires_at, created_at, updated_at
 `
 
 type UpdateZohoSyncConfigParams struct {
-	ID         pgtype.UUID `json:"id"`
-	ProjectID  pgtype.UUID `json:"project_id"`
-	Enabled    pgtype.Bool `json:"enabled"`
-	Direction  pgtype.Text `json:"direction"`
-	FieldMap   []byte      `json:"field_map"`
-	StatusMap  []byte      `json:"status_map"`
-	FilterCoql pgtype.Text `json:"filter_coql"`
+	ID             pgtype.UUID `json:"id"`
+	ClearProjectID bool        `json:"clear_project_id"`
+	ProjectID      pgtype.UUID `json:"project_id"`
+	Enabled        pgtype.Bool `json:"enabled"`
+	Direction      pgtype.Text `json:"direction"`
+	FieldMap       []byte      `json:"field_map"`
+	StatusMap      []byte      `json:"status_map"`
+	FilterCoql     pgtype.Text `json:"filter_coql"`
 }
 
 // Partial update: every updatable column is COALESCE'd so a narrow caller
@@ -266,6 +271,7 @@ type UpdateZohoSyncConfigParams struct {
 func (q *Queries) UpdateZohoSyncConfig(ctx context.Context, arg UpdateZohoSyncConfigParams) (ZohoSyncConfig, error) {
 	row := q.db.QueryRow(ctx, updateZohoSyncConfig,
 		arg.ID,
+		arg.ClearProjectID,
 		arg.ProjectID,
 		arg.Enabled,
 		arg.Direction,

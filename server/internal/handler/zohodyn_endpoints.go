@@ -393,12 +393,19 @@ func (h *Handler) UpdateZohoSyncConfig(w http.ResponseWriter, r *http.Request) {
 	if req.FilterCOQL != nil {
 		params.FilterCoql = pgtype.Text{String: strings.TrimSpace(*req.FilterCOQL), Valid: true}
 	}
-	if req.ProjectID != nil && strings.TrimSpace(*req.ProjectID) != "" {
-		pid, ok := h.resolveZohoDynProjectID(w, r, wsUUID, *req.ProjectID)
-		if !ok {
-			return
+	// project_id tri-state: key absent → keep; explicit "" → clear (the UI's
+	// "None" option — the engine re-creates the default module project on the
+	// next sweep); non-empty → resolve and set.
+	if req.ProjectID != nil {
+		if strings.TrimSpace(*req.ProjectID) == "" {
+			params.ClearProjectID = true
+		} else {
+			pid, ok := h.resolveZohoDynProjectID(w, r, wsUUID, *req.ProjectID)
+			if !ok {
+				return
+			}
+			params.ProjectID = pid
 		}
-		params.ProjectID = pid
 	}
 
 	tx, err := h.TxStarter.Begin(r.Context())

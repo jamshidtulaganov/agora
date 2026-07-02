@@ -160,6 +160,28 @@ import type {
   ZohoSprintsProject,
   ZohoSprintsImportRequest,
   ZohoSprintsImportResponse,
+  ZohoConnectionStatus,
+  PutZohoConnectionRequest,
+  ZohoUserBindingStatus,
+  ZohoCRMModule,
+  ZohoCRMFieldsResponse,
+  ZohoSyncConfig,
+  CreateZohoSyncConfigRequest,
+  UpdateZohoSyncConfigRequest,
+} from "../zoho/types";
+import {
+  ZohoConnectionStatusSchema,
+  EMPTY_ZOHO_CONNECTION_STATUS,
+  ZohoUserBindingStatusSchema,
+  EMPTY_ZOHO_USER_BINDING_STATUS,
+  ZohoCRMModulesResponseSchema,
+  EMPTY_ZOHO_CRM_MODULES,
+  ZohoCRMFieldsResponseSchema,
+  EMPTY_ZOHO_CRM_FIELDS,
+  ZohoSyncConfigSchema,
+  EMPTY_ZOHO_SYNC_CONFIG,
+  ZohoSyncConfigsResponseSchema,
+  EMPTY_ZOHO_SYNC_CONFIGS,
 } from "../zoho/types";
 import type { Plugin, CreatePluginRequest } from "../plugins/types";
 import type {
@@ -2291,6 +2313,127 @@ export class ApiClient {
     return this.fetch(`/api/zoho-sprints/import`, {
       method: "POST",
       body: JSON.stringify(req),
+    });
+  }
+
+  // --- Dynamic Zoho integration (docs/zoho-dynamic-integration.md) ---
+  // Workspace connection (sealed OAuth credentials, owner/admin writes),
+  // per-user identity binding (self-service), CRM module/field discovery
+  // and per-module sync configs. Status responses never carry secrets.
+
+  async getZohoConnection(workspaceId: string): Promise<ZohoConnectionStatus> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/zoho-connection`);
+    return parseWithFallback(raw, ZohoConnectionStatusSchema, EMPTY_ZOHO_CONNECTION_STATUS, {
+      endpoint: "GET /api/workspaces/{id}/zoho-connection",
+    });
+  }
+
+  async putZohoConnection(
+    workspaceId: string,
+    data: PutZohoConnectionRequest,
+  ): Promise<ZohoConnectionStatus> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/zoho-connection`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(raw, ZohoConnectionStatusSchema, EMPTY_ZOHO_CONNECTION_STATUS, {
+      endpoint: "PUT /api/workspaces/{id}/zoho-connection",
+    });
+  }
+
+  async deleteZohoConnection(workspaceId: string): Promise<void> {
+    await this.fetch(`/api/workspaces/${workspaceId}/zoho-connection`, {
+      method: "DELETE",
+    });
+  }
+
+  async getZohoUserBinding(workspaceId: string): Promise<ZohoUserBindingStatus> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/zoho-user-binding`);
+    return parseWithFallback(raw, ZohoUserBindingStatusSchema, EMPTY_ZOHO_USER_BINDING_STATUS, {
+      endpoint: "GET /api/workspaces/{id}/zoho-user-binding",
+    });
+  }
+
+  async putZohoUserBinding(
+    workspaceId: string,
+    grantCode: string,
+  ): Promise<ZohoUserBindingStatus> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/zoho-user-binding`, {
+      method: "PUT",
+      body: JSON.stringify({ grant_code: grantCode }),
+    });
+    return parseWithFallback(raw, ZohoUserBindingStatusSchema, EMPTY_ZOHO_USER_BINDING_STATUS, {
+      endpoint: "PUT /api/workspaces/{id}/zoho-user-binding",
+    });
+  }
+
+  async deleteZohoUserBinding(workspaceId: string): Promise<void> {
+    await this.fetch(`/api/workspaces/${workspaceId}/zoho-user-binding`, {
+      method: "DELETE",
+    });
+  }
+
+  async listZohoCRMModules(workspaceId: string): Promise<ZohoCRMModule[]> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/zoho/crm/modules`);
+    const parsed = parseWithFallback(raw, ZohoCRMModulesResponseSchema, EMPTY_ZOHO_CRM_MODULES, {
+      endpoint: "GET /api/workspaces/{id}/zoho/crm/modules",
+    });
+    return parsed.modules;
+  }
+
+  async listZohoCRMFields(
+    workspaceId: string,
+    module: string,
+  ): Promise<ZohoCRMFieldsResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/zoho/crm/fields?module=${encodeURIComponent(module)}`,
+    );
+    return parseWithFallback(raw, ZohoCRMFieldsResponseSchema, EMPTY_ZOHO_CRM_FIELDS, {
+      endpoint: "GET /api/workspaces/{id}/zoho/crm/fields",
+    });
+  }
+
+  async listZohoSyncConfigs(workspaceId: string): Promise<ZohoSyncConfig[]> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/zoho/sync-configs`);
+    const parsed = parseWithFallback(raw, ZohoSyncConfigsResponseSchema, EMPTY_ZOHO_SYNC_CONFIGS, {
+      endpoint: "GET /api/workspaces/{id}/zoho/sync-configs",
+    });
+    return parsed.configs;
+  }
+
+  async createZohoSyncConfig(
+    workspaceId: string,
+    req: CreateZohoSyncConfigRequest,
+  ): Promise<ZohoSyncConfig> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/zoho/sync-configs`, {
+      method: "POST",
+      body: JSON.stringify(req),
+    });
+    return parseWithFallback(raw, ZohoSyncConfigSchema, EMPTY_ZOHO_SYNC_CONFIG, {
+      endpoint: "POST /api/workspaces/{id}/zoho/sync-configs",
+    });
+  }
+
+  async updateZohoSyncConfig(
+    workspaceId: string,
+    configId: string,
+    req: UpdateZohoSyncConfigRequest,
+  ): Promise<ZohoSyncConfig> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/zoho/sync-configs/${configId}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(req),
+      },
+    );
+    return parseWithFallback(raw, ZohoSyncConfigSchema, EMPTY_ZOHO_SYNC_CONFIG, {
+      endpoint: "PUT /api/workspaces/{id}/zoho/sync-configs/{configId}",
+    });
+  }
+
+  async deleteZohoSyncConfig(workspaceId: string, configId: string): Promise<void> {
+    await this.fetch(`/api/workspaces/${workspaceId}/zoho/sync-configs/${configId}`, {
+      method: "DELETE",
     });
   }
 

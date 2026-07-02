@@ -30,7 +30,11 @@ ORDER BY created_at ASC;
 -- (e.g. the engine persisting an auto-created project_id) can never NULL out
 -- the columns it didn't pass — the UpdateProject partial-COALESCE footgun.
 UPDATE zoho_sync_config SET
-    project_id = COALESCE(sqlc.narg('project_id'), project_id),
+    -- clear_project_id lets a caller explicitly NULL the destination project
+    -- (COALESCE alone cannot express "clear"); the engine re-creates the
+    -- default module project on the next sweep.
+    project_id = CASE WHEN sqlc.arg('clear_project_id')::bool THEN NULL
+                      ELSE COALESCE(sqlc.narg('project_id'), project_id) END,
     enabled = COALESCE(sqlc.narg('enabled'), enabled),
     direction = COALESCE(sqlc.narg('direction'), direction),
     field_map = COALESCE(sqlc.narg('field_map'), field_map),

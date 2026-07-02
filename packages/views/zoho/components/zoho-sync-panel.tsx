@@ -15,17 +15,19 @@ import { Checkbox } from "@agora/ui/components/ui/checkbox";
 import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import { cn } from "@agora/ui/lib/utils";
 import { PageHeader } from "../../layout/page-header";
+import { ZohoModuleSyncPanel } from "./zoho-module-sync-panel";
 
 // Channels are the Zoho apps this connector can pull from. Projects + Sprints
-// are wired to their existing import endpoints; Desk + CRM are placeholders
-// until their backend channels ship (see docs/zoho-suite-integration-plan.md).
+// are wired to their existing import endpoints; CRM renders the dynamic
+// module-sync manager (docs/zoho-dynamic-integration.md); Desk is a
+// placeholder until its backend channel ships.
 type Channel = "projects" | "sprints" | "desk" | "crm";
 
 const CHANNELS: { key: Channel; label: string; ready: boolean }[] = [
   { key: "projects", label: "Projects", ready: true },
   { key: "sprints", label: "Sprints", ready: true },
   { key: "desk", label: "Desk", ready: false },
-  { key: "crm", label: "CRM", ready: false },
+  { key: "crm", label: "CRM", ready: true },
 ];
 
 /**
@@ -81,6 +83,9 @@ export function ZohoSyncPanel() {
   };
 
   const ready = CHANNELS.find((c) => c.key === channel)?.ready ?? false;
+  // Import affordances (refresh / import all / import N) only apply to the
+  // list-and-import channels; the CRM channel manages sync configs inline.
+  const isImportChannel = channel === "projects" || channel === "sprints";
 
   return (
     <div className="flex h-full flex-col">
@@ -89,7 +94,7 @@ export function ZohoSyncPanel() {
           <DatabaseZap className="h-4 w-4 text-muted-foreground" />
           <h1 className="text-sm font-medium">Zoho import</h1>
         </div>
-        {ready && (
+        {ready && isImportChannel && (
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
@@ -149,7 +154,9 @@ export function ZohoSyncPanel() {
           </div>
         )}
 
-        {!ready ? (
+        {channel === "crm" ? (
+          <ZohoModuleSyncPanel />
+        ) : !ready ? (
           <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
             {CHANNELS.find((c) => c.key === channel)?.label} import is coming soon.
           </div>

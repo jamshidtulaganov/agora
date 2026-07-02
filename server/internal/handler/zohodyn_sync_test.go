@@ -518,3 +518,61 @@ func TestZohoDynSweepWatermark(t *testing.T) {
 		t.Fatalf("abandon sweep: p=%v s=%d a=%v", p, s, a)
 	}
 }
+
+// TestZohoDynConfigClearProject pins the project_id tri-state on PUT:
+// key absent → kept; explicit "" → cleared to NULL (the UI's "None").
+func TestZohoDynConfigClearProject(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	stub := newZohoDynStub(t)
+	configureZohoConnEnv(t, stub.srv.URL)
+	wsID := createMcpTestWorkspace(t, ctx, "handler-tests-zoho-dyn-clearproj", "owner")
+	seedZohoConnection(t, wsID)
+
+	// Create a config bound to a real project.
+	var projectID string
+	if err := testPool.QueryRow(ctx, `
+INSERT INTO project (workspace_id, title) VALUES ($1, 'Clear target') RETURNING id
+`, wsID).Scan(&projectID); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	cw := httptest.NewRecorder()
+	creq := newRequest("POST", "/api/workspaces/"+wsID+"/zoho/sync-configs", map[string]any{
+		"module_api_name": "CustomModule34", "project_id": projectID,
+	})
+	creq = withURLParam(creq, "id", wsID)
+	testHandler.CreateZohoSyncConfig(cw, creq)
+	if cw.Code != http.StatusCreated && cw.Code != http.StatusOK {
+		t.Fatalf("create config: %d %s", cw.Code, cw.Body.String())
+	}
+	cfg := loadZohoDynConfig(t, ctx, wsID)
+	if !cfg.ProjectID.Valid {
+		t.Fatal("seed config lost its project_id")
+	}
+
+	// PUT without the key keeps the project.
+	uw := httptest.NewRecorder()
+	testHandler.UpdateZohoSyncConfig(uw, zohoDynConfigRequest("PUT", wsID, uuidToString(cfg.ID), map[string]any{
+		"direction": "in",
+	}))
+	if uw.Code != http.StatusOK {
+		t.Fatalf("update keep: %d %s", uw.Code, uw.Body.String())
+	}
+	if got := loadZohoDynConfig(t, ctx, wsID); !got.ProjectID.Valid {
+		t.Fatal("project_id cleared by an update that omitted the key")
+	}
+
+	// PUT with explicit "" clears it.
+	cw2 := httptest.NewRecorder()
+	testHandler.UpdateZohoSyncConfig(cw2, zohoDynConfigRequest("PUT", wsID, uuidToString(cfg.ID), map[string]any{
+		"project_id": "",
+	}))
+	if cw2.Code != http.StatusOK {
+		t.Fatalf("update clear: %d %s", cw2.Code, cw2.Body.String())
+	}
+	if got := loadZohoDynConfig(t, ctx, wsID); got.ProjectID.Valid {
+		t.Fatal("explicit empty project_id did not clear the column")
+	}
+}
