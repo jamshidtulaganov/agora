@@ -1377,6 +1377,21 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
+			// Project QA manifest rides along on EVERY claim — orchestrator, dev,
+			// and QA agents alike navigate by the app's KNOWN map (auth, routes,
+			// golden flows) instead of re-reading the code each run.
+			if resp.Agent != nil {
+				if note := h.sliceActionQAManifestContext(r.Context(), issue); note != "" {
+					resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + strings.TrimSpace(note))
+				}
+				// Docs (intended-behavior source of truth) ride along too, so a
+				// DELEGATED dev — whose brief comes from the claim, not a slice
+				// action — builds against the same spec QA judges it by.
+				if note := h.sliceActionQADocsContext(r.Context(), issue); note != "" {
+					resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + strings.TrimSpace(note))
+				}
+			}
+
 			var projectRepos []RepoData
 			if issue.ProjectID.Valid {
 				resp.ProjectID = uuidToString(issue.ProjectID)

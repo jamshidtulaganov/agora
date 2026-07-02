@@ -2426,6 +2426,8 @@ func (s *TaskService) createAgentComment(ctx context.Context, issueID, agentID p
 	// and a run_test_cases agent's ```test-runs``` block as test_run rows.
 	s.CaptureTestCases(ctx, issue, content, agentID)
 	s.CaptureTestRuns(ctx, issue, content, agentID)
+	// Persist a compile_tests agent's ```scripts``` block onto the named cases.
+	s.CaptureCompiledScripts(ctx, issue, content, agentID)
 }
 
 // AutoUnresolveThreadOnReply clears resolved_at on the thread root when a

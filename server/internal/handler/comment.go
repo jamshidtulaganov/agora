@@ -1042,6 +1042,7 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 		h.TaskService.CaptureQAEvidence(r.Context(), issue, comment.Content)
 		h.TaskService.CaptureTestCases(r.Context(), issue, comment.Content, parseUUID(authorID))
 		h.TaskService.CaptureTestRuns(r.Context(), issue, comment.Content, parseUUID(authorID))
+		h.TaskService.CaptureCompiledScripts(r.Context(), issue, comment.Content, parseUUID(authorID))
 	}
 
 	writeJSON(w, http.StatusCreated, resp)

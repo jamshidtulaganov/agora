@@ -22,10 +22,19 @@ var testCasesBlockRe = regexp.MustCompile("(?s)```test-cases\\s*\\n(.*?)```")
 // RUNS the automated cases (the run_test_cases slice action).
 var testRunsBlockRe = regexp.MustCompile("(?s)```test-runs\\s*\\n(.*?)```")
 
+// compiledScriptsBlockRe extracts the ```scripts``` array a QA agent appends when
+// it COMPILES automated cases into runnable Playwright scripts (compile_tests).
+var compiledScriptsBlockRe = regexp.MustCompile("(?s)```scripts\\s*\\n(.*?)```")
+
 type genTestRun struct {
 	TestCaseID string `json:"test_case_id"`
 	Status     string `json:"status"`
 	Output     string `json:"output"`
+}
+
+type genCompiledScript struct {
+	ID     string `json:"id"`
+	Script string `json:"script"`
 }
 
 type genTestCase struct {
@@ -34,6 +43,7 @@ type genTestCase struct {
 	Expected string `json:"expected"`
 	Kind     string `json:"kind"`
 	Category string `json:"category"` // positive | negative
+	Script   string `json:"script"`   // optional compiled Playwright script (automated cases)
 }
 
 // captureTestCases persists a gen_test_cases agent comment's ```test-cases```
@@ -75,6 +85,12 @@ func (s *TaskService) CaptureTestCases(ctx context.Context, issue db.Issue, cont
 		if c.Category == "negative" {
 			category = "negative"
 		}
+		// Only automated cases carry a compiled script — a manual case never gets a
+		// stray script, mirroring the kind/category normalization above.
+		script := ""
+		if kind == "automated" {
+			script = strings.TrimSpace(c.Script)
+		}
 		if _, err := s.Queries.CreateTestCase(ctx, db.CreateTestCaseParams{
 			WorkspaceID: issue.WorkspaceID,
 			IssueID:     issue.ID,
@@ -87,6 +103,7 @@ func (s *TaskService) CaptureTestCases(ctx context.Context, issue db.Issue, cont
 			AuthorType:  "agent",
 			AuthorID:    agentID,
 			Category:    category,
+			Script:      script,
 		}); err != nil {
 			slog.Warn("capture test cases: insert failed", "error", err, "issue_id", util.UUIDToString(issue.ID))
 			continue
@@ -174,4 +191,55 @@ func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, conte
 		Payload:     map[string]any{"issue_id": util.UUIDToString(issue.ID)},
 	})
 	slog.Info("agent test runs captured", "issue_id", util.UUIDToString(issue.ID), "count", inserted)
+}
+
+// CaptureCompiledScripts persists a compile_tests agent's ```scripts``` block —
+// a JSON array [{id, script}] — onto the named cases via SetTestCaseScript. Each
+// entry names a test_case_id we handed the agent; we verify the case belongs to
+// THIS workspace (same defensive guard as CaptureTestRuns) before writing.
+// Best-effort + detached. Exported so the HTTP comment handler can call it too
+// (agents post via POST /comments). A comment with no ```scripts``` block no-ops.
+func (s *TaskService) CaptureCompiledScripts(ctx context.Context, issue db.Issue, content string, agentID pgtype.UUID) {
+	m := compiledScriptsBlockRe.FindStringSubmatch(content)
+	if m == nil {
+		return
+	}
+	var scripts []genCompiledScript
+	if err := json.Unmarshal([]byte(strings.TrimSpace(m[1])), &scripts); err != nil {
+		return
+	}
+
+	updated := 0
+	for _, sc := range scripts {
+		script := strings.TrimSpace(sc.Script)
+		if script == "" {
+			continue
+		}
+		caseID, err := util.ParseUUID(sc.ID)
+		if err != nil {
+			continue
+		}
+		// Verify the case is in THIS workspace before writing (an agent can't
+		// compile a script onto another workspace's case).
+		if _, err := s.Queries.GetTestCase(ctx, db.GetTestCaseParams{ID: caseID, WorkspaceID: issue.WorkspaceID}); err != nil {
+			continue
+		}
+		if err := s.Queries.SetTestCaseScript(ctx, db.SetTestCaseScriptParams{ID: caseID, WorkspaceID: issue.WorkspaceID, Script: script}); err != nil {
+			slog.Warn("capture compiled scripts: update failed", "error", err, "issue_id", util.UUIDToString(issue.ID))
+			continue
+		}
+		updated++
+	}
+	if updated == 0 {
+		return
+	}
+
+	s.Bus.Publish(events.Event{
+		Type:        protocol.EventTestCasesChanged,
+		WorkspaceID: util.UUIDToString(issue.WorkspaceID),
+		ActorType:   "agent",
+		ActorID:     util.UUIDToString(agentID),
+		Payload:     map[string]any{"issue_id": util.UUIDToString(issue.ID)},
+	})
+	slog.Info("agent compiled scripts captured", "issue_id", util.UUIDToString(issue.ID), "count", updated)
 }

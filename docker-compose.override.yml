@@ -55,6 +55,9 @@ services:
       # in_review (and auto_docs on qa:pass). Opt-in, default off.
       AGORA_AUTO_QA_ENABLED: ${AGORA_AUTO_QA_ENABLED:-}
       AGORA_AUTO_DOCS_ENABLED: ${AGORA_AUTO_DOCS_ENABLED:-}
+      # Compiled QA scripts: background-compile a human-authored automated test
+      # case into a runnable Playwright script on create. Opt-in, default off.
+      AGORA_QA_COMPILE_ENABLED: ${AGORA_QA_COMPILE_ENABLED:-}
       # qa:fail -> reassign to the failing dev agent's squad lead. Opt-in.
       AGORA_QA_FAIL_AUTOROUTE_ENABLED: ${AGORA_QA_FAIL_AUTOROUTE_ENABLED:-}
       # Structural QA gate: squad-orchestrated issues can't skip in_review to

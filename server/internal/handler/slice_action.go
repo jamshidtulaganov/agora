@@ -33,15 +33,16 @@ import (
 // handler) makes buildSliceInstruction the SINGLE place that decides what an
 // agent is told to do.
 const (
-	sliceActionDraftCode  = "draft_code"
-	sliceActionWriteDocs  = "write_docs"
-	sliceActionWriteTests = "write_tests"
-	sliceActionReviewPart = "review_part"
-	sliceActionRunQA      = "run_qa"
-	sliceActionRunCI      = "run_ci"
-	sliceActionAutoDocs   = "auto_docs"
-	sliceActionGenTests   = "gen_test_cases"
-	sliceActionRunTests   = "run_test_cases"
+	sliceActionDraftCode    = "draft_code"
+	sliceActionWriteDocs    = "write_docs"
+	sliceActionWriteTests   = "write_tests"
+	sliceActionReviewPart   = "review_part"
+	sliceActionRunQA        = "run_qa"
+	sliceActionRunCI        = "run_ci"
+	sliceActionAutoDocs     = "auto_docs"
+	sliceActionGenTests     = "gen_test_cases"
+	sliceActionRunTests     = "run_test_cases"
+	sliceActionCompileTests = "compile_tests"
 )
 
 // isKnownSliceActionKind reports whether kind is one of the supported scoped
@@ -49,7 +50,7 @@ const (
 // agent is resolved or any comment is written.
 func isKnownSliceActionKind(kind string) bool {
 	switch kind {
-	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunCI, sliceActionAutoDocs, sliceActionGenTests, sliceActionRunTests:
+	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunCI, sliceActionAutoDocs, sliceActionGenTests, sliceActionRunTests, sliceActionCompileTests:
 		return true
 	default:
 		return false
@@ -185,7 +186,12 @@ func buildSliceInstruction(kind, scope string) string {
 			"the repo's EXISTING structure and conventions (read neighboring pages first; match their headings, " +
 			"sidebar entries, and tone). Update the relevant reference page(s) and add a changelog entry; only add " +
 			"a new page when no existing one fits. Keep the canonical locale authoritative and leave translation " +
-			"scaffolds consistent with how the repo handles locales. (3) Open a review request against the docs repo " +
+			"scaffolds consistent with how the repo handles locales. (3) MAINTAIN THE QA MANIFEST: the docs repo keeps " +
+			"the project's navigation manifest at qa-manifest/<project-slug>.json (base_url, auth, routes, flows) — the " +
+			"map QA agents navigate by instead of exploring. If this change ADDED, RENAMED, MOVED, or REMOVED a route, " +
+			"page, or user flow, update that file in the same change (add the route under routes, add/adjust the flow's " +
+			"steps+assert); if the file does not exist yet, create it from the PROJECT QA MANIFEST appended below. Skip " +
+			"this step only when the change has no navigation impact. (4) Open a review request against the docs repo " +
 			"with the doc changes for human review — a GitHub pull request, or, for a GitLab docs repo, the " +
 			"merge-request push-option flow described below. Do NOT merge — the human decides. If the change is purely " +
 			"internal (no doc-worthy surface), say so in a comment and open nothing rather than inventing content."
@@ -198,20 +204,46 @@ func buildSliceInstruction(kind, scope string) string {
 			"adversarial input the system must reject or degrade on gracefully (empty/null, wrong type, out-of-range, " +
 			"unauthorized, duplicate, conflicting state). A change with only positive cases has NO evidence it fails " +
 			"safely — always include negative cases for user-controlled input, permission boundaries, and error paths, " +
-			"not just the happy path. Do NOT run anything and do NOT touch code — only WRITE the cases. " +
+			"not just the happy path. COVER EVERY APPLICABLE TEST LAYER and prefix each title with its layer tag: " +
+			"`[e2e]` — browser golden path driven with Playwright against the QA box (use the PROJECT QA MANIFEST " +
+			"routes/flows below when present); `[api]` — direct authenticated HTTP calls asserting status + response " +
+			"shape (curl/fetch, no browser); `[unit]` — the repo's own test framework on the changed function/module; " +
+			"`[smoke]` — the cheapest liveness assertion for the changed page. Pick the layers the change actually " +
+			"touches — but a UI change with no [e2e] case, or an endpoint change with no [api] case, is an authoring " +
+			"gap. Do NOT run anything and do NOT touch code — only WRITE the cases. " +
 			"At the END of your comment, append a fenced ```test-cases code block containing ONLY a JSON array the QA " +
 			"panel parses: `[{\"title\":\"<short>\",\"steps\":\"<numbered steps, newline-separated>\",\"expected\":" +
-			"\"<expected result>\",\"kind\":\"manual\"|\"automated\",\"category\":\"positive\"|\"negative\"}]` — " +
+			"\"<expected result>\",\"kind\":\"manual\"|\"automated\",\"category\":\"positive\"|\"negative\",\"script\":" +
+			"\"<optional: a self-contained runnable Playwright script, ONLY for [e2e]/[api] cases>\"}]` — " +
 			"`automated` for a case a script/HTTP/DOM smoke can run deterministically, `manual` for one a human must " +
 			"click through. Keep titles unique and specific. The JSON must be valid and self-contained; a short " +
-			"human-readable summary may precede it."
+			"human-readable summary may precede it. " +
+			"COMPILED SCRIPT (the speed win): for each [e2e] and [api] automated case, ALSO emit a `script` — a " +
+			"COMPLETE, self-contained Playwright ESM module that runs with plain `node`: it MUST " +
+			"`import { chromium } from \"playwright\";` (for [api] cases you may use only `fetch`), use the PROJECT " +
+			"QA MANIFEST's base_url + auth (log in via the manifest's login_path/fields) and the manifest ROUTES/FLOWS, " +
+			"perform the case's steps, ASSERT the expected result by deterministic signal (HTTP status, response shape, " +
+			"DOM/accessibility-tree TEXT — never a screenshot), then `process.exit(0)` on pass and `process.exit(1)` on " +
+			"ANY failed assertion or thrown error (wrap the body in try/catch and exit(1) in catch; always close the " +
+			"browser in finally). No test-runner harness, no external config, no CLI args — the script is the whole test. " +
+			"Omit `script` for [unit]/[smoke]/manual cases (those stay hand-driven)."
 	case sliceActionRunTests:
 		base = "Run this issue's AUTOMATED QA test cases as a DETERMINISTIC check — you are the QA Squad's automation " +
 			"engineer. The cases (id · title · steps · expected) are listed below. BEFORE you start driving EACH case's " +
 			"steps, output the line `RUNNING test_case:<the case's id>` on its own — the QA panel watches your live " +
 			"output for this exact marker to show which case is in flight, the way a test runner's terminal shows the " +
 			"currently-running spec; skipping it just means that case never shows as \"running\" live, so always include " +
-			"it, one per case, right before you start that case. Then, for EACH case, drive its steps against the " +
+			"it, one per case, right before you start that case. " +
+			"For EACH case: if the case LISTING below includes a COMPILED SCRIPT for that id, do NOT drive the browser " +
+			"action-by-action — instead WRITE that script verbatim to a temp file `/tmp/case-<id>.mjs` and RUN it with " +
+			"`node /tmp/case-<id>.mjs`; take the process EXIT CODE as the verdict (0 = pass, non-zero = fail) and use the " +
+			"script's stdout/stderr as the one-line `output` evidence. This is deterministic and needs no per-action " +
+			"reasoning — that is the whole point. Playwright must be available to `node`: if `node -e \"import('playwright')\"` " +
+			"fails, run ONCE `npm i playwright && npx playwright install chromium-headless-shell` in the box (reuse the box's " +
+			"existing install when present — do not reinstall per case). Still emit the `RUNNING test_case:<id>` marker before " +
+			"each scripted case. ONLY cases with NO compiled script are hand-driven the old way (deterministic HTTP/DOM smoke " +
+			"or the embedded browser). " +
+			"Then, for EACH case, drive its steps against the " +
 			"running app — a deterministic HTTP / DOM-text smoke, or the embedded browser; NEVER an external playwright/" +
 			"chrome — and judge the EXPECTED result by SIGNAL (status code, DOM text, exit code), never by opinion. Do NOT " +
 			"modify code. At the END of your comment, append a fenced ```test-runs code block with ONLY a JSON array the QA " +
@@ -220,6 +252,18 @@ func buildSliceInstruction(kind, scope string) string {
 			"reviewer, e.g. the failing assertion or HTTP status; for pass, what you observed>\"}]` — one entry per case " +
 			"you ran. Use `blocked` if a case could not be exercised (missing data/route). The JSON must be valid and " +
 			"self-contained."
+	case sliceActionCompileTests:
+		base = "COMPILE this project's automated QA test cases into runnable Playwright scripts — you are the QA " +
+			"Squad's automation engineer. The cases that STILL NEED a script (id · title · steps · expected) are listed " +
+			"below, along with the PROJECT QA MANIFEST (base_url, auth, routes, flows). For EACH case, author a COMPLETE, " +
+			"self-contained Playwright ESM module that runs with plain `node`: `import { chromium } from \"playwright\";`, " +
+			"log in via the manifest auth, perform the steps against the manifest base_url/routes, ASSERT the expected " +
+			"result by deterministic signal (HTTP status, response shape, DOM/accessibility-tree TEXT — never a " +
+			"screenshot), then `process.exit(0)` on pass / `process.exit(1)` on any failed assertion or thrown error " +
+			"(try/catch → exit(1); close the browser in finally). Do NOT run anything and do NOT touch product code — only " +
+			"AUTHOR the scripts. At the END of your comment, append a fenced ```scripts code block containing ONLY a JSON " +
+			"array the server parses: `[{\"id\":\"<the case id from the list>\",\"script\":\"<the full Playwright module>\"}]` " +
+			"— one entry per case you compiled. The JSON must be valid and self-contained."
 	default:
 		return ""
 	}
@@ -344,6 +388,13 @@ type qaManifest struct {
 	} `json:"auth"`
 	Routes map[string]string `json:"routes"`
 	Flows  []qaManifestFlow  `json:"flows"`
+	// KnownIssues are pre-existing dead routes / disabled modules / standing
+	// server errors on the QA target. Injected so an agent neither wastes a
+	// run exploring them nor fails a task on a failure that predates it.
+	KnownIssues []string `json:"known_issues"`
+	// Notes carry target-specific ground rules (rendering model, selector
+	// conventions, role of the QA account) that don't fit routes/flows.
+	Notes string `json:"notes"`
 }
 
 // sliceActionQAManifestContext injects the project QA manifest + critical paths
@@ -398,6 +449,15 @@ func (h *Handler) sliceActionQAManifestContext(ctx context.Context, issue db.Iss
 				b.WriteString("; assert: " + f.Assert)
 			}
 			b.WriteString(".")
+		}
+		if m.Notes != "" {
+			b.WriteString(" NOTES: " + m.Notes)
+		}
+		if len(m.KnownIssues) > 0 {
+			b.WriteString(" KNOWN ISSUES (pre-existing — do NOT test these paths and NEVER fail a task on them; report separately if relevant):")
+			for _, k := range m.KnownIssues {
+				b.WriteString(" " + k + ";")
+			}
 		}
 	}
 	if len(settings.CriticalPaths) > 0 {
@@ -629,7 +689,7 @@ func (h *Handler) maybeAutoDocsOnLabel(ctx context.Context, issue db.Issue, labe
 	if !ok {
 		return
 	}
-	instruction := buildSliceInstruction(sliceActionAutoDocs, "") + docsCtx
+	instruction := buildSliceInstruction(sliceActionAutoDocs, "") + docsCtx + h.sliceActionQAManifestContext(ctx, issue)
 	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(agent.Name), uuidToString(agent.ID)) + instruction
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID:     issue.ID,
@@ -1170,12 +1230,21 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 		"qa_agents", len(agents))
 }
 
-// maybeGenTestsOnInReview fires the QA squad's gen_test_cases when an issue
-// enters in_review, so the QA Squad authors the test suite proactively the
-// moment dev hands off — no human click. Idempotent: skips if the issue already
-// has test cases (a re-review after a hotfix won't duplicate them). Best-effort
-// + detached, gated by AGORA_AUTO_QA_ENABLED, mirrors maybeRunQAOnInReview.
-func (h *Handler) maybeGenTestsOnInReview(ctx context.Context, issue db.Issue, actorType, actorID string) {
+// maybeGenTests fires the QA squad's gen_test_cases for an issue. Two
+// triggers, same machinery:
+//   - SHIFT-LEFT PREP, on dev start (status → in_progress): while dev agents
+//     work the task, a QA agent authors the cases AND compiles their Playwright
+//     scripts from the acceptance criteria + the project QA manifest — so by
+//     the time the issue reaches in_review the suite is sitting ready and the
+//     gate only has to EXECUTE it.
+//   - BACKFILL, on in_review: catches issues that skipped in_progress (or
+//     pre-dated the prep trigger).
+//
+// Idempotent: skips if the issue already has test cases (the in_review call
+// after a prep run, or a re-review after a hotfix, won't duplicate them).
+// Best-effort + detached, gated by AGORA_AUTO_QA_ENABLED, mirrors
+// maybeRunQAOnInReview.
+func (h *Handler) maybeGenTests(ctx context.Context, issue db.Issue, actorType, actorID string, prep bool) {
 	if !autoQAEnabled() {
 		return
 	}
@@ -1214,6 +1283,12 @@ func (h *Handler) maybeGenTestsOnInReview(ctx context.Context, issue db.Issue, a
 		h.sliceActionQAManifestContext(ctx, issue) +
 		h.sliceActionQADocsContext(ctx, issue) +
 		qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
+	if prep {
+		// Dev is still working — there is no diff to read yet. The whole value
+		// of the prep run is a suite that is EXECUTABLE the moment the issue
+		// reaches in_review, so scripts are mandatory here, not optional.
+		instruction += " SHIFT-LEFT PREP: the developer is still working on this task — do NOT look for a diff or a deployed change, and do NOT run anything. Author the cases from the acceptance criteria + the PROJECT QA MANIFEST above, and for EVERY automatable case also emit its runnable Playwright script (the script field) targeting the manifest's base_url/auth/routes — the in_review gate will only EXECUTE what you prepare now."
+	}
 	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID:     issue.ID,
@@ -1229,7 +1304,90 @@ func (h *Handler) maybeGenTestsOnInReview(ctx context.Context, issue db.Issue, a
 		return
 	}
 	h.triggerTasksForComment(ctx, issue, comment, nil, actorType, actorID, nil)
-	slog.Info("auto gen_test_cases fired on in_review", "issue_id", uuidToString(issue.ID), "agent_id", uuidToString(runner.ID))
+	slog.Info("auto gen_test_cases fired",
+		"issue_id", uuidToString(issue.ID), "agent_id", uuidToString(runner.ID), "prep", prep)
+}
+
+// maybeRunTestsOnInReview fires the QA squad's run_test_cases when an issue
+// enters in_review AND there are automated cases to EXECUTE — the issue's own
+// (authored earlier) OR the project's standing base suite (regression). Without
+// this the base suite is authored + promoted but never actually RUN, so no
+// test_run rows / regression history are ever produced — the regression QA layer
+// stays silent. Detached, best-effort, gated by AGORA_AUTO_QA_ENABLED; mirrors
+// maybeGenTests. Fires alongside run_qa (the gate) and gen_tests
+// (authoring) — three facets of one in_review.
+func (h *Handler) maybeRunTestsOnInReview(ctx context.Context, issue db.Issue, actorType, actorID string) {
+	if !autoQAEnabled() {
+		return
+	}
+	// Need automated cases to run: the issue's own, or the project base suite.
+	haveIssue := 0
+	if cs, err := h.Queries.ListAutomatedTestCasesForIssue(ctx, db.ListAutomatedTestCasesForIssueParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+	}); err == nil {
+		haveIssue = len(cs)
+	}
+	haveBase := 0
+	if issue.ProjectID.Valid {
+		if cs, err := h.Queries.ListAutomatedTestCasesForProject(ctx, db.ListAutomatedTestCasesForProjectParams{
+			ProjectID:   issue.ProjectID,
+			WorkspaceID: issue.WorkspaceID,
+		}); err == nil {
+			haveBase = len(cs)
+		}
+	}
+	if haveIssue == 0 && haveBase == 0 {
+		return // nothing to execute yet
+	}
+	agents := h.qaSquadAgents(ctx, issue.WorkspaceID)
+	if len(agents) == 0 {
+		return
+	}
+	var free []db.Agent
+	for _, a := range agents {
+		pending, err := h.Queries.HasPendingTaskForIssueAndAgent(ctx, db.HasPendingTaskForIssueAndAgentParams{
+			IssueID: issue.ID,
+			AgentID: a.ID,
+		})
+		if err == nil && !pending {
+			free = append(free, a)
+		}
+	}
+	if len(free) == 0 {
+		return
+	}
+	runner := h.pickLeastBusyQAAgent(ctx, free)
+
+	// Mirror the CreateSliceAction run_test_cases assembly so the auto-fired run
+	// carries the same smoke target, manifest, docs, base suite, and case list.
+	instruction := buildSliceInstruction(sliceActionRunTests, "")
+	if url := h.devBoxSmokeURL(ctx, issue); url != "" {
+		instruction += " SMOKE TARGET: the app is served at " + url + " — run the cases against THAT url."
+	}
+	instruction += h.sliceActionQASmokeContext(ctx, issue)
+	instruction += h.sliceActionQAManifestContext(ctx, issue)
+	instruction += h.sliceActionQADocsContext(ctx, issue)
+	baseSuite := h.sliceActionProjectBaseSuiteContext(ctx, issue)
+	instruction += h.sliceActionTestCasesContext(ctx, issue, baseSuite != "")
+	instruction += baseSuite
+
+	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
+	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+		AuthorType:  actorType,
+		AuthorID:    parseUUID(actorID),
+		Content:     content,
+		Type:        "comment",
+		ParentID:    pgtype.UUID{Valid: false},
+	})
+	if err != nil {
+		slog.Warn("auto run_test_cases: create comment failed", "error", err, "issue_id", uuidToString(issue.ID))
+		return
+	}
+	h.triggerTasksForComment(ctx, issue, comment, nil, actorType, actorID, nil)
+	slog.Info("auto run_test_cases fired on in_review", "issue_id", uuidToString(issue.ID), "agent_id", uuidToString(runner.ID))
 }
 
 // gitlabBaseBranch is the branch GitLab merge-request slice actions target +
@@ -1439,6 +1597,10 @@ func (h *Handler) sliceActionTestCasesContext(ctx context.Context, issue db.Issu
 		steps := strings.ReplaceAll(strings.TrimSpace(c.Steps), "\n", " ")
 		b.WriteString(fmt.Sprintf(" [id=%s] %s — steps: %s; expected: %s.",
 			uuidToString(c.ID), c.Title, steps, strings.TrimSpace(c.Expected)))
+		if s := strings.TrimSpace(c.Script); s != "" {
+			b.WriteString(fmt.Sprintf(" COMPILED SCRIPT for [id=%s] — write to /tmp/case-%s.mjs and run `node` it; exit code is the verdict:\n```javascript\n%s\n```",
+				uuidToString(c.ID), uuidToString(c.ID), s))
+		}
 	}
 	return b.String()
 }
@@ -1473,8 +1635,138 @@ func (h *Handler) sliceActionProjectBaseSuiteContext(ctx context.Context, issue 
 		steps := strings.ReplaceAll(strings.TrimSpace(c.Steps), "\n", " ")
 		b.WriteString(fmt.Sprintf(" [id=%s] %s — steps: %s; expected: %s.",
 			uuidToString(c.ID), c.Title, steps, strings.TrimSpace(c.Expected)))
+		if s := strings.TrimSpace(c.Script); s != "" {
+			b.WriteString(fmt.Sprintf(" COMPILED SCRIPT for [id=%s] — write to /tmp/case-%s.mjs and run `node` it; exit code is the verdict:\n```javascript\n%s\n```",
+				uuidToString(c.ID), uuidToString(c.ID), s))
+		}
 	}
 	return b.String()
+}
+
+// uncompiledAutomatedCases collects the automated cases (issue's own + the
+// project's standing base suite) that still lack a compiled script — the set
+// compile_tests must author scripts for. Deduped by id.
+func (h *Handler) uncompiledAutomatedCases(ctx context.Context, issue db.Issue) []db.TestCase {
+	var out []db.TestCase
+	seen := map[string]bool{}
+	add := func(cases []db.TestCase) {
+		for _, c := range cases {
+			if strings.TrimSpace(c.Script) != "" {
+				continue
+			}
+			k := uuidToString(c.ID)
+			if seen[k] {
+				continue
+			}
+			seen[k] = true
+			out = append(out, c)
+		}
+	}
+	if cs, err := h.Queries.ListAutomatedTestCasesForIssue(ctx, db.ListAutomatedTestCasesForIssueParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+	}); err == nil {
+		add(cs)
+	}
+	if issue.ProjectID.Valid {
+		if cs, err := h.Queries.ListAutomatedTestCasesForProject(ctx, db.ListAutomatedTestCasesForProjectParams{
+			ProjectID:   issue.ProjectID,
+			WorkspaceID: issue.WorkspaceID,
+		}); err == nil {
+			add(cs)
+		}
+	}
+	return out
+}
+
+// sliceActionUncompiledCasesContext lists the automated cases that still need a
+// compiled script (issue + project base) for compile_tests — id/title/steps/
+// expected only, since the agent is AUTHORING the script, not running it.
+func (h *Handler) sliceActionUncompiledCasesContext(ctx context.Context, issue db.Issue) string {
+	cases := h.uncompiledAutomatedCases(ctx, issue)
+	if len(cases) == 0 {
+		return " NOTE: every automated case already has a compiled script — nothing to compile."
+	}
+	var b strings.Builder
+	b.WriteString(" CASES TO COMPILE (author a script for EACH by its id):")
+	for _, c := range cases {
+		steps := strings.ReplaceAll(strings.TrimSpace(c.Steps), "\n", " ")
+		b.WriteString(fmt.Sprintf(" [id=%s] %s — steps: %s; expected: %s.",
+			uuidToString(c.ID), c.Title, steps, strings.TrimSpace(c.Expected)))
+	}
+	return b.String()
+}
+
+// qaCompileEnabled gates the auto-compile hook (a human-authored automated case
+// gets a runnable script authored in the background). Default off — opt-in, and
+// separate from AGORA_AUTO_QA_ENABLED because compilation is a pure authoring
+// convenience, not the QA gate.
+func qaCompileEnabled() bool {
+	return strings.TrimSpace(os.Getenv("AGORA_QA_COMPILE_ENABLED")) == "true"
+}
+
+// maybeCompileTestCases fires the QA squad's compile_tests when an automated case
+// on this issue still lacks a compiled Playwright script, so run_test_cases can
+// later EXECUTE it deterministically instead of hand-driving. Detached, best-
+// effort, gated by AGORA_QA_COMPILE_ENABLED. Only wired from the issue-scoped
+// create handler (CreateIssueTestCase): compile needs an issue timeline to post
+// the @mention comment to. Project-base cases are compiled on demand via the
+// /compile_tests slice action a human/agent fires against an issue in that
+// project — the create handler has no timeline to post to.
+func (h *Handler) maybeCompileTestCases(ctx context.Context, issue db.Issue) {
+	if !qaCompileEnabled() {
+		return
+	}
+	// Nothing to compile → skip (also covers the case whose script was authored
+	// inline by gen_test_cases).
+	if len(h.uncompiledAutomatedCases(ctx, issue)) == 0 {
+		return
+	}
+	agents := h.qaSquadAgents(ctx, issue.WorkspaceID)
+	if len(agents) == 0 {
+		return
+	}
+	var free []db.Agent
+	for _, a := range agents {
+		pending, err := h.Queries.HasPendingTaskForIssueAndAgent(ctx, db.HasPendingTaskForIssueAndAgentParams{
+			IssueID: issue.ID,
+			AgentID: a.ID,
+		})
+		if err == nil && !pending {
+			free = append(free, a)
+		}
+	}
+	if len(free) == 0 {
+		return
+	}
+	runner := h.pickLeastBusyQAAgent(ctx, free)
+
+	instruction := buildSliceInstruction(sliceActionCompileTests, "") +
+		h.sliceActionQAManifestContext(ctx, issue) +
+		h.sliceActionQADocsContext(ctx, issue) +
+		h.sliceActionUncompiledCasesContext(ctx, issue)
+	// No request user on this detached path — attribute to the issue's creator,
+	// mirroring the squad-failure-recovery path.
+	authorType := issue.CreatorType
+	if authorType != "member" && authorType != "agent" {
+		authorType = "member"
+	}
+	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
+	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+		AuthorType:  authorType,
+		AuthorID:    issue.CreatorID,
+		Content:     content,
+		Type:        "comment",
+		ParentID:    pgtype.UUID{Valid: false},
+	})
+	if err != nil {
+		slog.Warn("auto compile_tests: create comment failed", "error", err, "issue_id", uuidToString(issue.ID))
+		return
+	}
+	h.triggerTasksForComment(ctx, issue, comment, nil, authorType, uuidToString(issue.CreatorID), nil)
+	slog.Info("auto compile_tests fired on new automated case", "issue_id", uuidToString(issue.ID), "agent_id", uuidToString(runner.ID))
 }
 
 // parseAcceptanceCriteria defensively extracts human-readable criterion strings
@@ -1628,6 +1920,11 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 		if req.Kind == sliceActionDraftCode {
 			instruction += taskModeInstructionFor(h.issueTaskType(r.Context(), issue))
 			instruction += verifyGateInstruction()
+			// Give the DEV the intended-behavior source of truth (the docs repo),
+			// not just the ticket — so it builds against what the feature SHOULD
+			// do, the same spec QA later judges it against (closes the dev/QA
+			// docs asymmetry).
+			instruction += h.sliceActionQADocsContext(r.Context(), issue)
 		}
 		// Sprint mode: commit to the ONE shared sprint branch, no per-task PR
 		// (the directive supersedes the base "open a pull request" wording).
@@ -1659,6 +1956,7 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 	// auto_docs targets the project's configured docs repo when set.
 	if req.Kind == sliceActionAutoDocs {
 		instruction += h.sliceActionDocsRepoContext(r.Context(), issue)
+		instruction += h.sliceActionQAManifestContext(r.Context(), issue)
 	}
 	// gen_test_cases authors cases from the issue's plan (description + criteria)
 	// and the QA manifest so authored cases target KNOWN routes/flows, not guesses.
@@ -1681,6 +1979,13 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 		baseSuite := h.sliceActionProjectBaseSuiteContext(r.Context(), issue)
 		instruction += h.sliceActionTestCasesContext(r.Context(), issue, baseSuite != "")
 		instruction += baseSuite
+	}
+	// compile_tests authors runnable Playwright scripts for the automated cases
+	// that still lack one (issue + project base), against the QA manifest.
+	if req.Kind == sliceActionCompileTests {
+		instruction += h.sliceActionQAManifestContext(r.Context(), issue)
+		instruction += h.sliceActionQADocsContext(r.Context(), issue)
+		instruction += h.sliceActionUncompiledCasesContext(r.Context(), issue)
 	}
 
 	// Build the @mention link the comment-trigger path keys off:

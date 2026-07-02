@@ -2,9 +2,9 @@
 
 -- name: CreateTestCase :one
 INSERT INTO test_case (
-    workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, category
+    workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, category, script
 )
-VALUES ($1, sqlc.narg(issue_id), sqlc.narg(project_id), $2, $3, $4, $5, $6, $7, sqlc.narg(author_id), $8)
+VALUES ($1, sqlc.narg(issue_id), sqlc.narg(project_id), $2, $3, $4, $5, $6, $7, sqlc.narg(author_id), $8, $9)
 RETURNING *;
 
 -- name: ListTestCasesForIssue :many
@@ -50,9 +50,9 @@ ORDER BY created_at DESC;
 -- title prefix, so every future QA run regression-tests the finished work.
 -- Dedupe by prefixed title against live base rows — re-fires are no-ops.
 INSERT INTO test_case
-  (workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, category)
+  (workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, category, script)
 SELECT tc.workspace_id, NULL, $2, '[' || sqlc.arg(issue_key)::text || '] ' || tc.title,
-       tc.steps, tc.expected, 'automated', 'promoted', tc.author_type, tc.author_id, tc.category
+       tc.steps, tc.expected, 'automated', 'promoted', tc.author_type, tc.author_id, tc.category, tc.script
 FROM test_case tc
 WHERE tc.issue_id = $1 AND tc.kind = 'automated' AND tc.archived_at IS NULL
   AND NOT EXISTS (
@@ -109,3 +109,10 @@ SELECT * FROM test_run
 WHERE test_case_id = $1 AND workspace_id = $2
 ORDER BY created_at DESC
 LIMIT $3;
+
+-- name: SetTestCaseScript :exec
+-- Persist a compiled Playwright script onto an existing case (the background
+-- compile_tests flow / on-demand recompile). Workspace-scoped write.
+UPDATE test_case
+SET script = $3, updated_at = now()
+WHERE id = $1 AND workspace_id = $2;

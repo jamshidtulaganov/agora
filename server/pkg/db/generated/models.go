@@ -819,6 +819,7 @@ type TestCase struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 	Category    string             `json:"category"`
+	Script      string             `json:"script"`
 }
 
 type TestRun struct {

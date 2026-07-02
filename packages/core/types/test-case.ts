@@ -19,6 +19,7 @@ export interface TestCase {
   source: string; // human | agent
   author_type: string;
   category: string; // positive | negative
+  script?: string; // compiled Playwright script for an automated case; empty = hand-driven
   created_at: string;
   latest_run: TestRunLite | null;
 }

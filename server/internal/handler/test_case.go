@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -26,17 +27,21 @@ type TestRunLite struct {
 }
 
 type TestCaseResponse struct {
-	ID         string       `json:"id"`
-	IssueID    string       `json:"issue_id"`
-	Title      string       `json:"title"`
-	Steps      string       `json:"steps"`
-	Expected   string       `json:"expected"`
-	Kind       string       `json:"kind"`
-	Source     string       `json:"source"`
-	AuthorType string       `json:"author_type"`
-	Category   string       `json:"category"` // positive | negative
-	CreatedAt  string       `json:"created_at"`
-	LatestRun  *TestRunLite `json:"latest_run"`
+	ID         string `json:"id"`
+	IssueID    string `json:"issue_id"`
+	Title      string `json:"title"`
+	Steps      string `json:"steps"`
+	Expected   string `json:"expected"`
+	Kind       string `json:"kind"`
+	Source     string `json:"source"`
+	AuthorType string `json:"author_type"`
+	Category   string `json:"category"` // positive | negative
+	// Script is the compiled Playwright script for an automated case, if any.
+	// Empty means the case is hand-driven (no compiled runner) — the QA panel
+	// reads this to show the case's "compiled" state.
+	Script    string       `json:"script"`
+	CreatedAt string       `json:"created_at"`
+	LatestRun *TestRunLite `json:"latest_run"`
 }
 
 type ListTestCasesResponse struct {
@@ -54,6 +59,7 @@ func testCaseToResponse(c db.TestCase, latest *TestRunLite) TestCaseResponse {
 		Source:     c.Source,
 		AuthorType: c.AuthorType,
 		Category:   c.Category,
+		Script:     c.Script,
 		CreatedAt:  c.CreatedAt.Time.Format(time.RFC3339),
 		LatestRun:  latest,
 	}
@@ -150,6 +156,7 @@ func (h *Handler) CreateIssueTestCase(w http.ResponseWriter, r *http.Request) {
 		AuthorType:  "member",
 		AuthorID:    parseUUID(userID),
 		Category:    category,
+		Script:      "", // human-authored; empty triggers the background auto-compile hook below
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create test case")
@@ -158,6 +165,12 @@ func (h *Handler) CreateIssueTestCase(w http.ResponseWriter, r *http.Request) {
 	h.publish(protocol.EventTestCasesChanged, uuidToString(issue.WorkspaceID), "member", userID, map[string]any{
 		"issue_id": uuidToString(issue.ID),
 	})
+	// A human-authored automated case ships with no script; auto-compile it into a
+	// runnable Playwright script in the background so run_test_cases executes it
+	// deterministically. Detached, best-effort — gated inside maybeCompileTestCases.
+	if kind == "automated" {
+		go h.maybeCompileTestCases(context.Background(), issue)
+	}
 	writeJSON(w, http.StatusCreated, testCaseToResponse(c, nil))
 }
 
@@ -263,6 +276,7 @@ func (h *Handler) CreateProjectTestCase(w http.ResponseWriter, r *http.Request) 
 		AuthorType:  "member",
 		AuthorID:    parseUUID(userID),
 		Category:    category,
+		Script:      "", // human base case; compile-eligible on demand via /compile_tests
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create test case")
@@ -329,11 +343,11 @@ func (h *Handler) CreateTestCaseRun(w http.ResponseWriter, r *http.Request) {
 		"issue_id": uuidToString(tc.IssueID),
 	})
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"id":          uuidToString(run.ID),
+		"id":           uuidToString(run.ID),
 		"test_case_id": uuidToString(run.TestCaseID),
-		"status":      run.Status,
-		"run_source":  run.RunSource,
-		"created_at":  run.CreatedAt.Time.Format(time.RFC3339),
+		"status":       run.Status,
+		"run_source":   run.RunSource,
+		"created_at":   run.CreatedAt.Time.Format(time.RFC3339),
 	})
 }
 

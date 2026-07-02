@@ -190,6 +190,12 @@ not a general squad behavior. Two separate mechanisms:
   not the least-busy pick from the whole QA roster. Solo-agent / non-squad
   assignments are unchanged: they still fan across the whole QA roster so
   many `in_review` issues run concurrently.
+- **`in_progress` → shift-left QA prep.** The moment a task enters
+  `in_progress`, a QA agent gets a background `gen_test_cases` task: author
+  the cases AND compile their Playwright scripts against the project QA
+  manifest while the dev is still implementing — no diff-reading, no
+  execution. By `in_review` the suite already exists, so the gate only
+  EXECUTES it. Idempotent: skipped when the issue already has test cases.
 - **`qa:fail` label → auto-reassignment.** The issue is handed back to the
   FAILING dev agent's squad leader (not the failing agent itself, not a
   human), status resets to `todo`, and a comment carrying the QA verdict

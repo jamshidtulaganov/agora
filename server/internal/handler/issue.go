@@ -2618,8 +2618,18 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		// to the same agent and the gate verdict was silently suppressed.
 		go func() {
 			h.maybeRunQAOnInReview(context.Background(), issue, actorType, actorID)
-			h.maybeGenTestsOnInReview(context.Background(), issue, actorType, actorID)
+			h.maybeGenTests(context.Background(), issue, actorType, actorID, false)
+			h.maybeRunTestsOnInReview(context.Background(), issue, actorType, actorID)
 		}()
+	}
+
+	// Shift-left QA prep on dev start: the moment an issue enters in_progress,
+	// a QA agent authors the test cases + compiles their Playwright scripts
+	// against the project QA manifest IN THE BACKGROUND, while the dev agent
+	// is still implementing — so the in_review gate only executes a suite that
+	// is already sitting ready. Idempotent (skips when cases exist).
+	if statusChanged && issue.Status == "in_progress" && prevIssue.Status != "in_progress" {
+		go h.maybeGenTests(context.Background(), issue, actorType, actorID, true)
 	}
 
 	// Cancel active tasks when the issue is cancelled by a user.
@@ -3184,8 +3194,16 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			issueCopy := issue
 			go func() {
 				h.maybeRunQAOnInReview(context.Background(), issueCopy, actorType, actorID)
-				h.maybeGenTestsOnInReview(context.Background(), issueCopy, actorType, actorID)
+				h.maybeGenTests(context.Background(), issueCopy, actorType, actorID, false)
+				h.maybeRunTestsOnInReview(context.Background(), issueCopy, actorType, actorID)
 			}()
+		}
+
+		// Shift-left QA prep on dev start (batch-path mirror of UpdateIssue):
+		// author + compile the suite in the background while the dev works.
+		if statusChanged && issue.Status == "in_progress" && prevIssue.Status != "in_progress" {
+			issueCopy := issue
+			go h.maybeGenTests(context.Background(), issueCopy, actorType, actorID, true)
 		}
 
 		// Cancel active tasks when the issue is cancelled by a user.
