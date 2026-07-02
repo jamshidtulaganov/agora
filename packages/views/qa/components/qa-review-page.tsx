@@ -233,7 +233,12 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
               and driven in place. The terminal renders nothing when idle, so
               an idle issue's bay is just the browser. */}
           <aside className="order-2 flex h-[440px] flex-col gap-3 lg:sticky lg:top-6 lg:order-1 lg:h-[calc(100vh-6.5rem)]">
-            <div className="shrink-0 max-h-[45%] overflow-y-auto">
+            {/* Progress feed is a FIXED-height compact strip (header + the
+                latest couple of actions, internal scroll) — it must NOT grow
+                as tool calls accumulate, or it steals height from the live
+                browser below. The browser is the star and keeps all remaining
+                space (flex-1), stable regardless of how much the agent does. */}
+            <div className="shrink-0 max-h-[88px] overflow-y-auto">
               <QALiveProgress issueId={issueId} />
             </div>
             <QALiveBrowser issueId={issueId} />
