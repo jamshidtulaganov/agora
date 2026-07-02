@@ -163,6 +163,15 @@ Two ways `mcp_config` differs from `custom_env`:
   field is `null` and `mcp_config_redacted` is `true`. Agent actors never see
   it, and a workspace may force redaction for everyone.
 
+**Workspace defaults.** A workspace may define default MCP servers
+(`PUT /api/workspaces/{id}/default-mcp-config`, owner/admin-only, humans only —
+agent actors are rejected). At task-claim time the workspace's default
+`mcpServers` are merged into the running agent's effective config, and an
+agent-level entry with the same server name wins. So an agent with
+`mcp_config = null` still receives the workspace's shared servers at runtime;
+setting a same-named server on the agent overrides the default. The stored
+`agent.mcp_config` value is NOT modified by this merge — it happens per task.
+
 ## Skill binding
 
 Creating an agent does NOT bind any workspace skill — binding is a separate

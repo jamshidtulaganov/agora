@@ -74,6 +74,16 @@ only.
 | Agent actors denied | 80–84 | `if actorType == "agent"` → 403 "agents may not access env management endpoints" (MUL-2600 impersonation guard) |
 | Owner/admin only | 86 | `requireWorkspaceRole(..., "owner", "admin")` |
 
+## Workspace default MCP config — `server/internal/handler/workspace_mcp.go`
+
+| Contract | Line | Behavior |
+|---|---|---|
+| `authorizeWorkspaceDefaultMcp` gate | 48 | agent actors → 403; then `requireWorkspaceRole(..., "owner", "admin")` |
+| `GET /api/workspaces/{id}/default-mcp-config` | 73 | returns the stored default to owners/admins; never part of the generic workspace response |
+| `PUT /api/workspaces/{id}/default-mcp-config` | 99 | `null`/absent `mcp_config` clears; otherwise shape-validated; persist + audit in one tx (`workspace_default_mcp_updated`, server names only) |
+| Shape validation | 223 | object with an `mcpServers` object; non-empty names; object definitions — else 400 |
+| Claim-time merge | 194 (+ `daemon.go` 1221) | `applyWorkspaceDefaultMcpServers` merges default servers into the per-task config; agent-level entry wins on name collision; failures never block the claim; stored `agent.mcp_config` is untouched |
+
 ## Routes — `server/cmd/server/router.go`
 
 | Contract | Line | Behavior |

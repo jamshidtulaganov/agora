@@ -1213,6 +1213,12 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		if agent.McpConfig != nil {
 			mcpConfig = json.RawMessage(agent.McpConfig)
 		}
+		// Merge the workspace's default MCP servers first (agent entries win
+		// on name collision), so every agent — regardless of how it was
+		// created — carries the workspace's shared tool servers. Runs before
+		// the Lark/Figma credential injectors so a default-provided "lark"
+		// entry still gets its secrets filled below.
+		mcpConfig = h.applyWorkspaceDefaultMcpServers(r.Context(), runtime.WorkspaceID, mcpConfig)
 		// Fill the Lark MCP server's app credentials from the agent's bound
 		// Bot installation (the daemon can't decrypt app_secret; only the
 		// backend holds the key). No-op unless the agent configured a "lark"

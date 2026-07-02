@@ -11,10 +11,37 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const clearWorkspaceDefaultMcpConfig = `-- name: ClearWorkspaceDefaultMcpConfig :one
+UPDATE workspace SET default_mcp_config = NULL, updated_at = now()
+WHERE id = $1
+RETURNING id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, default_mcp_config
+`
+
+func (q *Queries) ClearWorkspaceDefaultMcpConfig(ctx context.Context, id pgtype.UUID) (Workspace, error) {
+	row := q.db.QueryRow(ctx, clearWorkspaceDefaultMcpConfig, id)
+	var i Workspace
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.Description,
+		&i.Settings,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Context,
+		&i.Repos,
+		&i.IssuePrefix,
+		&i.IssueCounter,
+		&i.AvatarUrl,
+		&i.DefaultMcpConfig,
+	)
+	return i, err
+}
+
 const createWorkspace = `-- name: CreateWorkspace :one
 INSERT INTO workspace (name, slug, description, context, issue_prefix)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url
+RETURNING id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, default_mcp_config
 `
 
 type CreateWorkspaceParams struct {
@@ -47,6 +74,7 @@ func (q *Queries) CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams
 		&i.IssuePrefix,
 		&i.IssueCounter,
 		&i.AvatarUrl,
+		&i.DefaultMcpConfig,
 	)
 	return i, err
 }
@@ -61,7 +89,7 @@ func (q *Queries) DeleteWorkspace(ctx context.Context, id pgtype.UUID) error {
 }
 
 const getWorkspace = `-- name: GetWorkspace :one
-SELECT id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url FROM workspace
+SELECT id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, default_mcp_config FROM workspace
 WHERE id = $1
 `
 
@@ -81,12 +109,13 @@ func (q *Queries) GetWorkspace(ctx context.Context, id pgtype.UUID) (Workspace, 
 		&i.IssuePrefix,
 		&i.IssueCounter,
 		&i.AvatarUrl,
+		&i.DefaultMcpConfig,
 	)
 	return i, err
 }
 
 const getWorkspaceBySlug = `-- name: GetWorkspaceBySlug :one
-SELECT id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url FROM workspace
+SELECT id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, default_mcp_config FROM workspace
 WHERE slug = $1
 `
 
@@ -106,8 +135,21 @@ func (q *Queries) GetWorkspaceBySlug(ctx context.Context, slug string) (Workspac
 		&i.IssuePrefix,
 		&i.IssueCounter,
 		&i.AvatarUrl,
+		&i.DefaultMcpConfig,
 	)
 	return i, err
+}
+
+const getWorkspaceDefaultMcpConfig = `-- name: GetWorkspaceDefaultMcpConfig :one
+SELECT default_mcp_config FROM workspace
+WHERE id = $1
+`
+
+func (q *Queries) GetWorkspaceDefaultMcpConfig(ctx context.Context, id pgtype.UUID) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getWorkspaceDefaultMcpConfig, id)
+	var default_mcp_config []byte
+	err := row.Scan(&default_mcp_config)
+	return default_mcp_config, err
 }
 
 const incrementIssueCounter = `-- name: IncrementIssueCounter :one
@@ -139,15 +181,17 @@ func (q *Queries) IncrementIssueCounter(ctx context.Context, workspaceID pgtype.
 }
 
 const listWorkspaces = `-- name: ListWorkspaces :many
-SELECT w.id, w.name, w.slug, w.description, w.settings,
-       w.created_at, w.updated_at, w.context, w.repos,
-       w.issue_prefix, w.issue_counter, w.avatar_url
+SELECT w.id, w.name, w.slug, w.description, w.settings, w.created_at, w.updated_at, w.context, w.repos, w.issue_prefix, w.issue_counter, w.avatar_url, w.default_mcp_config
 FROM member m
 JOIN workspace w ON w.id = m.workspace_id
 WHERE m.user_id = $1
 ORDER BY w.created_at ASC
 `
 
+// w.* keeps the row shape identical to the workspace model so sqlc reuses
+// db.Workspace. default_mcp_config rides along but is never mapped into
+// WorkspaceResponse (see workspaceToResponse) — the generic workspace
+// resource must not expose it.
 func (q *Queries) ListWorkspaces(ctx context.Context, userID pgtype.UUID) ([]Workspace, error) {
 	rows, err := q.db.Query(ctx, listWorkspaces, userID)
 	if err != nil {
@@ -170,6 +214,7 @@ func (q *Queries) ListWorkspaces(ctx context.Context, userID pgtype.UUID) ([]Wor
 			&i.IssuePrefix,
 			&i.IssueCounter,
 			&i.AvatarUrl,
+			&i.DefaultMcpConfig,
 		); err != nil {
 			return nil, err
 		}
@@ -192,7 +237,7 @@ UPDATE workspace SET
     avatar_url = COALESCE($8, avatar_url),
     updated_at = now()
 WHERE id = $1
-RETURNING id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url
+RETURNING id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, default_mcp_config
 `
 
 type UpdateWorkspaceParams struct {
@@ -231,6 +276,39 @@ func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams
 		&i.IssuePrefix,
 		&i.IssueCounter,
 		&i.AvatarUrl,
+		&i.DefaultMcpConfig,
+	)
+	return i, err
+}
+
+const updateWorkspaceDefaultMcpConfig = `-- name: UpdateWorkspaceDefaultMcpConfig :one
+UPDATE workspace SET default_mcp_config = $2, updated_at = now()
+WHERE id = $1
+RETURNING id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, default_mcp_config
+`
+
+type UpdateWorkspaceDefaultMcpConfigParams struct {
+	ID               pgtype.UUID `json:"id"`
+	DefaultMcpConfig []byte      `json:"default_mcp_config"`
+}
+
+func (q *Queries) UpdateWorkspaceDefaultMcpConfig(ctx context.Context, arg UpdateWorkspaceDefaultMcpConfigParams) (Workspace, error) {
+	row := q.db.QueryRow(ctx, updateWorkspaceDefaultMcpConfig, arg.ID, arg.DefaultMcpConfig)
+	var i Workspace
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.Description,
+		&i.Settings,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Context,
+		&i.Repos,
+		&i.IssuePrefix,
+		&i.IssueCounter,
+		&i.AvatarUrl,
+		&i.DefaultMcpConfig,
 	)
 	return i, err
 }

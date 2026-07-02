@@ -915,18 +915,19 @@ type WebhookDelivery struct {
 }
 
 type Workspace struct {
-	ID           pgtype.UUID        `json:"id"`
-	Name         string             `json:"name"`
-	Slug         string             `json:"slug"`
-	Description  pgtype.Text        `json:"description"`
-	Settings     []byte             `json:"settings"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	Context      pgtype.Text        `json:"context"`
-	Repos        []byte             `json:"repos"`
-	IssuePrefix  string             `json:"issue_prefix"`
-	IssueCounter int32              `json:"issue_counter"`
-	AvatarUrl    pgtype.Text        `json:"avatar_url"`
+	ID               pgtype.UUID        `json:"id"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	Description      pgtype.Text        `json:"description"`
+	Settings         []byte             `json:"settings"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	Context          pgtype.Text        `json:"context"`
+	Repos            []byte             `json:"repos"`
+	IssuePrefix      string             `json:"issue_prefix"`
+	IssueCounter     int32              `json:"issue_counter"`
+	AvatarUrl        pgtype.Text        `json:"avatar_url"`
+	DefaultMcpConfig []byte             `json:"default_mcp_config"`
 }
 
 type WorkspaceInvitation struct {

@@ -1,7 +1,9 @@
 -- name: ListWorkspaces :many
-SELECT w.id, w.name, w.slug, w.description, w.settings,
-       w.created_at, w.updated_at, w.context, w.repos,
-       w.issue_prefix, w.issue_counter, w.avatar_url
+-- w.* keeps the row shape identical to the workspace model so sqlc reuses
+-- db.Workspace. default_mcp_config rides along but is never mapped into
+-- WorkspaceResponse (see workspaceToResponse) — the generic workspace
+-- resource must not expose it.
+SELECT w.*
 FROM member m
 JOIN workspace w ON w.id = m.workspace_id
 WHERE m.user_id = $1
@@ -55,3 +57,17 @@ RETURNING issue_counter;
 
 -- name: DeleteWorkspace :exec
 DELETE FROM workspace WHERE id = $1;
+
+-- name: GetWorkspaceDefaultMcpConfig :one
+SELECT default_mcp_config FROM workspace
+WHERE id = $1;
+
+-- name: UpdateWorkspaceDefaultMcpConfig :one
+UPDATE workspace SET default_mcp_config = $2, updated_at = now()
+WHERE id = $1
+RETURNING *;
+
+-- name: ClearWorkspaceDefaultMcpConfig :one
+UPDATE workspace SET default_mcp_config = NULL, updated_at = now()
+WHERE id = $1
+RETURNING *;

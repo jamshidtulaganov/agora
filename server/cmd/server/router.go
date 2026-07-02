@@ -670,6 +670,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))
 					r.Put("/", h.UpdateWorkspace)
 					r.Patch("/", h.UpdateWorkspace)
+					// Workspace-default MCP servers (merged into every agent's
+					// mcp_config at claim time). Secret-bearing — deliberately a
+					// dedicated resource, never part of the generic workspace
+					// response; handlers additionally reject agent actors.
+					r.Get("/default-mcp-config", h.GetWorkspaceDefaultMcpConfig)
+					r.Put("/default-mcp-config", h.UpdateWorkspaceDefaultMcpConfig)
 					r.Post("/members", h.CreateInvitation)
 					r.Route("/members/{memberId}", func(r chi.Router) {
 						r.Patch("/", h.UpdateMember)
