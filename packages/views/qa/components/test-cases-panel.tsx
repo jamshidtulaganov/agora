@@ -257,10 +257,25 @@ function CaseRow({
     c.category === "negative" ? t(($) => $.test_cases.category_negative) : t(($) => $.test_cases.category_positive);
 
   return (
-    <li className="px-3 py-2">
+    <li
+      className={cn(
+        "px-3 py-2 transition-colors",
+        // The case executing RIGHT NOW is unmistakable: tinted row + a left
+        // accent bar + a spinning marker on the title (below). Jest-runner feel.
+        isRunning && "border-l-2 border-info bg-info/5",
+      )}
+    >
       <div className="flex items-start gap-2">
         <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setOpen((v) => !v)}>
-          <span className="block truncate text-[13px]">{c.title}</span>
+          <span
+            className={cn(
+              "flex items-center gap-1.5 truncate text-[13px]",
+              isRunning && "font-medium text-info",
+            )}
+          >
+            {isRunning && <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden />}
+            <span className="truncate">{c.title}</span>
+          </span>
           {/* Compact meta: kind · category · (who ran it + when) — plain text,
               not badge pills, so it fits a 400px rail on one wrapping-safe line. */}
           <span className="mt-0.5 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[10px] text-muted-foreground/70">
