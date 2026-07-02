@@ -661,6 +661,9 @@
     "duplicates": "重复标记",
     "unmanaged": "未纳管组件",
     "proposed_tokens": "建议的 token",
-    "replaces": "替换 {{count}} 个"
+    "replaces": "替换 {{count}} 个",
+    "apply": "应用",
+    "apply_fired": "已创建：{{title}}",
+    "apply_failed": "创建任务失败"
   }
 }

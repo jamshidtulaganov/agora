@@ -837,6 +837,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/comments/summarize", h.SummarizeComments)
 					r.Post("/slice-actions", h.CreateSliceAction)
 					r.Post("/design-review", h.CreateDesignReview)
+					// Apply a design-audit finding: create a codemod issue that
+					// adopts a token or extracts a shared component.
+					r.Post("/design-apply", h.ApplyDesignAudit)
 					r.Get("/qa-evidence", h.GetIssueQAEvidence)
 					r.Get("/test-cases", h.GetIssueTestCases)
 					r.Post("/test-cases", h.CreateIssueTestCase)

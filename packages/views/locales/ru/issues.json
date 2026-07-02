@@ -676,6 +676,9 @@
     "duplicates": "Дублированная разметка",
     "unmanaged": "Неучтённые компоненты",
     "proposed_tokens": "Предлагаемые токены",
-    "replaces": "заменяет {{count}}"
+    "replaces": "заменяет {{count}}",
+    "apply": "Применить",
+    "apply_fired": "Создано: {{title}}",
+    "apply_failed": "Не удалось создать задачу"
   }
 }

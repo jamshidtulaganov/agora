@@ -676,6 +676,9 @@
     "duplicates": "Duplicated markup",
     "unmanaged": "Unmanaged components",
     "proposed_tokens": "Proposed tokens",
-    "replaces": "replaces {{count}}"
+    "replaces": "replaces {{count}}",
+    "apply": "Apply",
+    "apply_fired": "Created: {{title}}",
+    "apply_failed": "Failed to create the task"
   }
 }

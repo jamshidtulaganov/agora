@@ -676,6 +676,9 @@
     "duplicates": "Takrorlangan markup",
     "unmanaged": "Hisobga olinmagan komponentlar",
     "proposed_tokens": "Tavsiya etilgan tokenlar",
-    "replaces": "{{count}} tani almashtiradi"
+    "replaces": "{{count}} tani almashtiradi",
+    "apply": "Qo'llash",
+    "apply_fired": "Yaratildi: {{title}}",
+    "apply_failed": "Vazifa yaratib bo'lmadi"
   }
 }

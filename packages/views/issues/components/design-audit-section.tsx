@@ -1,19 +1,39 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, Loader2, Wand2 } from "lucide-react";
+import { toast } from "sonner";
+import { api } from "@agora/core/api";
 import { issueTimelineOptions } from "@agora/core/issues/queries";
 import { latestDesignAudit } from "@agora/core/design";
 import { useT } from "../../i18n";
 
 // Read-only design-system audit report, rendered on the audit chore issue (or
 // any issue carrying a ```design-audit``` block): off-token values, duplicated
-// markup, unmanaged components, and proposed tokens. Renders nothing when the
-// issue has no audit.
+// markup, unmanaged components, and proposed tokens. Each proposed token /
+// duplicate has an "Apply" action that spins up a scoped codemod issue (token
+// adoption / component extraction) — closing the design-system loop. Renders
+// nothing when the issue has no audit.
 export function DesignAuditSection({ issueId }: { issueId: string }) {
   const { t } = useT("issues");
   const { data: timeline = [] } = useQuery(issueTimelineOptions(issueId));
+
+  // Which finding is being applied ("token:0" / "component:1"); null when idle.
+  const [applying, setApplying] = useState<string | null>(null);
+  const apply = async (kind: "token" | "component", index: number) => {
+    const key = `${kind}:${index}`;
+    if (applying) return;
+    setApplying(key);
+    try {
+      const res = await api.applyDesignAudit(issueId, { kind, index });
+      toast.success(t(($) => $.design_audit.apply_fired, { title: res.title }));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t(($) => $.design_audit.apply_failed));
+    } finally {
+      setApplying(null);
+    }
+  };
 
   const audit = useMemo(() => {
     const comments = timeline
@@ -64,8 +84,14 @@ export function DesignAuditSection({ issueId }: { issueId: string }) {
                 <span className="truncate">{d.pattern}</span>
                 <span className="text-muted-foreground">×{d.occurrences}</span>
                 {d.suggested_component && (
-                  <span className="ml-auto text-emerald-600 dark:text-emerald-400">→ {d.suggested_component}</span>
+                  <span className="text-emerald-600 dark:text-emerald-400">→ {d.suggested_component}</span>
                 )}
+                <ApplyButton
+                  busy={applying === `component:${i}`}
+                  disabled={!!applying}
+                  onClick={() => void apply("component", i)}
+                  label={t(($) => $.design_audit.apply)}
+                />
               </li>
             ))}
           </AuditGroup>
@@ -89,10 +115,16 @@ export function DesignAuditSection({ issueId }: { issueId: string }) {
                 <span className="font-medium">{p.name}</span>
                 <code className="font-mono text-muted-foreground">{p.value}</code>
                 {p.replaces.length > 0 && (
-                  <span className="ml-auto text-[10px] text-muted-foreground">
+                  <span className="text-[10px] text-muted-foreground">
                     {t(($) => $.design_audit.replaces, { count: p.replaces.length })}
                   </span>
                 )}
+                <ApplyButton
+                  busy={applying === `token:${i}`}
+                  disabled={!!applying}
+                  onClick={() => void apply("token", i)}
+                  label={t(($) => $.design_audit.apply)}
+                />
               </li>
             ))}
           </AuditGroup>
@@ -108,5 +140,30 @@ function AuditGroup({ title, children }: { title: string; children: React.ReactN
       <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{title}</div>
       <ul className="divide-y divide-border rounded-md border">{children}</ul>
     </section>
+  );
+}
+
+function ApplyButton({
+  busy,
+  disabled,
+  onClick,
+  label,
+}: {
+  busy: boolean;
+  disabled: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={label}
+      className="ml-auto inline-flex h-5 shrink-0 items-center gap-1 rounded border px-1.5 text-[10px] hover:bg-accent/70 disabled:opacity-50"
+    >
+      {busy ? <Loader2 className="size-3 animate-spin" /> : <Wand2 className="size-3" />}
+      {label}
+    </button>
   );
 }

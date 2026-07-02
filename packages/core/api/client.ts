@@ -2506,6 +2506,18 @@ export class ApiClient {
     await this.fetch(`/api/squads/${id}`, { method: "DELETE" });
   }
 
+  /**
+   * Suggest a roster-aware orchestrator brief for a squad's Instructions field.
+   * Server does not persist it — the caller fills the editable textarea with the
+   * result. Trivial one-field response; defensively read the string and default
+   * to "" so a drifted/empty body never throws into the UI.
+   */
+  async suggestSquadInstructions(id: string): Promise<string> {
+    const raw = await this.fetch<unknown>(`/api/squads/${id}/suggest-instructions`, { method: "POST" });
+    const value = (raw as { instructions?: unknown } | null)?.instructions;
+    return typeof value === "string" ? value : "";
+  }
+
   async listSquadMembers(squadId: string): Promise<SquadMember[]> {
     return this.fetch(`/api/squads/${squadId}/members`);
   }
@@ -2787,6 +2799,19 @@ export class ApiClient {
   async syncDesignAudit(projectId: string): Promise<{ status: string; issue_id: string }> {
     return this.fetch(`/api/projects/${projectId}/design-audit`, {
       method: "POST",
+    });
+  }
+
+  // Apply one design-audit finding: create a codemod issue (adopt a token or
+  // extract a component) from the audit block on the given issue. Returns the
+  // new implementation issue.
+  async applyDesignAudit(
+    issueId: string,
+    body: { kind: "token" | "component"; index: number },
+  ): Promise<{ issue_id: string; title: string }> {
+    return this.fetch(`/api/issues/${issueId}/design-apply`, {
+      method: "POST",
+      body: JSON.stringify(body),
     });
   }
 

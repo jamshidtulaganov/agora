@@ -79,6 +79,7 @@ PR). Re-confirm exact lines after later phases move code.
 | Project trigger `POST /api/projects/{id}/design-audit` (shared chore-issue helper with manifest sync) | `server/internal/handler/design_manifest.go` (`SyncProjectDesignAudit`, `fireProjectDesignChore`); route in `cmd/server/router.go` |
 | Audit block schema + extractor (lenient, agent-only, newest wins) | `packages/core/design/audit.ts` (`DesignAuditSchema`, `latestDesignAudit`) |
 | Read-only audit report render on the chore issue | `packages/views/issues/components/design-audit-section.tsx`; "Audit" button in `project-design-section.tsx` |
+| Apply a finding → codemod issue (token adoption / component extraction) `POST /api/issues/{id}/design-apply` | `server/internal/handler/design_apply.go` (`ApplyDesignAudit`, `composeCodemodIssue`); "Apply" buttons in `design-audit-section.tsx` |
 
 ## External facts (not in-repo)
 
