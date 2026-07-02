@@ -66,10 +66,12 @@ WHERE tc.issue_id = $1 AND tc.kind = 'automated' AND tc.archived_at IS NULL
 -- for the project-level base-suite list).
 SELECT DISTINCT ON (r.test_case_id)
     r.test_case_id,
+    r.id,
     r.status,
     r.run_source,
     r.created_at,
-    r.output
+    r.output,
+    r.trace_path
 FROM test_run r
 JOIN test_case c ON c.id = r.test_case_id
 WHERE c.project_id = $1 AND c.workspace_id = $2 AND c.issue_id IS NULL
@@ -82,10 +84,17 @@ WHERE id = $1 AND workspace_id = $2;
 
 -- name: CreateTestRun :one
 INSERT INTO test_run (
-    workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id
+    workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, trace_path
 )
-VALUES ($1, $2, sqlc.narg(issue_id), $3, $4, $5, $6, sqlc.narg(run_by_id))
+VALUES ($1, $2, sqlc.narg(issue_id), $3, $4, $5, $6, sqlc.narg(run_by_id), $7)
 RETURNING *;
+
+-- name: GetTestRunByID :one
+-- One run by id, for the trace-viewer launch endpoint. NOT workspace-scoped in
+-- the query — the caller resolves the run's issue and enforces membership from
+-- the issue's own workspace (mirrors GET /api/issues/:id/editor, which also
+-- takes only an id and authorizes off the resolved entity).
+SELECT * FROM test_run WHERE id = $1;
 
 -- name: ListLatestRunsForIssueCases :many
 -- The latest run per test case for an issue (drives each case's status chip).
@@ -94,10 +103,12 @@ RETURNING *;
 -- verdict and must render on the issue, not vanish.
 SELECT DISTINCT ON (r.test_case_id)
     r.test_case_id,
+    r.id,
     r.status,
     r.run_source,
     r.created_at,
-    r.output
+    r.output,
+    r.trace_path
 FROM test_run r
 JOIN test_case c ON c.id = r.test_case_id
 WHERE c.workspace_id = $2

@@ -850,6 +850,7 @@ type TestRun struct {
 	RunByType   string             `json:"run_by_type"`
 	RunByID     pgtype.UUID        `json:"run_by_id"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	TracePath   string             `json:"trace_path"`
 }
 
 type User struct {

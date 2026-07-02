@@ -1009,12 +1009,24 @@ export const TestCaseSchema = z.object({
   script: z.string().optional(),
   created_at: z.string().default(""),
   latest_run: z.object({
+    id: z.string().default(""),
     status: z.string().default(""),
     run_source: z.string().default(""),
     created_at: z.string().default(""),
     output: z.string().default(""),
+    // Non-empty when this run captured a Playwright trace; the panel gates its
+    // "View trace" affordance on it and passes `id` to the launch endpoint.
+    trace_path: z.string().default(""),
   }).loose().nullable().default(null),
 }).loose();
+
+// GET /api/qa/trace/:runId — launches `playwright show-trace` on the daemon that
+// holds the run's trace and returns a same-origin reverse-proxy URL to iframe.
+export const LaunchTraceResponseSchema = z.object({
+  trace_url: z.string().default(""),
+}).loose();
+
+export const EMPTY_LAUNCH_TRACE = { trace_url: "" };
 
 export const ListTestCasesResponseSchema = z.object({
   test_cases: z.array(TestCaseSchema).default([]),

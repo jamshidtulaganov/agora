@@ -17,6 +17,10 @@ import (
 // slice action, captured server-side). A run records one execution's verdict.
 
 type TestRunLite struct {
+	// ID is the test_run row id — the handle the trace-viewer launch endpoint
+	// (GET /api/qa/trace/:runId) takes. Sent so the panel can request a trace for
+	// exactly this run without a second lookup.
+	ID        string `json:"id"`
 	Status    string `json:"status"`
 	RunSource string `json:"run_source"`
 	CreatedAt string `json:"created_at"`
@@ -24,6 +28,10 @@ type TestRunLite struct {
 	// browser unreachable") via the run_test_cases test-runs protocol. Surfaced
 	// so a "blocked" verdict tells QA WHY, not just that it didn't run.
 	Output string `json:"output,omitempty"`
+	// TracePath is non-empty when this run captured a Playwright trace on the
+	// agent's runtime box. The panel gates its "View trace" affordance on it;
+	// the raw path never leaves the backend for anything but the launch call.
+	TracePath string `json:"trace_path,omitempty"`
 }
 
 type TestCaseResponse struct {
@@ -96,10 +104,12 @@ func (h *Handler) GetIssueTestCases(w http.ResponseWriter, r *http.Request) {
 	latest := make(map[string]*TestRunLite, len(runs))
 	for _, run := range runs {
 		latest[uuidToString(run.TestCaseID)] = &TestRunLite{
+			ID:        uuidToString(run.ID),
 			Status:    run.Status,
 			RunSource: run.RunSource,
 			CreatedAt: run.CreatedAt.Time.Format(time.RFC3339),
 			Output:    run.Output,
+			TracePath: run.TracePath,
 		}
 	}
 	resp := ListTestCasesResponse{TestCases: make([]TestCaseResponse, 0, len(cases))}
@@ -208,10 +218,12 @@ func (h *Handler) GetProjectTestCases(w http.ResponseWriter, r *http.Request) {
 	latest := make(map[string]*TestRunLite, len(runs))
 	for _, run := range runs {
 		latest[uuidToString(run.TestCaseID)] = &TestRunLite{
+			ID:        uuidToString(run.ID),
 			Status:    run.Status,
 			RunSource: run.RunSource,
 			CreatedAt: run.CreatedAt.Time.Format(time.RFC3339),
 			Output:    run.Output,
+			TracePath: run.TracePath,
 		}
 	}
 	resp := ListTestCasesResponse{TestCases: make([]TestCaseResponse, 0, len(cases))}

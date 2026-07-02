@@ -2626,6 +2626,12 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		go func() {
 			h.maybeRunQAOnInReview(context.Background(), issue, actorType, actorID)
 			h.maybeGenTests(context.Background(), issue, actorType, actorID, false)
+			// Compile any automated cases still missing a Playwright script
+			// (gen-authored or pre-existing) so run_test_cases EXECUTES them in a
+			// real browser — which is what makes the run watchable live + captures
+			// a trace. Without it the cases stay hand-driven (HTTP), so the live
+			// pane never shows the browser. Best-effort, gated by compile-enabled.
+			h.maybeCompileTestCases(context.Background(), issue)
 			h.maybeRunTestsOnInReview(context.Background(), issue, actorType, actorID)
 		}()
 	}
@@ -3209,6 +3215,7 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			go func() {
 				h.maybeRunQAOnInReview(context.Background(), issueCopy, actorType, actorID)
 				h.maybeGenTests(context.Background(), issueCopy, actorType, actorID, false)
+				h.maybeCompileTestCases(context.Background(), issueCopy)
 				h.maybeRunTestsOnInReview(context.Background(), issueCopy, actorType, actorID)
 			}()
 		}

@@ -566,6 +566,16 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// the remote daemon for that token. Authed via the session cookie the
 		// iframe carries; the token is the per-session capability.
 		r.HandleFunc("/editor/proxy/{token}/*", h.ProxyEditor)
+		// Playwright trace-viewer reverse-proxy (Slice 3 of QA observability):
+		// /trace/proxy/{token}/* streams (HTTP + WebSocket) to the
+		// `playwright show-trace` viewer the backend launched on the daemon that
+		// holds the trace .zip. Same authed-session + capability-token model as
+		// the editor proxy above.
+		r.HandleFunc("/trace/proxy/{token}/*", h.ProxyTrace)
+		// Launch a trace viewer for one QA test_run and return its proxied URL.
+		// Authorizes off the run's resolved issue/workspace (no header needed),
+		// mirroring GET /api/issues/:id/editor.
+		r.Get("/api/qa/trace/{testRunId}", h.LaunchTrace)
 		// SD: external-identity mapping (e.g. Bitrix RESPONSIBLE_ID -> member).
 		r.Get("/api/me/links", h.ListMyLinks)
 		r.Post("/api/me/links/bitrix", h.LinkBitrixIdentity)

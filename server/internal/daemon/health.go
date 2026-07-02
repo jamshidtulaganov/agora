@@ -469,6 +469,13 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 	previews := make(map[string]*previewProc)
 	var previewsMu sync.Mutex
 
+	// --- Playwright trace viewers (one `playwright show-trace` per trace file) ---
+	// The trace .zip a run_test_cases run captured is LOCAL to this daemon's box,
+	// so the viewer must run here; the backend reverse-proxies it. Reused per
+	// trace path while alive; same process-group kill on shutdown as previews.
+	traces := make(map[string]*previewProc)
+	var tracesMu sync.Mutex
+
 	mux.HandleFunc("/editor/preview", func(w http.ResponseWriter, r *http.Request) {
 		if origin := r.Header.Get("Origin"); strings.HasPrefix(origin, "http://localhost") || strings.HasPrefix(origin, "http://127.0.0.1") {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
@@ -699,6 +706,89 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 		})
 	})
 
+	// --- Playwright trace viewer: `playwright show-trace` for a captured trace ---
+	// The backend calls this over 6PN (cloud) or loopback (self-host) to bring up
+	// the full Playwright trace viewer for a run's trace .zip, then reverse-proxies
+	// it. show-trace ships with the Playwright the box already installed for
+	// run_test_cases, so no extra dependency. CORS scoped to localhost (the app).
+	mux.HandleFunc("/trace/launch", func(w http.ResponseWriter, r *http.Request) {
+		if origin := r.Header.Get("Origin"); strings.HasPrefix(origin, "http://localhost") || strings.HasPrefix(origin, "http://127.0.0.1") {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		}
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			TracePath string `json:"trace_path"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		tracePath := strings.TrimSpace(req.TracePath)
+		if tracePath == "" {
+			http.Error(w, "trace_path is required", http.StatusBadRequest)
+			return
+		}
+		if info, err := os.Stat(tracePath); err != nil || info.IsDir() {
+			http.Error(w, "trace file does not exist", http.StatusBadRequest)
+			return
+		}
+
+		tracesMu.Lock()
+		defer tracesMu.Unlock()
+
+		// Reuse a still-running viewer for this trace file.
+		if tp, ok := traces[tracePath]; ok && tp.running() {
+			writeTracePort(w, tp.port)
+			return
+		}
+		delete(traces, tracePath)
+
+		host := editorBindHost()
+		pl, err := net.Listen("tcp", fmt.Sprintf("%s:0", host))
+		if err != nil {
+			http.Error(w, "failed to allocate a port", http.StatusInternalServerError)
+			return
+		}
+		port := pl.Addr().(*net.TCPAddr).Port
+		pl.Close()
+
+		// `playwright show-trace` serves the viewer app + the loaded trace over
+		// HTTP on the given host:port. Run via a login shell so fnm/nvm-managed
+		// node + the box's `npx` are on PATH (same as the preview/test paths).
+		command := fmt.Sprintf("npx playwright show-trace --host %s --port %d %s", host, port, shellSingleQuote(tracePath))
+		tp, err := startPreview(filepath.Dir(tracePath), command, port)
+		if err != nil {
+			http.Error(w, "failed to launch trace viewer: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		traces[tracePath] = tp
+		d.logger.Info("launched trace viewer", "trace", tracePath, "port", port)
+
+		// Wait until the viewer is actually accepting connections before telling
+		// the backend the port — otherwise the reverse-proxy's first hit 502s
+		// while show-trace is still unzipping/booting. If the process dies first
+		// (npx/playwright missing, bad trace), surface its output.
+		if !waitTraceReady(tp, host, port, 25*time.Second) {
+			if !tp.running() {
+				delete(traces, tracePath)
+				http.Error(w, "trace viewer exited — is `playwright` installed on the box? "+tailLog(tp.buf.String()), http.StatusBadGateway)
+				return
+			}
+			// Still booting but alive — return the port; the proxy retries.
+		}
+		writeTracePort(w, port)
+	})
+
 	// --- embedded browser (general browser pane: preview URLs + watch automation) ---
 	bm := newBrowserManager(d.logger)
 	mux.HandleFunc("/editor/browser/start", bm.handleStart)
@@ -723,6 +813,11 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 			killProcessGroup(p.cmd)
 		}
 		previewsMu.Unlock()
+		tracesMu.Lock()
+		for _, tp := range traces {
+			killProcessGroup(tp.cmd)
+		}
+		tracesMu.Unlock()
 		bm.shutdown()
 	}()
 
@@ -741,6 +836,46 @@ func writeEditorURL(w http.ResponseWriter, port int, workdir string) {
 		"url":  fmt.Sprintf("http://127.0.0.1:%d/?folder=%s", port, url.QueryEscape(workdir)),
 		"port": port,
 	})
+}
+
+// writeTracePort replies with the port `playwright show-trace` bound. The
+// backend maps it to a reverse-proxy token (self-host and cloud both reach the
+// viewer only through the backend proxy, so no direct URL is returned here).
+func writeTracePort(w http.ResponseWriter, port int) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"port": port})
+}
+
+// waitTraceReady polls until the trace viewer accepts a TCP connection on the
+// bound port (up to timeout), or the process exits. host may be 0.0.0.0 (the
+// cloud bind); we dial loopback in that case since 0.0.0.0 isn't a connect
+// target. Returns true once reachable.
+func waitTraceReady(tp *previewProc, host string, port int, timeout time.Duration) bool {
+	dialHost := host
+	if dialHost == "0.0.0.0" || dialHost == "" {
+		dialHost = "127.0.0.1"
+	}
+	addr := net.JoinHostPort(dialHost, strconv.Itoa(port))
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !tp.running() {
+			return false
+		}
+		conn, err := net.DialTimeout("tcp", addr, time.Second)
+		if err == nil {
+			conn.Close()
+			return true
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	return false
+}
+
+// shellSingleQuote wraps s in single quotes for safe interpolation into a
+// `sh -c` command line (the trace path could contain spaces). Any embedded
+// single quote is escaped the POSIX way ('\'').
+func shellSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // --- git-diff helpers for the /editor/changes endpoint ---

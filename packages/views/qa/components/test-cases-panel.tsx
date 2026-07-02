@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { Sparkles, Plus, Bot, User, Loader2, FlaskConical, Play, CircleSlash, Check, X } from "lucide-react";
+import { Sparkles, Plus, Bot, User, Loader2, FlaskConical, Play, CircleSlash, Check, X, Film } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@agora/core/api";
 import { issueKeys, testCasesOptions } from "@agora/core/issues/queries";
@@ -34,8 +34,23 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
   const { data } = useQuery(testCasesOptions(issueId));
   const cases = data?.test_cases ?? [];
   const [adding, setAdding] = useState(false);
+  // The Playwright trace viewer opens as a full-panel overlay iframe — the URL
+  // is a same-origin reverse-proxy path the backend hands back per launch.
+  const [traceUrl, setTraceUrl] = useState<string | null>(null);
   const runningCaseId = useRunningTestCaseId(issueId);
   const liveVerdicts = useLiveCaseVerdicts(issueId);
+  // Cases the user just hit "run" on — an OPTIMISTIC running marker, so the row
+  // spins the instant it's clicked instead of waiting for the agent to emit its
+  // `RUNNING test_case:` marker (which lags behind agent setup). Cleared on a
+  // timer; the agent's own marker takes over if/when it arrives.
+  const [runningLocal, setRunningLocal] = useState<Set<string>>(new Set());
+  const markRunning = (id: string, on: boolean) =>
+    setRunningLocal((s) => {
+      const n = new Set(s);
+      if (on) n.add(id);
+      else n.delete(id);
+      return n;
+    });
 
   const invalidate = () => qc.invalidateQueries({ queryKey: issueKeys.testCases(issueId) });
 
@@ -69,6 +84,38 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
       api.recordTestCaseRun(caseId, { status }),
     onSuccess: invalidate,
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
+
+  // Run ONE case via the QA agent (scoped run_test_cases). Optimistically spins
+  // that row immediately; clears after a window (the agent run is async).
+  const runOne = useMutation({
+    mutationFn: (c: TestCase) =>
+      api.sliceAction(issueId, {
+        kind: "run_test_cases",
+        scope: `RUN ONLY the single test case id=${c.id} ("${c.title}") — execute just this one, skip all other cases.`,
+      }),
+    onMutate: (c) => {
+      markRunning(c.id, true);
+      // Safety clear so a stuck run never leaves the row spinning forever.
+      setTimeout(() => markRunning(c.id, false), 120_000);
+    },
+    onSuccess: () => {
+      toast.success(t(($) => $.test_cases.run_all_toast));
+      invalidate();
+    },
+    onError: (e, c) => {
+      markRunning(c.id, false);
+      toast.error(e instanceof Error ? e.message : "Failed");
+    },
+  });
+
+  const launchTrace = useMutation({
+    mutationFn: (runId: string) => api.launchTrace(runId),
+    onSuccess: (res) => {
+      if (res.trace_url) setTraceUrl(res.trace_url);
+      else toast.error(t(($) => $.test_cases.trace_error));
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : t(($) => $.test_cases.trace_error)),
   });
 
   return (
@@ -148,13 +195,49 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
               c={c}
               busy={recordRun.isPending}
               onRun={(status) => recordRun.mutate({ caseId: c.id, status })}
-              isRunning={c.id === runningCaseId}
+              onRunCase={() => runOne.mutate(c)}
+              isRunning={c.id === runningCaseId || runningLocal.has(c.id)}
               liveVerdict={liveVerdicts[c.id]}
+              onViewTrace={(runId) => launchTrace.mutate(runId)}
+              traceLaunchingRunId={launchTrace.isPending ? launchTrace.variables ?? null : null}
             />
           ))}
         </ul>
       )}
+
+      {traceUrl && <TraceOverlay url={traceUrl} onClose={() => setTraceUrl(null)} />}
     </section>
+  );
+}
+
+// Full-panel overlay hosting the real Playwright trace viewer in an iframe. The
+// src is a same-origin reverse-proxy URL (behind the authed session), so the
+// viewer + its DOM snapshots / screenshots stream through the backend — no
+// vendored viewer, no cross-origin auth wall. Esc / the close button dismiss it.
+function TraceOverlay({ url, onClose }: { url: string; onClose: () => void }) {
+  const { t } = useT("issues");
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+      <div className="flex items-center gap-2 border-b px-3 py-2">
+        <Film className="size-4 shrink-0 text-muted-foreground" />
+        <span className="text-sm font-medium">{t(($) => $.test_cases.trace_title)}</span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="ml-auto size-7"
+          onClick={onClose}
+          title={t(($) => $.test_cases.trace_close)}
+        >
+          <X className="size-4" />
+        </Button>
+      </div>
+      <iframe
+        src={url}
+        title={t(($) => $.test_cases.trace_title)}
+        className="min-h-0 flex-1 border-0"
+      />
+    </div>
   );
 }
 
@@ -162,12 +245,23 @@ function CaseRow({
   c,
   busy,
   onRun,
+  onRunCase,
   isRunning,
   liveVerdict,
+  onViewTrace,
+  traceLaunchingRunId,
 }: {
   c: TestCase;
   busy: boolean;
   onRun: (status: "pass" | "fail") => void;
+  // Execute THIS one case via the QA agent (single-case run).
+  onRunCase: () => void;
+  // Open the Playwright trace viewer for this case's latest run (only wired when
+  // that run captured a trace). The panel owns the overlay; the row just fires.
+  onViewTrace: (runId: string) => void;
+  // The run id whose trace launch is in flight (shows a spinner on that button),
+  // or null. Panel-level so a second row's button isn't disabled by this one.
+  traceLaunchingRunId: string | null;
   // Jest-style "RUNS <spec>" — true while the live agent stream's most recent
   // `RUNNING test_case:<id>` marker (see useRunningTestCaseId) names THIS case.
   // Takes priority over the persisted latest_run status, which is correct: a
@@ -202,10 +296,33 @@ function CaseRow({
     c.category === "negative" ? t(($) => $.test_cases.category_negative) : t(($) => $.test_cases.category_positive);
 
   return (
-    <li className="px-3 py-2">
+    <li
+      className={cn(
+        "relative px-3 py-2 transition-colors",
+        // The case executing RIGHT NOW is unmistakable: a tinted row + a spinning
+        // marker on the title (below) + an ANIMATED border — a pulsing inset ring
+        // that breathes so the eye is pulled to the running case. The ring is a
+        // separate overlay so only the border animates, not the row content.
+        isRunning && "bg-info/5",
+      )}
+    >
+      {isRunning && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-10 rounded-md ring-2 ring-inset ring-info/70 motion-safe:animate-pulse"
+        />
+      )}
       <div className="flex items-start gap-2">
         <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setOpen((v) => !v)}>
-          <span className="block truncate text-[13px]">{c.title}</span>
+          <span
+            className={cn(
+              "flex items-center gap-1.5 truncate text-[13px]",
+              isRunning && "font-medium text-info",
+            )}
+          >
+            {isRunning && <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden />}
+            <span className="truncate">{c.title}</span>
+          </span>
           {/* Compact meta: kind · category · (who ran it + when) — plain text,
               not badge pills, so it fits a 400px rail on one wrapping-safe line. */}
           <span className="mt-0.5 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[10px] text-muted-foreground/70">
@@ -254,6 +371,38 @@ function CaseRow({
             </span>
           ) : (
             <span className="text-[10px] text-muted-foreground">—</span>
+          )}
+          {c.latest_run?.trace_path && c.latest_run.id && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              disabled={traceLaunchingRunId === c.latest_run.id}
+              onClick={() => onViewTrace(c.latest_run!.id)}
+              className="size-6 text-info hover:bg-info/10"
+              title={t(($) => $.test_cases.view_trace)}
+            >
+              {traceLaunchingRunId === c.latest_run.id ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Film className="size-3.5" />
+              )}
+            </Button>
+          )}
+          {/* Run THIS one case via the QA agent — automated cases only (a manual
+              case has no script to execute; it's judged by the human ✓/✗). */}
+          {c.kind === "automated" && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              disabled={isRunning}
+              onClick={onRunCase}
+              className="size-6 text-info hover:bg-info/10"
+              title={t(($) => $.test_cases.run_case)}
+            >
+              {isRunning ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
+            </Button>
           )}
           <Button
             type="button"

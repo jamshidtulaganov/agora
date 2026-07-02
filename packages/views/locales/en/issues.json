@@ -420,6 +420,7 @@
   "qa_review": {
     "back": "Back to QA queue",
     "queue_crumb": "QA queue",
+    "running_qa": "Running QA…",
     "review_panel": "Review",
     "review_panel_show": "Show the review panel",
     "review_panel_hide": "Hide the review panel",
@@ -495,9 +496,14 @@
     "src_agent": "agent",
     "src_human": "manual",
     "run_all": "Run all (agent)",
+    "run_case": "Run this case",
     "running_all": "Running…",
     "run_all_toast": "QA agent is running the automated cases…",
-    "runs_now": "RUNS"
+    "runs_now": "RUNS",
+    "view_trace": "View trace",
+    "trace_title": "Trace viewer",
+    "trace_close": "Close",
+    "trace_error": "Could not open the trace"
   },
   "terminate_dialog": {
     "title": "Stop this task?",

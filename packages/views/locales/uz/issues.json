@@ -420,6 +420,7 @@
   "qa_review": {
     "back": "QA navbatiga qaytish",
     "queue_crumb": "QA navbati",
+    "running_qa": "QA ketmoqda…",
     "review_panel": "Ko'rib chiqish",
     "review_panel_show": "Ko'rib chiqish panelini ochish",
     "review_panel_hide": "Ko'rib chiqish panelini yashirish",
@@ -495,9 +496,14 @@
     "src_agent": "agent",
     "src_human": "qo'lda",
     "run_all": "Hammasini ishga tushirish (agent)",
+    "run_case": "Shu keysni ishga tushirish",
     "running_all": "Bajarilmoqda…",
     "run_all_toast": "QA agent avtotestlarni bajarmoqda…",
-    "runs_now": "BAJARILMOQDA"
+    "runs_now": "BAJARILMOQDA",
+    "view_trace": "Trace’ni ochish",
+    "trace_title": "Trace ko‘ruvchi",
+    "trace_close": "Yopish",
+    "trace_error": "Trace’ni ochib bo‘lmadi"
   },
   "terminate_dialog": {
     "title": "Bu topshiriqni to‘xtatasizmi?",

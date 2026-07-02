@@ -108,10 +108,10 @@ func (q *Queries) CreateTestCase(ctx context.Context, arg CreateTestCaseParams) 
 
 const createTestRun = `-- name: CreateTestRun :one
 INSERT INTO test_run (
-    workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id
+    workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, trace_path
 )
-VALUES ($1, $2, $7, $3, $4, $5, $6, $8)
-RETURNING id, workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, created_at
+VALUES ($1, $2, $8, $3, $4, $5, $6, $9, $7)
+RETURNING id, workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, created_at, trace_path
 `
 
 type CreateTestRunParams struct {
@@ -121,6 +121,7 @@ type CreateTestRunParams struct {
 	Output      string      `json:"output"`
 	RunSource   string      `json:"run_source"`
 	RunByType   string      `json:"run_by_type"`
+	TracePath   string      `json:"trace_path"`
 	IssueID     pgtype.UUID `json:"issue_id"`
 	RunByID     pgtype.UUID `json:"run_by_id"`
 }
@@ -133,6 +134,7 @@ func (q *Queries) CreateTestRun(ctx context.Context, arg CreateTestRunParams) (T
 		arg.Output,
 		arg.RunSource,
 		arg.RunByType,
+		arg.TracePath,
 		arg.IssueID,
 		arg.RunByID,
 	)
@@ -148,6 +150,7 @@ func (q *Queries) CreateTestRun(ctx context.Context, arg CreateTestRunParams) (T
 		&i.RunByType,
 		&i.RunByID,
 		&i.CreatedAt,
+		&i.TracePath,
 	)
 	return i, err
 }
@@ -182,6 +185,33 @@ func (q *Queries) GetTestCase(ctx context.Context, arg GetTestCaseParams) (TestC
 		&i.UpdatedAt,
 		&i.Category,
 		&i.Script,
+	)
+	return i, err
+}
+
+const getTestRunByID = `-- name: GetTestRunByID :one
+SELECT id, workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, created_at, trace_path FROM test_run WHERE id = $1
+`
+
+// One run by id, for the trace-viewer launch endpoint. NOT workspace-scoped in
+// the query — the caller resolves the run's issue and enforces membership from
+// the issue's own workspace (mirrors GET /api/issues/:id/editor, which also
+// takes only an id and authorizes off the resolved entity).
+func (q *Queries) GetTestRunByID(ctx context.Context, id pgtype.UUID) (TestRun, error) {
+	row := q.db.QueryRow(ctx, getTestRunByID, id)
+	var i TestRun
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.TestCaseID,
+		&i.IssueID,
+		&i.Status,
+		&i.Output,
+		&i.RunSource,
+		&i.RunByType,
+		&i.RunByID,
+		&i.CreatedAt,
+		&i.TracePath,
 	)
 	return i, err
 }
@@ -289,10 +319,12 @@ func (q *Queries) ListAutomatedTestCasesForProject(ctx context.Context, arg List
 const listLatestRunsForIssueCases = `-- name: ListLatestRunsForIssueCases :many
 SELECT DISTINCT ON (r.test_case_id)
     r.test_case_id,
+    r.id,
     r.status,
     r.run_source,
     r.created_at,
-    r.output
+    r.output,
+    r.trace_path
 FROM test_run r
 JOIN test_case c ON c.id = r.test_case_id
 WHERE c.workspace_id = $2
@@ -307,10 +339,12 @@ type ListLatestRunsForIssueCasesParams struct {
 
 type ListLatestRunsForIssueCasesRow struct {
 	TestCaseID pgtype.UUID        `json:"test_case_id"`
+	ID         pgtype.UUID        `json:"id"`
 	Status     string             `json:"status"`
 	RunSource  string             `json:"run_source"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	Output     string             `json:"output"`
+	TracePath  string             `json:"trace_path"`
 }
 
 // The latest run per test case for an issue (drives each case's status chip).
@@ -328,10 +362,12 @@ func (q *Queries) ListLatestRunsForIssueCases(ctx context.Context, arg ListLates
 		var i ListLatestRunsForIssueCasesRow
 		if err := rows.Scan(
 			&i.TestCaseID,
+			&i.ID,
 			&i.Status,
 			&i.RunSource,
 			&i.CreatedAt,
 			&i.Output,
+			&i.TracePath,
 		); err != nil {
 			return nil, err
 		}
@@ -346,10 +382,12 @@ func (q *Queries) ListLatestRunsForIssueCases(ctx context.Context, arg ListLates
 const listLatestRunsForProjectBaseCases = `-- name: ListLatestRunsForProjectBaseCases :many
 SELECT DISTINCT ON (r.test_case_id)
     r.test_case_id,
+    r.id,
     r.status,
     r.run_source,
     r.created_at,
-    r.output
+    r.output,
+    r.trace_path
 FROM test_run r
 JOIN test_case c ON c.id = r.test_case_id
 WHERE c.project_id = $1 AND c.workspace_id = $2 AND c.issue_id IS NULL
@@ -363,10 +401,12 @@ type ListLatestRunsForProjectBaseCasesParams struct {
 
 type ListLatestRunsForProjectBaseCasesRow struct {
 	TestCaseID pgtype.UUID        `json:"test_case_id"`
+	ID         pgtype.UUID        `json:"id"`
 	Status     string             `json:"status"`
 	RunSource  string             `json:"run_source"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	Output     string             `json:"output"`
+	TracePath  string             `json:"trace_path"`
 }
 
 // The latest run per project base case across ALL issues' runs (status chips
@@ -382,10 +422,12 @@ func (q *Queries) ListLatestRunsForProjectBaseCases(ctx context.Context, arg Lis
 		var i ListLatestRunsForProjectBaseCasesRow
 		if err := rows.Scan(
 			&i.TestCaseID,
+			&i.ID,
 			&i.Status,
 			&i.RunSource,
 			&i.CreatedAt,
 			&i.Output,
+			&i.TracePath,
 		); err != nil {
 			return nil, err
 		}
@@ -499,7 +541,7 @@ func (q *Queries) ListTestCasesForProject(ctx context.Context, arg ListTestCases
 }
 
 const listTestRunsForCase = `-- name: ListTestRunsForCase :many
-SELECT id, workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, created_at FROM test_run
+SELECT id, workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, created_at, trace_path FROM test_run
 WHERE test_case_id = $1 AND workspace_id = $2
 ORDER BY created_at DESC
 LIMIT $3
@@ -531,6 +573,7 @@ func (q *Queries) ListTestRunsForCase(ctx context.Context, arg ListTestRunsForCa
 			&i.RunByType,
 			&i.RunByID,
 			&i.CreatedAt,
+			&i.TracePath,
 		); err != nil {
 			return nil, err
 		}

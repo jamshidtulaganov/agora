@@ -420,6 +420,7 @@
   "qa_review": {
     "back": "Назад к очереди QA",
     "queue_crumb": "Очередь QA",
+    "running_qa": "Идёт QA…",
     "review_panel": "Обзор",
     "review_panel_show": "Показать панель обзора",
     "review_panel_hide": "Скрыть панель обзора",
@@ -495,9 +496,14 @@
     "src_agent": "агент",
     "src_human": "вручную",
     "run_all": "Запустить все (агент)",
+    "run_case": "Запустить этот кейс",
     "running_all": "Выполняется…",
     "run_all_toast": "QA-агент выполняет автотесты…",
-    "runs_now": "ВЫПОЛНЯЕТСЯ"
+    "runs_now": "ВЫПОЛНЯЕТСЯ",
+    "view_trace": "Открыть трейс",
+    "trace_title": "Просмотр трейса",
+    "trace_close": "Закрыть",
+    "trace_error": "Не удалось открыть трейс"
   },
   "terminate_dialog": {
     "title": "Остановить это задание?",

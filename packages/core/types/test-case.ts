@@ -3,10 +3,12 @@
 // one execution's verdict. See migration 135.
 
 export interface TestRunLite {
+  id: string; // the test_run id — the handle the trace-viewer launch endpoint takes
   status: string; // pass | fail | skip | blocked
   run_source: string; // human | agent
   created_at: string;
   output: string; // agent's one-line evidence/reason; empty for human-recorded runs
+  trace_path: string; // non-empty ⇒ this run captured a Playwright trace (drives "View trace")
 }
 
 export interface TestCase {

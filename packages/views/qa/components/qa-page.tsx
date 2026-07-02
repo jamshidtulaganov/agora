@@ -19,6 +19,7 @@ import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core";
 import { useWorkspacePaths } from "@agora/core/paths";
 import { projectListOptions } from "@agora/core/projects/queries";
+import { agentTaskSnapshotOptions } from "@agora/core/agents";
 import { useActorName } from "@agora/core/workspace/hooks";
 import { PRIORITY_ORDER } from "@agora/core/issues/config";
 import type { Issue, IssuePriority } from "@agora/core/types";
@@ -109,6 +110,14 @@ export function QAPage() {
   const [priorityFilter, setPriorityFilter] = useState<IssuePriority[]>([]);
   const { data: projectData } = useQuery(projectListOptions(wsId));
   const projects = projectData ?? [];
+  // Which issues have a QA run executing RIGHT NOW — mark those rows "live" so
+  // a QA lead sees the queue moving. Any running task on an in_review issue is
+  // effectively QA (the knowledge/dev noise runs on other statuses).
+  const { data: taskSnapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
+  const liveIssueIds = useMemo(
+    () => new Set(taskSnapshot.filter((t) => t.status === "running" && t.issue_id).map((t) => t.issue_id)),
+    [taskSnapshot],
+  );
   const { data, isLoading } = useQuery({
     queryKey: ["qa-cockpit", wsId, project],
     queryFn: () =>
@@ -138,7 +147,10 @@ export function QAPage() {
   const hasFilters = assigneeFilter.length > 0 || priorityFilter.length > 0;
 
   return (
-    <div className="flex w-full flex-col">
+    // Fill the (overflow-hidden) <main> and own our scroll: the header stays
+    // pinned, the content below scrolls — otherwise a long verdict lane is
+    // clipped with no way to reach the bottom rows.
+    <div className="flex h-full min-h-0 w-full flex-col">
       {/* Same top bar as the issue / QA review pages — a fixed leaf (this is
           a root surface, no ancestor to crumb to) with the view switch as the
           right-side action. */}
@@ -156,6 +168,7 @@ export function QAPage() {
         }
       />
 
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       {view === "metrics" ? (
         <QAMetricsView />
       ) : view === "sprint" ? (
@@ -180,7 +193,15 @@ export function QAPage() {
             <div className="flex flex-wrap items-center gap-2">
               <Select value={project} onValueChange={(v) => setProject(v ?? "all")}>
                 <SelectTrigger className="h-8 w-48 text-[13px]">
-                  <SelectValue />
+                  {/* Base UI's Select.Value renders the raw value (the project
+                      UUID) unless given a function child — map it to the title. */}
+                  <SelectValue>
+                    {() =>
+                      project === "all"
+                        ? "All projects"
+                        : (projects.find((p) => p.id === project)?.title ?? "Project")
+                    }
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All projects</SelectItem>
@@ -221,18 +242,19 @@ export function QAPage() {
       ) : view === "list" ? (
         <div className="space-y-5">
           {LANES.map(({ key, ...lane }) => (
-            <Lane key={key} {...lane} issues={lanes[key]} href={wp.qaDetail} />
+            <Lane key={key} {...lane} issues={lanes[key]} href={wp.qaDetail} liveIssueIds={liveIssueIds} />
           ))}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           {LANES.map(({ key, ...lane }) => (
-            <BoardColumn key={key} {...lane} issues={lanes[key]} href={wp.qaDetail} />
+            <BoardColumn key={key} {...lane} issues={lanes[key]} href={wp.qaDetail} liveIssueIds={liveIssueIds} />
           ))}
         </div>
       )}
       </div>
       )}
+      </div>{/* /scroll region */}
     </div>
   );
 }
@@ -410,6 +432,7 @@ function BoardColumn({
   title,
   issues,
   href,
+  liveIssueIds,
 }: {
   icon: typeof ShieldAlert;
   iconClass: string;
@@ -417,6 +440,7 @@ function BoardColumn({
   subtitle: string;
   issues: Issue[];
   href: (id: string) => string;
+  liveIssueIds?: Set<string>;
 }) {
   return (
     <section className="flex min-h-[200px] flex-col rounded-lg border bg-muted/20">
@@ -437,7 +461,7 @@ function BoardColumn({
               href={href(issue.id)}
               className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-[13px] hover:border-border-strong hover:bg-accent/50"
             >
-              <QAIssueRow issue={issue} />
+              <QAIssueRow issue={issue} isLive={liveIssueIds?.has(issue.id)} />
             </AppLink>
           ))
         )}

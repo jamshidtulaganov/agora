@@ -409,6 +409,7 @@
   "qa_review": {
     "back": "返回 QA 队列",
     "queue_crumb": "QA 队列",
+    "running_qa": "QA 运行中…",
     "review_panel": "评审",
     "review_panel_show": "显示评审面板",
     "review_panel_hide": "隐藏评审面板",
@@ -484,9 +485,14 @@
     "src_agent": "代理",
     "src_human": "手动",
     "run_all": "全部运行（代理）",
+    "run_case": "运行此用例",
     "running_all": "运行中…",
     "run_all_toast": "QA 代理正在运行自动用例…",
-    "runs_now": "运行中"
+    "runs_now": "运行中",
+    "view_trace": "查看追踪",
+    "trace_title": "追踪回放",
+    "trace_close": "关闭",
+    "trace_error": "无法打开追踪记录"
   },
   "terminate_dialog": {
     "title": "确定停止该 task？",

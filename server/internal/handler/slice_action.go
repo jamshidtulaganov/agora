@@ -242,7 +242,13 @@ func buildSliceInstruction(kind, scope string) string {
 			"perform the case's steps, ASSERT the expected result by deterministic signal (HTTP status, response shape, " +
 			"DOM/accessibility-tree TEXT — never a screenshot), then `process.exit(0)` on pass and `process.exit(1)` on " +
 			"ANY failed assertion or thrown error (wrap the body in try/catch and exit(1) in catch; always close the " +
-			"browser in finally). No test-runner harness, no external config, no CLI args — the script is the whole test. " +
+			"browser in finally). For [e2e] cases, open pages from an explicit context " +
+			"(`const context = await browser.newContext();`) and add Playwright TRACING so a QA reviewer can replay the " +
+			"run step-by-step in-app: when `process.env.TRACE_PATH` is set, `await context.tracing.start({ screenshots: " +
+			"true, snapshots: true, sources: true });` after creating the context and " +
+			"`await context.tracing.stop({ path: process.env.TRACE_PATH });` in the `finally` before closing the browser " +
+			"(guard both on `process.env.TRACE_PATH`). [api]/fetch cases have no browser and capture no trace. " +
+			"No test-runner harness, no external config, no CLI args — the script is the whole test. " +
 			"Omit `script` for [unit]/[smoke]/manual cases (those stay hand-driven)."
 	case sliceActionRunTests:
 		base = "Run this issue's AUTOMATED QA test cases as a DETERMINISTIC check — you are the QA Squad's automation " +
@@ -256,31 +262,54 @@ func buildSliceInstruction(kind, scope string) string {
 			"for every case right after you judge it. " +
 			"For EACH case: if the case LISTING below includes a COMPILED SCRIPT for that id, do NOT drive the browser " +
 			"action-by-action — instead WRITE that script verbatim to a temp file `/tmp/case-<id>.mjs` and RUN it with " +
-			"`node /tmp/case-<id>.mjs`; take the process EXIT CODE as the verdict (0 = pass, non-zero = fail) and use the " +
-			"script's stdout/stderr as the one-line `output` evidence. This is deterministic and needs no per-action " +
-			"reasoning — that is the whole point. Playwright must be available to `node`: if `node -e \"import('playwright')\"` " +
+			"`TRACE_PATH=/tmp/trace-<id>.zip node /tmp/case-<id>.mjs`; take the process EXIT CODE as the verdict (0 = pass, " +
+			"non-zero = fail) and use the script's stdout/stderr as the one-line `output` evidence. This is deterministic and " +
+			"needs no per-action reasoning — that is the whole point. TRACE (time-travel debugging): the compiled script " +
+			"records a Playwright trace (DOM snapshots + screenshots + sources per step) to the `TRACE_PATH` you set here, so " +
+			"a QA reviewer can replay the run step-by-step in-app. Give each case a DISTINCT `TRACE_PATH` keyed by its id " +
+			"(`/tmp/trace-<id>.zip`) so concurrent cases never overwrite each other's trace. After the run, if that trace " +
+			"file exists, report its ABSOLUTE path as the case's `trace_path` in the test-runs JSON below; omit `trace_path` " +
+			"when no trace was produced. Playwright must be available to `node`: if `node -e \"import('playwright')\"` " +
 			"fails, run ONCE `npm i playwright && npx playwright install chromium-headless-shell` in the box (reuse the box's " +
 			"existing install when present — do not reinstall per case). Still emit the `RUNNING test_case:<id>` marker before " +
 			"each scripted case. ONLY cases with NO compiled script are hand-driven the old way (deterministic HTTP/DOM smoke " +
-			"or the embedded browser). " +
+			"or the embedded browser) — those produce no trace. " +
 			"Then, for EACH case, drive its steps against the " +
 			"running app — a deterministic HTTP / DOM-text smoke, or the embedded browser; NEVER an external playwright/" +
 			"chrome — and judge the EXPECTED result by SIGNAL (status code, DOM text, exit code), never by opinion. Do NOT " +
 			"modify code. At the END of your comment, append a fenced ```test-runs code block with ONLY a JSON array the QA " +
 			"panel parses: `[{\"test_case_id\":\"<the id from the list>\",\"status\":\"pass\"|\"fail\"|\"blocked\"," +
 			"\"output\":\"<one-line evidence — for fail/blocked this IS the human-readable reason shown to the QA " +
-			"reviewer, e.g. the failing assertion or HTTP status; for pass, what you observed>\"}]` — one entry per case " +
+			"reviewer, e.g. the failing assertion or HTTP status; for pass, what you observed>\",\"trace_path\":\"<optional: " +
+			"the ABSOLUTE path of the Playwright trace .zip this case produced, e.g. /tmp/trace-<id>.zip; omit when no " +
+			"trace was captured (hand-driven cases)>\"}]` — one entry per case " +
 			"you ran. Use `blocked` if a case could not be exercised (missing data/route). The JSON must be valid and " +
 			"self-contained."
 	case sliceActionCompileTests:
 		base = "COMPILE this project's automated QA test cases into runnable Playwright scripts — you are the QA " +
 			"Squad's automation engineer. The cases that STILL NEED a script (id · title · steps · expected) are listed " +
 			"below, along with the PROJECT QA MANIFEST (base_url, auth, routes, flows). For EACH case, author a COMPLETE, " +
-			"self-contained Playwright ESM module that runs with plain `node`: `import { chromium } from \"playwright\";`, " +
-			"log in via the manifest auth, perform the steps against the manifest base_url/routes, ASSERT the expected " +
+			"self-contained Playwright ESM module that runs with plain `node`: `import { chromium } from \"playwright\";`. " +
+			"BROWSER — PREFER the SHARED review browser so a QA reviewer WATCHES the run live in the review page's pane: " +
+			"when `process.env.AGORA_DAEMON_PORT` is set, POST `http://127.0.0.1:${process.env.AGORA_DAEMON_PORT}/editor/browser/start` " +
+			"with body `{\"workdir\":\"qa-target:<THE MANIFEST base_url>\"}` (fetch/http), read `cdp_url` from the JSON, then " +
+			"`const browser = await chromium.connectOverCDP(cdp_url); const context = browser.contexts()[0] ?? await browser.newContext(); " +
+			"const page = context.pages()[0] ?? await context.newPage();`. Use the EXACT `qa-target:<base_url>` key (the manifest base_url) so you " +
+			"share ONE browser with the reviewer's pane and they see your actions live. Fall back to " +
+			"`const browser = await chromium.launch(); const context = await browser.newContext();` ONLY if AGORA_DAEMON_PORT is unset or that POST fails. " +
+			"Open pages from THAT context, log in via the manifest auth, perform the steps " +
+			"against the manifest base_url/routes, ASSERT the expected " +
 			"result by deterministic signal (HTTP status, response shape, DOM/accessibility-tree TEXT — never a " +
 			"screenshot), then `process.exit(0)` on pass / `process.exit(1)` on any failed assertion or thrown error " +
-			"(try/catch → exit(1); close the browser in finally). Do NOT run anything and do NOT touch product code — only " +
+			"(try/catch → exit(1)). In finally: stop tracing (below); then, ONLY if you launched your own browser, " +
+			"`await browser.close()`. If you connected to the SHARED browser over CDP, do NOT close it or its context " +
+			"(the daemon owns it) — `connectOverCDP`'s browser.close() only disconnects, so either skip it or guard it on the launched path. " +
+			"TRACING (so a reviewer can time-travel the run in Agora): the script MUST honor `process.env.TRACE_PATH` — " +
+			"when it is set, call `await context.tracing.start({ screenshots: true, snapshots: true, sources: true });` " +
+			"right after creating the context, and in the `finally` block call " +
+			"`await context.tracing.stop({ path: process.env.TRACE_PATH });` BEFORE closing the browser (guard both on " +
+			"`process.env.TRACE_PATH` so the script still runs when it's unset). Do NOT run anything and do NOT touch " +
+			"product code — only " +
 			"AUTHOR the scripts. At the END of your comment, append a fenced ```scripts code block containing ONLY a JSON " +
 			"array the server parses: `[{\"id\":\"<the case id from the list>\",\"script\":\"<the full Playwright module>\"}]` " +
 			"— one entry per case you compiled. The JSON must be valid and self-contained."
@@ -351,12 +380,29 @@ func buildSliceInstruction(kind, scope string) string {
 		return ""
 	}
 
+	// LIVE WATCH — for the browser-driving QA actions, connect to the SHARED
+	// review browser instead of launching a private one, so a QA reviewer watches
+	// the run in real time in the review page's live pane (they attach to the
+	// SAME Chromium). The agent already has AGORA_DAEMON_PORT in its env; the
+	// daemon serves the shared browser on that port keyed by workdir. The pane
+	// keys it `qa-target:<previewUrl>`, so the agent must use the same key (the QA
+	// target base URL it is testing) to share one browser. connectOverCDP coexists
+	// with the pane's screencast and with trace capture on the same context
+	// (verified). Hand-driven HTTP/DOM smokes that open no browser skip this.
+	if kind == sliceActionRunQA || kind == sliceActionRunTests {
+		base += qaLiveWatchClause
+	}
+
 	scope = strings.TrimSpace(scope)
 	if scope != "" {
 		base += " Focus on: " + scope
 	}
 	return base
 }
+
+// qaLiveWatchClause tells a browser-driving QA run to attach to the shared
+// review browser (see buildSliceInstruction) so the reviewer watches live.
+const qaLiveWatchClause = " LIVE WATCH (so a QA reviewer can watch you drive the browser in real time): when you drive a real browser, do NOT launch your own — attach to the SHARED review browser. With AGORA_DAEMON_PORT set, POST http://127.0.0.1:$AGORA_DAEMON_PORT/editor/browser/start with body {\"workdir\":\"qa-target:<THE QA TARGET BASE URL you are testing, e.g. the manifest base_url>\"}; it returns {\"cdp_url\":\"http://127.0.0.1:<port>\"}. Then in your Playwright script use `const browser = await chromium.connectOverCDP(cdp_url); const context = browser.contexts()[0] ?? await browser.newContext(); const page = context.pages()[0] ?? await context.newPage();` INSTEAD of chromium.launch(). Use the SAME `qa-target:<url>` key the review pane uses (the exact QA target base URL) so you and the reviewer share ONE browser and they see your actions live. Tracing (TRACE_PATH) still works on this connected context. Fall back to chromium.launch() ONLY if that POST fails or AGORA_DAEMON_PORT is unset."
 
 // sliceActionOpensPR reports whether a slice-action kind produces a pull request
 // (and so benefits from a deterministic, QA-resolvable branch name). review_part
