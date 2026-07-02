@@ -471,6 +471,7 @@
     "src_agent": "代理",
     "src_human": "手动",
     "run_all": "全部运行（代理）",
+    "run_case": "运行此用例",
     "running_all": "运行中…",
     "run_all_toast": "QA 代理正在运行自动用例…",
     "runs_now": "运行中",

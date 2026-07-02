@@ -482,6 +482,7 @@
     "src_agent": "agent",
     "src_human": "qo'lda",
     "run_all": "Hammasini ishga tushirish (agent)",
+    "run_case": "Shu keysni ishga tushirish",
     "running_all": "Bajarilmoqda…",
     "run_all_toast": "QA agent avtotestlarni bajarmoqda…",
     "runs_now": "BAJARILMOQDA",

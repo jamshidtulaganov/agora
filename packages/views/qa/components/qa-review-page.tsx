@@ -271,20 +271,24 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
               </div>
             </section>
 
-            {/* Verdict hero */}
-            <div className="border-t pt-4 pb-4">
-              <div className={cn("rounded-xl border px-4 py-3", verdictTone(verdict))}>
-                <div className="flex items-center gap-2.5">
-                  {verdictIcon(verdict, "size-5 shrink-0")}
-                  <span className="text-base font-medium">{verdictLabel}</span>
+            {/* Verdict — compact: one line (icon + label + captured time), with
+                the summary clamped to two lines (full text on hover). Was an
+                oversized hero that pushed the checks/cases below the fold. */}
+            <div className="border-t pt-3 pb-3">
+              <div className={cn("rounded-lg border px-3 py-2", verdictTone(verdict))}>
+                <div className="flex items-center gap-2">
+                  {verdictIcon(verdict, "size-4 shrink-0")}
+                  <span className="text-sm font-medium">{verdictLabel}</span>
+                  {evidence?.captured_at && (
+                    <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+                      {new Date(evidence.captured_at).toLocaleString()}
+                    </span>
+                  )}
                 </div>
-                {evidence?.captured_at && (
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    {t(($) => $.qa_evidence.captured)} {new Date(evidence.captured_at).toLocaleString()}
-                  </p>
-                )}
                 {evidence?.summary && (
-                  <p className="mt-1.5 text-[12px] text-muted-foreground">{evidence.summary}</p>
+                  <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground" title={evidence.summary}>
+                    {evidence.summary}
+                  </p>
                 )}
               </div>
             </div>

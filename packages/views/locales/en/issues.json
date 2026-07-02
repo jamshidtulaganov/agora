@@ -482,6 +482,7 @@
     "src_agent": "agent",
     "src_human": "manual",
     "run_all": "Run all (agent)",
+    "run_case": "Run this case",
     "running_all": "Running…",
     "run_all_toast": "QA agent is running the automated cases…",
     "runs_now": "RUNS",

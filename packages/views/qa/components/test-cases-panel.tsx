@@ -39,6 +39,18 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
   const [traceUrl, setTraceUrl] = useState<string | null>(null);
   const runningCaseId = useRunningTestCaseId(issueId);
   const liveVerdicts = useLiveCaseVerdicts(issueId);
+  // Cases the user just hit "run" on — an OPTIMISTIC running marker, so the row
+  // spins the instant it's clicked instead of waiting for the agent to emit its
+  // `RUNNING test_case:` marker (which lags behind agent setup). Cleared on a
+  // timer; the agent's own marker takes over if/when it arrives.
+  const [runningLocal, setRunningLocal] = useState<Set<string>>(new Set());
+  const markRunning = (id: string, on: boolean) =>
+    setRunningLocal((s) => {
+      const n = new Set(s);
+      if (on) n.add(id);
+      else n.delete(id);
+      return n;
+    });
 
   const invalidate = () => qc.invalidateQueries({ queryKey: issueKeys.testCases(issueId) });
 
@@ -72,6 +84,29 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
       api.recordTestCaseRun(caseId, { status }),
     onSuccess: invalidate,
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
+
+  // Run ONE case via the QA agent (scoped run_test_cases). Optimistically spins
+  // that row immediately; clears after a window (the agent run is async).
+  const runOne = useMutation({
+    mutationFn: (c: TestCase) =>
+      api.sliceAction(issueId, {
+        kind: "run_test_cases",
+        scope: `RUN ONLY the single test case id=${c.id} ("${c.title}") — execute just this one, skip all other cases.`,
+      }),
+    onMutate: (c) => {
+      markRunning(c.id, true);
+      // Safety clear so a stuck run never leaves the row spinning forever.
+      setTimeout(() => markRunning(c.id, false), 120_000);
+    },
+    onSuccess: () => {
+      toast.success(t(($) => $.test_cases.run_all_toast));
+      invalidate();
+    },
+    onError: (e, c) => {
+      markRunning(c.id, false);
+      toast.error(e instanceof Error ? e.message : "Failed");
+    },
   });
 
   const launchTrace = useMutation({
@@ -160,7 +195,8 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
               c={c}
               busy={recordRun.isPending}
               onRun={(status) => recordRun.mutate({ caseId: c.id, status })}
-              isRunning={c.id === runningCaseId}
+              onRunCase={() => runOne.mutate(c)}
+              isRunning={c.id === runningCaseId || runningLocal.has(c.id)}
               liveVerdict={liveVerdicts[c.id]}
               onViewTrace={(runId) => launchTrace.mutate(runId)}
               traceLaunchingRunId={launchTrace.isPending ? launchTrace.variables ?? null : null}
@@ -209,6 +245,7 @@ function CaseRow({
   c,
   busy,
   onRun,
+  onRunCase,
   isRunning,
   liveVerdict,
   onViewTrace,
@@ -217,6 +254,8 @@ function CaseRow({
   c: TestCase;
   busy: boolean;
   onRun: (status: "pass" | "fail") => void;
+  // Execute THIS one case via the QA agent (single-case run).
+  onRunCase: () => void;
   // Open the Playwright trace viewer for this case's latest run (only wired when
   // that run captured a trace). The panel owns the overlay; the row just fires.
   onViewTrace: (runId: string) => void;
@@ -340,6 +379,21 @@ function CaseRow({
               ) : (
                 <Film className="size-3.5" />
               )}
+            </Button>
+          )}
+          {/* Run THIS one case via the QA agent — automated cases only (a manual
+              case has no script to execute; it's judged by the human ✓/✗). */}
+          {c.kind === "automated" && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              disabled={isRunning}
+              onClick={onRunCase}
+              className="size-6 text-info hover:bg-info/10"
+              title={t(($) => $.test_cases.run_case)}
+            >
+              {isRunning ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
             </Button>
           )}
           <Button
