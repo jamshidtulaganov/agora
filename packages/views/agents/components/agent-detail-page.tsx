@@ -283,26 +283,26 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
         </div>
       )}
 
-      <div className="flex flex-1 min-h-0 flex-col gap-3 overflow-y-auto p-3 md:grid md:grid-cols-[320px_minmax(0,1fr)] md:gap-4 md:overflow-hidden md:p-6">
-        <AgentDetailInspector
-          agent={agent}
-          runtime={runtime}
-          owner={owner}
-          presence={presence}
-          runtimes={runtimes}
-          members={members}
-          currentUserId={currentUser?.id ?? null}
-          canEdit={canEdit.allowed}
-          onUpdate={handleUpdate}
-          onShowIntegrations={() => setTabNavIntent("integrations")}
-        />
-
+      <div className="flex min-h-0 flex-1 flex-col p-3 md:p-6">
         <AgentOverviewPane
           agent={agent}
           runtimes={runtimes}
           onUpdate={handleUpdate}
           navIntent={tabNavIntent}
           onNavIntentHandled={() => setTabNavIntent(null)}
+          overviewSlot={
+            <AgentDetailInspector
+              agent={agent}
+              runtime={runtime}
+              owner={owner}
+              presence={presence}
+              runtimes={runtimes}
+              members={members}
+              currentUserId={currentUser?.id ?? null}
+              canEdit={canEdit.allowed}
+              onUpdate={handleUpdate}
+            />
+          }
         />
       </div>
 

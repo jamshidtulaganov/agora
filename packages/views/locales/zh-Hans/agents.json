@@ -198,6 +198,7 @@
     "clear_full": "清除选择（使用提供方默认）"
   },
   "tabs": {
+    "overview": "概览",
     "activity": "动态",
     "tasks": "Tasks",
     "instructions": "指令",
