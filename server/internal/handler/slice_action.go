@@ -287,13 +287,21 @@ func buildSliceInstruction(kind, scope string) string {
 		base = "COMPILE this project's automated QA test cases into runnable Playwright scripts — you are the QA " +
 			"Squad's automation engineer. The cases that STILL NEED a script (id · title · steps · expected) are listed " +
 			"below, along with the PROJECT QA MANIFEST (base_url, auth, routes, flows). For EACH case, author a COMPLETE, " +
-			"self-contained Playwright ESM module that runs with plain `node`: `import { chromium } from \"playwright\";`, " +
-			"create an explicit context (`const browser = await chromium.launch(); const context = await " +
-			"browser.newContext();`) and open pages from THAT context, log in via the manifest auth, perform the steps " +
+			"self-contained Playwright ESM module that runs with plain `node`: `import { chromium } from \"playwright\";`. " +
+			"BROWSER — PREFER the SHARED review browser so a QA reviewer WATCHES the run live in the review page's pane: " +
+			"when `process.env.AGORA_DAEMON_PORT` is set, POST `http://127.0.0.1:${process.env.AGORA_DAEMON_PORT}/editor/browser/start` " +
+			"with body `{\"workdir\":\"qa-target:<THE MANIFEST base_url>\"}` (fetch/http), read `cdp_url` from the JSON, then " +
+			"`const browser = await chromium.connectOverCDP(cdp_url); const context = browser.contexts()[0] ?? await browser.newContext(); " +
+			"const page = context.pages()[0] ?? await context.newPage();`. Use the EXACT `qa-target:<base_url>` key (the manifest base_url) so you " +
+			"share ONE browser with the reviewer's pane and they see your actions live. Fall back to " +
+			"`const browser = await chromium.launch(); const context = await browser.newContext();` ONLY if AGORA_DAEMON_PORT is unset or that POST fails. " +
+			"Open pages from THAT context, log in via the manifest auth, perform the steps " +
 			"against the manifest base_url/routes, ASSERT the expected " +
 			"result by deterministic signal (HTTP status, response shape, DOM/accessibility-tree TEXT — never a " +
 			"screenshot), then `process.exit(0)` on pass / `process.exit(1)` on any failed assertion or thrown error " +
-			"(try/catch → exit(1); close the browser in finally). " +
+			"(try/catch → exit(1)). In finally: stop tracing (below); then, ONLY if you launched your own browser, " +
+			"`await browser.close()`. If you connected to the SHARED browser over CDP, do NOT close it or its context " +
+			"(the daemon owns it) — `connectOverCDP`'s browser.close() only disconnects, so either skip it or guard it on the launched path. " +
 			"TRACING (so a reviewer can time-travel the run in Agora): the script MUST honor `process.env.TRACE_PATH` — " +
 			"when it is set, call `await context.tracing.start({ screenshots: true, snapshots: true, sources: true });` " +
 			"right after creating the context, and in the `finally` block call " +
