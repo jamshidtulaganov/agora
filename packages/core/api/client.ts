@@ -244,6 +244,8 @@ import {
   QAEvidenceSchema,
   ListTestCasesResponseSchema,
   EMPTY_LIST_TEST_CASES,
+  LaunchTraceResponseSchema,
+  EMPTY_LAUNCH_TRACE,
   EMPTY_CONNECTED_BOX,
   GetIssueEditorResponseSchema,
   EMPTY_ISSUE_EDITOR,
@@ -2404,6 +2406,17 @@ export class ApiClient {
   // (run_test_cases) — results land as test_run rows via the capture path.
   async runTestCases(issueId: string): Promise<unknown> {
     return this.sliceAction(issueId, { kind: "run_test_cases" });
+  }
+
+  // Launch the Playwright trace viewer for one test run and get a same-origin
+  // URL to iframe. The backend spawns `playwright show-trace` on the daemon that
+  // holds the trace and reverse-proxies it. Returns an empty trace_url on a
+  // degraded response so the caller can just check `trace_url` before opening.
+  async launchTrace(testRunId: string): Promise<{ trace_url: string }> {
+    const raw = await this.fetch<unknown>(`/api/qa/trace/${testRunId}`);
+    return parseWithFallback(raw, LaunchTraceResponseSchema, EMPTY_LAUNCH_TRACE, {
+      endpoint: "GET /api/qa/trace/:runId",
+    });
   }
 
   async updateLabel(id: string, data: UpdateLabelRequest): Promise<Label> {
