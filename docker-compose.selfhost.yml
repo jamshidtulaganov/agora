@@ -104,6 +104,12 @@ services:
       # the daemon runs under an isolated `--profile` on a different health port
       # (e.g. `agora --profile local` binds 127.0.0.1:20038).
       AGORA_DAEMON_EDITOR_URL: ${AGORA_DAEMON_EDITOR_URL:-}
+      # Backend→daemon address for SERVER-SIDE launches (trace viewer, cloud
+      # editor proxy). Empty = self-host loopback (backend shares the daemon's
+      # host). In docker-compose the backend is a container and the daemon runs
+      # on the host, so set host.docker.internal:<health-port> and bind the
+      # daemon to 0.0.0.0 (AGORA_HEALTH_BIND=0.0.0.0) so the container can reach it.
+      AGORA_DAEMON_INTERNAL: ${AGORA_DAEMON_INTERNAL:-}
       ALLOW_SIGNUP: ${ALLOW_SIGNUP:-true}
       ALLOWED_EMAILS: ${ALLOWED_EMAILS:-}
       ALLOWED_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:-}
