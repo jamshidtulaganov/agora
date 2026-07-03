@@ -232,19 +232,27 @@ func buildSliceInstruction(kind, scope string) string {
 			"At the END of your comment, append a fenced ```test-cases code block containing ONLY a JSON array the QA " +
 			"panel parses: `[{\"title\":\"<short>\",\"steps\":\"<numbered steps, newline-separated>\",\"expected\":" +
 			"\"<expected result>\",\"kind\":\"manual\"|\"automated\",\"category\":\"positive\"|\"negative\",\"script\":" +
-			"\"<optional: a self-contained runnable Playwright script, ONLY for [e2e]/[api] cases>\"}]` — " +
+			"\"<a self-contained runnable Playwright script — REQUIRED for every [e2e]/[api] automated case>\"}]` — " +
 			"`automated` for a case a script/HTTP/DOM smoke can run deterministically, `manual` for one a human must " +
 			"click through. Keep titles unique and specific. The JSON must be valid and self-contained; a short " +
 			"human-readable summary may precede it. " +
-			"COMPILED SCRIPT (the speed win): for each [e2e] and [api] automated case, ALSO emit a `script` — a " +
+			"COMPILED SCRIPT (the biggest speed win): you MUST emit a `script` inline for EVERY [e2e] and [api] automated " +
+			"case — authoring it here SKIPS the separate compile step (a whole extra agent run + round-trip), so never " +
+			"leave an [e2e]/[api] automated case without one. Each is a " +
 			"COMPLETE, self-contained Playwright ESM module that runs with plain `node`: it MUST " +
 			"`import { chromium } from \"playwright\";` (for [api] cases you may use only `fetch`), use the PROJECT " +
 			"QA MANIFEST's base_url + auth (log in via the manifest's login_path/fields) and the manifest ROUTES/FLOWS, " +
-			"perform the case's steps, ASSERT the expected result by deterministic signal (HTTP status, response shape, " +
-			"DOM/accessibility-tree TEXT — never a screenshot), then `process.exit(0)` on pass and `process.exit(1)` on " +
-			"ANY failed assertion or thrown error (wrap the body in try/catch and exit(1) in catch; always close the " +
-			"browser in finally). For [e2e] cases, open pages from an explicit context " +
-			"(`const context = await browser.newContext();`) and add Playwright TRACING so a QA reviewer can replay the " +
+			"perform the case's steps, ASSERT the expected result by deterministic signal (DOM / accessibility-tree TEXT " +
+			"via `page.locator(...)`, HTTP status, or response shape — never a screenshot), then `process.exit(0)` on pass " +
+			"and `process.exit(1)` on ANY failed assertion or thrown error (wrap the body in try/catch and exit(1) in catch). " +
+			"For [e2e] cases you MUST DRIVE THE BROWSER against the SHARED review browser so the reviewer watches it live: " +
+			"when `process.env.AGORA_DAEMON_PORT` is set, POST " +
+			"`http://127.0.0.1:${process.env.AGORA_DAEMON_PORT}/editor/browser/start` with `{\"workdir\":\"qa-target:<the manifest base_url>\"}`, " +
+			"read `cdp_url`, then `const browser = await chromium.connectOverCDP(cdp_url); const context = browser.contexts()[0] ?? " +
+			"await browser.newContext(); const page = context.pages()[0] ?? await context.newPage();` (fall back to " +
+			"`chromium.launch()` ONLY if that POST fails or AGORA_DAEMON_PORT is unset; close the browser in finally ONLY on " +
+			"that launched path). Then `page.goto(route)` / fill / click / `page.locator(...)` the real UI — do NOT shortcut a " +
+			"UI case with a raw fetch of the HTML. Add Playwright TRACING so a QA reviewer can replay the " +
 			"run step-by-step in-app: when `process.env.TRACE_PATH` is set, `await context.tracing.start({ screenshots: " +
 			"true, snapshots: true, sources: true });` after creating the context and " +
 			"`await context.tracing.stop({ path: process.env.TRACE_PATH });` in the `finally` before closing the browser " +
@@ -1574,16 +1582,27 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	// running run_qa itself is the wall-clock bottleneck (a heavy model doing
 	// mechanical smoke). Falls back to self-run only if no member is available.
 	if routedToLead {
-		instruction = "As the QA LEAD, FIRST determine THIS project's stack and testing tooling yourself — read " +
-			"the repo (package.json/go.mod/composer.json, existing test dirs, CI config) rather than assuming; a " +
-			"Jest/Vitest project needs `npm test`/`vitest run`, a Go repo needs `go test ./...`, a PHP monolith with " +
-			"no unit-test layer (e.g. Yii1 with a mixed jQuery/Vue2/Vue3/Angular frontend) has no build/test command " +
-			"at all — for that stack the rendered page IS the contract, so route the delegate to browser-driven " +
-			"verification (deterministic HTTP/DOM assertions against the deployed QA box) instead of a nonexistent " +
-			"test suite. Then DELEGATE this QA gate to a QA squad member via @mention, TELLING them which tooling " +
-			"you determined applies (they execute it on a faster model) — do NOT run the gate yourself unless no " +
-			"member is available. You own the qa:pass/qa:fail rollup and stay in sync with the dev lead. " +
-			"The gate to delegate: " + instruction
+		if strings.TrimSpace(h.sliceActionQAManifestContext(ctx, issue)) != "" {
+			// SPEED: the project has a QA MANIFEST, so the stack + navigation are
+			// already KNOWN — skip the lead's heavy "read the repo to determine the
+			// tooling" hop (that determination was the slow part) and delegate
+			// immediately, pointing the member at the manifest.
+			instruction = "As the QA LEAD: this project's stack, auth, and navigation are in the PROJECT QA MANIFEST below — " +
+				"do NOT re-read the repo to determine them. DELEGATE this QA gate to a QA squad member via @mention right away " +
+				"(they execute it on a faster model), pointing them at the manifest; run it yourself ONLY if no member is " +
+				"available. You own the qa:pass/qa:fail rollup and stay in sync with the dev lead. The gate to delegate: " + instruction
+		} else {
+			instruction = "As the QA LEAD, FIRST determine THIS project's stack and testing tooling yourself — read " +
+				"the repo (package.json/go.mod/composer.json, existing test dirs, CI config) rather than assuming; a " +
+				"Jest/Vitest project needs `npm test`/`vitest run`, a Go repo needs `go test ./...`, a PHP monolith with " +
+				"no unit-test layer (e.g. Yii1 with a mixed jQuery/Vue2/Vue3/Angular frontend) has no build/test command " +
+				"at all — for that stack the rendered page IS the contract, so route the delegate to browser-driven " +
+				"verification (deterministic HTTP/DOM assertions against the deployed QA box) instead of a nonexistent " +
+				"test suite. Then DELEGATE this QA gate to a QA squad member via @mention, TELLING them which tooling " +
+				"you determined applies (they execute it on a faster model) — do NOT run the gate yourself unless no " +
+				"member is available. You own the qa:pass/qa:fail rollup and stay in sync with the dev lead. " +
+				"The gate to delegate: " + instruction
+		}
 	}
 
 	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
