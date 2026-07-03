@@ -49,12 +49,21 @@ func slugifyProjectName(s string) string {
 	return strings.Trim(b.String(), "-")
 }
 
+// soloAutomationDirective forbids fan-out on the focused, single-agent
+// automation tasks (KB study, conventions extraction, module KB, base-suite,
+// triage). These route to the project/QA LEAD, which is often an ORCHESTRATOR
+// whose default reflex is to decompose + @mention other agents — observed on
+// the sd-cs stress test pulling QA Tester and Security Reviewer into a solo
+// "extract conventions" job. A focused extraction/build is a solo job; fan-out
+// only adds noise, cost, and delay.
+const soloAutomationDirective = " IMPORTANT — do this ENTIRELY YOURSELF in this one run: do NOT delegate, do NOT spawn or create sub-agents, and do NOT @mention any other agent. This is a focused solo task; complete it end to end on your own."
+
 func buildProjectStudyPrompt(title string) string {
 	slug := slugifyProjectName(title)
 	if slug == "" {
 		slug = "project"
 	}
-	return fmt.Sprintf(projectStudyPromptTmpl, title, slug, slug, slug)
+	return fmt.Sprintf(projectStudyPromptTmpl, title, slug, slug, slug) + soloAutomationDirective
 }
 
 // projectKBSkillName resolves the name of a project's knowledge-base skill:

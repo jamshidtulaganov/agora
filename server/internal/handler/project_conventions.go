@@ -109,7 +109,7 @@ Emitting that block IS the deliverable — a human reviews it and it is saved to
 
 // buildLearnConventionsPrompt fills the study prompt for a project title.
 func buildLearnConventionsPrompt(title string) string {
-	return fmt.Sprintf(learnConventionsPromptTmpl, title)
+	return fmt.Sprintf(learnConventionsPromptTmpl, title) + soloAutomationDirective
 }
 
 // LearnProjectConventions triggers the project lead agent to study the connected

@@ -94,7 +94,7 @@ func (h *Handler) maybeEnqueueBitrixTriage(ctx context.Context, ws db.Workspace,
 	comment, cerr := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
 		AuthorType: "agent", AuthorID: agentID,
-		Content: bitrixTriagePrompt, Type: "comment", ParentID: pgtype.UUID{Valid: false},
+		Content: bitrixTriagePrompt + soloAutomationDirective, Type: "comment", ParentID: pgtype.UUID{Valid: false},
 	})
 	if cerr != nil {
 		slog.Warn("bitrix triage: prompt comment failed", "issue_id", util.UUIDToString(issue.ID), "error", cerr)

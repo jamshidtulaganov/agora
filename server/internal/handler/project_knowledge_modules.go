@@ -85,7 +85,7 @@ func (h *Handler) buildModuleStudyPrompt(ctx context.Context, project db.Project
 			"claim in real files — cite paths.\n\nThen persist it as the workspace SKILL named \"%s\" via the agora skill "+
 			"CLI (create or update). A worktree file does NOT count — ONLY the saved \"%s\" skill is read by other agents. "+
 			"Keep it tight and specific to THIS module; do not restate the whole-project base KB.",
-		matched, project.Title, strings.Join(paths, ", "), kbName, kbName)
+		matched, project.Title, strings.Join(paths, ", "), kbName, kbName) + soloAutomationDirective
 	return prompt, kbName, ""
 }
 

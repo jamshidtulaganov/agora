@@ -106,3 +106,20 @@ func TestAutonomyAggregationMath(t *testing.T) {
 		t.Errorf("orders agg wrong: %+v", *m["orders"])
 	}
 }
+
+// Every focused automation prompt must forbid delegation/fan-out — the sd-cs
+// stress test showed an orchestrator lead pulling QA Tester + Security Reviewer
+// into a solo "extract conventions" job.
+func TestAutomationPromptsForbidDelegation(t *testing.T) {
+	prompts := map[string]string{
+		"conventions": buildLearnConventionsPrompt("p"),
+		"base-suite":  baseSuitePromptTmpl + soloAutomationDirective,
+		"triage":      bitrixTriagePrompt + soloAutomationDirective,
+		"kb-study":    buildProjectStudyPrompt("p"),
+	}
+	for name, p := range prompts {
+		if !strings.Contains(p, "do NOT delegate") || !strings.Contains(p, "do NOT @mention") {
+			t.Errorf("%s prompt missing the solo/no-delegate directive", name)
+		}
+	}
+}

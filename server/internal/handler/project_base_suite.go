@@ -131,7 +131,7 @@ func (h *Handler) BuildProjectBaseSuite(w http.ResponseWriter, r *http.Request) 
 	comment, cerr := h.Queries.CreateComment(r.Context(), db.CreateCommentParams{
 		IssueID: res.Issue.ID, WorkspaceID: project.WorkspaceID,
 		AuthorType: "agent", AuthorID: author.ID,
-		Content: baseSuitePromptTmpl, Type: "comment", ParentID: pgtype.UUID{Valid: false},
+		Content: baseSuitePromptTmpl + soloAutomationDirective, Type: "comment", ParentID: pgtype.UUID{Valid: false},
 	})
 	if cerr != nil {
 		writeError(w, http.StatusBadGateway, "failed to post authoring prompt: "+cerr.Error())
