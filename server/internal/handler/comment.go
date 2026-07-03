@@ -1045,6 +1045,29 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 		h.TaskService.CaptureCompiledScripts(r.Context(), issue, comment.Content, parseUUID(authorID))
 		h.TaskService.CaptureDesignProposal(r.Context(), issue, comment, parseUUID(authorID))
 		h.TaskService.CaptureDesignManifest(r.Context(), issue, comment, parseUUID(authorID))
+
+		// Auto-chain the QA case pipeline so live per-case progress appears without
+		// a manual "Run all". gen_test_cases authors cases ASYNC (an agent task), so
+		// the in_review-time run fires BEFORE they exist and skips (no test_run rows,
+		// the live pane never shows a case). Re-fire the chain the moment a QA agent
+		// just AUTHORED cases (```test-cases```) or COMPILED them (```scripts```):
+		// compile fresh cases → run_test_cases executes them → the live strip shows
+		// which case is under test. Both steps are idempotent + gated (skip when
+		// nothing to do), so this self-sequences author→compile→run. NOT fired on a
+		// ```test-runs``` capture (an execution result), so a completed run can't
+		// re-trigger itself. Only while in_review.
+		if issue.Status == "in_review" &&
+			(strings.Contains(comment.Content, "```test-cases") || strings.Contains(comment.Content, "```scripts")) {
+			issueCopy := issue
+			actorType := issueCopy.CreatorType
+			if actorType != "member" && actorType != "agent" {
+				actorType = "member"
+			}
+			go func() {
+				h.maybeCompileTestCases(context.Background(), issueCopy)
+				h.maybeRunTestsOnInReview(context.Background(), issueCopy, actorType, uuidToString(issueCopy.CreatorID))
+			}()
+		}
 	}
 
 	writeJSON(w, http.StatusCreated, resp)
