@@ -678,6 +678,11 @@ func TestBitrixEndpointsDisabled(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("no database")
 	}
+	// The endpoints now authorize the caller (requireBitrixOperator) BEFORE the
+	// "is Bitrix configured" check, so route to the fixture workspace — which
+	// testUserID owns — to get PAST the operator gate. With the webhook URL empty
+	// the enabled-check is then what fails, yielding the 503 this test asserts.
+	t.Setenv("BITRIX_SYNC_WORKSPACE_SLUG", handlerTestWorkspaceSlug)
 	t.Setenv("BITRIX_WEBHOOK_URL", "")
 
 	for _, tc := range []struct {
