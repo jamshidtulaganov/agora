@@ -221,6 +221,14 @@ server/internal/handler/label.go          # AttachLabel wires maybeRouteToDevLea
 
 Contracts:
 
+- `maybeRunQAOnInReview` first computes `trivial := issueQAScopeTrivial(issue)`
+  — a low-risk change (`tier:trivial`/`tier:light`/`risk:safe`/`type:docs`
+  label, or a small non-zero PR diff; `risk:guarded`/`risk:critical` veto;
+  0/0/0 or unknown ⇒ full). When trivial, it does NOT route to the lead
+  (`devOrchestrated && !trivial`), its roster is filtered by
+  `filterQAAgentsForScope` (drops Security/Designer, never empties), and the
+  instruction gets the `qaTrivialCeiling` (gate solo, no fan-out). Same
+  filter applied to the gen_test_cases / run_test_cases rosters;
 - `maybeRunQAOnInReview` computes `devOrchestrated` before picking a runner:
   true when the issue's assignee is `agent` and that agent belongs to any
   squad (`ListSquadsByMember`), or when the assignee is `squad` directly

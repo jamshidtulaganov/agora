@@ -1615,6 +1615,66 @@ func (h *Handler) pickLeastBusyQAAgent(ctx context.Context, agents []db.Agent) d
 	return best
 }
 
+// qaTrivialCeiling is appended to a run_qa instruction for a low-risk change so
+// the gate stays SOLO and fast — the exact over-delegation the sd-cs stress test
+// surfaced (a doc-only issue pulled Security Reviewer + Designer into a review
+// panel and stalled).
+const qaTrivialCeiling = " SCOPE — TRIVIAL / low-risk change: gate it SOLO and FAST. Do NOT @mention, delegate to, or summon any other agent — no Security Reviewer, no Designer, no additional QA members — UNLESS the diff actually touches security-sensitive code or the UI/design. A one-file docs or config change does not need a review panel: run the minimal check that proves it is safe and post the qa:pass/qa:fail verdict yourself."
+
+// issueQAScopeTrivial decides whether an issue's QA effort should be scoped DOWN
+// to a solo, no-fan-out gate. It only ever DOWNGRADES on a reliably-small signal
+// (mirrors issue_tier.go's fail-safe: unknown size stays FULL), and never
+// downgrades a risk:guarded / risk:critical issue. Signals, cheapest first:
+//   - labels: risk:guarded|risk:critical veto; tier:trivial|tier:light|
+//     risk:safe|type:docs ⇒ trivial;
+//   - PR diff size (HINT only): a non-empty, small diff (<=2 files AND <=20
+//     lines). A 0/0/0 PR row is unsynced webhook stats = UNKNOWN ⇒ stays full,
+//     never downgraded on absent data.
+func (h *Handler) issueQAScopeTrivial(ctx context.Context, issue db.Issue) bool {
+	if labels, err := h.Queries.ListLabelsByIssue(ctx, db.ListLabelsByIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+	}); err == nil {
+		has := make(map[string]bool, len(labels))
+		for _, l := range labels {
+			has[strings.ToLower(strings.TrimSpace(l.Name))] = true
+		}
+		if has["risk:guarded"] || has["risk:critical"] {
+			return false // high blast radius — always full QA
+		}
+		if has["tier:trivial"] || has["tier:light"] || has["risk:safe"] || has["type:docs"] {
+			return true
+		}
+	}
+	prs, err := h.Queries.ListPullRequestsByIssue(ctx, issue.ID)
+	if err != nil || len(prs) == 0 {
+		return false // no PR / unknown → full
+	}
+	pr := prs[0]
+	return pr.ChangedFiles > 0 && pr.ChangedFiles <= 2 && (pr.Additions+pr.Deletions) <= 20
+}
+
+// filterQAAgentsForScope drops specialist reviewers (Security / Designer) from a
+// QA roster when the change is trivial, so a doc/config change never fans out to
+// a full review panel. Never returns empty — a trivial gate still needs ONE
+// runner, so a roster of only specialists falls back to the original slice.
+func filterQAAgentsForScope(agents []db.Agent, trivial bool) []db.Agent {
+	if !trivial {
+		return agents
+	}
+	kept := make([]db.Agent, 0, len(agents))
+	for _, a := range agents {
+		n := strings.ToLower(a.Name)
+		if strings.Contains(n, "security") || strings.Contains(n, "design") {
+			continue
+		}
+		kept = append(kept, a)
+	}
+	if len(kept) == 0 {
+		return agents
+	}
+	return kept
+}
+
 // issueQALocks serializes the auto-QA triggers (run_qa / gen_test_cases) per
 // issue WITHIN this backend process. The status write is a read-modify-write
 // with no row lock, so two concurrent transitions into the same state both see
@@ -1657,11 +1717,18 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	// non-squad assignments are UNCHANGED below: they still fan across the whole
 	// QA roster so many in_review issues run QA concurrently instead of queuing
 	// behind one agent — this branch never touches that path.
+	// A trivial / low-risk change (doc-only, risk:safe, tiny diff) is gated SOLO
+	// and fast: it does NOT route to the QA lead (which would delegate = 2 agents
+	// minimum) and its roster excludes specialist reviewers, so a one-file docs
+	// change never spins up a review panel. Guarded/critical/unknown work is
+	// unaffected — it takes the exact path it does today.
+	trivial := h.issueQAScopeTrivial(ctx, issue)
+
 	var runner db.Agent
 	var agents []db.Agent
 	routedToLead := false
 	devOrchestrated := h.issueDevOrchestrated(ctx, issue)
-	if devOrchestrated {
+	if devOrchestrated && !trivial {
 		if leader, ok := h.qaSquadLeader(ctx, issue.WorkspaceID); ok {
 			runner = leader
 			agents = []db.Agent{leader}
@@ -1673,7 +1740,7 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 		// ready agent, so many in_review issues run QA concurrently instead of queuing
 		// behind one agent. The per-box sync lock keeps concurrent runs on the shared
 		// sprint branch safe.
-		agents = h.qaSquadAgents(ctx, issue.WorkspaceID)
+		agents = filterQAAgentsForScope(h.qaSquadAgents(ctx, issue.WorkspaceID), trivial)
 		if len(agents) == 0 {
 			return
 		}
@@ -1737,13 +1804,21 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	instruction += h.sliceActionDesignCompareContext(ctx, issue)
 	instruction += h.sliceActionDesignLintContext(ctx, issue)
 
+	// Trivial change: cap the fleet explicitly (the runner is already a single
+	// non-specialist, but the ceiling stops it from @mentioning its way to a panel).
+	if trivial {
+		instruction += qaTrivialCeiling
+	}
+
 	// When this routed to the QA LEAD (orchestrated dev side), the lead should
 	// ORCHESTRATE, not execute: delegate the actual gate run to a QA member so
 	// the fast execution model does the mechanical work while the lead keeps the
 	// dev-lead↔QA-lead coordination and owns the qa:pass/qa:fail rollup. The lead
 	// running run_qa itself is the wall-clock bottleneck (a heavy model doing
 	// mechanical smoke). Falls back to self-run only if no member is available.
-	if routedToLead {
+	// Never runs when trivial (routedToLead is false above), but the explicit
+	// !trivial guard documents the invariant.
+	if routedToLead && !trivial {
 		if strings.TrimSpace(h.sliceActionQAManifestContext(ctx, issue)) != "" {
 			// SPEED: the project has a QA MANIFEST, so the stack + navigation are
 			// already KNOWN — skip the lead's heavy "read the repo to determine the
@@ -1813,7 +1888,7 @@ func (h *Handler) maybeGenTests(ctx context.Context, issue db.Issue, actorType, 
 	}); err != nil || n > 0 {
 		return
 	}
-	agents := h.qaSquadAgents(ctx, issue.WorkspaceID)
+	agents := filterQAAgentsForScope(h.qaSquadAgents(ctx, issue.WorkspaceID), h.issueQAScopeTrivial(ctx, issue))
 	if len(agents) == 0 {
 		return
 	}
@@ -1910,7 +1985,7 @@ func (h *Handler) maybeRunTestsOnInReview(ctx context.Context, issue db.Issue, a
 	if haveIssue == 0 && haveBase == 0 {
 		return // nothing to execute yet
 	}
-	agents := h.qaSquadAgents(ctx, issue.WorkspaceID)
+	agents := filterQAAgentsForScope(h.qaSquadAgents(ctx, issue.WorkspaceID), h.issueQAScopeTrivial(ctx, issue))
 	if len(agents) == 0 {
 		return
 	}
@@ -2356,7 +2431,7 @@ func (h *Handler) maybeCompileTestCases(ctx context.Context, issue db.Issue) {
 	if len(h.uncompiledAutomatedCases(ctx, issue)) == 0 {
 		return
 	}
-	agents := h.qaSquadAgents(ctx, issue.WorkspaceID)
+	agents := filterQAAgentsForScope(h.qaSquadAgents(ctx, issue.WorkspaceID), h.issueQAScopeTrivial(ctx, issue))
 	if len(agents) == 0 {
 		return
 	}

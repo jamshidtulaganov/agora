@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -121,5 +122,97 @@ func TestAutomationPromptsForbidDelegation(t *testing.T) {
 		if !strings.Contains(p, "do NOT delegate") || !strings.Contains(p, "do NOT @mention") {
 			t.Errorf("%s prompt missing the solo/no-delegate directive", name)
 		}
+	}
+}
+
+// filterQAAgentsForScope drops specialist reviewers on a trivial change but
+// never empties the roster.
+func TestFilterQAAgentsForScope(t *testing.T) {
+	roster := []db.Agent{
+		{Name: "Lead QA Engineer"}, {Name: "QA Tester"},
+		{Name: "Security Reviewer"}, {Name: "Designer"},
+	}
+	// non-trivial: unchanged
+	if got := filterQAAgentsForScope(roster, false); len(got) != 4 {
+		t.Errorf("non-trivial must keep all, got %d", len(got))
+	}
+	// trivial: drop Security + Designer, keep QA
+	got := filterQAAgentsForScope(roster, true)
+	names := map[string]bool{}
+	for _, a := range got {
+		names[a.Name] = true
+	}
+	if names["Security Reviewer"] || names["Designer"] {
+		t.Errorf("trivial must drop specialists, got %v", names)
+	}
+	if !names["Lead QA Engineer"] || !names["QA Tester"] {
+		t.Errorf("trivial must keep QA roles, got %v", names)
+	}
+	// never empty: a roster of only specialists falls back to the original
+	if got := filterQAAgentsForScope([]db.Agent{{Name: "Security Reviewer"}}, true); len(got) != 1 {
+		t.Errorf("must never return empty, got %d", len(got))
+	}
+}
+
+// issueQAScopeTrivial: risk:critical vetoes; type:docs downgrades; DB-backed.
+func TestIssueQAScopeTrivial(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("no database")
+	}
+	ctx := t.Context()
+	mkIssue := func() string {
+		var pid, iid string
+		if err := testPool.QueryRow(ctx,
+			`INSERT INTO project (workspace_id, title, status, priority) VALUES ($1::uuid,'scope-p-'||gen_random_uuid(),'planned','none') RETURNING id::text`,
+			testWorkspaceID).Scan(&pid); err != nil {
+			t.Fatal(err)
+		}
+		if err := testPool.QueryRow(ctx,
+			`INSERT INTO issue (workspace_id, project_id, title, creator_type, creator_id, number) VALUES ($1::uuid,$2::uuid,'scope issue','member',$3::uuid,(3000000+floor(random()*1000000))::int) RETURNING id::text`,
+			testWorkspaceID, pid, testUserID).Scan(&iid); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			c := context.Background()
+			testPool.Exec(c, `DELETE FROM issue WHERE id=$1::uuid`, iid)
+			testPool.Exec(c, `DELETE FROM project WHERE id=$1::uuid`, pid)
+		})
+		return iid
+	}
+	label := func(iid, name string) {
+		var lid string
+		testPool.QueryRow(ctx, `INSERT INTO issue_label (workspace_id,name,color) VALUES ($1::uuid,$2,'#000') RETURNING id::text`, testWorkspaceID, name).Scan(&lid)
+		testPool.Exec(ctx, `INSERT INTO issue_to_label (issue_id,label_id) VALUES ($1::uuid,$2::uuid)`, iid, lid)
+		t.Cleanup(func() {
+			c := context.Background()
+			testPool.Exec(c, `DELETE FROM issue_to_label WHERE label_id=$1::uuid`, lid)
+			testPool.Exec(c, `DELETE FROM issue_label WHERE id=$1::uuid`, lid)
+		})
+	}
+	load := func(iid string) db.Issue {
+		i, err := testHandler.Queries.GetIssue(ctx, parseUUID(iid))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return i
+	}
+
+	// type:docs → trivial
+	d := mkIssue()
+	label(d, "type:docs")
+	if !testHandler.issueQAScopeTrivial(ctx, load(d)) {
+		t.Error("type:docs must scope trivial")
+	}
+	// risk:critical vetoes even with type:docs
+	c := mkIssue()
+	label(c, "type:docs")
+	label(c, "risk:critical")
+	if testHandler.issueQAScopeTrivial(ctx, load(c)) {
+		t.Error("risk:critical must veto trivial")
+	}
+	// no labels, no PR → full (fail-safe)
+	n := mkIssue()
+	if testHandler.issueQAScopeTrivial(ctx, load(n)) {
+		t.Error("no signal must stay full")
 	}
 }
