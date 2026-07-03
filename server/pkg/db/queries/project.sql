@@ -84,3 +84,42 @@ SELECT * FROM project
 WHERE settings ? 'risk_map'
   AND status NOT IN ('completed', 'cancelled')
 ORDER BY created_at;
+
+-- name: ProjectAutonomyRows :many
+-- One row per issue in a project carrying: its latest QA verdict, its assignee,
+-- and its module labels. The autonomy report aggregates these per module (and
+-- per agent) into pass/fail rates — the instrument a human uses to decide which
+-- modules have earned promotion toward auto-merge (risk:safe). Read-only.
+SELECT
+    i.id AS issue_id,
+    i.assignee_type,
+    i.assignee_id,
+    COALESCE(qe.verdict, '') AS qa_verdict,
+    ARRAY(
+        SELECT il.name
+        FROM issue_to_label itl
+        JOIN issue_label il ON il.id = itl.label_id
+        WHERE itl.issue_id = i.id AND il.name ILIKE 'module:%'
+    )::text[] AS modules
+FROM issue i
+LEFT JOIN LATERAL (
+    SELECT verdict FROM qa_evidence qe
+    WHERE qe.issue_id = i.id
+    ORDER BY captured_at DESC
+    LIMIT 1
+) qe ON true
+WHERE i.project_id = sqlc.arg('project_id');
+
+-- name: MergeProjectCoverageEntry :one
+-- Atomically merge a single {module: timestamp} pair into settings.kb_coverage
+-- (deep-merge via jsonb ||) so concurrent per-module KB builds never clobber
+-- each other's stamp — unlike a Go read-modify-write of the whole object.
+UPDATE project SET
+    settings = jsonb_set(
+        COALESCE(settings, '{}'::jsonb),
+        '{kb_coverage}',
+        COALESCE(settings->'kb_coverage', '{}'::jsonb) || sqlc.arg('entry')::jsonb,
+        true),
+    updated_at = now()
+WHERE id = sqlc.arg('id') AND workspace_id = sqlc.arg('workspace_id')
+RETURNING *;

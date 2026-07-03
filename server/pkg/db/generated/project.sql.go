@@ -275,6 +275,108 @@ func (q *Queries) ListRiskMappedProjects(ctx context.Context) ([]Project, error)
 	return items, nil
 }
 
+const mergeProjectCoverageEntry = `-- name: MergeProjectCoverageEntry :one
+UPDATE project SET
+    settings = jsonb_set(
+        COALESCE(settings, '{}'::jsonb),
+        '{kb_coverage}',
+        COALESCE(settings->'kb_coverage', '{}'::jsonb) || $1::jsonb,
+        true),
+    updated_at = now()
+WHERE id = $2 AND workspace_id = $3
+RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, settings, squad_id
+`
+
+type MergeProjectCoverageEntryParams struct {
+	Entry       []byte      `json:"entry"`
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// Atomically merge a single {module: timestamp} pair into settings.kb_coverage
+// (deep-merge via jsonb ||) so concurrent per-module KB builds never clobber
+// each other's stamp — unlike a Go read-modify-write of the whole object.
+func (q *Queries) MergeProjectCoverageEntry(ctx context.Context, arg MergeProjectCoverageEntryParams) (Project, error) {
+	row := q.db.QueryRow(ctx, mergeProjectCoverageEntry, arg.Entry, arg.ID, arg.WorkspaceID)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Title,
+		&i.Description,
+		&i.Icon,
+		&i.Status,
+		&i.LeadType,
+		&i.LeadID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Priority,
+		&i.Settings,
+		&i.SquadID,
+	)
+	return i, err
+}
+
+const projectAutonomyRows = `-- name: ProjectAutonomyRows :many
+SELECT
+    i.id AS issue_id,
+    i.assignee_type,
+    i.assignee_id,
+    COALESCE(qe.verdict, '') AS qa_verdict,
+    ARRAY(
+        SELECT il.name
+        FROM issue_to_label itl
+        JOIN issue_label il ON il.id = itl.label_id
+        WHERE itl.issue_id = i.id AND il.name ILIKE 'module:%'
+    )::text[] AS modules
+FROM issue i
+LEFT JOIN LATERAL (
+    SELECT verdict FROM qa_evidence qe
+    WHERE qe.issue_id = i.id
+    ORDER BY captured_at DESC
+    LIMIT 1
+) qe ON true
+WHERE i.project_id = $1
+`
+
+type ProjectAutonomyRowsRow struct {
+	IssueID      pgtype.UUID `json:"issue_id"`
+	AssigneeType pgtype.Text `json:"assignee_type"`
+	AssigneeID   pgtype.UUID `json:"assignee_id"`
+	QaVerdict    string      `json:"qa_verdict"`
+	Modules      []string    `json:"modules"`
+}
+
+// One row per issue in a project carrying: its latest QA verdict, its assignee,
+// and its module labels. The autonomy report aggregates these per module (and
+// per agent) into pass/fail rates — the instrument a human uses to decide which
+// modules have earned promotion toward auto-merge (risk:safe). Read-only.
+func (q *Queries) ProjectAutonomyRows(ctx context.Context, projectID pgtype.UUID) ([]ProjectAutonomyRowsRow, error) {
+	rows, err := q.db.Query(ctx, projectAutonomyRows, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectAutonomyRowsRow{}
+	for rows.Next() {
+		var i ProjectAutonomyRowsRow
+		if err := rows.Scan(
+			&i.IssueID,
+			&i.AssigneeType,
+			&i.AssigneeID,
+			&i.QaVerdict,
+			&i.Modules,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setProjectDesignManifest = `-- name: SetProjectDesignManifest :one
 UPDATE project SET
     settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{design_manifest}', $1::jsonb, true),

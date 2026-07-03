@@ -942,6 +942,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/knowledge/build", h.BuildProjectKnowledge)
 					r.Post("/conventions/learn", h.LearnProjectConventions)
 					r.Post("/base-suite/build", h.BuildProjectBaseSuite)
+					r.Get("/autonomy-report", h.ProjectAutonomyReport)
 					// QA manifest — the app's known navigation map injected into
 					// every QA run. Built by the lead agent in the background
 					// (project create / first repo attach) or re-derived on

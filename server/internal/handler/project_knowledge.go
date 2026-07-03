@@ -186,6 +186,29 @@ func (h *Handler) BuildProjectKnowledge(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	requester, _ := h.parseUserUUIDOrZero(userID)
+
+	// ?module=<name> scopes the build to ONE module's paths (from the risk map),
+	// writing a focused "<kb>-<module>" skill. A 37-module monolith can't fit in
+	// one KB; module KBs are injected only for issues labelled with that module
+	// (see projectKBSkills). No module param → the whole-project base KB.
+	if module := strings.TrimSpace(r.URL.Query().Get("module")); module != "" {
+		prompt, kbName, perr := h.buildModuleStudyPrompt(r.Context(), project, module)
+		if perr != "" {
+			writeError(w, http.StatusBadRequest, perr)
+			return
+		}
+		if _, err := h.TaskService.EnqueueQuickCreateTask(
+			r.Context(), project.WorkspaceID, requester, project.LeadID, pgtype.UUID{},
+			prompt, project.ID, pgtype.UUID{}, nil,
+		); err != nil {
+			writeError(w, http.StatusBadGateway, "failed to start module knowledge build: "+err.Error())
+			return
+		}
+		h.recordModuleKBCoverage(r.Context(), project, module)
+		writeJSON(w, http.StatusAccepted, map[string]any{"status": "queued", "skill": kbName})
+		return
+	}
+
 	prompt := buildProjectStudyPrompt(project.Title)
 	if _, err := h.TaskService.EnqueueQuickCreateTask(
 		r.Context(), project.WorkspaceID, requester, project.LeadID, pgtype.UUID{},

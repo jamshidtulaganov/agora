@@ -1405,20 +1405,19 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			// The project knowledge-base skill (settings.kb_skill override, else
-			// "<slug>-kb") auto-rides on every claim, deduped against the agent's
-			// own bound skills — without this the KB reaches an agent only via
-			// manual agent_skill binding, and in practice reaches nobody.
+			// The project knowledge-base skills auto-ride on every claim, deduped
+			// against the agent's own bound skills — the base "<slug>-kb" (settings
+			// .kb_skill override, else derived) PLUS any "<slug>-kb-<module>" whose
+			// module matches the issue's module: labels. Without this the KB
+			// reaches an agent only via manual agent_skill binding — i.e. nobody.
 			if resp.Agent != nil {
-				if kb, ok := h.projectKBSkill(r.Context(), issue); ok {
-					bound := false
-					for _, s := range resp.Agent.Skills {
-						if s.Name == kb.Name {
-							bound = true
-							break
-						}
-					}
-					if !bound {
+				bound := make(map[string]bool, len(resp.Agent.Skills))
+				for _, s := range resp.Agent.Skills {
+					bound[s.Name] = true
+				}
+				for _, kb := range h.projectKBSkills(r.Context(), issue) {
+					if !bound[kb.Name] {
+						bound[kb.Name] = true
 						resp.Agent.Skills = append(resp.Agent.Skills, kb)
 					}
 				}
