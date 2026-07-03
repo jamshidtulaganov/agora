@@ -722,6 +722,18 @@ func sprintWorktreeEnabled() bool {
 	return strings.TrimSpace(os.Getenv("AGORA_SPRINT_WORKTREE_ENABLED")) == "true"
 }
 
+// sprintPRModeEnabled gates the per-task-PR-into-the-sprint-branch dev flow
+// (Phase 1 of auto sprint review): a sprint task opens a PR from its own branch
+// into the sprint branch — for the squad lead to review + merge — instead of
+// committing straight onto the shared branch. Mirrors the daemon-side gate of the
+// same name; both read AGORA_SPRINT_PR_MODE so the agent instruction path and the
+// co-code accept path switch together. Default OFF → direct-commit sprint mode.
+// Only meaningful when sprintWorktreeEnabled() + the project is in sprint mode.
+func sprintPRModeEnabled() bool {
+	v := strings.TrimSpace(os.Getenv("AGORA_SPRINT_PR_MODE"))
+	return v == "1" || strings.EqualFold(v, "true")
+}
+
 // projectDocsAgentID reads the project's configured docs agent (an agent UUID in
 // project.settings.docs_agent) — the dedicated agent that writes docs into the
 // docs repo. Empty when unset.
@@ -795,6 +807,19 @@ func sprintCommitInstruction(branch string) string {
 	return " SPRINT MODE — DO NOT OPEN A PULL REQUEST. This project is running a sprint: every task's work lands on the ONE shared sprint branch `" + branch +
 		"`, which is already checked out in your worktree. Commit your change directly to `" + branch + "` and push it there. Do NOT create a new branch, and do NOT open a pull/merge request. " +
 		"This SUPERSEDES any 'open a pull request' wording above. The whole sprint branch is reviewed and merged to the base branch ONCE, by a human, at sprint end."
+}
+
+// sprintPRInstruction is the sprint-PR-mode dev directive (AGORA_SPRINT_PR_MODE
+// on): the task opens a PR from its OWN branch into the sprint branch, rather than
+// committing straight onto it. The worktree is already on a per-task branch that
+// tracks the sprint branch (pulled to its latest tip), so the agent just commits,
+// pushes ITS branch, and opens a PR with base=<sprint branch>. The squad lead
+// reviews + merges it after QA — the agent must not merge or target main.
+func sprintPRInstruction(branch string) string {
+	return " SPRINT MODE (PR REVIEW) — open a pull request INTO the sprint branch; do NOT push onto it directly. This project runs a sprint on the shared branch `" + branch +
+		"`. Your worktree is already on a per-task branch pulled to the latest `" + branch + "` tip. Do your work and commit it to your CURRENT branch. Then: (1) push your current branch to origin as ITS OWN branch — `git push origin HEAD` — NOT onto `" + branch +
+		"`; (2) open a pull request with BASE `" + branch + "` — `gh pr create --base " + branch + " --fill`. " +
+		"The squad LEAD reviews the PR and merges it into `" + branch + "` automatically once QA passes — do NOT merge it yourself, and do NOT target the repository's main/default branch. This SUPERSEDES any other branch/PR wording above."
 }
 
 // resolveAutoDocsAgent picks the agent to run an auto-fired auto_docs: the
@@ -2119,11 +2144,18 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 			// reuse beats re-inventing components. "" when no manifest.
 			instruction += h.sliceActionDesignManifestContext(r.Context(), issue)
 		}
-		// Sprint mode: commit to the ONE shared sprint branch, no per-task PR
-		// (the directive supersedes the base "open a pull request" wording).
-		// Otherwise keep the per-task branch + PR instruction.
+		// Sprint mode. Two dev models, selected by AGORA_SPRINT_PR_MODE:
+		//   - off (default): commit to the ONE shared sprint branch, no per-task PR.
+		//   - on: open a PR from the task's own branch INTO the sprint branch, for
+		//     the squad lead to review + merge (Phase 1 of auto sprint review).
+		// Either directive supersedes the base "open a pull request" wording.
+		// Non-sprint issues keep the per-task branch + PR-into-main instruction.
 		if branch, ok := h.sliceActionSprintContext(r.Context(), issue); ok {
-			instruction += sprintCommitInstruction(branch)
+			if sprintPRModeEnabled() {
+				instruction += sprintPRInstruction(branch)
+			} else {
+				instruction += sprintCommitInstruction(branch)
+			}
 		} else {
 			instruction += h.sliceActionBranchInstruction(r.Context(), issue)
 		}
