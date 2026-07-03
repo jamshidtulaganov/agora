@@ -2416,6 +2416,11 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 			slog.Info("qa-gate: redirected direct →done to →in_review",
 				append(logger.RequestAttrs(r), "issue_id", uuidToString(prevIssue.ID), "requested", *req.Status)...)
 		}
+		// Sprint-PR merge gate: don't let a task read done while its PR into the
+		// sprint branch is unmerged (qa:pass is the merge gate, not completion).
+		if newStatus, held := h.enforceSprintPRMergedBeforeDone(r.Context(), prevIssue, prevIssue.Status, target); held {
+			target = newStatus
+		}
 		// Design gate (opt-in, default off): a design-decomposed issue can't skip
 		// in_review to done without a passing/skipped design verdict.
 		if newStatus, redirected := h.enforceDesignGateBeforeDone(r.Context(), prevIssue, prevIssue.Status, target); redirected {
@@ -3090,6 +3095,11 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 				target = newStatus
 				slog.Info("qa-gate: redirected direct →done to →in_review (batch)",
 					"issue_id", uuidToString(prevIssue.ID), "requested", *req.Updates.Status)
+			}
+			// Sprint-PR merge gate (batch-path mirror): hold done while the PR
+			// into the sprint branch is unmerged.
+			if newStatus, held := h.enforceSprintPRMergedBeforeDone(r.Context(), prevIssue, prevIssue.Status, target); held {
+				target = newStatus
 			}
 			// Design gate (batch-path mirror): a design-decomposed issue can't
 			// reach done without a passing/skipped design verdict. Opt-in, dark.

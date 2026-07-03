@@ -1066,6 +1066,94 @@ func (h *Handler) enforceQAGateBeforeDone(ctx context.Context, issue db.Issue, p
 	return "in_review", true
 }
 
+// sprintPRMergeGateMarker tags the hold comment so it's posted ONCE per open PR
+// (not on every retried →done attempt). The PR number is appended so a fresh PR
+// re-notifies.
+const sprintPRMergeGateMarker = "<!-- sprint-pr-merge-gate:%d -->"
+
+// sprintPRMergeOverrideLabel lets a human force a sprint-PR issue to done despite
+// an unmerged PR (abandoned branch, merged out-of-band, deliberate). The escape
+// hatch: the gate would otherwise wedge such an issue with no way out.
+const sprintPRMergeOverrideLabel = "merge:override"
+
+// enforceSprintPRMergedBeforeDone holds a sprint-PR issue from reading "done"
+// while its code is still an OPEN, UNMERGED pull request into the sprint branch.
+// qa:pass alone is not completion — in PR mode a human (or the lead) still has
+// to merge, and an issue that reaches done with an unmerged PR is code that
+// never landed but reports complete (worst for critical/guarded tiers).
+//
+// It holds ONLY when there is a still-OPEN unmerged PR: a merged PR passes (the
+// code landed), and a CLOSED-unmerged PR also passes (the branch was abandoned —
+// holding forever would wedge the issue). The `merge:override` label is a manual
+// escape. The hold comment is posted once per PR (marker-deduped) so repeated
+// →done attempts don't spam the thread. Returns (prevStatus, true) to hold.
+func (h *Handler) enforceSprintPRMergedBeforeDone(ctx context.Context, issue db.Issue, prevStatus, targetStatus string) (string, bool) {
+	if !sprintPRModeEnabled() {
+		return targetStatus, false
+	}
+	if targetStatus != "done" || prevStatus == "done" {
+		return targetStatus, false
+	}
+	// Manual escape hatch — a human accepts responsibility for the unmerged PR.
+	if h.issueHasLabel(ctx, issue, sprintPRMergeOverrideLabel) {
+		return targetStatus, false
+	}
+	// Only sprint work opens a PR into a sprint branch.
+	if _, err := h.Queries.GetSprintForIssue(ctx, issue.ID); err != nil {
+		return targetStatus, false
+	}
+	prs, err := h.Queries.ListPullRequestsByIssue(ctx, issue.ID)
+	if err != nil || len(prs) == 0 {
+		return targetStatus, false // no linked PR — nothing to gate (direct commits, etc.)
+	}
+	// Find a PR that is still OPEN and unmerged. A merged PR means the code
+	// landed (pass); a closed-unmerged PR means the branch was abandoned (pass,
+	// so the issue is never wedged) — only an open unmerged PR is "in flight".
+	var openPR *db.ListPullRequestsByIssueRow
+	for i := range prs {
+		pr := &prs[i]
+		if pr.MergedAt.Valid {
+			return targetStatus, false // landed
+		}
+		if openPR == nil && strings.EqualFold(strings.TrimSpace(pr.State), "open") {
+			openPR = pr
+		}
+	}
+	if openPR == nil {
+		return targetStatus, false // no open PR — abandoned/closed; don't wedge
+	}
+
+	// Hold, and post the explanation ONCE per PR (marker dedup).
+	marker := fmt.Sprintf(sprintPRMergeGateMarker, openPR.PrNumber)
+	alreadyNoted := false
+	if comments, cerr := h.Queries.ListCommentsForIssue(ctx, db.ListCommentsForIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID, Limit: 200,
+	}); cerr == nil {
+		for _, c := range comments {
+			if strings.Contains(c.Content, marker) {
+				alreadyNoted = true
+				break
+			}
+		}
+	}
+	if !alreadyNoted {
+		note := fmt.Sprintf("⛔ Not done yet — this task's pull request (#%d) into the sprint branch is still OPEN and "+
+			"UNMERGED. qa:pass is the merge GATE, not completion: a human (or the squad lead) must merge the PR first, then "+
+			"this can move to done. Holding the status until then. (To force done anyway, add the `%s` label.) %s",
+			openPR.PrNumber, sprintPRMergeOverrideLabel, marker)
+		if _, cerr := h.Queries.CreateComment(ctx, db.CreateCommentParams{
+			IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+			AuthorType: "system", AuthorID: pgtype.UUID{Valid: true},
+			Content: note, Type: "system", ParentID: pgtype.UUID{Valid: false},
+		}); cerr != nil {
+			slog.Warn("sprint-pr merge gate: comment failed", "error", cerr, "issue_id", uuidToString(issue.ID))
+		}
+	}
+	slog.Info("sprint-pr merge gate: held →done, PR open+unmerged",
+		"issue_id", uuidToString(issue.ID), "pr_number", openPR.PrNumber)
+	return prevStatus, true
+}
+
 // squadFailureRecoveryMarker tags the recovery comment so repeated failures on
 // the same issue can be capped (a broken member re-delegated to forever would
 // otherwise loop). Kept out of the visible text via an HTML comment.
