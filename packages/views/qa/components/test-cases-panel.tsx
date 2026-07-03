@@ -298,19 +298,27 @@ function CaseRow({
   return (
     <li
       className={cn(
-        "relative px-3 py-2 transition-colors",
+        "group/case relative px-3 py-2 transition-colors",
         // The case executing RIGHT NOW is unmistakable: a tinted row + a spinning
-        // marker on the title (below) + an ANIMATED border — a pulsing inset ring
-        // that breathes so the eye is pulled to the running case. The ring is a
-        // separate overlay so only the border animates, not the row content.
-        isRunning && "bg-info/5",
+        // marker on the title + an ANIMATED border. The ring + left accent bar are
+        // separate overlays so only the border animates, not the row content.
+        isRunning && "bg-info/10",
       )}
     >
       {isRunning && (
-        <span
-          aria-hidden
-          className="pointer-events-none absolute inset-0 z-10 rounded-md ring-2 ring-inset ring-info/70 motion-safe:animate-pulse"
-        />
+        <>
+          {/* Bright pulsing inset ring around the whole row… */}
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-0 z-10 rounded-md ring-2 ring-inset ring-info motion-safe:animate-pulse"
+          />
+          {/* …plus a solid accent bar down the left edge, so the eye lands on the
+              running case even at a glance. */}
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-y-1 left-0 z-10 w-1 rounded-full bg-info motion-safe:animate-pulse"
+          />
+        </>
       )}
       <div className="flex items-start gap-2">
         <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setOpen((v) => !v)}>
@@ -404,28 +412,36 @@ function CaseRow({
               {isRunning ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
             </Button>
           )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            disabled={busy}
-            onClick={() => onRun("pass")}
-            className="size-6 text-emerald-700 hover:bg-emerald-600/10 dark:text-emerald-300"
-            title={t(($) => $.test_cases.run_pass)}
-          >
-            <Check className="size-3.5" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            disabled={busy}
-            onClick={() => onRun("fail")}
-            className="size-6 text-destructive hover:bg-destructive/10"
-            title={t(($) => $.test_cases.run_fail)}
-          >
-            <X className="size-3.5" />
-          </Button>
+          {/* Manual pass/fail is ONLY for manual cases — a human judges those.
+              Automated cases are judged by the agent's run (▷ / Run-all), so the
+              always-on ✓/✗ there was redundant clutter on every row. Kept here for
+              manual cases, and revealed on row hover so the default view stays clean. */}
+          {c.kind !== "automated" && (
+            <div className="flex items-center gap-1.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover/case:opacity-100">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                disabled={busy}
+                onClick={() => onRun("pass")}
+                className="size-6 text-emerald-700 hover:bg-emerald-600/10 dark:text-emerald-300"
+                title={t(($) => $.test_cases.run_pass)}
+              >
+                <Check className="size-3.5" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                disabled={busy}
+                onClick={() => onRun("fail")}
+                className="size-6 text-destructive hover:bg-destructive/10"
+                title={t(($) => $.test_cases.run_fail)}
+              >
+                <X className="size-3.5" />
+              </Button>
+            </div>
+          )}
         </div>
       </div>
       {open && hasReason && (
