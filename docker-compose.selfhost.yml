@@ -141,6 +141,20 @@ services:
       # Workspace Figma credential: base64 32-byte key that seals the Figma
       # PAT agents use to read designs. Unset = figma endpoints fail closed.
       AGORA_FIGMA_SECRET_KEY: ${AGORA_FIGMA_SECRET_KEY:-}
+      # Sprint auto-review loop (all default OFF, reversible). WORKTREE = shared
+      # sprint-branch worktree model; PR_MODE = task opens a PR into the sprint
+      # branch for the lead to auto-review+merge; AUTO_QA = fire run_qa on
+      # in_review; QA_FAIL_AUTOROUTE = qa:fail routes back to the dev squad lead.
+      AGORA_SPRINT_WORKTREE_ENABLED: ${AGORA_SPRINT_WORKTREE_ENABLED:-}
+      AGORA_SPRINT_PR_MODE: ${AGORA_SPRINT_PR_MODE:-}
+      # AUTO_MERGE off (unset) = the squad lead prepares the PR but a HUMAN does the
+      # final review + merge; on = the lead auto-merges once QA passes.
+      AGORA_SPRINT_AUTO_MERGE: ${AGORA_SPRINT_AUTO_MERGE:-}
+      AGORA_AUTO_QA_ENABLED: ${AGORA_AUTO_QA_ENABLED:-}
+      AGORA_QA_FAIL_AUTOROUTE_ENABLED: ${AGORA_QA_FAIL_AUTOROUTE_ENABLED:-}
+      # Compile authored cases → Playwright scripts so run_test_cases executes them
+      # in a real browser (the QA live pane shows the case running, not just HTTP).
+      AGORA_QA_COMPILE_ENABLED: ${AGORA_QA_COMPILE_ENABLED:-}
     restart: unless-stopped
 
   frontend:
