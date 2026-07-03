@@ -734,6 +734,16 @@ func sprintPRModeEnabled() bool {
 	return v == "1" || strings.EqualFold(v, "true")
 }
 
+// sprintAutoMergeEnabled gates whether the squad LEAD auto-merges a sprint PR
+// once it passes QA (Phase 3). Default OFF: the lead prepares the PR and QA
+// gates it, but a HUMAN does the final review + merge into the sprint branch —
+// the safe default while the loop is being trusted. Set on to let the lead run
+// `gh pr merge` fully autonomously. Only meaningful with sprintPRModeEnabled().
+func sprintAutoMergeEnabled() bool {
+	v := strings.TrimSpace(os.Getenv("AGORA_SPRINT_AUTO_MERGE"))
+	return v == "1" || strings.EqualFold(v, "true")
+}
+
 // projectDocsAgentID reads the project's configured docs agent (an agent UUID in
 // project.settings.docs_agent) — the dedicated agent that writes docs into the
 // docs repo. Empty when unset.
@@ -816,10 +826,14 @@ func sprintCommitInstruction(branch string) string {
 // pushes ITS branch, and opens a PR with base=<sprint branch>. The squad lead
 // reviews + merges it after QA — the agent must not merge or target main.
 func sprintPRInstruction(branch string) string {
-	return " SPRINT MODE (PR REVIEW) — open a pull request INTO the sprint branch; do NOT push onto it directly. This project runs a sprint on the shared branch `" + branch +
-		"`. Your worktree is already on a per-task branch pulled to the latest `" + branch + "` tip. Do your work and commit it to your CURRENT branch. Then: (1) push your current branch to origin as ITS OWN branch — `git push origin HEAD` — NOT onto `" + branch +
-		"`; (2) open a pull request with BASE `" + branch + "` — `gh pr create --base " + branch + " --fill`. " +
-		"The squad LEAD reviews the PR and merges it into `" + branch + "` automatically once QA passes — do NOT merge it yourself, and do NOT target the repository's main/default branch. This SUPERSEDES any other branch/PR wording above."
+	return " SPRINT MODE (PR REVIEW) — open a pull request INTO the sprint branch `" + branch +
+		"`; do NOT push onto it directly. Steps, exactly: (1) make sure the sprint branch is fresh — `git fetch origin " + branch +
+		"`; (2) create your feature branch OFF the sprint branch — `git checkout -B <feature> origin/" + branch +
+		"` (a name like `fix/<issue-key>-<slug>`); (3) do your work and commit it to that feature branch; (4) push it as ITS OWN branch — `git push -u origin <feature>` — NOT onto `" + branch +
+		"`; (5) open the PR with BASE `" + branch + "` — `gh pr create --base " + branch + " --head <feature> --fill`. " +
+		"CRITICAL: the PR base MUST be exactly `" + branch + "` (the shared sprint branch). Your worktree may sit on a per-task `sprint-wt-*` alias — NEVER open the PR against that alias or the repo's main/default branch. After creating it, VERIFY: `gh pr view <pr> --json baseRefName` must show `" + branch +
+		"`; if it shows anything else (a `sprint-wt-*` alias, main, etc.) FIX it immediately — `gh pr edit <pr> --base " + branch + "`. " +
+		"Do NOT merge the PR yourself — it is reviewed and merged after QA. This SUPERSEDES any other branch/PR wording above."
 }
 
 // sliceActionLandingInstruction returns the "where does this task's code land"
@@ -1265,16 +1279,37 @@ func (h *Handler) maybeMergeOnQAPass(ctx context.Context, issue db.Issue, labelN
 	if strings.ToLower(strings.TrimSpace(labelName)) != "qa:pass" {
 		return
 	}
-	// Only sprint work has a PR into a sprint branch for the lead to merge.
+	// Only sprint work has a PR into a sprint branch.
 	sprint, err := h.Queries.GetSprintForIssue(ctx, issue.ID)
 	if err != nil {
 		return
 	}
+	branch := SprintBranchFor(sprint)
+
+	// Human-merge (default): the PR passed QA and is READY FOR A HUMAN to review +
+	// merge. Post a plain human-facing note (NO agent mention, so no agent acts)
+	// and stop — a person does the final review + merge into the sprint branch.
+	if !sprintAutoMergeEnabled() {
+		content := "✅ QA passed (qa:pass) on this task's pull request into `" + branch +
+			"`. READY FOR HUMAN REVIEW + MERGE — a person reviews the PR and merges it into `" + branch +
+			"`. Auto-merge is off (AGORA_SPRINT_AUTO_MERGE); no agent will merge it."
+		if _, cerr := h.Queries.CreateComment(ctx, db.CreateCommentParams{
+			IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+			AuthorType: "member", AuthorID: parseUUID(userID),
+			Content: content, Type: "comment", ParentID: pgtype.UUID{Valid: false},
+		}); cerr != nil {
+			slog.Warn("qa-pass human-merge note: create comment failed", "error", cerr, "issue_id", uuidToString(issue.ID))
+		}
+		slog.Info("qa-pass: PR ready for human review+merge (auto-merge off)", "issue_id", uuidToString(issue.ID))
+		return
+	}
+
+	// Auto-merge (opt-in via AGORA_SPRINT_AUTO_MERGE): route the DEV squad LEAD to
+	// review the diff + merge the PR into the sprint branch, no human in the loop.
 	leader, ok := h.devSquadLeaderForIssue(ctx, issue)
 	if !ok {
 		return // solo / non-squad — no lead owns the merge; today's flow stands
 	}
-	branch := SprintBranchFor(sprint)
 	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(leader.Name), uuidToString(leader.ID)) +
 		"QA passed (qa:pass) on this task's pull request into `" + branch + "`. As the squad LEAD this is the FINAL gate " +
 		"before code lands on the shared sprint branch — no human reviews it. Find the task's open PR (`gh pr list --base " + branch +

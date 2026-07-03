@@ -7,17 +7,20 @@ import (
 )
 
 // TestSprintPRInstruction asserts the sprint-PR-mode dev directive carries the
-// invariants that keep the flow correct: a PR INTO the sprint branch (never a
-// push onto it, never a PR into main), and the agent must not self-merge — the
-// squad lead owns the merge. Pure (no DB).
+// invariants that keep the flow correct: the PR base is the sprint branch itself
+// (never a sprint-wt-* alias, never main), with a self-correcting `gh pr edit`
+// guard for the base — the fix for a dev opening the PR against the per-task
+// alias — and the agent must not self-merge. Pure (no DB).
 func TestSprintPRInstruction(t *testing.T) {
 	s := sprintPRInstruction("sprint10")
 	for _, want := range []string{
-		"sprint10",                 // the sprint branch is named
-		"--base sprint10",          // PR targets the sprint branch
-		"do NOT push onto",         // never push straight onto the shared branch
-		"do NOT merge it yourself", // the lead merges, not the dev
-		"main/default branch",      // never target main
+		"sprint10",                     // the sprint branch is named
+		"--base sprint10",              // PR targets the sprint branch
+		"do NOT push onto",             // never push straight onto the shared branch
+		"sprint-wt-*",                  // must NOT target the per-task alias
+		"gh pr edit",                   // self-correct the base if it resolved wrong
+		"Do NOT merge the PR yourself", // reviewed + merged after QA, not by the dev
+		"main/default branch",          // never target main
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("sprintPRInstruction missing %q\ngot: %s", want, s)
@@ -172,27 +175,51 @@ func TestMaybeMergeOnQAPass_RoutesLeadToMerge(t *testing.T) {
 		return n
 	}
 
-	// Flag OFF → no merge routing.
+	humanNotes := func() int {
+		var n int
+		testPool.QueryRow(ctx,
+			`SELECT count(*) FROM comment WHERE issue_id = $1::uuid AND content LIKE '%READY FOR HUMAN%'`, iid).Scan(&n)
+		return n
+	}
+
+	// PR mode OFF → no routing at all.
 	t.Setenv("AGORA_SPRINT_PR_MODE", "")
 	testHandler.maybeMergeOnQAPass(ctx, issue, "qa:pass", testUserID)
-	if n := mergeComments(); n != 0 {
-		t.Fatalf("flag off: expected no merge directive, got %d", n)
+	if mergeComments()+humanNotes() != 0 {
+		t.Fatalf("pr-mode off: expected no routing")
 	}
 
-	// Wrong label with flag on → still no-op.
+	// PR mode on, wrong label → still no-op.
 	t.Setenv("AGORA_SPRINT_PR_MODE", "true")
 	testHandler.maybeMergeOnQAPass(ctx, issue, "qa:fail", testUserID)
-	if n := mergeComments(); n != 0 {
-		t.Fatalf("qa:fail: expected no merge directive, got %d", n)
+	if mergeComments()+humanNotes() != 0 {
+		t.Fatalf("qa:fail: expected no routing")
 	}
 
-	// qa:pass + flag on → the lead gets a review+merge directive into sprint10.
+	// qa:pass, auto-merge OFF (default) → a HUMAN-facing "ready to merge" note,
+	// with NO agent mention (no agent acts) and NO gh pr merge directive.
+	testHandler.maybeMergeOnQAPass(ctx, issue, "qa:pass", testUserID)
+	if humanNotes() != 1 {
+		t.Fatalf("auto-merge off: expected one human-merge note, got %d", humanNotes())
+	}
+	if mergeComments() != 0 {
+		t.Fatalf("auto-merge off: must NOT emit a gh pr merge directive")
+	}
+	var note string
+	testPool.QueryRow(ctx,
+		`SELECT content FROM comment WHERE issue_id = $1::uuid AND content LIKE '%READY FOR HUMAN%' ORDER BY created_at DESC LIMIT 1`, iid).Scan(&note)
+	if strings.Contains(note, "mention://agent/") {
+		t.Errorf("human-merge note must not @mention an agent\ngot: %s", note)
+	}
+
+	// qa:pass, auto-merge ON → the lead gets a gh pr merge directive into sprint10.
+	t.Setenv("AGORA_SPRINT_AUTO_MERGE", "true")
 	testHandler.maybeMergeOnQAPass(ctx, issue, "qa:pass", testUserID)
 	var content string
 	if err := testPool.QueryRow(ctx,
 		`SELECT content FROM comment WHERE issue_id = $1::uuid AND content LIKE '%gh pr merge%' ORDER BY created_at DESC LIMIT 1`,
 		iid).Scan(&content); err != nil {
-		t.Fatalf("qa:pass: expected a merge directive comment, none found: %v", err)
+		t.Fatalf("auto-merge on: expected a merge directive comment, none found: %v", err)
 	}
 	for _, want := range []string{"mention://agent/" + leaderID, "sprint10", "gh pr merge"} {
 		if !strings.Contains(content, want) {
