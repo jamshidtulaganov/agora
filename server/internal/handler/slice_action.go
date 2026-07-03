@@ -1213,6 +1213,88 @@ func (h *Handler) maybeRouteToDevLeadOnQAFail(ctx context.Context, issue db.Issu
 		"lead_agent_id", uuidToString(leaderID))
 }
 
+// devSquadLeaderForIssue resolves the leader of the DEV squad an orchestrated
+// issue belongs to — the squad the issue is assigned to, or the squad of the
+// agent it is assigned to. Returns false for solo / non-squad issues.
+func (h *Handler) devSquadLeaderForIssue(ctx context.Context, issue db.Issue) (db.Agent, bool) {
+	if !issue.AssigneeType.Valid || !issue.AssigneeID.Valid {
+		return db.Agent{}, false
+	}
+	var leaderID pgtype.UUID
+	switch issue.AssigneeType.String {
+	case "squad":
+		sq, err := h.Queries.GetSquad(ctx, issue.AssigneeID)
+		if err != nil {
+			return db.Agent{}, false
+		}
+		leaderID = sq.LeaderID
+	case "agent":
+		squads, err := h.Queries.ListSquadsByMember(ctx, db.ListSquadsByMemberParams{
+			WorkspaceID: issue.WorkspaceID, MemberType: "agent", MemberID: issue.AssigneeID,
+		})
+		if err != nil || len(squads) == 0 {
+			return db.Agent{}, false
+		}
+		leaderID = squads[0].LeaderID
+	default:
+		return db.Agent{}, false
+	}
+	if !leaderID.Valid {
+		return db.Agent{}, false
+	}
+	leader, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
+		ID: leaderID, WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		return db.Agent{}, false
+	}
+	return leader, true
+}
+
+// maybeMergeOnQAPass is the sprint-PR-mode merge gate (Phase 3 of auto sprint
+// review): when an orchestrated sprint task's PR passes QA (gains qa:pass), route
+// the squad LEAD to review the PR diff and, if it holds up, merge it into the
+// sprint branch — the final gate before code lands on the shared branch, with no
+// human in the loop. On real problems the lead comments + routes back to the dev
+// instead of merging. Detached + best-effort (mirrors maybeRouteToDevLeadOnQAFail),
+// gated by AGORA_SPRINT_PR_MODE + a sprint + a dev squad. No-op otherwise.
+func (h *Handler) maybeMergeOnQAPass(ctx context.Context, issue db.Issue, labelName, userID string) {
+	if !sprintPRModeEnabled() {
+		return
+	}
+	if strings.ToLower(strings.TrimSpace(labelName)) != "qa:pass" {
+		return
+	}
+	// Only sprint work has a PR into a sprint branch for the lead to merge.
+	sprint, err := h.Queries.GetSprintForIssue(ctx, issue.ID)
+	if err != nil {
+		return
+	}
+	leader, ok := h.devSquadLeaderForIssue(ctx, issue)
+	if !ok {
+		return // solo / non-squad — no lead owns the merge; today's flow stands
+	}
+	branch := SprintBranchFor(sprint)
+	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(leader.Name), uuidToString(leader.ID)) +
+		"QA passed (qa:pass) on this task's pull request into `" + branch + "`. As the squad LEAD this is the FINAL gate " +
+		"before code lands on the shared sprint branch — no human reviews it. Find the task's open PR (`gh pr list --base " + branch +
+		" --state open`) and review its diff (`gh pr diff <pr>`): if it is correct, safe, and matches the ticket, MERGE it into `" + branch +
+		"` with `gh pr merge <pr> --squash --delete-branch`. If it has real problems, do NOT merge — comment the specific issues and " +
+		"@mention the dev who wrote it to fix, then let QA re-run. Never target the repository's main/default branch."
+	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+		AuthorType: "member", AuthorID: parseUUID(userID),
+		Content: content, Type: "comment", ParentID: pgtype.UUID{Valid: false},
+	})
+	if err != nil {
+		slog.Warn("qa-pass merge gate: create comment failed", "error", err, "issue_id", uuidToString(issue.ID))
+		return
+	}
+	h.triggerTasksForComment(ctx, issue, comment, nil, "member", userID, nil)
+	slog.Info("qa-pass merge gate: routed PR review+merge to squad lead",
+		"issue_id", uuidToString(issue.ID), "lead_agent_id", uuidToString(leader.ID))
+}
+
 // qaSquadLeader resolves the QA squad's leader agent for a workspace — the squad
 // whose name contains "qa" (case-insensitive), e.g. "QA" / "QA Squad". The leader
 // agent is what runs an auto-fired run_qa. ok=false when there is no QA squad, it
@@ -1379,16 +1461,30 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	if sprint, err := h.Queries.GetSprintForIssue(ctx, issue.ID); err == nil {
 		scope = "task"
 		sid := uuidToString(sprint.ID)
-		sprintNote = " SPRINT CONTEXT: this task is on the shared sprint branch " + SprintBranchFor(sprint) +
+		branch := SprintBranchFor(sprint)
+		sprintNote = " SPRINT CONTEXT: this task is on the shared sprint branch " + branch +
 			"; for the scope=task baseline use <sprintId>=" + sid + " (refs/sprint/" + sid + "/last-green)."
-		if box, synced, derr := h.DeploySprintBranch(ctx, sprint.ID, issue.WorkspaceID); derr != nil || !synced {
-			// Fail CLOSED: the sprint branch is NOT confirmed live on the QA box,
-			// so smoking it would judge STALE code and let a false qa:pass stand.
-			// Withhold the smoke target and tell the gate to block, not pass.
-			slog.Warn("auto run_qa: sprint branch not deployed — blocking QA", "sprint_id", sid, "error", derr, "synced", synced)
-			sprintNote += " QA BLOCKED — the sprint branch could not be deployed to the QA box (it is not serving this branch), so QA cannot judge the real change. Do NOT smoke a stale environment and do NOT set qa:pass; set the `qa:blocked` label and report that the box is not serving the sprint branch."
-		} else {
-			smokeURL = boxSmokeURL(box)
+		switch {
+		case sprintPRModeEnabled():
+			// PR-review mode: the task's work lives on its OWN pull-request branch,
+			// NOT yet merged into the sprint branch. QA must smoke the PR branch on
+			// the dev's box — smoking the sprint tip would judge code the PR hasn't
+			// landed. This run's qa:pass/qa:fail is the merge gate (Phase 3): the
+			// squad lead merges the PR into the sprint branch only after qa:pass.
+			smokeURL = h.devBoxSmokeURL(ctx, issue)
+			sprintNote += " PR-REVIEW MODE: this task is an OPEN pull request INTO `" + branch +
+				"`, not yet merged. QA the PULL REQUEST's OWN branch, not the sprint tip: deploy the task's branch to the dev QA box (the deploy-qa git-sync) and smoke THAT url — do NOT deploy or smoke `" + branch +
+				"` itself. Your qa:pass/qa:fail IS the merge gate: the squad lead merges the PR into `" + branch + "` only after qa:pass."
+		default:
+			if box, synced, derr := h.DeploySprintBranch(ctx, sprint.ID, issue.WorkspaceID); derr != nil || !synced {
+				// Fail CLOSED: the sprint branch is NOT confirmed live on the QA box,
+				// so smoking it would judge STALE code and let a false qa:pass stand.
+				// Withhold the smoke target and tell the gate to block, not pass.
+				slog.Warn("auto run_qa: sprint branch not deployed — blocking QA", "sprint_id", sid, "error", derr, "synced", synced)
+				sprintNote += " QA BLOCKED — the sprint branch could not be deployed to the QA box (it is not serving this branch), so QA cannot judge the real change. Do NOT smoke a stale environment and do NOT set qa:pass; set the `qa:blocked` label and report that the box is not serving the sprint branch."
+			} else {
+				smokeURL = boxSmokeURL(box)
+			}
 		}
 	} else {
 		smokeURL = h.devBoxSmokeURL(ctx, issue)

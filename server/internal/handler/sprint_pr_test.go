@@ -109,3 +109,94 @@ func TestSliceActionLandingInstruction_SprintPRMode(t *testing.T) {
 		t.Errorf("flag off: expected direct-commit sprint directive, got: %s", off)
 	}
 }
+
+// TestMaybeMergeOnQAPass_RoutesLeadToMerge is the Phase 3 gate: when a squad-
+// assigned sprint task's PR passes QA (qa:pass) and AGORA_SPRINT_PR_MODE is on,
+// the squad LEAD is routed a review+merge directive (a comment mentioning the
+// lead with a `gh pr merge` into the sprint branch). Off / wrong label → no-op.
+func TestMaybeMergeOnQAPass_RoutesLeadToMerge(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("no database")
+	}
+	ctx := context.Background()
+
+	leaderID := createHandlerTestAgent(t, "sprint-merge-lead", []byte("[]"))
+	var squadID string
+	if err := testPool.QueryRow(ctx,
+		`INSERT INTO squad (workspace_id, name, leader_id, creator_id)
+		 VALUES ($1::uuid, 'merge-squad', $2::uuid, $3::uuid) RETURNING id::text`,
+		testWorkspaceID, leaderID, testUserID).Scan(&squadID); err != nil {
+		t.Fatalf("create squad: %v", err)
+	}
+	var pid, sid, iid string
+	if err := testPool.QueryRow(ctx,
+		`INSERT INTO project (workspace_id, title, status, priority, settings)
+		 VALUES ($1::uuid, 'merge-proj', 'planned', 'none', '{"sprint_mode":true}'::jsonb)
+		 RETURNING id::text`, testWorkspaceID).Scan(&pid); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if err := testPool.QueryRow(ctx,
+		`INSERT INTO sprint (workspace_id, project_id, name, status, branch)
+		 VALUES ($1::uuid, $2::uuid, 'Sprint 10', 'active', 'sprint10') RETURNING id::text`,
+		testWorkspaceID, pid).Scan(&sid); err != nil {
+		t.Fatalf("create sprint: %v", err)
+	}
+	if err := testPool.QueryRow(ctx,
+		`INSERT INTO issue (workspace_id, project_id, title, status, creator_type, creator_id, assignee_type, assignee_id)
+		 VALUES ($1::uuid, $2::uuid, 'merge issue', 'in_review', 'member', $3::uuid, 'squad', $4::uuid)
+		 RETURNING id::text`, testWorkspaceID, pid, testUserID, squadID).Scan(&iid); err != nil {
+		t.Fatalf("create issue: %v", err)
+	}
+	if _, err := testPool.Exec(ctx,
+		`INSERT INTO issue_to_sprint (issue_id, sprint_id) VALUES ($1::uuid, $2::uuid)`, iid, sid); err != nil {
+		t.Fatalf("link issue to sprint: %v", err)
+	}
+	t.Cleanup(func() {
+		testPool.Exec(ctx, `DELETE FROM comment WHERE issue_id = $1::uuid`, iid)
+		testPool.Exec(ctx, `DELETE FROM issue_to_sprint WHERE issue_id = $1::uuid`, iid)
+		testPool.Exec(ctx, `DELETE FROM issue WHERE id = $1::uuid`, iid)
+		testPool.Exec(ctx, `DELETE FROM sprint WHERE id = $1::uuid`, sid)
+		testPool.Exec(ctx, `DELETE FROM squad WHERE id = $1::uuid`, squadID)
+		testPool.Exec(ctx, `DELETE FROM project WHERE id = $1::uuid`, pid)
+	})
+
+	issue, err := testHandler.Queries.GetIssue(ctx, parseUUID(iid))
+	if err != nil {
+		t.Fatalf("load issue: %v", err)
+	}
+
+	mergeComments := func() int {
+		var n int
+		testPool.QueryRow(ctx,
+			`SELECT count(*) FROM comment WHERE issue_id = $1::uuid AND content LIKE '%gh pr merge%'`, iid).Scan(&n)
+		return n
+	}
+
+	// Flag OFF → no merge routing.
+	t.Setenv("AGORA_SPRINT_PR_MODE", "")
+	testHandler.maybeMergeOnQAPass(ctx, issue, "qa:pass", testUserID)
+	if n := mergeComments(); n != 0 {
+		t.Fatalf("flag off: expected no merge directive, got %d", n)
+	}
+
+	// Wrong label with flag on → still no-op.
+	t.Setenv("AGORA_SPRINT_PR_MODE", "true")
+	testHandler.maybeMergeOnQAPass(ctx, issue, "qa:fail", testUserID)
+	if n := mergeComments(); n != 0 {
+		t.Fatalf("qa:fail: expected no merge directive, got %d", n)
+	}
+
+	// qa:pass + flag on → the lead gets a review+merge directive into sprint10.
+	testHandler.maybeMergeOnQAPass(ctx, issue, "qa:pass", testUserID)
+	var content string
+	if err := testPool.QueryRow(ctx,
+		`SELECT content FROM comment WHERE issue_id = $1::uuid AND content LIKE '%gh pr merge%' ORDER BY created_at DESC LIMIT 1`,
+		iid).Scan(&content); err != nil {
+		t.Fatalf("qa:pass: expected a merge directive comment, none found: %v", err)
+	}
+	for _, want := range []string{"mention://agent/" + leaderID, "sprint10", "gh pr merge"} {
+		if !strings.Contains(content, want) {
+			t.Errorf("merge directive missing %q\ngot: %s", want, content)
+		}
+	}
+}
