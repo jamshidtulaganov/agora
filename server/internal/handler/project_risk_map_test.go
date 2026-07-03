@@ -198,7 +198,7 @@ func TestBitrixTriagePromptContract(t *testing.T) {
 // The base-suite authoring prompt must route output through the existing
 // capture (```test-cases block) and end at the promotion trigger (done).
 func TestBaseSuitePromptContract(t *testing.T) {
-	for _, want := range []string{"```test-cases", "status to done", "blocked", "QA MANIFEST", "Do NOT touch product code"} {
+	for _, want := range []string{"```test-cases", "JSON ARRAY", "status to done", "blocked", "QA MANIFEST", "Do NOT touch product code"} {
 		if !strings.Contains(baseSuitePromptTmpl, want) {
 			t.Errorf("base-suite prompt missing %q", want)
 		}

@@ -30,8 +30,15 @@ const baseSuitePromptTmpl = "[AUTOMATED DIRECTIVE — base-suite authoring] " +
 	"QA run executes. Source of truth: the PROJECT QA MANIFEST in your context (its flows + routes) and the project's " +
 	"risk map (critical modules FIRST: money, orders, stock). For each golden path author ONE tight automated case — " +
 	"title prefixed with its layer tag ([e2e]/[api]/[smoke]), concrete steps, a deterministic expected assertion, and " +
-	"BOTH categories where it matters (positive golden path + the negative guard). Emit them in ONE fenced " +
-	"```test-cases block on THIS issue (the platform captures them). Then VERIFY each case actually runs against the " +
+	"BOTH categories where it matters (positive golden path + the negative guard). " +
+	"Emit them in ONE fenced ```test-cases code block containing ONLY a JSON ARRAY (the platform parses JSON — a " +
+	"Markdown/YAML list is NOT captured and the whole suite is silently dropped): " +
+	"`[{\"title\":\"<short>\",\"steps\":\"<numbered steps, newline-separated>\",\"expected\":\"<expected result>\"," +
+	"\"kind\":\"manual\"|\"automated\",\"category\":\"positive\"|\"negative\",\"script\":\"<self-contained Playwright " +
+	"ESM module runnable with plain node — REQUIRED for every [e2e]/[api] automated case; import { chromium } from " +
+	"\\\"playwright\\\", use the QA manifest base_url+auth+routes, assert by deterministic DOM/HTTP signal, exit 0/1>\"}]` " +
+	"— `automated` for a case a script can run deterministically, `manual` for a human click-through; the JSON must be " +
+	"valid and self-contained (a short summary may precede it). Then VERIFY each case actually runs against the " +
 	"QA box (mark blocked — never invent — anything needing credentials the manifest does not have). When the cases " +
 	"are captured and verified: attach the `qa:pass` label (your verification IS this issue's QA — without the label " +
 	"the status gate bounces the transition), then set THIS issue's status to done — the platform then promotes the " +
