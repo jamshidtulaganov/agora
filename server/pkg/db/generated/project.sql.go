@@ -230,6 +230,51 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]P
 	return items, nil
 }
 
+const listRiskMappedProjects = `-- name: ListRiskMappedProjects :many
+SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, settings, squad_id FROM project
+WHERE settings ? 'risk_map'
+  AND status NOT IN ('completed', 'cancelled')
+ORDER BY created_at
+`
+
+// Projects that opted into the legacy safety spine (settings.risk_map set).
+// The config watchdog sweeps these to verify their knowledge/QA artifacts
+// (KB skill, qa_manifest, base suite) actually exist — a silently-missing
+// artifact would otherwise read as "covered".
+func (q *Queries) ListRiskMappedProjects(ctx context.Context) ([]Project, error) {
+	rows, err := q.db.Query(ctx, listRiskMappedProjects)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Project{}
+	for rows.Next() {
+		var i Project
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Title,
+			&i.Description,
+			&i.Icon,
+			&i.Status,
+			&i.LeadType,
+			&i.LeadID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Priority,
+			&i.Settings,
+			&i.SquadID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setProjectDesignManifest = `-- name: SetProjectDesignManifest :one
 UPDATE project SET
     settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{design_manifest}', $1::jsonb, true),

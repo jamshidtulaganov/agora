@@ -2285,11 +2285,54 @@ func (h *Handler) maybeEnqueueKnowledgeCapture(ctx context.Context, issue db.Iss
 	if err != nil || !agentID.Valid {
 		return
 	}
-	if _, err := h.TaskService.EnqueueTaskForMention(ctx, issue, agentID, pgtype.UUID{}); err != nil {
+	// Validate the synthesizer BEFORE writing the prompt comment — an archived
+	// or runtime-less agent would otherwise leave an orphaned instruction
+	// comment on every completed issue.
+	if agent, aerr := h.Queries.GetAgent(ctx, agentID); aerr != nil || agent.ArchivedAt.Valid || !agent.RuntimeID.Valid {
+		slog.Warn("knowledge-capture: synthesizer agent unavailable", "agent_id", settings.KBAgent)
+		return
+	}
+	// Server-authored distillation contract. Without it the synthesizer runs on
+	// its own generic instructions and the "capture" is whatever it improvises —
+	// observed as either nothing persisted or the whole issue pasted verbatim.
+	// The prompt rides as the task's trigger comment (mention tasks carry no
+	// instruction field), authored BY the synthesizer agent itself via a direct
+	// Queries.CreateComment — the agent-comment ingest path (and its capture
+	// hooks) is deliberately bypassed, so this cannot recurse.
+	kbName := ""
+	if project, perr := h.Queries.GetProject(ctx, issue.ProjectID); perr == nil {
+		kbName = projectKBSkillName(project)
+	}
+	if kbName == "" {
+		return // no resolvable KB skill name — nothing to distill into
+	}
+	prompt := "[AUTOMATED DIRECTIVE — knowledge capture] " +
+		"KNOWLEDGE CAPTURE for this just-completed issue. Distill 3-7 DURABLE learnings from what actually " +
+		"happened here (the diff / linked PR, the QA verdicts, the comment thread): root causes, gotchas, invariants, " +
+		"and \"next time do X\" facts an engineer must know — NOT a summary of the ticket. Then UPDATE the workspace " +
+		"skill named \"" + kbName + "\" via the agora skill CLI: append the learnings under the matching section (or a " +
+		"dated '## Learnings' section), one tight bullet each, ending with the issue key. RULES: never delete or rewrite " +
+		"human-authored lines; skip anything already covered (dedupe against the existing skill text — updating a stale " +
+		"bullet in place is better than appending a near-duplicate); keep the whole skill under ~15000 characters by " +
+		"tightening the oldest learnings first; a failure that was diagnosed here is the MOST valuable kind of learning. " +
+		"The skill text stays in English (it is engineering documentation); any comment you post on this issue follows " +
+		"the ISSUE'S language (e.g. Russian/Uzbek). " +
+		"If this issue produced no durable learning (trivial change, nothing surprising), say so in a comment and change " +
+		"nothing — an unchanged KB beats a diluted one."
+	comment, cerr := h.Queries.CreateComment(ctx, db.CreateCommentParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+		AuthorType: "agent", AuthorID: agentID,
+		Content: prompt, Type: "comment", ParentID: pgtype.UUID{Valid: false},
+	})
+	if cerr != nil {
+		slog.Warn("knowledge-capture prompt comment failed", "issue_id", uuidToString(issue.ID), "error", cerr)
+		return
+	}
+	if _, err := h.TaskService.EnqueueTaskForMention(ctx, issue, agentID, comment.ID); err != nil {
 		slog.Warn("knowledge-capture enqueue failed", "issue_id", uuidToString(issue.ID), "agent_id", settings.KBAgent, "error", err)
 		return
 	}
-	slog.Info("knowledge-capture enqueued on done", "issue_id", uuidToString(issue.ID), "agent_id", settings.KBAgent)
+	slog.Info("knowledge-capture enqueued on done", "issue_id", uuidToString(issue.ID), "agent_id", settings.KBAgent, "kb_skill", kbName)
 }
 
 // maybePromoteTestCasesOnDone grows the project's QA base suite from finished

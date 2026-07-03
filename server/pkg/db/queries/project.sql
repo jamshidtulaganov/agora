@@ -74,3 +74,13 @@ SELECT project_id,
 FROM issue
 WHERE project_id = ANY(sqlc.arg('project_ids')::uuid[])
 GROUP BY project_id;
+
+-- name: ListRiskMappedProjects :many
+-- Projects that opted into the legacy safety spine (settings.risk_map set).
+-- The config watchdog sweeps these to verify their knowledge/QA artifacts
+-- (KB skill, qa_manifest, base suite) actually exist — a silently-missing
+-- artifact would otherwise read as "covered".
+SELECT * FROM project
+WHERE settings ? 'risk_map'
+  AND status NOT IN ('completed', 'cancelled')
+ORDER BY created_at;
