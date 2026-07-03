@@ -299,9 +299,16 @@ func buildSliceInstruction(kind, scope string) string {
 			"share ONE browser with the reviewer's pane and they see your actions live. Fall back to " +
 			"`const browser = await chromium.launch(); const context = await browser.newContext();` ONLY if AGORA_DAEMON_PORT is unset or that POST fails. " +
 			"Open pages from THAT context, log in via the manifest auth, perform the steps " +
-			"against the manifest base_url/routes, ASSERT the expected " +
-			"result by deterministic signal (HTTP status, response shape, DOM/accessibility-tree TEXT — never a " +
-			"screenshot), then `process.exit(0)` on pass / `process.exit(1)` on any failed assertion or thrown error " +
+			"against the manifest base_url/routes, ASSERT the expected result by deterministic signal " +
+			"(DOM / accessibility-tree TEXT via `page.locator(...)`, HTTP status, or response shape — never a screenshot). " +
+			"BROWSER-DRIVE UI CASES — REQUIRED: if the case verifies the RENDERED UI (it renders / clicks / fills / " +
+			"navigates / logs in / checks a visible element — typically titled `[e2e]`), you MUST actually drive the page " +
+			"(`page.goto(route)`, `page.fill/click/waitForSelector`, assert via `page.locator(...).textContent()` / " +
+			"`.isVisible()`). Do NOT shortcut a UI case with a raw `fetch()` of the HTML or a filesystem/git check — a real " +
+			"browser interaction is what lets the reviewer WATCH it live in the pane AND what actually exercises the UI. " +
+			"ONLY a pure API/data case (titled `[api]`, asserting an endpoint's status / JSON with no rendered UI) may use " +
+			"`fetch`/HTTP with no page navigation. Every `[e2e]` case opens a page on the connected browser. " +
+			"Then `process.exit(0)` on pass / `process.exit(1)` on any failed assertion or thrown error " +
 			"(try/catch → exit(1)). In finally: stop tracing (below); then, ONLY if you launched your own browser, " +
 			"`await browser.close()`. If you connected to the SHARED browser over CDP, do NOT close it or its context " +
 			"(the daemon owns it) — `connectOverCDP`'s browser.close() only disconnects, so either skip it or guard it on the launched path. " +
