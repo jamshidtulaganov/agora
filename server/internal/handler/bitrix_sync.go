@@ -324,6 +324,10 @@ type bitrixSyncState struct {
 	// groupNames maps Bitrix group id -> name, lazily filled from GetGroup so a
 	// batch doesn't re-query the same workgroup name.
 	groupNames map[string]string
+	// triaged counts intake-triage tasks enqueued this sync run — the
+	// bitrixTriageMaxPerSync cap that keeps a bulk import from flooding the
+	// single triage agent.
+	triaged int
 	// stagesByGroup maps a Bitrix group id -> (stage id -> stage name), lazily
 	// filled from task.stages.get so a batch resolves each kanban's stages once.
 	// A nil inner map caches a failed/absent lookup so it isn't retried per task.
@@ -737,6 +741,12 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		h.embedInlineDiskImages(ctx, ws.ID, res.Issue.ID, ownerID, st)
 		h.importBitrixAttachments(ctx, ws.ID, res.Issue.ID, ownerID, task.ID, st)
 	}
+
+	// Intake triage (suggest-only, opt-in via workspace.settings.triage_agent_id):
+	// classify + enrich + ask-back on the fresh ticket. AFTER content import so
+	// the triage run sees the imported Bitrix comments/attachments. Best-effort;
+	// capped per sync run and skipped for already-closed backfill.
+	h.maybeEnqueueBitrixTriage(ctx, ws, res.Issue, draft.Status, st)
 	return nil
 }
 
