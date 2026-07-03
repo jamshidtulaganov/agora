@@ -1383,6 +1383,56 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
+			// Full issue brief (description + acceptance criteria) rides on EVERY
+			// claim. The claim brief otherwise carries only title + trigger
+			// comment — for Bitrix-imported legacy tickets the whole RU/UZ spec
+			// lives in the description and the dev agent never saw it. Skipped
+			// when the triggering slice instruction already embeds the plan
+			// (qaPlanContext's " TASK PLAN —" block) — those runs would otherwise
+			// carry the same description twice.
+			if resp.Agent != nil {
+				briefEmbedded := false
+				if task.TriggerCommentID.Valid {
+					if c, cerr := h.Queries.GetComment(r.Context(), task.TriggerCommentID); cerr == nil &&
+						strings.Contains(c.Content, " TASK PLAN —") {
+						briefEmbedded = true
+					}
+				}
+				if !briefEmbedded {
+					if note := issueBriefNote(issue.Description.String, issue.AcceptanceCriteria); note != "" {
+						resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + note)
+					}
+				}
+			}
+
+			// The project knowledge-base skill (settings.kb_skill override, else
+			// "<slug>-kb") auto-rides on every claim, deduped against the agent's
+			// own bound skills — without this the KB reaches an agent only via
+			// manual agent_skill binding, and in practice reaches nobody.
+			if resp.Agent != nil {
+				if kb, ok := h.projectKBSkill(r.Context(), issue); ok {
+					bound := false
+					for _, s := range resp.Agent.Skills {
+						if s.Name == kb.Name {
+							bound = true
+							break
+						}
+					}
+					if !bound {
+						resp.Agent.Skills = append(resp.Agent.Skills, kb)
+					}
+				}
+			}
+
+			// Project risk map rides along on every claim so dev, QA, and design
+			// agents all classify their diff by module blast radius (critical /
+			// guarded / safe) before acting.
+			if resp.Agent != nil {
+				if note := h.sliceActionRiskMapContext(r.Context(), issue); note != "" {
+					resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + strings.TrimSpace(note))
+				}
+			}
+
 			// Project QA manifest rides along on EVERY claim — orchestrator, dev,
 			// and QA agents alike navigate by the app's KNOWN map (auth, routes,
 			// golden flows) instead of re-reading the code each run.

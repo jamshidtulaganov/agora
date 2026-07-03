@@ -264,13 +264,13 @@ func TestQAPlanContext(t *testing.T) {
 	}
 
 	// Oversized non-ASCII description → truncated with an ellipsis, rune-safe.
-	long := strings.Repeat("ы", 4000) // Cyrillic, 2 bytes each → exercises the rune cut
+	long := strings.Repeat("ы", 5000) // Cyrillic, 2 bytes each → exercises the rune cut
 	big := qaPlanContext(long, nil)
 	if !strings.Contains(big, "…") {
 		t.Errorf("oversized description must be truncated with an ellipsis")
 	}
-	if n := len([]rune(big)); n > 1900 {
-		t.Errorf("oversized description must be capped near 1500 runes, got %d", n)
+	if n := len([]rune(big)); n > 4400 {
+		t.Errorf("oversized description must be capped near 4000 runes, got %d", n)
 	}
 }
 

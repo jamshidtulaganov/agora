@@ -433,6 +433,26 @@ func buildSliceInstruction(kind, scope string) string {
 		base += qaLiveWatchClause
 	}
 
+	// LANGUAGE PARITY — QA verdicts and test cases are read by the project's
+	// human QA team, who work in the issue's language (SalesDoctor tickets
+	// arrive from Bitrix in Russian/Uzbek). English-only agent output makes the
+	// loop unusable for them. Mirrors the design actions' existing same-language
+	// clause. Code, commands, JSON keys, and fenced-block schemas stay English —
+	// only the human-readable prose follows the issue. auto_docs gets its own
+	// clause: the ISSUE COMMENT follows the issue's language, but doc PAGES obey
+	// the docs repo's canonical locale (its template already demands matching
+	// neighboring pages — forcing issue-language pages would contradict that).
+	switch kind {
+	case sliceActionRunQA, sliceActionRunCI, sliceActionGenTests, sliceActionRunTests, sliceActionCompileTests:
+		base += " LANGUAGE: write every human-readable output — the verdict/report comment, test-case titles, steps and " +
+			"expected results, and summaries — IN THE SAME LANGUAGE AS THE ISSUE (its title/description, " +
+			"e.g. Russian or Uzbek). Code, shell commands, JSON keys, label names, and fenced-block schemas stay in English."
+	case sliceActionAutoDocs:
+		base += " LANGUAGE: write the summary COMMENT you post on the issue in the SAME LANGUAGE AS THE ISSUE " +
+			"(e.g. Russian or Uzbek). The documentation PAGES themselves follow the docs repo's canonical locale and " +
+			"existing conventions — never switch a page's language to match the issue."
+	}
+
 	scope = strings.TrimSpace(scope)
 	if scope != "" {
 		base += " Focus on: " + scope
@@ -1566,6 +1586,8 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 		instruction += " SMOKE TARGET: the branch is served at " + smokeURL +
 			" — smoke THAT url. It OVERRIDES any project smoke url below."
 	}
+	// Risk map intentionally NOT appended here: the claim path injects it into
+	// the same run's instructions (daemon.go) — appending again would duplicate.
 	instruction += h.sliceActionQASmokeContext(ctx, issue)
 	instruction += h.sliceActionQAManifestContext(ctx, issue)
 	instruction += h.sliceActionDesignManifestContext(ctx, issue)
@@ -1953,8 +1975,10 @@ func qaBaselineGuidanceFor(scope string) string {
 func qaPlanContext(description string, acceptanceCriteria []byte) string {
 	desc := strings.TrimSpace(description)
 	// Cap on RUNES (content is often Cyrillic/Uzbek) so a huge description can't
-	// blow the comment size and we never split a multi-byte rune.
-	const maxDescRunes = 1500
+	// blow the comment size and we never split a multi-byte rune. 4000 runes —
+	// Bitrix-imported legacy tickets routinely carry the whole spec in the
+	// description; the old 1500 cap dropped the part QA was judging against.
+	const maxDescRunes = 4000
 	if r := []rune(desc); len(r) > maxDescRunes {
 		desc = string(r[:maxDescRunes]) + "…"
 	}
@@ -1979,6 +2003,42 @@ func qaPlanContext(description string, acceptanceCriteria []byte) string {
 	}
 	b.WriteString(" A test must assert what the plan says SHOULD happen; if the implementation " +
 		"diverges, the test FAILS (a real bug) — never rewrite the test to match the code.")
+	return b.String()
+}
+
+// issueBriefNote renders the issue's full description + acceptance criteria for
+// the CLAIM brief. The task-claim brief otherwise carries only the title + the
+// trigger comment — for Bitrix-imported legacy tickets (long RU/UZ descriptions)
+// that meant the dev agent never saw the actual spec. Neutral wording (unlike
+// qaPlanContext's test-authoring frame) so it reads correctly for dev, QA, and
+// design runs alike. PURE; returns "" when there is nothing beyond the title.
+func issueBriefNote(description string, acceptanceCriteria []byte) string {
+	desc := strings.TrimSpace(description)
+	// Same rune-safe cap rationale as qaPlanContext.
+	const maxBriefRunes = 4000
+	if r := []rune(desc); len(r) > maxBriefRunes {
+		desc = string(r[:maxBriefRunes]) + "…"
+	}
+	criteria := parseAcceptanceCriteria(acceptanceCriteria)
+	if desc == "" && len(criteria) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	// Precedence: newest human instruction wins. Comments are the platform's
+	// live steering channel (mid-issue redirects, narrowed delegation scopes) —
+	// the brief is the BASE spec, never an override of a newer comment.
+	b.WriteString("ISSUE BRIEF — the full base spec of this issue (the title alone is NOT the spec). " +
+		"A newer comment on the issue may NARROW or SUPERSEDE this brief — on conflict, follow the newest " +
+		"human instruction (or ask); when the triggering comment is only a bare nudge, this brief IS the spec.")
+	if desc != "" {
+		b.WriteString("\nDescription: " + desc)
+	}
+	if len(criteria) > 0 {
+		b.WriteString("\nAcceptance criteria:")
+		for i, c := range criteria {
+			b.WriteString(fmt.Sprintf(" (%d) %s;", i+1, c))
+		}
+	}
 	return b.String()
 }
 
@@ -2351,6 +2411,8 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 			instruction += " SMOKE TARGET: the assignee developer's QA box serves this branch at " + url +
 				" — deploy the branch to it (the deploy-qa git-sync) and smoke THAT url. It OVERRIDES any project smoke url below."
 		}
+		// Risk map intentionally NOT appended here — the claim path injects it
+		// into the same run's instructions (see daemon.go).
 		instruction += h.sliceActionQASmokeContext(r.Context(), issue)
 		instruction += h.sliceActionQAManifestContext(r.Context(), issue)
 		instruction += h.sliceActionDesignManifestContext(r.Context(), issue)

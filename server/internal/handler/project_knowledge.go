@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -53,6 +55,65 @@ func buildProjectStudyPrompt(title string) string {
 		slug = "project"
 	}
 	return fmt.Sprintf(projectStudyPromptTmpl, title, slug, slug, slug)
+}
+
+// projectKBSkillName resolves the name of a project's knowledge-base skill:
+// the explicit project.settings.kb_skill override when set, else the derived
+// "<slug>-kb". The override exists because slugifyProjectName is ASCII-only —
+// a Cyrillic-titled Bitrix sprint bucket ("10 спринт (Июль)") slugifies to
+// "10", never matching the real "sd-main-kb" skill.
+func projectKBSkillName(project db.Project) string {
+	if len(project.Settings) > 0 {
+		var s struct {
+			KBSkill string `json:"kb_skill"`
+		}
+		if json.Unmarshal(project.Settings, &s) == nil {
+			if name := strings.TrimSpace(s.KBSkill); name != "" {
+				return name
+			}
+		}
+	}
+	slug := slugifyProjectName(project.Title)
+	if slug == "" {
+		return ""
+	}
+	return slug + "-kb"
+}
+
+// projectKBSkill loads the issue's project KB skill so the claim path can
+// auto-inject it into every run on the project — without this, the KB reaches
+// an agent only via manual agent_skill binding, and in practice it reaches
+// nobody. ok=false when the issue has no project or no such skill exists.
+func (h *Handler) projectKBSkill(ctx context.Context, issue db.Issue) (service.AgentSkillData, bool) {
+	if !issue.ProjectID.Valid {
+		return service.AgentSkillData{}, false
+	}
+	project, err := h.Queries.GetProject(ctx, issue.ProjectID)
+	if err != nil {
+		return service.AgentSkillData{}, false
+	}
+	name := projectKBSkillName(project)
+	if name == "" {
+		return service.AgentSkillData{}, false
+	}
+	skill, err := h.Queries.GetSkillByWorkspaceAndName(ctx, db.GetSkillByWorkspaceAndNameParams{
+		WorkspaceID: issue.WorkspaceID,
+		Name:        name,
+	})
+	if err != nil {
+		return service.AgentSkillData{}, false
+	}
+	data := service.AgentSkillData{
+		ID:          uuidToString(skill.ID),
+		Name:        skill.Name,
+		Description: skill.Description,
+		Content:     skill.Content,
+	}
+	files, _ := h.Queries.ListSkillFiles(ctx, skill.ID)
+	for _, f := range files {
+		data.Files = append(data.Files, service.AgentSkillFileData{Path: f.Path, Content: f.Content})
+	}
+	return data, true
 }
 
 // projectHasGithubRepo reports whether the project has at least one github_repo

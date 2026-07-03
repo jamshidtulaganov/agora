@@ -24,8 +24,11 @@ import (
 // the design system's own convention list.
 
 // conventionsMaxChars caps how much is injected so a sprawling doc can't blow
-// the context budget. Conventions should be tight rules, not a manual.
-const conventionsMaxChars = 4000
+// the context budget. Conventions should be tight rules, not a manual — but a
+// legacy ERP needs per-stack sections (Yii1/tenancy, api contracts, several
+// frontend stacks), which 4000 chars cannot hold; 12000 fits a disciplined
+// multi-stack rule set while still bounding the prompt.
+const conventionsMaxChars = 12000
 
 // projectConventions reads the trimmed project-level conventions text.
 // ok=false when the issue has no project, or the project has no conventions set.
@@ -85,8 +88,10 @@ func (h *Handler) sliceActionProjectConventionsContext(ctx context.Context, issu
 // wording is unit-tested without a database.
 func renderConventionsContext(text, label string) string {
 	text = strings.TrimSpace(text)
-	if len(text) > conventionsMaxChars {
-		text = strings.TrimSpace(text[:conventionsMaxChars]) + " …(truncated)"
+	// Cap on RUNES, not bytes — conventions are often Cyrillic (2 bytes/char);
+	// a byte cap would halve the effective budget and could split a rune.
+	if r := []rune(text); len(r) > conventionsMaxChars {
+		text = strings.TrimSpace(string(r[:conventionsMaxChars])) + " …(truncated)"
 	}
 	return "\n\n" + label + " — you MUST follow these; match the house style, do NOT re-invent it:\n" + text
 }
