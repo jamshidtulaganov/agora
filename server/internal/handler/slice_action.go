@@ -822,6 +822,21 @@ func sprintPRInstruction(branch string) string {
 		"The squad LEAD reviews the PR and merges it into `" + branch + "` automatically once QA passes — do NOT merge it yourself, and do NOT target the repository's main/default branch. This SUPERSEDES any other branch/PR wording above."
 }
 
+// sliceActionLandingInstruction returns the "where does this task's code land"
+// directive appended to a PR-producing slice action, picking the model in one
+// place so it is testable: sprint-PR-mode (PR into the sprint branch, flag on),
+// sprint direct-commit (flag off), or — for a non-sprint issue — the default
+// per-task branch + PR-into-main.
+func (h *Handler) sliceActionLandingInstruction(ctx context.Context, issue db.Issue) string {
+	if branch, ok := h.sliceActionSprintContext(ctx, issue); ok {
+		if sprintPRModeEnabled() {
+			return sprintPRInstruction(branch)
+		}
+		return sprintCommitInstruction(branch)
+	}
+	return h.sliceActionBranchInstruction(ctx, issue)
+}
+
 // resolveAutoDocsAgent picks the agent to run an auto-fired auto_docs: the
 // project's configured docs agent (preferred — it has the docs repo + skill),
 // else the issue's agent assignee (the squad working it), else the qa:pass
@@ -2144,21 +2159,7 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 			// reuse beats re-inventing components. "" when no manifest.
 			instruction += h.sliceActionDesignManifestContext(r.Context(), issue)
 		}
-		// Sprint mode. Two dev models, selected by AGORA_SPRINT_PR_MODE:
-		//   - off (default): commit to the ONE shared sprint branch, no per-task PR.
-		//   - on: open a PR from the task's own branch INTO the sprint branch, for
-		//     the squad lead to review + merge (Phase 1 of auto sprint review).
-		// Either directive supersedes the base "open a pull request" wording.
-		// Non-sprint issues keep the per-task branch + PR-into-main instruction.
-		if branch, ok := h.sliceActionSprintContext(r.Context(), issue); ok {
-			if sprintPRModeEnabled() {
-				instruction += sprintPRInstruction(branch)
-			} else {
-				instruction += sprintCommitInstruction(branch)
-			}
-		} else {
-			instruction += h.sliceActionBranchInstruction(r.Context(), issue)
-		}
+		instruction += h.sliceActionLandingInstruction(r.Context(), issue)
 	}
 	// run_qa is project-configurable: append the project's smoke cmd/url when set,
 	// and the issue's PLAN (description + acceptance criteria) so the agent authors
