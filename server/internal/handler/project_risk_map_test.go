@@ -107,6 +107,104 @@ func TestProjectKBSkill_ResolvesOverride(t *testing.T) {
 	}
 }
 
+// DB-backed: issueRiskTier — an explicit risk:<tier> label wins; a risk-mapped
+// project with no label fails CLOSED to guarded; no risk map → "" (no tiering).
+func TestIssueRiskTier(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("no database")
+	}
+	ctx := t.Context()
+	mk := func(settings string) (pid, iid string) {
+		if err := testPool.QueryRow(ctx,
+			`INSERT INTO project (workspace_id, title, status, priority, settings)
+			 VALUES ($1::uuid, 'tier-proj-'||gen_random_uuid(), 'planned', 'none', $2::jsonb) RETURNING id::text`,
+			testWorkspaceID, settings).Scan(&pid); err != nil {
+			t.Fatalf("create project: %v", err)
+		}
+		if err := testPool.QueryRow(ctx,
+			`INSERT INTO issue (workspace_id, project_id, title, creator_type, creator_id, number)
+			 VALUES ($1::uuid, $2::uuid, 'tier issue', 'member', $3::uuid,
+			         (2000000 + floor(random()*1000000))::int) RETURNING id::text`,
+			testWorkspaceID, pid, testUserID).Scan(&iid); err != nil {
+			t.Fatalf("create issue: %v", err)
+		}
+		t.Cleanup(func() {
+			cctx := context.Background()
+			testPool.Exec(cctx, `DELETE FROM issue WHERE id=$1::uuid`, iid)
+			testPool.Exec(cctx, `DELETE FROM project WHERE id=$1::uuid`, pid)
+		})
+		return pid, iid
+	}
+	load := func(iid string) db.Issue {
+		issue, err := testHandler.Queries.GetIssue(ctx, parseUUID(iid))
+		if err != nil {
+			t.Fatalf("load issue: %v", err)
+		}
+		return issue
+	}
+
+	mapped := `{"risk_map":[{"module":"billing","tier":"critical","paths":["pay/**"]}]}`
+
+	// (a) risk-mapped, no label → guarded (fail closed).
+	_, iid := mk(mapped)
+	if got := testHandler.issueRiskTier(ctx, load(iid)); got != "guarded" {
+		t.Errorf("mapped+unlabeled: want guarded, got %q", got)
+	}
+
+	// (b) explicit risk:safe label wins over the guarded fallback.
+	_, iid2 := mk(mapped)
+	var labelID string
+	if err := testPool.QueryRow(ctx,
+		`INSERT INTO issue_label (workspace_id, name, color) VALUES ($1::uuid, 'risk:safe', '#0f0')
+		 RETURNING id::text`,
+		testWorkspaceID).Scan(&labelID); err != nil {
+		t.Fatalf("create label: %v", err)
+	}
+	if _, err := testPool.Exec(ctx,
+		`INSERT INTO issue_to_label (issue_id, label_id) VALUES ($1::uuid,$2::uuid)`,
+		iid2, labelID); err != nil {
+		t.Fatalf("attach label: %v", err)
+	}
+	t.Cleanup(func() {
+		cctx := context.Background()
+		testPool.Exec(cctx, `DELETE FROM issue_to_label WHERE label_id=$1::uuid`, labelID)
+		testPool.Exec(cctx, `DELETE FROM issue_label WHERE id=$1::uuid`, labelID)
+	})
+	if got := testHandler.issueRiskTier(ctx, load(iid2)); got != "safe" {
+		t.Errorf("explicit risk:safe label must win, got %q", got)
+	}
+
+	// (c) no risk map → no tiering.
+	_, iid3 := mk(`{}`)
+	if got := testHandler.issueRiskTier(ctx, load(iid3)); got != "" {
+		t.Errorf("unmapped project: want empty tier, got %q", got)
+	}
+}
+
+// The intake-triage prompt is a suggest-only contract: it must demand the label
+// set and FORBID any routing/status mutation.
+func TestBitrixTriagePromptContract(t *testing.T) {
+	for _, want := range []string{
+		"SUGGEST-ONLY", "type:bug", "module:<name>", "risk:<tier>", "needs:spec",
+		"never safe", "do NOT change status, assignee, project",
+		"IN THE ISSUE'S LANGUAGE",
+	} {
+		if !strings.Contains(bitrixTriagePrompt, want) {
+			t.Errorf("triage prompt missing %q", want)
+		}
+	}
+}
+
+// The base-suite authoring prompt must route output through the existing
+// capture (```test-cases block) and end at the promotion trigger (done).
+func TestBaseSuitePromptContract(t *testing.T) {
+	for _, want := range []string{"```test-cases", "status to done", "blocked", "QA MANIFEST", "Do NOT touch product code"} {
+		if !strings.Contains(baseSuitePromptTmpl, want) {
+			t.Errorf("base-suite prompt missing %q", want)
+		}
+	}
+}
+
 // projectKBSkillName: explicit settings.kb_skill override wins; else the slug;
 // a Cyrillic-only title (slug "") with no override yields "" (no lookup).
 func TestProjectKBSkillName(t *testing.T) {

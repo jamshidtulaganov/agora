@@ -71,6 +71,73 @@ func (h *Handler) projectRiskMap(ctx context.Context, issue db.Issue) ([]riskMap
 	return entries, true
 }
 
+// issueRiskTier resolves the autonomy tier the merge gate enforces for an
+// issue. Order: an explicit risk:<tier> label wins (set by triage or a human —
+// editing the label IS the override mechanism); otherwise, in a risk-mapped
+// project, the tier is GUARDED — fail closed: the server cannot see the diff,
+// and unknown must never mean safe. Projects with no risk map return "" (no
+// tiering; pre-risk-map behavior stands).
+func (h *Handler) issueRiskTier(ctx context.Context, issue db.Issue) string {
+	labels, err := h.Queries.ListLabelsByIssue(ctx, db.ListLabelsByIssueParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+	})
+	if err == nil {
+		for _, l := range labels {
+			switch strings.ToLower(strings.TrimSpace(l.Name)) {
+			case "risk:critical":
+				return "critical"
+			case "risk:guarded":
+				return "guarded"
+			case "risk:safe":
+				return "safe"
+			}
+		}
+	}
+	if _, ok := h.projectRiskMap(ctx, issue); ok {
+		return "guarded"
+	}
+	return ""
+}
+
+// issueRiskOwners returns the human owner names of the issue's module:<name>
+// labels from the risk map (deduped, in map order) — the people a critical
+// qa:pass should be surfaced to. Empty when nothing matches.
+func (h *Handler) issueRiskOwners(ctx context.Context, issue db.Issue) []string {
+	entries, ok := h.projectRiskMap(ctx, issue)
+	if !ok {
+		return nil
+	}
+	labels, err := h.Queries.ListLabelsByIssue(ctx, db.ListLabelsByIssueParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		return nil
+	}
+	modules := map[string]bool{}
+	for _, l := range labels {
+		name := strings.ToLower(strings.TrimSpace(l.Name))
+		if m, found := strings.CutPrefix(name, "module:"); found {
+			modules[strings.TrimSpace(m)] = true
+		}
+	}
+	if len(modules) == 0 {
+		return nil
+	}
+	var owners []string
+	seen := map[string]bool{}
+	for _, e := range entries {
+		owner := strings.TrimSpace(e.Owner)
+		if owner == "" || seen[owner] || !modules[strings.ToLower(strings.TrimSpace(e.Module))] {
+			continue
+		}
+		seen[owner] = true
+		owners = append(owners, owner)
+	}
+	return owners
+}
+
 // sliceActionRiskMapContext injects the project risk map into an agent's
 // instructions. Returns "" when the project has none. Mirrors the other
 // project ride-alongs (qa manifest, conventions, design manifest).
@@ -111,7 +178,8 @@ func renderRiskMapContext(entries []riskMapEntry) string {
 		}
 	}
 	b.WriteString("\nTIER RULES: critical → do NOT merge or self-approve; a human reviews and merges, and the golden flows for that module MUST pass first. " +
-		"guarded → proceed with extra care; run the regression/base suite before calling it done; prefer the smallest possible diff. " +
-		"safe → the normal flow applies. When several modules match, the strictest tier wins.")
+		"guarded → proceed with extra care; run the regression/base suite before calling it done; prefer the smallest possible diff; " +
+		"auto-merge is withheld — a human reviews and merges here too. " +
+		"safe → the normal flow applies (auto-merge allowed where enabled). When several modules match, the strictest tier wins.")
 	return b.String()
 }

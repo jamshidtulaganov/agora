@@ -900,7 +900,16 @@ func sprintPRInstruction(branch string) string {
 func (h *Handler) sliceActionLandingInstruction(ctx context.Context, issue db.Issue) string {
 	if branch, ok := h.sliceActionSprintContext(ctx, issue); ok {
 		if sprintPRModeEnabled() {
-			return sprintPRInstruction(branch)
+			instr := sprintPRInstruction(branch)
+			// Tell the dev its landing mode up front: critical/guarded work
+			// NEVER auto-merges (risk-map policy), so it plans for a human
+			// review instead of expecting the lead to land it on qa:pass.
+			if tier := h.issueRiskTier(ctx, issue); tier == "critical" || tier == "guarded" {
+				instr += " LANDING MODE: this issue is RISK TIER " + strings.ToUpper(tier) +
+					" — after qa:pass a HUMAN reviews and merges your PR (auto-merge is refused for this tier); " +
+					"keep the PR small and reviewable."
+			}
+			return instr
 		}
 		return sprintCommitInstruction(branch)
 	}
@@ -1349,14 +1358,57 @@ func (h *Handler) maybeMergeOnQAPass(ctx context.Context, issue db.Issue, labelN
 		content := "✅ QA passed (qa:pass) on this task's pull request into `" + branch +
 			"`. READY FOR HUMAN REVIEW + MERGE — a person reviews the PR and merges it into `" + branch +
 			"`. Auto-merge is off (AGORA_SPRINT_AUTO_MERGE); no agent will merge it."
-		if _, cerr := h.Queries.CreateComment(ctx, db.CreateCommentParams{
+		if posted, cerr := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 			IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
 			AuthorType: "member", AuthorID: parseUUID(userID),
 			Content: content, Type: "comment", ParentID: pgtype.UUID{Valid: false},
 		}); cerr != nil {
 			slog.Warn("qa-pass human-merge note: create comment failed", "error", cerr, "issue_id", uuidToString(issue.ID))
+		} else {
+			h.publish(protocol.EventCommentCreated, uuidToString(issue.WorkspaceID), "member", userID, map[string]any{
+				"comment": map[string]any{
+					"id": uuidToString(posted.ID), "issue_id": uuidToString(posted.IssueID),
+					"author_type": posted.AuthorType, "author_id": uuidToString(posted.AuthorID),
+					"content": posted.Content, "type": posted.Type,
+					"created_at": posted.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+				},
+			})
 		}
 		slog.Info("qa-pass: PR ready for human review+merge (auto-merge off)", "issue_id", uuidToString(issue.ID))
+		return
+	}
+
+	// TIERED AUTONOMY: even with auto-merge opted in, a critical- or
+	// guarded-tier issue (risk_map projects; unknown = guarded, fail closed)
+	// NEVER auto-merges — a human reviews and merges, period. Only risk:safe
+	// issues (or projects without a risk map) reach the lead auto-merge below.
+	if tier := h.issueRiskTier(ctx, issue); tier == "critical" || tier == "guarded" {
+		content := "✅ QA passed (qa:pass) on this task's pull request into `" + branch +
+			"`. RISK TIER: **" + tier + "** — auto-merge is structurally refused for this tier " +
+			"(risk map policy); a HUMAN reviews the PR and merges it into `" + branch + "`."
+		if owners := h.issueRiskOwners(ctx, issue); len(owners) > 0 {
+			content += " Module owner(s): " + strings.Join(owners, ", ") + "."
+		}
+		if posted, cerr := h.Queries.CreateComment(ctx, db.CreateCommentParams{
+			IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+			AuthorType: "member", AuthorID: parseUUID(userID),
+			Content: content, Type: "comment", ParentID: pgtype.UUID{Valid: false},
+		}); cerr != nil {
+			slog.Warn("qa-pass tier gate: create comment failed", "error", cerr, "issue_id", uuidToString(issue.ID))
+		} else {
+			// Publish so the note renders live for the humans it addresses —
+			// a direct CreateComment bypasses the event bus.
+			h.publish(protocol.EventCommentCreated, uuidToString(issue.WorkspaceID), "member", userID, map[string]any{
+				"comment": map[string]any{
+					"id": uuidToString(posted.ID), "issue_id": uuidToString(posted.IssueID),
+					"author_type": posted.AuthorType, "author_id": uuidToString(posted.AuthorID),
+					"content": posted.Content, "type": posted.Type,
+					"created_at": posted.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+				},
+			})
+		}
+		slog.Info("qa-pass: auto-merge refused by risk tier — human merge required",
+			"issue_id", uuidToString(issue.ID), "tier", tier)
 		return
 	}
 
@@ -2089,6 +2141,32 @@ func (h *Handler) sliceActionProjectBaseSuiteContext(ctx context.Context, issue 
 	})
 	if err != nil || len(cases) == 0 {
 		return ""
+	}
+	// Quarantine skip-list (project.settings.qa_quarantine: case-id strings) —
+	// a flaky base script is EXCLUDED from the standing suite instead of
+	// training agents to ignore red. Humans park a case here while it is fixed.
+	quarantined := map[string]bool{}
+	if project, perr := h.Queries.GetProject(ctx, issue.ProjectID); perr == nil && len(project.Settings) > 0 {
+		var s struct {
+			Quarantine []string `json:"qa_quarantine"`
+		}
+		if json.Unmarshal(project.Settings, &s) == nil {
+			for _, id := range s.Quarantine {
+				quarantined[strings.TrimSpace(id)] = true
+			}
+		}
+	}
+	if len(quarantined) > 0 {
+		kept := cases[:0]
+		for _, c := range cases {
+			if !quarantined[uuidToString(c.ID)] {
+				kept = append(kept, c)
+			}
+		}
+		cases = kept
+		if len(cases) == 0 {
+			return ""
+		}
 	}
 	var b strings.Builder
 	// The wording self-describes the test-runs JSON format because run_qa's base
