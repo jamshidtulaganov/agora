@@ -79,6 +79,29 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
   const negativeCount = cases.filter((c) => c.category === "negative").length;
   const positiveCount = cases.length - negativeCount;
 
+  // Failing / blocked float to the TOP so a reviewer sees what needs attention
+  // first; passing sinks to the bottom. Sort on the PERSISTED verdict only (not
+  // the live running/verdict markers) so rows don't reshuffle mid-run.
+  const statusRank = (c: TestCase) => {
+    switch (c.latest_run?.status) {
+      case "fail":
+        return 0;
+      case "blocked":
+      case "skip":
+        return 1;
+      case "pass":
+        return 4;
+      default:
+        return 3; // never run
+    }
+  };
+  const sorted = [...cases].sort((a, b) => statusRank(a) - statusRank(b));
+  const failedCount = cases.filter((c) => c.latest_run?.status === "fail").length;
+  const blockedCount = cases.filter(
+    (c) => c.latest_run?.status === "blocked" || c.latest_run?.status === "skip",
+  ).length;
+  const attentionCount = failedCount + blockedCount;
+
   const recordRun = useMutation({
     mutationFn: ({ caseId, status }: { caseId: string; status: "pass" | "fail" }) =>
       api.recordTestCaseRun(caseId, { status }),
@@ -180,6 +203,25 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
         </div>
       )}
 
+      {/* What needs attention, first — failing/blocked are sorted to the top of
+          the list below, and this line names how many so the reviewer knows to
+          look up top. */}
+      {attentionCount > 0 && (
+        <div className="flex items-center gap-2 text-[11px]">
+          {failedCount > 0 && (
+            <span className="flex items-center gap-1 font-medium text-destructive">
+              <X className="size-3" /> {failedCount}
+            </span>
+          )}
+          {blockedCount > 0 && (
+            <span className="flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400">
+              <CircleSlash className="size-3" /> {blockedCount}
+            </span>
+          )}
+          <span className="text-muted-foreground">{t(($) => $.test_cases.needs_attention)}</span>
+        </div>
+      )}
+
       {adding && <AddCaseForm issueId={issueId} onDone={() => { setAdding(false); invalidate(); }} />}
 
       {cases.length === 0 && !adding ? (
@@ -189,7 +231,7 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
         </div>
       ) : (
         <ul className="divide-y rounded-lg border">
-          {cases.map((c) => (
+          {sorted.map((c) => (
             <CaseRow
               key={c.id}
               c={c}

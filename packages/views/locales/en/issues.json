@@ -493,6 +493,7 @@
     "run_pass": "Pass",
     "run_fail": "Fail",
     "blocked": "Blocked",
+    "needs_attention": "need attention — shown first",
     "empty": "No test cases yet.",
     "empty_hint": "Add one, or let the QA Squad generate them from the ticket.",
     "generated_toast": "QA agent is writing test cases…",

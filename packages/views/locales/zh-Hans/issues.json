@@ -482,6 +482,7 @@
     "run_pass": "通过",
     "run_fail": "未通过",
     "blocked": "受阻",
+    "needs_attention": "需关注 — 置顶",
     "empty": "暂无测试用例。",
     "empty_hint": "添加用例，或让 QA 小队从工单生成。",
     "generated_toast": "QA 代理正在编写测试用例…",
