@@ -1045,6 +1045,7 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 		h.TaskService.CaptureCompiledScripts(r.Context(), issue, comment.Content, parseUUID(authorID))
 		h.TaskService.CaptureDesignProposal(r.Context(), issue, comment, parseUUID(authorID))
 		h.TaskService.CaptureDesignManifest(r.Context(), issue, comment, parseUUID(authorID))
+		h.TaskService.CaptureProjectConventions(r.Context(), issue, comment, parseUUID(authorID))
 
 		// Auto-chain the QA case pipeline so live per-case progress appears without
 		// a manual "Run all". gen_test_cases authors cases ASYNC (an agent task), so

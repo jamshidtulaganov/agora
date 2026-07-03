@@ -1401,6 +1401,12 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				if note := h.sliceActionDesignManifestContext(r.Context(), issue); note != "" {
 					resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + strings.TrimSpace(note))
 				}
+				// Project conventions (human-authored coding rules) ride along on
+				// EVERY claim so any agent — dev, QA, design — writes to the
+				// project's house style instead of re-inventing it.
+				if note := h.sliceActionProjectConventionsContext(r.Context(), issue); note != "" {
+					resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + strings.TrimSpace(note))
+				}
 				// Figma access rides along on every claim whose issue
 				// references a design: fill (or auto-provision) the figma MCP
 				// server from the workspace credential and teach the agent to
