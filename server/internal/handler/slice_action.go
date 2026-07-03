@@ -556,6 +556,20 @@ type qaManifest struct {
 	// Notes carry target-specific ground rules (rendering model, selector
 	// conventions, role of the QA account) that don't fit routes/flows.
 	Notes string `json:"notes"`
+	// Accounts are ADDITIONAL role-specific logins for flows the default Auth
+	// account can't reach — e.g. an agent / ROLE=4 account for endpoints that
+	// reject the admin login ("войдите под аккаунтом агента"). The default Auth
+	// stays the primary login; the agent picks the account whose role matches
+	// the case it is exercising.
+	Accounts []qaManifestAccount `json:"accounts"`
+}
+
+// qaManifestAccount is one role-specific QA login (see qaManifest.Accounts).
+type qaManifestAccount struct {
+	Role     string `json:"role"`     // human label, e.g. "agent (ROLE=4)"
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Note     string `json:"note"` // when to use it, e.g. "for /api3/stock/*"
 }
 
 // sliceActionQAManifestContext injects the project QA manifest + critical paths
@@ -591,6 +605,13 @@ func (h *Handler) sliceActionQAManifestContext(ctx context.Context, issue db.Iss
 				b.WriteString(fmt.Sprintf("; success when the page contains %q", m.Auth.SuccessContains))
 			}
 			b.WriteString(".")
+		}
+		for _, a := range m.Accounts {
+			b.WriteString(fmt.Sprintf(" ACCOUNT [%s]: log in at the same form with %s=%s and %s=%s", a.Role, m.Auth.UserField, a.Username, m.Auth.PassField, a.Password))
+			if a.Note != "" {
+				b.WriteString(" — use " + a.Note)
+			}
+			b.WriteString(". If a case needs this role and the account is not configured, mark it blocked (do NOT invent credentials).")
 		}
 		if len(m.Routes) > 0 {
 			b.WriteString(" ROUTES:")
