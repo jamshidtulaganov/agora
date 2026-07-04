@@ -188,7 +188,15 @@ func (h *Handler) projectKBSkills(ctx context.Context, issue db.Issue) []service
 			Name:        name,
 		})
 		if serr != nil {
-			continue // module KB not built yet — silently skip
+			// The issue carries a module:<x> label but no matching module KB skill
+			// resolved. This is EITHER not-built-yet OR name drift (the label suffix
+			// and the risk-map module name slugify to different skill names — e.g. a
+			// Cyrillic module like "Касса" slugifies to "", or "module:kassa" vs a
+			// risk-map "Kassa (POS)"). Log it so the gap is visible instead of the
+			// agent silently getting only the base KB it was labelled past.
+			slog.Debug("module KB not injected: no skill for label",
+				"issue_id", uuidToString(issue.ID), "module_label", mod, "resolved_skill_name", name)
+			continue
 		}
 		data := service.AgentSkillData{
 			ID: uuidToString(skill.ID), Name: skill.Name, Description: skill.Description, Content: skill.Content,
