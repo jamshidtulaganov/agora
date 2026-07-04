@@ -56,7 +56,7 @@ func slugifyProjectName(s string) string {
 // the sd-cs stress test pulling QA Tester and Security Reviewer into a solo
 // "extract conventions" job. A focused extraction/build is a solo job; fan-out
 // only adds noise, cost, and delay.
-const soloAutomationDirective = " IMPORTANT — do this ENTIRELY YOURSELF in this one run: do NOT delegate, do NOT spawn or create sub-agents, and do NOT @mention any other agent. This is a focused solo task; complete it end to end on your own."
+const soloAutomationDirective = " IMPORTANT — do this ENTIRELY YOURSELF in this one run: do NOT delegate, do NOT spawn or create sub-agents, and do NOT @mention any other agent. Do NOT create an issue, sub-issue, task, or tracking ticket to DEFER or track this — creating a ticket is PUNTING, not doing. EXECUTE the work now: check out the repo, study it, and PRODUCE the deliverable (the saved skill / the fenced block) in THIS run. This is a focused solo task; complete it end to end on your own."
 
 func buildProjectStudyPrompt(title string) string {
 	slug := slugifyProjectName(title)
@@ -164,6 +164,15 @@ func (h *Handler) pickAutomationRunner(ctx context.Context, project db.Project) 
 	best, bestN := lead, leadN
 	for _, a := range agents {
 		if a.ID == lead || !sliceAgentReady(a) {
+			continue
+		}
+		// Skip non-executor personas in the SPREAD pool: a planner/orchestrator
+		// agent, handed a DOING task (clone + study + write a skill), tends to
+		// decompose it into a tracking issue rather than execute it (observed on
+		// the Dolibarr cold-start — a Planner created 5 punt issues). The lead is
+		// exempt (chosen by config above); this only shapes the overflow.
+		name := strings.ToLower(a.Name)
+		if strings.Contains(name, "planner") || strings.Contains(name, "orchestrat") {
 			continue
 		}
 		n, err := h.Queries.CountInFlightTasksForAgent(ctx, a.ID)
