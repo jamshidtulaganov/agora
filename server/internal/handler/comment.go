@@ -1049,6 +1049,7 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 			go h.maybeAutoDocsOnLabel(context.Background(), issue, gateLabel, authorID)
 			go h.maybeMergeOnQAPass(context.Background(), issue, gateLabel, authorID)
 			go h.maybeRouteToDevLeadOnQAFail(context.Background(), issue, gateLabel, authorID)
+			go h.maybeAutoFileBugOnQAFail(context.Background(), issue, gateLabel, authorID)
 		}
 		h.TaskService.CaptureTestCases(r.Context(), issue, comment.Content, parseUUID(authorID))
 		h.TaskService.CaptureTestRuns(r.Context(), issue, comment.Content, parseUUID(authorID))

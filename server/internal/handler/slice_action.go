@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/logger"
+	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
@@ -603,7 +604,7 @@ type qaManifest struct {
 
 // qaManifestAccount is one role-specific QA login (see qaManifest.Accounts).
 type qaManifestAccount struct {
-	Role     string `json:"role"`     // human label, e.g. "agent (ROLE=4)"
+	Role     string `json:"role"` // human label, e.g. "agent (ROLE=4)"
 	Username string `json:"username"`
 	Password string `json:"password"`
 	Note     string `json:"note"` // when to use it, e.g. "for /api3/stock/*"
@@ -1436,6 +1437,99 @@ func (h *Handler) maybeRouteToDevLeadOnQAFail(ctx context.Context, issue db.Issu
 		"issue_id", uuidToString(issue.ID),
 		"failing_agent_id", uuidToString(failingAgentID),
 		"lead_agent_id", uuidToString(leaderID))
+}
+
+func qaFailAutoFileBugEnabled() bool {
+	return strings.TrimSpace(os.Getenv("AGORA_QA_FAIL_AUTO_FILE_BUG_ENABLED")) == "true"
+}
+
+// maybeAutoFileBugOnQAFail opens a `bug`-labelled child issue when an issue is
+// labelled qa:fail, so a failed verdict becomes a tracked, triageable bug
+// instead of relying on a human clicking "File bug" in the QA cockpit. The bug
+// links to the failed issue (parent), inherits its project + priority, and
+// carries the QA evidence summary. Gated (AGORA_QA_FAIL_AUTO_FILE_BUG_ENABLED),
+// detached + best-effort, and runs alongside the qa-fail autoroute. Deduped via
+// a `qa_bug_filed` metadata stamp on the parent so repeated qa:fail labels
+// (re-QA loops) don't spawn duplicate bugs.
+func (h *Handler) maybeAutoFileBugOnQAFail(ctx context.Context, issue db.Issue, labelName, actorID string) {
+	if !qaFailAutoFileBugEnabled() {
+		return
+	}
+	if strings.ToLower(strings.TrimSpace(labelName)) != "qa:fail" {
+		return
+	}
+	// Dedup: one auto-filed bug per failed issue.
+	if len(issue.Metadata) > 0 {
+		var meta map[string]any
+		if json.Unmarshal(issue.Metadata, &meta) == nil {
+			if _, done := meta["qa_bug_filed"]; done {
+				return
+			}
+		}
+	}
+
+	summary := ""
+	if evidence, err := h.Queries.GetLatestQAEvidenceForIssue(ctx, db.GetLatestQAEvidenceForIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+	}); err == nil {
+		summary = strings.TrimSpace(evidence.Summary)
+	}
+
+	parentKey := fmt.Sprintf("%s-%d", h.getIssuePrefix(ctx, issue.WorkspaceID), issue.Number)
+	titleText := issue.Title
+	if summary != "" {
+		titleText = summary
+	}
+	title := "Bug: " + titleText
+	if r := []rune(title); len(r) > 160 {
+		title = string(r[:159]) + "…"
+	}
+	detail := summary
+	if detail == "" {
+		detail = "See the QA verdict on the parent issue."
+	}
+	desc := fmt.Sprintf("Filed automatically from a failed QA verdict on %s — %s.\n\n%s", parentKey, issue.Title, detail)
+
+	// The verdict author (comment path) is usually the QA agent, the label path
+	// usually a human — resolve which so creator_type is honest (creator_id has
+	// no FK, but the CHECK only allows member|agent).
+	actorUUID := parseUUID(actorID)
+	creatorType := "member"
+	if _, aerr := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{ID: actorUUID, WorkspaceID: issue.WorkspaceID}); aerr == nil {
+		creatorType = "agent"
+	}
+
+	res, err := h.IssueService.Create(ctx, service.IssueCreateParams{
+		WorkspaceID:    issue.WorkspaceID,
+		Title:          title,
+		Description:    pgtype.Text{String: desc, Valid: true},
+		Status:         "todo",
+		Priority:       issue.Priority,
+		CreatorType:    creatorType,
+		CreatorID:      actorUUID,
+		ParentIssueID:  issue.ID,
+		ProjectID:      issue.ProjectID,
+		AllowDuplicate: true,
+	}, service.IssueCreateOpts{ActorID: actorID})
+	if err != nil {
+		slog.Warn("qa-fail auto-file bug: create failed", "error", err, "issue_id", uuidToString(issue.ID))
+		return
+	}
+
+	if labelID, lerr := h.ensureLabel(ctx, issue.WorkspaceID, "bug", "#ef4444"); lerr == nil {
+		if err := h.Queries.AttachLabelToIssue(ctx, db.AttachLabelToIssueParams{
+			IssueID: res.Issue.ID, LabelID: labelID, WorkspaceID: issue.WorkspaceID,
+		}); err != nil {
+			slog.Warn("qa-fail auto-file bug: attach bug label failed", "error", err, "bug_id", uuidToString(res.Issue.ID))
+		}
+	}
+	// Stamp the parent so a re-QA loop doesn't file the same bug twice.
+	if _, err := h.Queries.SetIssueMetadataKey(ctx, db.SetIssueMetadataKeyParams{
+		ID: issue.ID, WorkspaceID: issue.WorkspaceID, Key: "qa_bug_filed", Value: []byte("true"),
+	}); err != nil {
+		slog.Warn("qa-fail auto-file bug: dedup stamp failed", "error", err, "issue_id", uuidToString(issue.ID))
+	}
+	slog.Info("qa-fail auto-filed bug", "parent_id", uuidToString(issue.ID), "bug_id", uuidToString(res.Issue.ID))
 }
 
 // devSquadLeaderForIssue resolves the leader of the DEV squad an orchestrated
