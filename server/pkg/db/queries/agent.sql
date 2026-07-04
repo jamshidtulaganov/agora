@@ -135,15 +135,20 @@ WHERE agent_id = $1
 ORDER BY created_at DESC;
 
 -- name: CreateAgentTask :one
+-- model_override (nullable): per-task model escalation set at enqueue time
+-- (e.g. KB capture on a large thread). At claim it wins over the agent's
+-- configured model but loses to issue cost-tier labels — see
+-- applyIssueCostTier and migration 146.
 INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, status, priority, trigger_comment_id,
-    trigger_summary, force_fresh_session, is_leader_task
+    trigger_summary, force_fresh_session, is_leader_task, model_override
 )
 VALUES (
     $1, $2, $3, 'queued', $4, sqlc.narg(trigger_comment_id),
     sqlc.narg(trigger_summary),
     COALESCE(sqlc.narg('force_fresh_session')::boolean, FALSE),
-    COALESCE(sqlc.narg('is_leader_task')::boolean, FALSE)
+    COALESCE(sqlc.narg('is_leader_task')::boolean, FALSE),
+    sqlc.narg('model_override')
 )
 RETURNING *;
 
@@ -180,7 +185,8 @@ INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, chat_session_id, autopilot_run_id,
     status, priority, trigger_comment_id, trigger_summary, context,
     session_id, work_dir,
-    attempt, max_attempts, parent_task_id, force_fresh_session, is_leader_task
+    attempt, max_attempts, parent_task_id, force_fresh_session, is_leader_task,
+    model_override
 )
 SELECT
     p.agent_id, p.runtime_id, p.issue_id, p.chat_session_id, p.autopilot_run_id,
@@ -189,7 +195,8 @@ SELECT
     CASE WHEN p.failure_reason IS NOT DISTINCT FROM 'codex_semantic_inactivity' THEN NULL ELSE p.work_dir END,
     p.attempt + 1, p.max_attempts, p.id,
     p.failure_reason IS NOT DISTINCT FROM 'codex_semantic_inactivity',
-    p.is_leader_task
+    p.is_leader_task,
+    p.model_override
 FROM agent_task_queue p
 WHERE p.id = $1
 RETURNING *;
@@ -205,14 +212,16 @@ RETURNING *;
 INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, chat_session_id, autopilot_run_id,
     status, priority, trigger_comment_id, trigger_summary, context,
-    attempt, max_attempts, parent_task_id, force_fresh_session, is_leader_task
+    attempt, max_attempts, parent_task_id, force_fresh_session, is_leader_task,
+    model_override
 )
 SELECT
     p.agent_id, sqlc.arg('runtime_id'), p.issue_id, p.chat_session_id, p.autopilot_run_id,
     'queued', p.priority, p.trigger_comment_id, p.trigger_summary, p.context,
     p.attempt, p.max_attempts, p.id,
     true,
-    p.is_leader_task
+    p.is_leader_task,
+    p.model_override
 FROM agent_task_queue p
 WHERE p.id = sqlc.arg('parent_id')
 RETURNING *;
@@ -705,3 +714,12 @@ SET status = CASE WHEN EXISTS (
     updated_at = now()
 WHERE a.id = $1
 RETURNING *;
+
+-- name: CountInFlightTasksForAgent :one
+-- Counts an agent's IN-FLIGHT tasks including 'queued' (unlike CountRunningTasks,
+-- which counts only running/dispatched). pickAutomationRunner needs 'queued' to
+-- count so a freshly-enqueued onboarding task immediately loads its agent — else
+-- a burst of enqueues all read the same pre-insert snapshot and pile on one
+-- agent instead of spreading.
+SELECT count(*) FROM agent_task_queue
+WHERE agent_id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory');

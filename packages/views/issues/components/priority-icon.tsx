@@ -10,7 +10,9 @@ export function PriorityIcon({
   className?: string;
   inheritColor?: boolean;
 }) {
-  const cfg = PRIORITY_CONFIG[priority];
+  // Fall back to "none" for an unknown server-driven priority (z.string() at
+  // the boundary) so a newer backend enum value can't deref undefined.
+  const cfg = PRIORITY_CONFIG[priority] ?? PRIORITY_CONFIG.none;
 
   // "none" — simple horizontal dashes
   if (cfg.bars === 0) {

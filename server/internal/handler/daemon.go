@@ -1293,6 +1293,19 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 			resp.WorkspaceID = uuidToString(issue.WorkspaceID)
 			resp.ThreadName = issue.Title
 
+			// Per-task model override (agent_task_queue.model_override): wins
+			// over the agent's configured model, but loses to the issue
+			// cost-tier labels applied just below. Set by knowledge-capture to
+			// escalate a large-thread distillation off the synthesizer's cheap
+			// default model. The model string is opaque and forwarded verbatim.
+			if resp.Agent != nil && task.ModelOverride.Valid && task.ModelOverride.String != "" {
+				slog.Info("per-task model override applied",
+					"task_id", uuidToString(task.ID),
+					"from_model", resp.Agent.Model, "to_model", task.ModelOverride.String,
+				)
+				resp.Agent.Model = task.ModelOverride.String
+			}
+
 			// Per-task cost tiering: override the agent's model/thinking for
 			// THIS run based on the issue's tier labels, so a small task does
 			// not burn opus[1m] money (an observed CSS fix cost $2.82 on
@@ -1383,6 +1396,55 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
+			// Full issue brief (description + acceptance criteria) rides on EVERY
+			// claim. The claim brief otherwise carries only title + trigger
+			// comment — for Bitrix-imported legacy tickets the whole RU/UZ spec
+			// lives in the description and the dev agent never saw it. Skipped
+			// when the triggering slice instruction already embeds the plan
+			// (qaPlanContext's " TASK PLAN —" block) — those runs would otherwise
+			// carry the same description twice.
+			if resp.Agent != nil {
+				briefEmbedded := false
+				if task.TriggerCommentID.Valid {
+					if c, cerr := h.Queries.GetComment(r.Context(), task.TriggerCommentID); cerr == nil &&
+						strings.Contains(c.Content, " TASK PLAN —") {
+						briefEmbedded = true
+					}
+				}
+				if !briefEmbedded {
+					if note := issueBriefNote(issue.Description.String, issue.AcceptanceCriteria); note != "" {
+						resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + note)
+					}
+				}
+			}
+
+			// The project knowledge-base skills auto-ride on every claim, deduped
+			// against the agent's own bound skills — the base "<slug>-kb" (settings
+			// .kb_skill override, else derived) PLUS any "<slug>-kb-<module>" whose
+			// module matches the issue's module: labels. Without this the KB
+			// reaches an agent only via manual agent_skill binding — i.e. nobody.
+			if resp.Agent != nil {
+				bound := make(map[string]bool, len(resp.Agent.Skills))
+				for _, s := range resp.Agent.Skills {
+					bound[s.Name] = true
+				}
+				for _, kb := range h.projectKBSkills(r.Context(), issue) {
+					if !bound[kb.Name] {
+						bound[kb.Name] = true
+						resp.Agent.Skills = append(resp.Agent.Skills, kb)
+					}
+				}
+			}
+
+			// Project risk map rides along on every claim so dev, QA, and design
+			// agents all classify their diff by module blast radius (critical /
+			// guarded / safe) before acting.
+			if resp.Agent != nil {
+				if note := h.sliceActionRiskMapContext(r.Context(), issue); note != "" {
+					resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + strings.TrimSpace(note))
+				}
+			}
+
 			// Project QA manifest rides along on EVERY claim — orchestrator, dev,
 			// and QA agents alike navigate by the app's KNOWN map (auth, routes,
 			// golden flows) instead of re-reading the code each run.
@@ -1399,6 +1461,12 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				// The project design system rides along too, so a delegated dev
 				// building UI reuses known components instead of re-inventing them.
 				if note := h.sliceActionDesignManifestContext(r.Context(), issue); note != "" {
+					resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + strings.TrimSpace(note))
+				}
+				// Project conventions (human-authored coding rules) ride along on
+				// EVERY claim so any agent — dev, QA, design — writes to the
+				// project's house style instead of re-inventing it.
+				if note := h.sliceActionProjectConventionsContext(r.Context(), issue); note != "" {
 					resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + strings.TrimSpace(note))
 				}
 				// Figma access rides along on every claim whose issue

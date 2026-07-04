@@ -3,6 +3,8 @@ package handler
 import (
 	"fmt"
 	"strings"
+
+	"github.com/multica-ai/multica/server/internal/service"
 )
 
 // inEditorCoCodeNote is appended to an agent's instructions when the claimed
@@ -42,11 +44,11 @@ func agentContextNote(raw string) string {
 // issue so the branch stays stable across the agent's turns and accumulates one
 // reviewable PR. Degrades gracefully when the key or title is empty.
 func coCodeBranchName(issueKey, issueTitle string) string {
-	key := slugifyProjectName(issueKey)
+	key := service.SlugifyProjectName(issueKey)
 	if key == "" {
 		key = "issue"
 	}
-	title := slugifyProjectName(issueTitle)
+	title := service.SlugifyProjectName(issueTitle)
 	// Bound the title slug so the branch (and the PR title GitHub derives from
 	// it) stays readable; cut on a word boundary, not mid-word.
 	const maxTitle = 40

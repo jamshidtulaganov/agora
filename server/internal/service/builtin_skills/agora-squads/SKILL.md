@@ -230,6 +230,19 @@ gate run to a QA member (executed on a faster model) and own the
 qa:pass/qa:fail rollup, rather than run the mechanical gate itself. The lead
 orchestrates; a member executes.
 
+**Trivial changes gate SOLO — no review panel.** A low-risk change (a
+`tier:trivial` / `tier:light` / `risk:safe` / `type:docs` label, or a tiny PR
+diff) does NOT route to the QA lead and its QA roster excludes specialist
+reviewers (Security Reviewer / Designer), so a one-file docs or config change
+never spins up a multi-agent panel. The run_qa instruction also carries an
+explicit ceiling: gate solo, do not @mention or summon any other agent unless
+the diff actually touches security-sensitive code or the UI/design. This only
+DOWNGRADES on a reliably-small signal — a `risk:guarded`/`risk:critical` label
+or unknown size takes the full lead-delegate path unchanged, so real feature
+work is never starved of QA. Documentation-only issues get `tier:trivial`
+automatically (the auto-tierer's docs keywords), so they flow through this
+solo path without a human tagging them.
+
 Before delegating, the lead is instructed to determine the PROJECT's own
 stack and testing tooling itself (read package.json/go.mod/composer.json,
 existing test dirs, CI config — never assume) and tell the delegate which

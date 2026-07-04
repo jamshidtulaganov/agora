@@ -226,6 +226,27 @@ func (q *Queries) ListWorkspaces(ctx context.Context, userID pgtype.UUID) ([]Wor
 	return items, nil
 }
 
+const mergeWorkspaceSettingsEntry = `-- name: MergeWorkspaceSettingsEntry :exec
+UPDATE workspace SET
+    settings = COALESCE(settings, '{}'::jsonb) || $1::jsonb,
+    updated_at = now()
+WHERE id = $2
+`
+
+type MergeWorkspaceSettingsEntryParams struct {
+	Entry []byte      `json:"entry"`
+	ID    pgtype.UUID `json:"id"`
+}
+
+// Atomically merge one or more top-level keys into workspace.settings via
+// jsonb || so concurrent writers never clobber sibling keys — unlike
+// UpdateWorkspace's whole-blob settings replace (same rationale as
+// MergeProjectCoverageEntry). First user: stamping kb_synthesizer_agent_id.
+func (q *Queries) MergeWorkspaceSettingsEntry(ctx context.Context, arg MergeWorkspaceSettingsEntryParams) error {
+	_, err := q.db.Exec(ctx, mergeWorkspaceSettingsEntry, arg.Entry, arg.ID)
+	return err
+}
+
 const setWorkspaceSettingKey = `-- name: SetWorkspaceSettingKey :one
 UPDATE workspace SET
     settings = jsonb_set(COALESCE(settings, '{}'::jsonb), ARRAY[$1::text], $2::jsonb, true),

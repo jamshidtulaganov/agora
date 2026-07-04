@@ -10,7 +10,7 @@ export function AutopilotDetailPage() {
   const wsId = useWorkspaceId();
   const { data } = useQuery(autopilotDetailOptions(wsId, id!));
 
-  useDocumentTitle(data ? `⚡ ${data.autopilot.title}` : "Autopilot");
+  useDocumentTitle(data?.autopilot ? `⚡ ${data.autopilot.title}` : "Autopilot");
 
   if (!id) return null;
   return <AutopilotDetail autopilotId={id} />;

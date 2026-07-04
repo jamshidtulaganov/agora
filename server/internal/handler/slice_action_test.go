@@ -264,13 +264,13 @@ func TestQAPlanContext(t *testing.T) {
 	}
 
 	// Oversized non-ASCII description → truncated with an ellipsis, rune-safe.
-	long := strings.Repeat("ы", 4000) // Cyrillic, 2 bytes each → exercises the rune cut
+	long := strings.Repeat("ы", 5000) // Cyrillic, 2 bytes each → exercises the rune cut
 	big := qaPlanContext(long, nil)
 	if !strings.Contains(big, "…") {
 		t.Errorf("oversized description must be truncated with an ellipsis")
 	}
-	if n := len([]rune(big)); n > 1900 {
-		t.Errorf("oversized description must be capped near 1500 runes, got %d", n)
+	if n := len([]rune(big)); n > 4400 {
+		t.Errorf("oversized description must be capped near 4000 runes, got %d", n)
 	}
 }
 
@@ -590,7 +590,7 @@ func TestEnforceQAGateBeforeDone(t *testing.T) {
 
 	t.Run("gate off → passthrough even for squad done", func(t *testing.T) {
 		t.Setenv("AGORA_QA_GATE_ENFORCED", "")
-		got, redirected := testHandler.enforceQAGateBeforeDone(ctx, squadIssue, "in_progress", "done")
+		got, redirected := testHandler.enforceQAGateBeforeDone(ctx, squadIssue, "agent", "in_progress", "done")
 		if redirected || got != "done" {
 			t.Errorf("gate off must passthrough, got (%q, %v)", got, redirected)
 		}
@@ -598,7 +598,7 @@ func TestEnforceQAGateBeforeDone(t *testing.T) {
 
 	t.Run("gate on + squad + direct done → redirect to in_review", func(t *testing.T) {
 		t.Setenv("AGORA_QA_GATE_ENFORCED", "true")
-		got, redirected := testHandler.enforceQAGateBeforeDone(ctx, squadIssue, "in_progress", "done")
+		got, redirected := testHandler.enforceQAGateBeforeDone(ctx, squadIssue, "agent", "in_progress", "done")
 		if !redirected || got != "in_review" {
 			t.Errorf("expected redirect to in_review, got (%q, %v)", got, redirected)
 		}
@@ -606,7 +606,7 @@ func TestEnforceQAGateBeforeDone(t *testing.T) {
 
 	t.Run("gate on + already in_review → passthrough (allow done)", func(t *testing.T) {
 		t.Setenv("AGORA_QA_GATE_ENFORCED", "true")
-		got, redirected := testHandler.enforceQAGateBeforeDone(ctx, squadIssue, "in_review", "done")
+		got, redirected := testHandler.enforceQAGateBeforeDone(ctx, squadIssue, "agent", "in_review", "done")
 		if redirected || got != "done" {
 			t.Errorf("done from in_review must passthrough, got (%q, %v)", got, redirected)
 		}
@@ -614,7 +614,7 @@ func TestEnforceQAGateBeforeDone(t *testing.T) {
 
 	t.Run("gate on + target not done → passthrough", func(t *testing.T) {
 		t.Setenv("AGORA_QA_GATE_ENFORCED", "true")
-		got, redirected := testHandler.enforceQAGateBeforeDone(ctx, squadIssue, "todo", "in_progress")
+		got, redirected := testHandler.enforceQAGateBeforeDone(ctx, squadIssue, "agent", "todo", "in_progress")
 		if redirected || got != "in_progress" {
 			t.Errorf("non-done target must passthrough, got (%q, %v)", got, redirected)
 		}
@@ -622,7 +622,7 @@ func TestEnforceQAGateBeforeDone(t *testing.T) {
 
 	t.Run("gate on + solo agent → passthrough", func(t *testing.T) {
 		t.Setenv("AGORA_QA_GATE_ENFORCED", "true")
-		got, redirected := testHandler.enforceQAGateBeforeDone(ctx, soloIssue, "in_progress", "done")
+		got, redirected := testHandler.enforceQAGateBeforeDone(ctx, soloIssue, "agent", "in_progress", "done")
 		if redirected || got != "done" {
 			t.Errorf("solo-agent issue must passthrough, got (%q, %v)", got, redirected)
 		}
@@ -631,7 +631,7 @@ func TestEnforceQAGateBeforeDone(t *testing.T) {
 	t.Run("gate on + squad + qa:pass present → passthrough", func(t *testing.T) {
 		t.Setenv("AGORA_QA_GATE_ENFORCED", "true")
 		attachLabelDirect(t, ctx, squadIssueID, "qa:pass")
-		got, redirected := testHandler.enforceQAGateBeforeDone(ctx, squadIssue, "in_progress", "done")
+		got, redirected := testHandler.enforceQAGateBeforeDone(ctx, squadIssue, "agent", "in_progress", "done")
 		if redirected || got != "done" {
 			t.Errorf("qa:pass present must passthrough, got (%q, %v)", got, redirected)
 		}

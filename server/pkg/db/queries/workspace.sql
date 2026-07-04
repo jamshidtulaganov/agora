@@ -72,6 +72,16 @@ UPDATE workspace SET default_mcp_config = NULL, updated_at = now()
 WHERE id = $1
 RETURNING *;
 
+-- name: MergeWorkspaceSettingsEntry :exec
+-- Atomically merge one or more top-level keys into workspace.settings via
+-- jsonb || so concurrent writers never clobber sibling keys — unlike
+-- UpdateWorkspace's whole-blob settings replace (same rationale as
+-- MergeProjectCoverageEntry). First user: stamping kb_synthesizer_agent_id.
+UPDATE workspace SET
+    settings = COALESCE(settings, '{}'::jsonb) || sqlc.arg('entry')::jsonb,
+    updated_at = now()
+WHERE id = sqlc.arg('id');
+
 -- name: SetWorkspaceSettingKey :one
 -- KEY-SCOPED write of a single workspace.settings key via jsonb_set — the same
 -- clobber-safe pattern as SetProjectSettingKey. Used for the workspace-level

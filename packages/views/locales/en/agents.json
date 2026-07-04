@@ -203,6 +203,7 @@
     "clear_full": "Clear selection (use provider default)"
   },
   "tabs": {
+    "overview": "Overview",
     "activity": "Activity",
     "tasks": "Tasks",
     "instructions": "Instructions",

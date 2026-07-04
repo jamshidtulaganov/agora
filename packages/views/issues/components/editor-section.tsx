@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import {
   ChevronRight,
+  Code2,
   ExternalLink,
   Expand,
   Loader2,
@@ -55,6 +56,9 @@ interface EditorAgent {
   agent_name: string;
   work_dir: string;
   status: string;
+  // Desktop-VS-Code deep link for this worktree (vscode://file/… local, or a
+  // Remote-SSH link for a box). Optional — older backends omit it.
+  vscode_url?: string;
 }
 
 // Distinct per-agent chip colors, picked by a stable hash of the agent id so
@@ -100,6 +104,28 @@ function agentChipColor(id: string) {
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
   return AGENT_CHIP_COLORS[h % AGENT_CHIP_COLORS.length]!;
 }
+
+// A self-host daemon_url is only reachable when the browser shares the daemon's
+// host (127.0.0.1). On a hosted page the browser is remote, so POSTing to a
+// loopback daemon URL just yields a CORS failure + a stuck spinner. These guards
+// let the UI show an honest message instead. (Belt-and-suspenders: the cloud
+// backend no longer returns a loopback self-host URL, but an older backend or a
+// misconfigured self-host still can — the desktop app outlives any server build.)
+function isLoopbackUrl(u: string): boolean {
+  try {
+    const h = new URL(u).hostname;
+    return h === "127.0.0.1" || h === "localhost" || h === "[::1]" || h === "::1";
+  } catch {
+    return false;
+  }
+}
+function browserIsRemote(): boolean {
+  if (typeof window === "undefined") return false;
+  const h = window.location.hostname;
+  return !(h === "127.0.0.1" || h === "localhost" || h === "[::1]");
+}
+const EDITOR_UNREACHABLE_LABEL =
+  "This issue's live editor was cleaned up (worktrees are removed automatically about a day after the agent finishes) or runs on a machine this browser can't reach. Re-run an agent on this issue to open it here.";
 
 // Browser-tab empty states (no live worktree / daemon). Plain TS literals so the
 // jsx-text-only i18n rule lets them through, matching this file's raw-string
@@ -232,7 +258,19 @@ export function EditorSection({
         setState("none");
         return;
       }
-      if (!r.ok) throw new Error(`editor lookup failed (${r.status})`);
+      if (!r.ok) {
+        // Surface the backend's own message (e.g. a GC'd worktree → 410
+        // worktree_gone) instead of a bare status code, so the user sees why +
+        // what to do. Defensive parse: the body may be non-JSON on some errors.
+        let msg = `editor lookup failed (${r.status})`;
+        try {
+          const body = (await r.json()) as { error?: string };
+          if (typeof body?.error === "string" && body.error) msg = body.error;
+        } catch {
+          /* non-JSON body — keep the status-code message */
+        }
+        throw new Error(msg);
+      }
       const data = (await r.json()) as {
         mode?: string;
         editor_url?: string;
@@ -242,7 +280,11 @@ export function EditorSection({
       };
 
       // Cloud: backend already launched + reverse-proxies — iframe directly.
+      // Still surface the agent roster so the chips + per-worktree "Open in
+      // VS Code" links render (the browser editor shows the default worktree;
+      // per-agent browser switching in cloud is the remaining follow-up).
       if (data.mode === "cloud" && data.editor_url) {
+        setAgents(data.agents ?? []);
         setUrl(data.editor_url);
         setState("ready");
         return;
@@ -253,6 +295,13 @@ export function EditorSection({
       const list = data.agents ?? [];
       if (list.length === 0 || !data.daemon_url || !data.user_id) {
         setState("none");
+        return;
+      }
+      // A remote browser can't reach a loopback daemon URL — don't spew a CORS
+      // failure + hang on the spinner; say so plainly.
+      if (isLoopbackUrl(data.daemon_url) && browserIsRemote()) {
+        setErr(EDITOR_UNREACHABLE_LABEL);
+        setState("error");
         return;
       }
       setAgents(list);
@@ -323,6 +372,17 @@ export function EditorSection({
                 className="shrink-0"
               />
               {a.agent_name || "agent"}
+              {a.vscode_url ? (
+                <a
+                  href={a.vscode_url}
+                  onClick={(e) => e.stopPropagation()}
+                  title={`Open ${a.agent_name || "agent"}'s worktree in your desktop VS Code`}
+                  aria-label="Open in VS Code"
+                  className="ml-0.5 rounded p-0.5 opacity-70 hover:opacity-100"
+                >
+                  <Code2 className="size-3" />
+                </a>
+              ) : null}
             </button>
           );
         })}

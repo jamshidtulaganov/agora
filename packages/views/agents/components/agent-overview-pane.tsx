@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Activity,
   BookOpenText,
   FileText,
+  IdCard,
   KeyRound,
   ListTodo,
   Plug,
@@ -39,6 +40,7 @@ import { ActorIssuesPanel } from "../../common/actor-issues-panel";
 import { useT } from "../../i18n";
 
 export type DetailTab =
+  | "overview"
   | "activity"
   | "tasks"
   | "instructions"
@@ -49,7 +51,8 @@ export type DetailTab =
   | "integrations"
   | "runtime_config";
 
-const TAB_LABEL_KEY: Record<DetailTab, "activity" | "tasks" | "instructions" | "skills" | "environment" | "custom_args" | "mcp_config" | "integrations" | "runtime_config"> = {
+const TAB_LABEL_KEY: Record<DetailTab, "overview" | "activity" | "tasks" | "instructions" | "skills" | "environment" | "custom_args" | "mcp_config" | "integrations" | "runtime_config"> = {
+  overview: "overview",
   activity: "activity",
   tasks: "tasks",
   instructions: "instructions",
@@ -65,6 +68,7 @@ const detailTabs: {
   id: DetailTab;
   icon: typeof FileText;
 }[] = [
+  { id: "overview", icon: IdCard },
   { id: "activity", icon: Activity },
   { id: "tasks", icon: ListTodo },
   { id: "instructions", icon: FileText },
@@ -88,6 +92,14 @@ interface AgentOverviewPaneProps {
    */
   navIntent?: DetailTab | null;
   onNavIntentHandled?: () => void;
+  /**
+   * Content for the "Overview" tab (agent identity + properties + skills +
+   * integrations). Rendered as the first tab and default landing tab. Passed
+   * as a slot so the page keeps ownership of the editor props rather than
+   * threading them all through this pane. When omitted, the Overview tab is
+   * hidden and Activity is the landing tab (back-compat).
+   */
+  overviewSlot?: ReactNode;
 }
 
 /**
@@ -119,10 +131,11 @@ export function AgentOverviewPane({
   onUpdate,
   navIntent,
   onNavIntentHandled,
+  overviewSlot,
 }: AgentOverviewPaneProps) {
   const { t } = useT("agents");
   const wsId = useWorkspaceId();
-  const [activeTab, setActiveTab] = useState<DetailTab>("activity");
+  const [activeTab, setActiveTab] = useState<DetailTab>(overviewSlot ? "overview" : "activity");
   const [activeDirty, setActiveDirty] = useState(false);
   // Holds the destination when a tab change is intercepted by the dirty
   // guard. Null means no pending change. The AlertDialog reads non-null as
@@ -160,12 +173,13 @@ export function AgentOverviewPane({
     const showMcp = runtime ? providerSupportsMcpConfig(runtime.provider) : true;
     const showRuntimeConfig = runtime ? runtime.provider === "openclaw" : false;
     return detailTabs.filter((tab) => {
+      if (tab.id === "overview") return !!overviewSlot;
       if (tab.id === "mcp_config") return showMcp;
       if (tab.id === "integrations") return larkConfigured;
       if (tab.id === "runtime_config") return showRuntimeConfig;
       return true;
     });
-  }, [runtime, larkConfigured]);
+  }, [runtime, larkConfigured, overviewSlot]);
 
   // If the active tab disappears (e.g. user just switched the agent's
   // runtime to one that doesn't read mcp_config), fall back to Activity
@@ -231,6 +245,9 @@ export function AgentOverviewPane({
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
+        {effectiveTab === "overview" && overviewSlot && (
+          <div className="h-full overflow-y-auto p-4 md:p-6">{overviewSlot}</div>
+        )}
         {effectiveTab === "activity" && <ActivityTab agent={agent} />}
         {effectiveTab === "tasks" && (
           <div className="flex h-full min-h-[520px] flex-col">

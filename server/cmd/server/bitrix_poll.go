@@ -43,7 +43,7 @@ func runBitrixSyncPoll(ctx context.Context, h *handler.Handler) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			h.PollBitrixActiveTasks(ctx)
+			safeTick("bitrix_poll", func() { h.PollBitrixActiveTasks(ctx) })
 		}
 	}
 }

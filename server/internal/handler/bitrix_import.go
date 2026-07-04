@@ -298,16 +298,21 @@ func (h *Handler) resolveProjectByTitle(ctx context.Context, wsID pgtype.UUID, t
 }
 
 // getOrCreateBitrixSprint returns the Agora sprint id for a sprint-named Bitrix
-// workgroup, creating it under the sd-main project on first sight. It mirrors
+// workgroup, creating it under the given host project on first sight. It mirrors
 // getOrCreateBitrixProject exactly, but the durable "bitrix_group:<id>" marker
 // lives in the sprint's GOAL (sprint has no description column), and dedup is
-// scoped to the parent project. Resolutions are cached on st for the batch.
-func (h *Handler) getOrCreateBitrixSprint(ctx context.Context, workspaceID, sdMainProjectID pgtype.UUID, groupID, groupName string, st *bitrixSyncState) (pgtype.UUID, error) {
+// scoped to the host project. Resolutions are cached on st for the batch.
+func (h *Handler) getOrCreateBitrixSprint(ctx context.Context, workspaceID, hostProjectID pgtype.UUID, groupID, groupName string, st *bitrixSyncState) (pgtype.UUID, error) {
 	groupID = strings.TrimSpace(groupID)
 	if groupID == "" {
 		return pgtype.UUID{}, fmt.Errorf("empty group id")
 	}
-	cacheKey := util.UUIDToString(workspaceID) + ":" + groupID
+	// Key by (workspace, host project, group): one Bitrix sprint-group can be
+	// hosted under more than one product project in a single batch — a
+	// cross-product "Sprint 12" split by title prefix into sd-main + sd-cs — and
+	// each must get its OWN sprint. A ws:group key would collide and hand the
+	// second product the first product's sprint.
+	cacheKey := util.UUIDToString(workspaceID) + ":" + util.UUIDToString(hostProjectID) + ":" + groupID
 	if id, ok := st.sprintCache[cacheKey]; ok {
 		return id, nil
 	}
@@ -315,14 +320,14 @@ func (h *Handler) getOrCreateBitrixSprint(ctx context.Context, workspaceID, sdMa
 	marker := bitrixProjectMarkerPrefix + groupID
 
 	// Look up an existing sprint for this group via the durable goal marker,
-	// scoped to the sd-main project (the sprint's parent).
+	// scoped to the host project (the sprint's parent).
 	var existingID pgtype.UUID
 	err := h.DB.QueryRow(ctx,
 		`SELECT id FROM sprint
 		  WHERE project_id = $1 AND goal LIKE '%' || $2 || '%'
 		  ORDER BY created_at ASC
 		  LIMIT 1`,
-		sdMainProjectID, marker).Scan(&existingID)
+		hostProjectID, marker).Scan(&existingID)
 	if err == nil {
 		st.sprintCache[cacheKey] = existingID
 		return existingID, nil
@@ -341,7 +346,7 @@ func (h *Handler) getOrCreateBitrixSprint(ctx context.Context, workspaceID, sdMa
 
 	sprint, err := h.Queries.CreateSprint(ctx, db.CreateSprintParams{
 		WorkspaceID: workspaceID,
-		ProjectID:   sdMainProjectID,
+		ProjectID:   hostProjectID,
 		Name:        name,
 		Goal:        marker,
 		Status:      "active",
@@ -355,7 +360,7 @@ func (h *Handler) getOrCreateBitrixSprint(ctx context.Context, workspaceID, sdMa
 	slog.Info("bitrix sync: created sprint for workgroup",
 		"sprint_id", util.UUIDToString(sprint.ID),
 		"group_id", groupID, "name", name,
-		"project_id", util.UUIDToString(sdMainProjectID),
+		"project_id", util.UUIDToString(hostProjectID),
 		"workspace_id", util.UUIDToString(workspaceID))
 	return sprint.ID, nil
 }

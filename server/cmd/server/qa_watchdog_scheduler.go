@@ -59,7 +59,7 @@ func runQAWatchdogScheduler(ctx context.Context, queries *db.Queries, h *handler
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			tickQAWatchdog(ctx, queries, h)
+			safeTick("qa_watchdog", func() { tickQAWatchdog(ctx, queries, h) })
 		}
 	}
 }

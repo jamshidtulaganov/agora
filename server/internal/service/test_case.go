@@ -36,6 +36,12 @@ type genTestRun struct {
 	// launch endpoint (GET /api/qa/trace/:runId) reads it to spawn `playwright
 	// show-trace` on that daemon and reverse-proxy the viewer in-app.
 	TracePath string `json:"trace_path"`
+	// BaselineStatus is the case's result when run against the PRE-CHANGE
+	// baseline (merge-base / sprint last-green). A plan-driven test discriminates
+	// the change only when it FAILED before (baseline_status=fail) and PASSES now
+	// (status=pass). "unknown" (the default) is neutral — an [e2e] case with no
+	// baseline deploy, or a discrimination-flag-off run, never counts as evidence.
+	BaselineStatus string `json:"baseline_status"`
 }
 
 type genCompiledScript struct {
@@ -154,6 +160,15 @@ func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, conte
 		default:
 			continue
 		}
+		// Normalize the baseline result: only pass/fail are meaningful; anything
+		// else (absent, "n/a", "unknown") is neutral and never counts as
+		// discriminating evidence.
+		baselineStatus := strings.ToLower(strings.TrimSpace(r.BaselineStatus))
+		switch baselineStatus {
+		case "pass", "fail":
+		default:
+			baselineStatus = "unknown"
+		}
 		caseID, err := util.ParseUUID(r.TestCaseID)
 		if err != nil {
 			continue
@@ -178,8 +193,9 @@ func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, conte
 			Output:      strings.TrimSpace(r.Output),
 			RunSource:   "agent",
 			RunByType:   "agent",
-			RunByID:     agentID,
-			TracePath:   strings.TrimSpace(r.TracePath),
+			RunByID:        agentID,
+			TracePath:      strings.TrimSpace(r.TracePath),
+			BaselineStatus: baselineStatus,
 		}); err != nil {
 			slog.Warn("capture test runs: insert failed", "error", err, "issue_id", util.UUIDToString(issue.ID))
 			continue

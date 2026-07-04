@@ -79,6 +79,29 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
   const negativeCount = cases.filter((c) => c.category === "negative").length;
   const positiveCount = cases.length - negativeCount;
 
+  // Failing / blocked float to the TOP so a reviewer sees what needs attention
+  // first; passing sinks to the bottom. Sort on the PERSISTED verdict only (not
+  // the live running/verdict markers) so rows don't reshuffle mid-run.
+  const statusRank = (c: TestCase) => {
+    switch (c.latest_run?.status) {
+      case "fail":
+        return 0;
+      case "blocked":
+      case "skip":
+        return 1;
+      case "pass":
+        return 4;
+      default:
+        return 3; // never run
+    }
+  };
+  const sorted = [...cases].sort((a, b) => statusRank(a) - statusRank(b));
+  const failedCount = cases.filter((c) => c.latest_run?.status === "fail").length;
+  const blockedCount = cases.filter(
+    (c) => c.latest_run?.status === "blocked" || c.latest_run?.status === "skip",
+  ).length;
+  const attentionCount = failedCount + blockedCount;
+
   const recordRun = useMutation({
     mutationFn: ({ caseId, status }: { caseId: string; status: "pass" | "fail" }) =>
       api.recordTestCaseRun(caseId, { status }),
@@ -180,6 +203,25 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
         </div>
       )}
 
+      {/* What needs attention, first — failing/blocked are sorted to the top of
+          the list below, and this line names how many so the reviewer knows to
+          look up top. */}
+      {attentionCount > 0 && (
+        <div className="flex items-center gap-2 text-[11px]">
+          {failedCount > 0 && (
+            <span className="flex items-center gap-1 font-medium text-destructive">
+              <X className="size-3" /> {failedCount}
+            </span>
+          )}
+          {blockedCount > 0 && (
+            <span className="flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400">
+              <CircleSlash className="size-3" /> {blockedCount}
+            </span>
+          )}
+          <span className="text-muted-foreground">{t(($) => $.test_cases.needs_attention)}</span>
+        </div>
+      )}
+
       {adding && <AddCaseForm issueId={issueId} onDone={() => { setAdding(false); invalidate(); }} />}
 
       {cases.length === 0 && !adding ? (
@@ -189,7 +231,7 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
         </div>
       ) : (
         <ul className="divide-y rounded-lg border">
-          {cases.map((c) => (
+          {sorted.map((c) => (
             <CaseRow
               key={c.id}
               c={c}
@@ -298,19 +340,27 @@ function CaseRow({
   return (
     <li
       className={cn(
-        "relative px-3 py-2 transition-colors",
+        "group/case relative px-3 py-2 transition-colors",
         // The case executing RIGHT NOW is unmistakable: a tinted row + a spinning
-        // marker on the title (below) + an ANIMATED border — a pulsing inset ring
-        // that breathes so the eye is pulled to the running case. The ring is a
-        // separate overlay so only the border animates, not the row content.
-        isRunning && "bg-info/5",
+        // marker on the title + an ANIMATED border. The ring + left accent bar are
+        // separate overlays so only the border animates, not the row content.
+        isRunning && "bg-info/10",
       )}
     >
       {isRunning && (
-        <span
-          aria-hidden
-          className="pointer-events-none absolute inset-0 z-10 rounded-md ring-2 ring-inset ring-info/70 motion-safe:animate-pulse"
-        />
+        <>
+          {/* Bright pulsing inset ring around the whole row… */}
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-0 z-10 rounded-md ring-2 ring-inset ring-info motion-safe:animate-pulse"
+          />
+          {/* …plus a solid accent bar down the left edge, so the eye lands on the
+              running case even at a glance. */}
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-y-1 left-0 z-10 w-1 rounded-full bg-info motion-safe:animate-pulse"
+          />
+        </>
       )}
       <div className="flex items-start gap-2">
         <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setOpen((v) => !v)}>
@@ -404,28 +454,36 @@ function CaseRow({
               {isRunning ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
             </Button>
           )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            disabled={busy}
-            onClick={() => onRun("pass")}
-            className="size-6 text-emerald-700 hover:bg-emerald-600/10 dark:text-emerald-300"
-            title={t(($) => $.test_cases.run_pass)}
-          >
-            <Check className="size-3.5" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            disabled={busy}
-            onClick={() => onRun("fail")}
-            className="size-6 text-destructive hover:bg-destructive/10"
-            title={t(($) => $.test_cases.run_fail)}
-          >
-            <X className="size-3.5" />
-          </Button>
+          {/* Manual pass/fail is ONLY for manual cases — a human judges those.
+              Automated cases are judged by the agent's run (▷ / Run-all), so the
+              always-on ✓/✗ there was redundant clutter on every row. Kept here for
+              manual cases, and revealed on row hover so the default view stays clean. */}
+          {c.kind !== "automated" && (
+            <div className="flex items-center gap-1.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover/case:opacity-100">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                disabled={busy}
+                onClick={() => onRun("pass")}
+                className="size-6 text-emerald-700 hover:bg-emerald-600/10 dark:text-emerald-300"
+                title={t(($) => $.test_cases.run_pass)}
+              >
+                <Check className="size-3.5" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                disabled={busy}
+                onClick={() => onRun("fail")}
+                className="size-6 text-destructive hover:bg-destructive/10"
+                title={t(($) => $.test_cases.run_fail)}
+              >
+                <X className="size-3.5" />
+              </Button>
+            </div>
+          )}
         </div>
       </div>
       {open && hasReason && (

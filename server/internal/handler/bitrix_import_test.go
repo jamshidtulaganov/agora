@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // --- in-memory Storage stub for attachment imports --------------------------
@@ -511,10 +512,50 @@ func TestBitrixSyncTagFilterSkips(t *testing.T) {
 	}
 }
 
+// --- async import helpers ---------------------------------------------------
+
+// waitForBitrixIssue polls for the issue synced from a Bitrix task id. POST
+// /api/bitrix/import is asynchronous: it returns 202 after resolving the task-id
+// set, then the per-task sync runs in a detached background goroutine that
+// streams issues onto the board. Bounded ~3s so a missing issue still fails.
+func waitForBitrixIssue(t *testing.T, taskID string) (string, bool) {
+	t.Helper()
+	for i := 0; i < 60; i++ {
+		if id, ok := issueIDByBitrixTaskID(t, taskID); ok {
+			return id, true
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return "", false
+}
+
+// waitForBitrixImportDone blocks until the background goroutine started by the
+// most recent ImportBitrixTasks call has synced every task — the progress
+// tracker flips Running=false with Synced>=Total. Used to observe post-run state
+// (dedup on a re-import) that isn't visible until the async sync finishes. The
+// Synced>=Total guard is load-bearing: a prior run's trailing Finish() can race
+// Running to false against a fresh Start(), but Synced only reaches Total once
+// this run's per-task syncs have all returned. Bounded ~6s.
+func waitForBitrixImportDone(t *testing.T) {
+	t.Helper()
+	for i := 0; i < 120; i++ {
+		bitrixImportProgressState.Lock()
+		done := !bitrixImportProgressState.Running &&
+			bitrixImportProgressState.Synced >= bitrixImportProgressState.Total
+		bitrixImportProgressState.Unlock()
+		if done {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("bitrix import did not finish within deadline")
+}
+
 // --- TestImportBitrixTasksEndpoint ------------------------------------------
 
-// POST /api/bitrix/import with explicit task_ids creates issues and returns the
-// tally. A second import of the same ids reports them as updated (dedup).
+// POST /api/bitrix/import with explicit task_ids returns 202 Accepted (the sync
+// runs in the background) and creates the issues. A second import of the same
+// ids takes the update path and must NOT duplicate rows.
 func TestImportBitrixTasksEndpoint(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("no database")
@@ -535,39 +576,50 @@ func TestImportBitrixTasksEndpoint(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	testHandler.ImportBitrixTasks(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("import status = %d, body=%s", w.Code, w.Body.String())
+	// Async contract: 202 Accepted once the task-id set is resolved; Created stays
+	// 0 (the per-task sync streams in over the websocket), Accepted tallies what
+	// was enqueued.
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("import status = %d, want 202, body=%s", w.Code, w.Body.String())
 	}
 	var resp BitrixImportResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode resp: %v (%s)", err, w.Body.String())
 	}
-	if resp.Created != 2 {
-		t.Fatalf("created = %d, want 2 (errors=%v)", resp.Created, resp.Errors)
+	if resp.Accepted != 2 {
+		t.Fatalf("accepted = %d, want 2 (errors=%v)", resp.Accepted, resp.Errors)
 	}
-	if _, ok := issueIDByBitrixTaskID(t, t1); !ok {
+	// Poll until the background sync has filed both tasks.
+	if _, ok := waitForBitrixIssue(t, t1); !ok {
 		t.Error("t1 not created")
 	}
-	if _, ok := issueIDByBitrixTaskID(t, t2); !ok {
+	if _, ok := waitForBitrixIssue(t, t2); !ok {
 		t.Error("t2 not created")
 	}
 
-	// Second import: both dedup to the update path.
+	// Second import: both issues already exist, so the background sync takes the
+	// update path. The 202 body carries no update tally, so wait for the run to
+	// finish, then assert dedup held — still exactly one issue per task.
 	body2, _ := json.Marshal(BitrixImportRequest{TaskIDs: []string{t1, t2}})
 	req2 := newRequest("POST", "/api/bitrix/import", nil)
 	req2.Body = io.NopCloser(bytes.NewReader(body2))
 	req2.Header.Set("Content-Type", "application/json")
 	w2 := httptest.NewRecorder()
 	testHandler.ImportBitrixTasks(w2, req2)
-	var resp2 BitrixImportResponse
-	json.Unmarshal(w2.Body.Bytes(), &resp2)
-	if resp2.Created != 0 || resp2.Updated != 2 {
-		t.Fatalf("second import created=%d updated=%d, want 0/2", resp2.Created, resp2.Updated)
+	if w2.Code != http.StatusAccepted {
+		t.Fatalf("second import status = %d, want 202, body=%s", w2.Code, w2.Body.String())
+	}
+	waitForBitrixImportDone(t)
+	for _, id := range []string{t1, t2} {
+		if _, _, _, _, count := issueByBitrixTaskID(t, id); count != 1 {
+			t.Fatalf("after re-import, task %s issue count = %d, want 1 (no dupes)", id, count)
+		}
 	}
 }
 
 // TestImportBitrixTasksByGroup: POST /api/bitrix/import with group_ids expands
-// each group into its tasks (via tasks.task.list) and imports them.
+// each group into its tasks (via tasks.task.list), returns 202, and the
+// background sync imports them.
 func TestImportBitrixTasksByGroup(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("no database")
@@ -590,22 +642,27 @@ func TestImportBitrixTasksByGroup(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	testHandler.ImportBitrixTasks(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("import status = %d, body=%s", w.Code, w.Body.String())
+	// Group expansion happens synchronously, so Accepted reflects the group's task
+	// count; the 202 returns before the background sync creates the issues.
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("import status = %d, want 202, body=%s", w.Code, w.Body.String())
 	}
 	var resp BitrixImportResponse
-	json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp.Created != 2 {
-		t.Fatalf("created = %d, want 2 (errors=%v)", resp.Created, resp.Errors)
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode resp: %v (%s)", err, w.Body.String())
+	}
+	if resp.Accepted != 2 {
+		t.Fatalf("accepted = %d, want 2 (errors=%v)", resp.Accepted, resp.Errors)
+	}
+	// Poll until the background sync has filed both group tasks.
+	for _, id := range []string{a, b} {
+		if _, ok := waitForBitrixIssue(t, id); !ok {
+			t.Errorf("group task %s not imported", id)
+		}
 	}
 	// Both tasks filed under the same group project — clean it up.
 	if pid, ok := projectIDForIssueByTask(t, a); ok {
 		cleanupProject(t, pid)
-	}
-	for _, id := range []string{a, b} {
-		if _, ok := issueIDByBitrixTaskID(t, id); !ok {
-			t.Errorf("group task %s not imported", id)
-		}
 	}
 }
 
@@ -678,6 +735,11 @@ func TestBitrixEndpointsDisabled(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("no database")
 	}
+	// The endpoints now authorize the caller (requireBitrixOperator) BEFORE the
+	// "is Bitrix configured" check, so route to the fixture workspace — which
+	// testUserID owns — to get PAST the operator gate. With the webhook URL empty
+	// the enabled-check is then what fails, yielding the 503 this test asserts.
+	t.Setenv("BITRIX_SYNC_WORKSPACE_SLUG", handlerTestWorkspaceSlug)
 	t.Setenv("BITRIX_WEBHOOK_URL", "")
 
 	for _, tc := range []struct {

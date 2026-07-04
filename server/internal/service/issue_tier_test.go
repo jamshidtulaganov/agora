@@ -25,6 +25,12 @@ func TestClassifyIssueTier(t *testing.T) {
 		{"translation/language stays full", "Persian language", "translate the app to Persian", ""},
 		{"feature stays full", "Add new CRM integration with the A++ API", "", ""},
 		{"empty stays full", "", "", ""},
+		// Docs-only work is trivial even when the body is longer than a typo.
+		{"docs task is trivial", "Add docs/MODULE_NOTES.md for the orders module", "", "tier:trivial"},
+		{"readme is trivial", "Update README with the QA box URL", "", "tier:trivial"},
+		{"markdown changelog is trivial", "Add a CHANGELOG.md entry", "", "tier:trivial"},
+		// A docs mention on a huge body (over tierDocsMaxLen) still stays full.
+		{"docs keyword but huge body stays full", "Update docs", strings.Repeat("y", 4100), ""},
 		// Brevity gate: a small keyword on a long detailed body stays full.
 		{"css keyword but long body stays full", "CSS tweak", long, ""},
 		// A typo with a medium body falls through trivial (too long) to light.

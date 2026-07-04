@@ -44,6 +44,7 @@ import { useNavigation } from "../../navigation";
 import { TitleEditor, ContentEditor, type ContentEditorRef } from "../../editor";
 import { PriorityIcon } from "../../issues/components/priority-icon";
 import { ProjectResourcesSection } from "./project-resources-section";
+import { ProjectConventionsSection } from "./project-conventions-section";
 import { ProjectQASection } from "./project-qa-section";
 import { ProjectDesignSection } from "./project-design-section";
 import { ProjectBitrixSection } from "./project-bitrix-section";
@@ -854,6 +855,9 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
 
       {/* Resources */}
       <ProjectResourcesSection projectId={projectId} />
+
+      {/* Conventions — human-authored coding rules injected into every agent run */}
+      <ProjectConventionsSection projectId={projectId} />
 
       {/* QA smoke configuration (run_qa gate) */}
       <ProjectQASection projectId={projectId} />

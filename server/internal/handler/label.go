@@ -376,11 +376,13 @@ func (h *Handler) AttachLabel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Automation chain: a qa:pass label fires an auto_docs run (when enabled +
-	// the project has a docs_repo); a qa:fail label routes the issue back to
-	// the failing dev agent's squad lead (when enabled + the agent has a
-	// squad). Both detached + best-effort so neither delays or fails the
-	// label attach.
+	// the project has a docs_repo); in sprint-PR mode it ALSO routes the squad
+	// lead to review + merge the task's PR into the sprint branch. A qa:fail
+	// label routes the issue back to the failing dev agent's squad lead (when
+	// enabled + the agent has a squad). All detached + best-effort so none delays
+	// or fails the label attach.
 	go h.maybeAutoDocsOnLabel(context.Background(), issue, label.Name, userID)
+	go h.maybeMergeOnQAPass(context.Background(), issue, label.Name, userID)
 	go h.maybeRouteToDevLeadOnQAFail(context.Background(), issue, label.Name, userID)
 
 	// Read the updated label list; on read failure, the attach is already

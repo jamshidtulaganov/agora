@@ -940,6 +940,17 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Put("/resources/{resourceId}", h.UpdateProjectResource)
 					r.Delete("/resources/{resourceId}", h.DeleteProjectResource)
 					r.Post("/knowledge/build", h.BuildProjectKnowledge)
+					// Knowledge items — the structured KB review queue (the
+					// KB flywheel). POST is RequireHumanActor-gated like the
+					// PATCH/DELETE below: agent task-tokens and PATs
+					// authenticate through this same member group (MUL-2600
+					// rationale), and an agent-minted immediately-active item
+					// would void the knowledge review gate.
+					r.Get("/knowledge/items", h.ListKnowledgeItems)
+					r.With(handler.RequireHumanActor).Post("/knowledge/items", h.CreateKnowledgeItem)
+					r.Post("/conventions/learn", h.LearnProjectConventions)
+					r.Post("/base-suite/build", h.BuildProjectBaseSuite)
+					r.Get("/autonomy-report", h.ProjectAutonomyReport)
 					// QA manifest — the app's known navigation map injected into
 					// every QA run. Built by the lead agent in the background
 					// (project create / first repo attach) or re-derived on
@@ -1005,6 +1016,16 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			r.Get("/api/qa/metrics", h.GetQAMetrics)
 			// Sprint QA-readiness — per-active-sprint mergeable rollup + rows.
 			r.Get("/api/qa/sprint-readiness", h.GetSprintReadiness)
+
+			// Knowledge items — edit / approve / archive / delete by item id
+			// (list/create are project-scoped above). Human-only mutations:
+			// approving a proposed item IS the prompt-injection review gate,
+			// so no agent may approve, edit, or purge items — including its
+			// own proposals — via PAT or task token.
+			r.Route("/api/knowledge-items/{itemId}", func(r chi.Router) {
+				r.With(handler.RequireHumanActor).Patch("/", h.UpdateKnowledgeItem)
+				r.With(handler.RequireHumanActor).Delete("/", h.DeleteKnowledgeItem)
+			})
 
 			// QA test cases — run + archive by case id (list/create are
 			// issue-scoped, or project-scoped for standing base scripts).

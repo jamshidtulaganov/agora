@@ -26,7 +26,7 @@ func runAutopilotScheduler(ctx context.Context, queries *db.Queries, svc *servic
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			tickScheduledAutopilots(ctx, queries, svc)
+			safeTick("autopilot_scheduler", func() { tickScheduledAutopilots(ctx, queries, svc) })
 		}
 	}
 }

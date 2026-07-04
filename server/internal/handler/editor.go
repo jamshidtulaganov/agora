@@ -28,6 +28,13 @@ type editorAgent struct {
 	AgentName string `json:"agent_name"`
 	WorkDir   string `json:"work_dir"`
 	Status    string `json:"status"`
+	// VSCodeURL is a desktop-VS-Code deep link that opens THIS worktree in the
+	// human's local VS Code: vscode://file/<abs-path> for a self-host/local
+	// daemon (worktree on the user's machine), or a Remote-SSH link
+	// (vscode://vscode-remote/ssh-remote+<host>/<path>) for a remote box. Sent to
+	// the browser so the "Open in VS Code" affordance works for every agent's
+	// worktree, in cloud AND self-host mode.
+	VSCodeURL string `json:"vscode_url,omitempty"`
 	// editorPort is the local health/editor port the agent's runtime daemon
 	// reported at registration (from agent_runtime.metadata.editor_port).
 	// Unexported: internal routing only, never sent to the browser. Empty when
@@ -90,10 +97,35 @@ func (h *Handler) listIssueEditorAgents(ctx context.Context, issueID pgtype.UUID
 	for rows.Next() {
 		var a editorAgent
 		if err := rows.Scan(&a.AgentID, &a.AgentName, &a.WorkDir, &a.Status, &a.editorPort, &a.editorAddr); err == nil {
+			a.VSCodeURL = vscodeURLForWorktree(a.WorkDir, a.editorAddr)
 			out = append(out, a)
 		}
 	}
 	return out
+}
+
+// vscodeURLForWorktree builds a desktop-VS-Code deep link for a worktree. A
+// local/self-host daemon (editorAddr empty) puts the worktree on the human's own
+// machine → vscode://file/<abs-path>. A remote box (editorAddr set) opens over
+// Remote-SSH against the daemon host. Empty workdir → "".
+func vscodeURLForWorktree(workdir, editorAddr string) string {
+	workdir = strings.TrimSpace(workdir)
+	if workdir == "" {
+		return ""
+	}
+	// vscode://file wants a leading slash before the absolute path.
+	path := workdir
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	if strings.TrimSpace(editorAddr) == "" {
+		return "vscode://file" + path
+	}
+	host := editorAddr
+	if i := strings.LastIndex(host, ":"); i > 0 {
+		host = host[:i] // strip the port; Remote-SSH takes a host/alias
+	}
+	return "vscode://vscode-remote/ssh-remote+" + host + path
 }
 
 // daemonEditorBase is the local daemon health server the browser calls to launch
@@ -139,16 +171,14 @@ func resolveDaemonInternalAddr(runtimeAddr string) string {
 	return daemonInternalAddr()
 }
 
-// editorShouldFallBackToSelfHost reports whether a failed cloud-daemon editor
-// launch should degrade to self-host rather than returning a 502. True only
-// when BOTH hold: the runtime carried no per-runtime editor_addr (so we dialed
-// the global AGORA_DAEMON_INTERNAL fallback, not a Remote Box's own endpoint),
-// AND the daemon reported the worktree is missing ("workdir does not exist") —
-// meaning the agent ran on a different daemon (typically the user's local one).
-// A Remote Box with its own editor_addr that fails is a genuine error.
-func editorShouldFallBackToSelfHost(editorAddr, launchErr string) bool {
-	return strings.TrimSpace(editorAddr) == "" &&
-		strings.Contains(launchErr, "workdir does not exist")
+// editorWorktreeGone reports whether a failed cloud-daemon editor launch was
+// caused by a missing worktree ("workdir does not exist"). The daemon GC removes
+// a task's env ~24h after its issue is done/cancelled (see
+// server/internal/daemon/config.go DefaultGCTTL), so the work_dir recorded in the
+// DB stops existing on disk. This is a normal, expected end state — not a server
+// error — so it maps to 410 Gone with an actionable message rather than a 502.
+func editorWorktreeGone(launchErr string) bool {
+	return strings.Contains(launchErr, "workdir does not exist")
 }
 
 // GetIssueEditor resolves the issue's latest task worktree and prepares a live
@@ -199,25 +229,33 @@ func (h *Handler) GetIssueEditor(w http.ResponseWriter, r *http.Request) {
 				host = internal[:i] // strip the health port; keep just the daemon host
 			}
 			tok := registerEditorTarget(fmt.Sprintf("%s:%d", host, port), uuidToString(issue.WorkspaceID))
-			writeJSON(w, http.StatusOK, map[string]string{
+			writeJSON(w, http.StatusOK, map[string]any{
 				"mode":       "cloud",
 				"editor_url": "/editor/proxy/" + tok + "/?folder=" + url.QueryEscape(latest),
+				// The full agent roster rides along so the frontend renders the
+				// switch chips + per-worktree "Open in VS Code" links even in cloud
+				// mode (the browser editor still shows the default worktree; per-agent
+				// BROWSER switching in cloud is the remaining follow-up).
+				"agents": agents,
 			})
 			return
 		}
-		// Launch failed. When we dialed the GLOBAL fallback daemon (the runtime
-		// carried no per-runtime editor_addr) and it reports the worktree isn't
-		// there, the agent actually ran on a DIFFERENT daemon than the single
-		// cloud daemon — typically the user's own local daemon. Degrade to
-		// self-host so a browser that shares that daemon's host can reach its
-		// editor directly, instead of a dead 502. A Remote Box that carries its
-		// own editor_addr and still fails is a real error (it should hold the
-		// worktree), so that surfaces as a 502.
-		if !editorShouldFallBackToSelfHost(agents[0].editorAddr, lerr.Error()) {
-			writeError(w, http.StatusBadGateway, "failed to launch editor on the daemon: "+lerr.Error())
+		// Launch failed. The common cause is a GC'd worktree: the daemon removes a
+		// task's env ~24h after its issue is done/cancelled, so the recorded
+		// work_dir no longer exists. We must NOT degrade to a 127.0.0.1 self-host
+		// URL here — this backend runs in cloud mode (AGORA_DAEMON_INTERNAL set),
+		// the browser is remote, and a loopback URL just yields a CORS failure and
+		// a stuck spinner (the exact symptom this replaces). Return an honest,
+		// specific error the UI can render.
+		if editorWorktreeGone(lerr.Error()) {
+			writeJSON(w, http.StatusGone, map[string]string{
+				"reason": "worktree_gone",
+				"error":  "This issue's live editor was cleaned up — worktrees are removed automatically about a day after the agent finishes. Re-run an agent on this issue to recreate an editable worktree.",
+			})
 			return
 		}
-		// else: fall through to the self-host response below.
+		writeError(w, http.StatusBadGateway, "failed to launch editor on the daemon: "+lerr.Error())
+		return
 	}
 
 	// The default worktree is agents[0]'s, so address its runtime's daemon. All

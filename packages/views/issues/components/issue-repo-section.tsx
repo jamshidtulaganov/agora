@@ -5,16 +5,17 @@ import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
   ChevronRight,
-  ExternalLink,
   FolderGit,
   FolderOpen,
   Plus,
   Search,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   projectResourcesOptions,
   useCreateProjectResource,
+  useDeleteProjectResource,
 } from "@agora/core/projects";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { useCurrentWorkspace, useWorkspacePaths } from "@agora/core/paths";
@@ -81,6 +82,7 @@ export function IssueRepoSection({
     enabled: !!projectId,
   });
   const createResource = useCreateProjectResource(wsId, projectId ?? "");
+  const deleteResource = useDeleteProjectResource(wsId, projectId ?? "");
 
   // Issue not in a project — no repo concept to surface.
   if (!projectId) return null;
@@ -113,6 +115,21 @@ export function IssueRepoSection({
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Failed to connect repository",
+      );
+    }
+  };
+
+  // Detach a repo/local dir from the PROJECT. Project-scoped (same resource the
+  // project-settings sidebar manages) — surfaced here so a human can correct a
+  // mis-connected repo without leaving the issue. Hover-reveal so it can't be
+  // fat-fingered mid-task; re-attach is one click away, so no confirm modal.
+  const remove = async (resource: ProjectResource) => {
+    try {
+      await deleteResource.mutateAsync(resource.id);
+      toast.success("Repository disconnected");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to disconnect repository",
       );
     }
   };
@@ -284,17 +301,36 @@ export function IssueRepoSection({
                         {r.resource_ref.default_branch_hint}
                       </span>
                     )}
-                    <ExternalLink className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                    <button
+                      type="button"
+                      onClick={() => void remove(r)}
+                      disabled={deleteResource.isPending}
+                      className="shrink-0 rounded-sm p-0.5 opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100 disabled:opacity-50"
+                      title="Disconnect repository"
+                      aria-label="Disconnect repository"
+                    >
+                      <Trash2 className="size-3 text-muted-foreground" />
+                    </button>
                   </div>
                 ))}
                 {localDirs.map((r) => (
-                  <div key={r.id} className="flex items-center gap-2 text-xs">
+                  <div key={r.id} className="group flex items-center gap-2 text-xs">
                     <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
                     <span className="flex-1 truncate">
                       {r.resource_ref.label ||
                         r.label ||
                         r.resource_ref.local_path}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => void remove(r)}
+                      disabled={deleteResource.isPending}
+                      className="shrink-0 rounded-sm p-0.5 opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100 disabled:opacity-50"
+                      title="Disconnect"
+                      aria-label="Disconnect local directory"
+                    >
+                      <Trash2 className="size-3 text-muted-foreground" />
+                    </button>
                   </div>
                 ))}
               </div>

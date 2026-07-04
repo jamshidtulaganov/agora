@@ -232,19 +232,27 @@ func buildSliceInstruction(kind, scope string) string {
 			"At the END of your comment, append a fenced ```test-cases code block containing ONLY a JSON array the QA " +
 			"panel parses: `[{\"title\":\"<short>\",\"steps\":\"<numbered steps, newline-separated>\",\"expected\":" +
 			"\"<expected result>\",\"kind\":\"manual\"|\"automated\",\"category\":\"positive\"|\"negative\",\"script\":" +
-			"\"<optional: a self-contained runnable Playwright script, ONLY for [e2e]/[api] cases>\"}]` — " +
+			"\"<a self-contained runnable Playwright script — REQUIRED for every [e2e]/[api] automated case>\"}]` — " +
 			"`automated` for a case a script/HTTP/DOM smoke can run deterministically, `manual` for one a human must " +
 			"click through. Keep titles unique and specific. The JSON must be valid and self-contained; a short " +
 			"human-readable summary may precede it. " +
-			"COMPILED SCRIPT (the speed win): for each [e2e] and [api] automated case, ALSO emit a `script` — a " +
+			"COMPILED SCRIPT (the biggest speed win): you MUST emit a `script` inline for EVERY [e2e] and [api] automated " +
+			"case — authoring it here SKIPS the separate compile step (a whole extra agent run + round-trip), so never " +
+			"leave an [e2e]/[api] automated case without one. Each is a " +
 			"COMPLETE, self-contained Playwright ESM module that runs with plain `node`: it MUST " +
 			"`import { chromium } from \"playwright\";` (for [api] cases you may use only `fetch`), use the PROJECT " +
 			"QA MANIFEST's base_url + auth (log in via the manifest's login_path/fields) and the manifest ROUTES/FLOWS, " +
-			"perform the case's steps, ASSERT the expected result by deterministic signal (HTTP status, response shape, " +
-			"DOM/accessibility-tree TEXT — never a screenshot), then `process.exit(0)` on pass and `process.exit(1)` on " +
-			"ANY failed assertion or thrown error (wrap the body in try/catch and exit(1) in catch; always close the " +
-			"browser in finally). For [e2e] cases, open pages from an explicit context " +
-			"(`const context = await browser.newContext();`) and add Playwright TRACING so a QA reviewer can replay the " +
+			"perform the case's steps, ASSERT the expected result by deterministic signal (DOM / accessibility-tree TEXT " +
+			"via `page.locator(...)`, HTTP status, or response shape — never a screenshot), then `process.exit(0)` on pass " +
+			"and `process.exit(1)` on ANY failed assertion or thrown error (wrap the body in try/catch and exit(1) in catch). " +
+			"For [e2e] cases you MUST DRIVE THE BROWSER against the SHARED review browser so the reviewer watches it live: " +
+			"when `process.env.AGORA_DAEMON_PORT` is set, POST " +
+			"`http://127.0.0.1:${process.env.AGORA_DAEMON_PORT}/editor/browser/start` with `{\"workdir\":\"qa-target:<the manifest base_url>\"}`, " +
+			"read `cdp_url`, then `const browser = await chromium.connectOverCDP(cdp_url); const context = browser.contexts()[0] ?? " +
+			"await browser.newContext(); const page = context.pages()[0] ?? await context.newPage();` (fall back to " +
+			"`chromium.launch()` ONLY if that POST fails or AGORA_DAEMON_PORT is unset; close the browser in finally ONLY on " +
+			"that launched path). Then `page.goto(route)` / fill / click / `page.locator(...)` the real UI — do NOT shortcut a " +
+			"UI case with a raw fetch of the HTML. Add Playwright TRACING so a QA reviewer can replay the " +
 			"run step-by-step in-app: when `process.env.TRACE_PATH` is set, `await context.tracing.start({ screenshots: " +
 			"true, snapshots: true, sources: true });` after creating the context and " +
 			"`await context.tracing.stop({ path: process.env.TRACE_PATH });` in the `finally` before closing the browser " +
@@ -283,9 +291,18 @@ func buildSliceInstruction(kind, scope string) string {
 			"\"output\":\"<one-line evidence — for fail/blocked this IS the human-readable reason shown to the QA " +
 			"reviewer, e.g. the failing assertion or HTTP status; for pass, what you observed>\",\"trace_path\":\"<optional: " +
 			"the ABSOLUTE path of the Playwright trace .zip this case produced, e.g. /tmp/trace-<id>.zip; omit when no " +
-			"trace was captured (hand-driven cases)>\"}]` — one entry per case " +
+			"trace was captured (hand-driven cases)>\",\"baseline_status\":\"pass\"|\"fail\"|\"unknown\"}]` — one entry per case " +
 			"you ran. Use `blocked` if a case could not be exercised (missing data/route). The JSON must be valid and " +
-			"self-contained."
+			"self-contained. " +
+			"BASELINE DISCRIMINATION — a plan-driven test only proves your change if it FAILS on the pre-change code and " +
+			"PASSES after (fail-before / pass-after). For EACH case that has a COMPILED SCRIPT, ALSO run that SAME script " +
+			"against the pre-change BASELINE (check out the merge-base — or the sprint last-green ref when a sprint context " +
+			"is given below — run the script, then return to the branch), and report `baseline_status`: `fail` if it failed " +
+			"on the baseline (GOOD — it discriminates your change), `pass` if it passed there too. A case that is `pass` on " +
+			"BOTH baseline and branch is NON-DISCRIMINATING — it proves nothing about your change (tautological / " +
+			"happy-path / testing-the-code-not-the-spec); do not rely on it as evidence, strengthen it to fail-before. " +
+			"Report `baseline_status:\"unknown\"` for hand-driven / [e2e] / [smoke] cases you cannot re-run against a " +
+			"baseline (they stay advisory). Restore the branch checkout before finishing."
 	case sliceActionCompileTests:
 		base = "COMPILE this project's automated QA test cases into runnable Playwright scripts — you are the QA " +
 			"Squad's automation engineer. The cases that STILL NEED a script (id · title · steps · expected) are listed " +
@@ -299,9 +316,16 @@ func buildSliceInstruction(kind, scope string) string {
 			"share ONE browser with the reviewer's pane and they see your actions live. Fall back to " +
 			"`const browser = await chromium.launch(); const context = await browser.newContext();` ONLY if AGORA_DAEMON_PORT is unset or that POST fails. " +
 			"Open pages from THAT context, log in via the manifest auth, perform the steps " +
-			"against the manifest base_url/routes, ASSERT the expected " +
-			"result by deterministic signal (HTTP status, response shape, DOM/accessibility-tree TEXT — never a " +
-			"screenshot), then `process.exit(0)` on pass / `process.exit(1)` on any failed assertion or thrown error " +
+			"against the manifest base_url/routes, ASSERT the expected result by deterministic signal " +
+			"(DOM / accessibility-tree TEXT via `page.locator(...)`, HTTP status, or response shape — never a screenshot). " +
+			"BROWSER-DRIVE UI CASES — REQUIRED: if the case verifies the RENDERED UI (it renders / clicks / fills / " +
+			"navigates / logs in / checks a visible element — typically titled `[e2e]`), you MUST actually drive the page " +
+			"(`page.goto(route)`, `page.fill/click/waitForSelector`, assert via `page.locator(...).textContent()` / " +
+			"`.isVisible()`). Do NOT shortcut a UI case with a raw `fetch()` of the HTML or a filesystem/git check — a real " +
+			"browser interaction is what lets the reviewer WATCH it live in the pane AND what actually exercises the UI. " +
+			"ONLY a pure API/data case (titled `[api]`, asserting an endpoint's status / JSON with no rendered UI) may use " +
+			"`fetch`/HTTP with no page navigation. Every `[e2e]` case opens a page on the connected browser. " +
+			"Then `process.exit(0)` on pass / `process.exit(1)` on any failed assertion or thrown error " +
 			"(try/catch → exit(1)). In finally: stop tracing (below); then, ONLY if you launched your own browser, " +
 			"`await browser.close()`. If you connected to the SHARED browser over CDP, do NOT close it or its context " +
 			"(the daemon owns it) — `connectOverCDP`'s browser.close() only disconnects, so either skip it or guard it on the launched path. " +
@@ -416,6 +440,26 @@ func buildSliceInstruction(kind, scope string) string {
 	// (verified). Hand-driven HTTP/DOM smokes that open no browser skip this.
 	if kind == sliceActionRunQA || kind == sliceActionRunTests {
 		base += qaLiveWatchClause
+	}
+
+	// LANGUAGE PARITY — QA verdicts and test cases are read by the project's
+	// human QA team, who work in the issue's language (SalesDoctor tickets
+	// arrive from Bitrix in Russian/Uzbek). English-only agent output makes the
+	// loop unusable for them. Mirrors the design actions' existing same-language
+	// clause. Code, commands, JSON keys, and fenced-block schemas stay English —
+	// only the human-readable prose follows the issue. auto_docs gets its own
+	// clause: the ISSUE COMMENT follows the issue's language, but doc PAGES obey
+	// the docs repo's canonical locale (its template already demands matching
+	// neighboring pages — forcing issue-language pages would contradict that).
+	switch kind {
+	case sliceActionRunQA, sliceActionRunCI, sliceActionGenTests, sliceActionRunTests, sliceActionCompileTests:
+		base += " LANGUAGE: write every human-readable output — the verdict/report comment, test-case titles, steps and " +
+			"expected results, and summaries — IN THE SAME LANGUAGE AS THE ISSUE (its title/description, " +
+			"e.g. Russian or Uzbek). Code, shell commands, JSON keys, label names, and fenced-block schemas stay in English."
+	case sliceActionAutoDocs:
+		base += " LANGUAGE: write the summary COMMENT you post on the issue in the SAME LANGUAGE AS THE ISSUE " +
+			"(e.g. Russian or Uzbek). The documentation PAGES themselves follow the docs repo's canonical locale and " +
+			"existing conventions — never switch a page's language to match the issue."
 	}
 
 	scope = strings.TrimSpace(scope)
@@ -549,6 +593,20 @@ type qaManifest struct {
 	// Notes carry target-specific ground rules (rendering model, selector
 	// conventions, role of the QA account) that don't fit routes/flows.
 	Notes string `json:"notes"`
+	// Accounts are ADDITIONAL role-specific logins for flows the default Auth
+	// account can't reach — e.g. an agent / ROLE=4 account for endpoints that
+	// reject the admin login ("войдите под аккаунтом агента"). The default Auth
+	// stays the primary login; the agent picks the account whose role matches
+	// the case it is exercising.
+	Accounts []qaManifestAccount `json:"accounts"`
+}
+
+// qaManifestAccount is one role-specific QA login (see qaManifest.Accounts).
+type qaManifestAccount struct {
+	Role     string `json:"role"`     // human label, e.g. "agent (ROLE=4)"
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Note     string `json:"note"` // when to use it, e.g. "for /api3/stock/*"
 }
 
 // sliceActionQAManifestContext injects the project QA manifest + critical paths
@@ -584,6 +642,13 @@ func (h *Handler) sliceActionQAManifestContext(ctx context.Context, issue db.Iss
 				b.WriteString(fmt.Sprintf("; success when the page contains %q", m.Auth.SuccessContains))
 			}
 			b.WriteString(".")
+		}
+		for _, a := range m.Accounts {
+			b.WriteString(fmt.Sprintf(" ACCOUNT [%s]: log in at the same form with %s=%s and %s=%s", a.Role, m.Auth.UserField, a.Username, m.Auth.PassField, a.Password))
+			if a.Note != "" {
+				b.WriteString(" — use " + a.Note)
+			}
+			b.WriteString(". If a case needs this role and the account is not configured, mark it blocked (do NOT invent credentials).")
 		}
 		if len(m.Routes) > 0 {
 			b.WriteString(" ROUTES:")
@@ -722,6 +787,28 @@ func sprintWorktreeEnabled() bool {
 	return strings.TrimSpace(os.Getenv("AGORA_SPRINT_WORKTREE_ENABLED")) == "true"
 }
 
+// sprintPRModeEnabled gates the per-task-PR-into-the-sprint-branch dev flow
+// (Phase 1 of auto sprint review): a sprint task opens a PR from its own branch
+// into the sprint branch — for the squad lead to review + merge — instead of
+// committing straight onto the shared branch. Mirrors the daemon-side gate of the
+// same name; both read AGORA_SPRINT_PR_MODE so the agent instruction path and the
+// co-code accept path switch together. Default OFF → direct-commit sprint mode.
+// Only meaningful when sprintWorktreeEnabled() + the project is in sprint mode.
+func sprintPRModeEnabled() bool {
+	v := strings.TrimSpace(os.Getenv("AGORA_SPRINT_PR_MODE"))
+	return v == "1" || strings.EqualFold(v, "true")
+}
+
+// sprintAutoMergeEnabled gates whether the squad LEAD auto-merges a sprint PR
+// once it passes QA (Phase 3). Default OFF: the lead prepares the PR and QA
+// gates it, but a HUMAN does the final review + merge into the sprint branch —
+// the safe default while the loop is being trusted. Set on to let the lead run
+// `gh pr merge` fully autonomously. Only meaningful with sprintPRModeEnabled().
+func sprintAutoMergeEnabled() bool {
+	v := strings.TrimSpace(os.Getenv("AGORA_SPRINT_AUTO_MERGE"))
+	return v == "1" || strings.EqualFold(v, "true")
+}
+
 // projectDocsAgentID reads the project's configured docs agent (an agent UUID in
 // project.settings.docs_agent) — the dedicated agent that writes docs into the
 // docs repo. Empty when unset.
@@ -795,6 +882,47 @@ func sprintCommitInstruction(branch string) string {
 	return " SPRINT MODE — DO NOT OPEN A PULL REQUEST. This project is running a sprint: every task's work lands on the ONE shared sprint branch `" + branch +
 		"`, which is already checked out in your worktree. Commit your change directly to `" + branch + "` and push it there. Do NOT create a new branch, and do NOT open a pull/merge request. " +
 		"This SUPERSEDES any 'open a pull request' wording above. The whole sprint branch is reviewed and merged to the base branch ONCE, by a human, at sprint end."
+}
+
+// sprintPRInstruction is the sprint-PR-mode dev directive (AGORA_SPRINT_PR_MODE
+// on): the task opens a PR from its OWN branch into the sprint branch, rather than
+// committing straight onto it. The worktree is already on a per-task branch that
+// tracks the sprint branch (pulled to its latest tip), so the agent just commits,
+// pushes ITS branch, and opens a PR with base=<sprint branch>. The squad lead
+// reviews + merges it after QA — the agent must not merge or target main.
+func sprintPRInstruction(branch string) string {
+	return " SPRINT MODE (PR REVIEW) — open a pull request INTO the sprint branch `" + branch +
+		"`; do NOT push onto it directly. Steps, exactly: (1) make sure the sprint branch is fresh — `git fetch origin " + branch +
+		"`; (2) create your feature branch OFF the sprint branch — `git checkout -B <feature> origin/" + branch +
+		"` (a name like `fix/<issue-key>-<slug>`); (3) do your work and commit it to that feature branch; (4) push it as ITS OWN branch — `git push -u origin <feature>` — NOT onto `" + branch +
+		"`; (5) open the PR with BASE `" + branch + "` — `gh pr create --base " + branch + " --head <feature> --fill`. " +
+		"CRITICAL: the PR base MUST be exactly `" + branch + "` (the shared sprint branch). Your worktree may sit on a per-task `sprint-wt-*` alias — NEVER open the PR against that alias or the repo's main/default branch. After creating it, VERIFY: `gh pr view <pr> --json baseRefName` must show `" + branch +
+		"`; if it shows anything else (a `sprint-wt-*` alias, main, etc.) FIX it immediately — `gh pr edit <pr> --base " + branch + "`. " +
+		"Do NOT merge the PR yourself — it is reviewed and merged after QA. This SUPERSEDES any other branch/PR wording above."
+}
+
+// sliceActionLandingInstruction returns the "where does this task's code land"
+// directive appended to a PR-producing slice action, picking the model in one
+// place so it is testable: sprint-PR-mode (PR into the sprint branch, flag on),
+// sprint direct-commit (flag off), or — for a non-sprint issue — the default
+// per-task branch + PR-into-main.
+func (h *Handler) sliceActionLandingInstruction(ctx context.Context, issue db.Issue) string {
+	if branch, ok := h.sliceActionSprintContext(ctx, issue); ok {
+		if sprintPRModeEnabled() {
+			instr := sprintPRInstruction(branch)
+			// Tell the dev its landing mode up front: critical/guarded work
+			// NEVER auto-merges (risk-map policy), so it plans for a human
+			// review instead of expecting the lead to land it on qa:pass.
+			if tier := h.issueRiskTier(ctx, issue); tier == "critical" || tier == "guarded" {
+				instr += " LANDING MODE: this issue is RISK TIER " + strings.ToUpper(tier) +
+					" — after qa:pass a HUMAN reviews and merges your PR (auto-merge is refused for this tier); " +
+					"keep the PR small and reviewable."
+			}
+			return instr
+		}
+		return sprintCommitInstruction(branch)
+	}
+	return h.sliceActionBranchInstruction(ctx, issue)
 }
 
 // resolveAutoDocsAgent picks the agent to run an auto-fired auto_docs: the
@@ -879,6 +1007,28 @@ func qaGateEnforced() bool {
 	return strings.TrimSpace(os.Getenv("AGORA_QA_GATE_ENFORCED")) == "true"
 }
 
+// qaDiscriminationEnforced gates the TEST-ACCURACY guard: when on, a qa:pass is
+// not enough to reach done — the issue must ALSO carry at least one plan-driven
+// test that DISCRIMINATES the change (passed on the branch, FAILED on the
+// pre-change baseline). This blocks a tautological / circular / happy-path-only
+// test (green on both baseline and branch) from certifying buggy code. Default
+// off — opt-in, fail-safe: with no baseline data (all runs "unknown") the guard
+// simply doesn't apply unless a project deliberately turns it on.
+func qaDiscriminationEnforced() bool {
+	return strings.TrimSpace(os.Getenv("AGORA_QA_DISCRIMINATION_ENFORCED")) == "true"
+}
+
+// riskTierGateEnforced gates the RISK-TIER human-sign-off guard: when on, a
+// CRITICAL-tier issue can only be moved to done by a HUMAN — an agent's own
+// transition (even with a self-attached qa:pass) is held at in_review for human
+// review. This makes the risk_map's documented "critical → human review
+// mandatory" invariant a real gate, not just advisory prompt text. Default off;
+// fail-open on a tier-lookup error (never block on infra failure). A human actor
+// is never blocked, so turning it on can only ADD safety, never wedge a human.
+func riskTierGateEnforced() bool {
+	return strings.TrimSpace(os.Getenv("AGORA_RISK_TIER_GATE_ENFORCED")) == "true"
+}
+
 // issueDevOrchestrated reports whether the issue's dev-side assignee is
 // squad-managed — assigned straight to a squad, or to an agent that belongs
 // to at least one squad. This is the signal that the work is run by a lead
@@ -931,20 +1081,135 @@ func (h *Handler) issueHasLabel(ctx context.Context, issue db.Issue, name string
 //
 // Applies uniformly to every actor (agent or human): a squad's work is QA
 // work, and a human who genuinely wants to bypass can apply qa:pass first.
-func (h *Handler) enforceQAGateBeforeDone(ctx context.Context, issue db.Issue, prevStatus, targetStatus string) (string, bool) {
+func (h *Handler) enforceQAGateBeforeDone(ctx context.Context, issue db.Issue, actorType, prevStatus, targetStatus string) (string, bool) {
+	if targetStatus != "done" || prevStatus == "done" {
+		return targetStatus, false
+	}
+
+	// Risk-tier human-sign-off gate (its OWN flag, independent of the QA gate): a
+	// CRITICAL-tier issue must be CLOSED by a human. An agent transition to done —
+	// from ANY prior status, including in_review, and even with its own qa:pass —
+	// is held at in_review for human review. This upholds the risk_map's
+	// documented "critical → human review mandatory" invariant, which was
+	// previously advisory-only (an agent could self-attach qa:pass and close it).
+	// Fail-open: a tier-lookup error never blocks. Humans are never held.
+	if riskTierGateEnforced() && actorType == "agent" && h.issueRiskTier(ctx, issue) == "critical" {
+		return "in_review", true
+	}
+
 	if !qaGateEnforced() {
 		return targetStatus, false
 	}
-	if targetStatus != "done" || prevStatus == "done" || prevStatus == "in_review" {
+	if prevStatus == "in_review" {
 		return targetStatus, false
 	}
 	if !h.issueDevOrchestrated(ctx, issue) {
 		return targetStatus, false
 	}
 	if h.issueHasLabel(ctx, issue, "qa:pass") {
-		return targetStatus, false
+		// qa:pass present. Unless test-accuracy is enforced, that's enough.
+		if !qaDiscriminationEnforced() {
+			return targetStatus, false
+		}
+		// Test-accuracy enforced: the qa:pass must rest on a DISCRIMINATING test
+		// (fail-before/pass-after), not a tautological/happy-path one. A
+		// discriminating run present → done proceeds; none → hold at in_review so
+		// QA re-runs and the author must add a test that actually exercises the
+		// change. Fail-open on a query error (never block on infra failure).
+		if ok, err := h.Queries.HasDiscriminatingRunForIssue(ctx, issue.ID); err != nil || ok {
+			return targetStatus, false
+		}
+		return "in_review", true
 	}
 	return "in_review", true
+}
+
+// sprintPRMergeGateMarker tags the hold comment so it's posted ONCE per open PR
+// (not on every retried →done attempt). The PR number is appended so a fresh PR
+// re-notifies.
+const sprintPRMergeGateMarker = "<!-- sprint-pr-merge-gate:%d -->"
+
+// sprintPRMergeOverrideLabel lets a human force a sprint-PR issue to done despite
+// an unmerged PR (abandoned branch, merged out-of-band, deliberate). The escape
+// hatch: the gate would otherwise wedge such an issue with no way out.
+const sprintPRMergeOverrideLabel = "merge:override"
+
+// enforceSprintPRMergedBeforeDone holds a sprint-PR issue from reading "done"
+// while its code is still an OPEN, UNMERGED pull request into the sprint branch.
+// qa:pass alone is not completion — in PR mode a human (or the lead) still has
+// to merge, and an issue that reaches done with an unmerged PR is code that
+// never landed but reports complete (worst for critical/guarded tiers).
+//
+// It holds ONLY when there is a still-OPEN unmerged PR: a merged PR passes (the
+// code landed), and a CLOSED-unmerged PR also passes (the branch was abandoned —
+// holding forever would wedge the issue). The `merge:override` label is a manual
+// escape. The hold comment is posted once per PR (marker-deduped) so repeated
+// →done attempts don't spam the thread. Returns (prevStatus, true) to hold.
+func (h *Handler) enforceSprintPRMergedBeforeDone(ctx context.Context, issue db.Issue, prevStatus, targetStatus string) (string, bool) {
+	if !sprintPRModeEnabled() {
+		return targetStatus, false
+	}
+	if targetStatus != "done" || prevStatus == "done" {
+		return targetStatus, false
+	}
+	// Manual escape hatch — a human accepts responsibility for the unmerged PR.
+	if h.issueHasLabel(ctx, issue, sprintPRMergeOverrideLabel) {
+		return targetStatus, false
+	}
+	// Only sprint work opens a PR into a sprint branch.
+	if _, err := h.Queries.GetSprintForIssue(ctx, issue.ID); err != nil {
+		return targetStatus, false
+	}
+	prs, err := h.Queries.ListPullRequestsByIssue(ctx, issue.ID)
+	if err != nil || len(prs) == 0 {
+		return targetStatus, false // no linked PR — nothing to gate (direct commits, etc.)
+	}
+	// Find a PR that is still OPEN and unmerged. A merged PR means the code
+	// landed (pass); a closed-unmerged PR means the branch was abandoned (pass,
+	// so the issue is never wedged) — only an open unmerged PR is "in flight".
+	var openPR *db.ListPullRequestsByIssueRow
+	for i := range prs {
+		pr := &prs[i]
+		if pr.MergedAt.Valid {
+			return targetStatus, false // landed
+		}
+		if openPR == nil && strings.EqualFold(strings.TrimSpace(pr.State), "open") {
+			openPR = pr
+		}
+	}
+	if openPR == nil {
+		return targetStatus, false // no open PR — abandoned/closed; don't wedge
+	}
+
+	// Hold, and post the explanation ONCE per PR (marker dedup).
+	marker := fmt.Sprintf(sprintPRMergeGateMarker, openPR.PrNumber)
+	alreadyNoted := false
+	if comments, cerr := h.Queries.ListCommentsForIssue(ctx, db.ListCommentsForIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID, Limit: 200,
+	}); cerr == nil {
+		for _, c := range comments {
+			if strings.Contains(c.Content, marker) {
+				alreadyNoted = true
+				break
+			}
+		}
+	}
+	if !alreadyNoted {
+		note := fmt.Sprintf("⛔ Not done yet — this task's pull request (#%d) into the sprint branch is still OPEN and "+
+			"UNMERGED. qa:pass is the merge GATE, not completion: a human (or the squad lead) must merge the PR first, then "+
+			"this can move to done. Holding the status until then. (To force done anyway, add the `%s` label.) %s",
+			openPR.PrNumber, sprintPRMergeOverrideLabel, marker)
+		if _, cerr := h.Queries.CreateComment(ctx, db.CreateCommentParams{
+			IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+			AuthorType: "system", AuthorID: pgtype.UUID{Valid: true},
+			Content: note, Type: "system", ParentID: pgtype.UUID{Valid: false},
+		}); cerr != nil {
+			slog.Warn("sprint-pr merge gate: comment failed", "error", cerr, "issue_id", uuidToString(issue.ID))
+		}
+	}
+	slog.Info("sprint-pr merge gate: held →done, PR open+unmerged",
+		"issue_id", uuidToString(issue.ID), "pr_number", openPR.PrNumber)
+	return prevStatus, true
 }
 
 // squadFailureRecoveryMarker tags the recovery comment so repeated failures on
@@ -1173,6 +1438,152 @@ func (h *Handler) maybeRouteToDevLeadOnQAFail(ctx context.Context, issue db.Issu
 		"lead_agent_id", uuidToString(leaderID))
 }
 
+// devSquadLeaderForIssue resolves the leader of the DEV squad an orchestrated
+// issue belongs to — the squad the issue is assigned to, or the squad of the
+// agent it is assigned to. Returns false for solo / non-squad issues.
+func (h *Handler) devSquadLeaderForIssue(ctx context.Context, issue db.Issue) (db.Agent, bool) {
+	if !issue.AssigneeType.Valid || !issue.AssigneeID.Valid {
+		return db.Agent{}, false
+	}
+	var leaderID pgtype.UUID
+	switch issue.AssigneeType.String {
+	case "squad":
+		sq, err := h.Queries.GetSquad(ctx, issue.AssigneeID)
+		if err != nil {
+			return db.Agent{}, false
+		}
+		leaderID = sq.LeaderID
+	case "agent":
+		squads, err := h.Queries.ListSquadsByMember(ctx, db.ListSquadsByMemberParams{
+			WorkspaceID: issue.WorkspaceID, MemberType: "agent", MemberID: issue.AssigneeID,
+		})
+		if err != nil || len(squads) == 0 {
+			return db.Agent{}, false
+		}
+		leaderID = squads[0].LeaderID
+	default:
+		return db.Agent{}, false
+	}
+	if !leaderID.Valid {
+		return db.Agent{}, false
+	}
+	leader, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
+		ID: leaderID, WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		return db.Agent{}, false
+	}
+	return leader, true
+}
+
+// maybeMergeOnQAPass is the sprint-PR-mode merge gate (Phase 3 of auto sprint
+// review): when an orchestrated sprint task's PR passes QA (gains qa:pass), route
+// the squad LEAD to review the PR diff and, if it holds up, merge it into the
+// sprint branch — the final gate before code lands on the shared branch, with no
+// human in the loop. On real problems the lead comments + routes back to the dev
+// instead of merging. Detached + best-effort (mirrors maybeRouteToDevLeadOnQAFail),
+// gated by AGORA_SPRINT_PR_MODE + a sprint + a dev squad. No-op otherwise.
+func (h *Handler) maybeMergeOnQAPass(ctx context.Context, issue db.Issue, labelName, userID string) {
+	if !sprintPRModeEnabled() {
+		return
+	}
+	if strings.ToLower(strings.TrimSpace(labelName)) != "qa:pass" {
+		return
+	}
+	// Only sprint work has a PR into a sprint branch.
+	sprint, err := h.Queries.GetSprintForIssue(ctx, issue.ID)
+	if err != nil {
+		return
+	}
+	branch := SprintBranchFor(sprint)
+
+	// Human-merge (default): the PR passed QA and is READY FOR A HUMAN to review +
+	// merge. Post a plain human-facing note (NO agent mention, so no agent acts)
+	// and stop — a person does the final review + merge into the sprint branch.
+	if !sprintAutoMergeEnabled() {
+		content := "✅ QA passed (qa:pass) on this task's pull request into `" + branch +
+			"`. READY FOR HUMAN REVIEW + MERGE — a person reviews the PR and merges it into `" + branch +
+			"`. Auto-merge is off (AGORA_SPRINT_AUTO_MERGE); no agent will merge it."
+		if posted, cerr := h.Queries.CreateComment(ctx, db.CreateCommentParams{
+			IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+			AuthorType: "member", AuthorID: parseUUID(userID),
+			Content: content, Type: "comment", ParentID: pgtype.UUID{Valid: false},
+		}); cerr != nil {
+			slog.Warn("qa-pass human-merge note: create comment failed", "error", cerr, "issue_id", uuidToString(issue.ID))
+		} else {
+			h.publish(protocol.EventCommentCreated, uuidToString(issue.WorkspaceID), "member", userID, map[string]any{
+				"comment": map[string]any{
+					"id": uuidToString(posted.ID), "issue_id": uuidToString(posted.IssueID),
+					"author_type": posted.AuthorType, "author_id": uuidToString(posted.AuthorID),
+					"content": posted.Content, "type": posted.Type,
+					"created_at": posted.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+				},
+			})
+		}
+		slog.Info("qa-pass: PR ready for human review+merge (auto-merge off)", "issue_id", uuidToString(issue.ID))
+		return
+	}
+
+	// TIERED AUTONOMY: even with auto-merge opted in, a critical- or
+	// guarded-tier issue (risk_map projects; unknown = guarded, fail closed)
+	// NEVER auto-merges — a human reviews and merges, period. Only risk:safe
+	// issues (or projects without a risk map) reach the lead auto-merge below.
+	if tier := h.issueRiskTier(ctx, issue); tier == "critical" || tier == "guarded" {
+		content := "✅ QA passed (qa:pass) on this task's pull request into `" + branch +
+			"`. RISK TIER: **" + tier + "** — auto-merge is structurally refused for this tier " +
+			"(risk map policy); a HUMAN reviews the PR and merges it into `" + branch + "`."
+		if owners := h.issueRiskOwners(ctx, issue); len(owners) > 0 {
+			content += " Module owner(s): " + strings.Join(owners, ", ") + "."
+		}
+		if posted, cerr := h.Queries.CreateComment(ctx, db.CreateCommentParams{
+			IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+			AuthorType: "member", AuthorID: parseUUID(userID),
+			Content: content, Type: "comment", ParentID: pgtype.UUID{Valid: false},
+		}); cerr != nil {
+			slog.Warn("qa-pass tier gate: create comment failed", "error", cerr, "issue_id", uuidToString(issue.ID))
+		} else {
+			// Publish so the note renders live for the humans it addresses —
+			// a direct CreateComment bypasses the event bus.
+			h.publish(protocol.EventCommentCreated, uuidToString(issue.WorkspaceID), "member", userID, map[string]any{
+				"comment": map[string]any{
+					"id": uuidToString(posted.ID), "issue_id": uuidToString(posted.IssueID),
+					"author_type": posted.AuthorType, "author_id": uuidToString(posted.AuthorID),
+					"content": posted.Content, "type": posted.Type,
+					"created_at": posted.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+				},
+			})
+		}
+		slog.Info("qa-pass: auto-merge refused by risk tier — human merge required",
+			"issue_id", uuidToString(issue.ID), "tier", tier)
+		return
+	}
+
+	// Auto-merge (opt-in via AGORA_SPRINT_AUTO_MERGE): route the DEV squad LEAD to
+	// review the diff + merge the PR into the sprint branch, no human in the loop.
+	leader, ok := h.devSquadLeaderForIssue(ctx, issue)
+	if !ok {
+		return // solo / non-squad — no lead owns the merge; today's flow stands
+	}
+	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(leader.Name), uuidToString(leader.ID)) +
+		"QA passed (qa:pass) on this task's pull request into `" + branch + "`. As the squad LEAD this is the FINAL gate " +
+		"before code lands on the shared sprint branch — no human reviews it. Find the task's open PR (`gh pr list --base " + branch +
+		" --state open`) and review its diff (`gh pr diff <pr>`): if it is correct, safe, and matches the ticket, MERGE it into `" + branch +
+		"` with `gh pr merge <pr> --squash --delete-branch`. If it has real problems, do NOT merge — comment the specific issues and " +
+		"@mention the dev who wrote it to fix, then let QA re-run. Never target the repository's main/default branch."
+	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+		AuthorType: "member", AuthorID: parseUUID(userID),
+		Content: content, Type: "comment", ParentID: pgtype.UUID{Valid: false},
+	})
+	if err != nil {
+		slog.Warn("qa-pass merge gate: create comment failed", "error", err, "issue_id", uuidToString(issue.ID))
+		return
+	}
+	h.triggerTasksForComment(ctx, issue, comment, nil, "member", userID, nil)
+	slog.Info("qa-pass merge gate: routed PR review+merge to squad lead",
+		"issue_id", uuidToString(issue.ID), "lead_agent_id", uuidToString(leader.ID))
+}
+
 // qaSquadLeader resolves the QA squad's leader agent for a workspace — the squad
 // whose name contains "qa" (case-insensitive), e.g. "QA" / "QA Squad". The leader
 // agent is what runs an auto-fired run_qa. ok=false when there is no QA squad, it
@@ -1262,6 +1673,66 @@ func (h *Handler) pickLeastBusyQAAgent(ctx context.Context, agents []db.Agent) d
 	return best
 }
 
+// qaTrivialCeiling is appended to a run_qa instruction for a low-risk change so
+// the gate stays SOLO and fast — the exact over-delegation the sd-cs stress test
+// surfaced (a doc-only issue pulled Security Reviewer + Designer into a review
+// panel and stalled).
+const qaTrivialCeiling = " SCOPE — TRIVIAL / low-risk change: gate it SOLO and FAST. Do NOT @mention, delegate to, or summon any other agent — no Security Reviewer, no Designer, no additional QA members — UNLESS the diff actually touches security-sensitive code or the UI/design. A one-file docs or config change does not need a review panel: run the minimal check that proves it is safe and post the qa:pass/qa:fail verdict yourself."
+
+// issueQAScopeTrivial decides whether an issue's QA effort should be scoped DOWN
+// to a solo, no-fan-out gate. It only ever DOWNGRADES on a reliably-small signal
+// (mirrors issue_tier.go's fail-safe: unknown size stays FULL), and never
+// downgrades a risk:guarded / risk:critical issue. Signals, cheapest first:
+//   - labels: risk:guarded|risk:critical veto; tier:trivial|tier:light|
+//     risk:safe|type:docs ⇒ trivial;
+//   - PR diff size (HINT only): a non-empty, small diff (<=2 files AND <=20
+//     lines). A 0/0/0 PR row is unsynced webhook stats = UNKNOWN ⇒ stays full,
+//     never downgraded on absent data.
+func (h *Handler) issueQAScopeTrivial(ctx context.Context, issue db.Issue) bool {
+	if labels, err := h.Queries.ListLabelsByIssue(ctx, db.ListLabelsByIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+	}); err == nil {
+		has := make(map[string]bool, len(labels))
+		for _, l := range labels {
+			has[strings.ToLower(strings.TrimSpace(l.Name))] = true
+		}
+		if has["risk:guarded"] || has["risk:critical"] {
+			return false // high blast radius — always full QA
+		}
+		if has["tier:trivial"] || has["tier:light"] || has["risk:safe"] || has["type:docs"] {
+			return true
+		}
+	}
+	prs, err := h.Queries.ListPullRequestsByIssue(ctx, issue.ID)
+	if err != nil || len(prs) == 0 {
+		return false // no PR / unknown → full
+	}
+	pr := prs[0]
+	return pr.ChangedFiles > 0 && pr.ChangedFiles <= 2 && (pr.Additions+pr.Deletions) <= 20
+}
+
+// filterQAAgentsForScope drops specialist reviewers (Security / Designer) from a
+// QA roster when the change is trivial, so a doc/config change never fans out to
+// a full review panel. Never returns empty — a trivial gate still needs ONE
+// runner, so a roster of only specialists falls back to the original slice.
+func filterQAAgentsForScope(agents []db.Agent, trivial bool) []db.Agent {
+	if !trivial {
+		return agents
+	}
+	kept := make([]db.Agent, 0, len(agents))
+	for _, a := range agents {
+		n := strings.ToLower(a.Name)
+		if strings.Contains(n, "security") || strings.Contains(n, "design") {
+			continue
+		}
+		kept = append(kept, a)
+	}
+	if len(kept) == 0 {
+		return agents
+	}
+	return kept
+}
+
 // issueQALocks serializes the auto-QA triggers (run_qa / gen_test_cases) per
 // issue WITHIN this backend process. The status write is a read-modify-write
 // with no row lock, so two concurrent transitions into the same state both see
@@ -1304,11 +1775,18 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	// non-squad assignments are UNCHANGED below: they still fan across the whole
 	// QA roster so many in_review issues run QA concurrently instead of queuing
 	// behind one agent — this branch never touches that path.
+	// A trivial / low-risk change (doc-only, risk:safe, tiny diff) is gated SOLO
+	// and fast: it does NOT route to the QA lead (which would delegate = 2 agents
+	// minimum) and its roster excludes specialist reviewers, so a one-file docs
+	// change never spins up a review panel. Guarded/critical/unknown work is
+	// unaffected — it takes the exact path it does today.
+	trivial := h.issueQAScopeTrivial(ctx, issue)
+
 	var runner db.Agent
 	var agents []db.Agent
 	routedToLead := false
 	devOrchestrated := h.issueDevOrchestrated(ctx, issue)
-	if devOrchestrated {
+	if devOrchestrated && !trivial {
 		if leader, ok := h.qaSquadLeader(ctx, issue.WorkspaceID); ok {
 			runner = leader
 			agents = []db.Agent{leader}
@@ -1320,7 +1798,7 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 		// ready agent, so many in_review issues run QA concurrently instead of queuing
 		// behind one agent. The per-box sync lock keeps concurrent runs on the shared
 		// sprint branch safe.
-		agents = h.qaSquadAgents(ctx, issue.WorkspaceID)
+		agents = filterQAAgentsForScope(h.qaSquadAgents(ctx, issue.WorkspaceID), trivial)
 		if len(agents) == 0 {
 			return
 		}
@@ -1339,16 +1817,30 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	if sprint, err := h.Queries.GetSprintForIssue(ctx, issue.ID); err == nil {
 		scope = "task"
 		sid := uuidToString(sprint.ID)
-		sprintNote = " SPRINT CONTEXT: this task is on the shared sprint branch " + SprintBranchFor(sprint) +
+		branch := SprintBranchFor(sprint)
+		sprintNote = " SPRINT CONTEXT: this task is on the shared sprint branch " + branch +
 			"; for the scope=task baseline use <sprintId>=" + sid + " (refs/sprint/" + sid + "/last-green)."
-		if box, synced, derr := h.DeploySprintBranch(ctx, sprint.ID, issue.WorkspaceID); derr != nil || !synced {
-			// Fail CLOSED: the sprint branch is NOT confirmed live on the QA box,
-			// so smoking it would judge STALE code and let a false qa:pass stand.
-			// Withhold the smoke target and tell the gate to block, not pass.
-			slog.Warn("auto run_qa: sprint branch not deployed — blocking QA", "sprint_id", sid, "error", derr, "synced", synced)
-			sprintNote += " QA BLOCKED — the sprint branch could not be deployed to the QA box (it is not serving this branch), so QA cannot judge the real change. Do NOT smoke a stale environment and do NOT set qa:pass; set the `qa:blocked` label and report that the box is not serving the sprint branch."
-		} else {
-			smokeURL = boxSmokeURL(box)
+		switch {
+		case sprintPRModeEnabled():
+			// PR-review mode: the task's work lives on its OWN pull-request branch,
+			// NOT yet merged into the sprint branch. QA must smoke the PR branch on
+			// the dev's box — smoking the sprint tip would judge code the PR hasn't
+			// landed. This run's qa:pass/qa:fail is the merge gate (Phase 3): the
+			// squad lead merges the PR into the sprint branch only after qa:pass.
+			smokeURL = h.devBoxSmokeURL(ctx, issue)
+			sprintNote += " PR-REVIEW MODE: this task is an OPEN pull request INTO `" + branch +
+				"`, not yet merged. QA the PULL REQUEST's OWN branch, not the sprint tip: deploy the task's branch to the dev QA box (the deploy-qa git-sync) and smoke THAT url — do NOT deploy or smoke `" + branch +
+				"` itself. Your qa:pass/qa:fail IS the merge gate: the squad lead merges the PR into `" + branch + "` only after qa:pass."
+		default:
+			if box, synced, derr := h.DeploySprintBranch(ctx, sprint.ID, issue.WorkspaceID); derr != nil || !synced {
+				// Fail CLOSED: the sprint branch is NOT confirmed live on the QA box,
+				// so smoking it would judge STALE code and let a false qa:pass stand.
+				// Withhold the smoke target and tell the gate to block, not pass.
+				slog.Warn("auto run_qa: sprint branch not deployed — blocking QA", "sprint_id", sid, "error", derr, "synced", synced)
+				sprintNote += " QA BLOCKED — the sprint branch could not be deployed to the QA box (it is not serving this branch), so QA cannot judge the real change. Do NOT smoke a stale environment and do NOT set qa:pass; set the `qa:blocked` label and report that the box is not serving the sprint branch."
+			} else {
+				smokeURL = boxSmokeURL(box)
+			}
 		}
 	} else {
 		smokeURL = h.devBoxSmokeURL(ctx, issue)
@@ -1359,6 +1851,8 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 		instruction += " SMOKE TARGET: the branch is served at " + smokeURL +
 			" — smoke THAT url. It OVERRIDES any project smoke url below."
 	}
+	// Risk map intentionally NOT appended here: the claim path injects it into
+	// the same run's instructions (daemon.go) — appending again would duplicate.
 	instruction += h.sliceActionQASmokeContext(ctx, issue)
 	instruction += h.sliceActionQAManifestContext(ctx, issue)
 	instruction += h.sliceActionDesignManifestContext(ctx, issue)
@@ -1368,31 +1862,55 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	instruction += h.sliceActionDesignCompareContext(ctx, issue)
 	instruction += h.sliceActionDesignLintContext(ctx, issue)
 
+	// Trivial change: cap the fleet explicitly (the runner is already a single
+	// non-specialist, but the ceiling stops it from @mentioning its way to a panel).
+	if trivial {
+		instruction += qaTrivialCeiling
+	}
+
 	// When this routed to the QA LEAD (orchestrated dev side), the lead should
 	// ORCHESTRATE, not execute: delegate the actual gate run to a QA member so
 	// the fast execution model does the mechanical work while the lead keeps the
 	// dev-lead↔QA-lead coordination and owns the qa:pass/qa:fail rollup. The lead
 	// running run_qa itself is the wall-clock bottleneck (a heavy model doing
 	// mechanical smoke). Falls back to self-run only if no member is available.
-	if routedToLead {
-		instruction = "As the QA LEAD, FIRST determine THIS project's stack and testing tooling yourself — read " +
-			"the repo (package.json/go.mod/composer.json, existing test dirs, CI config) rather than assuming; a " +
-			"Jest/Vitest project needs `npm test`/`vitest run`, a Go repo needs `go test ./...`, a PHP monolith with " +
-			"no unit-test layer (e.g. Yii1 with a mixed jQuery/Vue2/Vue3/Angular frontend) has no build/test command " +
-			"at all — for that stack the rendered page IS the contract, so route the delegate to browser-driven " +
-			"verification (deterministic HTTP/DOM assertions against the deployed QA box) instead of a nonexistent " +
-			"test suite. Then DELEGATE this QA gate to a QA squad member via @mention, TELLING them which tooling " +
-			"you determined applies (they execute it on a faster model) — do NOT run the gate yourself unless no " +
-			"member is available. You own the qa:pass/qa:fail rollup and stay in sync with the dev lead. " +
-			"The gate to delegate: " + instruction
+	// Never runs when trivial (routedToLead is false above), but the explicit
+	// !trivial guard documents the invariant.
+	if routedToLead && !trivial {
+		if strings.TrimSpace(h.sliceActionQAManifestContext(ctx, issue)) != "" {
+			// SPEED: the project has a QA MANIFEST, so the stack + navigation are
+			// already KNOWN — skip the lead's heavy "read the repo to determine the
+			// tooling" hop (that determination was the slow part) and delegate
+			// immediately, pointing the member at the manifest.
+			instruction = "As the QA LEAD: this project's stack, auth, and navigation are in the PROJECT QA MANIFEST below — " +
+				"do NOT re-read the repo to determine them. DELEGATE this QA gate to a QA squad member via @mention right away " +
+				"(they execute it on a faster model), pointing them at the manifest; run it yourself ONLY if no member is " +
+				"available. You own the qa:pass/qa:fail rollup and stay in sync with the dev lead. The gate to delegate: " + instruction
+		} else {
+			instruction = "As the QA LEAD, FIRST determine THIS project's stack and testing tooling yourself — read " +
+				"the repo (package.json/go.mod/composer.json, existing test dirs, CI config) rather than assuming; a " +
+				"Jest/Vitest project needs `npm test`/`vitest run`, a Go repo needs `go test ./...`, a PHP monolith with " +
+				"no unit-test layer (e.g. Yii1 with a mixed jQuery/Vue2/Vue3/Angular frontend) has no build/test command " +
+				"at all — for that stack the rendered page IS the contract, so route the delegate to browser-driven " +
+				"verification (deterministic HTTP/DOM assertions against the deployed QA box) instead of a nonexistent " +
+				"test suite. Then DELEGATE this QA gate to a QA squad member via @mention, TELLING them which tooling " +
+				"you determined applies (they execute it on a faster model) — do NOT run the gate yourself unless no " +
+				"member is available. You own the qa:pass/qa:fail rollup and stay in sync with the dev lead. " +
+				"The gate to delegate: " + instruction
+		}
 	}
 
+	authorID, ok := actorAuthorID(actorID)
+	if !ok {
+		slog.Warn("auto run_qa: invalid actor id, skipping", "actor_id", actorID, "issue_id", uuidToString(issue.ID))
+		return
+	}
 	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID:     issue.ID,
 		WorkspaceID: issue.WorkspaceID,
 		AuthorType:  actorType,
-		AuthorID:    parseUUID(actorID),
+		AuthorID:    authorID,
 		Content:     content,
 		Type:        "comment",
 		ParentID:    pgtype.UUID{Valid: false},
@@ -1433,7 +1951,7 @@ func (h *Handler) maybeGenTests(ctx context.Context, issue db.Issue, actorType, 
 	}); err != nil || n > 0 {
 		return
 	}
-	agents := h.qaSquadAgents(ctx, issue.WorkspaceID)
+	agents := filterQAAgentsForScope(h.qaSquadAgents(ctx, issue.WorkspaceID), h.issueQAScopeTrivial(ctx, issue))
 	if len(agents) == 0 {
 		return
 	}
@@ -1479,12 +1997,17 @@ func (h *Handler) maybeGenTests(ctx context.Context, issue db.Issue, actorType, 
 		// reaches in_review, so scripts are mandatory here, not optional.
 		instruction += " SHIFT-LEFT PREP: the developer is still working on this task — do NOT look for a diff or a deployed change, and do NOT run anything. Author the cases from the acceptance criteria + the PROJECT QA MANIFEST above, and for EVERY automatable case also emit its runnable Playwright script (the script field) targeting the manifest's base_url/auth/routes — the in_review gate will only EXECUTE what you prepare now."
 	}
+	authorID, ok := actorAuthorID(actorID)
+	if !ok {
+		slog.Warn("auto gen_test_cases: invalid actor id, skipping", "actor_id", actorID, "issue_id", uuidToString(issue.ID))
+		return
+	}
 	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID:     issue.ID,
 		WorkspaceID: issue.WorkspaceID,
 		AuthorType:  actorType,
-		AuthorID:    parseUUID(actorID),
+		AuthorID:    authorID,
 		Content:     content,
 		Type:        "comment",
 		ParentID:    pgtype.UUID{Valid: false},
@@ -1530,7 +2053,7 @@ func (h *Handler) maybeRunTestsOnInReview(ctx context.Context, issue db.Issue, a
 	if haveIssue == 0 && haveBase == 0 {
 		return // nothing to execute yet
 	}
-	agents := h.qaSquadAgents(ctx, issue.WorkspaceID)
+	agents := filterQAAgentsForScope(h.qaSquadAgents(ctx, issue.WorkspaceID), h.issueQAScopeTrivial(ctx, issue))
 	if len(agents) == 0 {
 		return
 	}
@@ -1562,12 +2085,17 @@ func (h *Handler) maybeRunTestsOnInReview(ctx context.Context, issue db.Issue, a
 	instruction += h.sliceActionTestCasesContext(ctx, issue, baseSuite != "")
 	instruction += baseSuite
 
+	authorID, ok := actorAuthorID(actorID)
+	if !ok {
+		slog.Warn("auto run_test_cases: invalid actor id, skipping", "actor_id", actorID, "issue_id", uuidToString(issue.ID))
+		return
+	}
 	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID:     issue.ID,
 		WorkspaceID: issue.WorkspaceID,
 		AuthorType:  actorType,
-		AuthorID:    parseUUID(actorID),
+		AuthorID:    authorID,
 		Content:     content,
 		Type:        "comment",
 		ParentID:    pgtype.UUID{Valid: false},
@@ -1735,8 +2263,10 @@ func qaBaselineGuidanceFor(scope string) string {
 func qaPlanContext(description string, acceptanceCriteria []byte) string {
 	desc := strings.TrimSpace(description)
 	// Cap on RUNES (content is often Cyrillic/Uzbek) so a huge description can't
-	// blow the comment size and we never split a multi-byte rune.
-	const maxDescRunes = 1500
+	// blow the comment size and we never split a multi-byte rune. 4000 runes —
+	// Bitrix-imported legacy tickets routinely carry the whole spec in the
+	// description; the old 1500 cap dropped the part QA was judging against.
+	const maxDescRunes = 4000
 	if r := []rune(desc); len(r) > maxDescRunes {
 		desc = string(r[:maxDescRunes]) + "…"
 	}
@@ -1761,6 +2291,42 @@ func qaPlanContext(description string, acceptanceCriteria []byte) string {
 	}
 	b.WriteString(" A test must assert what the plan says SHOULD happen; if the implementation " +
 		"diverges, the test FAILS (a real bug) — never rewrite the test to match the code.")
+	return b.String()
+}
+
+// issueBriefNote renders the issue's full description + acceptance criteria for
+// the CLAIM brief. The task-claim brief otherwise carries only the title + the
+// trigger comment — for Bitrix-imported legacy tickets (long RU/UZ descriptions)
+// that meant the dev agent never saw the actual spec. Neutral wording (unlike
+// qaPlanContext's test-authoring frame) so it reads correctly for dev, QA, and
+// design runs alike. PURE; returns "" when there is nothing beyond the title.
+func issueBriefNote(description string, acceptanceCriteria []byte) string {
+	desc := strings.TrimSpace(description)
+	// Same rune-safe cap rationale as qaPlanContext.
+	const maxBriefRunes = 4000
+	if r := []rune(desc); len(r) > maxBriefRunes {
+		desc = string(r[:maxBriefRunes]) + "…"
+	}
+	criteria := parseAcceptanceCriteria(acceptanceCriteria)
+	if desc == "" && len(criteria) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	// Precedence: newest human instruction wins. Comments are the platform's
+	// live steering channel (mid-issue redirects, narrowed delegation scopes) —
+	// the brief is the BASE spec, never an override of a newer comment.
+	b.WriteString("ISSUE BRIEF — the full base spec of this issue (the title alone is NOT the spec). " +
+		"A newer comment on the issue may NARROW or SUPERSEDE this brief — on conflict, follow the newest " +
+		"human instruction (or ask); when the triggering comment is only a bare nudge, this brief IS the spec.")
+	if desc != "" {
+		b.WriteString("\nDescription: " + desc)
+	}
+	if len(criteria) > 0 {
+		b.WriteString("\nAcceptance criteria:")
+		for i, c := range criteria {
+			b.WriteString(fmt.Sprintf(" (%d) %s;", i+1, c))
+		}
+	}
 	return b.String()
 }
 
@@ -1811,6 +2377,32 @@ func (h *Handler) sliceActionProjectBaseSuiteContext(ctx context.Context, issue 
 	})
 	if err != nil || len(cases) == 0 {
 		return ""
+	}
+	// Quarantine skip-list (project.settings.qa_quarantine: case-id strings) —
+	// a flaky base script is EXCLUDED from the standing suite instead of
+	// training agents to ignore red. Humans park a case here while it is fixed.
+	quarantined := map[string]bool{}
+	if project, perr := h.Queries.GetProject(ctx, issue.ProjectID); perr == nil && len(project.Settings) > 0 {
+		var s struct {
+			Quarantine []string `json:"qa_quarantine"`
+		}
+		if json.Unmarshal(project.Settings, &s) == nil {
+			for _, id := range s.Quarantine {
+				quarantined[strings.TrimSpace(id)] = true
+			}
+		}
+	}
+	if len(quarantined) > 0 {
+		kept := cases[:0]
+		for _, c := range cases {
+			if !quarantined[uuidToString(c.ID)] {
+				kept = append(kept, c)
+			}
+		}
+		cases = kept
+		if len(cases) == 0 {
+			return ""
+		}
 	}
 	var b strings.Builder
 	// The wording self-describes the test-runs JSON format because run_qa's base
@@ -1912,7 +2504,7 @@ func (h *Handler) maybeCompileTestCases(ctx context.Context, issue db.Issue) {
 	if len(h.uncompiledAutomatedCases(ctx, issue)) == 0 {
 		return
 	}
-	agents := h.qaSquadAgents(ctx, issue.WorkspaceID)
+	agents := filterQAAgentsForScope(h.qaSquadAgents(ctx, issue.WorkspaceID), h.issueQAScopeTrivial(ctx, issue))
 	if len(agents) == 0 {
 		return
 	}
@@ -2119,14 +2711,7 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 			// reuse beats re-inventing components. "" when no manifest.
 			instruction += h.sliceActionDesignManifestContext(r.Context(), issue)
 		}
-		// Sprint mode: commit to the ONE shared sprint branch, no per-task PR
-		// (the directive supersedes the base "open a pull request" wording).
-		// Otherwise keep the per-task branch + PR instruction.
-		if branch, ok := h.sliceActionSprintContext(r.Context(), issue); ok {
-			instruction += sprintCommitInstruction(branch)
-		} else {
-			instruction += h.sliceActionBranchInstruction(r.Context(), issue)
-		}
+		instruction += h.sliceActionLandingInstruction(r.Context(), issue)
 	}
 	// run_qa is project-configurable: append the project's smoke cmd/url when set,
 	// and the issue's PLAN (description + acceptance criteria) so the agent authors
@@ -2140,6 +2725,8 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 			instruction += " SMOKE TARGET: the assignee developer's QA box serves this branch at " + url +
 				" — deploy the branch to it (the deploy-qa git-sync) and smoke THAT url. It OVERRIDES any project smoke url below."
 		}
+		// Risk map intentionally NOT appended here — the claim path injects it
+		// into the same run's instructions (see daemon.go).
 		instruction += h.sliceActionQASmokeContext(r.Context(), issue)
 		instruction += h.sliceActionQAManifestContext(r.Context(), issue)
 		instruction += h.sliceActionDesignManifestContext(r.Context(), issue)

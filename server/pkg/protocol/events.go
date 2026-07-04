@@ -101,6 +101,9 @@ const (
 	// QA test cases changed for an issue (agent authored, or a run recorded).
 	EventTestCasesChanged = "test_cases:changed"
 
+	// Knowledge items changed / KB recompiled (structured knowledge flywheel).
+	EventKnowledgeChanged = "knowledge:changed"
+
 	// Pin events
 	EventPinCreated   = "pin:created"
 	EventPinDeleted   = "pin:deleted"

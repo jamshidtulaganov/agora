@@ -324,6 +324,10 @@ type bitrixSyncState struct {
 	// groupNames maps Bitrix group id -> name, lazily filled from GetGroup so a
 	// batch doesn't re-query the same workgroup name.
 	groupNames map[string]string
+	// triaged counts intake-triage tasks enqueued this sync run — the
+	// bitrixTriageMaxPerSync cap that keeps a bulk import from flooding the
+	// single triage agent.
+	triaged int
 	// stagesByGroup maps a Bitrix group id -> (stage id -> stage name), lazily
 	// filled from task.stages.get so a batch resolves each kanban's stages once.
 	// A nil inner map caches a failed/absent lookup so it isn't retried per task.
@@ -737,6 +741,12 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		h.embedInlineDiskImages(ctx, ws.ID, res.Issue.ID, ownerID, st)
 		h.importBitrixAttachments(ctx, ws.ID, res.Issue.ID, ownerID, task.ID, st)
 	}
+
+	// Intake triage (suggest-only, opt-in via workspace.settings.triage_agent_id):
+	// classify + enrich + ask-back on the fresh ticket. AFTER content import so
+	// the triage run sees the imported Bitrix comments/attachments. Best-effort;
+	// capped per sync run and skipped for already-closed backfill.
+	h.maybeEnqueueBitrixTriage(ctx, ws, res.Issue, draft.Status, st)
 	return nil
 }
 
@@ -763,21 +773,55 @@ func bitrixGroupIsSprint(name string) bool {
 	return strings.Contains(n, "sprint") || strings.Contains(n, "спринт")
 }
 
-// resolveBitrixTarget maps a task's Bitrix GROUP_ID to where its Agora issue
-// should live: a project, and optionally a sprint under sd-main. Order matters
-// and encodes the "new syncs only" rule for sprints:
+// resolveBitrixSprintUnder resolves the Agora sprint a task belongs to, hosted
+// under the given product project, from the task's Bitrix workgroup when that
+// group denotes a sprint ("Sprint N" / "Спринт N"). Returns the zero UUID (no
+// error surfaced) when the task isn't in a sprint-named group or the sprint can't
+// be resolved — sprint membership is best-effort and must never block the issue
+// from filing under its project.
 //
-//  1. If the group ALREADY has an Agora project (marker lookup hits), the issue
-//     stays in that project — no sprint. This is what keeps groups synced before
+// This is what makes named-project routing and sprint grouping COMPOSE: the
+// product project is chosen by title prefix, the sprint by the Bitrix
+// sprint-group, and the sprint is created under whichever product project the
+// task routed to (so a cross-product "Sprint 12" yields one sprint per product).
+func (h *Handler) resolveBitrixSprintUnder(ctx context.Context, wsID, hostProjectID pgtype.UUID, task *bitrix.Task, st *bitrixSyncState) pgtype.UUID {
+	groupID := strings.TrimSpace(task.GroupID)
+	if groupID == "" {
+		return pgtype.UUID{}
+	}
+	name := strings.TrimSpace(task.GroupName)
+	if name == "" {
+		name = h.bitrixGroupName(ctx, groupID, st)
+	}
+	if !bitrixGroupIsSprint(name) {
+		return pgtype.UUID{}
+	}
+	sid, err := h.getOrCreateBitrixSprint(ctx, wsID, hostProjectID, groupID, name, st)
+	if err != nil {
+		slog.Warn("bitrix sync: could not resolve sprint under product project, filing without sprint",
+			"group_id", groupID, "host_project_id", util.UUIDToString(hostProjectID),
+			"workspace_id", util.UUIDToString(wsID), "error", err)
+		return pgtype.UUID{}
+	}
+	return sid
+}
+
+// resolveBitrixTarget maps a task's Bitrix GROUP_ID to where its Agora issue
+// should live: a project, and optionally a sprint hosted under it. Order matters:
+//
+//  0. Named-project routing (workspace configured a prefix/default): route to the
+//     matched product project, AND link the task's Bitrix sprint under THAT
+//     project — the two compose (see below).
+//  1. Legacy: if the group ALREADY has an Agora project (marker lookup hits), the
+//     issue stays in that project — no sprint. Keeps groups synced before
 //     sprint-mapping existed as projects.
-//  2. Else if the group's name denotes a sprint AND an "sd-main" project exists,
-//     the issue goes into sd-main and is linked to the group's sprint (created on
-//     first sight).
-//  3. Else the group becomes its own project (the original behavior), no sprint.
+//  2. Legacy: else if the group's name denotes a sprint AND an "sd-main" project
+//     exists, the issue goes into sd-main linked to the group's sprint.
+//  3. Legacy: else the group becomes its own project (the original behavior).
 //
 // A failure in any resolution degrades to an unfiled issue (zero project) rather
-// than failing the sync — matching resolveBitrixProject. The returned sprintID is
-// the zero UUID (Valid=false) unless case (2) applies.
+// than failing the sync. sprintID is the zero UUID (Valid=false) unless a sprint
+// was resolved.
 func (h *Handler) resolveBitrixTarget(ctx context.Context, wsID pgtype.UUID, task *bitrix.Task, st *bitrixSyncState) (projectID pgtype.UUID, sprintID pgtype.UUID) {
 	// (0) Named-project routing. When the workspace configures any title-prefix
 	// rule or a default project, the importer routes EVERY task to a named
@@ -789,14 +833,14 @@ func (h *Handler) resolveBitrixTarget(ctx context.Context, wsID pgtype.UUID, tas
 	if cfg := h.bitrixRoutingForWorkspace(ctx, wsID, st); cfg.configured() {
 		if projTitle := matchBitrixPrefixRule(task.Title, cfg.Prefixes); projTitle != "" {
 			if pid, ok := h.resolveProjectByTitle(ctx, wsID, projTitle, st); ok {
-				return pid, pgtype.UUID{}
+				return pid, h.resolveBitrixSprintUnder(ctx, wsID, pid, task, st)
 			}
 			slog.Warn("bitrix sync: title prefix matched a project that does not exist, trying default",
 				"prefix_project", projTitle, "task_id", task.ID, "workspace_id", util.UUIDToString(wsID))
 		}
 		if def := strings.TrimSpace(cfg.Default); def != "" {
 			if pid, ok := h.resolveProjectByTitle(ctx, wsID, def, st); ok {
-				return pid, pgtype.UUID{}
+				return pid, h.resolveBitrixSprintUnder(ctx, wsID, pid, task, st)
 			}
 			slog.Warn("bitrix sync: default project does not exist, leaving task unfiled",
 				"default_project", def, "task_id", task.ID, "workspace_id", util.UUIDToString(wsID))

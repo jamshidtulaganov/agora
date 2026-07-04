@@ -221,6 +221,29 @@ server/internal/handler/label.go          # AttachLabel wires maybeRouteToDevLea
 
 Contracts:
 
+- `enforceQAGateBeforeDone` ALSO enforces a RISK-TIER human-sign-off gate when
+  `riskTierGateEnforced()` (env AGORA_RISK_TIER_GATE_ENFORCED, default off): a
+  CRITICAL-tier issue (issueRiskTier == "critical") can only be moved to done by a
+  HUMAN — an agent transition to done, from ANY prior status incl. in_review and
+  even with its own qa:pass, is held at in_review. This makes the risk_map's
+  "critical → human review mandatory" a real gate (was advisory-only). Own flag,
+  independent of the QA gate; fail-open on tier-lookup error; humans never held.
+  The gate now takes actorType (UpdateIssue resolves it inline; BatchUpdateIssues
+  hoists one resolve before the loop).
+- `enforceQAGateBeforeDone` also enforces TEST-ACCURACY when `qaDiscriminationEnforced()`
+  (env AGORA_QA_DISCRIMINATION_ENFORCED, default off): a qa:pass no longer reaches
+  done unless the issue has a DISCRIMINATING test — one that PASSED on the branch and
+  FAILED on the pre-change baseline (HasDiscriminatingRunForIssue, from test_run.
+  baseline_status set by run_test_cases). A tautological/happy-path test green on both
+  proves nothing and does not count. Fail-open on query error; 'unknown' baseline is neutral.
+- `maybeRunQAOnInReview` first computes `trivial := issueQAScopeTrivial(issue)`
+  — a low-risk change (`tier:trivial`/`tier:light`/`risk:safe`/`type:docs`
+  label, or a small non-zero PR diff; `risk:guarded`/`risk:critical` veto;
+  0/0/0 or unknown ⇒ full). When trivial, it does NOT route to the lead
+  (`devOrchestrated && !trivial`), its roster is filtered by
+  `filterQAAgentsForScope` (drops Security/Designer, never empties), and the
+  instruction gets the `qaTrivialCeiling` (gate solo, no fan-out). Same
+  filter applied to the gen_test_cases / run_test_cases rosters;
 - `maybeRunQAOnInReview` computes `devOrchestrated` before picking a runner:
   true when the issue's assignee is `agent` and that agent belongs to any
   squad (`ListSquadsByMember`), or when the assignee is `squad` directly

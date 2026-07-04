@@ -38,9 +38,19 @@ var lightTierKeywords = []string{
 	"hover", "верстк",
 }
 
+// docsTierKeywords tag a documentation-only change as trivial. Docs are
+// inherently low-blast-radius (no runtime code path), so they downgrade even
+// though their bodies run longer than a typo — gated on tierDocsMaxLen, not the
+// tight trivial/light caps. Excludes bare "doc" (matches "document"/"docker").
+var docsTierKeywords = []string{
+	"docs", "documentation", "readme", "changelog", ".md", ".mdx",
+	"markdown", "doc-only", "документац",
+}
+
 const (
-	tierTrivialMaxLen = 200 // a typo/rename issue is short
-	tierLightMaxLen   = 700 // a CSS/spacing tweak is short-ish; longer ⇒ treat as full
+	tierTrivialMaxLen = 200  // a typo/rename issue is short
+	tierLightMaxLen   = 700  // a CSS/spacing tweak is short-ish; longer ⇒ treat as full
+	tierDocsMaxLen    = 4000 // docs bodies run long; still low blast radius
 )
 
 var autoTierLabelColors = map[string]string{
@@ -68,8 +78,13 @@ func classifyIssueTier(title, description string) string {
 	}
 	trivial := hasAny(trivialTierKeywords)
 	light := hasAny(lightTierKeywords)
+	docs := hasAny(docsTierKeywords)
 	switch {
 	case trivial && n <= tierTrivialMaxLen:
+		return "tier:trivial"
+	// Docs-only work is low blast radius even when the body is longer than a
+	// typo — a doc keyword within tierDocsMaxLen tags trivial so QA scopes down.
+	case docs && n <= tierDocsMaxLen:
 		return "tier:trivial"
 	case (trivial || light) && n <= tierLightMaxLen:
 		return "tier:light"

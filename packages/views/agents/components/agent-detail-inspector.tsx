@@ -43,10 +43,8 @@ import { useT } from "../../i18n";
 import { ConcurrencyPicker } from "./inspector/concurrency-picker";
 import { ModelPicker } from "./inspector/model-picker";
 import { RuntimePicker } from "./inspector/runtime-picker";
-import { SkillAttach } from "./inspector/skill-attach";
 import { ThinkingPropRow } from "./inspector/thinking-prop-row";
 import { VisibilityPicker } from "./inspector/visibility-picker";
-import { LarkAgentBindButton } from "../../settings/components/lark-tab";
 
 interface InspectorProps {
   agent: Agent;
@@ -69,24 +67,18 @@ interface InspectorProps {
    */
   canEdit: boolean;
   onUpdate: (id: string, data: Record<string, unknown>) => Promise<void>;
-  /**
-   * Focus the overview pane's Integrations tab. The inspector's Lark status
-   * row is read-only and deep-links here; Manage / Disconnect live in the
-   * tab so the destructive action exists in exactly one place.
-   */
-  onShowIntegrations: () => void;
 }
 
 /**
- * Left 320px column of the agent detail page. Holds the agent's identity card
- * (avatar / name / description / status), inline-editable properties, and
- * skills.
+ * The agent detail page's **Overview** tab: the agent's identity card (avatar /
+ * name / description / status) plus its inline-editable core properties (runtime,
+ * model, thinking, visibility, concurrency, created/updated). Skills and
+ * Integrations have their own dedicated tabs, so they are intentionally NOT
+ * repeated here.
  *
- * **All editing happens here** — there is no separate Settings tab. The
- * trade-off is that the inspector carries some weight (4 inline pickers plus
- * 3 popovers for name/description/avatar), but it eliminates the "see vs
- * edit" mode split that the previous Settings tab created. Users no longer
- * have to switch tabs and hunt for the field they were already looking at.
+ * **All identity/property editing happens here** — pickers self-render as static
+ * read-only displays when `canEdit` is false, so the value is visible but not
+ * interactive.
  */
 export function AgentDetailInspector({
   agent,
@@ -98,7 +90,6 @@ export function AgentDetailInspector({
   currentUserId,
   canEdit,
   onUpdate,
-  onShowIntegrations,
 }: InspectorProps) {
   const { t } = useT("agents");
   const timeAgo = useTimeAgo();
@@ -106,7 +97,7 @@ export function AgentDetailInspector({
   const isOnline = runtime?.status === "online";
 
   return (
-    <aside className="flex w-full flex-col rounded-lg border bg-background md:h-full md:min-h-0 md:overflow-y-auto">
+    <div className="flex w-full flex-col rounded-lg border bg-background">
       {/* Identity */}
       <div className="flex flex-col gap-3 border-b px-5 pb-5 pt-5">
         <AvatarEditor agent={agent} canEdit={canEdit} onUpdate={update} />
@@ -191,54 +182,7 @@ export function AgentDetailInspector({
         </PropRow>
       </Section>
 
-      {/* Skills */}
-      <div className="flex flex-col border-b px-5 py-4">
-        <div className="mb-2 flex items-center gap-2">
-          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-            {t(($) => $.inspector.section_skills)}
-          </span>
-          <span className="font-mono text-[10px] tabular-nums text-muted-foreground/70">
-            {agent.skills.length}
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-1">
-          {agent.skills.map((s) => (
-            <span
-              key={s.id}
-              className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground"
-            >
-              {s.name}
-            </span>
-          ))}
-          <SkillAttach agent={agent} canEdit={canEdit} />
-        </div>
-      </div>
-
-      {/* Integrations — surfaces external-channel bind entry points
-          (Lark Bot today; Slack / Discord in the future). The bind
-          button self-hides when the server-side device-flow install
-          capability gate is closed, so this section may render empty
-          on deployments without a configured Lark app — that's
-          intentional and matches the "don't surface a flow that will
-          fail" guarantee. We only mount it for editors: viewers
-          shouldn't see a CTA they can't action. */}
-      {canEdit && (
-        <div className="flex flex-col px-5 py-4">
-          <div className="mb-2 flex items-center gap-2">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              {t(($) => $.inspector.section_integrations)}
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <LarkAgentBindButton
-              agentId={agent.id}
-              agentName={agent.name}
-              onShowConnectedDetails={onShowIntegrations}
-            />
-          </div>
-        </div>
-      )}
-    </aside>
+    </div>
   );
 }
 

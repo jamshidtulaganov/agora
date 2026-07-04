@@ -367,9 +367,9 @@ func (h *Handler) SendCode(w http.ResponseWriter, r *http.Request) {
 
 	if isUndeliverableEmailDomain(email) {
 		// Reserved/undeliverable domain (e.g. dev@local.test). The code is
-		// already stored; log it for the dev/seed flow and skip the send that
-		// could only bounce.
-		slog.Info("verification code not emailed: reserved/undeliverable domain (would bounce)", "email", email, "code", code)
+		// already stored; skip the send that could only bounce. Do NOT log the
+		// code — it is a valid login credential; log only that one was generated.
+		slog.Info("verification code not emailed: reserved/undeliverable domain (would bounce)", "email", email)
 	} else if err := h.EmailService.SendVerificationCode(email, code); err != nil {
 		slog.Error("failed to send verification code", "email", email, "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to send verification code")
@@ -562,7 +562,10 @@ func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if tokenResp.StatusCode != http.StatusOK {
-		slog.Error("google oauth token exchange returned error", "status", tokenResp.StatusCode, "body", string(tokenBody))
+		// Log only the status — a non-200 body is a Google error JSON today, but
+		// logging a raw provider response body verbatim is a fragile pattern if it
+		// ever echoes back request params/credentials.
+		slog.Error("google oauth token exchange returned error", "status", tokenResp.StatusCode)
 		writeError(w, http.StatusBadRequest, "failed to exchange code with Google")
 		return
 	}

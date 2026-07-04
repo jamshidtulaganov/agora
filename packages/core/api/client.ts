@@ -2130,6 +2130,15 @@ export class ApiClient {
     });
   }
 
+  // Triggers the lead agent to study the project's connected repo config +
+  // patterns and propose the project's coding conventions (saved to
+  // project.settings.conventions). 202 = queued.
+  async learnProjectConventions(id: string): Promise<{ status: string }> {
+    return this.fetch(`/api/projects/${id}/conventions/learn`, {
+      method: "POST",
+    });
+  }
+
   // Project resources
   async listProjectResources(
     projectId: string,

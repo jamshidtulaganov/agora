@@ -8,10 +8,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -2256,15 +2258,21 @@ type UpdateIssueRequest struct {
 }
 
 // maybeEnqueueKnowledgeCapture fires a one-off knowledge-capture run when an
-// issue transitions INTO `done`. The workspace's designated KB-synthesizer
-// agent (opt-in, stored in workspace settings as `kb_synthesizer_agent_id` —
-// a free-model agent) is triggered on the issue to distill its durable
-// learnings into the per-project `<slug>-kb` knowledgebase skill. No-op unless
-// the workspace opted in AND the issue belongs to a project (the KB is
-// per-project). Best-effort: any failure degrades to "no capture" and never
-// blocks the status transition. Callers MUST only invoke this on a genuine
-// prev!=done -> done transition so it fires exactly once per completion.
+// issue transitions INTO `done`. The workspace's KB-synthesizer agent is
+// resolved (and auto-provisioned if absent — capture is default-ON; see
+// resolveKBSynthesizer) and triggered on the issue to distill its durable
+// learnings into structured knowledge_item rows via a ```knowledge-items```
+// comment block, which the server compiles into the per-project `<slug>-kb`
+// skill. No-op unless the issue belongs to a project (the KB is per-project)
+// and a synthesizer resolves. Best-effort: any failure degrades to "no
+// capture" and never blocks the status transition. Callers MUST only invoke
+// this on a genuine prev!=done -> done transition so it fires exactly once per
+// completion. Disable entirely with AGORA_KB_CAPTURE_DISABLED=1; per-workspace
+// opt-out is archiving the "KB Synthesizer" agent.
 func (h *Handler) maybeEnqueueKnowledgeCapture(ctx context.Context, issue db.Issue) {
+	if os.Getenv("AGORA_KB_CAPTURE_DISABLED") == "1" {
+		return
+	}
 	if !issue.ProjectID.Valid {
 		return // KB is per-project; skip project-less issues
 	}
@@ -2272,24 +2280,108 @@ func (h *Handler) maybeEnqueueKnowledgeCapture(ctx context.Context, issue db.Iss
 	if err != nil {
 		return
 	}
-	var settings struct {
-		KBAgent string `json:"kb_synthesizer_agent_id"`
+	// Resolve the KB skill name fail-closed on workspace (issue.project_id is a
+	// plain FK with no same-workspace constraint). No resolvable name → there
+	// is no compile target, so nothing to distill into.
+	kbName := ""
+	if project, perr := h.Queries.GetProjectInWorkspace(ctx, db.GetProjectInWorkspaceParams{
+		ID:          issue.ProjectID,
+		WorkspaceID: issue.WorkspaceID,
+	}); perr == nil {
+		kbName = service.ProjectKBSkillName(project)
 	}
-	if len(ws.Settings) > 0 {
-		_ = json.Unmarshal(ws.Settings, &settings)
-	}
-	if strings.TrimSpace(settings.KBAgent) == "" {
-		return // workspace has not opted in
-	}
-	agentID, err := parseUUIDLoose(settings.KBAgent)
-	if err != nil || !agentID.Valid {
+	if kbName == "" {
 		return
 	}
-	if _, err := h.TaskService.EnqueueTaskForMention(ctx, issue, agentID, pgtype.UUID{}); err != nil {
-		slog.Warn("knowledge-capture enqueue failed", "issue_id", uuidToString(issue.ID), "agent_id", settings.KBAgent, "error", err)
+	// Find or auto-provision the synthesizer. !ok covers: no online runtime,
+	// auto-provisioning disabled, or the workspace opted out by archiving the
+	// agent — all silent, retried on the next completion.
+	agentID, ok := h.resolveKBSynthesizer(ctx, ws, issue)
+	if !ok {
 		return
 	}
-	slog.Info("knowledge-capture enqueued on done", "issue_id", uuidToString(issue.ID), "agent_id", settings.KBAgent)
+	// Backlog guard: capture is best-effort by contract. A daemon offline for
+	// days must not stockpile a backlog that fires the whole queue of paid LLM
+	// runs at reconnect. Skip beyond a modest in-flight count.
+	if n, cerr := h.Queries.CountInFlightTasksForAgent(ctx, agentID); cerr == nil && n >= 10 {
+		slog.Info("knowledge-capture skipped: synthesizer backlog", "issue_id", uuidToString(issue.ID), "in_flight", n)
+		return
+	}
+	// Server-authored distillation contract. The prompt rides as the task's
+	// trigger comment (mention tasks carry no instruction field), authored BY
+	// the synthesizer via a direct Queries.CreateComment — the agent-comment
+	// ingest path (and its knowledge-items capture hook) is deliberately
+	// bypassed, so the example block below cannot self-ingest.
+	prompt := "[AUTOMATED DIRECTIVE — knowledge capture] " +
+		"KNOWLEDGE CAPTURE for this just-completed issue. Distill up to 5 DURABLE learnings from what actually " +
+		"happened here (the diff / linked PR, the QA verdicts, the comment thread): root causes, gotchas, invariants, " +
+		"conventions, and \"next time do X\" facts an engineer must know — NOT a summary of the ticket. Post ONE comment " +
+		"on this issue that contains a fenced knowledge-items block with a JSON array, exactly like:\n\n" +
+		"```knowledge-items\n" +
+		"[\n" +
+		"  {\"kind\": \"gotcha\", \"module\": \"\", \"title\": \"One factual sentence naming the trap or invariant\", " +
+		"\"body\": \"2-6 plain-markdown sentences: what breaks, why, and what to do instead. Self-contained — a future reader has no access to this issue.\"}\n" +
+		"]\n" +
+		"```\n\n" +
+		"RULES: \"kind\" is one of architecture | gotcha | convention | nav | decision. \"title\" is at most 160 " +
+		"characters and states a fact, not a task. \"body\" is at most 1200 characters of plain markdown — no code " +
+		"fences, no HTML comments. \"module\": the affected module name if this project uses module: labels, else \"\". " +
+		"At most 5 items; fewer well-chosen items beat many shallow ones — a failure that was DIAGNOSED here is the most " +
+		"valuable kind. Do NOT run the agora skill CLI and do NOT create or edit any skill — the server compiles your " +
+		"items into the project knowledge base automatically, and it also deduplicates: do not restate what the project " +
+		"KB already injected into your context says (an exact restatement is treated as a confirmation, which is fine; " +
+		"near-restatements are noise). Items stay in English (they are engineering documentation); any prose in your " +
+		"comment follows the ISSUE'S language (e.g. Russian/Uzbek). If this issue produced no durable learning (trivial " +
+		"change, nothing surprising), post a short comment saying so and include NO knowledge-items block — an unchanged " +
+		"KB beats a diluted one."
+	comment, cerr := h.Queries.CreateComment(ctx, db.CreateCommentParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+		AuthorType: "agent", AuthorID: agentID,
+		Content: prompt, Type: "comment", ParentID: pgtype.UUID{Valid: false},
+	})
+	if cerr != nil {
+		slog.Warn("knowledge-capture prompt comment failed", "issue_id", uuidToString(issue.ID), "error", cerr)
+		return
+	}
+	// Per-task model escalation (§13.3): a large issue thread needs a bigger
+	// model than the synthesizer's cheap default to distill well. Only escalate
+	// on claude-provider runtimes (opencode runs the free GLM model, which owns
+	// its own context handling); the override loses to issue cost-tier labels.
+	modelOverride := h.kbCaptureModelOverride(ctx, agentID, issue)
+	if _, err := h.TaskService.EnqueueTaskForMentionWithModel(ctx, issue, agentID, comment.ID, modelOverride); err != nil {
+		slog.Warn("knowledge-capture enqueue failed", "issue_id", uuidToString(issue.ID), "agent_id", uuidToString(agentID), "error", err)
+		return
+	}
+	slog.Info("knowledge-capture enqueued on done", "issue_id", uuidToString(issue.ID), "agent_id", uuidToString(agentID), "kb_skill", kbName, "model_override", modelOverride.String)
+}
+
+// kbCaptureModelOverride returns a per-task model escalation for a
+// knowledge-capture run when the issue thread is large (§13.3). Empty (no
+// override) unless the synthesizer runs on a claude-provider runtime AND the
+// thread exceeds kbLargeContextRunes; then it returns the sonnet id. Thread
+// size = description + acceptance criteria + all comment bodies.
+func (h *Handler) kbCaptureModelOverride(ctx context.Context, agentID pgtype.UUID, issue db.Issue) pgtype.Text {
+	agent, err := h.Queries.GetAgent(ctx, agentID)
+	if err != nil || !agent.RuntimeID.Valid {
+		return pgtype.Text{}
+	}
+	runtime, rerr := h.Queries.GetAgentRuntime(ctx, agent.RuntimeID)
+	if rerr != nil || runtime.Provider != "claude" {
+		return pgtype.Text{}
+	}
+	runes := utf8.RuneCountInString(issue.Description.String) + utf8.RuneCount(issue.AcceptanceCriteria)
+	comments, cerr := h.Queries.ListCommentsForIssue(ctx, db.ListCommentsForIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID, Limit: 2000,
+	})
+	if cerr == nil {
+		for _, c := range comments {
+			runes += utf8.RuneCountInString(c.Content)
+		}
+	}
+	if runes <= kbLargeContextRunes {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: kbSynthEscalationModel, Valid: true}
 }
 
 // maybePromoteTestCasesOnDone grows the project's QA base suite from finished
@@ -2368,10 +2460,16 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		// its way to done without a qa:pass sign-off — redirect the write to
 		// in_review so the QA lead runs first (no-op unless AGORA_QA_GATE_ENFORCED).
 		target := *req.Status
-		if newStatus, redirected := h.enforceQAGateBeforeDone(r.Context(), prevIssue, prevIssue.Status, target); redirected {
+		gateActorType, _ := h.resolveActor(r, userID, workspaceID)
+		if newStatus, redirected := h.enforceQAGateBeforeDone(r.Context(), prevIssue, gateActorType, prevIssue.Status, target); redirected {
 			target = newStatus
 			slog.Info("qa-gate: redirected direct →done to →in_review",
 				append(logger.RequestAttrs(r), "issue_id", uuidToString(prevIssue.ID), "requested", *req.Status)...)
+		}
+		// Sprint-PR merge gate: don't let a task read done while its PR into the
+		// sprint branch is unmerged (qa:pass is the merge gate, not completion).
+		if newStatus, held := h.enforceSprintPRMergedBeforeDone(r.Context(), prevIssue, prevIssue.Status, target); held {
+			target = newStatus
 		}
 		// Design gate (opt-in, default off): a design-decomposed issue can't skip
 		// in_review to done without a passing/skipped design verdict.
@@ -2644,7 +2742,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		// (one with no pending task on this issue) so the per-(issue,agent) dedup
 		// no longer drops one of them. Found in the demo run (SD-320): both raced
 		// to the same agent and the gate verdict was silently suppressed.
-		go func() {
+		safeGo("autoQA:in_review", func() {
 			h.maybeRunQAOnInReview(context.Background(), issue, actorType, actorID)
 			h.maybeGenTests(context.Background(), issue, actorType, actorID, false)
 			// Compile any automated cases still missing a Playwright script
@@ -2654,7 +2752,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 			// pane never shows the browser. Best-effort, gated by compile-enabled.
 			h.maybeCompileTestCases(context.Background(), issue)
 			h.maybeRunTestsOnInReview(context.Background(), issue, actorType, actorID)
-		}()
+		})
 	}
 
 	// Shift-left QA prep on dev start: the moment an issue enters in_progress,
@@ -2663,7 +2761,9 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	// is still implementing — so the in_review gate only executes a suite that
 	// is already sitting ready. Idempotent (skips when cases exist).
 	if statusChanged && issue.Status == "in_progress" && prevIssue.Status != "in_progress" {
-		go h.maybeGenTests(context.Background(), issue, actorType, actorID, true)
+		safeGo("autoGenTests:in_progress", func() {
+			h.maybeGenTests(context.Background(), issue, actorType, actorID, true)
+		})
 	}
 
 	// Cancel active tasks when the issue is cancelled by a user.
@@ -3010,6 +3110,8 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	updated := 0
+	// Resolve the actor once for the batch (used by the risk-tier sign-off gate).
+	batchActorType, _ := h.resolveActor(r, userID, workspaceID)
 	for _, issueID := range req.IssueIDs {
 		issueUUID, err := util.ParseUUID(issueID)
 		if err != nil {
@@ -3043,10 +3145,15 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			// Structural QA gate (batch-path mirror of UpdateIssue): a
 			// squad-orchestrated issue can't skip in_review to done without qa:pass.
 			target := *req.Updates.Status
-			if newStatus, redirected := h.enforceQAGateBeforeDone(r.Context(), prevIssue, prevIssue.Status, target); redirected {
+			if newStatus, redirected := h.enforceQAGateBeforeDone(r.Context(), prevIssue, batchActorType, prevIssue.Status, target); redirected {
 				target = newStatus
 				slog.Info("qa-gate: redirected direct →done to →in_review (batch)",
 					"issue_id", uuidToString(prevIssue.ID), "requested", *req.Updates.Status)
+			}
+			// Sprint-PR merge gate (batch-path mirror): hold done while the PR
+			// into the sprint branch is unmerged.
+			if newStatus, held := h.enforceSprintPRMergedBeforeDone(r.Context(), prevIssue, prevIssue.Status, target); held {
+				target = newStatus
 			}
 			// Design gate (batch-path mirror): a design-decomposed issue can't
 			// reach done without a passing/skipped design verdict. Opt-in, dark.
@@ -3248,19 +3355,21 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		// squad-orchestrated issue always reaches the QA lead regardless of path.
 		if statusChanged && issue.Status == "in_review" && prevIssue.Status != "in_review" {
 			issueCopy := issue
-			go func() {
+			safeGo("autoQA:in_review:batch", func() {
 				h.maybeRunQAOnInReview(context.Background(), issueCopy, actorType, actorID)
 				h.maybeGenTests(context.Background(), issueCopy, actorType, actorID, false)
 				h.maybeCompileTestCases(context.Background(), issueCopy)
 				h.maybeRunTestsOnInReview(context.Background(), issueCopy, actorType, actorID)
-			}()
+			})
 		}
 
 		// Shift-left QA prep on dev start (batch-path mirror of UpdateIssue):
 		// author + compile the suite in the background while the dev works.
 		if statusChanged && issue.Status == "in_progress" && prevIssue.Status != "in_progress" {
 			issueCopy := issue
-			go h.maybeGenTests(context.Background(), issueCopy, actorType, actorID, true)
+			safeGo("autoGenTests:in_progress:batch", func() {
+				h.maybeGenTests(context.Background(), issueCopy, actorType, actorID, true)
+			})
 		}
 
 		// Cancel active tasks when the issue is cancelled by a user.

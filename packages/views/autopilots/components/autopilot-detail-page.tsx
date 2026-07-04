@@ -585,7 +585,7 @@ export function AutopilotDetailPage({ autopilotId }: { autopilotId: string }) {
   const updateAutopilot = useUpdateAutopilot();
   const deleteAutopilot = useDeleteAutopilot();
   const triggerAutopilot = useTriggerAutopilot();
-  const projectId = data?.autopilot.project_id ?? null;
+  const projectId = data?.autopilot?.project_id ?? null;
   const { data: project, isLoading: projectLoading } = useQuery({
     ...projectDetailOptions(wsId, projectId ?? ""),
     enabled: Boolean(projectId),

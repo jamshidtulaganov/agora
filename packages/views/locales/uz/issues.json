@@ -493,6 +493,7 @@
     "run_pass": "O'tdi",
     "run_fail": "O'tmadi",
     "blocked": "Bloklangan",
+    "needs_attention": "e'tibor talab — birinchi",
     "empty": "Hali test-keys yo'q.",
     "empty_hint": "Keys qo'shing yoki QA Squad'ga ticketdan yaratishni topshiring.",
     "generated_toast": "QA agent test-keyslar yozmoqda…",

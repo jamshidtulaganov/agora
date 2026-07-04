@@ -1027,11 +1027,18 @@ func openWorktreePR(workdir, title, body, base string) []prOpenResult {
 		branch := strings.TrimSpace(runGit(repo, "rev-parse", "--abbrev-ref", "HEAD"))
 		res := prOpenResult{Repo: filepath.Base(repo), Branch: branch}
 		// Sprint-worktree mode: a per-task alias (sprint-wt-*) tracking the
-		// SHARED origin/<sprintBranch>. Accept = push the task's commits straight
-		// onto the integration branch (no per-task PR); the sprint branch itself
-		// merges to main via the sprint-end QA/deploy flow.
+		// SHARED origin/<sprintBranch>. Two accept models, selected by env:
+		//   - AGORA_SPRINT_PR_MODE off (default): push the task's commits straight
+		//     onto the integration branch (no per-task PR).
+		//   - AGORA_SPRINT_PR_MODE on: open a PR FROM the task's own branch INTO
+		//     the sprint branch, for the squad lead to review + merge. The sprint
+		//     branch still merges to main via the sprint-end QA/deploy flow.
 		if sprintBranch, ok := sprintUpstreamBranch(repo, branch); ok {
-			out = append(out, pushToSprintBranch(repo, branch, sprintBranch))
+			if sprintPRModeEnabled() {
+				out = append(out, openSprintPR(repo, branch, sprintBranch, title, body))
+			} else {
+				out = append(out, pushToSprintBranch(repo, branch, sprintBranch))
+			}
 			continue
 		}
 		defBranch := strings.TrimPrefix(strings.TrimSpace(runGit(repo, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")), "origin/")
@@ -1136,6 +1143,64 @@ func pushToSprintBranch(repo, alias, sprintBranch string) prOpenResult {
 		}
 	}
 	// Landed on the integration branch — no PR is opened for a sprint commit.
+	return res
+}
+
+// sprintPRModeEnabled gates the per-task-PR-into-the-sprint-branch model (Phase 1
+// of auto sprint review): a sprint task opens a PR from its own branch INTO the
+// sprint branch — for the squad lead to review + merge — instead of pushing its
+// commits straight onto the shared branch. Default OFF, so the direct-push model
+// (pushToSprintBranch) stays the default and the switch is fully reversible.
+func sprintPRModeEnabled() bool {
+	v := strings.TrimSpace(os.Getenv("AGORA_SPRINT_PR_MODE"))
+	return v == "1" || strings.EqualFold(v, "true")
+}
+
+// openSprintPR opens (or reuses) a GitHub PR from the task's per-task sprint alias
+// INTO the shared sprint branch. Unlike pushToSprintBranch it never writes to the
+// shared branch: it pushes the alias as its OWN remote head (WITHOUT -u, so the
+// alias keeps tracking origin/<sprintBranch> for pull-before-work + sprint
+// detection) and targets --base <sprintBranch>. Idempotent: a re-accept
+// force-updates the head (the task owns that branch) and reuses the open PR.
+func openSprintPR(repo, alias, sprintBranch, title, body string) prOpenResult {
+	res := prOpenResult{Repo: filepath.Base(repo), Branch: alias}
+	// Commit any uncommitted edits (e.g. the human's live code-server edits).
+	if strings.TrimSpace(runGit(repo, "status", "--porcelain")) != "" {
+		_ = runGit(repo, "add", "-A")
+		_, _ = runInDir(repo, "git", "commit", "-m", "Co-code changes (Agora)")
+	}
+	// Nothing to review if the alias is not ahead of the sprint branch.
+	if baseSHA := strings.TrimSpace(runGit(repo, "merge-base", "HEAD", "origin/"+sprintBranch)); baseSHA != "" {
+		if ahead := strings.TrimSpace(runGit(repo, "rev-list", "--count", baseSHA+"..HEAD")); ahead == "" || ahead == "0" {
+			res.Skipped = "no changes vs sprint branch"
+			return res
+		}
+	}
+	// Push the alias as its own remote head. force-with-lease covers a re-accept
+	// after the pull-before-work rebase rewrote the alias — safe because this
+	// branch is the task's own, never the shared sprint branch.
+	if pout, err := runInDir(repo, "git", "push", "--force-with-lease", "origin", "HEAD:"+alias); err != nil {
+		res.Error = "push failed: " + firstLine(pout)
+		return res
+	}
+	// Reuse an existing open PR for this head branch if one exists.
+	if existing, err := runInDir(repo, "gh", "pr", "list", "--head", alias, "--state", "open", "--json", "url", "-q", ".[0].url"); err == nil && strings.HasPrefix(existing, "http") {
+		res.URL = existing
+		return res
+	}
+	args := []string{"pr", "create", "--head", alias, "--base", sprintBranch}
+	if title != "" {
+		args = append(args, "--title", title, "--body", body)
+	} else {
+		args = append(args, "--fill")
+	}
+	cout, err := runInDir(repo, "gh", args...)
+	if err != nil {
+		res.Error = "gh pr create failed: " + firstLine(cout)
+		return res
+	}
+	res.URL = lastURL(cout)
+	res.Created = true
 	return res
 }
 
