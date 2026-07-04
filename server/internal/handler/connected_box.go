@@ -736,6 +736,16 @@ type sprintRegressionPayload struct {
 	Branch   string `json:"branch"`
 	Baseline string `json:"baseline"`
 	SprintID string `json:"sprint_id"`
+	// Tasks the sprint explicitly covers (issue_to_sprint members). The agent
+	// scopes regression to these — running each task's promoted test cases plus
+	// the project base suite — instead of inferring scope from the branch diff
+	// alone. Empty = fall back to whole-branch regression.
+	Tasks []sprintRegressionTask `json:"tasks,omitempty"`
+}
+
+type sprintRegressionTask struct {
+	Key   string `json:"key"`
+	Title string `json:"title"`
 }
 
 // DispatchSprintRegression deploys the sprint branch to its project's bound QA
@@ -774,8 +784,23 @@ func (h *Handler) DispatchSprintRegression(ctx context.Context, sprintID, wsID p
 		return db.AutopilotRun{}, fmt.Errorf("no sprint-end (run-only) autopilot is bound to this sprint's project")
 	}
 
+	// Scope the regression to the sprint's attached tasks (issue_to_sprint) so a
+	// user curating the sprint in the QA cockpit controls what gets tested.
+	// Best-effort: on lookup failure fall back to whole-branch regression.
+	var tasks []sprintRegressionTask
+	if issues, ierr := h.Queries.ListIssuesBySprint(ctx, sprint.ID); ierr == nil {
+		prefix := h.getIssuePrefix(ctx, sprint.WorkspaceID)
+		for _, iss := range issues {
+			tasks = append(tasks, sprintRegressionTask{
+				Key:   fmt.Sprintf("%s-%d", prefix, iss.Number),
+				Title: iss.Title,
+			})
+		}
+	}
+
 	payload, err := json.Marshal(sprintRegressionPayload{
 		Scope: "regression", Branch: branch, Baseline: "sprint-root", SprintID: uuidToString(sprint.ID),
+		Tasks: tasks,
 	})
 	if err != nil {
 		return db.AutopilotRun{}, fmt.Errorf("marshal payload: %w", err)
