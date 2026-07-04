@@ -1293,6 +1293,19 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 			resp.WorkspaceID = uuidToString(issue.WorkspaceID)
 			resp.ThreadName = issue.Title
 
+			// Per-task model override (agent_task_queue.model_override): wins
+			// over the agent's configured model, but loses to the issue
+			// cost-tier labels applied just below. Set by knowledge-capture to
+			// escalate a large-thread distillation off the synthesizer's cheap
+			// default model. The model string is opaque and forwarded verbatim.
+			if resp.Agent != nil && task.ModelOverride.Valid && task.ModelOverride.String != "" {
+				slog.Info("per-task model override applied",
+					"task_id", uuidToString(task.ID),
+					"from_model", resp.Agent.Model, "to_model", task.ModelOverride.String,
+				)
+				resp.Agent.Model = task.ModelOverride.String
+			}
+
 			// Per-task cost tiering: override the agent's model/thinking for
 			// THIS run based on the issue's tier labels, so a small task does
 			// not burn opus[1m] money (an observed CSS fix cost $2.82 on

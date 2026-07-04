@@ -8,10 +8,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -2256,15 +2258,21 @@ type UpdateIssueRequest struct {
 }
 
 // maybeEnqueueKnowledgeCapture fires a one-off knowledge-capture run when an
-// issue transitions INTO `done`. The workspace's designated KB-synthesizer
-// agent (opt-in, stored in workspace settings as `kb_synthesizer_agent_id` —
-// a free-model agent) is triggered on the issue to distill its durable
-// learnings into the per-project `<slug>-kb` knowledgebase skill. No-op unless
-// the workspace opted in AND the issue belongs to a project (the KB is
-// per-project). Best-effort: any failure degrades to "no capture" and never
-// blocks the status transition. Callers MUST only invoke this on a genuine
-// prev!=done -> done transition so it fires exactly once per completion.
+// issue transitions INTO `done`. The workspace's KB-synthesizer agent is
+// resolved (and auto-provisioned if absent — capture is default-ON; see
+// resolveKBSynthesizer) and triggered on the issue to distill its durable
+// learnings into structured knowledge_item rows via a ```knowledge-items```
+// comment block, which the server compiles into the per-project `<slug>-kb`
+// skill. No-op unless the issue belongs to a project (the KB is per-project)
+// and a synthesizer resolves. Best-effort: any failure degrades to "no
+// capture" and never blocks the status transition. Callers MUST only invoke
+// this on a genuine prev!=done -> done transition so it fires exactly once per
+// completion. Disable entirely with AGORA_KB_CAPTURE_DISABLED=1; per-workspace
+// opt-out is archiving the "KB Synthesizer" agent.
 func (h *Handler) maybeEnqueueKnowledgeCapture(ctx context.Context, issue db.Issue) {
+	if os.Getenv("AGORA_KB_CAPTURE_DISABLED") == "1" {
+		return
+	}
 	if !issue.ProjectID.Valid {
 		return // KB is per-project; skip project-less issues
 	}
@@ -2272,36 +2280,10 @@ func (h *Handler) maybeEnqueueKnowledgeCapture(ctx context.Context, issue db.Iss
 	if err != nil {
 		return
 	}
-	var settings struct {
-		KBAgent string `json:"kb_synthesizer_agent_id"`
-	}
-	if len(ws.Settings) > 0 {
-		_ = json.Unmarshal(ws.Settings, &settings)
-	}
-	if strings.TrimSpace(settings.KBAgent) == "" {
-		return // workspace has not opted in
-	}
-	agentID, err := parseUUIDLoose(settings.KBAgent)
-	if err != nil || !agentID.Valid {
-		return
-	}
-	// Validate the synthesizer BEFORE writing the prompt comment — an archived
-	// or runtime-less agent would otherwise leave an orphaned instruction
-	// comment on every completed issue.
-	if agent, aerr := h.Queries.GetAgent(ctx, agentID); aerr != nil || agent.ArchivedAt.Valid || !agent.RuntimeID.Valid {
-		slog.Warn("knowledge-capture: synthesizer agent unavailable", "agent_id", settings.KBAgent)
-		return
-	}
-	// Server-authored distillation contract. Without it the synthesizer runs on
-	// its own generic instructions and the "capture" is whatever it improvises —
-	// observed as either nothing persisted or the whole issue pasted verbatim.
-	// The prompt rides as the task's trigger comment (mention tasks carry no
-	// instruction field), authored BY the synthesizer agent itself via a direct
-	// Queries.CreateComment — the agent-comment ingest path (and its capture
-	// hooks) is deliberately bypassed, so this cannot recurse.
-	kbName := ""
 	// Resolve the KB skill name fail-closed on workspace (issue.project_id is a
-	// plain FK with no same-workspace constraint).
+	// plain FK with no same-workspace constraint). No resolvable name → there
+	// is no compile target, so nothing to distill into.
+	kbName := ""
 	if project, perr := h.Queries.GetProjectInWorkspace(ctx, db.GetProjectInWorkspaceParams{
 		ID:          issue.ProjectID,
 		WorkspaceID: issue.WorkspaceID,
@@ -2309,21 +2291,49 @@ func (h *Handler) maybeEnqueueKnowledgeCapture(ctx context.Context, issue db.Iss
 		kbName = service.ProjectKBSkillName(project)
 	}
 	if kbName == "" {
-		return // no resolvable KB skill name — nothing to distill into
+		return
 	}
+	// Find or auto-provision the synthesizer. !ok covers: no online runtime,
+	// auto-provisioning disabled, or the workspace opted out by archiving the
+	// agent — all silent, retried on the next completion.
+	agentID, ok := h.resolveKBSynthesizer(ctx, ws, issue)
+	if !ok {
+		return
+	}
+	// Backlog guard: capture is best-effort by contract. A daemon offline for
+	// days must not stockpile a backlog that fires the whole queue of paid LLM
+	// runs at reconnect. Skip beyond a modest in-flight count.
+	if n, cerr := h.Queries.CountInFlightTasksForAgent(ctx, agentID); cerr == nil && n >= 10 {
+		slog.Info("knowledge-capture skipped: synthesizer backlog", "issue_id", uuidToString(issue.ID), "in_flight", n)
+		return
+	}
+	// Server-authored distillation contract. The prompt rides as the task's
+	// trigger comment (mention tasks carry no instruction field), authored BY
+	// the synthesizer via a direct Queries.CreateComment — the agent-comment
+	// ingest path (and its knowledge-items capture hook) is deliberately
+	// bypassed, so the example block below cannot self-ingest.
 	prompt := "[AUTOMATED DIRECTIVE — knowledge capture] " +
-		"KNOWLEDGE CAPTURE for this just-completed issue. Distill 3-7 DURABLE learnings from what actually " +
+		"KNOWLEDGE CAPTURE for this just-completed issue. Distill up to 5 DURABLE learnings from what actually " +
 		"happened here (the diff / linked PR, the QA verdicts, the comment thread): root causes, gotchas, invariants, " +
-		"and \"next time do X\" facts an engineer must know — NOT a summary of the ticket. Then UPDATE the workspace " +
-		"skill named \"" + kbName + "\" via the agora skill CLI: append the learnings under the matching section (or a " +
-		"dated '## Learnings' section), one tight bullet each, ending with the issue key. RULES: never delete or rewrite " +
-		"human-authored lines; skip anything already covered (dedupe against the existing skill text — updating a stale " +
-		"bullet in place is better than appending a near-duplicate); keep the whole skill under ~15000 characters by " +
-		"tightening the oldest learnings first; a failure that was diagnosed here is the MOST valuable kind of learning. " +
-		"The skill text stays in English (it is engineering documentation); any comment you post on this issue follows " +
-		"the ISSUE'S language (e.g. Russian/Uzbek). " +
-		"If this issue produced no durable learning (trivial change, nothing surprising), say so in a comment and change " +
-		"nothing — an unchanged KB beats a diluted one."
+		"conventions, and \"next time do X\" facts an engineer must know — NOT a summary of the ticket. Post ONE comment " +
+		"on this issue that contains a fenced knowledge-items block with a JSON array, exactly like:\n\n" +
+		"```knowledge-items\n" +
+		"[\n" +
+		"  {\"kind\": \"gotcha\", \"module\": \"\", \"title\": \"One factual sentence naming the trap or invariant\", " +
+		"\"body\": \"2-6 plain-markdown sentences: what breaks, why, and what to do instead. Self-contained — a future reader has no access to this issue.\"}\n" +
+		"]\n" +
+		"```\n\n" +
+		"RULES: \"kind\" is one of architecture | gotcha | convention | nav | decision. \"title\" is at most 160 " +
+		"characters and states a fact, not a task. \"body\" is at most 1200 characters of plain markdown — no code " +
+		"fences, no HTML comments. \"module\": the affected module name if this project uses module: labels, else \"\". " +
+		"At most 5 items; fewer well-chosen items beat many shallow ones — a failure that was DIAGNOSED here is the most " +
+		"valuable kind. Do NOT run the agora skill CLI and do NOT create or edit any skill — the server compiles your " +
+		"items into the project knowledge base automatically, and it also deduplicates: do not restate what the project " +
+		"KB already injected into your context says (an exact restatement is treated as a confirmation, which is fine; " +
+		"near-restatements are noise). Items stay in English (they are engineering documentation); any prose in your " +
+		"comment follows the ISSUE'S language (e.g. Russian/Uzbek). If this issue produced no durable learning (trivial " +
+		"change, nothing surprising), post a short comment saying so and include NO knowledge-items block — an unchanged " +
+		"KB beats a diluted one."
 	comment, cerr := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
 		AuthorType: "agent", AuthorID: agentID,
@@ -2333,11 +2343,45 @@ func (h *Handler) maybeEnqueueKnowledgeCapture(ctx context.Context, issue db.Iss
 		slog.Warn("knowledge-capture prompt comment failed", "issue_id", uuidToString(issue.ID), "error", cerr)
 		return
 	}
-	if _, err := h.TaskService.EnqueueTaskForMention(ctx, issue, agentID, comment.ID); err != nil {
-		slog.Warn("knowledge-capture enqueue failed", "issue_id", uuidToString(issue.ID), "agent_id", settings.KBAgent, "error", err)
+	// Per-task model escalation (§13.3): a large issue thread needs a bigger
+	// model than the synthesizer's cheap default to distill well. Only escalate
+	// on claude-provider runtimes (opencode runs the free GLM model, which owns
+	// its own context handling); the override loses to issue cost-tier labels.
+	modelOverride := h.kbCaptureModelOverride(ctx, agentID, issue)
+	if _, err := h.TaskService.EnqueueTaskForMentionWithModel(ctx, issue, agentID, comment.ID, modelOverride); err != nil {
+		slog.Warn("knowledge-capture enqueue failed", "issue_id", uuidToString(issue.ID), "agent_id", uuidToString(agentID), "error", err)
 		return
 	}
-	slog.Info("knowledge-capture enqueued on done", "issue_id", uuidToString(issue.ID), "agent_id", settings.KBAgent, "kb_skill", kbName)
+	slog.Info("knowledge-capture enqueued on done", "issue_id", uuidToString(issue.ID), "agent_id", uuidToString(agentID), "kb_skill", kbName, "model_override", modelOverride.String)
+}
+
+// kbCaptureModelOverride returns a per-task model escalation for a
+// knowledge-capture run when the issue thread is large (§13.3). Empty (no
+// override) unless the synthesizer runs on a claude-provider runtime AND the
+// thread exceeds kbLargeContextRunes; then it returns the sonnet id. Thread
+// size = description + acceptance criteria + all comment bodies.
+func (h *Handler) kbCaptureModelOverride(ctx context.Context, agentID pgtype.UUID, issue db.Issue) pgtype.Text {
+	agent, err := h.Queries.GetAgent(ctx, agentID)
+	if err != nil || !agent.RuntimeID.Valid {
+		return pgtype.Text{}
+	}
+	runtime, rerr := h.Queries.GetAgentRuntime(ctx, agent.RuntimeID)
+	if rerr != nil || runtime.Provider != "claude" {
+		return pgtype.Text{}
+	}
+	runes := utf8.RuneCountInString(issue.Description.String) + utf8.RuneCount(issue.AcceptanceCriteria)
+	comments, cerr := h.Queries.ListCommentsForIssue(ctx, db.ListCommentsForIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID, Limit: 2000,
+	})
+	if cerr == nil {
+		for _, c := range comments {
+			runes += utf8.RuneCountInString(c.Content)
+		}
+	}
+	if runes <= kbLargeContextRunes {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: kbSynthEscalationModel, Valid: true}
 }
 
 // maybePromoteTestCasesOnDone grows the project's QA base suite from finished
