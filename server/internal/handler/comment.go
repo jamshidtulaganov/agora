@@ -1039,7 +1039,17 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 	// evidence; a gen_test_cases agent's ```test-cases``` block becomes test_case
 	// rows. No-ops for ordinary comments.
 	if authorType == "agent" {
-		h.TaskService.CaptureQAEvidence(r.Context(), issue, comment.Content)
+		// CaptureQAEvidence derives + attaches the qa:pass/qa:fail gate label from
+		// the verdict when the agent didn't set it via CLI. On a NEW attach, fire
+		// the same downstream automations the AttachLabel handler fires, so the
+		// merge-gate / done-gate / autoroute run even when the agent only wrote a
+		// verdict comment (SD-588 stress finding).
+		if verdict, labeled := h.TaskService.CaptureQAEvidence(r.Context(), issue, comment.Content); labeled {
+			gateLabel := "qa:" + verdict
+			go h.maybeAutoDocsOnLabel(context.Background(), issue, gateLabel, authorID)
+			go h.maybeMergeOnQAPass(context.Background(), issue, gateLabel, authorID)
+			go h.maybeRouteToDevLeadOnQAFail(context.Background(), issue, gateLabel, authorID)
+		}
 		h.TaskService.CaptureTestCases(r.Context(), issue, comment.Content, parseUUID(authorID))
 		h.TaskService.CaptureTestRuns(r.Context(), issue, comment.Content, parseUUID(authorID))
 		h.TaskService.CaptureCompiledScripts(r.Context(), issue, comment.Content, parseUUID(authorID))

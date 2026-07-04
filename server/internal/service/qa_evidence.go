@@ -56,10 +56,22 @@ func parseQAResultBlock(content string) (raw string, p qaResultPayload, ok bool)
 // CaptureQAEvidence is exported so the HTTP comment handler can call it too:
 // real agents (daemon/CLI) post their verdict via POST /comments, not the
 // internal createAgentComment path.
-func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, content string) {
+// CaptureQAEvidence persists a qa-result block and, deterministically, attaches
+// the qa:pass / qa:fail LABEL the whole gate machinery keys on. Returns the
+// verdict ("pass"/"fail"/"") and whether it NEWLY attached the label — the
+// handler caller fires the merge-gate / autoroute triggers only on a new attach
+// (so an agent that ALSO set the label via CLI does not double-fire them).
+//
+// Why the server attaches the label: the run_qa agent is instructed to set
+// qa:pass/qa:fail itself, but observed live (SD-588 stress test) writing a
+// "QA Verdict: PASS" comment + a valid qa-result verdict WITHOUT running the
+// label CLI — so the loop stalled (no label → no merge-gate → never done).
+// Deriving the label from the captured verdict makes the gate reliable
+// regardless of whether the agent remembered the label step.
+func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, content string) (verdict string, newlyLabeled bool) {
 	raw, p, ok := parseQAResultBlock(content)
 	if !ok {
-		return
+		return "", false
 	}
 
 	if _, err := s.Queries.UpsertQAEvidence(ctx, db.UpsertQAEvidenceParams{
@@ -72,7 +84,7 @@ func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, con
 		ResultJson:  []byte(raw),
 	}); err != nil {
 		slog.Warn("capture qa evidence: upsert failed", "error", err, "issue_id", util.UUIDToString(issue.ID))
-		return
+		return "", false
 	}
 
 	s.Bus.Publish(events.Event{
@@ -86,4 +98,54 @@ func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, con
 		},
 	})
 	slog.Info("qa evidence captured", "issue_id", util.UUIDToString(issue.ID), "verdict", p.Verdict)
+
+	v := strings.ToLower(strings.TrimSpace(p.Verdict))
+	label, color := "", ""
+	switch v {
+	case "pass":
+		label, color = "qa:pass", "#22c55e"
+	case "fail":
+		label, color = "qa:fail", "#ef4444"
+	default:
+		return v, false // no verdict-derived gate label (e.g. "maybe"/"blocked")
+	}
+	if s.issueHasLabelName(ctx, issue, label) {
+		return v, false // agent already set it → the label handler already fired triggers
+	}
+	labelID, err := s.ensureLabel(ctx, issue.WorkspaceID, label, color)
+	if err != nil {
+		slog.Warn("capture qa evidence: ensure label failed", "error", err, "label", label, "issue_id", util.UUIDToString(issue.ID))
+		return v, false
+	}
+	if err := s.Queries.AttachLabelToIssue(ctx, db.AttachLabelToIssueParams{
+		IssueID: issue.ID, LabelID: labelID, WorkspaceID: issue.WorkspaceID,
+	}); err != nil {
+		slog.Warn("capture qa evidence: attach label failed", "error", err, "label", label, "issue_id", util.UUIDToString(issue.ID))
+		return v, false
+	}
+	s.Bus.Publish(events.Event{
+		Type:        protocol.EventIssueLabelsChanged,
+		WorkspaceID: util.UUIDToString(issue.WorkspaceID),
+		ActorType:   "agent",
+		ActorID:     "",
+		Payload:     map[string]any{"issue_id": util.UUIDToString(issue.ID)},
+	})
+	slog.Info("qa evidence: auto-attached gate label from verdict", "issue_id", util.UUIDToString(issue.ID), "label", label)
+	return v, true
+}
+
+// issueHasLabelName reports whether the issue already carries a label by name.
+func (s *TaskService) issueHasLabelName(ctx context.Context, issue db.Issue, name string) bool {
+	labels, err := s.Queries.ListLabelsByIssue(ctx, db.ListLabelsByIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		return false
+	}
+	for _, l := range labels {
+		if strings.EqualFold(strings.TrimSpace(l.Name), name) {
+			return true
+		}
+	}
+	return false
 }
