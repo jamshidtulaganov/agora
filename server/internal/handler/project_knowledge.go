@@ -136,6 +136,47 @@ func (h *Handler) projectHasGithubRepo(ctx context.Context, projectID pgtype.UUI
 	return false
 }
 
+// pickAutomationRunner spreads focused project-automation tasks (KB study,
+// conventions extraction, module KB, QA-manifest build) across agents so
+// several fired close together — project create alone fires KB + QA-manifest —
+// PARALLELIZE instead of serializing behind the single project lead, each
+// re-cloning the repo. The stress test showed 3 onboarding tasks queued on one
+// lead against a large external repo. Prefers the lead (correct project persona
+// + preserves single-task behavior); only spreads to the least-busy READY agent
+// when the lead already has work in flight. Falls back to the lead if nothing
+// else is ready. Callers still gate on the lead being an agent — this only
+// chooses the RUNNER, not whether to fire.
+func (h *Handler) pickAutomationRunner(ctx context.Context, project db.Project) pgtype.UUID {
+	lead := project.LeadID
+	leadN, err := h.Queries.CountRunningTasks(ctx, lead)
+	if err != nil {
+		return lead
+	}
+	if leadN == 0 {
+		return lead // lead is free — use it (default; right persona)
+	}
+	// Lead busy → find the least-busy ready agent (lead-preferred on ties, since
+	// it seeds `best` and only a STRICTLY smaller count displaces it).
+	agents, err := h.Queries.ListAgents(ctx, project.WorkspaceID)
+	if err != nil {
+		return lead
+	}
+	best, bestN := lead, leadN
+	for _, a := range agents {
+		if a.ID == lead || !sliceAgentReady(a) {
+			continue
+		}
+		n, err := h.Queries.CountRunningTasks(ctx, a.ID)
+		if err != nil {
+			continue
+		}
+		if n < bestN {
+			best, bestN = a.ID, n
+		}
+	}
+	return best
+}
+
 // maybeEnqueueProjectStudy fires a one-off knowledge-build run for the project's
 // lead agent. No-op unless the lead is an agent AND the project has a github
 // repo to study. Best-effort: any failure (e.g. the lead agent has no runtime
@@ -151,7 +192,7 @@ func (h *Handler) maybeEnqueueProjectStudy(ctx context.Context, project db.Proje
 	requester, _ := h.parseUserUUIDOrZero(requesterUserID)
 	prompt := buildProjectStudyPrompt(project.Title)
 	if _, err := h.TaskService.EnqueueQuickCreateTask(
-		ctx, project.WorkspaceID, requester, project.LeadID, pgtype.UUID{},
+		ctx, project.WorkspaceID, requester, h.pickAutomationRunner(ctx, project), pgtype.UUID{},
 		prompt, project.ID, pgtype.UUID{}, nil,
 	); err != nil {
 		slog.Warn("project knowledge build enqueue failed",
@@ -207,7 +248,7 @@ func (h *Handler) BuildProjectKnowledge(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		if _, err := h.TaskService.EnqueueQuickCreateTask(
-			r.Context(), project.WorkspaceID, requester, project.LeadID, pgtype.UUID{},
+			r.Context(), project.WorkspaceID, requester, h.pickAutomationRunner(r.Context(), project), pgtype.UUID{},
 			prompt, project.ID, pgtype.UUID{}, nil,
 		); err != nil {
 			writeError(w, http.StatusBadGateway, "failed to start module knowledge build: "+err.Error())
@@ -220,7 +261,7 @@ func (h *Handler) BuildProjectKnowledge(w http.ResponseWriter, r *http.Request) 
 
 	prompt := buildProjectStudyPrompt(project.Title)
 	if _, err := h.TaskService.EnqueueQuickCreateTask(
-		r.Context(), project.WorkspaceID, requester, project.LeadID, pgtype.UUID{},
+		r.Context(), project.WorkspaceID, requester, h.pickAutomationRunner(r.Context(), project), pgtype.UUID{},
 		prompt, project.ID, pgtype.UUID{}, nil,
 	); err != nil {
 		writeError(w, http.StatusBadGateway, "failed to start knowledge build: "+err.Error())

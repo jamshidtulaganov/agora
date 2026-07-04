@@ -95,7 +95,7 @@ func (h *Handler) maybeEnqueueQAManifestBuild(ctx context.Context, project db.Pr
 	requester, _ := h.parseUserUUIDOrZero(requesterUserID)
 	prompt := buildQAManifestPrompt(project.Title, project.ID)
 	if _, err := h.TaskService.EnqueueQuickCreateTask(
-		ctx, project.WorkspaceID, requester, project.LeadID, pgtype.UUID{},
+		ctx, project.WorkspaceID, requester, h.pickAutomationRunner(ctx, project), pgtype.UUID{},
 		prompt, project.ID, pgtype.UUID{}, nil,
 	); err != nil {
 		slog.Warn("project qa-manifest build enqueue failed",
@@ -142,7 +142,7 @@ func (h *Handler) BuildProjectQAManifest(w http.ResponseWriter, r *http.Request)
 	requester, _ := h.parseUserUUIDOrZero(userID)
 	prompt := buildQAManifestPrompt(project.Title, project.ID)
 	if _, err := h.TaskService.EnqueueQuickCreateTask(
-		r.Context(), project.WorkspaceID, requester, project.LeadID, pgtype.UUID{},
+		r.Context(), project.WorkspaceID, requester, h.pickAutomationRunner(r.Context(), project), pgtype.UUID{},
 		prompt, project.ID, pgtype.UUID{}, nil,
 	); err != nil {
 		writeError(w, http.StatusBadGateway, "failed to start qa-manifest build: "+err.Error())

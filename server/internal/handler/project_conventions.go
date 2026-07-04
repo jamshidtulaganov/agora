@@ -148,7 +148,7 @@ func (h *Handler) LearnProjectConventions(w http.ResponseWriter, r *http.Request
 	requester, _ := h.parseUserUUIDOrZero(userID)
 	prompt := buildLearnConventionsPrompt(project.Title)
 	if _, err := h.TaskService.EnqueueQuickCreateTask(
-		r.Context(), project.WorkspaceID, requester, project.LeadID, pgtype.UUID{},
+		r.Context(), project.WorkspaceID, requester, h.pickAutomationRunner(r.Context(), project), pgtype.UUID{},
 		prompt, project.ID, pgtype.UUID{}, nil,
 	); err != nil {
 		writeError(w, http.StatusBadGateway, "failed to start conventions study: "+err.Error())

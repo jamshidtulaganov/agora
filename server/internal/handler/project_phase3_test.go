@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -214,5 +215,28 @@ func TestIssueQAScopeTrivial(t *testing.T) {
 	n := mkIssue()
 	if testHandler.issueQAScopeTrivial(ctx, load(n)) {
 		t.Error("no signal must stay full")
+	}
+}
+
+// pickAutomationRunner returns the project lead when the lead has no running
+// tasks (the default / single-task path). Spread-under-load is verified live.
+func TestPickAutomationRunner_LeadFree(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("no database")
+	}
+	ctx := t.Context()
+	// A lead with no running tasks: CountRunningTasks returns 0 (no rows), so the
+	// lead-free path returns the lead without consulting readiness — a fresh UUID
+	// stands in for "a lead that has nothing in flight".
+	var aid string
+	testPool.QueryRow(ctx, `SELECT gen_random_uuid()::text`).Scan(&aid)
+	proj := db.Project{
+		WorkspaceID: parseUUID(testWorkspaceID),
+		LeadType:    pgtype.Text{String: "agent", Valid: true},
+		LeadID:      parseUUID(aid),
+	}
+	got := testHandler.pickAutomationRunner(ctx, proj)
+	if uuidToString(got) != aid {
+		t.Errorf("lead-free must return the lead %s, got %s", aid, uuidToString(got))
 	}
 }
