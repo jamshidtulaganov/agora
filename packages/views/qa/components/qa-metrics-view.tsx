@@ -46,10 +46,10 @@ function StatCard({
   );
 }
 
-export function QAMetricsView() {
+export function QAMetricsView({ projectId }: { projectId?: string }) {
   const { data, isLoading } = useQuery({
-    queryKey: ["qa-metrics"],
-    queryFn: () => api.getQAMetrics(),
+    queryKey: ["qa-metrics", projectId ?? "all"],
+    queryFn: () => api.getQAMetrics(projectId),
     staleTime: 30_000,
     refetchInterval: 60_000,
   });

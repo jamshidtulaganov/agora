@@ -158,21 +158,45 @@ export function QAPage() {
         segments={[]}
         leaf={<span className="truncate font-medium text-foreground">QA</span>}
         actions={
-          <div className="flex items-center gap-1 rounded-md border p-0.5">
-            <ViewToggle active={view === "list"} onClick={() => setView("list")} icon={List} label="List" />
-            <ViewToggle active={view === "board"} onClick={() => setView("board")} icon={LayoutGrid} label="Board" />
-            <ViewToggle active={view === "bugs"} onClick={() => setView("bugs")} icon={Bug} label="Bugs" />
-            <ViewToggle active={view === "sprint"} onClick={() => setView("sprint")} icon={Rocket} label="Sprint" />
-            <ViewToggle active={view === "metrics"} onClick={() => setView("metrics")} icon={Gauge} label="Metrics" />
+          <div className="flex items-center gap-2">
+            {/* Project scope applies to EVERY tab (List/Board/Bugs/Sprint/
+                Metrics) — hoisted here so the whole cockpit follows one
+                selector, not just the list. "All projects" = workspace-wide. */}
+            <Select value={project} onValueChange={(v) => setProject(v ?? "all")}>
+              <SelectTrigger className="h-8 w-44 text-[13px]">
+                <SelectValue>
+                  {() =>
+                    project === "all"
+                      ? "All projects"
+                      : (projects.find((p) => p.id === project)?.title ?? "Project")
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All projects</SelectItem>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="flex items-center gap-1 rounded-md border p-0.5">
+              <ViewToggle active={view === "list"} onClick={() => setView("list")} icon={List} label="List" />
+              <ViewToggle active={view === "board"} onClick={() => setView("board")} icon={LayoutGrid} label="Board" />
+              <ViewToggle active={view === "bugs"} onClick={() => setView("bugs")} icon={Bug} label="Bugs" />
+              <ViewToggle active={view === "sprint"} onClick={() => setView("sprint")} icon={Rocket} label="Sprint" />
+              <ViewToggle active={view === "metrics"} onClick={() => setView("metrics")} icon={Gauge} label="Metrics" />
+            </div>
           </div>
         }
       />
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       {view === "metrics" ? (
-        <QAMetricsView />
+        <QAMetricsView projectId={project !== "all" ? project : undefined} />
       ) : view === "sprint" ? (
-        <QASprintReadinessView />
+        <QASprintReadinessView projectId={project !== "all" ? project : undefined} />
       ) : (
       <div className="flex w-full flex-col gap-4 px-8 py-6">
         <div className="space-y-3">
@@ -191,28 +215,8 @@ export function QAPage() {
 
           {view !== "bugs" && (
             <div className="flex flex-wrap items-center gap-2">
-              <Select value={project} onValueChange={(v) => setProject(v ?? "all")}>
-                <SelectTrigger className="h-8 w-48 text-[13px]">
-                  {/* Base UI's Select.Value renders the raw value (the project
-                      UUID) unless given a function child — map it to the title. */}
-                  <SelectValue>
-                    {() =>
-                      project === "all"
-                        ? "All projects"
-                        : (projects.find((p) => p.id === project)?.title ?? "Project")
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All projects</SelectItem>
-                  {projects.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
+              {/* Project scope lives in the header now (applies to all tabs);
+                  this row keeps the list-only assignee/priority filters. */}
               <AssigneeFilter issues={issues} selected={assigneeFilter} onChange={setAssigneeFilter} />
               <PriorityFilter issues={issues} selected={priorityFilter} onChange={setPriorityFilter} />
 
@@ -236,7 +240,7 @@ export function QAPage() {
         </div>
 
       {view === "bugs" ? (
-        <BugsLens />
+        <BugsLens projectId={project !== "all" ? project : undefined} />
       ) : isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : view === "list" ? (

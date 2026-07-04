@@ -11,8 +11,11 @@ SELECT s.id, s.name, s.branch, s.project_id, p.title AS project_title,
        (SELECT count(*) FROM issue_to_sprint x WHERE x.sprint_id = s.id) AS issue_count
 FROM sprint s
 JOIN project p ON p.id = s.project_id
-WHERE p.workspace_id = $1 AND s.status = 'active'
+WHERE p.workspace_id = sqlc.arg('workspace_id') AND s.status = 'active'
   AND p.settings->'sprint_mode' = 'true'::jsonb
+  -- Optional single-project scope for the per-project QA cockpit; NULL = all
+  -- sprint-mode projects (workspace-wide view).
+  AND (sqlc.narg('project_id')::uuid IS NULL OR s.project_id = sqlc.narg('project_id'))
 ORDER BY p.title, s.name;
 
 -- name: LatestSprintRegressionRun :one

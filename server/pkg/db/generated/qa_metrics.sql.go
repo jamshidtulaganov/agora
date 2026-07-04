@@ -19,9 +19,11 @@ SELECT a.name                                                        AS agent,
        round(max(EXTRACT(EPOCH FROM (atq.completed_at - atq.created_at))))::int AS max_sec
 FROM agent_task_queue atq
 JOIN agent a ON a.id = atq.agent_id
+LEFT JOIN issue i ON i.id = atq.issue_id
 WHERE a.workspace_id = $1
   AND atq.status = 'completed' AND atq.completed_at IS NOT NULL
   AND atq.created_at > now() - interval '30 days'
+  AND ($2::uuid IS NULL OR i.project_id = $2)
   AND atq.agent_id IN (
     SELECT sm.member_id FROM squad_member sm
     JOIN squad s ON s.id = sm.squad_id
@@ -31,6 +33,11 @@ WHERE a.workspace_id = $1
   )
 GROUP BY a.name ORDER BY avg_sec DESC
 `
+
+type QAMetricsAgentDurationsParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
 
 type QAMetricsAgentDurationsRow struct {
 	Agent  string `json:"agent"`
@@ -43,8 +50,8 @@ type QAMetricsAgentDurationsRow struct {
 // Per-QA-agent task wall-clock (created -> completed) over the window: the
 // agent-driven QA cost the compiled-script model is shrinking. QA agents =
 // members (or leader) of the workspace's squad named 'QA'.
-func (q *Queries) QAMetricsAgentDurations(ctx context.Context, workspaceID pgtype.UUID) ([]QAMetricsAgentDurationsRow, error) {
-	rows, err := q.db.Query(ctx, qAMetricsAgentDurations, workspaceID)
+func (q *Queries) QAMetricsAgentDurations(ctx context.Context, arg QAMetricsAgentDurationsParams) ([]QAMetricsAgentDurationsRow, error) {
+	rows, err := q.db.Query(ctx, qAMetricsAgentDurations, arg.WorkspaceID, arg.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -77,9 +84,15 @@ FROM test_run r
 JOIN test_case c ON c.id = r.test_case_id
 LEFT JOIN issue i ON i.id = r.issue_id
 WHERE r.workspace_id = $1
+  AND ($2::uuid IS NULL OR i.project_id = $2)
 ORDER BY r.created_at DESC
 LIMIT 25
 `
+
+type QAMetricsRecentRunsParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
 
 type QAMetricsRecentRunsRow struct {
 	ID          pgtype.UUID        `json:"id"`
@@ -91,8 +104,8 @@ type QAMetricsRecentRunsRow struct {
 }
 
 // Latest regression verdicts with their case + issue for the runs table.
-func (q *Queries) QAMetricsRecentRuns(ctx context.Context, workspaceID pgtype.UUID) ([]QAMetricsRecentRunsRow, error) {
-	rows, err := q.db.Query(ctx, qAMetricsRecentRuns, workspaceID)
+func (q *Queries) QAMetricsRecentRuns(ctx context.Context, arg QAMetricsRecentRunsParams) ([]QAMetricsRecentRunsRow, error) {
+	rows, err := q.db.Query(ctx, qAMetricsRecentRuns, arg.WorkspaceID, arg.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -121,12 +134,19 @@ func (q *Queries) QAMetricsRecentRuns(ctx context.Context, workspaceID pgtype.UU
 const qAMetricsRunTotals = `-- name: QAMetricsRunTotals :one
 
 SELECT count(*)                                   AS total,
-       count(*) FILTER (WHERE status = 'pass')    AS passed,
-       count(*) FILTER (WHERE status = 'fail')    AS failed,
-       count(*) FILTER (WHERE status IN ('skip','blocked')) AS skipped
-FROM test_run
-WHERE workspace_id = $1 AND created_at > now() - interval '30 days'
+       count(*) FILTER (WHERE r.status = 'pass')    AS passed,
+       count(*) FILTER (WHERE r.status = 'fail')    AS failed,
+       count(*) FILTER (WHERE r.status IN ('skip','blocked')) AS skipped
+FROM test_run r
+LEFT JOIN issue i ON i.id = r.issue_id
+WHERE r.workspace_id = $1 AND r.created_at > now() - interval '30 days'
+  AND ($2::uuid IS NULL OR i.project_id = $2)
 `
+
+type QAMetricsRunTotalsParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
 
 type QAMetricsRunTotalsRow struct {
 	Total   int64 `json:"total"`
@@ -136,9 +156,14 @@ type QAMetricsRunTotalsRow struct {
 }
 
 // QA speed / regression metrics — aggregates for the QA Metrics page.
+// Every query takes an optional project_id (sqlc.narg): NULL = workspace-wide
+// (the "all projects" cockpit view), a UUID = scope to that one project so the
+// Metrics tab follows the same project selector as Bugs/Sprint. Runs/durations
+// are scoped through the owning issue's project_id; script coverage through
+// test_case.project_id.
 // Regression run totals over the window: how much the suite runs and how green.
-func (q *Queries) QAMetricsRunTotals(ctx context.Context, workspaceID pgtype.UUID) (QAMetricsRunTotalsRow, error) {
-	row := q.db.QueryRow(ctx, qAMetricsRunTotals, workspaceID)
+func (q *Queries) QAMetricsRunTotals(ctx context.Context, arg QAMetricsRunTotalsParams) (QAMetricsRunTotalsRow, error) {
+	row := q.db.QueryRow(ctx, qAMetricsRunTotals, arg.WorkspaceID, arg.ProjectID)
 	var i QAMetricsRunTotalsRow
 	err := row.Scan(
 		&i.Total,
@@ -150,13 +175,20 @@ func (q *Queries) QAMetricsRunTotals(ctx context.Context, workspaceID pgtype.UUI
 }
 
 const qAMetricsRunsByDay = `-- name: QAMetricsRunsByDay :many
-SELECT date_trunc('day', created_at)::date        AS day,
+SELECT date_trunc('day', r.created_at)::date        AS day,
        count(*)                                   AS total,
-       count(*) FILTER (WHERE status = 'fail')    AS failed
-FROM test_run
-WHERE workspace_id = $1 AND created_at > now() - interval '14 days'
+       count(*) FILTER (WHERE r.status = 'fail')    AS failed
+FROM test_run r
+LEFT JOIN issue i ON i.id = r.issue_id
+WHERE r.workspace_id = $1 AND r.created_at > now() - interval '14 days'
+  AND ($2::uuid IS NULL OR i.project_id = $2)
 GROUP BY 1 ORDER BY 1
 `
+
+type QAMetricsRunsByDayParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
 
 type QAMetricsRunsByDayRow struct {
 	Day    pgtype.Date `json:"day"`
@@ -165,8 +197,8 @@ type QAMetricsRunsByDayRow struct {
 }
 
 // Daily regression volume + failures for the trend strip (last 14 days).
-func (q *Queries) QAMetricsRunsByDay(ctx context.Context, workspaceID pgtype.UUID) ([]QAMetricsRunsByDayRow, error) {
-	rows, err := q.db.Query(ctx, qAMetricsRunsByDay, workspaceID)
+func (q *Queries) QAMetricsRunsByDay(ctx context.Context, arg QAMetricsRunsByDayParams) ([]QAMetricsRunsByDayRow, error) {
+	rows, err := q.db.Query(ctx, qAMetricsRunsByDay, arg.WorkspaceID, arg.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +222,13 @@ SELECT count(*) FILTER (WHERE kind = 'automated')                    AS automate
        count(*) FILTER (WHERE kind = 'automated' AND script <> '')   AS scripted
 FROM test_case
 WHERE workspace_id = $1 AND archived_at IS NULL
+  AND ($2::uuid IS NULL OR project_id = $2)
 `
+
+type QAMetricsScriptCoverageParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
 
 type QAMetricsScriptCoverageRow struct {
 	Automated int64 `json:"automated"`
@@ -199,8 +237,8 @@ type QAMetricsScriptCoverageRow struct {
 
 // Compiled-script adoption: automated cases carrying a runnable script run
 // deterministically (~seconds) instead of being LLM-driven (~minutes).
-func (q *Queries) QAMetricsScriptCoverage(ctx context.Context, workspaceID pgtype.UUID) (QAMetricsScriptCoverageRow, error) {
-	row := q.db.QueryRow(ctx, qAMetricsScriptCoverage, workspaceID)
+func (q *Queries) QAMetricsScriptCoverage(ctx context.Context, arg QAMetricsScriptCoverageParams) (QAMetricsScriptCoverageRow, error) {
+	row := q.db.QueryRow(ctx, qAMetricsScriptCoverage, arg.WorkspaceID, arg.ProjectID)
 	var i QAMetricsScriptCoverageRow
 	err := row.Scan(&i.Automated, &i.Scripted)
 	return i, err

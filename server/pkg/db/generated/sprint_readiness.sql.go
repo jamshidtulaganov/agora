@@ -51,8 +51,16 @@ FROM sprint s
 JOIN project p ON p.id = s.project_id
 WHERE p.workspace_id = $1 AND s.status = 'active'
   AND p.settings->'sprint_mode' = 'true'::jsonb
+  -- Optional single-project scope for the per-project QA cockpit; NULL = all
+  -- sprint-mode projects (workspace-wide view).
+  AND ($2::uuid IS NULL OR s.project_id = $2)
 ORDER BY p.title, s.name
 `
+
+type ListActiveSprintsForWorkspaceParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
 
 type ListActiveSprintsForWorkspaceRow struct {
 	ID           pgtype.UUID `json:"id"`
@@ -70,8 +78,8 @@ type ListActiveSprintsForWorkspaceRow struct {
 // project's active sprint must not pollute the QA cockpit (it has no shared
 // branch to regress). Match the jsonb value literally so a missing/non-bool
 // key is simply excluded (no cast error).
-func (q *Queries) ListActiveSprintsForWorkspace(ctx context.Context, workspaceID pgtype.UUID) ([]ListActiveSprintsForWorkspaceRow, error) {
-	rows, err := q.db.Query(ctx, listActiveSprintsForWorkspace, workspaceID)
+func (q *Queries) ListActiveSprintsForWorkspace(ctx context.Context, arg ListActiveSprintsForWorkspaceParams) ([]ListActiveSprintsForWorkspaceRow, error) {
+	rows, err := q.db.Query(ctx, listActiveSprintsForWorkspace, arg.WorkspaceID, arg.ProjectID)
 	if err != nil {
 		return nil, err
 	}

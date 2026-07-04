@@ -1,21 +1,30 @@
 -- QA speed / regression metrics — aggregates for the QA Metrics page.
+-- Every query takes an optional project_id (sqlc.narg): NULL = workspace-wide
+-- (the "all projects" cockpit view), a UUID = scope to that one project so the
+-- Metrics tab follows the same project selector as Bugs/Sprint. Runs/durations
+-- are scoped through the owning issue's project_id; script coverage through
+-- test_case.project_id.
 
 -- name: QAMetricsRunTotals :one
 -- Regression run totals over the window: how much the suite runs and how green.
 SELECT count(*)                                   AS total,
-       count(*) FILTER (WHERE status = 'pass')    AS passed,
-       count(*) FILTER (WHERE status = 'fail')    AS failed,
-       count(*) FILTER (WHERE status IN ('skip','blocked')) AS skipped
-FROM test_run
-WHERE workspace_id = $1 AND created_at > now() - interval '30 days';
+       count(*) FILTER (WHERE r.status = 'pass')    AS passed,
+       count(*) FILTER (WHERE r.status = 'fail')    AS failed,
+       count(*) FILTER (WHERE r.status IN ('skip','blocked')) AS skipped
+FROM test_run r
+LEFT JOIN issue i ON i.id = r.issue_id
+WHERE r.workspace_id = sqlc.arg('workspace_id') AND r.created_at > now() - interval '30 days'
+  AND (sqlc.narg('project_id')::uuid IS NULL OR i.project_id = sqlc.narg('project_id'));
 
 -- name: QAMetricsRunsByDay :many
 -- Daily regression volume + failures for the trend strip (last 14 days).
-SELECT date_trunc('day', created_at)::date        AS day,
+SELECT date_trunc('day', r.created_at)::date        AS day,
        count(*)                                   AS total,
-       count(*) FILTER (WHERE status = 'fail')    AS failed
-FROM test_run
-WHERE workspace_id = $1 AND created_at > now() - interval '14 days'
+       count(*) FILTER (WHERE r.status = 'fail')    AS failed
+FROM test_run r
+LEFT JOIN issue i ON i.id = r.issue_id
+WHERE r.workspace_id = sqlc.arg('workspace_id') AND r.created_at > now() - interval '14 days'
+  AND (sqlc.narg('project_id')::uuid IS NULL OR i.project_id = sqlc.narg('project_id'))
 GROUP BY 1 ORDER BY 1;
 
 -- name: QAMetricsAgentDurations :many
@@ -29,15 +38,17 @@ SELECT a.name                                                        AS agent,
        round(max(EXTRACT(EPOCH FROM (atq.completed_at - atq.created_at))))::int AS max_sec
 FROM agent_task_queue atq
 JOIN agent a ON a.id = atq.agent_id
-WHERE a.workspace_id = $1
+LEFT JOIN issue i ON i.id = atq.issue_id
+WHERE a.workspace_id = sqlc.arg('workspace_id')
   AND atq.status = 'completed' AND atq.completed_at IS NOT NULL
   AND atq.created_at > now() - interval '30 days'
+  AND (sqlc.narg('project_id')::uuid IS NULL OR i.project_id = sqlc.narg('project_id'))
   AND atq.agent_id IN (
     SELECT sm.member_id FROM squad_member sm
     JOIN squad s ON s.id = sm.squad_id
-    WHERE s.workspace_id = $1 AND s.name = 'QA' AND sm.member_type = 'agent'
+    WHERE s.workspace_id = sqlc.arg('workspace_id') AND s.name = 'QA' AND sm.member_type = 'agent'
     UNION
-    SELECT s.leader_id FROM squad s WHERE s.workspace_id = $1 AND s.name = 'QA'
+    SELECT s.leader_id FROM squad s WHERE s.workspace_id = sqlc.arg('workspace_id') AND s.name = 'QA'
   )
 GROUP BY a.name ORDER BY avg_sec DESC;
 
@@ -47,7 +58,8 @@ GROUP BY a.name ORDER BY avg_sec DESC;
 SELECT count(*) FILTER (WHERE kind = 'automated')                    AS automated,
        count(*) FILTER (WHERE kind = 'automated' AND script <> '')   AS scripted
 FROM test_case
-WHERE workspace_id = $1 AND archived_at IS NULL;
+WHERE workspace_id = sqlc.arg('workspace_id') AND archived_at IS NULL
+  AND (sqlc.narg('project_id')::uuid IS NULL OR project_id = sqlc.narg('project_id'));
 
 -- name: QAMetricsRecentRuns :many
 -- Latest regression verdicts with their case + issue for the runs table.
@@ -57,6 +69,7 @@ SELECT r.id, r.status, r.created_at, r.run_source,
 FROM test_run r
 JOIN test_case c ON c.id = r.test_case_id
 LEFT JOIN issue i ON i.id = r.issue_id
-WHERE r.workspace_id = $1
+WHERE r.workspace_id = sqlc.arg('workspace_id')
+  AND (sqlc.narg('project_id')::uuid IS NULL OR i.project_id = sqlc.narg('project_id'))
 ORDER BY r.created_at DESC
 LIMIT 25;

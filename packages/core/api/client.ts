@@ -2486,17 +2486,21 @@ export class ApiClient {
 
   // QA speed / regression metrics for the workspace (the QA Metrics page):
   // run totals + daily trend + per-QA-agent durations + script coverage.
-  async getQAMetrics(): Promise<QAMetricsResponse> {
-    const raw = await this.fetch<unknown>(`/api/qa/metrics`);
+  // projectId scopes metrics to one project (the cockpit project selector);
+  // omit for the workspace-wide "all projects" view.
+  async getQAMetrics(projectId?: string): Promise<QAMetricsResponse> {
+    const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+    const raw = await this.fetch<unknown>(`/api/qa/metrics${qs}`);
     return parseWithFallback(raw, QAMetricsResponseSchema, EMPTY_QA_METRICS, {
       endpoint: "GET /api/qa/metrics",
     });
   }
 
   // Per-active-sprint QA readiness (the QA cockpit Sprint tab): each sprint's
-  // issue rows by verdict + a mergeable rollup.
-  async getSprintReadiness(): Promise<SprintReadinessResponse> {
-    const raw = await this.fetch<unknown>(`/api/qa/sprint-readiness`);
+  // issue rows by verdict + a mergeable rollup. projectId scopes to one project.
+  async getSprintReadiness(projectId?: string): Promise<SprintReadinessResponse> {
+    const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+    const raw = await this.fetch<unknown>(`/api/qa/sprint-readiness${qs}`);
     return parseWithFallback(raw, SprintReadinessResponseSchema, EMPTY_SPRINT_READINESS, {
       endpoint: "GET /api/qa/sprint-readiness",
     });

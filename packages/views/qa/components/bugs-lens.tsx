@@ -18,12 +18,12 @@ function hasLabel(issue: Issue, name: string): boolean {
   return (issue.labels ?? []).some((l) => l.name === name);
 }
 
-export function BugsLens() {
+export function BugsLens({ projectId }: { projectId?: string }) {
   const wsId = useWorkspaceId();
   const wp = useWorkspacePaths();
   const { data, isLoading } = useQuery({
-    queryKey: ["qa-bugs", wsId],
-    queryFn: () => api.listIssues({ limit: 200 }),
+    queryKey: ["qa-bugs", wsId, projectId ?? "all"],
+    queryFn: () => api.listIssues({ limit: 200, ...(projectId ? { project_id: projectId } : {}) }),
     staleTime: 15_000,
   });
 

@@ -20,11 +20,11 @@ function VerdictDot({ verdict }: { verdict: string }) {
   return <CircleDashed className="size-4 shrink-0 text-muted-foreground" aria-label="pending" />;
 }
 
-export function QASprintReadinessView() {
+export function QASprintReadinessView({ projectId }: { projectId?: string }) {
   const wp = useWorkspacePaths();
   const { data, isLoading } = useQuery({
-    queryKey: ["qa-sprint-readiness"],
-    queryFn: () => api.getSprintReadiness(),
+    queryKey: ["qa-sprint-readiness", projectId ?? "all"],
+    queryFn: () => api.getSprintReadiness(projectId),
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
