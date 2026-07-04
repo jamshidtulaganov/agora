@@ -1109,6 +1109,29 @@ func (s *AutopilotService) buildIssueDescription(ap db.Autopilot, run db.Autopil
 		b.WriteString(" payload:\n```json\n")
 		b.Write(payloadJSON)
 		b.WriteString("\n```")
+
+		// Task-scoped sprint regression: turn the payload's `tasks` into an
+		// explicit directive so the agent regresses exactly the sprint's
+		// curated tasks instead of skimming the raw JSON. Empty tasks (or a
+		// non-regression payload) leaves the whole-branch behavior untouched.
+		var reg struct {
+			Scope string `json:"scope"`
+			Tasks []struct {
+				Key   string `json:"key"`
+				Title string `json:"title"`
+			} `json:"tasks"`
+		}
+		if json.Unmarshal(run.TriggerPayload, &reg) == nil && reg.Scope == "regression" && len(reg.Tasks) > 0 {
+			b.WriteString("\n\nREGRESSION SCOPE — test ONLY these sprint tasks. For each, run its promoted test cases plus the project base suite; a failure in any listed task or the base suite blocks the sprint:")
+			for _, t := range reg.Tasks {
+				b.WriteString("\n- ")
+				b.WriteString(t.Key)
+				if t.Title != "" {
+					b.WriteString(" — ")
+					b.WriteString(t.Title)
+				}
+			}
+		}
 	}
 
 	return pgtype.Text{String: b.String(), Valid: true}
