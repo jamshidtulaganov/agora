@@ -34,7 +34,7 @@ func runSprintEndScheduler(ctx context.Context, queries *db.Queries, h *handler.
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			tickSprintEnd(ctx, queries, h)
+			safeTick("sprint_end", func() { tickSprintEnd(ctx, queries, h) })
 		}
 	}
 }

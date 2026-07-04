@@ -26,7 +26,7 @@ func runConfigWatchdogScheduler(ctx context.Context, h *handler.Handler) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			h.SweepProjectConfigWatchdog(ctx)
+			safeTick("config_watchdog", func() { h.SweepProjectConfigWatchdog(ctx) })
 		}
 	}
 }

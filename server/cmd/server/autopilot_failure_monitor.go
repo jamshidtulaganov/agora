@@ -104,7 +104,7 @@ func runAutopilotFailureMonitor(ctx context.Context, queries *db.Queries, bus *e
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			tickAutopilotFailureMonitor(ctx, queries, bus, cfg)
+			safeTick("autopilot_failure_monitor", func() { tickAutopilotFailureMonitor(ctx, queries, bus, cfg) })
 		}
 	}
 }
