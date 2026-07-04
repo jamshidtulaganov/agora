@@ -28,6 +28,13 @@ type editorAgent struct {
 	AgentName string `json:"agent_name"`
 	WorkDir   string `json:"work_dir"`
 	Status    string `json:"status"`
+	// VSCodeURL is a desktop-VS-Code deep link that opens THIS worktree in the
+	// human's local VS Code: vscode://file/<abs-path> for a self-host/local
+	// daemon (worktree on the user's machine), or a Remote-SSH link
+	// (vscode://vscode-remote/ssh-remote+<host>/<path>) for a remote box. Sent to
+	// the browser so the "Open in VS Code" affordance works for every agent's
+	// worktree, in cloud AND self-host mode.
+	VSCodeURL string `json:"vscode_url,omitempty"`
 	// editorPort is the local health/editor port the agent's runtime daemon
 	// reported at registration (from agent_runtime.metadata.editor_port).
 	// Unexported: internal routing only, never sent to the browser. Empty when
@@ -90,10 +97,35 @@ func (h *Handler) listIssueEditorAgents(ctx context.Context, issueID pgtype.UUID
 	for rows.Next() {
 		var a editorAgent
 		if err := rows.Scan(&a.AgentID, &a.AgentName, &a.WorkDir, &a.Status, &a.editorPort, &a.editorAddr); err == nil {
+			a.VSCodeURL = vscodeURLForWorktree(a.WorkDir, a.editorAddr)
 			out = append(out, a)
 		}
 	}
 	return out
+}
+
+// vscodeURLForWorktree builds a desktop-VS-Code deep link for a worktree. A
+// local/self-host daemon (editorAddr empty) puts the worktree on the human's own
+// machine → vscode://file/<abs-path>. A remote box (editorAddr set) opens over
+// Remote-SSH against the daemon host. Empty workdir → "".
+func vscodeURLForWorktree(workdir, editorAddr string) string {
+	workdir = strings.TrimSpace(workdir)
+	if workdir == "" {
+		return ""
+	}
+	// vscode://file wants a leading slash before the absolute path.
+	path := workdir
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	if strings.TrimSpace(editorAddr) == "" {
+		return "vscode://file" + path
+	}
+	host := editorAddr
+	if i := strings.LastIndex(host, ":"); i > 0 {
+		host = host[:i] // strip the port; Remote-SSH takes a host/alias
+	}
+	return "vscode://vscode-remote/ssh-remote+" + host + path
 }
 
 // daemonEditorBase is the local daemon health server the browser calls to launch
@@ -197,9 +229,14 @@ func (h *Handler) GetIssueEditor(w http.ResponseWriter, r *http.Request) {
 				host = internal[:i] // strip the health port; keep just the daemon host
 			}
 			tok := registerEditorTarget(fmt.Sprintf("%s:%d", host, port), uuidToString(issue.WorkspaceID))
-			writeJSON(w, http.StatusOK, map[string]string{
+			writeJSON(w, http.StatusOK, map[string]any{
 				"mode":       "cloud",
 				"editor_url": "/editor/proxy/" + tok + "/?folder=" + url.QueryEscape(latest),
+				// The full agent roster rides along so the frontend renders the
+				// switch chips + per-worktree "Open in VS Code" links even in cloud
+				// mode (the browser editor still shows the default worktree; per-agent
+				// BROWSER switching in cloud is the remaining follow-up).
+				"agents": agents,
 			})
 			return
 		}

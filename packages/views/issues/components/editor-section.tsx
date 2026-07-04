@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import {
   ChevronRight,
+  Code2,
   ExternalLink,
   Expand,
   Loader2,
@@ -55,6 +56,9 @@ interface EditorAgent {
   agent_name: string;
   work_dir: string;
   status: string;
+  // Desktop-VS-Code deep link for this worktree (vscode://file/… local, or a
+  // Remote-SSH link for a box). Optional — older backends omit it.
+  vscode_url?: string;
 }
 
 // Distinct per-agent chip colors, picked by a stable hash of the agent id so
@@ -276,7 +280,11 @@ export function EditorSection({
       };
 
       // Cloud: backend already launched + reverse-proxies — iframe directly.
+      // Still surface the agent roster so the chips + per-worktree "Open in
+      // VS Code" links render (the browser editor shows the default worktree;
+      // per-agent browser switching in cloud is the remaining follow-up).
       if (data.mode === "cloud" && data.editor_url) {
+        setAgents(data.agents ?? []);
         setUrl(data.editor_url);
         setState("ready");
         return;
@@ -364,6 +372,17 @@ export function EditorSection({
                 className="shrink-0"
               />
               {a.agent_name || "agent"}
+              {a.vscode_url ? (
+                <a
+                  href={a.vscode_url}
+                  onClick={(e) => e.stopPropagation()}
+                  title={`Open ${a.agent_name || "agent"}'s worktree in your desktop VS Code`}
+                  aria-label="Open in VS Code"
+                  className="ml-0.5 rounded p-0.5 opacity-70 hover:opacity-100"
+                >
+                  <Code2 className="size-3" />
+                </a>
+              ) : null}
             </button>
           );
         })}
