@@ -22,6 +22,9 @@ interface IssuePickerModalProps {
   description: string;
   excludeIds: string[];
   onSelect: (issue: Issue) => void;
+  // When set, results are limited to issues in this project (client-side over
+  // the search hits) — used to attach a project's own tasks to its sprint.
+  projectId?: string;
 }
 
 export function IssuePickerModal({
@@ -31,6 +34,7 @@ export function IssuePickerModal({
   description,
   excludeIds,
   onSelect,
+  projectId,
 }: IssuePickerModalProps) {
   const { t } = useT("modals");
   const [query, setQuery] = useState("");
@@ -70,7 +74,11 @@ export function IssuePickerModal({
             signal: controller.signal,
           });
           if (!controller.signal.aborted) {
-            setResults(res.issues.filter((i) => !excludeIds.includes(i.id)));
+            setResults(
+              res.issues.filter(
+                (i) => !excludeIds.includes(i.id) && (!projectId || i.project_id === projectId),
+              ),
+            );
             setIsLoading(false);
           }
         } catch {
@@ -80,7 +88,7 @@ export function IssuePickerModal({
         }
       }, 300);
     },
-    [excludeIds],
+    [excludeIds, projectId],
   );
 
   return (
