@@ -46,6 +46,16 @@ UPDATE skill SET
 WHERE id = $1
 RETURNING *;
 
+-- name: MergeSkillConfigEntry :exec
+-- Atomically merge one or more top-level keys into skill.config via jsonb ||
+-- so concurrent writers never clobber sibling keys (read-merge-write would;
+-- see MergeProjectCoverageEntry). First user: the KB compile stamping
+-- {"kb_managed": true, "kb_name": ...} without racing human config saves.
+UPDATE skill SET
+    config = COALESCE(config, '{}'::jsonb) || sqlc.arg('entry')::jsonb,
+    updated_at = now()
+WHERE id = sqlc.arg('id') AND workspace_id = sqlc.arg('workspace_id');
+
 -- name: DeleteSkill :exec
 -- Defense-in-depth: workspace_id is a SQL-layer tenant guard. See DeleteIssue.
 DELETE FROM skill WHERE id = $1 AND workspace_id = $2;

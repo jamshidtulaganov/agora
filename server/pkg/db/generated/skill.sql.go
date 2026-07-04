@@ -451,6 +451,28 @@ func (q *Queries) ListSkillsByWorkspace(ctx context.Context, workspaceID pgtype.
 	return items, nil
 }
 
+const mergeSkillConfigEntry = `-- name: MergeSkillConfigEntry :exec
+UPDATE skill SET
+    config = COALESCE(config, '{}'::jsonb) || $1::jsonb,
+    updated_at = now()
+WHERE id = $2 AND workspace_id = $3
+`
+
+type MergeSkillConfigEntryParams struct {
+	Entry       []byte      `json:"entry"`
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// Atomically merge one or more top-level keys into skill.config via jsonb ||
+// so concurrent writers never clobber sibling keys (read-merge-write would;
+// see MergeProjectCoverageEntry). First user: the KB compile stamping
+// {"kb_managed": true, "kb_name": ...} without racing human config saves.
+func (q *Queries) MergeSkillConfigEntry(ctx context.Context, arg MergeSkillConfigEntryParams) error {
+	_, err := q.db.Exec(ctx, mergeSkillConfigEntry, arg.Entry, arg.ID, arg.WorkspaceID)
+	return err
+}
+
 const removeAgentSkill = `-- name: RemoveAgentSkill :exec
 DELETE FROM agent_skill
 WHERE agent_id = $1 AND skill_id = $2

@@ -122,6 +122,7 @@ type AgentTaskQueue struct {
 	IsLeaderTask      bool               `json:"is_leader_task"`
 	WaitReason        pgtype.Text        `json:"wait_reason"`
 	InitiatorUserID   pgtype.UUID        `json:"initiator_user_id"`
+	ModelOverride     pgtype.Text        `json:"model_override"`
 }
 
 type Attachment struct {
@@ -491,6 +492,26 @@ type IssueToSprint struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type KnowledgeItem struct {
+	ID              pgtype.UUID        `json:"id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	ProjectID       pgtype.UUID        `json:"project_id"`
+	KbName          string             `json:"kb_name"`
+	Module          string             `json:"module"`
+	Kind            string             `json:"kind"`
+	Title           string             `json:"title"`
+	Body            string             `json:"body"`
+	NormTitle       string             `json:"norm_title"`
+	SourceIssueID   pgtype.UUID        `json:"source_issue_id"`
+	CreatedByType   string             `json:"created_by_type"`
+	CreatedByID     pgtype.UUID        `json:"created_by_id"`
+	Status          string             `json:"status"`
+	Hits            int32              `json:"hits"`
+	LastConfirmedAt pgtype.Timestamptz `json:"last_confirmed_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
 type LarkBindingToken struct {
 	TokenHash      string             `json:"token_hash"`
 	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
@@ -840,17 +861,18 @@ type TestCase struct {
 }
 
 type TestRun struct {
-	ID          pgtype.UUID        `json:"id"`
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	TestCaseID  pgtype.UUID        `json:"test_case_id"`
-	IssueID     pgtype.UUID        `json:"issue_id"`
-	Status      string             `json:"status"`
-	Output      string             `json:"output"`
-	RunSource   string             `json:"run_source"`
-	RunByType   string             `json:"run_by_type"`
-	RunByID     pgtype.UUID        `json:"run_by_id"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	TracePath   string             `json:"trace_path"`
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	TestCaseID     pgtype.UUID        `json:"test_case_id"`
+	IssueID        pgtype.UUID        `json:"issue_id"`
+	Status         string             `json:"status"`
+	Output         string             `json:"output"`
+	RunSource      string             `json:"run_source"`
+	RunByType      string             `json:"run_by_type"`
+	RunByID        pgtype.UUID        `json:"run_by_id"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	TracePath      string             `json:"trace_path"`
+	BaselineStatus string             `json:"baseline_status"`
 }
 
 type User struct {
