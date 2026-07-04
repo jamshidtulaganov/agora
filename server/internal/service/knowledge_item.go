@@ -95,21 +95,50 @@ func cleanKnowledgeString(s string) string {
 	return stripKBRenderUnsafe(s)
 }
 
-// sanitizeKnowledgeText scrubs one proposal: hygiene on every field, ALL
-// whitespace runs (incl. newlines) in title and module collapsed to single
-// spaces (titles render inline as `- **<title>**`; an embedded newline would
-// inject markdown structure into the compiled region), bodies keep newlines
-// (they are line-indented at render), rune caps 160/1200/64, unknown kind →
-// "gotcha". ok=false when the title is empty after cleaning (item dropped).
+// SanitizeKnowledgeTitle applies the ingest hygiene to a title: valid UTF-8 +
+// NUL strip, marker/fence-token strip, ALL whitespace runs (incl. newlines)
+// collapsed to single spaces (titles render inline as `- **<title>**`; an
+// embedded newline would inject markdown structure into the compiled region),
+// trimmed, capped at 160 runes. Returns "" when nothing survives.
+// Exported for the review-API handler so human input passes the exact same
+// hygiene as agent proposals.
+func SanitizeKnowledgeTitle(s string) string {
+	return truncateKnowledgeRunes(strings.TrimSpace(kbWhitespaceRunRe.ReplaceAllString(cleanKnowledgeString(s), " ")), kbTitleMaxRunes)
+}
+
+// SanitizeKnowledgeModule is SanitizeKnowledgeTitle's 64-rune module variant.
+func SanitizeKnowledgeModule(s string) string {
+	return truncateKnowledgeRunes(strings.TrimSpace(kbWhitespaceRunRe.ReplaceAllString(cleanKnowledgeString(s), " ")), kbModuleMaxRunes)
+}
+
+// SanitizeKnowledgeBody applies the ingest hygiene to a body: newlines are
+// KEPT (bodies are line-indented at render), capped at 1200 runes.
+func SanitizeKnowledgeBody(s string) string {
+	return truncateKnowledgeRunes(strings.TrimSpace(cleanKnowledgeString(s)), kbBodyMaxRunes)
+}
+
+// NormalizeKnowledgeTitle is the exported norm_title derivation for the
+// review-API handler (title edits must recompute the dedupe key).
+func NormalizeKnowledgeTitle(title string) string {
+	return normalizeKnowledgeTitle(title)
+}
+
+// IsKnowledgeKind reports whether kind is one of the five item kinds.
+func IsKnowledgeKind(kind string) bool {
+	return knowledgeKinds[kind]
+}
+
+// sanitizeKnowledgeText scrubs one proposal: hygiene on every field, rune caps
+// 160/1200/64, unknown kind → "gotcha". ok=false when the title is empty
+// after cleaning (item dropped).
 func sanitizeKnowledgeText(p knowledgeItemProposal) (knowledgeItemProposal, bool) {
-	title := strings.TrimSpace(kbWhitespaceRunRe.ReplaceAllString(cleanKnowledgeString(p.Title), " "))
+	title := SanitizeKnowledgeTitle(p.Title)
 	if title == "" {
 		return p, false
 	}
-	module := strings.TrimSpace(kbWhitespaceRunRe.ReplaceAllString(cleanKnowledgeString(p.Module), " "))
-	p.Title = truncateKnowledgeRunes(title, kbTitleMaxRunes)
-	p.Module = truncateKnowledgeRunes(module, kbModuleMaxRunes)
-	p.Body = truncateKnowledgeRunes(strings.TrimSpace(cleanKnowledgeString(p.Body)), kbBodyMaxRunes)
+	p.Title = title
+	p.Module = SanitizeKnowledgeModule(p.Module)
+	p.Body = SanitizeKnowledgeBody(p.Body)
 	if kind := strings.ToLower(strings.TrimSpace(p.Kind)); knowledgeKinds[kind] {
 		p.Kind = kind
 	} else {
