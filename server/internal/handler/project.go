@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/logger"
+	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -574,6 +575,27 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		h.writeProjectWriteError(w, r, err, "update")
 		return
 	}
+	// KB drift hook: a title rename or a settings.kb_skill change moves the
+	// project's resolved KB skill name — the compile/dedupe key stored on its
+	// knowledge_item rows. Reassign the rows and recompile BOTH names so the
+	// old skill's managed region sheds this project's items and the new one
+	// gains them. Best-effort: a failure here must not fail the update.
+	if oldKB, newKB := service.ProjectKBSkillName(prevProject), service.ProjectKBSkillName(project); oldKB != newKB {
+		if err := h.Queries.ReassignKnowledgeItemsKBName(r.Context(), db.ReassignKnowledgeItemsKBNameParams{
+			WorkspaceID: project.WorkspaceID, ProjectID: project.ID, KbName: newKB,
+		}); err != nil {
+			// Possible legitimate failure: a live twin title already exists under
+			// the new kb_name (partial unique index) — surfaced for follow-up.
+			slog.Warn("knowledge items kb_name reassign failed",
+				"project_id", uuidToString(project.ID), "kb_name", newKB, "error", err)
+		}
+		if oldKB != "" {
+			h.TaskService.RecompileKB(r.Context(), project.WorkspaceID, oldKB)
+		}
+		if newKB != "" {
+			h.TaskService.RecompileKB(r.Context(), project.WorkspaceID, newKB)
+		}
+	}
 	resp := projectToResponse(project)
 	resp.IssueCount, resp.DoneCount = h.loadProjectIssueStats(r.Context(), project.ID)
 	resp.ResourceCount = h.loadProjectResourceCount(r.Context(), project.ID)
@@ -609,6 +631,13 @@ func (h *Handler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete project")
 		return
+	}
+	// The project's knowledge_item rows cascaded with the delete; recompile its
+	// KB so the managed region shrinks (to empty, if this project was the only
+	// contributor) instead of injecting the deleted project's items forever.
+	// Sibling projects sharing the KB via settings.kb_skill keep theirs.
+	if kbName := service.ProjectKBSkillName(project); kbName != "" {
+		h.TaskService.RecompileKB(r.Context(), project.WorkspaceID, kbName)
 	}
 	h.publish(protocol.EventProjectDeleted, workspaceID, "member", userID, map[string]any{"project_id": uuidToString(project.ID)})
 	w.WriteHeader(http.StatusNoContent)

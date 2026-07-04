@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
@@ -55,7 +56,7 @@ func (h *Handler) checkProjectConfig(ctx context.Context, project db.Project) {
 
 	// (1) KB skill exists? Only a definitive no-rows counts as a gap — a
 	// transient DB error must not escalate a false "skill missing".
-	if name := projectKBSkillName(project); name == "" {
+	if name := service.ProjectKBSkillName(project); name == "" {
 		gaps = append(gaps, "no resolvable KB skill name — set project.settings.kb_skill (the project title does not slugify)")
 	} else if _, err := h.Queries.GetSkillByWorkspaceAndName(ctx, db.GetSkillByWorkspaceAndNameParams{
 		WorkspaceID: project.WorkspaceID,

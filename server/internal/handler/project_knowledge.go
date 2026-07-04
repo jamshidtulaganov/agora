@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -29,25 +28,7 @@ const projectStudyPromptTmpl = `Build the knowledge base for the project "%s". W
 
 Its connected repositories are attached to this task — check them out (use the agora repo checkout commands surfaced in your context) and study them. Cover: the architecture and main components, the tech stack and frameworks, the directory layout and where key things live, how to build / test / run it, the coding conventions, and anything an engineer (human or agent) must know to work here effectively. If several repositories are connected, cover each and how they relate.
 
-Then you MUST persist the knowledge base as a workspace SKILL named "%s-kb" by running the agora skill CLI to create it (or update it if it already exists). Writing a file in the worktree (CLAUDE.md, README, notes, etc.) does NOT complete this task — the worktree is temporary and is discarded; ONLY the saved "%s-kb" skill is read by other agents. Keep the skill concise, accurate, current, and practical, with no fluff — focus on what helps someone act correctly in this codebase. Do not stop until the "%s-kb" skill exists.`
-
-// slugifyProjectName lowercases a project title into a skill-name-safe slug:
-// runs of non-alphanumeric become single hyphens, trimmed at the ends.
-func slugifyProjectName(s string) string {
-	var b strings.Builder
-	prevDash := false
-	for _, r := range strings.ToLower(strings.TrimSpace(s)) {
-		switch {
-		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
-			b.WriteRune(r)
-			prevDash = false
-		case !prevDash:
-			b.WriteByte('-')
-			prevDash = true
-		}
-	}
-	return strings.Trim(b.String(), "-")
-}
+Then you MUST persist the knowledge base as a workspace SKILL named "%s-kb" by running the agora skill CLI to create it (or update it if it already exists). Before composing the update, fetch the current content with the agora skill CLI. If it contains a block delimited by an HTML comment starting with "agora:kb:items:begin" and the closing "agora:kb:items:end" comment, that block is machine-managed: reproduce it verbatim (both marker comments included) in your updated content. Deleting or editing it is task failure. Writing a file in the worktree (CLAUDE.md, README, notes, etc.) does NOT complete this task — the worktree is temporary and is discarded; ONLY the saved "%s-kb" skill is read by other agents. Keep the skill concise, accurate, current, and practical, with no fluff — focus on what helps someone act correctly in this codebase. Do not stop until the "%s-kb" skill exists.`
 
 // soloAutomationDirective forbids fan-out on the focused, single-agent
 // automation tasks (KB study, conventions extraction, module KB, base-suite,
@@ -59,34 +40,11 @@ func slugifyProjectName(s string) string {
 const soloAutomationDirective = " IMPORTANT — do this ENTIRELY YOURSELF in this one run: do NOT delegate, do NOT spawn or create sub-agents, and do NOT @mention any other agent. Do NOT create an issue, sub-issue, task, or tracking ticket to DEFER or track this — creating a ticket is PUNTING, not doing. EXECUTE the work now: check out the repo, study it, and PRODUCE the deliverable (the saved skill / the fenced block) in THIS run. This is a focused solo task; complete it end to end on your own."
 
 func buildProjectStudyPrompt(title string) string {
-	slug := slugifyProjectName(title)
+	slug := service.SlugifyProjectName(title)
 	if slug == "" {
 		slug = "project"
 	}
 	return fmt.Sprintf(projectStudyPromptTmpl, title, slug, slug, slug) + soloAutomationDirective
-}
-
-// projectKBSkillName resolves the name of a project's knowledge-base skill:
-// the explicit project.settings.kb_skill override when set, else the derived
-// "<slug>-kb". The override exists because slugifyProjectName is ASCII-only —
-// a Cyrillic-titled Bitrix sprint bucket ("10 спринт (Июль)") slugifies to
-// "10", never matching the real "sd-main-kb" skill.
-func projectKBSkillName(project db.Project) string {
-	if len(project.Settings) > 0 {
-		var s struct {
-			KBSkill string `json:"kb_skill"`
-		}
-		if json.Unmarshal(project.Settings, &s) == nil {
-			if name := strings.TrimSpace(s.KBSkill); name != "" {
-				return name
-			}
-		}
-	}
-	slug := slugifyProjectName(project.Title)
-	if slug == "" {
-		return ""
-	}
-	return slug + "-kb"
 }
 
 // projectKBSkill loads the issue's project KB skill so the claim path can
@@ -107,7 +65,7 @@ func (h *Handler) projectKBSkill(ctx context.Context, issue db.Issue) (service.A
 	if err != nil {
 		return service.AgentSkillData{}, false
 	}
-	name := projectKBSkillName(project)
+	name := service.ProjectKBSkillName(project)
 	if name == "" {
 		return service.AgentSkillData{}, false
 	}

@@ -209,6 +209,15 @@ func (h *Handler) overwriteSkillWithFiles(ctx context.Context, input skillOverwr
 		return SkillWithFilesResponse{}, err
 	}
 
+	// Re-splice guard: the overwrite whole-replaces content AND config, so a
+	// re-import onto a KB skill may have dropped the server-compiled managed
+	// region and wiped the kb_managed stamp — decide KB-ness from the
+	// PRE-update row and recompile to restore both. Recompile writes via
+	// Queries.UpdateSkill directly, so this cannot recurse.
+	if h.skillIsKBManaged(ctx, existing) {
+		h.TaskService.RecompileKB(ctx, existing.WorkspaceID, existing.Name)
+	}
+
 	return SkillWithFilesResponse{
 		SkillResponse: skillToResponse(skill),
 		Files:         fileResps,

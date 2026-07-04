@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/service"
 	skillpkg "github.com/multica-ai/multica/server/internal/skill"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
@@ -394,8 +395,46 @@ func (h *Handler) CreateSkill(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, resp)
 }
 
+// skillConfigKBManaged reports whether a skill's config carries the
+// server-compile stamp {"kb_managed": true} (see service.RecompileKB).
+func skillConfigKBManaged(config []byte) bool {
+	if len(config) == 0 {
+		return false
+	}
+	var c struct {
+		KBManaged bool `json:"kb_managed"`
+	}
+	return json.Unmarshal(config, &c) == nil && c.KBManaged
+}
+
+// skillIsKBManaged decides whether a skill is a server-compiled KB target.
+// MUST be evaluated on the PRE-update row: UpdateSkill whole-replaces config
+// when the request carries one (and overwriteSkillWithFiles always does), so
+// the exact writes this guard defends against would disarm a post-update
+// check. Fallback for unstamped rows (a legacy blob KB the compile hasn't
+// touched yet): any workspace project resolving to the skill's name.
+func (h *Handler) skillIsKBManaged(ctx context.Context, skill db.Skill) bool {
+	if skillConfigKBManaged(skill.Config) {
+		return true
+	}
+	projects, err := h.Queries.ListProjects(ctx, db.ListProjectsParams{WorkspaceID: skill.WorkspaceID})
+	if err != nil {
+		return false
+	}
+	for _, p := range projects {
+		if service.ProjectKBSkillName(p) == skill.Name {
+			return true
+		}
+	}
+	return false
+}
+
 // canManageSkill checks whether the current user can update or delete a skill.
-// The skill creator or workspace owner/admin can manage any skill.
+// The skill creator or workspace owner/admin can manage any skill. A skill the
+// SERVER created (CreatedBy NULL + kb_managed config — the KB compile winning
+// the create race) is workspace property: any member may manage it, otherwise
+// the lead-agent study flow hard-fails for plain-member actors (update 403s,
+// create 409s on the unique name).
 func (h *Handler) canManageSkill(w http.ResponseWriter, r *http.Request, skill db.Skill) bool {
 	wsID := uuidToString(skill.WorkspaceID)
 	member, ok := h.requireWorkspaceRole(w, r, wsID, "skill not found", "owner", "admin", "member")
@@ -404,7 +443,8 @@ func (h *Handler) canManageSkill(w http.ResponseWriter, r *http.Request, skill d
 	}
 	isAdmin := roleAllowed(member.Role, "owner", "admin")
 	isSkillCreator := skill.CreatedBy.Valid && uuidToString(skill.CreatedBy) == requestUserID(r)
-	if !isAdmin && !isSkillCreator {
+	isServerKB := !skill.CreatedBy.Valid && skillConfigKBManaged(skill.Config)
+	if !isAdmin && !isSkillCreator && !isServerKB {
 		writeError(w, http.StatusForbidden, "only the skill creator can manage this skill")
 		return false
 	}
@@ -429,6 +469,9 @@ func (h *Handler) UpdateSkill(w http.ResponseWriter, r *http.Request) {
 	if !h.canManageSkill(w, r, skill) {
 		return
 	}
+	// KB-ness must come from the PRE-update row: the write below may replace
+	// config (wiping the kb_managed stamp) in the same request.
+	preSkill := skill
 
 	var req UpdateSkillRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -523,6 +566,22 @@ func (h *Handler) UpdateSkill(w http.ResponseWriter, r *http.Request) {
 	wsID := h.resolveWorkspaceID(r)
 	actorType, actorID := h.resolveActor(r, requestUserID(r), wsID)
 	h.publish(protocol.EventSkillUpdated, wsID, actorType, actorID, map[string]any{"skill": resp})
+
+	// Re-splice guard: a whole-content write to a KB skill (CLI `agora skill
+	// update`, the lead-agent study flow, a human save) may have dropped the
+	// server-compiled managed region — recompile to restore it (and re-stamp
+	// config, which the same request may have replaced). The recompile writes
+	// via Queries.UpdateSkill directly, so this cannot recurse.
+	if (req.Content != nil || req.Config != nil) && h.skillIsKBManaged(r.Context(), preSkill) {
+		if actorType == "agent" && req.Content != nil {
+			// §8 residual: the unmanaged part of a kb_managed skill stays
+			// agent-writable in Phase 1 — keep such writes auditable.
+			slog.Warn("agent content write to kb_managed skill",
+				"skill_id", uuidToString(preSkill.ID), "skill_name", preSkill.Name,
+				"workspace_id", uuidToString(preSkill.WorkspaceID), "agent_id", actorID)
+		}
+		h.TaskService.RecompileKB(r.Context(), preSkill.WorkspaceID, preSkill.Name)
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 

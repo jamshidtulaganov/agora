@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/util"
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
 // Per-module knowledge base — the depth track for a large legacy monolith. One
@@ -51,11 +51,11 @@ func capSkillContent(sk service.AgentSkillData, maxRunes int) service.AgentSkill
 // projectModuleKBName derives the module KB skill name: "<base-kb>-<module-slug>".
 // Empty when the base name is unresolvable or the module slugifies to nothing.
 func projectModuleKBName(project db.Project, module string) string {
-	base := projectKBSkillName(project)
+	base := service.ProjectKBSkillName(project)
 	if base == "" {
 		return ""
 	}
-	slug := slugifyProjectName(module)
+	slug := service.SlugifyProjectName(module)
 	if slug == "" {
 		return ""
 	}
