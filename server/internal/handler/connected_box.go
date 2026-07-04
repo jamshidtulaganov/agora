@@ -806,12 +806,38 @@ func (h *Handler) DispatchSprintRegression(ctx context.Context, sprintID, wsID p
 		return db.AutopilotRun{}, fmt.Errorf("marshal payload: %w", err)
 	}
 
-	ap := autopilots[0]
+	// Pick the QA-regression autopilot, not just autopilots[0]. A project may
+	// have several run-only autopilots (e.g. a "Weekly docs sweep" alongside a
+	// regression one); dispatching a whole-branch QA regression to a docs
+	// autopilot runs the wrong agent. Prefer a regression/QA-titled autopilot,
+	// then any non-docs one, and only fall back to [0] when that's all there is.
+	ap := pickRegressionAutopilot(autopilots)
 	run, err := h.AutopilotService.DispatchAutopilot(ctx, ap, pgtype.UUID{}, source, payload)
 	if err != nil {
 		return db.AutopilotRun{}, fmt.Errorf("dispatch regression: %w", err)
 	}
 	return *run, nil
+}
+
+// pickRegressionAutopilot chooses the best run-only autopilot to carry a sprint
+// regression: a title signalling regression/QA wins; otherwise the first one
+// whose title doesn't look like a docs job; otherwise the first (preserving the
+// original single-autopilot behavior). Purely title-based — autopilots carry no
+// explicit purpose field — so name a project's regression autopilot with "QA"
+// or "regression" for it to be chosen over siblings.
+func pickRegressionAutopilot(aps []db.Autopilot) db.Autopilot {
+	for _, ap := range aps {
+		t := strings.ToLower(ap.Title)
+		if strings.Contains(t, "regression") || strings.Contains(t, "qa") {
+			return ap
+		}
+	}
+	for _, ap := range aps {
+		if !strings.Contains(strings.ToLower(ap.Title), "docs") {
+			return ap
+		}
+	}
+	return aps[0]
 }
 
 // RunIssueSprintRegression lets a human fire the SAME whole-branch regression
