@@ -2384,6 +2384,10 @@ func (s *TaskService) createAgentComment(ctx context.Context, issueID, agentID p
 		}
 	}
 	// Expand bare issue identifiers (e.g. MUL-117) into mention links.
+	// Capture hooks that parse fenced JSON need the PRE-expansion text:
+	// expansion rewrites MUL-123 tokens into markdown links even inside
+	// indented fences (findSkipRegions is line-anchored), breaking the parse.
+	originalContent := content
 	content = mention.ExpandIssueIdentifiers(ctx, s.Queries, issue.WorkspaceID, content)
 	comment, err := s.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID:     issueID,
@@ -2434,6 +2438,9 @@ func (s *TaskService) createAgentComment(ctx context.Context, issueID, agentID p
 	// Persist a gen_design_manifest agent's ```design-manifest``` block onto the
 	// project (key-scoped; never clobbers a human-curated manifest).
 	s.CaptureDesignManifest(ctx, issue, comment, agentID)
+	// Persist a synthesizer's ```knowledge-items``` block as knowledge_item
+	// rows and recompile the KB. Pre-expansion content on purpose (see above).
+	s.CaptureKnowledgeItems(ctx, issue, originalContent, agentID)
 }
 
 // AutoUnresolveThreadOnReply clears resolved_at on the thread root when a
