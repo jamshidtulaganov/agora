@@ -166,8 +166,11 @@ export function StatusIcon({
   className?: string;
   inheritColor?: boolean;
 }) {
-  const cfg = STATUS_CONFIG[status];
-  const Renderer = STATUS_RENDERERS[status];
+  // Fall back to backlog for an unknown server-driven status: IssueStatus is
+  // z.string() at the API boundary, so a newer backend enum value must not
+  // deref undefined and white-screen every issue list (installed-app drift).
+  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.backlog;
+  const Renderer = STATUS_RENDERERS[status] ?? STATUS_RENDERERS.backlog;
 
   return (
     <svg

@@ -259,7 +259,9 @@ export function StructuredResult({ result }: { result: QAResult }) {
           </thead>
           <tbody className="font-mono">
             {result.commands.map((c, i) => {
-              const style = CMD_KIND_STYLE[c.kind];
+              // Fall back for an unknown command kind: QAResultSchema keeps
+              // kind as z.string(), so a newer server value must not deref undefined.
+              const style = CMD_KIND_STYLE[c.kind] ?? CMD_KIND_STYLE.pre_existing;
               return (
                 <Fragment key={i}>
                   <tr className="border-t border-border/40">

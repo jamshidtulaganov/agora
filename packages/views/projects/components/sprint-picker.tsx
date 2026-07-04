@@ -82,7 +82,8 @@ export function SprintPicker({
           <span
             className={cn(
               "size-2 shrink-0 rounded-full",
-              SPRINT_STATUS_CONFIG[currentSprint.status].dotColor,
+              SPRINT_STATUS_CONFIG[currentSprint.status]?.dotColor ??
+                SPRINT_STATUS_CONFIG.planned.dotColor,
             )}
             aria-hidden
           />
@@ -105,7 +106,8 @@ export function SprintPicker({
               <span
                 className={cn(
                   "size-2 shrink-0 rounded-full",
-                  SPRINT_STATUS_CONFIG[s.status].dotColor,
+                  SPRINT_STATUS_CONFIG[s.status]?.dotColor ??
+                    SPRINT_STATUS_CONFIG.planned.dotColor,
                 )}
                 aria-hidden
               />
