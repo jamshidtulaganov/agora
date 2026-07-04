@@ -2306,7 +2306,7 @@ func (h *Handler) maybeEnqueueKnowledgeCapture(ctx context.Context, issue db.Iss
 		ID:          issue.ProjectID,
 		WorkspaceID: issue.WorkspaceID,
 	}); perr == nil {
-		kbName = projectKBSkillName(project)
+		kbName = service.ProjectKBSkillName(project)
 	}
 	if kbName == "" {
 		return // no resolvable KB skill name — nothing to distill into
@@ -2416,7 +2416,8 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		// its way to done without a qa:pass sign-off — redirect the write to
 		// in_review so the QA lead runs first (no-op unless AGORA_QA_GATE_ENFORCED).
 		target := *req.Status
-		if newStatus, redirected := h.enforceQAGateBeforeDone(r.Context(), prevIssue, prevIssue.Status, target); redirected {
+		gateActorType, _ := h.resolveActor(r, userID, workspaceID)
+		if newStatus, redirected := h.enforceQAGateBeforeDone(r.Context(), prevIssue, gateActorType, prevIssue.Status, target); redirected {
 			target = newStatus
 			slog.Info("qa-gate: redirected direct →done to →in_review",
 				append(logger.RequestAttrs(r), "issue_id", uuidToString(prevIssue.ID), "requested", *req.Status)...)
@@ -3065,6 +3066,8 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	updated := 0
+	// Resolve the actor once for the batch (used by the risk-tier sign-off gate).
+	batchActorType, _ := h.resolveActor(r, userID, workspaceID)
 	for _, issueID := range req.IssueIDs {
 		issueUUID, err := util.ParseUUID(issueID)
 		if err != nil {
@@ -3098,7 +3101,7 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			// Structural QA gate (batch-path mirror of UpdateIssue): a
 			// squad-orchestrated issue can't skip in_review to done without qa:pass.
 			target := *req.Updates.Status
-			if newStatus, redirected := h.enforceQAGateBeforeDone(r.Context(), prevIssue, prevIssue.Status, target); redirected {
+			if newStatus, redirected := h.enforceQAGateBeforeDone(r.Context(), prevIssue, batchActorType, prevIssue.Status, target); redirected {
 				target = newStatus
 				slog.Info("qa-gate: redirected direct →done to →in_review (batch)",
 					"issue_id", uuidToString(prevIssue.ID), "requested", *req.Updates.Status)

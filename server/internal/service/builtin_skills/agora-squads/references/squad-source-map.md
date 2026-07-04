@@ -221,6 +221,15 @@ server/internal/handler/label.go          # AttachLabel wires maybeRouteToDevLea
 
 Contracts:
 
+- `enforceQAGateBeforeDone` ALSO enforces a RISK-TIER human-sign-off gate when
+  `riskTierGateEnforced()` (env AGORA_RISK_TIER_GATE_ENFORCED, default off): a
+  CRITICAL-tier issue (issueRiskTier == "critical") can only be moved to done by a
+  HUMAN — an agent transition to done, from ANY prior status incl. in_review and
+  even with its own qa:pass, is held at in_review. This makes the risk_map's
+  "critical → human review mandatory" a real gate (was advisory-only). Own flag,
+  independent of the QA gate; fail-open on tier-lookup error; humans never held.
+  The gate now takes actorType (UpdateIssue resolves it inline; BatchUpdateIssues
+  hoists one resolve before the loop).
 - `enforceQAGateBeforeDone` also enforces TEST-ACCURACY when `qaDiscriminationEnforced()`
   (env AGORA_QA_DISCRIMINATION_ENFORCED, default off): a qa:pass no longer reaches
   done unless the issue has a DISCRIMINATING test — one that PASSED on the branch and

@@ -181,6 +181,77 @@ func TestIssueRiskTier(t *testing.T) {
 	}
 }
 
+// DB-backed: the risk-tier human-sign-off gate. When AGORA_RISK_TIER_GATE_ENFORCED
+// is on, an AGENT cannot close a CRITICAL-tier issue (held at in_review from any
+// prior status, even with its own qa:pass); a human is never held; non-critical
+// tiers and non-done targets pass through; flag off is a full passthrough.
+func TestEnforceQAGateBeforeDone_RiskTierSignoff(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("no database")
+	}
+	ctx := t.Context()
+
+	var pid, iid, labelID string
+	if err := testPool.QueryRow(ctx,
+		`INSERT INTO project (workspace_id, title, status, priority, settings)
+		 VALUES ($1::uuid,'rt-proj-'||gen_random_uuid(),'planned','none',
+		         '{"risk_map":[{"module":"billing","tier":"critical","paths":["pay/**"]}]}'::jsonb)
+		 RETURNING id::text`, testWorkspaceID).Scan(&pid); err != nil {
+		t.Fatal(err)
+	}
+	if err := testPool.QueryRow(ctx,
+		`INSERT INTO issue (workspace_id, project_id, title, creator_type, creator_id, number)
+		 VALUES ($1::uuid,$2::uuid,'rt issue','member',$3::uuid,(3000000+floor(random()*1000000))::int)
+		 RETURNING id::text`, testWorkspaceID, pid, testUserID).Scan(&iid); err != nil {
+		t.Fatal(err)
+	}
+	if err := testPool.QueryRow(ctx,
+		`INSERT INTO issue_label (workspace_id, name, color) VALUES ($1::uuid,'risk:critical','#f00') RETURNING id::text`,
+		testWorkspaceID).Scan(&labelID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testPool.Exec(ctx,
+		`INSERT INTO issue_to_label (issue_id, label_id) VALUES ($1::uuid,$2::uuid)`, iid, labelID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		c := context.Background()
+		testPool.Exec(c, `DELETE FROM issue_to_label WHERE issue_id=$1::uuid`, iid)
+		testPool.Exec(c, `DELETE FROM issue_label WHERE id=$1::uuid`, labelID)
+		testPool.Exec(c, `DELETE FROM issue WHERE id=$1::uuid`, iid)
+		testPool.Exec(c, `DELETE FROM project WHERE id=$1::uuid`, pid)
+	})
+	issue, err := testHandler.Queries.GetIssue(ctx, parseUUID(iid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tier := testHandler.issueRiskTier(ctx, issue); tier != "critical" {
+		t.Fatalf("fixture tier = %q, want critical", tier)
+	}
+
+	// Flag OFF → an agent can close a critical issue (gate inert).
+	t.Setenv("AGORA_RISK_TIER_GATE_ENFORCED", "")
+	if got, held := testHandler.enforceQAGateBeforeDone(ctx, issue, "agent", "in_progress", "done"); held || got != "done" {
+		t.Errorf("flag off: want (done,false), got (%q,%v)", got, held)
+	}
+
+	t.Setenv("AGORA_RISK_TIER_GATE_ENFORCED", "true")
+	// Agent closing a critical issue → held at in_review from ANY prior status.
+	for _, prev := range []string{"in_progress", "in_review", "todo"} {
+		if got, held := testHandler.enforceQAGateBeforeDone(ctx, issue, "agent", prev, "done"); !held || got != "in_review" {
+			t.Errorf("agent+critical from %s: want (in_review,true), got (%q,%v)", prev, got, held)
+		}
+	}
+	// A human is NEVER held.
+	if got, held := testHandler.enforceQAGateBeforeDone(ctx, issue, "member", "in_progress", "done"); held || got != "done" {
+		t.Errorf("human+critical: want (done,false), got (%q,%v)", got, held)
+	}
+	// A non-done target passes through even for an agent on a critical issue.
+	if got, held := testHandler.enforceQAGateBeforeDone(ctx, issue, "agent", "todo", "in_progress"); held || got != "in_progress" {
+		t.Errorf("non-done target: want (in_progress,false), got (%q,%v)", got, held)
+	}
+}
+
 // The intake-triage prompt is a suggest-only contract: it must demand the label
 // set and FORBID any routing/status mutation.
 func TestBitrixTriagePromptContract(t *testing.T) {
@@ -202,22 +273,5 @@ func TestBaseSuitePromptContract(t *testing.T) {
 		if !strings.Contains(baseSuitePromptTmpl, want) {
 			t.Errorf("base-suite prompt missing %q", want)
 		}
-	}
-}
-
-// projectKBSkillName: explicit settings.kb_skill override wins; else the slug;
-// a Cyrillic-only title (slug "") with no override yields "" (no lookup).
-func TestProjectKBSkillName(t *testing.T) {
-	withOverride := db.Project{Title: "10 спринт (Июль)", Settings: []byte(`{"kb_skill":"sd-main-kb"}`)}
-	if got := projectKBSkillName(withOverride); got != "sd-main-kb" {
-		t.Errorf("override: want sd-main-kb, got %q", got)
-	}
-	bySlug := db.Project{Title: "sd-cs", Settings: []byte(`{}`)}
-	if got := projectKBSkillName(bySlug); got != "sd-cs-kb" {
-		t.Errorf("slug: want sd-cs-kb, got %q", got)
-	}
-	cyrillicNoOverride := db.Project{Title: "спринт", Settings: nil}
-	if got := projectKBSkillName(cyrillicNoOverride); got != "" {
-		t.Errorf("cyrillic-only title without override must yield empty, got %q", got)
 	}
 }

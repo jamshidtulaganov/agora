@@ -1018,6 +1018,17 @@ func qaDiscriminationEnforced() bool {
 	return strings.TrimSpace(os.Getenv("AGORA_QA_DISCRIMINATION_ENFORCED")) == "true"
 }
 
+// riskTierGateEnforced gates the RISK-TIER human-sign-off guard: when on, a
+// CRITICAL-tier issue can only be moved to done by a HUMAN — an agent's own
+// transition (even with a self-attached qa:pass) is held at in_review for human
+// review. This makes the risk_map's documented "critical → human review
+// mandatory" invariant a real gate, not just advisory prompt text. Default off;
+// fail-open on a tier-lookup error (never block on infra failure). A human actor
+// is never blocked, so turning it on can only ADD safety, never wedge a human.
+func riskTierGateEnforced() bool {
+	return strings.TrimSpace(os.Getenv("AGORA_RISK_TIER_GATE_ENFORCED")) == "true"
+}
+
 // issueDevOrchestrated reports whether the issue's dev-side assignee is
 // squad-managed — assigned straight to a squad, or to an agent that belongs
 // to at least one squad. This is the signal that the work is run by a lead
@@ -1070,11 +1081,26 @@ func (h *Handler) issueHasLabel(ctx context.Context, issue db.Issue, name string
 //
 // Applies uniformly to every actor (agent or human): a squad's work is QA
 // work, and a human who genuinely wants to bypass can apply qa:pass first.
-func (h *Handler) enforceQAGateBeforeDone(ctx context.Context, issue db.Issue, prevStatus, targetStatus string) (string, bool) {
+func (h *Handler) enforceQAGateBeforeDone(ctx context.Context, issue db.Issue, actorType, prevStatus, targetStatus string) (string, bool) {
+	if targetStatus != "done" || prevStatus == "done" {
+		return targetStatus, false
+	}
+
+	// Risk-tier human-sign-off gate (its OWN flag, independent of the QA gate): a
+	// CRITICAL-tier issue must be CLOSED by a human. An agent transition to done —
+	// from ANY prior status, including in_review, and even with its own qa:pass —
+	// is held at in_review for human review. This upholds the risk_map's
+	// documented "critical → human review mandatory" invariant, which was
+	// previously advisory-only (an agent could self-attach qa:pass and close it).
+	// Fail-open: a tier-lookup error never blocks. Humans are never held.
+	if riskTierGateEnforced() && actorType == "agent" && h.issueRiskTier(ctx, issue) == "critical" {
+		return "in_review", true
+	}
+
 	if !qaGateEnforced() {
 		return targetStatus, false
 	}
-	if targetStatus != "done" || prevStatus == "done" || prevStatus == "in_review" {
+	if prevStatus == "in_review" {
 		return targetStatus, false
 	}
 	if !h.issueDevOrchestrated(ctx, issue) {
