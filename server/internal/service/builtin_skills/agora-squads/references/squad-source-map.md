@@ -221,6 +221,12 @@ server/internal/handler/label.go          # AttachLabel wires maybeRouteToDevLea
 
 Contracts:
 
+- `enforceQAGateBeforeDone` also enforces TEST-ACCURACY when `qaDiscriminationEnforced()`
+  (env AGORA_QA_DISCRIMINATION_ENFORCED, default off): a qa:pass no longer reaches
+  done unless the issue has a DISCRIMINATING test — one that PASSED on the branch and
+  FAILED on the pre-change baseline (HasDiscriminatingRunForIssue, from test_run.
+  baseline_status set by run_test_cases). A tautological/happy-path test green on both
+  proves nothing and does not count. Fail-open on query error; 'unknown' baseline is neutral.
 - `maybeRunQAOnInReview` first computes `trivial := issueQAScopeTrivial(issue)`
   — a low-risk change (`tier:trivial`/`tier:light`/`risk:safe`/`type:docs`
   label, or a small non-zero PR diff; `risk:guarded`/`risk:critical` veto;

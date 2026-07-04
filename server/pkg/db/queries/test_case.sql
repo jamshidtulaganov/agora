@@ -84,10 +84,26 @@ WHERE id = $1 AND workspace_id = $2;
 
 -- name: CreateTestRun :one
 INSERT INTO test_run (
-    workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, trace_path
+    workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, trace_path, baseline_status
 )
-VALUES ($1, $2, sqlc.narg(issue_id), $3, $4, $5, $6, sqlc.narg(run_by_id), $7)
+VALUES ($1, $2, sqlc.narg(issue_id), $3, $4, $5, $6, sqlc.narg(run_by_id), $7, $8)
 RETURNING *;
+
+-- name: HasDiscriminatingRunForIssue :one
+-- Baseline discrimination gate: does the issue have AT LEAST ONE latest-per-case
+-- run that PASSED on the branch AND FAILED on the pre-change baseline? A test
+-- green on both is non-discriminating (proves nothing about the change), so only
+-- a fail-before/pass-after run counts as real evidence. Latest run per case wins
+-- (a re-run supersedes an earlier one).
+SELECT EXISTS (
+    SELECT 1 FROM (
+        SELECT DISTINCT ON (test_case_id) status, baseline_status
+        FROM test_run
+        WHERE issue_id = $1
+        ORDER BY test_case_id, created_at DESC
+    ) latest
+    WHERE latest.status = 'pass' AND latest.baseline_status = 'fail'
+) AS has_discriminating;
 
 -- name: GetTestRunByID :one
 -- One run by id, for the trace-viewer launch endpoint. NOT workspace-scoped in

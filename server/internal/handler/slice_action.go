@@ -291,9 +291,18 @@ func buildSliceInstruction(kind, scope string) string {
 			"\"output\":\"<one-line evidence — for fail/blocked this IS the human-readable reason shown to the QA " +
 			"reviewer, e.g. the failing assertion or HTTP status; for pass, what you observed>\",\"trace_path\":\"<optional: " +
 			"the ABSOLUTE path of the Playwright trace .zip this case produced, e.g. /tmp/trace-<id>.zip; omit when no " +
-			"trace was captured (hand-driven cases)>\"}]` — one entry per case " +
+			"trace was captured (hand-driven cases)>\",\"baseline_status\":\"pass\"|\"fail\"|\"unknown\"}]` — one entry per case " +
 			"you ran. Use `blocked` if a case could not be exercised (missing data/route). The JSON must be valid and " +
-			"self-contained."
+			"self-contained. " +
+			"BASELINE DISCRIMINATION — a plan-driven test only proves your change if it FAILS on the pre-change code and " +
+			"PASSES after (fail-before / pass-after). For EACH case that has a COMPILED SCRIPT, ALSO run that SAME script " +
+			"against the pre-change BASELINE (check out the merge-base — or the sprint last-green ref when a sprint context " +
+			"is given below — run the script, then return to the branch), and report `baseline_status`: `fail` if it failed " +
+			"on the baseline (GOOD — it discriminates your change), `pass` if it passed there too. A case that is `pass` on " +
+			"BOTH baseline and branch is NON-DISCRIMINATING — it proves nothing about your change (tautological / " +
+			"happy-path / testing-the-code-not-the-spec); do not rely on it as evidence, strengthen it to fail-before. " +
+			"Report `baseline_status:\"unknown\"` for hand-driven / [e2e] / [smoke] cases you cannot re-run against a " +
+			"baseline (they stay advisory). Restore the branch checkout before finishing."
 	case sliceActionCompileTests:
 		base = "COMPILE this project's automated QA test cases into runnable Playwright scripts — you are the QA " +
 			"Squad's automation engineer. The cases that STILL NEED a script (id · title · steps · expected) are listed " +
@@ -998,6 +1007,17 @@ func qaGateEnforced() bool {
 	return strings.TrimSpace(os.Getenv("AGORA_QA_GATE_ENFORCED")) == "true"
 }
 
+// qaDiscriminationEnforced gates the TEST-ACCURACY guard: when on, a qa:pass is
+// not enough to reach done — the issue must ALSO carry at least one plan-driven
+// test that DISCRIMINATES the change (passed on the branch, FAILED on the
+// pre-change baseline). This blocks a tautological / circular / happy-path-only
+// test (green on both baseline and branch) from certifying buggy code. Default
+// off — opt-in, fail-safe: with no baseline data (all runs "unknown") the guard
+// simply doesn't apply unless a project deliberately turns it on.
+func qaDiscriminationEnforced() bool {
+	return strings.TrimSpace(os.Getenv("AGORA_QA_DISCRIMINATION_ENFORCED")) == "true"
+}
+
 // issueDevOrchestrated reports whether the issue's dev-side assignee is
 // squad-managed — assigned straight to a squad, or to an agent that belongs
 // to at least one squad. This is the signal that the work is run by a lead
@@ -1061,7 +1081,19 @@ func (h *Handler) enforceQAGateBeforeDone(ctx context.Context, issue db.Issue, p
 		return targetStatus, false
 	}
 	if h.issueHasLabel(ctx, issue, "qa:pass") {
-		return targetStatus, false
+		// qa:pass present. Unless test-accuracy is enforced, that's enough.
+		if !qaDiscriminationEnforced() {
+			return targetStatus, false
+		}
+		// Test-accuracy enforced: the qa:pass must rest on a DISCRIMINATING test
+		// (fail-before/pass-after), not a tautological/happy-path one. A
+		// discriminating run present → done proceeds; none → hold at in_review so
+		// QA re-runs and the author must add a test that actually exercises the
+		// change. Fail-open on a query error (never block on infra failure).
+		if ok, err := h.Queries.HasDiscriminatingRunForIssue(ctx, issue.ID); err != nil || ok {
+			return targetStatus, false
+		}
+		return "in_review", true
 	}
 	return "in_review", true
 }

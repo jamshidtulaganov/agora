@@ -108,22 +108,23 @@ func (q *Queries) CreateTestCase(ctx context.Context, arg CreateTestCaseParams) 
 
 const createTestRun = `-- name: CreateTestRun :one
 INSERT INTO test_run (
-    workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, trace_path
+    workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, trace_path, baseline_status
 )
-VALUES ($1, $2, $8, $3, $4, $5, $6, $9, $7)
-RETURNING id, workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, created_at, trace_path
+VALUES ($1, $2, $9, $3, $4, $5, $6, $10, $7, $8)
+RETURNING id, workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, created_at, trace_path, baseline_status
 `
 
 type CreateTestRunParams struct {
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
-	TestCaseID  pgtype.UUID `json:"test_case_id"`
-	Status      string      `json:"status"`
-	Output      string      `json:"output"`
-	RunSource   string      `json:"run_source"`
-	RunByType   string      `json:"run_by_type"`
-	TracePath   string      `json:"trace_path"`
-	IssueID     pgtype.UUID `json:"issue_id"`
-	RunByID     pgtype.UUID `json:"run_by_id"`
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	TestCaseID     pgtype.UUID `json:"test_case_id"`
+	Status         string      `json:"status"`
+	Output         string      `json:"output"`
+	RunSource      string      `json:"run_source"`
+	RunByType      string      `json:"run_by_type"`
+	TracePath      string      `json:"trace_path"`
+	BaselineStatus string      `json:"baseline_status"`
+	IssueID        pgtype.UUID `json:"issue_id"`
+	RunByID        pgtype.UUID `json:"run_by_id"`
 }
 
 func (q *Queries) CreateTestRun(ctx context.Context, arg CreateTestRunParams) (TestRun, error) {
@@ -135,6 +136,7 @@ func (q *Queries) CreateTestRun(ctx context.Context, arg CreateTestRunParams) (T
 		arg.RunSource,
 		arg.RunByType,
 		arg.TracePath,
+		arg.BaselineStatus,
 		arg.IssueID,
 		arg.RunByID,
 	)
@@ -151,6 +153,7 @@ func (q *Queries) CreateTestRun(ctx context.Context, arg CreateTestRunParams) (T
 		&i.RunByID,
 		&i.CreatedAt,
 		&i.TracePath,
+		&i.BaselineStatus,
 	)
 	return i, err
 }
@@ -190,7 +193,7 @@ func (q *Queries) GetTestCase(ctx context.Context, arg GetTestCaseParams) (TestC
 }
 
 const getTestRunByID = `-- name: GetTestRunByID :one
-SELECT id, workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, created_at, trace_path FROM test_run WHERE id = $1
+SELECT id, workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, created_at, trace_path, baseline_status FROM test_run WHERE id = $1
 `
 
 // One run by id, for the trace-viewer launch endpoint. NOT workspace-scoped in
@@ -212,8 +215,33 @@ func (q *Queries) GetTestRunByID(ctx context.Context, id pgtype.UUID) (TestRun, 
 		&i.RunByID,
 		&i.CreatedAt,
 		&i.TracePath,
+		&i.BaselineStatus,
 	)
 	return i, err
+}
+
+const hasDiscriminatingRunForIssue = `-- name: HasDiscriminatingRunForIssue :one
+SELECT EXISTS (
+    SELECT 1 FROM (
+        SELECT DISTINCT ON (test_case_id) status, baseline_status
+        FROM test_run
+        WHERE issue_id = $1
+        ORDER BY test_case_id, created_at DESC
+    ) latest
+    WHERE latest.status = 'pass' AND latest.baseline_status = 'fail'
+) AS has_discriminating
+`
+
+// Baseline discrimination gate: does the issue have AT LEAST ONE latest-per-case
+// run that PASSED on the branch AND FAILED on the pre-change baseline? A test
+// green on both is non-discriminating (proves nothing about the change), so only
+// a fail-before/pass-after run counts as real evidence. Latest run per case wins
+// (a re-run supersedes an earlier one).
+func (q *Queries) HasDiscriminatingRunForIssue(ctx context.Context, issueID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, hasDiscriminatingRunForIssue, issueID)
+	var has_discriminating bool
+	err := row.Scan(&has_discriminating)
+	return has_discriminating, err
 }
 
 const listAutomatedTestCasesForIssue = `-- name: ListAutomatedTestCasesForIssue :many
@@ -541,7 +569,7 @@ func (q *Queries) ListTestCasesForProject(ctx context.Context, arg ListTestCases
 }
 
 const listTestRunsForCase = `-- name: ListTestRunsForCase :many
-SELECT id, workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, created_at, trace_path FROM test_run
+SELECT id, workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, created_at, trace_path, baseline_status FROM test_run
 WHERE test_case_id = $1 AND workspace_id = $2
 ORDER BY created_at DESC
 LIMIT $3
@@ -574,6 +602,7 @@ func (q *Queries) ListTestRunsForCase(ctx context.Context, arg ListTestRunsForCa
 			&i.RunByID,
 			&i.CreatedAt,
 			&i.TracePath,
+			&i.BaselineStatus,
 		); err != nil {
 			return nil, err
 		}
