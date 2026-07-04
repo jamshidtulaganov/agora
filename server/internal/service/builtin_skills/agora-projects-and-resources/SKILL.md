@@ -84,6 +84,33 @@ the project, so agents navigate by map instead of exploring.
 - Only include routes you saw in code or verified live; dead or role-gated
   paths belong in `known_issues`, never in `routes`.
 
+## Project knowledge base (knowledge-items)
+
+Each project has a `<slug>-kb` skill that is auto-injected into every task on
+the project. Its content is **server-compiled** from structured knowledge
+items — you do NOT hand-edit it.
+
+- To record a durable learning, post a comment containing a fenced
+  ` ```knowledge-items``` ` block with a JSON array. Each item:
+  `{"kind": "...", "module": "...", "title": "...", "body": "..."}`.
+  `kind` is one of `architecture | gotcha | convention | nav | decision`;
+  `title` ≤160 chars states a fact (not a task); `body` ≤1200 chars of plain
+  markdown with no code fences or HTML comments; `module` is the affected
+  module label or `""`. At most 10 items per comment.
+- The server parses the block, deduplicates against existing items (an exact
+  restatement just confirms an item), and compiles the active items into the
+  `<slug>-kb` skill. Items of instruction-bearing kinds
+  (`architecture`/`convention`/`decision`), and anything from a non-synthesizer
+  agent, land as `proposed` and wait for human approval before they compile in.
+- **Never run `agora skill` to edit a `<slug>-kb` skill, and never touch the
+  content between the `<!-- agora:kb:items:begin -->` /
+  `<!-- agora:kb:items:end -->` markers** — that region is machine-managed and
+  a whole-content write that drops it is treated as an error. Emit
+  knowledge-items instead.
+- Capture runs automatically when an issue transitions to `done` (a dedicated
+  "KB Synthesizer" agent is triggered); you can also emit a block from any
+  task that learned something durable.
+
 ## Side effects
 
 Project create/update/delete/status, project resource add/update/remove, and `qa-manifest set` mutate durable workspace state and affect future tasks. Creating a project with a repo (or attaching the first repo) also queues background knowledge-base and QA-manifest builds for an agent lead. Ask before changing `local_directory` unless the user explicitly requested that exact local path.
