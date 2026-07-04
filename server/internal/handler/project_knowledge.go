@@ -148,7 +148,7 @@ func (h *Handler) projectHasGithubRepo(ctx context.Context, projectID pgtype.UUI
 // chooses the RUNNER, not whether to fire.
 func (h *Handler) pickAutomationRunner(ctx context.Context, project db.Project) pgtype.UUID {
 	lead := project.LeadID
-	leadN, err := h.Queries.CountRunningTasks(ctx, lead)
+	leadN, err := h.Queries.CountInFlightTasksForAgent(ctx, lead)
 	if err != nil {
 		return lead
 	}
@@ -166,7 +166,7 @@ func (h *Handler) pickAutomationRunner(ctx context.Context, project db.Project) 
 		if a.ID == lead || !sliceAgentReady(a) {
 			continue
 		}
-		n, err := h.Queries.CountRunningTasks(ctx, a.ID)
+		n, err := h.Queries.CountInFlightTasksForAgent(ctx, a.ID)
 		if err != nil {
 			continue
 		}

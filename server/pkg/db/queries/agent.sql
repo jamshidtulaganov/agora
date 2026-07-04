@@ -705,3 +705,12 @@ SET status = CASE WHEN EXISTS (
     updated_at = now()
 WHERE a.id = $1
 RETURNING *;
+
+-- name: CountInFlightTasksForAgent :one
+-- Counts an agent's IN-FLIGHT tasks including 'queued' (unlike CountRunningTasks,
+-- which counts only running/dispatched). pickAutomationRunner needs 'queued' to
+-- count so a freshly-enqueued onboarding task immediately loads its agent — else
+-- a burst of enqueues all read the same pre-insert snapshot and pile on one
+-- agent instead of spreading.
+SELECT count(*) FROM agent_task_queue
+WHERE agent_id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory');

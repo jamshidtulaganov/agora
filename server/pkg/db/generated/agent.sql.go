@@ -728,6 +728,23 @@ func (q *Queries) CompleteAgentTask(ctx context.Context, arg CompleteAgentTaskPa
 	return i, err
 }
 
+const countInFlightTasksForAgent = `-- name: CountInFlightTasksForAgent :one
+SELECT count(*) FROM agent_task_queue
+WHERE agent_id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+`
+
+// Counts an agent's IN-FLIGHT tasks including 'queued' (unlike CountRunningTasks,
+// which counts only running/dispatched). pickAutomationRunner needs 'queued' to
+// count so a freshly-enqueued onboarding task immediately loads its agent — else
+// a burst of enqueues all read the same pre-insert snapshot and pile on one
+// agent instead of spreading.
+func (q *Queries) CountInFlightTasksForAgent(ctx context.Context, agentID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countInFlightTasksForAgent, agentID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countRunningTasks = `-- name: CountRunningTasks :one
 SELECT count(*) FROM agent_task_queue
 WHERE agent_id = $1 AND status IN ('dispatched', 'running', 'waiting_local_directory')
