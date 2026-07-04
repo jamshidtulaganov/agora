@@ -1,12 +1,18 @@
 -- Sprint QA-readiness — "is this sprint mergeable?" surface for the QA cockpit.
 
 -- name: ListActiveSprintsForWorkspace :many
--- Active sprints across all of the workspace's projects (the readiness picker).
+-- Active sprints for the readiness picker — ONLY from projects that actually
+-- run sprint mode (project.settings.sprint_mode = true). The "shared sprint
+-- branch, mergeable?" model only applies to sprint-mode projects; a non-sprint
+-- project's active sprint must not pollute the QA cockpit (it has no shared
+-- branch to regress). Match the jsonb value literally so a missing/non-bool
+-- key is simply excluded (no cast error).
 SELECT s.id, s.name, s.branch, s.project_id, p.title AS project_title,
        (SELECT count(*) FROM issue_to_sprint x WHERE x.sprint_id = s.id) AS issue_count
 FROM sprint s
 JOIN project p ON p.id = s.project_id
 WHERE p.workspace_id = $1 AND s.status = 'active'
+  AND p.settings->'sprint_mode' = 'true'::jsonb
 ORDER BY p.title, s.name;
 
 -- name: LatestSprintRegressionRun :one
