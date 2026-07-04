@@ -97,7 +97,13 @@ func (h *Handler) projectKBSkill(ctx context.Context, issue db.Issue) (service.A
 	if !issue.ProjectID.Valid {
 		return service.AgentSkillData{}, false
 	}
-	project, err := h.Queries.GetProject(ctx, issue.ProjectID)
+	// Read the project fail-closed on workspace: issue.project_id is a plain FK
+	// with no same-workspace DB constraint, so a workspace-unscoped GetProject
+	// would source the KB skill name from a foreign project on FK drift.
+	project, err := h.Queries.GetProjectInWorkspace(ctx, db.GetProjectInWorkspaceParams{
+		ID:          issue.ProjectID,
+		WorkspaceID: issue.WorkspaceID,
+	})
 	if err != nil {
 		return service.AgentSkillData{}, false
 	}

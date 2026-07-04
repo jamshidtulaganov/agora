@@ -49,7 +49,14 @@ func (h *Handler) projectRiskMap(ctx context.Context, issue db.Issue) ([]riskMap
 	if !issue.ProjectID.Valid {
 		return nil, false
 	}
-	project, err := h.Queries.GetProject(ctx, issue.ProjectID)
+	// Read fail-closed on workspace: the risk map is a safety control, so it must
+	// come from the issue's OWN project — a workspace-unscoped GetProject would
+	// source the tier policy from a foreign project on FK drift (issue.project_id
+	// is a plain FK with no same-workspace DB constraint).
+	project, err := h.Queries.GetProjectInWorkspace(ctx, db.GetProjectInWorkspaceParams{
+		ID:          issue.ProjectID,
+		WorkspaceID: issue.WorkspaceID,
+	})
 	if err != nil || len(project.Settings) == 0 {
 		return nil, false
 	}

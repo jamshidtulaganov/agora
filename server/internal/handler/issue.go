@@ -2300,7 +2300,12 @@ func (h *Handler) maybeEnqueueKnowledgeCapture(ctx context.Context, issue db.Iss
 	// Queries.CreateComment — the agent-comment ingest path (and its capture
 	// hooks) is deliberately bypassed, so this cannot recurse.
 	kbName := ""
-	if project, perr := h.Queries.GetProject(ctx, issue.ProjectID); perr == nil {
+	// Resolve the KB skill name fail-closed on workspace (issue.project_id is a
+	// plain FK with no same-workspace constraint).
+	if project, perr := h.Queries.GetProjectInWorkspace(ctx, db.GetProjectInWorkspaceParams{
+		ID:          issue.ProjectID,
+		WorkspaceID: issue.WorkspaceID,
+	}); perr == nil {
 		kbName = projectKBSkillName(project)
 	}
 	if kbName == "" {

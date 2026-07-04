@@ -30,12 +30,20 @@ const projectModuleKBMax = 3
 // the run's context. Over-cap content is truncated with a marker.
 const projectModuleKBMaxChars = 8000
 
+// projectKBBaseMaxChars caps the PROJECT BASE KB — the skill injected into EVERY
+// claim on the project. Unlike a per-module KB (8000), the base is the primary
+// document, so it gets more budget; but it must still be bounded, or an on-done
+// synthesizer that appends every completion grows it unbounded and every future
+// claim ships the whole thing (the exact context blowout the module cap exists
+// to prevent, applied to the always-injected skill instead of a module one).
+const projectKBBaseMaxChars = 16000
+
 // capSkillContent trims an injected skill's content to a rune budget so a large
 // authored skill can't blow the claim context. Returns the skill unchanged when
 // within budget.
 func capSkillContent(sk service.AgentSkillData, maxRunes int) service.AgentSkillData {
 	if r := []rune(sk.Content); len(r) > maxRunes {
-		sk.Content = strings.TrimSpace(string(r[:maxRunes])) + "\n\n…(module KB truncated for context budget — open the skill for the full text)"
+		sk.Content = strings.TrimSpace(string(r[:maxRunes])) + "\n\n…(KB truncated for context budget — open the skill for the full text)"
 	}
 	return sk
 }
@@ -140,13 +148,18 @@ func (h *Handler) projectKBSkills(ctx context.Context, issue db.Issue) []service
 			out = append(out, sk)
 		}
 	}
-	// Base KB (existing single-skill resolver).
-	add(h.projectKBSkill(ctx, issue))
+	// Base KB (existing single-skill resolver) — capped so the always-injected
+	// primary skill can't blow the claim context budget.
+	base, baseOK := h.projectKBSkill(ctx, issue)
+	add(capSkillContent(base, projectKBBaseMaxChars), baseOK)
 
 	if !issue.ProjectID.Valid {
 		return out
 	}
-	project, err := h.Queries.GetProject(ctx, issue.ProjectID)
+	project, err := h.Queries.GetProjectInWorkspace(ctx, db.GetProjectInWorkspaceParams{
+		ID:          issue.ProjectID,
+		WorkspaceID: issue.WorkspaceID,
+	})
 	if err != nil {
 		return out
 	}
