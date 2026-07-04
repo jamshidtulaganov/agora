@@ -2692,7 +2692,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		// (one with no pending task on this issue) so the per-(issue,agent) dedup
 		// no longer drops one of them. Found in the demo run (SD-320): both raced
 		// to the same agent and the gate verdict was silently suppressed.
-		go func() {
+		safeGo("autoQA:in_review", func() {
 			h.maybeRunQAOnInReview(context.Background(), issue, actorType, actorID)
 			h.maybeGenTests(context.Background(), issue, actorType, actorID, false)
 			// Compile any automated cases still missing a Playwright script
@@ -2702,7 +2702,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 			// pane never shows the browser. Best-effort, gated by compile-enabled.
 			h.maybeCompileTestCases(context.Background(), issue)
 			h.maybeRunTestsOnInReview(context.Background(), issue, actorType, actorID)
-		}()
+		})
 	}
 
 	// Shift-left QA prep on dev start: the moment an issue enters in_progress,
@@ -2711,7 +2711,9 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	// is still implementing — so the in_review gate only executes a suite that
 	// is already sitting ready. Idempotent (skips when cases exist).
 	if statusChanged && issue.Status == "in_progress" && prevIssue.Status != "in_progress" {
-		go h.maybeGenTests(context.Background(), issue, actorType, actorID, true)
+		safeGo("autoGenTests:in_progress", func() {
+			h.maybeGenTests(context.Background(), issue, actorType, actorID, true)
+		})
 	}
 
 	// Cancel active tasks when the issue is cancelled by a user.
@@ -3301,19 +3303,21 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		// squad-orchestrated issue always reaches the QA lead regardless of path.
 		if statusChanged && issue.Status == "in_review" && prevIssue.Status != "in_review" {
 			issueCopy := issue
-			go func() {
+			safeGo("autoQA:in_review:batch", func() {
 				h.maybeRunQAOnInReview(context.Background(), issueCopy, actorType, actorID)
 				h.maybeGenTests(context.Background(), issueCopy, actorType, actorID, false)
 				h.maybeCompileTestCases(context.Background(), issueCopy)
 				h.maybeRunTestsOnInReview(context.Background(), issueCopy, actorType, actorID)
-			}()
+			})
 		}
 
 		// Shift-left QA prep on dev start (batch-path mirror of UpdateIssue):
 		// author + compile the suite in the background while the dev works.
 		if statusChanged && issue.Status == "in_progress" && prevIssue.Status != "in_progress" {
 			issueCopy := issue
-			go h.maybeGenTests(context.Background(), issueCopy, actorType, actorID, true)
+			safeGo("autoGenTests:in_progress:batch", func() {
+				h.maybeGenTests(context.Background(), issueCopy, actorType, actorID, true)
+			})
 		}
 
 		// Cancel active tasks when the issue is cancelled by a user.

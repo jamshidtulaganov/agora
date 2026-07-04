@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"runtime/debug"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -300,6 +301,39 @@ func parseUUIDSliceOrBadRequest(w http.ResponseWriter, ids []string, fieldName s
 	return uuids, true
 }
 
+// safeGo runs fn in a detached goroutine WITH panic recovery. Detached
+// goroutines are NOT covered by chi's middleware.Recoverer (that only wraps the
+// HTTP handler stack), so an unrecovered panic in a fire-and-forget goroutine
+// crashes the ENTIRE server process — taking down every tenant, not just the
+// one request. Every fire-and-forget goroutine launched from a request handler
+// MUST go through safeGo. name identifies the goroutine in the recovery log.
+func safeGo(name string, fn func()) {
+	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("recovered panic in detached goroutine",
+					"goroutine", name, "panic", rec, "stack", string(debug.Stack()))
+			}
+		}()
+		fn()
+	}()
+}
+
+// actorAuthorID resolves an actorID string (an agent id, or a member/user id)
+// to a comment/reaction author UUID. actorID should always be a valid UUID —
+// resolveActor sources it from the auth-middleware-set X-Agent-ID token row or a
+// member userID — but this parses non-panickingly so a malformed id can never
+// reach util.MustParseUUID inside a detached goroutine and crash the process.
+// ok=false means "skip authoring" (the author_id column is NOT NULL, so there
+// is no valid row to write without a real UUID).
+func actorAuthorID(actorID string) (pgtype.UUID, bool) {
+	u, err := util.ParseUUID(actorID)
+	if err != nil {
+		return pgtype.UUID{}, false
+	}
+	return u, true
+}
+
 // publish sends a domain event through the event bus.
 func (h *Handler) publish(eventType, workspaceID, actorType, actorID string, payload any) {
 	h.Bus.Publish(events.Event{
@@ -382,6 +416,15 @@ func (h *Handler) resolveActor(r *http.Request, userID, workspaceID string) (act
 	if r.Header.Get("X-Actor-Source") == "task_token" {
 		// Server-set header — auth middleware also forced X-Agent-ID
 		// from the token row. Trust it directly without re-querying.
+		//
+		// SECURITY (MUL-2600): task_token ALWAYS resolves to actor=agent,
+		// even if X-Agent-ID is stripped/empty — an agent process must never
+		// be able to drop its identity headers and fall through to the member
+		// path (see TestAgentEnv_TaskTokenActorSource). So do NOT validate the
+		// id here and fall back to member on failure; that would reopen the
+		// escape. A malformed id is instead handled fail-safe DOWNSTREAM: every
+		// write that turns actorID into a UUID uses actorAuthorID (skips) or
+		// runs inside safeGo (recovers), so it can never panic the process.
 		return "agent", r.Header.Get("X-Agent-ID")
 	}
 	agentID := r.Header.Get("X-Agent-ID")

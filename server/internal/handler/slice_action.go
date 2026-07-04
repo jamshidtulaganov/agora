@@ -1874,12 +1874,17 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 		}
 	}
 
+	authorID, ok := actorAuthorID(actorID)
+	if !ok {
+		slog.Warn("auto run_qa: invalid actor id, skipping", "actor_id", actorID, "issue_id", uuidToString(issue.ID))
+		return
+	}
 	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID:     issue.ID,
 		WorkspaceID: issue.WorkspaceID,
 		AuthorType:  actorType,
-		AuthorID:    parseUUID(actorID),
+		AuthorID:    authorID,
 		Content:     content,
 		Type:        "comment",
 		ParentID:    pgtype.UUID{Valid: false},
@@ -1966,12 +1971,17 @@ func (h *Handler) maybeGenTests(ctx context.Context, issue db.Issue, actorType, 
 		// reaches in_review, so scripts are mandatory here, not optional.
 		instruction += " SHIFT-LEFT PREP: the developer is still working on this task — do NOT look for a diff or a deployed change, and do NOT run anything. Author the cases from the acceptance criteria + the PROJECT QA MANIFEST above, and for EVERY automatable case also emit its runnable Playwright script (the script field) targeting the manifest's base_url/auth/routes — the in_review gate will only EXECUTE what you prepare now."
 	}
+	authorID, ok := actorAuthorID(actorID)
+	if !ok {
+		slog.Warn("auto gen_test_cases: invalid actor id, skipping", "actor_id", actorID, "issue_id", uuidToString(issue.ID))
+		return
+	}
 	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID:     issue.ID,
 		WorkspaceID: issue.WorkspaceID,
 		AuthorType:  actorType,
-		AuthorID:    parseUUID(actorID),
+		AuthorID:    authorID,
 		Content:     content,
 		Type:        "comment",
 		ParentID:    pgtype.UUID{Valid: false},
@@ -2049,12 +2059,17 @@ func (h *Handler) maybeRunTestsOnInReview(ctx context.Context, issue db.Issue, a
 	instruction += h.sliceActionTestCasesContext(ctx, issue, baseSuite != "")
 	instruction += baseSuite
 
+	authorID, ok := actorAuthorID(actorID)
+	if !ok {
+		slog.Warn("auto run_test_cases: invalid actor id, skipping", "actor_id", actorID, "issue_id", uuidToString(issue.ID))
+		return
+	}
 	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID:     issue.ID,
 		WorkspaceID: issue.WorkspaceID,
 		AuthorType:  actorType,
-		AuthorID:    parseUUID(actorID),
+		AuthorID:    authorID,
 		Content:     content,
 		Type:        "comment",
 		ParentID:    pgtype.UUID{Valid: false},
