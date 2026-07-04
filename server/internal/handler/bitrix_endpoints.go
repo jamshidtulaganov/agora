@@ -445,6 +445,12 @@ func (h *Handler) SyncBitrixProject(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Re-syncing auto-provisions Bitrix users as members and imports comments/
+	// attachments — a tenant-provisioning action, so require owner/admin, not a
+	// plain member (mirrors requireBitrixOperator on the sibling import routes).
+	if _, ok := h.requireWorkspaceRole(w, r, wsID, "workspace not found", "owner", "admin"); !ok {
+		return
+	}
 	projectUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "project id")
 	if !ok {
 		return
@@ -553,8 +559,12 @@ type BitrixImportProgressResponse struct {
 }
 
 // GetBitrixImportProgress returns the live progress of the most recent import.
+// The progress state is a process-wide global tied to a cross-workspace import,
+// so it is gated the same as every other cross-workspace Bitrix browser endpoint
+// (requireBitrixOperator) — a plain logged-in account must not read another
+// tenant's import volume/timing.
 func (h *Handler) GetBitrixImportProgress(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUserID(w, r); !ok {
+	if !h.requireBitrixOperator(w, r) {
 		return
 	}
 	bitrixImportProgressState.Lock()
