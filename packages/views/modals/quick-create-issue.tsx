@@ -373,12 +373,22 @@ export function AgentCreatePanel({
   // there. Persist the mode flip so the next `c` lands in manual.
   const switchToManual = () => {
     const md = editorRef.current?.getMarkdown() ?? "";
+    // Carry the typed prompt into the manual description ONLY when it's the
+    // user's own text. A prefilled ACTION prompt (data.prompt — e.g. a
+    // "learn conventions" directive) is an agent instruction, not an issue
+    // description; seeding it into the persisted draft is what leaked a stale
+    // "Extract the coding conventions…" body into later "Create manually" opens.
+    const actionPrefill = String((data?.prompt as string) ?? "").trim();
+    const isUnmodifiedActionPrefill = actionPrefill !== "" && md.trim() === actionPrefill;
     useIssueDraftStore.getState().setDraft({
-      description: md,
+      ...(isUnmodifiedActionPrefill ? {} : { description: md }),
       ...(actor
         ? { assigneeType: actor.type, assigneeId: actor.id }
         : {}),
     });
+    // Drop the persisted agent-prompt draft so it can't resurface on the next
+    // open (the manual path owns the draft from here).
+    clearPrompt();
     setLastMode("manual");
     // Hand the picked project and the parent-issue context to the manual
     // panel through the same `data` channel that already carries agent_id /
