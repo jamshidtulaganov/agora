@@ -1272,7 +1272,7 @@ func TestExecuteAndDrain_StartupWatchdog_FiresFastWhenNoOutput(t *testing.T) {
 	t.Parallel()
 
 	d := newTestDaemon(t)
-	d.cfg.AgentIdleWatchdog = 10 * time.Second   // long: must NOT be what fires
+	d.cfg.AgentIdleWatchdog = 10 * time.Second // long: must NOT be what fires
 	d.cfg.AgentStartupWatchdog = 50 * time.Millisecond
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1301,7 +1301,7 @@ func TestExecuteAndDrain_StartupWatchdog_YieldsToIdleAfterFirstMessage(t *testin
 	t.Parallel()
 
 	d := newTestDaemon(t)
-	d.cfg.AgentIdleWatchdog = 0                   // idle net OFF — only the startup net is armed
+	d.cfg.AgentIdleWatchdog = 0 // idle net OFF — only the startup net is armed
 	d.cfg.AgentStartupWatchdog = 60 * time.Millisecond
 
 	ctx, cancel := context.WithCancel(context.Background())

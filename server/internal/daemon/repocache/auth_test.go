@@ -35,11 +35,11 @@ func TestTokenAuthConfig(t *testing.T) {
 
 func TestRepoHostFromURL(t *testing.T) {
 	cases := map[string]string{
-		"https://github.com/o/r":                     "github.com",
-		"https://github.com/o/r.git":                 "github.com",
+		"https://github.com/o/r":                      "github.com",
+		"https://github.com/o/r.git":                  "github.com",
 		"git@github.com:o/r.git":                      "github.com",
 		"ssh://git@ssh-gitlab.sdteam.uz:2222/o/r.git": "ssh-gitlab.sdteam.uz",
-		"":                                            "",
+		"": "",
 	}
 	for in, want := range cases {
 		if got := repoHostFromURL(in); got != want {

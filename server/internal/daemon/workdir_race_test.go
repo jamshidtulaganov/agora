@@ -95,9 +95,9 @@ func TestRunTask_StartTaskCalledAfterWorkdirOnDisk(t *testing.T) {
 	expectedWorkDir := filepath.Join(expectedEnvRoot, "workdir")
 
 	var (
-		startCalled    atomic.Bool
-		workdirOnDisk  atomic.Bool
-		envRootOnDisk  atomic.Bool
+		startCalled   atomic.Bool
+		workdirOnDisk atomic.Bool
+		envRootOnDisk atomic.Bool
 	)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -178,7 +178,7 @@ func TestHandleTask_KeepsEnvRootActiveAcrossCompletion(t *testing.T) {
 	expectedEnvRoot := execenv.PredictRootDir(workspacesRoot, workspaceID, taskID)
 
 	var (
-		completeCalled atomic.Bool
+		completeCalled   atomic.Bool
 		activeAtComplete atomic.Bool
 	)
 

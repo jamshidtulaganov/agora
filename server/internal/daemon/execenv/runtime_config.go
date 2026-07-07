@@ -272,6 +272,7 @@ func writeRuntimeConfigFile(path, brief string) error {
 //     through to the append branch, and stack a new block after the
 //     half-block. Treating "begin found, no end after" as "the block ends
 //     at EOF" makes the next write replace the half-block in place.
+//
 // The current AGORA-RUNTIME markers are tried first; if no begin marker is
 // present the legacy MULTICA-RUNTIME pair is tried so files written before the
 // rebrand are still located (and thus replaced on Inject / excised on Cleanup)

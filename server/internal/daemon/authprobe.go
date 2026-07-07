@@ -116,15 +116,15 @@ func ProbeAuth(ctx context.Context, provider, binPath string) AuthInfo {
 // could mutate state or open a browser:
 //
 //   - codex:  `codex login status`  — prints "Logged in" + account email or
-//             "Not logged in".
+//     "Not logged in".
 //   - gemini: `gemini auth status`  — prints the active account / "not
-//             authenticated". (Older builds may not support it; an exec error
-//             then maps to unknown, which is acceptable.)
+//     authenticated". (Older builds may not support it; an exec error
+//     then maps to unknown, which is acceptable.)
 //   - claude: no stable, non-interactive auth subcommand exists across Claude
-//             Code versions, so we report (false) here and rely on the
-//             filesystem fallback in ProbeAuth.
+//     Code versions, so we report (false) here and rely on the
+//     filesystem fallback in ProbeAuth.
 //   - antigravity: the `agy` CLI exposes no auth/status subcommand (it's print-
-//             mode only), so it is genuinely unknown.
+//     mode only), so it is genuinely unknown.
 func authProbeCommand(provider string) ([]string, bool) {
 	switch provider {
 	case "codex":

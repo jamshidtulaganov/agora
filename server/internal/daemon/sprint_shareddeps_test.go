@@ -21,11 +21,11 @@ func TestDetectSprintDepProvider(t *testing.T) {
 		return dir
 	}
 	cases := []struct {
-		name      string
-		repo      string
-		wantOK    bool
-		wantDir   string
-		wantInst  string
+		name     string
+		repo     string
+		wantOK   bool
+		wantDir  string
+		wantInst string
 	}{
 		{"pnpm", mk("package.json", "pnpm-lock.yaml"), true, "node_modules", "pnpm install"},
 		{"npm", mk("package.json", "package-lock.json"), true, "node_modules", "npm install"},
