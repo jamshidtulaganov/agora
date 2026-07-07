@@ -1085,6 +1085,21 @@ export const GetIssueEditorResponseSchema = z.object({
 
 export const EMPTY_ISSUE_EDITOR = { mode: "", daemon_url: "", user_id: "", agents: [], editor_url: "" };
 
+// Where the Live-testing bay reaches a CDP browser for an issue — self-host
+// (direct daemon_url) or cloud (a same-origin /browser/proxy/<token> base the
+// backend reverse-proxies to the daemon). Unlike the editor response this
+// never depends on a worktree existing, so the bay stays up for QA-target
+// browsing even when no dev task ever ran.
+export const IssueBrowserResponseSchema = z
+  .object({
+    mode: z.string().default(""),
+    daemon_url: z.string().default(""),
+    browser_url: z.string().default(""),
+  })
+  .loose();
+
+export const EMPTY_ISSUE_BROWSER = { mode: "", daemon_url: "", browser_url: "" };
+
 // The issue's resolved QA preview target — a deployed connected box (e.g. a
 // per-developer or per-project QA box) or the project's configured
 // qa_smoke_url. "" means nothing resolves; the frontend shows its own empty

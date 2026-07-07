@@ -16,6 +16,16 @@ const FRAME_H = 800;
 
 type StreamState = "connecting" | "live" | "error" | "closed";
 
+// A daemonUrl may be absolute (self-host: http://127.0.0.1:<port>) or a
+// same-origin path base (cloud: /browser/proxy/<token> — the backend
+// reverse-proxies to the remote daemon). Normalize to absolute so the
+// http→ws scheme swap for the stream URL works in both shapes.
+function absoluteBase(daemonUrl: string): string {
+  if (/^https?:\/\//.test(daemonUrl)) return daemonUrl;
+  if (typeof window === "undefined") return daemonUrl;
+  return window.location.origin + daemonUrl;
+}
+
 export function EditorBrowserPane({
   daemonUrl,
   workdir,
@@ -54,11 +64,12 @@ export function EditorBrowserPane({
 
   useEffect(() => {
     let closed = false;
+    const base = absoluteBase(daemonUrl);
     setState("connecting");
     setErr("");
     void (async () => {
       try {
-        const r = await fetch(`${daemonUrl}/editor/browser/start`, {
+        const r = await fetch(`${base}/editor/browser/start`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ workdir }),
@@ -79,7 +90,7 @@ export function EditorBrowserPane({
         return;
       }
       const wsUrl =
-        daemonUrl.replace(/^http/, "ws") +
+        base.replace(/^http/, "ws") +
         `/editor/browser/stream?workdir=${encodeURIComponent(workdir)}`;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
@@ -199,7 +210,7 @@ export function EditorBrowserPane({
   const loadPreview = async () => {
     setNote("");
     try {
-      const r = await fetch(`${daemonUrl}/editor/preview/status`, {
+      const r = await fetch(`${absoluteBase(daemonUrl)}/editor/preview/status`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ workdir }),

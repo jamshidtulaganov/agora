@@ -28,8 +28,10 @@ import { useT } from "../../i18n";
 //    against a checkout is heavier and only wanted for worktree-QA'd projects.
 // 3. New-tab link — no reachable daemon; hand off to the browser.
 //
-// Editor + preview metadata are fetched eagerly (cheap — no Chromium). CDP is
-// self-host only; cloud degrades to the new-tab link.
+// Editor + preview metadata are fetched eagerly (cheap — no Chromium). CDP
+// works in BOTH modes: self-host dials the local daemon directly; cloud rides
+// the backend's /browser/proxy/<token> reverse-proxy to the remote daemon —
+// the SAME daemon the QA agent attaches to, so the reviewer watches the run.
 
 export function QALiveBrowser({ issueId }: { issueId: string }) {
   const { t } = useT("issues");
@@ -40,14 +42,27 @@ export function QALiveBrowser({ issueId }: { issueId: string }) {
     queryFn: () => api.getIssueEditor(issueId),
     staleTime: 30_000,
   });
+  const { data: browser, isLoading: browserLoading } = useQuery({
+    queryKey: ["issue-browser", issueId],
+    queryFn: () => api.getIssueBrowser(issueId),
+    staleTime: 30_000,
+  });
   const { data: preview, isLoading: previewLoading } = useQuery({
     queryKey: ["issue-qa-preview-url", issueId],
     queryFn: () => api.getIssueQAPreviewURL(issueId),
     staleTime: 30_000,
   });
 
-  const daemonUrl = data?.mode === "self-host" ? data.daemon_url : "";
-  const agent = data?.mode === "self-host" ? data.agents[0] : undefined;
+  // Self-host: dial the daemon directly. Cloud: the same-origin proxied base.
+  const daemonUrl =
+    browser?.mode === "self-host"
+      ? browser.daemon_url
+      : browser?.mode === "cloud"
+        ? browser.browser_url
+        : "";
+  // Worktree browsing needs an agent work_dir; the editor endpoint returns the
+  // roster in both modes (cloud included, when a worktree still exists).
+  const agent = data?.agents?.[0];
   const previewUrl = preview?.url ?? "";
 
   // A deployed QA target + a reachable daemon → drive it in a CDP Chromium.
@@ -57,7 +72,7 @@ export function QALiveBrowser({ issueId }: { issueId: string }) {
   // No box, but the issue has an agent worktree → offer that checkout's browser.
   const agentBrowse = !boxBrowse && !!daemonUrl && !!agent;
   // No daemon at all → the target can only open in a real tab.
-  const linkOnly = !isLoading && !boxBrowse && !agentBrowse && !!previewUrl;
+  const linkOnly = !isLoading && !browserLoading && !boxBrowse && !agentBrowse && !!previewUrl;
 
   const live = boxBrowse || (agentBrowse && startedAgent);
 
@@ -124,7 +139,7 @@ export function QALiveBrowser({ issueId }: { issueId: string }) {
         </div>
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-10 text-center">
-          {isLoading || previewLoading ? (
+          {isLoading || browserLoading || previewLoading ? (
             <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
               <Loader2 className="size-3.5 animate-spin" />
               {t(($) => $.qa_review.live_browser_loading)}

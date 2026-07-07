@@ -85,6 +85,7 @@ import type {
   CreateTestCaseRequest,
   CreateTestRunRequest,
   GetIssueEditorResponse,
+  IssueBrowserResponse,
   IssueQAPreviewURLResponse,
   CreateProjectRequest,
   UpdateProjectRequest,
@@ -272,6 +273,8 @@ import {
   EMPTY_CONNECTED_BOX,
   GetIssueEditorResponseSchema,
   EMPTY_ISSUE_EDITOR,
+  EMPTY_ISSUE_BROWSER,
+  IssueBrowserResponseSchema,
   IssueQAPreviewURLResponseSchema,
   EMPTY_ISSUE_QA_PREVIEW_URL,
   QAMetricsResponseSchema,
@@ -2475,6 +2478,22 @@ export class ApiClient {
       });
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) return EMPTY_ISSUE_EDITOR;
+      throw e;
+    }
+  }
+
+  // Resolves where the Live-testing bay reaches a CDP browser for the issue:
+  // self-host (daemon_url, dialed directly) or cloud (browser_url — a
+  // same-origin reverse-proxy base). Never requires a worktree; 404 (issue
+  // gone) degrades to the empty fallback so consumers just check `mode`.
+  async getIssueBrowser(issueId: string): Promise<IssueBrowserResponse> {
+    try {
+      const raw = await this.fetch<unknown>(`/api/issues/${issueId}/browser`);
+      return parseWithFallback(raw, IssueBrowserResponseSchema, EMPTY_ISSUE_BROWSER, {
+        endpoint: "GET /api/issues/:id/browser",
+      });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return EMPTY_ISSUE_BROWSER;
       throw e;
     }
   }

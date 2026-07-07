@@ -18,6 +18,7 @@ import {
   SquadSchema,
   UserSchema,
 } from "./schemas";
+import { EMPTY_ISSUE_BROWSER, IssueBrowserResponseSchema } from "./schemas";
 import { parseWithFallback } from "./schema";
 
 const baseIssue = {
@@ -478,5 +479,57 @@ describe("FigmaCredentialStatusSchema", () => {
       endpoint,
     ) as unknown as Record<string, unknown>;
     expect(parsed.some_future_field).toBe(1);
+  });
+});
+
+describe("IssueBrowserResponseSchema", () => {
+  const endpoint = { endpoint: "GET /api/issues/:id/browser" };
+
+  it("parses both modes and defaults missing fields", () => {
+    const selfHost = parseWithFallback(
+      { mode: "self-host", daemon_url: "http://127.0.0.1:19514" },
+      IssueBrowserResponseSchema,
+      EMPTY_ISSUE_BROWSER,
+      endpoint,
+    );
+    expect(selfHost.mode).toBe("self-host");
+    expect(selfHost.daemon_url).toBe("http://127.0.0.1:19514");
+    expect(selfHost.browser_url).toBe(""); // absent → defaulted, never undefined
+
+    const cloud = parseWithFallback(
+      { mode: "cloud", browser_url: "/browser/proxy/abc123" },
+      IssueBrowserResponseSchema,
+      EMPTY_ISSUE_BROWSER,
+      endpoint,
+    );
+    expect(cloud.browser_url).toBe("/browser/proxy/abc123");
+    expect(cloud.daemon_url).toBe("");
+  });
+
+  it("degrades wrong-typed fields to the empty fallback instead of throwing", () => {
+    const parsed = parseWithFallback(
+      { mode: 7, daemon_url: null },
+      IssueBrowserResponseSchema,
+      EMPTY_ISSUE_BROWSER,
+      endpoint,
+    );
+    expect(parsed).toEqual(EMPTY_ISSUE_BROWSER);
+  });
+
+  it("falls back on null / non-object bodies", () => {
+    for (const body of [null, [], "nope"]) {
+      const parsed = parseWithFallback(body, IssueBrowserResponseSchema, EMPTY_ISSUE_BROWSER, endpoint);
+      expect(parsed.mode).toBe("");
+    }
+  });
+
+  it("tolerates an unknown future mode (consumer checks mode itself)", () => {
+    const parsed = parseWithFallback(
+      { mode: "edge-pop", browser_url: "/browser/proxy/x" },
+      IssueBrowserResponseSchema,
+      EMPTY_ISSUE_BROWSER,
+      endpoint,
+    );
+    expect(parsed.mode).toBe("edge-pop"); // renders as "unavailable", not a crash
   });
 });

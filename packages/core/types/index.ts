@@ -217,4 +217,4 @@ export type {
   CreateTestCaseRequest,
   CreateTestRunRequest,
 } from "./test-case";
-export type { EditorAgent, GetIssueEditorResponse, IssueQAPreviewURLResponse } from "./editor-live";
+export type { EditorAgent, GetIssueEditorResponse, IssueBrowserResponse, IssueQAPreviewURLResponse } from "./editor-live";

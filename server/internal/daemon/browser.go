@@ -118,17 +118,32 @@ func browserCORS(w http.ResponseWriter, r *http.Request) bool {
 // detectChromium finds a Chromium/Chrome executable, preferring a Playwright
 // chromium (the common automation build), then the system browsers.
 func detectChromium() string {
+	// Roots holding Playwright browser installs: the per-user cache, plus an
+	// explicit PLAYWRIGHT_BROWSERS_PATH (the cloud daemon image bakes browsers
+	// into a shared path outside HOME, since HOME is a mounted volume there).
+	var globs []string
+	if root := strings.TrimSpace(os.Getenv("PLAYWRIGHT_BROWSERS_PATH")); root != "" && root != "0" {
+		globs = append(globs,
+			filepath.Join(root, "chromium-*/chrome-linux/chrome"),
+			filepath.Join(root, "chromium_headless_shell-*/chrome-linux/headless_shell"),
+		)
+	}
 	if home, err := os.UserHomeDir(); err == nil {
-		globs := []string{
+		globs = append(globs,
 			filepath.Join(home, "Library/Caches/ms-playwright/chromium-*/chrome-mac/Chromium.app/Contents/MacOS/Chromium"),
 			filepath.Join(home, ".cache/ms-playwright/chromium-*/chrome-linux/chrome"),
 			filepath.Join(home, ".cache/puppeteer/chrome/*/chrome-*/Google Chrome for Testing"),
-		}
-		for _, g := range globs {
-			if m, _ := filepath.Glob(g); len(m) > 0 {
-				sort.Strings(m)
-				return m[len(m)-1]
-			}
+			// run_test_cases installs chromium-headless-shell (not full chromium)
+			// per box — it drives CDP + screencast the same, so accept it as the
+			// live-browser binary rather than failing "no Chromium found".
+			filepath.Join(home, "Library/Caches/ms-playwright/chromium_headless_shell-*/chrome-mac/headless_shell"),
+			filepath.Join(home, ".cache/ms-playwright/chromium_headless_shell-*/chrome-linux/headless_shell"),
+		)
+	}
+	for _, g := range globs {
+		if m, _ := filepath.Glob(g); len(m) > 0 {
+			sort.Strings(m)
+			return m[len(m)-1]
 		}
 	}
 	for _, c := range []string{
@@ -169,18 +184,25 @@ func (bm *browserManager) ensureChrome(key string) (*chromeInstance, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(bin,
+	args := []string{
 		"--headless=new",
 		fmt.Sprintf("--remote-debugging-port=%d", port),
 		"--remote-debugging-address=127.0.0.1",
-		"--user-data-dir="+udd,
+		"--user-data-dir=" + udd,
 		"--no-first-run",
 		"--no-default-browser-check",
 		"--hide-scrollbars",
 		"--disable-gpu",
 		"--window-size=1280,800",
-		"about:blank",
-	)
+	}
+	// Containerized daemon (Fly cloud image) runs as root with a tiny /dev/shm;
+	// Chromium refuses to start as root with the sandbox on, so relax both ONLY
+	// there — a developer's own machine keeps the sandbox.
+	if os.Geteuid() == 0 {
+		args = append(args, "--no-sandbox", "--disable-dev-shm-usage")
+	}
+	args = append(args, "about:blank")
+	cmd := exec.Command(bin, args...)
 	setProcessGroup(cmd)
 	if err := cmd.Start(); err != nil {
 		os.RemoveAll(udd)

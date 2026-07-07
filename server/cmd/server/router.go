@@ -591,6 +591,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// holds the trace .zip. Same authed-session + capability-token model as
 		// the editor proxy above.
 		r.HandleFunc("/trace/proxy/{token}/*", h.ProxyTrace)
+		// Live QA browser reverse-proxy (cloud mode): /browser/proxy/{token}/
+		// editor/browser/* streams the daemon's CDP screencast (HTTP + WebSocket)
+		// so the Live-testing bay works when the daemon is remote — the reviewer
+		// watches the QA agent drive the SAME shared Chromium. Only the
+		// /editor/browser/* subtree of the daemon is reachable through a token.
+		r.HandleFunc("/browser/proxy/{token}/*", h.ProxyBrowser)
 		// Launch a trace viewer for one QA test_run and return its proxied URL.
 		// Authorizes off the run's resolved issue/workspace (no header needed),
 		// mirroring GET /api/issues/:id/editor.
@@ -912,6 +918,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/merge-readiness", h.MergeReadiness)
 					r.Get("/task-runs", h.ListTasksByIssue)
 					r.Get("/editor", h.GetIssueEditor)
+					r.Get("/browser", h.GetIssueBrowser)
 					r.Get("/qa-preview-url", h.GetIssueQAPreviewURL)
 					r.Get("/usage", h.GetIssueUsage)
 					r.Post("/reactions", h.AddIssueReaction)
