@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agora — Install &amp; Use</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #1a1d23; font-size: 10.5pt; line-height: 1.55; margin: 0; }
+  h1 { font-size: 22pt; margin: 0 0 2mm; letter-spacing: -0.5px; }
+  .sub { color: #5a6472; font-size: 11pt; margin-bottom: 8mm; }
+  h2 { font-size: 13.5pt; margin: 9mm 0 3mm; padding-bottom: 1.5mm; border-bottom: 2px solid #2563EB; color: #111; page-break-after: avoid; }
+  h3 { font-size: 11pt; margin: 5mm 0 1.5mm; color: #1f2937; page-break-after: avoid; }
+  p { margin: 0 0 2.5mm; }
+  code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 9pt; background: #f1f3f7; border: 1px solid #e2e6ee; border-radius: 3px; padding: 0.5px 4px; }
+  pre { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 8.8pt; background: #0f172a; color: #dbe4f3; border-radius: 6px; padding: 3.2mm 4mm; overflow-x: auto; line-height: 1.5; page-break-inside: avoid; }
+  pre code { background: none; border: none; color: inherit; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 2mm 0 4mm; font-size: 9.3pt; page-break-inside: avoid; }
+  th, td { border: 1px solid #d8dee8; padding: 1.6mm 2.5mm; text-align: left; vertical-align: top; }
+  th { background: #eef2f9; font-weight: 600; }
+  ul, ol { margin: 0 0 3mm; padding-left: 6mm; }
+  li { margin-bottom: 1mm; }
+  .tip { background: #eff6ff; border-left: 3px solid #2563EB; padding: 2.2mm 3.5mm; border-radius: 0 4px 4px 0; margin: 2.5mm 0 4mm; font-size: 9.6pt; }
+  .warn { background: #fff7ed; border-left: 3px solid #ea580c; padding: 2.2mm 3.5mm; border-radius: 0 4px 4px 0; margin: 2.5mm 0 4mm; font-size: 9.6pt; }
+  .brand { color: #2563EB; font-weight: 700; }
+  .kbd { border: 1px solid #c9d2e0; border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; font-size: 8.5pt; background: #fff; font-family: inherit; }
+  .footer { color: #8b95a5; font-size: 8.5pt; margin-top: 10mm; border-top: 1px solid #e2e6ee; padding-top: 2mm; }
+  .cols { display: flex; gap: 6mm; }
+  .cols > div { flex: 1; }
+</style>
+</head>
+<body>
+
+<h1><span class="brand">Agora</span> — Install &amp; Use</h1>
+<div class="sub">AI-native task management: agents plan, code, and QA your work — you review. SalesDoctor team guide · July 2026</div>
+
+<h2>1 · What is Agora?</h2>
+<p>Agora is like Linear, but AI agents are first-class team members. You create an issue; an agent (or a squad of agents) picks it up, writes the code on a real checkout, opens the PR, and a QA agent then <b>tests the deployed result in a real browser</b> before the issue can be marked done. Humans stay in the loop through review pages, a live browser view of every QA run, and one-click verdicts.</p>
+
+<h2>2 · Use the web app (no install needed)</h2>
+<ol>
+  <li>Open <b>https://sd-agora-web.fly.dev</b></li>
+  <li>Sign in with your <b>work e-mail</b> (a 6-digit code is e-mailed to you) or via <b>Telegram</b> (@agora_ai_pm_bot).</li>
+  <li>Pick your workspace (e.g. <code>sd-main</code>). You land on the issue board.</li>
+</ol>
+<p>That is enough to create issues, assign agents, review results, and run QA. Install the CLI only if you want agents to run <b>on your own machine</b> (next section).</p>
+
+<h2>3 · Install the CLI (+ your personal daemon)</h2>
+<pre><code># macOS / Linux — installs or upgrades the `agora` binary
+curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.sh \
+  | bash
+
+agora --version</code></pre>
+
+<h3>3.1 Log in and start your daemon</h3>
+<pre><code>agora login                 # opens the e-mail / token flow; stores your PAT
+agora daemon start          # your machine becomes an agent runtime
+agora daemon status         # check it is online
+agora daemon logs -f        # tail what it is doing</code></pre>
+<div class="tip"><b>Why run a daemon?</b> Tasks assigned to your agents execute on <i>your</i> machine — your checkouts, your credentials, your GPU/tooling. Because you logged in with your own account, Agora knows the runtime is <b>yours</b> (it shows as “Claude (your-machine)”).</div>
+
+<h3>3.2 QA on your locally-running app (daemon-per-dev)</h3>
+<p>If you run the project's app locally (e.g. <code>http://127.0.0.1:8081</code>), QA can test <b>your running app on your machine</b> instead of a shared box:</p>
+<pre><code>agora daemon apps set sd-main http://127.0.0.1:8081   # declare what this machine serves
+agora daemon apps list
+agora daemon restart                                   # report it to the server</code></pre>
+<p>Then ask an admin to enable <b>Settings → Labs → “QA on developer machines”</b>. From that point, QA tasks for <i>your</i> issues in that project run on <i>your</i> daemon and drive <i>your</i> localhost app. If your laptop goes offline, the run falls back to the shared runtime automatically (or waits, in strict mode).</p>
+<div class="warn">Declare only loopback/private URLs. Each declaration is <b>per project</b> — an sd-main entry never affects sd-cs.</div>
+
+<h2>4 · Daily flow</h2>
+<table>
+  <tr><th>Step</th><th>What you do</th><th>What Agora does</th></tr>
+  <tr><td>1. Create</td><td>New issue (<span class="kbd">C</span>), describe the task; or it arrives from Bitrix/Zoho sync</td><td>Auto-tiers size, routes to the project</td></tr>
+  <tr><td>2. Assign</td><td>Assign an <b>agent</b> (solo work) or a <b>squad</b> (leader decomposes &amp; delegates)</td><td>Task queued to the right runtime; agent codes on a real branch/worktree</td></tr>
+  <tr><td>3. Watch</td><td>Open the issue → live activity feed; <b>Editor</b> tab = the agent's actual VS&nbsp;Code worktree in your browser</td><td>Commits, opens the PR / MR</td></tr>
+  <tr><td>4. QA gate</td><td>Nothing — moving to <b>In&nbsp;Review</b> fires QA automatically</td><td>QA agent deploys to the QA target and <b>drives the app in a real browser</b>; posts qa:pass / qa:fail with evidence</td></tr>
+  <tr><td>5. Review</td><td><b>QA page → open the issue</b>: verdict, checks, test cases, and the <b>Live testing</b> pane (watch the browser run in real time; console + network errors stream below it)</td><td>Captures Playwright traces for step-by-step replay</td></tr>
+  <tr><td>6. Verdict</td><td><b>Pass</b> / <b>Fail</b> / <b>Send back to dev</b>; “Re-run QA” any time</td><td>qa:fail blocks Done; failures can auto-file bug issues</td></tr>
+</table>
+
+<h3>4.1 The QA cockpit (QA page)</h3>
+<ul>
+  <li><b>Queue</b> — lanes: Needs&nbsp;fix / Pending / Passed, each card shows the latest verdict, who produced it, and how old it is. Select several → bulk “Re-run QA” or “Send back”.</li>
+  <li><b>Bugs</b> — auto-filed and manual bugs per project.</li>
+  <li><b>Sprint</b> — attach the sprint's tasks, then <b>Run regression</b>: one agent re-tests the whole sprint branch (base suite + each task's promoted cases) on the QA box; the <b>Mergeable</b> badge requires green regression.</li>
+  <li><b>Metrics</b> — run volume, failure trend, per-agent QA cost, script coverage.</li>
+</ul>
+
+<h3>4.2 Live testing pane</h3>
+<p>On any QA review page the right-hand <b>Live testing</b> bay streams a real Chromium. The QA agent attaches to the <b>same browser</b>, so you literally watch it type, click, and navigate. You can take over with your own mouse/keyboard at any time. The strip below auto-opens on the first console error or failed request (4xx/5xx). Finished runs keep a <b>trace</b> — click it to replay the run step by step.</p>
+
+<h2>5 · Where QA runs (targets)</h2>
+<table>
+  <tr><th>Priority</th><th>Target</th><th>When</th></tr>
+  <tr><td>0</td><td><b>Your machine</b> (<code>agora daemon apps</code>)</td><td>Labs “QA on developer machines” on, your daemon online, app declared for that project</td></tr>
+  <tr><td>1</td><td><b>Your dev box</b> (e.g. <code>shahzod.sdteam.uz</code>)</td><td>Box mapped to you <i>and</i> scoped to the issue's project (Settings → Labs)</td></tr>
+  <tr><td>2</td><td><b>Project box</b> (e.g. <code>agora-cs.sdteam.uz</code>)</td><td>Box bound to the project</td></tr>
+  <tr><td>3</td><td><b>Fallback box</b> (e.g. <code>sandbox.sdteam.uz</code>)</td><td>Chosen in Labs; same-project or unscoped only</td></tr>
+  <tr><td>4</td><td><code>qa_smoke_url</code></td><td>Project setting; last resort</td></tr>
+</table>
+<p>Everything is explicit: nothing ever routes across projects by accident. Admins manage the box↔developer↔project mapping in <b>Settings → Labs</b>.</p>
+
+<h2>6 · Useful CLI commands</h2>
+<pre><code>agora issue list --status in_review      # what's waiting on QA
+agora issue view SD-575                  # full issue in the terminal
+agora comment SD-575 "@QA Tester re-check the pivot page"
+agora repo list                          # repos this daemon serves
+agora daemon apps list                   # your declared local apps
+agora config                             # where you're logged in</code></pre>
+
+<h2>7 · Troubleshooting</h2>
+<table>
+  <tr><th>Symptom</th><th>Fix</th></tr>
+  <tr><td>Agent never picks up the task</td><td><code>agora daemon status</code> — daemon offline? <code>agora daemon restart</code>. Check the issue's runtime chip: “waiting for &lt;machine&gt;” means your pinned daemon is off.</td></tr>
+  <tr><td>Live testing shows “daemon unreachable”</td><td>Hard-reload the page; the runtime that ran the task must be online.</td></tr>
+  <tr><td>“Trace no longer exists”</td><td>Old runs only — traces now persist on the runtime. Click <b>Re-run QA</b> to capture a fresh one.</td></tr>
+  <tr><td>QA went stale (amber qa:stale)</td><td>The gate fired but died silently; the watchdog flagged it. Re-run QA from the review page.</td></tr>
+  <tr><td>Editor tab empty / worktree gone</td><td>Worktrees are cleaned ~24 h after an issue closes. Re-run an agent to recreate one.</td></tr>
+</table>
+
+<div class="footer">Agora · SalesDoctor internal · sd-agora-web.fly.dev · CLI: github.com/jamshidtulaganov/agora-cli · Generated 2026-07-07</div>
+
+</body>
+</html>
