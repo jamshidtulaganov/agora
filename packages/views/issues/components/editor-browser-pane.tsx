@@ -78,6 +78,10 @@ export function EditorBrowserPane({
   const [note, setNote] = useState("");
   const [events, setEvents] = useState<InspectorEvent[]>([]);
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  // The strip auto-expands when the first error lands (a tester shouldn't
+  // have to notice a tiny badge), but never re-opens against an explicit
+  // collapse — the ref remembers the user's choice for this connection.
+  const userCollapsedRef = useRef(false);
   const wsRef = useRef<WebSocket | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   // Latest frame's object URL. Frames arrive as binary JPEG Blobs; each becomes
@@ -97,6 +101,8 @@ export function EditorBrowserPane({
     setState("connecting");
     setErr("");
     setEvents([]);
+    setInspectorOpen(false);
+    userCollapsedRef.current = false;
     void (async () => {
       try {
         const r = await fetch(`${base}/editor/browser/start`, {
@@ -174,6 +180,7 @@ export function EditorBrowserPane({
               next.push(item);
               return next;
             });
+            if (!userCollapsedRef.current) setInspectorOpen(true);
           }
         } catch {
           /* ignore malformed */
@@ -437,7 +444,12 @@ export function EditorBrowserPane({
         <div className="flex items-center gap-2 px-2 py-1">
           <button
             type="button"
-            onClick={() => setInspectorOpen((o) => !o)}
+            onClick={() =>
+              setInspectorOpen((o) => {
+                userCollapsedRef.current = o; // closing = explicit user choice
+                return !o;
+              })
+            }
             className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             {inspectorOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
