@@ -87,6 +87,16 @@ vi.mock("@agora/core/api", () => ({
     searchIssues: mockSearchIssues,
     searchProjects: mockSearchProjects,
   },
+  // The recent-issues self-heal narrows fetch failures with `instanceof
+  // ApiError` — the mock must export the class or the component throws at
+  // that check instead of exercising the heal path.
+  ApiError: class ApiError extends Error {
+    status: number;
+    constructor(message: string, status = 500) {
+      super(message);
+      this.status = status;
+    }
+  },
 }));
 
 vi.mock("../common/actor-avatar", () => ({

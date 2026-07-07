@@ -116,12 +116,29 @@ func TestProvisionConnectedBoxRequiresQAHost(t *testing.T) {
 	}
 }
 
-// TestConnectedBoxForIssuePerDeveloper: the box owned by the developer behind an
-// issue (its assignee agent's owner) wins over any project-bound box, so the
-// dev's branch deploys to their own isolated box.
+// createTestProject inserts a throwaway project row (connected_box.project_id
+// is a real FK) and returns its id with cleanup registered.
+func createTestProject(t *testing.T, ctx context.Context, title string) pgtype.UUID {
+	t.Helper()
+	var id string
+	if err := testPool.QueryRow(ctx,
+		`INSERT INTO project (workspace_id, title, status) VALUES ($1, $2, 'planned') RETURNING id`,
+		testWorkspaceID, title).Scan(&id); err != nil {
+		t.Fatalf("create test project: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM project WHERE id=$1`, id) })
+	return testUUID(id)
+}
+
+// TestConnectedBoxForIssuePerDeveloper pins the PROJECT-SCOPED per-dev
+// contract: a developer's box wins for their issue ONLY when the box is
+// explicitly scoped to the issue's project — an unscoped personal box (or one
+// scoped to a different project) must never match, because each project's
+// boxes serve a different app (no cross-project defaults).
 func TestConnectedBoxForIssuePerDeveloper(t *testing.T) {
 	ctx := context.Background()
 	agentID, ownerID, _ := privateAgentTestFixture(t)
+	projectID := createTestProject(t, ctx, "per-dev-box-test")
 
 	devBox, err := testHandler.Queries.CreateConnectedBox(ctx, db.CreateConnectedBoxParams{
 		WorkspaceID: testUUID(testWorkspaceID),
@@ -135,17 +152,27 @@ func TestConnectedBoxForIssuePerDeveloper(t *testing.T) {
 		testPool.Exec(context.Background(), `DELETE FROM connected_box WHERE id=$1`, uuidToString(devBox.ID))
 	})
 
-	// Issue assigned to that agent. ProjectID need only be Valid for the resolver
-	// to proceed; the dev-axis matches on owner before any project binding.
 	issue := db.Issue{
 		WorkspaceID:  testUUID(testWorkspaceID),
-		ProjectID:    testUUID(testWorkspaceID), // any valid uuid; not a real project
+		ProjectID:    projectID,
 		AssigneeType: pgtype.Text{String: "agent", Valid: true},
 		AssigneeID:   testUUID(agentID),
 	}
+
+	// Unscoped personal box: owner matches, project does not — no match.
+	if box, ok := testHandler.connectedBoxForIssue(ctx, issue); ok {
+		t.Errorf("unscoped personal box must not match, got %s", uuidToString(box.ID))
+	}
+
+	// Scope the box to the issue's project — now the per-dev step matches.
+	if _, err := testHandler.Queries.BindConnectedBoxProject(ctx, db.BindConnectedBoxProjectParams{
+		ID: devBox.ID, WorkspaceID: testUUID(testWorkspaceID), ProjectID: projectID,
+	}); err != nil {
+		t.Fatalf("bind project: %v", err)
+	}
 	box, ok := testHandler.connectedBoxForIssue(ctx, issue)
 	if !ok || uuidToString(box.ID) != uuidToString(devBox.ID) {
-		t.Errorf("expected the dev box %s, got ok=%v id=%s", uuidToString(devBox.ID), ok, uuidToString(box.ID))
+		t.Errorf("expected the project-scoped dev box %s, got ok=%v id=%s", uuidToString(devBox.ID), ok, uuidToString(box.ID))
 	}
 }
 
@@ -168,10 +195,18 @@ func TestDevBoxSmokeURL(t *testing.T) {
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(), `DELETE FROM connected_box WHERE id=$1`, uuidToString(box.ID))
 	})
+	// Per-dev boxes are project-scoped (no cross-project defaults) — bind it
+	// to the issue's project or the resolver skips it by design.
+	smokeProject := createTestProject(t, ctx, "dev-box-smoke-test")
+	if _, err := testHandler.Queries.BindConnectedBoxProject(ctx, db.BindConnectedBoxProjectParams{
+		ID: box.ID, WorkspaceID: testUUID(testWorkspaceID), ProjectID: smokeProject,
+	}); err != nil {
+		t.Fatalf("bind project: %v", err)
+	}
 
 	issue := db.Issue{
 		WorkspaceID:  testUUID(testWorkspaceID),
-		ProjectID:    testUUID(testWorkspaceID),
+		ProjectID:    smokeProject,
 		AssigneeType: pgtype.Text{String: "agent", Valid: true},
 		AssigneeID:   testUUID(agentID),
 	}
