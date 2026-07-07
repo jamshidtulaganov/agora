@@ -96,6 +96,21 @@ const nextConfig: NextConfig = {
           destination: `${remoteApiUrl}/editor/:path*`,
         },
         {
+          // Live QA browser reverse-proxy (cloud) — backend
+          // /browser/proxy/{token}/editor/browser/* carries the CDP screencast
+          // (HTTP + WebSocket) from the remote daemon to the Live-testing bay.
+          source: "/browser/:path*",
+          destination: `${remoteApiUrl}/browser/:path*`,
+        },
+        {
+          // Playwright trace-viewer reverse-proxy (cloud) — backend
+          // /trace/proxy/{token}/* serves the show-trace viewer the QA panel
+          // iframes. Without this rule the iframe hits the Next 404 (whose
+          // frame-ancestors 'none' CSP blanks it) instead of the backend.
+          source: "/trace/:path*",
+          destination: `${remoteApiUrl}/trace/:path*`,
+        },
+        {
           source: "/uploads/:path*",
           destination: `${remoteApiUrl}/uploads/:path*`,
         },

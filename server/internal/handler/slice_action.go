@@ -272,12 +272,14 @@ func buildSliceInstruction(kind, scope string) string {
 			"for every case right after you judge it. " +
 			"For EACH case: if the case LISTING below includes a COMPILED SCRIPT for that id, do NOT drive the browser " +
 			"action-by-action — instead WRITE that script verbatim to a temp file `/tmp/case-<id>.mjs` and RUN it with " +
-			"`TRACE_PATH=/tmp/trace-<id>.zip node /tmp/case-<id>.mjs`; take the process EXIT CODE as the verdict (0 = pass, " +
+			"`mkdir -p \"$HOME/.agora/qa-traces\" && TRACE_PATH=\"$HOME/.agora/qa-traces/trace-<id>.zip\" node /tmp/case-<id>.mjs`; " +
+			"take the process EXIT CODE as the verdict (0 = pass, " +
 			"non-zero = fail) and use the script's stdout/stderr as the one-line `output` evidence. This is deterministic and " +
 			"needs no per-action reasoning — that is the whole point. TRACE (time-travel debugging): the compiled script " +
 			"records a Playwright trace (DOM snapshots + screenshots + sources per step) to the `TRACE_PATH` you set here, so " +
 			"a QA reviewer can replay the run step-by-step in-app. Give each case a DISTINCT `TRACE_PATH` keyed by its id " +
-			"(`/tmp/trace-<id>.zip`) so concurrent cases never overwrite each other's trace. After the run, if that trace " +
+			"(`$HOME/.agora/qa-traces/trace-<id>.zip`) so concurrent cases never overwrite each other's trace — NEVER " +
+			"under /tmp: the OS purges it and the in-app trace viewer replays these files days later. After the run, if that trace " +
 			"file exists, report its ABSOLUTE path as the case's `trace_path` in the test-runs JSON below; omit `trace_path` " +
 			"when no trace was produced. Playwright must be available to `node`: if `node -e \"import('playwright')\"` " +
 			"fails, run ONCE `npm i playwright && npx playwright install chromium-headless-shell` in the box (reuse the box's " +
@@ -291,7 +293,7 @@ func buildSliceInstruction(kind, scope string) string {
 			"panel parses: `[{\"test_case_id\":\"<the id from the list>\",\"status\":\"pass\"|\"fail\"|\"blocked\"," +
 			"\"output\":\"<one-line evidence — for fail/blocked this IS the human-readable reason shown to the QA " +
 			"reviewer, e.g. the failing assertion or HTTP status; for pass, what you observed>\",\"trace_path\":\"<optional: " +
-			"the ABSOLUTE path of the Playwright trace .zip this case produced, e.g. /tmp/trace-<id>.zip; omit when no " +
+			"the ABSOLUTE path of the Playwright trace .zip this case produced (expand $HOME yourself); omit when no " +
 			"trace was captured (hand-driven cases)>\",\"baseline_status\":\"pass\"|\"fail\"|\"unknown\"}]` — one entry per case " +
 			"you ran. Use `blocked` if a case could not be exercised (missing data/route). The JSON must be valid and " +
 			"self-contained. " +
