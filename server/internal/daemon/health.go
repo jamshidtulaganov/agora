@@ -1591,6 +1591,13 @@ func editorUserDataDir(key string) (string, error) {
 			if !seeded {
 				_ = os.WriteFile(settingsPath, []byte("{}\n"), 0o600)
 			}
+			// Inherit auth/session state from the newest sibling profile.
+			// code-server keeps SecretStorage (e.g. the "Sign in with GitHub"
+			// session) in User/globalStorage/state.vscdb INSIDE the per-
+			// (user, worktree) profile — so without this, every new worktree
+			// editor demanded a fresh sign-in. Copying the newest sibling's
+			// state.vscdb means: sign in once, every later editor inherits.
+			inheritEditorGlobalStorage(filepath.Dir(dir), dir, userDir)
 		}
 	}
 	machineDir := filepath.Join(dir, "Machine")
@@ -1607,6 +1614,49 @@ func editorUserDataDir(key string) (string, error) {
 		}
 	}
 	return dir, nil
+}
+
+// inheritEditorGlobalStorage copies User/globalStorage/state.vscdb from the
+// most recently modified sibling editor profile into a NEWLY created one, so a
+// GitHub (or any extension) sign-in done once carries into every later
+// worktree's editor. Best-effort: no sibling with auth state → fresh profile,
+// exactly as before.
+func inheritEditorGlobalStorage(root, selfDir, userDir string) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return
+	}
+	var newest string
+	var newestMod int64
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		cand := filepath.Join(root, e.Name())
+		if cand == selfDir {
+			continue
+		}
+		db := filepath.Join(cand, "User", "globalStorage", "state.vscdb")
+		info, serr := os.Stat(db)
+		if serr != nil {
+			continue
+		}
+		if m := info.ModTime().UnixNano(); m > newestMod {
+			newest, newestMod = db, m
+		}
+	}
+	if newest == "" {
+		return
+	}
+	b, err := os.ReadFile(newest)
+	if err != nil {
+		return
+	}
+	gsDir := filepath.Join(userDir, "globalStorage")
+	if err := os.MkdirAll(gsDir, 0o700); err != nil {
+		return
+	}
+	_ = os.WriteFile(filepath.Join(gsDir, "state.vscdb"), b, 0o600)
 }
 
 // hostVSCodeUserDir locates the host machine's own VS Code user profile so the
