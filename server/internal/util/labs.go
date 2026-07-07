@@ -27,6 +27,12 @@ type WorkspaceLabs struct {
 	// daemon goes offline instead of falling back to the shared runtime —
 	// for teams where testing on the wrong environment is worse than waiting.
 	QADevRuntimesStrict bool `json:"qa_dev_runtimes_strict"`
+	// QADefaultManifestProject is a project id whose qa_manifest is inherited
+	// by any project in the workspace that has NO manifest of its own — so
+	// sub-projects that share the workspace's main app (e.g. Bitrix-imported
+	// sprint projects, which are sd-main work but carry no repo/manifest) get
+	// a working QA navigation map instead of nothing. Empty = no inheritance.
+	QADefaultManifestProject string `json:"qa_default_manifest_project"`
 }
 
 func DefaultWorkspaceLabs() WorkspaceLabs {
@@ -43,10 +49,11 @@ func ParseWorkspaceLabs(settings []byte) WorkspaceLabs {
 	}
 	var s struct {
 		Labs *struct {
-			QADevBoxes          *bool  `json:"qa_dev_boxes"`
-			QAFallbackBoxID     string `json:"qa_fallback_box_id"`
-			QADevRuntimes       *bool  `json:"qa_dev_runtimes"`
-			QADevRuntimesStrict *bool  `json:"qa_dev_runtimes_strict"`
+			QADevBoxes               *bool  `json:"qa_dev_boxes"`
+			QAFallbackBoxID          string `json:"qa_fallback_box_id"`
+			QADevRuntimes            *bool  `json:"qa_dev_runtimes"`
+			QADevRuntimesStrict      *bool  `json:"qa_dev_runtimes_strict"`
+			QADefaultManifestProject string `json:"qa_default_manifest_project"`
 		} `json:"labs"`
 	}
 	if json.Unmarshal(settings, &s) != nil || s.Labs == nil {
@@ -56,6 +63,7 @@ func ParseWorkspaceLabs(settings []byte) WorkspaceLabs {
 		labs.QADevBoxes = *s.Labs.QADevBoxes
 	}
 	labs.QAFallbackBoxID = strings.TrimSpace(s.Labs.QAFallbackBoxID)
+	labs.QADefaultManifestProject = strings.TrimSpace(s.Labs.QADefaultManifestProject)
 	if s.Labs.QADevRuntimes != nil {
 		labs.QADevRuntimes = *s.Labs.QADevRuntimes
 	}

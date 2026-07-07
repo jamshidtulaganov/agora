@@ -651,9 +651,25 @@ func (h *Handler) sliceActionQAManifestContext(ctx context.Context, issue db.Iss
 	if json.Unmarshal(project.Settings, &settings) != nil {
 		return ""
 	}
+	// Inheritance: a project with no manifest of its own (e.g. a Bitrix-imported
+	// sprint project that carries sd-main work but no repo/manifest) falls back
+	// to the workspace-default project's manifest, so its QA runs still get a
+	// navigation map instead of nothing. Own manifest always wins; the default
+	// is only consulted when this project has none.
+	inherited := false
+	if settings.Manifest == nil || (settings.Manifest.Auth.LoginPath == "" && len(settings.Manifest.Routes) == 0 && len(settings.Manifest.Flows) == 0) {
+		if def := h.defaultManifestForWorkspace(ctx, project.WorkspaceID, project.ID); def != nil {
+			settings.Manifest = def
+			inherited = true
+		}
+	}
 	var b strings.Builder
 	if m := settings.Manifest; m != nil && (m.Auth.LoginPath != "" || len(m.Routes) > 0 || len(m.Flows) > 0) {
-		b.WriteString(" PROJECT QA MANIFEST — the app's navigation is KNOWN; go straight to these instead of exploring/auto-detecting (only fall back to discovery if a path 404s).")
+		if inherited {
+			b.WriteString(" PROJECT QA MANIFEST (INHERITED from the workspace's main project — this sub-project/sprint runs against the SAME app; use this navigation map).")
+		} else {
+			b.WriteString(" PROJECT QA MANIFEST — the app's navigation is KNOWN; go straight to these instead of exploring/auto-detecting (only fall back to discovery if a path 404s).")
+		}
 		if m.Auth.LoginPath != "" {
 			b.WriteString(fmt.Sprintf(" AUTH: log in at %s%s with %s=%s and %s=%s", m.BaseURL, m.Auth.LoginPath, m.Auth.UserField, m.Auth.Username, m.Auth.PassField, m.Auth.Password))
 			if m.Auth.SuccessContains != "" {
@@ -714,6 +730,39 @@ func (h *Handler) sliceActionQAManifestContext(ctx context.Context, issue db.Iss
 		}
 	}
 	return b.String()
+}
+
+// defaultManifestForWorkspace loads the workspace-default project's qa_manifest
+// (labs.qa_default_manifest_project) for a project that has none of its own.
+// Returns nil when no default is configured, it points at THIS project (no
+// self-inherit), or the default project has no usable manifest. Best-effort.
+func (h *Handler) defaultManifestForWorkspace(ctx context.Context, workspaceID, selfProjectID pgtype.UUID) *qaManifest {
+	ws, err := h.Queries.GetWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil
+	}
+	defID := strings.TrimSpace(util.ParseWorkspaceLabs(ws.Settings).QADefaultManifestProject)
+	if defID == "" {
+		return nil
+	}
+	defUUID, perr := util.ParseUUID(defID)
+	if perr != nil || defUUID.Bytes == selfProjectID.Bytes {
+		return nil // unset / self — nothing to inherit
+	}
+	def, derr := h.Queries.GetProject(ctx, defUUID)
+	if derr != nil || len(def.Settings) == 0 {
+		return nil
+	}
+	var s struct {
+		Manifest *qaManifest `json:"qa_manifest"`
+	}
+	if json.Unmarshal(def.Settings, &s) != nil || s.Manifest == nil {
+		return nil
+	}
+	if s.Manifest.Auth.LoginPath == "" && len(s.Manifest.Routes) == 0 && len(s.Manifest.Flows) == 0 {
+		return nil
+	}
+	return s.Manifest
 }
 
 // sliceActionDocsRepoContext appends the project's configured documentation repo
