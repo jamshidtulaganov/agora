@@ -26,6 +26,13 @@ const allowedDevOrigins = process.env.CORS_ALLOWED_ORIGINS
 
 const nextConfig: NextConfig = {
   ...(process.env.STANDALONE === "true" ? { output: "standalone" as const } : {}),
+  // Next's trailing-slash normalization 308-redirects
+  // /editor/proxy/{token}/?folder=… to the slash-less form before the rewrite
+  // proxies it — which used to 404 on the backend (route was {token}/* only)
+  // and the editor iframe rendered the API's frame-ancestors CSP block instead
+  // of code-server. Skip the redirect so proxied paths pass through verbatim;
+  // app routes don't rely on trailing-slash redirects.
+  skipTrailingSlashRedirect: true,
   transpilePackages: ["@agora/core", "@agora/ui", "@agora/views"],
   // Type-checking runs in CI, not in the production image build. Skipping it
   // avoids the OOM (SIGKILL) the tsc pass hit on the Fly/Depot builder.

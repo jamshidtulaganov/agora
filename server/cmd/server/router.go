@@ -570,6 +570,20 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// streams (HTTP + WebSocket) to the code-server the backend launched on
 		// the remote daemon for that token. Authed via the session cookie the
 		// iframe carries; the token is the per-session capability.
+		// The no-slash form redirects to the canonical slash form (serving at a
+		// slash-less base would break code-server's relative asset URLs). Web
+		// used to arrive slash-less because Next's trailing-slash normalization
+		// 308-stripped /editor/proxy/{token}/?folder=… before proxying; that
+		// fell through to the API 404 whose frame-ancestors 'none' CSP blocked
+		// the editor iframe. Next now skips that redirect
+		// (skipTrailingSlashRedirect), so this route is the defensive belt.
+		r.HandleFunc("/editor/proxy/{token}", func(w http.ResponseWriter, r *http.Request) {
+			target := r.URL.Path + "/"
+			if r.URL.RawQuery != "" {
+				target += "?" + r.URL.RawQuery
+			}
+			http.Redirect(w, r, target, http.StatusTemporaryRedirect)
+		})
 		r.HandleFunc("/editor/proxy/{token}/*", h.ProxyEditor)
 		// Playwright trace-viewer reverse-proxy (Slice 3 of QA observability):
 		// /trace/proxy/{token}/* streams (HTTP + WebSocket) to the
