@@ -274,3 +274,18 @@ machines" card (personal runtimes with declared apps: status dot, owner,
 project → URL). Verified live end-to-end on the local daemon: CLI set →
 restart → metadata in DB → resolver returned the dev-local URL over the
 project's bound box → mention task landed on the dev's own runtime.
+
+## Implementation note (phase 3, shipped)
+
+Smaller than budgeted, as predicted: the bind knobs already existed
+(`AGORA_HEALTH_BIND`; `AGORA_EDITOR_BIND` covers both code-server AND
+`playwright show-trace` via editorBindHost()), and the CDP screencast rides
+the health mux — so the only net-new code is the advertise chain:
+`AGORA_DAEMON_ADVERTISE_ADDR` / `--advertise-addr` (validated host:port;
+startup warning when binds are still loopback) → register payload
+`editor_addr` → runtime metadata — which every proxy resolver already
+prefers per-runtime. Onboarding + env matrix + security boundary notes in
+docs/daemon-per-dev-mesh.md. Verified live with the global
+AGORA_DAEMON_INTERNAL UNSET: GetIssueBrowser resolved cloud mode purely from
+the runtime's advertised address and the proxied /editor/browser/start
+spawned Chromium through it.

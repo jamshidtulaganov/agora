@@ -76,6 +76,7 @@ func init() {
 	f.Bool("foreground", false, "Run in the foreground instead of background")
 	f.String("daemon-id", "", "Unique daemon identifier (env: AGORA_DAEMON_ID)")
 	f.String("device-name", "", "Human-readable device name (env: AGORA_DAEMON_DEVICE_NAME)")
+	f.String("advertise-addr", "", "host:port the backend dials to reach this daemon over a mesh/private network — reported as editor_addr (env: AGORA_DAEMON_ADVERTISE_ADDR)")
 	f.String("runtime-name", "", "Runtime display name (env: AGORA_AGENT_RUNTIME_NAME)")
 	f.Duration("poll-interval", 0, "Task poll interval (env: AGORA_DAEMON_POLL_INTERVAL)")
 	f.Duration("heartbeat-interval", 0, "Heartbeat interval (env: AGORA_DAEMON_HEARTBEAT_INTERVAL)")
@@ -95,6 +96,7 @@ func init() {
 	rf.Bool("foreground", false, "Run in the foreground instead of background")
 	rf.String("daemon-id", "", "Unique daemon identifier (env: AGORA_DAEMON_ID)")
 	rf.String("device-name", "", "Human-readable device name (env: AGORA_DAEMON_DEVICE_NAME)")
+	rf.String("advertise-addr", "", "host:port the backend dials to reach this daemon over a mesh/private network — reported as editor_addr (env: AGORA_DAEMON_ADVERTISE_ADDR)")
 	rf.String("runtime-name", "", "Runtime display name (env: AGORA_AGENT_RUNTIME_NAME)")
 	rf.Duration("poll-interval", 0, "Task poll interval (env: AGORA_DAEMON_POLL_INTERVAL)")
 	rf.Duration("heartbeat-interval", 0, "Heartbeat interval (env: AGORA_DAEMON_HEARTBEAT_INTERVAL)")
@@ -291,6 +293,9 @@ func buildDaemonStartArgs(cmd *cobra.Command) []string {
 	if v := flagString(cmd, "runtime-name"); v != "" {
 		args = append(args, "--runtime-name", v)
 	}
+	if v := flagString(cmd, "advertise-addr"); v != "" {
+		args = append(args, "--advertise-addr", v)
+	}
 	if d, _ := cmd.Flags().GetDuration("poll-interval"); d > 0 {
 		args = append(args, "--poll-interval", d.String())
 	}
@@ -339,12 +344,13 @@ func runDaemonForeground(cmd *cobra.Command) error {
 		}
 	}
 	overrides := daemon.Overrides{
-		ServerURL:   serverURL,
-		DaemonID:    flagString(cmd, "daemon-id"),
-		DeviceName:  flagString(cmd, "device-name"),
-		RuntimeName: flagString(cmd, "runtime-name"),
-		Profile:     profile,
-		HealthPort:  healthPortForProfile(profile),
+		ServerURL:     serverURL,
+		DaemonID:      flagString(cmd, "daemon-id"),
+		DeviceName:    flagString(cmd, "device-name"),
+		RuntimeName:   flagString(cmd, "runtime-name"),
+		Profile:       profile,
+		HealthPort:    healthPortForProfile(profile),
+		AdvertiseAddr: flagString(cmd, "advertise-addr"),
 	}
 	if d, _ := cmd.Flags().GetDuration("poll-interval"); d > 0 {
 		overrides.PollInterval = d

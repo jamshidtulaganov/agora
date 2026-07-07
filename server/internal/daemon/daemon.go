@@ -817,6 +817,12 @@ func (d *Daemon) registerRuntimesForWorkspace(ctx context.Context, workspaceID s
 	if len(d.cfg.DevApps) > 0 {
 		req["dev_apps"] = d.cfg.DevApps
 	}
+	// Advertised reachable address (daemon-per-dev phase 3): lets the backend
+	// dial THIS daemon for the editor / live-browser / trace proxies when it
+	// lives on a mesh instead of the backend's host or 6PN.
+	if d.cfg.AdvertiseAddr != "" {
+		req["editor_addr"] = d.cfg.AdvertiseAddr
+	}
 
 	resp, err := d.client.Register(ctx, req)
 	if err != nil {
