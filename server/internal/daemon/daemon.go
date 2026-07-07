@@ -810,6 +810,13 @@ func (d *Daemon) registerRuntimesForWorkspace(ctx context.Context, workspaceID s
 		"editor_port": d.cfg.HealthPort,
 		"runtimes":    runtimes,
 	}
+	// Dev-served apps (daemon-per-dev): project id → local URL. Reported even
+	// when empty is skipped so an older server ignores the extra key and a
+	// current one clears stale entries only when the daemon re-registers with
+	// a non-empty map removed (metadata is rebuilt wholesale server-side).
+	if len(d.cfg.DevApps) > 0 {
+		req["dev_apps"] = d.cfg.DevApps
+	}
 
 	resp, err := d.client.Register(ctx, req)
 	if err != nil {

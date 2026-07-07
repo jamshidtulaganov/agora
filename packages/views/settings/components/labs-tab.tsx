@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FlaskConical, Globe, Loader2, Server } from "lucide-react";
+import { FlaskConical, Globe, Laptop, Loader2, Server } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@agora/core/api";
@@ -9,6 +9,7 @@ import type { WorkspaceLabs } from "@agora/core/types";
 import { remoteBoxesOptions, remoteBoxKeys } from "@agora/core/runtimes";
 import { memberListOptions } from "@agora/core/workspace/queries";
 import { projectListOptions } from "@agora/core/projects";
+import { runtimeListOptions } from "@agora/core/runtimes/queries";
 import { Switch } from "@agora/ui/components/ui/switch";
 import {
   Select,
@@ -48,6 +49,7 @@ export function LabsTab() {
   const boxesQuery = useQuery(remoteBoxesOptions(wsId));
   const membersQuery = useQuery(memberListOptions(wsId));
   const projectsQuery = useQuery(projectListOptions(wsId));
+  const runtimesQuery = useQuery(runtimeListOptions(wsId));
 
   // Track only the fields the user changed; render from server state otherwise.
   const [draft, setDraft] = useState<Partial<WorkspaceLabs>>({});
@@ -82,6 +84,20 @@ export function LabsTab() {
   const boxes = boxesQuery.data ?? [];
   const members = membersQuery.data ?? [];
   const projects = projectsQuery.data ?? [];
+  // Developer machines: personal runtimes (owner set) that declared at least
+  // one dev-served app — what the qa_dev_runtimes toggle routes to.
+  const devMachines = (runtimesQuery.data ?? [])
+    .map((r) => {
+      const apps = (r.metadata?.dev_apps ?? {}) as Record<string, string>;
+      const entries = Object.entries(apps).filter(([, url]) => !!url);
+      return { runtime: r, entries };
+    })
+    .filter((m) => m.runtime.owner_id && m.entries.length > 0);
+  const projectTitle = (id: string) => projects.find((p) => p.id === id)?.title ?? id.slice(0, 8);
+  const ownerName = (userId: string | null) => {
+    const m = members.find((mm) => mm.user_id === userId);
+    return m?.name || m?.email || "—";
+  };
 
   const apply = (patch: Partial<WorkspaceLabs>) => {
     const next = { ...labs, ...patch };
@@ -166,6 +182,48 @@ export function LabsTab() {
             </Select>
           </div>
         </div>
+      </div>
+
+      <div className="rounded-xl border bg-card">
+        <div className="flex items-center gap-2 border-b px-4 py-3">
+          <Laptop className="size-4 text-muted-foreground" />
+          <h3 className="text-[13px] font-medium">{t(($) => $.labs.dev_machines_title)}</h3>
+          <span className="text-[12px] text-muted-foreground">{devMachines.length}</span>
+        </div>
+        {devMachines.length === 0 ? (
+          <p className="px-4 py-4 text-[12px] leading-relaxed text-muted-foreground">
+            {t(($) => $.labs.dev_machines_empty)}
+          </p>
+        ) : (
+          <ul className="divide-y">
+            {devMachines.map(({ runtime, entries }) => (
+              <li key={runtime.id} className="px-4 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    aria-hidden
+                    className={
+                      "size-2 shrink-0 rounded-full " +
+                      (runtime.status === "online" ? "bg-emerald-500" : "bg-muted-foreground/40")
+                    }
+                    title={runtime.status}
+                  />
+                  <span className="text-[13px] font-medium">{runtime.name}</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    {ownerName(runtime.owner_id)}
+                  </span>
+                </div>
+                <ul className="mt-1.5 space-y-0.5 pl-4">
+                  {entries.map(([projectId, url]) => (
+                    <li key={projectId} className="flex flex-wrap items-center gap-2 font-mono text-[11px]">
+                      <span className="text-muted-foreground">{projectTitle(projectId)}</span>
+                      <span className="text-foreground/80">{url}</span>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <div className="rounded-xl border bg-card">

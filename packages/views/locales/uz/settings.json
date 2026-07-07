@@ -197,7 +197,9 @@
     "project_none": "Projectsiz",
     "qa_dev_runtimes_title": "QA developer mashinasida (daemon-per-dev)",
     "qa_dev_runtimes_description": "Developerning daemon'i online bo'lib, task projecti uchun lokal app e'lon qilgan bo'lsa (agora daemon apps set <project> <url>), QA task O'SHA mashinada bajariladi va lokal yurgan appni tekshiradi. O'chiq = QA doim umumiy runtime'larda.",
-    "qa_dev_runtimes_strict_label": "Strict: daemon offline bo'lsa fallback qilmasdan kutish"
+    "qa_dev_runtimes_strict_label": "Strict: daemon offline bo'lsa fallback qilmasdan kutish",
+    "dev_machines_title": "Developer mashinalari",
+    "dev_machines_empty": "Hozircha hech bir developer mashinasi lokal app e'lon qilmagan. Dev mashinasida: agora daemon apps set <project> <url>, keyin daemon'ni restart qiling."
   },
   "github": {
     "page_description": "GitHub App ulang, Pull Request’lar Agora ichida qanday ko‘rinishini boshqaring va agentlaringiz commit tarixida nima qoldirishini hal qiling.",

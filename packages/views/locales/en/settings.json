@@ -197,7 +197,9 @@
     "project_none": "No project",
     "qa_dev_runtimes_title": "QA on developer machines (daemon-per-dev)",
     "qa_dev_runtimes_description": "When the developer's own daemon is online and declares a local app for the issue's project (agora daemon apps set <project> <url>), the QA task executes on THAT machine and tests the locally running app. Off = QA always runs on shared runtimes.",
-    "qa_dev_runtimes_strict_label": "Strict: wait for the developer's daemon instead of falling back when it is offline"
+    "qa_dev_runtimes_strict_label": "Strict: wait for the developer's daemon instead of falling back when it is offline",
+    "dev_machines_title": "Developer machines",
+    "dev_machines_empty": "No developer machine has declared a local app yet. On the dev's machine: agora daemon apps set <project> <url>, then restart the daemon."
   },
   "github": {
     "page_description": "Connect a GitHub App, control how Pull Requests show up inside Agora, and decide what your agents leave behind in commit history.",

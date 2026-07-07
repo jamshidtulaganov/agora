@@ -112,6 +112,7 @@ type Config struct {
 	AgentIdleWatchdog              time.Duration // force-stop a run when the backend goes silent this long with an empty queue (0 = disabled)
 	AgentStartupWatchdog           time.Duration // force-stop a run that has emitted NO message yet after this long (0 = disabled); fail-fast for a provider hung at startup
 	AgentToolWatchdog              time.Duration // force-stop a run when a single tool call stays in flight (silent) this long (0 = disabled); backstop for hung tools now that there is no wall-clock cap
+	DevApps                        map[string]string // project id → locally-served app URL (reported as runtime metadata dev_apps; daemon-per-dev QA routing)
 	ClaudeArgs                     []string
 	CodexArgs                      []string
 	CodebuddyArgs                  []string
@@ -178,11 +179,24 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	// file should not prevent daemon startup, since the daemon can still run
 	// purely from env-var configuration. We log a warning and proceed with
 	// no overrides.
+	var devApps map[string]string
 	if cliCfg, err := cli.LoadCLIConfigForProfile(overrides.Profile); err != nil {
 		slog.Warn("could not load CLI config for backend overrides; proceeding without",
 			"profile", overrides.Profile, "err", err)
-	} else if oc := openclawOverrideFrom(cliCfg); oc != nil {
-		applyOpenclawOverride(oc)
+	} else {
+		if oc := openclawOverrideFrom(cliCfg); oc != nil {
+			applyOpenclawOverride(oc)
+		}
+		// Dev-served apps (daemon-per-dev QA routing): managed by
+		// `agora daemon apps`, reported to the server as runtime metadata.
+		if len(cliCfg.DevApps) > 0 {
+			devApps = make(map[string]string, len(cliCfg.DevApps))
+			for projectID, entry := range cliCfg.DevApps {
+				if u := strings.TrimSpace(entry.URL); u != "" {
+					devApps[projectID] = u
+				}
+			}
+		}
 	}
 
 	// Probe available agent CLIs. exec.LookPath is the primary path, but on
@@ -510,6 +524,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		AutoUpdateEnabled:              autoUpdateEnabled,
 		AutoUpdateCheckInterval:        autoUpdateInterval,
 		HealthPort:                     healthPort,
+		DevApps:                        devApps,
 		MaxConcurrentTasks:             maxConcurrentTasks,
 		PollInterval:                   pollInterval,
 		HeartbeatInterval:              heartbeatInterval,

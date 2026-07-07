@@ -260,3 +260,17 @@ Live-testing bay all see the dev-local URL consistently. Verified end-to-end
 with a synthetic runtime: pin → claim isolation → offline → fallback+comment.
 Phase 2 remaining: `agora daemon apps` CLI + metadata reporting + Labs
 runtimes list.
+
+## Implementation note (phase 2, shipped)
+
+`agora daemon apps set|unset|list [--profile]` — set resolves the project by
+id or exact title across every workspace the profile's token sees (ambiguity
+errors with candidates), enforces loopback/private URLs (net.IP.IsPrivate),
+and stores `dev_apps` {projectID: {url,title}} in the profile CLI config.
+LoadConfig lifts it into daemon Config; the register payload carries
+`dev_apps` and the server persists it into runtime metadata (wholesale-rebuilt
+per register, so unset+restart clears). Labs gained a read-only "Developer
+machines" card (personal runtimes with declared apps: status dot, owner,
+project → URL). Verified live end-to-end on the local daemon: CLI set →
+restart → metadata in DB → resolver returned the dev-local URL over the
+project's bound box → mention task landed on the dev's own runtime.
