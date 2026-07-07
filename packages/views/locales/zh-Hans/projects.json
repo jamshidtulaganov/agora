@@ -15,7 +15,8 @@
     "status": "状态",
     "progress": "进度",
     "lead": "负责人",
-    "created": "创建时间"
+    "created": "创建时间",
+    "squad": "小队"
   },
   "status": {
     "planned": "计划中",
@@ -178,5 +179,10 @@
     "audit_button": "审计",
     "audit_fired_toast": "已排队设计审计",
     "audit_running": "审计已在进行中"
+  },
+  "squad": {
+    "no_squad": "无小队",
+    "assign_placeholder": "绑定小队...",
+    "no_results": "无结果"
   }
 }
