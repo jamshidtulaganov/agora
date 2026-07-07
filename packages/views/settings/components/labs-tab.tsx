@@ -8,6 +8,7 @@ import { api } from "@agora/core/api";
 import type { WorkspaceLabs } from "@agora/core/types";
 import { remoteBoxesOptions, remoteBoxKeys } from "@agora/core/runtimes";
 import { memberListOptions } from "@agora/core/workspace/queries";
+import { projectListOptions } from "@agora/core/projects";
 import { Switch } from "@agora/ui/components/ui/switch";
 import {
   Select,
@@ -46,6 +47,7 @@ export function LabsTab() {
   });
   const boxesQuery = useQuery(remoteBoxesOptions(wsId));
   const membersQuery = useQuery(memberListOptions(wsId));
+  const projectsQuery = useQuery(projectListOptions(wsId));
 
   // Track only the fields the user changed; render from server state otherwise.
   const [draft, setDraft] = useState<Partial<WorkspaceLabs>>({});
@@ -63,8 +65,9 @@ export function LabsTab() {
     onError: (e) => toast.error(e instanceof Error ? e.message : t(($) => $.labs.save_failed)),
   });
 
-  const setOwner = useMutation({
-    mutationFn: ({ boxId, projectId, memberId }: { boxId: string; projectId: string; memberId: string }) =>
+  // One mutation serves both columns: owner (memberId) and project scope.
+  const bindBox = useMutation({
+    mutationFn: ({ boxId, projectId, memberId }: { boxId: string; projectId: string; memberId?: string }) =>
       api.bindConnectedBox(boxId, projectId, memberId),
     onSuccess: () => {
       toast.success(t(($) => $.labs.owner_saved));
@@ -75,6 +78,7 @@ export function LabsTab() {
 
   const boxes = boxesQuery.data ?? [];
   const members = membersQuery.data ?? [];
+  const projects = projectsQuery.data ?? [];
 
   const apply = (patch: Partial<WorkspaceLabs>) => {
     const next = { ...labs, ...patch };
@@ -180,15 +184,37 @@ export function LabsTab() {
                     )}
                   </div>
                   <Select
+                    value={b.project_id ?? CLEAR_VALUE}
+                    onValueChange={(v) =>
+                      bindBox.mutate({
+                        boxId: b.id,
+                        projectId: !v || v === CLEAR_VALUE ? "" : v,
+                      })
+                    }
+                    disabled={bindBox.isPending}
+                  >
+                    <SelectTrigger className="h-8 w-[180px] text-[12px]">
+                      <SelectValue placeholder={t(($) => $.labs.project_none)} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={CLEAR_VALUE}>{t(($) => $.labs.project_none)}</SelectItem>
+                      {projects.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
                     value={ownerMember?.id ?? CLEAR_VALUE}
                     onValueChange={(v) =>
-                      setOwner.mutate({
+                      bindBox.mutate({
                         boxId: b.id,
                         projectId: b.project_id ?? "",
                         memberId: !v || v === CLEAR_VALUE ? "" : v,
                       })
                     }
-                    disabled={setOwner.isPending}
+                    disabled={bindBox.isPending}
                   >
                     <SelectTrigger className="h-8 w-[200px] text-[12px]">
                       <SelectValue placeholder={t(($) => $.labs.owner_none)} />

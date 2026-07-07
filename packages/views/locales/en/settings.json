@@ -182,7 +182,7 @@
     "section_placeholder_description": "Experimental settings will land here as they ship. Today this tab is intentionally empty.",
     "toast_failed": "Failed to update setting",
     "qa_dev_env_title": "QA on developer environments",
-    "qa_dev_env_description": "Route QA to the working developer's own box: when Shahzod's issue is under test, QA drives shahzod.sdteam.uz instead of the shared project box. Uses the box→developer mapping below.",
+    "qa_dev_env_description": "Route QA to the working developer's own box — Shahzod's sd-main issue tests on shahzod.sdteam.uz. A per-dev box only matches issues of the PROJECT it is scoped to below; nothing routes cross-project.",
     "qa_fallback_title": "Fallback QA box",
     "qa_fallback_description": "When no developer or project box matches, QA lands here (e.g. sandbox.sdteam.uz).",
     "qa_fallback_none": "No fallback",
@@ -193,7 +193,8 @@
     "owner_saved": "Box owner updated",
     "saved": "Labs settings saved",
     "save_failed": "Could not save — try again",
-    "resolution_note": "QA target resolution order: 1) the assignee-developer's own box (this Labs toggle) → 2) the project-bound box → 3) repo-name match → 4) the fallback box above → 5) the project's qa_smoke_url."
+    "resolution_note": "QA target resolution, per issue: 1) the assignee-developer's own box scoped to the SAME project (this toggle) → 2) the project's shared box (ownerless preferred) → 3) repo-name match → 4) the fallback box, only if it is unscoped or scoped to that same project → 5) the project's qa_smoke_url.",
+    "project_none": "No project"
   },
   "github": {
     "page_description": "Connect a GitHub App, control how Pull Requests show up inside Agora, and decide what your agents leave behind in commit history.",

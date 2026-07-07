@@ -457,13 +457,27 @@ func (h *Handler) connectedBoxForIssue(ctx context.Context, issue db.Issue) (db.
 	if labs.QADevBoxes {
 		if devUser, ok := h.developerUserForIssue(ctx, issue); ok {
 			for _, b := range boxes {
-				if b.OwnerID.Valid && b.OwnerID.Bytes == devUser.Bytes {
+				// The box must be EXPLICITLY scoped to the issue's project — a
+				// developer's sd-main box must never swallow their sd-cs issue
+				// (each project's boxes serve a different app). No project
+				// binding = no per-dev match; nothing is a cross-project
+				// default.
+				if b.OwnerID.Valid && b.OwnerID.Bytes == devUser.Bytes &&
+					b.ProjectID.Valid && b.ProjectID.Bytes == issue.ProjectID.Bytes {
 					return b, true
 				}
 			}
 		}
 	}
-	// 1. Explicit project binding.
+	// 1. Explicit project binding — two passes: an OWNERLESS (shared) project
+	//    box wins over someone's personal box for the same project, so another
+	//    developer's issue never lands on a colleague's environment; a solely
+	//    per-dev-provisioned project (only owned boxes) still resolves.
+	for _, b := range boxes {
+		if !b.OwnerID.Valid && b.ProjectID.Valid && b.ProjectID.Bytes == issue.ProjectID.Bytes {
+			return b, true
+		}
+	}
 	for _, b := range boxes {
 		if b.ProjectID.Valid && b.ProjectID.Bytes == issue.ProjectID.Bytes {
 			return b, true
@@ -492,12 +506,18 @@ func (h *Handler) connectedBoxForIssue(ctx context.Context, issue db.Issue) (db.
 		}
 	}
 	// 3. Labs fallback: the workspace-designated shared box (e.g.
-	//    sandbox.sdteam.uz) — QA still gets a live target when nothing above
-	//    matched a per-dev or project box.
+	//    sandbox.sdteam.uz). Project-scoped like everything above: a fallback
+	//    bound to a project serves ONLY that project's issues; only a
+	//    deliberately unbound fallback is workspace-generic. Different projects
+	//    run different apps — a fallback must never become a cross-project
+	//    default by accident.
 	if labs.QAFallbackBoxID != "" {
 		if fbID, ferr := parseUUIDErr(labs.QAFallbackBoxID); ferr == nil {
 			for _, b := range boxes {
-				if b.ID.Bytes == fbID.Bytes {
+				if b.ID.Bytes != fbID.Bytes {
+					continue
+				}
+				if !b.ProjectID.Valid || b.ProjectID.Bytes == issue.ProjectID.Bytes {
 					return b, true
 				}
 			}
@@ -774,11 +794,20 @@ func (h *Handler) DeploySprintBranch(ctx context.Context, sprintID, wsID pgtype.
 	}
 	var box db.ConnectedBox
 	found := false
+	// Prefer the OWNERLESS (shared) project box: a sprint branch deploy onto a
+	// developer's personal box would clobber whatever they're testing.
 	for _, b := range boxes {
-		if b.ProjectID.Valid && b.ProjectID.Bytes == sprint.ProjectID.Bytes {
-			box = b
-			found = true
+		if !b.OwnerID.Valid && b.ProjectID.Valid && b.ProjectID.Bytes == sprint.ProjectID.Bytes {
+			box, found = b, true
 			break
+		}
+	}
+	if !found {
+		for _, b := range boxes {
+			if b.ProjectID.Valid && b.ProjectID.Bytes == sprint.ProjectID.Bytes {
+				box, found = b, true
+				break
+			}
 		}
 	}
 	if !found {
@@ -903,10 +932,20 @@ func (h *Handler) DispatchSprintRegression(ctx context.Context, sprintID, wsID p
 	var cases []sprintRegressionCase
 	if project, perr := h.Queries.GetProject(ctx, sprint.ProjectID); perr == nil {
 		if boxes, berr := h.Queries.ListConnectedBoxesByWorkspace(ctx, sprint.WorkspaceID); berr == nil {
+			// Same shared-box preference as DeploySprintBranch: regression
+			// drives the project's shared environment, not a developer's own.
 			for _, b := range boxes {
-				if b.ProjectID.Valid && b.ProjectID.Bytes == sprint.ProjectID.Bytes {
+				if !b.OwnerID.Valid && b.ProjectID.Valid && b.ProjectID.Bytes == sprint.ProjectID.Bytes {
 					qaTarget = boxSmokeURL(b)
 					break
+				}
+			}
+			if qaTarget == "" {
+				for _, b := range boxes {
+					if b.ProjectID.Valid && b.ProjectID.Bytes == sprint.ProjectID.Bytes {
+						qaTarget = boxSmokeURL(b)
+						break
+					}
 				}
 			}
 		}
