@@ -50,3 +50,33 @@ func TestQAManifestInheritance(t *testing.T) {
 		t.Fatalf("child did not inherit parent manifest\ngot: %s", got)
 	}
 }
+
+// Regression: a legacy string-array qa_critical_paths must not break the
+// manifest injection (found live on sd-main — the combined unmarshal failed on
+// the string form and dropped the whole manifest).
+func TestQAManifestSurvivesStringCriticalPaths(t *testing.T) {
+	ctx := context.Background()
+	var pid, iid string
+	if err := testPool.QueryRow(ctx,
+		`INSERT INTO project (workspace_id,title,status,priority,settings)
+		 VALUES ($1::uuid,'cp-legacy','planned','none',
+		 '{"qa_manifest":{"base_url":"https://sandbox.x","auth":{"login_path":"/site/login","username":"demo","password":"123456"},"routes":{"dash":"/dashboard/supervayzer"}},"qa_critical_paths":["create order","kassa / payments"]}'::jsonb)
+		 RETURNING id::text`, testWorkspaceID).Scan(&pid); err != nil {
+		t.Fatalf("project: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM project WHERE id=$1::uuid`, pid) })
+	testPool.QueryRow(ctx, `INSERT INTO issue (workspace_id,project_id,title,creator_type,creator_id) VALUES ($1::uuid,$2::uuid,'cp-issue','member',$3::uuid) RETURNING id::text`, testWorkspaceID, pid, testUserID).Scan(&iid)
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM issue WHERE id=$1::uuid`, iid) })
+
+	issue, err := testHandler.Queries.GetIssue(ctx, parseUUID(iid))
+	if err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	got := testHandler.sliceActionQAManifestContext(ctx, issue)
+	if !strings.Contains(got, "navigation is KNOWN") || !strings.Contains(got, "/site/login") {
+		t.Fatalf("manifest dropped by string-array qa_critical_paths\ngot: %s", got)
+	}
+	if !strings.Contains(got, "create order") {
+		t.Fatalf("string-array critical paths not rendered\ngot: %s", got)
+	}
+}

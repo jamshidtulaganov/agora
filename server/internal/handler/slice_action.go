@@ -640,17 +640,19 @@ func (h *Handler) sliceActionQAManifestContext(ctx context.Context, issue db.Iss
 	if err != nil || len(project.Settings) == 0 {
 		return ""
 	}
+	// Parse qa_manifest and qa_critical_paths INDEPENDENTLY: a legacy/foreign
+	// shape in one must never nuke the other. qa_critical_paths has shipped as
+	// BOTH an array of {name,assert,why} objects AND a bare array of strings
+	// (older seed) — a single combined struct unmarshal fails on the string
+	// form and silently dropped the WHOLE manifest for every affected project
+	// (found live: sd-main). Decoupled + shape-tolerant here (parse, don't
+	// crash — the API Response Compatibility rule applies to our own settings
+	// blob too).
 	var settings struct {
-		Manifest      *qaManifest `json:"qa_manifest"`
-		CriticalPaths []struct {
-			Name   string `json:"name"`
-			Assert string `json:"assert"`
-			Why    string `json:"why"`
-		} `json:"qa_critical_paths"`
+		Manifest *qaManifest `json:"qa_manifest"`
 	}
-	if json.Unmarshal(project.Settings, &settings) != nil {
-		return ""
-	}
+	_ = json.Unmarshal(project.Settings, &settings)
+	criticalPaths := parseQACriticalPaths(project.Settings)
 	// Inheritance: a project with no manifest of its own (e.g. a Bitrix-imported
 	// sprint project that carries sd-main work but no repo/manifest) falls back
 	// to the workspace-default project's manifest, so its QA runs still get a
@@ -723,13 +725,66 @@ func (h *Handler) sliceActionQAManifestContext(ctx context.Context, issue db.Iss
 			}
 		}
 	}
-	if len(settings.CriticalPaths) > 0 {
+	if len(criticalPaths) > 0 {
 		b.WriteString(" CRITICAL (daily-critical golden paths — always smoke these):")
-		for _, c := range settings.CriticalPaths {
-			b.WriteString(" " + c.Name + " (assert: " + c.Assert + ");")
+		for _, c := range criticalPaths {
+			if strings.TrimSpace(c.Assert) != "" {
+				b.WriteString(" " + c.Name + " (assert: " + c.Assert + ");")
+			} else {
+				b.WriteString(" " + c.Name + ";")
+			}
 		}
 	}
 	return b.String()
+}
+
+// qaCriticalPath is one daily-critical golden path. name is always present;
+// assert is optional (the string-array legacy form carries only a name).
+type qaCriticalPath struct {
+	Name   string
+	Assert string
+}
+
+// parseQACriticalPaths reads settings.qa_critical_paths tolerantly: it accepts
+// BOTH the rich [{name,assert,why}] object form and the legacy ["name", ...]
+// string-array form, so neither shape breaks the caller (and neither can take
+// the qa_manifest down with it). Returns nil on absence/garbage.
+func parseQACriticalPaths(settingsRaw []byte) []qaCriticalPath {
+	if len(settingsRaw) == 0 {
+		return nil
+	}
+	var top struct {
+		CP json.RawMessage `json:"qa_critical_paths"`
+	}
+	if json.Unmarshal(settingsRaw, &top) != nil || len(top.CP) == 0 {
+		return nil
+	}
+	// Object form first.
+	var objs []struct {
+		Name   string `json:"name"`
+		Assert string `json:"assert"`
+	}
+	if json.Unmarshal(top.CP, &objs) == nil {
+		out := make([]qaCriticalPath, 0, len(objs))
+		for _, o := range objs {
+			if strings.TrimSpace(o.Name) != "" {
+				out = append(out, qaCriticalPath{Name: o.Name, Assert: o.Assert})
+			}
+		}
+		return out
+	}
+	// Legacy string-array form.
+	var names []string
+	if json.Unmarshal(top.CP, &names) == nil {
+		out := make([]qaCriticalPath, 0, len(names))
+		for _, n := range names {
+			if strings.TrimSpace(n) != "" {
+				out = append(out, qaCriticalPath{Name: n})
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 // defaultManifestForWorkspace loads the workspace-default project's qa_manifest
