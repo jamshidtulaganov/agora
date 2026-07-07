@@ -180,7 +180,20 @@
   "labs": {
     "section_placeholder_title": "Hozircha tajribalar yo‘q",
     "section_placeholder_description": "Tajribaviy sozlamalar chiqishi bilan shu yerda paydo bo‘ladi. Bugun bu tab ataylab bo‘sh.",
-    "toast_failed": "Sozlamani yangilashda xatolik"
+    "toast_failed": "Sozlamani yangilashda xatolik",
+    "qa_dev_env_title": "QA developer muhitida",
+    "qa_dev_env_description": "QA ishlayotgan developerning o'z boxiga boradi: Shahzodning taski tekshirilayotgan bo'lsa — QA shahzod.sdteam.uz'ni haydaydi, umumiy project box emas. Quyidagi box→developer mapping ishlatiladi.",
+    "qa_fallback_title": "Zaxira QA box",
+    "qa_fallback_description": "Developer yoki project box topilmasa — QA shu yerga tushadi (masalan, sandbox.sdteam.uz).",
+    "qa_fallback_none": "Zaxirasiz",
+    "boxes_title": "Ulangan dev boxlar",
+    "boxes_loading": "Boxlar yuklanmoqda…",
+    "boxes_empty": "Hozircha box yo'q. remote-boxes API orqali provision qiling, keyin egalarini shu yerda bog'lang.",
+    "owner_none": "Biriktirilmagan",
+    "owner_saved": "Box egasi yangilandi",
+    "saved": "Labs sozlamalari saqlandi",
+    "save_failed": "Saqlanmadi — qayta urinib ko'ring",
+    "resolution_note": "QA target tanlash tartibi: 1) assignee-developerning o'z boxi (shu toggle) → 2) project box → 3) repo nomi bo'yicha moslik → 4) yuqoridagi zaxira box → 5) projectning qa_smoke_url'i."
   },
   "github": {
     "page_description": "GitHub App ulang, Pull Request’lar Agora ichida qanday ko‘rinishini boshqaring va agentlaringiz commit tarixida nima qoldirishini hal qiling.",

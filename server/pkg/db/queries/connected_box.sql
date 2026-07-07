@@ -51,3 +51,12 @@ RETURNING *;
 -- name: DeleteConnectedBox :exec
 DELETE FROM connected_box
 WHERE id = $1 AND workspace_id = $2;
+
+-- name: BindConnectedBoxOwner :one
+-- Labs: map a box to the developer who owns it (per-dev QA routing). An
+-- invalid/absent owner clears the mapping (the box becomes shared/unowned).
+UPDATE connected_box
+SET owner_id = sqlc.narg('owner_id'),
+    updated_at = now()
+WHERE id = $1 AND workspace_id = $2
+RETURNING *;

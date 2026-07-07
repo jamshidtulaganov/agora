@@ -1,33 +1,216 @@
 "use client";
 
-import { FlaskConical } from "lucide-react";
+import { useState } from "react";
+import { FlaskConical, Globe, Loader2, Server } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { api } from "@agora/core/api";
+import type { WorkspaceLabs } from "@agora/core/types";
+import { remoteBoxesOptions, remoteBoxKeys } from "@agora/core/runtimes";
+import { memberListOptions } from "@agora/core/workspace/queries";
+import { Switch } from "@agora/ui/components/ui/switch";
 import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@agora/ui/components/ui/empty";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@agora/ui/components/ui/select";
+import { useWorkspaceId } from "@agora/core/hooks";
 import { useT } from "../../i18n";
 
-// The Co-authored-by trailer toggle moved into the dedicated GitHub Settings
-// tab (see github-tab.tsx). Labs is kept as a container for future
-// experimental flags rather than removed from the IA.
+// Settings → Labs. First experiment: QA-environment routing — QA runs against
+// the WORKING DEVELOPER's own box (shahzod.sdteam.uz when Shahzod's issue is
+// under test), falling back to a designated shared box (sandbox.sdteam.uz)
+// when no per-dev box matches. The mapping table below is what makes the
+// per-dev match real: each box names the member who owns it.
+
+const CLEAR_VALUE = "__none__";
+
+// The https URL a box serves, derived the same way the backend does
+// (work_dir /var/www/<subdomain> → https://<subdomain>).
+function boxURL(workDir: string): string {
+  const wd = workDir.replace(/\/+$/, "");
+  const sub = wd.slice(wd.lastIndexOf("/") + 1);
+  return sub ? `https://${sub}` : "";
+}
+
 export function LabsTab() {
   const { t } = useT("settings");
+  const wsId = useWorkspaceId();
+  const qc = useQueryClient();
+
+  const labsQuery = useQuery({
+    queryKey: ["workspace-labs", wsId],
+    queryFn: () => api.getWorkspaceLabs(),
+  });
+  const boxesQuery = useQuery(remoteBoxesOptions(wsId));
+  const membersQuery = useQuery(memberListOptions(wsId));
+
+  // Track only the fields the user changed; render from server state otherwise.
+  const [draft, setDraft] = useState<Partial<WorkspaceLabs>>({});
+  const labs: WorkspaceLabs = {
+    qa_dev_boxes: draft.qa_dev_boxes ?? labsQuery.data?.qa_dev_boxes ?? true,
+    qa_fallback_box_id: draft.qa_fallback_box_id ?? labsQuery.data?.qa_fallback_box_id ?? "",
+  };
+
+  const saveLabs = useMutation({
+    mutationFn: (next: WorkspaceLabs) => api.updateWorkspaceLabs(next),
+    onSuccess: () => {
+      toast.success(t(($) => $.labs.saved));
+      void qc.invalidateQueries({ queryKey: ["workspace-labs", wsId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : t(($) => $.labs.save_failed)),
+  });
+
+  const setOwner = useMutation({
+    mutationFn: ({ boxId, projectId, memberId }: { boxId: string; projectId: string; memberId: string }) =>
+      api.bindConnectedBox(boxId, projectId, memberId),
+    onSuccess: () => {
+      toast.success(t(($) => $.labs.owner_saved));
+      void qc.invalidateQueries({ queryKey: remoteBoxKeys.all(wsId) });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : t(($) => $.labs.save_failed)),
+  });
+
+  const boxes = boxesQuery.data ?? [];
+  const members = membersQuery.data ?? [];
+
+  const apply = (patch: Partial<WorkspaceLabs>) => {
+    const next = { ...labs, ...patch };
+    setDraft((d) => ({ ...d, ...patch }));
+    saveLabs.mutate(next);
+  };
+
   return (
-    <div className="space-y-4">
-      <Empty>
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <FlaskConical className="h-4 w-4" />
-          </EmptyMedia>
-          <EmptyTitle>{t(($) => $.labs.section_placeholder_title)}</EmptyTitle>
-          <EmptyDescription>
-            {t(($) => $.labs.section_placeholder_description)}
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
+    <div className="space-y-6">
+      <div className="rounded-xl border bg-card p-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+              <FlaskConical className="size-4 text-muted-foreground" />
+            </span>
+            <div className="min-w-0">
+              <h3 className="text-[13px] font-medium">{t(($) => $.labs.qa_dev_env_title)}</h3>
+              <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
+                {t(($) => $.labs.qa_dev_env_description)}
+              </p>
+            </div>
+          </div>
+          <Switch
+            checked={labs.qa_dev_boxes}
+            onCheckedChange={(v) => apply({ qa_dev_boxes: v === true })}
+            disabled={labsQuery.isLoading || saveLabs.isPending}
+          />
+        </div>
+
+        <div className="mt-4 border-t pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h4 className="text-[12px] font-medium">{t(($) => $.labs.qa_fallback_title)}</h4>
+              <p className="mt-0.5 text-[12px] text-muted-foreground">
+                {t(($) => $.labs.qa_fallback_description)}
+              </p>
+            </div>
+            <Select
+              value={labs.qa_fallback_box_id || CLEAR_VALUE}
+              onValueChange={(v) => apply({ qa_fallback_box_id: !v || v === CLEAR_VALUE ? "" : v })}
+              disabled={labsQuery.isLoading || saveLabs.isPending}
+            >
+              <SelectTrigger className="h-8 w-[220px] text-[12px]">
+                <SelectValue placeholder={t(($) => $.labs.qa_fallback_none)} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={CLEAR_VALUE}>{t(($) => $.labs.qa_fallback_none)}</SelectItem>
+                {boxes.map((b) => (
+                  <SelectItem key={b.id} value={b.id}>
+                    {b.label || boxURL(b.work_dir) || b.id.slice(0, 8)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border bg-card">
+        <div className="flex items-center gap-2 border-b px-4 py-3">
+          <Server className="size-4 text-muted-foreground" />
+          <h3 className="text-[13px] font-medium">{t(($) => $.labs.boxes_title)}</h3>
+          <span className="text-[12px] text-muted-foreground">{boxes.length}</span>
+        </div>
+        {boxesQuery.isLoading ? (
+          <div className="flex items-center gap-2 px-4 py-6 text-[12px] text-muted-foreground">
+            <Loader2 className="size-3.5 animate-spin" />
+            {t(($) => $.labs.boxes_loading)}
+          </div>
+        ) : boxes.length === 0 ? (
+          <p className="px-4 py-6 text-[12px] text-muted-foreground">
+            {t(($) => $.labs.boxes_empty)}
+          </p>
+        ) : (
+          <ul className="divide-y">
+            {boxes.map((b) => {
+              const url = boxURL(b.work_dir);
+              // The Select speaks MEMBER ids; the box row carries the owner's
+              // USER id — map it back for display.
+              const ownerMember = members.find((m) => m.user_id === b.owner_id);
+              return (
+                <li key={b.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+                  <span
+                    aria-hidden
+                    className={
+                      "size-2 shrink-0 rounded-full " +
+                      (b.status === "online" ? "bg-emerald-500" : "bg-muted-foreground/40")
+                    }
+                    title={b.status}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13px] font-medium">{b.label || b.id.slice(0, 8)}</div>
+                    {url && (
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-0.5 inline-flex items-center gap-1 truncate text-[11px] text-muted-foreground hover:text-foreground hover:underline"
+                      >
+                        <Globe className="size-3 shrink-0" />
+                        {url}
+                      </a>
+                    )}
+                  </div>
+                  <Select
+                    value={ownerMember?.id ?? CLEAR_VALUE}
+                    onValueChange={(v) =>
+                      setOwner.mutate({
+                        boxId: b.id,
+                        projectId: b.project_id ?? "",
+                        memberId: !v || v === CLEAR_VALUE ? "" : v,
+                      })
+                    }
+                    disabled={setOwner.isPending}
+                  >
+                    <SelectTrigger className="h-8 w-[200px] text-[12px]">
+                      <SelectValue placeholder={t(($) => $.labs.owner_none)} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={CLEAR_VALUE}>{t(($) => $.labs.owner_none)}</SelectItem>
+                      {members.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.name || m.email || m.id.slice(0, 8)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <p className="border-t px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
+          {t(($) => $.labs.resolution_note)}
+        </p>
+      </div>
     </div>
   );
 }

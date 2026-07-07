@@ -418,6 +418,14 @@ func (h *Handler) developerUserForIssue(ctx context.Context, issue db.Issue) (pg
 			return agent.OwnerID, true
 		}
 	}
+	// A human assignee IS the developer — their issues route to their own box
+	// (Labs: "QA env = developer env", e.g. Shahzod's issue → shahzod.sdteam.uz).
+	if issue.AssigneeType.String == "member" {
+		member, err := h.Queries.GetMember(ctx, issue.AssigneeID)
+		if err == nil && member.WorkspaceID.Bytes == issue.WorkspaceID.Bytes {
+			return member.UserID, true
+		}
+	}
 	return pgtype.UUID{}, false
 }
 
@@ -435,15 +443,23 @@ func (h *Handler) connectedBoxForIssue(ctx context.Context, issue db.Issue) (db.
 	if err != nil {
 		return db.ConnectedBox{}, false
 	}
+	// Labs flags steer this resolver: qa_dev_boxes gates step 0, and
+	// qa_fallback_box_id adds a last-resort shared box (step 3).
+	labs := defaultWorkspaceLabs()
+	if ws, werr := h.Queries.GetWorkspace(ctx, issue.WorkspaceID); werr == nil {
+		labs = workspaceLabs(ws.Settings)
+	}
 	// 0. Per-developer box (highest priority): the developer behind this issue's
 	//    work gets their OWN box (owner_id match), so their branch deploys to their
 	//    own isolated environment instead of colliding with other devs on the
 	//    shared project box. Only the per-task deploy-qa path uses this resolver;
 	//    the sprint-end regression keeps its own project-only box resolution.
-	if devUser, ok := h.developerUserForIssue(ctx, issue); ok {
-		for _, b := range boxes {
-			if b.OwnerID.Valid && b.OwnerID.Bytes == devUser.Bytes {
-				return b, true
+	if labs.QADevBoxes {
+		if devUser, ok := h.developerUserForIssue(ctx, issue); ok {
+			for _, b := range boxes {
+				if b.OwnerID.Valid && b.OwnerID.Bytes == devUser.Bytes {
+					return b, true
+				}
 			}
 		}
 	}
@@ -472,6 +488,18 @@ func (h *Handler) connectedBoxForIssue(ctx context.Context, issue db.Issue) (db.
 		for _, b := range boxes {
 			if b.RepoUrl != "" && repoBasename(b.RepoUrl) == want {
 				return b, true
+			}
+		}
+	}
+	// 3. Labs fallback: the workspace-designated shared box (e.g.
+	//    sandbox.sdteam.uz) — QA still gets a live target when nothing above
+	//    matched a per-dev or project box.
+	if labs.QAFallbackBoxID != "" {
+		if fbID, ferr := parseUUIDErr(labs.QAFallbackBoxID); ferr == nil {
+			for _, b := range boxes {
+				if b.ID.Bytes == fbID.Bytes {
+					return b, true
+				}
 			}
 		}
 	}
@@ -567,6 +595,10 @@ type SyncConnectedBoxRequest struct {
 
 type BindConnectedBoxRequest struct {
 	ProjectID string `json:"project_id"`
+	// OwnerID (a MEMBER id) maps the box to its developer for Labs per-dev QA
+	// routing. Pointer semantics: absent = leave the owner untouched; present
+	// but "" = clear the mapping.
+	OwnerID *string `json:"owner_id,omitempty"`
 }
 
 // BindConnectedBox binds (or, with an empty project_id, unbinds) a box to a
@@ -596,6 +628,32 @@ func (h *Handler) BindConnectedBox(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
+	}
+	// Owner mapping (Labs per-dev QA routing): "owner_id" present in the body
+	// binds/clears the box's developer. Explicit presence check so binding a
+	// project alone never clears an existing owner.
+	if req.OwnerID != nil {
+		var ownerID pgtype.UUID
+		if oid := strings.TrimSpace(*req.OwnerID); oid != "" {
+			memberUUID, mok := parseUUIDOrBadRequest(w, oid, "owner_id")
+			if !mok {
+				return
+			}
+			// The value is a MEMBER id from the members list; a box owner is a
+			// USER id (what agent.owner_id and session identity carry).
+			member, merr := h.Queries.GetMember(r.Context(), memberUUID)
+			if merr != nil || member.WorkspaceID.Bytes != wsUUID.Bytes {
+				writeError(w, http.StatusBadRequest, "owner_id does not name a member of this workspace")
+				return
+			}
+			ownerID = member.UserID
+		}
+		if _, oerr := h.Queries.BindConnectedBoxOwner(r.Context(), db.BindConnectedBoxOwnerParams{
+			ID: boxUUID, WorkspaceID: wsUUID, OwnerID: ownerID,
+		}); oerr != nil {
+			writeError(w, http.StatusNotFound, "remote box not found")
+			return
+		}
 	}
 	var projectID pgtype.UUID
 	if pid := strings.TrimSpace(req.ProjectID); pid != "" {

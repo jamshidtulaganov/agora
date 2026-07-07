@@ -74,6 +74,7 @@ import type {
   CancelTaskResponse,
   Project,
   ConnectedBox,
+  WorkspaceLabs,
   CreateRemoteBoxRequest,
   RemoteBoxSyncResult,
   ProvisionBoxRequest,
@@ -260,6 +261,8 @@ import {
   EMPTY_CANCEL_TASK_RESPONSE,
   ConnectedBoxListSchema,
   ConnectedBoxSchema,
+  WorkspaceLabsSchema,
+  EMPTY_WORKSPACE_LABS,
   RemoteBoxSyncResultSchema,
   ProvisionBoxResultSchema,
   EMPTY_PROVISION_RESULT,
@@ -1297,14 +1300,36 @@ export class ApiClient {
   }
 
   // Bind (project_id set) or unbind (empty project_id) a box to a project so an
-  // issue in that project resolves to this box for deploy-qa.
-  async bindConnectedBox(id: string, projectId: string): Promise<ConnectedBox> {
+  // issue in that project resolves to this box for deploy-qa. ownerId (a MEMBER
+  // id) additionally maps the box to its developer for Labs per-dev QA routing:
+  // undefined = leave the owner untouched, "" = clear the mapping.
+  async bindConnectedBox(id: string, projectId: string, ownerId?: string): Promise<ConnectedBox> {
+    const body: Record<string, string> = { project_id: projectId };
+    if (ownerId !== undefined) body.owner_id = ownerId;
     const raw = await this.fetch<unknown>(`/api/remote-boxes/${id}/bind`, {
       method: "POST",
-      body: JSON.stringify({ project_id: projectId }),
+      body: JSON.stringify(body),
     });
     return parseWithFallback(raw, ConnectedBoxSchema, EMPTY_CONNECTED_BOX, {
       endpoint: "POST /api/remote-boxes/{id}/bind",
+    });
+  }
+
+  // Settings → Labs: workspace-level experimental flags (QA-env routing).
+  async getWorkspaceLabs(): Promise<WorkspaceLabs> {
+    const raw = await this.fetch<unknown>("/api/workspace-labs");
+    return parseWithFallback(raw, WorkspaceLabsSchema, EMPTY_WORKSPACE_LABS, {
+      endpoint: "GET /api/workspace-labs",
+    });
+  }
+
+  async updateWorkspaceLabs(labs: WorkspaceLabs): Promise<WorkspaceLabs> {
+    const raw = await this.fetch<unknown>("/api/workspace-labs", {
+      method: "PUT",
+      body: JSON.stringify(labs),
+    });
+    return parseWithFallback(raw, WorkspaceLabsSchema, EMPTY_WORKSPACE_LABS, {
+      endpoint: "PUT /api/workspace-labs",
     });
   }
 

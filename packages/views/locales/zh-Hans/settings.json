@@ -180,7 +180,20 @@
   "labs": {
     "section_placeholder_title": "暂无实验",
     "section_placeholder_description": "实验性功能上线后会出现在这里。当前实验室页面是空的。",
-    "toast_failed": "更新设置失败"
+    "toast_failed": "更新设置失败",
+    "qa_dev_env_title": "在开发者环境上运行 QA",
+    "qa_dev_env_description": "QA 指向正在开发者自己的环境：测试 Shahzod 的任务时，QA 驱动 shahzod.sdteam.uz，而不是共享项目环境。使用下方的环境→开发者映射。",
+    "qa_fallback_title": "兜底 QA 环境",
+    "qa_fallback_description": "当没有匹配的开发者或项目环境时，QA 落到这里（例如 sandbox.sdteam.uz）。",
+    "qa_fallback_none": "无兜底",
+    "boxes_title": "已连接的开发环境",
+    "boxes_loading": "正在加载…",
+    "boxes_empty": "还没有环境。先通过 remote-boxes API 供给，然后在此绑定负责人。",
+    "owner_none": "未指派",
+    "owner_saved": "环境负责人已更新",
+    "saved": "Labs 设置已保存",
+    "save_failed": "保存失败，请重试",
+    "resolution_note": "QA 目标解析顺序：1）负责人自己的环境（本开关）→ 2）项目绑定环境 → 3）仓库名匹配 → 4）上方兜底环境 → 5）项目 qa_smoke_url。"
   },
   "github": {
     "page_description": "连接 GitHub App、控制 Pull Request 如何出现在 Agora 中，并决定智能体在 commit 记录里留下哪些痕迹。",

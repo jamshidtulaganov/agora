@@ -74,3 +74,10 @@ export interface ProvisionBoxResult {
   output: string;
   box: ConnectedBox | null;
 }
+
+// Settings → Labs workspace flags (GET/PUT /api/workspace-labs) — QA-env
+// routing: per-dev boxes toggle + designated shared fallback box.
+export interface WorkspaceLabs {
+  qa_dev_boxes: boolean;
+  qa_fallback_box_id: string;
+}
