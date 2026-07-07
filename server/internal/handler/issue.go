@@ -847,8 +847,11 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 			limit = v
 		}
 	}
-	if limit > 100 {
-		limit = 100
+	// 500, not 100: the QA cockpit + Bugs lens are queue views that request
+	// up to a few hundred in_review issues; the old clamp silently dropped
+	// the tail with no "showing X of N" indicator (audit P0 truncation).
+	if limit > 500 {
+		limit = 500
 	}
 	if o := r.URL.Query().Get("offset"); o != "" {
 		if v, err := strconv.Atoi(o); err == nil && v >= 0 {
@@ -1162,8 +1165,11 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
 			limit = v
 		}
 	}
-	if limit > 100 {
-		limit = 100
+	// 500, not 100: the QA cockpit + Bugs lens are queue views that request
+	// up to a few hundred in_review issues; the old clamp silently dropped
+	// the tail with no "showing X of N" indicator (audit P0 truncation).
+	if limit > 500 {
+		limit = 500
 	}
 	if o := r.URL.Query().Get("offset"); o != "" {
 		if v, err := strconv.Atoi(o); err == nil && v > 0 {
@@ -2384,6 +2390,44 @@ func (h *Handler) kbCaptureModelOverride(ctx context.Context, agentID pgtype.UUI
 	return pgtype.Text{String: kbSynthEscalationModel, Valid: true}
 }
 
+// clearStaleQAGateLabels detaches both qa:pass and qa:fail at the start of a
+// fresh QA cycle (a genuine re-entry into in_review), so the previous cycle's
+// verdict can't survive the fix. Best-effort; publishes one labels-changed
+// event when anything was actually removed.
+func (h *Handler) clearStaleQAGateLabels(ctx context.Context, issue db.Issue) {
+	had := false
+	// qa:stale/qa:blocked are gate-machinery states from the previous cycle —
+	// a re-entry is exactly the retry they asked for, so they clear too.
+	for _, name := range []string{"qa:pass", "qa:fail", "qa:stale", "qa:blocked"} {
+		if h.issueHasLabelNameHandler(ctx, issue, name) {
+			h.TaskService.DetachIssueLabelByName(ctx, issue, name)
+			had = true
+		}
+	}
+	if had {
+		h.publish(protocol.EventIssueLabelsChanged, uuidToString(issue.WorkspaceID), "system", "", map[string]any{
+			"issue_id": uuidToString(issue.ID),
+		})
+		slog.Info("cleared stale QA gate labels on in_review re-entry", "issue_id", uuidToString(issue.ID))
+	}
+}
+
+// issueHasLabelNameHandler mirrors the service-side check for handler use.
+func (h *Handler) issueHasLabelNameHandler(ctx context.Context, issue db.Issue, name string) bool {
+	labels, err := h.Queries.ListLabelsByIssue(ctx, db.ListLabelsByIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		return false
+	}
+	for _, l := range labels {
+		if strings.EqualFold(strings.TrimSpace(l.Name), name) {
+			return true
+		}
+	}
+	return false
+}
+
 // maybePromoteTestCasesOnDone grows the project's QA base suite from finished
 // work: on a genuine ->done transition, the issue's automated test cases are
 // copied into the project's standing base scripts ("[KEY] <title>", issue_id
@@ -2743,6 +2787,11 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		// no longer drops one of them. Found in the demo run (SD-320): both raced
 		// to the same agent and the gate verdict was silently suppressed.
 		safeGo("autoQA:in_review", func() {
+			// Fresh QA cycle: drop the PREVIOUS cycle's verdict labels so the
+			// issue reads "pending" until the new verdict lands. Without this a
+			// stale qa:fail from the failed attempt survives the fix and keeps
+			// the issue in "need fix" forever (audit P0 sticky-label defect).
+			h.clearStaleQAGateLabels(context.Background(), issue)
 			h.maybeRunQAOnInReview(context.Background(), issue, actorType, actorID)
 			h.maybeGenTests(context.Background(), issue, actorType, actorID, false)
 			// Compile any automated cases still missing a Playwright script
@@ -3356,6 +3405,8 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		if statusChanged && issue.Status == "in_review" && prevIssue.Status != "in_review" {
 			issueCopy := issue
 			safeGo("autoQA:in_review:batch", func() {
+				// Fresh QA cycle — see the single-update path for rationale.
+				h.clearStaleQAGateLabels(context.Background(), issueCopy)
 				h.maybeRunQAOnInReview(context.Background(), issueCopy, actorType, actorID)
 				h.maybeGenTests(context.Background(), issueCopy, actorType, actorID, false)
 				h.maybeCompileTestCases(context.Background(), issueCopy)

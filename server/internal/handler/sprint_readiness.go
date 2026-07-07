@@ -147,9 +147,6 @@ func (h *Handler) GetSprintReadiness(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		sr.Total = len(sr.Issues)
-		// Mergeable = every issue passed and nothing failed (an empty sprint is
-		// not "mergeable" — nothing has been verified).
-		sr.Mergeable = sr.Total > 0 && sr.Failed == 0 && sr.Pending == 0
 
 		// Regression gate: the sprint's latest whole-branch regression run.
 		if run, err := h.Queries.LatestSprintRegressionRun(ctx, []byte(uuidToString(s.ID))); err == nil {
@@ -165,6 +162,16 @@ func (h *Handler) GetSprintReadiness(w http.ResponseWriter, r *http.Request) {
 			}
 			sr.Regression = g
 		}
+
+		// Mergeable = every issue passed, nothing failed or pending, AND the
+		// whole-branch regression gate is green. The regression used to be a
+		// display-only sibling — a sprint could read "Mergeable" right next to
+		// a red "regression failed" chip (audit P0). An empty sprint is not
+		// "mergeable" (nothing has been verified); a sprint whose regression
+		// never ran or is still running is not mergeable either.
+		regressionGreen := sr.Regression != nil &&
+			(sr.Regression.Status == "completed" || sr.Regression.Status == "succeeded")
+		sr.Mergeable = sr.Total > 0 && sr.Failed == 0 && sr.Pending == 0 && regressionGreen
 		resp.Sprints = append(resp.Sprints, sr)
 	}
 

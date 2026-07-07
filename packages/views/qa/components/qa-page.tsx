@@ -67,8 +67,16 @@ type AssigneeKey = `${string}:${string}`;
 
 function qaStatusOf(issue: Issue): QAStatus {
   const names = (issue.labels ?? []).map((l) => l.name);
-  if (names.includes("qa:fail")) return "fail";
-  if (names.includes("qa:pass")) return "pass";
+  const fail = names.includes("qa:fail");
+  const pass = names.includes("qa:pass");
+  // Both labels = a legacy sticky pair from before verdicts became
+  // replace-on-write; the freshest verdict is unknowable from labels, so the
+  // issue needs a re-verdict — pending, not a fail that drowns the queue.
+  if (fail && pass) return "pending";
+  if (fail) return "fail";
+  if (pass) return "pass";
+  // qa:stale / qa:blocked = the gate did not run (watchdog escalation /
+  // undeployable branch) — an infra state, not a test failure.
   return "pending";
 }
 

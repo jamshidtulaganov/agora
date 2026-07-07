@@ -8,8 +8,8 @@ import (
 )
 
 // TestQAWatchdog_EscalatesSilentGate verifies the silent-failure SPOF guard end
-// to end against the DB: a stale in_review issue with no qa:pass/qa:fail verdict
-// and no live task is detected, escalated to qa:fail + a loud system comment,
+// to end against the DB: a stale in_review issue with no gate verdict
+// and no live task is detected, escalated to qa:stale (gate-didn't-run, NOT a test failure) + a loud system comment,
 // and then excluded from the next sweep (idempotent).
 func TestQAWatchdog_EscalatesSilentGate(t *testing.T) {
 	if testHandler == nil {
@@ -52,12 +52,12 @@ func TestQAWatchdog_EscalatesSilentGate(t *testing.T) {
 
 	var labelCount int
 	if err := testPool.QueryRow(ctx,
-		`SELECT count(*) FROM issue_to_label il JOIN issue_label l ON l.id=il.label_id WHERE il.issue_id=$1 AND l.name='qa:fail'`,
+		`SELECT count(*) FROM issue_to_label il JOIN issue_label l ON l.id=il.label_id WHERE il.issue_id=$1 AND l.name='qa:stale'`,
 		issueUUID).Scan(&labelCount); err != nil {
 		t.Fatal(err)
 	}
 	if labelCount != 1 {
-		t.Errorf("expected qa:fail attached after escalation, got %d", labelCount)
+		t.Errorf("expected qa:stale attached after escalation, got %d", labelCount)
 	}
 
 	var commentCount int
@@ -69,7 +69,7 @@ func TestQAWatchdog_EscalatesSilentGate(t *testing.T) {
 		t.Error("expected a loud system comment explaining the missing verdict")
 	}
 
-	// Idempotent: the escalated gate now carries qa:fail, so it must drop out.
+	// Idempotent: the escalated gate now carries qa:stale, so it must drop out.
 	gates2, err := testHandler.Queries.ListStaleUnverifiedQAGates(ctx, params)
 	if err != nil {
 		t.Fatal(err)

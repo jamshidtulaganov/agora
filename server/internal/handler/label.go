@@ -375,6 +375,17 @@ func (h *Handler) AttachLabel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The QA gate labels are a VERDICT pair: attaching one replaces the other.
+	// Agents set verdicts through this handler (CLI label attach), and without
+	// the replace an issue that failed then re-passed carried BOTH labels
+	// forever — every fail-wins surface kept it "need fix" (audit P0).
+	switch strings.ToLower(strings.TrimSpace(label.Name)) {
+	case "qa:pass":
+		h.TaskService.DetachIssueLabelByName(r.Context(), issue, "qa:fail")
+	case "qa:fail":
+		h.TaskService.DetachIssueLabelByName(r.Context(), issue, "qa:pass")
+	}
+
 	// Automation chain: a qa:pass label fires an auto_docs run (when enabled +
 	// the project has a docs_repo); in sprint-PR mode it ALSO routes the squad
 	// lead to review + merge the task's PR into the sprint branch. A qa:fail

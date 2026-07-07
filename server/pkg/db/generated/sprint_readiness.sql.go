@@ -111,9 +111,21 @@ SELECT i.id, i.number, i.title, i.status,
                WHERE il.issue_id = i.id AND l.name = 'qa:pass') AS qa_pass,
        EXISTS (SELECT 1 FROM issue_to_label il JOIN issue_label l ON l.id = il.label_id
                WHERE il.issue_id = i.id AND l.name = 'qa:fail') AS qa_fail,
-       (SELECT count(*) FROM test_run r WHERE r.issue_id = i.id AND r.status = 'pass') AS runs_pass,
-       (SELECT count(*) FROM test_run r WHERE r.issue_id = i.id AND r.status = 'fail') AS runs_fail,
-       (SELECT count(*) FROM test_run r WHERE r.issue_id = i.id) AS runs_total
+       (SELECT count(*) FROM (
+          SELECT DISTINCT ON (r.test_case_id) r.status
+          FROM test_run r WHERE r.issue_id = i.id
+          ORDER BY r.test_case_id, r.created_at DESC
+        ) latest WHERE latest.status = 'pass') AS runs_pass,
+       (SELECT count(*) FROM (
+          SELECT DISTINCT ON (r.test_case_id) r.status
+          FROM test_run r WHERE r.issue_id = i.id
+          ORDER BY r.test_case_id, r.created_at DESC
+        ) latest WHERE latest.status = 'fail') AS runs_fail,
+       (SELECT count(*) FROM (
+          SELECT DISTINCT ON (r.test_case_id) r.status
+          FROM test_run r WHERE r.issue_id = i.id
+          ORDER BY r.test_case_id, r.created_at DESC
+        ) latest) AS runs_total
 FROM issue i
 JOIN issue_to_sprint its ON its.issue_id = i.id
 WHERE its.sprint_id = $1 AND i.workspace_id = $2
@@ -140,6 +152,11 @@ type SprintReadinessRowsRow struct {
 // Per-issue QA readiness for one sprint: the human qa:pass/qa:fail label plus
 // the automated test_run tallies (any fail = regression). Drives the row list
 // and the "X/Y green, mergeable?" rollup.
+// Run tallies use the LATEST run per test case, not all-time counts: a
+// regression that was caught once and then fixed + re-run green must stop
+// counting as a fail, otherwise one historical fail row marks the issue (and
+// therefore the sprint) unmergeable forever and silently overrides a human
+// qa:pass (audit P0).
 func (q *Queries) SprintReadinessRows(ctx context.Context, arg SprintReadinessRowsParams) ([]SprintReadinessRowsRow, error) {
 	rows, err := q.db.Query(ctx, sprintReadinessRows, arg.SprintID, arg.WorkspaceID)
 	if err != nil {
