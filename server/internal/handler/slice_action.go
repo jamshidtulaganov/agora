@@ -795,10 +795,7 @@ func sprintWorktreeEnabled() bool {
 // same name; both read AGORA_SPRINT_PR_MODE so the agent instruction path and the
 // co-code accept path switch together. Default OFF → direct-commit sprint mode.
 // Only meaningful when sprintWorktreeEnabled() + the project is in sprint mode.
-func sprintPRModeEnabled() bool {
-	v := strings.TrimSpace(os.Getenv("AGORA_SPRINT_PR_MODE"))
-	return v == "1" || strings.EqualFold(v, "true")
-}
+func sprintPRModeEnabled() bool { return util.SprintPRModeEnabled() }
 
 // sprintAutoMergeEnabled gates whether the squad LEAD auto-merges a sprint PR
 // once it passes QA (Phase 3). Default OFF: the lead prepares the PR and QA
@@ -1125,6 +1122,13 @@ func (h *Handler) enforceQAGateBeforeDone(ctx context.Context, issue db.Issue, a
 		// QA re-runs and the author must add a test that actually exercises the
 		// change. Fail-open on a query error (never block on infra failure).
 		if ok, err := h.Queries.HasDiscriminatingRunForIssue(ctx, issue.ID); err != nil || ok {
+			return targetStatus, false
+		}
+		// The hold is only meaningful when discrimination is POSSIBLE: e2e/
+		// smoke/hand-driven cases report baseline "unknown" and can never
+		// satisfy it, so an e2e-only issue used to wedge at in_review forever
+		// (audit P2). No baseline-capable run at all → let qa:pass stand.
+		if capable, err := h.Queries.HasBaselineCapableRunForIssue(ctx, issue.ID); err != nil || !capable {
 			return targetStatus, false
 		}
 		return "in_review", true
@@ -1865,6 +1869,21 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 		return
 	}
 	defer lockIssueQA(uuidToString(issue.ID))()
+	// The in-process mutex above only guards ONE replica. On a multi-replica
+	// deploy each backend would dispatch the full QA fan-out for the same
+	// transition (audit P2). A per-issue DB advisory try-lock held for the
+	// dispatch closes that: the loser sees the lock taken and bows out.
+	// Best-effort — lock-infra failure proceeds single-replica-style.
+	if lockTx, err := h.TxStarter.Begin(ctx); err == nil {
+		defer func() { _ = lockTx.Rollback(ctx) }()
+		var got bool
+		if qerr := lockTx.QueryRow(ctx,
+			`SELECT pg_try_advisory_xact_lock(hashtext($1))`,
+			"qa-dispatch:"+uuidToString(issue.ID)).Scan(&got); qerr == nil && !got {
+			slog.Info("qa dispatch already in flight on another replica; skipping", "issue_id", uuidToString(issue.ID))
+			return
+		}
+	}
 
 	// Orchestrator-to-orchestrator (product rule: "the QA lead and dev lead must
 	// always be in communication"): when the DEV side is squad-managed — the
@@ -2319,7 +2338,7 @@ func verifyGateInstruction() string {
 //     sprint branch against the branch it will merge into. Diffing the whole
 //     sprint branch against sprint-root answers "is the accumulated sprint
 //     healthy vs the base we'll merge into", catching cross-task drift. Used by
-//     the daily backstop and the sprint-end full regression.
+//     the sprint-end full regression (and any manual mid-sprint re-run).
 //   - "" or unknown — no extra guidance; the instruction keeps its original
 //     merge-base wording (backward-compatible default path).
 //

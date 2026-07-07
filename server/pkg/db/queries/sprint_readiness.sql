@@ -19,8 +19,8 @@ WHERE p.workspace_id = sqlc.arg('workspace_id') AND s.status = 'active'
 ORDER BY p.title, s.name;
 
 -- name: LatestSprintRegressionRun :one
--- The most recent whole-branch regression autopilot run for a sprint (daily
--- backstop or sprint-end gate) — the "is the branch green?" signal. Keyed on
+-- The most recent whole-branch regression autopilot run for a sprint
+-- (sprint-end gate or manual re-run; no scheduled daily run exists today) — the "is the branch green?" signal. Keyed on
 -- the sprint id stashed in the dispatch payload (autopilot_run has no sprint fk).
 -- issue_id = the run's tracking issue (create_issue mode) — the click-through
 -- target so "regression failed" isn't a dead-end chip (audit P1).

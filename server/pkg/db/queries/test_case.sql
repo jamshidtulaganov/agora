@@ -159,3 +159,14 @@ SELECT status, issue_id FROM test_run
 WHERE test_case_id = $1
 ORDER BY created_at DESC
 LIMIT $2;
+
+-- name: HasBaselineCapableRunForIssue :one
+-- Whether the issue has ANY run that reported a meaningful baseline status —
+-- the precondition for the discrimination gate to be satisfiable at all.
+-- [e2e]/[smoke]/hand-driven cases report baseline "unknown" and can NEVER
+-- discriminate; holding such an issue at in_review forever was the audit's
+-- "permanent wedge" finding.
+SELECT EXISTS (
+  SELECT 1 FROM test_run
+  WHERE issue_id = $1 AND baseline_status IN ('pass', 'fail')
+);

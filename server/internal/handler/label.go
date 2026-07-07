@@ -365,6 +365,10 @@ func (h *Handler) AttachLabel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Trigger-idempotency needs to know whether this attach is NEW: the insert
+	// is ON CONFLICT DO NOTHING, and re-attaching an existing qa:fail used to
+	// re-fire the whole autoroute/auto-bug chain (audit P2 churn).
+	alreadyHad := h.issueHasLabelNameHandler(r.Context(), issue, label.Name)
 	if err := h.Queries.AttachLabelToIssue(r.Context(), db.AttachLabelToIssueParams{
 		IssueID:     issue.ID,
 		LabelID:     labelID,
@@ -392,10 +396,12 @@ func (h *Handler) AttachLabel(w http.ResponseWriter, r *http.Request) {
 	// label routes the issue back to the failing dev agent's squad lead (when
 	// enabled + the agent has a squad). All detached + best-effort so none delays
 	// or fails the label attach.
-	go h.maybeAutoDocsOnLabel(context.Background(), issue, label.Name, userID)
-	go h.maybeMergeOnQAPass(context.Background(), issue, label.Name, userID)
-	go h.maybeRouteToDevLeadOnQAFail(context.Background(), issue, label.Name, userID)
-	go h.maybeAutoFileBugOnQAFail(context.Background(), issue, label.Name, userID)
+	if !alreadyHad {
+		go h.maybeAutoDocsOnLabel(context.Background(), issue, label.Name, userID)
+		go h.maybeMergeOnQAPass(context.Background(), issue, label.Name, userID)
+		go h.maybeRouteToDevLeadOnQAFail(context.Background(), issue, label.Name, userID)
+		go h.maybeAutoFileBugOnQAFail(context.Background(), issue, label.Name, userID)
+	}
 
 	// Read the updated label list; on read failure, the attach is already
 	// committed — return success without a labels body (clients refetch via

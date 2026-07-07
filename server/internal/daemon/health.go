@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/daemon/repocache"
+	"github.com/multica-ai/multica/server/internal/util"
 )
 
 // HealthResponse is returned by the daemon's local health endpoint.
@@ -1196,10 +1197,7 @@ func pushToSprintBranch(repo, alias, sprintBranch string) prOpenResult {
 // sprint branch — for the squad lead to review + merge — instead of pushing its
 // commits straight onto the shared branch. Default OFF, so the direct-push model
 // (pushToSprintBranch) stays the default and the switch is fully reversible.
-func sprintPRModeEnabled() bool {
-	v := strings.TrimSpace(os.Getenv("AGORA_SPRINT_PR_MODE"))
-	return v == "1" || strings.EqualFold(v, "true")
-}
+func sprintPRModeEnabled() bool { return util.SprintPRModeEnabled() }
 
 // openSprintPR opens (or reuses) a GitHub PR from the task's per-task sprint alias
 // INTO the shared sprint branch. Unlike pushToSprintBranch it never writes to the

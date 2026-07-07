@@ -84,7 +84,7 @@ FROM test_run r
 JOIN test_case c ON c.id = r.test_case_id
 LEFT JOIN issue i ON i.id = r.issue_id
 WHERE r.workspace_id = $1
-  AND ($2::uuid IS NULL OR i.project_id = $2)
+  AND ($2::uuid IS NULL OR COALESCE(i.project_id, c.project_id) = $2)
 ORDER BY r.created_at DESC
 LIMIT 25
 `
@@ -139,8 +139,13 @@ SELECT count(*)                                   AS total,
        count(*) FILTER (WHERE r.status IN ('skip','blocked')) AS skipped
 FROM test_run r
 LEFT JOIN issue i ON i.id = r.issue_id
+LEFT JOIN test_case tc ON tc.id = r.test_case_id
 WHERE r.workspace_id = $1 AND r.created_at > now() - interval '30 days'
-  AND ($2::uuid IS NULL OR i.project_id = $2)
+  -- Scope through the owning issue OR the case's own project (base-suite /
+  -- branch-level runs have no issue): without the COALESCE, those runs were
+  -- counted in "All projects" but vanished when a project was selected, so
+  -- per-project totals didn't add up (audit P2 asymmetry).
+  AND ($2::uuid IS NULL OR COALESCE(i.project_id, tc.project_id) = $2)
 `
 
 type QAMetricsRunTotalsParams struct {
@@ -180,8 +185,9 @@ SELECT date_trunc('day', r.created_at)::date        AS day,
        count(*) FILTER (WHERE r.status = 'fail')    AS failed
 FROM test_run r
 LEFT JOIN issue i ON i.id = r.issue_id
+LEFT JOIN test_case tc ON tc.id = r.test_case_id
 WHERE r.workspace_id = $1 AND r.created_at > now() - interval '14 days'
-  AND ($2::uuid IS NULL OR i.project_id = $2)
+  AND ($2::uuid IS NULL OR COALESCE(i.project_id, tc.project_id) = $2)
 GROUP BY 1 ORDER BY 1
 `
 

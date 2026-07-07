@@ -33,7 +33,8 @@ type sprintReadinessIssue struct {
 }
 
 // sprintRegressionGate is the sprint's latest whole-branch regression run (the
-// daily backstop / sprint-end gate). Empty Status = never run.
+// sprint-end gate or a manual re-run; there is no scheduled daily run
+// today). Empty Status = never run.
 type sprintRegressionGate struct {
 	Status      string `json:"status"`
 	Source      string `json:"source"`

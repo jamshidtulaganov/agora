@@ -2410,6 +2410,14 @@ func (h *Handler) clearStaleQAGateLabels(ctx context.Context, issue db.Issue) {
 		})
 		slog.Info("cleared stale QA gate labels on in_review re-entry", "issue_id", uuidToString(issue.ID))
 	}
+	// A fresh cycle also resets the auto-file-bug dedup stamp: the old stamp
+	// was per-issue-lifetime, so a GENUINE regression in a later cycle never
+	// filed a new bug (audit P2).
+	if _, err := h.Queries.DeleteIssueMetadataKey(ctx, db.DeleteIssueMetadataKeyParams{
+		ID: issue.ID, WorkspaceID: issue.WorkspaceID, Key: "qa_bug_filed",
+	}); err != nil {
+		slog.Warn("reset qa_bug_filed stamp failed", "error", err, "issue_id", uuidToString(issue.ID))
+	}
 }
 
 // issueHasLabelNameHandler mirrors the service-side check for handler use.

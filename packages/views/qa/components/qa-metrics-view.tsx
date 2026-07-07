@@ -84,7 +84,7 @@ export function QAMetricsView({ projectId }: { projectId?: string }) {
 
       {/* Top stats */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <StatCard icon={Gauge} label="Regression runs" value={String(totals.total)} sub="last 30 days" />
+        <StatCard icon={Gauge} label="Case runs" value={String(totals.total)} sub="per-case verdicts, last 30 days" />
         <StatCard
           icon={ShieldCheck}
           label="Pass rate"
@@ -108,9 +108,9 @@ export function QAMetricsView({ projectId }: { projectId?: string }) {
         />
         <StatCard
           icon={Zap}
-          label="Fast path"
-          value={coverage.scripted > 0 ? "~5s / case" : "—"}
-          sub="vs minutes LLM-driven"
+          label="Scripted cases"
+          value={String(coverage.scripted)}
+          sub="run deterministically (fast path)"
           tone={coverage.scripted > 0 ? "good" : "default"}
         />
       </div>

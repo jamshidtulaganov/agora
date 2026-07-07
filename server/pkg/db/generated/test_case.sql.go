@@ -220,6 +220,25 @@ func (q *Queries) GetTestRunByID(ctx context.Context, id pgtype.UUID) (TestRun, 
 	return i, err
 }
 
+const hasBaselineCapableRunForIssue = `-- name: HasBaselineCapableRunForIssue :one
+SELECT EXISTS (
+  SELECT 1 FROM test_run
+  WHERE issue_id = $1 AND baseline_status IN ('pass', 'fail')
+)
+`
+
+// Whether the issue has ANY run that reported a meaningful baseline status —
+// the precondition for the discrimination gate to be satisfiable at all.
+// [e2e]/[smoke]/hand-driven cases report baseline "unknown" and can NEVER
+// discriminate; holding such an issue at in_review forever was the audit's
+// "permanent wedge" finding.
+func (q *Queries) HasBaselineCapableRunForIssue(ctx context.Context, issueID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, hasBaselineCapableRunForIssue, issueID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const hasDiscriminatingRunForIssue = `-- name: HasDiscriminatingRunForIssue :one
 SELECT EXISTS (
     SELECT 1 FROM (
