@@ -596,12 +596,27 @@ type qaManifest struct {
 	// Notes carry target-specific ground rules (rendering model, selector
 	// conventions, role of the QA account) that don't fit routes/flows.
 	Notes string `json:"notes"`
+	// CrossManifests point at INTEGRATION manifests (docs repo qa-manifest/
+	// <a>--<b>.json) for flows that span this project and a partner system —
+	// e.g. sd-cs (supplier) ↔ sd-main (distributor) data exchange. Injected as
+	// an explicit "read this file" pointer so an integration QA run doesn't
+	// depend on the agent stumbling onto it while browsing the docs repo.
+	CrossManifests []qaCrossManifest `json:"cross_manifests"`
 	// Accounts are ADDITIONAL role-specific logins for flows the default Auth
 	// account can't reach — e.g. an agent / ROLE=4 account for endpoints that
 	// reject the admin login ("войдите под аккаунтом агента"). The default Auth
 	// stays the primary login; the agent picks the account whose role matches
 	// the case it is exercising.
 	Accounts []qaManifestAccount `json:"accounts"`
+}
+
+// qaCrossManifest names a partner project + the docs-repo integration manifest
+// documenting the seam between the two (shared entities + exchange endpoints +
+// cross-system flows). Doc is a path within the project's docs_repo.
+type qaCrossManifest struct {
+	Partner string `json:"partner"` // e.g. "sd-cs"
+	Doc     string `json:"doc"`     // e.g. "qa-manifest/sd-main--sd-cs.json"
+	Summary string `json:"summary"` // one line: what the two exchange
 }
 
 // qaManifestAccount is one role-specific QA login (see qaManifest.Accounts).
@@ -679,6 +694,16 @@ func (h *Handler) sliceActionQAManifestContext(ctx context.Context, issue db.Iss
 			b.WriteString(" KNOWN ISSUES (pre-existing — do NOT test these paths and NEVER fail a task on them; report separately if relevant):")
 			for _, k := range m.KnownIssues {
 				b.WriteString(" " + k + ";")
+			}
+		}
+		if len(m.CrossManifests) > 0 {
+			b.WriteString(" INTEGRATION MANIFESTS — if this task touches a cross-system flow, READ the named file in the docs repo (it maps the shared entities, exchange endpoints, and end-to-end flows that span BOTH systems; verify both ends + the sync):")
+			for _, c := range m.CrossManifests {
+				b.WriteString(fmt.Sprintf(" %s ↔ %s: read %s", "this project", c.Partner, c.Doc))
+				if c.Summary != "" {
+					b.WriteString(" (" + c.Summary + ")")
+				}
+				b.WriteString(";")
 			}
 		}
 	}

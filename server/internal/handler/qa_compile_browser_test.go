@@ -36,7 +36,7 @@ func TestQAManifestContext_InjectsRoleAccounts(t *testing.T) {
 		t.Skip("no database")
 	}
 	ctx := context.Background()
-	manifest := `{"qa_manifest":{"base_url":"https://x","auth":{"login_path":"/login","user_field":"login","pass_field":"password","username":"demo","password":"123456"},"accounts":[{"role":"agent (ROLE=4)","username":"agent1","password":"s3cret","note":"for /api3/stock/*"}]}}`
+	manifest := `{"qa_manifest":{"base_url":"https://x","auth":{"login_path":"/login","user_field":"login","pass_field":"password","username":"demo","password":"123456"},"accounts":[{"role":"agent (ROLE=4)","username":"agent1","password":"s3cret","note":"for /api3/stock/*"}],"cross_manifests":[{"partner":"sd-cs","doc":"qa-manifest/sd-main--sd-cs.json","summary":"customers/products/sales exchange"}]}}`
 	var pid, iid string
 	if err := testPool.QueryRow(ctx,
 		`INSERT INTO project (workspace_id, title, status, priority, settings)
@@ -60,7 +60,7 @@ func TestQAManifestContext_InjectsRoleAccounts(t *testing.T) {
 		t.Fatalf("load issue: %v", err)
 	}
 	got := testHandler.sliceActionQAManifestContext(ctx, issue)
-	for _, want := range []string{"ACCOUNT [agent (ROLE=4)]", "agent1", "s3cret", "for /api3/stock"} {
+	for _, want := range []string{"ACCOUNT [agent (ROLE=4)]", "agent1", "s3cret", "for /api3/stock", "INTEGRATION MANIFESTS", "qa-manifest/sd-main--sd-cs.json", "sd-cs"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("manifest context missing %q\ngot: %s", want, got)
 		}
