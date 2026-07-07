@@ -899,6 +899,7 @@ type UserEditorToken struct {
 	TokenSealed []byte             `json:"token_sealed"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
 }
 
 type UserExternalIdentity struct {

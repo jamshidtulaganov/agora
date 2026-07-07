@@ -531,6 +531,8 @@
     "toast_saved": "Token saqlandi",
     "toast_save_failed": "Token saqlanmadi",
     "toast_removed": "Token o‘chirildi",
-    "toast_remove_failed": "Token o‘chirilmadi"
+    "toast_remove_failed": "Token o‘chirilmadi",
+    "scope_global": "Global (barcha workspace’lar)",
+    "scope_unknown_workspace": "Noma’lum workspace"
   }
 }

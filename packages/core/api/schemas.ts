@@ -1389,6 +1389,7 @@ export const EditorTokensResponseSchema = z.object({
       z.object({
         provider: z.string().default(""),
         masked: z.string().default(""),
+        workspace_id: z.string().default(""),
         updated_at: z.string().default(""),
       }).loose(),
     )

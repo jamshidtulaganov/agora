@@ -222,7 +222,7 @@ func (h *Handler) GetIssueEditor(w http.ResponseWriter, r *http.Request) {
 	// The caller's editor account tokens (Settings → editor integration) ride
 	// into the code-server env so gh CLI / HTTPS git in the editor terminal are
 	// authenticated. Best-effort: nil when none configured.
-	editorEnv := h.editorEnvForUser(r.Context(), parseUUID(userID))
+	editorEnv := h.editorEnvForUser(r.Context(), parseUUID(userID), issue.WorkspaceID)
 
 	if internal := resolveDaemonInternalAddr(agents[0].editorAddr); internal != "" {
 		// Cloud / Remote Box: the backend proxies a single code-server; launch the

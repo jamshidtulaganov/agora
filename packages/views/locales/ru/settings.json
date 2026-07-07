@@ -531,6 +531,8 @@
     "toast_saved": "Токен сохранён",
     "toast_save_failed": "Не удалось сохранить токен",
     "toast_removed": "Токен удалён",
-    "toast_remove_failed": "Не удалось удалить токен"
+    "toast_remove_failed": "Не удалось удалить токен",
+    "scope_global": "Глобально (все воркспейсы)",
+    "scope_unknown_workspace": "Неизвестный воркспейс"
   }
 }

@@ -2912,15 +2912,18 @@ export class ApiClient {
     });
   }
 
-  async putEditorToken(provider: "github" | "gitlab", token: string): Promise<void> {
+  // workspaceId scopes the token to one workspace (overrides the global
+  // default for editors opened on that workspace's issues); omit for global.
+  async putEditorToken(provider: "github" | "gitlab", token: string, workspaceId?: string): Promise<void> {
     await this.fetch(`/api/me/editor-tokens`, {
       method: "PUT",
-      body: JSON.stringify({ provider, token }),
+      body: JSON.stringify({ provider, token, ...(workspaceId ? { workspace_id: workspaceId } : {}) }),
     });
   }
 
-  async deleteEditorToken(provider: "github" | "gitlab"): Promise<void> {
-    await this.fetch(`/api/me/editor-tokens/${provider}`, {
+  async deleteEditorToken(provider: "github" | "gitlab", workspaceId?: string): Promise<void> {
+    const qs = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
+    await this.fetch(`/api/me/editor-tokens/${provider}${qs}`, {
       method: "DELETE",
     });
   }

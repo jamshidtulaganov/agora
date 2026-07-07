@@ -12,17 +12,21 @@ import (
 )
 
 const deleteUserEditorToken = `-- name: DeleteUserEditorToken :execrows
-DELETE FROM user_editor_token WHERE user_id = $1 AND provider = $2
+DELETE FROM user_editor_token
+WHERE user_id = $1 AND provider = $2
+  AND workspace_id IS NOT DISTINCT FROM $3::uuid
 `
 
 type DeleteUserEditorTokenParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	Provider string      `json:"provider"`
+	UserID      pgtype.UUID `json:"user_id"`
+	Provider    string      `json:"provider"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
 }
 
 // :execrows so the handler can 404 on 0 rows (convention from #1661).
+// workspace_id: NULL deletes the global row, a uuid deletes that override.
 func (q *Queries) DeleteUserEditorToken(ctx context.Context, arg DeleteUserEditorTokenParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteUserEditorToken, arg.UserID, arg.Provider)
+	result, err := q.db.Exec(ctx, deleteUserEditorToken, arg.UserID, arg.Provider, arg.WorkspaceID)
 	if err != nil {
 		return 0, err
 	}
@@ -30,25 +34,35 @@ func (q *Queries) DeleteUserEditorToken(ctx context.Context, arg DeleteUserEdito
 }
 
 const listUserEditorTokens = `-- name: ListUserEditorTokens :many
-SELECT user_id, provider, token_sealed, created_at, updated_at
+SELECT user_id, provider, token_sealed, workspace_id, created_at, updated_at
 FROM user_editor_token
 WHERE user_id = $1
-ORDER BY provider
+ORDER BY provider, workspace_id NULLS FIRST
 `
 
-func (q *Queries) ListUserEditorTokens(ctx context.Context, userID pgtype.UUID) ([]UserEditorToken, error) {
+type ListUserEditorTokensRow struct {
+	UserID      pgtype.UUID        `json:"user_id"`
+	Provider    string             `json:"provider"`
+	TokenSealed []byte             `json:"token_sealed"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListUserEditorTokens(ctx context.Context, userID pgtype.UUID) ([]ListUserEditorTokensRow, error) {
 	rows, err := q.db.Query(ctx, listUserEditorTokens, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []UserEditorToken{}
+	items := []ListUserEditorTokensRow{}
 	for rows.Next() {
-		var i UserEditorToken
+		var i ListUserEditorTokensRow
 		if err := rows.Scan(
 			&i.UserID,
 			&i.Provider,
 			&i.TokenSealed,
+			&i.WorkspaceID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -62,23 +76,100 @@ func (q *Queries) ListUserEditorTokens(ctx context.Context, userID pgtype.UUID) 
 	return items, nil
 }
 
-const upsertUserEditorToken = `-- name: UpsertUserEditorToken :exec
+const listUserEditorTokensForWorkspace = `-- name: ListUserEditorTokensForWorkspace :many
+SELECT user_id, provider, token_sealed, workspace_id, created_at, updated_at
+FROM user_editor_token
+WHERE user_id = $1 AND (workspace_id IS NULL OR workspace_id = $2)
+ORDER BY provider
+`
 
-INSERT INTO user_editor_token (user_id, provider, token_sealed)
-VALUES ($1, $2, $3)
-ON CONFLICT (user_id, provider)
+type ListUserEditorTokensForWorkspaceParams struct {
+	UserID      pgtype.UUID `json:"user_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+type ListUserEditorTokensForWorkspaceRow struct {
+	UserID      pgtype.UUID        `json:"user_id"`
+	Provider    string             `json:"provider"`
+	TokenSealed []byte             `json:"token_sealed"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Resolution input for one editor launch: the user's global rows plus the
+// rows scoped to this workspace. The caller prefers the workspace row per
+// provider.
+func (q *Queries) ListUserEditorTokensForWorkspace(ctx context.Context, arg ListUserEditorTokensForWorkspaceParams) ([]ListUserEditorTokensForWorkspaceRow, error) {
+	rows, err := q.db.Query(ctx, listUserEditorTokensForWorkspace, arg.UserID, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUserEditorTokensForWorkspaceRow{}
+	for rows.Next() {
+		var i ListUserEditorTokensForWorkspaceRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Provider,
+			&i.TokenSealed,
+			&i.WorkspaceID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const upsertUserEditorTokenGlobal = `-- name: UpsertUserEditorTokenGlobal :exec
+
+INSERT INTO user_editor_token (user_id, provider, token_sealed, workspace_id)
+VALUES ($1, $2, $3, NULL)
+ON CONFLICT (user_id, provider) WHERE workspace_id IS NULL
 DO UPDATE SET token_sealed = EXCLUDED.token_sealed, updated_at = now()
 `
 
-type UpsertUserEditorTokenParams struct {
+type UpsertUserEditorTokenGlobalParams struct {
 	UserID      pgtype.UUID `json:"user_id"`
 	Provider    string      `json:"provider"`
 	TokenSealed []byte      `json:"token_sealed"`
 }
 
-// Per-user editor tokens (see migration 147). Sealed PATs the daemon injects
-// into the user's co-code editor env; never returned raw to the frontend.
-func (q *Queries) UpsertUserEditorToken(ctx context.Context, arg UpsertUserEditorTokenParams) error {
-	_, err := q.db.Exec(ctx, upsertUserEditorToken, arg.UserID, arg.Provider, arg.TokenSealed)
+// Per-user editor tokens (see migrations 147 + 148). Sealed PATs the daemon
+// injects into the user's co-code editor env; never returned raw to the
+// frontend. workspace_id NULL = global default; a workspace row overrides the
+// global one for editors opened on that workspace's issues.
+func (q *Queries) UpsertUserEditorTokenGlobal(ctx context.Context, arg UpsertUserEditorTokenGlobalParams) error {
+	_, err := q.db.Exec(ctx, upsertUserEditorTokenGlobal, arg.UserID, arg.Provider, arg.TokenSealed)
+	return err
+}
+
+const upsertUserEditorTokenWorkspace = `-- name: UpsertUserEditorTokenWorkspace :exec
+INSERT INTO user_editor_token (user_id, provider, token_sealed, workspace_id)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (user_id, provider, workspace_id) WHERE workspace_id IS NOT NULL
+DO UPDATE SET token_sealed = EXCLUDED.token_sealed, updated_at = now()
+`
+
+type UpsertUserEditorTokenWorkspaceParams struct {
+	UserID      pgtype.UUID `json:"user_id"`
+	Provider    string      `json:"provider"`
+	TokenSealed []byte      `json:"token_sealed"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) UpsertUserEditorTokenWorkspace(ctx context.Context, arg UpsertUserEditorTokenWorkspaceParams) error {
+	_, err := q.db.Exec(ctx, upsertUserEditorTokenWorkspace,
+		arg.UserID,
+		arg.Provider,
+		arg.TokenSealed,
+		arg.WorkspaceID,
+	)
 	return err
 }
