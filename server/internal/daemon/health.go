@@ -326,12 +326,42 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 			"--user-data-dir", userDataDir,
 			workdir,
 		)
+		// Scrub PORT (and CODE_SERVER_*) from the child env: code-server honors
+		// a PORT env var and it overrides --bind-addr's port. The daemon
+		// commonly inherits PORT=8080 — the backend's port, via make/.env — so
+		// every spawned editor tried to bind the backend's own port and died
+		// instantly with EADDRINUSE (the silent-death 502 at the proxy).
+		env := os.Environ()
+		filtered := env[:0]
+		for _, kv := range env {
+			if strings.HasPrefix(kv, "PORT=") || strings.HasPrefix(kv, "CODE_SERVER_") {
+				continue
+			}
+			filtered = append(filtered, kv)
+		}
+		cmd.Env = filtered
+		// code-server's own output is the ONLY evidence when it dies right after
+		// launch — a silent-death instance previously left nothing but a 502 at
+		// the proxy. Tee it to a log in the instance's user-data dir.
+		logPath := filepath.Join(userDataDir, "code-server.log")
+		if lf, lerr := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); lerr == nil {
+			cmd.Stdout = lf
+			cmd.Stderr = lf
+		}
 		if err := cmd.Start(); err != nil {
 			http.Error(w, "failed to launch code-server: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		editors[key] = &editorProc{port: port, cmd: cmd}
-		d.logger.Info("launched code-server editor", "workdir", workdir, "port", port, "user", req.UserID)
+		// Reap the child so (a) it never zombies and (b) ProcessState flips
+		// non-nil on exit, which is exactly what the reuse check above keys on —
+		// without Wait, a dead editor read as "still running" forever and every
+		// later open handed out the dead instance's port (502 at the proxy).
+		go func(c *exec.Cmd, k, lp string) {
+			err := c.Wait()
+			d.logger.Warn("code-server editor exited", "workdir", k, "error", err, "log", lp)
+		}(cmd, key, logPath)
+		d.logger.Info("launched code-server editor", "workdir", workdir, "port", port, "user", req.UserID, "log", logPath)
 		writeEditorURL(w, port, workdir)
 	})
 
@@ -872,7 +902,7 @@ func waitTraceReady(tp *previewProc, host string, port int, timeout time.Duratio
 
 // shellSingleQuote wraps s in single quotes for safe interpolation into a
 // `sh -c` command line (the trace path could contain spaces). Any embedded
-// single quote is escaped the POSIX way ('\'').
+// single quote is escaped the POSIX way ('\”).
 func shellSingleQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
