@@ -11,6 +11,30 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const agentInQASquad = `-- name: AgentInQASquad :one
+SELECT EXISTS (
+  SELECT 1 FROM squad s
+  LEFT JOIN squad_member sm ON sm.squad_id = s.id AND sm.member_type = 'agent'
+  WHERE s.workspace_id = $1 AND s.name = 'QA'
+    AND (sm.member_id = $2 OR s.leader_id = $2)
+)
+`
+
+type AgentInQASquadParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	MemberID    pgtype.UUID `json:"member_id"`
+}
+
+// Dev-runtime pinning ("QA runs where the app runs") applies only to QA-squad
+// agents — the squad named 'QA' is the same convention QAMetricsAgentDurations
+// keys on. Members and the leader both count.
+func (q *Queries) AgentInQASquad(ctx context.Context, arg AgentInQASquadParams) (bool, error) {
+	row := q.db.QueryRow(ctx, agentInQASquad, arg.WorkspaceID, arg.MemberID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const archiveAgent = `-- name: ArchiveAgent :one
 UPDATE agent SET archived_at = now(), archived_by = $2, updated_at = now()
 WHERE id = $1
@@ -1522,6 +1546,46 @@ func (q *Queries) GetAgentTaskInWorkspace(ctx context.Context, arg GetAgentTaskI
 	return i, err
 }
 
+const getDevRuntimeForProject = `-- name: GetDevRuntimeForProject :one
+SELECT id, workspace_id, daemon_id, name, runtime_mode, provider, status, device_info, metadata, last_seen_at, created_at, updated_at, owner_id, legacy_daemon_id, visibility FROM agent_runtime
+WHERE workspace_id = $1 AND owner_id = $2 AND status = 'online'
+  AND COALESCE(metadata->'dev_apps'->>($3::text), '') <> ''
+ORDER BY last_seen_at DESC NULLS LAST
+LIMIT 1
+`
+
+type GetDevRuntimeForProjectParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	OwnerID     pgtype.UUID `json:"owner_id"`
+	ProjectID   string      `json:"project_id"`
+}
+
+// The developer's own ONLINE daemon that declares a local app for this
+// project (metadata.dev_apps keyed by project UUID). Newest heartbeat wins
+// when the dev has several (laptop + box).
+func (q *Queries) GetDevRuntimeForProject(ctx context.Context, arg GetDevRuntimeForProjectParams) (AgentRuntime, error) {
+	row := q.db.QueryRow(ctx, getDevRuntimeForProject, arg.WorkspaceID, arg.OwnerID, arg.ProjectID)
+	var i AgentRuntime
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.DaemonID,
+		&i.Name,
+		&i.RuntimeMode,
+		&i.Provider,
+		&i.Status,
+		&i.DeviceInfo,
+		&i.Metadata,
+		&i.LastSeenAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.OwnerID,
+		&i.LegacyDaemonID,
+		&i.Visibility,
+	)
+	return i, err
+}
+
 const getLastTaskSession = `-- name: GetLastTaskSession :one
 SELECT session_id, work_dir, runtime_id FROM agent_task_queue
 WHERE agent_id = $1 AND issue_id = $2
@@ -2257,6 +2321,73 @@ func (q *Queries) ListQueuedClaimCandidatesByRuntime(ctx context.Context, runtim
 	return items, nil
 }
 
+const listStaleDevPinnedQueuedTasks = `-- name: ListStaleDevPinnedQueuedTasks :many
+SELECT atq.id, atq.agent_id, atq.issue_id, atq.status, atq.priority, atq.dispatched_at, atq.started_at, atq.completed_at, atq.result, atq.error, atq.created_at, atq.context, atq.runtime_id, atq.session_id, atq.work_dir, atq.trigger_comment_id, atq.chat_session_id, atq.autopilot_run_id, atq.attempt, atq.max_attempts, atq.parent_task_id, atq.failure_reason, atq.trigger_summary, atq.force_fresh_session, atq.is_leader_task, atq.wait_reason, atq.initiator_user_id, atq.model_override FROM agent_task_queue atq
+LEFT JOIN agent_runtime ar ON ar.id = atq.runtime_id
+WHERE atq.status = 'queued'
+  AND COALESCE(atq.context->>'dev_runtime_pin', '') = 'true'
+  AND (
+    ar.id IS NULL
+    OR ar.status IS DISTINCT FROM 'online'
+    OR ar.last_seen_at IS NULL
+    OR ar.last_seen_at < now() - interval '5 minutes'
+    OR atq.created_at < now() - make_interval(secs => $1::double precision)
+  )
+`
+
+// Dev-pinned tasks that are going nowhere: still queued and their pinned
+// runtime is offline / heartbeat-stale, or they have simply waited past the
+// allowed window. The QA watchdog decides (per labs strict flag) whether to
+// fall back to the home runtime or keep waiting loudly.
+func (q *Queries) ListStaleDevPinnedQueuedTasks(ctx context.Context, maxWaitSecs float64) ([]AgentTaskQueue, error) {
+	rows, err := q.db.Query(ctx, listStaleDevPinnedQueuedTasks, maxWaitSecs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AgentTaskQueue{}
+	for rows.Next() {
+		var i AgentTaskQueue
+		if err := rows.Scan(
+			&i.ID,
+			&i.AgentID,
+			&i.IssueID,
+			&i.Status,
+			&i.Priority,
+			&i.DispatchedAt,
+			&i.StartedAt,
+			&i.CompletedAt,
+			&i.Result,
+			&i.Error,
+			&i.CreatedAt,
+			&i.Context,
+			&i.RuntimeID,
+			&i.SessionID,
+			&i.WorkDir,
+			&i.TriggerCommentID,
+			&i.ChatSessionID,
+			&i.AutopilotRunID,
+			&i.Attempt,
+			&i.MaxAttempts,
+			&i.ParentTaskID,
+			&i.FailureReason,
+			&i.TriggerSummary,
+			&i.ForceFreshSession,
+			&i.IsLeaderTask,
+			&i.WaitReason,
+			&i.InitiatorUserID,
+			&i.ModelOverride,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTasksByIssue = `-- name: ListTasksByIssue :many
 SELECT id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, model_override FROM agent_task_queue
 WHERE issue_id = $1
@@ -2420,6 +2551,67 @@ type MarkAgentTaskWaitingLocalDirectoryParams struct {
 // mutation handles the reverse transition once the lock is acquired.
 func (q *Queries) MarkAgentTaskWaitingLocalDirectory(ctx context.Context, arg MarkAgentTaskWaitingLocalDirectoryParams) (AgentTaskQueue, error) {
 	row := q.db.QueryRow(ctx, markAgentTaskWaitingLocalDirectory, arg.ID, arg.WaitReason)
+	var i AgentTaskQueue
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.IssueID,
+		&i.Status,
+		&i.Priority,
+		&i.DispatchedAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.Error,
+		&i.CreatedAt,
+		&i.Context,
+		&i.RuntimeID,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.TriggerCommentID,
+		&i.ChatSessionID,
+		&i.AutopilotRunID,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.ParentTaskID,
+		&i.FailureReason,
+		&i.TriggerSummary,
+		&i.ForceFreshSession,
+		&i.IsLeaderTask,
+		&i.WaitReason,
+		&i.InitiatorUserID,
+		&i.ModelOverride,
+	)
+	return i, err
+}
+
+const pinTaskToDevRuntime = `-- name: PinTaskToDevRuntime :one
+UPDATE agent_task_queue
+SET runtime_id = $2,
+    wait_reason = $3,
+    context = COALESCE(context, '{}'::jsonb) || $4::jsonb
+WHERE id = $1 AND status = 'queued'
+RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, model_override
+`
+
+type PinTaskToDevRuntimeParams struct {
+	ID         pgtype.UUID `json:"id"`
+	RuntimeID  pgtype.UUID `json:"runtime_id"`
+	WaitReason pgtype.Text `json:"wait_reason"`
+	PinContext []byte      `json:"pin_context"`
+}
+
+// Re-route a just-enqueued QA task onto the developer's own runtime. Only a
+// still-queued row moves (a claimed task is already executing somewhere).
+// context carries the pin marker + the home runtime for the watchdog's
+// soft-fallback; wait_reason surfaces "waiting for <device>" in the UI.
+func (q *Queries) PinTaskToDevRuntime(ctx context.Context, arg PinTaskToDevRuntimeParams) (AgentTaskQueue, error) {
+	row := q.db.QueryRow(ctx, pinTaskToDevRuntime,
+		arg.ID,
+		arg.RuntimeID,
+		arg.WaitReason,
+		arg.PinContext,
+	)
 	var i AgentTaskQueue
 	err := row.Scan(
 		&i.ID,
@@ -2676,6 +2868,60 @@ RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, c
 // "previously waited".
 func (q *Queries) StartAgentTask(ctx context.Context, id pgtype.UUID) (AgentTaskQueue, error) {
 	row := q.db.QueryRow(ctx, startAgentTask, id)
+	var i AgentTaskQueue
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.IssueID,
+		&i.Status,
+		&i.Priority,
+		&i.DispatchedAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.Error,
+		&i.CreatedAt,
+		&i.Context,
+		&i.RuntimeID,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.TriggerCommentID,
+		&i.ChatSessionID,
+		&i.AutopilotRunID,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.ParentTaskID,
+		&i.FailureReason,
+		&i.TriggerSummary,
+		&i.ForceFreshSession,
+		&i.IsLeaderTask,
+		&i.WaitReason,
+		&i.InitiatorUserID,
+		&i.ModelOverride,
+	)
+	return i, err
+}
+
+const unpinTaskToRuntime = `-- name: UnpinTaskToRuntime :one
+UPDATE agent_task_queue
+SET runtime_id = $2,
+    wait_reason = NULL,
+    context = (COALESCE(context, '{}'::jsonb) - 'dev_runtime_pin' - 'dev_runtime_home')
+              || jsonb_build_object('dev_runtime_fallback', 'true')
+WHERE id = $1 AND status = 'queued'
+RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, model_override
+`
+
+type UnpinTaskToRuntimeParams struct {
+	ID        pgtype.UUID `json:"id"`
+	RuntimeID pgtype.UUID `json:"runtime_id"`
+}
+
+// Soft-fallback: return a dev-pinned queued task to a shared runtime. Clears
+// the pin marker (keeping a breadcrumb) and the wait_reason so normal
+// claiming takes it.
+func (q *Queries) UnpinTaskToRuntime(ctx context.Context, arg UnpinTaskToRuntimeParams) (AgentTaskQueue, error) {
+	row := q.db.QueryRow(ctx, unpinTaskToRuntime, arg.ID, arg.RuntimeID)
 	var i AgentTaskQueue
 	err := row.Scan(
 		&i.ID,

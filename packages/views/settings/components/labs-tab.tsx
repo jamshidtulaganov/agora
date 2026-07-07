@@ -54,6 +54,9 @@ export function LabsTab() {
   const labs: WorkspaceLabs = {
     qa_dev_boxes: draft.qa_dev_boxes ?? labsQuery.data?.qa_dev_boxes ?? true,
     qa_fallback_box_id: draft.qa_fallback_box_id ?? labsQuery.data?.qa_fallback_box_id ?? "",
+    qa_dev_runtimes: draft.qa_dev_runtimes ?? labsQuery.data?.qa_dev_runtimes ?? false,
+    qa_dev_runtimes_strict:
+      draft.qa_dev_runtimes_strict ?? labsQuery.data?.qa_dev_runtimes_strict ?? false,
   };
 
   const saveLabs = useMutation({
@@ -106,6 +109,34 @@ export function LabsTab() {
             onCheckedChange={(v) => apply({ qa_dev_boxes: v === true })}
             disabled={labsQuery.isLoading || saveLabs.isPending}
           />
+        </div>
+
+        <div className="mt-4 border-t pt-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h4 className="text-[12px] font-medium">{t(($) => $.labs.qa_dev_runtimes_title)}</h4>
+              <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
+                {t(($) => $.labs.qa_dev_runtimes_description)}
+              </p>
+              {labs.qa_dev_runtimes && (
+                <label className="mt-2 flex items-center gap-2 text-[12px] text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={labs.qa_dev_runtimes_strict}
+                    onChange={(e) => apply({ qa_dev_runtimes_strict: e.target.checked })}
+                    disabled={saveLabs.isPending}
+                    className="size-3.5 accent-primary"
+                  />
+                  {t(($) => $.labs.qa_dev_runtimes_strict_label)}
+                </label>
+              )}
+            </div>
+            <Switch
+              checked={labs.qa_dev_runtimes}
+              onCheckedChange={(v) => apply({ qa_dev_runtimes: v === true })}
+              disabled={labsQuery.isLoading || saveLabs.isPending}
+            />
+          </div>
         </div>
 
         <div className="mt-4 border-t pt-4">

@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -532,6 +533,15 @@ func (h *Handler) connectedBoxForIssue(ctx context.Context, issue db.Issue) (db.
 // project-wide URL. "" when remote boxes are off, no box resolves, or the box
 // has no work_dir — the run_qa smoke then falls back to the project qa_smoke_url.
 func (h *Handler) devBoxSmokeURL(ctx context.Context, issue db.Issue) string {
+	// Step 0 (daemon-per-dev): the developer's own ONLINE daemon declaring a
+	// local app for this project beats every deployed target — the QA task is
+	// pinned to that runtime (service.maybePinTaskToDevRuntime), so its
+	// 127.0.0.1 URL is meaningful to the agent that will run it. Opt-in via
+	// labs.qa_dev_runtimes; project-scoped by construction (dev_apps is keyed
+	// by project id) — never a cross-project default.
+	if url := h.devLocalAppURL(ctx, issue); url != "" {
+		return url
+	}
 	if !remoteBoxesEnabled() {
 		return ""
 	}
@@ -540,6 +550,32 @@ func (h *Handler) devBoxSmokeURL(ctx context.Context, issue db.Issue) string {
 		return ""
 	}
 	return boxSmokeURL(box)
+}
+
+// devLocalAppURL resolves the issue-developer's declared local app for the
+// issue's project (agent_runtime.metadata.dev_apps), gated by
+// labs.qa_dev_runtimes. "" on any miss.
+func (h *Handler) devLocalAppURL(ctx context.Context, issue db.Issue) string {
+	if !issue.ProjectID.Valid {
+		return ""
+	}
+	ws, err := h.Queries.GetWorkspace(ctx, issue.WorkspaceID)
+	if err != nil || !util.ParseWorkspaceLabs(ws.Settings).QADevRuntimes {
+		return ""
+	}
+	devUser, ok := h.developerUserForIssue(ctx, issue)
+	if !ok {
+		return ""
+	}
+	runtime, err := h.Queries.GetDevRuntimeForProject(ctx, db.GetDevRuntimeForProjectParams{
+		WorkspaceID: issue.WorkspaceID,
+		OwnerID:     devUser,
+		ProjectID:   uuidToString(issue.ProjectID),
+	})
+	if err != nil {
+		return ""
+	}
+	return util.DevAppURL(runtime.Metadata, uuidToString(issue.ProjectID))
 }
 
 // boxSmokeURL derives the https URL a box serves from its work_dir

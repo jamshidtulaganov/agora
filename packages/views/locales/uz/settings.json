@@ -194,7 +194,10 @@
     "saved": "Labs sozlamalari saqlandi",
     "save_failed": "Saqlanmadi — qayta urinib ko'ring",
     "resolution_note": "QA target tanlash (har task uchun): 1) assignee-developerning O'SHA projectga biriktirilgan boxi (shu toggle) → 2) projectning umumiy boxi (egasiz afzal) → 3) repo nomi bo'yicha moslik → 4) zaxira box — faqat projectsiz yoki o'sha projectga biriktirilgan bo'lsa → 5) projectning qa_smoke_url'i.",
-    "project_none": "Projectsiz"
+    "project_none": "Projectsiz",
+    "qa_dev_runtimes_title": "QA developer mashinasida (daemon-per-dev)",
+    "qa_dev_runtimes_description": "Developerning daemon'i online bo'lib, task projecti uchun lokal app e'lon qilgan bo'lsa (agora daemon apps set <project> <url>), QA task O'SHA mashinada bajariladi va lokal yurgan appni tekshiradi. O'chiq = QA doim umumiy runtime'larda.",
+    "qa_dev_runtimes_strict_label": "Strict: daemon offline bo'lsa fallback qilmasdan kutish"
   },
   "github": {
     "page_description": "GitHub App ulang, Pull Request’lar Agora ichida qanday ko‘rinishini boshqaring va agentlaringiz commit tarixida nima qoldirishini hal qiling.",

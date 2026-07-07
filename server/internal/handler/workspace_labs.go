@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -14,44 +15,14 @@ import (
 // working developer's own box (shahzod.sdteam.uz), falling back to a
 // designated shared box (sandbox.sdteam.uz) when no per-dev box matches."
 
-// WorkspaceLabs is the wire shape for GET/PUT /api/workspace-labs.
-type WorkspaceLabs struct {
-	// QADevBoxes routes per-task QA to the assignee-developer's own connected
-	// box (connected_box.owner_id match) before the project-bound box. Default
-	// ON — matches the resolver's historical behavior.
-	QADevBoxes bool `json:"qa_dev_boxes"`
-	// QAFallbackBoxID names the shared box QA lands on when neither a per-dev
-	// nor a project/repo match resolves (e.g. sandbox.sdteam.uz). Empty = no
-	// fallback (resolution can still end empty → qa_smoke_url).
-	QAFallbackBoxID string `json:"qa_fallback_box_id"`
-}
+// WorkspaceLabs is the wire shape for GET/PUT /api/workspace-labs. The
+// canonical struct + parser live in util (the task service reads the flags
+// too); these aliases keep the handler call sites unchanged.
+type WorkspaceLabs = util.WorkspaceLabs
 
-func defaultWorkspaceLabs() WorkspaceLabs {
-	return WorkspaceLabs{QADevBoxes: true, QAFallbackBoxID: ""}
-}
+func defaultWorkspaceLabs() WorkspaceLabs { return util.DefaultWorkspaceLabs() }
 
-// workspaceLabs reads the labs block off a workspace settings blob, defaulting
-// every absent field. Never errors — a malformed blob degrades to defaults.
-func workspaceLabs(settings []byte) WorkspaceLabs {
-	labs := defaultWorkspaceLabs()
-	if len(settings) == 0 {
-		return labs
-	}
-	var s struct {
-		Labs *struct {
-			QADevBoxes      *bool  `json:"qa_dev_boxes"`
-			QAFallbackBoxID string `json:"qa_fallback_box_id"`
-		} `json:"labs"`
-	}
-	if json.Unmarshal(settings, &s) != nil || s.Labs == nil {
-		return labs
-	}
-	if s.Labs.QADevBoxes != nil {
-		labs.QADevBoxes = *s.Labs.QADevBoxes
-	}
-	labs.QAFallbackBoxID = strings.TrimSpace(s.Labs.QAFallbackBoxID)
-	return labs
-}
+func workspaceLabs(settings []byte) WorkspaceLabs { return util.ParseWorkspaceLabs(settings) }
 
 // GetWorkspaceLabs returns the workspace's labs flags. GET /api/workspace-labs.
 func (h *Handler) GetWorkspaceLabs(w http.ResponseWriter, r *http.Request) {

@@ -837,10 +837,17 @@ export const WorkspaceLabsSchema = z
   .object({
     qa_dev_boxes: z.boolean().default(true),
     qa_fallback_box_id: z.string().default(""),
+    qa_dev_runtimes: z.boolean().default(false),
+    qa_dev_runtimes_strict: z.boolean().default(false),
   })
   .loose();
 
-export const EMPTY_WORKSPACE_LABS = { qa_dev_boxes: true, qa_fallback_box_id: "" };
+export const EMPTY_WORKSPACE_LABS = {
+  qa_dev_boxes: true,
+  qa_fallback_box_id: "",
+  qa_dev_runtimes: false,
+  qa_dev_runtimes_strict: false,
+};
 
 export const ConnectedBoxListSchema = z.object({
   boxes: z.array(ConnectedBoxSchema).default([]),

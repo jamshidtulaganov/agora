@@ -240,3 +240,23 @@ flowing exactly as today.
    matcher uses id.
 3. Does sprint regression EVER run on a personal runtime? Current answer:
    never (excluded by design, § 4) — confirm.
+
+---
+
+## Implementation note (phase 1, shipped)
+
+Reality simplified the design: tasks were ALREADY routed per-runtime at
+enqueue (`agent_task_queue.runtime_id` is what `ListQueuedClaimCandidatesByRuntime`
+keys on), so **no migration and no claim-SQL change** were needed. The pin is
+an enqueue-time `runtime_id` override in `maybePinTaskToDevRuntime`
+(service/dev_runtime_pin.go), hooked into `enqueueMentionTask` — which covers
+auto run_qa, lead delegation, and manual QA mentions in one place, gated on
+QA-squad membership (`AgentInQASquad`). Markers ride `context`
+(`dev_runtime_pin`/`dev_runtime_home`); `wait_reason` surfaces the wait. The
+QA watchdog boot+5-min tick runs `SweepStaleDevPinnedTasks` (soft fallback +
+issue comment, or strict hold). Resolver step-0 landed as `devLocalAppURL`
+inside `devBoxSmokeURL`, so the run_qa directive, qa-preview-url, and the
+Live-testing bay all see the dev-local URL consistently. Verified end-to-end
+with a synthetic runtime: pin → claim isolation → offline → fallback+comment.
+Phase 2 remaining: `agora daemon apps` CLI + metadata reporting + Labs
+runtimes list.

@@ -590,6 +590,11 @@ func (s *TaskService) enqueueMentionTask(ctx context.Context, issue db.Issue, ag
 		return db.AgentTaskQueue{}, fmt.Errorf("create task: %w", err)
 	}
 
+	// Dev-runtime pinning (daemon-per-dev): a QA-squad mention on an issue
+	// whose developer serves the project locally executes on the dev's own
+	// daemon. Best-effort; no-op unless labs.qa_dev_runtimes is on.
+	task = s.maybePinTaskToDevRuntime(ctx, issue, agent, task)
+
 	slog.Info("mention task enqueued", "task_id", util.UUIDToString(task.ID), "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID), "is_leader_task", isLeader)
 	// See EnqueueTaskForIssue for ordering rationale.
 	s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, task)

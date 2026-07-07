@@ -194,7 +194,10 @@
     "saved": "Labs 设置已保存",
     "save_failed": "保存失败，请重试",
     "resolution_note": "QA 目标解析（按任务）：1）负责人绑定到同一项目的个人环境（本开关）→ 2）项目共享环境（优先无负责人）→ 3）仓库名匹配 → 4）兜底环境（仅当未绑定项目或绑定同一项目）→ 5）项目 qa_smoke_url。",
-    "project_none": "无项目"
+    "project_none": "无项目",
+    "qa_dev_runtimes_title": "在开发者机器上运行 QA（daemon-per-dev）",
+    "qa_dev_runtimes_description": "当开发者自己的 daemon 在线并为该任务的项目声明了本地应用（agora daemon apps set <project> <url>）时，QA 任务在其机器上执行并测试本地运行的应用。关闭 = QA 始终在共享 runtime 上运行。",
+    "qa_dev_runtimes_strict_label": "严格：daemon 离线时等待而不回退"
   },
   "github": {
     "page_description": "连接 GitHub App、控制 Pull Request 如何出现在 Agora 中，并决定智能体在 commit 记录里留下哪些痕迹。",

@@ -194,7 +194,10 @@
     "saved": "Labs settings saved",
     "save_failed": "Could not save — try again",
     "resolution_note": "QA target resolution, per issue: 1) the assignee-developer's own box scoped to the SAME project (this toggle) → 2) the project's shared box (ownerless preferred) → 3) repo-name match → 4) the fallback box, only if it is unscoped or scoped to that same project → 5) the project's qa_smoke_url.",
-    "project_none": "No project"
+    "project_none": "No project",
+    "qa_dev_runtimes_title": "QA on developer machines (daemon-per-dev)",
+    "qa_dev_runtimes_description": "When the developer's own daemon is online and declares a local app for the issue's project (agora daemon apps set <project> <url>), the QA task executes on THAT machine and tests the locally running app. Off = QA always runs on shared runtimes.",
+    "qa_dev_runtimes_strict_label": "Strict: wait for the developer's daemon instead of falling back when it is offline"
   },
   "github": {
     "page_description": "Connect a GitHub App, control how Pull Requests show up inside Agora, and decide what your agents leave behind in commit history.",
