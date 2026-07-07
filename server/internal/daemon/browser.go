@@ -162,6 +162,15 @@ func detectChromium() string {
 	return ""
 }
 
+// clipText bounds an event payload so one giant console blob can't bloat the
+// stream (the pane shows a one-line summary anyway).
+func clipText(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
+}
+
 // ensureChrome launches (or reuses) a headless Chromium for key and returns it.
 func (bm *browserManager) ensureChrome(key string) (*chromeInstance, error) {
 	bm.mu.Lock()
@@ -368,6 +377,14 @@ func (bm *browserManager) handleStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sendCDP("Page.enable", nil)
+	// Console + network visibility for the pane's inspector strip: Runtime
+	// carries console.* calls and uncaught exceptions, Log carries the browser's
+	// own entries (CSP/CORS/deprecation), Network lets us surface 4xx/5xx and
+	// outright failed requests. Enabled unconditionally — the events only flow
+	// while a stream is attached, and the client filters what it renders.
+	sendCDP("Runtime.enable", nil)
+	sendCDP("Log.enable", nil)
+	sendCDP("Network.enable", nil)
 	sendCDP("Emulation.setDeviceMetricsOverride", map[string]any{
 		"width": 1280, "height": 800, "deviceScaleFactor": 1, "mobile": false,
 	})
@@ -375,35 +392,171 @@ func (bm *browserManager) handleStream(w http.ResponseWriter, r *http.Request) {
 		"format": "jpeg", "quality": 60, "maxWidth": 1280, "maxHeight": 800, "everyNthFrame": 1,
 	})
 
-	// CDP → app: relay screencast frames, ack each.
+	// CDP → app: relay screencast frames (ack each) + console/network events.
+	// Single goroutine = single client writer, so no write mutex is needed.
 	go func() {
+		// requestId → "METHOD url", so a later 4xx/5xx or hard failure can name
+		// the request. Bounded: cleared on finish/failure, hard-capped below.
+		reqMeta := map[string]string{}
 		for {
 			var msg struct {
-				Method string `json:"method"`
-				Params struct {
-					Data      string `json:"data"`
-					SessionID int    `json:"sessionId"`
-					Metadata  struct {
-						DeviceWidth  float64 `json:"deviceWidth"`
-						DeviceHeight float64 `json:"deviceHeight"`
-					} `json:"metadata"`
-				} `json:"params"`
+				Method string          `json:"method"`
+				Params json.RawMessage `json:"params"`
 			}
 			if err := cdp.ReadJSON(&msg); err != nil {
 				client.Close()
 				return
 			}
-			if msg.Method == "Page.screencastFrame" {
+			switch msg.Method {
+			case "Page.screencastFrame":
+				var p struct {
+					Data      string `json:"data"`
+					SessionID int    `json:"sessionId"`
+				}
+				if json.Unmarshal(msg.Params, &p) != nil {
+					continue
+				}
 				// Relay the JPEG as a BINARY frame, not base64-in-JSON: ~33%
 				// fewer bytes and the browser decodes it natively from a Blob
-				// URL (no base64→dataURL string alloc per frame). The client is
-				// the only writer on this goroutine, so no write mutex is needed.
-				// Frame w/h are omitted — the app maps clicks off the fixed
-				// 1280×800 device metrics, not per-frame dimensions.
-				if raw, derr := base64.StdEncoding.DecodeString(msg.Params.Data); derr == nil {
+				// URL (no base64→dataURL string alloc per frame). Frame w/h are
+				// omitted — the app maps clicks off the fixed 1280×800 device
+				// metrics, not per-frame dimensions.
+				if raw, derr := base64.StdEncoding.DecodeString(p.Data); derr == nil {
 					_ = client.WriteMessage(websocket.BinaryMessage, raw)
 				}
-				sendCDP("Page.screencastFrameAck", map[string]any{"sessionId": msg.Params.SessionID})
+				sendCDP("Page.screencastFrameAck", map[string]any{"sessionId": p.SessionID})
+			case "Runtime.consoleAPICalled":
+				var p struct {
+					Type string `json:"type"`
+					Args []struct {
+						Value       any    `json:"value"`
+						Description string `json:"description"`
+					} `json:"args"`
+				}
+				if json.Unmarshal(msg.Params, &p) != nil {
+					continue
+				}
+				// Only surface what a tester acts on; console.log spam stays out
+				// of the wire (a busy SPA logs constantly).
+				if p.Type != "error" && p.Type != "assert" && p.Type != "warning" {
+					continue
+				}
+				parts := make([]string, 0, len(p.Args))
+				for _, a := range p.Args {
+					if a.Value != nil {
+						parts = append(parts, fmt.Sprintf("%v", a.Value))
+					} else if a.Description != "" {
+						parts = append(parts, a.Description)
+					}
+				}
+				level := p.Type
+				if level == "assert" {
+					level = "error"
+				}
+				_ = client.WriteJSON(map[string]any{
+					"type": "console", "level": level, "text": clipText(strings.Join(parts, " "), 500),
+				})
+			case "Runtime.exceptionThrown":
+				var p struct {
+					ExceptionDetails struct {
+						Text      string `json:"text"`
+						Exception struct {
+							Description string `json:"description"`
+						} `json:"exception"`
+					} `json:"exceptionDetails"`
+				}
+				if json.Unmarshal(msg.Params, &p) != nil {
+					continue
+				}
+				text := p.ExceptionDetails.Exception.Description
+				if text == "" {
+					text = p.ExceptionDetails.Text
+				}
+				_ = client.WriteJSON(map[string]any{
+					"type": "console", "level": "error", "text": clipText(text, 500),
+				})
+			case "Log.entryAdded":
+				var p struct {
+					Entry struct {
+						Source string `json:"source"`
+						Level  string `json:"level"`
+						Text   string `json:"text"`
+					} `json:"entry"`
+				}
+				if json.Unmarshal(msg.Params, &p) != nil {
+					continue
+				}
+				if p.Entry.Level != "error" && p.Entry.Level != "warning" {
+					continue
+				}
+				// Network-sourced entries duplicate the Network.* events below.
+				if p.Entry.Source == "network" {
+					continue
+				}
+				_ = client.WriteJSON(map[string]any{
+					"type": "console", "level": p.Entry.Level, "text": clipText(p.Entry.Text, 500),
+				})
+			case "Network.requestWillBeSent":
+				var p struct {
+					RequestID string `json:"requestId"`
+					Request   struct {
+						Method string `json:"method"`
+						URL    string `json:"url"`
+					} `json:"request"`
+				}
+				if json.Unmarshal(msg.Params, &p) != nil {
+					continue
+				}
+				if len(reqMeta) > 512 { // runaway page safety valve
+					reqMeta = map[string]string{}
+				}
+				reqMeta[p.RequestID] = p.Request.Method + " " + p.Request.URL
+			case "Network.responseReceived":
+				var p struct {
+					RequestID string `json:"requestId"`
+					Response  struct {
+						Status int    `json:"status"`
+						URL    string `json:"url"`
+					} `json:"response"`
+				}
+				if json.Unmarshal(msg.Params, &p) != nil {
+					continue
+				}
+				if p.Response.Status < 400 {
+					continue
+				}
+				label := reqMeta[p.RequestID]
+				if label == "" {
+					label = p.Response.URL
+				}
+				_ = client.WriteJSON(map[string]any{
+					"type": "network", "status": p.Response.Status, "text": clipText(label, 300),
+				})
+			case "Network.loadingFailed":
+				var p struct {
+					RequestID string `json:"requestId"`
+					ErrorText string `json:"errorText"`
+					Canceled  bool   `json:"canceled"`
+				}
+				if json.Unmarshal(msg.Params, &p) != nil {
+					continue
+				}
+				label := reqMeta[p.RequestID]
+				delete(reqMeta, p.RequestID)
+				// Canceled loads (navigation away, aborted fetches) are routine.
+				if p.Canceled {
+					continue
+				}
+				_ = client.WriteJSON(map[string]any{
+					"type": "network", "status": 0, "text": clipText(strings.TrimSpace(label+" "+p.ErrorText), 300),
+				})
+			case "Network.loadingFinished":
+				var p struct {
+					RequestID string `json:"requestId"`
+				}
+				if json.Unmarshal(msg.Params, &p) == nil {
+					delete(reqMeta, p.RequestID)
+				}
 			}
 		}
 	}()

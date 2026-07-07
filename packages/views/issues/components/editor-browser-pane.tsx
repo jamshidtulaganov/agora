@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { RotateCw, Loader2, TriangleAlert, Globe, Copy, Check } from "lucide-react";
+import { RotateCw, Loader2, TriangleAlert, Globe, Copy, Check, ChevronUp, ChevronDown, Trash2 } from "lucide-react";
 
 // Embedded browser ("general browser pane"). Opens a WebSocket to the daemon,
 // which screencasts a headless Chromium (CDP) — frames render here, and mouse /
@@ -15,6 +15,17 @@ const FRAME_W = 1280;
 const FRAME_H = 800;
 
 type StreamState = "connecting" | "live" | "error" | "closed";
+
+// One row in the inspector strip — a console error/warning or a failed /
+// 4xx/5xx network request, streamed live from the daemon's CDP bridge.
+type InspectorEvent = {
+  kind: "console" | "network";
+  level: "error" | "warning";
+  text: string;
+  status?: number;
+};
+
+const MAX_INSPECTOR_EVENTS = 200;
 
 // A daemonUrl may be absolute (self-host: http://127.0.0.1:<port>) or a
 // same-origin path base (cloud: /browser/proxy/<token> — the backend
@@ -65,6 +76,8 @@ export function EditorBrowserPane({
   const [nonce, setNonce] = useState(0);
   const [hasNavigated, setHasNavigated] = useState(false);
   const [note, setNote] = useState("");
+  const [events, setEvents] = useState<InspectorEvent[]>([]);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   // Latest frame's object URL. Frames arrive as binary JPEG Blobs; each becomes
@@ -83,6 +96,7 @@ export function EditorBrowserPane({
     const base = absoluteBase(daemonUrl);
     setState("connecting");
     setErr("");
+    setEvents([]);
     void (async () => {
       try {
         const r = await fetch(`${base}/editor/browser/start`, {
@@ -135,12 +149,31 @@ export function EditorBrowserPane({
           setFrame(url);
           return;
         }
-        // Text payload = a JSON control message (currently only errors).
+        // Text payload = a JSON control message: bridge errors, or live
+        // console/network events for the inspector strip.
         try {
-          const m = JSON.parse(ev.data) as { type: string; message?: string };
+          const m = JSON.parse(ev.data) as {
+            type: string;
+            message?: string;
+            level?: string;
+            text?: string;
+            status?: number;
+          };
           if (m.type === "error") {
             setState("error");
             setErr(m.message || "browser error");
+          } else if (m.type === "console" || m.type === "network") {
+            const item: InspectorEvent = {
+              kind: m.type,
+              level: m.level === "warning" ? "warning" : "error",
+              text: m.text ?? "",
+              status: typeof m.status === "number" && m.status > 0 ? m.status : undefined,
+            };
+            setEvents((prev) => {
+              const next = prev.length >= MAX_INSPECTOR_EVENTS ? prev.slice(1) : prev.slice();
+              next.push(item);
+              return next;
+            });
           }
         } catch {
           /* ignore malformed */
@@ -249,6 +282,9 @@ export function EditorBrowserPane({
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1500);
   };
+
+  const consoleCount = events.filter((e) => e.kind === "console").length;
+  const networkCount = events.filter((e) => e.kind === "network").length;
 
   const iconBtn =
     "shrink-0 rounded-md border border-border p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground";
@@ -387,6 +423,64 @@ export function EditorBrowserPane({
                   reconnect
                 </button>
               </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Inspector strip — live console errors/warnings + failed (4xx/5xx/
+          hard-fail) network requests from the streamed Chromium, so a QA
+          reviewer sees WHY a page is broken without opening devtools on a
+          machine they can't reach. Collapsed by default; badge counts run
+          even while collapsed. */}
+      <div className="shrink-0 border-t border-border bg-background">
+        <div className="flex items-center gap-2 px-2 py-1">
+          <button
+            type="button"
+            onClick={() => setInspectorOpen((o) => !o)}
+            className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            {inspectorOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
+            Console
+            <span className={consoleCount > 0 ? "text-destructive" : ""}>{consoleCount}</span>
+            · Network
+            <span className={networkCount > 0 ? "text-destructive" : ""}>{networkCount}</span>
+          </button>
+          {events.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setEvents([])}
+              title="Clear"
+              className="ml-auto rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+        {inspectorOpen && (
+          <div className="max-h-36 overflow-y-auto border-t border-border">
+            {events.length === 0 ? (
+              <p className="px-3 py-2 text-[10px] text-muted-foreground">
+                No console errors or failed requests yet.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border/60">
+                {events.map((e, i) => (
+                  <li key={i} className="flex items-start gap-2 px-2 py-1 font-mono text-[10px] leading-relaxed">
+                    <span
+                      className={
+                        "mt-0.5 shrink-0 rounded px-1 text-[9px] font-semibold uppercase " +
+                        (e.level === "error"
+                          ? "bg-destructive/10 text-destructive"
+                          : "bg-amber-500/10 text-amber-600 dark:text-amber-400")
+                      }
+                    >
+                      {e.kind === "network" ? (e.status ?? "ERR") : e.level === "error" ? "ERR" : "WARN"}
+                    </span>
+                    <span className="min-w-0 break-all text-foreground/90">{e.text}</span>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         )}
