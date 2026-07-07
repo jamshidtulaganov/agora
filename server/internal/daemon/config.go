@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -96,6 +97,7 @@ type Config struct {
 	WorkspacesRoot                 string                // base path for execution envs (default: ~/agora_workspaces)
 	KeepEnvAfterTask               bool                  // preserve env after task for debugging
 	HealthPort                     int                   // local HTTP port for health checks (default: 19514)
+	AdvertiseAddr                  string                // host:port the BACKEND dials to reach this daemon (mesh/private address); reported as runtime metadata editor_addr
 	MaxConcurrentTasks             int                   // max tasks running in parallel (default: 20)
 	GCEnabled                      bool                  // enable periodic workspace garbage collection (default: true)
 	GCInterval                     time.Duration         // how often the GC loop runs (default: 1h)
@@ -109,9 +111,10 @@ type Config struct {
 	HeartbeatInterval              time.Duration
 	AgentTimeout                   time.Duration
 	CodexSemanticInactivityTimeout time.Duration
-	AgentIdleWatchdog              time.Duration // force-stop a run when the backend goes silent this long with an empty queue (0 = disabled)
-	AgentStartupWatchdog           time.Duration // force-stop a run that has emitted NO message yet after this long (0 = disabled); fail-fast for a provider hung at startup
-	AgentToolWatchdog              time.Duration // force-stop a run when a single tool call stays in flight (silent) this long (0 = disabled); backstop for hung tools now that there is no wall-clock cap
+	AgentIdleWatchdog              time.Duration     // force-stop a run when the backend goes silent this long with an empty queue (0 = disabled)
+	AgentStartupWatchdog           time.Duration     // force-stop a run that has emitted NO message yet after this long (0 = disabled); fail-fast for a provider hung at startup
+	AgentToolWatchdog              time.Duration     // force-stop a run when a single tool call stays in flight (silent) this long (0 = disabled); backstop for hung tools now that there is no wall-clock cap
+	DevApps                        map[string]string // project id → locally-served app URL (reported as runtime metadata dev_apps; daemon-per-dev QA routing)
 	ClaudeArgs                     []string
 	CodexArgs                      []string
 	CodebuddyArgs                  []string
@@ -134,6 +137,7 @@ type Overrides struct {
 	RuntimeName                    string
 	Profile                        string // profile name (empty = default)
 	HealthPort                     int    // health check port (0 = use default)
+	AdvertiseAddr                  string // host:port the backend dials for this daemon (mesh IP); overrides AGORA_DAEMON_ADVERTISE_ADDR
 	// DisableAutoUpdate, when true, forces the auto-update poller off. There
 	// is no symmetric "force on" override because the env/default already
 	// resolves to enabled; the flag exists so users can opt out from the CLI.
@@ -178,11 +182,46 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	// file should not prevent daemon startup, since the daemon can still run
 	// purely from env-var configuration. We log a warning and proceed with
 	// no overrides.
+	// Advertised address (daemon-per-dev phase 3): where the BACKEND dials this
+	// daemon for the editor / live-browser / trace proxies when it is not on
+	// the backend's own host or 6PN. Typically the machine's mesh (Tailscale /
+	// WireGuard) IP + the health port. Reported as runtime metadata
+	// editor_addr, which resolveDaemonInternalAddr prefers per-runtime.
+	advertiseAddr := strings.TrimSpace(envOrDefault("AGORA_DAEMON_ADVERTISE_ADDR", ""))
+	if overrides.AdvertiseAddr != "" {
+		advertiseAddr = strings.TrimSpace(overrides.AdvertiseAddr)
+	}
+	if advertiseAddr != "" {
+		if _, _, aerr := net.SplitHostPort(advertiseAddr); aerr != nil {
+			return Config{}, fmt.Errorf("invalid AGORA_DAEMON_ADVERTISE_ADDR %q — expected host:port (e.g. 100.64.1.5:19514): %w", advertiseAddr, aerr)
+		}
+		// Advertising is useless while the served surfaces still bind loopback:
+		// the backend will dial the advertised host and hit nothing. Warn, not
+		// fail — the operator may bind via other means.
+		if strings.TrimSpace(os.Getenv("AGORA_HEALTH_BIND")) == "" || strings.TrimSpace(os.Getenv("AGORA_EDITOR_BIND")) == "" {
+			slog.Warn("AGORA_DAEMON_ADVERTISE_ADDR is set but AGORA_HEALTH_BIND / AGORA_EDITOR_BIND are not — the backend will dial the advertised address and find loopback-bound servers; set both (usually to the same mesh IP or 0.0.0.0)",
+				"advertise_addr", advertiseAddr)
+		}
+	}
+
+	var devApps map[string]string
 	if cliCfg, err := cli.LoadCLIConfigForProfile(overrides.Profile); err != nil {
 		slog.Warn("could not load CLI config for backend overrides; proceeding without",
 			"profile", overrides.Profile, "err", err)
-	} else if oc := openclawOverrideFrom(cliCfg); oc != nil {
-		applyOpenclawOverride(oc)
+	} else {
+		if oc := openclawOverrideFrom(cliCfg); oc != nil {
+			applyOpenclawOverride(oc)
+		}
+		// Dev-served apps (daemon-per-dev QA routing): managed by
+		// `agora daemon apps`, reported to the server as runtime metadata.
+		if len(cliCfg.DevApps) > 0 {
+			devApps = make(map[string]string, len(cliCfg.DevApps))
+			for projectID, entry := range cliCfg.DevApps {
+				if u := strings.TrimSpace(entry.URL); u != "" {
+					devApps[projectID] = u
+				}
+			}
+		}
 	}
 
 	// Probe available agent CLIs. exec.LookPath is the primary path, but on
@@ -510,6 +549,8 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		AutoUpdateEnabled:              autoUpdateEnabled,
 		AutoUpdateCheckInterval:        autoUpdateInterval,
 		HealthPort:                     healthPort,
+		AdvertiseAddr:                  advertiseAddr,
+		DevApps:                        devApps,
 		MaxConcurrentTasks:             maxConcurrentTasks,
 		PollInterval:                   pollInterval,
 		HeartbeatInterval:              heartbeatInterval,

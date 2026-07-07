@@ -1117,10 +1117,18 @@ func (s *AutopilotService) buildIssueDescription(ap db.Autopilot, run db.Autopil
 		var reg struct {
 			Scope     string `json:"scope"`
 			Directive string `json:"directive"`
+			QATarget  string `json:"qa_target"`
+			RepoURL   string `json:"repo_url"`
+			Results   string `json:"results_issue"`
 			Tasks     []struct {
 				Key   string `json:"key"`
 				Title string `json:"title"`
 			} `json:"tasks"`
+			Cases []struct {
+				ID     string `json:"id"`
+				Title  string `json:"title"`
+				Script string `json:"script"`
+			} `json:"cases"`
 		}
 		regOK := json.Unmarshal(run.TriggerPayload, &reg) == nil && reg.Scope == "regression"
 		if regOK && strings.TrimSpace(reg.Directive) != "" {
@@ -1137,6 +1145,43 @@ func (s *AutopilotService) buildIssueDescription(ap db.Autopilot, run db.Autopil
 				if t.Title != "" {
 					b.WriteString(" — ")
 					b.WriteString(t.Title)
+				}
+			}
+		}
+		if regOK && strings.TrimSpace(reg.RepoURL) != "" {
+			b.WriteString("\n\nPRIMARY REPO — the sprint branch lives here; clone/fetch it (`agora repo list` may not include it yet): ")
+			b.WriteString(strings.TrimSpace(reg.RepoURL))
+		}
+		if regOK && strings.TrimSpace(reg.QATarget) != "" {
+			target := strings.TrimSpace(reg.QATarget)
+			b.WriteString("\n\nQA TARGET — the DEPLOYED app to drive for browser-level cases: ")
+			b.WriteString(target)
+			b.WriteString(". LIVE WATCH: do NOT launch a private browser — with AGORA_DAEMON_PORT set, POST " +
+				"http://127.0.0.1:$AGORA_DAEMON_PORT/editor/browser/start with body {\"workdir\":\"qa-target:" + target + "\"}, " +
+				"read cdp_url, then chromium.connectOverCDP(cdp_url) and drive the existing context — a QA reviewer watches " +
+				"you live in the review pane. Fall back to chromium.launch() only if that POST fails.")
+		}
+		if regOK && len(reg.Cases) > 0 {
+			b.WriteString("\n\nBASE SUITE — run EVERY case below deterministically: write the script VERBATIM to /tmp/case-<id>.mjs, " +
+				"ensure playwright is importable by node (npm i playwright && npx playwright install chromium-headless-shell — once, reuse an existing install), " +
+				"then `mkdir -p \"$HOME/.agora/qa-traces\" && TRACE_PATH=\"$HOME/.agora/qa-traces/trace-<id>.zip\" node /tmp/case-<id>.mjs`; " +
+				"the EXIT CODE is the verdict (0 pass, non-zero fail).")
+			if strings.TrimSpace(reg.Results) != "" {
+				b.WriteString(" REPORT: when all cases ran, post ONE comment on issue " + strings.TrimSpace(reg.Results) +
+					" (agora comment CLI) that ends with a fenced ```test-runs code block containing ONLY a JSON array: " +
+					"[{\"test_case_id\":\"<the case id below>\",\"status\":\"pass\"|\"fail\"|\"blocked\",\"output\":\"<one-line evidence>\"," +
+					"\"trace_path\":\"<absolute trace .zip path, omit if none>\",\"baseline_status\":\"unknown\"}] — the QA panel parses it; " +
+					"without this block the run records NOTHING.")
+			}
+			for _, c := range reg.Cases {
+				b.WriteString("\n\n### CASE " + c.ID)
+				if strings.TrimSpace(c.Title) != "" {
+					b.WriteString(" — " + strings.TrimSpace(c.Title))
+				}
+				if strings.TrimSpace(c.Script) != "" {
+					b.WriteString("\n```js\n" + strings.TrimSpace(c.Script) + "\n```")
+				} else {
+					b.WriteString("\n(no compiled script — drive it manually against the QA TARGET and judge by deterministic signal)")
 				}
 			}
 		}

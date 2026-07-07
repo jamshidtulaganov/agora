@@ -830,6 +830,25 @@ export const ConnectedBoxSchema = z.object({
   created_at: z.string().default(""),
 }).loose();
 
+// Settings → Labs workspace flags (GET/PUT /api/workspace-labs). qa_dev_boxes
+// routes QA to the assignee-developer's own box; qa_fallback_box_id is the
+// shared box QA lands on when nothing else matches.
+export const WorkspaceLabsSchema = z
+  .object({
+    qa_dev_boxes: z.boolean().default(true),
+    qa_fallback_box_id: z.string().default(""),
+    qa_dev_runtimes: z.boolean().default(false),
+    qa_dev_runtimes_strict: z.boolean().default(false),
+  })
+  .loose();
+
+export const EMPTY_WORKSPACE_LABS = {
+  qa_dev_boxes: true,
+  qa_fallback_box_id: "",
+  qa_dev_runtimes: false,
+  qa_dev_runtimes_strict: false,
+};
+
 export const ConnectedBoxListSchema = z.object({
   boxes: z.array(ConnectedBoxSchema).default([]),
 }).loose();

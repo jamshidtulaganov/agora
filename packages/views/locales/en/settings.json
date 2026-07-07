@@ -180,7 +180,26 @@
   "labs": {
     "section_placeholder_title": "No experiments yet",
     "section_placeholder_description": "Experimental settings will land here as they ship. Today this tab is intentionally empty.",
-    "toast_failed": "Failed to update setting"
+    "toast_failed": "Failed to update setting",
+    "qa_dev_env_title": "QA on developer environments",
+    "qa_dev_env_description": "Route QA to the working developer's own box — Shahzod's sd-main issue tests on shahzod.sdteam.uz. A per-dev box only matches issues of the PROJECT it is scoped to below; nothing routes cross-project.",
+    "qa_fallback_title": "Fallback QA box",
+    "qa_fallback_description": "When no developer or project box matches, QA lands here (e.g. sandbox.sdteam.uz).",
+    "qa_fallback_none": "No fallback",
+    "boxes_title": "Connected dev boxes",
+    "boxes_loading": "Loading boxes…",
+    "boxes_empty": "No connected boxes yet. Provision developer boxes via the remote-boxes API, then map them to their owners here.",
+    "owner_none": "Unassigned",
+    "owner_saved": "Box owner updated",
+    "saved": "Labs settings saved",
+    "save_failed": "Could not save — try again",
+    "resolution_note": "QA target resolution, per issue: 1) the assignee-developer's own box scoped to the SAME project (this toggle) → 2) the project's shared box (ownerless preferred) → 3) repo-name match → 4) the fallback box, only if it is unscoped or scoped to that same project → 5) the project's qa_smoke_url.",
+    "project_none": "No project",
+    "qa_dev_runtimes_title": "QA on developer machines (daemon-per-dev)",
+    "qa_dev_runtimes_description": "When the developer's own daemon is online and declares a local app for the issue's project (agora daemon apps set <project> <url>), the QA task executes on THAT machine and tests the locally running app. Off = QA always runs on shared runtimes.",
+    "qa_dev_runtimes_strict_label": "Strict: wait for the developer's daemon instead of falling back when it is offline",
+    "dev_machines_title": "Developer machines",
+    "dev_machines_empty": "No developer machine has declared a local app yet. On the dev's machine: agora daemon apps set <project> <url>, then restart the daemon."
   },
   "github": {
     "page_description": "Connect a GitHub App, control how Pull Requests show up inside Agora, and decide what your agents leave behind in commit history.",

@@ -11,6 +11,48 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const bindConnectedBoxOwner = `-- name: BindConnectedBoxOwner :one
+UPDATE connected_box
+SET owner_id = $3,
+    updated_at = now()
+WHERE id = $1 AND workspace_id = $2
+RETURNING id, workspace_id, owner_id, label, ssh_host, ssh_user, ssh_port, deploy_pubkey, daemon_id, status, last_error, last_bootstrap_at, created_at, updated_at, repo_url, work_dir, last_branch, project_id
+`
+
+type BindConnectedBoxOwnerParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	OwnerID     pgtype.UUID `json:"owner_id"`
+}
+
+// Labs: map a box to the developer who owns it (per-dev QA routing). An
+// invalid/absent owner clears the mapping (the box becomes shared/unowned).
+func (q *Queries) BindConnectedBoxOwner(ctx context.Context, arg BindConnectedBoxOwnerParams) (ConnectedBox, error) {
+	row := q.db.QueryRow(ctx, bindConnectedBoxOwner, arg.ID, arg.WorkspaceID, arg.OwnerID)
+	var i ConnectedBox
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.OwnerID,
+		&i.Label,
+		&i.SshHost,
+		&i.SshUser,
+		&i.SshPort,
+		&i.DeployPubkey,
+		&i.DaemonID,
+		&i.Status,
+		&i.LastError,
+		&i.LastBootstrapAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RepoUrl,
+		&i.WorkDir,
+		&i.LastBranch,
+		&i.ProjectID,
+	)
+	return i, err
+}
+
 const bindConnectedBoxProject = `-- name: BindConnectedBoxProject :one
 UPDATE connected_box
 SET project_id = $3, updated_at = now()

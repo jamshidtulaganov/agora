@@ -65,8 +65,15 @@ func buildGitSyncScript(workDir, repoURL, branch, token string) string {
 	tokenless := shellQuote(repoURL)
 	authed := shellQuote(authedRepoURL(repoURL, token))
 	br := shellQuote(branch)
+	// GIT_CONFIG_* env is "protected configuration", the one place git still
+	// honors safe.directory — a box dir owned by a different unix user than the
+	// SSH login (e.g. www-data-owned /var/www/<dev> synced as the shared
+	// control-plane user) otherwise fails every command with "dubious
+	// ownership". Scoped to this script's own git invocations only.
+	safeCfg := fmt.Sprintf("export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=%s", dir)
 	return strings.Join([]string{
 		"set -e",
+		safeCfg,
 		fmt.Sprintf("cd %s", dir),
 		fmt.Sprintf("if [ ! -d .git ]; then git init -q && git remote add origin %s; fi", tokenless),
 		// --depth 1: QA only needs the branch tip, and these repos can be large

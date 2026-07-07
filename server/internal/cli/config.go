@@ -17,12 +17,26 @@ type CLIConfig struct {
 	WorkspaceID string `json:"workspace_id,omitempty"`
 	Token       string `json:"token,omitempty"`
 
+	// DevApps maps project id → the locally-running app this machine serves
+	// for that project (daemon-per-dev QA routing). Managed by
+	// `agora daemon apps set|unset|list`; the daemon reports it to the server
+	// in agent_runtime.metadata.dev_apps on register. Title is display-only
+	// (the CLI resolved it at set time).
+	DevApps map[string]DevAppEntry `json:"dev_apps,omitempty"`
+
 	// Backends contains per-backend overrides for users who want to point
 	// the daemon at non-default tool installations (e.g. an OpenClaw bundled
 	// inside another desktop app, or multiple isolated profiles on the same
 	// machine). Empty / absent means "discover from PATH and use vendor
 	// defaults" — the historical behavior. See issue #3875.
 	Backends *BackendOverrides `json:"backends,omitempty"`
+}
+
+// DevAppEntry is one dev-served app: the local URL plus the project title
+// captured when it was set (display only — the id is the key).
+type DevAppEntry struct {
+	URL   string `json:"url"`
+	Title string `json:"title,omitempty"`
 }
 
 // BackendOverrides holds per-backend configuration overrides. Each field is

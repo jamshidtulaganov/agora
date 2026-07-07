@@ -18,7 +18,7 @@ import {
   SquadSchema,
   UserSchema,
 } from "./schemas";
-import { EMPTY_ISSUE_BROWSER, IssueBrowserResponseSchema } from "./schemas";
+import { EMPTY_ISSUE_BROWSER, EMPTY_WORKSPACE_LABS, IssueBrowserResponseSchema, WorkspaceLabsSchema } from "./schemas";
 import { parseWithFallback } from "./schema";
 
 const baseIssue = {
@@ -531,5 +531,32 @@ describe("IssueBrowserResponseSchema", () => {
       endpoint,
     );
     expect(parsed.mode).toBe("edge-pop"); // renders as "unavailable", not a crash
+  });
+});
+
+describe("WorkspaceLabsSchema", () => {
+  const endpoint = { endpoint: "GET /api/workspace-labs" };
+
+  it("defaults absent fields (fresh workspace has no labs block)", () => {
+    const parsed = parseWithFallback({}, WorkspaceLabsSchema, EMPTY_WORKSPACE_LABS, endpoint);
+    expect(parsed.qa_dev_boxes).toBe(true);
+    expect(parsed.qa_fallback_box_id).toBe("");
+  });
+
+  it("degrades wrong-typed fields to the fallback instead of throwing", () => {
+    const parsed = parseWithFallback(
+      { qa_dev_boxes: "yes", qa_fallback_box_id: 7 },
+      WorkspaceLabsSchema,
+      EMPTY_WORKSPACE_LABS,
+      endpoint,
+    );
+    expect(parsed).toEqual(EMPTY_WORKSPACE_LABS);
+  });
+
+  it("falls back on null / non-object bodies", () => {
+    for (const body of [null, [], "nope"]) {
+      const parsed = parseWithFallback(body, WorkspaceLabsSchema, EMPTY_WORKSPACE_LABS, endpoint);
+      expect(parsed.qa_dev_boxes).toBe(true);
+    }
   });
 });

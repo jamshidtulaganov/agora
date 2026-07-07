@@ -810,6 +810,19 @@ func (d *Daemon) registerRuntimesForWorkspace(ctx context.Context, workspaceID s
 		"editor_port": d.cfg.HealthPort,
 		"runtimes":    runtimes,
 	}
+	// Dev-served apps (daemon-per-dev): project id → local URL. Reported even
+	// when empty is skipped so an older server ignores the extra key and a
+	// current one clears stale entries only when the daemon re-registers with
+	// a non-empty map removed (metadata is rebuilt wholesale server-side).
+	if len(d.cfg.DevApps) > 0 {
+		req["dev_apps"] = d.cfg.DevApps
+	}
+	// Advertised reachable address (daemon-per-dev phase 3): lets the backend
+	// dial THIS daemon for the editor / live-browser / trace proxies when it
+	// lives on a mesh instead of the backend's host or 6PN.
+	if d.cfg.AdvertiseAddr != "" {
+		req["editor_addr"] = d.cfg.AdvertiseAddr
+	}
 
 	resp, err := d.client.Register(ctx, req)
 	if err != nil {

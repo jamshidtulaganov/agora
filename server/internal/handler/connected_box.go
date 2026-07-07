@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -418,6 +419,14 @@ func (h *Handler) developerUserForIssue(ctx context.Context, issue db.Issue) (pg
 			return agent.OwnerID, true
 		}
 	}
+	// A human assignee IS the developer — their issues route to their own box
+	// (Labs: "QA env = developer env", e.g. Shahzod's issue → shahzod.sdteam.uz).
+	if issue.AssigneeType.String == "member" {
+		member, err := h.Queries.GetMember(ctx, issue.AssigneeID)
+		if err == nil && member.WorkspaceID.Bytes == issue.WorkspaceID.Bytes {
+			return member.UserID, true
+		}
+	}
 	return pgtype.UUID{}, false
 }
 
@@ -435,19 +444,41 @@ func (h *Handler) connectedBoxForIssue(ctx context.Context, issue db.Issue) (db.
 	if err != nil {
 		return db.ConnectedBox{}, false
 	}
+	// Labs flags steer this resolver: qa_dev_boxes gates step 0, and
+	// qa_fallback_box_id adds a last-resort shared box (step 3).
+	labs := defaultWorkspaceLabs()
+	if ws, werr := h.Queries.GetWorkspace(ctx, issue.WorkspaceID); werr == nil {
+		labs = workspaceLabs(ws.Settings)
+	}
 	// 0. Per-developer box (highest priority): the developer behind this issue's
 	//    work gets their OWN box (owner_id match), so their branch deploys to their
 	//    own isolated environment instead of colliding with other devs on the
 	//    shared project box. Only the per-task deploy-qa path uses this resolver;
 	//    the sprint-end regression keeps its own project-only box resolution.
-	if devUser, ok := h.developerUserForIssue(ctx, issue); ok {
-		for _, b := range boxes {
-			if b.OwnerID.Valid && b.OwnerID.Bytes == devUser.Bytes {
-				return b, true
+	if labs.QADevBoxes {
+		if devUser, ok := h.developerUserForIssue(ctx, issue); ok {
+			for _, b := range boxes {
+				// The box must be EXPLICITLY scoped to the issue's project — a
+				// developer's sd-main box must never swallow their sd-cs issue
+				// (each project's boxes serve a different app). No project
+				// binding = no per-dev match; nothing is a cross-project
+				// default.
+				if b.OwnerID.Valid && b.OwnerID.Bytes == devUser.Bytes &&
+					b.ProjectID.Valid && b.ProjectID.Bytes == issue.ProjectID.Bytes {
+					return b, true
+				}
 			}
 		}
 	}
-	// 1. Explicit project binding.
+	// 1. Explicit project binding — two passes: an OWNERLESS (shared) project
+	//    box wins over someone's personal box for the same project, so another
+	//    developer's issue never lands on a colleague's environment; a solely
+	//    per-dev-provisioned project (only owned boxes) still resolves.
+	for _, b := range boxes {
+		if !b.OwnerID.Valid && b.ProjectID.Valid && b.ProjectID.Bytes == issue.ProjectID.Bytes {
+			return b, true
+		}
+	}
 	for _, b := range boxes {
 		if b.ProjectID.Valid && b.ProjectID.Bytes == issue.ProjectID.Bytes {
 			return b, true
@@ -475,6 +506,24 @@ func (h *Handler) connectedBoxForIssue(ctx context.Context, issue db.Issue) (db.
 			}
 		}
 	}
+	// 3. Labs fallback: the workspace-designated shared box (e.g.
+	//    sandbox.sdteam.uz). Project-scoped like everything above: a fallback
+	//    bound to a project serves ONLY that project's issues; only a
+	//    deliberately unbound fallback is workspace-generic. Different projects
+	//    run different apps — a fallback must never become a cross-project
+	//    default by accident.
+	if labs.QAFallbackBoxID != "" {
+		if fbID, ferr := parseUUIDErr(labs.QAFallbackBoxID); ferr == nil {
+			for _, b := range boxes {
+				if b.ID.Bytes != fbID.Bytes {
+					continue
+				}
+				if !b.ProjectID.Valid || b.ProjectID.Bytes == issue.ProjectID.Bytes {
+					return b, true
+				}
+			}
+		}
+	}
 	return db.ConnectedBox{}, false
 }
 
@@ -484,6 +533,15 @@ func (h *Handler) connectedBoxForIssue(ctx context.Context, issue db.Issue) (db.
 // project-wide URL. "" when remote boxes are off, no box resolves, or the box
 // has no work_dir — the run_qa smoke then falls back to the project qa_smoke_url.
 func (h *Handler) devBoxSmokeURL(ctx context.Context, issue db.Issue) string {
+	// Step 0 (daemon-per-dev): the developer's own ONLINE daemon declaring a
+	// local app for this project beats every deployed target — the QA task is
+	// pinned to that runtime (service.maybePinTaskToDevRuntime), so its
+	// 127.0.0.1 URL is meaningful to the agent that will run it. Opt-in via
+	// labs.qa_dev_runtimes; project-scoped by construction (dev_apps is keyed
+	// by project id) — never a cross-project default.
+	if url := h.devLocalAppURL(ctx, issue); url != "" {
+		return url
+	}
 	if !remoteBoxesEnabled() {
 		return ""
 	}
@@ -492,6 +550,32 @@ func (h *Handler) devBoxSmokeURL(ctx context.Context, issue db.Issue) string {
 		return ""
 	}
 	return boxSmokeURL(box)
+}
+
+// devLocalAppURL resolves the issue-developer's declared local app for the
+// issue's project (agent_runtime.metadata.dev_apps), gated by
+// labs.qa_dev_runtimes. "" on any miss.
+func (h *Handler) devLocalAppURL(ctx context.Context, issue db.Issue) string {
+	if !issue.ProjectID.Valid {
+		return ""
+	}
+	ws, err := h.Queries.GetWorkspace(ctx, issue.WorkspaceID)
+	if err != nil || !util.ParseWorkspaceLabs(ws.Settings).QADevRuntimes {
+		return ""
+	}
+	devUser, ok := h.developerUserForIssue(ctx, issue)
+	if !ok {
+		return ""
+	}
+	runtime, err := h.Queries.GetDevRuntimeForProject(ctx, db.GetDevRuntimeForProjectParams{
+		WorkspaceID: issue.WorkspaceID,
+		OwnerID:     devUser,
+		ProjectID:   uuidToString(issue.ProjectID),
+	})
+	if err != nil {
+		return ""
+	}
+	return util.DevAppURL(runtime.Metadata, uuidToString(issue.ProjectID))
 }
 
 // boxSmokeURL derives the https URL a box serves from its work_dir
@@ -567,6 +651,10 @@ type SyncConnectedBoxRequest struct {
 
 type BindConnectedBoxRequest struct {
 	ProjectID string `json:"project_id"`
+	// OwnerID (a MEMBER id) maps the box to its developer for Labs per-dev QA
+	// routing. Pointer semantics: absent = leave the owner untouched; present
+	// but "" = clear the mapping.
+	OwnerID *string `json:"owner_id,omitempty"`
 }
 
 // BindConnectedBox binds (or, with an empty project_id, unbinds) a box to a
@@ -596,6 +684,32 @@ func (h *Handler) BindConnectedBox(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
+	}
+	// Owner mapping (Labs per-dev QA routing): "owner_id" present in the body
+	// binds/clears the box's developer. Explicit presence check so binding a
+	// project alone never clears an existing owner.
+	if req.OwnerID != nil {
+		var ownerID pgtype.UUID
+		if oid := strings.TrimSpace(*req.OwnerID); oid != "" {
+			memberUUID, mok := parseUUIDOrBadRequest(w, oid, "owner_id")
+			if !mok {
+				return
+			}
+			// The value is a MEMBER id from the members list; a box owner is a
+			// USER id (what agent.owner_id and session identity carry).
+			member, merr := h.Queries.GetMember(r.Context(), memberUUID)
+			if merr != nil || member.WorkspaceID.Bytes != wsUUID.Bytes {
+				writeError(w, http.StatusBadRequest, "owner_id does not name a member of this workspace")
+				return
+			}
+			ownerID = member.UserID
+		}
+		if _, oerr := h.Queries.BindConnectedBoxOwner(r.Context(), db.BindConnectedBoxOwnerParams{
+			ID: boxUUID, WorkspaceID: wsUUID, OwnerID: ownerID,
+		}); oerr != nil {
+			writeError(w, http.StatusNotFound, "remote box not found")
+			return
+		}
 	}
 	var projectID pgtype.UUID
 	if pid := strings.TrimSpace(req.ProjectID); pid != "" {
@@ -716,11 +830,20 @@ func (h *Handler) DeploySprintBranch(ctx context.Context, sprintID, wsID pgtype.
 	}
 	var box db.ConnectedBox
 	found := false
+	// Prefer the OWNERLESS (shared) project box: a sprint branch deploy onto a
+	// developer's personal box would clobber whatever they're testing.
 	for _, b := range boxes {
-		if b.ProjectID.Valid && b.ProjectID.Bytes == sprint.ProjectID.Bytes {
-			box = b
-			found = true
+		if !b.OwnerID.Valid && b.ProjectID.Valid && b.ProjectID.Bytes == sprint.ProjectID.Bytes {
+			box, found = b, true
 			break
+		}
+	}
+	if !found {
+		for _, b := range boxes {
+			if b.ProjectID.Valid && b.ProjectID.Bytes == sprint.ProjectID.Bytes {
+				box, found = b, true
+				break
+			}
 		}
 	}
 	if !found {
@@ -757,11 +880,35 @@ type sprintRegressionPayload struct {
 	// must interpret unaided (audit P1: the rich contract never reached the
 	// autopilot run).
 	Directive string `json:"directive,omitempty"`
+	// QATarget is the deployed app the regression drives (the project's bound
+	// QA box, else its qa_smoke_url). Without it the agent has no address for
+	// the browser-level suite and silently degrades to code-only checks.
+	QATarget string `json:"qa_target,omitempty"`
+	// RepoURL names the project's primary repo so an issue-less run (no task
+	// worktree, no issue→project resource injection) still knows which code the
+	// sprint branch lives in.
+	RepoURL string `json:"repo_url,omitempty"`
+	// ResultsIssue is the issue KEY the agent posts its ```test-runs``` block
+	// on — CaptureTestRuns needs an issue in the cases' project to accept the
+	// rows. The project's base-suite tracking issue when it still exists, else
+	// the sprint's first attached task.
+	ResultsIssue string `json:"results_issue,omitempty"`
+	// Cases is the project's standing base suite (compiled automated cases).
+	// Embedded verbatim because an issue-less autopilot run gets none of the
+	// run_test_cases slice injection — without these the whole-branch
+	// regression ran zero scripted cases (found live 2026-07-07).
+	Cases []sprintRegressionCase `json:"cases,omitempty"`
 }
 
 type sprintRegressionTask struct {
 	Key   string `json:"key"`
 	Title string `json:"title"`
+}
+
+type sprintRegressionCase struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Script string `json:"script,omitempty"`
 }
 
 // DispatchSprintRegression deploys the sprint branch to its project's bound QA
@@ -814,10 +961,81 @@ func (h *Handler) DispatchSprintRegression(ctx context.Context, sprintID, wsID p
 		}
 	}
 
+	// The deployed target + primary repo + base suite ride in the payload:
+	// an issue-less run gets none of the per-issue slice injection, so this
+	// payload IS the whole QA contract for the run.
+	var qaTarget, repoURL, resultsIssue string
+	var cases []sprintRegressionCase
+	if project, perr := h.Queries.GetProject(ctx, sprint.ProjectID); perr == nil {
+		if boxes, berr := h.Queries.ListConnectedBoxesByWorkspace(ctx, sprint.WorkspaceID); berr == nil {
+			// Same shared-box preference as DeploySprintBranch: regression
+			// drives the project's shared environment, not a developer's own.
+			for _, b := range boxes {
+				if !b.OwnerID.Valid && b.ProjectID.Valid && b.ProjectID.Bytes == sprint.ProjectID.Bytes {
+					qaTarget = boxSmokeURL(b)
+					break
+				}
+			}
+			if qaTarget == "" {
+				for _, b := range boxes {
+					if b.ProjectID.Valid && b.ProjectID.Bytes == sprint.ProjectID.Bytes {
+						qaTarget = boxSmokeURL(b)
+						break
+					}
+				}
+			}
+		}
+		var ps struct {
+			QASmokeURL string `json:"qa_smoke_url"`
+			BaseSuite  string `json:"base_suite_issue_id"`
+		}
+		if len(project.Settings) > 0 {
+			_ = json.Unmarshal(project.Settings, &ps)
+		}
+		if qaTarget == "" {
+			qaTarget = strings.TrimSpace(ps.QASmokeURL)
+		}
+		if strings.TrimSpace(ps.BaseSuite) != "" {
+			if bid, berr := parseUUIDErr(strings.TrimSpace(ps.BaseSuite)); berr == nil {
+				if bi, ierr := h.Queries.GetIssue(ctx, bid); ierr == nil {
+					resultsIssue = fmt.Sprintf("%s-%d", h.getIssuePrefix(ctx, sprint.WorkspaceID), bi.Number)
+				}
+			}
+		}
+	}
+	for _, r := range h.listProjectResourcesForProject(ctx, sprint.ProjectID) {
+		if r.ResourceType != "github_repo" {
+			continue
+		}
+		var ref struct {
+			URL string `json:"url"`
+		}
+		if json.Unmarshal(r.ResourceRef, &ref) == nil && strings.TrimSpace(ref.URL) != "" {
+			repoURL = strings.TrimSpace(ref.URL)
+			break
+		}
+	}
+	if baseCases, cerr := h.Queries.ListAutomatedTestCasesForProject(ctx, db.ListAutomatedTestCasesForProjectParams{
+		ProjectID: sprint.ProjectID, WorkspaceID: sprint.WorkspaceID,
+	}); cerr == nil {
+		for _, c := range baseCases {
+			cases = append(cases, sprintRegressionCase{
+				ID: uuidToString(c.ID), Title: c.Title, Script: c.Script,
+			})
+		}
+	}
+	if resultsIssue == "" && len(tasks) > 0 {
+		resultsIssue = tasks[0].Key
+	}
+
 	payload, err := json.Marshal(sprintRegressionPayload{
 		Scope: "regression", Branch: branch, Baseline: "sprint-root", SprintID: uuidToString(sprint.ID),
-		Tasks:     tasks,
-		Directive: strings.TrimSpace(qaBaselineGuidanceFor("regression")),
+		Tasks:        tasks,
+		Directive:    strings.TrimSpace(qaBaselineGuidanceFor("regression")),
+		QATarget:     qaTarget,
+		RepoURL:      repoURL,
+		ResultsIssue: resultsIssue,
+		Cases:        cases,
 	})
 	if err != nil {
 		return db.AutopilotRun{}, fmt.Errorf("marshal payload: %w", err)

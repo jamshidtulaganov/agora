@@ -723,3 +723,65 @@ RETURNING *;
 -- agent instead of spreading.
 SELECT count(*) FROM agent_task_queue
 WHERE agent_id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory');
+
+-- name: AgentInQASquad :one
+-- Dev-runtime pinning ("QA runs where the app runs") applies only to QA-squad
+-- agents — the squad named 'QA' is the same convention QAMetricsAgentDurations
+-- keys on. Members and the leader both count.
+SELECT EXISTS (
+  SELECT 1 FROM squad s
+  LEFT JOIN squad_member sm ON sm.squad_id = s.id AND sm.member_type = 'agent'
+  WHERE s.workspace_id = $1 AND s.name = 'QA'
+    AND (sm.member_id = $2 OR s.leader_id = $2)
+);
+
+-- name: GetDevRuntimeForProject :one
+-- The developer's own ONLINE daemon that declares a local app for this
+-- project (metadata.dev_apps keyed by project UUID). Newest heartbeat wins
+-- when the dev has several (laptop + box).
+SELECT * FROM agent_runtime
+WHERE workspace_id = $1 AND owner_id = $2 AND status = 'online'
+  AND COALESCE(metadata->'dev_apps'->>(sqlc.arg('project_id')::text), '') <> ''
+ORDER BY last_seen_at DESC NULLS LAST
+LIMIT 1;
+
+-- name: PinTaskToDevRuntime :one
+-- Re-route a just-enqueued QA task onto the developer's own runtime. Only a
+-- still-queued row moves (a claimed task is already executing somewhere).
+-- context carries the pin marker + the home runtime for the watchdog's
+-- soft-fallback; wait_reason surfaces "waiting for <device>" in the UI.
+UPDATE agent_task_queue
+SET runtime_id = $2,
+    wait_reason = $3,
+    context = COALESCE(context, '{}'::jsonb) || @pin_context::jsonb
+WHERE id = $1 AND status = 'queued'
+RETURNING *;
+
+-- name: ListStaleDevPinnedQueuedTasks :many
+-- Dev-pinned tasks that are going nowhere: still queued and their pinned
+-- runtime is offline / heartbeat-stale, or they have simply waited past the
+-- allowed window. The QA watchdog decides (per labs strict flag) whether to
+-- fall back to the home runtime or keep waiting loudly.
+SELECT atq.* FROM agent_task_queue atq
+LEFT JOIN agent_runtime ar ON ar.id = atq.runtime_id
+WHERE atq.status = 'queued'
+  AND COALESCE(atq.context->>'dev_runtime_pin', '') = 'true'
+  AND (
+    ar.id IS NULL
+    OR ar.status IS DISTINCT FROM 'online'
+    OR ar.last_seen_at IS NULL
+    OR ar.last_seen_at < now() - interval '5 minutes'
+    OR atq.created_at < now() - make_interval(secs => @max_wait_secs::double precision)
+  );
+
+-- name: UnpinTaskToRuntime :one
+-- Soft-fallback: return a dev-pinned queued task to a shared runtime. Clears
+-- the pin marker (keeping a breadcrumb) and the wait_reason so normal
+-- claiming takes it.
+UPDATE agent_task_queue
+SET runtime_id = $2,
+    wait_reason = NULL,
+    context = (COALESCE(context, '{}'::jsonb) - 'dev_runtime_pin' - 'dev_runtime_home')
+              || jsonb_build_object('dev_runtime_fallback', 'true')
+WHERE id = $1 AND status = 'queued'
+RETURNING *;

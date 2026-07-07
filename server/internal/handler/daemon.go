@@ -182,6 +182,14 @@ type DaemonRegisterRequest struct {
 	// correct port. Zero from older daemons that don't report it — the editor
 	// endpoint then falls back to the legacy 19514 default.
 	EditorPort int `json:"editor_port"`
+	// DevApps: project id → the locally-running app this daemon's machine
+	// serves (daemon-per-dev QA routing). Persisted into runtime metadata.
+	DevApps map[string]string `json:"dev_apps"`
+	// EditorAddr is the daemon's self-advertised reachable address (host:port
+	// of its health mux on a mesh/private network). Persisted as runtime
+	// metadata editor_addr — the per-runtime override resolveDaemonInternalAddr
+	// prefers over the global AGORA_DAEMON_INTERNAL.
+	EditorAddr string `json:"editor_addr"`
 	Runtimes   []struct {
 		Name    string `json:"name"`
 		Type    string `json:"type"`
@@ -361,6 +369,12 @@ func (h *Handler) DaemonRegister(w http.ResponseWriter, r *http.Request) {
 		// register doesn't wipe a port a previous register stored.
 		if req.EditorPort > 0 {
 			metaMap["editor_port"] = req.EditorPort
+		}
+		if len(req.DevApps) > 0 {
+			metaMap["dev_apps"] = req.DevApps
+		}
+		if addr := strings.TrimSpace(req.EditorAddr); addr != "" {
+			metaMap["editor_addr"] = addr
 		}
 		if email := strings.TrimSpace(runtime.AccountEmail); email != "" {
 			metaMap["account_email"] = email
