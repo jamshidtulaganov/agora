@@ -1561,17 +1561,43 @@ func editorUserDataDir(key string) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
-	// Seed code-server User settings on first launch so the co-code editor opens
-	// straight to the agent's worktree: no "Do you trust the authors of the files
-	// in this folder?" prompt (the agent authored its own isolated branch — it is
-	// the author, the human is the reviewer) and no Getting-Started walkthrough
-	// tab covering the code. Write-if-absent so a human's later in-editor settings
-	// edits persist across relaunches.
+	// Seed the editor profile on first launch. Two layers (write-if-absent so a
+	// human's later in-editor edits persist across relaunches):
+	//
+	//   User/settings.json + User/keybindings.json — copied VERBATIM from the
+	//   host's own VS Code profile when one exists, so the co-code editor opens
+	//   with the reviewer's familiar theme/keybinds/settings. Verbatim because
+	//   VS Code settings are JSONC (comments, trailing commas) — parsing with
+	//   encoding/json would corrupt them. No host profile → minimal "{}".
+	//
+	//   Machine/settings.json — our co-code invariants. Machine scope overrides
+	//   User scope, so they hold regardless of what the copied profile says: no
+	//   workspace-trust prompt (the agent authored its own isolated branch — it
+	//   is the author, the human is the reviewer), no Getting-Started tab
+	//   covering the code, no telemetry.
 	userDir := filepath.Join(dir, "User")
 	settingsPath := filepath.Join(userDir, "settings.json")
 	if _, statErr := os.Stat(settingsPath); os.IsNotExist(statErr) {
 		if mkErr := os.MkdirAll(userDir, 0o700); mkErr == nil {
-			_ = os.WriteFile(settingsPath, []byte(`{
+			seeded := false
+			if hostDir, ok := hostVSCodeUserDir(); ok {
+				if b, rerr := os.ReadFile(filepath.Join(hostDir, "settings.json")); rerr == nil {
+					seeded = os.WriteFile(settingsPath, b, 0o600) == nil
+				}
+				if b, rerr := os.ReadFile(filepath.Join(hostDir, "keybindings.json")); rerr == nil {
+					_ = os.WriteFile(filepath.Join(userDir, "keybindings.json"), b, 0o600)
+				}
+			}
+			if !seeded {
+				_ = os.WriteFile(settingsPath, []byte("{}\n"), 0o600)
+			}
+		}
+	}
+	machineDir := filepath.Join(dir, "Machine")
+	machinePath := filepath.Join(machineDir, "settings.json")
+	if _, statErr := os.Stat(machinePath); os.IsNotExist(statErr) {
+		if mkErr := os.MkdirAll(machineDir, 0o700); mkErr == nil {
+			_ = os.WriteFile(machinePath, []byte(`{
   "security.workspace.trust.enabled": false,
   "workbench.startupEditor": "none",
   "workbench.tips.enabled": false,
@@ -1581,4 +1607,25 @@ func editorUserDataDir(key string) (string, error) {
 		}
 	}
 	return dir, nil
+}
+
+// hostVSCodeUserDir locates the host machine's own VS Code user profile so the
+// co-code editor can open with the reviewer's familiar settings. Self-host
+// daemons run on the developer's machine where this exists; cloud daemons
+// simply won't find one (ok=false → minimal seed).
+func hostVSCodeUserDir() (string, bool) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", false
+	}
+	candidates := []string{
+		filepath.Join(home, "Library", "Application Support", "Code", "User"), // macOS
+		filepath.Join(home, ".config", "Code", "User"),                        // Linux
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(filepath.Join(c, "settings.json")); err == nil {
+			return c, true
+		}
+	}
+	return "", false
 }
