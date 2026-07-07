@@ -757,11 +757,35 @@ type sprintRegressionPayload struct {
 	// must interpret unaided (audit P1: the rich contract never reached the
 	// autopilot run).
 	Directive string `json:"directive,omitempty"`
+	// QATarget is the deployed app the regression drives (the project's bound
+	// QA box, else its qa_smoke_url). Without it the agent has no address for
+	// the browser-level suite and silently degrades to code-only checks.
+	QATarget string `json:"qa_target,omitempty"`
+	// RepoURL names the project's primary repo so an issue-less run (no task
+	// worktree, no issue→project resource injection) still knows which code the
+	// sprint branch lives in.
+	RepoURL string `json:"repo_url,omitempty"`
+	// ResultsIssue is the issue KEY the agent posts its ```test-runs``` block
+	// on — CaptureTestRuns needs an issue in the cases' project to accept the
+	// rows. The project's base-suite tracking issue when it still exists, else
+	// the sprint's first attached task.
+	ResultsIssue string `json:"results_issue,omitempty"`
+	// Cases is the project's standing base suite (compiled automated cases).
+	// Embedded verbatim because an issue-less autopilot run gets none of the
+	// run_test_cases slice injection — without these the whole-branch
+	// regression ran zero scripted cases (found live 2026-07-07).
+	Cases []sprintRegressionCase `json:"cases,omitempty"`
 }
 
 type sprintRegressionTask struct {
 	Key   string `json:"key"`
 	Title string `json:"title"`
+}
+
+type sprintRegressionCase struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Script string `json:"script,omitempty"`
 }
 
 // DispatchSprintRegression deploys the sprint branch to its project's bound QA
@@ -814,10 +838,71 @@ func (h *Handler) DispatchSprintRegression(ctx context.Context, sprintID, wsID p
 		}
 	}
 
+	// The deployed target + primary repo + base suite ride in the payload:
+	// an issue-less run gets none of the per-issue slice injection, so this
+	// payload IS the whole QA contract for the run.
+	var qaTarget, repoURL, resultsIssue string
+	var cases []sprintRegressionCase
+	if project, perr := h.Queries.GetProject(ctx, sprint.ProjectID); perr == nil {
+		if boxes, berr := h.Queries.ListConnectedBoxesByWorkspace(ctx, sprint.WorkspaceID); berr == nil {
+			for _, b := range boxes {
+				if b.ProjectID.Valid && b.ProjectID.Bytes == sprint.ProjectID.Bytes {
+					qaTarget = boxSmokeURL(b)
+					break
+				}
+			}
+		}
+		var ps struct {
+			QASmokeURL string `json:"qa_smoke_url"`
+			BaseSuite  string `json:"base_suite_issue_id"`
+		}
+		if len(project.Settings) > 0 {
+			_ = json.Unmarshal(project.Settings, &ps)
+		}
+		if qaTarget == "" {
+			qaTarget = strings.TrimSpace(ps.QASmokeURL)
+		}
+		if strings.TrimSpace(ps.BaseSuite) != "" {
+			if bid, berr := parseUUIDErr(strings.TrimSpace(ps.BaseSuite)); berr == nil {
+				if bi, ierr := h.Queries.GetIssue(ctx, bid); ierr == nil {
+					resultsIssue = fmt.Sprintf("%s-%d", h.getIssuePrefix(ctx, sprint.WorkspaceID), bi.Number)
+				}
+			}
+		}
+	}
+	for _, r := range h.listProjectResourcesForProject(ctx, sprint.ProjectID) {
+		if r.ResourceType != "github_repo" {
+			continue
+		}
+		var ref struct {
+			URL string `json:"url"`
+		}
+		if json.Unmarshal(r.ResourceRef, &ref) == nil && strings.TrimSpace(ref.URL) != "" {
+			repoURL = strings.TrimSpace(ref.URL)
+			break
+		}
+	}
+	if baseCases, cerr := h.Queries.ListAutomatedTestCasesForProject(ctx, db.ListAutomatedTestCasesForProjectParams{
+		ProjectID: sprint.ProjectID, WorkspaceID: sprint.WorkspaceID,
+	}); cerr == nil {
+		for _, c := range baseCases {
+			cases = append(cases, sprintRegressionCase{
+				ID: uuidToString(c.ID), Title: c.Title, Script: c.Script,
+			})
+		}
+	}
+	if resultsIssue == "" && len(tasks) > 0 {
+		resultsIssue = tasks[0].Key
+	}
+
 	payload, err := json.Marshal(sprintRegressionPayload{
 		Scope: "regression", Branch: branch, Baseline: "sprint-root", SprintID: uuidToString(sprint.ID),
-		Tasks:     tasks,
-		Directive: strings.TrimSpace(qaBaselineGuidanceFor("regression")),
+		Tasks:        tasks,
+		Directive:    strings.TrimSpace(qaBaselineGuidanceFor("regression")),
+		QATarget:     qaTarget,
+		RepoURL:      repoURL,
+		ResultsIssue: resultsIssue,
+		Cases:        cases,
 	})
 	if err != nil {
 		return db.AutopilotRun{}, fmt.Errorf("marshal payload: %w", err)
