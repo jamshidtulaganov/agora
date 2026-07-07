@@ -12,7 +12,7 @@ import (
 )
 
 const getLatestQAEvidenceForIssue = `-- name: GetLatestQAEvidenceForIssue :one
-SELECT id, workspace_id, issue_id, baseline_ref, branch_sha, verdict, summary, result_json, captured_at, created_at FROM qa_evidence
+SELECT id, workspace_id, issue_id, baseline_ref, branch_sha, verdict, summary, result_json, captured_at, created_at, source FROM qa_evidence
 WHERE issue_id = $1 AND workspace_id = $2
 ORDER BY captured_at DESC
 LIMIT 1
@@ -38,6 +38,7 @@ func (q *Queries) GetLatestQAEvidenceForIssue(ctx context.Context, arg GetLatest
 		&i.ResultJson,
 		&i.CapturedAt,
 		&i.CreatedAt,
+		&i.Source,
 	)
 	return i, err
 }
@@ -131,15 +132,17 @@ INSERT INTO qa_evidence (
     verdict,
     summary,
     result_json,
+    source,
     captured_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
 ON CONFLICT (issue_id, baseline_ref, branch_sha) DO UPDATE
 SET verdict     = EXCLUDED.verdict,
     summary     = EXCLUDED.summary,
     result_json = EXCLUDED.result_json,
+    source      = EXCLUDED.source,
     captured_at = now()
-RETURNING id, workspace_id, issue_id, baseline_ref, branch_sha, verdict, summary, result_json, captured_at, created_at
+RETURNING id, workspace_id, issue_id, baseline_ref, branch_sha, verdict, summary, result_json, captured_at, created_at, source
 `
 
 type UpsertQAEvidenceParams struct {
@@ -150,6 +153,7 @@ type UpsertQAEvidenceParams struct {
 	Verdict     string      `json:"verdict"`
 	Summary     string      `json:"summary"`
 	ResultJson  []byte      `json:"result_json"`
+	Source      string      `json:"source"`
 }
 
 // QA evidence — the durable, evidence-first QA verdict per (issue, baseline, sha).
@@ -167,6 +171,7 @@ func (q *Queries) UpsertQAEvidence(ctx context.Context, arg UpsertQAEvidencePara
 		arg.Verdict,
 		arg.Summary,
 		arg.ResultJson,
+		arg.Source,
 	)
 	var i QaEvidence
 	err := row.Scan(
@@ -180,6 +185,7 @@ func (q *Queries) UpsertQAEvidence(ctx context.Context, arg UpsertQAEvidencePara
 		&i.ResultJson,
 		&i.CapturedAt,
 		&i.CreatedAt,
+		&i.Source,
 	)
 	return i, err
 }

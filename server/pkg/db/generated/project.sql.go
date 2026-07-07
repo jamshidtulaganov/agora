@@ -11,6 +11,36 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const appendProjectQuarantineEntry = `-- name: AppendProjectQuarantineEntry :execrows
+UPDATE project SET
+    settings = jsonb_set(
+        COALESCE(settings, '{}'::jsonb),
+        '{qa_quarantine}',
+        COALESCE(settings->'qa_quarantine', '[]'::jsonb) || to_jsonb($1::text)
+    ),
+    updated_at = now()
+WHERE id = $2 AND workspace_id = $3
+  AND NOT (COALESCE(settings->'qa_quarantine', '[]'::jsonb) ? $1::text)
+`
+
+type AppendProjectQuarantineEntryParams struct {
+	CaseID      string      `json:"case_id"`
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// Auto-flake quarantine: atomically append a test_case id to
+// settings.qa_quarantine (jsonb array) unless already present. jsonb-level
+// append (not read-modify-write) so concurrent captures can't clobber the
+// list — same discipline as MergeProjectCoverageEntry.
+func (q *Queries) AppendProjectQuarantineEntry(ctx context.Context, arg AppendProjectQuarantineEntryParams) (int64, error) {
+	result, err := q.db.Exec(ctx, appendProjectQuarantineEntry, arg.CaseID, arg.ID, arg.WorkspaceID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const countIssuesByProject = `-- name: CountIssuesByProject :one
 SELECT count(*) FROM issue
 WHERE project_id = $1

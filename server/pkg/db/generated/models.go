@@ -682,6 +682,7 @@ type QaEvidence struct {
 	ResultJson  []byte             `json:"result_json"`
 	CapturedAt  pgtype.Timestamptz `json:"captured_at"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	Source      string             `json:"source"`
 }
 
 type Skill struct {

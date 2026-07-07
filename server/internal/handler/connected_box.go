@@ -514,20 +514,31 @@ func boxSmokeURL(box db.ConnectedBox) string {
 func (h *Handler) performBoxSync(ctx context.Context, box db.ConnectedBox, branch, keyPath string) (db.ConnectedBox, bool, string) {
 	// Serialize git-sync per box so concurrent fetch+checkout into the box's one
 	// served work_dir can't interleave (one session's fetch updating FETCH_HEAD
-	// while another checks it out → a half-checked-out tree). Use a NON-BLOCKING
-	// box-scoped advisory lock: if another sync of this box is already in flight,
-	// SKIP the redundant fetch+checkout rather than block (and hold a pooled
-	// connection) — in the shared-sprint-branch model every QA task syncs the SAME
-	// branch, so the in-flight sync already converges the box on the right tip. The
-	// lock is held (tx open) across the SSH sync and released on tx rollback at
-	// return. Best-effort: a lock-infra error proceeds unlocked rather than fail.
+	// while another checks it out → a half-checked-out tree). The lock is
+	// BLOCKING (audit P1): the old try-lock returned ok=true on contention and
+	// skipped the sync, which was only sound when both callers wanted the SAME
+	// branch — when a feature-branch deploy raced a sprint-branch regression on
+	// the same box, the loser reported success while the box served the OTHER
+	// branch, and QA recorded a verdict against the wrong code. Blocking waits
+	// for the in-flight sync, then this sync checks out the branch IT was asked
+	// for — both callers end verified on their own request (last write wins on
+	// the box, but neither is lied to). Skip only when the box already serves
+	// this exact branch after the wait. Best-effort on lock-infra errors.
 	if lockTx, err := h.TxStarter.Begin(ctx); err == nil {
 		defer func() { _ = lockTx.Rollback(ctx) }()
-		var got bool
-		if qerr := lockTx.QueryRow(ctx,
-			`SELECT pg_try_advisory_xact_lock(hashtext($1))`,
-			"connected_box:"+uuidToString(box.ID)).Scan(&got); qerr == nil && !got {
-			return box, true, "(box sync already in progress for the same branch; skipped redundant sync)"
+		if _, qerr := lockTx.Exec(ctx,
+			`SELECT pg_advisory_xact_lock(hashtext($1))`,
+			"connected_box:"+uuidToString(box.ID)); qerr == nil {
+			// We now hold the lock. Re-read the box: if the winner just synced
+			// the SAME branch we want, the redundant fetch+checkout can be
+			// skipped — but never for a different branch.
+			if cur, rerr := h.Queries.GetConnectedBox(ctx, db.GetConnectedBoxParams{
+				ID: box.ID, WorkspaceID: box.WorkspaceID,
+			}); rerr == nil && cur.Status == "online" &&
+				strings.TrimSpace(cur.LastBranch) == branch && branch != "" &&
+				cur.LastBootstrapAt.Valid && time.Since(cur.LastBootstrapAt.Time) < 2*time.Minute {
+				return cur, true, "(box just synced this same branch; skipped redundant sync)"
+			}
 		}
 	}
 	out, syncErr := syncBoxBranch(ctx, box, branch, remoteBoxesGitToken(), keyPath, sshRunner{})
@@ -741,6 +752,11 @@ type sprintRegressionPayload struct {
 	// the project base suite — instead of inferring scope from the branch diff
 	// alone. Empty = fall back to whole-branch regression.
 	Tasks []sprintRegressionTask `json:"tasks,omitempty"`
+	// Directive carries the scope-keyed baseline guidance (the same text issue
+	// slices get) so the whole-branch fallback isn't a bare JSON blob the agent
+	// must interpret unaided (audit P1: the rich contract never reached the
+	// autopilot run).
+	Directive string `json:"directive,omitempty"`
 }
 
 type sprintRegressionTask struct {
@@ -800,7 +816,8 @@ func (h *Handler) DispatchSprintRegression(ctx context.Context, sprintID, wsID p
 
 	payload, err := json.Marshal(sprintRegressionPayload{
 		Scope: "regression", Branch: branch, Baseline: "sprint-root", SprintID: uuidToString(sprint.ID),
-		Tasks: tasks,
+		Tasks:     tasks,
+		Directive: strings.TrimSpace(qaBaselineGuidanceFor("regression")),
 	})
 	if err != nil {
 		return db.AutopilotRun{}, fmt.Errorf("marshal payload: %w", err)

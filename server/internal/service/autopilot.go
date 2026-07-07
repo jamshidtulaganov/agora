@@ -1115,13 +1115,21 @@ func (s *AutopilotService) buildIssueDescription(ap db.Autopilot, run db.Autopil
 		// curated tasks instead of skimming the raw JSON. Empty tasks (or a
 		// non-regression payload) leaves the whole-branch behavior untouched.
 		var reg struct {
-			Scope string `json:"scope"`
-			Tasks []struct {
+			Scope     string `json:"scope"`
+			Directive string `json:"directive"`
+			Tasks     []struct {
 				Key   string `json:"key"`
 				Title string `json:"title"`
 			} `json:"tasks"`
 		}
-		if json.Unmarshal(run.TriggerPayload, &reg) == nil && reg.Scope == "regression" && len(reg.Tasks) > 0 {
+		regOK := json.Unmarshal(run.TriggerPayload, &reg) == nil && reg.Scope == "regression"
+		if regOK && strings.TrimSpace(reg.Directive) != "" {
+			// The baseline contract for the whole-branch run — without it the
+			// empty-tasks fallback shipped the agent nothing but raw JSON.
+			b.WriteString("\n\n")
+			b.WriteString(strings.TrimSpace(reg.Directive))
+		}
+		if regOK && len(reg.Tasks) > 0 {
 			b.WriteString("\n\nREGRESSION SCOPE — test ONLY these sprint tasks. For each, run its promoted test cases plus the project base suite; a failure in any listed task or the base suite blocks the sprint:")
 			for _, t := range reg.Tasks {
 				b.WriteString("\n- ")

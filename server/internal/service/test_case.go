@@ -201,6 +201,14 @@ func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, conte
 			continue
 		}
 		inserted++
+		// Auto-flake quarantine (audit P1): a standing BASE case failing across
+		// DIFFERENT issues is wedging the whole project's gate ("a base-script
+		// failure blocks qa:pass" for everyone). Three consecutive fails over
+		// ≥2 distinct issues = systemic (flaky or stale), not a regression in
+		// any one change — park it. Manual un-quarantine is the exit.
+		if projectBase && status == "fail" {
+			s.maybeAutoQuarantineBaseCase(ctx, issue, tc)
+		}
 	}
 	if inserted == 0 {
 		return
@@ -214,6 +222,38 @@ func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, conte
 		Payload:     map[string]any{"issue_id": util.UUIDToString(issue.ID)},
 	})
 	slog.Info("agent test runs captured", "issue_id", util.UUIDToString(issue.ID), "count", inserted)
+}
+
+// maybeAutoQuarantineBaseCase parks a standing base case in
+// project.settings.qa_quarantine when its last 3 runs are all failures across
+// at least 2 distinct issues — systemic breakage (flaky or testing obsolete
+// behavior), not a regression in any single change. Best-effort.
+func (s *TaskService) maybeAutoQuarantineBaseCase(ctx context.Context, issue db.Issue, tc db.TestCase) {
+	runs, err := s.Queries.ListRecentRunsForCase(ctx, db.ListRecentRunsForCaseParams{
+		TestCaseID: tc.ID, Limit: 3,
+	})
+	if err != nil || len(runs) < 3 {
+		return
+	}
+	issues := map[string]bool{}
+	for _, r := range runs {
+		if r.Status != "fail" {
+			return
+		}
+		issues[util.UUIDToString(r.IssueID)] = true
+	}
+	if len(issues) < 2 {
+		return // repeated fails within ONE issue may be that change's real regression
+	}
+	n, err := s.Queries.AppendProjectQuarantineEntry(ctx, db.AppendProjectQuarantineEntryParams{
+		ID: tc.ProjectID, WorkspaceID: issue.WorkspaceID, CaseID: util.UUIDToString(tc.ID),
+	})
+	if err != nil || n == 0 {
+		return // already quarantined, or best-effort failure
+	}
+	slog.Warn("auto-quarantined flaky base case — failing across distinct issues",
+		"test_case_id", util.UUIDToString(tc.ID), "title", tc.Title,
+		"project_id", util.UUIDToString(tc.ProjectID))
 }
 
 // CaptureCompiledScripts persists a compile_tests agent's ```scripts``` block —

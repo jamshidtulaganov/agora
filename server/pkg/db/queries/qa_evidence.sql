@@ -14,13 +14,15 @@ INSERT INTO qa_evidence (
     verdict,
     summary,
     result_json,
+    source,
     captured_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
 ON CONFLICT (issue_id, baseline_ref, branch_sha) DO UPDATE
 SET verdict     = EXCLUDED.verdict,
     summary     = EXCLUDED.summary,
     result_json = EXCLUDED.result_json,
+    source      = EXCLUDED.source,
     captured_at = now()
 RETURNING *;
 

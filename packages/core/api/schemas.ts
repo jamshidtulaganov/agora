@@ -996,6 +996,7 @@ export const QAEvidenceSchema = z.object({
   baseline_ref: z.string().default(""),
   branch_sha: z.string().default(""),
   verdict: z.string().default(""),
+  source: z.string().default(""),
   summary: z.string().default(""),
   result: QAResultSchema.nullable().default(null),
   captured_at: z.string().default(""),
@@ -1174,6 +1175,7 @@ export const SprintReadinessResponseSchema = z
                 triggered_at: z.string().default(""),
                 completed_at: z.string().default(""),
                 reason: z.string().default(""),
+                run_issue_id: z.string().default(""),
               })
               .loose()
               .nullable()

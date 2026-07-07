@@ -467,6 +467,44 @@ func (q *Queries) ListLatestRunsForProjectBaseCases(ctx context.Context, arg Lis
 	return items, nil
 }
 
+const listRecentRunsForCase = `-- name: ListRecentRunsForCase :many
+SELECT status, issue_id FROM test_run
+WHERE test_case_id = $1
+ORDER BY created_at DESC
+LIMIT $2
+`
+
+type ListRecentRunsForCaseParams struct {
+	TestCaseID pgtype.UUID `json:"test_case_id"`
+	Limit      int32       `json:"limit"`
+}
+
+type ListRecentRunsForCaseRow struct {
+	Status  string      `json:"status"`
+	IssueID pgtype.UUID `json:"issue_id"`
+}
+
+// Auto-flake input: the case's most recent runs (any issue), newest first.
+func (q *Queries) ListRecentRunsForCase(ctx context.Context, arg ListRecentRunsForCaseParams) ([]ListRecentRunsForCaseRow, error) {
+	rows, err := q.db.Query(ctx, listRecentRunsForCase, arg.TestCaseID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRecentRunsForCaseRow{}
+	for rows.Next() {
+		var i ListRecentRunsForCaseRow
+		if err := rows.Scan(&i.Status, &i.IssueID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTestCasesForIssue = `-- name: ListTestCasesForIssue :many
 SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script FROM test_case
 WHERE issue_id = $1 AND workspace_id = $2 AND archived_at IS NULL
@@ -621,6 +659,11 @@ SELECT tc.workspace_id, NULL, $2, '[' || $3::text || '] ' || tc.title,
        tc.steps, tc.expected, 'automated', 'promoted', tc.author_type, tc.author_id, tc.category, tc.script
 FROM test_case tc
 WHERE tc.issue_id = $1 AND tc.kind = 'automated' AND tc.archived_at IS NULL
+  AND (
+    SELECT r.status FROM test_run r
+    WHERE r.test_case_id = tc.id
+    ORDER BY r.created_at DESC LIMIT 1
+  ) = 'pass'
   AND NOT EXISTS (
     SELECT 1 FROM test_case e
     WHERE e.project_id = $2 AND e.issue_id IS NULL AND e.archived_at IS NULL
@@ -638,6 +681,10 @@ type PromoteIssueTestCasesToProjectParams struct {
 // into the project's standing base scripts (issue_id NULL) with a "[KEY] "
 // title prefix, so every future QA run regression-tests the finished work.
 // Dedupe by prefixed title against live base rows — re-fires are no-ops.
+// Only cases whose LATEST run PASSED are promoted (audit P1): the base suite
+// blocks qa:pass for EVERY future issue in the project, so immortalizing a
+// case that never ran — or last ran red — pollutes every gate with a
+// manufactured regression. Verified-green-at-promotion is the entry bar.
 func (q *Queries) PromoteIssueTestCasesToProject(ctx context.Context, arg PromoteIssueTestCasesToProjectParams) (int64, error) {
 	result, err := q.db.Exec(ctx, promoteIssueTestCasesToProject, arg.IssueID, arg.ProjectID, arg.IssueKey)
 	if err != nil {

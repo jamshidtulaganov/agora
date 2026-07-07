@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Gauge, Timer, ShieldCheck, ShieldAlert, Code2, Zap } from "lucide-react";
 import { api } from "@agora/core/api";
+import { useWorkspaceId } from "@agora/core/hooks";
 
 // QA Metrics — reads regression as a first-class signal: how much the suite
 // runs, how green it stays, how fast each QA agent is, and how far the
@@ -47,8 +48,10 @@ function StatCard({
 }
 
 export function QAMetricsView({ projectId }: { projectId?: string }) {
+  const wsId = useWorkspaceId();
   const { data, isLoading } = useQuery({
-    queryKey: ["qa-metrics", projectId ?? "all"],
+    // wsId in the key — same cross-workspace staleness fix as the sprint tab.
+    queryKey: ["qa-metrics", wsId, projectId ?? "all"],
     queryFn: () => api.getQAMetrics(projectId),
     staleTime: 30_000,
     refetchInterval: 60_000,

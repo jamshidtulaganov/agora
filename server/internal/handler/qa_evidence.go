@@ -22,6 +22,7 @@ type QAEvidenceResponse struct {
 	BaselineRef string          `json:"baseline_ref"`
 	BranchSha   string          `json:"branch_sha"`
 	Verdict     string          `json:"verdict"`
+	Source      string          `json:"source"`
 	Summary     string          `json:"summary"`
 	Result      json.RawMessage `json:"result"`
 	CapturedAt  string          `json:"captured_at"`
@@ -38,6 +39,7 @@ func qaEvidenceToResponse(e db.QaEvidence) QAEvidenceResponse {
 		BaselineRef: e.BaselineRef,
 		BranchSha:   e.BranchSha,
 		Verdict:     e.Verdict,
+		Source:      e.Source,
 		Summary:     e.Summary,
 		Result:      result,
 		CapturedAt:  e.CapturedAt.Time.Format(time.RFC3339),

@@ -1101,11 +1101,18 @@ func (h *Handler) enforceQAGateBeforeDone(ctx context.Context, issue db.Issue, a
 	if !qaGateEnforced() {
 		return targetStatus, false
 	}
-	if prevStatus == "in_review" {
-		return targetStatus, false
-	}
 	if !h.issueDevOrchestrated(ctx, issue) {
 		return targetStatus, false
+	}
+	// A present qa:fail ALWAYS blocks done — the audit found in_review→done was
+	// ungated, so an issue the cockpit showed as "need fix" could be closed
+	// anyway, splitting the done-gate from the merge gate and the cockpit lane.
+	// The label is replace-on-write now, so a stale fail can't wedge this: a
+	// re-QA pass (or a human triage Pass) removes it. The same applies to a
+	// missing verdict: leaving in_review straight to done without qa:pass is
+	// the silent-green path the watchdog exists to catch.
+	if h.issueHasLabel(ctx, issue, "qa:fail") {
+		return "in_review", true
 	}
 	if h.issueHasLabel(ctx, issue, "qa:pass") {
 		// qa:pass present. Unless test-accuracy is enforced, that's enough.
@@ -2495,7 +2502,15 @@ func (h *Handler) sliceActionProjectBaseSuiteContext(ctx context.Context, issue 
 		}
 		cases = kept
 		if len(cases) == 0 {
-			return ""
+			// Every base case is quarantined: the regression gate is effectively
+			// OFF for this project. Say so loudly instead of silently injecting
+			// nothing — a fully-parked suite reading as "no regression to run"
+			// was an audit finding (coverage dropped to zero with no signal).
+			slog.Warn("project base suite fully quarantined — regression gate is a no-op",
+				"project_id", uuidToString(issue.ProjectID))
+			return " PROJECT BASE SCRIPTS: every standing regression case is currently QUARANTINED, so NO base-suite " +
+				"regression will run for this issue. Note this in your verdict summary — the project's regression gate " +
+				"is effectively disabled until cases are un-quarantined or replaced."
 		}
 	}
 	var b strings.Builder

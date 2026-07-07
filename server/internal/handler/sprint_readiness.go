@@ -40,6 +40,9 @@ type sprintRegressionGate struct {
 	TriggeredAt string `json:"triggered_at"`
 	CompletedAt string `json:"completed_at"`
 	Reason      string `json:"reason"`
+	// RunIssueID is the regression run's tracking issue — the click-through
+	// target (empty for run_only autopilots that carry no issue).
+	RunIssueID string `json:"run_issue_id"`
 }
 
 type sprintReadiness struct {
@@ -151,6 +154,9 @@ func (h *Handler) GetSprintReadiness(w http.ResponseWriter, r *http.Request) {
 		// Regression gate: the sprint's latest whole-branch regression run.
 		if run, err := h.Queries.LatestSprintRegressionRun(ctx, []byte(uuidToString(s.ID))); err == nil {
 			g := &sprintRegressionGate{Status: run.Status, Source: run.Source}
+			if run.IssueID.Valid {
+				g.RunIssueID = uuidToString(run.IssueID)
+			}
 			if run.TriggeredAt.Valid {
 				g.TriggeredAt = run.TriggeredAt.Time.Format(time.RFC3339)
 			}

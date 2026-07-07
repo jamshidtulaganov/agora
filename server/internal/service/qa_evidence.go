@@ -82,6 +82,7 @@ func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, con
 		Verdict:     p.Verdict,
 		Summary:     p.Summary,
 		ResultJson:  []byte(raw),
+		Source:      "agent",
 	}); err != nil {
 		slog.Warn("capture qa evidence: upsert failed", "error", err, "issue_id", util.UUIDToString(issue.ID))
 		return "", false

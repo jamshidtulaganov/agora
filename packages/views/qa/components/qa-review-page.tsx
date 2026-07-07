@@ -280,6 +280,14 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
                 <div className="flex items-center gap-2">
                   {verdictIcon(verdict, "size-4 shrink-0")}
                   <span className="text-sm font-medium">{verdictLabel}</span>
+                  {/* Provenance: who produced this verdict — a real agent run vs
+                      machinery — so an auto-state can't masquerade as a tested
+                      regression (audit P1). "" from older rows = agent. */}
+                  {evidence && (
+                    <span className="shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                      {evidence.source || "agent"}
+                    </span>
+                  )}
                   {evidence?.captured_at && (
                     <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
                       {new Date(evidence.captured_at).toLocaleString()}

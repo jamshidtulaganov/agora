@@ -12,7 +12,7 @@ import (
 )
 
 const latestSprintRegressionRun = `-- name: LatestSprintRegressionRun :one
-SELECT status, source, triggered_at, completed_at, failure_reason
+SELECT id, issue_id, status, source, triggered_at, completed_at, failure_reason
 FROM autopilot_run
 WHERE trigger_payload->>'sprint_id' = $1
 ORDER BY triggered_at DESC
@@ -20,6 +20,8 @@ LIMIT 1
 `
 
 type LatestSprintRegressionRunRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	IssueID       pgtype.UUID        `json:"issue_id"`
 	Status        string             `json:"status"`
 	Source        string             `json:"source"`
 	TriggeredAt   pgtype.Timestamptz `json:"triggered_at"`
@@ -30,10 +32,14 @@ type LatestSprintRegressionRunRow struct {
 // The most recent whole-branch regression autopilot run for a sprint (daily
 // backstop or sprint-end gate) — the "is the branch green?" signal. Keyed on
 // the sprint id stashed in the dispatch payload (autopilot_run has no sprint fk).
+// issue_id = the run's tracking issue (create_issue mode) — the click-through
+// target so "regression failed" isn't a dead-end chip (audit P1).
 func (q *Queries) LatestSprintRegressionRun(ctx context.Context, triggerPayload []byte) (LatestSprintRegressionRunRow, error) {
 	row := q.db.QueryRow(ctx, latestSprintRegressionRun, triggerPayload)
 	var i LatestSprintRegressionRunRow
 	err := row.Scan(
+		&i.ID,
+		&i.IssueID,
 		&i.Status,
 		&i.Source,
 		&i.TriggeredAt,
