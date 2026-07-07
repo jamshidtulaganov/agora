@@ -1339,9 +1339,24 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 							"agent_id", util.UUIDToString(task.AgentID),
 						)
 					} else {
+						// createAgentComment captures the structured blocks (test-runs /
+						// test-cases / qa-result) from the posted body.
 						s.createAgentComment(ctx, task.IssueID, task.AgentID, redact.Text(body), "comment", task.TriggerCommentID)
 					}
 				}
+			}
+		} else if agentCommented {
+			// The fallback comment is suppressed because the agent already posted
+			// during the run — but the authoritative structured output
+			// (```test-runs``` / ```test-cases``` / ```qa-result```) lives in the
+			// FINAL result, which interim progress comments don't carry. Without
+			// this, a run_test_cases block emitted only in the final output is
+			// never captured → test_run rows never recorded → base-suite
+			// promotion never fires (task_b0f15704). Capture directly from the
+			// final output; no comment is posted (the agent already did).
+			var payload protocol.TaskCompletedPayload
+			if err := json.Unmarshal(result, &payload); err == nil && strings.TrimSpace(payload.Output) != "" {
+				s.captureStructuredResult(ctx, task.IssueID, task.AgentID, util.UnescapeBackslashEscapes(payload.Output))
 			}
 		}
 	}
@@ -2375,6 +2390,41 @@ func (s *TaskService) getIssuePrefix(workspaceID pgtype.UUID) string {
 		return ""
 	}
 	return ws.IssuePrefix
+}
+
+// captureStructuredResult runs the fenced-block captures (test-runs, test-cases,
+// compiled scripts, qa-result evidence) on an agent's FINAL task output WITHOUT
+// posting a comment — used when the visible-comment fallback is suppressed
+// because the agent already commented during the run, so a structured block
+// that lives only in the final result still gets persisted. Also fires
+// base-suite promotion when the block's runs land on an already-done issue
+// (mirrors the comment-handler chain hook, which never runs on this path).
+func (s *TaskService) captureStructuredResult(ctx context.Context, issueID, agentID pgtype.UUID, content string) {
+	if strings.TrimSpace(content) == "" {
+		return
+	}
+	issue, err := s.Queries.GetIssue(ctx, issueID)
+	if err != nil {
+		return
+	}
+	s.CaptureQAEvidence(ctx, issue, content)
+	s.CaptureTestCases(ctx, issue, content, agentID)
+	s.CaptureTestRuns(ctx, issue, content, agentID)
+	s.CaptureCompiledScripts(ctx, issue, content, agentID)
+	// Base-suite chaining: run_test_cases runs recorded on an already-done
+	// tracking issue promote its cases into the standing project suite. The
+	// handler chain-hook fires on a comment POST; this path posts none, so do
+	// it here. Idempotent (SQL dedups; the green-latest-run gate still applies).
+	if issue.Status == "done" && issue.ProjectID.Valid {
+		if ws, werr := s.Queries.GetWorkspace(ctx, issue.WorkspaceID); werr == nil {
+			issueKey := fmt.Sprintf("%s-%d", ws.IssuePrefix, issue.Number)
+			if _, perr := s.Queries.PromoteIssueTestCasesToProject(ctx, db.PromoteIssueTestCasesToProjectParams{
+				IssueID: issue.ID, ProjectID: issue.ProjectID, IssueKey: issueKey,
+			}); perr != nil {
+				slog.Warn("captureStructuredResult: promotion failed", "issue_id", util.UUIDToString(issue.ID), "error", perr)
+			}
+		}
+	}
 }
 
 func (s *TaskService) createAgentComment(ctx context.Context, issueID, agentID pgtype.UUID, content, commentType string, parentID pgtype.UUID) {

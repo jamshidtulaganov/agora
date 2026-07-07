@@ -83,3 +83,58 @@ func TestCaptureTestRunsRealBlock(t *testing.T) {
 		t.Fatalf("expected 1 test_run recorded from the real block, got %d — capture logic is the fault", runs)
 	}
 }
+
+// TestCaptureStructuredResultPromotes covers the delivery-path fix: when the
+// visible-comment fallback is suppressed (agent already commented mid-run), the
+// final output's ```test-runs``` block is still captured, and on an
+// already-done tracking issue the cases promote into the standing base suite.
+func TestCaptureStructuredResultPromotes(t *testing.T) {
+	pool := knowledgeTestPool(t)
+	ctx := context.Background()
+	q := db.New(pool)
+	wsID := seedKnowledgeWorkspace(t, pool)
+
+	var projectID string
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO project (workspace_id, title, status, priority) VALUES ($1,'csr-proj','planned','none') RETURNING id`,
+		util.UUIDToString(wsID)).Scan(&projectID); err != nil {
+		t.Fatalf("project: %v", err)
+	}
+	var userID string
+	if err := pool.QueryRow(ctx, `INSERT INTO "user" (name,email) VALUES ('csr',$1) RETURNING id`, "csr-"+uuid.NewString()[:8]+"@x.dev").Scan(&userID); err != nil {
+		t.Fatalf("user: %v", err)
+	}
+	// DONE tracking issue (base-suite shape).
+	var issueID string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO issue (workspace_id,title,status,creator_type,creator_id,project_id,number)
+		VALUES ($1,'csr issue','done','member',$2,$3,7) RETURNING id`,
+		util.UUIDToString(wsID), userID, projectID).Scan(&issueID); err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	var runtimeID, agentID string
+	pool.QueryRow(ctx, `INSERT INTO agent_runtime (workspace_id,name,runtime_mode,provider,status,metadata,last_seen_at) VALUES ($1,'csr-rt','cloud','claude','online','{}'::jsonb,now()) RETURNING id`, util.UUIDToString(wsID)).Scan(&runtimeID)
+	pool.QueryRow(ctx, `INSERT INTO agent (workspace_id,name,runtime_mode,runtime_config,runtime_id,visibility,max_concurrent_tasks) VALUES ($1,'QA Tester','cloud','{}'::jsonb,$2,'workspace',3) RETURNING id`, util.UUIDToString(wsID), runtimeID).Scan(&agentID)
+	var caseID string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO test_case (workspace_id,issue_id,project_id,title,steps,expected,kind,source,author_type,author_id,category,script)
+		VALUES ($1,$2,$3,'[e2e] golden','open','ok','automated','agent','agent',$4,'positive','node x.mjs') RETURNING id`,
+		util.UUIDToString(wsID), issueID, projectID, agentID).Scan(&caseID); err != nil {
+		t.Fatalf("case: %v", err)
+	}
+
+	svc := NewTaskService(q, pool, nil, events.New())
+	content := fmt.Sprintf("done\n\n```test-runs\n[{\"test_case_id\":\"%s\",\"status\":\"pass\",\"output\":\"ok\",\"baseline_status\":\"unknown\"}]\n```", caseID)
+
+	svc.captureStructuredResult(ctx, util.MustParseUUID(issueID), util.MustParseUUID(agentID), content)
+
+	var runs, promoted int
+	pool.QueryRow(ctx, `SELECT count(*) FROM test_run WHERE test_case_id=$1`, caseID).Scan(&runs)
+	pool.QueryRow(ctx, `SELECT count(*) FROM test_case WHERE project_id=$1 AND issue_id IS NULL AND kind='automated' AND script<>''`, projectID).Scan(&promoted)
+	if runs != 1 {
+		t.Fatalf("expected 1 run recorded from final output, got %d", runs)
+	}
+	if promoted != 1 {
+		t.Fatalf("expected 1 case promoted to standing base suite, got %d", promoted)
+	}
+}
