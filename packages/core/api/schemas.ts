@@ -990,6 +990,25 @@ export const QAResultSchema = z.object({
   }).loose().nullable().catch(null).default(null),
 }).loose();
 
+// Freshest verdict per in_review issue for the cockpit rows (GET /api/qa/verdicts).
+export const QAVerdictsResponseSchema = z.object({
+  verdicts: z
+    .record(
+      z.string(),
+      z.object({
+        verdict: z.string().default(""),
+        source: z.string().default(""),
+        summary: z.string().default(""),
+        captured_at: z.string().default(""),
+      }).loose(),
+    )
+    .default({}),
+}).loose();
+
+export type QAVerdictsResponse = z.infer<typeof QAVerdictsResponseSchema>;
+
+export const EMPTY_QA_VERDICTS: QAVerdictsResponse = { verdicts: {} };
+
 export const QAEvidenceSchema = z.object({
   id: z.string().default(""),
   issue_id: z.string().default(""),

@@ -285,6 +285,9 @@ import {
   EditorTokensResponseSchema,
   EMPTY_EDITOR_TOKENS,
   type EditorTokensResponse,
+  QAVerdictsResponseSchema,
+  EMPTY_QA_VERDICTS,
+  type QAVerdictsResponse,
 } from "./schemas";
 
 /** Identifies the calling client to the server.
@@ -2496,6 +2499,16 @@ export class ApiClient {
     const raw = await this.fetch<unknown>(`/api/qa/metrics${qs}`);
     return parseWithFallback(raw, QAMetricsResponseSchema, EMPTY_QA_METRICS, {
       endpoint: "GET /api/qa/metrics",
+    });
+  }
+
+  // Freshest QA verdict per in_review issue (reason + provenance + age for the
+  // cockpit rows), keyed by issue id. projectId scopes like the cockpit.
+  async listQAVerdicts(projectId?: string): Promise<QAVerdictsResponse> {
+    const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+    const raw = await this.fetch<unknown>(`/api/qa/verdicts${qs}`);
+    return parseWithFallback(raw, QAVerdictsResponseSchema, EMPTY_QA_VERDICTS, {
+      endpoint: "GET /api/qa/verdicts",
     });
   }
 

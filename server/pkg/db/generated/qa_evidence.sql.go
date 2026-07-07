@@ -47,6 +47,7 @@ const listQAEvidenceSummariesForIssues = `-- name: ListQAEvidenceSummariesForIss
 SELECT DISTINCT ON (issue_id)
     issue_id,
     verdict,
+    source,
     summary,
     baseline_ref,
     branch_sha,
@@ -65,6 +66,7 @@ type ListQAEvidenceSummariesForIssuesParams struct {
 type ListQAEvidenceSummariesForIssuesRow struct {
 	IssueID     pgtype.UUID        `json:"issue_id"`
 	Verdict     string             `json:"verdict"`
+	Source      string             `json:"source"`
 	Summary     string             `json:"summary"`
 	BaselineRef string             `json:"baseline_ref"`
 	BranchSha   string             `json:"branch_sha"`
@@ -85,6 +87,7 @@ func (q *Queries) ListQAEvidenceSummariesForIssues(ctx context.Context, arg List
 		if err := rows.Scan(
 			&i.IssueID,
 			&i.Verdict,
+			&i.Source,
 			&i.Summary,
 			&i.BaselineRef,
 			&i.BranchSha,

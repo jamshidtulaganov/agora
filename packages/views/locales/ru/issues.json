@@ -457,7 +457,9 @@
     "mismatch_kind_generic": "другое",
     "design_lint_heading": "Линт дизайн-системы",
     "design_lint_block": "блок",
-    "design_lint_warn": "предупр"
+    "design_lint_warn": "предупр",
+    "send_back": "Вернуть разработчику",
+    "sent_back": "Возвращено разработчику (qa:fail, в работе)"
   },
   "qa_bug": {
     "file_bug": "Завести баг",

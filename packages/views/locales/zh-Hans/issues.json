@@ -446,7 +446,9 @@
     "mismatch_kind_generic": "其他",
     "design_lint_heading": "设计系统检查",
     "design_lint_block": "阻断",
-    "design_lint_warn": "警告"
+    "design_lint_warn": "警告",
+    "send_back": "退回开发",
+    "sent_back": "已退回开发（qa:fail，进行中）"
   },
   "qa_bug": {
     "file_bug": "提交缺陷",

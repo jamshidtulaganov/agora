@@ -39,6 +39,7 @@ LIMIT 1;
 SELECT DISTINCT ON (issue_id)
     issue_id,
     verdict,
+    source,
     summary,
     baseline_ref,
     branch_sha,

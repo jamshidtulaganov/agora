@@ -45,12 +45,12 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
   const qc = useQueryClient();
   const { t } = useT("issues");
   const [bugOpen, setBugOpen] = useState(false);
-  // Review rail is collapsed by default — the live browser is the star of this
-  // page and needs the full width to render its CDP frame near native 1280px
-  // (a squeezed sidebar shrank it well below that). QA opens the rail on demand
-  // to read evidence and mark the verdict; the toggle carries a verdict dot so
-  // the pass/fail state stays legible even while it's closed.
-  const [railOpen, setRailOpen] = useState(false);
+  // Review rail: open by default — the verdict, checks and Pass/Fail all live
+  // here, and the audit's top ergonomics finding was that every single open
+  // cost a click before triage could start. The live browser still gets the
+  // majority of the width; QA can collapse the rail when it wants the full
+  // CDP frame, and the collapsed toggle carries a verdict dot.
+  const [railOpen, setRailOpen] = useState(true);
 
   const { data: issue, isLoading } = useQuery(issueDetailOptions(wsId, issueId));
   const actions = useIssueActions(issue ?? null);
@@ -102,6 +102,22 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
   // sprint-end autopilot configured) surfaces via the error toast; the button
   // doesn't pre-check sprint membership to avoid an extra round trip for a
   // state the toast already explains clearly.
+  // One-click "send back to dev": mark the fail verdict AND move the issue to
+  // in_progress so it leaves the QA queue and re-enters the dev loop — the
+  // audit found this daily action was a hidden 3-hop generic-menu detour.
+  const sendBack = useMutation({
+    mutationFn: async () => {
+      await setVerdict.mutateAsync("fail");
+      await api.updateIssue(issueId, { status: "in_progress" });
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, issueId) });
+      void qc.invalidateQueries({ queryKey: ["qa-cockpit", wsId] });
+      toast.success(t(($) => $.qa_review.sent_back));
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
+
   const runRegression = useMutation({
     mutationFn: () => api.runIssueSprintRegression(issueId),
     onSuccess: () => toast.success(t(($) => $.qa_review.run_regression_fired)),
@@ -400,7 +416,18 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
                   {t(($) => $.qa_evidence.rerun)}
                 </Button>
               </div>
-              {verdict === "fail" && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 w-full gap-1.5 text-[12px]"
+                disabled={sendBack.isPending}
+                onClick={() => sendBack.mutate()}
+              >
+                {sendBack.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <XCircle className="size-3.5" />}
+                {t(($) => $.qa_review.send_back)}
+              </Button>
+              {(verdict === "fail" || humanVerdict === "fail") && (
                 <Button
                   type="button"
                   size="sm"

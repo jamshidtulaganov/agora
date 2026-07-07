@@ -1035,6 +1035,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 			// QA speed / regression metrics (the QA Metrics page).
 			r.Get("/api/qa/metrics", h.GetQAMetrics)
+			// Freshest qa_evidence verdict per in_review issue — the cockpit
+			// rows' reason/provenance/age data (one call, keyed by issue id).
+			r.Get("/api/qa/verdicts", h.ListQAVerdicts)
 			// Sprint QA-readiness — per-active-sprint mergeable rollup + rows.
 			r.Get("/api/qa/sprint-readiness", h.GetSprintReadiness)
 

@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   ShieldAlert,
   ShieldCheck,
@@ -132,6 +133,51 @@ export function QAPage() {
       api.listIssues({ status: "in_review", limit: 200, ...(project !== "all" ? { project_id: project } : {}) }),
     staleTime: 15_000,
   });
+  // Freshest verdict per row (reason + provenance + age) — one batch call, so
+  // the lanes answer "why is this here" without opening each issue.
+  const { data: verdictData } = useQuery({
+    queryKey: ["qa-verdicts", wsId, project],
+    queryFn: () => api.listQAVerdicts(project !== "all" ? project : undefined),
+    staleTime: 15_000,
+  });
+  const verdicts = verdictData?.verdicts ?? {};
+
+  // Bulk triage selection (list view): 33 items in "Needs fix" must not mean
+  // 33 page-opens — select rows, act once from the sticky bar.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const toggleSelect = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const qc = useQueryClient();
+  const bulkInvalidate = () => {
+    setSelected(new Set());
+    void qc.invalidateQueries({ queryKey: ["qa-cockpit", wsId] });
+    void qc.invalidateQueries({ queryKey: ["qa-verdicts", wsId] });
+  };
+  const bulkRerunQA = useMutation({
+    mutationFn: async (ids: string[]) => {
+      for (const id of ids) await api.sliceAction(id, { kind: "run_qa" });
+    },
+    onSuccess: (_d, ids) => {
+      toast.success(`Re-run QA fired on ${ids.length} issue${ids.length === 1 ? "" : "s"}`);
+      bulkInvalidate();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Bulk re-run failed"),
+  });
+  const bulkSendBack = useMutation({
+    mutationFn: async (ids: string[]) => {
+      for (const id of ids) await api.updateIssue(id, { status: "in_progress" });
+    },
+    onSuccess: (_d, ids) => {
+      toast.success(`Sent ${ids.length} issue${ids.length === 1 ? "" : "s"} back to dev`);
+      bulkInvalidate();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Bulk send-back failed"),
+  });
 
   const issues = data?.issues ?? [];
 
@@ -254,13 +300,52 @@ export function QAPage() {
       ) : view === "list" ? (
         <div className="space-y-5">
           {LANES.map(({ key, ...lane }) => (
-            <Lane key={key} {...lane} issues={lanes[key]} href={wp.qaDetail} liveIssueIds={liveIssueIds} />
+            <Lane
+              key={key}
+              {...lane}
+              issues={lanes[key]}
+              href={wp.qaDetail}
+              liveIssueIds={liveIssueIds}
+              verdicts={verdicts}
+              selected={selected}
+              onToggleSelect={toggleSelect}
+              // Passed = already decided; collapsed by default so the triage
+              // view stays about what needs a human (it grew all sprint).
+              defaultCollapsed={key === "pass"}
+            />
           ))}
+
+          {selected.size > 0 && (
+            <div className="sticky bottom-3 z-10 mx-auto flex w-fit items-center gap-2 rounded-full border bg-card px-4 py-2 shadow-lg">
+              <span className="text-[12px] text-muted-foreground">{selected.size} selected</span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-[11px]"
+                disabled={bulkRerunQA.isPending}
+                onClick={() => bulkRerunQA.mutate([...selected])}
+              >
+                Re-run QA
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-[11px]"
+                disabled={bulkSendBack.isPending}
+                onClick={() => bulkSendBack.mutate([...selected])}
+              >
+                Send back to dev
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => setSelected(new Set())}>
+                Clear
+              </Button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           {LANES.map(({ key, ...lane }) => (
-            <BoardColumn key={key} {...lane} issues={lanes[key]} href={wp.qaDetail} liveIssueIds={liveIssueIds} />
+            <BoardColumn key={key} {...lane} issues={lanes[key]} href={wp.qaDetail} liveIssueIds={liveIssueIds} verdicts={verdicts} />
           ))}
         </div>
       )}
@@ -445,6 +530,7 @@ function BoardColumn({
   issues,
   href,
   liveIssueIds,
+  verdicts,
 }: {
   icon: typeof ShieldAlert;
   iconClass: string;
@@ -453,6 +539,7 @@ function BoardColumn({
   issues: Issue[];
   href: (id: string) => string;
   liveIssueIds?: Set<string>;
+  verdicts?: Record<string, import("./qa-lane").QAVerdictInfo>;
 }) {
   return (
     <section className="flex min-h-[200px] flex-col rounded-lg border bg-muted/20">
@@ -473,7 +560,7 @@ function BoardColumn({
               href={href(issue.id)}
               className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-[13px] hover:border-border-strong hover:bg-accent/50"
             >
-              <QAIssueRow issue={issue} isLive={liveIssueIds?.has(issue.id)} />
+              <QAIssueRow issue={issue} isLive={liveIssueIds?.has(issue.id)} verdictInfo={verdicts?.[issue.id]} />
             </AppLink>
           ))
         )}
