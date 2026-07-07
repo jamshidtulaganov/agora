@@ -138,7 +138,14 @@ func (h *Handler) BuildProjectBaseSuite(w http.ResponseWriter, r *http.Request) 
 	comment, cerr := h.Queries.CreateComment(r.Context(), db.CreateCommentParams{
 		IssueID: res.Issue.ID, WorkspaceID: project.WorkspaceID,
 		AuthorType: "agent", AuthorID: author.ID,
-		Content: baseSuitePromptTmpl + soloAutomationDirective, Type: "comment", ParentID: pgtype.UUID{Valid: false},
+		// Inject the project QA manifest (routes/auth/flows) + docs — the prompt
+		// tells the author to work FROM "the PROJECT QA MANIFEST in your
+		// context", so it must actually be here or the compiled scripts have no
+		// base_url/auth/routes to build on (same drop-bug fixed for run_qa).
+		Content: baseSuitePromptTmpl + soloAutomationDirective +
+			h.sliceActionQAManifestContext(r.Context(), res.Issue) +
+			h.sliceActionQADocsContext(r.Context(), res.Issue),
+		Type: "comment", ParentID: pgtype.UUID{Valid: false},
 	})
 	if cerr != nil {
 		writeError(w, http.StatusBadGateway, "failed to post authoring prompt: "+cerr.Error())
