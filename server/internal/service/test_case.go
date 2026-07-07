@@ -186,13 +186,13 @@ func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, conte
 			continue
 		}
 		if _, err := s.Queries.CreateTestRun(ctx, db.CreateTestRunParams{
-			WorkspaceID: issue.WorkspaceID,
-			TestCaseID:  tc.ID,
-			IssueID:     issue.ID,
-			Status:      status,
-			Output:      strings.TrimSpace(r.Output),
-			RunSource:   "agent",
-			RunByType:   "agent",
+			WorkspaceID:    issue.WorkspaceID,
+			TestCaseID:     tc.ID,
+			IssueID:        issue.ID,
+			Status:         status,
+			Output:         strings.TrimSpace(r.Output),
+			RunSource:      "agent",
+			RunByType:      "agent",
 			RunByID:        agentID,
 			TracePath:      strings.TrimSpace(r.TracePath),
 			BaselineStatus: baselineStatus,

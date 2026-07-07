@@ -74,10 +74,10 @@ type ModelListRequest struct {
 // field, which is fine: the UI hides the selector and the agent runs
 // with the runtime default.
 type ModelEntry struct {
-	ID       string         `json:"id"`
-	Label    string         `json:"label"`
-	Provider string         `json:"provider,omitempty"`
-	Default  bool           `json:"default,omitempty"`
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	Provider string `json:"provider,omitempty"`
+	Default  bool   `json:"default,omitempty"`
 	// Free / Category carry Agora free-model branding from the daemon's
 	// opencode overlay (see agent.annotateAgoraFree). The UI badges Free
 	// models and groups them by Category; both are display-only.

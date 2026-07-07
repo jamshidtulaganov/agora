@@ -30,7 +30,7 @@ type autonomyModuleStat struct {
 	Total    int                 `json:"total"` // issues with a QA verdict
 	Pass     int                 `json:"pass"`
 	Fail     int                 `json:"fail"`
-	Untested int                 `json:"untested"` // module issues with no QA verdict yet
+	Untested int                 `json:"untested"`  // module issues with no QA verdict yet
 	PassRate float64             `json:"pass_rate"` // pass / (pass+fail), 0 when none tested
 	ByAgent  []autonomyAgentStat `json:"by_agent"`
 }

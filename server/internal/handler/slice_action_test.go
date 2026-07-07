@@ -554,7 +554,9 @@ func attachLabelDirect(t *testing.T, ctx context.Context, issueID, name string) 
 	`, issueID, labelID); err != nil {
 		t.Fatalf("setup: attach label %q: %v", name, err)
 	}
-	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM issue_to_label WHERE issue_id = $1 AND label_id = $2`, issueID, labelID) })
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `DELETE FROM issue_to_label WHERE issue_id = $1 AND label_id = $2`, issueID, labelID)
+	})
 }
 
 // TestEnforceQAGateBeforeDone is the truth table for the structural QA gate:
