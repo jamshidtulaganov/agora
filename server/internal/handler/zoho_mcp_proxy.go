@@ -370,4 +370,3 @@ func (h *Handler) injectZohoMcpProxy(ctx context.Context, wsUUID pgtype.UUID, mc
 	}
 	return json.RawMessage(mergeMcpServers(mcpConfig, map[string]any{"zoho": entry}))
 }
-

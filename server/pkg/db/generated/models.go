@@ -682,6 +682,7 @@ type QaEvidence struct {
 	ResultJson  []byte             `json:"result_json"`
 	CapturedAt  pgtype.Timestamptz `json:"captured_at"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	Source      string             `json:"source"`
 }
 
 type Skill struct {
@@ -891,6 +892,15 @@ type User struct {
 	ProfileDescription      string             `json:"profile_description"`
 	// User-preferred IANA timezone for report rendering (Viewing tz). NULL means "use the browser-detected tz at render time". Affects dashboards, charts, and any "today" label shown to this user. Does not affect data materialisation — all rollups remain in UTC.
 	Timezone pgtype.Text `json:"timezone"`
+}
+
+type UserEditorToken struct {
+	UserID      pgtype.UUID        `json:"user_id"`
+	Provider    string             `json:"provider"`
+	TokenSealed []byte             `json:"token_sealed"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
 }
 
 type UserExternalIdentity struct {

@@ -2,9 +2,12 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -14,15 +17,15 @@ import (
 // round trips (a workspace rarely has more than a couple active sprints).
 
 type sprintReadinessIssue struct {
-	ID       string `json:"id"`
-	Number   int32  `json:"number"`
-	Title    string `json:"title"`
-	Status   string `json:"status"`
-	QAPass   bool   `json:"qa_pass"`
-	QAFail   bool   `json:"qa_fail"`
-	RunsPass int64  `json:"runs_pass"`
-	RunsFail int64  `json:"runs_fail"`
-	RunsTotal int64 `json:"runs_total"`
+	ID        string `json:"id"`
+	Number    int32  `json:"number"`
+	Title     string `json:"title"`
+	Status    string `json:"status"`
+	QAPass    bool   `json:"qa_pass"`
+	QAFail    bool   `json:"qa_fail"`
+	RunsPass  int64  `json:"runs_pass"`
+	RunsFail  int64  `json:"runs_fail"`
+	RunsTotal int64  `json:"runs_total"`
 	// verdict: the rolled-up state used for the row chip + the rollup counts.
 	// fail if qa:fail or any failing run; pass if qa:pass and no failing run;
 	// else pending.
@@ -30,13 +33,17 @@ type sprintReadinessIssue struct {
 }
 
 // sprintRegressionGate is the sprint's latest whole-branch regression run (the
-// daily backstop / sprint-end gate). Empty Status = never run.
+// sprint-end gate or a manual re-run; there is no scheduled daily run
+// today). Empty Status = never run.
 type sprintRegressionGate struct {
 	Status      string `json:"status"`
 	Source      string `json:"source"`
 	TriggeredAt string `json:"triggered_at"`
 	CompletedAt string `json:"completed_at"`
 	Reason      string `json:"reason"`
+	// RunIssueID is the regression run's tracking issue — the click-through
+	// target (empty for run_only autopilots that carry no issue).
+	RunIssueID string `json:"run_issue_id"`
 }
 
 type sprintReadiness struct {
@@ -76,8 +83,20 @@ func (h *Handler) GetSprintReadiness(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 
+	// Optional ?project_id scopes the cockpit to one project (the project
+	// selector); absent/blank = all sprint-mode projects (workspace-wide).
+	var projID pgtype.UUID
+	if raw := strings.TrimSpace(r.URL.Query().Get("project_id")); raw != "" {
+		if id, perr := util.ParseUUID(raw); perr == nil {
+			projID = id
+		}
+	}
+
 	resp := sprintReadinessResponse{Sprints: []sprintReadiness{}}
-	sprints, err := h.Queries.ListActiveSprintsForWorkspace(ctx, wsUUID)
+	sprints, err := h.Queries.ListActiveSprintsForWorkspace(ctx, db.ListActiveSprintsForWorkspaceParams{
+		WorkspaceID: wsUUID,
+		ProjectID:   projID,
+	})
 	if err != nil {
 		writeJSON(w, http.StatusOK, resp) // fail soft — empty rather than 500
 		return
@@ -132,13 +151,13 @@ func (h *Handler) GetSprintReadiness(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		sr.Total = len(sr.Issues)
-		// Mergeable = every issue passed and nothing failed (an empty sprint is
-		// not "mergeable" — nothing has been verified).
-		sr.Mergeable = sr.Total > 0 && sr.Failed == 0 && sr.Pending == 0
 
 		// Regression gate: the sprint's latest whole-branch regression run.
 		if run, err := h.Queries.LatestSprintRegressionRun(ctx, []byte(uuidToString(s.ID))); err == nil {
 			g := &sprintRegressionGate{Status: run.Status, Source: run.Source}
+			if run.IssueID.Valid {
+				g.RunIssueID = uuidToString(run.IssueID)
+			}
 			if run.TriggeredAt.Valid {
 				g.TriggeredAt = run.TriggeredAt.Time.Format(time.RFC3339)
 			}
@@ -150,6 +169,16 @@ func (h *Handler) GetSprintReadiness(w http.ResponseWriter, r *http.Request) {
 			}
 			sr.Regression = g
 		}
+
+		// Mergeable = every issue passed, nothing failed or pending, AND the
+		// whole-branch regression gate is green. The regression used to be a
+		// display-only sibling — a sprint could read "Mergeable" right next to
+		// a red "regression failed" chip (audit P0). An empty sprint is not
+		// "mergeable" (nothing has been verified); a sprint whose regression
+		// never ran or is still running is not mergeable either.
+		regressionGreen := sr.Regression != nil &&
+			(sr.Regression.Status == "completed" || sr.Regression.Status == "succeeded")
+		sr.Mergeable = sr.Total > 0 && sr.Failed == 0 && sr.Pending == 0 && regressionGreen
 		resp.Sprints = append(resp.Sprints, sr)
 	}
 

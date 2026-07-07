@@ -15,6 +15,7 @@
     "status": "Status",
     "progress": "Progress",
     "lead": "Lead",
+    "squad": "Squad",
     "created": "Created"
   },
   "status": {
@@ -36,6 +37,11 @@
     "assign_placeholder": "Assign lead...",
     "members_group": "Members",
     "agents_group": "Agents",
+    "no_results": "No results"
+  },
+  "squad": {
+    "no_squad": "No squad",
+    "assign_placeholder": "Bind squad...",
     "no_results": "No results"
   },
   "relative_date": {

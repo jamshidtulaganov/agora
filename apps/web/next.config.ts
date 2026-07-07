@@ -26,6 +26,13 @@ const allowedDevOrigins = process.env.CORS_ALLOWED_ORIGINS
 
 const nextConfig: NextConfig = {
   ...(process.env.STANDALONE === "true" ? { output: "standalone" as const } : {}),
+  // Next's trailing-slash normalization 308-redirects
+  // /editor/proxy/{token}/?folder=… to the slash-less form before the rewrite
+  // proxies it — which used to 404 on the backend (route was {token}/* only)
+  // and the editor iframe rendered the API's frame-ancestors CSP block instead
+  // of code-server. Skip the redirect so proxied paths pass through verbatim;
+  // app routes don't rely on trailing-slash redirects.
+  skipTrailingSlashRedirect: true,
   transpilePackages: ["@agora/core", "@agora/ui", "@agora/views"],
   // Type-checking runs in CI, not in the production image build. Skipping it
   // avoids the OOM (SIGKILL) the tsc pass hit on the Fly/Depot builder.
@@ -73,10 +80,35 @@ const nextConfig: NextConfig = {
           destination: `${remoteApiUrl}/telegram/:path*`,
         },
         {
+          // Live code editor reverse-proxy (cloud) — the iframe's entry URL is
+          // /editor/proxy/{token}/?folder=… . The generic :path* rule below
+          // loses the TRAILING slash when it splits/rejoins the params, and the
+          // slash-less form 307-bounces off the backend back into the same
+          // strip — an infinite redirect shown as a CSP-blocked iframe. Match
+          // the entry form explicitly and rewrite it verbatim, slash included.
+          source: "/editor/proxy/:token/",
+          destination: `${remoteApiUrl}/editor/proxy/:token/`,
+        },
+        {
           // Live code editor reverse-proxy (cloud) — backend /editor/proxy/{token}/*
           // streams code-server (HTTP + WebSocket) from the remote daemon.
           source: "/editor/:path*",
           destination: `${remoteApiUrl}/editor/:path*`,
+        },
+        {
+          // Live QA browser reverse-proxy (cloud) — backend
+          // /browser/proxy/{token}/editor/browser/* carries the CDP screencast
+          // (HTTP + WebSocket) from the remote daemon to the Live-testing bay.
+          source: "/browser/:path*",
+          destination: `${remoteApiUrl}/browser/:path*`,
+        },
+        {
+          // Playwright trace-viewer reverse-proxy (cloud) — backend
+          // /trace/proxy/{token}/* serves the show-trace viewer the QA panel
+          // iframes. Without this rule the iframe hits the Next 404 (whose
+          // frame-ancestors 'none' CSP blanks it) instead of the backend.
+          source: "/trace/:path*",
+          destination: `${remoteApiUrl}/trace/:path*`,
         },
         {
           source: "/uploads/:path*",

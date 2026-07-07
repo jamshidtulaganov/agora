@@ -123,3 +123,18 @@ UPDATE project SET
     updated_at = now()
 WHERE id = sqlc.arg('id') AND workspace_id = sqlc.arg('workspace_id')
 RETURNING *;
+
+-- name: AppendProjectQuarantineEntry :execrows
+-- Auto-flake quarantine: atomically append a test_case id to
+-- settings.qa_quarantine (jsonb array) unless already present. jsonb-level
+-- append (not read-modify-write) so concurrent captures can't clobber the
+-- list — same discipline as MergeProjectCoverageEntry.
+UPDATE project SET
+    settings = jsonb_set(
+        COALESCE(settings, '{}'::jsonb),
+        '{qa_quarantine}',
+        COALESCE(settings->'qa_quarantine', '[]'::jsonb) || to_jsonb(sqlc.arg('case_id')::text)
+    ),
+    updated_at = now()
+WHERE id = sqlc.arg('id') AND workspace_id = sqlc.arg('workspace_id')
+  AND NOT (COALESCE(settings->'qa_quarantine', '[]'::jsonb) ? sqlc.arg('case_id')::text);

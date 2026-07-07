@@ -13,6 +13,7 @@ import { api } from "@agora/core/api";
 import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
 import { useFileUpload } from "@agora/core/hooks/use-file-upload";
 import { useT } from "../../i18n";
+import { EditorAccountsSection } from "./editor-accounts-section";
 
 // Mirror server/internal/handler/auth.go:MaxProfileDescriptionLen. Counted in
 // JS String.length (UTF-16 code units) here while the server counts runes,
@@ -178,6 +179,8 @@ export function AccountTab() {
           </CardContent>
         </Card>
       </section>
+
+      <EditorAccountsSection />
     </div>
   );
 }

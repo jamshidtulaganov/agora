@@ -47,12 +47,18 @@ const zohoSprintsSyncTimeout = 20 * time.Minute
 
 // --- env config -------------------------------------------------------------
 
-func zohoSprintsClientID() string     { return strings.TrimSpace(os.Getenv("ZOHO_SPRINTS_CLIENT_ID")) }
-func zohoSprintsClientSecret() string { return strings.TrimSpace(os.Getenv("ZOHO_SPRINTS_CLIENT_SECRET")) }
-func zohoSprintsRefreshToken() string { return strings.TrimSpace(os.Getenv("ZOHO_SPRINTS_REFRESH_TOKEN")) }
-func zohoSprintsTeam() string         { return strings.TrimSpace(os.Getenv("ZOHO_SPRINTS_TEAM")) }
-func zohoSprintsAccountsHost() string { return strings.TrimSpace(os.Getenv("ZOHO_SPRINTS_ACCOUNTS_HOST")) }
-func zohoSprintsAPIHost() string      { return strings.TrimSpace(os.Getenv("ZOHO_SPRINTS_API_HOST")) }
+func zohoSprintsClientID() string { return strings.TrimSpace(os.Getenv("ZOHO_SPRINTS_CLIENT_ID")) }
+func zohoSprintsClientSecret() string {
+	return strings.TrimSpace(os.Getenv("ZOHO_SPRINTS_CLIENT_SECRET"))
+}
+func zohoSprintsRefreshToken() string {
+	return strings.TrimSpace(os.Getenv("ZOHO_SPRINTS_REFRESH_TOKEN"))
+}
+func zohoSprintsTeam() string { return strings.TrimSpace(os.Getenv("ZOHO_SPRINTS_TEAM")) }
+func zohoSprintsAccountsHost() string {
+	return strings.TrimSpace(os.Getenv("ZOHO_SPRINTS_ACCOUNTS_HOST"))
+}
+func zohoSprintsAPIHost() string { return strings.TrimSpace(os.Getenv("ZOHO_SPRINTS_API_HOST")) }
 
 // zohoSprintsConfigured reports whether the Zoho Sprints integration has the
 // minimum env (OAuth client id/secret + refresh token).

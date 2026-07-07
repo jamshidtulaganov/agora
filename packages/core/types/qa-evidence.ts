@@ -68,6 +68,9 @@ export interface QAEvidence {
   baseline_ref: string;
   branch_sha: string;
   verdict: string;
+  // Who produced this verdict: "agent" (run_qa), "human", or machinery
+  // ("watchdog"/"system"). Older servers omit it — treat "" as agent.
+  source?: string;
   summary: string;
   result: QAResult | null;
   captured_at: string;

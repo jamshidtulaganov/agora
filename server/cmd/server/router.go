@@ -570,6 +570,20 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// streams (HTTP + WebSocket) to the code-server the backend launched on
 		// the remote daemon for that token. Authed via the session cookie the
 		// iframe carries; the token is the per-session capability.
+		// The no-slash form redirects to the canonical slash form (serving at a
+		// slash-less base would break code-server's relative asset URLs). Web
+		// used to arrive slash-less because Next's trailing-slash normalization
+		// 308-stripped /editor/proxy/{token}/?folder=… before proxying; that
+		// fell through to the API 404 whose frame-ancestors 'none' CSP blocked
+		// the editor iframe. Next now skips that redirect
+		// (skipTrailingSlashRedirect), so this route is the defensive belt.
+		r.HandleFunc("/editor/proxy/{token}", func(w http.ResponseWriter, r *http.Request) {
+			target := r.URL.Path + "/"
+			if r.URL.RawQuery != "" {
+				target += "?" + r.URL.RawQuery
+			}
+			http.Redirect(w, r, target, http.StatusTemporaryRedirect)
+		})
 		r.HandleFunc("/editor/proxy/{token}/*", h.ProxyEditor)
 		// Playwright trace-viewer reverse-proxy (Slice 3 of QA observability):
 		// /trace/proxy/{token}/* streams (HTTP + WebSocket) to the
@@ -577,6 +591,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// holds the trace .zip. Same authed-session + capability-token model as
 		// the editor proxy above.
 		r.HandleFunc("/trace/proxy/{token}/*", h.ProxyTrace)
+		// Live QA browser reverse-proxy (cloud mode): /browser/proxy/{token}/
+		// editor/browser/* streams the daemon's CDP screencast (HTTP + WebSocket)
+		// so the Live-testing bay works when the daemon is remote — the reviewer
+		// watches the QA agent drive the SAME shared Chromium. Only the
+		// /editor/browser/* subtree of the daemon is reachable through a token.
+		r.HandleFunc("/browser/proxy/{token}/*", h.ProxyBrowser)
 		// Launch a trace viewer for one QA test_run and return its proxied URL.
 		// Authorizes off the run's resolved issue/workspace (no header needed),
 		// mirroring GET /api/issues/:id/editor.
@@ -584,6 +604,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// SD: external-identity mapping (e.g. Bitrix RESPONSIBLE_ID -> member).
 		r.Get("/api/me/links", h.ListMyLinks)
 		r.Post("/api/me/links/bitrix", h.LinkBitrixIdentity)
+		// Editor account integration (Settings): per-user PATs injected into
+		// the co-code editor env. Reads are session-level; writes are
+		// human-only (an agent's task token must not be able to plant a
+		// token into the human's editor environment).
+		r.Get("/api/me/editor-tokens", h.ListEditorTokens)
+		r.With(handler.RequireHumanActor).Put("/api/me/editor-tokens", h.PutEditorToken)
+		r.With(handler.RequireHumanActor).Delete("/api/me/editor-tokens/{provider}", h.DeleteEditorToken)
 		r.Patch("/api/me/onboarding", h.PatchOnboarding)
 		r.Post("/api/me/onboarding/complete", h.CompleteOnboarding)
 		r.Post("/api/me/onboarding/cloud-waitlist", h.JoinCloudWaitlist)
@@ -891,6 +918,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/merge-readiness", h.MergeReadiness)
 					r.Get("/task-runs", h.ListTasksByIssue)
 					r.Get("/editor", h.GetIssueEditor)
+					r.Get("/browser", h.GetIssueBrowser)
 					r.Get("/qa-preview-url", h.GetIssueQAPreviewURL)
 					r.Get("/usage", h.GetIssueUsage)
 					r.Post("/reactions", h.AddIssueReaction)
@@ -1014,6 +1042,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 			// QA speed / regression metrics (the QA Metrics page).
 			r.Get("/api/qa/metrics", h.GetQAMetrics)
+			// Freshest qa_evidence verdict per in_review issue — the cockpit
+			// rows' reason/provenance/age data (one call, keyed by issue id).
+			r.Get("/api/qa/verdicts", h.ListQAVerdicts)
 			// Sprint QA-readiness — per-active-sprint mergeable rollup + rows.
 			r.Get("/api/qa/sprint-readiness", h.GetSprintReadiness)
 

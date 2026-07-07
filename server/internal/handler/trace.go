@@ -88,6 +88,18 @@ func (h *Handler) LaunchTrace(w http.ResponseWriter, r *http.Request) {
 
 	port, lerr := launchTraceOnDaemon(r.Context(), launchBase, tracePath)
 	if lerr != nil {
+		// The common terminal case: the trace .zip is gone from the runtime box.
+		// Older runs recorded traces under /tmp, which the OS purges within days;
+		// a GC'd worktree or daemon reinstall loses them too. That is an expired
+		// artifact, not a server fault — answer 410 with an actionable message
+		// (mirrors GetIssueEditor's worktree_gone contract).
+		if strings.Contains(lerr.Error(), "trace file does not exist") {
+			writeJSON(w, http.StatusGone, map[string]string{
+				"reason": "trace_gone",
+				"error":  "This run's trace file no longer exists on the runtime box (temporary storage was cleaned). Re-run the tests to capture a fresh trace.",
+			})
+			return
+		}
 		writeError(w, http.StatusBadGateway, "failed to launch trace viewer on the daemon: "+lerr.Error())
 		return
 	}

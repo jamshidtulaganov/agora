@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   ShieldAlert,
   ShieldCheck,
@@ -67,8 +68,16 @@ type AssigneeKey = `${string}:${string}`;
 
 function qaStatusOf(issue: Issue): QAStatus {
   const names = (issue.labels ?? []).map((l) => l.name);
-  if (names.includes("qa:fail")) return "fail";
-  if (names.includes("qa:pass")) return "pass";
+  const fail = names.includes("qa:fail");
+  const pass = names.includes("qa:pass");
+  // Both labels = a legacy sticky pair from before verdicts became
+  // replace-on-write; the freshest verdict is unknowable from labels, so the
+  // issue needs a re-verdict — pending, not a fail that drowns the queue.
+  if (fail && pass) return "pending";
+  if (fail) return "fail";
+  if (pass) return "pass";
+  // qa:stale / qa:blocked = the gate did not run (watchdog escalation /
+  // undeployable branch) — an infra state, not a test failure.
   return "pending";
 }
 
@@ -124,6 +133,51 @@ export function QAPage() {
       api.listIssues({ status: "in_review", limit: 200, ...(project !== "all" ? { project_id: project } : {}) }),
     staleTime: 15_000,
   });
+  // Freshest verdict per row (reason + provenance + age) — one batch call, so
+  // the lanes answer "why is this here" without opening each issue.
+  const { data: verdictData } = useQuery({
+    queryKey: ["qa-verdicts", wsId, project],
+    queryFn: () => api.listQAVerdicts(project !== "all" ? project : undefined),
+    staleTime: 15_000,
+  });
+  const verdicts = verdictData?.verdicts ?? {};
+
+  // Bulk triage selection (list view): 33 items in "Needs fix" must not mean
+  // 33 page-opens — select rows, act once from the sticky bar.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const toggleSelect = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const qc = useQueryClient();
+  const bulkInvalidate = () => {
+    setSelected(new Set());
+    void qc.invalidateQueries({ queryKey: ["qa-cockpit", wsId] });
+    void qc.invalidateQueries({ queryKey: ["qa-verdicts", wsId] });
+  };
+  const bulkRerunQA = useMutation({
+    mutationFn: async (ids: string[]) => {
+      for (const id of ids) await api.sliceAction(id, { kind: "run_qa" });
+    },
+    onSuccess: (_d, ids) => {
+      toast.success(`Re-run QA fired on ${ids.length} issue${ids.length === 1 ? "" : "s"}`);
+      bulkInvalidate();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Bulk re-run failed"),
+  });
+  const bulkSendBack = useMutation({
+    mutationFn: async (ids: string[]) => {
+      for (const id of ids) await api.updateIssue(id, { status: "in_progress" });
+    },
+    onSuccess: (_d, ids) => {
+      toast.success(`Sent ${ids.length} issue${ids.length === 1 ? "" : "s"} back to dev`);
+      bulkInvalidate();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Bulk send-back failed"),
+  });
 
   const issues = data?.issues ?? [];
 
@@ -158,21 +212,45 @@ export function QAPage() {
         segments={[]}
         leaf={<span className="truncate font-medium text-foreground">QA</span>}
         actions={
-          <div className="flex items-center gap-1 rounded-md border p-0.5">
-            <ViewToggle active={view === "list"} onClick={() => setView("list")} icon={List} label="List" />
-            <ViewToggle active={view === "board"} onClick={() => setView("board")} icon={LayoutGrid} label="Board" />
-            <ViewToggle active={view === "bugs"} onClick={() => setView("bugs")} icon={Bug} label="Bugs" />
-            <ViewToggle active={view === "sprint"} onClick={() => setView("sprint")} icon={Rocket} label="Sprint" />
-            <ViewToggle active={view === "metrics"} onClick={() => setView("metrics")} icon={Gauge} label="Metrics" />
+          <div className="flex items-center gap-2">
+            {/* Project scope applies to EVERY tab (List/Board/Bugs/Sprint/
+                Metrics) — hoisted here so the whole cockpit follows one
+                selector, not just the list. "All projects" = workspace-wide. */}
+            <Select value={project} onValueChange={(v) => setProject(v ?? "all")}>
+              <SelectTrigger className="h-8 w-44 text-[13px]">
+                <SelectValue>
+                  {() =>
+                    project === "all"
+                      ? "All projects"
+                      : (projects.find((p) => p.id === project)?.title ?? "Project")
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All projects</SelectItem>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="flex items-center gap-1 rounded-md border p-0.5">
+              <ViewToggle active={view === "list"} onClick={() => setView("list")} icon={List} label="List" />
+              <ViewToggle active={view === "board"} onClick={() => setView("board")} icon={LayoutGrid} label="Board" />
+              <ViewToggle active={view === "bugs"} onClick={() => setView("bugs")} icon={Bug} label="Bugs" />
+              <ViewToggle active={view === "sprint"} onClick={() => setView("sprint")} icon={Rocket} label="Sprint" />
+              <ViewToggle active={view === "metrics"} onClick={() => setView("metrics")} icon={Gauge} label="Metrics" />
+            </div>
           </div>
         }
       />
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       {view === "metrics" ? (
-        <QAMetricsView />
+        <QAMetricsView projectId={project !== "all" ? project : undefined} />
       ) : view === "sprint" ? (
-        <QASprintReadinessView />
+        <QASprintReadinessView projectId={project !== "all" ? project : undefined} />
       ) : (
       <div className="flex w-full flex-col gap-4 px-8 py-6">
         <div className="space-y-3">
@@ -191,28 +269,8 @@ export function QAPage() {
 
           {view !== "bugs" && (
             <div className="flex flex-wrap items-center gap-2">
-              <Select value={project} onValueChange={(v) => setProject(v ?? "all")}>
-                <SelectTrigger className="h-8 w-48 text-[13px]">
-                  {/* Base UI's Select.Value renders the raw value (the project
-                      UUID) unless given a function child — map it to the title. */}
-                  <SelectValue>
-                    {() =>
-                      project === "all"
-                        ? "All projects"
-                        : (projects.find((p) => p.id === project)?.title ?? "Project")
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All projects</SelectItem>
-                  {projects.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
+              {/* Project scope lives in the header now (applies to all tabs);
+                  this row keeps the list-only assignee/priority filters. */}
               <AssigneeFilter issues={issues} selected={assigneeFilter} onChange={setAssigneeFilter} />
               <PriorityFilter issues={issues} selected={priorityFilter} onChange={setPriorityFilter} />
 
@@ -236,19 +294,58 @@ export function QAPage() {
         </div>
 
       {view === "bugs" ? (
-        <BugsLens />
+        <BugsLens projectId={project !== "all" ? project : undefined} />
       ) : isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : view === "list" ? (
         <div className="space-y-5">
           {LANES.map(({ key, ...lane }) => (
-            <Lane key={key} {...lane} issues={lanes[key]} href={wp.qaDetail} liveIssueIds={liveIssueIds} />
+            <Lane
+              key={key}
+              {...lane}
+              issues={lanes[key]}
+              href={wp.qaDetail}
+              liveIssueIds={liveIssueIds}
+              verdicts={verdicts}
+              selected={selected}
+              onToggleSelect={toggleSelect}
+              // Passed = already decided; collapsed by default so the triage
+              // view stays about what needs a human (it grew all sprint).
+              defaultCollapsed={key === "pass"}
+            />
           ))}
+
+          {selected.size > 0 && (
+            <div className="sticky bottom-3 z-10 mx-auto flex w-fit items-center gap-2 rounded-full border bg-card px-4 py-2 shadow-lg">
+              <span className="text-[12px] text-muted-foreground">{selected.size} selected</span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-[11px]"
+                disabled={bulkRerunQA.isPending}
+                onClick={() => bulkRerunQA.mutate([...selected])}
+              >
+                Re-run QA
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-[11px]"
+                disabled={bulkSendBack.isPending}
+                onClick={() => bulkSendBack.mutate([...selected])}
+              >
+                Send back to dev
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => setSelected(new Set())}>
+                Clear
+              </Button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           {LANES.map(({ key, ...lane }) => (
-            <BoardColumn key={key} {...lane} issues={lanes[key]} href={wp.qaDetail} liveIssueIds={liveIssueIds} />
+            <BoardColumn key={key} {...lane} issues={lanes[key]} href={wp.qaDetail} liveIssueIds={liveIssueIds} verdicts={verdicts} />
           ))}
         </div>
       )}
@@ -433,6 +530,7 @@ function BoardColumn({
   issues,
   href,
   liveIssueIds,
+  verdicts,
 }: {
   icon: typeof ShieldAlert;
   iconClass: string;
@@ -441,6 +539,7 @@ function BoardColumn({
   issues: Issue[];
   href: (id: string) => string;
   liveIssueIds?: Set<string>;
+  verdicts?: Record<string, import("./qa-lane").QAVerdictInfo>;
 }) {
   return (
     <section className="flex min-h-[200px] flex-col rounded-lg border bg-muted/20">
@@ -461,7 +560,7 @@ function BoardColumn({
               href={href(issue.id)}
               className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-[13px] hover:border-border-strong hover:bg-accent/50"
             >
-              <QAIssueRow issue={issue} isLive={liveIssueIds?.has(issue.id)} />
+              <QAIssueRow issue={issue} isLive={liveIssueIds?.has(issue.id)} verdictInfo={verdicts?.[issue.id]} />
             </AppLink>
           ))
         )}

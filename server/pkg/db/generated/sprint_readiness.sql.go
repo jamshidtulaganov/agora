@@ -12,7 +12,7 @@ import (
 )
 
 const latestSprintRegressionRun = `-- name: LatestSprintRegressionRun :one
-SELECT status, source, triggered_at, completed_at, failure_reason
+SELECT id, issue_id, status, source, triggered_at, completed_at, failure_reason
 FROM autopilot_run
 WHERE trigger_payload->>'sprint_id' = $1
 ORDER BY triggered_at DESC
@@ -20,6 +20,8 @@ LIMIT 1
 `
 
 type LatestSprintRegressionRunRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	IssueID       pgtype.UUID        `json:"issue_id"`
 	Status        string             `json:"status"`
 	Source        string             `json:"source"`
 	TriggeredAt   pgtype.Timestamptz `json:"triggered_at"`
@@ -27,13 +29,17 @@ type LatestSprintRegressionRunRow struct {
 	FailureReason pgtype.Text        `json:"failure_reason"`
 }
 
-// The most recent whole-branch regression autopilot run for a sprint (daily
-// backstop or sprint-end gate) — the "is the branch green?" signal. Keyed on
+// The most recent whole-branch regression autopilot run for a sprint
+// (sprint-end gate or manual re-run; no scheduled daily run exists today) — the "is the branch green?" signal. Keyed on
 // the sprint id stashed in the dispatch payload (autopilot_run has no sprint fk).
+// issue_id = the run's tracking issue (create_issue mode) — the click-through
+// target so "regression failed" isn't a dead-end chip (audit P1).
 func (q *Queries) LatestSprintRegressionRun(ctx context.Context, triggerPayload []byte) (LatestSprintRegressionRunRow, error) {
 	row := q.db.QueryRow(ctx, latestSprintRegressionRun, triggerPayload)
 	var i LatestSprintRegressionRunRow
 	err := row.Scan(
+		&i.ID,
+		&i.IssueID,
 		&i.Status,
 		&i.Source,
 		&i.TriggeredAt,
@@ -50,8 +56,17 @@ SELECT s.id, s.name, s.branch, s.project_id, p.title AS project_title,
 FROM sprint s
 JOIN project p ON p.id = s.project_id
 WHERE p.workspace_id = $1 AND s.status = 'active'
+  AND p.settings->'sprint_mode' = 'true'::jsonb
+  -- Optional single-project scope for the per-project QA cockpit; NULL = all
+  -- sprint-mode projects (workspace-wide view).
+  AND ($2::uuid IS NULL OR s.project_id = $2)
 ORDER BY p.title, s.name
 `
+
+type ListActiveSprintsForWorkspaceParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
 
 type ListActiveSprintsForWorkspaceRow struct {
 	ID           pgtype.UUID `json:"id"`
@@ -63,9 +78,14 @@ type ListActiveSprintsForWorkspaceRow struct {
 }
 
 // Sprint QA-readiness — "is this sprint mergeable?" surface for the QA cockpit.
-// Active sprints across all of the workspace's projects (the readiness picker).
-func (q *Queries) ListActiveSprintsForWorkspace(ctx context.Context, workspaceID pgtype.UUID) ([]ListActiveSprintsForWorkspaceRow, error) {
-	rows, err := q.db.Query(ctx, listActiveSprintsForWorkspace, workspaceID)
+// Active sprints for the readiness picker — ONLY from projects that actually
+// run sprint mode (project.settings.sprint_mode = true). The "shared sprint
+// branch, mergeable?" model only applies to sprint-mode projects; a non-sprint
+// project's active sprint must not pollute the QA cockpit (it has no shared
+// branch to regress). Match the jsonb value literally so a missing/non-bool
+// key is simply excluded (no cast error).
+func (q *Queries) ListActiveSprintsForWorkspace(ctx context.Context, arg ListActiveSprintsForWorkspaceParams) ([]ListActiveSprintsForWorkspaceRow, error) {
+	rows, err := q.db.Query(ctx, listActiveSprintsForWorkspace, arg.WorkspaceID, arg.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -97,9 +117,21 @@ SELECT i.id, i.number, i.title, i.status,
                WHERE il.issue_id = i.id AND l.name = 'qa:pass') AS qa_pass,
        EXISTS (SELECT 1 FROM issue_to_label il JOIN issue_label l ON l.id = il.label_id
                WHERE il.issue_id = i.id AND l.name = 'qa:fail') AS qa_fail,
-       (SELECT count(*) FROM test_run r WHERE r.issue_id = i.id AND r.status = 'pass') AS runs_pass,
-       (SELECT count(*) FROM test_run r WHERE r.issue_id = i.id AND r.status = 'fail') AS runs_fail,
-       (SELECT count(*) FROM test_run r WHERE r.issue_id = i.id) AS runs_total
+       (SELECT count(*) FROM (
+          SELECT DISTINCT ON (r.test_case_id) r.status
+          FROM test_run r WHERE r.issue_id = i.id
+          ORDER BY r.test_case_id, r.created_at DESC
+        ) latest WHERE latest.status = 'pass') AS runs_pass,
+       (SELECT count(*) FROM (
+          SELECT DISTINCT ON (r.test_case_id) r.status
+          FROM test_run r WHERE r.issue_id = i.id
+          ORDER BY r.test_case_id, r.created_at DESC
+        ) latest WHERE latest.status = 'fail') AS runs_fail,
+       (SELECT count(*) FROM (
+          SELECT DISTINCT ON (r.test_case_id) r.status
+          FROM test_run r WHERE r.issue_id = i.id
+          ORDER BY r.test_case_id, r.created_at DESC
+        ) latest) AS runs_total
 FROM issue i
 JOIN issue_to_sprint its ON its.issue_id = i.id
 WHERE its.sprint_id = $1 AND i.workspace_id = $2
@@ -126,6 +158,11 @@ type SprintReadinessRowsRow struct {
 // Per-issue QA readiness for one sprint: the human qa:pass/qa:fail label plus
 // the automated test_run tallies (any fail = regression). Drives the row list
 // and the "X/Y green, mergeable?" rollup.
+// Run tallies use the LATEST run per test case, not all-time counts: a
+// regression that was caught once and then fixed + re-run green must stop
+// counting as a fail, otherwise one historical fail row marks the issue (and
+// therefore the sprint) unmergeable forever and silently overrides a human
+// qa:pass (audit P0).
 func (q *Queries) SprintReadinessRows(ctx context.Context, arg SprintReadinessRowsParams) ([]SprintReadinessRowsRow, error) {
 	rows, err := q.db.Query(ctx, sprintReadinessRows, arg.SprintID, arg.WorkspaceID)
 	if err != nil {

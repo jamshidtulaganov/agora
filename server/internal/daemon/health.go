@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/daemon/repocache"
+	"github.com/multica-ai/multica/server/internal/util"
 )
 
 // HealthResponse is returned by the daemon's local health endpoint.
@@ -264,6 +265,13 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 		var req struct {
 			WorkDir string `json:"workdir"`
 			UserID  string `json:"user_id"`
+			// Env carries the user's editor account tokens (Settings →
+			// editor integration) into the code-server process, so gh CLI /
+			// HTTPS git in its terminals are authenticated. ALLOWLISTED
+			// below — in self-host mode this request comes from the browser,
+			// and arbitrary env injection into a process that runs shells
+			// must be impossible.
+			Env map[string]string `json:"env"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
@@ -326,12 +334,50 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 			"--user-data-dir", userDataDir,
 			workdir,
 		)
+		// Scrub PORT (and CODE_SERVER_*) from the child env: code-server honors
+		// a PORT env var and it overrides --bind-addr's port. The daemon
+		// commonly inherits PORT=8080 — the backend's port, via make/.env — so
+		// every spawned editor tried to bind the backend's own port and died
+		// instantly with EADDRINUSE (the silent-death 502 at the proxy).
+		env := os.Environ()
+		filtered := env[:0]
+		for _, kv := range env {
+			if strings.HasPrefix(kv, "PORT=") || strings.HasPrefix(kv, "CODE_SERVER_") {
+				continue
+			}
+			filtered = append(filtered, kv)
+		}
+		// User editor tokens from the launch request — STRICT allowlist (the
+		// self-host launch comes from the browser; nothing outside these
+		// token vars may reach a shell-running process's environment).
+		for _, k := range []string{"GH_TOKEN", "GITHUB_TOKEN", "GITLAB_TOKEN"} {
+			if v := strings.TrimSpace(req.Env[k]); v != "" && !strings.ContainsAny(v, "\n\r\x00") {
+				filtered = append(filtered, k+"="+v)
+			}
+		}
+		cmd.Env = filtered
+		// code-server's own output is the ONLY evidence when it dies right after
+		// launch — a silent-death instance previously left nothing but a 502 at
+		// the proxy. Tee it to a log in the instance's user-data dir.
+		logPath := filepath.Join(userDataDir, "code-server.log")
+		if lf, lerr := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); lerr == nil {
+			cmd.Stdout = lf
+			cmd.Stderr = lf
+		}
 		if err := cmd.Start(); err != nil {
 			http.Error(w, "failed to launch code-server: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		editors[key] = &editorProc{port: port, cmd: cmd}
-		d.logger.Info("launched code-server editor", "workdir", workdir, "port", port, "user", req.UserID)
+		// Reap the child so (a) it never zombies and (b) ProcessState flips
+		// non-nil on exit, which is exactly what the reuse check above keys on —
+		// without Wait, a dead editor read as "still running" forever and every
+		// later open handed out the dead instance's port (502 at the proxy).
+		go func(c *exec.Cmd, k, lp string) {
+			err := c.Wait()
+			d.logger.Warn("code-server editor exited", "workdir", k, "error", err, "log", lp)
+		}(cmd, key, logPath)
+		d.logger.Info("launched code-server editor", "workdir", workdir, "port", port, "user", req.UserID, "log", logPath)
 		writeEditorURL(w, port, workdir)
 	})
 
@@ -872,7 +918,7 @@ func waitTraceReady(tp *previewProc, host string, port int, timeout time.Duratio
 
 // shellSingleQuote wraps s in single quotes for safe interpolation into a
 // `sh -c` command line (the trace path could contain spaces). Any embedded
-// single quote is escaped the POSIX way ('\'').
+// single quote is escaped the POSIX way ('\”).
 func shellSingleQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
@@ -1151,10 +1197,7 @@ func pushToSprintBranch(repo, alias, sprintBranch string) prOpenResult {
 // sprint branch — for the squad lead to review + merge — instead of pushing its
 // commits straight onto the shared branch. Default OFF, so the direct-push model
 // (pushToSprintBranch) stays the default and the switch is fully reversible.
-func sprintPRModeEnabled() bool {
-	v := strings.TrimSpace(os.Getenv("AGORA_SPRINT_PR_MODE"))
-	return v == "1" || strings.EqualFold(v, "true")
-}
+func sprintPRModeEnabled() bool { return util.SprintPRModeEnabled() }
 
 // openSprintPR opens (or reuses) a GitHub PR from the task's per-task sprint alias
 // INTO the shared sprint branch. Unlike pushToSprintBranch it never writes to the
@@ -1531,17 +1574,50 @@ func editorUserDataDir(key string) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
-	// Seed code-server User settings on first launch so the co-code editor opens
-	// straight to the agent's worktree: no "Do you trust the authors of the files
-	// in this folder?" prompt (the agent authored its own isolated branch — it is
-	// the author, the human is the reviewer) and no Getting-Started walkthrough
-	// tab covering the code. Write-if-absent so a human's later in-editor settings
-	// edits persist across relaunches.
+	// Seed the editor profile on first launch. Two layers (write-if-absent so a
+	// human's later in-editor edits persist across relaunches):
+	//
+	//   User/settings.json + User/keybindings.json — copied VERBATIM from the
+	//   host's own VS Code profile when one exists, so the co-code editor opens
+	//   with the reviewer's familiar theme/keybinds/settings. Verbatim because
+	//   VS Code settings are JSONC (comments, trailing commas) — parsing with
+	//   encoding/json would corrupt them. No host profile → minimal "{}".
+	//
+	//   Machine/settings.json — our co-code invariants. Machine scope overrides
+	//   User scope, so they hold regardless of what the copied profile says: no
+	//   workspace-trust prompt (the agent authored its own isolated branch — it
+	//   is the author, the human is the reviewer), no Getting-Started tab
+	//   covering the code, no telemetry.
 	userDir := filepath.Join(dir, "User")
 	settingsPath := filepath.Join(userDir, "settings.json")
 	if _, statErr := os.Stat(settingsPath); os.IsNotExist(statErr) {
 		if mkErr := os.MkdirAll(userDir, 0o700); mkErr == nil {
-			_ = os.WriteFile(settingsPath, []byte(`{
+			seeded := false
+			if hostDir, ok := hostVSCodeUserDir(); ok {
+				if b, rerr := os.ReadFile(filepath.Join(hostDir, "settings.json")); rerr == nil {
+					seeded = os.WriteFile(settingsPath, b, 0o600) == nil
+				}
+				if b, rerr := os.ReadFile(filepath.Join(hostDir, "keybindings.json")); rerr == nil {
+					_ = os.WriteFile(filepath.Join(userDir, "keybindings.json"), b, 0o600)
+				}
+			}
+			if !seeded {
+				_ = os.WriteFile(settingsPath, []byte("{}\n"), 0o600)
+			}
+			// Inherit auth/session state from the newest sibling profile.
+			// code-server keeps SecretStorage (e.g. the "Sign in with GitHub"
+			// session) in User/globalStorage/state.vscdb INSIDE the per-
+			// (user, worktree) profile — so without this, every new worktree
+			// editor demanded a fresh sign-in. Copying the newest sibling's
+			// state.vscdb means: sign in once, every later editor inherits.
+			inheritEditorGlobalStorage(filepath.Dir(dir), dir, userDir)
+		}
+	}
+	machineDir := filepath.Join(dir, "Machine")
+	machinePath := filepath.Join(machineDir, "settings.json")
+	if _, statErr := os.Stat(machinePath); os.IsNotExist(statErr) {
+		if mkErr := os.MkdirAll(machineDir, 0o700); mkErr == nil {
+			_ = os.WriteFile(machinePath, []byte(`{
   "security.workspace.trust.enabled": false,
   "workbench.startupEditor": "none",
   "workbench.tips.enabled": false,
@@ -1551,4 +1627,68 @@ func editorUserDataDir(key string) (string, error) {
 		}
 	}
 	return dir, nil
+}
+
+// inheritEditorGlobalStorage copies User/globalStorage/state.vscdb from the
+// most recently modified sibling editor profile into a NEWLY created one, so a
+// GitHub (or any extension) sign-in done once carries into every later
+// worktree's editor. Best-effort: no sibling with auth state → fresh profile,
+// exactly as before.
+func inheritEditorGlobalStorage(root, selfDir, userDir string) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return
+	}
+	var newest string
+	var newestMod int64
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		cand := filepath.Join(root, e.Name())
+		if cand == selfDir {
+			continue
+		}
+		db := filepath.Join(cand, "User", "globalStorage", "state.vscdb")
+		info, serr := os.Stat(db)
+		if serr != nil {
+			continue
+		}
+		if m := info.ModTime().UnixNano(); m > newestMod {
+			newest, newestMod = db, m
+		}
+	}
+	if newest == "" {
+		return
+	}
+	b, err := os.ReadFile(newest)
+	if err != nil {
+		return
+	}
+	gsDir := filepath.Join(userDir, "globalStorage")
+	if err := os.MkdirAll(gsDir, 0o700); err != nil {
+		return
+	}
+	_ = os.WriteFile(filepath.Join(gsDir, "state.vscdb"), b, 0o600)
+}
+
+// hostVSCodeUserDir locates the host machine's own VS Code user profile so the
+// co-code editor can open with the reviewer's familiar settings. Self-host
+// daemons run on the developer's machine where this exists; cloud daemons
+// simply won't find one (ok=false → minimal seed).
+func hostVSCodeUserDir() (string, bool) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", false
+	}
+	candidates := []string{
+		filepath.Join(home, "Library", "Application Support", "Code", "User"), // macOS
+		filepath.Join(home, ".config", "Code", "User"),                        // Linux
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(filepath.Join(c, "settings.json")); err == nil {
+			return c, true
+		}
+	}
+	return "", false
 }

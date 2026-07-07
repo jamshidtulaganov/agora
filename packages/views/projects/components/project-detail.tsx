@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
-import { CalendarClock, Check, ChevronRight, Link2, ListTodo, MoreHorizontal, PanelRight, Pin, PinOff, Plus, Trash2, UserMinus } from "lucide-react";
+import { CalendarClock, Check, ChevronRight, Link2, ListTodo, MoreHorizontal, PanelRight, Pin, PinOff, Plus, Trash2, UserMinus, Users } from "lucide-react";
 import { useQuery, type QueryKey } from "@tanstack/react-query";
 import { cn } from "@agora/ui/lib/utils";
 import { copyText } from "@agora/ui/lib/clipboard";
@@ -45,6 +45,7 @@ import { TitleEditor, ContentEditor, type ContentEditorRef } from "../../editor"
 import { PriorityIcon } from "../../issues/components/priority-icon";
 import { ProjectResourcesSection } from "./project-resources-section";
 import { ProjectConventionsSection } from "./project-conventions-section";
+import { ProjectSquadPicker } from "./project-squad-picker";
 import { ProjectQASection } from "./project-qa-section";
 import { ProjectDesignSection } from "./project-design-section";
 import { ProjectBitrixSection } from "./project-bitrix-section";
@@ -778,6 +779,24 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                 </div>
               </PopoverContent>
             </Popover>
+          </PropRow>
+          <PropRow label={t(($) => $.table.squad)}>
+            <ProjectSquadPicker
+              project={project}
+              handleUpdate={handleUpdateField}
+              renderTrigger={(squadName) => (
+                <button type="button" className="inline-flex items-center gap-1.5 text-xs hover:text-foreground transition-colors">
+                  {squadName ? (
+                    <>
+                      <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="cursor-pointer">{squadName}</span>
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">{t(($) => $.squad.no_squad)}</span>
+                  )}
+                </button>
+              )}
+            />
           </PropRow>
           <PropRow label={t(($) => $.sprints.mode_label)}>
             <label className="inline-flex cursor-pointer items-center gap-1.5">

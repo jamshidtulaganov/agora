@@ -554,7 +554,9 @@ func attachLabelDirect(t *testing.T, ctx context.Context, issueID, name string) 
 	`, issueID, labelID); err != nil {
 		t.Fatalf("setup: attach label %q: %v", name, err)
 	}
-	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM issue_to_label WHERE issue_id = $1 AND label_id = $2`, issueID, labelID) })
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `DELETE FROM issue_to_label WHERE issue_id = $1 AND label_id = $2`, issueID, labelID)
+	})
 }
 
 // TestEnforceQAGateBeforeDone is the truth table for the structural QA gate:
@@ -604,11 +606,11 @@ func TestEnforceQAGateBeforeDone(t *testing.T) {
 		}
 	})
 
-	t.Run("gate on + already in_review → passthrough (allow done)", func(t *testing.T) {
+	t.Run("gate on + in_review without a verdict → held (audit: in_review→done was ungated)", func(t *testing.T) {
 		t.Setenv("AGORA_QA_GATE_ENFORCED", "true")
 		got, redirected := testHandler.enforceQAGateBeforeDone(ctx, squadIssue, "agent", "in_review", "done")
-		if redirected || got != "done" {
-			t.Errorf("done from in_review must passthrough, got (%q, %v)", got, redirected)
+		if !redirected || got != "in_review" {
+			t.Errorf("done from in_review without qa:pass must hold, got (%q, %v)", got, redirected)
 		}
 	})
 
@@ -677,9 +679,15 @@ func TestUpdateIssue_QAGateRedirectsSquadDoneToInReview(t *testing.T) {
 	if got := drive(squadIssueID, "done"); got != "in_review" {
 		t.Errorf("squad-orchestrated done must redirect to in_review, got %q", got)
 	}
-	// Second hop: from in_review, done is now allowed through (prev==in_review).
+	// Second hop: from in_review WITHOUT a verdict, done is still held — the
+	// audit found this edge ungated (an issue the cockpit showed as failing
+	// could be closed anyway). A qa:pass is the exit.
+	if got := drive(squadIssueID, "done"); got != "in_review" {
+		t.Errorf("done from in_review without qa:pass must stay held, got %q", got)
+	}
+	attachTestLabel(t, squadIssueID, "qa:pass")
 	if got := drive(squadIssueID, "done"); got != "done" {
-		t.Errorf("done from in_review must pass through, got %q", got)
+		t.Errorf("done from in_review WITH qa:pass must pass through, got %q", got)
 	}
 
 	// Solo-agent issue: done is never gated.
@@ -687,6 +695,33 @@ func TestUpdateIssue_QAGateRedirectsSquadDoneToInReview(t *testing.T) {
 	soloIssueID := sliceActionTestIssue(t, "agent", solo)
 	if got := drive(soloIssueID, "done"); got != "done" {
 		t.Errorf("solo-agent done must pass through, got %q", got)
+	}
+}
+
+// attachTestLabel ensures a label exists in the fixture workspace and attaches
+// it to the issue — direct DB, mirroring what CaptureQAEvidence does.
+func attachTestLabel(t *testing.T, issueID, name string) {
+	t.Helper()
+	ctx := context.Background()
+	var labelID string
+	err := testPool.QueryRow(ctx,
+		`WITH ins AS (
+		    INSERT INTO issue_label (workspace_id, name, color)
+		    SELECT $1, $2, '#22c55e'
+		    WHERE NOT EXISTS (SELECT 1 FROM issue_label WHERE workspace_id = $1 AND name = $2)
+		    RETURNING id
+		 )
+		 SELECT id FROM ins
+		 UNION ALL
+		 SELECT id FROM issue_label WHERE workspace_id = $1 AND name = $2
+		 LIMIT 1`, testWorkspaceID, name).Scan(&labelID)
+	if err != nil {
+		t.Fatalf("ensure label %s: %v", name, err)
+	}
+	if _, err := testPool.Exec(ctx,
+		`INSERT INTO issue_to_label (issue_id, label_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+		issueID, labelID); err != nil {
+		t.Fatalf("attach label %s: %v", name, err)
 	}
 }
 

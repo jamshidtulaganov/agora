@@ -15,7 +15,8 @@
     "status": "Статус",
     "progress": "Прогресс",
     "lead": "Ответственный",
-    "created": "Создано"
+    "created": "Создано",
+    "squad": "Squad"
   },
   "status": {
     "planned": "Запланировано",
@@ -178,5 +179,10 @@
     "audit_button": "Аудит",
     "audit_fired_toast": "Дизайн-аудит поставлен в очередь",
     "audit_running": "Аудит уже выполняется"
+  },
+  "squad": {
+    "no_squad": "Нет Squad",
+    "assign_placeholder": "Привязать Squad...",
+    "no_results": "Нет результатов"
   }
 }

@@ -31,7 +31,7 @@ import type {
   SearchIssueResult,
   SearchProjectResult,
 } from "@agora/core/types";
-import { api } from "@agora/core/api";
+import { api, ApiError } from "@agora/core/api";
 import {
   openCreateIssueWithPreference,
   selectRecentIssues,
@@ -171,6 +171,18 @@ export function SearchCommand() {
       recentDetailQueries.flatMap((q) => (q.data ? [q.data] : [])),
     [recentDetailQueries],
   );
+  // Self-heal the persisted recent list: an id that 404s no longer exists (a
+  // deleted issue, or a re-seeded local DB) — without this, every stale id
+  // re-polled a 404 on each palette mount, forever.
+  useEffect(() => {
+    recentDetailQueries.forEach((q, i) => {
+      const item = recentItems[i];
+      if (!item) return;
+      if (q.error instanceof ApiError && q.error.status === 404) {
+        useRecentIssuesStore.getState().forgetIssue(wsId, item.id);
+      }
+    });
+  }, [recentDetailQueries, recentItems, wsId]);
 
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResults>({ issues: [], projects: [] });

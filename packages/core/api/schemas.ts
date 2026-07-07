@@ -990,12 +990,32 @@ export const QAResultSchema = z.object({
   }).loose().nullable().catch(null).default(null),
 }).loose();
 
+// Freshest verdict per in_review issue for the cockpit rows (GET /api/qa/verdicts).
+export const QAVerdictsResponseSchema = z.object({
+  verdicts: z
+    .record(
+      z.string(),
+      z.object({
+        verdict: z.string().default(""),
+        source: z.string().default(""),
+        summary: z.string().default(""),
+        captured_at: z.string().default(""),
+      }).loose(),
+    )
+    .default({}),
+}).loose();
+
+export type QAVerdictsResponse = z.infer<typeof QAVerdictsResponseSchema>;
+
+export const EMPTY_QA_VERDICTS: QAVerdictsResponse = { verdicts: {} };
+
 export const QAEvidenceSchema = z.object({
   id: z.string().default(""),
   issue_id: z.string().default(""),
   baseline_ref: z.string().default(""),
   branch_sha: z.string().default(""),
   verdict: z.string().default(""),
+  source: z.string().default(""),
   summary: z.string().default(""),
   result: QAResultSchema.nullable().default(null),
   captured_at: z.string().default(""),
@@ -1064,6 +1084,21 @@ export const GetIssueEditorResponseSchema = z.object({
 }).loose();
 
 export const EMPTY_ISSUE_EDITOR = { mode: "", daemon_url: "", user_id: "", agents: [], editor_url: "" };
+
+// Where the Live-testing bay reaches a CDP browser for an issue — self-host
+// (direct daemon_url) or cloud (a same-origin /browser/proxy/<token> base the
+// backend reverse-proxies to the daemon). Unlike the editor response this
+// never depends on a worktree existing, so the bay stays up for QA-target
+// browsing even when no dev task ever ran.
+export const IssueBrowserResponseSchema = z
+  .object({
+    mode: z.string().default(""),
+    daemon_url: z.string().default(""),
+    browser_url: z.string().default(""),
+  })
+  .loose();
+
+export const EMPTY_ISSUE_BROWSER = { mode: "", daemon_url: "", browser_url: "" };
 
 // The issue's resolved QA preview target — a deployed connected box (e.g. a
 // per-developer or per-project QA box) or the project's configured
@@ -1174,6 +1209,7 @@ export const SprintReadinessResponseSchema = z
                 triggered_at: z.string().default(""),
                 completed_at: z.string().default(""),
                 reason: z.string().default(""),
+                run_issue_id: z.string().default(""),
               })
               .loose()
               .nullable()
@@ -1381,6 +1417,25 @@ export const EMPTY_CREATE_BILLING_PORTAL_SESSION_RESPONSE: CreateBillingPortalSe
 // Everything beyond `configured` defaults so an older server shape degrades to
 // a "not configured" style rendering instead of knocking the settings section
 // into an error. Check `configured === true` explicitly downstream.
+// Editor account integration (per-user PATs for the co-code editor env).
+// Tokens are write-only; the API returns a masked tail per provider.
+export const EditorTokensResponseSchema = z.object({
+  tokens: z
+    .array(
+      z.object({
+        provider: z.string().default(""),
+        masked: z.string().default(""),
+        workspace_id: z.string().default(""),
+        updated_at: z.string().default(""),
+      }).loose(),
+    )
+    .default([]),
+}).loose();
+
+export type EditorTokensResponse = z.infer<typeof EditorTokensResponseSchema>;
+
+export const EMPTY_EDITOR_TOKENS: EditorTokensResponse = { tokens: [] };
+
 export const FigmaCredentialStatusSchema = z.object({
   configured: z.boolean().default(false),
   label: z.string().default(""),

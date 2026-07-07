@@ -71,6 +71,12 @@ func reviewTierForLabels(labels map[string]bool) reviewTier {
 // gateFromLabels resolves one gate's status from the issue's label set: a
 // `<g>:fail` label blocks, a `<g>:pass` label passes, neither is pending.
 func gateFromLabels(labels map[string]bool, g string) string {
+	// Both labels present = a legacy sticky pair from before verdicts became
+	// replace-on-write; the freshest verdict is unknowable from the label set,
+	// so the gate needs a re-verdict rather than a hard block.
+	if labels[g+":fail"] && labels[g+":pass"] {
+		return "pending"
+	}
 	if labels[g+":fail"] {
 		return "fail"
 	}

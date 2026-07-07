@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/logger"
+	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
@@ -271,12 +272,14 @@ func buildSliceInstruction(kind, scope string) string {
 			"for every case right after you judge it. " +
 			"For EACH case: if the case LISTING below includes a COMPILED SCRIPT for that id, do NOT drive the browser " +
 			"action-by-action — instead WRITE that script verbatim to a temp file `/tmp/case-<id>.mjs` and RUN it with " +
-			"`TRACE_PATH=/tmp/trace-<id>.zip node /tmp/case-<id>.mjs`; take the process EXIT CODE as the verdict (0 = pass, " +
+			"`mkdir -p \"$HOME/.agora/qa-traces\" && TRACE_PATH=\"$HOME/.agora/qa-traces/trace-<id>.zip\" node /tmp/case-<id>.mjs`; " +
+			"take the process EXIT CODE as the verdict (0 = pass, " +
 			"non-zero = fail) and use the script's stdout/stderr as the one-line `output` evidence. This is deterministic and " +
 			"needs no per-action reasoning — that is the whole point. TRACE (time-travel debugging): the compiled script " +
 			"records a Playwright trace (DOM snapshots + screenshots + sources per step) to the `TRACE_PATH` you set here, so " +
 			"a QA reviewer can replay the run step-by-step in-app. Give each case a DISTINCT `TRACE_PATH` keyed by its id " +
-			"(`/tmp/trace-<id>.zip`) so concurrent cases never overwrite each other's trace. After the run, if that trace " +
+			"(`$HOME/.agora/qa-traces/trace-<id>.zip`) so concurrent cases never overwrite each other's trace — NEVER " +
+			"under /tmp: the OS purges it and the in-app trace viewer replays these files days later. After the run, if that trace " +
 			"file exists, report its ABSOLUTE path as the case's `trace_path` in the test-runs JSON below; omit `trace_path` " +
 			"when no trace was produced. Playwright must be available to `node`: if `node -e \"import('playwright')\"` " +
 			"fails, run ONCE `npm i playwright && npx playwright install chromium-headless-shell` in the box (reuse the box's " +
@@ -290,7 +293,7 @@ func buildSliceInstruction(kind, scope string) string {
 			"panel parses: `[{\"test_case_id\":\"<the id from the list>\",\"status\":\"pass\"|\"fail\"|\"blocked\"," +
 			"\"output\":\"<one-line evidence — for fail/blocked this IS the human-readable reason shown to the QA " +
 			"reviewer, e.g. the failing assertion or HTTP status; for pass, what you observed>\",\"trace_path\":\"<optional: " +
-			"the ABSOLUTE path of the Playwright trace .zip this case produced, e.g. /tmp/trace-<id>.zip; omit when no " +
+			"the ABSOLUTE path of the Playwright trace .zip this case produced (expand $HOME yourself); omit when no " +
 			"trace was captured (hand-driven cases)>\",\"baseline_status\":\"pass\"|\"fail\"|\"unknown\"}]` — one entry per case " +
 			"you ran. Use `blocked` if a case could not be exercised (missing data/route). The JSON must be valid and " +
 			"self-contained. " +
@@ -603,7 +606,7 @@ type qaManifest struct {
 
 // qaManifestAccount is one role-specific QA login (see qaManifest.Accounts).
 type qaManifestAccount struct {
-	Role     string `json:"role"`     // human label, e.g. "agent (ROLE=4)"
+	Role     string `json:"role"` // human label, e.g. "agent (ROLE=4)"
 	Username string `json:"username"`
 	Password string `json:"password"`
 	Note     string `json:"note"` // when to use it, e.g. "for /api3/stock/*"
@@ -794,10 +797,7 @@ func sprintWorktreeEnabled() bool {
 // same name; both read AGORA_SPRINT_PR_MODE so the agent instruction path and the
 // co-code accept path switch together. Default OFF → direct-commit sprint mode.
 // Only meaningful when sprintWorktreeEnabled() + the project is in sprint mode.
-func sprintPRModeEnabled() bool {
-	v := strings.TrimSpace(os.Getenv("AGORA_SPRINT_PR_MODE"))
-	return v == "1" || strings.EqualFold(v, "true")
-}
+func sprintPRModeEnabled() bool { return util.SprintPRModeEnabled() }
 
 // sprintAutoMergeEnabled gates whether the squad LEAD auto-merges a sprint PR
 // once it passes QA (Phase 3). Default OFF: the lead prepares the PR and QA
@@ -1100,11 +1100,18 @@ func (h *Handler) enforceQAGateBeforeDone(ctx context.Context, issue db.Issue, a
 	if !qaGateEnforced() {
 		return targetStatus, false
 	}
-	if prevStatus == "in_review" {
-		return targetStatus, false
-	}
 	if !h.issueDevOrchestrated(ctx, issue) {
 		return targetStatus, false
+	}
+	// A present qa:fail ALWAYS blocks done — the audit found in_review→done was
+	// ungated, so an issue the cockpit showed as "need fix" could be closed
+	// anyway, splitting the done-gate from the merge gate and the cockpit lane.
+	// The label is replace-on-write now, so a stale fail can't wedge this: a
+	// re-QA pass (or a human triage Pass) removes it. The same applies to a
+	// missing verdict: leaving in_review straight to done without qa:pass is
+	// the silent-green path the watchdog exists to catch.
+	if h.issueHasLabel(ctx, issue, "qa:fail") {
+		return "in_review", true
 	}
 	if h.issueHasLabel(ctx, issue, "qa:pass") {
 		// qa:pass present. Unless test-accuracy is enforced, that's enough.
@@ -1117,6 +1124,13 @@ func (h *Handler) enforceQAGateBeforeDone(ctx context.Context, issue db.Issue, a
 		// QA re-runs and the author must add a test that actually exercises the
 		// change. Fail-open on a query error (never block on infra failure).
 		if ok, err := h.Queries.HasDiscriminatingRunForIssue(ctx, issue.ID); err != nil || ok {
+			return targetStatus, false
+		}
+		// The hold is only meaningful when discrimination is POSSIBLE: e2e/
+		// smoke/hand-driven cases report baseline "unknown" and can never
+		// satisfy it, so an e2e-only issue used to wedge at in_review forever
+		// (audit P2). No baseline-capable run at all → let qa:pass stand.
+		if capable, err := h.Queries.HasBaselineCapableRunForIssue(ctx, issue.ID); err != nil || !capable {
 			return targetStatus, false
 		}
 		return "in_review", true
@@ -1436,6 +1450,99 @@ func (h *Handler) maybeRouteToDevLeadOnQAFail(ctx context.Context, issue db.Issu
 		"issue_id", uuidToString(issue.ID),
 		"failing_agent_id", uuidToString(failingAgentID),
 		"lead_agent_id", uuidToString(leaderID))
+}
+
+func qaFailAutoFileBugEnabled() bool {
+	return strings.TrimSpace(os.Getenv("AGORA_QA_FAIL_AUTO_FILE_BUG_ENABLED")) == "true"
+}
+
+// maybeAutoFileBugOnQAFail opens a `bug`-labelled child issue when an issue is
+// labelled qa:fail, so a failed verdict becomes a tracked, triageable bug
+// instead of relying on a human clicking "File bug" in the QA cockpit. The bug
+// links to the failed issue (parent), inherits its project + priority, and
+// carries the QA evidence summary. Gated (AGORA_QA_FAIL_AUTO_FILE_BUG_ENABLED),
+// detached + best-effort, and runs alongside the qa-fail autoroute. Deduped via
+// a `qa_bug_filed` metadata stamp on the parent so repeated qa:fail labels
+// (re-QA loops) don't spawn duplicate bugs.
+func (h *Handler) maybeAutoFileBugOnQAFail(ctx context.Context, issue db.Issue, labelName, actorID string) {
+	if !qaFailAutoFileBugEnabled() {
+		return
+	}
+	if strings.ToLower(strings.TrimSpace(labelName)) != "qa:fail" {
+		return
+	}
+	// Dedup: one auto-filed bug per failed issue.
+	if len(issue.Metadata) > 0 {
+		var meta map[string]any
+		if json.Unmarshal(issue.Metadata, &meta) == nil {
+			if _, done := meta["qa_bug_filed"]; done {
+				return
+			}
+		}
+	}
+
+	summary := ""
+	if evidence, err := h.Queries.GetLatestQAEvidenceForIssue(ctx, db.GetLatestQAEvidenceForIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+	}); err == nil {
+		summary = strings.TrimSpace(evidence.Summary)
+	}
+
+	parentKey := fmt.Sprintf("%s-%d", h.getIssuePrefix(ctx, issue.WorkspaceID), issue.Number)
+	titleText := issue.Title
+	if summary != "" {
+		titleText = summary
+	}
+	title := "Bug: " + titleText
+	if r := []rune(title); len(r) > 160 {
+		title = string(r[:159]) + "…"
+	}
+	detail := summary
+	if detail == "" {
+		detail = "See the QA verdict on the parent issue."
+	}
+	desc := fmt.Sprintf("Filed automatically from a failed QA verdict on %s — %s.\n\n%s", parentKey, issue.Title, detail)
+
+	// The verdict author (comment path) is usually the QA agent, the label path
+	// usually a human — resolve which so creator_type is honest (creator_id has
+	// no FK, but the CHECK only allows member|agent).
+	actorUUID := parseUUID(actorID)
+	creatorType := "member"
+	if _, aerr := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{ID: actorUUID, WorkspaceID: issue.WorkspaceID}); aerr == nil {
+		creatorType = "agent"
+	}
+
+	res, err := h.IssueService.Create(ctx, service.IssueCreateParams{
+		WorkspaceID:    issue.WorkspaceID,
+		Title:          title,
+		Description:    pgtype.Text{String: desc, Valid: true},
+		Status:         "todo",
+		Priority:       issue.Priority,
+		CreatorType:    creatorType,
+		CreatorID:      actorUUID,
+		ParentIssueID:  issue.ID,
+		ProjectID:      issue.ProjectID,
+		AllowDuplicate: true,
+	}, service.IssueCreateOpts{ActorID: actorID})
+	if err != nil {
+		slog.Warn("qa-fail auto-file bug: create failed", "error", err, "issue_id", uuidToString(issue.ID))
+		return
+	}
+
+	if labelID, lerr := h.ensureLabel(ctx, issue.WorkspaceID, "bug", "#ef4444"); lerr == nil {
+		if err := h.Queries.AttachLabelToIssue(ctx, db.AttachLabelToIssueParams{
+			IssueID: res.Issue.ID, LabelID: labelID, WorkspaceID: issue.WorkspaceID,
+		}); err != nil {
+			slog.Warn("qa-fail auto-file bug: attach bug label failed", "error", err, "bug_id", uuidToString(res.Issue.ID))
+		}
+	}
+	// Stamp the parent so a re-QA loop doesn't file the same bug twice.
+	if _, err := h.Queries.SetIssueMetadataKey(ctx, db.SetIssueMetadataKeyParams{
+		ID: issue.ID, WorkspaceID: issue.WorkspaceID, Key: "qa_bug_filed", Value: []byte("true"),
+	}); err != nil {
+		slog.Warn("qa-fail auto-file bug: dedup stamp failed", "error", err, "issue_id", uuidToString(issue.ID))
+	}
+	slog.Info("qa-fail auto-filed bug", "parent_id", uuidToString(issue.ID), "bug_id", uuidToString(res.Issue.ID))
 }
 
 // devSquadLeaderForIssue resolves the leader of the DEV squad an orchestrated
@@ -1764,6 +1871,21 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 		return
 	}
 	defer lockIssueQA(uuidToString(issue.ID))()
+	// The in-process mutex above only guards ONE replica. On a multi-replica
+	// deploy each backend would dispatch the full QA fan-out for the same
+	// transition (audit P2). A per-issue DB advisory try-lock held for the
+	// dispatch closes that: the loser sees the lock taken and bows out.
+	// Best-effort — lock-infra failure proceeds single-replica-style.
+	if lockTx, err := h.TxStarter.Begin(ctx); err == nil {
+		defer func() { _ = lockTx.Rollback(ctx) }()
+		var got bool
+		if qerr := lockTx.QueryRow(ctx,
+			`SELECT pg_try_advisory_xact_lock(hashtext($1))`,
+			"qa-dispatch:"+uuidToString(issue.ID)).Scan(&got); qerr == nil && !got {
+			slog.Info("qa dispatch already in flight on another replica; skipping", "issue_id", uuidToString(issue.ID))
+			return
+		}
+	}
 
 	// Orchestrator-to-orchestrator (product rule: "the QA lead and dev lead must
 	// always be in communication"): when the DEV side is squad-managed — the
@@ -2218,7 +2340,7 @@ func verifyGateInstruction() string {
 //     sprint branch against the branch it will merge into. Diffing the whole
 //     sprint branch against sprint-root answers "is the accumulated sprint
 //     healthy vs the base we'll merge into", catching cross-task drift. Used by
-//     the daily backstop and the sprint-end full regression.
+//     the sprint-end full regression (and any manual mid-sprint re-run).
 //   - "" or unknown — no extra guidance; the instruction keeps its original
 //     merge-base wording (backward-compatible default path).
 //
@@ -2401,7 +2523,15 @@ func (h *Handler) sliceActionProjectBaseSuiteContext(ctx context.Context, issue 
 		}
 		cases = kept
 		if len(cases) == 0 {
-			return ""
+			// Every base case is quarantined: the regression gate is effectively
+			// OFF for this project. Say so loudly instead of silently injecting
+			// nothing — a fully-parked suite reading as "no regression to run"
+			// was an audit finding (coverage dropped to zero with no signal).
+			slog.Warn("project base suite fully quarantined — regression gate is a no-op",
+				"project_id", uuidToString(issue.ProjectID))
+			return " PROJECT BASE SCRIPTS: every standing regression case is currently QUARANTINED, so NO base-suite " +
+				"regression will run for this issue. Note this in your verdict summary — the project's regression gate " +
+				"is effectively disabled until cases are un-quarantined or replaced."
 		}
 	}
 	var b strings.Builder

@@ -85,6 +85,7 @@ import type {
   CreateTestCaseRequest,
   CreateTestRunRequest,
   GetIssueEditorResponse,
+  IssueBrowserResponse,
   IssueQAPreviewURLResponse,
   CreateProjectRequest,
   UpdateProjectRequest,
@@ -272,6 +273,8 @@ import {
   EMPTY_CONNECTED_BOX,
   GetIssueEditorResponseSchema,
   EMPTY_ISSUE_EDITOR,
+  EMPTY_ISSUE_BROWSER,
+  IssueBrowserResponseSchema,
   IssueQAPreviewURLResponseSchema,
   EMPTY_ISSUE_QA_PREVIEW_URL,
   QAMetricsResponseSchema,
@@ -282,6 +285,12 @@ import {
   type SprintReadinessResponse,
   FigmaCredentialStatusSchema,
   EMPTY_FIGMA_CREDENTIAL_STATUS,
+  EditorTokensResponseSchema,
+  EMPTY_EDITOR_TOKENS,
+  type EditorTokensResponse,
+  QAVerdictsResponseSchema,
+  EMPTY_QA_VERDICTS,
+  type QAVerdictsResponse,
 } from "./schemas";
 
 /** Identifies the calling client to the server.
@@ -2473,6 +2482,22 @@ export class ApiClient {
     }
   }
 
+  // Resolves where the Live-testing bay reaches a CDP browser for the issue:
+  // self-host (daemon_url, dialed directly) or cloud (browser_url — a
+  // same-origin reverse-proxy base). Never requires a worktree; 404 (issue
+  // gone) degrades to the empty fallback so consumers just check `mode`.
+  async getIssueBrowser(issueId: string): Promise<IssueBrowserResponse> {
+    try {
+      const raw = await this.fetch<unknown>(`/api/issues/${issueId}/browser`);
+      return parseWithFallback(raw, IssueBrowserResponseSchema, EMPTY_ISSUE_BROWSER, {
+        endpoint: "GET /api/issues/:id/browser",
+      });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return EMPTY_ISSUE_BROWSER;
+      throw e;
+    }
+  }
+
   // Resolves the issue's deployed QA target (a connected box or the project's
   // qa_smoke_url) — the Live testing bay's fallback for workspaces without a
   // per-issue daemon worktree. Always 200 with url: "" when nothing resolves,
@@ -2486,17 +2511,31 @@ export class ApiClient {
 
   // QA speed / regression metrics for the workspace (the QA Metrics page):
   // run totals + daily trend + per-QA-agent durations + script coverage.
-  async getQAMetrics(): Promise<QAMetricsResponse> {
-    const raw = await this.fetch<unknown>(`/api/qa/metrics`);
+  // projectId scopes metrics to one project (the cockpit project selector);
+  // omit for the workspace-wide "all projects" view.
+  async getQAMetrics(projectId?: string): Promise<QAMetricsResponse> {
+    const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+    const raw = await this.fetch<unknown>(`/api/qa/metrics${qs}`);
     return parseWithFallback(raw, QAMetricsResponseSchema, EMPTY_QA_METRICS, {
       endpoint: "GET /api/qa/metrics",
     });
   }
 
+  // Freshest QA verdict per in_review issue (reason + provenance + age for the
+  // cockpit rows), keyed by issue id. projectId scopes like the cockpit.
+  async listQAVerdicts(projectId?: string): Promise<QAVerdictsResponse> {
+    const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+    const raw = await this.fetch<unknown>(`/api/qa/verdicts${qs}`);
+    return parseWithFallback(raw, QAVerdictsResponseSchema, EMPTY_QA_VERDICTS, {
+      endpoint: "GET /api/qa/verdicts",
+    });
+  }
+
   // Per-active-sprint QA readiness (the QA cockpit Sprint tab): each sprint's
-  // issue rows by verdict + a mergeable rollup.
-  async getSprintReadiness(): Promise<SprintReadinessResponse> {
-    const raw = await this.fetch<unknown>(`/api/qa/sprint-readiness`);
+  // issue rows by verdict + a mergeable rollup. projectId scopes to one project.
+  async getSprintReadiness(projectId?: string): Promise<SprintReadinessResponse> {
+    const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+    const raw = await this.fetch<unknown>(`/api/qa/sprint-readiness${qs}`);
     return parseWithFallback(raw, SprintReadinessResponseSchema, EMPTY_SPRINT_READINESS, {
       endpoint: "GET /api/qa/sprint-readiness",
     });
@@ -2891,6 +2930,32 @@ export class ApiClient {
 
   async deleteFigmaCredential(workspaceId: string): Promise<void> {
     await this.fetch(`/api/workspaces/${workspaceId}/figma-credential`, {
+      method: "DELETE",
+    });
+  }
+
+  // Editor account integration (Settings → Account): per-user PATs the daemon
+  // injects into the co-code editor env (GH_TOKEN/GITHUB_TOKEN/GITLAB_TOKEN).
+  // Tokens are write-only — reads return a masked tail.
+  async listEditorTokens(): Promise<EditorTokensResponse> {
+    const raw = await this.fetch<unknown>(`/api/me/editor-tokens`);
+    return parseWithFallback(raw, EditorTokensResponseSchema, EMPTY_EDITOR_TOKENS, {
+      endpoint: "GET /api/me/editor-tokens",
+    });
+  }
+
+  // workspaceId scopes the token to one workspace (overrides the global
+  // default for editors opened on that workspace's issues); omit for global.
+  async putEditorToken(provider: "github" | "gitlab", token: string, workspaceId?: string): Promise<void> {
+    await this.fetch(`/api/me/editor-tokens`, {
+      method: "PUT",
+      body: JSON.stringify({ provider, token, ...(workspaceId ? { workspace_id: workspaceId } : {}) }),
+    });
+  }
+
+  async deleteEditorToken(provider: "github" | "gitlab", workspaceId?: string): Promise<void> {
+    const qs = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
+    await this.fetch(`/api/me/editor-tokens/${provider}${qs}`, {
       method: "DELETE",
     });
   }

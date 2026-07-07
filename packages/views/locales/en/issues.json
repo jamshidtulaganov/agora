@@ -457,7 +457,9 @@
     "mismatch_kind_generic": "other",
     "design_lint_heading": "Design-system lint",
     "design_lint_block": "block",
-    "design_lint_warn": "warn"
+    "design_lint_warn": "warn",
+    "send_back": "Send back to dev",
+    "sent_back": "Sent back to dev (qa:fail, in progress)"
   },
   "qa_bug": {
     "file_bug": "File bug",

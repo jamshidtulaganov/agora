@@ -15,7 +15,8 @@
     "status": "Holat",
     "progress": "Jarayon",
     "lead": "Yetakchi",
-    "created": "Yaratilgan"
+    "created": "Yaratilgan",
+    "squad": "Squad"
   },
   "status": {
     "planned": "Rejalashtirilgan",
@@ -178,5 +179,10 @@
     "audit_button": "Audit",
     "audit_fired_toast": "Dizayn audit navbatga qo'yildi",
     "audit_running": "Audit allaqachon ishlayapti"
+  },
+  "squad": {
+    "no_squad": "Squad yo‘q",
+    "assign_placeholder": "Squad biriktirish...",
+    "no_results": "Natija yo‘q"
   }
 }

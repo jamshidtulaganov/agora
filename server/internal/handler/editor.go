@@ -219,10 +219,15 @@ func (h *Handler) GetIssueEditor(w http.ResponseWriter, r *http.Request) {
 	// agent chips let the human switch to any other agent's worktree to review.
 	latest := agents[0].WorkDir
 
+	// The caller's editor account tokens (Settings → editor integration) ride
+	// into the code-server env so gh CLI / HTTPS git in the editor terminal are
+	// authenticated. Best-effort: nil when none configured.
+	editorEnv := h.editorEnvForUser(r.Context(), parseUUID(userID), issue.WorkspaceID)
+
 	if internal := resolveDaemonInternalAddr(agents[0].editorAddr); internal != "" {
 		// Cloud / Remote Box: the backend proxies a single code-server; launch the
 		// latest worktree (per-agent switching in cloud is a follow-up).
-		port, lerr := launchEditorOnDaemon(r.Context(), internal, latest, userID)
+		port, lerr := launchEditorOnDaemon(r.Context(), internal, latest, userID, editorEnv)
 		if lerr == nil {
 			host := internal
 			if i := strings.LastIndex(internal, ":"); i > 0 {
@@ -262,18 +267,29 @@ func (h *Handler) GetIssueEditor(w http.ResponseWriter, r *http.Request) {
 	// of an issue's agents are normally on the same local daemon (one port); if a
 	// future multi-daemon split makes that false, per-agent launch URLs are the
 	// follow-up — today the default agent's port is the right single answer.
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"mode":       "self-host",
 		"daemon_url": daemonEditorBase(agents[0].editorPort),
 		"user_id":    userID,
 		"agents":     agents,
-	})
+	}
+	// Self-host: the BROWSER posts the daemon /editor/launch directly, so hand
+	// it the env to forward (user's own tokens, to their own local daemon —
+	// same trust domain as the session that fetched them).
+	if len(editorEnv) > 0 {
+		resp["editor_env"] = editorEnv
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // launchEditorOnDaemon asks the remote daemon (over 6PN) to spawn code-server
 // for a workdir and returns the port it bound.
-func launchEditorOnDaemon(ctx context.Context, internal, workdir, userID string) (int, error) {
-	body, _ := json.Marshal(map[string]string{"workdir": workdir, "user_id": userID})
+func launchEditorOnDaemon(ctx context.Context, internal, workdir, userID string, env map[string]string) (int, error) {
+	payload := map[string]any{"workdir": workdir, "user_id": userID}
+	if len(env) > 0 {
+		payload["env"] = env
+	}
+	body, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+internal+"/editor/launch", bytes.NewReader(body))
 	if err != nil {
 		return 0, err
@@ -373,5 +389,12 @@ func (h *Handler) ProxyEditor(w http.ResponseWriter, r *http.Request) {
 		}
 		req.Host = addr
 	}
+	// The global CSP middleware stamps our API policy (frame-ancestors 'none',
+	// script-src 'self', …) on every response — but these responses ARE the
+	// code-server app, which must be iframed by the issue editor pane and needs
+	// its own (Monaco: workers, eval) policy. Drop ours so the upstream's
+	// headers stand; the capability token + per-request membership check above
+	// remain the actual access control.
+	w.Header().Del("Content-Security-Policy")
 	proxy.ServeHTTP(w, r)
 }

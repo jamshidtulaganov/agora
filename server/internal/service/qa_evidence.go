@@ -82,6 +82,7 @@ func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, con
 		Verdict:     p.Verdict,
 		Summary:     p.Summary,
 		ResultJson:  []byte(raw),
+		Source:      "agent",
 	}); err != nil {
 		slog.Warn("capture qa evidence: upsert failed", "error", err, "issue_id", util.UUIDToString(issue.ID))
 		return "", false
@@ -123,6 +124,15 @@ func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, con
 		slog.Warn("capture qa evidence: attach label failed", "error", err, "label", label, "issue_id", util.UUIDToString(issue.ID))
 		return v, false
 	}
+	// A verdict REPLACES the previous one — detach the opposite gate label.
+	// Without this a fixed-and-re-passed issue carried BOTH labels forever,
+	// and every fail-wins surface (cockpit lane, merge gate, sprint rollup)
+	// kept reporting it as "need fix" (the audit's sticky-label defect).
+	opposite := "qa:fail"
+	if label == "qa:fail" {
+		opposite = "qa:pass"
+	}
+	s.DetachIssueLabelByName(ctx, issue, opposite)
 	s.Bus.Publish(events.Event{
 		Type:        protocol.EventIssueLabelsChanged,
 		WorkspaceID: util.UUIDToString(issue.WorkspaceID),
@@ -132,6 +142,28 @@ func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, con
 	})
 	slog.Info("qa evidence: auto-attached gate label from verdict", "issue_id", util.UUIDToString(issue.ID), "label", label)
 	return v, true
+}
+
+// DetachIssueLabelByName removes a label (matched case-insensitively by name)
+// from an issue. Best-effort — a miss or error is a no-op. Exported so the
+// label handler can reuse it for the qa:pass/qa:fail replace semantics.
+func (s *TaskService) DetachIssueLabelByName(ctx context.Context, issue db.Issue, name string) {
+	labels, err := s.Queries.ListLabelsByIssue(ctx, db.ListLabelsByIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		return
+	}
+	for _, l := range labels {
+		if strings.EqualFold(strings.TrimSpace(l.Name), name) {
+			if err := s.Queries.DetachLabelFromIssue(ctx, db.DetachLabelFromIssueParams{
+				IssueID: issue.ID, LabelID: l.ID, WorkspaceID: issue.WorkspaceID,
+			}); err != nil {
+				slog.Warn("detach label by name failed", "error", err, "label", name, "issue_id", util.UUIDToString(issue.ID))
+			}
+			return
+		}
+	}
 }
 
 // issueHasLabelName reports whether the issue already carries a label by name.

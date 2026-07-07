@@ -1,13 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CheckCircle2, XCircle, CircleDashed, GitBranch, Rocket, Play, ShieldCheck, ShieldAlert, Loader2 } from "lucide-react";
+import { CheckCircle2, XCircle, CircleDashed, GitBranch, Rocket, Play, Plus, ShieldCheck, ShieldAlert, Loader2 } from "lucide-react";
 import { api } from "@agora/core/api";
 import type { SprintReadinessResponse } from "@agora/core/api/schemas";
 import { useWorkspacePaths } from "@agora/core/paths";
+import { useWorkspaceId } from "@agora/core/hooks";
 import { Button } from "@agora/ui/components/ui/button";
 import { AppLink } from "../../navigation";
+import { IssuePickerModal } from "../../modals/issue-picker-modal";
 
 // Sprint QA-readiness — "is this sprint mergeable?" Per active sprint: the issue
 // rows by QA verdict (human qa:pass/qa:fail + automated regression runs) and a
@@ -20,11 +23,14 @@ function VerdictDot({ verdict }: { verdict: string }) {
   return <CircleDashed className="size-4 shrink-0 text-muted-foreground" aria-label="pending" />;
 }
 
-export function QASprintReadinessView() {
+export function QASprintReadinessView({ projectId }: { projectId?: string }) {
   const wp = useWorkspacePaths();
+  const wsId = useWorkspaceId();
   const { data, isLoading } = useQuery({
-    queryKey: ["qa-sprint-readiness"],
-    queryFn: () => api.getSprintReadiness(),
+    // wsId in the key: the fetch scopes by the ambient workspace header, so
+    // without it a workspace switch served the previous workspace's cache.
+    queryKey: ["qa-sprint-readiness", wsId, projectId ?? "all"],
+    queryFn: () => api.getSprintReadiness(projectId),
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
@@ -59,7 +65,7 @@ export function QASprintReadinessView() {
 
 type SprintData = SprintReadinessResponse["sprints"][number];
 
-function RegressionGate({ gate }: { gate: SprintData["regression"] }) {
+function RegressionGate({ gate, issueHref }: { gate: SprintData["regression"]; issueHref: (id: string) => string }) {
   if (!gate || !gate.status) {
     return <span className="text-[11px] text-muted-foreground">regression: never run</span>;
   }
@@ -67,16 +73,35 @@ function RegressionGate({ gate }: { gate: SprintData["regression"] }) {
   const failed = gate.status === "failed" || gate.status === "error";
   const Icon = failed ? ShieldAlert : done ? ShieldCheck : Loader2;
   const cls = failed ? "text-destructive" : done ? "text-emerald-500" : "text-muted-foreground";
-  return (
-    <span className={`flex items-center gap-1 text-[11px] ${cls}`} title={gate.reason || gate.status}>
+  const body = (
+    <>
       <Icon className={`size-3.5 ${!done && !failed ? "animate-spin" : ""}`} aria-hidden />
       regression {gate.status}
+    </>
+  );
+  // Click-through to the run's tracking issue — the chip used to be a
+  // dead-end (toast + tooltip only) with no way to reach the agent output.
+  if (gate.run_issue_id) {
+    return (
+      <AppLink
+        href={issueHref(gate.run_issue_id)}
+        className={`flex items-center gap-1 text-[11px] underline-offset-2 hover:underline ${cls}`}
+        title={gate.reason || gate.status}
+      >
+        {body}
+      </AppLink>
+    );
+  }
+  return (
+    <span className={`flex items-center gap-1 text-[11px] ${cls}`} title={gate.reason || gate.status}>
+      {body}
     </span>
   );
 }
 
 function SprintCard({ sprint: s, qaDetail }: { sprint: SprintData; qaDetail: (id: string) => string }) {
   const qc = useQueryClient();
+  const [attachOpen, setAttachOpen] = useState(false);
   const pct = s.total > 0 ? Math.round((s.passed / s.total) * 100) : 0;
   const runRegression = useMutation({
     mutationFn: () => api.runSprintRegression(s.sprint_id),
@@ -85,6 +110,28 @@ function SprintCard({ sprint: s, qaDetail }: { sprint: SprintData; qaDetail: (id
       void qc.invalidateQueries({ queryKey: ["qa-sprint-readiness"] });
     },
     onError: (e) => toast.error(e instanceof Error && e.message ? e.message : "Failed to run regression"),
+  });
+  // Attach an existing project task to this sprint so it joins the sprint's
+  // regression scope + mergeability rollup. issue_to_sprint is one-sprint-per-
+  // issue (PK = issue_id), so attaching an issue that already belongs to a
+  // DIFFERENT sprint silently MOVES it — steal it only after an explicit
+  // confirm (audit P1: the picker offered such issues with no warning).
+  const attachTask = useMutation({
+    mutationFn: async (issueId: string) => {
+      const current = await api.getIssueSprint(issueId).catch(() => null);
+      if (current && current.id && current.id !== s.sprint_id) {
+        const move = window.confirm(
+          `This task already belongs to sprint "${current.name}". Attaching it here MOVES it out of that sprint (its regression scope and rollup). Move it?`,
+        );
+        if (!move) throw new Error("cancelled");
+      }
+      return api.assignIssueSprint(issueId, s.sprint_id);
+    },
+    onSuccess: () => {
+      toast.success("Task attached to sprint");
+      void qc.invalidateQueries({ queryKey: ["qa-sprint-readiness"] });
+    },
+    onError: (e) => toast.error(e instanceof Error && e.message ? e.message : "Failed to attach task"),
   });
 
   return (
@@ -102,7 +149,7 @@ function SprintCard({ sprint: s, qaDetail }: { sprint: SprintData; qaDetail: (id
         </div>
 
         <div className="ml-auto flex items-center gap-3 text-[12px]">
-          <RegressionGate gate={s.regression} />
+          <RegressionGate gate={s.regression} issueHref={qaDetail} />
           <span className="flex items-center gap-1 text-emerald-500" title="passed">
             <CheckCircle2 className="size-3.5" aria-hidden /> {s.passed}
           </span>
@@ -128,6 +175,15 @@ function SprintCard({ sprint: s, qaDetail }: { sprint: SprintData; qaDetail: (id
             size="sm"
             variant="outline"
             className="h-7 gap-1 text-[11px]"
+            onClick={() => setAttachOpen(true)}
+          >
+            <Plus className="size-3.5" />
+            Attach tasks
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1 text-[11px]"
             disabled={runRegression.isPending}
             onClick={() => runRegression.mutate()}
           >
@@ -136,6 +192,16 @@ function SprintCard({ sprint: s, qaDetail }: { sprint: SprintData; qaDetail: (id
           </Button>
         </div>
       </div>
+
+      <IssuePickerModal
+        open={attachOpen}
+        onOpenChange={setAttachOpen}
+        title="Attach tasks to sprint"
+        description={`Add a task from ${s.project_title} to ${s.name} for regression coverage.`}
+        projectId={s.project_id}
+        excludeIds={s.issues.map((i) => i.id)}
+        onSelect={(issue) => attachTask.mutate(issue.id)}
+      />
 
       <div className="h-1 w-full bg-muted">
         <div

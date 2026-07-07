@@ -20,6 +20,7 @@ import { api } from "@agora/core/api";
 import { issueTimelineOptions } from "@agora/core/issues/queries";
 import { cn } from "@agora/ui/lib/utils";
 import type { TimelineEntry, QACommand, QAResult } from "@agora/core/types";
+import { TestCasesPanel } from "../../qa/components/test-cases-panel";
 
 // Tests panel for the editor right sidebar. Shows:
 //  1. Merge-readiness gate chips (ci / qa) — live, polled every 15s.
@@ -140,49 +141,10 @@ interface QAVerdict {
   result?: QAResult | null;
 }
 
-// Heuristics: a QA verdict comment contains exit codes or qa label markers.
-// The agent posts these via the run_qa / run_ci slice action recipe.
-function parseQAVerdict(content: string): "pass" | "fail" | "unknown" {
-  const lower = content.toLowerCase();
-  if (lower.includes("qa:pass") || lower.includes("all checks passed")) {
-    return "pass";
-  }
-  if (
-    lower.includes("qa:fail") ||
-    lower.includes("exit code 1") ||
-    lower.includes("exit code: 1") ||
-    lower.includes("failed") ||
-    lower.includes("ci:fail")
-  ) {
-    return "fail";
-  }
-  return "unknown";
-}
-
 // Extract first line or short summary from comment content.
 function summarize(content: string): string {
   const first = content.split("\n").find((l) => l.trim().length > 0) ?? "";
   return first.length > 120 ? first.slice(0, 117) + "…" : first;
-}
-
-// QA verdict comments: comments that mention exit codes, QA labels, or test
-// results. We look for specific markers the run_qa recipe instructs the agent
-// to include in its verdict comment.
-function isQAComment(content: string): boolean {
-  const lower = content.toLowerCase();
-  return (
-    lower.includes("qa:pass") ||
-    lower.includes("qa:fail") ||
-    lower.includes("ci:pass") ||
-    lower.includes("ci:fail") ||
-    lower.includes("exit code") ||
-    lower.includes("pnpm test") ||
-    lower.includes("go test") ||
-    lower.includes("playwright") ||
-    lower.includes("smoke") ||
-    (lower.includes("all checks") &&
-      (lower.includes("passed") || lower.includes("failed")))
-  );
 }
 
 // QACommand / QAResult are the structured result the run_qa recipe appends as a
@@ -370,22 +332,27 @@ function VerdictCard({ verdict }: { verdict: QAVerdict }) {
 function VerdictSection({ issueId }: { issueId: string }) {
   const { data: timeline = [] } = useQuery(issueTimelineOptions(issueId));
 
+  // STRUCTURED verdicts only (```qa-result``` blocks) — the same source the
+  // persisted qa_evidence row is built from, so this panel can no longer
+  // disagree with the QA review page. The old keyword heuristic ("looks like
+  // a QA comment") produced phantom verdicts from free-form chatter and was
+  // the audit's two-sources-of-truth finding.
   const verdicts: QAVerdict[] = (timeline as TimelineEntry[])
-    .filter((e) => e.type === "comment" && isQAComment(e.content ?? ""))
-    .map((e) => {
+    .filter((e) => e.type === "comment")
+    .map((e): QAVerdict | null => {
       const content = e.content ?? "";
       const result = parseQAResultBlock(content);
+      if (!result) return null;
       return {
         id: e.id,
-        // The structured block's verdict is authoritative when present; fall
-        // back to the keyword heuristic for free-form comments.
-        verdict: result ? result.verdict : parseQAVerdict(content),
-        summary: result?.summary || summarize(content),
+        verdict: result.verdict,
+        summary: result.summary || summarize(content),
         raw: content,
         createdAt: e.created_at,
         result,
       };
     })
+    .filter((v): v is QAVerdict => v !== null)
     .reverse(); // newest first
 
   if (verdicts.length === 0) {
@@ -577,6 +544,20 @@ export function EditorTestsPanel({
           testRunState={testRunState ?? defaultTestState}
           onRunTests={onRunTests}
         />
+      </section>
+
+      <div className="h-px bg-border" />
+
+      {/* The QA process's own instruments (test_case/test_run rows: authored
+          cases, agent runs, verdicts, traces) — the same panel the QA review
+          page uses, so the editor's Tests tab is connected to the real QA
+          pipeline instead of only the ad-hoc daemon test run above. */}
+      <section className="space-y-2">
+        <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <FlaskConical className="h-3.5 w-3.5" />
+          Test Cases
+        </div>
+        <TestCasesPanel issueId={issueId} />
       </section>
 
       <div className="h-px bg-border" />

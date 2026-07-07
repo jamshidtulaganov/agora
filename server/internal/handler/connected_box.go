@@ -514,20 +514,31 @@ func boxSmokeURL(box db.ConnectedBox) string {
 func (h *Handler) performBoxSync(ctx context.Context, box db.ConnectedBox, branch, keyPath string) (db.ConnectedBox, bool, string) {
 	// Serialize git-sync per box so concurrent fetch+checkout into the box's one
 	// served work_dir can't interleave (one session's fetch updating FETCH_HEAD
-	// while another checks it out → a half-checked-out tree). Use a NON-BLOCKING
-	// box-scoped advisory lock: if another sync of this box is already in flight,
-	// SKIP the redundant fetch+checkout rather than block (and hold a pooled
-	// connection) — in the shared-sprint-branch model every QA task syncs the SAME
-	// branch, so the in-flight sync already converges the box on the right tip. The
-	// lock is held (tx open) across the SSH sync and released on tx rollback at
-	// return. Best-effort: a lock-infra error proceeds unlocked rather than fail.
+	// while another checks it out → a half-checked-out tree). The lock is
+	// BLOCKING (audit P1): the old try-lock returned ok=true on contention and
+	// skipped the sync, which was only sound when both callers wanted the SAME
+	// branch — when a feature-branch deploy raced a sprint-branch regression on
+	// the same box, the loser reported success while the box served the OTHER
+	// branch, and QA recorded a verdict against the wrong code. Blocking waits
+	// for the in-flight sync, then this sync checks out the branch IT was asked
+	// for — both callers end verified on their own request (last write wins on
+	// the box, but neither is lied to). Skip only when the box already serves
+	// this exact branch after the wait. Best-effort on lock-infra errors.
 	if lockTx, err := h.TxStarter.Begin(ctx); err == nil {
 		defer func() { _ = lockTx.Rollback(ctx) }()
-		var got bool
-		if qerr := lockTx.QueryRow(ctx,
-			`SELECT pg_try_advisory_xact_lock(hashtext($1))`,
-			"connected_box:"+uuidToString(box.ID)).Scan(&got); qerr == nil && !got {
-			return box, true, "(box sync already in progress for the same branch; skipped redundant sync)"
+		if _, qerr := lockTx.Exec(ctx,
+			`SELECT pg_advisory_xact_lock(hashtext($1))`,
+			"connected_box:"+uuidToString(box.ID)); qerr == nil {
+			// We now hold the lock. Re-read the box: if the winner just synced
+			// the SAME branch we want, the redundant fetch+checkout can be
+			// skipped — but never for a different branch.
+			if cur, rerr := h.Queries.GetConnectedBox(ctx, db.GetConnectedBoxParams{
+				ID: box.ID, WorkspaceID: box.WorkspaceID,
+			}); rerr == nil && cur.Status == "online" &&
+				strings.TrimSpace(cur.LastBranch) == branch && branch != "" &&
+				cur.LastBootstrapAt.Valid && time.Since(cur.LastBootstrapAt.Time) < 2*time.Minute {
+				return cur, true, "(box just synced this same branch; skipped redundant sync)"
+			}
 		}
 	}
 	out, syncErr := syncBoxBranch(ctx, box, branch, remoteBoxesGitToken(), keyPath, sshRunner{})
@@ -736,6 +747,21 @@ type sprintRegressionPayload struct {
 	Branch   string `json:"branch"`
 	Baseline string `json:"baseline"`
 	SprintID string `json:"sprint_id"`
+	// Tasks the sprint explicitly covers (issue_to_sprint members). The agent
+	// scopes regression to these — running each task's promoted test cases plus
+	// the project base suite — instead of inferring scope from the branch diff
+	// alone. Empty = fall back to whole-branch regression.
+	Tasks []sprintRegressionTask `json:"tasks,omitempty"`
+	// Directive carries the scope-keyed baseline guidance (the same text issue
+	// slices get) so the whole-branch fallback isn't a bare JSON blob the agent
+	// must interpret unaided (audit P1: the rich contract never reached the
+	// autopilot run).
+	Directive string `json:"directive,omitempty"`
+}
+
+type sprintRegressionTask struct {
+	Key   string `json:"key"`
+	Title string `json:"title"`
 }
 
 // DispatchSprintRegression deploys the sprint branch to its project's bound QA
@@ -774,19 +800,61 @@ func (h *Handler) DispatchSprintRegression(ctx context.Context, sprintID, wsID p
 		return db.AutopilotRun{}, fmt.Errorf("no sprint-end (run-only) autopilot is bound to this sprint's project")
 	}
 
+	// Scope the regression to the sprint's attached tasks (issue_to_sprint) so a
+	// user curating the sprint in the QA cockpit controls what gets tested.
+	// Best-effort: on lookup failure fall back to whole-branch regression.
+	var tasks []sprintRegressionTask
+	if issues, ierr := h.Queries.ListIssuesBySprint(ctx, sprint.ID); ierr == nil {
+		prefix := h.getIssuePrefix(ctx, sprint.WorkspaceID)
+		for _, iss := range issues {
+			tasks = append(tasks, sprintRegressionTask{
+				Key:   fmt.Sprintf("%s-%d", prefix, iss.Number),
+				Title: iss.Title,
+			})
+		}
+	}
+
 	payload, err := json.Marshal(sprintRegressionPayload{
 		Scope: "regression", Branch: branch, Baseline: "sprint-root", SprintID: uuidToString(sprint.ID),
+		Tasks:     tasks,
+		Directive: strings.TrimSpace(qaBaselineGuidanceFor("regression")),
 	})
 	if err != nil {
 		return db.AutopilotRun{}, fmt.Errorf("marshal payload: %w", err)
 	}
 
-	ap := autopilots[0]
+	// Pick the QA-regression autopilot, not just autopilots[0]. A project may
+	// have several run-only autopilots (e.g. a "Weekly docs sweep" alongside a
+	// regression one); dispatching a whole-branch QA regression to a docs
+	// autopilot runs the wrong agent. Prefer a regression/QA-titled autopilot,
+	// then any non-docs one, and only fall back to [0] when that's all there is.
+	ap := pickRegressionAutopilot(autopilots)
 	run, err := h.AutopilotService.DispatchAutopilot(ctx, ap, pgtype.UUID{}, source, payload)
 	if err != nil {
 		return db.AutopilotRun{}, fmt.Errorf("dispatch regression: %w", err)
 	}
 	return *run, nil
+}
+
+// pickRegressionAutopilot chooses the best run-only autopilot to carry a sprint
+// regression: a title signalling regression/QA wins; otherwise the first one
+// whose title doesn't look like a docs job; otherwise the first (preserving the
+// original single-autopilot behavior). Purely title-based — autopilots carry no
+// explicit purpose field — so name a project's regression autopilot with "QA"
+// or "regression" for it to be chosen over siblings.
+func pickRegressionAutopilot(aps []db.Autopilot) db.Autopilot {
+	for _, ap := range aps {
+		t := strings.ToLower(ap.Title)
+		if strings.Contains(t, "regression") || strings.Contains(t, "qa") {
+			return ap
+		}
+	}
+	for _, ap := range aps {
+		if !strings.Contains(strings.ToLower(ap.Title), "docs") {
+			return ap
+		}
+	}
+	return aps[0]
 }
 
 // RunIssueSprintRegression lets a human fire the SAME whole-branch regression

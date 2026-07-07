@@ -110,6 +110,24 @@ export function ManualCreatePanel({
   const setLastMode = useCreateModeStore((s) => s.setLastMode);
   const keepOpen = useQuickCreateStore((s) => s.keepOpen);
   const setKeepOpen = useQuickCreateStore((s) => s.setKeepOpen);
+  const quickCreatePrompt = useQuickCreateStore((s) => s.prompt);
+  const clearPrompt = useQuickCreateStore((s) => s.clearPrompt);
+
+  // Self-heal drafts polluted by the old agent→manual leak (fixed in
+  // quick-create-issue.tsx): if the persisted description is byte-identical to
+  // the persisted agent prompt, it's a leaked action prompt (e.g. a
+  // learn-conventions directive), not a real manual draft — start empty and
+  // purge both stores so it can't resurface. A genuine manual draft never
+  // equals the agent prompt verbatim.
+  const draftIsLeakedPrompt = !!draft.description && draft.description === quickCreatePrompt;
+  useEffect(() => {
+    if (draftIsLeakedPrompt) {
+      setDraft({ description: "" });
+      clearPrompt();
+    }
+    // Run once on mount — clearing storage here is a one-time migration.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [title, setTitle] = useState(draft.title);
   const [formResetKey, setFormResetKey] = useState(0);
@@ -514,7 +532,7 @@ export function ManualCreatePanel({
             <div {...descDropZoneProps} className="relative flex flex-1 min-h-0 overflow-y-auto px-5">
               <ContentEditor
                 ref={descEditorRef}
-                defaultValue={draft.description}
+                defaultValue={draftIsLeakedPrompt ? "" : draft.description}
                 placeholder={t(($) => $.create_issue.description_placeholder)}
                 onUpdate={(md) => setDraft({ description: md })}
                 onUploadFile={handleUpload}

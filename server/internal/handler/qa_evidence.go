@@ -7,8 +7,12 @@ import (
 	"net/http"
 	"time"
 
+	"strings"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -22,6 +26,7 @@ type QAEvidenceResponse struct {
 	BaselineRef string          `json:"baseline_ref"`
 	BranchSha   string          `json:"branch_sha"`
 	Verdict     string          `json:"verdict"`
+	Source      string          `json:"source"`
 	Summary     string          `json:"summary"`
 	Result      json.RawMessage `json:"result"`
 	CapturedAt  string          `json:"captured_at"`
@@ -38,6 +43,7 @@ func qaEvidenceToResponse(e db.QaEvidence) QAEvidenceResponse {
 		BaselineRef: e.BaselineRef,
 		BranchSha:   e.BranchSha,
 		Verdict:     e.Verdict,
+		Source:      e.Source,
 		Summary:     e.Summary,
 		Result:      result,
 		CapturedAt:  e.CapturedAt.Time.Format(time.RFC3339),
@@ -66,4 +72,74 @@ func (h *Handler) GetIssueQAEvidence(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, qaEvidenceToResponse(evidence))
+}
+
+// qaVerdictSummary is one issue's freshest QA verdict for the cockpit rows —
+// enough to answer "why is this here" without opening the issue.
+type qaVerdictSummary struct {
+	Verdict    string `json:"verdict"`
+	Source     string `json:"source"`
+	Summary    string `json:"summary"`
+	CapturedAt string `json:"captured_at"`
+}
+
+// ListQAVerdicts returns the freshest qa_evidence verdict per in_review issue
+// (optionally scoped to one project) keyed by issue id — the QA cockpit's
+// row-level "reason + provenance + age" data. GET /api/qa/verdicts.
+// This finally wires the previously-unused ListQAEvidenceSummariesForIssues
+// (the audit found the cockpit trusting sticky labels while this sat idle).
+func (h *Handler) ListQAVerdicts(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUserID(w, r); !ok {
+		return
+	}
+	wsID := h.resolveWorkspaceID(r)
+	if wsID == "" {
+		writeError(w, http.StatusBadRequest, "workspace required")
+		return
+	}
+	wsUUID, ok := parseUUIDOrBadRequest(w, wsID, "workspace_id")
+	if !ok {
+		return
+	}
+	var projID pgtype.UUID
+	if raw := strings.TrimSpace(r.URL.Query().Get("project_id")); raw != "" {
+		if id, perr := util.ParseUUID(raw); perr == nil {
+			projID = id
+		}
+	}
+
+	rows, err := h.DB.Query(r.Context(),
+		`SELECT id FROM issue
+		 WHERE workspace_id = $1 AND status = 'in_review'
+		   AND ($2::uuid IS NULL OR project_id = $2)
+		 LIMIT 500`, wsUUID, projID)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"verdicts": map[string]any{}})
+		return
+	}
+	var ids []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if rows.Scan(&id) == nil {
+			ids = append(ids, id)
+		}
+	}
+	rows.Close()
+
+	out := map[string]qaVerdictSummary{}
+	if len(ids) > 0 {
+		sums, serr := h.Queries.ListQAEvidenceSummariesForIssues(r.Context(), db.ListQAEvidenceSummariesForIssuesParams{
+			WorkspaceID: wsUUID, Column2: ids,
+		})
+		if serr == nil {
+			for _, s := range sums {
+				item := qaVerdictSummary{Verdict: s.Verdict, Source: s.Source, Summary: s.Summary}
+				if s.CapturedAt.Valid {
+					item.CapturedAt = s.CapturedAt.Time.Format(time.RFC3339)
+				}
+				out[uuidToString(s.IssueID)] = item
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"verdicts": out})
 }

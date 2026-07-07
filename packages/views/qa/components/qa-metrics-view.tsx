@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Gauge, Timer, ShieldCheck, ShieldAlert, Code2, Zap } from "lucide-react";
 import { api } from "@agora/core/api";
+import { useWorkspaceId } from "@agora/core/hooks";
 
 // QA Metrics — reads regression as a first-class signal: how much the suite
 // runs, how green it stays, how fast each QA agent is, and how far the
@@ -46,10 +47,12 @@ function StatCard({
   );
 }
 
-export function QAMetricsView() {
+export function QAMetricsView({ projectId }: { projectId?: string }) {
+  const wsId = useWorkspaceId();
   const { data, isLoading } = useQuery({
-    queryKey: ["qa-metrics"],
-    queryFn: () => api.getQAMetrics(),
+    // wsId in the key — same cross-workspace staleness fix as the sprint tab.
+    queryKey: ["qa-metrics", wsId, projectId ?? "all"],
+    queryFn: () => api.getQAMetrics(projectId),
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
@@ -81,7 +84,7 @@ export function QAMetricsView() {
 
       {/* Top stats */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <StatCard icon={Gauge} label="Regression runs" value={String(totals.total)} sub="last 30 days" />
+        <StatCard icon={Gauge} label="Case runs" value={String(totals.total)} sub="per-case verdicts, last 30 days" />
         <StatCard
           icon={ShieldCheck}
           label="Pass rate"
@@ -105,9 +108,9 @@ export function QAMetricsView() {
         />
         <StatCard
           icon={Zap}
-          label="Fast path"
-          value={coverage.scripted > 0 ? "~5s / case" : "—"}
-          sub="vs minutes LLM-driven"
+          label="Scripted cases"
+          value={String(coverage.scripted)}
+          sub="run deterministically (fast path)"
           tone={coverage.scripted > 0 ? "good" : "default"}
         />
       </div>

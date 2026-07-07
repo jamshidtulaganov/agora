@@ -2,7 +2,12 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/util"
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
 // QA speed / regression metrics — the QA Metrics page's aggregate payload.
@@ -71,16 +76,25 @@ func (h *Handler) GetQAMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 
+	// Optional ?project_id scopes every metric to one project (the cockpit
+	// project selector); absent/blank = workspace-wide.
+	var projID pgtype.UUID
+	if raw := strings.TrimSpace(r.URL.Query().Get("project_id")); raw != "" {
+		if id, perr := util.ParseUUID(raw); perr == nil {
+			projID = id
+		}
+	}
+
 	resp := qaMetricsResponse{
 		ByDay:      []qaMetricsDay{},
 		Agents:     []qaMetricsAgent{},
 		RecentRuns: []qaMetricsRun{},
 	}
 
-	if t, err := h.Queries.QAMetricsRunTotals(ctx, wsUUID); err == nil {
+	if t, err := h.Queries.QAMetricsRunTotals(ctx, db.QAMetricsRunTotalsParams{WorkspaceID: wsUUID, ProjectID: projID}); err == nil {
 		resp.Totals = qaMetricsTotals{Total: t.Total, Passed: t.Passed, Failed: t.Failed, Skipped: t.Skipped}
 	}
-	if rows, err := h.Queries.QAMetricsRunsByDay(ctx, wsUUID); err == nil {
+	if rows, err := h.Queries.QAMetricsRunsByDay(ctx, db.QAMetricsRunsByDayParams{WorkspaceID: wsUUID, ProjectID: projID}); err == nil {
 		for _, d := range rows {
 			day := ""
 			if d.Day.Valid {
@@ -89,17 +103,17 @@ func (h *Handler) GetQAMetrics(w http.ResponseWriter, r *http.Request) {
 			resp.ByDay = append(resp.ByDay, qaMetricsDay{Day: day, Total: d.Total, Failed: d.Failed})
 		}
 	}
-	if rows, err := h.Queries.QAMetricsAgentDurations(ctx, wsUUID); err == nil {
+	if rows, err := h.Queries.QAMetricsAgentDurations(ctx, db.QAMetricsAgentDurationsParams{WorkspaceID: wsUUID, ProjectID: projID}); err == nil {
 		for _, a := range rows {
 			resp.Agents = append(resp.Agents, qaMetricsAgent{
 				Agent: a.Agent, Runs: a.Runs, AvgSec: a.AvgSec, MinSec: a.MinSec, MaxSec: a.MaxSec,
 			})
 		}
 	}
-	if c, err := h.Queries.QAMetricsScriptCoverage(ctx, wsUUID); err == nil {
+	if c, err := h.Queries.QAMetricsScriptCoverage(ctx, db.QAMetricsScriptCoverageParams{WorkspaceID: wsUUID, ProjectID: projID}); err == nil {
 		resp.Coverage = qaMetricsCoverage{Automated: c.Automated, Scripted: c.Scripted}
 	}
-	if rows, err := h.Queries.QAMetricsRecentRuns(ctx, wsUUID); err == nil {
+	if rows, err := h.Queries.QAMetricsRecentRuns(ctx, db.QAMetricsRecentRunsParams{WorkspaceID: wsUUID, ProjectID: projID}); err == nil {
 		for _, rr := range rows {
 			run := qaMetricsRun{
 				ID:        uuidToString(rr.ID),

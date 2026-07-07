@@ -25,7 +25,10 @@ WHERE i.status = 'in_review'
   AND i.updated_at > now() - make_interval(hours => $2::int)
   AND NOT EXISTS (
     SELECT 1 FROM issue_to_label il JOIN issue_label l ON l.id = il.label_id
-    WHERE il.issue_id = i.id AND l.name IN ('qa:pass', 'qa:fail')
+    -- qa:stale = already escalated (idempotency); qa:blocked = a DELIBERATE
+    -- infra-blocked state set by the gate (undeployable sprint branch) —
+    -- sweeping it would overwrite a meaningful signal.
+    WHERE il.issue_id = i.id AND l.name IN ('qa:pass', 'qa:fail', 'qa:stale', 'qa:blocked')
   )
   AND NOT EXISTS (
     SELECT 1 FROM agent_task_queue t

@@ -117,6 +117,13 @@ export function onIssueLabelsChanged(
   issueId: string,
   labels: Label[],
 ) {
+  // QA cockpit surfaces bucket by qa:* labels — an agent posting a verdict (or
+  // the watchdog escalating) must move the row across lanes for EVERY viewer,
+  // not just the client that clicked (audit P1: lanes never live-updated).
+  void qc.invalidateQueries({ queryKey: ["qa-cockpit", wsId] });
+  void qc.invalidateQueries({ queryKey: ["qa-bugs", wsId] });
+  void qc.invalidateQueries({ queryKey: ["qa-sprint-readiness", wsId] });
+
   for (const [key, data] of qc.getQueriesData<ListIssuesCache>({ queryKey: issueKeys.list(wsId) })) {
     if (data) qc.setQueryData<ListIssuesCache>(key, patchIssueInBuckets(data, issueId, { labels }));
   }

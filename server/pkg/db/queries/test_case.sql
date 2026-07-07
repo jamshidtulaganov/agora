@@ -49,12 +49,21 @@ ORDER BY created_at DESC;
 -- into the project's standing base scripts (issue_id NULL) with a "[KEY] "
 -- title prefix, so every future QA run regression-tests the finished work.
 -- Dedupe by prefixed title against live base rows — re-fires are no-ops.
+-- Only cases whose LATEST run PASSED are promoted (audit P1): the base suite
+-- blocks qa:pass for EVERY future issue in the project, so immortalizing a
+-- case that never ran — or last ran red — pollutes every gate with a
+-- manufactured regression. Verified-green-at-promotion is the entry bar.
 INSERT INTO test_case
   (workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, category, script)
 SELECT tc.workspace_id, NULL, $2, '[' || sqlc.arg(issue_key)::text || '] ' || tc.title,
        tc.steps, tc.expected, 'automated', 'promoted', tc.author_type, tc.author_id, tc.category, tc.script
 FROM test_case tc
 WHERE tc.issue_id = $1 AND tc.kind = 'automated' AND tc.archived_at IS NULL
+  AND (
+    SELECT r.status FROM test_run r
+    WHERE r.test_case_id = tc.id
+    ORDER BY r.created_at DESC LIMIT 1
+  ) = 'pass'
   AND NOT EXISTS (
     SELECT 1 FROM test_case e
     WHERE e.project_id = $2 AND e.issue_id IS NULL AND e.archived_at IS NULL
@@ -143,3 +152,21 @@ LIMIT $3;
 UPDATE test_case
 SET script = $3, updated_at = now()
 WHERE id = $1 AND workspace_id = $2;
+
+-- name: ListRecentRunsForCase :many
+-- Auto-flake input: the case's most recent runs (any issue), newest first.
+SELECT status, issue_id FROM test_run
+WHERE test_case_id = $1
+ORDER BY created_at DESC
+LIMIT $2;
+
+-- name: HasBaselineCapableRunForIssue :one
+-- Whether the issue has ANY run that reported a meaningful baseline status —
+-- the precondition for the discrimination gate to be satisfiable at all.
+-- [e2e]/[smoke]/hand-driven cases report baseline "unknown" and can NEVER
+-- discriminate; holding such an issue at in_review forever was the audit's
+-- "permanent wedge" finding.
+SELECT EXISTS (
+  SELECT 1 FROM test_run
+  WHERE issue_id = $1 AND baseline_status IN ('pass', 'fail')
+);

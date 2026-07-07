@@ -168,7 +168,7 @@ export function EditorSection({
   // worktree is currently shown. Empty in cloud mode (single proxied editor).
   const [agents, setAgents] = useState<EditorAgent[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [daemon, setDaemon] = useState<{ url: string; userId: string } | null>(
+  const [daemon, setDaemon] = useState<{ url: string; userId: string; env?: Record<string, string> } | null>(
     null,
   );
   // Lifted test-run state — shared between EditorPreviewPane (button + bottom
@@ -222,13 +222,16 @@ export function EditorSection({
     workdir: string,
     daemonUrl: string,
     userId: string,
+    env?: Record<string, string>,
   ) => {
     setState("loading");
     setErr("");
     const lr = await fetch(`${daemonUrl}/editor/launch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ workdir, user_id: userId }),
+      // env = the user's editor account tokens (Settings → editor
+      // integration), forwarded verbatim; the daemon allowlists the keys.
+      body: JSON.stringify({ workdir, user_id: userId, ...(env ? { env } : {}) }),
     });
     if (!lr.ok) {
       throw new Error(
@@ -277,6 +280,7 @@ export function EditorSection({
         daemon_url?: string;
         user_id?: string;
         agents?: EditorAgent[];
+        editor_env?: Record<string, string>;
       };
 
       // Cloud: backend already launched + reverse-proxies — iframe directly.
@@ -305,9 +309,9 @@ export function EditorSection({
         return;
       }
       setAgents(list);
-      setDaemon({ url: data.daemon_url, userId: data.user_id });
+      setDaemon({ url: data.daemon_url, userId: data.user_id, env: data.editor_env });
       setSelectedId(list[0]!.agent_id);
-      await launchWorkdir(list[0]!.work_dir, data.daemon_url, data.user_id);
+      await launchWorkdir(list[0]!.work_dir, data.daemon_url, data.user_id, data.editor_env);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "failed to open editor");
       setState("error");
@@ -318,7 +322,7 @@ export function EditorSection({
     if (a.agent_id === selectedId || !daemon) return;
     setSelectedId(a.agent_id);
     try {
-      await launchWorkdir(a.work_dir, daemon.url, daemon.userId);
+      await launchWorkdir(a.work_dir, daemon.url, daemon.userId, daemon.env);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "failed to open editor");
       setState("error");

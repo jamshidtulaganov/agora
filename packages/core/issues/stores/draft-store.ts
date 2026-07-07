@@ -66,6 +66,23 @@ export const useIssueDraftStore = create<IssueDraftStore>()(
     }),
     {
       name: "agora_issue_draft",
+      // v1: one-time forced clear of draft.description. An earlier
+      // agent→manual leak persisted an action prompt (e.g. a learn-conventions
+      // directive) as the draft body, so "Create manually" kept opening with a
+      // stale "Extract the coding conventions…" description. The runtime fix
+      // (quick-create switchToManual + equality self-heal) stops recurrence,
+      // but a description already saved before it — and not byte-equal to the
+      // prompt store — survived. Bumping the version wipes description once for
+      // everyone on load, no manual localStorage clear needed. Cost: an
+      // in-progress description draft is dropped once (title/status/etc. kept).
+      version: 1,
+      migrate: (persisted, fromVersion) => {
+        const s = (persisted ?? {}) as Partial<IssueDraftStore>;
+        if (fromVersion < 1 && s.draft) {
+          s.draft = { ...s.draft, description: "" };
+        }
+        return s;
+      },
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
       // Drafts persisted by older builds predate fields added later (e.g.
       // `attachments`). Backfill EMPTY_DRAFT defaults on rehydrate so every

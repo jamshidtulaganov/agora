@@ -365,6 +365,10 @@ func (h *Handler) AttachLabel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Trigger-idempotency needs to know whether this attach is NEW: the insert
+	// is ON CONFLICT DO NOTHING, and re-attaching an existing qa:fail used to
+	// re-fire the whole autoroute/auto-bug chain (audit P2 churn).
+	alreadyHad := h.issueHasLabelNameHandler(r.Context(), issue, label.Name)
 	if err := h.Queries.AttachLabelToIssue(r.Context(), db.AttachLabelToIssueParams{
 		IssueID:     issue.ID,
 		LabelID:     labelID,
@@ -375,15 +379,29 @@ func (h *Handler) AttachLabel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The QA gate labels are a VERDICT pair: attaching one replaces the other.
+	// Agents set verdicts through this handler (CLI label attach), and without
+	// the replace an issue that failed then re-passed carried BOTH labels
+	// forever — every fail-wins surface kept it "need fix" (audit P0).
+	switch strings.ToLower(strings.TrimSpace(label.Name)) {
+	case "qa:pass":
+		h.TaskService.DetachIssueLabelByName(r.Context(), issue, "qa:fail")
+	case "qa:fail":
+		h.TaskService.DetachIssueLabelByName(r.Context(), issue, "qa:pass")
+	}
+
 	// Automation chain: a qa:pass label fires an auto_docs run (when enabled +
 	// the project has a docs_repo); in sprint-PR mode it ALSO routes the squad
 	// lead to review + merge the task's PR into the sprint branch. A qa:fail
 	// label routes the issue back to the failing dev agent's squad lead (when
 	// enabled + the agent has a squad). All detached + best-effort so none delays
 	// or fails the label attach.
-	go h.maybeAutoDocsOnLabel(context.Background(), issue, label.Name, userID)
-	go h.maybeMergeOnQAPass(context.Background(), issue, label.Name, userID)
-	go h.maybeRouteToDevLeadOnQAFail(context.Background(), issue, label.Name, userID)
+	if !alreadyHad {
+		go h.maybeAutoDocsOnLabel(context.Background(), issue, label.Name, userID)
+		go h.maybeMergeOnQAPass(context.Background(), issue, label.Name, userID)
+		go h.maybeRouteToDevLeadOnQAFail(context.Background(), issue, label.Name, userID)
+		go h.maybeAutoFileBugOnQAFail(context.Background(), issue, label.Name, userID)
+	}
 
 	// Read the updated label list; on read failure, the attach is already
 	// committed — return success without a labels body (clients refetch via

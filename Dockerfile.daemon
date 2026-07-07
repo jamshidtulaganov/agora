@@ -54,14 +54,19 @@ RUN npm install -g figma-developer-mcp@0.13.2
 # "Code" editor so a human can watch + edit an agent's worktree from the browser.
 RUN curl -fsSL https://code-server.dev/install.sh | sh
 
-# Playwright — for `playwright show-trace`, the QA trace viewer the daemon serves
-# on /trace/launch. Installed GLOBALLY so `npx playwright show-trace` resolves
-# from any cwd (the viewer is launched from the trace file's dir, e.g. /tmp).
-# NO browsers are downloaded here (PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD): show-trace
-# serves a static viewer app and its OS-level open() is a harmless no-op on this
-# headless box; run_test_cases installs chromium-headless-shell per box when it
-# actually needs to DRIVE a browser.
+# Playwright — for `playwright show-trace` (the QA trace viewer served on
+# /trace/launch) AND for the browsers below. Installed GLOBALLY so
+# `npx playwright ...` resolves from any cwd.
 RUN PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install -g playwright
+
+# Chromium headless shell — powers BOTH the compiled run_test_cases scripts and
+# the Live-testing bay's CDP screencast browser. Baked into a shared path
+# OUTSIDE $HOME on purpose: HOME is the mounted /data volume, so anything
+# installed under it at build time would be shadowed by the mount at runtime.
+# The daemon (detectChromium) and every agent-run `node` Playwright script
+# inherit PLAYWRIGHT_BROWSERS_PATH, so nothing re-downloads a browser per box.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN npx playwright install --with-deps chromium-headless-shell
 
 COPY --from=builder /src/server/bin/agora /usr/local/bin/agora
 COPY deploy/fly/daemon/entrypoint.sh /entrypoint.sh
