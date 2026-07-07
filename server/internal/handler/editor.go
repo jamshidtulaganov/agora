@@ -373,5 +373,12 @@ func (h *Handler) ProxyEditor(w http.ResponseWriter, r *http.Request) {
 		}
 		req.Host = addr
 	}
+	// The global CSP middleware stamps our API policy (frame-ancestors 'none',
+	// script-src 'self', …) on every response — but these responses ARE the
+	// code-server app, which must be iframed by the issue editor pane and needs
+	// its own (Monaco: workers, eval) policy. Drop ours so the upstream's
+	// headers stand; the capability token + per-request membership check above
+	// remain the actual access control.
+	w.Header().Del("Content-Security-Policy")
 	proxy.ServeHTTP(w, r)
 }

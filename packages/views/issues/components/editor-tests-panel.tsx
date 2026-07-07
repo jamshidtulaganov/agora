@@ -20,6 +20,7 @@ import { api } from "@agora/core/api";
 import { issueTimelineOptions } from "@agora/core/issues/queries";
 import { cn } from "@agora/ui/lib/utils";
 import type { TimelineEntry, QACommand, QAResult } from "@agora/core/types";
+import { TestCasesPanel } from "../../qa/components/test-cases-panel";
 
 // Tests panel for the editor right sidebar. Shows:
 //  1. Merge-readiness gate chips (ci / qa) — live, polled every 15s.
@@ -577,6 +578,20 @@ export function EditorTestsPanel({
           testRunState={testRunState ?? defaultTestState}
           onRunTests={onRunTests}
         />
+      </section>
+
+      <div className="h-px bg-border" />
+
+      {/* The QA process's own instruments (test_case/test_run rows: authored
+          cases, agent runs, verdicts, traces) — the same panel the QA review
+          page uses, so the editor's Tests tab is connected to the real QA
+          pipeline instead of only the ad-hoc daemon test run above. */}
+      <section className="space-y-2">
+        <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <FlaskConical className="h-3.5 w-3.5" />
+          Test Cases
+        </div>
+        <TestCasesPanel issueId={issueId} />
       </section>
 
       <div className="h-px bg-border" />
