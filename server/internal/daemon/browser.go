@@ -125,6 +125,9 @@ func detectChromium() string {
 	if root := strings.TrimSpace(os.Getenv("PLAYWRIGHT_BROWSERS_PATH")); root != "" && root != "0" {
 		globs = append(globs,
 			filepath.Join(root, "chromium-*/chrome-linux/chrome"),
+			// chromium-headless-shell install layout (Playwright):
+			// chromium_headless_shell-<rev>/chrome-headless-shell-<os>/chrome-headless-shell
+			filepath.Join(root, "chromium_headless_shell-*/chrome-headless-shell-*/chrome-headless-shell"),
 			filepath.Join(root, "chromium_headless_shell-*/chrome-linux/headless_shell"),
 		)
 	}
@@ -136,6 +139,8 @@ func detectChromium() string {
 			// run_test_cases installs chromium-headless-shell (not full chromium)
 			// per box — it drives CDP + screencast the same, so accept it as the
 			// live-browser binary rather than failing "no Chromium found".
+			filepath.Join(home, "Library/Caches/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-*/chrome-headless-shell"),
+			filepath.Join(home, ".cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-*/chrome-headless-shell"),
 			filepath.Join(home, "Library/Caches/ms-playwright/chromium_headless_shell-*/chrome-mac/headless_shell"),
 			filepath.Join(home, ".cache/ms-playwright/chromium_headless_shell-*/chrome-linux/headless_shell"),
 		)
