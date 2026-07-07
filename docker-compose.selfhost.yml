@@ -47,6 +47,9 @@ services:
       - "127.0.0.1:${BACKEND_PORT:-${API_PORT:-${SERVER_PORT:-${PORT:-8080}}}}:8080"
     volumes:
       - backend_uploads:/app/data/uploads
+      # Remote Boxes control-plane SSH key (git-sync / provisioning). Host path
+      # comes from .env; defaults to /dev/null so the mount is inert when unset.
+      - ${AGORA_REMOTE_BOXES_SSH_KEY_FILE:-/dev/null}:/keys/agora_remote_boxes:ro
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-agora}:${POSTGRES_PASSWORD:-agora}@postgres:5432/${POSTGRES_DB:-agora}?sslmode=disable
       PORT: "8080"
@@ -106,6 +109,7 @@ services:
       AGORA_DAEMON_EDITOR_URL: ${AGORA_DAEMON_EDITOR_URL:-}
       AGORA_REMOTE_BOXES_ENABLED: ${AGORA_REMOTE_BOXES_ENABLED:-}
       AGORA_REMOTE_BOXES_SSH_KEY: ${AGORA_REMOTE_BOXES_SSH_KEY:-}
+      AGORA_REMOTE_BOXES_GIT_TOKEN: ${AGORA_REMOTE_BOXES_GIT_TOKEN:-}
       # Backend→daemon address for SERVER-SIDE launches (trace viewer, cloud
       # editor proxy). Empty = self-host loopback (backend shares the daemon's
       # host). In docker-compose the backend is a container and the daemon runs
