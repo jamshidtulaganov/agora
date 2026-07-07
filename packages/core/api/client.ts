@@ -282,6 +282,9 @@ import {
   type SprintReadinessResponse,
   FigmaCredentialStatusSchema,
   EMPTY_FIGMA_CREDENTIAL_STATUS,
+  EditorTokensResponseSchema,
+  EMPTY_EDITOR_TOKENS,
+  type EditorTokensResponse,
 } from "./schemas";
 
 /** Identifies the calling client to the server.
@@ -2895,6 +2898,29 @@ export class ApiClient {
 
   async deleteFigmaCredential(workspaceId: string): Promise<void> {
     await this.fetch(`/api/workspaces/${workspaceId}/figma-credential`, {
+      method: "DELETE",
+    });
+  }
+
+  // Editor account integration (Settings → Account): per-user PATs the daemon
+  // injects into the co-code editor env (GH_TOKEN/GITHUB_TOKEN/GITLAB_TOKEN).
+  // Tokens are write-only — reads return a masked tail.
+  async listEditorTokens(): Promise<EditorTokensResponse> {
+    const raw = await this.fetch<unknown>(`/api/me/editor-tokens`);
+    return parseWithFallback(raw, EditorTokensResponseSchema, EMPTY_EDITOR_TOKENS, {
+      endpoint: "GET /api/me/editor-tokens",
+    });
+  }
+
+  async putEditorToken(provider: "github" | "gitlab", token: string): Promise<void> {
+    await this.fetch(`/api/me/editor-tokens`, {
+      method: "PUT",
+      body: JSON.stringify({ provider, token }),
+    });
+  }
+
+  async deleteEditorToken(provider: "github" | "gitlab"): Promise<void> {
+    await this.fetch(`/api/me/editor-tokens/${provider}`, {
       method: "DELETE",
     });
   }

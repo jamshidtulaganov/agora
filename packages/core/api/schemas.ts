@@ -1381,6 +1381,24 @@ export const EMPTY_CREATE_BILLING_PORTAL_SESSION_RESPONSE: CreateBillingPortalSe
 // Everything beyond `configured` defaults so an older server shape degrades to
 // a "not configured" style rendering instead of knocking the settings section
 // into an error. Check `configured === true` explicitly downstream.
+// Editor account integration (per-user PATs for the co-code editor env).
+// Tokens are write-only; the API returns a masked tail per provider.
+export const EditorTokensResponseSchema = z.object({
+  tokens: z
+    .array(
+      z.object({
+        provider: z.string().default(""),
+        masked: z.string().default(""),
+        updated_at: z.string().default(""),
+      }).loose(),
+    )
+    .default([]),
+}).loose();
+
+export type EditorTokensResponse = z.infer<typeof EditorTokensResponseSchema>;
+
+export const EMPTY_EDITOR_TOKENS: EditorTokensResponse = { tokens: [] };
+
 export const FigmaCredentialStatusSchema = z.object({
   configured: z.boolean().default(false),
   label: z.string().default(""),

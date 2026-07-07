@@ -893,6 +893,14 @@ type User struct {
 	Timezone pgtype.Text `json:"timezone"`
 }
 
+type UserEditorToken struct {
+	UserID      pgtype.UUID        `json:"user_id"`
+	Provider    string             `json:"provider"`
+	TokenSealed []byte             `json:"token_sealed"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
 type UserExternalIdentity struct {
 	UserID     pgtype.UUID        `json:"user_id"`
 	Provider   string             `json:"provider"`

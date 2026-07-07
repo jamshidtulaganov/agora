@@ -521,5 +521,16 @@
       "error_save_failed": "Sinxronlash konfiguratsiyasini saqlab bo'lmadi.",
       "error_delete_failed": "Sinxronlash konfiguratsiyasini o'chirib bo'lmadi."
     }
+  },
+  "editor_accounts": {
+    "title": "Editor akkauntlari",
+    "description": "Co-code editor’ingizga qo‘shiladigan shaxsiy tokenlar (editor terminalida gh CLI va HTTPS git avtomatik autentifikatsiya bo‘ladi). Shifrlangan saqlanadi; niqoblab ko‘rsatiladi.",
+    "token_placeholder": "Personal access token joylang…",
+    "save": "Saqlash",
+    "remove": "O‘chirish",
+    "toast_saved": "Token saqlandi",
+    "toast_save_failed": "Token saqlanmadi",
+    "toast_removed": "Token o‘chirildi",
+    "toast_remove_failed": "Token o‘chirilmadi"
   }
 }

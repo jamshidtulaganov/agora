@@ -15,6 +15,10 @@ export interface GetIssueEditorResponse {
   user_id: string; // self-host only
   agents: EditorAgent[]; // self-host only, most-recently-active first
   editor_url: string; // cloud only
+  // Self-host only: the caller's editor account tokens (Settings → editor
+  // integration) to forward verbatim in the daemon /editor/launch body, so
+  // gh CLI / HTTPS git in the editor terminal are authenticated.
+  editor_env?: Record<string, string>;
 }
 
 // GET /api/issues/:id/qa-preview-url — the issue's resolved QA target (a

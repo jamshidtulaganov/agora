@@ -264,6 +264,13 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 		var req struct {
 			WorkDir string `json:"workdir"`
 			UserID  string `json:"user_id"`
+			// Env carries the user's editor account tokens (Settings →
+			// editor integration) into the code-server process, so gh CLI /
+			// HTTPS git in its terminals are authenticated. ALLOWLISTED
+			// below — in self-host mode this request comes from the browser,
+			// and arbitrary env injection into a process that runs shells
+			// must be impossible.
+			Env map[string]string `json:"env"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
@@ -338,6 +345,14 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 				continue
 			}
 			filtered = append(filtered, kv)
+		}
+		// User editor tokens from the launch request — STRICT allowlist (the
+		// self-host launch comes from the browser; nothing outside these
+		// token vars may reach a shell-running process's environment).
+		for _, k := range []string{"GH_TOKEN", "GITHUB_TOKEN", "GITLAB_TOKEN"} {
+			if v := strings.TrimSpace(req.Env[k]); v != "" && !strings.ContainsAny(v, "\n\r\x00") {
+				filtered = append(filtered, k+"="+v)
+			}
 		}
 		cmd.Env = filtered
 		// code-server's own output is the ONLY evidence when it dies right after

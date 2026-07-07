@@ -598,6 +598,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// SD: external-identity mapping (e.g. Bitrix RESPONSIBLE_ID -> member).
 		r.Get("/api/me/links", h.ListMyLinks)
 		r.Post("/api/me/links/bitrix", h.LinkBitrixIdentity)
+		// Editor account integration (Settings): per-user PATs injected into
+		// the co-code editor env. Reads are session-level; writes are
+		// human-only (an agent's task token must not be able to plant a
+		// token into the human's editor environment).
+		r.Get("/api/me/editor-tokens", h.ListEditorTokens)
+		r.With(handler.RequireHumanActor).Put("/api/me/editor-tokens", h.PutEditorToken)
+		r.With(handler.RequireHumanActor).Delete("/api/me/editor-tokens/{provider}", h.DeleteEditorToken)
 		r.Patch("/api/me/onboarding", h.PatchOnboarding)
 		r.Post("/api/me/onboarding/complete", h.CompleteOnboarding)
 		r.Post("/api/me/onboarding/cloud-waitlist", h.JoinCloudWaitlist)
