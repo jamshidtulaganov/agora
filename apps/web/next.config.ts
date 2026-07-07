@@ -80,6 +80,16 @@ const nextConfig: NextConfig = {
           destination: `${remoteApiUrl}/telegram/:path*`,
         },
         {
+          // Live code editor reverse-proxy (cloud) — the iframe's entry URL is
+          // /editor/proxy/{token}/?folder=… . The generic :path* rule below
+          // loses the TRAILING slash when it splits/rejoins the params, and the
+          // slash-less form 307-bounces off the backend back into the same
+          // strip — an infinite redirect shown as a CSP-blocked iframe. Match
+          // the entry form explicitly and rewrite it verbatim, slash included.
+          source: "/editor/proxy/:token/",
+          destination: `${remoteApiUrl}/editor/proxy/:token/`,
+        },
+        {
           // Live code editor reverse-proxy (cloud) — backend /editor/proxy/{token}/*
           // streams code-server (HTTP + WebSocket) from the remote daemon.
           source: "/editor/:path*",
