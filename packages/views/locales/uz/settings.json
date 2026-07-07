@@ -199,7 +199,19 @@
     "qa_dev_runtimes_description": "Developerning daemon'i online bo'lib, task projecti uchun lokal app e'lon qilgan bo'lsa (agora daemon apps set <project> <url>), QA task O'SHA mashinada bajariladi va lokal yurgan appni tekshiradi. O'chiq = QA doim umumiy runtime'larda.",
     "qa_dev_runtimes_strict_label": "Strict: daemon offline bo'lsa fallback qilmasdan kutish",
     "dev_machines_title": "Developer mashinalari",
-    "dev_machines_empty": "Hozircha hech bir developer mashinasi lokal app e'lon qilmagan. Dev mashinasida: agora daemon apps set <project> <url>, keyin daemon'ni restart qiling."
+    "dev_machines_empty": "Hozircha hech bir developer mashinasi lokal app e'lon qilmagan. Dev mashinasida: agora daemon apps set <project> <url>, keyin daemon'ni restart qiling.",
+    "test_button": "Test",
+    "test_button_title": "Boxga SSH ulanishni tekshirish",
+    "test_ok": "Ulanish OK",
+    "test_failed": "Ulanish ishlamadi",
+    "seed_button": "Seed",
+    "seed_button_title": "Box demo-ma'lumotlarini qayta yuklash (operator belgilagan buyruq)",
+    "seed_confirm": "Box ma'lumotlari qayta yuklansinmi? Hozirgi test ma'lumotlar almashtiriladi.",
+    "seed_ok": "Seed bajarildi",
+    "seed_failed": "Seed ishlamadi",
+    "disconnect_button_title": "Uzish (boxni Agora'dan olib tashlash)",
+    "disconnect_confirm": "Box uzilsinmi? Agora uni unutadi; serverning o'zida hech narsa o'chmaydi.",
+    "disconnected": "Box uzildi"
   },
   "github": {
     "page_description": "GitHub App ulang, Pull Request’lar Agora ichida qanday ko‘rinishini boshqaring va agentlaringiz commit tarixida nima qoldirishini hal qiling.",

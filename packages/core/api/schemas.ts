@@ -842,6 +842,17 @@ export const WorkspaceLabsSchema = z
   })
   .loose();
 
+// Box action results (test connection / seed) — POST /api/remote-boxes/{id}/test|seed.
+export const BoxActionResultSchema = z
+  .object({
+    ok: z.boolean().default(false),
+    output: z.string().default(""),
+    latency_ms: z.number().optional(),
+  })
+  .loose();
+
+export const EMPTY_BOX_ACTION = { ok: false, output: "" };
+
 export const EMPTY_WORKSPACE_LABS = {
   qa_dev_boxes: true,
   qa_fallback_box_id: "",

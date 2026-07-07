@@ -199,7 +199,19 @@
     "qa_dev_runtimes_description": "当开发者自己的 daemon 在线并为该任务的项目声明了本地应用（agora daemon apps set <project> <url>）时，QA 任务在其机器上执行并测试本地运行的应用。关闭 = QA 始终在共享 runtime 上运行。",
     "qa_dev_runtimes_strict_label": "严格：daemon 离线时等待而不回退",
     "dev_machines_title": "开发者机器",
-    "dev_machines_empty": "还没有开发者机器声明本地应用。在开发者机器上执行：agora daemon apps set <project> <url>，然后重启 daemon。"
+    "dev_machines_empty": "还没有开发者机器声明本地应用。在开发者机器上执行：agora daemon apps set <project> <url>，然后重启 daemon。",
+    "test_button": "测试",
+    "test_button_title": "测试到该环境的 SSH 连接",
+    "test_ok": "连接正常",
+    "test_failed": "连接失败",
+    "seed_button": "Seed",
+    "seed_button_title": "重置该环境的演示数据（由运维定义的命令）",
+    "seed_confirm": "重置该环境的数据？当前测试数据将被替换。",
+    "seed_ok": "Seed 完成",
+    "seed_failed": "Seed 失败",
+    "disconnect_button_title": "断开（从 Agora 移除该环境）",
+    "disconnect_confirm": "断开该环境？Agora 将忘记它；服务器本身不会删除任何内容。",
+    "disconnected": "已断开"
   },
   "github": {
     "page_description": "连接 GitHub App、控制 Pull Request 如何出现在 Agora 中，并决定智能体在 commit 记录里留下哪些痕迹。",

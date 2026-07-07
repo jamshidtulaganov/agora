@@ -86,3 +86,10 @@ export interface WorkspaceLabs {
   qa_dev_runtimes: boolean;
   qa_dev_runtimes_strict: boolean;
 }
+
+// POST /api/remote-boxes/{id}/test | /seed result.
+export interface BoxActionResult {
+  ok: boolean;
+  output: string;
+  latency_ms?: number;
+}

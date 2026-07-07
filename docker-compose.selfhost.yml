@@ -110,6 +110,7 @@ services:
       AGORA_REMOTE_BOXES_ENABLED: ${AGORA_REMOTE_BOXES_ENABLED:-}
       AGORA_REMOTE_BOXES_SSH_KEY: ${AGORA_REMOTE_BOXES_SSH_KEY:-}
       AGORA_REMOTE_BOXES_GIT_TOKEN: ${AGORA_REMOTE_BOXES_GIT_TOKEN:-}
+      AGORA_QA_BOX_SEED_COMMAND: ${AGORA_QA_BOX_SEED_COMMAND:-}
       # Backend→daemon address for SERVER-SIDE launches (trace viewer, cloud
       # editor proxy). Empty = self-host loopback (backend shares the daemon's
       # host). In docker-compose the backend is a container and the daemon runs

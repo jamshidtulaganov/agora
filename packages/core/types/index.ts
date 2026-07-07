@@ -202,6 +202,7 @@ export type {
   ProvisionBoxRequest,
   ProvisionBoxResult,
   WorkspaceLabs,
+  BoxActionResult,
 } from "./remote-box";
 export type {
   PolicyFleetHealth,

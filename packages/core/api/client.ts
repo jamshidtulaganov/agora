@@ -75,6 +75,7 @@ import type {
   Project,
   ConnectedBox,
   WorkspaceLabs,
+  BoxActionResult,
   CreateRemoteBoxRequest,
   RemoteBoxSyncResult,
   ProvisionBoxRequest,
@@ -263,6 +264,8 @@ import {
   ConnectedBoxSchema,
   WorkspaceLabsSchema,
   EMPTY_WORKSPACE_LABS,
+  BoxActionResultSchema,
+  EMPTY_BOX_ACTION,
   RemoteBoxSyncResultSchema,
   ProvisionBoxResultSchema,
   EMPTY_PROVISION_RESULT,
@@ -1312,6 +1315,24 @@ export class ApiClient {
     });
     return parseWithFallback(raw, ConnectedBoxSchema, EMPTY_CONNECTED_BOX, {
       endpoint: "POST /api/remote-boxes/{id}/bind",
+    });
+  }
+
+  // Cheap SSH reachability probe for a box — the "did my connection work?"
+  // button. Never runs caller input on the box.
+  async testRemoteBox(id: string): Promise<BoxActionResult> {
+    const raw = await this.fetch<unknown>(`/api/remote-boxes/${id}/test`, { method: "POST" });
+    return parseWithFallback(raw, BoxActionResultSchema, EMPTY_BOX_ACTION, {
+      endpoint: "POST /api/remote-boxes/{id}/test",
+    });
+  }
+
+  // Trigger the operator-allowlisted seed command on a box (re-clone demo
+  // data etc.). 503 when the server has no AGORA_QA_BOX_SEED_COMMAND.
+  async seedRemoteBox(id: string): Promise<BoxActionResult> {
+    const raw = await this.fetch<unknown>(`/api/remote-boxes/${id}/seed`, { method: "POST" });
+    return parseWithFallback(raw, BoxActionResultSchema, EMPTY_BOX_ACTION, {
+      endpoint: "POST /api/remote-boxes/{id}/seed",
     });
   }
 

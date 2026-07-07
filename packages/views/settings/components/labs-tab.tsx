@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { FlaskConical, Globe, Laptop, Loader2, Server } from "lucide-react";
+import { Database, FlaskConical, Globe, Laptop, Loader2, PlugZap, Server, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@agora/core/api";
 import type { WorkspaceLabs } from "@agora/core/types";
 import { remoteBoxesOptions, remoteBoxKeys } from "@agora/core/runtimes";
+import { Button } from "@agora/ui/components/ui/button";
 import { memberListOptions } from "@agora/core/workspace/queries";
 import { projectListOptions } from "@agora/core/projects";
 import { runtimeListOptions } from "@agora/core/runtimes/queries";
@@ -66,6 +67,33 @@ export function LabsTab() {
     onSuccess: () => {
       toast.success(t(($) => $.labs.saved));
       void qc.invalidateQueries({ queryKey: ["workspace-labs", wsId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : t(($) => $.labs.save_failed)),
+  });
+
+  const testBox = useMutation({
+    mutationFn: (boxId: string) => api.testRemoteBox(boxId),
+    onSuccess: (res) => {
+      if (res.ok) toast.success(t(($) => $.labs.test_ok) + (res.latency_ms ? ` (${res.latency_ms}ms)` : ""));
+      else toast.error(t(($) => $.labs.test_failed) + ": " + res.output.slice(0, 160));
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : t(($) => $.labs.test_failed)),
+  });
+
+  const seedBox = useMutation({
+    mutationFn: (boxId: string) => api.seedRemoteBox(boxId),
+    onSuccess: (res) => {
+      if (res.ok) toast.success(t(($) => $.labs.seed_ok));
+      else toast.error(t(($) => $.labs.seed_failed) + ": " + res.output.slice(0, 160));
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : t(($) => $.labs.seed_failed)),
+  });
+
+  const deleteBox = useMutation({
+    mutationFn: (boxId: string) => api.deleteRemoteBox(boxId),
+    onSuccess: () => {
+      toast.success(t(($) => $.labs.disconnected));
+      void qc.invalidateQueries({ queryKey: remoteBoxKeys.all(wsId) });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : t(($) => $.labs.save_failed)),
   });
@@ -317,6 +345,55 @@ export function LabsTab() {
                       ))}
                     </SelectContent>
                   </Select>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1 px-2 text-[11px]"
+                      title={t(($) => $.labs.test_button_title)}
+                      disabled={testBox.isPending}
+                      onClick={() => testBox.mutate(b.id)}
+                    >
+                      {testBox.isPending && testBox.variables === b.id ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <PlugZap className="size-3.5" />
+                      )}
+                      {t(($) => $.labs.test_button)}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1 px-2 text-[11px]"
+                      title={t(($) => $.labs.seed_button_title)}
+                      disabled={seedBox.isPending}
+                      onClick={() => {
+                        if (window.confirm(t(($) => $.labs.seed_confirm))) seedBox.mutate(b.id);
+                      }}
+                    >
+                      {seedBox.isPending && seedBox.variables === b.id ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Database className="size-3.5" />
+                      )}
+                      {t(($) => $.labs.seed_button)}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 px-2 text-destructive hover:text-destructive"
+                      title={t(($) => $.labs.disconnect_button_title)}
+                      disabled={deleteBox.isPending}
+                      onClick={() => {
+                        if (window.confirm(t(($) => $.labs.disconnect_confirm))) deleteBox.mutate(b.id);
+                      }}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </div>
                 </li>
               );
             })}
