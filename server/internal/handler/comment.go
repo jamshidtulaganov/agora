@@ -1053,6 +1053,14 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 		}
 		h.TaskService.CaptureTestCases(r.Context(), issue, comment.Content, parseUUID(authorID))
 		h.TaskService.CaptureTestRuns(r.Context(), issue, comment.Content, parseUUID(authorID))
+		// Base-suite chaining: a run_test_cases that records passing runs on an
+		// ALREADY-done issue (e.g. a base-suite authoring issue verified after
+		// it was closed) re-fires promotion, so freshly-verified cases enter the
+		// standing suite without a manual re-done. Idempotent (SQL dedups); the
+		// promotion gate itself still requires the latest run to be green.
+		if issue.Status == "done" {
+			h.maybePromoteTestCasesOnDone(r.Context(), issue)
+		}
 		h.TaskService.CaptureCompiledScripts(r.Context(), issue, comment.Content, parseUUID(authorID))
 		h.TaskService.CaptureDesignProposal(r.Context(), issue, comment, parseUUID(authorID))
 		h.TaskService.CaptureDesignManifest(r.Context(), issue, comment, parseUUID(authorID))
