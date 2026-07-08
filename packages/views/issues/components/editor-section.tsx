@@ -130,6 +130,32 @@ function browserIsRemote(): boolean {
   const h = window.location.hostname;
   return !(h === "127.0.0.1" || h === "localhost" || h === "[::1]");
 }
+
+// Cloud mode only: probe the same-origin editor proxy URL before iframing it.
+// The backend returns `editor_url` as soon as the daemon's /editor/launch hands
+// back a port — but that port can be dead (code-server died on spawn, or the
+// worktree was GC'd between launch and load), in which case the ReverseProxy
+// answers 502 or the connection resets. Iframing that renders a raw browser
+// net-error (NS_ERROR_NET_ERROR_RESPONSE) the user can't recover from. The proxy
+// is served under our OWN origin (Next rewrite → backend ProxyEditor), so this
+// fetch is same-origin and cookie-authed exactly like the iframe. Treat only a
+// network rejection or a 5xx as unreachable; any 2xx/3xx/4xx (incl. an auth
+// redirect) means code-server answered, so let the iframe take over.
+export async function probeEditorReachable(u: string): Promise<boolean> {
+  try {
+    const res = await fetch(u, {
+      method: "GET",
+      credentials: "include",
+      redirect: "manual",
+    });
+    // redirect:manual surfaces a 3xx as an opaque response (status 0) — that is
+    // code-server bouncing to its own path, i.e. reachable.
+    if (res.type === "opaqueredirect") return true;
+    return res.status < 500;
+  } catch {
+    return false;
+  }
+}
 const EDITOR_UNREACHABLE_LABEL =
   "This issue's live editor was cleaned up (worktrees are removed automatically about a day after the agent finishes) or runs on a machine this browser can't reach. Re-run an agent on this issue to open it here.";
 
@@ -306,6 +332,15 @@ export function EditorSection({
       // per-agent browser switching in cloud is the remaining follow-up).
       if (data.mode === "cloud" && data.editor_url) {
         setAgents(data.agents ?? []);
+        // Don't iframe a URL whose code-server is actually dead — probe first so
+        // an unreachable proxy shows the actionable empty state (with a retry)
+        // instead of a raw browser net-error. See probeEditorReachable.
+        const reachable = await probeEditorReachable(data.editor_url);
+        if (!reachable) {
+          setErr(EDITOR_UNREACHABLE_LABEL);
+          setState("error");
+          return;
+        }
         setUrl(data.editor_url);
         setState("ready");
         return;
