@@ -32,6 +32,86 @@ type FeatureSection = {
   cards: { title: string; description: string }[];
 };
 
+// Strings rendered inside the coded product mockups (features section +
+// autoplay demo). Member/agent names are NOT here — they are locale-invariant
+// constants in the components.
+type FeaturesMock = {
+  issueTitle: string;
+  issueDesc: string;
+  activity: string;
+  subscribe: string;
+  properties: string;
+  statusLabel: string;
+  priorityLabel: string;
+  assigneeLabel: string;
+  assignTo: string;
+  members: string;
+  agents: string;
+  unassigned: string;
+  assignedToClaude: string;
+  changedStatus: string;
+  comment1: string;
+  comment2: string;
+  comment3: string;
+  agentWorking: string;
+  toolCalls: string;
+  taskHistory: string;
+  thinking1: string;
+  thinking2: string;
+  editResult: string;
+  task1: string;
+  task2: string;
+  task3: string;
+  skillsTitle: string;
+  files: string;
+  skill1Name: string;
+  skill1Desc: string;
+  skill2Name: string;
+  skill2Desc: string;
+  skill3Name: string;
+  skill3Desc: string;
+  skill4Name: string;
+  skill4Desc: string;
+  docTitle: string;
+  docBody: string;
+  steps: string;
+  step1: string;
+  step2: string;
+  step3: string;
+  step4: string;
+  runtimesTitle: string;
+  online: string;
+  offline: string;
+  justNow: string;
+  hoursAgo: string;
+  input: string;
+  output: string;
+  cacheRead: string;
+  cacheWrite: string;
+  activityCard: string;
+  dailyCost: string;
+  less: string;
+  more: string;
+  ccUserMsg: string;
+  ccAgentReply: string;
+  ccEditing: string;
+  ccOpenEditor: string;
+  qaPassed: string;
+  qaCheck1: string;
+  qaCheck2: string;
+  qaCheck3: string;
+  qaCheck4: string;
+  qaCheck5: string;
+  qaVerdict: string;
+  qaPosted: string;
+  qaShotCap: string;
+  statuses: Record<
+    "backlog" | "todo" | "in_progress" | "in_review" | "done",
+    string
+  >;
+  priorities: Record<"none" | "low" | "medium" | "high" | "urgent", string>;
+};
+
 type FooterGroup = {
   label: string;
   links: { label: string; href: string }[];
@@ -51,12 +131,15 @@ export type LandingDict = {
     navigation: string;
     openMenu: string;
     closeMenu: string;
+    language: string;
   };
   hero: {
+    badge: string;
     headlineLine1: string;
     headlineLine2: string;
     subheading: string;
     cta: string;
+    secondaryCta: string;
     downloadDesktop: string;
     talkToSales: string;
     worksWith: string;
@@ -65,8 +148,34 @@ export type LandingDict = {
   features: {
     teammates: FeatureSection;
     autonomous: FeatureSection;
+    cocode: FeatureSection;
+    qa: FeatureSection;
     skills: FeatureSection;
     runtimes: FeatureSection;
+    mock: FeaturesMock;
+  };
+  demo: {
+    kicker: string;
+    title: string;
+    windowTitle: string;
+    userMsg: string;
+    agentReply: string;
+    working: string;
+    running: string;
+    done: string;
+    testsPassed: string;
+    pr: string;
+    readyToMerge: string;
+    replyPlaceholder: string;
+    statusLabel: string;
+    assigneeLabel: string;
+    priorityLabel: string;
+    projectLabel: string;
+    priorityHigh: string;
+    project: string;
+    statusTodo: string;
+    statusInProgress: string;
+    statusInReview: string;
   };
   howItWorks: {
     label: string;

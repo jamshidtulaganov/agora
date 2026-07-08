@@ -14,14 +14,17 @@ export function createEnDict(allowSignup: boolean): LandingDict {
     navigation: "Primary navigation",
     openMenu: "Open navigation menu",
     closeMenu: "Close navigation menu",
+    language: "Language",
   },
 
   hero: {
+    badge: "New: Cloud Agents — always-on, no laptop needed",
     headlineLine1: "Assign it to a person.",
     headlineLine2: "Or an agent.",
     subheading:
       "Agora puts your developers and AI coding agents on one board. Every issue gets an assignee \u2014 human or agent \u2014 reports its own progress, and ships as a pull request.",
     cta: "Get started",
+    secondaryCta: "See the board",
     downloadDesktop: "Download Desktop",
     talkToSales: "Talk to sales",
     worksWith: "Works with",
@@ -121,6 +124,168 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         },
       ],
     },
+    cocode: {
+      label: "CO-CODE",
+      title: "Pair-edit with the agent in a live editor",
+      description:
+        "Open the co-code editor and steer the agent inside a browser VS Code — same branch, same files, small reviewable steps. Watch every change land live and jump in whenever you want.",
+      cards: [
+        {
+          title: "Browser VS Code, zero setup",
+          description:
+            "The issue opens straight into a live editor session on the runtime — no clone, no local environment.",
+        },
+        {
+          title: "Same branch, no handoffs",
+          description:
+            "You and the agent edit the same working tree. No patch files, no \u201cpull my branch\u201d, no merge dance.",
+        },
+        {
+          title: "Steer in small steps",
+          description:
+            "Chat sits next to the code. Redirect the agent mid-edit and watch the diff update live.",
+        },
+      ],
+    },
+    qa: {
+      label: "QA GATES",
+      title: "Nothing merges on trust — every change gets QA\u2019d",
+      description:
+        "Before review, every issue runs through a QA gate: the agent drives the real app in a browser, walks the flows, and posts a structured pass/fail verdict with screenshots right on the issue.",
+      cards: [
+        {
+          title: "Real browser, real flows",
+          description:
+            "The agent logs in, clicks through the scenario, and captures screenshots — on the team\u2019s own QA box.",
+        },
+        {
+          title: "Structured verdicts",
+          description:
+            "Pass/fail per check with commands and exit codes. Green means tested, not \u201cthe agent said so\u201d.",
+        },
+        {
+          title: "Auto-QA on review",
+          description:
+            "Move an issue to In Review and the gate runs itself. Failures bounce back with exact repro steps.",
+        },
+      ],
+    },
+    mock: {
+      issueTitle: "Refactor API error handling middleware",
+      issueDesc: "Standardize error responses across all endpoints.",
+      activity: "Activity",
+      subscribe: "Subscribe",
+      properties: "Properties",
+      statusLabel: "Status",
+      priorityLabel: "Priority",
+      assigneeLabel: "Assignee",
+      assignTo: "Assign to...",
+      members: "Members",
+      agents: "Agents",
+      unassigned: "Unassigned",
+      assignedToClaude: "assigned to Claude",
+      changedStatus: "changed status from Todo to In Progress",
+      comment1:
+        "The current error responses are inconsistent across handlers \u2014 need a unified format with error codes.",
+      comment2:
+        "I've standardized error responses across 14 handlers. Each error now includes a code, message, and request_id. PR #43 is ready for review.",
+      comment3:
+        "Looking good. Make sure to preserve the existing HTTP status codes \u2014 some of our frontend relies on specific codes like 409.",
+      agentWorking: "Agent is working",
+      toolCalls: "10 tool calls",
+      taskHistory: "Task execution history",
+      thinking1:
+        "Analyzing the error handling patterns across all 14 handler files\u2026",
+      thinking2:
+        "Now checking handler/comment.go for the same inconsistent patterns\u2026",
+      editResult: "Updated 3 error responses to use writeError() helper",
+      task1: "Set up error response types",
+      task2: "Migrate issue handler",
+      task3: "Migrate comment handler",
+      skillsTitle: "Skills",
+      files: "Files",
+      skill1Name: "Deploy to staging",
+      skill1Desc: "Run staging deploy pipeline",
+      skill2Name: "Write migration",
+      skill2Desc: "Generate and validate SQL migration",
+      skill3Name: "Review PR",
+      skill3Desc: "Code review with style guide checks",
+      skill4Name: "Write tests",
+      skill4Desc: "Generate unit and integration tests",
+      docTitle: "Write Migration",
+      docBody:
+        "Generate a SQL migration file based on the requested schema changes. Validates against the current database state and generates both up and down migrations.",
+      steps: "Steps",
+      step1: "Analyze the current schema from migrations/",
+      step2: "Generate migration SQL with proper ordering",
+      step3: "Validate with sqlc compile",
+      step4: "Run tests against a fresh database",
+      runtimesTitle: "Runtimes",
+      online: "online",
+      offline: "offline",
+      justNow: "Just now",
+      hoursAgo: "3h ago",
+      input: "Input",
+      output: "Output",
+      cacheRead: "Cache Read",
+      cacheWrite: "Cache Write",
+      activityCard: "Activity",
+      dailyCost: "Daily Cost",
+      less: "Less",
+      more: "More",
+      ccUserMsg: "Switch the chart to a radar view",
+      ccAgentReply:
+        "On it — swapping BarChart for RadarChart and updating the axes.",
+      ccEditing: "Aria is editing · same branch",
+      ccOpenEditor: "Open in browser VS Code",
+      qaPassed: "QA passed",
+      qaCheck1: "Log in as demo user",
+      qaCheck2: "Create issue from board",
+      qaCheck3: "Drag card to In Progress",
+      qaCheck4: "Export report to CSV",
+      qaCheck5: "No console errors",
+      qaVerdict: "PASS · 5/5 checks · exit 0 · 2m 41s",
+      qaPosted: "Verdict posted to the issue",
+      qaShotCap: "Screenshot · board after drag",
+      statuses: {
+        backlog: "Backlog",
+        todo: "Todo",
+        in_progress: "In Progress",
+        in_review: "In Review",
+        done: "Done",
+      },
+      priorities: {
+        none: "No priority",
+        low: "Low",
+        medium: "Medium",
+        high: "High",
+        urgent: "Urgent",
+      },
+    },
+  },
+
+  demo: {
+    kicker: "See it in action",
+    title: "Assign an issue. Watch the agent ship it.",
+    windowTitle: "AGORA-128 \u00b7 Persian localization \u2014 RTL polish",
+    userMsg: "the dashboard breaks in right-to-left \u2014 can you fix the alignment?",
+    agentReply: "On it \u2014 auditing the layout files and flipping the grid now.",
+    working: "Aria is working",
+    running: "running",
+    done: "done",
+    testsPassed: "12 tests passed \u00b7 0.41s",
+    pr: "PR #214 \u2014 RTL polish",
+    readyToMerge: "ready to merge",
+    replyPlaceholder: "Reply to Aria\u2026",
+    statusLabel: "Status",
+    assigneeLabel: "Assignee",
+    priorityLabel: "Priority",
+    projectLabel: "Project",
+    priorityHigh: "High",
+    project: "i18n",
+    statusTodo: "Todo",
+    statusInProgress: "In progress",
+    statusInReview: "In review",
   },
 
   howItWorks: {
@@ -968,7 +1133,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "New `agora daemon disk-usage` CLI surfaces per-task and per-workspace disk footprint",
           "Skill picker in agent settings has a search box for fast lookup",
           "Daemon GC extends to chat, autopilot, and quick-create tasks",
-          "Issue detail breadcrumb now shows the MUL-xxxx identifier for quick reference",
+          "Issue detail breadcrumb now shows the AGORA-xxxx identifier for quick reference",
         ],
         improvements: [
           "Timeline page size bumped to 50, with per-pool keyset cursors for comments and activities",
@@ -1490,7 +1655,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "Sidebar redesign — Personal / Workspace grouping, user profile footer, ⌘K search input",
-          "Search ranking — case-insensitive matching, identifier search (MUL-123), multi-word support",
+          "Search ranking — case-insensitive matching, identifier search (AGORA-123), multi-word support",
           "Search result keyword highlighting",
           "Daily token usage chart with cleaner Y-axis and per-category tooltip",
           "Master Agent multiline input support",

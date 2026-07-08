@@ -14,14 +14,17 @@ export function createUzDict(allowSignup: boolean): LandingDict {
     navigation: "Asosiy navigatsiya",
     openMenu: "Navigatsiya menyusini ochish",
     closeMenu: "Navigatsiya menyusini yopish",
+    language: "Til",
   },
 
   hero: {
+    badge: "Yangi: Cloud Agentlar — doim yoniq, noutbuk shart emas",
     headlineLine1: "Uni insonga biriktiring.",
     headlineLine2: "Yoki agentga.",
     subheading:
       "Agora dasturchilaringiz va AI kod agentlarini bitta doskaga jamlaydi. Har bir vazifa ijrochiga — inson yoki agentga — biriktiriladi, o'z holatini bildiradi va pull request sifatida yetkaziladi.",
     cta: "Boshlash",
+    secondaryCta: "Doskani ko'rish",
     downloadDesktop: "Desktop'ni yuklab olish",
     talkToSales: "Savdo bilan bog'lanish",
     worksWith: "Quyidagilar bilan ishlaydi",
@@ -121,6 +124,169 @@ export function createUzDict(allowSignup: boolean): LandingDict {
         },
       ],
     },
+    cocode: {
+      label: "CO-CODE",
+      title: "Agent bilan jonli muharrirda juft ishlang",
+      description:
+        "Co-code muharririni oching va agentni brauzerdagi VS Code ichida boshqaring — bitta branch, bitta fayllar, kichik ko'rib chiqiladigan qadamlar. Har bir o'zgarish jonli tushadi, xohlagan payt o'zingiz aralashasiz.",
+      cards: [
+        {
+          title: "Brauzerda VS Code, sozlashsiz",
+          description:
+            "Vazifa to'g'ridan-to'g'ri ijro muhitidagi jonli muharrir sessiyasiga ochiladi — clone yo'q, lokal muhit yo'q.",
+        },
+        {
+          title: "Bitta branch, topshirishlar yo'q",
+          description:
+            "Siz va agent bitta working tree'ni tahrirlaysiz. Patch fayllar yo'q, \u201cbranchimni tortib ol\u201d yo'q.",
+        },
+        {
+          title: "Kichik qadamlar bilan yo'naltiring",
+          description:
+            "Chat kodning yonida turadi. Agentni tahrir o'rtasida yo'naltiring — diff jonli yangilanadi.",
+        },
+      ],
+    },
+    qa: {
+      label: "QA DARVOZALARI",
+      title: "Hech narsa ishonchga merge bo'lmaydi — har o'zgarish QA'dan o'tadi",
+      description:
+        "Review'dan oldin har bir vazifa QA darvozasidan o'tadi: agent haqiqiy ilovani brauzerda boshqaradi, oqimlarni bosib chiqadi va vazifaning o'ziga skrinshotlar bilan tuzilgan pass/fail xulosasini joylaydi.",
+      cards: [
+        {
+          title: "Haqiqiy brauzer, haqiqiy oqimlar",
+          description:
+            "Agent login qiladi, ssenariy bo'ylab bosib o'tadi va skrinshot oladi — jamoaning o'z QA stendida.",
+        },
+        {
+          title: "Tuzilgan xulosalar",
+          description:
+            "Har tekshiruv uchun pass/fail, buyruqlar va exit-kodlar bilan. Yashil — testdan o'tgan degani, \u201cagent shunday dedi\u201d emas.",
+        },
+        {
+          title: "Review'da avto-QA",
+          description:
+            "Vazifani In Review'ga o'tkazing — darvoza o'zi ishlaydi. Yiqilganlar aniq repro qadamlar bilan qaytadi.",
+        },
+      ],
+    },
+    mock: {
+      issueTitle: "API xato ishlovi middleware'ini refaktoring qilish",
+      issueDesc: "Barcha endpointlarda xato javoblarini standartlashtirish.",
+      activity: "Faollik",
+      subscribe: "Obuna bo'lish",
+      properties: "Xususiyatlar",
+      statusLabel: "Holat",
+      priorityLabel: "Muhimlik",
+      assigneeLabel: "Ijrochi",
+      assignTo: "Kimga biriktirish...",
+      members: "A'zolar",
+      agents: "Agentlar",
+      unassigned: "Biriktirilmagan",
+      assignedToClaude: "Claude'ga biriktirdi",
+      changedStatus: "holatni Bajariladi'dan Jarayonda'ga o'zgartirdi",
+      comment1:
+        "Hozirgi xato javoblari handlerlar bo'ylab har xil — yagona format va xato kodlari kerak.",
+      comment2:
+        "14 ta handler bo'ylab xato javoblarini standartlashtirdim. Endi har bir xatoda kod, xabar va request_id bor. PR #43 ko'rib chiqishga tayyor.",
+      comment3:
+        "Yaxshi ko'rinyapti. Mavjud HTTP status kodlarini saqlab qoling — frontendimizning bir qismi 409 kabi kodlarga tayanadi.",
+      agentWorking: "Agent ishlamoqda",
+      toolCalls: "10 ta tool chaqiruvi",
+      taskHistory: "Vazifa bajarish tarixi",
+      thinking1:
+        "Barcha 14 ta handler faylidagi xato ishlov shablonlarini tahlil qilyapman…",
+      thinking2:
+        "Endi handler/comment.go'da xuddi shu nomuvofiq shablonlarni tekshiryapman…",
+      editResult: "3 ta xato javobi writeError() yordamchisiga o'tkazildi",
+      task1: "Xato javobi turlarini yaratish",
+      task2: "Issue handler'ni ko'chirish",
+      task3: "Comment handler'ni ko'chirish",
+      skillsTitle: "Ko'nikmalar",
+      files: "Fayllar",
+      skill1Name: "Staging'ga joylash",
+      skill1Desc: "Staging joylash jarayonini ishga tushirish",
+      skill2Name: "Migratsiya yozish",
+      skill2Desc: "SQL migratsiyani yaratish va tekshirish",
+      skill3Name: "PR ko'rib chiqish",
+      skill3Desc: "Uslub qo'llanmasi bo'yicha kod tekshiruvi",
+      skill4Name: "Test yozish",
+      skill4Desc: "Unit va integratsiya testlarini yaratish",
+      docTitle: "Migratsiya yozish",
+      docBody:
+        "So'ralgan sxema o'zgarishlari asosida SQL migratsiya faylini yaratadi. Joriy ma'lumotlar bazasi holatiga qarshi tekshiradi va up/down migratsiyalarning ikkalasini ham yaratadi.",
+      steps: "Bosqichlar",
+      step1: "migrations/ dan joriy sxemani tahlil qilish",
+      step2: "To'g'ri tartib bilan migratsiya SQL'ini yaratish",
+      step3: "sqlc compile bilan tekshirish",
+      step4: "Yangi bazaga qarshi testlarni ishga tushirish",
+      runtimesTitle: "Ijro muhitlari",
+      online: "onlayn",
+      offline: "oflayn",
+      justNow: "Hozirgina",
+      hoursAgo: "3 soat oldin",
+      input: "Kirish",
+      output: "Chiqish",
+      cacheRead: "Kesh o'qish",
+      cacheWrite: "Kesh yozish",
+      activityCard: "Faollik",
+      dailyCost: "Kunlik xarajat",
+      less: "Kam",
+      more: "Ko'p",
+      ccUserMsg: "Grafikni radar ko'rinishiga o'tkaz",
+      ccAgentReply:
+        "Boshladim — BarChart'ni RadarChart'ga almashtirib, o'qlarni yangilayapman.",
+      ccEditing: "Aria tahrirlayapti · bitta branch",
+      ccOpenEditor: "Brauzerda VS Code'da ochish",
+      qaPassed: "QA o'tdi",
+      qaCheck1: "Demo foydalanuvchi bilan kirish",
+      qaCheck2: "Doskadan vazifa yaratish",
+      qaCheck3: "Kartani Jarayonda'ga sudrash",
+      qaCheck4: "Hisobotni CSV'ga eksport qilish",
+      qaCheck5: "Konsolda xato yo'q",
+      qaVerdict: "PASS · 5/5 tekshiruv · exit 0 · 2m 41s",
+      qaPosted: "Xulosa vazifaga joylandi",
+      qaShotCap: "Skrinshot · sudrashdan keyingi doska",
+      statuses: {
+        backlog: "Rejada",
+        todo: "Bajariladi",
+        in_progress: "Jarayonda",
+        in_review: "Ko'rib chiqilmoqda",
+        done: "Bajarildi",
+      },
+      priorities: {
+        none: "Muhimlik yo'q",
+        low: "Past",
+        medium: "O'rta",
+        high: "Yuqori",
+        urgent: "Shoshilinch",
+      },
+    },
+  },
+
+  demo: {
+    kicker: "Amalda ko'ring",
+    title: "Vazifa biriktiring. Agent uni yetkazishini kuzating.",
+    windowTitle: "AGORA-128 · Fors tili lokalizatsiyasi — RTL sayqal",
+    userMsg:
+      "dashboard o'ngdan-chapga rejimda buziladi — tekislashni tuzata olasanmi?",
+    agentReply: "Boshladim — layout fayllarini tekshirib, gridni ag'daryapman.",
+    working: "Aria ishlamoqda",
+    running: "bajarilmoqda",
+    done: "tayyor",
+    testsPassed: "12 ta test o'tdi · 0.41s",
+    pr: "PR #214 — RTL sayqal",
+    readyToMerge: "merge'ga tayyor",
+    replyPlaceholder: "Aria'ga javob yozing…",
+    statusLabel: "Holat",
+    assigneeLabel: "Ijrochi",
+    priorityLabel: "Muhimlik",
+    projectLabel: "Loyiha",
+    priorityHigh: "Yuqori",
+    project: "i18n",
+    statusTodo: "Bajariladi",
+    statusInProgress: "Jarayonda",
+    statusInReview: "Ko'rib chiqilmoqda",
   },
 
   howItWorks: {
@@ -968,7 +1134,7 @@ export function createUzDict(allowSignup: boolean): LandingDict {
           "Yangi `agora daemon disk-usage` CLI har bir vazifa va har bir ish maydoni boʻyicha disk hajmini koʻrsatadi",
           "Agent sozlamalaridagi Skill tanlovchisi tez qidirish uchun qidiruv maydoniga ega",
           "Daemon GC chat, autopilot va tez-yaratish vazifalariga kengayadi",
-          "Vazifa tafsiloti breadcrumb'i endi tezkor havola uchun MUL-xxxx identifikatorini koʻrsatadi",
+          "Vazifa tafsiloti breadcrumb'i endi tezkor havola uchun AGORA-xxxx identifikatorini koʻrsatadi",
         ],
         improvements: [
           "Xronologiya sahifa hajmi 50 ga koʻtarildi, izohlar va faolliklar uchun har-pool keyset kursorlari bilan",
@@ -1490,7 +1656,7 @@ export function createUzDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "Yon panel qayta dizayni — Shaxsiy / Ish maydoni guruhlash, foydalanuvchi profili pastki qismi, ⌘K qidiruv kiritishi",
-          "Qidiruv saralash — katta-kichik harfga sezgirsiz moslik, identifikator qidiruvi (MUL-123), koʻp-soʻzli qoʻllab-quvvatlash",
+          "Qidiruv saralash — katta-kichik harfga sezgirsiz moslik, identifikator qidiruvi (AGORA-123), koʻp-soʻzli qoʻllab-quvvatlash",
           "Qidiruv natijasi kalit soʻz belgilashi",
           "Tozaroq Y-oʻqi va har-kategoriya maslahatlar bilan kunlik token foydalanish grafigi",
           "Master Agent koʻp qatorli kiritish qoʻllab-quvvatlash",
