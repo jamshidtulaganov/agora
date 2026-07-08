@@ -341,6 +341,150 @@ export function deriveFileChanges(items: TimelineItem[]): FileChange[] {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Live file documents (the "spectator editor" view)
+//
+// A FOURTH lens: instead of a per-mutation diff feed, reconstruct — best-effort
+// — the CURRENT text of every file the agent has touched this run, so the live
+// editor can render it like a real code pane (line numbers, the fresh edit
+// highlighted, the agent's cursor at the end). Reconstruction is stream-only:
+//   Write        → the full file text is known exactly.
+//   Edit         → applied in place when the old_string is found in the known
+//                  text; otherwise the new_string is appended as a fragment
+//                  after a "⋯" separator and the doc is marked partial.
+//   MultiEdit    → each pair applied sequentially with the same rule.
+// Partial docs are honest about being a keyhole view — the caller renders the
+// separator lines distinctly and can label the doc as streamed fragments.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A contiguous run of 0-based line indexes within {@link LiveFileDoc.text}. */
+export interface FileDocRange {
+  from: number;
+  count: number;
+}
+
+/** Best-effort current text of one file the agent touched this run. */
+export interface LiveFileDoc {
+  /** Full path as the agent reported it. */
+  path: string;
+  /** Last-two-segments display path (".../dir/file.ts"). */
+  shortPath: string;
+  /** Reconstructed text (may be fragments joined by separator lines). */
+  text: string;
+  /** Line ranges written by this file's MOST RECENT mutation (the highlight). */
+  ranges: FileDocRange[];
+  /** Timeline index of the newest mutation — orders docs and keys reveals. */
+  lastIdx: number;
+  /** True when text is fragments (no full Write seen / an Edit didn't anchor). */
+  partial: boolean;
+}
+
+/** Line used to separate non-contiguous fragments in a partial doc. */
+export const FRAGMENT_SEPARATOR = "⋯";
+
+// Lines spanned by a chunk when rendered (mid-line anchors still count their
+// host line). Unlike countLines this never returns 0 for a non-empty chunk.
+function spanLines(s: string): number {
+  return s.split("\n").length;
+}
+
+function countNewlines(s: string): number {
+  let n = 0;
+  for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) === 10) n++;
+  return n;
+}
+
+/**
+ * Reduce a built timeline to per-file reconstructed documents, newest-changed
+ * first. Only write/create/edit/multiedit/notebookedit calls contribute. Pure
+ * (no redaction — the renderer redacts per line like the diff feed does).
+ */
+export function deriveFileDocs(items: TimelineItem[]): LiveFileDoc[] {
+  const docs = new Map<string, LiveFileDoc>();
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]!;
+    if (item.type !== "tool_use") continue;
+    const tool = (item.tool ?? "").trim().toLowerCase();
+    if (!MUTATING_TOOLS.has(tool)) continue;
+    const input = item.input;
+    const path = rawPath(input);
+    if (!path) continue;
+
+    if (tool === "write" || tool === "create") {
+      const content = asString(input?.content);
+      docs.set(path, {
+        path,
+        shortPath: shortenPath(path),
+        text: content,
+        ranges: content ? [{ from: 0, count: spanLines(content) }] : [],
+        lastIdx: i,
+        partial: false,
+      });
+      continue;
+    }
+
+    // Edit-style tools: one or more old→new pairs, applied in order.
+    const pairs: Array<{ oldStr: string; newStr: string }> = [];
+    if (tool === "multiedit") {
+      const edits = Array.isArray(input?.edits) ? (input!.edits as unknown[]) : [];
+      for (const e of edits) {
+        if (e && typeof e === "object") {
+          const rec = e as Record<string, unknown>;
+          pairs.push({
+            oldStr: asString(rec.old_string),
+            newStr: asString(rec.new_string),
+          });
+        }
+      }
+    } else {
+      pairs.push({
+        oldStr: asString(input?.old_string) || asString(input?.old_source),
+        newStr: asString(input?.new_string) || asString(input?.new_source),
+      });
+    }
+    if (pairs.length === 0) continue;
+
+    const prev = docs.get(path);
+    let text = prev?.text ?? "";
+    let partial = prev?.partial ?? true;
+    const ranges: FileDocRange[] = [];
+
+    for (const { oldStr, newStr } of pairs) {
+      if (!oldStr && !newStr) continue;
+      const at = !partial && oldStr ? text.indexOf(oldStr) : -1;
+      if (at >= 0) {
+        // Anchored: replace in place; highlight the replacement's lines.
+        text = text.slice(0, at) + newStr + text.slice(at + oldStr.length);
+        if (newStr) {
+          ranges.push({
+            from: countNewlines(text.slice(0, at)),
+            count: spanLines(newStr),
+          });
+        }
+      } else if (newStr) {
+        // Unanchored: append as a fragment after a separator line.
+        const from = text ? spanLines(text) + 1 : 0;
+        text = text ? `${text}\n${FRAGMENT_SEPARATOR}\n${newStr}` : newStr;
+        ranges.push({ from, count: spanLines(newStr) });
+        partial = true;
+      }
+      // Pure deletion on an unanchored doc: nothing renderable — skip.
+    }
+
+    docs.set(path, {
+      path,
+      shortPath: shortenPath(path),
+      text,
+      ranges,
+      lastIdx: i,
+      partial,
+    });
+  }
+
+  return Array.from(docs.values()).sort((a, b) => b.lastIdx - a.lastIdx);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Step timeline
 //
 // A THIRD lens, for runs that touch no files — reviews, research, ops, anything

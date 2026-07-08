@@ -365,6 +365,18 @@
     "more": "+{{count}} yana",
     "show_less": "Kamroq ko‘rsatish"
   },
+  "live_editor": {
+    "live": "Jonli",
+    "idle_title": "Jonli ishga tushirish yo‘q",
+    "idle_hint": "Agent bu masala ustida kod yozishni boshlaganda, tahrirlari shu yerda jonli ko‘rinadi.",
+    "waiting": "tayyorlanmoqda — hozircha tahrir yo‘q",
+    "follow": "Jonli kuzatish",
+    "open_editor": "Editorni ochish",
+    "comment_line": "Shu qatorga izoh yozish",
+    "comment_placeholder": "Agent va jamoa uchun izoh — issue’ga yoziladi…",
+    "send": "Yuborish",
+    "cancel": "Bekor qilish"
+  },
   "execution_log": {
     "section": "Bajarilish jurnali",
     "show_past": "O‘tgan ishga tushirishlarni ko‘rsatish ({{count}})",

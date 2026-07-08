@@ -4,6 +4,8 @@ import {
   deriveActivitySteps,
   deriveCurrentActivity,
   deriveFileChanges,
+  deriveFileDocs,
+  FRAGMENT_SEPARATOR,
 } from "./live-agent-activity";
 
 function tool(seq: number, name: string, input: Record<string, unknown>): TimelineItem {
@@ -267,5 +269,92 @@ describe("deriveActivitySteps", () => {
     ]);
     expect(steps.every((s) => !(s.rawVerb ?? "").includes("mcp__"))).toBe(true);
     expect(steps.every((s) => s.verbKey === null)).toBe(true);
+  });
+});
+
+describe("deriveFileDocs", () => {
+  it("returns an empty list when nothing was mutated", () => {
+    expect(deriveFileDocs([tool(1, "Read", { file_path: "a.ts" })])).toEqual([]);
+  });
+
+  it("a Write yields a full (non-partial) doc with the whole file highlighted", () => {
+    const [doc] = deriveFileDocs([
+      tool(1, "Write", { file_path: "src/chart.tsx", content: "line1\nline2\nline3" }),
+    ]);
+    expect(doc).toMatchObject({
+      path: "src/chart.tsx",
+      text: "line1\nline2\nline3",
+      partial: false,
+      ranges: [{ from: 0, count: 3 }],
+    });
+  });
+
+  it("an anchored Edit replaces in place and highlights the replacement lines", () => {
+    const docs = deriveFileDocs([
+      tool(1, "Write", { file_path: "a.ts", content: "aaa\nbbb\nccc" }),
+      tool(2, "Edit", { file_path: "a.ts", old_string: "bbb", new_string: "BBB\nBBB2" }),
+    ]);
+    expect(docs).toHaveLength(1);
+    expect(docs[0]).toMatchObject({
+      text: "aaa\nBBB\nBBB2\nccc",
+      partial: false,
+      ranges: [{ from: 1, count: 2 }],
+    });
+  });
+
+  it("an unanchored Edit appends a separator-delimited fragment and marks the doc partial", () => {
+    const [doc] = deriveFileDocs([
+      tool(1, "Edit", { file_path: "b.ts", old_string: "never-seen", new_string: "x\ny" }),
+    ]);
+    expect(doc).toMatchObject({ partial: true, ranges: [{ from: 0, count: 2 }] });
+    expect(doc!.text).toBe("x\ny");
+
+    const [doc2] = deriveFileDocs([
+      tool(1, "Edit", { file_path: "b.ts", old_string: "n1", new_string: "x\ny" }),
+      tool(2, "Edit", { file_path: "b.ts", old_string: "n2", new_string: "z" }),
+    ]);
+    expect(doc2!.text).toBe(`x\ny\n${FRAGMENT_SEPARATOR}\nz`);
+    // lines: 0=x 1=y 2=sep 3=z
+    expect(doc2!.ranges).toEqual([{ from: 3, count: 1 }]);
+    expect(doc2!.partial).toBe(true);
+  });
+
+  it("MultiEdit applies its pairs sequentially against a written base", () => {
+    const [doc] = deriveFileDocs([
+      tool(1, "Write", { file_path: "c.ts", content: "one\ntwo\nthree" }),
+      tool(2, "MultiEdit", {
+        file_path: "c.ts",
+        edits: [
+          { old_string: "one", new_string: "ONE" },
+          { old_string: "three", new_string: "THREE" },
+        ],
+      }),
+    ]);
+    expect(doc!.text).toBe("ONE\ntwo\nTHREE");
+    expect(doc!.partial).toBe(false);
+    expect(doc!.ranges).toEqual([
+      { from: 0, count: 1 },
+      { from: 2, count: 1 },
+    ]);
+  });
+
+  it("only the newest mutation of a file is highlighted, and docs order newest-first", () => {
+    const docs = deriveFileDocs([
+      tool(1, "Write", { file_path: "first.ts", content: "f" }),
+      tool(2, "Write", { file_path: "second.ts", content: "s1\ns2" }),
+      tool(3, "Edit", { file_path: "first.ts", old_string: "f", new_string: "F" }),
+    ]);
+    expect(docs.map((d) => d.path)).toEqual(["first.ts", "second.ts"]);
+    expect(docs[0]!.ranges).toEqual([{ from: 0, count: 1 }]);
+    expect(docs[0]!.text).toBe("F");
+  });
+
+  it("a pure deletion updates text without a highlight", () => {
+    const [doc] = deriveFileDocs([
+      tool(1, "Write", { file_path: "d.ts", content: "keep\ndrop\n" }),
+      tool(2, "Edit", { file_path: "d.ts", old_string: "drop\n", new_string: "" }),
+    ]);
+    expect(doc!.text).toBe("keep\n");
+    expect(doc!.ranges).toEqual([]);
   });
 });

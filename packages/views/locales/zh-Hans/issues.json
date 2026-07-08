@@ -354,6 +354,18 @@
     "more": "还有 {{count}} 个",
     "show_less": "收起"
   },
+  "live_editor": {
+    "live": "实时",
+    "idle_title": "暂无进行中的运行",
+    "idle_hint": "当智能体开始在此任务上编写代码时，它的编辑会实时显示在这里。",
+    "waiting": "准备中——尚无编辑",
+    "follow": "跟随实时",
+    "open_editor": "打开编辑器",
+    "comment_line": "评论此行",
+    "comment_placeholder": "写给智能体和团队的评论——会发布到任务中…",
+    "send": "发送",
+    "cancel": "取消"
+  },
   "execution_log": {
     "section": "执行日志",
     "show_past": "显示历史运行（{{count}}）",

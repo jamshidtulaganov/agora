@@ -365,6 +365,18 @@
     "more": "+{{count}} more",
     "show_less": "Show less"
   },
+  "live_editor": {
+    "live": "Live",
+    "idle_title": "No live run",
+    "idle_hint": "When an agent starts coding on this issue, its edits appear here live.",
+    "waiting": "warming up — no edits yet",
+    "follow": "Follow live",
+    "open_editor": "Open editor",
+    "comment_line": "Comment on this line",
+    "comment_placeholder": "Comment for the agent and team — posts to the issue…",
+    "send": "Send",
+    "cancel": "Cancel"
+  },
   "execution_log": {
     "section": "Execution log",
     "show_past": "Show past runs ({{count}})",
