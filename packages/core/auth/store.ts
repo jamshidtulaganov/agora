@@ -104,7 +104,13 @@ export function createAuthStore(options: AuthStoreOptions) {
     },
 
     loginWithToken: async (token: string) => {
-      storage.setItem("agora_token", token);
+      if (!cookieAuth) {
+        // Token mode (Electron / Telegram Mini App): persist across restarts.
+        // In cookie mode the verify endpoint already set the HttpOnly cookie;
+        // persisting the raw JWT here would flip the next session into legacy
+        // token mode with split credentials (localStorage + cookie).
+        storage.setItem("agora_token", token);
+      }
       api.setToken(token);
       const user = await api.getMe();
       onLogin?.();
@@ -114,10 +120,13 @@ export function createAuthStore(options: AuthStoreOptions) {
     },
 
     logout: () => {
-      if (cookieAuth) {
-        // Clear server-side HttpOnly cookie.
-        api.logout().catch(() => {});
-      }
+      // Always clear the server-side HttpOnly cookie, not just in cookie
+      // mode. A session can hold both credentials at once — e.g. Telegram
+      // login sets the auth cookie server-side AND saved agora_token to
+      // localStorage, which flips the next session into token mode. A
+      // token-mode logout that skips this call leaves the cookie alive, and
+      // the following reload silently re-authenticates through it.
+      api.logout().catch(() => {});
       storage.removeItem("agora_token");
       api.setToken(null);
       setCurrentWorkspace(null, null);
