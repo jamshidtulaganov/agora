@@ -64,6 +64,7 @@ import { CapabilityBanner } from "@agora/ui/components/common/capability-banner"
 import { readOrigin, totalFileCount, type OriginInfo } from "../lib/origin";
 import { FileTree } from "./file-tree";
 import { FileViewer } from "./file-viewer";
+import { SkillsNavSidebar } from "./skills-nav-sidebar";
 import { useT } from "../../i18n";
 
 const SKILL_MD = "SKILL.md";
@@ -610,8 +611,11 @@ export function SkillDetailPage({ skillId }: { skillId: string }) {
         </div>
       )}
 
-      {/* Body: file tree | editor | sidebar */}
+      {/* Body: skills nav | file tree | editor | sidebar */}
       <div className="flex flex-1 min-h-0 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
+        {/* Skills nav (xl+ only — narrower screens keep the 3-pane layout) */}
+        <SkillsNavSidebar currentSkillId={skill.id} />
+
         {/* File tree */}
         <aside className="flex max-h-44 w-full shrink-0 flex-col border-b md:max-h-none md:w-56 md:border-b-0 md:border-r">
           <div className="flex h-10 shrink-0 items-center justify-between border-b px-3">
