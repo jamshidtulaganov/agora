@@ -644,6 +644,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Get("/api/bitrix/users", h.ListBitrixUsers)
 		r.Get("/api/bitrix/tasks", h.ListBitrixTasks)
 		r.Post("/api/bitrix/import", h.ImportBitrixTasks)
+		// Self-scoped import: any logged-in member pulls ONLY their own Bitrix
+		// tasks (RESPONSIBLE = their linked id). No operator role, no way to
+		// import another user's task. Requires a linked Bitrix account (412 else).
+		r.Post("/api/bitrix/import/mine", h.ImportMyBitrixTasks)
 		r.Get("/api/bitrix/import/progress", h.GetBitrixImportProgress)
 		r.Post("/api/bitrix/register-webhook", h.RegisterBitrixWebhook)
 

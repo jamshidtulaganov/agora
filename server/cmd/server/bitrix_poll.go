@@ -47,3 +47,42 @@ func runBitrixSyncPoll(ctx context.Context, h *handler.Handler) {
 		}
 	}
 }
+
+// bitrixUserPollInterval is the period for the per-user auto-pool, from
+// AGORA_BITRIX_USER_POLL_INTERVAL (a Go duration, e.g. "5m"). Empty / invalid /
+// <= 0 disables it — separate from BITRIX_SYNC_POLL_INTERVAL, which only
+// refreshes already-tracked tasks.
+func bitrixUserPollInterval() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("AGORA_BITRIX_USER_POLL_INTERVAL"))
+	if raw == "" {
+		return 0
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		return 0
+	}
+	return d
+}
+
+// runBitrixUserPoll periodically discovers + imports each linked member's own
+// active Bitrix tasks (the per-user auto-pool), so a task newly assigned to a
+// member in Bitrix lands on their board without a manual import. No-op when the
+// interval is unset.
+func runBitrixUserPoll(ctx context.Context, h *handler.Handler) {
+	interval := bitrixUserPollInterval()
+	if interval <= 0 {
+		slog.Info("bitrix user poll: disabled (set AGORA_BITRIX_USER_POLL_INTERVAL to enable)")
+		return
+	}
+	slog.Info("bitrix user poll: starting", "interval", interval.String())
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			safeTick("bitrix_user_poll", func() { h.PollBitrixUserTasks(ctx) })
+		}
+	}
+}

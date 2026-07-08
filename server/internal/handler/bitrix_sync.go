@@ -167,6 +167,42 @@ func bitrixArchiveDoneEnabled() bool {
 	}
 }
 
+// bitrixBulkImportEnabled gates the operator-driven bulk import paths — the
+// arbitrary task/group/user selectors (ImportBitrixTasks) and the whole-group
+// project re-sync (SyncBitrixProject). Both can pull tasks the caller is NOT the
+// responsible for, so they are OFF by default: the self-serve per-user import
+// (POST /api/bitrix/import/mine) plus the background auto-pool are the go-forward
+// path where a member only ever imports their own tasks. Enable
+// (AGORA_BITRIX_BULK_IMPORT=1) only for a deliberate one-time operator backfill.
+func bitrixBulkImportEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("AGORA_BITRIX_BULK_IMPORT"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+// bitrixImportOwnOnly gates the per-user scope on the CREATE path: a pushed or
+// polled task whose RESPONSIBLE doesn't resolve to a workspace member (an
+// existing linked member OR a dept-provisioned one) is SKIPPED rather than
+// created unassigned — so the webhook and poller never import a task that isn't
+// any member's own. OFF by default so the live sync's existing "import
+// unassigned (metadata chip)" behavior is preserved; enable
+// (AGORA_BITRIX_IMPORT_OWN_ONLY=1) to enforce the strict per-user model once a
+// workspace's members are linked. NOTE: the self-import endpoint
+// (/api/bitrix/import/mine) and the background auto-pool are already self-scoped
+// by construction — they fetch only the acting/iterated user's own tasks — so
+// this flag only tightens the inbound webhook / safety-net poller.
+func bitrixImportOwnOnly() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("AGORA_BITRIX_IMPORT_OWN_ONLY"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
 // maybeArchiveBitrixDone archives an issue when its dev-team kanban stage resolves
 // to `done` (and unarchives it if the task reopens), gated on the opt-in flag.
 // SetIssueArchived is idempotent, so this no-ops once the issue is already in the
@@ -477,6 +513,80 @@ func (h *Handler) PollBitrixActiveTasks(ctx context.Context) {
 	slog.Info("bitrix poll: tick complete", "candidates", len(taskIDs), "synced", synced)
 }
 
+// bitrixUserPollMaxTasks bounds how many tasks a single user-poll tick reconciles
+// across ALL linked users, so discovering a large backlog can't flood the Bitrix
+// REST API or the import pipeline in one tick — the rest carries to later ticks.
+const bitrixUserPollMaxTasks = 200
+
+// PollBitrixUserTasks discovers and imports each linked member's OWN active
+// Bitrix tasks: for every user_external_identity(provider='bitrix') it lists the
+// tasks that user is RESPONSIBLE for (tag-filtered) and reconciles each through
+// the shared sync — so a task newly assigned to a member in Bitrix appears on
+// their board with no manual import. This is the per-user auto-pool; unlike
+// PollBitrixActiveTasks (which only refreshes already-tracked tasks) it also
+// DISCOVERS new ones. Routing + the own-only gate keep each task landing only
+// where the member belongs; dedup on bitrix_task_id makes an already-imported
+// task a cheap update. Bounded per tick. No-op when Bitrix isn't configured.
+func (h *Handler) PollBitrixUserTasks(ctx context.Context) {
+	cfg := bitrixRouteConfig()
+	if !bitrixInboundEnabled(cfg) {
+		return
+	}
+	rows, err := h.DB.Query(ctx,
+		`SELECT external_id FROM user_external_identity WHERE provider = $1`,
+		providerBitrix)
+	if err != nil {
+		slog.Warn("bitrix user poll: list linked users failed", "error", err)
+		return
+	}
+	var bitrixIDs []string
+	for rows.Next() {
+		var id string
+		if rows.Scan(&id) == nil && strings.TrimSpace(id) != "" {
+			bitrixIDs = append(bitrixIDs, strings.TrimSpace(id))
+		}
+	}
+	rows.Close()
+	if len(bitrixIDs) == 0 {
+		return
+	}
+
+	st := h.newBitrixSyncState()
+	synced, polledUsers := 0, 0
+	for _, bid := range bitrixIDs {
+		if ctx.Err() != nil {
+			return
+		}
+		if synced >= bitrixUserPollMaxTasks {
+			slog.Info("bitrix user poll: per-tick task cap reached, deferring rest",
+				"cap", bitrixUserPollMaxTasks)
+			break
+		}
+		tasks, err := st.client.ListTasksByUser(ctx, bid, st.tag)
+		if err != nil {
+			slog.Debug("bitrix user poll: list user tasks failed", "bitrix_id", bid, "error", err)
+			continue
+		}
+		polledUsers++
+		for i := range tasks {
+			if ctx.Err() != nil || synced >= bitrixUserPollMaxTasks {
+				break
+			}
+			tid := strings.TrimSpace(tasks[i].ID)
+			if tid == "" {
+				continue
+			}
+			if err := h.syncBitrixTaskWithState(ctx, tid, cfg, st); err != nil {
+				slog.Debug("bitrix user poll: sync task failed", "task_id", tid, "error", err)
+				continue
+			}
+			synced++
+		}
+	}
+	slog.Info("bitrix user poll: tick complete",
+		"linked_users", len(bitrixIDs), "polled_users", polledUsers, "tasks_synced", synced)
+}
+
 // startBitrixTaskSync runs the per-task sync (REST + downloads + enrichment) for
 // a resolved task-id set in a detached background goroutine — streaming issues
 // onto the board live over the websocket and updating the import-progress tracker
@@ -703,6 +813,19 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 
 	responsible := h.bitrixResponsible(ctx, st, task.ResponsibleID)
 	assigneeType, assigneeID := h.bitrixResolveOrProvisionAssignee(ctx, ws.ID, task.ResponsibleID, responsible, st)
+
+	// Per-user scope: only import a task that belongs to one of THIS workspace's
+	// members. When the responsible resolves to no member (not linked + not
+	// dept-provisionable), the task is a stranger's — skip the create instead of
+	// importing it unassigned, so the webhook/poller never pull tasks that aren't
+	// any member's own. Self-import + auto-pool fetch the acting user's own tasks,
+	// so this only filters a routed task the responsible isn't a member for.
+	if bitrixImportOwnOnly() && !assigneeType.Valid {
+		slog.Info("bitrix sync: responsible is not a workspace member — skipping import (own-only)",
+			"task_id", task.ID, "responsible_id", task.ResponsibleID, "workspace", slug)
+		st.skipped++
+		return nil
+	}
 
 	res, err := h.IssueService.Create(ctx, service.IssueCreateParams{
 		WorkspaceID:  ws.ID,

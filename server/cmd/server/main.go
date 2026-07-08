@@ -366,6 +366,7 @@ func main() {
 	go runConfigWatchdogScheduler(autopilotCtx, h)
 	go runAutopilotFailureMonitor(autopilotCtx, queries, bus, envFailureMonitorConfig())
 	go runBitrixSyncPoll(sweepCtx, h)
+	go runBitrixUserPoll(sweepCtx, h)
 	go runDBStatsLogger(sweepCtx, pool)
 
 	// Lark inbound supervisor: holds the §4.4 WS lease per installation

@@ -320,6 +320,15 @@ func (h *Handler) ImportBitrixTasks(w http.ResponseWriter, r *http.Request) {
 	if !h.requireBitrixOperator(w, r) {
 		return
 	}
+	// Cross-user bulk import is OFF by default: even an operator must not pull
+	// tasks other users are responsible for. Members self-serve via
+	// POST /api/bitrix/import/mine; this arbitrary-selector path is a gated
+	// backfill tool (AGORA_BITRIX_BULK_IMPORT=1) only.
+	if !bitrixBulkImportEnabled() {
+		writeError(w, http.StatusForbidden,
+			"operator bulk import is disabled — use POST /api/bitrix/import/mine to import your own tasks")
+		return
+	}
 	if !bitrixEndpointsEnabled() {
 		writeError(w, http.StatusServiceUnavailable, "bitrix integration not configured")
 		return
@@ -423,6 +432,72 @@ func (h *Handler) ImportBitrixTasks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, resp)
 }
 
+// ImportMyBitrixTasks imports ONLY the caller's own Bitrix tasks — every task the
+// caller is RESPONSIBLE for in Bitrix (filtered by BITRIX_TASK_TAG), routed and
+// reconciled through the same per-task sync the webhook uses. Self-scoped by
+// construction: the task set comes solely from ListTasksByUser(caller's linked
+// Bitrix id), so no member — not even a workspace admin — can pull another user's
+// task. The caller must have linked their Bitrix account first
+// (POST /api/me/links/bitrix); an unlinked caller gets 412 with an actionable
+// message, since without an identity we can't scope the import to them and
+// importing anything else would leak other users' tasks. Auth = any logged-in
+// member (NOT requireBitrixOperator).
+func (h *Handler) ImportMyBitrixTasks(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	if !bitrixEndpointsEnabled() {
+		writeError(w, http.StatusServiceUnavailable, "bitrix integration not configured")
+		return
+	}
+
+	bitrixID := h.bitrixIDByUserID(r.Context(), userID)
+	if bitrixID == "" {
+		writeJSON(w, http.StatusPreconditionFailed, map[string]string{
+			"reason": "bitrix_not_linked",
+			"error":  "Link your Bitrix account first, then import — your tasks are matched by your Bitrix responsible id.",
+		})
+		return
+	}
+
+	cfg := bitrixRouteConfig()
+	st := h.newBitrixSyncState()
+
+	// Detach the per-task sync (REST round-trips, file downloads, frame
+	// extraction) from the request context — it outlives the ~30s client budget;
+	// issues stream onto the board over the websocket as each lands. cancel() is
+	// invoked by the background goroutine started inside startBitrixTaskSync.
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+
+	resp := BitrixImportResponse{Errors: []string{}}
+	tasks, err := st.client.ListTasksByUser(ctx, bitrixID, st.tag)
+	if err != nil {
+		cancel()
+		resp.Errors = append(resp.Errors, "list my tasks: "+err.Error())
+		writeJSON(w, http.StatusBadGateway, resp)
+		return
+	}
+
+	seen := map[string]bool{}
+	taskIDs := make([]string, 0, len(tasks))
+	for i := range tasks {
+		id := strings.TrimSpace(tasks[i].ID)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		taskIDs = append(taskIDs, id)
+		if len(taskIDs) >= bitrixImportMaxTasks {
+			break
+		}
+	}
+
+	h.startBitrixTaskSync(ctx, cancel, taskIDs, cfg, st)
+	resp.Accepted = len(taskIDs)
+	writeJSON(w, http.StatusAccepted, resp)
+}
+
 // SyncBitrixProject re-syncs a single Bitrix-linked project on demand: it pulls
 // the project's workgroup tasks (new + changed) through the same per-task sync
 // the bulk import + webhook use, then stamps project.settings.bitrix_synced_at so
@@ -430,6 +505,15 @@ func (h *Handler) ImportBitrixTasks(w http.ResponseWriter, r *http.Request) {
 // (the per-task sync streams onto the board over the websocket) + the timestamp.
 func (h *Handler) SyncBitrixProject(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUserID(w, r); !ok {
+		return
+	}
+	// A whole-workgroup re-sync pulls every user's tasks in the group, so it is a
+	// cross-user bulk path — OFF by default (AGORA_BITRIX_BULK_IMPORT). Per-user
+	// refresh is covered by the background auto-pool; members import their own via
+	// POST /api/bitrix/import/mine.
+	if !bitrixBulkImportEnabled() {
+		writeError(w, http.StatusForbidden,
+			"project bulk sync is disabled — members import their own tasks via POST /api/bitrix/import/mine")
 		return
 	}
 	if !bitrixEndpointsEnabled() {
