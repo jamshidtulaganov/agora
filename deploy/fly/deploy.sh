@@ -64,6 +64,7 @@ deploy_backend() {
     BITRIX_WEBHOOK_URL="$BITRIX_WEBHOOK_URL" \
     BITRIX_INBOUND_SECRET="$BITRIX_INBOUND_SECRET" \
     AGORA_GIT_SECRET_KEY="${AGORA_GIT_SECRET_KEY:-}" \
+    AGORA_FIGMA_SECRET_KEY="${AGORA_FIGMA_SECRET_KEY:-}" \
     --app sd-agora-backend --stage
   # Build context = repo root; Dockerfile copies server/.
   fly deploy --config "$FLYDIR/backend/fly.toml" --app sd-agora-backend \
