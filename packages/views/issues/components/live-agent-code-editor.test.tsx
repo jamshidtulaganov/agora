@@ -218,6 +218,22 @@ describe("LiveAgentCodeEditor", () => {
     );
   });
 
+  it("streams the step trail for a run that writes no files (QA-style)", () => {
+    mockState.snapshot = [makeTask({})];
+    mockState.messages = [
+      { seq: 1, type: "tool_use", tool: "Bash", input: { command: "npm ci 2>&1 | tail -10" }, created_at: "2026-07-08T08:00:00Z" },
+      { seq: 2, type: "tool_use", tool: "Read", input: { file_path: "repo/src/app.ts" }, created_at: "2026-07-08T08:00:01Z" },
+      { seq: 3, type: "tool_use", tool: "Bash", input: { command: "npm run lint:check 2>&1" }, created_at: "2026-07-08T08:00:02Z" },
+    ];
+    renderWithI18n(<LiveAgentCodeEditor issueId="issue-1" />);
+
+    // Still the waiting state (no file docs), but the trail streams the steps.
+    expect(screen.getAllByText(/warming up/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/npm run lint:check/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/npm ci/)).toBeInTheDocument();
+    expect(screen.getByText(/is reading .*app\.ts/)).toBeInTheDocument();
+  });
+
   it("renders the Uzbek live badge", () => {
     mockState.snapshot = [makeTask({})];
     renderWithI18n(<LiveAgentCodeEditor issueId="issue-1" />, {

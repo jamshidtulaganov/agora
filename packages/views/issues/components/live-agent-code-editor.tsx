@@ -26,10 +26,12 @@ import { ActorAvatar } from "../../common/actor-avatar";
 import { buildTimeline, redactSecrets } from "../../common/task-transcript";
 import { useT } from "../../i18n";
 import {
+  deriveActivitySteps,
   deriveCurrentActivity,
   deriveFileDocs,
   FRAGMENT_SEPARATOR,
   type ActivityLine,
+  type ActivityStep,
   type LiveFileDoc,
 } from "./live-agent-activity";
 
@@ -173,6 +175,10 @@ function LiveEditorForTask({
   const timeline = useMemo(() => buildTimeline(messages), [messages]);
   const docs = useMemo(() => deriveFileDocs(timeline), [timeline]);
   const activity = useMemo(() => deriveCurrentActivity(timeline), [timeline]);
+  // Step trail for runs that write no files (QA / review / ops): commands run,
+  // files read, pages driven — so the Live pane streams SOMETHING meaningful
+  // instead of sitting on "warming up" for the whole run.
+  const steps = useMemo(() => deriveActivitySteps(timeline), [timeline]);
 
   // Follow-the-agent by default; clicking a file pins it.
   const [pinnedPath, setPinnedPath] = useState<string | null>(null);
@@ -306,7 +312,7 @@ function LiveEditorForTask({
               }
             />
           ) : (
-            <WaitingPane task={task} activity={activity} />
+            <WaitingPane task={task} activity={activity} steps={steps} />
           )}
         </div>
 
@@ -358,28 +364,86 @@ function ActivityText({ activity }: { activity: ActivityLine }) {
   return <>{activity.target ? `${verb} ${activity.target}` : verb}</>;
 }
 
-// Pre-first-edit state: the run is alive but nothing was written yet.
+// Cap the step trail in the waiting pane — a long QA run can emit hundreds of
+// commands; the newest slice is what tells the human "it's alive and here's
+// what it's doing".
+const MAX_WAITING_STEPS = 30;
+
+// Pre-first-edit state: the run is alive but nothing was written yet. Runs
+// that never write files (QA / review / ops) live here for their whole
+// duration, so instead of a static "warming up" the pane streams the readable
+// step trail — every command run, file read, page driven — newest first.
 function WaitingPane({
   task,
   activity,
+  steps,
 }: {
   task: AgentTask;
   activity: ActivityLine | null;
+  steps: ActivityStep[];
 }) {
   const { t } = useT("issues");
+  const trail = steps.slice(0, MAX_WAITING_STEPS);
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+    <div className="flex h-full flex-col items-center gap-3 overflow-y-auto px-6 py-8 text-center">
       <ActorAvatar actorType="agent" actorId={task.agent_id} size={28} />
       <p className="text-xs text-muted-foreground">
         {t(($) => $.live_editor.waiting)}
       </p>
       {activity && (
-        <p className="max-w-[320px] truncate font-mono text-[11px] text-muted-foreground/70">
+        <p className="max-w-[420px] truncate font-mono text-[11px] text-foreground/80">
           <ActivityText activity={activity} />
         </p>
       )}
+      {/* Step trail — what the run has done so far, newest first. */}
+      {trail.length > 0 && (
+        <ul className="mt-2 w-full max-w-[560px] text-left">
+          {trail.map((step, i) => (
+            <li
+              key={step.key}
+              className={cn(
+                "flex items-center gap-2 border-b border-border/40 py-1 last:border-b-0",
+                i === 0 ? "text-foreground/80" : "text-muted-foreground/70",
+              )}
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  "size-1 shrink-0 rounded-full",
+                  i === 0
+                    ? "bg-info motion-safe:animate-pulse"
+                    : "bg-muted-foreground/40",
+                )}
+              />
+              <span className="min-w-0 flex-1 truncate font-mono text-[11px]">
+                <StepText step={step} />
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
+}
+
+// Localized step line ("is running npm ci", "click Войти", …) — same verb keys
+// as the activity strip so the trail and the strip read identically.
+function StepText({ step }: { step: ActivityStep }) {
+  const { t } = useT("issues");
+  let verb = "";
+  switch (step.verbKey) {
+    case "reading": verb = t(($) => $.live_activity.verb.reading); break;
+    case "editing": verb = t(($) => $.live_activity.verb.editing); break;
+    case "writing": verb = t(($) => $.live_activity.verb.writing); break;
+    case "searching": verb = t(($) => $.live_activity.verb.searching); break;
+    case "running": verb = t(($) => $.live_activity.verb.running); break;
+    case "fetching": verb = t(($) => $.live_activity.verb.fetching); break;
+    case "browsing": verb = t(($) => $.live_activity.verb.browsing); break;
+    case "thinking": verb = t(($) => $.live_activity.verb.thinking); break;
+    case "working": verb = t(($) => $.live_activity.verb.working); break;
+    default: verb = step.rawVerb ?? "";
+  }
+  return <>{step.target ? `${verb} ${step.target}` : verb}</>;
 }
 
 // The blue avatar pill that plays the agent's "cursor" (mockup: "Aria ▍").

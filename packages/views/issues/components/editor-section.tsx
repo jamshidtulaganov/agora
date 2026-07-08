@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { agentTaskSnapshotOptions } from "@agora/core/agents";
+import { projectDetailOptions } from "@agora/core/projects/queries";
 import {
   Activity as ActivityIcon,
   ChevronRight,
@@ -17,6 +18,7 @@ import {
   MessageSquare,
   PanelRightClose,
   PanelRightOpen,
+  Play,
 } from "lucide-react";
 import {
   Dialog,
@@ -165,6 +167,8 @@ const EDITOR_UNREACHABLE_LABEL =
 const BROWSER_STARTING_LABEL = "starting browser…";
 const BROWSER_UNAVAILABLE_LABEL =
   "Live browser unavailable — no live worktree yet. Assign an agent or wait for the daemon to come online, then reopen this tab.";
+const PREVIEW_UNAVAILABLE_LABEL =
+  "Preview runs the app's dev server next to the editor — available on self-host runtimes for now. On cloud runtimes, use the Browser tab to watch the live QA Chromium instead.";
 
 interface EditorSectionProps {
   issueId: string;
@@ -203,6 +207,14 @@ export function EditorSection({
   const [daemon, setDaemon] = useState<{ url: string; userId: string; env?: Record<string, string> } | null>(
     null,
   );
+  // Project settings feed the preview pane's command defaults: qa_smoke_cmd
+  // prefills the dev command, qa_test_cmd overrides /editor/test. Typed pane
+  // input > project setting > daemon auto-detect.
+  const { data: project } = useQuery({
+    ...projectDetailOptions(wsId, projectId ?? ""),
+    enabled: !!projectId,
+  });
+  const projectSettings = project?.settings;
   // Lifted test-run state — shared between EditorPreviewPane (button + bottom
   // bar); parseTestOutput summarizes the raw runner output for that bar.
   const [testRunState, setTestRunState] = useState<TestRunState>({
@@ -696,16 +708,32 @@ export function EditorSection({
                         </div>
                       )}
                     </div>
-                    {leftPane === "preview" && daemon && selectedAgent && (
-                      <div className="absolute inset-0 flex">
-                        <EditorPreviewPane
-                          daemonUrl={daemon.url}
-                          workdir={selectedAgent.work_dir}
-                          testRunState={testRunState}
-                          onTestResult={handleTestResult}
-                        />
-                      </div>
-                    )}
+                    {leftPane === "preview" &&
+                      (daemon && selectedAgent ? (
+                        <div className="absolute inset-0 flex">
+                          <EditorPreviewPane
+                            daemonUrl={daemon.url}
+                            workdir={selectedAgent.work_dir}
+                            defaultDevCommand={projectSettings?.qa_smoke_cmd}
+                            defaultTestCommand={projectSettings?.qa_test_cmd}
+                            testRunState={testRunState}
+                            onTestResult={handleTestResult}
+                          />
+                        </div>
+                      ) : (
+                        // Cloud mode: the preview pane drives the daemon's
+                        // /editor/preview API from the BROWSER, which only works
+                        // when the daemon is reachable directly (self-host).
+                        // Without this the tab rendered a silently blank pane.
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
+                          <span className="flex size-11 items-center justify-center rounded-full bg-muted">
+                            <Play className="size-5 text-muted-foreground/60" />
+                          </span>
+                          <p className="max-w-[300px] text-[11px] leading-relaxed text-muted-foreground">
+                            {PREVIEW_UNAVAILABLE_LABEL}
+                          </p>
+                        </div>
+                      ))}
                     {leftPane === "browser" &&
                       (daemon && selectedAgent ? (
                         <div className="absolute inset-0 flex">
