@@ -267,7 +267,9 @@
       "upload_aria": "Upload avatar",
       "remove_aria": "Remove avatar",
       "select_image_toast": "Please select an image file.",
-      "upload_failed_toast": "Avatar upload failed"
+      "upload_failed_toast": "Avatar upload failed",
+      "suggested_label": "Suggested icons",
+      "suggested_aria": "Use suggested icon {{n}}"
     }
   },
   "tab_body": {

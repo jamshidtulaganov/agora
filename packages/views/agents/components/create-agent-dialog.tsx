@@ -8,6 +8,7 @@ import { RuntimePicker, isRuntimeUsableForUser } from "./runtime-picker";
 import { InstructionsEditor } from "./instructions-editor";
 import { SkillMultiSelect } from "./skill-multi-select";
 import { AvatarPicker } from "./avatar-picker";
+import { DefaultIconRow } from "./default-icon-row";
 import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { workspaceKeys } from "@agora/core/workspace/queries";
@@ -284,6 +285,8 @@ export function CreateAgentDialog({
                 </div>
               </div>
             </div>
+
+            <DefaultIconRow value={avatarUrl} onChange={setAvatarUrl} />
 
             <div>
               <Label className="text-xs text-muted-foreground">{t(($) => $.create_dialog.visibility_label)}</Label>

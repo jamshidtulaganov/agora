@@ -267,7 +267,9 @@
       "upload_aria": "Avatar yuklash",
       "remove_aria": "Avatarni olib tashlash",
       "select_image_toast": "Iltimos, rasm faylini tanlang.",
-      "upload_failed_toast": "Avatarni yuklab bo‘lmadi"
+      "upload_failed_toast": "Avatarni yuklab bo‘lmadi",
+      "suggested_label": "Tavsiya etilgan iconlar",
+      "suggested_aria": "Tavsiya etilgan icon {{n}} ni tanlash"
     }
   },
   "tab_body": {

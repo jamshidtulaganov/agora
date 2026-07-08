@@ -267,7 +267,9 @@
       "upload_aria": "Загрузить аватар",
       "remove_aria": "Удалить аватар",
       "select_image_toast": "Пожалуйста, выберите файл изображения.",
-      "upload_failed_toast": "Не удалось загрузить аватар"
+      "upload_failed_toast": "Не удалось загрузить аватар",
+      "suggested_label": "Рекомендуемые иконки",
+      "suggested_aria": "Выбрать иконку {{n}}"
     }
   },
   "tab_body": {
