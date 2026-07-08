@@ -1426,6 +1426,14 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 				if !briefEmbedded {
+					// A video-heavy ticket's frames must be in the description
+					// BEFORE the brief is built from it, so the agent plans from
+					// the extracted stills instead of racing the async on-assign
+					// kick. Bounded to fit under the claim's 30s HTTP budget; a
+					// no-op once frames are extracted. See ensureVideoFramesForBrief.
+					fctx, fcancel := context.WithTimeout(r.Context(), claimFrameExtractTimeout)
+					issue = h.ensureVideoFramesForBrief(fctx, issue)
+					fcancel()
 					if note := issueBriefNote(issue.Description.String, issue.AcceptanceCriteria); note != "" {
 						resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + note)
 					}
