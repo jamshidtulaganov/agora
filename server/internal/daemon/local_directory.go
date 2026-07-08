@@ -223,6 +223,9 @@ func isBlacklistedLocalPath(absPath string) (reason string, blocked bool) {
 		if cleaned == filepath.Clean(home) {
 			return "path is the user's home directory", true
 		}
+		if reason, blocked := isProtectedHomeSubtree(cleaned, filepath.Clean(home)); blocked {
+			return reason, true
+		}
 	}
 	return "", false
 }
@@ -256,11 +259,55 @@ func isBlacklistedRealPath(realPath string) (reason string, blocked bool) {
 		if realClean == homeClean {
 			return "path is the user's home directory", true
 		}
+		if reason, blocked := isProtectedHomeSubtree(realClean, homeClean); blocked {
+			return reason, true
+		}
 		if r, err := filepath.EvalSymlinks(home); err == nil {
-			if filepath.Clean(r) == realClean {
+			realHome := filepath.Clean(r)
+			if realClean == realHome {
 				return "path is the user's home directory", true
 			}
+			if reason, blocked := isProtectedHomeSubtree(realClean, realHome); blocked {
+				return reason, true
+			}
 		}
+	}
+	return "", false
+}
+
+// isProtectedHomeSubtree rejects paths inside home subtrees that hold
+// credentials or OS-managed state rather than projects. Agents run with all
+// permission prompts bypassed as the daemon's OS user, so pointing one at
+// ~/.ssh or ~/.aws hands over the machine's credential stores — no
+// legitimate project lives there. Blocked as classes, not an enumerated
+// list (which would rot):
+//
+//   - any dot-directory directly under $HOME (~/.ssh, ~/.aws, ~/.gnupg,
+//     ~/.config, ...), including everything beneath it;
+//   - ~/Library on macOS (keychains, app containers);
+//   - $HOME\AppData on Windows (credential vaults, app state).
+//
+// Containment is separator-boundary aware: ~/.ssh-archive-of-mine is a weird
+// but legal project dir and passes; ~/.ssh/keys does not. Non-hidden project
+// dirs under $HOME (~/code, ~/Projects) are untouched.
+func isProtectedHomeSubtree(cleaned, homeClean string) (reason string, blocked bool) {
+	prefix := homeClean + string(filepath.Separator)
+	if !strings.HasPrefix(cleaned, prefix) {
+		return "", false
+	}
+	rel := cleaned[len(prefix):]
+	first := rel
+	if i := strings.IndexByte(rel, filepath.Separator); i >= 0 {
+		first = rel[:i]
+	}
+	if strings.HasPrefix(first, ".") {
+		return fmt.Sprintf("path is inside the protected home directory %q", filepath.Join(homeClean, first)), true
+	}
+	if runtime.GOOS == "darwin" && first == "Library" {
+		return "path is inside ~/Library, which holds OS-managed state, not projects", true
+	}
+	if runtime.GOOS == "windows" && strings.EqualFold(first, "AppData") {
+		return "path is inside AppData, which holds OS-managed state, not projects", true
 	}
 	return "", false
 }

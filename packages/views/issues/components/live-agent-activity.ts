@@ -509,6 +509,57 @@ export interface ActivityStep {
   rawVerb?: string;
   /** File path / command summary / query shown after the verb. May be empty. */
   target?: string;
+  /**
+   * Human intent class for a shell command ("installing dependencies",
+   * "running tests", …) — set when the command matches a known class so the
+   * UI can show a localized phrase instead of raw shell. The raw summary stays
+   * in {@link target} for hover/tooltips.
+   */
+  cmdClass?: CommandClass;
+}
+
+/** Recognized shell-command intents, localized under live_activity.cmd.*. */
+export type CommandClass =
+  | "install"
+  | "test"
+  | "lint"
+  | "build"
+  | "review"
+  | "branch"
+  | "inspect";
+
+// Order matters: first match wins.
+// - STRONG inspect signals go first: a command that starts with a process/
+//   sleep/word-count peek, or touches the agent's own tmp/task-output files,
+//   is plumbing even when its arguments mention a test runner
+//   (`ps aux | grep vitest` is a peek, not a test run).
+// - Test before build (npm run test:e2e also matches the generic npm-run
+//   shape).
+// - WEAK inspect signals (ls/cat/tail/… at the start) come last so a piped
+//   "npm test | tail" still reads as a test run.
+const COMMAND_CLASS_RULES: Array<{ cls: CommandClass; re: RegExp }> = [
+  { cls: "inspect", re: /^(ps|sleep|wc|du|stat|pwd|echo)\b|\/tmp\/claude|\/tasks\/[a-z0-9]+\.output/ },
+  { cls: "install", re: /\b(npm ci|npm install|pnpm install|yarn install|composer install|pip install|go mod (download|tidy)|bundle install)\b/ },
+  { cls: "test", re: /\b(vitest|jest|playwright|phpunit|pytest|codecept|go test)\b|\bnpm (run )?test\b|\btest:(e2e|unit|integration|smoke)\b|\bpnpm (run )?test\b/ },
+  { cls: "lint", re: /\b(eslint|golangci-lint|prettier --check|lint:?\w*)\b|\bphp -l\b/ },
+  { cls: "build", re: /\bnpm run build\b|\bpnpm (run )?build\b|\bgo build\b|\bvite build\b|\btsc\b|\bmake build\b|\bcomposer dump-autoload\b/ },
+  { cls: "review", re: /\bgit (diff|log|show|status|blame)\b/ },
+  { cls: "branch", re: /\bgit (checkout|switch|stash|reset|fetch|pull|rebase)\b/ },
+  { cls: "inspect", re: /^(ls|cat|tail|head|grep|find)\b/ },
+];
+
+/**
+ * Classify a shell command into a human intent class, or null when unknown.
+ * Pure + exported for tests; the trail renderers map the class to a localized
+ * phrase and fall back to the summarized command when null.
+ */
+export function classifyCommand(command: string): CommandClass | null {
+  const c = command.trim();
+  if (!c) return null;
+  for (const rule of COMMAND_CLASS_RULES) {
+    if (rule.re.test(c)) return rule.cls;
+  }
+  return null;
 }
 
 // Condense a shell command to a short, readable summary. Known platform/VCS
@@ -566,6 +617,8 @@ export function deriveActivitySteps(items: TimelineItem[]): ActivityStep[] {
         verbKey: "running",
         target: command ? summarizeCommand(command) : extractTarget(item.input),
       };
+      const cls = command ? classifyCommand(command) : null;
+      if (cls) step.cmdClass = cls;
     } else {
       const key = TOOL_VERB[tool];
       step = {
@@ -574,6 +627,11 @@ export function deriveActivitySteps(items: TimelineItem[]): ActivityStep[] {
         rawVerb: key ? undefined : toolName || undefined,
         target: extractTarget(item.input),
       };
+      // Reading its own background-task output is plumbing, not progress —
+      // same "checking output" phrase as the equivalent shell peeks.
+      if (key === "reading" && /\/tasks\/[a-z0-9]+\.output$|tmp\/claude/.test(step.target ?? "")) {
+        step.cmdClass = "inspect";
+      }
     }
 
     const prev = out[out.length - 1];

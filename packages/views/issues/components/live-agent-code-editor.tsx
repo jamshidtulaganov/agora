@@ -371,8 +371,11 @@ const MAX_WAITING_STEPS = 30;
 
 // Pre-first-edit state: the run is alive but nothing was written yet. Runs
 // that never write files (QA / review / ops) live here for their whole
-// duration, so instead of a static "warming up" the pane streams the readable
-// step trail — every command run, file read, page driven — newest first.
+// duration, so instead of a static "warming up" the pane renders the step
+// trail as a vertical timeline — oldest at the top, the live newest step
+// pulsing at the bottom, auto-followed — so the run reads as a sequence of
+// human phrases ("installing dependencies", "running the tests"), not raw
+// shell.
 function WaitingPane({
   task,
   activity,
@@ -383,53 +386,89 @@ function WaitingPane({
   steps: ActivityStep[];
 }) {
   const { t } = useT("issues");
-  const trail = steps.slice(0, MAX_WAITING_STEPS);
+  // deriveActivitySteps returns newest-first; the timeline reads top→down in
+  // execution order, so take the newest slice and flip it chronological.
+  const trail = steps.slice(0, MAX_WAITING_STEPS).reverse();
+
+  // Follow the live end of the timeline as new steps stream in.
+  const endRef = useRef<HTMLLIElement | null>(null);
+  const lastKey = trail[trail.length - 1]?.key;
+  useEffect(() => {
+    endRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [lastKey]);
+
   return (
-    <div className="flex h-full flex-col items-center gap-3 overflow-y-auto px-6 py-8 text-center">
+    <div className="flex h-full flex-col items-center gap-3 overflow-y-auto px-6 py-8">
       <ActorAvatar actorType="agent" actorId={task.agent_id} size={28} />
       <p className="text-xs text-muted-foreground">
-        {t(($) => $.live_editor.waiting)}
-      </p>
-      {activity && (
-        <p className="max-w-[420px] truncate font-mono text-[11px] text-foreground/80">
+        {trail.length === 0 && activity ? (
           <ActivityText activity={activity} />
-        </p>
-      )}
-      {/* Step trail — what the run has done so far, newest first. */}
+        ) : (
+          t(($) => $.live_editor.waiting)
+        )}
+      </p>
+      {/* Sequential timeline: connector rail + a dot per step. */}
       {trail.length > 0 && (
-        <ul className="mt-2 w-full max-w-[560px] text-left">
-          {trail.map((step, i) => (
-            <li
-              key={step.key}
-              className={cn(
-                "flex items-center gap-2 border-b border-border/40 py-1 last:border-b-0",
-                i === 0 ? "text-foreground/80" : "text-muted-foreground/70",
-              )}
-            >
-              <span
-                aria-hidden
-                className={cn(
-                  "size-1 shrink-0 rounded-full",
-                  i === 0
-                    ? "bg-info motion-safe:animate-pulse"
-                    : "bg-muted-foreground/40",
+        <ul className="mt-1 w-full max-w-[560px] text-left">
+          {trail.map((step, i) => {
+            const isLast = i === trail.length - 1;
+            return (
+              <li
+                key={step.key}
+                ref={isLast ? endRef : undefined}
+                className="relative pb-3 pl-6 last:pb-0"
+              >
+                {!isLast && (
+                  <span
+                    aria-hidden
+                    className="absolute left-[5.5px] top-3.5 h-full w-px bg-border"
+                  />
                 )}
-              />
-              <span className="min-w-0 flex-1 truncate font-mono text-[11px]">
-                <StepText step={step} />
-              </span>
-            </li>
-          ))}
+                <span
+                  aria-hidden
+                  className={cn(
+                    "absolute left-0 top-[3px] size-3 rounded-full border-2 border-background",
+                    isLast
+                      ? "bg-info motion-safe:animate-pulse"
+                      : "bg-muted-foreground/40",
+                  )}
+                />
+                <span
+                  className={cn(
+                    "block truncate text-xs",
+                    isLast
+                      ? "font-medium text-foreground/90"
+                      : "text-muted-foreground/80",
+                  )}
+                  title={step.target}
+                >
+                  <StepText step={step} />
+                </span>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
   );
 }
 
-// Localized step line ("is running npm ci", "click Войти", …) — same verb keys
-// as the activity strip so the trail and the strip read identically.
+// Localized step line. A classified shell command renders as its human intent
+// ("installing dependencies") with the raw summary on hover; everything else
+// keeps the verb + target form ("is reading .../file.ts"). Same keys as the
+// activity strip so the trail and the strip read identically.
 function StepText({ step }: { step: ActivityStep }) {
   const { t } = useT("issues");
+  switch (step.cmdClass) {
+    case "install": return <>{t(($) => $.live_activity.cmd.install)}</>;
+    case "test": return <>{t(($) => $.live_activity.cmd.test)}</>;
+    case "lint": return <>{t(($) => $.live_activity.cmd.lint)}</>;
+    case "build": return <>{t(($) => $.live_activity.cmd.build)}</>;
+    case "review": return <>{t(($) => $.live_activity.cmd.review)}</>;
+    case "branch": return <>{t(($) => $.live_activity.cmd.branch)}</>;
+    case "inspect": return <>{t(($) => $.live_activity.cmd.inspect)}</>;
+    default: break;
+  }
   let verb = "";
   switch (step.verbKey) {
     case "reading": verb = t(($) => $.live_activity.verb.reading); break;

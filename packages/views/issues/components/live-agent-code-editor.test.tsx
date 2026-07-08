@@ -227,11 +227,17 @@ describe("LiveAgentCodeEditor", () => {
     ];
     renderWithI18n(<LiveAgentCodeEditor issueId="issue-1" />);
 
-    // Still the waiting state (no file docs), but the trail streams the steps.
+    // Still the waiting state (no file docs), but the trail streams the steps —
+    // as human phrases, not raw shell (raw summary stays on the title attr).
     expect(screen.getAllByText(/warming up/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/npm run lint:check/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/npm ci/)).toBeInTheDocument();
+    expect(screen.getByText("installing dependencies")).toBeInTheDocument();
+    expect(screen.getByText("checking code style")).toBeInTheDocument();
     expect(screen.getByText(/is reading .*app\.ts/)).toBeInTheDocument();
+    // Chronological top→down: install (oldest) renders before lint (newest).
+    const items = screen.getAllByRole("listitem").map((li) => li.textContent);
+    expect(items.indexOf("installing dependencies")).toBeLessThan(
+      items.indexOf("checking code style"),
+    );
   });
 
   it("renders the Uzbek live badge", () => {

@@ -271,7 +271,19 @@ function StepRow({ step }: { step: ActivityStep }) {
     case "working": verb = t(($) => $.live_activity.verb.working); break;
     default: verb = step.rawVerb ?? "";
   }
-  const text = step.target ? `${verb} ${step.target}` : verb;
+  // A classified command reads as its human intent; raw summary stays on hover.
+  let human = "";
+  switch (step.cmdClass) {
+    case "install": human = t(($) => $.live_activity.cmd.install); break;
+    case "test": human = t(($) => $.live_activity.cmd.test); break;
+    case "lint": human = t(($) => $.live_activity.cmd.lint); break;
+    case "build": human = t(($) => $.live_activity.cmd.build); break;
+    case "review": human = t(($) => $.live_activity.cmd.review); break;
+    case "branch": human = t(($) => $.live_activity.cmd.branch); break;
+    case "inspect": human = t(($) => $.live_activity.cmd.inspect); break;
+    default: break;
+  }
+  const text = human || (step.target ? `${verb} ${step.target}` : verb);
   return (
     <li className="flex items-center gap-2 border-b px-2.5 py-1.5 last:border-b-0">
       <span

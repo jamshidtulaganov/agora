@@ -369,7 +369,16 @@
     "files_other": "{{count}} files",
     "working": "working…",
     "more": "+{{count}} more",
-    "show_less": "Show less"
+    "show_less": "Show less",
+    "cmd": {
+      "install": "installing dependencies",
+      "test": "running the tests",
+      "lint": "checking code style",
+      "build": "building the app",
+      "review": "reviewing the changes",
+      "branch": "preparing the branch",
+      "inspect": "checking output"
+    }
   },
   "live_editor": {
     "live": "Live",

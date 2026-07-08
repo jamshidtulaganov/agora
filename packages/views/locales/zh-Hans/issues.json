@@ -358,7 +358,16 @@
     "files_other": "{{count}} 个文件",
     "working": "处理中…",
     "more": "还有 {{count}} 个",
-    "show_less": "收起"
+    "show_less": "收起",
+    "cmd": {
+      "install": "正在安装依赖",
+      "test": "正在运行测试",
+      "lint": "正在检查代码风格",
+      "build": "正在构建应用",
+      "review": "正在查看改动",
+      "branch": "正在准备分支",
+      "inspect": "正在检查输出"
+    }
   },
   "live_editor": {
     "live": "实时",

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { TimelineItem } from "../../common/task-transcript";
 import {
+  classifyCommand,
   deriveActivitySteps,
   deriveCurrentActivity,
   deriveFileChanges,
@@ -356,5 +357,51 @@ describe("deriveFileDocs", () => {
     ]);
     expect(doc!.text).toBe("keep\n");
     expect(doc!.ranges).toEqual([]);
+  });
+});
+
+describe("classifyCommand", () => {
+  it("classifies dependency installs", () => {
+    expect(classifyCommand("npm ci 2>&1 | tail -10")).toBe("install");
+    expect(classifyCommand("pnpm install --frozen-lockfile")).toBe("install");
+    expect(classifyCommand("composer install --no-dev")).toBe("install");
+  });
+
+  it("classifies test runs (incl. script names and runners)", () => {
+    expect(classifyCommand("npm run test:e2e 2>&1 | tail -100")).toBe("test");
+    expect(classifyCommand("npm test")).toBe("test");
+    expect(classifyCommand("npx playwright test e2e/login.spec.ts")).toBe("test");
+    expect(classifyCommand("go test ./...")).toBe("test");
+  });
+
+  it("classifies lint / build / git review / branch prep", () => {
+    expect(classifyCommand("npm run lint:check 2>&1")).toBe("lint");
+    expect(classifyCommand("npm run build")).toBe("build");
+    expect(classifyCommand("git diff origin/main...HEAD -- src/a.ts")).toBe("review");
+    expect(classifyCommand("git stash list && git log --oneline -3")).toBe("review");
+    expect(classifyCommand("git checkout origin/main -- .")).toBe("branch");
+  });
+
+  it("classifies agent plumbing peeks as inspect", () => {
+    expect(classifyCommand("wc -l /tmp/claude-0/-data-workspaces-x/tasks/a1.output")).toBe("inspect");
+    expect(classifyCommand("ls /tmp/claude-0/whatever")).toBe("inspect");
+    expect(classifyCommand("sleep 30 && tail -80 /tmp/claude-0/x.log")).toBe("inspect");
+    expect(classifyCommand('ps aux | grep -E "(vitest|playwright)"')).toBe("inspect");
+  });
+
+  it("returns null for unknown commands (falls back to the summarized text)", () => {
+    expect(classifyCommand("agora issue comment MUL-1 'done'")).toBeNull();
+    expect(classifyCommand("curl -s https://example.com")).toBeNull();
+  });
+
+  it("rides into deriveActivitySteps as cmdClass with the summary kept in target", () => {
+    const steps = deriveActivitySteps([
+      tool(1, "Bash", { command: "npm ci 2>&1 | tail -10" }),
+      tool(2, "Read", { file_path: "/tmp/claude-0/x/tasks/ab12cd.output" }),
+    ]);
+    // newest-first
+    expect(steps[0]).toMatchObject({ verbKey: "reading", cmdClass: "inspect" });
+    expect(steps[1]).toMatchObject({ verbKey: "running", cmdClass: "install" });
+    expect(steps[1]!.target).toContain("npm ci");
   });
 });

@@ -369,7 +369,16 @@
     "files_other": "{{count}} ta fayl",
     "working": "ishlamoqda…",
     "more": "+{{count}} yana",
-    "show_less": "Kamroq ko‘rsatish"
+    "show_less": "Kamroq ko‘rsatish",
+    "cmd": {
+      "install": "bog‘liqliklarni o‘rnatmoqda",
+      "test": "testlarni ishga tushirmoqda",
+      "lint": "kod uslubini tekshirmoqda",
+      "build": "ilovani build qilmoqda",
+      "review": "o‘zgarishlarni ko‘zdan kechirmoqda",
+      "branch": "branch’ni tayyorlamoqda",
+      "inspect": "natijani tekshirmoqda"
+    }
   },
   "live_editor": {
     "live": "Jonli",
