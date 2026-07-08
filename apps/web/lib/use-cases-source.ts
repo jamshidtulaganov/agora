@@ -4,12 +4,13 @@ import type { SupportedLocale } from "@agora/core/i18n";
 import { useCases } from "@/.source";
 import { mergeUseCasePagesWithEnglishFallback } from "./use-case-locale-fallback";
 
-// Use-case content uses dot-suffixed MDX files (`<slug>.en.mdx` and
-// `<slug>.zh.mdx`). The public route remains prefix-free; request locale is
-// resolved through the same cookie/header path as the rest of the web app.
-// Locales without dedicated content (uz, ru) fall back to English.
+// Use-case content uses dot-suffixed MDX files (`<slug>.en.mdx`,
+// `<slug>.zh.mdx`, `<slug>.uz.mdx`). The public route remains prefix-free;
+// request locale is resolved through the same cookie/header path as the rest
+// of the web app. Locales without dedicated content (ru) fall back to
+// English, as does any slug missing a localized file.
 export const i18n = defineI18n({
-  languages: ["en", "zh"],
+  languages: ["en", "zh", "uz"],
   defaultLanguage: "en",
   hideLocale: "default-locale",
   parser: "dot",
@@ -19,6 +20,7 @@ export type UseCaseLang = (typeof i18n.languages)[number];
 
 export function getUseCaseLangForLocale(locale: SupportedLocale): UseCaseLang {
   if (locale === "zh-Hans") return "zh";
+  if (locale === "uz") return "uz";
   return "en";
 }
 

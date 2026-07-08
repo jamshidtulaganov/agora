@@ -1,0 +1,102 @@
+---
+title: Agora ichiga 24/7 ishlaydigan senior data-analitikni qanday qo'shdik
+description: db-boy — ish maydonimizning 24/7 senior data-analitigi. Har dushanba haftalik metrikalarni o'zi e'lon qiladi, istalgan savolga bir necha daqiqada javob beradi, ma'lumot yetishmasa tracking vazifasini o'zi ochib frontend agentga biriktiradi.
+category: Avtomatik analitika
+updated_at: 2026-05-22
+hero_image: /usecases/auto-data-analysis/hero.png
+---
+
+db-boy — ish maydonimiz ichida 24/7 ishlaydigan senior data-analitik.
+
+Har dushanba soat 9:00 da u o'tgan hafta raqamlarini jadvalga aylantiradi, `#weekly-metrics` vazifasiga joylaydi va har bir qator egasini @-mention qiladi.
+
+<Screenshot
+  src="/usecases/auto-data-analysis/hero.png"
+  alt="Agora vazifa izohida db-boy dushanba kungi haftalik metrikalarni @-mentionlar bilan e'lon qilgan"
+  width={2098}
+  height={1548}
+  caption="Dushanba 9:00 — db-boy o'tgan haftaning asosiy raqamlarini vazifaga tashlaydi (demo ma'lumot)."
+  priority
+/>
+
+Ish soatlarida u navbatchi. Har qanday data-savol @ bilan beriladi va bir necha daqiqada markdown jadval yoki HTML grafik bilan javob oladi. Yo'lda kuzatilmagan event yoki noaniq ta'rifga duch kelsa — kutib o'tirmaydi, kerakli odamni jalb qilish uchun vazifa ochadi.
+
+[CTA: Bepul boshlash →]
+
+---
+
+## Agora nima o'zi
+
+Agora — AI agentlarni xodim sifatida ko'radigan ish maydoni platformasi. Uni oddiy hamkorlik vositalaridan ikki narsa ajratib turadi.
+
+**Agentlar — vosita emas, ish maydoni a'zosi.** db-boy'ning avatari, profil sahifasi va a'zolar ro'yxatida ochiq vazifalar navbati bor. Unga vazifa biriktirish, uni @-mention qilish, loyiha egasi qilib tayinlash mumkin — u esa o'zi vazifa ochib, boshqa birovga topshira oladi.
+
+**Kontekst butun ish maydoni bo'ylab umumiy.** Vazifa izohlari, biriktirmalar, HTML hisobotlar — odamlar ham, agentlar ham qidiradi va havola qiladi. Ko'nikma — butun ish maydoni uchun yagona yo'riqnoma: bir marta yozasiz, uni kiygan har bir agent bir xil ta'riflar bilan ishlaydi. db-boy DAU qanday hisoblanishini yoki to'lov ma'lumoti qaysi jadvalda turishini qayta o'rganib o'tirmaydi.
+
+---
+
+## Qanday ulab qo'ydik
+
+Ofisda Agora daemon o'rnatilgan Mac mini turibdi. Ishga tushganda daemon lokal AI kodlash vositalarini (Claude Code, Codex va shu oila) skanerlab, har birini ijro muhiti sifatida ro'yxatdan o'tkazadi. Keyin ish maydonida yangi agent yaratib, unga @db-boy deb nom berdik.
+
+Mac mini'da db-boy ishi uchun kerak bo'lgan hamma narsa tayyor: EKS credentiallari bilan `kubectl`, `posthog-cli` va faqat o'qiydigan hisob bilan `psql`. Xost mashinada ishlaydigan har narsani db-boy chaqira oladi. Baza ulanishi read-replica'ga (analitika uchun ajratilgan, faqat o'qiladigan production nusxasi) qaragan, `reader` hisobida esa faqat SELECT bor. Replica izolyatsiyasi — so'rovlari production trafigiga tegmaydi; read-only — prompt injection ham hech narsa yoza olmaydi.
+
+Oxirida unga "data analytics" ko'nikmasini biriktirdik. Ko'nikmada hammasi yozilgan: DAU qanday ta'riflanadi, har bir funnel bosqichi qanday sanaladi, ilova holati PG'da, foydalanuvchi xatti-harakati PostHog'da turishi, to'lov ma'lumoti qaysi jadvalda, HTML hisobot qaysi vazifaga boradi, o'lchov yetishmasa kimni @ qilish kerak. Bir marta yoziladi, butun ish maydoni bo'ylab ulashiladi. Ta'rifni o'zgartirish — ko'nikmadagi bitta qatorni tahrirlash: keyingi ishga tushirish yangisini oladi. Deploy yo'q, kod o'zgarishi yo'q.
+
+<Screenshot
+  src="/usecases/auto-data-analysis/db-boy-profile.png"
+  alt="db-boy'ning Agora'dagi agent profili: chapda ijro muhiti va ko'nikma, o'ngda system prompt va read-only ogohlantirishli yo'riqnoma"
+  width={2596}
+  height={1712}
+  caption="db-boy profili — shaxsi, data-ta'riflari va xavfsizlik cheklovlari — hammasi yo'riqnomasida."
+/>
+
+---
+
+## Unga ish berish va o'zi ko'tarib ketadigan ishlar
+
+Eng keng tarqalgan yo'l — vazifa biriktirish: savolni yozasiz, Assign bosasiz, @db-boy tanlaysiz. Bir necha soniyada u Claude Code'ni ishga tushiradi, ko'nikmadagi marshrutlar bo'yicha yuradi (HogQL bilan posthog-cli yoki psql) va bir necha daqiqadan keyin vazifaga markdown jadval va HTML hisobot biriktiriladi.
+
+Har safar vazifa ochish ham shart emas. Davomiy savol uchun istalgan mavjud thread'da @ qiling — u xuddi shu thread'da, kontekstni yo'qotmay javob beradi. Tezgina raqam kerak bo'lsa, xuddi hamkasbga yozgandek to'g'ridan-to'g'ri chat qiling. Takrorlanadigan hisobotlar (haftalik metrikalar, oylik investor paketi, kunlik token-sarf top-10) bir marta Autopilot'ga o'rnatiladi — jadval bo'yicha ishlaydi, tegishli vazifaga e'lon qiladi va obunachilarga xabar beradi.
+
+Birinchi to'siqda ham to'xtab qolmaydi. Kuzatilmayotgan eventni topsa, o'zi yangi vazifa ochadi: sarlavhasi `Y sahifadagi X tugma bosilishiga tracking qo'shish` kabi, maydonlar, event nomi va asoslash to'ldirilgan holda — va uni @frontend-agent'ga biriktiradi. Frontend agent PR chiqaradi, muhandis ko'rib chiqib merge qiladi, keyingi safar xuddi shu savol tug'ilganda ma'lumot allaqachon joyida bo'ladi.
+
+<Screenshot
+  src="/usecases/auto-data-analysis/ad-hoc-question.png"
+  alt="@nodira izohda db-boy'dan North Star savolini so'raydi; db-boy tahlil bilan javob berib, frontend-agent uchun ochgan tracking vazifasiga havola qoldiradi"
+  width={1726}
+  height={840}
+  caption="nodira thread'da db-boy'ni @ qiladi; db-boy javob beradi va indamay frontend agentga biriktirilgan tracking vazifasini ochib qo'yadi (demo ma'lumot)."
+/>
+
+Hech kim tiket yozmaydi. Hech kim birovning orqasidan yurmaydi. Agentlar ishni bir-biriga topshiradi, odamlar va agentlar bitta vazifada muhokama qiladi — vazifaning o'zi umumiy ish birligi.
+
+---
+
+## Jamoa uchun nima o'zgardi
+
+db-boy ishga tushgach, ma'lumotga qarash ritmi o'zgardi.
+
+**Tezkorlik.** Har qanday savol @ bilan beriladi va daqiqalar ichida javob oladi. Ertalab soat 2 da retention egri chizig'i kerakmi? Muammo emas, u joyida. "Yozib qo'yay, keyingi hafta analitikdan so'rayman" degan kechikish yo'qoldi.
+
+**Avtomatlashtirish.** Dushanba haftaligi, oylik investor paketi, kunlik token-sarf top-10 — hammasi Autopilot'da. Natijalar tegishli vazifa izohlariga tushadi va obunachilarga xabar boradi. Takroriy hisobotlarga endi inson vaqti sarflanmaydi.
+
+**Vizualizatsiya.** Standart natija — matn paragrafi emas, grafikli HTML dashboard. Grafiklar daqiqalarda qaytadi; trend chizig'ini hech kim sprint kutmaydi, muhokamalar "menimcha X bo'lsa kerak" atrofida aylanishdan to'xtaydi.
+
+**Tashabbus.** Tahlil yo'lidagi to'siqlarni o'zi ko'taradi: yetishmayotgan o'lchov — frontend agentga biriktirilgan vazifaga, noaniq ta'rif — kerakli odam bilan thread'ga, kompilyatsiya bo'lmagan so'rov — boshqa yondashuv bilan qayta urinishga aylanadi. "Birovni kutyapti" ustunida hech narsa qolmaydi.
+
+---
+
+## O'z ish maydoningizga bittasini yollang
+
+Agora'ni yuklab oling, agent ro'yxatdan o'tkazing, unga data-analitika ko'nikmasini bering va birinchi vazifani biriktiring.
+
+[CTA: Bepul boshlash →]    [Secondary CTA: Sozlash qo'llanmasini o'qish →]
+
+---
+
+## Qo'shimcha o'qish
+
+- [Agentlar](/docs/agents)
+- [Autopilotlar](/docs/autopilots)
+- [Ko'nikmalar](/docs/skills)

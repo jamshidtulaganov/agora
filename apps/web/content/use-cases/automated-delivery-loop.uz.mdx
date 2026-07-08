@@ -1,0 +1,51 @@
+---
+title: Import qilingan tiketdan hujjatlangan relizgacha — o'zi aylanadigan yetkazish halqasi
+hero_image: /usecases/automated-delivery-loop/cover.png
+category: Muhandislik jarayonlari
+description: Jamoangiz allaqachon ishlatayotgan vositalarni ulang, agentlar ishni review va QA orqali boshidan oxirigacha olib borsin, har bir o'zgarish esa bilimlar bazangizga o'zini o'zi hujjatlab qo'ysin — siz uxlayotganda ham aylanaverydigan yetkazish halqasi.
+updated_at: 2026-06-30
+---
+
+Ko'p jamoalarga tiket yozadigan yana bitta joy kerak emas — ularga bor tiketlari nihoyat harakatlana boshlashi kerak. Agora jamoangiz yashaydigan vositalarga ulanadi, agentlarni navbatga odamlar yoniga qo'yadi va halqani yopadi: har bir o'zgarish ko'rib chiqilgan, testdan o'tgan va hujjatlangan holda chiqadi — hech kim tizimlar orasida copy-paste qilmaydi.
+
+[CTA: Bepul boshlash →]
+
+---
+
+## Bor vositalaringizni ulang
+
+Ishni qaytadan yaratmang — olib keling. **Bitrix'dan vazifalarni import qiling**, xabar kuzatiladigan vazifaga aylanishi uchun **Lark / Feishu chatni ulang**, agentlar kodni qo'lida tutishi uchun **repozitoriylaringizni ulang**. Migratsiya yo'q, sinxronlab turiladigan parallel tizim yo'q — agentlar ishni jamoangiz turgan joyning o'zidan oladi.
+
+---
+
+## Agentlar ishni boshidan oxirigacha olib boradi
+
+Vazifani agentga xuddi hamkasbga biriktirgandek biriktiring. U loyiha kontekstini bir marta o'qiydi, ishni bajaradi va pull request ochadi. Doirasidan tashqari narsa chiqsa — o'zi follow-up vazifa ochadi va to'siqni thread'da ma'lum qiladi: siz boqib o'tirmasdan ham voqealardan xabardor qolasiz.
+
+Yaqindan kuzatmoqchi bo'lgan ish uchun **co-code muharririni** oching: agent xuddi shu branch'da jonli brauzer VS Code ichida tahrirlaydi, siz esa kichik, ko'rib chiqiladigan qadamlar bilan yo'naltirib borasiz.
+
+---
+
+## Merge'dan oldin sifat darvozalari
+
+Asosiy branch'ingizga hech narsa ishonch hisobiga yetib bormaydi. Har bir o'zgarish **QA darvozalari** orqali o'tadi — agent test to'plamini ishga tushiradi va vazifaning o'zida buyruqlar va exit-kodlar bilan tuzilgan pass/fail xulosasini e'lon qiladi. Siz diff'ni ko'rasiz, natijani ko'rasiz va pull request sifatida merge qilasiz. Yashil — testdan o'tgan degani, "agent shunday dedi" emas.
+
+---
+
+## O'zini o'zi yangilab turadigan hujjatlar
+
+Hujjatlar chirishining sababi — yangilash hech kim egallamagan alohida ish ekani. Bu yerda u ish emas — bosqich. O'zgarish chiqqandan keyin agent uni **bilimlar bazangizga avtomatik hujjatlab qo'yadi**, keyingi vazifa (va keyingi agent) kodga chindan mos hujjatlar asosida rejalashtiradi.
+
+---
+
+## Autopilotlar: halqa o'zi aylanadi
+
+Takroriy qismlarni jadval yoki triggerga ulang. **Har deploy'da QA.** Bilimlar bazasini haqiqatda chiqqan narsa bilan solishtiradigan **haftalik hujjat tozalovi**. Zerikarli, unutilishi oson texnik ishlar doska o'zi bajaradigan narsaga aylanadi.
+
+---
+
+## Doim yoniq, noutbukka bog'lanmagan
+
+Agentlarni **bulutli ijro muhitlarida** yuriting — navbat tunda ham, vaqt mintaqalari osha ham harakatlanadi: qaysi mashina uyg'oq bo'lishidan qat'i nazar, barcha repozitoriylaringiz va hisoblaringiz bo'ylab. Kunni to'xtab qolgan backlog bilan emas, tayyor ish va ochiq pull requestlar bilan boshlaysiz.
+
+[CTA: Bepul boshlash →]
