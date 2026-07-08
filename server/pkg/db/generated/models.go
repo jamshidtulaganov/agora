@@ -963,16 +963,17 @@ type Workspace struct {
 }
 
 type WorkspaceInvitation struct {
-	ID            pgtype.UUID        `json:"id"`
-	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
-	InviterID     pgtype.UUID        `json:"inviter_id"`
-	InviteeEmail  string             `json:"invitee_email"`
-	InviteeUserID pgtype.UUID        `json:"invitee_user_id"`
-	Role          string             `json:"role"`
-	Status        string             `json:"status"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+	ID              pgtype.UUID        `json:"id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	InviterID       pgtype.UUID        `json:"inviter_id"`
+	InviteeEmail    string             `json:"invitee_email"`
+	InviteeUserID   pgtype.UUID        `json:"invitee_user_id"`
+	Role            string             `json:"role"`
+	Status          string             `json:"status"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	InviteeBitrixID pgtype.Text        `json:"invitee_bitrix_id"`
 }
 
 type ZohoConnection struct {

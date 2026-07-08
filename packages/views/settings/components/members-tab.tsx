@@ -260,10 +260,21 @@ export function MembersTab() {
   const wsId = useWorkspaceId();
   const { data: members = [] } = useQuery(memberListOptions(wsId));
   const { data: invitations = [] } = useQuery(invitationListOptions(wsId));
+  // Bitrix directory for the invite form's "link Bitrix user" recommendations.
+  // retry:false keeps the tab healthy when Bitrix is unconfigured (the endpoint
+  // 503s → empty list → no suggestions rendered).
+  const { data: bitrixUsers = [] } = useQuery({
+    queryKey: ["bitrix-users", wsId],
+    queryFn: () => api.listBitrixUsers(),
+    enabled: !!wsId,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
 
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<MemberRole>("member");
   const [inviteLoading, setInviteLoading] = useState(false);
+  const [bitrixLinkId, setBitrixLinkId] = useState<string | null>(null);
   const [memberActionId, setMemberActionId] = useState<string | null>(null);
   const [invitationActionId, setInvitationActionId] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<{
@@ -285,9 +296,11 @@ export function MembersTab() {
       await api.createMember(workspace.id, {
         email: inviteEmail,
         role: inviteRole,
+        bitrix_external_id: bitrixLinkId ?? undefined,
       });
       setInviteEmail("");
       setInviteRole("member");
+      setBitrixLinkId(null);
       qc.invalidateQueries({ queryKey: workspaceKeys.invitations(wsId) });
       toast.success(t(($) => $.members.toast_invitation_sent));
     } catch (e) {
@@ -355,6 +368,25 @@ export function MembersTab() {
 
   if (!workspace) return null;
 
+  // Bitrix recommendations for the invite form: match the typed email against
+  // Bitrix users' email OR name so the inviter can bind the right identity even
+  // when the two emails differ. Hidden once a link is picked.
+  const bitrixQuery = inviteEmail.trim().toLowerCase();
+  const bitrixSuggestions =
+    !bitrixLinkId && bitrixQuery.length >= 2
+      ? bitrixUsers
+          .filter(
+            (u) =>
+              u.email &&
+              (u.email.toLowerCase().includes(bitrixQuery) ||
+                u.name.toLowerCase().includes(bitrixQuery)),
+          )
+          .slice(0, 4)
+      : [];
+  const linkedBitrix = bitrixLinkId
+    ? bitrixUsers.find((u) => u.id === bitrixLinkId) ?? null
+    : null;
+
   return (
     <div className="space-y-8">
       <section className="space-y-4">
@@ -396,6 +428,45 @@ export function MembersTab() {
                   {inviteLoading ? t(($) => $.members.inviting) : t(($) => $.members.invite_button)}
                 </Button>
               </div>
+              {linkedBitrix ? (
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-muted-foreground">
+                    {t(($) => $.members.bitrix_linked_label)}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-md border bg-muted/40 px-2 py-1">
+                    <span className="font-medium">{linkedBitrix.name}</span>
+                    <span className="text-muted-foreground">{linkedBitrix.email}</span>
+                    <button
+                      type="button"
+                      onClick={() => setBitrixLinkId(null)}
+                      className="text-muted-foreground transition-colors hover:text-foreground"
+                      aria-label={t(($) => $.members.bitrix_unlink_aria)}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                </div>
+              ) : bitrixSuggestions.length > 0 ? (
+                <div className="space-y-1.5">
+                  <div className="text-xs text-muted-foreground">
+                    {t(($) => $.members.bitrix_suggest_label)}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {bitrixSuggestions.map((u) => (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => setBitrixLinkId(u.id)}
+                        className="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors hover:bg-accent/40"
+                        title={u.email}
+                      >
+                        <span className="font-medium">{u.name}</span>
+                        <span className="text-muted-foreground">{u.email}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         )}

@@ -124,12 +124,23 @@ func (h *Handler) CreateInvitation(w http.ResponseWriter, r *http.Request) {
 		inviteeUserID = existingUser.ID
 	}
 
+	// Optional Bitrix link chosen from the invite form's recommendations. Stored
+	// on the invitation and applied on accept (see AcceptInvitation) so the new
+	// account binds to the right Bitrix identity even when the emails differ.
+	var inviteeBitrixID pgtype.Text
+	if req.BitrixExternalID != nil {
+		if bid := strings.TrimSpace(*req.BitrixExternalID); bid != "" {
+			inviteeBitrixID = pgtype.Text{String: bid, Valid: true}
+		}
+	}
+
 	inv, err := h.Queries.CreateInvitation(r.Context(), db.CreateInvitationParams{
-		WorkspaceID:   requester.WorkspaceID,
-		InviterID:     requester.UserID,
-		InviteeEmail:  email,
-		InviteeUserID: inviteeUserID,
-		Role:          role,
+		WorkspaceID:     requester.WorkspaceID,
+		InviterID:       requester.UserID,
+		InviteeEmail:    email,
+		InviteeUserID:   inviteeUserID,
+		Role:            role,
+		InviteeBitrixID: inviteeBitrixID,
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -459,6 +470,17 @@ func (h *Handler) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 	if err := tx.Commit(r.Context()); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to accept invitation")
 		return
+	}
+
+	// If the inviter pinned a Bitrix user to this invite, bind the new account
+	// to that Bitrix identity now. Non-fatal: membership is already committed, so
+	// a link failure must not fail the accept — the identity can be re-linked
+	// later (Settings → links) if this ever errors.
+	if inv.InviteeBitrixID.Valid {
+		if err := h.linkExternalIdentity(r.Context(), providerBitrix, inv.InviteeBitrixID.String, userID); err != nil {
+			slog.Warn("accept invitation: link bitrix identity failed (non-fatal)",
+				"invitation_id", invitationID, "user_id", userID, "error", err)
+		}
 	}
 
 	slog.Info("invitation accepted", "invitation_id", invitationID, "user_id", userID, "workspace_id", uuidToString(accepted.WorkspaceID))

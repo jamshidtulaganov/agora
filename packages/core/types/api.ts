@@ -170,6 +170,9 @@ export interface UpdateMeRequest {
 export interface CreateMemberRequest {
   email: string;
   role?: MemberRole;
+  /** Optional Bitrix user external id to bind the invitee's account to on
+   *  accept (chosen from the invite form's Bitrix recommendations). */
+  bitrix_external_id?: string;
 }
 
 export interface UpdateMemberRequest {

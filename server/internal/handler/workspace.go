@@ -476,6 +476,10 @@ func (h *Handler) ListActorDirectory(w http.ResponseWriter, r *http.Request) {
 type CreateMemberRequest struct {
 	Email string `json:"email"`
 	Role  string `json:"role"`
+	// BitrixExternalID, when set, pins the invite to a specific Bitrix user
+	// (chosen from the invite form's recommendations). On accept, the new
+	// account is linked to that Bitrix identity so the two never diverge.
+	BitrixExternalID *string `json:"bitrix_external_id"`
 }
 
 func memberWithUserResponse(member db.Member, user db.User) MemberWithUserResponse {
