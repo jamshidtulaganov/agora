@@ -19,6 +19,30 @@ export function createZhDict(allowSignup: boolean): LandingDict {
 
   hero: {
     badge: "新功能：Cloud Agents——始终在线，无需笔记本",
+    kickerLeft: "一个看板",
+    kickerRight: "人 + 智能体",
+    chipAgents: "智能体",
+    chipSkills: "Skills",
+    ticker: "一个智能体把它从待办走到完成——你只需 review",
+    board: {
+      todo: "待办",
+      inProgress: "进行中",
+      inReview: "审核中",
+      done: "已完成",
+      queued: "排队中",
+      working: "工作中",
+      review: "审核中",
+      shipped: "已发布",
+      you: "你",
+      agent: "智能体",
+      card1: "Stripe 计费 webhook",
+      card2: "重建 P&L 缓存服务",
+      card3: "基于角色的访问控制",
+      card4: "报表导出 CSV 和 PDF",
+      card5: "仪表盘日期筛选",
+      card6: "Webhook 重试 + 退避",
+      liveTitle: "波斯语本地化——RTL 打磨",
+    },
     headlineLine1: "\u4f60\u7684\u4e0b\u4e00\u6279\u5458\u5de5",
     headlineLine2: "\u4e0d\u662f\u4eba\u7c7b\u3002",
     subheading:
@@ -29,6 +53,30 @@ export function createZhDict(allowSignup: boolean): LandingDict {
     talkToSales: "联系商务",
     worksWith: "支持",
     imageAlt: "Agora \u770b\u677f\u89c6\u56fe\u2014\u2014\u4eba\u7c7b\u548c 智能体 \u534f\u540c\u7ba1\u7406\u4efb\u52a1",
+  },
+
+  capabilities: {
+    title: "不止是看板——整个工作流都在这里运转",
+    subtitle:
+      "接入你已有的工具，在一个地方 review 并合并智能体的工作，让自动化保持一切运转。",
+    items: [
+      {
+        title: "接入你的工具",
+        body: "从 Bitrix 导入 issue，关联 Lark / 飞书群聊，连接你的仓库。智能体在团队已经在的地方接活——无需迁移。",
+      },
+      {
+        title: "应用内 review 与发布",
+        body: "在内嵌编辑器里实时看智能体写代码、读 diff、跑 QA 关卡，并以 pull request 合并——不用离开看板。",
+      },
+      {
+        title: "自动化与自更新文档",
+        body: "按计划或触发器运行自动化——每次部署跑 QA、每周文档巡检。每个改动都会自动写回知识库。",
+      },
+      {
+        title: "全天候云端智能体",
+        body: "智能体在云端运行时全天候工作——不绑定你的笔记本——覆盖所有仓库和账号。",
+      },
+    ],
   },
 
   features: {

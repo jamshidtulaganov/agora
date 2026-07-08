@@ -19,6 +19,30 @@ export function createUzDict(allowSignup: boolean): LandingDict {
 
   hero: {
     badge: "Yangi: Cloud Agentlar — doim yoniq, noutbuk shart emas",
+    kickerLeft: "Bitta doska",
+    kickerRight: "Odamlar + Agentlar",
+    chipAgents: "Agentlar",
+    chipSkills: "Ko'nikmalar",
+    ticker: "bitta agent uni Bajariladi → Bajarildi'ga olib boradi — siz faqat review qilasiz",
+    board: {
+      todo: "Bajariladi",
+      inProgress: "Jarayonda",
+      inReview: "Ko'rib chiqilmoqda",
+      done: "Bajarildi",
+      queued: "navbatda",
+      working: "ishlanmoqda",
+      review: "tekshiruvda",
+      shipped: "chiqarildi",
+      you: "siz",
+      agent: "agent",
+      card1: "Stripe billing webhooklari",
+      card2: "P&L kesh servisini qayta qurish",
+      card3: "Rolga asoslangan kirish nazorati",
+      card4: "Hisobotlarni CSV va PDF'ga eksport",
+      card5: "Dashboard sana filtri",
+      card6: "Webhook retry + backoff",
+      liveTitle: "Fors lokalizatsiyasi — RTL sayqal",
+    },
     headlineLine1: "Uni insonga biriktiring.",
     headlineLine2: "Yoki agentga.",
     subheading:
@@ -29,6 +53,30 @@ export function createUzDict(allowSignup: boolean): LandingDict {
     talkToSales: "Savdo bilan bog'lanish",
     worksWith: "Quyidagilar bilan ishlaydi",
     imageAlt: "Agora doskasi — vazifalar ham odamlarga, ham agentlarga biriktirilgan",
+  },
+
+  capabilities: {
+    title: "Shunchaki doska emas — butun ish jarayoningiz yuradigan joy",
+    subtitle:
+      "Mavjud vositalaringizni ulang, agent ishini bir joyda ko'rib chiqib merge qiling, avtomatlashtirishlar esa hammasini harakatda ushlab tursin.",
+    items: [
+      {
+        title: "Vositalaringizni ulang",
+        body: "Bitrix'dan vazifalarni import qiling, Lark / Feishu chatni ulang, repozitoriylaringizni ulang. Agentlar ishni jamoangiz allaqachon turgan joydan oladi — migratsiya yo'q.",
+      },
+      {
+        title: "Review va chiqarish — ilova ichida",
+        body: "Agentlar kodini o'rnatilgan muharrirda jonli kuzating, diff o'qing, QA darvozalarini ishga tushiring va doskadan chiqmasdan pull request sifatida merge qiling.",
+      },
+      {
+        title: "Autopilotlar va o'zi yangilanadigan hujjatlar",
+        body: "Avtomatlashtirishlarni jadval yoki triggerga qo'ying — har deploy'da QA, haftalik hujjat tozalovi. Har bir o'zgarish o'zini bilimlar bazasiga hujjatlab qo'yadi.",
+      },
+      {
+        title: "Doim yoniq bulut agentlari",
+        body: "Agentlar bulut ijro muhitlarida kechayu kunduz ishlaydi — noutbukingizga bog'lanmagan — barcha repozitoriy va hisoblaringiz bo'ylab.",
+      },
+    ],
   },
 
   features: {

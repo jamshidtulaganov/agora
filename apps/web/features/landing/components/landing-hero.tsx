@@ -6,6 +6,7 @@ import { ArrowRight, Check, Plug, Sparkles } from "lucide-react";
 import { useAuthStore } from "@agora/core/auth";
 import { cn } from "@agora/ui/lib/utils";
 import { useLocale } from "../i18n";
+import type { LandingDict } from "../i18n";
 import {
   ClaudeCodeLogo,
   CodexLogo,
@@ -45,8 +46,9 @@ export function LandingHero() {
             </Reveal>
             <Reveal from="none">
               <p className="text-[12px] font-medium uppercase tracking-[0.34em] text-[#71717A] dark:text-white/40">
-                One board <span className="text-[#A1A1AA] dark:text-white/25">·</span>{" "}
-                <span style={{ color: ACCENT }}>Humans + Agents</span>
+                {t.hero.kickerLeft}{" "}
+                <span className="text-[#A1A1AA] dark:text-white/25">·</span>{" "}
+                <span style={{ color: ACCENT }}>{t.hero.kickerRight}</span>
               </p>
             </Reveal>
 
@@ -128,8 +130,14 @@ export function LandingHero() {
           <Reveal delay={380}>
             <div className="mt-6 flex flex-wrap items-center justify-center gap-2.5">
               {[
-                { icon: <Sparkles className="size-3.5" />, label: "Agents" },
-                { icon: <Sparkles className="size-3.5" />, label: "Skills" },
+                {
+                  icon: <Sparkles className="size-3.5" />,
+                  label: t.hero.chipAgents,
+                },
+                {
+                  icon: <Sparkles className="size-3.5" />,
+                  label: t.hero.chipSkills,
+                },
                 { icon: <Plug className="size-3.5" />, label: "MCP" },
               ].map((c) => (
                 <span
@@ -150,7 +158,7 @@ export function LandingHero() {
             <div id="preview">
               <BoardMockup />
               <p className="mt-5 text-center text-[12px] uppercase tracking-[0.28em] text-[#A1A1AA] dark:text-white/30">
-                one agent walks it Todo → Done — you just review
+                {t.hero.ticker}
               </p>
             </div>
           </Reveal>
@@ -254,58 +262,58 @@ const VEGA: Assignee = { name: "Vega", initials: "VE", kind: "agent" };
 const JT: Assignee = { name: "JT", initials: "JT", kind: "human" };
 const DV: Assignee = { name: "Dilnoza", initials: "DV", kind: "human" };
 
+type HeroBoardDict = LandingDict["hero"]["board"];
+
 // Static cards per column. The "live" card (AGORA-128) is NOT here — an agent
 // walks it across the columns on a loop (see BoardMockup).
-const COLUMNS: { name: string; dot: string; cards: Card[] }[] = [
-  {
-    name: "Todo",
-    dot: "bg-zinc-400 dark:bg-white/45",
-    cards: [
-      { key: "AGORA-142", title: "Stripe billing webhooks", assignee: JT },
-    ],
-  },
-  {
-    name: "In progress",
-    dot: "bg-amber-400",
-    cards: [
-      { key: "AGORA-119", title: "Rebuild P&L cache service", assignee: ARIA },
-      { key: "AGORA-117", title: "Role-based access control", assignee: DV },
-    ],
-  },
-  {
-    name: "In review",
-    dot: "bg-blue-400",
-    cards: [
-      {
-        key: "AGORA-103",
-        title: "Export reports to CSV & PDF",
-        assignee: VEGA,
-      },
-    ],
-  },
-  {
-    name: "Done",
-    dot: "bg-emerald-400",
-    cards: [
-      { key: "AGORA-98", title: "Dashboard date filter", assignee: ARIA },
-      { key: "AGORA-91", title: "Webhook retry + backoff", assignee: JT },
-    ],
-  },
-];
+function buildColumns(b: HeroBoardDict): { name: string; dot: string; cards: Card[] }[] {
+  return [
+    {
+      name: b.todo,
+      dot: "bg-zinc-400 dark:bg-white/45",
+      cards: [{ key: "AGORA-142", title: b.card1, assignee: JT }],
+    },
+    {
+      name: b.inProgress,
+      dot: "bg-amber-400",
+      cards: [
+        { key: "AGORA-119", title: b.card2, assignee: ARIA },
+        { key: "AGORA-117", title: b.card3, assignee: DV },
+      ],
+    },
+    {
+      name: b.inReview,
+      dot: "bg-blue-400",
+      cards: [{ key: "AGORA-103", title: b.card4, assignee: VEGA }],
+    },
+    {
+      name: b.done,
+      dot: "bg-emerald-400",
+      cards: [
+        { key: "AGORA-98", title: b.card5, assignee: ARIA },
+        { key: "AGORA-91", title: b.card6, assignee: JT },
+      ],
+    },
+  ];
+}
 
-// The agent-driven card and its per-stage state, indexed by column.
-const LIVE_CARD = {
-  key: "AGORA-128",
-  title: "Persian localization — RTL polish",
-};
-const STAGE_STATUS = [
-  { label: "queued", tone: "text-[#71717A] dark:text-white/45" },
-  { label: "working", tone: "text-amber-300", pulse: true },
-  { label: "in review", tone: "text-blue-300" },
-  { label: "shipped", tone: "text-emerald-300", done: true },
-] as const;
+// Per-stage live-card status, indexed by column.
+function buildStageStatus(b: HeroBoardDict) {
+  return [
+    { label: b.queued, tone: "text-[#71717A] dark:text-white/45" },
+    { label: b.working, tone: "text-amber-300", pulse: true },
+    { label: b.review, tone: "text-blue-300" },
+    { label: b.shipped, tone: "text-emerald-300", done: true },
+  ] as const;
+}
+
+const STAGE_COUNT = 4;
 
 function BoardMockup() {
+  const { t } = useLocale();
+  const b = t.hero.board;
+  const COLUMNS = buildColumns(b);
+  const STAGE_STATUS = buildStageStatus(b);
   const stage = useBoardStage();
 
   return (
@@ -332,7 +340,9 @@ function BoardMockup() {
                 </span>
               </div>
               <div className="space-y-2">
-                {liveHere ? <LiveCard stage={stage} /> : null}
+                {liveHere ? (
+                  <LiveCard status={STAGE_STATUS[stage]!} title={b.liveTitle} />
+                ) : null}
                 {col.cards.map((card) => (
                   <article
                     key={card.key}
@@ -365,29 +375,30 @@ function useBoardStage() {
   const [stage, setStage] = useState(0);
   useEffect(() => {
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
-      setStage(STAGE_STATUS.length - 1);
+      setStage(STAGE_COUNT - 1);
       return;
     }
     const id = setInterval(() => {
-      setStage((s) => (s + 1) % STAGE_STATUS.length);
+      setStage((s) => (s + 1) % STAGE_COUNT);
     }, 1600);
     return () => clearInterval(id);
   }, []);
   return stage;
 }
 
-function LiveCard({ stage }: { stage: number }) {
-  const status = STAGE_STATUS[stage]!;
+type StageStatus = ReturnType<typeof buildStageStatus>[number];
+
+function LiveCard({ status, title }: { status: StageStatus; title: string }) {
   return (
     <article
       // Re-mount on every stage so the entrance animation re-runs — reads as
       // the card "landing" in the new column.
-      key={stage}
+      key={status.label}
       className="animate-in fade-in slide-in-from-top-2 rounded-lg border border-[#2563EB]/40 bg-[#2563EB]/[0.06] p-2.5 text-left shadow-[0_0_0_1px_rgba(37,99,235,0.12)] duration-500 dark:border-[#2563EB]/60 dark:bg-[#2563EB]/[0.08] dark:shadow-[0_0_0_1px_rgba(37,99,235,0.25)]"
     >
       <div className="mb-2 flex items-center justify-between">
         <span className="text-[11px] font-medium tracking-wide text-[#71717A] dark:text-white/40">
-          {LIVE_CARD.key}
+          AGORA-128
         </span>
         <span
           className={cn("flex items-center gap-1 text-[10px] font-medium", status.tone)}
@@ -400,7 +411,7 @@ function LiveCard({ stage }: { stage: number }) {
         </span>
       </div>
       <div className="mb-2.5 text-[13px] leading-snug text-[#27272A] dark:text-white/90">
-        {LIVE_CARD.title}
+        {title}
       </div>
       <AssigneeChip assignee={ARIA} />
     </article>
@@ -408,6 +419,7 @@ function LiveCard({ stage }: { stage: number }) {
 }
 
 function AssigneeChip({ assignee }: { assignee: Assignee }) {
+  const { t } = useLocale();
   const isAgent = assignee.kind === "agent";
   return (
     <span className="inline-flex items-center gap-2 text-[11px] font-medium text-[#71717A] dark:text-white/55">
@@ -425,7 +437,7 @@ function AssigneeChip({ assignee }: { assignee: Assignee }) {
       </span>
       <span className="text-[#52525B] dark:text-white/80">{assignee.name}</span>
       <span className="text-[#A1A1AA] dark:text-white/35">
-        · {isAgent ? "agent" : "you"}
+        · {isAgent ? t.hero.board.agent : t.hero.board.you}
       </span>
     </span>
   );

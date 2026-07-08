@@ -19,6 +19,30 @@ export function createEnDict(allowSignup: boolean): LandingDict {
 
   hero: {
     badge: "New: Cloud Agents — always-on, no laptop needed",
+    kickerLeft: "One board",
+    kickerRight: "Humans + Agents",
+    chipAgents: "Agents",
+    chipSkills: "Skills",
+    ticker: "one agent walks it Todo → Done — you just review",
+    board: {
+      todo: "Todo",
+      inProgress: "In progress",
+      inReview: "In review",
+      done: "Done",
+      queued: "queued",
+      working: "working",
+      review: "in review",
+      shipped: "shipped",
+      you: "you",
+      agent: "agent",
+      card1: "Stripe billing webhooks",
+      card2: "Rebuild P&L cache service",
+      card3: "Role-based access control",
+      card4: "Export reports to CSV & PDF",
+      card5: "Dashboard date filter",
+      card6: "Webhook retry + backoff",
+      liveTitle: "Persian localization — RTL polish",
+    },
     headlineLine1: "Assign it to a person.",
     headlineLine2: "Or an agent.",
     subheading:
@@ -29,6 +53,30 @@ export function createEnDict(allowSignup: boolean): LandingDict {
     talkToSales: "Talk to sales",
     worksWith: "Works with",
     imageAlt: "Agora board \u2014 issues assigned to both people and agents",
+  },
+
+  capabilities: {
+    title: "More than a board — a place your whole workflow runs",
+    subtitle:
+      "Bring your existing tools, review and merge agent work in one place, and let automations keep everything moving.",
+    items: [
+      {
+        title: "Connect your tools",
+        body: "Import issues from Bitrix, link Lark / Feishu chat, and connect your repositories. Agents pick up work where your team already is — no migration.",
+      },
+      {
+        title: "Review and ship in-app",
+        body: "Watch agents code live in an embedded editor, read the diff, run QA gates, and merge as a pull request — without leaving the board.",
+      },
+      {
+        title: "Autopilots & self-updating docs",
+        body: "Schedule or trigger automations — QA on every deploy, a weekly docs sweep. Every change documents itself back into your knowledge base.",
+      },
+      {
+        title: "Always-on cloud agents",
+        body: "Agents run around the clock on cloud runtimes — not tied to your laptop — across all your repositories and accounts.",
+      },
+    ],
   },
 
   features: {

@@ -136,6 +136,8 @@ export type LandingDict = {
   };
   hero: {
     badge: string;
+    kickerLeft: string;
+    kickerRight: string;
     headlineLine1: string;
     headlineLine2: string;
     subheading: string;
@@ -145,6 +147,33 @@ export type LandingDict = {
     talkToSales: string;
     worksWith: string;
     imageAlt: string;
+    chipAgents: string;
+    chipSkills: string;
+    ticker: string;
+    board: {
+      todo: string;
+      inProgress: string;
+      inReview: string;
+      done: string;
+      queued: string;
+      working: string;
+      review: string;
+      shipped: string;
+      you: string;
+      agent: string;
+      card1: string;
+      card2: string;
+      card3: string;
+      card4: string;
+      card5: string;
+      card6: string;
+      liveTitle: string;
+    };
+  };
+  capabilities: {
+    title: string;
+    subtitle: string;
+    items: { title: string; body: string }[];
   };
   features: {
     teammates: FeatureSection;
