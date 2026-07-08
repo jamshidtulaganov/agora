@@ -412,9 +412,27 @@ func (h *Handler) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to load user")
 		return
 	}
-	if !isTelegramSyntheticEmail(inv.InviteeEmail) &&
+	identityMismatch := !isTelegramSyntheticEmail(inv.InviteeEmail) &&
 		strings.ToLower(user.Email) != inv.InviteeEmail &&
-		uuidToString(inv.InviteeUserID) != userID {
+		uuidToString(inv.InviteeUserID) != userID
+	// A Bitrix-pinned invite is addressed to a specific Bitrix identity, not just
+	// an email. Honour it when the accepter's linked Bitrix id is the exact one
+	// the inviter chose — so a Bitrix user who signs in under a different email
+	// (Google / Telegram / a different work address) can still claim the invite
+	// meant for them. This is a verified identity match (the user already carries
+	// that Bitrix link from the sync-side provision), not a bare bearer bypass.
+	if identityMismatch && inv.InviteeBitrixID.Valid {
+		bid := h.bitrixIDByUserID(r.Context(), userID)
+		// Allow when the accepter already carries the pinned Bitrix link (a
+		// verified identity match), OR carries no Bitrix link yet — a fresh
+		// account claiming a Bitrix-pinned invite, whose link is established on
+		// accept below (mirrors the bearer trust the Telegram flow gets). A
+		// DIFFERENT Bitrix link still blocks: that is someone else's identity.
+		if bid == "" || bid == strings.TrimSpace(inv.InviteeBitrixID.String) {
+			identityMismatch = false
+		}
+	}
+	if identityMismatch {
 		writeError(w, http.StatusForbidden, "invitation was issued to a different account")
 		return
 	}

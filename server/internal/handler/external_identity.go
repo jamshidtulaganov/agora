@@ -90,6 +90,20 @@ func (h *Handler) telegramIDByUserID(ctx context.Context, userID string) (string
 	return externalID, nil
 }
 
+// bitrixIDByUserID returns the user's linked Bitrix responsible id, or "" when
+// none. Lets AcceptInvitation honour a Bitrix-pinned invite even when the
+// accepter logs in with an email different from the one the invite was
+// addressed to (the whole point of pinning a Bitrix user to the invite).
+func (h *Handler) bitrixIDByUserID(ctx context.Context, userID string) string {
+	var externalID string
+	if err := h.DB.QueryRow(ctx,
+		`SELECT external_id FROM user_external_identity WHERE provider = $1 AND user_id = $2::uuid LIMIT 1`,
+		providerBitrix, userID).Scan(&externalID); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(externalID)
+}
+
 type linkBitrixRequest struct {
 	BitrixUserID string `json:"bitrix_user_id"`
 }
