@@ -98,7 +98,13 @@ func prepareLocalDirGit(ctx context.Context, dir, agentName, taskID string, log 
 	}
 	branch, head, err := gitHeadRef(ctx, dir)
 	if err != nil {
-		return nil, fmt.Errorf("read git HEAD: %w", err)
+		// No resolvable HEAD — an unborn branch (freshly `git init`ed, no
+		// commits) or an otherwise unreadable repo. There is nothing to branch
+		// FROM and nothing to snapshot, so degrade to plain in-place behavior
+		// (no isolation) rather than failing the task. Once the repo has a
+		// first commit, subsequent tasks get full git safety.
+		log.Info("local_directory: no resolvable git HEAD, running in place without branch isolation", "dir", dir, "error", err)
+		return nil, nil
 	}
 	g := &localDirGit{dir: dir, origRef: branch, origHead: head}
 
