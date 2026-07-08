@@ -26,6 +26,9 @@ export interface TimelineEntry {
   resolved_at?: string | null;
   resolved_by_type?: CommentAuthorType | null;
   resolved_by_id?: string | null;
+  /** Source Bitrix comment id when imported from a Bitrix task; absent for an
+   * Agora-origin comment. Drives the "Bitrix" activity tab classification. */
+  bitrix_comment_id?: string;
   /** Set by frontend coalescing when consecutive identical activities are merged. */
   coalesced_count?: number;
 }

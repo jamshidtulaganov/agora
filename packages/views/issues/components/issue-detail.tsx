@@ -24,6 +24,12 @@ import {
 } from "lucide-react";
 import { BreadcrumbHeader, type BreadcrumbSegment } from "../../layout/breadcrumb-header";
 import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@agora/ui/components/ui/tabs";
+import {
+  classifyEntryRoot,
+  activityTabCounts,
+  type ActivityTab,
+} from "./activity-tabs";
 import { Button, buttonVariants } from "@agora/ui/components/ui/button";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@agora/ui/components/ui/resizable";
 import { Sheet, SheetContent } from "@agora/ui/components/ui/sheet";
@@ -922,17 +928,34 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // this, every WS event (including reactions, edits, AI streaming on an
   // unrelated thread) hands every card a brand-new prop reference and forces
   // every thread subtree to re-render in lockstep.
+  // Activity tab: which slice of the feed to show. Ephemeral UI state (not
+  // persisted) — resets to the unified "all" view on each issue open.
+  const [activityTab, setActivityTab] = useState<ActivityTab>("all");
+
+  // Per-tab top-level counts for the tab badges. Computed off the full timeline
+  // so the badges stay stable regardless of the active tab.
+  const tabCounts = useMemo(() => activityTabCounts(timeline), [timeline]);
+
+  // The timeline slice fed into the grouping pipeline for the active tab. "all"
+  // passes through; otherwise keep only entries whose thread root matches the
+  // tab, so a thread never splits across tabs.
+  const filteredTimeline = useMemo(() => {
+    if (activityTab === "all") return timeline;
+    const byId = new Map(timeline.map((e) => [e.id, e]));
+    return timeline.filter((e) => classifyEntryRoot(e, byId) === activityTab);
+  }, [timeline, activityTab]);
+
   const prevThreadRepliesRef = useRef<Map<string, TimelineEntry[]>>(new Map());
   const timelineView = useMemo(() => {
     // Group entries: top-level = activities + root comments; replies are
     // bucketed under their parent's id and rendered nested inside CommentCard.
     // No orphan rescue needed: the timeline is fetched in full, so every
     // reply's parent is always in the same array.
-    const topLevel = timeline.filter(
+    const topLevel = filteredTimeline.filter(
       (e) => e.type === "activity" || !e.parent_id,
     );
     const repliesByParent = new Map<string, TimelineEntry[]>();
-    for (const e of timeline) {
+    for (const e of filteredTimeline) {
       if (e.type === "comment" && e.parent_id) {
         const list = repliesByParent.get(e.parent_id) ?? [];
         list.push(e);
@@ -999,7 +1022,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     }
 
     return { threadReplies, groups };
-  }, [timeline]);
+  }, [filteredTimeline]);
 
   // Flat array consumed by <Virtuoso>. Recomputed when timelineView.groups
   // changes (timeline events) or expandedResolved flips (user toggles a
@@ -2200,6 +2223,43 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 first commit. Without this null guard Virtuoso falls back to
                 its own scroller, grabs 0 height inside overflow-y-auto, and
                 miscomputes total-height on first paint. */}
+            {/* Activity tabs: split the mixed feed — Bitrix comments, agent
+                responses, and people discussion each get their own view, with
+                the unified "All" as default. Agent responses already lead the
+                feed (newest-first). Hidden until there's more than one origin,
+                so a plain human thread isn't cluttered with empty tabs. */}
+            {tabCounts.all > 0 &&
+              [tabCounts.agents, tabCounts.bitrix, tabCounts.people].filter(
+                (n) => n > 0,
+              ).length > 1 && (
+                <Tabs
+                  value={activityTab}
+                  onValueChange={(v) => setActivityTab(v as ActivityTab)}
+                  className="mt-4"
+                >
+                  <TabsList variant="line">
+                    <TabsTrigger value="all">
+                      {t(($) => $.activity_tabs.all)} · {tabCounts.all}
+                    </TabsTrigger>
+                    {tabCounts.agents > 0 && (
+                      <TabsTrigger value="agents">
+                        {t(($) => $.activity_tabs.agents)} · {tabCounts.agents}
+                      </TabsTrigger>
+                    )}
+                    {tabCounts.bitrix > 0 && (
+                      <TabsTrigger value="bitrix">
+                        {t(($) => $.activity_tabs.bitrix)} · {tabCounts.bitrix}
+                      </TabsTrigger>
+                    )}
+                    {tabCounts.people > 0 && (
+                      <TabsTrigger value="people">
+                        {t(($) => $.activity_tabs.people)} · {tabCounts.people}
+                      </TabsTrigger>
+                    )}
+                  </TabsList>
+                </Tabs>
+              )}
+
             {timelineLoading && timelineView.groups.length === 0 ? (
               <TimelineSkeleton />
             ) : (

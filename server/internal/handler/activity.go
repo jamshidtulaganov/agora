@@ -34,6 +34,10 @@ type TimelineEntry struct {
 	ResolvedAt     *string              `json:"resolved_at,omitempty"`
 	ResolvedByType *string              `json:"resolved_by_type,omitempty"`
 	ResolvedByID   *string              `json:"resolved_by_id,omitempty"`
+	// BitrixCommentID is set (source Bitrix comment id) when this comment was
+	// imported from a Bitrix task; omitted for an Agora-origin comment. Lets the
+	// issue-detail activity tabs route it into the "Bitrix" tab.
+	BitrixCommentID *string `json:"bitrix_comment_id,omitempty"`
 }
 
 // timelineHardCap bounds the per-issue timeline payload. Sized as a defensive
@@ -174,20 +178,21 @@ func (h *Handler) commentsToEntries(r *http.Request, comments []db.Comment) []Ti
 		updatedAt := timestampToString(c.UpdatedAt)
 		cid := uuidToString(c.ID)
 		out[i] = TimelineEntry{
-			Type:           "comment",
-			ID:             cid,
-			ActorType:      c.AuthorType,
-			ActorID:        uuidToString(c.AuthorID),
-			Content:        &content,
-			CommentType:    &commentType,
-			ParentID:       uuidToPtr(c.ParentID),
-			CreatedAt:      timestampToString(c.CreatedAt),
-			UpdatedAt:      &updatedAt,
-			Reactions:      reactions[cid],
-			Attachments:    attachments[cid],
-			ResolvedAt:     timestampToPtr(c.ResolvedAt),
-			ResolvedByType: textToPtr(c.ResolvedByType),
-			ResolvedByID:   uuidToPtr(c.ResolvedByID),
+			Type:            "comment",
+			ID:              cid,
+			ActorType:       c.AuthorType,
+			ActorID:         uuidToString(c.AuthorID),
+			Content:         &content,
+			CommentType:     &commentType,
+			ParentID:        uuidToPtr(c.ParentID),
+			CreatedAt:       timestampToString(c.CreatedAt),
+			UpdatedAt:       &updatedAt,
+			Reactions:       reactions[cid],
+			Attachments:     attachments[cid],
+			ResolvedAt:      timestampToPtr(c.ResolvedAt),
+			ResolvedByType:  textToPtr(c.ResolvedByType),
+			ResolvedByID:    uuidToPtr(c.ResolvedByID),
+			BitrixCommentID: textToPtr(c.BitrixCommentID),
 		}
 	}
 	return out

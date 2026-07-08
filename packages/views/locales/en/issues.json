@@ -231,6 +231,12 @@
   "timeline": {
     "loading": "Loading..."
   },
+  "activity_tabs": {
+    "all": "All",
+    "agents": "Agents",
+    "bitrix": "Bitrix",
+    "people": "People"
+  },
   "activity": {
     "created": "created this issue",
     "self_assigned": "self-assigned this issue",

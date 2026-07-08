@@ -350,6 +350,12 @@ UPDATE comment SET
 WHERE id = $1
 RETURNING *;
 
+-- name: SetCommentBitrixOrigin :exec
+-- Stamp a freshly-created comment as Bitrix-imported (the source Bitrix comment
+-- id). Kept separate from CreateComment so the common create path is unchanged;
+-- importBitrixComments calls this right after creating the mirrored comment.
+UPDATE comment SET bitrix_comment_id = $2 WHERE id = $1;
+
 -- name: HasAgentCommentedSince :one
 SELECT EXISTS (
     SELECT 1 FROM comment

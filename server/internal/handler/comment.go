@@ -47,6 +47,11 @@ type CommentResponse struct {
 	// clipped to the summary budget, false when it fit. nil (omitted) means the
 	// caller did not request a summary projection, so Content is verbatim.
 	ContentTruncated *bool `json:"content_truncated,omitempty"`
+	// BitrixCommentID is the source Bitrix comment id when this comment was
+	// imported from a Bitrix task; nil (omitted) for an Agora-origin comment. The
+	// issue-detail activity tabs use its presence to route the comment into the
+	// "Bitrix" tab vs the in-Agora discussion.
+	BitrixCommentID *string `json:"bitrix_comment_id,omitempty"`
 }
 
 func commentToResponse(c db.Comment, reactions []ReactionResponse, attachments []AttachmentResponse) CommentResponse {
@@ -57,20 +62,21 @@ func commentToResponse(c db.Comment, reactions []ReactionResponse, attachments [
 		attachments = []AttachmentResponse{}
 	}
 	return CommentResponse{
-		ID:             uuidToString(c.ID),
-		IssueID:        uuidToString(c.IssueID),
-		AuthorType:     c.AuthorType,
-		AuthorID:       uuidToString(c.AuthorID),
-		Content:        c.Content,
-		Type:           c.Type,
-		ParentID:       uuidToPtr(c.ParentID),
-		CreatedAt:      timestampToString(c.CreatedAt),
-		UpdatedAt:      timestampToString(c.UpdatedAt),
-		ResolvedAt:     timestampToPtr(c.ResolvedAt),
-		ResolvedByType: textToPtr(c.ResolvedByType),
-		ResolvedByID:   uuidToPtr(c.ResolvedByID),
-		Reactions:      reactions,
-		Attachments:    attachments,
+		ID:              uuidToString(c.ID),
+		IssueID:         uuidToString(c.IssueID),
+		AuthorType:      c.AuthorType,
+		AuthorID:        uuidToString(c.AuthorID),
+		Content:         c.Content,
+		Type:            c.Type,
+		ParentID:        uuidToPtr(c.ParentID),
+		CreatedAt:       timestampToString(c.CreatedAt),
+		UpdatedAt:       timestampToString(c.UpdatedAt),
+		ResolvedAt:      timestampToPtr(c.ResolvedAt),
+		ResolvedByType:  textToPtr(c.ResolvedByType),
+		ResolvedByID:    uuidToPtr(c.ResolvedByID),
+		Reactions:       reactions,
+		Attachments:     attachments,
+		BitrixCommentID: textToPtr(c.BitrixCommentID),
 	}
 }
 

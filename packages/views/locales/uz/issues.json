@@ -231,6 +231,12 @@
   "timeline": {
     "loading": "Yuklanmoqda..."
   },
+  "activity_tabs": {
+    "all": "Hammasi",
+    "agents": "Agentlar",
+    "bitrix": "Bitrix",
+    "people": "Odamlar"
+  },
   "activity": {
     "created": "ushbu vazifani yaratdi",
     "self_assigned": "ushbu vazifani o‘ziga tayinladi",

@@ -420,19 +420,31 @@ func (h *Handler) importBitrixComments(ctx context.Context, wsID, issueID, owner
 		} else if bid, ok := h.ensureBitrixAuthorMember(ctx, wsID); ok {
 			authorType, authorID = "member", bid
 		}
-		if _, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
+		created, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 			IssueID:     issueID,
 			WorkspaceID: wsID,
 			AuthorType:  authorType,
 			AuthorID:    authorID,
 			Content:     content,
 			Type:        "comment",
-		}); err != nil {
+		})
+		if err != nil {
 			slog.Warn("bitrix sync: create comment failed",
 				"task_id", taskID, "issue_id", util.UUIDToString(issueID), "error", err)
 			continue
 		}
 		if cid != "" {
+			// Stamp the Bitrix-origin marker so the issue-detail activity tabs can
+			// cleanly separate this from in-Agora discussion (the issue-level
+			// bitrix_synced_comment_ids array holds Bitrix ids, which can't be
+			// matched to an Agora comment row).
+			if err := h.Queries.SetCommentBitrixOrigin(ctx, db.SetCommentBitrixOriginParams{
+				ID:              created.ID,
+				BitrixCommentID: pgtype.Text{String: cid, Valid: true},
+			}); err != nil {
+				slog.Warn("bitrix sync: mark comment bitrix-origin failed",
+					"comment_id", util.UUIDToString(created.ID), "error", err)
+			}
 			seen[cid] = true
 		}
 		imported++

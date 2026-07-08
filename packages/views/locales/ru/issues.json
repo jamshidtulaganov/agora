@@ -231,6 +231,12 @@
   "timeline": {
     "loading": "Загрузка..."
   },
+  "activity_tabs": {
+    "all": "Все",
+    "agents": "Агенты",
+    "bitrix": "Bitrix",
+    "people": "Люди"
+  },
   "activity": {
     "created": "создал(а) эту задачу",
     "self_assigned": "назначил(а) эту задачу себе",

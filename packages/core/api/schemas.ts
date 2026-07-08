@@ -145,6 +145,7 @@ const TimelineEntrySchema = z.object({
   comment_type: z.string().optional(),
   reactions: z.array(ReactionSchema).optional(),
   attachments: z.array(AttachmentSchema).optional(),
+  bitrix_comment_id: z.string().optional(),
   coalesced_count: z.number().optional(),
 }).loose();
 

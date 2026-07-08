@@ -229,6 +229,12 @@
   "timeline": {
     "loading": "加载中…"
   },
+  "activity_tabs": {
+    "all": "全部",
+    "agents": "智能体",
+    "bitrix": "Bitrix",
+    "people": "成员"
+  },
   "activity": {
     "created": "创建了这个 issue",
     "self_assigned": "把这个 issue 分配给了自己",
