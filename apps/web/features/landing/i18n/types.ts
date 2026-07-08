@@ -97,15 +97,18 @@ type FeaturesMock = {
   ccAgentReply: string;
   ccEditing: string;
   ccOpenEditor: string;
-  qaPassed: string;
-  qaCheck1: string;
-  qaCheck2: string;
-  qaCheck3: string;
-  qaCheck4: string;
-  qaCheck5: string;
-  qaVerdict: string;
-  qaPosted: string;
-  qaShotCap: string;
+  qaSummary: string;
+  qaLaneFail: string;
+  qaLanePending: string;
+  qaLanePass: string;
+  qaRow1Title: string;
+  qaRow1Verdict: string;
+  qaRow2Title: string;
+  qaRow3Title: string;
+  qaRow4Title: string;
+  qaRow4Verdict: string;
+  qaRunning: string;
+  qaStale: string;
   statuses: Record<
     "backlog" | "todo" | "in_progress" | "in_review" | "done",
     string

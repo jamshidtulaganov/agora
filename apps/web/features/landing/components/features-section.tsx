@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   Bot,
   Brain,
+  Bug,
   Check,
   CheckCircle2,
   ChevronRight,
@@ -12,8 +13,14 @@ import {
   FileText,
   Folder,
   FolderOpen,
+  Gauge,
+  LayoutGrid,
+  List,
   Loader2,
   Monitor,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldQuestion,
   Sparkles,
   UserMinus,
 } from "lucide-react";
@@ -1438,84 +1445,157 @@ function CocodeVisual() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  QA feature visual — run_qa gate verdict on an issue                */
+/*  QA feature visual — mirrors the real QA cockpit (verdict lanes)    */
 /* ------------------------------------------------------------------ */
 
 function QaVisual() {
   const { t } = useLocale();
   const m = t.features.mock;
-  const checks = [m.qaCheck1, m.qaCheck2, m.qaCheck3, m.qaCheck4, m.qaCheck5];
-  const times = ["12s", "18s", "9s", "26s", "4s"];
+
+  const lanes = [
+    {
+      icon: ShieldAlert,
+      iconClass: "text-destructive",
+      title: m.qaLaneFail,
+      count: 1,
+      rows: [
+        {
+          id: "AGORA-176",
+          title: m.qaRow1Title,
+          verdict: m.qaRow1Verdict,
+          verdictTone: "text-destructive",
+          priority: "urgent" as const,
+          assignee: MEMBER_A.initials,
+        },
+      ],
+    },
+    {
+      icon: ShieldQuestion,
+      iconClass: "text-muted-foreground",
+      title: m.qaLanePending,
+      count: 2,
+      rows: [
+        {
+          id: "AGORA-183",
+          title: m.qaRow2Title,
+          chip: "running" as const,
+          priority: "high" as const,
+          assignee: null,
+        },
+        {
+          id: "AGORA-190",
+          title: m.qaRow3Title,
+          chip: "stale" as const,
+          priority: "medium" as const,
+          assignee: MEMBER_B.initials,
+        },
+      ],
+    },
+    {
+      icon: ShieldCheck,
+      iconClass: "text-success",
+      title: m.qaLanePass,
+      count: 2,
+      rows: [
+        {
+          id: "AGORA-171",
+          title: m.qaRow4Title,
+          verdict: m.qaRow4Verdict,
+          verdictTone: "text-success",
+          priority: "medium" as const,
+          assignee: null,
+        },
+      ],
+    },
+  ];
+
   return (
     <div className="relative aspect-video overflow-hidden rounded-lg border bg-background text-foreground shadow-2xl">
-      {/* Header */}
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b bg-background px-4 text-xs">
-        <span className="font-mono text-muted-foreground">run_qa</span>
-        <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground/50" />
-        <span className="text-muted-foreground">AGORA-183</span>
-        <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2.5 py-0.5 text-[10px] font-semibold text-success">
-          <CheckCircle2 className="h-3 w-3" />
-          {m.qaPassed}
-        </span>
+      {/* Header: title + view-mode toggles, like the real cockpit */}
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b bg-background px-4">
+        <span className="text-sm font-semibold">QA</span>
+        <div className="ml-auto flex items-center gap-1">
+          {[List, LayoutGrid, Bug, Gauge].map((Icon, i) => (
+            <span
+              key={i}
+              className={cn(
+                "grid size-6 place-items-center rounded-md",
+                i === 0
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground",
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" />
+            </span>
+          ))}
+        </div>
       </div>
 
-      <div className="flex h-[calc(100%-40px)]">
-        {/* Checks list */}
-        <div className="min-w-0 flex-1 px-5 py-4">
-          <div className="space-y-2">
-            {checks.map((c, i) => (
-              <div
-                key={c}
-                className="flex items-center gap-2.5 rounded-lg border px-3 py-2 text-xs"
-              >
-                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
-                <span className="truncate">{c}</span>
-                <span className="ml-auto shrink-0 font-mono text-[10px] text-muted-foreground">
-                  {times[i]}
+      <div className="h-[calc(100%-40px)] overflow-hidden px-5 py-3.5">
+        <p className="text-xs text-muted-foreground">{m.qaSummary}</p>
+
+        <div className="mt-3 space-y-3">
+          {lanes.map((lane) => (
+            <div key={lane.title}>
+              <div className="flex items-center gap-1.5 text-xs font-semibold">
+                <lane.icon className={cn("h-3.5 w-3.5", lane.iconClass)} />
+                {lane.title}
+                <span className="font-normal text-muted-foreground">
+                  {lane.count}
                 </span>
               </div>
-            ))}
-          </div>
-          <div className="mt-3 flex items-center gap-2 rounded-lg border border-success/25 bg-success/5 px-3 py-2">
-            <span className="font-mono text-[11px] font-semibold text-success">
-              {m.qaVerdict}
-            </span>
-            <span className="ml-auto text-[10px] text-muted-foreground">
-              {m.qaPosted}
-            </span>
-          </div>
-        </div>
-
-        {/* Browser preview */}
-        <div className="hidden w-[300px] shrink-0 border-l p-4 lg:block">
-          <div className="overflow-hidden rounded-lg border shadow-sm">
-            <div className="flex h-7 items-center gap-1.5 border-b bg-muted/40 px-2.5">
-              <span className="size-2 rounded-full bg-muted-foreground/20" />
-              <span className="size-2 rounded-full bg-muted-foreground/20" />
-              <span className="ml-1 flex-1 truncate rounded bg-background px-2 py-0.5 font-mono text-[9px] text-muted-foreground">
-                qa.sdteam.uz/board
-              </span>
-            </div>
-            <div className="space-y-2 p-3">
-              <div className="h-2 w-2/3 rounded bg-muted" />
-              <div className="grid grid-cols-3 gap-1.5">
-                {[0, 1, 2].map((col) => (
-                  <div key={col} className="space-y-1.5 rounded border p-1.5">
-                    <div className="h-1.5 w-1/2 rounded bg-muted" />
-                    <div className="h-6 rounded bg-muted/60" />
-                    {col === 1 ? (
-                      <div className="h-6 rounded border-2 border-info/60 bg-info/10" />
-                    ) : (
-                      <div className="h-6 rounded bg-muted/40" />
-                    )}
+              <div className="mt-1.5 space-y-1.5">
+                {lane.rows.map((row) => (
+                  <div
+                    key={row.id}
+                    className="rounded-lg border px-3 py-1.5 text-xs"
+                  >
+                    <div className="flex items-center gap-2">
+                      <PriorityIcon priority={row.priority} className="shrink-0" />
+                      <span className="w-20 shrink-0 whitespace-nowrap text-muted-foreground">
+                        {row.id}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">
+                        {row.title}
+                      </span>
+                      {"chip" in row && row.chip === "running" ? (
+                        <span className="flex shrink-0 items-center gap-1 rounded-full bg-info/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-info">
+                          <span className="size-1.5 animate-pulse rounded-full bg-info" />
+                          {m.qaRunning}
+                        </span>
+                      ) : null}
+                      {"chip" in row && row.chip === "stale" ? (
+                        <span className="shrink-0 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                          {m.qaStale}
+                        </span>
+                      ) : null}
+                      {row.assignee ? (
+                        <MockAvatar
+                          type="member"
+                          initials={row.assignee}
+                          size={16}
+                        />
+                      ) : (
+                        <div className="inline-flex size-4 shrink-0 items-center justify-center rounded-full bg-info/10 text-info">
+                          <Bot className="size-2.5" />
+                        </div>
+                      )}
+                    </div>
+                    {"verdict" in row && row.verdict ? (
+                      <div className="mt-0.5 flex items-center gap-1.5 pl-6 text-[10px] text-muted-foreground">
+                        <span className="flex shrink-0 items-center gap-0.5 rounded border px-1 py-px text-[8px] uppercase tracking-wide">
+                          <Bot className="size-2.5" />
+                        </span>
+                        <span className={cn("truncate", row.verdictTone)}>
+                          {row.verdict}
+                        </span>
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>
             </div>
-          </div>
-          <div className="mt-2 text-center text-[10px] text-muted-foreground">
-            {m.qaShotCap}
-          </div>
+          ))}
         </div>
       </div>
     </div>
