@@ -903,6 +903,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/comments/summarize", h.SummarizeComments)
 					r.Post("/slice-actions", h.CreateSliceAction)
 					r.Post("/design-review", h.CreateDesignReview)
+					// Post an agent's final summary (branch, bug causes) to the
+					// linked Bitrix task. RequireHumanActor-gated: an agent can
+					// never self-post — a human reviews and approves the outbound
+					// write.
+					r.With(handler.RequireHumanActor).Post("/bitrix-summary", h.PostBitrixSummary)
 					// Apply a design-audit finding: create a codemod issue that
 					// adopts a token or extracts a shared component.
 					r.Post("/design-apply", h.ApplyDesignAudit)

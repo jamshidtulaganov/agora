@@ -59,7 +59,7 @@ import { IssueActionsDropdown, useIssueActions } from "../actions";
 import { ProjectPicker } from "../../projects/components/project-picker";
 import { SprintPicker } from "../../projects/components/sprint-picker";
 import { LocalDirectoryHint } from "../../projects/components/local-directory-hint";
-import { BitrixAssigneeChip, BitrixTaskLink } from "../../bitrix";
+import { BitrixAssigneeChip, BitrixTaskLink, BitrixSummaryAction } from "../../bitrix";
 import { CommentCard } from "./comment-card";
 import { CollapsibleDescription } from "./collapsible-description";
 import { LiveAgentChangesFeed } from "./live-agent-changes-feed";
@@ -936,6 +936,19 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // so the badges stay stable regardless of the active tab.
   const tabCounts = useMemo(() => activityTabCounts(timeline), [timeline]);
 
+  // Best-effort prefill for the "post summary to Bitrix" action: the most recent
+  // agent comment (the agent's final summary — branch name + bug causes usually
+  // live here). The human reviews/edits before posting.
+  const latestAgentSummary = useMemo(() => {
+    for (let i = timeline.length - 1; i >= 0; i--) {
+      const e = timeline[i]!;
+      if (e.type === "comment" && e.actor_type === "agent" && e.content?.trim()) {
+        return e.content;
+      }
+    }
+    return "";
+  }, [timeline]);
+
   // The timeline slice fed into the grouping pipeline for the active tab. "all"
   // passes through; otherwise keep only entries whose thread root matches the
   // tab, so a thread never splits across tabs.
@@ -1472,6 +1485,11 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 <BitrixAssigneeChip metadata={issue.metadata as Record<string, unknown> | null | undefined} />
               )}
               <BitrixTaskLink metadata={issue.metadata as Record<string, unknown> | null | undefined} />
+              <BitrixSummaryAction
+                issueId={id}
+                metadata={issue.metadata as Record<string, unknown> | null | undefined}
+                prefill={latestAgentSummary}
+              />
             </div>
           </PropRow>
           <PropRow label={t(($) => $.detail.prop_project)}>

@@ -800,6 +800,17 @@ export class ApiClient {
     });
   }
 
+  // Post an agent's final summary (branch, bug causes) to the issue's linked
+  // Bitrix task. Human-only on the server (RequireHumanActor); the caller passes
+  // the human-reviewed text. The server returns {status, posted_at} but callers
+  // only care about success/failure.
+  async postBitrixSummary(issueId: string, text: string): Promise<void> {
+    await this.fetch(`/api/issues/${issueId}/bitrix-summary`, {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    });
+  }
+
   async createComment(
     issueId: string,
     content: string,
