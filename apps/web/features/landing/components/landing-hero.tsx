@@ -39,7 +39,7 @@ export function LandingHero() {
                   <span className="relative inline-flex size-2 rounded-full" style={{ backgroundColor: ACCENT }} />
                 </span>
                 <span className="text-[12px] font-semibold" style={{ color: ACCENT }}>
-                  New: Cloud Agents — always-on, no laptop needed
+                  {t.hero.badge}
                 </span>
               </div>
             </Reveal>
@@ -86,7 +86,7 @@ export function LandingHero() {
                   href="#preview"
                   className="inline-flex items-center justify-center gap-1.5 rounded-[12px] border border-zinc-200 bg-zinc-50 px-5 py-3 text-[14px] font-semibold text-[#3F3F46] transition-colors hover:bg-zinc-100 hover:text-[#18181B] dark:border-white/14 dark:bg-white/[0.04] dark:text-white/85 dark:hover:bg-white/[0.08] dark:hover:text-white"
                 >
-                  See the board
+                  {t.hero.secondaryCta}
                 </Link>
               </div>
             </Reveal>

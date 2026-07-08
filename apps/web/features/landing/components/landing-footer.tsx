@@ -37,7 +37,7 @@ export function LandingFooter() {
           {/* Left — newsletter / CTA */}
           <div className="lg:w-[340px] lg:shrink-0">
             <Link href="#product" className="flex items-center gap-3">
-              <AgoraIcon className="size-5 text-foreground" noSpin />
+              <AgoraIcon className="size-5 text-[#2563EB]" noSpin />
               <span className="text-[18px] font-semibold tracking-[0.04em] lowercase">
                 agora
               </span>

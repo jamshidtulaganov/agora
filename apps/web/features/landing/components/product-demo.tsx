@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowUp, Check, GitPullRequest, Sparkles } from "lucide-react";
 import { cn } from "@agora/ui/lib/utils";
 import { Reveal } from "./reveal";
+import { useLocale } from "../i18n";
 
 const ACCENT = "#2563EB";
 
@@ -35,6 +36,8 @@ const TOOLS = [
 ];
 
 export function ProductDemo() {
+  const { t } = useLocale();
+  const d = t.demo;
   const [step, setStep] = useState(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -57,7 +60,8 @@ export function ProductDemo() {
     };
   }, []);
 
-  const status = step >= 7 ? "In review" : step >= 3 ? "In progress" : "Todo";
+  const status =
+    step >= 7 ? d.statusInReview : step >= 3 ? d.statusInProgress : d.statusTodo;
   const statusTone =
     step >= 7
       ? "text-blue-600 bg-blue-400/15 dark:text-blue-300"
@@ -86,10 +90,10 @@ export function ProductDemo() {
       <div className="relative mx-auto max-w-[980px] px-4 sm:px-6 lg:px-8">
         <Reveal className="text-center">
           <p className="text-[12px] font-medium uppercase tracking-[0.28em] text-[#71717A] dark:text-white/40">
-            See it in action
+            {d.kicker}
           </p>
           <h2 className="mx-auto mt-4 max-w-[680px] font-[family-name:var(--font-serif)] text-[2.4rem] leading-[1.05] tracking-[-0.03em] sm:text-[3.2rem]">
-            Assign an issue. Watch the agent ship it.
+            {d.title}
           </h2>
         </Reveal>
 
@@ -101,7 +105,7 @@ export function ProductDemo() {
               <span className="size-2.5 rounded-full bg-zinc-200 dark:bg-white/15" />
               <span className="size-2.5 rounded-full bg-zinc-200 dark:bg-white/15" />
               <span className="ml-3 text-[12px] text-[#71717A] dark:text-white/40">
-                AGORA-128 · Persian localization — RTL polish
+                {d.windowTitle}
               </span>
               <span
                 className={cn(
@@ -119,8 +123,7 @@ export function ProductDemo() {
                 {/* User message */}
                 <Bubble side="right" show={step >= 0}>
                   <span className="text-[#27272A] dark:text-white/90">
-                    <span style={{ color: ACCENT }}>@Aria</span> the dashboard
-                    breaks in right-to-left — can you fix the alignment?
+                    <span style={{ color: ACCENT }}>@Aria</span> {d.userMsg}
                   </span>
                 </Bubble>
 
@@ -133,8 +136,7 @@ export function ProductDemo() {
                 {step >= 2 ? (
                   <Bubble side="left" agent show>
                     <span className="text-[#3F3F46] dark:text-white/85">
-                      On it — auditing the layout files and flipping the grid
-                      now.
+                      {d.agentReply}
                     </span>
                   </Bubble>
                 ) : null}
@@ -145,7 +147,7 @@ export function ProductDemo() {
                     <div className="flex items-center gap-2">
                       <AgentAvatar size={20} />
                       <span className="text-[12px] font-medium text-[#3F3F46] dark:text-white/85">
-                        Aria is working
+                        {d.working}
                       </span>
                       {step < 7 ? (
                         <span className="ml-auto flex items-center gap-1.5 text-[11px] text-[#71717A] dark:text-white/45">
@@ -153,11 +155,11 @@ export function ProductDemo() {
                             className="size-1.5 animate-pulse rounded-full"
                             style={{ backgroundColor: ACCENT }}
                           />
-                          running
+                          {d.running}
                         </span>
                       ) : (
                         <span className="ml-auto flex items-center gap-1 text-[11px] text-emerald-300">
-                          <Check className="size-3" /> done
+                          <Check className="size-3" /> {d.done}
                         </span>
                       )}
                     </div>
@@ -187,9 +189,7 @@ export function ProductDemo() {
                         )}
                       >
                         <span className="shrink-0 text-[#A1A1AA] dark:text-white/35">›</span>
-                        <span className="truncate">
-                          12 tests passed · 0.41s
-                        </span>
+                        <span className="truncate">{d.testsPassed}</span>
                       </div>
                     </div>
                   </div>
@@ -208,9 +208,11 @@ export function ProductDemo() {
                       className="size-4"
                       style={{ color: ACCENT }}
                     />
-                    <span className="text-[#3F3F46] dark:text-white/85">PR #214 — RTL polish</span>
+                    <span className="text-[#3F3F46] dark:text-white/85">
+                      {d.pr}
+                    </span>
                     <span className="ml-auto text-[11px] text-emerald-600 dark:text-emerald-300/80">
-                      ready to merge
+                      {d.readyToMerge}
                     </span>
                   </div>
                 ) : null}
@@ -220,7 +222,7 @@ export function ProductDemo() {
                   <input
                     readOnly
                     value=""
-                    placeholder="Reply to Aria…"
+                    placeholder={d.replyPlaceholder}
                     className="flex-1 bg-transparent text-[13px] text-[#3F3F46] placeholder:text-[#A1A1AA] focus:outline-none dark:text-white/70 dark:placeholder:text-white/30"
                   />
                   <span
@@ -234,21 +236,25 @@ export function ProductDemo() {
 
               {/* Properties sidebar */}
               <div className="space-y-4 p-5 text-[12px]">
-                <PropRow label="Status">
+                <PropRow label={d.statusLabel}>
                   <span className={cn("rounded px-1.5 py-0.5", statusTone)}>
                     {status}
                   </span>
                 </PropRow>
-                <PropRow label="Assignee">
+                <PropRow label={d.assigneeLabel}>
                   <span className="flex items-center gap-1.5 text-[#3F3F46] dark:text-white/80">
                     <AgentAvatar size={18} /> Aria
                   </span>
                 </PropRow>
-                <PropRow label="Priority">
-                  <span className="text-[#52525B] dark:text-white/70">High</span>
+                <PropRow label={d.priorityLabel}>
+                  <span className="text-[#52525B] dark:text-white/70">
+                    {d.priorityHigh}
+                  </span>
                 </PropRow>
-                <PropRow label="Project">
-                  <span className="text-[#52525B] dark:text-white/70">i18n</span>
+                <PropRow label={d.projectLabel}>
+                  <span className="text-[#52525B] dark:text-white/70">
+                    {d.project}
+                  </span>
                 </PropRow>
               </div>
             </div>

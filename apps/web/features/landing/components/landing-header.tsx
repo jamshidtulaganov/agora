@@ -2,13 +2,22 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Menu, X } from "lucide-react";
+import { Check, Globe, Menu, X } from "lucide-react";
 import { AgoraIcon } from "@agora/ui/components/common/agora-icon";
 import { ThemeToggle } from "@agora/ui/components/common/theme-toggle";
 import { cn } from "@agora/ui/lib/utils";
 import { useAuthStore } from "@agora/core/auth";
-import { useLocale } from "../i18n";
+import { localeLabels, locales, useLocale, type Locale } from "../i18n";
 import { headerButtonClassName } from "./shared";
+
+// Compact code shown on the switcher button; the dropdown uses the full
+// localeLabels names.
+const localeShortLabels: Record<Locale, string> = {
+  en: "EN",
+  "zh-Hans": "中文",
+  uz: "UZ",
+  ru: "RU",
+};
 
 export function LandingHeader({
   variant = "auto",
@@ -37,7 +46,10 @@ export function LandingHeader({
       <div className="mx-auto flex h-[76px] max-w-[1320px] items-center justify-between px-4 sm:px-6 lg:px-8">
         <div className="flex min-w-0 items-center gap-6 lg:gap-8">
           <Link href="/" className="flex shrink-0 items-center gap-3">
-            <AgoraIcon className="size-5 text-foreground" noSpin />
+            {/* Explicit brand color: landing pins tokens to light, so
+                text-foreground would render the mark near-black on the dark
+                hero and it disappears. */}
+            <AgoraIcon className="size-6 text-[#2563EB]" noSpin />
             <span
               className={cn(
                 "text-[18px] font-semibold tracking-[0.04em] lowercase sm:text-[20px]",
@@ -69,6 +81,7 @@ export function LandingHeader({
         </div>
 
         <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
+          <LanguageSwitcher variant={variant} />
           {/* Hardcoded classes (not tokens): the landing tree pins tokens to
               light via `.landing-light`, so a token-styled control would stay
               light even in dark mode. These mirror the header's auto variant. */}
@@ -133,6 +146,88 @@ export function LandingHeader({
         </div>
       ) : null}
     </header>
+  );
+}
+
+function LanguageSwitcher({
+  variant,
+}: {
+  variant: "dark" | "light" | "auto";
+}) {
+  const { t, locale, setLocale } = useLocale();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        aria-label={t.header.language}
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          headerButtonClassName("ghost", variant),
+          "gap-1.5 px-2.5 sm:px-3",
+        )}
+      >
+        <Globe className="size-4" aria-hidden />
+        <span className="text-[12px] font-semibold tracking-wide">
+          {localeShortLabels[locale]}
+        </span>
+      </button>
+
+      {open ? (
+        <>
+          {/* click-away backdrop */}
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-hidden
+            className="fixed inset-0 z-40 cursor-default"
+            onClick={() => setOpen(false)}
+          />
+          <div
+            className={cn(
+              "absolute right-0 top-[calc(100%+8px)] z-50 w-44 rounded-[12px] border p-1.5 shadow-[0_18px_60px_rgba(0,0,0,0.18)]",
+              variant === "auto"
+                ? "border-[#0a0d12]/10 bg-white text-[#0a0d12] dark:border-white/14 dark:bg-[#070a10]/95 dark:text-white"
+                : variant === "dark"
+                  ? "border-white/14 bg-[#070a10]/95 text-white"
+                  : "border-[#0a0d12]/10 bg-white text-[#0a0d12]",
+            )}
+          >
+            {locales.map((l) => (
+              <button
+                type="button"
+                key={l}
+                onClick={() => {
+                  setLocale(l);
+                  setOpen(false);
+                }}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-[9px] px-3 py-2 text-left text-[13px] font-medium transition-colors",
+                  variant === "auto"
+                    ? "hover:bg-[#0a0d12]/5 dark:hover:bg-white/8"
+                    : variant === "dark"
+                      ? "hover:bg-white/8"
+                      : "hover:bg-[#0a0d12]/5",
+                  l !== locale &&
+                    (variant === "auto"
+                      ? "text-[#0a0d12]/68 dark:text-white/72"
+                      : variant === "dark"
+                        ? "text-white/72"
+                        : "text-[#0a0d12]/68"),
+                )}
+              >
+                {localeLabels[l]}
+                {l === locale ? (
+                  <Check className="ml-auto size-3.5" aria-hidden />
+                ) : null}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : null}
+    </div>
   );
 }
 

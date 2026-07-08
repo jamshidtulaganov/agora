@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Image from "next/image";
 import {
   Bot,
   Brain,
@@ -24,9 +23,7 @@ import { Reveal } from "./reveal";
 import { useLocale } from "../i18n";
 import type { LandingDict } from "../i18n";
 import { StatusIcon, PriorityIcon } from "@agora/views/issues/components";
-import { STATUS_CONFIG } from "@agora/core/issues/config/status";
-import { PRIORITY_CONFIG } from "@agora/core/issues/config/priority";
-import type { IssueStatus, IssuePriority } from "@agora/core/types";
+import type { IssuePriority } from "@agora/core/types";
 
 /* ------------------------------------------------------------------ */
 /*  Mock ActorAvatar — mirrors the real ActorAvatar styling exactly     */
@@ -83,53 +80,59 @@ function PropRow({
 /*  Teammates feature visual                                           */
 /* ------------------------------------------------------------------ */
 
-const mockTimeline = [
-  {
-    type: "activity" as const,
-    actorType: "member" as const,
-    initials: "AR",
-    name: "Alex Rivera",
-    action: "assigned to Claude",
-    time: "3:02 PM",
-    statusIcon: null,
-  },
-  {
-    type: "activity" as const,
-    actorType: "agent" as const,
-    initials: "",
-    name: "Claude",
-    action: "changed status from Todo to In Progress",
-    time: "3:02 PM",
-    statusIcon: "in_progress" as const,
-  },
-  {
-    type: "comment" as const,
-    actorType: "member" as const,
-    initials: "AR",
-    name: "Alex Rivera",
-    time: "10 min",
-    content:
-      "The current error responses are inconsistent across handlers — need a unified format with error codes.",
-  },
-  {
-    type: "comment" as const,
-    actorType: "agent" as const,
-    initials: "",
-    name: "Claude",
-    time: "6 min",
-    content:
-      "I've standardized error responses across 14 handlers. Each error now includes a code, message, and request_id. PR #43 is ready for review.",
-  },
-  {
-    type: "comment" as const,
-    actorType: "member" as const,
-    initials: "AR",
-    name: "Alex Rivera",
-    time: "3 min",
-    content:
-      "Looking good. Make sure to preserve the existing HTTP status codes — some of our frontend relies on specific codes like 409.",
-  },
-];
+// Demo people shown inside the mockups. Locale-invariant — names are not
+// translated, only the surrounding copy is (t.features.mock).
+const MEMBER_A = { name: "Aziz Rahimov", initials: "AR" };
+const MEMBER_B = { name: "Sevara Karimova", initials: "SK" };
+
+type MockDict = LandingDict["features"]["mock"];
+
+function buildMockTimeline(m: MockDict) {
+  return [
+    {
+      type: "activity" as const,
+      actorType: "member" as const,
+      initials: MEMBER_A.initials,
+      name: MEMBER_A.name,
+      action: m.assignedToClaude,
+      time: "3:02 PM",
+      statusIcon: null,
+    },
+    {
+      type: "activity" as const,
+      actorType: "agent" as const,
+      initials: "",
+      name: "Claude",
+      action: m.changedStatus,
+      time: "3:02 PM",
+      statusIcon: "in_progress" as const,
+    },
+    {
+      type: "comment" as const,
+      actorType: "member" as const,
+      initials: MEMBER_A.initials,
+      name: MEMBER_A.name,
+      time: "10 min",
+      content: m.comment1,
+    },
+    {
+      type: "comment" as const,
+      actorType: "agent" as const,
+      initials: "",
+      name: "Claude",
+      time: "6 min",
+      content: m.comment2,
+    },
+    {
+      type: "comment" as const,
+      actorType: "member" as const,
+      initials: MEMBER_A.initials,
+      name: MEMBER_A.name,
+      time: "3 min",
+      content: m.comment3,
+    },
+  ];
+}
 
 type Assignee = {
   type: "member" | "agent" | null;
@@ -138,15 +141,19 @@ type Assignee = {
   initials?: string;
 };
 
-const allAssignees: Assignee[] = [
-  { type: null, id: null, name: "Unassigned" },
-  { type: "member", id: "ar", name: "Alex Rivera", initials: "AR" },
-  { type: "member", id: "sk", name: "Sarah Kim", initials: "SK" },
-  { type: "agent", id: "claude", name: "Claude" },
-  { type: "agent", id: "tina", name: "Tina-dev" },
-];
+function buildAssignees(m: MockDict): Assignee[] {
+  return [
+    { type: null, id: null, name: m.unassigned },
+    { type: "member", id: "ar", ...MEMBER_A },
+    { type: "member", id: "sk", ...MEMBER_B },
+    { type: "agent", id: "claude", name: "Claude" },
+    { type: "agent", id: "tina", name: "Tina-dev" },
+  ];
+}
 
-const statusCycle: IssueStatus[] = [
+type MockStatus = keyof MockDict["statuses"];
+
+const statusCycle: MockStatus[] = [
   "backlog",
   "todo",
   "in_progress",
@@ -162,9 +169,17 @@ const priorityCycle: IssuePriority[] = [
 ];
 
 function TeammatesVisual() {
-  const [status, setStatus] = useState<IssueStatus>("in_progress");
+  const { t } = useLocale();
+  const m = t.features.mock;
+  const mockTimeline = buildMockTimeline(m);
+  const allAssignees = buildAssignees(m);
+  const [status, setStatus] = useState<MockStatus>("in_progress");
   const [priority, setPriority] = useState<IssuePriority>("medium");
-  const [assignee, setAssignee] = useState<Assignee>(allAssignees[3]!); // Claude
+  const [assignee, setAssignee] = useState<Assignee>({
+    type: "agent",
+    id: "claude",
+    name: "Claude",
+  });
   const [pickerOpen, setPickerOpen] = useState(true);
   const [statusOpen, setStatusOpen] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
@@ -186,11 +201,9 @@ function TeammatesVisual() {
         <div className="flex items-center gap-1.5 min-w-0 text-xs">
           <span className="text-muted-foreground">Agora Demo</span>
           <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />
-          <span className="text-muted-foreground">MUL-18</span>
+          <span className="text-muted-foreground">AGORA-18</span>
           <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />
-          <span className="truncate">
-            Refactor API error handling middleware
-          </span>
+          <span className="truncate">{m.issueTitle}</span>
         </div>
       </div>
 
@@ -198,17 +211,17 @@ function TeammatesVisual() {
         {/* Main content area */}
         <div className="flex-1 overflow-hidden px-8 py-5">
           <h3 className="text-lg font-bold leading-snug tracking-tight">
-            Refactor API error handling middleware
+            {m.issueTitle}
           </h3>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Standardize error responses across all endpoints.
-          </p>
+          <p className="mt-2 text-sm text-muted-foreground">{m.issueDesc}</p>
 
           <div className="my-4 border-t" />
 
           <div className="flex items-center justify-between">
-            <h4 className="text-sm font-semibold">Activity</h4>
-            <span className="text-xs text-muted-foreground">Subscribe</span>
+            <h4 className="text-sm font-semibold">{m.activity}</h4>
+            <span className="text-xs text-muted-foreground">
+              {m.subscribe}
+            </span>
           </div>
 
           <div className="mt-3 flex flex-col gap-2.5">
@@ -270,12 +283,12 @@ function TeammatesVisual() {
             <div>
               <div className="flex items-center gap-1 text-xs font-medium mb-2">
                 <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground rotate-90" />
-                Properties
+                {m.properties}
               </div>
               <div className="space-y-0.5 pl-2">
                 {/* Status — clickable with dropdown */}
                 <div className="relative">
-                  <PropRow label="Status">
+                  <PropRow label={m.statusLabel}>
                     <button
                       type="button"
                       className="flex items-center gap-1.5 cursor-pointer rounded px-1 -mx-1 hover:bg-accent/30 transition-colors"
@@ -288,7 +301,7 @@ function TeammatesVisual() {
                         status={status}
                         className="h-3.5 w-3.5 shrink-0"
                       />
-                      <span>{STATUS_CONFIG[status].label}</span>
+                      <span>{m.statuses[status]}</span>
                     </button>
                   </PropRow>
                   {statusOpen && (
@@ -310,7 +323,7 @@ function TeammatesVisual() {
                             status={s}
                             className="h-3.5 w-3.5 shrink-0"
                           />
-                          {STATUS_CONFIG[s].label}
+                          {m.statuses[s]}
                           {s === status && (
                             <Check className="ml-auto h-3.5 w-3.5" />
                           )}
@@ -322,7 +335,7 @@ function TeammatesVisual() {
 
                 {/* Priority — clickable with dropdown */}
                 <div className="relative">
-                  <PropRow label="Priority">
+                  <PropRow label={m.priorityLabel}>
                     <button
                       type="button"
                       className="flex items-center gap-1.5 cursor-pointer rounded px-1 -mx-1 hover:bg-accent/30 transition-colors"
@@ -332,7 +345,7 @@ function TeammatesVisual() {
                       }}
                     >
                       <PriorityIcon priority={priority} />
-                      <span>{PRIORITY_CONFIG[priority].label}</span>
+                      <span>{m.priorities[priority]}</span>
                     </button>
                   </PropRow>
                   {priorityOpen && (
@@ -351,7 +364,7 @@ function TeammatesVisual() {
                           }}
                         >
                           <PriorityIcon priority={p} />
-                          {PRIORITY_CONFIG[p].label}
+                          {m.priorities[p]}
                           {p === priority && (
                             <Check className="ml-auto h-3.5 w-3.5" />
                           )}
@@ -362,7 +375,7 @@ function TeammatesVisual() {
                 </div>
 
                 {/* Assignee — clickable to toggle picker */}
-                <PropRow label="Assignee">
+                <PropRow label={m.assigneeLabel}>
                   <button
                     type="button"
                     className="flex items-center gap-1.5 cursor-pointer rounded px-1 -mx-1 hover:bg-accent/30 transition-colors"
@@ -382,7 +395,9 @@ function TeammatesVisual() {
                         <span>{assignee.name}</span>
                       </>
                     ) : (
-                      <span className="text-muted-foreground">Unassigned</span>
+                      <span className="text-muted-foreground">
+                        {m.unassigned}
+                      </span>
                     )}
                   </button>
                 </PropRow>
@@ -393,7 +408,7 @@ function TeammatesVisual() {
             {pickerOpen && (
               <div className="overflow-hidden rounded-md border bg-popover shadow-md">
                 <div className="border-b px-3 py-1.5 text-xs text-muted-foreground">
-                  Assign to...
+                  {m.assignTo}
                 </div>
                 <div className="p-1">
                   <button
@@ -408,7 +423,7 @@ function TeammatesVisual() {
                     }}
                   >
                     <UserMinus className="h-3.5 w-3.5" />
-                    <span>Unassigned</span>
+                    <span>{m.unassigned}</span>
                     {!assignee.type && (
                       <Check className="ml-auto h-3.5 w-3.5" />
                     )}
@@ -416,7 +431,7 @@ function TeammatesVisual() {
                 </div>
                 <div className="px-3 py-0.5">
                   <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                    Members
+                    {m.members}
                   </span>
                 </div>
                 <div className="p-1 pt-0">
@@ -449,7 +464,7 @@ function TeammatesVisual() {
                 </div>
                 <div className="px-3 py-0.5">
                   <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                    Agents
+                    {m.agents}
                   </span>
                 </div>
                 <div className="p-1 pt-0">
@@ -491,11 +506,11 @@ function TeammatesVisual() {
 /*  Autonomous feature visual — agent live execution card               */
 /* ------------------------------------------------------------------ */
 
-const mockToolCalls = [
+function buildMockToolCalls(m: MockDict) {
+  return [
   {
     type: "thinking" as const,
-    content:
-      "Analyzing the error handling patterns across all 14 handler files…",
+    content: m.thinking1,
   },
   {
     type: "tool_use" as const,
@@ -514,12 +529,11 @@ const mockToolCalls = [
   },
   {
     type: "tool_result" as const,
-    preview: "Updated 3 error responses to use writeError() helper",
+    preview: m.editResult,
   },
   {
     type: "thinking" as const,
-    content:
-      "Now checking handler/comment.go for the same inconsistent patterns…",
+    content: m.thinking2,
   },
   {
     type: "tool_use" as const,
@@ -540,27 +554,22 @@ const mockToolCalls = [
     type: "tool_result" as const,
     preview: "ok  \tgithub.com/agora/server/internal/handler\t0.847s",
   },
-];
+  ];
+}
 
-const mockTaskHistory = [
-  {
-    status: "completed" as const,
-    title: "Set up error response types",
-    duration: "2m 14s",
-  },
-  {
-    status: "completed" as const,
-    title: "Migrate issue handler",
-    duration: "3m 41s",
-  },
-  {
-    status: "running" as const,
-    title: "Migrate comment handler",
-    duration: "1m 22s",
-  },
-];
+function buildMockTaskHistory(m: MockDict) {
+  return [
+    { status: "completed" as const, title: m.task1, duration: "2m 14s" },
+    { status: "completed" as const, title: m.task2, duration: "3m 41s" },
+    { status: "running" as const, title: m.task3, duration: "1m 22s" },
+  ];
+}
 
 function AutonomousVisual() {
+  const { t } = useLocale();
+  const m = t.features.mock;
+  const mockToolCalls = buildMockToolCalls(m);
+  const mockTaskHistory = buildMockTaskHistory(m);
   const [expanded, setExpanded] = useState<number | null>(null);
 
   return (
@@ -570,11 +579,9 @@ function AutonomousVisual() {
         <div className="flex items-center gap-1.5 min-w-0 text-xs">
           <span className="text-muted-foreground">Agora Demo</span>
           <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />
-          <span className="text-muted-foreground">MUL-18</span>
+          <span className="text-muted-foreground">AGORA-18</span>
           <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />
-          <span className="truncate">
-            Refactor API error handling middleware
-          </span>
+          <span className="truncate">{m.issueTitle}</span>
         </div>
       </div>
 
@@ -588,12 +595,14 @@ function AutonomousVisual() {
             </div>
             <div className="flex items-center gap-1.5 text-xs font-medium">
               <Loader2 className="h-3 w-3 animate-spin text-info" />
-              Agent is working
+              {m.agentWorking}
             </div>
             <span className="ml-auto text-xs tabular-nums text-muted-foreground">
               7m 17s
             </span>
-            <span className="text-xs text-muted-foreground">10 tool calls</span>
+            <span className="text-xs text-muted-foreground">
+              {m.toolCalls}
+            </span>
           </div>
 
           {/* Tool call timeline */}
@@ -674,7 +683,7 @@ function AutonomousVisual() {
         {/* Task run history */}
         <div className="mt-4">
           <span className="text-xs font-medium text-muted-foreground">
-            Task execution history
+            {m.taskHistory}
           </span>
           <div className="mt-2 space-y-1.5">
             {mockTaskHistory.map((task, i) => (
@@ -709,32 +718,14 @@ function AutonomousVisual() {
 /*  Skills feature visual — skill library + file browser               */
 /* ------------------------------------------------------------------ */
 
-const mockSkills = [
-  {
-    name: "Deploy to staging",
-    description: "Run staging deploy pipeline",
-    files: 3,
-    selected: false,
-  },
-  {
-    name: "Write migration",
-    description: "Generate and validate SQL migration",
-    files: 4,
-    selected: true,
-  },
-  {
-    name: "Review PR",
-    description: "Code review with style guide checks",
-    files: 2,
-    selected: false,
-  },
-  {
-    name: "Write tests",
-    description: "Generate unit and integration tests",
-    files: 3,
-    selected: false,
-  },
-];
+function buildMockSkills(m: MockDict) {
+  return [
+    { name: m.skill1Name, description: m.skill1Desc, files: 3, selected: false },
+    { name: m.skill2Name, description: m.skill2Desc, files: 4, selected: true },
+    { name: m.skill3Name, description: m.skill3Desc, files: 2, selected: false },
+    { name: m.skill4Name, description: m.skill4Desc, files: 3, selected: false },
+  ];
+}
 
 const mockFileTree = [
   { name: "SKILL.md", isDir: false, depth: 0, icon: "md" as const },
@@ -744,6 +735,9 @@ const mockFileTree = [
 ];
 
 function SkillsVisual() {
+  const { t } = useLocale();
+  const m = t.features.mock;
+  const mockSkills = buildMockSkills(m);
   const [selectedSkill, setSelectedSkill] = useState(1);
   const [selectedFile, setSelectedFile] = useState("SKILL.md");
 
@@ -753,7 +747,7 @@ function SkillsVisual() {
         {/* Skills list panel */}
         <div className="w-[200px] shrink-0 border-r flex flex-col">
           <div className="flex items-center justify-between border-b px-3 py-2">
-            <span className="text-xs font-semibold">Skills</span>
+            <span className="text-xs font-semibold">{m.skillsTitle}</span>
             <button
               type="button"
               className="rounded p-0.5 text-muted-foreground hover:bg-accent transition-colors"
@@ -807,7 +801,7 @@ function SkillsVisual() {
             <div className="w-44 shrink-0 border-r">
               <div className="flex items-center justify-between border-b px-3 py-1.5">
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Files
+                  {m.files}
                 </span>
               </div>
               <div className="py-1">
@@ -879,25 +873,21 @@ function SkillsVisual() {
                         <span className="font-medium text-muted-foreground">
                           author
                         </span>
-                        <span>Alex Rivera</span>
+                        <span>{MEMBER_A.name}</span>
                       </div>
                     </div>
                     {/* Content */}
                     <div className="space-y-2 text-muted-foreground leading-relaxed">
                       <p className="font-semibold text-foreground">
-                        Write Migration
+                        {m.docTitle}
                       </p>
-                      <p>
-                        Generate a SQL migration file based on the requested
-                        schema changes. Validates against the current database
-                        state and generates both up and down migrations.
-                      </p>
-                      <p className="font-medium text-foreground">Steps</p>
+                      <p>{m.docBody}</p>
+                      <p className="font-medium text-foreground">{m.steps}</p>
                       <ol className="list-decimal pl-4 space-y-0.5">
-                        <li>Analyze the current schema from migrations/</li>
-                        <li>Generate migration SQL with proper ordering</li>
-                        <li>Validate with sqlc compile</li>
-                        <li>Run tests against a fresh database</li>
+                        <li>{m.step1}</li>
+                        <li>{m.step2}</li>
+                        <li>{m.step3}</li>
+                        <li>{m.step4}</li>
                       </ol>
                     </div>
                   </div>
@@ -947,21 +937,18 @@ const mockRuntimeList = [
     mode: "local" as const,
     status: "online" as const,
     device: "arm64 / macOS 15.2",
-    lastSeen: "Just now",
   },
   {
     name: "Cloud (Anthropic)",
     mode: "cloud" as const,
     status: "online" as const,
     device: "api.anthropic.com",
-    lastSeen: "Just now",
   },
   {
     name: "Linux Server",
     mode: "local" as const,
     status: "offline" as const,
     device: "x86_64 / Ubuntu 24.04",
-    lastSeen: "3h ago",
   },
 ];
 
@@ -1084,6 +1071,8 @@ function DailyCostBars({ data }: { data: typeof mockUsageData }) {
 }
 
 function RuntimesVisual() {
+  const { t } = useLocale();
+  const m = t.features.mock;
   const [selectedRuntime, setSelectedRuntime] = useState(0);
   const [timeRange, setTimeRange] = useState<"7d" | "30d" | "90d">("30d");
   const [heatmapCells, setHeatmapCells] = useState<
@@ -1117,7 +1106,7 @@ function RuntimesVisual() {
         {/* Runtime list */}
         <div className="w-[200px] shrink-0 border-r flex flex-col">
           <div className="flex items-center justify-between border-b px-3 py-2">
-            <span className="text-xs font-semibold">Runtimes</span>
+            <span className="text-xs font-semibold">{m.runtimesTitle}</span>
           </div>
           <div className="flex-1 overflow-hidden">
             {mockRuntimeList.map((rt, i) => (
@@ -1153,7 +1142,7 @@ function RuntimesVisual() {
                       )}
                     />
                     <span className="text-[10px] text-muted-foreground">
-                      {rt.status}
+                      {rt.status === "online" ? m.online : m.offline}
                     </span>
                   </div>
                 </div>
@@ -1186,7 +1175,9 @@ function RuntimesVisual() {
                 )}
               />
               <span className="text-xs text-muted-foreground">
-                {mockRuntimeList[selectedRuntime]?.status}
+                {mockRuntimeList[selectedRuntime]?.status === "online"
+                  ? m.online
+                  : m.offline}
               </span>
             </div>
             <span className="text-xs text-muted-foreground">
@@ -1220,13 +1211,10 @@ function RuntimesVisual() {
             {/* Token summary cards — same as real TokenCard */}
             <div className="grid grid-cols-4 gap-2">
               {[
-                { label: "Input", value: formatTokens(totals.input) },
-                { label: "Output", value: formatTokens(totals.output) },
-                { label: "Cache Read", value: formatTokens(totals.cacheRead) },
-                {
-                  label: "Cache Write",
-                  value: formatTokens(totals.cacheWrite),
-                },
+                { label: m.input, value: formatTokens(totals.input) },
+                { label: m.output, value: formatTokens(totals.output) },
+                { label: m.cacheRead, value: formatTokens(totals.cacheRead) },
+                { label: m.cacheWrite, value: formatTokens(totals.cacheWrite) },
               ].map((card) => (
                 <div key={card.label} className="rounded-lg border px-3 py-2">
                   <div className="text-[10px] text-muted-foreground">
@@ -1244,7 +1232,7 @@ function RuntimesVisual() {
               {/* Activity Heatmap — mirrors real ActivityHeatmap */}
               <div className="rounded-lg border p-3">
                 <h4 className="text-[10px] font-medium text-muted-foreground mb-2">
-                  Activity
+                  {m.activityCard}
                 </h4>
                 <div className="overflow-x-auto">
                   <svg width={svgWidth} height={svgHeight} className="block">
@@ -1275,7 +1263,7 @@ function RuntimesVisual() {
                   </svg>
                 </div>
                 <div className="mt-1.5 flex items-center justify-end gap-1 text-[9px] text-muted-foreground">
-                  <span>Less</span>
+                  <span>{m.less}</span>
                   {[0, 1, 2, 3, 4].map((level) => (
                     <div
                       key={level}
@@ -1283,14 +1271,14 @@ function RuntimesVisual() {
                       style={{ backgroundColor: getHeatmapColor(level) }}
                     />
                   ))}
-                  <span>More</span>
+                  <span>{m.more}</span>
                 </div>
               </div>
 
               {/* Daily Cost — SVG bar chart mirroring real DailyCostChart */}
               <div className="rounded-lg border p-3">
                 <h4 className="text-[10px] font-medium text-muted-foreground mb-2">
-                  Daily Cost
+                  {m.dailyCost}
                 </h4>
                 <DailyCostBars data={mockUsageData.slice(-14)} />
                 <div className="mt-1.5 flex justify-between text-[8px] text-muted-foreground">
@@ -1307,25 +1295,302 @@ function RuntimesVisual() {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Co-code feature visual — browser VS Code pair-editing session      */
+/* ------------------------------------------------------------------ */
+
+const ccCodeLines = [
+  { n: 1, code: 'import { RadarChart, PolarGrid, Radar } from "recharts";', tone: "add" },
+  { n: 2, code: "", tone: "" },
+  { n: 3, code: "export function TeamLoadChart({ data }: ChartProps) {", tone: "" },
+  { n: 4, code: "  return (", tone: "" },
+  { n: 5, code: "    <RadarChart data={data} outerRadius={92}>", tone: "add" },
+  { n: 6, code: '      <PolarGrid strokeOpacity={0.25} />', tone: "add" },
+  { n: 7, code: '      <Radar dataKey="load" fill="#2563EB" fillOpacity={0.4} />', tone: "add" },
+  { n: 8, code: "    </RadarChart>", tone: "add" },
+  { n: 9, code: "  );", tone: "" },
+  { n: 10, code: "}", tone: "" },
+];
+
+function CocodeVisual() {
+  const { t } = useLocale();
+  const m = t.features.mock;
+  return (
+    <div className="relative aspect-video overflow-hidden rounded-lg border bg-background text-foreground shadow-2xl">
+      {/* Title bar */}
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b bg-background px-4 text-xs">
+        <span className="size-2.5 rounded-full bg-muted-foreground/20" />
+        <span className="size-2.5 rounded-full bg-muted-foreground/20" />
+        <span className="size-2.5 rounded-full bg-muted-foreground/20" />
+        <span className="ml-2 text-muted-foreground">
+          AGORA-204 · co-code · sprint-14
+        </span>
+        <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-info/30 bg-info/10 px-2 py-0.5 text-[10px] font-semibold text-info">
+          <span className="size-1.5 animate-pulse rounded-full bg-info" />
+          LIVE
+        </span>
+      </div>
+
+      <div className="flex h-[calc(100%-40px)]">
+        {/* File tree */}
+        <div className="hidden w-[168px] shrink-0 border-r py-2 sm:block">
+          {[
+            { name: "dashboard", dir: true, depth: 0 },
+            { name: "team-load-chart.tsx", dir: false, depth: 1, active: true },
+            { name: "filters.tsx", dir: false, depth: 1 },
+            { name: "issue-board.tsx", dir: false, depth: 1 },
+            { name: "lib", dir: true, depth: 0 },
+          ].map((f) => (
+            <div
+              key={f.name}
+              className={cn(
+                "flex items-center gap-1.5 py-1 text-xs",
+                f.active
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground",
+              )}
+              style={{ paddingLeft: f.dir ? f.depth * 12 + 10 : f.depth * 12 + 22 }}
+            >
+              {f.dir ? (
+                <>
+                  <ChevronRight className="h-3 w-3 shrink-0 rotate-90" />
+                  <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                </>
+              ) : (
+                <File className="h-3.5 w-3.5 shrink-0" />
+              )}
+              <span className="truncate">{f.name}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Editor pane */}
+        <div className="min-w-0 flex-1 overflow-hidden border-r">
+          <div className="flex h-8 items-center border-b px-3">
+            <span className="font-mono text-xs text-muted-foreground">
+              team-load-chart.tsx
+            </span>
+            <span className="ml-2 inline-flex items-center gap-1 rounded bg-info/10 px-1.5 py-0.5 text-[9px] font-semibold text-info">
+              <Bot className="h-2.5 w-2.5" />
+              Aria
+            </span>
+          </div>
+          <div className="space-y-0 p-3 font-mono text-[11px] leading-[1.7]">
+            {ccCodeLines.map((l) => (
+              <div
+                key={l.n}
+                className={cn(
+                  "flex gap-3 rounded px-1",
+                  l.tone === "add" && "bg-success/10",
+                )}
+              >
+                <span className="w-4 shrink-0 select-none text-right text-muted-foreground/40">
+                  {l.n}
+                </span>
+                <span
+                  className={cn(
+                    "whitespace-pre",
+                    l.tone === "add"
+                      ? "text-foreground"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {l.code}
+                </span>
+              </div>
+            ))}
+            <div className="flex gap-3 px-1">
+              <span className="w-4 shrink-0" />
+              <span className="inline-flex items-center gap-1 rounded bg-info px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                Aria
+                <span className="inline-block h-3 w-[2px] animate-pulse bg-white" />
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Steer panel */}
+        <div className="hidden w-[230px] shrink-0 flex-col p-3 md:flex">
+          <div className="ml-auto max-w-[95%] rounded-xl rounded-br-sm bg-muted px-2.5 py-1.5 text-xs">
+            {m.ccUserMsg}
+          </div>
+          <div className="mt-2 flex items-start gap-1.5">
+            <div className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-info/10 text-info">
+              <Bot className="h-2.5 w-2.5" />
+            </div>
+            <div className="rounded-xl rounded-bl-sm border px-2.5 py-1.5 text-xs text-muted-foreground">
+              {m.ccAgentReply}
+            </div>
+          </div>
+          <div className="mt-auto space-y-2">
+            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin text-info" />
+              {m.ccEditing}
+            </div>
+            <div className="flex items-center justify-center rounded-md border bg-muted/40 px-2 py-1.5 text-[11px] font-medium">
+              {m.ccOpenEditor}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  QA feature visual — run_qa gate verdict on an issue                */
+/* ------------------------------------------------------------------ */
+
+function QaVisual() {
+  const { t } = useLocale();
+  const m = t.features.mock;
+  const checks = [m.qaCheck1, m.qaCheck2, m.qaCheck3, m.qaCheck4, m.qaCheck5];
+  const times = ["12s", "18s", "9s", "26s", "4s"];
+  return (
+    <div className="relative aspect-video overflow-hidden rounded-lg border bg-background text-foreground shadow-2xl">
+      {/* Header */}
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b bg-background px-4 text-xs">
+        <span className="font-mono text-muted-foreground">run_qa</span>
+        <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground/50" />
+        <span className="text-muted-foreground">AGORA-183</span>
+        <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2.5 py-0.5 text-[10px] font-semibold text-success">
+          <CheckCircle2 className="h-3 w-3" />
+          {m.qaPassed}
+        </span>
+      </div>
+
+      <div className="flex h-[calc(100%-40px)]">
+        {/* Checks list */}
+        <div className="min-w-0 flex-1 px-5 py-4">
+          <div className="space-y-2">
+            {checks.map((c, i) => (
+              <div
+                key={c}
+                className="flex items-center gap-2.5 rounded-lg border px-3 py-2 text-xs"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
+                <span className="truncate">{c}</span>
+                <span className="ml-auto shrink-0 font-mono text-[10px] text-muted-foreground">
+                  {times[i]}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex items-center gap-2 rounded-lg border border-success/25 bg-success/5 px-3 py-2">
+            <span className="font-mono text-[11px] font-semibold text-success">
+              {m.qaVerdict}
+            </span>
+            <span className="ml-auto text-[10px] text-muted-foreground">
+              {m.qaPosted}
+            </span>
+          </div>
+        </div>
+
+        {/* Browser preview */}
+        <div className="hidden w-[300px] shrink-0 border-l p-4 lg:block">
+          <div className="overflow-hidden rounded-lg border shadow-sm">
+            <div className="flex h-7 items-center gap-1.5 border-b bg-muted/40 px-2.5">
+              <span className="size-2 rounded-full bg-muted-foreground/20" />
+              <span className="size-2 rounded-full bg-muted-foreground/20" />
+              <span className="ml-1 flex-1 truncate rounded bg-background px-2 py-0.5 font-mono text-[9px] text-muted-foreground">
+                qa.sdteam.uz/board
+              </span>
+            </div>
+            <div className="space-y-2 p-3">
+              <div className="h-2 w-2/3 rounded bg-muted" />
+              <div className="grid grid-cols-3 gap-1.5">
+                {[0, 1, 2].map((col) => (
+                  <div key={col} className="space-y-1.5 rounded border p-1.5">
+                    <div className="h-1.5 w-1/2 rounded bg-muted" />
+                    <div className="h-6 rounded bg-muted/60" />
+                    {col === 1 ? (
+                      <div className="h-6 rounded border-2 border-info/60 bg-info/10" />
+                    ) : (
+                      <div className="h-6 rounded bg-muted/40" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="mt-2 text-center text-[10px] text-muted-foreground">
+            {m.qaShotCap}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Brand backdrop behind the feature mockups.  Pure CSS — replaces the
+    legacy illustration JPGs so the marketing visuals stay on-brand and
+    theme-aware without shipping megabytes of raster art.               */
+/* ------------------------------------------------------------------ */
+
+const BACKDROP_GLOWS = [
+  ["18% 12%", "86% 82%"],
+  ["82% 10%", "12% 86%"],
+  ["50% 0%", "92% 90%"],
+  ["14% 88%", "88% 14%"],
+] as const;
+
+function FeatureBackdrop({ variant }: { variant: number }) {
+  const [a, b] = BACKDROP_GLOWS[variant % BACKDROP_GLOWS.length]!;
+  return (
+    <div aria-hidden className="absolute inset-0">
+      {/* Light theme */}
+      <div
+        className="absolute inset-0 dark:hidden"
+        style={{
+          background: `radial-gradient(52% 60% at ${a}, rgba(37,99,235,0.22), transparent 70%), radial-gradient(58% 64% at ${b}, rgba(59,130,246,0.16), transparent 72%), linear-gradient(155deg, #eef4ff 0%, #e3edff 48%, #dbe7fd 100%)`,
+        }}
+      />
+      {/* Dark theme */}
+      <div
+        className="absolute inset-0 hidden dark:block"
+        style={{
+          background: `radial-gradient(52% 60% at ${a}, rgba(37,99,235,0.38), transparent 70%), radial-gradient(58% 64% at ${b}, rgba(29,78,216,0.26), transparent 72%), linear-gradient(155deg, #070d1d 0%, #0a1226 55%, #060a17 100%)`,
+        }}
+      />
+      {/* Dot grid, fading toward the edges */}
+      <div
+        className="absolute inset-0 opacity-60 dark:opacity-40"
+        style={{
+          backgroundImage:
+            "radial-gradient(rgba(37,99,235,0.35) 1px, transparent 1px)",
+          backgroundSize: "24px 24px",
+          maskImage:
+            "radial-gradient(80% 70% at 50% 50%, black, transparent 92%)",
+          WebkitMaskImage:
+            "radial-gradient(80% 70% at 50% 50%, black, transparent 92%)",
+        }}
+      />
+    </div>
+  );
+}
+
 function buildFeatures(t: LandingDict) {
-  const keys = ["teammates", "autonomous", "skills", "runtimes"] as const;
+  const keys = [
+    "teammates",
+    "autonomous",
+    "cocode",
+    "qa",
+    "skills",
+    "runtimes",
+  ] as const;
   const visuals = [
     TeammatesVisual,
     AutonomousVisual,
+    CocodeVisual,
+    QaVisual,
     SkillsVisual,
     RuntimesVisual,
   ];
-  const bgImages = [
-    undefined,
-    "/images/feature-bg-2.jpg",
-    "/images/feature-bg-3.jpg",
-    "/images/feature-bg-4.jpg",
-  ];
-
   return keys.map((key, i) => ({
     ...t.features[key],
     visual: visuals[i]!,
-    bgImage: bgImages[i],
+    backdrop: i,
   }));
 }
 
@@ -1423,14 +1688,7 @@ export function FeaturesSection() {
                 <div className="mt-14 sm:mt-18">
                   {feature.visual ? (
                     <div className="relative overflow-hidden rounded-sm">
-                      <Image
-                        src={feature.bgImage ?? "/images/feature-bg.jpg"}
-                        alt=""
-                        fill
-                        className="object-cover object-center"
-                        sizes="(max-width: 1320px) 100vw, 1320px"
-                        quality={80}
-                      />
+                      <FeatureBackdrop variant={feature.backdrop} />
                       <div className="relative px-4 py-8 sm:px-6 sm:py-12 lg:px-8 lg:py-16">
                         <feature.visual />
                       </div>
