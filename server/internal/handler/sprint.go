@@ -505,7 +505,10 @@ func (h *Handler) ListSprintIssues(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to list sprint issues")
 		return
 	}
-	issues, err := h.Queries.ListIssuesBySprint(r.Context(), sprint.ID)
+	issues, err := h.Queries.ListIssuesBySprint(r.Context(), db.ListIssuesBySprintParams{
+		SprintID:       sprint.ID,
+		RestrictToUser: h.issueVisibilityRestriction(r),
+	})
 	if err != nil {
 		slog.Warn("ListIssuesBySprint failed", append(logger.RequestAttrs(r), "error", err)...)
 		writeError(w, http.StatusInternalServerError, "failed to list sprint issues")

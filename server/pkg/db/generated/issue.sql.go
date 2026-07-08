@@ -12,14 +12,33 @@ import (
 )
 
 const childIssueProgress = `-- name: ChildIssueProgress :many
-SELECT parent_issue_id,
+SELECT i.parent_issue_id,
        COUNT(*)::bigint AS total,
-       COUNT(*) FILTER (WHERE status IN ('done', 'cancelled'))::bigint AS done
-FROM issue
-WHERE workspace_id = $1
-  AND parent_issue_id IS NOT NULL
-GROUP BY parent_issue_id
+       COUNT(*) FILTER (WHERE i.status IN ('done', 'cancelled'))::bigint AS done
+FROM issue i
+WHERE i.workspace_id = $1
+  AND i.parent_issue_id IS NOT NULL
+  AND (
+    $2::uuid IS NULL
+    OR (i.assignee_type = 'member' AND i.assignee_id = $2::uuid)
+    OR (i.assignee_type = 'agent' AND i.assignee_id IN (
+          SELECT a.id FROM agent a
+           WHERE a.workspace_id = $1 AND a.owner_id = $2::uuid))
+    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
+          SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+           WHERE s.workspace_id = $1 AND sm.member_type = 'member' AND sm.member_id = $2::uuid
+          UNION SELECT s.id FROM squad s JOIN agent a ON a.id = s.leader_id
+           WHERE s.workspace_id = $1 AND a.owner_id = $2::uuid
+          UNION SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id JOIN agent a ON a.id = sm.member_id
+           WHERE s.workspace_id = $1 AND sm.member_type = 'agent' AND a.owner_id = $2::uuid))
+  )
+GROUP BY i.parent_issue_id
 `
+
+type ChildIssueProgressParams struct {
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	RestrictToUser pgtype.UUID `json:"restrict_to_user"`
+}
 
 type ChildIssueProgressRow struct {
 	ParentIssueID pgtype.UUID `json:"parent_issue_id"`
@@ -27,8 +46,8 @@ type ChildIssueProgressRow struct {
 	Done          int64       `json:"done"`
 }
 
-func (q *Queries) ChildIssueProgress(ctx context.Context, workspaceID pgtype.UUID) ([]ChildIssueProgressRow, error) {
-	rows, err := q.db.Query(ctx, childIssueProgress, workspaceID)
+func (q *Queries) ChildIssueProgress(ctx context.Context, arg ChildIssueProgressParams) ([]ChildIssueProgressRow, error) {
+	rows, err := q.db.Query(ctx, childIssueProgress, arg.WorkspaceID, arg.RestrictToUser)
 	if err != nil {
 		return nil, err
 	}
@@ -630,6 +649,42 @@ func (q *Queries) GetIssueInWorkspace(ctx context.Context, arg GetIssueInWorkspa
 	return i, err
 }
 
+const issueBelongsToUser = `-- name: IssueBelongsToUser :one
+SELECT EXISTS (
+  SELECT 1 FROM issue i
+  WHERE i.id = $1 AND i.workspace_id = $2
+    AND (
+      (i.assignee_type = 'member' AND i.assignee_id = $3)
+      OR (i.assignee_type = 'agent' AND i.assignee_id IN (
+            SELECT a.id FROM agent a WHERE a.workspace_id = $2 AND a.owner_id = $3))
+      OR (i.assignee_type = 'squad' AND i.assignee_id IN (
+            SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+             WHERE s.workspace_id = $2 AND sm.member_type = 'member' AND sm.member_id = $3
+            UNION SELECT s.id FROM squad s JOIN agent a ON a.id = s.leader_id
+             WHERE s.workspace_id = $2 AND a.owner_id = $3
+            UNION SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+              JOIN agent a ON a.id = sm.member_id
+             WHERE s.workspace_id = $2 AND sm.member_type = 'agent' AND a.owner_id = $3))
+    )
+)
+`
+
+type IssueBelongsToUserParams struct {
+	IssueID     pgtype.UUID `json:"issue_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	UserID      pgtype.UUID `json:"user_id"`
+}
+
+// Whether the issue is owned by the user: assigned to them directly (member),
+// to an agent they own, or to a squad they (or an agent they own) belong to /
+// lead. Gates issue detail for non-owner members (mirrors issueOwnershipClause).
+func (q *Queries) IssueBelongsToUser(ctx context.Context, arg IssueBelongsToUserParams) (bool, error) {
+	row := q.db.QueryRow(ctx, issueBelongsToUser, arg.IssueID, arg.WorkspaceID, arg.UserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const listChildIssues = `-- name: ListChildIssues :many
 SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, archived_at FROM issue
 WHERE parent_issue_id = $1
@@ -683,15 +738,30 @@ func (q *Queries) ListChildIssues(ctx context.Context, parentIssueID pgtype.UUID
 }
 
 const listChildrenByParents = `-- name: ListChildrenByParents :many
-SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, archived_at FROM issue
-WHERE workspace_id = $1
-  AND parent_issue_id = ANY($2::uuid[])
-ORDER BY parent_issue_id, position ASC, created_at DESC
+SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority, i.assignee_type, i.assignee_id, i.creator_type, i.creator_id, i.parent_issue_id, i.acceptance_criteria, i.context_refs, i.position, i.due_date, i.created_at, i.updated_at, i.number, i.project_id, i.origin_type, i.origin_id, i.first_executed_at, i.start_date, i.metadata, i.archived_at FROM issue i
+WHERE i.workspace_id = $1
+  AND i.parent_issue_id = ANY($2::uuid[])
+  AND (
+    $3::uuid IS NULL
+    OR (i.assignee_type = 'member' AND i.assignee_id = $3::uuid)
+    OR (i.assignee_type = 'agent' AND i.assignee_id IN (
+          SELECT a.id FROM agent a
+           WHERE a.workspace_id = $1 AND a.owner_id = $3::uuid))
+    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
+          SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+           WHERE s.workspace_id = $1 AND sm.member_type = 'member' AND sm.member_id = $3::uuid
+          UNION SELECT s.id FROM squad s JOIN agent a ON a.id = s.leader_id
+           WHERE s.workspace_id = $1 AND a.owner_id = $3::uuid
+          UNION SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id JOIN agent a ON a.id = sm.member_id
+           WHERE s.workspace_id = $1 AND sm.member_type = 'agent' AND a.owner_id = $3::uuid))
+  )
+ORDER BY i.parent_issue_id, i.position ASC, i.created_at DESC
 `
 
 type ListChildrenByParentsParams struct {
-	WorkspaceID pgtype.UUID   `json:"workspace_id"`
-	ParentIds   []pgtype.UUID `json:"parent_ids"`
+	WorkspaceID    pgtype.UUID   `json:"workspace_id"`
+	ParentIds      []pgtype.UUID `json:"parent_ids"`
+	RestrictToUser pgtype.UUID   `json:"restrict_to_user"`
 }
 
 // Batched variant of ListChildIssues: returns all children for the given
@@ -700,7 +770,7 @@ type ListChildrenByParentsParams struct {
 // parent_issue_id; the workspace filter is also enforced so callers can't
 // enumerate children of parents in workspaces they don't belong to.
 func (q *Queries) ListChildrenByParents(ctx context.Context, arg ListChildrenByParentsParams) ([]Issue, error) {
-	rows, err := q.db.Query(ctx, listChildrenByParents, arg.WorkspaceID, arg.ParentIds)
+	rows, err := q.db.Query(ctx, listChildrenByParents, arg.WorkspaceID, arg.ParentIds, arg.RestrictToUser)
 	if err != nil {
 		return nil, err
 	}
@@ -802,6 +872,30 @@ WHERE i.workspace_id = $1
              AND a.owner_id     = $13::uuid
     ))
   )
+  -- Restricted visibility: a non-owner member sees ONLY issues that are theirs
+  -- — assigned to them directly, to an agent they own, or to a squad they (or
+  -- an agent they own) belong to / lead. NULL disables the gate (owners see
+  -- everything). This is the AND-gate counterpart of involves_user_id, and it
+  -- additionally covers DIRECT member assignment.
+  AND (
+    $14::uuid IS NULL
+    OR (i.assignee_type = 'member' AND i.assignee_id = $14::uuid)
+    OR (i.assignee_type = 'agent' AND i.assignee_id IN (
+          SELECT a.id FROM agent a
+           WHERE a.workspace_id = $1 AND a.owner_id = $14::uuid))
+    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
+          SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+           WHERE s.workspace_id = $1 AND sm.member_type = 'member'
+             AND sm.member_id = $14::uuid
+          UNION
+          SELECT s.id FROM squad s JOIN agent a ON a.id = s.leader_id
+           WHERE s.workspace_id = $1 AND a.owner_id = $14::uuid
+          UNION
+          SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+            JOIN agent a ON a.id = sm.member_id
+           WHERE s.workspace_id = $1 AND sm.member_type = 'agent'
+             AND a.owner_id = $14::uuid))
+  )
 ORDER BY i.position ASC, i.created_at DESC
 LIMIT $2 OFFSET $3
 `
@@ -820,6 +914,7 @@ type ListIssuesParams struct {
 	Scheduled       pgtype.Bool   `json:"scheduled"`
 	MetadataFilter  []byte        `json:"metadata_filter"`
 	InvolvesUserID  pgtype.UUID   `json:"involves_user_id"`
+	RestrictToUser  pgtype.UUID   `json:"restrict_to_user"`
 }
 
 type ListIssuesRow struct {
@@ -866,6 +961,7 @@ func (q *Queries) ListIssues(ctx context.Context, arg ListIssuesParams) ([]ListI
 		arg.Scheduled,
 		arg.MetadataFilter,
 		arg.InvolvesUserID,
+		arg.RestrictToUser,
 	)
 	if err != nil {
 		return nil, err
@@ -951,6 +1047,26 @@ WHERE i.workspace_id = $1
              AND a.owner_id     = $8::uuid
     ))
   )
+  -- Restricted visibility (non-owner): only the caller's own issues. See ListIssues.
+  AND (
+    $9::uuid IS NULL
+    OR (i.assignee_type = 'member' AND i.assignee_id = $9::uuid)
+    OR (i.assignee_type = 'agent' AND i.assignee_id IN (
+          SELECT a.id FROM agent a
+           WHERE a.workspace_id = $1 AND a.owner_id = $9::uuid))
+    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
+          SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+           WHERE s.workspace_id = $1 AND sm.member_type = 'member'
+             AND sm.member_id = $9::uuid
+          UNION
+          SELECT s.id FROM squad s JOIN agent a ON a.id = s.leader_id
+           WHERE s.workspace_id = $1 AND a.owner_id = $9::uuid
+          UNION
+          SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+            JOIN agent a ON a.id = sm.member_id
+           WHERE s.workspace_id = $1 AND sm.member_type = 'agent'
+             AND a.owner_id = $9::uuid))
+  )
 ORDER BY i.position ASC, i.created_at DESC
 `
 
@@ -963,6 +1079,7 @@ type ListOpenIssuesParams struct {
 	ProjectID      pgtype.UUID   `json:"project_id"`
 	MetadataFilter []byte        `json:"metadata_filter"`
 	InvolvesUserID pgtype.UUID   `json:"involves_user_id"`
+	RestrictToUser pgtype.UUID   `json:"restrict_to_user"`
 }
 
 type ListOpenIssuesRow struct {
@@ -999,6 +1116,7 @@ func (q *Queries) ListOpenIssues(ctx context.Context, arg ListOpenIssuesParams) 
 		arg.ProjectID,
 		arg.MetadataFilter,
 		arg.InvolvesUserID,
+		arg.RestrictToUser,
 	)
 	if err != nil {
 		return nil, err

@@ -69,7 +69,26 @@ ORDER BY p.title ASC, s.created_at DESC;
 SELECT s.* FROM sprint s JOIN issue_to_sprint i ON i.sprint_id = s.id WHERE i.issue_id = $1;
 
 -- name: ListIssuesBySprint :many
-SELECT i.* FROM issue i JOIN issue_to_sprint x ON x.issue_id = i.id WHERE x.sprint_id = $1 ORDER BY i.created_at;
+-- restrict_to_user (nullable): when set, keeps only issues owned by that user
+-- (direct member-assignee, an agent they own, or a squad they/their agent
+-- belong to or lead) so non-owner members see only their own work on a sprint
+-- board. NULL = unrestricted (owners). Mirrors issueOwnershipClause.
+SELECT i.* FROM issue i JOIN issue_to_sprint x ON x.issue_id = i.id
+WHERE x.sprint_id = $1
+  AND (
+    sqlc.narg('restrict_to_user')::uuid IS NULL
+    OR (i.assignee_type = 'member' AND i.assignee_id = sqlc.narg('restrict_to_user')::uuid)
+    OR (i.assignee_type = 'agent' AND i.assignee_id IN (
+          SELECT a.id FROM agent a WHERE a.workspace_id = i.workspace_id AND a.owner_id = sqlc.narg('restrict_to_user')::uuid))
+    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
+          SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+           WHERE s.workspace_id = i.workspace_id AND sm.member_type = 'member' AND sm.member_id = sqlc.narg('restrict_to_user')::uuid
+          UNION SELECT s.id FROM squad s JOIN agent a ON a.id = s.leader_id
+           WHERE s.workspace_id = i.workspace_id AND a.owner_id = sqlc.narg('restrict_to_user')::uuid
+          UNION SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id JOIN agent a ON a.id = sm.member_id
+           WHERE s.workspace_id = i.workspace_id AND sm.member_type = 'agent' AND a.owner_id = sqlc.narg('restrict_to_user')::uuid))
+  )
+ORDER BY i.created_at;
 
 -- name: ListDueSprints :many
 -- Sprint-end QA dispatch: sprints whose window has closed but are still marked

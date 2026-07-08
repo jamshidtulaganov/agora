@@ -219,11 +219,35 @@ func (q *Queries) ListDueSprints(ctx context.Context) ([]Sprint, error) {
 }
 
 const listIssuesBySprint = `-- name: ListIssuesBySprint :many
-SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority, i.assignee_type, i.assignee_id, i.creator_type, i.creator_id, i.parent_issue_id, i.acceptance_criteria, i.context_refs, i.position, i.due_date, i.created_at, i.updated_at, i.number, i.project_id, i.origin_type, i.origin_id, i.first_executed_at, i.start_date, i.metadata, i.archived_at FROM issue i JOIN issue_to_sprint x ON x.issue_id = i.id WHERE x.sprint_id = $1 ORDER BY i.created_at
+SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority, i.assignee_type, i.assignee_id, i.creator_type, i.creator_id, i.parent_issue_id, i.acceptance_criteria, i.context_refs, i.position, i.due_date, i.created_at, i.updated_at, i.number, i.project_id, i.origin_type, i.origin_id, i.first_executed_at, i.start_date, i.metadata, i.archived_at FROM issue i JOIN issue_to_sprint x ON x.issue_id = i.id
+WHERE x.sprint_id = $1
+  AND (
+    $2::uuid IS NULL
+    OR (i.assignee_type = 'member' AND i.assignee_id = $2::uuid)
+    OR (i.assignee_type = 'agent' AND i.assignee_id IN (
+          SELECT a.id FROM agent a WHERE a.workspace_id = i.workspace_id AND a.owner_id = $2::uuid))
+    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
+          SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+           WHERE s.workspace_id = i.workspace_id AND sm.member_type = 'member' AND sm.member_id = $2::uuid
+          UNION SELECT s.id FROM squad s JOIN agent a ON a.id = s.leader_id
+           WHERE s.workspace_id = i.workspace_id AND a.owner_id = $2::uuid
+          UNION SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id JOIN agent a ON a.id = sm.member_id
+           WHERE s.workspace_id = i.workspace_id AND sm.member_type = 'agent' AND a.owner_id = $2::uuid))
+  )
+ORDER BY i.created_at
 `
 
-func (q *Queries) ListIssuesBySprint(ctx context.Context, sprintID pgtype.UUID) ([]Issue, error) {
-	rows, err := q.db.Query(ctx, listIssuesBySprint, sprintID)
+type ListIssuesBySprintParams struct {
+	SprintID       pgtype.UUID `json:"sprint_id"`
+	RestrictToUser pgtype.UUID `json:"restrict_to_user"`
+}
+
+// restrict_to_user (nullable): when set, keeps only issues owned by that user
+// (direct member-assignee, an agent they own, or a squad they/their agent
+// belong to or lead) so non-owner members see only their own work on a sprint
+// board. NULL = unrestricted (owners). Mirrors issueOwnershipClause.
+func (q *Queries) ListIssuesBySprint(ctx context.Context, arg ListIssuesBySprintParams) ([]Issue, error) {
+	rows, err := q.db.Query(ctx, listIssuesBySprint, arg.SprintID, arg.RestrictToUser)
 	if err != nil {
 		return nil, err
 	}

@@ -385,7 +385,7 @@ type searchResult struct {
 // It uses LOWER(column) LIKE for case-insensitive matching compatible with pg_bigm 1.2 GIN indexes.
 // Search patterns are lowercased in Go to avoid redundant LOWER() on the pattern side in SQL.
 // LIKE patterns are pre-built in Go (e.g. "%html%") so pg_bigm can extract bigrams from a single parameter value.
-func buildSearchQuery(phrase string, terms []string, queryNum int, hasNum bool, includeClosed bool) (string, []any) {
+func buildSearchQuery(phrase string, terms []string, queryNum int, hasNum bool, includeClosed bool, restrictUser pgtype.UUID) (string, []any) {
 	// Lowercase in Go so SQL only needs LOWER() on the column side.
 	phrase = strings.ToLower(phrase)
 	for i, t := range terms {
@@ -454,6 +454,14 @@ func buildSearchQuery(phrase string, terms []string, queryNum int, hasNum bool, 
 
 	if !includeClosed {
 		whereClause += " AND i.status NOT IN ('done', 'cancelled')"
+	}
+
+	// Restricted visibility (non-owner): only the caller's own issues. The arg is
+	// reserved here — before limit/offset — so it doesn't disturb the positional
+	// fills the caller does for $4 (workspace) and the trailing limit/offset.
+	if restrictUser.Valid {
+		restrictParam := nextArg(restrictUser)
+		whereClause += " AND " + issueOwnershipClause(restrictParam, wsParam)
 	}
 
 	// --- ORDER BY clause ---
@@ -633,7 +641,7 @@ func (h *Handler) SearchIssues(w http.ResponseWriter, r *http.Request) {
 	terms := splitSearchTerms(q)
 	queryNum, hasNum := parseQueryNumber(q)
 
-	sqlQuery, args := buildSearchQuery(q, terms, queryNum, hasNum, includeClosed)
+	sqlQuery, args := buildSearchQuery(q, terms, queryNum, hasNum, includeClosed, h.issueVisibilityRestriction(r))
 	// Fill placeholder args: $4 = workspace_id, last two = limit, offset
 	args[3] = wsUUID
 	args[len(args)-2] = limit
@@ -725,6 +733,93 @@ func (h *Handler) SearchIssues(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// issueVisibilityRestriction returns the user id that an issue list must be
+// scoped to when the caller is NOT a workspace owner. Owners see every issue in
+// the workspace; everyone else (admin or member) sees only issues that are
+// theirs — assigned to them directly, to an agent they own, or to a squad they
+// (or an agent they own) belong to / lead. The returned UUID feeds the
+// restrict_to_user narg; an unset UUID (Valid=false) disables the gate.
+//
+// Fail-CLOSED: only a confirmed `owner` role gets an unrestricted view. A member
+// lookup error, or any non-owner role, returns the caller's id so a leak can't
+// slip through on an unexpected error path.
+func (h *Handler) issueVisibilityRestriction(r *http.Request) pgtype.UUID {
+	// Agent / daemon / runtime actors (task-token, cloud-PAT) authenticate as
+	// their owner's user id but must see every issue they operate on — they run
+	// work across the whole workspace, not just their owner's slice. X-Actor-Source
+	// is server-set only (the auth middleware strips any client-supplied value),
+	// so its presence authoritatively marks a non-human actor: never restrict them.
+	// The gate is for genuine human member sessions (session JWT / member token),
+	// which carry no X-Actor-Source.
+	if r.Header.Get("X-Actor-Source") != "" {
+		return pgtype.UUID{}
+	}
+	userID := requestUserID(r)
+	wsID := h.resolveWorkspaceID(r)
+	if userID == "" || wsID == "" {
+		return pgtype.UUID{}
+	}
+	uid, err := util.ParseUUID(userID)
+	if err != nil {
+		return pgtype.UUID{}
+	}
+	wsUUID, werr := util.ParseUUID(wsID)
+	if werr != nil {
+		return uid // can't confirm owner → restrict
+	}
+	member, merr := h.Queries.GetMemberByUserAndWorkspace(r.Context(), db.GetMemberByUserAndWorkspaceParams{
+		UserID:      uid,
+		WorkspaceID: wsUUID,
+	})
+	if merr == nil && member.Role == "owner" {
+		return pgtype.UUID{} // owner → unrestricted
+	}
+	return uid // admin / member / lookup error → restricted to their own issues
+}
+
+// issueOwnershipClause returns a dynamic-SQL WHERE fragment (an AND-gate) that
+// keeps only issues owned by the user bound to `ref` (a $N placeholder already
+// registered in the caller's args): assigned to them directly (member), to an
+// agent they own, or to a squad they (or an agent they own) belong to / lead.
+// `wsRef` is the placeholder holding the workspace id ("$1" for the list/board
+// builders, "$4" for search). Shared by the paged list, the grouped board, and
+// search so the non-owner visibility gate is identical everywhere.
+func issueOwnershipClause(ref, wsRef string) string {
+	return fmt.Sprintf(`(
+    (i.assignee_type = 'member' AND i.assignee_id = %[1]s::uuid)
+    OR (i.assignee_type = 'agent' AND i.assignee_id IN (
+          SELECT a.id FROM agent a WHERE a.workspace_id = %[2]s AND a.owner_id = %[1]s::uuid))
+    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
+          SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+           WHERE s.workspace_id = %[2]s AND sm.member_type = 'member' AND sm.member_id = %[1]s::uuid
+          UNION SELECT s.id FROM squad s JOIN agent a ON a.id = s.leader_id
+           WHERE s.workspace_id = %[2]s AND a.owner_id = %[1]s::uuid
+          UNION SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+            JOIN agent a ON a.id = sm.member_id
+           WHERE s.workspace_id = %[2]s AND sm.member_type = 'agent' AND a.owner_id = %[1]s::uuid)))`, ref, wsRef)
+}
+
+// issueAccessDenied reports whether the requester is a restricted (non-owner)
+// member who does NOT own this issue. It guards the single-issue reads
+// (detail, children) that resolve through loadIssueForUser — which admits any
+// workspace member — so a direct issue id can't bypass the visibility gate the
+// list/board/search surfaces enforce. Fails CLOSED: a lookup error denies.
+func (h *Handler) issueAccessDenied(r *http.Request, issue db.Issue) bool {
+	restrict := h.issueVisibilityRestriction(r)
+	if !restrict.Valid {
+		return false // owner (or unresolved context that already denied elsewhere)
+	}
+	owned, err := h.Queries.IssueBelongsToUser(r.Context(), db.IssueBelongsToUserParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+		UserID:      restrict,
+	})
+	if err != nil {
+		return true // fail closed
+	}
+	return !owned
+}
+
 func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -733,6 +828,10 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
+	// Non-owners see only their own issues (set for both the open_only and the
+	// paged path below). Unset for owners.
+	restrictUser := h.issueVisibilityRestriction(r)
 
 	// Parse optional filter params. Malformed UUIDs in filters return 400 —
 	// silently coercing them to a zero UUID would mask a client bug and let
@@ -807,6 +906,7 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 			ProjectID:      projectFilter,
 			InvolvesUserID: involvesUserFilter,
 			MetadataFilter: metadataFilter,
+			RestrictToUser: restrictUser,
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to list issues")
@@ -968,6 +1068,10 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
           AND a.owner_id     = %[1]s::uuid
     ))
 )`, ref))
+	}
+	// Restricted visibility: a non-owner sees ONLY their own issues.
+	if restrictUser.Valid {
+		where = append(where, issueOwnershipClause(addArg(restrictUser), "$1"))
 	}
 
 	whereSql := strings.Join(where, " AND ")
@@ -1289,6 +1393,10 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
           AND a.owner_id     = %[1]s::uuid
     ))
 )`, ref))
+	}
+	// Restricted visibility (non-owner): only the caller's own issues.
+	if restrictUser := h.issueVisibilityRestriction(r); restrictUser.Valid {
+		where = append(where, issueOwnershipClause(addArg(restrictUser), "$1"))
 	}
 
 	assigneeFilters, ok := parseActorFilterList(w, r.URL.Query().Get("assignee_filters"), "assignee_filters")
@@ -1649,8 +1757,9 @@ func (h *Handler) ListChildrenByParents(w http.ResponseWriter, r *http.Request) 
 	}
 
 	children, err := h.Queries.ListChildrenByParents(r.Context(), db.ListChildrenByParentsParams{
-		WorkspaceID: wsUUID,
-		ParentIds:   parentIDs,
+		WorkspaceID:    wsUUID,
+		ParentIds:      parentIDs,
+		RestrictToUser: h.issueVisibilityRestriction(r),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list child issues")
@@ -1673,7 +1782,10 @@ func (h *Handler) ChildIssueProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := h.Queries.ChildIssueProgress(r.Context(), wsUUID)
+	rows, err := h.Queries.ChildIssueProgress(r.Context(), db.ChildIssueProgressParams{
+		WorkspaceID:    wsUUID,
+		RestrictToUser: h.issueVisibilityRestriction(r),
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to get child issue progress")
 		return

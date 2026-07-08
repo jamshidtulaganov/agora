@@ -621,27 +621,38 @@ func (h *Handler) loadIssueForUser(w http.ResponseWriter, r *http.Request, issue
 	// Try identifier format first (e.g., "JIA-42"). resolveIssueByIdentifier
 	// silently returns false for non-identifier strings, falling through to
 	// the UUID path below.
-	if issue, ok := h.resolveIssueByIdentifier(r.Context(), issueID, workspaceID); ok {
-		return issue, true
+	issue, ok := h.resolveIssueByIdentifier(r.Context(), issueID, workspaceID)
+	if !ok {
+		issueUUID, err := util.ParseUUID(issueID)
+		if err != nil {
+			// Not a valid UUID and didn't match identifier format → 404 (consistent
+			// with previous silent-zero behavior, which would also have produced 404).
+			writeError(w, http.StatusNotFound, "issue not found")
+			return db.Issue{}, false
+		}
+		wsUUID, err := util.ParseUUID(workspaceID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid workspace_id")
+			return db.Issue{}, false
+		}
+		issue, err = h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{
+			ID:          issueUUID,
+			WorkspaceID: wsUUID,
+		})
+		if err != nil {
+			writeError(w, http.StatusNotFound, "issue not found")
+			return db.Issue{}, false
+		}
 	}
 
-	issueUUID, err := util.ParseUUID(issueID)
-	if err != nil {
-		// Not a valid UUID and didn't match identifier format → 404 (consistent
-		// with previous silent-zero behavior, which would also have produced 404).
-		writeError(w, http.StatusNotFound, "issue not found")
-		return db.Issue{}, false
-	}
-	wsUUID, err := util.ParseUUID(workspaceID)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid workspace_id")
-		return db.Issue{}, false
-	}
-	issue, err := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{
-		ID:          issueUUID,
-		WorkspaceID: wsUUID,
-	})
-	if err != nil {
+	// Visibility gate (read-only). A non-owner human member may only READ issues
+	// they own — assigned to them, to an agent they own, or to a squad they/their
+	// agent belong to or lead (see issueAccessDenied). Scoped to GET so every
+	// mutation keeps its own authorization and agents/daemons (X-Actor-Source)
+	// stay exempt. Returns 404 (not 403) so a non-owned issue's existence is not
+	// revealed. This is the choke point that closes the single-issue read
+	// sub-resources (labels, subscribers, qa-evidence, …) which all resolve here.
+	if r.Method == http.MethodGet && h.issueAccessDenied(r, issue) {
 		writeError(w, http.StatusNotFound, "issue not found")
 		return db.Issue{}, false
 	}

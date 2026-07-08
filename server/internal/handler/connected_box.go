@@ -951,7 +951,7 @@ func (h *Handler) DispatchSprintRegression(ctx context.Context, sprintID, wsID p
 	// user curating the sprint in the QA cockpit controls what gets tested.
 	// Best-effort: on lookup failure fall back to whole-branch regression.
 	var tasks []sprintRegressionTask
-	if issues, ierr := h.Queries.ListIssuesBySprint(ctx, sprint.ID); ierr == nil {
+	if issues, ierr := h.Queries.ListIssuesBySprint(ctx, db.ListIssuesBySprintParams{SprintID: sprint.ID}); ierr == nil {
 		prefix := h.getIssuePrefix(ctx, sprint.WorkspaceID)
 		for _, iss := range issues {
 			tasks = append(tasks, sprintRegressionTask{

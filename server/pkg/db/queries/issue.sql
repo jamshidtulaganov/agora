@@ -61,6 +61,30 @@ WHERE i.workspace_id = $1
              AND a.owner_id     = sqlc.narg('involves_user_id')::uuid
     ))
   )
+  -- Restricted visibility: a non-owner member sees ONLY issues that are theirs
+  -- — assigned to them directly, to an agent they own, or to a squad they (or
+  -- an agent they own) belong to / lead. NULL disables the gate (owners see
+  -- everything). This is the AND-gate counterpart of involves_user_id, and it
+  -- additionally covers DIRECT member assignment.
+  AND (
+    sqlc.narg('restrict_to_user')::uuid IS NULL
+    OR (i.assignee_type = 'member' AND i.assignee_id = sqlc.narg('restrict_to_user')::uuid)
+    OR (i.assignee_type = 'agent' AND i.assignee_id IN (
+          SELECT a.id FROM agent a
+           WHERE a.workspace_id = $1 AND a.owner_id = sqlc.narg('restrict_to_user')::uuid))
+    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
+          SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+           WHERE s.workspace_id = $1 AND sm.member_type = 'member'
+             AND sm.member_id = sqlc.narg('restrict_to_user')::uuid
+          UNION
+          SELECT s.id FROM squad s JOIN agent a ON a.id = s.leader_id
+           WHERE s.workspace_id = $1 AND a.owner_id = sqlc.narg('restrict_to_user')::uuid
+          UNION
+          SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+            JOIN agent a ON a.id = sm.member_id
+           WHERE s.workspace_id = $1 AND sm.member_type = 'agent'
+             AND a.owner_id = sqlc.narg('restrict_to_user')::uuid))
+  )
 ORDER BY i.position ASC, i.created_at DESC
 LIMIT $2 OFFSET $3;
 
@@ -71,6 +95,28 @@ WHERE id = $1;
 -- name: GetIssueInWorkspace :one
 SELECT * FROM issue
 WHERE id = $1 AND workspace_id = $2;
+
+-- name: IssueBelongsToUser :one
+-- Whether the issue is owned by the user: assigned to them directly (member),
+-- to an agent they own, or to a squad they (or an agent they own) belong to /
+-- lead. Gates issue detail for non-owner members (mirrors issueOwnershipClause).
+SELECT EXISTS (
+  SELECT 1 FROM issue i
+  WHERE i.id = @issue_id AND i.workspace_id = @workspace_id
+    AND (
+      (i.assignee_type = 'member' AND i.assignee_id = @user_id)
+      OR (i.assignee_type = 'agent' AND i.assignee_id IN (
+            SELECT a.id FROM agent a WHERE a.workspace_id = @workspace_id AND a.owner_id = @user_id))
+      OR (i.assignee_type = 'squad' AND i.assignee_id IN (
+            SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+             WHERE s.workspace_id = @workspace_id AND sm.member_type = 'member' AND sm.member_id = @user_id
+            UNION SELECT s.id FROM squad s JOIN agent a ON a.id = s.leader_id
+             WHERE s.workspace_id = @workspace_id AND a.owner_id = @user_id
+            UNION SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+              JOIN agent a ON a.id = sm.member_id
+             WHERE s.workspace_id = @workspace_id AND sm.member_type = 'agent' AND a.owner_id = @user_id))
+    )
+);
 
 -- name: CreateIssue :one
 INSERT INTO issue (
@@ -220,6 +266,26 @@ WHERE i.workspace_id = $1
              AND a.owner_id     = sqlc.narg('involves_user_id')::uuid
     ))
   )
+  -- Restricted visibility (non-owner): only the caller's own issues. See ListIssues.
+  AND (
+    sqlc.narg('restrict_to_user')::uuid IS NULL
+    OR (i.assignee_type = 'member' AND i.assignee_id = sqlc.narg('restrict_to_user')::uuid)
+    OR (i.assignee_type = 'agent' AND i.assignee_id IN (
+          SELECT a.id FROM agent a
+           WHERE a.workspace_id = $1 AND a.owner_id = sqlc.narg('restrict_to_user')::uuid))
+    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
+          SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+           WHERE s.workspace_id = $1 AND sm.member_type = 'member'
+             AND sm.member_id = sqlc.narg('restrict_to_user')::uuid
+          UNION
+          SELECT s.id FROM squad s JOIN agent a ON a.id = s.leader_id
+           WHERE s.workspace_id = $1 AND a.owner_id = sqlc.narg('restrict_to_user')::uuid
+          UNION
+          SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+            JOIN agent a ON a.id = sm.member_id
+           WHERE s.workspace_id = $1 AND sm.member_type = 'agent'
+             AND a.owner_id = sqlc.narg('restrict_to_user')::uuid))
+  )
 ORDER BY i.position ASC, i.created_at DESC;
 
 -- name: CountIssues :one
@@ -278,10 +344,24 @@ ORDER BY position ASC, created_at DESC;
 -- (one request per visible parent lane). Result is grouped client-side by
 -- parent_issue_id; the workspace filter is also enforced so callers can't
 -- enumerate children of parents in workspaces they don't belong to.
-SELECT * FROM issue
-WHERE workspace_id = sqlc.arg('workspace_id')
-  AND parent_issue_id = ANY(sqlc.arg('parent_ids')::uuid[])
-ORDER BY parent_issue_id, position ASC, created_at DESC;
+SELECT i.* FROM issue i
+WHERE i.workspace_id = sqlc.arg('workspace_id')
+  AND i.parent_issue_id = ANY(sqlc.arg('parent_ids')::uuid[])
+  AND (
+    sqlc.narg('restrict_to_user')::uuid IS NULL
+    OR (i.assignee_type = 'member' AND i.assignee_id = sqlc.narg('restrict_to_user')::uuid)
+    OR (i.assignee_type = 'agent' AND i.assignee_id IN (
+          SELECT a.id FROM agent a
+           WHERE a.workspace_id = sqlc.arg('workspace_id') AND a.owner_id = sqlc.narg('restrict_to_user')::uuid))
+    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
+          SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+           WHERE s.workspace_id = sqlc.arg('workspace_id') AND sm.member_type = 'member' AND sm.member_id = sqlc.narg('restrict_to_user')::uuid
+          UNION SELECT s.id FROM squad s JOIN agent a ON a.id = s.leader_id
+           WHERE s.workspace_id = sqlc.arg('workspace_id') AND a.owner_id = sqlc.narg('restrict_to_user')::uuid
+          UNION SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id JOIN agent a ON a.id = sm.member_id
+           WHERE s.workspace_id = sqlc.arg('workspace_id') AND sm.member_type = 'agent' AND a.owner_id = sqlc.narg('restrict_to_user')::uuid))
+  )
+ORDER BY i.parent_issue_id, i.position ASC, i.created_at DESC;
 
 -- name: GetIssueByOrigin :one
 -- Finds the issue stamped with a specific (origin_type, origin_id) pair.
@@ -310,13 +390,27 @@ WHERE workspace_id = $1
 GROUP BY assignee_type, assignee_id;
 
 -- name: ChildIssueProgress :many
-SELECT parent_issue_id,
+SELECT i.parent_issue_id,
        COUNT(*)::bigint AS total,
-       COUNT(*) FILTER (WHERE status IN ('done', 'cancelled'))::bigint AS done
-FROM issue
-WHERE workspace_id = $1
-  AND parent_issue_id IS NOT NULL
-GROUP BY parent_issue_id;
+       COUNT(*) FILTER (WHERE i.status IN ('done', 'cancelled'))::bigint AS done
+FROM issue i
+WHERE i.workspace_id = sqlc.arg('workspace_id')
+  AND i.parent_issue_id IS NOT NULL
+  AND (
+    sqlc.narg('restrict_to_user')::uuid IS NULL
+    OR (i.assignee_type = 'member' AND i.assignee_id = sqlc.narg('restrict_to_user')::uuid)
+    OR (i.assignee_type = 'agent' AND i.assignee_id IN (
+          SELECT a.id FROM agent a
+           WHERE a.workspace_id = sqlc.arg('workspace_id') AND a.owner_id = sqlc.narg('restrict_to_user')::uuid))
+    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
+          SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id
+           WHERE s.workspace_id = sqlc.arg('workspace_id') AND sm.member_type = 'member' AND sm.member_id = sqlc.narg('restrict_to_user')::uuid
+          UNION SELECT s.id FROM squad s JOIN agent a ON a.id = s.leader_id
+           WHERE s.workspace_id = sqlc.arg('workspace_id') AND a.owner_id = sqlc.narg('restrict_to_user')::uuid
+          UNION SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id JOIN agent a ON a.id = sm.member_id
+           WHERE s.workspace_id = sqlc.arg('workspace_id') AND sm.member_type = 'agent' AND a.owner_id = sqlc.narg('restrict_to_user')::uuid))
+  )
+GROUP BY i.parent_issue_id;
 
 -- SearchIssues: moved to handler (dynamic SQL for multi-word search support).
 
