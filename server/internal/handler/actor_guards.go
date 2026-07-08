@@ -95,14 +95,29 @@ import (
 // human-equivalent or machine-equivalent.
 func RequireHumanActor(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// X-Actor-Source is server-set only. The auth middleware
-		// strips any client-supplied value before stamping its own,
-		// so a non-empty value here is authoritative.
-		switch r.Header.Get("X-Actor-Source") {
-		case "task_token", "cloud_pat":
+		if IsMachineActor(r) {
 			writeError(w, http.StatusForbidden, "this endpoint is only available to human actors")
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// IsMachineActor reports whether the request was authenticated via a
+// machine credential — a mat_ task token or an mcn_ cloud-node PAT.
+// It is the per-handler counterpart of RequireHumanActor for cases
+// where the human-only decision depends on request-body content (e.g.
+// a project resource's resource_type is only known after decoding the
+// body, so a route-level middleware can't gate it).
+//
+// X-Actor-Source is server-set only: the auth middleware strips any
+// client-supplied value before stamping its own, so a non-empty value
+// here is authoritative. See the RequireHumanActor comment above for
+// the full threat model and the extension rule for new actor kinds.
+func IsMachineActor(r *http.Request) bool {
+	switch r.Header.Get("X-Actor-Source") {
+	case "task_token", "cloud_pat":
+		return true
+	}
+	return false
 }

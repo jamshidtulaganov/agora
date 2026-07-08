@@ -464,6 +464,60 @@ func (q *Queries) ListAgentRuntimes(ctx context.Context, workspaceID pgtype.UUID
 	return items, nil
 }
 
+const listAgentRuntimesByDaemonID = `-- name: ListAgentRuntimesByDaemonID :many
+SELECT id, workspace_id, daemon_id, name, runtime_mode, provider, status, device_info, metadata, last_seen_at, created_at, updated_at, owner_id, legacy_daemon_id, visibility FROM agent_runtime
+WHERE workspace_id = $1
+  AND daemon_id = $2
+ORDER BY created_at ASC
+`
+
+type ListAgentRuntimesByDaemonIDParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	DaemonID    pgtype.Text `json:"daemon_id"`
+}
+
+// Resolves the runtime rows registered by one daemon machine in a workspace.
+// daemon_id is unique per (workspace_id, daemon_id, provider), so a single
+// machine can legitimately return several rows — one per provider. Used by
+// the project_resource handlers to verify that a local_directory ref's
+// daemon_id points at a real daemon the caller is allowed to use
+// (canUseRuntimeForAgent must pass for at least one returned row).
+func (q *Queries) ListAgentRuntimesByDaemonID(ctx context.Context, arg ListAgentRuntimesByDaemonIDParams) ([]AgentRuntime, error) {
+	rows, err := q.db.Query(ctx, listAgentRuntimesByDaemonID, arg.WorkspaceID, arg.DaemonID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AgentRuntime{}
+	for rows.Next() {
+		var i AgentRuntime
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.DaemonID,
+			&i.Name,
+			&i.RuntimeMode,
+			&i.Provider,
+			&i.Status,
+			&i.DeviceInfo,
+			&i.Metadata,
+			&i.LastSeenAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.OwnerID,
+			&i.LegacyDaemonID,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAgentRuntimesByOwner = `-- name: ListAgentRuntimesByOwner :many
 SELECT id, workspace_id, daemon_id, name, runtime_mode, provider, status, device_info, metadata, last_seen_at, created_at, updated_at, owner_id, legacy_daemon_id, visibility FROM agent_runtime
 WHERE workspace_id = $1 AND owner_id = $2

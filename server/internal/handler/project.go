@@ -343,6 +343,13 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		}
 		normalizedRefs[i] = ref
 		if res.ResourceType == "local_directory" {
+			// Bundled create is the same mutation surface as the
+			// standalone POST /resources — a machine actor must not be
+			// able to smuggle a local_directory in via project create.
+			if IsMachineActor(r) {
+				writeError(w, http.StatusForbidden, "resources["+strconv.Itoa(i)+"]: local_directory resources can only be managed by a human user")
+				return
+			}
 			var ld localDirectoryRef
 			if err := json.Unmarshal(ref, &ld); err != nil {
 				writeError(w, http.StatusBadRequest, "resources["+strconv.Itoa(i)+"]: "+err.Error())
@@ -353,6 +360,9 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			localDirSeen[ld.DaemonID] = i
+			if !h.requireLocalDirectoryDaemonAccess(w, r, wsUUID, ref, "resources["+strconv.Itoa(i)+"]: ") {
+				return
+			}
 		}
 	}
 

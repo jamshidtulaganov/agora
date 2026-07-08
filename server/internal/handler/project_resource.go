@@ -270,10 +270,24 @@ func (h *Handler) CreateProjectResource(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "resource_type is required")
 		return
 	}
+	// local_directory points an agent at a real directory on a user's
+	// machine — attaching one is a human-consent decision, so machine
+	// credentials (task tokens, cloud-node PATs) may not create them.
+	// github_repo stays machine-creatable: agent-driven repo bootstrap
+	// is a supported flow.
+	if req.ResourceType == "local_directory" && IsMachineActor(r) {
+		writeError(w, http.StatusForbidden, "local_directory resources can only be managed by a human user")
+		return
+	}
 	normalizedRef, err := validateAndNormalizeResourceRef(req.ResourceType, req.ResourceRef)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	if req.ResourceType == "local_directory" {
+		if !h.requireLocalDirectoryDaemonAccess(w, r, project.WorkspaceID, normalizedRef, "") {
+			return
+		}
 	}
 
 	if conflict, err := h.findLocalDirectoryConflict(r.Context(), project.ID, req.ResourceType, normalizedRef, pgtype.UUID{}); err != nil {
@@ -383,6 +397,13 @@ func (h *Handler) UpdateProjectResource(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusNotFound, "project resource not found")
 		return
 	}
+	// Machine actors may not mutate local_directory resources at all —
+	// including retargeting the local_path/daemon_id via a resource_ref
+	// update. Same human-consent rule as CreateProjectResource.
+	if existing.ResourceType == "local_directory" && IsMachineActor(r) {
+		writeError(w, http.StatusForbidden, "local_directory resources can only be managed by a human user")
+		return
+	}
 
 	// Decode into a raw map first so we can tell "field omitted" from
 	// "field present with zero value" — the label clear case in particular
@@ -401,6 +422,11 @@ func (h *Handler) UpdateProjectResource(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		nextRef = normalized
+		if existing.ResourceType == "local_directory" {
+			if !h.requireLocalDirectoryDaemonAccess(w, r, project.WorkspaceID, nextRef, "") {
+				return
+			}
+		}
 	}
 
 	if conflict, err := h.findLocalDirectoryConflict(r.Context(), project.ID, existing.ResourceType, nextRef, existing.ID); err != nil {
@@ -510,6 +536,55 @@ func (h *Handler) findLocalDirectoryConflict(ctx context.Context, projectID pgty
 	return false, nil
 }
 
+// requireLocalDirectoryDaemonAccess validates the daemon_id embedded in a
+// normalized local_directory ref against the workspace's registered runtimes.
+// Two gates, mirroring agent→runtime binding (CreateAgent):
+//
+//  1. The daemon_id must resolve to at least one agent_runtime row in the
+//     workspace — otherwise the ref points at a machine nobody registered
+//     (typo'd, or copied from another workspace) → 400.
+//  2. canUseRuntimeForAgent must pass for at least one of those rows —
+//     runtime owner, workspace owner/admin, or visibility=public. One
+//     daemon can carry several rows (one per provider); ANY accessible row
+//     grants the binding, because the resource targets the machine, not a
+//     specific provider → otherwise 403.
+//
+// Machine actors are rejected before this point (local_directory mutations
+// are human-only), so the member context here is always the authenticated
+// human user. errPrefix lets the bundled project-create path name the
+// offending resource index; pass "" elsewhere. Returns false after writing
+// the error response.
+func (h *Handler) requireLocalDirectoryDaemonAccess(w http.ResponseWriter, r *http.Request, workspaceID pgtype.UUID, normalizedRef json.RawMessage, errPrefix string) bool {
+	var ref localDirectoryRef
+	if err := json.Unmarshal(normalizedRef, &ref); err != nil {
+		writeError(w, http.StatusBadRequest, errPrefix+"invalid local_directory payload")
+		return false
+	}
+	runtimes, err := h.Queries.ListAgentRuntimesByDaemonID(r.Context(), db.ListAgentRuntimesByDaemonIDParams{
+		WorkspaceID: workspaceID,
+		DaemonID:    pgtype.Text{String: ref.DaemonID, Valid: true},
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, errPrefix+"failed to look up daemon runtimes")
+		return false
+	}
+	if len(runtimes) == 0 {
+		writeError(w, http.StatusBadRequest, errPrefix+"unknown daemon_id: no runtime is registered for this daemon in the workspace")
+		return false
+	}
+	member, ok := h.workspaceMember(w, r, uuidToString(workspaceID))
+	if !ok {
+		return false
+	}
+	for _, rt := range runtimes {
+		if canUseRuntimeForAgent(member, rt) {
+			return true
+		}
+	}
+	writeError(w, http.StatusForbidden, errPrefix+"this daemon's runtime is private; only its owner or a workspace admin can bind its local directories")
+	return false
+}
+
 // DeleteProjectResource removes a resource from a project.
 func (h *Handler) DeleteProjectResource(w http.ResponseWriter, r *http.Request) {
 	project, ok := h.loadProjectForResource(w, r, chi.URLParam(r, "id"))
@@ -533,6 +608,12 @@ func (h *Handler) DeleteProjectResource(w http.ResponseWriter, r *http.Request) 
 	}
 	if uuidToString(resource.ProjectID) != uuidToString(project.ID) {
 		writeError(w, http.StatusNotFound, "project resource not found")
+		return
+	}
+	// Same human-consent rule as create/update: a machine credential may
+	// not detach a user's local directory binding.
+	if resource.ResourceType == "local_directory" && IsMachineActor(r) {
+		writeError(w, http.StatusForbidden, "local_directory resources can only be managed by a human user")
 		return
 	}
 	if err := h.Queries.DeleteProjectResource(r.Context(), resource.ID); err != nil {

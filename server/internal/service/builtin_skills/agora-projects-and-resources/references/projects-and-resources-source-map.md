@@ -7,6 +7,8 @@
 - `project resource update` merges shortcut edits with existing `resource_ref` so a partial edit does not clobber required fields.
 - `server/cmd/server/router.go` exposes `/api/projects` plus `/api/projects/{projectId}/resources` routes.
 - `server/pkg/db/queries/project_resource.sql` is the CRUD query surface for `project_resource` rows.
+- `local_directory` mutations are human-gated: `IsMachineActor` (`server/internal/handler/actor_guards.go`) returns 403 for `task_token` / `cloud_pat` actors in `CreateProjectResource` / `UpdateProjectResource` / `DeleteProjectResource` (`server/internal/handler/project_resource.go`) and in `CreateProject`'s bundled-resources loop (`server/internal/handler/project.go`). `github_repo` stays machine-creatable.
+- `requireLocalDirectoryDaemonAccess` (`server/internal/handler/project_resource.go`) validates the ref's `daemon_id` on create and on any `resource_ref` update via `ListAgentRuntimesByDaemonID` (`server/pkg/db/queries/runtime.sql`): no runtime rows → 400 unknown daemon_id; otherwise `canUseRuntimeForAgent` (`server/internal/handler/runtime.go`) must pass for at least one row (runtime owner, workspace owner/admin, or `visibility=public`) → else 403.
 - Project resources are written into `.agora/project/resources.json` for agent workdirs.
 - `server/cmd/agora/cmd_project.go` also registers `project qa-manifest get/set/build` (`set` reads `--file` or stdin and PUTs the manifest JSON).
 - `server/internal/handler/project_qa_manifest.go` implements `PUT /api/projects/{id}/qa-manifest` (merge-writes ONLY the `qa_manifest` key in `project.settings`; validates base_url + non-empty routes/flows/auth) and `POST /api/projects/{id}/qa-manifest/build` (queues the lead agent's derivation task).

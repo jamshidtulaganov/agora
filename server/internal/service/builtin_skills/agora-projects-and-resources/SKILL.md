@@ -39,7 +39,6 @@ agora project update <project-id> --title "<title>" --output json
 agora project status <project-id> in_progress --output json
 agora project resource list <project-id> --output json
 agora project resource add <project-id> --type github_repo --url <github-url> --output json
-agora project resource add <project-id> --type local_directory --local-path <abs-path> --daemon-id <daemon-id> --output json
 agora project resource update <project-id> <resource-id> --url <new-github-url> --output json
 agora project resource remove <project-id> <resource-id> --output json
 agora project qa-manifest get <project-id>
@@ -49,9 +48,19 @@ agora project qa-manifest build <project-id>
 
 Use `--ref '<json>'` only for resource types or payloads not covered by shortcuts.
 
+`local_directory` resources are **human-only**: any create, update, or delete of
+a `local_directory` resource attempted with an agent task token or cloud PAT
+returns 403 — including bundling one into project create. Do not retry; ask the
+user to attach the directory themselves (Desktop folder picker, or
+`agora project resource add <project-id> --type local_directory --local-path <abs-path> --daemon-id <daemon-id>`
+from their own CLI session). The ref's `daemon_id` must also resolve to a
+daemon runtime registered in the workspace that the human caller may use
+(runtime owner, workspace owner/admin, or `visibility=public`); unknown daemon
+ids are rejected with 400.
+
 ## When to add a resource
 
-Add/update a project resource when the user asks for durable project context: "把这个 GitHub repo 绑到项目上", "以后都用这个 repo", "agent 总是拿不到这个项目的仓库", or "这个项目要在我的本地目录里跑".
+Add/update a project resource when the user asks for durable project context: "把这个 GitHub repo 绑到项目上", "以后都用这个 repo", "agent 总是拿不到这个项目的仓库", or "这个项目要在我的本地目录里跑" — for the last one, `local_directory` is human-only, so guide the user through attaching it instead of calling the API yourself.
 
 Project resources are durable and affect future tasks. `agora repo checkout`
 is task-local checkout state.
@@ -113,6 +122,6 @@ items — you do NOT hand-edit it.
 
 ## Side effects
 
-Project create/update/delete/status, project resource add/update/remove, and `qa-manifest set` mutate durable workspace state and affect future tasks. Creating a project with a repo (or attaching the first repo) also queues background knowledge-base and QA-manifest builds for an agent lead. Ask before changing `local_directory` unless the user explicitly requested that exact local path.
+Project create/update/delete/status, project resource add/update/remove, and `qa-manifest set` mutate durable workspace state and affect future tasks. Creating a project with a repo (or attaching the first repo) also queues background knowledge-base and QA-manifest builds for an agent lead. `local_directory` resources cannot be changed by agents at all — the API returns 403 for machine credentials on create/update/delete; a 403 there is the expected contract, not an error to work around.
 
 More source-backed details: `references/projects-and-resources-source-map.md`.

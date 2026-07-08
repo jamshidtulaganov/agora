@@ -29,6 +29,18 @@ FOR UPDATE;
 SELECT * FROM agent_runtime
 WHERE id = $1 AND workspace_id = $2;
 
+-- name: ListAgentRuntimesByDaemonID :many
+-- Resolves the runtime rows registered by one daemon machine in a workspace.
+-- daemon_id is unique per (workspace_id, daemon_id, provider), so a single
+-- machine can legitimately return several rows — one per provider. Used by
+-- the project_resource handlers to verify that a local_directory ref's
+-- daemon_id points at a real daemon the caller is allowed to use
+-- (canUseRuntimeForAgent must pass for at least one returned row).
+SELECT * FROM agent_runtime
+WHERE workspace_id = $1
+  AND daemon_id = $2
+ORDER BY created_at ASC;
+
 -- name: UpsertAgentRuntime :one
 -- (xmax = 0) AS inserted distinguishes a fresh insert (true) from an upsert
 -- that updated an existing row (false). Analytics reads this to fire

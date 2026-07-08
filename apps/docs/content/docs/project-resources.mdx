@@ -94,9 +94,20 @@ agora project resource update <project-id> <resource-id> \
 
 `--daemon-id` comes from `agora daemon list`. The CLI also accepts the generic `--ref '<json>'` escape hatch if you'd rather pass the payload directly.
 
+### Who can attach one
+
+`local_directory` mutations are **human-only**. Any create, update, or delete of a `local_directory` resource made with a machine credential — an agent's task token or a cloud-node PAT — returns `403`, including the bundled path where resources ride along on project create. An agent can never bind itself (or another agent) to a folder on your machine; if a task genuinely needs a local directory, the agent should ask you to attach it. `github_repo` resources are unaffected — agents keep creating those as part of normal repo bootstrap.
+
+The `daemon_id` is validated at attach time and again whenever the `resource_ref` changes:
+
+- It must match a daemon runtime **registered in the workspace** — an unknown or typo'd daemon ID is rejected with `400`.
+- The runtime must be one **you are allowed to use**: you own it, it's shared (`visibility=public`), or you're a workspace owner/admin. Pointing a resource at another member's private daemon is rejected with `403`.
+
+This is the same ownership rule that governs binding an agent to a runtime, applied to the machine the directory lives on.
+
 ### Path rules
 
-The path you attach must clear both an attach-time and a per-task validation. Both are enforced by the daemon that owns the resource — the server only stores the JSON. A path that breaks any rule fails the task with a typed error and leaves your directory untouched:
+The path you attach must clear both an attach-time and a per-task validation. Both are enforced by the daemon that owns the resource — the server validates who may attach and which daemon the ref points at (see above), but never inspects the path itself. A path that breaks any rule fails the task with a typed error and leaves your directory untouched:
 
 - Must be **absolute**.
 - Must **exist** and be a **directory** (not a file, symlink to a file, or device node).

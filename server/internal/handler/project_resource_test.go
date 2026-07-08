@@ -269,6 +269,9 @@ func TestProjectResourceLocalDirectoryLifecycle(t *testing.T) {
 		daemonID  = "daemon-aaaa-bbbb-cccc"
 		localPath = "/Users/foo/work/my-game"
 	)
+	// local_directory refs must resolve to a registered daemon runtime the
+	// caller can use (WS1 PR-A daemon ownership binding).
+	createHandlerTestDaemonRuntime(t, daemonID, "claude_code", testUserID, "private")
 
 	// Happy path: attach local_directory resource with label.
 	w := httptest.NewRecorder()
@@ -709,6 +712,13 @@ func TestProjectResourceUpdateLifecycle(t *testing.T) {
 		testHandler.DeleteProject(httptest.NewRecorder(), r)
 	}()
 
+	// local_directory refs must resolve to registered daemon runtimes the
+	// caller can use (WS1 PR-A daemon ownership binding). d3 is only used
+	// in a ref that fails schema validation before the binding check, so
+	// it needs no runtime row.
+	createHandlerTestDaemonRuntime(t, "d1", "claude_code", testUserID, "private")
+	createHandlerTestDaemonRuntime(t, "d2", "claude_code", testUserID, "private")
+
 	// Seed one local_directory resource we will mutate.
 	w = httptest.NewRecorder()
 	req = newRequest("POST", "/api/projects/"+project.ID+"/resources", map[string]any{
@@ -856,6 +866,10 @@ func TestProjectResourceLocalDirectoryDaemonScopedConflict(t *testing.T) {
 		otherDaemon = "d-other"
 		localPath   = "/Users/foo/work/scoped"
 	)
+	// Both daemons must exist as runtimes the caller can use (WS1 PR-A
+	// daemon ownership binding).
+	createHandlerTestDaemonRuntime(t, daemonID, "claude_code", testUserID, "private")
+	createHandlerTestDaemonRuntime(t, otherDaemon, "claude_code", testUserID, "private")
 
 	// First attach succeeds.
 	w = httptest.NewRecorder()
@@ -972,6 +986,13 @@ func TestProjectResourceLocalDirectoryDaemonScopedConflict(t *testing.T) {
 // with different labels, or different paths on the same daemon — must
 // reject with 400 before any DB work.
 func TestCreateProjectBundledLocalDirectoryDaemonConflict(t *testing.T) {
+	// Bundled local_directory refs go through the same daemon ownership
+	// binding as the standalone endpoint (WS1 PR-A), so every daemon_id
+	// used below needs a registered runtime row.
+	createHandlerTestDaemonRuntime(t, "d-bundle", "claude_code", testUserID, "private")
+	createHandlerTestDaemonRuntime(t, "d-bundle-1", "claude_code", testUserID, "private")
+	createHandlerTestDaemonRuntime(t, "d-bundle-2", "claude_code", testUserID, "private")
+
 	w := httptest.NewRecorder()
 	req := newRequest("POST", "/api/projects?workspace_id="+testWorkspaceID, map[string]any{
 		"title": "Bundled label shadow",
