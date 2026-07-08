@@ -97,6 +97,8 @@
     "serving_count_one": "{{count}} agent",
     "serving_count_other": "{{count}} agent",
     "no_agents": "Hozircha bu runtime’ga hech qanday agent bog‘lanmagan.",
+    "no_agents_hint": "Vazifalarni bajarishni boshlash uchun agent bog‘lang — istalgan agentni oching va uning Runtime’ini {{name}} qilib tanlang (yoki shu yerda yangi agent yarating).",
+    "no_agents_cta": "Agentlarni ko‘rish",
     "diagnostics_title": "Diagnostika",
     "diagnostics_cli": "CLI",
     "diagnostics_visibility": "Ko‘rinish",

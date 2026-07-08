@@ -92,6 +92,8 @@
     "serving_title": "服务中",
     "serving_count_other": "{{count}} 个智能体",
     "no_agents": "还没有智能体绑定到这个运行时。",
+    "no_agents_hint": "绑定一个智能体即可开始处理任务 — 打开任意智能体，将其运行时设为 {{name}}（或在其上创建新智能体）。",
+    "no_agents_cta": "浏览智能体",
     "diagnostics_title": "诊断",
     "diagnostics_cli": "CLI",
     "diagnostics_visibility": "可见性",

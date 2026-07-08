@@ -173,6 +173,8 @@ export function RuntimeDetail({ runtime }: { runtime: AgentRuntime }) {
               agents={servingAgents}
               presenceMap={presenceMap}
               agentHref={(id) => paths.agentDetail(id)}
+              agentsHref={paths.agents()}
+              runtimeName={runtime.name}
             />
             <DiagnosticsCard
               runtime={runtime}
@@ -359,10 +361,14 @@ function ServingAgentsCard({
   agents,
   presenceMap,
   agentHref,
+  agentsHref,
+  runtimeName,
 }: {
   agents: Agent[];
   presenceMap: Map<string, AgentPresenceDetail>;
   agentHref: (agentId: string) => string;
+  agentsHref: string;
+  runtimeName: string;
 }) {
   const { t } = useT("runtimes");
   const { t: tAgents } = useT("agents");
@@ -375,11 +381,25 @@ function ServingAgentsCard({
         </span>
       </div>
       {agents.length === 0 ? (
+        // Empty runtime is the #1 "now what?" moment: it's online but idle
+        // because nothing is bound to it. Spell out the bind step (agent →
+        // Runtime → this one) and give a one-click path to the agents list,
+        // instead of a dead-end "0 agents" state.
         <div className="flex flex-col items-center px-4 py-6 text-center">
           <Cpu className="h-5 w-5 text-muted-foreground/40" />
           <p className="mt-2 text-xs text-muted-foreground">
             {t(($) => $.detail.no_agents)}
           </p>
+          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground/80">
+            {t(($) => $.detail.no_agents_hint, { name: runtimeName })}
+          </p>
+          <AppLink
+            href={agentsHref}
+            className="mt-3 inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-accent/40 focus-visible:bg-accent/40 focus-visible:outline-none"
+          >
+            {t(($) => $.detail.no_agents_cta)}
+            <ChevronRight className="h-3.5 w-3.5" />
+          </AppLink>
         </div>
       ) : (
         <div className="divide-y">

@@ -97,6 +97,8 @@
     "serving_count_one": "{{count}} agent",
     "serving_count_other": "{{count}} agents",
     "no_agents": "No agents are bound to this runtime yet.",
+    "no_agents_hint": "Bind an agent to start serving tasks — open any agent, then set its Runtime to {{name}} (or create a new agent on it).",
+    "no_agents_cta": "Browse agents",
     "diagnostics_title": "Diagnostics",
     "diagnostics_cli": "CLI",
     "diagnostics_visibility": "Visibility",

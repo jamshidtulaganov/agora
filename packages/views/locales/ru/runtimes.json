@@ -97,6 +97,8 @@
     "serving_count_one": "{{count}} агент",
     "serving_count_other": "{{count}} агентов",
     "no_agents": "К этому runtime пока не привязан ни один агент.",
+    "no_agents_hint": "Привяжите агента, чтобы начать выполнять задачи — откройте любого агента и укажите ему runtime {{name}} (или создайте нового агента на нём).",
+    "no_agents_cta": "Открыть агентов",
     "diagnostics_title": "Диагностика",
     "diagnostics_cli": "CLI",
     "diagnostics_visibility": "Видимость",
