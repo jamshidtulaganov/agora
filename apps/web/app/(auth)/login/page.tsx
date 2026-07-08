@@ -209,6 +209,14 @@ function LoginPageContent() {
           : undefined
       }
       onTokenObtained={setLoggedInCookie}
+      extra={
+        <a
+          href="/homepage"
+          className="block text-center text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          ← {t(($) => $.signin.back_home)}
+        </a>
+      }
     />
   );
 }
