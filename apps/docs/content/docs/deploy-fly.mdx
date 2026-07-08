@@ -60,6 +60,7 @@ Fill in:
 | `JWT_SECRET` | `agora-backend` | Generate with `openssl rand -hex 32` |
 | `SMTP_PASSWORD` | `agora-backend` | Gmail app password (or your SMTP relay's) |
 | `GOOGLE_CLIENT_SECRET` | `agora-backend` | From your Google OAuth client |
+| `AGORA_GIT_SECRET_KEY` | `agora-backend` | **Optional.** Seals per-workspace git PATs + editor tokens at rest (NaCl secretbox). Set it to enable "connect GitHub account" and private multi-repo clones; leave blank to keep git-connect off. Generate with `openssl rand -base64 32`. Keep it stable once set — rotating orphans any already-sealed credential. |
 
 `DATABASE_URL` is derived from `POSTGRES_PASSWORD` by the script. Non-secret config
 (public URLs, `GOOGLE_CLIENT_ID`, SMTP host/user) lives in each app's
