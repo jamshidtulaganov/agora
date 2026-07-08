@@ -2346,12 +2346,19 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 	// fires only after execenv.Prepare/Reuse has put env.WorkDir on disk,
 	// so consumers that read status==running can resolve the workdir path
 	// without racing the daemon's os.MkdirAll.
-	localRelease, abort := d.acquireLocalDirectoryLockIfNeeded(ctx, task, taskLog)
+	localRelease, localGit, abort := d.acquireLocalDirectoryLockIfNeeded(ctx, task, taskLog)
 	if abort {
 		return
 	}
 	if localRelease != nil {
 		defer localRelease()
+	}
+	// Backstop: whatever exit this task takes, restore the user's branch (or
+	// keep the agent branch when it holds commits). finalizeLocalDirGit is
+	// idempotent, so the explicit calls below on the reported paths win and
+	// this only fires on early returns (e.g. cancellation) that skip them.
+	if localGit != nil {
+		defer finalizeLocalDirGit(ctx, localGit, taskLog)
 	}
 
 	// Hold a process-wide active-root guard for the rest of this task so
@@ -2419,6 +2426,11 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 	default:
 	}
 
+	// Restore the user's branch (or keep the agent branch when it holds
+	// commits) before reporting, so the git summary can ride the result
+	// comment / failure detail. The deferred backstop above becomes a no-op.
+	localGitSummary := finalizeLocalDirGit(ctx, localGit, taskLog)
+
 	if err != nil {
 		taskLog.Error("task failed", "error", err)
 		// runTask returned without a TaskResult, so we don't have a SessionID
@@ -2427,7 +2439,11 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 		// classifier so the failure_reason column reflects the actual
 		// shape of the failure (provider 5xx, network, process crash,
 		// …) rather than the coarse legacy "agent_error" bucket.
-		if failErr := d.client.FailTask(ctx, task.ID, err.Error(), "", "", taskfailure.Classify(err.Error()).String()); failErr != nil {
+		failDetail := err.Error()
+		if localGitSummary != "" {
+			failDetail += "\n\n" + localGitSummary
+		}
+		if failErr := d.client.FailTask(ctx, task.ID, failDetail, "", "", taskfailure.Classify(err.Error()).String()); failErr != nil {
 			taskLog.Error("fail task callback failed", "error", failErr)
 		}
 		return
@@ -2443,6 +2459,16 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 	if status, err := d.client.GetTaskStatus(ctx, task.ID); shouldInterruptAgent(status, err) {
 		taskLog.Info("task cancelled during execution, discarding result", "status", status, "error", err)
 		return
+	}
+
+	// Tell the user what the agent did to their local directory (branch it
+	// landed on, how to get back, dirty-tree backup). Empty for plain folders
+	// and for read-only runs that were torn down with no trace.
+	if localGitSummary != "" {
+		if result.Comment != "" {
+			result.Comment += "\n\n"
+		}
+		result.Comment += localGitSummary
 	}
 
 	d.reportTaskResult(ctx, task.ID, result, taskLog)
@@ -2486,9 +2512,9 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 //     lock, then return the release callback once we win.
 //  4. The blocking wait is cancelled (daemon shutdown, server-side cancel)
 //     — fail the task with the ctx error.
-func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Task, taskLog *slog.Logger) (release func(), abort bool) {
+func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Task, taskLog *slog.Logger) (release func(), localGit *localDirGit, abort bool) {
 	if len(task.ProjectResources) == 0 || d.cfg.DaemonID == "" {
-		return nil, false
+		return nil, nil, false
 	}
 	assignment, err := findLocalDirectoryAssignment(task.ProjectResources, d.cfg.DaemonID)
 	if err != nil {
@@ -2496,10 +2522,10 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 		if failErr := d.client.FailTask(ctx, task.ID, err.Error(), "", "", "local_directory_error"); failErr != nil {
 			taskLog.Error("fail task after local_directory resolve error", "error", failErr)
 		}
-		return nil, true
+		return nil, nil, true
 	}
 	if assignment == nil {
-		return nil, false
+		return nil, nil, false
 	}
 	taskLog = taskLog.With("local_directory", assignment.AbsPath)
 	if err := validateLocalPath(assignment.AbsPath); err != nil {
@@ -2507,7 +2533,7 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 		if failErr := d.client.FailTask(ctx, task.ID, err.Error(), "", "", "local_directory_error"); failErr != nil {
 			taskLog.Error("fail task after local_directory validation error", "error", failErr)
 		}
-		return nil, true
+		return nil, nil, true
 	}
 	// Consent gate: the server-side resource row is not authoritative — the
 	// machine owner must have approved this exact directory (or an ancestor)
@@ -2519,7 +2545,7 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 		if failErr := d.client.FailTask(ctx, task.ID, err.Error(), "", "", "local_directory_error"); failErr != nil {
 			taskLog.Error("fail task after local_directory approval error", "error", failErr)
 		}
-		return nil, true
+		return nil, nil, true
 	}
 
 	// While the lock is contended the daemon would otherwise sit blocked on
@@ -2579,7 +2605,7 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 			select {
 			case <-cancelledByPoll:
 				taskLog.Info("local_directory: wait aborted by server-side terminal state")
-				return nil, true
+				return nil, nil, true
 			default:
 			}
 		}
@@ -2591,10 +2617,29 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 		if failErr := d.client.FailTask(ctx, task.ID, fmt.Sprintf("local_directory wait cancelled: %s", err.Error()), "", "", failureReason); failErr != nil {
 			taskLog.Error("fail task after local_directory lock cancel", "error", failErr)
 		}
-		return nil, true
+		return nil, nil, true
 	}
 	taskLog.Info("local_directory: lock acquired")
-	return release, false
+
+	// Now that the path is ours for the whole task, put a git work tree on an
+	// isolated agent branch (and snapshot any pre-existing dirty state) so the
+	// agent's commits never land on the user's branch. Plain folders return a
+	// nil localGit and keep today's in-place behavior. A git-prep failure
+	// fails the task: running without isolation is the harm we're preventing.
+	agentName := "agent"
+	if task.Agent != nil && task.Agent.Name != "" {
+		agentName = task.Agent.Name
+	}
+	localGit, gitErr := prepareLocalDirGit(ctx, assignment.AbsPath, agentName, task.ID, taskLog)
+	if gitErr != nil {
+		taskLog.Error("local_directory: git prepare failed", "error", gitErr)
+		release()
+		if failErr := d.client.FailTask(ctx, task.ID, fmt.Sprintf("local_directory git setup failed: %s", gitErr.Error()), "", "", "local_directory_error"); failErr != nil {
+			taskLog.Error("fail task after local_directory git prepare error", "error", failErr)
+		}
+		return nil, nil, true
+	}
+	return release, localGit, false
 }
 
 // reportTaskResult writes the final task disposition back to the server.

@@ -538,7 +538,7 @@ func TestAcquireLocalDirectoryLock_CancelDuringWait(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		rel, abort := d.acquireLocalDirectoryLockIfNeeded(context.Background(), task, slog.Default())
+		rel, _, abort := d.acquireLocalDirectoryLockIfNeeded(context.Background(), task, slog.Default())
 		done <- result{release: rel, abort: abort}
 	}()
 
@@ -608,7 +608,7 @@ func TestAcquireLocalDirectoryLock_UnapprovedPathFailsTask(t *testing.T) {
 		},
 	}
 
-	release, abort := d.acquireLocalDirectoryLockIfNeeded(context.Background(), task, slog.Default())
+	release, _, abort := d.acquireLocalDirectoryLockIfNeeded(context.Background(), task, slog.Default())
 	if !abort {
 		t.Fatal("expected abort=true for an unapproved path")
 	}
@@ -627,7 +627,7 @@ func TestAcquireLocalDirectoryLock_UnapprovedPathFailsTask(t *testing.T) {
 
 	// Approval flips the outcome: same daemon, same task, path now allowed.
 	t.Setenv("AGORA_LOCAL_DIR_ALLOWLIST", dir)
-	release, abort = d.acquireLocalDirectoryLockIfNeeded(context.Background(), task, slog.Default())
+	release, _, abort = d.acquireLocalDirectoryLockIfNeeded(context.Background(), task, slog.Default())
 	if abort {
 		t.Fatal("approved path should not abort")
 	}

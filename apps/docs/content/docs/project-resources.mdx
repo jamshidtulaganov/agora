@@ -58,7 +58,7 @@ The trade-off vs. `github_repo` is intentional: only the bound daemon can pick u
 | --- | --- | --- |
 | Checkout cost per task | Fresh clone + worktree | None — agent runs in place |
 | Concurrency on the same repo | Many tasks in parallel | One at a time per directory |
-| Branch / dirty state | Each task gets a fresh branch from the default | Whatever the directory currently has |
+| Branch / dirty state | Each task gets a fresh branch from the default | Agent commits go on an isolated `agent/…` branch off your current HEAD; dirty tracked state is snapshotted first |
 | Where it can run | Any daemon | Exactly one daemon (the one bound) |
 | Disk footprint | One worktree per task | Zero overhead — your existing folder |
 
@@ -162,13 +162,23 @@ The wait is not a timeout — a parked task stays parked until either the lock r
 - **Will write** whatever code edits the agent decides to make — exactly the same way as if you'd run the agent locally yourself.
 - **Will never physically delete** the directory or anything inside it. Garbage collection is path-aware: for `local_directory` envRoots it cleans only its own `output/` and `logs/` under `workspacesRoot`, and treats the user's directory as off-limits.
 
+### Git safety (when the directory is a git repo)
+
+If the folder is a git work tree, the daemon protects your branch and your uncommitted work automatically:
+
+- **Your commits stay yours.** Before the agent runs, the daemon creates an isolated branch `agent/<agent-name>/<short-task-id>` from your current `HEAD` and checks it out. The agent's commits land there, never on your branch. Your branch ref is never moved.
+- **Read-only runs leave no trace.** If the agent makes no commits (a QA gate, an inspection), the daemon deletes that branch and puts you back on your original branch when the task ends — the repo is exactly where you left it.
+- **When the agent did commit, you stay on the agent branch** so you can review the work in place. The task's result comment tells you the branch name and the one-liner to get back (`git checkout <your-branch>`). Switching back is left to you on purpose — the daemon never rewrites your working-tree files out from under you after a real run.
+- **Dirty work is backed up.** If your tree has uncommitted tracked changes when the agent starts, the daemon snapshots them to `refs/agora/backup/<short-task-id>` with `git stash create` — a zero-touch backup that moves no files. Recover with `git stash apply <ref>` (the recovery command is printed in the result comment). Untracked files are **not** captured by this snapshot.
+- Plain (non-git) folders skip all of the above and run exactly in place, as before.
+
 ### v1 limits (will tighten in follow-ups)
 
 The first release deliberately ships with sharper edges than `github_repo`. Expect this list to shrink over time — what's documented here is what's true today:
 
-- **No automatic branch switching.** The agent runs in whatever branch you have checked out. Switch branches before dispatching if it matters.
-- **No dirty-tree protection or auto-commit.** Uncommitted changes are visible to the agent, may be modified in place, and won't be stashed. Treat the directory as a real working tree and commit before risky runs.
-- **No automatic PR.** When the task ends, the changes sit on whatever branch they were made on — nothing is pushed and no PR is opened. Push and open the PR yourself when you're ready.
+- **Untracked files aren't snapshotted.** The dirty-tree backup captures tracked modifications only; an agent that overwrites or deletes an untracked file leaves nothing to recover from. Commit or stash untracked work you care about before a risky run.
+- **You're left on the agent branch after a run with commits.** The daemon doesn't switch you back automatically (that would rewrite your working tree). The result comment gives you the return command.
+- **No automatic PR.** When the task ends, the changes sit on the agent branch — nothing is pushed and no PR is opened. Push and open the PR yourself when you're ready.
 - **`waiting_local_directory` shows status, not the holder.** The badge tells you the task is parked; it doesn't surface which task or which file path is currently holding the directory.
 
 These are tracked as the agent-task-lifecycle follow-up to the local-directory work; until that ships, treat `local_directory` as "the agent runs in your folder, the same way you would."
