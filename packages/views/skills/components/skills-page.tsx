@@ -15,7 +15,6 @@ import type {
   SkillSummary,
 } from "@agora/core/types";
 import { useQuery } from "@tanstack/react-query";
-import { getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import { useAuthStore } from "@agora/core/auth";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { useWorkspacePaths } from "@agora/core/paths";
@@ -27,7 +26,6 @@ import {
 } from "@agora/core/workspace/queries";
 import { runtimeListOptions } from "@agora/core/runtimes";
 import { Button } from "@agora/ui/components/ui/button";
-import { DataTable } from "@agora/ui/components/ui/data-table";
 import { Input } from "@agora/ui/components/ui/input";
 import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import {
@@ -40,7 +38,7 @@ import { PageHeader } from "../../layout/page-header";
 import { canEditSkill } from "../hooks/use-can-edit-skill";
 import { readOrigin } from "../lib/origin";
 import { CreateSkillDialog } from "./create-skill-dialog";
-import { type SkillRow, useSkillColumns } from "./skill-columns";
+import { SkillCard, type SkillRow } from "./skill-card";
 import { useT } from "../../i18n";
 
 type FilterKey = "all" | "used" | "unused" | "mine";
@@ -273,15 +271,6 @@ export default function SkillsPage() {
     myRole,
   ]);
 
-  const columns = useSkillColumns();
-
-  const table = useReactTable({
-    data: skillRows,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    enableColumnResizing: true,
-  });
-
   // --- Loading ---
   if (isLoading) {
     return (
@@ -404,12 +393,17 @@ export default function SkillsPage() {
                 </p>
               </div>
             ) : (
-              <DataTable
-                table={table}
-                onRowClick={(row) =>
-                  navigation.push(paths.skillDetail(row.original.skill.id))
-                }
-              />
+              <div className="flex-1 overflow-y-auto p-3 sm:p-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {skillRows.map((row) => (
+                    <SkillCard
+                      key={row.skill.id}
+                      row={row}
+                      href={paths.skillDetail(row.skill.id)}
+                    />
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         )}
