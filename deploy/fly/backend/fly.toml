@@ -66,8 +66,8 @@ primary_region = "fra"
   SMTP_EHLO_NAME = "sd-agora-backend.fly.dev"
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "1gb"
+  size = "shared-cpu-2x"
+  memory = "2048"
 
 [[restart]]
   policy = "always"

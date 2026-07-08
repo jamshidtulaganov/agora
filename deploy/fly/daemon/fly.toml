@@ -35,8 +35,8 @@ primary_region = "fra"
 # No [http_service]: the daemon is outbound-only (dials the backend), so there
 # is nothing to expose. The machine stays up via the always-restart policy.
 [[vm]]
-  size = "shared-cpu-2x"
-  memory = "2048"
+  size = "performance-2x"
+  memory = "4096"
 
 [[restart]]
   policy = "always"
