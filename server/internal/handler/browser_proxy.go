@@ -1,11 +1,15 @@
 package handler
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -168,11 +172,26 @@ func (h *Handler) ProxyBrowser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
+	// When proxying a dev-server (/editor/local/<port>/…), its HTML/JS/CSS
+	// reference assets at absolute-root paths (/@vite/client, /src/…,
+	// /node_modules/…, /assets/…). Those resolve against OUR origin, not the
+	// proxied app, so they 404. Rewrite them to carry the full proxy prefix so
+	// the iframe's asset graph loads. devPrefix is that full browser prefix
+	// ("/browser/proxy/<tok>/editor/local/<port>"), empty for non-preview paths.
+	devPrefix := ""
+	if port := devServerPort(upstream); port != "" {
+		devPrefix = prefix + "/editor/local/" + port
+	}
 	addr := t.addr
 	proxy := httputil.NewSingleHostReverseProxy(&url.URL{Scheme: "http", Host: addr})
 	orig := proxy.Director
 	proxy.Director = func(req *http.Request) {
 		orig(req)
+		// Ask the dev server for uncompressed bytes so ModifyResponse can
+		// rewrite them without gunzip/regzip. Only matters for the app itself.
+		if devPrefix != "" {
+			req.Header.Set("Accept-Encoding", "identity")
+		}
 		req.URL.Path = upstream
 		req.Host = addr
 		// The daemon's WebSocket upgrader and CORS helper only trust an empty or
@@ -181,9 +200,87 @@ func (h *Handler) ProxyBrowser(w http.ResponseWriter, r *http.Request) {
 		// it; the session + membership checks above are the real access control.
 		req.Header.Del("Origin")
 	}
+	// Rewrite the dev-server app's absolute-root asset refs to carry the proxy
+	// prefix (only for /editor/local/ HTML/JS/CSS). Everything else passes
+	// through untouched.
+	if devPrefix != "" {
+		proxy.ModifyResponse = func(resp *http.Response) error {
+			return rewriteDevServerResponse(resp, devPrefix)
+		}
+	}
 	// The global CSP middleware stamps the API policy on every response; these
 	// responses are consumed by the pane's fetch/WS (not an iframe), but keep
 	// parity with the editor/trace proxies so nothing downstream is surprised.
 	w.Header().Del("Content-Security-Policy")
 	proxy.ServeHTTP(w, r)
+}
+
+// devServerPort returns the <port> in an upstream path of the form
+// /editor/local/<port>/… (the proxied dev-server route), or "" for anything
+// else. Digits only — the port was allocated by the daemon, but validate the
+// shape so a crafted path can't smuggle a rewrite prefix.
+func devServerPort(upstreamPath string) string {
+	const p = "/editor/local/"
+	if !strings.HasPrefix(upstreamPath, p) {
+		return ""
+	}
+	rest := upstreamPath[len(p):]
+	port, _, _ := strings.Cut(rest, "/")
+	if port == "" {
+		return ""
+	}
+	for _, c := range port {
+		if c < '0' || c > '9' {
+			return ""
+		}
+	}
+	return port
+}
+
+// devRootRefs matches an absolute-root reference to a Vite/bundler dev root,
+// captured right after a delimiter (quote, paren, =, or whitespace) so we only
+// touch real references, not arbitrary "/foo" substrings. The alternation is
+// the fixed set of roots a dev server serves its module graph + assets from.
+var devRootRefs = regexp.MustCompile(
+	`([\"'` + "`" + `(=\s])/((?:@vite/|@react-refresh|@id/|@fs/|src/|node_modules/|assets/|@vite-plugin|__vite))`,
+)
+
+// rewriteDevServerResponse rewrites absolute-root asset refs in an HTML/JS/CSS
+// dev-server response so they resolve through the proxy prefix. Non-text
+// responses and other content types pass through untouched. Pure except for
+// mutating resp.Body + headers; the matching logic is in rewriteDevServerBody
+// for unit testing.
+func rewriteDevServerResponse(resp *http.Response, devPrefix string) error {
+	ct := resp.Header.Get("Content-Type")
+	if !isRewritableContentType(ct) {
+		return nil
+	}
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		return err
+	}
+	out := rewriteDevServerBody(body, devPrefix)
+	resp.Body = io.NopCloser(bytes.NewReader(out))
+	resp.ContentLength = int64(len(out))
+	resp.Header.Set("Content-Length", strconv.Itoa(len(out)))
+	// A rewritten body no longer matches the upstream validator.
+	resp.Header.Del("ETag")
+	return nil
+}
+
+// isRewritableContentType gates rewriting to the text formats that carry
+// absolute-root refs (HTML entry, JS modules, CSS url()). JSON, images, fonts,
+// wasm and the like pass through byte-for-byte.
+func isRewritableContentType(ct string) bool {
+	ct = strings.ToLower(ct)
+	return strings.Contains(ct, "text/html") ||
+		strings.Contains(ct, "javascript") ||
+		strings.Contains(ct, "text/css")
+}
+
+// rewriteDevServerBody is the pure core: prefix every absolute-root dev-server
+// ref with devPrefix. Exported-ish (package) for unit tests.
+func rewriteDevServerBody(body []byte, devPrefix string) []byte {
+	return devRootRefs.ReplaceAll(body, []byte("${1}"+devPrefix+"/${2}"))
 }
