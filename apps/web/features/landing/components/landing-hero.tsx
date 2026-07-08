@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Check, Plug, Sparkles } from "lucide-react";
+import { ArrowRight, Check, Play, Plug, Sparkles } from "lucide-react";
 import { useAuthStore } from "@agora/core/auth";
 import { cn } from "@agora/ui/lib/utils";
 import { useLocale } from "../i18n";
@@ -15,12 +15,14 @@ import {
   OpenCodeLogo,
 } from "./shared";
 import { Reveal } from "./reveal";
+import { LandingTourModal } from "./landing-tour";
 
 const ACCENT = "#2563EB";
 
 export function LandingHero() {
   const { t } = useLocale();
   const user = useAuthStore((s) => s.user);
+  const [tourOpen, setTourOpen] = useState(false);
 
   return (
     <div className="relative min-h-full overflow-hidden bg-white text-[#18181B] dark:bg-[#05060b] dark:text-white">
@@ -84,12 +86,14 @@ export function LandingHero() {
                     aria-hidden
                   />
                 </Link>
-                <Link
-                  href="#preview"
+                <button
+                  type="button"
+                  onClick={() => setTourOpen(true)}
                   className="inline-flex items-center justify-center gap-1.5 rounded-[12px] border border-zinc-200 bg-zinc-50 px-5 py-3 text-[14px] font-semibold text-[#3F3F46] transition-colors hover:bg-zinc-100 hover:text-[#18181B] dark:border-white/14 dark:bg-white/[0.04] dark:text-white/85 dark:hover:bg-white/[0.08] dark:hover:text-white"
                 >
+                  <Play className="size-3.5" aria-hidden />
                   {t.hero.secondaryCta}
-                </Link>
+                </button>
               </div>
             </Reveal>
           </div>
@@ -164,6 +168,8 @@ export function LandingHero() {
           </Reveal>
         </section>
       </main>
+
+      <LandingTourModal open={tourOpen} onClose={() => setTourOpen(false)} />
     </div>
   );
 }

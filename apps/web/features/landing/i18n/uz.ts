@@ -43,6 +43,37 @@ export function createUzDict(allowSignup: boolean): LandingDict {
       card6: "Webhook retry + backoff",
       liveTitle: "Fors lokalizatsiyasi — RTL sayqal",
     },
+    tour: {
+      title: "Agora 20 soniyada",
+      close: "Tur oynasini yopish",
+      scenes: [
+        {
+          label: "Biriktirish",
+          caption:
+            "Vazifani agentga biriktiring — xuddi hamkasbga biriktirgandek.",
+        },
+        {
+          label: "LLM'lar",
+          caption:
+            "Bitta vazifa — istalgan model: Claude Code, Codex yoki Gemini CLI. Hatto parallel ham.",
+        },
+        {
+          label: "Ish",
+          caption:
+            "Agent kod yozadi: fayllarni o'qiydi, tahrirlaydi, test yuritadi — hammasi kartada jonli.",
+        },
+        {
+          label: "QA",
+          caption:
+            "Ichki QA darvozasi o'zgarishni haqiqiy brauzerda tekshiradi.",
+        },
+        {
+          label: "Chiqarish",
+          caption:
+            "Pull request tayyor — karta Bajarildi'ga tushadi. Siz faqat review qilasiz.",
+        },
+      ],
+    },
     headlineLine1: "Uni insonga biriktiring.",
     headlineLine2: "Yoki agentga.",
     subheading:

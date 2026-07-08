@@ -172,6 +172,11 @@ export type LandingDict = {
       card6: string;
       liveTitle: string;
     };
+    tour: {
+      title: string;
+      close: string;
+      scenes: { label: string; caption: string }[];
+    };
   };
   capabilities: {
     title: string;

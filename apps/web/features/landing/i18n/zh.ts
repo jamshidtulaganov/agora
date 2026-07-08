@@ -43,6 +43,33 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       card6: "Webhook 重试 + 退避",
       liveTitle: "波斯语本地化——RTL 打磨",
     },
+    tour: {
+      title: "20 秒看懂 Agora",
+      close: "关闭导览",
+      scenes: [
+        {
+          label: "分配",
+          caption: "把任务分配给智能体——和分配给同事用同一个选择器。",
+        },
+        {
+          label: "模型",
+          caption:
+            "同一个任务，任意模型——Claude Code、Codex 或 Gemini CLI，甚至并行运行。",
+        },
+        {
+          label: "开发",
+          caption: "智能体写代码：读文件、改代码、跑测试——全程在卡片上直播。",
+        },
+        {
+          label: "QA",
+          caption: "内置 QA 关卡在真实浏览器中冒烟测试这次改动。",
+        },
+        {
+          label: "发布",
+          caption: "Pull request 就绪——卡片进入已完成。你只需 review。",
+        },
+      ],
+    },
     headlineLine1: "\u4f60\u7684\u4e0b\u4e00\u6279\u5458\u5de5",
     headlineLine2: "\u4e0d\u662f\u4eba\u7c7b\u3002",
     subheading:

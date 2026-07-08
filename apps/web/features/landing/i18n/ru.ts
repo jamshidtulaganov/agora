@@ -43,6 +43,37 @@ export function createRuDict(allowSignup: boolean): LandingDict {
       card6: "Webhook retry + backoff",
       liveTitle: "Персидская локализация — доработка RTL",
     },
+    tour: {
+      title: "Agora за 20 секунд",
+      close: "Закрыть тур",
+      scenes: [
+        {
+          label: "Назначение",
+          caption:
+            "Назначьте задачу агенту — тем же списком, что и коллеге.",
+        },
+        {
+          label: "Модели",
+          caption:
+            "Одна задача — любая модель: Claude Code, Codex или Gemini CLI. Хоть параллельно.",
+        },
+        {
+          label: "Работа",
+          caption:
+            "Агент пишет код: читает файлы, правит, гоняет тесты — всё живьём на карточке.",
+        },
+        {
+          label: "QA",
+          caption:
+            "Встроенный QA-гейт проверяет изменение в настоящем браузере.",
+        },
+        {
+          label: "Релиз",
+          caption:
+            "Pull request готов — карточка попадает в «Готово». Вам остаётся ревью.",
+        },
+      ],
+    },
     headlineLine1: "Назначьте человеку.",
     headlineLine2: "Или агенту.",
     subheading:

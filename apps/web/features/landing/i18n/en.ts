@@ -43,6 +43,36 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       card6: "Webhook retry + backoff",
       liveTitle: "Persian localization — RTL polish",
     },
+    tour: {
+      title: "Agora in 20 seconds",
+      close: "Close tour",
+      scenes: [
+        {
+          label: "Assign",
+          caption: "Assign the issue to an agent — same picker as a colleague.",
+        },
+        {
+          label: "Engines",
+          caption:
+            "One task, any model — run it with Claude Code, Codex, or Gemini CLI. Even in parallel.",
+        },
+        {
+          label: "Work",
+          caption:
+            "The agent codes: reads files, edits, runs tests — live on the card.",
+        },
+        {
+          label: "QA",
+          caption:
+            "The built-in QA gate smoke-tests the change in a real browser.",
+        },
+        {
+          label: "Ship",
+          caption:
+            "A pull request is ready — the card lands in Done. You just review.",
+        },
+      ],
+    },
     headlineLine1: "Assign it to a person.",
     headlineLine2: "Or an agent.",
     subheading:
