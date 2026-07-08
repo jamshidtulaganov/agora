@@ -99,6 +99,8 @@
     "local_other_machine_tooltip": "Only available on the machine that registered this directory.",
     "chat_hint_prefix": "Agent will work in-place at",
     "toast_local_attached": "Local directory attached",
+    "toast_local_approve_failed": "Could not record the folder approval — try again.",
+    "local_approve_protected": "This folder holds system or credential data and can't be used for agent tasks.",
     "toast_local_renamed": "Renamed",
     "toast_local_rename_failed": "Failed to rename",
     "toast_local_pick_failed": "Failed to pick directory",

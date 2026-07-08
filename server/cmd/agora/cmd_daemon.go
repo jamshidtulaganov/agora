@@ -71,6 +71,40 @@ var daemonDiskUsageCmd = &cobra.Command{
 	RunE: runDaemonDiskUsage,
 }
 
+var daemonAllowDirCmd = &cobra.Command{
+	Use:   "allow-dir <path>",
+	Short: "Approve a directory for local_directory agent tasks on this machine",
+	Long: "Records the machine owner's consent for agents to run inside <path> (and its subdirectories)\n" +
+		"when a project's local_directory resource points at it. Without an approval the daemon refuses\n" +
+		"the task. Approvals live in ~/.agora/local-dirs.json and are re-read on every task — no daemon\n" +
+		"restart needed. The Agora desktop app's folder picker records the same approval automatically.\n\n" +
+		"Headless/containerized daemons can instead set AGORA_LOCAL_DIR_ALLOWLIST (path-list-separated\n" +
+		"absolute paths). Run this on the daemon host as the OS user the daemon runs as.",
+	Args: cobra.ExactArgs(1),
+	RunE: runDaemonAllowDir,
+}
+
+func runDaemonAllowDir(_ *cobra.Command, args []string) error {
+	path := args[0]
+	if !filepath.IsAbs(path) {
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return fmt.Errorf("resolve %q: %w", path, err)
+		}
+		path = abs
+	}
+	added, file, err := daemon.ApproveLocalDir(path)
+	if err != nil {
+		return err
+	}
+	if !added {
+		fmt.Printf("Already approved: %s (in %s)\n", filepath.Clean(path), file)
+		return nil
+	}
+	fmt.Printf("Approved %s for local_directory tasks (recorded in %s)\n", filepath.Clean(path), file)
+	return nil
+}
+
 func init() {
 	f := daemonStartCmd.Flags()
 	f.Bool("foreground", false, "Run in the foreground instead of background")
@@ -119,6 +153,7 @@ func init() {
 	daemonCmd.AddCommand(daemonStatusCmd)
 	daemonCmd.AddCommand(daemonLogsCmd)
 	daemonCmd.AddCommand(daemonDiskUsageCmd)
+	daemonCmd.AddCommand(daemonAllowDirCmd)
 }
 
 // daemonDirForProfile returns the state directory for the given profile.

@@ -58,6 +58,14 @@ daemon runtime registered in the workspace that the human caller may use
 (runtime owner, workspace owner/admin, or `visibility=public`); unknown daemon
 ids are rejected with 400.
 
+Attaching the resource is not the whole story: the daemon also requires
+**on-machine owner approval** of the path before it runs tasks there. The
+desktop folder picker records it automatically; otherwise the machine owner
+runs `agora daemon allow-dir <path>` on the daemon host (headless daemons can
+set `AGORA_LOCAL_DIR_ALLOWLIST`). A task against an unapproved path fails with
+`local_directory_error` and a message naming the exact command — relay it to
+the user instead of retrying.
+
 ## When to add a resource
 
 Add/update a project resource when the user asks for durable project context: "把这个 GitHub repo 绑到项目上", "以后都用这个 repo", "agent 总是拿不到这个项目的仓库", or "这个项目要在我的本地目录里跑" — for the last one, `local_directory` is human-only, so guide the user through attaching it instead of calling the API yourself.

@@ -25,11 +25,20 @@ export type ValidateLocalDirectoryResult = {
   error?: string;
 };
 
+export type ApproveLocalDirectoryResult = {
+  ok: boolean;
+  reason?: "not_absolute" | "protected" | "error" | "unsupported";
+  error?: string;
+};
+
 interface DesktopLocalDirectoryAPI {
   pickDirectory?: (defaultPath?: string) => Promise<PickDirectoryResult>;
   validateLocalDirectory?: (
     path: string,
   ) => Promise<ValidateLocalDirectoryResult>;
+  approveLocalDirectory?: (
+    path: string,
+  ) => Promise<ApproveLocalDirectoryResult>;
 }
 
 function readDesktopAPI(): DesktopLocalDirectoryAPI | undefined {
@@ -61,4 +70,16 @@ export async function validateLocalDirectory(
   const api = readDesktopAPI();
   if (!api?.validateLocalDirectory) return { ok: false, reason: "unsupported" };
   return api.validateLocalDirectory(path);
+}
+
+/** Records owner consent for the path in ~/.agora/local-dirs.json so the
+ *  local daemon will accept local_directory tasks there. "unsupported" means
+ *  an older desktop shell without the approve bridge — callers should
+ *  proceed (the daemon's fail message covers the manual approval path). */
+export async function approveLocalDirectory(
+  path: string,
+): Promise<ApproveLocalDirectoryResult> {
+  const api = readDesktopAPI();
+  if (!api?.approveLocalDirectory) return { ok: false, reason: "unsupported" };
+  return api.approveLocalDirectory(path);
 }

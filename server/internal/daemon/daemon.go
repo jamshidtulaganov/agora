@@ -2509,6 +2509,18 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 		}
 		return nil, true
 	}
+	// Consent gate: the server-side resource row is not authoritative — the
+	// machine owner must have approved this exact directory (or an ancestor)
+	// on THIS machine, via the desktop picker, `agora daemon allow-dir`, or
+	// AGORA_LOCAL_DIR_ALLOWLIST. Checked per task so approvals apply without
+	// a daemon restart.
+	if err := checkLocalDirApproved(assignment.AbsPath, assignment.RealPath); err != nil {
+		taskLog.Error("local_directory: path not approved on this machine", "error", err)
+		if failErr := d.client.FailTask(ctx, task.ID, err.Error(), "", "", "local_directory_error"); failErr != nil {
+			taskLog.Error("fail task after local_directory approval error", "error", failErr)
+		}
+		return nil, true
+	}
 
 	// While the lock is contended the daemon would otherwise sit blocked on
 	// the path mutex with no signal back from the server — the main

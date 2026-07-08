@@ -162,6 +162,10 @@ const desktopAPI = {
   /** Validate that a path is an existing readable+writable directory. */
   validateLocalDirectory: (path: string) =>
     ipcRenderer.invoke("local-directory:validate", path),
+  /** Record owner consent for local_directory agent tasks in
+   *  ~/.agora/local-dirs.json (the daemon refuses unapproved paths). */
+  approveLocalDirectory: (path: string) =>
+    ipcRenderer.invoke("local-directory:approve", path),
 };
 
 interface DaemonStatus {

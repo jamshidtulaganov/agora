@@ -75,7 +75,7 @@ The folder picker lives in the **Desktop app** only — the web app has no way t
 
 1. Open the project → **Resources** panel.
 2. Click **Add local directory**. A native folder picker opens.
-3. Pick the folder. The path is bound to **the daemon currently registered by this Desktop install** — the resource record stores both the path and that daemon's ID.
+3. Pick the folder. The path is bound to **the daemon currently registered by this Desktop install** — the resource record stores both the path and that daemon's ID. Picking also records your **owner approval** for the folder (see below), so tasks can run there immediately.
 
 On Desktop the button stays visible but is **disabled with a hint** when the daemon on this machine is offline, or when the project already has a `local_directory` bound to this daemon — so you can see *why* it's unavailable. (On the web app the button is hidden outright, since there's no folder picker available there at all.) To bind another machine's directory, install Desktop on that machine and add the resource from there.
 
@@ -105,6 +105,16 @@ The `daemon_id` is validated at attach time and again whenever the `resource_ref
 
 This is the same ownership rule that governs binding an agent to a runtime, applied to the machine the directory lives on.
 
+### Owner approval on the machine
+
+Attaching the resource is not enough by itself: **the machine's owner must approve the folder on that machine** before the daemon will run tasks in it. The resource row lives on the server and could be created by anyone with your workspace credentials — the approval lives on the executing machine, where only its owner can put it. Three ways to approve:
+
+- **Desktop folder picker** — picking the folder records the approval automatically. For the normal flow you never think about this.
+- **`agora daemon allow-dir <path>`** — run on the daemon host as the OS user the daemon runs as. Approvals are stored in `~/.agora/local-dirs.json` and re-read on every task, so no daemon restart is needed.
+- **`AGORA_LOCAL_DIR_ALLOWLIST`** — a path-list-separated list of absolute paths, for headless or containerized daemons where neither the picker nor a CLI round-trip exists.
+
+Approving a folder covers everything beneath it. A task against an unapproved path fails fast with a message that names the exact `allow-dir` command to run — approve and re-dispatch, nothing else to clean up. Resources attached from the CLI (or from another machine) always need one of the manual approval paths, since no picker ran on the daemon host.
+
 ### Path rules
 
 The path you attach must clear both an attach-time and a per-task validation. Both are enforced by the daemon that owns the resource — the server validates who may attach and which daemon the ref points at (see above), but never inspects the path itself. A path that breaks any rule fails the task with a typed error and leaves your directory untouched:
@@ -113,6 +123,7 @@ The path you attach must clear both an attach-time and a per-task validation. Bo
 - Must **exist** and be a **directory** (not a file, symlink to a file, or device node).
 - Must be **readable and writable** by the daemon process.
 - Cannot be a system root or an entire user profile — `/`, `/Users`, `/home`, `/root`, `/etc`, `/tmp`, `/var`, `/usr`, `/opt`, `/Users/Shared`, your own `$HOME`, any Windows drive root (`C:\`, `D:\`, …), or `C:\Users` / `C:\ProgramData` / `C:\Program Files` / `C:\Program Files (x86)` / `C:\Windows`.
+- Cannot be inside a **protected home subtree**: any dot-directory directly under `$HOME` (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config`, …), `~/Library` on macOS, or `AppData` on Windows. These hold credentials and OS-managed state, never projects — and agents run with permission prompts bypassed, so handing one an agent is handing over the credential store.
 - A symlink that resolves to any of the above is rejected, and so is the canonical form of an OS-aliased path (e.g. on macOS, typing `/private/tmp` is rejected the same way as `/tmp`).
 
 The blacklist is intentionally aggressive — picking your home directory would put Agora's runtime files at the root of your account, which is never what you want. Pick a sub-folder (typically your actual project checkout) instead.

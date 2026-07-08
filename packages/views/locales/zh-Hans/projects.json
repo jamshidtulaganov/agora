@@ -94,6 +94,8 @@
     "local_other_machine_tooltip": "此目录仅在最初注册它的电脑上可用。",
     "chat_hint_prefix": "Agent 将在",
     "toast_local_attached": "已添加本地目录",
+    "toast_local_approve_failed": "无法保存目录授权，请重试。",
+    "local_approve_protected": "该目录包含系统或凭据数据，不能用于智能体任务。",
     "toast_local_renamed": "已重命名",
     "toast_local_rename_failed": "重命名失败",
     "toast_local_pick_failed": "选择目录失败",

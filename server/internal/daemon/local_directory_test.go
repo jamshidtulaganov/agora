@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -454,9 +455,12 @@ func (e *waiterError) Error() string { return e.msg }
 // the daemon must notice promptly and bail — otherwise the slot stays
 // pinned by a phantom waiter for the full lifetime of the holder.
 func TestAcquireLocalDirectoryLock_CancelDuringWait(t *testing.T) {
-	t.Parallel()
+	// No t.Parallel(): t.Setenv below is incompatible with parallel tests.
 
 	dir := t.TempDir() // valid, writable, non-blacklisted
+	// The consent gate runs before the lock wait — approve the fixture so
+	// the test still exercises the contended-wait path it was written for.
+	t.Setenv("AGORA_LOCAL_DIR_ALLOWLIST", dir)
 	// Pre-claim must use the same key the production path computes, which
 	// is the symlink-resolved realpath. On macOS, /tmp/... resolves to
 	// /private/tmp/..., so a literal preclaim with `dir` would miss the
@@ -552,5 +556,86 @@ func TestAcquireLocalDirectoryLock_CancelDuringWait(t *testing.T) {
 
 	if got := waitCall.Load(); got != 1 {
 		t.Errorf("wait-local-directory calls = %d, want 1", got)
+	}
+}
+
+// TestAcquireLocalDirectoryLock_UnapprovedPathFailsTask pins the consent
+// gate: a structurally valid local_directory whose path the machine owner
+// never approved must fail the task fast — before any lock wait — with a
+// message that names the approval commands (the fail comment is the user's
+// only signpost).
+func TestAcquireLocalDirectoryLock_UnapprovedPathFailsTask(t *testing.T) {
+	// No t.Parallel(): t.Setenv is incompatible with parallel tests.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("AGORA_LOCAL_DIR_ALLOWLIST", "")
+
+	dir := t.TempDir() // valid dir, but nobody approved it
+
+	var (
+		failCalls atomic.Int32
+		failBody  atomic.Value
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/fail") {
+			failCalls.Add(1)
+			body, _ := io.ReadAll(r.Body)
+			failBody.Store(string(body))
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		t.Errorf("unexpected daemon call: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	const daemonID = "d-test-unapproved"
+	d := &Daemon{
+		client:         NewClient(srv.URL),
+		logger:         slog.Default(),
+		localPathLocks: NewLocalPathLocker(),
+		cfg:            Config{DaemonID: daemonID},
+	}
+	ref, err := json.Marshal(localDirectoryRef{LocalPath: dir, DaemonID: daemonID})
+	if err != nil {
+		t.Fatalf("marshal ref: %v", err)
+	}
+	task := Task{
+		ID: "task-unapproved",
+		ProjectResources: []ProjectResourceData{
+			{ID: "r1", ResourceType: localDirectoryResourceType, ResourceRef: ref},
+		},
+	}
+
+	release, abort := d.acquireLocalDirectoryLockIfNeeded(context.Background(), task, slog.Default())
+	if !abort {
+		t.Fatal("expected abort=true for an unapproved path")
+	}
+	if release != nil {
+		t.Fatal("expected nil release for an unapproved path")
+	}
+	if got := failCalls.Load(); got != 1 {
+		t.Fatalf("FailTask calls = %d, want 1", got)
+	}
+	body, _ := failBody.Load().(string)
+	for _, needle := range []string{"allow-dir", "not approved"} {
+		if !strings.Contains(body, needle) {
+			t.Errorf("fail payload should mention %q, got: %s", needle, body)
+		}
+	}
+
+	// Approval flips the outcome: same daemon, same task, path now allowed.
+	t.Setenv("AGORA_LOCAL_DIR_ALLOWLIST", dir)
+	release, abort = d.acquireLocalDirectoryLockIfNeeded(context.Background(), task, slog.Default())
+	if abort {
+		t.Fatal("approved path should not abort")
+	}
+	if release == nil {
+		t.Fatal("approved path should return a release callback")
+	}
+	release()
+	if got := failCalls.Load(); got != 1 {
+		t.Errorf("FailTask called again after approval: %d calls", got)
 	}
 }

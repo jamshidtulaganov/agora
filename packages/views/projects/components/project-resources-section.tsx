@@ -39,6 +39,7 @@ import {
   TooltipContent,
 } from "@agora/ui/components/ui/tooltip";
 import {
+  approveLocalDirectory,
   isDesktopShell,
   pickDirectory,
   useLocalDaemonStatus,
@@ -193,6 +194,22 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
             unsupported: t(($) => $.resources.local_validate_unsupported),
             fallback: t(($) => $.resources.toast_local_pick_failed),
           }),
+        );
+        return;
+      }
+      // Picking the folder is the owner's consent gesture: record it in
+      // ~/.agora/local-dirs.json so the daemon accepts tasks there. An older
+      // desktop shell without the bridge ("unsupported") proceeds — the
+      // daemon's fail message covers manual approval via `agora daemon
+      // allow-dir`. A hard approve failure aborts: attaching a resource the
+      // daemon will refuse only produces failed tasks later.
+      const approval = await approveLocalDirectory(path);
+      if (!approval.ok && approval.reason !== "unsupported") {
+        toast.error(
+          approval.reason === "protected"
+            ? t(($) => $.resources.local_approve_protected)
+            : (approval.error ??
+                t(($) => $.resources.toast_local_approve_failed)),
         );
         return;
       }

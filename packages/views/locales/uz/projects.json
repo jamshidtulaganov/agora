@@ -94,6 +94,8 @@
     "local_other_machine_tooltip": "Faqat bu katalogni ro‘yxatdan o‘tkazgan mashinada mavjud.",
     "chat_hint_prefix": "Agent shu yerda joyida ishlaydi:",
     "toast_local_attached": "Lokal katalog biriktirildi",
+    "toast_local_approve_failed": "Papka ruxsatini saqlab bo'lmadi — qayta urinib ko'ring.",
+    "local_approve_protected": "Bu papkada tizim yoki hisob ma'lumotlari saqlanadi, uni agent vazifalari uchun ishlatib bo'lmaydi.",
     "toast_local_renamed": "Nomi o‘zgartirildi",
     "toast_local_rename_failed": "Nomini o‘zgartirib bo‘lmadi",
     "toast_local_pick_failed": "Katalog tanlab bo‘lmadi",

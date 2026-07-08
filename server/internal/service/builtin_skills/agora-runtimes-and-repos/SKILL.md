@@ -70,6 +70,7 @@ Workspace repos and project resources are not the same thing:
 - workspace repo metadata can appear in workspace context;
 - `github_repo` project resources are durable project context and can affect future tasks;
 - `local_directory` resources point at a path owned by a daemon and carry local-machine assumptions. They are **human-only to mutate**: create/update/delete with an agent task token or cloud PAT returns 403 (do not retry — ask the user to attach the directory themselves). The ref's `daemon_id` must also resolve to a daemon runtime the human caller may use (runtime owner, workspace owner/admin, or `visibility=public`); an unregistered daemon id is a 400.
+- Beyond the resource row, the daemon enforces **on-machine owner approval**: a local_directory task fails with `local_directory_error` when the path is not in the machine's allowlist (`~/.agora/local-dirs.json`, or `AGORA_LOCAL_DIR_ALLOWLIST` for headless daemons). The fail message names the fix — the machine owner runs `agora daemon allow-dir <path>` on the daemon host (the desktop folder picker records the approval automatically). Do not retry the task before the owner approves; nothing is broken, consent is just missing.
 
 Do not add a project resource just because `repo checkout` failed. First determine whether the user asked for durable project context or just a task checkout.
 
