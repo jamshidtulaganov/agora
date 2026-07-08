@@ -155,6 +155,35 @@ func bitrixPushStatus() bool {
 	}
 }
 
+// bitrixArchiveDoneEnabled gates auto-archiving of Bitrix tasks that land on the
+// kanban done stage (opt-in via AGORA_BITRIX_ARCHIVE_DONE). Off → done tasks keep
+// their `done` status and stay in the board's Done column as before.
+func bitrixArchiveDoneEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("AGORA_BITRIX_ARCHIVE_DONE"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+// maybeArchiveBitrixDone archives an issue when its dev-team kanban stage resolves
+// to `done` (and unarchives it if the task reopens), gated on the opt-in flag.
+// SetIssueArchived is idempotent, so this no-ops once the issue is already in the
+// right state — safe to call on every sync of a Bitrix-backed issue.
+func (h *Handler) maybeArchiveBitrixDone(ctx context.Context, issueID pgtype.UUID, mappedStatus string) {
+	if !bitrixArchiveDoneEnabled() {
+		return
+	}
+	if err := h.Queries.SetIssueArchived(ctx, db.SetIssueArchivedParams{
+		ID:       issueID,
+		Archived: mappedStatus == "done",
+	}); err != nil {
+		slog.Warn("bitrix sync: archive-done update failed",
+			"issue_id", util.UUIDToString(issueID), "error", err)
+	}
+}
+
 // bitrixRouteConfig builds the routing config from env:
 //
 //   - BITRIX_SYNC_WORKSPACE_SLUG : default (catch-all) workspace slug.
@@ -591,6 +620,10 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 		// older issues synced before this existed get backfilled on re-import.
 		h.setBitrixIssueMetadata(ctx, existing.ID, ws.ID, task.ResponsibleID, responsible, stageName, task.ID)
 
+		// Retire tasks that land on the kanban's done stage so the historical
+		// Bitrix backlog doesn't clutter the active board (opt-in).
+		h.maybeArchiveBitrixDone(ctx, existing.ID, mappedStatus)
+
 		// LIVE content sync: on every update, mirror any Bitrix comments +
 		// attachments ADDED since the last sync (importBitrix* dedups by item id),
 		// so an issue's discussion and files stay current while the dev team keeps
@@ -725,6 +758,10 @@ func (h *Handler) syncBitrixTaskWithState(ctx context.Context, taskID string, cf
 	// Record the Bitrix responsible (name/email/position) so the assignee shows
 	// in the issue's Metadata panel even when they aren't an Agora member.
 	h.setBitrixIssueMetadata(ctx, res.Issue.ID, ws.ID, task.ResponsibleID, responsible, stageName, task.ID)
+
+	// A task already on the done stage at import time is historical — archive it
+	// straight away so it never shows on the active board (opt-in).
+	h.maybeArchiveBitrixDone(ctx, res.Issue.ID, mappedStatus)
 
 	slog.Info("bitrix sync: created issue from task",
 		"issue_id", util.UUIDToString(res.Issue.ID),

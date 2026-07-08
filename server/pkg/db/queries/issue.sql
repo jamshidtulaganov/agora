@@ -7,9 +7,12 @@
 -- "Assigned to me"), and the two filters must produce disjoint result sets.
 SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority,
        i.assignee_type, i.assignee_id, i.creator_type, i.creator_id,
-       i.parent_issue_id, i.position, i.start_date, i.due_date, i.created_at, i.updated_at, i.number, i.project_id, i.metadata
+       i.parent_issue_id, i.position, i.start_date, i.due_date, i.created_at, i.updated_at, i.number, i.project_id, i.metadata, i.archived_at
 FROM issue i
 WHERE i.workspace_id = $1
+  -- Archived issues (retired done-from-Bitrix tasks) stay off the board unless
+  -- the caller explicitly opts into an archived view.
+  AND (sqlc.narg('include_archived')::bool IS TRUE OR i.archived_at IS NULL)
   AND (sqlc.narg('status')::text IS NULL OR i.status = sqlc.narg('status'))
   AND (sqlc.narg('priority')::text IS NULL OR i.priority = sqlc.narg('priority'))
   AND (sqlc.narg('assignee_id')::uuid IS NULL OR i.assignee_id = sqlc.narg('assignee_id'))
@@ -106,6 +109,15 @@ UPDATE issue SET
     updated_at = now()
 WHERE id = $1 AND workspace_id = $3
 RETURNING *;
+
+-- name: SetIssueArchived :exec
+-- Archive/unarchive an issue. Idempotent: only writes when the state actually
+-- flips, so a re-sync of an already-archived done task is a no-op (no churn, no
+-- updated_at bump / bus echo). Used by the Bitrix done-auto-archive path.
+UPDATE issue SET archived_at = CASE WHEN @archived::bool THEN now() ELSE NULL END
+WHERE id = @id
+  AND ((@archived::bool AND archived_at IS NULL)
+       OR ((NOT @archived::bool) AND archived_at IS NOT NULL));
 
 -- name: PromoteIssueFromBacklog :one
 -- Compare-and-swap promotion out of backlog: flips status to 'todo' ONLY when
