@@ -1420,64 +1420,8 @@ func resolvePreviewRepoDir(workdir, repo string) string {
 	return workdir
 }
 
-// detectDevCommand returns a best-guess dev-server command, or "". Covers the
-// Node ecosystem (the common vibecoder web stack) via package.json + lockfile.
-func detectDevCommand(repoDir string) string {
-	data, err := os.ReadFile(filepath.Join(repoDir, "package.json"))
-	if err != nil {
-		return ""
-	}
-	var pkg struct {
-		Scripts map[string]string `json:"scripts"`
-	}
-	if json.Unmarshal(data, &pkg) != nil {
-		return ""
-	}
-	script := ""
-	for _, cand := range []string{"dev", "start", "serve"} {
-		if _, ok := pkg.Scripts[cand]; ok {
-			script = cand
-			break
-		}
-	}
-	if script == "" {
-		return ""
-	}
-	pm := "npm"
-	if _, err := os.Stat(filepath.Join(repoDir, "pnpm-lock.yaml")); err == nil {
-		pm = "pnpm"
-	} else if _, err := os.Stat(filepath.Join(repoDir, "yarn.lock")); err == nil {
-		pm = "yarn"
-	}
-	return pm + " run " + script
-}
-
-// detectTestCommand resolves the project's test command from package.json's
-// "test" script. Returns "" when there is no test script (the QA pane then shows
-// "no tests configured" instead of failing). CI=1 in runProjectTests forces the
-// runner non-watch so it exits with a verdict.
-func detectTestCommand(repoDir string) string {
-	data, err := os.ReadFile(filepath.Join(repoDir, "package.json"))
-	if err != nil {
-		return ""
-	}
-	var pkg struct {
-		Scripts map[string]string `json:"scripts"`
-	}
-	if json.Unmarshal(data, &pkg) != nil {
-		return ""
-	}
-	if _, ok := pkg.Scripts["test"]; !ok {
-		return ""
-	}
-	pm := "npm"
-	if _, err := os.Stat(filepath.Join(repoDir, "pnpm-lock.yaml")); err == nil {
-		pm = "pnpm"
-	} else if _, err := os.Stat(filepath.Join(repoDir, "yarn.lock")); err == nil {
-		pm = "yarn"
-	}
-	return pm + " run test"
-}
+// detectDevCommand / detectTestCommand live in detect.go (Node → Makefile →
+// PHP tier chain).
 
 // runProjectTests runs the test command once (CI=1 → non-watch, so vitest/jest
 // exit instead of hanging in watch mode) and returns the combined output tail +
@@ -1509,31 +1453,18 @@ func runProjectTests(repoDir, command string, timeout time.Duration) (string, in
 	return tailLog(ansiRe.ReplaceAllString(string(out), "")), code
 }
 
-// ensureDeps installs Node dependencies when node_modules is missing, so the
-// dev server can actually start on a fresh worktree. No-op for non-Node repos or
-// when deps already exist; the package manager is picked from the lockfile. Runs
-// via a login shell so fnm/nvm-managed node is on PATH.
+// ensureDeps installs the repo's dependencies when its dep dir (node_modules /
+// vendor) is missing, so the dev server can actually start on a fresh worktree.
+// Provider detection is delegated to detectSprintDepProvider (Node + Composer)
+// and the install runs via runDepInstall (login shell so fnm/nvm-managed node
+// is on PATH; a package var so tests can stub it). No-op for repos without a
+// dep provider or when deps already exist.
 func ensureDeps(repoDir string) (string, error) {
-	if _, err := os.Stat(filepath.Join(repoDir, "package.json")); err != nil {
+	prov, ok := detectSprintDepProvider(repoDir)
+	if !ok || dirPopulated(filepath.Join(repoDir, prov.depDir)) {
 		return "", nil
 	}
-	if _, err := os.Stat(filepath.Join(repoDir, "node_modules")); err == nil {
-		return "", nil
-	}
-	install := "npm install"
-	if _, err := os.Stat(filepath.Join(repoDir, "pnpm-lock.yaml")); err == nil {
-		install = "pnpm install"
-	} else if _, err := os.Stat(filepath.Join(repoDir, "yarn.lock")); err == nil {
-		install = "yarn install"
-	}
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/zsh"
-	}
-	cmd := exec.Command(shell, "-lc", install)
-	cmd.Dir = repoDir
-	out, err := cmd.CombinedOutput()
-	return strings.TrimSpace(string(out)), err
+	return runDepInstall(repoDir, prov.installCmd)
 }
 
 // startPreview runs command in repoDir under a login shell (so fnm/nvm-managed

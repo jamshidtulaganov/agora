@@ -70,12 +70,20 @@ export function parseTestOutput(testOut: string): TestRunState["parsedTests"] {
 export function EditorPreviewPane({
   daemonUrl,
   workdir,
+  defaultDevCommand,
+  defaultTestCommand,
   onTestStart,
   testRunState,
   onTestResult,
 }: {
   daemonUrl: string;
   workdir: string;
+  /** Project-level dev command (settings.qa_smoke_cmd) — prefills the command
+   *  input when no preview is running; the daemon's detection is the fallback. */
+  defaultDevCommand?: string;
+  /** Project-level test command (settings.qa_test_cmd) — sent to /editor/test;
+   *  empty means the daemon auto-detects. */
+  defaultTestCommand?: string;
   /** Called when the user clicks "Run tests" — lets the parent switch to the Tests tab. */
   onTestStart?: () => void;
   /** Lifted test state from the parent (editor-section). */
@@ -132,7 +140,8 @@ export function EditorPreviewPane({
       const r = await fetch(`${daemonUrl}/editor/test`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workdir }),
+        // Empty command still means "daemon auto-detects".
+        body: JSON.stringify({ workdir, command: defaultTestCommand ?? "" }),
       });
       if (!r.ok) throw new Error(`could not run tests (${r.status})`);
       const d = (await r.json()) as {
@@ -144,7 +153,8 @@ export function EditorPreviewPane({
       if (d.needs_command) {
         const result = {
           testState: "done" as const,
-          testOut: "No test script in package.json — nothing to run.",
+          testOut:
+            "No test command detected (package.json / Makefile / go.mod / composer.json) — nothing to run.",
           testPassed: null,
           testCmd: "",
         };
@@ -178,8 +188,9 @@ export function EditorPreviewPane({
     }
   };
 
-  // On mount: sync with the daemon — reattach to a running preview, else prefill
-  // the detected dev command.
+  // On mount: sync with the daemon — reattach to a running preview, else
+  // prefill the command input. Precedence: a running preview's actual command >
+  // the project's configured dev command > the daemon's detection.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -204,6 +215,9 @@ export function EditorPreviewPane({
     return () => {
       cancelled = true;
     };
+    // defaultDevCommand deliberately omitted: the project query resolving after
+    // mount must not clobber a command the user already started editing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [daemonUrl, workdir]);
 
   // While running, keep syncing the bound port from the daemon. A slow first run
@@ -257,7 +271,9 @@ export function EditorPreviewPane({
       const d = (await r.json()) as PreviewStartResp;
       if (d.needs_command) {
         setState("error");
-        setMsg("No dev command detected — type one (e.g. npm run dev).");
+        setMsg(
+          "No dev command detected (package.json scripts, Makefile dev/start/run/serve, PHP index.php) — type one (e.g. npm run dev).",
+        );
         return;
       }
       if (d.error) {
@@ -502,8 +518,12 @@ export function EditorPreviewPane({
               <div className="overflow-auto border-t border-border">
                 {parsedTests.failed.length === 0 ? (
                   <div className="px-2 py-2 text-[11px] text-emerald-600 dark:text-emerald-400">
+                    {/* Non-vitest runners (go test, phpunit) parse 0 cases —
+                        report the exit code instead of "All 0 tests passed". */}
                     {testPassed
-                      ? `All ${parsedTests.passedCount} tests passed ✓`
+                      ? parsedTests.passedCount > 0
+                        ? `All ${parsedTests.passedCount} tests passed ✓`
+                        : "Tests passed (exit 0) ✓"
                       : (testOut.split("\n")[0] || "No tests found.")}
                   </div>
                 ) : (

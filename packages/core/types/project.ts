@@ -16,6 +16,9 @@ export interface ProjectSettings {
   // auto-detecting the smoke flow. Either may be set independently.
   qa_smoke_cmd?: string;
   qa_smoke_url?: string;
+  // Test-command override for the co-code Tests pane (/editor/test); when
+  // unset the daemon auto-detects (package.json / Makefile / go.mod / composer).
+  qa_test_cmd?: string;
   // Documentation repository for the auto_docs slice action — a SEPARATE repo
   // from the code (e.g. a Docusaurus site). When set, auto_docs writes the docs
   // there and opens a PR against it.

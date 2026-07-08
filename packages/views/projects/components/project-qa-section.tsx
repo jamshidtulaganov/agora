@@ -13,12 +13,13 @@ import type { ProjectSettings } from "@agora/core/types";
 
 // Project QA-smoke configuration section.
 //
-// Surfaces the two project.settings keys the run_qa slice action reads —
-// qa_smoke_cmd (how to bring the app up) and qa_smoke_url (where it serves) —
-// so a human configures the generic QA gate's smoke flow from the UI instead of
-// hand-editing the settings JSON. Empty values clear the override (the gate
-// falls back to auto-detect). Saves merge into the existing settings blob so
-// unrelated keys (sprint_mode, etc.) round-trip untouched.
+// Surfaces the project.settings keys the QA flows read — qa_smoke_cmd (how to
+// bring the app up), qa_smoke_url (where it serves), and qa_test_cmd (how to
+// run the test suite, consumed by the co-code Tests pane) — so a human
+// configures them from the UI instead of hand-editing the settings JSON.
+// Empty values clear the override (the flows fall back to auto-detect). Saves
+// merge into the existing settings blob so unrelated keys (sprint_mode, etc.)
+// round-trip untouched.
 export function ProjectQASection({ projectId }: { projectId: string }) {
   const wsId = useWorkspaceId();
   const { data: project } = useQuery(projectDetailOptions(wsId, projectId));
@@ -54,10 +55,12 @@ export function ProjectQASection({ projectId }: { projectId: string }) {
   const settings = project?.settings;
   const savedCmd = (settings?.qa_smoke_cmd ?? "") as string;
   const savedUrl = (settings?.qa_smoke_url ?? "") as string;
+  const savedTestCmd = (settings?.qa_test_cmd ?? "") as string;
   const savedDocsRepo = (settings?.docs_repo ?? "") as string;
 
   const [cmd, setCmd] = useState(savedCmd);
   const [url, setUrl] = useState(savedUrl);
+  const [testCmd, setTestCmd] = useState(savedTestCmd);
   const [docsRepo, setDocsRepo] = useState(savedDocsRepo);
 
   // Re-sync local drafts when the server value changes (e.g. another client, or
@@ -69,12 +72,18 @@ export function ProjectQASection({ projectId }: { projectId: string }) {
     setUrl(savedUrl);
   }, [savedUrl]);
   useEffect(() => {
+    setTestCmd(savedTestCmd);
+  }, [savedTestCmd]);
+  useEffect(() => {
     setDocsRepo(savedDocsRepo);
   }, [savedDocsRepo]);
 
   // Persist a single key, merging into the current settings blob. Normalizes
   // whitespace-only input to "" so the backend treats it as "no override".
-  const saveKey = async (key: "qa_smoke_cmd" | "qa_smoke_url" | "docs_repo", value: string) => {
+  const saveKey = async (
+    key: "qa_smoke_cmd" | "qa_smoke_url" | "qa_test_cmd" | "docs_repo",
+    value: string,
+  ) => {
     if (!project) return;
     const next = value.trim();
     if ((((settings?.[key] ?? "") as string)) === next) return;
@@ -136,6 +145,22 @@ export function ProjectQASection({ projectId }: { projectId: string }) {
                 if (e.key === "Enter") (e.target as HTMLInputElement).blur();
               }}
               placeholder="http://localhost:5173"
+              className="h-7 w-full rounded-md border bg-transparent px-2 text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          </label>
+          <label className="block space-y-1">
+            <span className="text-[10px] font-medium text-muted-foreground">
+              Test command
+            </span>
+            <input
+              type="text"
+              value={testCmd}
+              onChange={(e) => setTestCmd(e.target.value)}
+              onBlur={() => void saveKey("qa_test_cmd", testCmd)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              }}
+              placeholder="pnpm test"
               className="h-7 w-full rounded-md border bg-transparent px-2 text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
             />
           </label>
