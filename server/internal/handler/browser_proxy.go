@@ -122,9 +122,16 @@ func lookupBrowserTarget(tok string) (browserTarget, bool) {
 // forward. Unlike the trace proxy (whose upstream is a dedicated show-trace
 // server), this proxy's upstream is the daemon's WHOLE health mux — which also
 // serves /editor/launch, /trace/launch, /update and friends. The capability
-// token grants exactly the live-browser surface, nothing else.
+// token grants exactly the PANE surface the frontend drives — the live
+// browser, the dev-server preview (start/stop/status + the proxied app via
+// /editor/local/), and the one-shot test run — nothing else: no editor
+// launch, no repo checkout, no updater.
 func browserProxyPathAllowed(p string) bool {
-	return strings.HasPrefix(p, "/editor/browser/")
+	return strings.HasPrefix(p, "/editor/browser/") ||
+		p == "/editor/preview" ||
+		strings.HasPrefix(p, "/editor/preview/") ||
+		p == "/editor/test" ||
+		strings.HasPrefix(p, "/editor/local/")
 }
 
 // ProxyBrowser reverse-proxies /browser/proxy/{token}/editor/browser/* (HTTP +

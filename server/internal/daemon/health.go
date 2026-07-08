@@ -517,8 +517,8 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 	// dev server (detected from package.json, or a caller-supplied command),
 	// scans its output for the port it bound, and returns a localhost URL the app
 	// iframes. One per repo dir; reused while alive. CORS scoped to localhost.
-	previews := make(map[string]*previewProc)
-	var previewsMu sync.Mutex
+	// (The previews registry lives at package level so editorLocalProxyHandler
+	// can proxy a running dev-server's port for cloud mode.)
 
 	// --- Playwright trace viewers (one `playwright show-trace` per trace file) ---
 	// The trace .zip a run_test_cases run captured is LOCAL to this daemon's box,
@@ -586,6 +586,7 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 			previewsMu.Unlock()
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"url": fmt.Sprintf("http://127.0.0.1:%d/", port), "port": port, "command": cmd, "running": true,
+				"proxy_path": fmt.Sprintf("/editor/local/%d/", port),
 			})
 			return
 		}
@@ -623,9 +624,11 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 			p.port = realPort
 			resp["port"] = realPort
 			resp["url"] = fmt.Sprintf("http://127.0.0.1:%d/", realPort)
+			resp["proxy_path"] = fmt.Sprintf("/editor/local/%d/", realPort)
 		} else {
 			resp["port"] = hintPort
 			resp["url"] = fmt.Sprintf("http://127.0.0.1:%d/", hintPort)
+			resp["proxy_path"] = fmt.Sprintf("/editor/local/%d/", hintPort)
 			resp["warning"] = "could not detect the port from output; showing the PORT hint"
 			resp["log"] = tailLog(p.buf.String())
 		}
@@ -703,6 +706,7 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 			}
 			resp["port"] = p.port
 			resp["url"] = fmt.Sprintf("http://127.0.0.1:%d/", p.port)
+			resp["proxy_path"] = fmt.Sprintf("/editor/local/%d/", p.port)
 			resp["command"] = p.command
 		}
 		previewsMu.Unlock()
@@ -894,6 +898,14 @@ var (
 	editorsMu sync.Mutex
 )
 
+// previews registers running dev-server processes by repo dir. Package level
+// for the same reason as editors: the local proxy forwards a preview's port so
+// the cloud app can iframe the dev server through the backend proxy chain.
+var (
+	previews   = make(map[string]*previewProc)
+	previewsMu sync.Mutex
+)
+
 // editorLocalProxyHandler serves /editor/local/{port}/* by reverse-proxying to
 // the code-server bound on 127.0.0.1:{port}. Gated to ports of live,
 // daemon-tracked editors — never an open proxy into the machine. Split out of
@@ -916,6 +928,18 @@ func editorLocalProxyHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	editorsMu.Unlock()
+	if !alive {
+		// Not an editor — a running dev-server preview's port is equally
+		// proxyable (the cloud app iframes the preview through this route).
+		previewsMu.Lock()
+		for _, p := range previews {
+			if p.port == port && p.running() {
+				alive = true
+				break
+			}
+		}
+		previewsMu.Unlock()
+	}
 	if !alive {
 		http.Error(w, "no live editor on this port", http.StatusNotFound)
 		return

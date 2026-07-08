@@ -241,9 +241,16 @@ func (h *Handler) GetIssueEditor(w http.ResponseWriter, r *http.Request) {
 				addr = fmt.Sprintf("%s:%d", host, port)
 			}
 			tok := registerEditorTarget(addr, prefix, uuidToString(issue.WorkspaceID))
+			// A same-origin proxied base for the daemon PANE surface (preview /
+			// test / live browser — see browserProxyPathAllowed), so the Preview
+			// pane works in cloud exactly like self-host: its fetches and the
+			// dev-server iframe all ride this base.
+			daemonBase := "/browser/proxy/" + registerBrowserTarget(internal, uuidToString(issue.WorkspaceID))
 			writeJSON(w, http.StatusOK, map[string]any{
 				"mode":       "cloud",
 				"editor_url": "/editor/proxy/" + tok + "/?folder=" + url.QueryEscape(latest),
+				"daemon_url": daemonBase,
+				"user_id":    userID,
 				// The full agent roster rides along so the frontend renders the
 				// switch chips + per-worktree "Open in VS Code" links even in cloud
 				// mode (the browser editor still shows the default worktree; per-agent

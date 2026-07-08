@@ -23,6 +23,10 @@ interface PreviewStatus {
   command?: string;
   url?: string;
   port?: number;
+  /** Daemon health-listener route to this dev server ("/editor/local/<port>/").
+   * In cloud mode the iframe rides `${daemonUrl}${proxy_path}` — the raw
+   * 127.0.0.1 url is unreachable from the user's browser there. */
+  proxy_path?: string;
 }
 
 interface PreviewStartResp {
@@ -34,6 +38,7 @@ interface PreviewStartResp {
   error?: string;
   warning?: string;
   log?: string;
+  proxy_path?: string;
 }
 
 type PreviewState = "idle" | "starting" | "running" | "error";
@@ -108,6 +113,14 @@ export function EditorPreviewPane({
   // can't connect. Normalize to localhost so the browser reaches whatever the
   // dev server actually bound, on either stack.
   const toLocalhost = (u: string) => u.replace("://127.0.0.1:", "://localhost:");
+
+  // Cloud: daemonUrl is a same-origin path base (/browser/proxy/<token>) and
+  // the daemon's raw 127.0.0.1 url is unreachable — ride its proxy_path
+  // through that base instead. Self-host keeps the direct localhost url.
+  const resolveAppUrl = (r: { url?: string; proxy_path?: string }): string => {
+    if (daemonUrl.startsWith("/") && r.proxy_path) return `${daemonUrl}${r.proxy_path}`;
+    return r.url ? toLocalhost(r.url) : "";
+  };
 
   // Local test state used only when parent hasn't lifted it (standalone usage).
   const [localTestState, setLocalTestState] = useState<"idle" | "running" | "done">("idle");
@@ -203,9 +216,9 @@ export function EditorPreviewPane({
         if (!r.ok) return;
         const s = (await r.json()) as PreviewStatus;
         if (cancelled) return;
-        setCommand(s.command || s.detected || "");
-        if (s.running && s.url) {
-          setUrl(toLocalhost(s.url));
+        setCommand(s.command || defaultDevCommand || s.detected || "");
+        if (s.running && (s.url || s.proxy_path)) {
+          setUrl(resolveAppUrl(s));
           setState("running");
         }
       } catch {
@@ -239,7 +252,7 @@ export function EditorPreviewPane({
         if (!r.ok) return;
         const s = (await r.json()) as PreviewStatus;
         if (cancelled || !s.running) return;
-        const nextUrl = s.url ? toLocalhost(s.url) : "";
+        const nextUrl = resolveAppUrl(s);
         if (nextUrl && nextUrl !== url) {
           setUrl(nextUrl);
           setIframeKey((k) => k + 1);
@@ -283,8 +296,8 @@ export function EditorPreviewPane({
         return;
       }
       if (d.command) setCommand(d.command);
-      if (d.url) {
-        setUrl(toLocalhost(d.url));
+      if (d.url || d.proxy_path) {
+        setUrl(resolveAppUrl(d));
         setState("running");
         setIframeKey((k) => k + 1);
         setMsg(d.warning || "");

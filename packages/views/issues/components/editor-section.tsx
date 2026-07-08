@@ -343,7 +343,22 @@ export function EditorSection({
       // VS Code" links render (the browser editor shows the default worktree;
       // per-agent browser switching in cloud is the remaining follow-up).
       if (data.mode === "cloud" && data.editor_url) {
-        setAgents(data.agents ?? []);
+        const list = data.agents ?? [];
+        setAgents(list);
+        // Cloud carries a same-origin proxied base for the daemon pane surface
+        // (preview / test / live browser). Wiring it into the same `daemon`
+        // state the self-host path uses lights up the Preview and Browser tabs
+        // in cloud with zero pane changes. selectedId must be set too — the
+        // panes render on `daemon && selectedAgent`.
+        if (
+          typeof data.daemon_url === "string" &&
+          data.daemon_url.startsWith("/") &&
+          typeof data.user_id === "string" &&
+          data.user_id
+        ) {
+          setDaemon({ url: data.daemon_url, userId: data.user_id, env: data.editor_env });
+          setSelectedId(list[0]?.agent_id ?? null);
+        }
         // Don't iframe a URL whose code-server is actually dead — probe first so
         // an unreachable proxy shows the actionable empty state (with a retry)
         // instead of a raw browser net-error. See probeEditorReachable.
