@@ -197,7 +197,15 @@ export function LabsTab() {
               disabled={labsQuery.isLoading || saveLabs.isPending}
             >
               <SelectTrigger className="h-8 w-[220px] text-[12px]">
-                <SelectValue placeholder={t(($) => $.labs.qa_fallback_none)} />
+                <SelectValue>
+                  {() => {
+                    const id = labs.qa_fallback_box_id;
+                    const box = id ? boxes.find((x) => x.id === id) : undefined;
+                    return box
+                      ? box.label || boxURL(box.work_dir) || box.id.slice(0, 8)
+                      : t(($) => $.labs.qa_fallback_none);
+                  }}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={CLEAR_VALUE}>{t(($) => $.labs.qa_fallback_none)}</SelectItem>
@@ -311,7 +319,12 @@ export function LabsTab() {
                     disabled={bindBox.isPending}
                   >
                     <SelectTrigger className="h-8 w-[180px] text-[12px]">
-                      <SelectValue placeholder={t(($) => $.labs.project_none)} />
+                      <SelectValue>
+                        {() =>
+                          projects.find((p) => p.id === b.project_id)?.title ??
+                          t(($) => $.labs.project_none)
+                        }
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={CLEAR_VALUE}>{t(($) => $.labs.project_none)}</SelectItem>
@@ -334,7 +347,13 @@ export function LabsTab() {
                     disabled={bindBox.isPending}
                   >
                     <SelectTrigger className="h-8 w-[200px] text-[12px]">
-                      <SelectValue placeholder={t(($) => $.labs.owner_none)} />
+                      <SelectValue>
+                        {() =>
+                          ownerMember?.name ||
+                          ownerMember?.email ||
+                          t(($) => $.labs.owner_none)
+                        }
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={CLEAR_VALUE}>{t(($) => $.labs.owner_none)}</SelectItem>
