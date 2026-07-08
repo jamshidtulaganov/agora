@@ -2411,6 +2411,9 @@ func (s *TaskService) captureStructuredResult(ctx context.Context, issueID, agen
 	s.CaptureTestCases(ctx, issue, content, agentID)
 	s.CaptureTestRuns(ctx, issue, content, agentID)
 	s.CaptureCompiledScripts(ctx, issue, content, agentID)
+	// Additively enrich the project's qa_manifest with any routes/flows this
+	// task exercised, so the QA nav map grows richer with each done task.
+	s.CaptureQAManifest(ctx, issue, content, agentID)
 	// Base-suite chaining: run_test_cases runs recorded on an already-done
 	// tracking issue promote its cases into the standing project suite. The
 	// handler chain-hook fires on a comment POST; this path posts none, so do
@@ -2506,6 +2509,8 @@ func (s *TaskService) createAgentComment(ctx context.Context, issueID, agentID p
 	// Persist a synthesizer's ```knowledge-items``` block as knowledge_item
 	// rows and recompile the KB. Pre-expansion content on purpose (see above).
 	s.CaptureKnowledgeItems(ctx, issue, originalContent, agentID)
+	// Grow the project's qa_manifest with routes/flows the task exercised.
+	s.CaptureQAManifest(ctx, issue, originalContent, agentID)
 }
 
 // AutoUnresolveThreadOnReply clears resolved_at on the thread root when a

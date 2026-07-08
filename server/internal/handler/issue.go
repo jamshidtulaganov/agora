@@ -2340,6 +2340,15 @@ func (h *Handler) maybeEnqueueKnowledgeCapture(ctx context.Context, issue db.Iss
 		"comment follows the ISSUE'S language (e.g. Russian/Uzbek). If this issue produced no durable learning (trivial " +
 		"change, nothing surprising), post a short comment saying so and include NO knowledge-items block — an unchanged " +
 		"KB beats a diluted one."
+	prompt += "\n\nADDITIONALLY — QA NAV MAP: if this task added or exercised app routes/screens or a user flow that the " +
+		"project's QA manifest does not already list, include a SEPARATE fenced qa-manifest block so the nav map grows with " +
+		"the product. Additive only — the server MERGES it and never overwrites existing entries, so omit anything already " +
+		"present. Shape:\n\n" +
+		"```qa-manifest\n" +
+		"{\"routes\": {\"Human label\": \"/path\"}, \"flows\": [{\"name\": \"Short flow name\", \"path\": \"/path\", " +
+		"\"steps\": [\"open X\", \"click Y\"], \"assert\": \"what proves it worked\"}]}\n" +
+		"```\n\n" +
+		"Only routes/flows you are CONFIDENT exist (seen in the diff/PR or verified during QA). No qa-manifest block if nothing new."
 	comment, cerr := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
 		AuthorType: "agent", AuthorID: agentID,
