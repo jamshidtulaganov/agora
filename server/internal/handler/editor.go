@@ -227,13 +227,20 @@ func (h *Handler) GetIssueEditor(w http.ResponseWriter, r *http.Request) {
 	if internal := resolveDaemonInternalAddr(agents[0].editorAddr); internal != "" {
 		// Cloud / Remote Box: the backend proxies a single code-server; launch the
 		// latest worktree (per-agent switching in cloud is a follow-up).
-		port, lerr := launchEditorOnDaemon(r.Context(), internal, latest, userID, editorEnv)
+		port, proxyPath, lerr := launchEditorOnDaemon(r.Context(), internal, latest, userID, editorEnv)
 		if lerr == nil {
-			host := internal
-			if i := strings.LastIndex(internal, ":"); i > 0 {
-				host = internal[:i] // strip the health port; keep just the daemon host
+			// Prefer the daemon's health-listener route (proven 6PN-reachable);
+			// fall back to dialing the code-server port directly for daemons
+			// that predate proxy_path.
+			addr, prefix := internal, proxyPath
+			if prefix == "" {
+				host := internal
+				if i := strings.LastIndex(internal, ":"); i > 0 {
+					host = internal[:i] // strip the health port; keep just the daemon host
+				}
+				addr = fmt.Sprintf("%s:%d", host, port)
 			}
-			tok := registerEditorTarget(fmt.Sprintf("%s:%d", host, port), uuidToString(issue.WorkspaceID))
+			tok := registerEditorTarget(addr, prefix, uuidToString(issue.WorkspaceID))
 			writeJSON(w, http.StatusOK, map[string]any{
 				"mode":       "cloud",
 				"editor_url": "/editor/proxy/" + tok + "/?folder=" + url.QueryEscape(latest),
@@ -283,8 +290,13 @@ func (h *Handler) GetIssueEditor(w http.ResponseWriter, r *http.Request) {
 }
 
 // launchEditorOnDaemon asks the remote daemon (over 6PN) to spawn code-server
-// for a workdir and returns the port it bound.
-func launchEditorOnDaemon(ctx context.Context, internal, workdir, userID string, env map[string]string) (int, error) {
+// for a workdir. Returns the port it bound and, from daemons that support it,
+// a proxy_path on the daemon's HEALTH listener that reverse-proxies to that
+// editor ("/editor/local/<port>/"). Prefer the proxy path: the health listener
+// is the one address proven reachable over the private network, while dialing
+// the code-server port directly was not on Fly cloud nodes. An empty proxyPath
+// (older daemon / Remote Box build) falls back to the direct-port dial.
+func launchEditorOnDaemon(ctx context.Context, internal, workdir, userID string, env map[string]string) (port int, proxyPath string, err error) {
 	payload := map[string]any{"workdir": workdir, "user_id": userID}
 	if len(env) > 0 {
 		payload["env"] = env
@@ -292,34 +304,40 @@ func launchEditorOnDaemon(ctx context.Context, internal, workdir, userID string,
 	body, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+internal+"/editor/launch", bytes.NewReader(body))
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return 0, fmt.Errorf("daemon %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		return 0, "", fmt.Errorf("daemon %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
 	}
 	var out struct {
-		Port int `json:"port"`
+		Port      int    `json:"port"`
+		ProxyPath string `json:"proxy_path"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	if out.Port == 0 {
-		return 0, fmt.Errorf("daemon returned no port")
+		return 0, "", fmt.Errorf("daemon returned no port")
 	}
-	return out.Port, nil
+	return out.Port, strings.TrimSuffix(out.ProxyPath, "/"), nil
 }
 
 // --- cloud reverse-proxy: token -> code-server address on the daemon ---
 
 type editorTarget struct {
-	addr string // host:port of code-server on the daemon (6PN-reachable)
+	addr string // host:port on the daemon (6PN-reachable)
+	// prefix, when set, is prepended to the upstream path — the daemon health
+	// listener's per-editor route ("/editor/local/<port>"), so the proxy rides
+	// the known-reachable health port instead of dialing code-server directly.
+	// Empty for older daemons: addr is then the raw code-server host:port.
+	prefix string
 	// workspaceID binds the token to its workspace so ProxyEditor re-checks the
 	// caller's membership on every request (F8). The token is minted only after
 	// a membership check, but it lives 8h in the iframe URL and leaks via
@@ -334,12 +352,12 @@ var (
 	editorTargets   = map[string]editorTarget{}
 )
 
-func registerEditorTarget(addr, workspaceID string) string {
+func registerEditorTarget(addr, prefix, workspaceID string) string {
 	var buf [16]byte
 	_, _ = rand.Read(buf[:])
 	tok := hex.EncodeToString(buf[:])
 	editorTargetsMu.Lock()
-	editorTargets[tok] = editorTarget{addr: addr, workspaceID: workspaceID, expires: time.Now().Add(8 * time.Hour)}
+	editorTargets[tok] = editorTarget{addr: addr, prefix: prefix, workspaceID: workspaceID, expires: time.Now().Add(8 * time.Hour)}
 	editorTargetsMu.Unlock()
 	return tok
 }
@@ -386,6 +404,11 @@ func (h *Handler) ProxyEditor(w http.ResponseWriter, r *http.Request) {
 		req.URL.Path = strings.TrimPrefix(req.URL.Path, prefix)
 		if req.URL.Path == "" {
 			req.URL.Path = "/"
+		}
+		// New daemons: ride the health listener's per-editor route instead of
+		// the raw code-server port (t.prefix empty on older daemons).
+		if t.prefix != "" {
+			req.URL.Path = t.prefix + req.URL.Path
 		}
 		req.Host = addr
 	}

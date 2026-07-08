@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"os/exec"
@@ -239,12 +240,8 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 	// daemon, the browser and code-server are all on the same host for
 	// self-host, so the URL we return (127.0.0.1:<port>) is directly reachable.
 	// Reused per workdir. CORS is scoped to localhost origins (the Agora app).
-	type editorProc struct {
-		port int
-		cmd  *exec.Cmd
-	}
-	editors := make(map[string]*editorProc)
-	var editorsMu sync.Mutex
+	// (The editors registry lives at package level so editorLocalProxyHandler
+	// can gate its per-port reverse proxy on live instances.)
 
 	mux.HandleFunc("/editor/launch", func(w http.ResponseWriter, r *http.Request) {
 		if origin := r.Header.Get("Origin"); strings.HasPrefix(origin, "http://localhost") || strings.HasPrefix(origin, "http://127.0.0.1") {
@@ -380,6 +377,15 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 		d.logger.Info("launched code-server editor", "workdir", workdir, "port", port, "user", req.UserID, "log", logPath)
 		writeEditorURL(w, port, workdir)
 	})
+
+	// --- editor reverse-proxy: /editor/local/{port}/* → 127.0.0.1:{port} ---
+	// The backend reaches a spawned code-server THROUGH this health listener
+	// (the one address proven reachable over the Fly 6PN) instead of dialing
+	// the code-server port directly — direct port dials were unreachable on
+	// cloud nodes. Only ports of live, daemon-tracked editors are proxied, so
+	// this is not an open proxy into the machine. WebSocket upgrades pass
+	// through (httputil.ReverseProxy handles Upgrade natively).
+	mux.HandleFunc("/editor/local/", editorLocalProxyHandler)
 
 	// --- agent changes (git diff) for a task worktree ---
 	// For each git repo under the worktree, returns the agent's changes vs the
@@ -872,6 +878,59 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 	}
 }
 
+// editorProc tracks one spawned code-server instance: its port and the running
+// command (ProcessState flips non-nil once the reaper's Wait returns, which is
+// how both the launch-reuse check and the local proxy detect a dead editor).
+type editorProc struct {
+	port int
+	cmd  *exec.Cmd
+}
+
+// editors registers live code-server instances by (user, workdir) key. Package
+// level (not serveHealth-local) so editorLocalProxyHandler can validate that a
+// requested port belongs to a tracked live editor.
+var (
+	editors   = make(map[string]*editorProc)
+	editorsMu sync.Mutex
+)
+
+// editorLocalProxyHandler serves /editor/local/{port}/* by reverse-proxying to
+// the code-server bound on 127.0.0.1:{port}. Gated to ports of live,
+// daemon-tracked editors — never an open proxy into the machine. Split out of
+// serveHealth so the gate + path rewrite are unit-testable. WebSocket upgrades
+// pass through (httputil.ReverseProxy handles Upgrade natively).
+func editorLocalProxyHandler(w http.ResponseWriter, r *http.Request) {
+	rest := strings.TrimPrefix(r.URL.Path, "/editor/local/")
+	portStr, tail, _ := strings.Cut(rest, "/")
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port <= 0 || port > 65535 {
+		http.Error(w, "invalid editor port", http.StatusBadRequest)
+		return
+	}
+	editorsMu.Lock()
+	alive := false
+	for _, e := range editors {
+		if e.port == port && e.cmd.ProcessState == nil {
+			alive = true
+			break
+		}
+	}
+	editorsMu.Unlock()
+	if !alive {
+		http.Error(w, "no live editor on this port", http.StatusNotFound)
+		return
+	}
+	target := &url.URL{Scheme: "http", Host: fmt.Sprintf("127.0.0.1:%d", port)}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	orig := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		orig(req)
+		req.URL.Path = "/" + tail
+		req.Host = target.Host
+	}
+	proxy.ServeHTTP(w, r)
+}
+
 // writeEditorURL replies with the localhost code-server URL + the raw port. The
 // url is for self-host (browser hits 127.0.0.1 directly); the port lets the
 // cloud backend reverse-proxy to <daemon>.internal:<port> over the private net.
@@ -880,6 +939,12 @@ func writeEditorURL(w http.ResponseWriter, port int, workdir string) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"url":  fmt.Sprintf("http://127.0.0.1:%d/?folder=%s", port, url.QueryEscape(workdir)),
 		"port": port,
+		// proxy_path lets the backend reach this editor THROUGH the health
+		// server (already 6PN-reachable) instead of dialing the code-server
+		// port directly. Direct port dials proved unreachable on Fly cloud
+		// nodes even with a wildcard bind — routing through the one known-good
+		// listener kills that failure class. Old backends ignore the field.
+		"proxy_path": fmt.Sprintf("/editor/local/%d/", port),
 	})
 }
 
