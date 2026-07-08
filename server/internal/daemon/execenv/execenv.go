@@ -108,6 +108,12 @@ type TaskContextForEnv struct {
 	InitiatorID    string
 	InitiatorName  string
 	InitiatorEmail string
+	// LocalWorkDir is the user's own directory when this task runs in a
+	// local_directory project resource (in-place mode). Non-empty means the
+	// agent is ALREADY inside the project's code — the brief suppresses the
+	// `agora repo checkout` guidance so the agent edits in place instead of
+	// nesting a worktree. Empty for the standard managed-worktree flow.
+	LocalWorkDir string
 }
 
 // SkillContextForEnv represents a skill to be written into the execution environment.
@@ -226,7 +232,13 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	// and avoids a conditional that would silently disable cleanup if the
 	// local_directory detection logic ever drifts.
 	manifest := &sidecarManifest{}
-	if err := writeContextFiles(workDir, params.Provider, params.Task, manifest); err != nil {
+	// Tell the brief builder we're in local_directory (in-place) mode so it
+	// suppresses the repo-checkout guidance — the agent is already inside the
+	// project's code and must edit here, not `agora repo checkout` a nested
+	// worktree.
+	task := params.Task
+	task.LocalWorkDir = params.LocalWorkDir
+	if err := writeContextFiles(workDir, params.Provider, task, manifest); err != nil {
 		return nil, fmt.Errorf("execenv: write context files: %w", err)
 	}
 
@@ -379,7 +391,11 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 	// legacy local_directory Reuse fallback — skip the persist in that
 	// case to avoid creating a stray manifest at the filesystem root.
 	manifest := &sidecarManifest{}
-	if err := writeContextFiles(params.WorkDir, params.Provider, params.Task, manifest); err != nil {
+	task := params.Task
+	if params.LocalDirectory {
+		task.LocalWorkDir = params.WorkDir
+	}
+	if err := writeContextFiles(params.WorkDir, params.Provider, task, manifest); err != nil {
 		logger.Warn("execenv: refresh context files failed", "error", err)
 	}
 

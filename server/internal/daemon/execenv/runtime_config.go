@@ -557,7 +557,26 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 	b.WriteString("- Never describe a code change without showing its lines. Docs/data-only and no-code tasks are exempt.\n\n")
 
 	// Inject available repositories section.
-	if len(ctx.Repos) > 0 {
+	if ctx.LocalWorkDir != "" {
+		// In-place (local_directory) mode: the agent is ALREADY inside the
+		// project's code at ctx.LocalWorkDir. Do NOT tell it to `agora repo
+		// checkout` — that would nest a worktree and the agent would edit the
+		// wrong tree. List the repos for reference only.
+		b.WriteString("## Working Directory (local, in-place)\n\n")
+		fmt.Fprintf(&b, "You are running **in place** inside the project's own working directory: `%s`.\n", ctx.LocalWorkDir)
+		b.WriteString("The code is ALREADY here — edit files directly in this directory. Do **NOT** run `agora repo checkout`; doing so would create a nested worktree and your edits would land in the wrong place.\n\n")
+		if len(ctx.Repos) > 0 {
+			b.WriteString("For reference, this project maps to these repositories (already represented by the directory you're in — do not check them out):\n\n")
+			for _, repo := range ctx.Repos {
+				if repo.Description != "" {
+					fmt.Fprintf(&b, "- %s — %s\n", repo.URL, repo.Description)
+				} else {
+					fmt.Fprintf(&b, "- %s\n", repo.URL)
+				}
+			}
+			b.WriteString("\n")
+		}
+	} else if len(ctx.Repos) > 0 {
 		b.WriteString("## Repositories\n\n")
 		b.WriteString("The following code repositories are available in this workspace.\n")
 		b.WriteString("Use `agora repo checkout <url>` to check out a repository into your working directory. Add `--ref <branch-or-sha>` when you need an exact branch, tag, or commit.\n\n")
@@ -585,7 +604,11 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 				fmt.Fprintf(&b, "- %s\n", formatProjectResource(r))
 			}
 			b.WriteString("\nResources are pointers — open them only when relevant to the task. ")
-			b.WriteString("For `github_repo` resources, use `agora repo checkout <url>` to fetch the code. Add `--ref <branch-or-sha>` when a task or handoff names an exact revision.\n\n")
+			if ctx.LocalWorkDir != "" {
+				b.WriteString("A `local_directory` resource applies here: you are running in place inside it (see **Working Directory** above), so do NOT `agora repo checkout` the `github_repo` resources — the code is already in your working directory.\n\n")
+			} else {
+				b.WriteString("For `github_repo` resources, use `agora repo checkout <url>` to fetch the code. Add `--ref <branch-or-sha>` when a task or handoff names an exact revision.\n\n")
+			}
 		} else {
 			b.WriteString("This project has no resources attached yet.\n\n")
 		}

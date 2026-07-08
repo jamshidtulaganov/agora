@@ -1369,3 +1369,59 @@ func TestCleanupRuntimeConfigExcisesLegacyMarkerBlock(t *testing.T) {
 		t.Errorf("user content must be restored byte-for-byte\n got:\n%q\nwant:\n%q", s, userBefore)
 	}
 }
+
+// A local_directory (in-place) task must NOT be told to `agora repo checkout` —
+// that nests a worktree and the agent edits the wrong tree. When LocalWorkDir
+// is set the brief must carry an in-place working-directory directive and
+// suppress the checkout guidance, even though github_repo resources are listed.
+func TestLocalDirectoryBriefSuppressesRepoCheckout(t *testing.T) {
+	t.Parallel()
+	ctx := TaskContextForEnv{
+		IssueID:      "55555555-6666-7777-8888-999999999999",
+		LocalWorkDir: "/Users/dev/Projects/app",
+		Repos: []RepoContextForEnv{
+			{URL: "ssh://git@example.com/org/app.git", Description: "the app"},
+		},
+		ProjectID:    "77777777-8888-9999-aaaa-bbbbbbbbbbbb",
+		ProjectTitle: "Local App",
+		ProjectResources: []ProjectResourceForEnv{
+			{ResourceType: "github_repo"},
+			{ResourceType: "local_directory"},
+		},
+	}
+	out := buildMetaSkillContent("claude", ctx)
+
+	if !strings.Contains(out, "/Users/dev/Projects/app") {
+		t.Error("in-place brief must name the local working directory")
+	}
+	if !strings.Contains(out, "Working Directory (local, in-place)") {
+		t.Error("in-place brief must carry the Working Directory section")
+	}
+	if !strings.Contains(out, "do **NOT** run `agora repo checkout`") &&
+		!strings.Contains(out, "Do **NOT** run `agora repo checkout`") {
+		t.Error("in-place brief must forbid agora repo checkout")
+	}
+	// The standard checkout invitation must NOT appear as the repos header.
+	if strings.Contains(out, "Use `agora repo checkout <url>` to check out a repository into your working directory.") {
+		t.Error("in-place brief must not invite repo checkout in the repositories section")
+	}
+}
+
+// Without LocalWorkDir the standard checkout guidance stays intact (regression
+// guard for the non-local flow).
+func TestStandardBriefKeepsRepoCheckout(t *testing.T) {
+	t.Parallel()
+	ctx := TaskContextForEnv{
+		IssueID: "55555555-6666-7777-8888-999999999999",
+		Repos: []RepoContextForEnv{
+			{URL: "ssh://git@example.com/org/app.git"},
+		},
+	}
+	out := buildMetaSkillContent("claude", ctx)
+	if !strings.Contains(out, "Use `agora repo checkout <url>` to check out a repository into your working directory.") {
+		t.Error("standard brief must keep the repo checkout guidance")
+	}
+	if strings.Contains(out, "Working Directory (local, in-place)") {
+		t.Error("standard brief must not carry the in-place section")
+	}
+}

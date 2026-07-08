@@ -140,7 +140,7 @@ agora project resource update <project-id> <resource-id> \
 
 实际会碰到两种跨资源的组合：
 
-- **同一个项目同时挂 `github_repo` 和 `local_directory`。** 在拥有匹配 `local_directory` 绑定的那台守护进程上，本地目录 **优先**：智能体跑在你的目录里，这次任务不会为项目的 `github_repo` 创建或使用 worktree。（每工作区的仓库缓存可能仍会照常 sync，这层是和具体任务无关的后台行为。）`github_repo` 的 URL 仍然会出现在 `.agora/project/resources.json` 和智能体的 `## Repositories` 段里供参考，但智能体真正在编辑的工作树是你的本地目录，不是 worktree。在 **没有** 匹配 `local_directory` 行的其他守护进程上（不同机器、或者那位队友还没挂本地目录），任务按原本的 `github_repo` worktree 流程走。本质上 `local_directory` 是某台守护进程对 worktree 路径的一个覆盖。
+- **同一个项目同时挂 `github_repo` 和 `local_directory`。** 在拥有匹配 `local_directory` 绑定的那台守护进程上，本地目录 **优先**：智能体跑在你的目录里，这次任务不会为项目的 `github_repo` 创建或使用 worktree。智能体的 brief 也会改写成 in-place 模式 —— 不再给它 "`agora repo checkout <url>`" 的指引，而是一个 **Working Directory (local, in-place)** 段，告诉它代码已经在这里、直接编辑文件，**不要** 运行 `agora repo checkout`（那会在你的文件夹里嵌套一个多余的 worktree）。`github_repo` 的 URL 仍会在 `.agora/project/resources.json` 和 brief 里列出供参考，并标注"已由你所在的目录代表 —— 不要 checkout"。在 **没有** 匹配 `local_directory` 行的其他守护进程上（不同机器、或者那位队友还没挂本地目录），任务按原本的 `github_repo` worktree 流程走。本质上 `local_directory` 是某台守护进程对 worktree 路径的一个覆盖。
 - **同一个项目挂两个 `local_directory`。** 每个 `local_directory` 只能绑一台守护进程，所以这只会发生在两台不同机器之间（同一台机器上想加第二条会被 API 当场拒掉，见上一节）。任务的去向由智能体 runtime 绑定决定，不是由"哪台守护进程有本地目录"决定 —— 任务会落到承载这条智能体 runtime 的那台守护进程上，由它挑出匹配自己 ID 的那一行、忽略其他行。这里没有负载均衡：如果你想让某台机器跑某条任务，请把任务派给绑在那台机器 runtime 上的智能体。
 
 如果某台守护进程没有匹配这个项目的 `local_directory` 行，**不会**因为别处有人绑了就被拦下 —— 它的任务会照常走项目里的其他资源（一般就是 `github_repo` 那条 fallback 路径）。`local_directory` 只对它绑定的那台守护进程生效。
