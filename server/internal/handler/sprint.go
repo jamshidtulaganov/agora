@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/logger"
+	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -579,6 +580,88 @@ func (h *Handler) SetIssueSprint(w http.ResponseWriter, r *http.Request) {
 		"sprint":   resp,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"sprint": resp})
+}
+
+// BatchSetIssueSprintRequest is the POST body for POST /api/issues/batch-sprint.
+type BatchSetIssueSprintRequest struct {
+	IssueIDs []string `json:"issue_ids"`
+	SprintID string   `json:"sprint_id"`
+}
+
+// BatchSetIssueSprint moves the listed issues onto a sprint in one call. Because
+// sprints are project-scoped, issues whose project differs from the sprint's are
+// skipped; the response reports how many actually moved so the UI can say
+// "moved 4 of 6". POST /api/issues/batch-sprint.
+func (h *Handler) BatchSetIssueSprint(w http.ResponseWriter, r *http.Request) {
+	var req BatchSetIssueSprintRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if len(req.IssueIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "issue_ids is required")
+		return
+	}
+	sprintUUID, ok := parseUUIDOrBadRequest(w, strings.TrimSpace(req.SprintID), "sprint_id")
+	if !ok {
+		return
+	}
+	wsUUID, ok := parseUUIDOrBadRequest(w, h.resolveWorkspaceID(r), "workspace_id")
+	if !ok {
+		return
+	}
+	ids := make([]pgtype.UUID, 0, len(req.IssueIDs))
+	for _, s := range req.IssueIDs {
+		if u, err := util.ParseUUID(s); err == nil {
+			ids = append(ids, u)
+		}
+	}
+	if len(ids) == 0 {
+		writeError(w, http.StatusBadRequest, "no valid issue_ids")
+		return
+	}
+	moved, err := h.Queries.BatchSetIssueSprint(r.Context(), db.BatchSetIssueSprintParams{
+		SprintID:    sprintUUID,
+		IssueIds:    ids,
+		WorkspaceID: wsUUID,
+	})
+	if err != nil {
+		slog.Warn("BatchSetIssueSprint failed", append(logger.RequestAttrs(r), "error", err)...)
+		writeError(w, http.StatusInternalServerError, "failed to move issues to sprint")
+		return
+	}
+	// Single batch event (not N) so other clients invalidate their issue/sprint
+	// caches without a flood of per-issue publishes.
+	h.publish(protocol.EventIssueSprintChanged, uuidToString(wsUUID), "member", requestUserID(r), map[string]any{
+		"batch": true, "moved": moved,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"moved": moved})
+}
+
+// ListWorkspaceSprints returns every non-completed sprint across the workspace's
+// projects for the bulk "move to sprint" picker. GET /api/sprints.
+func (h *Handler) ListWorkspaceSprints(w http.ResponseWriter, r *http.Request) {
+	wsUUID, ok := parseUUIDOrBadRequest(w, h.resolveWorkspaceID(r), "workspace_id")
+	if !ok {
+		return
+	}
+	rows, err := h.Queries.ListSprintsForWorkspace(r.Context(), wsUUID)
+	if err != nil {
+		slog.Warn("ListWorkspaceSprints failed", append(logger.RequestAttrs(r), "error", err)...)
+		writeError(w, http.StatusInternalServerError, "failed to list sprints")
+		return
+	}
+	out := make([]map[string]any, 0, len(rows))
+	for _, s := range rows {
+		out = append(out, map[string]any{
+			"id":            uuidToString(s.ID),
+			"name":          s.Name,
+			"status":        s.Status,
+			"project_id":    uuidToString(s.ProjectID),
+			"project_title": s.ProjectTitle,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sprints": out})
 }
 
 // GetIssueSprint returns the sprint an issue is assigned to, or {"sprint": null}

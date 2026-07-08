@@ -524,6 +524,8 @@
     "priority": "Приоритет",
     "assignee": "Исполнитель",
     "project": "Проект",
+    "sprint": "Спринт",
+    "sprint_moved": "Перемещено {{count}} из {{total}} в спринт",
     "delete": "Удалить",
     "update_success_one": "Обновлена {{count}} задача",
     "update_success_other": "Обновлено {{count}} задач",

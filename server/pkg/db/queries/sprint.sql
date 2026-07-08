@@ -39,8 +39,31 @@ RETURNING *;
 INSERT INTO issue_to_sprint (issue_id, sprint_id) VALUES ($1, $2)
 ON CONFLICT (issue_id) DO UPDATE SET sprint_id = EXCLUDED.sprint_id, created_at = now();
 
+-- name: BatchSetIssueSprint :execrows
+-- Move every listed issue that lives in the sprint's project onto that sprint.
+-- Sprints are project-scoped, so issues from a different project are skipped —
+-- a mixed selection moves only the matching ones. Workspace-guarded on both the
+-- issues and the sprint. Returns the number of issues actually moved.
+INSERT INTO issue_to_sprint (issue_id, sprint_id)
+SELECT i.id, @sprint_id::uuid FROM issue i
+WHERE i.id = ANY(@issue_ids::uuid[])
+  AND i.workspace_id = @workspace_id
+  AND i.project_id = (SELECT s.project_id FROM sprint s
+                      WHERE s.id = @sprint_id::uuid AND s.workspace_id = @workspace_id)
+ON CONFLICT (issue_id) DO UPDATE SET sprint_id = EXCLUDED.sprint_id, created_at = now();
+
 -- name: RemoveIssueSprint :exec
 DELETE FROM issue_to_sprint WHERE issue_id = $1;
+
+-- name: ListSprintsForWorkspace :many
+-- Every non-completed sprint in the workspace, with its project, for the bulk
+-- "move to sprint" picker. Grouped client-side by project (sprints are
+-- project-scoped, so the picker shows which project each belongs to).
+SELECT s.id, s.name, s.status, s.project_id, p.title AS project_title
+FROM sprint s
+JOIN project p ON p.id = s.project_id
+WHERE s.workspace_id = $1 AND s.status <> 'completed'
+ORDER BY p.title ASC, s.created_at DESC;
 
 -- name: GetSprintForIssue :one
 SELECT s.* FROM sprint s JOIN issue_to_sprint i ON i.sprint_id = s.id WHERE i.issue_id = $1;

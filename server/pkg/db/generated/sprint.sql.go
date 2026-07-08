@@ -11,6 +11,34 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const batchSetIssueSprint = `-- name: BatchSetIssueSprint :execrows
+INSERT INTO issue_to_sprint (issue_id, sprint_id)
+SELECT i.id, $1::uuid FROM issue i
+WHERE i.id = ANY($2::uuid[])
+  AND i.workspace_id = $3
+  AND i.project_id = (SELECT s.project_id FROM sprint s
+                      WHERE s.id = $1::uuid AND s.workspace_id = $3)
+ON CONFLICT (issue_id) DO UPDATE SET sprint_id = EXCLUDED.sprint_id, created_at = now()
+`
+
+type BatchSetIssueSprintParams struct {
+	SprintID    pgtype.UUID   `json:"sprint_id"`
+	IssueIds    []pgtype.UUID `json:"issue_ids"`
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+}
+
+// Move every listed issue that lives in the sprint's project onto that sprint.
+// Sprints are project-scoped, so issues from a different project are skipped —
+// a mixed selection moves only the matching ones. Workspace-guarded on both the
+// issues and the sprint. Returns the number of issues actually moved.
+func (q *Queries) BatchSetIssueSprint(ctx context.Context, arg BatchSetIssueSprintParams) (int64, error) {
+	result, err := q.db.Exec(ctx, batchSetIssueSprint, arg.SprintID, arg.IssueIds, arg.WorkspaceID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createSprint = `-- name: CreateSprint :one
 INSERT INTO sprint (workspace_id, project_id, name, goal, status, start_date, end_date, branch)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, workspace_id, project_id, name, goal, status, start_date, end_date, created_at, updated_at, branch
@@ -191,7 +219,7 @@ func (q *Queries) ListDueSprints(ctx context.Context) ([]Sprint, error) {
 }
 
 const listIssuesBySprint = `-- name: ListIssuesBySprint :many
-SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority, i.assignee_type, i.assignee_id, i.creator_type, i.creator_id, i.parent_issue_id, i.acceptance_criteria, i.context_refs, i.position, i.due_date, i.created_at, i.updated_at, i.number, i.project_id, i.origin_type, i.origin_id, i.first_executed_at, i.start_date, i.metadata FROM issue i JOIN issue_to_sprint x ON x.issue_id = i.id WHERE x.sprint_id = $1 ORDER BY i.created_at
+SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority, i.assignee_type, i.assignee_id, i.creator_type, i.creator_id, i.parent_issue_id, i.acceptance_criteria, i.context_refs, i.position, i.due_date, i.created_at, i.updated_at, i.number, i.project_id, i.origin_type, i.origin_id, i.first_executed_at, i.start_date, i.metadata, i.archived_at FROM issue i JOIN issue_to_sprint x ON x.issue_id = i.id WHERE x.sprint_id = $1 ORDER BY i.created_at
 `
 
 func (q *Queries) ListIssuesBySprint(ctx context.Context, sprintID pgtype.UUID) ([]Issue, error) {
@@ -228,6 +256,7 @@ func (q *Queries) ListIssuesBySprint(ctx context.Context, sprintID pgtype.UUID) 
 			&i.FirstExecutedAt,
 			&i.StartDate,
 			&i.Metadata,
+			&i.ArchivedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -299,6 +328,51 @@ func (q *Queries) ListSprintsByProject(ctx context.Context, projectID pgtype.UUI
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Branch,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSprintsForWorkspace = `-- name: ListSprintsForWorkspace :many
+SELECT s.id, s.name, s.status, s.project_id, p.title AS project_title
+FROM sprint s
+JOIN project p ON p.id = s.project_id
+WHERE s.workspace_id = $1 AND s.status <> 'completed'
+ORDER BY p.title ASC, s.created_at DESC
+`
+
+type ListSprintsForWorkspaceRow struct {
+	ID           pgtype.UUID `json:"id"`
+	Name         string      `json:"name"`
+	Status       string      `json:"status"`
+	ProjectID    pgtype.UUID `json:"project_id"`
+	ProjectTitle string      `json:"project_title"`
+}
+
+// Every non-completed sprint in the workspace, with its project, for the bulk
+// "move to sprint" picker. Grouped client-side by project (sprints are
+// project-scoped, so the picker shows which project each belongs to).
+func (q *Queries) ListSprintsForWorkspace(ctx context.Context, workspaceID pgtype.UUID) ([]ListSprintsForWorkspaceRow, error) {
+	rows, err := q.db.Query(ctx, listSprintsForWorkspace, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSprintsForWorkspaceRow{}
+	for rows.Next() {
+		var i ListSprintsForWorkspaceRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Status,
+			&i.ProjectID,
+			&i.ProjectTitle,
 		); err != nil {
 			return nil, err
 		}

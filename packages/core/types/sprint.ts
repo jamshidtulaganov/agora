@@ -1,5 +1,16 @@
 export type SprintStatus = "planned" | "active" | "completed";
 
+// Lightweight sprint shape for the workspace-wide bulk "move to sprint" picker
+// (GET /api/sprints) — carries the owning project so the picker can group and
+// so the caller knows which project each sprint belongs to.
+export interface WorkspaceSprint {
+  id: string;
+  name: string;
+  status: string;
+  project_id: string;
+  project_title: string;
+}
+
 export interface Sprint {
   id: string;
   workspace_id: string;

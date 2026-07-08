@@ -889,6 +889,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Post("/quick-create", h.QuickCreateIssue)
 				r.Post("/batch-update", h.BatchUpdateIssues)
 				r.Post("/batch-delete", h.BatchDeleteIssues)
+				r.Post("/batch-sprint", h.BatchSetIssueSprint)
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", h.GetIssue)
 					r.Put("/", h.UpdateIssue)
@@ -1034,6 +1035,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// Sprints — direct access by id (the project-scoped list/create
 			// lives under /api/projects/{id}/sprints above).
 			r.Route("/api/sprints", func(r chi.Router) {
+				r.Get("/", h.ListWorkspaceSprints)
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", h.GetSprintByID)
 					r.Put("/", h.UpdateSprint)

@@ -97,6 +97,7 @@ import type {
   UpdateProjectResourceRequest,
   ListProjectResourcesResponse,
   Sprint,
+  WorkspaceSprint,
   CreateSprintRequest,
   UpdateSprintRequest,
   ListSprintsResponse,
@@ -2289,6 +2290,26 @@ export class ApiClient {
 
   async clearIssueSprint(issueId: string): Promise<void> {
     await this.fetch(`/api/issues/${issueId}/sprint`, { method: "DELETE" });
+  }
+
+  // Bulk "move to sprint": set the sprint for many issues at once. Issues in a
+  // different project than the sprint are skipped server-side (sprints are
+  // project-scoped); `moved` reports how many actually changed.
+  async batchSetIssueSprint(
+    issueIds: string[],
+    sprintId: string,
+  ): Promise<{ moved: number }> {
+    return this.fetch(`/api/issues/batch-sprint`, {
+      method: "POST",
+      body: JSON.stringify({ issue_ids: issueIds, sprint_id: sprintId }),
+    });
+  }
+
+  // Every non-completed sprint across the workspace's projects, for the bulk
+  // move-to-sprint picker (grouped client-side by project_title).
+  async listWorkspaceSprints(): Promise<WorkspaceSprint[]> {
+    const res = await this.fetch<{ sprints: WorkspaceSprint[] }>(`/api/sprints`);
+    return res.sprints ?? [];
   }
 
   // Fetch the issue's current sprint directly (server returns `{sprint}` or

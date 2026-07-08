@@ -513,6 +513,8 @@
     "priority": "优先级",
     "assignee": "负责人",
     "project": "项目",
+    "sprint": "冲刺",
+    "sprint_moved": "已将 {{total}} 个中的 {{count}} 个移动到冲刺",
     "delete": "删除",
     "update_success_other": "已更新 {{count}} 个 issue",
     "update_failed": "更新 issue 失败",

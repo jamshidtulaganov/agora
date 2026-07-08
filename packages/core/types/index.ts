@@ -99,6 +99,7 @@ export type {
 } from "./project";
 export type {
   Sprint,
+  WorkspaceSprint,
   SprintStatus,
   CreateSprintRequest,
   UpdateSprintRequest,
