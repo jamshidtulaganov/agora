@@ -14,6 +14,17 @@ func TestBrowserProxyPathAllowed(t *testing.T) {
 		"/editor/browser/stop",
 		"/editor/browser/stream",
 		"/editor/browser/stream?workdir=qa-target:https://x", // query rides RawQuery, but a raw path form must still pass
+		// Preview / test / proxied dev-server port + review surface — the panes
+		// the cloud co-code editor drives through this proxy.
+		"/editor/preview",
+		"/editor/preview/status",
+		"/editor/preview/stop",
+		"/editor/test",
+		"/editor/local/42873/",
+		"/editor/local/42873/assets/index.js",
+		"/editor/changes",
+		"/editor/open-pr",
+		"/editor/discard",
 	}
 	for _, p := range allowed {
 		if !browserProxyPathAllowed(p) {
@@ -22,12 +33,15 @@ func TestBrowserProxyPathAllowed(t *testing.T) {
 	}
 	denied := []string{
 		"/editor/launch",     // spawns code-server with caller-controlled env
+		"/repo/checkout",     // clones an arbitrary repo
 		"/trace/launch",      // spawns show-trace for an arbitrary path
 		"/update",            // daemon self-update
 		"/",                  // mux root
 		"",                   // empty after prefix strip
 		"/editor/browser",    // no trailing slash — not the subtree
 		"/editor/browserish", // prefix-confusion sibling
+		"/editor/localhost",  // not the /editor/local/ route
+		"/editor/previewx",   // exact/slashed only — not a prefix sibling
 	}
 	for _, p := range denied {
 		if browserProxyPathAllowed(p) {

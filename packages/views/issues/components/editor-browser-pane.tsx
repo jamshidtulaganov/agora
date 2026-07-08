@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { RotateCw, Loader2, TriangleAlert, Globe, Copy, Check, ChevronUp, ChevronDown, Trash2 } from "lucide-react";
+import { proxyHeaders, absoluteBase } from "./editor-proxy-fetch";
 
 // Embedded browser ("general browser pane"). Opens a WebSocket to the daemon,
 // which screencasts a headless Chromium (CDP) — frames render here, and mouse /
@@ -31,27 +32,9 @@ const MAX_INSPECTOR_EVENTS = 200;
 // same-origin path base (cloud: /browser/proxy/<token> — the backend
 // reverse-proxies to the remote daemon). Normalize to absolute so the
 // http→ws scheme swap for the stream URL works in both shapes.
-// Headers for the pane's POSTs. Through the same-origin cloud proxy the
-// request is cookie-authenticated, so Agora's double-submit CSRF header must
-// ride along (read from the agora_csrf cookie, same as the API client). A
-// direct self-host daemon call must NOT carry it — the daemon's CORS
-// allowlist is Content-Type only, and it does its own localhost-origin check.
-function proxyHeaders(daemonUrl: string): Record<string, string> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (/^https?:\/\//.test(daemonUrl)) return headers;
-  if (typeof document !== "undefined") {
-    const match = document.cookie.split("; ").find((c) => c.startsWith("agora_csrf="));
-    const token = match?.split("=")[1];
-    if (token) headers["X-CSRF-Token"] = token;
-  }
-  return headers;
-}
-
-function absoluteBase(daemonUrl: string): string {
-  if (/^https?:\/\//.test(daemonUrl)) return daemonUrl;
-  if (typeof window === "undefined") return daemonUrl;
-  return window.location.origin + daemonUrl;
-}
+// proxyHeaders / absoluteBase now live in editor-proxy-fetch (shared with the
+// preview / changes / review-bar panes, which need the same cloud-vs-self-host
+// request shaping).
 
 export function EditorBrowserPane({
   daemonUrl,

@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { FileDiff, GitBranch } from "lucide-react";
+import { proxyHeaders, absoluteBase } from "./editor-proxy-fetch";
 
 // Inline "what changed" — the committed/working file list for the agent's
 // worktree, so a reviewer sees which files moved (+adds / −dels) without opening
@@ -26,9 +27,9 @@ export function EditorChangesList({
   const { data } = useQuery({
     queryKey: ["editor-changes", workdir],
     queryFn: async () => {
-      const r = await fetch(`${daemonUrl}/editor/changes`, {
+      const r = await fetch(`${absoluteBase(daemonUrl)}/editor/changes`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: proxyHeaders(daemonUrl),
         body: JSON.stringify({ workdir }),
       });
       if (!r.ok) throw new Error("changes lookup failed");

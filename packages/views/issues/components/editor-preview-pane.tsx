@@ -11,6 +11,7 @@ import {
   Globe,
 } from "lucide-react";
 import { cn } from "@agora/ui/lib/utils";
+import { proxyHeaders, absoluteBase } from "./editor-proxy-fetch";
 
 // Live preview — the vibecoder's "Verify". Runs the project's dev server in the
 // agent's worktree (daemon-side) and iframes it, so you see the app RUN, not the
@@ -150,9 +151,9 @@ export function EditorPreviewPane({
       setLocalTestPassed(null);
     }
     try {
-      const r = await fetch(`${daemonUrl}/editor/test`, {
+      const r = await fetch(`${absoluteBase(daemonUrl)}/editor/test`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: proxyHeaders(daemonUrl),
         // Empty command still means "daemon auto-detects".
         body: JSON.stringify({ workdir, command: defaultTestCommand ?? "" }),
       });
@@ -208,9 +209,9 @@ export function EditorPreviewPane({
     let cancelled = false;
     void (async () => {
       try {
-        const r = await fetch(`${daemonUrl}/editor/preview/status`, {
+        const r = await fetch(`${absoluteBase(daemonUrl)}/editor/preview/status`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: proxyHeaders(daemonUrl),
           body: JSON.stringify({ workdir }),
         });
         if (!r.ok) return;
@@ -244,9 +245,9 @@ export function EditorPreviewPane({
     let cancelled = false;
     const tick = async () => {
       try {
-        const r = await fetch(`${daemonUrl}/editor/preview/status`, {
+        const r = await fetch(`${absoluteBase(daemonUrl)}/editor/preview/status`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: proxyHeaders(daemonUrl),
           body: JSON.stringify({ workdir }),
         });
         if (!r.ok) return;
@@ -275,9 +276,9 @@ export function EditorPreviewPane({
     setMsg("");
     setLog("");
     try {
-      const r = await fetch(`${daemonUrl}/editor/preview`, {
+      const r = await fetch(`${absoluteBase(daemonUrl)}/editor/preview`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: proxyHeaders(daemonUrl),
         body: JSON.stringify({ workdir, command: command.trim() }),
       });
       if (!r.ok) throw new Error(`preview failed (${r.status})`);
@@ -316,9 +317,9 @@ export function EditorPreviewPane({
 
   const stop = async () => {
     try {
-      await fetch(`${daemonUrl}/editor/preview/stop`, {
+      await fetch(`${absoluteBase(daemonUrl)}/editor/preview/stop`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: proxyHeaders(daemonUrl),
         body: JSON.stringify({ workdir }),
       });
     } catch {

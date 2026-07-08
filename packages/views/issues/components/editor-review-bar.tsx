@@ -20,6 +20,7 @@ import {
   derivePullRequestStatusKind,
 } from "@agora/core/github";
 import { cn } from "@agora/ui/lib/utils";
+import { proxyHeaders, absoluteBase } from "./editor-proxy-fetch";
 import { EditorGates } from "./editor-gates";
 
 // The co-code "trust bar". Built for a traditional developer who reviews every
@@ -100,9 +101,9 @@ export function EditorReviewBar({
   const { data: changes } = useQuery({
     queryKey: ["editor-changes", workdir],
     queryFn: async () => {
-      const r = await fetch(`${daemonUrl}/editor/changes`, {
+      const r = await fetch(`${absoluteBase(daemonUrl)}/editor/changes`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: proxyHeaders(daemonUrl),
         body: JSON.stringify({ workdir }),
       });
       if (!r.ok) throw new Error("changes lookup failed");
@@ -144,9 +145,9 @@ export function EditorReviewBar({
       const body = issueKey
         ? `Co-coded with the agent in Agora.\n\nCloses ${issueKey}`
         : "Co-coded with the agent in Agora.";
-      const r = await fetch(`${daemonUrl}/editor/open-pr`, {
+      const r = await fetch(`${absoluteBase(daemonUrl)}/editor/open-pr`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: proxyHeaders(daemonUrl),
         body: JSON.stringify({ workdir, title, body }),
       });
       if (!r.ok) throw new Error(`open PR failed (${r.status})`);
@@ -181,9 +182,9 @@ export function EditorReviewBar({
     setMsg(null);
     setConfirmDiscard(false);
     try {
-      const r = await fetch(`${daemonUrl}/editor/discard`, {
+      const r = await fetch(`${absoluteBase(daemonUrl)}/editor/discard`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: proxyHeaders(daemonUrl),
         body: JSON.stringify({ workdir }),
       });
       if (!r.ok) throw new Error(`discard failed (${r.status})`);

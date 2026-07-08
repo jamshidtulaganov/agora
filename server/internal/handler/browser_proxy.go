@@ -131,7 +131,14 @@ func browserProxyPathAllowed(p string) bool {
 		p == "/editor/preview" ||
 		strings.HasPrefix(p, "/editor/preview/") ||
 		p == "/editor/test" ||
-		strings.HasPrefix(p, "/editor/local/")
+		strings.HasPrefix(p, "/editor/local/") ||
+		// Review surface: the changes summary the pane polls, plus the two
+		// human review actions (Accept→PR / Discard). Same trust as self-host
+		// (there the browser hits the daemon directly) — the token is
+		// workspace-membership-gated. Still excludes launch/checkout/updater.
+		p == "/editor/changes" ||
+		p == "/editor/open-pr" ||
+		p == "/editor/discard"
 }
 
 // ProxyBrowser reverse-proxies /browser/proxy/{token}/editor/browser/* (HTTP +
