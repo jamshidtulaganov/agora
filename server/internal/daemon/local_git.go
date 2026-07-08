@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // This file protects a user's own git checkout when an agent runs inside it
@@ -126,7 +129,55 @@ func prepareLocalDirGit(ctx context.Context, dir, agentName, taskID string, log 
 		}
 	}
 	g.branch = branchName
+
+	// Prune stale dirty-tree snapshots from earlier runs so the backup refs
+	// don't accumulate unbounded in the user's repo. Best-effort.
+	pruneOldBackupRefs(ctx, dir, backupRefTTL(), log)
 	return g, nil
+}
+
+const backupRefPrefix = "refs/agora/backup/"
+
+// backupRefTTL is how long a dirty-tree snapshot ref is kept. Override with
+// AGORA_LOCAL_BACKUP_TTL_DAYS; 0 disables pruning. Default 14 days.
+func backupRefTTL() time.Duration {
+	if v := strings.TrimSpace(os.Getenv("AGORA_LOCAL_BACKUP_TTL_DAYS")); v != "" {
+		if days, err := strconv.Atoi(v); err == nil && days >= 0 {
+			return time.Duration(days) * 24 * time.Hour
+		}
+	}
+	return 14 * 24 * time.Hour
+}
+
+// pruneOldBackupRefs deletes refs/agora/backup/* whose committer time is older
+// than maxAge. A snapshot commit's committer date is when it was created, so
+// it doubles as the ref's age. Best-effort: any git failure is logged and
+// ignored. maxAge <= 0 disables pruning.
+func pruneOldBackupRefs(ctx context.Context, dir string, maxAge time.Duration, log *slog.Logger) {
+	if maxAge <= 0 {
+		return
+	}
+	// One line per ref: "<committer-unix-ts> <refname>".
+	out, err := gitOutput(ctx, dir, "for-each-ref", "--format=%(committerdate:unix) %(refname)", backupRefPrefix)
+	if err != nil || out == "" {
+		return
+	}
+	cutoff := time.Now().Add(-maxAge)
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+		ts, err := strconv.ParseInt(fields[0], 10, 64)
+		if err != nil {
+			continue
+		}
+		if time.Unix(ts, 0).Before(cutoff) {
+			if delErr := gitRun(ctx, dir, "update-ref", "-d", fields[1]); delErr != nil {
+				log.Warn("local_directory: prune stale backup ref failed", "ref", fields[1], "error", delErr)
+			}
+		}
+	}
 }
 
 // finalizeLocalDirGit is called once after the agent finishes (success,

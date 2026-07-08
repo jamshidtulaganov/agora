@@ -231,6 +231,65 @@ func TestApproveLocalDirRejectsProtectedPaths(t *testing.T) {
 	}
 }
 
+func TestRevokeLocalDir(t *testing.T) {
+	home := setTestHome(t)
+	a := t.TempDir()
+	b := t.TempDir()
+	if _, _, err := ApproveLocalDir(a); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ApproveLocalDir(b); err != nil {
+		t.Fatal(err)
+	}
+
+	// Revoking a present path removes only it.
+	removed, _, err := RevokeLocalDir(a)
+	if err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	if !removed {
+		t.Fatal("expected removed=true")
+	}
+	entries, _ := loadLocalDirAllowlist()
+	if len(entries) != 1 || filepath.Clean(entries[0]) != filepath.Clean(b) {
+		t.Fatalf("entries = %v, want just %s", entries, b)
+	}
+
+	// Revoking an absent path is a no-op, not an error.
+	removed, _, err = RevokeLocalDir(a)
+	if err != nil || removed {
+		t.Fatalf("re-revoke should be a no-op: removed=%v err=%v", removed, err)
+	}
+
+	// Revoking when the file doesn't exist yet is a no-op.
+	_ = home
+	other := setTestHome(t)
+	_ = other
+	if removed, _, err := RevokeLocalDir(a); err != nil || removed {
+		t.Fatalf("revoke with no file should be a no-op: removed=%v err=%v", removed, err)
+	}
+}
+
+func TestListLocalDirs(t *testing.T) {
+	setTestHome(t)
+	proj := t.TempDir()
+	if _, _, err := ApproveLocalDir(proj); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AGORA_LOCAL_DIR_ALLOWLIST", "/env/only")
+
+	fileDirs, envDirs, _, err := ListLocalDirs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fileDirs) != 1 || filepath.Clean(fileDirs[0]) != filepath.Clean(proj) {
+		t.Errorf("fileDirs = %v, want [%s]", fileDirs, proj)
+	}
+	if len(envDirs) != 1 || envDirs[0] != "/env/only" {
+		t.Errorf("envDirs = %v, want [/env/only]", envDirs)
+	}
+}
+
 func TestApproveLocalDirRepairsCorruptFile(t *testing.T) {
 	home := setTestHome(t)
 	dir := filepath.Join(home, ".agora")

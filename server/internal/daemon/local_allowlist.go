@@ -177,30 +177,109 @@ func ApproveLocalDir(path string) (added bool, file string, err error) {
 	f.Dirs = append(f.Dirs, cleaned)
 	sort.Strings(f.Dirs)
 
+	if err := writeAllowlistFileAtomic(file, f); err != nil {
+		return false, "", err
+	}
+	return true, file, nil
+}
+
+// RevokeLocalDir removes path from the on-disk allowlist. Used by
+// `agora daemon revoke-dir`. Returns removed=false when the path was not
+// present (env-var approvals are not touched — they are owner-controlled at
+// the process level, not persisted here). Comparison is on the cleaned path.
+func RevokeLocalDir(path string) (removed bool, file string, err error) {
+	if !filepath.IsAbs(path) {
+		return false, "", fmt.Errorf("path must be absolute, got %q", path)
+	}
+	cleaned := filepath.Clean(path)
+	file, err = localDirAllowlistPath()
+	if err != nil {
+		return false, "", err
+	}
+	var f localDirAllowlistFile
+	if data, readErr := os.ReadFile(file); readErr == nil {
+		if jsonErr := json.Unmarshal(data, &f); jsonErr != nil {
+			return false, "", fmt.Errorf("parse %s: %w", file, jsonErr)
+		}
+	} else if errors.Is(readErr, os.ErrNotExist) {
+		return false, file, nil
+	} else {
+		return false, "", fmt.Errorf("read %s: %w", file, readErr)
+	}
+
+	kept := f.Dirs[:0]
+	for _, existing := range f.Dirs {
+		if filepath.Clean(existing) == cleaned {
+			removed = true
+			continue
+		}
+		kept = append(kept, existing)
+	}
+	if !removed {
+		return false, file, nil
+	}
+	f.Version = 1
+	f.Dirs = kept
+	if err := writeAllowlistFileAtomic(file, f); err != nil {
+		return false, "", err
+	}
+	return true, file, nil
+}
+
+// ListLocalDirs returns the approvals currently in effect, split by source so
+// the CLI can show where each came from. envDirs come from
+// AGORA_LOCAL_DIR_ALLOWLIST and are not persisted in the file.
+func ListLocalDirs() (fileDirs, envDirs []string, file string, err error) {
+	file, err = localDirAllowlistPath()
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if data, readErr := os.ReadFile(file); readErr == nil {
+		var f localDirAllowlistFile
+		if jsonErr := json.Unmarshal(data, &f); jsonErr != nil {
+			return nil, nil, file, fmt.Errorf("parse %s: %w", file, jsonErr)
+		}
+		fileDirs = f.Dirs
+	} else if !errors.Is(readErr, os.ErrNotExist) {
+		return nil, nil, file, fmt.Errorf("read %s: %w", file, readErr)
+	}
+	if env := os.Getenv("AGORA_LOCAL_DIR_ALLOWLIST"); env != "" {
+		for _, p := range filepath.SplitList(env) {
+			if p = strings.TrimSpace(p); p != "" {
+				envDirs = append(envDirs, p)
+			}
+		}
+	}
+	return fileDirs, envDirs, file, nil
+}
+
+// writeAllowlistFileAtomic writes f to the allowlist path via temp + rename so
+// a concurrent daemon/CLI read never sees a torn file.
+func writeAllowlistFileAtomic(file string, f localDirAllowlistFile) error {
 	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
-		return false, "", fmt.Errorf("create %s: %w", filepath.Dir(file), err)
+		return fmt.Errorf("create %s: %w", filepath.Dir(file), err)
 	}
 	data, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
-		return false, "", err
+		return err
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(file), ".local-dirs-*.tmp")
 	if err != nil {
-		return false, "", err
+		return err
 	}
 	tmpName := tmp.Name()
 	if _, err := tmp.Write(append(data, '\n')); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmpName)
-		return false, "", err
+		return err
 	}
 	if err := tmp.Close(); err != nil {
 		_ = os.Remove(tmpName)
-		return false, "", err
+		return err
 	}
 	if err := os.Rename(tmpName, file); err != nil {
 		_ = os.Remove(tmpName)
-		return false, "", err
+		return err
 	}
-	return true, file, nil
+	return nil
 }

@@ -2,12 +2,14 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // gitFixture initializes a git repo in a temp dir with one commit on a known
@@ -206,6 +208,55 @@ func TestPrepareLocalDirGit_DetachedHead(t *testing.T) {
 	if cur := gitAt(t, dir, "rev-parse", "HEAD"); cur != head {
 		t.Errorf("HEAD = %q, want detached sha %q restored", cur, head)
 	}
+}
+
+func TestPruneOldBackupRefs(t *testing.T) {
+	dir := gitFixture(t)
+	ctx := context.Background()
+	head := gitAt(t, dir, "rev-parse", "HEAD")
+
+	// A "fresh" backup ref (points at HEAD, whose committer time is now) and a
+	// synthetic "old" one built from a commit dated 30 days ago.
+	gitAt(t, dir, "update-ref", "refs/agora/backup/fresh", head)
+
+	thirtyDaysAgo := fmt.Sprintf("@%d +0000", time.Now().Add(-30*24*time.Hour).Unix())
+	oldSha := gitCommitAtTime(t, dir, "old snapshot", thirtyDaysAgo)
+	gitAt(t, dir, "update-ref", "refs/agora/backup/stale", oldSha)
+
+	pruneOldBackupRefs(ctx, dir, 14*24*time.Hour, slog.Default())
+
+	refs := gitAt(t, dir, "for-each-ref", "--format=%(refname)", "refs/agora/backup/")
+	if strings.Contains(refs, "refs/agora/backup/stale") {
+		t.Errorf("stale backup ref should have been pruned, still present:\n%s", refs)
+	}
+	if !strings.Contains(refs, "refs/agora/backup/fresh") {
+		t.Errorf("fresh backup ref must be kept, missing:\n%s", refs)
+	}
+
+	// TTL 0 disables pruning.
+	gitAt(t, dir, "update-ref", "refs/agora/backup/stale2", oldSha)
+	pruneOldBackupRefs(ctx, dir, 0, slog.Default())
+	if r := gitAt(t, dir, "for-each-ref", "--format=%(refname)", "refs/agora/backup/stale2"); r == "" {
+		t.Error("TTL=0 should disable pruning")
+	}
+}
+
+// gitCommitAtTime creates an empty commit backdated to `when` (a git date
+// spec) and returns its sha, without moving any branch.
+func gitCommitAtTime(t *testing.T, dir, msg, when string) string {
+	t.Helper()
+	head := gitAt(t, dir, "rev-parse", "HEAD")
+	cmd := exec.Command("git", "-C", dir, "commit-tree", head+"^{tree}", "-p", head, "-m", msg)
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test",
+		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test",
+		"GIT_AUTHOR_DATE="+when, "GIT_COMMITTER_DATE="+when,
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("commit-tree: %v\n%s", err, out)
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func TestFinalize_Idempotent(t *testing.T) {

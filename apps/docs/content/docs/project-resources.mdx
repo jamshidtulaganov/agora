@@ -115,6 +115,8 @@ Attaching the resource is not enough by itself: **the machine's owner must appro
 
 Approving a folder covers everything beneath it. A task against an unapproved path fails fast with a message that names the exact `allow-dir` command to run — approve and re-dispatch, nothing else to clean up. Resources attached from the CLI (or from another machine) always need one of the manual approval paths, since no picker ran on the daemon host.
 
+Manage approvals on the daemon host with `agora daemon list-dirs` (show what's approved, file and env sources) and `agora daemon revoke-dir <path>` (remove a file approval; env approvals are revoked by unsetting `AGORA_LOCAL_DIR_ALLOWLIST`).
+
 ### Path rules
 
 The path you attach must clear both an attach-time and a per-task validation. Both are enforced by the daemon that owns the resource — the server validates who may attach and which daemon the ref points at (see above), but never inspects the path itself. A path that breaks any rule fails the task with a typed error and leaves your directory untouched:

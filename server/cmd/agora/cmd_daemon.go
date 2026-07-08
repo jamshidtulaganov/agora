@@ -105,6 +105,72 @@ func runDaemonAllowDir(_ *cobra.Command, args []string) error {
 	return nil
 }
 
+var daemonListDirsCmd = &cobra.Command{
+	Use:   "list-dirs",
+	Short: "List directories approved for local_directory agent tasks on this machine",
+	Long: "Prints the folders the machine owner has approved for local_directory execution — the same\n" +
+		"approvals the daemon checks on every task. File approvals come from ~/.agora/local-dirs.json\n" +
+		"(managed by `allow-dir` / `revoke-dir` and the desktop picker); env approvals come from\n" +
+		"AGORA_LOCAL_DIR_ALLOWLIST in the daemon's environment.",
+	Args: cobra.NoArgs,
+	RunE: runDaemonListDirs,
+}
+
+func runDaemonListDirs(_ *cobra.Command, _ []string) error {
+	fileDirs, envDirs, file, err := daemon.ListLocalDirs()
+	if err != nil {
+		return err
+	}
+	if len(fileDirs) == 0 && len(envDirs) == 0 {
+		fmt.Printf("No approved local directories. Approve one with `agora daemon allow-dir <path>` (file: %s).\n", file)
+		return nil
+	}
+	if len(fileDirs) > 0 {
+		fmt.Printf("Approved in %s:\n", file)
+		for _, d := range fileDirs {
+			fmt.Printf("  %s\n", d)
+		}
+	}
+	if len(envDirs) > 0 {
+		fmt.Println("Approved via AGORA_LOCAL_DIR_ALLOWLIST (not persisted):")
+		for _, d := range envDirs {
+			fmt.Printf("  %s\n", d)
+		}
+	}
+	return nil
+}
+
+var daemonRevokeDirCmd = &cobra.Command{
+	Use:   "revoke-dir <path>",
+	Short: "Remove a directory's approval for local_directory agent tasks",
+	Long: "Removes <path> from ~/.agora/local-dirs.json so the daemon will refuse local_directory tasks\n" +
+		"against it again. Takes effect on the next task (the file is re-read per task). Does not affect\n" +
+		"paths approved via AGORA_LOCAL_DIR_ALLOWLIST — unset that env var to revoke those.",
+	Args: cobra.ExactArgs(1),
+	RunE: runDaemonRevokeDir,
+}
+
+func runDaemonRevokeDir(_ *cobra.Command, args []string) error {
+	path := args[0]
+	if !filepath.IsAbs(path) {
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return fmt.Errorf("resolve %q: %w", path, err)
+		}
+		path = abs
+	}
+	removed, file, err := daemon.RevokeLocalDir(path)
+	if err != nil {
+		return err
+	}
+	if !removed {
+		fmt.Printf("Not in the approval list: %s (%s)\n", filepath.Clean(path), file)
+		return nil
+	}
+	fmt.Printf("Revoked %s (updated %s)\n", filepath.Clean(path), file)
+	return nil
+}
+
 func init() {
 	f := daemonStartCmd.Flags()
 	f.Bool("foreground", false, "Run in the foreground instead of background")
@@ -154,6 +220,8 @@ func init() {
 	daemonCmd.AddCommand(daemonLogsCmd)
 	daemonCmd.AddCommand(daemonDiskUsageCmd)
 	daemonCmd.AddCommand(daemonAllowDirCmd)
+	daemonCmd.AddCommand(daemonListDirsCmd)
+	daemonCmd.AddCommand(daemonRevokeDirCmd)
 }
 
 // daemonDirForProfile returns the state directory for the given profile.
