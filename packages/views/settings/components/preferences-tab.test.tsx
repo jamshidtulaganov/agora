@@ -128,6 +128,8 @@ describe("PreferencesTab — Language switcher", () => {
     expect(mockUpdateMe).not.toHaveBeenCalled();
     expect(mockReload).toHaveBeenCalledTimes(1);
     expect(mockToastWarning).not.toHaveBeenCalled();
+    // zh-Hans is disabled in SUPPORTED_LOCALES — must not be offered.
+    expect(screen.queryByRole("radio", { name: "中文" })).toBeNull();
   });
 
   it("when logged in + PATCH success: persists + PATCH + reload immediately", async () => {
@@ -136,10 +138,10 @@ describe("PreferencesTab — Language switcher", () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<PreferencesTab />, { wrapper: I18nWrapper });
 
-    await user.click(screen.getByRole("radio", { name: "中文" }));
+    await user.click(screen.getByRole("radio", { name: "Oʻzbekcha" }));
 
-    expect(mockPersist).toHaveBeenCalledWith("zh-Hans");
-    expect(mockUpdateMe).toHaveBeenCalledWith({ language: "zh-Hans" });
+    expect(mockPersist).toHaveBeenCalledWith("uz");
+    expect(mockUpdateMe).toHaveBeenCalledWith({ language: "uz" });
     expect(mockToastWarning).not.toHaveBeenCalled();
     expect(mockReload).toHaveBeenCalledTimes(1);
   });
@@ -150,11 +152,11 @@ describe("PreferencesTab — Language switcher", () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<PreferencesTab />, { wrapper: I18nWrapper });
 
-    await user.click(screen.getByRole("radio", { name: "中文" }));
+    await user.click(screen.getByRole("radio", { name: "Oʻzbekcha" }));
 
     // Local persist still happened so the reload below sees the new locale.
-    expect(mockPersist).toHaveBeenCalledWith("zh-Hans");
-    expect(mockUpdateMe).toHaveBeenCalledWith({ language: "zh-Hans" });
+    expect(mockPersist).toHaveBeenCalledWith("uz");
+    expect(mockUpdateMe).toHaveBeenCalledWith({ language: "uz" });
     // Toast surfaced the sync failure.
     expect(mockToastWarning).toHaveBeenCalledTimes(1);
     // Reload deferred so the toast is visible.

@@ -118,12 +118,14 @@ export function PreferencesTab() {
     { value: "system" as const, label: t(($) => $.preferences.theme.system) },
   ];
 
+  // Filtered by SUPPORTED_LOCALES so disabling a locale centrally (e.g.
+  // zh-Hans) drops it from this picker without touching this file.
   const languageOptions: { value: SupportedLocale; label: string }[] = [
-    { value: "en", label: t(($) => $.preferences.language.english) },
-    { value: "zh-Hans", label: t(($) => $.preferences.language.chinese) },
-    { value: "uz", label: t(($) => $.preferences.language.uzbek) },
-    { value: "ru", label: t(($) => $.preferences.language.russian) },
-  ];
+    { value: "en" as const, label: t(($) => $.preferences.language.english) },
+    { value: "zh-Hans" as const, label: t(($) => $.preferences.language.chinese) },
+    { value: "uz" as const, label: t(($) => $.preferences.language.uzbek) },
+    { value: "ru" as const, label: t(($) => $.preferences.language.russian) },
+  ].filter((o) => SUPPORTED_LOCALES.includes(o.value));
 
   // Persist locally → sync to user.language → reload. Reload (vs in-place
   // changeLanguage) avoids hydration mismatch and is the i18next-recommended

@@ -4,7 +4,8 @@ export { docsHrefForLocale } from "@/lib/docs-href";
 export type Locale = SupportedLocale;
 export type LandingDictionaryLocale = "en" | "zh" | "uz" | "ru";
 
-export const locales: Locale[] = ["en", "zh-Hans", "uz", "ru"];
+// Mirrors SUPPORTED_LOCALES (zh-Hans temporarily disabled).
+export const locales: Locale[] = ["en", "uz", "ru"];
 
 export const localeLabels: Record<Locale, string> = {
   en: "EN",

@@ -7,20 +7,21 @@ import {
 describe("locale routing", () => {
   it("accepts only app-supported locale identifiers", () => {
     expect(isSupportedLocale("en")).toBe(true);
-    expect(isSupportedLocale("zh-Hans")).toBe(true);
+    // zh-Hans is temporarily disabled in SUPPORTED_LOCALES.
+    expect(isSupportedLocale("zh-Hans")).toBe(false);
     expect(isSupportedLocale("uz")).toBe(true);
     expect(isSupportedLocale("ru")).toBe(true);
     expect(isSupportedLocale("zh")).toBe(false);
     expect(isSupportedLocale(null)).toBe(false);
   });
 
-  it("normalizes legacy landing zh cookies to the app locale", () => {
+  it("ignores legacy zh cookies while zh-Hans is disabled", () => {
     expect(
       resolveLocaleFromSignals({
         cookieLocale: "zh",
         acceptLanguage: "en-US,en;q=0.9",
       }),
-    ).toBe("zh-Hans");
+    ).toBe("en");
   });
 
   it("prefers cookie locale over Accept-Language", () => {
@@ -33,11 +34,12 @@ describe("locale routing", () => {
   });
 
   it("falls back to Accept-Language when no cookie is set", () => {
+    // zh is disabled, so a Chinese browser falls through to its next choice.
     expect(
       resolveLocaleFromSignals({
         acceptLanguage: "zh-CN,zh;q=0.9,en;q=0.8",
       }),
-    ).toBe("zh-Hans");
+    ).toBe("en");
   });
 
   it("matches Uzbek browser language signals", () => {
