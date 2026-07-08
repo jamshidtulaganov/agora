@@ -120,16 +120,23 @@ func generateCode() (string, error) {
 	return fmt.Sprintf("%06d", n), nil
 }
 
-func isDevVerificationCode(code string) bool {
+// devVerificationCodeActive reports whether a dev verification code is
+// configured on a non-production instance. When true the emailed code is
+// irrelevant to login — the dev code is accepted at verify time — so SendCode
+// skips the outbound email and local dev needs no working SMTP. Guarded by
+// isProductionEnv so production always emails a real code.
+func devVerificationCodeActive() bool {
 	if isProductionEnv() {
 		return false
 	}
+	return isSixDigitCode(strings.TrimSpace(os.Getenv(devVerificationCodeEnv)))
+}
 
-	devCode := strings.TrimSpace(os.Getenv(devVerificationCodeEnv))
-	if !isSixDigitCode(devCode) {
+func isDevVerificationCode(code string) bool {
+	if !devVerificationCodeActive() {
 		return false
 	}
-
+	devCode := strings.TrimSpace(os.Getenv(devVerificationCodeEnv))
 	return subtle.ConstantTimeCompare([]byte(code), []byte(devCode)) == 1
 }
 
@@ -370,6 +377,11 @@ func (h *Handler) SendCode(w http.ResponseWriter, r *http.Request) {
 		// already stored; skip the send that could only bounce. Do NOT log the
 		// code — it is a valid login credential; log only that one was generated.
 		slog.Info("verification code not emailed: reserved/undeliverable domain (would bounce)", "email", email)
+	} else if devVerificationCodeActive() {
+		// Non-prod with a dev verification code configured: the emailed code is
+		// never needed (the dev code logs in), so skip the send — local dev then
+		// works with any email address and no working SMTP.
+		slog.Info("verification code not emailed: dev verification code active (non-prod)", "email", email)
 	} else if err := h.EmailService.SendVerificationCode(email, code); err != nil {
 		slog.Error("failed to send verification code", "email", email, "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to send verification code")
