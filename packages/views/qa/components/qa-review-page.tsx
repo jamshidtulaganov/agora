@@ -14,7 +14,7 @@ import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
 import { AppLink } from "../../navigation";
 import { BreadcrumbHeader, type BreadcrumbSegment } from "../../layout/breadcrumb-header";
-import { StructuredResult } from "../../issues/components/editor-tests-panel";
+import { StructuredResult } from "../../issues/components/qa-result";
 import { IssueAgentHeaderChip } from "../../issues/components/issue-agent-header-chip";
 import { PullRequestList } from "../../issues/components/pull-request-list";
 import { useIssueActions, IssueActionsDropdown } from "../../issues/actions";

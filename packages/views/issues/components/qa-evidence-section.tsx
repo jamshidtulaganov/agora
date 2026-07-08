@@ -9,7 +9,7 @@ import { issueKeys, qaEvidenceOptions } from "@agora/core/issues/queries";
 import { Button } from "@agora/ui/components/ui/button";
 import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
-import { StructuredResult } from "./editor-tests-panel";
+import { StructuredResult } from "./qa-result";
 import { QADesignCompare } from "../../qa/components/qa-design-compare";
 
 // Evidence-first QA section. Opening an in-review task shows its frozen run_qa

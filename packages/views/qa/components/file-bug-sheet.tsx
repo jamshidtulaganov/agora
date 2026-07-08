@@ -27,7 +27,7 @@ import { Badge } from "@agora/ui/components/ui/badge";
 import { Button } from "@agora/ui/components/ui/button";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
-import { StructuredResult } from "../../issues/components/editor-tests-panel";
+import { StructuredResult } from "../../issues/components/qa-result";
 
 const SEVERITY: { value: string; priority: IssuePriority }[] = [
   { value: "blocker", priority: "urgent" },

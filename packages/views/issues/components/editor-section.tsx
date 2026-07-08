@@ -1,15 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { agentTaskSnapshotOptions } from "@agora/core/agents";
 import {
+  Activity as ActivityIcon,
   ChevronRight,
+  X,
   Code2,
   ExternalLink,
   Expand,
   Loader2,
   HelpCircle,
-  Layers,
+  Info,
   Globe,
+  MessageSquare,
+  PanelRightClose,
+  PanelRightOpen,
 } from "lucide-react";
 import {
   Dialog,
@@ -20,6 +27,7 @@ import { cn } from "@agora/ui/lib/utils";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { EditorChatPanel } from "./editor-chat-panel";
 import { LiveAgentChangesFeed } from "./live-agent-changes-feed";
+import { LiveAgentCodeEditor } from "./live-agent-code-editor";
 import { AgentWorkingIndicator } from "./agent-working-indicator";
 import { EditorReviewBar } from "./editor-review-bar";
 import {
@@ -33,12 +41,10 @@ import {
 } from "./editor-preview-pane";
 import { EditorBrowserPane } from "./editor-browser-pane";
 import { EditorContextPanel } from "./editor-context-panel";
-import { EditorVariantsDialog } from "./editor-variants-dialog";
 import { EditorAskBar } from "./editor-ask-bar";
 import { EditorChangesList } from "./editor-changes-list";
 import { EditorRunQA } from "./editor-run-qa";
 import { EditorDeployQA } from "./editor-deploy-qa";
-import { EditorTestsPanel } from "./editor-tests-panel";
 import { useWorkspaceId } from "@agora/core/hooks";
 
 // Right-panel "Code" section: launches a browser VS Code (code-server) on the
@@ -172,7 +178,7 @@ export function EditorSection({
     null,
   );
   // Lifted test-run state — shared between EditorPreviewPane (button + bottom
-  // bar) and EditorTestsPanel (right panel). Avoids duplicating daemon calls.
+  // bar); parseTestOutput summarizes the raw runner output for that bar.
   const [testRunState, setTestRunState] = useState<TestRunState>({
     testState: "idle",
     testOut: "",
@@ -188,25 +194,36 @@ export function EditorSection({
       parsedTests: parseTestOutput(result.testOut),
     });
   };
-  const handleTestStart = () => {
-    setRightTab("tests");
-  };
-
   // Right panel of the modal: watch the agent's live file edits, or chat to
   // steer it. Full diffs live in code-server's native Source Control panel.
-  const [rightTab, setRightTab] = useState<
-    "activity" | "chat" | "context" | "tests"
-  >("activity");
-  // Left pane of the modal: the code editor, or a live preview of the running
-  // app (the vibecoder's "see it work, not the diff").
-  const [leftPane, setLeftPane] = useState<"code" | "preview" | "browser">(
-    "code",
+  // (No Tests tab — merge gates render in the review bar via EditorGates, and
+  // QA verdicts live in the issue's QA evidence section.)
+  const [rightTab, setRightTab] = useState<"activity" | "chat" | "context">(
+    "activity",
+  );
+  // Collapse the right panel to a slim icon rail — the editor gets the full
+  // width. Ephemeral UI state, deliberately not persisted.
+  const [rightCollapsed, setRightCollapsed] = useState(false);
+  // Left pane of the modal: the live spectator editor (watch the agent code),
+  // the real code editor, or a live preview of the running app (the
+  // vibecoder's "see it work, not the diff").
+  const [leftPane, setLeftPane] = useState<
+    "live" | "code" | "preview" | "browser"
+  >("code");
+  // Is an agent currently running on this issue? Drives the Live tab's pulse
+  // and the auto-selection of the spectator view when the modal auto-expands.
+  const { data: taskSnapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
+  const hasLiveRun = useMemo(
+    () =>
+      taskSnapshot.some(
+        (task) => task.issue_id === issueId && task.status === "running",
+      ),
+    [taskSnapshot, issueId],
   );
   // First-time "how co-code works" explainer (auto-shows once, re-openable).
   const { dismissed: helpDismissed, dismiss: dismissHelp } =
     useHowItWorksDismissed();
   const [showHelp, setShowHelp] = useState(false);
-  const [variantsOpen, setVariantsOpen] = useState(false);
   // Co-code: the modal is the real workspace (the inline panel is too narrow),
   // so auto-expand it once the editor is ready. The user can still close it for
   // this visit (autoExpandedOnce guards against re-popping on every render).
@@ -340,13 +357,16 @@ export function EditorSection({
     // launch reads the latest closure; only the open/state transition matters.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, state]);
-  // Auto-expand into the full modal for co-code once the editor is ready.
+  // Auto-expand into the full modal for co-code once the editor is ready. When
+  // an agent is actively coding, open on the Live spectator view — that's the
+  // "watch it work" moment; the user can hop to Code anytime.
   useEffect(() => {
     if (coCode && state === "ready" && url && !expanded && !autoExpandedOnce) {
       setExpanded(true);
       setAutoExpandedOnce(true);
+      if (hasLiveRun) setLeftPane("live");
     }
-  }, [coCode, state, url, expanded, autoExpandedOnce]);
+  }, [coCode, state, url, expanded, autoExpandedOnce, hasLiveRun]);
 
   // Agent review chips — which agents worked on this issue; click to load that
   // agent's worktree into the editor. Shown inline + in the modal header.
@@ -409,30 +429,6 @@ export function EditorSection({
       />
     ) : null;
 
-  const toolbar = (
-    <div className="flex justify-end gap-3">
-      <button
-        type="button"
-        onClick={() => setExpanded(true)}
-        className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <Expand className="h-3 w-3" />
-        expand
-      </button>
-      {url && (
-        <a
-          href={url}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ExternalLink className="h-3 w-3" />
-          open in tab
-        </a>
-      )}
-    </div>
-  );
-
   // QA / variants / help controls. Rendered in BOTH the inline header and the
   // expanded modal header — otherwise the modal overlay hides the inline row
   // (the editor auto-expands for co-code, so these must live inside the modal).
@@ -440,14 +436,6 @@ export function EditorSection({
     <div className="flex items-center gap-3">
       <EditorRunQA issueId={issueId} agent={selectedAgent} />
       <EditorDeployQA issueId={issueId} wsId={wsId} projectId={projectId} />
-      <button
-        type="button"
-        onClick={() => setVariantsOpen(true)}
-        className="inline-flex items-center gap-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <Layers className="h-3 w-3" />
-        Run variants
-      </button>
       <button
         type="button"
         onClick={() => setShowHelp(true)}
@@ -485,14 +473,6 @@ export function EditorSection({
         <div className="space-y-1.5 pl-2">
           <div className="flex justify-end">{editorActions}</div>
           {helpVisible && <EditorHowItWorks onClose={closeHelp} />}
-          <EditorVariantsDialog
-            issueId={issueId}
-            open={variantsOpen}
-            onOpenChange={setVariantsOpen}
-          />
-
-          {/* Agent chips persist across launches so switching never unmounts them. */}
-          {agentTabs}
 
           {state === "loading" && (
             <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
@@ -528,19 +508,37 @@ export function EditorSection({
           )}
 
           {state === "ready" && url && (
-            <div className="space-y-1">
-              {toolbar}
+            <div className="space-y-1.5">
               {!expanded && reviewBar && (
                 <div className="overflow-hidden rounded-lg border border-border">
                   {reviewBar}
                 </div>
               )}
+              {/* The side panel is far too narrow for a usable VS Code — don't
+                  squeeze the iframe in here. One affordance: open the real
+                  workspace (the near-fullscreen modal). */}
               {!expanded && (
-                <iframe
-                  src={url}
-                  title="code editor"
-                  className="h-[70vh] w-full rounded-lg border border-border bg-background"
-                />
+                <button
+                  type="button"
+                  onClick={() => setExpanded(true)}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/30 px-3 py-8 text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                >
+                  <Expand className="size-3.5" />
+                  Open co-code editor
+                </button>
+              )}
+              {!expanded && url && (
+                <div className="flex justify-end">
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    open in tab
+                  </a>
+                </div>
               )}
             </div>
           )}
@@ -548,14 +546,28 @@ export function EditorSection({
           {/* Modal lives at the section level so an agent switch (brief loading)
               doesn't unmount it. */}
           <Dialog open={expanded} onOpenChange={setExpanded}>
-            <DialogContent className="flex h-[92vh] w-[96vw] max-w-[96vw] flex-col gap-0 overflow-hidden p-0 sm:max-w-[96vw]">
+            <DialogContent
+              showCloseButton={false}
+              className="flex h-[92vh] w-[96vw] max-w-[96vw] flex-col gap-0 overflow-hidden p-0 sm:max-w-[96vw]"
+            >
               <DialogTitle className="sr-only">Code editor</DialogTitle>
-              {(agents.length > 0 || selectedAgent) && (
-                <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
-                  <div className="min-w-0">{agentTabs}</div>
-                  {editorActions}
-                </div>
-              )}
+              {/* Single header row: agent chips (scrollable) · actions · close.
+                  The close button lives in-flow here — the dialog's default
+                  floating ✕ overlapped the action labels. Always rendered so
+                  the modal stays closable even before agents load. */}
+              <div className="flex shrink-0 items-center gap-3 border-b border-border py-2 pl-3 pr-2">
+                <div className="min-w-0 flex-1 overflow-x-auto">{agentTabs}</div>
+                {editorActions}
+                <button
+                  type="button"
+                  onClick={() => setExpanded(false)}
+                  title="Close editor"
+                  aria-label="Close editor"
+                  className="shrink-0 rounded p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
               <EditorAskBar
                 issueId={issueId}
                 agent={selectedAgent}
@@ -564,6 +576,24 @@ export function EditorSection({
               <div className="flex min-h-0 flex-1">
                 <div className="flex min-w-0 flex-1 flex-col">
                   <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setLeftPane("live")}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded px-2 py-0.5 font-medium transition-colors",
+                        leftPane === "live"
+                          ? "bg-accent text-foreground"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      Live
+                      {hasLiveRun && (
+                        <span
+                          aria-hidden
+                          className="size-1.5 rounded-full bg-info motion-safe:animate-pulse"
+                        />
+                      )}
+                    </button>
                     <button
                       type="button"
                       onClick={() => setLeftPane("code")}
@@ -602,6 +632,14 @@ export function EditorSection({
                     </button>
                   </div>
                   <div className="relative min-h-0 flex-1">
+                    {leftPane === "live" && (
+                      <div className="absolute inset-0 flex">
+                        <LiveAgentCodeEditor
+                          issueId={issueId}
+                          onOpenFullEditor={() => setLeftPane("code")}
+                        />
+                      </div>
+                    )}
                     {/* Code-server stays mounted (hidden) so switching to Preview
                         and back never reloads VS Code. */}
                     <div
@@ -630,7 +668,6 @@ export function EditorSection({
                           workdir={selectedAgent.work_dir}
                           testRunState={testRunState}
                           onTestResult={handleTestResult}
-                          onTestStart={handleTestStart}
                         />
                       </div>
                     )}
@@ -663,6 +700,53 @@ export function EditorSection({
                       ))}
                   </div>
                 </div>
+                {rightCollapsed && (
+                  <div className="flex h-full w-10 shrink-0 flex-col items-center gap-1 border-l border-border bg-background py-2">
+                    <button
+                      type="button"
+                      onClick={() => setRightCollapsed(false)}
+                      title="Expand panel"
+                      aria-label="Expand panel"
+                      className="rounded p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    >
+                      <PanelRightOpen className="size-4" />
+                    </button>
+                    <div className="my-1 h-px w-5 bg-border" />
+                    {(
+                      [
+                        ["activity", ActivityIcon, "Activity"],
+                        ["chat", MessageSquare, "Chat"],
+                        ["context", Info, "Context"],
+                      ] as const
+                    ).map(([key, Icon, label]) => (
+                      <button
+                        key={key}
+                        type="button"
+                        title={label}
+                        aria-label={label}
+                        onClick={() => {
+                          setRightTab(key);
+                          setRightCollapsed(false);
+                        }}
+                        className={cn(
+                          "relative rounded p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+                          rightTab === key && "text-foreground",
+                        )}
+                      >
+                        <Icon className="size-4" />
+                        {/* Live pulse on the Activity icon so a collapsed rail
+                            still signals a running agent. */}
+                        {key === "activity" && hasLiveRun && (
+                          <span
+                            aria-hidden
+                            className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-info motion-safe:animate-pulse"
+                          />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {!rightCollapsed && (
                 <div className="flex h-full w-[360px] shrink-0 flex-col border-l border-border bg-background">
                   {reviewBar}
                   <div className="flex shrink-0 border-b border-border text-xs">
@@ -704,15 +788,12 @@ export function EditorSection({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setRightTab("tests")}
-                      className={cn(
-                        "flex-1 px-3 py-2 font-medium transition-colors",
-                        rightTab === "tests"
-                          ? "border-b-2 border-primary text-foreground"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
+                      onClick={() => setRightCollapsed(true)}
+                      title="Collapse panel"
+                      aria-label="Collapse panel"
+                      className="shrink-0 px-2 text-muted-foreground transition-colors hover:text-foreground"
                     >
-                      Tests
+                      <PanelRightClose className="size-3.5" />
                     </button>
                   </div>
                   <div className="shrink-0 [&>div]:px-3 [&>div]:py-2">
@@ -739,17 +820,12 @@ export function EditorSection({
                         issueId={issueId}
                         agent={selectedAgent}
                       />
-                    ) : rightTab === "tests" ? (
-                      <EditorTestsPanel
-                        issueId={issueId}
-                        testRunState={testRunState}
-                        onRunTests={() => setLeftPane("preview")}
-                      />
                     ) : (
                       <EditorContextPanel issueId={issueId} />
                     )}
                   </div>
                 </div>
+                )}
               </div>
             </DialogContent>
           </Dialog>

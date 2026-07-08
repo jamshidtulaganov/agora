@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseQAResultBlock } from "./editor-tests-panel";
+import { parseQAResultBlock } from "./qa-result";
 
 // The qa-result block is agent-authored, untrusted content. parseQAResultBlock
 // must extract it deterministically when valid and fail CLOSED (return null, so

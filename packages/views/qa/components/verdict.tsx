@@ -6,7 +6,7 @@ import { cn } from "@agora/ui/lib/utils";
 // surface (review page, file-bug sheet, bugs lens) imports these so the pass /
 // fail / pending vocabulary stays consistent instead of being re-derived per
 // component. `pass` uses the emerald success tint the codebase already
-// standardizes (editor-tests-panel CMD_KIND_STYLE); fail uses the destructive
+// standardizes (qa-result CMD_KIND_STYLE); fail uses the destructive
 // token; pending is neutral muted.
 
 export function verdictIcon(verdict: string, className: string): ReactNode {
