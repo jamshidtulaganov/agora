@@ -561,7 +561,9 @@ export function LoginPage({
             {t(($) => $.signin.title)}
           </CardTitle>
           <CardDescription>
-            {t(($) => $.signin.description)}
+            {telegramOnly
+              ? t(($) => $.signin.description_telegram)
+              : t(($) => $.signin.description)}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
