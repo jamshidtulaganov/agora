@@ -422,6 +422,47 @@ func (q *Queries) GetAgentRuntimeForWorkspace(ctx context.Context, arg GetAgentR
 	return i, err
 }
 
+const getOnlineRuntimeForDaemon = `-- name: GetOnlineRuntimeForDaemon :one
+SELECT id, workspace_id, daemon_id, name, runtime_mode, provider, status, device_info, metadata, last_seen_at, created_at, updated_at, owner_id, legacy_daemon_id, visibility FROM agent_runtime
+WHERE workspace_id = $1
+  AND daemon_id = $2
+  AND status = 'online'
+ORDER BY last_seen_at DESC NULLS LAST
+LIMIT 1
+`
+
+type GetOnlineRuntimeForDaemonParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	DaemonID    pgtype.Text `json:"daemon_id"`
+}
+
+// The ONLINE runtime for a specific daemon machine, newest heartbeat first
+// when a daemon carries several provider rows. Used to route a QA task onto
+// the machine that hosts a project's local_directory (the folder lives there,
+// so the agent must run there for its 127.0.0.1 preview to be reachable).
+func (q *Queries) GetOnlineRuntimeForDaemon(ctx context.Context, arg GetOnlineRuntimeForDaemonParams) (AgentRuntime, error) {
+	row := q.db.QueryRow(ctx, getOnlineRuntimeForDaemon, arg.WorkspaceID, arg.DaemonID)
+	var i AgentRuntime
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.DaemonID,
+		&i.Name,
+		&i.RuntimeMode,
+		&i.Provider,
+		&i.Status,
+		&i.DeviceInfo,
+		&i.Metadata,
+		&i.LastSeenAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.OwnerID,
+		&i.LegacyDaemonID,
+		&i.Visibility,
+	)
+	return i, err
+}
+
 const listAgentRuntimes = `-- name: ListAgentRuntimes :many
 SELECT id, workspace_id, daemon_id, name, runtime_mode, provider, status, device_info, metadata, last_seen_at, created_at, updated_at, owner_id, legacy_daemon_id, visibility FROM agent_runtime
 WHERE workspace_id = $1

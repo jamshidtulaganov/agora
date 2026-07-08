@@ -578,6 +578,55 @@ func (h *Handler) devLocalAppURL(ctx context.Context, issue db.Issue) string {
 	return util.DevAppURL(runtime.Metadata, uuidToString(issue.ProjectID))
 }
 
+// localDirectoryQATarget resolves the daemon + path of a local_directory
+// resource on the issue's project whose daemon is currently ONLINE. This is
+// the "the app lives on the developer's own machine, in their own folder" QA
+// tier. Unlike dev_apps it carries no ready-to-smoke URL — it only tells us
+// WHERE — so the caller uses it to (a) pin the QA task to that daemon and
+// (b) instruct the agent to start the app via /editor/preview and smoke the
+// resulting 127.0.0.1 URL. Gated by labs.qa_dev_runtimes (same opt-in as
+// devLocalAppURL). Returns ok=false on any miss so resolution falls through to
+// connected_box / project qa_smoke_url unchanged.
+func (h *Handler) localDirectoryQATarget(ctx context.Context, issue db.Issue) (daemonID, localPath string, ok bool) {
+	if !issue.ProjectID.Valid {
+		return "", "", false
+	}
+	ws, err := h.Queries.GetWorkspace(ctx, issue.WorkspaceID)
+	if err != nil || !util.ParseWorkspaceLabs(ws.Settings).QADevRuntimes {
+		return "", "", false
+	}
+	for _, res := range h.listProjectResourcesForProject(ctx, issue.ProjectID) {
+		if res.ResourceType != "local_directory" {
+			continue
+		}
+		var ref struct {
+			LocalPath string `json:"local_path"`
+			DaemonID  string `json:"daemon_id"`
+		}
+		if err := json.Unmarshal(res.ResourceRef, &ref); err != nil || ref.DaemonID == "" || ref.LocalPath == "" {
+			continue
+		}
+		// The daemon must be online for its 127.0.0.1 preview to be reachable
+		// by the pinned QA task; an offline daemon means fall through.
+		if _, err := h.Queries.GetOnlineRuntimeForDaemon(ctx, db.GetOnlineRuntimeForDaemonParams{
+			WorkspaceID: issue.WorkspaceID,
+			DaemonID:    pgtype.Text{String: ref.DaemonID, Valid: true},
+		}); err != nil {
+			continue
+		}
+		return ref.DaemonID, ref.LocalPath, true
+	}
+	return "", "", false
+}
+
+// qaLocalDirectoryClause instructs a QA agent running ON the developer's own
+// machine (the task was pinned to the local_directory's daemon) to start the
+// app itself and smoke localhost, and to never mutate the user's working tree
+// for the baseline. localPath is the folder the agent is already running in.
+func qaLocalDirectoryClause(localPath string) string {
+	return " LOCAL APP: this project's code lives at " + localPath + " ON THIS MACHINE (you are running on the developer's own daemon, in their folder). The app may not be running — bring it up via the daemon: POST http://127.0.0.1:$AGORA_DAEMON_PORT/editor/preview/status with body {\"workdir\":\"" + localPath + "\"}; if it is not running, POST http://127.0.0.1:$AGORA_DAEMON_PORT/editor/preview with the same body (add \"command\" from the project QA smoke command below if one is set) and smoke the returned http://127.0.0.1:<port>/ URL. That URL is ALSO your `qa-target:<url>` key for the shared review browser. TREE SAFETY: this is the developer's real working tree — NEVER run `git checkout`/`switch`/`reset`/`stash` or edit files under " + localPath + ". For the step-1 baseline, create a throwaway scratch worktree instead: `git -C " + localPath + " worktree add <tmpdir> <merge-base>`, run baseline commands there, then `git -C " + localPath + " worktree remove <tmpdir>` and `git -C " + localPath + " worktree prune`."
+}
+
 // boxSmokeURL derives the https URL a box serves from its work_dir
 // (/var/www/<subdomain> → https://<subdomain>). "" when the box has no work_dir.
 func boxSmokeURL(box db.ConnectedBox) string {

@@ -230,6 +230,22 @@ gate run to a QA member (executed on a faster model) and own the
 qa:pass/qa:fail rollup, rather than run the mechanical gate itself. The lead
 orchestrates; a member executes.
 
+**Where the app-under-test comes from (non-sprint QA).** The gate resolves a
+smoke target in priority order: the developer's declared `dev_apps` URL
+(concrete, already running) → a project `local_directory` on an ONLINE daemon
+(the folder lives on the dev's own machine) → a deployed connected box →
+project `qa_smoke_cmd`/`qa_smoke_url` → generic auto-detect. All of the
+dev-machine tiers are gated by `labs.qa_dev_runtimes` (default off). When a
+`local_directory` wins, the QA task is PINNED to that daemon and the
+instruction tells the agent the app lives at that path on THIS machine —
+start it via the daemon's `/editor/preview` and smoke the returned
+`127.0.0.1:<port>`. Critically, the agent must NEVER `git checkout`/`reset`/
+`stash` or edit files in the user's folder; the run_qa baseline uses a
+throwaway `git worktree add <tmp> <merge-base>` instead. (The daemon also
+isolates the run on an `agent/…` branch and restores the user's branch when no
+commits were made — so a read-only QA gate leaves the developer's tree
+pristine.)
+
 **Trivial changes gate SOLO — no review panel.** A low-risk change (a
 `tier:trivial` / `tier:light` / `risk:safe` / `type:docs` label, or a tiny PR
 diff) does NOT route to the QA lead and its QA roster excludes specialist

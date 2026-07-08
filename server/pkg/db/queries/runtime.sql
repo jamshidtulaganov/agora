@@ -41,6 +41,18 @@ WHERE workspace_id = $1
   AND daemon_id = $2
 ORDER BY created_at ASC;
 
+-- name: GetOnlineRuntimeForDaemon :one
+-- The ONLINE runtime for a specific daemon machine, newest heartbeat first
+-- when a daemon carries several provider rows. Used to route a QA task onto
+-- the machine that hosts a project's local_directory (the folder lives there,
+-- so the agent must run there for its 127.0.0.1 preview to be reachable).
+SELECT * FROM agent_runtime
+WHERE workspace_id = $1
+  AND daemon_id = $2
+  AND status = 'online'
+ORDER BY last_seen_at DESC NULLS LAST
+LIMIT 1;
+
 -- name: UpsertAgentRuntime :one
 -- (xmax = 0) AS inserted distinguishes a fresh insert (true) from an upsert
 -- that updated an existing row (false). Analytics reads this to fire

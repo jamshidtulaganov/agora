@@ -172,6 +172,17 @@ If the folder is a git work tree, the daemon protects your branch and your uncom
 - **Dirty work is backed up.** If your tree has uncommitted tracked changes when the agent starts, the daemon snapshots them to `refs/agora/backup/<short-task-id>` with `git stash create` — a zero-touch backup that moves no files. Recover with `git stash apply <ref>` (the recovery command is printed in the result comment). Untracked files are **not** captured by this snapshot.
 - Plain (non-git) folders skip all of the above and run exactly in place, as before.
 
+### QA on a local directory
+
+When the workspace has `labs.qa_dev_runtimes` enabled, the automatic QA gate (fired when an issue moves to `in_review`) knows how to test an app that only exists in your local folder:
+
+- **The QA task runs on your machine.** If the issue's project has a `local_directory` bound to an online daemon, the gate pins the QA task to that daemon — the only place where the app's `127.0.0.1` is reachable. It ranks behind a concrete declared `dev_apps` URL but ahead of a deployed QA box.
+- **The app is started for you.** The QA agent brings the app up through the daemon's dev-server preview (the same detection covered under "Preview"), then smokes the resulting `http://127.0.0.1:<port>/`. Set the project's QA smoke command if the app needs a specific launch command.
+- **Your tree is never touched for QA.** The QA agent is told never to switch branches or edit files in your folder; it builds its comparison baseline in a throwaway `git worktree` off to the side. Combined with the git-safety branch handling above, a QA run leaves your working directory exactly as it was.
+- **It queues behind your own work.** Because tasks on one folder are serialized, a QA gate waits for your in-flight dev task on the same directory to finish, then runs — you'll see `waiting_local_directory` until it acquires.
+
+Watching the QA agent drive a browser live works when your daemon is reachable from the backend (self-host, or a laptop on the mesh). Cloud-backend live-watch of a laptop app is a separate mesh setup.
+
 ### v1 limits (will tighten in follow-ups)
 
 The first release deliberately ships with sharper edges than `github_repo`. Expect this list to shrink over time — what's documented here is what's true today:

@@ -2093,14 +2093,30 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 				smokeURL = boxSmokeURL(box)
 			}
 		}
-	} else {
-		smokeURL = h.devBoxSmokeURL(ctx, issue)
+	}
+
+	// The developer's own machine ranks ahead of a deployed box (non-sprint
+	// path only — sprint QA smokes the integrated sprint box, resolved above).
+	// Order: dev_apps URL (concrete, already running) > local_directory (folder
+	// on an online daemon — pin + start-via-preview, no URL yet) > connected
+	// box. Sprint mode already set smokeURL, so leave it alone there.
+	localDirQAPath := ""
+	if scope != "task" && smokeURL == "" {
+		if url := h.devLocalAppURL(ctx, issue); url != "" {
+			smokeURL = url
+		} else if _, lp, ok := h.localDirectoryQATarget(ctx, issue); ok {
+			localDirQAPath = lp
+		} else {
+			smokeURL = h.devBoxSmokeURL(ctx, issue)
+		}
 	}
 
 	instruction := buildSliceInstruction(sliceActionRunQA, scope) + sprintNote
 	if smokeURL != "" {
 		instruction += " SMOKE TARGET: the branch is served at " + smokeURL +
 			" — smoke THAT url. It OVERRIDES any project smoke url below."
+	} else if localDirQAPath != "" {
+		instruction += qaLocalDirectoryClause(localDirQAPath)
 	}
 	// Risk map intentionally NOT appended here: the claim path injects it into
 	// the same run's instructions (daemon.go) — appending again would duplicate.

@@ -51,7 +51,17 @@ func (s *TaskService) maybePinTaskToDevRuntime(ctx context.Context, issue db.Iss
 		ProjectID:   util.UUIDToString(issue.ProjectID),
 	})
 	if err != nil {
-		return task // no online dev runtime declaring this project — normal flow
+		// Fallback: a local_directory resource binds this project to a folder
+		// on a specific daemon — that daemon IS the developer's machine, so
+		// pin QA there too. Unlike dev_apps (a per-dev URL declaration) this is
+		// an explicit project→daemon binding, so it is NOT gated on the
+		// runtime being owned by the issue's developer; the labs +
+		// AgentInQASquad gates above still apply.
+		ldRuntime, lok := s.localDirectoryRuntimeForProject(ctx, issue)
+		if !lok {
+			return task // no online dev runtime and no online local_directory — normal flow
+		}
+		runtime = ldRuntime
 	}
 	if task.RuntimeID.Valid && task.RuntimeID.Bytes == runtime.ID.Bytes {
 		return task // already routed there (agent lives on the dev's runtime)
@@ -80,6 +90,42 @@ func (s *TaskService) maybePinTaskToDevRuntime(ctx context.Context, issue db.Iss
 	// The pin moved the task between runtimes' claim queues — wake the target.
 	s.NotifyTaskEnqueued(ctx, pinned)
 	return pinned
+}
+
+// localDirectoryRuntimeForProject resolves the ONLINE runtime hosting a
+// local_directory resource on the issue's project. It mirrors the handler-side
+// localDirectoryQATarget (service must not import handler), returning the
+// runtime so the QA task can be pinned to the machine where the folder — and
+// thus the app under test — lives. The first online local_directory daemon
+// wins; offline daemons are skipped.
+func (s *TaskService) localDirectoryRuntimeForProject(ctx context.Context, issue db.Issue) (db.AgentRuntime, bool) {
+	if !issue.ProjectID.Valid {
+		return db.AgentRuntime{}, false
+	}
+	rows, err := s.Queries.ListProjectResources(ctx, issue.ProjectID)
+	if err != nil {
+		return db.AgentRuntime{}, false
+	}
+	for _, res := range rows {
+		if res.ResourceType != "local_directory" {
+			continue
+		}
+		var ref struct {
+			DaemonID string `json:"daemon_id"`
+		}
+		if err := json.Unmarshal(res.ResourceRef, &ref); err != nil || ref.DaemonID == "" {
+			continue
+		}
+		rt, err := s.Queries.GetOnlineRuntimeForDaemon(ctx, db.GetOnlineRuntimeForDaemonParams{
+			WorkspaceID: issue.WorkspaceID,
+			DaemonID:    pgtype.Text{String: ref.DaemonID, Valid: true},
+		})
+		if err != nil {
+			continue
+		}
+		return rt, true
+	}
+	return db.AgentRuntime{}, false
 }
 
 // developerUserForIssue resolves the human developer (user id) behind an
