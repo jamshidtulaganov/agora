@@ -21,6 +21,7 @@ const STATUSES = [
 ];
 const LABELS = [
   "qa:pass", "qa:fail", "qa:blocked", "qa:stale", "merge:override",
+  "design:pass", "design:fail",
   "bug", "ci:pass", "ci:fail", "tier:light", "qa:PASS", "qa: pass", "",
 ];
 const GATE_STATES = ["pass", "fail", "pending"] as const;

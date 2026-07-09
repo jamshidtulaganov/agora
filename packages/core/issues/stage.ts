@@ -73,20 +73,33 @@ function normalizeStatus(status: string): IssueStatus {
 function deriveDesignStage(
   input: StagePipelineInput,
   status: IssueStatus,
+  labelNames: Set<string>,
   running: Set<SDLCStage>,
 ): StageSnapshot {
   if (!input.hasDesignSignals) {
     return { stage: "design", state: "skipped" };
   }
-  if (
-    input.designVerdict === "pass" ||
-    input.qaVerdict === "pass" ||
-    status === "done"
-  ) {
+  if (status === "done") {
+    return { stage: "design", state: "passed" };
+  }
+  // design:pass/design:fail are the durable, board-filterable signal (backend
+  // attaches them from qa-result.design.verdict — see
+  // TaskService.captureDesignVerdictLabel, qa_evidence.go). Labels take
+  // precedence over the raw verdict fields — including the qa:pass override,
+  // so an explicit design:fail is never silently erased by a green QA gate.
+  // The verdict fields remain as fallback for evidence captured before the
+  // labels existed — no backfill needed.
+  if (labelNames.has("design:fail")) {
+    return { stage: "design", state: "failed" };
+  }
+  if (labelNames.has("design:pass")) {
     return { stage: "design", state: "passed" };
   }
   if (input.designVerdict === "fail") {
     return { stage: "design", state: "failed" };
+  }
+  if (input.designVerdict === "pass" || input.qaVerdict === "pass") {
+    return { stage: "design", state: "passed" };
   }
   if (running.has("design")) {
     return { stage: "design", state: "running" };
@@ -237,7 +250,7 @@ export function deriveStagePipeline(input: StagePipelineInput): StagePipeline {
   const labelNames = new Set(input.labels.map((l) => l.name));
   const running = new Set(input.runningTaskStages ?? []);
 
-  const design = deriveDesignStage(input, status, running);
+  const design = deriveDesignStage(input, status, labelNames, running);
   const dev = deriveDevStage(input, status, running);
   const qa = deriveQaStage(status, labelNames, running);
   const review = deriveReviewStage(input, status, labelNames, qa);

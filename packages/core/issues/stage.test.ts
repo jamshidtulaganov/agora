@@ -70,6 +70,49 @@ describe("deriveStagePipeline — design stage", () => {
     expect(find(pipeline, "design").state).toBe("failed");
   });
 
+  it("passes on a design:pass label", () => {
+    const pipeline = deriveStagePipeline(
+      baseInput({ hasDesignSignals: true, labels: [{ name: "design:pass" }] }),
+    );
+    expect(find(pipeline, "design").state).toBe("passed");
+  });
+
+  it("fails on a design:fail label", () => {
+    const pipeline = deriveStagePipeline(
+      baseInput({ hasDesignSignals: true, labels: [{ name: "design:fail" }] }),
+    );
+    expect(find(pipeline, "design").state).toBe("failed");
+  });
+
+  it("prefers the design:pass label over a conflicting fail verdict field", () => {
+    const pipeline = deriveStagePipeline(
+      baseInput({
+        hasDesignSignals: true,
+        designVerdict: "fail",
+        labels: [{ name: "design:pass" }],
+      }),
+    );
+    expect(find(pipeline, "design").state).toBe("passed");
+  });
+
+  it("prefers the design:fail label over a conflicting pass verdict field", () => {
+    const pipeline = deriveStagePipeline(
+      baseInput({
+        hasDesignSignals: true,
+        designVerdict: "pass",
+        labels: [{ name: "design:fail" }],
+      }),
+    );
+    expect(find(pipeline, "design").state).toBe("failed");
+  });
+
+  it("falls back to the verdict field when neither design label is present", () => {
+    const pipeline = deriveStagePipeline(
+      baseInput({ hasDesignSignals: true, designVerdict: "fail", labels: [] }),
+    );
+    expect(find(pipeline, "design").state).toBe("failed");
+  });
+
   it("is running when a design task is attributed as running", () => {
     const pipeline = deriveStagePipeline(
       baseInput({ hasDesignSignals: true, runningTaskStages: ["design"] }),

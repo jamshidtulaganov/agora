@@ -100,6 +100,12 @@ func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, con
 	})
 	slog.Info("qa evidence captured", "issue_id", util.UUIDToString(issue.ID), "verdict", p.Verdict)
 
+	// The design-compare check (sliceActionDesignCompareContext, design_action.go)
+	// nests its own advisory verdict at result_json.design.verdict inside this
+	// SAME raw block. Mirror it into a design:pass/design:fail label the moment
+	// it's captured — independent of the top-level qa verdict below.
+	s.captureDesignVerdictLabel(ctx, issue, raw)
+
 	v := strings.ToLower(strings.TrimSpace(p.Verdict))
 	label, color := "", ""
 	switch v {
@@ -142,6 +148,77 @@ func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, con
 	})
 	slog.Info("qa evidence: auto-attached gate label from verdict", "issue_id", util.UUIDToString(issue.ID), "label", label)
 	return v, true
+}
+
+// designVerdictFromResult extracts result_json.design.verdict from a raw
+// qa-result JSON block. Mirrors designVerdictOf (design_action.go) — a small,
+// intentional duplicate rather than a shared package: handler already imports
+// service (Handler.TaskService), so service importing handler back would be a
+// cycle. The design-compare appendix embeds its verdict in the SAME qa-result
+// JSON blob CaptureQAEvidence already parses above, so this reads that raw
+// text directly instead of adding a new capture path.
+func designVerdictFromResult(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	var r struct {
+		Design *struct {
+			Verdict string `json:"verdict"`
+		} `json:"design"`
+	}
+	if json.Unmarshal([]byte(raw), &r) != nil || r.Design == nil {
+		return ""
+	}
+	return r.Design.Verdict
+}
+
+// captureDesignVerdictLabel mirrors the qa:pass/qa:fail attach above for the
+// ADVISORY design-compare verdict nested at result_json.design.verdict (see
+// sliceActionDesignCompareContext, design_action.go). Same replace-on-write
+// semantics: attaching one detaches the other, the label is auto-created per
+// workspace if missing. "skipped" (Figma unreachable) and "" (no
+// design-compare ran, e.g. the issue has no Figma refs) touch nothing — never
+// fail an issue for an infra reason, per the recipe's own doctrine.
+func (s *TaskService) captureDesignVerdictLabel(ctx context.Context, issue db.Issue, raw string) {
+	v := strings.ToLower(strings.TrimSpace(designVerdictFromResult(raw)))
+	label, color := "", ""
+	switch v {
+	case "pass":
+		label, color = "design:pass", "#22c55e"
+	case "fail":
+		label, color = "design:fail", "#ef4444"
+	default:
+		return
+	}
+	if s.issueHasLabelName(ctx, issue, label) {
+		return // already set → nothing new to do
+	}
+	labelID, err := s.ensureLabel(ctx, issue.WorkspaceID, label, color)
+	if err != nil {
+		slog.Warn("capture design verdict: ensure label failed", "error", err, "label", label, "issue_id", util.UUIDToString(issue.ID))
+		return
+	}
+	if err := s.Queries.AttachLabelToIssue(ctx, db.AttachLabelToIssueParams{
+		IssueID: issue.ID, LabelID: labelID, WorkspaceID: issue.WorkspaceID,
+	}); err != nil {
+		slog.Warn("capture design verdict: attach label failed", "error", err, "label", label, "issue_id", util.UUIDToString(issue.ID))
+		return
+	}
+	// A verdict REPLACES the previous one — same "opposite gate label" rule
+	// CaptureQAEvidence enforces for qa:pass/qa:fail above.
+	opposite := "design:fail"
+	if label == "design:fail" {
+		opposite = "design:pass"
+	}
+	s.DetachIssueLabelByName(ctx, issue, opposite)
+	s.Bus.Publish(events.Event{
+		Type:        protocol.EventIssueLabelsChanged,
+		WorkspaceID: util.UUIDToString(issue.WorkspaceID),
+		ActorType:   "agent",
+		ActorID:     "",
+		Payload:     map[string]any{"issue_id": util.UUIDToString(issue.ID)},
+	})
+	slog.Info("qa evidence: auto-attached design gate label from verdict", "issue_id", util.UUIDToString(issue.ID), "label", label)
 }
 
 // DetachIssueLabelByName removes a label (matched case-insensitively by name)
