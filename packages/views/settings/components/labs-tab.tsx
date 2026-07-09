@@ -301,10 +301,11 @@ export function LabsTab() {
                         href={url}
                         target="_blank"
                         rel="noreferrer"
-                        className="mt-0.5 inline-flex items-center gap-1 truncate text-[11px] text-muted-foreground hover:text-foreground hover:underline"
+                        title={url}
+                        className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground hover:underline"
                       >
                         <Globe className="size-3 shrink-0" />
-                        {url}
+                        <span className="truncate">{url}</span>
                       </a>
                     )}
                   </div>
