@@ -86,6 +86,7 @@ import type {
   ListTestCasesResponse,
   CreateTestCaseRequest,
   CreateTestRunRequest,
+  BuildBaseSuiteResponse,
   GetIssueEditorResponse,
   IssueBrowserResponse,
   IssueQAPreviewURLResponse,
@@ -275,6 +276,10 @@ import {
   QAEvidenceSchema,
   ListTestCasesResponseSchema,
   EMPTY_LIST_TEST_CASES,
+  TestCaseSchema,
+  EMPTY_TEST_CASE,
+  BuildBaseSuiteResponseSchema,
+  EMPTY_BUILD_BASE_SUITE,
   LaunchTraceResponseSchema,
   EMPTY_LAUNCH_TRACE,
   EMPTY_CONNECTED_BOX,
@@ -2655,6 +2660,42 @@ export class ApiClient {
     return this.fetch(`/api/issues/${issueId}/test-cases`, {
       method: "POST",
       body: JSON.stringify(data),
+    });
+  }
+
+  // A project's STANDING base regression suite — test cases with issue_id NULL,
+  // injected into every run_qa / run_test_cases on the project's issues (the
+  // "stoppage" release gate). Same response shape as the issue-scoped list; base
+  // rows carry issue_id "". Falls back to an empty list so the Suite tab renders.
+  async listProjectTestCases(projectId: string): Promise<ListTestCasesResponse> {
+    const raw = await this.fetch<unknown>(`/api/projects/${projectId}/test-cases`);
+    return parseWithFallback(raw, ListTestCasesResponseSchema, EMPTY_LIST_TEST_CASES, {
+      endpoint: "GET /api/projects/:id/test-cases",
+    });
+  }
+
+  // Author a standing base case for a project (issue_id stays NULL). Kind
+  // defaults to "automated" server-side — only automated base cases are injected
+  // into runs. Returns the created row; a degraded response yields an empty case.
+  async createProjectTestCase(projectId: string, data: CreateTestCaseRequest): Promise<TestCase> {
+    const raw = await this.fetch<unknown>(`/api/projects/${projectId}/test-cases`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(raw, TestCaseSchema, EMPTY_TEST_CASE, {
+      endpoint: "POST /api/projects/:id/test-cases",
+    });
+  }
+
+  // Fire the QA-squad lead to author the project's golden-path base suite from
+  // its QA manifest (202 Accepted → the tracking issue it opened). The UI only
+  // needs the queued status; a degraded response yields empty status/issue_id.
+  async buildProjectBaseSuite(projectId: string): Promise<BuildBaseSuiteResponse> {
+    const raw = await this.fetch<unknown>(`/api/projects/${projectId}/base-suite/build`, {
+      method: "POST",
+    });
+    return parseWithFallback(raw, BuildBaseSuiteResponseSchema, EMPTY_BUILD_BASE_SUITE, {
+      endpoint: "POST /api/projects/:id/base-suite/build",
     });
   }
 

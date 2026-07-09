@@ -42,3 +42,10 @@ export interface CreateTestRunRequest {
   status: string;
   output?: string;
 }
+
+// POST /api/projects/:id/base-suite/build — the QA-lead authoring run it queued,
+// returning the tracking issue it opened.
+export interface BuildBaseSuiteResponse {
+  status: string;
+  issue_id: string;
+}

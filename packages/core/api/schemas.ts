@@ -1093,6 +1093,33 @@ export const ListTestCasesResponseSchema = z.object({
 
 export const EMPTY_LIST_TEST_CASES = { test_cases: [] };
 
+// A single test case row — POST /api/projects/:id/test-cases returns one when a
+// standing base case is authored. Lenient like the list schema; the fallback is
+// an inert empty case so a degraded create response can't crash the caller.
+export const EMPTY_TEST_CASE = {
+  id: "",
+  issue_id: "",
+  title: "",
+  steps: "",
+  expected: "",
+  kind: "automated",
+  source: "human",
+  author_type: "",
+  category: "positive",
+  created_at: "",
+  latest_run: null,
+};
+
+// POST /api/projects/:id/base-suite/build — fires the QA-lead authoring run and
+// returns the tracking issue it opened (202 Accepted). Only status/issue_id are
+// read; the toast confirms the run was queued.
+export const BuildBaseSuiteResponseSchema = z.object({
+  status: z.string().default(""),
+  issue_id: z.string().default(""),
+}).loose();
+
+export const EMPTY_BUILD_BASE_SUITE = { status: "", issue_id: "" };
+
 // GET /api/issues/:id/editor — resolves where (and how) to reach a live view
 // of an issue's worktree. Two real shapes share one endpoint: self-host (a
 // daemon_url + the agents that have a worktree, most-recent first) or cloud

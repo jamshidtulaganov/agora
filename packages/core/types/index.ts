@@ -219,5 +219,6 @@ export type {
   ListTestCasesResponse,
   CreateTestCaseRequest,
   CreateTestRunRequest,
+  BuildBaseSuiteResponse,
 } from "./test-case";
 export type { EditorAgent, GetIssueEditorResponse, IssueBrowserResponse, IssueQAPreviewURLResponse } from "./editor-live";
