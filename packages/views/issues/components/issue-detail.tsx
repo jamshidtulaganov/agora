@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
 import { Virtuoso } from "react-virtuoso";
-import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { AppLink } from "../../navigation";
 import { useNavigation } from "../../navigation";
 import {
@@ -23,6 +22,8 @@ import {
   Users,
 } from "lucide-react";
 import { BreadcrumbHeader, type BreadcrumbSegment } from "../../layout/breadcrumb-header";
+import { CockpitFrame } from "../../layout/cockpit-frame";
+import { InspectorSection } from "../../layout/inspector-section";
 import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@agora/ui/components/ui/tabs";
 import {
@@ -31,9 +32,6 @@ import {
   type ActivityTab,
 } from "./activity-tabs";
 import { Button, buttonVariants } from "@agora/ui/components/ui/button";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@agora/ui/components/ui/resizable";
-import { Sheet, SheetContent } from "@agora/ui/components/ui/sheet";
-import { useIsMobile } from "@agora/ui/hooks/use-mobile";
 import { ContentEditor, type ContentEditorRef, TitleEditor, useFileDropZone, FileDropOverlay } from "../../editor";
 import { FileUploadButton } from "@agora/ui/components/common/file-upload-button";
 import {
@@ -697,26 +695,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const { data: allIssues = [] } = useQuery(issueListOptions(wsId));
   const { getActorName } = useActorName();
   const { uploadWithToast } = useFileUpload(api);
-  const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: layoutId,
-  });
-  const sidebarRef = usePanelRef();
-  const isMobile = useIsMobile();
-  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(defaultSidebarOpen);
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-
-  useEffect(() => {
-    if (isMobile) {
-      setMobileSidebarOpen(false);
-    }
-  }, [isMobile]);
-  const sidebarOpen = isMobile ? mobileSidebarOpen : desktopSidebarOpen;
-  const [propertiesOpen, setPropertiesOpen] = useState(true);
-  const [detailsOpen, setDetailsOpen] = useState(true);
-  const [parentIssueOpen, setParentIssueOpen] = useState(true);
-  const [pullRequestsOpen, setPullRequestsOpen] = useState(true);
   const [metadataOpen, setMetadataOpen] = useState(false);
-  const [tokenUsageOpen, setTokenUsageOpen] = useState(true);
   const githubSettings = useGitHubSettings();
 
   // Per-issue, per-session set of optional properties currently visible in
@@ -1385,18 +1364,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     setAutoOpenProp(null);
   }, [autoOpenProp]);
 
-  const handleToggleSidebar = useCallback(() => {
-    if (isMobile) {
-      setMobileSidebarOpen((open) => !open);
-      return;
-    }
-
-    const panel = sidebarRef.current;
-    if (!panel) return;
-    if (panel.isCollapsed()) panel.expand();
-    else panel.collapse();
-  }, [isMobile, sidebarRef]);
-
   if (loading) {
     return (
       <div className="flex flex-1 min-h-0 flex-col">
@@ -1464,16 +1431,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const sidebarContent = (
     <div className="space-y-5">
       {/* Properties */}
-      <div>
-        <button
-          type="button"
-          className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors mb-2 hover:bg-accent/70 ${propertiesOpen ? "" : "text-muted-foreground hover:text-foreground"}`}
-          onClick={() => setPropertiesOpen(!propertiesOpen)}
-        >
-          {t(($) => $.detail.section_properties)}
-          <ChevronRight className={`!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${propertiesOpen ? "rotate-90" : ""}`} />
-        </button>
-        {propertiesOpen && <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 pl-2">
+      <InspectorSection title={t(($) => $.detail.section_properties)} defaultOpen>
+        <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 pl-2">
           {/* Core props — always rendered. */}
           <PropRow label={t(($) => $.detail.prop_status)}>
             <StatusPicker status={issue.status} onUpdate={handleUpdateField} align="start" />
@@ -1592,24 +1551,16 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               </Popover>
             </div>
           )}
-        </div>}
-      </div>
+        </div>
+      </InspectorSection>
 
       {/* Parent issue — standalone section, only when the issue has a
           parent. Setting a parent is reachable via the issue actions menu;
           this card surfaces an existing parent without occupying sidebar
           space for issues that don't have one. */}
       {parentIssue && (
-        <div>
-          <button
-            type="button"
-            className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors mb-2 hover:bg-accent/70 ${parentIssueOpen ? "" : "text-muted-foreground hover:text-foreground"}`}
-            onClick={() => setParentIssueOpen(!parentIssueOpen)}
-          >
-            {t(($) => $.detail.section_parent_issue)}
-            <ChevronRight className={`!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${parentIssueOpen ? "rotate-90" : ""}`} />
-          </button>
-          {parentIssueOpen && <div className="pl-2">
+        <InspectorSection title={t(($) => $.detail.section_parent_issue)} defaultOpen>
+          <div className="pl-2">
             <AppLink
               href={paths.issueDetail(parentIssue.id)}
               className="flex items-center gap-1.5 rounded-md px-2 py-1.5 -mx-2 text-xs hover:bg-accent/50 transition-colors group"
@@ -1618,25 +1569,17 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               <span className="text-muted-foreground shrink-0">{parentIssue.identifier}</span>
               <span className="truncate group-hover:text-foreground">{parentIssue.title}</span>
             </AppLink>
-          </div>}
-        </div>
+          </div>
+        </InspectorSection>
       )}
 
       {/* Pull requests — hidden when the workspace disables the PR sidebar
           (or the GitHub master switch is off). Backend data is kept either
           way so re-enabling restores the section instantly. */}
       {githubSettings.prSidebar && (
-        <div>
-          <button
-            type="button"
-            className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors mb-2 hover:bg-accent/70 ${pullRequestsOpen ? "" : "text-muted-foreground hover:text-foreground"}`}
-            onClick={() => setPullRequestsOpen(!pullRequestsOpen)}
-          >
-            {t(($) => $.detail.section_pull_requests)}
-            <ChevronRight className={`!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${pullRequestsOpen ? "rotate-90" : ""}`} />
-          </button>
-          {pullRequestsOpen && <div className="pl-2"><PullRequestList issueId={id} /></div>}
-        </div>
+        <InspectorSection title={t(($) => $.detail.section_pull_requests)} defaultOpen>
+          <div className="pl-2"><PullRequestList issueId={id} /></div>
+        </InspectorSection>
       )}
 
       {/* Figma designs referenced by the description (client-side extraction;
@@ -1651,16 +1594,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       <DesignAuditSection issueId={id} />
 
       {/* Details */}
-      <div>
-        <button
-          type="button"
-          className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors mb-2 hover:bg-accent/70 ${detailsOpen ? "" : "text-muted-foreground hover:text-foreground"}`}
-          onClick={() => setDetailsOpen(!detailsOpen)}
-        >
-          {t(($) => $.detail.section_details)}
-          <ChevronRight className={`!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${detailsOpen ? "rotate-90" : ""}`} />
-        </button>
-        {detailsOpen && <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 pl-2">
+      <InspectorSection title={t(($) => $.detail.section_details)} defaultOpen>
+        <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 pl-2">
           <PropRow label={t(($) => $.detail.prop_created_by)}>
             <ActorAvatar actorType={issue.creator_type} actorId={issue.creator_id} size={18} enableHoverCard />
             <span className="cursor-pointer truncate">{getActorName(issue.creator_type, issue.creator_id)}</span>
@@ -1671,8 +1606,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           <PropRow label={t(($) => $.detail.prop_updated)}>
             <span className="text-muted-foreground">{shortDate(issue.updated_at)}</span>
           </PropRow>
-        </div>}
-      </div>
+        </div>
+      </InspectorSection>
 
       {/* Repository — which repo(s) the issue's project is bound to. Surfaces
           the code source the moment a task starts; prompts to connect one when
@@ -1730,16 +1665,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
 
       {/* Token usage */}
       {usage && usage.task_count > 0 && (
-        <div>
-          <button
-            type="button"
-            className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors mb-2 hover:bg-accent/70 ${tokenUsageOpen ? "" : "text-muted-foreground hover:text-foreground"}`}
-            onClick={() => setTokenUsageOpen(!tokenUsageOpen)}
-          >
-            {t(($) => $.detail.section_token_usage)}
-            <ChevronRight className={`!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${tokenUsageOpen ? "rotate-90" : ""}`} />
-          </button>
-          {tokenUsageOpen && <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 pl-2">
+        <InspectorSection title={t(($) => $.detail.section_token_usage)} defaultOpen>
+          <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 pl-2">
             <PropRow label={t(($) => $.detail.prop_input)}>
               <span className="text-muted-foreground">{formatTokenCount(usage.total_input_tokens)}</span>
             </PropRow>
@@ -1759,8 +1686,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             <PropRow label={t(($) => $.detail.prop_runs)}>
               <span className="text-muted-foreground">{usage.task_count}</span>
             </PropRow>
-          </div>}
-        </div>
+          </div>
+        </InspectorSection>
       )}
 
       {/* Metadata — agent-facing free-form KV bag. The values almost
@@ -1888,8 +1815,11 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
         ]
       : [];
 
-  const detailContent = (
-    <div className="flex h-full min-w-0 flex-1 flex-col">
+  // Header is a render-prop consumed by CockpitFrame: the frame owns the
+  // rail's open/collapse state (desktop panel collapse or mobile Sheet), and
+  // hands it here so the PanelRight toggle button can stay wired to it
+  // without CockpitFrame knowing anything about BreadcrumbHeader.
+  const renderHeader = ({ open, toggle }: { open: boolean; toggle: () => void }) => (
         <BreadcrumbHeader
           segments={breadcrumbSegments}
           leaf={
@@ -1953,8 +1883,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             />
             <Tooltip>
               <TooltipTrigger
-                className={buttonVariants({ variant: sidebarOpen ? "secondary" : "ghost", size: "icon-sm", className: sidebarOpen ? "" : "text-muted-foreground" })}
-                onClick={handleToggleSidebar}
+                className={buttonVariants({ variant: open ? "secondary" : "ghost", size: "icon-sm", className: open ? "" : "text-muted-foreground" })}
+                onClick={toggle}
               >
                 <PanelRight />
               </TooltipTrigger>
@@ -1963,7 +1893,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             </>
           }
         />
+  );
 
+  const bodyContent = (
         <div
           ref={setScrollContainerEl}
           data-tab-scroll-root
@@ -2337,44 +2269,16 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           </div>
         </div>
         </div>
-      </div>
   );
 
-  if (isMobile) {
-    return (
-      <div className="flex flex-1 min-h-0">
-        {detailContent}
-        <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
-          <SheetContent side="right" showCloseButton={false} className="w-[320px] overflow-y-auto p-4">
-            {sidebarContent}
-          </SheetContent>
-        </Sheet>
-      </div>
-    );
-  }
-
   return (
-    <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0" defaultLayout={defaultLayout} onLayoutChanged={onLayoutChanged}>
-      <ResizablePanel id="content" minSize="50%">
-        {detailContent}
-      </ResizablePanel>
-      <ResizableHandle />
-      <ResizablePanel
-        id="sidebar"
-        defaultSize={defaultSidebarOpen ? 320 : 0}
-        minSize={260}
-        maxSize={420}
-        collapsible
-        groupResizeBehavior="preserve-pixel-size"
-        panelRef={sidebarRef}
-        onResize={(size) => setDesktopSidebarOpen(size.inPixels > 0)}
-      >
-      <div className="overflow-y-auto border-l h-full">
-        <div className="p-4">
-          {sidebarContent}
-        </div>
-      </div>
-      </ResizablePanel>
-    </ResizablePanelGroup>
+    <CockpitFrame
+      layoutId={layoutId}
+      defaultRailOpen={defaultSidebarOpen}
+      header={renderHeader}
+      rail={sidebarContent}
+    >
+      {bodyContent}
+    </CockpitFrame>
   );
 }
