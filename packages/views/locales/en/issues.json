@@ -454,6 +454,7 @@
     "open_full": "Open full issue",
     "live_browser": "Live browser",
     "live_testing": "Live testing",
+    "env_local": "Local worktree",
     "live_browser_start": "Start live browser",
     "live_on": "Live",
     "live_preview_open": "Open",

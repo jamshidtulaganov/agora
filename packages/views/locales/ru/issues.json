@@ -454,6 +454,7 @@
     "open_full": "Открыть задачу",
     "live_browser": "Живой браузер",
     "live_testing": "Живое тестирование",
+    "env_local": "Локальный воркдир",
     "live_browser_start": "Запустить браузер",
     "live_on": "В эфире",
     "live_preview_open": "Открыть",

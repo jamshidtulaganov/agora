@@ -40,6 +40,7 @@ export function EditorBrowserPane({
   daemonUrl,
   workdir,
   initialUrl,
+  autoPreview,
 }: {
   daemonUrl: string;
   workdir: string;
@@ -49,8 +50,14 @@ export function EditorBrowserPane({
   // can't embed (its CSP frame-ancestors blanks cross-origin embeds; a real
   // top-level navigation isn't subject to it).
   initialUrl?: string;
+  // When set (and no initialUrl), auto-START the dev server for `workdir` via
+  // the daemon on connect and navigate to its 127.0.0.1 URL — no manual "Load
+  // dev preview" click. Used by QA's local-worktree lane so opening the review
+  // brings the app up on localhost by itself. Boot can take up to ~40s.
+  autoPreview?: boolean;
 }) {
   const [address, setAddress] = useState(initialUrl ?? "");
+  const [autoBooting, setAutoBooting] = useState(false);
   const [state, setState] = useState<StreamState>("connecting");
   const [err, setErr] = useState("");
   const [cdpUrl, setCdpUrl] = useState("");
@@ -86,6 +93,35 @@ export function EditorBrowserPane({
     setEvents([]);
     setInspectorOpen(false);
     userCollapsedRef.current = false;
+    // Auto-start the dev server for this workdir and drive the browser to it.
+    // POST /editor/preview is idempotent — it reuses an already-running server,
+    // else detects the command, installs deps, and returns the bound URL.
+    const bootPreview = async (ws: WebSocket) => {
+      setAutoBooting(true);
+      setNote("");
+      try {
+        const r = await fetch(`${base}/editor/preview`, {
+          method: "POST",
+          headers: proxyHeaders(daemonUrl),
+          body: JSON.stringify({ workdir }),
+        });
+        const s = (await r.json()) as { url?: string; needs_command?: boolean; error?: string };
+        if (closed) return;
+        if (s.url) {
+          setAddress(s.url);
+          setHasNavigated(true);
+          ws.send(JSON.stringify({ type: "navigate", url: s.url }));
+        } else if (s.needs_command) {
+          setNote("Could not auto-detect the dev command — start the app from the Preview tab.");
+        } else {
+          setNote(s.error || "Could not start the dev server.");
+        }
+      } catch {
+        if (!closed) setNote("Could not reach the daemon to start the preview.");
+      } finally {
+        if (!closed) setAutoBooting(false);
+      }
+    };
     void (async () => {
       try {
         const r = await fetch(`${base}/editor/browser/start`, {
@@ -123,6 +159,10 @@ export function EditorBrowserPane({
         if (target) {
           setHasNavigated(true);
           ws.send(JSON.stringify({ type: "navigate", url: target }));
+        } else if (autoPreview) {
+          // Blank first (never flash Chromium's start page), then boot + navigate.
+          ws.send(JSON.stringify({ type: "navigate", url: "about:blank" }));
+          void bootPreview(ws);
         } else {
           ws.send(JSON.stringify({ type: "navigate", url: "about:blank" }));
         }
@@ -188,7 +228,7 @@ export function EditorBrowserPane({
         frameUrlRef.current = "";
       }
     };
-  }, [daemonUrl, workdir, nonce, initialUrl]);
+  }, [daemonUrl, workdir, nonce, initialUrl, autoPreview]);
 
   const toCdp = (e: React.MouseEvent) => {
     const img = imgRef.current;
@@ -371,15 +411,24 @@ export function EditorBrowserPane({
           {!hasNavigated ? (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/85">
               <div className="pointer-events-auto flex flex-col items-center gap-2 px-6 text-center text-xs text-muted-foreground">
-                <Globe className="h-6 w-6" />
-                <span>Type a URL above to browse the web —</span>
-                <button
-                  type="button"
-                  onClick={() => void loadPreview()}
-                  className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-                >
-                  Load dev preview
-                </button>
+                {autoBooting ? (
+                  <>
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                    <span>Starting the dev server on this daemon…</span>
+                  </>
+                ) : (
+                  <>
+                    <Globe className="h-6 w-6" />
+                    <span>Type a URL above to browse the web —</span>
+                    <button
+                      type="button"
+                      onClick={() => void loadPreview()}
+                      className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                    >
+                      Load dev preview
+                    </button>
+                  </>
+                )}
                 {note && (
                   <span className="text-[10px] text-amber-600 dark:text-amber-400">
                     {note}

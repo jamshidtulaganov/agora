@@ -1,10 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { Globe, Loader2, Play, ExternalLink } from "lucide-react";
+import { Globe, Loader2, ExternalLink } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@agora/core/api";
-import { Button } from "@agora/ui/components/ui/button";
 import { EditorBrowserPane } from "../../issues/components/editor-browser-pane";
 import { useT } from "../../i18n";
 
@@ -35,7 +33,6 @@ import { useT } from "../../i18n";
 
 export function QALiveBrowser({ issueId }: { issueId: string }) {
   const { t } = useT("issues");
-  const [startedAgent, setStartedAgent] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["issue-editor", issueId],
@@ -74,13 +71,39 @@ export function QALiveBrowser({ issueId }: { issueId: string }) {
   // No daemon at all → the target can only open in a real tab.
   const linkOnly = !isLoading && !browserLoading && !boxBrowse && !agentBrowse && !!previewUrl;
 
-  const live = boxBrowse || (agentBrowse && startedAgent);
+  // The local-worktree lane AUTO-connects: opening the QA review IS the intent
+  // to watch the app, so it drives the CDP browser straight away — and the pane
+  // auto-starts the dev server (autoPreview) so localhost comes up by itself,
+  // no manual "Start" / "Load dev preview" clicks.
+  const live = boxBrowse || agentBrowse;
+  // Which environment is under test, surfaced as a chip so neither the reviewer
+  // nor the QA agent is ever unsure: a deployed box's host, or the local
+  // worktree on the developer's daemon.
+  const envLabel = boxBrowse
+    ? (() => {
+        try {
+          return new URL(previewUrl).host;
+        } catch {
+          return previewUrl;
+        }
+      })()
+    : agentBrowse
+      ? t(($) => $.qa_review.env_local)
+      : "";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card">
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <Globe className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="text-[12px] font-medium">{t(($) => $.qa_review.live_testing)}</span>
+        {envLabel && (
+          <span
+            className="max-w-[170px] truncate rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+            title={envLabel}
+          >
+            {envLabel}
+          </span>
+        )}
         {live && (
           <span className="ml-auto flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
             <span aria-hidden className="size-1.5 rounded-full bg-emerald-500 motion-safe:animate-pulse" />
@@ -95,27 +118,11 @@ export function QALiveBrowser({ issueId }: { issueId: string }) {
         <div className="min-h-0 flex-1">
           <EditorBrowserPane daemonUrl={daemonUrl} workdir={`qa-target:${previewUrl}`} initialUrl={previewUrl} />
         </div>
-      ) : agentBrowse && startedAgent ? (
-        <div className="min-h-0 flex-1">
-          <EditorBrowserPane daemonUrl={daemonUrl} workdir={agent!.work_dir} />
-        </div>
       ) : agentBrowse ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-10 text-center">
-          <span className="flex size-11 items-center justify-center rounded-full bg-muted">
-            <Globe className="size-5 text-muted-foreground" aria-hidden />
-          </span>
-          <p className="max-w-[240px] text-[11px] leading-relaxed text-muted-foreground">
-            {t(($) => $.qa_review.live_browser_hint)}
-          </p>
-          <Button
-            type="button"
-            size="sm"
-            className="h-8 gap-1.5 text-[12px]"
-            onClick={() => setStartedAgent(true)}
-          >
-            <Play className="size-3.5" />
-            {t(($) => $.qa_review.live_browser_start)}
-          </Button>
+        // Local worktree on the dev's daemon: drive its CDP browser and let the
+        // pane auto-start the dev server on localhost (autoPreview).
+        <div className="min-h-0 flex-1">
+          <EditorBrowserPane daemonUrl={daemonUrl} workdir={agent!.work_dir} autoPreview />
         </div>
       ) : linkOnly ? (
         // No reachable daemon to drive a Chromium — hand the target off to a

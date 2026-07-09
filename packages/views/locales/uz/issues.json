@@ -454,6 +454,7 @@
     "open_full": "Vazifani ochish",
     "live_browser": "Jonli brauzer",
     "live_testing": "Jonli test",
+    "env_local": "Lokal worktree",
     "live_browser_start": "Brauzerni ochish",
     "live_on": "Jonli",
     "live_preview_open": "Ochish",

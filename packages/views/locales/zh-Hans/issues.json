@@ -443,6 +443,7 @@
     "open_full": "打开完整任务",
     "live_browser": "实时浏览器",
     "live_testing": "实时测试",
+    "env_local": "本地工作区",
     "live_browser_start": "启动实时浏览器",
     "live_on": "实时",
     "live_preview_open": "打开",
