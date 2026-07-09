@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
 	"fmt"
 	"github.com/multica-ai/multica/server/internal/config"
@@ -77,6 +78,23 @@ func isQASliceAction(kind string) bool {
 	}
 }
 
+//go:embed slice_action_templates
+var sliceActionTemplateFS embed.FS
+
+// sliceActionTemplate returns the verbatim instruction body for a long slice
+// action, embedded from slice_action_templates/<wire>.md so the procedure is
+// versioned + reviewable outside the Go string literals. Injected exactly as
+// the inline base was (the trailing file newline is trimmed for byte-parity).
+// A missing/unreadable template panics at init-adjacent call time — the files
+// are embedded at build, so absence is a build error, not a runtime surprise.
+func sliceActionTemplate(wire string) string {
+	b, err := sliceActionTemplateFS.ReadFile("slice_action_templates/" + wire + ".md")
+	if err != nil {
+		panic("slice_action template missing: " + wire + ": " + err.Error())
+	}
+	return strings.TrimRight(string(b), "\n")
+}
+
 // agentProtocolMarker prefixes a slice-action comment with an inert marker
 // (<!--agent-protocol:<kind>-->) so the UI can classify the comment EXACTLY —
 // render a human headline + collapse the machine prompt — instead of guessing
@@ -121,77 +139,7 @@ func buildSliceInstruction(kind, scope string) string {
 			"the human to review. Do NOT make or merge any changes yourself — your review is " +
 			"advisory and the human reviewer decides what to do next."
 	case sliceActionRunQA:
-		base = "Run QA for this issue as a DETERMINISTIC gate — report strictly by EXIT CODE, never by " +
-			"opinion, and do NOT weaken, skip, or delete any test to make it pass. Judge the CHANGE, not the " +
-			"repo: a check that is ALREADY red on the base branch is PRE-EXISTING and must NOT fail this gate — " +
-			"only a NEW failure this change introduces does. " +
-			"(1) BASELINE: check out the merge-base (the base branch this PR/MR targets, e.g. `main`) and run the " +
-			"SAME build + lint + test commands you will run below, recording each exit code. Every command that " +
-			"already fails here is pre-existing and out of scope for this gate. " +
-			"(2) CHECKS: on the change's branch, detect the project type and run its build + lint + tests, " +
-			"recording each command and its exit code — e.g. `pnpm build && pnpm lint && pnpm test` (JS/TS), " +
-			"`go build ./... && go test ./...` (Go), `php -l` on changed files plus phpunit/codeception (PHP). " +
-			"Diff against BASELINE: a command red on BOTH is pre-existing (note it, do not block); a command " +
-			"green on baseline but RED on the branch is a NEW failure this change caused — that fails the gate. " +
-			"(3) SMOKE — DETERMINISTIC-FIRST, vision-last: decide the smoke verdict from DETERMINISTIC signals " +
-			"(HTTP status, console output, network responses, and asserted DOM / accessibility-tree TEXT), NEVER by " +
-			"visually judging a screenshot. If the project configures a smoke command (see its QA smoke below), RUN " +
-			"IT and take its EXIT CODE as the smoke verdict — a deterministic login-and-assert script (curl/CLI that " +
-			"checks status + page text and exits 0/1) is faster, cheaper, and more reliable than driving the UI by " +
-			"hand and consumes no vision tokens. Otherwise bring the app up and exercise it in a real browser — " +
-			"prefer the co-code editor's embedded Chromium over CDP (get the preview URL and the Chromium CDP url " +
-			"from the local daemon's editor endpoints, then drive it with `playwright-core` " +
-			"`chromium.connectOverCDP(<cdp_url>)`); if you cannot reach the embedded browser, launch your own " +
-			"headless Chromium. Read the page via its DOM / accessibility-tree snapshot (text), not a screenshot, " +
-			"and assert ALL of: (a) NO console errors AND no console warnings — in particular a vue-i18n / intlify " +
-			"\"Not found '<key>' key\" or any missing-translation warning is a FAIL; (b) no 4xx/5xx network " +
-			"responses; (c) the main UI renders — assert specific expected elements/text are PRESENT in the DOM or " +
-			"accessibility tree (assert on TEXT, not pixels); and (d) NO untranslated placeholder keys are visible " +
-			"in the rendered text — a raw i18n key showing through (a dotted identifier such as `section.tile.title` " +
-			"displayed verbatim) means a translation was never registered and is a FAIL, even when nothing logged. " +
-			"Apply the same baseline rule to smoke findings: a console error, network failure, or placeholder that " +
-			"ALSO reproduces on the unchanged base page is pre-existing; one that appears only after the change is a " +
-			"NEW failure. Capture a screenshot ONLY to DOCUMENT a failure you have already determined from the " +
-			"assertions above (attach it to the verdict for the human) — do NOT screenshot the happy path, and " +
-			"NEVER vision-analyze a screenshot to decide pass/fail; every smoke verdict must trace to a " +
-			"deterministic signal. " +
-			"(4) WRITE TEST CASES that assert the task's INTENDED behavior — derived from the TASK PLAN (this " +
-			"issue's acceptance criteria + description, appended below), NOT from the diff. The diff tells you WHERE " +
-			"the behavior lives (which files/functions/UI to target); the PLAN tells you WHAT the correct behavior " +
-			"is. For EACH acceptance criterion, author at least one test asserting that criterion's expected " +
-			"outcome — unit tests for the relevant logic/functions in the project's existing framework " +
-			"(vitest/jest/phpunit/go test), and a Playwright/e2e case for UI driven against the running preview " +
-			"over the embedded Chromium. If no acceptance criteria are listed, derive the intended behavior from " +
-			"the issue description. CRITICAL: a test encodes what the PLAN says SHOULD happen — if the " +
-			"implementation diverges from the plan, the test MUST FAIL (you have surfaced a real bug); never " +
-			"rewrite, weaken, or shape a test to match the code to go green. Follow the repo's existing test layout " +
-			"and mock external APIs (never hit live endpoints). Commit a new test when it BUILDS and faithfully " +
-			"asserts the plan: if it then PASSES on the branch the implementation meets that criterion; if it FAILS " +
-			"on the branch (and the criterion is not already broken on baseline) that is a NEW failure — report " +
-			"`qa:fail` and KEEP the test. For a bug fix the criterion is 'the bug no longer reproduces': the test " +
-			"must FAIL on the pre-change behaviour and PASS after (fail-before / pass-after). A criterion with NO " +
-			"covering test is a coverage GAP — list it in the verdict. NEVER weaken, skip, or delete an existing " +
-			"test to go green. " +
-			"(5) VERDICT: post a comment with two sections — NEW (regressions this change introduced) and " +
-			"PRE-EXISTING (already red on baseline, out of scope) — listing every command with its baseline and " +
-			"branch exit code, the tests you added and WHICH acceptance criterion each one covers (plus any " +
-			"criterion left uncovered), and the screenshots. Set the `qa:pass` label when this change introduces " +
-			"NO new failure AND your plan-driven tests pass (the implementation meets every criterion) AND the " +
-			"smoke is clean — even if the repo carries pre-existing red. Set `qa:fail` when the change introduces " +
-			"or worsens a failure OR an implemented criterion's test fails. Never fabricate a green result, but " +
-			"never blame the change for pre-existing breakage. " +
-			"At the END of that comment, append a fenced ```qa-result code block containing ONLY a JSON object the " +
-			"editor's QA panel parses to render the result structured: " +
-			"`{\"verdict\":\"pass\"|\"fail\",\"summary\":\"<one line>\",\"commands\":[{\"cmd\":\"<command>\"," +
-			"\"baseline_exit\":<int|null>,\"branch_exit\":<int>,\"kind\":\"pass\"|\"new_failure\"|\"pre_existing\"," +
-			"\"error\":\"<short reason, ONLY for new_failure>\"}],\"screenshots\":[\"<path-or-url>\"]}` — " +
-			"`baseline_exit` is null for a command that only exists on the branch (e.g. your new tests); `kind` is " +
-			"`new_failure` only when baseline passed and the branch failed. For EVERY `new_failure` command, set " +
-			"`error` to the ONE line that actually explains it — the failing assertion message or the last " +
-			"non-empty stderr line (e.g. `expected 200, got 500` or `AssertionError: title not trimmed`), NOT the " +
-			"full stack trace and NOT a restatement of the exit code. Omit `error` (or leave it empty) for `pass` " +
-			"and `pre_existing` commands. The JSON must be valid and self-contained (the human-readable sections " +
-			"above stay as well). Do NOT merge anything — your verdict is advisory and the human decides next."
+		base = sliceActionTemplate("run_qa")
 		if guidance := qaBaselineGuidanceFor(strings.ToLower(strings.TrimSpace(scope))); guidance != "" {
 			base += guidance
 		}
@@ -208,115 +156,11 @@ func buildSliceInstruction(kind, scope string) string {
 			"exited 0, otherwise `ci:fail`. Do NOT change code or merge anything — the gate is a " +
 			"deterministic signal and the human decides what to do next."
 	case sliceActionAutoDocs:
-		base = "Document this issue's change in the project's DOCUMENTATION repository — a SEPARATE repo " +
-			"from the code (its URL is appended below when configured; if none is configured, stop and say so). " +
-			"(1) DETERMINE WHAT CHANGED from this issue (its diff / linked PR): new or changed modules, API " +
-			"endpoints, data-model fields, settings, behavior, or user-facing flows. Documentation-only — do NOT " +
-			"touch product code. (2) IN THE DOCS REPO, write or update the pages that cover what changed, following " +
-			"the repo's EXISTING structure and conventions (read neighboring pages first; match their headings, " +
-			"sidebar entries, and tone). Update the relevant reference page(s) and add a changelog entry; only add " +
-			"a new page when no existing one fits. Keep the canonical locale authoritative and leave translation " +
-			"scaffolds consistent with how the repo handles locales. (3) MAINTAIN THE QA MANIFEST: the docs repo keeps " +
-			"the project's navigation manifest at qa-manifest/<project-slug>.json (base_url, auth, routes, flows) — the " +
-			"map QA agents navigate by instead of exploring. If this change ADDED, RENAMED, MOVED, or REMOVED a route, " +
-			"page, or user flow, update that file in the same change (add the route under routes, add/adjust the flow's " +
-			"steps+assert); if the file does not exist yet, create it from the PROJECT QA MANIFEST appended below. Skip " +
-			"this step only when the change has no navigation impact. (4) Open a review request against the docs repo " +
-			"with the doc changes for human review — a GitHub pull request, or, for a GitLab docs repo, the " +
-			"merge-request push-option flow described below. Do NOT merge — the human decides. If the change is purely " +
-			"internal (no doc-worthy surface), say so in a comment and open nothing rather than inventing content."
+		base = sliceActionTemplate("auto_docs")
 	case sliceActionGenTests:
-		base = "Author QA test cases for this issue — you are the QA Squad's automation engineer, and you write cases " +
-			"like a senior QA engineer: BOTH categories, deliberately, not just a pile of edge cases with no structure. " +
-			"Derive cases from the issue's PLAN (its description + acceptance criteria, appended below) and, when a " +
-			"diff / linked PR exists, the actual change. For EVERY case, decide its category: `positive` — the golden " +
-			"path, valid input, the feature working as intended; `negative` — invalid, malformed, boundary, or " +
-			"adversarial input the system must reject or degrade on gracefully (empty/null, wrong type, out-of-range, " +
-			"unauthorized, duplicate, conflicting state). A change with only positive cases has NO evidence it fails " +
-			"safely — always include negative cases for user-controlled input, permission boundaries, and error paths, " +
-			"not just the happy path. COVER EVERY APPLICABLE TEST LAYER and prefix each title with its layer tag: " +
-			"`[e2e]` — browser golden path driven with Playwright against the QA box (use the PROJECT QA MANIFEST " +
-			"routes/flows below when present); `[api]` — direct authenticated HTTP calls asserting status + response " +
-			"shape (curl/fetch, no browser); `[unit]` — the repo's own test framework on the changed function/module; " +
-			"`[smoke]` — the cheapest liveness assertion for the changed page. Pick the layers the change actually " +
-			"touches — but a UI change with no [e2e] case, or an endpoint change with no [api] case, is an authoring " +
-			"gap. Do NOT run anything and do NOT touch code — only WRITE the cases. " +
-			"At the END of your comment, append a fenced ```test-cases code block containing ONLY a JSON array the QA " +
-			"panel parses: `[{\"title\":\"<short>\",\"steps\":\"<numbered steps, newline-separated>\",\"expected\":" +
-			"\"<expected result>\",\"kind\":\"manual\"|\"automated\",\"category\":\"positive\"|\"negative\",\"script\":" +
-			"\"<a self-contained runnable Playwright script — REQUIRED for every [e2e]/[api] automated case>\"}]` — " +
-			"`automated` for a case a script/HTTP/DOM smoke can run deterministically, `manual` for one a human must " +
-			"click through. Keep titles unique and specific. The JSON must be valid and self-contained; a short " +
-			"human-readable summary may precede it. " +
-			"COMPILED SCRIPT (the biggest speed win): you MUST emit a `script` inline for EVERY [e2e] and [api] automated " +
-			"case — authoring it here SKIPS the separate compile step (a whole extra agent run + round-trip), so never " +
-			"leave an [e2e]/[api] automated case without one. Each is a " +
-			"COMPLETE, self-contained Playwright ESM module that runs with plain `node`: it MUST " +
-			"`import { chromium } from \"playwright\";` (for [api] cases you may use only `fetch`), use the PROJECT " +
-			"QA MANIFEST's base_url + auth (log in via the manifest's login_path/fields) and the manifest ROUTES/FLOWS, " +
-			"perform the case's steps, ASSERT the expected result by deterministic signal (DOM / accessibility-tree TEXT " +
-			"via `page.locator(...)`, HTTP status, or response shape — never a screenshot), then `process.exit(0)` on pass " +
-			"and `process.exit(1)` on ANY failed assertion or thrown error (wrap the body in try/catch and exit(1) in catch). " +
-			"For [e2e] cases you MUST DRIVE THE BROWSER against the SHARED review browser so the reviewer watches it live: " +
-			"when `process.env.AGORA_DAEMON_PORT` is set, POST " +
-			"`http://127.0.0.1:${process.env.AGORA_DAEMON_PORT}/editor/browser/start` with `{\"workdir\":\"qa-target:<the manifest base_url>\"}`, " +
-			"read `cdp_url`, then `const browser = await chromium.connectOverCDP(cdp_url); const context = browser.contexts()[0] ?? " +
-			"await browser.newContext(); const page = context.pages()[0] ?? await context.newPage();` (fall back to " +
-			"`chromium.launch()` ONLY if that POST fails or AGORA_DAEMON_PORT is unset; close the browser in finally ONLY on " +
-			"that launched path). Then `page.goto(route)` / fill / click / `page.locator(...)` the real UI — do NOT shortcut a " +
-			"UI case with a raw fetch of the HTML. Add Playwright TRACING so a QA reviewer can replay the " +
-			"run step-by-step in-app: when `process.env.TRACE_PATH` is set, `await context.tracing.start({ screenshots: " +
-			"true, snapshots: true, sources: true });` after creating the context and " +
-			"`await context.tracing.stop({ path: process.env.TRACE_PATH });` in the `finally` before closing the browser " +
-			"(guard both on `process.env.TRACE_PATH`). [api]/fetch cases have no browser and capture no trace. " +
-			"No test-runner harness, no external config, no CLI args — the script is the whole test. " +
-			"Omit `script` for [unit]/[smoke]/manual cases (those stay hand-driven)."
+		base = sliceActionTemplate("gen_test_cases")
 	case sliceActionRunTests:
-		base = "Run this issue's AUTOMATED QA test cases as a DETERMINISTIC check — you are the QA Squad's automation " +
-			"engineer. The cases (id · title · steps · expected) are listed below. BEFORE you start driving EACH case's " +
-			"steps, output the line `RUNNING test_case:<the case's id>` on its own — the QA panel watches your live " +
-			"output for this exact marker to show which case is in flight, the way a test runner's terminal shows the " +
-			"currently-running spec; skipping it just means that case never shows as \"running\" live, so always include " +
-			"it, one per case, right before you start that case. " +
-			"The MOMENT a case finishes, output the line `QA_RESULT test_case:<id> pass` or `QA_RESULT test_case:<id> fail` " +
-			"on its own — the panel flips that row's ✓/✗ live from this marker, before the final block persists; emit it " +
-			"for every case right after you judge it. " +
-			"For EACH case: if the case LISTING below includes a COMPILED SCRIPT for that id, do NOT drive the browser " +
-			"action-by-action — instead WRITE that script verbatim to a temp file `/tmp/case-<id>.mjs` and RUN it with " +
-			"`mkdir -p \"$HOME/.agora/qa-traces\" && TRACE_PATH=\"$HOME/.agora/qa-traces/trace-<id>.zip\" node /tmp/case-<id>.mjs`; " +
-			"take the process EXIT CODE as the verdict (0 = pass, " +
-			"non-zero = fail) and use the script's stdout/stderr as the one-line `output` evidence. This is deterministic and " +
-			"needs no per-action reasoning — that is the whole point. TRACE (time-travel debugging): the compiled script " +
-			"records a Playwright trace (DOM snapshots + screenshots + sources per step) to the `TRACE_PATH` you set here, so " +
-			"a QA reviewer can replay the run step-by-step in-app. Give each case a DISTINCT `TRACE_PATH` keyed by its id " +
-			"(`$HOME/.agora/qa-traces/trace-<id>.zip`) so concurrent cases never overwrite each other's trace — NEVER " +
-			"under /tmp: the OS purges it and the in-app trace viewer replays these files days later. After the run, if that trace " +
-			"file exists, report its ABSOLUTE path as the case's `trace_path` in the test-runs JSON below; omit `trace_path` " +
-			"when no trace was produced. Playwright must be available to `node`: if `node -e \"import('playwright')\"` " +
-			"fails, run ONCE `npm i playwright && npx playwright install chromium-headless-shell` in the box (reuse the box's " +
-			"existing install when present — do not reinstall per case). Still emit the `RUNNING test_case:<id>` marker before " +
-			"each scripted case. ONLY cases with NO compiled script are hand-driven the old way (deterministic HTTP/DOM smoke " +
-			"or the embedded browser) — those produce no trace. " +
-			"Then, for EACH case, drive its steps against the " +
-			"running app — a deterministic HTTP / DOM-text smoke, or the embedded browser; NEVER an external playwright/" +
-			"chrome — and judge the EXPECTED result by SIGNAL (status code, DOM text, exit code), never by opinion. Do NOT " +
-			"modify code. At the END of your comment, append a fenced ```test-runs code block with ONLY a JSON array the QA " +
-			"panel parses: `[{\"test_case_id\":\"<the id from the list>\",\"status\":\"pass\"|\"fail\"|\"blocked\"," +
-			"\"output\":\"<one-line evidence — for fail/blocked this IS the human-readable reason shown to the QA " +
-			"reviewer, e.g. the failing assertion or HTTP status; for pass, what you observed>\",\"trace_path\":\"<optional: " +
-			"the ABSOLUTE path of the Playwright trace .zip this case produced (expand $HOME yourself); omit when no " +
-			"trace was captured (hand-driven cases)>\",\"baseline_status\":\"pass\"|\"fail\"|\"unknown\"}]` — one entry per case " +
-			"you ran. Use `blocked` if a case could not be exercised (missing data/route). The JSON must be valid and " +
-			"self-contained. " +
-			"BASELINE DISCRIMINATION — a plan-driven test only proves your change if it FAILS on the pre-change code and " +
-			"PASSES after (fail-before / pass-after). For EACH case that has a COMPILED SCRIPT, ALSO run that SAME script " +
-			"against the pre-change BASELINE (check out the merge-base — or the sprint last-green ref when a sprint context " +
-			"is given below — run the script, then return to the branch), and report `baseline_status`: `fail` if it failed " +
-			"on the baseline (GOOD — it discriminates your change), `pass` if it passed there too. A case that is `pass` on " +
-			"BOTH baseline and branch is NON-DISCRIMINATING — it proves nothing about your change (tautological / " +
-			"happy-path / testing-the-code-not-the-spec); do not rely on it as evidence, strengthen it to fail-before. " +
-			"Report `baseline_status:\"unknown\"` for hand-driven / [e2e] / [smoke] cases you cannot re-run against a " +
-			"baseline (they stay advisory). Restore the branch checkout before finishing."
+		base = sliceActionTemplate("run_test_cases")
 	case sliceActionCompileTests:
 		base = "COMPILE this project's automated QA test cases into runnable Playwright scripts — you are the QA " +
 			"Squad's automation engineer. The cases that STILL NEED a script (id · title · steps · expected) are listed " +
