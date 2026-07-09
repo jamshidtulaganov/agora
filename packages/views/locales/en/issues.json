@@ -715,5 +715,26 @@
     "apply": "Apply",
     "apply_fired": "Created: {{title}}",
     "apply_failed": "Failed to create the task"
+  },
+  "agent_protocol": {
+    "an_agent": "an agent",
+    "show_details": "Show full instructions",
+    "hide_details": "Hide instructions",
+    "headline": {
+      "run_qa": "{{name}} was asked to run the QA gate on this change.",
+      "write_tests": "{{name}} was asked to write tests for this issue.",
+      "gen_tests": "{{name}} was asked to author QA test cases for this issue.",
+      "write_docs": "{{name}} was asked to write documentation for this issue.",
+      "review": "{{name}} was asked to review this change.",
+      "design": "{{name}} was asked to work on the design for this issue.",
+      "delegate": "{{name}} was given a task on this issue."
+    },
+    "qa_stage": {
+      "baseline": "Baseline",
+      "checks": "Build · Lint · Test",
+      "smoke": "Smoke",
+      "tests": "Test cases",
+      "verdict": "Verdict"
+    }
   }
 }

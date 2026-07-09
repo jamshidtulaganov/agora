@@ -715,5 +715,26 @@
     "apply": "Qo'llash",
     "apply_fired": "Yaratildi: {{title}}",
     "apply_failed": "Vazifa yaratib bo'lmadi"
+  },
+  "agent_protocol": {
+    "an_agent": "agent",
+    "show_details": "To'liq ko'rsatmani ko'rsatish",
+    "hide_details": "Ko'rsatmani yashirish",
+    "headline": {
+      "run_qa": "{{name}}dan bu o'zgarish uchun QA gate o'tkazish so'raldi.",
+      "write_tests": "{{name}}dan bu masala uchun testlar yozish so'raldi.",
+      "gen_tests": "{{name}}dan bu masala uchun QA test-case'lar tuzish so'raldi.",
+      "write_docs": "{{name}}dan bu masala uchun hujjat yozish so'raldi.",
+      "review": "{{name}}dan bu o'zgarishni ko'zdan kechirish so'raldi.",
+      "design": "{{name}}dan bu masala dizayni ustida ishlash so'raldi.",
+      "delegate": "{{name}}ga bu masalada topshiriq berildi."
+    },
+    "qa_stage": {
+      "baseline": "Baza",
+      "checks": "Build · Lint · Test",
+      "smoke": "Smoke",
+      "tests": "Test-case",
+      "verdict": "Xulosa"
+    }
   }
 }

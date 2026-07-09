@@ -42,6 +42,8 @@ import { useT } from "../../i18n";
 import { CommentsFoldBar } from "./resolved-thread-bar";
 import { deriveThreadResolution } from "./thread-utils";
 import { LiveAgentChangesFeed } from "./live-agent-changes-feed";
+import { parseAgentProtocol } from "./agent-protocol";
+import { AgentProtocolComment } from "./agent-protocol-comment";
 
 const highlightedCommentBackgroundClass =
   "bg-[color-mix(in_srgb,var(--card)_95%,var(--brand)_5%)]";
@@ -549,7 +551,22 @@ function CommentRow({
       ) : (
         <>
           <div className="pl-12 pr-4 pt-1 text-sm leading-relaxed text-foreground/85">
-            <ReadonlyContent content={entry.content ?? ""} attachments={entry.attachments} />
+            {(() => {
+              // Agent-protocol comments (a slice-action prompt the orchestrator
+              // posted to drive another agent) render as a human headline +
+              // collapsed prompt instead of an unreadable wall of text.
+              const proto = parseAgentProtocol(entry.content ?? "", entry.actor_type);
+              return proto ? (
+                <AgentProtocolComment
+                  protocol={proto}
+                  renderBody={(raw) => (
+                    <ReadonlyContent content={raw} attachments={entry.attachments} />
+                  )}
+                />
+              ) : (
+                <ReadonlyContent content={entry.content ?? ""} attachments={entry.attachments} />
+              );
+            })()}
           </div>
           <AttachmentList attachments={entry.attachments} content={entry.content} className="mt-1.5 pl-12 pr-4" />
           <ReactionBar
@@ -830,7 +847,22 @@ function CommentCardImpl({
             ) : (
               <>
                 <div className="pl-10 text-sm leading-relaxed text-foreground/85">
-                  <ReadonlyContent content={entry.content ?? ""} attachments={entry.attachments} />
+                  {(() => {
+              // Agent-protocol comments (a slice-action prompt the orchestrator
+              // posted to drive another agent) render as a human headline +
+              // collapsed prompt instead of an unreadable wall of text.
+              const proto = parseAgentProtocol(entry.content ?? "", entry.actor_type);
+              return proto ? (
+                <AgentProtocolComment
+                  protocol={proto}
+                  renderBody={(raw) => (
+                    <ReadonlyContent content={raw} attachments={entry.attachments} />
+                  )}
+                />
+              ) : (
+                <ReadonlyContent content={entry.content ?? ""} attachments={entry.attachments} />
+              );
+            })()}
                 </div>
                 <AttachmentList attachments={entry.attachments} content={entry.content} className="mt-1.5 pl-10" />
                 <ReactionBar

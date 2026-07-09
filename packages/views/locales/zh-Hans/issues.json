@@ -700,5 +700,26 @@
     "apply": "应用",
     "apply_fired": "已创建：{{title}}",
     "apply_failed": "创建任务失败"
+  },
+  "agent_protocol": {
+    "an_agent": "智能体",
+    "show_details": "显示完整指令",
+    "hide_details": "隐藏指令",
+    "headline": {
+      "run_qa": "已请求 {{name}} 对本次改动运行 QA 门禁。",
+      "write_tests": "已请求 {{name}} 为此任务编写测试。",
+      "gen_tests": "已请求 {{name}} 为此任务编写 QA 测试用例。",
+      "write_docs": "已请求 {{name}} 为此任务编写文档。",
+      "review": "已请求 {{name}} 审查本次改动。",
+      "design": "已请求 {{name}} 处理此任务的设计。",
+      "delegate": "已给 {{name}} 分配此任务。"
+    },
+    "qa_stage": {
+      "baseline": "基线",
+      "checks": "Build · Lint · Test",
+      "smoke": "冒烟",
+      "tests": "测试用例",
+      "verdict": "结论"
+    }
   }
 }
