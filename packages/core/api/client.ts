@@ -85,6 +85,7 @@ import type {
   TestCase,
   ListTestCasesResponse,
   CreateTestCaseRequest,
+  UpdateTestCaseRequest,
   CreateTestRunRequest,
   BuildBaseSuiteResponse,
   GetIssueEditorResponse,
@@ -2703,6 +2704,19 @@ export class ApiClient {
     return this.fetch(`/api/test-cases/${caseId}/runs`, {
       method: "POST",
       body: JSON.stringify(data),
+    });
+  }
+
+  // Edit a test case (title/steps/expected/kind/category/script). Only the
+  // provided fields change. Used by the QA cockpit Suite tab so an engineer can
+  // fix a wrong/flaky golden-path case in place.
+  async updateTestCase(caseId: string, data: UpdateTestCaseRequest): Promise<TestCase> {
+    const raw = await this.fetch<unknown>(`/api/test-cases/${caseId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(raw, TestCaseSchema, EMPTY_TEST_CASE, {
+      endpoint: "PATCH /api/test-cases/:id",
     });
   }
 

@@ -38,6 +38,16 @@ export interface CreateTestCaseRequest {
   category?: string; // positive | negative; server defaults to positive
 }
 
+// PATCH /api/test-cases/:id — partial edit; omitted fields are left unchanged.
+export interface UpdateTestCaseRequest {
+  title?: string;
+  steps?: string;
+  expected?: string;
+  kind?: string;
+  category?: string;
+  script?: string;
+}
+
 export interface CreateTestRunRequest {
   status: string;
   output?: string;

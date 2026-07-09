@@ -218,6 +218,7 @@ export type {
   TestCase,
   ListTestCasesResponse,
   CreateTestCaseRequest,
+  UpdateTestCaseRequest,
   CreateTestRunRequest,
   BuildBaseSuiteResponse,
 } from "./test-case";

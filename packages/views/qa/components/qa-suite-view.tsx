@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ShieldCheck, Plus, Sparkles, Loader2, Archive, CircleSlash, Bot, User } from "lucide-react";
+import { ShieldCheck, Plus, Sparkles, Loader2, Archive, CircleSlash, Bot, User, Pencil } from "lucide-react";
 import { api } from "@agora/core/api";
 import type { TestCase } from "@agora/core/types";
 import { useWorkspaceId } from "@agora/core/hooks";
@@ -53,6 +53,16 @@ export function QASuiteView({ projectId }: { projectId?: string }) {
       invalidate();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to archive case"),
+  });
+
+  const update = useMutation({
+    mutationFn: ({ caseId, data }: { caseId: string; data: import("@agora/core/types").UpdateTestCaseRequest }) =>
+      api.updateTestCase(caseId, data),
+    onSuccess: () => {
+      toast.success("Case updated");
+      invalidate();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to update case"),
   });
 
   // Per-project gate: base cases belong to ONE project (issue_id NULL, project
@@ -151,6 +161,8 @@ export function QASuiteView({ projectId }: { projectId?: string }) {
               c={c}
               onArchive={() => archive.mutate(c.id)}
               archiving={archive.isPending && archive.variables === c.id}
+              onSave={(data) => update.mutate({ caseId: c.id, data })}
+              saving={update.isPending && update.variables?.caseId === c.id}
             />
           ))}
         </ul>
@@ -165,8 +177,22 @@ function CasePill({ children, className }: { children: ReactNode; className?: st
   );
 }
 
-function BaseCaseRow({ c, onArchive, archiving }: { c: TestCase; onArchive: () => void; archiving: boolean }) {
+function BaseCaseRow({
+  c,
+  onArchive,
+  archiving,
+  onSave,
+  saving,
+}: {
+  c: TestCase;
+  onArchive: () => void;
+  archiving: boolean;
+  onSave: (data: import("@agora/core/types").UpdateTestCaseRequest) => void;
+  saving: boolean;
+}) {
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState({ title: c.title, steps: c.steps, expected: c.expected });
   const status = c.latest_run?.status;
   const isBlocked = status === "blocked" || status === "skip";
   const hasDetail = !!(c.steps || c.expected || (status === "fail" && c.latest_run?.output));
@@ -209,6 +235,19 @@ function BaseCaseRow({ c, onArchive, archiving }: { c: TestCase; onArchive: () =
             type="button"
             variant="ghost"
             size="icon"
+            className="size-6 text-muted-foreground opacity-0 transition-opacity focus-within:opacity-100 hover:text-foreground group-hover/case:opacity-100"
+            onClick={() => {
+              setDraft({ title: c.title, steps: c.steps, expected: c.expected });
+              setEditing((v) => !v);
+            }}
+            title="Edit this case"
+          >
+            <Pencil className="size-3.5" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
             className="size-6 text-muted-foreground opacity-0 transition-opacity focus-within:opacity-100 hover:text-destructive group-hover/case:opacity-100"
             disabled={archiving}
             onClick={onArchive}
@@ -218,7 +257,48 @@ function BaseCaseRow({ c, onArchive, archiving }: { c: TestCase; onArchive: () =
           </Button>
         </div>
       </div>
-      {open && hasDetail && (
+      {editing && (
+        <div className="mt-2 space-y-2 rounded-md border bg-muted/20 p-2.5">
+          <Input
+            value={draft.title}
+            onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
+            className="h-8 text-[13px]"
+            placeholder="Case title"
+          />
+          <Textarea
+            value={draft.steps}
+            onChange={(e) => setDraft((d) => ({ ...d, steps: e.target.value }))}
+            rows={2}
+            className="text-[12px]"
+            placeholder="Steps"
+          />
+          <Textarea
+            value={draft.expected}
+            onChange={(e) => setDraft((d) => ({ ...d, expected: e.target.value }))}
+            rows={1}
+            className="text-[12px]"
+            placeholder="Expected result"
+          />
+          <div className="flex items-center justify-end gap-1.5">
+            <Button type="button" variant="ghost" size="sm" className="h-7 text-[12px]" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="h-7 text-[12px]"
+              disabled={saving || !draft.title.trim()}
+              onClick={() => {
+                onSave({ title: draft.title.trim(), steps: draft.steps, expected: draft.expected });
+                setEditing(false);
+              }}
+            >
+              {saving ? <Loader2 className="size-3.5 animate-spin" /> : "Save"}
+            </Button>
+          </div>
+        </div>
+      )}
+      {open && hasDetail && !editing && (
         <div className="mt-1.5 space-y-1 pl-1 text-[12px] text-muted-foreground">
           {status === "fail" && c.latest_run?.output && (
             <pre className="whitespace-pre-wrap break-words rounded border-l-2 border-destructive/50 bg-destructive/5 px-2 py-1.5 font-mono text-[11px] text-destructive/90">
