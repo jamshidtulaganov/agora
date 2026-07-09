@@ -486,7 +486,9 @@
     "design_lint_block": "blok",
     "design_lint_warn": "ogoh",
     "send_back": "Dev'ga qaytarish",
-    "sent_back": "Dev'ga qaytarildi (qa:fail, jarayonda)"
+    "sent_back": "Dev'ga qaytarildi (qa:fail, jarayonda)",
+    "note_label": "QA izohi (ixtiyoriy)",
+    "note_ph": "Takrorlash qadamlari / asos — qaytarishda izoh sifatida joylanadi va ochilgan bagga oldindan qo'yiladi"
   },
   "qa_bug": {
     "file_bug": "Bag ochish",
@@ -502,7 +504,9 @@
     "cancel": "Bekor qilish",
     "filed_toast": "Bag ochildi",
     "open_bug": "Bagni ochish",
-    "filed_chip": "Ochilgan"
+    "filed_chip": "Ochilgan",
+    "notes_label": "QA izohlari (ixtiyoriy)",
+    "notes_ph": "O'zingizning takrorlash qadamlaringiz / asos — yuqoridagi dalillar bilan bag tavsifiga birlashtiriladi"
   },
   "test_cases": {
     "section": "Test-keyslar",

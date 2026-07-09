@@ -9,6 +9,7 @@ import { useWorkspaceId } from "@agora/core";
 import { useWorkspacePaths } from "@agora/core/paths";
 import { issueDetailOptions, qaEvidenceOptions, issueKeys } from "@agora/core/issues/queries";
 import { Button, buttonVariants } from "@agora/ui/components/ui/button";
+import { Textarea } from "@agora/ui/components/ui/textarea";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@agora/ui/components/ui/tooltip";
 import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
@@ -45,6 +46,10 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
   const qc = useQueryClient();
   const { t } = useT("issues");
   const [bugOpen, setBugOpen] = useState(false);
+  // A free-text QA note attached at triage time — posted as a comment on
+  // send-back (the dev's repro/rationale trail) and seeded into a filed bug so
+  // the engineer doesn't retype it. Optional; empty = today's behavior.
+  const [note, setNote] = useState("");
   // Review rail: open by default — the verdict, checks and Pass/Fail all live
   // here, and the audit's top ergonomics finding was that every single open
   // cost a click before triage could start. The live browser still gets the
@@ -108,10 +113,17 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
   const sendBack = useMutation({
     mutationFn: async () => {
       await setVerdict.mutateAsync("fail");
+      // Attach the QA engineer's note as a comment BEFORE the status flip, so the
+      // repro/rationale is on the thread the moment the issue re-enters the dev
+      // loop. Skipped when the note is blank (no empty comments).
+      const trimmed = note.trim();
+      if (trimmed) await api.createComment(issueId, trimmed);
       await api.updateIssue(issueId, { status: "in_progress" });
     },
     onSuccess: () => {
+      setNote("");
       void qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, issueId) });
+      void qc.invalidateQueries({ queryKey: issueKeys.timeline(issueId) });
       void qc.invalidateQueries({ queryKey: ["qa-cockpit", wsId] });
       toast.success(t(($) => $.qa_review.sent_back));
     },
@@ -416,6 +428,16 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
                   {t(($) => $.qa_evidence.rerun)}
                 </Button>
               </div>
+              {/* Optional QA note — the reviewer's repro/rationale. Posted as a
+                  comment on send-back and seeded into a filed bug. */}
+              <Textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                rows={2}
+                aria-label={t(($) => $.qa_review.note_label)}
+                placeholder={t(($) => $.qa_review.note_ph)}
+                className="min-h-0 resize-none text-[12px]"
+              />
               <Button
                 type="button"
                 size="sm"
@@ -451,6 +473,7 @@ export function QAReviewPage({ issueId }: { issueId: string }) {
             identifier={issue.identifier}
             projectId={issue.project_id}
             evidence={evidence}
+            seedNotes={note}
           />
         </div>
       )}

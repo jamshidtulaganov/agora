@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Bug, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -16,6 +16,7 @@ import {
   SheetFooter,
 } from "@agora/ui/components/ui/sheet";
 import { Input } from "@agora/ui/components/ui/input";
+import { Textarea } from "@agora/ui/components/ui/textarea";
 import {
   Select,
   SelectTrigger,
@@ -47,6 +48,7 @@ export function FileBugSheet({
   identifier,
   projectId,
   evidence,
+  seedNotes,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -55,6 +57,9 @@ export function FileBugSheet({
   identifier: string;
   projectId: string | null | undefined;
   evidence: QAEvidence | null | undefined;
+  // The QA note typed on the review page — carried in so the engineer's repro
+  // doesn't have to be retyped here. Optional; the field is editable regardless.
+  seedNotes?: string;
 }) {
   const { t } = useT("issues");
   const wp = useWorkspacePaths();
@@ -72,8 +77,16 @@ export function FileBugSheet({
 
   const [title, setTitle] = useState(seedTitle);
   const [severity, setSeverity] = useState("major");
+  // The engineer's own repro/rationale, editable here and merged into the bug
+  // description. Seeded from the review-page note each time the sheet opens (the
+  // sheet stays mounted, so a mount-time initial value would miss later typing).
+  const [notes, setNotes] = useState(seedNotes ?? "");
+  useEffect(() => {
+    if (open) setNotes(seedNotes ?? "");
+  }, [open, seedNotes]);
 
-  const description = useMemo(() => {
+  // The auto-generated evidence block — the failing checks + branch provenance.
+  const evidenceDescription = useMemo(() => {
     const lines = [`Filed from [${identifier}] — QA verdict: **${evidence?.verdict ?? "fail"}**.`];
     if (evidence?.summary) lines.push("", evidence.summary);
     if (newFailures.length > 0) {
@@ -85,6 +98,14 @@ export function FileBugSheet({
     }
     return lines.join("\n");
   }, [identifier, evidence, newFailures]);
+
+  // The engineer's notes lead the bug (their repro is what a dev reads first),
+  // then the frozen auto evidence. Notes-only or evidence-only both render clean.
+  const description = useMemo(() => {
+    const trimmed = notes.trim();
+    if (!trimmed) return evidenceDescription;
+    return `**QA notes**\n\n${trimmed}\n\n---\n\n${evidenceDescription}`;
+  }, [notes, evidenceDescription]);
 
   const file = useMutation({
     mutationFn: async () => {
@@ -153,6 +174,19 @@ export function FileBugSheet({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div>
+            <div className="mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
+              {t(($) => $.qa_bug.notes_label)}
+            </div>
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={4}
+              placeholder={t(($) => $.qa_bug.notes_ph)}
+              className="text-[13px]"
+            />
           </div>
 
           <div>
