@@ -650,6 +650,13 @@
     "keep_in_backlog": "保持在 Backlog",
     "move_to_todo": "移到 Todo"
   },
+  "sdlc": {
+    "design": "设计",
+    "dev": "开发",
+    "qa": "QA",
+    "review": "审核",
+    "deploy": "部署"
+  },
   "figma_links": {
     "chip_label": "已关联 Figma 设计稿",
     "chip_label_n": "已关联 {{count}} 个 Figma 设计稿",

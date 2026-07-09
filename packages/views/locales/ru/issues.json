@@ -665,6 +665,13 @@
     "keep_in_backlog": "Оставить в Бэклоге",
     "move_to_todo": "Переместить в «К выполнению»"
   },
+  "sdlc": {
+    "design": "Дизайн",
+    "dev": "Разработка",
+    "qa": "QA",
+    "review": "Проверка",
+    "deploy": "Деплой"
+  },
   "figma_links": {
     "chip_label": "Привязан макет Figma",
     "chip_label_n": "Привязаны макеты Figma ({{count}})",

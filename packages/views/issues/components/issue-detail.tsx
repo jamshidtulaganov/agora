@@ -76,6 +76,9 @@ import { PullRequestList } from "./pull-request-list";
 import { FigmaLinksSection } from "./figma-links-section";
 import { DesignProposalSection } from "./design-proposal-section";
 import { DesignAuditSection } from "./design-audit-section";
+import { SDLCStepper } from "./sdlc-stepper";
+import { useStagePipeline } from "./use-stage-pipeline";
+import { useLensParam, getLens, isLensRegistered } from "../lens";
 import { useGitHubSettings } from "@agora/core/github";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@agora/core/auth";
@@ -1364,6 +1367,14 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     setAutoOpenProp(null);
   }, [autoOpenProp]);
 
+  // SDLC stepper — derives the Design/Dev/QA/Review/Deploy pipeline from
+  // existing queries only (no new endpoints) and reads/writes the `?lens=`
+  // query param. Mounted via CockpitFrame's topStrip below. Called before
+  // the `if (loading)` / `if (!issue)` early returns so hook order stays
+  // stable. See docs/sdlc-stage-cockpit-plan.md phase C.
+  const stagePipeline = useStagePipeline(wsId, id);
+  const { lens: activeLens, setLens } = useLensParam();
+
   if (loading) {
     return (
       <div className="flex flex-1 min-h-0 flex-col">
@@ -2271,14 +2282,30 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
         </div>
   );
 
+  // "issue" always renders the body above (unchanged). Any other lens key
+  // goes through the registry; since no stage lenses are registered yet
+  // (phases D-F), the lookup always misses and falls back to the issue
+  // body too — the switch machinery is live, it just has nowhere to switch
+  // to until a later phase registers a Body.
+  const registeredLens = activeLens !== "issue" ? getLens(activeLens) : undefined;
+  const lensBody = registeredLens ? <registeredLens.Body issueId={id} /> : bodyContent;
+
   return (
     <CockpitFrame
       layoutId={layoutId}
       defaultRailOpen={defaultSidebarOpen}
       header={renderHeader}
+      topStrip={
+        <SDLCStepper
+          pipeline={stagePipeline}
+          activeLens={activeLens}
+          isLensAvailable={(stage) => isLensRegistered(stage)}
+          onSelectStage={setLens}
+        />
+      }
       rail={sidebarContent}
     >
-      {bodyContent}
+      {lensBody}
     </CockpitFrame>
   );
 }

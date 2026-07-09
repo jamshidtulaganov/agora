@@ -103,7 +103,11 @@ vi.mock("../../navigation", () => ({
   ),
   useNavigation: () => ({
     push: vi.fn(),
+    replace: vi.fn(),
     pathname: "/issues/issue-1",
+    // Used by the SDLC stepper's `?lens=` plumbing (lens.ts) — empty by
+    // default so the default "issue" lens renders (behavior-preserving).
+    searchParams: new URLSearchParams(),
     getShareableUrl: (p: string) => `https://app.agora.com${p}`,
   }),
   NavigationProvider: ({ children }: { children: React.ReactNode }) => children,
