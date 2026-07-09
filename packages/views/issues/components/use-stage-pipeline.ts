@@ -94,16 +94,24 @@ export function useStagePipeline(wsId: string, issueId: string): StagePipeline {
     const hasDesignSignals =
       figmaRefsFrom(issue?.description ?? "").length > 0 || designResult != null;
 
-    // hasDeployTarget reuses the exact bound-box lookup EditorDeployQA
-    // already runs (editor-deploy-qa.tsx) — remoteBoxesOptions is a
-    // per-workspace query already cached elsewhere, not a new endpoint.
-    // deploySynced has no client-side signal yet: ConnectedBox only tracks
-    // the project's last-synced branch, not "synced to THIS issue's
-    // branch" — left undefined (TODO: revisit once deploy-qa records a
-    // per-issue sync marker) so the stage renders "pending" rather than a
-    // false "passed".
-    const hasDeployTarget =
-      remoteBoxesEnabled && !!issue?.project_id && boxes.some((b) => b.project_id === issue.project_id);
+    // hasDeployTarget/deploySynced reuse the exact bound-box lookup
+    // EditorDeployQA already runs (editor-deploy-qa.tsx) — remoteBoxesOptions
+    // is a per-workspace query already cached elsewhere, not a new endpoint.
+    // deploySynced is derived, not stored (docs/deploy-stage-research.md P0,
+    // zero-migration variant): the box counts as "synced to THIS issue" when
+    // its last successful sync landed the exact branch the issue's own PR
+    // head points at. Known approximation: ConnectedBox.last_branch is a
+    // branch NAME, not a pinned SHA (no sync timestamp/ref column exists on
+    // connected_box) — a force-push to the same branch after the last sync
+    // still reads as "synced" until the next deploy-qa run re-syncs it. A
+    // durable per-deploy ref/verdict record (a `deploy_event` table, per the
+    // research doc §3.3) closes that gap; deferred to P1 because it needs a
+    // migration and this derivation is a real improvement over the
+    // permanently-undefined status quo without one.
+    const boundBox = issue?.project_id ? boxes.find((b) => b.project_id === issue.project_id) : undefined;
+    const hasDeployTarget = remoteBoxesEnabled && !!boundBox;
+    const deploySynced =
+      boundBox?.status === "online" && !!matchedPr?.branch && boundBox.last_branch === matchedPr.branch;
 
     return deriveStagePipeline({
       status,
@@ -124,6 +132,7 @@ export function useStagePipeline(wsId: string, issueId: string): StagePipeline {
       prMerged: matchedPr ? matchedPr.state === "merged" : undefined,
       runningTaskStages,
       hasDeployTarget,
+      deploySynced,
     });
   }, [
     status,
