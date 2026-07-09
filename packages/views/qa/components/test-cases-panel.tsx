@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { Sparkles, Plus, Bot, User, Loader2, FlaskConical, Play, CircleSlash, Check, X, Film } from "lucide-react";
+import { Sparkles, Plus, Bot, User, Loader2, FlaskConical, Play, CircleSlash, CircleStop, Check, X, Film } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@agora/core/api";
+import { useWorkspaceId } from "@agora/core/hooks";
+import { agentTaskSnapshotKeys, agentTaskSnapshotOptions } from "@agora/core/agents";
 import { issueKeys, testCasesOptions } from "@agora/core/issues/queries";
 import type { TestCase } from "@agora/core/types";
 import { Button } from "@agora/ui/components/ui/button";
@@ -31,9 +33,17 @@ import { verdictIcon } from "./verdict";
 export function TestCasesPanel({ issueId }: { issueId: string }) {
   const { t } = useT("issues");
   const qc = useQueryClient();
+  const wsId = useWorkspaceId();
   const { data } = useQuery(testCasesOptions(issueId));
   const cases = data?.test_cases ?? [];
   const [adding, setAdding] = useState(false);
+  // The live agent task driving this issue's QA/test run right now. `.id` is the
+  // task id the cancel endpoint needs; a running row for THIS issue is the one to
+  // stop. (SliceActionResponse carries no task id, so the dispatch return can't
+  // be used — the snapshot is the source of truth for the live task.)
+  const { data: taskSnapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
+  const runningTaskId =
+    taskSnapshot.find((task) => task.issue_id === issueId && task.status === "running")?.id ?? null;
   // The Playwright trace viewer opens as a full-panel overlay iframe — the URL
   // is a same-origin reverse-proxy path the backend hands back per launch.
   const [traceUrl, setTraceUrl] = useState<string | null>(null);
@@ -71,6 +81,35 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
+
+  // Cancel the live QA/test run. Invalidating the task snapshot refetches it so
+  // the cancelled task drops out of "running" — which clears `runningTaskId`
+  // here AND unmounts QALiveProgress's per-task marker watcher (its cleanup
+  // resets the running-case cache to null), so the "RUNS" markers on the rows
+  // clear without a manual refresh.
+  const stopRun = useMutation({
+    mutationFn: (taskId: string) => api.cancelTaskById(taskId),
+    onSuccess: () => {
+      toast.success(t(($) => $.test_cases.stopping));
+      invalidate();
+      void qc.invalidateQueries({ queryKey: agentTaskSnapshotKeys.list(wsId) });
+      void qc.invalidateQueries({ queryKey: ["qa-running-case", issueId] });
+      void qc.invalidateQueries({ queryKey: ["qa-live-case-verdicts", issueId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
+
+  // A run is "live" for this issue if the agent task snapshot has a running task,
+  // the run-all dispatch is in flight, or the live stream is naming a case under
+  // test — any of the three means the QA engineer should be able to stop it.
+  const runLive = runAll.isPending || !!runningCaseId || !!runningTaskId;
+  const onStopRun = () => {
+    if (!runningTaskId) {
+      toast(t(($) => $.test_cases.stop_no_task));
+      return;
+    }
+    stopRun.mutate(runningTaskId);
+  };
 
   const hasAutomated = cases.some((c) => c.kind === "automated");
   // Coverage at a glance: a senior QA reviewer's first question is "do we have
@@ -148,6 +187,21 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
         <span className="text-sm font-medium">{t(($) => $.test_cases.section)}</span>
         <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{cases.length}</span>
         <div className="ml-auto flex items-center gap-1">
+          {/* Stop the live run — only while something is actually running for this
+              issue. Destructive-tinted so it reads as an interrupt, not a control. */}
+          {runLive && (
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              className="size-7 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              disabled={stopRun.isPending}
+              onClick={onStopRun}
+              title={stopRun.isPending ? t(($) => $.test_cases.stopping) : t(($) => $.test_cases.stop)}
+            >
+              {stopRun.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <CircleStop className="size-3.5" />}
+            </Button>
+          )}
           {hasAutomated && (
             <Button
               type="button"

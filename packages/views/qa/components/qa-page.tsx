@@ -21,7 +21,7 @@ import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core";
 import { useWorkspacePaths } from "@agora/core/paths";
 import { projectListOptions } from "@agora/core/projects/queries";
-import { agentTaskSnapshotOptions } from "@agora/core/agents";
+import { agentTaskSnapshotKeys, agentTaskSnapshotOptions } from "@agora/core/agents";
 import { useActorName } from "@agora/core/workspace/hooks";
 import { PRIORITY_ORDER } from "@agora/core/issues/config";
 import type { Issue, IssuePriority } from "@agora/core/types";
@@ -129,6 +129,16 @@ export function QAPage() {
     () => new Set(taskSnapshot.filter((t) => t.status === "running" && t.issue_id).map((t) => t.issue_id)),
     [taskSnapshot],
   );
+  // issueId → live task id, so a running row can offer a Stop button. First
+  // running task per issue wins (a gate is one task); `.id` is what the cancel
+  // endpoint needs (SliceActionResponse carries no task id).
+  const runningTaskByIssue = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const t of taskSnapshot) {
+      if (t.status === "running" && t.issue_id && !map.has(t.issue_id)) map.set(t.issue_id, t.id);
+    }
+    return map;
+  }, [taskSnapshot]);
   const { data, isLoading } = useQuery({
     queryKey: ["qa-cockpit", wsId, project],
     queryFn: () =>
@@ -180,6 +190,21 @@ export function QAPage() {
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Bulk send-back failed"),
   });
+  // Stop a running gate from the queue. Invalidating the task snapshot refetches
+  // it so the cancelled task drops out of "running" — clearing liveIssueIds /
+  // runningTaskByIssue so the row's live badge + Stop button disappear without a
+  // manual refresh; the cockpit + verdict queries refresh the row's verdict.
+  const stopRun = useMutation({
+    mutationFn: (taskId: string) => api.cancelTaskById(taskId),
+    onSuccess: () => {
+      toast.success("Stopping the run…");
+      void qc.invalidateQueries({ queryKey: agentTaskSnapshotKeys.list(wsId) });
+      void qc.invalidateQueries({ queryKey: ["qa-cockpit", wsId] });
+      void qc.invalidateQueries({ queryKey: ["qa-verdicts", wsId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Stop failed"),
+  });
+  const stoppingTaskId = stopRun.isPending ? (stopRun.variables ?? null) : null;
 
   const issues = data?.issues ?? [];
 
@@ -350,6 +375,9 @@ export function QAPage() {
               verdicts={verdicts}
               selected={selected}
               onToggleSelect={toggleSelect}
+              runningTaskByIssue={runningTaskByIssue}
+              onStopRun={(taskId) => stopRun.mutate(taskId)}
+              stoppingTaskId={stoppingTaskId}
               // Passed = already decided; collapsed by default so the triage
               // view stays about what needs a human (it grew all sprint).
               defaultCollapsed={key === "pass"}
@@ -386,7 +414,17 @@ export function QAPage() {
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           {LANES.map(({ key, ...lane }) => (
-            <BoardColumn key={key} {...lane} issues={lanes[key]} href={wp.qaDetail} liveIssueIds={liveIssueIds} verdicts={verdicts} />
+            <BoardColumn
+              key={key}
+              {...lane}
+              issues={lanes[key]}
+              href={wp.qaDetail}
+              liveIssueIds={liveIssueIds}
+              verdicts={verdicts}
+              runningTaskByIssue={runningTaskByIssue}
+              onStopRun={(taskId) => stopRun.mutate(taskId)}
+              stoppingTaskId={stoppingTaskId}
+            />
           ))}
         </div>
       )}
@@ -572,6 +610,9 @@ function BoardColumn({
   href,
   liveIssueIds,
   verdicts,
+  runningTaskByIssue,
+  onStopRun,
+  stoppingTaskId,
 }: {
   icon: typeof ShieldAlert;
   iconClass: string;
@@ -581,6 +622,9 @@ function BoardColumn({
   href: (id: string) => string;
   liveIssueIds?: Set<string>;
   verdicts?: Record<string, import("./qa-lane").QAVerdictInfo>;
+  runningTaskByIssue?: Map<string, string>;
+  onStopRun?: (taskId: string) => void;
+  stoppingTaskId?: string | null;
 }) {
   return (
     <section className="flex min-h-[200px] flex-col rounded-lg border bg-muted/20">
@@ -601,7 +645,14 @@ function BoardColumn({
               href={href(issue.id)}
               className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-[13px] hover:border-border-strong hover:bg-accent/50"
             >
-              <QAIssueRow issue={issue} isLive={liveIssueIds?.has(issue.id)} verdictInfo={verdicts?.[issue.id]} />
+              <QAIssueRow
+                issue={issue}
+                isLive={liveIssueIds?.has(issue.id)}
+                verdictInfo={verdicts?.[issue.id]}
+                runningTaskId={runningTaskByIssue?.get(issue.id) ?? null}
+                onStopRun={onStopRun}
+                stopping={!!stoppingTaskId && stoppingTaskId === (runningTaskByIssue?.get(issue.id) ?? null)}
+              />
             </AppLink>
           ))
         )}

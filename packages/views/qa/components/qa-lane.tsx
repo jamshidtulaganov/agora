@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { ChevronDown, ChevronRight, Bot, User, Timer } from "lucide-react";
+import { ChevronDown, ChevronRight, Bot, User, Timer, CircleStop, Loader2 } from "lucide-react";
 import type { Issue } from "@agora/core/types";
 import { cn } from "@agora/ui/lib/utils";
 import { AppLink } from "../../navigation";
@@ -110,10 +110,21 @@ export function QAIssueRow({
   issue,
   isLive = false,
   verdictInfo,
+  runningTaskId,
+  onStopRun,
+  stopping = false,
 }: {
   issue: Issue;
   isLive?: boolean;
   verdictInfo?: QAVerdictInfo;
+  // The live QA task id for this issue (from the agent task snapshot), or null.
+  // Only set on rows whose gate is running right now — enables the Stop button.
+  runningTaskId?: string | null;
+  // Cancel the running gate. The row lives inside an <AppLink>, so the button
+  // stops propagation + prevents default to avoid navigating on click.
+  onStopRun?: (taskId: string) => void;
+  // True while this row's cancel request is in flight — disables the button.
+  stopping?: boolean;
 }) {
   // One color-coded state chip (running / stale / fail / pass / pending) instead
   // of the old single "stale" + "live" pair — so the row's QA state is legible at
@@ -126,6 +137,22 @@ export function QAIssueRow({
         <span className="w-14 shrink-0 text-xs text-muted-foreground">{issue.identifier}</span>
         <span className="min-w-0 flex-1 truncate">{issue.title}</span>
         <QAStateBadge state={state} />
+        {state === "running" && runningTaskId && onStopRun && (
+          <button
+            type="button"
+            disabled={stopping}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onStopRun(runningTaskId);
+            }}
+            className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+            title="Stop the running QA gate"
+            aria-label="Stop the running QA gate"
+          >
+            {stopping ? <Loader2 className="size-3.5 animate-spin" /> : <CircleStop className="size-3.5" />}
+          </button>
+        )}
         {issue.assignee_type && issue.assignee_id && (
           <ActorAvatar actorType={issue.assignee_type} actorId={issue.assignee_id} size={20} enableHoverCard />
         )}
@@ -178,6 +205,9 @@ export function Lane({
   selected,
   onToggleSelect,
   defaultCollapsed = false,
+  runningTaskByIssue,
+  onStopRun,
+  stoppingTaskId,
 }: {
   icon: LucideIcon;
   iconClass: string;
@@ -190,6 +220,11 @@ export function Lane({
   selected?: Set<string>;
   onToggleSelect?: (id: string) => void;
   defaultCollapsed?: boolean;
+  // Per-issue live QA task id (issueId → taskId) + the cancel handler, so a
+  // running row can offer a Stop button. Off unless the caller wires them.
+  runningTaskByIssue?: Map<string, string>;
+  onStopRun?: (taskId: string) => void;
+  stoppingTaskId?: string | null;
 }) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const Chevron = collapsed ? ChevronRight : ChevronDown;
@@ -225,7 +260,16 @@ export function Lane({
                 href={href(issue.id)}
                 className="flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent/60"
               >
-                <QAIssueRow issue={issue} isLive={liveIssueIds?.has(issue.id)} verdictInfo={verdicts?.[issue.id]} />
+                <QAIssueRow
+                  issue={issue}
+                  isLive={liveIssueIds?.has(issue.id)}
+                  verdictInfo={verdicts?.[issue.id]}
+                  runningTaskId={runningTaskByIssue?.get(issue.id) ?? null}
+                  onStopRun={onStopRun}
+                  stopping={
+                    !!stoppingTaskId && stoppingTaskId === (runningTaskByIssue?.get(issue.id) ?? null)
+                  }
+                />
               </AppLink>
             </li>
           ))}
