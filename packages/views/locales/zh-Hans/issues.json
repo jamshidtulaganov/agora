@@ -235,6 +235,9 @@
     "bitrix": "Bitrix",
     "people": "成员"
   },
+  "qa_activity": {
+    "empty": "暂无动态 — 在下方开始讨论。"
+  },
   "activity": {
     "created": "创建了这个 issue",
     "self_assigned": "把这个 issue 分配给了自己",

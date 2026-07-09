@@ -11,8 +11,10 @@ import { Button } from "@agora/ui/components/ui/button";
 import { Textarea } from "@agora/ui/components/ui/textarea";
 import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
+import { InspectorSection } from "../../layout/inspector-section";
 import { StructuredResult } from "../../issues/components/qa-result";
 import { PullRequestList } from "../../issues/components/pull-request-list";
+import { QAActivityPanel } from "./qa-activity-panel";
 import { QALiveBrowser } from "./qa-live-browser";
 import { QALiveProgress } from "./qa-live-progress";
 import { QADesignCompare } from "./qa-design-compare";
@@ -261,6 +263,21 @@ export function QALensBody({ issueId }: { issueId: string }) {
               {/* Test cases — the QA team's instruments (author / generate / run). */}
               <div className="border-t pt-4 pb-4">
                 <TestCasesPanel issueId={issueId} />
+              </div>
+
+              {/* Discussion — the issue's conversation, inside the lens. QA
+                  lives in the thread (repro notes, agent replies, Bitrix-synced
+                  comments), and @mentioning an agent here is how a re-check
+                  gets dispatched — no hop back to the issue lens. Same
+                  timeline cache + comment machinery as issue-detail
+                  (stage-cockpit phase G). */}
+              <div className="border-t pt-4 pb-4">
+                <InspectorSection
+                  title={t(($) => $.detail.activity_section)}
+                  defaultOpen
+                >
+                  <QAActivityPanel issueId={issueId} />
+                </InspectorSection>
               </div>
             </div>
             {/* /scroll region */}

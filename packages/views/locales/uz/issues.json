@@ -237,6 +237,9 @@
     "bitrix": "Bitrix",
     "people": "Odamlar"
   },
+  "qa_activity": {
+    "empty": "Hali faollik yo'q — muhokamani quyida boshlang."
+  },
   "activity": {
     "created": "ushbu vazifani yaratdi",
     "self_assigned": "ushbu vazifani o‘ziga tayinladi",

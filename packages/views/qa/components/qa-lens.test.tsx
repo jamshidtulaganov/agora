@@ -34,6 +34,7 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("./qa-live-browser", () => ({ QALiveBrowser: () => null }));
 vi.mock("./qa-live-progress", () => ({ QALiveProgress: () => null }));
 vi.mock("./test-cases-panel", () => ({ TestCasesPanel: () => null }));
+vi.mock("./qa-activity-panel", () => ({ QAActivityPanel: () => null }));
 vi.mock("./qa-design-compare", () => ({ QADesignCompare: () => null }));
 vi.mock("./file-bug-sheet", () => ({ FileBugSheet: () => null }));
 vi.mock("../../issues/components/pull-request-list", () => ({ PullRequestList: () => null }));

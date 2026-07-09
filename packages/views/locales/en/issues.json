@@ -237,6 +237,9 @@
     "bitrix": "Bitrix",
     "people": "People"
   },
+  "qa_activity": {
+    "empty": "No activity yet — start the discussion below."
+  },
   "activity": {
     "created": "created this issue",
     "self_assigned": "self-assigned this issue",
