@@ -1080,6 +1080,70 @@ export type IssueDeployEventsResponse = z.infer<typeof IssueDeployEventsResponse
 
 export const EMPTY_DEPLOY_EVENTS: IssueDeployEventsResponse = { latest: null, recent: [] };
 
+// Deploy environments — project.settings.deploy_environments (MCP-P1,
+// docs/deploy-mcp-integration.md §3). Human-authored JSONB routing config:
+// each entry names an environment (key) and its non-secret machine target
+// (GitLab project/ref for kind="gitlab_pipeline", or a Tier-2 command). The
+// GitLab PAT itself never appears here — it lives sealed in git_credential
+// and is injected server-side at claim time.
+const EMPTY_DEPLOY_ENVIRONMENT_TARGET = {
+  kind: "",
+  project_path: "",
+  ref: "",
+  environment: "",
+  command: "",
+};
+
+export const DeployEnvironmentTargetSchema = z
+  .object({
+    kind: z.string().default(""),
+    project_path: z.string().default(""),
+    ref: z.string().default(""),
+    environment: z.string().default(""),
+    command: z.string().default(""),
+  })
+  .loose();
+
+export const DeployEnvironmentSchema = z
+  .object({
+    key: z.string().default(""),
+    label: z.string().default(""),
+    kind: z.string().default(""),
+    requires_human: z.boolean().default(false),
+    target: DeployEnvironmentTargetSchema.default(EMPTY_DEPLOY_ENVIRONMENT_TARGET).catch(
+      EMPTY_DEPLOY_ENVIRONMENT_TARGET,
+    ),
+  })
+  .loose();
+
+export type DeployEnvironment = z.infer<typeof DeployEnvironmentSchema>;
+
+// parseDeployEnvironments reads deploy_environments out of an untyped project
+// settings blob defensively, mirroring the server's parser: a malformed blob
+// or non-array value yields [], a malformed ENTRY is skipped (one bad entry
+// must not hide its siblings), and keyless entries are dropped (the key is
+// the routing handle the Deploy button and the slice-action scope address).
+export function parseDeployEnvironments(settings: unknown): DeployEnvironment[] {
+  if (!settings || typeof settings !== "object") return [];
+  const raw = (settings as { deploy_environments?: unknown }).deploy_environments;
+  if (!Array.isArray(raw)) return [];
+  const out: DeployEnvironment[] = [];
+  for (const item of raw) {
+    const parsed = DeployEnvironmentSchema.safeParse(item);
+    if (parsed.success && parsed.data.key.trim() !== "") out.push(parsed.data);
+  }
+  return out;
+}
+
+// deployEnvironmentRequiresHuman mirrors the server-side gate (which is the
+// real enforcement — this is display-only): the explicit flag, or a
+// production-named key as defense in depth.
+export function deployEnvironmentRequiresHuman(env: DeployEnvironment): boolean {
+  if (env.requires_human) return true;
+  const key = env.key.trim().toLowerCase();
+  return key === "production" || key === "prod";
+}
+
 // QA test cases — agent- or human-authored, with the latest run's verdict.
 // Lenient: status/kind/source are plain strings (enum drift downgrades), and a
 // degraded response yields an empty list rather than white-screening the panel.

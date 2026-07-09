@@ -1057,6 +1057,10 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 			go h.maybeRouteToDevLeadOnQAFail(context.Background(), issue, gateLabel, authorID)
 			go h.maybeAutoFileBugOnQAFail(context.Background(), issue, gateLabel, authorID)
 		}
+		// A deploy agent's ```deploy-result``` block becomes a durable
+		// deploy_event row — the stepper's Deploy stage reads it the same way
+		// it reads QA-box git-syncs (deploy-mcp-integration.md §5).
+		h.TaskService.CaptureDeployEvent(r.Context(), issue, comment.Content)
 		h.TaskService.CaptureTestCases(r.Context(), issue, comment.Content, parseUUID(authorID))
 		h.TaskService.CaptureTestRuns(r.Context(), issue, comment.Content, parseUUID(authorID))
 		// Base-suite chaining: a run_test_cases that records passing runs on an

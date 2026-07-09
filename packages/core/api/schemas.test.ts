@@ -5,6 +5,7 @@ import {
   DashboardUsageByAgentListSchema,
   DashboardUsageDailyListSchema,
   DeployEventSchema,
+  deployEnvironmentRequiresHuman,
   DuplicateIssueErrorBodySchema,
   EMPTY_DEPLOY_EVENTS,
   EMPTY_FIGMA_CREDENTIAL_STATUS,
@@ -12,6 +13,7 @@ import {
   FigmaCredentialStatusSchema,
   IssueDeployEventsResponseSchema,
   ListIssuesResponseSchema,
+  parseDeployEnvironments,
   QAEvidenceSchema,
   RuntimeHourlyActivityListSchema,
   RuntimeUsageByAgentListSchema,
@@ -489,6 +491,74 @@ describe("DeployEventSchema / IssueDeployEventsResponseSchema (deploy P0)", () =
     expect(parsed.recent).toHaveLength(1);
     expect(parsed.recent[0]!.status).toBe("success");
     expect(parsed.recent[0]!.ref).toBe("");
+  });
+});
+
+describe("parseDeployEnvironments (deploy MCP-P1)", () => {
+  it("parses a well-formed two-environment list", () => {
+    const envs = parseDeployEnvironments({
+      deploy_environments: [
+        {
+          key: "staging",
+          label: "Staging",
+          kind: "gitlab_pipeline",
+          target: { project_path: "salesdoctor/sd-main", ref: "staging", environment: "staging" },
+        },
+        {
+          key: "production",
+          label: "Production",
+          kind: "gitlab_pipeline",
+          target: { project_path: "salesdoctor/sd-main", ref: "main" },
+          requires_human: true,
+        },
+      ],
+    });
+    expect(envs).toHaveLength(2);
+    expect(envs[0]!.key).toBe("staging");
+    expect(envs[0]!.target.project_path).toBe("salesdoctor/sd-main");
+    expect(envs[1]!.requires_human).toBe(true);
+  });
+
+  it("returns [] for missing, null, or non-object settings", () => {
+    expect(parseDeployEnvironments(undefined)).toEqual([]);
+    expect(parseDeployEnvironments(null)).toEqual([]);
+    expect(parseDeployEnvironments("nope")).toEqual([]);
+    expect(parseDeployEnvironments({})).toEqual([]);
+  });
+
+  it("returns [] when deploy_environments is not an array", () => {
+    expect(parseDeployEnvironments({ deploy_environments: "staging" })).toEqual([]);
+    expect(parseDeployEnvironments({ deploy_environments: { key: "staging" } })).toEqual([]);
+  });
+
+  it("skips malformed entries without hiding their siblings, and drops keyless entries", () => {
+    const envs = parseDeployEnvironments({
+      deploy_environments: [
+        { key: "staging", target: { command: "make deploy" } },
+        "not an object",
+        { key: 42 },
+        { label: "keyless" },
+      ],
+    });
+    expect(envs).toHaveLength(1);
+    expect(envs[0]!.key).toBe("staging");
+  });
+
+  it("degrades a malformed target to the empty target instead of rejecting the entry", () => {
+    const envs = parseDeployEnvironments({
+      deploy_environments: [{ key: "staging", target: "broken" }],
+    });
+    expect(envs).toHaveLength(1);
+    expect(envs[0]!.target).toMatchObject({ project_path: "", ref: "", command: "" });
+  });
+
+  it("deployEnvironmentRequiresHuman: explicit flag or production-named key", () => {
+    const env = (over: Record<string, unknown>) =>
+      parseDeployEnvironments({ deploy_environments: [{ key: "staging", ...over }] })[0]!;
+    expect(deployEnvironmentRequiresHuman(env({}))).toBe(false);
+    expect(deployEnvironmentRequiresHuman(env({ requires_human: true }))).toBe(true);
+    expect(deployEnvironmentRequiresHuman(env({ key: "production" }))).toBe(true);
+    expect(deployEnvironmentRequiresHuman(env({ key: " PROD " }))).toBe(true);
   });
 });
 

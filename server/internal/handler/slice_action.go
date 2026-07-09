@@ -50,6 +50,7 @@ const (
 	sliceActionDesignProposal    = "design_proposal"
 	sliceActionGenDesignManifest = "gen_design_manifest"
 	sliceActionDesignAudit       = "design_audit"
+	sliceActionDeploy            = "deploy"
 )
 
 // isKnownSliceActionKind reports whether kind is one of the supported scoped
@@ -57,7 +58,7 @@ const (
 // agent is resolved or any comment is written.
 func isKnownSliceActionKind(kind string) bool {
 	switch kind {
-	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunCI, sliceActionAutoDocs, sliceActionGenTests, sliceActionRunTests, sliceActionCompileTests, sliceActionDesignProposal, sliceActionGenDesignManifest, sliceActionDesignAudit:
+	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunCI, sliceActionAutoDocs, sliceActionGenTests, sliceActionRunTests, sliceActionCompileTests, sliceActionDesignProposal, sliceActionGenDesignManifest, sliceActionDesignAudit, sliceActionDeploy:
 		return true
 	default:
 		return false
@@ -157,6 +158,12 @@ func buildSliceInstruction(kind, scope string) string {
 			"deterministic signal and the human decides what to do next."
 	case sliceActionAutoDocs:
 		base = sliceActionTemplate("auto_docs")
+	case sliceActionDeploy:
+		// The generic deploy-operator contract (write-back block, never merge,
+		// advisory report). The environment-specific DEPLOY TARGET clause is
+		// appended by the handler (deployTargetClause) — it depends on the
+		// issue's project settings, and this renderer stays pure.
+		base = sliceActionTemplate("deploy")
 	case sliceActionGenTests:
 		base = sliceActionTemplate("gen_test_cases")
 	case sliceActionRunTests:
@@ -310,7 +317,7 @@ func buildSliceInstruction(kind, scope string) string {
 	// the docs repo's canonical locale (its template already demands matching
 	// neighboring pages — forcing issue-language pages would contradict that).
 	switch kind {
-	case sliceActionRunQA, sliceActionRunCI, sliceActionGenTests, sliceActionRunTests, sliceActionCompileTests:
+	case sliceActionRunQA, sliceActionRunCI, sliceActionGenTests, sliceActionRunTests, sliceActionCompileTests, sliceActionDeploy:
 		base += " LANGUAGE: write every human-readable output — the verdict/report comment, test-case titles, steps and " +
 			"expected results, and summaries — IN THE SAME LANGUAGE AS THE ISSUE (its title/description, " +
 			"e.g. Russian or Uzbek). Code, shell commands, JSON keys, label names, and fenced-block schemas stay in English."
@@ -2817,6 +2824,27 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// deploy targets ONE configured project environment (scope = the
+	// environment key). Resolve + gate it BEFORE any agent resolution or
+	// comment write: a requires_human / production environment is a
+	// human-only trigger, enforced server-side via IsMachineActor —
+	// RequireHumanActor's per-handler counterpart, used here because the
+	// environment is only known after decoding the body (actor_guards.go;
+	// deploy-mcp-integration.md §5).
+	var deployClause string
+	if req.Kind == sliceActionDeploy {
+		env, ok := h.resolveDeployEnvironment(w, r, issue, sanitizeSliceScope(req.Scope))
+		if !ok {
+			return
+		}
+		clause, usable := deployTargetClause(env)
+		if !usable {
+			writeError(w, http.StatusBadRequest, "deploy environment has no usable target (set target.project_path + target.ref for a gitlab_pipeline, or target.command)")
+			return
+		}
+		deployClause = clause
+	}
+
 	agent, ok := h.resolveSliceActionAgent(w, r, issue, userID, strings.TrimSpace(req.AgentID), req.Kind)
 	if !ok {
 		return
@@ -2933,6 +2961,12 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 	// design_audit scans the repo against the project design manifest.
 	if req.Kind == sliceActionDesignAudit {
 		instruction += h.sliceActionDesignManifestContext(r.Context(), issue)
+	}
+	// deploy carries the environment-specific target contract computed above:
+	// which GitLab project/ref to trigger (or which command to run) and the
+	// exact write-back values for the ```deploy-result``` block.
+	if req.Kind == sliceActionDeploy {
+		instruction += deployClause
 	}
 
 	// Build the @mention link the comment-trigger path keys off:
@@ -3056,6 +3090,18 @@ func (h *Handler) resolveSliceActionAgent(w http.ResponseWriter, r *http.Request
 		if designer, ok := h.resolveDesignerAgent(r.Context(), issue); ok &&
 			h.canAccessPrivateAgent(r.Context(), designer, "member", userID, workspaceID) {
 			return designer, true
+		}
+	}
+
+	// (a.7) deploy routes to the project's configured deploy agent when one is
+	// set (project.settings.deploy_agent) — the first hop of the deploy
+	// resolution chain (deploy-mcp-integration.md §5, mirroring the
+	// resolveAutoDocsAgent docs_agent hop). Falls through to the assignee /
+	// own-agent defaults when unset or inaccessible.
+	if kind == sliceActionDeploy {
+		if agent, ok := h.projectDeployAgent(r.Context(), issue); ok &&
+			h.canAccessPrivateAgent(r.Context(), agent, "member", userID, workspaceID) {
+			return agent, true
 		}
 	}
 
