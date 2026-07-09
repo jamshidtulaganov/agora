@@ -1999,7 +1999,8 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	// Never runs when trivial (routedToLead is false above), but the explicit
 	// !trivial guard documents the invariant.
 	if routedToLead && !trivial {
-		if strings.TrimSpace(h.sliceActionQAManifestContext(ctx, issue)) != "" {
+		switch {
+		case strings.TrimSpace(h.sliceActionQAManifestContext(ctx, issue)) != "":
 			// SPEED: the project has a QA MANIFEST, so the stack + navigation are
 			// already KNOWN — skip the lead's heavy "read the repo to determine the
 			// tooling" hop (that determination was the slow part) and delegate
@@ -2008,7 +2009,18 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 				"do NOT re-read the repo to determine them. DELEGATE this QA gate to a QA squad member via @mention right away " +
 				"(they execute it on a faster model), pointing them at the manifest; run it yourself ONLY if no member is " +
 				"available. You own the qa:pass/qa:fail rollup and stay in sync with the dev lead. The gate to delegate: " + instruction
-		} else {
+		case localDirQAPath != "":
+			// LOCAL ENV: the project runs in a folder on THIS daemon, not on a
+			// deployed box. The lead must NOT hunt for a box URL — the gate itself
+			// starts the app via /editor/preview and smokes 127.0.0.1. Tell the
+			// delegate it is the local daemon env so they don't smoke a stale box.
+			instruction = "As the QA LEAD: this project runs LOCALLY on THIS daemon — a folder on disk, NOT a deployed box " +
+				"(see 'QA ENVIRONMENT = LOCAL' in the gate). There is no box URL to smoke; the gate starts the app itself via " +
+				"the daemon preview and smokes 127.0.0.1. DELEGATE this QA gate to a QA squad member via @mention (they run it " +
+				"on a faster model), TELLING them it is the LOCAL daemon environment and to bring the app up via /editor/preview " +
+				"as the gate describes; run it yourself ONLY if no member is available. You own the qa:pass/qa:fail rollup and " +
+				"stay in sync with the dev lead. The gate to delegate: " + instruction
+		default:
 			instruction = "As the QA LEAD, FIRST determine THIS project's stack and testing tooling yourself — read " +
 				"the repo (package.json/go.mod/composer.json, existing test dirs, CI config) rather than assuming; a " +
 				"Jest/Vitest project needs `npm test`/`vitest run`, a Go repo needs `go test ./...`, a PHP monolith with " +
