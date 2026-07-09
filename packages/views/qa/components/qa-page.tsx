@@ -197,8 +197,32 @@ export function QAPage() {
   const lanes = useMemo(() => {
     const by: Record<QAStatus, Issue[]> = { fail: [], pending: [], pass: [] };
     for (const i of filteredIssues) by[qaStatusOf(i)].push(i);
+    // Actionable-now ordering for the long "Pending" tail: a running gate and a
+    // watchdog-escalated stale issue need eyes before the quiet queued rows.
+    // Fail is already all-actionable; Passed is decided — only Pending reorders.
+    const rank = (i: Issue) => {
+      if (liveIssueIds.has(i.id)) return 0; // running now
+      if ((i.labels ?? []).some((l) => l.name === "qa:stale")) return 1; // stalled gate
+      return 2;
+    };
+    by.pending.sort((a, b) => rank(a) - rank(b));
     return by;
-  }, [filteredIssues]);
+  }, [filteredIssues, liveIssueIds]);
+
+  // Attention counts for the summary line — surfaced ahead of the quiet queue so
+  // a QA lead reads "what needs me" first (derived from the same live set +
+  // labels the rows use; no new backend field).
+  const runningCount = useMemo(
+    () => filteredIssues.filter((i) => liveIssueIds.has(i.id)).length,
+    [filteredIssues, liveIssueIds],
+  );
+  const staleCount = useMemo(
+    () =>
+      filteredIssues.filter(
+        (i) => !liveIssueIds.has(i.id) && (i.labels ?? []).some((l) => l.name === "qa:stale"),
+      ).length,
+    [filteredIssues, liveIssueIds],
+  );
 
   const hasFilters = assigneeFilter.length > 0 || priorityFilter.length > 0;
 
@@ -268,6 +292,18 @@ export function QAPage() {
             {hasFilters && issues.length !== filteredIssues.length ? ` (of ${issues.length})` : ""}
             {" · "}
             <span className="text-destructive">{lanes.fail.length} need fix</span>
+            {runningCount > 0 && (
+              <>
+                {" · "}
+                <span className="text-info">{runningCount} running</span>
+              </>
+            )}
+            {staleCount > 0 && (
+              <>
+                {" · "}
+                <span className="text-amber-600 dark:text-amber-400">{staleCount} stale</span>
+              </>
+            )}
             {" · "}
             {lanes.pending.length} pending · {lanes.pass.length} passed
           </p>

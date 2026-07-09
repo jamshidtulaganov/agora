@@ -27,6 +27,79 @@ function relAge(iso: string): string {
   return `${Math.floor(h / 24)}d`;
 }
 
+// The QA STATE of a row, derived only from data already loaded (the live-run set
+// + the issue's qa:* labels) — no new backend field. It disambiguates the single
+// old "stale" chip into the five states a reviewer actually triages by:
+//   running — a gate task is executing on this issue right now (isLive);
+//   stale   — watchdog-escalated: the gate never produced a verdict;
+//   fail    — qa:fail (a real test failure);
+//   pass    — qa:pass (ready to merge);
+//   pending — in review, queued/awaiting QA, nothing wrong yet.
+// Precedence: an active run is the freshest truth, then the infra-stall, then a
+// real verdict. A legacy fail+pass pair is untrustworthy → pending, not fail.
+export type QARowState = "running" | "stale" | "fail" | "pass" | "pending";
+
+export function qaRowState(issue: Issue, isLive: boolean): QARowState {
+  if (isLive) return "running";
+  const names = (issue.labels ?? []).map((l) => l.name);
+  if (names.includes("qa:stale")) return "stale";
+  const fail = names.includes("qa:fail");
+  const pass = names.includes("qa:pass");
+  if (fail && pass) return "pending";
+  if (fail) return "fail";
+  if (pass) return "pass";
+  return "pending";
+}
+
+// Token-based, color-coded state chip. running=info (pulsing), stale=amber
+// (warning), fail=destructive, pass=emerald (the codebase's standardized success
+// tint), pending=muted — the same vocabulary the verdict lanes and review page
+// already use, so a row reads the same everywhere.
+const STATE_BADGE: Record<QARowState, { label: string; className: string; title: string; pulse?: boolean }> = {
+  running: {
+    label: "running",
+    className: "bg-info/10 text-info",
+    title: "A QA gate is executing on this issue now",
+    pulse: true,
+  },
+  stale: {
+    label: "stale",
+    className: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+    title: "The QA gate never produced a verdict (agent died / never dispatched) — re-run QA",
+  },
+  fail: {
+    label: "fail",
+    className: "bg-destructive/10 text-destructive",
+    title: "QA failed — hotfix in this sprint (re-QA runs on re-review) or move it out",
+  },
+  pass: {
+    label: "pass",
+    className: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+    title: "QA passed — ready to merge",
+  },
+  pending: {
+    label: "pending",
+    className: "bg-muted text-muted-foreground",
+    title: "In review — queued for or awaiting QA",
+  },
+};
+
+function QAStateBadge({ state }: { state: QARowState }) {
+  const b = STATE_BADGE[state];
+  return (
+    <span
+      className={cn(
+        "flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+        b.className,
+      )}
+      title={b.title}
+    >
+      {b.pulse && <span aria-hidden className="size-1.5 rounded-full bg-info motion-safe:animate-pulse" />}
+      {b.label}
+    </span>
+  );
+}
+
 // The identifier + priority + title + assignee row shared by the QA cockpit's
 // list lanes and board cards, so both read as the same surface and carry the
 // same "who owns this" signal at a glance. When a verdict summary is supplied,
@@ -42,31 +115,17 @@ export function QAIssueRow({
   isLive?: boolean;
   verdictInfo?: QAVerdictInfo;
 }) {
-  const stale = (issue.labels ?? []).some((l) => l.name === "qa:stale");
+  // One color-coded state chip (running / stale / fail / pass / pending) instead
+  // of the old single "stale" + "live" pair — so the row's QA state is legible at
+  // a glance in both the list lanes and the board cards.
+  const state = qaRowState(issue, isLive);
   return (
     <div className="min-w-0 flex-1">
       <div className="flex items-center gap-2">
         <PriorityIcon priority={issue.priority} className="shrink-0" />
         <span className="w-14 shrink-0 text-xs text-muted-foreground">{issue.identifier}</span>
         <span className="min-w-0 flex-1 truncate">{issue.title}</span>
-        {stale && (
-          <span
-            className="flex shrink-0 items-center gap-1 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-400"
-            title="The QA gate never produced a verdict (agent died / never dispatched) — re-run QA"
-          >
-            stale
-          </span>
-        )}
-        {/* Live QA indicator: a QA run is executing on this issue right now. */}
-        {isLive && (
-          <span
-            className="flex shrink-0 items-center gap-1 rounded-full bg-info/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-info"
-            title="QA is running on this issue now"
-          >
-            <span aria-hidden className="size-1.5 rounded-full bg-info motion-safe:animate-pulse" />
-            live
-          </span>
-        )}
+        <QAStateBadge state={state} />
         {issue.assignee_type && issue.assignee_id && (
           <ActorAvatar actorType={issue.assignee_type} actorId={issue.assignee_id} size={20} enableHoverCard />
         )}
