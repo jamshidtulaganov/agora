@@ -27,9 +27,9 @@ describe("lens registry", () => {
     expect(isLensRegistered("issue")).toBe(true);
   });
 
-  it("registers the qa, design, review, and deploy lenses; dev stays unregistered (phase F)", () => {
+  it("registers every SDLC stage lens (design/dev/qa/review/deploy)", () => {
     expect(isLensRegistered("design")).toBe(true);
-    expect(isLensRegistered("dev")).toBe(false);
+    expect(isLensRegistered("dev")).toBe(true);
     expect(isLensRegistered("qa")).toBe(true);
     expect(isLensRegistered("review")).toBe(true);
     expect(isLensRegistered("deploy")).toBe(true);
@@ -44,7 +44,9 @@ describe("useLensParam", () => {
   });
 
   it("falls back to issue for an unknown/unregistered ?lens= value", () => {
-    const nav = makeNav({ searchParams: new URLSearchParams("lens=dev") });
+    // Every SDLC stage is registered as of phase F, so probe with a key that
+    // can never be a stage.
+    const nav = makeNav({ searchParams: new URLSearchParams("lens=nonexistent") });
     const { result } = renderHook(() => useLensParam(), { wrapper: makeWrapper(nav) });
     expect(result.current.lens).toBe("issue");
   });
@@ -55,8 +57,8 @@ describe("useLensParam", () => {
     expect(result.current.lens).toBe("qa");
   });
 
-  it("recognizes the design/review/deploy lens keys from the URL (phase E)", () => {
-    for (const key of ["design", "review", "deploy"] as const) {
+  it("recognizes the design/review/deploy/dev lens keys from the URL (phases E-F)", () => {
+    for (const key of ["design", "review", "deploy", "dev"] as const) {
       const nav = makeNav({ searchParams: new URLSearchParams(`lens=${key}`) });
       const { result } = renderHook(() => useLensParam(), { wrapper: makeWrapper(nav) });
       expect(result.current.lens).toBe(key);

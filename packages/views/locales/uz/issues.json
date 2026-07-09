@@ -737,6 +737,12 @@
   "design_lens": {
     "empty": "Bu vazifada dizayn havolalari yo'q."
   },
+  "dev_lens": {
+    "empty": "Hali muharrir worktree yo'q.",
+    "empty_hint": "Worktree agent bu vazifada ishga tushganda yaratiladi. Agent tayinlang — jonli muharrir u ishlay boshlagach shu yerda ochiladi.",
+    "launching": "Muharrir ishga tushirilmoqda…",
+    "retry": "Qayta urinish"
+  },
   "review_lens": {
     "gates_heading": "Birlashtirishga tayyorlik",
     "override_badge": "Birlashtirish override",

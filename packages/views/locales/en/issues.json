@@ -737,6 +737,12 @@
   "design_lens": {
     "empty": "No design references on this issue."
   },
+  "dev_lens": {
+    "empty": "No editor worktree yet.",
+    "empty_hint": "A worktree is created when an agent runs this issue. Assign an agent — the live editor opens here once it starts.",
+    "launching": "Launching editor…",
+    "retry": "Retry"
+  },
   "review_lens": {
     "gates_heading": "Merge readiness",
     "override_badge": "Merge override",

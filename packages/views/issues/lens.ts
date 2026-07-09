@@ -17,6 +17,7 @@ import type { SDLCStage } from "@agora/core/issues";
 import { useNavigation } from "../navigation";
 import { QALensBody } from "../qa/components/qa-lens";
 import { DesignLensBody } from "./components/design-lens";
+import { DevLensBody } from "./components/dev-lens";
 import { ReviewLensBody } from "./components/review-lens";
 import { DeployLensBody } from "./components/deploy-lens";
 
@@ -46,9 +47,9 @@ export const LENS_REGISTRY: Partial<Record<LensKey, StageLens>> = {
   issue: { key: "issue", Body: IssueLensBody },
   qa: { key: "qa", Body: QALensBody },
   design: { key: "design", Body: DesignLensBody },
+  dev: { key: "dev", Body: DevLensBody },
   review: { key: "review", Body: ReviewLensBody },
   deploy: { key: "deploy", Body: DeployLensBody },
-  // Dev lens registers here in phase F (docs/sdlc-stage-cockpit-plan.md).
 };
 
 export function getLens(key: string): StageLens | undefined {

@@ -722,6 +722,12 @@
   "design_lens": {
     "empty": "该 issue 没有设计引用。"
   },
+  "dev_lens": {
+    "empty": "暂无编辑器工作副本。",
+    "empty_hint": "当代理在该 issue 上运行时会创建工作副本。指派一个代理——它开始工作后，实时编辑器会在此打开。",
+    "launching": "正在启动编辑器…",
+    "retry": "重试"
+  },
   "review_lens": {
     "gates_heading": "合并就绪度",
     "override_badge": "合并覆盖",
