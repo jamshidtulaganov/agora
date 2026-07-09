@@ -146,6 +146,19 @@ WHERE test_case_id = $1 AND workspace_id = $2
 ORDER BY created_at DESC
 LIMIT $3;
 
+-- name: UpdateTestCase :one
+-- Human edit of a test case (title/steps/expected/kind/category/script). Only
+-- non-null args change; the rest keep their current value.
+UPDATE test_case SET
+    title = COALESCE(sqlc.narg('title'), title),
+    steps = COALESCE(sqlc.narg('steps'), steps),
+    expected = COALESCE(sqlc.narg('expected'), expected),
+    kind = COALESCE(sqlc.narg('kind'), kind),
+    category = COALESCE(sqlc.narg('category'), category),
+    script = COALESCE(sqlc.narg('script'), script)
+WHERE id = $1 AND workspace_id = $2
+RETURNING *;
+
 -- name: SetTestCaseScript :exec
 -- Persist a compiled Playwright script onto an existing case (the background
 -- compile_tests flow / on-demand recompile). Workspace-scoped write.

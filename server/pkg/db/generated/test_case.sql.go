@@ -730,3 +730,61 @@ func (q *Queries) SetTestCaseScript(ctx context.Context, arg SetTestCaseScriptPa
 	_, err := q.db.Exec(ctx, setTestCaseScript, arg.ID, arg.WorkspaceID, arg.Script)
 	return err
 }
+
+const updateTestCase = `-- name: UpdateTestCase :one
+UPDATE test_case SET
+    title = COALESCE($3, title),
+    steps = COALESCE($4, steps),
+    expected = COALESCE($5, expected),
+    kind = COALESCE($6, kind),
+    category = COALESCE($7, category),
+    script = COALESCE($8, script)
+WHERE id = $1 AND workspace_id = $2
+RETURNING id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script
+`
+
+type UpdateTestCaseParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Title       pgtype.Text `json:"title"`
+	Steps       pgtype.Text `json:"steps"`
+	Expected    pgtype.Text `json:"expected"`
+	Kind        pgtype.Text `json:"kind"`
+	Category    pgtype.Text `json:"category"`
+	Script      pgtype.Text `json:"script"`
+}
+
+// Human edit of a test case (title/steps/expected/kind/category/script). Only
+// non-null args change; the rest keep their current value.
+func (q *Queries) UpdateTestCase(ctx context.Context, arg UpdateTestCaseParams) (TestCase, error) {
+	row := q.db.QueryRow(ctx, updateTestCase,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.Title,
+		arg.Steps,
+		arg.Expected,
+		arg.Kind,
+		arg.Category,
+		arg.Script,
+	)
+	var i TestCase
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.IssueID,
+		&i.ProjectID,
+		&i.Title,
+		&i.Steps,
+		&i.Expected,
+		&i.Kind,
+		&i.Source,
+		&i.AuthorType,
+		&i.AuthorID,
+		&i.ArchivedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Category,
+		&i.Script,
+	)
+	return i, err
+}

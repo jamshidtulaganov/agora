@@ -1272,6 +1272,20 @@ func (h *Handler) SyncConnectedBox(w http.ResponseWriter, r *http.Request) {
 // Agora-self-repo issue with only a per-task daemon worktree and no deployed
 // box, which is what GetIssueEditor's CDP-driven browser covers instead.
 func (h *Handler) resolveQAPreviewURL(ctx context.Context, issue db.Issue) string {
+	// A concrete declared dev_apps URL (the dev's own running app) wins.
+	if url := h.devLocalAppURL(ctx, issue); url != "" {
+		return url
+	}
+	// "Local config enabled": the project runs in a local_directory on an
+	// online daemon, so the QA app lives on THAT daemon (its worktree /
+	// in-place checkout), reached over the daemon's localhost — not a deployed
+	// sdteam box. Return "" so the Live pane drives the local daemon preview
+	// (agentBrowse against the worktree work_dir) instead of embedding a box.
+	if _, _, ok := h.localDirectoryQATarget(ctx, issue); ok {
+		return ""
+	}
+	// Otherwise fall back to the deployed QA target (connected box, e.g.
+	// agora.sdteam.uz), then the project's static qa_smoke_url.
 	if url := h.devBoxSmokeURL(ctx, issue); url != "" {
 		return url
 	}

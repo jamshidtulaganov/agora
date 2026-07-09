@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -379,4 +380,63 @@ func (h *Handler) ArchiveTestCaseHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// UpdateTestCaseRequest is the human-edit payload; any omitted field is left
+// unchanged (partial update).
+type UpdateTestCaseRequest struct {
+	Title    *string `json:"title,omitempty"`
+	Steps    *string `json:"steps,omitempty"`
+	Expected *string `json:"expected,omitempty"`
+	Kind     *string `json:"kind,omitempty"`
+	Category *string `json:"category,omitempty"`
+	Script   *string `json:"script,omitempty"`
+}
+
+// UpdateTestCaseHandler lets a QA engineer edit a test case (title/steps/
+// expected/kind/category/script) from the cockpit. Workspace-scoped; only the
+// provided fields change.
+func (h *Handler) UpdateTestCaseHandler(w http.ResponseWriter, r *http.Request) {
+	wsUUID, ok := parseUUIDOrBadRequest(w, h.resolveWorkspaceID(r), "workspace id")
+	if !ok {
+		return
+	}
+	caseUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "test case id")
+	if !ok {
+		return
+	}
+	var req UpdateTestCaseRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Kind != nil && *req.Kind != "manual" && *req.Kind != "automated" {
+		writeError(w, http.StatusBadRequest, "kind must be manual or automated")
+		return
+	}
+	if req.Category != nil && *req.Category != "positive" && *req.Category != "negative" {
+		writeError(w, http.StatusBadRequest, "category must be positive or negative")
+		return
+	}
+	optText := func(p *string) pgtype.Text {
+		if p == nil {
+			return pgtype.Text{}
+		}
+		return pgtype.Text{String: strings.TrimSpace(*p), Valid: true}
+	}
+	updated, err := h.Queries.UpdateTestCase(r.Context(), db.UpdateTestCaseParams{
+		ID:          caseUUID,
+		WorkspaceID: wsUUID,
+		Title:       optText(req.Title),
+		Steps:       optText(req.Steps),
+		Expected:    optText(req.Expected),
+		Kind:        optText(req.Kind),
+		Category:    optText(req.Category),
+		Script:      optText(req.Script),
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "test case not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, testCaseToResponse(updated, nil))
 }

@@ -1089,6 +1089,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			r.Route("/api/test-cases/{id}", func(r chi.Router) {
 				r.Post("/runs", h.CreateTestCaseRun)
 				r.Post("/archive", h.ArchiveTestCaseHandler)
+				r.With(handler.RequireHumanActor).Patch("/", h.UpdateTestCaseHandler)
 			})
 
 			// Squads
