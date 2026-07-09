@@ -16,7 +16,7 @@ func TestBuildSliceInstructionDesignProposal(t *testing.T) {
 	}
 	musts := []struct{ label, substr string }{
 		{"designer-analyst role", "DESIGNER-ANALYST"},
-		{"no implementation code", "do NOT write implementation code"},
+		{"no implementation code", "Do NOT write implementation code"},
 		{"no issue creation", "do NOT create issues"},
 		{"node-scoped reads", "get_figma_data(fileKey, nodeId) NODE-SCOPED"},
 		{"never whole file", "never fetch a whole file"},
