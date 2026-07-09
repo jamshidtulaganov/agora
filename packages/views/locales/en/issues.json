@@ -731,6 +731,26 @@
     "apply_fired": "Created: {{title}}",
     "apply_failed": "Failed to create the task"
   },
+  "design_lens": {
+    "empty": "No design references on this issue."
+  },
+  "review_lens": {
+    "gates_heading": "Merge readiness",
+    "override_badge": "Merge override",
+    "empty": "No merge-readiness gates yet.",
+    "tier_label": "Tier",
+    "ready": "Ready to merge",
+    "blocked": "Blocked"
+  },
+  "deploy_lens": {
+    "empty": "No deploy target bound to this project.",
+    "box_heading": "QA box",
+    "box_label": "Box",
+    "box_host": "Host",
+    "box_status": "Status",
+    "box_last_branch": "Last branch",
+    "deploy_heading": "Deploy"
+  },
   "agent_protocol": {
     "an_agent": "an agent",
     "show_details": "Show full instructions",

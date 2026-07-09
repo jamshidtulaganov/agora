@@ -731,6 +731,26 @@
     "apply_fired": "Yaratildi: {{title}}",
     "apply_failed": "Vazifa yaratib bo'lmadi"
   },
+  "design_lens": {
+    "empty": "Bu vazifada dizayn havolalari yo'q."
+  },
+  "review_lens": {
+    "gates_heading": "Birlashtirishga tayyorlik",
+    "override_badge": "Birlashtirish override",
+    "empty": "Hali birlashtirishga tayyorlik gate'lari yo'q.",
+    "tier_label": "Daraja",
+    "ready": "Birlashtirishga tayyor",
+    "blocked": "Bloklangan"
+  },
+  "deploy_lens": {
+    "empty": "Bu loyihaga deploy nishoni bog'lanmagan.",
+    "box_heading": "QA box",
+    "box_label": "Box",
+    "box_host": "Host",
+    "box_status": "Holat",
+    "box_last_branch": "Oxirgi branch",
+    "deploy_heading": "Deploy"
+  },
   "agent_protocol": {
     "an_agent": "agent",
     "show_details": "To'liq ko'rsatmani ko'rsatish",

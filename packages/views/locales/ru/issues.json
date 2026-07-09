@@ -731,6 +731,26 @@
     "apply_fired": "Создано: {{title}}",
     "apply_failed": "Не удалось создать задачу"
   },
+  "design_lens": {
+    "empty": "На этой задаче нет ссылок на дизайн."
+  },
+  "review_lens": {
+    "gates_heading": "Готовность к слиянию",
+    "override_badge": "Переопределение слияния",
+    "empty": "Пока нет данных о готовности к слиянию.",
+    "tier_label": "Уровень",
+    "ready": "Готово к слиянию",
+    "blocked": "Заблокировано"
+  },
+  "deploy_lens": {
+    "empty": "К этому проекту не привязана цель для деплоя.",
+    "box_heading": "QA-бокс",
+    "box_label": "Бокс",
+    "box_host": "Хост",
+    "box_status": "Статус",
+    "box_last_branch": "Последняя ветка",
+    "deploy_heading": "Деплой"
+  },
   "agent_protocol": {
     "an_agent": "агент",
     "show_details": "Показать полную инструкцию",

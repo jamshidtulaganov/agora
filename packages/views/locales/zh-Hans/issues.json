@@ -716,6 +716,26 @@
     "apply_fired": "已创建：{{title}}",
     "apply_failed": "创建任务失败"
   },
+  "design_lens": {
+    "empty": "该 issue 没有设计引用。"
+  },
+  "review_lens": {
+    "gates_heading": "合并就绪度",
+    "override_badge": "合并覆盖",
+    "empty": "暂无合并就绪门禁数据。",
+    "tier_label": "等级",
+    "ready": "可以合并",
+    "blocked": "已阻塞"
+  },
+  "deploy_lens": {
+    "empty": "该项目未绑定部署目标。",
+    "box_heading": "QA 机器",
+    "box_label": "机器",
+    "box_host": "主机",
+    "box_status": "状态",
+    "box_last_branch": "最近分支",
+    "deploy_heading": "部署"
+  },
   "agent_protocol": {
     "an_agent": "智能体",
     "show_details": "显示完整指令",
