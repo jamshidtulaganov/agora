@@ -47,6 +47,19 @@ func (s *TaskService) maybePinTaskToDevRuntime(ctx context.Context, issue db.Iss
 	//    local_directory always QAs on that daemon (only it has the
 	//    folder/worktree), taking precedence over the connected sdteam boxes.
 	if ldRuntime, lok := s.localDirectoryRuntimeForProject(ctx, issue); lok {
+		// GUARD: a daemon hosts one runtime PER PROVIDER (claude, antigravity,
+		// gemini, …). If the agent's own runtime already lives on the
+		// local_directory's daemon, the folder is reachable from THERE — keep the
+		// task put. Hopping to whatever provider GetOnlineRuntimeForDaemon happened
+		// to return moved a Claude task onto an unsigned-in Antigravity CLI, which
+		// then failed ("model not available from `agy models`"). Only re-home when
+		// the agent is on a DIFFERENT machine than the folder.
+		if task.RuntimeID.Valid && ldRuntime.DaemonID.Valid {
+			if cur, err := s.Queries.GetAgentRuntime(ctx, task.RuntimeID); err == nil &&
+				cur.DaemonID.Valid && cur.DaemonID.String == ldRuntime.DaemonID.String {
+				return task
+			}
+		}
 		runtime = ldRuntime
 	} else {
 		// 2. dev_apps (daemon-per-dev URL declaration) — labs-gated opt-in.
