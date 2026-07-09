@@ -585,7 +585,7 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 			port, cmd := p.port, p.command
 			previewsMu.Unlock()
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"url": fmt.Sprintf("http://127.0.0.1:%d/", port), "port": port, "command": cmd, "running": true,
+				"url": previewURL(port), "port": port, "command": cmd, "running": true,
 				"proxy_path": fmt.Sprintf("/editor/local/%d/", port),
 			})
 			return
@@ -623,11 +623,11 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 		if realPort != 0 {
 			p.port = realPort
 			resp["port"] = realPort
-			resp["url"] = fmt.Sprintf("http://127.0.0.1:%d/", realPort)
+			resp["url"] = previewURL(realPort)
 			resp["proxy_path"] = fmt.Sprintf("/editor/local/%d/", realPort)
 		} else {
 			resp["port"] = hintPort
-			resp["url"] = fmt.Sprintf("http://127.0.0.1:%d/", hintPort)
+			resp["url"] = previewURL(hintPort)
 			resp["proxy_path"] = fmt.Sprintf("/editor/local/%d/", hintPort)
 			resp["warning"] = "could not detect the port from output; showing the PORT hint"
 			resp["log"] = tailLog(p.buf.String())
@@ -705,7 +705,7 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 				p.port = rp
 			}
 			resp["port"] = p.port
-			resp["url"] = fmt.Sprintf("http://127.0.0.1:%d/", p.port)
+			resp["url"] = previewURL(p.port)
 			resp["proxy_path"] = fmt.Sprintf("/editor/local/%d/", p.port)
 			resp["command"] = p.command
 		}
@@ -911,6 +911,29 @@ var (
 // daemon-tracked editors — never an open proxy into the machine. Split out of
 // serveHealth so the gate + path rewrite are unit-testable. WebSocket upgrades
 // pass through (httputil.ReverseProxy handles Upgrade natively).
+// loopbackHostPort returns "host:port" (IPv6 bracketed) for the loopback
+// interface actually accepting TCP on port. Dev servers on macOS frequently
+// bind IPv6 [::1] ONLY — Node/Vite resolve "localhost" to ::1 first — so the
+// fixed 127.0.0.1 address the daemon used to hand back (and reverse-proxy to)
+// was refused with ERR_CONNECTION_REFUSED. Probe IPv4 first (most clients
+// prefer it), then IPv6; fall back to 127.0.0.1 when neither answers yet (the
+// server is still booting — /editor/preview/status re-probes on the next poll).
+func loopbackHostPort(port int) string {
+	ps := strconv.Itoa(port)
+	for _, h := range []string{"127.0.0.1", "::1"} {
+		hp := net.JoinHostPort(h, ps)
+		if c, err := net.DialTimeout("tcp", hp, 300*time.Millisecond); err == nil {
+			_ = c.Close()
+			return hp
+		}
+	}
+	return net.JoinHostPort("127.0.0.1", ps)
+}
+
+// previewURL builds the browser-facing dev-server URL for a bound port, using
+// whichever loopback stack is actually listening (see loopbackHostPort).
+func previewURL(port int) string { return "http://" + loopbackHostPort(port) + "/" }
+
 func editorLocalProxyHandler(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/editor/local/")
 	portStr, tail, _ := strings.Cut(rest, "/")
@@ -944,7 +967,7 @@ func editorLocalProxyHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no live editor on this port", http.StatusNotFound)
 		return
 	}
-	target := &url.URL{Scheme: "http", Host: fmt.Sprintf("127.0.0.1:%d", port)}
+	target := &url.URL{Scheme: "http", Host: loopbackHostPort(port)}
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	orig := proxy.Director
 	proxy.Director = func(req *http.Request) {
