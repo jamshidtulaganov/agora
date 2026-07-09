@@ -26,6 +26,16 @@ type localDirectoryRef struct {
 	LocalPath string `json:"local_path"`
 	DaemonID  string `json:"daemon_id"`
 	Label     string `json:"label,omitempty"`
+	// Isolation: "in_place" (default) or "worktree". In worktree mode the
+	// daemon provisions an isolated git worktree per (issue, repo) cut from the
+	// developer's own checkout instead of running the agent directly in the
+	// folder. Empty = in_place (back-compat with older servers).
+	Isolation string `json:"isolation,omitempty"`
+}
+
+// isWorktreeMode reports whether the assignment requests worktree isolation.
+func (a *localDirectoryAssignment) isWorktreeMode() bool {
+	return a != nil && strings.TrimSpace(a.Ref.Isolation) == "worktree"
 }
 
 // localDirectoryAssignment is the resolved view of a task's local_directory

@@ -117,6 +117,12 @@ type localDirectoryRef struct {
 	LocalPath string `json:"local_path"`
 	DaemonID  string `json:"daemon_id"`
 	Label     string `json:"label,omitempty"`
+	// Isolation selects how the agent's working tree is derived from the
+	// directory. "in_place" (default) runs the agent directly in the folder;
+	// "worktree" provisions an isolated git worktree per (issue, repo) cut from
+	// the developer's own checkout so tasks on different issues run in parallel
+	// without touching the user's tree. Empty means in_place (back-compat).
+	Isolation string `json:"isolation,omitempty"`
 }
 
 func validateLocalDirectoryRef(ref json.RawMessage) (json.RawMessage, error) {
@@ -136,6 +142,12 @@ func validateLocalDirectoryRef(ref json.RawMessage) (json.RawMessage, error) {
 		return nil, errors.New("local_directory: daemon_id is required")
 	}
 	payload.Label = strings.TrimSpace(payload.Label)
+	payload.Isolation = strings.TrimSpace(payload.Isolation)
+	switch payload.Isolation {
+	case "", "in_place", "worktree":
+	default:
+		return nil, errors.New("local_directory: isolation must be in_place or worktree")
+	}
 	out, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err

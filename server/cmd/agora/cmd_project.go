@@ -158,6 +158,7 @@ func init() {
 	projectResourceAddCmd.Flags().String("local-path", "", "Shortcut: absolute path to the working directory (only used when --type local_directory)")
 	projectResourceAddCmd.Flags().String("daemon-id", "", "Shortcut: id of the daemon that owns the local path (only used when --type local_directory)")
 	projectResourceAddCmd.Flags().String("ref-label", "", "Shortcut: optional label embedded in resource_ref (only used when --type local_directory)")
+	projectResourceAddCmd.Flags().String("isolation", "", "Shortcut: local_directory isolation — in_place (default) or worktree (parallel per-issue worktrees)")
 	projectResourceAddCmd.Flags().String("ref", "", "Generic JSON resource_ref payload — overrides the per-type shortcuts when set")
 	projectResourceAddCmd.Flags().String("label", "", "Optional human-readable label")
 	projectResourceAddCmd.Flags().String("output", "json", "Output format: table or json")
@@ -596,6 +597,9 @@ func runProjectResourceAdd(cmd *cobra.Command, args []string) error {
 			ref := map[string]any{"local_path": pathVal, "daemon_id": daemonVal}
 			if refLabel, _ := cmd.Flags().GetString("ref-label"); strings.TrimSpace(refLabel) != "" {
 				ref["label"] = strings.TrimSpace(refLabel)
+			}
+			if iso, _ := cmd.Flags().GetString("isolation"); strings.TrimSpace(iso) != "" {
+				ref["isolation"] = strings.TrimSpace(iso)
 			}
 			body["resource_ref"] = ref
 		default:

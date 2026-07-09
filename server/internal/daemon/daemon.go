@@ -2621,6 +2621,13 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 	}
 	taskLog.Info("local_directory: lock acquired")
 
+	// Worktree isolation runs the agent in a managed worktree, not the user's
+	// folder, so the in-place git-safety (snapshot + agent branch on the user's
+	// checkout) does not apply — worktree provisioning does its own branching.
+	if assignment.isWorktreeMode() {
+		return release, nil, false
+	}
+
 	// Now that the path is ours for the whole task, put a git work tree on an
 	// isolated agent branch (and snapshot any pre-existing dirty state) so the
 	// agent's commits never land on the user's branch. Plain folders return a
@@ -2814,6 +2821,15 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		instructions = task.Agent.Instructions
 	}
 
+	// In worktree-isolation mode the agent works in managed per-repo worktrees,
+	// NOT the developer's checkout — so the local_directory source path must not
+	// reach the agent context (resources.json / brief), or the agent will edit
+	// the source directly and defeat isolation. Strip it for worktree mode.
+	worktreeMode := false
+	if a, _ := findLocalDirectoryAssignment(task.ProjectResources, d.cfg.DaemonID); a.isWorktreeMode() {
+		worktreeMode = true
+	}
+
 	// Prepare isolated execution environment.
 	// Repos are passed as metadata only — the agent checks them out on demand
 	// via `agora repo checkout <url>`.
@@ -2831,7 +2847,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		Repos:                            convertReposForEnv(task.Repos),
 		ProjectID:                        task.ProjectID,
 		ProjectTitle:                     task.ProjectTitle,
-		ProjectResources:                 convertProjectResourcesForEnv(task.ProjectResources),
+		ProjectResources:                 convertProjectResourcesForEnv(sanitizeResourcesForWorktree(task.ProjectResources, worktreeMode)),
 		ChatSessionID:                    task.ChatSessionID,
 		AutopilotRunID:                   task.AutopilotRunID,
 		AutopilotID:                      task.AutopilotID,
@@ -2876,6 +2892,20 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// LocalWorkDir into execenv. handleTask already validated + locked the
 	// path; this call is a pure JSON parse over the same task payload.
 	localAssignment, _ := findLocalDirectoryAssignment(task.ProjectResources, d.cfg.DaemonID)
+	// Worktree-isolation state: set by the ProvisionWorkDir hook below (worktree
+	// mode only). Cleaned up when the task ends. Stage 1 removes the worktrees
+	// at task end; the agent branches (which hold the commits) are kept.
+	var worktreeRunForTask *worktreeRun
+	defer func() {
+		if worktreeRunForTask != nil {
+			// Commit the agent's real changes onto the agent branches (so the
+			// work survives worktree removal), then remove the worktrees. The
+			// developer's source checkout is never touched. User-facing
+			// messaging (which branch, PR/merge) arrives with stage-3
+			// integration; stage 1 just guarantees no work is lost.
+			finalizeWorktrees(ctx, worktreeRunForTask, agentName, taskLog)
+		}
+	}()
 	// Reuse intentionally skipped for local_directory tasks: the prior
 	// WorkDir is the user's own path (always present) but the reuse path
 	// loses the envRoot association the GC loop needs, and re-running
@@ -2919,7 +2949,26 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			Task:            taskCtx,
 		}
 		if localAssignment != nil {
-			prepParams.LocalWorkDir = localAssignment.AbsPath
+			if localAssignment.isWorktreeMode() {
+				// Worktree isolation: provision an isolated git worktree per
+				// repo cut from the user's checkout. env.WorkDir becomes
+				// daemon-managed scratch (LocalWorkDir stays empty), and the
+				// worktrees are cleaned up when the task ends (below).
+				issueKey := task.IssueID
+				if issueKey == "" {
+					issueKey = task.ID
+				}
+				prepParams.ProvisionWorkDir = func(workDir string) error {
+					run, perr := provisionLocalWorktrees(ctx, localAssignment.AbsPath, issueKey, workDir, taskLog)
+					if perr != nil {
+						return perr
+					}
+					worktreeRunForTask = run
+					return nil
+				}
+			} else {
+				prepParams.LocalWorkDir = localAssignment.AbsPath
+			}
 		}
 		env, err = execenv.Prepare(prepParams, d.logger)
 		if err != nil {

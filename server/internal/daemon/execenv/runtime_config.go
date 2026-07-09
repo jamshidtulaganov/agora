@@ -564,7 +564,8 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 		// wrong tree. List the repos for reference only.
 		b.WriteString("## Working Directory (local, in-place)\n\n")
 		fmt.Fprintf(&b, "You are running **in place** inside the project's own working directory: `%s`.\n", ctx.LocalWorkDir)
-		b.WriteString("The code is ALREADY here — edit files directly in this directory. Do **NOT** run `agora repo checkout`; doing so would create a nested worktree and your edits would land in the wrong place.\n\n")
+		b.WriteString("The code is ALREADY here — edit files directly in this directory. Do **NOT** run `agora repo checkout`; doing so would create a nested worktree and your edits would land in the wrong place.\n")
+		fmt.Fprintf(&b, "Work ONLY inside `%s` and its subfolders. Do NOT edit files at any other absolute path (a different checkout of the same repo may exist elsewhere on this machine — editing it would bypass isolation).\n\n", ctx.LocalWorkDir)
 		if len(ctx.Repos) > 0 {
 			b.WriteString("For reference, this project maps to these repositories (already represented by the directory you're in — do not check them out):\n\n")
 			for _, repo := range ctx.Repos {

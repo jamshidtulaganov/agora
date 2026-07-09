@@ -57,7 +57,14 @@ type PrepareParams struct {
 	// substituted. Used by the local_directory project_resource flow
 	// (MUL-2663). When set, the envRoot/workdir directory is not created.
 	LocalWorkDir string
-	Task         TaskContextForEnv // context data for writing files
+	// ProvisionWorkDir, when non-nil (and LocalWorkDir empty), is called with
+	// the workdir path INSTEAD of MkdirAll — the daemon populates the workdir
+	// itself (e.g. `git worktree add` for local_directory isolation:"worktree"
+	// mode). The workdir does not exist when the hook is called, so a
+	// worktree-add that requires a non-existent target works. env.LocalDirectory
+	// stays false: the workdir is daemon-managed scratch, not the user's tree.
+	ProvisionWorkDir func(workDir string) error
+	Task             TaskContextForEnv // context data for writing files
 }
 
 // TaskContextForEnv is the subset of task context used for writing context files.
@@ -206,14 +213,23 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	// envRoot.
 	workDir := filepath.Join(envRoot, "workdir")
 	scratchDirs := []string{filepath.Join(envRoot, "output"), filepath.Join(envRoot, "logs")}
-	if params.LocalWorkDir == "" {
-		scratchDirs = append(scratchDirs, workDir)
-	} else {
-		workDir = params.LocalWorkDir
+	provisionWorkDir := false
+	switch {
+	case params.LocalWorkDir != "":
+		workDir = params.LocalWorkDir // in-place: the user's own directory
+	case params.ProvisionWorkDir != nil:
+		provisionWorkDir = true // worktree mode: the hook creates workdir (git worktree add)
+	default:
+		scratchDirs = append(scratchDirs, workDir) // standard managed flow
 	}
 	for _, dir := range scratchDirs {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, fmt.Errorf("execenv: create directory %s: %w", dir, err)
+		}
+	}
+	if provisionWorkDir {
+		if err := params.ProvisionWorkDir(workDir); err != nil {
+			return nil, fmt.Errorf("execenv: provision workdir: %w", err)
 		}
 	}
 
@@ -238,6 +254,12 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	// worktree.
 	task := params.Task
 	task.LocalWorkDir = params.LocalWorkDir
+	if task.LocalWorkDir == "" && provisionWorkDir {
+		// Worktree-isolation mode: the agent is inside a managed worktree (or a
+		// parent of per-repo worktrees) at workDir. Same contract as in-place —
+		// edit here, do NOT `agora repo checkout` the project's repos.
+		task.LocalWorkDir = workDir
+	}
 	if err := writeContextFiles(workDir, params.Provider, task, manifest); err != nil {
 		return nil, fmt.Errorf("execenv: write context files: %w", err)
 	}
