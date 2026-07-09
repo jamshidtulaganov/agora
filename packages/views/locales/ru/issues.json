@@ -758,7 +758,11 @@
     "box_host": "Хост",
     "box_status": "Статус",
     "box_last_branch": "Последняя ветка",
-    "deploy_heading": "Деплой"
+    "deploy_heading": "Деплой",
+    "history_heading": "Недавние деплои",
+    "history_empty": "Деплоев пока не было.",
+    "status_success": "Успешно",
+    "status_failed": "Не удалось"
   },
   "agent_protocol": {
     "an_agent": "агент",

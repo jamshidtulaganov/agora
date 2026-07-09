@@ -923,6 +923,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/test-cases", h.GetIssueTestCases)
 					r.Post("/test-cases", h.CreateIssueTestCase)
 					r.Post("/deploy-qa", h.DeployIssueQA)
+					r.Get("/deploy-events", h.GetIssueDeployEvents)
 					r.Get("/comments", h.ListComments)
 					r.Get("/timeline", h.ListTimeline)
 					r.Get("/subscribers", h.ListIssueSubscribers)

@@ -348,6 +348,24 @@ describe("deriveStagePipeline — deploy stage", () => {
     expect(find(pipeline, "deploy").state).toBe("passed");
   });
 
+  it("carries the caller-supplied deployDetail (e.g. the deployed ref) onto a passed stage", () => {
+    const pipeline = deriveStagePipeline(
+      baseInput({ hasDeployTarget: true, deploySynced: true, deployDetail: "feature/foo" }),
+    );
+    expect(find(pipeline, "deploy")).toEqual({
+      stage: "deploy",
+      state: "passed",
+      detail: "feature/foo",
+    });
+  });
+
+  it("omits detail when deployDetail isn't supplied (unchanged pre-P0 shape)", () => {
+    const pipeline = deriveStagePipeline(
+      baseInput({ hasDeployTarget: true, deploySynced: true }),
+    );
+    expect(find(pipeline, "deploy")).toEqual({ stage: "deploy", state: "passed" });
+  });
+
   it("is running when a deploy task is attributed as running", () => {
     const pipeline = deriveStagePipeline(
       baseInput({ hasDeployTarget: true, runningTaskStages: ["deploy"] }),

@@ -94,6 +94,10 @@ export const issueKeys = {
   testCasesAll: () => ["issues", "test-cases"] as const,
   /** QA test cases for an issue (the Test-cases panel reads this). */
   testCases: (issueId: string) => [...issueKeys.testCasesAll(), issueId] as const,
+  deployEventsAll: () => ["issues", "deploy-events"] as const,
+  /** Latest + recent Tier-1 deploy events for an issue (the Deploy lens /
+   *  stepper's deploySynced signal reads this). */
+  deployEvents: (issueId: string) => [...issueKeys.deployEventsAll(), issueId] as const,
   attachmentsAll: () => ["issues", "attachments"] as const,
   /** Issue-level attachments — used by the description editor so its
    *  inline file-card / image NodeViews can re-sign download URLs at
@@ -524,6 +528,12 @@ export function qaEvidenceOptions(issueId: string) {
   return queryOptions({
     queryKey: issueKeys.qaEvidence(issueId),
     queryFn: () => api.getQAEvidence(issueId),
+  });
+}
+export function deployEventsOptions(issueId: string) {
+  return queryOptions({
+    queryKey: issueKeys.deployEvents(issueId),
+    queryFn: () => api.getIssueDeployEvents(issueId),
   });
 }
 export function testCasesOptions(issueId: string) {

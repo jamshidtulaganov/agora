@@ -59,6 +59,10 @@ export interface StagePipelineInput {
   /** Project has a connected box / local dir to deploy to. */
   hasDeployTarget: boolean;
   deploySynced?: boolean;
+  /** Optional detail shown on a passed deploy stage (e.g. the deployed ref) —
+   *  caller-derived from the deploy_event signal, deploy P0. Purely cosmetic:
+   *  never affects state, only StageSnapshot.detail when the stage passes. */
+  deployDetail?: string;
 }
 
 const STAGE_ORDER: SDLCStage[] = ["design", "dev", "qa", "review", "deploy"];
@@ -207,7 +211,11 @@ function deriveDeployStage(
     return { stage: "deploy", state: "skipped" };
   }
   if (input.deploySynced === true) {
-    return { stage: "deploy", state: "passed" };
+    const snapshot: StageSnapshot = { stage: "deploy", state: "passed" };
+    if (input.deployDetail) {
+      snapshot.detail = input.deployDetail;
+    }
+    return snapshot;
   }
   if (running.has("deploy")) {
     return { stage: "deploy", state: "running" };

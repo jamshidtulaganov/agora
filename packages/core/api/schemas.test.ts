@@ -4,10 +4,13 @@ import {
   DashboardAgentRunTimeListSchema,
   DashboardUsageByAgentListSchema,
   DashboardUsageDailyListSchema,
+  DeployEventSchema,
   DuplicateIssueErrorBodySchema,
+  EMPTY_DEPLOY_EVENTS,
   EMPTY_FIGMA_CREDENTIAL_STATUS,
   EMPTY_USER,
   FigmaCredentialStatusSchema,
+  IssueDeployEventsResponseSchema,
   ListIssuesResponseSchema,
   QAEvidenceSchema,
   RuntimeHourlyActivityListSchema,
@@ -410,6 +413,82 @@ describe("QAEvidenceSchema (evidence-first QA)", () => {
     expect(parsed.result?.verdict).toBe("fail");
     expect(parsed.result?.commands).toHaveLength(1);
     expect(parsed.result?.design).toBeNull();
+  });
+});
+
+describe("DeployEventSchema / IssueDeployEventsResponseSchema (deploy P0)", () => {
+  const endpoint = { endpoint: "GET /api/issues/:id/deploy-events" };
+
+  it("parses a well-formed deploy event", () => {
+    const parsed = DeployEventSchema.parse({
+      id: "de-1",
+      issue_id: "issue-1",
+      ref: "feature/foo",
+      target: "jamshid's box",
+      status: "success",
+      summary: "Switched to a new branch",
+      captured_at: "2026-06-30T00:00:00Z",
+    });
+    expect(parsed.status).toBe("success");
+    expect(parsed.ref).toBe("feature/foo");
+  });
+
+  it("defaults every field on a bare object (parse, don't trust)", () => {
+    const parsed = DeployEventSchema.parse({});
+    expect(parsed).toEqual({
+      id: "",
+      issue_id: "",
+      ref: "",
+      target: "",
+      status: "",
+      summary: "",
+      captured_at: "",
+    });
+  });
+
+  it("parses a well-formed issue deploy-events response (latest + recent)", () => {
+    const raw = {
+      latest: { id: "de-2", issue_id: "issue-1", ref: "main", target: "box-1", status: "failed", summary: "", captured_at: "2026-07-01T00:00:00Z" },
+      recent: [
+        { id: "de-2", issue_id: "issue-1", ref: "main", target: "box-1", status: "failed", summary: "", captured_at: "2026-07-01T00:00:00Z" },
+        { id: "de-1", issue_id: "issue-1", ref: "main", target: "box-1", status: "success", summary: "", captured_at: "2026-06-30T00:00:00Z" },
+      ],
+    };
+    const parsed = parseWithFallback(raw, IssueDeployEventsResponseSchema, EMPTY_DEPLOY_EVENTS, endpoint);
+    expect(parsed.latest?.status).toBe("failed");
+    expect(parsed.recent).toHaveLength(2);
+  });
+
+  it("degrades a never-deployed issue's null latest to the empty-list shape, not an error", () => {
+    const parsed = parseWithFallback(
+      { latest: null, recent: [] },
+      IssueDeployEventsResponseSchema,
+      EMPTY_DEPLOY_EVENTS,
+      endpoint,
+    );
+    expect(parsed.latest).toBeNull();
+    expect(parsed.recent).toEqual([]);
+  });
+
+  it("falls back to the empty shape on a malformed body instead of throwing", () => {
+    expect(parseWithFallback(null, IssueDeployEventsResponseSchema, EMPTY_DEPLOY_EVENTS, endpoint)).toEqual(
+      EMPTY_DEPLOY_EVENTS,
+    );
+    expect(parseWithFallback("nope", IssueDeployEventsResponseSchema, EMPTY_DEPLOY_EVENTS, endpoint)).toEqual(
+      EMPTY_DEPLOY_EVENTS,
+    );
+  });
+
+  it("drops a malformed recent entry's shape gracefully via per-field defaults rather than rejecting the whole response", () => {
+    const parsed = parseWithFallback(
+      { latest: null, recent: [{ status: "success" }] },
+      IssueDeployEventsResponseSchema,
+      EMPTY_DEPLOY_EVENTS,
+      endpoint,
+    );
+    expect(parsed.recent).toHaveLength(1);
+    expect(parsed.recent[0]!.status).toBe("success");
+    expect(parsed.recent[0]!.ref).toBe("");
   });
 });
 

@@ -14,6 +14,7 @@ import { DeployLensBody } from "./deploy-lens";
 const apiMocks = vi.hoisted(() => ({
   getIssue: vi.fn(),
   listRemoteBoxes: vi.fn(),
+  getIssueDeployEvents: vi.fn(),
 }));
 
 let remoteBoxesEnabled = true;
@@ -77,6 +78,19 @@ function box(over: Record<string, unknown> = {}) {
   };
 }
 
+function deployEvent(over: Record<string, unknown> = {}) {
+  return {
+    id: "de-1",
+    issue_id: "issue-1",
+    ref: "feature/foo",
+    target: "jamshid's box",
+    status: "success",
+    summary: "Switched to a new branch",
+    captured_at: "2026-07-01T00:00:00Z",
+    ...over,
+  };
+}
+
 function renderLens() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -94,6 +108,7 @@ describe("DeployLensBody", () => {
     remoteBoxesEnabled = true;
     apiMocks.getIssue.mockResolvedValue(baseIssue());
     apiMocks.listRemoteBoxes.mockResolvedValue([]);
+    apiMocks.getIssueDeployEvents.mockResolvedValue({ latest: null, recent: [] });
   });
 
   it("renders the empty state when the project has no bound box", async () => {
@@ -119,5 +134,41 @@ describe("DeployLensBody", () => {
     expect(screen.getByText("online")).toBeInTheDocument();
     expect(screen.getByText("feature/foo")).toBeInTheDocument();
     expect(screen.queryByText("No deploy target bound to this project.")).not.toBeInTheDocument();
+  });
+
+  it("renders the history-empty state when a box is bound but nothing has deployed yet", async () => {
+    apiMocks.listRemoteBoxes.mockResolvedValue([box()]);
+    renderLens();
+
+    await screen.findByTestId("editor-deploy-qa");
+    expect(screen.getByText("No deploys yet.")).toBeInTheDocument();
+  });
+
+  it("does not query deploy events when no box is bound (avoid a useless fetch)", async () => {
+    renderLens();
+    await screen.findByText("No deploy target bound to this project.");
+    expect(apiMocks.getIssueDeployEvents).not.toHaveBeenCalled();
+  });
+
+  it("renders recent deploy rows (ref + status + skips the empty state) once deploy_event history exists", async () => {
+    apiMocks.listRemoteBoxes.mockResolvedValue([box()]);
+    apiMocks.getIssueDeployEvents.mockResolvedValue({
+      latest: deployEvent(),
+      recent: [
+        deployEvent({ id: "de-2", ref: "feature/foo", status: "success" }),
+        deployEvent({ id: "de-1", ref: "feature/foo", status: "failed", summary: "ssh: connection refused" }),
+      ],
+    });
+    renderLens();
+
+    await screen.findByTestId("editor-deploy-qa");
+    // The history rows come from a separate query than the box info the
+    // testid above gates on — wait for the row content itself to land.
+    await screen.findByText("Success");
+    expect(screen.queryByText("No deploys yet.")).not.toBeInTheDocument();
+    const refs = screen.getAllByText("feature/foo");
+    // One from the box's "Last branch" row, two from the two history rows.
+    expect(refs.length).toBe(3);
+    expect(screen.getByText("Failed")).toBeInTheDocument();
   });
 });

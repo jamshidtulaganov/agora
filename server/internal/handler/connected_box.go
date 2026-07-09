@@ -828,6 +828,7 @@ func (h *Handler) DeployIssueQA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	updated, okSync, output := h.performBoxSync(r.Context(), box, branch, keyPath)
+	h.recordDeployEvent(r.Context(), issue.WorkspaceID, issue.ID, branch, box.Label, okSync, output)
 	code := http.StatusOK
 	if !okSync {
 		code = http.StatusBadGateway
@@ -838,6 +839,34 @@ func (h *Handler) DeployIssueQA(w http.ResponseWriter, r *http.Request) {
 		"ok":     okSync,
 		"output": output,
 	})
+}
+
+// recordDeployEvent persists a deploy_event row for a Tier-1 (QA-box git-sync)
+// deploy — the durable, append-only signal the SDLC stepper's Deploy stage
+// reads (GetLatestDeployEventForIssue) instead of the previous client-side
+// derivation off connected_box.last_branch (deploy-stage-research.md P0).
+// Best-effort: a write failure here must never fail the deploy response the
+// caller already computed — deploy_event is a read-side convenience, not a
+// consistency boundary the sync itself depends on.
+func (h *Handler) recordDeployEvent(ctx context.Context, workspaceID, issueID pgtype.UUID, ref, target string, ok bool, output string) {
+	status := "success"
+	if !ok {
+		status = "failed"
+	}
+	summary := strings.TrimSpace(output)
+	if len(summary) > 500 {
+		summary = summary[:500]
+	}
+	if _, err := h.Queries.InsertDeployEvent(ctx, db.InsertDeployEventParams{
+		WorkspaceID: workspaceID,
+		IssueID:     issueID,
+		Ref:         ref,
+		Target:      target,
+		Status:      status,
+		Summary:     summary,
+	}); err != nil {
+		slog.Warn("record deploy event failed", "error", err, "issue_id", uuidToString(issueID))
+	}
 }
 
 // sprintBranchName is the FALLBACK git branch convention for a sprint
@@ -912,6 +941,11 @@ func (h *Handler) DeploySprintBranch(ctx context.Context, sprintID, wsID pgtype.
 		return db.ConnectedBox{}, false, fmt.Errorf("remote box SSH key is not configured on the server")
 	}
 
+	// No deploy_event write here (deploy P0 scope): this syncs the WHOLE sprint
+	// branch onto a shared box with no single issue in hand — the issue set a
+	// sprint covers is a separate lookup (issue_to_sprint) this function
+	// doesn't do today. Writing one deploy_event per covered issue belongs in
+	// P1 alongside that lookup; see docs/deploy-stage-research.md P0 row.
 	updated, okSync, _ := h.performBoxSync(ctx, box, SprintBranchFor(sprint), keyPath)
 	return updated, okSync, nil
 }

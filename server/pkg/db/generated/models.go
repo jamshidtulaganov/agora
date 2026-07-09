@@ -305,6 +305,18 @@ type DaemonToken struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type DeployEvent struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	IssueID     pgtype.UUID        `json:"issue_id"`
+	Ref         string             `json:"ref"`
+	Target      string             `json:"target"`
+	Status      string             `json:"status"`
+	Summary     string             `json:"summary"`
+	CapturedAt  pgtype.Timestamptz `json:"captured_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type Feedback struct {
 	ID          pgtype.UUID        `json:"id"`
 	UserID      pgtype.UUID        `json:"user_id"`

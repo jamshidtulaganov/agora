@@ -758,7 +758,11 @@
     "box_host": "Host",
     "box_status": "Status",
     "box_last_branch": "Last branch",
-    "deploy_heading": "Deploy"
+    "deploy_heading": "Deploy",
+    "history_heading": "Recent deploys",
+    "history_empty": "No deploys yet.",
+    "status_success": "Success",
+    "status_failed": "Failed"
   },
   "agent_protocol": {
     "an_agent": "an agent",

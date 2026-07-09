@@ -743,7 +743,11 @@
     "box_host": "主机",
     "box_status": "状态",
     "box_last_branch": "最近分支",
-    "deploy_heading": "部署"
+    "deploy_heading": "部署",
+    "history_heading": "最近部署",
+    "history_empty": "尚无部署记录。",
+    "status_success": "成功",
+    "status_failed": "失败"
   },
   "agent_protocol": {
     "an_agent": "智能体",

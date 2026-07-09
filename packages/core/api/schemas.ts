@@ -1052,6 +1052,34 @@ export const QAEvidenceSchema = z.object({
   captured_at: z.string().default(""),
 }).loose();
 
+// Deploy events — the durable Tier-1 (QA-box git-sync) deploy signal (deploy
+// P0, docs/deploy-stage-research.md §3.3). Lenient like QAEvidenceSchema: an
+// agent/server-authored record, every field defaults so a partial or
+// malformed row degrades instead of rejecting the whole response.
+export const DeployEventSchema = z.object({
+  id: z.string().default(""),
+  issue_id: z.string().default(""),
+  ref: z.string().default(""),
+  target: z.string().default(""),
+  status: z.string().default(""),
+  summary: z.string().default(""),
+  captured_at: z.string().default(""),
+}).loose();
+
+export type DeployEvent = z.infer<typeof DeployEventSchema>;
+
+// GET /api/issues/:id/deploy-events — the freshest event plus a short recent
+// history. latest is null for a never-deployed issue (a normal response, not
+// an error — mirrors QAEvidenceSchema.nullable()'s null-fallback contract).
+export const IssueDeployEventsResponseSchema = z.object({
+  latest: DeployEventSchema.nullable().default(null),
+  recent: z.array(DeployEventSchema).default([]),
+}).loose();
+
+export type IssueDeployEventsResponse = z.infer<typeof IssueDeployEventsResponseSchema>;
+
+export const EMPTY_DEPLOY_EVENTS: IssueDeployEventsResponse = { latest: null, recent: [] };
+
 // QA test cases — agent- or human-authored, with the latest run's verdict.
 // Lenient: status/kind/source are plain strings (enum drift downgrades), and a
 // degraded response yields an empty list rather than white-screening the panel.

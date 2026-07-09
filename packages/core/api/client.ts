@@ -275,6 +275,9 @@ import {
   PolicyFleetHealthSchema,
   EMPTY_POLICY_FLEET_HEALTH,
   QAEvidenceSchema,
+  IssueDeployEventsResponseSchema,
+  EMPTY_DEPLOY_EVENTS,
+  type IssueDeployEventsResponse,
   ListTestCasesResponseSchema,
   EMPTY_LIST_TEST_CASES,
   TestCaseSchema,
@@ -2646,6 +2649,17 @@ export class ApiClient {
     const raw = await this.fetch<unknown>(`/api/issues/${issueId}/qa-evidence`);
     return parseWithFallback(raw, QAEvidenceSchema.nullable(), null, {
       endpoint: "GET /api/issues/:id/qa-evidence",
+    });
+  }
+
+  // The Deploy lens / stepper's evidence-first read: the freshest Tier-1
+  // (QA-box git-sync) deploy for an issue plus a short recent history.
+  // Empty (latest: null, recent: []) is a normal response for a never-
+  // deployed issue, not an error.
+  async getIssueDeployEvents(issueId: string): Promise<IssueDeployEventsResponse> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/deploy-events`);
+    return parseWithFallback(raw, IssueDeployEventsResponseSchema, EMPTY_DEPLOY_EVENTS, {
+      endpoint: "GET /api/issues/:id/deploy-events",
     });
   }
 

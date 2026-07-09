@@ -13,7 +13,7 @@ import { api } from "@agora/core/api";
 import { useConfigStore } from "@agora/core/config";
 import { remoteBoxesOptions } from "@agora/core/runtimes";
 import { agentTaskSnapshotOptions } from "@agora/core/agents";
-import { issueDetailOptions, qaEvidenceOptions } from "@agora/core/issues/queries";
+import { issueDetailOptions, qaEvidenceOptions, deployEventsOptions } from "@agora/core/issues/queries";
 import { getWorkMode } from "@agora/core/issues/work-mode";
 import { issueLabelsOptions } from "@agora/core/labels";
 import { issuePullRequestsOptions } from "@agora/core/github";
@@ -81,6 +81,20 @@ export function useStagePipeline(wsId: string, issueId: string): StagePipeline {
     enabled: remoteBoxesEnabled,
   });
 
+  // Resolved ahead of the deploy-events query below so its `enabled` gate can
+  // reference it — hooks are called unconditionally, so hasDeployTarget can't
+  // live inside the final useMemo alongside the values that depend on it.
+  const boundBox = issue?.project_id ? boxes.find((b) => b.project_id === issue.project_id) : undefined;
+  const hasDeployTarget = remoteBoxesEnabled && !!boundBox;
+
+  // Deploy P0 (docs/deploy-stage-research.md §3.3): the durable deploy_event
+  // signal, only queried when a box is actually bound (an issue with no
+  // deploy target has nothing to look up).
+  const { data: deployEvents } = useQuery({
+    ...deployEventsOptions(issueId),
+    enabled: hasDeployTarget,
+  });
+
   return useMemo(() => {
     const runningTaskStages: SDLCStage[] = snapshot
       .filter((task) => task.issue_id === issueId && task.status === "running")
@@ -94,24 +108,22 @@ export function useStagePipeline(wsId: string, issueId: string): StagePipeline {
     const hasDesignSignals =
       figmaRefsFrom(issue?.description ?? "").length > 0 || designResult != null;
 
-    // hasDeployTarget/deploySynced reuse the exact bound-box lookup
-    // EditorDeployQA already runs (editor-deploy-qa.tsx) — remoteBoxesOptions
-    // is a per-workspace query already cached elsewhere, not a new endpoint.
-    // deploySynced is derived, not stored (docs/deploy-stage-research.md P0,
-    // zero-migration variant): the box counts as "synced to THIS issue" when
-    // its last successful sync landed the exact branch the issue's own PR
-    // head points at. Known approximation: ConnectedBox.last_branch is a
-    // branch NAME, not a pinned SHA (no sync timestamp/ref column exists on
-    // connected_box) — a force-push to the same branch after the last sync
-    // still reads as "synced" until the next deploy-qa run re-syncs it. A
-    // durable per-deploy ref/verdict record (a `deploy_event` table, per the
-    // research doc §3.3) closes that gap; deferred to P1 because it needs a
-    // migration and this derivation is a real improvement over the
-    // permanently-undefined status quo without one.
-    const boundBox = issue?.project_id ? boxes.find((b) => b.project_id === issue.project_id) : undefined;
-    const hasDeployTarget = remoteBoxesEnabled && !!boundBox;
-    const deploySynced =
+    // deploySynced: prefer the durable deploy_event signal (deploy P0,
+    // docs/deploy-stage-research.md §3.3) when one has been recorded — success
+    // on this issue's box means synced, no ref-matching needed (the server
+    // writes the row from the exact deploy-qa call that just ran). Fall back
+    // to the pre-table heuristic (box.last_branch === the issue's PR branch)
+    // only when no deploy_event exists yet — e.g. an issue whose last sync
+    // predates this migration. Known approximation of the FALLBACK path only:
+    // ConnectedBox.last_branch is a branch NAME, not a pinned SHA, so a
+    // force-push after the last sync still reads as synced until the next
+    // deploy-qa run re-syncs it; the deploy_event path doesn't have this gap
+    // since every sync attempt writes its own row.
+    const latestDeployEvent = deployEvents?.latest ?? null;
+    const legacyDeploySynced =
       boundBox?.status === "online" && !!matchedPr?.branch && boundBox.last_branch === matchedPr.branch;
+    const deploySynced = latestDeployEvent ? latestDeployEvent.status === "success" : legacyDeploySynced;
+    const deployDetail = latestDeployEvent?.ref || undefined;
 
     return deriveStagePipeline({
       status,
@@ -133,6 +145,7 @@ export function useStagePipeline(wsId: string, issueId: string): StagePipeline {
       runningTaskStages,
       hasDeployTarget,
       deploySynced,
+      deployDetail,
     });
   }, [
     status,
@@ -143,8 +156,9 @@ export function useStagePipeline(wsId: string, issueId: string): StagePipeline {
     mergeReadiness,
     snapshot,
     qaAgentIds,
-    remoteBoxesEnabled,
-    boxes,
+    hasDeployTarget,
+    boundBox,
+    deployEvents,
     issueId,
   ]);
 }

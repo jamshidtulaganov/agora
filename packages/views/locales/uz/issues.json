@@ -758,7 +758,11 @@
     "box_host": "Host",
     "box_status": "Holat",
     "box_last_branch": "Oxirgi branch",
-    "deploy_heading": "Deploy"
+    "deploy_heading": "Deploy",
+    "history_heading": "So'nggi deploylar",
+    "history_empty": "Hozircha deploy bo'lmagan.",
+    "status_success": "Muvaffaqiyatli",
+    "status_failed": "Muvaffaqiyatsiz"
   },
   "agent_protocol": {
     "an_agent": "agent",
