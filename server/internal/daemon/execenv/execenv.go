@@ -64,7 +64,13 @@ type PrepareParams struct {
 	// worktree-add that requires a non-existent target works. env.LocalDirectory
 	// stays false: the workdir is daemon-managed scratch, not the user's tree.
 	ProvisionWorkDir func(workDir string) error
-	Task             TaskContextForEnv // context data for writing files
+	// WorktreeEnvDir, when set (with ProvisionWorkDir), overrides the workdir
+	// to an ISSUE-KEYED path OUTSIDE the per-task envRoot, so tasks on the same
+	// issue (dev → QA → fix) reuse one worktree set. It is NOT removed by the
+	// per-task env teardown; a dedicated worktree sweep reclaims it when the
+	// issue is done. ProvisionWorkDir must be provision-OR-reuse aware.
+	WorktreeEnvDir string
+	Task           TaskContextForEnv // context data for writing files
 }
 
 // TaskContextForEnv is the subset of task context used for writing context files.
@@ -217,6 +223,11 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	switch {
 	case params.LocalWorkDir != "":
 		workDir = params.LocalWorkDir // in-place: the user's own directory
+	case params.WorktreeEnvDir != "" && params.ProvisionWorkDir != nil:
+		// Worktree reuse: issue-keyed workdir outside the task envRoot; the
+		// hook provisions it on the first task and reuses it thereafter.
+		workDir = params.WorktreeEnvDir
+		provisionWorkDir = true
 	case params.ProvisionWorkDir != nil:
 		provisionWorkDir = true // worktree mode: the hook creates workdir (git worktree add)
 	default:

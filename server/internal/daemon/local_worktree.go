@@ -8,7 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Worktree isolation for local_directory (isolation:"worktree"). Instead of
@@ -175,6 +177,64 @@ func finalizeWorktrees(ctx context.Context, run *worktreeRun, agentName string, 
 	return "### Agent changes (worktree isolation)\n\nYour source checkout was untouched. The agent's work is committed on these branches:\n\n" + strings.Join(lines, "\n") + "\n"
 }
 
+// provisionOrReuseWorktrees returns the issue's worktrees, reusing them when
+// they already exist under workDir (same issue's earlier task: dev → QA → fix)
+// so QA runs in the dev's exact tree, or provisioning fresh otherwise. The
+// second return is true when the worktrees were REUSED. workDir is the
+// issue-keyed env dir (persists across the issue's tasks).
+func provisionOrReuseWorktrees(ctx context.Context, parent, issueKey, workDir string, log *slog.Logger) (*worktreeRun, bool, error) {
+	repos, err := detectLocalRepos(ctx, parent)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(repos) == 0 {
+		return nil, false, fmt.Errorf("local_directory %q contains no git repositories", parent)
+	}
+	single := len(repos) == 1 && repos[0].RelPath == "."
+
+	// Reuse path: every repo's worktree already present + a valid work tree.
+	reuse := &worktreeRun{parent: parent}
+	allPresent := true
+	for _, repo := range repos {
+		target := workDir
+		if !single {
+			target = filepath.Join(workDir, repo.Name)
+		}
+		if isGitWorkTree(ctx, target) {
+			reuse.worktrees = append(reuse.worktrees, provisionedWorktree{
+				SrcRepo: repo.SrcPath, Path: target, Branch: localAgentBranchName(issueKey, repo.Name),
+			})
+		} else {
+			allPresent = false
+			break
+		}
+	}
+	if allPresent && len(reuse.worktrees) == len(repos) {
+		log.Info("local_directory: reusing issue worktrees", "issue", issueKey, "count", len(reuse.worktrees))
+		touchDir(workDir) // bump mtime so the TTL sweep reflects last use
+		return reuse, true, nil
+	}
+
+	// Fresh: clear any partial state + stale worktree metadata, then provision.
+	_ = os.RemoveAll(workDir)
+	for _, repo := range repos {
+		_ = gitRun(ctx, repo.SrcPath, "worktree", "prune")
+	}
+	run, err := provisionLocalWorktrees(ctx, parent, issueKey, workDir, log)
+	if err == nil {
+		touchDir(workDir)
+	}
+	return run, false, err
+}
+
+// touchDir bumps a directory's modified time so the idle-TTL sweep treats it as
+// recently used (nested writes to worktree files don't update the env dir's
+// own mtime).
+func touchDir(dir string) {
+	now := time.Now()
+	_ = os.Chtimes(dir, now, now)
+}
+
 // sanitizeResourcesForWorktree drops the source local_path (and daemon_id) from
 // the local_directory resource when worktree mode is on, so the agent context
 // never advertises the developer's checkout as an editable path. Returns the
@@ -197,6 +257,108 @@ func sanitizeResourcesForWorktree(resources []ProjectResourceData, worktreeMode 
 		out[i].ResourceRef = safe
 	}
 	return out
+}
+
+// worktreeEnvDir is the issue-keyed directory that holds an issue's worktrees.
+// It lives under {WorkspacesRoot}/{ws}/.worktrees/{issue-short} — OUTSIDE the
+// per-task env roots — so it survives task teardown and is reused across the
+// issue's dev → QA → fix tasks.
+func (d *Daemon) worktreeEnvDir(ws, issueKey string) string {
+	return filepath.Join(d.cfg.WorkspacesRoot, ws, ".worktrees", shortID(issueKey))
+}
+
+// worktreeEnvTTL is how long an idle issue-worktree env is kept before the
+// sweep reclaims it. Override with AGORA_WORKTREE_ENV_TTL_HOURS; default 48h.
+func worktreeEnvTTL() time.Duration {
+	if v := strings.TrimSpace(os.Getenv("AGORA_WORKTREE_ENV_TTL_HOURS")); v != "" {
+		if h, err := strconv.Atoi(v); err == nil && h > 0 {
+			return time.Duration(h) * time.Hour
+		}
+	}
+	return 48 * time.Hour
+}
+
+// sweepWorktreeEnvs reclaims issue-worktree envs that have been idle longer than
+// the TTL and are not currently held by a running task. For each stale env it
+// removes the git worktrees (deriving each source repo from the worktree's own
+// git metadata) and deletes the env directory. Best-effort; called from the GC
+// loop. isActive reports whether a path is currently in use by a task.
+func (d *Daemon) sweepWorktreeEnvs(ctx context.Context, isActive func(path string) bool, log *slog.Logger) {
+	root := d.cfg.WorkspacesRoot
+	if root == "" {
+		return
+	}
+	wsDirs, err := os.ReadDir(root)
+	if err != nil {
+		return
+	}
+	cutoff := time.Now().Add(-worktreeEnvTTL())
+	for _, ws := range wsDirs {
+		if !ws.IsDir() {
+			continue
+		}
+		base := filepath.Join(root, ws.Name(), ".worktrees")
+		envs, err := os.ReadDir(base)
+		if err != nil {
+			continue
+		}
+		for _, e := range envs {
+			if !e.IsDir() {
+				continue
+			}
+			envDir := filepath.Join(base, e.Name())
+			if isActive != nil && isActive(envDir) {
+				continue
+			}
+			info, err := e.Info()
+			if err != nil || info.ModTime().After(cutoff) {
+				continue
+			}
+			cleanupWorktreeEnvDir(ctx, envDir, log)
+		}
+	}
+}
+
+// cleanupWorktreeEnvDir removes every git worktree under envDir (each subfolder,
+// or envDir itself for a single-repo issue) from its source repo, then deletes
+// envDir. The agent branches are kept — they hold the committed work.
+func cleanupWorktreeEnvDir(ctx context.Context, envDir string, log *slog.Logger) {
+	removed := false
+	if entries, err := os.ReadDir(envDir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			sub := filepath.Join(envDir, e.Name())
+			if isGitWorkTree(ctx, sub) {
+				removeOneWorktree(ctx, sub, log)
+				removed = true
+			}
+		}
+	}
+	if !removed && isGitWorkTree(ctx, envDir) { // single-repo env
+		removeOneWorktree(ctx, envDir, log)
+	}
+	if err := os.RemoveAll(envDir); err != nil {
+		log.Warn("local_directory: remove worktree env failed", "dir", envDir, "error", err)
+	}
+}
+
+// removeOneWorktree removes a single worktree from its source repo, derived
+// from the worktree's git-common-dir.
+func removeOneWorktree(ctx context.Context, worktree string, log *slog.Logger) {
+	common, err := gitOutput(ctx, worktree, "rev-parse", "--git-common-dir")
+	if err != nil || common == "" {
+		return
+	}
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(worktree, common)
+	}
+	src := filepath.Dir(common) // .../<repo>/.git → <repo>
+	if err := gitRun(ctx, src, "worktree", "remove", "--force", worktree); err != nil {
+		log.Warn("local_directory: worktree remove (sweep) failed", "worktree", worktree, "error", err)
+	}
+	_ = gitRun(ctx, src, "worktree", "prune")
 }
 
 // cleanupWorktrees removes every worktree in the run and prunes the parent

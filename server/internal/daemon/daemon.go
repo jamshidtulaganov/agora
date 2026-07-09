@@ -2895,17 +2895,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// Worktree-isolation state: set by the ProvisionWorkDir hook below (worktree
 	// mode only). Cleaned up when the task ends. Stage 1 removes the worktrees
 	// at task end; the agent branches (which hold the commits) are kept.
-	var worktreeRunForTask *worktreeRun
-	defer func() {
-		if worktreeRunForTask != nil {
-			// Commit the agent's real changes onto the agent branches (so the
-			// work survives worktree removal), then remove the worktrees. The
-			// developer's source checkout is never touched. User-facing
-			// messaging (which branch, PR/merge) arrives with stage-3
-			// integration; stage 1 just guarantees no work is lost.
-			finalizeWorktrees(ctx, worktreeRunForTask, agentName, taskLog)
-		}
-	}()
+	// The worktree env is issue-keyed and PERSISTS across the issue's tasks
+	// (dev → QA → fix) so QA runs in the dev's exact tree; a periodic sweep
+	// reclaims it when the issue reaches a terminal state (sweepDoneWorktreeEnvs).
 	// Reuse intentionally skipped for local_directory tasks: the prior
 	// WorkDir is the user's own path (always present) but the reuse path
 	// loses the envRoot association the GC loop needs, and re-running
@@ -2950,21 +2942,18 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		}
 		if localAssignment != nil {
 			if localAssignment.isWorktreeMode() {
-				// Worktree isolation: provision an isolated git worktree per
-				// repo cut from the user's checkout. env.WorkDir becomes
-				// daemon-managed scratch (LocalWorkDir stays empty), and the
-				// worktrees are cleaned up when the task ends (below).
+				// Worktree isolation: an ISSUE-KEYED worktree env (one worktree
+				// per repo, cut from the user's checkout) that persists across
+				// the issue's tasks so QA reuses the dev's exact tree. The hook
+				// provisions on the first task and reuses thereafter.
 				issueKey := task.IssueID
 				if issueKey == "" {
 					issueKey = task.ID
 				}
+				prepParams.WorktreeEnvDir = d.worktreeEnvDir(task.WorkspaceID, issueKey)
 				prepParams.ProvisionWorkDir = func(workDir string) error {
-					run, perr := provisionLocalWorktrees(ctx, localAssignment.AbsPath, issueKey, workDir, taskLog)
-					if perr != nil {
-						return perr
-					}
-					worktreeRunForTask = run
-					return nil
+					_, _, perr := provisionOrReuseWorktrees(ctx, localAssignment.AbsPath, issueKey, workDir, taskLog)
+					return perr
 				}
 			} else {
 				prepParams.LocalWorkDir = localAssignment.AbsPath

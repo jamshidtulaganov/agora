@@ -79,6 +79,11 @@ func (d *Daemon) runGC(ctx context.Context) {
 		d.gcWorkspace(ctx, wsDir, stats)
 	}
 
+	// Reclaim idle issue-worktree envs (local_directory isolation:"worktree").
+	// These persist across an issue's tasks so QA reuses the dev's tree; the
+	// sweep removes them (git worktree remove + prune) once idle past the TTL.
+	d.sweepWorktreeEnvs(ctx, nil, d.logger)
+
 	// Prune stale worktree references from all bare repo caches.
 	d.pruneRepoWorktrees(root)
 
@@ -109,6 +114,13 @@ func (d *Daemon) gcWorkspace(ctx context.Context, wsDir string, stats *gcStats) 
 			return
 		}
 		if !entry.IsDir() {
+			continue
+		}
+		// .worktrees holds issue-keyed worktree envs, reclaimed by
+		// sweepWorktreeEnvs (which does git worktree remove); the task-dir GC
+		// must never RemoveAll it or it would dangle worktree metadata in the
+		// user's source repos.
+		if entry.Name() == ".worktrees" {
 			continue
 		}
 		taskDir := filepath.Join(wsDir, entry.Name())

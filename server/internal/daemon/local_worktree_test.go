@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // makeRepo initializes a git repo with one commit at dir.
@@ -233,5 +234,67 @@ func TestFinalizeWorktrees_CommitsAndCleans(t *testing.T) {
 	}
 	if s := gitAt(t, filepath.Join(parent, "svc"), "status", "--porcelain"); s != "" {
 		t.Errorf("source dirty after finalize: %q", s)
+	}
+}
+
+func TestProvisionOrReuse_ReusesDevWorktree(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	parent := t.TempDir()
+	makeRepo(t, filepath.Join(parent, "svc"))
+	ctx := context.Background()
+	env := filepath.Join(t.TempDir(), "wt", "issue-x")
+
+	// First task (dev): provision.
+	run1, reused1, err := provisionOrReuseWorktrees(ctx, parent, "issue-xyz", env, slog.Default())
+	if err != nil || reused1 {
+		t.Fatalf("first call should provision (reused=%v err=%v)", reused1, err)
+	}
+	wt := run1.worktrees[0].Path
+	// Dev makes an uncommitted change in its worktree.
+	os.WriteFile(filepath.Join(wt, "index.js"), []byte("dev change"), 0o644)
+
+	// Second task (QA, same issue): must REUSE the same worktree and see the
+	// dev's change.
+	run2, reused2, err := provisionOrReuseWorktrees(ctx, parent, "issue-xyz", env, slog.Default())
+	if err != nil || !reused2 {
+		t.Fatalf("second call should reuse (reused=%v err=%v)", reused2, err)
+	}
+	if run2.worktrees[0].Path != wt {
+		t.Errorf("reuse gave a different worktree path: %q vs %q", run2.worktrees[0].Path, wt)
+	}
+	got, _ := os.ReadFile(filepath.Join(wt, "index.js"))
+	if string(got) != "dev change" {
+		t.Errorf("QA must see the dev's change, got %q", got)
+	}
+}
+
+func TestSweepWorktreeEnvs_RemovesStale(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	root := t.TempDir()
+	ws := "ws1"
+	parent := t.TempDir()
+	makeRepo(t, filepath.Join(parent, "svc"))
+	ctx := context.Background()
+	env := filepath.Join(root, ws, ".worktrees", "issue-old")
+	if _, err := provisionLocalWorktrees(ctx, parent, "issue-old", env, slog.Default()); err != nil {
+		t.Fatal(err)
+	}
+	// Backdate the env dir so it looks idle past the TTL.
+	old := time.Now().Add(-72 * time.Hour)
+	os.Chtimes(env, old, old)
+
+	d := &Daemon{cfg: Config{WorkspacesRoot: root}}
+	d.sweepWorktreeEnvs(ctx, nil, slog.Default())
+
+	if _, err := os.Stat(env); !os.IsNotExist(err) {
+		t.Error("stale worktree env should be swept")
+	}
+	// The source repo has no dangling worktree metadata.
+	if out := gitAt(t, filepath.Join(parent, "svc"), "worktree", "list"); strings.Contains(out, ".worktrees") {
+		t.Errorf("dangling worktree after sweep:\n%s", out)
 	}
 }
