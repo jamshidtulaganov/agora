@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/multica-ai/multica/server/internal/config"
 	"log/slog"
 	"net/http"
 	"net/netip"
@@ -150,10 +151,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	cfSigner := auth.NewCloudFrontSignerFromEnv()
 
 	signupConfig := handler.Config{
-		AllowSignup:              os.Getenv("ALLOW_SIGNUP") != "false",
+		AllowSignup:              config.String("ALLOW_SIGNUP") != "false",
 		AllowedEmails:            splitAndTrim(os.Getenv("ALLOWED_EMAILS")),
 		AllowedEmailDomains:      splitAndTrim(os.Getenv("ALLOWED_EMAIL_DOMAINS")),
-		DisableWorkspaceCreation: os.Getenv("DISABLE_WORKSPACE_CREATION") == "true",
+		DisableWorkspaceCreation: config.Bool("DISABLE_WORKSPACE_CREATION"),
 		PublicURL:                strings.TrimRight(strings.TrimSpace(os.Getenv("AGORA_PUBLIC_URL")), "/"),
 		TrustedProxies:           parseTrustedProxies(os.Getenv("AGORA_TRUSTED_PROXIES")),
 		CloudRuntimeFleetURL:     cloudRuntimeFleetURLFromEnv(),
@@ -611,6 +612,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Get("/api/me/editor-tokens", h.ListEditorTokens)
 		r.With(handler.RequireHumanActor).Put("/api/me/editor-tokens", h.PutEditorToken)
 		r.With(handler.RequireHumanActor).Delete("/api/me/editor-tokens/{provider}", h.DeleteEditorToken)
+
+		// Instance configuration (Settings → Configs). Owner-only (enforced in
+		// the handler); mutations are human-only so an agent's task token can
+		// never flip a global feature flag.
+		r.Get("/api/instance-config", h.GetInstanceConfig)
+		r.With(handler.RequireHumanActor).Put("/api/instance-config/{key}", h.SetInstanceConfig)
+		r.With(handler.RequireHumanActor).Delete("/api/instance-config/{key}", h.ResetInstanceConfig)
 		r.Patch("/api/me/onboarding", h.PatchOnboarding)
 		r.Post("/api/me/onboarding/complete", h.CompleteOnboarding)
 		r.Post("/api/me/onboarding/cloud-waitlist", h.JoinCloudWaitlist)
@@ -1028,7 +1036,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// must stay readable/writable even while the boxes feature is off.
 			r.Get("/api/workspace-labs", h.GetWorkspaceLabs)
 			r.Put("/api/workspace-labs", h.UpdateWorkspaceLabs)
-			if strings.TrimSpace(os.Getenv("AGORA_REMOTE_BOXES_ENABLED")) == "true" {
+			if config.Bool("AGORA_REMOTE_BOXES_ENABLED") {
 				r.Route("/api/remote-boxes", func(r chi.Router) {
 					r.Get("/", h.ListConnectedBoxes)
 					r.Post("/", h.CreateConnectedBox)

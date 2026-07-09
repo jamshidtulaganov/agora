@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/config"
 	"github.com/multica-ai/multica/server/internal/handler"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
@@ -33,7 +34,7 @@ func qaWatchdogStaleMinutes() int32 {
 // in_review within this window but has since gone silent. Without it, the first
 // sweep would mass-escalate the entire historical in_review backlog. Default 24h.
 func qaWatchdogWindowHours() int32 {
-	if v := strings.TrimSpace(os.Getenv("AGORA_QA_WATCHDOG_WINDOW_HOURS")); v != "" {
+	if v := strings.TrimSpace(config.String("AGORA_QA_WATCHDOG_WINDOW_HOURS")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			return int32(n)
 		}
@@ -59,7 +60,7 @@ func devRuntimeWaitMaxSecs() float64 {
 // those to a LOUD qa:fail + comment, so "didn't run" blocks instead of reading
 // green. Only runs where AGORA_AUTO_QA_ENABLED (else there is no gate to expect).
 func runQAWatchdogScheduler(ctx context.Context, queries *db.Queries, h *handler.Handler) {
-	if strings.TrimSpace(os.Getenv("AGORA_AUTO_QA_ENABLED")) != "true" {
+	if !config.Bool("AGORA_AUTO_QA_ENABLED") {
 		return
 	}
 	ticker := time.NewTicker(qaWatchdogInterval)

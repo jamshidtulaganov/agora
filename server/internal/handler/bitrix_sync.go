@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/multica-ai/multica/server/internal/config"
 	"log/slog"
 	"math"
 	"net/http"
@@ -147,7 +148,7 @@ func bitrixTaskHasTag(task *bitrix.Task, tag string) bool {
 // bitrixPushStatus reports whether outbound mirroring should also push a real
 // status update (tasks.task.update) on top of the courtesy comment.
 func bitrixPushStatus() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("BITRIX_PUSH_STATUS"))) {
+	switch strings.ToLower(config.String("BITRIX_PUSH_STATUS")) {
 	case "1", "true", "yes", "on":
 		return true
 	default:
@@ -159,7 +160,7 @@ func bitrixPushStatus() bool {
 // kanban done stage (opt-in via AGORA_BITRIX_ARCHIVE_DONE). Off → done tasks keep
 // their `done` status and stay in the board's Done column as before.
 func bitrixArchiveDoneEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("AGORA_BITRIX_ARCHIVE_DONE"))) {
+	switch strings.ToLower(config.String("AGORA_BITRIX_ARCHIVE_DONE")) {
 	case "1", "true", "yes", "on":
 		return true
 	default:

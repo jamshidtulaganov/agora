@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/multica-ai/multica/server/internal/config"
 	"log/slog"
 	"net/http"
 	"os"
@@ -901,13 +902,13 @@ func docsRepoInstruction(docsRepo string) string {
 // autoDocsEnabled gates the qa:pass → auto_docs auto-trigger. Default off so the
 // behavior is opt-in and never fires for a deployment that hasn't enabled it.
 func autoDocsEnabled() bool {
-	return strings.TrimSpace(os.Getenv("AGORA_AUTO_DOCS_ENABLED")) == "true"
+	return config.Bool("AGORA_AUTO_DOCS_ENABLED")
 }
 
 // autoQAEnabled gates the in_review → run_qa auto-trigger (the QA squad smokes a
 // dev's work the moment it's ready for review). Default off — opt-in.
 func autoQAEnabled() bool {
-	return strings.TrimSpace(os.Getenv("AGORA_AUTO_QA_ENABLED")) == "true"
+	return config.Bool("AGORA_AUTO_QA_ENABLED")
 }
 
 // sprintWorktreeEnabled gates the shared-sprint-branch worktree model
@@ -916,7 +917,7 @@ func autoQAEnabled() bool {
 // stays the default and the migration is fully reversible by unsetting the flag.
 // See docs/sprint-worktree-design.md.
 func sprintWorktreeEnabled() bool {
-	return strings.TrimSpace(os.Getenv("AGORA_SPRINT_WORKTREE_ENABLED")) == "true"
+	return config.Bool("AGORA_SPRINT_WORKTREE_ENABLED")
 }
 
 // sprintPRModeEnabled gates the per-task-PR-into-the-sprint-branch dev flow
@@ -1122,7 +1123,7 @@ func (h *Handler) maybeAutoDocsOnLabel(ctx context.Context, issue db.Issue, labe
 // qaFailAutorouteEnabled gates the qa:fail -> dev-lead auto-reassignment.
 // Default off — opt-in, matching every other auto-* gate in this file.
 func qaFailAutorouteEnabled() bool {
-	return strings.TrimSpace(os.Getenv("AGORA_QA_FAIL_AUTOROUTE_ENABLED")) == "true"
+	return config.Bool("AGORA_QA_FAIL_AUTOROUTE_ENABLED")
 }
 
 // qaGateEnforced gates the STRUCTURAL QA gate: when on, a squad-orchestrated
@@ -1133,7 +1134,7 @@ func qaFailAutorouteEnabled() bool {
 // the leader might omit into a platform guarantee. Default off — opt-in,
 // matching every other auto-* gate in this file.
 func qaGateEnforced() bool {
-	return strings.TrimSpace(os.Getenv("AGORA_QA_GATE_ENFORCED")) == "true"
+	return config.Bool("AGORA_QA_GATE_ENFORCED")
 }
 
 // qaDiscriminationEnforced gates the TEST-ACCURACY guard: when on, a qa:pass is
@@ -1144,7 +1145,7 @@ func qaGateEnforced() bool {
 // off — opt-in, fail-safe: with no baseline data (all runs "unknown") the guard
 // simply doesn't apply unless a project deliberately turns it on.
 func qaDiscriminationEnforced() bool {
-	return strings.TrimSpace(os.Getenv("AGORA_QA_DISCRIMINATION_ENFORCED")) == "true"
+	return config.Bool("AGORA_QA_DISCRIMINATION_ENFORCED")
 }
 
 // riskTierGateEnforced gates the RISK-TIER human-sign-off guard: when on, a
@@ -1155,7 +1156,7 @@ func qaDiscriminationEnforced() bool {
 // fail-open on a tier-lookup error (never block on infra failure). A human actor
 // is never blocked, so turning it on can only ADD safety, never wedge a human.
 func riskTierGateEnforced() bool {
-	return strings.TrimSpace(os.Getenv("AGORA_RISK_TIER_GATE_ENFORCED")) == "true"
+	return config.Bool("AGORA_RISK_TIER_GATE_ENFORCED")
 }
 
 // issueDevOrchestrated reports whether the issue's dev-side assignee is
@@ -1369,7 +1370,7 @@ const maxSquadFailureRecoveries = 3
 // squadFailureRecoveryEnabled gates the delegated-sub-task failure recovery.
 // Default off — opt-in, matching every other auto-* gate in this file.
 func squadFailureRecoveryEnabled() bool {
-	return strings.TrimSpace(os.Getenv("AGORA_SQUAD_FAILURE_RECOVERY_ENABLED")) == "true"
+	return config.Bool("AGORA_SQUAD_FAILURE_RECOVERY_ENABLED")
 }
 
 // maybeRecoverSquadTaskFailure re-wakes the squad LEADER when a delegated
@@ -1582,7 +1583,7 @@ func (h *Handler) maybeRouteToDevLeadOnQAFail(ctx context.Context, issue db.Issu
 }
 
 func qaFailAutoFileBugEnabled() bool {
-	return strings.TrimSpace(os.Getenv("AGORA_QA_FAIL_AUTO_FILE_BUG_ENABLED")) == "true"
+	return config.Bool("AGORA_QA_FAIL_AUTO_FILE_BUG_ENABLED")
 }
 
 // maybeAutoFileBugOnQAFail opens a `bug`-labelled child issue when an issue is
@@ -2759,7 +2760,7 @@ func (h *Handler) sliceActionUncompiledCasesContext(ctx context.Context, issue d
 // separate from AGORA_AUTO_QA_ENABLED because compilation is a pure authoring
 // convenience, not the QA gate.
 func qaCompileEnabled() bool {
-	return strings.TrimSpace(os.Getenv("AGORA_QA_COMPILE_ENABLED")) == "true"
+	return config.Bool("AGORA_QA_COMPILE_ENABLED")
 }
 
 // maybeCompileTestCases fires the QA squad's compile_tests when an automated case

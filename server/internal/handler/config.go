@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"github.com/multica-ai/multica/server/internal/config"
 	"net/http"
 	"net/url"
 	"os"
@@ -69,11 +70,11 @@ type AppConfig struct {
 // to anonymous callers — never user- or tenant-scoped data.
 func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	config := AppConfig{
-		AllowSignup:               os.Getenv("ALLOW_SIGNUP") != "false",
+		AllowSignup:               config.String("ALLOW_SIGNUP") != "false",
 		GoogleClientID:            os.Getenv("GOOGLE_CLIENT_ID"),
-		WorkspaceCreationDisabled: os.Getenv("DISABLE_WORKSPACE_CREATION") == "true",
-		TelegramOnly:              os.Getenv("AGORA_TELEGRAM_ONLY") == "true",
-		RemoteBoxesEnabled:        os.Getenv("AGORA_REMOTE_BOXES_ENABLED") == "true",
+		WorkspaceCreationDisabled: config.Bool("DISABLE_WORKSPACE_CREATION"),
+		TelegramOnly:              config.Bool("AGORA_TELEGRAM_ONLY"),
+		RemoteBoxesEnabled:        config.Bool("AGORA_REMOTE_BOXES_ENABLED"),
 	}
 	if h.Storage != nil {
 		config.CdnDomain = h.Storage.CdnDomain()

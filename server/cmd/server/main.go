@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/multica-ai/multica/server/internal/analytics"
+	"github.com/multica-ai/multica/server/internal/config"
 	"github.com/multica-ai/multica/server/internal/daemonws"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/handler"
@@ -250,6 +251,22 @@ func main() {
 	defer analyticsClient.Close()
 
 	queries := db.New(pool)
+
+	// Initialize the instance-config store so feature flags / tunables resolve
+	// DB override → env → default (Settings → Configs edits apply without a
+	// redeploy). Read helpers fall back to env when this isn't called (tests).
+	config.Init(ctx, func(ctx context.Context) (map[string]string, error) {
+		rows, err := queries.ListInstanceConfig(ctx)
+		if err != nil {
+			return nil, err
+		}
+		m := make(map[string]string, len(rows))
+		for _, r := range rows {
+			m[r.Key] = r.Value
+		}
+		return m, nil
+	})
+
 	hub.SetAuthorizer(newScopeAuthorizer(queries))
 	// Order matters: subscriber listeners must register BEFORE notification listeners.
 	// The notification listener queries the subscriber table to determine recipients,

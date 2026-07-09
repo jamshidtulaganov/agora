@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"github.com/multica-ai/multica/server/internal/config"
 	"os"
 	"os/exec"
 	"strconv"
@@ -177,10 +178,10 @@ func remoteBoxesGitToken() string {
 // AGORA_REMOTE_BOXES_SSH_KEY / _GIT_TOKEN secrets above. The provisioner reuses
 // the same deploy key + git token; the per-box DB clone uses the box's OWN local
 // mysql auth, so no database password is ever an Agora-held secret.
-func qaHostSSHHost() string    { return strings.TrimSpace(os.Getenv("AGORA_QA_HOST_SSH_HOST")) }
-func qaHostSSHUser() string    { return strings.TrimSpace(os.Getenv("AGORA_QA_HOST_SSH_USER")) }
-func qaHostBaseDomain() string { return strings.TrimSpace(os.Getenv("AGORA_QA_HOST_BASE_DOMAIN")) }
-func qaHostWebRoot() string    { return strings.TrimSpace(os.Getenv("AGORA_QA_HOST_WEB_ROOT")) }
+func qaHostSSHHost() string    { return config.String("AGORA_QA_HOST_SSH_HOST") }
+func qaHostSSHUser() string    { return config.String("AGORA_QA_HOST_SSH_USER") }
+func qaHostBaseDomain() string { return config.String("AGORA_QA_HOST_BASE_DOMAIN") }
+func qaHostWebRoot() string    { return config.String("AGORA_QA_HOST_WEB_ROOT") }
 func qaHostRepoURL() string    { return strings.TrimSpace(os.Getenv("AGORA_QA_HOST_REPO_URL")) }
 func qaHostSeedDir() string    { return strings.TrimSpace(os.Getenv("AGORA_QA_HOST_SEED_DIR")) }
 func qaHostSeedDB() string     { return strings.TrimSpace(os.Getenv("AGORA_QA_HOST_SEED_DB")) }

@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/multica-ai/multica/server/internal/config"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -29,7 +29,7 @@ import (
 // routes are not even mounted when disabled (see router) — this in-handler check
 // is defense-in-depth so a directly-dispatched call still fails closed.
 func remoteBoxesEnabled() bool {
-	return strings.TrimSpace(os.Getenv("AGORA_REMOTE_BOXES_ENABLED")) == "true"
+	return config.Bool("AGORA_REMOTE_BOXES_ENABLED")
 }
 
 // ConnectedBoxResponse is the API shape. UUIDs are strings; nullable columns are

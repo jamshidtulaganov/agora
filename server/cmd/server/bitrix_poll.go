@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/multica-ai/multica/server/internal/config"
 	"log/slog"
 	"os"
 	"strings"
@@ -53,7 +54,7 @@ func runBitrixSyncPoll(ctx context.Context, h *handler.Handler) {
 // <= 0 disables it — separate from BITRIX_SYNC_POLL_INTERVAL, which only
 // refreshes already-tracked tasks.
 func bitrixUserPollInterval() time.Duration {
-	raw := strings.TrimSpace(os.Getenv("AGORA_BITRIX_USER_POLL_INTERVAL"))
+	raw := strings.TrimSpace(config.String("AGORA_BITRIX_USER_POLL_INTERVAL"))
 	if raw == "" {
 		return 0
 	}
