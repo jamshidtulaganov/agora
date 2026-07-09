@@ -584,15 +584,18 @@ func (h *Handler) devLocalAppURL(ctx context.Context, issue db.Issue) string {
 // tier. Unlike dev_apps it carries no ready-to-smoke URL — it only tells us
 // WHERE — so the caller uses it to (a) pin the QA task to that daemon and
 // (b) instruct the agent to start the app via /editor/preview and smoke the
-// resulting 127.0.0.1 URL. Gated by labs.qa_dev_runtimes (same opt-in as
-// devLocalAppURL). Returns ok=false on any miss so resolution falls through to
-// connected_box / project qa_smoke_url unchanged.
+// resulting 127.0.0.1 URL.
+//
+// A local_directory is a DELIBERATE per-project resource — attaching it IS the
+// opt-in ("local config enabled"), so this is NOT gated on the labs
+// qa_dev_runtimes toggle (which stays the opt-in for the dev_apps /
+// daemon-per-dev flow). A project with a local_directory on an online daemon
+// therefore runs QA locally regardless of the toggle, taking precedence over
+// the connected sdteam boxes. Projects with no local_directory are unaffected.
+// Returns ok=false on any miss so resolution falls through to connected_box /
+// project qa_smoke_url unchanged.
 func (h *Handler) localDirectoryQATarget(ctx context.Context, issue db.Issue) (daemonID, localPath string, ok bool) {
 	if !issue.ProjectID.Valid {
-		return "", "", false
-	}
-	ws, err := h.Queries.GetWorkspace(ctx, issue.WorkspaceID)
-	if err != nil || !util.ParseWorkspaceLabs(ws.Settings).QADevRuntimes {
 		return "", "", false
 	}
 	for _, res := range h.listProjectResourcesForProject(ctx, issue.ProjectID) {

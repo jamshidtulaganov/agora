@@ -32,36 +32,41 @@ func (s *TaskService) maybePinTaskToDevRuntime(ctx context.Context, issue db.Iss
 	if !issue.ProjectID.Valid {
 		return task
 	}
-	ws, err := s.Queries.GetWorkspace(ctx, issue.WorkspaceID)
-	if err != nil || !util.ParseWorkspaceLabs(ws.Settings).QADevRuntimes {
-		return task
-	}
+	// QA-squad agents only — both the local_directory and dev_apps paths route
+	// QA where the app runs, and only QA tasks should be re-homed.
 	if inQA, qerr := s.Queries.AgentInQASquad(ctx, db.AgentInQASquadParams{
 		WorkspaceID: issue.WorkspaceID, MemberID: agent.ID,
 	}); qerr != nil || !inQA {
 		return task
 	}
-	devUser, ok := s.developerUserForIssue(ctx, issue)
-	if !ok {
-		return task
-	}
-	runtime, err := s.Queries.GetDevRuntimeForProject(ctx, db.GetDevRuntimeForProjectParams{
-		WorkspaceID: issue.WorkspaceID,
-		OwnerID:     devUser,
-		ProjectID:   util.UUIDToString(issue.ProjectID),
-	})
-	if err != nil {
-		// Fallback: a local_directory resource binds this project to a folder
-		// on a specific daemon — that daemon IS the developer's machine, so
-		// pin QA there too. Unlike dev_apps (a per-dev URL declaration) this is
-		// an explicit project→daemon binding, so it is NOT gated on the
-		// runtime being owned by the issue's developer; the labs +
-		// AgentInQASquad gates above still apply.
-		ldRuntime, lok := s.localDirectoryRuntimeForProject(ctx, issue)
-		if !lok {
-			return task // no online dev runtime and no online local_directory — normal flow
-		}
+
+	var runtime db.AgentRuntime
+	// 1. local_directory — a DELIBERATE per-project resource binding the project
+	//    to a folder on a specific daemon. Attaching it IS the opt-in, so this
+	//    path is NOT gated on the labs qa_dev_runtimes toggle: a project with a
+	//    local_directory always QAs on that daemon (only it has the
+	//    folder/worktree), taking precedence over the connected sdteam boxes.
+	if ldRuntime, lok := s.localDirectoryRuntimeForProject(ctx, issue); lok {
 		runtime = ldRuntime
+	} else {
+		// 2. dev_apps (daemon-per-dev URL declaration) — labs-gated opt-in.
+		ws, err := s.Queries.GetWorkspace(ctx, issue.WorkspaceID)
+		if err != nil || !util.ParseWorkspaceLabs(ws.Settings).QADevRuntimes {
+			return task
+		}
+		devUser, ok := s.developerUserForIssue(ctx, issue)
+		if !ok {
+			return task
+		}
+		rt, rerr := s.Queries.GetDevRuntimeForProject(ctx, db.GetDevRuntimeForProjectParams{
+			WorkspaceID: issue.WorkspaceID,
+			OwnerID:     devUser,
+			ProjectID:   util.UUIDToString(issue.ProjectID),
+		})
+		if rerr != nil {
+			return task // no online dev runtime and no local_directory — normal flow
+		}
+		runtime = rt
 	}
 	if task.RuntimeID.Valid && task.RuntimeID.Bytes == runtime.ID.Bytes {
 		return task // already routed there (agent lives on the dev's runtime)
