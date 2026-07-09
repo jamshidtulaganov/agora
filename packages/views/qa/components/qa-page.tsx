@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   ShieldQuestion,
   List,
+  ListChecks,
   LayoutGrid,
   Bug,
   Gauge,
@@ -48,6 +49,7 @@ import { AppLink } from "../../navigation";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { QAMetricsView } from "./qa-metrics-view";
 import { QASprintReadinessView } from "./qa-sprint-readiness-view";
+import { QASuiteView } from "./qa-suite-view";
 import { Lane, QAIssueRow } from "./qa-lane";
 import { BugsLens } from "./bugs-lens";
 
@@ -63,7 +65,7 @@ import { BugsLens } from "./bugs-lens";
 // page; this view is the queue + the verdict.
 
 type QAStatus = "fail" | "pending" | "pass";
-type ViewMode = "list" | "board" | "bugs" | "sprint" | "metrics";
+type ViewMode = "list" | "board" | "bugs" | "suite" | "sprint" | "metrics";
 type AssigneeKey = `${string}:${string}`;
 
 function qaStatusOf(issue: Issue): QAStatus {
@@ -239,6 +241,7 @@ export function QAPage() {
               <ViewToggle active={view === "list"} onClick={() => setView("list")} icon={List} label="List" />
               <ViewToggle active={view === "board"} onClick={() => setView("board")} icon={LayoutGrid} label="Board" />
               <ViewToggle active={view === "bugs"} onClick={() => setView("bugs")} icon={Bug} label="Bugs" />
+              <ViewToggle active={view === "suite"} onClick={() => setView("suite")} icon={ListChecks} label="Suite" />
               <ViewToggle active={view === "sprint"} onClick={() => setView("sprint")} icon={Rocket} label="Sprint" />
               <ViewToggle active={view === "metrics"} onClick={() => setView("metrics")} icon={Gauge} label="Metrics" />
             </div>
@@ -249,6 +252,8 @@ export function QAPage() {
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       {view === "metrics" ? (
         <QAMetricsView projectId={project !== "all" ? project : undefined} />
+      ) : view === "suite" ? (
+        <QASuiteView projectId={project !== "all" ? project : undefined} />
       ) : view === "sprint" ? (
         <QASprintReadinessView projectId={project !== "all" ? project : undefined} />
       ) : (
