@@ -35,6 +35,28 @@ export interface AgentProtocol {
 const LEADING_MENTION =
   /^\s*\[@([^\]]+)\]\(mention:\/\/(?:agent|squad)\/[0-9a-fA-F-]+\)\s*/;
 
+// Explicit backend marker: the slice-action dispatcher prepends
+// <!--agent-protocol:<backend-kind>--> so classification is EXACT (not the
+// wording heuristic below). An HTML comment → invisible in markdown, inert to
+// the agent. Backend kinds (run_qa, gen_test_cases, review_part, …) map to the
+// display kinds via BACKEND_KIND.
+const PROTOCOL_MARKER = /^\s*<!--\s*agent-protocol:([a-z_]+)\s*-->\s*/;
+
+const BACKEND_KIND: Record<string, AgentProtocolKind> = {
+  run_qa: "run_qa",
+  auto_docs: "write_docs",
+  write_docs: "write_docs",
+  write_tests: "write_tests",
+  gen_test_cases: "gen_tests",
+  run_test_cases: "gen_tests",
+  compile_tests: "gen_tests",
+  review_part: "review",
+  design_proposal: "design",
+  gen_design_manifest: "design",
+  design_audit: "design",
+  draft_code: "delegate",
+};
+
 // Below this instruction length it's a normal human @mention, not a machine
 // prompt — leave it rendered verbatim.
 const MIN_INSTRUCTION_LEN = 280;
@@ -61,16 +83,30 @@ export function parseAgentProtocol(
   authorType: string,
 ): AgentProtocol | null {
   if (authorType !== "agent" && authorType !== "system") return null;
-  const m = LEADING_MENTION.exec(content);
-  if (!m) return null;
-  const instruction = content.slice(m[0].length).trim();
-  if (instruction.length < MIN_INSTRUCTION_LEN) return null;
 
-  let kind: AgentProtocolKind = "delegate";
-  for (const rule of KIND_RULES) {
-    if (rule.re.test(instruction)) {
-      kind = rule.kind;
-      break;
+  // Explicit backend marker wins — exact kind, robust to instruction wording.
+  let rest = content;
+  let markedKind: AgentProtocolKind | null = null;
+  const mk = PROTOCOL_MARKER.exec(content);
+  if (mk) {
+    markedKind = BACKEND_KIND[mk[1] ?? ""] ?? "delegate";
+    rest = content.slice(mk[0].length);
+  }
+
+  const m = LEADING_MENTION.exec(rest);
+  if (!m) return null;
+  const instruction = rest.slice(m[0].length).trim();
+  // A marked comment is authoritative even if short; an unmarked one must clear
+  // the length floor so a normal human @mention isn't mistaken for a prompt.
+  if (!markedKind && instruction.length < MIN_INSTRUCTION_LEN) return null;
+
+  let kind: AgentProtocolKind = markedKind ?? "delegate";
+  if (!markedKind) {
+    for (const rule of KIND_RULES) {
+      if (rule.re.test(instruction)) {
+        kind = rule.kind;
+        break;
+      }
     }
   }
   return { agentName: (m[1] ?? "").trim(), kind, instruction };

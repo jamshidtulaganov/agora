@@ -350,6 +350,21 @@ interface ReadonlyContentProps {
   attachments?: Attachment[];
 }
 
+// Agent machine-payload fences: agents append these structured blocks to a
+// comment for the app to parse (QA verdict → qa-result, design → proposal,
+// etc.). The dedicated panels (QA evidence, DesignProposalSection, TestCases)
+// read them from the RAW comment content, so hiding them from the prose render
+// here is display-only — the human sees the readable summary, not a wall of
+// machine JSON. DISPLAY-ONLY: never mutate stored content with this.
+const AGENT_MACHINE_FENCE =
+  /(^|\n)[ \t]*```(?:qa-result|design-proposal|design-manifest|test-cases|knowledge-items)[ \t]*\n[\s\S]*?\n[ \t]*```[ \t]*(?=\n|$)/g;
+
+/** Strip agent machine-payload fenced blocks for human display. Exported for
+ * unit tests; applied only in the readonly render path. */
+export function stripAgentMachineBlocks(content: string): string {
+  return content.replace(AGENT_MACHINE_FENCE, "$1").trim();
+}
+
 // Memoized so a long timeline of comments (Inbox + IssueDetail) does not
 // re-run the full react-markdown + rehype-* + lowlight pipeline on every
 // parent re-render. Props are `content`/`className`/`attachments`, all
@@ -361,7 +376,7 @@ export const ReadonlyContent = memo(function ReadonlyContent({
   attachments,
 }: ReadonlyContentProps) {
   const processed = useMemo(
-    () => highlightToHtml(preprocessMarkdown(content)),
+    () => highlightToHtml(preprocessMarkdown(stripAgentMachineBlocks(content))),
     [content],
   );
   const wrapperRef = useRef<HTMLDivElement>(null);

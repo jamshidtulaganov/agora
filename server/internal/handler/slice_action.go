@@ -77,6 +77,16 @@ func isQASliceAction(kind string) bool {
 	}
 }
 
+// agentProtocolMarker prefixes a slice-action comment with an inert marker
+// (<!--agent-protocol:<kind>-->) so the UI can classify the comment EXACTLY —
+// render a human headline + collapse the machine prompt — instead of guessing
+// from the wording. It is an HTML comment: invisible in the rendered markdown
+// and harmless in the prompt the agent reads. Must sit at the very start, ahead
+// of the [@mention] link, so the frontend parser sees it first.
+func agentProtocolMarker(kind string) string {
+	return "<!--agent-protocol:" + kind + "-->\n"
+}
+
 // buildSliceInstruction renders the English instruction the resolved agent
 // receives for a scoped action. It is PURE — no I/O, no handler state — so it
 // is the single source of truth for slice-action wording and is exhaustively
@@ -1102,7 +1112,7 @@ func (h *Handler) maybeAutoDocsOnLabel(ctx context.Context, issue db.Issue, labe
 		return
 	}
 	instruction := buildSliceInstruction(sliceActionAutoDocs, "") + docsCtx + h.sliceActionQAManifestContext(ctx, issue)
-	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(agent.Name), uuidToString(agent.ID)) + instruction
+	content := agentProtocolMarker("auto_docs") + fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(agent.Name), uuidToString(agent.ID)) + instruction
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID:     issue.ID,
 		WorkspaceID: issue.WorkspaceID,
@@ -2173,7 +2183,7 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 		slog.Warn("auto run_qa: invalid actor id, skipping", "actor_id", actorID, "issue_id", uuidToString(issue.ID))
 		return
 	}
-	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
+	content := agentProtocolMarker("run_qa") + fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID:     issue.ID,
 		WorkspaceID: issue.WorkspaceID,
@@ -2270,7 +2280,7 @@ func (h *Handler) maybeGenTests(ctx context.Context, issue db.Issue, actorType, 
 		slog.Warn("auto gen_test_cases: invalid actor id, skipping", "actor_id", actorID, "issue_id", uuidToString(issue.ID))
 		return
 	}
-	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
+	content := agentProtocolMarker("gen_test_cases") + fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID:     issue.ID,
 		WorkspaceID: issue.WorkspaceID,
@@ -2358,7 +2368,7 @@ func (h *Handler) maybeRunTestsOnInReview(ctx context.Context, issue db.Issue, a
 		slog.Warn("auto run_test_cases: invalid actor id, skipping", "actor_id", actorID, "issue_id", uuidToString(issue.ID))
 		return
 	}
-	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
+	content := agentProtocolMarker("run_test_cases") + fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID:     issue.ID,
 		WorkspaceID: issue.WorkspaceID,
@@ -2809,7 +2819,7 @@ func (h *Handler) maybeCompileTestCases(ctx context.Context, issue db.Issue) {
 	if authorType != "member" && authorType != "agent" {
 		authorType = "member"
 	}
-	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
+	content := agentProtocolMarker("compile_tests") + fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID:     issue.ID,
 		WorkspaceID: issue.WorkspaceID,
@@ -3074,7 +3084,7 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 	// trigger parser matches the mention://agent/<id> URL, not the label — but
 	// a sanitized agent name keeps the rendered comment legible.
 	mentionPrefix := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(agent.Name), uuidToString(agent.ID))
-	content := mentionPrefix + instruction
+	content := agentProtocolMarker(req.Kind) + mentionPrefix + instruction
 
 	// Author the comment as the calling member. This is a human-initiated
 	// action on a human-owned issue, so the slice-action comment is attributed

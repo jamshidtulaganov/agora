@@ -41,3 +41,32 @@ describe("parseAgentProtocol", () => {
     expect(parseAgentProtocol(`Run QA for this issue as a DETERMINISTIC gate ${"x".repeat(400)}`, "agent")).toBeNull();
   });
 })
+
+describe("parseAgentProtocol — explicit backend marker", () => {
+  const mention = "[@QA Tester](mention://agent/11111111-1111-4111-8111-111111111111)";
+  it("uses the marker's exact kind (mapped), overriding the heuristic", () => {
+    // Body wording says nothing QA-ish, but the marker pins it to run_qa.
+    const c = `<!--agent-protocol:run_qa-->\n${mention} Please proceed with the delegated work now.`;
+    const p = parseAgentProtocol(c, "agent");
+    expect(p!.kind).toBe("run_qa");
+    expect(p!.agentName).toBe("QA Tester");
+    expect(p!.instruction.startsWith("Please proceed")).toBe(true);
+  });
+
+  it("maps backend vocabulary to display kinds", () => {
+    const mk = (k: string) => parseAgentProtocol(`<!--agent-protocol:${k}-->\n${mention} short.`, "agent")!.kind;
+    expect(mk("auto_docs")).toBe("write_docs");
+    expect(mk("gen_test_cases")).toBe("gen_tests");
+    expect(mk("run_test_cases")).toBe("gen_tests");
+    expect(mk("compile_tests")).toBe("gen_tests");
+    expect(mk("review_part")).toBe("review");
+    expect(mk("design_proposal")).toBe("design");
+    expect(mk("draft_code")).toBe("delegate");
+    expect(mk("something_new")).toBe("delegate");
+  });
+
+  it("honors a marked comment even below the length floor (marker is authoritative)", () => {
+    const c = `<!--agent-protocol:run_qa-->\n${mention} go.`;
+    expect(parseAgentProtocol(c, "agent")).not.toBeNull();
+  });
+})
