@@ -33,7 +33,6 @@ function workspaceScoped(slug: string) {
     inbox: () => `${ws}/inbox`,
     myIssues: () => `${ws}/my-issues`,
     qa: () => `${ws}/qa`,
-    qaDetail: (id: string) => `${ws}/qa/${encode(id)}`,
     policy: () => `${ws}/policy`,
     runtimes: () => `${ws}/runtimes`,
     runtimeDetail: (id: string) => `${ws}/runtimes/${encode(id)}`,

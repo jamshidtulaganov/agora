@@ -251,6 +251,11 @@ export function QAPage() {
 
   const hasFilters = assigneeFilter.length > 0 || priorityFilter.length > 0;
 
+  // The QA lens lives inside the issue cockpit now (docs/sdlc-stage-cockpit-plan.md
+  // phase D) — there is no more dedicated /qa/<id> page, so queue rows deep-link
+  // straight to the issue with the QA stage pre-selected.
+  const qaLensHref = (id: string) => `${wp.issueDetail(id)}?lens=qa`;
+
   return (
     // Fill the (overflow-hidden) <main> and own our scroll: the header stays
     // pinned, the content below scrolls — otherwise a long verdict lane is
@@ -370,7 +375,7 @@ export function QAPage() {
               key={key}
               {...lane}
               issues={lanes[key]}
-              href={wp.qaDetail}
+              href={qaLensHref}
               liveIssueIds={liveIssueIds}
               verdicts={verdicts}
               selected={selected}
@@ -418,7 +423,7 @@ export function QAPage() {
               key={key}
               {...lane}
               issues={lanes[key]}
-              href={wp.qaDetail}
+              href={qaLensHref}
               liveIssueIds={liveIssueIds}
               verdicts={verdicts}
               runningTaskByIssue={runningTaskByIssue}

@@ -56,8 +56,11 @@ export function QASprintReadinessView({ projectId }: { projectId?: string }) {
         every task passed and none is failing or pending.
       </p>
 
+      {/* The QA lens lives inside the issue cockpit now (docs/sdlc-stage-cockpit-plan.md
+          phase D) — there is no more dedicated /qa/<id> page, so these links
+          deep-link to the issue with the QA stage pre-selected. */}
       {sprints.map((s) => (
-        <SprintCard key={s.sprint_id} sprint={s} qaDetail={wp.qaDetail} />
+        <SprintCard key={s.sprint_id} sprint={s} qaDetail={(id) => `${wp.issueDetail(id)}?lens=qa`} />
       ))}
     </div>
   );

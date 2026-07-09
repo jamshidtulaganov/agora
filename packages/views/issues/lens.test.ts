@@ -27,10 +27,10 @@ describe("lens registry", () => {
     expect(isLensRegistered("issue")).toBe(true);
   });
 
-  it("has no stage lenses registered yet (phase C)", () => {
+  it("registers the qa lens (phase D); other stage lenses stay unregistered", () => {
     expect(isLensRegistered("design")).toBe(false);
     expect(isLensRegistered("dev")).toBe(false);
-    expect(isLensRegistered("qa")).toBe(false);
+    expect(isLensRegistered("qa")).toBe(true);
     expect(isLensRegistered("review")).toBe(false);
     expect(isLensRegistered("deploy")).toBe(false);
   });
@@ -44,9 +44,15 @@ describe("useLensParam", () => {
   });
 
   it("falls back to issue for an unknown/unregistered ?lens= value", () => {
-    const nav = makeNav({ searchParams: new URLSearchParams("lens=qa") });
+    const nav = makeNav({ searchParams: new URLSearchParams("lens=design") });
     const { result } = renderHook(() => useLensParam(), { wrapper: makeWrapper(nav) });
     expect(result.current.lens).toBe("issue");
+  });
+
+  it("recognizes the qa lens key from the URL (phase D)", () => {
+    const nav = makeNav({ searchParams: new URLSearchParams("lens=qa") });
+    const { result } = renderHook(() => useLensParam(), { wrapper: makeWrapper(nav) });
+    expect(result.current.lens).toBe("qa");
   });
 
   it("falls back to issue for garbage ?lens= input", () => {
