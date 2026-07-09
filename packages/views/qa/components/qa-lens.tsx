@@ -143,7 +143,7 @@ export function QALensBody({ issueId }: { issueId: string }) {
   if (isLoading || !issue) {
     return (
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[1600px] px-8 py-8">
+        <div className="w-full px-8 py-8">
           <p className="text-sm text-muted-foreground">{t(($) => $.timeline.loading)}</p>
         </div>
       </div>
@@ -152,7 +152,7 @@ export function QALensBody({ issueId }: { issueId: string }) {
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-[1600px] px-8 py-8">
+      <div className="w-full px-8 py-8">
         {/* Cockpit split, matching the issue detail page's own convention: the
             Live testing bay takes ALL remaining width on the LEFT (it drives a
             real Chromium pinned at a 1280×800 CDP frame, so it needs the room,
@@ -160,7 +160,7 @@ export function QALensBody({ issueId }: { issueId: string }) {
             (evidence you read, test cases, the call you make) sits on the
             RIGHT. Below lg the bay stacks ABOVE the review column (what's
             running first, then what you decide). */}
-        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start lg:gap-6">
+        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start lg:gap-6">
           {/* ── Live bay ─────────────────────────────────────────────────
               Both "live" surfaces together: the terminal feed of what the QA
               agent is doing right now, and the running app itself, watched

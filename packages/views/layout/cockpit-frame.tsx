@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@agora/ui/components/ui/resizable";
 import { Sheet, SheetContent } from "@agora/ui/components/ui/sheet";
@@ -43,6 +43,14 @@ export interface CockpitFrameProps {
    * SDLC stepper strip (docs/sdlc-stage-cockpit-plan.md, phase C).
    */
   topStrip?: ReactNode;
+  /**
+   * Soft-collapse signal for WIDE content (e.g. the QA lens's live browser,
+   * the dev lens's editor): flipping this true collapses the desktop rail so
+   * the content pane gets the width; flipping it false re-expands. The user's
+   * manual toggle still works in between — this only acts on transitions, it
+   * never fights an explicit open/close. No effect on mobile (Sheet).
+   */
+  railCollapsed?: boolean;
 }
 
 const DEFAULT_RAIL_MIN = 260;
@@ -69,6 +77,7 @@ export function CockpitFrame({
   defaultRailOpen = true,
   railWidths,
   topStrip,
+  railCollapsed,
 }: CockpitFrameProps) {
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({ id: layoutId });
   const railRef = usePanelRef();
@@ -81,6 +90,22 @@ export function CockpitFrame({
       setMobileRailOpen(false);
     }
   }, [isMobile]);
+
+  // Wide-content soft collapse: act only on TRANSITIONS of the signal —
+  // never on mount (so `defaultRailOpen` / the persisted layout stays the
+  // source of truth for the initial state) and never on re-render (so the
+  // user's manual toggle wins in between).
+  const prevRailCollapsed = useRef(railCollapsed);
+  useEffect(() => {
+    const prev = prevRailCollapsed.current;
+    prevRailCollapsed.current = railCollapsed;
+    if (isMobile || railCollapsed === undefined || railCollapsed === prev) return;
+    const panel = railRef.current;
+    if (!panel) return;
+    if (railCollapsed && !panel.isCollapsed()) panel.collapse();
+    else if (!railCollapsed && panel.isCollapsed()) panel.expand();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire on signal flips only
+  }, [railCollapsed, isMobile]);
 
   const railOpen = isMobile ? mobileRailOpen : desktopRailOpen;
 

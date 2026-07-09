@@ -2289,11 +2289,17 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // to until a later phase registers a Body.
   const registeredLens = activeLens !== "issue" ? getLens(activeLens) : undefined;
   const lensBody = registeredLens ? <registeredLens.Body issueId={id} /> : bodyContent;
+  // WIDE lenses carry their own right-hand column (QA review rail, editor
+  // chat) — three columns cramp the primary surface (the live browser /
+  // editor). Soft-collapse the frame rail while a wide lens is active; the
+  // header toggle still re-opens it on demand.
+  const wideLens = activeLens === "qa" || activeLens === "dev";
 
   return (
     <CockpitFrame
       layoutId={layoutId}
-      defaultRailOpen={defaultSidebarOpen}
+      defaultRailOpen={defaultSidebarOpen && !wideLens}
+      railCollapsed={wideLens}
       header={renderHeader}
       topStrip={
         <SDLCStepper
