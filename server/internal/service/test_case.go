@@ -6,7 +6,9 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/util"
@@ -93,6 +95,9 @@ type genTestRun struct {
 	// (status=pass). "unknown" (the default) is neutral — an [e2e] case with no
 	// baseline deploy, or a discrimination-flag-off run, never counts as evidence.
 	BaselineStatus string `json:"baseline_status"`
+	// CommitSha (Phase 3 — run identity) is `git rev-parse HEAD` of the checkout
+	// this run tested. Optional; validated to a 7-40 hex shape, else "".
+	CommitSha string `json:"commit_sha"`
 }
 
 type genCompiledScript struct {
@@ -263,6 +268,11 @@ func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, conte
 		return
 	}
 	scopedCaseIDs, scoped := s.scopedTestCaseIDsFromTrigger(ctx, triggerCommentID)
+	// ONE session per capture dispatch (Phase 3 — run identity): every run row
+	// written from this trigger shares the same session_id, so "which runs
+	// belong to the same execution" is a column, not a timestamp heuristic.
+	sessionID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	finishedAt := pgtype.Timestamptz{Time: time.Now(), Valid: true}
 
 	inserted := 0
 	for _, r := range runs {
@@ -318,6 +328,9 @@ func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, conte
 			RunByID:        agentID,
 			TracePath:      strings.TrimSpace(r.TracePath),
 			BaselineStatus: baselineStatus,
+			CommitSha:      validCommitSha(r.CommitSha),
+			SessionID:      sessionID,
+			FinishedAt:     finishedAt,
 		}); err != nil {
 			slog.Warn("capture test runs: insert failed", "error", err, "issue_id", util.UUIDToString(issue.ID))
 			continue

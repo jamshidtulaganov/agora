@@ -121,25 +121,34 @@ func (q *Queries) CreateTestCase(ctx context.Context, arg CreateTestCaseParams) 
 
 const createTestRun = `-- name: CreateTestRun :one
 INSERT INTO test_run (
-    workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, trace_path, baseline_status
+    workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, trace_path, baseline_status,
+    commit_sha, session_id, started_at, finished_at
 )
-VALUES ($1, $2, $9, $3, $4, $5, $6, $10, $7, $8)
-RETURNING id, workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, created_at, trace_path, baseline_status
+VALUES ($1, $2, $10, $3, $4, $5, $6, $11, $7, $8,
+    $9, $12, $13, $14)
+RETURNING id, workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, created_at, trace_path, baseline_status, commit_sha, session_id, started_at, finished_at
 `
 
 type CreateTestRunParams struct {
-	WorkspaceID    pgtype.UUID `json:"workspace_id"`
-	TestCaseID     pgtype.UUID `json:"test_case_id"`
-	Status         string      `json:"status"`
-	Output         string      `json:"output"`
-	RunSource      string      `json:"run_source"`
-	RunByType      string      `json:"run_by_type"`
-	TracePath      string      `json:"trace_path"`
-	BaselineStatus string      `json:"baseline_status"`
-	IssueID        pgtype.UUID `json:"issue_id"`
-	RunByID        pgtype.UUID `json:"run_by_id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	TestCaseID     pgtype.UUID        `json:"test_case_id"`
+	Status         string             `json:"status"`
+	Output         string             `json:"output"`
+	RunSource      string             `json:"run_source"`
+	RunByType      string             `json:"run_by_type"`
+	TracePath      string             `json:"trace_path"`
+	BaselineStatus string             `json:"baseline_status"`
+	CommitSha      string             `json:"commit_sha"`
+	IssueID        pgtype.UUID        `json:"issue_id"`
+	RunByID        pgtype.UUID        `json:"run_by_id"`
+	SessionID      pgtype.UUID        `json:"session_id"`
+	StartedAt      pgtype.Timestamptz `json:"started_at"`
+	FinishedAt     pgtype.Timestamptz `json:"finished_at"`
 }
 
+// commit_sha/session_id/started_at/finished_at are the run's IDENTITY
+// (migration 157): which checkout it tested, which dispatch it belongs to,
+// and when it ran. All fail-open — ”/NULL when the reporter didn't say.
 func (q *Queries) CreateTestRun(ctx context.Context, arg CreateTestRunParams) (TestRun, error) {
 	row := q.db.QueryRow(ctx, createTestRun,
 		arg.WorkspaceID,
@@ -150,8 +159,12 @@ func (q *Queries) CreateTestRun(ctx context.Context, arg CreateTestRunParams) (T
 		arg.RunByType,
 		arg.TracePath,
 		arg.BaselineStatus,
+		arg.CommitSha,
 		arg.IssueID,
 		arg.RunByID,
+		arg.SessionID,
+		arg.StartedAt,
+		arg.FinishedAt,
 	)
 	var i TestRun
 	err := row.Scan(
@@ -167,6 +180,10 @@ func (q *Queries) CreateTestRun(ctx context.Context, arg CreateTestRunParams) (T
 		&i.CreatedAt,
 		&i.TracePath,
 		&i.BaselineStatus,
+		&i.CommitSha,
+		&i.SessionID,
+		&i.StartedAt,
+		&i.FinishedAt,
 	)
 	return i, err
 }
@@ -210,7 +227,7 @@ func (q *Queries) GetTestCase(ctx context.Context, arg GetTestCaseParams) (TestC
 }
 
 const getTestRunByID = `-- name: GetTestRunByID :one
-SELECT id, workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, created_at, trace_path, baseline_status FROM test_run WHERE id = $1
+SELECT id, workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, created_at, trace_path, baseline_status, commit_sha, session_id, started_at, finished_at FROM test_run WHERE id = $1
 `
 
 // One run by id, for the trace-viewer launch endpoint. NOT workspace-scoped in
@@ -233,6 +250,10 @@ func (q *Queries) GetTestRunByID(ctx context.Context, id pgtype.UUID) (TestRun, 
 		&i.CreatedAt,
 		&i.TracePath,
 		&i.BaselineStatus,
+		&i.CommitSha,
+		&i.SessionID,
+		&i.StartedAt,
+		&i.FinishedAt,
 	)
 	return i, err
 }
@@ -719,7 +740,7 @@ func (q *Queries) ListTestCasesForProject(ctx context.Context, arg ListTestCases
 }
 
 const listTestRunsForCase = `-- name: ListTestRunsForCase :many
-SELECT id, workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, created_at, trace_path, baseline_status FROM test_run
+SELECT id, workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, created_at, trace_path, baseline_status, commit_sha, session_id, started_at, finished_at FROM test_run
 WHERE test_case_id = $1 AND workspace_id = $2
 ORDER BY created_at DESC
 LIMIT $3
@@ -753,6 +774,10 @@ func (q *Queries) ListTestRunsForCase(ctx context.Context, arg ListTestRunsForCa
 			&i.CreatedAt,
 			&i.TracePath,
 			&i.BaselineStatus,
+			&i.CommitSha,
+			&i.SessionID,
+			&i.StartedAt,
+			&i.FinishedAt,
 		); err != nil {
 			return nil, err
 		}

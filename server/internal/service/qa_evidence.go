@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/events"
@@ -23,11 +24,75 @@ var qaResultBlockRe = regexp.MustCompile("(?s)```qa-result\\s*\\n(.*?)```")
 // branch_sha are intentionally NOT part of the block in P1 — evidence is keyed
 // (issue, "", "") so each verdict refreshes one latest-row per issue. P2 widens
 // the block to carry the tested sha + baseline ref for per-commit history.
+//
+// commit_sha / started_at (Phase 3 — run identity) are OPTIONAL: commit_sha is
+// `git rev-parse HEAD` of the checkout the gate tested (validated to a 7-40
+// hex shape, else discarded); started_at is when the gate began (RFC3339). A
+// finished_at in the fence is tolerated (unknown JSON keys are ignored) but
+// the capture stamps its own now() — the capture moment is authoritative.
 type qaResultPayload struct {
 	Verdict     string            `json:"verdict"`
 	Summary     string            `json:"summary"`
 	Commands    []json.RawMessage `json:"commands"`
 	Screenshots []json.RawMessage `json:"screenshots"`
+	CommitSha   string            `json:"commit_sha"`
+	StartedAt   string            `json:"started_at"`
+}
+
+// commitShaRe is the accepted commit_sha shape: 7-40 hex chars (a short or
+// full git sha). Anything else — prose, a branch name, an injection attempt —
+// fails open to "" (unreported), never an error.
+var commitShaRe = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)
+
+// validCommitSha normalizes an agent-reported sha: trimmed + lowercased when
+// it matches the 7-40 hex shape, "" otherwise (fail-open).
+func validCommitSha(s string) string {
+	trimmed := strings.TrimSpace(s)
+	if !commitShaRe.MatchString(trimmed) {
+		return ""
+	}
+	return strings.ToLower(trimmed)
+}
+
+// parseFenceTime parses an agent-reported RFC3339 timestamp from a fence
+// field. Invalid/absent → a NULL timestamptz (fail-open).
+func parseFenceTime(s string) pgtype.Timestamptz {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return pgtype.Timestamptz{}
+	}
+	ts, err := time.Parse(time.RFC3339, trimmed)
+	if err != nil {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: ts, Valid: true}
+}
+
+// QADispatchAutoMarker tags an AUTO-fired run_qa dispatch comment (the
+// in_review auto-QA path, maybeRunQAOnInReview) — an inert HTML comment next
+// to the agent-protocol marker, invisible in rendered markdown. The capture
+// reads it off the trigger comment to record qa_evidence.triggered_by="auto"
+// vs "agent" (an agent verdict from a human/agent-fired dispatch). Defined
+// here (not in handler) because the service layer parses it and handler
+// already imports service.
+const QADispatchAutoMarker = "<!--qa-dispatch:auto-->"
+
+// qaTriggeredBy classifies who fired the gate whose verdict is being
+// captured: "auto" when the trigger comment carries the auto-dispatch marker,
+// else "agent". (The human override endpoint writes "human" directly and
+// never goes through this.) Fail-open: unresolvable trigger → "agent".
+func (s *TaskService) qaTriggeredBy(ctx context.Context, triggerCommentID pgtype.UUID) string {
+	if !triggerCommentID.Valid {
+		return "agent"
+	}
+	trigger, err := s.Queries.GetComment(ctx, triggerCommentID)
+	if err != nil {
+		return "agent"
+	}
+	if strings.Contains(trigger.Content, QADispatchAutoMarker) {
+		return "auto"
+	}
+	return "agent"
 }
 
 // captureQAEvidence persists a run_qa verdict comment as a durable qa_evidence
@@ -83,10 +148,18 @@ func parseQAResultBlock(content string) (raw string, p qaResultPayload, ok bool)
 // still guarantees agreement, chosen over a cross-table transaction since
 // UpsertQAEvidence and AttachLabelToIssue are separate tables with their own
 // upsert/idempotency semantics).
-func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, content string) (verdict string, newlyLabeled bool) {
+// triggerCommentID (Phase 3) is the dispatch comment that fired this gate,
+// when known — read to classify triggered_by (auto vs agent). Zero-value =
+// unknown → "agent".
+func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, content string, triggerCommentID pgtype.UUID) (verdict string, newlyLabeled bool) {
 	raw, p, ok := parseQAResultBlock(content)
 	if !ok {
 		return "", false
+	}
+	identity := qaEvidenceIdentity{
+		CommitSha:   validCommitSha(p.CommitSha),
+		TriggeredBy: s.qaTriggeredBy(ctx, triggerCommentID),
+		StartedAt:   parseFenceTime(p.StartedAt),
 	}
 
 	v := strings.ToLower(strings.TrimSpace(p.Verdict))
@@ -115,7 +188,7 @@ func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, con
 	// merge gate to disagree with — persist evidence unconditionally, same as
 	// before.
 	if label == "" {
-		if err := s.upsertQAEvidenceRow(ctx, issue, raw, p); err != nil {
+		if err := s.upsertQAEvidenceRow(ctx, issue, raw, p, identity); err != nil {
 			return "", false
 		}
 		s.captureDesignVerdictLabel(ctx, issue, raw)
@@ -144,7 +217,7 @@ func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, con
 		newlyLabeled = true
 	}
 
-	if err := s.upsertQAEvidenceRow(ctx, issue, raw, p); err != nil {
+	if err := s.upsertQAEvidenceRow(ctx, issue, raw, p, identity); err != nil {
 		// The label is already live at this point; leaving it there would swap
 		// the divergence direction (label present, no evidence) instead of
 		// closing it. If WE just attached it fresh this call, undo that attach
@@ -195,11 +268,21 @@ func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, con
 	return v, newlyLabeled
 }
 
+// qaEvidenceIdentity is the Phase 3 run-identity metadata riding on the
+// single current evidence row: the sha the gate tested, who fired it
+// (agent|human|auto), and when it began. finished_at is stamped by the
+// upsert itself (now()).
+type qaEvidenceIdentity struct {
+	CommitSha   string
+	TriggeredBy string
+	StartedAt   pgtype.Timestamptz
+}
+
 // upsertQAEvidenceRow writes the qa_evidence row and publishes the ready
 // event. Split out of CaptureQAEvidence so the label-first ordering above can
 // call it from both branches (labeled and label-less verdicts) without
 // duplicating the upsert + publish + log.
-func (s *TaskService) upsertQAEvidenceRow(ctx context.Context, issue db.Issue, raw string, p qaResultPayload) error {
+func (s *TaskService) upsertQAEvidenceRow(ctx context.Context, issue db.Issue, raw string, p qaResultPayload, identity qaEvidenceIdentity) error {
 	if _, err := s.Queries.UpsertQAEvidence(ctx, db.UpsertQAEvidenceParams{
 		WorkspaceID: issue.WorkspaceID,
 		IssueID:     issue.ID,
@@ -209,6 +292,9 @@ func (s *TaskService) upsertQAEvidenceRow(ctx context.Context, issue db.Issue, r
 		Summary:     p.Summary,
 		ResultJson:  []byte(raw),
 		Source:      "agent",
+		CommitSha:   identity.CommitSha,
+		TriggeredBy: identity.TriggeredBy,
+		StartedAt:   identity.StartedAt,
 	}); err != nil {
 		slog.Warn("capture qa evidence: upsert failed", "error", err, "issue_id", util.UUIDToString(issue.ID))
 		return err

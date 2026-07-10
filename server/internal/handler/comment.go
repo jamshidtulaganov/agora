@@ -1050,7 +1050,7 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 		// the same downstream automations the AttachLabel handler fires, so the
 		// merge-gate / done-gate / autoroute run even when the agent only wrote a
 		// verdict comment (SD-588 stress finding).
-		if verdict, labeled := h.TaskService.CaptureQAEvidence(r.Context(), issue, comment.Content); labeled {
+		if verdict, labeled := h.TaskService.CaptureQAEvidence(r.Context(), issue, comment.Content, comment.ParentID); labeled {
 			gateLabel := "qa:" + verdict
 			go h.maybeAutoDocsOnLabel(context.Background(), issue, gateLabel, authorID)
 			go h.maybeMergeOnQAPass(context.Background(), issue, gateLabel, authorID)

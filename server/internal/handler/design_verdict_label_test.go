@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -53,7 +54,7 @@ func TestCaptureQAEvidenceAttachesDesignVerdictLabel(t *testing.T) {
 	passContent := "```qa-result\n" +
 		`{"verdict":"pass","summary":"functional pass","commands":[{"cmd":"pnpm test","branch_exit":0,"kind":"pass"}],"design":{"verdict":"pass","reference_node":"1:2"}}` +
 		"\n```"
-	if verdict, _ := testHandler.TaskService.CaptureQAEvidence(ctx, issue, passContent); verdict != "pass" {
+	if verdict, _ := testHandler.TaskService.CaptureQAEvidence(ctx, issue, passContent, pgtype.UUID{}); verdict != "pass" {
 		t.Fatalf("CaptureQAEvidence: verdict = %q, want pass", verdict)
 	}
 	if names := labelNames(); !names["design:pass"] || names["design:fail"] {
@@ -66,7 +67,7 @@ func TestCaptureQAEvidenceAttachesDesignVerdictLabel(t *testing.T) {
 		`{"verdict":"pass","summary":"functional still pass","commands":[{"cmd":"pnpm test","branch_exit":0,"kind":"pass"}],"design":{"verdict":"fail",` +
 		`"mismatches":[{"kind":"color","selector":"button.primary","expected":"#2563EB","actual":"#000000"}]}}` +
 		"\n```"
-	if verdict, _ := testHandler.TaskService.CaptureQAEvidence(ctx, issue, failContent); verdict != "pass" {
+	if verdict, _ := testHandler.TaskService.CaptureQAEvidence(ctx, issue, failContent, pgtype.UUID{}); verdict != "pass" {
 		t.Fatalf("CaptureQAEvidence: verdict = %q, want pass (top-level verdict unrelated to design)", verdict)
 	}
 	if names := labelNames(); names["design:pass"] || !names["design:fail"] {
@@ -78,7 +79,7 @@ func TestCaptureQAEvidenceAttachesDesignVerdictLabel(t *testing.T) {
 	skippedContent := "```qa-result\n" +
 		`{"verdict":"pass","summary":"figma unreachable","commands":[{"cmd":"pnpm test","branch_exit":0,"kind":"pass"}],"design":{"verdict":"skipped"}}` +
 		"\n```"
-	if verdict, _ := testHandler.TaskService.CaptureQAEvidence(ctx, issue, skippedContent); verdict != "pass" {
+	if verdict, _ := testHandler.TaskService.CaptureQAEvidence(ctx, issue, skippedContent, pgtype.UUID{}); verdict != "pass" {
 		t.Fatalf("CaptureQAEvidence: verdict = %q, want pass", verdict)
 	}
 	if names := labelNames(); names["design:pass"] || !names["design:fail"] {
@@ -88,7 +89,7 @@ func TestCaptureQAEvidenceAttachesDesignVerdictLabel(t *testing.T) {
 	// 4. A qa-result with no design object at all is likewise a no-op for
 	// design labels (e.g. an issue with no Figma refs never got the appendix).
 	noDesignContent := "```qa-result\n" + `{"verdict":"fail","summary":"unrelated functional failure"}` + "\n```"
-	if verdict, _ := testHandler.TaskService.CaptureQAEvidence(ctx, issue, noDesignContent); verdict != "fail" {
+	if verdict, _ := testHandler.TaskService.CaptureQAEvidence(ctx, issue, noDesignContent, pgtype.UUID{}); verdict != "fail" {
 		t.Fatalf("CaptureQAEvidence: verdict = %q, want fail", verdict)
 	}
 	if names := labelNames(); names["design:pass"] || !names["design:fail"] {

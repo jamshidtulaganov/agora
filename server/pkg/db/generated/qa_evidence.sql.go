@@ -12,7 +12,7 @@ import (
 )
 
 const getLatestQAEvidenceForIssue = `-- name: GetLatestQAEvidenceForIssue :one
-SELECT id, workspace_id, issue_id, baseline_ref, branch_sha, verdict, summary, result_json, captured_at, created_at, source FROM qa_evidence
+SELECT id, workspace_id, issue_id, baseline_ref, branch_sha, verdict, summary, result_json, captured_at, created_at, source, commit_sha, triggered_by, started_at, finished_at FROM qa_evidence
 WHERE issue_id = $1 AND workspace_id = $2
 ORDER BY captured_at DESC
 LIMIT 1
@@ -39,6 +39,10 @@ func (q *Queries) GetLatestQAEvidenceForIssue(ctx context.Context, arg GetLatest
 		&i.CapturedAt,
 		&i.CreatedAt,
 		&i.Source,
+		&i.CommitSha,
+		&i.TriggeredBy,
+		&i.StartedAt,
+		&i.FinishedAt,
 	)
 	return i, err
 }
@@ -136,27 +140,38 @@ INSERT INTO qa_evidence (
     summary,
     result_json,
     source,
+    commit_sha,
+    triggered_by,
+    started_at,
+    finished_at,
     captured_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now())
 ON CONFLICT (issue_id, baseline_ref, branch_sha) DO UPDATE
-SET verdict     = EXCLUDED.verdict,
-    summary     = EXCLUDED.summary,
-    result_json = EXCLUDED.result_json,
-    source      = EXCLUDED.source,
-    captured_at = now()
-RETURNING id, workspace_id, issue_id, baseline_ref, branch_sha, verdict, summary, result_json, captured_at, created_at, source
+SET verdict      = EXCLUDED.verdict,
+    summary      = EXCLUDED.summary,
+    result_json  = EXCLUDED.result_json,
+    source       = EXCLUDED.source,
+    commit_sha   = EXCLUDED.commit_sha,
+    triggered_by = EXCLUDED.triggered_by,
+    started_at   = EXCLUDED.started_at,
+    finished_at  = now(),
+    captured_at  = now()
+RETURNING id, workspace_id, issue_id, baseline_ref, branch_sha, verdict, summary, result_json, captured_at, created_at, source, commit_sha, triggered_by, started_at, finished_at
 `
 
 type UpsertQAEvidenceParams struct {
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
-	IssueID     pgtype.UUID `json:"issue_id"`
-	BaselineRef string      `json:"baseline_ref"`
-	BranchSha   string      `json:"branch_sha"`
-	Verdict     string      `json:"verdict"`
-	Summary     string      `json:"summary"`
-	ResultJson  []byte      `json:"result_json"`
-	Source      string      `json:"source"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	IssueID     pgtype.UUID        `json:"issue_id"`
+	BaselineRef string             `json:"baseline_ref"`
+	BranchSha   string             `json:"branch_sha"`
+	Verdict     string             `json:"verdict"`
+	Summary     string             `json:"summary"`
+	ResultJson  []byte             `json:"result_json"`
+	Source      string             `json:"source"`
+	CommitSha   string             `json:"commit_sha"`
+	TriggeredBy string             `json:"triggered_by"`
+	StartedAt   pgtype.Timestamptz `json:"started_at"`
 }
 
 // QA evidence — the durable, evidence-first QA verdict per (issue, baseline, sha).
@@ -165,6 +180,12 @@ type UpsertQAEvidenceParams struct {
 // Insert the parsed verdict, or refresh a same-(issue,baseline_ref,branch_sha)
 // re-run in place (a re-run on an ADVANCED sha writes a new row instead). Keeps
 // evidence immutable per tested commit while letting a repeated smoke update.
+//
+// commit_sha / triggered_by / started_at / finished_at (migration 157) are
+// run-identity METADATA on the single current row — deliberately NOT part of
+// the (issue_id, baseline_ref, branch_sha) conflict key, which keeps its
+// one-current-row overwrite semantics untouched (see the migration comment).
+// finished_at is stamped at capture time; started_at only when reported.
 func (q *Queries) UpsertQAEvidence(ctx context.Context, arg UpsertQAEvidenceParams) (QaEvidence, error) {
 	row := q.db.QueryRow(ctx, upsertQAEvidence,
 		arg.WorkspaceID,
@@ -175,6 +196,9 @@ func (q *Queries) UpsertQAEvidence(ctx context.Context, arg UpsertQAEvidencePara
 		arg.Summary,
 		arg.ResultJson,
 		arg.Source,
+		arg.CommitSha,
+		arg.TriggeredBy,
+		arg.StartedAt,
 	)
 	var i QaEvidence
 	err := row.Scan(
@@ -189,6 +213,10 @@ func (q *Queries) UpsertQAEvidence(ctx context.Context, arg UpsertQAEvidencePara
 		&i.CapturedAt,
 		&i.CreatedAt,
 		&i.Source,
+		&i.CommitSha,
+		&i.TriggeredBy,
+		&i.StartedAt,
+		&i.FinishedAt,
 	)
 	return i, err
 }

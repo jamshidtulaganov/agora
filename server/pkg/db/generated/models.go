@@ -704,6 +704,10 @@ type QaEvidence struct {
 	CapturedAt  pgtype.Timestamptz `json:"captured_at"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	Source      string             `json:"source"`
+	CommitSha   string             `json:"commit_sha"`
+	TriggeredBy string             `json:"triggered_by"`
+	StartedAt   pgtype.Timestamptz `json:"started_at"`
+	FinishedAt  pgtype.Timestamptz `json:"finished_at"`
 }
 
 type Skill struct {
@@ -899,6 +903,10 @@ type TestRun struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	TracePath      string             `json:"trace_path"`
 	BaselineStatus string             `json:"baseline_status"`
+	CommitSha      string             `json:"commit_sha"`
+	SessionID      pgtype.UUID        `json:"session_id"`
+	StartedAt      pgtype.Timestamptz `json:"started_at"`
+	FinishedAt     pgtype.Timestamptz `json:"finished_at"`
 }
 
 type User struct {

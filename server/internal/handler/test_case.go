@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
@@ -409,6 +410,10 @@ func (h *Handler) CreateTestCaseRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "status must be pass | fail | skip | blocked")
 		return
 	}
+	// Run identity (Phase 3): a human manual run mints its OWN session id (it
+	// is its own execution, not part of an agent dispatch) and finishes at
+	// record time. commit_sha stays "" — a hand-driven run doesn't know the
+	// checkout's sha.
 	run, err := h.Queries.CreateTestRun(r.Context(), db.CreateTestRunParams{
 		WorkspaceID: tc.WorkspaceID,
 		TestCaseID:  tc.ID,
@@ -418,6 +423,8 @@ func (h *Handler) CreateTestCaseRun(w http.ResponseWriter, r *http.Request) {
 		RunSource:   "human",
 		RunByType:   "member",
 		RunByID:     parseUUID(userID),
+		SessionID:   pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		FinishedAt:  pgtype.Timestamptz{Time: time.Now(), Valid: true},
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to record run")

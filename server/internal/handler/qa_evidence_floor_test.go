@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -44,7 +45,7 @@ func TestQAEvidenceFloorDowngradesZeroCommandPass(t *testing.T) {
 	}
 
 	content := "```qa-result\n" + `{"verdict":"pass","commands":[]}` + "\n```"
-	verdict, labeled := testHandler.TaskService.CaptureQAEvidence(ctx, issue, content)
+	verdict, labeled := testHandler.TaskService.CaptureQAEvidence(ctx, issue, content, pgtype.UUID{})
 	if verdict != "" || labeled {
 		t.Fatalf("CaptureQAEvidence: verdict=%q labeled=%v, want \"\"/false (verdict not applied)", verdict, labeled)
 	}
@@ -102,7 +103,7 @@ func TestQAEvidenceFloorAllowsPassWithCommands(t *testing.T) {
 	content := "```qa-result\n" +
 		`{"verdict":"pass","summary":"all green","commands":[{"cmd":"go test ./...","branch_exit":0,"kind":"pass"}]}` +
 		"\n```"
-	verdict, labeled := testHandler.TaskService.CaptureQAEvidence(ctx, issue, content)
+	verdict, labeled := testHandler.TaskService.CaptureQAEvidence(ctx, issue, content, pgtype.UUID{})
 	if verdict != "pass" || !labeled {
 		t.Fatalf("CaptureQAEvidence: verdict=%q labeled=%v, want pass/true", verdict, labeled)
 	}
@@ -149,7 +150,7 @@ func TestQAEvidenceFloorRequiresVisualEvidenceForUICase(t *testing.T) {
 	content := "```qa-result\n" +
 		`{"verdict":"pass","summary":"looked fine","commands":[{"cmd":"curl -s https://box/login","branch_exit":0,"kind":"pass"}]}` +
 		"\n```"
-	verdict, labeled := testHandler.TaskService.CaptureQAEvidence(ctx, issue, content)
+	verdict, labeled := testHandler.TaskService.CaptureQAEvidence(ctx, issue, content, pgtype.UUID{})
 	if verdict != "" || labeled {
 		t.Fatalf("CaptureQAEvidence: verdict=%q labeled=%v, want \"\"/false (insufficient visual evidence for a UI case)", verdict, labeled)
 	}
@@ -192,7 +193,7 @@ func TestQAEvidenceFloorAllowsUICaseWithScreenshot(t *testing.T) {
 	content := "```qa-result\n" +
 		`{"verdict":"pass","summary":"looked fine","commands":[{"cmd":"node run.mjs","branch_exit":0,"kind":"pass"}],"screenshots":["/tmp/login.png"]}` +
 		"\n```"
-	verdict, labeled := testHandler.TaskService.CaptureQAEvidence(ctx, issue, content)
+	verdict, labeled := testHandler.TaskService.CaptureQAEvidence(ctx, issue, content, pgtype.UUID{})
 	if verdict != "pass" || !labeled {
 		t.Fatalf("CaptureQAEvidence: verdict=%q labeled=%v, want pass/true", verdict, labeled)
 	}

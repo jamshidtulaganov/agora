@@ -121,6 +121,17 @@ func (h *Handler) OverrideQAVerdict(w http.ResponseWriter, r *http.Request) {
 	// result_json is preserved with the override stamp merged in, so the
 	// Checks section keeps rendering the command table the agent produced
 	// while verdict/source/summary now speak for the human.
+	// Run identity (Phase 3): triggered_by="human". commit_sha is PRESERVED
+	// from the prior row — the human is judging the same tested state the
+	// agent reported, and keeping the sha means stale-green invalidation
+	// (head moved past the evidence sha → stale) still applies to overridden
+	// verdicts instead of being silently disarmed by an override.
+	priorCommitSha := ""
+	if prior, perr := h.Queries.GetLatestQAEvidenceForIssue(r.Context(), db.GetLatestQAEvidenceForIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+	}); perr == nil {
+		priorCommitSha = prior.CommitSha
+	}
 	resultJSON := h.overrideResultJSON(r.Context(), issue, qaOverrideStamp{
 		ByUserID: userID, ByName: userName, Reason: reason,
 	})
@@ -137,6 +148,8 @@ func (h *Handler) OverrideQAVerdict(w http.ResponseWriter, r *http.Request) {
 		Summary:     summary,
 		ResultJson:  resultJSON,
 		Source:      "human",
+		CommitSha:   priorCommitSha,
+		TriggeredBy: "human",
 	})
 	if err != nil {
 		slog.Warn("qa override: evidence upsert failed", "error", err, "issue_id", uuidToString(issue.ID))

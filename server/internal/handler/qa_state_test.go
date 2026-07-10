@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
@@ -51,7 +52,7 @@ func TestQAGateFromReconciledStateFailsClosedOnFailingCase(t *testing.T) {
 	passContent := "```qa-result\n" +
 		`{"verdict":"pass","summary":"looks good","commands":[{"cmd":"go test ./...","branch_exit":0,"kind":"pass"}]}` +
 		"\n```"
-	if verdict, labeled := testHandler.TaskService.CaptureQAEvidence(ctx, issue, passContent); verdict != "pass" || !labeled {
+	if verdict, labeled := testHandler.TaskService.CaptureQAEvidence(ctx, issue, passContent, pgtype.UUID{}); verdict != "pass" || !labeled {
 		t.Fatalf("CaptureQAEvidence: verdict=%q labeled=%v, want pass/true", verdict, labeled)
 	}
 
@@ -111,7 +112,7 @@ func TestQAGateFromReconciledStateCleanPass(t *testing.T) {
 	passContent := "```qa-result\n" +
 		`{"verdict":"pass","summary":"all green","commands":[{"cmd":"pnpm test","branch_exit":0,"kind":"pass"}]}` +
 		"\n```"
-	if verdict, labeled := testHandler.TaskService.CaptureQAEvidence(ctx, issue, passContent); verdict != "pass" || !labeled {
+	if verdict, labeled := testHandler.TaskService.CaptureQAEvidence(ctx, issue, passContent, pgtype.UUID{}); verdict != "pass" || !labeled {
 		t.Fatalf("CaptureQAEvidence: verdict=%q labeled=%v, want pass/true", verdict, labeled)
 	}
 

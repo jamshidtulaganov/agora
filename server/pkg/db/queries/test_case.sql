@@ -95,10 +95,15 @@ SET archived_at = now(), updated_at = now()
 WHERE id = $1 AND workspace_id = $2;
 
 -- name: CreateTestRun :one
+-- commit_sha/session_id/started_at/finished_at are the run's IDENTITY
+-- (migration 157): which checkout it tested, which dispatch it belongs to,
+-- and when it ran. All fail-open — ''/NULL when the reporter didn't say.
 INSERT INTO test_run (
-    workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, trace_path, baseline_status
+    workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, trace_path, baseline_status,
+    commit_sha, session_id, started_at, finished_at
 )
-VALUES ($1, $2, sqlc.narg(issue_id), $3, $4, $5, $6, sqlc.narg(run_by_id), $7, $8)
+VALUES ($1, $2, sqlc.narg(issue_id), $3, $4, $5, $6, sqlc.narg(run_by_id), $7, $8,
+    $9, sqlc.narg(session_id), sqlc.narg(started_at), sqlc.narg(finished_at))
 RETURNING *;
 
 -- name: HasDiscriminatingRunForIssue :one

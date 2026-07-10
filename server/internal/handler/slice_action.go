@@ -2055,7 +2055,10 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 		slog.Warn("auto run_qa: invalid actor id, skipping", "actor_id", actorID, "issue_id", uuidToString(issue.ID))
 		return
 	}
-	content := agentProtocolMarker("run_qa") + fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
+	// QADispatchAutoMarker (Phase 3): tag this dispatch as AUTO-fired so the
+	// verdict capture records triggered_by="auto" — a manual Re-run (the
+	// CreateSliceAction path) carries no such marker and records "agent".
+	content := agentProtocolMarker("run_qa") + service.QADispatchAutoMarker + "\n" + fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID:     issue.ID,
 		WorkspaceID: issue.WorkspaceID,
@@ -2654,7 +2657,8 @@ func (h *Handler) sliceActionGateTestCasesContext(ctx context.Context, issue db.
 		"api = deterministic HTTP/response assertion; unit = run it as a unit check; manual = perform it by hand " +
 		"if feasible, else mark it blocked and say why), and report a verdict for EACH by its id in a fenced " +
 		"```test-runs``` code block at the END of your comment — same schema run_test_cases uses: a JSON array " +
-		"`[{\"test_case_id\":\"<id>\",\"status\":\"pass\"|\"fail\"|\"blocked\",\"output\":\"<one-line evidence>\"}]`. " +
+		"`[{\"test_case_id\":\"<id>\",\"status\":\"pass\"|\"fail\"|\"blocked\",\"output\":\"<one-line evidence>\"," +
+		"\"commit_sha\":\"<git rev-parse HEAD of the checkout you tested; omit when no git checkout>\"}]`. " +
 		"A FAILING defined case means this gate's overall verdict CANNOT be \"pass\" — set qa:fail (or qa:blocked " +
 		"if it could not run) instead, even if everything else about the change looks fine.")
 	b.WriteString(formatAutomatedTestCasesList(cases))

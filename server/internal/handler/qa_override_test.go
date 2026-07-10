@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -50,7 +51,7 @@ func TestOverrideQAVerdict_ProvenanceEndToEnd(t *testing.T) {
 	agentContent := "```qa-result\n" +
 		`{"verdict":"pass","summary":"agent says fine","commands":[{"cmd":"go test ./...","branch_exit":0,"kind":"pass"}]}` +
 		"\n```"
-	if v, labeled := testHandler.TaskService.CaptureQAEvidence(ctx, issue, agentContent); v != "pass" || !labeled {
+	if v, labeled := testHandler.TaskService.CaptureQAEvidence(ctx, issue, agentContent, pgtype.UUID{}); v != "pass" || !labeled {
 		t.Fatalf("seed agent evidence: verdict=%q labeled=%v", v, labeled)
 	}
 

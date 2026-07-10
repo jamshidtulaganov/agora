@@ -2409,7 +2409,7 @@ func (s *TaskService) captureStructuredResult(ctx context.Context, issueID, agen
 	if err != nil {
 		return
 	}
-	s.CaptureQAEvidence(ctx, issue, content)
+	s.CaptureQAEvidence(ctx, issue, content, triggerCommentID)
 	s.CaptureDeployEvent(ctx, issue, content)
 	s.CaptureTestCases(ctx, issue, content, agentID)
 	s.CaptureTestRuns(ctx, issue, content, agentID, triggerCommentID)
@@ -2496,7 +2496,8 @@ func (s *TaskService) createAgentComment(ctx context.Context, issueID, agentID p
 
 	// Persist a run_qa verdict's structured ```qa-result``` block as durable QA
 	// evidence so the issue's QA section reads one indexed row, not the timeline.
-	s.CaptureQAEvidence(ctx, issue, content)
+	// parentID is this reply's trigger comment — read for triggered_by (Phase 3).
+	s.CaptureQAEvidence(ctx, issue, content, parentID)
 	// Persist a deploy agent's ```deploy-result``` block as a deploy_event row
 	// (the stepper's Deploy signal — deploy-mcp-integration.md §5).
 	s.CaptureDeployEvent(ctx, issue, content)
