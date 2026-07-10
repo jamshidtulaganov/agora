@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
+
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
 // figmaEnvOf pulls mcpServers.figma out of a config payload for assertions.
@@ -255,5 +258,99 @@ func TestApplyFigmaMcp_ExpiredNeverInjectsToken(t *testing.T) {
 	res = applyFigmaMcp(json.RawMessage(`{"mcpServers":{"figma":{"command":"npx"}}}`), true, "ws_tok", figmaCredExpired)
 	if strings.Contains(string(res.Config), "ws_tok") {
 		t.Fatal("expired credential must never be merged into an entry")
+	}
+}
+
+// figmaTestCredential seals a token with the process's figma credential box
+// and inserts the workspace row directly (bypassing the PUT endpoint's live
+// /v1/me probe). Mirrors gitlabTestCredential's pattern. Skips the test when
+// the box was already initialized without a key earlier in the process
+// (figmaBoxOnce is a sync.Once).
+func figmaTestCredential(t *testing.T, ctx context.Context, token string) {
+	t.Helper()
+	t.Setenv("AGORA_FIGMA_SECRET_KEY", figmaTestKey(t))
+	resetFigmaBox()
+	t.Cleanup(resetFigmaBox)
+	box, err := figmaCredentialBox()
+	if err != nil {
+		t.Skipf("figma credential box unavailable in this process: %v", err)
+	}
+	sealed, err := box.Seal([]byte(token))
+	if err != nil {
+		t.Fatalf("seal: %v", err)
+	}
+	last4 := token
+	if len(last4) > 4 {
+		last4 = last4[len(last4)-4:]
+	}
+	_, err = testHandler.Queries.UpsertFigmaCredential(ctx, db.UpsertFigmaCredentialParams{
+		WorkspaceID:    testUUID(testWorkspaceID),
+		Label:          "figma-mcp-test",
+		TokenEncrypted: sealed,
+		TokenLast4:     last4,
+		TokenKind:      "pat",
+		SeatProbe:      "unknown",
+		ProbeStatus:    "ok",
+	})
+	if err != nil {
+		t.Fatalf("insert figma credential: %v", err)
+	}
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `DELETE FROM figma_credential WHERE workspace_id = $1`, testWorkspaceID)
+	})
+}
+
+// figmaTestIssueWithDesignRef creates an issue whose description references a
+// Figma design, returning the loaded row so injectFigmaMcpCreds sees a
+// non-empty issueFigmaRefs.
+func figmaTestIssueWithDesignRef(t *testing.T, ctx context.Context) db.Issue {
+	t.Helper()
+	issueID := createTestIssue(t, "figma mcp inject", "in_review", "medium")
+	t.Cleanup(func() { deleteTestIssue(t, issueID) })
+	if _, err := testPool.Exec(ctx, `UPDATE issue SET description = $1 WHERE id = $2`,
+		"Design ref: https://www.figma.com/design/TestFileKey01/dashboard?node-id=1-10", issueID); err != nil {
+		t.Fatalf("set description: %v", err)
+	}
+	issue, err := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+	if err != nil {
+		t.Fatalf("get issue: %v", err)
+	}
+	return issue
+}
+
+// TestInjectFigmaMcpCreds_Presence covers the DB-touching wrapper
+// injectFigmaMcpCreds end-to-end (not just the pure applyFigmaMcp core it
+// delegates to): a sealed workspace credential + an issue whose description
+// references a Figma design must result in the figma MCP server being
+// auto-provisioned with the decrypted token — the shape a real claim
+// (ClaimTaskByRuntime) hands the agent.
+func TestInjectFigmaMcpCreds_Presence(t *testing.T) {
+	ctx := context.Background()
+	figmaTestCredential(t, ctx, "figd_real_test_token")
+	issue := figmaTestIssueWithDesignRef(t, ctx)
+
+	res := testHandler.injectFigmaMcpCreds(ctx, "agent-1", issue, nil)
+	if !res.Available {
+		t.Fatalf("expected Available=true, note=%q", res.Note)
+	}
+	if !res.Provisioned || !res.Synthesized {
+		t.Errorf("expected the whole mcpServers document to be synthesized, got provisioned=%v synthesized=%v", res.Provisioned, res.Synthesized)
+	}
+	if !mcpConfigHasServer(res.Config, "figma") {
+		t.Fatalf("config missing figma server: %s", res.Config)
+	}
+	env, args := figmaEnvOf(t, res.Config)
+	if env["FIGMA_API_KEY"] != "figd_real_test_token" {
+		t.Errorf("FIGMA_API_KEY = %q, want the decrypted workspace token", env["FIGMA_API_KEY"])
+	}
+	wantArg := "figma-developer-mcp@" + figmaMcpVersion
+	found := false
+	for _, a := range args {
+		if a == wantArg {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("args %v missing pinned %q", args, wantArg)
 	}
 }
