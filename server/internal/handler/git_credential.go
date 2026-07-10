@@ -120,7 +120,16 @@ func (h *Handler) CreateGitCredential(w http.ResponseWriter, r *http.Request) {
 		req.Host = "github.com"
 	}
 	if req.Provider == "" {
-		req.Provider = "github"
+		// The settings UI sends host but not provider. Infer it from the host so
+		// a self-hosted GitLab credential lands as provider="gitlab" — the GitLab
+		// MCP injection (gitlab_mcp.go) matches on that provider, and a silent
+		// "github" default would mean deploy agents never receive their pipeline
+		// tools despite a perfectly good credential.
+		if strings.Contains(req.Host, "gitlab") {
+			req.Provider = "gitlab"
+		} else {
+			req.Provider = "github"
+		}
 	}
 	if req.AuthKind == "" {
 		req.AuthKind = "token"
