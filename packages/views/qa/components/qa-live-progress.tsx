@@ -81,13 +81,18 @@ function extractCaseVerdicts(messages: TaskMessagePayload[]): Record<string, "pa
   return out;
 }
 
-export function QALiveProgress({ issueId }: { issueId: string }) {
+// The QA-run signal — shared with the QA lens so the live browser bay knows
+// when to auto-open (docs: signal-driven live bay). One source of truth: both
+// this component's marker-watching and the lens's auto-open decision read the
+// SAME filtered task list, so they can never disagree about "is QA running".
+//
+// QA agents only — a knowledge-capture / dev task running on the same issue
+// must not count as "QA is running". Leader + agent members of any squad
+// named like "qa"; empty set (no QA squad) → no filter (show all).
+export function useQaRunningTasks(issueId: string): AgentTask[] {
   const wsId = useWorkspaceId();
   const { data: snapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
 
-  // QA agents only — a knowledge-capture / dev task running on the same issue
-  // must not count as "QA is running". Leader + agent members of any squad
-  // named like "qa"; empty set (no QA squad) → no filter (show all).
   const { data: qaAgentIds } = useQuery({
     queryKey: ["qa-squad-agent-ids", wsId],
     queryFn: async () => {
@@ -109,7 +114,7 @@ export function QALiveProgress({ issueId }: { issueId: string }) {
     staleTime: 300_000,
   });
 
-  const runningTasks = useMemo(
+  return useMemo(
     () =>
       snapshot.filter(
         (task) =>
@@ -119,6 +124,10 @@ export function QALiveProgress({ issueId }: { issueId: string }) {
       ),
     [snapshot, issueId, qaAgentIds],
   );
+}
+
+export function QALiveProgress({ issueId }: { issueId: string }) {
+  const runningTasks = useQaRunningTasks(issueId);
 
   return (
     <>

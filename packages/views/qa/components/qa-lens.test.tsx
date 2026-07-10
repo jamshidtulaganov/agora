@@ -7,10 +7,16 @@ import { QALensBody } from "./qa-lens";
 
 // QALensBody is the QA lens re-homed into the issue cockpit
 // (docs/sdlc-stage-cockpit-plan.md, phase D). These tests cover its OWN
-// composition — the verdict block and the triage mutations (setVerdict /
-// sendBack) — not the already-tested child instruments (live bay, test
-// cases, PR list, design compare), which are stubbed out here so this file
-// stays a focused unit test of the lens itself.
+// composition — the verdict block, the triage mutations (setVerdict /
+// sendBack), and the signal-driven live bay (open/idle state, driven by
+// useQaRunningTasks) — not the already-tested child instruments (test cases,
+// PR list, design compare), which are stubbed out here so this file stays a
+// focused unit test of the lens itself.
+//
+// QALiveBrowser is stubbed with a light active/idle marker (instead of the
+// usual `() => null`) so these tests can assert on the lens's OWN
+// active/onOpen/onCollapse wiring without re-testing QALiveBrowser's actual
+// pane rendering (a separate concern, out of scope here).
 
 const apiMocks = vi.hoisted(() => ({
   getIssue: vi.fn(),
@@ -24,6 +30,10 @@ const apiMocks = vi.hoisted(() => ({
   runIssueSprintRegression: vi.fn(),
 }));
 
+const qaLiveProgressMocks = vi.hoisted(() => ({
+  useQaRunningTasks: vi.fn((): { id: string }[] => []),
+}));
+
 vi.mock("@agora/core/api", () => ({ api: apiMocks }));
 vi.mock("@agora/core", () => ({ useWorkspaceId: () => "ws-1" }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -31,8 +41,35 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 // Stub the child instruments — each already has its own coverage elsewhere
 // (test-cases-panel.test.tsx, qa-suite-view.test.tsx). Stubbing keeps this
 // file from having to mock their entire transitive query graph.
-vi.mock("./qa-live-browser", () => ({ QALiveBrowser: () => null }));
-vi.mock("./qa-live-progress", () => ({ QALiveProgress: () => null }));
+vi.mock("./qa-live-browser", () => ({
+  QALiveBrowser: ({
+    active,
+    onOpen,
+    onCollapse,
+  }: {
+    active: boolean;
+    running: boolean;
+    onOpen: () => void;
+    onCollapse: () => void;
+  }) =>
+    active ? (
+      <div data-testid="live-bay-active">
+        <button type="button" onClick={onCollapse}>
+          collapse
+        </button>
+      </div>
+    ) : (
+      <div data-testid="live-bay-idle">
+        <button type="button" onClick={onOpen}>
+          Open live testing
+        </button>
+      </div>
+    ),
+}));
+vi.mock("./qa-live-progress", () => ({
+  QALiveProgress: () => null,
+  useQaRunningTasks: qaLiveProgressMocks.useQaRunningTasks,
+}));
 vi.mock("./test-cases-panel", () => ({ TestCasesPanel: () => null }));
 vi.mock("./qa-activity-panel", () => ({ QAActivityPanel: () => null }));
 vi.mock("./qa-design-compare", () => ({ QADesignCompare: () => null }));
@@ -108,6 +145,9 @@ describe("QALensBody", () => {
     apiMocks.detachLabel.mockResolvedValue(undefined);
     apiMocks.createComment.mockResolvedValue(undefined);
     apiMocks.updateIssue.mockResolvedValue(undefined);
+    // Default: no live QA run — the bay starts idle. Individual tests
+    // override this to simulate a running QA-squad task.
+    qaLiveProgressMocks.useQaRunningTasks.mockReturnValue([]);
   });
 
   it("renders the verdict and triage actions from mocked issue + evidence", async () => {
@@ -144,5 +184,35 @@ describe("QALensBody", () => {
     );
     expect(apiMocks.attachLabel).toHaveBeenCalledWith("issue-1", "label-fail");
     expect(apiMocks.createComment).toHaveBeenCalledWith("issue-1", "Repro: click X, see Y");
+  });
+
+  describe("live bay", () => {
+    it("starts idle: compact card only, no browser pane, review column present", async () => {
+      renderLens();
+
+      await screen.findByText("Passed"); // review column has loaded
+      expect(await screen.findByTestId("live-bay-idle")).toBeInTheDocument();
+      expect(screen.queryByTestId("live-bay-active")).not.toBeInTheDocument();
+      // Review content (verdict + triage) is present alongside the idle card.
+      expect(screen.getByRole("button", { name: "Pass" })).toBeInTheDocument();
+    });
+
+    it("auto-opens the bay when a QA-squad task is running", async () => {
+      qaLiveProgressMocks.useQaRunningTasks.mockReturnValue([{ id: "task-1" }]);
+      renderLens();
+
+      expect(await screen.findByTestId("live-bay-active")).toBeInTheDocument();
+      expect(screen.queryByTestId("live-bay-idle")).not.toBeInTheDocument();
+    });
+
+    it('opens the bay when "Open live testing" is clicked, with no run active', async () => {
+      renderLens();
+
+      const openBtn = await screen.findByRole("button", { name: "Open live testing" });
+      fireEvent.click(openBtn);
+
+      expect(await screen.findByTestId("live-bay-active")).toBeInTheDocument();
+      expect(screen.queryByTestId("live-bay-idle")).not.toBeInTheDocument();
+    });
   });
 });

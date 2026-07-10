@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { CheckCircle2, XCircle, RefreshCw, Loader2, Bug, GitBranch } from "lucide-react";
 import { toast } from "sonner";
@@ -16,7 +16,7 @@ import { StructuredResult } from "../../issues/components/qa-result";
 import { PullRequestList } from "../../issues/components/pull-request-list";
 import { QAActivityPanel } from "./qa-activity-panel";
 import { QALiveBrowser } from "./qa-live-browser";
-import { QALiveProgress } from "./qa-live-progress";
+import { QALiveProgress, useQaRunningTasks } from "./qa-live-progress";
 import { QADesignCompare } from "./qa-design-compare";
 import { TestCasesPanel } from "./test-cases-panel";
 import { verdictIcon, verdictTone } from "./verdict";
@@ -32,6 +32,19 @@ import { FileBugSheet } from "./file-bug-sheet";
 // review column (verdict, checks, test cases, triage actions). No bespoke
 // header, no back-to-queue crumb, no rail-open toggle — the frame owns all of
 // that now.
+//
+// The live bay is signal-driven, not default-on (most QA is API/unit-level
+// and never touches a browser — see QALiveBrowser's own comment for why
+// mounting it unconditionally was actively harmful: it auto-connected a CDP
+// Chromium and auto-booted a dev server as a side effect of merely opening
+// this lens). `open` tracks whether the bay is expanded; it auto-opens the
+// moment a QA-squad task starts running (the "watch the agent drive" case —
+// the core value), stays open once opened (a run ending shouldn't yank the
+// browser out from under a reviewer still inspecting it), and only closes on
+// an explicit collapse click, which is sticky for as long as the SAME run
+// keeps going. The layout itself flips with it: split when the bay is open
+// (browser needs the room), single centered reading column when it's not
+// (the review content becomes primary).
 
 type Verdict = "pass" | "fail" | "pending";
 
@@ -58,6 +71,19 @@ export function QALensBody({ issueId }: { issueId: string }) {
     queryFn: () => api.listLabels(),
     staleTime: 60_000,
   });
+
+  // Live-bay signal: is a QA-squad agent task running on this issue right
+  // now? Same filtered list QALiveProgress watches for markers — one source,
+  // so the two can't disagree (see useQaRunningTasks).
+  const qaRunning = useQaRunningTasks(issueId).length > 0;
+  // Bay open/closed. Starts closed; auto-opens on a run starting and then
+  // stays open (a run ending doesn't auto-collapse it) until the reviewer
+  // explicitly collapses it, which sticks for as long as THIS run continues
+  // (the effect only flips it back open on a fresh false→true transition).
+  const [bayOpen, setBayOpen] = useState(false);
+  useEffect(() => {
+    if (qaRunning) setBayOpen(true);
+  }, [qaRunning]);
 
   const labelId = (name: string) => labelCatalog?.labels.find((l) => l.name === name)?.id;
   const issueLabelNames = (issue?.labels ?? []).map((l) => l.name);
@@ -155,38 +181,63 @@ export function QALensBody({ issueId }: { issueId: string }) {
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="w-full px-8 py-8">
-        {/* Cockpit split, matching the issue detail page's own convention: the
-            Live testing bay takes ALL remaining width on the LEFT (it drives a
-            real Chromium pinned at a 1280×800 CDP frame, so it needs the room,
-            not a squeezed sidebar) — a narrow, fixed-width review column
-            (evidence you read, test cases, the call you make) sits on the
-            RIGHT. Below lg the bay stacks ABOVE the review column (what's
-            running first, then what you decide). */}
-        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start lg:gap-6">
+        {/* Adaptive split: when the live bay is OPEN (a QA run is live, or
+            the reviewer opted in), it takes ALL remaining width on the LEFT
+            (it drives a real Chromium pinned at a 1280×800 CDP frame, so it
+            needs the room, not a squeezed sidebar) — a narrow, fixed-width
+            review column (evidence you read, test cases, the call you make)
+            sits on the RIGHT. Below lg the bay stacks ABOVE the review column.
+            When the bay is CLOSED (the common case — most QA is API/unit-
+            level, no browser involved), the split disappears: the review
+            column becomes the primary reading column at a comfortable
+            centered measure, with the compact bay card sitting above it. */}
+        <div
+          className={cn(
+            bayOpen
+              ? "lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start lg:gap-6"
+              : "mx-auto flex w-full max-w-4xl flex-col gap-6",
+          )}
+        >
           {/* ── Live bay ─────────────────────────────────────────────────
               Both "live" surfaces together: the terminal feed of what the QA
               agent is doing right now, and the running app itself, watched
-              and driven in place. The terminal renders nothing when idle, so
-              an idle issue's bay is just the browser. */}
-          <aside className="order-2 flex h-[440px] flex-col gap-3 lg:sticky lg:top-8 lg:order-1 lg:h-[calc(100vh-10rem)]">
-            {/* NOT a tool-call terminal — just a slim "which test case is
-                running" strip (renders nothing when idle). The reviewer WATCHES
-                the run in the live browser below (the agent shares that Chromium
-                over CDP during a scripted run); per-case verdicts are in the
-                Test-cases panel. The browser is the star and keeps all the
-                height. */}
+              and driven in place. QALiveProgress stays mounted regardless of
+              bayOpen — it's the signal source (drives the auto-open effect
+              above) and its marker-watching must keep feeding the Test-cases
+              panel even while the browser pane is collapsed. It renders
+              nothing itself when no run is active. QALiveBrowser owns its own
+              open/closed rendering via the `active` prop — see its comment. */}
+          <aside
+            className={cn(
+              "flex flex-col gap-3",
+              bayOpen && "order-2 h-[440px] lg:sticky lg:top-8 lg:order-1 lg:h-[calc(100vh-10rem)]",
+            )}
+          >
             <div className="shrink-0">
               <QALiveProgress issueId={issueId} />
             </div>
-            <QALiveBrowser issueId={issueId} />
+            <QALiveBrowser
+              issueId={issueId}
+              active={bayOpen}
+              running={qaRunning}
+              onOpen={() => setBayOpen(true)}
+              onCollapse={() => setBayOpen(false)}
+            />
           </aside>
 
           {/* ── Review column ────────────────────────────────────────────
-              A fixed-height flex column on lg (matching the live bay): one
-              scroll region holds PRs/verdict/checks/test-cases, the triage bar
-              pins to the bottom. Sections separated by hairlines (border-t +
-              pt), matching the issue detail page's grouping. */}
-          <div className="order-1 flex min-w-0 flex-col lg:order-2 lg:sticky lg:top-8 lg:h-[calc(100vh-10rem)] lg:min-h-0">
+              A fixed-height flex column when the bay is open (matching its
+              height): one scroll region holds PRs/verdict/checks/test-cases,
+              the triage bar pins to the bottom. Sections separated by
+              hairlines (border-t + pt), matching the issue detail page's
+              grouping. When the bay is closed, this reads as a normal page —
+              no artificial height cap, no sticky positioning. */}
+          <div
+            className={cn(
+              "flex min-w-0 flex-col",
+              bayOpen && "order-1 lg:order-2 lg:sticky lg:top-8 lg:h-[calc(100vh-10rem)] lg:min-h-0",
+            )}
+          >
             {/* Single scroll region above the triage bar — a long (27-case)
                 list or a tall checks table scrolls here instead of pushing the
                 pass/fail buttons off-screen. Capped on mobile, where the
