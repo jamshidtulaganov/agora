@@ -159,6 +159,28 @@ func (q *Queries) GetLabelByName(ctx context.Context, arg GetLabelByNameParams) 
 	return i, err
 }
 
+const issueHasRunQADispatchMarker = `-- name: IssueHasRunQADispatchMarker :one
+SELECT EXISTS (
+  SELECT 1 FROM comment
+  WHERE issue_id = $1 AND content LIKE '%<!--agent-protocol:run_qa-->%'
+) AS dispatched
+`
+
+// Reports whether a run_qa gate was ever DISPATCHED for this issue — a comment
+// carrying the run_qa agent-protocol marker (agentProtocolMarker("run_qa"),
+// slice_action.go: "<!--agent-protocol:run_qa-->"), fired either automatically
+// (in_review auto-QA) or manually (the QA lens's Re-run button). Used by the
+// watchdog to gate escalation PER-ISSUE when AGORA_AUTO_QA_ENABLED is off: in
+// that world not every in_review issue is gated, so only an issue that
+// actually had a run_qa fired — and then went silent — is a silent-failure
+// candidate; a stale in_review issue nobody ever asked QA to gate is not.
+func (q *Queries) IssueHasRunQADispatchMarker(ctx context.Context, issueID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, issueHasRunQADispatchMarker, issueID)
+	var dispatched bool
+	err := row.Scan(&dispatched)
+	return dispatched, err
+}
+
 const listLabels = `-- name: ListLabels :many
 SELECT id, workspace_id, name, color, created_at, updated_at FROM issue_label
 WHERE workspace_id = $1

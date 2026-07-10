@@ -81,19 +81,15 @@ function extractCaseVerdicts(messages: TaskMessagePayload[]): Record<string, "pa
   return out;
 }
 
-// The QA-run signal — shared with the QA lens so the live browser bay knows
-// when to auto-open (docs: signal-driven live bay). One source of truth: both
-// this component's marker-watching and the lens's auto-open decision read the
-// SAME filtered task list, so they can never disagree about "is QA running".
-//
-// QA agents only — a knowledge-capture / dev task running on the same issue
-// must not count as "QA is running". Leader + agent members of any squad
-// named like "qa"; empty set (no QA squad) → no filter (show all).
-export function useQaRunningTasks(issueId: string): AgentTask[] {
-  const wsId = useWorkspaceId();
-  const { data: snapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
-
-  const { data: qaAgentIds } = useQuery({
+// The QA squad's agent id set — the leader + agent members of any squad named
+// like "qa" — extracted so every surface that needs to tell "a QA task" apart
+// from "any task on this issue" (marker-watching here, the lens's live-bay
+// auto-open, the Test-cases panel's Stop button, the QA cockpit queue's Stop
+// button) reads the SAME set instead of separately re-deriving it and risking
+// drift. Empty set (no QA squad) → callers treat it as "no filter" (show all),
+// matching useQaRunningTasks' own fallback below.
+export function useQaSquadAgentIds(wsId: string): Set<string> | undefined {
+  const { data } = useQuery({
     queryKey: ["qa-squad-agent-ids", wsId],
     queryFn: async () => {
       const ids = new Set<string>();
@@ -113,6 +109,21 @@ export function useQaRunningTasks(issueId: string): AgentTask[] {
     },
     staleTime: 300_000,
   });
+  return data;
+}
+
+// The QA-run signal — shared with the QA lens so the live browser bay knows
+// when to auto-open (docs: signal-driven live bay). One source of truth: both
+// this component's marker-watching and the lens's auto-open decision read the
+// SAME filtered task list, so they can never disagree about "is QA running".
+//
+// QA agents only — a knowledge-capture / dev task running on the same issue
+// must not count as "QA is running". Leader + agent members of any squad
+// named like "qa"; empty set (no QA squad) → no filter (show all).
+export function useQaRunningTasks(issueId: string): AgentTask[] {
+  const wsId = useWorkspaceId();
+  const { data: snapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
+  const qaAgentIds = useQaSquadAgentIds(wsId);
 
   return useMemo(
     () =>

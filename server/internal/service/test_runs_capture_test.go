@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
@@ -73,7 +74,7 @@ func TestCaptureTestRunsRealBlock(t *testing.T) {
 		"## Результаты запуска\n\nВсе кейсы прогнаны.\n\n---\n\n```test-runs\n[\n  {\"test_case_id\":\"%s\",\"status\":\"pass\",\"output\":\"title contains X\",\"baseline_status\":\"unknown\"}\n]\n```\n",
 		caseID)
 
-	svc.CaptureTestRuns(ctx, issue, content, util.MustParseUUID(agentID))
+	svc.CaptureTestRuns(ctx, issue, content, util.MustParseUUID(agentID), pgtype.UUID{})
 
 	var runs int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM test_run WHERE test_case_id=$1 AND issue_id=$2`, caseID, issueID).Scan(&runs); err != nil {
@@ -126,7 +127,7 @@ func TestCaptureStructuredResultPromotes(t *testing.T) {
 	svc := NewTaskService(q, pool, nil, events.New())
 	content := fmt.Sprintf("done\n\n```test-runs\n[{\"test_case_id\":\"%s\",\"status\":\"pass\",\"output\":\"ok\",\"baseline_status\":\"unknown\"}]\n```", caseID)
 
-	svc.captureStructuredResult(ctx, util.MustParseUUID(issueID), util.MustParseUUID(agentID), content)
+	svc.captureStructuredResult(ctx, util.MustParseUUID(issueID), util.MustParseUUID(agentID), pgtype.UUID{}, content)
 
 	var runs, promoted int
 	pool.QueryRow(ctx, `SELECT count(*) FROM test_run WHERE test_case_id=$1`, caseID).Scan(&runs)
@@ -136,5 +137,100 @@ func TestCaptureStructuredResultPromotes(t *testing.T) {
 	}
 	if promoted != 1 {
 		t.Fatalf("expected 1 case promoted to standing base suite, got %d", promoted)
+	}
+}
+
+// TestCaptureTestRunsScopedSingleCaseFailsClosed is the regression for the
+// unenforced-scope audit finding: the Test-cases panel's per-row "Run" button
+// dispatches run_test_cases scoped to ONE case via a prose "RUN ONLY the
+// single test case id=<uuid>" clause (test-cases-panel.tsx), but nothing
+// server-side ever enforced it — CaptureTestRuns wrote every entry an agent
+// emitted, so a scoped run that also (accidentally or not) reported OTHER
+// cases silently overwrote their state too. This seeds two cases, dispatches
+// a run scoped to case A (a trigger comment carrying the scope marker), and
+// feeds a test-runs block reporting BOTH A and B — only A may be recorded.
+func TestCaptureTestRunsScopedSingleCaseFailsClosed(t *testing.T) {
+	pool := knowledgeTestPool(t)
+	ctx := context.Background()
+	q := db.New(pool)
+	wsID := seedKnowledgeWorkspace(t, pool)
+
+	var projectID string
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO project (workspace_id, title, status, priority) VALUES ($1,'scope-proj','planned','none') RETURNING id`,
+		util.UUIDToString(wsID)).Scan(&projectID); err != nil {
+		t.Fatalf("seed project: %v", err)
+	}
+	var userID string
+	if err := pool.QueryRow(ctx, `INSERT INTO "user" (name,email) VALUES ('scope',$1) RETURNING id`, "scope-"+uuid.NewString()[:8]+"@x.dev").Scan(&userID); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	var issueID string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO issue (workspace_id,title,status,creator_type,creator_id,project_id,number)
+		VALUES ($1,'scope issue','in_review','member',$2,$3,1) RETURNING id`,
+		util.UUIDToString(wsID), userID, projectID).Scan(&issueID); err != nil {
+		t.Fatalf("seed issue: %v", err)
+	}
+	issue := db.Issue{
+		ID:          util.MustParseUUID(issueID),
+		WorkspaceID: wsID,
+		ProjectID:   util.MustParseUUID(projectID),
+		Status:      "in_review",
+		Number:      1,
+	}
+	var runtimeID, agentID string
+	pool.QueryRow(ctx, `INSERT INTO agent_runtime (workspace_id,name,runtime_mode,provider,status,metadata,last_seen_at) VALUES ($1,'scope-rt','cloud','claude','online','{}'::jsonb,now()) RETURNING id`, util.UUIDToString(wsID)).Scan(&runtimeID)
+	pool.QueryRow(ctx, `INSERT INTO agent (workspace_id,name,runtime_mode,runtime_config,runtime_id,visibility,max_concurrent_tasks) VALUES ($1,'QA Tester','cloud','{}'::jsonb,$2,'workspace',3) RETURNING id`, util.UUIDToString(wsID), runtimeID).Scan(&agentID)
+
+	var caseAID, caseBID string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO test_case (workspace_id,issue_id,project_id,title,steps,expected,kind,source,author_type,author_id,category)
+		VALUES ($1,$2,$3,'[e2e] case A','open','ok','automated','agent','agent',$4,'positive') RETURNING id`,
+		util.UUIDToString(wsID), issueID, projectID, agentID).Scan(&caseAID); err != nil {
+		t.Fatalf("seed case A: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO test_case (workspace_id,issue_id,project_id,title,steps,expected,kind,source,author_type,author_id,category)
+		VALUES ($1,$2,$3,'[e2e] case B','open','ok','automated','agent','agent',$4,'positive') RETURNING id`,
+		util.UUIDToString(wsID), issueID, projectID, agentID).Scan(&caseBID); err != nil {
+		t.Fatalf("seed case B: %v", err)
+	}
+
+	svc := NewTaskService(q, pool, nil, events.New())
+
+	// The trigger comment carries EXACTLY the scope clause the Test-cases
+	// panel's runOne mutation sends (test-cases-panel.tsx), wrapped the way
+	// buildSliceInstruction appends it ("... Focus on: <scope>").
+	trigger, err := q.CreateComment(ctx, db.CreateCommentParams{
+		IssueID:     issue.ID,
+		WorkspaceID: wsID,
+		AuthorType:  "member",
+		AuthorID:    util.MustParseUUID(userID),
+		Content: fmt.Sprintf(
+			"[@QA Tester](mention://agent/%s) Run the automated cases. Focus on: RUN ONLY the single test case id=%s (\"case A\") — execute just this one, skip all other cases.",
+			agentID, caseAID),
+		Type: "comment",
+	})
+	if err != nil {
+		t.Fatalf("seed trigger comment: %v", err)
+	}
+
+	// The agent's reply reports BOTH cases — B is outside the scope it was
+	// dispatched with and must be dropped, not written.
+	content := fmt.Sprintf(
+		"```test-runs\n[{\"test_case_id\":\"%s\",\"status\":\"pass\",\"output\":\"ok\"},{\"test_case_id\":\"%s\",\"status\":\"pass\",\"output\":\"ok\"}]\n```",
+		caseAID, caseBID)
+
+	svc.CaptureTestRuns(ctx, issue, content, util.MustParseUUID(agentID), trigger.ID)
+
+	var runsA, runsB int
+	pool.QueryRow(ctx, `SELECT count(*) FROM test_run WHERE test_case_id=$1`, caseAID).Scan(&runsA)
+	pool.QueryRow(ctx, `SELECT count(*) FROM test_run WHERE test_case_id=$1`, caseBID).Scan(&runsB)
+	if runsA != 1 {
+		t.Fatalf("expected the scoped case A to record 1 run, got %d", runsA)
+	}
+	if runsB != 0 {
+		t.Fatalf("expected the OUT-OF-SCOPE case B to record 0 runs (fail-closed), got %d", runsB)
 	}
 }

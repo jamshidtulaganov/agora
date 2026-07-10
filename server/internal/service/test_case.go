@@ -26,6 +26,41 @@ var testRunsBlockRe = regexp.MustCompile("(?s)```test-runs\\s*\\n(.*?)```")
 // it COMPILES automated cases into runnable Playwright scripts (compile_tests).
 var compiledScriptsBlockRe = regexp.MustCompile("(?s)```scripts\\s*\\n(.*?)```")
 
+// scopedSingleTestCaseRe recognizes the "RUN ONLY the single test case id=<uuid>"
+// scope marker the Test-cases panel's per-row Run button appends to a
+// run_test_cases dispatch (see test-cases-panel.tsx's runOne mutation). The
+// scope was previously PROSE ONLY — the server never enforced it, so
+// CaptureTestRuns wrote every entry an agent emitted even when it strayed
+// outside the one case it was asked to run (audit finding: "scoped single-case
+// runs not enforced"). Matched case-insensitively against the ORIGINAL
+// dispatch (trigger) comment, not the agent's reply.
+var scopedSingleTestCaseRe = regexp.MustCompile(`(?i)RUN ONLY the single test case id=([0-9a-fA-F-]{36})`)
+
+// scopedTestCaseIDFromTrigger resolves the single test_case_id a run_test_cases
+// dispatch was scoped to, by re-reading the ORIGINAL trigger comment (the one
+// carrying the "Focus on: RUN ONLY the single test case id=<uuid>" clause
+// buildSliceInstruction appended). ok=false for a whole-issue run (no scope
+// marker, or triggerCommentID unresolvable) — callers must then apply NO
+// filtering, preserving existing whole-issue-run behavior exactly.
+func (s *TaskService) scopedTestCaseIDFromTrigger(ctx context.Context, triggerCommentID pgtype.UUID) (pgtype.UUID, bool) {
+	if !triggerCommentID.Valid {
+		return pgtype.UUID{}, false
+	}
+	trigger, err := s.Queries.GetComment(ctx, triggerCommentID)
+	if err != nil {
+		return pgtype.UUID{}, false
+	}
+	m := scopedSingleTestCaseRe.FindStringSubmatch(trigger.Content)
+	if m == nil {
+		return pgtype.UUID{}, false
+	}
+	id, err := util.ParseUUID(m[1])
+	if err != nil {
+		return pgtype.UUID{}, false
+	}
+	return id, true
+}
+
 type genTestRun struct {
 	TestCaseID string `json:"test_case_id"`
 	Status     string `json:"status"`
@@ -191,7 +226,17 @@ func (s *TaskService) CaptureTestCases(ctx context.Context, issue db.Issue, cont
 // script — within the same workspace before writing (an agent can't post runs
 // for another issue's case). Best-effort + detached. Exported so the HTTP
 // comment handler can call it too (agents post via POST /comments).
-func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, content string, agentID pgtype.UUID) {
+//
+// triggerCommentID is the ORIGINAL dispatch comment for this run, when known
+// (task.TriggerCommentID / the reply's parent_id — see call sites). When that
+// comment carries the single-case scope marker ("RUN ONLY the single test case
+// id=<uuid>" — test-cases-panel.tsx's per-row Run button), this run is a
+// SCOPED run and CaptureTestRuns fails CLOSED: any emitted entry whose
+// test_case_id is outside the scoped set is DROPPED (logged, not written),
+// instead of trusting the agent's own adherence to the prose instruction. A
+// zero-value triggerCommentID, or a trigger with no scope marker, is a
+// whole-issue run — every entry is accepted exactly as before.
+func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, content string, agentID, triggerCommentID pgtype.UUID) {
 	m := testRunsBlockRe.FindStringSubmatch(content)
 	if m == nil {
 		return
@@ -200,6 +245,7 @@ func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, conte
 	if err := json.Unmarshal([]byte(strings.TrimSpace(m[1])), &runs); err != nil {
 		return
 	}
+	scopedCaseID, scoped := s.scopedTestCaseIDFromTrigger(ctx, triggerCommentID)
 
 	inserted := 0
 	for _, r := range runs {
@@ -220,6 +266,16 @@ func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, conte
 		}
 		caseID, err := util.ParseUUID(r.TestCaseID)
 		if err != nil {
+			continue
+		}
+		// Fail-closed scope enforcement: a scoped single-case run only ever
+		// writes the ONE case it was asked to run. Anything else the agent
+		// emitted (it strayed, or fabricated extra entries) is dropped, not
+		// trusted — the scope was previously prose-only and unenforced.
+		if scoped && caseID.Bytes != scopedCaseID.Bytes {
+			slog.Warn("capture test runs: dropped entry outside scoped case",
+				"issue_id", util.UUIDToString(issue.ID), "scoped_case_id", util.UUIDToString(scopedCaseID),
+				"reported_case_id", r.TestCaseID)
 			continue
 		}
 		tc, err := s.Queries.GetTestCase(ctx, db.GetTestCaseParams{ID: caseID, WorkspaceID: issue.WorkspaceID})

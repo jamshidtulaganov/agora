@@ -6,7 +6,7 @@ import { Sparkles, Plus, Bot, User, Loader2, FlaskConical, Play, CircleSlash, Ci
 import { toast } from "sonner";
 import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core/hooks";
-import { agentTaskSnapshotKeys, agentTaskSnapshotOptions } from "@agora/core/agents";
+import { agentTaskSnapshotKeys } from "@agora/core/agents";
 import { issueKeys, issueDetailOptions, testCasesOptions } from "@agora/core/issues/queries";
 import type { TestCase } from "@agora/core/types";
 import { CASE_TEMPLATES, type CaseTemplate } from "@agora/core/qa/templates";
@@ -32,7 +32,7 @@ import {
   type TestCasePriority,
   type TestCaseModality,
 } from "./case-meta";
-import { useRunningTestCaseId, useLiveCaseVerdicts } from "./qa-live-progress";
+import { useRunningTestCaseId, useLiveCaseVerdicts, useQaRunningTasks } from "./qa-live-progress";
 import { StepEditor, StepList, parseSteps, serializeSteps, type ParsedStep } from "./step-editor";
 import { StepRunChecklist, StepResultList } from "./step-run";
 import { verdictIcon } from "./verdict";
@@ -72,10 +72,11 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
   // The live agent task driving this issue's QA/test run right now. `.id` is the
   // task id the cancel endpoint needs; a running row for THIS issue is the one to
   // stop. (SliceActionResponse carries no task id, so the dispatch return can't
-  // be used — the snapshot is the source of truth for the live task.)
-  const { data: taskSnapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
-  const runningTaskId =
-    taskSnapshot.find((task) => task.issue_id === issueId && task.status === "running")?.id ?? null;
+  // be used — the snapshot is the source of truth for the live task.) Filtered
+  // to the QA squad's own tasks (useQaRunningTasks) — an unrelated dev/knowledge
+  // task running on the same issue must never be offered up as "the QA run" a
+  // Stop click would cancel (audit finding: Stop targeted ANY running task).
+  const runningTaskId = useQaRunningTasks(issueId)[0]?.id ?? null;
   // The Playwright trace viewer opens as a full-panel overlay iframe — the URL
   // is a same-origin reverse-proxy path the backend hands back per launch.
   const [traceUrl, setTraceUrl] = useState<string | null>(null);

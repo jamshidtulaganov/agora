@@ -21,6 +21,13 @@ const apiMocks = vi.hoisted(() => ({
   recordTestCaseRun: vi.fn(),
   sliceAction: vi.fn(),
   launchTrace: vi.fn(),
+  // useQaRunningTasks (qa-live-progress.tsx, real hook — not mocked below) also
+  // resolves the QA-squad agent id set via these two calls. No squad in these
+  // tests → empty result → the hook's own "no QA squad → no filter" fallback,
+  // matching pre-fix behavior for the "which issue is this task on" assertions
+  // these tests actually care about.
+  listSquads: vi.fn(),
+  listSquadMembers: vi.fn(),
 }));
 
 vi.mock("@agora/core/api", () => ({ api: apiMocks }));
@@ -36,10 +43,17 @@ const qaLiveProgressMocks = vi.hoisted(() => ({
   useRunningTestCaseId: vi.fn((): string | null => null),
   useLiveCaseVerdicts: vi.fn((): Record<string, "pass" | "fail"> => ({})),
 }));
-vi.mock("./qa-live-progress", () => ({
-  useRunningTestCaseId: qaLiveProgressMocks.useRunningTestCaseId,
-  useLiveCaseVerdicts: qaLiveProgressMocks.useLiveCaseVerdicts,
-}));
+// useQaRunningTasks stays REAL (imported via importOriginal) — the stop-
+// affordance tests below assert its actual issue_id filtering against the
+// mocked agent task snapshot, not a stubbed return value.
+vi.mock("./qa-live-progress", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./qa-live-progress")>();
+  return {
+    ...actual,
+    useRunningTestCaseId: qaLiveProgressMocks.useRunningTestCaseId,
+    useLiveCaseVerdicts: qaLiveProgressMocks.useLiveCaseVerdicts,
+  };
+});
 
 // Keep the snapshot query focused on the mocked api, without pulling the whole
 // @agora/core/agents barrel into jsdom.
@@ -86,6 +100,8 @@ function renderPanel() {
 describe("TestCasesPanel stop affordance", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    apiMocks.listSquads.mockResolvedValue([]);
+    apiMocks.listSquadMembers.mockResolvedValue([]);
     apiMocks.getIssueTestCases.mockResolvedValue({ test_cases: [automatedCase()] });
     apiMocks.getIssue.mockResolvedValue({ id: "issue-1", description: null });
     apiMocks.cancelTaskById.mockResolvedValue({ id: "task-99", status: "cancelled" });
@@ -127,6 +143,8 @@ describe("TestCasesPanel stop affordance", () => {
 describe("TestCasesPanel — running case + fail expansion", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    apiMocks.listSquads.mockResolvedValue([]);
+    apiMocks.listSquadMembers.mockResolvedValue([]);
     apiMocks.getAgentTaskSnapshot.mockResolvedValue([]);
     apiMocks.getIssue.mockResolvedValue({ id: "issue-1", description: null });
     apiMocks.cancelTaskById.mockResolvedValue({ id: "task-99", status: "cancelled" });
@@ -208,6 +226,8 @@ describe("TestCasesPanel — suggest-from-ticket card", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    apiMocks.listSquads.mockResolvedValue([]);
+    apiMocks.listSquadMembers.mockResolvedValue([]);
     apiMocks.getAgentTaskSnapshot.mockResolvedValue([]);
     apiMocks.getIssueTestCases.mockResolvedValue({ test_cases: [] });
     apiMocks.getIssue.mockResolvedValue({ id: "issue-1", description: longDescription });
@@ -256,6 +276,8 @@ describe("TestCasesPanel — suggest-from-ticket card", () => {
 describe("TestCasesPanel — per-step manual run (checklist)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    apiMocks.listSquads.mockResolvedValue([]);
+    apiMocks.listSquadMembers.mockResolvedValue([]);
     apiMocks.getAgentTaskSnapshot.mockResolvedValue([]);
     apiMocks.getIssue.mockResolvedValue({ id: "issue-1", description: null });
     apiMocks.getIssueTestCases.mockResolvedValue({ test_cases: [automatedCase()] });

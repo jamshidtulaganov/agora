@@ -1356,7 +1356,7 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 			// final output; no comment is posted (the agent already did).
 			var payload protocol.TaskCompletedPayload
 			if err := json.Unmarshal(result, &payload); err == nil && strings.TrimSpace(payload.Output) != "" {
-				s.captureStructuredResult(ctx, task.IssueID, task.AgentID, util.UnescapeBackslashEscapes(payload.Output))
+				s.captureStructuredResult(ctx, task.IssueID, task.AgentID, task.TriggerCommentID, util.UnescapeBackslashEscapes(payload.Output))
 			}
 		}
 	}
@@ -2399,7 +2399,9 @@ func (s *TaskService) getIssuePrefix(workspaceID pgtype.UUID) string {
 // that lives only in the final result still gets persisted. Also fires
 // base-suite promotion when the block's runs land on an already-done issue
 // (mirrors the comment-handler chain hook, which never runs on this path).
-func (s *TaskService) captureStructuredResult(ctx context.Context, issueID, agentID pgtype.UUID, content string) {
+// triggerCommentID threads through to CaptureTestRuns so a scoped single-case
+// run still gets its fail-closed enforcement on this path too.
+func (s *TaskService) captureStructuredResult(ctx context.Context, issueID, agentID, triggerCommentID pgtype.UUID, content string) {
 	if strings.TrimSpace(content) == "" {
 		return
 	}
@@ -2410,7 +2412,7 @@ func (s *TaskService) captureStructuredResult(ctx context.Context, issueID, agen
 	s.CaptureQAEvidence(ctx, issue, content)
 	s.CaptureDeployEvent(ctx, issue, content)
 	s.CaptureTestCases(ctx, issue, content, agentID)
-	s.CaptureTestRuns(ctx, issue, content, agentID)
+	s.CaptureTestRuns(ctx, issue, content, agentID, triggerCommentID)
 	s.CaptureCompiledScripts(ctx, issue, content, agentID)
 	// Additively enrich the project's qa_manifest with any routes/flows this
 	// task exercised, so the QA nav map grows richer with each done task.
@@ -2500,8 +2502,10 @@ func (s *TaskService) createAgentComment(ctx context.Context, issueID, agentID p
 	s.CaptureDeployEvent(ctx, issue, content)
 	// Persist a gen_test_cases agent's ```test-cases``` block as test_case rows,
 	// and a run_test_cases agent's ```test-runs``` block as test_run rows.
+	// parentID is this reply's trigger comment — CaptureTestRuns re-reads it to
+	// enforce a scoped single-case run (see scopedTestCaseIDFromTrigger).
 	s.CaptureTestCases(ctx, issue, content, agentID)
-	s.CaptureTestRuns(ctx, issue, content, agentID)
+	s.CaptureTestRuns(ctx, issue, content, agentID, parentID)
 	// Persist a compile_tests agent's ```scripts``` block onto the named cases.
 	s.CaptureCompiledScripts(ctx, issue, content, agentID)
 	// Persist a design_proposal agent's ```design-proposal``` block: attach the

@@ -53,16 +53,20 @@ func devRuntimeWaitMaxSecs() float64 {
 	return 600
 }
 
-// runQAWatchdogScheduler is the silent-failure SPOF guard. When auto-QA is on,
-// every in_review issue is gated by run_qa — so a stale in_review issue with no
-// qa:pass/qa:fail verdict and no live task is a gate that fired but produced no
-// result (agent died / usage limit / never dispatched). The watchdog escalates
-// those to a LOUD qa:fail + comment, so "didn't run" blocks instead of reading
-// green. Only runs where AGORA_AUTO_QA_ENABLED (else there is no gate to expect).
+// runQAWatchdogScheduler is the silent-failure SPOF guard: a stale in_review
+// issue with no qa:pass/qa:fail verdict and no live task is a gate that fired
+// but produced no result (agent died / usage limit / never dispatched). The
+// watchdog escalates those to a LOUD qa:stale + comment, so "didn't run"
+// blocks instead of reading green.
+//
+// The loop itself ALWAYS runs — AGORA_AUTO_QA_ENABLED gates the AUTO-fire path
+// only (in_review auto-QA), not the backstop. A manual "Re-run QA" (the QA
+// lens's Re-run button, or a bulk cockpit re-run) can still be fired with
+// auto-QA off, and its agent can still die silently; without a running
+// watchdog that manual run had NO stale backstop at all (audit finding). See
+// tickQAWatchdog for the per-issue dispatch gate that replaces the old
+// all-or-nothing global check.
 func runQAWatchdogScheduler(ctx context.Context, queries *db.Queries, h *handler.Handler) {
-	if !config.Bool("AGORA_AUTO_QA_ENABLED") {
-		return
-	}
 	ticker := time.NewTicker(qaWatchdogInterval)
 	defer ticker.Stop()
 	tickQAWatchdog(ctx, queries, h)
@@ -85,16 +89,32 @@ func tickQAWatchdog(ctx context.Context, queries *db.Queries, h *handler.Handler
 		slog.Warn("qa watchdog: list stale gates failed", "error", err)
 		return
 	}
+	// AGORA_AUTO_QA_ENABLED is the AUTO-fire gate: when ON, every in_review
+	// issue is implicitly QA-gated, so every candidate ListStaleUnverifiedQAGates
+	// returns is a legitimate silent-failure. When OFF, QA only ever runs when
+	// something explicitly fired run_qa (a manual Re-run) — a candidate that
+	// never had one dispatched is just a quiet in_review issue nobody asked QA
+	// to touch, not a silent failure, and must NOT be escalated.
+	autoQAOn := config.Bool("AGORA_AUTO_QA_ENABLED")
+	escalated := 0
 	for _, g := range gates {
+		if !autoQAOn {
+			dispatched, derr := queries.IssueHasRunQADispatchMarker(ctx, g.ID)
+			if derr != nil || !dispatched {
+				continue
+			}
+		}
 		h.EscalateStaleQAGate(ctx, g.ID, g.WorkspaceID, g.Title)
+		escalated++
 	}
 	// Dev-runtime pins (daemon-per-dev): queued tasks pinned to a developer's
 	// daemon that went offline (or waited past the window) fall back to their
-	// home runtime — unless the workspace opted into strict pinning.
+	// home runtime — unless the workspace opted into strict pinning. Unrelated
+	// to the QA auto-fire flag, so it always runs alongside the sweep above.
 	if n := h.TaskService.SweepStaleDevPinnedTasks(ctx, devRuntimeWaitMaxSecs()); n > 0 {
 		slog.Info("qa watchdog: dev-pinned tasks fell back", "count", n)
 	}
-	if len(gates) > 0 {
-		slog.Info("qa watchdog: swept stale gates", "count", len(gates))
+	if escalated > 0 {
+		slog.Info("qa watchdog: swept stale gates", "count", escalated, "candidates", len(gates))
 	}
 }

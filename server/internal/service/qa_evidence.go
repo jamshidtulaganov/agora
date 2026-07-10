@@ -68,43 +68,25 @@ func parseQAResultBlock(content string) (raw string, p qaResultPayload, ok bool)
 // label CLI — so the loop stalled (no label → no merge-gate → never done).
 // Deriving the label from the captured verdict makes the gate reliable
 // regardless of whether the agent remembered the label step.
+//
+// Label-first ordering (audit finding — "label-attach failure diverges from
+// evidence"): the LABEL is attached BEFORE the qa_evidence row is persisted,
+// and a label-attach failure aborts the whole capture (no evidence written).
+// The old order wrote evidence first and merely warned on a label failure, so
+// the qa_evidence row could carry a fresh "pass" while the qa:pass label never
+// landed — the chip (reads evidence.verdict, qa-lens.tsx) would show green
+// while the merge gate (reads the LABEL, slice_action.go
+// enforceQAGateBeforeDone) stayed blocked. Attaching first means the two
+// surfaces can never disagree: either both the label and the evidence are
+// live, or NEITHER is — a re-run picks it back up (least invasive fix that
+// still guarantees agreement, chosen over a cross-table transaction since
+// UpsertQAEvidence and AttachLabelToIssue are separate tables with their own
+// upsert/idempotency semantics).
 func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, content string) (verdict string, newlyLabeled bool) {
 	raw, p, ok := parseQAResultBlock(content)
 	if !ok {
 		return "", false
 	}
-
-	if _, err := s.Queries.UpsertQAEvidence(ctx, db.UpsertQAEvidenceParams{
-		WorkspaceID: issue.WorkspaceID,
-		IssueID:     issue.ID,
-		BaselineRef: "",
-		BranchSha:   "",
-		Verdict:     p.Verdict,
-		Summary:     p.Summary,
-		ResultJson:  []byte(raw),
-		Source:      "agent",
-	}); err != nil {
-		slog.Warn("capture qa evidence: upsert failed", "error", err, "issue_id", util.UUIDToString(issue.ID))
-		return "", false
-	}
-
-	s.Bus.Publish(events.Event{
-		Type:        protocol.EventQAEvidenceReady,
-		WorkspaceID: util.UUIDToString(issue.WorkspaceID),
-		ActorType:   "agent",
-		ActorID:     "",
-		Payload: map[string]any{
-			"issue_id": util.UUIDToString(issue.ID),
-			"verdict":  p.Verdict,
-		},
-	})
-	slog.Info("qa evidence captured", "issue_id", util.UUIDToString(issue.ID), "verdict", p.Verdict)
-
-	// The design-compare check (sliceActionDesignCompareContext, design_action.go)
-	// nests its own advisory verdict at result_json.design.verdict inside this
-	// SAME raw block. Mirror it into a design:pass/design:fail label the moment
-	// it's captured — independent of the top-level qa verdict below.
-	s.captureDesignVerdictLabel(ctx, issue, raw)
 
 	v := strings.ToLower(strings.TrimSpace(p.Verdict))
 	label, color := "", ""
@@ -113,23 +95,61 @@ func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, con
 		label, color = "qa:pass", "#22c55e"
 	case "fail":
 		label, color = "qa:fail", "#ef4444"
-	default:
-		return v, false // no verdict-derived gate label (e.g. "maybe"/"blocked")
 	}
+
+	// A verdict with no gate label (e.g. "maybe"/"blocked") has nothing for the
+	// merge gate to disagree with — persist evidence unconditionally, same as
+	// before.
+	if label == "" {
+		if err := s.upsertQAEvidenceRow(ctx, issue, raw, p); err != nil {
+			return "", false
+		}
+		s.captureDesignVerdictLabel(ctx, issue, raw)
+		return v, false
+	}
+
+	newlyLabeled = false
 	if s.issueHasLabelName(ctx, issue, label) {
-		return v, false // agent already set it → the label handler already fired triggers
+		// Agent already set it (e.g. via CLI) → the label handler already fired
+		// triggers for it. The label is confirmed present, so evidence can be
+		// persisted safely below; just don't report a NEW attach.
+	} else {
+		labelID, err := s.ensureLabel(ctx, issue.WorkspaceID, label, color)
+		if err != nil {
+			slog.Warn("capture qa evidence: ensure label failed — evidence NOT recorded (would disagree with the missing label)",
+				"error", err, "label", label, "issue_id", util.UUIDToString(issue.ID))
+			return "", false
+		}
+		if err := s.Queries.AttachLabelToIssue(ctx, db.AttachLabelToIssueParams{
+			IssueID: issue.ID, LabelID: labelID, WorkspaceID: issue.WorkspaceID,
+		}); err != nil {
+			slog.Warn("capture qa evidence: attach label failed — evidence NOT recorded (would disagree with the missing label)",
+				"error", err, "label", label, "issue_id", util.UUIDToString(issue.ID))
+			return "", false
+		}
+		newlyLabeled = true
 	}
-	labelID, err := s.ensureLabel(ctx, issue.WorkspaceID, label, color)
-	if err != nil {
-		slog.Warn("capture qa evidence: ensure label failed", "error", err, "label", label, "issue_id", util.UUIDToString(issue.ID))
-		return v, false
+
+	if err := s.upsertQAEvidenceRow(ctx, issue, raw, p); err != nil {
+		// The label is already live at this point; leaving it there would swap
+		// the divergence direction (label present, no evidence) instead of
+		// closing it. If WE just attached it fresh this call, undo that attach
+		// so the two surfaces still agree (both absent); if the label was
+		// already present from an EARLIER successful capture, leave it — that
+		// earlier capture's own evidence row still stands and is unaffected by
+		// this call's failure.
+		if newlyLabeled {
+			s.DetachIssueLabelByName(ctx, issue, label)
+		}
+		return "", false
 	}
-	if err := s.Queries.AttachLabelToIssue(ctx, db.AttachLabelToIssueParams{
-		IssueID: issue.ID, LabelID: labelID, WorkspaceID: issue.WorkspaceID,
-	}); err != nil {
-		slog.Warn("capture qa evidence: attach label failed", "error", err, "label", label, "issue_id", util.UUIDToString(issue.ID))
-		return v, false
-	}
+
+	// The design-compare check (sliceActionDesignCompareContext, design_action.go)
+	// nests its own advisory verdict at result_json.design.verdict inside this
+	// SAME raw block. Mirror it into a design:pass/design:fail label the moment
+	// it's captured — independent of the top-level qa verdict above.
+	s.captureDesignVerdictLabel(ctx, issue, raw)
+
 	// A verdict REPLACES the previous one — detach the opposite gate label.
 	// Without this a fixed-and-re-passed issue carried BOTH labels forever,
 	// and every fail-wins surface (cockpit lane, merge gate, sprint rollup)
@@ -147,7 +167,39 @@ func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, con
 		Payload:     map[string]any{"issue_id": util.UUIDToString(issue.ID)},
 	})
 	slog.Info("qa evidence: auto-attached gate label from verdict", "issue_id", util.UUIDToString(issue.ID), "label", label)
-	return v, true
+	return v, newlyLabeled
+}
+
+// upsertQAEvidenceRow writes the qa_evidence row and publishes the ready
+// event. Split out of CaptureQAEvidence so the label-first ordering above can
+// call it from both branches (labeled and label-less verdicts) without
+// duplicating the upsert + publish + log.
+func (s *TaskService) upsertQAEvidenceRow(ctx context.Context, issue db.Issue, raw string, p qaResultPayload) error {
+	if _, err := s.Queries.UpsertQAEvidence(ctx, db.UpsertQAEvidenceParams{
+		WorkspaceID: issue.WorkspaceID,
+		IssueID:     issue.ID,
+		BaselineRef: "",
+		BranchSha:   "",
+		Verdict:     p.Verdict,
+		Summary:     p.Summary,
+		ResultJson:  []byte(raw),
+		Source:      "agent",
+	}); err != nil {
+		slog.Warn("capture qa evidence: upsert failed", "error", err, "issue_id", util.UUIDToString(issue.ID))
+		return err
+	}
+	s.Bus.Publish(events.Event{
+		Type:        protocol.EventQAEvidenceReady,
+		WorkspaceID: util.UUIDToString(issue.WorkspaceID),
+		ActorType:   "agent",
+		ActorID:     "",
+		Payload: map[string]any{
+			"issue_id": util.UUIDToString(issue.ID),
+			"verdict":  p.Verdict,
+		},
+	})
+	slog.Info("qa evidence captured", "issue_id", util.UUIDToString(issue.ID), "verdict", p.Verdict)
+	return nil
 }
 
 // designVerdictFromResult extracts result_json.design.verdict from a raw

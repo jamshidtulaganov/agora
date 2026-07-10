@@ -1062,7 +1062,10 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 		// it reads QA-box git-syncs (deploy-mcp-integration.md §5).
 		h.TaskService.CaptureDeployEvent(r.Context(), issue, comment.Content)
 		h.TaskService.CaptureTestCases(r.Context(), issue, comment.Content, parseUUID(authorID))
-		h.TaskService.CaptureTestRuns(r.Context(), issue, comment.Content, parseUUID(authorID))
+		// comment.ParentID is this reply's trigger comment (the server enforces
+		// parent_id == the task's trigger comment for X-Task-ID requests above),
+		// so CaptureTestRuns can re-read it to enforce a scoped single-case run.
+		h.TaskService.CaptureTestRuns(r.Context(), issue, comment.Content, parseUUID(authorID), comment.ParentID)
 		// Base-suite chaining: a run_test_cases that records passing runs on an
 		// ALREADY-done issue (e.g. a base-suite authoring issue verified after
 		// it was closed) re-fires promotion, so freshly-verified cases enter the

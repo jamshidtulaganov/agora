@@ -37,6 +37,20 @@ WHERE i.status = 'in_review'
 ORDER BY i.updated_at ASC
 LIMIT 100;
 
+-- name: IssueHasRunQADispatchMarker :one
+-- Reports whether a run_qa gate was ever DISPATCHED for this issue — a comment
+-- carrying the run_qa agent-protocol marker (agentProtocolMarker("run_qa"),
+-- slice_action.go: "<!--agent-protocol:run_qa-->"), fired either automatically
+-- (in_review auto-QA) or manually (the QA lens's Re-run button). Used by the
+-- watchdog to gate escalation PER-ISSUE when AGORA_AUTO_QA_ENABLED is off: in
+-- that world not every in_review issue is gated, so only an issue that
+-- actually had a run_qa fired — and then went silent — is a silent-failure
+-- candidate; a stale in_review issue nobody ever asked QA to gate is not.
+SELECT EXISTS (
+  SELECT 1 FROM comment
+  WHERE issue_id = $1 AND content LIKE '%<!--agent-protocol:run_qa-->%'
+) AS dispatched;
+
 -- name: CreateLabel :one
 INSERT INTO issue_label (workspace_id, name, color)
 VALUES ($1, $2, $3)

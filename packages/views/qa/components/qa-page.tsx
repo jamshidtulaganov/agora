@@ -53,6 +53,7 @@ import { QAMetricsView } from "./qa-metrics-view";
 import { QASprintReadinessView } from "./qa-sprint-readiness-view";
 import { QASuiteView } from "./qa-suite-view";
 import { Lane, QAIssueRow } from "./qa-lane";
+import { useQaSquadAgentIds } from "./qa-live-progress";
 import { BugsLens } from "./bugs-lens";
 
 // QA cockpit — the QA team's triage view. The in_review queue (every project)
@@ -129,12 +130,18 @@ export function QAPage() {
   ];
 
   // Which issues have a QA run executing RIGHT NOW — mark those rows "live" so
-  // a QA lead sees the queue moving. Any running task on an in_review issue is
-  // effectively QA (the knowledge/dev noise runs on other statuses).
+  // a QA lead sees the queue moving. Filtered to the QA squad's own tasks
+  // (useQaSquadAgentIds) — an unrelated dev/knowledge task running on the same
+  // in_review issue is NOT "QA is running" and must not light up the row or
+  // hand its task id to the Stop button (audit finding: the cockpit queue had
+  // the same unfiltered-Stop flaw as the Test-cases panel).
   const { data: taskSnapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
+  const qaAgentIds = useQaSquadAgentIds(wsId);
+  const isQaTask = (t: (typeof taskSnapshot)[number]) =>
+    t.status === "running" && !!t.issue_id && (!qaAgentIds || qaAgentIds.size === 0 || qaAgentIds.has(t.agent_id));
   const liveIssueIds = useMemo(
-    () => new Set(taskSnapshot.filter((t) => t.status === "running" && t.issue_id).map((t) => t.issue_id)),
-    [taskSnapshot],
+    () => new Set(taskSnapshot.filter(isQaTask).map((t) => t.issue_id)),
+    [taskSnapshot, qaAgentIds],
   );
   // issueId → live task id, so a running row can offer a Stop button. First
   // running task per issue wins (a gate is one task); `.id` is what the cancel
@@ -142,10 +149,10 @@ export function QAPage() {
   const runningTaskByIssue = useMemo(() => {
     const map = new Map<string, string>();
     for (const t of taskSnapshot) {
-      if (t.status === "running" && t.issue_id && !map.has(t.issue_id)) map.set(t.issue_id, t.id);
+      if (isQaTask(t) && !map.has(t.issue_id)) map.set(t.issue_id, t.id);
     }
     return map;
-  }, [taskSnapshot]);
+  }, [taskSnapshot, qaAgentIds]);
   const { data, isLoading } = useQuery({
     queryKey: ["qa-cockpit", wsId, project],
     queryFn: () =>

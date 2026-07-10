@@ -1987,6 +1987,10 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	instruction += h.sliceActionDesignManifestContext(ctx, issue)
 	instruction += h.sliceActionQADocsContext(ctx, issue)
 	instruction += h.sliceActionProjectBaseSuiteContext(ctx, issue)
+	// The issue's own DEFINED test cases are part of the gate, not a separate
+	// concern run_test_cases alone was responsible for (audit finding — see
+	// sliceActionGateTestCasesContext).
+	instruction += h.sliceActionGateTestCasesContext(ctx, issue)
 	instruction += qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
 	instruction += h.sliceActionDesignCompareContext(ctx, issue)
 	instruction += h.sliceActionDesignLintContext(ctx, issue)
@@ -2471,6 +2475,45 @@ func issueBriefNote(description string, acceptanceCriteria []byte) string {
 	return b.String()
 }
 
+// sliceActionTestCasesListCap bounds how many cases get the full
+// title+preconditions+steps+expected treatment in an injected prompt. Beyond
+// the cap, remaining cases are listed by TITLE ONLY — a project with hundreds
+// of defined cases must not blow the agent's prompt budget just to name them.
+// Chosen well above the p95 case count per issue (single digits) while still
+// bounding the pathological project-base-suite-sized case.
+const sliceActionTestCasesListCap = 20
+
+// formatAutomatedTestCasesList renders the id/title/steps/expected line format
+// shared by sliceActionTestCasesContext (run_test_cases) and
+// sliceActionGateTestCasesContext (run_qa) so the two callers can't drift in
+// what "the case list" looks like. Applies sliceActionTestCasesListCap: cases
+// beyond the cap get a title-only line instead of the full detail.
+func formatAutomatedTestCasesList(cases []db.TestCase) string {
+	var b strings.Builder
+	for i, c := range cases {
+		if i >= sliceActionTestCasesListCap {
+			b.WriteString(fmt.Sprintf(" [id=%s] %s (title only — case list capped at %d full entries).",
+				uuidToString(c.ID), c.Title, sliceActionTestCasesListCap))
+			continue
+		}
+		steps := strings.ReplaceAll(strings.TrimSpace(c.Steps), "\n", " ")
+		// Preconditions ride along when set — a runner that doesn't know the
+		// required setup state (seeded account, feature flag) can't execute the
+		// case faithfully and reports a bogus "blocked".
+		pre := ""
+		if p := strings.TrimSpace(c.Preconditions); p != "" {
+			pre = fmt.Sprintf(" preconditions: %s;", strings.ReplaceAll(p, "\n", " "))
+		}
+		b.WriteString(fmt.Sprintf(" [id=%s] %s —%s steps: %s; expected: %s.",
+			uuidToString(c.ID), c.Title, pre, steps, strings.TrimSpace(c.Expected)))
+		if s := strings.TrimSpace(c.Script); s != "" {
+			b.WriteString(fmt.Sprintf(" COMPILED SCRIPT for [id=%s] — write to /tmp/case-%s.mjs and run `node` it; exit code is the verdict:\n```javascript\n%s\n```",
+				uuidToString(c.ID), uuidToString(c.ID), s))
+		}
+	}
+	return b.String()
+}
+
 // sliceActionTestCasesContext lists the issue's AUTOMATED test cases (id · title ·
 // steps · expected) for run_test_cases, so the agent drives each one and reports
 // a verdict per case keyed by the id we hand it. hasBaseSuite tells the no-cases
@@ -2490,22 +2533,37 @@ func (h *Handler) sliceActionTestCasesContext(ctx context.Context, issue db.Issu
 	}
 	var b strings.Builder
 	b.WriteString(" AUTOMATED TEST CASES TO RUN (report a verdict for each by its id):")
-	for _, c := range cases {
-		steps := strings.ReplaceAll(strings.TrimSpace(c.Steps), "\n", " ")
-		// Preconditions ride along when set — a runner that doesn't know the
-		// required setup state (seeded account, feature flag) can't execute the
-		// case faithfully and reports a bogus "blocked".
-		pre := ""
-		if p := strings.TrimSpace(c.Preconditions); p != "" {
-			pre = fmt.Sprintf(" preconditions: %s;", strings.ReplaceAll(p, "\n", " "))
-		}
-		b.WriteString(fmt.Sprintf(" [id=%s] %s —%s steps: %s; expected: %s.",
-			uuidToString(c.ID), c.Title, pre, steps, strings.TrimSpace(c.Expected)))
-		if s := strings.TrimSpace(c.Script); s != "" {
-			b.WriteString(fmt.Sprintf(" COMPILED SCRIPT for [id=%s] — write to /tmp/case-%s.mjs and run `node` it; exit code is the verdict:\n```javascript\n%s\n```",
-				uuidToString(c.ID), uuidToString(c.ID), s))
-		}
+	b.WriteString(formatAutomatedTestCasesList(cases))
+	return b.String()
+}
+
+// sliceActionGateTestCasesContext folds the issue's own DEFINED test cases into
+// the run_qa gate instruction. Before this, run_qa never saw
+// sliceActionTestCasesContext at all (only run_test_cases did) — an agent could
+// set qa:pass having never executed a single case the team defined for this
+// issue (audit finding: "run_qa never runs the issue's own test cases"). The
+// cases are framed as PART of the gate, not an optional extra: execute each,
+// respecting its modality, and a failing defined case blocks a "pass" verdict.
+// "" when the issue has no cases (the gate still runs the smoke/plan checks it
+// always has — this is additive, not a hard requirement to have cases).
+func (h *Handler) sliceActionGateTestCasesContext(ctx context.Context, issue db.Issue) string {
+	cases, err := h.Queries.ListAutomatedTestCasesForIssue(ctx, db.ListAutomatedTestCasesForIssueParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil || len(cases) == 0 {
+		return ""
 	}
+	var b strings.Builder
+	b.WriteString(" DEFINED TEST CASES — PART OF THIS GATE (not optional): the team has defined the following " +
+		"automated cases for this issue. EXECUTE every one, respecting its modality (ui = drive a real browser; " +
+		"api = deterministic HTTP/response assertion; unit = run it as a unit check; manual = perform it by hand " +
+		"if feasible, else mark it blocked and say why), and report a verdict for EACH by its id in a fenced " +
+		"```test-runs``` code block at the END of your comment — same schema run_test_cases uses: a JSON array " +
+		"`[{\"test_case_id\":\"<id>\",\"status\":\"pass\"|\"fail\"|\"blocked\",\"output\":\"<one-line evidence>\"}]`. " +
+		"A FAILING defined case means this gate's overall verdict CANNOT be \"pass\" — set qa:fail (or qa:blocked " +
+		"if it could not run) instead, even if everything else about the change looks fine.")
+	b.WriteString(formatAutomatedTestCasesList(cases))
 	return b.String()
 }
 
@@ -2929,6 +2987,9 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 		instruction += h.sliceActionDesignManifestContext(r.Context(), issue)
 		instruction += h.sliceActionQADocsContext(r.Context(), issue)
 		instruction += h.sliceActionProjectBaseSuiteContext(r.Context(), issue)
+		// The issue's own DEFINED test cases are part of the gate — see
+		// sliceActionGateTestCasesContext (audit finding: run_qa never ran them).
+		instruction += h.sliceActionGateTestCasesContext(r.Context(), issue)
 		instruction += qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
 		instruction += h.sliceActionDesignCompareContext(r.Context(), issue)
 		instruction += h.sliceActionDesignLintContext(r.Context(), issue)
