@@ -248,7 +248,7 @@ export function QALensBody({ issueId }: { issueId: string }) {
                     )}
                     {evidence.result.design && (
                       <div className={evidence.result.commands.length > 0 ? "mt-3" : ""}>
-                        <QADesignCompare design={evidence.result.design} />
+                        <QADesignCompare design={evidence.result.design} issueId={issueId} />
                       </div>
                     )}
                   </section>
