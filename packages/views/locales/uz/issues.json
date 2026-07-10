@@ -672,8 +672,7 @@
     "design": "Dizayn",
     "dev": "Dasturlash",
     "qa": "QA",
-    "review": "Tekshiruv",
-    "deploy": "Deploy"
+    "review": "Tekshiruv"
   },
   "figma_links": {
     "chip_label": "Figma maket bog'langan",
@@ -750,19 +749,6 @@
     "tier_label": "Daraja",
     "ready": "Birlashtirishga tayyor",
     "blocked": "Bloklangan"
-  },
-  "deploy_lens": {
-    "empty": "Bu loyihaga deploy nishoni bog'lanmagan.",
-    "box_heading": "QA box",
-    "box_label": "Box",
-    "box_host": "Host",
-    "box_status": "Holat",
-    "box_last_branch": "Oxirgi branch",
-    "deploy_heading": "Deploy",
-    "history_heading": "So'nggi deploylar",
-    "history_empty": "Hozircha deploy bo'lmagan.",
-    "status_success": "Muvaffaqiyatli",
-    "status_failed": "Muvaffaqiyatsiz"
   },
   "agent_protocol": {
     "an_agent": "agent",

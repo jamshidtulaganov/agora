@@ -13,7 +13,7 @@ function mulberry32(seed: number) {
   };
 }
 
-const STAGES: SDLCStage[] = ["design", "dev", "qa", "review", "deploy"];
+const STAGES: SDLCStage[] = ["design", "dev", "qa", "review"];
 const STATUSES = [
   "backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled",
   // enum drift — future/garbage statuses must never crash the pipeline
@@ -43,8 +43,6 @@ function randomInput(rand: () => number): StagePipelineInput {
     runningTaskStages: maybe(
       Array.from({ length: Math.floor(rand() * 3) }, () => pick(STAGES)),
     ),
-    hasDeployTarget: rand() < 0.5,
-    deploySynced: maybe(rand() < 0.5),
   };
 }
 
@@ -61,10 +59,10 @@ describe("deriveStagePipeline fuzz — 10k adversarial inputs", () => {
       }
       const ctx = () => `input #${i}: ${JSON.stringify(input)} → ${JSON.stringify(pipeline)}`;
 
-      // 1. Always exactly the 5 stages, in canonical order.
+      // 1. Always exactly the 4 stages, in canonical order.
       expect(pipeline.stages.map((s) => s.stage), ctx()).toEqual(STAGES);
 
-      // 2. current is always one of the 5.
+      // 2. current is always one of the 4.
       expect(STAGES, ctx()).toContain(pipeline.current);
 
       // 3. Every state is a known StageState.
@@ -75,14 +73,11 @@ describe("deriveStagePipeline fuzz — 10k adversarial inputs", () => {
         ).toContain(s.state);
       }
 
-      // 4. Skipped-stage rules: no design signals → design skipped; no deploy
-      //    target → deploy skipped (regardless of everything else).
+      // 4. Skipped-stage rule: no design signals → design skipped
+      //    (regardless of everything else).
       const byStage = Object.fromEntries(pipeline.stages.map((s) => [s.stage, s]));
       if (!input.hasDesignSignals && input.status !== "done") {
         expect(byStage.design!.state, ctx()).toBe("skipped");
-      }
-      if (!input.hasDeployTarget && input.status !== "done") {
-        expect(byStage.deploy!.state, ctx()).toBe("skipped");
       }
 
       // 5. done → every non-skipped stage passed.

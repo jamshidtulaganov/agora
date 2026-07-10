@@ -4,11 +4,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useStagePipeline } from "./use-stage-pipeline";
 
-// Focused on the deploy P0 fix (docs/deploy-stage-research.md P0): deploySynced
-// was always undefined, so the deploy stage could never reach "passed". This
-// covers the ASSEMBLY of hasDeployTarget/deploySynced from the box + PR
-// queries this hook already fetches — deriveStagePipeline's own state-machine
-// rules are covered exhaustively in packages/core/issues/stage.test.ts.
+// Covers the ASSEMBLY of StagePipelineInput from the queries this hook
+// fetches (issue metadata -> prNumber, PR list -> prMerged, qa_evidence ->
+// design/qa verdicts, task snapshot + QA-squad membership -> running-stage
+// attribution). deriveStagePipeline's own state-machine rules are covered
+// exhaustively in packages/core/issues/stage.test.ts.
+//
+// Deploy is deliberately absent: it left the issue-level pipeline (deploy
+// cycle rehome, part 1) — the hook no longer queries remote boxes or
+// deploy events, and the pipeline is 4 stages (design/dev/qa/review).
 
 const apiMocks = vi.hoisted(() => ({
   getIssue: vi.fn(),
@@ -19,17 +23,9 @@ const apiMocks = vi.hoisted(() => ({
   getAgentTaskSnapshot: vi.fn(),
   listSquads: vi.fn(),
   listSquadMembers: vi.fn(),
-  listRemoteBoxes: vi.fn(),
-  getIssueDeployEvents: vi.fn(),
 }));
-
-let remoteBoxesEnabled = true;
 
 vi.mock("@agora/core/api", () => ({ api: apiMocks }));
-vi.mock("@agora/core/config", () => ({
-  useConfigStore: (selector: (s: { remoteBoxesEnabled: boolean }) => unknown) =>
-    selector({ remoteBoxesEnabled }),
-}));
 
 function baseIssue(over: Record<string, unknown> = {}) {
   return {
@@ -58,28 +54,6 @@ function baseIssue(over: Record<string, unknown> = {}) {
   };
 }
 
-function box(over: Record<string, unknown> = {}) {
-  return {
-    id: "box-1",
-    workspace_id: "ws-1",
-    owner_id: "u1",
-    label: "jamshid's box",
-    ssh_host: "jamshid.sdteam.uz",
-    ssh_user: "deploy",
-    ssh_port: 22,
-    deploy_pubkey: "",
-    daemon_id: "daemon-1",
-    status: "online",
-    last_error: "",
-    repo_url: "",
-    work_dir: "/srv/app",
-    last_branch: "feature/foo",
-    project_id: "project-1",
-    created_at: "",
-    ...over,
-  };
-}
-
 function pullRequest(over: Record<string, unknown> = {}) {
   return {
     id: "pr-1",
@@ -101,19 +75,6 @@ function pullRequest(over: Record<string, unknown> = {}) {
   };
 }
 
-function deployEvent(over: Record<string, unknown> = {}) {
-  return {
-    id: "de-1",
-    issue_id: "issue-1",
-    ref: "feature/foo",
-    target: "jamshid's box",
-    status: "success",
-    summary: "",
-    captured_at: "2026-07-01T00:00:00Z",
-    ...over,
-  };
-}
-
 function createWrapper(qc: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
@@ -125,14 +86,13 @@ function renderPipeline() {
   return renderHook(() => useStagePipeline("ws-1", "issue-1"), { wrapper: createWrapper(qc) });
 }
 
-function deployState(stages: { stage: string; state: string }[]) {
-  return stages.find((s) => s.stage === "deploy")?.state;
+function stageState(stages: { stage: string; state: string }[], stage: string) {
+  return stages.find((s) => s.stage === stage)?.state;
 }
 
-describe("useStagePipeline — deploy signal", () => {
+describe("useStagePipeline — 4-stage assembly", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    remoteBoxesEnabled = true;
     apiMocks.getIssue.mockResolvedValue(baseIssue());
     apiMocks.listLabelsForIssue.mockResolvedValue([]);
     apiMocks.getQAEvidence.mockResolvedValue(null);
@@ -141,103 +101,60 @@ describe("useStagePipeline — deploy signal", () => {
     apiMocks.getAgentTaskSnapshot.mockResolvedValue([]);
     apiMocks.listSquads.mockResolvedValue([]);
     apiMocks.listSquadMembers.mockResolvedValue([]);
-    apiMocks.listRemoteBoxes.mockResolvedValue([box()]);
-    // No deploy_event recorded yet by default — every pre-existing test below
-    // exercises the pre-table fallback heuristic (box.last_branch vs. the
-    // issue's PR branch) unchanged.
-    apiMocks.getIssueDeployEvents.mockResolvedValue({ latest: null, recent: [] });
   });
 
-  it("passes the deploy stage when the bound box's last sync matches the issue's PR branch", async () => {
+  it("derives a 4-stage pipeline — deploy is not a stage anymore", async () => {
     const { result } = renderPipeline();
-    await waitFor(() => expect(deployState(result.current.stages)).toBe("passed"));
+    await waitFor(() => expect(stageState(result.current.stages, "dev")).toBe("passed"));
+    expect(result.current.stages.map((s) => s.stage)).toEqual(["design", "dev", "qa", "review"]);
   });
 
-  it("does not pass when the box last synced a different branch than the issue's PR", async () => {
-    apiMocks.listRemoteBoxes.mockResolvedValue([box({ last_branch: "main" })]);
+  it("passes the dev stage from the issue's pr_number metadata", async () => {
     const { result } = renderPipeline();
-    await waitFor(() => expect(deployState(result.current.stages)).not.toBe("skipped"));
-    expect(deployState(result.current.stages)).not.toBe("passed");
+    await waitFor(() => expect(stageState(result.current.stages, "dev")).toBe("passed"));
   });
 
-  it("does not pass when the bound box is offline even if the branch matches", async () => {
-    apiMocks.listRemoteBoxes.mockResolvedValue([box({ status: "offline" })]);
-    const { result } = renderPipeline();
-    await waitFor(() => expect(deployState(result.current.stages)).not.toBe("skipped"));
-    expect(deployState(result.current.stages)).not.toBe("passed");
-  });
-
-  it("does not pass when the issue has no matching PR to compare branches against", async () => {
+  it("keeps dev open when the issue has no PR metadata", async () => {
     apiMocks.getIssue.mockResolvedValue(baseIssue({ metadata: {} }));
     const { result } = renderPipeline();
-    await waitFor(() => expect(deployState(result.current.stages)).not.toBe("skipped"));
-    expect(deployState(result.current.stages)).not.toBe("passed");
+    await waitFor(() => expect(stageState(result.current.stages, "dev")).toBe("active"));
   });
 
-  it("skips the deploy stage entirely when the remote-boxes feature is disabled", async () => {
-    remoteBoxesEnabled = false;
-    const { result } = renderPipeline();
-    await waitFor(() => expect(deployState(result.current.stages)).toBe("skipped"));
-  });
-
-  it("skips the deploy stage when no box is bound to the issue's project", async () => {
-    apiMocks.listRemoteBoxes.mockResolvedValue([box({ project_id: "other-project" })]);
-    const { result } = renderPipeline();
-    await waitFor(() => expect(deployState(result.current.stages)).toBe("skipped"));
-  });
-
-  it("does not query deploy events when no box is bound (avoid a useless fetch)", async () => {
-    apiMocks.listRemoteBoxes.mockResolvedValue([box({ project_id: "other-project" })]);
-    const { result } = renderPipeline();
-    await waitFor(() => expect(deployState(result.current.stages)).toBe("skipped"));
-    expect(apiMocks.getIssueDeployEvents).not.toHaveBeenCalled();
-  });
-});
-
-describe("useStagePipeline — deploy_event signal (deploy P0) takes precedence over the legacy heuristic", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    remoteBoxesEnabled = true;
-    apiMocks.getIssue.mockResolvedValue(baseIssue());
-    apiMocks.listLabelsForIssue.mockResolvedValue([]);
-    apiMocks.getQAEvidence.mockResolvedValue(null);
-    apiMocks.listIssuePullRequests.mockResolvedValue({ pull_requests: [pullRequest()] });
-    apiMocks.mergeReadiness.mockResolvedValue({ ready: false, tier: "light", gates: [], reviews: [] });
-    apiMocks.getAgentTaskSnapshot.mockResolvedValue([]);
-    apiMocks.listSquads.mockResolvedValue([]);
-    apiMocks.listSquadMembers.mockResolvedValue([]);
-    apiMocks.listRemoteBoxes.mockResolvedValue([box()]);
-  });
-
-  it("passes on a successful deploy_event even when the box's last_branch doesn't match the PR branch (fixes the legacy heuristic's known gap)", async () => {
-    apiMocks.listRemoteBoxes.mockResolvedValue([box({ last_branch: "main" })]);
-    apiMocks.getIssueDeployEvents.mockResolvedValue({ latest: deployEvent({ status: "success" }), recent: [] });
-    const { result } = renderPipeline();
-    await waitFor(() => expect(deployState(result.current.stages)).toBe("passed"));
-  });
-
-  it("does not pass on a failed deploy_event even when the box's last_branch matches the PR branch", async () => {
-    apiMocks.listRemoteBoxes.mockResolvedValue([box({ last_branch: "feature/foo" })]);
-    apiMocks.getIssueDeployEvents.mockResolvedValue({ latest: deployEvent({ status: "failed" }), recent: [] });
-    const { result } = renderPipeline();
-    await waitFor(() => expect(deployState(result.current.stages)).not.toBe("skipped"));
-    expect(deployState(result.current.stages)).not.toBe("passed");
-  });
-
-  it("falls back to the legacy branch heuristic when no deploy_event has been recorded yet", async () => {
-    apiMocks.getIssueDeployEvents.mockResolvedValue({ latest: null, recent: [] });
-    const { result } = renderPipeline();
-    await waitFor(() => expect(deployState(result.current.stages)).toBe("passed"));
-  });
-
-  it("surfaces the deploy_event's ref as the passed stage's detail", async () => {
-    apiMocks.getIssueDeployEvents.mockResolvedValue({
-      latest: deployEvent({ status: "success", ref: "feature/foo" }),
-      recent: [],
+  it("passes the review stage when the matched PR is merged", async () => {
+    apiMocks.listIssuePullRequests.mockResolvedValue({
+      pull_requests: [pullRequest({ state: "merged" })],
     });
     const { result } = renderPipeline();
-    await waitFor(() => expect(deployState(result.current.stages)).toBe("passed"));
-    const deploy = result.current.stages.find((s) => s.stage === "deploy");
-    expect(deploy?.detail).toBe("feature/foo");
+    await waitFor(() => expect(stageState(result.current.stages, "review")).toBe("passed"));
+  });
+
+  it("passes the qa stage from a qa:pass evidence verdict + surfaces design signals", async () => {
+    apiMocks.getQAEvidence.mockResolvedValue({
+      verdict: "pass",
+      result: { design: { verdict: "pass" } },
+    });
+    const { result } = renderPipeline();
+    await waitFor(() => expect(stageState(result.current.stages, "design")).toBe("passed"));
+    // design evidence present -> the stage participates instead of skipping.
+    expect(stageState(result.current.stages, "design")).not.toBe("skipped");
+  });
+
+  it("skips design when the issue has no design signals at all", async () => {
+    const { result } = renderPipeline();
+    await waitFor(() => expect(stageState(result.current.stages, "design")).toBe("skipped"));
+  });
+
+  it("attributes a running QA-squad agent task to the qa stage, others to dev", async () => {
+    apiMocks.getIssue.mockResolvedValue(baseIssue({ metadata: {} }));
+    apiMocks.listSquads.mockResolvedValue([{ id: "sq-1", name: "QA Squad", leader_id: "agent-qa" }]);
+    apiMocks.listSquadMembers.mockResolvedValue([]);
+    apiMocks.getAgentTaskSnapshot.mockResolvedValue([
+      { issue_id: "issue-1", agent_id: "agent-qa", status: "running" },
+      { issue_id: "issue-1", agent_id: "agent-dev", status: "running" },
+      { issue_id: "other-issue", agent_id: "agent-dev", status: "running" },
+    ]);
+    const { result } = renderPipeline();
+    await waitFor(() => expect(stageState(result.current.stages, "qa")).toBe("running"));
+    expect(stageState(result.current.stages, "dev")).toBe("running");
   });
 });

@@ -12,7 +12,6 @@ function baseInput(overrides: Partial<StagePipelineInput> = {}): StagePipelineIn
     status: "todo",
     labels: [],
     hasDesignSignals: false,
-    hasDeployTarget: false,
     ...overrides,
   };
 }
@@ -24,15 +23,9 @@ function find(pipeline: StagePipeline, stage: SDLCStage) {
 }
 
 describe("deriveStagePipeline — stage order", () => {
-  it("always returns the five stages in design/dev/qa/review/deploy order", () => {
+  it("always returns the four stages in design/dev/qa/review order", () => {
     const pipeline = deriveStagePipeline(baseInput());
-    expect(pipeline.stages.map((s) => s.stage)).toEqual([
-      "design",
-      "dev",
-      "qa",
-      "review",
-      "deploy",
-    ]);
+    expect(pipeline.stages.map((s) => s.stage)).toEqual(["design", "dev", "qa", "review"]);
   });
 });
 
@@ -335,63 +328,17 @@ describe("deriveStagePipeline — review stage", () => {
   });
 });
 
-describe("deriveStagePipeline — deploy stage", () => {
-  it("is skipped when the project has no deploy target", () => {
-    const pipeline = deriveStagePipeline(baseInput({ hasDeployTarget: false }));
-    expect(find(pipeline, "deploy")).toEqual({ stage: "deploy", state: "skipped" });
-  });
-
-  it("passes once synced", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ hasDeployTarget: true, deploySynced: true }),
-    );
-    expect(find(pipeline, "deploy").state).toBe("passed");
-  });
-
-  it("carries the caller-supplied deployDetail (e.g. the deployed ref) onto a passed stage", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ hasDeployTarget: true, deploySynced: true, deployDetail: "feature/foo" }),
-    );
-    expect(find(pipeline, "deploy")).toEqual({
-      stage: "deploy",
-      state: "passed",
-      detail: "feature/foo",
-    });
-  });
-
-  it("omits detail when deployDetail isn't supplied (unchanged pre-P0 shape)", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ hasDeployTarget: true, deploySynced: true }),
-    );
-    expect(find(pipeline, "deploy")).toEqual({ stage: "deploy", state: "passed" });
-  });
-
-  it("is running when a deploy task is attributed as running", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ hasDeployTarget: true, runningTaskStages: ["deploy"] }),
-    );
-    expect(find(pipeline, "deploy").state).toBe("running");
-  });
-
-  it("is pending with a target that isn't synced or running", () => {
-    const pipeline = deriveStagePipeline(baseInput({ hasDeployTarget: true }));
-    expect(find(pipeline, "deploy").state).toBe("pending");
-  });
-});
-
 describe("deriveStagePipeline — running attribution is per-stage", () => {
   it("only marks the stages the caller attributed as running", () => {
     const pipeline = deriveStagePipeline(
       baseInput({
         hasDesignSignals: true,
-        hasDeployTarget: true,
-        runningTaskStages: ["design", "deploy"],
+        runningTaskStages: ["design"],
       }),
     );
     expect(find(pipeline, "design").state).toBe("running");
     expect(find(pipeline, "dev").state).toBe("pending"); // not attributed, stays pending
     expect(find(pipeline, "qa").state).toBe("pending");
-    expect(find(pipeline, "deploy").state).toBe("running");
   });
 });
 
@@ -428,10 +375,9 @@ describe("deriveStagePipeline — current stage resolution", () => {
         designVerdict: "pass",
         prNumber: 1,
         labels: [{ name: "qa:pass" }],
-        hasDeployTarget: false, // deploy skipped
       }),
     );
-    // design/dev/qa passed, deploy skipped -> review is first open.
+    // design/dev/qa passed -> review is first open.
     expect(pipeline.current).toBe("review");
     expect(find(pipeline, "review").state).toBe("active"); // promoted from pending
   });
@@ -440,20 +386,19 @@ describe("deriveStagePipeline — current stage resolution", () => {
 describe("deriveStagePipeline — done status", () => {
   it("forces every non-skipped stage to passed and pins current to the last non-skipped stage", () => {
     const pipeline = deriveStagePipeline(
-      baseInput({ status: "done", hasDesignSignals: true, hasDeployTarget: true }),
+      baseInput({ status: "done", hasDesignSignals: true }),
     );
     for (const s of pipeline.stages) {
       expect(s.state).toBe("passed");
     }
-    expect(pipeline.current).toBe("deploy");
+    expect(pipeline.current).toBe("review");
   });
 
   it("skips a stage with no signals even when done, and pins current to the last non-skipped stage", () => {
     const pipeline = deriveStagePipeline(
-      baseInput({ status: "done", hasDesignSignals: false, hasDeployTarget: false }),
+      baseInput({ status: "done", hasDesignSignals: false }),
     );
     expect(find(pipeline, "design").state).toBe("skipped");
-    expect(find(pipeline, "deploy").state).toBe("skipped");
     expect(find(pipeline, "dev").state).toBe("passed");
     expect(find(pipeline, "qa").state).toBe("passed");
     expect(find(pipeline, "review").state).toBe("passed");
@@ -466,11 +411,9 @@ describe("deriveStagePipeline — done status", () => {
         status: "done",
         hasDesignSignals: true,
         designVerdict: "fail",
-        hasDeployTarget: true,
       }),
     );
     expect(find(pipeline, "design").state).toBe("passed");
-    expect(find(pipeline, "deploy").state).toBe("passed");
   });
 });
 
@@ -491,7 +434,6 @@ describe("deriveStagePipeline — cancelled status", () => {
         prNumber: 1,
         labels: [{ name: "qa:pass" }],
         prMerged: true,
-        hasDeployTarget: false,
       }),
     );
     expect(pipeline.current).toBe("review");

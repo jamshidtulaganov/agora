@@ -672,8 +672,7 @@
     "design": "Дизайн",
     "dev": "Разработка",
     "qa": "QA",
-    "review": "Проверка",
-    "deploy": "Деплой"
+    "review": "Проверка"
   },
   "figma_links": {
     "chip_label": "Привязан макет Figma",
@@ -750,19 +749,6 @@
     "tier_label": "Уровень",
     "ready": "Готово к слиянию",
     "blocked": "Заблокировано"
-  },
-  "deploy_lens": {
-    "empty": "К этому проекту не привязана цель для деплоя.",
-    "box_heading": "QA-бокс",
-    "box_label": "Бокс",
-    "box_host": "Хост",
-    "box_status": "Статус",
-    "box_last_branch": "Последняя ветка",
-    "deploy_heading": "Деплой",
-    "history_heading": "Недавние деплои",
-    "history_empty": "Деплоев пока не было.",
-    "status_success": "Успешно",
-    "status_failed": "Не удалось"
   },
   "agent_protocol": {
     "an_agent": "агент",

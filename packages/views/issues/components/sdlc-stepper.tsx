@@ -1,10 +1,11 @@
 "use client";
 
-// The SDLC stepper strip — Design → Dev → QA → Review → Deploy — mounted via
+// The SDLC stepper strip — Design → Dev → QA → Review — mounted via
 // CockpitFrame's `topStrip` slot. Renders the pipeline `deriveStagePipeline`
 // already computed; owns no state of its own beyond click handling, which it
 // delegates entirely to the caller (lens switching lives in lens.ts).
-// See docs/sdlc-stage-cockpit-plan.md section 1/3 (phase C).
+// See docs/sdlc-stage-cockpit-plan.md section 1/3 (phase C). Deploy is not a
+// stage here — it moved to the sprint level (qa-sprint-readiness-view.tsx).
 
 import { CheckCircle2, XCircle, TriangleAlert } from "lucide-react";
 import type { SDLCStage, StagePipeline, StageState } from "@agora/core/issues";
@@ -69,8 +70,6 @@ function stageLabel(stage: SDLCStage, t: ReturnType<typeof useT<"issues">>["t"])
       return t(($) => $.sdlc.qa);
     case "review":
       return t(($) => $.sdlc.review);
-    case "deploy":
-      return t(($) => $.sdlc.deploy);
   }
 }
 

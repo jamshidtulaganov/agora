@@ -15,7 +15,6 @@ const BASE_PIPELINE: StagePipeline = {
     { stage: "dev", state: "passed" },
     { stage: "qa", state: "running" },
     { stage: "review", state: "pending" },
-    { stage: "deploy", state: "skipped" },
   ],
 };
 
@@ -43,18 +42,16 @@ function renderStepper(
 }
 
 describe("SDLCStepper", () => {
-  it("renders all 5 stages with their translated labels", () => {
+  it("renders all 4 stages with their translated labels", () => {
     renderStepper(BASE_PIPELINE);
     expect(screen.getByTestId("sdlc-stage-design")).toBeInTheDocument();
     expect(screen.getByTestId("sdlc-stage-dev")).toBeInTheDocument();
     expect(screen.getByTestId("sdlc-stage-qa")).toBeInTheDocument();
     expect(screen.getByTestId("sdlc-stage-review")).toBeInTheDocument();
-    expect(screen.getByTestId("sdlc-stage-deploy")).toBeInTheDocument();
     expect(screen.getByText("Design")).toBeInTheDocument();
     expect(screen.getByText("Dev")).toBeInTheDocument();
     expect(screen.getByText("QA")).toBeInTheDocument();
     expect(screen.getByText("Review")).toBeInTheDocument();
-    expect(screen.getByText("Deploy")).toBeInTheDocument();
   });
 
   it("stamps data-state per stage and dims skipped stages", () => {
@@ -65,7 +62,6 @@ describe("SDLCStepper", () => {
     expect(screen.getByTestId("sdlc-stage-dev").className).not.toContain("opacity-40");
     expect(screen.getByTestId("sdlc-stage-qa")).toHaveAttribute("data-state", "running");
     expect(screen.getByTestId("sdlc-stage-review")).toHaveAttribute("data-state", "pending");
-    expect(screen.getByTestId("sdlc-stage-deploy")).toHaveAttribute("data-state", "skipped");
   });
 
   it("renders an unregistered-lens stage as non-interactive and ignores clicks", () => {
@@ -109,7 +105,6 @@ describe("SDLCStepper", () => {
         { stage: "dev", state: "passed" },
         { stage: "qa", state: "passed", detail: "stale" },
         { stage: "review", state: "active", detail: "light" },
-        { stage: "deploy", state: "skipped" },
       ],
     };
     renderStepper(pipeline);

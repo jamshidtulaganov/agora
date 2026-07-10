@@ -19,7 +19,6 @@ import { QALensBody } from "../qa/components/qa-lens";
 import { DesignLensBody } from "./components/design-lens";
 import { DevLensBody } from "./components/dev-lens";
 import { ReviewLensBody } from "./components/review-lens";
-import { DeployLensBody } from "./components/deploy-lens";
 
 export const LENS_QUERY_KEY = "lens";
 export const DEFAULT_LENS_KEY = "issue" as const;
@@ -49,7 +48,6 @@ export const LENS_REGISTRY: Partial<Record<LensKey, StageLens>> = {
   design: { key: "design", Body: DesignLensBody },
   dev: { key: "dev", Body: DevLensBody },
   review: { key: "review", Body: ReviewLensBody },
-  deploy: { key: "deploy", Body: DeployLensBody },
 };
 
 export function getLens(key: string): StageLens | undefined {

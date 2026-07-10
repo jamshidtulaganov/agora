@@ -657,8 +657,7 @@
     "design": "设计",
     "dev": "开发",
     "qa": "QA",
-    "review": "审核",
-    "deploy": "部署"
+    "review": "审核"
   },
   "figma_links": {
     "chip_label": "已关联 Figma 设计稿",
@@ -735,19 +734,6 @@
     "tier_label": "等级",
     "ready": "可以合并",
     "blocked": "已阻塞"
-  },
-  "deploy_lens": {
-    "empty": "该项目未绑定部署目标。",
-    "box_heading": "QA 机器",
-    "box_label": "机器",
-    "box_host": "主机",
-    "box_status": "状态",
-    "box_last_branch": "最近分支",
-    "deploy_heading": "部署",
-    "history_heading": "最近部署",
-    "history_empty": "尚无部署记录。",
-    "status_success": "成功",
-    "status_failed": "失败"
   },
   "agent_protocol": {
     "an_agent": "智能体",

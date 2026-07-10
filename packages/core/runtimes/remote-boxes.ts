@@ -87,8 +87,8 @@ export function useProvisionRemoteBox(wsId: string) {
 
 // Deploy an issue's branch to its project's bound QA box (git-sync). Keyed by
 // issue; invalidates the box list so last_branch/status stay fresh, plus the
-// issue's deploy-events query (deploy P0) so the stepper's deploySynced signal
-// and the Deploy lens's history pick up the row the server just wrote.
+// issue's deploy-events query (deploy P0) so any deploy-history reader (the
+// sprint-level deploy panel) picks up the row the server just wrote.
 export function useDeployIssueQA(wsId: string) {
   const qc = useQueryClient();
   return useMutation<

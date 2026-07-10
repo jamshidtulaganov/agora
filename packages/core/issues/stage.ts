@@ -1,10 +1,16 @@
 // SDLC stage pipeline — derived, never stored.
 //
 // There is no `stage` column on Issue. The issue's position in the
-// Design -> Dev -> QA -> Review -> Deploy cycle is derived client-side from
-// signals that already exist (status, labels, PR/merge state, running task
-// attribution, deploy sync). This keeps the pipeline a pure projection of
-// data the backend already owns — no new source of truth, no migration.
+// Design -> Dev -> QA -> Review cycle is derived client-side from signals
+// that already exist (status, labels, PR/merge state, running task
+// attribution). This keeps the pipeline a pure projection of data the
+// backend already owns — no new source of truth, no migration.
+//
+// Deploy is NOT part of this pipeline. It used to be a 5th stage here, but
+// deploy is a SPRINT-level concern (a shared branch deployed as a cycle, not
+// a per-issue checkbox) — it now lives in the sprint-readiness view
+// (packages/views/qa/components/qa-sprint-readiness-view.tsx). See
+// docs/deploy-mcp-integration.md for the deploy cycle's own design.
 //
 // See docs/sdlc-stage-cockpit-plan.md section 2 for the design rationale.
 //
@@ -17,7 +23,7 @@ import { ALL_STATUSES } from "./config/status";
 import type { IssueStatus } from "../types/issue";
 import type { WorkMode } from "./work-mode";
 
-export type SDLCStage = "design" | "dev" | "qa" | "review" | "deploy";
+export type SDLCStage = "design" | "dev" | "qa" | "review";
 
 export type StageState =
   | "pending"
@@ -56,16 +62,9 @@ export interface StagePipelineInput {
   prMerged?: boolean;
   /** Stages a currently-running agent task is attributed to (caller-derived). */
   runningTaskStages?: SDLCStage[];
-  /** Project has a connected box / local dir to deploy to. */
-  hasDeployTarget: boolean;
-  deploySynced?: boolean;
-  /** Optional detail shown on a passed deploy stage (e.g. the deployed ref) —
-   *  caller-derived from the deploy_event signal, deploy P0. Purely cosmetic:
-   *  never affects state, only StageSnapshot.detail when the stage passes. */
-  deployDetail?: string;
 }
 
-const STAGE_ORDER: SDLCStage[] = ["design", "dev", "qa", "review", "deploy"];
+const STAGE_ORDER: SDLCStage[] = ["design", "dev", "qa", "review"];
 
 const KNOWN_STATUSES = new Set<string>(ALL_STATUSES);
 
@@ -203,26 +202,6 @@ function deriveReviewStage(
   return snapshot;
 }
 
-function deriveDeployStage(
-  input: StagePipelineInput,
-  running: Set<SDLCStage>,
-): StageSnapshot {
-  if (!input.hasDeployTarget) {
-    return { stage: "deploy", state: "skipped" };
-  }
-  if (input.deploySynced === true) {
-    const snapshot: StageSnapshot = { stage: "deploy", state: "passed" };
-    if (input.deployDetail) {
-      snapshot.detail = input.deployDetail;
-    }
-    return snapshot;
-  }
-  if (running.has("deploy")) {
-    return { stage: "deploy", state: "running" };
-  }
-  return { stage: "deploy", state: "pending" };
-}
-
 /**
  * Resolves `current` from a finalized (post status==="done" forcing) list of
  * stage snapshots, promoting the current stage from "pending" to "active" in
@@ -234,9 +213,11 @@ function finalizePipeline(stages: StageSnapshot[], status: IssueStatus): StagePi
 
   if (!target) {
     // Every stage is passed/skipped (or status forced them there): pin
-    // current to the last non-skipped stage.
+    // current to the last non-skipped stage. design is the only stage that
+    // can ever be "skipped" in this 4-stage model, so this fallback is
+    // effectively unreachable — kept for defensiveness (fuzz-tested).
     const lastNonSkipped = [...stages].reverse().find((s) => s.state !== "skipped");
-    const fallback: StageSnapshot = { stage: "deploy", state: "pending" };
+    const fallback: StageSnapshot = { stage: "review", state: "pending" };
     return { stages, current: (lastNonSkipped ?? fallback).stage };
   }
 
@@ -262,10 +243,9 @@ export function deriveStagePipeline(input: StagePipelineInput): StagePipeline {
   const dev = deriveDevStage(input, status, running);
   const qa = deriveQaStage(status, labelNames, running);
   const review = deriveReviewStage(input, status, labelNames, qa);
-  const deploy = deriveDeployStage(input, running);
 
   let stages: StageSnapshot[] = STAGE_ORDER.map(
-    (stage) => ({ design, dev, qa, review, deploy })[stage],
+    (stage) => ({ design, dev, qa, review })[stage],
   );
 
   if (status === "done") {

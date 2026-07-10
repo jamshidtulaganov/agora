@@ -95,8 +95,8 @@ export const issueKeys = {
   /** QA test cases for an issue (the Test-cases panel reads this). */
   testCases: (issueId: string) => [...issueKeys.testCasesAll(), issueId] as const,
   deployEventsAll: () => ["issues", "deploy-events"] as const,
-  /** Latest + recent Tier-1 deploy events for an issue (the Deploy lens /
-   *  stepper's deploySynced signal reads this). */
+  /** Latest + recent deploy events for an issue (the sprint-level deploy
+   *  panel reads this on the sprint's anchor issue). */
   deployEvents: (issueId: string) => [...issueKeys.deployEventsAll(), issueId] as const,
   attachmentsAll: () => ["issues", "attachments"] as const,
   /** Issue-level attachments — used by the description editor so its

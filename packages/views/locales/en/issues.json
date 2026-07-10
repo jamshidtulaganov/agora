@@ -672,8 +672,7 @@
     "design": "Design",
     "dev": "Dev",
     "qa": "QA",
-    "review": "Review",
-    "deploy": "Deploy"
+    "review": "Review"
   },
   "figma_links": {
     "chip_label": "Figma design linked",
@@ -750,19 +749,6 @@
     "tier_label": "Tier",
     "ready": "Ready to merge",
     "blocked": "Blocked"
-  },
-  "deploy_lens": {
-    "empty": "No deploy target bound to this project.",
-    "box_heading": "QA box",
-    "box_label": "Box",
-    "box_host": "Host",
-    "box_status": "Status",
-    "box_last_branch": "Last branch",
-    "deploy_heading": "Deploy",
-    "history_heading": "Recent deploys",
-    "history_empty": "No deploys yet.",
-    "status_success": "Success",
-    "status_failed": "Failed"
   },
   "agent_protocol": {
     "an_agent": "an agent",

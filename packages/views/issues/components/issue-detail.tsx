@@ -1276,7 +1276,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     setAutoOpenProp(null);
   }, [autoOpenProp]);
 
-  // SDLC stepper — derives the Design/Dev/QA/Review/Deploy pipeline from
+  // SDLC stepper — derives the Design/Dev/QA/Review pipeline from
   // existing queries only (no new endpoints) and reads/writes the `?lens=`
   // query param. Mounted via CockpitFrame's topStrip below. Called before
   // the `if (loading)` / `if (!issue)` early returns so hook order stays
@@ -2193,8 +2193,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
 
   // "issue" always renders the body above (unchanged). Any other lens key
   // goes through the registry — every SDLC stage has a Body as of phase F
-  // (design/dev/qa/review/deploy); an unregistered key (stale URL, removed
-  // lens) falls back to the issue body.
+  // (design/dev/qa/review); an unregistered key (stale URL, removed lens —
+  // e.g. the old "deploy" lens, now the sprint-level deploy panel) falls
+  // back to the issue body.
   const registeredLens = activeLens !== "issue" ? getLens(activeLens) : undefined;
   const lensBody = registeredLens ? <registeredLens.Body issueId={id} /> : bodyContent;
   // WIDE lenses carry their own right-hand column (QA review rail, editor

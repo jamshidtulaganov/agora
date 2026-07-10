@@ -27,12 +27,15 @@ describe("lens registry", () => {
     expect(isLensRegistered("issue")).toBe(true);
   });
 
-  it("registers every SDLC stage lens (design/dev/qa/review/deploy)", () => {
+  it("registers every SDLC stage lens (design/dev/qa/review)", () => {
     expect(isLensRegistered("design")).toBe(true);
     expect(isLensRegistered("dev")).toBe(true);
     expect(isLensRegistered("qa")).toBe(true);
     expect(isLensRegistered("review")).toBe(true);
-    expect(isLensRegistered("deploy")).toBe(true);
+  });
+
+  it("does not register a deploy lens — deploy moved to the sprint level", () => {
+    expect(isLensRegistered("deploy")).toBe(false);
   });
 });
 
@@ -44,9 +47,11 @@ describe("useLensParam", () => {
   });
 
   it("falls back to issue for an unknown/unregistered ?lens= value", () => {
-    // Every SDLC stage is registered as of phase F, so probe with a key that
-    // can never be a stage.
-    const nav = makeNav({ searchParams: new URLSearchParams("lens=nonexistent") });
+    // "deploy" used to be a registered stage lens; it moved to the sprint
+    // level and is no longer registered — a great probe for "unregistered",
+    // and a regression check that a stale ?lens=deploy bookmark degrades
+    // gracefully instead of rendering a dead lens.
+    const nav = makeNav({ searchParams: new URLSearchParams("lens=deploy") });
     const { result } = renderHook(() => useLensParam(), { wrapper: makeWrapper(nav) });
     expect(result.current.lens).toBe("issue");
   });
@@ -57,8 +62,8 @@ describe("useLensParam", () => {
     expect(result.current.lens).toBe("qa");
   });
 
-  it("recognizes the design/review/deploy/dev lens keys from the URL (phases E-F)", () => {
-    for (const key of ["design", "review", "deploy", "dev"] as const) {
+  it("recognizes the design/review/dev lens keys from the URL (phases E-F)", () => {
+    for (const key of ["design", "review", "dev"] as const) {
       const nav = makeNav({ searchParams: new URLSearchParams(`lens=${key}`) });
       const { result } = renderHook(() => useLensParam(), { wrapper: makeWrapper(nav) });
       expect(result.current.lens).toBe(key);
