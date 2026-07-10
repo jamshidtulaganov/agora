@@ -36,6 +36,20 @@ const SEVERITY: { value: string; priority: IssuePriority }[] = [
   { value: "minor", priority: "medium" },
 ];
 
+// A per-case seed for the sheet (Phase 2, item 5): filing a bug from ONE
+// failing test case pre-fills the case title, the failed step + human note
+// (parsed from the latest run's breakdown when present), and the acceptance
+// criterion the case covers. No issue-verdict gate — a failing case is
+// bug-worthy regardless of what the overall gate says.
+export interface FileBugCaseSeed {
+  title: string;
+  // Human-readable failure detail — "failed at step 2 — <note>" from a
+  // checklist walk, or the run output's lead line. "" when the run carried
+  // no detail.
+  detail: string;
+  criterionRef?: string;
+}
+
 // One click turns a FAIL verdict's frozen evidence into a tracked bug: a child
 // issue (parent_issue_id back-link) pre-filled with the failing checks, labelled
 // `bug`, so the repro never rots into copy-paste. The bug is an ordinary issue,
@@ -49,6 +63,7 @@ export function FileBugSheet({
   projectId,
   evidence,
   seedNotes,
+  caseSeed,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -60,6 +75,9 @@ export function FileBugSheet({
   // The QA note typed on the review page — carried in so the engineer's repro
   // doesn't have to be retyped here. Optional; the field is editable regardless.
   seedNotes?: string;
+  // Per-case seed (see FileBugCaseSeed). When set, the title and description
+  // lead with the failing CASE rather than the issue-level evidence summary.
+  caseSeed?: FileBugCaseSeed | null;
 }) {
   const { t } = useT("issues");
   const wp = useWorkspacePaths();
@@ -70,10 +88,10 @@ export function FileBugSheet({
     [evidence],
   );
   const seedTitle = useMemo(() => {
-    const lead = newFailures[0]?.cmd || evidence?.summary || "";
+    const lead = caseSeed?.title || newFailures[0]?.cmd || evidence?.summary || "";
     const base = lead ? `Bug: ${lead}` : "Bug";
     return `${base} — ${sourceTitle}`.slice(0, 160);
-  }, [newFailures, evidence, sourceTitle]);
+  }, [caseSeed, newFailures, evidence, sourceTitle]);
 
   const [title, setTitle] = useState(seedTitle);
   const [severity, setSeverity] = useState("major");
@@ -85,9 +103,16 @@ export function FileBugSheet({
     if (open) setNotes(seedNotes ?? "");
   }, [open, seedNotes]);
 
-  // The auto-generated evidence block — the failing checks + branch provenance.
+  // The auto-generated evidence block. Per-case filings lead with the
+  // FAILING CASE (title + failed step/note + covered criterion) — that's the
+  // repro a dev needs; the issue-level evidence lines follow when present.
   const evidenceDescription = useMemo(() => {
-    const lines = [`Filed from [${identifier}] — QA verdict: **${evidence?.verdict ?? "fail"}**.`];
+    const lines = [`Filed from [${identifier}]${caseSeed ? "" : ` — QA verdict: **${evidence?.verdict ?? "fail"}**`}.`];
+    if (caseSeed) {
+      lines.push("", `Failing test case: **${caseSeed.title}**`);
+      if (caseSeed.detail) lines.push(`- ${caseSeed.detail}`);
+      if (caseSeed.criterionRef) lines.push(`- Covers: ${caseSeed.criterionRef}`);
+    }
     if (evidence?.summary) lines.push("", evidence.summary);
     if (newFailures.length > 0) {
       lines.push("", "New failures:");
@@ -97,7 +122,7 @@ export function FileBugSheet({
       lines.push("", `_branch ${evidence.branch_sha || "—"} vs baseline ${evidence.baseline_ref || "merge-base"}_`);
     }
     return lines.join("\n");
-  }, [identifier, evidence, newFailures]);
+  }, [identifier, evidence, newFailures, caseSeed]);
 
   // The engineer's notes lead the bug (their repro is what a dev reads first),
   // then the frozen auto evidence. Notes-only or evidence-only both render clean.
@@ -201,6 +226,16 @@ export function FileBugSheet({
             {evidence?.result && newFailures.length > 0 ? (
               <div className="rounded-lg border">
                 <StructuredResult result={{ ...evidence.result, commands: newFailures }} />
+              </div>
+            ) : caseSeed ? (
+              // Per-case filing: the failing case IS the evidence — show its
+              // title + failed step/note instead of the empty placeholder.
+              <div className="rounded-lg border px-3 py-2.5 text-[12px]">
+                <p className="font-medium">{caseSeed.title}</p>
+                {caseSeed.detail && <p className="mt-1 text-muted-foreground">{caseSeed.detail}</p>}
+                {caseSeed.criterionRef && (
+                  <p className="mt-1 text-[11px] text-muted-foreground/70">{caseSeed.criterionRef}</p>
+                )}
               </div>
             ) : (
               <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-5 text-center text-[12px] text-muted-foreground">

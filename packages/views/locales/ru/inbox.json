@@ -46,7 +46,9 @@
     "quick_create_done": "Создано с агентом",
     "quick_create_failed": "Не удалось создать с агентом",
     "design_proposal_ready": "Дизайн-предложение готово",
-    "design_proposal_blocked": "Дизайн-предложение заблокировано"
+    "design_proposal_blocked": "Дизайн-предложение заблокировано",
+    "qa_failed": "QA провалено",
+    "qa_passed": "QA пройдено после провала"
   },
   "labels": {
     "set_status_to": "Установить статус",

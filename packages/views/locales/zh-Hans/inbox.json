@@ -46,7 +46,9 @@
     "quick_create_done": "通过智能体创建",
     "quick_create_failed": "通过智能体创建失败",
     "design_proposal_ready": "设计方案已就绪",
-    "design_proposal_blocked": "设计方案受阻"
+    "design_proposal_blocked": "设计方案受阻",
+    "qa_failed": "QA 未通过",
+    "qa_passed": "QA 失败后已通过"
   },
   "labels": {
     "set_status_to": "状态设为",

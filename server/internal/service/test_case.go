@@ -36,29 +36,45 @@ var compiledScriptsBlockRe = regexp.MustCompile("(?s)```scripts\\s*\\n(.*?)```")
 // dispatch (trigger) comment, not the agent's reply.
 var scopedSingleTestCaseRe = regexp.MustCompile(`(?i)RUN ONLY the single test case id=([0-9a-fA-F-]{36})`)
 
-// scopedTestCaseIDFromTrigger resolves the single test_case_id a run_test_cases
+// scopedTestCaseSetRe recognizes the SET form of the scope marker — "RUN ONLY
+// these test cases ids=<uuid>,<uuid>,…" — emitted by the Test-cases panel's
+// "Re-run failed (N)" button (Phase 2, item 4). Same fail-closed enforcement
+// as the single-case form, over a set.
+var scopedTestCaseSetRe = regexp.MustCompile(`(?i)RUN ONLY these test cases ids=([0-9a-fA-F-]{36}(?:\s*,\s*[0-9a-fA-F-]{36})*)`)
+
+// scopedTestCaseIDsFromTrigger resolves the test_case_id SET a run_test_cases
 // dispatch was scoped to, by re-reading the ORIGINAL trigger comment (the one
-// carrying the "Focus on: RUN ONLY the single test case id=<uuid>" clause
-// buildSliceInstruction appended). ok=false for a whole-issue run (no scope
-// marker, or triggerCommentID unresolvable) — callers must then apply NO
-// filtering, preserving existing whole-issue-run behavior exactly.
-func (s *TaskService) scopedTestCaseIDFromTrigger(ctx context.Context, triggerCommentID pgtype.UUID) (pgtype.UUID, bool) {
+// carrying the "Focus on: RUN ONLY …" clause buildSliceInstruction appended).
+// Handles both the single-case marker (the per-row Run button) and the set
+// marker (Re-run failed). ok=false for a whole-issue run (no scope marker, or
+// triggerCommentID unresolvable) — callers must then apply NO filtering,
+// preserving existing whole-issue-run behavior exactly. Keys are
+// util.UUIDToString-normalized.
+func (s *TaskService) scopedTestCaseIDsFromTrigger(ctx context.Context, triggerCommentID pgtype.UUID) (map[string]bool, bool) {
 	if !triggerCommentID.Valid {
-		return pgtype.UUID{}, false
+		return nil, false
 	}
 	trigger, err := s.Queries.GetComment(ctx, triggerCommentID)
 	if err != nil {
-		return pgtype.UUID{}, false
+		return nil, false
 	}
-	m := scopedSingleTestCaseRe.FindStringSubmatch(trigger.Content)
-	if m == nil {
-		return pgtype.UUID{}, false
+	set := map[string]bool{}
+	if m := scopedSingleTestCaseRe.FindStringSubmatch(trigger.Content); m != nil {
+		if id, perr := util.ParseUUID(m[1]); perr == nil {
+			set[util.UUIDToString(id)] = true
+		}
 	}
-	id, err := util.ParseUUID(m[1])
-	if err != nil {
-		return pgtype.UUID{}, false
+	if m := scopedTestCaseSetRe.FindStringSubmatch(trigger.Content); m != nil {
+		for _, raw := range strings.Split(m[1], ",") {
+			if id, perr := util.ParseUUID(strings.TrimSpace(raw)); perr == nil {
+				set[util.UUIDToString(id)] = true
+			}
+		}
 	}
-	return id, true
+	if len(set) == 0 {
+		return nil, false
+	}
+	return set, true
 }
 
 type genTestRun struct {
@@ -229,13 +245,14 @@ func (s *TaskService) CaptureTestCases(ctx context.Context, issue db.Issue, cont
 //
 // triggerCommentID is the ORIGINAL dispatch comment for this run, when known
 // (task.TriggerCommentID / the reply's parent_id — see call sites). When that
-// comment carries the single-case scope marker ("RUN ONLY the single test case
-// id=<uuid>" — test-cases-panel.tsx's per-row Run button), this run is a
-// SCOPED run and CaptureTestRuns fails CLOSED: any emitted entry whose
-// test_case_id is outside the scoped set is DROPPED (logged, not written),
-// instead of trusting the agent's own adherence to the prose instruction. A
-// zero-value triggerCommentID, or a trigger with no scope marker, is a
-// whole-issue run — every entry is accepted exactly as before.
+// comment carries a scope marker — the single-case form ("RUN ONLY the single
+// test case id=<uuid>", the per-row Run button) or the set form ("RUN ONLY
+// these test cases ids=…", the Re-run failed button) — this run is a SCOPED
+// run and CaptureTestRuns fails CLOSED: any emitted entry whose test_case_id
+// is outside the scoped set is DROPPED (logged, not written), instead of
+// trusting the agent's own adherence to the prose instruction. A zero-value
+// triggerCommentID, or a trigger with no scope marker, is a whole-issue run —
+// every entry is accepted exactly as before.
 func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, content string, agentID, triggerCommentID pgtype.UUID) {
 	m := testRunsBlockRe.FindStringSubmatch(content)
 	if m == nil {
@@ -245,7 +262,7 @@ func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, conte
 	if err := json.Unmarshal([]byte(strings.TrimSpace(m[1])), &runs); err != nil {
 		return
 	}
-	scopedCaseID, scoped := s.scopedTestCaseIDFromTrigger(ctx, triggerCommentID)
+	scopedCaseIDs, scoped := s.scopedTestCaseIDsFromTrigger(ctx, triggerCommentID)
 
 	inserted := 0
 	for _, r := range runs {
@@ -268,13 +285,13 @@ func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, conte
 		if err != nil {
 			continue
 		}
-		// Fail-closed scope enforcement: a scoped single-case run only ever
-		// writes the ONE case it was asked to run. Anything else the agent
-		// emitted (it strayed, or fabricated extra entries) is dropped, not
-		// trusted — the scope was previously prose-only and unenforced.
-		if scoped && caseID.Bytes != scopedCaseID.Bytes {
-			slog.Warn("capture test runs: dropped entry outside scoped case",
-				"issue_id", util.UUIDToString(issue.ID), "scoped_case_id", util.UUIDToString(scopedCaseID),
+		// Fail-closed scope enforcement: a scoped run only ever writes the
+		// case(s) it was asked to run. Anything else the agent emitted (it
+		// strayed, or fabricated extra entries) is dropped, not trusted — the
+		// scope was previously prose-only and unenforced.
+		if scoped && !scopedCaseIDs[util.UUIDToString(caseID)] {
+			slog.Warn("capture test runs: dropped entry outside scoped case set",
+				"issue_id", util.UUIDToString(issue.ID), "scoped_cases", len(scopedCaseIDs),
 				"reported_case_id", r.TestCaseID)
 			continue
 		}

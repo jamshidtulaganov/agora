@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -1991,6 +1992,10 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	// concern run_test_cases alone was responsible for (audit finding — see
 	// sliceActionGateTestCasesContext).
 	instruction += h.sliceActionGateTestCasesContext(ctx, issue)
+	// A human's hand-recorded case results are ground truth the gate must
+	// confirm and localize, not re-derive (Phase 2 — "the agent reads the
+	// human").
+	instruction += h.sliceActionPriorHumanResultsContext(ctx, issue)
 	instruction += qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
 	instruction += h.sliceActionDesignCompareContext(ctx, issue)
 	instruction += h.sliceActionDesignLintContext(ctx, issue)
@@ -2228,6 +2233,9 @@ func (h *Handler) maybeRunTestsOnInReview(ctx context.Context, issue db.Issue, a
 	instruction += h.sliceActionQADocsContext(ctx, issue)
 	baseSuite := h.sliceActionProjectBaseSuiteContext(ctx, issue)
 	instruction += h.sliceActionTestCasesContext(ctx, issue, baseSuite != "")
+	// Prior human results ride along here too — a run_test_cases execution
+	// must confirm/localize a human's hand-recorded finding, not overwrite it.
+	instruction += h.sliceActionPriorHumanResultsContext(ctx, issue)
 	instruction += baseSuite
 
 	authorID, ok := actorAuthorID(actorID)
@@ -2534,6 +2542,92 @@ func (h *Handler) sliceActionTestCasesContext(ctx context.Context, issue db.Issu
 	var b strings.Builder
 	b.WriteString(" AUTOMATED TEST CASES TO RUN (report a verdict for each by its id):")
 	b.WriteString(formatAutomatedTestCasesList(cases))
+	return b.String()
+}
+
+// stepResultsFenceRe extracts the ```step-results``` fenced JSON a per-step
+// manual checklist walk embeds in a test_run's output (see
+// packages/core/qa/step-run.ts — serializeStepResults). Parsed here so the
+// prior-human-results context can name the exact FAILED STEP + the human's
+// note instead of dumping the raw fence into the prompt.
+var stepResultsFenceRe = regexp.MustCompile("(?s)```step-results\\s*\\n(.*?)```")
+
+// humanRunStepFailure summarizes a human checklist walk's failing steps from
+// the run output's ```step-results``` fence: "failed at step 2 — <note>".
+// "" when the output carries no parsable fence or no failing step — callers
+// then fall back to the output's first line.
+func humanRunStepFailure(output string) string {
+	m := stepResultsFenceRe.FindStringSubmatch(output)
+	if m == nil {
+		return ""
+	}
+	var results []struct {
+		Step   int    `json:"step"`
+		Status string `json:"status"`
+		Note   string `json:"note"`
+	}
+	if json.Unmarshal([]byte(strings.TrimSpace(m[1])), &results) != nil {
+		return ""
+	}
+	var parts []string
+	for _, r := range results {
+		if r.Status != "fail" {
+			continue
+		}
+		p := fmt.Sprintf("failed at step %d", r.Step)
+		if note := strings.TrimSpace(r.Note); note != "" {
+			p += " — " + note
+		}
+		parts = append(parts, p)
+	}
+	return strings.Join(parts, "; ")
+}
+
+// priorHumanNoteMaxRunes caps each case's human-result line — a pointer to
+// the human's finding, never a pasted transcript.
+const priorHumanNoteMaxRunes = 200
+
+// sliceActionPriorHumanResultsContext injects each case's latest HUMAN run
+// result into a QA/test-run instruction (Phase 2: "the agent reads the
+// human"). A QA human's hand-recorded verdict — the one-click ✓/✗ or a
+// per-step checklist walk — is GROUND TRUTH the agent must confirm and
+// localize, not silently re-derive from scratch. Compact by construction:
+// only cases WITH a human run appear, each as one line (status + failed
+// step/note when the walk recorded one, else the output's first line,
+// capped). "" when no case has a human run.
+func (h *Handler) sliceActionPriorHumanResultsContext(ctx context.Context, issue db.Issue) string {
+	runs, err := h.Queries.ListLatestHumanRunsForIssueCases(ctx, db.ListLatestHumanRunsForIssueCasesParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil || len(runs) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(" PRIOR HUMAN RESULTS — a QA human already executed some of these cases BY HAND; their " +
+		"result is GROUND TRUTH. For each case below, CONFIRM AND LOCALIZE the human's finding before " +
+		"re-deriving anything: a human-recorded FAIL that your run does not reproduce is a discrepancy to " +
+		"surface explicitly (say WHY the results differ), never something to silently overwrite with a pass.")
+	for _, r := range runs {
+		detail := humanRunStepFailure(r.Output)
+		if detail == "" {
+			// Fall back to the output's first line (the walk's summary line, or
+			// whatever note the human typed) — capped.
+			line := strings.TrimSpace(r.Output)
+			if i := strings.IndexByte(line, '\n'); i >= 0 {
+				line = strings.TrimSpace(line[:i])
+			}
+			if rs := []rune(line); len(rs) > priorHumanNoteMaxRunes {
+				line = string(rs[:priorHumanNoteMaxRunes-1]) + "…"
+			}
+			detail = line
+		}
+		b.WriteString(fmt.Sprintf(" [id=%s] %s: human ran it — %s", uuidToString(r.TestCaseID), r.Title, r.Status))
+		if detail != "" {
+			b.WriteString(" (" + detail + ")")
+		}
+		b.WriteString(".")
+	}
 	return b.String()
 }
 
@@ -2990,6 +3084,9 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 		// The issue's own DEFINED test cases are part of the gate — see
 		// sliceActionGateTestCasesContext (audit finding: run_qa never ran them).
 		instruction += h.sliceActionGateTestCasesContext(r.Context(), issue)
+		// A human's hand-recorded case results are ground truth to confirm and
+		// localize (Phase 2 — "the agent reads the human").
+		instruction += h.sliceActionPriorHumanResultsContext(r.Context(), issue)
 		instruction += qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
 		instruction += h.sliceActionDesignCompareContext(r.Context(), issue)
 		instruction += h.sliceActionDesignLintContext(r.Context(), issue)
@@ -3019,6 +3116,9 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 		// whether the project's standing scripts follow it.
 		baseSuite := h.sliceActionProjectBaseSuiteContext(r.Context(), issue)
 		instruction += h.sliceActionTestCasesContext(r.Context(), issue, baseSuite != "")
+		// Prior human results — confirm/localize a human's hand-recorded
+		// finding, never overwrite it (Phase 2).
+		instruction += h.sliceActionPriorHumanResultsContext(r.Context(), issue)
 		instruction += baseSuite
 	}
 	// compile_tests authors runnable Playwright scripts for the automated cases

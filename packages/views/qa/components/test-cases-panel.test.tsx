@@ -67,6 +67,18 @@ vi.mock("@agora/core/agents", () => ({
   }),
 }));
 
+// FileBugSheet has its own coverage; here we only assert the panel's WIRING —
+// that the per-case Bug action mounts it with the right derived caseSeed
+// (title + failed step/note + criterion) — so it's stubbed to a marker that
+// exposes the props it received.
+const fileBugSheetMock = vi.hoisted(() => ({ lastProps: null as Record<string, unknown> | null }));
+vi.mock("./file-bug-sheet", () => ({
+  FileBugSheet: (props: Record<string, unknown>) => {
+    fileBugSheetMock.lastProps = props;
+    return <div data-testid="file-bug-sheet" />;
+  },
+}));
+
 const automatedCase = (over: Partial<TestCase> = {}): TestCase => ({
   id: "tc-1",
   issue_id: "issue-1",
@@ -388,5 +400,122 @@ describe("QAIssueRow stop affordance (queue)", () => {
       </I18nProvider>,
     );
     expect(screen.queryByRole("button", { name: "Stop the running QA gate" })).not.toBeInTheDocument();
+  });
+});
+
+describe("TestCasesPanel — re-run failed + per-case file-bug (Phase 2)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fileBugSheetMock.lastProps = null;
+    apiMocks.listSquads.mockResolvedValue([]);
+    apiMocks.listSquadMembers.mockResolvedValue([]);
+    apiMocks.getAgentTaskSnapshot.mockResolvedValue([]);
+    apiMocks.getIssue.mockResolvedValue({
+      id: "issue-1",
+      title: "Fix onboarding",
+      identifier: "MUL-1",
+      project_id: "project-1",
+      description: null,
+    });
+    apiMocks.sliceAction.mockResolvedValue({});
+    qaLiveProgressMocks.useRunningTestCaseId.mockReturnValue(null);
+    qaLiveProgressMocks.useLiveCaseVerdicts.mockReturnValue({});
+  });
+
+  const failRun = (output: string) => ({
+    id: "run-1",
+    status: "fail" as const,
+    run_source: "human",
+    created_at: "2026-01-01T00:00:00Z",
+    output,
+    trace_path: "",
+  });
+
+  it("Re-run failed (N) fires ONE set-scoped run_test_cases naming only the failing case ids", async () => {
+    apiMocks.getIssueTestCases.mockResolvedValue({
+      test_cases: [
+        automatedCase({ id: "tc-fail-1", title: "A", latest_run: failRun("boom") }),
+        automatedCase({ id: "tc-fail-2", title: "B", latest_run: failRun("boom2") }),
+        automatedCase({
+          id: "tc-pass",
+          title: "C",
+          latest_run: { id: "run-3", status: "pass", run_source: "agent", created_at: "", output: "", trace_path: "" },
+        }),
+      ],
+    });
+
+    renderPanel();
+
+    const btn = await screen.findByRole("button", { name: /Re-run failed \(2\)/ });
+    fireEvent.click(btn);
+
+    await waitFor(() => expect(apiMocks.sliceAction).toHaveBeenCalledTimes(1));
+    const [issueId, body] = apiMocks.sliceAction.mock.calls[0]!;
+    expect(issueId).toBe("issue-1");
+    expect(body.kind).toBe("run_test_cases");
+    // The SET scope marker the server enforces fail-closed
+    // (scopedTestCaseIDsFromTrigger): both failing ids, NOT the passing one.
+    expect(body.scope).toContain("RUN ONLY these test cases ids=tc-fail-1,tc-fail-2");
+    expect(body.scope).not.toContain("tc-pass");
+  });
+
+  it("hides the Re-run failed button when nothing is failing", async () => {
+    apiMocks.getIssueTestCases.mockResolvedValue({
+      test_cases: [
+        automatedCase({
+          id: "tc-pass",
+          latest_run: { id: "run-1", status: "pass", run_source: "agent", created_at: "", output: "", trace_path: "" },
+        }),
+      ],
+    });
+
+    renderPanel();
+
+    await screen.findByText("Checkout — happy path");
+    expect(screen.queryByRole("button", { name: /Re-run failed/ })).not.toBeInTheDocument();
+  });
+
+  it("per-case Bug action mounts FileBugSheet seeded with title + failed step/note + criterion", async () => {
+    apiMocks.getIssueTestCases.mockResolvedValue({
+      test_cases: [
+        automatedCase({
+          id: "tc-fail-1",
+          title: "Checkout — declined card",
+          criterion_ref: "AC2",
+          latest_run: failRun(
+            "Manual step run — 1/2 passed, failed at step 2\n```step-results\n[{\"step\":1,\"status\":\"pass\"},{\"step\":2,\"status\":\"fail\",\"note\":\"no error toast\"}]\n```",
+          ),
+        }),
+      ],
+    });
+
+    renderPanel();
+
+    fireEvent.click(await screen.findByTitle("File a bug from this case"));
+
+    await screen.findByTestId("file-bug-sheet");
+    const props = fileBugSheetMock.lastProps!;
+    expect(props.sourceId).toBe("issue-1");
+    expect(props.identifier).toBe("MUL-1");
+    const seed = props.caseSeed as { title: string; detail: string; criterionRef?: string };
+    expect(seed.title).toBe("Checkout — declined card");
+    expect(seed.detail).toBe("failed at step 2 — no error toast");
+    expect(seed.criterionRef).toBe("AC2");
+  });
+
+  it("never offers the Bug action on a passing row", async () => {
+    apiMocks.getIssueTestCases.mockResolvedValue({
+      test_cases: [
+        automatedCase({
+          id: "tc-pass",
+          latest_run: { id: "run-1", status: "pass", run_source: "agent", created_at: "", output: "", trace_path: "" },
+        }),
+      ],
+    });
+
+    renderPanel();
+
+    await screen.findByText("Checkout — happy path");
+    expect(screen.queryByTitle("File a bug from this case")).not.toBeInTheDocument();
   });
 });

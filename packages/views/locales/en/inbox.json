@@ -46,7 +46,9 @@
     "quick_create_done": "Created with agent",
     "quick_create_failed": "Create with agent failed",
     "design_proposal_ready": "Design proposal ready",
-    "design_proposal_blocked": "Design proposal blocked"
+    "design_proposal_blocked": "Design proposal blocked",
+    "qa_failed": "QA failed",
+    "qa_passed": "QA passed after a fail"
   },
   "labels": {
     "set_status_to": "Set status to",

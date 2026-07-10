@@ -143,6 +143,26 @@ WHERE c.workspace_id = $2
   AND (c.issue_id = $1 OR (c.issue_id IS NULL AND r.issue_id = $1))
 ORDER BY r.test_case_id, r.created_at DESC;
 
+-- name: ListLatestHumanRunsForIssueCases :many
+-- The latest HUMAN-recorded run per test case for an issue (Phase 2: "the
+-- agent reads the human"). Same case scoping as ListLatestRunsForIssueCases
+-- (the issue's own cases + project base scripts run against this issue),
+-- filtered to run_source='human' — a QA human's hand-recorded verdict (the
+-- one-click ✓/✗ or a per-step checklist walk) is ground truth an agent run
+-- must CONFIRM AND LOCALIZE, not silently re-derive.
+SELECT DISTINCT ON (r.test_case_id)
+    r.test_case_id,
+    c.title,
+    r.status,
+    r.output,
+    r.created_at
+FROM test_run r
+JOIN test_case c ON c.id = r.test_case_id
+WHERE c.workspace_id = $2
+  AND (c.issue_id = $1 OR (c.issue_id IS NULL AND r.issue_id = $1))
+  AND r.run_source = 'human'
+ORDER BY r.test_case_id, r.created_at DESC;
+
 -- name: ListTestRunsForCase :many
 SELECT * FROM test_run
 WHERE test_case_id = $1 AND workspace_id = $2

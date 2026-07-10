@@ -21,7 +21,12 @@ export type InboxItemType =
   | "quick_create_done"
   | "quick_create_failed"
   | "design_proposal_ready"
-  | "design_proposal_blocked";
+  | "design_proposal_blocked"
+  // QA verdict notifications (Phase 2 — the human-first loop): a qa:fail
+  // landing on an issue, and a qa:pass that RECOVERS from a prior fail.
+  // A routine (non-recovery) pass never notifies.
+  | "qa_failed"
+  | "qa_passed";
 
 export interface InboxItem {
   id: string;

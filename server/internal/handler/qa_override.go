@@ -96,6 +96,9 @@ func (h *Handler) OverrideQAVerdict(w http.ResponseWriter, r *http.Request) {
 	// LABEL FIRST — same ordering contract as CaptureQAEvidence: the label is
 	// what the merge gate reads, so evidence must never exist without it.
 	alreadyHad := h.issueHasLabelNameHandler(r.Context(), issue, label)
+	// hadOpposite BEFORE the detach below: an override to pass that displaces
+	// a qa:fail is a RECOVERY (NotifyQAVerdict distinguishes it).
+	hadOpposite := h.issueHasLabelNameHandler(r.Context(), issue, opposite)
 	if !alreadyHad {
 		labelID, err := h.ensureLabel(r.Context(), issue.WorkspaceID, label, color)
 		if err != nil {
@@ -190,6 +193,11 @@ func (h *Handler) OverrideQAVerdict(w http.ResponseWriter, r *http.Request) {
 		go h.maybeRouteToDevLeadOnQAFail(context.Background(), issue, label, userID)
 		go h.maybeAutoFileBugOnQAFail(context.Background(), issue, label, userID)
 	}
+
+	// Typed inbox notification — same dispatcher CaptureQAEvidence uses. The
+	// overriding human is excluded by NotifyQAVerdict itself (actor=member);
+	// an override to pass that displaced a qa:fail notifies as a recovery.
+	h.TaskService.NotifyQAVerdict(r.Context(), issue, verdict, hadOpposite, "member", userUUID, summary)
 
 	slog.Info("qa verdict overridden", "issue_id", uuidToString(issue.ID), "verdict", verdict, "user_id", userID)
 	reconciled := h.reconciledQAState(r.Context(), issue, true)

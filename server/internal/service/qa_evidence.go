@@ -168,10 +168,13 @@ func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, con
 	// Without this a fixed-and-re-passed issue carried BOTH labels forever,
 	// and every fail-wins surface (cockpit lane, merge gate, sprint rollup)
 	// kept reporting it as "need fix" (the audit's sticky-label defect).
+	// hadOpposite is read BEFORE the detach: a pass that displaces a qa:fail
+	// is a RECOVERY — the one kind of pass worth an inbox notification.
 	opposite := "qa:fail"
 	if label == "qa:fail" {
 		opposite = "qa:pass"
 	}
+	hadOpposite := s.issueHasLabelName(ctx, issue, opposite)
 	s.DetachIssueLabelByName(ctx, issue, opposite)
 	s.Bus.Publish(events.Event{
 		Type:        protocol.EventIssueLabelsChanged,
@@ -181,6 +184,14 @@ func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, con
 		Payload:     map[string]any{"issue_id": util.UUIDToString(issue.ID)},
 	})
 	slog.Info("qa evidence: auto-attached gate label from verdict", "issue_id", util.UUIDToString(issue.ID), "label", label)
+
+	// Typed inbox notification — the human loop's push channel: a qa:fail
+	// (and a recovery pass) must REACH the responsible humans, not wait to be
+	// noticed on the /qa queue. Only fires on a NEWLY landed verdict
+	// (newlyLabeled), so a re-posted identical verdict never re-notifies.
+	if newlyLabeled {
+		s.NotifyQAVerdict(ctx, issue, v, hadOpposite, "agent", pgtype.UUID{}, p.Summary)
+	}
 	return v, newlyLabeled
 }
 

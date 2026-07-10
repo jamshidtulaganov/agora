@@ -388,6 +388,66 @@ func (q *Queries) ListAutomatedTestCasesForProject(ctx context.Context, arg List
 	return items, nil
 }
 
+const listLatestHumanRunsForIssueCases = `-- name: ListLatestHumanRunsForIssueCases :many
+SELECT DISTINCT ON (r.test_case_id)
+    r.test_case_id,
+    c.title,
+    r.status,
+    r.output,
+    r.created_at
+FROM test_run r
+JOIN test_case c ON c.id = r.test_case_id
+WHERE c.workspace_id = $2
+  AND (c.issue_id = $1 OR (c.issue_id IS NULL AND r.issue_id = $1))
+  AND r.run_source = 'human'
+ORDER BY r.test_case_id, r.created_at DESC
+`
+
+type ListLatestHumanRunsForIssueCasesParams struct {
+	IssueID     pgtype.UUID `json:"issue_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+type ListLatestHumanRunsForIssueCasesRow struct {
+	TestCaseID pgtype.UUID        `json:"test_case_id"`
+	Title      string             `json:"title"`
+	Status     string             `json:"status"`
+	Output     string             `json:"output"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+// The latest HUMAN-recorded run per test case for an issue (Phase 2: "the
+// agent reads the human"). Same case scoping as ListLatestRunsForIssueCases
+// (the issue's own cases + project base scripts run against this issue),
+// filtered to run_source='human' — a QA human's hand-recorded verdict (the
+// one-click ✓/✗ or a per-step checklist walk) is ground truth an agent run
+// must CONFIRM AND LOCALIZE, not silently re-derive.
+func (q *Queries) ListLatestHumanRunsForIssueCases(ctx context.Context, arg ListLatestHumanRunsForIssueCasesParams) ([]ListLatestHumanRunsForIssueCasesRow, error) {
+	rows, err := q.db.Query(ctx, listLatestHumanRunsForIssueCases, arg.IssueID, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLatestHumanRunsForIssueCasesRow{}
+	for rows.Next() {
+		var i ListLatestHumanRunsForIssueCasesRow
+		if err := rows.Scan(
+			&i.TestCaseID,
+			&i.Title,
+			&i.Status,
+			&i.Output,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLatestRunsForIssueCases = `-- name: ListLatestRunsForIssueCases :many
 SELECT DISTINCT ON (r.test_case_id)
     r.test_case_id,
