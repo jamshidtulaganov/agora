@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { ReactNode } from "react";
 import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider } from "@agora/core/i18n/react";
@@ -17,6 +18,19 @@ const apiMocks = vi.hoisted(() => ({
 
 vi.mock("@agora/core/api", () => ({ api: apiMocks }));
 vi.mock("@agora/core", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("@agora/core/paths", () => ({
+  useWorkspacePaths: () => ({ qa: () => "/acme/qa" }),
+}));
+// AppLink pulls in NavigationProvider context (useNavigation) — stub it as a
+// plain anchor so the deploy-readiness pointer renders without a full
+// NavigationProvider tree, mirroring comment-card.test.tsx's approach.
+vi.mock("../../navigation", () => ({
+  AppLink: ({ href, children, className }: { href: string; children: ReactNode; className?: string }) => (
+    <a href={href} className={className}>
+      {children}
+    </a>
+  ),
+}));
 vi.mock("./pull-request-list", () => ({
   PullRequestList: () => <div data-testid="pull-request-list" />,
 }));
@@ -85,6 +99,19 @@ describe("ReviewLensBody", () => {
     expect(screen.getByText(/light/)).toBeInTheDocument();
     expect(screen.getByText(/Blocked/)).toBeInTheDocument();
     expect(screen.getByTestId("pull-request-list")).toBeInTheDocument();
+  });
+
+  it("points to the QA cockpit's sprint view for deploy status", async () => {
+    apiMocks.mergeReadiness.mockResolvedValue({
+      ready: true,
+      tier: "trivial",
+      gates: [{ name: "ci", status: "pass" }],
+      reviews: [],
+    });
+    renderLens();
+
+    const link = await screen.findByText("Open sprint deploys");
+    expect(link.closest("a")).toHaveAttribute("href", "/acme/qa");
   });
 
   it("shows the merge:override badge when the issue carries the label", async () => {

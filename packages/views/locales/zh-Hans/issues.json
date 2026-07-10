@@ -478,6 +478,8 @@
     "design_lint_heading": "设计系统检查",
     "design_lint_block": "阻断",
     "design_lint_warn": "警告",
+    "screenshot_figma": "Figma 参考图",
+    "screenshot_built": "实现效果",
     "send_back": "退回开发",
     "sent_back": "已退回开发（qa:fail，进行中）",
     "note_label": "QA 备注（可选）",
@@ -719,7 +721,8 @@
     "apply_failed": "创建任务失败"
   },
   "design_lens": {
-    "empty": "该 issue 没有设计引用。"
+    "empty": "该 issue 没有设计引用。",
+    "screenshots_empty": "暂无截图——设计对比 QA 运行后将显示在此处。"
   },
   "dev_lens": {
     "empty": "暂无编辑器工作副本。",
@@ -733,7 +736,9 @@
     "empty": "暂无合并就绪门禁数据。",
     "tier_label": "等级",
     "ready": "可以合并",
-    "blocked": "已阻塞"
+    "blocked": "已阻塞",
+    "deploy_note": "部署状态现已迁移至 QA 面板的 Sprint 视图。",
+    "deploy_link": "查看 Sprint 部署"
   },
   "sprint_deploy": {
     "heading": "部署",

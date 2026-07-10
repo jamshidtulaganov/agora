@@ -489,6 +489,8 @@
     "design_lint_heading": "Dizayn-tizim lint",
     "design_lint_block": "blok",
     "design_lint_warn": "ogoh",
+    "screenshot_figma": "Figma namunasi",
+    "screenshot_built": "Amalga oshirilgan",
     "send_back": "Dev'ga qaytarish",
     "sent_back": "Dev'ga qaytarildi (qa:fail, jarayonda)",
     "note_label": "QA izohi (ixtiyoriy)",
@@ -734,7 +736,8 @@
     "apply_failed": "Vazifa yaratib bo'lmadi"
   },
   "design_lens": {
-    "empty": "Bu vazifada dizayn havolalari yo'q."
+    "empty": "Bu vazifada dizayn havolalari yo'q.",
+    "screenshots_empty": "Hali skrinshotlar yo'q — ular dizayn solishtiruvi QA ishga tushgach shu yerda ko'rinadi."
   },
   "dev_lens": {
     "empty": "Hali muharrir worktree yo'q.",
@@ -748,7 +751,9 @@
     "empty": "Hali birlashtirishga tayyorlik gate'lari yo'q.",
     "tier_label": "Daraja",
     "ready": "Birlashtirishga tayyor",
-    "blocked": "Bloklangan"
+    "blocked": "Bloklangan",
+    "deploy_note": "Deploy holati endi QA panelining Sprint ko'rinishida joylashgan.",
+    "deploy_link": "Sprint deploylarini ochish"
   },
   "sprint_deploy": {
     "heading": "Deploy",

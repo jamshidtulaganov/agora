@@ -2199,10 +2199,12 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const registeredLens = activeLens !== "issue" ? getLens(activeLens) : undefined;
   const lensBody = registeredLens ? <registeredLens.Body issueId={id} /> : bodyContent;
   // WIDE lenses carry their own right-hand column (QA review rail, editor
-  // chat) — three columns cramp the primary surface (the live browser /
-  // editor). Soft-collapse the frame rail while a wide lens is active; the
-  // header toggle still re-opens it on demand.
-  const wideLens = activeLens === "qa" || activeLens === "dev";
+  // chat, design's screenshot compare, review's PR list) — three columns
+  // cramp the primary surface (the live browser / editor / big screenshots).
+  // Soft-collapse the frame rail while a wide lens is active; the header
+  // toggle still re-opens it on demand.
+  const wideLens =
+    activeLens === "qa" || activeLens === "dev" || activeLens === "design" || activeLens === "review";
 
   return (
     <CockpitFrame

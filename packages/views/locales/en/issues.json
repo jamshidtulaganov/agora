@@ -489,6 +489,8 @@
     "design_lint_heading": "Design-system lint",
     "design_lint_block": "block",
     "design_lint_warn": "warn",
+    "screenshot_figma": "Figma reference",
+    "screenshot_built": "Built",
     "send_back": "Send back to dev",
     "sent_back": "Sent back to dev (qa:fail, in progress)",
     "note_label": "QA note (optional)",
@@ -734,7 +736,8 @@
     "apply_failed": "Failed to create the task"
   },
   "design_lens": {
-    "empty": "No design references on this issue."
+    "empty": "No design references on this issue.",
+    "screenshots_empty": "No screenshots yet — they appear here after a design-compare QA run."
   },
   "dev_lens": {
     "empty": "No editor worktree yet.",
@@ -748,7 +751,9 @@
     "empty": "No merge-readiness gates yet.",
     "tier_label": "Tier",
     "ready": "Ready to merge",
-    "blocked": "Blocked"
+    "blocked": "Blocked",
+    "deploy_note": "Deploy status now lives in the QA cockpit's Sprint view.",
+    "deploy_link": "Open sprint deploys"
   },
   "sprint_deploy": {
     "heading": "Deploy",

@@ -30,6 +30,9 @@ vi.mock("./design-proposal-section", () => ({
 vi.mock("./design-audit-section", () => ({
   DesignAuditSection: () => <div data-testid="design-audit" />,
 }));
+vi.mock("./design-screenshot-compare", () => ({
+  DesignScreenshotCompare: () => <div data-testid="design-screenshot-compare" />,
+}));
 vi.mock("../../qa/components/qa-design-compare", () => ({
   QADesignCompare: () => <div data-testid="qa-design-compare" />,
 }));
@@ -103,13 +106,14 @@ describe("DesignLensBody", () => {
     expect(screen.queryByTestId("design-proposal")).not.toBeInTheDocument();
   });
 
-  it("renders the design sections when the issue links a Figma design", async () => {
+  it("renders the design workbench (primary screenshot compare + right-column sections) when the issue links a Figma design", async () => {
     apiMocks.getIssue.mockResolvedValue(
       baseIssue({ description: "See https://figma.com/file/abcdefghijklmnop/My-Design" }),
     );
     renderLens();
 
     await screen.findByTestId("figma-links");
+    expect(screen.getByTestId("design-screenshot-compare")).toBeInTheDocument();
     expect(screen.getByTestId("design-proposal")).toBeInTheDocument();
     expect(screen.getByTestId("design-audit")).toBeInTheDocument();
     expect(screen.getByTestId("qa-design-compare")).toBeInTheDocument();

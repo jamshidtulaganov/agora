@@ -21,3 +21,8 @@ export {
   latestDesignAudit,
   type DesignAudit,
 } from "./audit";
+export {
+  latestQAResultScreenshots,
+  pairDesignScreenshots,
+  type DesignScreenshotPair,
+} from "./screenshots";
