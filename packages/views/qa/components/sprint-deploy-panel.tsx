@@ -16,7 +16,7 @@
 // endpoint the write path already populates — no new read surface) uses the
 // same anchor.
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Rocket, ShieldAlert, Loader2 } from "lucide-react";
@@ -30,6 +30,16 @@ import {
 import { projectDetailOptions } from "@agora/core/projects";
 import { deployEventsOptions } from "@agora/core/issues/queries";
 import { Button } from "@agora/ui/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@agora/ui/components/ui/alert-dialog";
 import { useT, useTimeAgo } from "../../i18n";
 import { verdictIcon } from "./verdict";
 
@@ -138,18 +148,17 @@ export function SprintDeployPanel({ wsId, projectId, sprintId, branch, issues }:
       ),
   });
 
+  // The server 403s machine actors for requires_human/production environments
+  // regardless (resolveDeployEnvironment) — this confirm is the HUMAN-side
+  // speed bump for the human-only trigger. Set only while the confirm dialog
+  // for a human-gated environment is open.
+  const [pendingEnv, setPendingEnv] = useState<DeployEnvironment | null>(null);
+
   const fire = (env: DeployEnvironment) => {
     if (!anchor) return;
-    // The server 403s machine actors for requires_human/production
-    // environments regardless (resolveDeployEnvironment) — this confirm is
-    // the HUMAN-side speed bump for the human-only trigger, reusing the same
-    // window.confirm pattern as the sprint attach-task guard in
-    // qa-sprint-readiness-view.tsx.
     if (deployEnvironmentRequiresHuman(env)) {
-      const confirmed = window.confirm(
-        t(($) => $.sprint_deploy.confirm, { branch: sprintBranch, env: env.label || env.key }),
-      );
-      if (!confirmed) return;
+      setPendingEnv(env);
+      return;
     }
     deploy.mutate(env);
   };
@@ -221,6 +230,29 @@ export function SprintDeployPanel({ wsId, projectId, sprintId, branch, issues }:
           </div>
         </>
       )}
+
+      <AlertDialog open={!!pendingEnv} onOpenChange={(open) => !open && setPendingEnv(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t(($) => $.sprint_deploy.confirm_title)}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingEnv &&
+                t(($) => $.sprint_deploy.confirm, { branch: sprintBranch, env: pendingEnv.label || pendingEnv.key })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t(($) => $.test_cases.cancel)}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingEnv) deploy.mutate(pendingEnv);
+                setPendingEnv(null);
+              }}
+            >
+              {t(($) => $.sprint_deploy.deploy)}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

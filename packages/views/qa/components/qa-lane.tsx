@@ -3,6 +3,8 @@ import type { LucideIcon } from "lucide-react";
 import { ChevronDown, ChevronRight, Bot, User, Timer, CircleStop, Loader2 } from "lucide-react";
 import type { Issue } from "@agora/core/types";
 import { cn } from "@agora/ui/lib/utils";
+import { Checkbox } from "@agora/ui/components/ui/checkbox";
+import { useT } from "../../i18n";
 import { AppLink } from "../../navigation";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { PriorityIcon } from "../../issues/components/priority-icon";
@@ -55,37 +57,41 @@ export function qaRowState(issue: Issue, isLive: boolean): QARowState {
 // (warning), fail=destructive, pass=emerald (the codebase's standardized success
 // tint), pending=muted — the same vocabulary the verdict lanes and review page
 // already use, so a row reads the same everywhere.
-const STATE_BADGE: Record<QARowState, { label: string; className: string; title: string; pulse?: boolean }> = {
-  running: {
-    label: "running",
-    className: "bg-info/10 text-info",
-    title: "A QA gate is executing on this issue now",
-    pulse: true,
-  },
-  stale: {
-    label: "stale",
-    className: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-    title: "The QA gate never produced a verdict (agent died / never dispatched) — re-run QA",
-  },
-  fail: {
-    label: "fail",
-    className: "bg-destructive/10 text-destructive",
-    title: "QA failed — hotfix in this sprint (re-QA runs on re-review) or move it out",
-  },
-  pass: {
-    label: "pass",
-    className: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-    title: "QA passed — ready to merge",
-  },
-  pending: {
-    label: "pending",
-    className: "bg-muted text-muted-foreground",
-    title: "In review — queued for or awaiting QA",
-  },
-};
+function useStateBadgeMeta(): Record<QARowState, { label: string; className: string; title: string; pulse?: boolean }> {
+  const { t } = useT("issues");
+  return {
+    running: {
+      label: t(($) => $.qa_cockpit.state_running),
+      className: "bg-info/10 text-info",
+      title: t(($) => $.qa_cockpit.state_running_title),
+      pulse: true,
+    },
+    stale: {
+      label: t(($) => $.qa_cockpit.state_stale),
+      className: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+      title: t(($) => $.qa_cockpit.state_stale_title),
+    },
+    fail: {
+      label: t(($) => $.qa_cockpit.state_fail),
+      className: "bg-destructive/10 text-destructive",
+      title: t(($) => $.qa_cockpit.state_fail_title),
+    },
+    pass: {
+      label: t(($) => $.qa_cockpit.state_pass),
+      className: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+      title: t(($) => $.qa_cockpit.state_pass_title),
+    },
+    pending: {
+      label: t(($) => $.qa_cockpit.state_pending),
+      className: "bg-muted text-muted-foreground",
+      title: t(($) => $.qa_cockpit.state_pending_title),
+    },
+  };
+}
 
 function QAStateBadge({ state }: { state: QARowState }) {
-  const b = STATE_BADGE[state];
+  const meta = useStateBadgeMeta();
+  const b = meta[state];
   return (
     <span
       className={cn(
@@ -126,6 +132,7 @@ export function QAIssueRow({
   // True while this row's cancel request is in flight — disables the button.
   stopping?: boolean;
 }) {
+  const { t } = useT("issues");
   // One color-coded state chip (running / stale / fail / pass / pending) instead
   // of the old single "stale" + "live" pair — so the row's QA state is legible at
   // a glance in both the list lanes and the board cards.
@@ -147,8 +154,8 @@ export function QAIssueRow({
               onStopRun(runningTaskId);
             }}
             className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
-            title="Stop the running QA gate"
-            aria-label="Stop the running QA gate"
+            title={t(($) => $.qa_cockpit.stop_run_title)}
+            aria-label={t(($) => $.qa_cockpit.stop_run_title)}
           >
             {stopping ? <Loader2 className="size-3.5 animate-spin" /> : <CircleStop className="size-3.5" />}
           </button>
@@ -161,7 +168,7 @@ export function QAIssueRow({
         <div className="mt-0.5 flex items-center gap-1.5 pl-6 text-[11px] text-muted-foreground">
           <span
             className="flex shrink-0 items-center gap-0.5 rounded border px-1 py-px text-[9px] uppercase tracking-wide"
-            title={`verdict source: ${verdictInfo.source || "agent"}`}
+            title={t(($) => $.qa_cockpit.verdict_source_title, { source: verdictInfo.source || "agent" })}
           >
             {(verdictInfo.source || "agent") === "agent" ? (
               <Bot className="size-2.5" aria-hidden />
@@ -226,6 +233,7 @@ export function Lane({
   onStopRun?: (taskId: string) => void;
   stoppingTaskId?: string | null;
 }) {
+  const { t } = useT("issues");
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const Chevron = collapsed ? ChevronRight : ChevronDown;
   return (
@@ -242,18 +250,19 @@ export function Lane({
         <span className="ml-2 truncate text-[11px] text-muted-foreground">{subtitle}</span>
       </button>
       {collapsed ? null : issues.length === 0 ? (
-        <p className="px-3 py-2 text-[12px] text-muted-foreground">Nothing here.</p>
+        <p className="px-3 py-2 text-[12px] text-muted-foreground">{t(($) => $.qa_cockpit.nothing_here)}</p>
       ) : (
-        <ul className="divide-y">
+        // Bounded so one fat lane (e.g. a long-running "Pending") doesn't grow
+        // the whole page — it scrolls internally instead.
+        <ul className="max-h-[60vh] divide-y overflow-y-auto">
           {issues.map((issue) => (
             <li key={issue.id} className="flex items-center">
               {onToggleSelect && (
-                <input
-                  type="checkbox"
-                  className="ml-3 size-3.5 shrink-0 accent-primary"
+                <Checkbox
+                  className="ml-3 shrink-0"
                   checked={selected?.has(issue.id) ?? false}
-                  onChange={() => onToggleSelect(issue.id)}
-                  aria-label={`select ${issue.identifier}`}
+                  onCheckedChange={() => onToggleSelect(issue.id)}
+                  aria-label={t(($) => $.qa_cockpit.select_issue_label, { identifier: issue.identifier })}
                 />
               )}
               <AppLink

@@ -26,6 +26,7 @@ import { useActorName } from "@agora/core/workspace/hooks";
 import { PRIORITY_ORDER } from "@agora/core/issues/config";
 import type { Issue, IssuePriority } from "@agora/core/types";
 import { Button } from "@agora/ui/components/ui/button";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import {
   Select,
   SelectTrigger,
@@ -43,6 +44,7 @@ import {
   DropdownMenuSeparator,
 } from "@agora/ui/components/ui/dropdown-menu";
 import { cn } from "@agora/ui/lib/utils";
+import { useT } from "../../i18n";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { PriorityIcon } from "../../issues/components/priority-icon";
 import { AppLink } from "../../navigation";
@@ -88,39 +90,44 @@ function assigneeKey(issue: Issue): AssigneeKey | null {
   return `${issue.assignee_type}:${issue.assignee_id}`;
 }
 
-const LANES = [
-  {
-    key: "fail" as const,
-    icon: ShieldAlert,
-    iconClass: "text-destructive",
-    title: "Needs fix",
-    subtitle: "qa:fail — hotfix in this sprint (re-QA runs on re-review) or move to the next sprint",
-  },
-  {
-    key: "pending" as const,
-    icon: ShieldQuestion,
-    iconClass: "text-muted-foreground",
-    title: "Pending QA",
-    subtitle: "in review — awaiting or running QA",
-  },
-  {
-    key: "pass" as const,
-    icon: ShieldCheck,
-    iconClass: "text-muted-foreground",
-    title: "Passed",
-    subtitle: "qa:pass — ready to merge",
-  },
-];
-
 export function QAPage() {
   const wsId = useWorkspaceId();
   const wp = useWorkspacePaths();
+  const { t } = useT("issues");
+  const { t: tLayout } = useT("layout");
   const [view, setView] = useState<ViewMode>("list");
   const [project, setProject] = useState("all");
   const [assigneeFilter, setAssigneeFilter] = useState<AssigneeKey[]>([]);
   const [priorityFilter, setPriorityFilter] = useState<IssuePriority[]>([]);
   const { data: projectData } = useQuery(projectListOptions(wsId));
   const projects = projectData ?? [];
+
+  // Lane chrome (icon/title/subtitle) — translated, so it must be built inside
+  // the component (not module scope) where `t` is available.
+  const LANES = [
+    {
+      key: "fail" as const,
+      icon: ShieldAlert,
+      iconClass: "text-destructive",
+      title: t(($) => $.qa_cockpit.lane_fail_title),
+      subtitle: t(($) => $.qa_cockpit.lane_fail_subtitle),
+    },
+    {
+      key: "pending" as const,
+      icon: ShieldQuestion,
+      iconClass: "text-muted-foreground",
+      title: t(($) => $.qa_cockpit.lane_pending_title),
+      subtitle: t(($) => $.qa_cockpit.lane_pending_subtitle),
+    },
+    {
+      key: "pass" as const,
+      icon: ShieldCheck,
+      iconClass: "text-muted-foreground",
+      title: t(($) => $.qa_cockpit.lane_pass_title),
+      subtitle: t(($) => $.qa_cockpit.lane_pass_subtitle),
+    },
+  ];
+
   // Which issues have a QA run executing RIGHT NOW — mark those rows "live" so
   // a QA lead sees the queue moving. Any running task on an in_review issue is
   // effectively QA (the knowledge/dev noise runs on other statuses).
@@ -175,20 +182,20 @@ export function QAPage() {
       for (const id of ids) await api.sliceAction(id, { kind: "run_qa" });
     },
     onSuccess: (_d, ids) => {
-      toast.success(`Re-run QA fired on ${ids.length} issue${ids.length === 1 ? "" : "s"}`);
+      toast.success(t(($) => $.qa_cockpit.toast_rerun_success, { count: ids.length }));
       bulkInvalidate();
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Bulk re-run failed"),
+    onError: (e) => toast.error(e instanceof Error ? e.message : t(($) => $.qa_cockpit.toast_rerun_failed)),
   });
   const bulkSendBack = useMutation({
     mutationFn: async (ids: string[]) => {
       for (const id of ids) await api.updateIssue(id, { status: "in_progress" });
     },
     onSuccess: (_d, ids) => {
-      toast.success(`Sent ${ids.length} issue${ids.length === 1 ? "" : "s"} back to dev`);
+      toast.success(t(($) => $.qa_cockpit.toast_sendback_success, { count: ids.length }));
       bulkInvalidate();
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Bulk send-back failed"),
+    onError: (e) => toast.error(e instanceof Error ? e.message : t(($) => $.qa_cockpit.toast_sendback_failed)),
   });
   // Stop a running gate from the queue. Invalidating the task snapshot refetches
   // it so the cancelled task drops out of "running" — clearing liveIssueIds /
@@ -197,12 +204,12 @@ export function QAPage() {
   const stopRun = useMutation({
     mutationFn: (taskId: string) => api.cancelTaskById(taskId),
     onSuccess: () => {
-      toast.success("Stopping the run…");
+      toast.success(t(($) => $.qa_cockpit.toast_stopping));
       void qc.invalidateQueries({ queryKey: agentTaskSnapshotKeys.list(wsId) });
       void qc.invalidateQueries({ queryKey: ["qa-cockpit", wsId] });
       void qc.invalidateQueries({ queryKey: ["qa-verdicts", wsId] });
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Stop failed"),
+    onError: (e) => toast.error(e instanceof Error ? e.message : t(($) => $.qa_cockpit.toast_stop_failed)),
   });
   const stoppingTaskId = stopRun.isPending ? (stopRun.variables ?? null) : null;
 
@@ -266,7 +273,7 @@ export function QAPage() {
           right-side action. */}
       <BreadcrumbHeader
         segments={[]}
-        leaf={<span className="truncate font-medium text-foreground">QA</span>}
+        leaf={<span className="truncate font-medium text-foreground">{tLayout(($) => $.nav.qa)}</span>}
         actions={
           <div className="flex items-center gap-2">
             {/* Project scope applies to EVERY tab (List/Board/Bugs/Sprint/
@@ -277,13 +284,13 @@ export function QAPage() {
                 <SelectValue>
                   {() =>
                     project === "all"
-                      ? "All projects"
-                      : (projects.find((p) => p.id === project)?.title ?? "Project")
+                      ? t(($) => $.qa_cockpit.all_projects)
+                      : (projects.find((p) => p.id === project)?.title ?? t(($) => $.qa_cockpit.project_fallback))
                   }
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All projects</SelectItem>
+                <SelectItem value="all">{t(($) => $.qa_cockpit.all_projects)}</SelectItem>
                 {projects.map((p) => (
                   <SelectItem key={p.id} value={p.id}>
                     {p.title}
@@ -292,12 +299,12 @@ export function QAPage() {
               </SelectContent>
             </Select>
             <div className="flex items-center gap-1 rounded-md border p-0.5">
-              <ViewToggle active={view === "list"} onClick={() => setView("list")} icon={List} label="List" />
-              <ViewToggle active={view === "board"} onClick={() => setView("board")} icon={LayoutGrid} label="Board" />
-              <ViewToggle active={view === "bugs"} onClick={() => setView("bugs")} icon={Bug} label="Bugs" />
-              <ViewToggle active={view === "suite"} onClick={() => setView("suite")} icon={ListChecks} label="Suite" />
-              <ViewToggle active={view === "sprint"} onClick={() => setView("sprint")} icon={Rocket} label="Sprint" />
-              <ViewToggle active={view === "metrics"} onClick={() => setView("metrics")} icon={Gauge} label="Metrics" />
+              <ViewToggle active={view === "list"} onClick={() => setView("list")} icon={List} label={t(($) => $.qa_cockpit.view_list)} />
+              <ViewToggle active={view === "board"} onClick={() => setView("board")} icon={LayoutGrid} label={t(($) => $.qa_cockpit.view_board)} />
+              <ViewToggle active={view === "bugs"} onClick={() => setView("bugs")} icon={Bug} label={t(($) => $.qa_cockpit.view_bugs)} />
+              <ViewToggle active={view === "suite"} onClick={() => setView("suite")} icon={ListChecks} label={t(($) => $.qa_cockpit.view_suite)} />
+              <ViewToggle active={view === "sprint"} onClick={() => setView("sprint")} icon={Rocket} label={t(($) => $.qa_cockpit.view_sprint)} />
+              <ViewToggle active={view === "metrics"} onClick={() => setView("metrics")} icon={Gauge} label={t(($) => $.qa_cockpit.view_metrics)} />
             </div>
           </div>
         }
@@ -311,31 +318,38 @@ export function QAPage() {
       ) : view === "sprint" ? (
         <QASprintReadinessView projectId={project !== "all" ? project : undefined} />
       ) : (
-      <div className="flex w-full flex-col gap-4 px-8 py-6">
+      <div className="flex w-full flex-col gap-4 px-8 py-8">
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            The review queue
             {project === "all"
-              ? " across all projects"
-              : ` for ${projects.find((p) => p.id === project)?.title ?? "this project"}`}
-            , by QA verdict. {filteredIssues.length} in review
-            {hasFilters && issues.length !== filteredIssues.length ? ` (of ${issues.length})` : ""}
+              ? t(($) => $.qa_cockpit.summary_all, { count: filteredIssues.length })
+              : t(($) => $.qa_cockpit.summary_project, {
+                  project: projects.find((p) => p.id === project)?.title ?? t(($) => $.qa_cockpit.project_fallback),
+                  count: filteredIssues.length,
+                })}
+            {hasFilters && issues.length !== filteredIssues.length
+              ? ` ${t(($) => $.qa_cockpit.summary_of_total, { total: issues.length })}`
+              : ""}
             {" · "}
-            <span className="text-destructive">{lanes.fail.length} need fix</span>
+            <span className="text-destructive">{t(($) => $.qa_cockpit.summary_need_fix, { count: lanes.fail.length })}</span>
             {runningCount > 0 && (
               <>
                 {" · "}
-                <span className="text-info">{runningCount} running</span>
+                <span className="text-info">{t(($) => $.qa_cockpit.summary_running, { count: runningCount })}</span>
               </>
             )}
             {staleCount > 0 && (
               <>
                 {" · "}
-                <span className="text-amber-600 dark:text-amber-400">{staleCount} stale</span>
+                <span className="text-amber-600 dark:text-amber-400">
+                  {t(($) => $.qa_cockpit.summary_stale, { count: staleCount })}
+                </span>
               </>
             )}
             {" · "}
-            {lanes.pending.length} pending · {lanes.pass.length} passed
+            {t(($) => $.qa_cockpit.summary_pending, { count: lanes.pending.length })}
+            {" · "}
+            {t(($) => $.qa_cockpit.summary_passed, { count: lanes.pass.length })}
           </p>
 
           {view !== "bugs" && (
@@ -357,7 +371,7 @@ export function QAPage() {
                   }}
                 >
                   <X className="size-3.5" />
-                  Clear filters
+                  {t(($) => $.qa_cockpit.clear_filters)}
                 </Button>
               )}
             </div>
@@ -367,7 +381,11 @@ export function QAPage() {
       {view === "bugs" ? (
         <BugsLens projectId={project !== "all" ? project : undefined} />
       ) : isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <div className="space-y-2" aria-hidden>
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-3/4" />
+        </div>
       ) : view === "list" ? (
         <div className="space-y-5">
           {LANES.map(({ key, ...lane }) => (
@@ -391,7 +409,9 @@ export function QAPage() {
 
           {selected.size > 0 && (
             <div className="sticky bottom-3 z-10 mx-auto flex w-fit items-center gap-2 rounded-full border bg-card px-4 py-2 shadow-lg">
-              <span className="text-[12px] text-muted-foreground">{selected.size} selected</span>
+              <span className="text-[12px] text-muted-foreground">
+                {t(($) => $.qa_cockpit.selected_count, { count: selected.size })}
+              </span>
               <Button
                 size="sm"
                 variant="outline"
@@ -399,7 +419,7 @@ export function QAPage() {
                 disabled={bulkRerunQA.isPending}
                 onClick={() => bulkRerunQA.mutate([...selected])}
               >
-                Re-run QA
+                {t(($) => $.qa_cockpit.rerun_qa)}
               </Button>
               <Button
                 size="sm"
@@ -408,10 +428,10 @@ export function QAPage() {
                 disabled={bulkSendBack.isPending}
                 onClick={() => bulkSendBack.mutate([...selected])}
               >
-                Send back to dev
+                {t(($) => $.qa_cockpit.send_back_to_dev)}
               </Button>
               <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => setSelected(new Set())}>
-                Clear
+                {t(($) => $.qa_cockpit.clear)}
               </Button>
             </div>
           )}
@@ -480,6 +500,7 @@ function AssigneeFilter({
   selected: AssigneeKey[];
   onChange: (next: AssigneeKey[]) => void;
 }) {
+  const { t } = useT("issues");
   const { getActorName } = useActorName();
   const options = useMemo(() => {
     const counts = new Map<AssigneeKey, number>();
@@ -511,7 +532,7 @@ function AssigneeFilter({
             className={cn("h-8 gap-1.5 px-2 text-[12px]", selected.length > 0 && "border-primary/50 text-primary")}
           >
             <User className="size-3.5" />
-            Assignee
+            {t(($) => $.qa_cockpit.assignee_filter)}
             {selected.length > 0 && (
               <span className="rounded bg-primary/10 px-1 text-[11px] font-medium">{selected.length}</span>
             )}
@@ -521,11 +542,11 @@ function AssigneeFilter({
       <DropdownMenuContent align="start" className="w-64">
         <DropdownMenuGroup>
           <DropdownMenuLabel className="text-[11px] text-muted-foreground">
-            Filter by assignee
+            {t(($) => $.qa_cockpit.assignee_filter_label)}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           {options.length === 0 ? (
-            <p className="px-2 py-3 text-[12px] text-muted-foreground">No assignees in the current queue.</p>
+            <p className="px-2 py-3 text-[12px] text-muted-foreground">{t(($) => $.qa_cockpit.assignee_filter_empty)}</p>
           ) : (
             options.map((opt) => (
               <DropdownMenuCheckboxItem
@@ -555,6 +576,7 @@ function PriorityFilter({
   selected: IssuePriority[];
   onChange: (next: IssuePriority[]) => void;
 }) {
+  const { t } = useT("issues");
   const counts = useMemo(() => {
     const by = new Map<IssuePriority, number>();
     for (const issue of issues) by.set(issue.priority, (by.get(issue.priority) ?? 0) + 1);
@@ -576,7 +598,7 @@ function PriorityFilter({
             className={cn("h-8 gap-1.5 px-2 text-[12px]", selected.length > 0 && "border-primary/50 text-primary")}
           >
             <ListFilter className="size-3.5" />
-            Priority
+            {t(($) => $.qa_cockpit.priority_filter)}
             {selected.length > 0 && (
               <span className="rounded bg-primary/10 px-1 text-[11px] font-medium">{selected.length}</span>
             )}
@@ -586,7 +608,7 @@ function PriorityFilter({
       <DropdownMenuContent align="start" className="w-56">
         <DropdownMenuGroup>
           <DropdownMenuLabel className="text-[11px] text-muted-foreground">
-            Filter by priority
+            {t(($) => $.qa_cockpit.priority_filter_label)}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           {PRIORITY_ORDER.filter((p) => (counts.get(p) ?? 0) > 0).map((p) => (
@@ -597,7 +619,7 @@ function PriorityFilter({
               className="gap-2"
             >
               <PriorityIcon priority={p} />
-              <span className="flex-1 capitalize">{p === "none" ? "No priority" : p}</span>
+              <span className="flex-1 capitalize">{p === "none" ? t(($) => $.qa_cockpit.priority_no_priority) : p}</span>
               <span className="text-[11px] text-muted-foreground">{counts.get(p)}</span>
             </DropdownMenuCheckboxItem>
           ))}
@@ -631,6 +653,7 @@ function BoardColumn({
   onStopRun?: (taskId: string) => void;
   stoppingTaskId?: string | null;
 }) {
+  const { t } = useT("issues");
   return (
     <section className="flex min-h-[200px] flex-col rounded-lg border bg-muted/20">
       <div className="flex items-center gap-2 border-b px-3 py-2">
@@ -640,9 +663,12 @@ function BoardColumn({
           {issues.length}
         </span>
       </div>
-      <div className="flex flex-col gap-2 p-2">
+      {/* Bounded so one fat column doesn't grow the whole page — a long verdict
+          column scrolls internally instead of pushing the other columns'
+          headers out of view. */}
+      <div className="flex max-h-[60vh] flex-col gap-2 overflow-y-auto p-2">
         {issues.length === 0 ? (
-          <p className="px-1 py-2 text-[12px] text-muted-foreground">Nothing here.</p>
+          <p className="px-1 py-2 text-[12px] text-muted-foreground">{t(($) => $.qa_cockpit.nothing_here)}</p>
         ) : (
           issues.map((issue) => (
             <AppLink

@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { I18nProvider } from "@agora/core/i18n/react";
 import type { TestCase } from "@agora/core/types";
+import enIssues from "../../locales/en/issues.json";
 import { QASuiteView } from "./qa-suite-view";
 
 // The Suite tab manages a project's STANDING regression suite (issue_id NULL
@@ -22,9 +24,11 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 function renderView(projectId?: string) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <QueryClientProvider client={qc}>
-      <QASuiteView projectId={projectId} />
-    </QueryClientProvider>,
+    <I18nProvider locale="en" resources={{ en: { issues: enIssues } }}>
+      <QueryClientProvider client={qc}>
+        <QASuiteView projectId={projectId} />
+      </QueryClientProvider>
+    </I18nProvider>,
   );
 }
 

@@ -22,7 +22,7 @@ import { verdictIcon } from "./verdict";
 // latest run verdict, and lets QA add cases, generate via agent, and record a
 // pass/fail run. Automated execution + regression are later phases.
 //
-// Density note: this panel lives in a fixed 400px rail (see qa-review-page),
+// Density note: this panel lives in a fixed 380px rail (see qa-review-page),
 // same width class as the issue detail page's Properties panel — every
 // control here is icon-first / single-line-per-row on purpose, not a
 // scaled-down version of a wide layout. Badges became plain muted text,
@@ -428,7 +428,7 @@ function CaseRow({
             <span className="truncate">{c.title}</span>
           </span>
           {/* Compact meta: kind · category · (who ran it + when) — plain text,
-              not badge pills, so it fits a 400px rail on one wrapping-safe line. */}
+              not badge pills, so it fits a 380px rail on one wrapping-safe line. */}
           <span className="mt-0.5 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[10px] text-muted-foreground/70">
             <span>{kindLabel}</span>
             <span aria-hidden>·</span>

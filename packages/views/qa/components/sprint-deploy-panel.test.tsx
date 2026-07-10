@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, within, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider } from "@agora/core/i18n/react";
 import enIssues from "../../locales/en/issues.json";
@@ -156,17 +156,20 @@ describe("SprintDeployPanel", () => {
   });
 
   it("asks for confirmation before a human-gated (requires_human) deploy and aborts on cancel", async () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     renderPanel();
     fireEvent.click(await screen.findByTestId("sprint-deploy-production"));
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText("Deploy to a human-gated environment?")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByText("Cancel"));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
     expect(apiMocks.sliceAction).not.toHaveBeenCalled();
   });
 
   it("fires the human-gated deploy once confirmed", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     renderPanel();
     fireEvent.click(await screen.findByTestId("sprint-deploy-production"));
+    const dialog = await screen.findByRole("alertdialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Deploy" }));
     await waitFor(() => expect(apiMocks.sliceAction).toHaveBeenCalledTimes(1));
     expect(apiMocks.sliceAction).toHaveBeenCalledWith("issue-2", {
       kind: "deploy",
@@ -176,11 +179,10 @@ describe("SprintDeployPanel", () => {
   });
 
   it("does not ask for confirmation on a non-gated environment", async () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     renderPanel();
     fireEvent.click(await screen.findByTestId("sprint-deploy-staging"));
     await waitFor(() => expect(apiMocks.sliceAction).toHaveBeenCalledTimes(1));
-    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
   it("renders recent deploy history rows from the anchor issue's deploy events", async () => {

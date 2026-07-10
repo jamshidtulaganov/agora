@@ -10,7 +10,9 @@ import { useWorkspaceId } from "@agora/core/hooks";
 import { Button } from "@agora/ui/components/ui/button";
 import { Input } from "@agora/ui/components/ui/input";
 import { Textarea } from "@agora/ui/components/ui/textarea";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import { cn } from "@agora/ui/lib/utils";
+import { useT } from "../../i18n";
 import { verdictIcon } from "./verdict";
 
 // The project's STANDING regression suite — the "stoppage" release gate. These
@@ -18,13 +20,12 @@ import { verdictIcon } from "./verdict";
 // golden-path cases injected into every run_qa / run_test_cases on the project's
 // issues, and re-run whole-branch at sprint end. A failing base case is a
 // regression that must block a release. QA manages the suite here — build it
-// from the QA manifest (the QA-lead authoring run), add standing cases by hand,
-// and archive ones that no longer hold.
-//
-// English-only, matching its sibling cockpit tabs (Metrics / Sprint / Bugs).
+// from the QA manifest, add standing cases by hand, and archive ones that no
+// longer hold.
 
 export function QASuiteView({ projectId }: { projectId?: string }) {
   const wsId = useWorkspaceId();
+  const { t } = useT("issues");
   const qc = useQueryClient();
   const [adding, setAdding] = useState(false);
 
@@ -41,28 +42,27 @@ export function QASuiteView({ projectId }: { projectId?: string }) {
 
   const build = useMutation({
     mutationFn: () => api.buildProjectBaseSuite(projectId as string),
-    onSuccess: () =>
-      toast.success("Base-suite authoring queued — the QA lead is drafting cases from the QA manifest."),
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to build base suite"),
+    onSuccess: () => toast.success(t(($) => $.qa_cockpit.suite_toast_build_queued)),
+    onError: (e) => toast.error(e instanceof Error ? e.message : t(($) => $.qa_cockpit.suite_toast_build_failed)),
   });
 
   const archive = useMutation({
     mutationFn: (caseId: string) => api.archiveTestCase(caseId),
     onSuccess: () => {
-      toast.success("Case archived");
+      toast.success(t(($) => $.qa_cockpit.suite_toast_archived));
       invalidate();
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to archive case"),
+    onError: (e) => toast.error(e instanceof Error ? e.message : t(($) => $.qa_cockpit.suite_toast_archive_failed)),
   });
 
   const update = useMutation({
     mutationFn: ({ caseId, data }: { caseId: string; data: import("@agora/core/types").UpdateTestCaseRequest }) =>
       api.updateTestCase(caseId, data),
     onSuccess: () => {
-      toast.success("Case updated");
+      toast.success(t(($) => $.qa_cockpit.suite_toast_updated));
       invalidate();
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to update case"),
+    onError: (e) => toast.error(e instanceof Error ? e.message : t(($) => $.qa_cockpit.suite_toast_update_failed)),
   });
 
   // Per-project gate: base cases belong to ONE project (issue_id NULL, project
@@ -71,10 +71,8 @@ export function QASuiteView({ projectId }: { projectId?: string }) {
     return (
       <div className="mx-auto max-w-md px-8 py-16 text-center">
         <ShieldCheck className="mx-auto size-6 text-muted-foreground/60" />
-        <p className="mt-2 text-sm text-muted-foreground">Select a project to manage its regression suite.</p>
-        <p className="mt-1 text-[12px] text-muted-foreground/70">
-          The base suite is per-project — the standing golden-path cases that gate every release.
-        </p>
+        <p className="mt-2 text-sm text-muted-foreground">{t(($) => $.qa_cockpit.suite_select_project)}</p>
+        <p className="mt-1 text-[12px] text-muted-foreground/70">{t(($) => $.qa_cockpit.suite_select_project_hint)}</p>
       </div>
     );
   }
@@ -85,28 +83,29 @@ export function QASuiteView({ projectId }: { projectId?: string }) {
   const failingCount = cases.filter((c) => c.latest_run?.status === "fail").length;
 
   return (
-    <div className="flex w-full flex-col gap-4 px-8 py-6">
+    // One consistent bounded measure for the whole tab (header + rows share it)
+    // instead of a header capped at max-w-2xl while the rows below stretch full
+    // width — matches issue-detail's max-w-4xl reading measure.
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-8 py-8">
       <div className="flex items-start justify-between gap-3">
-        <div className="max-w-2xl space-y-1.5">
+        <div className="space-y-1.5">
           <div className="flex items-center gap-2">
             <ShieldCheck className="size-4 shrink-0 text-emerald-500" />
-            <span className="text-sm font-medium">Regression suite</span>
+            <span className="text-sm font-medium">{t(($) => $.qa_cockpit.suite_heading)}</span>
             <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{cases.length}</span>
             {failingCount > 0 && (
               <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive">
-                {failingCount} failing
+                {t(($) => $.qa_cockpit.suite_failing_count, { count: failingCount })}
               </span>
             )}
           </div>
-          <p className="text-sm text-muted-foreground">
-            The standing golden-path cases for this project — injected into every QA run and re-checked whole-branch
-            at sprint end. A failing case here is a regression that stops the release.
-          </p>
+          <p className="text-sm text-muted-foreground">{t(($) => $.qa_cockpit.suite_description)}</p>
           {cases.length > 0 && (
             <p className="text-[11px] text-muted-foreground">
-              {positiveCount} positive{" · "}
+              {t(($) => $.qa_cockpit.suite_positive_count, { count: positiveCount })}
+              {" · "}
               <span className={cn(negativeCount === 0 && "font-medium text-amber-600 dark:text-amber-400")}>
-                {negativeCount} negative
+                {t(($) => $.qa_cockpit.suite_negative_count, { count: negativeCount })}
               </span>
             </p>
           )}
@@ -119,14 +118,14 @@ export function QASuiteView({ projectId }: { projectId?: string }) {
             className="h-8 gap-1.5 text-[12px]"
             disabled={build.isPending}
             onClick={() => build.mutate()}
-            title="Fire the QA lead to author the base suite from the project's QA manifest"
+            title={t(($) => $.qa_cockpit.suite_build_title)}
           >
             {build.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
-            Build base suite
+            {t(($) => $.qa_cockpit.suite_build)}
           </Button>
           <Button type="button" size="sm" className="h-8 gap-1.5 text-[12px]" onClick={() => setAdding((v) => !v)}>
             <Plus className="size-3.5" />
-            Add case
+            {t(($) => $.qa_cockpit.suite_add_case)}
           </Button>
         </div>
       </div>
@@ -143,14 +142,17 @@ export function QASuiteView({ projectId }: { projectId?: string }) {
       )}
 
       {isLoading && !data ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <div className="space-y-2" aria-hidden>
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-3/4" />
+        </div>
       ) : cases.length === 0 && !adding ? (
         <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-12 text-center">
           <ShieldCheck className="mx-auto size-6 text-muted-foreground/60" />
-          <p className="mt-2 text-sm text-muted-foreground">No regression cases yet.</p>
+          <p className="mt-2 text-sm text-muted-foreground">{t(($) => $.qa_cockpit.suite_empty_title)}</p>
           <p className="mx-auto mt-1 max-w-md text-[12px] text-muted-foreground/70">
-            The base suite is the standing release gate for this project — the golden paths every QA run must still
-            pass. Build it from the QA manifest, or add cases by hand.
+            {t(($) => $.qa_cockpit.suite_empty_hint)}
           </p>
         </div>
       ) : (
@@ -173,7 +175,7 @@ export function QASuiteView({ projectId }: { projectId?: string }) {
 
 function CasePill({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <span className={cn("rounded border px-1 py-px text-[10px] uppercase tracking-wide", className)}>{children}</span>
+    <span className={cn("rounded border px-1 py-px text-[11px] uppercase tracking-wide", className)}>{children}</span>
   );
 }
 
@@ -190,12 +192,16 @@ function BaseCaseRow({
   onSave: (data: import("@agora/core/types").UpdateTestCaseRequest) => void;
   saving: boolean;
 }) {
+  const { t } = useT("issues");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({ title: c.title, steps: c.steps, expected: c.expected });
   const status = c.latest_run?.status;
   const isBlocked = status === "blocked" || status === "skip";
   const hasDetail = !!(c.steps || c.expected || (status === "fail" && c.latest_run?.output));
+  const kindLabel = c.kind === "automated" ? t(($) => $.test_cases.kind_automated) : t(($) => $.test_cases.kind_manual);
+  const categoryLabel =
+    c.category === "negative" ? t(($) => $.test_cases.category_negative) : t(($) => $.test_cases.category_positive);
 
   return (
     <li className="group/case px-4 py-2.5">
@@ -207,11 +213,11 @@ function BaseCaseRow({
         >
           <span className="block truncate text-[13px]">{c.title}</span>
           <span className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
-            <CasePill>{c.kind}</CasePill>
+            <CasePill>{kindLabel}</CasePill>
             <CasePill className={cn(c.category === "negative" && "border-amber-500/40 text-amber-600 dark:text-amber-400")}>
-              {c.category}
+              {categoryLabel}
             </CasePill>
-            {c.script ? <CasePill>compiled</CasePill> : null}
+            {c.script ? <CasePill>{t(($) => $.qa_cockpit.suite_compiled)}</CasePill> : null}
             {c.latest_run && (
               <span className="flex items-center gap-0.5">
                 {c.latest_run.run_source === "agent" ? <Bot className="size-2.5" /> : <User className="size-2.5" />}
@@ -225,7 +231,7 @@ function BaseCaseRow({
               {verdictIcon(status, "size-4")}
             </span>
           ) : isBlocked ? (
-            <span title={c.latest_run?.output || "blocked"}>
+            <span title={c.latest_run?.output || t(($) => $.test_cases.blocked)}>
               <CircleSlash className="size-4 text-amber-600 dark:text-amber-400" />
             </span>
           ) : (
@@ -240,7 +246,7 @@ function BaseCaseRow({
               setDraft({ title: c.title, steps: c.steps, expected: c.expected });
               setEditing((v) => !v);
             }}
-            title="Edit this case"
+            title={t(($) => $.qa_cockpit.suite_edit_title)}
           >
             <Pencil className="size-3.5" />
           </Button>
@@ -251,7 +257,7 @@ function BaseCaseRow({
             className="size-6 text-muted-foreground opacity-0 transition-opacity focus-within:opacity-100 hover:text-destructive group-hover/case:opacity-100"
             disabled={archiving}
             onClick={onArchive}
-            title="Archive this case (removes it from the standing suite)"
+            title={t(($) => $.qa_cockpit.suite_archive_title)}
           >
             {archiving ? <Loader2 className="size-3.5 animate-spin" /> : <Archive className="size-3.5" />}
           </Button>
@@ -263,25 +269,25 @@ function BaseCaseRow({
             value={draft.title}
             onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
             className="h-8 text-[13px]"
-            placeholder="Case title"
+            placeholder={t(($) => $.qa_cockpit.suite_case_title_ph)}
           />
           <Textarea
             value={draft.steps}
             onChange={(e) => setDraft((d) => ({ ...d, steps: e.target.value }))}
             rows={2}
             className="text-[12px]"
-            placeholder="Steps"
+            placeholder={t(($) => $.qa_cockpit.suite_steps_ph)}
           />
           <Textarea
             value={draft.expected}
             onChange={(e) => setDraft((d) => ({ ...d, expected: e.target.value }))}
             rows={1}
             className="text-[12px]"
-            placeholder="Expected result"
+            placeholder={t(($) => $.qa_cockpit.suite_expected_ph)}
           />
           <div className="flex items-center justify-end gap-1.5">
             <Button type="button" variant="ghost" size="sm" className="h-7 text-[12px]" onClick={() => setEditing(false)}>
-              Cancel
+              {t(($) => $.qa_cockpit.suite_cancel)}
             </Button>
             <Button
               type="button"
@@ -293,7 +299,7 @@ function BaseCaseRow({
                 setEditing(false);
               }}
             >
-              {saving ? <Loader2 className="size-3.5 animate-spin" /> : "Save"}
+              {saving ? <Loader2 className="size-3.5 animate-spin" /> : t(($) => $.qa_cockpit.suite_save)}
             </Button>
           </div>
         </div>
@@ -327,6 +333,7 @@ function AddBaseCaseForm({
   onDone: () => void;
   onCancel: () => void;
 }) {
+  const { t } = useT("issues");
   const [title, setTitle] = useState("");
   const [steps, setSteps] = useState("");
   const [expected, setExpected] = useState("");
@@ -339,26 +346,26 @@ function AddBaseCaseForm({
     mutationFn: () =>
       api.createProjectTestCase(projectId, { title: title.trim(), steps, expected, kind, category }),
     onSuccess: onDone,
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to add case"),
+    onError: (e) => toast.error(e instanceof Error ? e.message : t(($) => $.qa_cockpit.suite_toast_add_failed)),
   });
 
   return (
     <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
       <Input
-        placeholder="Case title (e.g. [e2e] Checkout — happy path)"
+        placeholder={t(($) => $.qa_cockpit.suite_new_case_title_ph)}
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         className="h-8 text-[13px]"
       />
       <Textarea
-        placeholder="Steps (numbered, newline-separated)"
+        placeholder={t(($) => $.qa_cockpit.suite_new_steps_ph)}
         value={steps}
         onChange={(e) => setSteps(e.target.value)}
         rows={2}
         className="text-[12px]"
       />
       <Textarea
-        placeholder="Expected result"
+        placeholder={t(($) => $.qa_cockpit.suite_expected_ph)}
         value={expected}
         onChange={(e) => setExpected(e.target.value)}
         rows={1}
@@ -374,11 +381,11 @@ function AddBaseCaseForm({
               size="sm"
               onClick={() => setKind(k)}
               className={cn(
-                "h-6 px-2 text-[11px] capitalize",
+                "h-6 px-2 text-[11px]",
                 kind === k ? "bg-muted font-medium text-foreground" : "text-muted-foreground",
               )}
             >
-              {k}
+              {k === "automated" ? t(($) => $.test_cases.kind_automated) : t(($) => $.test_cases.kind_manual)}
             </Button>
           ))}
         </div>
@@ -391,17 +398,17 @@ function AddBaseCaseForm({
               size="sm"
               onClick={() => setCategory(cat)}
               className={cn(
-                "h-6 px-2 text-[11px] capitalize",
+                "h-6 px-2 text-[11px]",
                 category === cat ? "bg-muted font-medium text-foreground" : "text-muted-foreground",
               )}
             >
-              {cat}
+              {cat === "positive" ? t(($) => $.test_cases.category_positive) : t(($) => $.test_cases.category_negative)}
             </Button>
           ))}
         </div>
         <div className="ml-auto flex items-center gap-1.5">
           <Button type="button" variant="ghost" size="sm" className="h-7 text-[12px]" onClick={onCancel}>
-            Cancel
+            {t(($) => $.qa_cockpit.suite_cancel)}
           </Button>
           <Button
             type="button"
@@ -410,7 +417,7 @@ function AddBaseCaseForm({
             disabled={!title.trim() || save.isPending}
             onClick={() => save.mutate()}
           >
-            {save.isPending ? <Loader2 className="size-3.5 animate-spin" /> : "Add case"}
+            {save.isPending ? <Loader2 className="size-3.5 animate-spin" /> : t(($) => $.qa_cockpit.suite_add_case)}
           </Button>
         </div>
       </div>

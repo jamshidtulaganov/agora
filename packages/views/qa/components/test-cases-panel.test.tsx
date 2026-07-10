@@ -106,12 +106,14 @@ describe("QAIssueRow stop affordance (queue)", () => {
   it("renders a Stop button on a running row and calls onStopRun with the resolved task id", () => {
     const onStopRun = vi.fn();
     render(
-      <QAIssueRow
-        issue={{ id: "issue-1", identifier: "MUL-1", title: "T", priority: "none", labels: [] } as never}
-        isLive
-        runningTaskId="task-99"
-        onStopRun={onStopRun}
-      />,
+      <I18nProvider locale="en" resources={{ en: { issues: enIssues } }}>
+        <QAIssueRow
+          issue={{ id: "issue-1", identifier: "MUL-1", title: "T", priority: "none", labels: [] } as never}
+          isLive
+          runningTaskId="task-99"
+          onStopRun={onStopRun}
+        />
+      </I18nProvider>,
     );
 
     const stopBtn = screen.getByRole("button", { name: "Stop the running QA gate" });
@@ -123,12 +125,14 @@ describe("QAIssueRow stop affordance (queue)", () => {
 
   it("does not render a Stop button when the row is not live", () => {
     render(
-      <QAIssueRow
-        issue={{ id: "issue-1", identifier: "MUL-1", title: "T", priority: "none", labels: [] } as never}
-        isLive={false}
-        runningTaskId={null}
-        onStopRun={vi.fn()}
-      />,
+      <I18nProvider locale="en" resources={{ en: { issues: enIssues } }}>
+        <QAIssueRow
+          issue={{ id: "issue-1", identifier: "MUL-1", title: "T", priority: "none", labels: [] } as never}
+          isLive={false}
+          runningTaskId={null}
+          onStopRun={vi.fn()}
+        />
+      </I18nProvider>,
     );
     expect(screen.queryByRole("button", { name: "Stop the running QA gate" })).not.toBeInTheDocument();
   });
