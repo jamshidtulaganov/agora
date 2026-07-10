@@ -275,5 +275,12 @@ func (h *Handler) ProxyTrace(w http.ResponseWriter, r *http.Request) {
 		req.URL.Path = tracePathPrefix + rest
 		req.Host = target.Host
 	}
+	// The global CSP middleware stamps our API policy (frame-ancestors 'none')
+	// on every response — but these responses ARE the Playwright trace viewer,
+	// which must be iframed by the QA panel's TraceOverlay. Drop ours so the
+	// upstream's headers stand; the capability token + the per-request
+	// membership check above remain the actual access control (same model as
+	// ProxyEditor, editor.go).
+	w.Header().Del("Content-Security-Policy")
 	proxy.ServeHTTP(w, r)
 }
