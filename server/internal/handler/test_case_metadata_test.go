@@ -190,3 +190,75 @@ func TestUpdateTestCaseMetadata(t *testing.T) {
 		t.Errorf("rejected updates must not write: priority=%q modality=%q", row.Priority, row.Modality)
 	}
 }
+
+// The per-step manual checklist (phase 4) records ONE run via the EXISTING
+// human path (POST /api/test-cases/:id/runs) with the step breakdown riding
+// in `output`. This pins the contract the panel depends on: output survives
+// the write verbatim (fenced block included) and comes back on the issue's
+// latest_run, with run_source=human.
+func TestCreateTestCaseRunOutputRoundTrip(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("no database")
+	}
+	ctx := context.Background()
+	issueID := createTestIssue(t, "tc manual step run", "in_review", "medium")
+	t.Cleanup(func() { deleteTestIssue(t, issueID) })
+
+	created, err := testHandler.Queries.CreateTestCase(ctx, db.CreateTestCaseParams{
+		WorkspaceID: testUUID(testWorkspaceID),
+		IssueID:     testUUID(issueID),
+		Title:       "walked case",
+		Steps:       "1. open page\n2. click save → expects: toast",
+		Kind:        "manual",
+		Source:      "human",
+		AuthorType:  "member",
+		AuthorID:    testUUID(testUserID),
+		Category:    "positive",
+		Priority:    "p2",
+	})
+	if err != nil {
+		t.Fatalf("seed case: %v", err)
+	}
+	caseID := uuidToString(created.ID)
+
+	output := "Manual step run — 1/2 passed, failed at step 2\n```step-results\n[{\"step\":1,\"status\":\"pass\"},{\"step\":2,\"status\":\"fail\",\"note\":\"toast never appeared\"}]\n```"
+	req := withURLParam(newRequest(http.MethodPost, "/api/test-cases/"+caseID+"/runs", map[string]any{
+		"status": "fail",
+		"output": output,
+	}), "id", caseID)
+	rec := httptest.NewRecorder()
+	testHandler.CreateTestCaseRun(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("record manual run: got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	// Read back through the issue's list — the panel's actual read path.
+	listReq := withURLParam(newRequest(http.MethodGet, "/api/issues/"+issueID+"/test-cases", nil), "id", issueID)
+	listRec := httptest.NewRecorder()
+	testHandler.GetIssueTestCases(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list cases: got %d", listRec.Code)
+	}
+	var list ListTestCasesResponse
+	if err := json.NewDecoder(listRec.Body).Decode(&list); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	var found *TestCaseResponse
+	for i := range list.TestCases {
+		if list.TestCases[i].ID == caseID {
+			found = &list.TestCases[i]
+		}
+	}
+	if found == nil || found.LatestRun == nil {
+		t.Fatalf("case with latest_run not in list: %+v", list.TestCases)
+	}
+	if found.LatestRun.Status != "fail" || found.LatestRun.RunSource != "human" {
+		t.Errorf("unexpected run: status=%q source=%q", found.LatestRun.Status, found.LatestRun.RunSource)
+	}
+	if found.LatestRun.Output != output {
+		t.Errorf("output did not round-trip verbatim:\nwant %q\ngot  %q", output, found.LatestRun.Output)
+	}
+	if found.LatestRun.TracePath != "" {
+		t.Errorf("manual run must carry no trace_path, got %q", found.LatestRun.TracePath)
+	}
+}

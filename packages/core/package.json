@@ -116,7 +116,8 @@
     "./skills": "./skills/index.ts",
     "./skills/frontmatter": "./skills/frontmatter.ts",
     "./qa/steps": "./qa/steps.ts",
-    "./qa/templates": "./qa/templates.ts"
+    "./qa/templates": "./qa/templates.ts",
+    "./qa/step-run": "./qa/step-run.ts"
   },
   "dependencies": {
     "@formatjs/intl-localematcher": "catalog:",

@@ -253,6 +253,86 @@ describe("TestCasesPanel — suggest-from-ticket card", () => {
   });
 });
 
+describe("TestCasesPanel — per-step manual run (checklist)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    apiMocks.getAgentTaskSnapshot.mockResolvedValue([]);
+    apiMocks.getIssue.mockResolvedValue({ id: "issue-1", description: null });
+    apiMocks.getIssueTestCases.mockResolvedValue({ test_cases: [automatedCase()] });
+    apiMocks.recordTestCaseRun.mockResolvedValue({});
+    qaLiveProgressMocks.useRunningTestCaseId.mockReturnValue(null);
+    qaLiveProgressMocks.useLiveCaseVerdicts.mockReturnValue({});
+  });
+
+  it("walks the steps, notes the failure, and records ONE run with the fenced breakdown", async () => {
+    renderPanel();
+
+    fireEvent.click(await screen.findByTitle("Run the steps manually"));
+    expect(screen.getByText("Step 1 of 2")).toBeInTheDocument();
+
+    // Step 1 passes; header advances to step 2.
+    fireEvent.click(screen.getAllByTitle("Pass")[0]!);
+    expect(screen.getByText("Step 2 of 2")).toBeInTheDocument();
+
+    // Step 2 fails — the actual-result note input appears.
+    fireEvent.click(screen.getAllByTitle("Fail")[1]!);
+    fireEvent.change(screen.getByLabelText("Actual result — what happened?"), {
+      target: { value: "cart total went negative" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Record result" }));
+
+    await waitFor(() => expect(apiMocks.recordTestCaseRun).toHaveBeenCalledTimes(1));
+    const [caseId, body] = apiMocks.recordTestCaseRun.mock.calls[0]!;
+    expect(caseId).toBe("tc-1");
+    expect(body.status).toBe("fail");
+    expect(body.output).toContain("Manual step run — 1/2 passed, failed at step 2");
+    expect(body.output).toContain("step-results");
+    expect(body.output).toContain("cart total went negative");
+  });
+
+  it("allows finishing early on a fail — unmarked steps record as skipped", async () => {
+    renderPanel();
+
+    fireEvent.click(await screen.findByTitle("Run the steps manually"));
+    // Fail step 1 immediately; step 2 stays unmarked.
+    fireEvent.click(screen.getAllByTitle("Fail")[0]!);
+    fireEvent.click(screen.getByRole("button", { name: "Record result" }));
+
+    await waitFor(() => expect(apiMocks.recordTestCaseRun).toHaveBeenCalledTimes(1));
+    const [, body] = apiMocks.recordTestCaseRun.mock.calls[0]!;
+    expect(body.status).toBe("fail");
+    expect(body.output).toContain('{"step":2,"status":"skip"}');
+  });
+
+  it("renders a recorded walk as a structured per-step breakdown, not raw fence text", async () => {
+    const output =
+      'Manual step run — 1/2 passed, failed at step 2\n```step-results\n[{"step":1,"status":"pass"},{"step":2,"status":"fail","note":"toast never appeared"}]\n```';
+    apiMocks.getIssueTestCases.mockResolvedValue({
+      test_cases: [
+        automatedCase({
+          latest_run: {
+            id: "run-1",
+            status: "fail",
+            run_source: "human",
+            created_at: "2026-01-01T00:00:00Z",
+            output,
+            trace_path: "",
+          },
+        }),
+      ],
+    });
+
+    renderPanel();
+
+    // hasReason auto-opens the failing row; the breakdown renders structured.
+    expect(await screen.findByText("Manual step run")).toBeInTheDocument();
+    expect(screen.getByText(/toast never appeared/)).toBeInTheDocument();
+    // The raw fenced JSON must not leak into the DOM as text.
+    expect(screen.queryByText(/step-results/)).not.toBeInTheDocument();
+  });
+});
+
 describe("QAIssueRow stop affordance (queue)", () => {
   it("renders a Stop button on a running row and calls onStopRun with the resolved task id", () => {
     const onStopRun = vi.fn();

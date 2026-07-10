@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { Sparkles, Plus, Bot, User, Loader2, FlaskConical, Play, CircleSlash, CircleStop, Check, X, Film } from "lucide-react";
+import { Sparkles, Plus, Bot, User, Loader2, FlaskConical, Play, CircleSlash, CircleStop, Check, X, Film, ListChecks } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core/hooks";
@@ -10,6 +10,7 @@ import { agentTaskSnapshotKeys, agentTaskSnapshotOptions } from "@agora/core/age
 import { issueKeys, issueDetailOptions, testCasesOptions } from "@agora/core/issues/queries";
 import type { TestCase } from "@agora/core/types";
 import { CASE_TEMPLATES, type CaseTemplate } from "@agora/core/qa/templates";
+import { parseStepResults } from "@agora/core/qa/step-run";
 import { Button } from "@agora/ui/components/ui/button";
 import { Input } from "@agora/ui/components/ui/input";
 import { Textarea } from "@agora/ui/components/ui/textarea";
@@ -32,7 +33,8 @@ import {
   type TestCaseModality,
 } from "./case-meta";
 import { useRunningTestCaseId, useLiveCaseVerdicts } from "./qa-live-progress";
-import { StepEditor, StepList, serializeSteps, type ParsedStep } from "./step-editor";
+import { StepEditor, StepList, parseSteps, serializeSteps, type ParsedStep } from "./step-editor";
+import { StepRunChecklist, StepResultList } from "./step-run";
 import { verdictIcon } from "./verdict";
 
 // The QA team's Test-cases instrument. Lists an issue's cases (authored by a QA
@@ -188,9 +190,12 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
   const runProgressPct =
     runningIndex >= 0 && sorted.length > 0 ? Math.round(((runningIndex + 1) / sorted.length) * 100) : null;
 
+  // Records a human run verdict. `output` is optional: the one-click ✓/✗
+  // sends none; a per-step checklist walk (phase 4) sends its serialized
+  // breakdown so the row's expanded detail can render step-by-step results.
   const recordRun = useMutation({
-    mutationFn: ({ caseId, status }: { caseId: string; status: "pass" | "fail" }) =>
-      api.recordTestCaseRun(caseId, { status }),
+    mutationFn: ({ caseId, status, output }: { caseId: string; status: "pass" | "fail" | "skip"; output?: string }) =>
+      api.recordTestCaseRun(caseId, { status, output }),
     onSuccess: invalidate,
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
@@ -406,6 +411,7 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
               c={c}
               busy={recordRun.isPending}
               onRun={(status) => recordRun.mutate({ caseId: c.id, status })}
+              onStepRun={(status, output) => recordRun.mutate({ caseId: c.id, status, output })}
               onRunCase={() => runOne.mutate(c)}
               isRunning={c.id === runningCaseId || runningLocal.has(c.id)}
               liveVerdict={liveVerdicts[c.id]}
@@ -505,6 +511,7 @@ function CaseRow({
   c,
   busy,
   onRun,
+  onStepRun,
   onRunCase,
   isRunning,
   liveVerdict,
@@ -514,6 +521,9 @@ function CaseRow({
   c: TestCase;
   busy: boolean;
   onRun: (status: "pass" | "fail") => void;
+  // Record a finished per-step manual walk (phase 4): the derived case verdict
+  // plus the serialized per-step breakdown for the run's output.
+  onStepRun: (status: "pass" | "fail" | "skip", output: string) => void;
   // Execute THIS one case via the QA agent (single-case run).
   onRunCase: () => void;
   // Open the Playwright trace viewer for this case's latest run (only wired when
@@ -553,6 +563,15 @@ function CaseRow({
   // without an extra click — the whole point of asking "which failed and why"
   // is to NOT have to hunt for it. A passing/never-run case stays collapsed.
   const [open, setOpen] = useState(hasReason);
+  // Per-step manual run (phase 4): the case's parsed steps power both the
+  // interactive checklist and the recorded run's breakdown display. A manual
+  // walk is offered for ANY case with steps — hand-walking an automated
+  // case's steps is legitimate when its box/script is unavailable.
+  const parsedSteps = parseSteps(c.steps);
+  const [stepRunOpen, setStepRunOpen] = useState(false);
+  // The latest run's per-step breakdown, when that run was a checklist walk
+  // (null for agent free-text evidence / one-click ✓✗ runs / legacy).
+  const stepResults = c.latest_run?.output ? parseStepResults(c.latest_run.output) : null;
   const kindLabel = c.kind === "automated" ? t(($) => $.test_cases.kind_automated) : t(($) => $.test_cases.kind_manual);
   const categoryLabel =
     c.category === "negative" ? t(($) => $.test_cases.category_negative) : t(($) => $.test_cases.category_positive);
@@ -693,6 +712,21 @@ function CaseRow({
               {isRunning ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
             </Button>
           )}
+          {/* Per-step manual walk (phase 4) — any case with structured steps.
+              Toggles the inline checklist below the row. */}
+          {parsedSteps.length > 0 && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              disabled={isRunning}
+              onClick={() => setStepRunOpen((v) => !v)}
+              className={cn("size-6 text-muted-foreground hover:text-foreground", stepRunOpen && "text-foreground")}
+              title={t(($) => $.test_cases.run_steps)}
+            >
+              <ListChecks className="size-3.5" />
+            </Button>
+          )}
           {/* Manual pass/fail is ONLY for manual cases — a human judges those.
               Automated cases are judged by the agent's run (▷ / Run-all), so the
               always-on ✓/✗ there was redundant clutter on every row. Kept here for
@@ -725,6 +759,17 @@ function CaseRow({
           )}
         </div>
       </div>
+      {stepRunOpen && (
+        <StepRunChecklist
+          steps={parsedSteps}
+          busy={busy}
+          onCancel={() => setStepRunOpen(false)}
+          onFinish={(verdict, output) => {
+            onStepRun(verdict, output);
+            setStepRunOpen(false);
+          }}
+        />
+      )}
       {open && hasReason && (
         <div
           className={cn(
@@ -734,7 +779,20 @@ function CaseRow({
               : "border-amber-500/50 bg-amber-500/5 text-amber-700 dark:text-amber-400",
           )}
         >
-          <pre className="whitespace-pre-wrap break-words font-mono">{c.latest_run?.output}</pre>
+          {/* A checklist walk renders as a structured per-step breakdown;
+              an agent's free-text evidence keeps the raw <pre>. */}
+          {stepResults ? (
+            <StepResultList results={stepResults} steps={parsedSteps} />
+          ) : (
+            <pre className="whitespace-pre-wrap break-words font-mono">{c.latest_run?.output}</pre>
+          )}
+        </div>
+      )}
+      {/* A PASSING checklist walk has no tinted reason block — still surface
+          its per-step breakdown in the expanded detail. */}
+      {open && !hasReason && stepResults && (
+        <div className="mt-1.5 rounded border-l-2 border-border bg-muted/20 px-2 py-1.5 text-[11px] text-muted-foreground">
+          <StepResultList results={stepResults} steps={parsedSteps} />
         </div>
       )}
       {open && (c.steps || c.expected || c.preconditions) && (
