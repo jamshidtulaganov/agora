@@ -1503,8 +1503,10 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       )}
 
       {/* Figma designs referenced by the description (client-side extraction;
-          renders nothing when the issue links no designs). */}
-      <FigmaLinksSection description={issue.description} />
+          renders nothing when the issue links no designs). Also the entry
+          point into the optional design lens (?lens=design) — activeLens
+          hides that link when we're already viewing it. */}
+      <FigmaLinksSection issueId={id} description={issue.description} activeLens={activeLens} />
 
       {/* Design stage: proposal state, summary, and the review entry point.
           Renders nothing unless the issue is design-relevant. */}

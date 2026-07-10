@@ -879,7 +879,8 @@
   "figma_links": {
     "chip_label": "已关联 Figma 设计稿",
     "chip_label_n": "已关联 {{count}} 个 Figma 设计稿",
-    "open_in_figma": "在 Figma 中打开"
+    "open_in_figma": "在 Figma 中打开",
+    "open_design_view": "打开设计视图"
   },
   "design_proposal": {
     "title": "设计",

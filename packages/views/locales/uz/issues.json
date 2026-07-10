@@ -894,7 +894,8 @@
   "figma_links": {
     "chip_label": "Figma maket bog'langan",
     "chip_label_n": "Figma maketlar bog'langan ({{count}})",
-    "open_in_figma": "Figma'da ochish"
+    "open_in_figma": "Figma'da ochish",
+    "open_design_view": "Dizayn ko'rinishini ochish"
   },
   "design_proposal": {
     "title": "Dizayn",

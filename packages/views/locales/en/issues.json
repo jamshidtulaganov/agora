@@ -894,7 +894,8 @@
   "figma_links": {
     "chip_label": "Figma design linked",
     "chip_label_n": "Figma designs linked ({{count}})",
-    "open_in_figma": "Open in Figma"
+    "open_in_figma": "Open in Figma",
+    "open_design_view": "Open design view"
   },
   "design_proposal": {
     "title": "Design",

@@ -77,7 +77,7 @@ export function DesignLensBody({ issueId }: { issueId: string }) {
               <DesignProposalSection issueId={issueId} />
               <DesignAuditSection issueId={issueId} />
               <QADesignCompare design={designResult} issueId={issueId} visual="full" />
-              <FigmaLinksSection description={issue.description} />
+              <FigmaLinksSection issueId={issueId} description={issue.description} activeLens="design" />
             </div>
           </div>
         ) : (

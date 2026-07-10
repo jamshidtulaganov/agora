@@ -3063,6 +3063,13 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 			// A UI change builds against the project's known design system, so
 			// reuse beats re-inventing components. "" when no manifest.
 			instruction += h.sliceActionDesignManifestContext(r.Context(), issue)
+			// Design is an INPUT to the build, not a separate SDLC stage (Agora's
+			// ICP is small vibe-coding teams, usually without a dedicated
+			// designer): when the issue references a Figma design, hand the dev
+			// the compact DESIGN INPUT block — the refs, how to read them via the
+			// figma MCP, and "match the built UI to the design" framing. "" when
+			// the issue references nothing.
+			instruction += figmaDesignInputContext(issueFigmaRefs(issue))
 		}
 		instruction += h.sliceActionLandingInstruction(r.Context(), issue)
 	}
