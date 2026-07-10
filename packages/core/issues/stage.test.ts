@@ -11,7 +11,6 @@ function baseInput(overrides: Partial<StagePipelineInput> = {}): StagePipelineIn
   return {
     status: "todo",
     labels: [],
-    hasDesignSignals: false,
     ...overrides,
   };
 }
@@ -23,112 +22,9 @@ function find(pipeline: StagePipeline, stage: SDLCStage) {
 }
 
 describe("deriveStagePipeline — stage order", () => {
-  it("always returns the four stages in design/dev/qa/review order", () => {
+  it("always returns the three stages in dev/qa/review order", () => {
     const pipeline = deriveStagePipeline(baseInput());
-    expect(pipeline.stages.map((s) => s.stage)).toEqual(["design", "dev", "qa", "review"]);
-  });
-});
-
-describe("deriveStagePipeline — design stage", () => {
-  it("is skipped when the issue has no design signals", () => {
-    const pipeline = deriveStagePipeline(baseInput({ hasDesignSignals: false }));
-    expect(find(pipeline, "design")).toEqual({ stage: "design", state: "skipped" });
-  });
-
-  it("passes on a design verdict of pass", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ hasDesignSignals: true, designVerdict: "pass" }),
-    );
-    expect(find(pipeline, "design").state).toBe("passed");
-  });
-
-  it("passes via the QA-verdict override (mirrors backend design_action.go)", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ hasDesignSignals: true, designVerdict: null, qaVerdict: "pass" }),
-    );
-    expect(find(pipeline, "design").state).toBe("passed");
-  });
-
-  it("passes when the issue is done, regardless of verdicts", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ hasDesignSignals: true, status: "done" }),
-    );
-    expect(find(pipeline, "design").state).toBe("passed");
-  });
-
-  it("fails on a design verdict of fail", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ hasDesignSignals: true, designVerdict: "fail" }),
-    );
-    expect(find(pipeline, "design").state).toBe("failed");
-  });
-
-  it("passes on a design:pass label", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ hasDesignSignals: true, labels: [{ name: "design:pass" }] }),
-    );
-    expect(find(pipeline, "design").state).toBe("passed");
-  });
-
-  it("fails on a design:fail label", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ hasDesignSignals: true, labels: [{ name: "design:fail" }] }),
-    );
-    expect(find(pipeline, "design").state).toBe("failed");
-  });
-
-  it("prefers the design:pass label over a conflicting fail verdict field", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({
-        hasDesignSignals: true,
-        designVerdict: "fail",
-        labels: [{ name: "design:pass" }],
-      }),
-    );
-    expect(find(pipeline, "design").state).toBe("passed");
-  });
-
-  it("prefers the design:fail label over a conflicting pass verdict field", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({
-        hasDesignSignals: true,
-        designVerdict: "pass",
-        labels: [{ name: "design:fail" }],
-      }),
-    );
-    expect(find(pipeline, "design").state).toBe("failed");
-  });
-
-  it("falls back to the verdict field when neither design label is present", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ hasDesignSignals: true, designVerdict: "fail", labels: [] }),
-    );
-    expect(find(pipeline, "design").state).toBe("failed");
-  });
-
-  it("is running when a design task is attributed as running", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ hasDesignSignals: true, runningTaskStages: ["design"] }),
-    );
-    expect(find(pipeline, "design").state).toBe("running");
-  });
-
-  it("is pending with signals but no verdict and nothing running", () => {
-    // design is always stage index 0, so whenever it's open it's also the
-    // "current" stage and a pending base state gets promoted to "active"
-    // (see the current-resolution describe block). Use cancelled status,
-    // which never promotes, to observe the raw base state here.
-    const pipeline = deriveStagePipeline(
-      baseInput({ hasDesignSignals: true, status: "cancelled" }),
-    );
-    expect(find(pipeline, "design").state).toBe("pending");
-  });
-
-  it("precedence: status done wins over a fail verdict", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ hasDesignSignals: true, designVerdict: "fail", status: "done" }),
-    );
-    expect(find(pipeline, "design").state).toBe("passed");
+    expect(pipeline.stages.map((s) => s.stage)).toEqual(["dev", "qa", "review"]);
   });
 });
 
@@ -159,9 +55,9 @@ describe("deriveStagePipeline — dev stage", () => {
   });
 
   it("is pending with no PR, not running, not blocked", () => {
-    // design is skipped by default, making dev the earliest open stage, so a
-    // non-cancelled status would promote it to "active". Use cancelled to
-    // observe the raw base state.
+    // dev is stage index 0, so a non-cancelled status would promote a
+    // pending base state to "active". Use cancelled to observe the raw
+    // base state.
     const pipeline = deriveStagePipeline(baseInput({ status: "cancelled" }));
     expect(find(pipeline, "dev").state).toBe("pending");
   });
@@ -330,22 +226,22 @@ describe("deriveStagePipeline — review stage", () => {
 
 describe("deriveStagePipeline — running attribution is per-stage", () => {
   it("only marks the stages the caller attributed as running", () => {
+    // dev is stage index 0, so a non-cancelled status promotes its pending
+    // base state to "active" (the current-stage promotion) — use cancelled
+    // to observe that "qa" is the only stage marked "running".
     const pipeline = deriveStagePipeline(
-      baseInput({
-        hasDesignSignals: true,
-        runningTaskStages: ["design"],
-      }),
+      baseInput({ status: "cancelled", runningTaskStages: ["qa"] }),
     );
-    expect(find(pipeline, "design").state).toBe("running");
+    expect(find(pipeline, "qa").state).toBe("running");
     expect(find(pipeline, "dev").state).toBe("pending"); // not attributed, stays pending
-    expect(find(pipeline, "qa").state).toBe("pending");
+    expect(find(pipeline, "review").state).toBe("pending");
   });
 });
 
 describe("deriveStagePipeline — current stage resolution", () => {
   it("promotes only the current stage from pending to active", () => {
-    const pipeline = deriveStagePipeline(baseInput({ hasDesignSignals: false }));
-    // design skipped -> dev is the first open (non-passed/skipped) stage.
+    const pipeline = deriveStagePipeline(baseInput());
+    // dev is the first open (non-passed) stage.
     expect(pipeline.current).toBe("dev");
     expect(find(pipeline, "dev").state).toBe("active");
     // qa/review are also pending in this scenario but are NOT current, so
@@ -368,69 +264,47 @@ describe("deriveStagePipeline — current stage resolution", () => {
     expect(find(pipeline, "qa").state).toBe("active");
   });
 
-  it("advances current past every passed/skipped stage", () => {
+  it("advances current past every passed stage", () => {
     const pipeline = deriveStagePipeline(
       baseInput({
-        hasDesignSignals: true,
-        designVerdict: "pass",
         prNumber: 1,
         labels: [{ name: "qa:pass" }],
       }),
     );
-    // design/dev/qa passed -> review is first open.
+    // dev/qa passed -> review is first open.
     expect(pipeline.current).toBe("review");
     expect(find(pipeline, "review").state).toBe("active"); // promoted from pending
   });
 });
 
 describe("deriveStagePipeline — done status", () => {
-  it("forces every non-skipped stage to passed and pins current to the last non-skipped stage", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ status: "done", hasDesignSignals: true }),
-    );
+  it("forces every stage to passed and pins current to the last stage", () => {
+    const pipeline = deriveStagePipeline(baseInput({ status: "done" }));
     for (const s of pipeline.stages) {
       expect(s.state).toBe("passed");
     }
     expect(pipeline.current).toBe("review");
   });
 
-  it("skips a stage with no signals even when done, and pins current to the last non-skipped stage", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ status: "done", hasDesignSignals: false }),
-    );
-    expect(find(pipeline, "design").state).toBe("skipped");
-    expect(find(pipeline, "dev").state).toBe("passed");
-    expect(find(pipeline, "qa").state).toBe("passed");
-    expect(find(pipeline, "review").state).toBe("passed");
-    expect(pipeline.current).toBe("review"); // last non-skipped
-  });
-
   it("forces a stage that would otherwise be failed/blocked to passed", () => {
     const pipeline = deriveStagePipeline(
-      baseInput({
-        status: "done",
-        hasDesignSignals: true,
-        designVerdict: "fail",
-      }),
+      baseInput({ status: "done", labels: [{ name: "qa:fail" }] }),
     );
-    expect(find(pipeline, "design").state).toBe("passed");
+    expect(find(pipeline, "qa").state).toBe("passed");
   });
 });
 
 describe("deriveStagePipeline — cancelled status", () => {
   it("derives states normally but never promotes pending to active", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ status: "cancelled", hasDesignSignals: true }),
-    );
-    expect(pipeline.current).toBe("design");
-    expect(find(pipeline, "design")).toEqual({ stage: "design", state: "pending" }); // NOT "active"
+    const pipeline = deriveStagePipeline(baseInput({ status: "cancelled" }));
+    expect(pipeline.current).toBe("dev");
+    expect(find(pipeline, "dev")).toEqual({ stage: "dev", state: "pending" }); // NOT "active"
   });
 
-  it("falls back to the last non-skipped stage when everything is passed/skipped", () => {
+  it("falls back to the last passed stage when everything is passed", () => {
     const pipeline = deriveStagePipeline(
       baseInput({
         status: "cancelled",
-        hasDesignSignals: false,
         prNumber: 1,
         labels: [{ name: "qa:pass" }],
         prMerged: true,
@@ -438,7 +312,7 @@ describe("deriveStagePipeline — cancelled status", () => {
     );
     expect(pipeline.current).toBe("review");
     for (const s of pipeline.stages) {
-      expect(["passed", "skipped"]).toContain(s.state);
+      expect(s.state).toBe("passed");
     }
   });
 });
@@ -455,11 +329,11 @@ describe("deriveStagePipeline — unknown status (enum drift)", () => {
   });
 
   it("does not treat an unknown status as 'blocked'", () => {
-    // dev is the earliest open stage here (design skipped by default), so
-    // the normal current-promotion applies and it reads "active", not
-    // "pending" — the important assertion is that it never reads "blocked",
-    // which is the state an unrecognized status could wrongly trigger if it
-    // fell through to a raw string comparison.
+    // dev is the earliest open stage here, so the normal current-promotion
+    // applies and it reads "active", not "pending" — the important
+    // assertion is that it never reads "blocked", which is the state an
+    // unrecognized status could wrongly trigger if it fell through to a raw
+    // string comparison.
     const pipeline = deriveStagePipeline(baseInput({ status: "weird-legacy-status" }));
     expect(find(pipeline, "dev").state).not.toBe("blocked");
     expect(find(pipeline, "dev").state).toBe("active");

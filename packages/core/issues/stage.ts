@@ -1,12 +1,21 @@
 // SDLC stage pipeline — derived, never stored.
 //
 // There is no `stage` column on Issue. The issue's position in the
-// Design -> Dev -> QA -> Review cycle is derived client-side from signals
-// that already exist (status, labels, PR/merge state, running task
-// attribution). This keeps the pipeline a pure projection of data the
-// backend already owns — no new source of truth, no migration.
+// Dev -> QA -> Review cycle is derived client-side from signals that already
+// exist (status, labels, PR/merge state, running task attribution). This
+// keeps the pipeline a pure projection of data the backend already owns — no
+// new source of truth, no migration.
 //
-// Deploy is NOT part of this pipeline. It used to be a 5th stage here, but
+// Design is NOT a stage in this pipeline. For Agora's ICP (small vibe-coding
+// dev teams, usually without a dedicated designer), design is an INPUT to the
+// dev build — not a co-equal SDLC stage with its own reviewer ceremony. A
+// Figma link on an issue is injected as context into the dev build task (see
+// sliceActionDraftCode in server/internal/handler/slice_action.go), and the
+// design lens/machinery stays available as an OPTIONAL, deep-linkable view
+// (`?lens=design`, see packages/views/issues/lens.ts) for teams that want it
+// — it's just no longer a stepper stage the user clicks through.
+//
+// Deploy is also NOT part of this pipeline. It used to be a stage here, but
 // deploy is a SPRINT-level concern (a shared branch deployed as a cycle, not
 // a per-issue checkbox) — it now lives in the sprint-readiness view
 // (packages/views/qa/components/qa-sprint-readiness-view.tsx). See
@@ -23,7 +32,7 @@ import { ALL_STATUSES } from "./config/status";
 import type { IssueStatus } from "../types/issue";
 import type { WorkMode } from "./work-mode";
 
-export type SDLCStage = "design" | "dev" | "qa" | "review";
+export type SDLCStage = "dev" | "qa" | "review";
 
 export type StageState =
   | "pending"
@@ -53,61 +62,19 @@ export interface StagePipelineInput {
   labels: { name: string }[];
   workMode?: WorkMode;
   prNumber?: number | null;
-  /** Figma refs or design evidence present on the issue. */
-  hasDesignSignals: boolean;
-  designVerdict?: "pass" | "fail" | null;
-  /** QA verdict; a "pass" here also counts as a design-pass override. */
-  qaVerdict?: "pass" | "fail" | null;
   mergeGates?: { ci: MergeGateState; qa: MergeGateState; tier: string } | null;
   prMerged?: boolean;
   /** Stages a currently-running agent task is attributed to (caller-derived). */
   runningTaskStages?: SDLCStage[];
 }
 
-const STAGE_ORDER: SDLCStage[] = ["design", "dev", "qa", "review"];
+const STAGE_ORDER: SDLCStage[] = ["dev", "qa", "review"];
 
 const KNOWN_STATUSES = new Set<string>(ALL_STATUSES);
 
 /** Enum-drift guard: any status the frontend doesn't recognize downgrades to "todo". */
 function normalizeStatus(status: string): IssueStatus {
   return (KNOWN_STATUSES.has(status) ? status : "todo") as IssueStatus;
-}
-
-function deriveDesignStage(
-  input: StagePipelineInput,
-  status: IssueStatus,
-  labelNames: Set<string>,
-  running: Set<SDLCStage>,
-): StageSnapshot {
-  if (!input.hasDesignSignals) {
-    return { stage: "design", state: "skipped" };
-  }
-  if (status === "done") {
-    return { stage: "design", state: "passed" };
-  }
-  // design:pass/design:fail are the durable, board-filterable signal (backend
-  // attaches them from qa-result.design.verdict — see
-  // TaskService.captureDesignVerdictLabel, qa_evidence.go). Labels take
-  // precedence over the raw verdict fields — including the qa:pass override,
-  // so an explicit design:fail is never silently erased by a green QA gate.
-  // The verdict fields remain as fallback for evidence captured before the
-  // labels existed — no backfill needed.
-  if (labelNames.has("design:fail")) {
-    return { stage: "design", state: "failed" };
-  }
-  if (labelNames.has("design:pass")) {
-    return { stage: "design", state: "passed" };
-  }
-  if (input.designVerdict === "fail") {
-    return { stage: "design", state: "failed" };
-  }
-  if (input.designVerdict === "pass" || input.qaVerdict === "pass") {
-    return { stage: "design", state: "passed" };
-  }
-  if (running.has("design")) {
-    return { stage: "design", state: "running" };
-  }
-  return { stage: "design", state: "pending" };
 }
 
 function deriveDevStage(
@@ -213,9 +180,10 @@ function finalizePipeline(stages: StageSnapshot[], status: IssueStatus): StagePi
 
   if (!target) {
     // Every stage is passed/skipped (or status forced them there): pin
-    // current to the last non-skipped stage. design is the only stage that
-    // can ever be "skipped" in this 4-stage model, so this fallback is
-    // effectively unreachable — kept for defensiveness (fuzz-tested).
+    // current to the last non-skipped stage. No stage in this 3-stage model
+    // normally derives to "skipped" (skipped stays a valid StageState for
+    // future use), so this fallback is effectively unreachable — kept for
+    // defensiveness (fuzz-tested).
     const lastNonSkipped = [...stages].reverse().find((s) => s.state !== "skipped");
     const fallback: StageSnapshot = { stage: "review", state: "pending" };
     return { stages, current: (lastNonSkipped ?? fallback).stage };
@@ -239,13 +207,12 @@ export function deriveStagePipeline(input: StagePipelineInput): StagePipeline {
   const labelNames = new Set(input.labels.map((l) => l.name));
   const running = new Set(input.runningTaskStages ?? []);
 
-  const design = deriveDesignStage(input, status, labelNames, running);
   const dev = deriveDevStage(input, status, running);
   const qa = deriveQaStage(status, labelNames, running);
   const review = deriveReviewStage(input, status, labelNames, qa);
 
   let stages: StageSnapshot[] = STAGE_ORDER.map(
-    (stage) => ({ design, dev, qa, review })[stage],
+    (stage) => ({ dev, qa, review })[stage],
   );
 
   if (status === "done") {

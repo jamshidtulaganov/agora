@@ -23,7 +23,12 @@ import { ReviewLensBody } from "./components/review-lens";
 export const LENS_QUERY_KEY = "lens";
 export const DEFAULT_LENS_KEY = "issue" as const;
 
-export type LensKey = "issue" | SDLCStage;
+// "design" is deliberately NOT part of SDLCStage (packages/core/issues/stage.ts)
+// — it left the stepper as its own stage and is now a dev-build INPUT
+// instead. It stays a first-class LensKey so the lens is still reachable as
+// an optional, deep-linkable view (`?lens=design`) for teams that want it —
+// see figma-links-section.tsx's "Open design view" entry point.
+export type LensKey = "issue" | "design" | SDLCStage;
 
 export interface StageLens {
   key: LensKey;

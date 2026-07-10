@@ -1,11 +1,17 @@
 "use client";
 
-// The SDLC stepper strip — Design → Dev → QA → Review — mounted via
-// CockpitFrame's `topStrip` slot. Renders the pipeline `deriveStagePipeline`
-// already computed; owns no state of its own beyond click handling, which it
+// The SDLC stepper strip — Dev → QA → Review — mounted via CockpitFrame's
+// `topStrip` slot. Renders the pipeline `deriveStagePipeline` already
+// computed; owns no state of its own beyond click handling, which it
 // delegates entirely to the caller (lens switching lives in lens.ts).
 // See docs/sdlc-stage-cockpit-plan.md section 1/3 (phase C). Deploy is not a
 // stage here — it moved to the sprint level (qa-sprint-readiness-view.tsx).
+// Design is not a stage here either — for Agora's ICP (small vibe-coding
+// dev teams, usually without a dedicated designer) it's an INPUT injected
+// into the dev build task, not a stepper stage with its own reviewer
+// ceremony. The design lens/machinery stays reachable as an optional,
+// deep-linkable view (`?lens=design`) for teams that want it — see
+// figma-links-section.tsx's "Open design view" entry point and lens.ts.
 
 import { useEffect, useRef } from "react";
 import { CheckCircle2, XCircle, TriangleAlert } from "lucide-react";
@@ -138,8 +144,6 @@ function connectorClassName(
 
 function stageLabel(stage: SDLCStage, t: ReturnType<typeof useT<"issues">>["t"]): string {
   switch (stage) {
-    case "design":
-      return t(($) => $.sdlc.design);
     case "dev":
       return t(($) => $.sdlc.dev);
     case "qa":

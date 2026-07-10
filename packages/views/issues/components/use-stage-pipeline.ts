@@ -12,16 +12,20 @@
 // (qa-sprint-readiness-view.tsx, docs/deploy-mcp-integration.md). This hook
 // used to also query remote boxes + deploy_event for a 5th "deploy" stage;
 // that query set was removed along with the stage.
+//
+// Design is NOT assembled here either — it left the stepper as its own
+// stage (see packages/core/issues/stage.ts); this hook no longer needs
+// qa_evidence's design verdict or a figma-refs check, so that query was
+// dropped along with the design fields.
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@agora/core/api";
 import { agentTaskSnapshotOptions } from "@agora/core/agents";
-import { issueDetailOptions, qaEvidenceOptions } from "@agora/core/issues/queries";
+import { issueDetailOptions } from "@agora/core/issues/queries";
 import { getWorkMode } from "@agora/core/issues/work-mode";
 import { issueLabelsOptions } from "@agora/core/labels";
 import { issuePullRequestsOptions } from "@agora/core/github";
-import { figmaRefsFrom } from "@agora/core/figma";
 import { deriveStagePipeline, type SDLCStage, type StagePipeline, type MergeGateState } from "@agora/core/issues";
 import type { MergeGateStatus } from "@agora/core/types";
 
@@ -60,7 +64,6 @@ function gateStatus(gates: MergeGateStatus[], name: string): MergeGateState {
 export function useStagePipeline(wsId: string, issueId: string): StagePipeline {
   const { data: issue } = useQuery(issueDetailOptions(wsId, issueId));
   const { data: labels = [] } = useQuery(issueLabelsOptions(wsId, issueId));
-  const { data: evidence } = useQuery(qaEvidenceOptions(issueId));
   const { data: prs } = useQuery(issuePullRequestsOptions(issueId));
 
   const status = issue?.status ?? "todo";
@@ -88,19 +91,11 @@ export function useStagePipeline(wsId: string, issueId: string): StagePipeline {
     const matchedPr =
       prNumber != null ? (prs?.pull_requests ?? []).find((pr) => pr.number === prNumber) : undefined;
 
-    const designResult = evidence?.result?.design ?? null;
-    const hasDesignSignals =
-      figmaRefsFrom(issue?.description ?? "").length > 0 || designResult != null;
-
     return deriveStagePipeline({
       status,
       labels,
       workMode: getWorkMode(issue),
       prNumber,
-      hasDesignSignals,
-      designVerdict:
-        designResult?.verdict === "pass" || designResult?.verdict === "fail" ? designResult.verdict : null,
-      qaVerdict: evidence?.verdict === "pass" || evidence?.verdict === "fail" ? evidence.verdict : null,
       mergeGates: mergeReadiness
         ? {
             ci: gateStatus(mergeReadiness.gates, "ci"),
@@ -111,5 +106,5 @@ export function useStagePipeline(wsId: string, issueId: string): StagePipeline {
       prMerged: matchedPr ? matchedPr.state === "merged" : undefined,
       runningTaskStages,
     });
-  }, [status, labels, issue, evidence, prs, mergeReadiness, snapshot, qaAgentIds, issueId]);
+  }, [status, labels, issue, prs, mergeReadiness, snapshot, qaAgentIds, issueId]);
 }

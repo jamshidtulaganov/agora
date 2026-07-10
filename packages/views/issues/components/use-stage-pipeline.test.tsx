@@ -5,19 +5,21 @@ import type { ReactNode } from "react";
 import { useStagePipeline } from "./use-stage-pipeline";
 
 // Covers the ASSEMBLY of StagePipelineInput from the queries this hook
-// fetches (issue metadata -> prNumber, PR list -> prMerged, qa_evidence ->
-// design/qa verdicts, task snapshot + QA-squad membership -> running-stage
-// attribution). deriveStagePipeline's own state-machine rules are covered
-// exhaustively in packages/core/issues/stage.test.ts.
+// fetches (issue metadata -> prNumber, PR list -> prMerged, task snapshot +
+// QA-squad membership -> running-stage attribution). deriveStagePipeline's
+// own state-machine rules are covered exhaustively in
+// packages/core/issues/stage.test.ts.
 //
 // Deploy is deliberately absent: it left the issue-level pipeline (deploy
-// cycle rehome, part 1) — the hook no longer queries remote boxes or
-// deploy events, and the pipeline is 4 stages (design/dev/qa/review).
+// cycle rehome, part 1) — the hook no longer queries remote boxes or deploy
+// events. Design is deliberately absent too: it left the stepper as its own
+// stage (design is now a dev-build INPUT, not a pipeline stage — see
+// packages/core/issues/stage.ts), so this hook no longer queries qa_evidence
+// for a design verdict. The pipeline is 3 stages (dev/qa/review).
 
 const apiMocks = vi.hoisted(() => ({
   getIssue: vi.fn(),
   listLabelsForIssue: vi.fn(),
-  getQAEvidence: vi.fn(),
   listIssuePullRequests: vi.fn(),
   mergeReadiness: vi.fn(),
   getAgentTaskSnapshot: vi.fn(),
@@ -90,12 +92,11 @@ function stageState(stages: { stage: string; state: string }[], stage: string) {
   return stages.find((s) => s.stage === stage)?.state;
 }
 
-describe("useStagePipeline — 4-stage assembly", () => {
+describe("useStagePipeline — 3-stage assembly", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     apiMocks.getIssue.mockResolvedValue(baseIssue());
     apiMocks.listLabelsForIssue.mockResolvedValue([]);
-    apiMocks.getQAEvidence.mockResolvedValue(null);
     apiMocks.listIssuePullRequests.mockResolvedValue({ pull_requests: [pullRequest()] });
     apiMocks.mergeReadiness.mockResolvedValue({ ready: false, tier: "light", gates: [], reviews: [] });
     apiMocks.getAgentTaskSnapshot.mockResolvedValue([]);
@@ -103,10 +104,10 @@ describe("useStagePipeline — 4-stage assembly", () => {
     apiMocks.listSquadMembers.mockResolvedValue([]);
   });
 
-  it("derives a 4-stage pipeline — deploy is not a stage anymore", async () => {
+  it("derives a 3-stage pipeline — design and deploy are not stages anymore", async () => {
     const { result } = renderPipeline();
     await waitFor(() => expect(stageState(result.current.stages, "dev")).toBe("passed"));
-    expect(result.current.stages.map((s) => s.stage)).toEqual(["design", "dev", "qa", "review"]);
+    expect(result.current.stages.map((s) => s.stage)).toEqual(["dev", "qa", "review"]);
   });
 
   it("passes the dev stage from the issue's pr_number metadata", async () => {
@@ -126,22 +127,6 @@ describe("useStagePipeline — 4-stage assembly", () => {
     });
     const { result } = renderPipeline();
     await waitFor(() => expect(stageState(result.current.stages, "review")).toBe("passed"));
-  });
-
-  it("passes the qa stage from a qa:pass evidence verdict + surfaces design signals", async () => {
-    apiMocks.getQAEvidence.mockResolvedValue({
-      verdict: "pass",
-      result: { design: { verdict: "pass" } },
-    });
-    const { result } = renderPipeline();
-    await waitFor(() => expect(stageState(result.current.stages, "design")).toBe("passed"));
-    // design evidence present -> the stage participates instead of skipping.
-    expect(stageState(result.current.stages, "design")).not.toBe("skipped");
-  });
-
-  it("skips design when the issue has no design signals at all", async () => {
-    const { result } = renderPipeline();
-    await waitFor(() => expect(stageState(result.current.stages, "design")).toBe("skipped"));
   });
 
   it("attributes a running QA-squad agent task to the qa stage, others to dev", async () => {
