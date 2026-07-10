@@ -552,7 +552,9 @@
     "view_trace": "Открыть трейс",
     "trace_title": "Просмотр трейса",
     "trace_close": "Закрыть",
-    "trace_error": "Не удалось открыть трейс"
+    "trace_error": "Не удалось открыть трейс",
+    "trace_load_error": "Просмотр трейса не загрузился",
+    "trace_retry": "Повторить"
   },
   "qa_cockpit": {
     "all_projects": "Все проекты",

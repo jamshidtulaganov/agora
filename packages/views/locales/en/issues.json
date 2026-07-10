@@ -552,7 +552,9 @@
     "view_trace": "View trace",
     "trace_title": "Trace viewer",
     "trace_close": "Close",
-    "trace_error": "Could not open the trace"
+    "trace_error": "Could not open the trace",
+    "trace_load_error": "The trace viewer didn't load",
+    "trace_retry": "Retry"
   },
   "qa_cockpit": {
     "all_projects": "All projects",

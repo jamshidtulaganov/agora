@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Sparkles, Plus, Bot, User, Loader2, FlaskConical, Play, CircleSlash, CircleStop, Check, X, Film } from "lucide-react";
 import { toast } from "sonner";
@@ -47,6 +47,10 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
   // The Playwright trace viewer opens as a full-panel overlay iframe — the URL
   // is a same-origin reverse-proxy path the backend hands back per launch.
   const [traceUrl, setTraceUrl] = useState<string | null>(null);
+  // The run id behind the current traceUrl, kept alongside it so the overlay's
+  // retry affordance can re-fire the SAME launch mutation for the SAME run
+  // without the row that originally triggered it still being mounted/visible.
+  const [traceRunId, setTraceRunId] = useState<string | null>(null);
   const runningCaseId = useRunningTestCaseId(issueId);
   const liveVerdicts = useLiveCaseVerdicts(issueId);
   // Cases the user just hit "run" on — an OPTIMISTIC running marker, so the row
@@ -173,6 +177,7 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
 
   const launchTrace = useMutation({
     mutationFn: (runId: string) => api.launchTrace(runId),
+    onMutate: (runId) => setTraceRunId(runId),
     onSuccess: (res) => {
       if (res.trace_url) setTraceUrl(res.trace_url);
       else toast.error(t(($) => $.test_cases.trace_error));
@@ -301,22 +306,69 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
         </ul>
       )}
 
-      {traceUrl && <TraceOverlay url={traceUrl} onClose={() => setTraceUrl(null)} />}
+      {traceUrl && (
+        <TraceOverlay
+          url={traceUrl}
+          onClose={() => {
+            setTraceUrl(null);
+            setTraceRunId(null);
+          }}
+          onRetry={traceRunId ? () => launchTrace.mutate(traceRunId) : undefined}
+        />
+      )}
     </section>
   );
 }
+
+// How long the viewer gets to render before the overlay offers a retry. A
+// blank iframe from a dead reverse-proxy target still "loads" as far as the
+// browser is concerned (it rendered SOME response — a connection-refused error
+// page or a 502 body), so iframe onLoad/onError can't reliably detect this
+// failure mode. A generous timeout is the only honest signal: if the viewer
+// hasn't confirmed it's up by then, offer the escape hatch instead of leaving
+// the reviewer staring at an unexplained blank panel.
+const TRACE_LOAD_TIMEOUT_MS = 8000;
 
 // Full-panel overlay hosting the real Playwright trace viewer in an iframe. The
 // src is a same-origin reverse-proxy URL (behind the authed session), so the
 // viewer + its DOM snapshots / screenshots stream through the backend — no
 // vendored viewer, no cross-origin auth wall. Esc / the close button dismiss it.
-function TraceOverlay({ url, onClose }: { url: string; onClose: () => void }) {
+function TraceOverlay({ url, onClose, onRetry }: { url: string; onClose: () => void; onRetry?: () => void }) {
   const { t } = useT("issues");
+  const [showRetry, setShowRetry] = useState(false);
+
+  useEffect(() => {
+    setShowRetry(false);
+    const timer = setTimeout(() => setShowRetry(true), TRACE_LOAD_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [url]);
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <Film className="size-4 shrink-0 text-muted-foreground" />
         <span className="text-sm font-medium">{t(($) => $.test_cases.trace_title)}</span>
+        {/* Escape hatch for the blank-panel failure mode: the viewer proxy
+            couldn't reach the daemon/show-trace process. Never assumed fatal —
+            just offered after a generous grace period, with a one-click retry
+            that re-launches the SAME run's trace viewer. */}
+        {showRetry && onRetry && (
+          <span className="ml-2 flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+            <span className="truncate">{t(($) => $.test_cases.trace_load_error)}</span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-6 shrink-0 px-2 text-[11px]"
+              onClick={() => {
+                setShowRetry(false);
+                onRetry();
+              }}
+            >
+              {t(($) => $.test_cases.trace_retry)}
+            </Button>
+          </span>
+        )}
         <Button
           type="button"
           variant="ghost"
@@ -329,9 +381,11 @@ function TraceOverlay({ url, onClose }: { url: string; onClose: () => void }) {
         </Button>
       </div>
       <iframe
+        key={url}
         src={url}
         title={t(($) => $.test_cases.trace_title)}
         className="min-h-0 flex-1 border-0"
+        onLoad={() => setShowRetry(false)}
       />
     </div>
   );

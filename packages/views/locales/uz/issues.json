@@ -552,7 +552,9 @@
     "view_trace": "Trace’ni ochish",
     "trace_title": "Trace ko‘ruvchi",
     "trace_close": "Yopish",
-    "trace_error": "Trace’ni ochib bo‘lmadi"
+    "trace_error": "Trace’ni ochib bo‘lmadi",
+    "trace_load_error": "Trace ko‘ruvchi yuklanmadi",
+    "trace_retry": "Qayta urinish"
   },
   "qa_cockpit": {
     "all_projects": "Barcha loyihalar",

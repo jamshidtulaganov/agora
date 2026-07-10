@@ -541,7 +541,9 @@
     "view_trace": "查看追踪",
     "trace_title": "追踪回放",
     "trace_close": "关闭",
-    "trace_error": "无法打开追踪记录"
+    "trace_error": "无法打开追踪记录",
+    "trace_load_error": "追踪回放未能加载",
+    "trace_retry": "重试"
   },
   "qa_cockpit": {
     "all_projects": "所有项目",

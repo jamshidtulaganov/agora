@@ -520,13 +520,6 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 	// (The previews registry lives at package level so editorLocalProxyHandler
 	// can proxy a running dev-server's port for cloud mode.)
 
-	// --- Playwright trace viewers (one `playwright show-trace` per trace file) ---
-	// The trace .zip a run_test_cases run captured is LOCAL to this daemon's box,
-	// so the viewer must run here; the backend reverse-proxies it. Reused per
-	// trace path while alive; same process-group kill on shutdown as previews.
-	traces := make(map[string]*previewProc)
-	var tracesMu sync.Mutex
-
 	mux.HandleFunc("/editor/preview", func(w http.ResponseWriter, r *http.Request) {
 		if origin := r.Header.Get("Origin"); strings.HasPrefix(origin, "http://localhost") || strings.HasPrefix(origin, "http://127.0.0.1") {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
@@ -826,6 +819,11 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 			http.Error(w, "failed to launch trace viewer: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		// Reap the oldest viewer(s) BEFORE registering this one, capping total
+		// live viewers at maxTraceViewers — nothing ever explicitly "closes" a
+		// trace viewer from the frontend, so without this the process count
+		// grows unbounded across a QA session's worth of "view trace" clicks.
+		pruneOldTraceViewers(maxTraceViewers - 1)
 		traces[tracePath] = tp
 		d.logger.Info("launched trace viewer", "trace", tracePath, "port", port)
 
@@ -843,6 +841,15 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 		}
 		writeTracePort(w, port)
 	})
+
+	// --- trace-viewer reverse-proxy: /trace/local/{port}/* → loopback:{port} ---
+	// Same shape as /editor/local/{port}/*: the backend reaches a spawned
+	// `playwright show-trace` THROUGH this health listener instead of dialing
+	// the viewer port directly, because the viewer binds the DAEMON HOST's
+	// loopback — unreachable from a containerized (self-host Docker) or
+	// remote-node (cloud) backend that tries to dial it directly. Only ports of
+	// live, daemon-tracked trace viewers are proxied.
+	mux.HandleFunc("/trace/local/", traceLocalProxyHandler)
 
 	// --- embedded browser (general browser pane: preview URLs + watch automation) ---
 	bm := newBrowserManager(d.logger)
@@ -906,6 +913,55 @@ var (
 	previewsMu sync.Mutex
 )
 
+// traces registers running `playwright show-trace` viewers by trace .zip path.
+// Package level so traceLocalProxyHandler can gate its per-port reverse proxy
+// on live instances — mirrors editors/previews above. The backend reaches a
+// tracked viewer THROUGH this health listener (/trace/local/{port}), never by
+// dialing the viewer's port directly: the viewer binds the DAEMON HOST's
+// loopback, which is unreachable from a containerized (self-host Docker) or
+// remote-node (cloud) backend.
+var (
+	traces   = make(map[string]*previewProc)
+	tracesMu sync.Mutex
+)
+
+// maxTraceViewers caps how many `playwright show-trace` processes a daemon
+// keeps alive at once. Each viewer unzips a trace + serves it indefinitely
+// with no natural end-of-life signal (no TTL, no explicit "close" from the
+// frontend), so repeated "view trace" clicks across issues/runs would
+// otherwise leak processes forever. Small and simple on purpose: oldest is
+// killed to make room for a newly launched viewer past the cap.
+const maxTraceViewers = 3
+
+// pruneOldTraceViewers keeps at most maxKeep live entries in traces, killing
+// the oldest (by startedAt) first. Also drops any entry that already exited on
+// its own, so a crashed viewer's slot doesn't count against the cap forever.
+// Called right before a newly launched viewer is added, with maxKeep one less
+// than the cap so the total stays at maxTraceViewers after the insert.
+// Caller must hold tracesMu.
+func pruneOldTraceViewers(maxKeep int) {
+	for {
+		var oldestPath string
+		var oldest *previewProc
+		count := 0
+		for path, tp := range traces {
+			if !tp.running() {
+				delete(traces, path)
+				continue
+			}
+			count++
+			if oldest == nil || tp.startedAt.Before(oldest.startedAt) {
+				oldestPath, oldest = path, tp
+			}
+		}
+		if count <= maxKeep || oldest == nil {
+			return
+		}
+		killProcessGroup(oldest.cmd)
+		delete(traces, oldestPath)
+	}
+}
+
 // editorLocalProxyHandler serves /editor/local/{port}/* by reverse-proxying to
 // the code-server bound on 127.0.0.1:{port}. Gated to ports of live,
 // daemon-tracked editors — never an open proxy into the machine. Split out of
@@ -965,6 +1021,45 @@ func editorLocalProxyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if !alive {
 		http.Error(w, "no live editor on this port", http.StatusNotFound)
+		return
+	}
+	target := &url.URL{Scheme: "http", Host: loopbackHostPort(port)}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	orig := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		orig(req)
+		req.URL.Path = "/" + tail
+		req.Host = target.Host
+	}
+	proxy.ServeHTTP(w, r)
+}
+
+// traceLocalProxyHandler serves /trace/local/{port}/* by reverse-proxying to
+// the `playwright show-trace` viewer bound on loopback:{port}. Gated to ports
+// of live, daemon-tracked trace viewers (the traces registry) — never an open
+// proxy into the machine. Mirrors editorLocalProxyHandler's shape exactly.
+// WebSocket upgrades pass through (httputil.ReverseProxy handles Upgrade
+// natively) and show-trace's relative redirect (Location: ./trace/index.html)
+// resolves fine under this prefix since we never rewrite Location headers.
+func traceLocalProxyHandler(w http.ResponseWriter, r *http.Request) {
+	rest := strings.TrimPrefix(r.URL.Path, "/trace/local/")
+	portStr, tail, _ := strings.Cut(rest, "/")
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port <= 0 || port > 65535 {
+		http.Error(w, "invalid trace port", http.StatusBadRequest)
+		return
+	}
+	tracesMu.Lock()
+	alive := false
+	for _, tp := range traces {
+		if tp.port == port && tp.running() {
+			alive = true
+			break
+		}
+	}
+	tracesMu.Unlock()
+	if !alive {
+		http.Error(w, "no live trace viewer on this port", http.StatusNotFound)
 		return
 	}
 	target := &url.URL{Scheme: "http", Host: loopbackHostPort(port)}
@@ -1410,6 +1505,10 @@ type previewProc struct {
 	command string
 	buf     *syncBuffer
 	done    chan struct{}
+	// startedAt is used by pruneOldTraceViewers to identify the oldest live
+	// trace viewer to reap when the concurrent cap is exceeded. Unused by the
+	// preview (dev-server) registry.
+	startedAt time.Time
 }
 
 // running reports whether the dev-server process is still alive.
@@ -1537,7 +1636,7 @@ func startPreview(repoDir, command string, hintPort int) (*previewProc, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	pp := &previewProc{port: hintPort, cmd: cmd, command: command, buf: buf, done: make(chan struct{})}
+	pp := &previewProc{port: hintPort, cmd: cmd, command: command, buf: buf, done: make(chan struct{}), startedAt: time.Now()}
 	go func() {
 		_ = cmd.Wait()
 		close(pp.done)
