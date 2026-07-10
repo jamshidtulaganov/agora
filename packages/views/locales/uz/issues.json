@@ -497,7 +497,16 @@
     "send_back": "Dev'ga qaytarish",
     "sent_back": "Dev'ga qaytarildi (qa:fail, jarayonda)",
     "note_label": "QA izohi (ixtiyoriy)",
-    "note_ph": "Takrorlash qadamlari / asos — qaytarishda izoh sifatida joylanadi va ochilgan bagga oldindan qo'yiladi"
+    "note_ph": "Takrorlash qadamlari / asos — qaytarishda izoh sifatida joylanadi va ochilgan bagga oldindan qo'yiladi",
+    "cancel": "Bekor qilish",
+    "send_back_dialog_desc": "Takrorlash qadamlari yoki asosni qo'shing — izoh sifatida joylanadi va vazifani \"Jarayonda\" holatiga qaytaradi.",
+    "send_back_confirm": "Qaytarish",
+    "override": "Qayta belgilash",
+    "override_pass": "O'tdi deb belgilash",
+    "override_fail": "O'tmadi deb belgilash",
+    "source_agent": "agent",
+    "source_human": "inson",
+    "more_actions": "Yana amallar"
   },
   "qa_bug": {
     "file_bug": "Bag ochish",
@@ -546,6 +555,7 @@
     "running_all": "Bajarilmoqda…",
     "run_all_toast": "QA agent avtotestlarni bajarmoqda…",
     "runs_now": "BAJARILMOQDA",
+    "running_line": "{{total}} tadan {{index}}-keys bajarilmoqda — {{title}}",
     "stop": "Ishga tushirishni to‘xtatish",
     "stopping": "Ishga tushirish to‘xtatilmoqda…",
     "stop_no_task": "To‘xtatish uchun faol vazifa yo‘q.",

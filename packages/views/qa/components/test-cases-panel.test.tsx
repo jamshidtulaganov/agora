@@ -26,6 +26,20 @@ vi.mock("@agora/core/api", () => ({ api: apiMocks }));
 vi.mock("@agora/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
 
+// The live-run marker hooks — real defaults are null / {} (idle, matching
+// qa-live-progress.tsx's own initialData), overridden per-test to simulate a
+// run in progress. Mocking these (rather than using the real hooks against
+// an empty query cache) lets the "running case" tests drive the exact
+// runningCaseId without wiring a whole QAMarkerWatcher + task snapshot.
+const qaLiveProgressMocks = vi.hoisted(() => ({
+  useRunningTestCaseId: vi.fn((): string | null => null),
+  useLiveCaseVerdicts: vi.fn((): Record<string, "pass" | "fail"> => ({})),
+}));
+vi.mock("./qa-live-progress", () => ({
+  useRunningTestCaseId: qaLiveProgressMocks.useRunningTestCaseId,
+  useLiveCaseVerdicts: qaLiveProgressMocks.useLiveCaseVerdicts,
+}));
+
 // Keep the snapshot query focused on the mocked api, without pulling the whole
 // @agora/core/agents barrel into jsdom.
 vi.mock("@agora/core/agents", () => ({
@@ -69,6 +83,8 @@ describe("TestCasesPanel stop affordance", () => {
     vi.clearAllMocks();
     apiMocks.getIssueTestCases.mockResolvedValue({ test_cases: [automatedCase()] });
     apiMocks.cancelTaskById.mockResolvedValue({ id: "task-99", status: "cancelled" });
+    qaLiveProgressMocks.useRunningTestCaseId.mockReturnValue(null);
+    qaLiveProgressMocks.useLiveCaseVerdicts.mockReturnValue({});
   });
 
   it("cancels the issue's running task id (resolved from the snapshot) when Stop is clicked", async () => {
@@ -99,6 +115,83 @@ describe("TestCasesPanel stop affordance", () => {
     await screen.findByText("Checkout — happy path");
     expect(screen.queryByTitle("Stop the run")).not.toBeInTheDocument();
     expect(apiMocks.cancelTaskById).not.toHaveBeenCalled();
+  });
+});
+
+describe("TestCasesPanel — running case + fail expansion", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    apiMocks.getAgentTaskSnapshot.mockResolvedValue([]);
+    apiMocks.cancelTaskById.mockResolvedValue({ id: "task-99", status: "cancelled" });
+    qaLiveProgressMocks.useRunningTestCaseId.mockReturnValue(null);
+    qaLiveProgressMocks.useLiveCaseVerdicts.mockReturnValue({});
+  });
+
+  it("pulses the running row and shows the sticky 'Running case X of N' summary with a progress bar", async () => {
+    apiMocks.getIssueTestCases.mockResolvedValue({
+      test_cases: [automatedCase({ id: "tc-1", title: "Checkout — happy path" }), automatedCase({ id: "tc-2", title: "Checkout — declined card" })],
+    });
+    qaLiveProgressMocks.useRunningTestCaseId.mockReturnValue("tc-2");
+
+    renderPanel();
+
+    await screen.findByText("Checkout — declined card");
+    // "Running case 2 of 2 — Checkout — declined card" (test_cases.running_line)
+    // — one combined sticky-summary text node, matched by regex since it also
+    // overlaps with the row's own (exact-text) title span.
+    expect(screen.getByText(/Running case 2 of 2 — Checkout — declined card/)).toBeInTheDocument();
+    expect(screen.getByText("RUNS")).toBeInTheDocument();
+  });
+
+  it("shows a generic running message when the live marker names a case not in the list", async () => {
+    apiMocks.getIssueTestCases.mockResolvedValue({ test_cases: [automatedCase()] });
+    qaLiveProgressMocks.useRunningTestCaseId.mockReturnValue("unknown-case-id");
+
+    renderPanel();
+
+    await screen.findByText("Checkout — happy path");
+    expect(screen.getByText("Running QA…")).toBeInTheDocument();
+    expect(screen.queryByText(/Running case/)).not.toBeInTheDocument();
+  });
+
+  it("opens a fail row automatically and shows the agent's WHY output; a pass row stays collapsed", async () => {
+    apiMocks.getIssueTestCases.mockResolvedValue({
+      test_cases: [
+        automatedCase({
+          id: "tc-fail",
+          title: "Checkout — expired card",
+          latest_run: {
+            id: "run-1",
+            status: "fail",
+            run_source: "agent",
+            created_at: "2026-01-01T00:00:00Z",
+            output: "Expected error toast, got a silent 500.",
+            trace_path: "",
+          },
+        }),
+        automatedCase({
+          id: "tc-pass",
+          title: "Checkout — happy path",
+          latest_run: {
+            id: "run-2",
+            status: "pass",
+            run_source: "agent",
+            created_at: "2026-01-01T00:00:00Z",
+            output: "",
+            trace_path: "",
+          },
+        }),
+      ],
+    });
+
+    renderPanel();
+
+    // Fail case sorts first (statusRank) and its WHY is visible without a click.
+    await screen.findByText("Expected error toast, got a silent 500.");
+
+    // The passing case's row is present but its detail body never renders —
+    // there's no `output` to show and it isn't auto-opened.
+    expect(screen.getByText("Checkout — happy path")).toBeInTheDocument();
   });
 });
 

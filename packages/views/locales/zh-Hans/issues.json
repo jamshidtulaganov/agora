@@ -486,7 +486,16 @@
     "send_back": "退回开发",
     "sent_back": "已退回开发（qa:fail，进行中）",
     "note_label": "QA 备注（可选）",
-    "note_ph": "复现步骤 / 理由 — 退回时作为评论发布，并预填到已提交的缺陷"
+    "note_ph": "复现步骤 / 理由 — 退回时作为评论发布，并预填到已提交的缺陷",
+    "cancel": "取消",
+    "send_back_dialog_desc": "添加复现步骤或理由——将作为评论发布，并把任务状态改回“进行中”。",
+    "send_back_confirm": "退回",
+    "override": "覆盖",
+    "override_pass": "标记为通过",
+    "override_fail": "标记为未通过",
+    "source_agent": "代理",
+    "source_human": "人工",
+    "more_actions": "更多操作"
   },
   "qa_bug": {
     "file_bug": "提交缺陷",
@@ -535,6 +544,7 @@
     "running_all": "运行中…",
     "run_all_toast": "QA 代理正在运行自动用例…",
     "runs_now": "运行中",
+    "running_line": "正在运行第 {{index}} 个用例，共 {{total}} 个 — {{title}}",
     "stop": "停止运行",
     "stopping": "正在停止运行…",
     "stop_no_task": "没有正在运行的任务可停止。",

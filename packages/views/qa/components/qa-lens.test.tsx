@@ -150,40 +150,68 @@ describe("QALensBody", () => {
     qaLiveProgressMocks.useQaRunningTasks.mockReturnValue([]);
   });
 
-  it("renders the verdict and triage actions from mocked issue + evidence", async () => {
+  it("renders the verdict chip (state + source) and the primary triage actions from mocked issue + evidence", async () => {
     renderLens();
 
     await screen.findByText("Passed"); // qa_evidence.verdict_pass
-    expect(screen.getByRole("button", { name: "Pass" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Fail" })).toBeInTheDocument();
+    expect(screen.getByText("agent")).toBeInTheDocument(); // qa_review.source_agent — no human override yet
+    expect(screen.getByRole("button", { name: "Override" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send back to dev" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Re-run QA" })).toBeInTheDocument();
+    // Pass/Fail buttons are gone — the chip + Override dropdown replace them.
+    expect(screen.queryByRole("button", { name: "Pass" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Fail" })).not.toBeInTheDocument();
     expect(apiMocks.getIssue).toHaveBeenCalledWith("issue-1");
     expect(apiMocks.getQAEvidence).toHaveBeenCalledWith("issue-1");
   });
 
-  it("Pass button attaches the qa:pass label", async () => {
+  it("Override → Mark pass attaches the qa:pass label", async () => {
     renderLens();
 
-    const passBtn = await screen.findByRole("button", { name: "Pass" });
-    fireEvent.click(passBtn);
+    fireEvent.click(await screen.findByRole("button", { name: "Override" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Mark pass" }));
 
     await waitFor(() => expect(apiMocks.attachLabel).toHaveBeenCalledWith("issue-1", "label-pass"));
     expect(apiMocks.detachLabel).not.toHaveBeenCalled();
   });
 
-  it("send-back posts the QA note as a comment, marks qa:fail, and moves the issue to in_progress", async () => {
+  it("shows the chip as human-sourced when the qa:fail label diverges from the agent's own pass verdict", async () => {
+    // A human already flipped the label to qa:fail while the agent's own
+    // evidence (from the default beforeEach mock) still says "pass" — the
+    // divergence IS the override signal (see isOverride in qa-lens.tsx).
+    apiMocks.getIssue.mockResolvedValue(
+      baseIssue({ labels: [{ id: "label-fail", name: "qa:fail" }] }),
+    );
     renderLens();
+
+    await screen.findByText("Failed"); // qa_evidence.verdict_fail — human override wins
+    expect(screen.getByText("human")).toBeInTheDocument(); // qa_review.source_human
+  });
+
+  it("send-back opens a dialog; confirming posts the QA note as a comment, marks qa:fail, and moves the issue to in_progress", async () => {
+    renderLens();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Send back to dev" }));
 
     const noteInput = await screen.findByLabelText("QA note (optional)");
     fireEvent.change(noteInput, { target: { value: "Repro: click X, see Y" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Send back to dev" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send back" }));
 
     await waitFor(() =>
       expect(apiMocks.updateIssue).toHaveBeenCalledWith("issue-1", { status: "in_progress" }),
     );
     expect(apiMocks.attachLabel).toHaveBeenCalledWith("issue-1", "label-fail");
     expect(apiMocks.createComment).toHaveBeenCalledWith("issue-1", "Repro: click X, see Y");
+  });
+
+  it("more-actions overflow menu fires the regression re-run", async () => {
+    renderLens();
+
+    fireEvent.click(await screen.findByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Run sprint regression" }));
+
+    await waitFor(() => expect(apiMocks.runIssueSprintRegression).toHaveBeenCalledWith("issue-1"));
   });
 
   describe("live bay", () => {
@@ -194,7 +222,7 @@ describe("QALensBody", () => {
       expect(await screen.findByTestId("live-bay-idle")).toBeInTheDocument();
       expect(screen.queryByTestId("live-bay-active")).not.toBeInTheDocument();
       // Review content (verdict + triage) is present alongside the idle card.
-      expect(screen.getByRole("button", { name: "Pass" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Override" })).toBeInTheDocument();
     });
 
     it("auto-opens the bay when a QA-squad task is running", async () => {

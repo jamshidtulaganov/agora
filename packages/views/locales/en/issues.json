@@ -497,7 +497,16 @@
     "send_back": "Send back to dev",
     "sent_back": "Sent back to dev (qa:fail, in progress)",
     "note_label": "QA note (optional)",
-    "note_ph": "Repro steps / rationale — posted as a comment on send-back and pre-fills a filed bug"
+    "note_ph": "Repro steps / rationale — posted as a comment on send-back and pre-fills a filed bug",
+    "cancel": "Cancel",
+    "send_back_dialog_desc": "Add repro steps or rationale — posted as a comment and moves the issue back to In Progress.",
+    "send_back_confirm": "Send back",
+    "override": "Override",
+    "override_pass": "Mark pass",
+    "override_fail": "Mark fail",
+    "source_agent": "agent",
+    "source_human": "human",
+    "more_actions": "More actions"
   },
   "qa_bug": {
     "file_bug": "File bug",
@@ -546,6 +555,7 @@
     "running_all": "Running…",
     "run_all_toast": "QA agent is running the automated cases…",
     "runs_now": "RUNS",
+    "running_line": "Running case {{index}} of {{total}} — {{title}}",
     "stop": "Stop the run",
     "stopping": "Stopping the run…",
     "stop_no_task": "No running task to stop.",
