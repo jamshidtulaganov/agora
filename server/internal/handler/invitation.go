@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/analytics"
+	"github.com/multica-ai/multica/server/internal/config"
 	"github.com/multica-ai/multica/server/internal/logger"
 	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
@@ -432,6 +433,18 @@ func (h *Handler) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 			identityMismatch = false
 		}
 	}
+	// Telegram-only deployments authenticate exclusively through the bot, so
+	// every account's email is the synthetic tg<id>@telegram.local — an accepter
+	// can NEVER present the real address an email invite was sent to, which
+	// would make every such invite permanently unclaimable. In that mode the
+	// invite link itself is the credential (the same trust the synthetic-address
+	// Telegram flow and the fresh-account Bitrix path already get), so let a
+	// Telegram-synthetic account claim it — unless the invite is pinned to a
+	// DIFFERENT existing account: that is someone else's invite.
+	if identityMismatch && config.Bool("AGORA_TELEGRAM_ONLY") &&
+		isTelegramSyntheticEmail(user.Email) && !inv.InviteeUserID.Valid {
+		identityMismatch = false
+	}
 	if identityMismatch {
 		writeError(w, http.StatusForbidden, "invitation was issued to a different account")
 		return
@@ -566,7 +579,16 @@ func (h *Handler) DeclineInvitation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to load user")
 		return
 	}
-	if strings.ToLower(user.Email) != inv.InviteeEmail && uuidToString(inv.InviteeUserID) != userID {
+	declineMismatch := strings.ToLower(user.Email) != inv.InviteeEmail &&
+		uuidToString(inv.InviteeUserID) != userID
+	// Mirror AcceptInvitation's Telegram-only exception: a synthetic-email
+	// accepter can never match a real invitee_email, so without this the
+	// intended invitee could accept but never decline.
+	if declineMismatch && config.Bool("AGORA_TELEGRAM_ONLY") &&
+		isTelegramSyntheticEmail(user.Email) && !inv.InviteeUserID.Valid {
+		declineMismatch = false
+	}
+	if declineMismatch {
 		writeError(w, http.StatusForbidden, "invitation does not belong to you")
 		return
 	}
