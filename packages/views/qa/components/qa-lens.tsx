@@ -261,13 +261,15 @@ export function QALensBody({ issueId }: { issueId: string }) {
             sits on the RIGHT. Below lg the bay stacks ABOVE the review column.
             When the bay is CLOSED (the common case — most QA is API/unit-
             level, no browser involved), the split disappears: the review
-            column becomes the primary reading column at a comfortable
-            centered measure, with the compact bay card sitting above it. */}
+            column takes the full width, with the compact bay card above it.
+            No centered reading cap here — this is an instrument surface (case
+            checklists, run tables, evidence), not prose; the same reason the
+            /qa dashboard tabs dropped theirs. */}
         <div
           className={cn(
             bayOpen
               ? "lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start lg:gap-6"
-              : "mx-auto flex w-full max-w-4xl flex-col gap-6",
+              : "flex w-full flex-col gap-6",
           )}
         >
           {/* ── Live bay ─────────────────────────────────────────────────
