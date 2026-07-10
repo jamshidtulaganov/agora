@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -504,5 +506,77 @@ func TestTelegramVerifyAutoJoinsDefaultWorkspaces(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("expected exactly 1 membership for user in %q after replay, got %d", presentSlugA, count)
+	}
+}
+
+// TestTelegramPollerWebhookGuard covers the poller's refusal to clobber a
+// webhook owned by a public deployment (the 2026-07-10 prod outage: a local
+// dev backend sharing the prod bot token deleted prod's webhook and consumed
+// its login updates). A webhook registered to a public URL must abort the
+// poller BEFORE deleteWebhook; an empty or localhost webhook keeps today's
+// behavior (delete, then poll). DB-free — a minimal Handler against a mock
+// Bot API server; the getUpdates handler cancels the context so one poll
+// iteration ends the test.
+func TestTelegramPollerWebhookGuard(t *testing.T) {
+	cases := []struct {
+		name        string
+		webhookURL  string
+		wantDeleted bool // deleteWebhook reached (poller proceeded past the guard)
+		wantPolled  bool // getUpdates reached (poll loop started)
+	}{
+		{name: "public webhook aborts poller", webhookURL: "https://sd-agora-web.fly.dev/telegram/webhook"},
+		{name: "no webhook proceeds", webhookURL: "", wantDeleted: true, wantPolled: true},
+		{name: "localhost webhook proceeds", webhookURL: "http://localhost:8080/telegram/webhook", wantDeleted: true, wantPolled: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			var mu sync.Mutex
+			var deleted, polled bool
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case strings.HasSuffix(r.URL.Path, "/getWebhookInfo"):
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"ok": true, "result": map[string]any{"url": tc.webhookURL},
+					})
+				case strings.HasSuffix(r.URL.Path, "/deleteWebhook"):
+					mu.Lock()
+					deleted = true
+					mu.Unlock()
+					io.WriteString(w, `{"ok":true,"result":true}`)
+				case strings.HasSuffix(r.URL.Path, "/getUpdates"):
+					mu.Lock()
+					polled = true
+					mu.Unlock()
+					cancel() // one poll iteration is enough — exit the loop
+					io.WriteString(w, `{"ok":true,"result":[]}`)
+				default:
+					io.WriteString(w, `{"ok":true,"result":{}}`)
+				}
+			}))
+			defer srv.Close()
+
+			bot := telegram.NewBotClient("TESTTOKEN")
+			bot.BaseURL = srv.URL
+			bot.HTTPClient = srv.Client()
+
+			t.Setenv("TELEGRAM_BOT_USERNAME", "agora_test_bot")
+			t.Setenv("AGORA_PUBLIC_URL", "") // self-host shape: the poller path is active
+
+			h := &Handler{telegramBot: bot, telegramLogins: telegram.NewLoginStore()}
+			h.RunTelegramLoginPoller(ctx)
+
+			mu.Lock()
+			defer mu.Unlock()
+			if deleted != tc.wantDeleted {
+				t.Fatalf("deleteWebhook called = %v, want %v", deleted, tc.wantDeleted)
+			}
+			if polled != tc.wantPolled {
+				t.Fatalf("getUpdates called = %v, want %v", polled, tc.wantPolled)
+			}
+		})
 	}
 }

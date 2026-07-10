@@ -331,6 +331,23 @@ func (h *Handler) RunTelegramLoginPoller(ctx context.Context) {
 		return
 	}
 
+	// Guard: if the bot already has a webhook registered to a genuinely public
+	// URL, this token is shared with a public deployment (whose
+	// EnsureLoginWebhook registered it). Deleting that webhook would break that
+	// deployment's login and this poller would consume its updates — exactly how
+	// prod Telegram login broke on 2026-07-10 when a local dev backend held the
+	// prod token. Refuse to start; the operator must use a separate dev bot
+	// token (or unset TELEGRAM_BOT_TOKEN locally). A genuinely retired public
+	// webhook can be cleared manually via the Bot API's deleteWebhook. Lookup
+	// errors fail open so transient API issues don't disable self-host login.
+	if info, err := h.telegramBot.GetWebhookInfo(ctx); err != nil {
+		slog.Warn("telegram poller: getWebhookInfo failed (continuing)", "error", err)
+	} else if info.URL != "" && !isLocalhostURL(info.URL) {
+		slog.Error("telegram poller: bot webhook points at a public deployment; refusing to start the long-poll fallback so it isn't clobbered — use a separate dev bot token or unset TELEGRAM_BOT_TOKEN",
+			"webhook_url", info.URL)
+		return
+	}
+
 	// getUpdates and a webhook are mutually exclusive; drop any stale webhook so
 	// polling isn't rejected with 409.
 	if err := h.telegramBot.DeleteWebhook(ctx); err != nil {
@@ -398,10 +415,11 @@ func (h *Handler) EnsureLoginWebhook(ctx context.Context) {
 	}
 	webhookURL := strings.TrimRight(pubURL, "/") + "/telegram/webhook"
 	secret := strings.TrimSpace(os.Getenv("TELEGRAM_WEBHOOK_SECRET"))
-	// allowed_updates=["message"] mirrors the poller: the login flow only needs
-	// the "/start login_<nonce>" DM, and narrowing it keeps unrelated update
-	// types off the endpoint.
-	if err := h.telegramBot.SetWebhook(ctx, webhookURL, secret, []string{"message"}); err != nil {
+	// Login only needs "message" ("/start login_<nonce>" DMs), but the bot's
+	// create wizard drives its inline buttons through "callback_query" — since
+	// this re-registration runs on EVERY boot, omitting it here would silently
+	// strip callback delivery each deploy and dead-button the wizard.
+	if err := h.telegramBot.SetWebhook(ctx, webhookURL, secret, []string{"message", "callback_query"}); err != nil {
 		slog.Warn("telegram login: setWebhook failed (login unavailable until it succeeds)", "error", err, "url", webhookURL)
 		return
 	}
