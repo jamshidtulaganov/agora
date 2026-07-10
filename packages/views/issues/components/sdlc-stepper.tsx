@@ -108,14 +108,25 @@ function StageDot({ state }: { state: StageState }) {
  * Connector line between stage i-1 and stage i.
  *  - `bg-border` (default): the segment hasn't been reached yet.
  *  - filled emerald: the prior stage passed — completed progress.
- *  - info-tinted + shimmer: this segment leads into the *current* stage —
- *    "work is flowing forward into this stage now." The shimmer is a
- *    `motion-safe:`-gated sweep (see `sdlc-connector-shimmer` in
- *    packages/ui/styles/base.css); `bg-info/30` alone is the static
- *    fallback so reduced-motion users still see which segment is "next".
+ *  - info-tinted + shimmer: this segment leads into the *current* stage AND
+ *    that stage is live (active/running/pending) — "work is flowing forward
+ *    into this stage now." The shimmer is a `motion-safe:`-gated sweep (see
+ *    `sdlc-connector-shimmer` in packages/ui/styles/base.css); `bg-info/30`
+ *    alone is the static fallback so reduced-motion users still see which
+ *    segment is "next".
+ *
+ * A current stage that has FAILED or is BLOCKED gets no shimmer: work is not
+ * flowing into it, it is stuck there. Animating forward motion onto a failure
+ * is the wrong signal — same reasoning that keeps the failed/blocked dots
+ * themselves static (alarm fatigue).
  */
-function connectorClassName(prevState: StageState, leadsIntoCurrent: boolean): string {
-  if (leadsIntoCurrent) {
+function connectorClassName(
+  prevState: StageState,
+  leadsIntoCurrent: boolean,
+  currentState: StageState,
+): string {
+  const currentIsLive = currentState !== "failed" && currentState !== "blocked";
+  if (leadsIntoCurrent && currentIsLive) {
     return "bg-info/30 motion-safe:animate-sdlc-connector-shimmer";
   }
   if (prevState === "passed") {
@@ -179,7 +190,7 @@ export function SDLCStepper({ pipeline, activeLens, isLensAvailable, onSelectSta
                 aria-hidden
                 className={cn(
                   "mx-1.5 h-px w-4 shrink-0 transition-colors duration-300",
-                  connectorClassName(prevState, snapshot.stage === pipeline.current),
+                  connectorClassName(prevState, snapshot.stage === pipeline.current, snapshot.state),
                 )}
               />
             )}
