@@ -497,6 +497,10 @@
     "override": "覆盖",
     "override_pass": "标记为通过",
     "override_fail": "标记为未通过",
+    "override_dialog_desc": "以你的名义记录为当前 QA 结论——写入证据行并作为时间线评论。",
+    "override_reason_label": "覆盖原因（可选）",
+    "override_reason_ph": "为什么覆盖——你验证了什么，或代理错在哪里",
+    "override_confirm": "覆盖结论",
     "source_agent": "代理",
     "source_human": "人工",
     "more_actions": "更多操作"

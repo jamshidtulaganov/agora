@@ -2656,6 +2656,26 @@ export class ApiClient {
     });
   }
 
+  // Human QA override with provenance: flips the qa:pass/qa:fail label AND
+  // replaces the current evidence row with a human-sourced one (the reason
+  // becomes the summary; the actor is stamped into result_json.override) plus
+  // a timeline comment — one attributed decision instead of two bare label
+  // calls. Returns the fresh evidence row (with reconciled_state) so callers
+  // can update the cache; a malformed body degrades to null (the caller's
+  // invalidations then refetch).
+  async overrideQAVerdict(
+    issueId: string,
+    body: { verdict: "pass" | "fail"; reason?: string },
+  ): Promise<QAEvidence | null> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/qa-override`, {
+      method: "POST",
+      body: JSON.stringify({ verdict: body.verdict, ...(body.reason ? { reason: body.reason } : {}) }),
+    });
+    return parseWithFallback(raw, QAEvidenceSchema.nullable(), null, {
+      endpoint: "POST /api/issues/:id/qa-override",
+    });
+  }
+
   // The Deploy lens / stepper's evidence-first read: the freshest Tier-1
   // (QA-box git-sync) deploy for an issue plus a short recent history.
   // Empty (latest: null, recent: []) is a normal response for a never-

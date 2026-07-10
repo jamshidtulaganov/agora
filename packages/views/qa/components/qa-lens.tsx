@@ -118,6 +118,14 @@ export function QALensBody({ issueId }: { issueId: string }) {
   // dialog is currently open.
   const [sendBackOpen, setSendBackOpen] = useState(false);
   const [note, setNote] = useState("");
+  // Override dialog (Phase 2 — human override with provenance): picking
+  // Mark pass / Mark fail no longer fires bare label calls from the client;
+  // it opens a compact reason dialog (same pattern as send-back) and POSTs a
+  // proper override that records WHO and WHY server-side — evidence row with
+  // source="human", the reason as summary, and a timeline comment. Non-null
+  // = the dialog is open for that verdict.
+  const [overrideVerdict, setOverrideVerdict] = useState<"pass" | "fail" | null>(null);
+  const [overrideReason, setOverrideReason] = useState("");
 
   const { data: issue, isLoading } = useQuery(issueDetailOptions(wsId, issueId));
   const { data: evidence } = useQuery(qaEvidenceOptions(issueId));
@@ -164,9 +172,10 @@ export function QALensBody({ issueId }: { issueId: string }) {
 
   // Triage: set the human verdict by attaching the chosen qa:* label and
   // detaching the opposite. Mirrors the cockpit's label-derived lanes, so the
-  // queue re-groups the moment QA decides. Also the Override dropdown's
-  // mutation — an "override" is just this same call made when the label
-  // state doesn't already match the agent's automated verdict.
+  // queue re-groups the moment QA decides. Still used by send-back (a fail
+  // verdict as part of the send-back flow, whose own dialog captures the
+  // note); the Override dropdown now goes through the provenance-recording
+  // override mutation below instead.
   const setVerdict = useMutation({
     mutationFn: async (next: "pass" | "fail") => {
       const addId = labelId(next === "pass" ? "qa:pass" : "qa:fail");
@@ -185,6 +194,26 @@ export function QALensBody({ issueId }: { issueId: string }) {
       // showing the pre-override state until some unrelated refetch happened.
       void qc.invalidateQueries({ queryKey: issueKeys.qaEvidence(issueId) });
       toast.success(next === "pass" ? t(($) => $.qa_review.marked_pass) : t(($) => $.qa_review.marked_fail));
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
+
+  // The provenance-recording override (POST /api/issues/{id}/qa-override):
+  // one attributed server-side decision — label flip + human-sourced evidence
+  // row + timeline comment — instead of two bare label calls that left the
+  // /qa queue showing the agent's stale summary on an overridden row.
+  const override = useMutation({
+    mutationFn: ({ verdict, reason }: { verdict: "pass" | "fail"; reason: string }) =>
+      api.overrideQAVerdict(issueId, { verdict, reason: reason.trim() || undefined }),
+    onSuccess: (_d, { verdict }) => {
+      setOverrideVerdict(null);
+      setOverrideReason("");
+      void qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, issueId) });
+      void qc.invalidateQueries({ queryKey: issueKeys.qaEvidence(issueId) });
+      void qc.invalidateQueries({ queryKey: issueKeys.timeline(issueId) });
+      void qc.invalidateQueries({ queryKey: ["qa-cockpit", wsId] });
+      void qc.invalidateQueries({ queryKey: ["qa-verdicts", wsId] });
+      toast.success(verdict === "pass" ? t(($) => $.qa_review.marked_pass) : t(($) => $.qa_review.marked_fail));
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
@@ -269,11 +298,14 @@ export function QALensBody({ issueId }: { issueId: string }) {
   // than widening the API response to also carry a count.
   const failingCaseCount = (lensCases ?? []).filter((c) => c.latest_run?.status === "fail").length;
 
-  // Provenance for the chip: a label that diverges from the agent's own
-  // evidence verdict can only have gotten there via a human's Override click
-  // (the auto-gate always attaches the label matching its own verdict) — so
-  // that divergence IS the "human touched this" signal, with no extra state
-  // to track. No source pill for the two "nothing to attribute" states.
+  // Provenance for the chip. Since the provenance-recording override landed,
+  // evidence.source is the PRIMARY signal: a human override writes the
+  // evidence row itself with source="human", so `evidence?.source` renders
+  // "human" directly — no client inference needed. The label-vs-verdict
+  // divergence check (isOverride) remains ONLY as a fallback for legacy
+  // overridden rows written before that endpoint existed (label flipped, but
+  // the evidence row still says source=agent). No source pill for the two
+  // "nothing to attribute" states.
   const isOverride = humanVerdict !== "pending" && humanVerdict !== verdict;
   const chipSource =
     reconciledState === "never_ran" || reconciledState === "running"
@@ -398,7 +430,7 @@ export function QALensBody({ issueId }: { issueId: string }) {
                             type="button"
                             variant="ghost"
                             size="sm"
-                            disabled={setVerdict.isPending}
+                            disabled={override.isPending}
                             className="ml-auto h-6 gap-1 px-2 text-[11px] text-muted-foreground"
                           />
                         }
@@ -407,11 +439,11 @@ export function QALensBody({ issueId }: { issueId: string }) {
                         <ChevronDown className="size-3" />
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => setVerdict.mutate("pass")}>
+                        <DropdownMenuItem onClick={() => setOverrideVerdict("pass")}>
                           <CheckCircle2 className="size-3.5" />
                           {t(($) => $.qa_review.override_pass)}
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setVerdict.mutate("fail")}>
+                        <DropdownMenuItem onClick={() => setOverrideVerdict("fail")}>
                           <XCircle className="size-3.5" />
                           {t(($) => $.qa_review.override_fail)}
                         </DropdownMenuItem>
@@ -594,6 +626,71 @@ export function QALensBody({ issueId }: { issueId: string }) {
               >
                 {sendBack.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <XCircle className="size-3.5" />}
                 {t(($) => $.qa_review.send_back_confirm)}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Override dialog (Phase 2) — the WHY behind a human override,
+            captured at decision time and recorded server-side (evidence row
+            source="human" + timeline comment). Same compact pattern as
+            send-back. The reason is optional — a human may just disagree —
+            but the dialog makes providing one the path of least resistance. */}
+        <Dialog
+          open={overrideVerdict !== null}
+          onOpenChange={(open) => {
+            if (!open) {
+              setOverrideVerdict(null);
+              setOverrideReason("");
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {overrideVerdict === "pass"
+                  ? t(($) => $.qa_review.override_pass)
+                  : t(($) => $.qa_review.override_fail)}
+              </DialogTitle>
+              <DialogDescription>{t(($) => $.qa_review.override_dialog_desc)}</DialogDescription>
+            </DialogHeader>
+            <Textarea
+              value={overrideReason}
+              onChange={(e) => setOverrideReason(e.target.value)}
+              rows={4}
+              aria-label={t(($) => $.qa_review.override_reason_label)}
+              placeholder={t(($) => $.qa_review.override_reason_ph)}
+              className="text-[13px]"
+            />
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setOverrideVerdict(null);
+                  setOverrideReason("");
+                }}
+              >
+                {t(($) => $.qa_review.cancel)}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="gap-1.5"
+                disabled={override.isPending}
+                onClick={() => {
+                  if (overrideVerdict) override.mutate({ verdict: overrideVerdict, reason: overrideReason });
+                }}
+              >
+                {override.isPending ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : overrideVerdict === "pass" ? (
+                  <CheckCircle2 className="size-3.5" />
+                ) : (
+                  <XCircle className="size-3.5" />
+                )}
+                {t(($) => $.qa_review.override_confirm)}
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -29,6 +29,7 @@ const apiMocks = vi.hoisted(() => ({
   updateIssue: vi.fn(),
   sliceAction: vi.fn(),
   runIssueSprintRegression: vi.fn(),
+  overrideQAVerdict: vi.fn(),
 }));
 
 const qaLiveProgressMocks = vi.hoisted(() => ({
@@ -169,14 +170,44 @@ describe("QALensBody", () => {
     expect(apiMocks.getQAEvidence).toHaveBeenCalledWith("issue-1");
   });
 
-  it("Override → Mark pass attaches the qa:pass label", async () => {
+  it("Override → Mark pass opens the reason dialog and POSTs a provenance-recording override", async () => {
+    apiMocks.overrideQAVerdict.mockResolvedValue(baseEvidence({ verdict: "pass", source: "human" }));
     renderLens();
 
     fireEvent.click(await screen.findByRole("button", { name: "Override" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Mark pass" }));
 
-    await waitFor(() => expect(apiMocks.attachLabel).toHaveBeenCalledWith("issue-1", "label-pass"));
+    // The compact reason dialog (send-back pattern) — the WHY is captured at
+    // decision time, then ONE server-side call records label + evidence row
+    // (source=human) + timeline comment. No bare client label calls anymore.
+    const reasonInput = await screen.findByLabelText("Override reason (optional)");
+    fireEvent.change(reasonInput, { target: { value: "verified by hand on staging" } });
+    fireEvent.click(screen.getByRole("button", { name: "Override verdict" }));
+
+    await waitFor(() =>
+      expect(apiMocks.overrideQAVerdict).toHaveBeenCalledWith("issue-1", {
+        verdict: "pass",
+        reason: "verified by hand on staging",
+      }),
+    );
+    expect(apiMocks.attachLabel).not.toHaveBeenCalled();
     expect(apiMocks.detachLabel).not.toHaveBeenCalled();
+  });
+
+  it("Override → Mark fail with a blank reason sends no reason field", async () => {
+    apiMocks.overrideQAVerdict.mockResolvedValue(baseEvidence({ verdict: "fail", source: "human" }));
+    renderLens();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Override" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Mark fail" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Override verdict" }));
+
+    await waitFor(() =>
+      expect(apiMocks.overrideQAVerdict).toHaveBeenCalledWith("issue-1", {
+        verdict: "fail",
+        reason: undefined,
+      }),
+    );
   });
 
   it("shows the chip as human-sourced when the qa:fail label diverges from the agent's own pass verdict", async () => {

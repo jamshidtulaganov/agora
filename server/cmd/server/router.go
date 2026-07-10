@@ -920,6 +920,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// adopts a token or extracts a shared component.
 					r.Post("/design-apply", h.ApplyDesignAudit)
 					r.Get("/qa-evidence", h.GetIssueQAEvidence)
+					// Human QA override with provenance — evidence row (source=
+					// human) + reason + timeline comment. RequireHumanActor: a
+					// machine credential can never override a QA verdict.
+					r.With(handler.RequireHumanActor).Post("/qa-override", h.OverrideQAVerdict)
 					r.Get("/test-cases", h.GetIssueTestCases)
 					r.Post("/test-cases", h.CreateIssueTestCase)
 					r.Post("/deploy-qa", h.DeployIssueQA)

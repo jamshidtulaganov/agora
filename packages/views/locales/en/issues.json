@@ -508,6 +508,10 @@
     "override": "Override",
     "override_pass": "Mark pass",
     "override_fail": "Mark fail",
+    "override_dialog_desc": "Recorded with your name as the current QA verdict — on the evidence row and as a timeline comment.",
+    "override_reason_label": "Override reason (optional)",
+    "override_reason_ph": "Why you're overriding — what you verified or what the agent got wrong",
+    "override_confirm": "Override verdict",
     "source_agent": "agent",
     "source_human": "human",
     "more_actions": "More actions"

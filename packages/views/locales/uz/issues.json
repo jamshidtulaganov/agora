@@ -508,6 +508,10 @@
     "override": "Qayta belgilash",
     "override_pass": "O'tdi deb belgilash",
     "override_fail": "O'tmadi deb belgilash",
+    "override_dialog_desc": "Sizning ismingiz bilan joriy QA verdikti sifatida yoziladi — dalillar qatorida va lentada izoh bo'lib.",
+    "override_reason_label": "Qayta belgilash sababi (ixtiyoriy)",
+    "override_reason_ph": "Nega qayta belgilayapsiz — nimani tekshirdingiz yoki agent nimada xato qildi",
+    "override_confirm": "Verdiktni qayta belgilash",
     "source_agent": "agent",
     "source_human": "inson",
     "more_actions": "Yana amallar"
