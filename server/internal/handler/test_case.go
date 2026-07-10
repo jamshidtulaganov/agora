@@ -65,6 +65,12 @@ type TestCaseResponse struct {
 	CriterionRef string       `json:"criterion_ref"`
 	CreatedAt    string       `json:"created_at"`
 	LatestRun    *TestRunLite `json:"latest_run"`
+	// Flaky (Phase 3 — run identity): this case produced BOTH a pass and a
+	// fail on the SAME commit_sha within its last 20 runs — the code didn't
+	// change, the verdict did. Rendered as an amber chip (same visual language
+	// as the base-case quarantine) so a reviewer stops treating its latest
+	// verdict as settled truth.
+	Flaky bool `json:"flaky"`
 }
 
 type ListTestCasesResponse struct {
@@ -109,7 +115,7 @@ func normalizeTestCaseCriterionRef(ref string) string {
 	return string(runes[:criterionRefMaxRunes-1]) + "…"
 }
 
-func testCaseToResponse(c db.TestCase, latest *TestRunLite) TestCaseResponse {
+func testCaseToResponse(c db.TestCase, latest *TestRunLite, flaky bool) TestCaseResponse {
 	return TestCaseResponse{
 		ID:            uuidToString(c.ID),
 		IssueID:       uuidToString(c.IssueID),
@@ -127,6 +133,7 @@ func testCaseToResponse(c db.TestCase, latest *TestRunLite) TestCaseResponse {
 		CriterionRef:  c.CriterionRef,
 		CreatedAt:     c.CreatedAt.Time.Format(time.RFC3339),
 		LatestRun:     latest,
+		Flaky:         flaky,
 	}
 }
 
@@ -169,9 +176,19 @@ func (h *Handler) GetIssueTestCases(w http.ResponseWriter, r *http.Request) {
 			TracePath: run.TracePath,
 		}
 	}
+	// Flaky flags (Phase 3): same case + same commit_sha with BOTH verdicts
+	// in its last 20 runs. Best-effort — an error just means no flaky chips.
+	flaky := map[string]bool{}
+	if ids, ferr := h.Queries.ListFlakyCaseIDsForIssue(r.Context(), db.ListFlakyCaseIDsForIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+	}); ferr == nil {
+		for _, id := range ids {
+			flaky[uuidToString(id)] = true
+		}
+	}
 	resp := ListTestCasesResponse{TestCases: make([]TestCaseResponse, 0, len(cases))}
 	for _, c := range cases {
-		resp.TestCases = append(resp.TestCases, testCaseToResponse(c, latest[uuidToString(c.ID)]))
+		resp.TestCases = append(resp.TestCases, testCaseToResponse(c, latest[uuidToString(c.ID)], flaky[uuidToString(c.ID)]))
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -250,7 +267,7 @@ func (h *Handler) CreateIssueTestCase(w http.ResponseWriter, r *http.Request) {
 	if kind == "automated" {
 		go h.maybeCompileTestCases(context.Background(), issue)
 	}
-	writeJSON(w, http.StatusCreated, testCaseToResponse(c, nil))
+	writeJSON(w, http.StatusCreated, testCaseToResponse(c, nil, false))
 }
 
 // GetProjectTestCases lists a project's STANDING base test cases (issue_id
@@ -295,9 +312,18 @@ func (h *Handler) GetProjectTestCases(w http.ResponseWriter, r *http.Request) {
 			TracePath: run.TracePath,
 		}
 	}
+	// Flaky flags for the standing suite (the /qa Suite tab's flaky filter).
+	flaky := map[string]bool{}
+	if ids, ferr := h.Queries.ListFlakyCaseIDsForProject(r.Context(), db.ListFlakyCaseIDsForProjectParams{
+		ProjectID: project.ID, WorkspaceID: project.WorkspaceID,
+	}); ferr == nil {
+		for _, id := range ids {
+			flaky[uuidToString(id)] = true
+		}
+	}
 	resp := ListTestCasesResponse{TestCases: make([]TestCaseResponse, 0, len(cases))}
 	for _, c := range cases {
-		resp.TestCases = append(resp.TestCases, testCaseToResponse(c, latest[uuidToString(c.ID)]))
+		resp.TestCases = append(resp.TestCases, testCaseToResponse(c, latest[uuidToString(c.ID)], flaky[uuidToString(c.ID)]))
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -370,7 +396,7 @@ func (h *Handler) CreateProjectTestCase(w http.ResponseWriter, r *http.Request) 
 	h.publish(protocol.EventTestCasesChanged, uuidToString(project.WorkspaceID), "member", userID, map[string]any{
 		"project_id": uuidToString(project.ID),
 	})
-	writeJSON(w, http.StatusCreated, testCaseToResponse(c, nil))
+	writeJSON(w, http.StatusCreated, testCaseToResponse(c, nil, false))
 }
 
 type CreateTestRunRequest struct {
@@ -440,6 +466,78 @@ func (h *Handler) CreateTestCaseRun(w http.ResponseWriter, r *http.Request) {
 		"run_source":   run.RunSource,
 		"created_at":   run.CreatedAt.Time.Format(time.RFC3339),
 	})
+}
+
+// testRunHistoryItem is one run in a case's history — the verdict plus its
+// Phase 3 identity (which commit it tested, which dispatch/session it belongs
+// to, when it ran, who ran it). Times are RFC3339 or "" when unknown.
+type testRunHistoryItem struct {
+	ID         string `json:"id"`
+	Status     string `json:"status"`
+	RunSource  string `json:"run_source"`
+	CreatedAt  string `json:"created_at"`
+	Output     string `json:"output,omitempty"`
+	TracePath  string `json:"trace_path,omitempty"`
+	CommitSha  string `json:"commit_sha"`
+	SessionID  string `json:"session_id"`
+	StartedAt  string `json:"started_at"`
+	FinishedAt string `json:"finished_at"`
+}
+
+// testCaseRunsHistoryLimit bounds the history read — the UI strip shows the
+// last 5; 20 gives a tooltip/table headroom without unbounded scans.
+const testCaseRunsHistoryLimit = 20
+
+// GetTestCaseRuns returns a case's recent run history, newest first — wiring
+// the existing ListTestRunsForCase query to GET /api/test-cases/{id}/runs.
+// Membership-checked like its siblings (CreateTestCaseRun etc.): the case is
+// resolved inside the caller's workspace or 404s.
+func (h *Handler) GetTestCaseRuns(w http.ResponseWriter, r *http.Request) {
+	wsUUID, ok := parseUUIDOrBadRequest(w, h.resolveWorkspaceID(r), "workspace id")
+	if !ok {
+		return
+	}
+	caseUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "test case id")
+	if !ok {
+		return
+	}
+	tc, err := h.Queries.GetTestCase(r.Context(), db.GetTestCaseParams{ID: caseUUID, WorkspaceID: wsUUID})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "test case not found")
+		return
+	}
+	runs, err := h.Queries.ListTestRunsForCase(r.Context(), db.ListTestRunsForCaseParams{
+		TestCaseID:  tc.ID,
+		WorkspaceID: tc.WorkspaceID,
+		Limit:       testCaseRunsHistoryLimit,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load runs")
+		return
+	}
+	items := make([]testRunHistoryItem, 0, len(runs))
+	for _, run := range runs {
+		item := testRunHistoryItem{
+			ID:        uuidToString(run.ID),
+			Status:    run.Status,
+			RunSource: run.RunSource,
+			CreatedAt: run.CreatedAt.Time.Format(time.RFC3339),
+			Output:    run.Output,
+			TracePath: run.TracePath,
+			CommitSha: run.CommitSha,
+		}
+		if run.SessionID.Valid {
+			item.SessionID = uuidToString(run.SessionID)
+		}
+		if run.StartedAt.Valid {
+			item.StartedAt = run.StartedAt.Time.Format(time.RFC3339)
+		}
+		if run.FinishedAt.Valid {
+			item.FinishedAt = run.FinishedAt.Time.Format(time.RFC3339)
+		}
+		items = append(items, item)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"runs": items})
 }
 
 // ArchiveTestCaseHandler soft-deletes a test case.
@@ -553,5 +651,5 @@ func (h *Handler) UpdateTestCaseHandler(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusNotFound, "test case not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, testCaseToResponse(updated, nil))
+	writeJSON(w, http.StatusOK, testCaseToResponse(updated, nil, false))
 }

@@ -57,6 +57,8 @@ SELECT DISTINCT ON (issue_id)
     summary,
     baseline_ref,
     branch_sha,
+    commit_sha,
+    triggered_by,
     captured_at
 FROM qa_evidence
 WHERE workspace_id = $1

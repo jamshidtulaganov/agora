@@ -409,6 +409,99 @@ func (q *Queries) ListAutomatedTestCasesForProject(ctx context.Context, arg List
 	return items, nil
 }
 
+const listFlakyCaseIDsForIssue = `-- name: ListFlakyCaseIDsForIssue :many
+WITH recent AS (
+    SELECT r.test_case_id, r.status, r.commit_sha,
+           ROW_NUMBER() OVER (PARTITION BY r.test_case_id ORDER BY r.created_at DESC) AS rn
+    FROM test_run r
+    JOIN test_case c ON c.id = r.test_case_id
+    WHERE c.workspace_id = $2
+      AND (c.issue_id = $1 OR (c.issue_id IS NULL AND r.issue_id = $1))
+      AND r.commit_sha <> ''
+)
+SELECT DISTINCT a.test_case_id
+FROM recent a
+JOIN recent b ON b.test_case_id = a.test_case_id AND b.commit_sha = a.commit_sha
+WHERE a.rn <= 20 AND b.rn <= 20
+  AND a.status = 'pass' AND b.status = 'fail'
+`
+
+type ListFlakyCaseIDsForIssueParams struct {
+	IssueID     pgtype.UUID `json:"issue_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// FLAKY detection (Phase 3): a case that produced BOTH a pass and a fail on
+// the SAME commit_sha is flaky by definition — the code didn't change, the
+// verdict did. Scoped to the issue's cases (own + base scripts run against
+// it), the last 20 runs per case, and runs that actually reported a sha
+// (” can't bind two runs to one commit). Simple by design: no
+// cross-issue/window aggregation, just "same case + same sha + both verdicts".
+func (q *Queries) ListFlakyCaseIDsForIssue(ctx context.Context, arg ListFlakyCaseIDsForIssueParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listFlakyCaseIDsForIssue, arg.IssueID, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var test_case_id pgtype.UUID
+		if err := rows.Scan(&test_case_id); err != nil {
+			return nil, err
+		}
+		items = append(items, test_case_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFlakyCaseIDsForProject = `-- name: ListFlakyCaseIDsForProject :many
+WITH recent AS (
+    SELECT r.test_case_id, r.status, r.commit_sha,
+           ROW_NUMBER() OVER (PARTITION BY r.test_case_id ORDER BY r.created_at DESC) AS rn
+    FROM test_run r
+    JOIN test_case c ON c.id = r.test_case_id
+    WHERE c.workspace_id = $2
+      AND c.project_id = $1 AND c.issue_id IS NULL
+      AND r.commit_sha <> ''
+)
+SELECT DISTINCT a.test_case_id
+FROM recent a
+JOIN recent b ON b.test_case_id = a.test_case_id AND b.commit_sha = a.commit_sha
+WHERE a.rn <= 20 AND b.rn <= 20
+  AND a.status = 'pass' AND b.status = 'fail'
+`
+
+type ListFlakyCaseIDsForProjectParams struct {
+	ProjectID   pgtype.UUID `json:"project_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// The project-suite variant of ListFlakyCaseIDsForIssue (the /qa Suite tab's
+// flaky filter): standing base cases (issue_id NULL) whose last 20 runs
+// contain both verdicts on one sha.
+func (q *Queries) ListFlakyCaseIDsForProject(ctx context.Context, arg ListFlakyCaseIDsForProjectParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listFlakyCaseIDsForProject, arg.ProjectID, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var test_case_id pgtype.UUID
+		if err := rows.Scan(&test_case_id); err != nil {
+			return nil, err
+		}
+		items = append(items, test_case_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLatestHumanRunsForIssueCases = `-- name: ListLatestHumanRunsForIssueCases :many
 SELECT DISTINCT ON (r.test_case_id)
     r.test_case_id,

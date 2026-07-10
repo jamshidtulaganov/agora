@@ -28,6 +28,7 @@ const apiMocks = vi.hoisted(() => ({
   // these tests actually care about.
   listSquads: vi.fn(),
   listSquadMembers: vi.fn(),
+  listTestCaseRuns: vi.fn(),
 }));
 
 vi.mock("@agora/core/api", () => ({ api: apiMocks }));
@@ -114,6 +115,7 @@ describe("TestCasesPanel stop affordance", () => {
     vi.clearAllMocks();
     apiMocks.listSquads.mockResolvedValue([]);
     apiMocks.listSquadMembers.mockResolvedValue([]);
+    apiMocks.listTestCaseRuns.mockResolvedValue({ runs: [] });
     apiMocks.getIssueTestCases.mockResolvedValue({ test_cases: [automatedCase()] });
     apiMocks.getIssue.mockResolvedValue({ id: "issue-1", description: null });
     apiMocks.cancelTaskById.mockResolvedValue({ id: "task-99", status: "cancelled" });
@@ -157,6 +159,7 @@ describe("TestCasesPanel — running case + fail expansion", () => {
     vi.clearAllMocks();
     apiMocks.listSquads.mockResolvedValue([]);
     apiMocks.listSquadMembers.mockResolvedValue([]);
+    apiMocks.listTestCaseRuns.mockResolvedValue({ runs: [] });
     apiMocks.getAgentTaskSnapshot.mockResolvedValue([]);
     apiMocks.getIssue.mockResolvedValue({ id: "issue-1", description: null });
     apiMocks.cancelTaskById.mockResolvedValue({ id: "task-99", status: "cancelled" });
@@ -240,6 +243,7 @@ describe("TestCasesPanel — suggest-from-ticket card", () => {
     vi.clearAllMocks();
     apiMocks.listSquads.mockResolvedValue([]);
     apiMocks.listSquadMembers.mockResolvedValue([]);
+    apiMocks.listTestCaseRuns.mockResolvedValue({ runs: [] });
     apiMocks.getAgentTaskSnapshot.mockResolvedValue([]);
     apiMocks.getIssueTestCases.mockResolvedValue({ test_cases: [] });
     apiMocks.getIssue.mockResolvedValue({ id: "issue-1", description: longDescription });
@@ -290,6 +294,7 @@ describe("TestCasesPanel — per-step manual run (checklist)", () => {
     vi.clearAllMocks();
     apiMocks.listSquads.mockResolvedValue([]);
     apiMocks.listSquadMembers.mockResolvedValue([]);
+    apiMocks.listTestCaseRuns.mockResolvedValue({ runs: [] });
     apiMocks.getAgentTaskSnapshot.mockResolvedValue([]);
     apiMocks.getIssue.mockResolvedValue({ id: "issue-1", description: null });
     apiMocks.getIssueTestCases.mockResolvedValue({ test_cases: [automatedCase()] });
@@ -517,5 +522,68 @@ describe("TestCasesPanel — re-run failed + per-case file-bug (Phase 2)", () =>
 
     await screen.findByText("Checkout — happy path");
     expect(screen.queryByTitle("File a bug from this case")).not.toBeInTheDocument();
+  });
+});
+
+describe("TestCasesPanel — flaky chip + run history (Phase 3)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    apiMocks.listSquads.mockResolvedValue([]);
+    apiMocks.listSquadMembers.mockResolvedValue([]);
+    apiMocks.listTestCaseRuns.mockResolvedValue({ runs: [] });
+    apiMocks.getAgentTaskSnapshot.mockResolvedValue([]);
+    apiMocks.getIssue.mockResolvedValue({ id: "issue-1", description: null });
+    qaLiveProgressMocks.useRunningTestCaseId.mockReturnValue(null);
+    qaLiveProgressMocks.useLiveCaseVerdicts.mockReturnValue({});
+  });
+
+  it("shows the amber flaky chip only on flaky cases", async () => {
+    apiMocks.getIssueTestCases.mockResolvedValue({
+      test_cases: [
+        automatedCase({ id: "tc-flaky", title: "Wobbly case", flaky: true }),
+        automatedCase({ id: "tc-solid", title: "Solid case" }),
+      ],
+    });
+
+    renderPanel();
+
+    await screen.findByText("Wobbly case");
+    expect(screen.getByText("flaky")).toBeInTheDocument(); // test_cases.flaky — exactly once
+    expect(screen.getAllByText("flaky")).toHaveLength(1);
+  });
+
+  it("fetches and renders the last-5 run history dots when a row expands", async () => {
+    apiMocks.getIssueTestCases.mockResolvedValue({
+      test_cases: [
+        automatedCase({
+          id: "tc-hist",
+          title: "History case",
+          // A failing latest run auto-opens the row (hasReason), which enables
+          // the history query without an extra click.
+          latest_run: {
+            id: "run-9",
+            status: "fail",
+            run_source: "agent",
+            created_at: "2026-07-10T12:00:00Z",
+            output: "boom",
+            trace_path: "",
+          },
+        }),
+      ],
+    });
+    apiMocks.listTestCaseRuns.mockResolvedValue({
+      runs: [
+        { id: "r1", status: "fail", run_source: "agent", created_at: "2026-07-10T12:00:00Z", commit_sha: "deadbeef1234", session_id: "", started_at: "", finished_at: "", output: "", trace_path: "" },
+        { id: "r2", status: "pass", run_source: "human", created_at: "2026-07-09T12:00:00Z", commit_sha: "", session_id: "", started_at: "", finished_at: "", output: "", trace_path: "" },
+      ],
+    });
+
+    renderPanel();
+
+    await screen.findByText("History case");
+    await screen.findByText("Recent runs:"); // test_cases.run_history label renders once loaded
+    await waitFor(() => expect(apiMocks.listTestCaseRuns).toHaveBeenCalledWith("tc-hist"));
+    // The newest dot's tooltip carries verdict + source + short sha.
+    expect(screen.getByTitle(/fail · agent · deadbee/)).toBeInTheDocument();
   });
 });

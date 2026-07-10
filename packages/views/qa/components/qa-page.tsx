@@ -52,7 +52,7 @@ import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { QAMetricsView } from "./qa-metrics-view";
 import { QASprintReadinessView } from "./qa-sprint-readiness-view";
 import { QASuiteView } from "./qa-suite-view";
-import { Lane, QAIssueRow } from "./qa-lane";
+import { Lane, QAIssueRow, qaRowState } from "./qa-lane";
 import { useQaSquadAgentIds } from "./qa-live-progress";
 import { BugsLens } from "./bugs-lens";
 
@@ -100,6 +100,16 @@ export function QAPage() {
   const [project, setProject] = useState("all");
   const [assigneeFilter, setAssigneeFilter] = useState<AssigneeKey[]>([]);
   const [priorityFilter, setPriorityFilter] = useState<IssuePriority[]>([]);
+  // Reconciled-state toggles (Phase 3): "Stale" (the verdict no longer
+  // applies — watchdog-escalated, sticky pair, or the head moved past the
+  // evidence sha) and "Needs human" (fail or pass_with_failing_cases — a
+  // human decision is the next step). Server-computed reconciled_state from
+  // the verdicts batch when present; label-derived qaRowState as the
+  // fail-open fallback for issues without evidence / old servers. A
+  // qa_reviewer/"mine" filter is deliberately NOT here — it needs a QA
+  // assignment model that doesn't exist yet (out of scope).
+  const [staleOnly, setStaleOnly] = useState(false);
+  const [needsHumanOnly, setNeedsHumanOnly] = useState(false);
   const { data: projectData } = useQuery(projectListOptions(wsId));
   const projects = projectData ?? [];
 
@@ -222,6 +232,15 @@ export function QAPage() {
 
   const issues = data?.issues ?? [];
 
+  // One issue's effective reconciled state for the toggles: the server's
+  // batch-computed value when present, else the label+live derived row state
+  // (fail-open for old servers / evidence-less issues).
+  const effectiveState = (issue: Issue): string => {
+    const server = verdicts[issue.id]?.reconciled_state ?? "";
+    if (server !== "") return server;
+    return qaRowState(issue, liveIssueIds.has(issue.id));
+  };
+
   const filteredIssues = useMemo(() => {
     return issues.filter((issue) => {
       if (assigneeFilter.length > 0) {
@@ -229,9 +248,15 @@ export function QAPage() {
         if (!key || !assigneeFilter.includes(key)) return false;
       }
       if (priorityFilter.length > 0 && !priorityFilter.includes(issue.priority)) return false;
+      if (staleOnly && effectiveState(issue) !== "stale") return false;
+      if (needsHumanOnly) {
+        const s = effectiveState(issue);
+        if (s !== "fail" && s !== "pass_with_failing_cases") return false;
+      }
       return true;
     });
-  }, [issues, assigneeFilter, priorityFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [issues, assigneeFilter, priorityFilter, staleOnly, needsHumanOnly, verdicts, liveIssueIds]);
 
   const lanes = useMemo(() => {
     const by: Record<QAStatus, Issue[]> = { fail: [], pending: [], pass: [] };
@@ -263,7 +288,7 @@ export function QAPage() {
     [filteredIssues, liveIssueIds],
   );
 
-  const hasFilters = assigneeFilter.length > 0 || priorityFilter.length > 0;
+  const hasFilters = assigneeFilter.length > 0 || priorityFilter.length > 0 || staleOnly || needsHumanOnly;
 
   // The QA lens lives inside the issue cockpit now (docs/sdlc-stage-cockpit-plan.md
   // phase D) — there is no more dedicated /qa/<id> page, so queue rows deep-link
@@ -366,6 +391,36 @@ export function QAPage() {
               <AssigneeFilter issues={issues} selected={assigneeFilter} onChange={setAssigneeFilter} />
               <PriorityFilter issues={issues} selected={priorityFilter} onChange={setPriorityFilter} />
 
+              {/* Reconciled-state toggles (Phase 3) — one-click cuts of the
+                  queue by the SAME server-computed state the chip and merge
+                  gate read. */}
+              <Button
+                type="button"
+                variant={staleOnly ? "secondary" : "outline"}
+                size="sm"
+                className={cn(
+                  "h-8 gap-1 px-2 text-[12px]",
+                  staleOnly && "text-amber-600 dark:text-amber-400",
+                )}
+                title={t(($) => $.qa_cockpit.filter_stale_title)}
+                onClick={() => setStaleOnly((v) => !v)}
+              >
+                {t(($) => $.qa_cockpit.filter_stale)}
+              </Button>
+              <Button
+                type="button"
+                variant={needsHumanOnly ? "secondary" : "outline"}
+                size="sm"
+                className={cn(
+                  "h-8 gap-1 px-2 text-[12px]",
+                  needsHumanOnly && "text-destructive",
+                )}
+                title={t(($) => $.qa_cockpit.filter_needs_human_title)}
+                onClick={() => setNeedsHumanOnly((v) => !v)}
+              >
+                {t(($) => $.qa_cockpit.filter_needs_human)}
+              </Button>
+
               {hasFilters && (
                 <Button
                   type="button"
@@ -375,6 +430,8 @@ export function QAPage() {
                   onClick={() => {
                     setAssigneeFilter([]);
                     setPriorityFilter([]);
+                    setStaleOnly(false);
+                    setNeedsHumanOnly(false);
                   }}
                 >
                   <X className="size-3.5" />

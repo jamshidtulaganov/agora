@@ -1,5 +1,7 @@
 package service
 
+import "strings"
+
 // QAState is the single reconciled QA state for an issue — the ONE truth the
 // verdict chip (qa-lens.tsx), the cockpit lanes (qa-lane.tsx), and the merge
 // gate (merge_readiness.go) all read, instead of each separately combining
@@ -44,6 +46,19 @@ type QACaseRunStatus struct {
 	Status string
 }
 
+// CommitShasDiffer reports whether two commit shas identify DIFFERENT
+// commits, with prefix tolerance (an agent may report a short sha while the
+// PR head is the full 40 chars). Fail-open: either side empty/unknown →
+// false (no staleness claim can be made). Case-insensitive.
+func CommitShasDiffer(a, b string) bool {
+	a = strings.ToLower(strings.TrimSpace(a))
+	b = strings.ToLower(strings.TrimSpace(b))
+	if a == "" || b == "" {
+		return false
+	}
+	return !strings.HasPrefix(a, b) && !strings.HasPrefix(b, a)
+}
+
 // ReconcileQAState folds every QA signal for one issue into ONE state.
 //
 //   - labels: the issue's label NAMES currently attached (only "qa:pass",
@@ -55,10 +70,18 @@ type QACaseRunStatus struct {
 //     now (a live gate always wins over a stale prior verdict).
 //   - hasEvidence: a qa_evidence row exists for this issue — a run_qa verdict
 //     was captured at some point, even if no gate label ended up attached.
+//   - evidenceCommitSha / knownHeadSha (Phase 3 — stale-green invalidation):
+//     the sha the current evidence tested vs the issue's CURRENT known head
+//     (an open PR's head sha, when one exists). When BOTH are known and they
+//     differ, the verdict — green or red — judged code that is no longer the
+//     issue's head, so the state is stale (needs a re-run). Fail-open: either
+//     side "" (unreported sha, no open PR, sprint-branch/local-worktree modes
+//     where the head is unknowable) → no staleness claim.
 //
 // Precedence (highest first): running > (qa:stale OR a legacy qa:fail+qa:pass
-// sticky pair) > blocked > fail > pass_with_failing_cases > pass > (evidence
-// with no usable label) stale > never_ran.
+// sticky pair OR a commit-sha mismatch) > blocked > fail >
+// pass_with_failing_cases > pass > (evidence with no usable label) stale >
+// never_ran.
 //
 // The PRECEDENCE ORDER — an explicit qa:stale check ranking above
 // blocked/fail/pass — mirrors qa-lane.tsx's pre-existing, fuzz-tested
@@ -69,7 +92,7 @@ type QACaseRunStatus struct {
 // this richer 7-value enum has no "pending" and folds the same pair into
 // Stale (an untrustworthy verdict needing a re-run is a stale one, in this
 // vocabulary). Both agree an EXPLICIT qa:stale label always wins outright.
-func ReconcileQAState(labels map[string]bool, latestRunsPerCase []QACaseRunStatus, hasRunningQATask, hasEvidence bool) QAState {
+func ReconcileQAState(labels map[string]bool, latestRunsPerCase []QACaseRunStatus, hasRunningQATask, hasEvidence bool, evidenceCommitSha, knownHeadSha string) QAState {
 	if hasRunningQATask {
 		return QAStateRunning
 	}
@@ -77,10 +100,15 @@ func ReconcileQAState(labels map[string]bool, latestRunsPerCase []QACaseRunStatu
 	hasPass := labels["qa:pass"]
 	hasFail := labels["qa:fail"]
 
-	// qa:stale (watchdog-escalated) and a legacy fail+pass sticky pair both
-	// mean "the freshest verdict here is not trustworthy — needs a re-run,"
-	// so both fold to Stale ahead of any other label check.
+	// qa:stale (watchdog-escalated), a legacy fail+pass sticky pair, and a
+	// commit-sha mismatch (the evidence judged a commit that is no longer the
+	// issue's head — stale-green invalidation) all mean "the freshest verdict
+	// here is not trustworthy — needs a re-run," so all fold to Stale ahead
+	// of any other label check.
 	if labels["qa:stale"] || (hasFail && hasPass) {
+		return QAStateStale
+	}
+	if hasEvidence && CommitShasDiffer(evidenceCommitSha, knownHeadSha) {
 		return QAStateStale
 	}
 	if labels["qa:blocked"] {

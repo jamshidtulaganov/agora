@@ -595,7 +595,10 @@
     "trace_close": "关闭",
     "trace_error": "无法打开追踪记录",
     "trace_load_error": "追踪回放未能加载",
-    "trace_retry": "重试"
+    "trace_retry": "重试",
+    "flaky": "不稳定",
+    "flaky_title": "近期运行中在同一提交上既通过又失败——对最新结论保持怀疑",
+    "run_history": "近期运行"
   },
   "qa_cockpit": {
     "all_projects": "所有项目",
@@ -744,7 +747,13 @@
     "metrics_table_max": "最长",
     "metrics_recent_heading": "近期回归测试运行",
     "metrics_recent_empty": "暂无运行记录。",
-    "metrics_untitled_case": "（无标题用例）"
+    "metrics_untitled_case": "（无标题用例）",
+    "filter_stale": "已过期",
+    "filter_stale_title": "仅显示 QA 结论已不再适用的 issue（gate 停滞，或代码已越过被测提交）",
+    "filter_needs_human": "需人工",
+    "filter_needs_human_title": "仅显示下一步需要人工决定的 issue：未通过，或通过但仍有用例失败",
+    "suite_flaky_count": "{{count}} 个不稳定",
+    "suite_flaky_filter_title": "仅显示不稳定用例——近期运行中同一提交上出现两种结论"
   },
   "terminate_dialog": {
     "title": "确定停止该 task？",

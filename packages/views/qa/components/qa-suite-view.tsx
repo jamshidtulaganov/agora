@@ -38,6 +38,9 @@ export function QASuiteView({ projectId }: { projectId?: string }) {
   const { t } = useT("issues");
   const qc = useQueryClient();
   const [adding, setAdding] = useState(false);
+  // Show only flaky cases (Phase 3) — a client-side filter over data the
+  // list already carries (TestCase.flaky), no extra fetch.
+  const [flakyOnly, setFlakyOnly] = useState(false);
 
   const queryKey = ["qa-suite", wsId, projectId ?? "none"];
   const { data, isLoading } = useQuery({
@@ -87,10 +90,13 @@ export function QASuiteView({ projectId }: { projectId?: string }) {
     );
   }
 
-  const cases = data?.test_cases ?? [];
-  const negativeCount = cases.filter((c) => c.category === "negative").length;
-  const positiveCount = cases.length - negativeCount;
-  const failingCount = cases.filter((c) => c.latest_run?.status === "fail").length;
+  const allCases = data?.test_cases ?? [];
+  const negativeCount = allCases.filter((c) => c.category === "negative").length;
+  const positiveCount = allCases.length - negativeCount;
+  const failingCount = allCases.filter((c) => c.latest_run?.status === "fail").length;
+  // Flaky filter (Phase 3): pass+fail on the SAME commit within recent runs.
+  const flakyCount = allCases.filter((c) => c.flaky === true).length;
+  const cases = flakyOnly ? allCases.filter((c) => c.flaky === true) : allCases;
 
   return (
     // One consistent bounded measure for the whole tab (header + rows share it)
@@ -107,6 +113,20 @@ export function QASuiteView({ projectId }: { projectId?: string }) {
               <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive">
                 {t(($) => $.qa_cockpit.suite_failing_count, { count: failingCount })}
               </span>
+            )}
+            {flakyCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setFlakyOnly((v) => !v)}
+                title={t(($) => $.qa_cockpit.suite_flaky_filter_title)}
+                className={cn(
+                  "rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors",
+                  "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                  flakyOnly && "ring-1 ring-inset ring-amber-500/60",
+                )}
+              >
+                {t(($) => $.qa_cockpit.suite_flaky_count, { count: flakyCount })}
+              </button>
             )}
           </div>
           <p className="text-sm text-muted-foreground">{t(($) => $.qa_cockpit.suite_description)}</p>
@@ -248,6 +268,11 @@ function BaseCaseRow({
               {categoryLabel}
             </CasePill>
             {c.script ? <CasePill>{t(($) => $.qa_cockpit.suite_compiled)}</CasePill> : null}
+            {c.flaky === true ? (
+              <CasePill className="border-amber-500/40 font-medium text-amber-600 dark:text-amber-400">
+                {t(($) => $.test_cases.flaky)}
+              </CasePill>
+            ) : null}
             {c.latest_run && (
               <span className="flex items-center gap-0.5">
                 {c.latest_run.run_source === "agent" ? <Bot className="size-2.5" /> : <User className="size-2.5" />}

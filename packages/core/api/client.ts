@@ -284,6 +284,9 @@ import {
   EMPTY_TEST_CASE,
   BuildBaseSuiteResponseSchema,
   EMPTY_BUILD_BASE_SUITE,
+  TestCaseRunsResponseSchema,
+  EMPTY_TEST_CASE_RUNS,
+  type TestCaseRunsParsed,
   LaunchTraceResponseSchema,
   EMPTY_LAUNCH_TRACE,
   EMPTY_CONNECTED_BOX,
@@ -2742,6 +2745,17 @@ export class ApiClient {
     return this.fetch(`/api/test-cases/${caseId}/runs`, {
       method: "POST",
       body: JSON.stringify(data),
+    });
+  }
+
+  // A case's recent run history with run identity (sha/session/timing) —
+  // the QA panel's last-5 strip. Defensive: a malformed body degrades to an
+  // empty history, never a crash (old servers 404 → the caller's query error
+  // state simply shows no strip).
+  async listTestCaseRuns(caseId: string): Promise<TestCaseRunsParsed> {
+    const raw = await this.fetch<unknown>(`/api/test-cases/${caseId}/runs`);
+    return parseWithFallback(raw, TestCaseRunsResponseSchema, EMPTY_TEST_CASE_RUNS, {
+      endpoint: "GET /api/test-cases/:id/runs",
     });
   }
 

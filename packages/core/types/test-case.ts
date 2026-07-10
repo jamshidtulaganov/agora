@@ -28,10 +28,34 @@ export interface TestCase {
   criterion_ref: string; // which acceptance criterion this case verifies ("AC2" / short quote); "" = untraced
   created_at: string;
   latest_run: TestRunLite | null;
+  // Phase 3 (run identity): the case produced BOTH a pass and a fail on the
+  // SAME commit within its recent runs — its latest verdict is not settled
+  // truth. Optional: old servers omit it (treat as false).
+  flaky?: boolean;
 }
 
 export interface ListTestCasesResponse {
   test_cases: TestCase[];
+}
+
+// One run in a case's history (GET /api/test-cases/:id/runs) — the verdict
+// plus its Phase 3 identity. All identity fields degrade to "" on old
+// servers / unreported runs.
+export interface TestRunHistoryItem {
+  id: string;
+  status: string; // pass | fail | skip | blocked
+  run_source: string; // human | agent
+  created_at: string;
+  output?: string;
+  trace_path?: string;
+  commit_sha: string; // "" = unreported
+  session_id: string; // "" = unreported; runs sharing one dispatch share it
+  started_at: string; // RFC3339 or ""
+  finished_at: string; // RFC3339 or ""
+}
+
+export interface TestCaseRunsResponse {
+  runs: TestRunHistoryItem[];
 }
 
 export interface CreateTestCaseRequest {

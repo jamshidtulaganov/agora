@@ -19,6 +19,9 @@ import {
   TestCaseSchema,
   parseDeployEnvironments,
   QAEvidenceSchema,
+  QAVerdictsResponseSchema,
+  TestCaseRunsResponseSchema,
+  EMPTY_TEST_CASE_RUNS,
   RuntimeHourlyActivityListSchema,
   RuntimeUsageByAgentListSchema,
   RuntimeUsageByHourListSchema,
@@ -447,6 +450,24 @@ describe("QAEvidenceSchema (evidence-first QA)", () => {
       expect(parsed.reconciled_state).toBe("some_future_state");
     });
 
+    it("defaults the Phase 3 identity fields when absent — OLD SERVER compatibility", () => {
+      const parsed = QAEvidenceSchema.parse({ id: "e1", issue_id: "i1", verdict: "pass" });
+      expect(parsed.commit_sha).toBe("");
+      expect(parsed.triggered_by).toBe("");
+      expect(parsed.started_at).toBe("");
+      expect(parsed.finished_at).toBe("");
+    });
+
+    it("passes through populated identity fields", () => {
+      const parsed = QAEvidenceSchema.parse({
+        id: "e1", issue_id: "i1", verdict: "pass",
+        commit_sha: "deadbeef1234", triggered_by: "auto",
+        started_at: "2026-07-10T11:00:00Z", finished_at: "2026-07-10T11:20:00Z",
+      });
+      expect(parsed.commit_sha).toBe("deadbeef1234");
+      expect(parsed.triggered_by).toBe("auto");
+    });
+
     it("a wrong-typed reconciled_state (number) falls back to the row's own default via .nullable() null-fallback, not a throw", () => {
       // Whole-response malformed-field tolerance: a non-string reconciled_state
       // must not crash the endpoint — parseWithFallback's null fallback (the
@@ -828,5 +849,55 @@ describe("TestCaseSchema metadata (preconditions / priority / modality)", () => 
       listEndpoint,
     );
     expect(parsed.test_cases).toEqual([]);
+  });
+});
+
+describe("TestCaseRunsResponseSchema (Phase 3 run history)", () => {
+  const endpoint = { endpoint: "GET /api/test-cases/:id/runs" };
+
+  it("parses a well-formed history with identity fields", () => {
+    const parsed = TestCaseRunsResponseSchema.parse({
+      runs: [
+        {
+          id: "r1", status: "pass", run_source: "agent", created_at: "2026-07-10T12:00:00Z",
+          commit_sha: "deadbeef1234", session_id: "s1",
+          started_at: "", finished_at: "2026-07-10T12:01:00Z",
+        },
+      ],
+    });
+    expect(parsed.runs).toHaveLength(1);
+    expect(parsed.runs[0]!.commit_sha).toBe("deadbeef1234");
+  });
+
+  it("defaults identity fields on legacy runs (pre-157 rows)", () => {
+    const parsed = TestCaseRunsResponseSchema.parse({
+      runs: [{ id: "r1", status: "fail", run_source: "human", created_at: "2026-01-01T00:00:00Z" }],
+    });
+    expect(parsed.runs[0]!.commit_sha).toBe("");
+    expect(parsed.runs[0]!.session_id).toBe("");
+  });
+
+  it("falls back to an empty history on a malformed body instead of throwing", () => {
+    expect(parseWithFallback(null, TestCaseRunsResponseSchema, EMPTY_TEST_CASE_RUNS, endpoint).runs).toEqual([]);
+    expect(parseWithFallback({ runs: "bad" }, TestCaseRunsResponseSchema, EMPTY_TEST_CASE_RUNS, endpoint).runs).toEqual([]);
+    expect(parseWithFallback("nope", TestCaseRunsResponseSchema, EMPTY_TEST_CASE_RUNS, endpoint).runs).toEqual([]);
+  });
+
+  it("defaults a missing runs array to []", () => {
+    expect(TestCaseRunsResponseSchema.parse({}).runs).toEqual([]);
+  });
+});
+
+describe("QAVerdictsResponseSchema — Phase 3 reconciled_state per entry", () => {
+  it("passes reconciled_state + triggered_by through and defaults them when absent (old server)", () => {
+    const parsed = QAVerdictsResponseSchema.parse({
+      verdicts: {
+        "issue-1": { verdict: "pass", reconciled_state: "stale", triggered_by: "auto" },
+        "issue-2": { verdict: "fail" },
+      },
+    });
+    expect(parsed.verdicts["issue-1"]!.reconciled_state).toBe("stale");
+    expect(parsed.verdicts["issue-1"]!.triggered_by).toBe("auto");
+    expect(parsed.verdicts["issue-2"]!.reconciled_state).toBe("");
   });
 });

@@ -1092,6 +1092,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// QA test cases — run + archive by case id (list/create are
 			// issue-scoped, or project-scoped for standing base scripts).
 			r.Route("/api/test-cases/{id}", func(r chi.Router) {
+				// Run history (Phase 3) — the case's recent runs with their
+				// identity (sha, session, timing, source).
+				r.Get("/runs", h.GetTestCaseRuns)
 				r.Post("/runs", h.CreateTestCaseRun)
 				r.Post("/archive", h.ArchiveTestCaseHandler)
 				r.With(handler.RequireHumanActor).Patch("/", h.UpdateTestCaseHandler)

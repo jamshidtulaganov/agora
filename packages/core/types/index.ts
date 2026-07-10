@@ -221,5 +221,7 @@ export type {
   UpdateTestCaseRequest,
   CreateTestRunRequest,
   BuildBaseSuiteResponse,
+  TestRunHistoryItem,
+  TestCaseRunsResponse,
 } from "./test-case";
 export type { EditorAgent, GetIssueEditorResponse, IssueBrowserResponse, IssueQAPreviewURLResponse } from "./editor-live";

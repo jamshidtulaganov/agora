@@ -676,6 +676,15 @@ function CaseRow({
   const kindLabel = c.kind === "automated" ? t(($) => $.test_cases.kind_automated) : t(($) => $.test_cases.kind_manual);
   const categoryLabel =
     c.category === "negative" ? t(($) => $.test_cases.category_negative) : t(($) => $.test_cases.category_positive);
+  // Run history (Phase 3) — fetched only when the row is EXPANDED (the strip
+  // lives in the detail); last 5, newest first from the API.
+  const { data: historyData } = useQuery({
+    queryKey: ["test-case-runs", c.id],
+    queryFn: () => api.listTestCaseRuns(c.id),
+    enabled: open,
+    staleTime: 15_000,
+  });
+  const historyRuns = (historyData?.runs ?? []).slice(0, 5);
 
   return (
     <li
@@ -719,6 +728,19 @@ function CaseRow({
               a reviewer must see); modality only shows when declared. */}
           <span className="mt-0.5 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[10px] text-muted-foreground/70">
             <span className={cn("uppercase", priorityChipClass(c.priority))}>{priorityLabel(c.priority)}</span>
+            {c.flaky === true && (
+              <>
+                <span aria-hidden>·</span>
+                {/* Flaky (Phase 3): pass AND fail on the SAME commit — the same
+                    amber caution language as the base-case quarantine. */}
+                <span
+                  className="font-medium uppercase text-amber-600 dark:text-amber-400"
+                  title={t(($) => $.test_cases.flaky_title)}
+                >
+                  {t(($) => $.test_cases.flaky)}
+                </span>
+              </>
+            )}
             {c.modality && (
               <>
                 <span aria-hidden>·</span>
@@ -909,6 +931,31 @@ function CaseRow({
       {open && !hasReason && stepResults && (
         <div className="mt-1.5 rounded border-l-2 border-border bg-muted/20 px-2 py-1.5 text-[11px] text-muted-foreground">
           <StepResultList results={stepResults} steps={parsedSteps} />
+        </div>
+      )}
+      {/* Run history strip (Phase 3): the last 5 runs as verdict dots, with
+          time + source + short sha in the tooltip — "is this case settling
+          or churning" at a glance. Renders only when history exists. */}
+      {open && historyRuns.length > 0 && (
+        <div className="mt-1.5 flex items-center gap-1.5 pl-1 text-[10px] text-muted-foreground">
+          <span>{t(($) => $.test_cases.run_history)}:</span>
+          <span className="flex items-center gap-1">
+            {historyRuns.map((r) => (
+              <span
+                key={r.id}
+                aria-hidden={false}
+                title={`${r.status} · ${r.run_source}${r.commit_sha ? ` · ${r.commit_sha.slice(0, 7)}` : ""}${r.created_at ? ` · ${new Date(r.created_at).toLocaleString()}` : ""}`}
+                className={cn(
+                  "size-2 rounded-full",
+                  r.status === "pass"
+                    ? "bg-emerald-500"
+                    : r.status === "fail"
+                      ? "bg-destructive"
+                      : "bg-muted-foreground/40",
+                )}
+              />
+            ))}
+          </span>
         </div>
       )}
       {open && (c.steps || c.expected || c.preconditions) && (

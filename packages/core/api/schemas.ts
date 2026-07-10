@@ -1031,6 +1031,11 @@ export const QAVerdictsResponseSchema = z.object({
         source: z.string().default(""),
         summary: z.string().default(""),
         captured_at: z.string().default(""),
+        // Phase 3: the server-computed reconciled state, batch-computed per
+        // in_review issue ("" = old server / not reconciled — the client
+        // falls back to its label-derived state), and who fired the gate.
+        reconciled_state: z.string().default(""),
+        triggered_by: z.string().default(""),
       }).loose(),
     )
     .default({}),
@@ -1059,7 +1064,35 @@ export const QAEvidenceSchema = z.object({
   // "not provided" signal consumers (qa-lens, qa-lane) fall back to their own
   // label-derived computation on.
   reconciled_state: z.string().default(""),
+  // Run identity (Phase 3, migration 157) — all default so an old server
+  // (or a legacy row) degrades to "" instead of rejecting the response.
+  commit_sha: z.string().default(""),
+  triggered_by: z.string().default(""),
+  started_at: z.string().default(""),
+  finished_at: z.string().default(""),
 }).loose();
+
+// A test case's run history (GET /api/test-cases/:id/runs) — Phase 3 run
+// identity. Lenient like its QA siblings: every field defaults, a malformed
+// entry degrades instead of rejecting the whole history.
+export const TestCaseRunsResponseSchema = z.object({
+  runs: z.array(z.object({
+    id: z.string().default(""),
+    status: z.string().default(""),
+    run_source: z.string().default(""),
+    created_at: z.string().default(""),
+    output: z.string().default(""),
+    trace_path: z.string().default(""),
+    commit_sha: z.string().default(""),
+    session_id: z.string().default(""),
+    started_at: z.string().default(""),
+    finished_at: z.string().default(""),
+  }).loose()).default([]),
+}).loose();
+
+export type TestCaseRunsParsed = z.infer<typeof TestCaseRunsResponseSchema>;
+
+export const EMPTY_TEST_CASE_RUNS: TestCaseRunsParsed = { runs: [] };
 
 // Deploy events — the durable Tier-1 (QA-box git-sync) deploy signal (deploy
 // P0, docs/deploy-stage-research.md §3.3). Lenient like QAEvidenceSchema: an

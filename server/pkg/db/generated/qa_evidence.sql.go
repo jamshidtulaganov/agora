@@ -55,6 +55,8 @@ SELECT DISTINCT ON (issue_id)
     summary,
     baseline_ref,
     branch_sha,
+    commit_sha,
+    triggered_by,
     captured_at
 FROM qa_evidence
 WHERE workspace_id = $1
@@ -74,6 +76,8 @@ type ListQAEvidenceSummariesForIssuesRow struct {
 	Summary     string             `json:"summary"`
 	BaselineRef string             `json:"baseline_ref"`
 	BranchSha   string             `json:"branch_sha"`
+	CommitSha   string             `json:"commit_sha"`
+	TriggeredBy string             `json:"triggered_by"`
 	CapturedAt  pgtype.Timestamptz `json:"captured_at"`
 }
 
@@ -95,6 +99,8 @@ func (q *Queries) ListQAEvidenceSummariesForIssues(ctx context.Context, arg List
 			&i.Summary,
 			&i.BaselineRef,
 			&i.BranchSha,
+			&i.CommitSha,
+			&i.TriggeredBy,
 			&i.CapturedAt,
 		); err != nil {
 			return nil, err

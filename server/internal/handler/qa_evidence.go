@@ -43,6 +43,13 @@ type QAEvidenceResponse struct {
 	Result          json.RawMessage `json:"result"`
 	CapturedAt      string          `json:"captured_at"`
 	ReconciledState string          `json:"reconciled_state"`
+	// Run identity (Phase 3, migration 157): which commit the verdict judged
+	// ("" = unreported/legacy), who fired the gate (agent|human|auto, "" =
+	// legacy), and the gate's timing (RFC3339, "" = unknown).
+	CommitSha   string `json:"commit_sha"`
+	TriggeredBy string `json:"triggered_by"`
+	StartedAt   string `json:"started_at"`
+	FinishedAt  string `json:"finished_at"`
 }
 
 func qaEvidenceToResponse(e db.QaEvidence, reconciledState service.QAState) QAEvidenceResponse {
@@ -50,7 +57,7 @@ func qaEvidenceToResponse(e db.QaEvidence, reconciledState service.QAState) QAEv
 	if len(result) == 0 {
 		result = json.RawMessage("{}")
 	}
-	return QAEvidenceResponse{
+	resp := QAEvidenceResponse{
 		ID:              uuidToString(e.ID),
 		IssueID:         uuidToString(e.IssueID),
 		BaselineRef:     e.BaselineRef,
@@ -61,7 +68,16 @@ func qaEvidenceToResponse(e db.QaEvidence, reconciledState service.QAState) QAEv
 		Result:          result,
 		CapturedAt:      e.CapturedAt.Time.Format(time.RFC3339),
 		ReconciledState: string(reconciledState),
+		CommitSha:       e.CommitSha,
+		TriggeredBy:     e.TriggeredBy,
 	}
+	if e.StartedAt.Valid {
+		resp.StartedAt = e.StartedAt.Time.Format(time.RFC3339)
+	}
+	if e.FinishedAt.Valid {
+		resp.FinishedAt = e.FinishedAt.Time.Format(time.RFC3339)
+	}
+	return resp
 }
 
 // GetIssueQAEvidence returns the freshest QA evidence row for an issue, or null
@@ -96,6 +112,15 @@ type qaVerdictSummary struct {
 	Source     string `json:"source"`
 	Summary    string `json:"summary"`
 	CapturedAt string `json:"captured_at"`
+	// ReconciledState (Phase 3): the SAME server-computed enum the qa-evidence
+	// endpoint returns, batch-computed per in_review issue so the cockpit's
+	// Stale / Needs-human filters read one truth instead of re-deriving it
+	// client-side. "" for issues the batch couldn't reconcile (fail-open — the
+	// client falls back to its label-derived state).
+	ReconciledState string `json:"reconciled_state"`
+	// TriggeredBy: who fired the gate that produced this verdict
+	// (agent|human|auto, "" = legacy).
+	TriggeredBy string `json:"triggered_by"`
 }
 
 // ListQAVerdicts returns the freshest qa_evidence verdict per in_review issue
@@ -147,11 +172,25 @@ func (h *Handler) ListQAVerdicts(w http.ResponseWriter, r *http.Request) {
 			WorkspaceID: wsUUID, Column2: ids,
 		})
 		if serr == nil {
+			// Reconcile per evidence-bearing issue with the QA-agent set hoisted
+			// out of the loop (the per-issue reads — labels, latest runs, active
+			// tasks, PR head — stay, bounded by the 500-issue cap + the client's
+			// 15s staleTime).
+			qaAgentIDs := h.qaSquadAgentIDSet(r.Context(), wsUUID)
 			for _, s := range sums {
-				item := qaVerdictSummary{Verdict: s.Verdict, Source: s.Source, Summary: s.Summary}
+				item := qaVerdictSummary{Verdict: s.Verdict, Source: s.Source, Summary: s.Summary, TriggeredBy: s.TriggeredBy}
 				if s.CapturedAt.Valid {
 					item.CapturedAt = s.CapturedAt.Time.Format(time.RFC3339)
 				}
+				stub := db.Issue{ID: s.IssueID, WorkspaceID: wsUUID}
+				labels := h.issueQALabelSet(r.Context(), stub)
+				runs := h.issueLatestCaseRunStatuses(r.Context(), stub)
+				running := h.issueHasRunningQATaskWithSet(r.Context(), stub, qaAgentIDs)
+				headSha := ""
+				if s.CommitSha != "" {
+					headSha = h.issueKnownHeadSha(r.Context(), stub)
+				}
+				item.ReconciledState = string(service.ReconcileQAState(labels, runs, running, true, s.CommitSha, headSha))
 				out[uuidToString(s.IssueID)] = item
 			}
 		}

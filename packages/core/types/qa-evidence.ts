@@ -80,4 +80,9 @@ export interface QAEvidence {
   // this field — consumers must fall back to their own label-derived
   // computation on "" (or any value they don't recognize).
   reconciled_state: string;
+  // Run identity (Phase 3, migration 157). All degrade to "" on old servers.
+  commit_sha: string; // sha the verdict judged; "" = unreported/legacy
+  triggered_by: string; // agent | human | auto; "" = legacy
+  started_at: string; // RFC3339 or ""
+  finished_at: string; // RFC3339 or ""
 }

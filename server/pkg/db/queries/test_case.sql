@@ -168,6 +168,47 @@ WHERE c.workspace_id = $2
   AND r.run_source = 'human'
 ORDER BY r.test_case_id, r.created_at DESC;
 
+-- name: ListFlakyCaseIDsForIssue :many
+-- FLAKY detection (Phase 3): a case that produced BOTH a pass and a fail on
+-- the SAME commit_sha is flaky by definition — the code didn't change, the
+-- verdict did. Scoped to the issue's cases (own + base scripts run against
+-- it), the last 20 runs per case, and runs that actually reported a sha
+-- ('' can't bind two runs to one commit). Simple by design: no
+-- cross-issue/window aggregation, just "same case + same sha + both verdicts".
+WITH recent AS (
+    SELECT r.test_case_id, r.status, r.commit_sha,
+           ROW_NUMBER() OVER (PARTITION BY r.test_case_id ORDER BY r.created_at DESC) AS rn
+    FROM test_run r
+    JOIN test_case c ON c.id = r.test_case_id
+    WHERE c.workspace_id = $2
+      AND (c.issue_id = $1 OR (c.issue_id IS NULL AND r.issue_id = $1))
+      AND r.commit_sha <> ''
+)
+SELECT DISTINCT a.test_case_id
+FROM recent a
+JOIN recent b ON b.test_case_id = a.test_case_id AND b.commit_sha = a.commit_sha
+WHERE a.rn <= 20 AND b.rn <= 20
+  AND a.status = 'pass' AND b.status = 'fail';
+
+-- name: ListFlakyCaseIDsForProject :many
+-- The project-suite variant of ListFlakyCaseIDsForIssue (the /qa Suite tab's
+-- flaky filter): standing base cases (issue_id NULL) whose last 20 runs
+-- contain both verdicts on one sha.
+WITH recent AS (
+    SELECT r.test_case_id, r.status, r.commit_sha,
+           ROW_NUMBER() OVER (PARTITION BY r.test_case_id ORDER BY r.created_at DESC) AS rn
+    FROM test_run r
+    JOIN test_case c ON c.id = r.test_case_id
+    WHERE c.workspace_id = $2
+      AND c.project_id = $1 AND c.issue_id IS NULL
+      AND r.commit_sha <> ''
+)
+SELECT DISTINCT a.test_case_id
+FROM recent a
+JOIN recent b ON b.test_case_id = a.test_case_id AND b.commit_sha = a.commit_sha
+WHERE a.rn <= 20 AND b.rn <= 20
+  AND a.status = 'pass' AND b.status = 'fail';
+
 -- name: ListTestRunsForCase :many
 SELECT * FROM test_run
 WHERE test_case_id = $1 AND workspace_id = $2

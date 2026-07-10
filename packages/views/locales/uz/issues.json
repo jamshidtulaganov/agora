@@ -606,7 +606,10 @@
     "trace_close": "Yopish",
     "trace_error": "Trace’ni ochib bo‘lmadi",
     "trace_load_error": "Trace ko‘ruvchi yuklanmadi",
-    "trace_retry": "Qayta urinish"
+    "trace_retry": "Qayta urinish",
+    "flaky": "flaky",
+    "flaky_title": "So'nggi ishga tushirishlarda bitta commit'da ham o'tgan, ham o'tmagan — oxirgi verdiktga ishonmang",
+    "run_history": "So'nggi ishga tushirishlar"
   },
   "qa_cockpit": {
     "all_projects": "Barcha loyihalar",
@@ -755,7 +758,13 @@
     "metrics_table_max": "Maks",
     "metrics_recent_heading": "So'nggi regressiya natijalari",
     "metrics_recent_empty": "Hali natijalar yo'q.",
-    "metrics_untitled_case": "(nomsiz case)"
+    "metrics_untitled_case": "(nomsiz case)",
+    "filter_stale": "Eskirgan",
+    "filter_stale_title": "Faqat QA verdikti endi amal qilmaydigan vazifalar (gate osilib qoldi yoki kod tekshirilgan commit'dan o'tib ketdi)",
+    "filter_needs_human": "Inson kerak",
+    "filter_needs_human_title": "Faqat keyingi qadam insonda bo'lgan vazifalar: o'tmadi yoki o'tgan-lekin keyslar o'tmagan",
+    "suite_flaky_count": "{{count}} flaky",
+    "suite_flaky_filter_title": "Faqat flaky keyslarni ko'rsatish — so'nggi ishga tushirishlarda bitta commit'da ikkala verdikt"
   },
   "terminate_dialog": {
     "title": "Bu topshiriqni to‘xtatasizmi?",

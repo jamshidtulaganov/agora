@@ -1,6 +1,9 @@
 package service
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestReconcileQAState(t *testing.T) {
 	fail := []QACaseRunStatus{{Status: "fail"}}
@@ -71,7 +74,7 @@ func TestReconcileQAState(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ReconcileQAState(tt.labels, tt.latestRunsPerCase, tt.hasRunningQATask, tt.hasEvidence)
+			got := ReconcileQAState(tt.labels, tt.latestRunsPerCase, tt.hasRunningQATask, tt.hasEvidence, "", "")
 			if got != tt.want {
 				t.Errorf("ReconcileQAState(%v, %v, running=%v, evidence=%v) = %q, want %q",
 					tt.labels, tt.latestRunsPerCase, tt.hasRunningQATask, tt.hasEvidence, got, tt.want)
@@ -108,13 +111,75 @@ func TestQAStateBlocksMerge(t *testing.T) {
 // coarser bucketing.)
 func TestReconcileQAStateMatchesQARowStatePrecedence(t *testing.T) {
 	// stale beats a plain single fail (not just the sticky pair).
-	got := ReconcileQAState(map[string]bool{"qa:stale": true, "qa:fail": true}, nil, false, true)
+	got := ReconcileQAState(map[string]bool{"qa:stale": true, "qa:fail": true}, nil, false, true, "", "")
 	if got != QAStateStale {
 		t.Fatalf("qa:stale must win over a plain qa:fail, got %q", got)
 	}
 	// stale beats a plain single pass.
-	got = ReconcileQAState(map[string]bool{"qa:stale": true, "qa:pass": true}, nil, false, true)
+	got = ReconcileQAState(map[string]bool{"qa:stale": true, "qa:pass": true}, nil, false, true, "", "")
 	if got != QAStateStale {
 		t.Fatalf("qa:stale must win over a plain qa:pass, got %q", got)
+	}
+}
+
+// TestCommitShasDiffer pins the fail-open, prefix-tolerant sha comparison
+// behind stale-green invalidation.
+func TestCommitShasDiffer(t *testing.T) {
+	tests := []struct {
+		a, b string
+		want bool
+	}{
+		{"", "", false},                 // both unknown — no claim
+		{"deadbeef", "", false},         // head unknown — no claim
+		{"", "deadbeef", false},         // evidence sha unknown — no claim
+		{"deadbeef", "deadbeef", false}, // identical
+		{"deadbeef", "DEADBEEF", false}, // case-insensitive
+		{"deadbef12", "deadbeef1234deadbeef1234deadbeef12341234", true},     // genuinely different (diverge at char 6)
+		{"deadbeef1234", "deadbeef1234deadbeef1234deadbeef12341234", false}, // short-vs-full prefix match
+		{"deadbeef1234deadbeef1234deadbeef12341234", "deadbeef1234", false}, // full-vs-short prefix match
+		{"aaaaaaa", "bbbbbbb", true},                                        // plainly different
+	}
+	for _, tt := range tests {
+		if got := CommitShasDiffer(tt.a, tt.b); got != tt.want {
+			t.Errorf("CommitShasDiffer(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.want)
+		}
+	}
+}
+
+// TestReconcileQAStateStaleGreen pins the Phase 3 stale-green invalidation:
+// evidence whose commit_sha no longer matches the issue's known head
+// reconciles to stale — a green (or red) verdict on outdated code is not a
+// current verdict — while an unknown head or unreported sha makes NO
+// staleness claim (fail-open).
+func TestReconcileQAStateStaleGreen(t *testing.T) {
+	passLabels := map[string]bool{"qa:pass": true}
+
+	// Head moved past the evidence sha → stale, even with a clean qa:pass.
+	if got := ReconcileQAState(passLabels, nil, false, true, "deadbeef", "cafebabe1234"); got != QAStateStale {
+		t.Errorf("pass with sha mismatch = %q, want stale", got)
+	}
+	// Same for a fail verdict — the red is equally outdated.
+	if got := ReconcileQAState(map[string]bool{"qa:fail": true}, nil, false, true, "deadbeef", "cafebabe1234"); got != QAStateStale {
+		t.Errorf("fail with sha mismatch = %q, want stale", got)
+	}
+	// Matching head (short evidence sha vs full head) → the verdict stands.
+	if got := ReconcileQAState(passLabels, nil, false, true, "deadbee1", "deadbee1"+strings.Repeat("0", 32)); got != QAStatePass {
+		t.Errorf("pass with matching prefix sha = %q, want pass", got)
+	}
+	// Unknown head (no open PR / sprint-branch / local-worktree) → fail-open.
+	if got := ReconcileQAState(passLabels, nil, false, true, "deadbeef", ""); got != QAStatePass {
+		t.Errorf("pass with unknown head = %q, want pass (no staleness claim)", got)
+	}
+	// Unreported evidence sha (legacy verdict) → fail-open.
+	if got := ReconcileQAState(passLabels, nil, false, true, "", "cafebabe1234"); got != QAStatePass {
+		t.Errorf("pass with unreported evidence sha = %q, want pass (no staleness claim)", got)
+	}
+	// running still outranks the mismatch.
+	if got := ReconcileQAState(passLabels, nil, true, true, "deadbeef", "cafebabe1234"); got != QAStateRunning {
+		t.Errorf("running with sha mismatch = %q, want running", got)
+	}
+	// No evidence at all → the sha params are ignored entirely.
+	if got := ReconcileQAState(map[string]bool{}, nil, false, false, "deadbeef", "cafebabe1234"); got != QAStateNeverRan {
+		t.Errorf("no evidence with sha params = %q, want never_ran", got)
 	}
 }
