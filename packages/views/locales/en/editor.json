@@ -73,7 +73,10 @@
     "copy_code": "Copy code",
     "show_preview": "Show preview",
     "show_source": "Show source",
-    "fullscreen": "Fullscreen"
+    "fullscreen": "Fullscreen",
+    "collapsed_lines": "{{count}} lines · {{tag}}",
+    "expand": "Expand",
+    "collapse": "Collapse"
   },
   "file_card": {
     "uploading": "Uploading {{filename}}"

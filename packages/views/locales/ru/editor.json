@@ -73,7 +73,10 @@
     "copy_code": "Копировать код",
     "show_preview": "Показать предпросмотр",
     "show_source": "Показать исходный код",
-    "fullscreen": "Полный экран"
+    "fullscreen": "Полный экран",
+    "collapsed_lines": "{{count}} строк · {{tag}}",
+    "expand": "Развернуть",
+    "collapse": "Свернуть"
   },
   "file_card": {
     "uploading": "Загрузка {{filename}}"

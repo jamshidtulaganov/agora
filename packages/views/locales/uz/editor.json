@@ -73,7 +73,10 @@
     "copy_code": "Koddan nusxa olish",
     "show_preview": "Oldindan ko‘rishni ko‘rsatish",
     "show_source": "Manbani ko‘rsatish",
-    "fullscreen": "To‘liq ekran"
+    "fullscreen": "To‘liq ekran",
+    "collapsed_lines": "{{count}} qator · {{tag}}",
+    "expand": "Yoyish",
+    "collapse": "Yig‘ish"
   },
   "file_card": {
     "uploading": "{{filename}} yuklanmoqda"
