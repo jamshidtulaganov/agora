@@ -3,9 +3,9 @@
 -- name: CreateTestCase :one
 INSERT INTO test_case (
     workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, category, script,
-    preconditions, priority, modality
+    preconditions, priority, modality, criterion_ref
 )
-VALUES ($1, sqlc.narg(issue_id), sqlc.narg(project_id), $2, $3, $4, $5, $6, $7, sqlc.narg(author_id), $8, $9, $10, $11, $12)
+VALUES ($1, sqlc.narg(issue_id), sqlc.narg(project_id), $2, $3, $4, $5, $6, $7, sqlc.narg(author_id), $8, $9, $10, $11, $12, $13)
 RETURNING *;
 
 -- name: ListTestCasesForIssue :many
@@ -56,10 +56,10 @@ ORDER BY created_at DESC;
 -- manufactured regression. Verified-green-at-promotion is the entry bar.
 INSERT INTO test_case
   (workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, category, script,
-   preconditions, priority, modality)
+   preconditions, priority, modality, criterion_ref)
 SELECT tc.workspace_id, NULL, $2, '[' || sqlc.arg(issue_key)::text || '] ' || tc.title,
        tc.steps, tc.expected, 'automated', 'promoted', tc.author_type, tc.author_id, tc.category, tc.script,
-       tc.preconditions, tc.priority, tc.modality
+       tc.preconditions, tc.priority, tc.modality, tc.criterion_ref
 FROM test_case tc
 WHERE tc.issue_id = $1 AND tc.kind = 'automated' AND tc.archived_at IS NULL
   AND (
@@ -162,7 +162,8 @@ UPDATE test_case SET
     script = COALESCE(sqlc.narg('script'), script),
     preconditions = COALESCE(sqlc.narg('preconditions'), preconditions),
     priority = COALESCE(sqlc.narg('priority'), priority),
-    modality = COALESCE(sqlc.narg('modality'), modality)
+    modality = COALESCE(sqlc.narg('modality'), modality),
+    criterion_ref = COALESCE(sqlc.narg('criterion_ref'), criterion_ref)
 WHERE id = $1 AND workspace_id = $2
 RETURNING *;
 

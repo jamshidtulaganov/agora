@@ -237,6 +237,12 @@ function BaseCaseRow({
               {priorityLabel(c.priority)}
             </CasePill>
             {c.modality ? <CasePill>{modalityLabel(c.modality)}</CasePill> : null}
+            {/* Traceability: which acceptance criterion the case covers. */}
+            {c.criterion_ref ? (
+              <CasePill className="inline-block max-w-[160px] truncate align-bottom normal-case">
+                {c.criterion_ref}
+              </CasePill>
+            ) : null}
             <CasePill>{kindLabel}</CasePill>
             <CasePill className={cn(c.category === "negative" && "border-amber-500/40 text-amber-600 dark:text-amber-400")}>
               {categoryLabel}

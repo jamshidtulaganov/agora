@@ -883,6 +883,7 @@ type TestCase struct {
 	Preconditions string             `json:"preconditions"`
 	Priority      string             `json:"priority"`
 	Modality      string             `json:"modality"`
+	CriterionRef  string             `json:"criterion_ref"`
 }
 
 type TestRun struct {

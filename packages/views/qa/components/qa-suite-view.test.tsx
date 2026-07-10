@@ -45,6 +45,7 @@ const baseCase = (over: Partial<TestCase>): TestCase => ({
   preconditions: "",
   priority: "p2",
   modality: "",
+  criterion_ref: "",
   created_at: "",
   latest_run: null,
   ...over,

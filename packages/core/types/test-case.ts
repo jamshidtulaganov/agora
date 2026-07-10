@@ -25,6 +25,7 @@ export interface TestCase {
   preconditions: string; // setup state needed before step 1 (free text)
   priority: string; // p1 | p2 | p3 (p2 = normal)
   modality: string; // ui | api | unit | manual, or "" = legacy/unspecified
+  criterion_ref: string; // which acceptance criterion this case verifies ("AC2" / short quote); "" = untraced
   created_at: string;
   latest_run: TestRunLite | null;
 }
@@ -42,6 +43,7 @@ export interface CreateTestCaseRequest {
   preconditions?: string; // free text
   priority?: string; // p1 | p2 | p3; server normalizes anything else to p2
   modality?: string; // ui | api | unit | manual; server normalizes anything else to ""
+  criterion_ref?: string; // short pointer to the acceptance criterion covered; server truncates
 }
 
 // PATCH /api/test-cases/:id — partial edit; omitted fields are left unchanged.
@@ -55,6 +57,7 @@ export interface UpdateTestCaseRequest {
   preconditions?: string;
   priority?: string; // p1 | p2 | p3 (server 400s on anything else)
   modality?: string; // ui | api | unit | manual or "" (server 400s on anything else)
+  criterion_ref?: string; // "" clears to untraced; server truncates long text
 }
 
 export interface CreateTestRunRequest {

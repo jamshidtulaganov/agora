@@ -7,11 +7,18 @@ import { toast } from "sonner";
 import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { agentTaskSnapshotKeys, agentTaskSnapshotOptions } from "@agora/core/agents";
-import { issueKeys, testCasesOptions } from "@agora/core/issues/queries";
+import { issueKeys, issueDetailOptions, testCasesOptions } from "@agora/core/issues/queries";
 import type { TestCase } from "@agora/core/types";
+import { CASE_TEMPLATES, type CaseTemplate } from "@agora/core/qa/templates";
 import { Button } from "@agora/ui/components/ui/button";
 import { Input } from "@agora/ui/components/ui/input";
 import { Textarea } from "@agora/ui/components/ui/textarea";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@agora/ui/components/ui/dropdown-menu";
 import { cn } from "@agora/ui/lib/utils";
 import { useT, useTimeAgo } from "../../i18n";
 import {
@@ -48,6 +55,18 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
   const { data } = useQuery(testCasesOptions(issueId));
   const cases = data?.test_cases ?? [];
   const [adding, setAdding] = useState(false);
+  // Suggest-from-ticket affordance (phase 3): when the issue has a substantive
+  // plan to derive from but ZERO cases yet, surface a one-click "generate from
+  // the ticket" card instead of the generic empty state. Same-key query as the
+  // QA lens's issue detail — a cache hit, not a second fetch. Gate on a
+  // non-trivial DESCRIPTION: acceptance_criteria isn't exposed in the issue
+  // response the frontend sees, and the gen_test_cases agent reads the full
+  // plan (criteria included) server-side anyway. Dismissal is local state —
+  // it re-offers next visit, which is fine for a suggestion.
+  const { data: issueDetail } = useQuery(issueDetailOptions(wsId, issueId));
+  const [suggestDismissed, setSuggestDismissed] = useState(false);
+  const hasSubstantivePlan = (issueDetail?.description ?? "").trim().length >= 40;
+  const showSuggest = data !== undefined && cases.length === 0 && !adding && hasSubstantivePlan && !suggestDismissed;
   // The live agent task driving this issue's QA/test run right now. `.id` is the
   // task id the cancel endpoint needs; a running row for THIS issue is the one to
   // stop. (SliceActionResponse carries no task id, so the dispatch return can't
@@ -340,10 +359,45 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
       )}
 
       {cases.length === 0 && !adding ? (
-        <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-5 text-center">
-          <p className="text-[12px] text-muted-foreground">{t(($) => $.test_cases.empty)}</p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground/70">{t(($) => $.test_cases.empty_hint)}</p>
-        </div>
+        showSuggest ? (
+          // The suggest-from-ticket card — a stronger empty state for issues
+          // with a real plan: one click fires the SAME gen_test_cases slice
+          // action as the header's sparkle button (affordance, not machinery).
+          <div className="rounded-lg border bg-muted/20 px-3 py-3">
+            <div className="flex items-start gap-2">
+              <Sparkles className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+              <div className="min-w-0 flex-1">
+                <p className="text-[12px] font-medium">{t(($) => $.test_cases.suggest_title)}</p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">{t(($) => $.test_cases.suggest_text)}</p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-6 shrink-0 text-muted-foreground"
+                onClick={() => setSuggestDismissed(true)}
+                title={t(($) => $.test_cases.suggest_dismiss)}
+              >
+                <X className="size-3.5" />
+              </Button>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              className="mt-2 h-7 w-full gap-1.5 text-[12px]"
+              disabled={generate.isPending}
+              onClick={() => generate.mutate()}
+            >
+              {generate.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+              {t(($) => $.test_cases.suggest_generate)}
+            </Button>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-5 text-center">
+            <p className="text-[12px] text-muted-foreground">{t(($) => $.test_cases.empty)}</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground/70">{t(($) => $.test_cases.empty_hint)}</p>
+          </div>
+        )
       ) : (
         <ul className="divide-y rounded-lg border">
           {sorted.map((c) => (
@@ -551,6 +605,15 @@ function CaseRow({
                 <span>{modalityLabel(c.modality)}</span>
               </>
             )}
+            {c.criterion_ref && (
+              <>
+                <span aria-hidden>·</span>
+                {/* Traceability: which acceptance criterion this case covers. */}
+                <span className="max-w-[140px] truncate" title={c.criterion_ref}>
+                  {c.criterion_ref}
+                </span>
+              </>
+            )}
             <span aria-hidden>·</span>
             <span>{kindLabel}</span>
             <span aria-hidden>·</span>
@@ -705,6 +768,32 @@ function AddCaseForm({ issueId, onDone }: { issueId: string; onDone: () => void 
   const [category, setCategory] = useState<"positive" | "negative">("positive");
   const [priority, setPriority] = useState<TestCasePriority>("p2");
   const [modality, setModality] = useState<TestCaseModality>("");
+  const [criterionRef, setCriterionRef] = useState("");
+
+  // Picking a template REPLACES the whole draft — it's a starting point the
+  // author then edits, not a merge into half-typed fields.
+  const applyTemplate = (tpl: CaseTemplate) => {
+    setTitle(tpl.title);
+    setPreconditions(tpl.preconditions);
+    setSteps(tpl.steps.map((s) => ({ ...s })));
+    setExpected(tpl.expected);
+    setKind(tpl.kind);
+    setCategory(tpl.category);
+    setPriority(tpl.priority);
+    setModality(tpl.modality);
+  };
+  const templateLabel = (id: CaseTemplate["id"]): string => {
+    switch (id) {
+      case "login_flow":
+        return t(($) => $.test_cases.template_login_flow);
+      case "crud_happy_path":
+        return t(($) => $.test_cases.template_crud_happy_path);
+      case "negative_validation":
+        return t(($) => $.test_cases.template_negative_validation);
+      case "api_contract":
+        return t(($) => $.test_cases.template_api_contract);
+    }
+  };
 
   const save = useMutation({
     mutationFn: () =>
@@ -717,6 +806,7 @@ function AddCaseForm({ issueId, onDone }: { issueId: string; onDone: () => void 
         preconditions,
         priority,
         modality,
+        criterion_ref: criterionRef.trim(),
       }),
     onSuccess: onDone,
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
@@ -724,6 +814,22 @@ function AddCaseForm({ issueId, onDone }: { issueId: string; onDone: () => void 
 
   return (
     <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px] text-muted-foreground">
+              {t(($) => $.test_cases.template_picker)}
+            </Button>
+          }
+        />
+        <DropdownMenuContent align="start">
+          {CASE_TEMPLATES.map((tpl) => (
+            <DropdownMenuItem key={tpl.id} onClick={() => applyTemplate(tpl)} className="text-[12px]">
+              {templateLabel(tpl.id)}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
       <Input
         placeholder={t(($) => $.test_cases.title_ph)}
         value={title}
@@ -744,6 +850,13 @@ function AddCaseForm({ issueId, onDone }: { issueId: string; onDone: () => void 
         onChange={(e) => setExpected(e.target.value)}
         rows={1}
         className="text-[12px]"
+      />
+      {/* Traceability (optional): which acceptance criterion this case covers. */}
+      <Input
+        placeholder={t(($) => $.test_cases.criterion_ref_ph)}
+        value={criterionRef}
+        onChange={(e) => setCriterionRef(e.target.value)}
+        className="h-7 text-[12px]"
       />
       {/* Two toggle groups stack on their own rows in a narrow rail — forcing
           both onto one row with the Save button is what overflowed before. */}

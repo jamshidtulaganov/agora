@@ -13,6 +13,7 @@ import { QAIssueRow } from "./qa-lane";
 
 const apiMocks = vi.hoisted(() => ({
   getIssueTestCases: vi.fn(),
+  getIssue: vi.fn(),
   getAgentTaskSnapshot: vi.fn(),
   cancelTaskById: vi.fn(),
   generateTestCases: vi.fn(),
@@ -65,6 +66,7 @@ const automatedCase = (over: Partial<TestCase> = {}): TestCase => ({
   preconditions: "",
   priority: "p2",
   modality: "",
+  criterion_ref: "",
   created_at: "",
   latest_run: null,
   ...over,
@@ -85,6 +87,7 @@ describe("TestCasesPanel stop affordance", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     apiMocks.getIssueTestCases.mockResolvedValue({ test_cases: [automatedCase()] });
+    apiMocks.getIssue.mockResolvedValue({ id: "issue-1", description: null });
     apiMocks.cancelTaskById.mockResolvedValue({ id: "task-99", status: "cancelled" });
     qaLiveProgressMocks.useRunningTestCaseId.mockReturnValue(null);
     qaLiveProgressMocks.useLiveCaseVerdicts.mockReturnValue({});
@@ -125,6 +128,7 @@ describe("TestCasesPanel — running case + fail expansion", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     apiMocks.getAgentTaskSnapshot.mockResolvedValue([]);
+    apiMocks.getIssue.mockResolvedValue({ id: "issue-1", description: null });
     apiMocks.cancelTaskById.mockResolvedValue({ id: "task-99", status: "cancelled" });
     qaLiveProgressMocks.useRunningTestCaseId.mockReturnValue(null);
     qaLiveProgressMocks.useLiveCaseVerdicts.mockReturnValue({});
@@ -195,6 +199,57 @@ describe("TestCasesPanel — running case + fail expansion", () => {
     // The passing case's row is present but its detail body never renders —
     // there's no `output` to show and it isn't auto-opened.
     expect(screen.getByText("Checkout — happy path")).toBeInTheDocument();
+  });
+});
+
+describe("TestCasesPanel — suggest-from-ticket card", () => {
+  const longDescription =
+    "As a customer I can apply a coupon at checkout; invalid coupons show an inline error and the total stays unchanged.";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    apiMocks.getAgentTaskSnapshot.mockResolvedValue([]);
+    apiMocks.getIssueTestCases.mockResolvedValue({ test_cases: [] });
+    apiMocks.getIssue.mockResolvedValue({ id: "issue-1", description: longDescription });
+    apiMocks.generateTestCases.mockResolvedValue({});
+    qaLiveProgressMocks.useRunningTestCaseId.mockReturnValue(null);
+    qaLiveProgressMocks.useLiveCaseVerdicts.mockReturnValue({});
+  });
+
+  it("offers generate-from-ticket for a described issue with zero cases, firing gen_test_cases", async () => {
+    renderPanel();
+
+    const btn = await screen.findByRole("button", { name: /Generate from ticket/ });
+    fireEvent.click(btn);
+
+    await waitFor(() => expect(apiMocks.generateTestCases).toHaveBeenCalledTimes(1));
+    expect(apiMocks.generateTestCases).toHaveBeenCalledWith("issue-1");
+  });
+
+  it("dismiss hides the card and falls back to the plain empty state", async () => {
+    renderPanel();
+
+    fireEvent.click(await screen.findByTitle("Dismiss"));
+
+    expect(screen.queryByRole("button", { name: /Generate from ticket/ })).not.toBeInTheDocument();
+    // The generic empty state (with its trailing period) takes over.
+    expect(await screen.findByText("No test cases yet.")).toBeInTheDocument();
+  });
+
+  it("shows the plain empty state instead when the description is trivial", async () => {
+    apiMocks.getIssue.mockResolvedValue({ id: "issue-1", description: "wip" });
+    renderPanel();
+
+    expect(await screen.findByText("No test cases yet.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Generate from ticket/ })).not.toBeInTheDocument();
+  });
+
+  it("never shows the card once the issue has cases", async () => {
+    apiMocks.getIssueTestCases.mockResolvedValue({ test_cases: [automatedCase()] });
+    renderPanel();
+
+    await screen.findByText("Checkout — happy path");
+    expect(screen.queryByRole("button", { name: /Generate from ticket/ })).not.toBeInTheDocument();
   });
 });
 

@@ -62,6 +62,22 @@ type genTestCase struct {
 	Preconditions string `json:"preconditions"`
 	Priority      string `json:"priority"`
 	Modality      string `json:"modality"`
+	// CriterionRef names the acceptance criterion the case verifies ("AC2" or
+	// a trimmed quote) — traceability, truncated to a short pointer below.
+	CriterionRef string `json:"criterion_ref"`
+}
+
+// genCriterionRefMaxRunes mirrors the handler's cap: a short pointer, never a
+// pasted spec. Silent truncation — over-long text never drops the case.
+const genCriterionRefMaxRunes = 120
+
+func normalizeGenCriterionRef(ref string) string {
+	trimmed := strings.TrimSpace(ref)
+	runes := []rune(trimmed)
+	if len(runes) <= genCriterionRefMaxRunes {
+		return trimmed
+	}
+	return string(runes[:genCriterionRefMaxRunes-1]) + "…"
 }
 
 // normalizeGenPriority / normalizeGenModality mirror the handler package's
@@ -148,6 +164,7 @@ func (s *TaskService) CaptureTestCases(ctx context.Context, issue db.Issue, cont
 			Preconditions: strings.TrimSpace(c.Preconditions),
 			Priority:      normalizeGenPriority(c.Priority),
 			Modality:      normalizeGenModality(c.Modality),
+			CriterionRef:  normalizeGenCriterionRef(c.CriterionRef),
 		}); err != nil {
 			slog.Warn("capture test cases: insert failed", "error", err, "issue_id", util.UUIDToString(issue.ID))
 			continue

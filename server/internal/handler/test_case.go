@@ -56,9 +56,14 @@ type TestCaseResponse struct {
 	Priority string `json:"priority"`
 	// Modality is ui | api | unit | manual, or "" for legacy/unspecified. The
 	// QA lens reads it to decide whether the live browser bay is warranted.
-	Modality  string       `json:"modality"`
-	CreatedAt string       `json:"created_at"`
-	LatestRun *TestRunLite `json:"latest_run"`
+	Modality string `json:"modality"`
+	// CriterionRef is a short pointer to the acceptance criterion / requirement
+	// this case verifies — "AC2" (matching the numbered criteria the QA plan
+	// context hands agents) or a trimmed quote. "" = untraced. Origin lives in
+	// `source`, never here.
+	CriterionRef string       `json:"criterion_ref"`
+	CreatedAt    string       `json:"created_at"`
+	LatestRun    *TestRunLite `json:"latest_run"`
 }
 
 type ListTestCasesResponse struct {
@@ -89,6 +94,20 @@ func normalizeTestCaseModality(m string) string {
 	}
 }
 
+// criterionRefMaxRunes caps criterion_ref at a short-pointer length: "AC2" or
+// the criterion's first ~sentence, never a pasted spec. Truncation is silent
+// (fail-open) — over-long text is a formatting nit, not invalid input.
+const criterionRefMaxRunes = 120
+
+func normalizeTestCaseCriterionRef(ref string) string {
+	trimmed := strings.TrimSpace(ref)
+	runes := []rune(trimmed)
+	if len(runes) <= criterionRefMaxRunes {
+		return trimmed
+	}
+	return string(runes[:criterionRefMaxRunes-1]) + "…"
+}
+
 func testCaseToResponse(c db.TestCase, latest *TestRunLite) TestCaseResponse {
 	return TestCaseResponse{
 		ID:            uuidToString(c.ID),
@@ -104,6 +123,7 @@ func testCaseToResponse(c db.TestCase, latest *TestRunLite) TestCaseResponse {
 		Preconditions: c.Preconditions,
 		Priority:      c.Priority,
 		Modality:      c.Modality,
+		CriterionRef:  c.CriterionRef,
 		CreatedAt:     c.CreatedAt.Time.Format(time.RFC3339),
 		LatestRun:     latest,
 	}
@@ -166,6 +186,9 @@ type CreateTestCaseRequest struct {
 	Preconditions string `json:"preconditions"`
 	Priority      string `json:"priority"`
 	Modality      string `json:"modality"`
+	// CriterionRef is a short pointer to the acceptance criterion this case
+	// verifies ("AC2" or a trimmed quote); truncated server-side, "" = untraced.
+	CriterionRef string `json:"criterion_ref"`
 }
 
 // CreateIssueTestCase authors a manual test case for an issue (source=human).
@@ -211,6 +234,7 @@ func (h *Handler) CreateIssueTestCase(w http.ResponseWriter, r *http.Request) {
 		Preconditions: strings.TrimSpace(req.Preconditions),
 		Priority:      normalizeTestCasePriority(req.Priority),
 		Modality:      normalizeTestCaseModality(req.Modality),
+		CriterionRef:  normalizeTestCaseCriterionRef(req.CriterionRef),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create test case")
@@ -336,6 +360,7 @@ func (h *Handler) CreateProjectTestCase(w http.ResponseWriter, r *http.Request) 
 		Preconditions: strings.TrimSpace(req.Preconditions),
 		Priority:      normalizeTestCasePriority(req.Priority),
 		Modality:      normalizeTestCaseModality(req.Modality),
+		CriterionRef:  normalizeTestCaseCriterionRef(req.CriterionRef),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create test case")
@@ -444,6 +469,8 @@ type UpdateTestCaseRequest struct {
 	Preconditions *string `json:"preconditions,omitempty"`
 	Priority      *string `json:"priority,omitempty"`
 	Modality      *string `json:"modality,omitempty"`
+	// CriterionRef is free text (truncated server-side); "" clears to untraced.
+	CriterionRef *string `json:"criterion_ref,omitempty"`
 }
 
 // UpdateTestCaseHandler lets a QA engineer edit a test case (title/steps/
@@ -491,6 +518,10 @@ func (h *Handler) UpdateTestCaseHandler(w http.ResponseWriter, r *http.Request) 
 		normalized := normalizeTestCaseModality(*req.Modality)
 		req.Modality = &normalized
 	}
+	if req.CriterionRef != nil {
+		normalized := normalizeTestCaseCriterionRef(*req.CriterionRef)
+		req.CriterionRef = &normalized
+	}
 	optText := func(p *string) pgtype.Text {
 		if p == nil {
 			return pgtype.Text{}
@@ -509,6 +540,7 @@ func (h *Handler) UpdateTestCaseHandler(w http.ResponseWriter, r *http.Request) 
 		Preconditions: optText(req.Preconditions),
 		Priority:      optText(req.Priority),
 		Modality:      optText(req.Modality),
+		CriterionRef:  optText(req.CriterionRef),
 	})
 	if err != nil {
 		writeError(w, http.StatusNotFound, "test case not found")

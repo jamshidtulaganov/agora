@@ -746,13 +746,14 @@ describe("TestCaseSchema metadata (preconditions / priority / modality)", () => 
     expect(parsed.test_cases[0]?.preconditions).toBe("");
     expect(parsed.test_cases[0]?.priority).toBe("p2");
     expect(parsed.test_cases[0]?.modality).toBe("");
+    expect(parsed.test_cases[0]?.criterion_ref).toBe("");
   });
 
   it("keeps provided metadata and tolerates unknown enum drift (plain strings)", () => {
     const parsed = parseWithFallback(
       {
         test_cases: [
-          { ...legacyCase, preconditions: "admin seeded", priority: "p1", modality: "ui" },
+          { ...legacyCase, preconditions: "admin seeded", priority: "p1", modality: "ui", criterion_ref: "AC2" },
           // A FUTURE server's new enum value must still parse (downgrade, not crash).
           { ...legacyCase, id: "tc-2", priority: "p0", modality: "mobile" },
         ],
@@ -764,6 +765,7 @@ describe("TestCaseSchema metadata (preconditions / priority / modality)", () => 
     expect(parsed.test_cases[0]?.priority).toBe("p1");
     expect(parsed.test_cases[0]?.modality).toBe("ui");
     expect(parsed.test_cases[0]?.preconditions).toBe("admin seeded");
+    expect(parsed.test_cases[0]?.criterion_ref).toBe("AC2");
     expect(parsed.test_cases[1]?.priority).toBe("p0");
     expect(parsed.test_cases[1]?.modality).toBe("mobile");
   });
