@@ -84,7 +84,7 @@ export function QAMetricsView({ projectId }: { projectId?: string }) {
 
   if (isLoading && !data) {
     return (
-      <div className="mx-auto w-full max-w-4xl space-y-6 px-8 py-8" aria-hidden>
+      <div className="w-full space-y-6 px-8 py-8" aria-hidden>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           <Skeleton className="h-20 w-full" />
           <Skeleton className="h-20 w-full" />
@@ -96,7 +96,7 @@ export function QAMetricsView({ projectId }: { projectId?: string }) {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-8 py-8">
+    <div className="flex w-full flex-col gap-6 px-8 py-8">
       <p className="text-sm text-muted-foreground">{t(($) => $.qa_cockpit.metrics_description)}</p>
 
       {/* Top stats */}

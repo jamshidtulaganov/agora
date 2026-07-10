@@ -53,7 +53,7 @@ export function QASprintReadinessView({ projectId }: { projectId?: string }) {
 
   if (isLoading && !data) {
     return (
-      <div className="mx-auto w-full max-w-4xl space-y-2 px-8 py-8" aria-hidden>
+      <div className="w-full space-y-2 px-8 py-8" aria-hidden>
         <Skeleton className="h-24 w-full" />
         <Skeleton className="h-24 w-full" />
       </div>
@@ -61,14 +61,14 @@ export function QASprintReadinessView({ projectId }: { projectId?: string }) {
   }
   if (sprints.length === 0) {
     return (
-      <div className="mx-auto w-full max-w-4xl px-8 py-10 text-center text-sm text-muted-foreground">
+      <div className="w-full px-8 py-10 text-center text-sm text-muted-foreground">
         {t(($) => $.qa_cockpit.sprint_empty)}
       </div>
     );
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-8 py-8">
+    <div className="flex w-full flex-col gap-6 px-8 py-8">
       <p className="text-sm text-muted-foreground">{t(($) => $.qa_cockpit.sprint_description)}</p>
 
       {/* The QA lens lives inside the issue cockpit now (docs/sdlc-stage-cockpit-plan.md

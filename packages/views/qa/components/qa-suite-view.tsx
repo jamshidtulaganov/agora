@@ -94,9 +94,9 @@ export function QASuiteView({ projectId }: { projectId?: string }) {
 
   return (
     // One consistent bounded measure for the whole tab (header + rows share it)
-    // instead of a header capped at max-w-2xl while the rows below stretch full
-    // width — matches issue-detail's max-w-4xl reading measure.
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-8 py-8">
+    // Full-width: this is a data-dense QA surface (case rows, run pills), not a
+    // prose reading column — the same reason the QA lens drops its width cap.
+    <div className="flex w-full flex-col gap-4 px-8 py-8">
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
