@@ -14,6 +14,16 @@ import { Input } from "@agora/ui/components/ui/input";
 import { Textarea } from "@agora/ui/components/ui/textarea";
 import { cn } from "@agora/ui/lib/utils";
 import { useT, useTimeAgo } from "../../i18n";
+import {
+  PriorityToggle,
+  ModalityToggle,
+  priorityRank,
+  priorityChipClass,
+  usePriorityLabel,
+  useModalityLabel,
+  type TestCasePriority,
+  type TestCaseModality,
+} from "./case-meta";
 import { useRunningTestCaseId, useLiveCaseVerdicts } from "./qa-live-progress";
 import { StepEditor, StepList, serializeSteps, type ParsedStep } from "./step-editor";
 import { verdictIcon } from "./verdict";
@@ -125,7 +135,9 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
 
   // Failing / blocked float to the TOP so a reviewer sees what needs attention
   // first; passing sinks to the bottom. Sort on the PERSISTED verdict only (not
-  // the live running/verdict markers) so rows don't reshuffle mid-run.
+  // the live running/verdict markers) so rows don't reshuffle mid-run. Within
+  // one state, priority breaks the tie (p1 before p2 before p3) — a failing p1
+  // outranks a failing p3.
   const statusRank = (c: TestCase) => {
     switch (c.latest_run?.status) {
       case "fail":
@@ -139,7 +151,9 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
         return 3; // never run
     }
   };
-  const sorted = [...cases].sort((a, b) => statusRank(a) - statusRank(b));
+  const sorted = [...cases].sort(
+    (a, b) => statusRank(a) - statusRank(b) || priorityRank(a.priority) - priorityRank(b.priority),
+  );
   const failedCount = cases.filter((c) => c.latest_run?.status === "fail").length;
   const blockedCount = cases.filter(
     (c) => c.latest_run?.status === "blocked" || c.latest_run?.status === "skip",
@@ -468,6 +482,8 @@ function CaseRow({
 }) {
   const { t } = useT("issues");
   const timeAgo = useTimeAgo();
+  const priorityLabel = usePriorityLabel();
+  const modalityLabel = useModalityLabel();
   // Precedence: running now > this run's just-finished live verdict > persisted.
   const status = isRunning ? undefined : liveVerdict ?? c.latest_run?.status;
   const isLive = !isRunning && !!liveVerdict && liveVerdict === status && !c.latest_run;
@@ -523,9 +539,19 @@ function CaseRow({
             {isRunning && <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden />}
             <span className="truncate">{c.title}</span>
           </span>
-          {/* Compact meta: kind · category · (who ran it + when) — plain text,
-              not badge pills, so it fits a 380px rail on one wrapping-safe line. */}
+          {/* Compact meta: priority · modality · kind · category · (who ran it
+              + when) — plain text, not badge pills, so it fits a 380px rail on
+              one wrapping-safe line. p1 is destructive-tinted (the first thing
+              a reviewer must see); modality only shows when declared. */}
           <span className="mt-0.5 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[10px] text-muted-foreground/70">
+            <span className={cn("uppercase", priorityChipClass(c.priority))}>{priorityLabel(c.priority)}</span>
+            {c.modality && (
+              <>
+                <span aria-hidden>·</span>
+                <span>{modalityLabel(c.modality)}</span>
+              </>
+            )}
+            <span aria-hidden>·</span>
             <span>{kindLabel}</span>
             <span aria-hidden>·</span>
             <span
@@ -648,8 +674,14 @@ function CaseRow({
           <pre className="whitespace-pre-wrap break-words font-mono">{c.latest_run?.output}</pre>
         </div>
       )}
-      {open && (c.steps || c.expected) && (
+      {open && (c.steps || c.expected || c.preconditions) && (
         <div className="mt-1.5 space-y-1 pl-1 text-[12px] text-muted-foreground">
+          {c.preconditions && (
+            <p>
+              <span className="text-foreground/70">{t(($) => $.test_cases.preconditions_label)}: </span>
+              {c.preconditions}
+            </p>
+          )}
           {c.steps && <StepList text={c.steps} />}
           {c.expected && (
             <p>
@@ -666,10 +698,13 @@ function CaseRow({
 function AddCaseForm({ issueId, onDone }: { issueId: string; onDone: () => void }) {
   const { t } = useT("issues");
   const [title, setTitle] = useState("");
+  const [preconditions, setPreconditions] = useState("");
   const [steps, setSteps] = useState<ParsedStep[]>([{ action: "", expects: "" }]);
   const [expected, setExpected] = useState("");
   const [kind, setKind] = useState<"manual" | "automated">("manual");
   const [category, setCategory] = useState<"positive" | "negative">("positive");
+  const [priority, setPriority] = useState<TestCasePriority>("p2");
+  const [modality, setModality] = useState<TestCaseModality>("");
 
   const save = useMutation({
     mutationFn: () =>
@@ -679,6 +714,9 @@ function AddCaseForm({ issueId, onDone }: { issueId: string; onDone: () => void 
         expected,
         kind,
         category,
+        preconditions,
+        priority,
+        modality,
       }),
     onSuccess: onDone,
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
@@ -691,6 +729,13 @@ function AddCaseForm({ issueId, onDone }: { issueId: string; onDone: () => void 
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         className="h-8 text-[13px]"
+      />
+      <Textarea
+        placeholder={t(($) => $.test_cases.preconditions_ph)}
+        value={preconditions}
+        onChange={(e) => setPreconditions(e.target.value)}
+        rows={1}
+        className="text-[12px]"
       />
       <StepEditor steps={steps} onChange={setSteps} />
       <Textarea
@@ -737,6 +782,8 @@ function AddCaseForm({ issueId, onDone }: { issueId: string; onDone: () => void 
             </Button>
           ))}
         </div>
+        <PriorityToggle value={priority} onChange={setPriority} />
+        <ModalityToggle value={modality} onChange={setModality} />
       </div>
       <Button
         type="button"

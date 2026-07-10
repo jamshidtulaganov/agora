@@ -1158,6 +1158,11 @@ export const TestCaseSchema = z.object({
   author_type: z.string().default(""),
   category: z.string().default("positive"),
   script: z.string().optional(),
+  // Phase-2 metadata (migration 155). Defaults keep an OLD server's response
+  // (fields absent) parsing as legacy rows: priority p2, modality unspecified.
+  preconditions: z.string().default(""),
+  priority: z.string().default("p2"),
+  modality: z.string().default(""),
   created_at: z.string().default(""),
   latest_run: z.object({
     id: z.string().default(""),
@@ -1198,6 +1203,9 @@ export const EMPTY_TEST_CASE = {
   source: "human",
   author_type: "",
   category: "positive",
+  preconditions: "",
+  priority: "p2",
+  modality: "",
   created_at: "",
   latest_run: null,
 };

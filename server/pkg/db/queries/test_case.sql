@@ -2,9 +2,10 @@
 
 -- name: CreateTestCase :one
 INSERT INTO test_case (
-    workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, category, script
+    workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, category, script,
+    preconditions, priority, modality
 )
-VALUES ($1, sqlc.narg(issue_id), sqlc.narg(project_id), $2, $3, $4, $5, $6, $7, sqlc.narg(author_id), $8, $9)
+VALUES ($1, sqlc.narg(issue_id), sqlc.narg(project_id), $2, $3, $4, $5, $6, $7, sqlc.narg(author_id), $8, $9, $10, $11, $12)
 RETURNING *;
 
 -- name: ListTestCasesForIssue :many
@@ -54,9 +55,11 @@ ORDER BY created_at DESC;
 -- case that never ran — or last ran red — pollutes every gate with a
 -- manufactured regression. Verified-green-at-promotion is the entry bar.
 INSERT INTO test_case
-  (workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, category, script)
+  (workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, category, script,
+   preconditions, priority, modality)
 SELECT tc.workspace_id, NULL, $2, '[' || sqlc.arg(issue_key)::text || '] ' || tc.title,
-       tc.steps, tc.expected, 'automated', 'promoted', tc.author_type, tc.author_id, tc.category, tc.script
+       tc.steps, tc.expected, 'automated', 'promoted', tc.author_type, tc.author_id, tc.category, tc.script,
+       tc.preconditions, tc.priority, tc.modality
 FROM test_case tc
 WHERE tc.issue_id = $1 AND tc.kind = 'automated' AND tc.archived_at IS NULL
   AND (
@@ -147,15 +150,19 @@ ORDER BY created_at DESC
 LIMIT $3;
 
 -- name: UpdateTestCase :one
--- Human edit of a test case (title/steps/expected/kind/category/script). Only
--- non-null args change; the rest keep their current value.
+-- Human edit of a test case (title/steps/expected/kind/category/script/
+-- preconditions/priority/modality). Only non-null args change; the rest keep
+-- their current value.
 UPDATE test_case SET
     title = COALESCE(sqlc.narg('title'), title),
     steps = COALESCE(sqlc.narg('steps'), steps),
     expected = COALESCE(sqlc.narg('expected'), expected),
     kind = COALESCE(sqlc.narg('kind'), kind),
     category = COALESCE(sqlc.narg('category'), category),
-    script = COALESCE(sqlc.narg('script'), script)
+    script = COALESCE(sqlc.narg('script'), script),
+    preconditions = COALESCE(sqlc.narg('preconditions'), preconditions),
+    priority = COALESCE(sqlc.narg('priority'), priority),
+    modality = COALESCE(sqlc.narg('modality'), modality)
 WHERE id = $1 AND workspace_id = $2
 RETURNING *;
 

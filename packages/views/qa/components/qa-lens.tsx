@@ -15,7 +15,7 @@ import {
 import { toast } from "sonner";
 import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core";
-import { issueDetailOptions, qaEvidenceOptions, issueKeys } from "@agora/core/issues/queries";
+import { issueDetailOptions, qaEvidenceOptions, testCasesOptions, issueKeys } from "@agora/core/issues/queries";
 import { Button } from "@agora/ui/components/ui/button";
 import { Textarea } from "@agora/ui/components/ui/textarea";
 import {
@@ -115,14 +115,32 @@ export function QALensBody({ issueId }: { issueId: string }) {
   // now? Same filtered list QALiveProgress watches for markers — one source,
   // so the two can't disagree (see useQaRunningTasks).
   const qaRunning = useQaRunningTasks(issueId).length > 0;
-  // Bay open/closed. Starts closed; auto-opens on a run starting and then
-  // stays open (a run ending doesn't auto-collapse it) until the reviewer
-  // explicitly collapses it, which sticks for as long as THIS run continues
-  // (the effect only flips it back open on a fresh false→true transition).
+  // Modality gate (phase 2): the live browser is only WARRANTED when the run
+  // can actually drive one — at least one case declares modality "ui", or the
+  // suite predates modality entirely (every case is "" — legacy ⇒ keep the
+  // old always-open behavior; same when the issue has no cases at all). An
+  // issue whose cases are all api/unit/manual never auto-boots a browser; the
+  // manual "Open live testing" affordance (QALiveBrowser's onOpen) stays
+  // available regardless. While the list is still LOADING the gate holds
+  // closed (undefined ≠ warranted) — auto-opening before the modalities are
+  // known would boot a Chromium for an api-only issue in the window before
+  // the query resolves, which is exactly what the gate exists to prevent.
+  const { data: lensCasesData } = useQuery(testCasesOptions(issueId));
+  const lensCases = lensCasesData?.test_cases;
+  const browserWarranted =
+    lensCases !== undefined &&
+    (lensCases.length === 0 ||
+      lensCases.some((c) => c.modality === "ui") ||
+      lensCases.every((c) => !c.modality));
+  // Bay open/closed. Starts closed; auto-opens on a run starting (when the
+  // browser is warranted) and then stays open (a run ending doesn't
+  // auto-collapse it) until the reviewer explicitly collapses it, which
+  // sticks for as long as THIS run continues (the effect only flips it back
+  // open on a fresh transition).
   const [bayOpen, setBayOpen] = useState(false);
   useEffect(() => {
-    if (qaRunning) setBayOpen(true);
-  }, [qaRunning]);
+    if (qaRunning && browserWarranted) setBayOpen(true);
+  }, [qaRunning, browserWarranted]);
 
   const labelId = (name: string) => labelCatalog?.labels.find((l) => l.name === name)?.id;
   const issueLabelNames = (issue?.labels ?? []).map((l) => l.name);

@@ -13,6 +13,15 @@ import { Textarea } from "@agora/ui/components/ui/textarea";
 import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
+import {
+  PriorityToggle,
+  ModalityToggle,
+  priorityChipClass,
+  usePriorityLabel,
+  useModalityLabel,
+  type TestCasePriority,
+  type TestCaseModality,
+} from "./case-meta";
 import { StepEditor, StepList, parseSteps, serializeSteps, type ParsedStep } from "./step-editor";
 import { verdictIcon } from "./verdict";
 
@@ -194,12 +203,22 @@ function BaseCaseRow({
   saving: boolean;
 }) {
   const { t } = useT("issues");
+  const priorityLabel = usePriorityLabel();
+  const modalityLabel = useModalityLabel();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState({ title: c.title, steps: parseSteps(c.steps), expected: c.expected });
+  const mkDraft = () => ({
+    title: c.title,
+    preconditions: c.preconditions,
+    steps: parseSteps(c.steps),
+    expected: c.expected,
+    priority: (c.priority === "p1" || c.priority === "p3" ? c.priority : "p2") as TestCasePriority,
+    modality: (["ui", "api", "unit", "manual"].includes(c.modality) ? c.modality : "") as TestCaseModality,
+  });
+  const [draft, setDraft] = useState(mkDraft);
   const status = c.latest_run?.status;
   const isBlocked = status === "blocked" || status === "skip";
-  const hasDetail = !!(c.steps || c.expected || (status === "fail" && c.latest_run?.output));
+  const hasDetail = !!(c.steps || c.expected || c.preconditions || (status === "fail" && c.latest_run?.output));
   const kindLabel = c.kind === "automated" ? t(($) => $.test_cases.kind_automated) : t(($) => $.test_cases.kind_manual);
   const categoryLabel =
     c.category === "negative" ? t(($) => $.test_cases.category_negative) : t(($) => $.test_cases.category_positive);
@@ -214,6 +233,10 @@ function BaseCaseRow({
         >
           <span className="block truncate text-[13px]">{c.title}</span>
           <span className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
+            <CasePill className={cn(c.priority === "p1" && "border-destructive/40", priorityChipClass(c.priority))}>
+              {priorityLabel(c.priority)}
+            </CasePill>
+            {c.modality ? <CasePill>{modalityLabel(c.modality)}</CasePill> : null}
             <CasePill>{kindLabel}</CasePill>
             <CasePill className={cn(c.category === "negative" && "border-amber-500/40 text-amber-600 dark:text-amber-400")}>
               {categoryLabel}
@@ -244,7 +267,7 @@ function BaseCaseRow({
             size="icon"
             className="size-6 text-muted-foreground opacity-0 transition-opacity focus-within:opacity-100 hover:text-foreground group-hover/case:opacity-100"
             onClick={() => {
-              setDraft({ title: c.title, steps: parseSteps(c.steps), expected: c.expected });
+              setDraft(mkDraft());
               setEditing((v) => !v);
             }}
             title={t(($) => $.qa_cockpit.suite_edit_title)}
@@ -272,6 +295,13 @@ function BaseCaseRow({
             className="h-8 text-[13px]"
             placeholder={t(($) => $.qa_cockpit.suite_case_title_ph)}
           />
+          <Textarea
+            value={draft.preconditions}
+            onChange={(e) => setDraft((d) => ({ ...d, preconditions: e.target.value }))}
+            rows={1}
+            className="text-[12px]"
+            placeholder={t(($) => $.test_cases.preconditions_ph)}
+          />
           <StepEditor steps={draft.steps} onChange={(steps) => setDraft((d) => ({ ...d, steps }))} />
           <Textarea
             value={draft.expected}
@@ -280,6 +310,10 @@ function BaseCaseRow({
             className="text-[12px]"
             placeholder={t(($) => $.qa_cockpit.suite_expected_ph)}
           />
+          <div className="flex flex-wrap items-center gap-1.5">
+            <PriorityToggle value={draft.priority} onChange={(priority) => setDraft((d) => ({ ...d, priority }))} />
+            <ModalityToggle value={draft.modality} onChange={(modality) => setDraft((d) => ({ ...d, modality }))} />
+          </div>
           <div className="flex items-center justify-end gap-1.5">
             <Button type="button" variant="ghost" size="sm" className="h-7 text-[12px]" onClick={() => setEditing(false)}>
               {t(($) => $.qa_cockpit.suite_cancel)}
@@ -294,6 +328,9 @@ function BaseCaseRow({
                   title: draft.title.trim(),
                   steps: serializeSteps(draft.steps.filter((s) => s.action.trim() !== "")),
                   expected: draft.expected,
+                  preconditions: draft.preconditions,
+                  priority: draft.priority,
+                  modality: draft.modality,
                 });
                 setEditing(false);
               }}
@@ -309,6 +346,12 @@ function BaseCaseRow({
             <pre className="whitespace-pre-wrap break-words rounded border-l-2 border-destructive/50 bg-destructive/5 px-2 py-1.5 font-mono text-[11px] text-destructive/90">
               {c.latest_run.output}
             </pre>
+          )}
+          {c.preconditions && (
+            <p>
+              <span className="text-foreground/70">{t(($) => $.test_cases.preconditions_label)}: </span>
+              {c.preconditions}
+            </p>
           )}
           {c.steps && <StepList text={c.steps} />}
           {c.expected && (
@@ -334,12 +377,15 @@ function AddBaseCaseForm({
 }) {
   const { t } = useT("issues");
   const [title, setTitle] = useState("");
+  const [preconditions, setPreconditions] = useState("");
   const [steps, setSteps] = useState<ParsedStep[]>([{ action: "", expects: "" }]);
   const [expected, setExpected] = useState("");
   // Base cases default to "automated" — only automated cases are injected into
   // run_qa / run_test_cases (a manual base case is inert), mirroring the server.
   const [kind, setKind] = useState<"manual" | "automated">("automated");
   const [category, setCategory] = useState<"positive" | "negative">("positive");
+  const [priority, setPriority] = useState<TestCasePriority>("p2");
+  const [modality, setModality] = useState<TestCaseModality>("");
 
   const save = useMutation({
     mutationFn: () =>
@@ -349,6 +395,9 @@ function AddBaseCaseForm({
         expected,
         kind,
         category,
+        preconditions,
+        priority,
+        modality,
       }),
     onSuccess: onDone,
     onError: (e) => toast.error(e instanceof Error ? e.message : t(($) => $.qa_cockpit.suite_toast_add_failed)),
@@ -361,6 +410,13 @@ function AddBaseCaseForm({
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         className="h-8 text-[13px]"
+      />
+      <Textarea
+        placeholder={t(($) => $.test_cases.preconditions_ph)}
+        value={preconditions}
+        onChange={(e) => setPreconditions(e.target.value)}
+        rows={1}
+        className="text-[12px]"
       />
       <StepEditor steps={steps} onChange={setSteps} />
       <Textarea
@@ -405,6 +461,8 @@ function AddBaseCaseForm({
             </Button>
           ))}
         </div>
+        <PriorityToggle value={priority} onChange={setPriority} />
+        <ModalityToggle value={modality} onChange={setModality} />
         <div className="ml-auto flex items-center gap-1.5">
           <Button type="button" variant="ghost" size="sm" className="h-7 text-[12px]" onClick={onCancel}>
             {t(($) => $.qa_cockpit.suite_cancel)}

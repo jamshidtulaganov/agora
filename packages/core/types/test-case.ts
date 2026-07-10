@@ -22,6 +22,9 @@ export interface TestCase {
   author_type: string;
   category: string; // positive | negative
   script?: string; // compiled Playwright script for an automated case; empty = hand-driven
+  preconditions: string; // setup state needed before step 1 (free text)
+  priority: string; // p1 | p2 | p3 (p2 = normal)
+  modality: string; // ui | api | unit | manual, or "" = legacy/unspecified
   created_at: string;
   latest_run: TestRunLite | null;
 }
@@ -36,6 +39,9 @@ export interface CreateTestCaseRequest {
   expected?: string;
   kind?: string;
   category?: string; // positive | negative; server defaults to positive
+  preconditions?: string; // free text
+  priority?: string; // p1 | p2 | p3; server normalizes anything else to p2
+  modality?: string; // ui | api | unit | manual; server normalizes anything else to ""
 }
 
 // PATCH /api/test-cases/:id — partial edit; omitted fields are left unchanged.
@@ -46,6 +52,9 @@ export interface UpdateTestCaseRequest {
   kind?: string;
   category?: string;
   script?: string;
+  preconditions?: string;
+  priority?: string; // p1 | p2 | p3 (server 400s on anything else)
+  modality?: string; // ui | api | unit | manual or "" (server 400s on anything else)
 }
 
 export interface CreateTestRunRequest {

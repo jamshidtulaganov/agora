@@ -79,6 +79,7 @@ export function StepEditor({
 // plain action-only lines when the text doesn't carry `expects` markers
 // (legacy free-text blobs). Renders nothing for an empty/blank `steps` value.
 export function StepList({ text }: { text: string }) {
+  const { t } = useT("issues");
   const steps = parseSteps(text);
   if (steps.length === 0) return null;
   return (
@@ -92,7 +93,10 @@ export function StepList({ text }: { text: string }) {
             {s.action}
             {s.expects && (
               <>
-                <span className="text-foreground/70"> → expects: </span>
+                <span className="text-foreground/70">
+                  {" → "}
+                  {t(($) => $.test_cases.step_expects_inline)}{" "}
+                </span>
                 {s.expects}
               </>
             )}

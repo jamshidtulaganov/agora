@@ -56,6 +56,35 @@ type genTestCase struct {
 	Kind     string `json:"kind"`
 	Category string `json:"category"` // positive | negative
 	Script   string `json:"script"`   // optional compiled Playwright script (automated cases)
+	// Phase-2 metadata (all optional — fail-open normalization below):
+	// preconditions free text; priority p1|p2|p3 (else p2); modality
+	// ui|api|unit|manual (else "" = unspecified).
+	Preconditions string `json:"preconditions"`
+	Priority      string `json:"priority"`
+	Modality      string `json:"modality"`
+}
+
+// normalizeGenPriority / normalizeGenModality mirror the handler package's
+// normalization: agent-emitted metadata is best-effort, so anything outside
+// the known values downgrades to the default instead of dropping the case.
+func normalizeGenPriority(p string) string {
+	switch strings.ToLower(strings.TrimSpace(p)) {
+	case "p1":
+		return "p1"
+	case "p3":
+		return "p3"
+	default:
+		return "p2"
+	}
+}
+
+func normalizeGenModality(m string) string {
+	switch strings.ToLower(strings.TrimSpace(m)) {
+	case "ui", "api", "unit", "manual":
+		return strings.ToLower(strings.TrimSpace(m))
+	default:
+		return ""
+	}
 }
 
 // captureTestCases persists a gen_test_cases agent comment's ```test-cases```
@@ -104,18 +133,21 @@ func (s *TaskService) CaptureTestCases(ctx context.Context, issue db.Issue, cont
 			script = strings.TrimSpace(c.Script)
 		}
 		if _, err := s.Queries.CreateTestCase(ctx, db.CreateTestCaseParams{
-			WorkspaceID: issue.WorkspaceID,
-			IssueID:     issue.ID,
-			ProjectID:   issue.ProjectID,
-			Title:       title,
-			Steps:       strings.TrimSpace(c.Steps),
-			Expected:    strings.TrimSpace(c.Expected),
-			Kind:        kind,
-			Source:      "agent",
-			AuthorType:  "agent",
-			AuthorID:    agentID,
-			Category:    category,
-			Script:      script,
+			WorkspaceID:   issue.WorkspaceID,
+			IssueID:       issue.ID,
+			ProjectID:     issue.ProjectID,
+			Title:         title,
+			Steps:         strings.TrimSpace(c.Steps),
+			Expected:      strings.TrimSpace(c.Expected),
+			Kind:          kind,
+			Source:        "agent",
+			AuthorType:    "agent",
+			AuthorID:      agentID,
+			Category:      category,
+			Script:        script,
+			Preconditions: strings.TrimSpace(c.Preconditions),
+			Priority:      normalizeGenPriority(c.Priority),
+			Modality:      normalizeGenModality(c.Modality),
 		}); err != nil {
 			slog.Warn("capture test cases: insert failed", "error", err, "issue_id", util.UUIDToString(issue.ID))
 			continue

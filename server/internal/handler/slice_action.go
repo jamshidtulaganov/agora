@@ -2492,8 +2492,15 @@ func (h *Handler) sliceActionTestCasesContext(ctx context.Context, issue db.Issu
 	b.WriteString(" AUTOMATED TEST CASES TO RUN (report a verdict for each by its id):")
 	for _, c := range cases {
 		steps := strings.ReplaceAll(strings.TrimSpace(c.Steps), "\n", " ")
-		b.WriteString(fmt.Sprintf(" [id=%s] %s — steps: %s; expected: %s.",
-			uuidToString(c.ID), c.Title, steps, strings.TrimSpace(c.Expected)))
+		// Preconditions ride along when set — a runner that doesn't know the
+		// required setup state (seeded account, feature flag) can't execute the
+		// case faithfully and reports a bogus "blocked".
+		pre := ""
+		if p := strings.TrimSpace(c.Preconditions); p != "" {
+			pre = fmt.Sprintf(" preconditions: %s;", strings.ReplaceAll(p, "\n", " "))
+		}
+		b.WriteString(fmt.Sprintf(" [id=%s] %s —%s steps: %s; expected: %s.",
+			uuidToString(c.ID), c.Title, pre, steps, strings.TrimSpace(c.Expected)))
 		if s := strings.TrimSpace(c.Script); s != "" {
 			b.WriteString(fmt.Sprintf(" COMPILED SCRIPT for [id=%s] — write to /tmp/case-%s.mjs and run `node` it; exit code is the verdict:\n```javascript\n%s\n```",
 				uuidToString(c.ID), uuidToString(c.ID), s))

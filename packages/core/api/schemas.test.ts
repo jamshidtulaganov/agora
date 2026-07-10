@@ -9,10 +9,14 @@ import {
   DuplicateIssueErrorBodySchema,
   EMPTY_DEPLOY_EVENTS,
   EMPTY_FIGMA_CREDENTIAL_STATUS,
+  EMPTY_LIST_TEST_CASES,
+  EMPTY_TEST_CASE,
   EMPTY_USER,
   FigmaCredentialStatusSchema,
   IssueDeployEventsResponseSchema,
   ListIssuesResponseSchema,
+  ListTestCasesResponseSchema,
+  TestCaseSchema,
   parseDeployEnvironments,
   QAEvidenceSchema,
   RuntimeHourlyActivityListSchema,
@@ -25,6 +29,7 @@ import {
 } from "./schemas";
 import { EMPTY_ISSUE_BROWSER, EMPTY_WORKSPACE_LABS, IssueBrowserResponseSchema, WorkspaceLabsSchema } from "./schemas";
 import { parseWithFallback } from "./schema";
+import type { ListTestCasesResponse } from "../types/test-case";
 
 const baseIssue = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -707,5 +712,80 @@ describe("WorkspaceLabsSchema", () => {
       const parsed = parseWithFallback(body, WorkspaceLabsSchema, EMPTY_WORKSPACE_LABS, endpoint);
       expect(parsed.qa_dev_boxes).toBe(true);
     }
+  });
+});
+
+describe("TestCaseSchema metadata (preconditions / priority / modality)", () => {
+  const endpoint = { endpoint: "GET /api/issues/:id/test-cases" };
+  const listEndpoint = { endpoint: "GET /api/issues/:id/test-cases" };
+  // EMPTY_LIST_TEST_CASES's literal type is { test_cases: never[] } — anchor
+  // parseWithFallback's T to the real response shape, as the client does.
+  const emptyList: ListTestCasesResponse = EMPTY_LIST_TEST_CASES;
+  const legacyCase = {
+    id: "tc-1",
+    issue_id: "issue-1",
+    title: "login works",
+    steps: "1. open login",
+    expected: "dashboard",
+    kind: "manual",
+    source: "human",
+    author_type: "member",
+    category: "positive",
+    created_at: "2026-01-01T00:00:00Z",
+    latest_run: null,
+  };
+
+  it("defaults absent metadata fields — an OLD server's response parses as a legacy row", () => {
+    const parsed = parseWithFallback(
+      { test_cases: [legacyCase] },
+      ListTestCasesResponseSchema,
+      emptyList,
+      listEndpoint,
+    );
+    expect(parsed.test_cases).toHaveLength(1);
+    expect(parsed.test_cases[0]?.preconditions).toBe("");
+    expect(parsed.test_cases[0]?.priority).toBe("p2");
+    expect(parsed.test_cases[0]?.modality).toBe("");
+  });
+
+  it("keeps provided metadata and tolerates unknown enum drift (plain strings)", () => {
+    const parsed = parseWithFallback(
+      {
+        test_cases: [
+          { ...legacyCase, preconditions: "admin seeded", priority: "p1", modality: "ui" },
+          // A FUTURE server's new enum value must still parse (downgrade, not crash).
+          { ...legacyCase, id: "tc-2", priority: "p0", modality: "mobile" },
+        ],
+      },
+      ListTestCasesResponseSchema,
+      emptyList,
+      listEndpoint,
+    );
+    expect(parsed.test_cases[0]?.priority).toBe("p1");
+    expect(parsed.test_cases[0]?.modality).toBe("ui");
+    expect(parsed.test_cases[0]?.preconditions).toBe("admin seeded");
+    expect(parsed.test_cases[1]?.priority).toBe("p0");
+    expect(parsed.test_cases[1]?.modality).toBe("mobile");
+  });
+
+  it("falls back to the inert empty case on wrong-typed metadata (single-row endpoints)", () => {
+    const parsed = parseWithFallback(
+      { ...legacyCase, priority: 1, modality: ["ui"], preconditions: { text: "x" } },
+      TestCaseSchema,
+      EMPTY_TEST_CASE,
+      endpoint,
+    );
+    expect(parsed).toEqual(EMPTY_TEST_CASE);
+    expect(parsed.priority).toBe("p2");
+  });
+
+  it("falls back to an empty list on a null test_cases array", () => {
+    const parsed = parseWithFallback(
+      { test_cases: null },
+      ListTestCasesResponseSchema,
+      emptyList,
+      listEndpoint,
+    );
+    expect(parsed.test_cases).toEqual([]);
   });
 });

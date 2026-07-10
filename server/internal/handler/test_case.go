@@ -48,7 +48,15 @@ type TestCaseResponse struct {
 	// Script is the compiled Playwright script for an automated case, if any.
 	// Empty means the case is hand-driven (no compiled runner) — the QA panel
 	// reads this to show the case's "compiled" state.
-	Script    string       `json:"script"`
+	Script string `json:"script"`
+	// Preconditions is the setup state the tester needs before step 1 (free text).
+	Preconditions string `json:"preconditions"`
+	// Priority is p1 | p2 | p3 (p2 = normal). Plain text so enum drift
+	// downgrades instead of crashing, per the API-compat rules.
+	Priority string `json:"priority"`
+	// Modality is ui | api | unit | manual, or "" for legacy/unspecified. The
+	// QA lens reads it to decide whether the live browser bay is warranted.
+	Modality  string       `json:"modality"`
 	CreatedAt string       `json:"created_at"`
 	LatestRun *TestRunLite `json:"latest_run"`
 }
@@ -57,20 +65,47 @@ type ListTestCasesResponse struct {
 	TestCases []TestCaseResponse `json:"test_cases"`
 }
 
+// normalizeTestCasePriority downgrades anything outside p1|p2|p3 (including
+// "") to the p2 default — enum drift never rejects a create/capture.
+func normalizeTestCasePriority(p string) string {
+	switch strings.ToLower(strings.TrimSpace(p)) {
+	case "p1":
+		return "p1"
+	case "p3":
+		return "p3"
+	default:
+		return "p2"
+	}
+}
+
+// normalizeTestCaseModality downgrades anything outside ui|api|unit|manual to
+// "" (legacy/unspecified) — an unknown modality never rejects a create/capture.
+func normalizeTestCaseModality(m string) string {
+	switch strings.ToLower(strings.TrimSpace(m)) {
+	case "ui", "api", "unit", "manual":
+		return strings.ToLower(strings.TrimSpace(m))
+	default:
+		return ""
+	}
+}
+
 func testCaseToResponse(c db.TestCase, latest *TestRunLite) TestCaseResponse {
 	return TestCaseResponse{
-		ID:         uuidToString(c.ID),
-		IssueID:    uuidToString(c.IssueID),
-		Title:      c.Title,
-		Steps:      c.Steps,
-		Expected:   c.Expected,
-		Kind:       c.Kind,
-		Source:     c.Source,
-		AuthorType: c.AuthorType,
-		Category:   c.Category,
-		Script:     c.Script,
-		CreatedAt:  c.CreatedAt.Time.Format(time.RFC3339),
-		LatestRun:  latest,
+		ID:            uuidToString(c.ID),
+		IssueID:       uuidToString(c.IssueID),
+		Title:         c.Title,
+		Steps:         c.Steps,
+		Expected:      c.Expected,
+		Kind:          c.Kind,
+		Source:        c.Source,
+		AuthorType:    c.AuthorType,
+		Category:      c.Category,
+		Script:        c.Script,
+		Preconditions: c.Preconditions,
+		Priority:      c.Priority,
+		Modality:      c.Modality,
+		CreatedAt:     c.CreatedAt.Time.Format(time.RFC3339),
+		LatestRun:     latest,
 	}
 }
 
@@ -126,6 +161,11 @@ type CreateTestCaseRequest struct {
 	Expected string `json:"expected"`
 	Kind     string `json:"kind"`
 	Category string `json:"category"` // positive | negative; defaults to positive
+	// Preconditions is free text; Priority normalizes to p1|p2|p3 (default p2);
+	// Modality normalizes to ui|api|unit|manual (default "" = unspecified).
+	Preconditions string `json:"preconditions"`
+	Priority      string `json:"priority"`
+	Modality      string `json:"modality"`
 }
 
 // CreateIssueTestCase authors a manual test case for an issue (source=human).
@@ -156,18 +196,21 @@ func (h *Handler) CreateIssueTestCase(w http.ResponseWriter, r *http.Request) {
 		category = "negative"
 	}
 	c, err := h.Queries.CreateTestCase(r.Context(), db.CreateTestCaseParams{
-		WorkspaceID: issue.WorkspaceID,
-		IssueID:     issue.ID,
-		ProjectID:   issue.ProjectID,
-		Title:       req.Title,
-		Steps:       req.Steps,
-		Expected:    req.Expected,
-		Kind:        kind,
-		Source:      "human",
-		AuthorType:  "member",
-		AuthorID:    parseUUID(userID),
-		Category:    category,
-		Script:      "", // human-authored; empty triggers the background auto-compile hook below
+		WorkspaceID:   issue.WorkspaceID,
+		IssueID:       issue.ID,
+		ProjectID:     issue.ProjectID,
+		Title:         req.Title,
+		Steps:         req.Steps,
+		Expected:      req.Expected,
+		Kind:          kind,
+		Source:        "human",
+		AuthorType:    "member",
+		AuthorID:      parseUUID(userID),
+		Category:      category,
+		Script:        "", // human-authored; empty triggers the background auto-compile hook below
+		Preconditions: strings.TrimSpace(req.Preconditions),
+		Priority:      normalizeTestCasePriority(req.Priority),
+		Modality:      normalizeTestCaseModality(req.Modality),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create test case")
@@ -278,18 +321,21 @@ func (h *Handler) CreateProjectTestCase(w http.ResponseWriter, r *http.Request) 
 		category = "negative"
 	}
 	c, err := h.Queries.CreateTestCase(r.Context(), db.CreateTestCaseParams{
-		WorkspaceID: project.WorkspaceID,
-		IssueID:     pgtype.UUID{}, // NULL — a base case belongs to the project, not an issue
-		ProjectID:   project.ID,
-		Title:       req.Title,
-		Steps:       req.Steps,
-		Expected:    req.Expected,
-		Kind:        kind,
-		Source:      "human",
-		AuthorType:  "member",
-		AuthorID:    parseUUID(userID),
-		Category:    category,
-		Script:      "", // human base case; compile-eligible on demand via /compile_tests
+		WorkspaceID:   project.WorkspaceID,
+		IssueID:       pgtype.UUID{}, // NULL — a base case belongs to the project, not an issue
+		ProjectID:     project.ID,
+		Title:         req.Title,
+		Steps:         req.Steps,
+		Expected:      req.Expected,
+		Kind:          kind,
+		Source:        "human",
+		AuthorType:    "member",
+		AuthorID:      parseUUID(userID),
+		Category:      category,
+		Script:        "", // human base case; compile-eligible on demand via /compile_tests
+		Preconditions: strings.TrimSpace(req.Preconditions),
+		Priority:      normalizeTestCasePriority(req.Priority),
+		Modality:      normalizeTestCaseModality(req.Modality),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create test case")
@@ -391,11 +437,18 @@ type UpdateTestCaseRequest struct {
 	Kind     *string `json:"kind,omitempty"`
 	Category *string `json:"category,omitempty"`
 	Script   *string `json:"script,omitempty"`
+	// Preconditions is free text. Priority must be p1|p2|p3 ("" normalizes to
+	// p2); Modality must be ui|api|unit|manual or "" (clears to unspecified).
+	// Garbage in either is a 400 — an explicit human edit sending an unknown
+	// value is a client bug, unlike the fail-open create/capture paths.
+	Preconditions *string `json:"preconditions,omitempty"`
+	Priority      *string `json:"priority,omitempty"`
+	Modality      *string `json:"modality,omitempty"`
 }
 
 // UpdateTestCaseHandler lets a QA engineer edit a test case (title/steps/
-// expected/kind/category/script) from the cockpit. Workspace-scoped; only the
-// provided fields change.
+// expected/kind/category/script/preconditions/priority/modality) from the
+// cockpit. Workspace-scoped; only the provided fields change.
 func (h *Handler) UpdateTestCaseHandler(w http.ResponseWriter, r *http.Request) {
 	wsUUID, ok := parseUUIDOrBadRequest(w, h.resolveWorkspaceID(r), "workspace id")
 	if !ok {
@@ -418,6 +471,26 @@ func (h *Handler) UpdateTestCaseHandler(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "category must be positive or negative")
 		return
 	}
+	if req.Priority != nil {
+		switch strings.ToLower(strings.TrimSpace(*req.Priority)) {
+		case "p1", "p2", "p3", "":
+		default:
+			writeError(w, http.StatusBadRequest, "priority must be p1, p2 or p3")
+			return
+		}
+		normalized := normalizeTestCasePriority(*req.Priority)
+		req.Priority = &normalized
+	}
+	if req.Modality != nil {
+		switch strings.ToLower(strings.TrimSpace(*req.Modality)) {
+		case "ui", "api", "unit", "manual", "":
+		default:
+			writeError(w, http.StatusBadRequest, "modality must be ui, api, unit, manual or empty")
+			return
+		}
+		normalized := normalizeTestCaseModality(*req.Modality)
+		req.Modality = &normalized
+	}
 	optText := func(p *string) pgtype.Text {
 		if p == nil {
 			return pgtype.Text{}
@@ -425,14 +498,17 @@ func (h *Handler) UpdateTestCaseHandler(w http.ResponseWriter, r *http.Request) 
 		return pgtype.Text{String: strings.TrimSpace(*p), Valid: true}
 	}
 	updated, err := h.Queries.UpdateTestCase(r.Context(), db.UpdateTestCaseParams{
-		ID:          caseUUID,
-		WorkspaceID: wsUUID,
-		Title:       optText(req.Title),
-		Steps:       optText(req.Steps),
-		Expected:    optText(req.Expected),
-		Kind:        optText(req.Kind),
-		Category:    optText(req.Category),
-		Script:      optText(req.Script),
+		ID:            caseUUID,
+		WorkspaceID:   wsUUID,
+		Title:         optText(req.Title),
+		Steps:         optText(req.Steps),
+		Expected:      optText(req.Expected),
+		Kind:          optText(req.Kind),
+		Category:      optText(req.Category),
+		Script:        optText(req.Script),
+		Preconditions: optText(req.Preconditions),
+		Priority:      optText(req.Priority),
+		Modality:      optText(req.Modality),
 	})
 	if err != nil {
 		writeError(w, http.StatusNotFound, "test case not found")

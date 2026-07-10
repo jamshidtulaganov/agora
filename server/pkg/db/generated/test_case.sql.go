@@ -47,25 +47,29 @@ func (q *Queries) CountActiveTestCasesForIssue(ctx context.Context, arg CountAct
 const createTestCase = `-- name: CreateTestCase :one
 
 INSERT INTO test_case (
-    workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, category, script
+    workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, category, script,
+    preconditions, priority, modality
 )
-VALUES ($1, $10, $11, $2, $3, $4, $5, $6, $7, $12, $8, $9)
-RETURNING id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script
+VALUES ($1, $13, $14, $2, $3, $4, $5, $6, $7, $15, $8, $9, $10, $11, $12)
+RETURNING id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script, preconditions, priority, modality
 `
 
 type CreateTestCaseParams struct {
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
-	Title       string      `json:"title"`
-	Steps       string      `json:"steps"`
-	Expected    string      `json:"expected"`
-	Kind        string      `json:"kind"`
-	Source      string      `json:"source"`
-	AuthorType  string      `json:"author_type"`
-	Category    string      `json:"category"`
-	Script      string      `json:"script"`
-	IssueID     pgtype.UUID `json:"issue_id"`
-	ProjectID   pgtype.UUID `json:"project_id"`
-	AuthorID    pgtype.UUID `json:"author_id"`
+	WorkspaceID   pgtype.UUID `json:"workspace_id"`
+	Title         string      `json:"title"`
+	Steps         string      `json:"steps"`
+	Expected      string      `json:"expected"`
+	Kind          string      `json:"kind"`
+	Source        string      `json:"source"`
+	AuthorType    string      `json:"author_type"`
+	Category      string      `json:"category"`
+	Script        string      `json:"script"`
+	Preconditions string      `json:"preconditions"`
+	Priority      string      `json:"priority"`
+	Modality      string      `json:"modality"`
+	IssueID       pgtype.UUID `json:"issue_id"`
+	ProjectID     pgtype.UUID `json:"project_id"`
+	AuthorID      pgtype.UUID `json:"author_id"`
 }
 
 // QA test cases + runs — the QA team's test-management instruments.
@@ -80,6 +84,9 @@ func (q *Queries) CreateTestCase(ctx context.Context, arg CreateTestCaseParams) 
 		arg.AuthorType,
 		arg.Category,
 		arg.Script,
+		arg.Preconditions,
+		arg.Priority,
+		arg.Modality,
 		arg.IssueID,
 		arg.ProjectID,
 		arg.AuthorID,
@@ -102,6 +109,9 @@ func (q *Queries) CreateTestCase(ctx context.Context, arg CreateTestCaseParams) 
 		&i.UpdatedAt,
 		&i.Category,
 		&i.Script,
+		&i.Preconditions,
+		&i.Priority,
+		&i.Modality,
 	)
 	return i, err
 }
@@ -159,7 +169,7 @@ func (q *Queries) CreateTestRun(ctx context.Context, arg CreateTestRunParams) (T
 }
 
 const getTestCase = `-- name: GetTestCase :one
-SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script FROM test_case
+SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script, preconditions, priority, modality FROM test_case
 WHERE id = $1 AND workspace_id = $2
 `
 
@@ -188,6 +198,9 @@ func (q *Queries) GetTestCase(ctx context.Context, arg GetTestCaseParams) (TestC
 		&i.UpdatedAt,
 		&i.Category,
 		&i.Script,
+		&i.Preconditions,
+		&i.Priority,
+		&i.Modality,
 	)
 	return i, err
 }
@@ -264,7 +277,7 @@ func (q *Queries) HasDiscriminatingRunForIssue(ctx context.Context, issueID pgty
 }
 
 const listAutomatedTestCasesForIssue = `-- name: ListAutomatedTestCasesForIssue :many
-SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script FROM test_case
+SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script, preconditions, priority, modality FROM test_case
 WHERE issue_id = $1 AND workspace_id = $2 AND archived_at IS NULL AND kind = 'automated'
 ORDER BY created_at ASC
 `
@@ -301,6 +314,9 @@ func (q *Queries) ListAutomatedTestCasesForIssue(ctx context.Context, arg ListAu
 			&i.UpdatedAt,
 			&i.Category,
 			&i.Script,
+			&i.Preconditions,
+			&i.Priority,
+			&i.Modality,
 		); err != nil {
 			return nil, err
 		}
@@ -313,7 +329,7 @@ func (q *Queries) ListAutomatedTestCasesForIssue(ctx context.Context, arg ListAu
 }
 
 const listAutomatedTestCasesForProject = `-- name: ListAutomatedTestCasesForProject :many
-SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script FROM test_case
+SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script, preconditions, priority, modality FROM test_case
 WHERE project_id = $1 AND workspace_id = $2
   AND issue_id IS NULL AND kind = 'automated' AND archived_at IS NULL
 ORDER BY created_at ASC
@@ -352,6 +368,9 @@ func (q *Queries) ListAutomatedTestCasesForProject(ctx context.Context, arg List
 			&i.UpdatedAt,
 			&i.Category,
 			&i.Script,
+			&i.Preconditions,
+			&i.Priority,
+			&i.Modality,
 		); err != nil {
 			return nil, err
 		}
@@ -525,7 +544,7 @@ func (q *Queries) ListRecentRunsForCase(ctx context.Context, arg ListRecentRunsF
 }
 
 const listTestCasesForIssue = `-- name: ListTestCasesForIssue :many
-SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script FROM test_case
+SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script, preconditions, priority, modality FROM test_case
 WHERE issue_id = $1 AND workspace_id = $2 AND archived_at IS NULL
 ORDER BY created_at DESC
 `
@@ -562,6 +581,9 @@ func (q *Queries) ListTestCasesForIssue(ctx context.Context, arg ListTestCasesFo
 			&i.UpdatedAt,
 			&i.Category,
 			&i.Script,
+			&i.Preconditions,
+			&i.Priority,
+			&i.Modality,
 		); err != nil {
 			return nil, err
 		}
@@ -574,7 +596,7 @@ func (q *Queries) ListTestCasesForIssue(ctx context.Context, arg ListTestCasesFo
 }
 
 const listTestCasesForProject = `-- name: ListTestCasesForProject :many
-SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script FROM test_case
+SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script, preconditions, priority, modality FROM test_case
 WHERE project_id = $1 AND workspace_id = $2
   AND issue_id IS NULL AND archived_at IS NULL
 ORDER BY created_at DESC
@@ -614,6 +636,9 @@ func (q *Queries) ListTestCasesForProject(ctx context.Context, arg ListTestCases
 			&i.UpdatedAt,
 			&i.Category,
 			&i.Script,
+			&i.Preconditions,
+			&i.Priority,
+			&i.Modality,
 		); err != nil {
 			return nil, err
 		}
@@ -673,9 +698,11 @@ func (q *Queries) ListTestRunsForCase(ctx context.Context, arg ListTestRunsForCa
 
 const promoteIssueTestCasesToProject = `-- name: PromoteIssueTestCasesToProject :execrows
 INSERT INTO test_case
-  (workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, category, script)
+  (workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, category, script,
+   preconditions, priority, modality)
 SELECT tc.workspace_id, NULL, $2, '[' || $3::text || '] ' || tc.title,
-       tc.steps, tc.expected, 'automated', 'promoted', tc.author_type, tc.author_id, tc.category, tc.script
+       tc.steps, tc.expected, 'automated', 'promoted', tc.author_type, tc.author_id, tc.category, tc.script,
+       tc.preconditions, tc.priority, tc.modality
 FROM test_case tc
 WHERE tc.issue_id = $1 AND tc.kind = 'automated' AND tc.archived_at IS NULL
   AND (
@@ -738,24 +765,31 @@ UPDATE test_case SET
     expected = COALESCE($5, expected),
     kind = COALESCE($6, kind),
     category = COALESCE($7, category),
-    script = COALESCE($8, script)
+    script = COALESCE($8, script),
+    preconditions = COALESCE($9, preconditions),
+    priority = COALESCE($10, priority),
+    modality = COALESCE($11, modality)
 WHERE id = $1 AND workspace_id = $2
-RETURNING id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script
+RETURNING id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script, preconditions, priority, modality
 `
 
 type UpdateTestCaseParams struct {
-	ID          pgtype.UUID `json:"id"`
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
-	Title       pgtype.Text `json:"title"`
-	Steps       pgtype.Text `json:"steps"`
-	Expected    pgtype.Text `json:"expected"`
-	Kind        pgtype.Text `json:"kind"`
-	Category    pgtype.Text `json:"category"`
-	Script      pgtype.Text `json:"script"`
+	ID            pgtype.UUID `json:"id"`
+	WorkspaceID   pgtype.UUID `json:"workspace_id"`
+	Title         pgtype.Text `json:"title"`
+	Steps         pgtype.Text `json:"steps"`
+	Expected      pgtype.Text `json:"expected"`
+	Kind          pgtype.Text `json:"kind"`
+	Category      pgtype.Text `json:"category"`
+	Script        pgtype.Text `json:"script"`
+	Preconditions pgtype.Text `json:"preconditions"`
+	Priority      pgtype.Text `json:"priority"`
+	Modality      pgtype.Text `json:"modality"`
 }
 
-// Human edit of a test case (title/steps/expected/kind/category/script). Only
-// non-null args change; the rest keep their current value.
+// Human edit of a test case (title/steps/expected/kind/category/script/
+// preconditions/priority/modality). Only non-null args change; the rest keep
+// their current value.
 func (q *Queries) UpdateTestCase(ctx context.Context, arg UpdateTestCaseParams) (TestCase, error) {
 	row := q.db.QueryRow(ctx, updateTestCase,
 		arg.ID,
@@ -766,6 +800,9 @@ func (q *Queries) UpdateTestCase(ctx context.Context, arg UpdateTestCaseParams) 
 		arg.Kind,
 		arg.Category,
 		arg.Script,
+		arg.Preconditions,
+		arg.Priority,
+		arg.Modality,
 	)
 	var i TestCase
 	err := row.Scan(
@@ -785,6 +822,9 @@ func (q *Queries) UpdateTestCase(ctx context.Context, arg UpdateTestCaseParams) 
 		&i.UpdatedAt,
 		&i.Category,
 		&i.Script,
+		&i.Preconditions,
+		&i.Priority,
+		&i.Modality,
 	)
 	return i, err
 }

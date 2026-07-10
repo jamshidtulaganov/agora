@@ -864,22 +864,25 @@ type TaskUsageHourlyRollupState struct {
 }
 
 type TestCase struct {
-	ID          pgtype.UUID        `json:"id"`
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	IssueID     pgtype.UUID        `json:"issue_id"`
-	ProjectID   pgtype.UUID        `json:"project_id"`
-	Title       string             `json:"title"`
-	Steps       string             `json:"steps"`
-	Expected    string             `json:"expected"`
-	Kind        string             `json:"kind"`
-	Source      string             `json:"source"`
-	AuthorType  string             `json:"author_type"`
-	AuthorID    pgtype.UUID        `json:"author_id"`
-	ArchivedAt  pgtype.Timestamptz `json:"archived_at"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	Category    string             `json:"category"`
-	Script      string             `json:"script"`
+	ID            pgtype.UUID        `json:"id"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	IssueID       pgtype.UUID        `json:"issue_id"`
+	ProjectID     pgtype.UUID        `json:"project_id"`
+	Title         string             `json:"title"`
+	Steps         string             `json:"steps"`
+	Expected      string             `json:"expected"`
+	Kind          string             `json:"kind"`
+	Source        string             `json:"source"`
+	AuthorType    string             `json:"author_type"`
+	AuthorID      pgtype.UUID        `json:"author_id"`
+	ArchivedAt    pgtype.Timestamptz `json:"archived_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	Category      string             `json:"category"`
+	Script        string             `json:"script"`
+	Preconditions string             `json:"preconditions"`
+	Priority      string             `json:"priority"`
+	Modality      string             `json:"modality"`
 }
 
 type TestRun struct {

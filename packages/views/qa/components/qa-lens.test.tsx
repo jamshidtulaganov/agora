@@ -21,6 +21,7 @@ import { QALensBody } from "./qa-lens";
 const apiMocks = vi.hoisted(() => ({
   getIssue: vi.fn(),
   getQAEvidence: vi.fn(),
+  getIssueTestCases: vi.fn(),
   listLabels: vi.fn(),
   attachLabel: vi.fn(),
   detachLabel: vi.fn(),
@@ -135,6 +136,9 @@ describe("QALensBody", () => {
     vi.clearAllMocks();
     apiMocks.getIssue.mockResolvedValue(baseIssue());
     apiMocks.getQAEvidence.mockResolvedValue(baseEvidence());
+    // Default: no cases at all — the modality gate keeps the legacy
+    // auto-open behavior. Gate tests override with modality-tagged cases.
+    apiMocks.getIssueTestCases.mockResolvedValue({ test_cases: [] });
     apiMocks.listLabels.mockResolvedValue({
       labels: [
         { id: "label-pass", name: "qa:pass" },
@@ -241,6 +245,53 @@ describe("QALensBody", () => {
 
       expect(await screen.findByTestId("live-bay-active")).toBeInTheDocument();
       expect(screen.queryByTestId("live-bay-idle")).not.toBeInTheDocument();
+    });
+
+    // Modality gate (phase 2): API/unit-only issues never auto-boot the
+    // browser; a ui case (or a legacy suite with no modality set) keeps the
+    // auto-open. The manual affordance works regardless.
+    it("does NOT auto-open the bay when every case declares a non-ui modality", async () => {
+      apiMocks.getIssueTestCases.mockResolvedValue({
+        test_cases: [
+          { id: "tc-1", modality: "api" },
+          { id: "tc-2", modality: "unit" },
+        ],
+      });
+      qaLiveProgressMocks.useQaRunningTasks.mockReturnValue([{ id: "task-1" }]);
+      renderLens();
+
+      expect(await screen.findByTestId("live-bay-idle")).toBeInTheDocument();
+      expect(screen.queryByTestId("live-bay-active")).not.toBeInTheDocument();
+
+      // The manual "Open live testing" affordance still works.
+      fireEvent.click(screen.getByRole("button", { name: "Open live testing" }));
+      expect(await screen.findByTestId("live-bay-active")).toBeInTheDocument();
+    });
+
+    it("auto-opens the bay when at least one case declares modality ui", async () => {
+      apiMocks.getIssueTestCases.mockResolvedValue({
+        test_cases: [
+          { id: "tc-1", modality: "api" },
+          { id: "tc-2", modality: "ui" },
+        ],
+      });
+      qaLiveProgressMocks.useQaRunningTasks.mockReturnValue([{ id: "task-1" }]);
+      renderLens();
+
+      expect(await screen.findByTestId("live-bay-active")).toBeInTheDocument();
+    });
+
+    it("auto-opens the bay for a legacy suite where no case declares a modality", async () => {
+      apiMocks.getIssueTestCases.mockResolvedValue({
+        test_cases: [
+          { id: "tc-1", modality: "" },
+          { id: "tc-2", modality: "" },
+        ],
+      });
+      qaLiveProgressMocks.useQaRunningTasks.mockReturnValue([{ id: "task-1" }]);
+      renderLens();
+
+      expect(await screen.findByTestId("live-bay-active")).toBeInTheDocument();
     });
   });
 });
