@@ -15,6 +15,7 @@ import { Textarea } from "@agora/ui/components/ui/textarea";
 import { cn } from "@agora/ui/lib/utils";
 import { useT, useTimeAgo } from "../../i18n";
 import { useRunningTestCaseId, useLiveCaseVerdicts } from "./qa-live-progress";
+import { StepEditor, StepList, serializeSteps, type ParsedStep } from "./step-editor";
 import { verdictIcon } from "./verdict";
 
 // The QA team's Test-cases instrument. Lists an issue's cases (authored by a QA
@@ -649,7 +650,7 @@ function CaseRow({
       )}
       {open && (c.steps || c.expected) && (
         <div className="mt-1.5 space-y-1 pl-1 text-[12px] text-muted-foreground">
-          {c.steps && <pre className="whitespace-pre-wrap font-sans">{c.steps}</pre>}
+          {c.steps && <StepList text={c.steps} />}
           {c.expected && (
             <p>
               <span className="text-foreground/70">→ </span>
@@ -665,13 +666,20 @@ function CaseRow({
 function AddCaseForm({ issueId, onDone }: { issueId: string; onDone: () => void }) {
   const { t } = useT("issues");
   const [title, setTitle] = useState("");
-  const [steps, setSteps] = useState("");
+  const [steps, setSteps] = useState<ParsedStep[]>([{ action: "", expects: "" }]);
   const [expected, setExpected] = useState("");
   const [kind, setKind] = useState<"manual" | "automated">("manual");
   const [category, setCategory] = useState<"positive" | "negative">("positive");
 
   const save = useMutation({
-    mutationFn: () => api.createIssueTestCase(issueId, { title: title.trim(), steps, expected, kind, category }),
+    mutationFn: () =>
+      api.createIssueTestCase(issueId, {
+        title: title.trim(),
+        steps: serializeSteps(steps.filter((s) => s.action.trim() !== "")),
+        expected,
+        kind,
+        category,
+      }),
     onSuccess: onDone,
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
@@ -684,13 +692,7 @@ function AddCaseForm({ issueId, onDone }: { issueId: string; onDone: () => void 
         onChange={(e) => setTitle(e.target.value)}
         className="h-8 text-[13px]"
       />
-      <Textarea
-        placeholder={t(($) => $.test_cases.steps_ph)}
-        value={steps}
-        onChange={(e) => setSteps(e.target.value)}
-        rows={2}
-        className="text-[12px]"
-      />
+      <StepEditor steps={steps} onChange={setSteps} />
       <Textarea
         placeholder={t(($) => $.test_cases.expected_ph)}
         value={expected}

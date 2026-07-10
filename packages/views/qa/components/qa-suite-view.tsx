@@ -13,6 +13,7 @@ import { Textarea } from "@agora/ui/components/ui/textarea";
 import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
+import { StepEditor, StepList, parseSteps, serializeSteps, type ParsedStep } from "./step-editor";
 import { verdictIcon } from "./verdict";
 
 // The project's STANDING regression suite — the "stoppage" release gate. These
@@ -195,7 +196,7 @@ function BaseCaseRow({
   const { t } = useT("issues");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState({ title: c.title, steps: c.steps, expected: c.expected });
+  const [draft, setDraft] = useState({ title: c.title, steps: parseSteps(c.steps), expected: c.expected });
   const status = c.latest_run?.status;
   const isBlocked = status === "blocked" || status === "skip";
   const hasDetail = !!(c.steps || c.expected || (status === "fail" && c.latest_run?.output));
@@ -243,7 +244,7 @@ function BaseCaseRow({
             size="icon"
             className="size-6 text-muted-foreground opacity-0 transition-opacity focus-within:opacity-100 hover:text-foreground group-hover/case:opacity-100"
             onClick={() => {
-              setDraft({ title: c.title, steps: c.steps, expected: c.expected });
+              setDraft({ title: c.title, steps: parseSteps(c.steps), expected: c.expected });
               setEditing((v) => !v);
             }}
             title={t(($) => $.qa_cockpit.suite_edit_title)}
@@ -271,13 +272,7 @@ function BaseCaseRow({
             className="h-8 text-[13px]"
             placeholder={t(($) => $.qa_cockpit.suite_case_title_ph)}
           />
-          <Textarea
-            value={draft.steps}
-            onChange={(e) => setDraft((d) => ({ ...d, steps: e.target.value }))}
-            rows={2}
-            className="text-[12px]"
-            placeholder={t(($) => $.qa_cockpit.suite_steps_ph)}
-          />
+          <StepEditor steps={draft.steps} onChange={(steps) => setDraft((d) => ({ ...d, steps }))} />
           <Textarea
             value={draft.expected}
             onChange={(e) => setDraft((d) => ({ ...d, expected: e.target.value }))}
@@ -295,7 +290,11 @@ function BaseCaseRow({
               className="h-7 text-[12px]"
               disabled={saving || !draft.title.trim()}
               onClick={() => {
-                onSave({ title: draft.title.trim(), steps: draft.steps, expected: draft.expected });
+                onSave({
+                  title: draft.title.trim(),
+                  steps: serializeSteps(draft.steps.filter((s) => s.action.trim() !== "")),
+                  expected: draft.expected,
+                });
                 setEditing(false);
               }}
             >
@@ -311,7 +310,7 @@ function BaseCaseRow({
               {c.latest_run.output}
             </pre>
           )}
-          {c.steps && <pre className="whitespace-pre-wrap font-sans">{c.steps}</pre>}
+          {c.steps && <StepList text={c.steps} />}
           {c.expected && (
             <p>
               <span className="text-foreground/70">→ </span>
@@ -335,7 +334,7 @@ function AddBaseCaseForm({
 }) {
   const { t } = useT("issues");
   const [title, setTitle] = useState("");
-  const [steps, setSteps] = useState("");
+  const [steps, setSteps] = useState<ParsedStep[]>([{ action: "", expects: "" }]);
   const [expected, setExpected] = useState("");
   // Base cases default to "automated" — only automated cases are injected into
   // run_qa / run_test_cases (a manual base case is inert), mirroring the server.
@@ -344,7 +343,13 @@ function AddBaseCaseForm({
 
   const save = useMutation({
     mutationFn: () =>
-      api.createProjectTestCase(projectId, { title: title.trim(), steps, expected, kind, category }),
+      api.createProjectTestCase(projectId, {
+        title: title.trim(),
+        steps: serializeSteps(steps.filter((s) => s.action.trim() !== "")),
+        expected,
+        kind,
+        category,
+      }),
     onSuccess: onDone,
     onError: (e) => toast.error(e instanceof Error ? e.message : t(($) => $.qa_cockpit.suite_toast_add_failed)),
   });
@@ -357,13 +362,7 @@ function AddBaseCaseForm({
         onChange={(e) => setTitle(e.target.value)}
         className="h-8 text-[13px]"
       />
-      <Textarea
-        placeholder={t(($) => $.qa_cockpit.suite_new_steps_ph)}
-        value={steps}
-        onChange={(e) => setSteps(e.target.value)}
-        rows={2}
-        className="text-[12px]"
-      />
+      <StepEditor steps={steps} onChange={setSteps} />
       <Textarea
         placeholder={t(($) => $.qa_cockpit.suite_expected_ph)}
         value={expected}
