@@ -7,6 +7,7 @@
 // See docs/sdlc-stage-cockpit-plan.md section 1/3 (phase C). Deploy is not a
 // stage here — it moved to the sprint level (qa-sprint-readiness-view.tsx).
 
+import { useEffect, useRef } from "react";
 import { CheckCircle2, XCircle, TriangleAlert } from "lucide-react";
 import type { SDLCStage, StagePipeline, StageState } from "@agora/core/issues";
 import { cn } from "@agora/ui/lib/utils";
@@ -151,6 +152,17 @@ function stageLabel(stage: SDLCStage, t: ReturnType<typeof useT<"issues">>["t"])
 export function SDLCStepper({ pipeline, activeLens, isLensAvailable, onSelectStage }: SDLCStepperProps) {
   const { t } = useT("issues");
 
+  // Per-stage previous state, committed after each paint. The flip animation
+  // plays ONLY on a genuine state change (e.g. QA running -> passed via a WS
+  // invalidation), never on first mount — so loading an issue doesn't pop all
+  // four dots at once. `prev === undefined` (first render) => no flip.
+  const prevStatesRef = useRef<Partial<Record<SDLCStage, StageState>>>({});
+  useEffect(() => {
+    const next: Partial<Record<SDLCStage, StageState>> = {};
+    for (const s of pipeline.stages) next[s.stage] = s.state;
+    prevStatesRef.current = next;
+  });
+
   return (
     <div
       data-testid="sdlc-stepper"
@@ -166,22 +178,45 @@ export function SDLCStepper({ pipeline, activeLens, isLensAvailable, onSelectSta
         // the type checker.
         const prevState = pipeline.stages[i - 1]?.state ?? "pending";
 
-        // Remounting the dot on `state` change (key={snapshot.state}) is
-        // what makes `animate-sdlc-flip` replay on a real transition
-        // (e.g. QA running -> passed via WS invalidation) instead of only
-        // on first mount — same technique as animate-onboarding-enter.
+        // Flip only when THIS stage actually changed state since the last
+        // commit — not on first mount. key={snapshot.state} remounts the dot
+        // on change so the keyframe replays; the flip class is withheld on
+        // the initial render (prev undefined) so page load stays calm.
+        const prevOwn = prevStatesRef.current[snapshot.stage];
+        const justChanged = prevOwn !== undefined && prevOwn !== snapshot.state;
         const dot = (
           <span
             key={snapshot.state}
             aria-hidden
-            className="inline-flex shrink-0 items-center motion-safe:animate-sdlc-flip"
+            className={cn(
+              "inline-flex shrink-0 items-center",
+              justChanged && "motion-safe:animate-sdlc-flip",
+            )}
           >
             <StageDot state={snapshot.state} />
           </span>
         );
+        // Underline (the "selected lens" indicator) lives on the LABEL only —
+        // putting it on the button underlined the detail chip too, splitting
+        // into two ugly runs ("QA" + "STALE").
         const labelSpan = (
-          <span className={cn("transition-colors duration-300", stateTextClass(snapshot.state))}>{label}</span>
+          <span
+            className={cn(
+              "transition-colors duration-300",
+              stateTextClass(snapshot.state),
+              selected && "underline decoration-primary decoration-2 underline-offset-4",
+            )}
+          >
+            {label}
+          </span>
         );
+        // The detail ("stale", "full", tier…) as a discrete chip, so it reads
+        // as metadata beside the label rather than part of it.
+        const detailChip = snapshot.detail ? (
+          <span className="rounded bg-muted px-1 py-0.5 text-[9px] font-medium uppercase leading-none tracking-wide text-muted-foreground">
+            {snapshot.detail}
+          </span>
+        ) : null;
 
         return (
           <div key={snapshot.stage} className="flex shrink-0 items-center">
@@ -203,16 +238,12 @@ export function SDLCStepper({ pipeline, activeLens, isLensAvailable, onSelectSta
                 className={cn(
                   "flex items-center gap-1.5 rounded-md px-1.5 py-1 transition-colors duration-300 hover:bg-accent/60",
                   snapshot.state === "skipped" && "opacity-40",
-                  selected && "underline decoration-2 underline-offset-4",
+                  selected && "bg-accent/50",
                 )}
               >
                 {dot}
                 {labelSpan}
-                {snapshot.detail && (
-                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                    {snapshot.detail}
-                  </span>
-                )}
+                {detailChip}
               </button>
             ) : (
               <div
@@ -221,16 +252,12 @@ export function SDLCStepper({ pipeline, activeLens, isLensAvailable, onSelectSta
                 className={cn(
                   "flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 transition-colors duration-300",
                   snapshot.state === "skipped" && "opacity-40",
-                  selected && "underline decoration-2 underline-offset-4",
+                  selected && "bg-accent/50",
                 )}
               >
                 {dot}
                 {labelSpan}
-                {snapshot.detail && (
-                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                    {snapshot.detail}
-                  </span>
-                )}
+                {detailChip}
               </div>
             )}
           </div>

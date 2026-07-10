@@ -91,10 +91,16 @@ describe("SDLCStepper", () => {
     expect(onSelectStage).toHaveBeenCalledTimes(1);
   });
 
-  it("underlines the stage matching the active lens", () => {
+  it("marks the stage matching the active lens as selected (bg fill + underlined label)", () => {
     renderStepper(BASE_PIPELINE, { activeLens: "qa", isLensAvailable: (stage) => stage === "qa" });
-    expect(screen.getByTestId("sdlc-stage-qa").className).toContain("underline");
-    expect(screen.getByTestId("sdlc-stage-dev").className).not.toContain("underline");
+    const qa = screen.getByTestId("sdlc-stage-qa");
+    const dev = screen.getByTestId("sdlc-stage-dev");
+    // Selected: subtle fill on the stage, underline on the LABEL span only
+    // (not the whole button — the detail chip must not get underlined).
+    expect(qa.className).toContain("bg-accent");
+    expect(qa.querySelector(".underline")).not.toBeNull();
+    expect(dev.className).not.toContain("bg-accent");
+    expect(dev.querySelector(".underline")).toBeNull();
   });
 
   it("renders the detail suffix as a tiny uppercase label when present", () => {
