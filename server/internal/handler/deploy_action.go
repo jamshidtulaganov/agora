@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -110,6 +111,27 @@ func findDeployEnvironment(envs []deployEnvironment, key string) (deployEnvironm
 		}
 	}
 	return deployEnvironment{}, false
+}
+
+// deployRefRe is the allowlist for a caller-supplied deploy ref override
+// (CreateSliceActionRequest.Ref — the sprint Deploy panel passes the sprint
+// branch). Git-ref-shaped only: no backticks (the ref is embedded inside a
+// `…` code span in the rendered instruction), no whitespace/newlines, no
+// mention-forming delimiters. Deliberately conservative — a legitimate
+// branch name ("sprint/9f2c…", "billing", "release-2.4") always fits.
+var deployRefRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
+
+// sanitizeDeployRef validates a caller-supplied ref override. Returns "" for
+// anything that is not plainly a git ref — the caller then keeps the
+// environment's configured target.ref instead of failing the request (the
+// override is an optimization, not a contract; a miss must not block a
+// deploy that would have worked without it).
+func sanitizeDeployRef(ref string) string {
+	ref = strings.TrimSpace(ref)
+	if ref == "" || len(ref) > 200 || !deployRefRe.MatchString(ref) {
+		return ""
+	}
+	return ref
 }
 
 // deployEnvironmentRequiresHuman reports whether firing a deploy to this

@@ -735,6 +735,21 @@
     "ready": "可以合并",
     "blocked": "已阻塞"
   },
+  "sprint_deploy": {
+    "heading": "部署",
+    "empty": "未配置部署环境——请在项目设置中添加 deploy_environments。",
+    "deploy": "部署",
+    "requires_human": "需人工确认",
+    "confirm": "将冲刺分支「{{branch}}」部署到 {{env}}？该环境受人工门禁保护——部署会触发真实流水线。",
+    "toast_fired": "已请求部署到 {{env}}",
+    "toast_failed": "请求部署失败",
+    "no_anchor": "没有可挂靠部署的有效任务——请先添加任务。",
+    "history_heading": "最近部署",
+    "history_empty": "尚无部署记录。",
+    "status_success": "成功",
+    "status_failed": "失败",
+    "status_timeout": "超时"
+  },
   "agent_protocol": {
     "an_agent": "智能体",
     "show_details": "显示完整指令",

@@ -2765,10 +2765,21 @@ func sanitizeSliceScope(scope string) string {
 //	agent_id — optional; an explicit agent to target. When omitted the handler
 //	           falls back to the issue's agent assignee, then to the caller's
 //	           own ready agent.
+//	ref      — optional; deploy kind ONLY. Overrides the environment's
+//	           configured target ref (the git ref the pipeline/command
+//	           deploys) — the sprint-level Deploy panel passes the SPRINT
+//	           BRANCH here so a sprint deploy ships the shared branch instead
+//	           of the environment's static default. Validated by
+//	           sanitizeDeployRef (deploy_action.go); an invalid value falls
+//	           back to the configured ref. Ignored for every other kind. The
+//	           production human gate is unaffected: resolveDeployEnvironment
+//	           runs before the override and gates on the ENVIRONMENT, never
+//	           on the ref.
 type CreateSliceActionRequest struct {
 	Kind    string `json:"kind"`
 	Scope   string `json:"scope"`
 	AgentID string `json:"agent_id"`
+	Ref     string `json:"ref"`
 }
 
 // CreateSliceActionResponse is returned on a successful fire. It echoes the
@@ -2836,6 +2847,15 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 		env, ok := h.resolveDeployEnvironment(w, r, issue, sanitizeSliceScope(req.Scope))
 		if !ok {
 			return
+		}
+		// Sprint-branch ref threading: the caller (the sprint Deploy panel)
+		// may name the git ref to deploy — the shared sprint branch — which
+		// overrides the environment's static target.ref. Applied AFTER the
+		// human gate (the gate is per-environment; which ref ships does not
+		// change who may pull the trigger) and only when the value survives
+		// the allowlist, so a hostile ref can never reach the instruction.
+		if ref := sanitizeDeployRef(req.Ref); ref != "" {
+			env.Target.Ref = ref
 		}
 		clause, usable := deployTargetClause(env)
 		if !usable {

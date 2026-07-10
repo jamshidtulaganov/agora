@@ -750,6 +750,21 @@
     "ready": "Ready to merge",
     "blocked": "Blocked"
   },
+  "sprint_deploy": {
+    "heading": "Deploy",
+    "empty": "No deploy environments configured — add deploy_environments in the project's settings.",
+    "deploy": "Deploy",
+    "requires_human": "Human-gated",
+    "confirm": "Deploy sprint branch \"{{branch}}\" to {{env}}? This environment is human-gated — the deploy fires a real pipeline.",
+    "toast_fired": "Deploy to {{env}} requested",
+    "toast_failed": "Failed to request deploy",
+    "no_anchor": "No active task to anchor a deploy to — attach a task first.",
+    "history_heading": "Recent deploys",
+    "history_empty": "No deploys yet.",
+    "status_success": "Success",
+    "status_failed": "Failed",
+    "status_timeout": "Timeout"
+  },
   "agent_protocol": {
     "an_agent": "an agent",
     "show_details": "Show full instructions",

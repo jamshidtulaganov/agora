@@ -875,9 +875,12 @@ export class ApiClient {
   // renders the instruction template for `kind`, dispatches a task, and posts
   // the agent draft as a comment (surfaced in the execution log). 201 ->
   // { kind, scope, instruction, agent_id, comment }.
+  // `ref` applies to kind="deploy" only: it overrides the environment's
+  // configured target ref (the sprint Deploy panel passes the sprint branch);
+  // the server validates it and ignores it for every other kind.
   async sliceAction(
     issueId: string,
-    body: { kind: string; scope?: string; agentId?: string },
+    body: { kind: string; scope?: string; agentId?: string; ref?: string },
   ): Promise<SliceActionResponse> {
     return this.fetch(`/api/issues/${issueId}/slice-actions`, {
       method: "POST",
@@ -885,6 +888,7 @@ export class ApiClient {
         kind: body.kind,
         ...(body.scope ? { scope: body.scope } : {}),
         ...(body.agentId ? { agent_id: body.agentId } : {}),
+        ...(body.ref ? { ref: body.ref } : {}),
       }),
     });
   }

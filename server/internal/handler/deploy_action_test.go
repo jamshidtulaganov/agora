@@ -326,6 +326,114 @@ func TestCreateSliceAction_Deploy(t *testing.T) {
 	})
 }
 
+// TestSanitizeDeployRef: the ref-override allowlist accepts git-ref-shaped
+// values and rejects anything that could break out of the instruction's
+// code span or smuggle a mention.
+func TestSanitizeDeployRef(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"sprint-9", "sprint-9"},
+		{"sprint/9f2c1a", "sprint/9f2c1a"},
+		{"  billing  ", "billing"},
+		{"release-2.4", "release-2.4"},
+		{"", ""},
+		{"has space", ""},
+		{"evil`ref", ""},
+		{"a]b(c)", ""},
+		{"-leading-dash", ""},
+		{"line\nbreak", ""},
+		{strings.Repeat("a", 201), ""},
+	}
+	for _, c := range cases {
+		if got := sanitizeDeployRef(c.in); got != c.want {
+			t.Errorf("sanitizeDeployRef(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestCreateSliceAction_DeployRefOverride: the sprint panel's ref threading —
+// a valid ref override replaces the environment's configured target.ref in
+// the rendered contract; an invalid one falls back to the configured ref;
+// and the production human gate is unaffected by the override.
+func TestCreateSliceAction_DeployRefOverride(t *testing.T) {
+	ctx := context.Background()
+
+	fire := func(t *testing.T, issueID, scope, ref string, machine bool) *httptest.ResponseRecorder {
+		t.Helper()
+		w := httptest.NewRecorder()
+		req := newRequest("POST", "/api/issues/"+issueID+"/slice-actions", map[string]any{
+			"kind":  "deploy",
+			"scope": scope,
+			"ref":   ref,
+		})
+		if machine {
+			req.Header.Set("X-Actor-Source", "task_token")
+		}
+		req = withURLParam(req, "id", issueID)
+		testHandler.CreateSliceAction(w, req)
+		return w
+	}
+
+	t.Run("a valid ref override replaces the configured target ref", func(t *testing.T) {
+		issueID := createTestIssue(t, "deploy ref override", "in_review", "medium")
+		t.Cleanup(func() { deleteTestIssue(t, issueID) })
+		deployTestProject(t, ctx, issueID, deployTestEnvSettings)
+
+		w := fire(t, issueID, "staging", "sprint/test-sprint-1", false)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+		}
+		var resp CreateSliceActionResponse
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		for _, want := range []string{
+			"on ref `sprint/test-sprint-1`",
+			`ref="sprint/test-sprint-1"`,
+		} {
+			if !strings.Contains(resp.Instruction, want) {
+				t.Errorf("instruction missing %q — the ref override did not thread through", want)
+			}
+		}
+		if strings.Contains(resp.Instruction, "ref `staging`") {
+			t.Error("instruction still names the environment's static ref despite the override")
+		}
+	})
+
+	t.Run("an invalid ref falls back to the configured target ref", func(t *testing.T) {
+		issueID := createTestIssue(t, "deploy ref invalid", "in_review", "medium")
+		t.Cleanup(func() { deleteTestIssue(t, issueID) })
+		deployTestProject(t, ctx, issueID, deployTestEnvSettings)
+
+		w := fire(t, issueID, "staging", "evil`ref with spaces", false)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+		}
+		var resp CreateSliceActionResponse
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if !strings.Contains(resp.Instruction, "on ref `staging`") {
+			t.Error("instruction should keep the configured ref when the override is invalid")
+		}
+		if strings.Contains(resp.Instruction, "evil") {
+			t.Error("an invalid ref must never reach the instruction")
+		}
+	})
+
+	t.Run("the production human gate is unaffected by a ref override", func(t *testing.T) {
+		issueID := createTestIssue(t, "deploy ref prod gate", "in_review", "medium")
+		t.Cleanup(func() { deleteTestIssue(t, issueID) })
+		deployTestProject(t, ctx, issueID, deployTestEnvSettings)
+
+		if w := fire(t, issueID, "production", "sprint/test-sprint-1", true); w.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 for a machine actor firing production with a ref, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+}
+
 // TestTaskTriggerIsDeploy: the claim path attaches GitLab MCP tools ONLY to
 // tasks whose triggering comment is a deploy slice-action dispatch.
 func TestTaskTriggerIsDeploy(t *testing.T) {

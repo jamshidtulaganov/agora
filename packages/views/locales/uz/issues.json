@@ -750,6 +750,21 @@
     "ready": "Birlashtirishga tayyor",
     "blocked": "Bloklangan"
   },
+  "sprint_deploy": {
+    "heading": "Deploy",
+    "empty": "Deploy muhitlari sozlanmagan — loyiha sozlamalarida deploy_environments qo'shing.",
+    "deploy": "Deploy qilish",
+    "requires_human": "Faqat inson",
+    "confirm": "Sprint branchi \"{{branch}}\" ni {{env}} ga deploy qilasizmi? Bu muhit himoyalangan — deploy haqiqiy pipeline'ni ishga tushiradi.",
+    "toast_fired": "{{env}} ga deploy so'raldi",
+    "toast_failed": "Deploy so'rab bo'lmadi",
+    "no_anchor": "Deploy bog'lash uchun faol vazifa yo'q — avval vazifa qo'shing.",
+    "history_heading": "So'nggi deploylar",
+    "history_empty": "Hozircha deploy bo'lmagan.",
+    "status_success": "Muvaffaqiyatli",
+    "status_failed": "Muvaffaqiyatsiz",
+    "status_timeout": "Vaqt tugadi"
+  },
   "agent_protocol": {
     "an_agent": "agent",
     "show_details": "To'liq ko'rsatmani ko'rsatish",

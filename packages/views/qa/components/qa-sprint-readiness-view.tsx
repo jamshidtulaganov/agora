@@ -11,6 +11,7 @@ import { useWorkspaceId } from "@agora/core/hooks";
 import { Button } from "@agora/ui/components/ui/button";
 import { AppLink } from "../../navigation";
 import { IssuePickerModal } from "../../modals/issue-picker-modal";
+import { SprintDeployPanel } from "./sprint-deploy-panel";
 
 // Sprint QA-readiness — "is this sprint mergeable?" Per active sprint: the issue
 // rows by QA verdict (human qa:pass/qa:fail + automated regression runs) and a
@@ -60,7 +61,7 @@ export function QASprintReadinessView({ projectId }: { projectId?: string }) {
           phase D) — there is no more dedicated /qa/<id> page, so these links
           deep-link to the issue with the QA stage pre-selected. */}
       {sprints.map((s) => (
-        <SprintCard key={s.sprint_id} sprint={s} qaDetail={(id) => `${wp.issueDetail(id)}?lens=qa`} />
+        <SprintCard key={s.sprint_id} sprint={s} wsId={wsId} qaDetail={(id) => `${wp.issueDetail(id)}?lens=qa`} />
       ))}
     </div>
   );
@@ -102,7 +103,7 @@ function RegressionGate({ gate, issueHref }: { gate: SprintData["regression"]; i
   );
 }
 
-function SprintCard({ sprint: s, qaDetail }: { sprint: SprintData; qaDetail: (id: string) => string }) {
+function SprintCard({ sprint: s, wsId, qaDetail }: { sprint: SprintData; wsId: string; qaDetail: (id: string) => string }) {
   const qc = useQueryClient();
   const [attachOpen, setAttachOpen] = useState(false);
   const pct = s.total > 0 ? Math.round((s.passed / s.total) * 100) : 0;
@@ -242,6 +243,17 @@ function SprintCard({ sprint: s, qaDetail }: { sprint: SprintData; qaDetail: (id
           ))}
         </ul>
       )}
+
+      {/* Deploy is a SPRINT-level cycle (the shared branch ships as a unit) —
+          this panel is its home after leaving the per-issue stepper (deploy
+          cycle rehome, part 2). */}
+      <SprintDeployPanel
+        wsId={wsId}
+        projectId={s.project_id}
+        sprintId={s.sprint_id}
+        branch={s.branch}
+        issues={s.issues}
+      />
     </div>
   );
 }
