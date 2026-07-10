@@ -83,7 +83,8 @@ import { FileBugSheet } from "./file-bug-sheet";
 
 type Verdict = "pass" | "fail" | "pending";
 
-function verdictFromLabels(names: string[]): Verdict {
+// Exported for fuzz testing (qa-lens.fuzz.test.ts) — no behavior change.
+export function verdictFromLabels(names: string[]): Verdict {
   if (names.includes("qa:fail")) return "fail";
   if (names.includes("qa:pass")) return "pass";
   return "pending";
