@@ -347,6 +347,47 @@ func (c *BotClient) DeleteWebhook(ctx context.Context) error {
 	return nil
 }
 
+// WebhookInfo is the subset of the Bot API's getWebhookInfo result the login
+// flow needs: whether a webhook is registered and where it points.
+type WebhookInfo struct {
+	URL string `json:"url"`
+}
+
+// GetWebhookInfo reports the bot's currently registered webhook (URL is empty
+// when none is set). The long-poll login path checks this before DeleteWebhook
+// so a self-host/dev backend that shares a public deployment's bot token cannot
+// clobber that deployment's webhook and steal its login updates.
+func (c *BotClient) GetWebhookInfo(ctx context.Context) (WebhookInfo, error) {
+	if c.token == "" {
+		return WebhookInfo{}, ErrNoToken
+	}
+	url := fmt.Sprintf("%s/bot%s/getWebhookInfo", c.baseURL(), c.token)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return WebhookInfo{}, fmt.Errorf("telegram: new getWebhookInfo request: %w", err)
+	}
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return WebhookInfo{}, fmt.Errorf("telegram: getWebhookInfo http: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return WebhookInfo{}, fmt.Errorf("telegram: read getWebhookInfo response: %w", err)
+	}
+	var parsed struct {
+		telegramResponse
+		Result WebhookInfo `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return WebhookInfo{}, fmt.Errorf("telegram: decode getWebhookInfo response: %w", err)
+	}
+	if !parsed.OK {
+		return WebhookInfo{}, fmt.Errorf("telegram: getWebhookInfo failed: code=%d description=%q", parsed.ErrorCode, parsed.Description)
+	}
+	return parsed.Result, nil
+}
+
 // setWebhookRequest is the JSON body for setWebhook. secret_token is echoed
 // back by Telegram in the X-Telegram-Bot-Api-Secret-Token header on every
 // delivered update; the webhook handler compares it against
