@@ -74,4 +74,10 @@ export interface QAEvidence {
   summary: string;
   result: QAResult | null;
   captured_at: string;
+  // The server-computed single source of truth (service.ReconcileQAState on
+  // the backend): "running" | "pass" | "fail" | "blocked" | "stale" |
+  // "never_ran" | "pass_with_failing_cases", or "" when the server predates
+  // this field — consumers must fall back to their own label-derived
+  // computation on "" (or any value they don't recognize).
+  reconciled_state: string;
 }

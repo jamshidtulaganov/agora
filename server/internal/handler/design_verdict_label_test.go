@@ -45,9 +45,13 @@ func TestCaptureQAEvidenceAttachesDesignVerdictLabel(t *testing.T) {
 		return names
 	}
 
-	// 1. A design-compare pass attaches design:pass.
+	// 1. A design-compare pass attaches design:pass. Carries a command so it
+	// clears the evidence floor (CaptureQAEvidence: a "pass" with zero
+	// commands downgrades to qa:stale instead of applying qa:pass) — that
+	// floor is exercised separately in qa_evidence_floor_test.go; this test's
+	// concern is the design:* label mirroring, so it stays out of the way.
 	passContent := "```qa-result\n" +
-		`{"verdict":"pass","summary":"functional pass","design":{"verdict":"pass","reference_node":"1:2"}}` +
+		`{"verdict":"pass","summary":"functional pass","commands":[{"cmd":"pnpm test","branch_exit":0,"kind":"pass"}],"design":{"verdict":"pass","reference_node":"1:2"}}` +
 		"\n```"
 	if verdict, _ := testHandler.TaskService.CaptureQAEvidence(ctx, issue, passContent); verdict != "pass" {
 		t.Fatalf("CaptureQAEvidence: verdict = %q, want pass", verdict)
@@ -59,7 +63,7 @@ func TestCaptureQAEvidenceAttachesDesignVerdictLabel(t *testing.T) {
 	// 2. A later design-compare fail REPLACES the label (opposite detached) —
 	// independent of the top-level qa verdict, which stays "pass" here.
 	failContent := "```qa-result\n" +
-		`{"verdict":"pass","summary":"functional still pass","design":{"verdict":"fail",` +
+		`{"verdict":"pass","summary":"functional still pass","commands":[{"cmd":"pnpm test","branch_exit":0,"kind":"pass"}],"design":{"verdict":"fail",` +
 		`"mismatches":[{"kind":"color","selector":"button.primary","expected":"#2563EB","actual":"#000000"}]}}` +
 		"\n```"
 	if verdict, _ := testHandler.TaskService.CaptureQAEvidence(ctx, issue, failContent); verdict != "pass" {
@@ -72,7 +76,7 @@ func TestCaptureQAEvidenceAttachesDesignVerdictLabel(t *testing.T) {
 	// 3. A "skipped" design verdict (Figma unreachable) must NOT touch labels
 	// — never fail an issue for an infra reason. The prior design:fail stays.
 	skippedContent := "```qa-result\n" +
-		`{"verdict":"pass","summary":"figma unreachable","design":{"verdict":"skipped"}}` +
+		`{"verdict":"pass","summary":"figma unreachable","commands":[{"cmd":"pnpm test","branch_exit":0,"kind":"pass"}],"design":{"verdict":"skipped"}}` +
 		"\n```"
 	if verdict, _ := testHandler.TaskService.CaptureQAEvidence(ctx, issue, skippedContent); verdict != "pass" {
 		t.Fatalf("CaptureQAEvidence: verdict = %q, want pass", verdict)

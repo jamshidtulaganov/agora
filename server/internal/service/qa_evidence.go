@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
@@ -89,6 +90,19 @@ func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, con
 	}
 
 	v := strings.ToLower(strings.TrimSpace(p.Verdict))
+
+	// Evidence floor (audit requirement): a "pass" that carries ZERO commands
+	// asserted nothing was actually verified. downgradeQAVerdictToStale
+	// attaches qa:stale + an explanatory comment INSTEAD of applying qa:pass —
+	// the qa_evidence row is deliberately NOT written, so an under-evidenced
+	// "pass" never sits in the evidence table reading as green.
+	if v == "pass" {
+		if reason := s.qaEvidenceFloorGap(ctx, issue, p); reason != "" {
+			s.downgradeQAVerdictToStale(ctx, issue, reason)
+			return "", false
+		}
+	}
+
 	label, color := "", ""
 	switch v {
 	case "pass":
@@ -200,6 +214,102 @@ func (s *TaskService) upsertQAEvidenceRow(ctx context.Context, issue db.Issue, r
 	})
 	slog.Info("qa evidence captured", "issue_id", util.UUIDToString(issue.ID), "verdict", p.Verdict)
 	return nil
+}
+
+// qaEvidenceFloorGap returns a human-readable reason when a "pass" verdict's
+// evidence does not clear the floor, or "" when it does. Two independent
+// checks:
+//  1. ZERO commands — the verdict asserted "pass" without a single command
+//     result to back it. Always required, regardless of the issue's cases.
+//  2. For an issue with at least one UI-modality test case: some VISUAL
+//     evidence — a screenshot in the verdict, or a captured Playwright trace
+//     on one of the issue's automated runs. Command exit codes alone don't
+//     prove a UI case was actually driven and checked.
+// Best-effort: a query error on the (2) check is treated as "no gap" (fail
+// open on the SECOND, stricter check only — the first, unconditional zero-
+// commands check never depends on a query and always applies).
+func (s *TaskService) qaEvidenceFloorGap(ctx context.Context, issue db.Issue, p qaResultPayload) string {
+	if len(p.Commands) == 0 {
+		return "the verdict carried zero commands — nothing ran to prove it"
+	}
+	if len(p.Screenshots) > 0 {
+		return ""
+	}
+	cases, err := s.Queries.ListTestCasesForIssue(ctx, db.ListTestCasesForIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		return ""
+	}
+	hasUICase := false
+	for _, c := range cases {
+		if c.Modality == "ui" {
+			hasUICase = true
+			break
+		}
+	}
+	if !hasUICase {
+		return ""
+	}
+	runs, err := s.Queries.ListLatestRunsForIssueCases(ctx, db.ListLatestRunsForIssueCasesParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		return ""
+	}
+	for _, r := range runs {
+		if strings.TrimSpace(r.TracePath) != "" {
+			return ""
+		}
+	}
+	return "this issue has a UI-modality test case but the verdict carried no screenshot and no run has a captured trace"
+}
+
+// downgradeQAVerdictToStale attaches qa:stale (replacing qa:pass/qa:fail, if
+// either is present) and posts a loud system comment explaining why the
+// verdict was not applied, instead of accepting an under-evidenced "pass".
+// Mirrors EscalateStaleQAGate's framing (qa:stale = "the gate didn't produce
+// a trustworthy result", not a test failure) so this reads consistently with
+// the watchdog's own stale escalation. The qa_evidence row is intentionally
+// NEVER written here — an insufficiently-evidenced "pass" must not sit in the
+// evidence table at all, or the chip would still show a stale-but-green
+// summary.
+func (s *TaskService) downgradeQAVerdictToStale(ctx context.Context, issue db.Issue, reason string) {
+	labelID, err := s.ensureLabel(ctx, issue.WorkspaceID, "qa:stale", "#f59e0b")
+	if err != nil {
+		slog.Warn("qa evidence floor: ensure qa:stale label failed", "error", err, "issue_id", util.UUIDToString(issue.ID))
+		return
+	}
+	if err := s.Queries.AttachLabelToIssue(ctx, db.AttachLabelToIssueParams{
+		IssueID: issue.ID, LabelID: labelID, WorkspaceID: issue.WorkspaceID,
+	}); err != nil {
+		slog.Warn("qa evidence floor: attach qa:stale failed", "error", err, "issue_id", util.UUIDToString(issue.ID))
+		return
+	}
+	s.DetachIssueLabelByName(ctx, issue, "qa:pass")
+	s.DetachIssueLabelByName(ctx, issue, "qa:fail")
+	note := "⚠️ QA reported a \"pass\" verdict, but " + reason + " — insufficient evidence — verdict not applied. " +
+		"Marking qa:stale (not qa:fail — this is a missing-evidence problem, not a proven test failure); re-run QA with real evidence."
+	if _, cerr := s.Queries.CreateComment(ctx, db.CreateCommentParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+		AuthorType:  "system",
+		AuthorID:    pgtype.UUID{Valid: true},
+		Content:     note,
+		Type:        "system",
+		ParentID:    pgtype.UUID{Valid: false},
+	}); cerr != nil {
+		slog.Warn("qa evidence floor: system comment failed", "error", cerr, "issue_id", util.UUIDToString(issue.ID))
+	}
+	s.Bus.Publish(events.Event{
+		Type:        protocol.EventIssueLabelsChanged,
+		WorkspaceID: util.UUIDToString(issue.WorkspaceID),
+		ActorType:   "agent",
+		ActorID:     "",
+		Payload:     map[string]any{"issue_id": util.UUIDToString(issue.ID)},
+	})
+	slog.Warn("qa evidence floor: pass verdict downgraded to qa:stale — insufficient evidence",
+		"issue_id", util.UUIDToString(issue.ID), "reason", reason)
 }
 
 // designVerdictFromResult extracts result_json.design.verdict from a raw

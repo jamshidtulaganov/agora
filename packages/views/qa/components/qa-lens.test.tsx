@@ -294,4 +294,65 @@ describe("QALensBody", () => {
       expect(await screen.findByTestId("live-bay-active")).toBeInTheDocument();
     });
   });
+
+  // Phase 2 (reconciled QA state — service.ReconcileQAState on the backend).
+  // The server folds labels + per-case run results + a live task into ONE
+  // richer enum; the chip renders it directly when present, and falls back
+  // to the legacy pass/fail/pending computation (already covered above) when
+  // it's absent or unrecognized (an old server, or a future value).
+  describe("reconciled QA state chip", () => {
+    it("renders pass_with_failing_cases as an amber 'Pass · N case(s) failing', not a clean pass", async () => {
+      apiMocks.getQAEvidence.mockResolvedValue(baseEvidence({ reconciled_state: "pass_with_failing_cases" }));
+      apiMocks.getIssueTestCases.mockResolvedValue({
+        test_cases: [
+          { id: "tc-1", latest_run: { status: "pass" } },
+          { id: "tc-2", latest_run: { status: "fail" } },
+        ],
+      });
+      renderLens();
+
+      await screen.findByText("Pass · 1 case(s) failing"); // qa_evidence.verdict_pass_with_failing
+      expect(screen.queryByText("Passed")).not.toBeInTheDocument();
+    });
+
+    it("renders blocked distinctly from fail", async () => {
+      apiMocks.getQAEvidence.mockResolvedValue(baseEvidence({ reconciled_state: "blocked", verdict: "fail" }));
+      renderLens();
+
+      await screen.findByText("Blocked"); // qa_evidence.verdict_blocked
+      expect(screen.queryByText("Failed")).not.toBeInTheDocument();
+    });
+
+    it("renders stale distinctly from pending", async () => {
+      apiMocks.getQAEvidence.mockResolvedValue(baseEvidence({ reconciled_state: "stale" }));
+      renderLens();
+
+      await screen.findByText("Stale — re-run QA"); // qa_evidence.verdict_stale
+    });
+
+    it("renders running from the server enum even with a plain evidence verdict underneath", async () => {
+      apiMocks.getQAEvidence.mockResolvedValue(baseEvidence({ reconciled_state: "running" }));
+      renderLens();
+
+      await screen.findByText("Running…"); // qa_evidence.verdict_running
+    });
+
+    it("falls back to the legacy chip for an UNRECOGNIZED reconciled_state (future server value)", async () => {
+      apiMocks.getQAEvidence.mockResolvedValue(baseEvidence({ reconciled_state: "some_future_state" }));
+      renderLens();
+
+      // verdict="pass" from baseEvidence, no human override → legacy fallback
+      // renders the plain pass chip exactly as it did before Phase 2.
+      await screen.findByText("Passed");
+    });
+
+    it("falls back to the legacy chip when reconciled_state is absent (OLD SERVER compatibility)", async () => {
+      // baseEvidence() carries no reconciled_state field at all — exactly the
+      // shape a pre-Phase-2 server sends.
+      apiMocks.getQAEvidence.mockResolvedValue(baseEvidence());
+      renderLens();
+
+      await screen.findByText("Passed");
+    });
+  });
 });

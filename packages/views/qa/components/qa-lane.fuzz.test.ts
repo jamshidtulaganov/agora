@@ -25,6 +25,7 @@ const LABEL_NAMES = [
   "qa:pass",
   "qa:fail",
   "qa:stale",
+  "qa:blocked",
   "qa:PASS",
   "QA:FAIL",
   "qa: pass",
@@ -33,6 +34,7 @@ const LABEL_NAMES = [
   "qa:passfail",
   "qa:fail-override",
   "qa:stale-legacy",
+  "qa:blocked-legacy",
   "bug",
   "design:pass",
   "",
@@ -85,7 +87,7 @@ function randomIssue(rand: () => number): Issue {
   };
 }
 
-const KNOWN_STATES: QARowState[] = ["running", "stale", "fail", "pass", "pending"];
+const KNOWN_STATES: QARowState[] = ["running", "stale", "blocked", "fail", "pass", "pending"];
 
 describe("qaRowState fuzz — 8k adversarial inputs", () => {
   it("holds every structural invariant on every input", () => {
@@ -110,12 +112,18 @@ describe("qaRowState fuzz — 8k adversarial inputs", () => {
           const fail = names.includes("qa:fail");
           const pass = names.includes("qa:pass");
 
-          // 3. qa:stale takes precedence over fail/pass when not live.
+          // 3. qa:stale takes precedence over blocked/fail/pass when not live.
           if (names.includes("qa:stale")) {
             expect(state).toBe("stale");
+          } else if (names.includes("qa:blocked")) {
+            // 3b. qa:blocked (a deliberate infra-blocked state) takes
+            //     precedence over fail/pass, same as qa:stale does, but
+            //     ranks below it.
+            expect(state).toBe("blocked");
           } else if (fail && pass) {
-            // 4. Conflicting fail+pass (without stale) degrades to pending —
-            //    an untrustworthy legacy pairing, never a real verdict.
+            // 4. Conflicting fail+pass (without stale/blocked) degrades to
+            //    pending — an untrustworthy legacy pairing, never a real
+            //    verdict.
             expect(state).toBe("pending");
           } else if (fail) {
             expect(state).toBe("fail");

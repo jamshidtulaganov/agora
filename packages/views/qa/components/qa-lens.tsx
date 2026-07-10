@@ -90,6 +90,22 @@ export function verdictFromLabels(names: string[]): Verdict {
   return "pending";
 }
 
+// The reconciled-state values the backend's service.ReconcileQAState can
+// emit (see qa-evidence.ts's QAEvidence.reconciled_state). A value outside
+// this set — "" (no evidence yet / an old server) or a future enum member
+// this build doesn't know about — is treated as "not provided" so the chip
+// falls back to its legacy label-derived computation instead of rendering
+// something unrecognized.
+const KNOWN_RECONCILED_STATES = new Set([
+  "running",
+  "pass",
+  "fail",
+  "blocked",
+  "stale",
+  "never_ran",
+  "pass_with_failing_cases",
+]);
+
 export function QALensBody({ issueId }: { issueId: string }) {
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
@@ -164,6 +180,10 @@ export function QALensBody({ issueId }: { issueId: string }) {
     onSuccess: (_d, next) => {
       void qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, issueId) });
       void qc.invalidateQueries({ queryKey: ["qa-cockpit", wsId] });
+      // The reconciled chip state is computed server-side FROM these same
+      // labels (service.ReconcileQAState) — without this the chip would keep
+      // showing the pre-override state until some unrelated refetch happened.
+      void qc.invalidateQueries({ queryKey: issueKeys.qaEvidence(issueId) });
       toast.success(next === "pass" ? t(($) => $.qa_review.marked_pass) : t(($) => $.qa_review.marked_fail));
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
@@ -224,19 +244,57 @@ export function QALensBody({ issueId }: { issueId: string }) {
   const suggestedVerdict = humanVerdict !== "pending" ? humanVerdict : verdict;
   const chipVerdict: Verdict =
     suggestedVerdict === "pass" || suggestedVerdict === "fail" ? suggestedVerdict : "pending";
+
+  // Reconciled chip state (Phase 2 — service.ReconcileQAState on the
+  // backend): folds labels + per-case run results + a live task into ONE
+  // richer enum than pass/fail/pending, so the chip can show
+  // "pass_with_failing_cases" (amber — a qa:pass label sitting on a
+  // known-failing case, NOT a clean pass) and distinguish blocked / stale /
+  // running / never_ran instead of lumping them all into "pending". Only
+  // trusted when the server actually populated it (a non-empty, recognized
+  // value) — "" covers both "no evidence row yet" and an OLD SERVER that
+  // predates this field; either way this falls back to the legacy
+  // pass/fail/pending chip above, with the live-run signal layered on top so
+  // a running gate still reads as "running" rather than a stale "pending".
+  const chipVerdictAsState: string = chipVerdict === "pending" ? "never_ran" : chipVerdict;
+  const serverReconciledState = evidence?.reconciled_state ?? "";
+  const reconciledState = KNOWN_RECONCILED_STATES.has(serverReconciledState)
+    ? serverReconciledState
+    : qaRunning
+      ? "running"
+      : chipVerdictAsState;
+
+  // Failing-case count for the "Pass · N cases failing" copy — read from the
+  // SAME test-cases fetch the live-bay gate already uses (lensCases) rather
+  // than widening the API response to also carry a count.
+  const failingCaseCount = (lensCases ?? []).filter((c) => c.latest_run?.status === "fail").length;
+
   // Provenance for the chip: a label that diverges from the agent's own
   // evidence verdict can only have gotten there via a human's Override click
   // (the auto-gate always attaches the label matching its own verdict) — so
   // that divergence IS the "human touched this" signal, with no extra state
-  // to track.
+  // to track. No source pill for the two "nothing to attribute" states.
   const isOverride = humanVerdict !== "pending" && humanVerdict !== verdict;
-  const chipSource = chipVerdict === "pending" ? null : isOverride ? "human" : evidence?.source || "agent";
+  const chipSource =
+    reconciledState === "never_ran" || reconciledState === "running"
+      ? null
+      : isOverride
+        ? "human"
+        : evidence?.source || "agent";
   const verdictLabel =
-    chipVerdict === "pass"
+    reconciledState === "pass"
       ? t(($) => $.qa_evidence.verdict_pass)
-      : chipVerdict === "fail"
-        ? t(($) => $.qa_evidence.verdict_fail)
-        : t(($) => $.qa_evidence.verdict_unknown);
+      : reconciledState === "pass_with_failing_cases"
+        ? t(($) => $.qa_evidence.verdict_pass_with_failing, { count: failingCaseCount })
+        : reconciledState === "fail"
+          ? t(($) => $.qa_evidence.verdict_fail)
+          : reconciledState === "blocked"
+            ? t(($) => $.qa_evidence.verdict_blocked)
+            : reconciledState === "stale"
+              ? t(($) => $.qa_evidence.verdict_stale)
+              : reconciledState === "running"
+                ? t(($) => $.qa_evidence.verdict_running)
+                : t(($) => $.qa_evidence.verdict_unknown);
 
   if (isLoading || !issue) {
     return (
@@ -324,9 +382,9 @@ export function QALensBody({ issueId }: { issueId: string }) {
                   live in the triage bar — those two were showing the same
                   fact twice. */}
               <div className="pb-4">
-                <div className={cn("rounded-lg border px-3 py-2", verdictTone(chipVerdict))}>
+                <div className={cn("rounded-lg border px-3 py-2", verdictTone(reconciledState))}>
                   <div className="flex items-center gap-2">
-                    {verdictIcon(chipVerdict, "size-4 shrink-0")}
+                    {verdictIcon(reconciledState, "size-4 shrink-0")}
                     <span className="text-sm font-medium">{verdictLabel}</span>
                     {chipSource && (
                       <span className="shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">

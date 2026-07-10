@@ -1,10 +1,13 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/multica-ai/multica/server/internal/service"
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
 // Merge-readiness gate (Phase D of the review-system build). Deterministic:
@@ -70,6 +73,9 @@ func reviewTierForLabels(labels map[string]bool) reviewTier {
 
 // gateFromLabels resolves one gate's status from the issue's label set: a
 // `<g>:fail` label blocks, a `<g>:pass` label passes, neither is pending.
+// Used for every gate EXCEPT "qa" — the qa gate is reconciled (see
+// qaGateFromReconciledState) so it also fails closed on a case regression a
+// bare label check can't see.
 func gateFromLabels(labels map[string]bool, g string) string {
 	// Both labels present = a legacy sticky pair from before verdicts became
 	// replace-on-write; the freshest verdict is unknowable from the label set,
@@ -84,6 +90,39 @@ func gateFromLabels(labels map[string]bool, g string) string {
 		return "pass"
 	}
 	return "pending"
+}
+
+// qaGateFromReconciledState resolves the "qa" gate from the SAME reconciled
+// state the qa-evidence endpoint and the QA lens/cockpit read (Phase 2 of the
+// QA-stage review — service.ReconcileQAState), instead of a bare label check.
+// This is what makes pass_with_failing_cases fail-closed here too: a qa:pass
+// label sitting on a known-failing case must NOT clear the merge gate just
+// because gateFromLabels alone can't see the case-run signal. reason is a
+// human-readable blocked-reason string for the non-pass states.
+func (h *Handler) qaGateFromReconciledState(ctx context.Context, issue db.Issue) (status, reason string) {
+	hasEvidence := true
+	if _, err := h.Queries.GetLatestQAEvidenceForIssue(ctx, db.GetLatestQAEvidenceForIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+	}); err != nil {
+		hasEvidence = false
+	}
+	state := h.reconciledQAState(ctx, issue, hasEvidence)
+	switch state {
+	case service.QAStatePass:
+		return "pass", ""
+	case service.QAStatePassWithFailingCases:
+		return "fail", "qa passed (qa:pass) but at least one defined test case's latest run is failing — not a clean pass"
+	case service.QAStateFail:
+		return "fail", "qa failed (qa:fail)"
+	case service.QAStateBlocked:
+		return "fail", "qa gate is blocked (qa:blocked)"
+	case service.QAStateRunning:
+		return "pending", "qa gate is running"
+	case service.QAStateStale:
+		return "pending", "qa gate went stale — re-run QA"
+	default: // QAStateNeverRan
+		return "pending", "qa has not passed yet"
+	}
 }
 
 // MergeReadiness handles GET /api/issues/{id}/merge-readiness. Read-only and
@@ -109,15 +148,23 @@ func (h *Handler) MergeReadiness(w http.ResponseWriter, r *http.Request) {
 	blocked := make([]string, 0)
 	ready := true
 	for _, g := range required {
-		st := gateFromLabels(labels, g)
+		var st, reason string
+		if g == "qa" {
+			// The qa gate is RECONCILED (labels + per-case run results + live
+			// task), not a bare label check — see qaGateFromReconciledState.
+			st, reason = h.qaGateFromReconciledState(r.Context(), issue)
+		} else {
+			st = gateFromLabels(labels, g)
+			if st == "fail" {
+				reason = g + " failed (" + g + ":fail)"
+			} else if st == "pending" {
+				reason = g + " has not passed yet"
+			}
+		}
 		gates = append(gates, gateStatus{Name: g, Status: st})
-		switch st {
-		case "fail":
+		if st != "pass" {
 			ready = false
-			blocked = append(blocked, g+" failed ("+g+":fail)")
-		case "pending":
-			ready = false
-			blocked = append(blocked, g+" has not passed yet")
+			blocked = append(blocked, reason)
 		}
 	}
 

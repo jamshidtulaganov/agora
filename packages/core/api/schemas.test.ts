@@ -421,6 +421,45 @@ describe("QAEvidenceSchema (evidence-first QA)", () => {
     expect(parsed.result?.commands).toHaveLength(1);
     expect(parsed.result?.design).toBeNull();
   });
+
+  describe("reconciled_state (Phase 2 — server-computed single source of truth)", () => {
+    it("parses a known reconciled state through untouched", () => {
+      const parsed = QAEvidenceSchema.parse({
+        id: "e1", issue_id: "i1", verdict: "pass", reconciled_state: "pass_with_failing_cases",
+      });
+      expect(parsed.reconciled_state).toBe("pass_with_failing_cases");
+    });
+
+    it("defaults to \"\" when the field is absent — OLD SERVER compatibility", () => {
+      // A server that predates Phase 2 never sends this field at all. The
+      // client must fall back to its own label-derived computation, not
+      // reject the whole evidence row — "" is the explicit signal for that.
+      const parsed = QAEvidenceSchema.parse({ id: "e1", issue_id: "i1", verdict: "pass" });
+      expect(parsed.reconciled_state).toBe("");
+    });
+
+    it("degrades an unrecognized/future state to a plain string, never throws", () => {
+      // A newer server might ship an enum value this client doesn't know
+      // about yet — must not reject the evidence row over it.
+      const parsed = QAEvidenceSchema.parse({
+        id: "e1", issue_id: "i1", verdict: "pass", reconciled_state: "some_future_state",
+      });
+      expect(parsed.reconciled_state).toBe("some_future_state");
+    });
+
+    it("a wrong-typed reconciled_state (number) falls back to the row's own default via .nullable() null-fallback, not a throw", () => {
+      // Whole-response malformed-field tolerance: a non-string reconciled_state
+      // must not crash the endpoint — parseWithFallback's null fallback (the
+      // real client path, see getQAEvidence) absorbs it.
+      const result = parseWithFallback(
+        { id: "e1", issue_id: "i1", verdict: "pass", reconciled_state: 42 },
+        QAEvidenceSchema.nullable(),
+        null,
+        { endpoint: "t" },
+      );
+      expect(result).toBeNull();
+    });
+  });
 });
 
 describe("DeployEventSchema / IssueDeployEventsResponseSchema (deploy P0)", () => {

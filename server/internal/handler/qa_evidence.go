@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
@@ -20,33 +21,46 @@ import (
 // QA section reads this single indexed row instead of re-parsing the timeline,
 // so opening any of N in-review tasks is a cheap read. result is the verbatim
 // ```qa-result``` payload (verdict / summary / commands / screenshots).
+//
+// ReconciledState is the server-computed single source of truth (Phase 2 of
+// the QA-stage review — see service.ReconcileQAState): the SAME enum the
+// merge-readiness qa gate uses, folding in labels, per-case run results, and
+// whether a QA task is running right now — not just this row's own verdict
+// field. Only populated when an evidence row exists (this endpoint still
+// returns a bare `null` body when none has been captured — see
+// GetIssueQAEvidence — so existing `!evidence` consumers are unaffected); a
+// plain string (not a strict enum) so an old frontend simply ignores it and a
+// new frontend on an old server that omits it falls back to its own
+// label-derived computation (parseWithFallback + the schema default).
 type QAEvidenceResponse struct {
-	ID          string          `json:"id"`
-	IssueID     string          `json:"issue_id"`
-	BaselineRef string          `json:"baseline_ref"`
-	BranchSha   string          `json:"branch_sha"`
-	Verdict     string          `json:"verdict"`
-	Source      string          `json:"source"`
-	Summary     string          `json:"summary"`
-	Result      json.RawMessage `json:"result"`
-	CapturedAt  string          `json:"captured_at"`
+	ID              string          `json:"id"`
+	IssueID         string          `json:"issue_id"`
+	BaselineRef     string          `json:"baseline_ref"`
+	BranchSha       string          `json:"branch_sha"`
+	Verdict         string          `json:"verdict"`
+	Source          string          `json:"source"`
+	Summary         string          `json:"summary"`
+	Result          json.RawMessage `json:"result"`
+	CapturedAt      string          `json:"captured_at"`
+	ReconciledState string          `json:"reconciled_state"`
 }
 
-func qaEvidenceToResponse(e db.QaEvidence) QAEvidenceResponse {
+func qaEvidenceToResponse(e db.QaEvidence, reconciledState service.QAState) QAEvidenceResponse {
 	result := json.RawMessage(e.ResultJson)
 	if len(result) == 0 {
 		result = json.RawMessage("{}")
 	}
 	return QAEvidenceResponse{
-		ID:          uuidToString(e.ID),
-		IssueID:     uuidToString(e.IssueID),
-		BaselineRef: e.BaselineRef,
-		BranchSha:   e.BranchSha,
-		Verdict:     e.Verdict,
-		Source:      e.Source,
-		Summary:     e.Summary,
-		Result:      result,
-		CapturedAt:  e.CapturedAt.Time.Format(time.RFC3339),
+		ID:              uuidToString(e.ID),
+		IssueID:         uuidToString(e.IssueID),
+		BaselineRef:     e.BaselineRef,
+		BranchSha:       e.BranchSha,
+		Verdict:         e.Verdict,
+		Source:          e.Source,
+		Summary:         e.Summary,
+		Result:          result,
+		CapturedAt:      e.CapturedAt.Time.Format(time.RFC3339),
+		ReconciledState: string(reconciledState),
 	}
 }
 
@@ -71,7 +85,8 @@ func (h *Handler) GetIssueQAEvidence(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to load qa evidence")
 		return
 	}
-	writeJSON(w, http.StatusOK, qaEvidenceToResponse(evidence))
+	reconciled := h.reconciledQAState(r.Context(), issue, true)
+	writeJSON(w, http.StatusOK, qaEvidenceToResponse(evidence, reconciled))
 }
 
 // qaVerdictSummary is one issue's freshest QA verdict for the cockpit rows —

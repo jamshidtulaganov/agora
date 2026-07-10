@@ -31,20 +31,38 @@ function relAge(iso: string): string {
 
 // The QA STATE of a row, derived only from data already loaded (the live-run set
 // + the issue's qa:* labels) — no new backend field. It disambiguates the single
-// old "stale" chip into the five states a reviewer actually triages by:
+// old "stale" chip into the states a reviewer actually triages by:
 //   running — a gate task is executing on this issue right now (isLive);
 //   stale   — watchdog-escalated: the gate never produced a verdict;
+//   blocked — qa:blocked: a DELIBERATE infra-blocked state the gate reported
+//             (e.g. an undeployable sprint branch), not a test failure;
 //   fail    — qa:fail (a real test failure);
 //   pass    — qa:pass (ready to merge);
-//   pending — in review, queued/awaiting QA, nothing wrong yet.
-// Precedence: an active run is the freshest truth, then the infra-stall, then a
-// real verdict. A legacy fail+pass pair is untrustworthy → pending, not fail.
-export type QARowState = "running" | "stale" | "fail" | "pass" | "pending";
+//   pending — in review, queued/awaiting QA, nothing wrong yet (also covers
+//             "never touched by QA at all" and a legacy fail+pass pair —
+//             this dense chip doesn't need a separate never_ran bucket the
+//             way the fuller server-side reconciled enum does).
+// Precedence: an active run is the freshest truth, then the explicit
+// watchdog stale flag, then the deliberate blocked flag, then a real
+// verdict. A legacy fail+pass pair is untrustworthy → pending, not fail
+// (this exact rule is fuzz-tested — qa-lane.fuzz.test.ts — do not change it
+// without updating that test's invariants).
+//
+// Precedence ORDER (not the pending-vs-stale MAPPING TARGET for the sticky
+// pair, which is this lane's own established rule) mirrors
+// service.ReconcileQAState (server/internal/service/qa_state.go) at the
+// label-combination level: running > stale > blocked > fail > pass > (else).
+// This lane has no per-case run data at this density (a queue of N rows), so
+// it can never reach the server's richer pass_with_failing_cases — that
+// distinction is reserved for the qa-lens chip, which has the case data for
+// ONE issue.
+export type QARowState = "running" | "stale" | "blocked" | "fail" | "pass" | "pending";
 
 export function qaRowState(issue: Issue, isLive: boolean): QARowState {
   if (isLive) return "running";
   const names = (issue.labels ?? []).map((l) => l.name);
   if (names.includes("qa:stale")) return "stale";
+  if (names.includes("qa:blocked")) return "blocked";
   const fail = names.includes("qa:fail");
   const pass = names.includes("qa:pass");
   if (fail && pass) return "pending";
@@ -70,6 +88,11 @@ function useStateBadgeMeta(): Record<QARowState, { label: string; className: str
       label: t(($) => $.qa_cockpit.state_stale),
       className: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
       title: t(($) => $.qa_cockpit.state_stale_title),
+    },
+    blocked: {
+      label: t(($) => $.qa_cockpit.state_blocked),
+      className: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+      title: t(($) => $.qa_cockpit.state_blocked_title),
     },
     fail: {
       label: t(($) => $.qa_cockpit.state_fail),

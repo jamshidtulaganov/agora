@@ -1050,6 +1050,15 @@ export const QAEvidenceSchema = z.object({
   summary: z.string().default(""),
   result: QAResultSchema.nullable().default(null),
   captured_at: z.string().default(""),
+  // The server-computed single source of truth (Phase 2 of the QA-stage
+  // review — service.ReconcileQAState on the backend): "running" | "pass" |
+  // "fail" | "blocked" | "stale" | "never_ran" | "pass_with_failing_cases".
+  // A plain string, not a strict enum, on purpose — an unrecognized value (a
+  // future state, or "" from a server that predates this field) must degrade
+  // gracefully rather than reject the whole evidence row. "" is the explicit
+  // "not provided" signal consumers (qa-lens, qa-lane) fall back to their own
+  // label-derived computation on.
+  reconciled_state: z.string().default(""),
 }).loose();
 
 // Deploy events — the durable Tier-1 (QA-box git-sync) deploy signal (deploy
