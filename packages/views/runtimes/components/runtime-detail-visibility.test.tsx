@@ -69,6 +69,7 @@ vi.mock("@agora/core/paths", () => ({
   useWorkspacePaths: () => ({
     runtimes: () => "/runtimes",
     agentDetail: () => "/agents",
+    agents: () => "/agents",
   }),
 }));
 
