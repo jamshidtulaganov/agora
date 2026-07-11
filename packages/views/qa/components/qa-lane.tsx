@@ -71,6 +71,21 @@ export function qaRowState(issue: Issue, isLive: boolean): QARowState {
   return "pending";
 }
 
+// One issue's EFFECTIVE reconciled state: the server's batch-computed
+// reconciled_state (GET /api/qa/verdicts) when present, else the label+live
+// derived row state above (fail-open for old servers / evidence-less issues).
+// Shared by the Release queue's toggles and the health strip's needs-decision
+// chip so both count the exact same states.
+export function qaEffectiveState(
+  issue: Issue,
+  verdicts: Record<string, { reconciled_state?: string } | undefined>,
+  liveIssueIds: ReadonlySet<string>,
+): string {
+  const server = verdicts[issue.id]?.reconciled_state ?? "";
+  if (server !== "") return server;
+  return qaRowState(issue, liveIssueIds.has(issue.id));
+}
+
 // Token-based, color-coded state chip. running=info (pulsing), stale=amber
 // (warning), fail=destructive, pass=emerald (the codebase's standardized success
 // tint), pending=muted — the same vocabulary the verdict lanes and review page

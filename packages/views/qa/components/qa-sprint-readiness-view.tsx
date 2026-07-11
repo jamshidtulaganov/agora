@@ -129,6 +129,11 @@ function SprintCard({ sprint: s, wsId, qaDetail }: { sprint: SprintData; wsId: s
   // warning at all).
   const [pendingMove, setPendingMove] = useState<{ issueId: string; sprintName: string } | null>(null);
   const pct = s.total > 0 ? Math.round((s.passed / s.total) * 100) : 0;
+  // Fail-first row order: the rows blocking the merge surface at the top of
+  // the card (pending next, passed last); stable sort keeps server order
+  // within each group.
+  const verdictRank = (v: string) => (v === "fail" ? 0 : v === "pass" ? 2 : 1);
+  const sortedIssues = [...s.issues].sort((a, b) => verdictRank(a.verdict) - verdictRank(b.verdict));
   const runRegression = useMutation({
     mutationFn: () => api.runSprintRegression(s.sprint_id),
     onSuccess: () => {
@@ -271,7 +276,7 @@ function SprintCard({ sprint: s, wsId, qaDetail }: { sprint: SprintData; wsId: s
         <div className="px-4 py-4 text-[12px] text-muted-foreground">{t(($) => $.qa_cockpit.sprint_no_tasks)}</div>
       ) : (
         <ul className="divide-y">
-          {s.issues.map((i) => (
+          {sortedIssues.map((i) => (
             <li key={i.id} className="flex items-center gap-3 px-4 py-2 text-[12px]">
               <VerdictDot verdict={i.verdict} />
               <AppLink href={qaDetail(i.id)} className="shrink-0 font-medium text-muted-foreground hover:text-foreground">
