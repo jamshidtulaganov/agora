@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CheckCircle2, XCircle, CircleDashed, GitBranch, Rocket, Play, Plus, ShieldCheck, ShieldAlert, Loader2 } from "lucide-react";
+import { CheckCircle2, XCircle, CircleDashed, GitBranch, Rocket, Play, Plus, Loader2 } from "lucide-react";
 import { api } from "@agora/core/api";
+import { sprintReadinessOptions } from "@agora/core/qa/queries";
 import type { SprintReadinessResponse } from "@agora/core/api/schemas";
 import { useWorkspacePaths } from "@agora/core/paths";
 import { useWorkspaceId } from "@agora/core/hooks";
@@ -24,6 +25,7 @@ import { useT } from "../../i18n";
 import { AppLink } from "../../navigation";
 import { IssuePickerModal } from "../../modals/issue-picker-modal";
 import { SprintDeployPanel } from "./sprint-deploy-panel";
+import { regressionStatusMeta } from "./regression-status";
 
 // Sprint QA-readiness — "is this sprint mergeable?" Per active sprint: the issue
 // rows by QA verdict (human qa:pass/qa:fail + automated regression runs) and a
@@ -40,14 +42,8 @@ export function QASprintReadinessView({ projectId }: { projectId?: string }) {
   const wp = useWorkspacePaths();
   const wsId = useWorkspaceId();
   const { t } = useT("issues");
-  const { data, isLoading } = useQuery({
-    // wsId in the key: the fetch scopes by the ambient workspace header, so
-    // without it a workspace switch served the previous workspace's cache.
-    queryKey: ["qa-sprint-readiness", wsId, projectId ?? "all"],
-    queryFn: () => api.getSprintReadiness(projectId),
-    staleTime: 30_000,
-    refetchInterval: 60_000,
-  });
+  // Shared factory — the same cache entry the health strip reads.
+  const { data, isLoading } = useQuery(sprintReadinessOptions(wsId, projectId));
 
   const sprints = data?.sprints ?? [];
 
@@ -88,13 +84,12 @@ function RegressionGate({ gate, issueHref }: { gate: SprintData["regression"]; i
   if (!gate || !gate.status) {
     return <span className="text-[11px] text-muted-foreground">{t(($) => $.qa_cockpit.sprint_regression_never_run)}</span>;
   }
-  const done = gate.status === "completed" || gate.status === "succeeded";
-  const failed = gate.status === "failed" || gate.status === "error";
-  const Icon = failed ? ShieldAlert : done ? ShieldCheck : Loader2;
-  const cls = failed ? "text-destructive" : done ? "text-emerald-500" : "text-muted-foreground";
+  // Shared status classification (regression-status.ts) — the health strip's
+  // glyph renders the same mapping, so the two can't drift.
+  const { running, Icon, className: cls } = regressionStatusMeta(gate.status);
   const body = (
     <>
-      <Icon className={`size-3.5 ${!done && !failed ? "animate-spin" : ""}`} aria-hidden />
+      <Icon className={`size-3.5 ${running ? "animate-spin" : ""}`} aria-hidden />
       {t(($) => $.qa_cockpit.sprint_regression_status, { status: gate.status })}
     </>
   );

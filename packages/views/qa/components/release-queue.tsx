@@ -18,7 +18,8 @@ import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core";
 import { useWorkspacePaths } from "@agora/core/paths";
 import { projectListOptions } from "@agora/core/projects/queries";
-import { agentTaskSnapshotKeys, agentTaskSnapshotOptions } from "@agora/core/agents";
+import { qaQueueOptions, qaVerdictsOptions } from "@agora/core/qa/queries";
+import { agentTaskSnapshotKeys } from "@agora/core/agents";
 import { useActorName } from "@agora/core/workspace/hooks";
 import { PRIORITY_ORDER } from "@agora/core/issues/config";
 import type { Issue, IssuePriority } from "@agora/core/types";
@@ -39,7 +40,7 @@ import { ActorAvatar } from "../../common/actor-avatar";
 import { PriorityIcon } from "../../issues/components/priority-icon";
 import { AppLink } from "../../navigation";
 import { Lane, QAIssueRow, qaEffectiveState } from "./qa-lane";
-import { useQaSquadAgentIds } from "./qa-live-progress";
+import { useQaLiveIssueMap } from "./qa-live-progress";
 
 // The Release page's Queue tab — the QA team's triage view. The in_review
 // queue (scoped by the page's project selector) grouped by QA verdict so the
@@ -92,8 +93,8 @@ export function ReleaseQueue({
   const wsId = useWorkspaceId();
   const wp = useWorkspacePaths();
   const { t } = useT("issues");
-  // "all" mirrors the page-level selector's sentinel so the query keys stay
-  // identical to the health strip's (shared cache entries).
+  // "all" mirrors the page-level selector's sentinel (the shared query
+  // factories use the same one for their cache keys).
   const project = projectId ?? "all";
   const [layout, setLayout] = useState<QueueLayout>("list");
   const [assigneeFilter, setAssigneeFilter] = useState<AssigneeKey[]>([]);
@@ -144,42 +145,17 @@ export function ReleaseQueue({
   ];
 
   // Which issues have a QA run executing RIGHT NOW — mark those rows "live" so
-  // a QA lead sees the queue moving. Filtered to the QA squad's own tasks
-  // (useQaSquadAgentIds) — an unrelated dev/knowledge task running on the same
-  // in_review issue is NOT "QA is running" and must not light up the row or
-  // hand its task id to the Stop button (audit finding: the cockpit queue had
-  // the same unfiltered-Stop flaw as the Test-cases panel).
-  const { data: taskSnapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
-  const qaAgentIds = useQaSquadAgentIds(wsId);
-  const isQaTask = (t: (typeof taskSnapshot)[number]) =>
-    t.status === "running" && !!t.issue_id && (!qaAgentIds || qaAgentIds.size === 0 || qaAgentIds.has(t.agent_id));
-  const liveIssueIds = useMemo(
-    () => new Set(taskSnapshot.filter(isQaTask).map((t) => t.issue_id)),
-    [taskSnapshot, qaAgentIds],
-  );
-  // issueId → live task id, so a running row can offer a Stop button. First
-  // running task per issue wins (a gate is one task); `.id` is what the cancel
-  // endpoint needs (SliceActionResponse carries no task id).
-  const runningTaskByIssue = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const t of taskSnapshot) {
-      if (isQaTask(t) && !map.has(t.issue_id)) map.set(t.issue_id, t.id);
-    }
-    return map;
-  }, [taskSnapshot, qaAgentIds]);
-  const { data, isLoading } = useQuery({
-    queryKey: ["qa-cockpit", wsId, project],
-    queryFn: () =>
-      api.listIssues({ status: "in_review", limit: 200, ...(project !== "all" ? { project_id: project } : {}) }),
-    staleTime: 15_000,
-  });
+  // a QA lead sees the queue moving. Filtered to the QA squad's own tasks —
+  // an unrelated dev/knowledge task running on the same in_review issue is NOT
+  // "QA is running" and must not light up the row or hand its task id to the
+  // Stop button (audit finding: the cockpit queue had the same unfiltered-Stop
+  // flaw as the Test-cases panel). Shared with the health strip's
+  // needs-decision chip so both classify "running" identically.
+  const { liveIssueIds, runningTaskByIssue } = useQaLiveIssueMap(wsId);
+  const { data, isLoading, isError } = useQuery(qaQueueOptions(wsId, projectId));
   // Freshest verdict per row (reason + provenance + age) — one batch call, so
   // the lanes answer "why is this here" without opening each issue.
-  const { data: verdictData } = useQuery({
-    queryKey: ["qa-verdicts", wsId, project],
-    queryFn: () => api.listQAVerdicts(project !== "all" ? project : undefined),
-    staleTime: 15_000,
-  });
+  const { data: verdictData } = useQuery(qaVerdictsOptions(wsId, projectId));
   const verdicts = useMemo(() => verdictData?.verdicts ?? {}, [verdictData]);
 
   // Bulk triage selection (list view): 33 items in "Needs fix" must not mean
@@ -289,9 +265,24 @@ export function ReleaseQueue({
   // straight to the issue with the QA stage pre-selected.
   const qaLensHref = (id: string) => `${wp.issueDetail(id)}?lens=qa`;
 
-  // A truly empty queue (no filters hiding anything) means the review loop is
-  // clear — point at Ship, where the release decision actually happens next.
-  if (!isLoading && issues.length === 0) {
+  // A failed fetch must NOT read as an empty queue — the affirmative
+  // "all clear, go to Ship" claim below would tell the team the review loop
+  // is done when the request actually errored (network / 5xx). Render a
+  // neutral error state instead (fail closed, per the API-compat doctrine).
+  if (isError) {
+    return (
+      <div className="flex w-full flex-col gap-4 px-8 py-8">
+        <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-12 text-center text-sm text-muted-foreground">
+          {t(($) => $.qa_cockpit.queue_load_failed)}
+        </div>
+      </div>
+    );
+  }
+
+  // A truly empty queue (successful fetch, no filters hiding anything) means
+  // the review loop is clear — point at Ship, where the release decision
+  // actually happens next.
+  if (!isLoading && !isError && issues.length === 0) {
     return (
       <div className="flex w-full flex-col gap-4 px-8 py-8">
         <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-12 text-center">

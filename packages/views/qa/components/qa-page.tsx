@@ -110,9 +110,14 @@ export function QAPage() {
             }}
           />
         )}
-        {tab === "queue" ? (
+        {/* The Queue stays MOUNTED across tab switches (display-toggled, not
+            unmounted) so an in-progress triage cut — filters, bulk selection,
+            list/board layout — survives a glance at Ship/Bugs/Suite/Metrics
+            instead of resetting on every return. */}
+        <div className={tab === "queue" ? "contents" : "hidden"}>
           <ReleaseQueue projectId={projectId} initialNeedsHumanOnly={needsHumanSeed} onOpenShip={openShip} />
-        ) : tab === "ship" ? (
+        </div>
+        {tab === "ship" ? (
           <QASprintReadinessView projectId={projectId} />
         ) : tab === "bugs" ? (
           <div className="flex w-full flex-col gap-4 px-8 py-8">
@@ -120,9 +125,9 @@ export function QAPage() {
           </div>
         ) : tab === "suite" ? (
           <QASuiteView projectId={projectId} />
-        ) : (
+        ) : tab === "metrics" ? (
           <QAMetricsView projectId={projectId} />
-        )}
+        ) : null}
       </div>
     </div>
   );

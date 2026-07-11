@@ -15,6 +15,9 @@ const apiMocks = vi.hoisted(() => ({
   getSprintReadiness: vi.fn(),
   listIssues: vi.fn(),
   listQAVerdicts: vi.fn(),
+  getAgentTaskSnapshot: vi.fn(),
+  listSquads: vi.fn(),
+  listSquadMembers: vi.fn(),
 }));
 
 vi.mock("@agora/core/api", () => ({ api: apiMocks }));
@@ -59,6 +62,9 @@ describe("ReleaseHealthStrip", () => {
     vi.clearAllMocks();
     apiMocks.listIssues.mockResolvedValue({ issues: [] });
     apiMocks.listQAVerdicts.mockResolvedValue({ verdicts: {} });
+    apiMocks.getAgentTaskSnapshot.mockResolvedValue([]);
+    apiMocks.listSquads.mockResolvedValue([]);
+    apiMocks.listSquadMembers.mockResolvedValue([]);
   });
 
   it("renders nothing when there are no active sprints", async () => {
@@ -113,5 +119,23 @@ describe("ReleaseHealthStrip", () => {
     const chip = await screen.findByText("2 need a decision");
     fireEvent.click(chip);
     expect(onOpenQueueNeedsHuman).toHaveBeenCalledTimes(1);
+  });
+
+  it("excludes issues whose QA gate is running right now, matching the Queue's needs-human cut", async () => {
+    apiMocks.getSprintReadiness.mockResolvedValue({ sprints: [sprint({})] });
+    apiMocks.listIssues.mockResolvedValue({
+      issues: [
+        issue("i-1", ["qa:fail"]), // gate re-running → the Queue shows "running", not needs-human
+        issue("i-2", ["qa:fail"]), // no live run → genuinely needs a decision
+      ],
+    });
+    apiMocks.listQAVerdicts.mockResolvedValue({ verdicts: {} });
+    apiMocks.getAgentTaskSnapshot.mockResolvedValue([
+      { id: "t-1", issue_id: "i-1", agent_id: "a-1", status: "running" },
+    ]);
+
+    renderStrip();
+
+    expect(await screen.findByText("1 need a decision")).toBeInTheDocument();
   });
 });

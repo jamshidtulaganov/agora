@@ -624,6 +624,7 @@
     "health_row_title": "Sprint tayyorligi — Ship bo'limini ochish",
     "health_needs_decision": "{{count}} ta qaror kutmoqda",
     "queue_empty_go_ship": "Ko'rib chiqish navbati bo'sh — sprint tayyorligini Ship bo'limida tekshiring",
+    "queue_load_failed": "Ko'rib chiqish navbatini yuklab bo'lmadi — ulanishni tekshirib, qayta urinib ko'ring.",
     "lane_fail_title": "Tuzatish kerak",
     "lane_fail_subtitle": "qa:fail — shu sprintda hotfix qiling (qayta review QA'ni qayta ishga tushiradi) yoki keyingi sprintga o'tkazing",
     "lane_pending_title": "QA kutmoqda",

@@ -112,6 +112,33 @@ export function useQaSquadAgentIds(wsId: string): Set<string> | undefined {
   return data;
 }
 
+// Workspace-wide live QA runs, from the shared agent-task snapshot filtered
+// to the QA squad: the set of issue ids with a QA gate executing RIGHT NOW,
+// plus issueId → taskId (first running task wins — a gate is one task; `.id`
+// is what the cancel endpoint needs). Shared by the Release queue (row live
+// badges, Stop buttons, needs-human cut) and the health strip's
+// needs-decision chip so both classify "running" IDENTICALLY — a strip that
+// ignores live runs counts label-fallback fails the Queue excludes, and the
+// chip's deep-link then shows fewer rows than it promised.
+export function useQaLiveIssueMap(wsId: string): {
+  liveIssueIds: Set<string>;
+  runningTaskByIssue: Map<string, string>;
+} {
+  const { data: snapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
+  const qaAgentIds = useQaSquadAgentIds(wsId);
+  return useMemo(() => {
+    const liveIssueIds = new Set<string>();
+    const runningTaskByIssue = new Map<string, string>();
+    for (const task of snapshot) {
+      if (task.status !== "running" || !task.issue_id) continue;
+      if (qaAgentIds && qaAgentIds.size > 0 && !qaAgentIds.has(task.agent_id)) continue;
+      liveIssueIds.add(task.issue_id);
+      if (!runningTaskByIssue.has(task.issue_id)) runningTaskByIssue.set(task.issue_id, task.id);
+    }
+    return { liveIssueIds, runningTaskByIssue };
+  }, [snapshot, qaAgentIds]);
+}
+
 // The QA-run signal — shared with the QA lens so the live browser bay knows
 // when to auto-open (docs: signal-driven live bay). One source of truth: both
 // this component's marker-watching and the lens's auto-open decision read the
