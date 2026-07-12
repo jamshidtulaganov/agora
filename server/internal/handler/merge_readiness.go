@@ -22,13 +22,16 @@ import (
 // a genuinely low-risk change (docs/config) to the CI-only gate — match the
 // review effort to the cost of being wrong, not to the author.
 //
-// Reviewer findings (the Gemini code-review + Security agents) are advisory
-// comments the human reads; they are not yet label-backed, so they are not part
-// of the deterministic verdict. When those agents start setting review:pass /
-// sec:pass labels they can be added to `required` with no other change.
+// The reviewer gate (Review stage v2) IS label-backed now: run_review's
+// captured ```review-result``` verdict attaches review:pass / review:fail
+// (service.CaptureReviewEvidence), so "review" joins `required` for the full
+// tier — but ONLY when the issue actually has a known pull request (metadata
+// pr_number or a linked PR row). No PR → no diff to review → the gate is
+// omitted entirely, never left dangling as "pending". Security findings remain
+// advisory (no sec:pass label yet).
 
 type gateStatus struct {
-	Name   string `json:"name"`   // "ci" | "qa"
+	Name   string `json:"name"`   // "ci" | "qa" | "review"
 	Status string `json:"status"` // "pass" | "fail" | "pending"
 }
 
@@ -69,6 +72,20 @@ func reviewTierForLabels(labels map[string]bool) reviewTier {
 	default:
 		return reviewTier{name: "full", required: []string{"ci", "qa"}, reviews: []string{"ci", "qa", "security", "code-review"}}
 	}
+}
+
+// requiredGatesWithReview appends the "review" gate to a tier's required set
+// for FULL-tier issues that have a known pull request. PURE (unit-tested
+// without a DB): the tier comes from labels, the PR presence from the caller.
+// trivial/light tiers and PR-less issues keep their required set untouched —
+// the review gate is omitted, not pending.
+func requiredGatesWithReview(t reviewTier, hasPR bool) []string {
+	if t.name != "full" || !hasPR {
+		return t.required
+	}
+	out := make([]string, 0, len(t.required)+1)
+	out = append(out, t.required...)
+	return append(out, "review")
 }
 
 // gateFromLabels resolves one gate's status from the issue's label set: a
@@ -142,7 +159,7 @@ func (h *Handler) MergeReadiness(w http.ResponseWriter, r *http.Request) {
 	}
 
 	t := reviewTierForLabels(labels)
-	required := t.required
+	required := requiredGatesWithReview(t, h.issueHasKnownPR(r.Context(), issue))
 
 	gates := make([]gateStatus, 0, len(required))
 	blocked := make([]string, 0)

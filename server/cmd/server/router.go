@@ -939,6 +939,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/steer", h.SteerIssue)
 					r.Post("/video-frames", h.ExtractIssueVideoFrames)
 					r.Get("/merge-readiness", h.MergeReadiness)
+					// Latest run_review verdict (parsed ```review-result```
+					// block of the newest agent comment carrying one).
+					r.Get("/review-verdict", h.GetIssueReviewVerdict)
+					// Human Approve & merge / Request changes (Review stage
+					// v2). RequireHumanActor: an agent can never approve a
+					// merge or reject a review on the human's behalf.
+					r.With(handler.RequireHumanActor).Post("/review-decision", h.CreateReviewDecision)
 					r.Get("/task-runs", h.ListTasksByIssue)
 					r.Get("/editor", h.GetIssueEditor)
 					r.Get("/browser", h.GetIssueBrowser)

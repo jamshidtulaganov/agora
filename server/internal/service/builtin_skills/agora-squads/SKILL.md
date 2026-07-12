@@ -217,12 +217,29 @@ not a general squad behavior. Two separate mechanisms:
   summary is posted with an `@leader` mention — that comment IS the QA↔dev
   communication; it lands in the issue's one shared timeline so both the
   dev-facing Issue Detail and the QA review page read the same story.
+- **`qa:pass` label → auto code review (`run_review`).** When
+  `AGORA_AUTO_REVIEW_ENABLED` is on and the issue has a known pull request,
+  a `run_review` task is dispatched to an INDEPENDENT reviewer — never the
+  author agent (the issue's assignee). Reviewer resolution: the dev squad
+  leader when it isn't the author → the least-busy other dev-squad agent →
+  the QA squad leader → skip. The reviewer reads the PR diff (`gh pr diff`)
+  and posts a fenced ```review-result``` JSON block
+  (`{"verdict":"pass"|"fail","summary","commit_sha","files_reviewed",
+  "findings":[{"file","line","severity":"blocker"|"major"|"minor","title",
+  "detail"}]}`); the server captures it into the `review:pass`/`review:fail`
+  label (replace-on-write, like the QA pair). Verdict is `fail` iff any
+  finding is a `blocker`. The reviewer NEVER edits code and NEVER merges —
+  a human clicks Approve & merge (POST `/api/issues/{id}/review-decision`,
+  human-only), which is what actually orders the squad lead to
+  `gh pr merge`. For full-tier issues with a PR, `review` is a required
+  merge-readiness gate alongside `ci` and `qa`.
 
-Both are opt-in behind env gates (`AGORA_AUTO_QA_ENABLED`,
-`AGORA_QA_FAIL_AUTOROUTE_ENABLED`) and both degrade silently to today's
-manual/load-balanced behavior when there's no squad on one side — e.g. a
-solo dev agent with no squad keeps the old flow; a squad dev with no QA
-squad in the workspace falls through to the generic roster pick.
+All three are opt-in behind env gates (`AGORA_AUTO_QA_ENABLED`,
+`AGORA_QA_FAIL_AUTOROUTE_ENABLED`, `AGORA_AUTO_REVIEW_ENABLED`) and degrade
+silently to today's manual/load-balanced behavior when there's no squad on
+one side — e.g. a solo dev agent with no squad keeps the old flow; a squad
+dev with no QA squad in the workspace falls through to the generic roster
+pick.
 
 When auto-QA routes to the QA LEAD (dev side orchestrated), the instruction
 is framed as a DELEGATION directive: the QA lead is told to hand the actual

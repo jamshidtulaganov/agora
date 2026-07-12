@@ -43,6 +43,7 @@ const (
 	sliceActionWriteTests        = "write_tests"
 	sliceActionReviewPart        = "review_part"
 	sliceActionRunQA             = "run_qa"
+	sliceActionRunReview         = "run_review"
 	sliceActionRunCI             = "run_ci"
 	sliceActionAutoDocs          = "auto_docs"
 	sliceActionGenTests          = "gen_test_cases"
@@ -59,7 +60,7 @@ const (
 // agent is resolved or any comment is written.
 func isKnownSliceActionKind(kind string) bool {
 	switch kind {
-	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunCI, sliceActionAutoDocs, sliceActionGenTests, sliceActionRunTests, sliceActionCompileTests, sliceActionDesignProposal, sliceActionGenDesignManifest, sliceActionDesignAudit, sliceActionDeploy:
+	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunReview, sliceActionRunCI, sliceActionAutoDocs, sliceActionGenTests, sliceActionRunTests, sliceActionCompileTests, sliceActionDesignProposal, sliceActionGenDesignManifest, sliceActionDesignAudit, sliceActionDeploy:
 		return true
 	default:
 		return false
@@ -145,6 +146,13 @@ func buildSliceInstruction(kind, scope string) string {
 		if guidance := qaBaselineGuidanceFor(strings.ToLower(strings.TrimSpace(scope))); guidance != "" {
 			base += guidance
 		}
+	case sliceActionRunReview:
+		// The independent code-review gate (Review stage v2): a reviewer agent
+		// that did NOT write the change reads the PR diff and emits a fenced
+		// ```review-result``` verdict the server captures into review:pass /
+		// review:fail. Distinct from review_part (an advisory, human-fired
+		// partial review with no structured verdict), which stays untouched.
+		base = sliceActionTemplate("run_review")
 	case sliceActionRunCI:
 		base = "Run the CI gate for this issue's branch. Find the issue's open pull/merge request for its " +
 			"branch and check out that branch. Detect the " +
@@ -1586,7 +1594,25 @@ func (h *Handler) maybeMergeOnQAPass(ctx context.Context, issue db.Issue, labelN
 	if !sprintPRModeEnabled() {
 		return
 	}
-	if strings.ToLower(strings.TrimSpace(labelName)) != "qa:pass" {
+	gateLabel := strings.ToLower(strings.TrimSpace(labelName))
+	if gateLabel != "qa:pass" && gateLabel != service.ReviewLabelPass {
+		return
+	}
+	// Reviewer-gate ordering (Review stage v2): when the review gate applies
+	// to this issue (full tier + a known PR), the merge chain fires only once
+	// BOTH deterministic verdicts are in — qa:pass AND review:pass — so the
+	// second label to land is the one that triggers it (this function is
+	// called from both attach paths). A present review:fail always holds.
+	// When the gate does NOT apply, review:pass is not a merge trigger at all
+	// (qa:pass alone drives the chain, exactly as before).
+	if h.reviewGateApplies(ctx, issue) {
+		if !h.issueHasLabel(ctx, issue, "qa:pass") || !h.issueHasLabel(ctx, issue, service.ReviewLabelPass) {
+			return
+		}
+		if h.issueHasLabel(ctx, issue, service.ReviewLabelFail) {
+			return
+		}
+	} else if gateLabel != "qa:pass" {
 		return
 	}
 	// Only sprint work has a PR into a sprint branch.
@@ -1599,10 +1625,15 @@ func (h *Handler) maybeMergeOnQAPass(ctx context.Context, issue db.Issue, labelN
 	// Human-merge (default): the PR passed QA and is READY FOR A HUMAN to review +
 	// merge. Post a plain human-facing note (NO agent mention, so no agent acts)
 	// and stop — a person does the final review + merge into the sprint branch.
+	// Marker-deduped: with the review gate in play this can be reached from two
+	// label attaches (qa:pass and review:pass), and the note must post ONCE.
 	if !sprintAutoMergeEnabled() {
+		if h.issueHasCommentMarker(ctx, issue, readyForHumanMergeMarker) {
+			return
+		}
 		content := "✅ QA passed (qa:pass) on this task's pull request into `" + branch +
 			"`. READY FOR HUMAN REVIEW + MERGE — a person reviews the PR and merges it into `" + branch +
-			"`. Auto-merge is off (AGORA_SPRINT_AUTO_MERGE); no agent will merge it."
+			"`. Auto-merge is off (AGORA_SPRINT_AUTO_MERGE); no agent will merge it. " + readyForHumanMergeMarker
 		if posted, cerr := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 			IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
 			AuthorType: "member", AuthorID: parseUUID(userID),
@@ -3102,6 +3133,15 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 		instruction += h.sliceActionDesignCompareContext(r.Context(), issue)
 		instruction += h.sliceActionDesignLintContext(r.Context(), issue)
 	}
+	// run_review reviews the issue's PR diff: hand the reviewer the concrete
+	// PR pointer(s) and the issue's base spec so the diff is judged against
+	// the REQUIREMENT, not read cold.
+	if req.Kind == sliceActionRunReview {
+		instruction += h.sliceActionReviewPRContext(r.Context(), issue)
+		if brief := issueBriefNote(issue.Description.String, issue.AcceptanceCriteria); brief != "" {
+			instruction += "\n" + brief
+		}
+	}
 	// auto_docs targets the project's configured docs repo when set.
 	if req.Kind == sliceActionAutoDocs {
 		instruction += h.sliceActionDocsRepoContext(r.Context(), issue)
@@ -3281,6 +3321,19 @@ func (h *Handler) resolveSliceActionAgent(w http.ResponseWriter, r *http.Request
 		}
 	}
 
+	// (a.55) run_review is the INDEPENDENT code-review gate: the reviewer must
+	// differ from the author agent (the issue's assignee). Without an explicit
+	// agent, resolve through the same chain the auto-dispatch uses (dev squad
+	// leader ≠ author → other squad member → QA leader). The assignee default
+	// (b) below is skipped for this kind — the assignee IS the author, and an
+	// agent must never review its own diff.
+	if kind == sliceActionRunReview {
+		if reviewer, ok := h.resolveReviewerAgent(r.Context(), issue); ok &&
+			h.canAccessPrivateAgent(r.Context(), reviewer, "member", userID, workspaceID) {
+			return reviewer, true
+		}
+	}
+
 	// (a.6) design_proposal is the designer-analyst's job. Without an explicit
 	// agent, resolve the project's configured design agent, else a "design"
 	// squad's leader — the same way QA routes to its squad. Falls through to the
@@ -3309,7 +3362,8 @@ func (h *Handler) resolveSliceActionAgent(w http.ResponseWriter, r *http.Request
 	// belongs to someone else, so silently queuing nothing (or leaking its
 	// identity in the comment) is worse than falling back to the caller's own
 	// agent. The own-agent path is owner==caller, so it is always accessible.
-	if issue.AssigneeType.Valid && issue.AssigneeType.String == "agent" && issue.AssigneeID.Valid {
+	if kind != sliceActionRunReview &&
+		issue.AssigneeType.Valid && issue.AssigneeType.String == "agent" && issue.AssigneeID.Valid {
 		agent, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
 			ID:          issue.AssigneeID,
 			WorkspaceID: issue.WorkspaceID,

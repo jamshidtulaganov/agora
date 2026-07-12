@@ -2519,7 +2519,11 @@ func (h *Handler) clearStaleQAGateLabels(ctx context.Context, issue db.Issue) {
 	had := false
 	// qa:stale/qa:blocked are gate-machinery states from the previous cycle —
 	// a re-entry is exactly the retry they asked for, so they clear too.
-	for _, name := range []string{"qa:pass", "qa:fail", "qa:stale", "qa:blocked"} {
+	// review:pass/review:fail/merge:approved are the reviewer + human-approval
+	// gate states (Review stage v2): the fresh cycle's diff has not been
+	// re-reviewed or re-approved, so the previous cycle's verdicts clear with
+	// the QA pair.
+	for _, name := range []string{"qa:pass", "qa:fail", "qa:stale", "qa:blocked", "review:pass", "review:fail", "merge:approved"} {
 		if h.issueHasLabelNameHandler(ctx, issue, name) {
 			h.TaskService.DetachIssueLabelByName(ctx, issue, name)
 			had = true

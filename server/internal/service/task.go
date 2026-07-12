@@ -2410,6 +2410,9 @@ func (s *TaskService) captureStructuredResult(ctx context.Context, issueID, agen
 		return
 	}
 	s.CaptureQAEvidence(ctx, issue, content, triggerCommentID)
+	// A run_review verdict's ```review-result``` block becomes the
+	// review:pass/review:fail gate label (Review stage v2).
+	s.CaptureReviewEvidence(ctx, issue, content, agentID)
 	s.CaptureDeployEvent(ctx, issue, content)
 	s.CaptureTestCases(ctx, issue, content, agentID)
 	s.CaptureTestRuns(ctx, issue, content, agentID, triggerCommentID)
@@ -2498,6 +2501,9 @@ func (s *TaskService) createAgentComment(ctx context.Context, issueID, agentID p
 	// evidence so the issue's QA section reads one indexed row, not the timeline.
 	// parentID is this reply's trigger comment — read for triggered_by (Phase 3).
 	s.CaptureQAEvidence(ctx, issue, content, parentID)
+	// Persist a run_review verdict's ```review-result``` block as the
+	// review:pass/review:fail gate label (Review stage v2).
+	s.CaptureReviewEvidence(ctx, issue, content, agentID)
 	// Persist a deploy agent's ```deploy-result``` block as a deploy_event row
 	// (the stepper's Deploy signal — deploy-mcp-integration.md §5).
 	s.CaptureDeployEvent(ctx, issue, content)

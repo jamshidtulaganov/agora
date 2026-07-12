@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/logger"
+	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -388,6 +389,12 @@ func (h *Handler) AttachLabel(w http.ResponseWriter, r *http.Request) {
 		h.TaskService.DetachIssueLabelByName(r.Context(), issue, "qa:fail")
 	case "qa:fail":
 		h.TaskService.DetachIssueLabelByName(r.Context(), issue, "qa:pass")
+	// The reviewer gate labels are the same kind of verdict pair (Review
+	// stage v2) — a CLI-attached review verdict replaces its opposite too.
+	case service.ReviewLabelPass:
+		h.TaskService.DetachIssueLabelByName(r.Context(), issue, service.ReviewLabelFail)
+	case service.ReviewLabelFail:
+		h.TaskService.DetachIssueLabelByName(r.Context(), issue, service.ReviewLabelPass)
 	}
 
 	// Automation chain: a qa:pass label fires an auto_docs run (when enabled +
@@ -399,6 +406,7 @@ func (h *Handler) AttachLabel(w http.ResponseWriter, r *http.Request) {
 	if !alreadyHad {
 		go h.maybeAutoDocsOnLabel(context.Background(), issue, label.Name, userID)
 		go h.maybeMergeOnQAPass(context.Background(), issue, label.Name, userID)
+		go h.maybeRunReviewOnQAPass(context.Background(), issue, label.Name, userID)
 		go h.maybeRouteToDevLeadOnQAFail(context.Background(), issue, label.Name, userID)
 		go h.maybeAutoFileBugOnQAFail(context.Background(), issue, label.Name, userID)
 	}
