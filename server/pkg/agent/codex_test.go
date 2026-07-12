@@ -1869,6 +1869,35 @@ func TestEnsureCodexMcpConfigWritesManagedBlock(t *testing.T) {
 	}
 }
 
+// TestEnsureCodexMcpConfigRendersRemoteEntry locks that a remote http entry
+// (type + url + headers) renders into config.toml without error — the daemon
+// must not strip type/url/headers when materialising for Codex. The headers
+// map renders as a TOML inline table.
+func TestEnsureCodexMcpConfigRendersRemoteEntry(t *testing.T) {
+	t.Parallel()
+
+	tmp := filepath.Join(t.TempDir(), "config.toml")
+	raw := json.RawMessage(`{"mcpServers":{"linear":{"type":"http","url":"https://mcp.linear.app/mcp","headers":{"Authorization":"Bearer tok"}}}}`)
+	if err := ensureCodexMcpConfig(tmp, raw, slog.Default()); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	data, err := os.ReadFile(tmp)
+	if err != nil {
+		t.Fatalf("read after: %v", err)
+	}
+	got := string(data)
+	for _, want := range []string{
+		"[mcp_servers.linear]",
+		`type = "http"`,
+		`url = "https://mcp.linear.app/mcp"`,
+		`Authorization = "Bearer tok"`, // inline-table header key = value
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected %q in remote-entry render:\n%s", want, got)
+		}
+	}
+}
+
 func TestEnsureCodexMcpConfigForces0600OnPreexistingFile(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {

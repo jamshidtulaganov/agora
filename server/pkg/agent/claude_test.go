@@ -552,6 +552,28 @@ func TestWriteMcpConfigToTemp(t *testing.T) {
 	}
 }
 
+// TestWriteMcpConfigToTempPreservesRemoteEntry locks the dynamic-MCP contract:
+// a remote http/sse entry (type + url + headers) reaches Claude's --mcp-config
+// file byte-for-byte. Claude Code natively understands
+// {"type":"http","url":…,"headers":{…}}, so the daemon must pass it verbatim.
+func TestWriteMcpConfigToTempPreservesRemoteEntry(t *testing.T) {
+	t.Parallel()
+
+	raw := json.RawMessage(`{"mcpServers":{"linear":{"type":"http","url":"https://mcp.linear.app/mcp","headers":{"Authorization":"Bearer tok"}}}}`)
+	path, err := writeMcpConfigToTemp(raw)
+	if err != nil {
+		t.Fatalf("writeMcpConfigToTemp: %v", err)
+	}
+	defer os.Remove(path)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read temp file %s: %v", path, err)
+	}
+	if !bytes.Equal(data, []byte(raw)) {
+		t.Fatalf("remote entry not preserved verbatim: want %s, got %s", raw, data)
+	}
+}
+
 func TestResolveSessionID(t *testing.T) {
 	t.Parallel()
 
