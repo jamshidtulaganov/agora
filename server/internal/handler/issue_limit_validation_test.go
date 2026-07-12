@@ -20,9 +20,9 @@ import (
 //   - offset=-1 → same 500 from Postgres
 //   - non-numeric limit/offset → silently ignored today (this test pins that)
 //
-// Default is 100 and clamp is 100, matching the upstream issue's suggestion
-// and the current default. All cases below must return 200 and a well-formed
-// JSON body, never 500.
+// The default page size is 100; the upper-bound clamp is 500 (raised from the
+// upstream issue's original 100 to fit the QA cockpit's whole-queue page). All
+// cases below must return 200 and a well-formed JSON body, never 500.
 func TestListIssues_LimitValidation(t *testing.T) {
 	ctx := context.Background()
 	suffix := time.Now().UnixNano()
@@ -85,7 +85,7 @@ func TestListIssues_LimitValidation(t *testing.T) {
 	// Cases that previously 500'd. All must return 200 with a well-formed
 	// body. With only 3 seeded rows the clamp and default-fallback are
 	// observably indistinguishable here — those behaviors are covered by
-	// TestListIssues_LimitClamp below, which seeds 101 rows.
+	// TestListIssues_LimitClamp below, which seeds 501 rows.
 	cases := []struct {
 		name  string
 		query string
@@ -143,10 +143,13 @@ func TestListIssues_LimitValidation(t *testing.T) {
 // TestListIssues_LimitClamp proves the upper-bound clamp on `limit` actually
 // fires. TestListIssues_LimitValidation above seeds only 3 rows, so a missing
 // clamp would still return 3 rows for `limit=100000000` and the assertion
-// would pass. Here we seed 101 rows and pin the clamp at exactly 100, the
-// same boundary the production endpoint promises.
+// would pass. Here we seed one more than the clamp and pin it at exactly 500 —
+// the boundary the production endpoint promises. (500, not 100: the QA cockpit
+// + Bugs lens request up to a few hundred in_review issues in one page — see
+// packages/core/qa/queries.ts and the clamp comment in ListIssues — so the
+// clamp was deliberately raised to 500 to stop silently truncating that queue.)
 func TestListIssues_LimitClamp(t *testing.T) {
-	const seeded = 101
+	const seeded = 501
 	ctx := context.Background()
 	suffix := time.Now().UnixNano()
 
@@ -161,29 +164,30 @@ func TestListIssues_LimitClamp(t *testing.T) {
 		testPool.Exec(context.Background(), `DELETE FROM project WHERE id = $1`, projectID)
 	})
 
-	// Seed 101 issues. Each row is inserted individually so the workspace's
-	// `issue_counter` advances correctly via the same path real issues take;
-	// `LIMIT 101` returning exactly 101 rows is itself a sanity check that
-	// nothing in the test wiring is off.
-	insertIssue := func(idx int) {
-		title := fmt.Sprintf("clamp-%d-%d", suffix, idx)
-		var number int
-		if err := testPool.QueryRow(ctx, `
-			UPDATE workspace
-			SET issue_counter = GREATEST(issue_counter, (SELECT COALESCE(MAX(number), 0) FROM issue WHERE workspace_id = $1)) + 1
-			WHERE id = $1 RETURNING issue_counter
-		`, testWorkspaceID).Scan(&number); err != nil {
-			t.Fatalf("next issue number: %v", err)
-		}
-		if _, err := testPool.Exec(ctx, `
-			INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, position, number, project_id)
-			VALUES ($1, $2, 'todo', 'none', 'member', $3, 0, $4, $5)
-		`, testWorkspaceID, title, testUserID, number, projectID); err != nil {
-			t.Fatalf("create issue #%d: %v", idx, err)
-		}
+	// Seed `seeded` issues in a single bulk insert — one above the clamp so the
+	// truncation is observable — instead of 501 per-row round-trips. Numbers
+	// continue past the workspace's current max so the (workspace_id, number)
+	// uniqueness holds; the issue_counter is then bumped to match so any later
+	// test that mints an issue number via the counter can't collide with the
+	// seeded range.
+	var base int
+	if err := testPool.QueryRow(ctx, `
+		SELECT GREATEST(w.issue_counter, COALESCE((SELECT MAX(number) FROM issue WHERE workspace_id = w.id), 0))
+		FROM workspace w WHERE w.id = $1
+	`, testWorkspaceID).Scan(&base); err != nil {
+		t.Fatalf("resolve base issue number: %v", err)
 	}
-	for i := 0; i < seeded; i++ {
-		insertIssue(i)
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, position, number, project_id)
+		SELECT $1, 'clamp-' || $2::text || '-' || g::text, 'todo', 'none', 'member', $3, 0, $4 + g, $5
+		FROM generate_series(1, $6) AS g
+	`, testWorkspaceID, fmt.Sprintf("%d", suffix), testUserID, base, projectID, seeded); err != nil {
+		t.Fatalf("bulk seed issues: %v", err)
+	}
+	if _, err := testPool.Exec(ctx,
+		`UPDATE workspace SET issue_counter = $2 WHERE id = $1`,
+		testWorkspaceID, base+seeded); err != nil {
+		t.Fatalf("bump issue_counter: %v", err)
 	}
 
 	type listResp struct {
@@ -222,17 +226,17 @@ func TestListIssues_LimitClamp(t *testing.T) {
 		}
 	})
 
-	// The actual clamp assertions. Without the `if limit > 100` clamp, the
-	// huge/above-clamp cases would return 101 rows and these would fail.
+	// The actual clamp assertions. Without the `if limit > 500` clamp, the
+	// huge/above-clamp cases would return all 501 rows and these would fail.
 	clampCases := []struct {
 		name  string
 		query string
 		want  int
 	}{
-		{"huge limit is clamped to 100", "&limit=100000000", 100},
-		{"one above the clamp", "&limit=101", 100},
-		{"well above the clamp", "&limit=200", 100},
-		{"at the clamp boundary", "&limit=100", 100},
+		{"huge limit is clamped to 500", "&limit=100000000", 500},
+		{"one above the clamp", "&limit=501", 500},
+		{"well above the clamp", "&limit=600", 500},
+		{"at the clamp boundary", "&limit=500", 500},
 	}
 	for _, tc := range clampCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -264,20 +268,20 @@ func TestListIssues_LimitClamp(t *testing.T) {
 	})
 
 	// Offset and clamp compose against the full result set. The SQL is
-	// `LIMIT $limit OFFSET $offset` (with the limit already clamped to 100),
-	// so `limit=200&offset=50` over 101 rows produces `LIMIT 100 OFFSET 50`,
-	// which is rows 50..100 — 51 rows. This subtest pins the composition:
+	// `LIMIT $limit OFFSET $offset` (with the limit already clamped to 500),
+	// so `limit=600&offset=50` over 501 rows produces `LIMIT 500 OFFSET 50`,
+	// which is rows 50..500 — 451 rows. This subtest pins the composition:
 	// it would fail with a 500 if the offset guard were missing, with a
 	// different count if the clamp were applied to the wrong axis, and with
 	// `len == 0` if a buggy implementation skipped rows beyond the clamped
 	// page instead of against the full result set.
 	t.Run("offset and clamp compose against the full result set", func(t *testing.T) {
-		code, resp, body := call("&limit=200&offset=50")
+		code, resp, body := call("&limit=600&offset=50")
 		if code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", code, body)
 		}
-		if got := len(resp.Issues); got != 51 {
-			t.Fatalf("limit=200 offset=50: want 51 issues, got %d", got)
+		if got := len(resp.Issues); got != 451 {
+			t.Fatalf("limit=600 offset=50: want 451 issues, got %d", got)
 		}
 		if resp.Total != seeded {
 			t.Fatalf("total: want %d, got %d", seeded, resp.Total)
