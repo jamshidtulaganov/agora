@@ -266,6 +266,11 @@ func configureBitrixEnvRich(t *testing.T, portalURL string) {
 	t.Setenv("BITRIX_INBOUND_SECRET", "")
 	t.Setenv("BITRIX_PUSH_STATUS", "")
 	t.Setenv("BITRIX_TASK_TAG", "")
+	// The operator bulk-import endpoint (POST /api/bitrix/import, exercised by
+	// TestImportBitrixTasks*) is OFF by default — members self-serve via
+	// /api/bitrix/import/mine. These tests drive that gated operator path, so opt
+	// into it explicitly; without this the handler 403s before any sync runs.
+	t.Setenv("AGORA_BITRIX_BULK_IMPORT", "1")
 }
 
 // --- helpers to read synced issue id + related rows -------------------------
