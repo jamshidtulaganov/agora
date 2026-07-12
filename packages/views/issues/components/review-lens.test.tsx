@@ -286,6 +286,46 @@ describe("ReviewLensBody", () => {
     expect(approveBtn).toBeDisabled();
   });
 
+  it("enables Approve & merge with merge:override even when readiness is not ready", async () => {
+    // merge:override is meant to bypass red gates, so the button must stay
+    // enabled regardless of readiness.ready / verdict.
+    apiMocks.getIssue.mockResolvedValue(
+      baseIssue({ labels: [{ id: "l1", name: "merge:override" }] }),
+    );
+    apiMocks.getReviewVerdict.mockResolvedValue(passVerdict({ verdict: "fail" }));
+    apiMocks.mergeReadiness.mockResolvedValue(
+      readyReadiness({
+        ready: false,
+        gates: [{ name: "ci", status: "fail" }],
+      }),
+    );
+    renderLens();
+
+    const approveBtn = await screen.findByRole("button", { name: "Approve & merge" });
+    await waitFor(() => expect(approveBtn).toBeEnabled());
+  });
+
+  it("toasts the merge-by-hand variant when approve returns merged_dispatch:false", async () => {
+    apiMocks.getReviewVerdict.mockResolvedValue(passVerdict());
+    apiMocks.mergeReadiness.mockResolvedValue(readyReadiness());
+    // No squad lead resolved on the backend — nothing was dispatched.
+    apiMocks.reviewDecision.mockResolvedValue({ action: "approve", merged_dispatch: false });
+    renderLens();
+
+    const approveBtn = await screen.findByRole("button", { name: "Approve & merge" });
+    await waitFor(() => expect(approveBtn).toBeEnabled());
+    fireEvent.click(approveBtn);
+
+    await screen.findByText("Dispatch the merge order to the squad lead?");
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() =>
+      expect(apiMocks.reviewDecision).toHaveBeenCalledWith("issue-1", { action: "approve" }),
+    );
+    expect(toastMocks.success).toHaveBeenCalledWith(
+      "Approved — merge it by hand (no squad lead to dispatch to)",
+    );
+  });
+
   it("request changes requires a note, then fires api.reviewDecision with it", async () => {
     apiMocks.getReviewVerdict.mockResolvedValue(passVerdict({ verdict: "fail" }));
     apiMocks.reviewDecision.mockResolvedValue({

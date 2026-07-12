@@ -258,7 +258,10 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
       (pr) => pr.state === "open" && Date.parse(pr.pr_updated_at) > reviewedAtMs,
     );
 
-  const canApprove = (review?.verdict === "pass" || hasOverride) && readiness?.ready === true;
+  // merge:override bypasses the deterministic gates by design, so override
+  // wins unconditionally; the normal path still needs a clean pass + a ready
+  // gate grid.
+  const canApprove = hasOverride || (review?.verdict === "pass" && readiness?.ready === true);
 
   const refreshDecision = () => {
     void qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, issueId) });
@@ -282,10 +285,15 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
   const decide = useMutation({
     mutationFn: (body: { action: "approve" | "request_changes"; note?: string }) =>
       api.reviewDecision(issueId, body),
-    onSuccess: (_res, vars) => {
+    onSuccess: (res, vars) => {
       toast.success(
         vars.action === "approve"
-          ? t(($) => $.review_lens.toast_approved)
+          ? // When no squad lead resolves, the backend returns
+            // merged_dispatch:false — nothing was dispatched, so tell the
+            // human to merge it by hand instead of claiming a dispatch.
+            res.merged_dispatch
+            ? t(($) => $.review_lens.toast_approved)
+            : t(($) => $.review_lens.toast_approved_manual)
           : t(($) => $.review_lens.toast_changes_requested),
       );
       setDecision(null);

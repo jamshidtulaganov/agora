@@ -984,6 +984,7 @@
     "changes_note_required": "请求修改需要填写说明",
     "changes_submit": "退回给作者",
     "toast_approved": "已批准合并——指令已发送给小队负责人",
+    "toast_approved_manual": "已批准——请手动合并（无小队负责人可派发指令）",
     "toast_changes_requested": "已请求修改——任务已退回给作者",
     "toast_decision_failed": "无法记录该决定",
     "awaiting_approval": "等待您的批准"

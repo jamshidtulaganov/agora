@@ -999,6 +999,7 @@
     "changes_note_required": "O'zgartirish so'rash uchun izoh kerak",
     "changes_submit": "Muallifga qaytarish",
     "toast_approved": "Birlashtirish tasdiqlandi — buyruq squad yetakchisiga yuborildi",
+    "toast_approved_manual": "Tasdiqlandi — qo'lda birlashtiring (buyruq yuboriladigan squad yetakchisi yo'q)",
     "toast_changes_requested": "O'zgartirishlar so'raldi — vazifa muallifga qaytarildi",
     "toast_decision_failed": "Qarorni saqlab bo'lmadi",
     "awaiting_approval": "Sizning tasdig'ingizni kutmoqda"
