@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { Sparkles, Plus, Bot, User, Loader2, FlaskConical, Play, CircleStop, Check, X, Film, ListChecks, RotateCcw, Bug, MoreHorizontal } from "lucide-react";
+import { Sparkles, Plus, Bot, User, Loader2, FlaskConical, Play, CircleStop, Check, X, Film, ListChecks, RotateCcw, Bug, MoreHorizontal, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core/hooks";
@@ -932,6 +932,11 @@ function AddCaseForm({ issueId, onDone }: { issueId: string; onDone: () => void 
   const [priority, setPriority] = useState<TestCasePriority>("p2");
   const [modality, setModality] = useState<TestCaseModality>("");
   const [criterionRef, setCriterionRef] = useState("");
+  // Progressive disclosure: someone jotting a quick case sees only Title +
+  // Steps + Save. The extra fields (preconditions/expected/criterion + the
+  // four segmented controls) sit behind "Add details ▸" so they don't greet
+  // every quick entry. Their state still defaults sensibly when left hidden.
+  const [showDetails, setShowDetails] = useState(false);
 
   // Picking a template REPLACES the whole draft — it's a starting point the
   // author then edits, not a merge into half-typed fields.
@@ -944,6 +949,8 @@ function AddCaseForm({ issueId, onDone }: { issueId: string; onDone: () => void 
     setCategory(tpl.category);
     setPriority(tpl.priority);
     setModality(tpl.modality);
+    // A template fills the detail fields — reveal them so the choices show.
+    setShowDetails(true);
   };
   const templateLabel = (id: CaseTemplate["id"]): string => {
     switch (id) {
@@ -999,68 +1006,83 @@ function AddCaseForm({ issueId, onDone }: { issueId: string; onDone: () => void 
         onChange={(e) => setTitle(e.target.value)}
         className="h-8 text-[13px]"
       />
-      <Textarea
-        placeholder={t(($) => $.test_cases.preconditions_ph)}
-        value={preconditions}
-        onChange={(e) => setPreconditions(e.target.value)}
-        rows={1}
-        className="text-[12px]"
-      />
       <StepEditor steps={steps} onChange={setSteps} />
-      <Textarea
-        placeholder={t(($) => $.test_cases.expected_ph)}
-        value={expected}
-        onChange={(e) => setExpected(e.target.value)}
-        rows={1}
-        className="text-[12px]"
-      />
-      {/* Traceability (optional): which acceptance criterion this case covers. */}
-      <Input
-        placeholder={t(($) => $.test_cases.criterion_ref_ph)}
-        value={criterionRef}
-        onChange={(e) => setCriterionRef(e.target.value)}
-        className="h-7 text-[12px]"
-      />
-      {/* Two toggle groups stack on their own rows in a narrow rail — forcing
-          both onto one row with the Save button is what overflowed before. */}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <div className="flex rounded-md border p-0.5">
-          {(["manual", "automated"] as const).map((k) => (
-            <Button
-              key={k}
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setKind(k)}
-              className={cn(
-                "h-6 px-2 text-[11px]",
-                kind === k ? "bg-muted font-medium text-foreground" : "text-muted-foreground",
-              )}
-            >
-              {k === "manual" ? t(($) => $.test_cases.kind_manual) : t(($) => $.test_cases.kind_automated)}
-            </Button>
-          ))}
+      {/* Default = Title + Steps + Save. Everything else is one click away. */}
+      {!showDetails ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => setShowDetails(true)}
+          className="h-6 gap-1 px-2 text-[11px] text-muted-foreground"
+        >
+          <ChevronRight className="size-3" />
+          {t(($) => $.test_cases.add_details)}
+        </Button>
+      ) : (
+        <div className="space-y-2">
+          <Textarea
+            placeholder={t(($) => $.test_cases.preconditions_ph)}
+            value={preconditions}
+            onChange={(e) => setPreconditions(e.target.value)}
+            rows={1}
+            className="text-[12px]"
+          />
+          <Textarea
+            placeholder={t(($) => $.test_cases.expected_ph)}
+            value={expected}
+            onChange={(e) => setExpected(e.target.value)}
+            rows={1}
+            className="text-[12px]"
+          />
+          {/* Traceability (optional): which acceptance criterion this covers. */}
+          <Input
+            placeholder={t(($) => $.test_cases.criterion_ref_ph)}
+            value={criterionRef}
+            onChange={(e) => setCriterionRef(e.target.value)}
+            className="h-7 text-[12px]"
+          />
+          {/* The four segmented controls, stacked so they don't overflow. */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex rounded-md border p-0.5">
+              {(["manual", "automated"] as const).map((k) => (
+                <Button
+                  key={k}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setKind(k)}
+                  className={cn(
+                    "h-6 px-2 text-[11px]",
+                    kind === k ? "bg-muted font-medium text-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  {k === "manual" ? t(($) => $.test_cases.kind_manual) : t(($) => $.test_cases.kind_automated)}
+                </Button>
+              ))}
+            </div>
+            <div className="flex rounded-md border p-0.5">
+              {(["positive", "negative"] as const).map((cat) => (
+                <Button
+                  key={cat}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setCategory(cat)}
+                  className={cn(
+                    "h-6 px-2 text-[11px]",
+                    category === cat ? "bg-muted font-medium text-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  {cat === "positive" ? t(($) => $.test_cases.category_positive) : t(($) => $.test_cases.category_negative)}
+                </Button>
+              ))}
+            </div>
+            <PriorityToggle value={priority} onChange={setPriority} />
+            <ModalityToggle value={modality} onChange={setModality} />
+          </div>
         </div>
-        <div className="flex rounded-md border p-0.5">
-          {(["positive", "negative"] as const).map((cat) => (
-            <Button
-              key={cat}
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setCategory(cat)}
-              className={cn(
-                "h-6 px-2 text-[11px]",
-                category === cat ? "bg-muted font-medium text-foreground" : "text-muted-foreground",
-              )}
-            >
-              {cat === "positive" ? t(($) => $.test_cases.category_positive) : t(($) => $.test_cases.category_negative)}
-            </Button>
-          ))}
-        </div>
-        <PriorityToggle value={priority} onChange={setPriority} />
-        <ModalityToggle value={modality} onChange={setModality} />
-      </div>
+      )}
       <Button
         type="button"
         size="sm"

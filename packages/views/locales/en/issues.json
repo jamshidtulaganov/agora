@@ -539,6 +539,7 @@
     "generate": "Generate via agent",
     "generating": "Generating…",
     "add": "Add case",
+    "add_details": "Add details",
     "title_ph": "Test case title",
     "steps_ph": "Steps (one per line)",
     "step_action_ph": "Step action, e.g. Click Save",

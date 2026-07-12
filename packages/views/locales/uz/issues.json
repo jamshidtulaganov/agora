@@ -539,6 +539,7 @@
     "generate": "Agent orqali yaratish",
     "generating": "Yaratilmoqda…",
     "add": "Keys qo'shish",
+    "add_details": "Tafsilotlarni qo'shish",
     "title_ph": "Test-keys nomi",
     "steps_ph": "Qadamlar (har biri alohida qatorda)",
     "step_action_ph": "Qadam amali, masalan: Saqlashni bosish",
