@@ -723,6 +723,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// for non-admins). The query never selects the sealed
 					// webhook URL — has_secret is a computed boolean.
 					r.Get("/release-integrations", h.ListReleaseIntegrations)
+					// Remote-MCP credential status is member-visible so the MCP
+					// servers panel can render the "sealed auth" badge for
+					// non-admins. The query never selects secret_encrypted —
+					// has_secret + last4 only, never the token.
+					r.Get("/mcp-credentials", h.ListMcpCredentials)
 				})
 				// Admin-level access
 				r.Group(func(r chi.Router) {
@@ -792,6 +797,19 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// Workspace-level shared design manifest — the base every
 					// project in the workspace inherits.
 					r.Put("/design-manifest", h.PutWorkspaceDesignManifest)
+				})
+
+				// Remote-MCP credentials: sealed auth (bearer tokens) for
+				// remote http/sse MCP servers, keyed by server name and
+				// merged into the entry's headers server-side at dispatch.
+				// Writes are admin-only; the handlers additionally reject
+				// agent actors (a remote MCP with a stolen token exfiltrates
+				// data). The member-visible status endpoint lives above. The
+				// token is sealed at rest and never echoed back.
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))
+					r.Put("/mcp-credentials/{serverName}", h.PutMcpCredential)
+					r.Delete("/mcp-credentials/{serverName}", h.DeleteMcpCredential)
 				})
 
 				// Release integrations — per-workspace outbound connectors that

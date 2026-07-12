@@ -1238,6 +1238,13 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		// backend holds the key). No-op unless the agent configured a "lark"
 		// server and has an active installation. See injectLarkMcpCreds.
 		mcpConfig = h.injectLarkMcpCreds(r.Context(), agent, mcpConfig)
+		// Merge sealed auth (bearer tokens) into remote http/sse MCP server
+		// entries from the workspace's mcp_credential store, so a remote MCP
+		// server's token reaches the runtime without ever sitting plaintext in
+		// agent.mcp_config. No-op unless a remote entry's name matches a sealed
+		// credential; any failure returns the config unchanged. See
+		// injectMcpCredentials.
+		mcpConfig = h.injectMcpCredentials(r.Context(), runtime.WorkspaceID, mcpConfig)
 		// runtime_config is stored as JSONB and may legitimately be the
 		// empty object `{}` for agents that haven't opted into any
 		// provider-specific tuning. Forward only non-empty payloads so the

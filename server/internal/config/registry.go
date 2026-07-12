@@ -80,6 +80,7 @@ var Registry = []Def{
 	{Key: "AGORA_ZOHO_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "Zoho seal key", Description: "Secretbox key for Zoho integration."},
 	{Key: "AGORA_FIGMA_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "Figma seal key", Description: "Secretbox key for Figma integration."},
 	{Key: "AGORA_RELEASE_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "Release integration seal key", Description: "Secretbox key for per-workspace release-integration webhook URLs / signing secrets."},
+	{Key: "AGORA_MCP_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "MCP credential seal key", Description: "Secretbox key for per-workspace remote-MCP auth headers (bearer tokens)."},
 	{Key: "TELEGRAM_BOT_TOKEN", Kind: KindSecret, Category: "Secrets", Label: "Telegram bot token", Description: "Bot API token."},
 	{Key: "ZHIPU_API_KEY", Kind: KindSecret, Category: "Secrets", Label: "Zhipu API key", Description: "GLM model API key."},
 	{Key: "BITRIX_WEBHOOK_URL", Kind: KindSecret, Category: "Secrets", Label: "Bitrix webhook URL", Description: "Inbound Bitrix REST webhook (carries a token)."},
