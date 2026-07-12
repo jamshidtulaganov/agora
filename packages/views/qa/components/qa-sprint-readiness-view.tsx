@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { GitBranch, Rocket, Play, Plus, Loader2, HelpCircle, ChevronDown, ChevronRight } from "lucide-react";
+import { GitBranch, Rocket, Play, Plus, Loader2, HelpCircle, ChevronDown, ChevronRight, MoreHorizontal } from "lucide-react";
 import { api } from "@agora/core/api";
 import { sprintReadinessOptions } from "@agora/core/qa/queries";
 import type { SprintReadinessResponse } from "@agora/core/api/schemas";
@@ -12,6 +12,12 @@ import { useWorkspaceId } from "@agora/core/hooks";
 import { Button, buttonVariants } from "@agora/ui/components/ui/button";
 import { Badge } from "@agora/ui/components/ui/badge";
 import { Card } from "@agora/ui/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@agora/ui/components/ui/dropdown-menu";
 import { ProgressRing } from "@agora/ui/components/ui/progress-ring";
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "@agora/ui/components/ui/hover-card";
 import {
@@ -122,13 +128,19 @@ function RegressionGate({ gate, issueHref }: { gate: SprintData["regression"]; i
   if (!gate || !gate.status) {
     return <span className="text-[11px] text-muted-foreground">{t(($) => $.qa_cockpit.sprint_regression_never_run)}</span>;
   }
-  // Shared status classification (regression-status.ts) — the health strip's
-  // glyph renders the same mapping, so the two can't drift.
-  const { running, Icon, className: cls } = regressionStatusMeta(gate.status);
+  // Shared status classification (regression-status.ts) — the same mapping the
+  // sprint-readiness rollup reads, so the two can't drift. The raw server
+  // status string never reaches the user; it's mapped to plain English here.
+  const { running, failed, done, Icon, className: cls } = regressionStatusMeta(gate.status);
+  const label = done
+    ? t(($) => $.qa_cockpit.regression_passed)
+    : failed
+      ? t(($) => $.qa_cockpit.regression_failed)
+      : t(($) => $.qa_cockpit.regression_running);
   const body = (
     <>
       <Icon className={`size-3.5 ${running ? "animate-spin" : ""}`} aria-hidden />
-      {t(($) => $.qa_cockpit.sprint_regression_status, { status: gate.status })}
+      {label}
     </>
   );
   // Click-through to the run's tracking issue — the chip used to be a
@@ -138,7 +150,7 @@ function RegressionGate({ gate, issueHref }: { gate: SprintData["regression"]; i
       <AppLink
         href={issueHref(gate.run_issue_id)}
         className={`flex items-center gap-1 text-[11px] underline-offset-2 hover:underline ${cls}`}
-        title={gate.reason || gate.status}
+        title={gate.reason || label}
       >
         {body}
       </AppLink>
@@ -173,6 +185,9 @@ function SprintCard({
   const qc = useQueryClient();
   const [attachOpen, setAttachOpen] = useState(false);
   const [changelogOpen, setChangelogOpen] = useState(false);
+  // Deploy is collapsed at rest — a Ship card shouldn't open with a full deploy
+  // panel in every row. "Ship it" reveals it; a not-ready sprint never shows it.
+  const [deployOpen, setDeployOpen] = useState(false);
   const deployRef = useRef<HTMLDivElement>(null);
   // Set only when attaching an issue that already belongs to a DIFFERENT
   // sprint — issue_to_sprint is one-sprint-per-issue (PK = issue_id), so
@@ -246,62 +261,42 @@ function SprintCard({
   });
 
   const shipIt = () => {
-    // No new backend call — scroll the deploy panel into view so the human
-    // fires the environment deploy from its existing controls.
-    deployRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    // No new backend call — REVEAL the deploy panel (collapsed by default) so
+    // the human fires the environment deploy from its existing controls. The
+    // panel mounts on this state change, so defer the scroll a frame.
+    setDeployOpen(true);
+    requestAnimationFrame(() => deployRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
   };
 
   return (
     <Card className="gap-0 py-0">
-      <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
-        {/* LEFT: the readiness gestalt. */}
-        <div className="flex shrink-0 flex-col items-center gap-1.5">
-          <ProgressRing
-            value={readiness.value}
-            size={76}
-            strokeWidth={6}
-            tone={readiness.tone}
-            aria-label={t(($) => $.qa_cockpit.ring_aria, { passed: s.passed, total: s.total })}
-          >
-            <span className="text-base font-semibold tabular-nums">
-              {s.passed}/{s.total}
-            </span>
-          </ProgressRing>
-          <span className={cn("text-[11px] font-medium", SUBLABEL_TONE[readiness.state])}>{subLabelText}</span>
+      <div className="flex items-center gap-4 p-4">
+        {/* LEFT: the readiness gestalt — ring only. */}
+        <ProgressRing
+          value={readiness.value}
+          size={76}
+          strokeWidth={6}
+          tone={readiness.tone}
+          aria-label={t(($) => $.qa_cockpit.ring_aria, { passed: s.passed, total: s.total })}
+        >
+          <span className="text-base font-semibold tabular-nums">
+            {s.passed}/{s.total}
+          </span>
+        </ProgressRing>
+
+        {/* MIDDLE: identity + ONE headline state. Branch, the regression chip
+            and the verdict-count badges live in "What's shipping" below —
+            they're the detail behind the headline, not the headline itself. */}
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="truncate text-[13px] font-semibold">
+            {s.project_title} · {s.name}
+          </span>
+          <span className={cn("text-[13px] font-medium", SUBLABEL_TONE[readiness.state])}>{subLabelText}</span>
         </div>
 
-        {/* MIDDLE: identity + regression + count badges. */}
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <div className="flex min-w-0 flex-col">
-            <span className="truncate text-[13px] font-semibold">
-              {s.project_title} · {s.name}
-            </span>
-            {s.branch ? (
-              <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                <GitBranch className="size-3" aria-hidden /> {s.branch}
-              </span>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-[12px]">
-            <RegressionGate gate={s.regression} issueHref={qaDetail} />
-            <Badge variant="outline" className="gap-1 text-emerald-600 dark:text-emerald-400" title={t(($) => $.qa_cockpit.sprint_passed_title)}>
-              {verdictIcon("pass", "size-3")} {s.passed}
-            </Badge>
-            {s.failed > 0 ? (
-              <Badge variant="destructive" className="gap-1" title={t(($) => $.qa_cockpit.sprint_failing_title)}>
-                {verdictIcon("fail", "size-3")} {s.failed}
-              </Badge>
-            ) : null}
-            {s.pending > 0 ? (
-              <Badge variant="outline" className="gap-1 text-muted-foreground" title={t(($) => $.qa_cockpit.sprint_pending_title, { count: s.no_qa })}>
-                {verdictIcon("pending", "size-3")} {s.pending}
-              </Badge>
-            ) : null}
-          </div>
-        </div>
-
-        {/* RIGHT: primary CTA + secondary actions. */}
-        <div className="flex shrink-0 flex-col items-stretch gap-2 sm:w-40">
+        {/* RIGHT: one primary CTA + a `⋯` menu for the secondary actions (run
+            regression / attach a task) so they don't compete with the CTA. */}
+        <div className="flex shrink-0 items-center gap-2">
           {s.mergeable ? (
             <Button size="sm" className="h-8 gap-1.5" onClick={shipIt}>
               <Rocket className="size-3.5" />
@@ -326,28 +321,31 @@ function SprintCard({
               {t(($) => $.qa_cockpit.ship_it)}
             </Button>
           )}
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 flex-1 gap-1 text-[11px]"
-              disabled={runRegression.isPending}
-              onClick={() => runRegression.mutate()}
-            >
-              {runRegression.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
-              {t(($) => $.qa_cockpit.sprint_run_regression)}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 shrink-0 gap-1 text-[11px]"
-              title={t(($) => $.qa_cockpit.sprint_attach_tasks)}
-              aria-label={t(($) => $.qa_cockpit.sprint_attach_tasks)}
-              onClick={() => setAttachOpen(true)}
-            >
-              <Plus className="size-3.5" />
-            </Button>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="size-8 shrink-0"
+                  aria-label={t(($) => $.qa_cockpit.view_more)}
+                >
+                  <MoreHorizontal className="size-3.5" />
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem disabled={runRegression.isPending} onClick={() => runRegression.mutate()}>
+                {runRegression.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
+                {t(($) => $.qa_cockpit.sprint_run_regression)}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setAttachOpen(true)}>
+                <Plus className="size-3.5" />
+                {t(($) => $.qa_cockpit.sprint_attach_tasks)}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -405,6 +403,37 @@ function SprintCard({
           </button>
           {changelogOpen ? (
             <div className="space-y-3 px-4 pb-3">
+              {/* Detail row — branch + regression chip + verdict-count badges,
+                  moved out of the resting headline (detail, not the answer). */}
+              <div className="flex flex-wrap items-center gap-2 text-[12px]">
+                {s.branch ? (
+                  <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <GitBranch className="size-3" aria-hidden /> {s.branch}
+                  </span>
+                ) : null}
+                <RegressionGate gate={s.regression} issueHref={qaDetail} />
+                <Badge
+                  variant="outline"
+                  className="gap-1 text-emerald-600 dark:text-emerald-400"
+                  title={t(($) => $.qa_cockpit.sprint_passed_title)}
+                >
+                  {verdictIcon("pass", "size-3")} {s.passed}
+                </Badge>
+                {s.failed > 0 ? (
+                  <Badge variant="destructive" className="gap-1" title={t(($) => $.qa_cockpit.sprint_failing_title)}>
+                    {verdictIcon("fail", "size-3")} {s.failed}
+                  </Badge>
+                ) : null}
+                {s.pending > 0 ? (
+                  <Badge
+                    variant="outline"
+                    className="gap-1 text-muted-foreground"
+                    title={t(($) => $.qa_cockpit.sprint_pending_title)}
+                  >
+                    {verdictIcon("pending", "size-3")} {s.pending}
+                  </Badge>
+                ) : null}
+              </div>
               {changelogGroups.map((g) => (
                 <div key={g.key}>
                   <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -435,16 +464,20 @@ function SprintCard({
 
       {/* Deploy is a SPRINT-level cycle (the shared branch ships as a unit) —
           this panel is its home after leaving the per-issue stepper (deploy
-          cycle rehome, part 2). The "Ship it" CTA scrolls here. */}
-      <div ref={deployRef}>
-        <SprintDeployPanel
-          wsId={wsId}
-          projectId={s.project_id}
-          sprintId={s.sprint_id}
-          branch={s.branch}
-          issues={s.issues}
-        />
-      </div>
+          cycle rehome, part 2). Collapsed by default: only a ready sprint whose
+          "Ship it" CTA has been pressed reveals it, so a not-ready sprint shows
+          zero deploy UI and no card opens with a full panel in it. */}
+      {s.mergeable && deployOpen ? (
+        <div ref={deployRef}>
+          <SprintDeployPanel
+            wsId={wsId}
+            projectId={s.project_id}
+            sprintId={s.sprint_id}
+            branch={s.branch}
+            issues={s.issues}
+          />
+        </div>
+      ) : null}
     </Card>
   );
 }
