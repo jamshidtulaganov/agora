@@ -1025,8 +1025,8 @@
     "empty": "No deploy environments configured — add deploy_environments in the project's settings.",
     "deploy": "Deploy",
     "requires_human": "Human-gated",
-    "confirm": "Deploy sprint branch \"{{branch}}\" to {{env}}? This environment is human-gated — the deploy fires a real pipeline.",
-    "confirm_title": "Deploy to a human-gated environment?",
+    "confirm": "Deploy sprint branch \"{{branch}}\" to {{env}}? This dispatches the deploy agent to run the pipeline.",
+    "confirm_title": "Deploy this sprint?",
     "toast_fired": "Deploy to {{env}} requested",
     "toast_failed": "Failed to request deploy",
     "no_anchor": "No active task to anchor a deploy to — attach a task first.",
@@ -1034,7 +1034,10 @@
     "history_empty": "No deploys yet.",
     "status_success": "Success",
     "status_failed": "Failed",
-    "status_timeout": "Timeout"
+    "status_timeout": "Timeout",
+    "confirm_prod": "This is a production / human-gated environment — the deploy fires a real pipeline against live infrastructure.",
+    "deploying": "Deploying…",
+    "dispatched": "Dispatched — follow"
   },
   "agent_protocol": {
     "an_agent": "an agent",

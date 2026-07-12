@@ -1025,8 +1025,8 @@
     "empty": "Deploy muhitlari sozlanmagan — loyiha sozlamalarida deploy_environments qo'shing.",
     "deploy": "Deploy qilish",
     "requires_human": "Faqat inson",
-    "confirm": "Sprint branchi \"{{branch}}\" ni {{env}} ga deploy qilasizmi? Bu muhit himoyalangan — deploy haqiqiy pipeline'ni ishga tushiradi.",
-    "confirm_title": "Himoyalangan muhitga deploy qilinsinmi?",
+    "confirm": "\"{{branch}}\" sprint tarmog'ini {{env}} ga deploy qilinsinmi? Bu deploy agentini pipeline'ni ishga tushirish uchun jo'natadi.",
+    "confirm_title": "Bu sprintni deploy qilinsinmi?",
     "toast_fired": "{{env}} ga deploy so'raldi",
     "toast_failed": "Deploy so'rab bo'lmadi",
     "no_anchor": "Deploy bog'lash uchun faol vazifa yo'q — avval vazifa qo'shing.",
@@ -1034,7 +1034,10 @@
     "history_empty": "Hozircha deploy bo'lmagan.",
     "status_success": "Muvaffaqiyatli",
     "status_failed": "Muvaffaqiyatsiz",
-    "status_timeout": "Vaqt tugadi"
+    "status_timeout": "Vaqt tugadi",
+    "confirm_prod": "Bu production / inson-gate qilingan muhit — deploy jonli infratuzilmada haqiqiy pipeline ishga tushiradi.",
+    "deploying": "Deploy qilinmoqda…",
+    "dispatched": "Jo'natildi — kuzatish"
   },
   "agent_protocol": {
     "an_agent": "agent",

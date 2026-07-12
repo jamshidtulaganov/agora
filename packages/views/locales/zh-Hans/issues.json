@@ -1010,8 +1010,8 @@
     "empty": "未配置部署环境——请在项目设置中添加 deploy_environments。",
     "deploy": "部署",
     "requires_human": "需人工确认",
-    "confirm": "将冲刺分支「{{branch}}」部署到 {{env}}？该环境受人工门禁保护——部署会触发真实流水线。",
-    "confirm_title": "部署到需要人工门禁的环境？",
+    "confirm": "将 sprint 分支“{{branch}}”部署到 {{env}}？这将派发部署 agent 运行流水线。",
+    "confirm_title": "部署此 sprint？",
     "toast_fired": "已请求部署到 {{env}}",
     "toast_failed": "请求部署失败",
     "no_anchor": "没有可挂靠部署的有效任务——请先添加任务。",
@@ -1019,7 +1019,10 @@
     "history_empty": "尚无部署记录。",
     "status_success": "成功",
     "status_failed": "失败",
-    "status_timeout": "超时"
+    "status_timeout": "超时",
+    "confirm_prod": "这是生产 / 需人工确认的环境 — 部署会对线上基础设施触发真实流水线。",
+    "deploying": "部署中…",
+    "dispatched": "已派发 — 跟踪"
   },
   "agent_protocol": {
     "an_agent": "智能体",
