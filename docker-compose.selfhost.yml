@@ -158,6 +158,10 @@ services:
       # URLs + connector tokens (Slack/GitHub/GitLab/Sentry). Unset = the
       # release-integrations config endpoints fail closed.
       AGORA_RELEASE_SECRET_KEY: ${AGORA_RELEASE_SECRET_KEY:-}
+      # Dynamic MCP: base64 32-byte key that seals the auth headers/tokens for
+      # remote (http/sse) MCP servers a team connects. Unset = the mcp-credential
+      # write endpoints fail closed (existing stdio configs unaffected).
+      AGORA_MCP_SECRET_KEY: ${AGORA_MCP_SECRET_KEY:-}
       # Sprint auto-review loop (all default OFF, reversible). WORKTREE = shared
       # sprint-branch worktree model; PR_MODE = task opens a PR into the sprint
       # branch for the lead to auto-review+merge; AUTO_QA = fire run_qa on
