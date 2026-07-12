@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { Sparkles, Plus, Bot, User, Loader2, FlaskConical, Play, CircleSlash, CircleStop, Check, X, Film, ListChecks, RotateCcw, Bug } from "lucide-react";
+import { Sparkles, Plus, Bot, User, Loader2, FlaskConical, Play, CircleSlash, CircleStop, Check, X, Film, ListChecks, RotateCcw, Bug, MoreHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core/hooks";
@@ -686,6 +686,13 @@ function CaseRow({
   });
   const historyRuns = (historyData?.runs ?? []).slice(0, 5);
 
+  // ⋯ overflow contents (each conditional). Hand-walking an automated case's
+  // steps is legitimate when its box/script is unavailable, so it stays
+  // reachable there rather than as the row's primary Run.
+  const canHandWalk = c.kind === "automated" && parsedSteps.length > 0;
+  const hasTrace = !!(c.latest_run?.trace_path && c.latest_run.id);
+  const canFileBug = !isRunning && (status === "fail" || isBlocked);
+
   return (
     <li
       className={cn(
@@ -711,189 +718,157 @@ function CaseRow({
           />
         </>
       )}
-      <div className="flex items-start gap-2">
+      {/* Collapsed row = [status] Title …… [Run] [⋯]. Everything else — the
+          meta taxonomy, the reason, run history, steps — lives behind the row
+          expand (click the title). */}
+      <div className="flex items-center gap-2">
+        {/* Status on the LEFT, 4-vocab: Testing (spinner) / Passed / Failed
+            (also blocked+skip = couldn't run) / Not run (—). */}
+        {isRunning ? (
+          <Loader2 className="size-4 shrink-0 animate-spin text-info" aria-hidden />
+        ) : status === "pass" ? (
+          <span
+            className={cn("shrink-0", isLive && "motion-safe:animate-pulse")}
+            title={isLive ? t(($) => $.test_cases.runs_now) : undefined}
+          >
+            {verdictIcon("pass", "size-4")}
+          </span>
+        ) : status === "fail" || isBlocked ? (
+          <span
+            className={cn("shrink-0", isLive && "motion-safe:animate-pulse")}
+            title={
+              isLive
+                ? t(($) => $.test_cases.runs_now)
+                : c.latest_run?.output || (isBlocked ? t(($) => $.test_cases.blocked) : undefined)
+            }
+          >
+            {verdictIcon("fail", "size-4")}
+          </span>
+        ) : (
+          <span className="shrink-0 text-[10px] text-muted-foreground">—</span>
+        )}
+        {/* Title — click toggles the expanded detail. The ONE inline badge is a
+            P1 marker on a failing P1 (the first thing a reviewer must see). */}
         <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setOpen((v) => !v)}>
           <span
-            className={cn(
-              "flex items-center gap-1.5 truncate text-[13px]",
-              isRunning && "font-medium text-info",
-            )}
+            className={cn("flex items-center gap-1.5 truncate text-[13px]", isRunning && "font-medium text-info")}
           >
-            {isRunning && <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden />}
             <span className="truncate">{c.title}</span>
-          </span>
-          {/* Compact meta: priority · modality · kind · category · (who ran it
-              + when) — plain text, not badge pills, so it fits a 380px rail on
-              one wrapping-safe line. p1 is destructive-tinted (the first thing
-              a reviewer must see); modality only shows when declared. */}
-          <span className="mt-0.5 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[10px] text-muted-foreground/70">
-            <span className={cn("uppercase", priorityChipClass(c.priority))}>{priorityLabel(c.priority)}</span>
-            {c.flaky === true && (
-              <>
-                <span aria-hidden>·</span>
-                {/* Flaky (Phase 3): pass AND fail on the SAME commit — the same
-                    amber caution language as the base-case quarantine. */}
-                <span
-                  className="font-medium uppercase text-amber-600 dark:text-amber-400"
-                  title={t(($) => $.test_cases.flaky_title)}
-                >
-                  {t(($) => $.test_cases.flaky)}
-                </span>
-              </>
-            )}
-            {c.modality && (
-              <>
-                <span aria-hidden>·</span>
-                <span>{modalityLabel(c.modality)}</span>
-              </>
-            )}
-            {c.criterion_ref && (
-              <>
-                <span aria-hidden>·</span>
-                {/* Traceability: which acceptance criterion this case covers. */}
-                <span className="max-w-[140px] truncate" title={c.criterion_ref}>
-                  {c.criterion_ref}
-                </span>
-              </>
-            )}
-            <span aria-hidden>·</span>
-            <span>{kindLabel}</span>
-            <span aria-hidden>·</span>
-            <span
-              className={cn(c.category === "negative" && "font-medium text-amber-600 dark:text-amber-400")}
-            >
-              {categoryLabel}
-            </span>
-            {!isRunning && c.latest_run && (
-              <>
-                <span aria-hidden>·</span>
-                {c.latest_run.run_source === "agent" ? (
-                  <Bot className="size-2.5 shrink-0" />
-                ) : (
-                  <User className="size-2.5 shrink-0" />
-                )}
-                {timeAgo(c.latest_run.created_at)}
-              </>
+            {c.priority === "p1" && (status === "fail" || isBlocked) && (
+              <span className="shrink-0 rounded bg-destructive/10 px-1 text-[9px] font-medium uppercase tracking-wide text-destructive">
+                {priorityLabel("p1")}
+              </span>
             )}
           </span>
         </button>
-        <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
+        {/* Right — a running label, else the ONE primary Run + a ⋯ overflow. */}
+        <div className="flex shrink-0 items-center gap-1 pt-0.5">
           {isRunning ? (
             <span className="flex items-center gap-1 text-[10px] font-medium text-info">
               <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-info motion-safe:animate-pulse" />
               {t(($) => $.test_cases.runs_now)}
             </span>
-          ) : status === "pass" || status === "fail" ? (
-            <span
-              className={cn(isLive && "motion-safe:animate-pulse")}
-              title={
-                isLive
-                  ? t(($) => $.test_cases.runs_now)
-                  : status === "fail"
-                    ? c.latest_run?.output || undefined
-                    : undefined
-              }
-            >
-              {verdictIcon(status, "size-4")}
-            </span>
-          ) : isBlocked ? (
-            <span title={c.latest_run?.output || t(($) => $.test_cases.blocked)}>
-              <CircleSlash className="size-4 text-amber-600 dark:text-amber-400" />
-            </span>
           ) : (
-            <span className="text-[10px] text-muted-foreground">—</span>
-          )}
-          {c.latest_run?.trace_path && c.latest_run.id && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              disabled={traceLaunchingRunId === c.latest_run.id}
-              onClick={() => onViewTrace(c.latest_run!.id)}
-              className="size-6 text-info hover:bg-info/10"
-              title={t(($) => $.test_cases.view_trace)}
-            >
-              {traceLaunchingRunId === c.latest_run.id ? (
-                <Loader2 className="size-3.5 animate-spin" />
+            <>
+              {/* Primary Run: agent-run for automated, the manual checklist for
+                  manual. A manual case with no steps keeps an inline pass/fail —
+                  the only way it can record a verdict. */}
+              {c.kind === "automated" ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={onRunCase}
+                  className="size-6 text-info hover:bg-info/10"
+                  title={t(($) => $.test_cases.run_case)}
+                >
+                  <Play className="size-3.5" />
+                </Button>
+              ) : parsedSteps.length > 0 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setStepRunOpen((v) => !v)}
+                  className={cn("size-6 text-info hover:bg-info/10", stepRunOpen && "bg-info/10")}
+                  title={t(($) => $.test_cases.run_steps)}
+                >
+                  <Play className="size-3.5" />
+                </Button>
               ) : (
-                <Film className="size-3.5" />
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    disabled={busy}
+                    onClick={() => onRun("pass")}
+                    className="size-6 text-emerald-700 hover:bg-emerald-600/10 dark:text-emerald-300"
+                    title={t(($) => $.test_cases.run_pass)}
+                  >
+                    <Check className="size-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    disabled={busy}
+                    onClick={() => onRun("fail")}
+                    className="size-6 text-destructive hover:bg-destructive/10"
+                    title={t(($) => $.test_cases.run_fail)}
+                  >
+                    <X className="size-3.5" />
+                  </Button>
+                </div>
               )}
-            </Button>
-          )}
-          {/* File a bug from THIS case — its title, failed step + note, and
-              covered criterion pre-fill the sheet. Failing/blocked rows only:
-              that's where a bug-worthy finding lives. No issue-verdict gate. */}
-          {!isRunning && (status === "fail" || isBlocked) && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={onFileBug}
-              className="size-6 text-destructive hover:bg-destructive/10"
-              title={t(($) => $.test_cases.file_bug_case)}
-            >
-              <Bug className="size-3.5" />
-            </Button>
-          )}
-          {/* Run THIS one case via the QA agent — automated cases only (a manual
-              case has no script to execute; it's judged by the human ✓/✗). */}
-          {c.kind === "automated" && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              disabled={isRunning}
-              onClick={onRunCase}
-              className="size-6 text-info hover:bg-info/10"
-              title={t(($) => $.test_cases.run_case)}
-            >
-              {isRunning ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
-            </Button>
-          )}
-          {/* Per-step manual walk (phase 4) — any case with structured steps.
-              Toggles the inline checklist below the row. */}
-          {parsedSteps.length > 0 && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              disabled={isRunning}
-              onClick={() => setStepRunOpen((v) => !v)}
-              className={cn("size-6 text-muted-foreground hover:text-foreground", stepRunOpen && "text-foreground")}
-              title={t(($) => $.test_cases.run_steps)}
-            >
-              <ListChecks className="size-3.5" />
-            </Button>
-          )}
-          {/* Manual pass/fail is ONLY for manual cases — a human judges those.
-              Automated cases are judged by the agent's run (▷ / Run-all), so the
-              always-on ✓/✗ there was redundant clutter on every row. Kept here for
-              manual cases, and revealed on row hover so the default view stays clean. */}
-          {c.kind !== "automated" && (
-            <div className="flex items-center gap-1.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover/case:opacity-100">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                disabled={busy}
-                onClick={() => onRun("pass")}
-                className="size-6 text-emerald-700 hover:bg-emerald-600/10 dark:text-emerald-300"
-                title={t(($) => $.test_cases.run_pass)}
-              >
-                <Check className="size-3.5" />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                disabled={busy}
-                onClick={() => onRun("fail")}
-                className="size-6 text-destructive hover:bg-destructive/10"
-                title={t(($) => $.test_cases.run_fail)}
-              >
-                <X className="size-3.5" />
-              </Button>
-            </div>
+              {/* Overflow ⋯ — hand-walk an automated case's steps, view its
+                  trace, file a bug. Rendered only when it has an item. */}
+              {(canHandWalk || hasTrace || canFileBug) && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-6 text-muted-foreground"
+                        title={t(($) => $.qa_review.more_actions)}
+                        aria-label={t(($) => $.qa_review.more_actions)}
+                      />
+                    }
+                  >
+                    <MoreHorizontal className="size-3.5" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {canHandWalk && (
+                      <DropdownMenuItem onClick={() => setStepRunOpen((v) => !v)}>
+                        <ListChecks className="size-3.5" />
+                        {t(($) => $.test_cases.run_steps)}
+                      </DropdownMenuItem>
+                    )}
+                    {hasTrace && (
+                      <DropdownMenuItem
+                        disabled={traceLaunchingRunId === c.latest_run!.id}
+                        onClick={() => onViewTrace(c.latest_run!.id)}
+                      >
+                        {traceLaunchingRunId === c.latest_run!.id ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <Film className="size-3.5" />
+                        )}
+                        {t(($) => $.test_cases.view_trace)}
+                      </DropdownMenuItem>
+                    )}
+                    {canFileBug && (
+                      <DropdownMenuItem onClick={onFileBug}>
+                        <Bug className="size-3.5 text-destructive" />
+                        {t(($) => $.test_cases.file_bug_case)}
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -907,6 +882,57 @@ function CaseRow({
             setStepRunOpen(false);
           }}
         />
+      )}
+      {/* Case taxonomy — priority · flaky · modality · criterion · kind ·
+          category · (who ran it + when). Hidden on the collapsed row; the
+          reviewer only needs it once they open a specific case. */}
+      {open && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-1 gap-y-0.5 pl-1 text-[10px] text-muted-foreground/70">
+          <span className={cn("uppercase", priorityChipClass(c.priority))}>{priorityLabel(c.priority)}</span>
+          {c.flaky === true && (
+            <>
+              <span aria-hidden>·</span>
+              {/* Flaky: pass AND fail on the SAME commit — same amber caution. */}
+              <span
+                className="font-medium uppercase text-amber-600 dark:text-amber-400"
+                title={t(($) => $.test_cases.flaky_title)}
+              >
+                {t(($) => $.test_cases.flaky)}
+              </span>
+            </>
+          )}
+          {c.modality && (
+            <>
+              <span aria-hidden>·</span>
+              <span>{modalityLabel(c.modality)}</span>
+            </>
+          )}
+          {c.criterion_ref && (
+            <>
+              <span aria-hidden>·</span>
+              <span className="max-w-[140px] truncate" title={c.criterion_ref}>
+                {c.criterion_ref}
+              </span>
+            </>
+          )}
+          <span aria-hidden>·</span>
+          <span>{kindLabel}</span>
+          <span aria-hidden>·</span>
+          <span className={cn(c.category === "negative" && "font-medium text-amber-600 dark:text-amber-400")}>
+            {categoryLabel}
+          </span>
+          {c.latest_run && (
+            <>
+              <span aria-hidden>·</span>
+              {c.latest_run.run_source === "agent" ? (
+                <Bot className="size-2.5 shrink-0" />
+              ) : (
+                <User className="size-2.5 shrink-0" />
+              )}
+              {timeAgo(c.latest_run.created_at)}
+            </>
+          )}
+        </div>
       )}
       {open && hasReason && (
         <div

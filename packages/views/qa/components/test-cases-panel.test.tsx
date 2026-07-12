@@ -297,7 +297,8 @@ describe("TestCasesPanel — per-step manual run (checklist)", () => {
     apiMocks.listTestCaseRuns.mockResolvedValue({ runs: [] });
     apiMocks.getAgentTaskSnapshot.mockResolvedValue([]);
     apiMocks.getIssue.mockResolvedValue({ id: "issue-1", description: null });
-    apiMocks.getIssueTestCases.mockResolvedValue({ test_cases: [automatedCase()] });
+    // Manual cases: the primary Run opens the step checklist directly.
+    apiMocks.getIssueTestCases.mockResolvedValue({ test_cases: [automatedCase({ kind: "manual" })] });
     apiMocks.recordTestCaseRun.mockResolvedValue({});
     qaLiveProgressMocks.useRunningTestCaseId.mockReturnValue(null);
     qaLiveProgressMocks.useLiveCaseVerdicts.mockReturnValue({});
@@ -350,6 +351,7 @@ describe("TestCasesPanel — per-step manual run (checklist)", () => {
     apiMocks.getIssueTestCases.mockResolvedValue({
       test_cases: [
         automatedCase({
+          kind: "manual",
           latest_run: {
             id: "run-1",
             status: "fail",
@@ -496,7 +498,9 @@ describe("TestCasesPanel — re-run failed + per-case file-bug (Phase 2)", () =>
 
     renderPanel();
 
-    fireEvent.click(await screen.findByTitle("File a bug from this case"));
+    // File-bug now lives in the row's ⋯ overflow (not an always-there button).
+    fireEvent.click(await screen.findByTitle("More actions"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "File a bug from this case" }));
 
     await screen.findByTestId("file-bug-sheet");
     const props = fileBugSheetMock.lastProps!;
@@ -521,7 +525,10 @@ describe("TestCasesPanel — re-run failed + per-case file-bug (Phase 2)", () =>
     renderPanel();
 
     await screen.findByText("Checkout — happy path");
-    expect(screen.queryByTitle("File a bug from this case")).not.toBeInTheDocument();
+    // The passing automated case still has a ⋯ (hand-walk its steps), but no
+    // File-a-bug item — that lives on failing/blocked rows only.
+    fireEvent.click(screen.getByTitle("More actions"));
+    expect(screen.queryByRole("menuitem", { name: "File a bug from this case" })).not.toBeInTheDocument();
   });
 });
 
@@ -537,7 +544,7 @@ describe("TestCasesPanel — flaky chip + run history (Phase 3)", () => {
     qaLiveProgressMocks.useLiveCaseVerdicts.mockReturnValue({});
   });
 
-  it("shows the amber flaky chip only on flaky cases", async () => {
+  it("shows the amber flaky chip in the expanded row detail, not the collapsed row", async () => {
     apiMocks.getIssueTestCases.mockResolvedValue({
       test_cases: [
         automatedCase({ id: "tc-flaky", title: "Wobbly case", flaky: true }),
@@ -548,7 +555,12 @@ describe("TestCasesPanel — flaky chip + run history (Phase 3)", () => {
     renderPanel();
 
     await screen.findByText("Wobbly case");
-    expect(screen.getByText("flaky")).toBeInTheDocument(); // test_cases.flaky — exactly once
+    // flaky is one of the 8 meta tokens moved behind the row expand — it must
+    // NOT clutter the collapsed row.
+    expect(screen.queryByText("flaky")).not.toBeInTheDocument();
+    // Expanding the flaky row reveals it (exactly once).
+    fireEvent.click(screen.getByText("Wobbly case"));
+    expect(await screen.findByText("flaky")).toBeInTheDocument();
     expect(screen.getAllByText("flaky")).toHaveLength(1);
   });
 
