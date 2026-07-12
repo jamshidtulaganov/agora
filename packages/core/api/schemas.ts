@@ -18,6 +18,7 @@ import type {
   GroupedIssuesResponse,
   ListIssuesResponse,
   ListWebhookDeliveriesResponse,
+  ReleaseIntegration,
   Squad,
   TimelineEntry,
   User,
@@ -1717,3 +1718,23 @@ export const EMPTY_FIGMA_CREDENTIAL_STATUS: FigmaCredentialStatus = {
   probe_status: "",
   probed_at: "",
 };
+
+// Release integrations (release-hub Thread B). Every field is defaulted so a
+// drifted backend row (missing/wrong-typed field) downgrades to a benign shape
+// instead of throwing into the settings UI. The sealed URL is never present —
+// has_secret is the only secret signal.
+export const ReleaseIntegrationSchema = z.object({
+  id: z.string().default(""),
+  kind: z.string().default("webhook"),
+  config: z.object({ name: z.string().optional() }).loose().default({}),
+  events: z.array(z.string()).default([]),
+  enabled: z.boolean().default(false),
+  probe_status: z.string().default(""),
+  has_secret: z.boolean().default(false),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+}).loose();
+
+export const ReleaseIntegrationListSchema = z.array(ReleaseIntegrationSchema);
+
+export const EMPTY_RELEASE_INTEGRATIONS: ReleaseIntegration[] = [];

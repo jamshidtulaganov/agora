@@ -24,6 +24,8 @@ import {
   EMPTY_REVIEW_VERDICT,
   ReviewDecisionResponseSchema,
   EMPTY_REVIEW_DECISION,
+  ReleaseIntegrationListSchema,
+  EMPTY_RELEASE_INTEGRATIONS,
   TestCaseRunsResponseSchema,
   EMPTY_TEST_CASE_RUNS,
   RuntimeHourlyActivityListSchema,
@@ -356,6 +358,46 @@ describe("ConnectedBoxListSchema (Remote Boxes)", () => {
 
   it("defaults a missing boxes array to []", () => {
     expect(ConnectedBoxListSchema.parse({}).boxes).toEqual([]);
+  });
+});
+
+describe("ReleaseIntegrationListSchema (release-hub Thread B)", () => {
+  it("parses a well-formed list and defaults missing optional fields", () => {
+    const parsed = ReleaseIntegrationListSchema.parse([
+      { id: "ri1", kind: "webhook", events: ["deploy_recorded"], enabled: true, has_secret: true },
+    ]);
+    const row = parsed[0]!;
+    expect(row.probe_status).toBe("");
+    expect(row.config).toEqual({});
+    expect(row.has_secret).toBe(true);
+    expect(row.created_at).toBe("");
+  });
+
+  it("falls back on a malformed body instead of throwing", () => {
+    // Not an array → whole parse fails → fallback.
+    expect(
+      parseWithFallback({ nope: true }, ReleaseIntegrationListSchema, EMPTY_RELEASE_INTEGRATIONS, {
+        endpoint: "GET /api/workspaces/{id}/release-integrations",
+      }),
+    ).toEqual(EMPTY_RELEASE_INTEGRATIONS);
+    // A row whose events is the wrong type → row invalid → whole parse fails.
+    expect(
+      parseWithFallback([{ id: "ri1", events: "deploy_recorded" }], ReleaseIntegrationListSchema, EMPTY_RELEASE_INTEGRATIONS, {
+        endpoint: "GET /api/workspaces/{id}/release-integrations",
+      }),
+    ).toEqual(EMPTY_RELEASE_INTEGRATIONS);
+    // null body → fallback.
+    expect(
+      parseWithFallback(null, ReleaseIntegrationListSchema, EMPTY_RELEASE_INTEGRATIONS, { endpoint: "t" }),
+    ).toEqual(EMPTY_RELEASE_INTEGRATIONS);
+  });
+
+  it("keeps unknown extra fields (loose) and unknown event strings (no enum)", () => {
+    const parsed = ReleaseIntegrationListSchema.parse([
+      { id: "ri1", kind: "slack", events: ["future_event"], server_only_field: 1 },
+    ]);
+    expect(parsed[0]!.events).toEqual(["future_event"]);
+    expect((parsed[0] as Record<string, unknown>).server_only_field).toBe(1);
   });
 });
 

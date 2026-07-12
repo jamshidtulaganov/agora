@@ -36,6 +36,7 @@ import type {
   WorkspaceRepo,
   GitCredential,
   FigmaCredentialStatus,
+  ReleaseIntegration,
   MemberWithUser,
   ActorDirectoryEntry,
   User,
@@ -306,6 +307,8 @@ import {
   type SprintReadinessResponse,
   FigmaCredentialStatusSchema,
   EMPTY_FIGMA_CREDENTIAL_STATUS,
+  ReleaseIntegrationListSchema,
+  EMPTY_RELEASE_INTEGRATIONS,
   EditorTokensResponseSchema,
   EMPTY_EDITOR_TOKENS,
   type EditorTokensResponse,
@@ -3155,6 +3158,43 @@ export class ApiClient {
 
   async deleteFigmaCredential(workspaceId: string): Promise<void> {
     await this.fetch(`/api/workspaces/${workspaceId}/figma-credential`, {
+      method: "DELETE",
+    });
+  }
+
+  // Release integrations — per-workspace outbound connectors that fire on
+  // release-lifecycle events (Phase 2: signed webhook). The webhook URL +
+  // signing secret are write-only; the list never returns them (has_secret only).
+  async listReleaseIntegrations(workspaceId: string): Promise<ReleaseIntegration[]> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/release-integrations`);
+    return parseWithFallback(raw, ReleaseIntegrationListSchema, EMPTY_RELEASE_INTEGRATIONS, {
+      endpoint: "GET /api/workspaces/{id}/release-integrations",
+    });
+  }
+
+  async createReleaseIntegration(
+    workspaceId: string,
+    data: { kind?: string; name?: string; url: string; secret?: string; events: string[]; enabled?: boolean },
+  ): Promise<void> {
+    await this.fetch(`/api/workspaces/${workspaceId}/release-integrations`, {
+      method: "POST",
+      body: JSON.stringify({ kind: "webhook", ...data }),
+    });
+  }
+
+  async updateReleaseIntegration(
+    workspaceId: string,
+    integrationId: string,
+    data: { name?: string; url?: string; secret?: string; events: string[]; enabled?: boolean },
+  ): Promise<void> {
+    await this.fetch(`/api/workspaces/${workspaceId}/release-integrations/${integrationId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteReleaseIntegration(workspaceId: string, integrationId: string): Promise<void> {
+    await this.fetch(`/api/workspaces/${workspaceId}/release-integrations/${integrationId}`, {
       method: "DELETE",
     });
   }

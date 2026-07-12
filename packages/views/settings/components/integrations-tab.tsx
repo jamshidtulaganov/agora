@@ -5,6 +5,7 @@ import { BitrixTab } from "./bitrix-tab";
 import { ZohoTab } from "./zoho-tab";
 import { McpServersTab } from "./mcp-servers-tab";
 import { FigmaIntegrationSection } from "./figma-integration-section";
+import { ReleaseIntegrationsSection } from "./release-integrations-section";
 import { WorkspaceDesignSection } from "./workspace-design-section";
 import { useT } from "../../i18n";
 
@@ -25,6 +26,7 @@ export function IntegrationsTab() {
       <BitrixTab />
       <ZohoTab />
       <FigmaIntegrationSection />
+      <ReleaseIntegrationsSection />
       <WorkspaceDesignSection />
       <McpServersTab />
     </div>

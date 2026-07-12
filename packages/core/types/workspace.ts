@@ -33,6 +33,23 @@ export interface FigmaCredentialStatus {
   probed_at: string;
 }
 
+// A per-workspace release integration (release-hub Thread B). Phase 2 wires
+// only kind="webhook": a signed POST to an outbound URL on release-lifecycle
+// events. The sealed webhook URL / signing secret are never returned —
+// `has_secret` reports only that one is stored. `config` is non-secret display
+// metadata (a `name`). `events` are the short lifecycle names that fire it.
+export interface ReleaseIntegration {
+  id: string;
+  kind: string;
+  config: { name?: string } & Record<string, unknown>;
+  events: string[];
+  enabled: boolean;
+  probe_status: string;
+  has_secret: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Workspace {
   id: string;
   name: string;
