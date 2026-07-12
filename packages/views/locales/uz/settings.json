@@ -413,6 +413,37 @@
       }
     }
   },
+  "integrations": {
+    "intro": "Jamoangiz va agentlaringiz allaqachon ishlatayotgan vositalarni ulang.",
+    "status_connected": "Ulangan",
+    "status_not_connected": "Ulanmagan",
+    "mcp": {
+      "name": "MCP serverlar",
+      "description": "Agentlaringiz uchun istalgan vositani ulang — GitHub, Linear, Postgres yoki istalgan MCP server.",
+      "body": "Har bir agentda qaysi MCP serverlar sozlanganini ko'ring va bir nechta agentga bir vaqtda yangi serverlar qo'shing.",
+      "open": "MCP serverlarni ochish"
+    },
+    "release": {
+      "name": "Reliz",
+      "description": "Sprint chiqqanda Slack'ni xabardor qiling, GitHub yoki GitLab relizlarini yarating yoki Sentry'ga signal yuboring."
+    },
+    "figma": {
+      "name": "Figma",
+      "description": "Agentlar issue'larda ko'rsatilgan Figma maketlarini o'qiy olsin."
+    },
+    "bitrix": {
+      "name": "Bitrix24",
+      "description": "Bitrix24 ishchi guruhlari va tasklarini import qiling va statusni orqaga sinxronlang."
+    },
+    "zoho": {
+      "name": "Zoho",
+      "description": "Zoho CRM, Desk, Projects va Sprints'ni ushbu workspace'ga ulang."
+    },
+    "lark": {
+      "name": "Lark",
+      "description": "Har bir agentni jamoa DM yozib, eslatib turadigan Lark botiga ulang."
+    }
+  },
   "figma": {
     "section_title": "Figma",
     "description": "Workspace uchun bitta token — agentlar issue'larda ko'rsatilgan Figma maketlarini o'qiy oladi. Issue Figma faylga havola qilsa, agent MCP konfiguratsiyasi task berilganda avtomatik to'ldiriladi — har bir agent uchun alohida sozlash shart emas.",

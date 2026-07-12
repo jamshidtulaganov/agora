@@ -413,6 +413,37 @@
       }
     }
   },
+  "integrations": {
+    "intro": "Connect the tools your team and agents already use.",
+    "status_connected": "Connected",
+    "status_not_connected": "Not connected",
+    "mcp": {
+      "name": "MCP servers",
+      "description": "Connect any tool your agents can use — GitHub, Linear, Postgres, or any MCP server.",
+      "body": "Review the Model Context Protocol servers each agent has configured, and add new servers across one or more agents at once.",
+      "open": "Open MCP servers"
+    },
+    "release": {
+      "name": "Release",
+      "description": "Notify Slack, cut GitHub or GitLab releases, or ping Sentry when a sprint ships."
+    },
+    "figma": {
+      "name": "Figma",
+      "description": "Let agents read Figma designs referenced in issues."
+    },
+    "bitrix": {
+      "name": "Bitrix24",
+      "description": "Import Bitrix24 workgroups and tasks, and mirror status back."
+    },
+    "zoho": {
+      "name": "Zoho",
+      "description": "Connect Zoho CRM, Desk, Projects, and Sprints to this workspace."
+    },
+    "lark": {
+      "name": "Lark",
+      "description": "Connect each agent to a Lark bot your team can DM and mention."
+    }
+  },
   "figma": {
     "section_title": "Figma",
     "description": "One workspace token that lets agents read Figma designs referenced by issues. When an issue links a Figma file, the agent's MCP config is filled automatically at claim time — no per-agent setup.",

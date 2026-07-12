@@ -413,6 +413,37 @@
       }
     }
   },
+  "integrations": {
+    "intro": "连接你的团队和智能体已经在用的工具。",
+    "status_connected": "已连接",
+    "status_not_connected": "未连接",
+    "mcp": {
+      "name": "MCP 服务器",
+      "description": "为智能体连接任意工具 —— GitHub、Linear、Postgres 或任意 MCP 服务器。",
+      "body": "查看每个智能体已配置的 MCP 服务器，并一次性为一个或多个智能体添加新服务器。",
+      "open": "打开 MCP 服务器"
+    },
+    "release": {
+      "name": "发布",
+      "description": "冲刺发布时通知 Slack、创建 GitHub 或 GitLab 发布，或向 Sentry 发送事件。"
+    },
+    "figma": {
+      "name": "Figma",
+      "description": "让智能体读取 issue 中引用的 Figma 设计稿。"
+    },
+    "bitrix": {
+      "name": "Bitrix24",
+      "description": "导入 Bitrix24 工作组和 task，并将状态同步回去。"
+    },
+    "zoho": {
+      "name": "Zoho",
+      "description": "将 Zoho CRM、Desk、Projects 和 Sprints 连接到此工作区。"
+    },
+    "lark": {
+      "name": "飞书",
+      "description": "将每个智能体连接到团队可以私信和 @ 的飞书机器人。"
+    }
+  },
   "figma": {
     "section_title": "Figma",
     "description": "为工作区设置一个令牌，智能体即可读取 issue 中引用的 Figma 设计稿。当 issue 链接了 Figma 文件时，智能体的 MCP 配置会在领取 task 时自动填充，无需逐个智能体配置。",
