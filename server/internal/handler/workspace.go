@@ -262,7 +262,12 @@ type workspaceRepoRef struct {
 // daemon can never clone (it 404s on the /tree path).
 func normalizeGitRepoURL(u string) string {
 	u = strings.TrimSpace(u)
-	for _, sep := range []string{"/tree/", "/blob/", "/commit/", "/commits/", "/pull/", "/-/"} {
+	// GitLab wraps its web-view suffixes behind a "/-/" segment
+	// (…/-/tree/<ref>, …/-/blob/…), so strip "/-/" FIRST — cutting at "/tree/"
+	// on a "…/r/-/tree/main" URL would leave a dangling "/-" that TrimRight
+	// can't remove. Once "/-/" is gone the remaining GitHub-style suffixes are
+	// stripped from the already-trimmed URL.
+	for _, sep := range []string{"/-/", "/tree/", "/blob/", "/commit/", "/commits/", "/pull/"} {
 		if i := strings.Index(u, sep); i != -1 {
 			u = u[:i]
 		}
