@@ -2,7 +2,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Globe, Loader2, Lock, Plug, Plus, ShieldCheck, Terminal, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Globe, Loader2, Lock, Plug, Plus, ShieldCheck, Terminal, Trash2, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useWorkspaceId } from "@agora/core/hooks";
 import {
@@ -83,6 +83,10 @@ export function McpServersPanel() {
   // Required-scope hint for source-control templates (github/gitlab) + the
   // remote sealed-auth note, shown once a template that declares one is applied.
   const [scopeHint, setScopeHint] = useState<string | null>(null);
+  // The add-server form is collapsed by default; the header row is a real
+  // toggle button now (it read as clickable — a "+ Add MCP server" pill — but
+  // was an inert div that did nothing when clicked).
+  const [showAddForm, setShowAddForm] = useState(false);
 
   const remote = isRemoteTransport(transport);
   const selectedIds = Object.keys(selected).filter((id) => selected[id]);
@@ -257,10 +261,21 @@ export function McpServersPanel() {
 
         {/* ---------------- Add MCP server form ---------------- */}
         <section className="mb-8 rounded-md border border-border">
-          <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
+          <button
+            type="button"
+            onClick={() => setShowAddForm((v) => !v)}
+            aria-expanded={showAddForm}
+            className="flex w-full items-center gap-2 border-b border-border bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+          >
             <Plus className="h-3.5 w-3.5" />
             Add MCP server
-          </div>
+            {showAddForm ? (
+              <ChevronDown className="ml-auto h-3.5 w-3.5" />
+            ) : (
+              <ChevronRight className="ml-auto h-3.5 w-3.5" />
+            )}
+          </button>
+          {showAddForm && (
           <div className="space-y-4 p-4">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-muted-foreground">
@@ -542,6 +557,7 @@ export function McpServersPanel() {
               </Button>
             </div>
           </div>
+          )}
         </section>
 
         {/* ---------------- Per-agent server list ---------------- */}
