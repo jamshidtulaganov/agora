@@ -118,7 +118,13 @@ export function QAPage() {
           <ReleaseQueue projectId={projectId} initialNeedsHumanOnly={needsHumanSeed} onOpenShip={openShip} />
         </div>
         {tab === "ship" ? (
-          <QASprintReadinessView projectId={projectId} />
+          <QASprintReadinessView
+            projectId={projectId}
+            onSeeBlockers={() => {
+              setNeedsHumanSeed(true);
+              setTab("queue");
+            }}
+          />
         ) : tab === "bugs" ? (
           <div className="flex w-full flex-col gap-4 px-8 py-8">
             <BugsLens projectId={projectId} />

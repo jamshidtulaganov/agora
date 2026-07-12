@@ -76,13 +76,15 @@ describe("ReleaseHealthStrip", () => {
     await waitFor(() => expect(container).toBeEmptyDOMElement());
   });
 
-  it("renders a blocked sprint row with its counts and the Not-ready pill", async () => {
+  it("renders a blocked sprint row with its counts and the readiness headline", async () => {
     apiMocks.getSprintReadiness.mockResolvedValue({ sprints: [sprint({})] });
 
     renderStrip();
 
     await waitFor(() => expect(screen.getByText("SD Main · Sprint 12")).toBeInTheDocument());
-    expect(screen.getByText("Not ready")).toBeInTheDocument();
+    // The readiness gestalt (ring + "N/M ready") replaces the old text pill.
+    expect(screen.getByText("2/5 ready")).toBeInTheDocument();
+    expect(screen.getByLabelText("2 of 5 tasks passed")).toBeInTheDocument();
     expect(screen.getByTitle("passed")).toHaveTextContent("2");
     expect(screen.getByTitle("failing")).toHaveTextContent("1");
     expect(screen.getByTitle(/pending/)).toHaveTextContent("2");
@@ -95,7 +97,7 @@ describe("ReleaseHealthStrip", () => {
     renderStrip({ onOpenShip });
 
     await waitFor(() => expect(screen.getByText("SD Main · Sprint 12")).toBeInTheDocument());
-    expect(screen.getByText("Mergeable")).toBeInTheDocument();
+    expect(screen.getByText("2/5 ready")).toBeInTheDocument();
     fireEvent.click(screen.getByText("SD Main · Sprint 12"));
     expect(onOpenShip).toHaveBeenCalledTimes(1);
   });

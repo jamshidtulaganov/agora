@@ -2,25 +2,35 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, XCircle, CircleDashed, Rocket, ShieldAlert } from "lucide-react";
+import { CheckCircle2, XCircle, CircleDashed, ShieldAlert } from "lucide-react";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { qaQueueOptions, qaVerdictsOptions, sprintReadinessOptions } from "@agora/core/qa/queries";
 import type { SprintReadinessResponse } from "@agora/core/api/schemas";
 import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import { ProgressRing, type ProgressRingTone } from "@agora/ui/components/ui/progress-ring";
 import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
 import { qaEffectiveState } from "./qa-lane";
 import { useQaLiveIssueMap } from "./qa-live-progress";
 import { regressionStatusMeta } from "./regression-status";
+import { sprintReadiness } from "./sprint-readiness";
 
 // The Release page's always-on health strip — one compact row per active
 // sprint (readiness rollup) so "can we ship?" is visible from every tab
 // without opening Ship. Reads the same query factories as the Ship view and
-// the Queue (one cache entry each, zero drift). Rows click through to
-// Ship; the needs-decision chip (fail / pass_with_failing_cases in the
-// review queue) deep-links to Queue with the needs-human toggle pre-set.
+// the Queue (one cache entry each, zero drift). Rows are sorted
+// closest-to-shipping first, carry a mini readiness ring + "N/M ready"
+// headline, and click through to Ship; the needs-decision chip sits inline in
+// the cluster and deep-links to Queue with the needs-human toggle pre-set.
 
 type Sprint = SprintReadinessResponse["sprints"][number];
+
+const READY_TEXT_TONE: Record<ProgressRingTone, string> = {
+  ready: "text-emerald-600 dark:text-emerald-400",
+  close: "text-amber-600 dark:text-amber-400",
+  far: "text-muted-foreground",
+  blocked: "text-destructive",
+};
 
 function RegressionGlyph({ gate }: { gate: Sprint["regression"] }) {
   const { t } = useT("issues");
@@ -66,6 +76,18 @@ export function ReleaseHealthStrip({
     }).length;
   }, [queueData, verdictData, liveIssueIds]);
 
+  // Closest-to-shipping first: mergeable sprints lead, then by passed ratio —
+  // the strip reads top-to-bottom as "what ships next".
+  const sprints = useMemo(() => {
+    const rows = data?.sprints ?? [];
+    return [...rows].sort((a, b) => {
+      if (a.mergeable !== b.mergeable) return a.mergeable ? -1 : 1;
+      const ra = a.total > 0 ? a.passed / a.total : 0;
+      const rb = b.total > 0 ? b.passed / b.total : 0;
+      return rb - ra;
+    });
+  }, [data]);
+
   if (isLoading && !data) {
     return (
       <div className="border-b px-8 py-2" aria-hidden>
@@ -74,61 +96,68 @@ export function ReleaseHealthStrip({
     );
   }
 
-  const sprints = data?.sprints ?? [];
   if (sprints.length === 0) return null;
 
   return (
-    <div className="flex items-start gap-3 border-b bg-muted/20 px-8 py-1.5">
-      <div className="flex min-w-0 flex-1 flex-col">
-        {sprints.map((s) => (
+    <div className="border-b bg-muted/20 px-8 py-1.5">
+      <div className="flex flex-col gap-0.5">
+        {sprints.map((s) => {
+          const r = sprintReadiness(s);
+          return (
+            <button
+              key={s.sprint_id}
+              type="button"
+              onClick={onOpenShip}
+              title={t(($) => $.qa_cockpit.health_row_title)}
+              className="flex w-full items-center gap-3 rounded-md px-2 py-1 text-left text-[12px] hover:bg-accent/60"
+            >
+              <ProgressRing
+                value={r.value}
+                size={18}
+                strokeWidth={3}
+                tone={r.tone}
+                aria-label={t(($) => $.qa_cockpit.ring_aria, { passed: s.passed, total: s.total })}
+              />
+              <span className="min-w-0 flex-1 truncate font-medium">
+                {s.project_title} · {s.name}
+              </span>
+              <span className={cn("shrink-0 text-[11px] font-medium tabular-nums", READY_TEXT_TONE[r.tone])}>
+                {t(($) => $.qa_cockpit.health_ready, { passed: s.passed, total: s.total })}
+              </span>
+              <span className="flex shrink-0 items-center gap-3">
+                <RegressionGlyph gate={s.regression} />
+                <span className="flex items-center gap-1 text-emerald-500" title={t(($) => $.qa_cockpit.sprint_passed_title)}>
+                  <CheckCircle2 className="size-3.5" aria-hidden /> {s.passed}
+                </span>
+                {s.failed > 0 ? (
+                  <span className="flex items-center gap-1 text-destructive" title={t(($) => $.qa_cockpit.sprint_failing_title)}>
+                    <XCircle className="size-3.5" aria-hidden /> {s.failed}
+                  </span>
+                ) : null}
+                {s.pending > 0 ? (
+                  <span
+                    className="flex items-center gap-1 text-muted-foreground"
+                    title={t(($) => $.qa_cockpit.sprint_pending_title, { count: s.no_qa })}
+                  >
+                    <CircleDashed className="size-3.5" aria-hidden /> {s.pending}
+                  </span>
+                ) : null}
+              </span>
+            </button>
+          );
+        })}
+
+        {needsDecision > 0 && (
           <button
-            key={s.sprint_id}
             type="button"
-            onClick={onOpenShip}
-            title={t(($) => $.qa_cockpit.health_row_title)}
-            className="flex w-full items-center gap-3 rounded-md px-2 py-1 text-left text-[12px] hover:bg-accent/60"
+            onClick={onOpenQueueNeedsHuman}
+            className="mt-0.5 flex w-fit items-center gap-1 self-start rounded-full bg-destructive/10 px-2.5 py-1 text-[11px] font-medium text-destructive hover:bg-destructive/20"
           >
-            <span className="min-w-0 truncate font-medium">
-              {s.project_title} · {s.name}
-            </span>
-            <span className="ml-auto flex shrink-0 items-center gap-3">
-              <RegressionGlyph gate={s.regression} />
-              <span className="flex items-center gap-1 text-emerald-500" title={t(($) => $.qa_cockpit.sprint_passed_title)}>
-                <CheckCircle2 className="size-3.5" aria-hidden /> {s.passed}
-              </span>
-              <span className="flex items-center gap-1 text-destructive" title={t(($) => $.qa_cockpit.sprint_failing_title)}>
-                <XCircle className="size-3.5" aria-hidden /> {s.failed}
-              </span>
-              <span
-                className="flex items-center gap-1 text-muted-foreground"
-                title={t(($) => $.qa_cockpit.sprint_pending_title, { count: s.no_qa })}
-              >
-                <CircleDashed className="size-3.5" aria-hidden /> {s.pending}
-              </span>
-              <span
-                className={
-                  s.mergeable
-                    ? "flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-medium text-emerald-500"
-                    : "flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground"
-                }
-              >
-                <Rocket className="size-3.5" aria-hidden />
-                {s.mergeable ? t(($) => $.qa_cockpit.sprint_mergeable) : t(($) => $.qa_cockpit.sprint_not_ready)}
-              </span>
-            </span>
+            <ShieldAlert className="size-3.5" aria-hidden />
+            {t(($) => $.qa_cockpit.health_needs_decision, { count: needsDecision })}
           </button>
-        ))}
+        )}
       </div>
-      {needsDecision > 0 && (
-        <button
-          type="button"
-          onClick={onOpenQueueNeedsHuman}
-          className="mt-1 flex shrink-0 items-center gap-1 rounded-full bg-destructive/10 px-2.5 py-1 text-[11px] font-medium text-destructive hover:bg-destructive/20"
-        >
-          <ShieldAlert className="size-3.5" aria-hidden />
-          {t(($) => $.qa_cockpit.health_needs_decision, { count: needsDecision })}
-        </button>
-      )}
     </div>
   );
 }
