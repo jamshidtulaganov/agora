@@ -718,6 +718,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/zoho-user-binding", h.GetZohoUserBindingStatus)
 					r.Put("/zoho-user-binding", h.PutZohoUserBinding)
 					r.Delete("/zoho-user-binding", h.DeleteZohoUserBinding)
+					// Release integrations listing is member-visible (same
+					// rationale as figma/lark: the Integrations tab must render
+					// for non-admins). The query never selects the sealed
+					// webhook URL — has_secret is a computed boolean.
+					r.Get("/release-integrations", h.ListReleaseIntegrations)
 				})
 				// Admin-level access
 				r.Group(func(r chi.Router) {
@@ -787,6 +792,19 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// Workspace-level shared design manifest — the base every
 					// project in the workspace inherits.
 					r.Put("/design-manifest", h.PutWorkspaceDesignManifest)
+				})
+
+				// Release integrations — per-workspace outbound connectors that
+				// fire on release-lifecycle events (Phase 2: signed webhook).
+				// Writes are admin-only; the member-visible listing lives in the
+				// member group above. The sealed webhook URL is never returned,
+				// and the handlers additionally reject agent actors (a webhook
+				// URL exfiltrates release data).
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))
+					r.Post("/release-integrations", h.CreateReleaseIntegration)
+					r.Put("/release-integrations/{integrationId}", h.UpdateReleaseIntegration)
+					r.Delete("/release-integrations/{integrationId}", h.DeleteReleaseIntegration)
 				})
 
 				// Lark integration. Listing is member-visible (same
