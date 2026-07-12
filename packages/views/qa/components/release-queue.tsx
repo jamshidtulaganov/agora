@@ -243,13 +243,6 @@ export function ReleaseQueue({
     return by;
   }, [filteredIssues, liveIssueIds]);
 
-  // Attention counts for the summary line — surfaced ahead of the quiet queue so
-  // a QA lead reads "what needs me" first (derived from the same live set +
-  // labels the rows use; no new backend field).
-  const runningCount = useMemo(
-    () => filteredIssues.filter((i) => liveIssueIds.has(i.id)).length,
-    [filteredIssues, liveIssueIds],
-  );
   // Stale backlog size — computed from the FULL queue (not the stale-filtered
   // cut) so the "Stale backlog (N)" affordance shows a stable count regardless
   // of whether the toggle is on. Framed as a secondary backlog, not a headline
@@ -306,44 +299,20 @@ export function ReleaseQueue({
   return (
     <div className="flex w-full flex-col gap-4 px-8 py-8">
       <div className="space-y-3">
-        {/* Scope context (muted) above a positive-first counts line: passed
-            leads, then what needs a human; the raw pending/in-review totals
-            stay muted so they don't read as a problem-list. Stale is NOT here
-            — it lives on the "Stale backlog" toggle as a secondary affordance. */}
-        <div className="space-y-0.5">
-          <p className="text-[12px] text-muted-foreground">
-            {project === "all"
-              ? t(($) => $.qa_cockpit.summary_all, { count: filteredIssues.length })
-              : t(($) => $.qa_cockpit.summary_project, {
-                  project: projects.find((p) => p.id === project)?.title ?? t(($) => $.qa_cockpit.project_fallback),
-                  count: filteredIssues.length,
-                })}
-            {hasFilters && issues.length !== filteredIssues.length
-              ? ` ${t(($) => $.qa_cockpit.summary_of_total, { total: issues.length })}`
-              : ""}
-          </p>
-          <p className="text-sm text-muted-foreground">
-            <span className="font-medium text-emerald-600 dark:text-emerald-400">
-              {t(($) => $.qa_cockpit.summary_passed, { count: lanes.pass.length })}
-            </span>
-            {lanes.fail.length > 0 && (
-              <>
-                {" · "}
-                <span className="font-medium text-destructive">
-                  {t(($) => $.qa_cockpit.summary_need_fix, { count: lanes.fail.length })}
-                </span>
-              </>
-            )}
-            {runningCount > 0 && (
-              <>
-                {" · "}
-                <span className="text-info">{t(($) => $.qa_cockpit.summary_running, { count: runningCount })}</span>
-              </>
-            )}
-            {" · "}
-            {t(($) => $.qa_cockpit.summary_pending, { count: lanes.pending.length })}
-          </p>
-        </div>
+        {/* Scope context (muted): the queue's scope + how many are in review.
+            The per-verdict counts live in the lane headers just below, so a
+            second summing line here would only duplicate them. */}
+        <p className="text-[12px] text-muted-foreground">
+          {project === "all"
+            ? t(($) => $.qa_cockpit.summary_all, { count: filteredIssues.length })
+            : t(($) => $.qa_cockpit.summary_project, {
+                project: projects.find((p) => p.id === project)?.title ?? t(($) => $.qa_cockpit.project_fallback),
+                count: filteredIssues.length,
+              })}
+          {hasFilters && issues.length !== filteredIssues.length
+            ? ` ${t(($) => $.qa_cockpit.summary_of_total, { total: issues.length })}`
+            : ""}
+        </p>
 
         <div className="flex flex-wrap items-center gap-2">
           {/* Project scope lives in the page header (applies to all tabs);
