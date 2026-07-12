@@ -54,7 +54,7 @@ export type {
   RuntimeLocalSkillImportResult,
   IssueUsageSummary,
 } from "./agent";
-export type { Workspace, WorkspaceRepo, GitCredential, FigmaCredentialStatus, ReleaseIntegration, Member, MemberRole, User, MemberWithUser, ActorDirectoryEntry, Invitation } from "./workspace";
+export type { Workspace, WorkspaceRepo, GitCredential, FigmaCredentialStatus, ReleaseIntegration, ReleaseIntegrationInput, Member, MemberRole, User, MemberWithUser, ActorDirectoryEntry, Invitation } from "./workspace";
 export type { InboxItem, InboxSeverity, InboxItemType } from "./inbox";
 export type { NotificationGroupKey, NotificationGroupValue, NotificationPreferences, NotificationPreferenceResponse } from "./notification-preference";
 export type { Comment, CommentType, CommentAuthorType, CommentTriggerPreview, CommentTriggerPreviewAgent, CommentTriggerSource, Reaction } from "./comment";

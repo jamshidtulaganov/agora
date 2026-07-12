@@ -1726,7 +1726,18 @@ export const EMPTY_FIGMA_CREDENTIAL_STATUS: FigmaCredentialStatus = {
 export const ReleaseIntegrationSchema = z.object({
   id: z.string().default(""),
   kind: z.string().default("webhook"),
-  config: z.object({ name: z.string().optional() }).loose().default({}),
+  config: z
+    .object({
+      name: z.string().optional(),
+      channel_hint: z.string().optional(),
+      owner: z.string().optional(),
+      repo: z.string().optional(),
+      project_path: z.string().optional(),
+      org: z.string().optional(),
+      project: z.string().optional(),
+    })
+    .loose()
+    .default({}),
   events: z.array(z.string()).default([]),
   enabled: z.boolean().default(false),
   probe_status: z.string().default(""),

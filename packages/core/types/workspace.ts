@@ -33,21 +33,59 @@ export interface FigmaCredentialStatus {
   probed_at: string;
 }
 
-// A per-workspace release integration (release-hub Thread B). Phase 2 wires
-// only kind="webhook": a signed POST to an outbound URL on release-lifecycle
-// events. The sealed webhook URL / signing secret are never returned —
-// `has_secret` reports only that one is stored. `config` is non-secret display
-// metadata (a `name`). `events` are the short lifecycle names that fire it.
+// A per-workspace release integration (release-hub Thread B). One of the named
+// connector kinds (webhook | slack | bitrix | github_release | gitlab_release |
+// sentry) fires on release-lifecycle events. The sealed secret (webhook/bot/API
+// token or URL) is never returned — `has_secret` reports only that one is
+// stored. `config` is the NON-secret, per-kind display/routing metadata.
+// `events` are the short lifecycle names that fire it.
 export interface ReleaseIntegration {
   id: string;
   kind: string;
-  config: { name?: string } & Record<string, unknown>;
+  config: {
+    name?: string;
+    channel_hint?: string; // slack
+    owner?: string; // github_release
+    repo?: string; // github_release
+    project_path?: string; // gitlab_release
+    org?: string; // sentry
+    project?: string; // sentry
+  } & Record<string, unknown>;
   events: string[];
   enabled: boolean;
   probe_status: string;
   has_secret: boolean;
   created_at: string;
   updated_at: string;
+}
+
+// Write payload for creating/updating a release integration. Only the fields
+// relevant to the chosen `kind` are sent; every secret-bearing field (url,
+// webhook_url, token, host, base_url, secret) is write-only — the server seals
+// it and never echoes it back.
+export interface ReleaseIntegrationInput {
+  kind?: string;
+  name?: string;
+  events: string[];
+  enabled?: boolean;
+  // webhook
+  url?: string;
+  secret?: string;
+  // slack
+  webhook_url?: string;
+  channel_hint?: string;
+  // github_release / gitlab_release / sentry
+  token?: string;
+  // github_release
+  owner?: string;
+  repo?: string;
+  // gitlab_release
+  host?: string;
+  project_path?: string;
+  // sentry
+  base_url?: string;
+  org?: string;
+  project?: string;
 }
 
 export interface Workspace {

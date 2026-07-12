@@ -37,6 +37,7 @@ import type {
   GitCredential,
   FigmaCredentialStatus,
   ReleaseIntegration,
+  ReleaseIntegrationInput,
   MemberWithUser,
   ActorDirectoryEntry,
   User,
@@ -3174,10 +3175,11 @@ export class ApiClient {
 
   async createReleaseIntegration(
     workspaceId: string,
-    data: { kind?: string; name?: string; url: string; secret?: string; events: string[]; enabled?: boolean },
+    data: ReleaseIntegrationInput,
   ): Promise<void> {
     await this.fetch(`/api/workspaces/${workspaceId}/release-integrations`, {
       method: "POST",
+      // kind defaults to webhook server-side when omitted.
       body: JSON.stringify({ kind: "webhook", ...data }),
     });
   }
@@ -3185,7 +3187,7 @@ export class ApiClient {
   async updateReleaseIntegration(
     workspaceId: string,
     integrationId: string,
-    data: { name?: string; url?: string; secret?: string; events: string[]; enabled?: boolean },
+    data: ReleaseIntegrationInput,
   ): Promise<void> {
     await this.fetch(`/api/workspaces/${workspaceId}/release-integrations/${integrationId}`, {
       method: "PUT",
