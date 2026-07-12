@@ -64,27 +64,15 @@ type webhookSecret struct {
 	Signing string `json:"signing,omitempty"`
 }
 
+// sealWebhookSecret marshals + seals a webhook secret. Retained as a helper
+// because the fan-out test seeds rows through it; the create/update handlers now
+// seal every kind through the generic buildReleaseSecretPlain + box.Seal path.
 func sealWebhookSecret(box *secretbox.Box, s webhookSecret) ([]byte, error) {
 	raw, err := json.Marshal(s)
 	if err != nil {
 		return nil, err
 	}
 	return box.Seal(raw)
-}
-
-func openWebhookSecret(box *secretbox.Box, sealed []byte) (webhookSecret, bool) {
-	if len(sealed) == 0 {
-		return webhookSecret{}, false
-	}
-	plain, err := box.Open(sealed)
-	if err != nil {
-		return webhookSecret{}, false
-	}
-	var s webhookSecret
-	if json.Unmarshal(plain, &s) != nil {
-		return webhookSecret{}, false
-	}
-	return s, true
 }
 
 type releaseIntegrationResponse struct {
@@ -139,10 +127,162 @@ func releaseIntegrationFromModel(row db.ReleaseIntegration) releaseIntegrationRe
 type releaseIntegrationRequest struct {
 	Kind    string   `json:"kind"`
 	Name    string   `json:"name"`
-	URL     string   `json:"url"`    // sealed; write-only, never returned
-	Secret  string   `json:"secret"` // optional HMAC signing secret; write-only
 	Events  []string `json:"events"`
 	Enabled *bool    `json:"enabled"`
+
+	// webhook (sealed): the receiver URL + optional HMAC signing secret.
+	URL    string `json:"url"`    // write-only, never returned
+	Secret string `json:"secret"` // write-only HMAC signing secret
+
+	// slack (sealed webhook_url; channel_hint is non-secret display config).
+	WebhookURL  string `json:"webhook_url"`
+	ChannelHint string `json:"channel_hint"`
+
+	// github_release / gitlab_release / sentry share a sealed token.
+	Token string `json:"token"`
+
+	// github_release config (non-secret).
+	Owner string `json:"owner"`
+	Repo  string `json:"repo"`
+
+	// gitlab_release: host is sealed with the token; project_path is config.
+	Host        string `json:"host"`
+	ProjectPath string `json:"project_path"`
+
+	// sentry: base_url is sealed with the token; org + project are config.
+	BaseURL string `json:"base_url"`
+	Org     string `json:"org"`
+	Project string `json:"project"`
+}
+
+// isKnownReleaseKind reports whether kind is a connector a workspace may
+// configure. The dispatcher's releaseConnectorFor must stay in sync with this.
+func isKnownReleaseKind(kind string) bool {
+	switch kind {
+	case "webhook", "slack", "bitrix", "github_release", "gitlab_release", "sentry":
+		return true
+	default:
+		return false
+	}
+}
+
+// releaseSecretRequiredOnCreate reports whether a kind must carry a secret at
+// create time. bitrix is the exception — its portal comes from BITRIX_WEBHOOK_URL
+// so a per-workspace override secret is optional.
+func releaseSecretRequiredOnCreate(kind string) bool { return kind != "bitrix" }
+
+// releaseSecretProvided reports whether the request carries this kind's
+// secret-bearing field (used on update to decide reseal-vs-keep).
+func releaseSecretProvided(kind string, req *releaseIntegrationRequest) bool {
+	switch kind {
+	case "webhook":
+		return strings.TrimSpace(req.URL) != ""
+	case "slack", "bitrix":
+		return strings.TrimSpace(req.WebhookURL) != ""
+	case "github_release", "gitlab_release", "sentry":
+		return strings.TrimSpace(req.Token) != ""
+	default:
+		return false
+	}
+}
+
+// buildReleaseConfig assembles the NON-secret config jsonb for a kind, merging
+// the request over the existing config (so a metadata-only edit keeps prior
+// values) and validating that the kind's required config fields are present.
+// Returns (config, "", true) on success or ("", message, false) with a 400
+// message on a missing required field.
+func buildReleaseConfig(kind string, req *releaseIntegrationRequest, existing releaseConfigFields) (json.RawMessage, string, bool) {
+	pick := func(next, prev string) string {
+		if s := strings.TrimSpace(next); s != "" {
+			return s
+		}
+		return strings.TrimSpace(prev)
+	}
+	out := map[string]string{"name": pick(req.Name, existing.Name)}
+	switch kind {
+	case "webhook", "bitrix":
+		// name only
+	case "slack":
+		if h := pick(req.ChannelHint, existing.ChannelHint); h != "" {
+			out["channel_hint"] = h
+		}
+	case "github_release":
+		out["owner"] = pick(req.Owner, existing.Owner)
+		out["repo"] = pick(req.Repo, existing.Repo)
+		if out["owner"] == "" || out["repo"] == "" {
+			return nil, "github_release requires owner and repo", false
+		}
+	case "gitlab_release":
+		out["project_path"] = pick(req.ProjectPath, existing.ProjectPath)
+		if out["project_path"] == "" {
+			return nil, "gitlab_release requires project_path", false
+		}
+	case "sentry":
+		out["org"] = pick(req.Org, existing.Org)
+		out["project"] = pick(req.Project, existing.Project)
+		if out["org"] == "" || out["project"] == "" {
+			return nil, "sentry requires org and project", false
+		}
+	}
+	raw, err := json.Marshal(out)
+	if err != nil {
+		return nil, "invalid config", false
+	}
+	return raw, "", true
+}
+
+// buildReleaseSecretPlain validates + marshals the plaintext secret blob for a
+// kind (the bytes the caller then seals). Returns (plain, "", true) on success
+// or (nil, message, false) with a 400 message on an invalid/missing field. Only
+// called when the kind's secret field was provided.
+func buildReleaseSecretPlain(kind string, req *releaseIntegrationRequest) ([]byte, string, bool) {
+	marshal := func(v any) ([]byte, string, bool) {
+		raw, err := json.Marshal(v)
+		if err != nil {
+			return nil, "invalid secret", false
+		}
+		return raw, "", true
+	}
+	switch kind {
+	case "webhook":
+		url, ok := validWebhookURL(req.URL)
+		if !ok {
+			return nil, "url must be an absolute http(s) URL", false
+		}
+		return marshal(webhookSecret{URL: url, Signing: strings.TrimSpace(req.Secret)})
+	case "slack":
+		url, ok := validWebhookURL(req.WebhookURL)
+		if !ok {
+			return nil, "webhook_url must be an absolute http(s) URL", false
+		}
+		return marshal(slackSecret{WebhookURL: url})
+	case "bitrix":
+		url, ok := validWebhookURL(req.WebhookURL)
+		if !ok {
+			return nil, "webhook_url must be an absolute http(s) URL", false
+		}
+		return marshal(bitrixReleaseSecret{WebhookURL: url})
+	case "github_release":
+		token := strings.TrimSpace(req.Token)
+		if token == "" {
+			return nil, "github_release requires a token", false
+		}
+		return marshal(githubReleaseSecret{Token: token})
+	case "gitlab_release":
+		token := strings.TrimSpace(req.Token)
+		if token == "" {
+			return nil, "gitlab_release requires a token", false
+		}
+		return marshal(gitlabReleaseSecret{Token: token, Host: strings.TrimSpace(req.Host)})
+	case "sentry":
+		token := strings.TrimSpace(req.Token)
+		if token == "" {
+			return nil, "sentry requires a token", false
+		}
+		return marshal(sentrySecret{Token: token, BaseURL: strings.TrimSpace(req.BaseURL)})
+	default:
+		return nil, "unsupported kind", false
+	}
 }
 
 // normalizeReleaseEvents keeps only the known short event names, de-duplicated
@@ -265,13 +405,8 @@ func (h *Handler) CreateReleaseIntegration(w http.ResponseWriter, r *http.Reques
 	if kind == "" {
 		kind = "webhook"
 	}
-	if kind != "webhook" {
-		writeError(w, http.StatusBadRequest, "only webhook integrations are supported")
-		return
-	}
-	url, ok := validWebhookURL(req.URL)
-	if !ok {
-		writeError(w, http.StatusBadRequest, "url must be an absolute http(s) URL")
+	if !isKnownReleaseKind(kind) {
+		writeError(w, http.StatusBadRequest, "unsupported integration kind")
 		return
 	}
 	eventsList := normalizeReleaseEvents(req.Events)
@@ -279,18 +414,38 @@ func (h *Handler) CreateReleaseIntegration(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "at least one event is required (deploy_recorded, release_shipped)")
 		return
 	}
-
-	probeStatus, invalid := h.probeReleaseWebhook(r.Context(), url)
-	if invalid {
-		writeError(w, http.StatusUnprocessableEntity, "release_webhook_invalid: the URL rejected the probe (401/403)")
+	config, cmsg, ok := buildReleaseConfig(kind, &req, releaseConfigFields{})
+	if !ok {
+		writeError(w, http.StatusBadRequest, cmsg)
 		return
 	}
 
-	sealed, err := sealWebhookSecret(box, webhookSecret{URL: url, Signing: strings.TrimSpace(req.Secret)})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to seal webhook secret")
+	// Build → probe → seal the secret. bitrix may omit it (env-driven portal);
+	// every other kind requires one at create time.
+	var sealed []byte
+	probeStatus := ""
+	if releaseSecretProvided(kind, &req) {
+		plain, smsg, ok := buildReleaseSecretPlain(kind, &req)
+		if !ok {
+			writeError(w, http.StatusBadRequest, smsg)
+			return
+		}
+		ps, invalid := h.probeReleaseKind(r.Context(), kind, config, plain)
+		if invalid {
+			writeError(w, http.StatusUnprocessableEntity, "release_integration_invalid: the credential was rejected (401/403)")
+			return
+		}
+		probeStatus = ps
+		sealed, err = box.Seal(plain)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to seal integration secret")
+			return
+		}
+	} else if releaseSecretRequiredOnCreate(kind) {
+		writeError(w, http.StatusBadRequest, "a secret is required for this integration kind")
 		return
 	}
+
 	creator, ok := parseUUIDOrBadRequest(w, requestUserID(r), "user id")
 	if !ok {
 		return
@@ -302,7 +457,7 @@ func (h *Handler) CreateReleaseIntegration(w http.ResponseWriter, r *http.Reques
 	row, err := h.Queries.InsertReleaseIntegration(r.Context(), db.InsertReleaseIntegrationParams{
 		WorkspaceID:     wsUUID,
 		Kind:            kind,
-		Config:          releaseConfigJSON(req.Name),
+		Config:          config,
 		SecretEncrypted: sealed,
 		Events:          eventsList,
 		Enabled:         enabled,
@@ -358,42 +513,40 @@ func (h *Handler) UpdateReleaseIntegration(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "at least one event is required (deploy_recorded, release_shipped)")
 		return
 	}
+	// Kind is immutable — a metadata/secret edit cannot repurpose the row.
+	kind := existing.Kind
 	enabled := existing.Enabled
 	if req.Enabled != nil {
 		enabled = *req.Enabled
 	}
+	// Config: merge the request over the existing config so a metadata-only edit
+	// keeps prior owner/repo/org/etc.
+	config, cmsg, ok := buildReleaseConfig(kind, &req, parseReleaseConfig(existing.Config))
+	if !ok {
+		writeError(w, http.StatusBadRequest, cmsg)
+		return
+	}
+	// Secret: a new secret field rotates the sealed blob + re-probes; otherwise
+	// the stored secret + probe status are kept verbatim.
 	sealed := existing.SecretEncrypted
 	probeStatus := existing.ProbeStatus
-	// A new URL rotates the sealed blob and re-probes; otherwise the stored one
-	// is kept verbatim (a metadata edit never drops the URL).
-	if strings.TrimSpace(req.URL) != "" {
-		url, ok := validWebhookURL(req.URL)
+	if releaseSecretProvided(kind, &req) {
+		plain, smsg, ok := buildReleaseSecretPlain(kind, &req)
 		if !ok {
-			writeError(w, http.StatusBadRequest, "url must be an absolute http(s) URL")
+			writeError(w, http.StatusBadRequest, smsg)
 			return
 		}
-		signing := strings.TrimSpace(req.Secret)
-		if signing == "" {
-			// Preserve the existing signing secret when only the URL changed.
-			if prev, ok := openWebhookSecret(box, existing.SecretEncrypted); ok {
-				signing = prev.Signing
-			}
-		}
-		ps, invalid := h.probeReleaseWebhook(r.Context(), url)
+		ps, invalid := h.probeReleaseKind(r.Context(), kind, config, plain)
 		if invalid {
-			writeError(w, http.StatusUnprocessableEntity, "release_webhook_invalid: the URL rejected the probe (401/403)")
+			writeError(w, http.StatusUnprocessableEntity, "release_integration_invalid: the credential was rejected (401/403)")
 			return
 		}
 		probeStatus = ps
-		sealed, err = sealWebhookSecret(box, webhookSecret{URL: url, Signing: signing})
+		sealed, err = box.Seal(plain)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to seal webhook secret")
+			writeError(w, http.StatusInternalServerError, "failed to seal integration secret")
 			return
 		}
-	}
-	config := existing.Config
-	if strings.TrimSpace(req.Name) != "" {
-		config = releaseConfigJSON(req.Name)
 	}
 	row, err := h.Queries.UpdateReleaseIntegration(r.Context(), db.UpdateReleaseIntegrationParams{
 		ID:              intUUID,
@@ -444,21 +597,50 @@ func (h *Handler) DeleteReleaseIntegration(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// probeReleaseWebhook runs a bounded OPTIONS probe against the URL and
-// classifies the outcome. Split out so create + update share it.
-func (h *Handler) probeReleaseWebhook(ctx context.Context, url string) (probeStatus string, invalid bool) {
+// probeReleaseKind validates a kind's credential at save time WITHOUT delivering
+// a real event, classifying the outcome into the stored probe_status + whether
+// the save must be rejected (an unambiguous 401/403 auth rejection). Cheap authed
+// GETs for github/gitlab/sentry; an OPTIONS reachability probe for webhook. Slack
+// (a test POST is destructive) and bitrix (env-driven portal) are NOT probed —
+// they return an empty probe_status so the UI shows no badge. Always called with
+// the same config + plaintext secret about to be sealed.
+func (h *Handler) probeReleaseKind(ctx context.Context, kind string, config json.RawMessage, plain []byte) (probeStatus string, invalid bool) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	status, reachable := releaseHookClient.Probe(ctx, url)
-	return classifyReleaseProbe(status, reachable)
-}
-
-// releaseConfigJSON builds the non-secret config blob for a webhook. Only a
-// display name today; kept as a helper so the shape has one definition.
-func releaseConfigJSON(name string) []byte {
-	raw, err := json.Marshal(map[string]string{"name": strings.TrimSpace(name)})
-	if err != nil {
-		return []byte("{}")
+	switch kind {
+	case "webhook":
+		var s webhookSecret
+		if json.Unmarshal(plain, &s) != nil {
+			return "", false
+		}
+		status, reachable := releaseHookClient.Probe(ctx, s.URL)
+		return classifyReleaseProbe(status, reachable)
+	case "github_release":
+		cfg := parseReleaseConfig(config)
+		var s githubReleaseSecret
+		if json.Unmarshal(plain, &s) != nil {
+			return "", false
+		}
+		status, reachable := releaseGitHubClient.ValidateToken(ctx, cfg.Owner, cfg.Repo, s.Token)
+		return classifyReleaseProbe(status, reachable)
+	case "gitlab_release":
+		cfg := parseReleaseConfig(config)
+		var s gitlabReleaseSecret
+		if json.Unmarshal(plain, &s) != nil {
+			return "", false
+		}
+		status, reachable := releaseGitLabClient.ValidateToken(ctx, s.Host, cfg.ProjectPath, s.Token)
+		return classifyReleaseProbe(status, reachable)
+	case "sentry":
+		cfg := parseReleaseConfig(config)
+		var s sentrySecret
+		if json.Unmarshal(plain, &s) != nil {
+			return "", false
+		}
+		status, reachable := releaseSentryClient.ValidateToken(ctx, s.BaseURL, cfg.Org, s.Token)
+		return classifyReleaseProbe(status, reachable)
+	default:
+		// slack (destructive to probe) + bitrix (env-based) → unprobed.
+		return "", false
 	}
-	return raw
 }

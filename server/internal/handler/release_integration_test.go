@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/multica-ai/multica/server/internal/integrations/githubrelease"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -250,6 +251,68 @@ func TestReleaseIntegration_CreateListDelete(t *testing.T) {
 	testHandler.DeleteReleaseIntegration(dw, dr)
 	if dw.Code != http.StatusNoContent {
 		t.Fatalf("delete: status = %d (body: %s)", dw.Code, dw.Body.String())
+	}
+}
+
+// TestCreateReleaseIntegration_GitHubSealsToken: a github_release create probes
+// the PAT (authed GET), seals it (never plaintext), validates required config
+// (owner/repo), and never echoes the token back.
+func TestCreateReleaseIntegration_GitHubSealsToken(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	t.Setenv("AGORA_RELEASE_SECRET_KEY", releaseTestKey(t))
+	resetReleaseBox()
+	t.Cleanup(resetReleaseBox)
+
+	// GitHub probe target: authed GET /repos/octo/hello with the PAT → 200.
+	probe := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/octo/hello" && r.Header.Get("Authorization") == "Bearer ghp_secret_tok" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer probe.Close()
+	orig := githubrelease.APIBase
+	githubrelease.APIBase = probe.URL
+	defer func() { githubrelease.APIBase = orig }()
+
+	wsID := createMcpTestWorkspace(t, ctx, "handler-tests-release-github", "owner")
+
+	// Missing repo → 400 (required config validated).
+	bw, br := createReleaseRequest(t, wsID, `{"kind":"github_release","owner":"octo","token":"x","events":["release_shipped"]}`)
+	testHandler.CreateReleaseIntegration(bw, br)
+	if bw.Code != http.StatusBadRequest {
+		t.Fatalf("missing repo: status = %d, want 400 (body: %s)", bw.Code, bw.Body.String())
+	}
+
+	// Complete → 200, probe ok, token sealed.
+	body := `{"kind":"github_release","name":"prod release","owner":"octo","repo":"hello","token":"ghp_secret_tok","events":["release_shipped"]}`
+	cw, cr := createReleaseRequest(t, wsID, body)
+	testHandler.CreateReleaseIntegration(cw, cr)
+	if cw.Code != http.StatusOK {
+		t.Fatalf("create: status = %d (body: %s)", cw.Code, cw.Body.String())
+	}
+	if s := cw.Body.String(); strings.Contains(s, "ghp_secret_tok") {
+		t.Fatalf("create response leaked token: %s", s)
+	}
+	if !strings.Contains(cw.Body.String(), `"has_secret":true`) || !strings.Contains(cw.Body.String(), `"probe_status":"ok"`) {
+		t.Fatalf("create response missing has_secret/probe_status ok: %s", cw.Body.String())
+	}
+	// The config (non-secret) carries owner/repo and is returned.
+	if !strings.Contains(cw.Body.String(), `"owner":"octo"`) || !strings.Contains(cw.Body.String(), `"repo":"hello"`) {
+		t.Fatalf("create response missing owner/repo config: %s", cw.Body.String())
+	}
+
+	// The stored secret is sealed — plaintext token must not appear.
+	var sealed []byte
+	if err := testPool.QueryRow(ctx, `SELECT secret_encrypted FROM release_integration WHERE workspace_id = $1`, wsID).Scan(&sealed); err != nil {
+		t.Fatalf("load sealed secret: %v", err)
+	}
+	if strings.Contains(string(sealed), "ghp_secret_tok") {
+		t.Fatal("github PAT stored in plaintext")
 	}
 }
 
