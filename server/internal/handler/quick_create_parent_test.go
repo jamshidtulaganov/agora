@@ -33,25 +33,29 @@ func TestQuickCreateIssueParentTrustBoundary(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	// Resolve the seeded runtime + agent for this workspace, then bump the
-	// runtime metadata to a CLI version that clears MinQuickCreateCLIVersion.
-	// The seed runtime uses metadata '{}'::jsonb which would otherwise trip
-	// the daemon-version gate before we ever reach the parent_issue_id check.
+	// Resolve a live agent together with ITS runtime, then bump that runtime's
+	// metadata to a CLI version that clears MinQuickCreateCLIVersion. The handler
+	// gates on `agent.runtime_id`, so the runtime we bump MUST be the one the
+	// chosen agent points at. Selecting an agent and a runtime independently with
+	// two `LIMIT 1` (no ORDER BY) queries could pair a mismatched agent/runtime
+	// once other tests seed extra agents or runtimes in this workspace — the
+	// version gate then trips on the un-bumped runtime and the 202 path fails
+	// intermittently. Pin the oldest seeded agent and read its runtime id from the
+	// same row so the pair is always consistent. Also force the runtime online so
+	// the liveness check ahead of the version gate can't flake.
 	var runtimeID, agentID string
-	if err := testPool.QueryRow(ctx,
-		`SELECT id FROM agent_runtime WHERE workspace_id = $1 LIMIT 1`,
-		testWorkspaceID,
-	).Scan(&runtimeID); err != nil {
-		t.Fatalf("fetch runtime: %v", err)
-	}
-	if err := testPool.QueryRow(ctx,
-		`SELECT id FROM agent WHERE workspace_id = $1 LIMIT 1`,
-		testWorkspaceID,
-	).Scan(&agentID); err != nil {
-		t.Fatalf("fetch agent: %v", err)
+	if err := testPool.QueryRow(ctx, `
+		SELECT a.id::text, a.runtime_id::text
+		FROM agent a
+		JOIN agent_runtime rt ON rt.id = a.runtime_id
+		WHERE a.workspace_id = $1 AND a.runtime_id IS NOT NULL
+		ORDER BY a.created_at ASC
+		LIMIT 1
+	`, testWorkspaceID).Scan(&agentID, &runtimeID); err != nil {
+		t.Fatalf("fetch agent + runtime: %v", err)
 	}
 	if _, err := testPool.Exec(ctx,
-		`UPDATE agent_runtime SET metadata = jsonb_build_object('cli_version', $1::text) WHERE id = $2`,
+		`UPDATE agent_runtime SET status = 'online', metadata = jsonb_build_object('cli_version', $1::text) WHERE id = $2`,
 		agent.MinQuickCreateCLIVersion, runtimeID,
 	); err != nil {
 		t.Fatalf("bump runtime cli_version: %v", err)
