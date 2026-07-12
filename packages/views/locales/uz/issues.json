@@ -445,10 +445,11 @@
     "verdict_pass": "O'tdi",
     "verdict_fail": "O'tmadi",
     "verdict_unknown": "Kutilmoqda",
-    "verdict_pass_with_failing": "O'tdi · {{count}} keys o'tmadi",
-    "verdict_blocked": "Bloklangan",
-    "verdict_stale": "Osilib qoldi — QA'ni qayta ishga tushiring",
-    "verdict_running": "Bajarilmoqda…",
+    "verdict_running": "Sinovdan o'tkazilmoqda…",
+    "not_tested": "Hali sinovdan o'tmagan",
+    "still_failing": "{{count}} ta tekshiruv hali ham o'tmayapti",
+    "out_of_date": "Eskirgan — qayta ishga tushiring",
+    "checks_count": "{{count}} ta tekshiruv",
     "captured": "Olingan"
   },
   "qa_review": {
@@ -512,8 +513,7 @@
     "override_reason_label": "Qayta belgilash sababi (ixtiyoriy)",
     "override_reason_ph": "Nega qayta belgilayapsiz — nimani tekshirdingiz yoki agent nimada xato qildi",
     "override_confirm": "Verdiktni qayta belgilash",
-    "source_agent": "agent",
-    "source_human": "inson",
+    "overridden_by_you": "Siz qayta belgilagansiz",
     "more_actions": "Yana amallar"
   },
   "qa_bug": {

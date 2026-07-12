@@ -445,10 +445,11 @@
     "verdict_pass": "Passed",
     "verdict_fail": "Failed",
     "verdict_unknown": "Pending",
-    "verdict_pass_with_failing": "Pass · {{count}} case(s) failing",
-    "verdict_blocked": "Blocked",
-    "verdict_stale": "Stale — re-run QA",
-    "verdict_running": "Running…",
+    "verdict_running": "Testing…",
+    "not_tested": "Not tested yet",
+    "still_failing": "{{count}} check(s) still failing",
+    "out_of_date": "Out of date — re-run",
+    "checks_count": "{{count}} checks",
     "captured": "Captured"
   },
   "qa_review": {
@@ -512,8 +513,7 @@
     "override_reason_label": "Override reason (optional)",
     "override_reason_ph": "Why you're overriding — what you verified or what the agent got wrong",
     "override_confirm": "Override verdict",
-    "source_agent": "agent",
-    "source_human": "human",
+    "overridden_by_you": "Overridden by you",
     "more_actions": "More actions"
   },
   "qa_bug": {

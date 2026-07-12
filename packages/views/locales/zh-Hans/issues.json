@@ -434,10 +434,11 @@
     "verdict_pass": "通过",
     "verdict_fail": "未通过",
     "verdict_unknown": "待定",
-    "verdict_pass_with_failing": "通过 · {{count}} 个用例未通过",
-    "verdict_blocked": "已阻塞",
-    "verdict_stale": "已停滞 — 请重新运行 QA",
-    "verdict_running": "运行中…",
+    "verdict_running": "测试中…",
+    "not_tested": "尚未测试",
+    "still_failing": "{{count}} 项检查仍未通过",
+    "out_of_date": "已过期 — 请重新运行",
+    "checks_count": "{{count}} 项检查",
     "captured": "捕获于"
   },
   "qa_review": {
@@ -501,8 +502,7 @@
     "override_reason_label": "覆盖原因（可选）",
     "override_reason_ph": "为什么覆盖——你验证了什么，或代理错在哪里",
     "override_confirm": "覆盖结论",
-    "source_agent": "代理",
-    "source_human": "人工",
+    "overridden_by_you": "已由你覆盖",
     "more_actions": "更多操作"
   },
   "qa_bug": {

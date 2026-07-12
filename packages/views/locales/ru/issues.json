@@ -445,10 +445,11 @@
     "verdict_pass": "Пройдено",
     "verdict_fail": "Провалено",
     "verdict_unknown": "Ожидает",
-    "verdict_pass_with_failing": "Пройдено · {{count}} кейс(ов) провалено",
-    "verdict_blocked": "Заблокировано",
-    "verdict_stale": "Зависло — перезапустите QA",
-    "verdict_running": "Выполняется…",
+    "verdict_running": "Тестирование…",
+    "not_tested": "Ещё не проверено",
+    "still_failing": "{{count}} проверок(а) всё ещё падает",
+    "out_of_date": "Устарело — перезапустите",
+    "checks_count": "{{count}} проверок",
     "captured": "Получено"
   },
   "qa_review": {
@@ -512,8 +513,7 @@
     "override_reason_label": "Причина переопределения (необязательно)",
     "override_reason_ph": "Почему вы переопределяете — что вы проверили или в чём ошибся агент",
     "override_confirm": "Переопределить вердикт",
-    "source_agent": "агент",
-    "source_human": "человек",
+    "overridden_by_you": "Переопределено вами",
     "more_actions": "Ещё действия"
   },
   "qa_bug": {
