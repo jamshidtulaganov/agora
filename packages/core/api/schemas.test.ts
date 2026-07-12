@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  AppConfigSchema,
+  EMPTY_APP_CONFIG,
   ConnectedBoxListSchema,
   DashboardAgentRunTimeListSchema,
   DashboardUsageByAgentListSchema,
@@ -358,6 +360,45 @@ describe("ConnectedBoxListSchema (Remote Boxes)", () => {
 
   it("defaults a missing boxes array to []", () => {
     expect(ConnectedBoxListSchema.parse({}).boxes).toEqual([]);
+  });
+});
+
+describe("AppConfigSchema (integration capability flags)", () => {
+  it("parses the bitrix/zoho/lark flags when present", () => {
+    const parsed = AppConfigSchema.parse({
+      cdn_domain: "cdn.example.com",
+      allow_signup: true,
+      bitrix_enabled: true,
+      zoho_enabled: true,
+      lark_enabled: true,
+    });
+    expect(parsed.bitrix_enabled).toBe(true);
+    expect(parsed.zoho_enabled).toBe(true);
+    expect(parsed.lark_enabled).toBe(true);
+  });
+
+  it("treats the flags as absent when the server omits them (older/general deployment)", () => {
+    // omitempty on the Go side means a deployment without the integrations
+    // sends no key at all — the optional schema leaves them undefined, and the
+    // config store coerces `=== true` to false downstream.
+    const parsed = AppConfigSchema.parse({ cdn_domain: "", allow_signup: true });
+    expect(parsed.bitrix_enabled).toBeUndefined();
+    expect(parsed.zoho_enabled).toBeUndefined();
+    expect(parsed.lark_enabled).toBeUndefined();
+  });
+
+  it("survives a malformed body via parseWithFallback without throwing", () => {
+    // A non-boolean flag must not reject the whole response — the preprocess
+    // downgrades the bad value to the safe default (false) rather than
+    // white-screening, and the rest of the config still parses.
+    const parsed = parseWithFallback(
+      { cdn_domain: "", allow_signup: true, bitrix_enabled: "yes" },
+      AppConfigSchema,
+      EMPTY_APP_CONFIG,
+      { endpoint: "GET /api/config" },
+    );
+    expect(parsed.bitrix_enabled).toBe(false);
+    expect(parsed.allow_signup).toBe(true);
   });
 });
 

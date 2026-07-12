@@ -82,6 +82,7 @@ import { useLensParam, getLens, isLensRegistered } from "../lens";
 import { useGitHubSettings } from "@agora/core/github";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@agora/core/auth";
+import { useConfigStore } from "@agora/core/config";
 import { useWorkspacePaths } from "@agora/core/paths";
 import { useActorName } from "@agora/core/workspace/hooks";
 import { useWorkspaceId } from "@agora/core/hooks";
@@ -591,6 +592,11 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const id = issueId;
   const router = useNavigation();
   const user = useAuthStore((s) => s.user);
+  // Bitrix issue surfaces (assignee chip / task link / summary action) render
+  // only when the deployment has Bitrix configured. They already no-op without
+  // Bitrix metadata, but gating on the capability flag keeps all Bitrix code
+  // paths dormant for a general dev-team customer.
+  const bitrixEnabled = useConfigStore((s) => s.bitrixEnabled);
   const paths = useWorkspacePaths();
 
   // Issue navigation — read from TQ list cache
@@ -1360,15 +1366,19 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           <PropRow label={t(($) => $.detail.prop_assignee)}>
             <div className="flex flex-col items-start gap-1">
               <AssigneePicker assigneeType={issue.assignee_type} assigneeId={issue.assignee_id} onUpdate={handleUpdateField} align="start" />
-              {!issue.assignee_id && (
-                <BitrixAssigneeChip metadata={issue.metadata as Record<string, unknown> | null | undefined} />
+              {bitrixEnabled && (
+                <>
+                  {!issue.assignee_id && (
+                    <BitrixAssigneeChip metadata={issue.metadata as Record<string, unknown> | null | undefined} />
+                  )}
+                  <BitrixTaskLink metadata={issue.metadata as Record<string, unknown> | null | undefined} />
+                  <BitrixSummaryAction
+                    issueId={id}
+                    metadata={issue.metadata as Record<string, unknown> | null | undefined}
+                    prefill={latestAgentSummary}
+                  />
+                </>
               )}
-              <BitrixTaskLink metadata={issue.metadata as Record<string, unknown> | null | undefined} />
-              <BitrixSummaryAction
-                issueId={id}
-                metadata={issue.metadata as Record<string, unknown> | null | undefined}
-                prefill={latestAgentSummary}
-              />
             </div>
           </PropRow>
           <PropRow label={t(($) => $.detail.prop_project)}>

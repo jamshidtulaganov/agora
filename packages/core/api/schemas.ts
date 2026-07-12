@@ -39,6 +39,9 @@ export interface AppConfigResponse {
   workspace_creation_disabled?: boolean;
   telegram_only?: boolean;
   remote_boxes_enabled?: boolean;
+  bitrix_enabled?: boolean;
+  zoho_enabled?: boolean;
+  lark_enabled?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -181,6 +184,9 @@ export const AppConfigSchema = z.object({
   workspace_creation_disabled: BooleanWithDefaultSchema(false).optional(),
   telegram_only: BooleanWithDefaultSchema(false).optional(),
   remote_boxes_enabled: BooleanWithDefaultSchema(false).optional(),
+  bitrix_enabled: BooleanWithDefaultSchema(false).optional(),
+  zoho_enabled: BooleanWithDefaultSchema(false).optional(),
+  lark_enabled: BooleanWithDefaultSchema(false).optional(),
 }).loose();
 
 export const EMPTY_APP_CONFIG: AppConfigResponse = {
