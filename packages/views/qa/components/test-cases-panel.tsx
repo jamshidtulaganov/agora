@@ -174,15 +174,6 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
   );
   const failedCount = cases.filter((c) => c.latest_run?.status === "fail").length;
 
-  // The sticky "which case is running RIGHT NOW" summary — the ONE thing a QA
-  // engineer needs, made the focal point instead of one signal among many.
-  // Position is read off `sorted` (not the raw `cases` array) so "case X of N"
-  // matches where the highlighted row actually sits in the list below.
-  const runningIndex = sorted.findIndex((c) => c.id === runningCaseId);
-  const runningRowCase = runningIndex >= 0 ? sorted[runningIndex] : null;
-  const runProgressPct =
-    runningIndex >= 0 && sorted.length > 0 ? Math.round(((runningIndex + 1) / sorted.length) * 100) : null;
-
   // Records a human run verdict. `output` is optional: the one-click ✓/✗
   // sends none; a per-step checklist walk (phase 4) sends its serialized
   // breakdown so the row's expanded detail can render step-by-step results.
@@ -343,38 +334,6 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
       </div>
 
       {adding && <AddCaseForm issueId={issueId} onDone={() => { setAdding(false); invalidate(); }} />}
-
-      {/* Sticky "running right now" summary — pins to the top of the
-          scrolling review column while a run is live, so which case is
-          executing (and how far the run has gotten) never scrolls out of
-          view. Renders nothing when idle. */}
-      {runLive && (
-        <div
-          className="sticky top-0 z-10 rounded-md border bg-card px-2.5 py-1.5 text-[12px] shadow-sm"
-          aria-live="polite"
-        >
-          <div className="flex items-center gap-2">
-            <Loader2 className="size-3 shrink-0 animate-spin text-info" aria-hidden />
-            <span className="min-w-0 flex-1 truncate font-medium">
-              {runningRowCase
-                ? t(($) => $.test_cases.running_line, {
-                    index: runningIndex + 1,
-                    total: sorted.length,
-                    title: runningRowCase.title,
-                  })
-                : t(($) => $.qa_review.running_qa)}
-            </span>
-          </div>
-          {runProgressPct !== null && (
-            <div className="mt-1.5 h-0.5 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-info transition-all"
-                style={{ width: `${runProgressPct}%` }}
-              />
-            </div>
-          )}
-        </div>
-      )}
 
       {cases.length === 0 && !adding ? (
         showSuggest ? (

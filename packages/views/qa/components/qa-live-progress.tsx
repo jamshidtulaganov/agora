@@ -239,7 +239,7 @@ function QARunStatusStrip({ issueId, running }: { issueId: string; running: bool
       <span className="min-w-0 flex-1 truncate">
         {runningTitle ? (
           <>
-            <span className="text-muted-foreground">{t(($) => $.test_cases.runs_now)}: </span>
+            <span className="text-muted-foreground">{t(($) => $.test_cases.runs_now)} </span>
             <span className="font-medium">{runningTitle}</span>
           </>
         ) : (

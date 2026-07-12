@@ -167,7 +167,7 @@ describe("TestCasesPanel — running case + fail expansion", () => {
     qaLiveProgressMocks.useLiveCaseVerdicts.mockReturnValue({});
   });
 
-  it("pulses the running row and shows the sticky 'Running case X of N' summary with a progress bar", async () => {
+  it("marks the running row with a per-row 'Running' indicator (no duplicate sticky summary)", async () => {
     apiMocks.getIssueTestCases.mockResolvedValue({
       test_cases: [automatedCase({ id: "tc-1", title: "Checkout — happy path" }), automatedCase({ id: "tc-2", title: "Checkout — declined card" })],
     });
@@ -176,22 +176,25 @@ describe("TestCasesPanel — running case + fail expansion", () => {
     renderPanel();
 
     await screen.findByText("Checkout — declined card");
-    // "Running case 2 of 2 — Checkout — declined card" (test_cases.running_line)
-    // — one combined sticky-summary text node, matched by regex since it also
-    // overlaps with the row's own (exact-text) title span.
-    expect(screen.getByText(/Running case 2 of 2 — Checkout — declined card/)).toBeInTheDocument();
-    expect(screen.getByText("RUNS")).toBeInTheDocument();
+    // The running fact now shows in exactly ONE place inside the panel: the
+    // per-row highlight (relabeled "Running", not the uppercase "RUNS" badge).
+    // The duplicate sticky "Running case X of N" summary is gone (the top strip
+    // that carries the ✓/✗/N tally lives in QALiveProgress, not this panel).
+    expect(screen.getByText("Running")).toBeInTheDocument();
+    expect(screen.queryByText(/Running case/)).not.toBeInTheDocument();
+    expect(screen.queryByText("RUNS")).not.toBeInTheDocument();
   });
 
-  it("shows a generic running message when the live marker names a case not in the list", async () => {
+  it("marks no row when the live marker names a case not in the list", async () => {
     apiMocks.getIssueTestCases.mockResolvedValue({ test_cases: [automatedCase()] });
     qaLiveProgressMocks.useRunningTestCaseId.mockReturnValue("unknown-case-id");
 
     renderPanel();
 
     await screen.findByText("Checkout — happy path");
-    expect(screen.getByText("Running QA…")).toBeInTheDocument();
-    expect(screen.queryByText(/Running case/)).not.toBeInTheDocument();
+    // No row matches the marker → no per-row "Running" highlight in the panel
+    // (the generic "Running QA…" message lives in the top strip, not here).
+    expect(screen.queryByText("Running")).not.toBeInTheDocument();
   });
 
   it("opens a fail row automatically and shows the agent's WHY output; a pass row stays collapsed", async () => {
