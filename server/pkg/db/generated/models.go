@@ -710,6 +710,20 @@ type QaEvidence struct {
 	FinishedAt  pgtype.Timestamptz `json:"finished_at"`
 }
 
+type ReleaseIntegration struct {
+	ID              pgtype.UUID        `json:"id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	Kind            string             `json:"kind"`
+	Config          []byte             `json:"config"`
+	SecretEncrypted []byte             `json:"secret_encrypted"`
+	Events          []string           `json:"events"`
+	Enabled         bool               `json:"enabled"`
+	ProbeStatus     string             `json:"probe_status"`
+	CreatedBy       pgtype.UUID        `json:"created_by"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Skill struct {
 	ID          pgtype.UUID        `json:"id"`
 	WorkspaceID pgtype.UUID        `json:"workspace_id"`
