@@ -3,10 +3,9 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Webhook, Trash2, Plus } from "lucide-react";
+import { Trash2, Plus } from "lucide-react";
 import { Input } from "@agora/ui/components/ui/input";
 import { Button } from "@agora/ui/components/ui/button";
-import { Card, CardContent } from "@agora/ui/components/ui/card";
 import { Checkbox } from "@agora/ui/components/ui/checkbox";
 import { NativeSelect, NativeSelectOption } from "@agora/ui/components/ui/native-select";
 import {
@@ -179,96 +178,91 @@ export function ReleaseIntegrationsSection() {
   };
 
   return (
-    <section className="space-y-4">
-      <h2 className="flex items-center gap-1.5 text-sm font-semibold">
-        <Webhook className="h-4 w-4" /> {t(($) => $.release_integrations.section_title)}
-      </h2>
-      <Card>
-        <CardContent className="space-y-4 pt-5">
-          <p className="text-xs text-muted-foreground">{t(($) => $.release_integrations.description)}</p>
+    <>
+      <div className="space-y-4">
+        <p className="text-xs text-muted-foreground">{t(($) => $.release_integrations.description)}</p>
 
-          {integrations.length > 0 ? (
-            <ul className="divide-y divide-border rounded-md border border-border">
-              {integrations.map((it) => (
-                <li key={it.id} className="flex items-center gap-2 px-3 py-2 text-sm">
-                  <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                    {kindLabel(it.kind)}
+        {integrations.length > 0 ? (
+          <ul className="divide-y divide-border rounded-md border border-border">
+            {integrations.map((it) => (
+              <li key={it.id} className="flex items-center gap-2 px-3 py-2 text-sm">
+                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {kindLabel(it.kind)}
+                </span>
+                <span className="truncate font-medium">
+                  {it.config?.name || t(($) => $.release_integrations.unnamed)}
+                </span>
+                <ConfigSummary integration={it} />
+                {!it.enabled && (
+                  <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                    {t(($) => $.release_integrations.disabled)}
                   </span>
-                  <span className="truncate font-medium">
-                    {it.config?.name || t(($) => $.release_integrations.unnamed)}
-                  </span>
-                  <ConfigSummary integration={it} />
-                  {!it.enabled && (
-                    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                      {t(($) => $.release_integrations.disabled)}
-                    </span>
-                  )}
-                  <span className="truncate text-xs text-muted-foreground">
-                    {it.events.map((e) => eventLabel(e)).join(" · ")}
-                  </span>
-                  <ProbeStatusBadge probeStatus={it.probe_status} />
-                  {canManage && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="ml-auto h-7 w-7 shrink-0"
-                      aria-label={t(($) => $.release_integrations.remove)}
-                      onClick={() => setPendingDelete(it)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                    </Button>
-                  )}
-                </li>
+                )}
+                <span className="truncate text-xs text-muted-foreground">
+                  {it.events.map((e) => eventLabel(e)).join(" · ")}
+                </span>
+                <ProbeStatusBadge probeStatus={it.probe_status} />
+                {canManage && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="ml-auto h-7 w-7 shrink-0"
+                    aria-label={t(($) => $.release_integrations.remove)}
+                    onClick={() => setPendingDelete(it)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">{t(($) => $.release_integrations.not_configured)}</p>
+        )}
+
+        {canManage && (
+          <div className="space-y-2">
+            <NativeSelect
+              className="w-full"
+              aria-label={t(($) => $.release_integrations.kind_label)}
+              value={kind}
+              onChange={(e) => changeKind(e.target.value as Kind)}
+            >
+              {KINDS.map((k) => (
+                <NativeSelectOption key={k} value={k}>
+                  {kindLabel(k)}
+                </NativeSelectOption>
               ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-muted-foreground">{t(($) => $.release_integrations.not_configured)}</p>
-          )}
+            </NativeSelect>
 
-          {canManage && (
-            <div className="space-y-2">
-              <NativeSelect
-                className="w-full"
-                aria-label={t(($) => $.release_integrations.kind_label)}
-                value={kind}
-                onChange={(e) => changeKind(e.target.value as Kind)}
-              >
-                {KINDS.map((k) => (
-                  <NativeSelectOption key={k} value={k}>
-                    {kindLabel(k)}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
+            <Input
+              placeholder={t(($) => $.release_integrations.name_placeholder)}
+              aria-label={t(($) => $.release_integrations.name_label)}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
 
-              <Input
-                placeholder={t(($) => $.release_integrations.name_placeholder)}
-                aria-label={t(($) => $.release_integrations.name_label)}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
+            <KindFields kind={kind} field={field} setField={setField} t={t} />
 
-              <KindFields kind={kind} field={field} setField={setField} t={t} />
-
-              <div className="flex flex-wrap gap-4 pt-1">
-                {ALL_EVENTS.map((ev) => (
-                  <label key={ev} className="flex items-center gap-2 text-sm">
-                    <Checkbox
-                      checked={events.includes(ev)}
-                      onCheckedChange={() => toggleEvent(ev)}
-                      aria-label={eventLabel(ev)}
-                    />
-                    {eventLabel(ev)}
-                  </label>
-                ))}
-              </div>
-              <Button onClick={add} disabled={saving || !canSubmit} size="sm">
-                <Plus className="mr-1 h-3.5 w-3.5" />
-                {saving ? t(($) => $.release_integrations.adding) : t(($) => $.release_integrations.add)}
-              </Button>
+            <div className="flex flex-wrap gap-4 pt-1">
+              {ALL_EVENTS.map((ev) => (
+                <label key={ev} className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={events.includes(ev)}
+                    onCheckedChange={() => toggleEvent(ev)}
+                    aria-label={eventLabel(ev)}
+                  />
+                  {eventLabel(ev)}
+                </label>
+              ))}
             </div>
-          )}
-        </CardContent>
-      </Card>
+            <Button onClick={add} disabled={saving || !canSubmit} size="sm">
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              {saving ? t(($) => $.release_integrations.adding) : t(($) => $.release_integrations.add)}
+            </Button>
+          </div>
+        )}
+      </div>
 
       <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
         <AlertDialogContent>
@@ -290,7 +284,7 @@ export function ReleaseIntegrationsSection() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </section>
+    </>
   );
 }
 

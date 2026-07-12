@@ -106,13 +106,7 @@ export function LarkTab() {
   }
 
   return (
-    <div className="space-y-8">
-      <section className="space-y-1">
-        <p className="text-sm text-muted-foreground">
-          {t(($) => $.lark.page_description)}
-        </p>
-      </section>
-
+    <div className="space-y-6">
       {!configured ? (
         <Card>
           <CardContent className="space-y-2">

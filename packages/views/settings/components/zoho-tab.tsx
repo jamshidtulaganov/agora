@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { DatabaseZap, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { Button } from "@agora/ui/components/ui/button";
 import { Card, CardContent } from "@agora/ui/components/ui/card";
 import { Input } from "@agora/ui/components/ui/input";
@@ -53,7 +53,6 @@ import { useT } from "../../i18n";
  *    the Zoho page. The Projects/Sprints import deep-link card stays as-is.
  */
 export function ZohoTab() {
-  const { t } = useT("settings");
   const wsId = useWorkspaceId();
   const user = useAuthStore((s) => s.user);
 
@@ -68,10 +67,7 @@ export function ZohoTab() {
   });
 
   return (
-    <section className="space-y-4">
-      <h2 className="flex items-center gap-1.5 text-sm font-semibold">
-        <DatabaseZap className="h-4 w-4" /> {t(($) => $.zoho.section_title)}
-      </h2>
+    <div className="space-y-4">
       <ZohoConnectionCard
         wsId={wsId}
         canManage={canManage}
@@ -85,7 +81,7 @@ export function ZohoTab() {
         />
       )}
       <ZohoImportCard />
-    </section>
+    </div>
   );
 }
 
