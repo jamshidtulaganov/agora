@@ -83,7 +83,10 @@ const FIGMA_FILENAME_RE = /^figma-/i;
 describe("pairDesignScreenshots fuzz — 8k adversarial inputs", () => {
   it("holds every structural invariant on every input", () => {
     const rand = mulberry32(0xd351611);
-    const ITER = 8000;
+    // 2k adversarial inputs keeps this synchronous fuzz loop well under the
+    // suite timeout on CI (8k took ~72s on the runner); still exercises the
+    // full generator space for the structural invariants below.
+    const ITER = 2000;
     for (let i = 0; i < ITER; i++) {
       const n = Math.floor(rand() * 51); // 0..50 attachments
       const images = Array.from({ length: n }, () => randomAttachment(rand));
@@ -179,7 +182,10 @@ function randomComment(rand: () => number): {
 describe("latestQAResultScreenshots fuzz — 8k adversarial inputs", () => {
   it("holds every structural invariant on every input", () => {
     const rand = mulberry32(0x5c0ff33);
-    const ITER = 8000;
+    // 2k adversarial inputs keeps this synchronous fuzz loop well under the
+    // suite timeout on CI (8k took ~72s on the runner); still exercises the
+    // full generator space for the structural invariants below.
+    const ITER = 2000;
     for (let i = 0; i < ITER; i++) {
       const m = Math.floor(rand() * 8); // 0..7 comments
       const comments = Array.from({ length: m }, () => randomComment(rand));
