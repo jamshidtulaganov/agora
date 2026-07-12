@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { Sparkles, Plus, Bot, User, Loader2, FlaskConical, Play, CircleSlash, CircleStop, Check, X, Film, ListChecks, RotateCcw, Bug, MoreHorizontal } from "lucide-react";
+import { Sparkles, Plus, Bot, User, Loader2, FlaskConical, Play, CircleStop, Check, X, Film, ListChecks, RotateCcw, Bug, MoreHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core/hooks";
@@ -150,11 +150,6 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
   };
 
   const hasAutomated = cases.some((c) => c.kind === "automated");
-  // Coverage at a glance: a senior QA reviewer's first question is "do we have
-  // both?" — a case pile that's all positive has no evidence anything fails
-  // safely. Counted here once so the header doesn't scan the list twice.
-  const negativeCount = cases.filter((c) => c.category === "negative").length;
-  const positiveCount = cases.length - negativeCount;
 
   // Failing / blocked float to the TOP so a reviewer sees what needs attention
   // first; passing sinks to the bottom. Sort on the PERSISTED verdict only (not
@@ -178,10 +173,6 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
     (a, b) => statusRank(a) - statusRank(b) || priorityRank(a.priority) - priorityRank(b.priority),
   );
   const failedCount = cases.filter((c) => c.latest_run?.status === "fail").length;
-  const blockedCount = cases.filter(
-    (c) => c.latest_run?.status === "blocked" || c.latest_run?.status === "skip",
-  ).length;
-  const attentionCount = failedCount + blockedCount;
 
   // The sticky "which case is running RIGHT NOW" summary — the ONE thing a QA
   // engineer needs, made the focal point instead of one signal among many.
@@ -272,26 +263,31 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
       <div className="flex items-center gap-2">
         <FlaskConical className="size-4 shrink-0 text-muted-foreground" />
         <span className="text-sm font-medium">{t(($) => $.test_cases.section)}</span>
+        {/* One count line — the old "N Positive · N Negative" coverage row and
+            the separate attention row are merged in here: "12 · 2 failing". */}
         <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{cases.length}</span>
+        {failedCount > 0 && (
+          <span className="text-[11px] font-medium text-destructive">
+            · {t(($) => $.test_cases.failing_count, { count: failedCount })}
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-1">
-          {/* Stop the live run — only while something is actually running for this
-              issue. Destructive-tinted so it reads as an interrupt, not a control. */}
-          {runLive && (
+          {/* ONE state-aware primary: Stop (a run is live) → Re-run failed
+              (something's red) → Run all. Never all three at once. */}
+          {runLive ? (
             <Button
               type="button"
-              size="icon"
+              size="sm"
               variant="outline"
-              className="size-7 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              className="h-7 gap-1 px-2 text-[11px] text-destructive hover:bg-destructive/10 hover:text-destructive"
               disabled={stopRun.isPending}
               onClick={onStopRun}
               title={stopRun.isPending ? t(($) => $.test_cases.stopping) : t(($) => $.test_cases.stop)}
             >
               {stopRun.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <CircleStop className="size-3.5" />}
+              {t(($) => $.test_cases.stop_label)}
             </Button>
-          )}
-          {/* Re-run ONLY the failing cases — the tight hotfix loop: fix, re-run
-              the red ones, done. Only rendered when something is failing. */}
-          {failedCount > 0 && (
+          ) : failedCount > 0 ? (
             <Button
               type="button"
               size="sm"
@@ -303,27 +299,25 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
               }
               title={t(($) => $.test_cases.rerun_failed_title)}
             >
-              {rerunFailed.isPending ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <RotateCcw className="size-3.5" />
-              )}
+              {rerunFailed.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <RotateCcw className="size-3.5" />}
               {t(($) => $.test_cases.rerun_failed, { count: failedCount })}
             </Button>
-          )}
-          {hasAutomated && (
+          ) : hasAutomated ? (
             <Button
               type="button"
-              size="icon"
+              size="sm"
               variant="outline"
-              className="size-7"
+              className="h-7 gap-1 px-2 text-[11px]"
               disabled={runAll.isPending}
               onClick={() => runAll.mutate()}
               title={runAll.isPending ? t(($) => $.test_cases.running_all) : t(($) => $.test_cases.run_all)}
             >
               {runAll.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
+              {t(($) => $.test_cases.run_all)}
             </Button>
-          )}
+          ) : null}
+          {/* Generate + Add — the two constant actions, compact next to the
+              labeled primary. */}
           <Button
             type="button"
             size="icon"
@@ -347,43 +341,6 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
           </Button>
         </div>
       </div>
-
-      {/* Coverage summary on its own line — the header row above is already
-          tight with the icon buttons; forcing this onto the same line is
-          what caused the wrap/overflow. */}
-      {cases.length > 0 && (
-        <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-          <span>
-            {positiveCount} {t(($) => $.test_cases.category_positive)}
-          </span>
-          <span aria-hidden>·</span>
-          <span
-            className={cn(negativeCount === 0 && "font-medium text-amber-600 dark:text-amber-400")}
-            title={negativeCount === 0 ? t(($) => $.test_cases.category_negative_missing_hint) : undefined}
-          >
-            {negativeCount} {t(($) => $.test_cases.category_negative)}
-          </span>
-        </div>
-      )}
-
-      {/* What needs attention, first — failing/blocked are sorted to the top of
-          the list below, and this line names how many so the reviewer knows to
-          look up top. */}
-      {attentionCount > 0 && (
-        <div className="flex items-center gap-2 text-[11px]">
-          {failedCount > 0 && (
-            <span className="flex items-center gap-1 font-medium text-destructive">
-              <X className="size-3" /> {failedCount}
-            </span>
-          )}
-          {blockedCount > 0 && (
-            <span className="flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400">
-              <CircleSlash className="size-3" /> {blockedCount}
-            </span>
-          )}
-          <span className="text-muted-foreground">{t(($) => $.test_cases.needs_attention)}</span>
-        </div>
-      )}
 
       {adding && <AddCaseForm issueId={issueId} onDone={() => { setAdding(false); invalidate(); }} />}
 
