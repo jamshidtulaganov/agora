@@ -15,6 +15,10 @@ import {
   EMPTY_TEST_CASE,
   EMPTY_USER,
   FigmaCredentialStatusSchema,
+  McpCredentialStatusSchema,
+  McpCredentialListSchema,
+  EMPTY_MCP_CREDENTIAL_STATUS,
+  EMPTY_MCP_CREDENTIAL_LIST,
   IssueDeployEventsResponseSchema,
   ListIssuesResponseSchema,
   ListTestCasesResponseSchema,
@@ -870,6 +874,73 @@ describe("FigmaCredentialStatusSchema", () => {
       endpoint,
     ) as unknown as Record<string, unknown>;
     expect(parsed.some_future_field).toBe(1);
+  });
+});
+
+describe("McpCredentialStatusSchema", () => {
+  const endpoint = { endpoint: "GET /api/workspaces/{id}/mcp-credentials" };
+
+  it("parses a full status payload", () => {
+    const parsed = parseWithFallback(
+      {
+        id: "cred-1",
+        server_name: "linear",
+        has_secret: true,
+        last4: "1234",
+        created_at: "2026-07-13T00:00:00Z",
+        updated_at: "2026-07-13T00:00:00Z",
+      },
+      McpCredentialStatusSchema,
+      EMPTY_MCP_CREDENTIAL_STATUS,
+      endpoint,
+    );
+    expect(parsed.server_name).toBe("linear");
+    expect(parsed.has_secret).toBe(true);
+    expect(parsed.last4).toBe("1234");
+  });
+
+  it("defaults every missing field (older server shape)", () => {
+    const parsed = parseWithFallback(
+      { server_name: "linear" },
+      McpCredentialStatusSchema,
+      EMPTY_MCP_CREDENTIAL_STATUS,
+      endpoint,
+    );
+    expect(parsed.server_name).toBe("linear");
+    expect(parsed.has_secret).toBe(false);
+    expect(parsed.last4).toBe("");
+  });
+
+  it("never surfaces token material even if a drifted server leaks it", () => {
+    // A `.loose()` schema passes unknown fields through, but the typed shape the
+    // panel reads has no secret field — the token can't be rendered by mistake.
+    const parsed = parseWithFallback(
+      { server_name: "linear", has_secret: true, secret: "Bearer LEAK" },
+      McpCredentialStatusSchema,
+      EMPTY_MCP_CREDENTIAL_STATUS,
+      endpoint,
+    );
+    expect(parsed.has_secret).toBe(true);
+    expect((parsed as unknown as Record<string, unknown>).last4 ?? "").not.toContain("LEAK");
+  });
+
+  it("list schema downgrades a malformed / non-array body to an empty list", () => {
+    for (const body of [null, "nope", { server_name: "x" }, 42]) {
+      const parsed = parseWithFallback(body, McpCredentialListSchema, EMPTY_MCP_CREDENTIAL_LIST, endpoint);
+      expect(parsed).toEqual([]);
+    }
+  });
+
+  it("list schema keeps well-formed rows and defaults their gaps", () => {
+    const parsed = parseWithFallback(
+      [{ server_name: "linear", has_secret: true }],
+      McpCredentialListSchema,
+      EMPTY_MCP_CREDENTIAL_LIST,
+      endpoint,
+    );
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]!.server_name).toBe("linear");
+    expect(parsed[0]!.last4).toBe("");
   });
 });
 

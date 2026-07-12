@@ -33,6 +33,27 @@ export interface FigmaCredentialStatus {
   probed_at: string;
 }
 
+// Status of one workspace remote-MCP credential (the sealed auth for a remote
+// http/sse MCP server, keyed by server name). Token material is never returned
+// — `has_secret` reports one is stored and `last4` is a display hint only.
+export interface McpCredentialStatus {
+  id: string;
+  server_name: string;
+  has_secret: boolean;
+  last4: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Write payload for sealing a remote-MCP credential. The auth value is
+// write-only: either a single header (header_name + secret) — the common bearer
+// case — or a full header map. The server seals it and never echoes it back.
+export interface McpCredentialInput {
+  header_name?: string;
+  secret?: string;
+  headers?: Record<string, string>;
+}
+
 // A per-workspace release integration (release-hub Thread B). One of the named
 // connector kinds (webhook | slack | bitrix | github_release | gitlab_release |
 // sentry) fires on release-lifecycle events. The sealed secret (webhook/bot/API

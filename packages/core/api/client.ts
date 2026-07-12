@@ -36,6 +36,8 @@ import type {
   WorkspaceRepo,
   GitCredential,
   FigmaCredentialStatus,
+  McpCredentialStatus,
+  McpCredentialInput,
   ReleaseIntegration,
   ReleaseIntegrationInput,
   MemberWithUser,
@@ -308,6 +310,10 @@ import {
   type SprintReadinessResponse,
   FigmaCredentialStatusSchema,
   EMPTY_FIGMA_CREDENTIAL_STATUS,
+  McpCredentialStatusSchema,
+  McpCredentialListSchema,
+  EMPTY_MCP_CREDENTIAL_LIST,
+  EMPTY_MCP_CREDENTIAL_STATUS,
   ReleaseIntegrationListSchema,
   EMPTY_RELEASE_INTEGRATIONS,
   EditorTokensResponseSchema,
@@ -3160,6 +3166,40 @@ export class ApiClient {
     await this.fetch(`/api/workspaces/${workspaceId}/figma-credential`, {
       method: "DELETE",
     });
+  }
+
+  // Remote-MCP credentials — sealed auth (bearer tokens) for remote http/sse
+  // MCP servers, keyed by server name. The secret is write-only; the list never
+  // returns it (has_secret + last4 only).
+  async listMcpCredentials(workspaceId: string): Promise<McpCredentialStatus[]> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/mcp-credentials`);
+    return parseWithFallback(raw, McpCredentialListSchema, EMPTY_MCP_CREDENTIAL_LIST, {
+      endpoint: "GET /api/workspaces/{id}/mcp-credentials",
+    });
+  }
+
+  async putMcpCredential(
+    workspaceId: string,
+    serverName: string,
+    data: McpCredentialInput,
+  ): Promise<McpCredentialStatus> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/mcp-credentials/${encodeURIComponent(serverName)}`,
+      { method: "PUT", body: JSON.stringify(data) },
+    );
+    return parseWithFallback(
+      raw,
+      McpCredentialStatusSchema,
+      { ...EMPTY_MCP_CREDENTIAL_STATUS, server_name: serverName, has_secret: true },
+      { endpoint: "PUT /api/workspaces/{id}/mcp-credentials/{serverName}" },
+    );
+  }
+
+  async deleteMcpCredential(workspaceId: string, serverName: string): Promise<void> {
+    await this.fetch(
+      `/api/workspaces/${workspaceId}/mcp-credentials/${encodeURIComponent(serverName)}`,
+      { method: "DELETE" },
+    );
   }
 
   // Release integrations — per-workspace outbound connectors that fire on

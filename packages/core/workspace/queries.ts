@@ -19,6 +19,8 @@ export const workspaceKeys = {
   skills: (wsId: string) => ["workspaces", wsId, "skills"] as const,
   plugins: (wsId: string) => ["workspaces", wsId, "plugins"] as const,
   assigneeFrequency: (wsId: string) => ["workspaces", wsId, "assignee-frequency"] as const,
+  // Sealed auth for remote MCP servers (status only — has_secret + last4).
+  mcpCredentials: (wsId: string) => ["workspaces", wsId, "mcp-credentials"] as const,
 };
 
 export function workspaceListOptions() {

@@ -15,6 +15,7 @@ import type {
   CreateBillingCheckoutSessionResponse,
   CreateBillingPortalSessionResponse,
   FigmaCredentialStatus,
+  McpCredentialStatus,
   GroupedIssuesResponse,
   ListIssuesResponse,
   ListWebhookDeliveriesResponse,
@@ -1723,6 +1724,34 @@ export const EMPTY_FIGMA_CREDENTIAL_STATUS: FigmaCredentialStatus = {
   seat_probe: "",
   probe_status: "",
   probed_at: "",
+};
+
+// Remote-MCP credential status (sealed auth for a remote http/sse MCP server).
+// Every field is defaulted so a drifted backend row downgrades to a benign
+// shape rather than throwing into the panel. Token material is never present —
+// has_secret + last4 only.
+export const McpCredentialStatusSchema = z.object({
+  id: z.string().default(""),
+  server_name: z.string().default(""),
+  has_secret: z.boolean().default(false),
+  last4: z.string().default(""),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+}).loose();
+
+// The list endpoint returns an array; a non-array or malformed body downgrades
+// to an empty list (the panel shows no sealed-auth badges rather than crashing).
+export const McpCredentialListSchema = z.array(McpCredentialStatusSchema).catch([]);
+
+export const EMPTY_MCP_CREDENTIAL_LIST: McpCredentialStatus[] = [];
+
+export const EMPTY_MCP_CREDENTIAL_STATUS: McpCredentialStatus = {
+  id: "",
+  server_name: "",
+  has_secret: false,
+  last4: "",
+  created_at: "",
+  updated_at: "",
 };
 
 // Release integrations (release-hub Thread B). Every field is defaulted so a
