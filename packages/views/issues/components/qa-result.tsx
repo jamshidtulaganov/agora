@@ -1,3 +1,4 @@
+/* eslint-disable i18next/no-literal-string -- QA cockpit internal; i18n follow-up */
 "use client";
 
 import { Fragment } from "react";

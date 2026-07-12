@@ -1,3 +1,4 @@
+/* eslint-disable i18next/no-literal-string -- co-code editor surface; i18n follow-up */
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";

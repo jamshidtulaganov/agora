@@ -1,3 +1,4 @@
+/* eslint-disable i18next/no-literal-string -- design review dialog; i18n follow-up */
 "use client";
 
 import { useMemo, useState } from "react";
