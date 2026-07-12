@@ -470,6 +470,58 @@ func (q *Queries) ListCommentsSinceForIssue(ctx context.Context, arg ListComment
 	return items, nil
 }
 
+const listRecentCommentsForIssue = `-- name: ListRecentCommentsForIssue :many
+SELECT id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, bitrix_comment_id FROM comment
+WHERE issue_id = $1 AND workspace_id = $2
+ORDER BY created_at DESC, id DESC
+LIMIT $3
+`
+
+type ListRecentCommentsForIssueParams struct {
+	IssueID     pgtype.UUID `json:"issue_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Limit       int32       `json:"limit"`
+}
+
+// The MOST RECENT comments for an issue, newest first, capped at $3. Callers
+// that scan for a fresh marker or the latest verdict must read from the newest
+// end — the ASC ListCommentsForIssue with a LIMIT would read the OLDEST $3 rows
+// and miss recent activity on a long issue (>$3 comments).
+func (q *Queries) ListRecentCommentsForIssue(ctx context.Context, arg ListRecentCommentsForIssueParams) ([]Comment, error) {
+	rows, err := q.db.Query(ctx, listRecentCommentsForIssue, arg.IssueID, arg.WorkspaceID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Comment{}
+	for rows.Next() {
+		var i Comment
+		if err := rows.Scan(
+			&i.ID,
+			&i.IssueID,
+			&i.AuthorType,
+			&i.AuthorID,
+			&i.Content,
+			&i.Type,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ParentID,
+			&i.WorkspaceID,
+			&i.ResolvedAt,
+			&i.ResolvedByType,
+			&i.ResolvedByID,
+			&i.BitrixCommentID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRecentThreadCommentsForIssue = `-- name: ListRecentThreadCommentsForIssue :many
 WITH RECURSIVE membership(id, root_id, comment_created_at) AS (
     -- Each root maps to itself.

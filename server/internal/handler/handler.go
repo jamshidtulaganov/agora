@@ -227,6 +227,15 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		telegramWizards: telegram.NewWizardStore(),
 		cfg:             cfg,
 	}
+	// Review verdict → merge re-check seam for the internal (task-completion)
+	// ingress paths. The HTTP comment ingress fires this inline (comment.go); the
+	// service layer can't call back into the handler without an import cycle, so
+	// the handler injects the callback here. Fires the SAME merge re-check on a
+	// NEW review verdict label, detached, so a review:pass landed via task
+	// completion advances the merge instead of stalling.
+	taskSvc.OnReviewVerdictLabeled = func(ctx context.Context, issue db.Issue, verdict, actorID string) {
+		go h.maybeMergeOnQAPass(context.Background(), issue, "review:"+verdict, actorID)
+	}
 	// Bitrix24 outbound status mirror. No-op when BITRIX_WEBHOOK_URL is unset,
 	// so self-hosted deployments without Bitrix pay nothing.
 	h.registerBitrixOutbound()

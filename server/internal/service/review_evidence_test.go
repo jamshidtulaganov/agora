@@ -148,6 +148,56 @@ func TestCaptureReviewEvidence(t *testing.T) {
 	}
 }
 
+// TestCaptureReviewEvidenceSelfReviewRejected covers the reviewer≠author
+// invariant enforced at CAPTURE (finding 1): the AUTHOR agent posting a passing
+// review-result block for its own diff must NOT mint review:pass; a distinct
+// reviewer's verdict is accepted.
+func TestCaptureReviewEvidenceSelfReviewRejected(t *testing.T) {
+	pool := knowledgeTestPool(t)
+	ctx := context.Background()
+	q := db.New(pool)
+	issue := seedReviewIssue(t, pool, q)
+	svc := NewTaskService(q, pool, nil, events.New())
+
+	var runtimeID, agentID string
+	if err := pool.QueryRow(ctx, `INSERT INTO agent_runtime (workspace_id,name,runtime_mode,provider,status,metadata,last_seen_at) VALUES ($1,'self-rt','cloud','claude','online','{}'::jsonb,now()) RETURNING id`,
+		util.UUIDToString(issue.WorkspaceID)).Scan(&runtimeID); err != nil {
+		t.Fatalf("seed runtime: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO agent (workspace_id,name,runtime_mode,runtime_config,runtime_id,visibility,max_concurrent_tasks)
+		VALUES ($1,'Author','cloud','{}'::jsonb,$2,'workspace',1) RETURNING id`,
+		util.UUIDToString(issue.WorkspaceID), runtimeID).Scan(&agentID); err != nil {
+		t.Fatalf("seed agent: %v", err)
+	}
+	// Make the agent the issue's assignee (the AUTHOR).
+	if _, err := pool.Exec(ctx, `UPDATE issue SET assignee_type='agent', assignee_id=$1::uuid WHERE id=$2::uuid`,
+		agentID, util.UUIDToString(issue.ID)); err != nil {
+		t.Fatalf("assign issue: %v", err)
+	}
+	issue, err := q.GetIssue(ctx, issue.ID)
+	if err != nil {
+		t.Fatalf("reload issue: %v", err)
+	}
+
+	pass := "```review-result\n" + `{"verdict":"pass","summary":"lgtm (by author)","files_reviewed":2,"findings":[]}` + "\n```"
+	// The AUTHOR agent reviews its own diff → REJECTED, no label.
+	if v, newly := svc.CaptureReviewEvidence(ctx, issue, pass, util.MustParseUUID(agentID)); v != "" || newly {
+		t.Errorf("self-review: got (%q,%v), want (\"\",false)", v, newly)
+	}
+	if svc.issueHasLabelName(ctx, issue, ReviewLabelPass) {
+		t.Error("a self-authored review-result must NOT attach review:pass")
+	}
+
+	// A DIFFERENT reviewer's verdict is accepted.
+	if v, newly := svc.CaptureReviewEvidence(ctx, issue, pass, util.MustParseUUID(uuid.NewString())); v != "pass" || !newly {
+		t.Errorf("distinct reviewer: got (%q,%v), want (pass,true)", v, newly)
+	}
+	if !svc.issueHasLabelName(ctx, issue, ReviewLabelPass) {
+		t.Error("a distinct reviewer's review:pass must attach")
+	}
+}
+
 // TestLatestReviewResultForIssue verifies the newest-first comment resolution:
 // the latest AGENT comment with a valid block wins; unparsable blocks are
 // skipped; no block → found=false.

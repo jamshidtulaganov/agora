@@ -9,7 +9,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -96,18 +95,19 @@ func (h *Handler) approveReviewDecision(w http.ResponseWriter, r *http.Request, 
 	ctx := r.Context()
 
 	// Gate check — merge:override is the human's explicit bypass (they already
-	// accepted responsibility for the gates when they attached it).
+	// accepted responsibility for the gates when they attached it). Otherwise
+	// reuse the SAME deterministic readiness spine the GET /merge-readiness
+	// endpoint computes (computeMergeReadiness): this catches ci:fail (required
+	// all tiers) and a review gate that applies-but-has-no-verdict, which the
+	// old bespoke qa/review-only check silently let through.
 	if !h.issueHasLabel(ctx, issue, sprintPRMergeOverrideLabel) {
-		if h.issueHasLabel(ctx, issue, "qa:fail") {
-			writeError(w, http.StatusConflict, "qa_failed: the QA gate is failing (qa:fail) — fix and re-run QA before approving the merge")
-			return
-		}
-		if !h.issueHasLabel(ctx, issue, "qa:pass") {
-			writeError(w, http.StatusConflict, "qa_gate_not_passed: no qa:pass verdict yet — run QA before approving the merge")
-			return
-		}
-		if h.issueHasLabel(ctx, issue, service.ReviewLabelFail) {
-			writeError(w, http.StatusConflict, "review_failed: the code review found blockers (review:fail) — request changes or re-run the review before approving")
+		readiness := h.computeMergeReadiness(ctx, issue)
+		if !readiness.Ready {
+			reason := strings.Join(readiness.Blocked, "; ")
+			if reason == "" {
+				reason = "one or more required gates have not passed"
+			}
+			writeError(w, http.StatusConflict, "merge_gates_not_satisfied: "+reason)
 			return
 		}
 	}
@@ -128,9 +128,16 @@ func (h *Handler) approveReviewDecision(w http.ResponseWriter, r *http.Request, 
 			writeError(w, http.StatusInternalServerError, "failed to record the approval")
 			return
 		}
-		h.publish(protocol.EventIssueLabelsChanged, uuidToString(issue.WorkspaceID), "member", userID, map[string]any{
-			"issue_id": uuidToString(issue.ID),
-		})
+		// Publish the FULL label set, not just {issue_id}: the frontend
+		// labels-changed handler REPLACES the issue's labels with the payload,
+		// so an issue_id-only event wipes every client's label cache. On a read
+		// failure skip the broadcast — clients recover on their next query.
+		if labels, ok := h.listLabelsForIssueSafe(r, issue.ID, issue.WorkspaceID); ok {
+			h.publish(protocol.EventIssueLabelsChanged, uuidToString(issue.WorkspaceID), "member", userID, map[string]any{
+				"issue_id": uuidToString(issue.ID),
+				"labels":   labelsToResponse(labels),
+			})
+		}
 	}
 
 	// The decision in prose — a system comment so every surface that renders
@@ -186,6 +193,15 @@ func (h *Handler) approveReviewDecision(w http.ResponseWriter, r *http.Request, 
 	writeJSON(w, http.StatusOK, map[string]any{"action": "approve", "merged_dispatch": mergedDispatch})
 }
 
+// neutralizeNoteMentions defuses any @mention link a human types into a review
+// note so it cannot smuggle an EXTRA task trigger into the request-changes
+// comment (which is itself a mention-trigger comment). Mirrors the
+// issue_child_done.go title defense: breaking the `](mention://` anchor is
+// enough — util.MentionRe keys on it — while leaving the note human-readable.
+func neutralizeNoteMentions(note string) string {
+	return strings.ReplaceAll(note, "](mention://", "] (mention-stripped://")
+}
+
 // requestReviewChanges routes the review findings back to the author agent
 // and drops the issue to in_progress. review:fail (when present) is KEPT —
 // only the next review's replace-on-write verdict clears it.
@@ -195,6 +211,9 @@ func (h *Handler) requestReviewChanges(w http.ResponseWriter, r *http.Request, i
 		writeError(w, http.StatusBadRequest, "note is required for request_changes")
 		return
 	}
+	// The note is embedded into a mention-trigger comment below — neutralize any
+	// mention link it carries so it can't summon an extra agent (P2 security).
+	note = neutralizeNoteMentions(note)
 
 	// The AUTHOR agent gets the work back: the issue's agent assignee,
 	// falling back to the dev squad leader (who re-delegates).
@@ -213,13 +232,23 @@ func (h *Handler) requestReviewChanges(w http.ResponseWriter, r *http.Request, i
 		}
 	}
 
-	if _, err := h.Queries.UpdateIssueStatus(ctx, db.UpdateIssueStatusParams{
+	updated, err := h.Queries.UpdateIssueStatus(ctx, db.UpdateIssueStatusParams{
 		ID: issue.ID, Status: "in_progress", WorkspaceID: issue.WorkspaceID,
-	}); err != nil {
+	})
+	if err != nil {
 		slog.Warn("review decision: status reset failed", "error", err, "issue_id", uuidToString(issue.ID))
 		writeError(w, http.StatusInternalServerError, "failed to move the issue back to in_progress")
 		return
 	}
+	// Broadcast the status transition so boards / lists / other open detail
+	// views refresh off in_review — a comment-only event leaves them stale
+	// (they don't recompute status from a new comment). Matches how the HTTP
+	// status handlers publish transitions (issue, status_changed, prev_status).
+	h.publish(protocol.EventIssueUpdated, uuidToString(issue.WorkspaceID), "member", userID, map[string]any{
+		"issue":          issueToResponse(updated, h.getIssuePrefix(ctx, issue.WorkspaceID)),
+		"status_changed": true,
+		"prev_status":    issue.Status,
+	})
 
 	body := "Changes were requested on this implementation by " + userName + ". Note: " + note +
 		" Read the latest review findings on this issue (the newest comment carrying a ```review-result``` block lists every finding with file, line, and severity), " +

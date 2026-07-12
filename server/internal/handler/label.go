@@ -366,6 +366,21 @@ func (h *Handler) AttachLabel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Human sign-off labels — merge:override (force done past an unmerged PR)
+	// and merge:approved (a human reviewed the gates and ordered the merge) —
+	// assert that a HUMAN decided. A machine credential (mat_ task token / mcn_
+	// cloud PAT) must never attach them, or an agent could forge the human gate
+	// through this raw label-attach path. The review-decision endpoint that
+	// normally stamps merge:approved is already RequireHumanActor-gated; this
+	// closes the back door.
+	switch strings.ToLower(strings.TrimSpace(label.Name)) {
+	case sprintPRMergeOverrideLabel, mergeApprovedLabel:
+		if IsMachineActor(r) {
+			writeError(w, http.StatusForbidden, "merge:override and merge:approved are human sign-off labels and cannot be attached by a machine actor")
+			return
+		}
+	}
+
 	// Trigger-idempotency needs to know whether this attach is NEW: the insert
 	// is ON CONFLICT DO NOTHING, and re-attaching an existing qa:fail used to
 	// re-fire the whole autoroute/auto-bug chain (audit P2 churn).

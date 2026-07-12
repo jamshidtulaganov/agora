@@ -1605,7 +1605,16 @@ func (h *Handler) maybeMergeOnQAPass(ctx context.Context, issue db.Issue, labelN
 	// called from both attach paths). A present review:fail always holds.
 	// When the gate does NOT apply, review:pass is not a merge trigger at all
 	// (qa:pass alone drives the chain, exactly as before).
-	if h.reviewGateApplies(ctx, issue) {
+	applies, ok := h.reviewGateApplies(ctx, issue)
+	if !ok {
+		// Labels could not be read — cannot confirm the review gate is
+		// satisfied. Fail CLOSED for the merge action: do not auto-proceed
+		// (the old fail-open merged qa:pass-only work without a required review).
+		slog.Warn("merge gate: cannot read labels to evaluate the review gate — not auto-proceeding",
+			"issue_id", uuidToString(issue.ID))
+		return
+	}
+	if applies {
 		if !h.issueHasLabel(ctx, issue, "qa:pass") || !h.issueHasLabel(ctx, issue, service.ReviewLabelPass) {
 			return
 		}
@@ -1628,6 +1637,12 @@ func (h *Handler) maybeMergeOnQAPass(ctx context.Context, issue db.Issue, labelN
 	// Marker-deduped: with the review gate in play this can be reached from two
 	// label attaches (qa:pass and review:pass), and the note must post ONCE.
 	if !sprintAutoMergeEnabled() {
+		// Serialize the check-then-write: this READY note is posted from
+		// detached goroutines fired at up to three qa:pass/review:pass attach
+		// sites, and without a lock two concurrent attaches both pass the marker
+		// check before either writes, double-posting the note. The same
+		// per-issue lock maybeRunReviewOnQAPass / maybeRunQAOnInReview use.
+		defer lockIssueQA(uuidToString(issue.ID))()
 		if h.issueHasCommentMarker(ctx, issue, readyForHumanMergeMarker) {
 			return
 		}
@@ -3332,6 +3347,13 @@ func (h *Handler) resolveSliceActionAgent(w http.ResponseWriter, r *http.Request
 			h.canAccessPrivateAgent(r.Context(), reviewer, "member", userID, workspaceID) {
 			return reviewer, true
 		}
+		// No reviewer distinct from the author resolves. Do NOT fall through to
+		// the assignee (b) — that IS the author — or to the caller's own agent
+		// (c), which is frequently the author too: an agent must never review
+		// its own diff (the capture layer rejects a self-review outright, and
+		// dispatch must stay consistent with that). Refuse with a clear 409.
+		writeError(w, http.StatusConflict, "no reviewer distinct from the author agent is available to review this issue")
+		return db.Agent{}, false
 	}
 
 	// (a.6) design_proposal is the designer-analyst's job. Without an explicit

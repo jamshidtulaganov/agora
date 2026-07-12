@@ -20,20 +20,20 @@ func TestRequiredGatesWithReview(t *testing.T) {
 	trivial := reviewTierForLabels(map[string]bool{"tier:trivial": true})
 
 	tests := []struct {
-		name  string
-		tier  reviewTier
-		hasPR bool
-		want  []string
+		name          string
+		tier          reviewTier
+		reviewRequire bool
+		want          []string
 	}{
-		{"full tier with PR requires review", full, true, []string{"ci", "qa", "review"}},
-		{"full tier without PR omits review entirely", full, false, []string{"ci", "qa"}},
-		{"light tier never requires review", light, true, []string{"ci"}},
-		{"trivial tier never requires review", trivial, true, []string{"ci"}},
+		{"full tier with review required appends review", full, true, []string{"ci", "qa", "review"}},
+		{"full tier without review required omits review", full, false, []string{"ci", "qa"}},
+		{"light tier never appends review", light, false, []string{"ci"}},
+		{"trivial tier never appends review", trivial, false, []string{"ci"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := requiredGatesWithReview(tt.tier, tt.hasPR); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("requiredGatesWithReview(%s, %v) = %v, want %v", tt.tier.name, tt.hasPR, got, tt.want)
+			if got := requiredGatesWithReview(tt.tier, tt.reviewRequire); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("requiredGatesWithReview(%s, %v) = %v, want %v", tt.tier.name, tt.reviewRequire, got, tt.want)
 			}
 		})
 	}
@@ -42,6 +42,49 @@ func TestRequiredGatesWithReview(t *testing.T) {
 	if !reflect.DeepEqual(full.required, []string{"ci", "qa"}) {
 		t.Errorf("full.required mutated to %v", full.required)
 	}
+}
+
+// TestReviewGateRequired covers the coupling fix: the review gate is required
+// only for a full-tier issue that has a diff to review AND an active review
+// (auto-review enabled OR a manual verdict landed). Flag off + no manual
+// verdict ⇒ advisory, never a silent blocker.
+func TestReviewGateRequired(t *testing.T) {
+	full := reviewTierForLabels(map[string]bool{})
+	light := reviewTierForLabels(map[string]bool{"tier:light": true})
+
+	t.Run("auto-review off, no verdict, with PR: not required (advisory)", func(t *testing.T) {
+		if reviewGateRequired(full, true, map[string]bool{}) {
+			t.Error("review gate must be advisory when auto-review is off and no manual verdict exists")
+		}
+	})
+	t.Run("auto-review on, with PR: required", func(t *testing.T) {
+		t.Setenv("AGORA_AUTO_REVIEW_ENABLED", "1")
+		if !reviewGateRequired(full, true, map[string]bool{}) {
+			t.Error("review gate must be required when auto-review is enabled on a full-tier PR issue")
+		}
+	})
+	t.Run("auto-review off but manual verdict present: required", func(t *testing.T) {
+		if !reviewGateRequired(full, true, map[string]bool{"review:fail": true}) {
+			t.Error("a landed review verdict must make the gate required even with auto-review off")
+		}
+	})
+	t.Run("manual verdict present, no PR detected: still required", func(t *testing.T) {
+		if !reviewGateRequired(full, false, map[string]bool{"review:pass": true}) {
+			t.Error("a landed verdict proves a review happened even without a detectable PR")
+		}
+	})
+	t.Run("no PR and no verdict: not required", func(t *testing.T) {
+		t.Setenv("AGORA_AUTO_REVIEW_ENABLED", "1")
+		if reviewGateRequired(full, false, map[string]bool{}) {
+			t.Error("no diff to review (no PR, no verdict) ⇒ gate not required")
+		}
+	})
+	t.Run("light tier never required", func(t *testing.T) {
+		t.Setenv("AGORA_AUTO_REVIEW_ENABLED", "1")
+		if reviewGateRequired(light, true, map[string]bool{"review:fail": true}) {
+			t.Error("non-full tiers never require the review gate")
+		}
+	})
 }
 
 func TestIssuePRNumberFromMetadata(t *testing.T) {
@@ -182,21 +225,47 @@ func TestCreateReviewDecisionApproveGateViolations(t *testing.T) {
 		}
 	})
 
-	t.Run("approve without qa:pass is 409", func(t *testing.T) {
-		issue := seedReviewDecisionIssue(t, "review 409 no qa", "in_review", "", "")
+	t.Run("approve with no gates passing is 409", func(t *testing.T) {
+		issue := seedReviewDecisionIssue(t, "review 409 no gates", "in_review", "", "")
 		w := post(issue, map[string]any{"action": "approve"})
-		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "qa_gate_not_passed") {
-			t.Fatalf("expected 409 qa_gate_not_passed, got %d: %s", w.Code, w.Body.String())
+		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "merge_gates_not_satisfied") {
+			t.Fatalf("expected 409 merge_gates_not_satisfied, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+
+	// ci:fail must block approve — the spine requires ci at every tier, which
+	// the old bespoke qa/review-only check missed.
+	t.Run("approve with ci:fail is 409", func(t *testing.T) {
+		issue := seedReviewDecisionIssue(t, "review 409 ci fail", "in_review", "", "")
+		attachTestLabel(t, uuidToString(issue.ID), "qa:pass")
+		attachTestLabel(t, uuidToString(issue.ID), "ci:fail")
+		w := post(issue, map[string]any{"action": "approve"})
+		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "ci") {
+			t.Fatalf("expected 409 mentioning ci, got %d: %s", w.Code, w.Body.String())
 		}
 	})
 
 	t.Run("approve with review:fail is 409", func(t *testing.T) {
 		issue := seedReviewDecisionIssue(t, "review 409 fail", "in_review", "", "")
+		attachTestLabel(t, uuidToString(issue.ID), "ci:pass")
 		attachTestLabel(t, uuidToString(issue.ID), "qa:pass")
 		attachTestLabel(t, uuidToString(issue.ID), "review:fail")
 		w := post(issue, map[string]any{"action": "approve"})
-		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "review_failed") {
-			t.Fatalf("expected 409 review_failed, got %d: %s", w.Code, w.Body.String())
+		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "review") {
+			t.Fatalf("expected 409 mentioning review, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+
+	// The review gate applies (auto-review on + a PR) but no verdict has landed
+	// yet → approve must 409 rather than merge past a pending review.
+	t.Run("approve with review gate applying but no verdict is 409", func(t *testing.T) {
+		t.Setenv("AGORA_AUTO_REVIEW_ENABLED", "1")
+		issue := seedReviewDecisionIssue(t, "review 409 pending", "in_review", "", `{"pr_number": 11}`)
+		attachTestLabel(t, uuidToString(issue.ID), "ci:pass")
+		attachTestLabel(t, uuidToString(issue.ID), "qa:pass")
+		w := post(issue, map[string]any{"action": "approve"})
+		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "review") {
+			t.Fatalf("expected 409 for a pending review gate, got %d: %s", w.Code, w.Body.String())
 		}
 	})
 
@@ -219,6 +288,9 @@ func TestCreateReviewDecisionApproveDispatch(t *testing.T) {
 	}
 	leaderID, authorID := seedReviewSquad(t, "Review Approve Squad")
 	issue := seedReviewDecisionIssue(t, "review approve dispatch", "in_review", authorID, "")
+	// Green the full readiness spine: ci + qa + review (review:pass makes the
+	// review gate apply for this full-tier issue).
+	attachTestLabel(t, uuidToString(issue.ID), "ci:pass")
 	attachTestLabel(t, uuidToString(issue.ID), "qa:pass")
 	attachTestLabel(t, uuidToString(issue.ID), "review:pass")
 
@@ -303,6 +375,76 @@ func TestCreateReviewDecisionRequestChanges(t *testing.T) {
 	// review:fail is deliberately KEPT until a re-review replaces it.
 	if !testHandler.issueHasLabel(context.Background(), issue, "review:fail") {
 		t.Error("review:fail must survive request_changes")
+	}
+}
+
+// TestRequestChangesNeutralizesNoteMentions covers finding 9: a mention link
+// smuggled into the human note must NOT survive as a live trigger in the
+// request-changes comment (which is itself a mention-trigger comment).
+func TestRequestChangesNeutralizesNoteMentions(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	authorID := createHandlerTestAgent(t, "RC Note Author", nil)
+	evilID := createHandlerTestAgent(t, "RC Note Evil", nil)
+	issue := seedReviewDecisionIssue(t, "review rc note mention", "in_review", authorID, "")
+
+	note := "please fix, also [@evil](mention://agent/" + evilID + ") must not be pinged"
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/api/issues/"+uuidToString(issue.ID)+"/review-decision", map[string]any{
+		"action": "request_changes", "note": note,
+	})
+	req = withURLParam(req, "id", uuidToString(issue.ID))
+	testHandler.CreateReviewDecision(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	for _, c := range issueComments(t, issue) {
+		if strings.Contains(c.Content, "](mention://agent/"+evilID) {
+			t.Fatalf("the note's smuggled mention survived as a live trigger: %.200s", c.Content)
+		}
+	}
+}
+
+// TestResolveSliceActionAgentRunReviewNeverAuthor covers finding 12: a manual
+// run_review must never resolve to the AUTHOR agent — it resolves to a distinct
+// reviewer or refuses (409), consistent with the capture-time self-review
+// rejection.
+func TestResolveSliceActionAgentRunReviewNeverAuthor(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	// A one-agent squad where the author IS the leader.
+	authorID := createHandlerTestAgent(t, "Solo RR Author", nil)
+	var squadID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO squad (workspace_id, name, description, leader_id, creator_id)
+		VALUES ($1, 'Solo RR Squad', '', $2, $3) RETURNING id`,
+		testWorkspaceID, authorID, testUserID).Scan(&squadID); err != nil {
+		t.Fatalf("create squad: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM squad WHERE id=$1::uuid`, squadID) })
+	if _, err := testPool.Exec(ctx, `INSERT INTO squad_member (squad_id, member_type, member_id) VALUES ($1,'agent',$2)`, squadID, authorID); err != nil {
+		t.Fatalf("add member: %v", err)
+	}
+	issue := seedReviewDecisionIssue(t, "run_review no reviewer", "in_review", authorID, "")
+
+	w := httptest.NewRecorder()
+	req := withURLParam(newRequest("POST", "/api/issues/"+uuidToString(issue.ID)+"/slice-actions", nil), "id", uuidToString(issue.ID))
+	agent, ok := testHandler.resolveSliceActionAgent(w, req, issue, testUserID, "", sliceActionRunReview)
+	if ok {
+		// If a distinct reviewer resolved (e.g. a QA leader in the shared
+		// workspace), it must NOT be the author.
+		if uuidToString(agent.ID) == authorID {
+			t.Fatal("run_review must never resolve to the author agent")
+		}
+		return
+	}
+	// Otherwise it must refuse cleanly with a 409, not fall through to the
+	// author via the own-agent path.
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409 when no distinct reviewer resolves, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

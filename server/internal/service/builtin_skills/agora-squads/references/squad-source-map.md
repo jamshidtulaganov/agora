@@ -283,12 +283,15 @@ server/internal/handler/review_action.go   # autoReviewEnabled, maybeRunReviewOn
                                             # resolveReviewerAgent, reviewGateApplies,
                                             # issueHasKnownPR, reviewDispatchMarker
 server/internal/handler/slice_action_templates/run_review.md   # reviewer instruction + review-result schema
-server/internal/service/review_evidence.go  # ParseReviewResultBlock, CaptureReviewEvidence (label-first),
-                                             # LatestReviewResultForIssue (newest-first comment scan)
+server/internal/service/review_evidence.go  # ParseReviewResultBlock, CaptureReviewEvidence (label-first;
+                                             # rejects self-review: reviewer==author agent),
+                                             # LatestReviewResultForIssue (newest-first, ListRecentCommentsForIssue)
 server/internal/service/review_notify.go    # NotifyReviewVerdict (review_failed / review_passed / merge_ready)
 server/internal/handler/review_decision.go  # POST /api/issues/{id}/review-decision (RequireHumanActor)
 server/internal/handler/review_verdict.go   # GET /api/issues/{id}/review-verdict
-server/internal/handler/merge_readiness.go  # requiredGatesWithReview — "review" required for full tier + PR
+server/internal/handler/merge_readiness.go  # reviewGateRequired + requiredGatesWithReview + computeMergeReadiness
+                                             # (shared spine; review required only for full tier + a diff + active review)
+server/internal/handler/label.go            # AttachLabel — merge:override/merge:approved are human-only (403 for machine actors)
 ```
 
 Contracts:
@@ -303,10 +306,14 @@ Contracts:
   `ListPullRequestsByIssue`) → an in-flight dispatch (newest
   `<!--review-dispatch:auto-->` marker comment with no review-result comment
   after it) → no reviewer distinct from the author agent.
-- Reviewer ≠ author invariant: `resolveReviewerAgent` never returns the
-  issue's assignee agent; the manual slice action
-  (`POST /slice-actions {kind:"run_review"}`) also skips the assignee
-  default for this kind (slice_action.go resolveSliceActionAgent a.55).
+- Reviewer ≠ author invariant, enforced at THREE layers: `resolveReviewerAgent`
+  never returns the issue's assignee agent; the manual slice action
+  (`POST /slice-actions {kind:"run_review"}`) skips the assignee/own-agent
+  defaults and returns 409 when no distinct reviewer resolves (never dispatches
+  to the author); and `CaptureReviewEvidence` REJECTS a verdict whose reviewer
+  id equals the issue's author agent (self-review can't mint review:pass). A
+  zero/unattributed reviewer id skips the capture-time check (some ingress
+  can't attribute authorship).
 - `CaptureReviewEvidence` is label-FIRST (the CaptureQAEvidence contract):
   the `review:pass`/`review:fail` label attaches before anything else, the
   opposite label detaches (replace-on-write), the FULL label set is
@@ -315,14 +322,20 @@ Contracts:
   comment; `GET /review-verdict` re-parses the newest valid block.
 - `clearStaleQAGateLabels` (issue.go) also detaches `review:pass`,
   `review:fail`, and `merge:approved` on a genuine in_review re-entry.
-- `maybeMergeOnQAPass` now accepts both `qa:pass` and `review:pass` trigger
-  labels; when `reviewGateApplies` (full tier + PR) it proceeds only with
-  BOTH verdicts present, and its human-facing READY note is deduped by
-  `<!-- ready-for-human-merge -->`.
-- `POST /review-decision` (human-only): `approve` requires qa:pass present
-  and review:fail absent (`merge:override` bypasses), attaches
-  `merge:approved` (#2563eb), posts a system comment, and dispatches a
-  member-authored `gh pr merge` order to the dev squad leader;
+- `maybeMergeOnQAPass` accepts both `qa:pass` and `review:pass` trigger
+  labels; when the review gate is required (`reviewGateRequired`: full tier +
+  a diff to review + auto-review-enabled-or-a-landed-verdict) it proceeds only
+  with BOTH verdicts present. If the labels can't be read it fails CLOSED (no
+  auto-merge). When auto-review is off and no manual verdict exists, the review
+  gate is advisory — qa:pass alone drives the chain, never a silent stall. The
+  human-facing READY note is deduped by `<!-- ready-for-human-merge -->` under
+  the per-issue `lockIssueQA` lock.
+- `POST /review-decision` (human-only): `approve` computes the SAME
+  `computeMergeReadiness` spine the GET endpoint uses (ci + qa + review-when-
+  required) and 409s with the blocked reasons unless ready (`merge:override`
+  bypasses); on success it attaches `merge:approved` (#2563eb, broadcasting the
+  FULL label set), posts a system comment, and dispatches a member-authored
+  `gh pr merge` order to the dev squad leader;
   `request_changes` requires a note, resets status to `in_progress`, and
   @mentions the author agent (fallback: the dev squad leader) — review:fail
   is kept until a re-review replaces it.

@@ -99,6 +99,29 @@ func (s *TaskService) CaptureReviewEvidence(ctx context.Context, issue db.Issue,
 		return "", false
 	}
 
+	// Reviewer≠author invariant, enforced at CAPTURE (not only at dispatch): an
+	// agent must never mint its own review:pass by posting a review-result
+	// block. If the issue's assignee is an AGENT and the reviewer posting this
+	// block IS that agent (self-review), reject — attach no label, post
+	// nothing, no-op cleanly.
+	//
+	// reviewerID may be a zero (invalid) UUID on ingress paths that cannot
+	// attribute the author. A zero reviewerID is deliberately NOT treated as
+	// self-review — some ingress genuinely can't prove authorship, so we
+	// proceed rather than drop a legitimate verdict — but we log it so the gap
+	// is visible.
+	if reviewerID.Valid {
+		if issue.AssigneeType.Valid && issue.AssigneeType.String == "agent" &&
+			issue.AssigneeID.Valid && issue.AssigneeID.Bytes == reviewerID.Bytes {
+			slog.Warn("capture review verdict: self-review REJECTED — the reviewer is the issue's author agent; no review label attached",
+				"issue_id", util.UUIDToString(issue.ID), "reviewer_id", util.UUIDToString(reviewerID))
+			return "", false
+		}
+	} else {
+		slog.Info("capture review verdict: reviewer id is unattributed (zero UUID) — proceeding without the self-review check",
+			"issue_id", util.UUIDToString(issue.ID))
+	}
+
 	label, color := ReviewLabelPass, reviewLabelPassColor
 	opposite := ReviewLabelFail
 	if p.Verdict == "fail" {
@@ -168,17 +191,20 @@ func (s *TaskService) CaptureReviewEvidence(ctx context.Context, issue db.Issue,
 // verdict still resolves). Mirrors LatestDesignProposalForIssue's
 // newest-first comment scan; there is deliberately no review table to query.
 func (s *TaskService) LatestReviewResultForIssue(ctx context.Context, issue db.Issue) (p ReviewResultPayload, commentID, reviewerID pgtype.UUID, reviewedAt pgtype.Timestamptz, found bool, err error) {
-	comments, err := s.Queries.ListCommentsForIssue(ctx, db.ListCommentsForIssueParams{
+	// Newest-first at the DB (ORDER BY created_at DESC): on a long issue the
+	// ASC ListCommentsForIssue capped at a LIMIT would read the OLDEST N rows
+	// and never see a fresh verdict. ListRecentCommentsForIssue returns the
+	// most-recent rows, so the newest valid verdict always resolves.
+	comments, err := s.Queries.ListRecentCommentsForIssue(ctx, db.ListRecentCommentsForIssueParams{
 		IssueID:     issue.ID,
 		WorkspaceID: issue.WorkspaceID,
-		Limit:       2000,
+		Limit:       500,
 	})
 	if err != nil {
 		return ReviewResultPayload{}, pgtype.UUID{}, pgtype.UUID{}, pgtype.Timestamptz{}, false, err
 	}
-	// Newest-first: the last agent comment with a valid block wins.
-	for i := len(comments) - 1; i >= 0; i-- {
-		c := comments[i]
+	// Already newest-first: the first agent comment with a valid block wins.
+	for _, c := range comments {
 		if c.AuthorType != "agent" {
 			continue
 		}

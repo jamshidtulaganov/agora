@@ -40,6 +40,14 @@ type TaskService struct {
 	// client.
 	EmptyClaim *EmptyClaimCache
 
+	// OnReviewVerdictLabeled, when non-nil, is invoked after the internal
+	// task-completion ingress paths (captureStructuredResult / createAgentComment)
+	// capture a NEW review verdict gate label, so the merge re-check fires the
+	// same way the HTTP comment ingress fires it (comment.go). Kept as a callback
+	// wired by the handler layer to avoid a service→handler import cycle;
+	// nil-safe. actorID is the reviewer agent id (as string).
+	OnReviewVerdictLabeled func(ctx context.Context, issue db.Issue, verdict, actorID string)
+
 	analyticsContextMu    sync.Mutex
 	analyticsContextCache map[string]analytics.TaskContext
 	analyticsContextOrder []string
@@ -2411,8 +2419,13 @@ func (s *TaskService) captureStructuredResult(ctx context.Context, issueID, agen
 	}
 	s.CaptureQAEvidence(ctx, issue, content, triggerCommentID)
 	// A run_review verdict's ```review-result``` block becomes the
-	// review:pass/review:fail gate label (Review stage v2).
-	s.CaptureReviewEvidence(ctx, issue, content, agentID)
+	// review:pass/review:fail gate label (Review stage v2). On a NEW attach fire
+	// the merge re-check — mirror the HTTP comment ingress (comment.go), so a
+	// review:pass that lands via task completion (not an HTTP comment) still
+	// advances the merge instead of stalling.
+	if verdict, labeled := s.CaptureReviewEvidence(ctx, issue, content, agentID); labeled && s.OnReviewVerdictLabeled != nil {
+		s.OnReviewVerdictLabeled(ctx, issue, verdict, util.UUIDToString(agentID))
+	}
 	s.CaptureDeployEvent(ctx, issue, content)
 	s.CaptureTestCases(ctx, issue, content, agentID)
 	s.CaptureTestRuns(ctx, issue, content, agentID, triggerCommentID)
@@ -2502,8 +2515,11 @@ func (s *TaskService) createAgentComment(ctx context.Context, issueID, agentID p
 	// parentID is this reply's trigger comment — read for triggered_by (Phase 3).
 	s.CaptureQAEvidence(ctx, issue, content, parentID)
 	// Persist a run_review verdict's ```review-result``` block as the
-	// review:pass/review:fail gate label (Review stage v2).
-	s.CaptureReviewEvidence(ctx, issue, content, agentID)
+	// review:pass/review:fail gate label (Review stage v2). On a NEW attach fire
+	// the merge re-check — same seam as the HTTP comment ingress (comment.go).
+	if verdict, labeled := s.CaptureReviewEvidence(ctx, issue, content, agentID); labeled && s.OnReviewVerdictLabeled != nil {
+		s.OnReviewVerdictLabeled(ctx, issue, verdict, util.UUIDToString(agentID))
+	}
 	// Persist a deploy agent's ```deploy-result``` block as a deploy_event row
 	// (the stepper's Deploy signal — deploy-mcp-integration.md §5).
 	s.CaptureDeployEvent(ctx, issue, content)

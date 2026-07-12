@@ -44,7 +44,11 @@ const reviewDispatchMarker = "<!--review-dispatch:auto-->"
 // issueHasCommentMarker reports whether any comment on the issue contains the
 // given marker string. Best-effort: a query error reports false.
 func (h *Handler) issueHasCommentMarker(ctx context.Context, issue db.Issue, marker string) bool {
-	comments, err := h.Queries.ListCommentsForIssue(ctx, db.ListCommentsForIssueParams{
+	// Newest-first (ListRecentCommentsForIssue): a dedup marker is written on
+	// the freshest comments, so on a long issue (>500 comments) the ASC read
+	// would return the OLDEST 500 and never see the recent marker — the dedup
+	// would fail and the note would re-post (floodable).
+	comments, err := h.Queries.ListRecentCommentsForIssue(ctx, db.ListRecentCommentsForIssueParams{
 		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID, Limit: 500,
 	})
 	if err != nil {
@@ -95,25 +99,26 @@ func (h *Handler) issueHasKnownPR(ctx context.Context, issue db.Issue) bool {
 }
 
 // reviewGateApplies reports whether the reviewer gate is REQUIRED for this
-// issue: full review tier (no tier:trivial / tier:light downgrade) AND a known
-// PR. trivial/light changes and PR-less work (direct commits, chores) never
-// wait on a code review. Mirrors the merge-readiness computation exactly so
-// the auto-merge ordering and the endpoint can never disagree.
-func (h *Handler) reviewGateApplies(ctx context.Context, issue db.Issue) bool {
+// issue (see reviewGateRequired for the full predicate: full tier + a diff to
+// review + an active review). Mirrors the merge-readiness computation exactly
+// so the auto-merge ordering and the endpoint can never disagree.
+//
+// ok=false means the labels could NOT be read. The MERGE chain must treat that
+// as "cannot confirm the gate is satisfied" and fail CLOSED (do not
+// auto-proceed) — the old fail-open returned "gate does not apply", which
+// merged qa:pass-only work without the review that would otherwise be required.
+func (h *Handler) reviewGateApplies(ctx context.Context, issue db.Issue) (required, ok bool) {
 	labelRows, err := h.Queries.ListLabelsByIssue(ctx, db.ListLabelsByIssueParams{
 		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
 	})
 	if err != nil {
-		return false // fail-open: never block the merge chain on a label read error
+		return false, false
 	}
 	labels := make(map[string]bool, len(labelRows))
 	for _, l := range labelRows {
 		labels[strings.ToLower(strings.TrimSpace(l.Name))] = true
 	}
-	if reviewTierForLabels(labels).name != "full" {
-		return false
-	}
-	return h.issueHasKnownPR(ctx, issue)
+	return reviewGateRequired(reviewTierForLabels(labels), h.issueHasKnownPR(ctx, issue), labels), true
 }
 
 // reviewDispatchInFlight reports whether an auto-fired run_review dispatch is
@@ -123,22 +128,31 @@ func (h *Handler) reviewGateApplies(ctx context.Context, issue db.Issue) bool {
 // dispatches again. Best-effort: a query error reports false (dispatch
 // proceeds; the reviewer-side pending-task guard still caps duplicates).
 func (h *Handler) reviewDispatchInFlight(ctx context.Context, issue db.Issue) bool {
-	comments, err := h.Queries.ListCommentsForIssue(ctx, db.ListCommentsForIssueParams{
+	// Newest-first (ListRecentCommentsForIssue) so a fresh dispatch/verdict on a
+	// long issue is never hidden past a LIMIT of the OLDEST rows. Index 0 is the
+	// newest comment: the newest dispatch is in flight until a verdict posted
+	// AFTER it (i.e. newer → a smaller index) closes the cycle.
+	comments, err := h.Queries.ListRecentCommentsForIssue(ctx, db.ListRecentCommentsForIssueParams{
 		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID, Limit: 500,
 	})
 	if err != nil {
 		return false
 	}
-	lastDispatch, lastVerdict := -1, -1
+	firstDispatch, firstVerdict := -1, -1
 	for i, c := range comments {
-		if strings.Contains(c.Content, reviewDispatchMarker) {
-			lastDispatch = i
+		if firstDispatch == -1 && strings.Contains(c.Content, reviewDispatchMarker) {
+			firstDispatch = i
 		}
-		if _, ok := service.ParseReviewResultBlock(c.Content); ok {
-			lastVerdict = i
+		if firstVerdict == -1 {
+			if _, ok := service.ParseReviewResultBlock(c.Content); ok {
+				firstVerdict = i
+			}
 		}
 	}
-	return lastDispatch >= 0 && lastVerdict < lastDispatch
+	if firstDispatch == -1 {
+		return false
+	}
+	return firstVerdict == -1 || firstVerdict > firstDispatch
 }
 
 // devSquadAgentsForIssue returns the ready agents of the DEV squad the issue's
