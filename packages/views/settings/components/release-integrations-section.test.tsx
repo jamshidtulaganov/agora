@@ -130,6 +130,62 @@ describe("ReleaseIntegrationsSection", () => {
     expect(toast.success).toHaveBeenCalled();
   });
 
+  it("switches to GitHub Release and creates with owner/repo/token", async () => {
+    mockCreate.mockResolvedValue(undefined);
+    renderSection();
+    await userEvent.selectOptions(
+      screen.getByLabelText(enSettings.release_integrations.kind_label),
+      "github_release",
+    );
+    await userEvent.type(screen.getByLabelText(enSettings.release_integrations.owner_label), "octocat");
+    await userEvent.type(screen.getByLabelText(enSettings.release_integrations.repo_label), "hello");
+    await userEvent.type(screen.getByLabelText(enSettings.release_integrations.token_label), "ghp_secret");
+    await userEvent.click(screen.getByText(enSettings.release_integrations.add));
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const [, body] = mockCreate.mock.calls[0]!;
+    expect(body.kind).toBe("github_release");
+    expect(body.owner).toBe("octocat");
+    expect(body.repo).toBe("hello");
+    expect(body.token).toBe("ghp_secret");
+    // The webhook-only field is not part of a github_release payload.
+    expect(body.url).toBeUndefined();
+  });
+
+  it("creates a Bitrix integration with no secret field", async () => {
+    mockCreate.mockResolvedValue(undefined);
+    renderSection();
+    await userEvent.selectOptions(
+      screen.getByLabelText(enSettings.release_integrations.kind_label),
+      "bitrix",
+    );
+    // Bitrix shows an explanatory note, no secret input.
+    expect(screen.getByText(enSettings.release_integrations.bitrix_note)).toBeTruthy();
+    expect(screen.queryByLabelText(enSettings.release_integrations.token_label)).toBeNull();
+    await userEvent.click(screen.getByText(enSettings.release_integrations.add));
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const [, body] = mockCreate.mock.calls[0]!;
+    expect(body.kind).toBe("bitrix");
+  });
+
+  it("shows a kind badge and config summary for a github_release row", () => {
+    integrationsRef.current = [
+      {
+        id: "ri9",
+        kind: "github_release",
+        config: { name: "Prod release", owner: "octo", repo: "hello" },
+        events: ["release_shipped"],
+        enabled: true,
+        probe_status: "ok",
+        has_secret: true,
+      },
+    ];
+    renderSection();
+    // The label appears both as the row's kind badge and as a select option, so
+    // assert at least one match plus the unique owner/repo config summary.
+    expect(screen.getAllByText(enSettings.release_integrations.kind_github_release).length).toBeGreaterThan(0);
+    expect(screen.getByText("octo/hello")).toBeTruthy();
+  });
+
   it("removes an integration after confirming in the dialog", async () => {
     integrationsRef.current = [
       { id: "ri1", kind: "webhook", config: { name: "Release channel" }, events: ["deploy_recorded"], enabled: true, probe_status: "ok", has_secret: true },
