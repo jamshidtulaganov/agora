@@ -1,53 +1,71 @@
 import type { ReactNode } from "react";
-import { CheckCircle2, XCircle, ShieldQuestion, CircleSlash, RefreshCw, Loader2 } from "lucide-react";
+import { CheckCircle2, XCircle, ShieldQuestion, Loader2 } from "lucide-react";
 import { cn } from "@agora/ui/lib/utils";
 
-// The single source of truth for QA verdict visuals — icon + hero tint. Every QA
-// surface (review page, file-bug sheet, bugs lens) imports these so the pass /
-// fail / pending vocabulary stays consistent instead of being re-derived per
-// component. `pass` uses the emerald success tint the codebase already
-// standardizes (qa-result CMD_KIND_STYLE); fail uses the destructive token;
-// pending is neutral muted.
+// The single source of truth for QA verdict visuals — reduced (Phase B) to
+// FOUR buckets so every QA surface speaks one plain vocabulary and one color
+// per state instead of five colors across seven near-synonyms:
+//   pass    → green check   ("Passed")
+//   fail    → red   cross   ("Failed" / "Couldn't run")
+//   running → blue  spinner ("Testing…")
+//   pending → grey  shield  ("Not tested yet")
 //
-// Phase 2 (reconciled QA state — service.ReconcileQAState) added four more
-// recognized values so the chip can render the server's fuller enum instead
-// of collapsing everything non-pass/fail into one generic "pending":
-// "pass_with_failing_cases" (a qa:pass label sitting on a known-failing case
-// — amber, NOT a clean pass), "blocked", "stale", and "running". Colors
-// mirror qa-lane.tsx's STATE_BADGE so a state reads the same tone on every
-// QA surface. Any other string (including "", "never_ran", or an unrecognized
-// future value) falls through to the original muted/ShieldQuestion pending
-// look — enum drift downgrades, it never crashes or looks broken.
+// The backend's richer reconciled enum (service.ReconcileQAState) still flows
+// through here unchanged; each extra value is FOLDED onto one of the four
+// buckets so the headline stays a single word + single color. The fuller
+// distinction is preserved at the call site as a muted secondary line /
+// tooltip, never as a competing loud color:
+//   pass_with_failing_cases, stale → pass    (still a pass; the caveat is a
+//                                             muted note, not amber)
+//   blocked                        → fail    ("couldn't run" reads as
+//                                             not-passing)
+//   never_ran / "" / any unknown   → pending (enum-drift-safe default)
+// Nothing crashes on an unrecognized value — it downgrades to pending.
 
-export function verdictIcon(verdict: string, className: string): ReactNode {
-  if (verdict === "pass") {
-    return <CheckCircle2 className={cn("text-emerald-600 dark:text-emerald-400", className)} />;
+export type VerdictBucket = "pass" | "fail" | "running" | "pending";
+
+// Fold any verdict / reconciled-state string onto one of the four buckets.
+// The default arm is the enum-drift guard: an old-server "" or a future
+// enum member this build doesn't know renders as pending, never broken.
+export function verdictBucket(verdict: string): VerdictBucket {
+  switch (verdict) {
+    case "pass":
+    case "pass_with_failing_cases":
+    case "stale":
+      return "pass";
+    case "fail":
+    case "blocked":
+      return "fail";
+    case "running":
+      return "running";
+    default:
+      return "pending";
   }
-  if (verdict === "pass_with_failing_cases") {
-    return <CheckCircle2 className={cn("text-amber-600 dark:text-amber-400", className)} />;
-  }
-  if (verdict === "fail") {
-    return <XCircle className={cn("text-destructive", className)} />;
-  }
-  if (verdict === "blocked") {
-    return <CircleSlash className={cn("text-amber-600 dark:text-amber-400", className)} />;
-  }
-  if (verdict === "stale") {
-    return <RefreshCw className={cn("text-amber-600 dark:text-amber-400", className)} />;
-  }
-  if (verdict === "running") {
-    return <Loader2 className={cn("text-info animate-spin", className)} />;
-  }
-  return <ShieldQuestion className={cn("text-muted-foreground", className)} />;
 }
 
-// Hero/card tint (border + bg) for a verdict block.
-export function verdictTone(verdict: string): string {
-  if (verdict === "fail") return "border-destructive/30 bg-destructive/5";
-  if (verdict === "pass") return "border-emerald-600/30 bg-emerald-600/5";
-  if (verdict === "pass_with_failing_cases" || verdict === "blocked" || verdict === "stale") {
-    return "border-amber-500/30 bg-amber-500/5";
+export function verdictIcon(verdict: string, className: string): ReactNode {
+  switch (verdictBucket(verdict)) {
+    case "pass":
+      return <CheckCircle2 className={cn("text-emerald-600 dark:text-emerald-400", className)} />;
+    case "fail":
+      return <XCircle className={cn("text-destructive", className)} />;
+    case "running":
+      return <Loader2 className={cn("text-info animate-spin", className)} />;
+    default:
+      return <ShieldQuestion className={cn("text-muted-foreground", className)} />;
   }
-  if (verdict === "running") return "border-info/30 bg-info/5";
-  return "border-border bg-muted/20";
+}
+
+// Hero/card tint (border + bg) for a verdict block — one tint per bucket.
+export function verdictTone(verdict: string): string {
+  switch (verdictBucket(verdict)) {
+    case "pass":
+      return "border-emerald-600/30 bg-emerald-600/5";
+    case "fail":
+      return "border-destructive/30 bg-destructive/5";
+    case "running":
+      return "border-info/30 bg-info/5";
+    default:
+      return "border-border bg-muted/20";
+  }
 }
