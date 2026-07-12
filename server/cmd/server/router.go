@@ -920,9 +920,14 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// adopts a token or extracts a shared component.
 					r.Post("/design-apply", h.ApplyDesignAudit)
 					r.Get("/qa-evidence", h.GetIssueQAEvidence)
+					// Human QA override with provenance — evidence row (source=
+					// human) + reason + timeline comment. RequireHumanActor: a
+					// machine credential can never override a QA verdict.
+					r.With(handler.RequireHumanActor).Post("/qa-override", h.OverrideQAVerdict)
 					r.Get("/test-cases", h.GetIssueTestCases)
 					r.Post("/test-cases", h.CreateIssueTestCase)
 					r.Post("/deploy-qa", h.DeployIssueQA)
+					r.Get("/deploy-events", h.GetIssueDeployEvents)
 					r.Get("/comments", h.ListComments)
 					r.Get("/timeline", h.ListTimeline)
 					r.Get("/subscribers", h.ListIssueSubscribers)
@@ -934,6 +939,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/steer", h.SteerIssue)
 					r.Post("/video-frames", h.ExtractIssueVideoFrames)
 					r.Get("/merge-readiness", h.MergeReadiness)
+					// Latest run_review verdict (parsed ```review-result```
+					// block of the newest agent comment carrying one).
+					r.Get("/review-verdict", h.GetIssueReviewVerdict)
+					// Human Approve & merge / Request changes (Review stage
+					// v2). RequireHumanActor: an agent can never approve a
+					// merge or reject a review on the human's behalf.
+					r.With(handler.RequireHumanActor).Post("/review-decision", h.CreateReviewDecision)
 					r.Get("/task-runs", h.ListTasksByIssue)
 					r.Get("/editor", h.GetIssueEditor)
 					r.Get("/browser", h.GetIssueBrowser)
@@ -1087,8 +1099,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// QA test cases — run + archive by case id (list/create are
 			// issue-scoped, or project-scoped for standing base scripts).
 			r.Route("/api/test-cases/{id}", func(r chi.Router) {
+				// Run history (Phase 3) — the case's recent runs with their
+				// identity (sha, session, timing, source).
+				r.Get("/runs", h.GetTestCaseRuns)
 				r.Post("/runs", h.CreateTestCaseRun)
 				r.Post("/archive", h.ArchiveTestCaseHandler)
+				r.With(handler.RequireHumanActor).Patch("/", h.UpdateTestCaseHandler)
 			})
 
 			// Squads

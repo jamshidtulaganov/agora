@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
@@ -47,29 +49,91 @@ type TestCaseResponse struct {
 	// Script is the compiled Playwright script for an automated case, if any.
 	// Empty means the case is hand-driven (no compiled runner) — the QA panel
 	// reads this to show the case's "compiled" state.
-	Script    string       `json:"script"`
-	CreatedAt string       `json:"created_at"`
-	LatestRun *TestRunLite `json:"latest_run"`
+	Script string `json:"script"`
+	// Preconditions is the setup state the tester needs before step 1 (free text).
+	Preconditions string `json:"preconditions"`
+	// Priority is p1 | p2 | p3 (p2 = normal). Plain text so enum drift
+	// downgrades instead of crashing, per the API-compat rules.
+	Priority string `json:"priority"`
+	// Modality is ui | api | unit | manual, or "" for legacy/unspecified. The
+	// QA lens reads it to decide whether the live browser bay is warranted.
+	Modality string `json:"modality"`
+	// CriterionRef is a short pointer to the acceptance criterion / requirement
+	// this case verifies — "AC2" (matching the numbered criteria the QA plan
+	// context hands agents) or a trimmed quote. "" = untraced. Origin lives in
+	// `source`, never here.
+	CriterionRef string       `json:"criterion_ref"`
+	CreatedAt    string       `json:"created_at"`
+	LatestRun    *TestRunLite `json:"latest_run"`
+	// Flaky (Phase 3 — run identity): this case produced BOTH a pass and a
+	// fail on the SAME commit_sha within its last 20 runs — the code didn't
+	// change, the verdict did. Rendered as an amber chip (same visual language
+	// as the base-case quarantine) so a reviewer stops treating its latest
+	// verdict as settled truth.
+	Flaky bool `json:"flaky"`
 }
 
 type ListTestCasesResponse struct {
 	TestCases []TestCaseResponse `json:"test_cases"`
 }
 
-func testCaseToResponse(c db.TestCase, latest *TestRunLite) TestCaseResponse {
+// normalizeTestCasePriority downgrades anything outside p1|p2|p3 (including
+// "") to the p2 default — enum drift never rejects a create/capture.
+func normalizeTestCasePriority(p string) string {
+	switch strings.ToLower(strings.TrimSpace(p)) {
+	case "p1":
+		return "p1"
+	case "p3":
+		return "p3"
+	default:
+		return "p2"
+	}
+}
+
+// normalizeTestCaseModality downgrades anything outside ui|api|unit|manual to
+// "" (legacy/unspecified) — an unknown modality never rejects a create/capture.
+func normalizeTestCaseModality(m string) string {
+	switch strings.ToLower(strings.TrimSpace(m)) {
+	case "ui", "api", "unit", "manual":
+		return strings.ToLower(strings.TrimSpace(m))
+	default:
+		return ""
+	}
+}
+
+// criterionRefMaxRunes caps criterion_ref at a short-pointer length: "AC2" or
+// the criterion's first ~sentence, never a pasted spec. Truncation is silent
+// (fail-open) — over-long text is a formatting nit, not invalid input.
+const criterionRefMaxRunes = 120
+
+func normalizeTestCaseCriterionRef(ref string) string {
+	trimmed := strings.TrimSpace(ref)
+	runes := []rune(trimmed)
+	if len(runes) <= criterionRefMaxRunes {
+		return trimmed
+	}
+	return string(runes[:criterionRefMaxRunes-1]) + "…"
+}
+
+func testCaseToResponse(c db.TestCase, latest *TestRunLite, flaky bool) TestCaseResponse {
 	return TestCaseResponse{
-		ID:         uuidToString(c.ID),
-		IssueID:    uuidToString(c.IssueID),
-		Title:      c.Title,
-		Steps:      c.Steps,
-		Expected:   c.Expected,
-		Kind:       c.Kind,
-		Source:     c.Source,
-		AuthorType: c.AuthorType,
-		Category:   c.Category,
-		Script:     c.Script,
-		CreatedAt:  c.CreatedAt.Time.Format(time.RFC3339),
-		LatestRun:  latest,
+		ID:            uuidToString(c.ID),
+		IssueID:       uuidToString(c.IssueID),
+		Title:         c.Title,
+		Steps:         c.Steps,
+		Expected:      c.Expected,
+		Kind:          c.Kind,
+		Source:        c.Source,
+		AuthorType:    c.AuthorType,
+		Category:      c.Category,
+		Script:        c.Script,
+		Preconditions: c.Preconditions,
+		Priority:      c.Priority,
+		Modality:      c.Modality,
+		CriterionRef:  c.CriterionRef,
+		CreatedAt:     c.CreatedAt.Time.Format(time.RFC3339),
+		LatestRun:     latest,
+		Flaky:         flaky,
 	}
 }
 
@@ -112,9 +176,19 @@ func (h *Handler) GetIssueTestCases(w http.ResponseWriter, r *http.Request) {
 			TracePath: run.TracePath,
 		}
 	}
+	// Flaky flags (Phase 3): same case + same commit_sha with BOTH verdicts
+	// in its last 20 runs. Best-effort — an error just means no flaky chips.
+	flaky := map[string]bool{}
+	if ids, ferr := h.Queries.ListFlakyCaseIDsForIssue(r.Context(), db.ListFlakyCaseIDsForIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+	}); ferr == nil {
+		for _, id := range ids {
+			flaky[uuidToString(id)] = true
+		}
+	}
 	resp := ListTestCasesResponse{TestCases: make([]TestCaseResponse, 0, len(cases))}
 	for _, c := range cases {
-		resp.TestCases = append(resp.TestCases, testCaseToResponse(c, latest[uuidToString(c.ID)]))
+		resp.TestCases = append(resp.TestCases, testCaseToResponse(c, latest[uuidToString(c.ID)], flaky[uuidToString(c.ID)]))
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -125,6 +199,14 @@ type CreateTestCaseRequest struct {
 	Expected string `json:"expected"`
 	Kind     string `json:"kind"`
 	Category string `json:"category"` // positive | negative; defaults to positive
+	// Preconditions is free text; Priority normalizes to p1|p2|p3 (default p2);
+	// Modality normalizes to ui|api|unit|manual (default "" = unspecified).
+	Preconditions string `json:"preconditions"`
+	Priority      string `json:"priority"`
+	Modality      string `json:"modality"`
+	// CriterionRef is a short pointer to the acceptance criterion this case
+	// verifies ("AC2" or a trimmed quote); truncated server-side, "" = untraced.
+	CriterionRef string `json:"criterion_ref"`
 }
 
 // CreateIssueTestCase authors a manual test case for an issue (source=human).
@@ -155,18 +237,22 @@ func (h *Handler) CreateIssueTestCase(w http.ResponseWriter, r *http.Request) {
 		category = "negative"
 	}
 	c, err := h.Queries.CreateTestCase(r.Context(), db.CreateTestCaseParams{
-		WorkspaceID: issue.WorkspaceID,
-		IssueID:     issue.ID,
-		ProjectID:   issue.ProjectID,
-		Title:       req.Title,
-		Steps:       req.Steps,
-		Expected:    req.Expected,
-		Kind:        kind,
-		Source:      "human",
-		AuthorType:  "member",
-		AuthorID:    parseUUID(userID),
-		Category:    category,
-		Script:      "", // human-authored; empty triggers the background auto-compile hook below
+		WorkspaceID:   issue.WorkspaceID,
+		IssueID:       issue.ID,
+		ProjectID:     issue.ProjectID,
+		Title:         req.Title,
+		Steps:         req.Steps,
+		Expected:      req.Expected,
+		Kind:          kind,
+		Source:        "human",
+		AuthorType:    "member",
+		AuthorID:      parseUUID(userID),
+		Category:      category,
+		Script:        "", // human-authored; empty triggers the background auto-compile hook below
+		Preconditions: strings.TrimSpace(req.Preconditions),
+		Priority:      normalizeTestCasePriority(req.Priority),
+		Modality:      normalizeTestCaseModality(req.Modality),
+		CriterionRef:  normalizeTestCaseCriterionRef(req.CriterionRef),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create test case")
@@ -181,7 +267,7 @@ func (h *Handler) CreateIssueTestCase(w http.ResponseWriter, r *http.Request) {
 	if kind == "automated" {
 		go h.maybeCompileTestCases(context.Background(), issue)
 	}
-	writeJSON(w, http.StatusCreated, testCaseToResponse(c, nil))
+	writeJSON(w, http.StatusCreated, testCaseToResponse(c, nil, false))
 }
 
 // GetProjectTestCases lists a project's STANDING base test cases (issue_id
@@ -226,9 +312,18 @@ func (h *Handler) GetProjectTestCases(w http.ResponseWriter, r *http.Request) {
 			TracePath: run.TracePath,
 		}
 	}
+	// Flaky flags for the standing suite (the /qa Suite tab's flaky filter).
+	flaky := map[string]bool{}
+	if ids, ferr := h.Queries.ListFlakyCaseIDsForProject(r.Context(), db.ListFlakyCaseIDsForProjectParams{
+		ProjectID: project.ID, WorkspaceID: project.WorkspaceID,
+	}); ferr == nil {
+		for _, id := range ids {
+			flaky[uuidToString(id)] = true
+		}
+	}
 	resp := ListTestCasesResponse{TestCases: make([]TestCaseResponse, 0, len(cases))}
 	for _, c := range cases {
-		resp.TestCases = append(resp.TestCases, testCaseToResponse(c, latest[uuidToString(c.ID)]))
+		resp.TestCases = append(resp.TestCases, testCaseToResponse(c, latest[uuidToString(c.ID)], flaky[uuidToString(c.ID)]))
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -277,18 +372,22 @@ func (h *Handler) CreateProjectTestCase(w http.ResponseWriter, r *http.Request) 
 		category = "negative"
 	}
 	c, err := h.Queries.CreateTestCase(r.Context(), db.CreateTestCaseParams{
-		WorkspaceID: project.WorkspaceID,
-		IssueID:     pgtype.UUID{}, // NULL — a base case belongs to the project, not an issue
-		ProjectID:   project.ID,
-		Title:       req.Title,
-		Steps:       req.Steps,
-		Expected:    req.Expected,
-		Kind:        kind,
-		Source:      "human",
-		AuthorType:  "member",
-		AuthorID:    parseUUID(userID),
-		Category:    category,
-		Script:      "", // human base case; compile-eligible on demand via /compile_tests
+		WorkspaceID:   project.WorkspaceID,
+		IssueID:       pgtype.UUID{}, // NULL — a base case belongs to the project, not an issue
+		ProjectID:     project.ID,
+		Title:         req.Title,
+		Steps:         req.Steps,
+		Expected:      req.Expected,
+		Kind:          kind,
+		Source:        "human",
+		AuthorType:    "member",
+		AuthorID:      parseUUID(userID),
+		Category:      category,
+		Script:        "", // human base case; compile-eligible on demand via /compile_tests
+		Preconditions: strings.TrimSpace(req.Preconditions),
+		Priority:      normalizeTestCasePriority(req.Priority),
+		Modality:      normalizeTestCaseModality(req.Modality),
+		CriterionRef:  normalizeTestCaseCriterionRef(req.CriterionRef),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create test case")
@@ -297,7 +396,7 @@ func (h *Handler) CreateProjectTestCase(w http.ResponseWriter, r *http.Request) 
 	h.publish(protocol.EventTestCasesChanged, uuidToString(project.WorkspaceID), "member", userID, map[string]any{
 		"project_id": uuidToString(project.ID),
 	})
-	writeJSON(w, http.StatusCreated, testCaseToResponse(c, nil))
+	writeJSON(w, http.StatusCreated, testCaseToResponse(c, nil, false))
 }
 
 type CreateTestRunRequest struct {
@@ -337,6 +436,10 @@ func (h *Handler) CreateTestCaseRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "status must be pass | fail | skip | blocked")
 		return
 	}
+	// Run identity (Phase 3): a human manual run mints its OWN session id (it
+	// is its own execution, not part of an agent dispatch) and finishes at
+	// record time. commit_sha stays "" — a hand-driven run doesn't know the
+	// checkout's sha.
 	run, err := h.Queries.CreateTestRun(r.Context(), db.CreateTestRunParams{
 		WorkspaceID: tc.WorkspaceID,
 		TestCaseID:  tc.ID,
@@ -346,6 +449,8 @@ func (h *Handler) CreateTestCaseRun(w http.ResponseWriter, r *http.Request) {
 		RunSource:   "human",
 		RunByType:   "member",
 		RunByID:     parseUUID(userID),
+		SessionID:   pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		FinishedAt:  pgtype.Timestamptz{Time: time.Now(), Valid: true},
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to record run")
@@ -361,6 +466,78 @@ func (h *Handler) CreateTestCaseRun(w http.ResponseWriter, r *http.Request) {
 		"run_source":   run.RunSource,
 		"created_at":   run.CreatedAt.Time.Format(time.RFC3339),
 	})
+}
+
+// testRunHistoryItem is one run in a case's history — the verdict plus its
+// Phase 3 identity (which commit it tested, which dispatch/session it belongs
+// to, when it ran, who ran it). Times are RFC3339 or "" when unknown.
+type testRunHistoryItem struct {
+	ID         string `json:"id"`
+	Status     string `json:"status"`
+	RunSource  string `json:"run_source"`
+	CreatedAt  string `json:"created_at"`
+	Output     string `json:"output,omitempty"`
+	TracePath  string `json:"trace_path,omitempty"`
+	CommitSha  string `json:"commit_sha"`
+	SessionID  string `json:"session_id"`
+	StartedAt  string `json:"started_at"`
+	FinishedAt string `json:"finished_at"`
+}
+
+// testCaseRunsHistoryLimit bounds the history read — the UI strip shows the
+// last 5; 20 gives a tooltip/table headroom without unbounded scans.
+const testCaseRunsHistoryLimit = 20
+
+// GetTestCaseRuns returns a case's recent run history, newest first — wiring
+// the existing ListTestRunsForCase query to GET /api/test-cases/{id}/runs.
+// Membership-checked like its siblings (CreateTestCaseRun etc.): the case is
+// resolved inside the caller's workspace or 404s.
+func (h *Handler) GetTestCaseRuns(w http.ResponseWriter, r *http.Request) {
+	wsUUID, ok := parseUUIDOrBadRequest(w, h.resolveWorkspaceID(r), "workspace id")
+	if !ok {
+		return
+	}
+	caseUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "test case id")
+	if !ok {
+		return
+	}
+	tc, err := h.Queries.GetTestCase(r.Context(), db.GetTestCaseParams{ID: caseUUID, WorkspaceID: wsUUID})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "test case not found")
+		return
+	}
+	runs, err := h.Queries.ListTestRunsForCase(r.Context(), db.ListTestRunsForCaseParams{
+		TestCaseID:  tc.ID,
+		WorkspaceID: tc.WorkspaceID,
+		Limit:       testCaseRunsHistoryLimit,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load runs")
+		return
+	}
+	items := make([]testRunHistoryItem, 0, len(runs))
+	for _, run := range runs {
+		item := testRunHistoryItem{
+			ID:        uuidToString(run.ID),
+			Status:    run.Status,
+			RunSource: run.RunSource,
+			CreatedAt: run.CreatedAt.Time.Format(time.RFC3339),
+			Output:    run.Output,
+			TracePath: run.TracePath,
+			CommitSha: run.CommitSha,
+		}
+		if run.SessionID.Valid {
+			item.SessionID = uuidToString(run.SessionID)
+		}
+		if run.StartedAt.Valid {
+			item.StartedAt = run.StartedAt.Time.Format(time.RFC3339)
+		}
+		if run.FinishedAt.Valid {
+			item.FinishedAt = run.FinishedAt.Time.Format(time.RFC3339)
+		}
+		items = append(items, item)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"runs": items})
 }
 
 // ArchiveTestCaseHandler soft-deletes a test case.
@@ -379,4 +556,100 @@ func (h *Handler) ArchiveTestCaseHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// UpdateTestCaseRequest is the human-edit payload; any omitted field is left
+// unchanged (partial update).
+type UpdateTestCaseRequest struct {
+	Title    *string `json:"title,omitempty"`
+	Steps    *string `json:"steps,omitempty"`
+	Expected *string `json:"expected,omitempty"`
+	Kind     *string `json:"kind,omitempty"`
+	Category *string `json:"category,omitempty"`
+	Script   *string `json:"script,omitempty"`
+	// Preconditions is free text. Priority must be p1|p2|p3 ("" normalizes to
+	// p2); Modality must be ui|api|unit|manual or "" (clears to unspecified).
+	// Garbage in either is a 400 — an explicit human edit sending an unknown
+	// value is a client bug, unlike the fail-open create/capture paths.
+	Preconditions *string `json:"preconditions,omitempty"`
+	Priority      *string `json:"priority,omitempty"`
+	Modality      *string `json:"modality,omitempty"`
+	// CriterionRef is free text (truncated server-side); "" clears to untraced.
+	CriterionRef *string `json:"criterion_ref,omitempty"`
+}
+
+// UpdateTestCaseHandler lets a QA engineer edit a test case (title/steps/
+// expected/kind/category/script/preconditions/priority/modality) from the
+// cockpit. Workspace-scoped; only the provided fields change.
+func (h *Handler) UpdateTestCaseHandler(w http.ResponseWriter, r *http.Request) {
+	wsUUID, ok := parseUUIDOrBadRequest(w, h.resolveWorkspaceID(r), "workspace id")
+	if !ok {
+		return
+	}
+	caseUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "test case id")
+	if !ok {
+		return
+	}
+	var req UpdateTestCaseRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Kind != nil && *req.Kind != "manual" && *req.Kind != "automated" {
+		writeError(w, http.StatusBadRequest, "kind must be manual or automated")
+		return
+	}
+	if req.Category != nil && *req.Category != "positive" && *req.Category != "negative" {
+		writeError(w, http.StatusBadRequest, "category must be positive or negative")
+		return
+	}
+	if req.Priority != nil {
+		switch strings.ToLower(strings.TrimSpace(*req.Priority)) {
+		case "p1", "p2", "p3", "":
+		default:
+			writeError(w, http.StatusBadRequest, "priority must be p1, p2 or p3")
+			return
+		}
+		normalized := normalizeTestCasePriority(*req.Priority)
+		req.Priority = &normalized
+	}
+	if req.Modality != nil {
+		switch strings.ToLower(strings.TrimSpace(*req.Modality)) {
+		case "ui", "api", "unit", "manual", "":
+		default:
+			writeError(w, http.StatusBadRequest, "modality must be ui, api, unit, manual or empty")
+			return
+		}
+		normalized := normalizeTestCaseModality(*req.Modality)
+		req.Modality = &normalized
+	}
+	if req.CriterionRef != nil {
+		normalized := normalizeTestCaseCriterionRef(*req.CriterionRef)
+		req.CriterionRef = &normalized
+	}
+	optText := func(p *string) pgtype.Text {
+		if p == nil {
+			return pgtype.Text{}
+		}
+		return pgtype.Text{String: strings.TrimSpace(*p), Valid: true}
+	}
+	updated, err := h.Queries.UpdateTestCase(r.Context(), db.UpdateTestCaseParams{
+		ID:            caseUUID,
+		WorkspaceID:   wsUUID,
+		Title:         optText(req.Title),
+		Steps:         optText(req.Steps),
+		Expected:      optText(req.Expected),
+		Kind:          optText(req.Kind),
+		Category:      optText(req.Category),
+		Script:        optText(req.Script),
+		Preconditions: optText(req.Preconditions),
+		Priority:      optText(req.Priority),
+		Modality:      optText(req.Modality),
+		CriterionRef:  optText(req.CriterionRef),
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "test case not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, testCaseToResponse(updated, nil, false))
 }

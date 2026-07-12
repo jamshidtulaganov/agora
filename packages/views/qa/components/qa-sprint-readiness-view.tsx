@@ -3,14 +3,29 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CheckCircle2, XCircle, CircleDashed, GitBranch, Rocket, Play, Plus, ShieldCheck, ShieldAlert, Loader2 } from "lucide-react";
+import { CheckCircle2, XCircle, CircleDashed, GitBranch, Rocket, Play, Plus, Loader2 } from "lucide-react";
 import { api } from "@agora/core/api";
+import { sprintReadinessOptions } from "@agora/core/qa/queries";
 import type { SprintReadinessResponse } from "@agora/core/api/schemas";
 import { useWorkspacePaths } from "@agora/core/paths";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { Button } from "@agora/ui/components/ui/button";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@agora/ui/components/ui/alert-dialog";
+import { useT } from "../../i18n";
 import { AppLink } from "../../navigation";
 import { IssuePickerModal } from "../../modals/issue-picker-modal";
+import { SprintDeployPanel } from "./sprint-deploy-panel";
+import { regressionStatusMeta } from "./regression-status";
 
 // Sprint QA-readiness — "is this sprint mergeable?" Per active sprint: the issue
 // rows by QA verdict (human qa:pass/qa:fail + automated regression runs) and a
@@ -26,38 +41,37 @@ function VerdictDot({ verdict }: { verdict: string }) {
 export function QASprintReadinessView({ projectId }: { projectId?: string }) {
   const wp = useWorkspacePaths();
   const wsId = useWorkspaceId();
-  const { data, isLoading } = useQuery({
-    // wsId in the key: the fetch scopes by the ambient workspace header, so
-    // without it a workspace switch served the previous workspace's cache.
-    queryKey: ["qa-sprint-readiness", wsId, projectId ?? "all"],
-    queryFn: () => api.getSprintReadiness(projectId),
-    staleTime: 30_000,
-    refetchInterval: 60_000,
-  });
+  const { t } = useT("issues");
+  // Shared factory — the same cache entry the health strip reads.
+  const { data, isLoading } = useQuery(sprintReadinessOptions(wsId, projectId));
 
   const sprints = data?.sprints ?? [];
 
   if (isLoading && !data) {
-    return <div className="px-8 py-6 text-sm text-muted-foreground">Loading sprint readiness…</div>;
+    return (
+      <div className="w-full space-y-2 px-8 py-8" aria-hidden>
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-24 w-full" />
+      </div>
+    );
   }
   if (sprints.length === 0) {
     return (
-      <div className="px-8 py-10 text-center text-sm text-muted-foreground">
-        No active sprints. Sprint readiness appears here once a project has an active sprint.
+      <div className="w-full px-8 py-10 text-center text-sm text-muted-foreground">
+        {t(($) => $.qa_cockpit.sprint_empty)}
       </div>
     );
   }
 
   return (
-    <div className="flex w-full flex-col gap-6 px-8 py-6">
-      <p className="max-w-2xl text-sm text-muted-foreground">
-        Is each active sprint mergeable? Every task on the shared sprint branch, by QA verdict —
-        the human qa:pass/qa:fail plus the automated regression runs. A sprint is mergeable when
-        every task passed and none is failing or pending.
-      </p>
+    <div className="flex w-full flex-col gap-6 px-8 py-8">
+      <p className="text-sm text-muted-foreground">{t(($) => $.qa_cockpit.sprint_description)}</p>
 
+      {/* The QA lens lives inside the issue cockpit now (docs/sdlc-stage-cockpit-plan.md
+          phase D) — there is no more dedicated /qa/<id> page, so these links
+          deep-link to the issue with the QA stage pre-selected. */}
       {sprints.map((s) => (
-        <SprintCard key={s.sprint_id} sprint={s} qaDetail={wp.qaDetail} />
+        <SprintCard key={s.sprint_id} sprint={s} wsId={wsId} qaDetail={(id) => `${wp.issueDetail(id)}?lens=qa`} />
       ))}
     </div>
   );
@@ -66,17 +80,17 @@ export function QASprintReadinessView({ projectId }: { projectId?: string }) {
 type SprintData = SprintReadinessResponse["sprints"][number];
 
 function RegressionGate({ gate, issueHref }: { gate: SprintData["regression"]; issueHref: (id: string) => string }) {
+  const { t } = useT("issues");
   if (!gate || !gate.status) {
-    return <span className="text-[11px] text-muted-foreground">regression: never run</span>;
+    return <span className="text-[11px] text-muted-foreground">{t(($) => $.qa_cockpit.sprint_regression_never_run)}</span>;
   }
-  const done = gate.status === "completed" || gate.status === "succeeded";
-  const failed = gate.status === "failed" || gate.status === "error";
-  const Icon = failed ? ShieldAlert : done ? ShieldCheck : Loader2;
-  const cls = failed ? "text-destructive" : done ? "text-emerald-500" : "text-muted-foreground";
+  // Shared status classification (regression-status.ts) — the health strip's
+  // glyph renders the same mapping, so the two can't drift.
+  const { running, Icon, className: cls } = regressionStatusMeta(gate.status);
   const body = (
     <>
-      <Icon className={`size-3.5 ${!done && !failed ? "animate-spin" : ""}`} aria-hidden />
-      regression {gate.status}
+      <Icon className={`size-3.5 ${running ? "animate-spin" : ""}`} aria-hidden />
+      {t(($) => $.qa_cockpit.sprint_regression_status, { status: gate.status })}
     </>
   );
   // Click-through to the run's tracking issue — the chip used to be a
@@ -99,43 +113,61 @@ function RegressionGate({ gate, issueHref }: { gate: SprintData["regression"]; i
   );
 }
 
-function SprintCard({ sprint: s, qaDetail }: { sprint: SprintData; qaDetail: (id: string) => string }) {
+function SprintCard({ sprint: s, wsId, qaDetail }: { sprint: SprintData; wsId: string; qaDetail: (id: string) => string }) {
+  const { t } = useT("issues");
   const qc = useQueryClient();
   const [attachOpen, setAttachOpen] = useState(false);
+  // Set only when attaching an issue that already belongs to a DIFFERENT
+  // sprint — issue_to_sprint is one-sprint-per-issue (PK = issue_id), so
+  // attaching such an issue silently MOVES it. Gated behind an explicit
+  // confirm dialog (audit P1: the picker used to offer such issues with no
+  // warning at all).
+  const [pendingMove, setPendingMove] = useState<{ issueId: string; sprintName: string } | null>(null);
   const pct = s.total > 0 ? Math.round((s.passed / s.total) * 100) : 0;
+  // Fail-first row order: the rows blocking the merge surface at the top of
+  // the card (pending next, passed last); stable sort keeps server order
+  // within each group.
+  const verdictRank = (v: string) => (v === "fail" ? 0 : v === "pass" ? 2 : 1);
+  const sortedIssues = [...s.issues].sort((a, b) => verdictRank(a.verdict) - verdictRank(b.verdict));
   const runRegression = useMutation({
     mutationFn: () => api.runSprintRegression(s.sprint_id),
     onSuccess: () => {
-      toast.success("Sprint regression fired");
+      toast.success(t(($) => $.qa_cockpit.sprint_toast_regression_fired));
       void qc.invalidateQueries({ queryKey: ["qa-sprint-readiness"] });
     },
-    onError: (e) => toast.error(e instanceof Error && e.message ? e.message : "Failed to run regression"),
+    onError: (e) =>
+      toast.error(e instanceof Error && e.message ? e.message : t(($) => $.qa_cockpit.sprint_toast_regression_failed)),
   });
   // Attach an existing project task to this sprint so it joins the sprint's
-  // regression scope + mergeability rollup. issue_to_sprint is one-sprint-per-
-  // issue (PK = issue_id), so attaching an issue that already belongs to a
-  // DIFFERENT sprint silently MOVES it — steal it only after an explicit
-  // confirm (audit P1: the picker offered such issues with no warning).
+  // regression scope + mergeability rollup.
   const attachTask = useMutation({
-    mutationFn: async (issueId: string) => {
-      const current = await api.getIssueSprint(issueId).catch(() => null);
-      if (current && current.id && current.id !== s.sprint_id) {
-        const move = window.confirm(
-          `This task already belongs to sprint "${current.name}". Attaching it here MOVES it out of that sprint (its regression scope and rollup). Move it?`,
-        );
-        if (!move) throw new Error("cancelled");
-      }
-      return api.assignIssueSprint(issueId, s.sprint_id);
-    },
+    mutationFn: (issueId: string) => api.assignIssueSprint(issueId, s.sprint_id),
     onSuccess: () => {
-      toast.success("Task attached to sprint");
+      toast.success(t(($) => $.qa_cockpit.sprint_toast_attach_success));
       void qc.invalidateQueries({ queryKey: ["qa-sprint-readiness"] });
     },
-    onError: (e) => toast.error(e instanceof Error && e.message ? e.message : "Failed to attach task"),
+    onError: (e) =>
+      toast.error(e instanceof Error && e.message ? e.message : t(($) => $.qa_cockpit.sprint_toast_attach_failed)),
+  });
+  // Checks whether the picked issue already belongs to a different sprint
+  // BEFORE attaching — if so, the confirm dialog opens instead of firing the
+  // move outright.
+  const checkAttach = useMutation({
+    mutationFn: async (issueId: string) => {
+      const current = await api.getIssueSprint(issueId).catch(() => null);
+      return { issueId, current };
+    },
+    onSuccess: ({ issueId, current }) => {
+      if (current && current.id && current.id !== s.sprint_id) {
+        setPendingMove({ issueId, sprintName: current.name });
+      } else {
+        attachTask.mutate(issueId);
+      }
+    },
   });
 
   return (
-    <div className="rounded-xl border bg-card">
+    <div className="rounded-lg border bg-card">
       <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3">
         <div className="flex min-w-0 flex-col">
           <span className="truncate text-[13px] font-semibold">
@@ -150,15 +182,18 @@ function SprintCard({ sprint: s, qaDetail }: { sprint: SprintData; qaDetail: (id
 
         <div className="ml-auto flex items-center gap-3 text-[12px]">
           <RegressionGate gate={s.regression} issueHref={qaDetail} />
-          <span className="flex items-center gap-1 text-emerald-500" title="passed">
+          <span className="flex items-center gap-1 text-emerald-500" title={t(($) => $.qa_cockpit.sprint_passed_title)}>
             <CheckCircle2 className="size-3.5" aria-hidden /> {s.passed}
           </span>
-          <span className="flex items-center gap-1 text-destructive" title="failing">
+          <span className="flex items-center gap-1 text-destructive" title={t(($) => $.qa_cockpit.sprint_failing_title)}>
             <XCircle className="size-3.5" aria-hidden /> {s.failed}
           </span>
-          <span className="flex items-center gap-1 text-muted-foreground" title={`pending (${s.no_qa} not QA'd yet)`}>
+          <span
+            className="flex items-center gap-1 text-muted-foreground"
+            title={t(($) => $.qa_cockpit.sprint_pending_title, { count: s.no_qa })}
+          >
             <CircleDashed className="size-3.5" aria-hidden /> {s.pending}
-            {s.no_qa > 0 ? <span className="text-[10px]">({s.no_qa} no-QA)</span> : null}
+            {s.no_qa > 0 ? <span className="text-[10px]">{t(($) => $.qa_cockpit.sprint_no_qa_hint, { count: s.no_qa })}</span> : null}
           </span>
           <span className="text-muted-foreground">/ {s.total}</span>
           <span
@@ -169,7 +204,7 @@ function SprintCard({ sprint: s, qaDetail }: { sprint: SprintData; qaDetail: (id
             }
           >
             <Rocket className="size-3.5" aria-hidden />
-            {s.mergeable ? "Mergeable" : "Not ready"}
+            {s.mergeable ? t(($) => $.qa_cockpit.sprint_mergeable) : t(($) => $.qa_cockpit.sprint_not_ready)}
           </span>
           <Button
             size="sm"
@@ -178,7 +213,7 @@ function SprintCard({ sprint: s, qaDetail }: { sprint: SprintData; qaDetail: (id
             onClick={() => setAttachOpen(true)}
           >
             <Plus className="size-3.5" />
-            Attach tasks
+            {t(($) => $.qa_cockpit.sprint_attach_tasks)}
           </Button>
           <Button
             size="sm"
@@ -188,7 +223,7 @@ function SprintCard({ sprint: s, qaDetail }: { sprint: SprintData; qaDetail: (id
             onClick={() => runRegression.mutate()}
           >
             {runRegression.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
-            Run regression
+            {t(($) => $.qa_cockpit.sprint_run_regression)}
           </Button>
         </div>
       </div>
@@ -196,12 +231,34 @@ function SprintCard({ sprint: s, qaDetail }: { sprint: SprintData; qaDetail: (id
       <IssuePickerModal
         open={attachOpen}
         onOpenChange={setAttachOpen}
-        title="Attach tasks to sprint"
-        description={`Add a task from ${s.project_title} to ${s.name} for regression coverage.`}
+        title={t(($) => $.qa_cockpit.sprint_attach_modal_title)}
+        description={t(($) => $.qa_cockpit.sprint_attach_modal_desc, { project: s.project_title, sprint: s.name })}
         projectId={s.project_id}
         excludeIds={s.issues.map((i) => i.id)}
-        onSelect={(issue) => attachTask.mutate(issue.id)}
+        onSelect={(issue) => checkAttach.mutate(issue.id)}
       />
+
+      <AlertDialog open={!!pendingMove} onOpenChange={(open) => !open && setPendingMove(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t(($) => $.qa_cockpit.sprint_confirm_move_title)}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(($) => $.qa_cockpit.sprint_confirm_move_body, { name: pendingMove?.sprintName ?? "" })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t(($) => $.qa_cockpit.suite_cancel)}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingMove) attachTask.mutate(pendingMove.issueId);
+                setPendingMove(null);
+              }}
+            >
+              {t(($) => $.qa_cockpit.sprint_confirm_move_action)}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="h-1 w-full bg-muted">
         <div
@@ -211,10 +268,10 @@ function SprintCard({ sprint: s, qaDetail }: { sprint: SprintData; qaDetail: (id
       </div>
 
       {s.issues.length === 0 ? (
-        <div className="px-4 py-4 text-[12px] text-muted-foreground">No tasks in this sprint.</div>
+        <div className="px-4 py-4 text-[12px] text-muted-foreground">{t(($) => $.qa_cockpit.sprint_no_tasks)}</div>
       ) : (
         <ul className="divide-y">
-          {s.issues.map((i) => (
+          {sortedIssues.map((i) => (
             <li key={i.id} className="flex items-center gap-3 px-4 py-2 text-[12px]">
               <VerdictDot verdict={i.verdict} />
               <AppLink href={qaDetail(i.id)} className="shrink-0 font-medium text-muted-foreground hover:text-foreground">
@@ -223,15 +280,15 @@ function SprintCard({ sprint: s, qaDetail }: { sprint: SprintData; qaDetail: (id
               <span className="truncate">{i.title}</span>
               <span className="ml-auto flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
                 {i.runs_total > 0 ? (
-                  <span title="automated regression runs (pass/fail)">
+                  <span title={t(($) => $.qa_cockpit.sprint_runs_tooltip)}>
                     {i.runs_fail > 0 ? (
-                      <span className="text-destructive">{i.runs_fail} failing</span>
+                      <span className="text-destructive">{t(($) => $.qa_cockpit.sprint_runs_failing, { count: i.runs_fail })}</span>
                     ) : (
-                      <span className="text-emerald-500">{i.runs_pass} runs</span>
+                      <span className="text-emerald-500">{t(($) => $.qa_cockpit.sprint_runs_count, { count: i.runs_pass })}</span>
                     )}
                   </span>
                 ) : (
-                  <span>no runs</span>
+                  <span>{t(($) => $.qa_cockpit.sprint_no_runs)}</span>
                 )}
                 <span className="rounded border px-1.5 py-0.5 uppercase tracking-wide">{i.status}</span>
               </span>
@@ -239,6 +296,17 @@ function SprintCard({ sprint: s, qaDetail }: { sprint: SprintData; qaDetail: (id
           ))}
         </ul>
       )}
+
+      {/* Deploy is a SPRINT-level cycle (the shared branch ships as a unit) —
+          this panel is its home after leaving the per-issue stepper (deploy
+          cycle rehome, part 2). */}
+      <SprintDeployPanel
+        wsId={wsId}
+        projectId={s.project_id}
+        sprintId={s.sprint_id}
+        branch={s.branch}
+        issues={s.issues}
+      />
     </div>
   );
 }

@@ -1031,6 +1031,11 @@ export const QAVerdictsResponseSchema = z.object({
         source: z.string().default(""),
         summary: z.string().default(""),
         captured_at: z.string().default(""),
+        // Phase 3: the server-computed reconciled state, batch-computed per
+        // in_review issue ("" = old server / not reconciled — the client
+        // falls back to its label-derived state), and who fired the gate.
+        reconciled_state: z.string().default(""),
+        triggered_by: z.string().default(""),
       }).loose(),
     )
     .default({}),
@@ -1050,7 +1055,191 @@ export const QAEvidenceSchema = z.object({
   summary: z.string().default(""),
   result: QAResultSchema.nullable().default(null),
   captured_at: z.string().default(""),
+  // The server-computed single source of truth (Phase 2 of the QA-stage
+  // review — service.ReconcileQAState on the backend): "running" | "pass" |
+  // "fail" | "blocked" | "stale" | "never_ran" | "pass_with_failing_cases".
+  // A plain string, not a strict enum, on purpose — an unrecognized value (a
+  // future state, or "" from a server that predates this field) must degrade
+  // gracefully rather than reject the whole evidence row. "" is the explicit
+  // "not provided" signal consumers (qa-lens, qa-lane) fall back to their own
+  // label-derived computation on.
+  reconciled_state: z.string().default(""),
+  // Run identity (Phase 3, migration 157) — all default so an old server
+  // (or a legacy row) degrades to "" instead of rejecting the response.
+  commit_sha: z.string().default(""),
+  triggered_by: z.string().default(""),
+  started_at: z.string().default(""),
+  finished_at: z.string().default(""),
 }).loose();
+
+// Review verdict — the latest run_review code-review result for an issue
+// (GET /api/issues/:id/review-verdict). Lenient like its QA siblings: the
+// findings come from an agent-authored ```review-result``` block, so every
+// field defaults and an unrecognized severity/verdict degrades instead of
+// rejecting the payload. verdict "none" (the endpoint's explicit "no review
+// yet" answer) doubles as the parse fallback — a malformed response renders
+// the same empty state as a never-reviewed issue.
+export const ReviewFindingSchema = z.object({
+  file: z.string().default(""),
+  line: z.number().nullable().default(null),
+  severity: z.string().default("minor"),
+  title: z.string().default(""),
+  detail: z.string().default(""),
+}).loose();
+
+export const ReviewVerdictSchema = z.object({
+  verdict: z.string().default("none"),
+  summary: z.string().default(""),
+  commit_sha: z.string().default(""),
+  files_reviewed: z.number().default(0),
+  findings: z.array(ReviewFindingSchema).default([]),
+  comment_id: z.string().default(""),
+  reviewed_at: z.string().default(""),
+  reviewer_agent_id: z.string().default(""),
+}).loose();
+
+export const EMPTY_REVIEW_VERDICT = {
+  verdict: "none",
+  summary: "",
+  commit_sha: "",
+  files_reviewed: 0,
+  findings: [],
+  comment_id: "",
+  reviewed_at: "",
+  reviewer_agent_id: "",
+};
+
+// POST /api/issues/:id/review-decision — approve returns {action,
+// merged_dispatch}, request_changes returns {action, status, dispatched};
+// one lenient schema covers both with zero-value defaults. The UI only
+// toasts + invalidates on success, so a degraded body is harmless.
+export const ReviewDecisionResponseSchema = z.object({
+  action: z.string().default(""),
+  merged_dispatch: z.boolean().default(false),
+  status: z.string().default(""),
+  dispatched: z.boolean().default(false),
+}).loose();
+
+export const EMPTY_REVIEW_DECISION = {
+  action: "",
+  merged_dispatch: false,
+  status: "",
+  dispatched: false,
+};
+
+// A test case's run history (GET /api/test-cases/:id/runs) — Phase 3 run
+// identity. Lenient like its QA siblings: every field defaults, a malformed
+// entry degrades instead of rejecting the whole history.
+export const TestCaseRunsResponseSchema = z.object({
+  runs: z.array(z.object({
+    id: z.string().default(""),
+    status: z.string().default(""),
+    run_source: z.string().default(""),
+    created_at: z.string().default(""),
+    output: z.string().default(""),
+    trace_path: z.string().default(""),
+    commit_sha: z.string().default(""),
+    session_id: z.string().default(""),
+    started_at: z.string().default(""),
+    finished_at: z.string().default(""),
+  }).loose()).default([]),
+}).loose();
+
+export type TestCaseRunsParsed = z.infer<typeof TestCaseRunsResponseSchema>;
+
+export const EMPTY_TEST_CASE_RUNS: TestCaseRunsParsed = { runs: [] };
+
+// Deploy events — the durable Tier-1 (QA-box git-sync) deploy signal (deploy
+// P0, docs/deploy-stage-research.md §3.3). Lenient like QAEvidenceSchema: an
+// agent/server-authored record, every field defaults so a partial or
+// malformed row degrades instead of rejecting the whole response.
+export const DeployEventSchema = z.object({
+  id: z.string().default(""),
+  issue_id: z.string().default(""),
+  ref: z.string().default(""),
+  target: z.string().default(""),
+  status: z.string().default(""),
+  summary: z.string().default(""),
+  captured_at: z.string().default(""),
+}).loose();
+
+export type DeployEvent = z.infer<typeof DeployEventSchema>;
+
+// GET /api/issues/:id/deploy-events — the freshest event plus a short recent
+// history. latest is null for a never-deployed issue (a normal response, not
+// an error — mirrors QAEvidenceSchema.nullable()'s null-fallback contract).
+export const IssueDeployEventsResponseSchema = z.object({
+  latest: DeployEventSchema.nullable().default(null),
+  recent: z.array(DeployEventSchema).default([]),
+}).loose();
+
+export type IssueDeployEventsResponse = z.infer<typeof IssueDeployEventsResponseSchema>;
+
+export const EMPTY_DEPLOY_EVENTS: IssueDeployEventsResponse = { latest: null, recent: [] };
+
+// Deploy environments — project.settings.deploy_environments (MCP-P1,
+// docs/deploy-mcp-integration.md §3). Human-authored JSONB routing config:
+// each entry names an environment (key) and its non-secret machine target
+// (GitLab project/ref for kind="gitlab_pipeline", or a Tier-2 command). The
+// GitLab PAT itself never appears here — it lives sealed in git_credential
+// and is injected server-side at claim time.
+const EMPTY_DEPLOY_ENVIRONMENT_TARGET = {
+  kind: "",
+  project_path: "",
+  ref: "",
+  environment: "",
+  command: "",
+};
+
+export const DeployEnvironmentTargetSchema = z
+  .object({
+    kind: z.string().default(""),
+    project_path: z.string().default(""),
+    ref: z.string().default(""),
+    environment: z.string().default(""),
+    command: z.string().default(""),
+  })
+  .loose();
+
+export const DeployEnvironmentSchema = z
+  .object({
+    key: z.string().default(""),
+    label: z.string().default(""),
+    kind: z.string().default(""),
+    requires_human: z.boolean().default(false),
+    target: DeployEnvironmentTargetSchema.default(EMPTY_DEPLOY_ENVIRONMENT_TARGET).catch(
+      EMPTY_DEPLOY_ENVIRONMENT_TARGET,
+    ),
+  })
+  .loose();
+
+export type DeployEnvironment = z.infer<typeof DeployEnvironmentSchema>;
+
+// parseDeployEnvironments reads deploy_environments out of an untyped project
+// settings blob defensively, mirroring the server's parser: a malformed blob
+// or non-array value yields [], a malformed ENTRY is skipped (one bad entry
+// must not hide its siblings), and keyless entries are dropped (the key is
+// the routing handle the Deploy button and the slice-action scope address).
+export function parseDeployEnvironments(settings: unknown): DeployEnvironment[] {
+  if (!settings || typeof settings !== "object") return [];
+  const raw = (settings as { deploy_environments?: unknown }).deploy_environments;
+  if (!Array.isArray(raw)) return [];
+  const out: DeployEnvironment[] = [];
+  for (const item of raw) {
+    const parsed = DeployEnvironmentSchema.safeParse(item);
+    if (parsed.success && parsed.data.key.trim() !== "") out.push(parsed.data);
+  }
+  return out;
+}
+
+// deployEnvironmentRequiresHuman mirrors the server-side gate (which is the
+// real enforcement — this is display-only): the explicit flag, or a
+// production-named key as defense in depth.
+export function deployEnvironmentRequiresHuman(env: DeployEnvironment): boolean {
+  if (env.requires_human) return true;
+  const key = env.key.trim().toLowerCase();
+  return key === "production" || key === "prod";
+}
 
 // QA test cases — agent- or human-authored, with the latest run's verdict.
 // Lenient: status/kind/source are plain strings (enum drift downgrades), and a
@@ -1066,6 +1255,13 @@ export const TestCaseSchema = z.object({
   author_type: z.string().default(""),
   category: z.string().default("positive"),
   script: z.string().optional(),
+  // Phase-2/3 metadata (migrations 155/156). Defaults keep an OLD server's
+  // response (fields absent) parsing as legacy rows: priority p2, modality
+  // unspecified, no criterion traceability.
+  preconditions: z.string().default(""),
+  priority: z.string().default("p2"),
+  modality: z.string().default(""),
+  criterion_ref: z.string().default(""),
   created_at: z.string().default(""),
   latest_run: z.object({
     id: z.string().default(""),
@@ -1092,6 +1288,37 @@ export const ListTestCasesResponseSchema = z.object({
 }).loose();
 
 export const EMPTY_LIST_TEST_CASES = { test_cases: [] };
+
+// A single test case row — POST /api/projects/:id/test-cases returns one when a
+// standing base case is authored. Lenient like the list schema; the fallback is
+// an inert empty case so a degraded create response can't crash the caller.
+export const EMPTY_TEST_CASE = {
+  id: "",
+  issue_id: "",
+  title: "",
+  steps: "",
+  expected: "",
+  kind: "automated",
+  source: "human",
+  author_type: "",
+  category: "positive",
+  preconditions: "",
+  priority: "p2",
+  modality: "",
+  criterion_ref: "",
+  created_at: "",
+  latest_run: null,
+};
+
+// POST /api/projects/:id/base-suite/build — fires the QA-lead authoring run and
+// returns the tracking issue it opened (202 Accepted). Only status/issue_id are
+// read; the toast confirms the run was queued.
+export const BuildBaseSuiteResponseSchema = z.object({
+  status: z.string().default(""),
+  issue_id: z.string().default(""),
+}).loose();
+
+export const EMPTY_BUILD_BASE_SUITE = { status: "", issue_id: "" };
 
 // GET /api/issues/:id/editor — resolves where (and how) to reach a live view
 // of an issue's worktree. Two real shapes share one endpoint: self-host (a

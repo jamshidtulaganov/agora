@@ -48,6 +48,37 @@ export interface ProjectSettings {
   // "Learn from repo" action drafts this by studying the repo's config; a human
   // owns and edits the final text.
   conventions?: string;
+  // Ordered deploy targets for the deploy slice action (MCP-P1,
+  // docs/deploy-mcp-integration.md §3). Non-secret routing only — the GitLab
+  // PAT lives sealed in git_credential, never here. Read leniently via
+  // parseDeployEnvironments in @agora/core/api/schemas.
+  deploy_environments?: DeployEnvironmentSetting[];
+  // Agent UUID that runs the deploy slice action. When unset, deploy falls
+  // back to the issue's assignee agent, then the firing user's own agent.
+  deploy_agent?: string;
+  [key: string]: unknown;
+}
+
+// One entry of settings.deploy_environments. kind="gitlab_pipeline" targets a
+// GitLab CI/CD pipeline (project_path + ref, optional GitLab environment
+// name); target.command is the stack-agnostic Tier-2 fallback the agent runs
+// on its daemon. requires_human environments (and production-named keys) are
+// human-only triggers, enforced server-side.
+export interface DeployEnvironmentTargetSetting {
+  kind?: string;
+  project_path?: string;
+  ref?: string;
+  environment?: string;
+  command?: string;
+  [key: string]: unknown;
+}
+
+export interface DeployEnvironmentSetting {
+  key?: string;
+  label?: string;
+  kind?: string;
+  requires_human?: boolean;
+  target?: DeployEnvironmentTargetSetting;
   [key: string]: unknown;
 }
 

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -42,6 +43,7 @@ const (
 	sliceActionWriteTests        = "write_tests"
 	sliceActionReviewPart        = "review_part"
 	sliceActionRunQA             = "run_qa"
+	sliceActionRunReview         = "run_review"
 	sliceActionRunCI             = "run_ci"
 	sliceActionAutoDocs          = "auto_docs"
 	sliceActionGenTests          = "gen_test_cases"
@@ -50,6 +52,7 @@ const (
 	sliceActionDesignProposal    = "design_proposal"
 	sliceActionGenDesignManifest = "gen_design_manifest"
 	sliceActionDesignAudit       = "design_audit"
+	sliceActionDeploy            = "deploy"
 )
 
 // isKnownSliceActionKind reports whether kind is one of the supported scoped
@@ -57,7 +60,7 @@ const (
 // agent is resolved or any comment is written.
 func isKnownSliceActionKind(kind string) bool {
 	switch kind {
-	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunCI, sliceActionAutoDocs, sliceActionGenTests, sliceActionRunTests, sliceActionCompileTests, sliceActionDesignProposal, sliceActionGenDesignManifest, sliceActionDesignAudit:
+	case sliceActionDraftCode, sliceActionWriteDocs, sliceActionWriteTests, sliceActionReviewPart, sliceActionRunQA, sliceActionRunReview, sliceActionRunCI, sliceActionAutoDocs, sliceActionGenTests, sliceActionRunTests, sliceActionCompileTests, sliceActionDesignProposal, sliceActionGenDesignManifest, sliceActionDesignAudit, sliceActionDeploy:
 		return true
 	default:
 		return false
@@ -143,6 +146,13 @@ func buildSliceInstruction(kind, scope string) string {
 		if guidance := qaBaselineGuidanceFor(strings.ToLower(strings.TrimSpace(scope))); guidance != "" {
 			base += guidance
 		}
+	case sliceActionRunReview:
+		// The independent code-review gate (Review stage v2): a reviewer agent
+		// that did NOT write the change reads the PR diff and emits a fenced
+		// ```review-result``` verdict the server captures into review:pass /
+		// review:fail. Distinct from review_part (an advisory, human-fired
+		// partial review with no structured verdict), which stays untouched.
+		base = sliceActionTemplate("run_review")
 	case sliceActionRunCI:
 		base = "Run the CI gate for this issue's branch. Find the issue's open pull/merge request for its " +
 			"branch and check out that branch. Detect the " +
@@ -157,6 +167,12 @@ func buildSliceInstruction(kind, scope string) string {
 			"deterministic signal and the human decides what to do next."
 	case sliceActionAutoDocs:
 		base = sliceActionTemplate("auto_docs")
+	case sliceActionDeploy:
+		// The generic deploy-operator contract (write-back block, never merge,
+		// advisory report). The environment-specific DEPLOY TARGET clause is
+		// appended by the handler (deployTargetClause) — it depends on the
+		// issue's project settings, and this renderer stays pure.
+		base = sliceActionTemplate("deploy")
 	case sliceActionGenTests:
 		base = sliceActionTemplate("gen_test_cases")
 	case sliceActionRunTests:
@@ -310,7 +326,7 @@ func buildSliceInstruction(kind, scope string) string {
 	// the docs repo's canonical locale (its template already demands matching
 	// neighboring pages — forcing issue-language pages would contradict that).
 	switch kind {
-	case sliceActionRunQA, sliceActionRunCI, sliceActionGenTests, sliceActionRunTests, sliceActionCompileTests:
+	case sliceActionRunQA, sliceActionRunCI, sliceActionGenTests, sliceActionRunTests, sliceActionCompileTests, sliceActionDeploy:
 		base += " LANGUAGE: write every human-readable output — the verdict/report comment, test-case titles, steps and " +
 			"expected results, and summaries — IN THE SAME LANGUAGE AS THE ISSUE (its title/description, " +
 			"e.g. Russian or Uzbek). Code, shell commands, JSON keys, label names, and fenced-block schemas stay in English."
@@ -1578,7 +1594,34 @@ func (h *Handler) maybeMergeOnQAPass(ctx context.Context, issue db.Issue, labelN
 	if !sprintPRModeEnabled() {
 		return
 	}
-	if strings.ToLower(strings.TrimSpace(labelName)) != "qa:pass" {
+	gateLabel := strings.ToLower(strings.TrimSpace(labelName))
+	if gateLabel != "qa:pass" && gateLabel != service.ReviewLabelPass {
+		return
+	}
+	// Reviewer-gate ordering (Review stage v2): when the review gate applies
+	// to this issue (full tier + a known PR), the merge chain fires only once
+	// BOTH deterministic verdicts are in — qa:pass AND review:pass — so the
+	// second label to land is the one that triggers it (this function is
+	// called from both attach paths). A present review:fail always holds.
+	// When the gate does NOT apply, review:pass is not a merge trigger at all
+	// (qa:pass alone drives the chain, exactly as before).
+	applies, ok := h.reviewGateApplies(ctx, issue)
+	if !ok {
+		// Labels could not be read — cannot confirm the review gate is
+		// satisfied. Fail CLOSED for the merge action: do not auto-proceed
+		// (the old fail-open merged qa:pass-only work without a required review).
+		slog.Warn("merge gate: cannot read labels to evaluate the review gate — not auto-proceeding",
+			"issue_id", uuidToString(issue.ID))
+		return
+	}
+	if applies {
+		if !h.issueHasLabel(ctx, issue, "qa:pass") || !h.issueHasLabel(ctx, issue, service.ReviewLabelPass) {
+			return
+		}
+		if h.issueHasLabel(ctx, issue, service.ReviewLabelFail) {
+			return
+		}
+	} else if gateLabel != "qa:pass" {
 		return
 	}
 	// Only sprint work has a PR into a sprint branch.
@@ -1591,10 +1634,21 @@ func (h *Handler) maybeMergeOnQAPass(ctx context.Context, issue db.Issue, labelN
 	// Human-merge (default): the PR passed QA and is READY FOR A HUMAN to review +
 	// merge. Post a plain human-facing note (NO agent mention, so no agent acts)
 	// and stop — a person does the final review + merge into the sprint branch.
+	// Marker-deduped: with the review gate in play this can be reached from two
+	// label attaches (qa:pass and review:pass), and the note must post ONCE.
 	if !sprintAutoMergeEnabled() {
+		// Serialize the check-then-write: this READY note is posted from
+		// detached goroutines fired at up to three qa:pass/review:pass attach
+		// sites, and without a lock two concurrent attaches both pass the marker
+		// check before either writes, double-posting the note. The same
+		// per-issue lock maybeRunReviewOnQAPass / maybeRunQAOnInReview use.
+		defer lockIssueQA(uuidToString(issue.ID))()
+		if h.issueHasCommentMarker(ctx, issue, readyForHumanMergeMarker) {
+			return
+		}
 		content := "✅ QA passed (qa:pass) on this task's pull request into `" + branch +
 			"`. READY FOR HUMAN REVIEW + MERGE — a person reviews the PR and merges it into `" + branch +
-			"`. Auto-merge is off (AGORA_SPRINT_AUTO_MERGE); no agent will merge it."
+			"`. Auto-merge is off (AGORA_SPRINT_AUTO_MERGE); no agent will merge it. " + readyForHumanMergeMarker
 		if posted, cerr := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 			IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
 			AuthorType: "member", AuthorID: parseUUID(userID),
@@ -1980,6 +2034,14 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	instruction += h.sliceActionDesignManifestContext(ctx, issue)
 	instruction += h.sliceActionQADocsContext(ctx, issue)
 	instruction += h.sliceActionProjectBaseSuiteContext(ctx, issue)
+	// The issue's own DEFINED test cases are part of the gate, not a separate
+	// concern run_test_cases alone was responsible for (audit finding — see
+	// sliceActionGateTestCasesContext).
+	instruction += h.sliceActionGateTestCasesContext(ctx, issue)
+	// A human's hand-recorded case results are ground truth the gate must
+	// confirm and localize, not re-derive (Phase 2 — "the agent reads the
+	// human").
+	instruction += h.sliceActionPriorHumanResultsContext(ctx, issue)
 	instruction += qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
 	instruction += h.sliceActionDesignCompareContext(ctx, issue)
 	instruction += h.sliceActionDesignLintContext(ctx, issue)
@@ -1999,7 +2061,8 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	// Never runs when trivial (routedToLead is false above), but the explicit
 	// !trivial guard documents the invariant.
 	if routedToLead && !trivial {
-		if strings.TrimSpace(h.sliceActionQAManifestContext(ctx, issue)) != "" {
+		switch {
+		case strings.TrimSpace(h.sliceActionQAManifestContext(ctx, issue)) != "":
 			// SPEED: the project has a QA MANIFEST, so the stack + navigation are
 			// already KNOWN — skip the lead's heavy "read the repo to determine the
 			// tooling" hop (that determination was the slow part) and delegate
@@ -2008,7 +2071,18 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 				"do NOT re-read the repo to determine them. DELEGATE this QA gate to a QA squad member via @mention right away " +
 				"(they execute it on a faster model), pointing them at the manifest; run it yourself ONLY if no member is " +
 				"available. You own the qa:pass/qa:fail rollup and stay in sync with the dev lead. The gate to delegate: " + instruction
-		} else {
+		case localDirQAPath != "":
+			// LOCAL ENV: the project runs in a folder on THIS daemon, not on a
+			// deployed box. The lead must NOT hunt for a box URL — the gate itself
+			// starts the app via /editor/preview and smokes 127.0.0.1. Tell the
+			// delegate it is the local daemon env so they don't smoke a stale box.
+			instruction = "As the QA LEAD: this project runs LOCALLY on THIS daemon — a folder on disk, NOT a deployed box " +
+				"(see 'QA ENVIRONMENT = LOCAL' in the gate). There is no box URL to smoke; the gate starts the app itself via " +
+				"the daemon preview and smokes 127.0.0.1. DELEGATE this QA gate to a QA squad member via @mention (they run it " +
+				"on a faster model), TELLING them it is the LOCAL daemon environment and to bring the app up via /editor/preview " +
+				"as the gate describes; run it yourself ONLY if no member is available. You own the qa:pass/qa:fail rollup and " +
+				"stay in sync with the dev lead. The gate to delegate: " + instruction
+		default:
 			instruction = "As the QA LEAD, FIRST determine THIS project's stack and testing tooling yourself — read " +
 				"the repo (package.json/go.mod/composer.json, existing test dirs, CI config) rather than assuming; a " +
 				"Jest/Vitest project needs `npm test`/`vitest run`, a Go repo needs `go test ./...`, a PHP monolith with " +
@@ -2027,7 +2101,10 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 		slog.Warn("auto run_qa: invalid actor id, skipping", "actor_id", actorID, "issue_id", uuidToString(issue.ID))
 		return
 	}
-	content := agentProtocolMarker("run_qa") + fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
+	// QADispatchAutoMarker (Phase 3): tag this dispatch as AUTO-fired so the
+	// verdict capture records triggered_by="auto" — a manual Re-run (the
+	// CreateSliceAction path) carries no such marker and records "agent".
+	content := agentProtocolMarker("run_qa") + service.QADispatchAutoMarker + "\n" + fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID:     issue.ID,
 		WorkspaceID: issue.WorkspaceID,
@@ -2205,6 +2282,9 @@ func (h *Handler) maybeRunTestsOnInReview(ctx context.Context, issue db.Issue, a
 	instruction += h.sliceActionQADocsContext(ctx, issue)
 	baseSuite := h.sliceActionProjectBaseSuiteContext(ctx, issue)
 	instruction += h.sliceActionTestCasesContext(ctx, issue, baseSuite != "")
+	// Prior human results ride along here too — a run_test_cases execution
+	// must confirm/localize a human's hand-recorded finding, not overwrite it.
+	instruction += h.sliceActionPriorHumanResultsContext(ctx, issue)
 	instruction += baseSuite
 
 	authorID, ok := actorAuthorID(actorID)
@@ -2452,6 +2532,45 @@ func issueBriefNote(description string, acceptanceCriteria []byte) string {
 	return b.String()
 }
 
+// sliceActionTestCasesListCap bounds how many cases get the full
+// title+preconditions+steps+expected treatment in an injected prompt. Beyond
+// the cap, remaining cases are listed by TITLE ONLY — a project with hundreds
+// of defined cases must not blow the agent's prompt budget just to name them.
+// Chosen well above the p95 case count per issue (single digits) while still
+// bounding the pathological project-base-suite-sized case.
+const sliceActionTestCasesListCap = 20
+
+// formatAutomatedTestCasesList renders the id/title/steps/expected line format
+// shared by sliceActionTestCasesContext (run_test_cases) and
+// sliceActionGateTestCasesContext (run_qa) so the two callers can't drift in
+// what "the case list" looks like. Applies sliceActionTestCasesListCap: cases
+// beyond the cap get a title-only line instead of the full detail.
+func formatAutomatedTestCasesList(cases []db.TestCase) string {
+	var b strings.Builder
+	for i, c := range cases {
+		if i >= sliceActionTestCasesListCap {
+			b.WriteString(fmt.Sprintf(" [id=%s] %s (title only — case list capped at %d full entries).",
+				uuidToString(c.ID), c.Title, sliceActionTestCasesListCap))
+			continue
+		}
+		steps := strings.ReplaceAll(strings.TrimSpace(c.Steps), "\n", " ")
+		// Preconditions ride along when set — a runner that doesn't know the
+		// required setup state (seeded account, feature flag) can't execute the
+		// case faithfully and reports a bogus "blocked".
+		pre := ""
+		if p := strings.TrimSpace(c.Preconditions); p != "" {
+			pre = fmt.Sprintf(" preconditions: %s;", strings.ReplaceAll(p, "\n", " "))
+		}
+		b.WriteString(fmt.Sprintf(" [id=%s] %s —%s steps: %s; expected: %s.",
+			uuidToString(c.ID), c.Title, pre, steps, strings.TrimSpace(c.Expected)))
+		if s := strings.TrimSpace(c.Script); s != "" {
+			b.WriteString(fmt.Sprintf(" COMPILED SCRIPT for [id=%s] — write to /tmp/case-%s.mjs and run `node` it; exit code is the verdict:\n```javascript\n%s\n```",
+				uuidToString(c.ID), uuidToString(c.ID), s))
+		}
+	}
+	return b.String()
+}
+
 // sliceActionTestCasesContext lists the issue's AUTOMATED test cases (id · title ·
 // steps · expected) for run_test_cases, so the agent drives each one and reports
 // a verdict per case keyed by the id we hand it. hasBaseSuite tells the no-cases
@@ -2471,15 +2590,124 @@ func (h *Handler) sliceActionTestCasesContext(ctx context.Context, issue db.Issu
 	}
 	var b strings.Builder
 	b.WriteString(" AUTOMATED TEST CASES TO RUN (report a verdict for each by its id):")
-	for _, c := range cases {
-		steps := strings.ReplaceAll(strings.TrimSpace(c.Steps), "\n", " ")
-		b.WriteString(fmt.Sprintf(" [id=%s] %s — steps: %s; expected: %s.",
-			uuidToString(c.ID), c.Title, steps, strings.TrimSpace(c.Expected)))
-		if s := strings.TrimSpace(c.Script); s != "" {
-			b.WriteString(fmt.Sprintf(" COMPILED SCRIPT for [id=%s] — write to /tmp/case-%s.mjs and run `node` it; exit code is the verdict:\n```javascript\n%s\n```",
-				uuidToString(c.ID), uuidToString(c.ID), s))
-		}
+	b.WriteString(formatAutomatedTestCasesList(cases))
+	return b.String()
+}
+
+// stepResultsFenceRe extracts the ```step-results``` fenced JSON a per-step
+// manual checklist walk embeds in a test_run's output (see
+// packages/core/qa/step-run.ts — serializeStepResults). Parsed here so the
+// prior-human-results context can name the exact FAILED STEP + the human's
+// note instead of dumping the raw fence into the prompt.
+var stepResultsFenceRe = regexp.MustCompile("(?s)```step-results\\s*\\n(.*?)```")
+
+// humanRunStepFailure summarizes a human checklist walk's failing steps from
+// the run output's ```step-results``` fence: "failed at step 2 — <note>".
+// "" when the output carries no parsable fence or no failing step — callers
+// then fall back to the output's first line.
+func humanRunStepFailure(output string) string {
+	m := stepResultsFenceRe.FindStringSubmatch(output)
+	if m == nil {
+		return ""
 	}
+	var results []struct {
+		Step   int    `json:"step"`
+		Status string `json:"status"`
+		Note   string `json:"note"`
+	}
+	if json.Unmarshal([]byte(strings.TrimSpace(m[1])), &results) != nil {
+		return ""
+	}
+	var parts []string
+	for _, r := range results {
+		if r.Status != "fail" {
+			continue
+		}
+		p := fmt.Sprintf("failed at step %d", r.Step)
+		if note := strings.TrimSpace(r.Note); note != "" {
+			p += " — " + note
+		}
+		parts = append(parts, p)
+	}
+	return strings.Join(parts, "; ")
+}
+
+// priorHumanNoteMaxRunes caps each case's human-result line — a pointer to
+// the human's finding, never a pasted transcript.
+const priorHumanNoteMaxRunes = 200
+
+// sliceActionPriorHumanResultsContext injects each case's latest HUMAN run
+// result into a QA/test-run instruction (Phase 2: "the agent reads the
+// human"). A QA human's hand-recorded verdict — the one-click ✓/✗ or a
+// per-step checklist walk — is GROUND TRUTH the agent must confirm and
+// localize, not silently re-derive from scratch. Compact by construction:
+// only cases WITH a human run appear, each as one line (status + failed
+// step/note when the walk recorded one, else the output's first line,
+// capped). "" when no case has a human run.
+func (h *Handler) sliceActionPriorHumanResultsContext(ctx context.Context, issue db.Issue) string {
+	runs, err := h.Queries.ListLatestHumanRunsForIssueCases(ctx, db.ListLatestHumanRunsForIssueCasesParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil || len(runs) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(" PRIOR HUMAN RESULTS — a QA human already executed some of these cases BY HAND; their " +
+		"result is GROUND TRUTH. For each case below, CONFIRM AND LOCALIZE the human's finding before " +
+		"re-deriving anything: a human-recorded FAIL that your run does not reproduce is a discrepancy to " +
+		"surface explicitly (say WHY the results differ), never something to silently overwrite with a pass.")
+	for _, r := range runs {
+		detail := humanRunStepFailure(r.Output)
+		if detail == "" {
+			// Fall back to the output's first line (the walk's summary line, or
+			// whatever note the human typed) — capped.
+			line := strings.TrimSpace(r.Output)
+			if i := strings.IndexByte(line, '\n'); i >= 0 {
+				line = strings.TrimSpace(line[:i])
+			}
+			if rs := []rune(line); len(rs) > priorHumanNoteMaxRunes {
+				line = string(rs[:priorHumanNoteMaxRunes-1]) + "…"
+			}
+			detail = line
+		}
+		b.WriteString(fmt.Sprintf(" [id=%s] %s: human ran it — %s", uuidToString(r.TestCaseID), r.Title, r.Status))
+		if detail != "" {
+			b.WriteString(" (" + detail + ")")
+		}
+		b.WriteString(".")
+	}
+	return b.String()
+}
+
+// sliceActionGateTestCasesContext folds the issue's own DEFINED test cases into
+// the run_qa gate instruction. Before this, run_qa never saw
+// sliceActionTestCasesContext at all (only run_test_cases did) — an agent could
+// set qa:pass having never executed a single case the team defined for this
+// issue (audit finding: "run_qa never runs the issue's own test cases"). The
+// cases are framed as PART of the gate, not an optional extra: execute each,
+// respecting its modality, and a failing defined case blocks a "pass" verdict.
+// "" when the issue has no cases (the gate still runs the smoke/plan checks it
+// always has — this is additive, not a hard requirement to have cases).
+func (h *Handler) sliceActionGateTestCasesContext(ctx context.Context, issue db.Issue) string {
+	cases, err := h.Queries.ListAutomatedTestCasesForIssue(ctx, db.ListAutomatedTestCasesForIssueParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil || len(cases) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(" DEFINED TEST CASES — PART OF THIS GATE (not optional): the team has defined the following " +
+		"automated cases for this issue. EXECUTE every one, respecting its modality (ui = drive a real browser; " +
+		"api = deterministic HTTP/response assertion; unit = run it as a unit check; manual = perform it by hand " +
+		"if feasible, else mark it blocked and say why), and report a verdict for EACH by its id in a fenced " +
+		"```test-runs``` code block at the END of your comment — same schema run_test_cases uses: a JSON array " +
+		"`[{\"test_case_id\":\"<id>\",\"status\":\"pass\"|\"fail\"|\"blocked\",\"output\":\"<one-line evidence>\"," +
+		"\"commit_sha\":\"<git rev-parse HEAD of the checkout you tested; omit when no git checkout>\"}]`. " +
+		"A FAILING defined case means this gate's overall verdict CANNOT be \"pass\" — set qa:fail (or qa:blocked " +
+		"if it could not run) instead, even if everything else about the change looks fine.")
+	b.WriteString(formatAutomatedTestCasesList(cases))
 	return b.String()
 }
 
@@ -2746,10 +2974,21 @@ func sanitizeSliceScope(scope string) string {
 //	agent_id — optional; an explicit agent to target. When omitted the handler
 //	           falls back to the issue's agent assignee, then to the caller's
 //	           own ready agent.
+//	ref      — optional; deploy kind ONLY. Overrides the environment's
+//	           configured target ref (the git ref the pipeline/command
+//	           deploys) — the sprint-level Deploy panel passes the SPRINT
+//	           BRANCH here so a sprint deploy ships the shared branch instead
+//	           of the environment's static default. Validated by
+//	           sanitizeDeployRef (deploy_action.go); an invalid value falls
+//	           back to the configured ref. Ignored for every other kind. The
+//	           production human gate is unaffected: resolveDeployEnvironment
+//	           runs before the override and gates on the ENVIRONMENT, never
+//	           on the ref.
 type CreateSliceActionRequest struct {
 	Kind    string `json:"kind"`
 	Scope   string `json:"scope"`
 	AgentID string `json:"agent_id"`
+	Ref     string `json:"ref"`
 }
 
 // CreateSliceActionResponse is returned on a successful fire. It echoes the
@@ -2805,6 +3044,36 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// deploy targets ONE configured project environment (scope = the
+	// environment key). Resolve + gate it BEFORE any agent resolution or
+	// comment write: a requires_human / production environment is a
+	// human-only trigger, enforced server-side via IsMachineActor —
+	// RequireHumanActor's per-handler counterpart, used here because the
+	// environment is only known after decoding the body (actor_guards.go;
+	// deploy-mcp-integration.md §5).
+	var deployClause string
+	if req.Kind == sliceActionDeploy {
+		env, ok := h.resolveDeployEnvironment(w, r, issue, sanitizeSliceScope(req.Scope))
+		if !ok {
+			return
+		}
+		// Sprint-branch ref threading: the caller (the sprint Deploy panel)
+		// may name the git ref to deploy — the shared sprint branch — which
+		// overrides the environment's static target.ref. Applied AFTER the
+		// human gate (the gate is per-environment; which ref ships does not
+		// change who may pull the trigger) and only when the value survives
+		// the allowlist, so a hostile ref can never reach the instruction.
+		if ref := sanitizeDeployRef(req.Ref); ref != "" {
+			env.Target.Ref = ref
+		}
+		clause, usable := deployTargetClause(env)
+		if !usable {
+			writeError(w, http.StatusBadRequest, "deploy environment has no usable target (set target.project_path + target.ref for a gitlab_pipeline, or target.command)")
+			return
+		}
+		deployClause = clause
+	}
+
 	agent, ok := h.resolveSliceActionAgent(w, r, issue, userID, strings.TrimSpace(req.AgentID), req.Kind)
 	if !ok {
 		return
@@ -2840,6 +3109,13 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 			// A UI change builds against the project's known design system, so
 			// reuse beats re-inventing components. "" when no manifest.
 			instruction += h.sliceActionDesignManifestContext(r.Context(), issue)
+			// Design is an INPUT to the build, not a separate SDLC stage (Agora's
+			// ICP is small vibe-coding teams, usually without a dedicated
+			// designer): when the issue references a Figma design, hand the dev
+			// the compact DESIGN INPUT block — the refs, how to read them via the
+			// figma MCP, and "match the built UI to the design" framing. "" when
+			// the issue references nothing.
+			instruction += figmaDesignInputContext(issueFigmaRefs(issue))
 		}
 		instruction += h.sliceActionLandingInstruction(r.Context(), issue)
 	}
@@ -2862,9 +3138,24 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 		instruction += h.sliceActionDesignManifestContext(r.Context(), issue)
 		instruction += h.sliceActionQADocsContext(r.Context(), issue)
 		instruction += h.sliceActionProjectBaseSuiteContext(r.Context(), issue)
+		// The issue's own DEFINED test cases are part of the gate — see
+		// sliceActionGateTestCasesContext (audit finding: run_qa never ran them).
+		instruction += h.sliceActionGateTestCasesContext(r.Context(), issue)
+		// A human's hand-recorded case results are ground truth to confirm and
+		// localize (Phase 2 — "the agent reads the human").
+		instruction += h.sliceActionPriorHumanResultsContext(r.Context(), issue)
 		instruction += qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
 		instruction += h.sliceActionDesignCompareContext(r.Context(), issue)
 		instruction += h.sliceActionDesignLintContext(r.Context(), issue)
+	}
+	// run_review reviews the issue's PR diff: hand the reviewer the concrete
+	// PR pointer(s) and the issue's base spec so the diff is judged against
+	// the REQUIREMENT, not read cold.
+	if req.Kind == sliceActionRunReview {
+		instruction += h.sliceActionReviewPRContext(r.Context(), issue)
+		if brief := issueBriefNote(issue.Description.String, issue.AcceptanceCriteria); brief != "" {
+			instruction += "\n" + brief
+		}
 	}
 	// auto_docs targets the project's configured docs repo when set.
 	if req.Kind == sliceActionAutoDocs {
@@ -2891,6 +3182,9 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 		// whether the project's standing scripts follow it.
 		baseSuite := h.sliceActionProjectBaseSuiteContext(r.Context(), issue)
 		instruction += h.sliceActionTestCasesContext(r.Context(), issue, baseSuite != "")
+		// Prior human results — confirm/localize a human's hand-recorded
+		// finding, never overwrite it (Phase 2).
+		instruction += h.sliceActionPriorHumanResultsContext(r.Context(), issue)
 		instruction += baseSuite
 	}
 	// compile_tests authors runnable Playwright scripts for the automated cases
@@ -2921,6 +3215,12 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 	// design_audit scans the repo against the project design manifest.
 	if req.Kind == sliceActionDesignAudit {
 		instruction += h.sliceActionDesignManifestContext(r.Context(), issue)
+	}
+	// deploy carries the environment-specific target contract computed above:
+	// which GitLab project/ref to trigger (or which command to run) and the
+	// exact write-back values for the ```deploy-result``` block.
+	if req.Kind == sliceActionDeploy {
+		instruction += deployClause
 	}
 
 	// Build the @mention link the comment-trigger path keys off:
@@ -3036,6 +3336,26 @@ func (h *Handler) resolveSliceActionAgent(w http.ResponseWriter, r *http.Request
 		}
 	}
 
+	// (a.55) run_review is the INDEPENDENT code-review gate: the reviewer must
+	// differ from the author agent (the issue's assignee). Without an explicit
+	// agent, resolve through the same chain the auto-dispatch uses (dev squad
+	// leader ≠ author → other squad member → QA leader). The assignee default
+	// (b) below is skipped for this kind — the assignee IS the author, and an
+	// agent must never review its own diff.
+	if kind == sliceActionRunReview {
+		if reviewer, ok := h.resolveReviewerAgent(r.Context(), issue); ok &&
+			h.canAccessPrivateAgent(r.Context(), reviewer, "member", userID, workspaceID) {
+			return reviewer, true
+		}
+		// No reviewer distinct from the author resolves. Do NOT fall through to
+		// the assignee (b) — that IS the author — or to the caller's own agent
+		// (c), which is frequently the author too: an agent must never review
+		// its own diff (the capture layer rejects a self-review outright, and
+		// dispatch must stay consistent with that). Refuse with a clear 409.
+		writeError(w, http.StatusConflict, "no reviewer distinct from the author agent is available to review this issue")
+		return db.Agent{}, false
+	}
+
 	// (a.6) design_proposal is the designer-analyst's job. Without an explicit
 	// agent, resolve the project's configured design agent, else a "design"
 	// squad's leader — the same way QA routes to its squad. Falls through to the
@@ -3047,12 +3367,25 @@ func (h *Handler) resolveSliceActionAgent(w http.ResponseWriter, r *http.Request
 		}
 	}
 
+	// (a.7) deploy routes to the project's configured deploy agent when one is
+	// set (project.settings.deploy_agent) — the first hop of the deploy
+	// resolution chain (deploy-mcp-integration.md §5, mirroring the
+	// resolveAutoDocsAgent docs_agent hop). Falls through to the assignee /
+	// own-agent defaults when unset or inaccessible.
+	if kind == sliceActionDeploy {
+		if agent, ok := h.projectDeployAgent(r.Context(), issue); ok &&
+			h.canAccessPrivateAgent(r.Context(), agent, "member", userID, workspaceID) {
+			return agent, true
+		}
+	}
+
 	// (b) The issue's agent assignee. Treat an inaccessible private assignee as
 	// "not resolved" and fall through to the own-agent path (c): the assignee
 	// belongs to someone else, so silently queuing nothing (or leaking its
 	// identity in the comment) is worse than falling back to the caller's own
 	// agent. The own-agent path is owner==caller, so it is always accessible.
-	if issue.AssigneeType.Valid && issue.AssigneeType.String == "agent" && issue.AssigneeID.Valid {
+	if kind != sliceActionRunReview &&
+		issue.AssigneeType.Valid && issue.AssigneeType.String == "agent" && issue.AssigneeID.Valid {
 		agent, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
 			ID:          issue.AssigneeID,
 			WorkspaceID: issue.WorkspaceID,

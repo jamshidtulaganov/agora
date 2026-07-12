@@ -305,6 +305,18 @@ type DaemonToken struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type DeployEvent struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	IssueID     pgtype.UUID        `json:"issue_id"`
+	Ref         string             `json:"ref"`
+	Target      string             `json:"target"`
+	Status      string             `json:"status"`
+	Summary     string             `json:"summary"`
+	CapturedAt  pgtype.Timestamptz `json:"captured_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type Feedback struct {
 	ID          pgtype.UUID        `json:"id"`
 	UserID      pgtype.UUID        `json:"user_id"`
@@ -692,6 +704,10 @@ type QaEvidence struct {
 	CapturedAt  pgtype.Timestamptz `json:"captured_at"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	Source      string             `json:"source"`
+	CommitSha   string             `json:"commit_sha"`
+	TriggeredBy string             `json:"triggered_by"`
+	StartedAt   pgtype.Timestamptz `json:"started_at"`
+	FinishedAt  pgtype.Timestamptz `json:"finished_at"`
 }
 
 type Skill struct {
@@ -852,22 +868,26 @@ type TaskUsageHourlyRollupState struct {
 }
 
 type TestCase struct {
-	ID          pgtype.UUID        `json:"id"`
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	IssueID     pgtype.UUID        `json:"issue_id"`
-	ProjectID   pgtype.UUID        `json:"project_id"`
-	Title       string             `json:"title"`
-	Steps       string             `json:"steps"`
-	Expected    string             `json:"expected"`
-	Kind        string             `json:"kind"`
-	Source      string             `json:"source"`
-	AuthorType  string             `json:"author_type"`
-	AuthorID    pgtype.UUID        `json:"author_id"`
-	ArchivedAt  pgtype.Timestamptz `json:"archived_at"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	Category    string             `json:"category"`
-	Script      string             `json:"script"`
+	ID            pgtype.UUID        `json:"id"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	IssueID       pgtype.UUID        `json:"issue_id"`
+	ProjectID     pgtype.UUID        `json:"project_id"`
+	Title         string             `json:"title"`
+	Steps         string             `json:"steps"`
+	Expected      string             `json:"expected"`
+	Kind          string             `json:"kind"`
+	Source        string             `json:"source"`
+	AuthorType    string             `json:"author_type"`
+	AuthorID      pgtype.UUID        `json:"author_id"`
+	ArchivedAt    pgtype.Timestamptz `json:"archived_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	Category      string             `json:"category"`
+	Script        string             `json:"script"`
+	Preconditions string             `json:"preconditions"`
+	Priority      string             `json:"priority"`
+	Modality      string             `json:"modality"`
+	CriterionRef  string             `json:"criterion_ref"`
 }
 
 type TestRun struct {
@@ -883,6 +903,10 @@ type TestRun struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	TracePath      string             `json:"trace_path"`
 	BaselineStatus string             `json:"baseline_status"`
+	CommitSha      string             `json:"commit_sha"`
+	SessionID      pgtype.UUID        `json:"session_id"`
+	StartedAt      pgtype.Timestamptz `json:"started_at"`
+	FinishedAt     pgtype.Timestamptz `json:"finished_at"`
 }
 
 type User struct {

@@ -85,7 +85,9 @@ import type {
   TestCase,
   ListTestCasesResponse,
   CreateTestCaseRequest,
+  UpdateTestCaseRequest,
   CreateTestRunRequest,
+  BuildBaseSuiteResponse,
   GetIssueEditorResponse,
   IssueBrowserResponse,
   IssueQAPreviewURLResponse,
@@ -128,6 +130,8 @@ import type {
   NotificationPreferences,
   GitHubPullRequest,
   MergeReadiness,
+  ReviewVerdict,
+  ReviewDecisionResponse,
   ListGitHubInstallationsResponse,
   GitHubConnectResponse,
   ListLarkInstallationsResponse,
@@ -273,8 +277,18 @@ import {
   PolicyFleetHealthSchema,
   EMPTY_POLICY_FLEET_HEALTH,
   QAEvidenceSchema,
+  IssueDeployEventsResponseSchema,
+  EMPTY_DEPLOY_EVENTS,
+  type IssueDeployEventsResponse,
   ListTestCasesResponseSchema,
   EMPTY_LIST_TEST_CASES,
+  TestCaseSchema,
+  EMPTY_TEST_CASE,
+  BuildBaseSuiteResponseSchema,
+  EMPTY_BUILD_BASE_SUITE,
+  TestCaseRunsResponseSchema,
+  EMPTY_TEST_CASE_RUNS,
+  type TestCaseRunsParsed,
   LaunchTraceResponseSchema,
   EMPTY_LAUNCH_TRACE,
   EMPTY_CONNECTED_BOX,
@@ -298,6 +312,10 @@ import {
   QAVerdictsResponseSchema,
   EMPTY_QA_VERDICTS,
   type QAVerdictsResponse,
+  ReviewVerdictSchema,
+  EMPTY_REVIEW_VERDICT,
+  ReviewDecisionResponseSchema,
+  EMPTY_REVIEW_DECISION,
 } from "./schemas";
 
 /** Identifies the calling client to the server.
@@ -866,9 +884,12 @@ export class ApiClient {
   // renders the instruction template for `kind`, dispatches a task, and posts
   // the agent draft as a comment (surfaced in the execution log). 201 ->
   // { kind, scope, instruction, agent_id, comment }.
+  // `ref` applies to kind="deploy" only: it overrides the environment's
+  // configured target ref (the sprint Deploy panel passes the sprint branch);
+  // the server validates it and ignores it for every other kind.
   async sliceAction(
     issueId: string,
-    body: { kind: string; scope?: string; agentId?: string },
+    body: { kind: string; scope?: string; agentId?: string; ref?: string },
   ): Promise<SliceActionResponse> {
     return this.fetch(`/api/issues/${issueId}/slice-actions`, {
       method: "POST",
@@ -876,6 +897,7 @@ export class ApiClient {
         kind: body.kind,
         ...(body.scope ? { scope: body.scope } : {}),
         ...(body.agentId ? { agent_id: body.agentId } : {}),
+        ...(body.ref ? { ref: body.ref } : {}),
       }),
     });
   }
@@ -1705,6 +1727,40 @@ export class ApiClient {
   // labels, tiered by blast radius). Read-only.
   async mergeReadiness(issueId: string): Promise<MergeReadiness> {
     return this.fetch(`/api/issues/${issueId}/merge-readiness`);
+  }
+
+  // The Review lens' evidence read: the latest run_review code-review verdict
+  // for an issue, resolved server-side from the newest agent comment carrying
+  // a parsable ```review-result``` block. verdict "none" (a normal response
+  // for a never-reviewed issue, and this parse's fallback) renders the "No
+  // review yet" empty state.
+  async getReviewVerdict(issueId: string): Promise<ReviewVerdict> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/review-verdict`);
+    return parseWithFallback(raw, ReviewVerdictSchema, EMPTY_REVIEW_VERDICT, {
+      endpoint: "GET /api/issues/:id/review-verdict",
+    });
+  }
+
+  // The human half of "agent reviews, human approves". approve verifies the
+  // deterministic gates server-side (409 with qa_gate_not_passed / qa_failed /
+  // review_failed in the message when they block; merge:override bypasses)
+  // and dispatches the merge order to the squad lead; request_changes needs a
+  // non-empty note (400 otherwise) and drops the issue back to in_progress.
+  // Human-only: the route 403s machine actors.
+  async reviewDecision(
+    issueId: string,
+    body: { action: "approve" | "request_changes"; note?: string },
+  ): Promise<ReviewDecisionResponse> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/review-decision`, {
+      method: "POST",
+      body: JSON.stringify({
+        action: body.action,
+        ...(body.note ? { note: body.note } : {}),
+      }),
+    });
+    return parseWithFallback(raw, ReviewDecisionResponseSchema, EMPTY_REVIEW_DECISION, {
+      endpoint: "POST /api/issues/:id/review-decision",
+    });
   }
 
   // Inbox
@@ -2643,6 +2699,37 @@ export class ApiClient {
     });
   }
 
+  // Human QA override with provenance: flips the qa:pass/qa:fail label AND
+  // replaces the current evidence row with a human-sourced one (the reason
+  // becomes the summary; the actor is stamped into result_json.override) plus
+  // a timeline comment — one attributed decision instead of two bare label
+  // calls. Returns the fresh evidence row (with reconciled_state) so callers
+  // can update the cache; a malformed body degrades to null (the caller's
+  // invalidations then refetch).
+  async overrideQAVerdict(
+    issueId: string,
+    body: { verdict: "pass" | "fail"; reason?: string },
+  ): Promise<QAEvidence | null> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/qa-override`, {
+      method: "POST",
+      body: JSON.stringify({ verdict: body.verdict, ...(body.reason ? { reason: body.reason } : {}) }),
+    });
+    return parseWithFallback(raw, QAEvidenceSchema.nullable(), null, {
+      endpoint: "POST /api/issues/:id/qa-override",
+    });
+  }
+
+  // The Deploy lens / stepper's evidence-first read: the freshest Tier-1
+  // (QA-box git-sync) deploy for an issue plus a short recent history.
+  // Empty (latest: null, recent: []) is a normal response for a never-
+  // deployed issue, not an error.
+  async getIssueDeployEvents(issueId: string): Promise<IssueDeployEventsResponse> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/deploy-events`);
+    return parseWithFallback(raw, IssueDeployEventsResponseSchema, EMPTY_DEPLOY_EVENTS, {
+      endpoint: "GET /api/issues/:id/deploy-events",
+    });
+  }
+
   // QA test cases — the QA team's test-management instruments.
   async getIssueTestCases(issueId: string): Promise<ListTestCasesResponse> {
     const raw = await this.fetch<unknown>(`/api/issues/${issueId}/test-cases`);
@@ -2658,10 +2745,70 @@ export class ApiClient {
     });
   }
 
+  // A project's STANDING base regression suite — test cases with issue_id NULL,
+  // injected into every run_qa / run_test_cases on the project's issues (the
+  // "stoppage" release gate). Same response shape as the issue-scoped list; base
+  // rows carry issue_id "". Falls back to an empty list so the Suite tab renders.
+  async listProjectTestCases(projectId: string): Promise<ListTestCasesResponse> {
+    const raw = await this.fetch<unknown>(`/api/projects/${projectId}/test-cases`);
+    return parseWithFallback(raw, ListTestCasesResponseSchema, EMPTY_LIST_TEST_CASES, {
+      endpoint: "GET /api/projects/:id/test-cases",
+    });
+  }
+
+  // Author a standing base case for a project (issue_id stays NULL). Kind
+  // defaults to "automated" server-side — only automated base cases are injected
+  // into runs. Returns the created row; a degraded response yields an empty case.
+  async createProjectTestCase(projectId: string, data: CreateTestCaseRequest): Promise<TestCase> {
+    const raw = await this.fetch<unknown>(`/api/projects/${projectId}/test-cases`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(raw, TestCaseSchema, EMPTY_TEST_CASE, {
+      endpoint: "POST /api/projects/:id/test-cases",
+    });
+  }
+
+  // Fire the QA-squad lead to author the project's golden-path base suite from
+  // its QA manifest (202 Accepted → the tracking issue it opened). The UI only
+  // needs the queued status; a degraded response yields empty status/issue_id.
+  async buildProjectBaseSuite(projectId: string): Promise<BuildBaseSuiteResponse> {
+    const raw = await this.fetch<unknown>(`/api/projects/${projectId}/base-suite/build`, {
+      method: "POST",
+    });
+    return parseWithFallback(raw, BuildBaseSuiteResponseSchema, EMPTY_BUILD_BASE_SUITE, {
+      endpoint: "POST /api/projects/:id/base-suite/build",
+    });
+  }
+
   async recordTestCaseRun(caseId: string, data: CreateTestRunRequest): Promise<unknown> {
     return this.fetch(`/api/test-cases/${caseId}/runs`, {
       method: "POST",
       body: JSON.stringify(data),
+    });
+  }
+
+  // A case's recent run history with run identity (sha/session/timing) —
+  // the QA panel's last-5 strip. Defensive: a malformed body degrades to an
+  // empty history, never a crash (old servers 404 → the caller's query error
+  // state simply shows no strip).
+  async listTestCaseRuns(caseId: string): Promise<TestCaseRunsParsed> {
+    const raw = await this.fetch<unknown>(`/api/test-cases/${caseId}/runs`);
+    return parseWithFallback(raw, TestCaseRunsResponseSchema, EMPTY_TEST_CASE_RUNS, {
+      endpoint: "GET /api/test-cases/:id/runs",
+    });
+  }
+
+  // Edit a test case (title/steps/expected/kind/category/script). Only the
+  // provided fields change. Used by the QA cockpit Suite tab so an engineer can
+  // fix a wrong/flaky golden-path case in place.
+  async updateTestCase(caseId: string, data: UpdateTestCaseRequest): Promise<TestCase> {
+    const raw = await this.fetch<unknown>(`/api/test-cases/${caseId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(raw, TestCaseSchema, EMPTY_TEST_CASE, {
+      endpoint: "PATCH /api/test-cases/:id",
     });
   }
 

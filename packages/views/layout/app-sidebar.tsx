@@ -31,7 +31,7 @@ import {
   BookOpenText,
   SquarePen,
   CircleUser,
-  ShieldCheck,
+  Rocket,
   FolderKanban,
   BarChart3,
   X,
@@ -151,7 +151,7 @@ type NavLabelKey =
 const personalNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[] = [
   { key: "inbox", labelKey: "inbox", icon: Inbox },
   { key: "myIssues", labelKey: "my_issues", icon: CircleUser },
-  { key: "qa", labelKey: "qa", icon: ShieldCheck },
+  { key: "qa", labelKey: "qa", icon: Rocket },
   // "policy" (fleet cockpit) removed from the nav — the route stays reachable by
   // URL; agent fleet health/details will live inside the agent detail page.
 ];

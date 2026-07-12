@@ -47,25 +47,30 @@ func (q *Queries) CountActiveTestCasesForIssue(ctx context.Context, arg CountAct
 const createTestCase = `-- name: CreateTestCase :one
 
 INSERT INTO test_case (
-    workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, category, script
+    workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, category, script,
+    preconditions, priority, modality, criterion_ref
 )
-VALUES ($1, $10, $11, $2, $3, $4, $5, $6, $7, $12, $8, $9)
-RETURNING id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script
+VALUES ($1, $14, $15, $2, $3, $4, $5, $6, $7, $16, $8, $9, $10, $11, $12, $13)
+RETURNING id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script, preconditions, priority, modality, criterion_ref
 `
 
 type CreateTestCaseParams struct {
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
-	Title       string      `json:"title"`
-	Steps       string      `json:"steps"`
-	Expected    string      `json:"expected"`
-	Kind        string      `json:"kind"`
-	Source      string      `json:"source"`
-	AuthorType  string      `json:"author_type"`
-	Category    string      `json:"category"`
-	Script      string      `json:"script"`
-	IssueID     pgtype.UUID `json:"issue_id"`
-	ProjectID   pgtype.UUID `json:"project_id"`
-	AuthorID    pgtype.UUID `json:"author_id"`
+	WorkspaceID   pgtype.UUID `json:"workspace_id"`
+	Title         string      `json:"title"`
+	Steps         string      `json:"steps"`
+	Expected      string      `json:"expected"`
+	Kind          string      `json:"kind"`
+	Source        string      `json:"source"`
+	AuthorType    string      `json:"author_type"`
+	Category      string      `json:"category"`
+	Script        string      `json:"script"`
+	Preconditions string      `json:"preconditions"`
+	Priority      string      `json:"priority"`
+	Modality      string      `json:"modality"`
+	CriterionRef  string      `json:"criterion_ref"`
+	IssueID       pgtype.UUID `json:"issue_id"`
+	ProjectID     pgtype.UUID `json:"project_id"`
+	AuthorID      pgtype.UUID `json:"author_id"`
 }
 
 // QA test cases + runs — the QA team's test-management instruments.
@@ -80,6 +85,10 @@ func (q *Queries) CreateTestCase(ctx context.Context, arg CreateTestCaseParams) 
 		arg.AuthorType,
 		arg.Category,
 		arg.Script,
+		arg.Preconditions,
+		arg.Priority,
+		arg.Modality,
+		arg.CriterionRef,
 		arg.IssueID,
 		arg.ProjectID,
 		arg.AuthorID,
@@ -102,31 +111,44 @@ func (q *Queries) CreateTestCase(ctx context.Context, arg CreateTestCaseParams) 
 		&i.UpdatedAt,
 		&i.Category,
 		&i.Script,
+		&i.Preconditions,
+		&i.Priority,
+		&i.Modality,
+		&i.CriterionRef,
 	)
 	return i, err
 }
 
 const createTestRun = `-- name: CreateTestRun :one
 INSERT INTO test_run (
-    workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, trace_path, baseline_status
+    workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, trace_path, baseline_status,
+    commit_sha, session_id, started_at, finished_at
 )
-VALUES ($1, $2, $9, $3, $4, $5, $6, $10, $7, $8)
-RETURNING id, workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, created_at, trace_path, baseline_status
+VALUES ($1, $2, $10, $3, $4, $5, $6, $11, $7, $8,
+    $9, $12, $13, $14)
+RETURNING id, workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, created_at, trace_path, baseline_status, commit_sha, session_id, started_at, finished_at
 `
 
 type CreateTestRunParams struct {
-	WorkspaceID    pgtype.UUID `json:"workspace_id"`
-	TestCaseID     pgtype.UUID `json:"test_case_id"`
-	Status         string      `json:"status"`
-	Output         string      `json:"output"`
-	RunSource      string      `json:"run_source"`
-	RunByType      string      `json:"run_by_type"`
-	TracePath      string      `json:"trace_path"`
-	BaselineStatus string      `json:"baseline_status"`
-	IssueID        pgtype.UUID `json:"issue_id"`
-	RunByID        pgtype.UUID `json:"run_by_id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	TestCaseID     pgtype.UUID        `json:"test_case_id"`
+	Status         string             `json:"status"`
+	Output         string             `json:"output"`
+	RunSource      string             `json:"run_source"`
+	RunByType      string             `json:"run_by_type"`
+	TracePath      string             `json:"trace_path"`
+	BaselineStatus string             `json:"baseline_status"`
+	CommitSha      string             `json:"commit_sha"`
+	IssueID        pgtype.UUID        `json:"issue_id"`
+	RunByID        pgtype.UUID        `json:"run_by_id"`
+	SessionID      pgtype.UUID        `json:"session_id"`
+	StartedAt      pgtype.Timestamptz `json:"started_at"`
+	FinishedAt     pgtype.Timestamptz `json:"finished_at"`
 }
 
+// commit_sha/session_id/started_at/finished_at are the run's IDENTITY
+// (migration 157): which checkout it tested, which dispatch it belongs to,
+// and when it ran. All fail-open — ”/NULL when the reporter didn't say.
 func (q *Queries) CreateTestRun(ctx context.Context, arg CreateTestRunParams) (TestRun, error) {
 	row := q.db.QueryRow(ctx, createTestRun,
 		arg.WorkspaceID,
@@ -137,8 +159,12 @@ func (q *Queries) CreateTestRun(ctx context.Context, arg CreateTestRunParams) (T
 		arg.RunByType,
 		arg.TracePath,
 		arg.BaselineStatus,
+		arg.CommitSha,
 		arg.IssueID,
 		arg.RunByID,
+		arg.SessionID,
+		arg.StartedAt,
+		arg.FinishedAt,
 	)
 	var i TestRun
 	err := row.Scan(
@@ -154,12 +180,16 @@ func (q *Queries) CreateTestRun(ctx context.Context, arg CreateTestRunParams) (T
 		&i.CreatedAt,
 		&i.TracePath,
 		&i.BaselineStatus,
+		&i.CommitSha,
+		&i.SessionID,
+		&i.StartedAt,
+		&i.FinishedAt,
 	)
 	return i, err
 }
 
 const getTestCase = `-- name: GetTestCase :one
-SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script FROM test_case
+SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script, preconditions, priority, modality, criterion_ref FROM test_case
 WHERE id = $1 AND workspace_id = $2
 `
 
@@ -188,12 +218,16 @@ func (q *Queries) GetTestCase(ctx context.Context, arg GetTestCaseParams) (TestC
 		&i.UpdatedAt,
 		&i.Category,
 		&i.Script,
+		&i.Preconditions,
+		&i.Priority,
+		&i.Modality,
+		&i.CriterionRef,
 	)
 	return i, err
 }
 
 const getTestRunByID = `-- name: GetTestRunByID :one
-SELECT id, workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, created_at, trace_path, baseline_status FROM test_run WHERE id = $1
+SELECT id, workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, created_at, trace_path, baseline_status, commit_sha, session_id, started_at, finished_at FROM test_run WHERE id = $1
 `
 
 // One run by id, for the trace-viewer launch endpoint. NOT workspace-scoped in
@@ -216,6 +250,10 @@ func (q *Queries) GetTestRunByID(ctx context.Context, id pgtype.UUID) (TestRun, 
 		&i.CreatedAt,
 		&i.TracePath,
 		&i.BaselineStatus,
+		&i.CommitSha,
+		&i.SessionID,
+		&i.StartedAt,
+		&i.FinishedAt,
 	)
 	return i, err
 }
@@ -264,7 +302,7 @@ func (q *Queries) HasDiscriminatingRunForIssue(ctx context.Context, issueID pgty
 }
 
 const listAutomatedTestCasesForIssue = `-- name: ListAutomatedTestCasesForIssue :many
-SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script FROM test_case
+SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script, preconditions, priority, modality, criterion_ref FROM test_case
 WHERE issue_id = $1 AND workspace_id = $2 AND archived_at IS NULL AND kind = 'automated'
 ORDER BY created_at ASC
 `
@@ -301,6 +339,10 @@ func (q *Queries) ListAutomatedTestCasesForIssue(ctx context.Context, arg ListAu
 			&i.UpdatedAt,
 			&i.Category,
 			&i.Script,
+			&i.Preconditions,
+			&i.Priority,
+			&i.Modality,
+			&i.CriterionRef,
 		); err != nil {
 			return nil, err
 		}
@@ -313,7 +355,7 @@ func (q *Queries) ListAutomatedTestCasesForIssue(ctx context.Context, arg ListAu
 }
 
 const listAutomatedTestCasesForProject = `-- name: ListAutomatedTestCasesForProject :many
-SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script FROM test_case
+SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script, preconditions, priority, modality, criterion_ref FROM test_case
 WHERE project_id = $1 AND workspace_id = $2
   AND issue_id IS NULL AND kind = 'automated' AND archived_at IS NULL
 ORDER BY created_at ASC
@@ -352,6 +394,163 @@ func (q *Queries) ListAutomatedTestCasesForProject(ctx context.Context, arg List
 			&i.UpdatedAt,
 			&i.Category,
 			&i.Script,
+			&i.Preconditions,
+			&i.Priority,
+			&i.Modality,
+			&i.CriterionRef,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFlakyCaseIDsForIssue = `-- name: ListFlakyCaseIDsForIssue :many
+WITH recent AS (
+    SELECT r.test_case_id, r.status, r.commit_sha,
+           ROW_NUMBER() OVER (PARTITION BY r.test_case_id ORDER BY r.created_at DESC) AS rn
+    FROM test_run r
+    JOIN test_case c ON c.id = r.test_case_id
+    WHERE c.workspace_id = $2
+      AND (c.issue_id = $1 OR (c.issue_id IS NULL AND r.issue_id = $1))
+      AND r.commit_sha <> ''
+)
+SELECT DISTINCT a.test_case_id
+FROM recent a
+JOIN recent b ON b.test_case_id = a.test_case_id AND b.commit_sha = a.commit_sha
+WHERE a.rn <= 20 AND b.rn <= 20
+  AND a.status = 'pass' AND b.status = 'fail'
+`
+
+type ListFlakyCaseIDsForIssueParams struct {
+	IssueID     pgtype.UUID `json:"issue_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// FLAKY detection (Phase 3): a case that produced BOTH a pass and a fail on
+// the SAME commit_sha is flaky by definition — the code didn't change, the
+// verdict did. Scoped to the issue's cases (own + base scripts run against
+// it), the last 20 runs per case, and runs that actually reported a sha
+// (” can't bind two runs to one commit). Simple by design: no
+// cross-issue/window aggregation, just "same case + same sha + both verdicts".
+func (q *Queries) ListFlakyCaseIDsForIssue(ctx context.Context, arg ListFlakyCaseIDsForIssueParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listFlakyCaseIDsForIssue, arg.IssueID, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var test_case_id pgtype.UUID
+		if err := rows.Scan(&test_case_id); err != nil {
+			return nil, err
+		}
+		items = append(items, test_case_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFlakyCaseIDsForProject = `-- name: ListFlakyCaseIDsForProject :many
+WITH recent AS (
+    SELECT r.test_case_id, r.status, r.commit_sha,
+           ROW_NUMBER() OVER (PARTITION BY r.test_case_id ORDER BY r.created_at DESC) AS rn
+    FROM test_run r
+    JOIN test_case c ON c.id = r.test_case_id
+    WHERE c.workspace_id = $2
+      AND c.project_id = $1 AND c.issue_id IS NULL
+      AND r.commit_sha <> ''
+)
+SELECT DISTINCT a.test_case_id
+FROM recent a
+JOIN recent b ON b.test_case_id = a.test_case_id AND b.commit_sha = a.commit_sha
+WHERE a.rn <= 20 AND b.rn <= 20
+  AND a.status = 'pass' AND b.status = 'fail'
+`
+
+type ListFlakyCaseIDsForProjectParams struct {
+	ProjectID   pgtype.UUID `json:"project_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// The project-suite variant of ListFlakyCaseIDsForIssue (the /qa Suite tab's
+// flaky filter): standing base cases (issue_id NULL) whose last 20 runs
+// contain both verdicts on one sha.
+func (q *Queries) ListFlakyCaseIDsForProject(ctx context.Context, arg ListFlakyCaseIDsForProjectParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listFlakyCaseIDsForProject, arg.ProjectID, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var test_case_id pgtype.UUID
+		if err := rows.Scan(&test_case_id); err != nil {
+			return nil, err
+		}
+		items = append(items, test_case_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLatestHumanRunsForIssueCases = `-- name: ListLatestHumanRunsForIssueCases :many
+SELECT DISTINCT ON (r.test_case_id)
+    r.test_case_id,
+    c.title,
+    r.status,
+    r.output,
+    r.created_at
+FROM test_run r
+JOIN test_case c ON c.id = r.test_case_id
+WHERE c.workspace_id = $2
+  AND (c.issue_id = $1 OR (c.issue_id IS NULL AND r.issue_id = $1))
+  AND r.run_source = 'human'
+ORDER BY r.test_case_id, r.created_at DESC
+`
+
+type ListLatestHumanRunsForIssueCasesParams struct {
+	IssueID     pgtype.UUID `json:"issue_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+type ListLatestHumanRunsForIssueCasesRow struct {
+	TestCaseID pgtype.UUID        `json:"test_case_id"`
+	Title      string             `json:"title"`
+	Status     string             `json:"status"`
+	Output     string             `json:"output"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+// The latest HUMAN-recorded run per test case for an issue (Phase 2: "the
+// agent reads the human"). Same case scoping as ListLatestRunsForIssueCases
+// (the issue's own cases + project base scripts run against this issue),
+// filtered to run_source='human' — a QA human's hand-recorded verdict (the
+// one-click ✓/✗ or a per-step checklist walk) is ground truth an agent run
+// must CONFIRM AND LOCALIZE, not silently re-derive.
+func (q *Queries) ListLatestHumanRunsForIssueCases(ctx context.Context, arg ListLatestHumanRunsForIssueCasesParams) ([]ListLatestHumanRunsForIssueCasesRow, error) {
+	rows, err := q.db.Query(ctx, listLatestHumanRunsForIssueCases, arg.IssueID, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLatestHumanRunsForIssueCasesRow{}
+	for rows.Next() {
+		var i ListLatestHumanRunsForIssueCasesRow
+		if err := rows.Scan(
+			&i.TestCaseID,
+			&i.Title,
+			&i.Status,
+			&i.Output,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -525,7 +724,7 @@ func (q *Queries) ListRecentRunsForCase(ctx context.Context, arg ListRecentRunsF
 }
 
 const listTestCasesForIssue = `-- name: ListTestCasesForIssue :many
-SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script FROM test_case
+SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script, preconditions, priority, modality, criterion_ref FROM test_case
 WHERE issue_id = $1 AND workspace_id = $2 AND archived_at IS NULL
 ORDER BY created_at DESC
 `
@@ -562,6 +761,10 @@ func (q *Queries) ListTestCasesForIssue(ctx context.Context, arg ListTestCasesFo
 			&i.UpdatedAt,
 			&i.Category,
 			&i.Script,
+			&i.Preconditions,
+			&i.Priority,
+			&i.Modality,
+			&i.CriterionRef,
 		); err != nil {
 			return nil, err
 		}
@@ -574,7 +777,7 @@ func (q *Queries) ListTestCasesForIssue(ctx context.Context, arg ListTestCasesFo
 }
 
 const listTestCasesForProject = `-- name: ListTestCasesForProject :many
-SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script FROM test_case
+SELECT id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script, preconditions, priority, modality, criterion_ref FROM test_case
 WHERE project_id = $1 AND workspace_id = $2
   AND issue_id IS NULL AND archived_at IS NULL
 ORDER BY created_at DESC
@@ -614,6 +817,10 @@ func (q *Queries) ListTestCasesForProject(ctx context.Context, arg ListTestCases
 			&i.UpdatedAt,
 			&i.Category,
 			&i.Script,
+			&i.Preconditions,
+			&i.Priority,
+			&i.Modality,
+			&i.CriterionRef,
 		); err != nil {
 			return nil, err
 		}
@@ -626,7 +833,7 @@ func (q *Queries) ListTestCasesForProject(ctx context.Context, arg ListTestCases
 }
 
 const listTestRunsForCase = `-- name: ListTestRunsForCase :many
-SELECT id, workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, created_at, trace_path, baseline_status FROM test_run
+SELECT id, workspace_id, test_case_id, issue_id, status, output, run_source, run_by_type, run_by_id, created_at, trace_path, baseline_status, commit_sha, session_id, started_at, finished_at FROM test_run
 WHERE test_case_id = $1 AND workspace_id = $2
 ORDER BY created_at DESC
 LIMIT $3
@@ -660,6 +867,10 @@ func (q *Queries) ListTestRunsForCase(ctx context.Context, arg ListTestRunsForCa
 			&i.CreatedAt,
 			&i.TracePath,
 			&i.BaselineStatus,
+			&i.CommitSha,
+			&i.SessionID,
+			&i.StartedAt,
+			&i.FinishedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -673,9 +884,11 @@ func (q *Queries) ListTestRunsForCase(ctx context.Context, arg ListTestRunsForCa
 
 const promoteIssueTestCasesToProject = `-- name: PromoteIssueTestCasesToProject :execrows
 INSERT INTO test_case
-  (workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, category, script)
+  (workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, category, script,
+   preconditions, priority, modality, criterion_ref)
 SELECT tc.workspace_id, NULL, $2, '[' || $3::text || '] ' || tc.title,
-       tc.steps, tc.expected, 'automated', 'promoted', tc.author_type, tc.author_id, tc.category, tc.script
+       tc.steps, tc.expected, 'automated', 'promoted', tc.author_type, tc.author_id, tc.category, tc.script,
+       tc.preconditions, tc.priority, tc.modality, tc.criterion_ref
 FROM test_case tc
 WHERE tc.issue_id = $1 AND tc.kind = 'automated' AND tc.archived_at IS NULL
   AND (
@@ -729,4 +942,79 @@ type SetTestCaseScriptParams struct {
 func (q *Queries) SetTestCaseScript(ctx context.Context, arg SetTestCaseScriptParams) error {
 	_, err := q.db.Exec(ctx, setTestCaseScript, arg.ID, arg.WorkspaceID, arg.Script)
 	return err
+}
+
+const updateTestCase = `-- name: UpdateTestCase :one
+UPDATE test_case SET
+    title = COALESCE($3, title),
+    steps = COALESCE($4, steps),
+    expected = COALESCE($5, expected),
+    kind = COALESCE($6, kind),
+    category = COALESCE($7, category),
+    script = COALESCE($8, script),
+    preconditions = COALESCE($9, preconditions),
+    priority = COALESCE($10, priority),
+    modality = COALESCE($11, modality),
+    criterion_ref = COALESCE($12, criterion_ref)
+WHERE id = $1 AND workspace_id = $2
+RETURNING id, workspace_id, issue_id, project_id, title, steps, expected, kind, source, author_type, author_id, archived_at, created_at, updated_at, category, script, preconditions, priority, modality, criterion_ref
+`
+
+type UpdateTestCaseParams struct {
+	ID            pgtype.UUID `json:"id"`
+	WorkspaceID   pgtype.UUID `json:"workspace_id"`
+	Title         pgtype.Text `json:"title"`
+	Steps         pgtype.Text `json:"steps"`
+	Expected      pgtype.Text `json:"expected"`
+	Kind          pgtype.Text `json:"kind"`
+	Category      pgtype.Text `json:"category"`
+	Script        pgtype.Text `json:"script"`
+	Preconditions pgtype.Text `json:"preconditions"`
+	Priority      pgtype.Text `json:"priority"`
+	Modality      pgtype.Text `json:"modality"`
+	CriterionRef  pgtype.Text `json:"criterion_ref"`
+}
+
+// Human edit of a test case (title/steps/expected/kind/category/script/
+// preconditions/priority/modality). Only non-null args change; the rest keep
+// their current value.
+func (q *Queries) UpdateTestCase(ctx context.Context, arg UpdateTestCaseParams) (TestCase, error) {
+	row := q.db.QueryRow(ctx, updateTestCase,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.Title,
+		arg.Steps,
+		arg.Expected,
+		arg.Kind,
+		arg.Category,
+		arg.Script,
+		arg.Preconditions,
+		arg.Priority,
+		arg.Modality,
+		arg.CriterionRef,
+	)
+	var i TestCase
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.IssueID,
+		&i.ProjectID,
+		&i.Title,
+		&i.Steps,
+		&i.Expected,
+		&i.Kind,
+		&i.Source,
+		&i.AuthorType,
+		&i.AuthorID,
+		&i.ArchivedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Category,
+		&i.Script,
+		&i.Preconditions,
+		&i.Priority,
+		&i.Modality,
+		&i.CriterionRef,
+	)
+	return i, err
 }

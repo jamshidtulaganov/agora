@@ -584,15 +584,18 @@ func (h *Handler) devLocalAppURL(ctx context.Context, issue db.Issue) string {
 // tier. Unlike dev_apps it carries no ready-to-smoke URL — it only tells us
 // WHERE — so the caller uses it to (a) pin the QA task to that daemon and
 // (b) instruct the agent to start the app via /editor/preview and smoke the
-// resulting 127.0.0.1 URL. Gated by labs.qa_dev_runtimes (same opt-in as
-// devLocalAppURL). Returns ok=false on any miss so resolution falls through to
-// connected_box / project qa_smoke_url unchanged.
+// resulting 127.0.0.1 URL.
+//
+// A local_directory is a DELIBERATE per-project resource — attaching it IS the
+// opt-in ("local config enabled"), so this is NOT gated on the labs
+// qa_dev_runtimes toggle (which stays the opt-in for the dev_apps /
+// daemon-per-dev flow). A project with a local_directory on an online daemon
+// therefore runs QA locally regardless of the toggle, taking precedence over
+// the connected sdteam boxes. Projects with no local_directory are unaffected.
+// Returns ok=false on any miss so resolution falls through to connected_box /
+// project qa_smoke_url unchanged.
 func (h *Handler) localDirectoryQATarget(ctx context.Context, issue db.Issue) (daemonID, localPath string, ok bool) {
 	if !issue.ProjectID.Valid {
-		return "", "", false
-	}
-	ws, err := h.Queries.GetWorkspace(ctx, issue.WorkspaceID)
-	if err != nil || !util.ParseWorkspaceLabs(ws.Settings).QADevRuntimes {
 		return "", "", false
 	}
 	for _, res := range h.listProjectResourcesForProject(ctx, issue.ProjectID) {
@@ -622,9 +625,12 @@ func (h *Handler) localDirectoryQATarget(ctx context.Context, issue db.Issue) (d
 // qaLocalDirectoryClause instructs a QA agent running ON the developer's own
 // machine (the task was pinned to the local_directory's daemon) to start the
 // app itself and smoke localhost, and to never mutate the user's working tree
-// for the baseline. localPath is the folder the agent is already running in.
+// for the baseline. It targets the agent's CURRENT WORKING DIRECTORY (`pwd`),
+// not the source localPath: in worktree-isolation mode the agent runs in the
+// issue's worktree (its changes), so previewing the source folder would smoke
+// the WRONG code. localPath is passed only as the in-place fallback hint.
 func qaLocalDirectoryClause(localPath string) string {
-	return " LOCAL APP: this project's code lives at " + localPath + " ON THIS MACHINE (you are running on the developer's own daemon, in their folder). The app may not be running — bring it up via the daemon: POST http://127.0.0.1:$AGORA_DAEMON_PORT/editor/preview/status with body {\"workdir\":\"" + localPath + "\"}; if it is not running, POST http://127.0.0.1:$AGORA_DAEMON_PORT/editor/preview with the same body (add \"command\" from the project QA smoke command below if one is set) and smoke the returned http://127.0.0.1:<port>/ URL. That URL is ALSO your `qa-target:<url>` key for the shared review browser. TREE SAFETY: this is the developer's real working tree — NEVER run `git checkout`/`switch`/`reset`/`stash` or edit files under " + localPath + ". For the step-1 baseline, create a throwaway scratch worktree instead: `git -C " + localPath + " worktree add <tmpdir> <merge-base>`, run baseline commands there, then `git -C " + localPath + " worktree remove <tmpdir>` and `git -C " + localPath + " worktree prune`."
+	return " QA ENVIRONMENT = LOCAL (this daemon's folder, NOT a deployed box): this project runs on THIS machine — you are on the developer's own daemon. The code under test is in your CURRENT WORKING DIRECTORY: run `pwd` to get its absolute path (call it $QADIR — in worktree-isolation mode this is the issue's own worktree with its changes; in in-place mode it is the project folder " + localPath + "). Bring the app up on localhost via the daemon: POST http://127.0.0.1:$AGORA_DAEMON_PORT/editor/preview/status with body {\"workdir\":\"$QADIR\"}; if it is not running, POST http://127.0.0.1:$AGORA_DAEMON_PORT/editor/preview with the same body (it auto-detects the dev command, installs deps, and returns {\"url\":\"http://127.0.0.1:<port>/\"} — add \"command\" from the project QA smoke command below if one is set) and smoke that http://127.0.0.1:<port>/ URL. That URL is ALSO your `qa-target:<url>` key for the shared review browser. TREE SAFETY: if $QADIR is the developer's real in-place working tree, NEVER run `git checkout`/`switch`/`reset`/`stash` there or edit files outside your task; for the step-1 baseline create a throwaway scratch worktree instead: `git -C $QADIR worktree add <tmpdir> <merge-base>`, run baseline commands there, then `git -C $QADIR worktree remove <tmpdir>` and `git -C $QADIR worktree prune`."
 }
 
 // boxSmokeURL derives the https URL a box serves from its work_dir
@@ -822,6 +828,7 @@ func (h *Handler) DeployIssueQA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	updated, okSync, output := h.performBoxSync(r.Context(), box, branch, keyPath)
+	h.recordDeployEvent(r.Context(), issue.WorkspaceID, issue.ID, branch, box.Label, okSync, output)
 	code := http.StatusOK
 	if !okSync {
 		code = http.StatusBadGateway
@@ -832,6 +839,34 @@ func (h *Handler) DeployIssueQA(w http.ResponseWriter, r *http.Request) {
 		"ok":     okSync,
 		"output": output,
 	})
+}
+
+// recordDeployEvent persists a deploy_event row for a Tier-1 (QA-box git-sync)
+// deploy — the durable, append-only signal the SDLC stepper's Deploy stage
+// reads (GetLatestDeployEventForIssue) instead of the previous client-side
+// derivation off connected_box.last_branch (deploy-stage-research.md P0).
+// Best-effort: a write failure here must never fail the deploy response the
+// caller already computed — deploy_event is a read-side convenience, not a
+// consistency boundary the sync itself depends on.
+func (h *Handler) recordDeployEvent(ctx context.Context, workspaceID, issueID pgtype.UUID, ref, target string, ok bool, output string) {
+	status := "success"
+	if !ok {
+		status = "failed"
+	}
+	summary := strings.TrimSpace(output)
+	if len(summary) > 500 {
+		summary = summary[:500]
+	}
+	if _, err := h.Queries.InsertDeployEvent(ctx, db.InsertDeployEventParams{
+		WorkspaceID: workspaceID,
+		IssueID:     issueID,
+		Ref:         ref,
+		Target:      target,
+		Status:      status,
+		Summary:     summary,
+	}); err != nil {
+		slog.Warn("record deploy event failed", "error", err, "issue_id", uuidToString(issueID))
+	}
 }
 
 // sprintBranchName is the FALLBACK git branch convention for a sprint
@@ -906,6 +941,11 @@ func (h *Handler) DeploySprintBranch(ctx context.Context, sprintID, wsID pgtype.
 		return db.ConnectedBox{}, false, fmt.Errorf("remote box SSH key is not configured on the server")
 	}
 
+	// No deploy_event write here (deploy P0 scope): this syncs the WHOLE sprint
+	// branch onto a shared box with no single issue in hand — the issue set a
+	// sprint covers is a separate lookup (issue_to_sprint) this function
+	// doesn't do today. Writing one deploy_event per covered issue belongs in
+	// P1 alongside that lookup; see docs/deploy-stage-research.md P0 row.
 	updated, okSync, _ := h.performBoxSync(ctx, box, SprintBranchFor(sprint), keyPath)
 	return updated, okSync, nil
 }
@@ -1272,6 +1312,20 @@ func (h *Handler) SyncConnectedBox(w http.ResponseWriter, r *http.Request) {
 // Agora-self-repo issue with only a per-task daemon worktree and no deployed
 // box, which is what GetIssueEditor's CDP-driven browser covers instead.
 func (h *Handler) resolveQAPreviewURL(ctx context.Context, issue db.Issue) string {
+	// A concrete declared dev_apps URL (the dev's own running app) wins.
+	if url := h.devLocalAppURL(ctx, issue); url != "" {
+		return url
+	}
+	// "Local config enabled": the project runs in a local_directory on an
+	// online daemon, so the QA app lives on THAT daemon (its worktree /
+	// in-place checkout), reached over the daemon's localhost — not a deployed
+	// sdteam box. Return "" so the Live pane drives the local daemon preview
+	// (agentBrowse against the worktree work_dir) instead of embedding a box.
+	if _, _, ok := h.localDirectoryQATarget(ctx, issue); ok {
+		return ""
+	}
+	// Otherwise fall back to the deployed QA target (connected box, e.g.
+	// agora.sdteam.uz), then the project's static qa_smoke_url.
 	if url := h.devBoxSmokeURL(ctx, issue); url != "" {
 		return url
 	}

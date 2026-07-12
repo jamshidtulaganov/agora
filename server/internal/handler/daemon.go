@@ -1507,6 +1507,21 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				} else if figmaRes.Note != "" {
 					resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + figmaRes.Note)
 				}
+				// GitLab pipeline tools ride along ONLY on deploy tasks (the
+				// triggering comment carries the deploy agent-protocol
+				// marker): injectGitLabMcpCreds provisions the pinned gitlab
+				// MCP server from the workspace's sealed git credential so
+				// the deploy agent can drive a real CI/CD pipeline
+				// (docs/deploy-mcp-integration.md §3). Deliberately NOT
+				// blanket-attached — a run_qa or draft_code task has no
+				// business holding pipeline-write tools in its MCP surface.
+				if h.taskTriggerIsDeploy(r.Context(), task.TriggerCommentID) {
+					glRes := h.injectGitLabMcpCreds(r.Context(), resp.Agent.ID, issue, resp.Agent.McpConfig)
+					resp.Agent.McpConfig = glRes.Config
+					if !glRes.Available && glRes.Note != "" {
+						resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + glRes.Note)
+					}
+				}
 			}
 
 			var projectRepos []RepoData

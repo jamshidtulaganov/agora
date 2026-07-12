@@ -653,4 +653,86 @@ describe("ApiClient", () => {
       expect(JSON.parse(fetchMock.mock.calls[1]![1]?.body as string)).toEqual({ content: "again" });
     });
   });
+
+  describe("project test cases (regression suite)", () => {
+    it("falls back to an empty list when the base-suite response is malformed", async () => {
+      // The server returns garbage (a bare array instead of { test_cases: [...] },
+      // or a non-array test_cases) — parseWithFallback must degrade to an empty
+      // list so the Suite tab renders instead of white-screening.
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          new Response(JSON.stringify({ test_cases: "not-an-array" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        ),
+      );
+
+      const client = new ApiClient("https://api.example.test");
+      const res = await client.listProjectTestCases("project-1");
+
+      expect(res.test_cases).toEqual([]);
+    });
+
+    it("parses a well-formed base-suite list", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              test_cases: [
+                { id: "tc-1", title: "[e2e] Checkout", kind: "automated", category: "positive" },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        ),
+      );
+
+      const client = new ApiClient("https://api.example.test");
+      const res = await client.listProjectTestCases("project-1");
+
+      expect(res.test_cases).toHaveLength(1);
+      expect(res.test_cases[0]).toMatchObject({ id: "tc-1", title: "[e2e] Checkout", kind: "automated" });
+      // A base row omits issue_id in the schema default — the fallback keeps "".
+      expect(res.test_cases[0]!.issue_id).toBe("");
+    });
+
+    it("uses the expected HTTP contract for the project test-case + build endpoints", async () => {
+      const fetchMock = vi.fn().mockImplementation(() =>
+        Promise.resolve(new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } })),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const client = new ApiClient("https://api.example.test");
+      await client.listProjectTestCases("p1");
+      await client.createProjectTestCase("p1", { title: "case", kind: "automated", category: "positive" });
+      await client.buildProjectBaseSuite("p1");
+
+      const calls = fetchMock.mock.calls.map(([url, init]) => ({ url, method: init?.method ?? "GET" }));
+      expect(calls).toMatchObject([
+        { url: "https://api.example.test/api/projects/p1/test-cases", method: "GET" },
+        { url: "https://api.example.test/api/projects/p1/test-cases", method: "POST" },
+        { url: "https://api.example.test/api/projects/p1/base-suite/build", method: "POST" },
+      ]);
+    });
+
+    it("degrades a malformed build response to empty status/issue_id", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          new Response(JSON.stringify({ status: 123 }), {
+            status: 202,
+            headers: { "Content-Type": "application/json" },
+          }),
+        ),
+      );
+
+      const client = new ApiClient("https://api.example.test");
+      const res = await client.buildProjectBaseSuite("p1");
+
+      expect(res).toEqual({ status: "", issue_id: "" });
+    });
+  });
 });

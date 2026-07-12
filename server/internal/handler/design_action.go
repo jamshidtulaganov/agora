@@ -12,14 +12,17 @@ import (
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
-// The design stage: an issue that references a Figma design gets a
+// Design as a build input (not an SDLC stepper stage — see
+// packages/core/issues/stage.ts): an issue that references a Figma design
+// gets its design context injected straight into the dev build (draft_code —
+// see figmaDesignInputContext in figma_links.go), and optionally an explicit
 // designer-analyst pass (the design_proposal slice action) that reads the
 // design, maps it against the project's design system, and proposes an
-// implementation decomposition for a human to approve. This file holds the
-// handler-side helpers — agent resolution and the project design-manifest
-// context injected into the recipe. Capture + labels live in the service layer
-// (service/design_proposal.go) because the agent-comment ingest points are
-// there.
+// implementation decomposition for a human to approve — for teams that want
+// that ceremony. This file holds the handler-side helpers — agent resolution
+// and the project design-manifest context injected into the recipe. Capture +
+// labels live in the service layer (service/design_proposal.go) because the
+// agent-comment ingest points are there.
 
 // resolveDesignerAgent resolves the agent a design_proposal targets when the
 // caller did not pin one explicitly. Order (mirrors projectDocsAgentID /

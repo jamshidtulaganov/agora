@@ -82,11 +82,11 @@ func (h *Handler) LaunchTrace(w http.ResponseWriter, r *http.Request) {
 	// Which daemon holds the trace file: the runtime that ran the QA task for
 	// this issue+agent. Its per-runtime editor_addr (Remote Box endpoint) or the
 	// global AGORA_DAEMON_INTERNAL (cloud) tells the backend where to dial;
-	// empty ⇒ self-host (127.0.0.1, backend shares the daemon's host).
+	// empty ⇒ self-host (the daemon's own health listener on localhost).
 	editorAddr, editorPort := h.resolveTraceDaemon(r.Context(), run.IssueID, run.RunByID)
-	launchBase, proxyHost := traceDaemonEndpoints(resolveDaemonInternalAddr(editorAddr), editorPort)
+	daemonBase := traceDaemonBase(resolveDaemonInternalAddr(editorAddr), editorPort)
 
-	port, lerr := launchTraceOnDaemon(r.Context(), launchBase, tracePath)
+	port, lerr := launchTraceOnDaemon(r.Context(), daemonBase, tracePath)
 	if lerr != nil {
 		// The common terminal case: the trace .zip is gone from the runtime box.
 		// Older runs recorded traces under /tmp, which the OS purges within days;
@@ -103,26 +103,32 @@ func (h *Handler) LaunchTrace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "failed to launch trace viewer on the daemon: "+lerr.Error())
 		return
 	}
-	tok := registerTraceTarget(fmt.Sprintf("%s:%d", proxyHost, port), uuidToString(issue.WorkspaceID))
+	// The proxy target is the daemon's OWN /trace/local/{port} route, not
+	// <host>:<port> directly: the show-trace process binds the DAEMON HOST's
+	// loopback, which a containerized (self-host Docker) or remote-node (cloud)
+	// backend cannot dial directly. Same routing model as the live code editor
+	// (/editor/local/{port}), which reaches code-server through this same
+	// daemon base for the identical reason.
+	tok := registerTraceTarget(daemonBase, fmt.Sprintf("/trace/local/%d", port), uuidToString(issue.WorkspaceID))
 	writeJSON(w, http.StatusOK, map[string]string{
 		"trace_url": "/trace/proxy/" + tok + "/",
 	})
 }
 
-// traceDaemonEndpoints returns (launchBase, proxyHost): the full base URL the
-// backend POSTs /trace/launch to, and the host the reverse-proxy target is
-// pinned to. Cloud/Remote Box (internal set) → dial the daemon's private
-// address, proxy to its host; self-host (internal empty) → dial the local
-// daemon health port, proxy to loopback. Mirrors GetIssueEditor's split.
-func traceDaemonEndpoints(internal, editorPort string) (launchBase, proxyHost string) {
+// traceDaemonBase resolves the ONE daemon health-listener base URL used both
+// to launch the trace viewer (POST /trace/launch) and to reverse-proxy it
+// afterward (GET /trace/local/{port}/*, via ProxyTrace). Cloud/Remote Box
+// (internal set) → the daemon's private address; self-host (internal empty) →
+// the local daemon health port. Mirrors GetIssueEditor's resolution, except
+// unlike the old two-value split there is no separate "proxy host:port" —
+// both operations always go through the SAME daemon base, because the trace
+// viewer's port is only reachable THROUGH the daemon's own reverse proxy, not
+// by dialing it directly (see ProxyTrace).
+func traceDaemonBase(internal, editorPort string) string {
 	if internal != "" {
-		host := internal
-		if i := strings.LastIndex(internal, ":"); i > 0 {
-			host = internal[:i] // strip the health port; keep just the daemon host
-		}
-		return "http://" + internal, host
+		return "http://" + internal
 	}
-	return daemonEditorBase(editorPort), "127.0.0.1"
+	return daemonEditorBase(editorPort)
 }
 
 // resolveTraceDaemon finds the runtime endpoint of the daemon that ran the QA
@@ -183,7 +189,16 @@ func launchTraceOnDaemon(ctx context.Context, base, tracePath string) (int, erro
 // a trace session and an editor session never collide on a token.
 
 type traceTarget struct {
-	addr string // host:port of `playwright show-trace` on the daemon
+	// base is the daemon health-listener base URL this viewer's daemon is
+	// reachable at (e.g. "http://127.0.0.1:20038" self-host, or
+	// "http://<daemon>.internal:19514" cloud) — the SAME base LaunchTrace
+	// POSTed /trace/launch to.
+	base string
+	// path is the daemon-side proxy path for this specific viewer instance,
+	// e.g. "/trace/local/54321" — the daemon's own reverse proxy (mirroring
+	// /editor/local/{port}) forwards it to the show-trace process on ITS OWN
+	// loopback. ProxyTrace never dials the viewer's port directly.
+	path string
 	// workspaceID binds the token to its workspace so ProxyTrace re-checks the
 	// caller's membership on every request (F8) — the token is minted behind a
 	// membership check but rides the 8h iframe URL and leaks via referer/logs.
@@ -196,12 +211,12 @@ var (
 	traceTargets   = map[string]traceTarget{}
 )
 
-func registerTraceTarget(addr, workspaceID string) string {
+func registerTraceTarget(base, path, workspaceID string) string {
 	var buf [16]byte
 	_, _ = rand.Read(buf[:])
 	tok := hex.EncodeToString(buf[:])
 	traceTargetsMu.Lock()
-	traceTargets[tok] = traceTarget{addr: addr, workspaceID: workspaceID, expires: time.Now().Add(8 * time.Hour)}
+	traceTargets[tok] = traceTarget{base: base, path: path, workspaceID: workspaceID, expires: time.Now().Add(8 * time.Hour)}
 	traceTargetsMu.Unlock()
 	return tok
 }
@@ -238,17 +253,34 @@ func (h *Handler) ProxyTrace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "not a member of this workspace")
 		return
 	}
-	addr := t.addr
+	target, err := url.Parse(t.base)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "invalid trace viewer target")
+		return
+	}
 	prefix := "/trace/proxy/" + tok
-	proxy := httputil.NewSingleHostReverseProxy(&url.URL{Scheme: "http", Host: addr})
+	tracePathPrefix := strings.TrimRight(t.path, "/")
+	proxy := httputil.NewSingleHostReverseProxy(target)
 	orig := proxy.Director
 	proxy.Director = func(req *http.Request) {
 		orig(req)
-		req.URL.Path = strings.TrimPrefix(req.URL.Path, prefix)
-		if req.URL.Path == "" {
-			req.URL.Path = "/"
+		rest := strings.TrimPrefix(req.URL.Path, prefix)
+		if rest == "" {
+			rest = "/"
 		}
-		req.Host = addr
+		// Route THROUGH the daemon's own /trace/local/{port} reverse proxy
+		// (registered at launch time as t.path) instead of dialing the viewer's
+		// port directly — the viewer binds the daemon HOST's loopback, which is
+		// unreachable from a containerized or remote-node backend.
+		req.URL.Path = tracePathPrefix + rest
+		req.Host = target.Host
 	}
+	// The global CSP middleware stamps our API policy (frame-ancestors 'none')
+	// on every response — but these responses ARE the Playwright trace viewer,
+	// which must be iframed by the QA panel's TraceOverlay. Drop ours so the
+	// upstream's headers stand; the capability token + the per-request
+	// membership check above remain the actual access control (same model as
+	// ProxyEditor, editor.go).
+	w.Header().Del("Content-Security-Policy")
 	proxy.ServeHTTP(w, r)
 }

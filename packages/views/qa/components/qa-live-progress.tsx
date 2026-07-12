@@ -81,14 +81,15 @@ function extractCaseVerdicts(messages: TaskMessagePayload[]): Record<string, "pa
   return out;
 }
 
-export function QALiveProgress({ issueId }: { issueId: string }) {
-  const wsId = useWorkspaceId();
-  const { data: snapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
-
-  // QA agents only — a knowledge-capture / dev task running on the same issue
-  // must not count as "QA is running". Leader + agent members of any squad
-  // named like "qa"; empty set (no QA squad) → no filter (show all).
-  const { data: qaAgentIds } = useQuery({
+// The QA squad's agent id set — the leader + agent members of any squad named
+// like "qa" — extracted so every surface that needs to tell "a QA task" apart
+// from "any task on this issue" (marker-watching here, the lens's live-bay
+// auto-open, the Test-cases panel's Stop button, the QA cockpit queue's Stop
+// button) reads the SAME set instead of separately re-deriving it and risking
+// drift. Empty set (no QA squad) → callers treat it as "no filter" (show all),
+// matching useQaRunningTasks' own fallback below.
+export function useQaSquadAgentIds(wsId: string): Set<string> | undefined {
+  const { data } = useQuery({
     queryKey: ["qa-squad-agent-ids", wsId],
     queryFn: async () => {
       const ids = new Set<string>();
@@ -108,8 +109,50 @@ export function QALiveProgress({ issueId }: { issueId: string }) {
     },
     staleTime: 300_000,
   });
+  return data;
+}
 
-  const runningTasks = useMemo(
+// Workspace-wide live QA runs, from the shared agent-task snapshot filtered
+// to the QA squad: the set of issue ids with a QA gate executing RIGHT NOW,
+// plus issueId → taskId (first running task wins — a gate is one task; `.id`
+// is what the cancel endpoint needs). Shared by the Release queue (row live
+// badges, Stop buttons, needs-human cut) and the health strip's
+// needs-decision chip so both classify "running" IDENTICALLY — a strip that
+// ignores live runs counts label-fallback fails the Queue excludes, and the
+// chip's deep-link then shows fewer rows than it promised.
+export function useQaLiveIssueMap(wsId: string): {
+  liveIssueIds: Set<string>;
+  runningTaskByIssue: Map<string, string>;
+} {
+  const { data: snapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
+  const qaAgentIds = useQaSquadAgentIds(wsId);
+  return useMemo(() => {
+    const liveIssueIds = new Set<string>();
+    const runningTaskByIssue = new Map<string, string>();
+    for (const task of snapshot) {
+      if (task.status !== "running" || !task.issue_id) continue;
+      if (qaAgentIds && qaAgentIds.size > 0 && !qaAgentIds.has(task.agent_id)) continue;
+      liveIssueIds.add(task.issue_id);
+      if (!runningTaskByIssue.has(task.issue_id)) runningTaskByIssue.set(task.issue_id, task.id);
+    }
+    return { liveIssueIds, runningTaskByIssue };
+  }, [snapshot, qaAgentIds]);
+}
+
+// The QA-run signal — shared with the QA lens so the live browser bay knows
+// when to auto-open (docs: signal-driven live bay). One source of truth: both
+// this component's marker-watching and the lens's auto-open decision read the
+// SAME filtered task list, so they can never disagree about "is QA running".
+//
+// QA agents only — a knowledge-capture / dev task running on the same issue
+// must not count as "QA is running". Leader + agent members of any squad
+// named like "qa"; empty set (no QA squad) → no filter (show all).
+export function useQaRunningTasks(issueId: string): AgentTask[] {
+  const wsId = useWorkspaceId();
+  const { data: snapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
+  const qaAgentIds = useQaSquadAgentIds(wsId);
+
+  return useMemo(
     () =>
       snapshot.filter(
         (task) =>
@@ -119,6 +162,10 @@ export function QALiveProgress({ issueId }: { issueId: string }) {
       ),
     [snapshot, issueId, qaAgentIds],
   );
+}
+
+export function QALiveProgress({ issueId }: { issueId: string }) {
+  const runningTasks = useQaRunningTasks(issueId);
 
   return (
     <>

@@ -100,6 +100,63 @@ func TestLabelCRUD(t *testing.T) {
 	}
 }
 
+// TestAttachMergeLabelHumanGate covers finding 2: merge:override and
+// merge:approved are HUMAN sign-off labels — a machine actor (task token) must
+// not attach them via the raw label-attach path, while a human can.
+func TestAttachMergeLabelHumanGate(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	// Seed an issue.
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
+		"title": "merge label human-gate issue", "status": "in_review", "priority": "medium",
+	})
+	testHandler.CreateIssue(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("CreateIssue: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var issue IssueResponse
+	json.NewDecoder(w.Body).Decode(&issue)
+
+	for _, name := range []string{"merge:override", "merge:approved"} {
+		name := name
+		// Create the label to get an id.
+		w := httptest.NewRecorder()
+		req := newRequest("POST", "/api/labels", map[string]any{"name": name, "color": "#2563eb"})
+		testHandler.CreateLabel(w, req)
+		var label LabelResponse
+		json.NewDecoder(w.Body).Decode(&label)
+		if label.ID == "" {
+			t.Fatalf("create label %s: %s", name, w.Body.String())
+		}
+		t.Cleanup(func() {
+			cw := httptest.NewRecorder()
+			cr := withURLParam(newRequest("DELETE", "/api/labels/"+label.ID, nil), "id", label.ID)
+			testHandler.DeleteLabel(cw, cr)
+		})
+
+		// Machine actor (task token) → 403.
+		w = httptest.NewRecorder()
+		req = newRequest("POST", "/api/issues/"+issue.ID+"/labels", map[string]any{"label_id": label.ID})
+		req = withURLParam(req, "id", issue.ID)
+		req.Header.Set("X-Actor-Source", "task_token")
+		testHandler.AttachLabel(w, req)
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("machine attach %s: expected 403, got %d: %s", name, w.Code, w.Body.String())
+		}
+
+		// Human actor → 200.
+		w = httptest.NewRecorder()
+		req = newRequest("POST", "/api/issues/"+issue.ID+"/labels", map[string]any{"label_id": label.ID})
+		req = withURLParam(req, "id", issue.ID)
+		testHandler.AttachLabel(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("human attach %s: expected 200, got %d: %s", name, w.Code, w.Body.String())
+		}
+	}
+}
+
 // TestIssueLabelAttachDetach exercises attach/detach + the issue-scoped endpoints.
 func TestIssueLabelAttachDetach(t *testing.T) {
 	// Create issue

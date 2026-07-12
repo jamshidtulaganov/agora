@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
 import { Virtuoso } from "react-virtuoso";
-import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { AppLink } from "../../navigation";
 import { useNavigation } from "../../navigation";
 import {
@@ -23,6 +22,8 @@ import {
   Users,
 } from "lucide-react";
 import { BreadcrumbHeader, type BreadcrumbSegment } from "../../layout/breadcrumb-header";
+import { CockpitFrame } from "../../layout/cockpit-frame";
+import { InspectorSection } from "../../layout/inspector-section";
 import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@agora/ui/components/ui/tabs";
 import {
@@ -31,9 +32,6 @@ import {
   type ActivityTab,
 } from "./activity-tabs";
 import { Button, buttonVariants } from "@agora/ui/components/ui/button";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@agora/ui/components/ui/resizable";
-import { Sheet, SheetContent } from "@agora/ui/components/ui/sheet";
-import { useIsMobile } from "@agora/ui/hooks/use-mobile";
 import { ContentEditor, type ContentEditorRef, TitleEditor, useFileDropZone, FileDropOverlay } from "../../editor";
 import { FileUploadButton } from "@agora/ui/components/common/file-upload-button";
 import {
@@ -50,8 +48,8 @@ import { ActorAvatar } from "../../common/actor-avatar";
 import { PropRow } from "../../common/prop-row";
 import type { Attachment, Issue, IssueStatus, IssuePriority, TimelineEntry, UpdateIssueRequest } from "@agora/core/types";
 import { contentReferencesAttachment } from "@agora/core/types";
-import { STATUS_CONFIG, PRIORITY_CONFIG } from "@agora/core/issues/config";
 import { formatDateOnly } from "@agora/core/issues/date";
+import { formatActivity, type ActivityT } from "./activity-format";
 import { useUpdateIssue } from "@agora/core/issues/mutations";
 import { toast } from "sonner";
 import { StatusIcon, PriorityIcon, StatusPicker, PriorityPicker, StartDatePicker, DueDatePicker, AssigneePicker, LabelPicker } from ".";
@@ -78,6 +76,9 @@ import { PullRequestList } from "./pull-request-list";
 import { FigmaLinksSection } from "./figma-links-section";
 import { DesignProposalSection } from "./design-proposal-section";
 import { DesignAuditSection } from "./design-audit-section";
+import { SDLCStepper } from "./sdlc-stepper";
+import { useStagePipeline } from "./use-stage-pipeline";
+import { useLensParam, getLens, isLensRegistered } from "../lens";
 import { useGitHubSettings } from "@agora/core/github";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@agora/core/auth";
@@ -193,97 +194,6 @@ function shortDate(date: string | null): string {
   if (!date) return "—";
   return formatDateOnly(date, { month: "short", day: "numeric" }, "en-US");
 }
-
-type ActivityT = ReturnType<typeof useT<"issues">>["t"];
-
-function statusLabel(status: string, t: ActivityT): string {
-  if (status in STATUS_CONFIG) {
-    return t(($) => $.status[status as IssueStatus]);
-  }
-  return status;
-}
-
-function priorityLabel(priority: string, t: ActivityT): string {
-  if (priority in PRIORITY_CONFIG) {
-    return t(($) => $.priority[priority as IssuePriority]);
-  }
-  return priority;
-}
-
-function formatActivity(
-  entry: TimelineEntry,
-  t: ActivityT,
-  resolveActorName?: (type: string, id: string) => string,
-): string {
-  const details = (entry.details ?? {}) as Record<string, string>;
-  switch (entry.action) {
-    case "created":
-      return t(($) => $.activity.created);
-    case "status_changed":
-      return t(($) => $.activity.status_changed, {
-        from: statusLabel(details.from ?? "?", t),
-        to: statusLabel(details.to ?? "?", t),
-      });
-    case "priority_changed":
-      return t(($) => $.activity.priority_changed, {
-        from: priorityLabel(details.from ?? "?", t),
-        to: priorityLabel(details.to ?? "?", t),
-      });
-    case "assignee_changed": {
-      const isSelfAssign = details.to_type === entry.actor_type && details.to_id === entry.actor_id;
-      if (isSelfAssign) return t(($) => $.activity.self_assigned);
-      const toName = details.to_id && details.to_type && resolveActorName
-        ? resolveActorName(details.to_type, details.to_id)
-        : null;
-      if (toName) return t(($) => $.activity.assigned_to, { name: toName });
-      if (details.from_id && !details.to_id) return t(($) => $.activity.removed_assignee);
-      return t(($) => $.activity.changed_assignee);
-    }
-    case "start_date_changed": {
-      if (!details.to) return t(($) => $.activity.start_date_removed);
-      const formatted = formatDateOnly(details.to, { month: "short", day: "numeric" }, "en-US");
-      return t(($) => $.activity.start_date_set, { date: formatted });
-    }
-    case "due_date_changed": {
-      if (!details.to) return t(($) => $.activity.due_date_removed);
-      const formatted = formatDateOnly(details.to, { month: "short", day: "numeric" }, "en-US");
-      return t(($) => $.activity.due_date_set, { date: formatted });
-    }
-    case "title_changed":
-      return t(($) => $.activity.title_renamed, {
-        from: details.from ?? "?",
-        to: details.to ?? "?",
-      });
-    case "description_updated":
-      return t(($) => $.activity.description_updated);
-    case "task_completed":
-      return t(($) => $.activity.task_completed, { count: entry.coalesced_count ?? 1 });
-    case "task_failed":
-      return t(($) => $.activity.task_failed, { count: entry.coalesced_count ?? 1 });
-    case "squad_leader_evaluated": {
-      const reason = details.reason?.trim();
-      switch (details.outcome) {
-        case "action":
-          return reason
-            ? t(($) => $.activity.squad_leader_action_reason, { reason })
-            : t(($) => $.activity.squad_leader_action);
-        case "no_action":
-          return reason
-            ? t(($) => $.activity.squad_leader_no_action_reason, { reason })
-            : t(($) => $.activity.squad_leader_no_action);
-        case "failed":
-          return reason
-            ? t(($) => $.activity.squad_leader_failed_reason, { reason })
-            : t(($) => $.activity.squad_leader_failed);
-        default:
-          return t(($) => $.activity.squad_leader_evaluated);
-      }
-    }
-    default:
-      return entry.action ?? "";
-  }
-}
-
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -697,26 +607,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const { data: allIssues = [] } = useQuery(issueListOptions(wsId));
   const { getActorName } = useActorName();
   const { uploadWithToast } = useFileUpload(api);
-  const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: layoutId,
-  });
-  const sidebarRef = usePanelRef();
-  const isMobile = useIsMobile();
-  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(defaultSidebarOpen);
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-
-  useEffect(() => {
-    if (isMobile) {
-      setMobileSidebarOpen(false);
-    }
-  }, [isMobile]);
-  const sidebarOpen = isMobile ? mobileSidebarOpen : desktopSidebarOpen;
-  const [propertiesOpen, setPropertiesOpen] = useState(true);
-  const [detailsOpen, setDetailsOpen] = useState(true);
-  const [parentIssueOpen, setParentIssueOpen] = useState(true);
-  const [pullRequestsOpen, setPullRequestsOpen] = useState(true);
   const [metadataOpen, setMetadataOpen] = useState(false);
-  const [tokenUsageOpen, setTokenUsageOpen] = useState(true);
   const githubSettings = useGitHubSettings();
 
   // Per-issue, per-session set of optional properties currently visible in
@@ -1385,17 +1276,13 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     setAutoOpenProp(null);
   }, [autoOpenProp]);
 
-  const handleToggleSidebar = useCallback(() => {
-    if (isMobile) {
-      setMobileSidebarOpen((open) => !open);
-      return;
-    }
-
-    const panel = sidebarRef.current;
-    if (!panel) return;
-    if (panel.isCollapsed()) panel.expand();
-    else panel.collapse();
-  }, [isMobile, sidebarRef]);
+  // SDLC stepper — derives the Design/Dev/QA/Review pipeline from
+  // existing queries only (no new endpoints) and reads/writes the `?lens=`
+  // query param. Mounted via CockpitFrame's topStrip below. Called before
+  // the `if (loading)` / `if (!issue)` early returns so hook order stays
+  // stable. See docs/sdlc-stage-cockpit-plan.md phase C.
+  const stagePipeline = useStagePipeline(wsId, id);
+  const { lens: activeLens, setLens } = useLensParam();
 
   if (loading) {
     return (
@@ -1464,16 +1351,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const sidebarContent = (
     <div className="space-y-5">
       {/* Properties */}
-      <div>
-        <button
-          type="button"
-          className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors mb-2 hover:bg-accent/70 ${propertiesOpen ? "" : "text-muted-foreground hover:text-foreground"}`}
-          onClick={() => setPropertiesOpen(!propertiesOpen)}
-        >
-          {t(($) => $.detail.section_properties)}
-          <ChevronRight className={`!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${propertiesOpen ? "rotate-90" : ""}`} />
-        </button>
-        {propertiesOpen && <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 pl-2">
+      <InspectorSection title={t(($) => $.detail.section_properties)} defaultOpen>
+        <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 pl-2">
           {/* Core props — always rendered. */}
           <PropRow label={t(($) => $.detail.prop_status)}>
             <StatusPicker status={issue.status} onUpdate={handleUpdateField} align="start" />
@@ -1592,24 +1471,16 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               </Popover>
             </div>
           )}
-        </div>}
-      </div>
+        </div>
+      </InspectorSection>
 
       {/* Parent issue — standalone section, only when the issue has a
           parent. Setting a parent is reachable via the issue actions menu;
           this card surfaces an existing parent without occupying sidebar
           space for issues that don't have one. */}
       {parentIssue && (
-        <div>
-          <button
-            type="button"
-            className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors mb-2 hover:bg-accent/70 ${parentIssueOpen ? "" : "text-muted-foreground hover:text-foreground"}`}
-            onClick={() => setParentIssueOpen(!parentIssueOpen)}
-          >
-            {t(($) => $.detail.section_parent_issue)}
-            <ChevronRight className={`!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${parentIssueOpen ? "rotate-90" : ""}`} />
-          </button>
-          {parentIssueOpen && <div className="pl-2">
+        <InspectorSection title={t(($) => $.detail.section_parent_issue)} defaultOpen>
+          <div className="pl-2">
             <AppLink
               href={paths.issueDetail(parentIssue.id)}
               className="flex items-center gap-1.5 rounded-md px-2 py-1.5 -mx-2 text-xs hover:bg-accent/50 transition-colors group"
@@ -1618,30 +1489,24 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               <span className="text-muted-foreground shrink-0">{parentIssue.identifier}</span>
               <span className="truncate group-hover:text-foreground">{parentIssue.title}</span>
             </AppLink>
-          </div>}
-        </div>
+          </div>
+        </InspectorSection>
       )}
 
       {/* Pull requests — hidden when the workspace disables the PR sidebar
           (or the GitHub master switch is off). Backend data is kept either
           way so re-enabling restores the section instantly. */}
       {githubSettings.prSidebar && (
-        <div>
-          <button
-            type="button"
-            className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors mb-2 hover:bg-accent/70 ${pullRequestsOpen ? "" : "text-muted-foreground hover:text-foreground"}`}
-            onClick={() => setPullRequestsOpen(!pullRequestsOpen)}
-          >
-            {t(($) => $.detail.section_pull_requests)}
-            <ChevronRight className={`!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${pullRequestsOpen ? "rotate-90" : ""}`} />
-          </button>
-          {pullRequestsOpen && <div className="pl-2"><PullRequestList issueId={id} /></div>}
-        </div>
+        <InspectorSection title={t(($) => $.detail.section_pull_requests)} defaultOpen>
+          <div className="pl-2"><PullRequestList issueId={id} /></div>
+        </InspectorSection>
       )}
 
       {/* Figma designs referenced by the description (client-side extraction;
-          renders nothing when the issue links no designs). */}
-      <FigmaLinksSection description={issue.description} />
+          renders nothing when the issue links no designs). Also the entry
+          point into the optional design lens (?lens=design) — activeLens
+          hides that link when we're already viewing it. */}
+      <FigmaLinksSection issueId={id} description={issue.description} activeLens={activeLens} />
 
       {/* Design stage: proposal state, summary, and the review entry point.
           Renders nothing unless the issue is design-relevant. */}
@@ -1651,16 +1516,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       <DesignAuditSection issueId={id} />
 
       {/* Details */}
-      <div>
-        <button
-          type="button"
-          className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors mb-2 hover:bg-accent/70 ${detailsOpen ? "" : "text-muted-foreground hover:text-foreground"}`}
-          onClick={() => setDetailsOpen(!detailsOpen)}
-        >
-          {t(($) => $.detail.section_details)}
-          <ChevronRight className={`!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${detailsOpen ? "rotate-90" : ""}`} />
-        </button>
-        {detailsOpen && <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 pl-2">
+      <InspectorSection title={t(($) => $.detail.section_details)} defaultOpen>
+        <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 pl-2">
           <PropRow label={t(($) => $.detail.prop_created_by)}>
             <ActorAvatar actorType={issue.creator_type} actorId={issue.creator_id} size={18} enableHoverCard />
             <span className="cursor-pointer truncate">{getActorName(issue.creator_type, issue.creator_id)}</span>
@@ -1671,8 +1528,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           <PropRow label={t(($) => $.detail.prop_updated)}>
             <span className="text-muted-foreground">{shortDate(issue.updated_at)}</span>
           </PropRow>
-        </div>}
-      </div>
+        </div>
+      </InspectorSection>
 
       {/* Repository — which repo(s) the issue's project is bound to. Surfaces
           the code source the moment a task starts; prompts to connect one when
@@ -1730,16 +1587,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
 
       {/* Token usage */}
       {usage && usage.task_count > 0 && (
-        <div>
-          <button
-            type="button"
-            className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors mb-2 hover:bg-accent/70 ${tokenUsageOpen ? "" : "text-muted-foreground hover:text-foreground"}`}
-            onClick={() => setTokenUsageOpen(!tokenUsageOpen)}
-          >
-            {t(($) => $.detail.section_token_usage)}
-            <ChevronRight className={`!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${tokenUsageOpen ? "rotate-90" : ""}`} />
-          </button>
-          {tokenUsageOpen && <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 pl-2">
+        <InspectorSection title={t(($) => $.detail.section_token_usage)} defaultOpen>
+          <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 pl-2">
             <PropRow label={t(($) => $.detail.prop_input)}>
               <span className="text-muted-foreground">{formatTokenCount(usage.total_input_tokens)}</span>
             </PropRow>
@@ -1759,8 +1608,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             <PropRow label={t(($) => $.detail.prop_runs)}>
               <span className="text-muted-foreground">{usage.task_count}</span>
             </PropRow>
-          </div>}
-        </div>
+          </div>
+        </InspectorSection>
       )}
 
       {/* Metadata — agent-facing free-form KV bag. The values almost
@@ -1888,8 +1737,11 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
         ]
       : [];
 
-  const detailContent = (
-    <div className="flex h-full min-w-0 flex-1 flex-col">
+  // Header is a render-prop consumed by CockpitFrame: the frame owns the
+  // rail's open/collapse state (desktop panel collapse or mobile Sheet), and
+  // hands it here so the PanelRight toggle button can stay wired to it
+  // without CockpitFrame knowing anything about BreadcrumbHeader.
+  const renderHeader = ({ open, toggle }: { open: boolean; toggle: () => void }) => (
         <BreadcrumbHeader
           segments={breadcrumbSegments}
           leaf={
@@ -1953,8 +1805,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             />
             <Tooltip>
               <TooltipTrigger
-                className={buttonVariants({ variant: sidebarOpen ? "secondary" : "ghost", size: "icon-sm", className: sidebarOpen ? "" : "text-muted-foreground" })}
-                onClick={handleToggleSidebar}
+                className={buttonVariants({ variant: open ? "secondary" : "ghost", size: "icon-sm", className: open ? "" : "text-muted-foreground" })}
+                onClick={toggle}
               >
                 <PanelRight />
               </TooltipTrigger>
@@ -1963,7 +1815,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             </>
           }
         />
+  );
 
+  const bodyContent = (
         <div
           ref={setScrollContainerEl}
           data-tab-scroll-root
@@ -2337,44 +2191,40 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           </div>
         </div>
         </div>
-      </div>
   );
 
-  if (isMobile) {
-    return (
-      <div className="flex flex-1 min-h-0">
-        {detailContent}
-        <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
-          <SheetContent side="right" showCloseButton={false} className="w-[320px] overflow-y-auto p-4">
-            {sidebarContent}
-          </SheetContent>
-        </Sheet>
-      </div>
-    );
-  }
+  // "issue" always renders the body above (unchanged). Any other lens key
+  // goes through the registry — every SDLC stage has a Body as of phase F
+  // (design/dev/qa/review); an unregistered key (stale URL, removed lens —
+  // e.g. the old "deploy" lens, now the sprint-level deploy panel) falls
+  // back to the issue body.
+  const registeredLens = activeLens !== "issue" ? getLens(activeLens) : undefined;
+  const lensBody = registeredLens ? <registeredLens.Body issueId={id} /> : bodyContent;
+  // WIDE lenses carry their own right-hand column (QA review rail, editor
+  // chat, design's screenshot compare, review's PR list) — three columns
+  // cramp the primary surface (the live browser / editor / big screenshots).
+  // Soft-collapse the frame rail while a wide lens is active; the header
+  // toggle still re-opens it on demand.
+  const wideLens =
+    activeLens === "qa" || activeLens === "dev" || activeLens === "design" || activeLens === "review";
 
   return (
-    <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0" defaultLayout={defaultLayout} onLayoutChanged={onLayoutChanged}>
-      <ResizablePanel id="content" minSize="50%">
-        {detailContent}
-      </ResizablePanel>
-      <ResizableHandle />
-      <ResizablePanel
-        id="sidebar"
-        defaultSize={defaultSidebarOpen ? 320 : 0}
-        minSize={260}
-        maxSize={420}
-        collapsible
-        groupResizeBehavior="preserve-pixel-size"
-        panelRef={sidebarRef}
-        onResize={(size) => setDesktopSidebarOpen(size.inPixels > 0)}
-      >
-      <div className="overflow-y-auto border-l h-full">
-        <div className="p-4">
-          {sidebarContent}
-        </div>
-      </div>
-      </ResizablePanel>
-    </ResizablePanelGroup>
+    <CockpitFrame
+      layoutId={layoutId}
+      defaultRailOpen={defaultSidebarOpen && !wideLens}
+      railCollapsed={wideLens}
+      header={renderHeader}
+      topStrip={
+        <SDLCStepper
+          pipeline={stagePipeline}
+          activeLens={activeLens}
+          isLensAvailable={(stage) => isLensRegistered(stage)}
+          onSelectStage={setLens}
+        />
+      }
+      rail={sidebarContent}
+    >
+      {lensBody}
+    </CockpitFrame>
   );
 }

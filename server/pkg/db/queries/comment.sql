@@ -7,6 +7,16 @@ WHERE issue_id = $1 AND workspace_id = $2
 ORDER BY created_at ASC, id ASC
 LIMIT $3;
 
+-- name: ListRecentCommentsForIssue :many
+-- The MOST RECENT comments for an issue, newest first, capped at $3. Callers
+-- that scan for a fresh marker or the latest verdict must read from the newest
+-- end — the ASC ListCommentsForIssue with a LIMIT would read the OLDEST $3 rows
+-- and miss recent activity on a long issue (>$3 comments).
+SELECT * FROM comment
+WHERE issue_id = $1 AND workspace_id = $2
+ORDER BY created_at DESC, id DESC
+LIMIT $3;
+
 -- name: ListCommentsSinceForIssue :many
 -- Comments created strictly after $3 in chronological order, capped at $4.
 -- Powers the CLI's `--since` agent-polling flow.

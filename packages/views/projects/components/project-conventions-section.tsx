@@ -1,3 +1,4 @@
+/* eslint-disable i18next/no-literal-string -- project admin panel; i18n follow-up */
 "use client";
 
 import { useEffect, useState } from "react";

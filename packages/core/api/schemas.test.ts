@@ -4,12 +4,28 @@ import {
   DashboardAgentRunTimeListSchema,
   DashboardUsageByAgentListSchema,
   DashboardUsageDailyListSchema,
+  DeployEventSchema,
+  deployEnvironmentRequiresHuman,
   DuplicateIssueErrorBodySchema,
+  EMPTY_DEPLOY_EVENTS,
   EMPTY_FIGMA_CREDENTIAL_STATUS,
+  EMPTY_LIST_TEST_CASES,
+  EMPTY_TEST_CASE,
   EMPTY_USER,
   FigmaCredentialStatusSchema,
+  IssueDeployEventsResponseSchema,
   ListIssuesResponseSchema,
+  ListTestCasesResponseSchema,
+  TestCaseSchema,
+  parseDeployEnvironments,
   QAEvidenceSchema,
+  QAVerdictsResponseSchema,
+  ReviewVerdictSchema,
+  EMPTY_REVIEW_VERDICT,
+  ReviewDecisionResponseSchema,
+  EMPTY_REVIEW_DECISION,
+  TestCaseRunsResponseSchema,
+  EMPTY_TEST_CASE_RUNS,
   RuntimeHourlyActivityListSchema,
   RuntimeUsageByAgentListSchema,
   RuntimeUsageByHourListSchema,
@@ -20,6 +36,7 @@ import {
 } from "./schemas";
 import { EMPTY_ISSUE_BROWSER, EMPTY_WORKSPACE_LABS, IssueBrowserResponseSchema, WorkspaceLabsSchema } from "./schemas";
 import { parseWithFallback } from "./schema";
+import type { ListTestCasesResponse } from "../types/test-case";
 
 const baseIssue = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -342,6 +359,96 @@ describe("ConnectedBoxListSchema (Remote Boxes)", () => {
   });
 });
 
+describe("ReviewVerdictSchema (Review stage v2)", () => {
+  it("parses a well-formed verdict including findings", () => {
+    const parsed = ReviewVerdictSchema.parse({
+      verdict: "fail",
+      summary: "1 blocker in the auth path",
+      commit_sha: "deadbeefcafe",
+      files_reviewed: 7,
+      findings: [
+        {
+          file: "server/internal/handler/auth.go",
+          line: 42,
+          severity: "blocker",
+          title: "token compared with ==",
+          detail: "Use subtle.ConstantTimeCompare.",
+        },
+        { file: "docs/x.md", line: null, severity: "minor", title: "typo", detail: "" },
+      ],
+      comment_id: "c1",
+      reviewed_at: "2026-07-12T00:00:00Z",
+      reviewer_agent_id: "a1",
+    });
+    expect(parsed.verdict).toBe("fail");
+    expect(parsed.findings).toHaveLength(2);
+    expect(parsed.findings[0]!.severity).toBe("blocker");
+    expect(parsed.findings[1]!.line).toBeNull();
+  });
+
+  it("parses the endpoint's explicit 'none' answer (no review yet)", () => {
+    const parsed = ReviewVerdictSchema.parse({ verdict: "none", findings: [] });
+    expect(parsed.verdict).toBe("none");
+    expect(parsed.findings).toEqual([]);
+    expect(parsed.summary).toBe("");
+    expect(parsed.commit_sha).toBe("");
+  });
+
+  it("falls back to the 'none' empty verdict on a malformed body instead of throwing", () => {
+    for (const bad of [null, "nope", 42, { findings: "bad" }, { verdict: 7 }]) {
+      const out = parseWithFallback(bad, ReviewVerdictSchema, EMPTY_REVIEW_VERDICT, {
+        endpoint: "t",
+      });
+      expect(out).toEqual(EMPTY_REVIEW_VERDICT);
+    }
+  });
+
+  it("defaults a partial finding instead of rejecting the payload (agent-authored)", () => {
+    const parsed = ReviewVerdictSchema.parse({
+      verdict: "pass",
+      findings: [{ title: "note without file/line/severity" }],
+    });
+    expect(parsed.findings[0]).toMatchObject({
+      file: "",
+      line: null,
+      severity: "minor",
+      title: "note without file/line/severity",
+      detail: "",
+    });
+  });
+
+  it("keeps an unrecognized future severity/verdict as-is (enum drift downgrades)", () => {
+    const parsed = ReviewVerdictSchema.parse({
+      verdict: "pass_with_notes",
+      findings: [{ file: "a.ts", line: 1, severity: "nitpick", title: "t", detail: "d" }],
+    });
+    expect(parsed.verdict).toBe("pass_with_notes");
+    expect(parsed.findings[0]!.severity).toBe("nitpick");
+  });
+});
+
+describe("ReviewDecisionResponseSchema (review-decision)", () => {
+  it("parses both action shapes", () => {
+    expect(
+      ReviewDecisionResponseSchema.parse({ action: "approve", merged_dispatch: true }),
+    ).toMatchObject({ action: "approve", merged_dispatch: true, status: "", dispatched: false });
+    expect(
+      ReviewDecisionResponseSchema.parse({
+        action: "request_changes",
+        status: "in_progress",
+        dispatched: true,
+      }),
+    ).toMatchObject({ action: "request_changes", status: "in_progress", dispatched: true });
+  });
+
+  it("falls back to the zero-value decision on a malformed body", () => {
+    const out = parseWithFallback("nope", ReviewDecisionResponseSchema, EMPTY_REVIEW_DECISION, {
+      endpoint: "t",
+    });
+    expect(out).toEqual(EMPTY_REVIEW_DECISION);
+  });
+});
+
 describe("QAEvidenceSchema (evidence-first QA)", () => {
   it("parses a well-formed evidence row including the command table", () => {
     const parsed = QAEvidenceSchema.parse({
@@ -410,6 +517,207 @@ describe("QAEvidenceSchema (evidence-first QA)", () => {
     expect(parsed.result?.verdict).toBe("fail");
     expect(parsed.result?.commands).toHaveLength(1);
     expect(parsed.result?.design).toBeNull();
+  });
+
+  describe("reconciled_state (Phase 2 — server-computed single source of truth)", () => {
+    it("parses a known reconciled state through untouched", () => {
+      const parsed = QAEvidenceSchema.parse({
+        id: "e1", issue_id: "i1", verdict: "pass", reconciled_state: "pass_with_failing_cases",
+      });
+      expect(parsed.reconciled_state).toBe("pass_with_failing_cases");
+    });
+
+    it("defaults to \"\" when the field is absent — OLD SERVER compatibility", () => {
+      // A server that predates Phase 2 never sends this field at all. The
+      // client must fall back to its own label-derived computation, not
+      // reject the whole evidence row — "" is the explicit signal for that.
+      const parsed = QAEvidenceSchema.parse({ id: "e1", issue_id: "i1", verdict: "pass" });
+      expect(parsed.reconciled_state).toBe("");
+    });
+
+    it("degrades an unrecognized/future state to a plain string, never throws", () => {
+      // A newer server might ship an enum value this client doesn't know
+      // about yet — must not reject the evidence row over it.
+      const parsed = QAEvidenceSchema.parse({
+        id: "e1", issue_id: "i1", verdict: "pass", reconciled_state: "some_future_state",
+      });
+      expect(parsed.reconciled_state).toBe("some_future_state");
+    });
+
+    it("defaults the Phase 3 identity fields when absent — OLD SERVER compatibility", () => {
+      const parsed = QAEvidenceSchema.parse({ id: "e1", issue_id: "i1", verdict: "pass" });
+      expect(parsed.commit_sha).toBe("");
+      expect(parsed.triggered_by).toBe("");
+      expect(parsed.started_at).toBe("");
+      expect(parsed.finished_at).toBe("");
+    });
+
+    it("passes through populated identity fields", () => {
+      const parsed = QAEvidenceSchema.parse({
+        id: "e1", issue_id: "i1", verdict: "pass",
+        commit_sha: "deadbeef1234", triggered_by: "auto",
+        started_at: "2026-07-10T11:00:00Z", finished_at: "2026-07-10T11:20:00Z",
+      });
+      expect(parsed.commit_sha).toBe("deadbeef1234");
+      expect(parsed.triggered_by).toBe("auto");
+    });
+
+    it("a wrong-typed reconciled_state (number) falls back to the row's own default via .nullable() null-fallback, not a throw", () => {
+      // Whole-response malformed-field tolerance: a non-string reconciled_state
+      // must not crash the endpoint — parseWithFallback's null fallback (the
+      // real client path, see getQAEvidence) absorbs it.
+      const result = parseWithFallback(
+        { id: "e1", issue_id: "i1", verdict: "pass", reconciled_state: 42 },
+        QAEvidenceSchema.nullable(),
+        null,
+        { endpoint: "t" },
+      );
+      expect(result).toBeNull();
+    });
+  });
+});
+
+describe("DeployEventSchema / IssueDeployEventsResponseSchema (deploy P0)", () => {
+  const endpoint = { endpoint: "GET /api/issues/:id/deploy-events" };
+
+  it("parses a well-formed deploy event", () => {
+    const parsed = DeployEventSchema.parse({
+      id: "de-1",
+      issue_id: "issue-1",
+      ref: "feature/foo",
+      target: "jamshid's box",
+      status: "success",
+      summary: "Switched to a new branch",
+      captured_at: "2026-06-30T00:00:00Z",
+    });
+    expect(parsed.status).toBe("success");
+    expect(parsed.ref).toBe("feature/foo");
+  });
+
+  it("defaults every field on a bare object (parse, don't trust)", () => {
+    const parsed = DeployEventSchema.parse({});
+    expect(parsed).toEqual({
+      id: "",
+      issue_id: "",
+      ref: "",
+      target: "",
+      status: "",
+      summary: "",
+      captured_at: "",
+    });
+  });
+
+  it("parses a well-formed issue deploy-events response (latest + recent)", () => {
+    const raw = {
+      latest: { id: "de-2", issue_id: "issue-1", ref: "main", target: "box-1", status: "failed", summary: "", captured_at: "2026-07-01T00:00:00Z" },
+      recent: [
+        { id: "de-2", issue_id: "issue-1", ref: "main", target: "box-1", status: "failed", summary: "", captured_at: "2026-07-01T00:00:00Z" },
+        { id: "de-1", issue_id: "issue-1", ref: "main", target: "box-1", status: "success", summary: "", captured_at: "2026-06-30T00:00:00Z" },
+      ],
+    };
+    const parsed = parseWithFallback(raw, IssueDeployEventsResponseSchema, EMPTY_DEPLOY_EVENTS, endpoint);
+    expect(parsed.latest?.status).toBe("failed");
+    expect(parsed.recent).toHaveLength(2);
+  });
+
+  it("degrades a never-deployed issue's null latest to the empty-list shape, not an error", () => {
+    const parsed = parseWithFallback(
+      { latest: null, recent: [] },
+      IssueDeployEventsResponseSchema,
+      EMPTY_DEPLOY_EVENTS,
+      endpoint,
+    );
+    expect(parsed.latest).toBeNull();
+    expect(parsed.recent).toEqual([]);
+  });
+
+  it("falls back to the empty shape on a malformed body instead of throwing", () => {
+    expect(parseWithFallback(null, IssueDeployEventsResponseSchema, EMPTY_DEPLOY_EVENTS, endpoint)).toEqual(
+      EMPTY_DEPLOY_EVENTS,
+    );
+    expect(parseWithFallback("nope", IssueDeployEventsResponseSchema, EMPTY_DEPLOY_EVENTS, endpoint)).toEqual(
+      EMPTY_DEPLOY_EVENTS,
+    );
+  });
+
+  it("drops a malformed recent entry's shape gracefully via per-field defaults rather than rejecting the whole response", () => {
+    const parsed = parseWithFallback(
+      { latest: null, recent: [{ status: "success" }] },
+      IssueDeployEventsResponseSchema,
+      EMPTY_DEPLOY_EVENTS,
+      endpoint,
+    );
+    expect(parsed.recent).toHaveLength(1);
+    expect(parsed.recent[0]!.status).toBe("success");
+    expect(parsed.recent[0]!.ref).toBe("");
+  });
+});
+
+describe("parseDeployEnvironments (deploy MCP-P1)", () => {
+  it("parses a well-formed two-environment list", () => {
+    const envs = parseDeployEnvironments({
+      deploy_environments: [
+        {
+          key: "staging",
+          label: "Staging",
+          kind: "gitlab_pipeline",
+          target: { project_path: "salesdoctor/sd-main", ref: "staging", environment: "staging" },
+        },
+        {
+          key: "production",
+          label: "Production",
+          kind: "gitlab_pipeline",
+          target: { project_path: "salesdoctor/sd-main", ref: "main" },
+          requires_human: true,
+        },
+      ],
+    });
+    expect(envs).toHaveLength(2);
+    expect(envs[0]!.key).toBe("staging");
+    expect(envs[0]!.target.project_path).toBe("salesdoctor/sd-main");
+    expect(envs[1]!.requires_human).toBe(true);
+  });
+
+  it("returns [] for missing, null, or non-object settings", () => {
+    expect(parseDeployEnvironments(undefined)).toEqual([]);
+    expect(parseDeployEnvironments(null)).toEqual([]);
+    expect(parseDeployEnvironments("nope")).toEqual([]);
+    expect(parseDeployEnvironments({})).toEqual([]);
+  });
+
+  it("returns [] when deploy_environments is not an array", () => {
+    expect(parseDeployEnvironments({ deploy_environments: "staging" })).toEqual([]);
+    expect(parseDeployEnvironments({ deploy_environments: { key: "staging" } })).toEqual([]);
+  });
+
+  it("skips malformed entries without hiding their siblings, and drops keyless entries", () => {
+    const envs = parseDeployEnvironments({
+      deploy_environments: [
+        { key: "staging", target: { command: "make deploy" } },
+        "not an object",
+        { key: 42 },
+        { label: "keyless" },
+      ],
+    });
+    expect(envs).toHaveLength(1);
+    expect(envs[0]!.key).toBe("staging");
+  });
+
+  it("degrades a malformed target to the empty target instead of rejecting the entry", () => {
+    const envs = parseDeployEnvironments({
+      deploy_environments: [{ key: "staging", target: "broken" }],
+    });
+    expect(envs).toHaveLength(1);
+    expect(envs[0]!.target).toMatchObject({ project_path: "", ref: "", command: "" });
+  });
+
+  it("deployEnvironmentRequiresHuman: explicit flag or production-named key", () => {
+    const env = (over: Record<string, unknown>) =>
+      parseDeployEnvironments({ deploy_environments: [{ key: "staging", ...over }] })[0]!;
+    expect(deployEnvironmentRequiresHuman(env({}))).toBe(false);
+    expect(deployEnvironmentRequiresHuman(env({ requires_human: true }))).toBe(true);
+    expect(deployEnvironmentRequiresHuman(env({ key: "production" }))).toBe(true);
+    expect(deployEnvironmentRequiresHuman(env({ key: " PROD " }))).toBe(true);
   });
 });
 
@@ -558,5 +866,132 @@ describe("WorkspaceLabsSchema", () => {
       const parsed = parseWithFallback(body, WorkspaceLabsSchema, EMPTY_WORKSPACE_LABS, endpoint);
       expect(parsed.qa_dev_boxes).toBe(true);
     }
+  });
+});
+
+describe("TestCaseSchema metadata (preconditions / priority / modality)", () => {
+  const endpoint = { endpoint: "GET /api/issues/:id/test-cases" };
+  const listEndpoint = { endpoint: "GET /api/issues/:id/test-cases" };
+  // EMPTY_LIST_TEST_CASES's literal type is { test_cases: never[] } — anchor
+  // parseWithFallback's T to the real response shape, as the client does.
+  const emptyList: ListTestCasesResponse = EMPTY_LIST_TEST_CASES;
+  const legacyCase = {
+    id: "tc-1",
+    issue_id: "issue-1",
+    title: "login works",
+    steps: "1. open login",
+    expected: "dashboard",
+    kind: "manual",
+    source: "human",
+    author_type: "member",
+    category: "positive",
+    created_at: "2026-01-01T00:00:00Z",
+    latest_run: null,
+  };
+
+  it("defaults absent metadata fields — an OLD server's response parses as a legacy row", () => {
+    const parsed = parseWithFallback(
+      { test_cases: [legacyCase] },
+      ListTestCasesResponseSchema,
+      emptyList,
+      listEndpoint,
+    );
+    expect(parsed.test_cases).toHaveLength(1);
+    expect(parsed.test_cases[0]?.preconditions).toBe("");
+    expect(parsed.test_cases[0]?.priority).toBe("p2");
+    expect(parsed.test_cases[0]?.modality).toBe("");
+    expect(parsed.test_cases[0]?.criterion_ref).toBe("");
+  });
+
+  it("keeps provided metadata and tolerates unknown enum drift (plain strings)", () => {
+    const parsed = parseWithFallback(
+      {
+        test_cases: [
+          { ...legacyCase, preconditions: "admin seeded", priority: "p1", modality: "ui", criterion_ref: "AC2" },
+          // A FUTURE server's new enum value must still parse (downgrade, not crash).
+          { ...legacyCase, id: "tc-2", priority: "p0", modality: "mobile" },
+        ],
+      },
+      ListTestCasesResponseSchema,
+      emptyList,
+      listEndpoint,
+    );
+    expect(parsed.test_cases[0]?.priority).toBe("p1");
+    expect(parsed.test_cases[0]?.modality).toBe("ui");
+    expect(parsed.test_cases[0]?.preconditions).toBe("admin seeded");
+    expect(parsed.test_cases[0]?.criterion_ref).toBe("AC2");
+    expect(parsed.test_cases[1]?.priority).toBe("p0");
+    expect(parsed.test_cases[1]?.modality).toBe("mobile");
+  });
+
+  it("falls back to the inert empty case on wrong-typed metadata (single-row endpoints)", () => {
+    const parsed = parseWithFallback(
+      { ...legacyCase, priority: 1, modality: ["ui"], preconditions: { text: "x" } },
+      TestCaseSchema,
+      EMPTY_TEST_CASE,
+      endpoint,
+    );
+    expect(parsed).toEqual(EMPTY_TEST_CASE);
+    expect(parsed.priority).toBe("p2");
+  });
+
+  it("falls back to an empty list on a null test_cases array", () => {
+    const parsed = parseWithFallback(
+      { test_cases: null },
+      ListTestCasesResponseSchema,
+      emptyList,
+      listEndpoint,
+    );
+    expect(parsed.test_cases).toEqual([]);
+  });
+});
+
+describe("TestCaseRunsResponseSchema (Phase 3 run history)", () => {
+  const endpoint = { endpoint: "GET /api/test-cases/:id/runs" };
+
+  it("parses a well-formed history with identity fields", () => {
+    const parsed = TestCaseRunsResponseSchema.parse({
+      runs: [
+        {
+          id: "r1", status: "pass", run_source: "agent", created_at: "2026-07-10T12:00:00Z",
+          commit_sha: "deadbeef1234", session_id: "s1",
+          started_at: "", finished_at: "2026-07-10T12:01:00Z",
+        },
+      ],
+    });
+    expect(parsed.runs).toHaveLength(1);
+    expect(parsed.runs[0]!.commit_sha).toBe("deadbeef1234");
+  });
+
+  it("defaults identity fields on legacy runs (pre-157 rows)", () => {
+    const parsed = TestCaseRunsResponseSchema.parse({
+      runs: [{ id: "r1", status: "fail", run_source: "human", created_at: "2026-01-01T00:00:00Z" }],
+    });
+    expect(parsed.runs[0]!.commit_sha).toBe("");
+    expect(parsed.runs[0]!.session_id).toBe("");
+  });
+
+  it("falls back to an empty history on a malformed body instead of throwing", () => {
+    expect(parseWithFallback(null, TestCaseRunsResponseSchema, EMPTY_TEST_CASE_RUNS, endpoint).runs).toEqual([]);
+    expect(parseWithFallback({ runs: "bad" }, TestCaseRunsResponseSchema, EMPTY_TEST_CASE_RUNS, endpoint).runs).toEqual([]);
+    expect(parseWithFallback("nope", TestCaseRunsResponseSchema, EMPTY_TEST_CASE_RUNS, endpoint).runs).toEqual([]);
+  });
+
+  it("defaults a missing runs array to []", () => {
+    expect(TestCaseRunsResponseSchema.parse({}).runs).toEqual([]);
+  });
+});
+
+describe("QAVerdictsResponseSchema — Phase 3 reconciled_state per entry", () => {
+  it("passes reconciled_state + triggered_by through and defaults them when absent (old server)", () => {
+    const parsed = QAVerdictsResponseSchema.parse({
+      verdicts: {
+        "issue-1": { verdict: "pass", reconciled_state: "stale", triggered_by: "auto" },
+        "issue-2": { verdict: "fail" },
+      },
+    });
+    expect(parsed.verdicts["issue-1"]!.reconciled_state).toBe("stale");
+    expect(parsed.verdicts["issue-1"]!.triggered_by).toBe("auto");
+    expect(parsed.verdicts["issue-2"]!.reconciled_state).toBe("");
   });
 });

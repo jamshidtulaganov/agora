@@ -46,7 +46,12 @@
     "quick_create_done": "Agent bilan yaratildi",
     "quick_create_failed": "Agent bilan yaratish muvaffaqiyatsiz tugadi",
     "design_proposal_ready": "Dizayn taklifi tayyor",
-    "design_proposal_blocked": "Dizayn taklifi bloklandi"
+    "design_proposal_blocked": "Dizayn taklifi bloklandi",
+    "qa_failed": "QA o'tmadi",
+    "qa_passed": "QA muvaffaqiyatsizlikdan keyin o'tdi",
+    "review_failed": "Kod-tekshiruvdan o'tmadi",
+    "review_passed": "Kod-tekshiruvdan o'tdi",
+    "merge_ready": "Birlashtirishga tayyor"
   },
   "labels": {
     "set_status_to": "Holat o‘rnatildi",

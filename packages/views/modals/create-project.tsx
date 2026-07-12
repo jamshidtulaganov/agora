@@ -1,3 +1,4 @@
+/* eslint-disable i18next/no-literal-string -- create project modal; i18n follow-up */
 "use client";
 
 import { useState, useRef } from "react";

@@ -95,13 +95,20 @@ func TestLocalDirectoryQATarget(t *testing.T) {
 		}
 	})
 
-	t.Run("misses when labs off", func(t *testing.T) {
+	t.Run("resolves even when labs off (local_directory is the opt-in)", func(t *testing.T) {
+		// A local_directory is a deliberate per-project resource; its presence
+		// on an online daemon is itself the signal to QA locally, regardless of
+		// the labs qa_dev_runtimes toggle.
 		setWorkspaceLabsQADevRuntimes(t, false)
 		createHandlerTestDaemonRuntime(t, "ld-daemon-labsoff", "claude", testUserID, "private")
 		seedLocalDirectoryResource(t, projectID, "/Users/dev/app", "ld-daemon-labsoff")
 
-		if _, _, ok := testHandler.localDirectoryQATarget(ctx, issue); ok {
-			t.Error("labs off must not resolve a local_directory QA target")
+		did, _, ok := testHandler.localDirectoryQATarget(ctx, issue)
+		if !ok {
+			t.Fatal("local_directory on an online daemon must resolve even with labs off")
+		}
+		if did != "ld-daemon-labsoff" {
+			t.Errorf("daemonID = %q", did)
 		}
 	})
 

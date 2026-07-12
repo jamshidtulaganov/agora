@@ -6,7 +6,9 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/util"
@@ -26,6 +28,57 @@ var testRunsBlockRe = regexp.MustCompile("(?s)```test-runs\\s*\\n(.*?)```")
 // it COMPILES automated cases into runnable Playwright scripts (compile_tests).
 var compiledScriptsBlockRe = regexp.MustCompile("(?s)```scripts\\s*\\n(.*?)```")
 
+// scopedSingleTestCaseRe recognizes the "RUN ONLY the single test case id=<uuid>"
+// scope marker the Test-cases panel's per-row Run button appends to a
+// run_test_cases dispatch (see test-cases-panel.tsx's runOne mutation). The
+// scope was previously PROSE ONLY — the server never enforced it, so
+// CaptureTestRuns wrote every entry an agent emitted even when it strayed
+// outside the one case it was asked to run (audit finding: "scoped single-case
+// runs not enforced"). Matched case-insensitively against the ORIGINAL
+// dispatch (trigger) comment, not the agent's reply.
+var scopedSingleTestCaseRe = regexp.MustCompile(`(?i)RUN ONLY the single test case id=([0-9a-fA-F-]{36})`)
+
+// scopedTestCaseSetRe recognizes the SET form of the scope marker — "RUN ONLY
+// these test cases ids=<uuid>,<uuid>,…" — emitted by the Test-cases panel's
+// "Re-run failed (N)" button (Phase 2, item 4). Same fail-closed enforcement
+// as the single-case form, over a set.
+var scopedTestCaseSetRe = regexp.MustCompile(`(?i)RUN ONLY these test cases ids=([0-9a-fA-F-]{36}(?:\s*,\s*[0-9a-fA-F-]{36})*)`)
+
+// scopedTestCaseIDsFromTrigger resolves the test_case_id SET a run_test_cases
+// dispatch was scoped to, by re-reading the ORIGINAL trigger comment (the one
+// carrying the "Focus on: RUN ONLY …" clause buildSliceInstruction appended).
+// Handles both the single-case marker (the per-row Run button) and the set
+// marker (Re-run failed). ok=false for a whole-issue run (no scope marker, or
+// triggerCommentID unresolvable) — callers must then apply NO filtering,
+// preserving existing whole-issue-run behavior exactly. Keys are
+// util.UUIDToString-normalized.
+func (s *TaskService) scopedTestCaseIDsFromTrigger(ctx context.Context, triggerCommentID pgtype.UUID) (map[string]bool, bool) {
+	if !triggerCommentID.Valid {
+		return nil, false
+	}
+	trigger, err := s.Queries.GetComment(ctx, triggerCommentID)
+	if err != nil {
+		return nil, false
+	}
+	set := map[string]bool{}
+	if m := scopedSingleTestCaseRe.FindStringSubmatch(trigger.Content); m != nil {
+		if id, perr := util.ParseUUID(m[1]); perr == nil {
+			set[util.UUIDToString(id)] = true
+		}
+	}
+	if m := scopedTestCaseSetRe.FindStringSubmatch(trigger.Content); m != nil {
+		for _, raw := range strings.Split(m[1], ",") {
+			if id, perr := util.ParseUUID(strings.TrimSpace(raw)); perr == nil {
+				set[util.UUIDToString(id)] = true
+			}
+		}
+	}
+	if len(set) == 0 {
+		return nil, false
+	}
+	return set, true
+}
+
 type genTestRun struct {
 	TestCaseID string `json:"test_case_id"`
 	Status     string `json:"status"`
@@ -42,6 +95,9 @@ type genTestRun struct {
 	// (status=pass). "unknown" (the default) is neutral — an [e2e] case with no
 	// baseline deploy, or a discrimination-flag-off run, never counts as evidence.
 	BaselineStatus string `json:"baseline_status"`
+	// CommitSha (Phase 3 — run identity) is `git rev-parse HEAD` of the checkout
+	// this run tested. Optional; validated to a 7-40 hex shape, else "".
+	CommitSha string `json:"commit_sha"`
 }
 
 type genCompiledScript struct {
@@ -56,6 +112,51 @@ type genTestCase struct {
 	Kind     string `json:"kind"`
 	Category string `json:"category"` // positive | negative
 	Script   string `json:"script"`   // optional compiled Playwright script (automated cases)
+	// Phase-2 metadata (all optional — fail-open normalization below):
+	// preconditions free text; priority p1|p2|p3 (else p2); modality
+	// ui|api|unit|manual (else "" = unspecified).
+	Preconditions string `json:"preconditions"`
+	Priority      string `json:"priority"`
+	Modality      string `json:"modality"`
+	// CriterionRef names the acceptance criterion the case verifies ("AC2" or
+	// a trimmed quote) — traceability, truncated to a short pointer below.
+	CriterionRef string `json:"criterion_ref"`
+}
+
+// genCriterionRefMaxRunes mirrors the handler's cap: a short pointer, never a
+// pasted spec. Silent truncation — over-long text never drops the case.
+const genCriterionRefMaxRunes = 120
+
+func normalizeGenCriterionRef(ref string) string {
+	trimmed := strings.TrimSpace(ref)
+	runes := []rune(trimmed)
+	if len(runes) <= genCriterionRefMaxRunes {
+		return trimmed
+	}
+	return string(runes[:genCriterionRefMaxRunes-1]) + "…"
+}
+
+// normalizeGenPriority / normalizeGenModality mirror the handler package's
+// normalization: agent-emitted metadata is best-effort, so anything outside
+// the known values downgrades to the default instead of dropping the case.
+func normalizeGenPriority(p string) string {
+	switch strings.ToLower(strings.TrimSpace(p)) {
+	case "p1":
+		return "p1"
+	case "p3":
+		return "p3"
+	default:
+		return "p2"
+	}
+}
+
+func normalizeGenModality(m string) string {
+	switch strings.ToLower(strings.TrimSpace(m)) {
+	case "ui", "api", "unit", "manual":
+		return strings.ToLower(strings.TrimSpace(m))
+	default:
+		return ""
+	}
 }
 
 // captureTestCases persists a gen_test_cases agent comment's ```test-cases```
@@ -104,18 +205,22 @@ func (s *TaskService) CaptureTestCases(ctx context.Context, issue db.Issue, cont
 			script = strings.TrimSpace(c.Script)
 		}
 		if _, err := s.Queries.CreateTestCase(ctx, db.CreateTestCaseParams{
-			WorkspaceID: issue.WorkspaceID,
-			IssueID:     issue.ID,
-			ProjectID:   issue.ProjectID,
-			Title:       title,
-			Steps:       strings.TrimSpace(c.Steps),
-			Expected:    strings.TrimSpace(c.Expected),
-			Kind:        kind,
-			Source:      "agent",
-			AuthorType:  "agent",
-			AuthorID:    agentID,
-			Category:    category,
-			Script:      script,
+			WorkspaceID:   issue.WorkspaceID,
+			IssueID:       issue.ID,
+			ProjectID:     issue.ProjectID,
+			Title:         title,
+			Steps:         strings.TrimSpace(c.Steps),
+			Expected:      strings.TrimSpace(c.Expected),
+			Kind:          kind,
+			Source:        "agent",
+			AuthorType:    "agent",
+			AuthorID:      agentID,
+			Category:      category,
+			Script:        script,
+			Preconditions: strings.TrimSpace(c.Preconditions),
+			Priority:      normalizeGenPriority(c.Priority),
+			Modality:      normalizeGenModality(c.Modality),
+			CriterionRef:  normalizeGenCriterionRef(c.CriterionRef),
 		}); err != nil {
 			slog.Warn("capture test cases: insert failed", "error", err, "issue_id", util.UUIDToString(issue.ID))
 			continue
@@ -142,7 +247,18 @@ func (s *TaskService) CaptureTestCases(ctx context.Context, issue db.Issue, cont
 // script — within the same workspace before writing (an agent can't post runs
 // for another issue's case). Best-effort + detached. Exported so the HTTP
 // comment handler can call it too (agents post via POST /comments).
-func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, content string, agentID pgtype.UUID) {
+//
+// triggerCommentID is the ORIGINAL dispatch comment for this run, when known
+// (task.TriggerCommentID / the reply's parent_id — see call sites). When that
+// comment carries a scope marker — the single-case form ("RUN ONLY the single
+// test case id=<uuid>", the per-row Run button) or the set form ("RUN ONLY
+// these test cases ids=…", the Re-run failed button) — this run is a SCOPED
+// run and CaptureTestRuns fails CLOSED: any emitted entry whose test_case_id
+// is outside the scoped set is DROPPED (logged, not written), instead of
+// trusting the agent's own adherence to the prose instruction. A zero-value
+// triggerCommentID, or a trigger with no scope marker, is a whole-issue run —
+// every entry is accepted exactly as before.
+func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, content string, agentID, triggerCommentID pgtype.UUID) {
 	m := testRunsBlockRe.FindStringSubmatch(content)
 	if m == nil {
 		return
@@ -151,6 +267,12 @@ func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, conte
 	if err := json.Unmarshal([]byte(strings.TrimSpace(m[1])), &runs); err != nil {
 		return
 	}
+	scopedCaseIDs, scoped := s.scopedTestCaseIDsFromTrigger(ctx, triggerCommentID)
+	// ONE session per capture dispatch (Phase 3 — run identity): every run row
+	// written from this trigger shares the same session_id, so "which runs
+	// belong to the same execution" is a column, not a timestamp heuristic.
+	sessionID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	finishedAt := pgtype.Timestamptz{Time: time.Now(), Valid: true}
 
 	inserted := 0
 	for _, r := range runs {
@@ -171,6 +293,16 @@ func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, conte
 		}
 		caseID, err := util.ParseUUID(r.TestCaseID)
 		if err != nil {
+			continue
+		}
+		// Fail-closed scope enforcement: a scoped run only ever writes the
+		// case(s) it was asked to run. Anything else the agent emitted (it
+		// strayed, or fabricated extra entries) is dropped, not trusted — the
+		// scope was previously prose-only and unenforced.
+		if scoped && !scopedCaseIDs[util.UUIDToString(caseID)] {
+			slog.Warn("capture test runs: dropped entry outside scoped case set",
+				"issue_id", util.UUIDToString(issue.ID), "scoped_cases", len(scopedCaseIDs),
+				"reported_case_id", r.TestCaseID)
 			continue
 		}
 		tc, err := s.Queries.GetTestCase(ctx, db.GetTestCaseParams{ID: caseID, WorkspaceID: issue.WorkspaceID})
@@ -196,6 +328,9 @@ func (s *TaskService) CaptureTestRuns(ctx context.Context, issue db.Issue, conte
 			RunByID:        agentID,
 			TracePath:      strings.TrimSpace(r.TracePath),
 			BaselineStatus: baselineStatus,
+			CommitSha:      validCommitSha(r.CommitSha),
+			SessionID:      sessionID,
+			FinishedAt:     finishedAt,
 		}); err != nil {
 			slog.Warn("capture test runs: insert failed", "error", err, "issue_id", util.UUIDToString(issue.ID))
 			continue

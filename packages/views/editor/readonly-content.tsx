@@ -16,7 +16,7 @@
  * - Rendering mentions with the same IssueMentionCard component and .mention class
  */
 
-import { isValidElement, memo, useMemo, useRef } from "react";
+import { isValidElement, memo, useMemo, useRef, type ReactNode } from "react";
 import ReactMarkdown, {
   defaultUrlTransform,
   type Components,
@@ -42,6 +42,7 @@ import { preprocessMarkdown } from "./utils/preprocess";
 import { highlightToHtml } from "./utils/highlight-markdown";
 import { MermaidDiagram } from "./mermaid-diagram";
 import { HtmlBlockPreview } from "./html-block-preview";
+import { CollapsedFenceBlock, shouldCollapseFence, fenceChildrenToText } from "./collapsed-fence-block";
 import { AttachmentDownloadProvider } from "./attachment-download-context";
 import { Attachment as AttachmentRenderer } from "./attachment";
 import "katex/dist/katex.min.css";
@@ -258,7 +259,9 @@ function buildComponents(): Partial<Components> {
 
     // Code — lowlight highlighting for blocks, plain render for inline
     code: ({ className, children, node, ...props }) => {
-      const lang = /language-(\w+)/.exec(className || "")?.[1];
+      // [\w-] (not \w alone) so hyphenated tags like `test-runs` /
+      // `deploy-result` capture in full instead of truncating at the hyphen.
+      const lang = /language-([\w-]+)/.exec(className || "")?.[1];
       const isBlock =
         node?.position &&
         node.position.start.line !== node.position.end.line;
@@ -281,6 +284,14 @@ function buildComponents(): Partial<Components> {
 
       // Block code — highlight with lowlight, output hljs classes
       const code = String(children).replace(/\n$/, "");
+
+      if (isBlock && shouldCollapseFence(lang, code)) {
+        // Long machine-payload fence (raw JSON test-run results, compiled
+        // scripts, etc.) — collapse to a one-line summary instead of a wall
+        // of JSON. See collapsed-fence-block.tsx.
+        return <CollapsedFenceBlock lang={lang} code={code} />;
+      }
+
       try {
         const tree = lang
           ? lowlight.highlight(lang, code)
@@ -320,8 +331,18 @@ function buildComponents(): Partial<Components> {
       // would also fire on neighboring languages like `language-htmlbars`
       // and silently strip their <pre> wrapper.
       if (isValidElement(children)) {
-        const childProps = children.props as { className?: string };
+        const childProps = children.props as { className?: string; children?: ReactNode };
         if (PRE_UNWRAP_RE.test(childProps.className ?? "")) {
+          return <>{children}</>;
+        }
+        // Same unwrap trick for a fence that CollapsedFenceBlock will render
+        // (a button when collapsed, its own <pre> when expanded) — checked
+        // from the same raw className + text `code` will see, since
+        // `children.type` here is still the shared `code` renderer function,
+        // not CollapsedFenceBlock (react-markdown hasn't invoked it yet).
+        const lang = /language-([\w-]+)/.exec(childProps.className ?? "")?.[1];
+        const rawCode = fenceChildrenToText(childProps.children).replace(/\n$/, "");
+        if (shouldCollapseFence(lang, rawCode)) {
           return <>{children}</>;
         }
       }

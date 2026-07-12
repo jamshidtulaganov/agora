@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { probeEditorReachable } from "./editor-section";
+import { probeEditorReachable } from "./editor-workbench";
 
 // Contract for the cloud-editor reachability probe: a dead code-server proxy
 // (network reject or a 5xx from the ReverseProxy) is unreachable → the caller

@@ -6,6 +6,12 @@
 -- Insert the parsed verdict, or refresh a same-(issue,baseline_ref,branch_sha)
 -- re-run in place (a re-run on an ADVANCED sha writes a new row instead). Keeps
 -- evidence immutable per tested commit while letting a repeated smoke update.
+--
+-- commit_sha / triggered_by / started_at / finished_at (migration 157) are
+-- run-identity METADATA on the single current row — deliberately NOT part of
+-- the (issue_id, baseline_ref, branch_sha) conflict key, which keeps its
+-- one-current-row overwrite semantics untouched (see the migration comment).
+-- finished_at is stamped at capture time; started_at only when reported.
 INSERT INTO qa_evidence (
     workspace_id,
     issue_id,
@@ -15,15 +21,23 @@ INSERT INTO qa_evidence (
     summary,
     result_json,
     source,
+    commit_sha,
+    triggered_by,
+    started_at,
+    finished_at,
     captured_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, sqlc.narg(started_at), now(), now())
 ON CONFLICT (issue_id, baseline_ref, branch_sha) DO UPDATE
-SET verdict     = EXCLUDED.verdict,
-    summary     = EXCLUDED.summary,
-    result_json = EXCLUDED.result_json,
-    source      = EXCLUDED.source,
-    captured_at = now()
+SET verdict      = EXCLUDED.verdict,
+    summary      = EXCLUDED.summary,
+    result_json  = EXCLUDED.result_json,
+    source       = EXCLUDED.source,
+    commit_sha   = EXCLUDED.commit_sha,
+    triggered_by = EXCLUDED.triggered_by,
+    started_at   = EXCLUDED.started_at,
+    finished_at  = now(),
+    captured_at  = now()
 RETURNING *;
 
 -- name: GetLatestQAEvidenceForIssue :one
@@ -43,6 +57,8 @@ SELECT DISTINCT ON (issue_id)
     summary,
     baseline_ref,
     branch_sha,
+    commit_sha,
+    triggered_by,
     captured_at
 FROM qa_evidence
 WHERE workspace_id = $1

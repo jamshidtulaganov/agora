@@ -1050,15 +1050,31 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 		// the same downstream automations the AttachLabel handler fires, so the
 		// merge-gate / done-gate / autoroute run even when the agent only wrote a
 		// verdict comment (SD-588 stress finding).
-		if verdict, labeled := h.TaskService.CaptureQAEvidence(r.Context(), issue, comment.Content); labeled {
+		if verdict, labeled := h.TaskService.CaptureQAEvidence(r.Context(), issue, comment.Content, comment.ParentID); labeled {
 			gateLabel := "qa:" + verdict
 			go h.maybeAutoDocsOnLabel(context.Background(), issue, gateLabel, authorID)
 			go h.maybeMergeOnQAPass(context.Background(), issue, gateLabel, authorID)
+			go h.maybeRunReviewOnQAPass(context.Background(), issue, gateLabel, authorID)
 			go h.maybeRouteToDevLeadOnQAFail(context.Background(), issue, gateLabel, authorID)
 			go h.maybeAutoFileBugOnQAFail(context.Background(), issue, gateLabel, authorID)
 		}
+		// A run_review verdict's ```review-result``` block becomes the
+		// review:pass/review:fail gate label (Review stage v2). On a NEW
+		// review:pass attach, re-check the merge chain — with the reviewer gate
+		// in play the review verdict is usually the LAST label to land, so this
+		// attach is the one that actually fires the merge routing.
+		if verdict, labeled := h.TaskService.CaptureReviewEvidence(r.Context(), issue, comment.Content, parseUUID(authorID)); labeled {
+			go h.maybeMergeOnQAPass(context.Background(), issue, "review:"+verdict, authorID)
+		}
+		// A deploy agent's ```deploy-result``` block becomes a durable
+		// deploy_event row — the stepper's Deploy stage reads it the same way
+		// it reads QA-box git-syncs (deploy-mcp-integration.md §5).
+		h.TaskService.CaptureDeployEvent(r.Context(), issue, comment.Content)
 		h.TaskService.CaptureTestCases(r.Context(), issue, comment.Content, parseUUID(authorID))
-		h.TaskService.CaptureTestRuns(r.Context(), issue, comment.Content, parseUUID(authorID))
+		// comment.ParentID is this reply's trigger comment (the server enforces
+		// parent_id == the task's trigger comment for X-Task-ID requests above),
+		// so CaptureTestRuns can re-read it to enforce a scoped single-case run.
+		h.TaskService.CaptureTestRuns(r.Context(), issue, comment.Content, parseUUID(authorID), comment.ParentID)
 		// Base-suite chaining: a run_test_cases that records passing runs on an
 		// ALREADY-done issue (e.g. a base-suite authoring issue verified after
 		// it was closed) re-fires promotion, so freshly-verified cases enter the

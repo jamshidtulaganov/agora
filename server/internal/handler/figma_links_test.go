@@ -80,6 +80,29 @@ func TestFigmaContextForIssue(t *testing.T) {
 	}
 }
 
+func TestFigmaDesignInputContext(t *testing.T) {
+	if figmaDesignInputContext(nil) != "" {
+		t.Error("no refs → empty block (draft_code must not append anything for a design-less issue)")
+	}
+	refs := []figma.Ref{
+		{URL: "https://www.figma.com/design/cF4PFq3P5NOyZvp01JSHnE/SD?node-id=208-5147", FileKey: "cF4PFq3P5NOyZvp01JSHnE", NodeID: "208:5147"},
+	}
+	note := figmaDesignInputContext(refs)
+	for _, want := range []string{
+		"DESIGN INPUT",
+		"visual contract",
+		"not a separate review stage",
+		`get_figma_data(fileKey="cF4PFq3P5NOyZvp01JSHnE", nodeId="208:5147")`,
+		"download_figma_images",
+		"Match the BUILT UI to the design",
+		"empty/loading/error",
+	} {
+		if !strings.Contains(note, want) {
+			t.Errorf("draft_code design-input block missing %q:\n%s", want, note)
+		}
+	}
+}
+
 func TestProbeFigmaToken(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/me" {

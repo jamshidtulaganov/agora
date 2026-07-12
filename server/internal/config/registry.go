@@ -50,6 +50,9 @@ var Registry = []Def{
 	{Key: "AGORA_SPRINT_AUTO_MERGE", Kind: KindBool, Category: "Sprint", Label: "Auto-merge on qa:pass", Description: "Squad lead auto-merges a PR into the sprint branch after qa:pass."},
 	{Key: "AGORA_SQUAD_FAILURE_RECOVERY_ENABLED", Kind: KindBool, Category: "Sprint", Label: "Squad failure recovery", Description: "Recover a squad run when a member task fails mid-orchestration."},
 
+	// ---- Review gate -----------------------------------------------------
+	{Key: "AGORA_AUTO_REVIEW_ENABLED", Kind: KindBool, Category: "Review", Label: "Auto review on qa:pass", Description: "Dispatch a run_review code review (reviewer ≠ author) automatically when an issue gains qa:pass and has a pull request. Default off — enable via Settings → Configs."},
+
 	// ---- Docs / knowledge ----------------------------------------------
 	{Key: "AGORA_AUTO_DOCS_ENABLED", Kind: KindBool, Category: "Automation", Label: "Auto docs", Description: "Run the auto_docs slice action to keep a docs repo in sync."},
 

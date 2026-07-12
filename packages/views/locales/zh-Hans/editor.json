@@ -73,7 +73,10 @@
     "copy_code": "复制代码",
     "show_preview": "显示预览",
     "show_source": "显示源码",
-    "fullscreen": "放大"
+    "fullscreen": "放大",
+    "collapsed_lines": "{{count}} 行 · {{tag}}",
+    "expand": "展开",
+    "collapse": "收起"
   },
   "file_card": {
     "uploading": "正在上传 {{filename}}"

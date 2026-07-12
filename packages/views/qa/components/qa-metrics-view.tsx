@@ -2,9 +2,11 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Gauge, Timer, ShieldCheck, ShieldAlert, Code2, Zap } from "lucide-react";
+import { Gauge, Timer, ShieldCheck, ShieldAlert, Code2, Zap, BarChart3 } from "lucide-react";
 import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core/hooks";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import { useT } from "../../i18n";
 
 // QA Metrics — reads regression as a first-class signal: how much the suite
 // runs, how green it stays, how fast each QA agent is, and how far the
@@ -36,7 +38,7 @@ function StatCard({
   const toneCls =
     tone === "good" ? "text-emerald-500" : tone === "bad" ? "text-destructive" : "text-foreground";
   return (
-    <div className="flex flex-col gap-1 rounded-xl border bg-card p-4">
+    <div className="flex flex-col gap-1 rounded-lg border bg-card p-4">
       <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
         <Icon className="size-3.5" aria-hidden />
         {label}
@@ -47,8 +49,20 @@ function StatCard({
   );
 }
 
+// Compact dashed-border empty card — mirrors the Suite tab's empty state so
+// every cockpit tab reads the same way when there's nothing to show yet.
+function EmptyCard({ label }: { label: string }) {
+  return (
+    <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-6 text-center">
+      <BarChart3 className="mx-auto size-5 text-muted-foreground/60" />
+      <p className="mt-1.5 text-[12px] text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
 export function QAMetricsView({ projectId }: { projectId?: string }) {
   const wsId = useWorkspaceId();
+  const { t } = useT("issues");
   const { data, isLoading } = useQuery({
     // wsId in the key — same cross-workspace staleness fix as the sprint tab.
     queryKey: ["qa-metrics", wsId, projectId ?? "all"],
@@ -70,63 +84,79 @@ export function QAMetricsView({ projectId }: { projectId?: string }) {
 
   if (isLoading && !data) {
     return (
-      <div className="px-8 py-6 text-sm text-muted-foreground">Loading QA metrics…</div>
+      <div className="w-full space-y-6 px-8 py-8" aria-hidden>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+        </div>
+        <Skeleton className="h-32 w-full" />
+      </div>
     );
   }
 
   return (
-    <div className="flex w-full flex-col gap-6 px-8 py-6">
-      <p className="max-w-2xl text-sm text-muted-foreground">
-        Regression health across the workspace (last 30 days). Compiled scripts run
-        deterministically in seconds; the rest are LLM-driven — the script coverage below
-        is how much of QA has crossed to the fast path.
-      </p>
+    <div className="flex w-full flex-col gap-6 px-8 py-8">
+      <p className="text-sm text-muted-foreground">{t(($) => $.qa_cockpit.metrics_description)}</p>
 
       {/* Top stats */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <StatCard icon={Gauge} label="Case runs" value={String(totals.total)} sub="per-case verdicts, last 30 days" />
+        <StatCard
+          icon={Gauge}
+          label={t(($) => $.qa_cockpit.metrics_case_runs)}
+          value={String(totals.total)}
+          sub={t(($) => $.qa_cockpit.metrics_case_runs_sub)}
+        />
         <StatCard
           icon={ShieldCheck}
-          label="Pass rate"
+          label={t(($) => $.qa_cockpit.metrics_pass_rate)}
           value={`${passRate}%`}
-          sub={`${totals.passed} passed`}
+          sub={t(($) => $.qa_cockpit.metrics_pass_rate_sub, { count: totals.passed })}
           tone={passRate >= 80 ? "good" : "default"}
         />
         <StatCard
           icon={ShieldAlert}
-          label="Failing"
+          label={t(($) => $.qa_cockpit.metrics_failing)}
           value={String(totals.failed)}
-          sub={totals.skipped ? `${totals.skipped} skipped/blocked` : "regressions caught"}
+          sub={
+            totals.skipped
+              ? t(($) => $.qa_cockpit.metrics_failing_sub_skipped, { count: totals.skipped })
+              : t(($) => $.qa_cockpit.metrics_failing_sub_caught)
+          }
           tone={totals.failed > 0 ? "bad" : "good"}
         />
         <StatCard
           icon={Code2}
-          label="Script coverage"
+          label={t(($) => $.qa_cockpit.metrics_script_coverage)}
           value={`${scriptPct}%`}
-          sub={`${coverage.scripted} of ${coverage.automated} automated`}
+          sub={t(($) => $.qa_cockpit.metrics_script_coverage_sub, { scripted: coverage.scripted, automated: coverage.automated })}
           tone={scriptPct >= 50 ? "good" : "default"}
         />
         <StatCard
           icon={Zap}
-          label="Scripted cases"
+          label={t(($) => $.qa_cockpit.metrics_scripted_cases)}
           value={String(coverage.scripted)}
-          sub="run deterministically (fast path)"
+          sub={t(($) => $.qa_cockpit.metrics_scripted_cases_sub)}
           tone={coverage.scripted > 0 ? "good" : "default"}
         />
       </div>
 
       {/* Daily trend */}
-      <div className="rounded-xl border bg-card p-4">
-        <div className="mb-3 text-[12px] font-medium">Regression volume — last 14 days</div>
+      <div className="rounded-lg border bg-card p-4">
+        <div className="mb-3 text-[12px] font-medium">{t(($) => $.qa_cockpit.metrics_trend_heading)}</div>
         {byDay.length === 0 ? (
-          <div className="text-[12px] text-muted-foreground">No runs recorded yet.</div>
+          <EmptyCard label={t(($) => $.qa_cockpit.metrics_trend_empty)} />
         ) : (
           <div className="flex items-end gap-1.5" style={{ height: 96 }}>
             {byDay.map((d) => {
               const h = Math.round((d.total / maxDay) * 84) + 4;
               const failH = d.total > 0 ? Math.round((d.failed / d.total) * h) : 0;
               return (
-                <div key={d.day} className="flex flex-1 flex-col items-center gap-1" title={`${d.day}: ${d.total} runs, ${d.failed} failed`}>
+                <div
+                  key={d.day}
+                  className="flex flex-1 flex-col items-center gap-1"
+                  title={t(($) => $.qa_cockpit.metrics_trend_bar_title, { day: d.day, total: d.total, failed: d.failed })}
+                >
                   <div className="relative w-full overflow-hidden rounded-sm bg-muted" style={{ height: h }}>
                     <div className="absolute inset-x-0 top-0 bg-emerald-500/70" style={{ height: h - failH }} />
                     <div className="absolute inset-x-0 bottom-0 bg-destructive" style={{ height: failH }} />
@@ -140,24 +170,26 @@ export function QAMetricsView({ projectId }: { projectId?: string }) {
       </div>
 
       {/* Per-agent QA speed */}
-      <div className="rounded-xl border bg-card">
+      <div className="rounded-lg border bg-card">
         <div className="flex items-center gap-1.5 border-b px-4 py-2.5 text-[12px] font-medium">
-          <Timer className="size-3.5 text-muted-foreground" aria-hidden /> QA agent speed
+          <Timer className="size-3.5 text-muted-foreground" aria-hidden /> {t(($) => $.qa_cockpit.metrics_agent_speed)}
           <span className="ml-1 text-[11px] font-normal text-muted-foreground">
-            wall-clock per completed QA task
+            {t(($) => $.qa_cockpit.metrics_agent_speed_sub)}
           </span>
         </div>
         {agents.length === 0 ? (
-          <div className="px-4 py-4 text-[12px] text-muted-foreground">No completed QA agent runs yet.</div>
+          <div className="p-4">
+            <EmptyCard label={t(($) => $.qa_cockpit.metrics_agent_speed_empty)} />
+          </div>
         ) : (
           <table className="w-full text-[12px]">
             <thead>
               <tr className="border-b text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                <th className="px-4 py-2 font-medium">Agent</th>
-                <th className="px-4 py-2 text-right font-medium">Runs</th>
-                <th className="px-4 py-2 text-right font-medium">Avg</th>
-                <th className="px-4 py-2 text-right font-medium">Min</th>
-                <th className="px-4 py-2 text-right font-medium">Max</th>
+                <th className="px-4 py-2 font-medium">{t(($) => $.qa_cockpit.metrics_table_agent)}</th>
+                <th className="px-4 py-2 text-right font-medium">{t(($) => $.qa_cockpit.metrics_table_runs)}</th>
+                <th className="px-4 py-2 text-right font-medium">{t(($) => $.qa_cockpit.metrics_table_avg)}</th>
+                <th className="px-4 py-2 text-right font-medium">{t(($) => $.qa_cockpit.metrics_table_min)}</th>
+                <th className="px-4 py-2 text-right font-medium">{t(($) => $.qa_cockpit.metrics_table_max)}</th>
               </tr>
             </thead>
             <tbody>
@@ -176,10 +208,12 @@ export function QAMetricsView({ projectId }: { projectId?: string }) {
       </div>
 
       {/* Recent runs */}
-      <div className="rounded-xl border bg-card">
-        <div className="border-b px-4 py-2.5 text-[12px] font-medium">Recent regression runs</div>
+      <div className="rounded-lg border bg-card">
+        <div className="border-b px-4 py-2.5 text-[12px] font-medium">{t(($) => $.qa_cockpit.metrics_recent_heading)}</div>
         {recent.length === 0 ? (
-          <div className="px-4 py-4 text-[12px] text-muted-foreground">No runs yet.</div>
+          <div className="p-4">
+            <EmptyCard label={t(($) => $.qa_cockpit.metrics_recent_empty)} />
+          </div>
         ) : (
           <ul className="divide-y">
             {recent.map((r) => (
@@ -200,7 +234,7 @@ export function QAMetricsView({ projectId }: { projectId?: string }) {
                 {r.issue_number != null ? (
                   <span className="shrink-0 text-muted-foreground">#{r.issue_number}</span>
                 ) : null}
-                <span className="truncate">{r.case_title || "(untitled case)"}</span>
+                <span className="truncate">{r.case_title || t(($) => $.qa_cockpit.metrics_untitled_case)}</span>
                 <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{r.run_source}</span>
               </li>
             ))}

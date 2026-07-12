@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { sanitizeNextUrl, useAuthStore } from "@agora/core/auth";
@@ -210,12 +211,12 @@ function LoginPageContent() {
       }
       onTokenObtained={setLoggedInCookie}
       extra={
-        <a
+        <Link
           href="/homepage"
           className="block text-center text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           ← {t(($) => $.signin.back_home)}
-        </a>
+        </Link>
       }
     />
   );

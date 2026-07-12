@@ -45,6 +45,34 @@ vi.mock("./utils/link-handler", () => ({
   isMentionHref: (href?: string) => Boolean(href?.startsWith("mention://")),
 }));
 
+// Several editor components (MermaidDiagram, HtmlBlockPreview,
+// HtmlAttachmentPreview, and now CollapsedFenceBlock) call useT("editor") —
+// mocked here with the REAL en/editor.json bundle (rather than a hand-rolled
+// partial one) so every existing t() call site in this file's transitive
+// render tree keeps resolving, and the new collapse tests below can assert
+// on the exact rendered summary text with real interpolation support.
+vi.mock("../i18n", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../i18n")>();
+  const enEditor = (await import("../locales/en/editor.json")).default;
+  return {
+    ...actual,
+    useT: () => ({
+      t: (
+        selector: (resources: typeof enEditor) => string,
+        vars?: Record<string, string | number>,
+      ) => {
+        let out = selector(enEditor);
+        if (vars) {
+          for (const [key, value] of Object.entries(vars)) {
+            out = out.replaceAll(`{{${key}}}`, String(value));
+          }
+        }
+        return out;
+      },
+    }),
+  };
+});
+
 vi.mock("mermaid", () => ({
   default: {
     initialize: vi.fn(),
@@ -490,5 +518,88 @@ describe("ReadonlyContent slash command rendering", () => {
 
     expect(container.querySelector(".slash-command")).toBeNull();
     expect(container.querySelector("a")).not.toBeNull();
+  });
+});
+
+describe("ReadonlyContent — long machine-payload fences collapse", () => {
+  // run_test_cases posts its results as a fenced ```test-runs JSON array
+  // (server/internal/handler/slice_action_templates/run_test_cases.md,
+  // parsed by test_case.go's CaptureTestRuns) — the exact "unreadable wall
+  // in the activity feed" this collapses. Long enough to clear
+  // COLLAPSE_LINE_THRESHOLD (8 lines).
+  const testRunsPayload = JSON.stringify(
+    [
+      { test_case_id: "11111111-1111-1111-1111-111111111111", status: "pass", output: "", trace_path: "" },
+      { test_case_id: "22222222-2222-2222-2222-222222222222", status: "fail", output: "assert 200 == 500", trace_path: "" },
+    ],
+    null,
+    2,
+  );
+
+  it("collapses a long ```test-runs fence into a one-line summary with an Expand affordance", () => {
+    const { container, getByText, queryByText } = render(
+      <ReadonlyContent content={["```test-runs", testRunsPayload, "```"].join("\n")} />,
+    );
+
+    // The raw JSON body must not be in the DOM at all while collapsed.
+    expect(queryByText(/assert 200 == 500/)).toBeNull();
+    expect(container.querySelector("pre")).toBeNull();
+
+    const lineCount = testRunsPayload.split("\n").length;
+    expect(getByText(`${lineCount} lines · test-runs`)).toBeInTheDocument();
+    expect(getByText("Expand")).toBeInTheDocument();
+  });
+
+  it("expands on click to reveal the full body, then collapses again", () => {
+    const { getByText, queryByText, container } = render(
+      <ReadonlyContent content={["```test-runs", testRunsPayload, "```"].join("\n")} />,
+    );
+
+    fireEvent.click(getByText("Expand"));
+
+    expect(queryByText("Expand")).toBeNull();
+    expect(getByText("Collapse")).toBeInTheDocument();
+    expect(container.querySelector("pre code.hljs")).not.toBeNull();
+    expect(container.textContent).toContain("assert 200 == 500");
+
+    fireEvent.click(getByText("Collapse"));
+
+    expect(queryByText(/assert 200 == 500/)).toBeNull();
+    expect(getByText("Expand")).toBeInTheDocument();
+  });
+
+  it("collapses a long plain ```json fence the same way", () => {
+    const longJson = JSON.stringify(
+      Array.from({ length: 12 }, (_, i) => ({ i, note: "row" })),
+      null,
+      2,
+    );
+    const { getByText, container } = render(
+      <ReadonlyContent content={["```json", longJson, "```"].join("\n")} />,
+    );
+
+    expect(container.querySelector("pre")).toBeNull();
+    expect(getByText(`${longJson.split("\n").length} lines · json`)).toBeInTheDocument();
+  });
+
+  it("does NOT collapse a short ```test-runs fence at or under the line threshold", () => {
+    const shortPayload = JSON.stringify([{ test_case_id: "a", status: "pass" }]);
+    const { container, queryByText } = render(
+      <ReadonlyContent content={["```test-runs", shortPayload, "```"].join("\n")} />,
+    );
+
+    expect(queryByText("Expand")).toBeNull();
+    expect(container.querySelector("pre code")).not.toBeNull();
+    expect(container.textContent).toContain("test_case_id");
+  });
+
+  it("does NOT collapse a long non-JSON code fence (a real long code paste stays readable)", () => {
+    const longCode = Array.from({ length: 20 }, (_, i) => `line_${i} = ${i}`).join("\n");
+    const { container, queryByText } = render(
+      <ReadonlyContent content={["```python", longCode, "```"].join("\n")} />,
+    );
+
+    expect(queryByText("Expand")).toBeNull();
+    expect(container.querySelector("pre code.language-python")).not.toBeNull();
   });
 });

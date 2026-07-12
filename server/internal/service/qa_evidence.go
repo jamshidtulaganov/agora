@@ -6,7 +6,9 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
@@ -22,11 +24,75 @@ var qaResultBlockRe = regexp.MustCompile("(?s)```qa-result\\s*\\n(.*?)```")
 // branch_sha are intentionally NOT part of the block in P1 — evidence is keyed
 // (issue, "", "") so each verdict refreshes one latest-row per issue. P2 widens
 // the block to carry the tested sha + baseline ref for per-commit history.
+//
+// commit_sha / started_at (Phase 3 — run identity) are OPTIONAL: commit_sha is
+// `git rev-parse HEAD` of the checkout the gate tested (validated to a 7-40
+// hex shape, else discarded); started_at is when the gate began (RFC3339). A
+// finished_at in the fence is tolerated (unknown JSON keys are ignored) but
+// the capture stamps its own now() — the capture moment is authoritative.
 type qaResultPayload struct {
 	Verdict     string            `json:"verdict"`
 	Summary     string            `json:"summary"`
 	Commands    []json.RawMessage `json:"commands"`
 	Screenshots []json.RawMessage `json:"screenshots"`
+	CommitSha   string            `json:"commit_sha"`
+	StartedAt   string            `json:"started_at"`
+}
+
+// commitShaRe is the accepted commit_sha shape: 7-40 hex chars (a short or
+// full git sha). Anything else — prose, a branch name, an injection attempt —
+// fails open to "" (unreported), never an error.
+var commitShaRe = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)
+
+// validCommitSha normalizes an agent-reported sha: trimmed + lowercased when
+// it matches the 7-40 hex shape, "" otherwise (fail-open).
+func validCommitSha(s string) string {
+	trimmed := strings.TrimSpace(s)
+	if !commitShaRe.MatchString(trimmed) {
+		return ""
+	}
+	return strings.ToLower(trimmed)
+}
+
+// parseFenceTime parses an agent-reported RFC3339 timestamp from a fence
+// field. Invalid/absent → a NULL timestamptz (fail-open).
+func parseFenceTime(s string) pgtype.Timestamptz {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return pgtype.Timestamptz{}
+	}
+	ts, err := time.Parse(time.RFC3339, trimmed)
+	if err != nil {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: ts, Valid: true}
+}
+
+// QADispatchAutoMarker tags an AUTO-fired run_qa dispatch comment (the
+// in_review auto-QA path, maybeRunQAOnInReview) — an inert HTML comment next
+// to the agent-protocol marker, invisible in rendered markdown. The capture
+// reads it off the trigger comment to record qa_evidence.triggered_by="auto"
+// vs "agent" (an agent verdict from a human/agent-fired dispatch). Defined
+// here (not in handler) because the service layer parses it and handler
+// already imports service.
+const QADispatchAutoMarker = "<!--qa-dispatch:auto-->"
+
+// qaTriggeredBy classifies who fired the gate whose verdict is being
+// captured: "auto" when the trigger comment carries the auto-dispatch marker,
+// else "agent". (The human override endpoint writes "human" directly and
+// never goes through this.) Fail-open: unresolvable trigger → "agent".
+func (s *TaskService) qaTriggeredBy(ctx context.Context, triggerCommentID pgtype.UUID) string {
+	if !triggerCommentID.Valid {
+		return "agent"
+	}
+	trigger, err := s.Queries.GetComment(ctx, triggerCommentID)
+	if err != nil {
+		return "agent"
+	}
+	if strings.Contains(trigger.Content, QADispatchAutoMarker) {
+		return "auto"
+	}
+	return "agent"
 }
 
 // captureQAEvidence persists a run_qa verdict comment as a durable qa_evidence
@@ -68,12 +134,155 @@ func parseQAResultBlock(content string) (raw string, p qaResultPayload, ok bool)
 // label CLI — so the loop stalled (no label → no merge-gate → never done).
 // Deriving the label from the captured verdict makes the gate reliable
 // regardless of whether the agent remembered the label step.
-func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, content string) (verdict string, newlyLabeled bool) {
+//
+// Label-first ordering (audit finding — "label-attach failure diverges from
+// evidence"): the LABEL is attached BEFORE the qa_evidence row is persisted,
+// and a label-attach failure aborts the whole capture (no evidence written).
+// The old order wrote evidence first and merely warned on a label failure, so
+// the qa_evidence row could carry a fresh "pass" while the qa:pass label never
+// landed — the chip (reads evidence.verdict, qa-lens.tsx) would show green
+// while the merge gate (reads the LABEL, slice_action.go
+// enforceQAGateBeforeDone) stayed blocked. Attaching first means the two
+// surfaces can never disagree: either both the label and the evidence are
+// live, or NEITHER is — a re-run picks it back up (least invasive fix that
+// still guarantees agreement, chosen over a cross-table transaction since
+// UpsertQAEvidence and AttachLabelToIssue are separate tables with their own
+// upsert/idempotency semantics).
+// triggerCommentID (Phase 3) is the dispatch comment that fired this gate,
+// when known — read to classify triggered_by (auto vs agent). Zero-value =
+// unknown → "agent".
+func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, content string, triggerCommentID pgtype.UUID) (verdict string, newlyLabeled bool) {
 	raw, p, ok := parseQAResultBlock(content)
 	if !ok {
 		return "", false
 	}
+	identity := qaEvidenceIdentity{
+		CommitSha:   validCommitSha(p.CommitSha),
+		TriggeredBy: s.qaTriggeredBy(ctx, triggerCommentID),
+		StartedAt:   parseFenceTime(p.StartedAt),
+	}
 
+	v := strings.ToLower(strings.TrimSpace(p.Verdict))
+
+	// Evidence floor (audit requirement): a "pass" that carries ZERO commands
+	// asserted nothing was actually verified. downgradeQAVerdictToStale
+	// attaches qa:stale + an explanatory comment INSTEAD of applying qa:pass —
+	// the qa_evidence row is deliberately NOT written, so an under-evidenced
+	// "pass" never sits in the evidence table reading as green.
+	if v == "pass" {
+		if reason := s.qaEvidenceFloorGap(ctx, issue, p); reason != "" {
+			s.downgradeQAVerdictToStale(ctx, issue, reason)
+			return "", false
+		}
+	}
+
+	label, color := "", ""
+	switch v {
+	case "pass":
+		label, color = "qa:pass", "#22c55e"
+	case "fail":
+		label, color = "qa:fail", "#ef4444"
+	}
+
+	// A verdict with no gate label (e.g. "maybe"/"blocked") has nothing for the
+	// merge gate to disagree with — persist evidence unconditionally, same as
+	// before.
+	if label == "" {
+		if err := s.upsertQAEvidenceRow(ctx, issue, raw, p, identity); err != nil {
+			return "", false
+		}
+		s.captureDesignVerdictLabel(ctx, issue, raw)
+		return v, false
+	}
+
+	newlyLabeled = false
+	if s.issueHasLabelName(ctx, issue, label) {
+		// Agent already set it (e.g. via CLI) → the label handler already fired
+		// triggers for it. The label is confirmed present, so evidence can be
+		// persisted safely below; just don't report a NEW attach.
+	} else {
+		labelID, err := s.ensureLabel(ctx, issue.WorkspaceID, label, color)
+		if err != nil {
+			slog.Warn("capture qa evidence: ensure label failed — evidence NOT recorded (would disagree with the missing label)",
+				"error", err, "label", label, "issue_id", util.UUIDToString(issue.ID))
+			return "", false
+		}
+		if err := s.Queries.AttachLabelToIssue(ctx, db.AttachLabelToIssueParams{
+			IssueID: issue.ID, LabelID: labelID, WorkspaceID: issue.WorkspaceID,
+		}); err != nil {
+			slog.Warn("capture qa evidence: attach label failed — evidence NOT recorded (would disagree with the missing label)",
+				"error", err, "label", label, "issue_id", util.UUIDToString(issue.ID))
+			return "", false
+		}
+		newlyLabeled = true
+	}
+
+	if err := s.upsertQAEvidenceRow(ctx, issue, raw, p, identity); err != nil {
+		// The label is already live at this point; leaving it there would swap
+		// the divergence direction (label present, no evidence) instead of
+		// closing it. If WE just attached it fresh this call, undo that attach
+		// so the two surfaces still agree (both absent); if the label was
+		// already present from an EARLIER successful capture, leave it — that
+		// earlier capture's own evidence row still stands and is unaffected by
+		// this call's failure.
+		if newlyLabeled {
+			s.DetachIssueLabelByName(ctx, issue, label)
+		}
+		return "", false
+	}
+
+	// The design-compare check (sliceActionDesignCompareContext, design_action.go)
+	// nests its own advisory verdict at result_json.design.verdict inside this
+	// SAME raw block. Mirror it into a design:pass/design:fail label the moment
+	// it's captured — independent of the top-level qa verdict above.
+	s.captureDesignVerdictLabel(ctx, issue, raw)
+
+	// A verdict REPLACES the previous one — detach the opposite gate label.
+	// Without this a fixed-and-re-passed issue carried BOTH labels forever,
+	// and every fail-wins surface (cockpit lane, merge gate, sprint rollup)
+	// kept reporting it as "need fix" (the audit's sticky-label defect).
+	// hadOpposite is read BEFORE the detach: a pass that displaces a qa:fail
+	// is a RECOVERY — the one kind of pass worth an inbox notification.
+	opposite := "qa:fail"
+	if label == "qa:fail" {
+		opposite = "qa:pass"
+	}
+	hadOpposite := s.issueHasLabelName(ctx, issue, opposite)
+	s.DetachIssueLabelByName(ctx, issue, opposite)
+	s.Bus.Publish(events.Event{
+		Type:        protocol.EventIssueLabelsChanged,
+		WorkspaceID: util.UUIDToString(issue.WorkspaceID),
+		ActorType:   "agent",
+		ActorID:     "",
+		Payload:     map[string]any{"issue_id": util.UUIDToString(issue.ID)},
+	})
+	slog.Info("qa evidence: auto-attached gate label from verdict", "issue_id", util.UUIDToString(issue.ID), "label", label)
+
+	// Typed inbox notification — the human loop's push channel: a qa:fail
+	// (and a recovery pass) must REACH the responsible humans, not wait to be
+	// noticed on the /qa queue. Only fires on a NEWLY landed verdict
+	// (newlyLabeled), so a re-posted identical verdict never re-notifies.
+	if newlyLabeled {
+		s.NotifyQAVerdict(ctx, issue, v, hadOpposite, "agent", pgtype.UUID{}, p.Summary)
+	}
+	return v, newlyLabeled
+}
+
+// qaEvidenceIdentity is the Phase 3 run-identity metadata riding on the
+// single current evidence row: the sha the gate tested, who fired it
+// (agent|human|auto), and when it began. finished_at is stamped by the
+// upsert itself (now()).
+type qaEvidenceIdentity struct {
+	CommitSha   string
+	TriggeredBy string
+	StartedAt   pgtype.Timestamptz
+}
+
+// upsertQAEvidenceRow writes the qa_evidence row and publishes the ready
+// event. Split out of CaptureQAEvidence so the label-first ordering above can
+// call it from both branches (labeled and label-less verdicts) without
+// duplicating the upsert + publish + log.
+func (s *TaskService) upsertQAEvidenceRow(ctx context.Context, issue db.Issue, raw string, p qaResultPayload, identity qaEvidenceIdentity) error {
 	if _, err := s.Queries.UpsertQAEvidence(ctx, db.UpsertQAEvidenceParams{
 		WorkspaceID: issue.WorkspaceID,
 		IssueID:     issue.ID,
@@ -83,11 +292,13 @@ func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, con
 		Summary:     p.Summary,
 		ResultJson:  []byte(raw),
 		Source:      "agent",
+		CommitSha:   identity.CommitSha,
+		TriggeredBy: identity.TriggeredBy,
+		StartedAt:   identity.StartedAt,
 	}); err != nil {
 		slog.Warn("capture qa evidence: upsert failed", "error", err, "issue_id", util.UUIDToString(issue.ID))
-		return "", false
+		return err
 	}
-
 	s.Bus.Publish(events.Event{
 		Type:        protocol.EventQAEvidenceReady,
 		WorkspaceID: util.UUIDToString(issue.WorkspaceID),
@@ -99,38 +310,164 @@ func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, con
 		},
 	})
 	slog.Info("qa evidence captured", "issue_id", util.UUIDToString(issue.ID), "verdict", p.Verdict)
+	return nil
+}
 
-	v := strings.ToLower(strings.TrimSpace(p.Verdict))
-	label, color := "", ""
-	switch v {
-	case "pass":
-		label, color = "qa:pass", "#22c55e"
-	case "fail":
-		label, color = "qa:fail", "#ef4444"
-	default:
-		return v, false // no verdict-derived gate label (e.g. "maybe"/"blocked")
+// qaEvidenceFloorGap returns a human-readable reason when a "pass" verdict's
+// evidence does not clear the floor, or "" when it does. Two independent
+// checks:
+//  1. ZERO commands — the verdict asserted "pass" without a single command
+//     result to back it. Always required, regardless of the issue's cases.
+//  2. For an issue with at least one UI-modality test case: some VISUAL
+//     evidence — a screenshot in the verdict, or a captured Playwright trace
+//     on one of the issue's automated runs. Command exit codes alone don't
+//     prove a UI case was actually driven and checked.
+// Best-effort: a query error on the (2) check is treated as "no gap" (fail
+// open on the SECOND, stricter check only — the first, unconditional zero-
+// commands check never depends on a query and always applies).
+func (s *TaskService) qaEvidenceFloorGap(ctx context.Context, issue db.Issue, p qaResultPayload) string {
+	if len(p.Commands) == 0 {
+		return "the verdict carried zero commands — nothing ran to prove it"
 	}
-	if s.issueHasLabelName(ctx, issue, label) {
-		return v, false // agent already set it → the label handler already fired triggers
+	if len(p.Screenshots) > 0 {
+		return ""
 	}
-	labelID, err := s.ensureLabel(ctx, issue.WorkspaceID, label, color)
+	cases, err := s.Queries.ListTestCasesForIssue(ctx, db.ListTestCasesForIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+	})
 	if err != nil {
-		slog.Warn("capture qa evidence: ensure label failed", "error", err, "label", label, "issue_id", util.UUIDToString(issue.ID))
-		return v, false
+		return ""
+	}
+	hasUICase := false
+	for _, c := range cases {
+		if c.Modality == "ui" {
+			hasUICase = true
+			break
+		}
+	}
+	if !hasUICase {
+		return ""
+	}
+	runs, err := s.Queries.ListLatestRunsForIssueCases(ctx, db.ListLatestRunsForIssueCasesParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		return ""
+	}
+	for _, r := range runs {
+		if strings.TrimSpace(r.TracePath) != "" {
+			return ""
+		}
+	}
+	return "this issue has a UI-modality test case but the verdict carried no screenshot and no run has a captured trace"
+}
+
+// downgradeQAVerdictToStale attaches qa:stale (replacing qa:pass/qa:fail, if
+// either is present) and posts a loud system comment explaining why the
+// verdict was not applied, instead of accepting an under-evidenced "pass".
+// Mirrors EscalateStaleQAGate's framing (qa:stale = "the gate didn't produce
+// a trustworthy result", not a test failure) so this reads consistently with
+// the watchdog's own stale escalation. The qa_evidence row is intentionally
+// NEVER written here — an insufficiently-evidenced "pass" must not sit in the
+// evidence table at all, or the chip would still show a stale-but-green
+// summary.
+func (s *TaskService) downgradeQAVerdictToStale(ctx context.Context, issue db.Issue, reason string) {
+	labelID, err := s.ensureLabel(ctx, issue.WorkspaceID, "qa:stale", "#f59e0b")
+	if err != nil {
+		slog.Warn("qa evidence floor: ensure qa:stale label failed", "error", err, "issue_id", util.UUIDToString(issue.ID))
+		return
 	}
 	if err := s.Queries.AttachLabelToIssue(ctx, db.AttachLabelToIssueParams{
 		IssueID: issue.ID, LabelID: labelID, WorkspaceID: issue.WorkspaceID,
 	}); err != nil {
-		slog.Warn("capture qa evidence: attach label failed", "error", err, "label", label, "issue_id", util.UUIDToString(issue.ID))
-		return v, false
+		slog.Warn("qa evidence floor: attach qa:stale failed", "error", err, "issue_id", util.UUIDToString(issue.ID))
+		return
 	}
-	// A verdict REPLACES the previous one — detach the opposite gate label.
-	// Without this a fixed-and-re-passed issue carried BOTH labels forever,
-	// and every fail-wins surface (cockpit lane, merge gate, sprint rollup)
-	// kept reporting it as "need fix" (the audit's sticky-label defect).
-	opposite := "qa:fail"
-	if label == "qa:fail" {
-		opposite = "qa:pass"
+	s.DetachIssueLabelByName(ctx, issue, "qa:pass")
+	s.DetachIssueLabelByName(ctx, issue, "qa:fail")
+	note := "⚠️ QA reported a \"pass\" verdict, but " + reason + " — insufficient evidence — verdict not applied. " +
+		"Marking qa:stale (not qa:fail — this is a missing-evidence problem, not a proven test failure); re-run QA with real evidence."
+	if _, cerr := s.Queries.CreateComment(ctx, db.CreateCommentParams{
+		IssueID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+		AuthorType:  "system",
+		AuthorID:    pgtype.UUID{Valid: true},
+		Content:     note,
+		Type:        "system",
+		ParentID:    pgtype.UUID{Valid: false},
+	}); cerr != nil {
+		slog.Warn("qa evidence floor: system comment failed", "error", cerr, "issue_id", util.UUIDToString(issue.ID))
+	}
+	s.Bus.Publish(events.Event{
+		Type:        protocol.EventIssueLabelsChanged,
+		WorkspaceID: util.UUIDToString(issue.WorkspaceID),
+		ActorType:   "agent",
+		ActorID:     "",
+		Payload:     map[string]any{"issue_id": util.UUIDToString(issue.ID)},
+	})
+	slog.Warn("qa evidence floor: pass verdict downgraded to qa:stale — insufficient evidence",
+		"issue_id", util.UUIDToString(issue.ID), "reason", reason)
+}
+
+// designVerdictFromResult extracts result_json.design.verdict from a raw
+// qa-result JSON block. Mirrors designVerdictOf (design_action.go) — a small,
+// intentional duplicate rather than a shared package: handler already imports
+// service (Handler.TaskService), so service importing handler back would be a
+// cycle. The design-compare appendix embeds its verdict in the SAME qa-result
+// JSON blob CaptureQAEvidence already parses above, so this reads that raw
+// text directly instead of adding a new capture path.
+func designVerdictFromResult(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	var r struct {
+		Design *struct {
+			Verdict string `json:"verdict"`
+		} `json:"design"`
+	}
+	if json.Unmarshal([]byte(raw), &r) != nil || r.Design == nil {
+		return ""
+	}
+	return r.Design.Verdict
+}
+
+// captureDesignVerdictLabel mirrors the qa:pass/qa:fail attach above for the
+// ADVISORY design-compare verdict nested at result_json.design.verdict (see
+// sliceActionDesignCompareContext, design_action.go). Same replace-on-write
+// semantics: attaching one detaches the other, the label is auto-created per
+// workspace if missing. "skipped" (Figma unreachable) and "" (no
+// design-compare ran, e.g. the issue has no Figma refs) touch nothing — never
+// fail an issue for an infra reason, per the recipe's own doctrine.
+func (s *TaskService) captureDesignVerdictLabel(ctx context.Context, issue db.Issue, raw string) {
+	v := strings.ToLower(strings.TrimSpace(designVerdictFromResult(raw)))
+	label, color := "", ""
+	switch v {
+	case "pass":
+		label, color = "design:pass", "#22c55e"
+	case "fail":
+		label, color = "design:fail", "#ef4444"
+	default:
+		return
+	}
+	if s.issueHasLabelName(ctx, issue, label) {
+		return // already set → nothing new to do
+	}
+	labelID, err := s.ensureLabel(ctx, issue.WorkspaceID, label, color)
+	if err != nil {
+		slog.Warn("capture design verdict: ensure label failed", "error", err, "label", label, "issue_id", util.UUIDToString(issue.ID))
+		return
+	}
+	if err := s.Queries.AttachLabelToIssue(ctx, db.AttachLabelToIssueParams{
+		IssueID: issue.ID, LabelID: labelID, WorkspaceID: issue.WorkspaceID,
+	}); err != nil {
+		slog.Warn("capture design verdict: attach label failed", "error", err, "label", label, "issue_id", util.UUIDToString(issue.ID))
+		return
+	}
+	// A verdict REPLACES the previous one — same "opposite gate label" rule
+	// CaptureQAEvidence enforces for qa:pass/qa:fail above.
+	opposite := "design:fail"
+	if label == "design:fail" {
+		opposite = "design:pass"
 	}
 	s.DetachIssueLabelByName(ctx, issue, opposite)
 	s.Bus.Publish(events.Event{
@@ -140,8 +477,7 @@ func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, con
 		ActorID:     "",
 		Payload:     map[string]any{"issue_id": util.UUIDToString(issue.ID)},
 	})
-	slog.Info("qa evidence: auto-attached gate label from verdict", "issue_id", util.UUIDToString(issue.ID), "label", label)
-	return v, true
+	slog.Info("qa evidence: auto-attached design gate label from verdict", "issue_id", util.UUIDToString(issue.ID), "label", label)
 }
 
 // DetachIssueLabelByName removes a label (matched case-insensitively by name)

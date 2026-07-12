@@ -1,3 +1,4 @@
+/* eslint-disable i18next/no-literal-string -- policy admin panel; i18n follow-up */
 "use client";
 
 import type { ReactNode } from "react";

@@ -1,53 +1,35 @@
+/* eslint-disable i18next/no-literal-string -- co-code editor surface; i18n follow-up */
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { agentTaskSnapshotOptions } from "@agora/core/agents";
-import { projectDetailOptions } from "@agora/core/projects/queries";
 import {
-  Activity as ActivityIcon,
   ChevronRight,
   X,
-  Code2,
   ExternalLink,
   Expand,
   Loader2,
   HelpCircle,
-  Info,
-  Globe,
-  MessageSquare,
-  PanelRightClose,
-  PanelRightOpen,
-  Play,
 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
 } from "@agora/ui/components/ui/dialog";
-import { cn } from "@agora/ui/lib/utils";
-import { ActorAvatar } from "../../common/actor-avatar";
-import { EditorChatPanel } from "./editor-chat-panel";
-import { LiveAgentChangesFeed } from "./live-agent-changes-feed";
-import { LiveAgentCodeEditor } from "./live-agent-code-editor";
-import { AgentWorkingIndicator } from "./agent-working-indicator";
 import { EditorReviewBar } from "./editor-review-bar";
 import {
   EditorHowItWorks,
   useHowItWorksDismissed,
 } from "./editor-how-it-works";
-import {
-  EditorPreviewPane,
-  parseTestOutput,
-  type TestRunState,
-} from "./editor-preview-pane";
-import { EditorBrowserPane } from "./editor-browser-pane";
-import { EditorContextPanel } from "./editor-context-panel";
-import { EditorAskBar } from "./editor-ask-bar";
-import { EditorChangesList } from "./editor-changes-list";
 import { EditorRunQA } from "./editor-run-qa";
 import { EditorDeployQA } from "./editor-deploy-qa";
 import { useWorkspaceId } from "@agora/core/hooks";
+import {
+  EditorWorkbench,
+  useEditorSession,
+  type EditorWorkbenchPane,
+} from "./editor-workbench";
 
 // Right-panel "Code" section: launches a browser VS Code (code-server) on the
 // issue's agent worktree and iframes it, so a human can watch + edit the live
@@ -56,119 +38,12 @@ import { useWorkspaceId } from "@agora/core/hooks";
 // Self-host flow: GET /api/issues/{id}/editor → {daemon_url, agents:[{work_dir}]}
 // then POST {daemon_url}/editor/launch {workdir} → {url}. Lazy: nothing runs
 // until the section is opened.
-
-type LaunchState = "idle" | "loading" | "ready" | "none" | "error";
-
-interface EditorAgent {
-  agent_id: string;
-  agent_name: string;
-  work_dir: string;
-  status: string;
-  // Desktop-VS-Code deep link for this worktree (vscode://file/… local, or a
-  // Remote-SSH link for a box). Optional — older backends omit it.
-  vscode_url?: string;
-}
-
-// Distinct per-agent chip colors, picked by a stable hash of the agent id so
-// each agent keeps the same color across renders. Full class strings (no
-// interpolation) so Tailwind keeps them.
-const AGENT_CHIP_COLORS = [
-  {
-    on: "border-blue-500/50 bg-blue-500/15 text-blue-700 dark:text-blue-300",
-    off: "border-blue-500/30 text-blue-600/80 hover:bg-blue-500/10 dark:text-blue-400/80",
-  },
-  {
-    on: "border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-    off: "border-emerald-500/30 text-emerald-600/80 hover:bg-emerald-500/10 dark:text-emerald-400/80",
-  },
-  {
-    on: "border-violet-500/50 bg-violet-500/15 text-violet-700 dark:text-violet-300",
-    off: "border-violet-500/30 text-violet-600/80 hover:bg-violet-500/10 dark:text-violet-400/80",
-  },
-  {
-    on: "border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-300",
-    off: "border-amber-500/30 text-amber-600/80 hover:bg-amber-500/10 dark:text-amber-400/80",
-  },
-  {
-    on: "border-rose-500/50 bg-rose-500/15 text-rose-700 dark:text-rose-300",
-    off: "border-rose-500/30 text-rose-600/80 hover:bg-rose-500/10 dark:text-rose-400/80",
-  },
-  {
-    on: "border-cyan-500/50 bg-cyan-500/15 text-cyan-700 dark:text-cyan-300",
-    off: "border-cyan-500/30 text-cyan-600/80 hover:bg-cyan-500/10 dark:text-cyan-400/80",
-  },
-  {
-    on: "border-fuchsia-500/50 bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300",
-    off: "border-fuchsia-500/30 text-fuchsia-600/80 hover:bg-fuchsia-500/10 dark:text-fuchsia-400/80",
-  },
-  {
-    on: "border-teal-500/50 bg-teal-500/15 text-teal-700 dark:text-teal-300",
-    off: "border-teal-500/30 text-teal-600/80 hover:bg-teal-500/10 dark:text-teal-400/80",
-  },
-];
-
-function agentChipColor(id: string) {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return AGENT_CHIP_COLORS[h % AGENT_CHIP_COLORS.length]!;
-}
-
-// A self-host daemon_url is only reachable when the browser shares the daemon's
-// host (127.0.0.1). On a hosted page the browser is remote, so POSTing to a
-// loopback daemon URL just yields a CORS failure + a stuck spinner. These guards
-// let the UI show an honest message instead. (Belt-and-suspenders: the cloud
-// backend no longer returns a loopback self-host URL, but an older backend or a
-// misconfigured self-host still can — the desktop app outlives any server build.)
-function isLoopbackUrl(u: string): boolean {
-  try {
-    const h = new URL(u).hostname;
-    return h === "127.0.0.1" || h === "localhost" || h === "[::1]" || h === "::1";
-  } catch {
-    return false;
-  }
-}
-function browserIsRemote(): boolean {
-  if (typeof window === "undefined") return false;
-  const h = window.location.hostname;
-  return !(h === "127.0.0.1" || h === "localhost" || h === "[::1]");
-}
-
-// Cloud mode only: probe the same-origin editor proxy URL before iframing it.
-// The backend returns `editor_url` as soon as the daemon's /editor/launch hands
-// back a port — but that port can be dead (code-server died on spawn, or the
-// worktree was GC'd between launch and load), in which case the ReverseProxy
-// answers 502 or the connection resets. Iframing that renders a raw browser
-// net-error (NS_ERROR_NET_ERROR_RESPONSE) the user can't recover from. The proxy
-// is served under our OWN origin (Next rewrite → backend ProxyEditor), so this
-// fetch is same-origin and cookie-authed exactly like the iframe. Treat only a
-// network rejection or a 5xx as unreachable; any 2xx/3xx/4xx (incl. an auth
-// redirect) means code-server answered, so let the iframe take over.
-export async function probeEditorReachable(u: string): Promise<boolean> {
-  try {
-    const res = await fetch(u, {
-      method: "GET",
-      credentials: "include",
-      redirect: "manual",
-    });
-    // redirect:manual surfaces a 3xx as an opaque response (status 0) — that is
-    // code-server bouncing to its own path, i.e. reachable.
-    if (res.type === "opaqueredirect") return true;
-    return res.status < 500;
-  } catch {
-    return false;
-  }
-}
-const EDITOR_UNREACHABLE_LABEL =
-  "This issue's live editor was cleaned up (worktrees are removed automatically about a day after the agent finishes) or runs on a machine this browser can't reach. Re-run an agent on this issue to open it here.";
-
-// Browser-tab empty states (no live worktree / daemon). Plain TS literals so the
-// jsx-text-only i18n rule lets them through, matching this file's raw-string
-// convention (it doesn't use useT()).
-const BROWSER_STARTING_LABEL = "starting browser…";
-const BROWSER_UNAVAILABLE_LABEL =
-  "Live browser unavailable — no live worktree yet. Assign an agent or wait for the daemon to come online, then reopen this tab.";
-const PREVIEW_UNAVAILABLE_LABEL =
-  "Preview runs the app's dev server next to the editor — available on self-host runtimes for now. On cloud runtimes, use the Browser tab to watch the live QA Chromium instead.";
+//
+// The editor surface itself (pane switcher, ask bar, right rail) lives in
+// EditorWorkbench (editor-workbench.tsx) — this section owns the collapsed
+// sidebar preview, the session, and the full-screen Dialog that hosts the
+// workbench. The cockpit's Dev lens mounts the same workbench without the
+// Dialog (docs/sdlc-stage-cockpit-plan.md, phase F).
 
 interface EditorSectionProps {
   issueId: string;
@@ -194,62 +69,21 @@ export function EditorSection({
 }: EditorSectionProps) {
   const wsId = useWorkspaceId();
   const [open, setOpen] = useState(defaultOpen);
-  const [state, setState] = useState<LaunchState>("idle");
-  const [url, setUrl] = useState<string | null>(null);
-  const [err, setErr] = useState("");
+  // The editor session (worktree lookup + code-server launch + agent roster).
+  // Owned here — not by the workbench — because the collapsed sidebar UI below
+  // and the Dialog share it: the same instance is passed into the workbench,
+  // so expanding the modal never re-launches. Launches once the section opens.
+  const session = useEditorSession(issueId, open);
+  const { state, url, err, daemon, selectedAgent, launch } = session;
   // Expand into a near-fullscreen modal (real coding needs width). One iframe
   // at a time — the inline preview unmounts while the modal is open.
   const [expanded, setExpanded] = useState(false);
-  // Per-agent review: every agent that ran on the issue, and which one's
-  // worktree is currently shown. Empty in cloud mode (single proxied editor).
-  const [agents, setAgents] = useState<EditorAgent[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [daemon, setDaemon] = useState<{ url: string; userId: string; env?: Record<string, string> } | null>(
-    null,
-  );
-  // Project settings feed the preview pane's command defaults: qa_smoke_cmd
-  // prefills the dev command, qa_test_cmd overrides /editor/test. Typed pane
-  // input > project setting > daemon auto-detect.
-  const { data: project } = useQuery({
-    ...projectDetailOptions(wsId, projectId ?? ""),
-    enabled: !!projectId,
-  });
-  const projectSettings = project?.settings;
-  // Lifted test-run state — shared between EditorPreviewPane (button + bottom
-  // bar); parseTestOutput summarizes the raw runner output for that bar.
-  const [testRunState, setTestRunState] = useState<TestRunState>({
-    testState: "idle",
-    testOut: "",
-    testPassed: null,
-    testCmd: "",
-    parsedTests: { failed: [], failedCount: 0, passedCount: 0 },
-  });
-  const handleTestResult = (
-    result: Omit<TestRunState, "parsedTests">,
-  ) => {
-    setTestRunState({
-      ...result,
-      parsedTests: parseTestOutput(result.testOut),
-    });
-  };
-  // Right panel of the modal: watch the agent's live file edits, or chat to
-  // steer it. Full diffs live in code-server's native Source Control panel.
-  // (No Tests tab — merge gates render in the review bar via EditorGates, and
-  // QA verdicts live in the issue's QA evidence section.)
-  const [rightTab, setRightTab] = useState<"activity" | "chat" | "context">(
-    "activity",
-  );
-  // Collapse the right panel to a slim icon rail — the editor gets the full
-  // width. Ephemeral UI state, deliberately not persisted.
-  const [rightCollapsed, setRightCollapsed] = useState(false);
-  // Left pane of the modal: the live spectator editor (watch the agent code),
-  // the real code editor, or a live preview of the running app (the
-  // vibecoder's "see it work, not the diff").
-  const [leftPane, setLeftPane] = useState<
-    "live" | "code" | "preview" | "browser"
-  >("code");
-  // Is an agent currently running on this issue? Drives the Live tab's pulse
-  // and the auto-selection of the spectator view when the modal auto-expands.
+  // Left pane of the modal, kept section-owned (controlled into the workbench)
+  // so auto-expand-to-Live below and pane persistence across dialog
+  // close/reopen behave exactly as before the workbench extraction.
+  const [leftPane, setLeftPane] = useState<EditorWorkbenchPane>("code");
+  // Is an agent currently running on this issue? Drives the auto-selection of
+  // the spectator view when the modal auto-expands.
   const { data: taskSnapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
   const hasLiveRun = useMemo(
     () =>
@@ -272,153 +106,13 @@ export function EditorSection({
     setShowHelp(false);
   };
 
-  // Launch code-server on a specific worktree (self-host: browser → daemon).
-  const launchWorkdir = async (
-    workdir: string,
-    daemonUrl: string,
-    userId: string,
-    env?: Record<string, string>,
-  ) => {
-    setState("loading");
-    setErr("");
-    const lr = await fetch(`${daemonUrl}/editor/launch`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      // env = the user's editor account tokens (Settings → editor
-      // integration), forwarded verbatim; the daemon allowlists the keys.
-      body: JSON.stringify({ workdir, user_id: userId, ...(env ? { env } : {}) }),
-    });
-    if (!lr.ok) {
-      throw new Error(
-        `daemon launch failed (${lr.status}) — is the daemon running?`,
-      );
-    }
-    const { url: launched } = (await lr.json()) as { url: string };
-    setUrl(launched);
-    setState("ready");
-  };
-
-  const launch = async () => {
-    setState("loading");
-    setErr("");
-    try {
-      // The backend resolves the workspace from ?workspace_slug — the app routes
-      // under /{workspaceSlug}/… so it's the first path segment.
-      const slug =
-        typeof window !== "undefined"
-          ? window.location.pathname.split("/").filter(Boolean)[0]
-          : "";
-      const r = await fetch(
-        `/api/issues/${issueId}/editor${slug ? `?workspace_slug=${encodeURIComponent(slug)}` : ""}`,
-        { credentials: "include" },
-      );
-      if (r.status === 404) {
-        setState("none");
-        return;
-      }
-      if (!r.ok) {
-        // Surface the backend's own message (e.g. a GC'd worktree → 410
-        // worktree_gone) instead of a bare status code, so the user sees why +
-        // what to do. Defensive parse: the body may be non-JSON on some errors.
-        let msg = `editor lookup failed (${r.status})`;
-        try {
-          const body = (await r.json()) as { error?: string };
-          if (typeof body?.error === "string" && body.error) msg = body.error;
-        } catch {
-          /* non-JSON body — keep the status-code message */
-        }
-        throw new Error(msg);
-      }
-      const data = (await r.json()) as {
-        mode?: string;
-        editor_url?: string;
-        daemon_url?: string;
-        user_id?: string;
-        agents?: EditorAgent[];
-        editor_env?: Record<string, string>;
-      };
-
-      // Cloud: backend already launched + reverse-proxies — iframe directly.
-      // Still surface the agent roster so the chips + per-worktree "Open in
-      // VS Code" links render (the browser editor shows the default worktree;
-      // per-agent browser switching in cloud is the remaining follow-up).
-      if (data.mode === "cloud" && data.editor_url) {
-        const list = data.agents ?? [];
-        setAgents(list);
-        // Cloud carries a same-origin proxied base for the daemon pane surface
-        // (preview / test / live browser). Wiring it into the same `daemon`
-        // state the self-host path uses lights up the Preview and Browser tabs
-        // in cloud with zero pane changes. selectedId must be set too — the
-        // panes render on `daemon && selectedAgent`.
-        if (
-          typeof data.daemon_url === "string" &&
-          data.daemon_url.startsWith("/") &&
-          typeof data.user_id === "string" &&
-          data.user_id
-        ) {
-          setDaemon({ url: data.daemon_url, userId: data.user_id, env: data.editor_env });
-          setSelectedId(list[0]?.agent_id ?? null);
-        }
-        // Don't iframe a URL whose code-server is actually dead — probe first so
-        // an unreachable proxy shows the actionable empty state (with a retry)
-        // instead of a raw browser net-error. See probeEditorReachable.
-        const reachable = await probeEditorReachable(data.editor_url);
-        if (!reachable) {
-          setErr(EDITOR_UNREACHABLE_LABEL);
-          setState("error");
-          return;
-        }
-        setUrl(data.editor_url);
-        setState("ready");
-        return;
-      }
-
-      // Self-host: launch the first (most-recently-active) agent's worktree; the
-      // chip row lets the human switch to any other agent.
-      const list = data.agents ?? [];
-      if (list.length === 0 || !data.daemon_url || !data.user_id) {
-        setState("none");
-        return;
-      }
-      // A remote browser can't reach a loopback daemon URL — don't spew a CORS
-      // failure + hang on the spinner; say so plainly.
-      if (isLoopbackUrl(data.daemon_url) && browserIsRemote()) {
-        setErr(EDITOR_UNREACHABLE_LABEL);
-        setState("error");
-        return;
-      }
-      setAgents(list);
-      setDaemon({ url: data.daemon_url, userId: data.user_id, env: data.editor_env });
-      setSelectedId(list[0]!.agent_id);
-      await launchWorkdir(list[0]!.work_dir, data.daemon_url, data.user_id, data.editor_env);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "failed to open editor");
-      setState("error");
-    }
-  };
-
-  const selectAgent = async (a: EditorAgent) => {
-    if (a.agent_id === selectedId || !daemon) return;
-    setSelectedId(a.agent_id);
-    try {
-      await launchWorkdir(a.work_dir, daemon.url, daemon.userId, daemon.env);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "failed to open editor");
-      setState("error");
-    }
-  };
-
   const toggle = () => setOpen((o) => !o);
 
-  // Open when the issue switches into in_editor mode, then launch once open+idle.
+  // Open when the issue switches into in_editor mode (the session launches
+  // itself once open — see useEditorSession).
   useEffect(() => {
     if (defaultOpen) setOpen(true);
   }, [defaultOpen]);
-  useEffect(() => {
-    if (open && state === "idle") void launch();
-    // launch reads the latest closure; only the open/state transition matters.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, state]);
   // Auto-expand into the full modal for co-code once the editor is ready. When
   // an agent is actively coding, open on the Live spectator view — that's the
   // "watch it work" moment; the user can hop to Code anytime.
@@ -430,56 +124,10 @@ export function EditorSection({
     }
   }, [coCode, state, url, expanded, autoExpandedOnce, hasLiveRun]);
 
-  // Agent review chips — which agents worked on this issue; click to load that
-  // agent's worktree into the editor. Shown inline + in the modal header.
-  const agentTabs =
-    agents.length > 0 ? (
-      <div className="flex flex-wrap items-center gap-1">
-        <span className="mr-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-          Agents
-        </span>
-        {agents.map((a) => {
-          const c = agentChipColor(a.agent_id);
-          return (
-            <button
-              key={a.agent_id}
-              type="button"
-              onClick={() => void selectAgent(a)}
-              title={`Review ${a.agent_name || "agent"}'s worktree`}
-              className={cn(
-                "flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs transition-colors",
-                a.agent_id === selectedId ? c.on : c.off,
-              )}
-            >
-              <ActorAvatar
-                actorType="agent"
-                actorId={a.agent_id}
-                size={14}
-                className="shrink-0"
-              />
-              {a.agent_name || "agent"}
-              {a.vscode_url ? (
-                <a
-                  href={a.vscode_url}
-                  onClick={(e) => e.stopPropagation()}
-                  title={`Open ${a.agent_name || "agent"}'s worktree in your desktop VS Code`}
-                  aria-label="Open in VS Code"
-                  className="ml-0.5 rounded p-0.5 opacity-70 hover:opacity-100"
-                >
-                  <Code2 className="size-3" />
-                </a>
-              ) : null}
-            </button>
-          );
-        })}
-      </div>
-    ) : null;
-
-  const selectedAgent =
-    agents.find((a) => a.agent_id === selectedId) ?? null;
-
   // Trust bar: branch isolation + CI status + Accept (→PR) / Discard. Self-host
   // only (talks to the daemon directly), keyed to the agent currently shown.
+  // The workbench renders its own copy inside the modal's right rail; this one
+  // is the inline (collapsed-section) instance.
   const reviewBar =
     daemon && selectedAgent ? (
       <EditorReviewBar
@@ -606,305 +254,37 @@ export function EditorSection({
           )}
 
           {/* Modal lives at the section level so an agent switch (brief loading)
-              doesn't unmount it. */}
+              doesn't unmount it. The Dialog owns only the chrome (sizing, sr
+              title, close button) — the surface inside is EditorWorkbench,
+              driven by this section's session + pane state so behavior is
+              identical to the pre-extraction modal. */}
           <Dialog open={expanded} onOpenChange={setExpanded}>
             <DialogContent
               showCloseButton={false}
               className="flex h-[92vh] w-[96vw] max-w-[96vw] flex-col gap-0 overflow-hidden p-0 sm:max-w-[96vw]"
             >
               <DialogTitle className="sr-only">Code editor</DialogTitle>
-              {/* Single header row: agent chips (scrollable) · actions · close.
-                  The close button lives in-flow here — the dialog's default
-                  floating ✕ overlapped the action labels. Always rendered so
-                  the modal stays closable even before agents load. */}
-              <div className="flex shrink-0 items-center gap-3 border-b border-border py-2 pl-3 pr-2">
-                <div className="min-w-0 flex-1 overflow-x-auto">{agentTabs}</div>
-                {editorActions}
-                <button
-                  type="button"
-                  onClick={() => setExpanded(false)}
-                  title="Close editor"
-                  aria-label="Close editor"
-                  className="shrink-0 rounded p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                >
-                  <X className="size-4" />
-                </button>
-              </div>
-              <EditorAskBar
+              <EditorWorkbench
                 issueId={issueId}
-                agent={selectedAgent}
-                onSent={() => setRightTab("activity")}
+                issueKey={issueKey}
+                issueTitle={issueTitle}
+                projectId={projectId}
+                session={session}
+                leftPane={leftPane}
+                onLeftPaneChange={setLeftPane}
+                actions={editorActions}
+                headerEnd={
+                  <button
+                    type="button"
+                    onClick={() => setExpanded(false)}
+                    title="Close editor"
+                    aria-label="Close editor"
+                    className="shrink-0 rounded p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  >
+                    <X className="size-4" />
+                  </button>
+                }
               />
-              <div className="flex min-h-0 flex-1">
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1 text-xs">
-                    <button
-                      type="button"
-                      onClick={() => setLeftPane("live")}
-                      className={cn(
-                        "flex items-center gap-1.5 rounded px-2 py-0.5 font-medium transition-colors",
-                        leftPane === "live"
-                          ? "bg-accent text-foreground"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      Live
-                      {hasLiveRun && (
-                        <span
-                          aria-hidden
-                          className="size-1.5 rounded-full bg-info motion-safe:animate-pulse"
-                        />
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setLeftPane("code")}
-                      className={cn(
-                        "rounded px-2 py-0.5 font-medium transition-colors",
-                        leftPane === "code"
-                          ? "bg-accent text-foreground"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      Code
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setLeftPane("preview")}
-                      className={cn(
-                        "rounded px-2 py-0.5 font-medium transition-colors",
-                        leftPane === "preview"
-                          ? "bg-accent text-foreground"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      Preview
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setLeftPane("browser")}
-                      className={cn(
-                        "rounded px-2 py-0.5 font-medium transition-colors",
-                        leftPane === "browser"
-                          ? "bg-accent text-foreground"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      Browser
-                    </button>
-                  </div>
-                  <div className="relative min-h-0 flex-1">
-                    {leftPane === "live" && (
-                      <div className="absolute inset-0 flex">
-                        <LiveAgentCodeEditor
-                          issueId={issueId}
-                          onOpenFullEditor={() => setLeftPane("code")}
-                        />
-                      </div>
-                    )}
-                    {/* Code-server stays mounted (hidden) so switching to Preview
-                        and back never reloads VS Code. */}
-                    <div
-                      className={cn(
-                        "absolute inset-0 flex",
-                        leftPane === "code" ? "" : "hidden",
-                      )}
-                    >
-                      {expanded && url ? (
-                        <iframe
-                          src={url}
-                          title="code editor (expanded)"
-                          className="min-w-0 flex-1 border-0 bg-background"
-                        />
-                      ) : (
-                        <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground">
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          launching VS Code…
-                        </div>
-                      )}
-                    </div>
-                    {leftPane === "preview" &&
-                      (daemon && selectedAgent ? (
-                        <div className="absolute inset-0 flex">
-                          <EditorPreviewPane
-                            daemonUrl={daemon.url}
-                            workdir={selectedAgent.work_dir}
-                            defaultDevCommand={projectSettings?.qa_smoke_cmd}
-                            defaultTestCommand={projectSettings?.qa_test_cmd}
-                            testRunState={testRunState}
-                            onTestResult={handleTestResult}
-                          />
-                        </div>
-                      ) : (
-                        // Cloud mode: the preview pane drives the daemon's
-                        // /editor/preview API from the BROWSER, which only works
-                        // when the daemon is reachable directly (self-host).
-                        // Without this the tab rendered a silently blank pane.
-                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
-                          <span className="flex size-11 items-center justify-center rounded-full bg-muted">
-                            <Play className="size-5 text-muted-foreground/60" />
-                          </span>
-                          <p className="max-w-[300px] text-[11px] leading-relaxed text-muted-foreground">
-                            {PREVIEW_UNAVAILABLE_LABEL}
-                          </p>
-                        </div>
-                      ))}
-                    {leftPane === "browser" &&
-                      (daemon && selectedAgent ? (
-                        <div className="absolute inset-0 flex">
-                          <EditorBrowserPane
-                            daemonUrl={daemon.url}
-                            workdir={selectedAgent.work_dir}
-                          />
-                        </div>
-                      ) : (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
-                          {state === "loading" ? (
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                              {BROWSER_STARTING_LABEL}
-                            </div>
-                          ) : (
-                            <>
-                              <span className="flex size-11 items-center justify-center rounded-full bg-muted">
-                                <Globe className="size-5 text-muted-foreground/60" />
-                              </span>
-                              <p className="max-w-[260px] text-[11px] leading-relaxed text-muted-foreground">
-                                {BROWSER_UNAVAILABLE_LABEL}
-                              </p>
-                            </>
-                          )}
-                        </div>
-                      ))}
-                  </div>
-                </div>
-                {rightCollapsed && (
-                  <div className="flex h-full w-10 shrink-0 flex-col items-center gap-1 border-l border-border bg-background py-2">
-                    <button
-                      type="button"
-                      onClick={() => setRightCollapsed(false)}
-                      title="Expand panel"
-                      aria-label="Expand panel"
-                      className="rounded p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                    >
-                      <PanelRightOpen className="size-4" />
-                    </button>
-                    <div className="my-1 h-px w-5 bg-border" />
-                    {(
-                      [
-                        ["activity", ActivityIcon, "Activity"],
-                        ["chat", MessageSquare, "Chat"],
-                        ["context", Info, "Context"],
-                      ] as const
-                    ).map(([key, Icon, label]) => (
-                      <button
-                        key={key}
-                        type="button"
-                        title={label}
-                        aria-label={label}
-                        onClick={() => {
-                          setRightTab(key);
-                          setRightCollapsed(false);
-                        }}
-                        className={cn(
-                          "relative rounded p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-                          rightTab === key && "text-foreground",
-                        )}
-                      >
-                        <Icon className="size-4" />
-                        {/* Live pulse on the Activity icon so a collapsed rail
-                            still signals a running agent. */}
-                        {key === "activity" && hasLiveRun && (
-                          <span
-                            aria-hidden
-                            className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-info motion-safe:animate-pulse"
-                          />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {!rightCollapsed && (
-                <div className="flex h-full w-[360px] shrink-0 flex-col border-l border-border bg-background">
-                  {reviewBar}
-                  <div className="flex shrink-0 border-b border-border text-xs">
-                    <button
-                      type="button"
-                      onClick={() => setRightTab("activity")}
-                      className={cn(
-                        "flex-1 px-3 py-2 font-medium transition-colors",
-                        rightTab === "activity"
-                          ? "border-b-2 border-primary text-foreground"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      Activity
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRightTab("chat")}
-                      className={cn(
-                        "flex-1 px-3 py-2 font-medium transition-colors",
-                        rightTab === "chat"
-                          ? "border-b-2 border-primary text-foreground"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      Chat
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRightTab("context")}
-                      className={cn(
-                        "flex-1 px-3 py-2 font-medium transition-colors",
-                        rightTab === "context"
-                          ? "border-b-2 border-primary text-foreground"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      Context
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRightCollapsed(true)}
-                      title="Collapse panel"
-                      aria-label="Collapse panel"
-                      className="shrink-0 px-2 text-muted-foreground transition-colors hover:text-foreground"
-                    >
-                      <PanelRightClose className="size-3.5" />
-                    </button>
-                  </div>
-                  <div className="shrink-0 [&>div]:px-3 [&>div]:py-2">
-                    <AgentWorkingIndicator issueId={issueId} allowStop />
-                  </div>
-                  <div className="min-h-0 flex-1 overflow-y-auto">
-                    {rightTab === "activity" ? (
-                      <div className="space-y-2 p-2">
-                        {daemon && selectedAgent && (
-                          <EditorChangesList
-                            daemonUrl={daemon.url}
-                            workdir={selectedAgent.work_dir}
-                          />
-                        )}
-                        <LiveAgentChangesFeed issueId={issueId} />
-                        <p className="mt-2 px-1 text-[11px] leading-snug text-muted-foreground">
-                          Live file edits appear here while an agent runs. For
-                          the full line-by-line diff, open Source Control (the
-                          branch icon) in the editor on the left.
-                        </p>
-                      </div>
-                    ) : rightTab === "chat" ? (
-                      <EditorChatPanel
-                        issueId={issueId}
-                        agent={selectedAgent}
-                      />
-                    ) : (
-                      <EditorContextPanel issueId={issueId} />
-                    )}
-                  </div>
-                </div>
-                )}
-              </div>
             </DialogContent>
           </Dialog>
         </div>

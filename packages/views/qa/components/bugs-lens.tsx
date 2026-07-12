@@ -2,11 +2,13 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Bug, Loader2, ShieldCheck } from "lucide-react";
+import { Bug, ShieldCheck, Timer } from "lucide-react";
 import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core";
 import { useWorkspacePaths } from "@agora/core/paths";
 import type { Issue } from "@agora/core/types";
+import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import { useT } from "../../i18n";
 import { Lane } from "./qa-lane";
 
 // The Bugs lens on the QA cockpit. Bugs filed from failed verdicts (the
@@ -21,6 +23,7 @@ function hasLabel(issue: Issue, name: string): boolean {
 export function BugsLens({ projectId }: { projectId?: string }) {
   const wsId = useWorkspaceId();
   const wp = useWorkspacePaths();
+  const { t } = useT("issues");
   const { data, isLoading } = useQuery({
     queryKey: ["qa-bugs", wsId, projectId ?? "all"],
     queryFn: () => api.listIssues({ limit: 200, ...(projectId ? { project_id: projectId } : {}) }),
@@ -41,7 +44,27 @@ export function BugsLens({ projectId }: { projectId?: string }) {
   }, [bugs]);
 
   if (isLoading) {
-    return <p className="text-sm text-muted-foreground">Loading…</p>;
+    return (
+      <div className="space-y-2" aria-hidden>
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-10 w-3/4" />
+      </div>
+    );
+  }
+
+  // One dashed-border empty card (mirrors the Suite tab's empty state) instead
+  // of three separate "Nothing here." lanes when there simply are no bugs yet.
+  if (bugs.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-12 text-center">
+        <Bug className="mx-auto size-6 text-muted-foreground/60" />
+        <p className="mt-2 text-sm text-muted-foreground">{t(($) => $.qa_cockpit.bugs_empty_title)}</p>
+        <p className="mx-auto mt-1 max-w-md text-[12px] text-muted-foreground/70">
+          {t(($) => $.qa_cockpit.bugs_empty_hint)}
+        </p>
+      </div>
+    );
   }
 
   return (
@@ -49,24 +72,26 @@ export function BugsLens({ projectId }: { projectId?: string }) {
       <Lane
         icon={Bug}
         iconClass="text-destructive"
-        title="Open"
-        subtitle="filed from a failed verdict — awaiting triage"
+        title={t(($) => $.qa_cockpit.bugs_lane_open_title)}
+        subtitle={t(($) => $.qa_cockpit.bugs_lane_open_subtitle)}
         issues={lanes.open}
         href={(id) => wp.issueDetail(id)}
       />
       <Lane
-        icon={Loader2}
+        // A static Loader2 (spinner glyph that isn't actually spinning) reads as
+        // a stuck/broken UI — Timer reads as "in progress" without implying motion.
+        icon={Timer}
         iconClass="text-muted-foreground"
-        title="In progress"
-        subtitle="being fixed — re-QA runs on re-review"
+        title={t(($) => $.qa_cockpit.bugs_lane_progress_title)}
+        subtitle={t(($) => $.qa_cockpit.bugs_lane_progress_subtitle)}
         issues={lanes.inProgress}
         href={(id) => wp.issueDetail(id)}
       />
       <Lane
         icon={ShieldCheck}
         iconClass="text-muted-foreground"
-        title="Verified fixed"
-        subtitle="done + qa:pass — the repro is closed for real"
+        title={t(($) => $.qa_cockpit.bugs_lane_fixed_title)}
+        subtitle={t(($) => $.qa_cockpit.bugs_lane_fixed_subtitle)}
         issues={lanes.fixed}
         href={(id) => wp.issueDetail(id)}
       />

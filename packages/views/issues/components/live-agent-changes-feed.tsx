@@ -1,3 +1,4 @@
+/* eslint-disable i18next/no-literal-string -- co-code editor live agent surface; i18n follow-up */
 "use client";
 
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";

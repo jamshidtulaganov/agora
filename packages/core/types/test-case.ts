@@ -22,12 +22,40 @@ export interface TestCase {
   author_type: string;
   category: string; // positive | negative
   script?: string; // compiled Playwright script for an automated case; empty = hand-driven
+  preconditions: string; // setup state needed before step 1 (free text)
+  priority: string; // p1 | p2 | p3 (p2 = normal)
+  modality: string; // ui | api | unit | manual, or "" = legacy/unspecified
+  criterion_ref: string; // which acceptance criterion this case verifies ("AC2" / short quote); "" = untraced
   created_at: string;
   latest_run: TestRunLite | null;
+  // Phase 3 (run identity): the case produced BOTH a pass and a fail on the
+  // SAME commit within its recent runs — its latest verdict is not settled
+  // truth. Optional: old servers omit it (treat as false).
+  flaky?: boolean;
 }
 
 export interface ListTestCasesResponse {
   test_cases: TestCase[];
+}
+
+// One run in a case's history (GET /api/test-cases/:id/runs) — the verdict
+// plus its Phase 3 identity. All identity fields degrade to "" on old
+// servers / unreported runs.
+export interface TestRunHistoryItem {
+  id: string;
+  status: string; // pass | fail | skip | blocked
+  run_source: string; // human | agent
+  created_at: string;
+  output?: string;
+  trace_path?: string;
+  commit_sha: string; // "" = unreported
+  session_id: string; // "" = unreported; runs sharing one dispatch share it
+  started_at: string; // RFC3339 or ""
+  finished_at: string; // RFC3339 or ""
+}
+
+export interface TestCaseRunsResponse {
+  runs: TestRunHistoryItem[];
 }
 
 export interface CreateTestCaseRequest {
@@ -36,9 +64,34 @@ export interface CreateTestCaseRequest {
   expected?: string;
   kind?: string;
   category?: string; // positive | negative; server defaults to positive
+  preconditions?: string; // free text
+  priority?: string; // p1 | p2 | p3; server normalizes anything else to p2
+  modality?: string; // ui | api | unit | manual; server normalizes anything else to ""
+  criterion_ref?: string; // short pointer to the acceptance criterion covered; server truncates
+}
+
+// PATCH /api/test-cases/:id — partial edit; omitted fields are left unchanged.
+export interface UpdateTestCaseRequest {
+  title?: string;
+  steps?: string;
+  expected?: string;
+  kind?: string;
+  category?: string;
+  script?: string;
+  preconditions?: string;
+  priority?: string; // p1 | p2 | p3 (server 400s on anything else)
+  modality?: string; // ui | api | unit | manual or "" (server 400s on anything else)
+  criterion_ref?: string; // "" clears to untraced; server truncates long text
 }
 
 export interface CreateTestRunRequest {
   status: string;
   output?: string;
+}
+
+// POST /api/projects/:id/base-suite/build — the QA-lead authoring run it queued,
+// returning the tracking issue it opened.
+export interface BuildBaseSuiteResponse {
+  status: string;
+  issue_id: string;
 }

@@ -117,6 +117,8 @@ export type {
   GitHubConnectResponse,
 } from "./github";
 
+export type { ReviewFinding, ReviewVerdict, ReviewDecisionResponse } from "./review";
+
 // Deterministic merge-readiness gate verdict (GET /api/issues/{id}/merge-readiness).
 export interface MergeGateStatus {
   name: string; // "ci" | "qa" | "security" | "code-review"
@@ -218,6 +220,10 @@ export type {
   TestCase,
   ListTestCasesResponse,
   CreateTestCaseRequest,
+  UpdateTestCaseRequest,
   CreateTestRunRequest,
+  BuildBaseSuiteResponse,
+  TestRunHistoryItem,
+  TestCaseRunsResponse,
 } from "./test-case";
 export type { EditorAgent, GetIssueEditorResponse, IssueBrowserResponse, IssueQAPreviewURLResponse } from "./editor-live";
