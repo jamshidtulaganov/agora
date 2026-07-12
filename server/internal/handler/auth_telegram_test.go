@@ -221,14 +221,22 @@ func TestTelegramWebhookIgnoresNonPrivateChat(t *testing.T) {
 	}
 }
 
-func TestTelegramWebhookIgnoresNonStartMessage(t *testing.T) {
+// A plain (non-"/start") private DM is now captured by the bot's create-task
+// wizard (see telegram_bot.go: "Any other plain text in a DM is captured as a
+// new task title"). Because the sender here is not linked to any Agora account,
+// the wizard replies exactly once with the "link your account / open the app"
+// onboarding prompt — it does NOT drive the OTP login flow, so no nonce is bound
+// and no login code is leaked. This pins that contract: the message reaches the
+// wizard (one onboarding DM), not the login path.
+func TestTelegramWebhookNonStartDMEntersCreateWizard(t *testing.T) {
 	sent := setupTelegramTest(t)
 
+	const senderID int64 = 111
 	update := map[string]any{
 		"message": map[string]any{
 			"text": "hello there",
-			"from": map[string]any{"id": 111},
-			"chat": map[string]any{"id": 111, "type": "private"},
+			"from": map[string]any{"id": senderID},
+			"chat": map[string]any{"id": senderID, "type": "private"},
 		},
 	}
 	body, _ := json.Marshal(update)
@@ -240,8 +248,9 @@ func TestTelegramWebhookIgnoresNonStartMessage(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("TelegramWebhook non-start: expected 200, got %d", w.Code)
 	}
-	if sent.count != 0 {
-		t.Fatalf("TelegramWebhook non-start: expected no DM, got %d", sent.count)
+	// Exactly one DM: the unlinked-user onboarding prompt from the create wizard.
+	if sent.count != 1 {
+		t.Fatalf("TelegramWebhook non-start: expected 1 onboarding DM, got %d", sent.count)
 	}
 }
 
