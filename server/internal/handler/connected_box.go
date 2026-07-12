@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 // Remote Boxes (opt-in, additive). A connected_box is a developer's own remote
@@ -866,6 +867,25 @@ func (h *Handler) recordDeployEvent(ctx context.Context, workspaceID, issueID pg
 		Summary:     summary,
 	}); err != nil {
 		slog.Warn("record deploy event failed", "error", err, "issue_id", uuidToString(issueID))
+		return
+	}
+
+	// Publish deploy:recorded for the release-integrations fan-out. A QA-box
+	// git-sync is always Tier-1 (target = box label, never a production env), so
+	// this path never emits release:shipped — only the deploy-result capture
+	// path (CaptureDeployEvent) does.
+	if h.Bus != nil {
+		sprintID := ""
+		if sprint, serr := h.Queries.GetSprintForIssue(ctx, issueID); serr == nil {
+			sprintID = uuidToString(sprint.ID)
+		}
+		h.publish(protocol.EventDeployRecorded, uuidToString(workspaceID), "member", "", map[string]any{
+			"issue_id":  uuidToString(issueID),
+			"ref":       ref,
+			"target":    target,
+			"status":    status,
+			"sprint_id": sprintID,
+		})
 	}
 }
 

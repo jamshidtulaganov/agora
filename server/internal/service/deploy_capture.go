@@ -7,8 +7,11 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 // deployResultBlockRe extracts the ```deploy-result``` fenced JSON a deploy
@@ -110,4 +113,132 @@ func (s *TaskService) CaptureDeployEvent(ctx context.Context, issue db.Issue, co
 	}
 	slog.Info("deploy event captured from deploy-result",
 		"issue_id", util.UUIDToString(issue.ID), "target", target, "status", p.Status)
+
+	s.publishDeployEvents(ctx, issue, ref, target, p.Status)
+}
+
+// publishDeployEvents fans the just-persisted deploy_event onto the bus for the
+// release-integrations dispatcher. Always publishes deploy:recorded; ADDS
+// release:shipped when the deploy SUCCEEDED to a production-tier environment.
+//
+// "Shipped" heuristic (documented per release-hub-and-redesign.md B1, since the
+// merge is a human action with no single unambiguous seam): status=="success"
+// AND the deployed environment key resolves to a requires_human / production-
+// named entry in the issue's project's deploy_environments. A Tier-1 QA-box
+// sync (recordDeployEvent, connected_box.go) never matches — its target is a
+// box label, not a production env — so it only ever emits deploy:recorded.
+func (s *TaskService) publishDeployEvents(ctx context.Context, issue db.Issue, ref, target, status string) {
+	if s.Bus == nil {
+		return
+	}
+	// Resolve the issue's sprint once (optional) so connectors can group by it.
+	sprintID, branch, hasSprint := "", "", false
+	if sprint, err := s.Queries.GetSprintForIssue(ctx, issue.ID); err == nil {
+		hasSprint = true
+		sprintID = util.UUIDToString(sprint.ID)
+		branch = strings.TrimSpace(sprint.Branch)
+	}
+
+	s.Bus.Publish(events.Event{
+		Type:        protocol.EventDeployRecorded,
+		WorkspaceID: util.UUIDToString(issue.WorkspaceID),
+		ActorType:   "agent",
+		Payload: map[string]any{
+			"issue_id":  util.UUIDToString(issue.ID),
+			"ref":       ref,
+			"target":    target,
+			"status":    status,
+			"sprint_id": sprintID,
+		},
+	})
+
+	if status != "success" || !s.deployTargetIsProductionTier(ctx, issue, target) {
+		return
+	}
+	if branch == "" {
+		branch = ref
+	}
+	// issue_ids: the sprint's shipped issues when the deploy belongs to a
+	// sprint, else just the triggering issue. The dispatcher rebuilds the full
+	// changelog from sprint_id — this is the routing/grouping list.
+	issueIDs := []string{util.UUIDToString(issue.ID)}
+	if hasSprint {
+		if changelog, err := s.BuildSprintChangelog(ctx, mustSprintUUID(sprintID), issue.WorkspaceID); err == nil && len(changelog) > 0 {
+			issueIDs = issueIDs[:0]
+			for _, e := range changelog {
+				issueIDs = append(issueIDs, e.ID)
+			}
+		}
+	}
+	s.Bus.Publish(events.Event{
+		Type:        protocol.EventReleaseShipped,
+		WorkspaceID: util.UUIDToString(issue.WorkspaceID),
+		ActorType:   "agent",
+		Payload: map[string]any{
+			"sprint_id":   sprintID,
+			"project_id":  util.UUIDToString(issue.ProjectID),
+			"branch":      branch,
+			"environment": target,
+			"issue_ids":   issueIDs,
+		},
+	})
+}
+
+// mustSprintUUID re-parses a sprint id string we just serialized from a valid
+// pgtype.UUID — a trusted round-trip, so a parse failure is a programmer error
+// (returns the zero UUID, which BuildSprintChangelog treats as an empty sprint).
+func mustSprintUUID(s string) pgtype.UUID {
+	id, _ := util.ParseUUID(s)
+	return id
+}
+
+// deployTargetIsProductionTier reports whether the deployed environment key is
+// a production-tier target of the issue's project. Best-effort: no project, no
+// settings, or a malformed blob returns false (no release:shipped fired).
+func (s *TaskService) deployTargetIsProductionTier(ctx context.Context, issue db.Issue, envKey string) bool {
+	if !issue.ProjectID.Valid {
+		return false
+	}
+	project, err := s.Queries.GetProject(ctx, issue.ProjectID)
+	if err != nil || len(project.Settings) == 0 {
+		return false
+	}
+	return deployEnvIsProductionTier(project.Settings, envKey)
+}
+
+// deployEnvIsProductionTier parses project.settings.deploy_environments and
+// reports whether the entry keyed envKey is human-gated / production. Mirrors
+// the rule handler.deployEnvironmentRequiresHuman enforces (the requires_human
+// flag OR a key literally named production/prod). It is duplicated rather than
+// shared because the service package sits BELOW handler in the import graph and
+// cannot import it; the rule is tiny and stable. Defensive: a non-array or
+// malformed settings blob, or a missing entry, returns false.
+func deployEnvIsProductionTier(settingsRaw []byte, envKey string) bool {
+	key := strings.ToLower(strings.TrimSpace(envKey))
+	if key == "" {
+		return false
+	}
+	var settings struct {
+		DeployEnvironments []struct {
+			Key           string `json:"key"`
+			RequiresHuman bool   `json:"requires_human"`
+		} `json:"deploy_environments"`
+	}
+	if json.Unmarshal(settingsRaw, &settings) != nil {
+		return false
+	}
+	for _, env := range settings.DeployEnvironments {
+		if strings.ToLower(strings.TrimSpace(env.Key)) != key {
+			continue
+		}
+		if env.RequiresHuman {
+			return true
+		}
+		switch key {
+		case "production", "prod":
+			return true
+		}
+		return false
+	}
+	return false
 }
