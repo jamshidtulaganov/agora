@@ -224,6 +224,76 @@ describe("deriveStagePipeline — review stage", () => {
   });
 });
 
+describe("deriveStagePipeline — review stage v2 (agent reviews, human approves)", () => {
+  it("fails on a review:fail label", () => {
+    const pipeline = deriveStagePipeline(baseInput({ labels: [{ name: "review:fail" }] }));
+    expect(find(pipeline, "review").state).toBe("failed");
+  });
+
+  it("review:fail wins over green ci/qa merge gates", () => {
+    const pipeline = deriveStagePipeline(
+      baseInput({
+        labels: [{ name: "review:fail" }],
+        mergeGates: { ci: "pass", qa: "pass", tier: "full" },
+      }),
+    );
+    expect(find(pipeline, "review")).toMatchObject({ state: "failed", detail: "full" });
+  });
+
+  it("is active 'awaiting approval' on review:pass once the qa stage has passed", () => {
+    const pipeline = deriveStagePipeline(
+      baseInput({ labels: [{ name: "review:pass" }, { name: "qa:pass" }] }),
+    );
+    expect(find(pipeline, "review")).toMatchObject({
+      state: "active",
+      detail: "awaiting approval",
+    });
+  });
+
+  it("does not go 'awaiting approval' on review:pass while qa hasn't passed", () => {
+    const pipeline = deriveStagePipeline(baseInput({ labels: [{ name: "review:pass" }] }));
+    expect(find(pipeline, "review").state).toBe("pending");
+  });
+
+  it("is active 'merging…' once merge:approved is stamped", () => {
+    const pipeline = deriveStagePipeline(
+      baseInput({ labels: [{ name: "merge:approved" }, { name: "qa:pass" }] }),
+    );
+    expect(find(pipeline, "review")).toMatchObject({ state: "active", detail: "merging…" });
+  });
+
+  it("precedence: merge:approved wins over review:fail (the human decided)", () => {
+    const pipeline = deriveStagePipeline(
+      baseInput({ labels: [{ name: "merge:approved" }, { name: "review:fail" }] }),
+    );
+    expect(find(pipeline, "review")).toMatchObject({ state: "active", detail: "merging…" });
+  });
+
+  it("precedence: merge:override wins over merge:approved", () => {
+    const pipeline = deriveStagePipeline(
+      baseInput({ labels: [{ name: "merge:override" }, { name: "merge:approved" }] }),
+    );
+    expect(find(pipeline, "review")).toMatchObject({ state: "passed", detail: "override" });
+  });
+
+  it("precedence: a merged PR wins over merge:approved and review labels", () => {
+    const pipeline = deriveStagePipeline(
+      baseInput({
+        prMerged: true,
+        labels: [{ name: "merge:approved" }, { name: "review:fail" }],
+      }),
+    );
+    expect(find(pipeline, "review").state).toBe("passed");
+  });
+
+  it("status done forces review passed even with review:fail present", () => {
+    const pipeline = deriveStagePipeline(
+      baseInput({ status: "done", labels: [{ name: "review:fail" }] }),
+    );
+    expect(find(pipeline, "review").state).toBe("passed");
+  });
+});
+
 describe("deriveStagePipeline — running attribution is per-stage", () => {
   it("only marks the stages the caller attributed as running", () => {
     // dev is stage index 0, so a non-cancelled status promotes its pending

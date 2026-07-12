@@ -20,6 +20,10 @@ import {
   parseDeployEnvironments,
   QAEvidenceSchema,
   QAVerdictsResponseSchema,
+  ReviewVerdictSchema,
+  EMPTY_REVIEW_VERDICT,
+  ReviewDecisionResponseSchema,
+  EMPTY_REVIEW_DECISION,
   TestCaseRunsResponseSchema,
   EMPTY_TEST_CASE_RUNS,
   RuntimeHourlyActivityListSchema,
@@ -352,6 +356,96 @@ describe("ConnectedBoxListSchema (Remote Boxes)", () => {
 
   it("defaults a missing boxes array to []", () => {
     expect(ConnectedBoxListSchema.parse({}).boxes).toEqual([]);
+  });
+});
+
+describe("ReviewVerdictSchema (Review stage v2)", () => {
+  it("parses a well-formed verdict including findings", () => {
+    const parsed = ReviewVerdictSchema.parse({
+      verdict: "fail",
+      summary: "1 blocker in the auth path",
+      commit_sha: "deadbeefcafe",
+      files_reviewed: 7,
+      findings: [
+        {
+          file: "server/internal/handler/auth.go",
+          line: 42,
+          severity: "blocker",
+          title: "token compared with ==",
+          detail: "Use subtle.ConstantTimeCompare.",
+        },
+        { file: "docs/x.md", line: null, severity: "minor", title: "typo", detail: "" },
+      ],
+      comment_id: "c1",
+      reviewed_at: "2026-07-12T00:00:00Z",
+      reviewer_agent_id: "a1",
+    });
+    expect(parsed.verdict).toBe("fail");
+    expect(parsed.findings).toHaveLength(2);
+    expect(parsed.findings[0]!.severity).toBe("blocker");
+    expect(parsed.findings[1]!.line).toBeNull();
+  });
+
+  it("parses the endpoint's explicit 'none' answer (no review yet)", () => {
+    const parsed = ReviewVerdictSchema.parse({ verdict: "none", findings: [] });
+    expect(parsed.verdict).toBe("none");
+    expect(parsed.findings).toEqual([]);
+    expect(parsed.summary).toBe("");
+    expect(parsed.commit_sha).toBe("");
+  });
+
+  it("falls back to the 'none' empty verdict on a malformed body instead of throwing", () => {
+    for (const bad of [null, "nope", 42, { findings: "bad" }, { verdict: 7 }]) {
+      const out = parseWithFallback(bad, ReviewVerdictSchema, EMPTY_REVIEW_VERDICT, {
+        endpoint: "t",
+      });
+      expect(out).toEqual(EMPTY_REVIEW_VERDICT);
+    }
+  });
+
+  it("defaults a partial finding instead of rejecting the payload (agent-authored)", () => {
+    const parsed = ReviewVerdictSchema.parse({
+      verdict: "pass",
+      findings: [{ title: "note without file/line/severity" }],
+    });
+    expect(parsed.findings[0]).toMatchObject({
+      file: "",
+      line: null,
+      severity: "minor",
+      title: "note without file/line/severity",
+      detail: "",
+    });
+  });
+
+  it("keeps an unrecognized future severity/verdict as-is (enum drift downgrades)", () => {
+    const parsed = ReviewVerdictSchema.parse({
+      verdict: "pass_with_notes",
+      findings: [{ file: "a.ts", line: 1, severity: "nitpick", title: "t", detail: "d" }],
+    });
+    expect(parsed.verdict).toBe("pass_with_notes");
+    expect(parsed.findings[0]!.severity).toBe("nitpick");
+  });
+});
+
+describe("ReviewDecisionResponseSchema (review-decision)", () => {
+  it("parses both action shapes", () => {
+    expect(
+      ReviewDecisionResponseSchema.parse({ action: "approve", merged_dispatch: true }),
+    ).toMatchObject({ action: "approve", merged_dispatch: true, status: "", dispatched: false });
+    expect(
+      ReviewDecisionResponseSchema.parse({
+        action: "request_changes",
+        status: "in_progress",
+        dispatched: true,
+      }),
+    ).toMatchObject({ action: "request_changes", status: "in_progress", dispatched: true });
+  });
+
+  it("falls back to the zero-value decision on a malformed body", () => {
+    const out = parseWithFallback("nope", ReviewDecisionResponseSchema, EMPTY_REVIEW_DECISION, {
+      endpoint: "t",
+    });
+    expect(out).toEqual(EMPTY_REVIEW_DECISION);
   });
 });
 

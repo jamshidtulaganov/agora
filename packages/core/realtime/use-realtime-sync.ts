@@ -512,6 +512,11 @@ export function useRealtimeSync(
         // page picks up new results the moment the agent's task transitions.
         qc.invalidateQueries({ queryKey: issueKeys.testCasesAll() });
         qc.invalidateQueries({ queryKey: issueKeys.qaEvidenceAll() });
+        // Review lens verdict card: a run_review task landing its
+        // ```review-result``` comment is a task lifecycle event too — same
+        // blanket-prefix contract as qa-evidence above, so the mounted
+        // Review lens picks up the fresh verdict without polling.
+        qc.invalidateQueries({ queryKey: issueKeys.reviewVerdictAll() });
         // Per-issue token usage card (issue-detail right rail). Same
         // shape as the tasks invalidation above — any task lifecycle
         // event shifts the aggregated usage numbers.

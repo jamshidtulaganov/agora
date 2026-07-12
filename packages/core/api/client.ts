@@ -130,6 +130,8 @@ import type {
   NotificationPreferences,
   GitHubPullRequest,
   MergeReadiness,
+  ReviewVerdict,
+  ReviewDecisionResponse,
   ListGitHubInstallationsResponse,
   GitHubConnectResponse,
   ListLarkInstallationsResponse,
@@ -310,6 +312,10 @@ import {
   QAVerdictsResponseSchema,
   EMPTY_QA_VERDICTS,
   type QAVerdictsResponse,
+  ReviewVerdictSchema,
+  EMPTY_REVIEW_VERDICT,
+  ReviewDecisionResponseSchema,
+  EMPTY_REVIEW_DECISION,
 } from "./schemas";
 
 /** Identifies the calling client to the server.
@@ -1721,6 +1727,40 @@ export class ApiClient {
   // labels, tiered by blast radius). Read-only.
   async mergeReadiness(issueId: string): Promise<MergeReadiness> {
     return this.fetch(`/api/issues/${issueId}/merge-readiness`);
+  }
+
+  // The Review lens' evidence read: the latest run_review code-review verdict
+  // for an issue, resolved server-side from the newest agent comment carrying
+  // a parsable ```review-result``` block. verdict "none" (a normal response
+  // for a never-reviewed issue, and this parse's fallback) renders the "No
+  // review yet" empty state.
+  async getReviewVerdict(issueId: string): Promise<ReviewVerdict> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/review-verdict`);
+    return parseWithFallback(raw, ReviewVerdictSchema, EMPTY_REVIEW_VERDICT, {
+      endpoint: "GET /api/issues/:id/review-verdict",
+    });
+  }
+
+  // The human half of "agent reviews, human approves". approve verifies the
+  // deterministic gates server-side (409 with qa_gate_not_passed / qa_failed /
+  // review_failed in the message when they block; merge:override bypasses)
+  // and dispatches the merge order to the squad lead; request_changes needs a
+  // non-empty note (400 otherwise) and drops the issue back to in_progress.
+  // Human-only: the route 403s machine actors.
+  async reviewDecision(
+    issueId: string,
+    body: { action: "approve" | "request_changes"; note?: string },
+  ): Promise<ReviewDecisionResponse> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/review-decision`, {
+      method: "POST",
+      body: JSON.stringify({
+        action: body.action,
+        ...(body.note ? { note: body.note } : {}),
+      }),
+    });
+    return parseWithFallback(raw, ReviewDecisionResponseSchema, EMPTY_REVIEW_DECISION, {
+      endpoint: "POST /api/issues/:id/review-decision",
+    });
   }
 
   // Inbox

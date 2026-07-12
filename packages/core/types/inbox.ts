@@ -26,7 +26,14 @@ export type InboxItemType =
   // landing on an issue, and a qa:pass that RECOVERS from a prior fail.
   // A routine (non-recovery) pass never notifies.
   | "qa_failed"
-  | "qa_passed";
+  | "qa_passed"
+  // Review stage v2 ("agent reviews, human approves"): review:fail landing
+  // on an issue (action_required), a review:pass that leaves every required
+  // merge gate green (merge_ready, action_required — "awaiting your
+  // approval"), and a routine review:pass (info).
+  | "review_failed"
+  | "review_passed"
+  | "merge_ready";
 
 export interface InboxItem {
   id: string;

@@ -48,7 +48,10 @@
     "design_proposal_ready": "Design proposal ready",
     "design_proposal_blocked": "Design proposal blocked",
     "qa_failed": "QA failed",
-    "qa_passed": "QA passed after a fail"
+    "qa_passed": "QA passed after a fail",
+    "review_failed": "Code review failed",
+    "review_passed": "Code review passed",
+    "merge_ready": "Ready to merge"
   },
   "labels": {
     "set_status_to": "Set status to",

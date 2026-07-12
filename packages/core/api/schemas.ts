@@ -1072,6 +1072,61 @@ export const QAEvidenceSchema = z.object({
   finished_at: z.string().default(""),
 }).loose();
 
+// Review verdict — the latest run_review code-review result for an issue
+// (GET /api/issues/:id/review-verdict). Lenient like its QA siblings: the
+// findings come from an agent-authored ```review-result``` block, so every
+// field defaults and an unrecognized severity/verdict degrades instead of
+// rejecting the payload. verdict "none" (the endpoint's explicit "no review
+// yet" answer) doubles as the parse fallback — a malformed response renders
+// the same empty state as a never-reviewed issue.
+export const ReviewFindingSchema = z.object({
+  file: z.string().default(""),
+  line: z.number().nullable().default(null),
+  severity: z.string().default("minor"),
+  title: z.string().default(""),
+  detail: z.string().default(""),
+}).loose();
+
+export const ReviewVerdictSchema = z.object({
+  verdict: z.string().default("none"),
+  summary: z.string().default(""),
+  commit_sha: z.string().default(""),
+  files_reviewed: z.number().default(0),
+  findings: z.array(ReviewFindingSchema).default([]),
+  comment_id: z.string().default(""),
+  reviewed_at: z.string().default(""),
+  reviewer_agent_id: z.string().default(""),
+}).loose();
+
+export const EMPTY_REVIEW_VERDICT = {
+  verdict: "none",
+  summary: "",
+  commit_sha: "",
+  files_reviewed: 0,
+  findings: [],
+  comment_id: "",
+  reviewed_at: "",
+  reviewer_agent_id: "",
+};
+
+// POST /api/issues/:id/review-decision — approve returns {action,
+// merged_dispatch}, request_changes returns {action, status, dispatched};
+// one lenient schema covers both with zero-value defaults. The UI only
+// toasts + invalidates on success, so a degraded body is harmless.
+export const ReviewDecisionResponseSchema = z.object({
+  action: z.string().default(""),
+  merged_dispatch: z.boolean().default(false),
+  status: z.string().default(""),
+  dispatched: z.boolean().default(false),
+}).loose();
+
+export const EMPTY_REVIEW_DECISION = {
+  action: "",
+  merged_dispatch: false,
+  status: "",
+  dispatched: false,
+};
+
 // A test case's run history (GET /api/test-cases/:id/runs) — Phase 3 run
 // identity. Lenient like its QA siblings: every field defaults, a malformed
 // entry degrades instead of rejecting the whole history.

@@ -21,6 +21,7 @@ const STATUSES = [
 ];
 const LABELS = [
   "qa:pass", "qa:fail", "qa:blocked", "qa:stale", "merge:override",
+  "review:pass", "review:fail", "merge:approved",
   "bug", "ci:pass", "ci:fail", "tier:light", "qa:PASS", "qa: pass", "",
 ];
 const GATE_STATES = ["pass", "fail", "pending"] as const;
@@ -91,9 +92,14 @@ describe("deriveStagePipeline fuzz — 10k adversarial inputs", () => {
 
       // 6. At most ONE stage got the pending→active promotion (active can also
       //    come from explicit rules: qa active on in_review, review active on
-      //    pending gates — so we assert promotion discipline only when the
-      //    status rules out explicit actives).
-      if (input.status !== "in_review" && !input.mergeGates) {
+      //    pending gates / review:pass+qa:pass "awaiting approval" /
+      //    merge:approved "merging…" — so we assert promotion discipline only
+      //    when the input rules out every explicit active).
+      const labelSet = new Set(input.labels.map((l) => l.name));
+      const reviewExplicitActive =
+        labelSet.has("merge:approved") ||
+        (labelSet.has("review:pass") && labelSet.has("qa:pass"));
+      if (input.status !== "in_review" && !input.mergeGates && !reviewExplicitActive) {
         const actives = pipeline.stages.filter((s) => s.state === "active");
         expect(actives.length, ctx()).toBeLessThanOrEqual(1);
       }

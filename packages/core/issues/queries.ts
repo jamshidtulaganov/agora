@@ -91,6 +91,9 @@ export const issueKeys = {
   qaEvidenceAll: () => ["issues", "qa-evidence"] as const,
   /** Latest persisted run_qa verdict for an issue (the QA section reads this). */
   qaEvidence: (issueId: string) => [...issueKeys.qaEvidenceAll(), issueId] as const,
+  reviewVerdictAll: () => ["issues", "review-verdict"] as const,
+  /** Latest run_review code-review verdict for an issue (the Review lens reads this). */
+  reviewVerdict: (issueId: string) => [...issueKeys.reviewVerdictAll(), issueId] as const,
   testCasesAll: () => ["issues", "test-cases"] as const,
   /** QA test cases for an issue (the Test-cases panel reads this). */
   testCases: (issueId: string) => [...issueKeys.testCasesAll(), issueId] as const,

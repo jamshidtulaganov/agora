@@ -129,6 +129,14 @@ function deriveQaStage(
   return snapshot;
 }
 
+// Review stage v2 ("agent reviews, human approves"): the reviewer agent's
+// verdict lands as review:pass / review:fail labels (server-captured from the
+// ```review-result``` block), and a human's Approve & merge decision stamps
+// merge:approved. Signal precedence, strongest first:
+//   merged/done > merge:override > merge:approved ("merging…", the dispatch
+//   is out but the PR hasn't merged yet) > review:fail > ci/qa gate fail >
+//   review:pass with QA passed ("awaiting approval") > pending-gates active >
+//   pending.
 function deriveReviewStage(
   input: StagePipelineInput,
   status: IssueStatus,
@@ -146,8 +154,19 @@ function deriveReviewStage(
   } else if (overrideLabel) {
     state = "passed";
     detail = "override";
+  } else if (labelNames.has("merge:approved")) {
+    // A human approved; the merge order is dispatched but the PR isn't
+    // merged yet (prMerged would have won above once it lands).
+    state = "active";
+    detail = "merging…";
+  } else if (labelNames.has("review:fail")) {
+    state = "failed";
   } else if (gates !== null && (gates.ci === "fail" || gates.qa === "fail")) {
     state = "failed";
+  } else if (labelNames.has("review:pass") && qaStage.state === "passed") {
+    // Both machine gates are green — the stage now waits on the HUMAN.
+    state = "active";
+    detail = "awaiting approval";
   } else if (
     gates !== null &&
     (gates.ci === "pending" || gates.qa === "pending") &&
