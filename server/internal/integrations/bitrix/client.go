@@ -380,13 +380,27 @@ type rawGroup struct {
 	NameLower jsonStr `json:"name"`
 }
 
+// bitrixEmptyResult reports whether a Bitrix `result` payload is one of the
+// "empty set" sentinels the REST API returns instead of an empty array. Several
+// list endpoints (task.commentitem.getlist, sonet_group.get, user.get,
+// department.get, event.get) return the JSON literal `false` — and occasionally
+// `null` — for a zero-row result set rather than `[]`. Decoding that straight
+// into a []T target fails with "cannot unmarshal bool into ... of type []T", so
+// every bare-array list decoder captures `result` as a RawMessage and skips the
+// array decode when this reports true (leaving the caller with an empty slice).
+func bitrixEmptyResult(raw json.RawMessage) bool {
+	t := bytes.TrimSpace(raw)
+	return len(t) == 0 || bytes.Equal(t, []byte("false")) || bytes.Equal(t, []byte("null"))
+}
+
 // listGroupsResponse is the envelope for sonet_group.get. Unlike the task
 // endpoints, the result is a bare ARRAY of group objects (not wrapped in a
-// {tasks:[...]} object), so result decodes directly into a slice.
+// {tasks:[...]} object). It is captured raw so the false/null empty-set
+// sentinel (see bitrixEmptyResult) decodes to an empty list, not an error.
 type listGroupsResponse struct {
-	Result    []rawGroup `json:"result"`
-	Error     string     `json:"error"`
-	ErrorDesc string     `json:"error_description"`
+	Result    json.RawMessage `json:"result"`
+	Error     string          `json:"error"`
+	ErrorDesc string          `json:"error_description"`
 }
 
 // maxGroups caps how many workgroups ListGroups returns so a portal with
@@ -421,8 +435,15 @@ func (c *Client) ListGroups(ctx context.Context) ([]Group, error) {
 		return nil, fmt.Errorf("bitrix: sonet_group.get error %s: %s", parsed.Error, parsed.ErrorDesc)
 	}
 
-	groups := make([]Group, 0, len(parsed.Result))
-	for _, rg := range parsed.Result {
+	var rows []rawGroup
+	if !bitrixEmptyResult(parsed.Result) {
+		if err := json.Unmarshal(parsed.Result, &rows); err != nil {
+			return nil, fmt.Errorf("bitrix: decode sonet_group.get result: %w", err)
+		}
+	}
+
+	groups := make([]Group, 0, len(rows))
+	for _, rg := range rows {
 		id := firstNonEmpty(rg.ID, rg.IDLower)
 		if id == "" {
 			continue // skip malformed rows rather than emitting blank ids
@@ -548,18 +569,19 @@ func (c *Client) ListUsers(ctx context.Context) ([]User, error) {
 		if err != nil {
 			return nil, err
 		}
+		type userRow struct {
+			ID           jsonStr `json:"ID"`
+			Name         jsonStr `json:"NAME"`
+			LastName     jsonStr `json:"LAST_NAME"`
+			Email        jsonStr `json:"EMAIL"`
+			WorkPosition jsonStr `json:"WORK_POSITION"`
+			Department   deptIDs `json:"UF_DEPARTMENT"`
+		}
 		var parsed struct {
-			Result []struct {
-				ID           jsonStr `json:"ID"`
-				Name         jsonStr `json:"NAME"`
-				LastName     jsonStr `json:"LAST_NAME"`
-				Email        jsonStr `json:"EMAIL"`
-				WorkPosition jsonStr `json:"WORK_POSITION"`
-				Department   deptIDs `json:"UF_DEPARTMENT"`
-			} `json:"result"`
-			Next      *int   `json:"next"`
-			Error     string `json:"error"`
-			ErrorDesc string `json:"error_description"`
+			Result    json.RawMessage `json:"result"`
+			Next      *int            `json:"next"`
+			Error     string          `json:"error"`
+			ErrorDesc string          `json:"error_description"`
 		}
 		if err := json.Unmarshal(body, &parsed); err != nil {
 			return nil, fmt.Errorf("bitrix: decode user.get (list): %w", err)
@@ -567,7 +589,13 @@ func (c *Client) ListUsers(ctx context.Context) ([]User, error) {
 		if parsed.Error != "" {
 			return nil, fmt.Errorf("bitrix: user.get (list) error %s: %s", parsed.Error, parsed.ErrorDesc)
 		}
-		for _, r := range parsed.Result {
+		var rows []userRow
+		if !bitrixEmptyResult(parsed.Result) {
+			if err := json.Unmarshal(parsed.Result, &rows); err != nil {
+				return nil, fmt.Errorf("bitrix: decode user.get (list) result: %w", err)
+			}
+		}
+		for _, r := range rows {
 			id := firstNonEmpty(r.ID)
 			if id == "" {
 				continue
@@ -581,7 +609,7 @@ func (c *Client) ListUsers(ctx context.Context) ([]User, error) {
 				Department: r.Department,
 			})
 		}
-		if parsed.Next == nil || len(parsed.Result) == 0 || len(users) >= bitrixMaxTasksPerImport || *parsed.Next <= start {
+		if parsed.Next == nil || len(rows) == 0 || len(users) >= bitrixMaxTasksPerImport || *parsed.Next <= start {
 			break
 		}
 		start = *parsed.Next
@@ -751,11 +779,14 @@ type rawComment struct {
 }
 
 // listCommentsResponse is the envelope for task.commentitem.getlist. Like
-// sonet_group.get the result is a bare array, not wrapped in an object.
+// sonet_group.get the result is a bare array, not wrapped in an object, and is
+// captured raw so the false/null empty-set sentinel (a task with no comments —
+// the common case) decodes to an empty list instead of erroring. See
+// bitrixEmptyResult.
 type listCommentsResponse struct {
-	Result    []rawComment `json:"result"`
-	Error     string       `json:"error"`
-	ErrorDesc string       `json:"error_description"`
+	Result    json.RawMessage `json:"result"`
+	Error     string          `json:"error"`
+	ErrorDesc string          `json:"error_description"`
 }
 
 // maxCommentsPerTask caps how many comments GetTaskComments returns so a task
@@ -797,8 +828,15 @@ func (c *Client) GetTaskComments(ctx context.Context, taskID string) ([]Comment,
 		return nil, fmt.Errorf("bitrix: task.commentitem.getlist error %s: %s", parsed.Error, parsed.ErrorDesc)
 	}
 
-	comments := make([]Comment, 0, len(parsed.Result))
-	for _, rc := range parsed.Result {
+	var rows []rawComment
+	if !bitrixEmptyResult(parsed.Result) {
+		if err := json.Unmarshal(parsed.Result, &rows); err != nil {
+			return nil, fmt.Errorf("bitrix: decode task.commentitem.getlist result: %w", err)
+		}
+	}
+
+	comments := make([]Comment, 0, len(rows))
+	for _, rc := range rows {
 		text := strings.TrimSpace(firstNonEmpty(rc.PostMsg, rc.PostMsgL))
 		if text == "" {
 			continue // file-only / system row — nothing to mirror as a comment
@@ -1137,7 +1175,13 @@ func (c *Client) GetGroup(ctx context.Context, groupID string) (Group, error) {
 	if parsed.Error != "" {
 		return Group{}, fmt.Errorf("bitrix: sonet_group.get (by id) error %s: %s", parsed.Error, parsed.ErrorDesc)
 	}
-	for _, rg := range parsed.Result {
+	var rows []rawGroup
+	if !bitrixEmptyResult(parsed.Result) {
+		if err := json.Unmarshal(parsed.Result, &rows); err != nil {
+			return Group{}, fmt.Errorf("bitrix: decode sonet_group.get (by id) result: %w", err)
+		}
+	}
+	for _, rg := range rows {
 		id := firstNonEmpty(rg.ID, rg.IDLower)
 		if id == "" {
 			continue
@@ -1300,15 +1344,16 @@ func (c *Client) ListDepartments(ctx context.Context) ([]Department, error) {
 		if err != nil {
 			return nil, err
 		}
+		type deptRow struct {
+			ID     jsonStr `json:"ID"`
+			Name   jsonStr `json:"NAME"`
+			Parent jsonStr `json:"PARENT"`
+		}
 		var parsed struct {
-			Result []struct {
-				ID     jsonStr `json:"ID"`
-				Name   jsonStr `json:"NAME"`
-				Parent jsonStr `json:"PARENT"`
-			} `json:"result"`
-			Next      *int   `json:"next"`
-			Error     string `json:"error"`
-			ErrorDesc string `json:"error_description"`
+			Result    json.RawMessage `json:"result"`
+			Next      *int            `json:"next"`
+			Error     string          `json:"error"`
+			ErrorDesc string          `json:"error_description"`
 		}
 		if err := json.Unmarshal(body, &parsed); err != nil {
 			return nil, fmt.Errorf("bitrix: decode department.get: %w", err)
@@ -1316,14 +1361,20 @@ func (c *Client) ListDepartments(ctx context.Context) ([]Department, error) {
 		if parsed.Error != "" {
 			return nil, fmt.Errorf("bitrix: department.get error %s: %s", parsed.Error, parsed.ErrorDesc)
 		}
-		for _, r := range parsed.Result {
+		var rows []deptRow
+		if !bitrixEmptyResult(parsed.Result) {
+			if err := json.Unmarshal(parsed.Result, &rows); err != nil {
+				return nil, fmt.Errorf("bitrix: decode department.get result: %w", err)
+			}
+		}
+		for _, r := range rows {
 			depts = append(depts, Department{
 				ID:     strings.TrimSpace(string(r.ID)),
 				Name:   strings.TrimSpace(string(r.Name)),
 				Parent: strings.TrimSpace(string(r.Parent)),
 			})
 		}
-		if parsed.Next == nil || len(parsed.Result) == 0 || len(depts) >= bitrixMaxTasksPerImport || *parsed.Next <= start {
+		if parsed.Next == nil || len(rows) == 0 || len(depts) >= bitrixMaxTasksPerImport || *parsed.Next <= start {
 			break
 		}
 		start = *parsed.Next
@@ -1460,13 +1511,14 @@ func (c *Client) ListBoundEvents(ctx context.Context) ([]EventBinding, error) {
 	if err != nil {
 		return nil, err
 	}
+	type eventRow struct {
+		Event   jsonStr `json:"event"`
+		Handler jsonStr `json:"handler"`
+	}
 	var parsed struct {
-		Result []struct {
-			Event   jsonStr `json:"event"`
-			Handler jsonStr `json:"handler"`
-		} `json:"result"`
-		Error     string `json:"error"`
-		ErrorDesc string `json:"error_description"`
+		Result    json.RawMessage `json:"result"`
+		Error     string          `json:"error"`
+		ErrorDesc string          `json:"error_description"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("bitrix: decode event.get: %w", err)
@@ -1474,8 +1526,14 @@ func (c *Client) ListBoundEvents(ctx context.Context) ([]EventBinding, error) {
 	if parsed.Error != "" {
 		return nil, fmt.Errorf("bitrix: event.get error %s: %s", parsed.Error, parsed.ErrorDesc)
 	}
-	out := make([]EventBinding, 0, len(parsed.Result))
-	for _, b := range parsed.Result {
+	var rows []eventRow
+	if !bitrixEmptyResult(parsed.Result) {
+		if err := json.Unmarshal(parsed.Result, &rows); err != nil {
+			return nil, fmt.Errorf("bitrix: decode event.get result: %w", err)
+		}
+	}
+	out := make([]EventBinding, 0, len(rows))
+	for _, b := range rows {
 		out = append(out, EventBinding{Event: string(b.Event), Handler: string(b.Handler)})
 	}
 	return out, nil

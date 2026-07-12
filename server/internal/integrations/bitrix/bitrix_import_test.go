@@ -99,6 +99,60 @@ func TestGetTaskCommentsBitrixError(t *testing.T) {
 	}
 }
 
+// Bitrix returns the JSON literal `false` (not `[]`) for a task with no comments
+// — the common case in prod. The decoder must treat that empty-set sentinel as
+// an empty list, NOT fail with "cannot unmarshal bool into ... of type
+// []bitrix.rawComment". `null` and a missing result are handled the same way.
+func TestGetTaskCommentsEmptyResultSentinel(t *testing.T) {
+	for name, payload := range map[string]string{
+		"false":   `{"result":false}`,
+		"null":    `{"result":null}`,
+		"absent":  `{}`,
+		"emptyar": `{"result":[]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				io.WriteString(w, payload)
+			}))
+			defer srv.Close()
+			c := NewClient(srv.URL)
+			comments, err := c.GetTaskComments(context.Background(), "1")
+			if err != nil {
+				t.Fatalf("GetTaskComments(%s): unexpected error: %v", name, err)
+			}
+			if len(comments) != 0 {
+				t.Fatalf("GetTaskComments(%s): want 0 comments, got %d", name, len(comments))
+			}
+		})
+	}
+}
+
+// The same empty-set sentinel applies to sonet_group.get (a portal with no
+// active workgroups) — ListGroups must return an empty slice, not error.
+func TestListGroupsEmptyResultSentinel(t *testing.T) {
+	for name, payload := range map[string]string{
+		"false": `{"result":false}`,
+		"null":  `{"result":null}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				io.WriteString(w, payload)
+			}))
+			defer srv.Close()
+			c := NewClient(srv.URL)
+			groups, err := c.ListGroups(context.Background())
+			if err != nil {
+				t.Fatalf("ListGroups(%s): unexpected error: %v", name, err)
+			}
+			if len(groups) != 0 {
+				t.Fatalf("ListGroups(%s): want 0 groups, got %d", name, len(groups))
+			}
+		})
+	}
+}
+
 // --- GetTaskFiles -----------------------------------------------------------
 
 func TestGetTaskFiles(t *testing.T) {
