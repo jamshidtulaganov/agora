@@ -1973,8 +1973,7 @@ export class ApiClient {
 
   // Idempotently attaches skills to an agent — server does ON CONFLICT DO
   // NOTHING, so it never clobbers existing agent_skill links (unlike
-  // setAgentSkills, which replaces the set wholesale via PUT). Used by the
-  // SD onboarding skill-seeder (packages/views/workspace/sd-skills.ts).
+  // setAgentSkills, which replaces the set wholesale via PUT).
   async addAgentSkills(agentId: string, skillIds: string[]): Promise<void> {
     await this.fetch(`/api/agents/${agentId}/skills/add`, {
       method: "POST",
