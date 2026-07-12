@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   AppConfigSchema,
   EMPTY_APP_CONFIG,
-  ConnectedBoxListSchema,
   DashboardAgentRunTimeListSchema,
   DashboardUsageByAgentListSchema,
   DashboardUsageDailyListSchema,
@@ -326,44 +325,6 @@ describe("dashboard + runtime usage schema drift", () => {
       { date: "2026-05-19", region: "us-east" },
     ]);
     expect((parsed[0] as Record<string, unknown>).region).toBe("us-east");
-  });
-});
-
-describe("ConnectedBoxListSchema (Remote Boxes)", () => {
-  const EMPTY = { boxes: [] as unknown[] };
-
-  it("parses a well-formed list and coerces missing optional fields", () => {
-    const parsed = ConnectedBoxListSchema.parse({
-      boxes: [{ id: "b1", label: "jamshid", ssh_host: "jamshid.sdteam.uz", ssh_user: "dev" }],
-    });
-    const box = parsed.boxes[0]!;
-    expect(box.ssh_port).toBe(22);
-    expect(box.status).toBe("pending");
-    expect(box.owner_id).toBeNull();
-    expect(box.daemon_id).toBeNull();
-  });
-
-  it("falls back on a malformed body (null / wrong shape) instead of throwing", () => {
-    expect(parseWithFallback(null, ConnectedBoxListSchema, EMPTY, { endpoint: "t" })).toEqual(EMPTY);
-    expect(
-      parseWithFallback({ boxes: "nope" }, ConnectedBoxListSchema, EMPTY, { endpoint: "t" }),
-    ).toEqual(EMPTY);
-    // A box missing its required id is invalid → whole parse fails → fallback.
-    expect(
-      parseWithFallback({ boxes: [{ label: "x" }] }, ConnectedBoxListSchema, EMPTY, { endpoint: "t" }),
-    ).toEqual(EMPTY);
-  });
-
-  it("downgrades an unknown status string instead of rejecting (enum drift)", () => {
-    const parsed = ConnectedBoxListSchema.parse({
-      boxes: [{ id: "b1", status: "quarantined", region: "us-east" }],
-    });
-    expect(parsed.boxes[0]!.status).toBe("quarantined");
-    expect((parsed.boxes[0] as Record<string, unknown>).region).toBe("us-east");
-  });
-
-  it("defaults a missing boxes array to []", () => {
-    expect(ConnectedBoxListSchema.parse({}).boxes).toEqual([]);
   });
 });
 

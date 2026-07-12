@@ -34,7 +34,6 @@ import { EditorContextPanel } from "./editor-context-panel";
 import { EditorAskBar } from "./editor-ask-bar";
 import { EditorChangesList } from "./editor-changes-list";
 import { EditorRunQA } from "./editor-run-qa";
-import { EditorDeployQA } from "./editor-deploy-qa";
 
 // The co-code editor WORKBENCH — the editor Dialog's inner surface, extracted
 // from editor-section.tsx so it can mount in two hosts (docs/
@@ -521,7 +520,6 @@ export function EditorWorkbench({
   const actionsNode = actions ?? (
     <div className="flex items-center gap-3">
       <EditorRunQA issueId={issueId} agent={selectedAgent} />
-      <EditorDeployQA issueId={issueId} wsId={wsId} projectId={projectId} />
     </div>
   );
 

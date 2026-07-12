@@ -49,7 +49,6 @@ vi.mock("./editor-ask-bar", () => ({
 vi.mock("./editor-run-qa", () => ({
   EditorRunQA: () => <div data-testid="run-qa" />,
 }));
-vi.mock("./editor-deploy-qa", () => ({ EditorDeployQA: () => null }));
 
 function agent(over: Record<string, unknown> = {}) {
   return {

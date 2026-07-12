@@ -39,7 +39,6 @@ export interface AppConfigResponse {
   daemon_app_url?: string;
   workspace_creation_disabled?: boolean;
   telegram_only?: boolean;
-  remote_boxes_enabled?: boolean;
   bitrix_enabled?: boolean;
   zoho_enabled?: boolean;
   lark_enabled?: boolean;
@@ -184,7 +183,6 @@ export const AppConfigSchema = z.object({
   daemon_app_url: OptionalStringSchema,
   workspace_creation_disabled: BooleanWithDefaultSchema(false).optional(),
   telegram_only: BooleanWithDefaultSchema(false).optional(),
-  remote_boxes_enabled: BooleanWithDefaultSchema(false).optional(),
   bitrix_enabled: BooleanWithDefaultSchema(false).optional(),
   zoho_enabled: BooleanWithDefaultSchema(false).optional(),
   lark_enabled: BooleanWithDefaultSchema(false).optional(),
@@ -817,28 +815,6 @@ export const EMPTY_USER: User = {
 };
 
 // ---------------------------------------------------------------------------
-// Remote Boxes (connected_box) — a developer's onboarded remote dev server.
-// Lenient by design (`.loose()`, string status) so a future backend status
-// value downgrades gracefully and never white-screens the runtimes page.
-export const ConnectedBoxSchema = z.object({
-  id: z.string(),
-  workspace_id: z.string().default(""),
-  owner_id: z.string().nullable().default(null),
-  label: z.string().default(""),
-  ssh_host: z.string().default(""),
-  ssh_user: z.string().default(""),
-  ssh_port: z.number().default(22),
-  deploy_pubkey: z.string().default(""),
-  daemon_id: z.string().nullable().default(null),
-  status: z.string().default("pending"),
-  last_error: z.string().default(""),
-  repo_url: z.string().default(""),
-  work_dir: z.string().default(""),
-  last_branch: z.string().default(""),
-  project_id: z.string().nullable().default(null),
-  created_at: z.string().default(""),
-}).loose();
-
 // Settings → Labs workspace flags (GET/PUT /api/workspace-labs). qa_dev_boxes
 // routes QA to the assignee-developer's own box; qa_fallback_box_id is the
 // shared box QA lands on when nothing else matches.
@@ -851,87 +827,12 @@ export const WorkspaceLabsSchema = z
   })
   .loose();
 
-// Box action results (test connection / seed) — POST /api/remote-boxes/{id}/test|seed.
-export const BoxActionResultSchema = z
-  .object({
-    ok: z.boolean().default(false),
-    output: z.string().default(""),
-    latency_ms: z.number().optional(),
-  })
-  .loose();
-
-export const EMPTY_BOX_ACTION = { ok: false, output: "" };
-
 export const EMPTY_WORKSPACE_LABS = {
   qa_dev_boxes: true,
   qa_fallback_box_id: "",
   qa_dev_runtimes: false,
   qa_dev_runtimes_strict: false,
 };
-
-export const ConnectedBoxListSchema = z.object({
-  boxes: z.array(ConnectedBoxSchema).default([]),
-}).loose();
-
-// Fallback box for endpoints whose contract returns a single box (bind) or
-// embeds one (sync result). All fields defaulted so a degraded response yields
-// a benign empty box rather than a throw.
-export const EMPTY_CONNECTED_BOX = {
-  id: "",
-  workspace_id: "",
-  owner_id: null,
-  label: "",
-  ssh_host: "",
-  ssh_user: "",
-  ssh_port: 22,
-  deploy_pubkey: "",
-  daemon_id: null,
-  status: "pending",
-  last_error: "",
-  repo_url: "",
-  work_dir: "",
-  last_branch: "",
-  project_id: null,
-  created_at: "",
-} as const;
-
-// Result of a box git-sync (branch sync / issue deploy-qa). Lenient + defaulted
-// so a degraded response renders "deploy failed" rather than white-screening.
-export const RemoteBoxSyncResultSchema = z.object({
-  ok: z.boolean().default(false),
-  branch: z.string().default(""),
-  output: z.string().default(""),
-  box: ConnectedBoxSchema,
-}).loose();
-
-// Result of a per-developer box provision (or a dry-run preview). Lenient +
-// defaulted so a degraded response renders a benign empty preview rather than
-// white-screening. box is nullable (null on a dry run, before any row exists).
-export const ProvisionBoxResultSchema = z.object({
-  handle: z.string().default(""),
-  subdomain: z.string().default(""),
-  work_dir: z.string().default(""),
-  database: z.string().default(""),
-  script: z.string().default(""),
-  dry_run: z.boolean().default(false),
-  ran: z.boolean().default(false),
-  ok: z.boolean().default(false),
-  output: z.string().default(""),
-  box: ConnectedBoxSchema.nullable().default(null),
-}).loose();
-
-export const EMPTY_PROVISION_RESULT = {
-  handle: "",
-  subdomain: "",
-  work_dir: "",
-  database: "",
-  script: "",
-  dry_run: false,
-  ran: false,
-  ok: false,
-  output: "",
-  box: null,
-} as const;
 
 // ---------------------------------------------------------------------------
 // Policy Agent — fleet watchdog. Lenient + defaulted (arrays default to []) so a

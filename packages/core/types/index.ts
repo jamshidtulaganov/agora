@@ -198,15 +198,7 @@ export type {
   BillingCheckoutSessionStatus,
   CreateBillingPortalSessionResponse,
 } from "./billing";
-export type {
-  ConnectedBox,
-  CreateRemoteBoxRequest,
-  RemoteBoxSyncResult,
-  ProvisionBoxRequest,
-  ProvisionBoxResult,
-  WorkspaceLabs,
-  BoxActionResult,
-} from "./remote-box";
+export type { WorkspaceLabs } from "./workspace-labs";
 export type {
   PolicyFleetHealth,
   PolicyAgentSpeed,
