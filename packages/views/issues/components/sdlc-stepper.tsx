@@ -14,7 +14,7 @@
 // figma-links-section.tsx's "Open design view" entry point and lens.ts.
 
 import { useEffect, useRef } from "react";
-import { CheckCircle2, XCircle, TriangleAlert } from "lucide-react";
+import { CheckCircle2, XCircle } from "lucide-react";
 import type { SDLCStage, StagePipeline, StageState } from "@agora/core/issues";
 import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
@@ -28,19 +28,21 @@ export interface SDLCStepperProps {
   onSelectStage: (stage: SDLCStage) => void;
 }
 
+// Four visual states only — the stepper is a glance, not a status console.
+// blocked folds into failed (both are "stuck"); active + running fold into one
+// "current / live" dot. skipped reuses the pending look (and the stage dims via
+// opacity). This is the fold from 8 raw StageStates → 4 read-in-a-glance dots.
 function stateTextClass(state: StageState): string {
   switch (state) {
     case "passed":
       return "text-emerald-600 dark:text-emerald-400";
     case "failed":
-      return "text-destructive";
     case "blocked":
-      return "text-amber-600 dark:text-amber-400";
-    case "skipped":
-      return "text-muted-foreground";
+      return "text-destructive";
     case "active":
     case "running":
       return "text-foreground font-medium";
+    case "skipped":
     case "pending":
     default:
       return "text-muted-foreground";
@@ -57,36 +59,18 @@ function StageDot({ state }: { state: StageState }) {
         />
       );
     case "failed":
-      // No looping animation on failed/blocked — alarm fatigue. Only the
-      // color transition (from the flip wrapper + transition-colors) eases.
+    case "blocked":
+      // No looping animation on a stuck stage — alarm fatigue. Only the color
+      // transition (from the flip wrapper + transition-colors) eases.
       return (
         <XCircle aria-hidden className="size-3.5 shrink-0 text-destructive transition-colors duration-300" />
       );
-    case "blocked":
-      return (
-        <TriangleAlert
-          aria-hidden
-          className="size-3.5 shrink-0 text-amber-600 transition-colors duration-300 dark:text-amber-400"
-        />
-      );
-    case "running":
-      // info/blue is this codebase's "running / live" idiom (qa-lane.tsx,
-      // live-agent-code-editor.tsx, editor-workbench.tsx) — not the
-      // emerald "passed" tint, so running and passed read as distinct
-      // states. Pulsing dot + a soft expanding ring behind it; the ring is
-      // Tailwind's built-in `animate-ping`, gated `motion-safe:` so a
-      // prefers-reduced-motion user gets a still, translucent halo.
-      return (
-        <span aria-hidden className="relative inline-flex size-2.5 shrink-0 items-center justify-center">
-          <span className="absolute inline-flex size-2.5 rounded-full bg-info opacity-40 motion-safe:animate-ping" />
-          <span className="relative inline-flex size-1.5 rounded-full bg-info transition-colors duration-300 motion-safe:animate-pulse" />
-        </span>
-      );
     case "active":
-      // Gentle breathing halo (custom `sdlc-breathe` keyframe, see
-      // packages/ui/styles/base.css) around the current-stage dot — a slow
-      // ~2s scale/opacity cycle, calmer than the running ping so the two
-      // "alive" states don't compete for attention.
+    case "running":
+      // The single "current / live" dot: a gentle breathing halo (custom
+      // `sdlc-breathe` keyframe, see packages/ui/styles/base.css). Whether the
+      // stage is merely current or actively running, it reads as "this is where
+      // work is now" — one calm animation, not two competing ones.
       return (
         <span aria-hidden className="relative inline-flex size-2.5 shrink-0 items-center justify-center">
           <span className="absolute inline-flex size-4 rounded-full bg-primary/20 motion-safe:animate-sdlc-breathe" />
@@ -94,12 +78,6 @@ function StageDot({ state }: { state: StageState }) {
         </span>
       );
     case "skipped":
-      return (
-        <span
-          aria-hidden
-          className="size-2.5 shrink-0 rounded-full bg-muted-foreground/30 transition-colors duration-300"
-        />
-      );
     case "pending":
     default:
       return (
@@ -115,17 +93,13 @@ function StageDot({ state }: { state: StageState }) {
  * Connector line between stage i-1 and stage i.
  *  - `bg-border` (default): the segment hasn't been reached yet.
  *  - filled emerald: the prior stage passed — completed progress.
- *  - info-tinted + shimmer: this segment leads into the *current* stage AND
- *    that stage is live (active/running/pending) — "work is flowing forward
- *    into this stage now." The shimmer is a `motion-safe:`-gated sweep (see
- *    `sdlc-connector-shimmer` in packages/ui/styles/base.css); `bg-info/30`
- *    alone is the static fallback so reduced-motion users still see which
- *    segment is "next".
+ *  - static info tint: this segment leads into the *current* stage AND that
+ *    stage is live — "next up". No shimmer sweep: one moving animation (the
+ *    breathing current dot) is enough; a second one competing on the connector
+ *    was motion noise.
  *
- * A current stage that has FAILED or is BLOCKED gets no shimmer: work is not
- * flowing into it, it is stuck there. Animating forward motion onto a failure
- * is the wrong signal — same reasoning that keeps the failed/blocked dots
- * themselves static (alarm fatigue).
+ * A current stage that has FAILED or is BLOCKED gets no tint: work is not
+ * flowing into it, it is stuck there.
  */
 function connectorClassName(
   prevState: StageState,
@@ -134,7 +108,7 @@ function connectorClassName(
 ): string {
   const currentIsLive = currentState !== "failed" && currentState !== "blocked";
   if (leadsIntoCurrent && currentIsLive) {
-    return "bg-info/30 motion-safe:animate-sdlc-connector-shimmer";
+    return "bg-info/30";
   }
   if (prevState === "passed") {
     return "bg-emerald-500/40 dark:bg-emerald-500/35";
@@ -200,9 +174,7 @@ export function SDLCStepper({ pipeline, activeLens, isLensAvailable, onSelectSta
             <StageDot state={snapshot.state} />
           </span>
         );
-        // Underline (the "selected lens" indicator) lives on the LABEL only —
-        // putting it on the button underlined the detail chip too, splitting
-        // into two ugly runs ("QA" + "STALE").
+        // Underline (the "selected lens" indicator) marks the active lens.
         const labelSpan = (
           <span
             className={cn(
@@ -214,13 +186,9 @@ export function SDLCStepper({ pipeline, activeLens, isLensAvailable, onSelectSta
             {label}
           </span>
         );
-        // The detail ("stale", "full", tier…) as a discrete chip, so it reads
-        // as metadata beside the label rather than part of it.
-        const detailChip = snapshot.detail ? (
-          <span className="rounded bg-muted px-1 py-0.5 text-[9px] font-medium uppercase leading-none tracking-wide text-muted-foreground">
-            {snapshot.detail}
-          </span>
-        ) : null;
+        // No detail chip: "STALE"/"FULL"/tier were jargon, and the live states
+        // ("merging…"/"awaiting approval") are already told by the dot + the
+        // stage's own lens. The stepper stays a clean [dot] [label] beat.
 
         return (
           <div key={snapshot.stage} className="flex shrink-0 items-center">
@@ -247,7 +215,6 @@ export function SDLCStepper({ pipeline, activeLens, isLensAvailable, onSelectSta
               >
                 {dot}
                 {labelSpan}
-                {detailChip}
               </button>
             ) : (
               <div
@@ -261,7 +228,6 @@ export function SDLCStepper({ pipeline, activeLens, isLensAvailable, onSelectSta
               >
                 {dot}
                 {labelSpan}
-                {detailChip}
               </div>
             )}
           </div>

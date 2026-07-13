@@ -638,7 +638,7 @@
     "summary_of_total": "(of {{total}})",
     "summary_need_fix": "{{count}} need fix",
     "summary_running": "{{count}} running",
-    "summary_stale": "{{count}} stale",
+    "summary_stale": "{{count}} out of date",
     "summary_pending": "{{count}} pending",
     "summary_passed": "{{count}} passed",
     "clear_filters": "Clear filters",
@@ -661,7 +661,7 @@
     "toast_stopping": "Stopping the run…",
     "toast_stop_failed": "Stop failed",
     "state_running": "running",
-    "state_stale": "stale",
+    "state_stale": "out of date",
     "state_fail": "fail",
     "state_pass": "pass",
     "state_pending": "pending",
@@ -768,7 +768,7 @@
     "metrics_recent_heading": "Recent regression runs",
     "metrics_recent_empty": "No runs yet.",
     "metrics_untitled_case": "(untitled case)",
-    "filter_stale": "Stale",
+    "filter_stale": "Out of date",
     "filter_stale_title": "Only issues whose QA verdict no longer applies (gate stalled, or the code moved past the tested commit)",
     "filter_needs_human": "Needs human",
     "filter_needs_human_title": "Only issues where a human decision is next: failed, or passed with failing cases",
@@ -789,7 +789,7 @@
     "changelog_passed": "Passed",
     "changelog_needs_fix": "Needs fix",
     "changelog_pending": "Pending",
-    "filter_stale_backlog": "Stale backlog"
+    "filter_stale_backlog": "Out-of-date backlog"
   },
   "terminate_dialog": {
     "title": "Stop this task?",
