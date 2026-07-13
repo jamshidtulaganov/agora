@@ -43,5 +43,12 @@
     "workspace_group": "工作区",
     "configure_group": "配置",
     "unread_overflow": "99+"
+  },
+  "running": {
+    "idle": "代理空闲",
+    "active": "{{count}} 个运行中",
+    "header": "正在运行",
+    "queued": "{{count}} 个排队",
+    "empty": "当前没有正在运行的任务"
   }
 }

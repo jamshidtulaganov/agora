@@ -43,5 +43,12 @@
     "workspace_group": "Ish maydoni",
     "configure_group": "Sozlash",
     "unread_overflow": "99+"
+  },
+  "running": {
+    "idle": "Agentlar bo‘sh",
+    "active": "{{count}} ta ishlayapti",
+    "header": "Hozir ishlayapti",
+    "queued": "{{count}} ta navbatda",
+    "empty": "Hozir hech narsa ishlamayapti"
   }
 }

@@ -43,5 +43,12 @@
     "workspace_group": "Рабочее пространство",
     "configure_group": "Настройка",
     "unread_overflow": "99+"
+  },
+  "running": {
+    "idle": "Агенты простаивают",
+    "active": "{{count}} в работе",
+    "header": "Сейчас в работе",
+    "queued": "{{count}} в очереди",
+    "empty": "Сейчас ничего не выполняется"
   }
 }

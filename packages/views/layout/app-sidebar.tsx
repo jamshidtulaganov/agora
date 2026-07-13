@@ -5,6 +5,7 @@ import { cn } from "@agora/ui/lib/utils";
 import { useScrollFade } from "@agora/ui/hooks/use-scroll-fade";
 import { AppLink, useNavigation } from "../navigation";
 import { HelpLauncher } from "./help-launcher";
+import { WorkspaceRunningIndicatorItem } from "./workspace-running-indicator";
 import { ThemeToggle } from "@agora/ui/components/common/theme-toggle";
 import {
   DndContext,
@@ -635,6 +636,9 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                 <kbd className="pointer-events-none ml-auto inline-flex h-5 select-none items-center gap-0.5 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">{t(($) => $.sidebar.new_issue_shortcut)}</kbd>
               </SidebarMenuButton>
             </SidebarMenuItem>
+            {/* Workspace-wide "is anything running?" signal — always visible,
+                pulses while agents work, click to jump to a running task. */}
+            <WorkspaceRunningIndicatorItem />
           </SidebarMenu>
         </SidebarHeader>
 
