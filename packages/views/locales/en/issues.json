@@ -385,8 +385,8 @@
   },
   "live_editor": {
     "live": "Live",
-    "idle_title": "No live run",
-    "idle_hint": "When an agent starts coding on this issue, its edits appear here live.",
+    "idle_title": "Nothing running yet",
+    "idle_hint": "Ask the agent to build or change something above — you'll watch it work here, live.",
     "waiting": "warming up — no edits yet",
     "follow": "Follow live",
     "open_editor": "Open editor",

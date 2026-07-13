@@ -385,8 +385,8 @@
   },
   "live_editor": {
     "live": "Jonli",
-    "idle_title": "Jonli ishga tushirish yo‘q",
-    "idle_hint": "Agent bu masala ustida kod yozishni boshlaganda, tahrirlari shu yerda jonli ko‘rinadi.",
+    "idle_title": "Hozircha hech nima ishlamayapti",
+    "idle_hint": "Yuqorida agentdan biror narsa qurish yoki o‘zgartirishni so‘rang — bu yerda uning ishini jonli ko‘rasiz.",
     "waiting": "tayyorlanmoqda — hozircha tahrir yo‘q",
     "follow": "Jonli kuzatish",
     "open_editor": "Editorni ochish",

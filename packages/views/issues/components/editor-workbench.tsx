@@ -704,6 +704,9 @@ export function EditorWorkbench({
             >
               Preview
             </button>
+            {/* Divider: everything left is the vibe-coder view (watch / preview);
+                Code + Browser to the right are the developer tools. */}
+            <span aria-hidden className="mx-1 h-3.5 w-px shrink-0 bg-border" />
             <button
               type="button"
               onClick={() => setLeftPane("code")}
