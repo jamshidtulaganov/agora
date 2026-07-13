@@ -672,11 +672,14 @@ export function EditorWorkbench({
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1 text-xs">
-            {/* App-first order for the vibe-coder default: Watch the agent →
-                Preview the running app → Code (the IDE, for devs) → Browser. */}
+            {/* Vibe-coder first: Watch the agent → Preview the running app →
+                Browser (open + use it) | Code (the IDE, for developers). The
+                three left of the divider are all "see / use your app"; Code is
+                the advanced developer view. */}
             <button
               type="button"
               onClick={() => setLeftPane("live")}
+              title="Watch the agent build, live"
               className={cn(
                 "flex items-center gap-1.5 rounded px-2 py-0.5 font-medium transition-colors",
                 leftPane === "live"
@@ -695,6 +698,7 @@ export function EditorWorkbench({
             <button
               type="button"
               onClick={() => setLeftPane("preview")}
+              title="See your app running"
               className={cn(
                 "rounded px-2 py-0.5 font-medium transition-colors",
                 leftPane === "preview"
@@ -704,24 +708,10 @@ export function EditorWorkbench({
             >
               Preview
             </button>
-            {/* Divider: everything left is the vibe-coder view (watch / preview);
-                Code + Browser to the right are the developer tools. */}
-            <span aria-hidden className="mx-1 h-3.5 w-px shrink-0 bg-border" />
-            <button
-              type="button"
-              onClick={() => setLeftPane("code")}
-              className={cn(
-                "rounded px-2 py-0.5 font-medium transition-colors",
-                leftPane === "code"
-                  ? "bg-accent text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              Code
-            </button>
             <button
               type="button"
               onClick={() => setLeftPane("browser")}
+              title="Open your app in a browser — you and the agent share it"
               className={cn(
                 "rounded px-2 py-0.5 font-medium transition-colors",
                 leftPane === "browser"
@@ -730,6 +720,22 @@ export function EditorWorkbench({
               )}
             >
               Browser
+            </button>
+            {/* Divider: left = see / use your app (vibe coder); Code = the
+                developer IDE. */}
+            <span aria-hidden className="mx-1 h-3.5 w-px shrink-0 bg-border" />
+            <button
+              type="button"
+              onClick={() => setLeftPane("code")}
+              title="Edit the code — for developers"
+              className={cn(
+                "rounded px-2 py-0.5 font-medium transition-colors",
+                leftPane === "code"
+                  ? "bg-accent text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              Code
             </button>
           </div>
           <div className="relative min-h-0 flex-1">
