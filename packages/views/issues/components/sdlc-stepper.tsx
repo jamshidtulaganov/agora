@@ -13,7 +13,7 @@
 // deep-linkable view (`?lens=design`) for teams that want it — see
 // figma-links-section.tsx's "Open design view" entry point and lens.ts.
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { CheckCircle2, XCircle } from "lucide-react";
 import type { SDLCStage, StagePipeline, StageState } from "@agora/core/issues";
 import { cn } from "@agora/ui/lib/utils";
@@ -26,6 +26,9 @@ export interface SDLCStepperProps {
   /** Whether a lens is registered for this stage — gates click interactivity. */
   isLensAvailable: (stage: SDLCStage) => boolean;
   onSelectStage: (stage: SDLCStage) => void;
+  /** Optional right-aligned slot — the orchestrator narrative (who owns this
+   *  pipeline + its plain-language current action). Absent for human-run tasks. */
+  trailing?: ReactNode;
 }
 
 // Four visual states only — the stepper is a glance, not a status console.
@@ -127,7 +130,7 @@ function stageLabel(stage: SDLCStage, t: ReturnType<typeof useT<"issues">>["t"])
   }
 }
 
-export function SDLCStepper({ pipeline, activeLens, isLensAvailable, onSelectStage }: SDLCStepperProps) {
+export function SDLCStepper({ pipeline, activeLens, isLensAvailable, onSelectStage, trailing }: SDLCStepperProps) {
   const { t } = useT("issues");
 
   // Per-stage previous state, committed after each paint. The flip animation
@@ -233,6 +236,9 @@ export function SDLCStepper({ pipeline, activeLens, isLensAvailable, onSelectSta
           </div>
         );
       })}
+      {trailing && (
+        <div className="ml-auto flex shrink-0 items-center pl-3">{trailing}</div>
+      )}
     </div>
   );
 }
