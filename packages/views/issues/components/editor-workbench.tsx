@@ -14,7 +14,6 @@ import {
   Globe,
   Info,
   Loader2,
-  MessageSquare,
   PanelRightClose,
   PanelRightOpen,
   Play,
@@ -24,7 +23,6 @@ import { cn } from "@agora/ui/lib/utils";
 import type { AgentTask } from "@agora/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { TranscriptButton } from "../../common/task-transcript";
-import { EditorChatPanel } from "./editor-chat-panel";
 import { LiveAgentChangesFeed } from "./live-agent-changes-feed";
 import { LiveAgentCodeEditor } from "./live-agent-code-editor";
 import { AgentWorkingIndicator } from "./agent-working-indicator";
@@ -432,7 +430,7 @@ export function EditorWorkbench({
   // diffs live in code-server's native Source Control panel. (No Tests tab —
   // merge gates render in the review bar via EditorGates, and QA verdicts
   // live in the issue's QA evidence section.)
-  const [rightTab, setRightTab] = useState<"activity" | "chat" | "context">(
+  const [rightTab, setRightTab] = useState<"activity" | "context">(
     "activity",
   );
   // Collapse the right panel to a slim icon rail — the editor gets the full
@@ -838,7 +836,6 @@ export function EditorWorkbench({
             {(
               [
                 ["activity", ActivityIcon, "Activity"],
-                ["chat", MessageSquare, "Chat"],
                 ["context", Info, "Context"],
               ] as const
             ).map(([key, Icon, label]) => (
@@ -888,18 +885,6 @@ export function EditorWorkbench({
             </button>
             <button
               type="button"
-              onClick={() => setRightTab("chat")}
-              className={cn(
-                "flex-1 px-3 py-2 font-medium transition-colors",
-                rightTab === "chat"
-                  ? "border-b-2 border-primary text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              Chat
-            </button>
-            <button
-              type="button"
               onClick={() => setRightTab("context")}
               className={cn(
                 "flex-1 px-3 py-2 font-medium transition-colors",
@@ -943,11 +928,6 @@ export function EditorWorkbench({
                   branch icon) in the editor on the left.
                 </p>
               </div>
-            ) : rightTab === "chat" ? (
-              <EditorChatPanel
-                issueId={issueId}
-                agent={selectedAgent}
-              />
             ) : (
               <EditorContextPanel issueId={issueId} />
             )}

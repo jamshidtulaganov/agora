@@ -31,9 +31,6 @@ vi.mock("./editor-preview-pane", () => ({
 vi.mock("./editor-browser-pane", () => ({
   EditorBrowserPane: () => <div data-testid="browser-pane" />,
 }));
-vi.mock("./editor-chat-panel", () => ({
-  EditorChatPanel: () => <div data-testid="chat-panel" />,
-}));
 vi.mock("./editor-context-panel", () => ({
   EditorContextPanel: () => <div data-testid="context-panel" />,
 }));
@@ -147,16 +144,15 @@ describe("EditorWorkbench", () => {
     expect(screen.getByTestId("preview-pane")).toBeInTheDocument();
   });
 
-  it("switches the right rail between Activity, Chat, and Context", () => {
+  it("switches the right rail between Activity and Context (no Chat tab)", () => {
     renderWorkbench();
 
-    expect(screen.queryByTestId("chat-panel")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Chat" }));
-    expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
+    // The Chat tab was folded into the always-on Ask bar — it no longer exists
+    // as a separate rail surface.
+    expect(screen.queryByRole("button", { name: "Chat" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Context" }));
     expect(screen.getByTestId("context-panel")).toBeInTheDocument();
-    expect(screen.queryByTestId("chat-panel")).not.toBeInTheDocument();
   });
 
   it("renders custom actions and headerEnd when the Dialog host provides them", () => {
