@@ -332,16 +332,27 @@ export function QALensBody({ issueId }: { issueId: string }) {
           ? t(($) => $.qa_evidence.verdict_running)
           : t(($) => $.qa_evidence.not_tested);
 
+  // Plain-English "why it failed": the agent's summary, else the first failing
+  // case's run output, else the first new-failure command's error reason — so a
+  // summary-less fail still says WHY instead of a bare "Failed". The truncated
+  // form feeds the one-line caption; the full text stays the chip's hover title.
+  const failReasonRaw =
+    evidence?.summary?.trim() ||
+    (lensCases ?? []).find((c) => c.latest_run?.status === "fail")?.latest_run?.output?.trim() ||
+    (evidence?.result?.commands ?? []).find((c) => c.kind === "new_failure" && c.error.trim())?.error.trim() ||
+    "";
+  const failReason = failReasonRaw ? failReasonRaw.slice(0, 200) : undefined;
+
   // The single muted secondary line: the pass-with-failing / stale caveat, or
   // the fail/blocked reason. A clean pass / pending / running shows no second
-  // line — the full summary stays reachable as the chip's hover title.
+  // line — the full reason stays reachable as the chip's hover title.
   const verdictSecondary =
     reconciledState === "pass_with_failing_cases"
       ? t(($) => $.qa_evidence.still_failing, { count: failingCaseCount })
       : reconciledState === "stale"
         ? t(($) => $.qa_evidence.out_of_date)
         : chipBucket === "fail"
-          ? evidence?.summary || undefined
+          ? failReason
           : undefined;
 
   if (isLoading || !issue) {
@@ -432,7 +443,7 @@ export function QALensBody({ issueId }: { issueId: string }) {
               <div className="pb-4">
                 <div
                   className={cn("rounded-lg border px-3 py-2", verdictTone(reconciledState))}
-                  title={evidence?.summary || undefined}
+                  title={failReasonRaw || undefined}
                 >
                   <div className="flex items-center gap-2">
                     {verdictIcon(reconciledState, "size-4 shrink-0")}
