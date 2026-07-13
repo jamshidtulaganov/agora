@@ -159,15 +159,19 @@ func TestProjectScopedFlags(t *testing.T) {
 	scoped := map[string]bool{
 		"AGORA_QA_FAIL_AUTOROUTE_ENABLED": true,
 		"AGORA_AUTO_QA_ENABLED":           true,
-		"AGORA_SPRINT_PR_MODE":            true,
 		"AGORA_AUTO_REVIEW_ENABLED":       true,
+		"AGORA_AUTO_DOCS_ENABLED":         true,
 	}
 	for k, want := range scoped {
 		if IsProjectScoped(k) != want {
 			t.Errorf("%s: IsProjectScoped=%v want %v", k, IsProjectScoped(k), want)
 		}
 	}
-	for _, k := range []string{"ALLOW_SIGNUP", "AGORA_TELEGRAM_ONLY", "JWT_SECRET", "BITRIX_PUSH_STATUS"} {
+	// Sprint-cluster flags couple to the daemon and stay instance-global.
+	for _, k := range []string{
+		"ALLOW_SIGNUP", "AGORA_TELEGRAM_ONLY", "JWT_SECRET", "BITRIX_PUSH_STATUS",
+		"AGORA_SPRINT_PR_MODE", "AGORA_SPRINT_WORKTREE_ENABLED",
+	} {
 		if IsProjectScoped(k) {
 			t.Errorf("%s must NOT be project-scoped", k)
 		}

@@ -772,14 +772,16 @@ func docsRepoInstruction(docsRepo string) string {
 
 // autoDocsEnabled gates the qa:pass → auto_docs auto-trigger. Default off so the
 // behavior is opt-in and never fires for a deployment that hasn't enabled it.
-func autoDocsEnabled() bool {
-	return config.Bool("AGORA_AUTO_DOCS_ENABLED")
+// Project-scoped: a project may override AGORA_AUTO_DOCS_ENABLED for its issues.
+func (h *Handler) autoDocsEnabled(ctx context.Context, issue db.Issue) bool {
+	return config.BoolFrom(h.projectConfigOverrides(ctx, issue), "AGORA_AUTO_DOCS_ENABLED")
 }
 
 // autoQAEnabled gates the in_review → run_qa auto-trigger (the QA squad smokes a
 // dev's work the moment it's ready for review). Default off — opt-in.
-func autoQAEnabled() bool {
-	return config.Bool("AGORA_AUTO_QA_ENABLED")
+// Project-scoped: a project may override AGORA_AUTO_QA_ENABLED for its issues.
+func (h *Handler) autoQAEnabled(ctx context.Context, issue db.Issue) bool {
+	return config.BoolFrom(h.projectConfigOverrides(ctx, issue), "AGORA_AUTO_QA_ENABLED")
 }
 
 // sprintWorktreeEnabled gates the shared-sprint-branch worktree model
@@ -958,7 +960,7 @@ func (h *Handler) resolveAutoDocsAgent(ctx context.Context, issue db.Issue, user
 // (context.Background) by the caller so it doesn't block or get cancelled with
 // the request.
 func (h *Handler) maybeAutoDocsOnLabel(ctx context.Context, issue db.Issue, labelName, userID string) {
-	if !autoDocsEnabled() {
+	if !h.autoDocsEnabled(ctx, issue) {
 		return
 	}
 	if strings.ToLower(strings.TrimSpace(labelName)) != "qa:pass" {
@@ -993,9 +995,10 @@ func (h *Handler) maybeAutoDocsOnLabel(ctx context.Context, issue db.Issue, labe
 
 // qaFailAutorouteEnabled gates the qa:fail -> dev-lead auto-reassignment.
 // Default ON (registry.go): closing the QA<->dev loop automatically is the
-// expected SDLC behavior for the product; a deployment can still turn it off.
-func qaFailAutorouteEnabled() bool {
-	return config.Bool("AGORA_QA_FAIL_AUTOROUTE_ENABLED")
+// expected SDLC behavior for the product. Project-scoped: a project may turn it
+// off (or back on) for its own issues via project.settings.config.
+func (h *Handler) qaFailAutorouteEnabled(ctx context.Context, issue db.Issue) bool {
+	return config.BoolFrom(h.projectConfigOverrides(ctx, issue), "AGORA_QA_FAIL_AUTOROUTE_ENABLED")
 }
 
 // qaFailAutorouteMaxAttempts caps how many times a single issue may be
@@ -1034,8 +1037,8 @@ func issueMetadataInt(raw []byte, key string) int {
 // "the dev lead and QA lead are always in communication" from an instruction
 // the leader might omit into a platform guarantee. Default off — opt-in,
 // matching every other auto-* gate in this file.
-func qaGateEnforced() bool {
-	return config.Bool("AGORA_QA_GATE_ENFORCED")
+func (h *Handler) qaGateEnforced(ctx context.Context, issue db.Issue) bool {
+	return config.BoolFrom(h.projectConfigOverrides(ctx, issue), "AGORA_QA_GATE_ENFORCED")
 }
 
 // qaDiscriminationEnforced gates the TEST-ACCURACY guard: when on, a qa:pass is
@@ -1045,8 +1048,8 @@ func qaGateEnforced() bool {
 // test (green on both baseline and branch) from certifying buggy code. Default
 // off — opt-in, fail-safe: with no baseline data (all runs "unknown") the guard
 // simply doesn't apply unless a project deliberately turns it on.
-func qaDiscriminationEnforced() bool {
-	return config.Bool("AGORA_QA_DISCRIMINATION_ENFORCED")
+func (h *Handler) qaDiscriminationEnforced(ctx context.Context, issue db.Issue) bool {
+	return config.BoolFrom(h.projectConfigOverrides(ctx, issue), "AGORA_QA_DISCRIMINATION_ENFORCED")
 }
 
 // riskTierGateEnforced gates the RISK-TIER human-sign-off guard: when on, a
@@ -1056,8 +1059,8 @@ func qaDiscriminationEnforced() bool {
 // mandatory" invariant a real gate, not just advisory prompt text. Default off;
 // fail-open on a tier-lookup error (never block on infra failure). A human actor
 // is never blocked, so turning it on can only ADD safety, never wedge a human.
-func riskTierGateEnforced() bool {
-	return config.Bool("AGORA_RISK_TIER_GATE_ENFORCED")
+func (h *Handler) riskTierGateEnforced(ctx context.Context, issue db.Issue) bool {
+	return config.BoolFrom(h.projectConfigOverrides(ctx, issue), "AGORA_RISK_TIER_GATE_ENFORCED")
 }
 
 // issueDevOrchestrated reports whether the issue's dev-side assignee is
@@ -1124,11 +1127,11 @@ func (h *Handler) enforceQAGateBeforeDone(ctx context.Context, issue db.Issue, a
 	// documented "critical → human review mandatory" invariant, which was
 	// previously advisory-only (an agent could self-attach qa:pass and close it).
 	// Fail-open: a tier-lookup error never blocks. Humans are never held.
-	if riskTierGateEnforced() && actorType == "agent" && h.issueRiskTier(ctx, issue) == "critical" {
+	if h.riskTierGateEnforced(ctx, issue) && actorType == "agent" && h.issueRiskTier(ctx, issue) == "critical" {
 		return "in_review", true
 	}
 
-	if !qaGateEnforced() {
+	if !h.qaGateEnforced(ctx, issue) {
 		return targetStatus, false
 	}
 	if !h.issueDevOrchestrated(ctx, issue) {
@@ -1146,7 +1149,7 @@ func (h *Handler) enforceQAGateBeforeDone(ctx context.Context, issue db.Issue, a
 	}
 	if h.issueHasLabel(ctx, issue, "qa:pass") {
 		// qa:pass present. Unless test-accuracy is enforced, that's enough.
-		if !qaDiscriminationEnforced() {
+		if !h.qaDiscriminationEnforced(ctx, issue) {
 			return targetStatus, false
 		}
 		// Test-accuracy enforced: the qa:pass must rest on a DISCRIMINATING test
@@ -1416,7 +1419,7 @@ func (h *Handler) maybeRecoverSquadTaskFailure(ctx context.Context, task db.Agen
 // keeps today's manual triage), or the squad's leader IS the failing agent
 // itself (reassigning to itself teaches nothing).
 func (h *Handler) maybeRouteToDevLeadOnQAFail(ctx context.Context, issue db.Issue, labelName, userID string) {
-	if !qaFailAutorouteEnabled() {
+	if !h.qaFailAutorouteEnabled(ctx, issue) {
 		return
 	}
 	if strings.ToLower(strings.TrimSpace(labelName)) != "qa:fail" {
@@ -1511,8 +1514,8 @@ func (h *Handler) clearQAFailAutorouteBudget(ctx context.Context, issue db.Issue
 	}
 }
 
-func qaFailAutoFileBugEnabled() bool {
-	return config.Bool("AGORA_QA_FAIL_AUTO_FILE_BUG_ENABLED")
+func (h *Handler) qaFailAutoFileBugEnabled(ctx context.Context, issue db.Issue) bool {
+	return config.BoolFrom(h.projectConfigOverrides(ctx, issue), "AGORA_QA_FAIL_AUTO_FILE_BUG_ENABLED")
 }
 
 // maybeAutoFileBugOnQAFail opens a `bug`-labelled child issue when an issue is
@@ -1524,7 +1527,7 @@ func qaFailAutoFileBugEnabled() bool {
 // a `qa_bug_filed` metadata stamp on the parent so repeated qa:fail labels
 // (re-QA loops) don't spawn duplicate bugs.
 func (h *Handler) maybeAutoFileBugOnQAFail(ctx context.Context, issue db.Issue, labelName, actorID string) {
-	if !qaFailAutoFileBugEnabled() {
+	if !h.qaFailAutoFileBugEnabled(ctx, issue) {
 		return
 	}
 	if strings.ToLower(strings.TrimSpace(labelName)) != "qa:fail" {
@@ -1964,7 +1967,7 @@ func lockIssueQA(issueID string) func() {
 // Gated by AGORA_AUTO_QA_ENABLED; the caller guards the prev!=in_review→in_review
 // transition so it runs once per entry.
 func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, actorType, actorID string) {
-	if !autoQAEnabled() {
+	if !h.autoQAEnabled(ctx, issue) {
 		return
 	}
 	defer lockIssueQA(uuidToString(issue.ID))()
@@ -2189,7 +2192,7 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 // Best-effort + detached, gated by AGORA_AUTO_QA_ENABLED, mirrors
 // maybeRunQAOnInReview.
 func (h *Handler) maybeGenTests(ctx context.Context, issue db.Issue, actorType, actorID string, prep bool) {
-	if !autoQAEnabled() {
+	if !h.autoQAEnabled(ctx, issue) {
 		return
 	}
 	defer lockIssueQA(uuidToString(issue.ID))()
@@ -2279,7 +2282,7 @@ func (h *Handler) maybeGenTests(ctx context.Context, issue db.Issue, actorType, 
 // maybeGenTests. Fires alongside run_qa (the gate) and gen_tests
 // (authoring) — three facets of one in_review.
 func (h *Handler) maybeRunTestsOnInReview(ctx context.Context, issue db.Issue, actorType, actorID string) {
-	if !autoQAEnabled() {
+	if !h.autoQAEnabled(ctx, issue) {
 		return
 	}
 	// Need automated cases to run: the issue's own, or the project base suite.

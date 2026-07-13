@@ -809,12 +809,16 @@ func TestSanitizeSliceScope(t *testing.T) {
 // TestAutoDocsEnabled pins the opt-in default: the qa:pass → auto_docs trigger
 // is off unless explicitly enabled.
 func TestAutoDocsEnabled(t *testing.T) {
+	// A no-project issue resolves to the instance value (nil project overrides),
+	// so this still pins the env-driven default without a database.
+	h := &Handler{}
+	noProject := db.Issue{}
 	t.Setenv("AGORA_AUTO_DOCS_ENABLED", "")
-	if autoDocsEnabled() {
+	if h.autoDocsEnabled(context.Background(), noProject) {
 		t.Error("auto_docs must default to OFF")
 	}
 	t.Setenv("AGORA_AUTO_DOCS_ENABLED", "true")
-	if !autoDocsEnabled() {
+	if !h.autoDocsEnabled(context.Background(), noProject) {
 		t.Error("auto_docs must be ON when AGORA_AUTO_DOCS_ENABLED=true")
 	}
 }

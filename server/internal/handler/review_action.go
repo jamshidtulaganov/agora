@@ -23,10 +23,10 @@ import (
 // clicks Approve & merge or Request changes (review_decision.go).
 
 // autoReviewEnabled gates the qa:pass → run_review auto-dispatch. Default off —
-// opt-in, matching every other auto-* gate in slice_action.go; enable via
-// Settings→Configs (AGORA_AUTO_REVIEW_ENABLED).
-func autoReviewEnabled() bool {
-	return config.Bool("AGORA_AUTO_REVIEW_ENABLED")
+// opt-in, matching every other auto-* gate in slice_action.go. Project-scoped:
+// a project may override AGORA_AUTO_REVIEW_ENABLED for its own issues.
+func (h *Handler) autoReviewEnabled(ctx context.Context, issue db.Issue) bool {
+	return config.BoolFrom(h.projectConfigOverrides(ctx, issue), "AGORA_AUTO_REVIEW_ENABLED")
 }
 
 // readyForHumanMergeMarker dedupes the human-facing "READY FOR HUMAN REVIEW +
@@ -118,7 +118,7 @@ func (h *Handler) reviewGateApplies(ctx context.Context, issue db.Issue) (requir
 	for _, l := range labelRows {
 		labels[strings.ToLower(strings.TrimSpace(l.Name))] = true
 	}
-	return reviewGateRequired(reviewTierForLabels(labels), h.issueHasKnownPR(ctx, issue), labels), true
+	return reviewGateRequired(reviewTierForLabels(labels), h.issueHasKnownPR(ctx, issue), labels, h.autoReviewEnabled(ctx, issue)), true
 }
 
 // reviewDispatchInFlight reports whether an auto-fired run_review dispatch is
@@ -282,7 +282,7 @@ func (h *Handler) sliceActionReviewPRContext(ctx context.Context, issue db.Issue
 // Best-effort + detached: any miss silently no-ops so a label attach never
 // fails because of it.
 func (h *Handler) maybeRunReviewOnQAPass(ctx context.Context, issue db.Issue, labelName, userID string) {
-	if !autoReviewEnabled() {
+	if !h.autoReviewEnabled(ctx, issue) {
 		return
 	}
 	if strings.ToLower(strings.TrimSpace(labelName)) != "qa:pass" {

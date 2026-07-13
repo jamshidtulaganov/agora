@@ -42,18 +42,20 @@ var Registry = []Def{
 	// ---- QA automation -------------------------------------------------
 	{Key: "AGORA_AUTO_QA_ENABLED", Kind: KindBool, Category: "QA", Label: "Auto QA on in-review", Description: "Fire a run_qa gate automatically when an issue moves to in_review.", ProjectScoped: true},
 	{Key: "AGORA_QA_GATE_ENFORCED", Kind: KindBool, Category: "QA", Label: "Enforce QA gate before done", Description: "Block in_review → done unless a qa:pass verdict exists.", ProjectScoped: true},
-	{Key: "AGORA_QA_COMPILE_ENABLED", Kind: KindBool, Category: "QA", Label: "Compile tests", Description: "Enable the compile_tests slice action for Playwright scripts.", ProjectScoped: true},
+	{Key: "AGORA_QA_COMPILE_ENABLED", Kind: KindBool, Category: "QA", Label: "Compile tests", Description: "Enable the compile_tests slice action for Playwright scripts."},
 	{Key: "AGORA_QA_FAIL_AUTOROUTE_ENABLED", Kind: KindBool, Category: "QA", Label: "Auto-route QA failures", Description: "On qa:fail, reset to todo and route back to the dev-squad lead.", Default: "true", ProjectScoped: true},
 	{Key: "AGORA_QA_FAIL_AUTO_FILE_BUG_ENABLED", Kind: KindBool, Category: "QA", Label: "Auto-file bug on QA fail", Description: "Open a bug issue automatically when a QA gate fails.", ProjectScoped: true},
 	{Key: "AGORA_QA_DISCRIMINATION_ENFORCED", Kind: KindBool, Category: "QA", Label: "Require discriminating test", Description: "Require a fail-before/pass-after test run before qa:pass counts.", ProjectScoped: true},
 	{Key: "AGORA_RISK_TIER_GATE_ENFORCED", Kind: KindBool, Category: "QA", Label: "Enforce risk-tier gate", Description: "Gate QA depth on the issue's risk tier.", ProjectScoped: true},
-	{Key: "AGORA_QA_WATCHDOG_WINDOW_HOURS", Kind: KindInt, Category: "QA", Label: "QA watchdog window (hours)", Description: "How long a silent QA gate waits before escalating to qa:stale.", Default: "24", ProjectScoped: true},
+	{Key: "AGORA_QA_WATCHDOG_WINDOW_HOURS", Kind: KindInt, Category: "QA", Label: "QA watchdog window (hours)", Description: "How long a silent QA gate waits before escalating to qa:stale.", Default: "24"},
 
 	// ---- Sprint / dev flow ---------------------------------------------
-	{Key: "AGORA_SPRINT_PR_MODE", Kind: KindBool, Category: "Sprint", Label: "Sprint PR-review mode", Description: "Dev tasks open PRs into the sprint branch; QA gates the PR branch.", ProjectScoped: true},
-	{Key: "AGORA_SPRINT_WORKTREE_ENABLED", Kind: KindBool, Category: "Sprint", Label: "Shared sprint worktree", Description: "Put concurrent sprint tasks on one shared sprint branch.", ProjectScoped: true},
-	{Key: "AGORA_SPRINT_AUTO_MERGE", Kind: KindBool, Category: "Sprint", Label: "Auto-merge on qa:pass", Description: "Squad lead auto-merges a PR into the sprint branch after qa:pass.", ProjectScoped: true},
-	{Key: "AGORA_SQUAD_FAILURE_RECOVERY_ENABLED", Kind: KindBool, Category: "Sprint", Label: "Squad failure recovery", Description: "Recover a squad run when a member task fails mid-orchestration.", ProjectScoped: true},
+	// (Instance-global — these couple to the daemon / worktree model, so they
+	// are not per-project overridable today.)
+	{Key: "AGORA_SPRINT_PR_MODE", Kind: KindBool, Category: "Sprint", Label: "Sprint PR-review mode", Description: "Dev tasks open PRs into the sprint branch; QA gates the PR branch."},
+	{Key: "AGORA_SPRINT_WORKTREE_ENABLED", Kind: KindBool, Category: "Sprint", Label: "Shared sprint worktree", Description: "Put concurrent sprint tasks on one shared sprint branch."},
+	{Key: "AGORA_SPRINT_AUTO_MERGE", Kind: KindBool, Category: "Sprint", Label: "Auto-merge on qa:pass", Description: "Squad lead auto-merges a PR into the sprint branch after qa:pass."},
+	{Key: "AGORA_SQUAD_FAILURE_RECOVERY_ENABLED", Kind: KindBool, Category: "Sprint", Label: "Squad failure recovery", Description: "Recover a squad run when a member task fails mid-orchestration."},
 
 	// ---- Review gate -----------------------------------------------------
 	{Key: "AGORA_AUTO_REVIEW_ENABLED", Kind: KindBool, Category: "Review", Label: "Auto review on qa:pass", Description: "Dispatch a run_review code review (reviewer ≠ author) automatically when an issue gains qa:pass and has a pull request. Default off — enable per project.", ProjectScoped: true},

@@ -1060,6 +1060,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// Design-system audit: scan the repo against the manifest for
 					// off-token values, duplicated markup, and proposed tokens.
 					r.Post("/design-audit", h.SyncProjectDesignAudit)
+					// Per-project pipeline config — override the QA / sprint /
+					// review / automation flags for THIS project's issues. Read =
+					// any member; write = owner/admin, human-only (an agent must
+					// not flip its own project's behavior mid-run).
+					r.Get("/config", h.GetProjectConfig)
+					r.With(handler.RequireHumanActor).Put("/config/{key}", h.SetProjectConfig)
+					r.With(handler.RequireHumanActor).Delete("/config/{key}", h.ResetProjectConfig)
 					// QA base scripts — the project's STANDING regression suite
 					// (test cases with issue_id NULL, injected into every
 					// run_qa / run_test_cases on the project's issues).
