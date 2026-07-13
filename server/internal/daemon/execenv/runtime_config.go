@@ -556,6 +556,20 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 	b.WriteString("- If you pushed a branch, state the branch and that `git push` returned exit 0, and include the PR or compare URL.\n")
 	b.WriteString("- Never describe a code change without showing its lines. Docs/data-only and no-code tasks are exempt.\n\n")
 
+	// Progress contract — a platform-wide LIVE-view output contract for ALL
+	// stages/providers. A human watches this task run in real time; the platform
+	// surfaces the agent's OWN plan + headline rather than reverse-engineering
+	// raw tool calls into human phrases (which is lossy and stage-blind). This is
+	// the counterpart to the QA marker convention (`RUNNING test_case:` /
+	// `QA_RESULT`) generalized to every stage. Kept plain and language-agnostic;
+	// the frontend parses the latest `PROGRESS:` line and renders the todo plan
+	// verbatim. See packages/views/issues/components/stage-live-process.tsx.
+	b.WriteString("## Progress You Show The Human\n\n")
+	b.WriteString("While you work, a person is watching a LIVE view of this task. Keep two things current so they always understand what you're doing — in plain language, never raw shell or tool names:\n\n")
+	b.WriteString("1. **A plan.** Maintain a short checklist with your todo tool (e.g. TodoWrite). One line per real step, phrased as a HUMAN task (\"Fix the greet button typo\", not \"edit Button.tsx\"). Mark an item `in_progress` before you start it and `completed` when it's done; keep exactly one item `in_progress` at a time. This checklist is shown to the human VERBATIM as the task's to-do list — write it for them, not for yourself.\n")
+	b.WriteString("2. **A headline.** Each time you move to a new phase, output one line by itself starting with `PROGRESS:` then a single plain present-continuous sentence — e.g. `PROGRESS: Reading the greet button component`, `PROGRESS: Running the tests`, `PROGRESS: Opening a pull request`. No file paths, flags, or command names. Use the SAME language as the issue. This line becomes the \"what's happening now\" the human sees.\n\n")
+	b.WriteString("Both feed the human's live view only — they do NOT replace your normal comment / verdict, which you still post as usual.\n\n")
+
 	// Inject available repositories section.
 	if ctx.LocalWorkDir != "" {
 		// In-place (local_directory) mode: the agent is ALREADY inside the
