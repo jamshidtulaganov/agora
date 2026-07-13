@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -975,14 +976,45 @@ func TestMaybeRouteToDevLeadOnQAFail_Gating(t *testing.T) {
 		return issue.Status == "todo"
 	}
 
-	t.Run("disabled_noop", func(t *testing.T) {
-		t.Setenv("AGORA_QA_FAIL_AUTOROUTE_ENABLED", "")
+	t.Run("explicitly_disabled_noop", func(t *testing.T) {
+		// Default is ON now, so disabling takes an explicit false.
+		t.Setenv("AGORA_QA_FAIL_AUTOROUTE_ENABLED", "false")
 		devAgentID, _ := qaFailAutorouteFixture(t, ctx, true)
 		issueID := sliceActionTestIssue(t, "agent", devAgentID)
 		issue, _ := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
 		testHandler.maybeRouteToDevLeadOnQAFail(ctx, issue, "qa:fail", testUserID)
 		if reassigned(issueID) {
-			t.Error("disabled must not reassign")
+			t.Error("explicitly disabled must not reassign")
+		}
+	})
+
+	t.Run("default_on_routes", func(t *testing.T) {
+		// Unset env → falls to the registry default, which is now "true".
+		t.Setenv("AGORA_QA_FAIL_AUTOROUTE_ENABLED", "")
+		devAgentID, _ := qaFailAutorouteFixture(t, ctx, true)
+		issueID := sliceActionTestIssue(t, "agent", devAgentID)
+		issue, _ := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+		testHandler.maybeRouteToDevLeadOnQAFail(ctx, issue, "qa:fail", testUserID)
+		if !reassigned(issueID) {
+			t.Error("default-on must route qa:fail back to the dev lead")
+		}
+	})
+
+	t.Run("attempt_cap_noop", func(t *testing.T) {
+		t.Setenv("AGORA_QA_FAIL_AUTOROUTE_ENABLED", "true")
+		devAgentID, _ := qaFailAutorouteFixture(t, ctx, true)
+		issueID := sliceActionTestIssue(t, "agent", devAgentID)
+		// Pre-spend the whole loop budget.
+		if _, err := testHandler.Queries.SetIssueMetadataKey(ctx, db.SetIssueMetadataKeyParams{
+			ID: testUUID(issueID), WorkspaceID: testUUID(testWorkspaceID),
+			Key: "qa_fail_autoroute_count", Value: []byte(strconv.Itoa(qaFailAutorouteMaxAttempts)),
+		}); err != nil {
+			t.Fatalf("seed count: %v", err)
+		}
+		issue, _ := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+		testHandler.maybeRouteToDevLeadOnQAFail(ctx, issue, "qa:fail", testUserID)
+		if reassigned(issueID) {
+			t.Error("an issue at the attempt cap must not auto-route again")
 		}
 	})
 

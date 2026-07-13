@@ -38,7 +38,7 @@ var Registry = []Def{
 	{Key: "AGORA_AUTO_QA_ENABLED", Kind: KindBool, Category: "QA", Label: "Auto QA on in-review", Description: "Fire a run_qa gate automatically when an issue moves to in_review."},
 	{Key: "AGORA_QA_GATE_ENFORCED", Kind: KindBool, Category: "QA", Label: "Enforce QA gate before done", Description: "Block in_review → done unless a qa:pass verdict exists."},
 	{Key: "AGORA_QA_COMPILE_ENABLED", Kind: KindBool, Category: "QA", Label: "Compile tests", Description: "Enable the compile_tests slice action for Playwright scripts."},
-	{Key: "AGORA_QA_FAIL_AUTOROUTE_ENABLED", Kind: KindBool, Category: "QA", Label: "Auto-route QA failures", Description: "On qa:fail, reset to todo and route back to the dev-squad lead."},
+	{Key: "AGORA_QA_FAIL_AUTOROUTE_ENABLED", Kind: KindBool, Category: "QA", Label: "Auto-route QA failures", Description: "On qa:fail, reset to todo and route back to the dev-squad lead.", Default: "true"},
 	{Key: "AGORA_QA_FAIL_AUTO_FILE_BUG_ENABLED", Kind: KindBool, Category: "QA", Label: "Auto-file bug on QA fail", Description: "Open a bug issue automatically when a QA gate fails."},
 	{Key: "AGORA_QA_DISCRIMINATION_ENFORCED", Kind: KindBool, Category: "QA", Label: "Require discriminating test", Description: "Require a fail-before/pass-after test run before qa:pass counts."},
 	{Key: "AGORA_RISK_TIER_GATE_ENFORCED", Kind: KindBool, Category: "QA", Label: "Enforce risk-tier gate", Description: "Gate QA depth on the issue's risk tier."},

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -991,9 +992,39 @@ func (h *Handler) maybeAutoDocsOnLabel(ctx context.Context, issue db.Issue, labe
 }
 
 // qaFailAutorouteEnabled gates the qa:fail -> dev-lead auto-reassignment.
-// Default off — opt-in, matching every other auto-* gate in this file.
+// Default ON (registry.go): closing the QA<->dev loop automatically is the
+// expected SDLC behavior for the product; a deployment can still turn it off.
 func qaFailAutorouteEnabled() bool {
 	return config.Bool("AGORA_QA_FAIL_AUTOROUTE_ENABLED")
+}
+
+// qaFailAutorouteMaxAttempts caps how many times a single issue may be
+// auto-routed dev<->QA before the loop gives up and leaves it for a human.
+// Each route dispatches a real agent (real tokens), so an issue that keeps
+// failing QA must not ping-pong forever. The counter lives in issue metadata
+// (qa_fail_autoroute_count) and is cleared on a qa:pass (the loop succeeded).
+const qaFailAutorouteMaxAttempts = 5
+
+// issueMetadataInt reads an integer-valued key from an issue's metadata JSON,
+// tolerating the jsonb number (float64) and string encodings. Returns 0 when
+// absent or unparseable.
+func issueMetadataInt(raw []byte, key string) int {
+	if len(raw) == 0 {
+		return 0
+	}
+	var meta map[string]any
+	if json.Unmarshal(raw, &meta) != nil {
+		return 0
+	}
+	switch v := meta[key].(type) {
+	case float64:
+		return int(v)
+	case string:
+		n, _ := strconv.Atoi(strings.TrimSpace(v))
+		return n
+	default:
+		return 0
+	}
 }
 
 // qaGateEnforced gates the STRUCTURAL QA gate: when on, a squad-orchestrated
@@ -1391,25 +1422,26 @@ func (h *Handler) maybeRouteToDevLeadOnQAFail(ctx context.Context, issue db.Issu
 	if strings.ToLower(strings.TrimSpace(labelName)) != "qa:fail" {
 		return
 	}
-	if !issue.AssigneeType.Valid || issue.AssigneeType.String != "agent" || !issue.AssigneeID.Valid {
-		return // nothing to route from — no failing dev agent to find a lead for
+	// Resolve the dev-squad lead for BOTH shapes of orchestrated issue: one
+	// assigned to a squad, and one assigned to an agent that belongs to a
+	// squad. Solo / non-squad issues get no lead -> today's manual triage stands.
+	leader, ok := h.devSquadLeaderForIssue(ctx, issue)
+	if !ok {
+		return
 	}
-	failingAgentID := issue.AssigneeID
-
-	squads, err := h.Queries.ListSquadsByMember(ctx, db.ListSquadsByMemberParams{
-		WorkspaceID: issue.WorkspaceID, MemberType: "agent", MemberID: failingAgentID,
-	})
-	if err != nil || len(squads) == 0 {
-		return // solo agent, no squad -> no lead to route to; today's manual flow stands
+	// Reassigning to the agent that just failed teaches nothing (covers the
+	// case where the failing assignee IS the squad leader).
+	if issue.AssigneeType.Valid && issue.AssigneeType.String == "agent" &&
+		issue.AssigneeID.Valid && uuidToString(issue.AssigneeID) == uuidToString(leader.ID) {
+		return
 	}
-	leaderID := squads[0].LeaderID
-	if !leaderID.Valid || uuidToString(leaderID) == uuidToString(failingAgentID) {
-		return // the failing agent IS the leader -> reassigning to itself teaches nothing
-	}
-	leader, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
-		ID: leaderID, WorkspaceID: issue.WorkspaceID,
-	})
-	if err != nil {
+	// Loop cap: a persistently-failing issue must not ping-pong dev<->QA
+	// forever. After qaFailAutorouteMaxAttempts routes, stop and leave it for a
+	// human (the qa:fail still surfaces in the QA queue). Cleared on qa:pass.
+	attempts := issueMetadataInt(issue.Metadata, "qa_fail_autoroute_count")
+	if attempts >= qaFailAutorouteMaxAttempts {
+		slog.Info("qa-fail autoroute: attempt cap reached, leaving for human",
+			"issue_id", uuidToString(issue.ID), "attempts", attempts)
 		return
 	}
 
@@ -1422,7 +1454,7 @@ func (h *Handler) maybeRouteToDevLeadOnQAFail(ctx context.Context, issue db.Issu
 
 	if _, err := h.Queries.UpdateIssueAssignee(ctx, db.UpdateIssueAssigneeParams{
 		ID: issue.ID, AssigneeType: pgtype.Text{String: "agent", Valid: true},
-		AssigneeID: leaderID, WorkspaceID: issue.WorkspaceID,
+		AssigneeID: leader.ID, WorkspaceID: issue.WorkspaceID,
 	}); err != nil {
 		slog.Warn("qa-fail autoroute: reassign failed", "error", err, "issue_id", uuidToString(issue.ID))
 		return
@@ -1431,6 +1463,14 @@ func (h *Handler) maybeRouteToDevLeadOnQAFail(ctx context.Context, issue db.Issu
 		ID: issue.ID, Status: "todo", WorkspaceID: issue.WorkspaceID,
 	}); err != nil {
 		slog.Warn("qa-fail autoroute: status reset failed", "error", err, "issue_id", uuidToString(issue.ID))
+	}
+	// Bump the loop-cap counter so a persistently-failing issue eventually
+	// stops auto-routing (see qaFailAutorouteMaxAttempts).
+	if _, err := h.Queries.SetIssueMetadataKey(ctx, db.SetIssueMetadataKeyParams{
+		ID: issue.ID, WorkspaceID: issue.WorkspaceID,
+		Key: "qa_fail_autoroute_count", Value: []byte(strconv.Itoa(attempts + 1)),
+	}); err != nil {
+		slog.Warn("qa-fail autoroute: attempt-count stamp failed", "error", err, "issue_id", uuidToString(issue.ID))
 	}
 
 	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(leader.Name), uuidToString(leader.ID)) +
@@ -1448,8 +1488,27 @@ func (h *Handler) maybeRouteToDevLeadOnQAFail(ctx context.Context, issue db.Issu
 	h.triggerTasksForComment(ctx, issue, comment, nil, "member", userID, nil)
 	slog.Info("qa-fail autoroute: reassigned to squad lead",
 		"issue_id", uuidToString(issue.ID),
-		"failing_agent_id", uuidToString(failingAgentID),
-		"lead_agent_id", uuidToString(leaderID))
+		"lead_agent_id", uuidToString(leader.ID),
+		"attempt", attempts+1)
+}
+
+// clearQAFailAutorouteBudget resets the qa:fail autoroute loop counter when an
+// issue passes QA — the loop succeeded, so a future regression starts with a
+// fresh budget instead of inheriting a spent one. Best-effort; a no-op when the
+// stamp was never set.
+func (h *Handler) clearQAFailAutorouteBudget(ctx context.Context, issue db.Issue, labelName string) {
+	if strings.ToLower(strings.TrimSpace(labelName)) != "qa:pass" {
+		return
+	}
+	if issueMetadataInt(issue.Metadata, "qa_fail_autoroute_count") == 0 {
+		return
+	}
+	if _, err := h.Queries.SetIssueMetadataKey(ctx, db.SetIssueMetadataKeyParams{
+		ID: issue.ID, WorkspaceID: issue.WorkspaceID,
+		Key: "qa_fail_autoroute_count", Value: []byte("0"),
+	}); err != nil {
+		slog.Warn("qa-fail autoroute: budget reset failed", "error", err, "issue_id", uuidToString(issue.ID))
+	}
 }
 
 func qaFailAutoFileBugEnabled() bool {

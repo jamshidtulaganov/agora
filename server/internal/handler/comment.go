@@ -1057,6 +1057,7 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 			go h.maybeRunReviewOnQAPass(context.Background(), issue, gateLabel, authorID)
 			go h.maybeRouteToDevLeadOnQAFail(context.Background(), issue, gateLabel, authorID)
 			go h.maybeAutoFileBugOnQAFail(context.Background(), issue, gateLabel, authorID)
+			go h.clearQAFailAutorouteBudget(context.Background(), issue, gateLabel)
 		}
 		// A run_review verdict's ```review-result``` block becomes the
 		// review:pass/review:fail gate label (Review stage v2). On a NEW
