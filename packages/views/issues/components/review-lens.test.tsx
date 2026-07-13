@@ -144,7 +144,8 @@ describe("ReviewLensBody", () => {
     });
   });
 
-  it("renders a gate card per gate with its pass/fail/pending state and the tier", async () => {
+  it("renders gate cards with plain names + a blocking banner, never the tier", async () => {
+    apiMocks.getReviewVerdict.mockResolvedValue(passVerdict({ verdict: "fail" }));
     apiMocks.mergeReadiness.mockResolvedValue({
       ready: false,
       tier: "light",
@@ -152,17 +153,19 @@ describe("ReviewLensBody", () => {
         { name: "ci", status: "pass" },
         { name: "qa", status: "fail" },
       ],
-      blocked: ["qa"],
+      blocked: ["qa failed"],
       reviews: [],
     });
     renderLens();
 
-    await screen.findByText("ci");
-    expect(screen.getByText("qa")).toBeInTheDocument();
-    expect(screen.getByText("Passed")).toBeInTheDocument();
-    expect(screen.getByText("Failed")).toBeInTheDocument();
-    expect(screen.getByText(/light/)).toBeInTheDocument();
-    expect(screen.getByText(/Blocked/)).toBeInTheDocument();
+    // Gate slugs are relabelled to plain English (in the Details breakdown).
+    await screen.findByText("Tests / CI");
+    expect(screen.getByText("QA")).toBeInTheDocument();
+    expect(screen.getAllByText("Passed").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Failed").length).toBeGreaterThan(0);
+    // One conclusion banner — never the internal tier word.
+    expect(screen.getByText(/blocking/)).toBeInTheDocument();
+    expect(screen.queryByText(/light/)).not.toBeInTheDocument();
     expect(screen.getByTestId("pull-request-list")).toBeInTheDocument();
   });
 
@@ -182,10 +185,12 @@ describe("ReviewLensBody", () => {
     await screen.findByText("Merge override");
   });
 
-  it("renders the empty state when merge-readiness has no gates yet", async () => {
+  it("shows the 'Review not run yet' banner when review hasn't run and there are no gates", async () => {
     renderLens();
 
-    await screen.findByText("No merge-readiness gates yet.");
+    // beforeEach: NONE_VERDICT + empty gates → the banner is the review-pending
+    // conclusion (no gate breakdown, no tier line).
+    await screen.findByText("Review not run yet");
   });
 
   it("shows the 'No review yet' empty state and dispatches run_review from its button", async () => {
@@ -260,7 +265,7 @@ describe("ReviewLensBody", () => {
     await waitFor(() => expect(approveBtn).toBeEnabled());
     fireEvent.click(approveBtn);
 
-    // Confirm panel lists the gates, then the actual dispatch.
+    // Confirm panel = a single body line (no gate recap), then the dispatch.
     await screen.findByText("Dispatch the merge order to the squad lead?");
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     await waitFor(() =>

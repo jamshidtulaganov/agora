@@ -1007,7 +1007,17 @@
     "toast_approved_manual": "已批准——请手动合并（无小队负责人可派发指令）",
     "toast_changes_requested": "已请求修改——任务已退回给作者",
     "toast_decision_failed": "无法记录该决定",
-    "awaiting_approval": "等待您的批准"
+    "awaiting_approval": "等待您的批准",
+    "banner_review_pending": "尚未进行审查",
+    "banner_blocking": "{{n}} 项阻塞",
+    "banner_merging": "正在合并…",
+    "gate_ci": "测试 / CI",
+    "gate_qa": "QA",
+    "gate_security": "安全",
+    "gate_review": "代码审查",
+    "gate_state_failed": "未通过",
+    "gate_state_pending": "尚未运行",
+    "details": "详情"
   },
   "sprint_deploy": {
     "heading": "部署",

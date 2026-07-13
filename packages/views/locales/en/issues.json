@@ -1022,7 +1022,17 @@
     "toast_approved_manual": "Approved — merge it by hand (no squad lead to dispatch to)",
     "toast_changes_requested": "Changes requested — sent back to the author",
     "toast_decision_failed": "Could not record the decision",
-    "awaiting_approval": "Awaiting your approval"
+    "awaiting_approval": "Awaiting your approval",
+    "banner_review_pending": "Review not run yet",
+    "banner_blocking": "{{n}} blocking",
+    "banner_merging": "Merging…",
+    "gate_ci": "Tests / CI",
+    "gate_qa": "QA",
+    "gate_security": "Security",
+    "gate_review": "Code review",
+    "gate_state_failed": "failed",
+    "gate_state_pending": "not run yet",
+    "details": "Details"
   },
   "sprint_deploy": {
     "heading": "Deploy",

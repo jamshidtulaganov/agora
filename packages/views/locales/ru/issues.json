@@ -1022,7 +1022,17 @@
     "toast_approved_manual": "Одобрено — слейте вручную (нет лидера сквода для отправки команды)",
     "toast_changes_requested": "Изменения запрошены — задача возвращена автору",
     "toast_decision_failed": "Не удалось сохранить решение",
-    "awaiting_approval": "Ждёт вашего одобрения"
+    "awaiting_approval": "Ждёт вашего одобрения",
+    "banner_review_pending": "Ревью ещё не проводилось",
+    "banner_blocking": "Блокирует: {{n}}",
+    "banner_merging": "Слияние…",
+    "gate_ci": "Тесты / CI",
+    "gate_qa": "QA",
+    "gate_security": "Безопасность",
+    "gate_review": "Код-ревью",
+    "gate_state_failed": "не пройдено",
+    "gate_state_pending": "ещё не запускалось",
+    "details": "Подробнее"
   },
   "sprint_deploy": {
     "heading": "Деплой",

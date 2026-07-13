@@ -177,21 +177,22 @@ describe("deriveStagePipeline — review stage", () => {
     expect(find(pipeline, "review").state).toBe("failed");
   });
 
-  it("is active when a gate is pending and the qa stage has passed", () => {
+  it("is active with no tier detail when a gate is pending and the qa stage has passed", () => {
     const pipeline = deriveStagePipeline(
       baseInput({
         labels: [{ name: "qa:pass" }],
         mergeGates: { ci: "pending", qa: "pass", tier: "light" },
       }),
     );
-    expect(find(pipeline, "review")).toMatchObject({ state: "active", detail: "light" });
+    // Tier is internal gate-policy jargon — never surfaced as a stepper detail.
+    expect(find(pipeline, "review")).toEqual({ stage: "review", state: "active" });
   });
 
-  it("stays pending when a gate is pending but the qa stage hasn't passed yet", () => {
+  it("stays pending (no tier detail) when a gate is pending but the qa stage hasn't passed yet", () => {
     const pipeline = deriveStagePipeline(
       baseInput({ mergeGates: { ci: "pending", qa: "pending", tier: "light" } }),
     );
-    expect(find(pipeline, "review")).toMatchObject({ state: "pending", detail: "light" });
+    expect(find(pipeline, "review")).toEqual({ stage: "review", state: "pending" });
   });
 
   it("is pending with no merge signals at all", () => {
@@ -199,11 +200,11 @@ describe("deriveStagePipeline — review stage", () => {
     expect(find(pipeline, "review")).toEqual({ stage: "review", state: "pending" });
   });
 
-  it("passes the gate tier through as detail on a failed gate", () => {
+  it("never surfaces the gate tier as detail on a failed gate", () => {
     const pipeline = deriveStagePipeline(
       baseInput({ mergeGates: { ci: "fail", qa: "pass", tier: "trivial" } }),
     );
-    expect(find(pipeline, "review")).toMatchObject({ state: "failed", detail: "trivial" });
+    expect(find(pipeline, "review")).toEqual({ stage: "review", state: "failed" });
   });
 
   it("precedence: the override detail wins over the gate tier", () => {
@@ -237,7 +238,7 @@ describe("deriveStagePipeline — review stage v2 (agent reviews, human approves
         mergeGates: { ci: "pass", qa: "pass", tier: "full" },
       }),
     );
-    expect(find(pipeline, "review")).toMatchObject({ state: "failed", detail: "full" });
+    expect(find(pipeline, "review")).toEqual({ stage: "review", state: "failed" });
   });
 
   it("is active 'awaiting approval' on review:pass once the qa stage has passed", () => {

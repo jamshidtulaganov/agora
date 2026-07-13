@@ -177,9 +177,9 @@ function deriveReviewStage(
     state = "pending";
   }
 
-  if (detail === undefined && gates !== null) {
-    detail = gates.tier;
-  }
+  // No resting tier chip: "trivial/light/full" is internal gate-policy jargon,
+  // not something the stepper beat should ever surface. Only the meaningful
+  // detail states above (override / merging… / awaiting approval) show.
 
   const snapshot: StageSnapshot = { stage: "review", state };
   if (detail !== undefined) {

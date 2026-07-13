@@ -1022,7 +1022,17 @@
     "toast_approved_manual": "Tasdiqlandi — qo'lda birlashtiring (buyruq yuboriladigan squad yetakchisi yo'q)",
     "toast_changes_requested": "O'zgartirishlar so'raldi — vazifa muallifga qaytarildi",
     "toast_decision_failed": "Qarorni saqlab bo'lmadi",
-    "awaiting_approval": "Sizning tasdig'ingizni kutmoqda"
+    "awaiting_approval": "Sizning tasdig'ingizni kutmoqda",
+    "banner_review_pending": "Ko‘rib chiqilmagan",
+    "banner_blocking": "{{n}} ta to‘siq",
+    "banner_merging": "Birlashtirilmoqda…",
+    "gate_ci": "Testlar / CI",
+    "gate_qa": "QA",
+    "gate_security": "Xavfsizlik",
+    "gate_review": "Kod ko‘rigi",
+    "gate_state_failed": "o‘tmadi",
+    "gate_state_pending": "hali ishga tushmagan",
+    "details": "Batafsil"
   },
   "sprint_deploy": {
     "heading": "Deploy",
