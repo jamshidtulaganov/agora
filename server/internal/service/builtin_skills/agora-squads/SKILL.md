@@ -198,7 +198,9 @@ not a general squad behavior. Two separate mechanisms:
   specifically (matched by squad name containing "qa", case-insensitive) —
   not the least-busy pick from the whole QA roster. Solo-agent / non-squad
   assignments are unchanged: they still fan across the whole QA roster so
-  many `in_review` issues run concurrently.
+  many `in_review` issues run concurrently. A per-issue **QA cast**
+  (`cast_qa_agent_id` metadata) overrides ALL of this: when set, QA runs on
+  that exact agent (see *Stage casting* below).
 - **Manual QA actions → QA lead, never the dev.** A manually-fired QA-family
   slice action (`run_qa` / `gen_test_cases` / `run_test_cases`, e.g. the QA
   review page's "Re-run QA") with no explicit agent defaults to the QA squad
@@ -211,18 +213,28 @@ not a general squad behavior. Two separate mechanisms:
   manifest while the dev is still implementing — no diff-reading, no
   execution. By `in_review` the suite already exists, so the gate only
   EXECUTES it. Idempotent: skipped when the issue already has test cases.
-- **`qa:fail` label → auto-reassignment.** The issue is handed back to the
-  FAILING dev agent's squad leader (not the failing agent itself, not a
-  human), status resets to `todo`, and a comment carrying the QA verdict
-  summary is posted with an `@leader` mention — that comment IS the QA↔dev
-  communication; it lands in the issue's one shared timeline so both the
-  dev-facing Issue Detail and the QA review page read the same story.
+- **`qa:fail` label → auto-reassignment.** The issue is handed back to its
+  ORCHESTRATOR (`orchestratorForIssue`, a TOTAL resolver: the squad lead for a
+  squad-assigned or squad-member issue, or — for a solo agent with no squad —
+  the agent ITSELF), status resets to `todo`, and a comment carrying the QA
+  verdict summary is posted with an `@orchestrator` mention. That comment IS
+  the QA↔dev communication; it lands in the issue's one shared timeline. The
+  orchestrator absorbs its OWN qa:fail too — a solo self-orchestrator, or a
+  lead that took the work directly, re-fires WITH the failure feedback (the
+  difference from a blind retry), bounded by a `qa_fail_autoroute_count`
+  attempt cap (5) that leaves a persistently-failing issue for a human.
+  DEFAULT-ON (`AGORA_QA_FAIL_AUTOROUTE_ENABLED` defaults true); only a
+  human/member-assigned or unassigned issue has no agent orchestrator and
+  keeps manual triage.
 - **`qa:pass` label → auto code review (`run_review`).** When
   `AGORA_AUTO_REVIEW_ENABLED` is on and the issue has a known pull request,
   a `run_review` task is dispatched to an INDEPENDENT reviewer — never the
-  author agent (the issue's assignee). Reviewer resolution: the dev squad
-  leader when it isn't the author → the least-busy other dev-squad agent →
-  the QA squad leader → skip. The reviewer reads the PR diff (`gh pr diff`)
+  author agent (the issue's assignee). Reviewer resolution: a per-issue
+  **review cast** (`cast_review_agent_id`) when it isn't the author → the dev
+  squad leader (the orchestrator) when it isn't the author → the least-busy
+  other dev-squad agent → the QA squad leader → skip. The author-exclusion
+  invariant holds even for the cast: a cast reviewer equal to the author is
+  ignored (an agent never reviews its own diff). The reviewer reads the PR diff (`gh pr diff`)
   and posts a fenced ```review-result``` JSON block
   (`{"verdict":"pass"|"fail","summary","commit_sha","files_reviewed",
   "findings":[{"file","line","severity":"blocker"|"major"|"minor","title",
@@ -234,18 +246,39 @@ not a general squad behavior. Two separate mechanisms:
   `gh pr merge`. For full-tier issues with a PR, `review` is a required
   merge-readiness gate alongside `ci` and `qa`.
 
-All three are opt-in behind env gates (`AGORA_AUTO_QA_ENABLED`,
-`AGORA_QA_FAIL_AUTOROUTE_ENABLED`, `AGORA_AUTO_REVIEW_ENABLED`) and degrade
-silently to today's manual/load-balanced behavior when there's no squad on
-one side — e.g. a solo dev agent with no squad keeps the old flow; a squad
-dev with no QA squad in the workspace falls through to the generic roster
-pick.
+Each is env-gated (`AGORA_AUTO_QA_ENABLED`, `AGORA_QA_FAIL_AUTOROUTE_ENABLED`
+— now default TRUE —, `AGORA_AUTO_REVIEW_ENABLED`) and degrades silently when
+a squad is missing on one side: a squad dev with no QA squad falls through to
+the generic roster pick. Note the qa:fail autoroute NO LONGER needs a squad —
+its resolver is total, so a solo dev agent's failed QA now routes back to that
+agent itself (a corrective retry with the verdict, capped) instead of the old
+"manual triage" no-op; only a human/member-assigned issue is left to a human.
+All of these gates are ALSO per-project overridable (see the per-project
+config: `settings.config` on the project).
 
 When auto-QA routes to the QA LEAD (dev side orchestrated), the instruction
 is framed as a DELEGATION directive: the QA lead is told to hand the actual
 gate run to a QA member (executed on a faster model) and own the
 qa:pass/qa:fail rollup, rather than run the mechanical gate itself. The lead
 orchestrates; a member executes.
+
+### Stage casting and manual pipeline mode
+
+The orchestrator controls WHO runs each stage and WHETHER automation drives it,
+both as per-issue metadata (`agora metadata set <id> --key <k> --value <v>` — no
+new endpoint; a human sets the same keys from the issue inspector). Inert by
+default (absent key = today's behavior); no-ops on a human/unassigned issue.
+
+- **Casting — `cast_qa_agent_id` / `cast_review_agent_id`.** Pin an agent to a
+  stage. `maybeRunQAOnInReview` runs QA on the cast ahead of the QA-lead/roster
+  logic; `resolveReviewerAgent` checks the review cast first (still author-
+  excluded). An unset/malformed/not-ready cast degrades to the default — a
+  stale cast never wedges. No dev slot (dev = the assignee, set by delegating).
+- **Manual mode — `pipeline_mode`=`manual`** (default `auto`). The auto-QA /
+  review / merge reflexes step back; instead each WAKES the orchestrator via an
+  @mention that triggers its run, so it dispatches run_qa / run_review itself
+  and owns the merge. No stall (no ready orchestrator → silent no-op); qa:fail
+  routing UNCHANGED.
 
 **Where the app-under-test comes from (non-sprint QA).** The gate resolves a
 smoke target in priority order: the developer's declared `dev_apps` URL
