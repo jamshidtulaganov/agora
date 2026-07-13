@@ -117,6 +117,31 @@ function agentChipColor(id: string) {
   return AGENT_CHIP_COLORS[h % AGENT_CHIP_COLORS.length]!;
 }
 
+type AgentLiveStatus = "running" | "queued" | "done" | "failed";
+
+// Per-agent live status on the roster chip — the signal that turns the agent
+// switcher into an actual "agents window" (which one is working, which is done,
+// which failed). running pulses in the agent's own chip color (bg-current);
+// the terminal/queued states use fixed semantic colors.
+function AgentStatusDot({ status }: { status?: AgentLiveStatus }) {
+  if (!status) return null;
+  if (status === "running") {
+    return (
+      <span aria-hidden className="relative inline-flex size-2 shrink-0 items-center justify-center">
+        <span className="absolute inline-flex size-2 rounded-full bg-current opacity-40 motion-safe:animate-ping" />
+        <span className="relative inline-flex size-1.5 rounded-full bg-current" />
+      </span>
+    );
+  }
+  const cls =
+    status === "failed"
+      ? "bg-destructive"
+      : status === "done"
+        ? "bg-emerald-500"
+        : "bg-amber-500"; // queued
+  return <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", cls)} />;
+}
+
 // A self-host daemon_url is only reachable when the browser shares the daemon's
 // host (127.0.0.1). On a hosted page the browser is remote, so POSTing to a
 // loopback daemon URL just yields a CORS failure + a stuck spinner. These guards
@@ -456,22 +481,67 @@ export function EditorWorkbench({
     [taskSnapshot, issueId],
   );
 
+  // Per-agent live status for THIS issue, so each roster chip can show whether
+  // that agent is working / queued / done / failed — the thing that makes the
+  // switcher read like a Cursor/VS-Code agents window. A live state (running >
+  // queued) always wins over a terminal one.
+  const agentStatusById = useMemo(() => {
+    const byAgent = new Map<string, AgentLiveStatus>();
+    const rank: Record<AgentLiveStatus, number> = { running: 3, queued: 2, done: 1, failed: 1 };
+    for (const task of taskSnapshot) {
+      if (task.issue_id !== issueId) continue;
+      let bucket: AgentLiveStatus;
+      switch (task.status) {
+        case "running":
+          bucket = "running";
+          break;
+        case "queued":
+        case "dispatched":
+        case "waiting_local_directory":
+          bucket = "queued";
+          break;
+        case "failed":
+        case "cancelled":
+          bucket = "failed";
+          break;
+        case "completed":
+          bucket = "done";
+          break;
+        default:
+          continue;
+      }
+      const prev = byAgent.get(task.agent_id);
+      if (!prev || rank[bucket] > rank[prev]) byAgent.set(task.agent_id, bucket);
+    }
+    return byAgent;
+  }, [taskSnapshot, issueId]);
+
+  const workingCount = useMemo(
+    () => [...agentStatusById.values()].filter((s) => s === "running").length,
+    [agentStatusById],
+  );
+
   // Agent review chips — which agents worked on this issue; click to load that
   // agent's worktree into the editor.
   const agentTabs =
     agents.length > 0 ? (
       <div className="flex flex-wrap items-center gap-1">
         <span className="mr-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-          Agents
+          Agents{workingCount > 0 ? ` · ${workingCount} working` : ""}
         </span>
         {agents.map((a) => {
           const c = agentChipColor(a.agent_id);
+          const status = agentStatusById.get(a.agent_id);
           return (
             <button
               key={a.agent_id}
               type="button"
               onClick={() => void selectAgent(a)}
-              title={`Review ${a.agent_name || "agent"}'s worktree`}
+              title={
+                status
+                  ? `${a.agent_name || "agent"} — ${status}`
+                  : `Review ${a.agent_name || "agent"}'s worktree`
+              }
               className={cn(
                 "flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs transition-colors",
                 a.agent_id === selectedId ? c.on : c.off,
@@ -483,6 +553,7 @@ export function EditorWorkbench({
                 size={14}
                 className="shrink-0"
               />
+              <AgentStatusDot status={status} />
               {a.agent_name || "agent"}
               {a.vscode_url ? (
                 <a
