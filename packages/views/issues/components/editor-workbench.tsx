@@ -17,6 +17,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Play,
+  TriangleAlert,
   Users,
 } from "lucide-react";
 import { cn } from "@agora/ui/lib/utils";
@@ -25,6 +26,7 @@ import { ActorAvatar } from "../../common/actor-avatar";
 import { TranscriptButton } from "../../common/task-transcript";
 import { LiveAgentChangesFeed } from "./live-agent-changes-feed";
 import { LiveAgentCodeEditor } from "./live-agent-code-editor";
+import { useEditorAppErrors } from "./use-editor-app-errors";
 import { AgentWorkingIndicator } from "./agent-working-indicator";
 import { EditorReviewBar } from "./editor-review-bar";
 import {
@@ -446,6 +448,16 @@ export function EditorWorkbench({
   const leftPane = leftPaneProp ?? ownLeftPane;
   const setLeftPane = onLeftPaneChange ?? setOwnLeftPane;
 
+  // App-health watcher: while the vibe views (Watch/Preview) are up, count the
+  // running app's console errors + failed requests via an events-only browser
+  // stream, so the banner below surfaces "your app has problems" without the
+  // user being on the Browser tab. Needs a daemon that supports events_only.
+  const { errorCount: appErrorCount } = useEditorAppErrors({
+    daemonUrl: daemon?.url,
+    workdir: selectedAgent?.work_dir,
+    enabled: leftPane === "live" || leftPane === "preview",
+  });
+
   // Is an agent currently running on this issue? Drives the Live tab's pulse
   // and the collapsed rail's activity dot.
   const { data: taskSnapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
@@ -737,6 +749,21 @@ export function EditorWorkbench({
             </button>
           </div>
           <div className="relative min-h-0 flex-1">
+            {appErrorCount > 0 && (leftPane === "live" || leftPane === "preview") && (
+              <div className="absolute inset-x-0 top-0 z-20 flex items-center gap-2 border-b border-destructive/30 bg-destructive/10 px-3 py-1.5 text-[11px] text-destructive">
+                <TriangleAlert className="size-3.5 shrink-0" />
+                <span className="flex-1 truncate">
+                  {appErrorCount} {appErrorCount === 1 ? "problem" : "problems"} in your running app
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setLeftPane("browser")}
+                  className="shrink-0 font-medium underline underline-offset-2 transition-opacity hover:opacity-80"
+                >
+                  Inspect
+                </button>
+              </div>
+            )}
             {leftPane === "live" && (
               <div className="absolute inset-0 flex">
                 <LiveAgentCodeEditor
