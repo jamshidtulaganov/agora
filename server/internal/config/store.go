@@ -128,11 +128,13 @@ func Source(key string) string {
 // exposing the value.
 func SecretIsSet(key string) bool { return strings.TrimSpace(os.Getenv(key)) != "" }
 
-// Bool reports whether key resolves to a truthy value ("1" or "true").
-func Bool(key string) bool {
-	v := strings.TrimSpace(resolve(key))
+func truthy(v string) bool {
+	v = strings.TrimSpace(v)
 	return v == "1" || strings.EqualFold(v, "true")
 }
+
+// Bool reports whether key resolves to a truthy value ("1" or "true").
+func Bool(key string) bool { return truthy(resolve(key)) }
 
 // String returns the resolved string value (trimmed).
 func String(key string) string { return strings.TrimSpace(resolve(key)) }
@@ -148,4 +150,57 @@ func Int(key string, def int) int {
 		return def
 	}
 	return n
+}
+
+// ---- Scoped reads (per-project overrides) ---------------------------------
+//
+// A project may override a ProjectScoped key for its own issues. The scoped
+// helpers take that project's override map (its settings.config) and layer it
+// ABOVE the instance resolution: project override > instance override > env >
+// default. A blank/whitespace override value is treated as "unset" so an empty
+// project field falls through to the instance value. Passing a nil map makes
+// these identical to the unscoped helpers.
+
+// ResolveFrom returns the effective raw value for key, honouring a scope map.
+func ResolveFrom(overrides map[string]string, key string) string {
+	if overrides != nil {
+		if v, ok := overrides[key]; ok && strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return resolve(key)
+}
+
+// BoolFrom is Bool with a per-scope override map.
+func BoolFrom(overrides map[string]string, key string) bool {
+	return truthy(ResolveFrom(overrides, key))
+}
+
+// StringFrom is String with a per-scope override map.
+func StringFrom(overrides map[string]string, key string) string {
+	return strings.TrimSpace(ResolveFrom(overrides, key))
+}
+
+// IntFrom is Int with a per-scope override map.
+func IntFrom(overrides map[string]string, key string, def int) int {
+	v := strings.TrimSpace(ResolveFrom(overrides, key))
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return def
+	}
+	return n
+}
+
+// SourceFrom reports where a scoped read resolved from: "project" (the override
+// map), else the instance Source ("override" | "env" | "default").
+func SourceFrom(overrides map[string]string, key string) string {
+	if overrides != nil {
+		if v, ok := overrides[key]; ok && strings.TrimSpace(v) != "" {
+			return "project"
+		}
+	}
+	return Source(key)
 }
