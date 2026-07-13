@@ -1967,9 +1967,10 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 
 	// Shared-sprint-branch model: when the issue belongs to a sprint, QA runs on
 	// the SPRINT branch (the integrated tip), not an isolated per-task branch.
-	// scope=task attributes a failure to this task's delta via the last-green ref;
-	// deploy the sprint branch to the project's sprint box so the smoke hits the
-	// integrated state. No sprint → fall back to the generic gate + the dev box.
+	// scope=task attributes a failure to this task's delta via the last-green ref.
+	// The team's own CI deploys the sprint branch to their staging (the project's
+	// qa_smoke_url) — Agora runs no deploy step — so QA smokes that staging URL
+	// (appended below). No sprint → the generic per-issue gate below.
 	scope := ""
 	smokeURL := ""
 	sprintNote := ""
@@ -1980,44 +1981,34 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 		branch := SprintBranchFor(sprint)
 		sprintNote = " SPRINT CONTEXT: this task is on the shared sprint branch " + branch +
 			"; for the scope=task baseline use <sprintId>=" + sid + " (refs/sprint/" + sid + "/last-green)."
-		switch {
-		case sprintPRModeEnabled():
+		// QA smokes the project's staging URL (qa_smoke_url), where the team's CI
+		// deploys the sprint branch — there is no Agora-managed QA box. Left "" here
+		// so it falls through to the project qa_smoke_url appended below.
+		if sprintPRModeEnabled() {
 			// PR-review mode: the task's work lives on its OWN pull-request branch,
-			// NOT yet merged into the sprint branch. QA must smoke the PR branch on
-			// the dev's box — smoking the sprint tip would judge code the PR hasn't
-			// landed. This run's qa:pass/qa:fail is the merge gate (Phase 3): the
-			// squad lead merges the PR into the sprint branch only after qa:pass.
-			smokeURL = h.devBoxSmokeURL(ctx, issue)
+			// NOT yet merged into the sprint branch. This run's qa:pass/qa:fail is
+			// the merge gate (Phase 3): the squad lead merges the PR into the sprint
+			// branch only after qa:pass.
 			sprintNote += " PR-REVIEW MODE: this task is an OPEN pull request INTO `" + branch +
-				"`, not yet merged. QA the PULL REQUEST's OWN branch, not the sprint tip: deploy the task's branch to the dev QA box (the deploy-qa git-sync) and smoke THAT url — do NOT deploy or smoke `" + branch +
-				"` itself. Your qa:pass/qa:fail IS the merge gate: the squad lead merges the PR into `" + branch + "` only after qa:pass."
-		default:
-			if box, synced, derr := h.DeploySprintBranch(ctx, sprint.ID, issue.WorkspaceID); derr != nil || !synced {
-				// Fail CLOSED: the sprint branch is NOT confirmed live on the QA box,
-				// so smoking it would judge STALE code and let a false qa:pass stand.
-				// Withhold the smoke target and tell the gate to block, not pass.
-				slog.Warn("auto run_qa: sprint branch not deployed — blocking QA", "sprint_id", sid, "error", derr, "synced", synced)
-				sprintNote += " QA BLOCKED — the sprint branch could not be deployed to the QA box (it is not serving this branch), so QA cannot judge the real change. Do NOT smoke a stale environment and do NOT set qa:pass; set the `qa:blocked` label and report that the box is not serving the sprint branch."
-			} else {
-				smokeURL = boxSmokeURL(box)
-			}
+				"`, not yet merged. QA the change on the project's staging URL (qa_smoke_url below), where the branch is deployed. Your qa:pass/qa:fail IS the merge gate: the squad lead merges the PR into `" + branch + "` only after qa:pass."
 		}
 	}
 
-	// The developer's own machine ranks ahead of a deployed box (non-sprint
-	// path only — sprint QA smokes the integrated sprint box, resolved above).
-	// Order: dev_apps URL (concrete, already running) > local_directory (folder
-	// on an online daemon — pin + start-via-preview, no URL yet) > connected
-	// box. Sprint mode already set smokeURL, so leave it alone there.
+	// The developer's own machine ranks ahead of the project's staging (non-sprint
+	// path only — sprint QA smokes the staging URL, handled above). Order: dev_apps
+	// URL (concrete, already running) > local_directory (folder on an online
+	// daemon — pin + start-via-preview, no URL yet) > the project qa_smoke_url
+	// (left "" here, appended below). Sprint mode already set scope=task, so leave
+	// this alone there.
 	localDirQAPath := ""
 	if scope != "task" && smokeURL == "" {
 		if url := h.devLocalAppURL(ctx, issue); url != "" {
 			smokeURL = url
 		} else if _, lp, ok := h.localDirectoryQATarget(ctx, issue); ok {
 			localDirQAPath = lp
-		} else {
-			smokeURL = h.devBoxSmokeURL(ctx, issue)
 		}
+		// else: no dev-local app and no local_directory — leave smokeURL "" so QA
+		// falls through to the project's qa_smoke_url (appended below).
 	}
 
 	instruction := buildSliceInstruction(sliceActionRunQA, scope) + sprintNote
@@ -2274,7 +2265,7 @@ func (h *Handler) maybeRunTestsOnInReview(ctx context.Context, issue db.Issue, a
 	// Mirror the CreateSliceAction run_test_cases assembly so the auto-fired run
 	// carries the same smoke target, manifest, docs, base suite, and case list.
 	instruction := buildSliceInstruction(sliceActionRunTests, "")
-	if url := h.devBoxSmokeURL(ctx, issue); url != "" {
+	if url := h.resolveQAPreviewURL(ctx, issue); url != "" {
 		instruction += " SMOKE TARGET: the app is served at " + url + " — run the cases against THAT url."
 	}
 	instruction += h.sliceActionQASmokeContext(ctx, issue)
@@ -3124,12 +3115,12 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 	// tests against the INTENDED behavior rather than re-deriving them from the diff
 	// it is judging (the task-claim brief carries only the title + trigger comment).
 	if req.Kind == sliceActionRunQA {
-		// Smoke the ASSIGNEE DEVELOPER'S own QA box when one resolves, so each dev's
-		// branch is verified on their isolated environment (https://<handle>.<host>)
-		// rather than a shared project URL. Overrides the project qa_smoke_url below.
-		if url := h.devBoxSmokeURL(r.Context(), issue); url != "" {
-			instruction += " SMOKE TARGET: the assignee developer's QA box serves this branch at " + url +
-				" — deploy the branch to it (the deploy-qa git-sync) and smoke THAT url. It OVERRIDES any project smoke url below."
+		// Smoke the developer's own running app (dev_apps) when one resolves, so the
+		// change is verified where the dev actually runs it; otherwise the project's
+		// staging URL. Overrides the project qa_smoke_url below.
+		if url := h.resolveQAPreviewURL(r.Context(), issue); url != "" {
+			instruction += " SMOKE TARGET: the branch is served at " + url +
+				" — smoke THAT url. It OVERRIDES any project smoke url below."
 		}
 		// Risk map intentionally NOT appended here — the claim path injects it
 		// into the same run's instructions (see daemon.go).
@@ -3169,10 +3160,10 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 		instruction += h.sliceActionQADocsContext(r.Context(), issue)
 		instruction += qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
 	}
-	// run_test_cases drives the issue's automated cases against the box — same
-	// smoke target as run_qa, plus the cases (id/title/steps/expected) to run.
+	// run_test_cases drives the issue's automated cases against the QA target —
+	// same smoke target as run_qa, plus the cases (id/title/steps/expected) to run.
 	if req.Kind == sliceActionRunTests {
-		if url := h.devBoxSmokeURL(r.Context(), issue); url != "" {
+		if url := h.resolveQAPreviewURL(r.Context(), issue); url != "" {
 			instruction += " SMOKE TARGET: the app is served at " + url + " — run the cases against THAT url."
 		}
 		instruction += h.sliceActionQASmokeContext(r.Context(), issue)

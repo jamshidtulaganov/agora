@@ -962,7 +962,6 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.With(handler.RequireHumanActor).Post("/qa-override", h.OverrideQAVerdict)
 					r.Get("/test-cases", h.GetIssueTestCases)
 					r.Post("/test-cases", h.CreateIssueTestCase)
-					r.Post("/deploy-qa", h.DeployIssueQA)
 					r.Get("/deploy-events", h.GetIssueDeployEvents)
 					r.Get("/comments", h.ListComments)
 					r.Get("/timeline", h.ListTimeline)
@@ -1075,27 +1074,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				})
 			})
 
-			// Remote Boxes (opt-in, additive) — onboard a developer's own
-			// remote dev server. Gated by AGORA_REMOTE_BOXES_ENABLED: when off the
-			// routes are not mounted at all, so the feature is fully inert for
-			// every existing deployment.
 			// Settings → Labs: workspace-level experimental flags (QA-env
-			// routing). Deliberately OUTSIDE the remote-boxes gate — the flags
-			// must stay readable/writable even while the boxes feature is off.
+			// routing — the daemon-per-dev qa_dev_runtimes toggle).
 			r.Get("/api/workspace-labs", h.GetWorkspaceLabs)
 			r.Put("/api/workspace-labs", h.UpdateWorkspaceLabs)
-			if config.Bool("AGORA_REMOTE_BOXES_ENABLED") {
-				r.Route("/api/remote-boxes", func(r chi.Router) {
-					r.Get("/", h.ListConnectedBoxes)
-					r.Post("/", h.CreateConnectedBox)
-					r.Post("/provision", h.ProvisionConnectedBoxForMember)
-					r.Post("/{id}/sync", h.SyncConnectedBox)
-					r.Post("/{id}/test", h.TestConnectedBox)
-					r.Post("/{id}/seed", h.SeedConnectedBox)
-					r.Post("/{id}/bind", h.BindConnectedBox)
-					r.Delete("/{id}", h.DeleteConnectedBox)
-				})
-			}
 
 			// Sprints — direct access by id (the project-scoped list/create
 			// lives under /api/projects/{id}/sprints above).
@@ -1106,7 +1088,6 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Put("/", h.UpdateSprint)
 					r.Delete("/", h.DeleteSprint)
 					r.Get("/issues", h.ListSprintIssues)
-					r.Post("/deploy-qa", h.DeploySprintQA)
 					r.Post("/run-regression", h.RunSprintRegression)
 				})
 			})

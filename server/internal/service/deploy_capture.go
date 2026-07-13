@@ -61,10 +61,9 @@ func parseDeployResultBlock(content string) (p deployResultPayload, ok bool) {
 }
 
 // CaptureDeployEvent persists a deploy agent's ```deploy-result``` block as a
-// durable deploy_event row — the same append-only signal the Tier-1 QA-box
-// git-sync writes (recordDeployEvent, connected_box.go), so the stepper's
-// Deploy stage and the Deploy lens read pipeline deploys and box syncs from
-// ONE table. Exported for the same reason CaptureQAEvidence is: real agents
+// durable, append-only deploy_event row — the single writer of that table — so
+// the stepper's Deploy stage and the Deploy lens read pipeline deploys from ONE
+// place. Exported for the same reason CaptureQAEvidence is: real agents
 // (daemon/CLI) post their terminal comment via POST /comments, so the HTTP
 // comment handler must be able to call it too.
 //
@@ -124,9 +123,9 @@ func (s *TaskService) CaptureDeployEvent(ctx context.Context, issue db.Issue, co
 // "Shipped" heuristic (documented per release-hub-and-redesign.md B1, since the
 // merge is a human action with no single unambiguous seam): status=="success"
 // AND the deployed environment key resolves to a requires_human / production-
-// named entry in the issue's project's deploy_environments. A Tier-1 QA-box
-// sync (recordDeployEvent, connected_box.go) never matches — its target is a
-// box label, not a production env — so it only ever emits deploy:recorded.
+// named entry in the issue's project's deploy_environments. A deploy to a
+// non-production environment (e.g. staging) never matches — so it only ever
+// emits deploy:recorded.
 func (s *TaskService) publishDeployEvents(ctx context.Context, issue db.Issue, ref, target, status string) {
 	if s.Bus == nil {
 		return
