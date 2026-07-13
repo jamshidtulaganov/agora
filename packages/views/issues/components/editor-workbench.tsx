@@ -18,6 +18,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Play,
+  Users,
 } from "lucide-react";
 import { cn } from "@agora/ui/lib/utils";
 import type { AgentTask } from "@agora/core/types";
@@ -77,50 +78,6 @@ export interface EditorDaemon {
 
 export type EditorWorkbenchPane = "live" | "code" | "preview" | "browser";
 
-// Distinct per-agent chip colors, picked by a stable hash of the agent id so
-// each agent keeps the same color across renders. Full class strings (no
-// interpolation) so Tailwind keeps them.
-const AGENT_CHIP_COLORS = [
-  {
-    on: "border-blue-500/50 bg-blue-500/15 text-blue-700 dark:text-blue-300",
-    off: "border-blue-500/30 text-blue-600/80 hover:bg-blue-500/10 dark:text-blue-400/80",
-  },
-  {
-    on: "border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-    off: "border-emerald-500/30 text-emerald-600/80 hover:bg-emerald-500/10 dark:text-emerald-400/80",
-  },
-  {
-    on: "border-violet-500/50 bg-violet-500/15 text-violet-700 dark:text-violet-300",
-    off: "border-violet-500/30 text-violet-600/80 hover:bg-violet-500/10 dark:text-violet-400/80",
-  },
-  {
-    on: "border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-300",
-    off: "border-amber-500/30 text-amber-600/80 hover:bg-amber-500/10 dark:text-amber-400/80",
-  },
-  {
-    on: "border-rose-500/50 bg-rose-500/15 text-rose-700 dark:text-rose-300",
-    off: "border-rose-500/30 text-rose-600/80 hover:bg-rose-500/10 dark:text-rose-400/80",
-  },
-  {
-    on: "border-cyan-500/50 bg-cyan-500/15 text-cyan-700 dark:text-cyan-300",
-    off: "border-cyan-500/30 text-cyan-600/80 hover:bg-cyan-500/10 dark:text-cyan-400/80",
-  },
-  {
-    on: "border-fuchsia-500/50 bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300",
-    off: "border-fuchsia-500/30 text-fuchsia-600/80 hover:bg-fuchsia-500/10 dark:text-fuchsia-400/80",
-  },
-  {
-    on: "border-teal-500/50 bg-teal-500/15 text-teal-700 dark:text-teal-300",
-    off: "border-teal-500/30 text-teal-600/80 hover:bg-teal-500/10 dark:text-teal-400/80",
-  },
-];
-
-function agentChipColor(id: string) {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return AGENT_CHIP_COLORS[h % AGENT_CHIP_COLORS.length]!;
-}
-
 type AgentLiveStatus = "running" | "queued" | "done" | "failed";
 
 // Per-agent live status on the roster chip — the signal that turns the agent
@@ -144,6 +101,22 @@ function AgentStatusDot({ status }: { status?: AgentLiveStatus }) {
         ? "bg-emerald-500"
         : "bg-amber-500"; // queued
   return <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", cls)} />;
+}
+
+// Plain per-session status line for the vertical roster.
+function agentStatusLabel(status?: AgentLiveStatus): string {
+  switch (status) {
+    case "running":
+      return "Working…";
+    case "queued":
+      return "Queued";
+    case "done":
+      return "Done";
+    case "failed":
+      return "Failed";
+    default:
+      return "Idle";
+  }
 }
 
 // A self-host daemon_url is only reachable when the browser shares the daemon's
@@ -535,80 +508,126 @@ export function EditorWorkbench({
     enabled: !!selectedId,
   });
 
-  // The selected agent's most recent task on this issue — so the roster can open
-  // that session's run transcript even after it finished (the "open a done
-  // agent's work" a Cursor/VS-Code agents window has, not just the live run).
-  const selectedAgentTask = useMemo(() => {
-    if (!selectedId) return null;
+  // Each agent's most recent task on this issue — so every row in the vertical
+  // session list can open its own transcript, not just the selected one.
+  const latestTaskByAgent = useMemo(() => {
     const stamp = (t: AgentTask) =>
       new Date(t.started_at ?? t.dispatched_at ?? t.created_at).getTime();
-    let best: AgentTask | null = null;
+    const byAgent = new Map<string, AgentTask>();
     for (const task of issueTasks) {
-      if (task.agent_id !== selectedId) continue;
-      if (!best || stamp(task) > stamp(best)) best = task;
+      const prev = byAgent.get(task.agent_id);
+      if (!prev || stamp(task) > stamp(prev)) byAgent.set(task.agent_id, task);
     }
-    return best;
-  }, [issueTasks, selectedId]);
+    return byAgent;
+  }, [issueTasks]);
 
-  // Agent review chips — which agents worked on this issue; click to load that
-  // agent's worktree into the editor.
-  const agentTabs =
+  // Compact header entry point — count + working pulse, click expands the rail
+  // to the full session list. Replaces the old horizontal chip strip; the list
+  // itself is vertical in the right rail (agentSessionList below).
+  const agentSummary =
     agents.length > 0 ? (
-      <div className="flex flex-wrap items-center gap-1">
-        <span className="mr-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-          Agents{workingCount > 0 ? ` · ${workingCount} working` : ""}
-        </span>
-        {agents.map((a) => {
-          const c = agentChipColor(a.agent_id);
-          const status = agentStatusById.get(a.agent_id);
-          return (
-            <button
-              key={a.agent_id}
-              type="button"
-              onClick={() => void selectAgent(a)}
-              title={
-                status
-                  ? `${a.agent_name || "agent"} — ${status}`
-                  : `Review ${a.agent_name || "agent"}'s worktree`
-              }
-              className={cn(
-                "flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs transition-colors",
-                a.agent_id === selectedId ? c.on : c.off,
-              )}
-            >
-              <ActorAvatar
-                actorType="agent"
-                actorId={a.agent_id}
-                size={14}
-                className="shrink-0"
-              />
-              <AgentStatusDot status={status} />
-              {a.agent_name || "agent"}
-              {a.vscode_url ? (
-                <a
-                  href={a.vscode_url}
-                  onClick={(e) => e.stopPropagation()}
-                  title={`Open ${a.agent_name || "agent"}'s worktree in your desktop VS Code`}
-                  aria-label="Open in VS Code"
-                  className="ml-0.5 rounded p-0.5 opacity-70 hover:opacity-100"
-                >
-                  <Code2 className="size-3" />
-                </a>
-              ) : null}
-            </button>
-          );
-        })}
-        {/* Open the selected agent's run transcript — reachable even after the
-            run finished, so the roster is a session switcher + history, not just
-            a live-worktree picker. */}
-        {selectedAgentTask && (
-          <TranscriptButton
-            task={selectedAgentTask}
-            agentName={selectedAgent?.agent_name || "agent"}
-            title={`View ${selectedAgent?.agent_name || "agent"}'s run transcript`}
-            className="ml-0.5"
-          />
+      <button
+        type="button"
+        onClick={() => setRightCollapsed(false)}
+        title="Agents"
+        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      >
+        <Users className="size-3.5 shrink-0" />
+        <span>Agents · {agents.length}</span>
+        {workingCount > 0 && (
+          <span className="inline-flex items-center gap-1 text-info">
+            <span className="size-1.5 rounded-full bg-info motion-safe:animate-pulse" />
+            {workingCount}
+          </span>
         )}
+      </button>
+    ) : null;
+
+  // The dev space's agents window — a VERTICAL session list, one row per agent
+  // that has worked this issue: avatar + live status + plain status line, with
+  // per-row Transcript + VS Code actions. Selecting a row loads that agent's
+  // worktree into the editor (and focuses Steer/Stop on it). Sits at the top of
+  // the right rail so switching sessions never leaves the editor. The row is a
+  // container (not a button) so the transcript/vscode controls don't nest inside
+  // an interactive element.
+  const agentSessionList =
+    agents.length > 0 ? (
+      <div className="flex shrink-0 flex-col border-b border-border">
+        <div className="flex items-center justify-between px-3 pb-1 pt-2">
+          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            Agents · {agents.length}
+          </span>
+          {workingCount > 0 && (
+            <span className="inline-flex items-center gap-1 text-[10px] text-info">
+              <span className="size-1.5 rounded-full bg-info motion-safe:animate-pulse" />
+              {workingCount} working
+            </span>
+          )}
+        </div>
+        <div className="max-h-40 overflow-y-auto pb-1">
+          {agents.map((a) => {
+            const status = agentStatusById.get(a.agent_id);
+            const task = latestTaskByAgent.get(a.agent_id);
+            const selected = a.agent_id === selectedId;
+            const running = status === "running";
+            return (
+              <div
+                key={a.agent_id}
+                className={cn(
+                  "flex items-center gap-2 border-l-2 pl-2 pr-2 transition-colors",
+                  selected
+                    ? "border-l-primary bg-accent"
+                    : "border-l-transparent hover:bg-accent/50",
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => void selectAgent(a)}
+                  title={`Load ${a.agent_name || "agent"}'s worktree`}
+                  className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left"
+                >
+                  <ActorAvatar
+                    actorType="agent"
+                    actorId={a.agent_id}
+                    size={18}
+                    className="shrink-0"
+                  />
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-xs font-medium">
+                      {a.agent_name || "agent"}
+                    </span>
+                    <span
+                      className={cn(
+                        "flex items-center gap-1 text-[10px]",
+                        running ? "text-info" : "text-muted-foreground",
+                      )}
+                    >
+                      <AgentStatusDot status={status} />
+                      {agentStatusLabel(status)}
+                    </span>
+                  </span>
+                </button>
+                {task && (
+                  <TranscriptButton
+                    task={task}
+                    agentName={a.agent_name || "agent"}
+                    title={`View ${a.agent_name || "agent"}'s run transcript`}
+                  />
+                )}
+                {a.vscode_url && (
+                  <a
+                    href={a.vscode_url}
+                    title={`Open ${a.agent_name || "agent"}'s worktree in VS Code`}
+                    aria-label="Open in VS Code"
+                    className="shrink-0 rounded p-1 text-muted-foreground opacity-70 transition-colors hover:bg-accent/50 hover:text-foreground hover:opacity-100"
+                  >
+                    <Code2 className="size-3.5" />
+                  </a>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     ) : null;
 
@@ -640,7 +659,7 @@ export function EditorWorkbench({
           (the Dialog host's close button). Always rendered so the host stays
           controllable even before agents load. */}
       <div className="flex shrink-0 items-center gap-3 border-b border-border py-2 pl-3 pr-2">
-        <div className="min-w-0 flex-1 overflow-x-auto">{agentTabs}</div>
+        <div className="min-w-0 flex-1 overflow-x-auto">{agentSummary}</div>
         {actionsNode}
         {headerEnd}
       </div>
@@ -841,6 +860,7 @@ export function EditorWorkbench({
         {!rightCollapsed && (
         <div className="flex h-full w-[360px] shrink-0 flex-col border-l border-border bg-background">
           {reviewBar}
+          {agentSessionList}
           <div className="flex shrink-0 border-b border-border text-xs">
             <button
               type="button"
