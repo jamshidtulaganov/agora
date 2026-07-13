@@ -29,18 +29,19 @@ import { issuePullRequestsOptions } from "@agora/core/github";
 import { deriveStagePipeline, type SDLCStage, type StagePipeline, type MergeGateState } from "@agora/core/issues";
 import type { MergeGateStatus } from "@agora/core/types";
 
-// Mirrors qa-live-progress.tsx:88-110 exactly (QA-squad member -> "qa",
-// everything else defaults to "dev" — the accepted v1 model gap called out
-// in the plan). Same queryKey, so the two components share one cache entry
-// instead of double-fetching squads + members when both are mounted.
-function qaSquadAgentIdsOptions(wsId: string) {
+// Agent-id set for every squad whose name contains `needle` (leader + agent
+// members). Used to attribute a running task to a stage: QA-squad agents ->
+// "qa", review-squad agents -> "review", everything else -> "dev". Same
+// queryKey shape as qa-live-progress.tsx:88-110, so the QA lookup shares one
+// cache entry with that component instead of double-fetching squads + members.
+function squadAgentIdsOptions(wsId: string, needle: string) {
   return {
-    queryKey: ["qa-squad-agent-ids", wsId] as const,
+    queryKey: [`${needle}-squad-agent-ids`, wsId] as const,
     queryFn: async () => {
       const ids = new Set<string>();
       const squads = await api.listSquads();
       for (const s of squads) {
-        if (!s.name?.toLowerCase().includes("qa")) continue;
+        if (!s.name?.toLowerCase().includes(needle)) continue;
         if (s.leader_id) ids.add(s.leader_id);
         try {
           for (const m of await api.listSquadMembers(s.id)) {
@@ -80,12 +81,25 @@ export function useStagePipeline(wsId: string, issueId: string): StagePipeline {
   });
 
   const { data: snapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
-  const { data: qaAgentIds } = useQuery(qaSquadAgentIdsOptions(wsId));
+  const { data: qaAgentIds } = useQuery(squadAgentIdsOptions(wsId, "qa"));
+  const { data: reviewAgentIds } = useQuery(squadAgentIdsOptions(wsId, "review"));
 
   return useMemo(() => {
-    const runningTaskStages: SDLCStage[] = snapshot
-      .filter((task) => task.issue_id === issueId && task.status === "running")
-      .map((task) => (qaAgentIds?.has(task.agent_id) ? "qa" : "dev"));
+    // Attribute each running task to a stage AND record its task id so the
+    // stepper can bind the stage to that run's live process. Review-squad
+    // agents -> "review", QA-squad -> "qa", everything else -> "dev". First
+    // task per stage wins (a stage is one run; taskId is what the live feed
+    // subscribes to).
+    const runningTaskByStage: Partial<Record<SDLCStage, string>> = {};
+    for (const task of snapshot) {
+      if (task.issue_id !== issueId || task.status !== "running") continue;
+      const stage: SDLCStage = reviewAgentIds?.has(task.agent_id)
+        ? "review"
+        : qaAgentIds?.has(task.agent_id)
+          ? "qa"
+          : "dev";
+      if (!runningTaskByStage[stage]) runningTaskByStage[stage] = task.id;
+    }
 
     const prNumber = typeof issue?.metadata.pr_number === "number" ? issue.metadata.pr_number : null;
     const matchedPr =
@@ -104,7 +118,7 @@ export function useStagePipeline(wsId: string, issueId: string): StagePipeline {
           }
         : null,
       prMerged: matchedPr ? matchedPr.state === "merged" : undefined,
-      runningTaskStages,
+      runningTaskByStage,
     });
-  }, [status, labels, issue, prs, mergeReadiness, snapshot, qaAgentIds, issueId]);
+  }, [status, labels, issue, prs, mergeReadiness, snapshot, qaAgentIds, reviewAgentIds, issueId]);
 }

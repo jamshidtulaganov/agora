@@ -16,8 +16,14 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { CheckCircle2, XCircle } from "lucide-react";
 import type { SDLCStage, StagePipeline, StageState } from "@agora/core/issues";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@agora/ui/components/ui/popover";
 import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
+import { StageLiveProcessBody } from "./stage-live-process";
 
 export interface SDLCStepperProps {
   pipeline: StagePipeline;
@@ -193,6 +199,12 @@ export function SDLCStepper({ pipeline, activeLens, isLensAvailable, onSelectSta
         // ("merging…"/"awaiting approval") are already told by the dot + the
         // stage's own lens. The stepper stays a clean [dot] [label] beat.
 
+        const stageClass = cn(
+          "flex items-center gap-1.5 rounded-md px-1.5 py-1 transition-colors duration-300",
+          snapshot.state === "skipped" && "opacity-40",
+          selected && "bg-accent/50",
+        );
+
         return (
           <div key={snapshot.stage} className="flex shrink-0 items-center">
             {i > 0 && (
@@ -204,17 +216,44 @@ export function SDLCStepper({ pipeline, activeLens, isLensAvailable, onSelectSta
                 )}
               />
             )}
-            {interactive ? (
+            {snapshot.taskId ? (
+              // A task is running THIS stage — clicking it opens the live
+              // process (what the agent is doing now), bound to the stage. The
+              // full stage lens stays one click away inside the popover.
+              <Popover>
+                <PopoverTrigger
+                  render={
+                    <button
+                      type="button"
+                      data-testid={`sdlc-stage-${snapshot.stage}`}
+                      data-state={snapshot.state}
+                      className={cn(stageClass, "hover:bg-accent/60")}
+                    />
+                  }
+                >
+                  {dot}
+                  {labelSpan}
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-80">
+                  <StageLiveProcessBody taskId={snapshot.taskId} />
+                  {interactive && (
+                    <button
+                      type="button"
+                      onClick={() => onSelectStage(snapshot.stage)}
+                      className="mt-2 flex w-full items-center justify-center rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    >
+                      {t(($) => $.live_activity.open_view, { stage: label })}
+                    </button>
+                  )}
+                </PopoverContent>
+              </Popover>
+            ) : interactive ? (
               <button
                 type="button"
                 data-testid={`sdlc-stage-${snapshot.stage}`}
                 data-state={snapshot.state}
                 onClick={() => onSelectStage(snapshot.stage)}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-md px-1.5 py-1 transition-colors duration-300 hover:bg-accent/60",
-                  snapshot.state === "skipped" && "opacity-40",
-                  selected && "bg-accent/50",
-                )}
+                className={cn(stageClass, "hover:bg-accent/60")}
               >
                 {dot}
                 {labelSpan}
@@ -223,11 +262,7 @@ export function SDLCStepper({ pipeline, activeLens, isLensAvailable, onSelectSta
               <div
                 data-testid={`sdlc-stage-${snapshot.stage}`}
                 data-state={snapshot.state}
-                className={cn(
-                  "flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 transition-colors duration-300",
-                  snapshot.state === "skipped" && "opacity-40",
-                  selected && "bg-accent/50",
-                )}
+                className={cn(stageClass, "cursor-default")}
               >
                 {dot}
                 {labelSpan}

@@ -391,6 +391,10 @@
     "files_one": "{{count}} ta fayl",
     "files_other": "{{count}} ta fayl",
     "working": "ishlamoqda…",
+    "now_title": "Hozir bajarilmoqda",
+    "todo_title": "Vazifalar",
+    "todo_progress": "{{done}}/{{total}}",
+    "open_view": "{{stage}} ko‘rinishini ochish",
     "more": "+{{count}} yana",
     "show_less": "Kamroq ko‘rsatish",
     "cmd": {
@@ -400,6 +404,9 @@
       "build": "ilovani build qilmoqda",
       "review": "o‘zgarishlarni ko‘zdan kechirmoqda",
       "branch": "branch’ni tayyorlamoqda",
+      "commit": "o‘zgarishlarni saqlamoqda",
+      "publish": "branch’ni yubormoqda",
+      "pr": "pull request ochmoqda",
       "inspect": "natijani tekshirmoqda"
     }
   },
@@ -1022,6 +1029,10 @@
     "rerun_review": "Tekshiruvni qayta ishga tushirish",
     "toast_review_dispatched": "Kod-tekshiruv ishga tushirildi",
     "toast_review_dispatch_failed": "Tekshiruvni ishga tushirib bo'lmadi",
+    "toast_no_reviewer": "Tekshiruvchi topilmadi — birini tanlang",
+    "pick_reviewer": "Tekshiruvchini tanlash",
+    "no_reviewer_title": "Tekshiruvchi mavjud emas",
+    "no_reviewer_body": "Muallifdan farqli tekshiruvchi agent topilmadi. Tekshiruvchini qo'lda tanlang yoki bu agentni squad'ga qo'shing.",
     "reviewed_commit": "Kommit",
     "view_diff": "Diff'ni ko‘rish",
     "files_reviewed": "Tekshirilgan fayllar: {{n}}",

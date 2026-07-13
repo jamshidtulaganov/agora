@@ -14,11 +14,12 @@ import { ActorAvatar } from "../../common/actor-avatar";
 import { buildTimeline, redactSecrets } from "../../common/task-transcript";
 import { useT } from "../../i18n";
 import {
-  deriveActivitySteps,
   deriveFileChanges,
+  deriveMilestoneSteps,
   type ActivityStep,
   type FileChange,
 } from "./live-agent-activity";
+import { useStepText } from "./stage-live-process";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LiveAgentChangesFeed — a LIVE "git changes" view of an agent's run on this
@@ -128,7 +129,7 @@ function AgentChangesPanel({ task }: { task: AgentTask }) {
   // (reviews/research/ops) so the panel is never just a bare "working…".
   const timeline = useMemo(() => buildTimeline(messages), [messages]);
   const changes = useMemo(() => deriveFileChanges(timeline), [timeline]);
-  const steps = useMemo(() => deriveActivitySteps(timeline), [timeline]);
+  const steps = useMemo(() => deriveMilestoneSteps(timeline), [timeline]);
 
   // Change A — "+K more" is a real toggle. Default collapsed (capped at
   // MAX_ROWS); the user can expand to see every changed file for this task and
@@ -254,37 +255,11 @@ function AgentChangesPanel({ task }: { task: AgentTask }) {
 }
 
 // One row = one readable activity step (a non-mutating tool call) for a run that
-// touched no files. The verb is localized via the existing `live_activity.verb.*`
-// keys; the target (file / command summary / query) renders verbatim. Purely
-// presentational — no expand, no diff, no fetch.
+// touched no files. Text is localized via the shared `useStepText` (same phrase
+// the stepper's live surfaces render). Purely presentational — no expand, no
+// diff, no fetch.
 function StepRow({ step }: { step: ActivityStep }) {
-  const { t } = useT("issues");
-  let verb = "";
-  switch (step.verbKey) {
-    case "reading": verb = t(($) => $.live_activity.verb.reading); break;
-    case "editing": verb = t(($) => $.live_activity.verb.editing); break;
-    case "writing": verb = t(($) => $.live_activity.verb.writing); break;
-    case "searching": verb = t(($) => $.live_activity.verb.searching); break;
-    case "running": verb = t(($) => $.live_activity.verb.running); break;
-    case "fetching": verb = t(($) => $.live_activity.verb.fetching); break;
-    case "browsing": verb = t(($) => $.live_activity.verb.browsing); break;
-    case "thinking": verb = t(($) => $.live_activity.verb.thinking); break;
-    case "working": verb = t(($) => $.live_activity.verb.working); break;
-    default: verb = step.rawVerb ?? "";
-  }
-  // A classified command reads as its human intent; raw summary stays on hover.
-  let human = "";
-  switch (step.cmdClass) {
-    case "install": human = t(($) => $.live_activity.cmd.install); break;
-    case "test": human = t(($) => $.live_activity.cmd.test); break;
-    case "lint": human = t(($) => $.live_activity.cmd.lint); break;
-    case "build": human = t(($) => $.live_activity.cmd.build); break;
-    case "review": human = t(($) => $.live_activity.cmd.review); break;
-    case "branch": human = t(($) => $.live_activity.cmd.branch); break;
-    case "inspect": human = t(($) => $.live_activity.cmd.inspect); break;
-    default: break;
-  }
-  const text = human || (step.target ? `${verb} ${step.target}` : verb);
+  const text = useStepText(step);
   return (
     <li className="flex items-center gap-2 border-b px-2.5 py-1.5 last:border-b-0">
       <span

@@ -391,6 +391,10 @@
     "files_one": "{{count}} файл",
     "files_other": "{{count}} файлов",
     "working": "работает…",
+    "now_title": "Сейчас в работе",
+    "todo_title": "Задачи",
+    "todo_progress": "{{done}}/{{total}}",
+    "open_view": "Открыть вид {{stage}}",
     "more": "+{{count}} ещё",
     "show_less": "Показать меньше",
     "cmd": {
@@ -400,6 +404,9 @@
       "build": "собирает приложение",
       "review": "просматривает изменения",
       "branch": "готовит ветку",
+      "commit": "сохраняет изменения",
+      "publish": "публикует ветку",
+      "pr": "создаёт pull request",
       "inspect": "проверяет вывод"
     }
   },
@@ -1022,6 +1029,10 @@
     "rerun_review": "Перезапустить ревью",
     "toast_review_dispatched": "Код-ревью запущено",
     "toast_review_dispatch_failed": "Не удалось запустить ревью",
+    "toast_no_reviewer": "Нет доступного ревьюера — выберите вручную",
+    "pick_reviewer": "Выбрать ревьюера",
+    "no_reviewer_title": "Нет доступного ревьюера",
+    "no_reviewer_body": "Не удалось найти агента для ревью, отличного от автора. Выберите ревьюера вручную или добавьте этого агента в squad.",
     "reviewed_commit": "Коммит",
     "view_diff": "Открыть diff",
     "files_reviewed": "Проверено файлов: {{n}}",

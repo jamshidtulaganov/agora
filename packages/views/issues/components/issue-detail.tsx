@@ -79,7 +79,7 @@ import { FigmaLinksSection } from "./figma-links-section";
 import { DesignProposalSection } from "./design-proposal-section";
 import { DesignAuditSection } from "./design-audit-section";
 import { SDLCStepper } from "./sdlc-stepper";
-import { OrchestratorNarrative } from "./orchestrator-narrative";
+import { StageTrailing } from "./stage-live-process";
 import { useStagePipeline } from "./use-stage-pipeline";
 import { useLensParam, getLens, isLensRegistered } from "../lens";
 import { useGitHubSettings } from "@agora/core/github";
@@ -2283,7 +2283,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           isLensAvailable={(stage) => isLensRegistered(stage)}
           onSelectStage={setLens}
           trailing={
-            <OrchestratorNarrative
+            <StageTrailing
               pipeline={stagePipeline}
               orchestratorAgentId={issue.orchestrator_agent_id}
             />

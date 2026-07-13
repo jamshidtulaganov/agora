@@ -391,6 +391,10 @@
     "files_one": "{{count}} file",
     "files_other": "{{count}} files",
     "working": "working…",
+    "now_title": "Working now",
+    "todo_title": "To-do",
+    "todo_progress": "{{done}}/{{total}}",
+    "open_view": "Open {{stage}} view",
     "more": "+{{count}} more",
     "show_less": "Show less",
     "cmd": {
@@ -400,6 +404,9 @@
       "build": "building the app",
       "review": "reviewing the changes",
       "branch": "preparing the branch",
+      "commit": "saving changes",
+      "publish": "pushing the branch",
+      "pr": "opening a pull request",
       "inspect": "checking output"
     }
   },
@@ -1022,6 +1029,10 @@
     "rerun_review": "Re-run review",
     "toast_review_dispatched": "Code review dispatched",
     "toast_review_dispatch_failed": "Could not dispatch the review",
+    "toast_no_reviewer": "No reviewer available — pick one",
+    "pick_reviewer": "Pick a reviewer",
+    "no_reviewer_title": "No reviewer available",
+    "no_reviewer_body": "No agent could be resolved to review this issue distinct from its author. Pick a reviewer explicitly, or add this agent to a squad.",
     "reviewed_commit": "Commit",
     "view_diff": "View diff",
     "files_reviewed": "{{n}} files reviewed",

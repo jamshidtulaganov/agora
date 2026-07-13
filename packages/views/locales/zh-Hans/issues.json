@@ -380,6 +380,10 @@
     },
     "files_other": "{{count}} 个文件",
     "working": "处理中…",
+    "now_title": "正在进行",
+    "todo_title": "待办",
+    "todo_progress": "{{done}}/{{total}}",
+    "open_view": "打开 {{stage}} 视图",
     "more": "还有 {{count}} 个",
     "show_less": "收起",
     "cmd": {
@@ -389,6 +393,9 @@
       "build": "正在构建应用",
       "review": "正在查看改动",
       "branch": "正在准备分支",
+      "commit": "正在保存更改",
+      "publish": "正在推送分支",
+      "pr": "正在创建合并请求",
       "inspect": "正在检查输出"
     }
   },
@@ -1007,6 +1014,10 @@
     "rerun_review": "重新运行评审",
     "toast_review_dispatched": "代码评审已派发",
     "toast_review_dispatch_failed": "无法派发评审",
+    "toast_no_reviewer": "没有可用的评审者 — 请手动选择",
+    "pick_reviewer": "选择评审者",
+    "no_reviewer_title": "没有可用的评审者",
+    "no_reviewer_body": "未能解析出一个不同于作者的评审智能体。请手动选择评审者，或将该智能体加入小队。",
     "reviewed_commit": "提交",
     "view_diff": "查看差异",
     "files_reviewed": "已评审 {{n}} 个文件",
