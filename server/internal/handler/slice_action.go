@@ -1039,6 +1039,57 @@ func issueMetadataInt(raw []byte, key string) int {
 	}
 }
 
+// issueMetadataString reads a string-valued issue-metadata key, "" when unset,
+// malformed, or not a string. Mirrors issueMetadataInt.
+func issueMetadataString(raw []byte, key string) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var meta map[string]any
+	if json.Unmarshal(raw, &meta) != nil {
+		return ""
+	}
+	if s, ok := meta[key].(string); ok {
+		return strings.TrimSpace(s)
+	}
+	return ""
+}
+
+// Stage-cast metadata keys. The orchestrator (or a human in the cockpit) pins a
+// specific agent to a stage of THIS issue's pipeline; the auto-dispatch honors
+// the cast before falling back to the workspace QA / dev-squad default. This is
+// how "the orchestrator controls which agent runs each stage" (per-task casting)
+// is expressed without a schema change — same jsonb metadata as the autoroute
+// counter. A dev slot is not stored: the dev agent IS the issue's assignee,
+// which the orchestrator sets by delegating.
+const (
+	metaCastQAAgent     = "cast_qa_agent_id"
+	metaCastReviewAgent = "cast_review_agent_id"
+)
+
+// castAgentForStage resolves a per-issue stage cast: the agent pinned to this
+// stage (metaKey), when it is a real, ready agent in the issue's workspace.
+// ok=false when unset, malformed, missing, or not ready — the caller then falls
+// back to its own default agent-selection logic, so a stale cast never wedges
+// the pipeline (it degrades to today's behavior).
+func (h *Handler) castAgentForStage(ctx context.Context, issue db.Issue, metaKey string) (db.Agent, bool) {
+	raw := issueMetadataString(issue.Metadata, metaKey)
+	if raw == "" {
+		return db.Agent{}, false
+	}
+	id, err := util.ParseUUID(raw)
+	if err != nil {
+		return db.Agent{}, false
+	}
+	agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
+		ID: id, WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil || !sliceAgentReady(agent) {
+		return db.Agent{}, false
+	}
+	return agent, true
+}
+
 // qaGateEnforced gates the STRUCTURAL QA gate: when on, a squad-orchestrated
 // issue cannot jump straight to `done` without a QA sign-off — a direct
 // →done transition is redirected to →in_review (which fires the QA lead via
@@ -2037,8 +2088,15 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	var runner db.Agent
 	var agents []db.Agent
 	routedToLead := false
+	// Per-issue QA cast wins over the workspace default: when the orchestrator
+	// (or a human in the cockpit) pinned a QA agent to this task, run QA there.
+	// A missing/stale cast falls through to today's lead-routing / roster logic.
+	if cast, ok := h.castAgentForStage(ctx, issue, metaCastQAAgent); ok {
+		runner = cast
+		agents = []db.Agent{cast}
+	}
 	devOrchestrated := h.issueDevOrchestrated(ctx, issue)
-	if devOrchestrated && !trivial {
+	if runner.ID == (pgtype.UUID{}) && devOrchestrated && !trivial {
 		if leader, ok := h.qaSquadLeader(ctx, issue.WorkspaceID); ok {
 			runner = leader
 			agents = []db.Agent{leader}

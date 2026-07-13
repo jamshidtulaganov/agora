@@ -221,6 +221,12 @@ func (h *Handler) resolveReviewerAgent(ctx context.Context, issue db.Issue) (db.
 	if issue.AssigneeType.Valid && issue.AssigneeType.String == "agent" && issue.AssigneeID.Valid {
 		authorID = uuidToString(issue.AssigneeID)
 	}
+	// A per-issue review cast wins — the orchestrator pinned a reviewer for this
+	// task — but the hard invariant holds: a cast reviewer that IS the author is
+	// ignored (an agent never reviews its own diff) and falls through below.
+	if cast, ok := h.castAgentForStage(ctx, issue, metaCastReviewAgent); ok && uuidToString(cast.ID) != authorID {
+		return cast, true
+	}
 	if leader, ok := h.orchestratorForIssue(ctx, issue); ok && sliceAgentReady(leader) && uuidToString(leader.ID) != authorID {
 		return leader, true
 	}

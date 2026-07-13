@@ -1075,6 +1075,91 @@ func TestMaybeRouteToDevLeadOnQAFail_Gating(t *testing.T) {
 	})
 }
 
+// TestCastAgentForStage covers the per-issue stage-cast resolver: an unset cast
+// yields no agent (caller falls back), a valid pinned agent resolves, and a
+// malformed / non-workspace id degrades to no-cast rather than wedging.
+func TestCastAgentForStage(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	devAgentID, castAgentID := qaFailAutorouteFixture(t, ctx, false)
+	issueID := sliceActionTestIssue(t, "agent", devAgentID)
+
+	setCast := func(val string) db.Issue {
+		if _, err := testHandler.Queries.SetIssueMetadataKey(ctx, db.SetIssueMetadataKeyParams{
+			ID: testUUID(issueID), WorkspaceID: testUUID(testWorkspaceID),
+			Key: metaCastQAAgent, Value: []byte(strconv.Quote(val)),
+		}); err != nil {
+			t.Fatalf("set cast metadata: %v", err)
+		}
+		issue, err := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+		if err != nil {
+			t.Fatalf("reload issue: %v", err)
+		}
+		return issue
+	}
+
+	// Unset -> no cast.
+	issue, _ := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+	if _, ok := testHandler.castAgentForStage(ctx, issue, metaCastQAAgent); ok {
+		t.Error("no cast metadata must resolve ok=false")
+	}
+
+	// Valid, ready agent in the workspace -> resolves it.
+	got, ok := testHandler.castAgentForStage(ctx, setCast(castAgentID), metaCastQAAgent)
+	if !ok || uuidToString(got.ID) != castAgentID {
+		t.Errorf("cast must resolve the pinned agent %s, got ok=%v id=%s", castAgentID, ok, uuidToString(got.ID))
+	}
+
+	// Malformed id -> no cast (degrade, do not wedge).
+	if _, ok := testHandler.castAgentForStage(ctx, setCast("not-a-uuid"), metaCastQAAgent); ok {
+		t.Error("a malformed cast id must resolve ok=false")
+	}
+
+	// Well-formed but unknown agent id (a workspace id, not an agent) -> no cast.
+	if _, ok := testHandler.castAgentForStage(ctx, setCast(testWorkspaceID), metaCastQAAgent); ok {
+		t.Error("a cast id that is not an agent in the workspace must resolve ok=false")
+	}
+}
+
+// TestResolveReviewerAgent_HonorsCast asserts the review cast wins over the
+// default resolution order, but never breaks the author-exclusion invariant: a
+// cast reviewer that IS the diff's author is ignored.
+func TestResolveReviewerAgent_HonorsCast(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	devAgentID, reviewerAgentID := qaFailAutorouteFixture(t, ctx, false)
+	issueID := sliceActionTestIssue(t, "agent", devAgentID)
+
+	setReviewCast := func(val string) db.Issue {
+		if _, err := testHandler.Queries.SetIssueMetadataKey(ctx, db.SetIssueMetadataKeyParams{
+			ID: testUUID(issueID), WorkspaceID: testUUID(testWorkspaceID),
+			Key: metaCastReviewAgent, Value: []byte(strconv.Quote(val)),
+		}); err != nil {
+			t.Fatalf("set review cast: %v", err)
+		}
+		issue, err := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+		if err != nil {
+			t.Fatalf("reload issue: %v", err)
+		}
+		return issue
+	}
+
+	// A distinct cast reviewer wins.
+	got, ok := testHandler.resolveReviewerAgent(ctx, setReviewCast(reviewerAgentID))
+	if !ok || uuidToString(got.ID) != reviewerAgentID {
+		t.Errorf("review cast must pick the pinned reviewer %s, got ok=%v id=%s", reviewerAgentID, ok, uuidToString(got.ID))
+	}
+
+	// A cast reviewer that IS the author is ignored (never self-review).
+	if got, ok := testHandler.resolveReviewerAgent(ctx, setReviewCast(devAgentID)); ok && uuidToString(got.ID) == devAgentID {
+		t.Error("a cast reviewer equal to the author must be ignored")
+	}
+}
+
 // TestMaybeRecoverSquadTaskFailure_ReTriggersLeader is the BUG-2 happy path: a
 // squad-member dev task dies (idle_watchdog) on a still-in-progress issue with
 // nothing else queued → the squad LEADER is re-woken with an @-mention carrying
