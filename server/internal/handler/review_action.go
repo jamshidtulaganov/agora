@@ -294,6 +294,12 @@ func (h *Handler) maybeRunReviewOnQAPass(ctx context.Context, issue db.Issue, la
 	if strings.ToLower(strings.TrimSpace(labelName)) != "qa:pass" {
 		return
 	}
+	// Manual pipeline mode: the orchestrator drives review itself. Wake it to
+	// dispatch run_review instead of auto-selecting a reviewer.
+	if pipelineManual(issue) {
+		h.wakeOrchestratorManual(ctx, issue, "QA passed on this task — dispatch code review (run_review) to your reviewer pick", userID)
+		return
+	}
 	// Serialize per issue: two ingress paths can land the same qa:pass
 	// concurrently (capture + CLI label attach), and both would pass the
 	// marker check before either writes its dispatch comment.

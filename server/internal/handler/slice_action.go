@@ -1065,6 +1065,12 @@ func issueMetadataString(raw []byte, key string) string {
 const (
 	metaCastQAAgent     = "cast_qa_agent_id"
 	metaCastReviewAgent = "cast_review_agent_id"
+	// metaPipelineMode selects who drives this issue's stage transitions.
+	// "" / "auto" (default) = the auto-QA/review/merge reflexes fire. "manual"
+	// = the reflexes step back and the orchestrator drives each stage itself
+	// (it is woken at each gate). This is the per-issue "everything in the
+	// orchestrator's hands" switch.
+	metaPipelineMode = "pipeline_mode"
 )
 
 // castAgentForStage resolves a per-issue stage cast: the agent pinned to this
@@ -1088,6 +1094,42 @@ func (h *Handler) castAgentForStage(ctx context.Context, issue db.Issue, metaKey
 		return db.Agent{}, false
 	}
 	return agent, true
+}
+
+// pipelineManual reports whether this issue is in manual pipeline mode — the
+// orchestrator drives its stage transitions instead of the auto-QA/review/merge
+// reflexes. Default (unset / "auto") is false.
+func pipelineManual(issue db.Issue) bool {
+	return strings.EqualFold(issueMetadataString(issue.Metadata, metaPipelineMode), "manual")
+}
+
+// wakeOrchestratorManual nudges the issue's orchestrator to drive the next
+// pipeline stage itself — used when manual mode suppresses an auto-reflex, so
+// the pipeline never stalls waiting on automation that has stepped back. The
+// nudge is a member-authored @mention comment that triggers a run for the
+// orchestrator (same contract as the qa:fail autoroute). Best-effort: no ready
+// agent orchestrator -> silent no-op (exactly what the suppressed reflex would
+// have done). Fires once per transition — the caller is already guarded to the
+// prev!=X->X edge — so it does not loop.
+func (h *Handler) wakeOrchestratorManual(ctx context.Context, issue db.Issue, action, userID string) {
+	orch, ok := h.orchestratorForIssue(ctx, issue)
+	if !ok || !sliceAgentReady(orch) {
+		return
+	}
+	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(orch.Name), uuidToString(orch.ID)) +
+		action + " — manual pipeline mode is on, so the automation is stepping back and YOU drive this stage."
+	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+		AuthorType: "member", AuthorID: parseUUID(userID),
+		Content: content, Type: "comment", ParentID: pgtype.UUID{Valid: false},
+	})
+	if err != nil {
+		slog.Warn("manual pipeline: wake orchestrator failed", "error", err, "issue_id", uuidToString(issue.ID))
+		return
+	}
+	h.triggerTasksForComment(ctx, issue, comment, nil, "member", userID, nil)
+	slog.Info("manual pipeline: woke orchestrator to drive stage",
+		"issue_id", uuidToString(issue.ID), "orchestrator_agent_id", uuidToString(orch.ID))
 }
 
 // qaGateEnforced gates the STRUCTURAL QA gate: when on, a squad-orchestrated
@@ -1737,6 +1779,11 @@ func (h *Handler) maybeMergeOnQAPass(ctx context.Context, issue db.Issue, labelN
 	if !sprintPRModeEnabled() {
 		return
 	}
+	// Manual pipeline mode: the orchestrator owns the merge decision (it is
+	// woken at the review gate). Auto-merge steps back.
+	if pipelineManual(issue) {
+		return
+	}
 	gateLabel := strings.ToLower(strings.TrimSpace(labelName))
 	if gateLabel != "qa:pass" && gateLabel != service.ReviewLabelPass {
 		return
@@ -2049,6 +2096,12 @@ func lockIssueQA(issueID string) func() {
 // transition so it runs once per entry.
 func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, actorType, actorID string) {
 	if !h.autoQAEnabled(ctx, issue) {
+		return
+	}
+	// Manual pipeline mode: the orchestrator drives QA itself. Wake it to
+	// dispatch run_qa instead of auto-firing the QA roster.
+	if pipelineManual(issue) {
+		h.wakeOrchestratorManual(ctx, issue, "Dev is done and this task moved to in_review — dispatch QA to the agent you want (run_qa on your QA pick)", actorID)
 		return
 	}
 	defer lockIssueQA(uuidToString(issue.ID))()

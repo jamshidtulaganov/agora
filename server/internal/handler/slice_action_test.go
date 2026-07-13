@@ -1160,6 +1160,67 @@ func TestResolveReviewerAgent_HonorsCast(t *testing.T) {
 	}
 }
 
+// TestPipelineManual is the pure resolver: only an explicit "manual" (any case)
+// flips the switch; unset / "auto" / anything else stays on autopilot.
+func TestPipelineManual(t *testing.T) {
+	mk := func(v string) db.Issue {
+		if v == "" {
+			return db.Issue{}
+		}
+		return db.Issue{Metadata: []byte(`{"pipeline_mode":` + strconv.Quote(v) + `}`)}
+	}
+	if pipelineManual(mk("")) {
+		t.Error("unset pipeline_mode must be auto (false)")
+	}
+	if pipelineManual(mk("auto")) {
+		t.Error(`"auto" must be false`)
+	}
+	if !pipelineManual(mk("manual")) {
+		t.Error(`"manual" must be true`)
+	}
+	if !pipelineManual(mk("MANUAL")) {
+		t.Error("manual must be case-insensitive")
+	}
+}
+
+// TestPipelineManual_WakesOrchestratorNotAutoQA: in manual mode the in_review
+// auto-QA reflex steps back and instead wakes the orchestrator (an @mention that
+// triggers its run) to dispatch QA itself — the pipeline stays in its hands.
+func TestPipelineManual_WakesOrchestratorNotAutoQA(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	t.Setenv("AGORA_AUTO_QA_ENABLED", "true")
+	devAgentID, leaderAgentID := qaFailAutorouteFixture(t, ctx, true) // dev in a squad led by leader
+	issueID := sliceActionTestIssue(t, "agent", devAgentID)
+	if _, err := testHandler.Queries.SetIssueMetadataKey(ctx, db.SetIssueMetadataKeyParams{
+		ID: testUUID(issueID), WorkspaceID: testUUID(testWorkspaceID),
+		Key: metaPipelineMode, Value: []byte(strconv.Quote("manual")),
+	}); err != nil {
+		t.Fatalf("set manual mode: %v", err)
+	}
+	issue, err := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+	if err != nil {
+		t.Fatalf("load issue: %v", err)
+	}
+
+	testHandler.maybeRunQAOnInReview(ctx, issue, "member", testUserID)
+
+	var content string
+	if err := testPool.QueryRow(ctx, `
+		SELECT content FROM comment WHERE issue_id = $1 ORDER BY created_at DESC LIMIT 1
+	`, issueID).Scan(&content); err != nil {
+		t.Fatalf("manual mode must post a wake comment: %v", err)
+	}
+	if !strings.Contains(content, "mention://agent/"+leaderAgentID) {
+		t.Errorf("manual mode must @mention the orchestrator (leader), got: %q", content)
+	}
+	if !strings.Contains(content, "manual pipeline mode") {
+		t.Errorf("wake comment should name manual mode, got: %q", content)
+	}
+}
+
 // TestMaybeRecoverSquadTaskFailure_ReTriggersLeader is the BUG-2 happy path: a
 // squad-member dev task dies (idle_watchdog) on a still-in-progress issue with
 // nothing else queued → the squad LEADER is re-woken with an @-mention carrying
