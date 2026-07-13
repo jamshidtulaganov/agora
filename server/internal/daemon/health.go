@@ -1729,7 +1729,11 @@ func editorUserDataDir(key string) (string, error) {
 	//   User scope, so they hold regardless of what the copied profile says: no
 	//   workspace-trust prompt (the agent authored its own isolated branch — it
 	//   is the author, the human is the reviewer), no Getting-Started tab
-	//   covering the code, no telemetry.
+	//   covering the code, no telemetry, and a TRIMMED chrome for the co-code
+	//   surface — the vibe coder embeds this IDE, so hide the status bar,
+	//   minimap, breadcrumbs, layout controls, the SCM commit graph + git action
+	//   buttons that read as raw-git clutter. The activity bar stays so Explorer
+	//   / Source Control are still one click away for a dev who opens Code.
 	userDir := filepath.Join(dir, "User")
 	settingsPath := filepath.Join(userDir, "settings.json")
 	if _, statErr := os.Stat(settingsPath); os.IsNotExist(statErr) {
@@ -1763,7 +1767,20 @@ func editorUserDataDir(key string) (string, error) {
   "security.workspace.trust.enabled": false,
   "workbench.startupEditor": "none",
   "workbench.tips.enabled": false,
-  "telemetry.telemetryLevel": "off"
+  "telemetry.telemetryLevel": "off",
+  "workbench.statusBar.visible": false,
+  "workbench.layoutControl.enabled": false,
+  "breadcrumbs.enabled": false,
+  "editor.minimap.enabled": false,
+  "scm.showHistoryGraph": false,
+  "git.openRepositoryInParentFolders": "never",
+  "git.showActionButton": {
+    "commit": false,
+    "publish": false,
+    "sync": false
+  },
+  "outline.showVariables": false,
+  "explorer.compactFolders": false
 }
 `), 0o600)
 		}
