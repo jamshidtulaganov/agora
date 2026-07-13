@@ -48,6 +48,7 @@ import { ProjectResourcesSection } from "./project-resources-section";
 import { ProjectConventionsSection } from "./project-conventions-section";
 import { ProjectSquadPicker } from "./project-squad-picker";
 import { ProjectQASection } from "./project-qa-section";
+import { ProjectPipelineSection } from "./project-pipeline-section";
 import { ProjectDesignSection } from "./project-design-section";
 import { ProjectBitrixSection } from "./project-bitrix-section";
 import { ProjectSprintsSection } from "./project-sprints-section";
@@ -886,6 +887,9 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
 
       {/* QA smoke configuration (run_qa gate) */}
       <ProjectQASection projectId={projectId} />
+
+      {/* Per-project pipeline config (auto-QA / fail-autoroute / auto-review …) */}
+      <ProjectPipelineSection projectId={projectId} />
 
       {/* Design system manifest (designer + implementation runs) */}
       <ProjectDesignSection projectId={projectId} />

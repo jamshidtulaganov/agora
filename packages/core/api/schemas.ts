@@ -1685,3 +1685,25 @@ export const ReleaseIntegrationSchema = z.object({
 export const ReleaseIntegrationListSchema = z.array(ReleaseIntegrationSchema);
 
 export const EMPTY_RELEASE_INTEGRATIONS: ReleaseIntegration[] = [];
+
+// Per-project pipeline config (GET /api/projects/{id}/config). Lenient — a
+// forward-compat key/kind/source we don't recognise still renders (enum drift
+// downgrades, never white-screens the settings section).
+export const ProjectConfigEntrySchema = z.object({
+  key: z.string(),
+  kind: z.string().default("bool"),
+  category: z.string().default(""),
+  label: z.string().default(""),
+  description: z.string().default(""),
+  value: z.string().default(""),
+  source: z.string().default("default"),
+  overridden_by_project: z.boolean().default(false),
+}).loose();
+
+export const ProjectConfigListSchema = z.object({
+  configs: z.array(ProjectConfigEntrySchema).default([]),
+});
+
+export type ProjectConfigEntry = z.infer<typeof ProjectConfigEntrySchema>;
+
+export const EMPTY_PROJECT_CONFIG: { configs: ProjectConfigEntry[] } = { configs: [] };

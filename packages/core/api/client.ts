@@ -302,6 +302,9 @@ import {
   EMPTY_MCP_CREDENTIAL_STATUS,
   ReleaseIntegrationListSchema,
   EMPTY_RELEASE_INTEGRATIONS,
+  ProjectConfigListSchema,
+  EMPTY_PROJECT_CONFIG,
+  type ProjectConfigEntry,
   EditorTokensResponseSchema,
   EMPTY_EDITOR_TOKENS,
   type EditorTokensResponse,
@@ -2132,6 +2135,29 @@ export class ApiClient {
     return this.fetch(`/api/projects/${id}`, {
       method: "PUT",
       body: JSON.stringify(data),
+    });
+  }
+
+  // Per-project pipeline config — the ProjectScoped QA / review / automation
+  // flags this project overrides for its own issues. GET lists them with the
+  // effective value + source; PUT/DELETE set/clear one override (owner/admin).
+  async getProjectConfig(id: string): Promise<ProjectConfigEntry[]> {
+    const raw = await this.fetch<unknown>(`/api/projects/${id}/config`);
+    return parseWithFallback(raw, ProjectConfigListSchema, EMPTY_PROJECT_CONFIG, {
+      endpoint: "GET /api/projects/{id}/config",
+    }).configs;
+  }
+
+  async setProjectConfig(id: string, key: string, value: string): Promise<void> {
+    await this.fetch(`/api/projects/${id}/config/${encodeURIComponent(key)}`, {
+      method: "PUT",
+      body: JSON.stringify({ value }),
+    });
+  }
+
+  async resetProjectConfig(id: string, key: string): Promise<void> {
+    await this.fetch(`/api/projects/${id}/config/${encodeURIComponent(key)}`, {
+      method: "DELETE",
     });
   }
 

@@ -77,3 +77,29 @@ export function useDeleteProject() {
     },
   });
 }
+
+// Per-project pipeline config — set or clear one ProjectScoped override. Both
+// invalidate the project's config query so the section re-renders the effective
+// value + source.
+export function useSetProjectConfig(projectId: string) {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+  return useMutation({
+    mutationFn: ({ key, value }: { key: string; value: string }) =>
+      api.setProjectConfig(projectId, key, value),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: projectKeys.config(wsId, projectId) });
+    },
+  });
+}
+
+export function useResetProjectConfig(projectId: string) {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+  return useMutation({
+    mutationFn: (key: string) => api.resetProjectConfig(projectId, key),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: projectKeys.config(wsId, projectId) });
+    },
+  });
+}
