@@ -81,7 +81,7 @@ accounts — review whether a 2-10 team needs each at top level.
 - **Source pill only when a human overrode.** AddCase form: Title + Steps + Save
   default, kind/category/priority/modality behind "Add details ▸".
 
-## PHASE C — Review lens
+## PHASE C — Review lens ✅ DONE (11530614)
 
 - **One readiness banner** (`review-lens.tsx:486-518,151-221`): **Ready to merge /
   N blocking / Review not run yet / Merging…**, powered by the unused
@@ -96,13 +96,30 @@ accounts — review whether a 2-10 team needs each at top level.
   Move commit/files/reviewer + gate breakdown behind a "Details" expander;
   collapse findings unless a blocker exists. Deploy pointer → footer link.
 
-## PHASE D — Shared stepper + jargon sweep
+## PHASE D — Shared stepper + jargon sweep ✅ DONE (1fbd0b6d)
 
 - **Stepper** (`sdlc-stepper.tsx`): 8 dot states → 4 (passed / failed / current /
-  pending; fold blocked→failed, active+running→current); keep 1-2 animations
-  (drop the connector shimmer); **drop the detail chip** ("STALE"/"FULL" jargon).
-- **i18n jargon sweep** across `qa_cockpit / qa_evidence / qa_review / test_cases /
-  sdlc / sprint_deploy` — plain English, 4 locales, parity test.
+  pending; blocked→failed, active+running→one breathing "current" dot,
+  skipped→pending look); kept 2 animations (breathing current + change flip),
+  dropped the connector shimmer (+ removed its dead keyframe from base.css);
+  **dropped the detail chip** entirely. Beat is now `[dot] [label]`.
+- **i18n:** unified the "stale" QA state onto plain "out of date" across 4
+  locales (state chip said "stale/hung/stalled" while the filter already said
+  "out of date"). The heavy jargon (tier / verdict enums / gate slugs /
+  qa:fail·pass / no-QA / reconciled) was already killed in A/B/C.
+- **Deferred descriptive-copy polish** (low sell-impact, high multi-locale
+  churn): "golden-path" → "critical path" in the long `suite_*` description
+  sentences, and softening "blocked"/"regression" in body copy. These are
+  legit domain terms for a dev-team buyer; revisit only if a customer trips on
+  them.
+
+---
+
+## STATUS — all four phases shipped on sd-platform (not pushed)
+
+Phase A `dc0a9230`+ · B (QA lens) · C `11530614` · D `1fbd0b6d`, plus the
+remote-box removal (`36cd27be` tail). Every power affordance stayed reachable —
+these changed DEFAULT visibility + wording, not capability. Not on master/prod.
 
 ## Sequencing
 A (Release) → B (QA) → C (Review) → D (stepper + jargon). Each is frontend-only
