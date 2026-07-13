@@ -917,3 +917,34 @@ export function useToggleIssueSubscriber(issueId: string) {
     },
   });
 }
+
+// ---------------------------------------------------------------------------
+// Per-issue metadata KV mutations. Used by the stage-cast pickers (the
+// orchestrator's QA/review casting, settable by a human) and any other
+// pipeline flag stored on issue.metadata. Simple invalidate-on-settle — a cast
+// change is not latency-critical, and the detail refetch re-reads metadata.
+// ---------------------------------------------------------------------------
+
+export function useSetIssueMetadataKey() {
+  const wsId = useWorkspaceId();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { issueId: string; key: string; value: string | number | boolean }) =>
+      api.setIssueMetadataKey(vars.issueId, vars.key, vars.value),
+    onSettled: (_data, _err, vars) => {
+      qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, vars.issueId) });
+    },
+  });
+}
+
+export function useDeleteIssueMetadataKey() {
+  const wsId = useWorkspaceId();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { issueId: string; key: string }) =>
+      api.deleteIssueMetadataKey(vars.issueId, vars.key),
+    onSettled: (_data, _err, vars) => {
+      qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, vars.issueId) });
+    },
+  });
+}

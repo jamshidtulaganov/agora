@@ -767,6 +767,12 @@ export class ApiClient {
     });
   }
 
+  async deleteIssueMetadataKey(id: string, key: string): Promise<void> {
+    await this.fetch(`/api/issues/${id}/metadata/${encodeURIComponent(key)}`, {
+      method: "DELETE",
+    });
+  }
+
   async listChildIssues(id: string): Promise<{ issues: Issue[] }> {
     const raw = await this.fetch<unknown>(`/api/issues/${id}/children`);
     return parseWithFallback(raw, ChildIssuesResponseSchema, { issues: [] }, {

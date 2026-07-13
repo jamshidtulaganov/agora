@@ -65,6 +65,7 @@ import { CommentInput } from "./comment-input";
 import { ResolvedThreadBar } from "./resolved-thread-bar";
 import { collectThreadReplies, deriveThreadResolution } from "./thread-utils";
 import { IssueAgentHeaderChip } from "./issue-agent-header-chip";
+import { StageCastPicker } from "./stage-cast-picker";
 import { ExecutionLogSection } from "./execution-log-section";
 import { EditorSection } from "./editor-section";
 import { QAEvidenceSection } from "./qa-evidence-section";
@@ -108,6 +109,16 @@ import { cn } from "@agora/ui/lib/utils";
 import { ProgressRing } from "./progress-ring";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 import { useT } from "../../i18n";
+
+// Reads a string-valued key off an issue's metadata bag, null when absent or
+// not a string. Used for the stage-cast agent ids (cast_qa_agent_id, ...).
+function metaString(meta: unknown, key: string): string | null {
+  if (meta && typeof meta === "object") {
+    const v = (meta as Record<string, unknown>)[key];
+    if (typeof v === "string") return v;
+  }
+  return null;
+}
 
 function SubscriberPopoverContent({
   members,
@@ -1395,6 +1406,24 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 <TooltipContent side="top">{t(($) => $.detail.prop_orchestrator_hint)}</TooltipContent>
               </Tooltip>
             </PropRow>
+          )}
+          {issue.orchestrator_agent_id && (
+            <>
+              <PropRow label={t(($) => $.detail.prop_qa_agent)}>
+                <StageCastPicker
+                  issueId={issue.id}
+                  stageKey="cast_qa_agent_id"
+                  agentId={metaString(issue.metadata, "cast_qa_agent_id")}
+                />
+              </PropRow>
+              <PropRow label={t(($) => $.detail.prop_review_agent)}>
+                <StageCastPicker
+                  issueId={issue.id}
+                  stageKey="cast_review_agent_id"
+                  agentId={metaString(issue.metadata, "cast_review_agent_id")}
+                />
+              </PropRow>
+            </>
           )}
           <PropRow label={t(($) => $.detail.prop_project)}>
             <ProjectPicker
