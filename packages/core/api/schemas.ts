@@ -250,6 +250,10 @@ export const IssueSchema = z.object({
   priority: z.string(),
   assignee_type: z.string().nullable(),
   assignee_id: z.string().nullable(),
+  // Detail-only: the orchestrator that owns this task's pipeline (see the Issue
+  // type). Optional — list/broadcast paths omit it; nullish tolerates both a
+  // missing key and an explicit null.
+  orchestrator_agent_id: z.string().nullish(),
   creator_type: z.string(),
   creator_id: z.string(),
   parent_issue_id: z.string().nullable(),

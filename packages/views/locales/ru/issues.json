@@ -191,6 +191,8 @@
     "prop_status": "Статус",
     "prop_priority": "Приоритет",
     "prop_assignee": "Исполнитель",
+    "prop_orchestrator": "Оркестратор",
+    "prop_orchestrator_hint": "Владеет пайплайном этой задачи — ведёт dev → QA → review и принимает обратно отклонения QA.",
     "prop_start_date": "Дата начала",
     "prop_due_date": "Срок выполнения",
     "prop_project": "Проект",

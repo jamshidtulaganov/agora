@@ -1381,6 +1381,21 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               )}
             </div>
           </PropRow>
+          {issue.orchestrator_agent_id && (
+            <PropRow label={t(($) => $.detail.prop_orchestrator)}>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <span className="flex items-center gap-1.5 truncate">
+                      <ActorAvatar actorType="agent" actorId={issue.orchestrator_agent_id} size={16} />
+                      <span className="truncate">{getActorName("agent", issue.orchestrator_agent_id)}</span>
+                    </span>
+                  }
+                />
+                <TooltipContent side="top">{t(($) => $.detail.prop_orchestrator_hint)}</TooltipContent>
+              </Tooltip>
+            </PropRow>
+          )}
           <PropRow label={t(($) => $.detail.prop_project)}>
             <ProjectPicker
               projectId={issue.project_id}

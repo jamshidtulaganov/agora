@@ -67,6 +67,13 @@ type IssueResponse struct {
 	// Nullable; omitempty keeps it absent on write/broadcast paths that don't
 	// load it, so the client cache isn't clobbered.
 	SprintID *string `json:"sprint_id,omitempty"`
+	// OrchestratorAgentID is the agent that OWNS this issue's pipeline — the
+	// squad lead, or the solo agent itself (see orchestratorForIssue). Every
+	// agent-run task has one (mandatory attach). DETAIL-ONLY: attached by
+	// GetIssue, never by list endpoints (resolving it per-row would N+1), so it
+	// is absent (omitempty) on list/broadcast paths — the client renders
+	// "Orchestrated by X" only on the issue it opened.
+	OrchestratorAgentID *string `json:"orchestrator_agent_id,omitempty"`
 }
 
 func issueToResponse(i db.Issue, issuePrefix string) IssueResponse {
@@ -1658,6 +1665,13 @@ func (h *Handler) GetIssue(w http.ResponseWriter, r *http.Request) {
 	resp.Labels = &detailLabels
 	if sid, ok := h.sprintIdsByIssue(r.Context(), []pgtype.UUID{issue.ID})[uuidToString(issue.ID)]; ok {
 		resp.SprintID = &sid
+	}
+	// The orchestrator that owns this task's pipeline (mandatory-attach). Detail
+	// only — the client resolves the agent's name/avatar from its own cache, so
+	// we emit just the id (like assignee_id).
+	if orch, ok := h.orchestratorForIssue(r.Context(), issue); ok {
+		oid := uuidToString(orch.ID)
+		resp.OrchestratorAgentID = &oid
 	}
 
 	// Fetch issue reactions.

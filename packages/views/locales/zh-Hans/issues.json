@@ -189,6 +189,8 @@
     "prop_status": "状态",
     "prop_priority": "优先级",
     "prop_assignee": "负责人",
+    "prop_orchestrator": "编排者",
+    "prop_orchestrator_hint": "负责该任务的整个流水线 —— 推动 开发 → 测试 → 评审，并接回测试失败的反馈。",
     "prop_start_date": "开始日期",
     "prop_due_date": "截止日期",
     "prop_project": "项目",
