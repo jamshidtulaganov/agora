@@ -66,6 +66,7 @@ import { ResolvedThreadBar } from "./resolved-thread-bar";
 import { collectThreadReplies, deriveThreadResolution } from "./thread-utils";
 import { IssueAgentHeaderChip } from "./issue-agent-header-chip";
 import { StageCastPicker } from "./stage-cast-picker";
+import { PipelineModePicker } from "./pipeline-mode-picker";
 import { ExecutionLogSection } from "./execution-log-section";
 import { EditorSection } from "./editor-section";
 import { QAEvidenceSection } from "./qa-evidence-section";
@@ -1410,6 +1411,12 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           )}
           {issue.orchestrator_agent_id && (
             <>
+              <PropRow label={t(($) => $.detail.prop_pipeline)}>
+                <PipelineModePicker
+                  issueId={issue.id}
+                  mode={metaString(issue.metadata, "pipeline_mode")}
+                />
+              </PropRow>
               <PropRow label={t(($) => $.detail.prop_qa_agent)}>
                 <StageCastPicker
                   issueId={issue.id}
