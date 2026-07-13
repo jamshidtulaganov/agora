@@ -1498,6 +1498,12 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				if note := h.sliceActionProjectConventionsContext(r.Context(), issue); note != "" {
 					resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + strings.TrimSpace(note))
 				}
+				// Self-verify (close the vibe-coding loop): a build agent should
+				// RUN + LOOK at a UI/behavior change in the SAME shared daemon
+				// browser the human watches, not just assume it works. Advisory —
+				// pure-backend changes ignore it. QA agents already get the more
+				// detailed run_qa browser clause; this is the DEV-side counterpart.
+				resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + strings.TrimSpace(agentSelfVerifyClause))
 				// Figma access rides along on every claim whose issue
 				// references a design: fill (or auto-provision) the figma MCP
 				// server from the workspace credential and teach the agent to

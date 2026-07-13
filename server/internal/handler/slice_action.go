@@ -348,6 +348,15 @@ func buildSliceInstruction(kind, scope string) string {
 // review browser (see buildSliceInstruction) so the reviewer watches live.
 const qaLiveWatchClause = " LIVE WATCH (so a QA reviewer can watch you drive the browser in real time): when you drive a real browser, do NOT launch your own — attach to the SHARED review browser. With AGORA_DAEMON_PORT set, POST http://127.0.0.1:$AGORA_DAEMON_PORT/editor/browser/start with body {\"workdir\":\"qa-target:<THE QA TARGET BASE URL you are testing, e.g. the manifest base_url>\"}; it returns {\"cdp_url\":\"http://127.0.0.1:<port>\"}. Then in your Playwright script use `const browser = await chromium.connectOverCDP(cdp_url); const context = browser.contexts()[0] ?? await browser.newContext(); const page = context.pages()[0] ?? await context.newPage();` INSTEAD of chromium.launch(). Use the SAME `qa-target:<url>` key the review pane uses (the exact QA target base URL) so you and the reviewer share ONE browser and they see your actions live. Tracing (TRACE_PATH) still works on this connected context. Fall back to chromium.launch() ONLY if that POST fails or AGORA_DAEMON_PORT is unset."
 
+// agentSelfVerifyClause closes the vibe-coding loop for a BUILD agent: after it
+// changes how the app runs or looks, it should RUN it and LOOK — using the SAME
+// shared daemon browser the QA reviewer / human watches, so the human sees the
+// agent verify its own work live. Rides along on every claim (advisory: an
+// agent whose change is pure-backend simply ignores it). Reuses the endpoints
+// the QA clause uses — /editor/preview to bring the app up, /editor/browser/start
+// + connectOverCDP to drive the shared Chromium — so build + QA share one browser.
+const agentSelfVerifyClause = " SELF-VERIFY YOUR OWN WORK (do this before calling a UI/behavior change \"done\" — do NOT just assume it works): (1) Bring the app up on THIS daemon: POST http://127.0.0.1:$AGORA_DAEMON_PORT/editor/preview with body {\"workdir\":\"<your absolute working directory — run pwd>\"} (it auto-detects the dev command + installs deps); it returns {\"url\":\"http://127.0.0.1:<port>/\"} — that is your preview URL. (2) Open + drive that URL in the SHARED review browser (the human watches you live — do NOT launch your own): POST http://127.0.0.1:$AGORA_DAEMON_PORT/editor/browser/start with body {\"workdir\":\"<that preview URL>\"}; it returns {\"cdp_url\":\"http://127.0.0.1:<port>\"}, then in a Playwright script use `const browser = await chromium.connectOverCDP(cdp_url); const context = browser.contexts()[0] ?? await browser.newContext(); const page = context.pages()[0] ?? await context.newPage();` — navigate to the screen you changed, screenshot it, and CONFIRM it renders + behaves as you intended. Fix anything wrong and re-check. Use the preview URL as the shared `qa-target` key so you and the reviewer share ONE browser. Skip this only for pure backend / non-UI changes."
+
 // sliceActionOpensPR reports whether a slice-action kind produces a pull request
 // (and so benefits from a deterministic, QA-resolvable branch name). review_part
 // posts an advisory comment and opens nothing.
