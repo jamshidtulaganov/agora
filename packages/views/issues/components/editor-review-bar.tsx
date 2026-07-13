@@ -368,7 +368,7 @@ export function EditorReviewBar({
           ) : (
             <GitPullRequest className="h-3 w-3" />
           )}
-          {openPr ? "Accept → Update PR" : "Accept → Open PR"}
+          {openPr ? "Ship update" : "Ship it"}
         </button>
         {confirmDiscard ? (
           <>
@@ -379,7 +379,7 @@ export function EditorReviewBar({
               className="inline-flex items-center gap-1 rounded-md bg-destructive px-2 py-1 text-xs font-medium text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:opacity-50"
             >
               {busy === "discard" && <Loader2 className="h-3 w-3 animate-spin" />}
-              Confirm discard
+              Yes, undo
             </button>
             <button
               type="button"
@@ -394,11 +394,11 @@ export function EditorReviewBar({
             type="button"
             disabled={busy !== null || !hasChanges}
             onClick={() => setConfirmDiscard(true)}
-            title="Discard the changes and reset the worktree to its base"
+            title="Undo the agent's changes — throws them away (your app is on a safe copy, nothing else breaks)"
             className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
           >
             <X className="h-3 w-3" />
-            Discard
+            Undo
           </button>
         )}
       </div>

@@ -80,7 +80,7 @@ export function EditorSection({
   // Left pane of the modal, kept section-owned (controlled into the workbench)
   // so auto-expand-to-Live below and pane persistence across dialog
   // close/reopen behave exactly as before the workbench extraction.
-  const [leftPane, setLeftPane] = useState<EditorWorkbenchPane>("code");
+  const [leftPane, setLeftPane] = useState<EditorWorkbenchPane>("live");
   // Is an agent currently running on this issue? Drives the auto-selection of
   // the spectator view when the modal auto-expands.
   const { data: taskSnapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));

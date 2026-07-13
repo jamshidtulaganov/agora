@@ -442,8 +442,9 @@ export function EditorWorkbench({
   // Left pane: the live spectator editor (watch the agent code), the real
   // code editor, or a live preview of the running app (the vibecoder's "see
   // it work, not the diff"). Controlled by the Dialog host, self-owned in the
-  // Dev lens.
-  const [ownLeftPane, setOwnLeftPane] = useState<EditorWorkbenchPane>("code");
+  // Dev lens. Defaults to Watch — a vibe coder lands on "watch the agent /
+  // nothing running yet", not the raw IDE (Code is a click away for devs).
+  const [ownLeftPane, setOwnLeftPane] = useState<EditorWorkbenchPane>("live");
   const leftPane = leftPaneProp ?? ownLeftPane;
   const setLeftPane = onLeftPaneChange ?? setOwnLeftPane;
 
@@ -671,6 +672,8 @@ export function EditorWorkbench({
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1 text-xs">
+            {/* App-first order for the vibe-coder default: Watch the agent →
+                Preview the running app → Code (the IDE, for devs) → Browser. */}
             <button
               type="button"
               onClick={() => setLeftPane("live")}
@@ -681,25 +684,13 @@ export function EditorWorkbench({
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
-              Live
+              Watch
               {hasLiveRun && (
                 <span
                   aria-hidden
                   className="size-1.5 rounded-full bg-info motion-safe:animate-pulse"
                 />
               )}
-            </button>
-            <button
-              type="button"
-              onClick={() => setLeftPane("code")}
-              className={cn(
-                "rounded px-2 py-0.5 font-medium transition-colors",
-                leftPane === "code"
-                  ? "bg-accent text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              Code
             </button>
             <button
               type="button"
@@ -712,6 +703,18 @@ export function EditorWorkbench({
               )}
             >
               Preview
+            </button>
+            <button
+              type="button"
+              onClick={() => setLeftPane("code")}
+              className={cn(
+                "rounded px-2 py-0.5 font-medium transition-colors",
+                leftPane === "code"
+                  ? "bg-accent text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              Code
             </button>
             <button
               type="button"

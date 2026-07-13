@@ -99,16 +99,19 @@ describe("EditorWorkbench", () => {
     apiMocks.getProject.mockResolvedValue({ id: "project-1", settings: {} });
   });
 
-  it("renders the pane switcher, ask bar, agent chips, and the code iframe by default", () => {
+  it("renders the pane switcher, ask bar, agent chips, and the Watch pane by default", () => {
     renderWorkbench();
 
-    for (const name of ["Live", "Code", "Preview", "Browser"]) {
+    for (const name of ["Watch", "Code", "Preview", "Browser"]) {
       expect(screen.getByRole("button", { name })).toBeInTheDocument();
     }
     expect(screen.getByTestId("ask-bar")).toBeInTheDocument();
     expect(screen.getByTestId("review-bar")).toBeInTheDocument();
     expect(screen.getByText("coder")).toBeInTheDocument();
-    // Default pane is Code → the code-server iframe mounts.
+    // Default pane is Watch (the vibe-coder default) → the live spectator
+    // mounts; the code-server iframe stays mounted (hidden) so switching to
+    // Code never reloads VS Code.
+    expect(screen.getByTestId("live-agent-editor")).toBeInTheDocument();
     expect(screen.getByTitle("code editor (expanded)")).toBeInTheDocument();
     expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
   });
@@ -126,7 +129,7 @@ describe("EditorWorkbench", () => {
     expect(screen.getByTestId("browser-pane")).toBeInTheDocument();
     expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Live" }));
+    fireEvent.click(screen.getByRole("button", { name: "Watch" }));
     expect(screen.getByTestId("live-agent-editor")).toBeInTheDocument();
     expect(screen.queryByTestId("browser-pane")).not.toBeInTheDocument();
   });
