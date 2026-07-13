@@ -154,7 +154,7 @@ func (h *Handler) approveReviewDecision(w http.ResponseWriter, r *http.Request, 
 	// critical/guarded work is NOT refused here — a human decided — but the
 	// order carries cautious wording so the lead double-checks the diff scope.
 	mergedDispatch := false
-	if leader, ok := h.devSquadLeaderForIssue(ctx, issue); ok && sliceAgentReady(leader) {
+	if leader, ok := h.orchestratorForIssue(ctx, issue); ok && sliceAgentReady(leader) {
 		branchClause := "the branch this PR targets"
 		if sprint, err := h.Queries.GetSprintForIssue(ctx, issue.ID); err == nil {
 			if b := SprintBranchFor(sprint); b != "" {
@@ -227,7 +227,7 @@ func (h *Handler) requestReviewChanges(w http.ResponseWriter, r *http.Request, i
 		}
 	}
 	if !resolved {
-		if leader, ok := h.devSquadLeaderForIssue(ctx, issue); ok && sliceAgentReady(leader) {
+		if leader, ok := h.orchestratorForIssue(ctx, issue); ok && sliceAgentReady(leader) {
 			author, resolved = leader, true
 		}
 	}

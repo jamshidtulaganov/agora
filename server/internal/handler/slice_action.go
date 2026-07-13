@@ -1434,19 +1434,18 @@ func (h *Handler) maybeRouteToDevLeadOnQAFail(ctx context.Context, issue db.Issu
 	if strings.ToLower(strings.TrimSpace(labelName)) != "qa:fail" {
 		return
 	}
-	// Resolve the dev-squad lead for BOTH shapes of orchestrated issue: one
-	// assigned to a squad, and one assigned to an agent that belongs to a
-	// squad. Solo / non-squad issues get no lead -> today's manual triage stands.
-	leader, ok := h.devSquadLeaderForIssue(ctx, issue)
+	// Every agent-run task has an orchestrator (squad lead, or the solo agent
+	// itself). Route the QA-fail feedback to it so no task wedges silently. A
+	// human/member-assigned or unassigned issue has no agent orchestrator ->
+	// manual triage stands.
+	leader, ok := h.orchestratorForIssue(ctx, issue)
 	if !ok {
 		return
 	}
-	// Reassigning to the agent that just failed teaches nothing (covers the
-	// case where the failing assignee IS the squad leader).
-	if issue.AssigneeType.Valid && issue.AssigneeType.String == "agent" &&
-		issue.AssigneeID.Valid && uuidToString(issue.AssigneeID) == uuidToString(leader.ID) {
-		return
-	}
+	// The orchestrator absorbs its OWN QA-fail too: when it is also the failing
+	// assignee (a solo self-orchestrator, or a lead that took the work directly)
+	// we still route — the difference from a blind retry is the QA-fail feedback
+	// comment it now carries. The attempt cap below bounds the retry loop.
 	// Loop cap: a persistently-failing issue must not ping-pong dev<->QA
 	// forever. After qaFailAutorouteMaxAttempts routes, stop and leave it for a
 	// human (the qa:fail still surfaces in the QA queue). Cleared on qa:pass.
@@ -1486,8 +1485,8 @@ func (h *Handler) maybeRouteToDevLeadOnQAFail(ctx context.Context, issue db.Issu
 	}
 
 	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(leader.Name), uuidToString(leader.ID)) +
-		summary + " Reassigned back to you for triage — re-delegate to a dev agent or fix it yourself, " +
-		"then move this to in_review to re-fire QA."
+		summary + " You own this task — fix it (or re-delegate to a dev agent), " +
+		"then move it back to in_review to re-run QA."
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
 		AuthorType: "member", AuthorID: parseUUID(userID),
@@ -1498,9 +1497,9 @@ func (h *Handler) maybeRouteToDevLeadOnQAFail(ctx context.Context, issue db.Issu
 		return
 	}
 	h.triggerTasksForComment(ctx, issue, comment, nil, "member", userID, nil)
-	slog.Info("qa-fail autoroute: reassigned to squad lead",
+	slog.Info("qa-fail autoroute: routed to orchestrator",
 		"issue_id", uuidToString(issue.ID),
-		"lead_agent_id", uuidToString(leader.ID),
+		"orchestrator_agent_id", uuidToString(leader.ID),
 		"attempt", attempts+1)
 }
 
@@ -1616,10 +1615,20 @@ func (h *Handler) maybeAutoFileBugOnQAFail(ctx context.Context, issue db.Issue, 
 	slog.Info("qa-fail auto-filed bug", "parent_id", uuidToString(issue.ID), "bug_id", uuidToString(res.Issue.ID))
 }
 
-// devSquadLeaderForIssue resolves the leader of the DEV squad an orchestrated
-// issue belongs to — the squad the issue is assigned to, or the squad of the
-// agent it is assigned to. Returns false for solo / non-squad issues.
-func (h *Handler) devSquadLeaderForIssue(ctx context.Context, issue db.Issue) (db.Agent, bool) {
+// orchestratorForIssue resolves the agent that OWNS this issue's pipeline —
+// the orchestrator. Mandatory-attach means every agent-run task has one, so
+// this never returns false for a live agent assignee:
+//
+//   - squad-assigned   -> the squad's lead (the orchestrator)
+//   - agent in a squad -> that squad's lead
+//   - solo agent       -> the agent itself (it orchestrates its own task,
+//                         driving its dev->QA->review loop and absorbing QA-fail
+//                         feedback until it is given a crew)
+//
+// Only a bare/unassigned issue, or one owned by a human member, resolves to
+// false: nothing agent-driven is running, so there is no orchestrator to route
+// to. The orchestrator is attached at assignment, which is when work starts.
+func (h *Handler) orchestratorForIssue(ctx context.Context, issue db.Issue) (db.Agent, bool) {
 	if !issue.AssigneeType.Valid || !issue.AssigneeID.Valid {
 		return db.Agent{}, false
 	}
@@ -1635,8 +1644,20 @@ func (h *Handler) devSquadLeaderForIssue(ctx context.Context, issue db.Issue) (d
 		squads, err := h.Queries.ListSquadsByMember(ctx, db.ListSquadsByMemberParams{
 			WorkspaceID: issue.WorkspaceID, MemberType: "agent", MemberID: issue.AssigneeID,
 		})
-		if err != nil || len(squads) == 0 {
+		if err != nil {
 			return db.Agent{}, false
+		}
+		if len(squads) == 0 {
+			// Solo agent, no squad: it is its own orchestrator. Mandatory
+			// attach means even a crew-less task has an owner that drives the
+			// pipeline and takes QA-fail feedback back — no task wedges unowned.
+			agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
+				ID: issue.AssigneeID, WorkspaceID: issue.WorkspaceID,
+			})
+			if err != nil {
+				return db.Agent{}, false
+			}
+			return agent, true
 		}
 		leaderID = squads[0].LeaderID
 	default:
@@ -1774,11 +1795,11 @@ func (h *Handler) maybeMergeOnQAPass(ctx context.Context, issue db.Issue, labelN
 		return
 	}
 
-	// Auto-merge (opt-in via AGORA_SPRINT_AUTO_MERGE): route the DEV squad LEAD to
+	// Auto-merge (opt-in via AGORA_SPRINT_AUTO_MERGE): route the orchestrator to
 	// review the diff + merge the PR into the sprint branch, no human in the loop.
-	leader, ok := h.devSquadLeaderForIssue(ctx, issue)
+	leader, ok := h.orchestratorForIssue(ctx, issue)
 	if !ok {
-		return // solo / non-squad — no lead owns the merge; today's flow stands
+		return // no agent orchestrator owns the merge; today's flow stands
 	}
 	content := fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(leader.Name), uuidToString(leader.ID)) +
 		"QA passed (qa:pass) on this task's pull request into `" + branch + "`. As the squad LEAD this is the FINAL gate " +

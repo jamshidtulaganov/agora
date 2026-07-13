@@ -221,7 +221,7 @@ func (h *Handler) resolveReviewerAgent(ctx context.Context, issue db.Issue) (db.
 	if issue.AssigneeType.Valid && issue.AssigneeType.String == "agent" && issue.AssigneeID.Valid {
 		authorID = uuidToString(issue.AssigneeID)
 	}
-	if leader, ok := h.devSquadLeaderForIssue(ctx, issue); ok && sliceAgentReady(leader) && uuidToString(leader.ID) != authorID {
+	if leader, ok := h.orchestratorForIssue(ctx, issue); ok && sliceAgentReady(leader) && uuidToString(leader.ID) != authorID {
 		return leader, true
 	}
 	var candidates []db.Agent

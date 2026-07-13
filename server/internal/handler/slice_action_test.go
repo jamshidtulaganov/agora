@@ -963,9 +963,10 @@ func TestMaybeRouteToDevLeadOnQAFail_ReassignsToSquadLeader(t *testing.T) {
 	}
 }
 
-// TestMaybeRouteToDevLeadOnQAFail_Gating covers every no-op path: disabled,
-// wrong label, no squad (solo agent — today's manual triage stands), and the
-// failing agent IS the leader (reassigning to itself teaches nothing).
+// TestMaybeRouteToDevLeadOnQAFail_Gating covers the gate paths: disabled and
+// wrong-label no-op; an unassigned issue (no agent orchestrator) no-op; and the
+// mandatory-orchestrator routes — a solo agent and a directly-assigned lead both
+// self-route with the QA-fail feedback (bounded by the attempt cap).
 func TestMaybeRouteToDevLeadOnQAFail_Gating(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
@@ -1033,27 +1034,43 @@ func TestMaybeRouteToDevLeadOnQAFail_Gating(t *testing.T) {
 		}
 	})
 
-	t.Run("no_squad_noop", func(t *testing.T) {
+	t.Run("unassigned_noop", func(t *testing.T) {
+		t.Setenv("AGORA_QA_FAIL_AUTOROUTE_ENABLED", "true")
+		issueID := sliceActionTestIssue(t, "", "") // no assignee -> no orchestrator
+		issue, _ := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+		testHandler.maybeRouteToDevLeadOnQAFail(ctx, issue, "qa:fail", testUserID)
+		if reassigned(issueID) {
+			t.Error("an unassigned issue has no agent orchestrator and must not route")
+		}
+	})
+
+	t.Run("solo_agent_self_routes", func(t *testing.T) {
+		// Mandatory orchestrator: a solo agent (no squad) owns its own task, so a
+		// qa:fail routes back to IT with the feedback comment — no silent wedge.
 		t.Setenv("AGORA_QA_FAIL_AUTOROUTE_ENABLED", "true")
 		devAgentID, _ := qaFailAutorouteFixture(t, ctx, false) // no squad membership
 		issueID := sliceActionTestIssue(t, "agent", devAgentID)
 		issue, _ := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
 		testHandler.maybeRouteToDevLeadOnQAFail(ctx, issue, "qa:fail", testUserID)
-		if reassigned(issueID) {
-			t.Error("a solo agent with no squad must not be reassigned (no lead to route to)")
+		if !reassigned(issueID) {
+			t.Error("a solo agent must self-route on qa:fail (it orchestrates its own task)")
+		}
+		updated, _ := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+		if !updated.AssigneeID.Valid || uuidToString(updated.AssigneeID) != devAgentID {
+			t.Errorf("assignee_id = %v, want the solo agent itself %s", updated.AssigneeID, devAgentID)
 		}
 	})
 
-	t.Run("failing_agent_is_leader_noop", func(t *testing.T) {
+	t.Run("failing_agent_is_leader_self_retries", func(t *testing.T) {
+		// The orchestrator absorbs its OWN qa:fail: a directly-assigned lead
+		// re-fires with the feedback comment (the attempt cap bounds the retry).
 		t.Setenv("AGORA_QA_FAIL_AUTOROUTE_ENABLED", "true")
 		_, leaderAgentID := qaFailAutorouteFixture(t, ctx, true)
-		// The LEADER itself is assigned (and somehow fails) — reassigning it to
-		// itself would be a no-op that still burns a comment; skip entirely.
 		issueID := sliceActionTestIssue(t, "agent", leaderAgentID)
 		issue, _ := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
 		testHandler.maybeRouteToDevLeadOnQAFail(ctx, issue, "qa:fail", testUserID)
-		if reassigned(issueID) {
-			t.Error("the leader failing its own issue must not self-reassign")
+		if !reassigned(issueID) {
+			t.Error("the orchestrator must absorb its own qa:fail and re-fire with feedback")
 		}
 	})
 }
