@@ -13,8 +13,7 @@ import {
   SidebarMenuItem,
 } from "@agora/ui/components/ui/sidebar";
 import { cn } from "@agora/ui/lib/utils";
-import { useWorkspaceId } from "@agora/core/hooks";
-import { useWorkspacePaths } from "@agora/core/paths";
+import { useCurrentWorkspace, useWorkspacePaths } from "@agora/core/paths";
 import { agentTaskSnapshotOptions } from "@agora/core/agents";
 import { useActorName } from "@agora/core/workspace/hooks";
 import type { AgentTask } from "@agora/core/types";
@@ -30,8 +29,17 @@ import { useT } from "../i18n";
 // straight to the issue where the full progress lives (the Live editor pane /
 // QA strip). Idle collapses to a calm muted line so the sidebar stays quiet.
 export function WorkspaceRunningIndicator() {
+  // The sidebar can mount before a workspace resolves; useActorName /
+  // useWorkspacePaths throw without one (CLAUDE.md — workspace hooks don't
+  // tolerate a missing provider). Gate on the safe accessor and only mount the
+  // data-bound inner once a workspace exists.
+  const workspace = useCurrentWorkspace();
+  if (!workspace) return null;
+  return <RunningIndicatorInner wsId={workspace.id} />;
+}
+
+function RunningIndicatorInner({ wsId }: { wsId: string }) {
   const { t } = useT("layout");
-  const wsId = useWorkspaceId();
   const wp = useWorkspacePaths();
   const { getActorName, getActorInitials, getActorAvatarUrl } = useActorName();
   const { data: snapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
