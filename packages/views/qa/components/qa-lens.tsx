@@ -11,6 +11,7 @@ import {
   GitBranch,
   ChevronDown,
   MoreHorizontal,
+  CornerUpLeft,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@agora/core/api";
@@ -300,6 +301,10 @@ export function QALensBody({ issueId }: { issueId: string }) {
   // nuance the richer enum carried (pass-with-failing / blocked / stale)
   // survives as a muted secondary line below, not as a competing loud color.
   const chipBucket = verdictBucket(reconciledState);
+  // On a failed verdict the corrective next step is routing back to dev, so the
+  // triage bar promotes "Send back to dev" to the solid primary; otherwise no
+  // action is pushed (pass/pending don't demand one).
+  const isFail = chipBucket === "fail";
 
   // Failing-case count for the "N still failing" caveat — read from the SAME
   // test-cases fetch the live-bay gate already uses (lensCases) rather than
@@ -552,32 +557,34 @@ export function QALensBody({ issueId }: { issueId: string }) {
             {/* /scroll region */}
 
             {/* Triage bar — pinned to the bottom of the column (flex,
-                shrink-0) so the primary actions are always within reach while
-                the region above scrolls. Exactly two primary actions (send
-                back / re-run); regression + file-bug are rarer, so they live
-                behind the overflow menu instead of taking a whole row. */}
+                shrink-0) so the actions stay within reach while the region
+                above scrolls. Right-aligned, content-width cluster (not two
+                stretched half-buttons) so it reads the same on a narrow rail
+                and the wide issue view. On a failed verdict "Send back to dev"
+                is the solid primary — the corrective next step; "Re-run QA" is
+                the secondary retry; regression + file-bug live in the ⋯ menu. */}
             <div className="shrink-0 border-t bg-background pt-4 pb-1">
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="h-8 flex-1 gap-1.5 text-[12px]"
-                  onClick={() => setSendBackOpen(true)}
-                >
-                  <XCircle className="size-3.5" />
-                  {t(($) => $.qa_review.send_back)}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-8 flex-1 gap-1.5 text-[12px]"
+                  className="h-8 gap-1.5 text-[12px]"
                   disabled={rerun.isPending}
                   onClick={() => rerun.mutate()}
                 >
                   {rerun.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
                   {t(($) => $.qa_evidence.rerun)}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={isFail ? "default" : "outline"}
+                  className="h-8 gap-1.5 text-[12px]"
+                  onClick={() => setSendBackOpen(true)}
+                >
+                  <CornerUpLeft className="size-3.5" />
+                  {t(($) => $.qa_review.send_back)}
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger
