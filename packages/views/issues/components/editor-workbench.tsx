@@ -3,6 +3,8 @@
 
 import { useState, useEffect, useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { api } from "@agora/core/api";
+import { issueKeys } from "@agora/core/issues/queries";
 import { agentTaskSnapshotOptions } from "@agora/core/agents";
 import { projectDetailOptions } from "@agora/core/projects/queries";
 import { useWorkspaceId } from "@agora/core/hooks";
@@ -18,7 +20,9 @@ import {
   Play,
 } from "lucide-react";
 import { cn } from "@agora/ui/lib/utils";
+import type { AgentTask } from "@agora/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
+import { TranscriptButton } from "../../common/task-transcript";
 import { EditorChatPanel } from "./editor-chat-panel";
 import { LiveAgentChangesFeed } from "./live-agent-changes-feed";
 import { LiveAgentCodeEditor } from "./live-agent-code-editor";
@@ -521,6 +525,31 @@ export function EditorWorkbench({
     [agentStatusById],
   );
 
+  // The full per-issue task history (same cache the execution log uses, so it
+  // dedupes) — retains OLD terminal runs the live snapshot drops, so the roster
+  // can open a finished agent's transcript however long ago it ran. Fetched
+  // only once an agent is selected.
+  const { data: issueTasks = [] } = useQuery({
+    queryKey: issueKeys.tasks(issueId),
+    queryFn: () => api.listTasksByIssue(issueId),
+    enabled: !!selectedId,
+  });
+
+  // The selected agent's most recent task on this issue — so the roster can open
+  // that session's run transcript even after it finished (the "open a done
+  // agent's work" a Cursor/VS-Code agents window has, not just the live run).
+  const selectedAgentTask = useMemo(() => {
+    if (!selectedId) return null;
+    const stamp = (t: AgentTask) =>
+      new Date(t.started_at ?? t.dispatched_at ?? t.created_at).getTime();
+    let best: AgentTask | null = null;
+    for (const task of issueTasks) {
+      if (task.agent_id !== selectedId) continue;
+      if (!best || stamp(task) > stamp(best)) best = task;
+    }
+    return best;
+  }, [issueTasks, selectedId]);
+
   // Agent review chips — which agents worked on this issue; click to load that
   // agent's worktree into the editor.
   const agentTabs =
@@ -569,6 +598,17 @@ export function EditorWorkbench({
             </button>
           );
         })}
+        {/* Open the selected agent's run transcript — reachable even after the
+            run finished, so the roster is a session switcher + history, not just
+            a live-worktree picker. */}
+        {selectedAgentTask && (
+          <TranscriptButton
+            task={selectedAgentTask}
+            agentName={selectedAgent?.agent_name || "agent"}
+            title={`View ${selectedAgent?.agent_name || "agent"}'s run transcript`}
+            className="ml-0.5"
+          />
+        )}
       </div>
     ) : null;
 
@@ -849,7 +889,11 @@ export function EditorWorkbench({
             </button>
           </div>
           <div className="shrink-0 [&>div]:px-3 [&>div]:py-2">
-            <AgentWorkingIndicator issueId={issueId} allowStop />
+            <AgentWorkingIndicator
+              issueId={issueId}
+              allowStop
+              focusAgentId={selectedId ?? undefined}
+            />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {rightTab === "activity" ? (
