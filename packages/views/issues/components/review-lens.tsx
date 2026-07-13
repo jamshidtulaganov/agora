@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleDashed,
+  ExternalLink,
   Info,
   Loader2,
   OctagonAlert,
@@ -242,9 +243,11 @@ function FindingRow({ finding }: { finding: ReviewFinding }) {
 function ReviewVerdictCard({
   review,
   stale,
+  diffUrl,
 }: {
   review: ReviewVerdict;
   stale: boolean;
+  diffUrl?: string;
 }) {
   const { t } = useT("issues");
 
@@ -301,6 +304,17 @@ function ReviewVerdictCard({
         {review.files_reviewed > 0 && (
           <span>{t(($) => $.review_lens.files_reviewed, { n: review.files_reviewed })}</span>
         )}
+        {diffUrl && (
+          <a
+            href={diffUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+          >
+            {t(($) => $.review_lens.view_diff)}
+            <ExternalLink className="size-3" />
+          </a>
+        )}
       </div>
       {stale && (
         <div className="mt-2 rounded-md bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-700 dark:text-amber-400">
@@ -348,6 +362,14 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
     (prData?.pull_requests ?? []).some(
       (pr) => pr.state === "open" && Date.parse(pr.pr_updated_at) > reviewedAtMs,
     );
+
+  // One-click from the verdict to the diff the agent reviewed: prefer an open
+  // PR, else the newest one on the issue. Links to the PR page (provider-
+  // agnostic — the diff is one tab away on GitHub/GitLab alike).
+  const primaryPr =
+    (prData?.pull_requests ?? []).find((pr) => pr.state === "open") ??
+    (prData?.pull_requests ?? [])[0];
+  const diffUrl = primaryPr?.html_url || undefined;
 
   // merge:override bypasses the deterministic gates by design, so override
   // wins unconditionally; the normal path still needs a clean pass + a ready
@@ -483,7 +505,7 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
                   </p>
                 </div>
               ) : (
-                <ReviewVerdictCard review={review} stale={stale} />
+                <ReviewVerdictCard review={review} stale={stale} diffUrl={diffUrl} />
               )}
             </section>
 

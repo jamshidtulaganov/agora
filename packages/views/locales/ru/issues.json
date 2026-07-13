@@ -1023,6 +1023,7 @@
     "toast_review_dispatched": "Код-ревью запущено",
     "toast_review_dispatch_failed": "Не удалось запустить ревью",
     "reviewed_commit": "Коммит",
+    "view_diff": "Открыть diff",
     "files_reviewed": "Проверено файлов: {{n}}",
     "stale_hint": "PR изменился после этого ревью — перезапустите его перед одобрением.",
     "findings_heading": "Замечания",

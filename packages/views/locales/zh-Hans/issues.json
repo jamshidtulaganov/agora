@@ -1008,6 +1008,7 @@
     "toast_review_dispatched": "代码评审已派发",
     "toast_review_dispatch_failed": "无法派发评审",
     "reviewed_commit": "提交",
+    "view_diff": "查看差异",
     "files_reviewed": "已评审 {{n}} 个文件",
     "stale_hint": "此评审之后 PR 已变更——请在批准前重新运行评审。",
     "findings_heading": "评审发现",

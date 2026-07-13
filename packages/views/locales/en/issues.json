@@ -1023,6 +1023,7 @@
     "toast_review_dispatched": "Code review dispatched",
     "toast_review_dispatch_failed": "Could not dispatch the review",
     "reviewed_commit": "Commit",
+    "view_diff": "View diff",
     "files_reviewed": "{{n}} files reviewed",
     "stale_hint": "The PR changed after this review — re-run it before approving.",
     "findings_heading": "Findings",

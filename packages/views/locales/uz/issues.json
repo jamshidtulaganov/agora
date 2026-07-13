@@ -1023,6 +1023,7 @@
     "toast_review_dispatched": "Kod-tekshiruv ishga tushirildi",
     "toast_review_dispatch_failed": "Tekshiruvni ishga tushirib bo'lmadi",
     "reviewed_commit": "Kommit",
+    "view_diff": "Diff'ni ko‘rish",
     "files_reviewed": "Tekshirilgan fayllar: {{n}}",
     "stale_hint": "PR ushbu tekshiruvdan keyin o'zgardi — tasdiqlashdan oldin qayta ishga tushiring.",
     "findings_heading": "Topilmalar",
