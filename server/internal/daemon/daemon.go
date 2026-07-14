@@ -2906,6 +2906,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	if task.Agent != nil {
 		agentMcpConfig = task.Agent.McpConfig
 	}
+	// Every task gets Agora's own QA MCP server (deterministic test-runner
+	// tools served by this same binary) merged into its mcp_config.
+	agentMcpConfig = injectQAMcpConfig(agentMcpConfig, d.logger)
 	// Decode openclaw-specific runtime_config knobs once so reuse / prepare /
 	// ExecOptions all see the same mode + gateway pin (issue #3260). Parse
 	// failures fail soft to local mode — a broken JSON blob must never block
@@ -3186,6 +3189,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		customArgs = task.Agent.CustomArgs
 		mcpConfig = task.Agent.McpConfig
 	}
+	// Mirror the ProvisionWorkDir-path injection: the exec options must carry
+	// the same merged config (QA MCP server included) the env was prepared with.
+	mcpConfig = injectQAMcpConfig(mcpConfig, d.logger)
 	// Two-tier model resolution: an explicit agent.model wins,
 	// then the daemon-wide AGORA_<PROVIDER>_MODEL env var. If
 	// both are empty we deliberately pass "" through — each
