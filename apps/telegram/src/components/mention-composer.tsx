@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Avatar } from "./avatar";
 
 // A textarea with an "@" autocomplete that inserts Agora mention tokens
@@ -32,6 +32,17 @@ export function MentionComposer({
   const ref = useRef<HTMLTextAreaElement>(null);
   const [query, setQuery] = useState<string | null>(null);
   const [anchor, setAnchor] = useState(0); // index of the triggering "@"
+
+  // Auto-grow with the content (up to max-h-32) so multi-line drafts and
+  // mention picking stay fully visible instead of scrolling inside a
+  // one-line pill. Runs on every value change, including programmatic ones
+  // (mention insertion, draft restore, clear-on-send).
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
+  }, [value]);
 
   const candidates: Candidate[] = [
     ...members.map((m) => ({ type: "member" as const, id: m.user_id, name: m.name, isAgent: false })),
@@ -129,7 +140,7 @@ export function MentionComposer({
         rows={1}
         placeholder={placeholder}
         disabled={disabled}
-        className="max-h-32 min-h-[42px] w-full resize-none rounded-2xl bg-muted px-3.5 py-2.5 text-[15px] text-foreground outline-none placeholder:text-muted-foreground"
+        className="max-h-32 min-h-[44px] w-full resize-none rounded-2xl bg-muted px-4 py-[11px] text-[15px] leading-[1.4] text-foreground outline-none placeholder:truncate placeholder:text-muted-foreground"
       />
     </div>
   );

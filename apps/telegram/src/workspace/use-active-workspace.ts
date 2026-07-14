@@ -45,9 +45,15 @@ export function useActiveWorkspace(preferredSlug?: string | null): ActiveWorkspa
     workspaces[0] ??
     null;
 
+  // Set the api-header source DURING render, not in an effect: the shell
+  // mounts the tab screens in the same commit, and their queryFns fire before
+  // a parent effect would run — every workspace-scoped request would 400 on
+  // first load. setCurrentWorkspace is documented render-safe (repeat calls
+  // with the same slug are a no-op; side effects are microtask-deferred).
+  if (active) setCurrentWorkspace(active.slug, active.id);
+
   useEffect(() => {
     if (!active) return;
-    setCurrentWorkspace(active.slug, active.id);
     writeLastSlug(active.slug);
     if (active.slug !== slug) setSlug(active.slug);
     // eslint-disable-next-line react-hooks/exhaustive-deps

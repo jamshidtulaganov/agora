@@ -39,6 +39,7 @@ export interface TelegramWebApp {
   viewportStableHeight: number;
   ready(): void;
   expand(): void;
+  close?(): void;
   onEvent(event: string, handler: () => void): void;
   offEvent(event: string, handler: () => void): void;
   openTelegramLink?(url: string): void;
@@ -119,6 +120,11 @@ export function telegramReady(): void {
 
 export function haptic(style: "light" | "medium" | "heavy" = "light"): void {
   getWebApp()?.HapticFeedback?.impactOccurred(style);
+}
+
+/** Close the Mini App (design header "Close" affordance). No-op in browser. */
+export function closeApp(): void {
+  getWebApp()?.close?.();
 }
 
 /**

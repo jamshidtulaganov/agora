@@ -12,20 +12,19 @@ import {
 } from "@agora/views/navigation";
 
 // In-memory router for the Mini App. The SPA has a tiny, fixed screen set
-// (three tabs + issue detail + create), so a typed route union beats a
-// path-string router — no URL bar inside Telegram. A NavigationAdapter is also
-// provided so any @agora/views/@agora/core component that calls
-// useNavigation().push() resolves an issue path to the right screen instead of
-// throwing.
+// (five tabs + issue detail + create + agent chat), so a typed route union
+// beats a path-string router — no URL bar inside Telegram. A
+// NavigationAdapter is also provided so any @agora/views/@agora/core
+// component that calls useNavigation().push() resolves an issue path to the
+// right screen instead of throwing.
 
-export type Tab = "inbox" | "issues" | "chat";
+export type Tab = "tasks" | "cycle" | "agents" | "inbox" | "profile";
 
 export type Route =
   | { name: "tab"; tab: Tab }
   | { name: "issue"; id: string }
   | { name: "create" }
-  | { name: "chat-session"; id: string }
-  | { name: "settings" };
+  | { name: "chat-session"; id: string };
 
 interface RouterValue {
   route: Route;
@@ -37,7 +36,26 @@ interface RouterValue {
 
 const RouterContext = createContext<RouterValue | null>(null);
 
-const DEFAULT_ROUTE: Route = { name: "tab", tab: "inbox" };
+const TAB_STORAGE_KEY = "tg_last_tab";
+const TABS: Tab[] = ["tasks", "cycle", "agents", "inbox", "profile"];
+
+function loadPersistedTab(): Tab {
+  try {
+    const saved = window.localStorage.getItem(TAB_STORAGE_KEY);
+    if (saved && (TABS as string[]).includes(saved)) return saved as Tab;
+  } catch {
+    /* storage unavailable — fall through */
+  }
+  return "tasks";
+}
+
+function persistTab(tab: Tab) {
+  try {
+    window.localStorage.setItem(TAB_STORAGE_KEY, tab);
+  } catch {
+    /* best-effort */
+  }
+}
 
 export function RouterProvider({
   initialRoute,
@@ -46,25 +64,40 @@ export function RouterProvider({
   initialRoute?: Route;
   children: ReactNode;
 }) {
-  const [stack, setStack] = useState<Route[]>([initialRoute ?? DEFAULT_ROUTE]);
-  const [lastTab, setLastTab] = useState<Tab>(
-    initialRoute?.name === "tab" ? initialRoute.tab : "inbox",
+  const [stack, setStack] = useState<Route[]>(() => [
+    initialRoute ?? { name: "tab", tab: loadPersistedTab() },
+  ]);
+  const [lastTab, setLastTab] = useState<Tab>(() =>
+    initialRoute?.name === "tab" ? initialRoute.tab : loadPersistedTab(),
   );
 
-  const route = stack[stack.length - 1] ?? DEFAULT_ROUTE;
+  const route = useMemo<Route>(
+    () => stack[stack.length - 1] ?? { name: "tab", tab: lastTab },
+    [stack, lastTab],
+  );
 
   const navigate = useCallback((next: Route) => {
-    if (next.name === "tab") setLastTab(next.tab);
+    if (next.name === "tab") {
+      setLastTab(next.tab);
+      persistTab(next.tab);
+    }
     setStack((s) => [...s, next]);
   }, []);
 
+  // Popping past the stack bottom (deep-link launch lands directly on a
+  // detail route) falls through to the last tab so Back is never a dead end.
   const back = useCallback(() => {
-    setStack((s) => (s.length > 1 ? s.slice(0, -1) : s));
-  }, []);
+    setStack((s) => {
+      if (s.length > 1) return s.slice(0, -1);
+      const only = s[0];
+      return only && only.name !== "tab" ? [{ name: "tab", tab: lastTab }] : s;
+    });
+  }, [lastTab]);
 
   // Switching tabs resets the stack to that tab (tabs are roots, not pushes).
   const openTab = useCallback((tab: Tab) => {
     setLastTab(tab);
+    persistTab(tab);
     setStack([{ name: "tab", tab }]);
   }, []);
 
@@ -104,8 +137,6 @@ function makeAdapter(router: RouterValue): NavigationAdapter {
         return "/issues/new";
       case "chat-session":
         return `/chat/${r.id}`;
-      case "settings":
-        return "/settings";
       case "tab":
         return `/${r.tab}`;
     }
