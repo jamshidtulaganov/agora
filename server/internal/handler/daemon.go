@@ -1133,7 +1133,17 @@ func logClaimEndpointSlow(runtimeID, outcome string, start time.Time, authMs, cl
 //
 // Labels must be pre-lowercased/trimmed by the caller. Thinking "off" is the
 // empty string — the daemon's ValidateThinkingLevel resolves "" to no thinking.
-func applyIssueCostTier(model, thinking string, labels map[string]bool) (string, string) {
+func applyIssueCostTier(model, thinking, provider string, labels map[string]bool) (string, string) {
+	// The tier→model map below is CLAUDE-specific (haiku/sonnet/opus ids). On a
+	// non-claude runtime (e.g. codex) those ids are meaningless — forwarding
+	// them verbatim to the CLI would hand codex a claude model string and break
+	// the run. We have no codex-tier mapping, so the safe policy is: leave the
+	// agent's own model untouched on non-claude providers. The gate stays here
+	// (not at the call site) so the function can never emit a claude id for a
+	// provider that can't use it.
+	if !isClaudeProvider(provider) {
+		return model, thinking
+	}
 	switch {
 	case labels["tier:trivial"]:
 		model, thinking = "claude-haiku-4-5-20251001", ""
@@ -1149,6 +1159,56 @@ func applyIssueCostTier(model, thinking string, labels map[string]bool) (string,
 		model = strings.TrimSuffix(model, "[1m]")
 	}
 	return model, thinking
+}
+
+// Diff-size cost downgrade — supplements applyIssueCostTier with a signal
+// tier: labels can't see: the issue's ACTUAL post-diff size, known only once
+// Dev has opened a PR. classifyIssueTier (service/issue_tier.go) guesses tier
+// from the issue's pre-diff TEXT at first dispatch — a bugfix like "wire up
+// the Greet button to /api/greeting" hits none of its trivial/light keywords
+// and defaults to full tier, even when the actual diff is one line. By the
+// time QA/Review claim, the PR's real additions/deletions/changed_files are
+// already stored (github_pull_request, synced from the webhook) — free to
+// read, no new instrumentation.
+//
+// Deliberately NEVER touches tier: labels or reviewGateRequired/
+// reviewTierForLabels (merge_readiness.go) — those still gate purely on
+// human-set tier: labels, so QA and Review stay REQUIRED for every diff
+// regardless of size. This only cheapens the MODEL those runs use, mirroring
+// the tier:light model choice without the label (and without a human's
+// explicit tier: label ever being overridden — see the labelSet guard at the
+// call site).
+const (
+	diffSizeSmallMaxFiles = 3
+	diffSizeSmallMaxLines = 15
+)
+
+// isSmallConfirmedDiff reports whether a PR's actual (post-diff) stats
+// qualify for the cost downgrade.
+func isSmallConfirmedDiff(additions, deletions, changedFiles int32) bool {
+	return changedFiles > 0 && changedFiles <= diffSizeSmallMaxFiles &&
+		additions+deletions <= diffSizeSmallMaxLines
+}
+
+// applyDiffSizeCostDowngrade mirrors applyIssueCostTier's tier:light choice
+// (sonnet, no thinking) — a confirmed-small diff earns the same downgrade a
+// human tier:light label would give it, without the label ever being set.
+// Provider-gated for the same reason as applyIssueCostTier: the sonnet id is
+// claude-only, so a non-claude runtime keeps its own model untouched.
+func applyDiffSizeCostDowngrade(model, thinking, provider string) (string, string) {
+	if !isClaudeProvider(provider) {
+		return model, thinking
+	}
+	return "claude-sonnet-4-6", ""
+}
+
+// isClaudeProvider reports whether a runtime's provider uses claude model ids.
+// The cost-tier + diff-size overrides emit claude-specific model strings, so
+// they must only fire on a claude runtime — every other provider (codex, etc.)
+// keeps the agent's configured model. Case-insensitive against the runtime
+// Provider string the daemon registers ("claude").
+func isClaudeProvider(provider string) bool {
+	return strings.EqualFold(strings.TrimSpace(provider), "claude")
 }
 
 // ClaimTaskByRuntime atomically claims the next queued task for a runtime.
@@ -1340,7 +1400,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				for _, l := range labelRows {
 					labelSet[strings.ToLower(strings.TrimSpace(l.Name))] = true
 				}
-				if m, tl := applyIssueCostTier(resp.Agent.Model, resp.Agent.ThinkingLevel, labelSet); m != resp.Agent.Model || tl != resp.Agent.ThinkingLevel {
+				if m, tl := applyIssueCostTier(resp.Agent.Model, resp.Agent.ThinkingLevel, runtime.Provider, labelSet); m != resp.Agent.Model || tl != resp.Agent.ThinkingLevel {
 					slog.Info("issue cost-tier applied",
 						"issue_id", uuidToString(issue.ID),
 						"from_model", resp.Agent.Model, "to_model", m,
@@ -1348,6 +1408,30 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 					)
 					resp.Agent.Model = m
 					resp.Agent.ThinkingLevel = tl
+				} else if isClaudeProvider(runtime.Provider) && !labelSet["tier:trivial"] && !labelSet["tier:light"] && !labelSet["tier:heavy"] {
+					// No human tier: label decided the model above — check
+					// the issue's actual diff size now that a PR may exist.
+					// Claude-only: the downgrade emits a claude model id (guarded
+					// again inside applyDiffSizeCostDowngrade), and skipping the
+					// PR query entirely on non-claude runtimes avoids the work.
+					if prs, err := h.Queries.ListPullRequestsByIssue(r.Context(), issue.ID); err == nil {
+						for _, pr := range prs {
+							if !isSmallConfirmedDiff(pr.Additions, pr.Deletions, pr.ChangedFiles) {
+								continue
+							}
+							if dm, dtl := applyDiffSizeCostDowngrade(resp.Agent.Model, resp.Agent.ThinkingLevel, runtime.Provider); dm != resp.Agent.Model || dtl != resp.Agent.ThinkingLevel {
+								slog.Info("diff-size cost downgrade applied",
+									"issue_id", uuidToString(issue.ID),
+									"pr_id", uuidToString(pr.ID),
+									"changed_files", pr.ChangedFiles, "additions", pr.Additions, "deletions", pr.Deletions,
+									"from_model", resp.Agent.Model, "to_model", dm,
+								)
+								resp.Agent.Model = dm
+								resp.Agent.ThinkingLevel = dtl
+							}
+							break
+						}
+					}
 				}
 			}
 
