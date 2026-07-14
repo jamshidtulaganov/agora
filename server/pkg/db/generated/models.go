@@ -247,6 +247,27 @@ type CommentReaction struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type ConnectedBox struct {
+	ID              pgtype.UUID        `json:"id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	OwnerID         pgtype.UUID        `json:"owner_id"`
+	Label           string             `json:"label"`
+	SshHost         string             `json:"ssh_host"`
+	SshUser         string             `json:"ssh_user"`
+	SshPort         int32              `json:"ssh_port"`
+	DeployPubkey    string             `json:"deploy_pubkey"`
+	DaemonID        pgtype.UUID        `json:"daemon_id"`
+	Status          string             `json:"status"`
+	LastError       string             `json:"last_error"`
+	LastBootstrapAt pgtype.Timestamptz `json:"last_bootstrap_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	RepoUrl         string             `json:"repo_url"`
+	WorkDir         string             `json:"work_dir"`
+	LastBranch      string             `json:"last_branch"`
+	ProjectID       pgtype.UUID        `json:"project_id"`
+}
+
 type ContactSalesInquiry struct {
 	ID              pgtype.UUID        `json:"id"`
 	FirstName       string             `json:"first_name"`
