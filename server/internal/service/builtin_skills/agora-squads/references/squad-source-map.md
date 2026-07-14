@@ -210,11 +210,14 @@ Contracts:
 Source:
 
 ```text
-server/internal/handler/slice_action.go   # qaSquadLeader ~597-611, qaSquadAgents ~619-660,
-                                           # pickLeastBusyQAAgent ~666-679,
-                                           # maybeRunQAOnInReview devOrchestrated branch ~704-732,
-                                           # maybeRouteToDevLeadOnQAFail ~525-591,
-                                           # qaFailAutorouteEnabled ~502-503, autoQAEnabled ~402
+server/internal/handler/slice_action.go   # qaSquadLeader, qaSquadAgents, pickLeastBusyQAAgent,
+                                           # maybeRunQAOnInReview (devOrchestrated branch + QA-cast branch),
+                                           # maybeRouteToDevLeadOnQAFail, qaFailAutorouteEnabled, autoQAEnabled,
+                                           # orchestratorForIssue (the TOTAL orchestrator resolver — renamed
+                                           #   from devSquadLeaderForIssue; solo agent = itself),
+                                           # castAgentForStage + metaCastQAAgent/metaCastReviewAgent (stage casting),
+                                           # pipelineManual + metaPipelineMode + wakeOrchestratorManual (manual mode),
+                                           # issueMetadataString helper
 server/internal/handler/label.go          # AttachLabel wires maybeRouteToDevLeadOnQAFail alongside
                                            # maybeAutoDocsOnLabel
 ```
@@ -255,16 +258,31 @@ Contracts:
   pre-existing load-balanced pick across `qaSquadAgents` (leader + agent
   members, each ready) via `pickLeastBusyQAAgent` — fewest in-flight tasks
   wins (slice_action.go:619-680, 722-732);
-- `maybeRouteToDevLeadOnQAFail` fires from `AttachLabel` only for label name
-  `qa:fail` (case-insensitive) and only when the issue's current assignee is
-  a solo `agent` (slice_action.go:529-534);
-- it resolves the failing agent's squad via `ListSquadsByMember`, no-ops if
-  the agent is in no squad or if the squad's leader IS the failing agent
-  itself (slice_action.go:537-546);
-- reassigns via `UpdateIssueAssignee` to the leader, resets status to `todo`
-  via `UpdateIssueStatus`, then posts an `@leader` mention comment carrying
-  the latest QA evidence summary and re-triggers tasks for that comment
-  (slice_action.go:561-586);
+- `maybeRouteToDevLeadOnQAFail` fires from `AttachLabel` for label name
+  `qa:fail` (case-insensitive) and resolves the issue's owner via
+  `orchestratorForIssue` — a TOTAL resolver (renamed from
+  `devSquadLeaderForIssue`): squad-assigned or squad-member → the squad lead;
+  a solo `agent` with no squad → the agent ITSELF; only a `member`/unassigned
+  issue → false (no agent orchestrator, manual triage);
+- it no longer skips when the orchestrator IS the failing assignee (the old
+  self-guard is gone): a solo self-orchestrator, or a directly-assigned lead,
+  re-fires WITH the qa:fail feedback comment (the difference from a blind
+  retry), bounded by the `qa_fail_autoroute_count` metadata cap
+  (`qaFailAutorouteMaxAttempts`, cleared on qa:pass by
+  `clearQAFailAutorouteBudget`);
+- reassigns via `UpdateIssueAssignee` to the orchestrator, resets status to
+  `todo` via `UpdateIssueStatus`, then posts an `@orchestrator` mention comment
+  carrying the latest QA evidence summary and re-triggers tasks for it;
+- **QA cast:** `maybeRunQAOnInReview` checks `castAgentForStage(issue,
+  metaCastQAAgent)` BEFORE the devOrchestrated/roster logic — a valid, ready
+  cast agent runs QA and short-circuits the rest; an unset/malformed/unknown
+  cast degrades to the default path (`castAgentForStage` returns ok=false);
+- **Manual pipeline mode:** `pipelineManual(issue)` reads `metaPipelineMode`
+  ("manual", case-insensitive; default false). When true, `maybeRunQAOnInReview`
+  and `maybeRunReviewOnQAPass` skip the auto-dispatch and instead call
+  `wakeOrchestratorManual` (resolve orchestrator → `@mention` comment →
+  `triggerTasksForComment`, no-op if no ready orchestrator), and
+  `maybeMergeOnQAPass` suppresses auto-merge. qa:fail routing is unaffected;
 - both paths are opt-in: `AGORA_AUTO_QA_ENABLED` (autoQAEnabled,
   slice_action.go:402) gates `maybeRunQAOnInReview`;
   `AGORA_QA_FAIL_AUTOROUTE_ENABLED` (qaFailAutorouteEnabled,
@@ -301,11 +319,18 @@ Contracts:
   CaptureQAEvidence hook, qa_override.go), gated by
   `AGORA_AUTO_REVIEW_ENABLED` (config registry, Category "Review",
   default off).
-- Guards, in order: flag off → not qa:pass → an existing
-  `review:pass`/`review:fail` label → no known PR (metadata `pr_number` or
-  `ListPullRequestsByIssue`) → an in-flight dispatch (newest
-  `<!--review-dispatch:auto-->` marker comment with no review-result comment
-  after it) → no reviewer distinct from the author agent.
+- Guards, in order: flag off → **manual pipeline mode** (`pipelineManual` →
+  wake the orchestrator to dispatch review itself, no auto-select) → not
+  qa:pass → an existing `review:pass`/`review:fail` label → no known PR
+  (metadata `pr_number` or `ListPullRequestsByIssue`) → an in-flight dispatch
+  (newest `<!--review-dispatch:auto-->` marker comment with no review-result
+  comment after it) → no reviewer distinct from the author agent.
+- `resolveReviewerAgent` now checks a per-issue review cast FIRST:
+  `castAgentForStage(issue, metaCastReviewAgent)` when it isn't the author →
+  then `orchestratorForIssue` (the dev lead / solo self) when not the author →
+  least-busy other dev-squad agent → QA squad leader → skip. The
+  author-exclusion invariant holds for the cast too (a cast == author is
+  ignored).
 - Reviewer ≠ author invariant, enforced at THREE layers: `resolveReviewerAgent`
   never returns the issue's assignee agent; the manual slice action
   (`POST /slice-actions {kind:"run_review"}`) skips the assignee/own-agent

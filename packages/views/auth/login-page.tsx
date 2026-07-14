@@ -567,45 +567,11 @@ export function LoginPage({
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          {/* Telegram — primary option, shown first when bot is configured.
-              In telegram_only mode this is the sole sign-in action. */}
-          {telegramBotUsername && (
-            <Button
-              type="button"
-              variant="default"
-              className="w-full"
-              size="lg"
-              onClick={handleTelegramStart}
-              disabled={loading}
-            >
-              <svg
-                className="mr-2 h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-              >
-                <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.56 8.21-1.86 8.77c-.14.62-.51.77-1.03.48l-2.85-2.1-1.37 1.32c-.15.15-.28.28-.57.28l.2-2.9 5.29-4.78c.23-.2-.05-.32-.36-.12L8.66 13.1l-2.82-.88c-.61-.19-.62-.61.13-.9l11.02-4.25c.51-.19.96.12.79.04z" />
-              </svg>
-              {t(($) => $.signin.telegram)}
-            </Button>
-          )}
-          {telegramOnly && error && (
-            <p className="w-full text-sm text-destructive">{error}</p>
-          )}
-          {/* Divider + secondary options (email/Google) hidden in telegram_only mode */}
+          {/* Email OTP + Google SSO — primary sign-in for a dev-team product.
+              Hidden entirely in telegram_only mode (the SD fork), where the
+              Telegram button below is the sole way in. */}
           {!telegramOnly && (
             <>
-              {telegramBotUsername && (
-                <div className="relative w-full">
-                  <div className="absolute inset-0 flex items-center">
-                    <span className="w-full border-t" />
-                  </div>
-                  <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-card px-2 text-muted-foreground">
-                      {t(($) => $.signin.divider)}
-                    </span>
-                  </div>
-                </div>
-              )}
               <form id="login-form" onSubmit={handleSendCode} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="login-email">{t(($) => $.common.email)}</Label>
@@ -677,6 +643,45 @@ export function LoginPage({
                 </>
               )}
             </>
+          )}
+          {/* Telegram — secondary option, shown after email/Google when the bot
+              is configured. In telegram_only mode it is the sole sign-in action
+              (the email/Google block above is hidden), so no leading divider. */}
+          {telegramBotUsername && (
+            <>
+              {!telegramOnly && (
+                <div className="relative w-full">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-card px-2 text-muted-foreground">
+                      {t(($) => $.signin.divider)}
+                    </span>
+                  </div>
+                </div>
+              )}
+              <Button
+                type="button"
+                variant={telegramOnly ? "default" : "outline"}
+                className="w-full"
+                size="lg"
+                onClick={handleTelegramStart}
+                disabled={loading}
+              >
+                <svg
+                  className="mr-2 h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.56 8.21-1.86 8.77c-.14.62-.51.77-1.03.48l-2.85-2.1-1.37 1.32c-.15.15-.28.28-.57.28l.2-2.9 5.29-4.78c.23-.2-.05-.32-.36-.12L8.66 13.1l-2.82-.88c-.61-.19-.62-.61.13-.9l11.02-4.25c.51-.19.96.12.79.04z" />
+                </svg>
+                {t(($) => $.signin.telegram)}
+              </Button>
+            </>
+          )}
+          {telegramOnly && error && (
+            <p className="w-full text-sm text-destructive">{error}</p>
           )}
           {extra && <div className="w-full pt-1 text-center">{extra}</div>}
         </CardContent>

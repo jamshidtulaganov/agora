@@ -294,31 +294,6 @@
   animation: sdlc-breathe 2s ease-in-out infinite;
 }
 
-/* Connector leading into the current stage: a brief info-tinted band sweeps
- * left-to-right across an otherwise static tinted line, suggesting work
- * flowing forward into the stage that's next up. Pure background-position
- * slide — same technique as chat-text-shimmer above, but on a background
- * instead of clipped text. The base `bg-info/30` (set at the call site in
- * sdlc-stepper.tsx) is the motion-reduced fallback: a static tint, no
- * sweep. */
-@keyframes sdlc-connector-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
-@utility animate-sdlc-connector-shimmer {
-  background-image: linear-gradient(
-    90deg,
-    transparent 0%,
-    transparent 35%,
-    color-mix(in oklab, var(--info) 70%, transparent) 50%,
-    transparent 65%,
-    transparent 100%
-  );
-  background-size: 250% 100%;
-  animation: sdlc-connector-shimmer 2.2s linear infinite;
-}
-
 /* One-shot pop played when a stage dot/icon is (re)mounted — either the
  * stepper's initial mount, or a state flip (e.g. QA running -> passed via a
  * WS-driven refetch) via a `key={state}` remount at the call site. Same

@@ -424,6 +424,7 @@ func (h *Handler) AttachLabel(w http.ResponseWriter, r *http.Request) {
 		go h.maybeRunReviewOnQAPass(context.Background(), issue, label.Name, userID)
 		go h.maybeRouteToDevLeadOnQAFail(context.Background(), issue, label.Name, userID)
 		go h.maybeAutoFileBugOnQAFail(context.Background(), issue, label.Name, userID)
+		go h.clearQAFailAutorouteBudget(context.Background(), issue, label.Name)
 	}
 
 	// Read the updated label list; on read failure, the attach is already

@@ -224,29 +224,25 @@ export function EditorReviewBar({
 
   return (
     <div className="shrink-0 space-y-1.5 border-b border-border bg-muted/20 px-3 py-2 text-[11px]">
-      {/* Trust line — branch, base, change count. */}
+      {/* One plain status line: what changed + the safety reassurance. The raw
+          branch name + base SHA are git jargon a non-engineer never needs — they
+          move into Developer options below. */}
       <div className="flex items-center gap-1.5 text-muted-foreground">
         <GitBranch className="h-3 w-3 shrink-0" />
-        <span className="truncate font-mono text-foreground" title={primary?.branch}>
-          {primary?.branch ?? "—"}
-        </span>
-        {primary?.base && (
-          <span className="shrink-0 font-mono">→ {primary.base.slice(0, 7)}</span>
-        )}
-        <span className="ml-auto shrink-0">
+        <span className="text-foreground">
           {hasChanges
             ? `${totalFiles} file${totalFiles === 1 ? "" : "s"} changed`
-            : "no changes"}
+            : "No changes yet"}
+        </span>
+        <span className="ml-auto inline-flex shrink-0 items-center gap-1 text-emerald-600 dark:text-emerald-500">
+          <ShieldCheck className="h-3 w-3 shrink-0" />
+          Won&apos;t touch main
         </span>
       </div>
-      <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-        <ShieldCheck className="h-3 w-3 shrink-0 text-emerald-600 dark:text-emerald-500" />
-        Isolated on a branch — your main branch stays untouched.
-      </div>
 
-      {/* Work in your own editor — the worktree is a real git checkout on this
-          machine, so a dev who prefers their own IDE/git isn't trapped in the
-          browser. Collapsed by default to keep the bar quiet. */}
+      {/* Developer options — the raw branch/SHA + a real local git checkout, so
+          a dev who prefers their own IDE isn't trapped in the browser. Collapsed
+          by default so the bar reads as a plain "N changed · safe · ship it". */}
       <div>
         <button
           type="button"
@@ -259,10 +255,20 @@ export function EditorReviewBar({
               showLocal ? "" : "-rotate-90",
             )}
           />
-          Open in your own editor
+          Developer options
         </button>
         {showLocal && (
           <div className="mt-1 space-y-1 pl-1">
+            {primary?.branch && (
+              <div className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground">
+                <span className="min-w-0 truncate" title={primary.branch}>
+                  {primary.branch}
+                </span>
+                {primary.base && (
+                  <span className="shrink-0">→ {primary.base.slice(0, 7)}</span>
+                )}
+              </div>
+            )}
             <a
               href={vscodeUri}
               className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] transition-colors hover:bg-accent"
@@ -362,7 +368,7 @@ export function EditorReviewBar({
           ) : (
             <GitPullRequest className="h-3 w-3" />
           )}
-          {openPr ? "Accept → Update PR" : "Accept → Open PR"}
+          {openPr ? "Ship update" : "Ship it"}
         </button>
         {confirmDiscard ? (
           <>
@@ -373,7 +379,7 @@ export function EditorReviewBar({
               className="inline-flex items-center gap-1 rounded-md bg-destructive px-2 py-1 text-xs font-medium text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:opacity-50"
             >
               {busy === "discard" && <Loader2 className="h-3 w-3 animate-spin" />}
-              Confirm discard
+              Yes, undo
             </button>
             <button
               type="button"
@@ -388,11 +394,11 @@ export function EditorReviewBar({
             type="button"
             disabled={busy !== null || !hasChanges}
             onClick={() => setConfirmDiscard(true)}
-            title="Discard the changes and reset the worktree to its base"
+            title="Undo the agent's changes — throws them away (your app is on a safe copy, nothing else breaks)"
             className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
           >
             <X className="h-3 w-3" />
-            Discard
+            Undo
           </button>
         )}
       </div>

@@ -15,9 +15,11 @@ import type {
   CreateBillingCheckoutSessionResponse,
   CreateBillingPortalSessionResponse,
   FigmaCredentialStatus,
+  McpCredentialStatus,
   GroupedIssuesResponse,
   ListIssuesResponse,
   ListWebhookDeliveriesResponse,
+  ReleaseIntegration,
   Squad,
   TimelineEntry,
   User,
@@ -37,7 +39,9 @@ export interface AppConfigResponse {
   daemon_app_url?: string;
   workspace_creation_disabled?: boolean;
   telegram_only?: boolean;
-  remote_boxes_enabled?: boolean;
+  bitrix_enabled?: boolean;
+  zoho_enabled?: boolean;
+  lark_enabled?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -179,7 +183,9 @@ export const AppConfigSchema = z.object({
   daemon_app_url: OptionalStringSchema,
   workspace_creation_disabled: BooleanWithDefaultSchema(false).optional(),
   telegram_only: BooleanWithDefaultSchema(false).optional(),
-  remote_boxes_enabled: BooleanWithDefaultSchema(false).optional(),
+  bitrix_enabled: BooleanWithDefaultSchema(false).optional(),
+  zoho_enabled: BooleanWithDefaultSchema(false).optional(),
+  lark_enabled: BooleanWithDefaultSchema(false).optional(),
 }).loose();
 
 export const EMPTY_APP_CONFIG: AppConfigResponse = {
@@ -244,6 +250,10 @@ export const IssueSchema = z.object({
   priority: z.string(),
   assignee_type: z.string().nullable(),
   assignee_id: z.string().nullable(),
+  // Detail-only: the orchestrator that owns this task's pipeline (see the Issue
+  // type). Optional — list/broadcast paths omit it; nullish tolerates both a
+  // missing key and an explicit null.
+  orchestrator_agent_id: z.string().nullish(),
   creator_type: z.string(),
   creator_id: z.string(),
   parent_issue_id: z.string().nullable(),
@@ -809,28 +819,6 @@ export const EMPTY_USER: User = {
 };
 
 // ---------------------------------------------------------------------------
-// Remote Boxes (connected_box) — a developer's onboarded remote dev server.
-// Lenient by design (`.loose()`, string status) so a future backend status
-// value downgrades gracefully and never white-screens the runtimes page.
-export const ConnectedBoxSchema = z.object({
-  id: z.string(),
-  workspace_id: z.string().default(""),
-  owner_id: z.string().nullable().default(null),
-  label: z.string().default(""),
-  ssh_host: z.string().default(""),
-  ssh_user: z.string().default(""),
-  ssh_port: z.number().default(22),
-  deploy_pubkey: z.string().default(""),
-  daemon_id: z.string().nullable().default(null),
-  status: z.string().default("pending"),
-  last_error: z.string().default(""),
-  repo_url: z.string().default(""),
-  work_dir: z.string().default(""),
-  last_branch: z.string().default(""),
-  project_id: z.string().nullable().default(null),
-  created_at: z.string().default(""),
-}).loose();
-
 // Settings → Labs workspace flags (GET/PUT /api/workspace-labs). qa_dev_boxes
 // routes QA to the assignee-developer's own box; qa_fallback_box_id is the
 // shared box QA lands on when nothing else matches.
@@ -843,87 +831,12 @@ export const WorkspaceLabsSchema = z
   })
   .loose();
 
-// Box action results (test connection / seed) — POST /api/remote-boxes/{id}/test|seed.
-export const BoxActionResultSchema = z
-  .object({
-    ok: z.boolean().default(false),
-    output: z.string().default(""),
-    latency_ms: z.number().optional(),
-  })
-  .loose();
-
-export const EMPTY_BOX_ACTION = { ok: false, output: "" };
-
 export const EMPTY_WORKSPACE_LABS = {
   qa_dev_boxes: true,
   qa_fallback_box_id: "",
   qa_dev_runtimes: false,
   qa_dev_runtimes_strict: false,
 };
-
-export const ConnectedBoxListSchema = z.object({
-  boxes: z.array(ConnectedBoxSchema).default([]),
-}).loose();
-
-// Fallback box for endpoints whose contract returns a single box (bind) or
-// embeds one (sync result). All fields defaulted so a degraded response yields
-// a benign empty box rather than a throw.
-export const EMPTY_CONNECTED_BOX = {
-  id: "",
-  workspace_id: "",
-  owner_id: null,
-  label: "",
-  ssh_host: "",
-  ssh_user: "",
-  ssh_port: 22,
-  deploy_pubkey: "",
-  daemon_id: null,
-  status: "pending",
-  last_error: "",
-  repo_url: "",
-  work_dir: "",
-  last_branch: "",
-  project_id: null,
-  created_at: "",
-} as const;
-
-// Result of a box git-sync (branch sync / issue deploy-qa). Lenient + defaulted
-// so a degraded response renders "deploy failed" rather than white-screening.
-export const RemoteBoxSyncResultSchema = z.object({
-  ok: z.boolean().default(false),
-  branch: z.string().default(""),
-  output: z.string().default(""),
-  box: ConnectedBoxSchema,
-}).loose();
-
-// Result of a per-developer box provision (or a dry-run preview). Lenient +
-// defaulted so a degraded response renders a benign empty preview rather than
-// white-screening. box is nullable (null on a dry run, before any row exists).
-export const ProvisionBoxResultSchema = z.object({
-  handle: z.string().default(""),
-  subdomain: z.string().default(""),
-  work_dir: z.string().default(""),
-  database: z.string().default(""),
-  script: z.string().default(""),
-  dry_run: z.boolean().default(false),
-  ran: z.boolean().default(false),
-  ok: z.boolean().default(false),
-  output: z.string().default(""),
-  box: ConnectedBoxSchema.nullable().default(null),
-}).loose();
-
-export const EMPTY_PROVISION_RESULT = {
-  handle: "",
-  subdomain: "",
-  work_dir: "",
-  database: "",
-  script: "",
-  dry_run: false,
-  ran: false,
-  ok: false,
-  output: "",
-  box: null,
-} as const;
 
 // ---------------------------------------------------------------------------
 // Policy Agent — fleet watchdog. Lenient + defaulted (arrays default to []) so a
@@ -1717,3 +1630,84 @@ export const EMPTY_FIGMA_CREDENTIAL_STATUS: FigmaCredentialStatus = {
   probe_status: "",
   probed_at: "",
 };
+
+// Remote-MCP credential status (sealed auth for a remote http/sse MCP server).
+// Every field is defaulted so a drifted backend row downgrades to a benign
+// shape rather than throwing into the panel. Token material is never present —
+// has_secret + last4 only.
+export const McpCredentialStatusSchema = z.object({
+  id: z.string().default(""),
+  server_name: z.string().default(""),
+  has_secret: z.boolean().default(false),
+  last4: z.string().default(""),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+}).loose();
+
+// The list endpoint returns an array; a non-array or malformed body downgrades
+// to an empty list (the panel shows no sealed-auth badges rather than crashing).
+export const McpCredentialListSchema = z.array(McpCredentialStatusSchema).catch([]);
+
+export const EMPTY_MCP_CREDENTIAL_LIST: McpCredentialStatus[] = [];
+
+export const EMPTY_MCP_CREDENTIAL_STATUS: McpCredentialStatus = {
+  id: "",
+  server_name: "",
+  has_secret: false,
+  last4: "",
+  created_at: "",
+  updated_at: "",
+};
+
+// Release integrations (release-hub Thread B). Every field is defaulted so a
+// drifted backend row (missing/wrong-typed field) downgrades to a benign shape
+// instead of throwing into the settings UI. The sealed URL is never present —
+// has_secret is the only secret signal.
+export const ReleaseIntegrationSchema = z.object({
+  id: z.string().default(""),
+  kind: z.string().default("webhook"),
+  config: z
+    .object({
+      name: z.string().optional(),
+      channel_hint: z.string().optional(),
+      owner: z.string().optional(),
+      repo: z.string().optional(),
+      project_path: z.string().optional(),
+      org: z.string().optional(),
+      project: z.string().optional(),
+    })
+    .loose()
+    .default({}),
+  events: z.array(z.string()).default([]),
+  enabled: z.boolean().default(false),
+  probe_status: z.string().default(""),
+  has_secret: z.boolean().default(false),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+}).loose();
+
+export const ReleaseIntegrationListSchema = z.array(ReleaseIntegrationSchema);
+
+export const EMPTY_RELEASE_INTEGRATIONS: ReleaseIntegration[] = [];
+
+// Per-project pipeline config (GET /api/projects/{id}/config). Lenient — a
+// forward-compat key/kind/source we don't recognise still renders (enum drift
+// downgrades, never white-screens the settings section).
+export const ProjectConfigEntrySchema = z.object({
+  key: z.string(),
+  kind: z.string().default("bool"),
+  category: z.string().default(""),
+  label: z.string().default(""),
+  description: z.string().default(""),
+  value: z.string().default(""),
+  source: z.string().default("default"),
+  overridden_by_project: z.boolean().default(false),
+}).loose();
+
+export const ProjectConfigListSchema = z.object({
+  configs: z.array(ProjectConfigEntrySchema).default([]),
+});
+
+export type ProjectConfigEntry = z.infer<typeof ProjectConfigEntrySchema>;
+
+export const EMPTY_PROJECT_CONFIG: { configs: ProjectConfigEntry[] } = { configs: [] };

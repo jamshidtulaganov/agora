@@ -9,14 +9,14 @@ import (
 
 func TestDevServerPort(t *testing.T) {
 	cases := map[string]string{
-		"/editor/local/5173/":                  "5173",
-		"/editor/local/42873/assets/index.js":  "42873",
-		"/editor/local/5173":                   "5173", // no trailing slash: port is the whole rest
-		"/editor/browser/start":                "",
-		"/editor/preview":                      "",
-		"/editor/local//assets":                "", // empty port
-		"/editor/local/12ab/x":                 "", // non-numeric
-		"/editor/local/../etc":                 "", // traversal-ish, non-numeric
+		"/editor/local/5173/":                 "5173",
+		"/editor/local/42873/assets/index.js": "42873",
+		"/editor/local/5173":                  "5173", // no trailing slash: port is the whole rest
+		"/editor/browser/start":               "",
+		"/editor/preview":                     "",
+		"/editor/local//assets":               "", // empty port
+		"/editor/local/12ab/x":                "", // non-numeric
+		"/editor/local/../etc":                "", // traversal-ish, non-numeric
 	}
 	for path, want := range cases {
 		if got := devServerPort(path); got != want {

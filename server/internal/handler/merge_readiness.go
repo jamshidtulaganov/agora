@@ -93,7 +93,10 @@ func reviewTierForLabels(labels map[string]bool) reviewTier {
 // gate would stall the merge chain forever. In that state the review is
 // advisory only — never a silent blocker. Flag on ⇒ review required +
 // auto-dispatched; flag off ⇒ review is manual/advisory.
-func reviewGateRequired(t reviewTier, hasPR bool, labels map[string]bool) bool {
+// autoReview is the resolved (project-scoped) AGORA_AUTO_REVIEW_ENABLED value —
+// passed in so this stays a pure function (the caller, computeMergeReadiness,
+// has the issue and resolves the per-project override).
+func reviewGateRequired(t reviewTier, hasPR bool, labels map[string]bool, autoReview bool) bool {
 	if t.name != "full" {
 		return false
 	}
@@ -101,7 +104,7 @@ func reviewGateRequired(t reviewTier, hasPR bool, labels map[string]bool) bool {
 	if !hasPR && !hasVerdict {
 		return false
 	}
-	return autoReviewEnabled() || hasVerdict
+	return autoReview || hasVerdict
 }
 
 // requiredGatesWithReview appends the "review" gate to a tier's required set
@@ -191,7 +194,7 @@ func (h *Handler) computeMergeReadiness(ctx context.Context, issue db.Issue) Mer
 	}
 
 	t := reviewTierForLabels(labels)
-	required := requiredGatesWithReview(t, reviewGateRequired(t, h.issueHasKnownPR(ctx, issue), labels))
+	required := requiredGatesWithReview(t, reviewGateRequired(t, h.issueHasKnownPR(ctx, issue), labels, h.autoReviewEnabled(ctx, issue)))
 
 	gates := make([]gateStatus, 0, len(required))
 	blocked := make([]string, 0)

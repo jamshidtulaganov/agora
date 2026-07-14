@@ -5,11 +5,12 @@ import { I18nProvider } from "@agora/core/i18n/react";
 import enIssues from "../../locales/en/issues.json";
 import { ReleaseHealthStrip } from "./release-health-strip";
 
-// The Release page's health strip — one row per active sprint plus the
+// The Release page's health strip — a single readiness roll-up line plus the
 // needs-decision chip. These tests pin the strip's contract: silent when
-// there are no sprints, rows that read the readiness rollup and deep-link to
-// Ship, and a chip that counts fail / pass_with_failing_cases and deep-links
-// to Queue with the needs-human toggle pre-set.
+// there are no sprints, a roll-up ("M of N sprints ready to ship") that
+// deep-links to Ship (no per-sprint rows, no ✓✗◌ trio), and a chip that counts
+// fail / pass_with_failing_cases and deep-links to Queue with the needs-human
+// toggle pre-set.
 
 const apiMocks = vi.hoisted(() => ({
   getSprintReadiness: vi.fn(),
@@ -76,27 +77,27 @@ describe("ReleaseHealthStrip", () => {
     await waitFor(() => expect(container).toBeEmptyDOMElement());
   });
 
-  it("renders a blocked sprint row with its counts and the Not-ready pill", async () => {
+  it("rolls readiness up into one line — no per-sprint rows or ✓✗◌ trio", async () => {
     apiMocks.getSprintReadiness.mockResolvedValue({ sprints: [sprint({})] });
 
     renderStrip();
 
-    await waitFor(() => expect(screen.getByText("SD Main · Sprint 12")).toBeInTheDocument());
-    expect(screen.getByText("Not ready")).toBeInTheDocument();
-    expect(screen.getByTitle("passed")).toHaveTextContent("2");
-    expect(screen.getByTitle("failing")).toHaveTextContent("1");
-    expect(screen.getByTitle(/pending/)).toHaveTextContent("2");
+    // A single roll-up ("M of N sprints ready to ship"); the non-mergeable
+    // fixture is 0 of 1. The per-sprint name row, ring, and count trio are gone.
+    expect(await screen.findByText("0 of 1 sprints ready to ship")).toBeInTheDocument();
+    expect(screen.queryByText("SD Main · Sprint 12")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("passed")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("failing")).not.toBeInTheDocument();
   });
 
-  it("clicking a sprint row opens Ship", async () => {
+  it("clicking the roll-up opens Ship", async () => {
     apiMocks.getSprintReadiness.mockResolvedValue({ sprints: [sprint({ mergeable: true })] });
     const onOpenShip = vi.fn();
 
     renderStrip({ onOpenShip });
 
-    await waitFor(() => expect(screen.getByText("SD Main · Sprint 12")).toBeInTheDocument());
-    expect(screen.getByText("Mergeable")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("SD Main · Sprint 12"));
+    const rollup = await screen.findByText("1 of 1 sprints ready to ship");
+    fireEvent.click(rollup);
     expect(onOpenShip).toHaveBeenCalledTimes(1);
   });
 

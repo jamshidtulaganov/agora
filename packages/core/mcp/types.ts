@@ -1,20 +1,51 @@
 // Types + pure helpers for the workspace-level MCP servers admin page.
 //
 // The canonical on-agent shape is `agent.mcp_config` (see Agent.mcp_config in
-// types/agent.ts), a JSON object with a top-level `mcpServers` map:
+// types/agent.ts), a JSON object with a top-level `mcpServers` map. An entry is
+// one of two transports:
 //
-//   { "mcpServers": { "<name>": { "command": "...", "args": [...], "env": {...} } } }
+//   stdio (local command):
+//     { "mcpServers": { "<name>": { "command": "...", "args": [...], "env": {...} } } }
+//   http / sse (remote MCP server by URL):
+//     { "mcpServers": { "<name>": { "type": "http", "url": "https://…", "headers": {…} } } }
 //
-// The daemon materialises this per-runtime (Claude flags, Codex config.toml,
-// etc.). We only ever read the whole object, set/delete one key under
-// `mcpServers`, and write the whole object back — preserving every other
-// server the agent already has.
+// A missing `type` means "stdio" (back-compat: every entry written before
+// dynamic MCP has `command` and no `type`, and must keep working). The daemon
+// materialises this per-runtime (Claude `--mcp-config` verbatim, Codex
+// config.toml, Cursor `.cursor/mcp.json`, OpenClaw `mcp.servers`). We only ever
+// read the whole object, set/delete one key under `mcpServers`, and write the
+// whole object back — preserving every other server the agent already has.
+//
+// Remote entries often need a bearer token in `headers`. That auth material is
+// NOT stored here (it would sit plaintext in `agent.mcp_config`); it lives
+// sealed in the workspace `mcp_credential` store, keyed by server name, and is
+// merged into `headers` server-side at task dispatch (mirrors the Figma/GitLab
+// credential injection). See server/internal/handler/mcp_credential.go.
 
-/** One MCP server entry as stored under `mcpServers[<name>]`. */
+/** The transport an MCP server entry uses. Absent ⇒ "stdio" (back-compat). */
+export type McpTransport = "stdio" | "http" | "sse";
+
+/**
+ * One MCP server entry as stored under `mcpServers[<name>]`. Every field is
+ * optional so the same shape covers both transports: a stdio entry carries
+ * `command` (+ optional `args`/`env`); a remote entry carries `type` +`url`
+ * (+ optional `headers`). Consumers must not assume `command` is present.
+ */
 export interface McpServerEntry {
-  command: string;
+  /** Transport. Absent or "stdio" ⇒ local command; "http"/"sse" ⇒ remote URL. */
+  type?: McpTransport;
+  // --- stdio ---
+  command?: string;
   args?: string[];
   env?: Record<string, string>;
+  // --- http / sse ---
+  url?: string;
+  headers?: Record<string, string>;
+}
+
+/** True when the entry is a remote (http/sse) MCP server rather than stdio. */
+export function isRemoteMcpServer(entry: Partial<McpServerEntry>): boolean {
+  return entry.type === "http" || entry.type === "sse";
 }
 
 /** The shape of a valid `agent.mcp_config`. */
@@ -23,10 +54,10 @@ export interface McpConfig {
 }
 
 /**
- * A server entry paired with its name, for list rendering. `command` is
- * optional here (unlike McpServerEntry) because the source is parsed from an
- * untrusted `mcp_config` JSON blob where the field may be missing — the UI
- * renders it defensively.
+ * A server entry paired with its name, for list rendering. All entry fields are
+ * optional (the source is an untrusted `mcp_config` JSON blob where any field
+ * may be missing), so the UI renders it defensively — checking `url` vs
+ * `command` to decide whether it is a remote or stdio server.
  */
 export interface NamedMcpServer extends Partial<McpServerEntry> {
   name: string;
@@ -86,17 +117,52 @@ export function removeMcpServer(current: unknown, name: string): McpConfig {
   return { mcpServers: servers };
 }
 
-/**
- * Builds an `McpServerEntry` from raw form fields. `argsText` is split on
- * whitespace (the form takes args as one space-separated string); empty env
- * keys are dropped. `args`/`env` are omitted entirely when empty so the stored
- * JSON stays minimal.
- */
-export function buildServerEntry(input: {
+/** Discriminated form input for a stdio (local command) MCP server. */
+export interface StdioServerInput {
+  transport?: "stdio";
   command: string;
   argsText: string;
   env: Array<{ key: string; value: string }>;
-}): McpServerEntry {
+}
+
+/** Discriminated form input for a remote (http/sse) MCP server. */
+export interface RemoteServerInput {
+  transport: "http" | "sse";
+  url: string;
+  /**
+   * Header rows for the entry stored in `mcp_config`. For a sealed auth header
+   * the caller passes the header key with a BLANK value here (a documented
+   * placeholder), then submits the real value to the `mcp_credential` endpoint;
+   * the server fills the blank at dispatch. Non-secret headers may carry values.
+   */
+  headers: Array<{ key: string; value: string }>;
+}
+
+export type BuildServerEntryInput = StdioServerInput | RemoteServerInput;
+
+/**
+ * Builds an `McpServerEntry` from raw form fields, for either transport.
+ *
+ * - stdio (default): `argsText` is split on whitespace, empty env keys dropped;
+ *   `args`/`env` omitted when empty so the stored JSON stays minimal.
+ * - http/sse: writes `type` + `url`; header rows with a non-empty key are kept
+ *   (blank values preserved as sealed-auth placeholders); `headers` omitted
+ *   when no keyed row exists.
+ */
+export function buildServerEntry(input: BuildServerEntryInput): McpServerEntry {
+  // Narrow on the required `url` field (a reliable discriminant — `transport`
+  // is optional on the stdio branch for back-compat, so it can't split the
+  // union on its own).
+  if ("url" in input) {
+    const entry: McpServerEntry = { type: input.transport, url: input.url.trim() };
+    const headers: Record<string, string> = {};
+    for (const { key, value } of input.headers) {
+      const k = key.trim();
+      if (k) headers[k] = value;
+    }
+    if (Object.keys(headers).length > 0) entry.headers = headers;
+    return entry;
+  }
   const entry: McpServerEntry = { command: input.command.trim() };
   const args = input.argsText
     .trim()
@@ -112,16 +178,32 @@ export function buildServerEntry(input: {
   return entry;
 }
 
-/** A quick-template the Add-server form can pre-fill from. */
+/**
+ * A quick-template the Add-server form can pre-fill from. `transport` selects
+ * which half of the form the template fills: "stdio" (default/absent) uses
+ * `command`/`argsText`/`envKeys`; "http"/"sse" uses `url`/`headerKeys`.
+ */
 export interface McpServerTemplate {
   id: string;
   label: string;
   /** Suggested server name (used as the `mcpServers` key). */
   name: string;
-  command: string;
-  argsText: string;
+  /** Absent ⇒ "stdio". */
+  transport?: McpTransport;
+  // --- stdio ---
+  command?: string;
+  argsText?: string;
   /** Env keys the user is expected to fill; values start empty. */
-  envKeys: string[];
+  envKeys?: string[];
+  // --- http / sse ---
+  /** Remote MCP endpoint URL (user edits/replaces). */
+  url?: string;
+  /**
+   * Auth header keys the user is expected to fill for a remote server (e.g.
+   * "Authorization"); values start empty and are submitted sealed. Rendered as
+   * blank-valued header rows.
+   */
+  headerKeys?: string[];
   /**
    * For source-control servers (github/gitlab): the token permissions the
    * operator must grant so agents can create branches and open PRs/MRs. Shown
@@ -177,6 +259,32 @@ export const MCP_SERVER_TEMPLATES: McpServerTemplate[] = [
     command: "mcp-server-mysql",
     argsText: "",
     envKeys: ["MYSQL_HOST", "MYSQL_DB", "MYSQL_USER", "MYSQL_PASS"],
+  },
+  {
+    id: "remote-http",
+    label: "Remote (HTTP)",
+    name: "remote",
+    transport: "http",
+    // Generic hosted-MCP example: any tool that exposes a streamable-HTTP MCP
+    // endpoint (Linear, Sentry, Notion, a company's own gateway…) connects by
+    // URL — no bespoke Agora coupling. Replace the URL with the vendor's.
+    url: "https://mcp.example.com/mcp",
+    // The bearer token is entered once and stored SEALED (never in mcp_config).
+    headerKeys: ["Authorization"],
+    scopeHint:
+      "Paste the hosted server's URL, then add the bearer token under the auth header (e.g. Authorization: Bearer <token>). The token is stored sealed and injected server-side at task dispatch — it never sits in the agent's mcp_config.",
+  },
+  {
+    id: "remote-sse",
+    label: "Remote (SSE)",
+    name: "remote-sse",
+    transport: "sse",
+    // Server-Sent-Events transport, for hosted MCP servers that expose /sse
+    // instead of streamable HTTP. Same sealed-auth flow as Remote (HTTP).
+    url: "https://mcp.example.com/sse",
+    headerKeys: ["Authorization"],
+    scopeHint:
+      "For hosted MCP servers that speak SSE. Paste the /sse URL and add the bearer token under the auth header; it is stored sealed and injected at dispatch.",
   },
   {
     id: "lark",

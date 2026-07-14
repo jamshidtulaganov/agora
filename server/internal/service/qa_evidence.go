@@ -332,6 +332,19 @@ func (s *TaskService) qaEvidenceFloorGap(ctx context.Context, issue db.Issue, p 
 	if len(p.Screenshots) > 0 {
 		return ""
 	}
+	// The visual-evidence bar (a screenshot or a captured Playwright trace for a
+	// UI case) fires ONLY when the change is POSITIVELY high-blast-radius. For
+	// everything else — trivial, small, or UNKNOWN scope — the non-zero
+	// deterministic commands are the proportionate floor (the zero-commands
+	// check above already rejects a truly-hollow pass). This is the
+	// deterministic-first stance: a fast DOM-text smoke is the norm, a trace is
+	// the exception reserved for guarded / large changes. Requiring a trace by
+	// DEFAULT dead-ended every light-QA pass as qa:stale — worst on the common
+	// no-PR (sprint-mode) path, where there's no diff signal at all, so an
+	// unknown-scope UI change was wrongly forced to the heaviest bar.
+	if !s.qaRequiresVisualEvidence(ctx, issue) {
+		return ""
+	}
 	cases, err := s.Queries.ListTestCasesForIssue(ctx, db.ListTestCasesForIssueParams{
 		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
 	})
@@ -360,6 +373,56 @@ func (s *TaskService) qaEvidenceFloorGap(ctx context.Context, issue db.Issue, p 
 		}
 	}
 	return "this issue has a UI-modality test case but the verdict carried no screenshot and no run has a captured trace"
+}
+
+// qaRequiresVisualEvidence reports whether a UI-case "pass" must carry a
+// screenshot or a captured Playwright trace to clear the evidence floor. It
+// returns true ONLY for a POSITIVELY high-blast-radius change:
+//   - an explicit risk:guarded / risk:critical label, OR
+//   - a confirmed LARGE PR diff (more than 2 files or more than 20 changed
+//     lines) — where the visual bar is worth the ceremony and the full-scope
+//     QA drives the browser anyway (run_qa mandates capturing a trace there).
+//
+// Everything else returns false — the deterministic commands suffice:
+//   - trivial/light/safe/docs labels (light QA sheds the trace ceremony), and
+//   - UNKNOWN scope (no PR, e.g. sprint-mode's shared-branch flow) — there is
+//     no diff signal, so we must NOT default an unknown change to the heaviest
+//     bar; that is exactly what dead-ended light QA as qa:stale. The zero-
+//     commands check upstream still rejects a pass that ran nothing.
+//
+// Mirrors the blast-radius half of handler.issueQAScopeTrivial (the handler
+// package can't be imported here — it depends on service, so importing it back
+// would cycle); the inversion of the no-PR default is deliberate and specific
+// to the evidence floor, not the gate-depth decision.
+func (s *TaskService) qaRequiresVisualEvidence(ctx context.Context, issue db.Issue) bool {
+	if labels, err := s.Queries.ListLabelsByIssue(ctx, db.ListLabelsByIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+	}); err == nil {
+		has := make(map[string]bool, len(labels))
+		for _, l := range labels {
+			has[strings.ToLower(strings.TrimSpace(l.Name))] = true
+		}
+		if has["risk:guarded"] || has["risk:critical"] {
+			return true // high blast radius — earns the full visual-evidence bar
+		}
+		if has["tier:trivial"] || has["tier:light"] || has["risk:safe"] || has["type:docs"] {
+			return false // light gate — deterministic commands suffice
+		}
+	}
+	prs, err := s.Queries.ListPullRequestsByIssue(ctx, issue.ID)
+	if err != nil || len(prs) == 0 {
+		return false // no diff signal (unknown / sprint-mode) — don't force a trace
+	}
+	pr := prs[0]
+	if pr.ChangedFiles == 0 {
+		// Zero-stat PR row: the PR-open webhook created it but diff stats never
+		// synced. UNKNOWN, not "confirmed large" — do not arm the visual bar on
+		// a diff we cannot actually see (this exact hole staled honest light
+		// passes on every freshly-opened PR).
+		return false
+	}
+	small := pr.ChangedFiles <= 2 && (pr.Additions+pr.Deletions) <= 20
+	return !small // only a confirmed LARGE diff earns the visual bar
 }
 
 // downgradeQAVerdictToStale attaches qa:stale (replacing qa:pass/qa:fail, if

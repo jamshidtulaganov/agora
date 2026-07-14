@@ -62,6 +62,18 @@ type AppConfig struct {
 	// Omitted when false to keep the response shape identical for every existing
 	// deployment.
 	RemoteBoxesEnabled bool `json:"remote_boxes_enabled,omitempty"`
+
+	// Bitrix / Zoho / Lark integration availability. Each mirrors the SAME env
+	// gate the backend already uses to enable that integration's endpoints, so
+	// Settings → Integrations renders a connector's section only where it is
+	// actually configured. A general dev-team deployment leaves all three
+	// unset → clean Integrations tab (GitHub, Figma, Release, MCP). The
+	// backends stay fully env-gated regardless of these flags — this only
+	// controls client-visible surface. Omitted when false to keep the response
+	// shape identical for deployments without the integration.
+	BitrixEnabled bool `json:"bitrix_enabled,omitempty"`
+	ZohoEnabled   bool `json:"zoho_enabled,omitempty"`
+	LarkEnabled   bool `json:"lark_enabled,omitempty"`
 }
 
 // GetConfig is mounted on the public (unauthenticated) route group because
@@ -75,6 +87,13 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		WorkspaceCreationDisabled: config.Bool("DISABLE_WORKSPACE_CREATION"),
 		TelegramOnly:              config.Bool("AGORA_TELEGRAM_ONLY"),
 		RemoteBoxesEnabled:        config.Bool("AGORA_REMOTE_BOXES_ENABLED"),
+		// Same env gates the integration endpoints themselves check:
+		// bitrixEndpointsEnabled() = BITRIX_WEBHOOK_URL set; zohoConfigured() =
+		// Zoho OAuth client/secret/refresh set; Lark keys off the master
+		// at-rest key that the router uses to wire the Lark handlers.
+		BitrixEnabled: bitrixEndpointsEnabled(),
+		ZohoEnabled:   zohoConfigured(),
+		LarkEnabled:   strings.TrimSpace(os.Getenv("AGORA_LARK_SECRET_KEY")) != "",
 	}
 	if h.Storage != nil {
 		config.CdnDomain = h.Storage.CdnDomain()

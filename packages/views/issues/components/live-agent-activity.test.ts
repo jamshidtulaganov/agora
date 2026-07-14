@@ -6,8 +6,16 @@ import {
   deriveCurrentActivity,
   deriveFileChanges,
   deriveFileDocs,
+  deriveMilestoneSteps,
+  deriveProgressHeadline,
+  deriveTodos,
+  unwrapShell,
   FRAGMENT_SEPARATOR,
 } from "./live-agent-activity";
+
+function text(seq: number, content: string): TimelineItem {
+  return { seq, type: "text", content };
+}
 
 function tool(seq: number, name: string, input: Record<string, unknown>): TimelineItem {
   return { seq, type: "tool_use", tool: name, input };
@@ -357,6 +365,186 @@ describe("deriveFileDocs", () => {
     ]);
     expect(doc!.text).toBe("keep\n");
     expect(doc!.ranges).toEqual([]);
+  });
+});
+
+describe("deriveProgressHeadline", () => {
+  it("returns the latest PROGRESS: line the agent emitted", () => {
+    expect(
+      deriveProgressHeadline([
+        text(1, "Let me start.\nPROGRESS: Reading the greet button component"),
+        tool(2, "Read", { file_path: "Button.tsx" }),
+        text(3, "PROGRESS: Running the tests\nall good"),
+      ]),
+    ).toBe("Running the tests");
+  });
+
+  it("only matches the marker at the start of a line", () => {
+    expect(
+      deriveProgressHeadline([text(1, "there was no progress: here at all")]),
+    ).toBeNull();
+  });
+
+  it("returns null when no headline was emitted", () => {
+    expect(deriveProgressHeadline([tool(1, "Bash", { command: "ls" })])).toBeNull();
+  });
+});
+
+describe("deriveTodos", () => {
+  it("parses the latest TodoWrite into an ordered plan", () => {
+    const todos = deriveTodos([
+      tool(1, "TodoWrite", {
+        todos: [{ content: "Old plan", status: "pending" }],
+      }),
+      tool(2, "TodoWrite", {
+        todos: [
+          { content: "Read the code", status: "completed" },
+          { content: "Fix the typo", activeForm: "Fixing the typo", status: "in_progress" },
+          { content: "Run the tests", status: "pending" },
+        ],
+      }),
+    ]);
+    expect(todos).toEqual([
+      { content: "Read the code", status: "completed" },
+      { content: "Fix the typo", status: "in_progress", activeForm: "Fixing the typo" },
+      { content: "Run the tests", status: "pending" },
+    ]);
+  });
+
+  it("handles the normalized todo_write tool name and active_form key", () => {
+    const todos = deriveTodos([
+      tool(1, "todo_write", {
+        todos: [{ content: "Ship it", status: "in_progress", active_form: "Shipping it" }],
+      }),
+    ]);
+    expect(todos[0]).toEqual({ content: "Ship it", status: "in_progress", activeForm: "Shipping it" });
+  });
+
+  it("degrades unknown statuses to pending and skips empty entries", () => {
+    const todos = deriveTodos([
+      tool(1, "TodoWrite", {
+        todos: [
+          { content: "A", status: "bogus" },
+          { content: "", status: "pending" },
+          null,
+          { status: "completed" },
+        ],
+      }),
+    ]);
+    expect(todos).toEqual([{ content: "A", status: "pending" }]);
+  });
+
+  it("returns [] when there's no todo tool or the payload is malformed", () => {
+    expect(deriveTodos([tool(1, "Bash", { command: "ls" })])).toEqual([]);
+    expect(deriveTodos([tool(1, "TodoWrite", { todos: "nope" })])).toEqual([]);
+  });
+
+  it("parses a fenced ```todo block from text (providers without a todo tool)", () => {
+    const todos = deriveTodos([
+      text(1, "PROGRESS: Fixing the typo\n```todo\n- [x] Read the code\n- [~] Fix the typo\n- [ ] Run the tests\n```"),
+    ]);
+    expect(todos).toEqual([
+      { content: "Read the code", status: "completed" },
+      { content: "Fix the typo", status: "in_progress" },
+      { content: "Run the tests", status: "pending" },
+    ]);
+  });
+
+  it("uses the LATEST fenced ```todo block (each rewrites the list)", () => {
+    const todos = deriveTodos([
+      text(1, "```todo\n- [~] Read the code\n- [ ] Fix the typo\n```"),
+      text(2, "```todo\n- [x] Read the code\n- [x] Fix the typo\n- [~] Run the tests\n```"),
+    ]);
+    expect(todos).toEqual([
+      { content: "Read the code", status: "completed" },
+      { content: "Fix the typo", status: "completed" },
+      { content: "Run the tests", status: "in_progress" },
+    ]);
+  });
+
+  it("prefers a TodoWrite tool call over a text block, but falls back to the block", () => {
+    // Tool present → wins.
+    expect(
+      deriveTodos([
+        text(1, "```todo\n- [ ] from text\n```"),
+        tool(2, "TodoWrite", { todos: [{ content: "from tool", status: "pending" }] }),
+      ]),
+    ).toEqual([{ content: "from tool", status: "pending" }]);
+    // Only a malformed tool → falls through to the block.
+    expect(
+      deriveTodos([
+        text(1, "```todo\n- [~] from text\n```"),
+        tool(2, "TodoWrite", { todos: "nope" }),
+      ]),
+    ).toEqual([{ content: "from text", status: "in_progress" }]);
+  });
+});
+
+describe("unwrapShell", () => {
+  it("unwraps a login-shell invocation to the inner command", () => {
+    expect(unwrapShell("/bin/zsh -lc 'git push -u origin agent/x'")).toBe(
+      "git push -u origin agent/x",
+    );
+    expect(unwrapShell('/bin/bash -c "npm test"')).toBe("npm test");
+    expect(unwrapShell("sh -c 'ls -la'")).toBe("ls -la");
+  });
+
+  it("returns the command unchanged when there's no shell wrapper", () => {
+    expect(unwrapShell("git status --short")).toBe("git status --short");
+  });
+});
+
+describe("exec_command and shell-tool variants", () => {
+  it("routes exec_command through summarize/classify (not a raw dump)", () => {
+    const [s] = deriveActivitySteps([
+      tool(1, "exec_command", {
+        command: "/bin/zsh -lc 'git push -u origin agent/dev-bot/47245d4f'",
+      }),
+    ]);
+    // Not the raw "/bin/zsh -lc …" wrapper, and not a rawVerb tool-name dump.
+    expect(s?.verbKey).toBe("running");
+    expect(s?.rawVerb).toBeUndefined();
+    expect(s?.cmdClass).toBe("publish");
+    expect(s?.target).toBe("git push");
+  });
+
+  it("classifies a wrapped git commit as the commit milestone", () => {
+    expect(
+      classifyCommand(unwrapShell(`/bin/zsh -lc 'git add . && git commit -m "x"'`)),
+    ).toBe("commit");
+  });
+});
+
+describe("deriveMilestoneSteps", () => {
+  it("keeps only human milestones and drops git/inspect plumbing", () => {
+    const steps = deriveMilestoneSteps([
+      tool(1, "exec_command", { command: "/bin/zsh -lc 'git status --short'" }),
+      tool(2, "exec_command", { command: "/bin/zsh -lc 'git diff --check'" }),
+      tool(3, "exec_command", { command: "/bin/zsh -lc 'rm agora-spacing-verify.png'" }),
+      tool(4, "exec_command", { command: "/bin/zsh -lc 'git branch --show-current'" }),
+      tool(5, "exec_command", { command: "/bin/zsh -lc 'git commit -m \"fix\"'" }),
+      tool(6, "exec_command", { command: "/bin/zsh -lc 'git push -u origin agent/x'" }),
+    ]);
+    // Newest first: push, then commit. The four plumbing peeks are dropped.
+    expect(steps.map((s) => s.cmdClass)).toEqual(["publish", "commit"]);
+  });
+
+  it("keeps test/build/install runs and drops bare reads", () => {
+    const steps = deriveMilestoneSteps([
+      tool(1, "Read", { file_path: "src/a.ts" }),
+      tool(2, "Bash", { command: "npm test 2>&1 | tail -50" }),
+      tool(3, "Grep", { pattern: "TODO" }),
+    ]);
+    expect(steps.map((s) => s.cmdClass)).toEqual(["test"]);
+  });
+
+  it("returns nothing for a read-only / plumbing-only run", () => {
+    expect(
+      deriveMilestoneSteps([
+        tool(1, "Read", { file_path: "a.ts" }),
+        tool(2, "Bash", { command: "git status" }),
+      ]),
+    ).toEqual([]);
   });
 });
 

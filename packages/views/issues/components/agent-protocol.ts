@@ -44,17 +44,20 @@ const PROTOCOL_MARKER = /^\s*<!--\s*agent-protocol:([a-z_]+)\s*-->\s*/;
 
 const BACKEND_KIND: Record<string, AgentProtocolKind> = {
   run_qa: "run_qa",
+  run_review: "review",
+  review_part: "review",
   auto_docs: "write_docs",
   write_docs: "write_docs",
   write_tests: "write_tests",
   gen_test_cases: "gen_tests",
   run_test_cases: "gen_tests",
   compile_tests: "gen_tests",
-  review_part: "review",
   design_proposal: "design",
   gen_design_manifest: "design",
   design_audit: "design",
   draft_code: "delegate",
+  deploy: "delegate",
+  run_ci: "delegate",
 };
 
 // Below this instruction length it's a normal human @mention, not a machine
@@ -82,8 +85,6 @@ export function parseAgentProtocol(
   content: string,
   authorType: string,
 ): AgentProtocol | null {
-  if (authorType !== "agent" && authorType !== "system") return null;
-
   // Explicit backend marker wins — exact kind, robust to instruction wording.
   let rest = content;
   let markedKind: AgentProtocolKind | null = null;
@@ -92,6 +93,14 @@ export function parseAgentProtocol(
     markedKind = BACKEND_KIND[mk[1] ?? ""] ?? "delegate";
     rest = content.slice(mk[0].length);
   }
+
+  // The authorType gate applies ONLY to the unmarked heuristic path: a human's
+  // genuine long @mention must not be mistaken for a machine prompt. An EXPLICIT
+  // marker is unambiguous, so honor it whoever the dispatch was attributed to —
+  // a human-triggered "Run QA" / "Run review" posts the marked prompt as a
+  // MEMBER comment, and it must still collapse into a headline, not dump the
+  // whole template into the thread.
+  if (!markedKind && authorType !== "agent" && authorType !== "system") return null;
 
   const m = LEADING_MENTION.exec(rest);
   if (!m) return null;

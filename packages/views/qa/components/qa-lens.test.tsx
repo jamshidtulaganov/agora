@@ -155,11 +155,14 @@ describe("QALensBody", () => {
     qaLiveProgressMocks.useQaRunningTasks.mockReturnValue([]);
   });
 
-  it("renders the verdict chip (state + source) and the primary triage actions from mocked issue + evidence", async () => {
+  it("renders the verdict chip headline and the primary triage actions from mocked issue + evidence", async () => {
     renderLens();
 
-    await screen.findByText("Passed"); // qa_evidence.verdict_pass
-    expect(screen.getByText("agent")).toBeInTheDocument(); // qa_review.source_agent — no human override yet
+    await screen.findByText("Passed"); // qa_evidence.verdict_pass — the ONE state word
+    // A clean agent verdict shows NO provenance pill — only a human override
+    // surfaces "Overridden by you" (the old always-on AGENT pill is gone).
+    expect(screen.queryByText("Overridden by you")).not.toBeInTheDocument();
+    expect(screen.queryByText("agent")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Override" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send back to dev" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Re-run QA" })).toBeInTheDocument();
@@ -194,23 +197,27 @@ describe("QALensBody", () => {
     expect(apiMocks.detachLabel).not.toHaveBeenCalled();
   });
 
-  it("Override → Mark fail with a blank reason sends no reason field", async () => {
-    apiMocks.overrideQAVerdict.mockResolvedValue(baseEvidence({ verdict: "fail", source: "human" }));
+  it("Override → Mark pass with a blank reason sends no reason field", async () => {
+    // The Override menu now offers only Mark pass (the fail path is "Send back
+    // to dev"). A blank reason POSTs reason: undefined.
+    apiMocks.overrideQAVerdict.mockResolvedValue(baseEvidence({ verdict: "pass", source: "human" }));
     renderLens();
 
     fireEvent.click(await screen.findByRole("button", { name: "Override" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Mark fail" }));
+    // Mark fail is gone from the menu.
+    expect(screen.queryByRole("menuitem", { name: "Mark fail" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Mark pass" }));
     fireEvent.click(await screen.findByRole("button", { name: "Override verdict" }));
 
     await waitFor(() =>
       expect(apiMocks.overrideQAVerdict).toHaveBeenCalledWith("issue-1", {
-        verdict: "fail",
+        verdict: "pass",
         reason: undefined,
       }),
     );
   });
 
-  it("shows the chip as human-sourced when the qa:fail label diverges from the agent's own pass verdict", async () => {
+  it("shows the 'Overridden by you' pill when the qa:fail label diverges from the agent's own pass verdict", async () => {
     // A human already flipped the label to qa:fail while the agent's own
     // evidence (from the default beforeEach mock) still says "pass" — the
     // divergence IS the override signal (see isOverride in qa-lens.tsx).
@@ -220,7 +227,7 @@ describe("QALensBody", () => {
     renderLens();
 
     await screen.findByText("Failed"); // qa_evidence.verdict_fail — human override wins
-    expect(screen.getByText("human")).toBeInTheDocument(); // qa_review.source_human
+    expect(screen.getByText("Overridden by you")).toBeInTheDocument(); // qa_review.overridden_by_you
   });
 
   it("send-back opens a dialog; confirming posts the QA note as a comment, marks qa:fail, and moves the issue to in_progress", async () => {
@@ -326,13 +333,14 @@ describe("QALensBody", () => {
     });
   });
 
-  // Phase 2 (reconciled QA state — service.ReconcileQAState on the backend).
-  // The server folds labels + per-case run results + a live task into ONE
-  // richer enum; the chip renders it directly when present, and falls back
-  // to the legacy pass/fail/pending computation (already covered above) when
-  // it's absent or unrecognized (an old server, or a future value).
+  // Reconciled QA state (service.ReconcileQAState on the backend) folds labels
+  // + per-case run results + a live task into ONE richer enum. Phase B folds
+  // that enum onto the FOUR plain buckets: the headline is always one of
+  // Passed / Failed / Testing… / Not tested yet, with the nuance demoted to a
+  // muted secondary line. Falls back to the legacy pass/fail/pending
+  // computation when the field is absent or unrecognized (old / future server).
   describe("reconciled QA state chip", () => {
-    it("renders pass_with_failing_cases as an amber 'Pass · N case(s) failing', not a clean pass", async () => {
+    it("folds pass_with_failing_cases to a green 'Passed' headline + a muted 'still failing' caveat", async () => {
       apiMocks.getQAEvidence.mockResolvedValue(baseEvidence({ reconciled_state: "pass_with_failing_cases" }));
       apiMocks.getIssueTestCases.mockResolvedValue({
         test_cases: [
@@ -342,30 +350,31 @@ describe("QALensBody", () => {
       });
       renderLens();
 
-      await screen.findByText("Pass · 1 case(s) failing"); // qa_evidence.verdict_pass_with_failing
-      expect(screen.queryByText("Passed")).not.toBeInTheDocument();
+      await screen.findByText("Passed"); // headline is the plain state word…
+      expect(screen.getByText(/1 check.*still failing/)).toBeInTheDocument(); // …the caveat is a muted line
     });
 
-    it("renders blocked distinctly from fail", async () => {
+    it("folds blocked to a 'Failed' headline (couldn't run reads as not-passing)", async () => {
       apiMocks.getQAEvidence.mockResolvedValue(baseEvidence({ reconciled_state: "blocked", verdict: "fail" }));
       renderLens();
 
-      await screen.findByText("Blocked"); // qa_evidence.verdict_blocked
-      expect(screen.queryByText("Failed")).not.toBeInTheDocument();
+      await screen.findByText("Failed"); // qa_evidence.verdict_fail — no separate "Blocked" state word
+      expect(screen.queryByText("Blocked")).not.toBeInTheDocument();
     });
 
-    it("renders stale distinctly from pending", async () => {
+    it("folds stale to a 'Passed' headline + a muted 'out of date' hint", async () => {
       apiMocks.getQAEvidence.mockResolvedValue(baseEvidence({ reconciled_state: "stale" }));
       renderLens();
 
-      await screen.findByText("Stale — re-run QA"); // qa_evidence.verdict_stale
+      await screen.findByText("Passed");
+      expect(screen.getByText(/out of date/i)).toBeInTheDocument(); // qa_evidence.out_of_date
     });
 
-    it("renders running from the server enum even with a plain evidence verdict underneath", async () => {
+    it("renders running from the server enum as 'Testing…'", async () => {
       apiMocks.getQAEvidence.mockResolvedValue(baseEvidence({ reconciled_state: "running" }));
       renderLens();
 
-      await screen.findByText("Running…"); // qa_evidence.verdict_running
+      await screen.findByText("Testing…"); // qa_evidence.verdict_running
     });
 
     it("falls back to the legacy chip for an UNRECOGNIZED reconciled_state (future server value)", async () => {

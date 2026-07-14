@@ -99,10 +99,12 @@ export function PluginsPanel() {
 
   function applyTemplate(tpl: McpServerTemplate) {
     setServerName(tpl.name);
-    setCommand(tpl.command);
-    setArgsText(tpl.argsText);
+    // Plugins bundle a local-command (stdio) MCP server; remote templates are
+    // filtered out below, so the stdio fields are the only ones used here.
+    setCommand(tpl.command ?? "");
+    setArgsText(tpl.argsText ?? "");
     setEnv(
-      tpl.envKeys.length
+      tpl.envKeys?.length
         ? tpl.envKeys.map((key) => ({ key, value: "" }))
         : [{ key: "", value: "" }],
     );
@@ -285,7 +287,9 @@ export function PluginsPanel() {
                 <span className="text-xs text-muted-foreground">
                   Quick templates:
                 </span>
-                {MCP_SERVER_TEMPLATES.map((tpl) => (
+                {MCP_SERVER_TEMPLATES.filter(
+                  (tpl) => (tpl.transport ?? "stdio") === "stdio",
+                ).map((tpl) => (
                   <Button
                     key={tpl.id}
                     type="button"

@@ -47,6 +47,15 @@ export interface StageSnapshot {
   stage: SDLCStage;
   state: StageState;
   detail?: string;
+  /**
+   * The id of the agent task currently running THIS stage, when the caller
+   * attributed a running task to it (see StagePipelineInput.runningTaskByStage).
+   * Lets the stepper bind the stage to its live agent process — the trailing
+   * narrative reads the newest activity step off it, and clicking the stage
+   * opens a live "what the agent is doing now" popover. Absent when no task is
+   * running this stage.
+   */
+  taskId?: string;
 }
 
 export interface StagePipeline {
@@ -66,6 +75,13 @@ export interface StagePipelineInput {
   prMerged?: boolean;
   /** Stages a currently-running agent task is attributed to (caller-derived). */
   runningTaskStages?: SDLCStage[];
+  /**
+   * The running agent task id per stage (caller-derived, first task wins).
+   * Carries the "which run" alongside runningTaskStages' "which stage" so the
+   * stepper can bind a stage to its live agent process. When present, its keys
+   * are treated as running stages too (so runningTaskStages can be omitted).
+   */
+  runningTaskByStage?: Partial<Record<SDLCStage, string>>;
 }
 
 const STAGE_ORDER: SDLCStage[] = ["dev", "qa", "review"];
@@ -142,6 +158,7 @@ function deriveReviewStage(
   status: IssueStatus,
   labelNames: Set<string>,
   qaStage: StageSnapshot,
+  running: Set<SDLCStage>,
 ): StageSnapshot {
   const overrideLabel = labelNames.has("merge:override");
   const gates = input.mergeGates ?? null;
@@ -163,6 +180,11 @@ function deriveReviewStage(
     state = "failed";
   } else if (gates !== null && (gates.ci === "fail" || gates.qa === "fail")) {
     state = "failed";
+  } else if (running.has("review")) {
+    // A reviewer agent is executing on this issue right now — no verdict label
+    // has landed yet, so the stage reads "running" (the breathing dot) and can
+    // bind to that run's live process, just like dev/qa.
+    state = "running";
   } else if (labelNames.has("review:pass") && qaStage.state === "passed") {
     // Both machine gates are green — the stage now waits on the HUMAN.
     state = "active";
@@ -177,9 +199,9 @@ function deriveReviewStage(
     state = "pending";
   }
 
-  if (detail === undefined && gates !== null) {
-    detail = gates.tier;
-  }
+  // No resting tier chip: "trivial/light/full" is internal gate-policy jargon,
+  // not something the stepper beat should ever surface. Only the meaningful
+  // detail states above (override / merging… / awaiting approval) show.
 
   const snapshot: StageSnapshot = { stage: "review", state };
   if (detail !== undefined) {
@@ -224,15 +246,28 @@ function finalizePipeline(stages: StageSnapshot[], status: IssueStatus): StagePi
 export function deriveStagePipeline(input: StagePipelineInput): StagePipeline {
   const status = normalizeStatus(input.status);
   const labelNames = new Set(input.labels.map((l) => l.name));
-  const running = new Set(input.runningTaskStages ?? []);
+  const taskByStage = input.runningTaskByStage ?? {};
+  // Running stages come from the explicit list, plus any stage the taskId map
+  // names (so a caller can pass only the map). Union keeps both callers working.
+  const running = new Set<SDLCStage>([
+    ...(input.runningTaskStages ?? []),
+    ...(Object.keys(taskByStage) as SDLCStage[]),
+  ]);
 
   const dev = deriveDevStage(input, status, running);
   const qa = deriveQaStage(status, labelNames, running);
-  const review = deriveReviewStage(input, status, labelNames, qa);
+  const review = deriveReviewStage(input, status, labelNames, qa, running);
 
   let stages: StageSnapshot[] = STAGE_ORDER.map(
     (stage) => ({ dev, qa, review })[stage],
   );
+
+  // Bind each stage to its running task id (if any). Done before the done/finalize
+  // passes, which spread-copy snapshots and preserve the field.
+  stages = stages.map((s) => {
+    const taskId = taskByStage[s.stage];
+    return taskId ? { ...s, taskId } : s;
+  });
 
   if (status === "done") {
     stages = stages.map((s) => (s.state === "skipped" ? s : { ...s, state: "passed" }));

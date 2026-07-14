@@ -95,6 +95,14 @@ const (
 	EventSprintDeleted      = "sprint:deleted"
 	EventIssueSprintChanged = "issue_sprint:changed"
 
+	// Release lifecycle events (release-hub Thread B). deploy:recorded fires
+	// after any deploy_event row is persisted (a QA-box git-sync OR a pipeline
+	// deploy-result); release:shipped fires when a deploy to a production-tier
+	// (requires_human / production-named) environment SUCCEEDS — the seam the
+	// release-integrations dispatcher fans out to configured connectors.
+	EventDeployRecorded = "deploy:recorded"
+	EventReleaseShipped = "release:shipped"
+
 	// QA evidence — a run_qa verdict was parsed + persisted for an issue.
 	EventQAEvidenceReady = "qa_evidence:ready"
 

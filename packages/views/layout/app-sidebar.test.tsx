@@ -132,6 +132,18 @@ vi.mock("@agora/core/workspace/queries", () => ({
   workspaceKeys: { myInvitations: () => ["invitations"] },
   workspaceListOptions: () => ({ queryKey: ["workspaces"] }),
 }));
+// WorkspaceRunningIndicator (sidebar header) pulls these in; mock them like
+// every other core dep so the sidebar renders headless.
+vi.mock("@agora/core/workspace/hooks", () => ({
+  useActorName: () => ({
+    getActorName: () => "",
+    getActorInitials: () => "",
+    getActorAvatarUrl: () => null,
+  }),
+}));
+vi.mock("@agora/core/agents", () => ({
+  agentTaskSnapshotOptions: () => ({ queryKey: ["agent-task-snapshot"], queryFn: async () => [] }),
+}));
 vi.mock("@tanstack/react-query", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-query")>()),
   useMutation: () => ({ isPending: false, mutate: vi.fn() }),

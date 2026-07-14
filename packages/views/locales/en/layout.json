@@ -43,5 +43,12 @@
     "workspace_group": "Workspace",
     "configure_group": "Configure",
     "unread_overflow": "99+"
+  },
+  "running": {
+    "idle": "Agents idle",
+    "active": "{{count}} running",
+    "header": "Working now",
+    "queued": "{{count}} queued",
+    "empty": "Nothing running right now"
   }
 }

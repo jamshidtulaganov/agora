@@ -334,7 +334,15 @@ export function CreateAgentDialog({
               members={members}
               currentUserId={currentUserId}
               selectedRuntimeId={selectedRuntimeId}
-              onSelect={setSelectedRuntimeId}
+              // Switching runtime clears any picked model: a model id is
+              // provider-specific (a claude id is invalid on a codex runtime),
+              // and the duplicate-mode pre-fill can carry the source agent's
+              // model onto a different runtime. The provider-scoped
+              // ModelDropdown below then offers the new runtime's models.
+              onSelect={(id) => {
+                setSelectedRuntimeId(id);
+                if (id !== selectedRuntimeId) setModel("");
+              }}
             />
 
             <ModelDropdown

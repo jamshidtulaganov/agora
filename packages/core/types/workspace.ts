@@ -33,6 +33,82 @@ export interface FigmaCredentialStatus {
   probed_at: string;
 }
 
+// Status of one workspace remote-MCP credential (the sealed auth for a remote
+// http/sse MCP server, keyed by server name). Token material is never returned
+// — `has_secret` reports one is stored and `last4` is a display hint only.
+export interface McpCredentialStatus {
+  id: string;
+  server_name: string;
+  has_secret: boolean;
+  last4: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Write payload for sealing a remote-MCP credential. The auth value is
+// write-only: either a single header (header_name + secret) — the common bearer
+// case — or a full header map. The server seals it and never echoes it back.
+export interface McpCredentialInput {
+  header_name?: string;
+  secret?: string;
+  headers?: Record<string, string>;
+}
+
+// A per-workspace release integration (release-hub Thread B). One of the named
+// connector kinds (webhook | slack | bitrix | github_release | gitlab_release |
+// sentry) fires on release-lifecycle events. The sealed secret (webhook/bot/API
+// token or URL) is never returned — `has_secret` reports only that one is
+// stored. `config` is the NON-secret, per-kind display/routing metadata.
+// `events` are the short lifecycle names that fire it.
+export interface ReleaseIntegration {
+  id: string;
+  kind: string;
+  config: {
+    name?: string;
+    channel_hint?: string; // slack
+    owner?: string; // github_release
+    repo?: string; // github_release
+    project_path?: string; // gitlab_release
+    org?: string; // sentry
+    project?: string; // sentry
+  } & Record<string, unknown>;
+  events: string[];
+  enabled: boolean;
+  probe_status: string;
+  has_secret: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// Write payload for creating/updating a release integration. Only the fields
+// relevant to the chosen `kind` are sent; every secret-bearing field (url,
+// webhook_url, token, host, base_url, secret) is write-only — the server seals
+// it and never echoes it back.
+export interface ReleaseIntegrationInput {
+  kind?: string;
+  name?: string;
+  events: string[];
+  enabled?: boolean;
+  // webhook
+  url?: string;
+  secret?: string;
+  // slack
+  webhook_url?: string;
+  channel_hint?: string;
+  // github_release / gitlab_release / sentry
+  token?: string;
+  // github_release
+  owner?: string;
+  repo?: string;
+  // gitlab_release
+  host?: string;
+  project_path?: string;
+  // sentry
+  base_url?: string;
+  org?: string;
+  project?: string;
+}
+
 export interface Workspace {
   id: string;
   name: string;

@@ -611,6 +611,17 @@ type LarkUserBinding struct {
 	BoundAt        pgtype.Timestamptz `json:"bound_at"`
 }
 
+type McpCredential struct {
+	ID              pgtype.UUID        `json:"id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	ServerName      string             `json:"server_name"`
+	SecretEncrypted []byte             `json:"secret_encrypted"`
+	SecretLast4     string             `json:"secret_last4"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	CreatedBy       pgtype.UUID        `json:"created_by"`
+}
+
 type Member struct {
 	ID          pgtype.UUID        `json:"id"`
 	WorkspaceID pgtype.UUID        `json:"workspace_id"`
@@ -708,6 +719,20 @@ type QaEvidence struct {
 	TriggeredBy string             `json:"triggered_by"`
 	StartedAt   pgtype.Timestamptz `json:"started_at"`
 	FinishedAt  pgtype.Timestamptz `json:"finished_at"`
+}
+
+type ReleaseIntegration struct {
+	ID              pgtype.UUID        `json:"id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	Kind            string             `json:"kind"`
+	Config          []byte             `json:"config"`
+	SecretEncrypted []byte             `json:"secret_encrypted"`
+	Events          []string           `json:"events"`
+	Enabled         bool               `json:"enabled"`
+	ProbeStatus     string             `json:"probe_status"`
+	CreatedBy       pgtype.UUID        `json:"created_by"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Skill struct {

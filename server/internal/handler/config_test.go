@@ -241,3 +241,57 @@ func TestGetConfigExposesWorkspaceCreationDisabled(t *testing.T) {
 		t.Fatalf("workspace_creation_disabled: want true with env on, got false (body=%s)", w.Body.String())
 	}
 }
+
+// TestGetConfigExposesIntegrationCapabilityFlags verifies that bitrix/zoho/lark
+// availability surfaces to the frontend through /api/config, derived from the
+// same env gates the integration endpoints already check. A general dev-team
+// deployment (none configured) reports all three false so the Settings →
+// Integrations UI hides those connector sections; SD (env set) flips them true.
+func TestGetConfigExposesIntegrationCapabilityFlags(t *testing.T) {
+	origStorage := testHandler.Storage
+	testHandler.Storage = &mockStorage{}
+	defer func() { testHandler.Storage = origStorage }()
+
+	// Default: no integration env configured → all three omitted (false).
+	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	w := httptest.NewRecorder()
+	testHandler.GetConfig(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GetConfig: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var off AppConfig
+	if err := json.Unmarshal(w.Body.Bytes(), &off); err != nil {
+		t.Fatalf("decode config: %v", err)
+	}
+	if off.BitrixEnabled || off.ZohoEnabled || off.LarkEnabled {
+		t.Fatalf("integration flags: want all false by default, got bitrix=%v zoho=%v lark=%v",
+			off.BitrixEnabled, off.ZohoEnabled, off.LarkEnabled)
+	}
+
+	// With each integration's env gate set → the matching flag flips true.
+	t.Setenv("BITRIX_WEBHOOK_URL", "https://example.bitrix24.com/rest/1/token/")
+	t.Setenv("ZOHO_PROJECTS_CLIENT_ID", "zoho-client")
+	t.Setenv("ZOHO_PROJECTS_CLIENT_SECRET", "zoho-secret")
+	t.Setenv("ZOHO_PROJECTS_REFRESH_TOKEN", "zoho-refresh")
+	t.Setenv("AGORA_LARK_SECRET_KEY", "lark-master-key")
+
+	req = httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	w = httptest.NewRecorder()
+	testHandler.GetConfig(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GetConfig: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var on AppConfig
+	if err := json.Unmarshal(w.Body.Bytes(), &on); err != nil {
+		t.Fatalf("decode config: %v", err)
+	}
+	if !on.BitrixEnabled {
+		t.Fatalf("bitrix_enabled: want true with BITRIX_WEBHOOK_URL set (body=%s)", w.Body.String())
+	}
+	if !on.ZohoEnabled {
+		t.Fatalf("zoho_enabled: want true with Zoho OAuth env set (body=%s)", w.Body.String())
+	}
+	if !on.LarkEnabled {
+		t.Fatalf("lark_enabled: want true with AGORA_LARK_SECRET_KEY set (body=%s)", w.Body.String())
+	}
+}

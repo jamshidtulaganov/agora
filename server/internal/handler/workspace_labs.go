@@ -76,20 +76,9 @@ func (h *Handler) UpdateWorkspaceLabs(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	// qa_fallback_box_id is a dormant field — the connected-box routing it fed
+	// was removed. Normalize it so it round-trips cleanly; no box-table check.
 	req.QAFallbackBoxID = strings.TrimSpace(req.QAFallbackBoxID)
-	if req.QAFallbackBoxID != "" {
-		boxUUID, ok := parseUUIDOrBadRequest(w, req.QAFallbackBoxID, "qa_fallback_box_id")
-		if !ok {
-			return
-		}
-		// The fallback must be one of THIS workspace's boxes.
-		if _, berr := h.Queries.GetConnectedBox(r.Context(), db.GetConnectedBoxParams{
-			ID: boxUUID, WorkspaceID: wsUUID,
-		}); berr != nil {
-			writeError(w, http.StatusBadRequest, "qa_fallback_box_id does not name a box in this workspace")
-			return
-		}
-	}
 
 	value, _ := json.Marshal(req)
 	if _, err := h.Queries.SetWorkspaceSettingKey(r.Context(), db.SetWorkspaceSettingKeyParams{

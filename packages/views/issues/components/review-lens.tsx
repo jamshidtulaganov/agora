@@ -5,7 +5,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   AlertTriangle,
+  CheckCircle2,
   ChevronDown,
+  CircleDashed,
+  ExternalLink,
   Info,
   Loader2,
   OctagonAlert,
@@ -16,6 +19,7 @@ import { useWorkspaceId } from "@agora/core";
 import { issueDetailOptions, issueKeys } from "@agora/core/issues/queries";
 import { issuePullRequestsOptions } from "@agora/core/github";
 import { useWorkspacePaths } from "@agora/core/paths";
+import { agentListOptions } from "@agora/core/workspace/queries";
 import type { MergeGateStatus, ReviewFinding, ReviewVerdict } from "@agora/core/types";
 import { Badge } from "@agora/ui/components/ui/badge";
 import { Button } from "@agora/ui/components/ui/button";
@@ -26,6 +30,7 @@ import { AppLink } from "../../navigation";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { PullRequestList } from "./pull-request-list";
 import { verdictIcon, verdictTone } from "../../qa/components/verdict";
+import { PropertyPicker, PickerItem, PickerEmpty } from "./pickers/property-picker";
 
 // The Review lens v2 — the human half of "agent reviews, human approves"
 // (docs/review-stage-plan.md). Same wide two-column workbench shape as the
@@ -35,11 +40,12 @@ import { verdictIcon, verdictTone } from "../../qa/components/verdict";
 // (Approve & merge / Request changes → POST review-decision, a human-only
 // endpoint), the findings list (engineer altitude: severity / file:line /
 // detail), then the issue's PR list.
-// RIGHT (~380px): the deterministic merge-readiness gate grid (the "review"
-// gate row appears automatically from the endpoint once the tier requires
-// it), tier, the merge:override badge, and the sprint-deploy pointer.
-// Shares the ["merge-readiness", issueId] query key with EditorGates so the
-// cache (and the 15s poll) is shared, not duplicated.
+// RIGHT (~380px): ONE merge-readiness banner (Ready to merge / N blocking /
+// Review not run yet / Merging…) — the single conclusion, with the per-gate
+// breakdown folded behind a Details disclosure and the "why" (blocker reasons)
+// shown inline. No tier surfaced. Plus the merge:override badge and the
+// sprint-deploy pointer. Shares the ["merge-readiness", issueId] query key with
+// EditorGates so the cache (and the 15s poll) is shared, not duplicated.
 
 type IssuesT = ReturnType<typeof useT<"issues">>["t"];
 
@@ -50,7 +56,7 @@ function GateCard({ gate }: { gate: MergeGateStatus }) {
   return (
     <div className={cn("rounded-lg border px-3 py-2", verdictTone(gate.status))}>
       <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        {gate.name}
+        {plainGateName(gate.name, t)}
       </div>
       <div className="mt-1 flex items-center gap-1.5 text-xs font-medium">
         {verdictIcon(gate.status, "size-3.5 shrink-0")}
@@ -66,6 +72,94 @@ function gateStatusLabel(status: string, t: IssuesT): string {
     : status === "fail"
       ? t(($) => $.qa_evidence.verdict_fail)
       : t(($) => $.qa_evidence.verdict_unknown);
+}
+
+// Gate names arrive as backend slugs ("ci" | "qa" | "security" | "review" |
+// "code-review"). Never show the slug — map to plain English. Unknown future
+// gate slugs render their raw name (enum drift downgrades, not crashes).
+function plainGateName(name: string, t: IssuesT): string {
+  switch (name) {
+    case "ci":
+      return t(($) => $.review_lens.gate_ci);
+    case "qa":
+      return t(($) => $.review_lens.gate_qa);
+    case "security":
+      return t(($) => $.review_lens.gate_security);
+    case "review":
+    case "code-review":
+      return t(($) => $.review_lens.gate_review);
+    default:
+      return name;
+  }
+}
+
+function plainGateState(status: string, t: IssuesT): string {
+  return status === "fail"
+    ? t(($) => $.review_lens.gate_state_failed)
+    : t(($) => $.review_lens.gate_state_pending);
+}
+
+type BannerKind = "merging" | "ready" | "review_pending" | "blocking";
+
+// One conclusion, computed once. The banner is the single "can this merge?"
+// answer — the gate grid + reasons are the inputs, moved behind a Details
+// disclosure. Tone maps to the four states; the reasons array is the "why".
+function ReadinessBanner({
+  kind,
+  blockerCount,
+  reasons,
+}: {
+  kind: BannerKind;
+  blockerCount: number;
+  reasons: string[];
+}) {
+  const { t } = useT("issues");
+
+  const meta: Record<
+    BannerKind,
+    { Icon: typeof CheckCircle2; cls: string; spin?: boolean; label: string }
+  > = {
+    ready: {
+      Icon: CheckCircle2,
+      cls: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+      label: t(($) => $.review_lens.ready),
+    },
+    merging: {
+      Icon: Loader2,
+      cls: "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-400",
+      spin: true,
+      label: t(($) => $.review_lens.banner_merging),
+    },
+    review_pending: {
+      Icon: CircleDashed,
+      cls: "border-border bg-muted/30 text-muted-foreground",
+      label: t(($) => $.review_lens.banner_review_pending),
+    },
+    blocking: {
+      Icon: AlertTriangle,
+      cls: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+      label: t(($) => $.review_lens.banner_blocking, { n: blockerCount }),
+    },
+  };
+  const { Icon, cls, spin, label } = meta[kind];
+
+  return (
+    <div className={cn("rounded-lg border px-3.5 py-3", cls)}>
+      <div className="flex items-center gap-2">
+        <Icon className={cn("size-4 shrink-0", spin && "animate-spin")} />
+        <span className="text-sm font-semibold">{label}</span>
+      </div>
+      {kind === "blocking" && reasons.length > 0 && (
+        <ul className="mt-1.5 space-y-0.5 pl-6 text-[12px] text-muted-foreground">
+          {reasons.map((r, i) => (
+            <li key={i} className="list-disc">
+              {r}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 // Severity visuals — blocker is the only gate-failing kind (destructive),
@@ -148,12 +242,69 @@ function FindingRow({ finding }: { finding: ReviewFinding }) {
   );
 }
 
+// Explicit reviewer picker — a chevron split-button next to Run/Re-run review.
+// Server-side auto-resolution (resolveReviewerAgent) needs a cast reviewer, an
+// orchestrator, or squad membership; a workspace without any of those wiring
+// has no way to satisfy "Run review" and the button 409s with no recourse.
+// This lets a human name a reviewer explicitly — sliceAction already accepts
+// agentId (resolveSliceActionAgent path (a)), so no backend change needed.
+// Excludes the issue's author agent: the server rejects a self-review anyway.
+function ReviewerPicker({
+  authorAgentId,
+  onSelect,
+  disabled,
+}: {
+  authorAgentId: string | null;
+  onSelect: (agentId: string) => void;
+  disabled?: boolean;
+}) {
+  const { t } = useT("issues");
+  const wsId = useWorkspaceId();
+  const [open, setOpen] = useState(false);
+  const { data: agents = [] } = useQuery(agentListOptions(wsId));
+  const eligible = agents.filter((a) => !a.archived_at && a.id !== authorAgentId);
+
+  return (
+    <PropertyPicker
+      open={open}
+      onOpenChange={setOpen}
+      width="w-56"
+      align="end"
+      triggerRender={
+        <Button variant="outline" size="sm" disabled={disabled} className="px-1.5" />
+      }
+      trigger={<ChevronDown className="size-3.5" />}
+      tooltip={t(($) => $.review_lens.pick_reviewer)}
+    >
+      {eligible.length === 0 ? (
+        <PickerEmpty />
+      ) : (
+        eligible.map((a) => (
+          <PickerItem
+            key={a.id}
+            selected={false}
+            onClick={() => {
+              onSelect(a.id);
+              setOpen(false);
+            }}
+          >
+            <ActorAvatar actorType="agent" actorId={a.id} size={18} showStatusDot />
+            <span className="truncate">{a.name}</span>
+          </PickerItem>
+        ))
+      )}
+    </PropertyPicker>
+  );
+}
+
 function ReviewVerdictCard({
   review,
   stale,
+  diffUrl,
 }: {
   review: ReviewVerdict;
   stale: boolean;
+  diffUrl?: string;
 }) {
   const { t } = useT("issues");
 
@@ -210,6 +361,17 @@ function ReviewVerdictCard({
         {review.files_reviewed > 0 && (
           <span>{t(($) => $.review_lens.files_reviewed, { n: review.files_reviewed })}</span>
         )}
+        {diffUrl && (
+          <a
+            href={diffUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+          >
+            {t(($) => $.review_lens.view_diff)}
+            <ExternalLink className="size-3" />
+          </a>
+        )}
       </div>
       {stale && (
         <div className="mt-2 rounded-md bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-700 dark:text-amber-400">
@@ -245,6 +407,12 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
 
   const hasOverride = (issue?.labels ?? []).some((l) => l.name === "merge:override");
   const hasVerdict = review?.verdict === "pass" || review?.verdict === "fail";
+  // Stage brain (frontend half): review is DISABLED while QA is failing or
+  // stale — the backend refuses the dispatch too (409); this disables the
+  // affordance up front with the reason, instead of letting the click bounce.
+  const qaFailing = (issue?.labels ?? []).some((l) => l.name === "qa:fail");
+  const qaStale = (issue?.labels ?? []).some((l) => l.name === "qa:stale");
+  const reviewBlocked = qaFailing || qaStale;
 
   // Stale hint: the backend PR payload carries no head SHA, so we approximate
   // "the reviewed commit is no longer the PR head" with "an open PR was
@@ -258,6 +426,14 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
       (pr) => pr.state === "open" && Date.parse(pr.pr_updated_at) > reviewedAtMs,
     );
 
+  // One-click from the verdict to the diff the agent reviewed: prefer an open
+  // PR, else the newest one on the issue. Links to the PR page (provider-
+  // agnostic — the diff is one tab away on GitHub/GitLab alike).
+  const primaryPr =
+    (prData?.pull_requests ?? []).find((pr) => pr.state === "open") ??
+    (prData?.pull_requests ?? [])[0];
+  const diffUrl = primaryPr?.html_url || undefined;
+
   // merge:override bypasses the deterministic gates by design, so override
   // wins unconditionally; the normal path still needs a clean pass + a ready
   // gate grid.
@@ -270,17 +446,32 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
     void qc.invalidateQueries({ queryKey: ["merge-readiness", issueId] });
   };
 
+  // No-reviewer-resolves is a distinct, recoverable state (not just a toast):
+  // the human can pick a reviewer explicitly via the picker instead of first
+  // going to set up a squad/cast. Cleared on any run attempt so a fresh
+  // failure always re-surfaces the hint.
+  const [noReviewerAvailable, setNoReviewerAvailable] = useState(false);
+
   const runReview = useMutation({
-    mutationFn: () => api.sliceAction(issueId, { kind: "run_review" }),
+    mutationFn: (agentId?: string) =>
+      api.sliceAction(issueId, { kind: "run_review", agentId }),
     onSuccess: () => {
+      setNoReviewerAvailable(false);
       toast.success(t(($) => $.review_lens.toast_review_dispatched));
       void qc.invalidateQueries({ queryKey: issueKeys.timeline(issueId) });
     },
     onError: (e) => {
       const msg = e instanceof Error ? e.message : "";
+      if (msg.includes("no reviewer distinct from the author")) {
+        setNoReviewerAvailable(true);
+        toast.error(t(($) => $.review_lens.toast_no_reviewer));
+        return;
+      }
       toast.error(msg || t(($) => $.review_lens.toast_review_dispatch_failed));
     },
   });
+
+  const authorAgentId = issue?.assignee_type === "agent" ? issue.assignee_id : null;
 
   const decide = useMutation({
     mutationFn: (body: { action: "approve" | "request_changes"; note?: string }) =>
@@ -317,6 +508,42 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
   const sortedFindings = [...(review?.findings ?? [])].sort(
     (a, b) => (SEVERITY_ORDER[a.severity] ?? 3) - (SEVERITY_ORDER[b.severity] ?? 3),
   );
+  const hasBlockerFinding = sortedFindings.some((f) => f.severity === "blocker");
+
+  // The single "why can't this merge" list, derived from the same signals as
+  // canApprove so the banner and the Approve button never disagree. Each
+  // non-passing gate contributes one plain-English reason; the code-review
+  // verdict adds one when the tier didn't already fold it into a gate.
+  const gates = readiness?.gates ?? [];
+  const hasReviewGate = gates.some((g) => g.name === "review" || g.name === "code-review");
+  const blockers: string[] = [];
+  if (!hasOverride) {
+    for (const g of gates) {
+      if (g.status === "pass") continue;
+      blockers.push(`${plainGateName(g.name, t)} — ${plainGateState(g.status, t)}`);
+    }
+    if (!hasReviewGate && review?.verdict !== "pass") {
+      blockers.push(
+        `${t(($) => $.review_lens.gate_review)} — ${plainGateState(
+          hasVerdict ? "fail" : "pending",
+          t,
+        )}`,
+      );
+    }
+  }
+
+  const merging = decide.isPending && decision === "approve";
+  const bannerKind: BannerKind = merging
+    ? "merging"
+    : canApprove
+      ? "ready"
+      : !hasVerdict
+        ? "review_pending"
+        : "blocking";
+  // The one-line reason to show inline under a disabled Approve button.
+  const disabledReason = !hasVerdict
+    ? t(($) => $.review_lens.banner_review_pending)
+    : (blockers[0] ?? "");
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -330,24 +557,57 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
                 <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
                   {t(($) => $.review_lens.verdict_heading)}
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => runReview.mutate()}
-                  disabled={runReview.isPending}
-                >
-                  {runReview.isPending ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : hasVerdict ? (
-                    t(($) => $.review_lens.rerun_review)
-                  ) : (
-                    t(($) => $.review_lens.run_review)
-                  )}
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => runReview.mutate(undefined)}
+                    disabled={runReview.isPending || reviewBlocked}
+                    title={
+                      reviewBlocked
+                        ? qaFailing
+                          ? t(($) => $.review_lens.blocked_qa_fail)
+                          : t(($) => $.review_lens.blocked_qa_stale)
+                        : undefined
+                    }
+                  >
+                    {runReview.isPending ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : hasVerdict ? (
+                      t(($) => $.review_lens.rerun_review)
+                    ) : (
+                      t(($) => $.review_lens.run_review)
+                    )}
+                  </Button>
+                  <ReviewerPicker
+                    authorAgentId={authorAgentId}
+                    disabled={runReview.isPending || reviewBlocked}
+                    onSelect={(agentId) => runReview.mutate(agentId)}
+                  />
+                </div>
               </div>
+
+              {/* Stage-brain banner: WHY review is disabled + the next step. */}
+              {reviewBlocked && (
+                <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-[12px] text-amber-700 dark:text-amber-400">
+                  <span aria-hidden>⚠</span>
+                  <span>
+                    {qaFailing
+                      ? t(($) => $.review_lens.blocked_qa_fail)
+                      : t(($) => $.review_lens.blocked_qa_stale)}
+                  </span>
+                </div>
+              )}
 
               {reviewLoading ? (
                 <p className="text-sm text-muted-foreground">{t(($) => $.timeline.loading)}</p>
+              ) : noReviewerAvailable ? (
+                <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-5 text-center">
+                  <p className="text-xs font-medium">{t(($) => $.review_lens.no_reviewer_title)}</p>
+                  <p className="mt-1 text-[12px] text-muted-foreground">
+                    {t(($) => $.review_lens.no_reviewer_body)}
+                  </p>
+                </div>
               ) : !review || !hasVerdict ? (
                 <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-5 text-center">
                   <p className="text-xs font-medium">{t(($) => $.review_lens.no_review_title)}</p>
@@ -356,7 +616,7 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
                   </p>
                 </div>
               ) : (
-                <ReviewVerdictCard review={review} stale={stale} />
+                <ReviewVerdictCard review={review} stale={stale} diffUrl={diffUrl} />
               )}
             </section>
 
@@ -365,41 +625,43 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
                 the authority. */}
             <section className="rounded-lg border px-4 py-3">
               {decision === null ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    size="sm"
-                    onClick={() => setDecision("approve")}
-                    disabled={!canApprove || decide.isPending}
-                  >
-                    {t(($) => $.review_lens.approve_merge)}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setDecision("changes")}
-                    disabled={decide.isPending}
-                  >
-                    {t(($) => $.review_lens.request_changes)}
-                  </Button>
-                  {canApprove && (
-                    <span className="text-[11px] text-muted-foreground">
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => setDecision("approve")}
+                      disabled={!canApprove || decide.isPending}
+                    >
+                      {t(($) => $.review_lens.approve_merge)}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setDecision("changes")}
+                      disabled={decide.isPending}
+                    >
+                      {t(($) => $.review_lens.request_changes)}
+                    </Button>
+                  </div>
+                  {/* Always say why: awaiting-you when ready, the top blocker
+                      when Approve is disabled (the reason a disabled control
+                      must state inline). */}
+                  {canApprove ? (
+                    <p className="text-[11px] text-muted-foreground">
                       {t(($) => $.review_lens.awaiting_approval)}
-                    </span>
-                  )}
+                    </p>
+                  ) : disabledReason ? (
+                    <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <CircleDashed className="size-3 shrink-0" />
+                      {disabledReason}
+                    </p>
+                  ) : null}
                 </div>
               ) : decision === "approve" ? (
                 <div className="space-y-2">
                   <p className="text-xs text-muted-foreground">
                     {t(($) => $.review_lens.approve_confirm_body)}
                   </p>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                    {(readiness?.gates ?? []).map((g) => (
-                      <span key={g.name} className="inline-flex items-center gap-1">
-                        {verdictIcon(g.status, "size-3 shrink-0")}
-                        {g.name}: {gateStatusLabel(g.status, t)}
-                      </span>
-                    ))}
-                  </div>
                   <div className="flex justify-end gap-2">
                     <Button
                       variant="ghost"
@@ -451,23 +713,31 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
               )}
             </section>
 
-            {/* Findings — engineer altitude. */}
+            {/* Findings — engineer altitude. Collapsed by default; only auto-
+                expands when there's a blocker (the finding that gates merge). */}
             {hasVerdict && (
               <section>
-                <div className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">
-                  {t(($) => $.review_lens.findings_heading)}
-                  {sortedFindings.length > 0 ? ` (${sortedFindings.length})` : ""}
-                </div>
                 {sortedFindings.length === 0 ? (
-                  <p className="text-[12px] text-muted-foreground">
-                    {t(($) => $.review_lens.no_findings)}
-                  </p>
+                  <>
+                    <div className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+                      {t(($) => $.review_lens.findings_heading)}
+                    </div>
+                    <p className="text-[12px] text-muted-foreground">
+                      {t(($) => $.review_lens.no_findings)}
+                    </p>
+                  </>
                 ) : (
-                  <ul className="divide-y rounded-lg border">
-                    {sortedFindings.map((f, i) => (
-                      <FindingRow key={i} finding={f} />
-                    ))}
-                  </ul>
+                  <details open={hasBlockerFinding} className="group">
+                    <summary className="mb-2 flex cursor-pointer list-none items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground [&::-webkit-details-marker]:hidden">
+                      <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" />
+                      {t(($) => $.review_lens.findings_heading)} ({sortedFindings.length})
+                    </summary>
+                    <ul className="divide-y rounded-lg border">
+                      {sortedFindings.map((f, i) => (
+                        <FindingRow key={i} finding={f} />
+                      ))}
+                    </ul>
+                  </details>
                 )}
               </section>
             )}
@@ -497,23 +767,29 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
 
               {isLoading ? (
                 <p className="text-sm text-muted-foreground">{t(($) => $.timeline.loading)}</p>
-              ) : !readiness || readiness.gates.length === 0 ? (
-                <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-5 text-center">
-                  <p className="text-[12px] text-muted-foreground">{t(($) => $.review_lens.empty)}</p>
-                </div>
               ) : (
-                <div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {readiness.gates.map((g) => (
-                      <GateCard key={g.name} gate={g} />
-                    ))}
-                  </div>
-                  <div className="mt-2 text-[11px] text-muted-foreground">
-                    {t(($) => $.review_lens.tier_label)}: {readiness.tier} ·{" "}
-                    {readiness.ready
-                      ? t(($) => $.review_lens.ready)
-                      : t(($) => $.review_lens.blocked)}
-                  </div>
+                <div className="space-y-2">
+                  {/* One conclusion up top; the gate breakdown (the inputs)
+                      folds behind Details. No tier line — "trivial/light/full"
+                      is internal policy, never user-facing. */}
+                  <ReadinessBanner
+                    kind={bannerKind}
+                    blockerCount={blockers.length}
+                    reasons={blockers}
+                  />
+                  {gates.length > 0 && (
+                    <details className="group rounded-lg border px-3 py-2">
+                      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] font-medium text-muted-foreground [&::-webkit-details-marker]:hidden">
+                        <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" />
+                        {t(($) => $.review_lens.details)}
+                      </summary>
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        {gates.map((g) => (
+                          <GateCard key={g.name} gate={g} />
+                        ))}
+                      </div>
+                    </details>
+                  )}
                 </div>
               )}
             </section>

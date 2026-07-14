@@ -7,10 +7,27 @@ import { api } from "@agora/core/api";
 import { cn } from "@agora/ui/lib/utils";
 
 // Merge-readiness gates — surfaces the EXISTING deterministic gate spine
-// (MergeReadiness: ci/qa/security/code-review verdicts from labels, tiered by
-// blast radius) inside the editor's review bar, so the human sees what still
-// blocks merge right next to Accept→PR. Read-only; polled. Renders nothing until
-// gates exist (e.g. before any tier is resolved).
+// (MergeReadiness: ci/qa/security/code-review verdicts from labels) inside the
+// editor's review bar, so the human sees what still blocks merge right next to
+// Accept→PR. Read-only; polled. Renders nothing until gates exist. Plain names
+// only — the internal tier ("trivial/light/full") is never surfaced.
+
+// Backend gate slugs → short plain labels for the tight editor strip.
+function gateLabel(name: string): string {
+  switch (name) {
+    case "ci":
+      return "CI";
+    case "qa":
+      return "QA";
+    case "security":
+      return "Security";
+    case "review":
+    case "code-review":
+      return "Review";
+    default:
+      return name;
+  }
+}
 
 function gateIcon(status: string) {
   if (status === "pass") return <Check className="h-2.5 w-2.5" />;
@@ -34,6 +51,8 @@ export function EditorGates({ issueId }: { issueId: string }) {
 
   if (!data || data.gates.length === 0) return null;
 
+  const blocking = data.gates.filter((g) => g.status !== "pass").length;
+
   return (
     <div
       className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]"
@@ -41,14 +60,14 @@ export function EditorGates({ issueId }: { issueId: string }) {
     >
       <span className="inline-flex items-center gap-1 text-muted-foreground">
         <GitMerge className="h-3 w-3 shrink-0" />
-        Gates · {data.tier}
+        Merge
       </span>
       {data.gates.map((g) => (
         <span
           key={g.name}
           className={cn("inline-flex items-center gap-0.5", gateClass(g.status))}
         >
-          {g.name}
+          {gateLabel(g.name)}
           {gateIcon(g.status)}
         </span>
       ))}
@@ -60,7 +79,7 @@ export function EditorGates({ issueId }: { issueId: string }) {
             : "text-amber-600 dark:text-amber-400",
         )}
       >
-        {data.ready ? "ready to merge" : "blocked"}
+        {data.ready ? "ready to merge" : `${blocking} blocking`}
       </span>
     </div>
   );

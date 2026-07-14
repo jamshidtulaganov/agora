@@ -21,7 +21,6 @@ import { Button } from "@agora/ui/components/ui/button";
 import { cn } from "@agora/ui/lib/utils";
 import { useNavigation } from "../navigation";
 import { useT } from "../i18n";
-import { seedSdSkills } from "./sd-skills";
 import {
   buildUserContextSection,
   CREATE_AGENT_GUIDE_ISSUE_TITLE,
@@ -169,11 +168,6 @@ async function findOrCreateHelper(
         !a.archived_at,
     );
     if (found) {
-      // Fire-and-forget: seed the SD shared skills onto the helper agent so
-      // every dev's helper carries the same SalesDoctor context. Never
-      // blocks onboarding — `seedSdSkills` is best-effort and swallows its
-      // own errors.
-      void seedSdSkills(workspaceId, found.id);
       return found;
     }
     const lang = pickContentLang(language);
@@ -187,8 +181,6 @@ async function findOrCreateHelper(
       max_concurrent_tasks: 6,
       template: "agora_helper",
     });
-    // Same fire-and-forget seed on the freshly created helper.
-    void seedSdSkills(workspaceId, created.id);
     return created;
   })();
 

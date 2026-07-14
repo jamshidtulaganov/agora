@@ -103,15 +103,14 @@ describe("SDLCStepper", () => {
     renderStepper(BASE_PIPELINE, { activeLens: "qa", isLensAvailable: (stage) => stage === "qa" });
     const qa = screen.getByTestId("sdlc-stage-qa");
     const dev = screen.getByTestId("sdlc-stage-dev");
-    // Selected: subtle fill on the stage, underline on the LABEL span only
-    // (not the whole button — the detail chip must not get underlined).
+    // Selected: subtle fill on the stage, underline on the LABEL span only.
     expect(qa.className).toContain("bg-accent");
     expect(qa.querySelector(".underline")).not.toBeNull();
     expect(dev.className).not.toContain("bg-accent");
     expect(dev.querySelector(".underline")).toBeNull();
   });
 
-  it("renders the detail suffix as a tiny uppercase label when present", () => {
+  it("never surfaces the stage detail (the jargon chip was dropped)", () => {
     const pipeline: StagePipeline = {
       current: "review",
       stages: [
@@ -121,7 +120,9 @@ describe("SDLCStepper", () => {
       ],
     };
     renderStepper(pipeline);
-    expect(screen.getByText("stale")).toBeInTheDocument();
-    expect(screen.getByText("light")).toBeInTheDocument();
+    // The stepper is a clean [dot] [label] beat — "stale"/"light" jargon must
+    // not appear anywhere.
+    expect(screen.queryByText("stale")).toBeNull();
+    expect(screen.queryByText("light")).toBeNull();
   });
 });

@@ -1,16 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CheckCircle2, XCircle, CircleDashed, GitBranch, Rocket, Play, Plus, Loader2 } from "lucide-react";
+import { GitBranch, Rocket, Play, Plus, Loader2, HelpCircle, ChevronDown, ChevronRight, MoreHorizontal } from "lucide-react";
 import { api } from "@agora/core/api";
 import { sprintReadinessOptions } from "@agora/core/qa/queries";
 import type { SprintReadinessResponse } from "@agora/core/api/schemas";
 import { useWorkspacePaths } from "@agora/core/paths";
 import { useWorkspaceId } from "@agora/core/hooks";
-import { Button } from "@agora/ui/components/ui/button";
-import { Skeleton } from "@agora/ui/components/ui/skeleton";
+import { Button, buttonVariants } from "@agora/ui/components/ui/button";
+import { Badge } from "@agora/ui/components/ui/badge";
+import { Card } from "@agora/ui/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@agora/ui/components/ui/dropdown-menu";
+import { ProgressRing } from "@agora/ui/components/ui/progress-ring";
+import { HoverCard, HoverCardTrigger, HoverCardContent } from "@agora/ui/components/ui/hover-card";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,24 +30,32 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@agora/ui/components/ui/alert-dialog";
+import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
 import { AppLink } from "../../navigation";
 import { IssuePickerModal } from "../../modals/issue-picker-modal";
 import { SprintDeployPanel } from "./sprint-deploy-panel";
 import { regressionStatusMeta } from "./regression-status";
+import { sprintReadiness, type ReadinessState } from "./sprint-readiness";
+import { verdictIcon } from "./verdict";
 
-// Sprint QA-readiness — "is this sprint mergeable?" Per active sprint: the issue
-// rows by QA verdict (human qa:pass/qa:fail + automated regression runs) and a
-// green/blocked rollup. Answers, at a glance, whether the shared sprint branch
-// is safe to merge to base. Reads GET /api/qa/sprint-readiness.
+// Sprint QA-readiness — "is this sprint ready to ship?" Per active sprint: a
+// readiness ring (passed/total, toned by state), the primary ship/blockers
+// CTA, a positive-first "what's shipping" changelog, and the sprint deploy
+// panel. Answers, at a glance, how close the shared sprint branch is to
+// shipping. Reads GET /api/qa/sprint-readiness (shared cache with the health
+// strip + queue).
 
-function VerdictDot({ verdict }: { verdict: string }) {
-  if (verdict === "pass") return <CheckCircle2 className="size-4 shrink-0 text-emerald-500" aria-label="pass" />;
-  if (verdict === "fail") return <XCircle className="size-4 shrink-0 text-destructive" aria-label="fail" />;
-  return <CircleDashed className="size-4 shrink-0 text-muted-foreground" aria-label="pending" />;
-}
-
-export function QASprintReadinessView({ projectId }: { projectId?: string }) {
+export function QASprintReadinessView({
+  projectId,
+  onSeeBlockers,
+}: {
+  projectId?: string;
+  // Deep-link to the Queue filtered to needs-human (the health strip's chip
+  // pattern) — the "See N blockers" CTA's target. Falls back to the first
+  // failing issue's QA lens when the parent doesn't wire it.
+  onSeeBlockers?: () => void;
+}) {
   const wp = useWorkspacePaths();
   const wsId = useWorkspaceId();
   const { t } = useT("issues");
@@ -49,29 +66,56 @@ export function QASprintReadinessView({ projectId }: { projectId?: string }) {
 
   if (isLoading && !data) {
     return (
-      <div className="w-full space-y-2 px-8 py-8" aria-hidden>
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-24 w-full" />
+      <div className="w-full space-y-4 px-8 py-8" aria-hidden>
+        <Card className="h-28 w-full" />
+        <Card className="h-28 w-full" />
       </div>
     );
   }
   if (sprints.length === 0) {
     return (
-      <div className="w-full px-8 py-10 text-center text-sm text-muted-foreground">
-        {t(($) => $.qa_cockpit.sprint_empty)}
+      <div className="w-full px-8 py-8">
+        <Card className="items-center gap-2 py-12 text-center text-sm text-muted-foreground">
+          <Rocket className="size-6 text-muted-foreground/60" aria-hidden />
+          <p className="px-6">{t(($) => $.qa_cockpit.sprint_empty)}</p>
+        </Card>
       </div>
     );
   }
 
   return (
     <div className="flex w-full flex-col gap-6 px-8 py-8">
-      <p className="text-sm text-muted-foreground">{t(($) => $.qa_cockpit.sprint_description)}</p>
+      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+        <span>{t(($) => $.qa_cockpit.view_ship)}</span>
+        <HoverCard>
+          <HoverCardTrigger
+            render={
+              <button
+                type="button"
+                aria-label={t(($) => $.qa_cockpit.ship_help_label)}
+                className="flex size-5 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <HelpCircle className="size-3.5" aria-hidden />
+              </button>
+            }
+          />
+          <HoverCardContent className="w-72">
+            <p className="text-[12px] leading-relaxed text-muted-foreground">{t(($) => $.qa_cockpit.ship_help)}</p>
+          </HoverCardContent>
+        </HoverCard>
+      </div>
 
       {/* The QA lens lives inside the issue cockpit now (docs/sdlc-stage-cockpit-plan.md
           phase D) — there is no more dedicated /qa/<id> page, so these links
           deep-link to the issue with the QA stage pre-selected. */}
       {sprints.map((s) => (
-        <SprintCard key={s.sprint_id} sprint={s} wsId={wsId} qaDetail={(id) => `${wp.issueDetail(id)}?lens=qa`} />
+        <SprintCard
+          key={s.sprint_id}
+          sprint={s}
+          wsId={wsId}
+          qaDetail={(id) => `${wp.issueDetail(id)}?lens=qa`}
+          onSeeBlockers={onSeeBlockers}
+        />
       ))}
     </div>
   );
@@ -84,13 +128,19 @@ function RegressionGate({ gate, issueHref }: { gate: SprintData["regression"]; i
   if (!gate || !gate.status) {
     return <span className="text-[11px] text-muted-foreground">{t(($) => $.qa_cockpit.sprint_regression_never_run)}</span>;
   }
-  // Shared status classification (regression-status.ts) — the health strip's
-  // glyph renders the same mapping, so the two can't drift.
-  const { running, Icon, className: cls } = regressionStatusMeta(gate.status);
+  // Shared status classification (regression-status.ts) — the same mapping the
+  // sprint-readiness rollup reads, so the two can't drift. The raw server
+  // status string never reaches the user; it's mapped to plain English here.
+  const { running, failed, done, Icon, className: cls } = regressionStatusMeta(gate.status);
+  const label = done
+    ? t(($) => $.qa_cockpit.regression_passed)
+    : failed
+      ? t(($) => $.qa_cockpit.regression_failed)
+      : t(($) => $.qa_cockpit.regression_running);
   const body = (
     <>
       <Icon className={`size-3.5 ${running ? "animate-spin" : ""}`} aria-hidden />
-      {t(($) => $.qa_cockpit.sprint_regression_status, { status: gate.status })}
+      {label}
     </>
   );
   // Click-through to the run's tracking issue — the chip used to be a
@@ -100,7 +150,7 @@ function RegressionGate({ gate, issueHref }: { gate: SprintData["regression"]; i
       <AppLink
         href={issueHref(gate.run_issue_id)}
         className={`flex items-center gap-1 text-[11px] underline-offset-2 hover:underline ${cls}`}
-        title={gate.reason || gate.status}
+        title={gate.reason || label}
       >
         {body}
       </AppLink>
@@ -113,22 +163,66 @@ function RegressionGate({ gate, issueHref }: { gate: SprintData["regression"]; i
   );
 }
 
-function SprintCard({ sprint: s, wsId, qaDetail }: { sprint: SprintData; wsId: string; qaDetail: (id: string) => string }) {
+const SUBLABEL_TONE: Record<ReadinessState, string> = {
+  ready: "text-emerald-600 dark:text-emerald-400",
+  blocking: "text-destructive",
+  regression: "text-amber-600 dark:text-amber-400",
+  togo: "text-muted-foreground",
+};
+
+function SprintCard({
+  sprint: s,
+  wsId,
+  qaDetail,
+  onSeeBlockers,
+}: {
+  sprint: SprintData;
+  wsId: string;
+  qaDetail: (id: string) => string;
+  onSeeBlockers?: () => void;
+}) {
   const { t } = useT("issues");
   const qc = useQueryClient();
   const [attachOpen, setAttachOpen] = useState(false);
+  const [changelogOpen, setChangelogOpen] = useState(false);
+  // Deploy is collapsed at rest — a Ship card shouldn't open with a full deploy
+  // panel in every row. "Ship it" reveals it; a not-ready sprint never shows it.
+  const [deployOpen, setDeployOpen] = useState(false);
+  const deployRef = useRef<HTMLDivElement>(null);
   // Set only when attaching an issue that already belongs to a DIFFERENT
   // sprint — issue_to_sprint is one-sprint-per-issue (PK = issue_id), so
   // attaching such an issue silently MOVES it. Gated behind an explicit
   // confirm dialog (audit P1: the picker used to offer such issues with no
   // warning at all).
   const [pendingMove, setPendingMove] = useState<{ issueId: string; sprintName: string } | null>(null);
-  const pct = s.total > 0 ? Math.round((s.passed / s.total) * 100) : 0;
+
+  const readiness = sprintReadiness(s);
+  const togo = Math.max(0, s.total - s.passed);
+  // Ring sub-label — reads the shared readiness state so the Ship card and the
+  // health strip name the same thing.
+  const subLabelText =
+    readiness.state === "ready"
+      ? t(($) => $.qa_cockpit.ready_to_ship)
+      : readiness.state === "blocking"
+        ? t(($) => $.qa_cockpit.n_blocking, { count: readiness.count })
+        : readiness.state === "regression"
+          ? t(($) => $.qa_cockpit.regression_pending)
+          : t(($) => $.qa_cockpit.n_to_go, { count: readiness.count });
+
   // Fail-first row order: the rows blocking the merge surface at the top of
-  // the card (pending next, passed last); stable sort keeps server order
+  // the changelog (pending next, passed last); stable sort keeps server order
   // within each group.
   const verdictRank = (v: string) => (v === "fail" ? 0 : v === "pass" ? 2 : 1);
   const sortedIssues = [...s.issues].sort((a, b) => verdictRank(a.verdict) - verdictRank(b.verdict));
+  const firstFailing = sortedIssues.find((i) => i.verdict === "fail");
+  // Changelog groups — positive framing keeps "Passed" first when clean, but
+  // fails lead when there's something to fix.
+  const changelogGroups = [
+    { key: "fail", label: t(($) => $.qa_cockpit.changelog_needs_fix), items: sortedIssues.filter((i) => i.verdict === "fail") },
+    { key: "pending", label: t(($) => $.qa_cockpit.changelog_pending), items: sortedIssues.filter((i) => i.verdict !== "fail" && i.verdict !== "pass") },
+    { key: "pass", label: t(($) => $.qa_cockpit.changelog_passed), items: sortedIssues.filter((i) => i.verdict === "pass") },
+  ].filter((g) => g.items.length > 0);
+
   const runRegression = useMutation({
     mutationFn: () => api.runSprintRegression(s.sprint_id),
     onSuccess: () => {
@@ -166,65 +260,92 @@ function SprintCard({ sprint: s, wsId, qaDetail }: { sprint: SprintData; wsId: s
     },
   });
 
+  const shipIt = () => {
+    // No new backend call — REVEAL the deploy panel (collapsed by default) so
+    // the human fires the environment deploy from its existing controls. The
+    // panel mounts on this state change, so defer the scroll a frame.
+    setDeployOpen(true);
+    requestAnimationFrame(() => deployRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
+  };
+
   return (
-    <div className="rounded-lg border bg-card">
-      <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3">
-        <div className="flex min-w-0 flex-col">
+    <Card className="gap-0 py-0">
+      <div className="flex items-center gap-4 p-4">
+        {/* LEFT: the readiness gestalt — ring only. */}
+        <ProgressRing
+          value={readiness.value}
+          size={76}
+          strokeWidth={6}
+          tone={readiness.tone}
+          aria-label={t(($) => $.qa_cockpit.ring_aria, { passed: s.passed, total: s.total })}
+        >
+          <span className="text-base font-semibold tabular-nums">
+            {s.passed}/{s.total}
+          </span>
+        </ProgressRing>
+
+        {/* MIDDLE: identity + ONE headline state. Branch, the regression chip
+            and the verdict-count badges live in "What's shipping" below —
+            they're the detail behind the headline, not the headline itself. */}
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="truncate text-[13px] font-semibold">
             {s.project_title} · {s.name}
           </span>
-          {s.branch ? (
-            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <GitBranch className="size-3" aria-hidden /> {s.branch}
-            </span>
-          ) : null}
+          <span className={cn("text-[13px] font-medium", SUBLABEL_TONE[readiness.state])}>{subLabelText}</span>
         </div>
 
-        <div className="ml-auto flex items-center gap-3 text-[12px]">
-          <RegressionGate gate={s.regression} issueHref={qaDetail} />
-          <span className="flex items-center gap-1 text-emerald-500" title={t(($) => $.qa_cockpit.sprint_passed_title)}>
-            <CheckCircle2 className="size-3.5" aria-hidden /> {s.passed}
-          </span>
-          <span className="flex items-center gap-1 text-destructive" title={t(($) => $.qa_cockpit.sprint_failing_title)}>
-            <XCircle className="size-3.5" aria-hidden /> {s.failed}
-          </span>
-          <span
-            className="flex items-center gap-1 text-muted-foreground"
-            title={t(($) => $.qa_cockpit.sprint_pending_title, { count: s.no_qa })}
-          >
-            <CircleDashed className="size-3.5" aria-hidden /> {s.pending}
-            {s.no_qa > 0 ? <span className="text-[10px]">{t(($) => $.qa_cockpit.sprint_no_qa_hint, { count: s.no_qa })}</span> : null}
-          </span>
-          <span className="text-muted-foreground">/ {s.total}</span>
-          <span
-            className={
-              s.mergeable
-                ? "flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] font-medium text-emerald-500"
-                : "flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground"
-            }
-          >
-            <Rocket className="size-3.5" aria-hidden />
-            {s.mergeable ? t(($) => $.qa_cockpit.sprint_mergeable) : t(($) => $.qa_cockpit.sprint_not_ready)}
-          </span>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 gap-1 text-[11px]"
-            onClick={() => setAttachOpen(true)}
-          >
-            <Plus className="size-3.5" />
-            {t(($) => $.qa_cockpit.sprint_attach_tasks)}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 gap-1 text-[11px]"
-            disabled={runRegression.isPending}
-            onClick={() => runRegression.mutate()}
-          >
-            {runRegression.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
-            {t(($) => $.qa_cockpit.sprint_run_regression)}
-          </Button>
+        {/* RIGHT: one primary CTA + a `⋯` menu for the secondary actions (run
+            regression / attach a task) so they don't compete with the CTA. */}
+        <div className="flex shrink-0 items-center gap-2">
+          {s.mergeable ? (
+            <Button size="sm" className="h-8 gap-1.5" onClick={shipIt}>
+              <Rocket className="size-3.5" />
+              {t(($) => $.qa_cockpit.ship_it)}
+            </Button>
+          ) : s.failed > 0 ? (
+            onSeeBlockers ? (
+              <Button size="sm" variant="destructive" className="h-8 gap-1.5" onClick={onSeeBlockers}>
+                {t(($) => $.qa_cockpit.see_blockers, { count: s.failed })}
+              </Button>
+            ) : (
+              <AppLink
+                href={qaDetail(firstFailing?.id ?? "")}
+                className={cn(buttonVariants({ variant: "destructive", size: "sm" }), "h-8 gap-1.5")}
+              >
+                {t(($) => $.qa_cockpit.see_blockers, { count: s.failed })}
+              </AppLink>
+            )
+          ) : (
+            <Button size="sm" variant="outline" className="h-8 gap-1.5" disabled>
+              <Rocket className="size-3.5" />
+              {t(($) => $.qa_cockpit.ship_it)}
+            </Button>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="size-8 shrink-0"
+                  aria-label={t(($) => $.qa_cockpit.view_more)}
+                >
+                  <MoreHorizontal className="size-3.5" />
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem disabled={runRegression.isPending} onClick={() => runRegression.mutate()}>
+                {runRegression.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
+                {t(($) => $.qa_cockpit.sprint_run_regression)}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setAttachOpen(true)}>
+                <Plus className="size-3.5" />
+                {t(($) => $.qa_cockpit.sprint_attach_tasks)}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -260,53 +381,103 @@ function SprintCard({ sprint: s, wsId, qaDetail }: { sprint: SprintData; wsId: s
         </AlertDialogContent>
       </AlertDialog>
 
-      <div className="h-1 w-full bg-muted">
-        <div
-          className={s.failed > 0 ? "h-1 bg-destructive" : "h-1 bg-emerald-500"}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-
-      {s.issues.length === 0 ? (
-        <div className="px-4 py-4 text-[12px] text-muted-foreground">{t(($) => $.qa_cockpit.sprint_no_tasks)}</div>
-      ) : (
-        <ul className="divide-y">
-          {sortedIssues.map((i) => (
-            <li key={i.id} className="flex items-center gap-3 px-4 py-2 text-[12px]">
-              <VerdictDot verdict={i.verdict} />
-              <AppLink href={qaDetail(i.id)} className="shrink-0 font-medium text-muted-foreground hover:text-foreground">
-                #{i.number}
-              </AppLink>
-              <span className="truncate">{i.title}</span>
-              <span className="ml-auto flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
-                {i.runs_total > 0 ? (
-                  <span title={t(($) => $.qa_cockpit.sprint_runs_tooltip)}>
-                    {i.runs_fail > 0 ? (
-                      <span className="text-destructive">{t(($) => $.qa_cockpit.sprint_runs_failing, { count: i.runs_fail })}</span>
-                    ) : (
-                      <span className="text-emerald-500">{t(($) => $.qa_cockpit.sprint_runs_count, { count: i.runs_pass })}</span>
-                    )}
+      {/* "What's shipping" changelog — positive-first summary in the header,
+          issues grouped by verdict when expanded. Also the changelog source
+          Thread B feeds to Slack/GitHub/GitLab. */}
+      {s.issues.length > 0 ? (
+        <div className="border-t">
+          <button
+            type="button"
+            onClick={() => setChangelogOpen((v) => !v)}
+            className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-accent/40"
+          >
+            {changelogOpen ? (
+              <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+            ) : (
+              <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+            )}
+            <span className="text-[12px] font-medium">{t(($) => $.qa_cockpit.whats_shipping)}</span>
+            <span className="ml-auto text-[11px] text-muted-foreground">
+              {t(($) => $.qa_cockpit.whats_shipping_summary, { passed: s.passed, togo })}
+            </span>
+          </button>
+          {changelogOpen ? (
+            <div className="space-y-3 px-4 pb-3">
+              {/* Detail row — branch + regression chip + verdict-count badges,
+                  moved out of the resting headline (detail, not the answer). */}
+              <div className="flex flex-wrap items-center gap-2 text-[12px]">
+                {s.branch ? (
+                  <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <GitBranch className="size-3" aria-hidden /> {s.branch}
                   </span>
-                ) : (
-                  <span>{t(($) => $.qa_cockpit.sprint_no_runs)}</span>
-                )}
-                <span className="rounded border px-1.5 py-0.5 uppercase tracking-wide">{i.status}</span>
-              </span>
-            </li>
-          ))}
-        </ul>
+                ) : null}
+                <RegressionGate gate={s.regression} issueHref={qaDetail} />
+                <Badge
+                  variant="outline"
+                  className="gap-1 text-emerald-600 dark:text-emerald-400"
+                  title={t(($) => $.qa_cockpit.sprint_passed_title)}
+                >
+                  {verdictIcon("pass", "size-3")} {s.passed}
+                </Badge>
+                {s.failed > 0 ? (
+                  <Badge variant="destructive" className="gap-1" title={t(($) => $.qa_cockpit.sprint_failing_title)}>
+                    {verdictIcon("fail", "size-3")} {s.failed}
+                  </Badge>
+                ) : null}
+                {s.pending > 0 ? (
+                  <Badge
+                    variant="outline"
+                    className="gap-1 text-muted-foreground"
+                    title={t(($) => $.qa_cockpit.sprint_pending_title)}
+                  >
+                    {verdictIcon("pending", "size-3")} {s.pending}
+                  </Badge>
+                ) : null}
+              </div>
+              {changelogGroups.map((g) => (
+                <div key={g.key}>
+                  <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    {g.label} · {g.items.length}
+                  </div>
+                  <ul className="space-y-0.5">
+                    {g.items.map((i) => (
+                      <li key={i.id} className="flex items-center gap-2 text-[12px]">
+                        {verdictIcon(i.verdict, "size-3.5 shrink-0")}
+                        <AppLink
+                          href={qaDetail(i.id)}
+                          className="shrink-0 font-medium text-muted-foreground hover:text-foreground"
+                        >
+                          #{i.number}
+                        </AppLink>
+                        <span className="min-w-0 truncate">{i.title}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="border-t px-4 py-3 text-[12px] text-muted-foreground">{t(($) => $.qa_cockpit.sprint_no_tasks)}</div>
       )}
 
       {/* Deploy is a SPRINT-level cycle (the shared branch ships as a unit) —
           this panel is its home after leaving the per-issue stepper (deploy
-          cycle rehome, part 2). */}
-      <SprintDeployPanel
-        wsId={wsId}
-        projectId={s.project_id}
-        sprintId={s.sprint_id}
-        branch={s.branch}
-        issues={s.issues}
-      />
-    </div>
+          cycle rehome, part 2). Collapsed by default: only a ready sprint whose
+          "Ship it" CTA has been pressed reveals it, so a not-ready sprint shows
+          zero deploy UI and no card opens with a full panel in it. */}
+      {s.mergeable && deployOpen ? (
+        <div ref={deployRef}>
+          <SprintDeployPanel
+            wsId={wsId}
+            projectId={s.project_id}
+            sprintId={s.sprint_id}
+            branch={s.branch}
+            issues={s.issues}
+          />
+        </div>
+      ) : null}
+    </Card>
   );
 }

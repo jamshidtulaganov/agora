@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { Sparkles, Plus, Bot, User, Loader2, FlaskConical, Play, CircleSlash, CircleStop, Check, X, Film, ListChecks, RotateCcw, Bug } from "lucide-react";
+import { Sparkles, Plus, Bot, User, Loader2, FlaskConical, Play, CircleStop, Check, X, Film, ListChecks, RotateCcw, Bug, MoreHorizontal, ChevronRight, Circle } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core/hooks";
@@ -150,11 +150,6 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
   };
 
   const hasAutomated = cases.some((c) => c.kind === "automated");
-  // Coverage at a glance: a senior QA reviewer's first question is "do we have
-  // both?" — a case pile that's all positive has no evidence anything fails
-  // safely. Counted here once so the header doesn't scan the list twice.
-  const negativeCount = cases.filter((c) => c.category === "negative").length;
-  const positiveCount = cases.length - negativeCount;
 
   // Failing / blocked float to the TOP so a reviewer sees what needs attention
   // first; passing sinks to the bottom. Sort on the PERSISTED verdict only (not
@@ -178,19 +173,6 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
     (a, b) => statusRank(a) - statusRank(b) || priorityRank(a.priority) - priorityRank(b.priority),
   );
   const failedCount = cases.filter((c) => c.latest_run?.status === "fail").length;
-  const blockedCount = cases.filter(
-    (c) => c.latest_run?.status === "blocked" || c.latest_run?.status === "skip",
-  ).length;
-  const attentionCount = failedCount + blockedCount;
-
-  // The sticky "which case is running RIGHT NOW" summary — the ONE thing a QA
-  // engineer needs, made the focal point instead of one signal among many.
-  // Position is read off `sorted` (not the raw `cases` array) so "case X of N"
-  // matches where the highlighted row actually sits in the list below.
-  const runningIndex = sorted.findIndex((c) => c.id === runningCaseId);
-  const runningRowCase = runningIndex >= 0 ? sorted[runningIndex] : null;
-  const runProgressPct =
-    runningIndex >= 0 && sorted.length > 0 ? Math.round(((runningIndex + 1) / sorted.length) * 100) : null;
 
   // Records a human run verdict. `output` is optional: the one-click ✓/✗
   // sends none; a per-step checklist walk (phase 4) sends its serialized
@@ -272,26 +254,31 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
       <div className="flex items-center gap-2">
         <FlaskConical className="size-4 shrink-0 text-muted-foreground" />
         <span className="text-sm font-medium">{t(($) => $.test_cases.section)}</span>
+        {/* One count line — the old "N Positive · N Negative" coverage row and
+            the separate attention row are merged in here: "12 · 2 failing". */}
         <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{cases.length}</span>
+        {failedCount > 0 && (
+          <span className="text-[11px] font-medium text-destructive">
+            · {t(($) => $.test_cases.failing_count, { count: failedCount })}
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-1">
-          {/* Stop the live run — only while something is actually running for this
-              issue. Destructive-tinted so it reads as an interrupt, not a control. */}
-          {runLive && (
+          {/* ONE state-aware primary: Stop (a run is live) → Re-run failed
+              (something's red) → Run all. Never all three at once. */}
+          {runLive ? (
             <Button
               type="button"
-              size="icon"
+              size="sm"
               variant="outline"
-              className="size-7 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              className="h-7 gap-1 px-2 text-[11px] text-destructive hover:bg-destructive/10 hover:text-destructive"
               disabled={stopRun.isPending}
               onClick={onStopRun}
               title={stopRun.isPending ? t(($) => $.test_cases.stopping) : t(($) => $.test_cases.stop)}
             >
               {stopRun.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <CircleStop className="size-3.5" />}
+              {t(($) => $.test_cases.stop_label)}
             </Button>
-          )}
-          {/* Re-run ONLY the failing cases — the tight hotfix loop: fix, re-run
-              the red ones, done. Only rendered when something is failing. */}
-          {failedCount > 0 && (
+          ) : failedCount > 0 ? (
             <Button
               type="button"
               size="sm"
@@ -303,27 +290,25 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
               }
               title={t(($) => $.test_cases.rerun_failed_title)}
             >
-              {rerunFailed.isPending ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <RotateCcw className="size-3.5" />
-              )}
+              {rerunFailed.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <RotateCcw className="size-3.5" />}
               {t(($) => $.test_cases.rerun_failed, { count: failedCount })}
             </Button>
-          )}
-          {hasAutomated && (
+          ) : hasAutomated ? (
             <Button
               type="button"
-              size="icon"
+              size="sm"
               variant="outline"
-              className="size-7"
+              className="h-7 gap-1 px-2 text-[11px]"
               disabled={runAll.isPending}
               onClick={() => runAll.mutate()}
               title={runAll.isPending ? t(($) => $.test_cases.running_all) : t(($) => $.test_cases.run_all)}
             >
               {runAll.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
+              {t(($) => $.test_cases.run_all)}
             </Button>
-          )}
+          ) : null}
+          {/* Generate + Add — the two constant actions, compact next to the
+              labeled primary. */}
           <Button
             type="button"
             size="icon"
@@ -348,76 +333,7 @@ export function TestCasesPanel({ issueId }: { issueId: string }) {
         </div>
       </div>
 
-      {/* Coverage summary on its own line — the header row above is already
-          tight with the icon buttons; forcing this onto the same line is
-          what caused the wrap/overflow. */}
-      {cases.length > 0 && (
-        <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-          <span>
-            {positiveCount} {t(($) => $.test_cases.category_positive)}
-          </span>
-          <span aria-hidden>·</span>
-          <span
-            className={cn(negativeCount === 0 && "font-medium text-amber-600 dark:text-amber-400")}
-            title={negativeCount === 0 ? t(($) => $.test_cases.category_negative_missing_hint) : undefined}
-          >
-            {negativeCount} {t(($) => $.test_cases.category_negative)}
-          </span>
-        </div>
-      )}
-
-      {/* What needs attention, first — failing/blocked are sorted to the top of
-          the list below, and this line names how many so the reviewer knows to
-          look up top. */}
-      {attentionCount > 0 && (
-        <div className="flex items-center gap-2 text-[11px]">
-          {failedCount > 0 && (
-            <span className="flex items-center gap-1 font-medium text-destructive">
-              <X className="size-3" /> {failedCount}
-            </span>
-          )}
-          {blockedCount > 0 && (
-            <span className="flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400">
-              <CircleSlash className="size-3" /> {blockedCount}
-            </span>
-          )}
-          <span className="text-muted-foreground">{t(($) => $.test_cases.needs_attention)}</span>
-        </div>
-      )}
-
       {adding && <AddCaseForm issueId={issueId} onDone={() => { setAdding(false); invalidate(); }} />}
-
-      {/* Sticky "running right now" summary — pins to the top of the
-          scrolling review column while a run is live, so which case is
-          executing (and how far the run has gotten) never scrolls out of
-          view. Renders nothing when idle. */}
-      {runLive && (
-        <div
-          className="sticky top-0 z-10 rounded-md border bg-card px-2.5 py-1.5 text-[12px] shadow-sm"
-          aria-live="polite"
-        >
-          <div className="flex items-center gap-2">
-            <Loader2 className="size-3 shrink-0 animate-spin text-info" aria-hidden />
-            <span className="min-w-0 flex-1 truncate font-medium">
-              {runningRowCase
-                ? t(($) => $.test_cases.running_line, {
-                    index: runningIndex + 1,
-                    total: sorted.length,
-                    title: runningRowCase.title,
-                  })
-                : t(($) => $.qa_review.running_qa)}
-            </span>
-          </div>
-          {runProgressPct !== null && (
-            <div className="mt-1.5 h-0.5 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-info transition-all"
-                style={{ width: `${runProgressPct}%` }}
-              />
-            </div>
-          )}
-        </div>
-      )}
 
       {cases.length === 0 && !adding ? (
         showSuggest ? (
@@ -686,6 +602,13 @@ function CaseRow({
   });
   const historyRuns = (historyData?.runs ?? []).slice(0, 5);
 
+  // ⋯ overflow contents (each conditional). Hand-walking an automated case's
+  // steps is legitimate when its box/script is unavailable, so it stays
+  // reachable there rather than as the row's primary Run.
+  const canHandWalk = c.kind === "automated" && parsedSteps.length > 0;
+  const hasTrace = !!(c.latest_run?.trace_path && c.latest_run.id);
+  const canFileBug = !isRunning && (status === "fail" || isBlocked);
+
   return (
     <li
       className={cn(
@@ -711,192 +634,200 @@ function CaseRow({
           />
         </>
       )}
-      <div className="flex items-start gap-2">
+      {/* Collapsed row = [status] Title …… [Run] [⋯]. Everything else — the
+          meta taxonomy, the reason, run history, steps — lives behind the row
+          expand (click the title). */}
+      <div className="flex items-center gap-2">
+        {/* Status on the LEFT, 4-vocab: Testing (spinner) / Passed / Failed
+            (also blocked+skip = couldn't run) / Not run (—). */}
+        {isRunning ? (
+          <Loader2 className="size-4 shrink-0 animate-spin text-info" aria-hidden />
+        ) : status === "pass" ? (
+          <span
+            className={cn("shrink-0", isLive && "motion-safe:animate-pulse")}
+            title={isLive ? t(($) => $.test_cases.runs_now) : undefined}
+          >
+            {verdictIcon("pass", "size-4")}
+          </span>
+        ) : status === "fail" || isBlocked ? (
+          <span
+            className={cn("shrink-0", isLive && "motion-safe:animate-pulse")}
+            title={
+              isLive
+                ? t(($) => $.test_cases.runs_now)
+                : c.latest_run?.output || (isBlocked ? t(($) => $.test_cases.blocked) : undefined)
+            }
+          >
+            {verdictIcon("fail", "size-4")}
+          </span>
+        ) : (
+          <span className="shrink-0 text-[10px] text-muted-foreground">—</span>
+        )}
+        {/* Title — click toggles the expanded detail. The ONE inline badge is a
+            P1 marker on a failing P1 (the first thing a reviewer must see). */}
         <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setOpen((v) => !v)}>
           <span
-            className={cn(
-              "flex items-center gap-1.5 truncate text-[13px]",
-              isRunning && "font-medium text-info",
-            )}
+            className={cn("flex items-center gap-1.5 truncate text-[13px]", isRunning && "font-medium text-info")}
           >
-            {isRunning && <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden />}
             <span className="truncate">{c.title}</span>
-          </span>
-          {/* Compact meta: priority · modality · kind · category · (who ran it
-              + when) — plain text, not badge pills, so it fits a 380px rail on
-              one wrapping-safe line. p1 is destructive-tinted (the first thing
-              a reviewer must see); modality only shows when declared. */}
-          <span className="mt-0.5 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[10px] text-muted-foreground/70">
-            <span className={cn("uppercase", priorityChipClass(c.priority))}>{priorityLabel(c.priority)}</span>
-            {c.flaky === true && (
-              <>
-                <span aria-hidden>·</span>
-                {/* Flaky (Phase 3): pass AND fail on the SAME commit — the same
-                    amber caution language as the base-case quarantine. */}
-                <span
-                  className="font-medium uppercase text-amber-600 dark:text-amber-400"
-                  title={t(($) => $.test_cases.flaky_title)}
-                >
-                  {t(($) => $.test_cases.flaky)}
-                </span>
-              </>
-            )}
-            {c.modality && (
-              <>
-                <span aria-hidden>·</span>
-                <span>{modalityLabel(c.modality)}</span>
-              </>
-            )}
-            {c.criterion_ref && (
-              <>
-                <span aria-hidden>·</span>
-                {/* Traceability: which acceptance criterion this case covers. */}
-                <span className="max-w-[140px] truncate" title={c.criterion_ref}>
-                  {c.criterion_ref}
-                </span>
-              </>
-            )}
-            <span aria-hidden>·</span>
-            <span>{kindLabel}</span>
-            <span aria-hidden>·</span>
-            <span
-              className={cn(c.category === "negative" && "font-medium text-amber-600 dark:text-amber-400")}
-            >
-              {categoryLabel}
-            </span>
-            {!isRunning && c.latest_run && (
-              <>
-                <span aria-hidden>·</span>
-                {c.latest_run.run_source === "agent" ? (
-                  <Bot className="size-2.5 shrink-0" />
-                ) : (
-                  <User className="size-2.5 shrink-0" />
-                )}
-                {timeAgo(c.latest_run.created_at)}
-              </>
+            {c.priority === "p1" && (status === "fail" || isBlocked) && (
+              <span className="shrink-0 rounded bg-destructive/10 px-1 text-[9px] font-medium uppercase tracking-wide text-destructive">
+                {priorityLabel("p1")}
+              </span>
             )}
           </span>
         </button>
-        <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
+        {/* Right — a running label, else the ONE primary Run + a ⋯ overflow. */}
+        <div className="flex shrink-0 items-center gap-1 pt-0.5">
           {isRunning ? (
             <span className="flex items-center gap-1 text-[10px] font-medium text-info">
               <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-info motion-safe:animate-pulse" />
               {t(($) => $.test_cases.runs_now)}
             </span>
-          ) : status === "pass" || status === "fail" ? (
-            <span
-              className={cn(isLive && "motion-safe:animate-pulse")}
-              title={
-                isLive
-                  ? t(($) => $.test_cases.runs_now)
-                  : status === "fail"
-                    ? c.latest_run?.output || undefined
-                    : undefined
-              }
-            >
-              {verdictIcon(status, "size-4")}
-            </span>
-          ) : isBlocked ? (
-            <span title={c.latest_run?.output || t(($) => $.test_cases.blocked)}>
-              <CircleSlash className="size-4 text-amber-600 dark:text-amber-400" />
-            </span>
           ) : (
-            <span className="text-[10px] text-muted-foreground">—</span>
-          )}
-          {c.latest_run?.trace_path && c.latest_run.id && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              disabled={traceLaunchingRunId === c.latest_run.id}
-              onClick={() => onViewTrace(c.latest_run!.id)}
-              className="size-6 text-info hover:bg-info/10"
-              title={t(($) => $.test_cases.view_trace)}
-            >
-              {traceLaunchingRunId === c.latest_run.id ? (
-                <Loader2 className="size-3.5 animate-spin" />
+            <>
+              {/* Primary Run: agent-run for automated, the manual checklist for
+                  manual. A manual case with no steps keeps an inline pass/fail —
+                  the only way it can record a verdict. */}
+              {c.kind === "automated" ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={onRunCase}
+                  className="size-6 text-info hover:bg-info/10"
+                  title={t(($) => $.test_cases.run_case)}
+                >
+                  <Play className="size-3.5" />
+                </Button>
+              ) : parsedSteps.length > 0 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setStepRunOpen((v) => !v)}
+                  className={cn("size-6 text-info hover:bg-info/10", stepRunOpen && "bg-info/10")}
+                  title={t(($) => $.test_cases.run_steps)}
+                >
+                  <Play className="size-3.5" />
+                </Button>
               ) : (
-                <Film className="size-3.5" />
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    disabled={busy}
+                    onClick={() => onRun("pass")}
+                    className="size-6 text-emerald-700 hover:bg-emerald-600/10 dark:text-emerald-300"
+                    title={t(($) => $.test_cases.run_pass)}
+                  >
+                    <Check className="size-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    disabled={busy}
+                    onClick={() => onRun("fail")}
+                    className="size-6 text-destructive hover:bg-destructive/10"
+                    title={t(($) => $.test_cases.run_fail)}
+                  >
+                    <X className="size-3.5" />
+                  </Button>
+                </div>
               )}
-            </Button>
-          )}
-          {/* File a bug from THIS case — its title, failed step + note, and
-              covered criterion pre-fill the sheet. Failing/blocked rows only:
-              that's where a bug-worthy finding lives. No issue-verdict gate. */}
-          {!isRunning && (status === "fail" || isBlocked) && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={onFileBug}
-              className="size-6 text-destructive hover:bg-destructive/10"
-              title={t(($) => $.test_cases.file_bug_case)}
-            >
-              <Bug className="size-3.5" />
-            </Button>
-          )}
-          {/* Run THIS one case via the QA agent — automated cases only (a manual
-              case has no script to execute; it's judged by the human ✓/✗). */}
-          {c.kind === "automated" && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              disabled={isRunning}
-              onClick={onRunCase}
-              className="size-6 text-info hover:bg-info/10"
-              title={t(($) => $.test_cases.run_case)}
-            >
-              {isRunning ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
-            </Button>
-          )}
-          {/* Per-step manual walk (phase 4) — any case with structured steps.
-              Toggles the inline checklist below the row. */}
-          {parsedSteps.length > 0 && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              disabled={isRunning}
-              onClick={() => setStepRunOpen((v) => !v)}
-              className={cn("size-6 text-muted-foreground hover:text-foreground", stepRunOpen && "text-foreground")}
-              title={t(($) => $.test_cases.run_steps)}
-            >
-              <ListChecks className="size-3.5" />
-            </Button>
-          )}
-          {/* Manual pass/fail is ONLY for manual cases — a human judges those.
-              Automated cases are judged by the agent's run (▷ / Run-all), so the
-              always-on ✓/✗ there was redundant clutter on every row. Kept here for
-              manual cases, and revealed on row hover so the default view stays clean. */}
-          {c.kind !== "automated" && (
-            <div className="flex items-center gap-1.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover/case:opacity-100">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                disabled={busy}
-                onClick={() => onRun("pass")}
-                className="size-6 text-emerald-700 hover:bg-emerald-600/10 dark:text-emerald-300"
-                title={t(($) => $.test_cases.run_pass)}
-              >
-                <Check className="size-3.5" />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                disabled={busy}
-                onClick={() => onRun("fail")}
-                className="size-6 text-destructive hover:bg-destructive/10"
-                title={t(($) => $.test_cases.run_fail)}
-              >
-                <X className="size-3.5" />
-              </Button>
-            </div>
+              {/* Overflow ⋯ — hand-walk an automated case's steps, view its
+                  trace, file a bug. Rendered only when it has an item. */}
+              {(canHandWalk || hasTrace || canFileBug) && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-6 text-muted-foreground"
+                        title={t(($) => $.qa_review.more_actions)}
+                        aria-label={t(($) => $.qa_review.more_actions)}
+                      />
+                    }
+                  >
+                    <MoreHorizontal className="size-3.5" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {canHandWalk && (
+                      <DropdownMenuItem onClick={() => setStepRunOpen((v) => !v)}>
+                        <ListChecks className="size-3.5" />
+                        {t(($) => $.test_cases.run_steps)}
+                      </DropdownMenuItem>
+                    )}
+                    {hasTrace && (
+                      <DropdownMenuItem
+                        disabled={traceLaunchingRunId === c.latest_run!.id}
+                        onClick={() => onViewTrace(c.latest_run!.id)}
+                      >
+                        {traceLaunchingRunId === c.latest_run!.id ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <Film className="size-3.5" />
+                        )}
+                        {t(($) => $.test_cases.view_trace)}
+                      </DropdownMenuItem>
+                    )}
+                    {canFileBug && (
+                      <DropdownMenuItem onClick={onFileBug}>
+                        <Bug className="size-3.5 text-destructive" />
+                        {t(($) => $.test_cases.file_bug_case)}
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </>
           )}
         </div>
       </div>
+      {/* While this case is RUNNING, surface WHAT it checks as a live checklist
+          right under the title — the agent's own to-do for this test — so the
+          human isn't left watching a spinner with no idea what's being verified.
+          We can't mark WHICH step is live (the agent emits per-case, not
+          per-step, markers), so every step reads as a neutral checklist item;
+          the header spinner carries the "in progress" signal. Falls back to the
+          case's single `expected` when it has no structured steps. */}
+      {isRunning && (parsedSteps.length > 0 || c.expected) && (
+        <div className="mt-2 rounded-md border border-info/30 bg-info/5 px-2 py-1.5">
+          <div className="mb-1 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-info">
+            <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden />
+            {t(($) => $.test_cases.checking_now)}
+          </div>
+          {parsedSteps.length > 0 ? (
+            <ol className="space-y-0.5">
+              {parsedSteps.map((s, i) => (
+                <li key={i} className="flex items-start gap-1.5 text-[11px]">
+                  <Circle className="mt-[3px] size-2.5 shrink-0 text-info/50" aria-hidden />
+                  <span className="min-w-0 text-foreground/85">
+                    {s.action}
+                    {s.expects && (
+                      <span className="text-muted-foreground">
+                        {" → "}
+                        {t(($) => $.test_cases.step_expects_inline)} {s.expects}
+                      </span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <div className="flex items-start gap-1.5 text-[11px]">
+              <Circle className="mt-[3px] size-2.5 shrink-0 text-info/50" aria-hidden />
+              <span className="min-w-0 text-foreground/85">
+                {t(($) => $.test_cases.step_expects_inline)} {c.expected}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
       {stepRunOpen && (
         <StepRunChecklist
           steps={parsedSteps}
@@ -907,6 +838,57 @@ function CaseRow({
             setStepRunOpen(false);
           }}
         />
+      )}
+      {/* Case taxonomy — priority · flaky · modality · criterion · kind ·
+          category · (who ran it + when). Hidden on the collapsed row; the
+          reviewer only needs it once they open a specific case. */}
+      {open && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-1 gap-y-0.5 pl-1 text-[10px] text-muted-foreground/70">
+          <span className={cn("uppercase", priorityChipClass(c.priority))}>{priorityLabel(c.priority)}</span>
+          {c.flaky === true && (
+            <>
+              <span aria-hidden>·</span>
+              {/* Flaky: pass AND fail on the SAME commit — same amber caution. */}
+              <span
+                className="font-medium uppercase text-amber-600 dark:text-amber-400"
+                title={t(($) => $.test_cases.flaky_title)}
+              >
+                {t(($) => $.test_cases.flaky)}
+              </span>
+            </>
+          )}
+          {c.modality && (
+            <>
+              <span aria-hidden>·</span>
+              <span>{modalityLabel(c.modality)}</span>
+            </>
+          )}
+          {c.criterion_ref && (
+            <>
+              <span aria-hidden>·</span>
+              <span className="max-w-[140px] truncate" title={c.criterion_ref}>
+                {c.criterion_ref}
+              </span>
+            </>
+          )}
+          <span aria-hidden>·</span>
+          <span>{kindLabel}</span>
+          <span aria-hidden>·</span>
+          <span className={cn(c.category === "negative" && "font-medium text-amber-600 dark:text-amber-400")}>
+            {categoryLabel}
+          </span>
+          {c.latest_run && (
+            <>
+              <span aria-hidden>·</span>
+              {c.latest_run.run_source === "agent" ? (
+                <Bot className="size-2.5 shrink-0" />
+              ) : (
+                <User className="size-2.5 shrink-0" />
+              )}
+              {timeAgo(c.latest_run.created_at)}
+            </>
+          )}
+        </div>
       )}
       {open && hasReason && (
         <div
@@ -990,6 +972,11 @@ function AddCaseForm({ issueId, onDone }: { issueId: string; onDone: () => void 
   const [priority, setPriority] = useState<TestCasePriority>("p2");
   const [modality, setModality] = useState<TestCaseModality>("");
   const [criterionRef, setCriterionRef] = useState("");
+  // Progressive disclosure: someone jotting a quick case sees only Title +
+  // Steps + Save. The extra fields (preconditions/expected/criterion + the
+  // four segmented controls) sit behind "Add details ▸" so they don't greet
+  // every quick entry. Their state still defaults sensibly when left hidden.
+  const [showDetails, setShowDetails] = useState(false);
 
   // Picking a template REPLACES the whole draft — it's a starting point the
   // author then edits, not a merge into half-typed fields.
@@ -1002,6 +989,8 @@ function AddCaseForm({ issueId, onDone }: { issueId: string; onDone: () => void 
     setCategory(tpl.category);
     setPriority(tpl.priority);
     setModality(tpl.modality);
+    // A template fills the detail fields — reveal them so the choices show.
+    setShowDetails(true);
   };
   const templateLabel = (id: CaseTemplate["id"]): string => {
     switch (id) {
@@ -1057,68 +1046,83 @@ function AddCaseForm({ issueId, onDone }: { issueId: string; onDone: () => void 
         onChange={(e) => setTitle(e.target.value)}
         className="h-8 text-[13px]"
       />
-      <Textarea
-        placeholder={t(($) => $.test_cases.preconditions_ph)}
-        value={preconditions}
-        onChange={(e) => setPreconditions(e.target.value)}
-        rows={1}
-        className="text-[12px]"
-      />
       <StepEditor steps={steps} onChange={setSteps} />
-      <Textarea
-        placeholder={t(($) => $.test_cases.expected_ph)}
-        value={expected}
-        onChange={(e) => setExpected(e.target.value)}
-        rows={1}
-        className="text-[12px]"
-      />
-      {/* Traceability (optional): which acceptance criterion this case covers. */}
-      <Input
-        placeholder={t(($) => $.test_cases.criterion_ref_ph)}
-        value={criterionRef}
-        onChange={(e) => setCriterionRef(e.target.value)}
-        className="h-7 text-[12px]"
-      />
-      {/* Two toggle groups stack on their own rows in a narrow rail — forcing
-          both onto one row with the Save button is what overflowed before. */}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <div className="flex rounded-md border p-0.5">
-          {(["manual", "automated"] as const).map((k) => (
-            <Button
-              key={k}
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setKind(k)}
-              className={cn(
-                "h-6 px-2 text-[11px]",
-                kind === k ? "bg-muted font-medium text-foreground" : "text-muted-foreground",
-              )}
-            >
-              {k === "manual" ? t(($) => $.test_cases.kind_manual) : t(($) => $.test_cases.kind_automated)}
-            </Button>
-          ))}
+      {/* Default = Title + Steps + Save. Everything else is one click away. */}
+      {!showDetails ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => setShowDetails(true)}
+          className="h-6 gap-1 px-2 text-[11px] text-muted-foreground"
+        >
+          <ChevronRight className="size-3" />
+          {t(($) => $.test_cases.add_details)}
+        </Button>
+      ) : (
+        <div className="space-y-2">
+          <Textarea
+            placeholder={t(($) => $.test_cases.preconditions_ph)}
+            value={preconditions}
+            onChange={(e) => setPreconditions(e.target.value)}
+            rows={1}
+            className="text-[12px]"
+          />
+          <Textarea
+            placeholder={t(($) => $.test_cases.expected_ph)}
+            value={expected}
+            onChange={(e) => setExpected(e.target.value)}
+            rows={1}
+            className="text-[12px]"
+          />
+          {/* Traceability (optional): which acceptance criterion this covers. */}
+          <Input
+            placeholder={t(($) => $.test_cases.criterion_ref_ph)}
+            value={criterionRef}
+            onChange={(e) => setCriterionRef(e.target.value)}
+            className="h-7 text-[12px]"
+          />
+          {/* The four segmented controls, stacked so they don't overflow. */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex rounded-md border p-0.5">
+              {(["manual", "automated"] as const).map((k) => (
+                <Button
+                  key={k}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setKind(k)}
+                  className={cn(
+                    "h-6 px-2 text-[11px]",
+                    kind === k ? "bg-muted font-medium text-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  {k === "manual" ? t(($) => $.test_cases.kind_manual) : t(($) => $.test_cases.kind_automated)}
+                </Button>
+              ))}
+            </div>
+            <div className="flex rounded-md border p-0.5">
+              {(["positive", "negative"] as const).map((cat) => (
+                <Button
+                  key={cat}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setCategory(cat)}
+                  className={cn(
+                    "h-6 px-2 text-[11px]",
+                    category === cat ? "bg-muted font-medium text-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  {cat === "positive" ? t(($) => $.test_cases.category_positive) : t(($) => $.test_cases.category_negative)}
+                </Button>
+              ))}
+            </div>
+            <PriorityToggle value={priority} onChange={setPriority} />
+            <ModalityToggle value={modality} onChange={setModality} />
+          </div>
         </div>
-        <div className="flex rounded-md border p-0.5">
-          {(["positive", "negative"] as const).map((cat) => (
-            <Button
-              key={cat}
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setCategory(cat)}
-              className={cn(
-                "h-6 px-2 text-[11px]",
-                category === cat ? "bg-muted font-medium text-foreground" : "text-muted-foreground",
-              )}
-            >
-              {cat === "positive" ? t(($) => $.test_cases.category_positive) : t(($) => $.test_cases.category_negative)}
-            </Button>
-          ))}
-        </div>
-        <PriorityToggle value={priority} onChange={setPriority} />
-        <ModalityToggle value={modality} onChange={setModality} />
-      </div>
+      )}
       <Button
         type="button"
         size="sm"

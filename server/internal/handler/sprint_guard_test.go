@@ -4,8 +4,8 @@ import "testing"
 
 // The guard exists because a sprint whose integration branch is the prod branch
 // (SalesDoctor's "billing") makes the sprint machinery — worktree checkout,
-// DeploySprintBranch, auto-QA — target production directly. Sprints must use
-// their OWN dedicated branch cut off prod; a human merges it back at sprint end.
+// auto-QA, staging deploy — target production directly. Sprints must use their
+// OWN dedicated branch cut off prod; a human merges it back at sprint end.
 func TestSprintBranchRejected(t *testing.T) {
 	t.Setenv("AGORA_PROTECTED_SPRINT_BRANCHES", "billing, Release ")
 

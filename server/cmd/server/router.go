@@ -718,6 +718,16 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/zoho-user-binding", h.GetZohoUserBindingStatus)
 					r.Put("/zoho-user-binding", h.PutZohoUserBinding)
 					r.Delete("/zoho-user-binding", h.DeleteZohoUserBinding)
+					// Release integrations listing is member-visible (same
+					// rationale as figma/lark: the Integrations tab must render
+					// for non-admins). The query never selects the sealed
+					// webhook URL — has_secret is a computed boolean.
+					r.Get("/release-integrations", h.ListReleaseIntegrations)
+					// Remote-MCP credential status is member-visible so the MCP
+					// servers panel can render the "sealed auth" badge for
+					// non-admins. The query never selects secret_encrypted —
+					// has_secret + last4 only, never the token.
+					r.Get("/mcp-credentials", h.ListMcpCredentials)
 				})
 				// Admin-level access
 				r.Group(func(r chi.Router) {
@@ -787,6 +797,32 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// Workspace-level shared design manifest — the base every
 					// project in the workspace inherits.
 					r.Put("/design-manifest", h.PutWorkspaceDesignManifest)
+				})
+
+				// Remote-MCP credentials: sealed auth (bearer tokens) for
+				// remote http/sse MCP servers, keyed by server name and
+				// merged into the entry's headers server-side at dispatch.
+				// Writes are admin-only; the handlers additionally reject
+				// agent actors (a remote MCP with a stolen token exfiltrates
+				// data). The member-visible status endpoint lives above. The
+				// token is sealed at rest and never echoed back.
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))
+					r.Put("/mcp-credentials/{serverName}", h.PutMcpCredential)
+					r.Delete("/mcp-credentials/{serverName}", h.DeleteMcpCredential)
+				})
+
+				// Release integrations — per-workspace outbound connectors that
+				// fire on release-lifecycle events (Phase 2: signed webhook).
+				// Writes are admin-only; the member-visible listing lives in the
+				// member group above. The sealed webhook URL is never returned,
+				// and the handlers additionally reject agent actors (a webhook
+				// URL exfiltrates release data).
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))
+					r.Post("/release-integrations", h.CreateReleaseIntegration)
+					r.Put("/release-integrations/{integrationId}", h.UpdateReleaseIntegration)
+					r.Delete("/release-integrations/{integrationId}", h.DeleteReleaseIntegration)
 				})
 
 				// Lark integration. Listing is member-visible (same
@@ -926,7 +962,6 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.With(handler.RequireHumanActor).Post("/qa-override", h.OverrideQAVerdict)
 					r.Get("/test-cases", h.GetIssueTestCases)
 					r.Post("/test-cases", h.CreateIssueTestCase)
-					r.Post("/deploy-qa", h.DeployIssueQA)
 					r.Get("/deploy-events", h.GetIssueDeployEvents)
 					r.Get("/comments", h.ListComments)
 					r.Get("/timeline", h.ListTimeline)
@@ -1025,6 +1060,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// Design-system audit: scan the repo against the manifest for
 					// off-token values, duplicated markup, and proposed tokens.
 					r.Post("/design-audit", h.SyncProjectDesignAudit)
+					// Per-project pipeline config — override the QA / sprint /
+					// review / automation flags for THIS project's issues. Read =
+					// any member; write = owner/admin, human-only (an agent must
+					// not flip its own project's behavior mid-run).
+					r.Get("/config", h.GetProjectConfig)
+					r.With(handler.RequireHumanActor).Put("/config/{key}", h.SetProjectConfig)
+					r.With(handler.RequireHumanActor).Delete("/config/{key}", h.ResetProjectConfig)
 					// QA base scripts — the project's STANDING regression suite
 					// (test cases with issue_id NULL, injected into every
 					// run_qa / run_test_cases on the project's issues).
@@ -1039,27 +1081,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				})
 			})
 
-			// Remote Boxes (opt-in, additive) — onboard a developer's own
-			// remote dev server. Gated by AGORA_REMOTE_BOXES_ENABLED: when off the
-			// routes are not mounted at all, so the feature is fully inert for
-			// every existing deployment.
 			// Settings → Labs: workspace-level experimental flags (QA-env
-			// routing). Deliberately OUTSIDE the remote-boxes gate — the flags
-			// must stay readable/writable even while the boxes feature is off.
+			// routing — the daemon-per-dev qa_dev_runtimes toggle).
 			r.Get("/api/workspace-labs", h.GetWorkspaceLabs)
 			r.Put("/api/workspace-labs", h.UpdateWorkspaceLabs)
-			if config.Bool("AGORA_REMOTE_BOXES_ENABLED") {
-				r.Route("/api/remote-boxes", func(r chi.Router) {
-					r.Get("/", h.ListConnectedBoxes)
-					r.Post("/", h.CreateConnectedBox)
-					r.Post("/provision", h.ProvisionConnectedBoxForMember)
-					r.Post("/{id}/sync", h.SyncConnectedBox)
-					r.Post("/{id}/test", h.TestConnectedBox)
-					r.Post("/{id}/seed", h.SeedConnectedBox)
-					r.Post("/{id}/bind", h.BindConnectedBox)
-					r.Delete("/{id}", h.DeleteConnectedBox)
-				})
-			}
 
 			// Sprints — direct access by id (the project-scoped list/create
 			// lives under /api/projects/{id}/sprints above).
@@ -1070,7 +1095,6 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Put("/", h.UpdateSprint)
 					r.Delete("/", h.DeleteSprint)
 					r.Get("/issues", h.ListSprintIssues)
-					r.Post("/deploy-qa", h.DeploySprintQA)
 					r.Post("/run-regression", h.RunSprintRegression)
 				})
 			})

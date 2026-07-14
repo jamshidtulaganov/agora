@@ -16,10 +16,13 @@ interface ConfigState {
   // email send-code form, the Google button, and the "or" divider are all
   // hidden. Defaults to false so unknown / older servers keep every method.
   telegramOnly: boolean;
-  // Remote Boxes (opt-in): when true, the runtimes page shows the onboarding UI
-  // for per-developer remote dev servers. Defaults to false so older servers
-  // (and deployments with the feature off) hide it entirely.
-  remoteBoxesEnabled: boolean;
+  // Integration availability (mirror the backend env gates via /api/config).
+  // Each gates the corresponding Settings → Integrations section plus the
+  // connector-specific issue/project surfaces. Default false so a deployment
+  // without the integration (and older servers) shows a clean Integrations tab.
+  bitrixEnabled: boolean;
+  zohoEnabled: boolean;
+  larkEnabled: boolean;
   setCdnDomain: (domain: string) => void;
   setAuthConfig: (config: {
     allowSignup: boolean;
@@ -27,7 +30,9 @@ interface ConfigState {
     telegramBotUsername?: string;
     workspaceCreationDisabled?: boolean;
     telegramOnly?: boolean;
-    remoteBoxesEnabled?: boolean;
+    bitrixEnabled?: boolean;
+    zohoEnabled?: boolean;
+    larkEnabled?: boolean;
   }) => void;
   setDaemonConfig: (config: {
     daemonServerUrl?: string;
@@ -44,7 +49,9 @@ export const configStore = createStore<ConfigState>((set) => ({
   daemonAppUrl: "",
   workspaceCreationDisabled: false,
   telegramOnly: false,
-  remoteBoxesEnabled: false,
+  bitrixEnabled: false,
+  zohoEnabled: false,
+  larkEnabled: false,
   setCdnDomain: (domain) => set({ cdnDomain: domain }),
   setAuthConfig: ({
     allowSignup,
@@ -52,7 +59,9 @@ export const configStore = createStore<ConfigState>((set) => ({
     telegramBotUsername = "",
     workspaceCreationDisabled = false,
     telegramOnly = false,
-    remoteBoxesEnabled = false,
+    bitrixEnabled = false,
+    zohoEnabled = false,
+    larkEnabled = false,
   }) =>
     set({
       allowSignup,
@@ -60,7 +69,9 @@ export const configStore = createStore<ConfigState>((set) => ({
       telegramBotUsername,
       workspaceCreationDisabled,
       telegramOnly,
-      remoteBoxesEnabled,
+      bitrixEnabled,
+      zohoEnabled,
+      larkEnabled,
     }),
   setDaemonConfig: ({ daemonServerUrl = "", daemonAppUrl = "" }) =>
     set({ daemonServerUrl, daemonAppUrl }),

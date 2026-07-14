@@ -9,6 +9,7 @@ import { copyText } from "@agora/ui/lib/clipboard";
 import { toast } from "sonner";
 import type { Issue, IssueAssigneeGroup, ProjectStatus, ProjectPriority, UpdateIssueRequest } from "@agora/core/types";
 import { useAuthStore } from "@agora/core/auth";
+import { useConfigStore } from "@agora/core/config";
 import { projectDetailOptions } from "@agora/core/projects/queries";
 import { useUpdateProject, useDeleteProject } from "@agora/core/projects/mutations";
 import { pinListOptions } from "@agora/core/pins";
@@ -47,6 +48,7 @@ import { ProjectResourcesSection } from "./project-resources-section";
 import { ProjectConventionsSection } from "./project-conventions-section";
 import { ProjectSquadPicker } from "./project-squad-picker";
 import { ProjectQASection } from "./project-qa-section";
+import { ProjectPipelineSection } from "./project-pipeline-section";
 import { ProjectDesignSection } from "./project-design-section";
 import { ProjectBitrixSection } from "./project-bitrix-section";
 import { ProjectSprintsSection } from "./project-sprints-section";
@@ -483,6 +485,11 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const wsPaths = useWorkspacePaths();
   const router = useNavigation();
   const userId = useAuthStore((s) => s.user?.id);
+  // Bitrix project sync panel renders only when the deployment has Bitrix
+  // configured (capability flag on /api/config). It already no-ops for
+  // non-Bitrix-linked projects; gating keeps the surface clean for a general
+  // dev-team customer.
+  const bitrixEnabled = useConfigStore((s) => s.bitrixEnabled);
   const { data: project, isLoading } = useQuery(projectDetailOptions(wsId, projectId));
   const recordRecentContext = useRecentContextStore((s) => s.recordVisit);
   useEffect(() => {
@@ -881,11 +888,15 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
       {/* QA smoke configuration (run_qa gate) */}
       <ProjectQASection projectId={projectId} />
 
+      {/* Per-project pipeline config (auto-QA / fail-autoroute / auto-review …) */}
+      <ProjectPipelineSection projectId={projectId} />
+
       {/* Design system manifest (designer + implementation runs) */}
       <ProjectDesignSection projectId={projectId} />
 
-      {/* Bitrix sync — last-sync time + manual re-sync (Bitrix-linked projects only) */}
-      <ProjectBitrixSection projectId={projectId} />
+      {/* Bitrix sync — last-sync time + manual re-sync (Bitrix-linked projects
+          only, and only when the deployment has Bitrix configured) */}
+      {bitrixEnabled && <ProjectBitrixSection projectId={projectId} />}
     </div>
   );
 

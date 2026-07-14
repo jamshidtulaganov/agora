@@ -23,7 +23,6 @@ import {
   useHowItWorksDismissed,
 } from "./editor-how-it-works";
 import { EditorRunQA } from "./editor-run-qa";
-import { EditorDeployQA } from "./editor-deploy-qa";
 import { useWorkspaceId } from "@agora/core/hooks";
 import {
   EditorWorkbench,
@@ -81,7 +80,7 @@ export function EditorSection({
   // Left pane of the modal, kept section-owned (controlled into the workbench)
   // so auto-expand-to-Live below and pane persistence across dialog
   // close/reopen behave exactly as before the workbench extraction.
-  const [leftPane, setLeftPane] = useState<EditorWorkbenchPane>("code");
+  const [leftPane, setLeftPane] = useState<EditorWorkbenchPane>("live");
   // Is an agent currently running on this issue? Drives the auto-selection of
   // the spectator view when the modal auto-expands.
   const { data: taskSnapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
@@ -145,7 +144,6 @@ export function EditorSection({
   const editorActions = (
     <div className="flex items-center gap-3">
       <EditorRunQA issueId={issueId} agent={selectedAgent} />
-      <EditorDeployQA issueId={issueId} wsId={wsId} projectId={projectId} />
       <button
         type="button"
         onClick={() => setShowHelp(true)}

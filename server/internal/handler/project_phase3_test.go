@@ -211,10 +211,52 @@ func TestIssueQAScopeTrivial(t *testing.T) {
 	if testHandler.issueQAScopeTrivial(ctx, load(c)) {
 		t.Error("risk:critical must veto trivial")
 	}
-	// no labels, no PR → full (fail-safe)
+	// no labels, no PR → NOT trivial (roster shedding stays full-safe)
 	n := mkIssue()
 	if testHandler.issueQAScopeTrivial(ctx, load(n)) {
-		t.Error("no signal must stay full")
+		t.Error("no signal must not scope trivial")
+	}
+
+	// Direct 3-way issueQAScope: type:docs → light, risk:critical → full, and
+	// the no-signal case → SELF (the agent sizes the diff from git itself — the
+	// sprint-mode no-PR path that must NOT be forced onto the full lead-delegated
+	// gate just because there is no PR to measure).
+	if got := testHandler.issueQAScope(ctx, load(d)); got != qaScopeLight {
+		t.Errorf("type:docs issueQAScope = %d, want qaScopeLight(%d)", got, qaScopeLight)
+	}
+	if got := testHandler.issueQAScope(ctx, load(c)); got != qaScopeFull {
+		t.Errorf("risk:critical issueQAScope = %d, want qaScopeFull(%d)", got, qaScopeFull)
+	}
+	if got := testHandler.issueQAScope(ctx, load(n)); got != qaScopeSelf {
+		t.Errorf("no-signal issueQAScope = %d, want qaScopeSelf(%d)", got, qaScopeSelf)
+	}
+
+	// ZERO-STAT PR: a linked PR row whose diff stats never synced
+	// (changed_files=0 — the PR-open webhook carries no file counts) is
+	// UNKNOWN, not "confirmed large". It must scope SELF, not FULL — treating
+	// it as large routed every freshly-opened PR to the lead-delegated full
+	// gate and armed the visual-evidence floor (the EED-58 qa:stale regression).
+	z := mkIssue()
+	var prID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO github_pull_request (workspace_id, installation_id, repo_owner, repo_name, pr_number,
+			title, state, html_url, pr_created_at, pr_updated_at, head_sha, additions, deletions, changed_files, provider)
+		VALUES ($1::uuid, 1, 'o', 'r', (1000000+floor(random()*1000000))::int, 'zero-stat', 'open', 'https://x',
+			now(), now(), 'abc123', 0, 0, 0, 'github') RETURNING id::text`,
+		testWorkspaceID).Scan(&prID); err != nil {
+		t.Fatalf("seed zero-stat PR: %v", err)
+	}
+	if _, err := testPool.Exec(ctx,
+		`INSERT INTO issue_pull_request (issue_id, pull_request_id) VALUES ($1::uuid, $2::uuid)`, z, prID); err != nil {
+		t.Fatalf("link zero-stat PR: %v", err)
+	}
+	t.Cleanup(func() {
+		c := context.Background()
+		testPool.Exec(c, `DELETE FROM issue_pull_request WHERE pull_request_id=$1::uuid`, prID)
+		testPool.Exec(c, `DELETE FROM github_pull_request WHERE id=$1::uuid`, prID)
+	})
+	if got := testHandler.issueQAScope(ctx, load(z)); got != qaScopeSelf {
+		t.Errorf("zero-stat PR issueQAScope = %d, want qaScopeSelf(%d) — stats-unsynced is unknown, not large", got, qaScopeSelf)
 	}
 }
 

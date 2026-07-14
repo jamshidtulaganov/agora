@@ -23,10 +23,10 @@ import (
 // clicks Approve & merge or Request changes (review_decision.go).
 
 // autoReviewEnabled gates the qa:pass → run_review auto-dispatch. Default off —
-// opt-in, matching every other auto-* gate in slice_action.go; enable via
-// Settings→Configs (AGORA_AUTO_REVIEW_ENABLED).
-func autoReviewEnabled() bool {
-	return config.Bool("AGORA_AUTO_REVIEW_ENABLED")
+// opt-in, matching every other auto-* gate in slice_action.go. Project-scoped:
+// a project may override AGORA_AUTO_REVIEW_ENABLED for its own issues.
+func (h *Handler) autoReviewEnabled(ctx context.Context, issue db.Issue) bool {
+	return config.BoolFrom(h.projectConfigOverrides(ctx, issue), "AGORA_AUTO_REVIEW_ENABLED")
 }
 
 // readyForHumanMergeMarker dedupes the human-facing "READY FOR HUMAN REVIEW +
@@ -118,7 +118,7 @@ func (h *Handler) reviewGateApplies(ctx context.Context, issue db.Issue) (requir
 	for _, l := range labelRows {
 		labels[strings.ToLower(strings.TrimSpace(l.Name))] = true
 	}
-	return reviewGateRequired(reviewTierForLabels(labels), h.issueHasKnownPR(ctx, issue), labels), true
+	return reviewGateRequired(reviewTierForLabels(labels), h.issueHasKnownPR(ctx, issue), labels, h.autoReviewEnabled(ctx, issue)), true
 }
 
 // reviewDispatchInFlight reports whether an auto-fired run_review dispatch is
@@ -221,7 +221,13 @@ func (h *Handler) resolveReviewerAgent(ctx context.Context, issue db.Issue) (db.
 	if issue.AssigneeType.Valid && issue.AssigneeType.String == "agent" && issue.AssigneeID.Valid {
 		authorID = uuidToString(issue.AssigneeID)
 	}
-	if leader, ok := h.devSquadLeaderForIssue(ctx, issue); ok && sliceAgentReady(leader) && uuidToString(leader.ID) != authorID {
+	// A per-issue review cast wins — the orchestrator pinned a reviewer for this
+	// task — but the hard invariant holds: a cast reviewer that IS the author is
+	// ignored (an agent never reviews its own diff) and falls through below.
+	if cast, ok := h.castAgentForStage(ctx, issue, metaCastReviewAgent); ok && uuidToString(cast.ID) != authorID {
+		return cast, true
+	}
+	if leader, ok := h.orchestratorForIssue(ctx, issue); ok && sliceAgentReady(leader) && uuidToString(leader.ID) != authorID {
 		return leader, true
 	}
 	var candidates []db.Agent
@@ -282,10 +288,16 @@ func (h *Handler) sliceActionReviewPRContext(ctx context.Context, issue db.Issue
 // Best-effort + detached: any miss silently no-ops so a label attach never
 // fails because of it.
 func (h *Handler) maybeRunReviewOnQAPass(ctx context.Context, issue db.Issue, labelName, userID string) {
-	if !autoReviewEnabled() {
+	if !h.autoReviewEnabled(ctx, issue) {
 		return
 	}
 	if strings.ToLower(strings.TrimSpace(labelName)) != "qa:pass" {
+		return
+	}
+	// Manual pipeline mode: the orchestrator drives review itself. Wake it to
+	// dispatch run_review instead of auto-selecting a reviewer.
+	if pipelineManual(issue) {
+		h.wakeOrchestratorManual(ctx, issue, "QA passed on this task — dispatch code review (run_review) to your reviewer pick", userID)
 		return
 	}
 	// Serialize per issue: two ingress paths can land the same qa:pass
@@ -314,9 +326,12 @@ func (h *Handler) maybeRunReviewOnQAPass(ctx context.Context, issue db.Issue, la
 		instruction += "\n" + brief
 	}
 
-	authorID, ok := actorAuthorID(userID)
-	if !ok {
-		slog.Warn("auto run_review: invalid actor id, skipping", "actor_id", userID, "issue_id", uuidToString(issue.ID))
+	// The ORCHESTRATOR is shown dispatching the review — not the human who
+	// merely nudged the status (falls back to the actor when there is no agent
+	// orchestrator).
+	authorType, authorID := h.dispatchAuthor(ctx, issue, "member", userID)
+	if !authorID.Valid {
+		slog.Warn("auto run_review: no valid dispatch author, skipping", "actor_id", userID, "issue_id", uuidToString(issue.ID))
 		return
 	}
 	content := agentProtocolMarker(sliceActionRunReview) + reviewDispatchMarker + "\n" +
@@ -324,7 +339,7 @@ func (h *Handler) maybeRunReviewOnQAPass(ctx context.Context, issue db.Issue, la
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID:     issue.ID,
 		WorkspaceID: issue.WorkspaceID,
-		AuthorType:  "member",
+		AuthorType:  authorType,
 		AuthorID:    authorID,
 		Content:     content,
 		Type:        "comment",
@@ -334,7 +349,7 @@ func (h *Handler) maybeRunReviewOnQAPass(ctx context.Context, issue db.Issue, la
 		slog.Warn("auto run_review: create comment failed", "error", err, "issue_id", uuidToString(issue.ID))
 		return
 	}
-	h.triggerTasksForComment(ctx, issue, comment, nil, "member", userID, nil)
+	h.triggerTasksForComment(ctx, issue, comment, nil, authorType, uuidToString(authorID), nil)
 	slog.Info("auto run_review fired on qa:pass",
 		"issue_id", uuidToString(issue.ID), "reviewer_agent_id", uuidToString(reviewer.ID))
 }

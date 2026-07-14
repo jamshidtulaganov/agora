@@ -120,6 +120,43 @@ func (q *Queries) DeleteProject(ctx context.Context, arg DeleteProjectParams) er
 	return err
 }
 
+const deleteProjectConfigKey = `-- name: DeleteProjectConfigKey :one
+UPDATE project SET
+    settings = COALESCE(settings, '{}'::jsonb) #- ARRAY['config', $1::text],
+    updated_at = now()
+WHERE id = $2 AND workspace_id = $3
+RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, settings, squad_id
+`
+
+type DeleteProjectConfigKeyParams struct {
+	Key         string      `json:"key"`
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// Remove one override from settings.config, reverting that key to the instance
+// value. No-op (unchanged row) when the key or the config object is absent.
+func (q *Queries) DeleteProjectConfigKey(ctx context.Context, arg DeleteProjectConfigKeyParams) (Project, error) {
+	row := q.db.QueryRow(ctx, deleteProjectConfigKey, arg.Key, arg.ID, arg.WorkspaceID)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Title,
+		&i.Description,
+		&i.Icon,
+		&i.Status,
+		&i.LeadType,
+		&i.LeadID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Priority,
+		&i.Settings,
+		&i.SquadID,
+	)
+	return i, err
+}
+
 const getProject = `-- name: GetProject :one
 SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, settings, squad_id FROM project
 WHERE id = $1
@@ -405,6 +442,56 @@ func (q *Queries) ProjectAutonomyRows(ctx context.Context, projectID pgtype.UUID
 		return nil, err
 	}
 	return items, nil
+}
+
+const setProjectConfigKey = `-- name: SetProjectConfigKey :one
+UPDATE project SET
+    settings = jsonb_set(
+        COALESCE(settings, '{}'::jsonb),
+        '{config}',
+        COALESCE(settings->'config', '{}'::jsonb) || jsonb_build_object($1::text, to_jsonb($2::text)),
+        true
+    ),
+    updated_at = now()
+WHERE id = $3 AND workspace_id = $4
+RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, settings, squad_id
+`
+
+type SetProjectConfigKeyParams struct {
+	Key         string      `json:"key"`
+	Value       string      `json:"value"`
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// KEY-SCOPED write of one project-scoped config override into settings.config.
+// The value is stored as a JSON string ("true"/"false"/"24") so it round-trips
+// through config.ResolveFrom. Merges into the existing config object (creating
+// it if absent) so sibling overrides are never clobbered. Workspace-guarded.
+func (q *Queries) SetProjectConfigKey(ctx context.Context, arg SetProjectConfigKeyParams) (Project, error) {
+	row := q.db.QueryRow(ctx, setProjectConfigKey,
+		arg.Key,
+		arg.Value,
+		arg.ID,
+		arg.WorkspaceID,
+	)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Title,
+		&i.Description,
+		&i.Icon,
+		&i.Status,
+		&i.LeadType,
+		&i.LeadID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Priority,
+		&i.Settings,
+		&i.SquadID,
+	)
+	return i, err
 }
 
 const setProjectDesignManifest = `-- name: SetProjectDesignManifest :one

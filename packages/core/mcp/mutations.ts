@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
+import type { McpCredentialInput } from "../types";
 import { workspaceKeys } from "../workspace/queries";
 
 /**
@@ -19,6 +20,34 @@ export function useUpdateAgentMcpConfig(workspaceId: string) {
       api.updateAgent(vars.agentId, { mcp_config: vars.mcp_config }),
     onSettled: () => {
       qc.invalidateQueries({ queryKey: workspaceKeys.agents(workspaceId) });
+    },
+  });
+}
+
+/**
+ * Seal (or rotate) the auth for one remote MCP server, keyed by server name.
+ * The secret is write-only; the server seals it and returns status only. On
+ * settle we refresh the credential status list so the "sealed auth" badge
+ * appears.
+ */
+export function usePutMcpCredential(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { serverName: string; data: McpCredentialInput }) =>
+      api.putMcpCredential(workspaceId, vars.serverName, vars.data),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: workspaceKeys.mcpCredentials(workspaceId) });
+    },
+  });
+}
+
+/** Remove the sealed auth for one remote MCP server (by server name). */
+export function useDeleteMcpCredential(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (serverName: string) => api.deleteMcpCredential(workspaceId, serverName),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: workspaceKeys.mcpCredentials(workspaceId) });
     },
   });
 }

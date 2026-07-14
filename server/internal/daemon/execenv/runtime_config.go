@@ -556,6 +556,43 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 	b.WriteString("- If you pushed a branch, state the branch and that `git push` returned exit 0, and include the PR or compare URL.\n")
 	b.WriteString("- Never describe a code change without showing its lines. Docs/data-only and no-code tasks are exempt.\n\n")
 
+	// Progress contract — a platform-wide LIVE-view output contract for ALL
+	// stages/providers. A human watches this task run in real time; the platform
+	// surfaces the agent's OWN plan + headline rather than reverse-engineering
+	// raw tool calls into human phrases (which is lossy and stage-blind). This is
+	// the counterpart to the QA marker convention (`RUNNING test_case:` /
+	// `QA_RESULT`) generalized to every stage. Kept plain and language-agnostic;
+	// the frontend parses the latest `PROGRESS:` line and renders the todo plan
+	// verbatim. See packages/views/issues/components/stage-live-process.tsx.
+	b.WriteString("## Progress You Show The Human\n\n")
+	b.WriteString("While you work, a person is watching a LIVE view of this task. Keep two things current so they always understand what you're doing — in plain language, never raw shell or tool names:\n\n")
+	b.WriteString("1. **A plan.** Maintain a short checklist of the real DELIVERABLES — the actual changes, features, or checks a human cares about, phrased as human outcomes (\"Add the notes API\", \"Wire up the notes UI\", \"Verify it works\"), NOT low-level file edits (\"edit Button.tsx\"). This checklist is the human's PLAN of the work, shown to them VERBATIM — write it for them.\n")
+	b.WriteString("   - **List only meaningful work. NEVER list your mechanical process.** Do NOT include steps like \"Read the issue\", \"Check out the repo\", \"Explore the codebase\", \"Run git\", \"Commit\", \"Push\", \"Open a pull request\", \"Post a comment\", \"Set the label\" — those are invisible plumbing, not the plan, and they turn the plan into noise. Keep it to roughly 3–6 real deliverable items.\n")
+	b.WriteString("   - Mark an item in progress before you start it and done when it's done; keep exactly one item in progress at a time.\n")
+	b.WriteString("   - Keep it current TWO ways so it shows no matter which runtime you are: (a) if you have a todo tool (e.g. Claude Code's TodoWrite), use it; AND (b) ALWAYS also emit the whole checklist as a fenced block — a line ```todo on its own, then one `- [ ] item` per step (`[ ]` = not started, `[~]` = in progress, `[x]` = done), then a closing ``` line. Re-emit the ENTIRE block every time the plan changes (a status flip or a new step); the latest block wins and replaces the list. Example:\n```todo\n- [x] Add the notes API\n- [~] Wire up the notes UI\n- [ ] Verify it works\n```\n")
+	b.WriteString("2. **A headline.** Each time you move to a new phase, output one line by itself starting with `PROGRESS:` then a single plain present-continuous sentence — e.g. `PROGRESS: Reading the greet button component`, `PROGRESS: Running the tests`, `PROGRESS: Opening a pull request`. No file paths, flags, or command names. Use the SAME language as the issue. This line becomes the \"what's happening now\" the human sees.\n\n")
+	b.WriteString("Both feed the human's live view only — they do NOT replace your normal comment / verdict, which you still post as usual.\n\n")
+
+	// TDD contract — DEV (on-assign) tasks only. The single most expensive
+	// cycle in the pipeline is the QA-fail loop: dev hands off wrong → QA
+	// catches it (~5 min gate) → autoroute back → re-dev → re-QA (≈12 min per
+	// iteration, two agent dispatches). Test-first moves that verification
+	// into the dev's INNER loop, where an iteration costs seconds (a local
+	// test run via the agora-qa MCP), so a wrong-direction fix dies at the
+	// red test instead of at the gate. QA/review/chat tasks are excluded:
+	// they arrive via trigger comments (TriggerCommentID set) or carry their
+	// own mode markers, and their instructions own their procedure.
+	if ctx.IssueID != "" && ctx.TriggerCommentID == "" && ctx.ChatSessionID == "" &&
+		ctx.AutopilotRunID == "" && ctx.QuickCreatePrompt == "" {
+		b.WriteString("## Test-Driven Delivery\n\n")
+		b.WriteString("Work test-first — the QA gate re-runs your tests, and a red hand-off is a guaranteed bounce (slow for everyone):\n\n")
+		b.WriteString("1. **Red first.** Before implementing, write (or extend) a test in the repo's OWN framework that encodes the EXACT expected outcome from the plan — the exact value/status/text, not mere presence. Run it and SEE IT FAIL against the current code: a test that passes before your change proves nothing about it.\n")
+		b.WriteString("2. **Green.** Implement until that test passes. Iterate here — running tests locally costs seconds; a QA bounce costs two agent runs.\n")
+		b.WriteString("3. **Use the `agora-qa` MCP tools** when available: `detect_tests` finds the repo's runner, `run_tests` runs the suite and returns the real exit code, `run_case_script` runs a pre-authored Agora case script. Pre-authored QA cases for this issue (authored in parallel from the plan) may already exist — if they do, run them green before hand-off; they are what the gate will judge you by.\n")
+		b.WriteString("4. **Commit the tests WITH the code** — same branch, same PR. They are the proof of the deliverable and become the team's permanent regression suite.\n")
+		b.WriteString("5. **Never hand off red.** Do not move the issue to review with a failing suite. Exception: a change with no testable behavior (docs, copy, comments) skips the red-test step — say so explicitly in your final comment.\n\n")
+	}
+
 	// Inject available repositories section.
 	if ctx.LocalWorkDir != "" {
 		// In-place (local_directory) mode: the agent is ALREADY inside the

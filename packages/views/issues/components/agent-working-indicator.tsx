@@ -30,11 +30,17 @@ interface AgentWorkingIndicatorProps {
   /** Show a Stop button that cancels the running agent — the "kill switch"
    * a developer who wants to stay in control needs when a run goes wrong. */
   allowStop?: boolean;
+  /** The dev-space roster's currently-selected agent. When set AND that agent
+   * is in flight, Steer/Stop act on THAT session only (not every agent on the
+   * issue) — the per-session control a Cursor/VS-Code agents window has. Absent
+   * (the issue-detail mount) keeps the all-agents behavior. */
+  focusAgentId?: string;
 }
 
 export function AgentWorkingIndicator({
   issueId,
   allowStop = false,
+  focusAgentId,
 }: AgentWorkingIndicatorProps) {
   const { t } = useT("issues");
   const wsId = useWorkspaceId();
@@ -68,15 +74,27 @@ export function AgentWorkingIndicator({
   if (running.length === 0 && queued.length === 0) return null;
 
   const active = [...running, ...queued];
-  const agentIds = [...new Set(active.map((tk) => tk.agent_id))];
+  const allAgentIds = [...new Set(active.map((tk) => tk.agent_id))];
 
-  // Cancel every in-flight task for this issue. The daemon polls for
-  // server-side cancellation mid-run, so this actually halts the agent.
+  // Per-session scope: when the caller focuses one agent (the roster-selected
+  // worktree) AND that agent is actually in flight, Steer/Stop target THAT
+  // session's tasks only. Otherwise (no focus, or the focused agent is idle) we
+  // fall back to every in-flight agent on the issue — the original behavior.
+  const focused =
+    focusAgentId && allAgentIds.includes(focusAgentId) ? focusAgentId : null;
+  const targetTasks = focused
+    ? active.filter((tk) => tk.agent_id === focused)
+    : active;
+  const agentIds = focused ? [focused] : allAgentIds;
+  const focusName = focused ? getActorName("agent", focused) : "";
+
+  // Cancel the targeted in-flight task(s). The daemon polls for server-side
+  // cancellation mid-run, so this actually halts the agent.
   const stopAll = async () => {
     setStopping(true);
     try {
       await Promise.allSettled(
-        active.map((tk) => api.cancelTask(issueId, tk.id)),
+        targetTasks.map((tk) => api.cancelTask(issueId, tk.id)),
       );
       qc.invalidateQueries({
         queryKey: agentTaskSnapshotOptions(wsId).queryKey,
@@ -86,11 +104,11 @@ export function AgentWorkingIndicator({
     }
   };
 
-  // Steer: post the message + force-enqueue a resuming follow-up for the running
+  // Steer: post the message + force-enqueue a resuming follow-up for the target
   // agent. Applied the moment the current turn ends, keeping context.
   const steer = async () => {
     const msg = steerText.trim();
-    const agentId = agentIds[0];
+    const agentId = focused ?? agentIds[0];
     if (!msg || !agentId) return;
     setSteering(true);
     try {
@@ -105,7 +123,9 @@ export function AgentWorkingIndicator({
       setSteering(false);
     }
   };
-  const anyRunning = running.length > 0;
+  const anyRunning = focused
+    ? running.some((tk) => tk.agent_id === focused)
+    : running.length > 0;
   const isSingle = agentIds.length === 1;
 
   // Copy follows the real state: "is working" only when something is truly
@@ -149,7 +169,7 @@ export function AgentWorkingIndicator({
             type="button"
             onClick={() => void stopAll()}
             disabled={stopping}
-            title="Stop the agent"
+            title={focused ? `Stop ${focusName}` : "Stop the agent"}
             className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
           >
             <CircleStop className="h-3 w-3" />
@@ -170,7 +190,11 @@ export function AgentWorkingIndicator({
           <input
             value={steerText}
             onChange={(e) => setSteerText(e.target.value)}
-            placeholder="Steer the agent (applied after this turn)…"
+            placeholder={
+              focused
+                ? `Steer ${focusName} (applied after this turn)…`
+                : "Steer the agent (applied after this turn)…"
+            }
             className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] outline-none focus:border-primary/50"
           />
           <button

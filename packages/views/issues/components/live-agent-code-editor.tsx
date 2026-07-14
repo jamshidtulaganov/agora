@@ -30,11 +30,15 @@ import {
   deriveActivitySteps,
   deriveCurrentActivity,
   deriveFileDocs,
+  deriveProgressHeadline,
+  deriveTodos,
   FRAGMENT_SEPARATOR,
   type ActivityLine,
   type ActivityStep,
   type LiveFileDoc,
+  type TodoItem,
 } from "./live-agent-activity";
+import { TodoList, useStepText } from "./stage-live-process";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LiveAgentCodeEditor — the "spectator editor" for a running agent. Renders the
@@ -178,8 +182,14 @@ function LiveEditorForTask({
   const activity = useMemo(() => deriveCurrentActivity(timeline), [timeline]);
   // Step trail for runs that write no files (QA / review / ops): commands run,
   // files read, pages driven — so the Live pane streams SOMETHING meaningful
-  // instead of sitting on "warming up" for the whole run.
+  // instead of sitting on "warming up" for the whole run. exec_command and
+  // friends are unwrapped/humanized inside deriveActivitySteps (no raw shell).
   const steps = useMemo(() => deriveActivitySteps(timeline), [timeline]);
+  // The agent's own plan — leads the waiting pane so the human sees what it's
+  // doing and what's next, in the agent's words, not a tool-call trail.
+  const todos = useMemo(() => deriveTodos(timeline), [timeline]);
+  // The agent's own PROGRESS headline — the primary "what's happening now".
+  const headline = useMemo(() => deriveProgressHeadline(timeline), [timeline]);
 
   // Follow-the-agent by default; clicking a file pins it.
   const [pinnedPath, setPinnedPath] = useState<string | null>(null);
@@ -313,7 +323,13 @@ function LiveEditorForTask({
               }
             />
           ) : (
-            <WaitingPane task={task} activity={activity} steps={steps} />
+            <WaitingPane
+              task={task}
+              activity={activity}
+              steps={steps}
+              todos={todos}
+              headline={headline}
+            />
           )}
         </div>
 
@@ -381,10 +397,14 @@ function WaitingPane({
   task,
   activity,
   steps,
+  todos,
+  headline,
 }: {
   task: AgentTask;
   activity: ActivityLine | null;
   steps: ActivityStep[];
+  todos: TodoItem[];
+  headline: string | null;
 }) {
   const { t } = useT("issues");
   // deriveActivitySteps returns newest-first; the timeline reads top→down in
@@ -401,13 +421,23 @@ function WaitingPane({
   return (
     <div className="flex h-full flex-col items-center gap-3 overflow-y-auto px-6 py-8">
       <ActorAvatar actorType="agent" actorId={task.agent_id} size={28} />
-      <p className="text-xs text-muted-foreground">
-        {trail.length === 0 && activity ? (
+      {/* The agent's own PROGRESS headline leads; fall back to the derived
+          current activity, then a neutral "warming up". */}
+      <p className={cn("text-xs", headline ? "font-medium text-foreground" : "text-muted-foreground")}>
+        {headline ? (
+          headline
+        ) : trail.length === 0 && activity ? (
           <ActivityText activity={activity} />
         ) : (
           t(($) => $.live_editor.waiting)
         )}
       </p>
+      {/* The agent's own to-do plan leads — what's done, now, and next. */}
+      {todos.length > 0 && (
+        <div className="w-full max-w-[560px]">
+          <TodoList todos={todos} />
+        </div>
+      )}
       {/* Sequential timeline: connector rail + a dot per step. */}
       {trail.length > 0 && (
         <ul className="mt-1 w-full max-w-[560px] text-left">
@@ -454,36 +484,11 @@ function WaitingPane({
   );
 }
 
-// Localized step line. A classified shell command renders as its human intent
-// ("installing dependencies") with the raw summary on hover; everything else
-// keeps the verb + target form ("is reading .../file.ts"). Same keys as the
-// activity strip so the trail and the strip read identically.
+// Localized step line — delegates to the shared useStepText so the Watch pane,
+// the changes feed, and the stepper all read identically (and pick up the
+// commit/publish/pr milestone phrasing without drifting a second switch here).
 function StepText({ step }: { step: ActivityStep }) {
-  const { t } = useT("issues");
-  switch (step.cmdClass) {
-    case "install": return <>{t(($) => $.live_activity.cmd.install)}</>;
-    case "test": return <>{t(($) => $.live_activity.cmd.test)}</>;
-    case "lint": return <>{t(($) => $.live_activity.cmd.lint)}</>;
-    case "build": return <>{t(($) => $.live_activity.cmd.build)}</>;
-    case "review": return <>{t(($) => $.live_activity.cmd.review)}</>;
-    case "branch": return <>{t(($) => $.live_activity.cmd.branch)}</>;
-    case "inspect": return <>{t(($) => $.live_activity.cmd.inspect)}</>;
-    default: break;
-  }
-  let verb = "";
-  switch (step.verbKey) {
-    case "reading": verb = t(($) => $.live_activity.verb.reading); break;
-    case "editing": verb = t(($) => $.live_activity.verb.editing); break;
-    case "writing": verb = t(($) => $.live_activity.verb.writing); break;
-    case "searching": verb = t(($) => $.live_activity.verb.searching); break;
-    case "running": verb = t(($) => $.live_activity.verb.running); break;
-    case "fetching": verb = t(($) => $.live_activity.verb.fetching); break;
-    case "browsing": verb = t(($) => $.live_activity.verb.browsing); break;
-    case "thinking": verb = t(($) => $.live_activity.verb.thinking); break;
-    case "working": verb = t(($) => $.live_activity.verb.working); break;
-    default: verb = step.rawVerb ?? "";
-  }
-  return <>{step.target ? `${verb} ${step.target}` : verb}</>;
+  return <>{useStepText(step)}</>;
 }
 
 // The blue avatar pill that plays the agent's "cursor" (mockup: "Aria ▍").

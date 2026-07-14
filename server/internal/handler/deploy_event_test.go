@@ -7,14 +7,34 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
-// TestRecordDeployEvent covers the write path DeployIssueQA calls on every
-// sync attempt: a success writes status="success", a failed sync writes
-// status="failed", and the latest row wins on read regardless of insert
-// order (append-only, same discipline as qa_evidence).
-func TestRecordDeployEvent(t *testing.T) {
+// insertTestDeployEvent seeds a deploy_event row directly through the query the
+// live capture path uses (service.CaptureDeployEvent → InsertDeployEvent). The
+// handler-side writer recordDeployEvent was removed with the connected-box
+// code; the append-only storage and read path these tests exercise
+// (GetIssueDeployEvents) are the live deploy/stage-cockpit surface.
+func insertTestDeployEvent(t *testing.T, ctx context.Context, ws, issue pgtype.UUID, ref, target, status, summary string) {
+	t.Helper()
+	if _, err := testHandler.Queries.InsertDeployEvent(ctx, db.InsertDeployEventParams{
+		WorkspaceID: ws,
+		IssueID:     issue,
+		Ref:         ref,
+		Target:      target,
+		Status:      status,
+		Summary:     summary,
+	}); err != nil {
+		t.Fatalf("seed deploy event: %v", err)
+	}
+}
+
+// TestDeployEventAppendOnly covers the deploy_event storage contract the live
+// read path depends on: each write is a NEW append-only row (no upsert), status
+// is persisted verbatim, and the latest row wins on read regardless of insert
+// order (same discipline as qa_evidence).
+func TestDeployEventAppendOnly(t *testing.T) {
 	ctx := context.Background()
 	issueID := createTestIssue(t, "deploy event write path", "in_progress", "medium")
 	t.Cleanup(func() { deleteTestIssue(t, issueID) })
@@ -22,7 +42,7 @@ func TestRecordDeployEvent(t *testing.T) {
 	wsUUID := testUUID(testWorkspaceID)
 	issueUUID := testUUID(issueID)
 
-	testHandler.recordDeployEvent(ctx, wsUUID, issueUUID, "feature/foo", "jamshid's box", true, "Switched to a new branch")
+	insertTestDeployEvent(t, ctx, wsUUID, issueUUID, "feature/foo", "staging", "success", "Switched to a new branch")
 
 	latest, err := testHandler.Queries.GetLatestDeployEventForIssue(ctx, db.GetLatestDeployEventForIssueParams{
 		IssueID:     issueUUID,
@@ -31,13 +51,13 @@ func TestRecordDeployEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get latest deploy event: %v", err)
 	}
-	if latest.Status != "success" || latest.Ref != "feature/foo" || latest.Target != "jamshid's box" {
+	if latest.Status != "success" || latest.Ref != "feature/foo" || latest.Target != "staging" {
 		t.Errorf("unexpected row: %+v", latest)
 	}
 
 	// A second, failed attempt on the same issue must write a NEW row (no
 	// upsert) and become the freshest one read back.
-	testHandler.recordDeployEvent(ctx, wsUUID, issueUUID, "feature/foo", "jamshid's box", false, "ssh: connection refused")
+	insertTestDeployEvent(t, ctx, wsUUID, issueUUID, "feature/foo", "staging", "failed", "pipeline failed")
 
 	latest2, err := testHandler.Queries.GetLatestDeployEventForIssue(ctx, db.GetLatestDeployEventForIssueParams{
 		IssueID:     issueUUID,
@@ -60,32 +80,6 @@ func TestRecordDeployEvent(t *testing.T) {
 	}
 	if len(recent) != 2 {
 		t.Errorf("expected 2 recorded deploy events, got %d", len(recent))
-	}
-}
-
-// TestRecordDeployEventTruncatesSummary: the box's raw SSH output can be long
-// (a full git fetch/checkout transcript) — the summary column is a display
-// convenience, not the audit trail, so it's capped.
-func TestRecordDeployEventTruncatesSummary(t *testing.T) {
-	ctx := context.Background()
-	issueID := createTestIssue(t, "deploy event long output", "in_progress", "medium")
-	t.Cleanup(func() { deleteTestIssue(t, issueID) })
-
-	long := make([]byte, 2000)
-	for i := range long {
-		long[i] = 'x'
-	}
-	testHandler.recordDeployEvent(ctx, testUUID(testWorkspaceID), testUUID(issueID), "main", "box-1", true, string(long))
-
-	latest, err := testHandler.Queries.GetLatestDeployEventForIssue(ctx, db.GetLatestDeployEventForIssueParams{
-		IssueID:     testUUID(issueID),
-		WorkspaceID: testUUID(testWorkspaceID),
-	})
-	if err != nil {
-		t.Fatalf("get latest deploy event: %v", err)
-	}
-	if len(latest.Summary) > 500 {
-		t.Errorf("expected summary to be capped at 500 bytes, got %d", len(latest.Summary))
 	}
 }
 
@@ -127,8 +121,8 @@ func TestGetIssueDeployEvents_ReadPath(t *testing.T) {
 	wsUUID := testUUID(testWorkspaceID)
 	issueUUID := testUUID(issueID)
 
-	testHandler.recordDeployEvent(ctx, wsUUID, issueUUID, "feature/a", "qa-box", true, "first sync")
-	testHandler.recordDeployEvent(ctx, wsUUID, issueUUID, "feature/a", "qa-box", true, "second sync, same branch")
+	insertTestDeployEvent(t, ctx, wsUUID, issueUUID, "feature/a", "staging", "success", "first sync")
+	insertTestDeployEvent(t, ctx, wsUUID, issueUUID, "feature/a", "staging", "success", "second sync, same branch")
 
 	w := httptest.NewRecorder()
 	req := newRequest("GET", "/api/issues/"+issueID+"/deploy-events", nil)

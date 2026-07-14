@@ -36,6 +36,10 @@ import type {
   WorkspaceRepo,
   GitCredential,
   FigmaCredentialStatus,
+  McpCredentialStatus,
+  McpCredentialInput,
+  ReleaseIntegration,
+  ReleaseIntegrationInput,
   MemberWithUser,
   ActorDirectoryEntry,
   User,
@@ -73,13 +77,7 @@ import type {
   SendChatMessageResponse,
   CancelTaskResponse,
   Project,
-  ConnectedBox,
   WorkspaceLabs,
-  BoxActionResult,
-  CreateRemoteBoxRequest,
-  RemoteBoxSyncResult,
-  ProvisionBoxRequest,
-  ProvisionBoxResult,
   PolicyFleetHealth,
   QAEvidence,
   TestCase,
@@ -265,15 +263,8 @@ import {
   EMPTY_BILLING_CHECKOUT_SESSION_STATUS,
   EMPTY_CREATE_BILLING_PORTAL_SESSION_RESPONSE,
   EMPTY_CANCEL_TASK_RESPONSE,
-  ConnectedBoxListSchema,
-  ConnectedBoxSchema,
   WorkspaceLabsSchema,
   EMPTY_WORKSPACE_LABS,
-  BoxActionResultSchema,
-  EMPTY_BOX_ACTION,
-  RemoteBoxSyncResultSchema,
-  ProvisionBoxResultSchema,
-  EMPTY_PROVISION_RESULT,
   PolicyFleetHealthSchema,
   EMPTY_POLICY_FLEET_HEALTH,
   QAEvidenceSchema,
@@ -291,7 +282,6 @@ import {
   type TestCaseRunsParsed,
   LaunchTraceResponseSchema,
   EMPTY_LAUNCH_TRACE,
-  EMPTY_CONNECTED_BOX,
   GetIssueEditorResponseSchema,
   EMPTY_ISSUE_EDITOR,
   EMPTY_ISSUE_BROWSER,
@@ -306,6 +296,15 @@ import {
   type SprintReadinessResponse,
   FigmaCredentialStatusSchema,
   EMPTY_FIGMA_CREDENTIAL_STATUS,
+  McpCredentialStatusSchema,
+  McpCredentialListSchema,
+  EMPTY_MCP_CREDENTIAL_LIST,
+  EMPTY_MCP_CREDENTIAL_STATUS,
+  ReleaseIntegrationListSchema,
+  EMPTY_RELEASE_INTEGRATIONS,
+  ProjectConfigListSchema,
+  EMPTY_PROJECT_CONFIG,
+  type ProjectConfigEntry,
   EditorTokensResponseSchema,
   EMPTY_EDITOR_TOKENS,
   type EditorTokensResponse,
@@ -765,6 +764,12 @@ export class ApiClient {
     return this.fetch(`/api/issues/${id}/metadata/${encodeURIComponent(key)}`, {
       method: "PUT",
       body: JSON.stringify({ value }),
+    });
+  }
+
+  async deleteIssueMetadataKey(id: string, key: string): Promise<void> {
+    await this.fetch(`/api/issues/${id}/metadata/${encodeURIComponent(key)}`, {
+      method: "DELETE",
     });
   }
 
@@ -1298,78 +1303,6 @@ export class ApiClient {
     await this.fetch(`/api/runtimes/${runtimeId}`, { method: "DELETE" });
   }
 
-  // Remote Boxes (connected_box) — a developer's onboarded remote dev server.
-  // Gated behind AGORA_REMOTE_BOXES_ENABLED server-side (404 when off). The list
-  // is schema-parsed with a [] fallback so a contract drift degrades to "no
-  // boxes" instead of white-screening the runtimes page.
-  async listRemoteBoxes(): Promise<ConnectedBox[]> {
-    const raw = await this.fetch<unknown>("/api/remote-boxes");
-    return parseWithFallback(raw, ConnectedBoxListSchema, { boxes: [] as ConnectedBox[] }, {
-      endpoint: "GET /api/remote-boxes",
-    }).boxes;
-  }
-
-  async createRemoteBox(data: CreateRemoteBoxRequest): Promise<ConnectedBox> {
-    return this.fetch("/api/remote-boxes", {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-  }
-
-  async deleteRemoteBox(id: string): Promise<void> {
-    await this.fetch(`/api/remote-boxes/${id}`, { method: "DELETE" });
-  }
-
-  // Check out a branch of the box's repo into its work_dir over SSH (git-sync),
-  // so the box serves that branch and QA can test it. Returns ok + the remote
-  // git output (token already redacted server-side).
-  async syncRemoteBox(id: string, branch: string): Promise<RemoteBoxSyncResult> {
-    const raw = await this.fetch<unknown>(`/api/remote-boxes/${id}/sync`, {
-      method: "POST",
-      body: JSON.stringify({ branch }),
-    });
-    return parseWithFallback(
-      raw,
-      RemoteBoxSyncResultSchema,
-      { ok: false, branch, output: "", box: EMPTY_CONNECTED_BOX },
-      { endpoint: "POST /api/remote-boxes/{id}/sync" },
-    );
-  }
-
-  // Bind (project_id set) or unbind (empty project_id) a box to a project so an
-  // issue in that project resolves to this box for deploy-qa. ownerId (a MEMBER
-  // id) additionally maps the box to its developer for Labs per-dev QA routing:
-  // undefined = leave the owner untouched, "" = clear the mapping.
-  async bindConnectedBox(id: string, projectId: string, ownerId?: string): Promise<ConnectedBox> {
-    const body: Record<string, string> = { project_id: projectId };
-    if (ownerId !== undefined) body.owner_id = ownerId;
-    const raw = await this.fetch<unknown>(`/api/remote-boxes/${id}/bind`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
-    return parseWithFallback(raw, ConnectedBoxSchema, EMPTY_CONNECTED_BOX, {
-      endpoint: "POST /api/remote-boxes/{id}/bind",
-    });
-  }
-
-  // Cheap SSH reachability probe for a box — the "did my connection work?"
-  // button. Never runs caller input on the box.
-  async testRemoteBox(id: string): Promise<BoxActionResult> {
-    const raw = await this.fetch<unknown>(`/api/remote-boxes/${id}/test`, { method: "POST" });
-    return parseWithFallback(raw, BoxActionResultSchema, EMPTY_BOX_ACTION, {
-      endpoint: "POST /api/remote-boxes/{id}/test",
-    });
-  }
-
-  // Trigger the operator-allowlisted seed command on a box (re-clone demo
-  // data etc.). 503 when the server has no AGORA_QA_BOX_SEED_COMMAND.
-  async seedRemoteBox(id: string): Promise<BoxActionResult> {
-    const raw = await this.fetch<unknown>(`/api/remote-boxes/${id}/seed`, { method: "POST" });
-    return parseWithFallback(raw, BoxActionResultSchema, EMPTY_BOX_ACTION, {
-      endpoint: "POST /api/remote-boxes/{id}/seed",
-    });
-  }
-
   // Settings → Labs: workspace-level experimental flags (QA-env routing).
   async getWorkspaceLabs(): Promise<WorkspaceLabs> {
     const raw = await this.fetch<unknown>("/api/workspace-labs");
@@ -1386,35 +1319,6 @@ export class ApiClient {
     return parseWithFallback(raw, WorkspaceLabsSchema, EMPTY_WORKSPACE_LABS, {
       endpoint: "PUT /api/workspace-labs",
     });
-  }
-
-  // Provision a per-developer QA box for a workspace member. With dry_run the
-  // server returns the runbook + computed placement WITHOUT touching the host
-  // (the review gate); a real run SSHes the QA host and registers the box.
-  async provisionRemoteBox(data: ProvisionBoxRequest): Promise<ProvisionBoxResult> {
-    const raw = await this.fetch<unknown>("/api/remote-boxes/provision", {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-    return parseWithFallback(raw, ProvisionBoxResultSchema, EMPTY_PROVISION_RESULT, {
-      endpoint: "POST /api/remote-boxes/provision",
-    });
-  }
-
-  // Check the given branch out onto the QA box bound to the issue's project
-  // (git-sync), so the box serves the branch under review for QA. The box is
-  // auto-resolved server-side from the issue.
-  async deployIssueQA(issueId: string, branch: string): Promise<RemoteBoxSyncResult> {
-    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/deploy-qa`, {
-      method: "POST",
-      body: JSON.stringify({ branch }),
-    });
-    return parseWithFallback(
-      raw,
-      RemoteBoxSyncResultSchema,
-      { ok: false, branch, output: "", box: EMPTY_CONNECTED_BOX },
-      { endpoint: "POST /api/issues/{id}/deploy-qa" },
-    );
   }
 
   // Cascade variant of deleteRuntime. The strict DELETE refuses with
@@ -1969,8 +1873,7 @@ export class ApiClient {
 
   // Idempotently attaches skills to an agent — server does ON CONFLICT DO
   // NOTHING, so it never clobbers existing agent_skill links (unlike
-  // setAgentSkills, which replaces the set wholesale via PUT). Used by the
-  // SD onboarding skill-seeder (packages/views/workspace/sd-skills.ts).
+  // setAgentSkills, which replaces the set wholesale via PUT).
   async addAgentSkills(agentId: string, skillIds: string[]): Promise<void> {
     await this.fetch(`/api/agents/${agentId}/skills/add`, {
       method: "POST",
@@ -2238,6 +2141,29 @@ export class ApiClient {
     return this.fetch(`/api/projects/${id}`, {
       method: "PUT",
       body: JSON.stringify(data),
+    });
+  }
+
+  // Per-project pipeline config — the ProjectScoped QA / review / automation
+  // flags this project overrides for its own issues. GET lists them with the
+  // effective value + source; PUT/DELETE set/clear one override (owner/admin).
+  async getProjectConfig(id: string): Promise<ProjectConfigEntry[]> {
+    const raw = await this.fetch<unknown>(`/api/projects/${id}/config`);
+    return parseWithFallback(raw, ProjectConfigListSchema, EMPTY_PROJECT_CONFIG, {
+      endpoint: "GET /api/projects/{id}/config",
+    }).configs;
+  }
+
+  async setProjectConfig(id: string, key: string, value: string): Promise<void> {
+    await this.fetch(`/api/projects/${id}/config/${encodeURIComponent(key)}`, {
+      method: "PUT",
+      body: JSON.stringify({ value }),
+    });
+  }
+
+  async resetProjectConfig(id: string, key: string): Promise<void> {
+    await this.fetch(`/api/projects/${id}/config/${encodeURIComponent(key)}`, {
+      method: "DELETE",
     });
   }
 
@@ -3155,6 +3081,78 @@ export class ApiClient {
 
   async deleteFigmaCredential(workspaceId: string): Promise<void> {
     await this.fetch(`/api/workspaces/${workspaceId}/figma-credential`, {
+      method: "DELETE",
+    });
+  }
+
+  // Remote-MCP credentials — sealed auth (bearer tokens) for remote http/sse
+  // MCP servers, keyed by server name. The secret is write-only; the list never
+  // returns it (has_secret + last4 only).
+  async listMcpCredentials(workspaceId: string): Promise<McpCredentialStatus[]> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/mcp-credentials`);
+    return parseWithFallback(raw, McpCredentialListSchema, EMPTY_MCP_CREDENTIAL_LIST, {
+      endpoint: "GET /api/workspaces/{id}/mcp-credentials",
+    });
+  }
+
+  async putMcpCredential(
+    workspaceId: string,
+    serverName: string,
+    data: McpCredentialInput,
+  ): Promise<McpCredentialStatus> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/mcp-credentials/${encodeURIComponent(serverName)}`,
+      { method: "PUT", body: JSON.stringify(data) },
+    );
+    return parseWithFallback(
+      raw,
+      McpCredentialStatusSchema,
+      { ...EMPTY_MCP_CREDENTIAL_STATUS, server_name: serverName, has_secret: true },
+      { endpoint: "PUT /api/workspaces/{id}/mcp-credentials/{serverName}" },
+    );
+  }
+
+  async deleteMcpCredential(workspaceId: string, serverName: string): Promise<void> {
+    await this.fetch(
+      `/api/workspaces/${workspaceId}/mcp-credentials/${encodeURIComponent(serverName)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  // Release integrations — per-workspace outbound connectors that fire on
+  // release-lifecycle events (Phase 2: signed webhook). The webhook URL +
+  // signing secret are write-only; the list never returns them (has_secret only).
+  async listReleaseIntegrations(workspaceId: string): Promise<ReleaseIntegration[]> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/release-integrations`);
+    return parseWithFallback(raw, ReleaseIntegrationListSchema, EMPTY_RELEASE_INTEGRATIONS, {
+      endpoint: "GET /api/workspaces/{id}/release-integrations",
+    });
+  }
+
+  async createReleaseIntegration(
+    workspaceId: string,
+    data: ReleaseIntegrationInput,
+  ): Promise<void> {
+    await this.fetch(`/api/workspaces/${workspaceId}/release-integrations`, {
+      method: "POST",
+      // kind defaults to webhook server-side when omitted.
+      body: JSON.stringify({ kind: "webhook", ...data }),
+    });
+  }
+
+  async updateReleaseIntegration(
+    workspaceId: string,
+    integrationId: string,
+    data: ReleaseIntegrationInput,
+  ): Promise<void> {
+    await this.fetch(`/api/workspaces/${workspaceId}/release-integrations/${integrationId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteReleaseIntegration(workspaceId: string, integrationId: string): Promise<void> {
+    await this.fetch(`/api/workspaces/${workspaceId}/release-integrations/${integrationId}`, {
       method: "DELETE",
     });
   }

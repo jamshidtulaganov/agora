@@ -999,10 +999,11 @@ describe("IssueDetail (shared)", () => {
       // The deep-link effect lands on AND highlights the target comment: it
       // drives the timeline container's scrollTop directly (jsdom has no
       // layout, so the scroll itself isn't observable here) and applies the
-      // brand highlight ring. Assert the user-facing highlight.
+      // soft brand background tint (the old ring border was removed — the
+      // tint is the only highlight now). Assert the user-facing highlight.
       await waitFor(() => {
         expect(
-          document.getElementById("comment-comment-2")?.querySelector(".ring-2"),
+          document.getElementById("comment-comment-2")?.querySelector('[class*="color-mix"]'),
         ).not.toBeNull();
       });
     });
@@ -1025,7 +1026,7 @@ describe("IssueDetail (shared)", () => {
         document.getElementById("comment-comment-2"),
       ).toBeNull();
       // Nothing highlighted while the loading skeleton is up.
-      expect(document.querySelector(".ring-2")).toBeNull();
+      expect(document.querySelector('[class*="color-mix"]')).toBeNull();
 
       resolveIssue(mockIssue);
 
@@ -1036,7 +1037,7 @@ describe("IssueDetail (shared)", () => {
       });
       await waitFor(() => {
         expect(
-          document.getElementById("comment-comment-2")?.querySelector(".ring-2"),
+          document.getElementById("comment-comment-2")?.querySelector('[class*="color-mix"]'),
         ).not.toBeNull();
       });
     });

@@ -167,7 +167,7 @@ describe("TestCasesPanel — running case + fail expansion", () => {
     qaLiveProgressMocks.useLiveCaseVerdicts.mockReturnValue({});
   });
 
-  it("pulses the running row and shows the sticky 'Running case X of N' summary with a progress bar", async () => {
+  it("marks the running row with a per-row 'Running' indicator (no duplicate sticky summary)", async () => {
     apiMocks.getIssueTestCases.mockResolvedValue({
       test_cases: [automatedCase({ id: "tc-1", title: "Checkout — happy path" }), automatedCase({ id: "tc-2", title: "Checkout — declined card" })],
     });
@@ -176,22 +176,53 @@ describe("TestCasesPanel — running case + fail expansion", () => {
     renderPanel();
 
     await screen.findByText("Checkout — declined card");
-    // "Running case 2 of 2 — Checkout — declined card" (test_cases.running_line)
-    // — one combined sticky-summary text node, matched by regex since it also
-    // overlaps with the row's own (exact-text) title span.
-    expect(screen.getByText(/Running case 2 of 2 — Checkout — declined card/)).toBeInTheDocument();
-    expect(screen.getByText("RUNS")).toBeInTheDocument();
+    // The running fact now shows in exactly ONE place inside the panel: the
+    // per-row highlight (relabeled "Running", not the uppercase "RUNS" badge).
+    // The duplicate sticky "Running case X of N" summary is gone (the top strip
+    // that carries the ✓/✗/N tally lives in QALiveProgress, not this panel).
+    expect(screen.getByText("Running")).toBeInTheDocument();
+    expect(screen.queryByText(/Running case/)).not.toBeInTheDocument();
+    expect(screen.queryByText("RUNS")).not.toBeInTheDocument();
   });
 
-  it("shows a generic running message when the live marker names a case not in the list", async () => {
+  it("marks no row when the live marker names a case not in the list", async () => {
     apiMocks.getIssueTestCases.mockResolvedValue({ test_cases: [automatedCase()] });
     qaLiveProgressMocks.useRunningTestCaseId.mockReturnValue("unknown-case-id");
 
     renderPanel();
 
     await screen.findByText("Checkout — happy path");
-    expect(screen.getByText("Running QA…")).toBeInTheDocument();
-    expect(screen.queryByText(/Running case/)).not.toBeInTheDocument();
+    // No row matches the marker → no per-row "Running" highlight in the panel
+    // (the generic "Running QA…" message lives in the top strip, not here).
+    expect(screen.queryByText("Running")).not.toBeInTheDocument();
+  });
+
+  it("shows the running case's steps as a live checklist so the human sees WHAT is being verified", async () => {
+    apiMocks.getIssueTestCases.mockResolvedValue({
+      test_cases: [automatedCase({ id: "tc-1", steps: "1. add to cart\n2. pay" })],
+    });
+    qaLiveProgressMocks.useRunningTestCaseId.mockReturnValue("tc-1");
+
+    renderPanel();
+
+    // The "Checking now" checklist header appears with the case's own steps —
+    // without the user having to click to expand the collapsed row.
+    expect(await screen.findByText("Checking now")).toBeInTheDocument();
+    expect(screen.getByText(/add to cart/)).toBeInTheDocument();
+    expect(screen.getByText(/pay/)).toBeInTheDocument();
+  });
+
+  it("does NOT show the checklist for a case that is not running", async () => {
+    apiMocks.getIssueTestCases.mockResolvedValue({
+      test_cases: [automatedCase({ id: "tc-1", steps: "1. add to cart\n2. pay" })],
+    });
+    qaLiveProgressMocks.useRunningTestCaseId.mockReturnValue(null);
+
+    renderPanel();
+
+    await screen.findByText("Checkout — happy path");
+    // Collapsed, not running → the "Checking now" checklist stays hidden.
+    expect(screen.queryByText("Checking now")).not.toBeInTheDocument();
   });
 
   it("opens a fail row automatically and shows the agent's WHY output; a pass row stays collapsed", async () => {
@@ -297,7 +328,8 @@ describe("TestCasesPanel — per-step manual run (checklist)", () => {
     apiMocks.listTestCaseRuns.mockResolvedValue({ runs: [] });
     apiMocks.getAgentTaskSnapshot.mockResolvedValue([]);
     apiMocks.getIssue.mockResolvedValue({ id: "issue-1", description: null });
-    apiMocks.getIssueTestCases.mockResolvedValue({ test_cases: [automatedCase()] });
+    // Manual cases: the primary Run opens the step checklist directly.
+    apiMocks.getIssueTestCases.mockResolvedValue({ test_cases: [automatedCase({ kind: "manual" })] });
     apiMocks.recordTestCaseRun.mockResolvedValue({});
     qaLiveProgressMocks.useRunningTestCaseId.mockReturnValue(null);
     qaLiveProgressMocks.useLiveCaseVerdicts.mockReturnValue({});
@@ -350,6 +382,7 @@ describe("TestCasesPanel — per-step manual run (checklist)", () => {
     apiMocks.getIssueTestCases.mockResolvedValue({
       test_cases: [
         automatedCase({
+          kind: "manual",
           latest_run: {
             id: "run-1",
             status: "fail",
@@ -496,7 +529,9 @@ describe("TestCasesPanel — re-run failed + per-case file-bug (Phase 2)", () =>
 
     renderPanel();
 
-    fireEvent.click(await screen.findByTitle("File a bug from this case"));
+    // File-bug now lives in the row's ⋯ overflow (not an always-there button).
+    fireEvent.click(await screen.findByTitle("More actions"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "File a bug from this case" }));
 
     await screen.findByTestId("file-bug-sheet");
     const props = fileBugSheetMock.lastProps!;
@@ -521,7 +556,10 @@ describe("TestCasesPanel — re-run failed + per-case file-bug (Phase 2)", () =>
     renderPanel();
 
     await screen.findByText("Checkout — happy path");
-    expect(screen.queryByTitle("File a bug from this case")).not.toBeInTheDocument();
+    // The passing automated case still has a ⋯ (hand-walk its steps), but no
+    // File-a-bug item — that lives on failing/blocked rows only.
+    fireEvent.click(screen.getByTitle("More actions"));
+    expect(screen.queryByRole("menuitem", { name: "File a bug from this case" })).not.toBeInTheDocument();
   });
 });
 
@@ -537,7 +575,7 @@ describe("TestCasesPanel — flaky chip + run history (Phase 3)", () => {
     qaLiveProgressMocks.useLiveCaseVerdicts.mockReturnValue({});
   });
 
-  it("shows the amber flaky chip only on flaky cases", async () => {
+  it("shows the amber flaky chip in the expanded row detail, not the collapsed row", async () => {
     apiMocks.getIssueTestCases.mockResolvedValue({
       test_cases: [
         automatedCase({ id: "tc-flaky", title: "Wobbly case", flaky: true }),
@@ -548,7 +586,12 @@ describe("TestCasesPanel — flaky chip + run history (Phase 3)", () => {
     renderPanel();
 
     await screen.findByText("Wobbly case");
-    expect(screen.getByText("flaky")).toBeInTheDocument(); // test_cases.flaky — exactly once
+    // flaky is one of the 8 meta tokens moved behind the row expand — it must
+    // NOT clutter the collapsed row.
+    expect(screen.queryByText("flaky")).not.toBeInTheDocument();
+    // Expanding the flaky row reveals it (exactly once).
+    fireEvent.click(screen.getByText("Wobbly case"));
+    expect(await screen.findByText("flaky")).toBeInTheDocument();
     expect(screen.getAllByText("flaky")).toHaveLength(1);
   });
 

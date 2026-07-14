@@ -92,14 +92,6 @@ vi.mock("@agora/core/api", () => ({
   },
 }));
 
-// SD shared skills are seeded fire-and-forget inside findOrCreateHelper. The
-// seed has its own unit tests (sd-skills.test.ts); here we no-op it so it
-// doesn't fan out real api calls or affect the helper-setup assertions.
-const mockSeedSdSkills = vi.fn();
-vi.mock("./sd-skills", () => ({
-  seedSdSkills: (...args: unknown[]) => mockSeedSdSkills(...args),
-}));
-
 const mockPush = vi.fn();
 const navigationAdapter: NavigationAdapter = {
   push: (path: string) => mockPush(path),
@@ -146,7 +138,6 @@ beforeEach(() => {
   mockCreateIssue.mockReset();
   mockCreateComment.mockReset();
   mockGetWorkspace.mockReset();
-  mockSeedSdSkills.mockReset();
   mockPush.mockReset();
   useWelcomeStore.getState().reset();
 });

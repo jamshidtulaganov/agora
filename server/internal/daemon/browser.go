@@ -340,6 +340,11 @@ func (bm *browserManager) handleStream(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "workdir is required", http.StatusBadRequest)
 		return
 	}
+	// events_only: bridge console/network events but NOT the JPEG screencast.
+	// Lets a caller (the editor's always-on "app health" watcher) collect the
+	// running app's errors without paying for — or spinning the shared Chromium
+	// on — a full frame stream it never renders.
+	eventsOnly := r.URL.Query().Get("events_only") == "1"
 	inst, err := bm.ensureChrome(key)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -390,12 +395,14 @@ func (bm *browserManager) handleStream(w http.ResponseWriter, r *http.Request) {
 	sendCDP("Runtime.enable", nil)
 	sendCDP("Log.enable", nil)
 	sendCDP("Network.enable", nil)
-	sendCDP("Emulation.setDeviceMetricsOverride", map[string]any{
-		"width": 1280, "height": 800, "deviceScaleFactor": 1, "mobile": false,
-	})
-	sendCDP("Page.startScreencast", map[string]any{
-		"format": "jpeg", "quality": 60, "maxWidth": 1280, "maxHeight": 800, "everyNthFrame": 1,
-	})
+	if !eventsOnly {
+		sendCDP("Emulation.setDeviceMetricsOverride", map[string]any{
+			"width": 1280, "height": 800, "deviceScaleFactor": 1, "mobile": false,
+		})
+		sendCDP("Page.startScreencast", map[string]any{
+			"format": "jpeg", "quality": 60, "maxWidth": 1280, "maxHeight": 800, "everyNthFrame": 1,
+		})
+	}
 
 	// CDP → app: relay screencast frames (ack each) + console/network events.
 	// Single goroutine = single client writer, so no write mutex is needed.

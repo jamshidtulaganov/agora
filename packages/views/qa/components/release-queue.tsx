@@ -243,19 +243,16 @@ export function ReleaseQueue({
     return by;
   }, [filteredIssues, liveIssueIds]);
 
-  // Attention counts for the summary line — surfaced ahead of the quiet queue so
-  // a QA lead reads "what needs me" first (derived from the same live set +
-  // labels the rows use; no new backend field).
-  const runningCount = useMemo(
-    () => filteredIssues.filter((i) => liveIssueIds.has(i.id)).length,
-    [filteredIssues, liveIssueIds],
-  );
-  const staleCount = useMemo(
+  // Stale backlog size — computed from the FULL queue (not the stale-filtered
+  // cut) so the "Stale backlog (N)" affordance shows a stable count regardless
+  // of whether the toggle is on. Framed as a secondary backlog, not a headline
+  // number competing with the active release set.
+  const staleBacklogCount = useMemo(
     () =>
-      filteredIssues.filter(
+      issues.filter(
         (i) => !liveIssueIds.has(i.id) && (i.labels ?? []).some((l) => l.name === "qa:stale"),
       ).length,
-    [filteredIssues, liveIssueIds],
+    [issues, liveIssueIds],
   );
 
   const hasFilters = assigneeFilter.length > 0 || priorityFilter.length > 0 || staleOnly || needsHumanOnly;
@@ -302,7 +299,10 @@ export function ReleaseQueue({
   return (
     <div className="flex w-full flex-col gap-4 px-8 py-8">
       <div className="space-y-3">
-        <p className="text-sm text-muted-foreground">
+        {/* Scope context (muted): the queue's scope + how many are in review.
+            The per-verdict counts live in the lane headers just below, so a
+            second summing line here would only duplicate them. */}
+        <p className="text-[12px] text-muted-foreground">
           {project === "all"
             ? t(($) => $.qa_cockpit.summary_all, { count: filteredIssues.length })
             : t(($) => $.qa_cockpit.summary_project, {
@@ -312,26 +312,6 @@ export function ReleaseQueue({
           {hasFilters && issues.length !== filteredIssues.length
             ? ` ${t(($) => $.qa_cockpit.summary_of_total, { total: issues.length })}`
             : ""}
-          {" · "}
-          <span className="text-destructive">{t(($) => $.qa_cockpit.summary_need_fix, { count: lanes.fail.length })}</span>
-          {runningCount > 0 && (
-            <>
-              {" · "}
-              <span className="text-info">{t(($) => $.qa_cockpit.summary_running, { count: runningCount })}</span>
-            </>
-          )}
-          {staleCount > 0 && (
-            <>
-              {" · "}
-              <span className="text-amber-600 dark:text-amber-400">
-                {t(($) => $.qa_cockpit.summary_stale, { count: staleCount })}
-              </span>
-            </>
-          )}
-          {" · "}
-          {t(($) => $.qa_cockpit.summary_pending, { count: lanes.pending.length })}
-          {" · "}
-          {t(($) => $.qa_cockpit.summary_passed, { count: lanes.pass.length })}
         </p>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -348,13 +328,18 @@ export function ReleaseQueue({
             variant={staleOnly ? "secondary" : "outline"}
             size="sm"
             className={cn(
-              "h-8 gap-1 px-2 text-[12px]",
+              "h-8 gap-1.5 px-2 text-[12px]",
               staleOnly && "text-amber-600 dark:text-amber-400",
             )}
             title={t(($) => $.qa_cockpit.filter_stale_title)}
             onClick={() => setStaleOnly((v) => !v)}
           >
-            {t(($) => $.qa_cockpit.filter_stale)}
+            {t(($) => $.qa_cockpit.filter_stale_backlog)}
+            {staleBacklogCount > 0 && (
+              <span className="rounded bg-muted px-1 text-[11px] font-medium text-muted-foreground">
+                {staleBacklogCount}
+              </span>
+            )}
           </Button>
           <Button
             type="button"

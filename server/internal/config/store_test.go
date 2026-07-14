@@ -105,6 +105,88 @@ func TestSecretNeverExposedViaResolveDefault(t *testing.T) {
 	}
 }
 
+func TestScopedResolvePrecedence(t *testing.T) {
+	const key = "AGORA_QA_FAIL_AUTOROUTE_ENABLED" // default "true", ProjectScoped
+	singleton = nil
+	t.Setenv(key, "")
+
+	// nil overrides → identical to the unscoped read (registry default true).
+	if !BoolFrom(nil, key) {
+		t.Error("nil overrides should fall through to the instance value (default true)")
+	}
+	if SourceFrom(nil, key) != "default" {
+		t.Errorf("nil-source: got %q, want default", SourceFrom(nil, key))
+	}
+
+	// A project override beats the instance value both ways.
+	proj := map[string]string{key: "false"}
+	if BoolFrom(proj, key) {
+		t.Error("project override false must win over default true")
+	}
+	if SourceFrom(proj, key) != "project" {
+		t.Errorf("source: got %q, want project", SourceFrom(proj, key))
+	}
+
+	// A project override wins even over an instance env value.
+	t.Setenv(key, "false")
+	on := map[string]string{key: "true"}
+	if !BoolFrom(on, key) {
+		t.Error("project override true must win over env false")
+	}
+
+	// A blank project value is treated as unset → falls through to instance.
+	t.Setenv(key, "false")
+	blank := map[string]string{key: "   "}
+	if BoolFrom(blank, key) {
+		t.Error("blank project value should fall through to instance (env false)")
+	}
+	if SourceFrom(blank, key) != "env" {
+		t.Errorf("blank-source: got %q, want env", SourceFrom(blank, key))
+	}
+
+	// IntFrom honours the project override, else the default.
+	t.Setenv("AGORA_QA_WATCHDOG_WINDOW_HOURS", "")
+	if IntFrom(map[string]string{"AGORA_QA_WATCHDOG_WINDOW_HOURS": "6"}, "AGORA_QA_WATCHDOG_WINDOW_HOURS", 24) != 6 {
+		t.Error("IntFrom should read the project override")
+	}
+	if IntFrom(nil, "AGORA_QA_WATCHDOG_WINDOW_HOURS", 24) != 24 {
+		t.Error("IntFrom nil should fall to the registry default 24")
+	}
+}
+
+func TestProjectScopedFlags(t *testing.T) {
+	// The pipeline keys are project-scopable; platform/secret keys are not.
+	scoped := map[string]bool{
+		"AGORA_QA_FAIL_AUTOROUTE_ENABLED": true,
+		"AGORA_AUTO_QA_ENABLED":           true,
+		"AGORA_AUTO_REVIEW_ENABLED":       true,
+		"AGORA_AUTO_DOCS_ENABLED":         true,
+	}
+	for k, want := range scoped {
+		if IsProjectScoped(k) != want {
+			t.Errorf("%s: IsProjectScoped=%v want %v", k, IsProjectScoped(k), want)
+		}
+	}
+	// Sprint-cluster flags couple to the daemon and stay instance-global.
+	for _, k := range []string{
+		"ALLOW_SIGNUP", "AGORA_TELEGRAM_ONLY", "JWT_SECRET", "BITRIX_PUSH_STATUS",
+		"AGORA_SPRINT_PR_MODE", "AGORA_SPRINT_WORKTREE_ENABLED",
+	} {
+		if IsProjectScoped(k) {
+			t.Errorf("%s must NOT be project-scoped", k)
+		}
+	}
+	// No secret is ever project-scoped.
+	for _, d := range ProjectScopedRegistry() {
+		if d.Kind == KindSecret {
+			t.Errorf("secret %q must not be project-scoped", d.Key)
+		}
+	}
+	if len(ProjectScopedRegistry()) == 0 {
+		t.Error("expected some project-scoped keys")
+	}
+}
+
 func TestRegistryKeysUnique(t *testing.T) {
 	seen := map[string]bool{}
 	for _, d := range Registry {

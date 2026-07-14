@@ -346,6 +346,10 @@ func main() {
 	// each new inbox item. No-op unless Lark is wired and the recipient bound
 	// their Lark identity. Shares the same bus instance.
 	registerLarkPushListeners(bus, h)
+	// Release-integrations dispatcher: fan deploy:recorded / release:shipped out
+	// to each workspace's configured outbound connectors (Phase 2: webhook).
+	// No-op unless AGORA_RELEASE_SECRET_KEY is set and an integration matches.
+	registerReleaseOutbound(bus, h)
 
 	srv := &http.Server{
 		Addr:    ":" + port,

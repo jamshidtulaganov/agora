@@ -11,6 +11,7 @@ import {
   GitBranch,
   ChevronDown,
   MoreHorizontal,
+  CornerUpLeft,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@agora/core/api";
@@ -33,7 +34,7 @@ import {
   DropdownMenuItem,
 } from "@agora/ui/components/ui/dropdown-menu";
 import { cn } from "@agora/ui/lib/utils";
-import { useT } from "../../i18n";
+import { useT, useTimeAgo } from "../../i18n";
 import { InspectorSection } from "../../layout/inspector-section";
 import { StructuredResult } from "../../issues/components/qa-result";
 import { PullRequestList } from "../../issues/components/pull-request-list";
@@ -42,7 +43,7 @@ import { QALiveBrowser } from "./qa-live-browser";
 import { QALiveProgress, useQaRunningTasks } from "./qa-live-progress";
 import { QADesignCompare } from "./qa-design-compare";
 import { TestCasesPanel } from "./test-cases-panel";
-import { verdictIcon, verdictTone } from "./verdict";
+import { verdictIcon, verdictTone, verdictBucket } from "./verdict";
 import { FileBugSheet } from "./file-bug-sheet";
 
 // The QA lens — the QA team's instrument surface, re-homed from the old
@@ -110,6 +111,7 @@ export function QALensBody({ issueId }: { issueId: string }) {
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
   const { t } = useT("issues");
+  const timeAgo = useTimeAgo();
   const [bugOpen, setBugOpen] = useState(false);
   // The send-back Dialog's own open state — the repro/rationale textarea now
   // lives inside it instead of an always-visible field cluttering the triage
@@ -293,40 +295,65 @@ export function QALensBody({ issueId }: { issueId: string }) {
       ? "running"
       : chipVerdictAsState;
 
-  // Failing-case count for the "Pass · N cases failing" copy — read from the
-  // SAME test-cases fetch the live-bay gate already uses (lensCases) rather
-  // than widening the API response to also carry a count.
-  const failingCaseCount = (lensCases ?? []).filter((c) => c.latest_run?.status === "fail").length;
+  // Fold the reconciled enum onto ONE of the four plain buckets. The chip
+  // headline is derived from the bucket, so it can only ever read Passed /
+  // Failed / Testing… / Not tested yet — never the seven-way enum label. The
+  // nuance the richer enum carried (pass-with-failing / blocked / stale)
+  // survives as a muted secondary line below, not as a competing loud color.
+  const chipBucket = verdictBucket(reconciledState);
+  // On a failed verdict the corrective next step is routing back to dev, so the
+  // triage bar promotes "Send back to dev" to the solid primary; otherwise no
+  // action is pushed (pass/pending don't demand one).
+  const isFail = chipBucket === "fail";
 
-  // Provenance for the chip. Since the provenance-recording override landed,
-  // evidence.source is the PRIMARY signal: a human override writes the
-  // evidence row itself with source="human", so `evidence?.source` renders
-  // "human" directly — no client inference needed. The label-vs-verdict
-  // divergence check (isOverride) remains ONLY as a fallback for legacy
-  // overridden rows written before that endpoint existed (label flipped, but
-  // the evidence row still says source=agent). No source pill for the two
-  // "nothing to attribute" states.
+  // Failing-case count for the "N still failing" caveat — read from the SAME
+  // test-cases fetch the live-bay gate already uses (lensCases) rather than
+  // widening the API response to also carry a count. `checkCount` is the total
+  // for the muted "· N checks" detail on the chip's primary line.
+  const failingCaseCount = (lensCases ?? []).filter((c) => c.latest_run?.status === "fail").length;
+  const checkCount = lensCases?.length ?? 0;
+
+  // Provenance pill: shown ONLY when a human overrode the agent — then it reads
+  // "Overridden by you" in place of the old always-on AGENT pill (a clean
+  // agent verdict now shows no pill at all). A human override writes the
+  // evidence row with source="human"; the label-vs-verdict divergence
+  // (isOverride) is the fallback for legacy rows written before the override
+  // endpoint existed (label flipped, evidence row still says source=agent).
   const isOverride = humanVerdict !== "pending" && humanVerdict !== verdict;
-  const chipSource =
-    reconciledState === "never_ran" || reconciledState === "running"
-      ? null
-      : isOverride
-        ? "human"
-        : evidence?.source || "agent";
-  const verdictLabel =
-    reconciledState === "pass"
+  const overridden = evidence?.source === "human" || isOverride;
+
+  // One state word, derived from the bucket — the whole point of 7→4.
+  const verdictHeadline =
+    chipBucket === "pass"
       ? t(($) => $.qa_evidence.verdict_pass)
-      : reconciledState === "pass_with_failing_cases"
-        ? t(($) => $.qa_evidence.verdict_pass_with_failing, { count: failingCaseCount })
-        : reconciledState === "fail"
-          ? t(($) => $.qa_evidence.verdict_fail)
-          : reconciledState === "blocked"
-            ? t(($) => $.qa_evidence.verdict_blocked)
-            : reconciledState === "stale"
-              ? t(($) => $.qa_evidence.verdict_stale)
-              : reconciledState === "running"
-                ? t(($) => $.qa_evidence.verdict_running)
-                : t(($) => $.qa_evidence.verdict_unknown);
+      : chipBucket === "fail"
+        ? t(($) => $.qa_evidence.verdict_fail)
+        : chipBucket === "running"
+          ? t(($) => $.qa_evidence.verdict_running)
+          : t(($) => $.qa_evidence.not_tested);
+
+  // Plain-English "why it failed": the agent's summary, else the first failing
+  // case's run output, else the first new-failure command's error reason — so a
+  // summary-less fail still says WHY instead of a bare "Failed". The truncated
+  // form feeds the one-line caption; the full text stays the chip's hover title.
+  const failReasonRaw =
+    evidence?.summary?.trim() ||
+    (lensCases ?? []).find((c) => c.latest_run?.status === "fail")?.latest_run?.output?.trim() ||
+    (evidence?.result?.commands ?? []).find((c) => c.kind === "new_failure" && c.error.trim())?.error.trim() ||
+    "";
+  const failReason = failReasonRaw ? failReasonRaw.slice(0, 200) : undefined;
+
+  // The single muted secondary line: the pass-with-failing / stale caveat, or
+  // the fail/blocked reason. A clean pass / pending / running shows no second
+  // line — the full reason stays reachable as the chip's hover title.
+  const verdictSecondary =
+    reconciledState === "pass_with_failing_cases"
+      ? t(($) => $.qa_evidence.still_failing, { count: failingCaseCount })
+      : reconciledState === "stale"
+        ? t(($) => $.qa_evidence.out_of_date)
+        : chipBucket === "fail"
+          ? failReason
+          : undefined;
 
   if (isLoading || !issue) {
     return (
@@ -408,61 +435,72 @@ export function QALensBody({ issueId }: { issueId: string }) {
                 triage actions off-screen. Capped on mobile, where the
                 column isn't height-bounded. */}
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pr-0.5 max-lg:max-h-[65vh]">
-              {/* Verdict chip — compact: icon + label + source pill + an
-                  Override escape hatch, all in one row. Replaces the old
-                  hero card AND the separate Pass/Fail buttons that used to
-                  live in the triage bar — those two were showing the same
-                  fact twice. */}
+              {/* Verdict chip — ONE clean line: [icon] Passed · 12 checks ·
+                  ran 2m ago  [Override ▾]. One state word, one color, the rest
+                  muted. The provenance pill appears only on a human override
+                  ("Overridden by you"); a clean agent verdict shows none.
+                  Replaces the old hero card AND the seven-way enum label. */}
               <div className="pb-4">
-                <div className={cn("rounded-lg border px-3 py-2", verdictTone(reconciledState))}>
+                <div
+                  className={cn("rounded-lg border px-3 py-2", verdictTone(reconciledState))}
+                  title={failReasonRaw || undefined}
+                >
                   <div className="flex items-center gap-2">
                     {verdictIcon(reconciledState, "size-4 shrink-0")}
-                    <span className="text-sm font-medium">{verdictLabel}</span>
-                    {chipSource && (
-                      <span className="shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                        {chipSource === "human" ? t(($) => $.qa_review.source_human) : t(($) => $.qa_review.source_agent)}
+                    <span className="text-sm font-medium">{verdictHeadline}</span>
+                    {checkCount > 0 && (
+                      <span className="shrink-0 text-[11px] text-muted-foreground">
+                        · {t(($) => $.qa_evidence.checks_count, { count: checkCount })}
                       </span>
                     )}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            disabled={override.isPending}
-                            className="ml-auto h-6 gap-1 px-2 text-[11px] text-muted-foreground"
-                          />
-                        }
+                    {evidence?.captured_at && (
+                      <span
+                        className="truncate text-[11px] text-muted-foreground"
+                        title={new Date(evidence.captured_at).toLocaleString()}
                       >
-                        {t(($) => $.qa_review.override)}
-                        <ChevronDown className="size-3" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => setOverrideVerdict("pass")}>
-                          <CheckCircle2 className="size-3.5" />
-                          {t(($) => $.qa_review.override_pass)}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setOverrideVerdict("fail")}>
-                          <XCircle className="size-3.5" />
-                          {t(($) => $.qa_review.override_fail)}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                  {(evidence?.summary || evidence?.captured_at) && (
-                    <div className="mt-1 flex items-center gap-1.5">
-                      {evidence?.summary && (
-                        <p className="line-clamp-2 text-[11px] text-muted-foreground" title={evidence.summary}>
-                          {evidence.summary}
-                        </p>
-                      )}
-                      {evidence?.captured_at && (
-                        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
-                          {new Date(evidence.captured_at).toLocaleString()}
+                        · {timeAgo(evidence.captured_at)}
+                      </span>
+                    )}
+                    <div className="ml-auto flex shrink-0 items-center gap-2">
+                      {overridden && (
+                        <span className="rounded-full border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          {t(($) => $.qa_review.overridden_by_you)}
                         </span>
                       )}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              disabled={override.isPending}
+                              className="h-6 gap-1 px-2 text-[11px] text-muted-foreground"
+                            />
+                          }
+                        >
+                          {t(($) => $.qa_review.override)}
+                          <ChevronDown className="size-3" />
+                        </DropdownMenuTrigger>
+                        {/* Override is the "agent was wrong, force pass" escape
+                            hatch — the fail path is "Send back to dev" in the
+                            triage bar, so the menu offers only Mark pass. */}
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => setOverrideVerdict("pass")}>
+                            <CheckCircle2 className="size-3.5" />
+                            {t(($) => $.qa_review.override_pass)}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
+                  </div>
+                  {verdictSecondary && (
+                    <p
+                      className="mt-1 line-clamp-2 text-[11px] text-muted-foreground"
+                      title={verdictSecondary}
+                    >
+                      {verdictSecondary}
+                    </p>
                   )}
                 </div>
               </div>
@@ -530,32 +568,34 @@ export function QALensBody({ issueId }: { issueId: string }) {
             {/* /scroll region */}
 
             {/* Triage bar — pinned to the bottom of the column (flex,
-                shrink-0) so the primary actions are always within reach while
-                the region above scrolls. Exactly two primary actions (send
-                back / re-run); regression + file-bug are rarer, so they live
-                behind the overflow menu instead of taking a whole row. */}
+                shrink-0) so the actions stay within reach while the region
+                above scrolls. Right-aligned, content-width cluster (not two
+                stretched half-buttons) so it reads the same on a narrow rail
+                and the wide issue view. On a failed verdict "Send back to dev"
+                is the solid primary — the corrective next step; "Re-run QA" is
+                the secondary retry; regression + file-bug live in the ⋯ menu. */}
             <div className="shrink-0 border-t bg-background pt-4 pb-1">
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="h-8 flex-1 gap-1.5 text-[12px]"
-                  onClick={() => setSendBackOpen(true)}
-                >
-                  <XCircle className="size-3.5" />
-                  {t(($) => $.qa_review.send_back)}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-8 flex-1 gap-1.5 text-[12px]"
+                  className="h-8 gap-1.5 text-[12px]"
                   disabled={rerun.isPending}
                   onClick={() => rerun.mutate()}
                 >
                   {rerun.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
                   {t(($) => $.qa_evidence.rerun)}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={isFail ? "default" : "outline"}
+                  className="h-8 gap-1.5 text-[12px]"
+                  onClick={() => setSendBackOpen(true)}
+                >
+                  <CornerUpLeft className="size-3.5" />
+                  {t(($) => $.qa_review.send_back)}
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger

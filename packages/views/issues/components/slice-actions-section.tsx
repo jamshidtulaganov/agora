@@ -54,7 +54,9 @@ export function SliceActionsSection({ issueId }: SliceActionsSectionProps) {
   const queryClient = useQueryClient();
   const userId = useAuthStore((s) => s.user?.id);
 
-  const [open, setOpen] = useState(true);
+  // Collapsed by default — the rail leads with live/settled state (plan,
+  // evidence, runs); dispatch affordances stay one click away, not a block.
+  const [open, setOpen] = useState(false);
   const [scope, setScope] = useState("");
   // Which kind is mid-flight; null when idle. One in-flight action at a time —
   // firing two slices at once is almost always an accidental double-fire.

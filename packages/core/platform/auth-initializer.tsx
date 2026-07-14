@@ -62,9 +62,13 @@ export function AuthInitializer({
           // Old servers omit this field — treat that as "all methods enabled"
           // rather than hiding the email/Google paths.
           telegramOnly: cfg.telegram_only === true,
-          // Opt-in Remote Boxes UI. Omitted by servers without the feature →
-          // false → the runtimes page hides the onboarding section entirely.
-          remoteBoxesEnabled: cfg.remote_boxes_enabled === true,
+          // Integration availability — each mirrors a backend env gate and
+          // gates its Settings → Integrations section (+ Bitrix issue/project
+          // surfaces). Omitted by deployments without the integration → false
+          // → clean Integrations tab for a general dev-team customer.
+          bitrixEnabled: cfg.bitrix_enabled === true,
+          zohoEnabled: cfg.zoho_enabled === true,
+          larkEnabled: cfg.lark_enabled === true,
         });
         configStore.getState().setDaemonConfig({
           daemonServerUrl: cfg.daemon_server_url,

@@ -3,6 +3,8 @@
 
 import { useState, useEffect, useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { api } from "@agora/core/api";
+import { issueKeys } from "@agora/core/issues/queries";
 import { agentTaskSnapshotOptions } from "@agora/core/agents";
 import { projectDetailOptions } from "@agora/core/projects/queries";
 import { useWorkspaceId } from "@agora/core/hooks";
@@ -12,29 +14,27 @@ import {
   Globe,
   Info,
   Loader2,
-  MessageSquare,
   PanelRightClose,
   PanelRightOpen,
-  Play,
+  TriangleAlert,
+  Users,
 } from "lucide-react";
 import { cn } from "@agora/ui/lib/utils";
+import type { AgentTask } from "@agora/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
-import { EditorChatPanel } from "./editor-chat-panel";
+import { TranscriptButton } from "../../common/task-transcript";
 import { LiveAgentChangesFeed } from "./live-agent-changes-feed";
 import { LiveAgentCodeEditor } from "./live-agent-code-editor";
+import { useEditorAppErrors } from "./use-editor-app-errors";
 import { AgentWorkingIndicator } from "./agent-working-indicator";
 import { EditorReviewBar } from "./editor-review-bar";
-import {
-  EditorPreviewPane,
-  parseTestOutput,
-  type TestRunState,
-} from "./editor-preview-pane";
+import { parseTestOutput, type TestRunState } from "./editor-preview-pane";
 import { EditorBrowserPane } from "./editor-browser-pane";
+import { runEditorTest } from "./editor-test-run";
 import { EditorContextPanel } from "./editor-context-panel";
 import { EditorAskBar } from "./editor-ask-bar";
 import { EditorChangesList } from "./editor-changes-list";
 import { EditorRunQA } from "./editor-run-qa";
-import { EditorDeployQA } from "./editor-deploy-qa";
 
 // The co-code editor WORKBENCH — the editor Dialog's inner surface, extracted
 // from editor-section.tsx so it can mount in two hosts (docs/
@@ -72,50 +72,50 @@ export interface EditorDaemon {
   env?: Record<string, string>;
 }
 
-export type EditorWorkbenchPane = "live" | "code" | "preview" | "browser";
+// "app" is the merged vibe-coder view: the interactive shared browser (auto-
+// starts the dev server and shows the running app) — it absorbed the former
+// separate "preview" and "browser" tabs. "live" = Watch the agent, "code" = IDE.
+export type EditorWorkbenchPane = "live" | "code" | "app";
 
-// Distinct per-agent chip colors, picked by a stable hash of the agent id so
-// each agent keeps the same color across renders. Full class strings (no
-// interpolation) so Tailwind keeps them.
-const AGENT_CHIP_COLORS = [
-  {
-    on: "border-blue-500/50 bg-blue-500/15 text-blue-700 dark:text-blue-300",
-    off: "border-blue-500/30 text-blue-600/80 hover:bg-blue-500/10 dark:text-blue-400/80",
-  },
-  {
-    on: "border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-    off: "border-emerald-500/30 text-emerald-600/80 hover:bg-emerald-500/10 dark:text-emerald-400/80",
-  },
-  {
-    on: "border-violet-500/50 bg-violet-500/15 text-violet-700 dark:text-violet-300",
-    off: "border-violet-500/30 text-violet-600/80 hover:bg-violet-500/10 dark:text-violet-400/80",
-  },
-  {
-    on: "border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-300",
-    off: "border-amber-500/30 text-amber-600/80 hover:bg-amber-500/10 dark:text-amber-400/80",
-  },
-  {
-    on: "border-rose-500/50 bg-rose-500/15 text-rose-700 dark:text-rose-300",
-    off: "border-rose-500/30 text-rose-600/80 hover:bg-rose-500/10 dark:text-rose-400/80",
-  },
-  {
-    on: "border-cyan-500/50 bg-cyan-500/15 text-cyan-700 dark:text-cyan-300",
-    off: "border-cyan-500/30 text-cyan-600/80 hover:bg-cyan-500/10 dark:text-cyan-400/80",
-  },
-  {
-    on: "border-fuchsia-500/50 bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300",
-    off: "border-fuchsia-500/30 text-fuchsia-600/80 hover:bg-fuchsia-500/10 dark:text-fuchsia-400/80",
-  },
-  {
-    on: "border-teal-500/50 bg-teal-500/15 text-teal-700 dark:text-teal-300",
-    off: "border-teal-500/30 text-teal-600/80 hover:bg-teal-500/10 dark:text-teal-400/80",
-  },
-];
+type AgentLiveStatus = "running" | "queued" | "done" | "failed";
 
-function agentChipColor(id: string) {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return AGENT_CHIP_COLORS[h % AGENT_CHIP_COLORS.length]!;
+// Per-agent live status on the roster chip — the signal that turns the agent
+// switcher into an actual "agents window" (which one is working, which is done,
+// which failed). running pulses in the agent's own chip color (bg-current);
+// the terminal/queued states use fixed semantic colors.
+function AgentStatusDot({ status }: { status?: AgentLiveStatus }) {
+  if (!status) return null;
+  if (status === "running") {
+    return (
+      <span aria-hidden className="relative inline-flex size-2 shrink-0 items-center justify-center">
+        <span className="absolute inline-flex size-2 rounded-full bg-current opacity-40 motion-safe:animate-ping" />
+        <span className="relative inline-flex size-1.5 rounded-full bg-current" />
+      </span>
+    );
+  }
+  const cls =
+    status === "failed"
+      ? "bg-destructive"
+      : status === "done"
+        ? "bg-emerald-500"
+        : "bg-amber-500"; // queued
+  return <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", cls)} />;
+}
+
+// Plain per-session status line for the vertical roster.
+function agentStatusLabel(status?: AgentLiveStatus): string {
+  switch (status) {
+    case "running":
+      return "Working…";
+    case "queued":
+      return "Queued";
+    case "done":
+      return "Done";
+    case "failed":
+      return "Failed";
+    default:
+      return "Idle";
+  }
 }
 
 // A self-host daemon_url is only reachable when the browser shares the daemon's
@@ -171,9 +171,7 @@ const EDITOR_UNREACHABLE_LABEL =
 // raw-string convention (they don't use useT()).
 const BROWSER_STARTING_LABEL = "starting browser…";
 const BROWSER_UNAVAILABLE_LABEL =
-  "Live browser unavailable — no live worktree yet. Assign an agent or wait for the daemon to come online, then reopen this tab.";
-const PREVIEW_UNAVAILABLE_LABEL =
-  "Preview runs the app's dev server next to the editor — available on self-host runtimes for now. On cloud runtimes, use the Browser tab to watch the live QA Chromium instead.";
+  "Live app unavailable — no live worktree yet. Assign an agent or wait for the daemon to come online, then reopen this tab.";
 
 export interface EditorSession {
   state: LaunchState;
@@ -409,8 +407,8 @@ export function EditorWorkbench({
   });
   const projectSettings = project?.settings;
 
-  // Lifted test-run state — shared between EditorPreviewPane (button + bottom
-  // bar); parseTestOutput summarizes the raw runner output for that bar.
+  // Lifted test-run state — drives the App tab's Run-tests button + its inline
+  // pass/fail pill; parseTestOutput summarizes the raw runner output.
   const [testRunState, setTestRunState] = useState<TestRunState>({
     testState: "idle",
     testOut: "",
@@ -427,11 +425,23 @@ export function EditorWorkbench({
     });
   };
 
+  // Run-tests trigger for the merged App tab — the former Preview pane's button,
+  // folded into the App view. Uses the shared runEditorTest helper against the
+  // agent's worktree and feeds the lifted testRunState so the inline pass/fail
+  // pill renders. No-op unless a daemon + selected agent are present.
+  const runAppTests = async () => {
+    if (!daemon || !selectedAgent) return;
+    handleTestResult({ testState: "running", testOut: "", testPassed: null, testCmd: "" });
+    handleTestResult(
+      await runEditorTest(daemon.url, selectedAgent.work_dir, projectSettings?.qa_test_cmd),
+    );
+  };
+
   // Right panel: watch the agent's live file edits, or chat to steer it. Full
   // diffs live in code-server's native Source Control panel. (No Tests tab —
   // merge gates render in the review bar via EditorGates, and QA verdicts
   // live in the issue's QA evidence section.)
-  const [rightTab, setRightTab] = useState<"activity" | "chat" | "context">(
+  const [rightTab, setRightTab] = useState<"activity" | "context">(
     "activity",
   );
   // Collapse the right panel to a slim icon rail — the editor gets the full
@@ -441,10 +451,22 @@ export function EditorWorkbench({
   // Left pane: the live spectator editor (watch the agent code), the real
   // code editor, or a live preview of the running app (the vibecoder's "see
   // it work, not the diff"). Controlled by the Dialog host, self-owned in the
-  // Dev lens.
-  const [ownLeftPane, setOwnLeftPane] = useState<EditorWorkbenchPane>("code");
+  // Dev lens. Defaults to Watch — a vibe coder lands on "watch the agent /
+  // nothing running yet", not the raw IDE (Code is a click away for devs).
+  const [ownLeftPane, setOwnLeftPane] = useState<EditorWorkbenchPane>("live");
   const leftPane = leftPaneProp ?? ownLeftPane;
   const setLeftPane = onLeftPaneChange ?? setOwnLeftPane;
+
+  // App-health watcher: while the vibe views (Watch / App) are up, count the
+  // running app's console errors + failed requests via an events-only browser
+  // stream, so the banner below surfaces "your app has problems" even before
+  // the user opens the interactive App view. Needs a daemon that supports
+  // events_only.
+  const { errorCount: appErrorCount } = useEditorAppErrors({
+    daemonUrl: daemon?.url,
+    workdir: selectedAgent?.work_dir,
+    enabled: leftPane === "live" || leftPane === "app",
+  });
 
   // Is an agent currently running on this issue? Drives the Live tab's pulse
   // and the collapsed rail's activity dot.
@@ -457,48 +479,176 @@ export function EditorWorkbench({
     [taskSnapshot, issueId],
   );
 
-  // Agent review chips — which agents worked on this issue; click to load that
-  // agent's worktree into the editor.
-  const agentTabs =
+  // Per-agent live status for THIS issue, so each roster chip can show whether
+  // that agent is working / queued / done / failed — the thing that makes the
+  // switcher read like a Cursor/VS-Code agents window. A live state (running >
+  // queued) always wins over a terminal one.
+  const agentStatusById = useMemo(() => {
+    const byAgent = new Map<string, AgentLiveStatus>();
+    const rank: Record<AgentLiveStatus, number> = { running: 3, queued: 2, done: 1, failed: 1 };
+    for (const task of taskSnapshot) {
+      if (task.issue_id !== issueId) continue;
+      let bucket: AgentLiveStatus;
+      switch (task.status) {
+        case "running":
+          bucket = "running";
+          break;
+        case "queued":
+        case "dispatched":
+        case "waiting_local_directory":
+          bucket = "queued";
+          break;
+        case "failed":
+        case "cancelled":
+          bucket = "failed";
+          break;
+        case "completed":
+          bucket = "done";
+          break;
+        default:
+          continue;
+      }
+      const prev = byAgent.get(task.agent_id);
+      if (!prev || rank[bucket] > rank[prev]) byAgent.set(task.agent_id, bucket);
+    }
+    return byAgent;
+  }, [taskSnapshot, issueId]);
+
+  const workingCount = useMemo(
+    () => [...agentStatusById.values()].filter((s) => s === "running").length,
+    [agentStatusById],
+  );
+
+  // The full per-issue task history (same cache the execution log uses, so it
+  // dedupes) — retains OLD terminal runs the live snapshot drops, so the roster
+  // can open a finished agent's transcript however long ago it ran. Fetched
+  // only once an agent is selected.
+  const { data: issueTasks = [] } = useQuery({
+    queryKey: issueKeys.tasks(issueId),
+    queryFn: () => api.listTasksByIssue(issueId),
+    enabled: !!selectedId,
+  });
+
+  // Each agent's most recent task on this issue — so every row in the vertical
+  // session list can open its own transcript, not just the selected one.
+  const latestTaskByAgent = useMemo(() => {
+    const stamp = (t: AgentTask) =>
+      new Date(t.started_at ?? t.dispatched_at ?? t.created_at).getTime();
+    const byAgent = new Map<string, AgentTask>();
+    for (const task of issueTasks) {
+      const prev = byAgent.get(task.agent_id);
+      if (!prev || stamp(task) > stamp(prev)) byAgent.set(task.agent_id, task);
+    }
+    return byAgent;
+  }, [issueTasks]);
+
+  // Compact header entry point — count + working pulse, click expands the rail
+  // to the full session list. Replaces the old horizontal chip strip; the list
+  // itself is vertical in the right rail (agentSessionList below).
+  const agentSummary =
     agents.length > 0 ? (
-      <div className="flex flex-wrap items-center gap-1">
-        <span className="mr-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-          Agents
-        </span>
-        {agents.map((a) => {
-          const c = agentChipColor(a.agent_id);
-          return (
-            <button
-              key={a.agent_id}
-              type="button"
-              onClick={() => void selectAgent(a)}
-              title={`Review ${a.agent_name || "agent"}'s worktree`}
-              className={cn(
-                "flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs transition-colors",
-                a.agent_id === selectedId ? c.on : c.off,
-              )}
-            >
-              <ActorAvatar
-                actorType="agent"
-                actorId={a.agent_id}
-                size={14}
-                className="shrink-0"
-              />
-              {a.agent_name || "agent"}
-              {a.vscode_url ? (
-                <a
-                  href={a.vscode_url}
-                  onClick={(e) => e.stopPropagation()}
-                  title={`Open ${a.agent_name || "agent"}'s worktree in your desktop VS Code`}
-                  aria-label="Open in VS Code"
-                  className="ml-0.5 rounded p-0.5 opacity-70 hover:opacity-100"
+      <button
+        type="button"
+        onClick={() => setRightCollapsed(false)}
+        title="Agents"
+        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      >
+        <Users className="size-3.5 shrink-0" />
+        <span>Agents · {agents.length}</span>
+        {workingCount > 0 && (
+          <span className="inline-flex items-center gap-1 text-info">
+            <span className="size-1.5 rounded-full bg-info motion-safe:animate-pulse" />
+            {workingCount}
+          </span>
+        )}
+      </button>
+    ) : null;
+
+  // The dev space's agents window — a VERTICAL session list, one row per agent
+  // that has worked this issue: avatar + live status + plain status line, with
+  // per-row Transcript + VS Code actions. Selecting a row loads that agent's
+  // worktree into the editor (and focuses Steer/Stop on it). Sits at the top of
+  // the right rail so switching sessions never leaves the editor. The row is a
+  // container (not a button) so the transcript/vscode controls don't nest inside
+  // an interactive element.
+  const agentSessionList =
+    agents.length > 0 ? (
+      <div className="flex shrink-0 flex-col border-b border-border">
+        <div className="flex items-center justify-between px-3 pb-1 pt-2">
+          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            Agents · {agents.length}
+          </span>
+          {workingCount > 0 && (
+            <span className="inline-flex items-center gap-1 text-[10px] text-info">
+              <span className="size-1.5 rounded-full bg-info motion-safe:animate-pulse" />
+              {workingCount} working
+            </span>
+          )}
+        </div>
+        <div className="max-h-40 overflow-y-auto pb-1">
+          {agents.map((a) => {
+            const status = agentStatusById.get(a.agent_id);
+            const task = latestTaskByAgent.get(a.agent_id);
+            const selected = a.agent_id === selectedId;
+            const running = status === "running";
+            return (
+              <div
+                key={a.agent_id}
+                className={cn(
+                  "flex items-center gap-2 border-l-2 pl-2 pr-2 transition-colors",
+                  selected
+                    ? "border-l-primary bg-accent"
+                    : "border-l-transparent hover:bg-accent/50",
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => void selectAgent(a)}
+                  title={`Load ${a.agent_name || "agent"}'s worktree`}
+                  className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left"
                 >
-                  <Code2 className="size-3" />
-                </a>
-              ) : null}
-            </button>
-          );
-        })}
+                  <ActorAvatar
+                    actorType="agent"
+                    actorId={a.agent_id}
+                    size={18}
+                    className="shrink-0"
+                  />
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-xs font-medium">
+                      {a.agent_name || "agent"}
+                    </span>
+                    <span
+                      className={cn(
+                        "flex items-center gap-1 text-[10px]",
+                        running ? "text-info" : "text-muted-foreground",
+                      )}
+                    >
+                      <AgentStatusDot status={status} />
+                      {agentStatusLabel(status)}
+                    </span>
+                  </span>
+                </button>
+                {task && (
+                  <TranscriptButton
+                    task={task}
+                    agentName={a.agent_name || "agent"}
+                    title={`View ${a.agent_name || "agent"}'s run transcript`}
+                  />
+                )}
+                {a.vscode_url && (
+                  <a
+                    href={a.vscode_url}
+                    title={`Open ${a.agent_name || "agent"}'s worktree in VS Code`}
+                    aria-label="Open in VS Code"
+                    className="shrink-0 rounded p-1 text-muted-foreground opacity-70 transition-colors hover:bg-accent/50 hover:text-foreground hover:opacity-100"
+                  >
+                    <Code2 className="size-3.5" />
+                  </a>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     ) : null;
 
@@ -521,7 +671,6 @@ export function EditorWorkbench({
   const actionsNode = actions ?? (
     <div className="flex items-center gap-3">
       <EditorRunQA issueId={issueId} agent={selectedAgent} />
-      <EditorDeployQA issueId={issueId} wsId={wsId} projectId={projectId} />
     </div>
   );
 
@@ -531,7 +680,7 @@ export function EditorWorkbench({
           (the Dialog host's close button). Always rendered so the host stays
           controllable even before agents load. */}
       <div className="flex shrink-0 items-center gap-3 border-b border-border py-2 pl-3 pr-2">
-        <div className="min-w-0 flex-1 overflow-x-auto">{agentTabs}</div>
+        <div className="min-w-0 flex-1 overflow-x-auto">{agentSummary}</div>
         {actionsNode}
         {headerEnd}
       </div>
@@ -543,9 +692,14 @@ export function EditorWorkbench({
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1 text-xs">
+            {/* Vibe-coder first: Watch the agent → App (see + use the running
+                app: the interactive shared browser, dev server auto-started) |
+                Code (the IDE, for developers). App merges the former Preview +
+                Browser tabs — one place to see and drive your app. */}
             <button
               type="button"
               onClick={() => setLeftPane("live")}
+              title="Watch the agent build, live"
               className={cn(
                 "flex items-center gap-1.5 rounded px-2 py-0.5 font-medium transition-colors",
                 leftPane === "live"
@@ -553,7 +707,7 @@ export function EditorWorkbench({
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
-              Live
+              Watch
               {hasLiveRun && (
                 <span
                   aria-hidden
@@ -563,7 +717,51 @@ export function EditorWorkbench({
             </button>
             <button
               type="button"
+              onClick={() => setLeftPane("app")}
+              title="See + use your running app — you and the agent share one browser"
+              className={cn(
+                "rounded px-2 py-0.5 font-medium transition-colors",
+                leftPane === "app"
+                  ? "bg-accent text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              App
+            </button>
+            {/* Run tests — folded in from the old Preview pane. Only meaningful
+                on a self-host runtime with a live worktree (daemon + agent). */}
+            {daemon && selectedAgent && (
+              <button
+                type="button"
+                onClick={() => void runAppTests()}
+                disabled={testRunState.testState === "running"}
+                title="Run the project's tests in the agent's worktree"
+                className={cn(
+                  "flex items-center gap-1 rounded px-2 py-0.5 font-medium transition-colors",
+                  "text-muted-foreground hover:text-foreground disabled:opacity-60",
+                )}
+              >
+                {testRunState.testState === "running" ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : testRunState.testState === "done" && testRunState.testPassed !== null ? (
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "size-1.5 rounded-full",
+                      testRunState.testPassed ? "bg-emerald-500" : "bg-destructive",
+                    )}
+                  />
+                ) : null}
+                Run tests
+              </button>
+            )}
+            {/* Divider: left = see / use your app (vibe coder); Code = the
+                developer IDE. */}
+            <span aria-hidden className="mx-1 h-3.5 w-px shrink-0 bg-border" />
+            <button
+              type="button"
               onClick={() => setLeftPane("code")}
+              title="Edit the code — for developers"
               className={cn(
                 "rounded px-2 py-0.5 font-medium transition-colors",
                 leftPane === "code"
@@ -573,32 +771,23 @@ export function EditorWorkbench({
             >
               Code
             </button>
-            <button
-              type="button"
-              onClick={() => setLeftPane("preview")}
-              className={cn(
-                "rounded px-2 py-0.5 font-medium transition-colors",
-                leftPane === "preview"
-                  ? "bg-accent text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              Preview
-            </button>
-            <button
-              type="button"
-              onClick={() => setLeftPane("browser")}
-              className={cn(
-                "rounded px-2 py-0.5 font-medium transition-colors",
-                leftPane === "browser"
-                  ? "bg-accent text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              Browser
-            </button>
           </div>
           <div className="relative min-h-0 flex-1">
+            {appErrorCount > 0 && leftPane === "live" && (
+              <div className="absolute inset-x-0 top-0 z-20 flex items-center gap-2 border-b border-destructive/30 bg-destructive/10 px-3 py-1.5 text-[11px] text-destructive">
+                <TriangleAlert className="size-3.5 shrink-0" />
+                <span className="flex-1 truncate">
+                  {appErrorCount} {appErrorCount === 1 ? "problem" : "problems"} in your running app
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setLeftPane("app")}
+                  className="shrink-0 font-medium underline underline-offset-2 transition-opacity hover:opacity-80"
+                >
+                  Inspect
+                </button>
+              </div>
+            )}
             {leftPane === "live" && (
               <div className="absolute inset-0 flex">
                 <LiveAgentCodeEditor
@@ -607,7 +796,7 @@ export function EditorWorkbench({
                 />
               </div>
             )}
-            {/* Code-server stays mounted (hidden) so switching to Preview
+            {/* Code-server stays mounted (hidden) so switching to the App tab
                 and back never reloads VS Code. */}
             <div
               className={cn(
@@ -628,38 +817,18 @@ export function EditorWorkbench({
                 </div>
               )}
             </div>
-            {leftPane === "preview" &&
-              (daemon && selectedAgent ? (
-                <div className="absolute inset-0 flex">
-                  <EditorPreviewPane
-                    daemonUrl={daemon.url}
-                    workdir={selectedAgent.work_dir}
-                    defaultDevCommand={projectSettings?.qa_smoke_cmd}
-                    defaultTestCommand={projectSettings?.qa_test_cmd}
-                    testRunState={testRunState}
-                    onTestResult={handleTestResult}
-                  />
-                </div>
-              ) : (
-                // Cloud mode: the preview pane drives the daemon's
-                // /editor/preview API from the BROWSER, which only works
-                // when the daemon is reachable directly (self-host).
-                // Without this the tab rendered a silently blank pane.
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
-                  <span className="flex size-11 items-center justify-center rounded-full bg-muted">
-                    <Play className="size-5 text-muted-foreground/60" />
-                  </span>
-                  <p className="max-w-[300px] text-[11px] leading-relaxed text-muted-foreground">
-                    {PREVIEW_UNAVAILABLE_LABEL}
-                  </p>
-                </div>
-              ))}
-            {leftPane === "browser" &&
+            {/* App — the merged Preview + Browser view. The shared interactive
+                Chromium with autoPreview auto-starts the dev server in the
+                agent's worktree and navigates to it, so you SEE the running app
+                AND drive it, sharing one browser with the agent. Self-host only
+                (needs a direct daemon + a live worktree). */}
+            {leftPane === "app" &&
               (daemon && selectedAgent ? (
                 <div className="absolute inset-0 flex">
                   <EditorBrowserPane
                     daemonUrl={daemon.url}
                     workdir={selectedAgent.work_dir}
+                    autoPreview
                   />
                 </div>
               ) : (
@@ -698,7 +867,6 @@ export function EditorWorkbench({
             {(
               [
                 ["activity", ActivityIcon, "Activity"],
-                ["chat", MessageSquare, "Chat"],
                 ["context", Info, "Context"],
               ] as const
             ).map(([key, Icon, label]) => (
@@ -732,6 +900,7 @@ export function EditorWorkbench({
         {!rightCollapsed && (
         <div className="flex h-full w-[360px] shrink-0 flex-col border-l border-border bg-background">
           {reviewBar}
+          {agentSessionList}
           <div className="flex shrink-0 border-b border-border text-xs">
             <button
               type="button"
@@ -744,18 +913,6 @@ export function EditorWorkbench({
               )}
             >
               Activity
-            </button>
-            <button
-              type="button"
-              onClick={() => setRightTab("chat")}
-              className={cn(
-                "flex-1 px-3 py-2 font-medium transition-colors",
-                rightTab === "chat"
-                  ? "border-b-2 border-primary text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              Chat
             </button>
             <button
               type="button"
@@ -780,7 +937,11 @@ export function EditorWorkbench({
             </button>
           </div>
           <div className="shrink-0 [&>div]:px-3 [&>div]:py-2">
-            <AgentWorkingIndicator issueId={issueId} allowStop />
+            <AgentWorkingIndicator
+              issueId={issueId}
+              allowStop
+              focusAgentId={selectedId ?? undefined}
+            />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {rightTab === "activity" ? (
@@ -798,11 +959,6 @@ export function EditorWorkbench({
                   branch icon) in the editor on the left.
                 </p>
               </div>
-            ) : rightTab === "chat" ? (
-              <EditorChatPanel
-                issueId={issueId}
-                agent={selectedAgent}
-              />
             ) : (
               <EditorContextPanel issueId={issueId} />
             )}

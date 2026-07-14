@@ -52,6 +52,11 @@ export interface Issue {
   // issue_to_sprint → one sprint per issue). Optional because write/broadcast
   // paths omit it; readers should treat absent as "unknown, leave as-is".
   sprint_id?: string | null;
+  // Agent that OWNS this issue's pipeline — the orchestrator (squad lead, or
+  // the solo agent itself). Every agent-run task has one (mandatory attach).
+  // DETAIL-ONLY: only the single-issue GET attaches it; list/broadcast paths
+  // omit it (resolving per-row would N+1), so treat absent as "unknown".
+  orchestrator_agent_id?: string | null;
   position: number;
   // Calendar days as date-only "YYYY-MM-DD" (no time, no timezone). Use the
   // helpers in @agora/core/issues/date to format/compare — never `new Date()`

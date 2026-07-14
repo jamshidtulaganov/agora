@@ -52,36 +52,35 @@ func TestReviewGateRequired(t *testing.T) {
 	full := reviewTierForLabels(map[string]bool{})
 	light := reviewTierForLabels(map[string]bool{"tier:light": true})
 
+	// The 4th arg is the resolved (project-scoped) auto-review flag, passed
+	// explicitly now that reviewGateRequired is pure (the caller resolves it).
 	t.Run("auto-review off, no verdict, with PR: not required (advisory)", func(t *testing.T) {
-		if reviewGateRequired(full, true, map[string]bool{}) {
+		if reviewGateRequired(full, true, map[string]bool{}, false) {
 			t.Error("review gate must be advisory when auto-review is off and no manual verdict exists")
 		}
 	})
 	t.Run("auto-review on, with PR: required", func(t *testing.T) {
-		t.Setenv("AGORA_AUTO_REVIEW_ENABLED", "1")
-		if !reviewGateRequired(full, true, map[string]bool{}) {
+		if !reviewGateRequired(full, true, map[string]bool{}, true) {
 			t.Error("review gate must be required when auto-review is enabled on a full-tier PR issue")
 		}
 	})
 	t.Run("auto-review off but manual verdict present: required", func(t *testing.T) {
-		if !reviewGateRequired(full, true, map[string]bool{"review:fail": true}) {
+		if !reviewGateRequired(full, true, map[string]bool{"review:fail": true}, false) {
 			t.Error("a landed review verdict must make the gate required even with auto-review off")
 		}
 	})
 	t.Run("manual verdict present, no PR detected: still required", func(t *testing.T) {
-		if !reviewGateRequired(full, false, map[string]bool{"review:pass": true}) {
+		if !reviewGateRequired(full, false, map[string]bool{"review:pass": true}, false) {
 			t.Error("a landed verdict proves a review happened even without a detectable PR")
 		}
 	})
 	t.Run("no PR and no verdict: not required", func(t *testing.T) {
-		t.Setenv("AGORA_AUTO_REVIEW_ENABLED", "1")
-		if reviewGateRequired(full, false, map[string]bool{}) {
+		if reviewGateRequired(full, false, map[string]bool{}, true) {
 			t.Error("no diff to review (no PR, no verdict) ⇒ gate not required")
 		}
 	})
 	t.Run("light tier never required", func(t *testing.T) {
-		t.Setenv("AGORA_AUTO_REVIEW_ENABLED", "1")
-		if reviewGateRequired(light, true, map[string]bool{"review:fail": true}) {
+		if reviewGateRequired(light, true, map[string]bool{"review:fail": true}, true) {
 			t.Error("non-full tiers never require the review gate")
 		}
 	})

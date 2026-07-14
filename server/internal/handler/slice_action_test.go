@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -158,16 +159,21 @@ func TestBuildSliceInstructionRunQA(t *testing.T) {
 			t.Errorf("run_qa smoke must be deterministic-first / vision-last (%q), got: %s", want, got)
 		}
 	}
-	// Plan-driven test derivation (Feature 2): step 4 must author tests from the
-	// TASK PLAN (acceptance criteria + description), asserting INTENDED behavior —
-	// NOT re-derive them from the diff it is judging (which is circular: the agent
-	// that wrote the code then writes tests that only confirm the code does what
-	// the code does). A plan↔implementation divergence must make the test FAIL,
-	// never be rewritten to match the code.
-	for _, want := range []string{"task plan", "intended behavior", "acceptance criteri", "match the code", "coverage gap"} {
+	// Shift-left model: the QA test cases are authored FROM THE PLAN by the
+	// parallel gen_test_cases step (in parallel with dev), so step 4 must PREFER
+	// running that PRE-AUTHORED suite and only BACKFILL what's missing — not
+	// re-author cold (QA's dominant time cost). It must still enforce
+	// plan-alignment (assert the acceptance criteria, not ECHO the code) and
+	// surface any criterion left as a COVERAGE GAP.
+	for _, want := range []string{"pre-authored", "backfill", "acceptance criteri", "coverage gap"} {
 		if !strings.Contains(lower, strings.ToLower(want)) {
-			t.Errorf("run_qa step 4 must be plan-driven (%q), got: %s", want, got)
+			t.Errorf("run_qa step 4 must prefer the pre-authored suite + backfill (%q), got: %s", want, got)
 		}
+	}
+	// A self-referential test (passes even when the code is wrong) must be
+	// rejected — the anti-circular guard survives the model change.
+	if !strings.Contains(lower, "echoes the implementation") {
+		t.Errorf("run_qa step 4 must reject cases that echo the implementation; got: %s", got)
 	}
 	// Regression guard: the recipe must no longer derive tests FROM THE DIFF (the
 	// circular pre-Feature-2 wording).
@@ -808,12 +814,16 @@ func TestSanitizeSliceScope(t *testing.T) {
 // TestAutoDocsEnabled pins the opt-in default: the qa:pass → auto_docs trigger
 // is off unless explicitly enabled.
 func TestAutoDocsEnabled(t *testing.T) {
+	// A no-project issue resolves to the instance value (nil project overrides),
+	// so this still pins the env-driven default without a database.
+	h := &Handler{}
+	noProject := db.Issue{}
 	t.Setenv("AGORA_AUTO_DOCS_ENABLED", "")
-	if autoDocsEnabled() {
+	if h.autoDocsEnabled(context.Background(), noProject) {
 		t.Error("auto_docs must default to OFF")
 	}
 	t.Setenv("AGORA_AUTO_DOCS_ENABLED", "true")
-	if !autoDocsEnabled() {
+	if !h.autoDocsEnabled(context.Background(), noProject) {
 		t.Error("auto_docs must be ON when AGORA_AUTO_DOCS_ENABLED=true")
 	}
 }
@@ -958,9 +968,10 @@ func TestMaybeRouteToDevLeadOnQAFail_ReassignsToSquadLeader(t *testing.T) {
 	}
 }
 
-// TestMaybeRouteToDevLeadOnQAFail_Gating covers every no-op path: disabled,
-// wrong label, no squad (solo agent — today's manual triage stands), and the
-// failing agent IS the leader (reassigning to itself teaches nothing).
+// TestMaybeRouteToDevLeadOnQAFail_Gating covers the gate paths: disabled and
+// wrong-label no-op; an unassigned issue (no agent orchestrator) no-op; and the
+// mandatory-orchestrator routes — a solo agent and a directly-assigned lead both
+// self-route with the QA-fail feedback (bounded by the attempt cap).
 func TestMaybeRouteToDevLeadOnQAFail_Gating(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
@@ -975,14 +986,45 @@ func TestMaybeRouteToDevLeadOnQAFail_Gating(t *testing.T) {
 		return issue.Status == "todo"
 	}
 
-	t.Run("disabled_noop", func(t *testing.T) {
-		t.Setenv("AGORA_QA_FAIL_AUTOROUTE_ENABLED", "")
+	t.Run("explicitly_disabled_noop", func(t *testing.T) {
+		// Default is ON now, so disabling takes an explicit false.
+		t.Setenv("AGORA_QA_FAIL_AUTOROUTE_ENABLED", "false")
 		devAgentID, _ := qaFailAutorouteFixture(t, ctx, true)
 		issueID := sliceActionTestIssue(t, "agent", devAgentID)
 		issue, _ := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
 		testHandler.maybeRouteToDevLeadOnQAFail(ctx, issue, "qa:fail", testUserID)
 		if reassigned(issueID) {
-			t.Error("disabled must not reassign")
+			t.Error("explicitly disabled must not reassign")
+		}
+	})
+
+	t.Run("default_on_routes", func(t *testing.T) {
+		// Unset env → falls to the registry default, which is now "true".
+		t.Setenv("AGORA_QA_FAIL_AUTOROUTE_ENABLED", "")
+		devAgentID, _ := qaFailAutorouteFixture(t, ctx, true)
+		issueID := sliceActionTestIssue(t, "agent", devAgentID)
+		issue, _ := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+		testHandler.maybeRouteToDevLeadOnQAFail(ctx, issue, "qa:fail", testUserID)
+		if !reassigned(issueID) {
+			t.Error("default-on must route qa:fail back to the dev lead")
+		}
+	})
+
+	t.Run("attempt_cap_noop", func(t *testing.T) {
+		t.Setenv("AGORA_QA_FAIL_AUTOROUTE_ENABLED", "true")
+		devAgentID, _ := qaFailAutorouteFixture(t, ctx, true)
+		issueID := sliceActionTestIssue(t, "agent", devAgentID)
+		// Pre-spend the whole loop budget.
+		if _, err := testHandler.Queries.SetIssueMetadataKey(ctx, db.SetIssueMetadataKeyParams{
+			ID: testUUID(issueID), WorkspaceID: testUUID(testWorkspaceID),
+			Key: "qa_fail_autoroute_count", Value: []byte(strconv.Itoa(qaFailAutorouteMaxAttempts)),
+		}); err != nil {
+			t.Fatalf("seed count: %v", err)
+		}
+		issue, _ := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+		testHandler.maybeRouteToDevLeadOnQAFail(ctx, issue, "qa:fail", testUserID)
+		if reassigned(issueID) {
+			t.Error("an issue at the attempt cap must not auto-route again")
 		}
 	})
 
@@ -997,29 +1039,191 @@ func TestMaybeRouteToDevLeadOnQAFail_Gating(t *testing.T) {
 		}
 	})
 
-	t.Run("no_squad_noop", func(t *testing.T) {
+	t.Run("unassigned_noop", func(t *testing.T) {
+		t.Setenv("AGORA_QA_FAIL_AUTOROUTE_ENABLED", "true")
+		issueID := sliceActionTestIssue(t, "", "") // no assignee -> no orchestrator
+		issue, _ := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+		testHandler.maybeRouteToDevLeadOnQAFail(ctx, issue, "qa:fail", testUserID)
+		if reassigned(issueID) {
+			t.Error("an unassigned issue has no agent orchestrator and must not route")
+		}
+	})
+
+	t.Run("solo_agent_self_routes", func(t *testing.T) {
+		// Mandatory orchestrator: a solo agent (no squad) owns its own task, so a
+		// qa:fail routes back to IT with the feedback comment — no silent wedge.
 		t.Setenv("AGORA_QA_FAIL_AUTOROUTE_ENABLED", "true")
 		devAgentID, _ := qaFailAutorouteFixture(t, ctx, false) // no squad membership
 		issueID := sliceActionTestIssue(t, "agent", devAgentID)
 		issue, _ := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
 		testHandler.maybeRouteToDevLeadOnQAFail(ctx, issue, "qa:fail", testUserID)
-		if reassigned(issueID) {
-			t.Error("a solo agent with no squad must not be reassigned (no lead to route to)")
+		if !reassigned(issueID) {
+			t.Error("a solo agent must self-route on qa:fail (it orchestrates its own task)")
+		}
+		updated, _ := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+		if !updated.AssigneeID.Valid || uuidToString(updated.AssigneeID) != devAgentID {
+			t.Errorf("assignee_id = %v, want the solo agent itself %s", updated.AssigneeID, devAgentID)
 		}
 	})
 
-	t.Run("failing_agent_is_leader_noop", func(t *testing.T) {
+	t.Run("failing_agent_is_leader_self_retries", func(t *testing.T) {
+		// The orchestrator absorbs its OWN qa:fail: a directly-assigned lead
+		// re-fires with the feedback comment (the attempt cap bounds the retry).
 		t.Setenv("AGORA_QA_FAIL_AUTOROUTE_ENABLED", "true")
 		_, leaderAgentID := qaFailAutorouteFixture(t, ctx, true)
-		// The LEADER itself is assigned (and somehow fails) — reassigning it to
-		// itself would be a no-op that still burns a comment; skip entirely.
 		issueID := sliceActionTestIssue(t, "agent", leaderAgentID)
 		issue, _ := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
 		testHandler.maybeRouteToDevLeadOnQAFail(ctx, issue, "qa:fail", testUserID)
-		if reassigned(issueID) {
-			t.Error("the leader failing its own issue must not self-reassign")
+		if !reassigned(issueID) {
+			t.Error("the orchestrator must absorb its own qa:fail and re-fire with feedback")
 		}
 	})
+}
+
+// TestCastAgentForStage covers the per-issue stage-cast resolver: an unset cast
+// yields no agent (caller falls back), a valid pinned agent resolves, and a
+// malformed / non-workspace id degrades to no-cast rather than wedging.
+func TestCastAgentForStage(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	devAgentID, castAgentID := qaFailAutorouteFixture(t, ctx, false)
+	issueID := sliceActionTestIssue(t, "agent", devAgentID)
+
+	setCast := func(val string) db.Issue {
+		if _, err := testHandler.Queries.SetIssueMetadataKey(ctx, db.SetIssueMetadataKeyParams{
+			ID: testUUID(issueID), WorkspaceID: testUUID(testWorkspaceID),
+			Key: metaCastQAAgent, Value: []byte(strconv.Quote(val)),
+		}); err != nil {
+			t.Fatalf("set cast metadata: %v", err)
+		}
+		issue, err := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+		if err != nil {
+			t.Fatalf("reload issue: %v", err)
+		}
+		return issue
+	}
+
+	// Unset -> no cast.
+	issue, _ := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+	if _, ok := testHandler.castAgentForStage(ctx, issue, metaCastQAAgent); ok {
+		t.Error("no cast metadata must resolve ok=false")
+	}
+
+	// Valid, ready agent in the workspace -> resolves it.
+	got, ok := testHandler.castAgentForStage(ctx, setCast(castAgentID), metaCastQAAgent)
+	if !ok || uuidToString(got.ID) != castAgentID {
+		t.Errorf("cast must resolve the pinned agent %s, got ok=%v id=%s", castAgentID, ok, uuidToString(got.ID))
+	}
+
+	// Malformed id -> no cast (degrade, do not wedge).
+	if _, ok := testHandler.castAgentForStage(ctx, setCast("not-a-uuid"), metaCastQAAgent); ok {
+		t.Error("a malformed cast id must resolve ok=false")
+	}
+
+	// Well-formed but unknown agent id (a workspace id, not an agent) -> no cast.
+	if _, ok := testHandler.castAgentForStage(ctx, setCast(testWorkspaceID), metaCastQAAgent); ok {
+		t.Error("a cast id that is not an agent in the workspace must resolve ok=false")
+	}
+}
+
+// TestResolveReviewerAgent_HonorsCast asserts the review cast wins over the
+// default resolution order, but never breaks the author-exclusion invariant: a
+// cast reviewer that IS the diff's author is ignored.
+func TestResolveReviewerAgent_HonorsCast(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	devAgentID, reviewerAgentID := qaFailAutorouteFixture(t, ctx, false)
+	issueID := sliceActionTestIssue(t, "agent", devAgentID)
+
+	setReviewCast := func(val string) db.Issue {
+		if _, err := testHandler.Queries.SetIssueMetadataKey(ctx, db.SetIssueMetadataKeyParams{
+			ID: testUUID(issueID), WorkspaceID: testUUID(testWorkspaceID),
+			Key: metaCastReviewAgent, Value: []byte(strconv.Quote(val)),
+		}); err != nil {
+			t.Fatalf("set review cast: %v", err)
+		}
+		issue, err := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+		if err != nil {
+			t.Fatalf("reload issue: %v", err)
+		}
+		return issue
+	}
+
+	// A distinct cast reviewer wins.
+	got, ok := testHandler.resolveReviewerAgent(ctx, setReviewCast(reviewerAgentID))
+	if !ok || uuidToString(got.ID) != reviewerAgentID {
+		t.Errorf("review cast must pick the pinned reviewer %s, got ok=%v id=%s", reviewerAgentID, ok, uuidToString(got.ID))
+	}
+
+	// A cast reviewer that IS the author is ignored (never self-review).
+	if got, ok := testHandler.resolveReviewerAgent(ctx, setReviewCast(devAgentID)); ok && uuidToString(got.ID) == devAgentID {
+		t.Error("a cast reviewer equal to the author must be ignored")
+	}
+}
+
+// TestPipelineManual is the pure resolver: only an explicit "manual" (any case)
+// flips the switch; unset / "auto" / anything else stays on autopilot.
+func TestPipelineManual(t *testing.T) {
+	mk := func(v string) db.Issue {
+		if v == "" {
+			return db.Issue{}
+		}
+		return db.Issue{Metadata: []byte(`{"pipeline_mode":` + strconv.Quote(v) + `}`)}
+	}
+	if pipelineManual(mk("")) {
+		t.Error("unset pipeline_mode must be auto (false)")
+	}
+	if pipelineManual(mk("auto")) {
+		t.Error(`"auto" must be false`)
+	}
+	if !pipelineManual(mk("manual")) {
+		t.Error(`"manual" must be true`)
+	}
+	if !pipelineManual(mk("MANUAL")) {
+		t.Error("manual must be case-insensitive")
+	}
+}
+
+// TestPipelineManual_WakesOrchestratorNotAutoQA: in manual mode the in_review
+// auto-QA reflex steps back and instead wakes the orchestrator (an @mention that
+// triggers its run) to dispatch QA itself — the pipeline stays in its hands.
+func TestPipelineManual_WakesOrchestratorNotAutoQA(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	t.Setenv("AGORA_AUTO_QA_ENABLED", "true")
+	devAgentID, leaderAgentID := qaFailAutorouteFixture(t, ctx, true) // dev in a squad led by leader
+	issueID := sliceActionTestIssue(t, "agent", devAgentID)
+	if _, err := testHandler.Queries.SetIssueMetadataKey(ctx, db.SetIssueMetadataKeyParams{
+		ID: testUUID(issueID), WorkspaceID: testUUID(testWorkspaceID),
+		Key: metaPipelineMode, Value: []byte(strconv.Quote("manual")),
+	}); err != nil {
+		t.Fatalf("set manual mode: %v", err)
+	}
+	issue, err := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+	if err != nil {
+		t.Fatalf("load issue: %v", err)
+	}
+
+	testHandler.maybeRunQAOnInReview(ctx, issue, "member", testUserID)
+
+	var content string
+	if err := testPool.QueryRow(ctx, `
+		SELECT content FROM comment WHERE issue_id = $1 ORDER BY created_at DESC LIMIT 1
+	`, issueID).Scan(&content); err != nil {
+		t.Fatalf("manual mode must post a wake comment: %v", err)
+	}
+	if !strings.Contains(content, "mention://agent/"+leaderAgentID) {
+		t.Errorf("manual mode must @mention the orchestrator (leader), got: %q", content)
+	}
+	if !strings.Contains(content, "manual pipeline mode") {
+		t.Errorf("wake comment should name manual mode, got: %q", content)
+	}
 }
 
 // TestMaybeRecoverSquadTaskFailure_ReTriggersLeader is the BUG-2 happy path: a
@@ -1831,5 +2035,158 @@ func TestCreateSliceActionExplicitAgentOverridesAssignee(t *testing.T) {
 	}
 	if got := countPendingTasksForAgent(t, issueID, assigneeX); got != 0 {
 		t.Errorf("expected 0 queued tasks for assignee X (suppressed), got %d", got)
+	}
+}
+
+func TestQATierScopeClause(t *testing.T) {
+	// Full-scope change → no extra clause (the whole gate runs).
+	if got := qaTierScopeClause(qaScopeFull); got != "" {
+		t.Errorf("full scope should add no clause, got: %q", got)
+	}
+	// Trivial change → a LIGHT-scope directive: fast smoke, skip baseline, no
+	// broad e2e authoring — but the gate still runs (verification never skipped).
+	c := qaTierScopeClause(qaScopeLight)
+	// Sheds ceremony...
+	for _, want := range []string{"LIGHT", "DETERMINISTIC SMOKE", "Do NOT check out the merge-base", "do NOT author a broad new e2e suite"} {
+		if !strings.Contains(c, want) {
+			t.Errorf("trivial clause missing %q, got: %s", want, c)
+		}
+	}
+	// ...but KEEPS the real check: it must assert the SPECIFIC EXPECTED value
+	// from the plan and explicitly forbid a hollow "renders" pass (the accuracy
+	// gap that green-lit a wrong fix). This is the fast+accurate contract.
+	for _, want := range []string{"SPECIFIC EXPECTED OUTCOME", "EXACT expected value", "NEVER pass on", "COVERAGE GAP"} {
+		if !strings.Contains(c, want) {
+			t.Errorf("trivial clause must keep the ground-truth assertion (%q), got: %s", want, c)
+		}
+	}
+	// It must NOT tell the agent to skip verification entirely — the gate scales
+	// depth, it does not disappear.
+	if strings.Contains(strings.ToLower(c), "skip qa") || strings.Contains(strings.ToLower(c), "no gate") {
+		t.Errorf("trivial clause must scale the gate, not skip it; got: %s", c)
+	}
+
+	// SELF-SIZED (unknown: no label, no PR — the sprint-mode gap): the agent must
+	// be told to measure the diff from git FIRST, then run the SAME light body if
+	// it is genuinely tiny — so a one-line sprint-branch change isn't stuck on the
+	// full gate just because there is no PR to read.
+	s := qaTierScopeClause(qaScopeSelf)
+	for _, want := range []string{"SELF-SIZED", "git diff --numstat", "≤3 files", "≤15 changed lines", "DETERMINISTIC SMOKE", "FULL gate"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("self-sized clause missing %q, got: %s", want, s)
+		}
+	}
+}
+
+// TestGenTestCountClause pins the authoring-side count scaling: full scope adds
+// nothing (full matrix), light caps to a minimal positive+negative on one
+// layer, and self-sized tells the agent to match the count to the change's
+// actual size — the twin lever to qaTierScopeClause that stops a one-line
+// change from generating a 4-case matrix the light gate then runs one by one.
+func TestGenTestCountClause(t *testing.T) {
+	// Full scope: no COUNT cap, but the LAYER rule is UNIVERSAL — a button-text
+	// issue must not spawn [api]/[e2e] cases regardless of scope.
+	full := genTestCountClause(qaScopeFull, false)
+	if strings.Contains(full, "CASE COUNT") {
+		t.Errorf("full scope must not cap the count, got: %q", full)
+	}
+	for _, want := range []string{"LAYER FOLLOWS THE CHANGE", "ONE [smoke]", "endpoint/response changed → ONE [api]", "Do NOT author cases for surfaces the issue did not touch"} {
+		if !strings.Contains(full, want) {
+			t.Errorf("universal layer clause missing %q", want)
+		}
+	}
+	if strings.Contains(full, "SPRINT") {
+		t.Errorf("non-sprint clause must not mention sprint, got: %q", full)
+	}
+	light := genTestCountClause(qaScopeLight, false)
+	for _, want := range []string{"MINIMAL", "ONE positive", "ONE negative", "SINGLE layer"} {
+		if !strings.Contains(light, want) {
+			t.Errorf("light count clause missing %q, got: %s", want, light)
+		}
+	}
+	self := genTestCountClause(qaScopeSelf, false)
+	for _, want := range []string{"SIZE-AWARE", "git diff", "full positive+negative matrix"} {
+		if !strings.Contains(self, want) {
+			t.Errorf("self-sized count clause missing %q, got: %s", want, self)
+		}
+	}
+	// Neither scaling clause may tell the agent to DROP negative cases wholesale
+	// — the positive/negative discipline survives; only the fan-out shrinks.
+	for _, c := range []string{light, self} {
+		if strings.Contains(strings.ToLower(c), "skip negative") || strings.Contains(strings.ToLower(c), "no negative") {
+			t.Errorf("count clause must keep positive+negative discipline, got: %s", c)
+		}
+	}
+
+	// SPRINT MODE adds the deferral on top of the universal layer rule: the
+	// broad cross-layer matrix belongs to the sprint-end regression.
+	sprint := genTestCountClause(qaScopeFull, true)
+	for _, want := range []string{"LAYER FOLLOWS THE CHANGE", "SPRINT MODE", "SPRINT-END regression"} {
+		if !strings.Contains(sprint, want) {
+			t.Errorf("sprint clause missing %q, got: %s", want, sprint)
+		}
+	}
+	if got := genTestCountClause(qaScopeLight, true); !strings.Contains(got, "MINIMAL") ||
+		!strings.Contains(got, "LAYER FOLLOWS THE CHANGE") || !strings.Contains(got, "SPRINT MODE") {
+		t.Errorf("sprint+light must carry count + layer + sprint clauses, got: %s", got)
+	}
+}
+
+// TestSliceActionStageGuard pins the stage "brain": a human dispatch that
+// contradicts the pipeline state is refused with the reason + next step —
+// QA on a finished/backlog task, QA re-run while the fix is still in dev,
+// review on a failing or stale-QA task. force=true bypasses (checked at the
+// handler layer; the guard itself only reports).
+func TestSliceActionStageGuard(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("no database")
+	}
+	ctx := context.Background()
+
+	mk := func(status string, labels ...string) db.Issue {
+		id := createTestIssue(t, "guard "+status+strings.Join(labels, ""), status, "medium")
+		t.Cleanup(func() { deleteTestIssue(t, id) })
+		for _, name := range labels {
+			attachLabelToTestIssue(t, id, name)
+		}
+		issue, err := testHandler.Queries.GetIssue(ctx, parseUUID(id))
+		if err != nil {
+			t.Fatalf("GetIssue: %v", err)
+		}
+		return issue
+	}
+
+	// run_qa refusals
+	for _, tc := range []struct {
+		issue db.Issue
+		want  string
+	}{
+		{mk("done"), "already finished"},
+		{mk("backlog"), "not been started"},
+		{mk("in_progress"), "dev is not finished"},
+		{mk("todo", "qa:fail"), "fix the failing cases first"},
+	} {
+		if got := testHandler.sliceActionStageGuard(ctx, tc.issue, sliceActionRunQA); !strings.Contains(got, tc.want) {
+			t.Errorf("run_qa guard on %s = %q, want contains %q", tc.issue.Status, got, tc.want)
+		}
+	}
+	// run_qa allowed in review
+	if got := testHandler.sliceActionStageGuard(ctx, mk("in_review"), sliceActionRunQA); got != "" {
+		t.Errorf("run_qa in_review must be allowed, got %q", got)
+	}
+
+	// run_review refusals
+	if got := testHandler.sliceActionStageGuard(ctx, mk("in_review", "qa:fail"), sliceActionRunReview); !strings.Contains(got, "review is disabled") {
+		t.Errorf("run_review with qa:fail = %q, want disabled", got)
+	}
+	if got := testHandler.sliceActionStageGuard(ctx, mk("in_review", "qa:stale"), sliceActionRunReview); !strings.Contains(got, "stale") {
+		t.Errorf("run_review with qa:stale = %q, want stale warning", got)
+	}
+	if got := testHandler.sliceActionStageGuard(ctx, mk("done"), sliceActionRunReview); !strings.Contains(got, "already finished") {
+		t.Errorf("run_review on done = %q", got)
+	}
+	// run_review allowed on green
+	if got := testHandler.sliceActionStageGuard(ctx, mk("in_review", "qa:pass"), sliceActionRunReview); got != "" {
+		t.Errorf("run_review with qa:pass must be allowed, got %q", got)
 	}
 }

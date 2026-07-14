@@ -16,10 +16,10 @@
 // endpoint the write path already populates — no new read surface) uses the
 // same anchor.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Rocket, ShieldAlert, Loader2 } from "lucide-react";
+import { Rocket, ShieldAlert, Loader2, ArrowUpRight } from "lucide-react";
 import { api } from "@agora/core/api";
 import {
   parseDeployEnvironments,
@@ -29,6 +29,7 @@ import {
 } from "@agora/core/api/schemas";
 import { projectDetailOptions } from "@agora/core/projects";
 import { deployEventsOptions } from "@agora/core/issues/queries";
+import { useWorkspacePaths } from "@agora/core/paths";
 import { Button } from "@agora/ui/components/ui/button";
 import {
   AlertDialog,
@@ -40,8 +41,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@agora/ui/components/ui/alert-dialog";
+import { AppLink } from "../../navigation";
 import { useT, useTimeAgo } from "../../i18n";
 import { verdictIcon } from "./verdict";
+
+// After a deploy is dispatched, the agent runs asynchronously and only writes
+// its ```deploy-result``` (→ a deploy_event row) when the pipeline finishes.
+// Poll the history fast for this window so the result lands in "Recent deploys"
+// without the user reloading; fall back to the lazy 60s cadence afterwards.
+const DEPLOY_FOLLOW_WINDOW_MS = 3 * 60_000;
+const DEPLOY_FOLLOW_INTERVAL_MS = 5_000;
+const DEPLOY_IDLE_INTERVAL_MS = 60_000;
 
 export interface SprintDeployPanelIssue {
   id: string;
@@ -106,6 +116,7 @@ function DeployHistoryRow({ event }: { event: DeployEvent }) {
 
 export function SprintDeployPanel({ wsId, projectId, sprintId, branch, issues }: SprintDeployPanelProps) {
   const { t } = useT("issues");
+  const wp = useWorkspacePaths();
   const qc = useQueryClient();
 
   // The ref every deploy fires with: the sprint's explicit branch, or the
@@ -124,12 +135,33 @@ export function SprintDeployPanel({ wsId, projectId, sprintId, branch, issues }:
     [project?.settings],
   );
 
+  // The env key of the most-recent dispatch + when it fired. While inside the
+  // follow window we poll the history fast so the agent's deploy_event surfaces
+  // on its own, and the chip shows a "dispatched — follow" affordance so the
+  // user isn't left staring at a toast wondering if anything happened.
+  const [firedEnvKey, setFiredEnvKey] = useState<string | null>(null);
+  const [firedAt, setFiredAt] = useState<number | null>(null);
+  const following = firedAt !== null && Date.now() - firedAt < DEPLOY_FOLLOW_WINDOW_MS;
+
+  // Once the follow window elapses, drop the chip's "dispatched" state so it
+  // doesn't linger forever (a fresh deploy_event or a reload also clears it).
+  useEffect(() => {
+    if (firedAt === null) return;
+    const remaining = DEPLOY_FOLLOW_WINDOW_MS - (Date.now() - firedAt);
+    if (remaining <= 0) {
+      setFiredEnvKey(null);
+      return;
+    }
+    const timer = setTimeout(() => setFiredEnvKey(null), remaining);
+    return () => clearTimeout(timer);
+  }, [firedAt]);
+
   // History only makes sense once there's an anchor to have written it; the
   // envs gate avoids a useless fetch for projects with no deploy config.
   const { data: deployEvents } = useQuery({
     ...deployEventsOptions(anchor?.id ?? ""),
     enabled: !!anchor && environments.length > 0,
-    refetchInterval: 60_000,
+    refetchInterval: following ? DEPLOY_FOLLOW_INTERVAL_MS : DEPLOY_IDLE_INTERVAL_MS,
   });
   const recentDeploys = deployEvents?.recent ?? [];
 
@@ -137,6 +169,8 @@ export function SprintDeployPanel({ wsId, projectId, sprintId, branch, issues }:
     mutationFn: (env: DeployEnvironment) =>
       api.sliceAction(anchor!.id, { kind: "deploy", scope: env.key, ref: sprintBranch }),
     onSuccess: (_data, env) => {
+      setFiredEnvKey(env.key);
+      setFiredAt(Date.now());
       toast.success(t(($) => $.sprint_deploy.toast_fired, { env: env.label || env.key }));
       if (anchor) {
         void qc.invalidateQueries({ queryKey: deployEventsOptions(anchor.id).queryKey });
@@ -148,20 +182,27 @@ export function SprintDeployPanel({ wsId, projectId, sprintId, branch, issues }:
       ),
   });
 
-  // The server 403s machine actors for requires_human/production environments
-  // regardless (resolveDeployEnvironment) — this confirm is the HUMAN-side
-  // speed bump for the human-only trigger. Set only while the confirm dialog
-  // for a human-gated environment is open.
+  // The confirm dialog is now the speed bump for EVERY deploy, not just
+  // human-gated ones: a deploy fires a real pipeline against the sprint branch,
+  // so a single stray click should never trigger one. The dialog copy escalates
+  // for production/human-gated environments (which the server also 403s for
+  // machine actors, resolveDeployEnvironment).
   const [pendingEnv, setPendingEnv] = useState<DeployEnvironment | null>(null);
 
   const fire = (env: DeployEnvironment) => {
     if (!anchor) return;
-    if (deployEnvironmentRequiresHuman(env)) {
-      setPendingEnv(env);
-      return;
-    }
-    deploy.mutate(env);
+    setPendingEnv(env);
   };
+
+  const confirmDeploy = () => {
+    if (pendingEnv) deploy.mutate(pendingEnv);
+    setPendingEnv(null);
+  };
+
+  // The mutation is shared across chips; only the chip whose env is mid-flight
+  // should show the spinner (deploy.variables carries the env being mutated).
+  const isDeploying = (env: DeployEnvironment) =>
+    deploy.isPending && deploy.variables?.key === env.key;
 
   return (
     <div data-testid="sprint-deploy-panel" className="border-t px-4 py-3">
@@ -178,6 +219,8 @@ export function SprintDeployPanel({ wsId, projectId, sprintId, branch, issues }:
           <div className="flex flex-wrap items-center gap-2">
             {environments.map((env) => {
               const humanGated = deployEnvironmentRequiresHuman(env);
+              const deploying = isDeploying(env);
+              const dispatched = firedEnvKey === env.key && !deploying;
               return (
                 <div key={env.key} className="flex items-center gap-1.5 rounded-md border px-2 py-1">
                   <span className="text-[12px] font-medium">{env.label || env.key}</span>
@@ -187,21 +230,37 @@ export function SprintDeployPanel({ wsId, projectId, sprintId, branch, issues }:
                       aria-label={t(($) => $.sprint_deploy.requires_human)}
                     />
                   ) : null}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-6 gap-1 text-[11px]"
-                    data-testid={`sprint-deploy-${env.key}`}
-                    disabled={!anchor || deploy.isPending}
-                    onClick={() => fire(env)}
-                  >
-                    {deploy.isPending ? (
-                      <Loader2 className="size-3 animate-spin" aria-hidden />
-                    ) : (
-                      <Rocket className="size-3" aria-hidden />
-                    )}
-                    {t(($) => $.sprint_deploy.deploy)}
-                  </Button>
+                  {dispatched ? (
+                    // Post-dispatch: the deploy agent is running the pipeline
+                    // async. Surface a "dispatched — follow" link to the anchor
+                    // issue (where the agent's task + deploy-result land) so the
+                    // click has a visible destination, not just a toast.
+                    <AppLink
+                      href={`${wp.issueDetail(anchor!.id)}?lens=qa`}
+                      className="inline-flex items-center gap-1 rounded bg-info/10 px-1.5 py-0.5 text-[11px] font-medium text-info"
+                    >
+                      {t(($) => $.sprint_deploy.dispatched)}
+                      <ArrowUpRight className="size-3" aria-hidden />
+                    </AppLink>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 gap-1 text-[11px]"
+                      data-testid={`sprint-deploy-${env.key}`}
+                      disabled={!anchor || deploying}
+                      onClick={() => fire(env)}
+                    >
+                      {deploying ? (
+                        <Loader2 className="size-3 animate-spin" aria-hidden />
+                      ) : (
+                        <Rocket className="size-3" aria-hidden />
+                      )}
+                      {deploying
+                        ? t(($) => $.sprint_deploy.deploying)
+                        : t(($) => $.sprint_deploy.deploy)}
+                    </Button>
+                  )}
                 </div>
               );
             })}
@@ -237,17 +296,31 @@ export function SprintDeployPanel({ wsId, projectId, sprintId, branch, issues }:
             <AlertDialogTitle>{t(($) => $.sprint_deploy.confirm_title)}</AlertDialogTitle>
             <AlertDialogDescription>
               {pendingEnv &&
-                t(($) => $.sprint_deploy.confirm, { branch: sprintBranch, env: pendingEnv.label || pendingEnv.key })}
+                t(($) => $.sprint_deploy.confirm, {
+                  branch: sprintBranch,
+                  env: pendingEnv.label || pendingEnv.key,
+                })}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {pendingEnv ? (
+            <div className="space-y-2 text-[12px]">
+              {/* Show exactly what will run so "Deploy" is never a blind click. */}
+              {pendingEnv.target?.command ? (
+                <div className="rounded-md border bg-muted/30 px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
+                  {pendingEnv.target.command}
+                </div>
+              ) : null}
+              {deployEnvironmentRequiresHuman(pendingEnv) ? (
+                <p className="flex items-start gap-1.5 text-amber-600 dark:text-amber-400">
+                  <ShieldAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                  <span>{t(($) => $.sprint_deploy.confirm_prod)}</span>
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel>{t(($) => $.test_cases.cancel)}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (pendingEnv) deploy.mutate(pendingEnv);
-                setPendingEnv(null);
-              }}
-            >
+            <AlertDialogAction onClick={confirmDeploy}>
               {t(($) => $.sprint_deploy.deploy)}
             </AlertDialogAction>
           </AlertDialogFooter>

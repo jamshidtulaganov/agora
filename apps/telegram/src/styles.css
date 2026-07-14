@@ -16,6 +16,51 @@
 :root {
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
     "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  /* Geist Mono isn't shipped in the Mini App — same fallback chain minus it. */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* Redesign motion vocabulary (design handoff): shimmer for skeletons and the
+   gated stage segment, slide-ins for toast/dialog, fade for screen mounts. */
+@keyframes ag-shimmer {
+  0% { opacity: 0.55; }
+  50% { opacity: 1; }
+  100% { opacity: 0.55; }
+}
+@keyframes ag-toast-in {
+  from { transform: translateY(-12px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes ag-sheet-in {
+  from { transform: translateY(-60%) translateY(40px); opacity: 0; }
+  to { transform: translateY(-60%); opacity: 1; }
+}
+@keyframes ag-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@theme inline {
+  --animate-ag-shimmer: ag-shimmer 1.2s ease infinite;
+  --animate-ag-toast-in: ag-toast-in 0.25s ease;
+  --animate-ag-sheet-in: ag-sheet-in 0.2s ease;
+  --animate-ag-fade-in: ag-fade-in 0.2s ease;
+  --animate-ag-ping: ag-ping 2.2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* Live halo for the current stage node (cycle position "running" feel). */
+@keyframes ag-ping {
+  0% { transform: scale(1); opacity: 0.45; }
+  70%, 100% { transform: scale(2.1); opacity: 0; }
+}
+
+/* Touch-first horizontal rows (filter chips, workspace chips): the shared
+   base.css paints 6px scrollbars everywhere — hide them on these rows. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 html,

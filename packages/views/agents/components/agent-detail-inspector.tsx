@@ -120,7 +120,20 @@ export function AgentDetailInspector({
             members={members}
             currentUserId={currentUserId}
             canEdit={canEdit}
-            onChange={(id) => update({ runtime_id: id })}
+            // Model + thinking are PROVIDER-COUPLED: a claude model id (or a
+            // claude thinking level) is invalid on a codex/gemini runtime and
+            // the CLI rejects it ("model X not supported when using Codex").
+            // Changing the runtime therefore resets both to the new provider's
+            // default (empty) — the provider-scoped ModelPicker below then lets
+            // the user pick a valid model for the new runtime. No-op when the
+            // runtime is unchanged.
+            onChange={(id) =>
+              update(
+                id === agent.runtime_id
+                  ? { runtime_id: id }
+                  : { runtime_id: id, model: "", thinking_level: "" },
+              )
+            }
           />
         </PropRow>
         <PropRow label={t(($) => $.inspector.prop_model)} interactive={false}>

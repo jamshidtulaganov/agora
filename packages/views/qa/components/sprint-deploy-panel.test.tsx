@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, within, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -18,6 +19,14 @@ const apiMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@agora/core/api", () => ({ api: apiMocks }));
+
+vi.mock("@agora/core/paths", () => ({
+  useWorkspacePaths: () => ({ issueDetail: (id: string) => `/w/issue/${id}` }),
+}));
+
+vi.mock("../../navigation", () => ({
+  AppLink: ({ href, children }: { href: string; children: ReactNode }) => <a href={href}>{children}</a>,
+}));
 
 const DEPLOY_ENVIRONMENTS = [
   {
@@ -132,9 +141,11 @@ describe("SprintDeployPanel", () => {
     );
   });
 
-  it("fires the deploy slice-action anchored to the highest-numbered non-cancelled issue, with the sprint branch as ref", async () => {
+  it("fires the deploy slice-action (after confirm) anchored to the highest-numbered non-cancelled issue, with the sprint branch as ref", async () => {
     renderPanel();
     fireEvent.click(await screen.findByTestId("sprint-deploy-staging"));
+    const dialog = await screen.findByRole("alertdialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Deploy" }));
     await waitFor(() => expect(apiMocks.sliceAction).toHaveBeenCalledTimes(1));
     // issue-3 (#30) is cancelled -> the anchor is issue-2 (#20), not issue-1.
     expect(apiMocks.sliceAction).toHaveBeenCalledWith("issue-2", {
@@ -147,6 +158,8 @@ describe("SprintDeployPanel", () => {
   it("falls back to the sprint/<id> branch convention when the sprint has no explicit branch", async () => {
     renderPanel({ branch: "" });
     fireEvent.click(await screen.findByTestId("sprint-deploy-staging"));
+    const dialog = await screen.findByRole("alertdialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Deploy" }));
     await waitFor(() => expect(apiMocks.sliceAction).toHaveBeenCalledTimes(1));
     expect(apiMocks.sliceAction).toHaveBeenCalledWith("issue-2", {
       kind: "deploy",
@@ -155,11 +168,11 @@ describe("SprintDeployPanel", () => {
     });
   });
 
-  it("asks for confirmation before a human-gated (requires_human) deploy and aborts on cancel", async () => {
+  it("asks for confirmation before EVERY deploy and aborts on cancel", async () => {
     renderPanel();
     fireEvent.click(await screen.findByTestId("sprint-deploy-production"));
     const dialog = await screen.findByRole("alertdialog");
-    expect(within(dialog).getByText("Deploy to a human-gated environment?")).toBeInTheDocument();
+    expect(within(dialog).getByText("Deploy this sprint?")).toBeInTheDocument();
     fireEvent.click(within(dialog).getByText("Cancel"));
     await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
     expect(apiMocks.sliceAction).not.toHaveBeenCalled();
@@ -178,11 +191,13 @@ describe("SprintDeployPanel", () => {
     });
   });
 
-  it("does not ask for confirmation on a non-gated environment", async () => {
+  it("also confirms a non-gated environment before firing (no blind one-click deploy)", async () => {
     renderPanel();
     fireEvent.click(await screen.findByTestId("sprint-deploy-staging"));
-    await waitFor(() => expect(apiMocks.sliceAction).toHaveBeenCalledTimes(1));
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    // The dialog appears for a plain (non human-gated) environment too, and no
+    // slice-action fires until it is confirmed.
+    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
+    expect(apiMocks.sliceAction).not.toHaveBeenCalled();
   });
 
   it("renders recent deploy history rows from the anchor issue's deploy events", async () => {

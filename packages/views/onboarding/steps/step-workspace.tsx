@@ -51,9 +51,10 @@ import { isReservedSlug } from "@agora/core/paths";
  * shared form's own button would fight the footer CTA.
  *
  * The create-fields block doubles as a pedagogical preview: the URL is
- * rendered as a `salesdoctor/[slug]` pill, and a live `Issues will look
- * like ACME-123` line shows the user what their issue IDs will read
- * like before they've created anything.
+ * rendered as a `/[slug]` path pill (host-agnostic — the workspace lives
+ * at the first path segment on whatever host the instance is served
+ * from), and a live `Issues will look like ACME-123` line shows the user
+ * what their issue IDs will read like before they've created anything.
  *
  * Resume path ships two picker cards (existing + create-new) and the
  * user toggles between them. No-existing path just shows the create
@@ -242,7 +243,7 @@ export function StepWorkspace({
         </Label>
         <div className="flex items-center rounded-md border bg-muted transition-colors focus-within:border-foreground">
           <span className="select-none pl-3 font-mono text-sm text-muted-foreground">
-            {"salesdoctor/"}
+            {"/"}
           </span>
           <Input
             id="ws-slug"
@@ -444,7 +445,7 @@ function ExistingWorkspaceCard({
           {workspace.name}
         </div>
         <div className="truncate font-mono text-xs text-muted-foreground">
-          {`salesdoctor/${workspace.slug}`}
+          {`/${workspace.slug}`}
         </div>
       </div>
       <RadioMark selected={selected} />
@@ -580,7 +581,7 @@ function WorkspacePreviewCard({
             {name}
           </div>
           <div className="truncate font-mono text-[11.5px] text-muted-foreground">
-            {`salesdoctor/${slug}`}
+            {`/${slug}`}
           </div>
         </div>
         <Lock

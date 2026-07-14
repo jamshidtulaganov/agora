@@ -9,6 +9,21 @@ import (
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
+// createTestProject inserts a bare project in the test workspace and returns its
+// UUID, cleaning it up when the test ends. Generic project fixture, previously
+// shared from the (now removed) connected-box test suite.
+func createTestProject(t *testing.T, ctx context.Context, title string) pgtype.UUID {
+	t.Helper()
+	var id string
+	if err := testPool.QueryRow(ctx,
+		`INSERT INTO project (workspace_id, title, status) VALUES ($1, $2, 'planned') RETURNING id`,
+		testWorkspaceID, title).Scan(&id); err != nil {
+		t.Fatalf("create test project: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM project WHERE id=$1`, id) })
+	return testUUID(id)
+}
+
 func TestQALocalDirectoryClause(t *testing.T) {
 	got := qaLocalDirectoryClause("/Users/dev/code/app")
 	for _, needle := range []string{

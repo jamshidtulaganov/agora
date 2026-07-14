@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  ConnectedBoxListSchema,
+  AppConfigSchema,
+  EMPTY_APP_CONFIG,
   DashboardAgentRunTimeListSchema,
   DashboardUsageByAgentListSchema,
   DashboardUsageDailyListSchema,
@@ -13,6 +14,10 @@ import {
   EMPTY_TEST_CASE,
   EMPTY_USER,
   FigmaCredentialStatusSchema,
+  McpCredentialStatusSchema,
+  McpCredentialListSchema,
+  EMPTY_MCP_CREDENTIAL_STATUS,
+  EMPTY_MCP_CREDENTIAL_LIST,
   IssueDeployEventsResponseSchema,
   ListIssuesResponseSchema,
   ListTestCasesResponseSchema,
@@ -24,6 +29,8 @@ import {
   EMPTY_REVIEW_VERDICT,
   ReviewDecisionResponseSchema,
   EMPTY_REVIEW_DECISION,
+  ReleaseIntegrationListSchema,
+  EMPTY_RELEASE_INTEGRATIONS,
   TestCaseRunsResponseSchema,
   EMPTY_TEST_CASE_RUNS,
   RuntimeHourlyActivityListSchema,
@@ -321,41 +328,82 @@ describe("dashboard + runtime usage schema drift", () => {
   });
 });
 
-describe("ConnectedBoxListSchema (Remote Boxes)", () => {
-  const EMPTY = { boxes: [] as unknown[] };
-
-  it("parses a well-formed list and coerces missing optional fields", () => {
-    const parsed = ConnectedBoxListSchema.parse({
-      boxes: [{ id: "b1", label: "jamshid", ssh_host: "jamshid.sdteam.uz", ssh_user: "dev" }],
+describe("AppConfigSchema (integration capability flags)", () => {
+  it("parses the bitrix/zoho/lark flags when present", () => {
+    const parsed = AppConfigSchema.parse({
+      cdn_domain: "cdn.example.com",
+      allow_signup: true,
+      bitrix_enabled: true,
+      zoho_enabled: true,
+      lark_enabled: true,
     });
-    const box = parsed.boxes[0]!;
-    expect(box.ssh_port).toBe(22);
-    expect(box.status).toBe("pending");
-    expect(box.owner_id).toBeNull();
-    expect(box.daemon_id).toBeNull();
+    expect(parsed.bitrix_enabled).toBe(true);
+    expect(parsed.zoho_enabled).toBe(true);
+    expect(parsed.lark_enabled).toBe(true);
   });
 
-  it("falls back on a malformed body (null / wrong shape) instead of throwing", () => {
-    expect(parseWithFallback(null, ConnectedBoxListSchema, EMPTY, { endpoint: "t" })).toEqual(EMPTY);
+  it("treats the flags as absent when the server omits them (older/general deployment)", () => {
+    // omitempty on the Go side means a deployment without the integrations
+    // sends no key at all — the optional schema leaves them undefined, and the
+    // config store coerces `=== true` to false downstream.
+    const parsed = AppConfigSchema.parse({ cdn_domain: "", allow_signup: true });
+    expect(parsed.bitrix_enabled).toBeUndefined();
+    expect(parsed.zoho_enabled).toBeUndefined();
+    expect(parsed.lark_enabled).toBeUndefined();
+  });
+
+  it("survives a malformed body via parseWithFallback without throwing", () => {
+    // A non-boolean flag must not reject the whole response — the preprocess
+    // downgrades the bad value to the safe default (false) rather than
+    // white-screening, and the rest of the config still parses.
+    const parsed = parseWithFallback(
+      { cdn_domain: "", allow_signup: true, bitrix_enabled: "yes" },
+      AppConfigSchema,
+      EMPTY_APP_CONFIG,
+      { endpoint: "GET /api/config" },
+    );
+    expect(parsed.bitrix_enabled).toBe(false);
+    expect(parsed.allow_signup).toBe(true);
+  });
+});
+
+describe("ReleaseIntegrationListSchema (release-hub Thread B)", () => {
+  it("parses a well-formed list and defaults missing optional fields", () => {
+    const parsed = ReleaseIntegrationListSchema.parse([
+      { id: "ri1", kind: "webhook", events: ["deploy_recorded"], enabled: true, has_secret: true },
+    ]);
+    const row = parsed[0]!;
+    expect(row.probe_status).toBe("");
+    expect(row.config).toEqual({});
+    expect(row.has_secret).toBe(true);
+    expect(row.created_at).toBe("");
+  });
+
+  it("falls back on a malformed body instead of throwing", () => {
+    // Not an array → whole parse fails → fallback.
     expect(
-      parseWithFallback({ boxes: "nope" }, ConnectedBoxListSchema, EMPTY, { endpoint: "t" }),
-    ).toEqual(EMPTY);
-    // A box missing its required id is invalid → whole parse fails → fallback.
+      parseWithFallback({ nope: true }, ReleaseIntegrationListSchema, EMPTY_RELEASE_INTEGRATIONS, {
+        endpoint: "GET /api/workspaces/{id}/release-integrations",
+      }),
+    ).toEqual(EMPTY_RELEASE_INTEGRATIONS);
+    // A row whose events is the wrong type → row invalid → whole parse fails.
     expect(
-      parseWithFallback({ boxes: [{ label: "x" }] }, ConnectedBoxListSchema, EMPTY, { endpoint: "t" }),
-    ).toEqual(EMPTY);
+      parseWithFallback([{ id: "ri1", events: "deploy_recorded" }], ReleaseIntegrationListSchema, EMPTY_RELEASE_INTEGRATIONS, {
+        endpoint: "GET /api/workspaces/{id}/release-integrations",
+      }),
+    ).toEqual(EMPTY_RELEASE_INTEGRATIONS);
+    // null body → fallback.
+    expect(
+      parseWithFallback(null, ReleaseIntegrationListSchema, EMPTY_RELEASE_INTEGRATIONS, { endpoint: "t" }),
+    ).toEqual(EMPTY_RELEASE_INTEGRATIONS);
   });
 
-  it("downgrades an unknown status string instead of rejecting (enum drift)", () => {
-    const parsed = ConnectedBoxListSchema.parse({
-      boxes: [{ id: "b1", status: "quarantined", region: "us-east" }],
-    });
-    expect(parsed.boxes[0]!.status).toBe("quarantined");
-    expect((parsed.boxes[0] as Record<string, unknown>).region).toBe("us-east");
-  });
-
-  it("defaults a missing boxes array to []", () => {
-    expect(ConnectedBoxListSchema.parse({}).boxes).toEqual([]);
+  it("keeps unknown extra fields (loose) and unknown event strings (no enum)", () => {
+    const parsed = ReleaseIntegrationListSchema.parse([
+      { id: "ri1", kind: "slack", events: ["future_event"], server_only_field: 1 },
+    ]);
+    expect(parsed[0]!.events).toEqual(["future_event"]);
+    expect((parsed[0] as Record<string, unknown>).server_only_field).toBe(1);
   });
 });
 
@@ -787,6 +835,73 @@ describe("FigmaCredentialStatusSchema", () => {
       endpoint,
     ) as unknown as Record<string, unknown>;
     expect(parsed.some_future_field).toBe(1);
+  });
+});
+
+describe("McpCredentialStatusSchema", () => {
+  const endpoint = { endpoint: "GET /api/workspaces/{id}/mcp-credentials" };
+
+  it("parses a full status payload", () => {
+    const parsed = parseWithFallback(
+      {
+        id: "cred-1",
+        server_name: "linear",
+        has_secret: true,
+        last4: "1234",
+        created_at: "2026-07-13T00:00:00Z",
+        updated_at: "2026-07-13T00:00:00Z",
+      },
+      McpCredentialStatusSchema,
+      EMPTY_MCP_CREDENTIAL_STATUS,
+      endpoint,
+    );
+    expect(parsed.server_name).toBe("linear");
+    expect(parsed.has_secret).toBe(true);
+    expect(parsed.last4).toBe("1234");
+  });
+
+  it("defaults every missing field (older server shape)", () => {
+    const parsed = parseWithFallback(
+      { server_name: "linear" },
+      McpCredentialStatusSchema,
+      EMPTY_MCP_CREDENTIAL_STATUS,
+      endpoint,
+    );
+    expect(parsed.server_name).toBe("linear");
+    expect(parsed.has_secret).toBe(false);
+    expect(parsed.last4).toBe("");
+  });
+
+  it("never surfaces token material even if a drifted server leaks it", () => {
+    // A `.loose()` schema passes unknown fields through, but the typed shape the
+    // panel reads has no secret field — the token can't be rendered by mistake.
+    const parsed = parseWithFallback(
+      { server_name: "linear", has_secret: true, secret: "Bearer LEAK" },
+      McpCredentialStatusSchema,
+      EMPTY_MCP_CREDENTIAL_STATUS,
+      endpoint,
+    );
+    expect(parsed.has_secret).toBe(true);
+    expect((parsed as unknown as Record<string, unknown>).last4 ?? "").not.toContain("LEAK");
+  });
+
+  it("list schema downgrades a malformed / non-array body to an empty list", () => {
+    for (const body of [null, "nope", { server_name: "x" }, 42]) {
+      const parsed = parseWithFallback(body, McpCredentialListSchema, EMPTY_MCP_CREDENTIAL_LIST, endpoint);
+      expect(parsed).toEqual([]);
+    }
+  });
+
+  it("list schema keeps well-formed rows and defaults their gaps", () => {
+    const parsed = parseWithFallback(
+      [{ server_name: "linear", has_secret: true }],
+      McpCredentialListSchema,
+      EMPTY_MCP_CREDENTIAL_LIST,
+      endpoint,
+    );
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]!.server_name).toBe("linear");
+    expect(parsed[0]!.last4).toBe("");
   });
 });
 

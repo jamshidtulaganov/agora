@@ -664,7 +664,9 @@ function CommentCardImpl({
     // overflow-clip (not -hidden) clips the rounded corners WITHOUT creating a
     // scroll container, so the sticky collapse affordances below resolve to the
     // timeline's scroll parent instead of this card. See PR #3623.
-    <Card className={cn("!py-0 !gap-0 overflow-clip transition-colors duration-700", isHighlighted && "ring-2 ring-brand/50", isHighlighted && highlightedCommentBackgroundClass)}>
+    // Highlight (deep-link target) = a soft background tint only — the old
+    // ring-2 "active border" read as a stray selected state and is gone.
+    <Card className={cn("!py-0 !gap-0 overflow-clip transition-colors duration-700", isHighlighted && highlightedCommentBackgroundClass)}>
       {onCollapseResolved && (
         <button
           type="button"

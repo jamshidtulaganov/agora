@@ -3,10 +3,9 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Palette, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { Input } from "@agora/ui/components/ui/input";
 import { Button } from "@agora/ui/components/ui/button";
-import { Card, CardContent } from "@agora/ui/components/ui/card";
 import { api, ApiError } from "@agora/core/api";
 import { useAuthStore } from "@agora/core/auth";
 import { useWorkspaceId } from "@agora/core/hooks";
@@ -85,94 +84,87 @@ export function FigmaIntegrationSection() {
   };
 
   return (
-    <section className="space-y-4">
-      <h2 className="flex items-center gap-1.5 text-sm font-semibold">
-        <Palette className="h-4 w-4" /> {t(($) => $.figma.section_title)}
-      </h2>
-      <Card>
-        <CardContent className="space-y-4 pt-5">
-          <p className="text-xs text-muted-foreground">{t(($) => $.figma.description)}</p>
+    <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">{t(($) => $.figma.description)}</p>
 
-          {configured && status ? (
-            <div className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2 text-sm">
-              <span className="truncate font-medium">{status.label}</span>
-              {status.token_last4 && (
-                <span className="font-mono text-xs text-muted-foreground">…{status.token_last4}</span>
-              )}
-              {status.expires_at && (
-                <span className="text-xs text-muted-foreground">
-                  {t(($) => $.figma.expires_on, { date: status.expires_at.slice(0, 10) })}
-                </span>
-              )}
-              {status.expiring_soon === true && (
-                <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
-                  {t(($) => $.figma.expiring_soon)}
-                </span>
-              )}
-              <ProbeStatusBadge probeStatus={status.probe_status} />
-              {canManage && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="ml-auto h-7 w-7 shrink-0"
-                  aria-label={t(($) => $.figma.remove)}
-                  onClick={remove}
-                  disabled={removing}
-                >
-                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                </Button>
-              )}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">{t(($) => $.figma.not_configured)}</p>
+      {configured && status ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2 text-sm">
+          <span className="truncate font-medium">{status.label}</span>
+          {status.token_last4 && (
+            <span className="font-mono text-xs text-muted-foreground">…{status.token_last4}</span>
           )}
-
-          {configured && status?.seat_probe === "low_seat" && (
-            <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              {t(($) => $.figma.seat_warning)}
-            </p>
+          {status.expires_at && (
+            <span className="text-xs text-muted-foreground">
+              {t(($) => $.figma.expires_on, { date: status.expires_at.slice(0, 10) })}
+            </span>
           )}
-
+          {status.expiring_soon === true && (
+            <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+              {t(($) => $.figma.expiring_soon)}
+            </span>
+          )}
+          <ProbeStatusBadge probeStatus={status.probe_status} />
           {canManage && (
-            <div className="space-y-2">
-              <Input
-                type="password"
-                autoComplete="off"
-                placeholder={t(($) => $.figma.token_placeholder)}
-                aria-label={t(($) => $.figma.token_label)}
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <Input
-                  placeholder={t(($) => $.figma.label_placeholder)}
-                  aria-label={t(($) => $.figma.label_label)}
-                  value={label}
-                  onChange={(e) => setLabel(e.target.value)}
-                />
-                <Input
-                  type="date"
-                  aria-label={t(($) => $.figma.expires_label)}
-                  value={expiresAt}
-                  onChange={(e) => setExpiresAt(e.target.value)}
-                />
-              </div>
-              <p className="text-[11px] text-muted-foreground">{t(($) => $.figma.expires_hint)}</p>
-              <Input
-                placeholder={t(($) => $.figma.probe_file_label)}
-                aria-label={t(($) => $.figma.probe_file_label)}
-                value={probeFileKey}
-                onChange={(e) => setProbeFileKey(e.target.value)}
-              />
-              <p className="text-[11px] text-muted-foreground">{t(($) => $.figma.probe_file_hint)}</p>
-              <Button onClick={save} disabled={saving || !token.trim()} size="sm">
-                {saving ? t(($) => $.figma.saving) : t(($) => $.figma.save)}
-              </Button>
-            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="ml-auto h-7 w-7 shrink-0"
+              aria-label={t(($) => $.figma.remove)}
+              onClick={remove}
+              disabled={removing}
+            >
+              <Trash2 className="h-3.5 w-3.5 text-destructive" />
+            </Button>
           )}
-        </CardContent>
-      </Card>
-    </section>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">{t(($) => $.figma.not_configured)}</p>
+      )}
+
+      {configured && status?.seat_probe === "low_seat" && (
+        <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          {t(($) => $.figma.seat_warning)}
+        </p>
+      )}
+
+      {canManage && (
+        <div className="space-y-2">
+          <Input
+            type="password"
+            autoComplete="off"
+            placeholder={t(($) => $.figma.token_placeholder)}
+            aria-label={t(($) => $.figma.token_label)}
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <Input
+              placeholder={t(($) => $.figma.label_placeholder)}
+              aria-label={t(($) => $.figma.label_label)}
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+            />
+            <Input
+              type="date"
+              aria-label={t(($) => $.figma.expires_label)}
+              value={expiresAt}
+              onChange={(e) => setExpiresAt(e.target.value)}
+            />
+          </div>
+          <p className="text-[11px] text-muted-foreground">{t(($) => $.figma.expires_hint)}</p>
+          <Input
+            placeholder={t(($) => $.figma.probe_file_label)}
+            aria-label={t(($) => $.figma.probe_file_label)}
+            value={probeFileKey}
+            onChange={(e) => setProbeFileKey(e.target.value)}
+          />
+          <p className="text-[11px] text-muted-foreground">{t(($) => $.figma.probe_file_hint)}</p>
+          <Button onClick={save} disabled={saving || !token.trim()} size="sm">
+            {saving ? t(($) => $.figma.saving) : t(($) => $.figma.save)}
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 

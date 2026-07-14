@@ -63,6 +63,31 @@ UPDATE project SET
 WHERE id = sqlc.arg('id') AND workspace_id = sqlc.arg('workspace_id')
 RETURNING *;
 
+-- name: SetProjectConfigKey :one
+-- KEY-SCOPED write of one project-scoped config override into settings.config.
+-- The value is stored as a JSON string ("true"/"false"/"24") so it round-trips
+-- through config.ResolveFrom. Merges into the existing config object (creating
+-- it if absent) so sibling overrides are never clobbered. Workspace-guarded.
+UPDATE project SET
+    settings = jsonb_set(
+        COALESCE(settings, '{}'::jsonb),
+        '{config}',
+        COALESCE(settings->'config', '{}'::jsonb) || jsonb_build_object(sqlc.arg('key')::text, to_jsonb(sqlc.arg('value')::text)),
+        true
+    ),
+    updated_at = now()
+WHERE id = sqlc.arg('id') AND workspace_id = sqlc.arg('workspace_id')
+RETURNING *;
+
+-- name: DeleteProjectConfigKey :one
+-- Remove one override from settings.config, reverting that key to the instance
+-- value. No-op (unchanged row) when the key or the config object is absent.
+UPDATE project SET
+    settings = COALESCE(settings, '{}'::jsonb) #- ARRAY['config', sqlc.arg('key')::text],
+    updated_at = now()
+WHERE id = sqlc.arg('id') AND workspace_id = sqlc.arg('workspace_id')
+RETURNING *;
+
 -- name: CountIssuesByProject :one
 SELECT count(*) FROM issue
 WHERE project_id = $1;

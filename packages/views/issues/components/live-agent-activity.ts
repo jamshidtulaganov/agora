@@ -133,6 +133,43 @@ function clamp(s: string, max: number): string {
   return trimmed.length > max ? trimmed.slice(0, max - 1) + "…" : trimmed;
 }
 
+// Shell tool names. A coding agent runs shell via many differently-named
+// tools depending on runtime/MCP: Claude Code's "Bash", a generic "shell",
+// and daemon/MCP variants like "exec_command" / "run_command" / "terminal".
+// All carry the command under `input.command` and must go through the same
+// summarize/classify path — otherwise (as happened for "exec_command") the
+// generic branch dumps the raw `/bin/zsh -lc '…'` invocation into the UI.
+const SHELL_TOOLS = new Set([
+  "bash",
+  "shell",
+  "sh",
+  "exec_command",
+  "execute_command",
+  "run_command",
+  "run_terminal_cmd",
+  "terminal",
+  "command",
+  "exec",
+]);
+
+function isShellTool(tool: string): boolean {
+  return SHELL_TOOLS.has(tool);
+}
+
+// Unwrap a login-shell invocation to the command a human cares about:
+//   /bin/zsh -lc 'git push -u origin …'  →  git push -u origin …
+//   /bin/bash -c "npm test"              →  npm test
+// The agent's shell tool wraps every command in `<shell> -lc '<cmd>'`; without
+// unwrapping, classify/summarize see the wrapper (not the git/npm verb) and the
+// UI shows the plumbing. Falls through to the original string when there's no
+// recognizable wrapper. Exported for tests.
+export function unwrapShell(command: string): string {
+  const m = command
+    .trim()
+    .match(/^(?:\S*\/)?(?:ba|z)?sh\s+-[a-z]*c\s+(['"])([\s\S]*)\1\s*$/i);
+  return m ? m[2]!.trim() : command.trim();
+}
+
 // Pull the most informative target string out of a tool_use input bag. Order
 // matches the transcript dialog: explicit path → search pattern/query →
 // command → description → first short string value.
@@ -178,7 +215,17 @@ export function deriveCurrentActivity(items: TimelineItem[]): ActivityLine | nul
       const toolName = (item.tool ?? "").trim();
       const pw = playwrightAction(toolName, item.input);
       if (pw) return { verbKey: null, rawVerb: pw.verb, target: pw.target };
-      const key = TOOL_VERB[toolName.toLowerCase()];
+      const tool = toolName.toLowerCase();
+      if (isShellTool(tool)) {
+        const raw =
+          typeof item.input?.command === "string" ? item.input.command : "";
+        const command = raw ? unwrapShell(raw) : "";
+        return {
+          verbKey: "running",
+          target: command ? summarizeCommand(command) : extractTarget(item.input),
+        };
+      }
+      const key = TOOL_VERB[tool];
       return {
         verbKey: key ?? null,
         rawVerb: key ? undefined : toolName || undefined,
@@ -526,7 +573,25 @@ export type CommandClass =
   | "build"
   | "review"
   | "branch"
+  | "commit"
+  | "publish"
+  | "pr"
   | "inspect";
+
+// The classes a HUMAN reads as real progress (a milestone), not plumbing. The
+// live step trail keeps only these — inspect/review/branch (git status/diff/
+// checkout/…) are the agent's own bookkeeping and are dropped, so the human
+// sees "Saving changes" / "Publishing the branch" / "Running the tests" instead
+// of a wall of raw shell. See deriveMilestoneSteps.
+const MILESTONE_CLASSES = new Set<CommandClass>([
+  "install",
+  "test",
+  "lint",
+  "build",
+  "commit",
+  "publish",
+  "pr",
+]);
 
 // Order matters: first match wins.
 // - STRONG inspect signals go first: a command that starts with a process/
@@ -543,6 +608,12 @@ const COMMAND_CLASS_RULES: Array<{ cls: CommandClass; re: RegExp }> = [
   { cls: "test", re: /\b(vitest|jest|playwright|phpunit|pytest|codecept|go test)\b|\bnpm (run )?test\b|\btest:(e2e|unit|integration|smoke)\b|\bpnpm (run )?test\b/ },
   { cls: "lint", re: /\b(eslint|golangci-lint|prettier --check|lint:?\w*)\b|\bphp -l\b/ },
   { cls: "build", re: /\bnpm run build\b|\bpnpm (run )?build\b|\bgo build\b|\bvite build\b|\btsc\b|\bmake build\b|\bcomposer dump-autoload\b/ },
+  // Milestone git verbs — a human wants to see these. Ordered before the
+  // review/branch plumbing rules (git commit/push don't match those anyway,
+  // but keep the intent grouped).
+  { cls: "pr", re: /\bgh\s+pr\s+create\b|merge_request\.create/ },
+  { cls: "commit", re: /\bgit\s+commit\b/ },
+  { cls: "publish", re: /\bgit\s+push\b/ },
   { cls: "review", re: /\bgit (diff|log|show|status|blame)\b/ },
   { cls: "branch", re: /\bgit (checkout|switch|stash|reset|fetch|pull|rebase)\b/ },
   { cls: "inspect", re: /^(ls|cat|tail|head|grep|find)\b/ },
@@ -609,9 +680,11 @@ export function deriveActivitySteps(items: TimelineItem[]): ActivityStep[] {
     const pw = playwrightAction(toolName, item.input);
     if (pw) {
       step = { key: `idx-${i}`, verbKey: null, rawVerb: pw.verb, target: pw.target };
-    } else if (tool === "bash" || tool === "shell") {
-      const command =
+    } else if (isShellTool(tool)) {
+      const raw =
         typeof item.input?.command === "string" ? item.input.command : "";
+      // Unwrap `<shell> -lc '<cmd>'` so classify/summarize see the real verb.
+      const command = raw ? unwrapShell(raw) : "";
       step = {
         key: `idx-${i}`,
         verbKey: "running",
@@ -639,4 +712,147 @@ export function deriveActivitySteps(items: TimelineItem[]): ActivityStep[] {
     out.push(step);
   }
   return out.reverse();
+}
+
+/**
+ * The human-facing step trail: {@link deriveActivitySteps} filtered to real
+ * milestones. Drops the agent's plumbing — git status/diff/branch peeks, tmp
+ * inspections, bare reads/searches — and keeps only the steps a non-engineer
+ * reads as progress (dependency installs, test/build/lint runs, commits,
+ * pushes, PR creation). File writes/edits are intentionally excluded too: they
+ * are shown as their own diff feed (deriveFileChanges), so surfacing them here
+ * would double-count. An empty result is honest ("working…") — better than a
+ * wall of `git status --short`. Newest first (inherits deriveActivitySteps).
+ */
+export function deriveMilestoneSteps(items: TimelineItem[]): ActivityStep[] {
+  return deriveActivitySteps(items).filter(
+    (s) => s.cmdClass !== undefined && MILESTONE_CLASSES.has(s.cmdClass),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agent to-do list
+//
+// A coding agent maintains its own plan via the TodoWrite tool (Claude Code)
+// or the runtime's normalized `todo_write` — each call REWRITES the whole list,
+// so the latest such tool_use in the stream is the current plan. Surfacing it
+// answers "what is the agent doing, and what's next" in the agent's OWN words,
+// far more legible than any tool-call trail. The payload rides in the tool_use
+// `input.todos` verbatim (daemon streams Tool+Input untouched).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type TodoStatus = "pending" | "in_progress" | "completed";
+
+export interface TodoItem {
+  /** The imperative task text ("Fix the greet button typo"). */
+  content: string;
+  status: TodoStatus;
+  /**
+   * Present-continuous form shown while in progress ("Fixing the greet button
+   * typo"), when the agent provided one. Falls back to `content`.
+   */
+  activeForm?: string;
+}
+
+// The agent emits `PROGRESS: <sentence>` on each phase transition (runtime
+// brief contract — see server/.../runtime_config.go "## Progress You Show The
+// Human"). It rides in the agent's streamed text, so we scan text items for the
+// latest such line. Anchored to the line start so a mention of the word
+// "progress" mid-sentence never matches. Case-insensitive on the marker.
+const PROGRESS_RE = /^\s*PROGRESS:\s*(.+?)\s*$/i;
+
+/**
+ * The agent's latest human-readable progress headline — the single "what's
+ * happening now" sentence it authored, in its own (and the issue's) language.
+ * This is the PRIMARY live signal: authored by the agent that knows its intent,
+ * stage-agnostic, and never a reverse-engineered tool name. Returns null when
+ * the agent hasn't emitted one (older runtime / agent that ignores the brief) —
+ * callers fall back to the to-do's active item, then the derived milestone.
+ */
+export function deriveProgressHeadline(items: TimelineItem[]): string | null {
+  let found: string | null = null;
+  for (const item of items) {
+    if (item.type !== "text" || !item.content) continue;
+    for (const line of item.content.split("\n")) {
+      const m = line.match(PROGRESS_RE);
+      if (m) found = m[1]!;
+    }
+  }
+  return found;
+}
+
+const TODO_TOOLS = new Set(["todowrite", "todo_write", "todo", "update_todos"]);
+
+// Provider-agnostic plan fallback. Claude Code has a TodoWrite tool; codex /
+// gemini / etc. do NOT, so a runtime without it would show no to-do list at
+// all. The runtime brief therefore asks EVERY agent to also emit its checklist
+// as a fenced ```todo block in its streamed text (see runtime_config.go). Each
+// block REWRITES the whole list (like TodoWrite), so the latest block wins.
+// Markers: `[ ]` pending, `[x]`/`[X]` done, `[~]`/`[>]` in progress.
+const TODO_FENCE_RE = /```todo[^\n]*\n([\s\S]*?)```/gi;
+const TODO_LINE_RE = /^\s*[-*]\s*\[([ xX~>])\]\s*(.+?)\s*$/;
+
+function deriveTodosFromText(items: TimelineItem[]): TodoItem[] {
+  let block: string | null = null;
+  for (const item of items) {
+    if (item.type !== "text" || !item.content) continue;
+    // Latest fenced ```todo block anywhere in this text item wins.
+    const re = new RegExp(TODO_FENCE_RE);
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(item.content)) !== null) block = m[1]!;
+  }
+  if (block == null) return [];
+  const out: TodoItem[] = [];
+  for (const line of block.split("\n")) {
+    const m = line.match(TODO_LINE_RE);
+    if (!m) continue;
+    const content = m[2]!.trim();
+    if (!content) continue;
+    const marker = m[1]!.toLowerCase();
+    const status: TodoStatus =
+      marker === "x" ? "completed" : marker === "~" || marker === ">" ? "in_progress" : "pending";
+    out.push({ content, status });
+  }
+  return out;
+}
+
+/**
+ * The agent's current to-do list. Prefers the most recent TodoWrite-style tool
+ * call (Claude Code); falls back to the latest fenced ```todo block in the
+ * agent's text (provider-agnostic — codex/gemini/etc.). Defensive: unknown
+ * shapes / missing fields degrade to an empty list rather than throwing (the
+ * payload is untyped JSON off the wire). Returns [] when the agent maintains no
+ * plan. Preserves the agent's order.
+ */
+export function deriveTodos(items: TimelineItem[]): TodoItem[] {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i]!;
+    if (item.type !== "tool_use") continue;
+    if (!TODO_TOOLS.has((item.tool ?? "").trim().toLowerCase())) continue;
+    const raw = (item.input as Record<string, unknown> | undefined)?.todos;
+    // A TodoWrite call with a malformed payload → fall through to the text
+    // block rather than showing nothing.
+    if (!Array.isArray(raw)) return deriveTodosFromText(items);
+    const out: TodoItem[] = [];
+    for (const entry of raw) {
+      if (!entry || typeof entry !== "object") continue;
+      const e = entry as Record<string, unknown>;
+      const content = typeof e.content === "string" ? e.content.trim() : "";
+      if (!content) continue;
+      const status: TodoStatus =
+        e.status === "in_progress" || e.status === "completed"
+          ? e.status
+          : "pending";
+      const activeForm =
+        typeof e.activeForm === "string"
+          ? e.activeForm.trim()
+          : typeof e.active_form === "string"
+            ? e.active_form.trim()
+            : undefined;
+      out.push(activeForm ? { content, status, activeForm } : { content, status });
+    }
+    return out;
+  }
+  // No TodoWrite-style tool call in the stream → try the fenced ```todo block.
+  return deriveTodosFromText(items);
 }

@@ -1,8 +1,4 @@
-import { Plus, Settings } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
 import { WorkspaceSlugProvider } from "@agora/core/paths";
-import { agentListOptions } from "@agora/core/workspace/queries";
 import { useWorkspaceId } from "@agora/core/hooks";
 import type { Workspace } from "@agora/core/types";
 import { useActiveWorkspace } from "../workspace/use-active-workspace";
@@ -10,16 +6,19 @@ import { useDeepLinkWorkspace } from "../workspace/use-deep-link-workspace";
 import { useRouter } from "../platform/navigation";
 import { CenterMessage } from "./center-message";
 import { TabBar } from "./tab-bar";
+import { ToastProvider } from "./toast";
 import { InboxScreen } from "../screens/inbox-screen";
-import { IssuesScreen } from "../screens/issues-screen";
-import { ChatScreen } from "../screens/chat-screen";
+import { TasksScreen } from "../screens/tasks-screen";
+import { CycleScreen } from "../screens/cycle-screen";
+import { AgentsScreen } from "../screens/agents-screen";
+import { ProfileScreen } from "../screens/profile-screen";
 import { ChatSessionScreen } from "../screens/chat-session-screen";
 import { IssueDetailScreen } from "../screens/issue-detail-screen";
 import { CreateIssueScreen } from "../screens/create-issue-screen";
-import { SettingsScreen } from "../screens/settings-screen";
 import { AgoraIcon } from "@agora/ui/components/common/agora-icon";
 import { useT } from "../i18n";
 import { useBackButton } from "../telegram/native-buttons";
+import { isTelegramEnv } from "../telegram/sdk";
 import { cn } from "../lib/cn";
 
 export function AppShell({
@@ -55,20 +54,6 @@ export function AppShell({
   );
 }
 
-// Small round workspace logo for the header chips — image when the workspace
-// has an avatar (served same-origin via the SPA proxy), else its initial.
-function WorkspaceMark({ workspace }: { workspace: Workspace }) {
-  const url = resolvePublicFileUrl(workspace.avatar_url);
-  if (url) {
-    return <img src={url} alt="" className="size-5 shrink-0 rounded-full object-cover" />;
-  }
-  return (
-    <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-foreground/15 text-[10px] font-bold">
-      {workspace.name.charAt(0).toUpperCase()}
-    </span>
-  );
-}
-
 function ShellInner({
   workspaces,
   active,
@@ -79,13 +64,7 @@ function ShellInner({
   onSelect: (slug: string) => void;
 }) {
   const wsId = useWorkspaceId();
-  const { route, activeTab, navigate, back } = useRouter();
-  const t = useT();
-
-  // Chat is only useful once the workspace has an AI agent — hide the tab
-  // otherwise so it isn't a dead end. Auto-appears when an agent is created.
-  const { data: agents = [] } = useQuery(agentListOptions(wsId));
-  const hasChat = agents.some((a) => !a.archived_at);
+  const { route, activeTab, back } = useRouter();
 
   // Telegram's native top-left back button on every non-tab screen.
   useBackButton(route.name !== "tab", back);
@@ -101,71 +80,52 @@ function ShellInner({
     case "chat-session":
       body = <ChatSessionScreen sessionId={route.id} />;
       break;
-    case "settings":
-      body = <SettingsScreen />;
-      break;
     case "tab":
     default:
       body =
-        activeTab === "issues" ? (
-          <IssuesScreen />
-        ) : activeTab === "chat" && hasChat ? (
-          <ChatScreen />
+        activeTab === "tasks" ? (
+          <TasksScreen workspaces={workspaces} active={active} onSelect={onSelect} />
+        ) : activeTab === "cycle" ? (
+          <CycleScreen />
+        ) : activeTab === "agents" ? (
+          <AgentsScreen />
+        ) : activeTab === "profile" ? (
+          <ProfileScreen workspace={active} />
         ) : (
           <InboxScreen />
         );
   }
 
   const isRootTab = route.name === "tab";
+  // Inside Telegram the client already draws its own chrome (bot title, close,
+  // menu pill) — an in-app brand header on top of that reads as clutter. Keep
+  // the lockup only for the browser preview, and give root tabs just the
+  // safe-area clearance in Telegram.
+  const inTelegram = isTelegramEnv();
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col">
-      {isRootTab && (
-        <header className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 py-2 pt-[max(env(safe-area-inset-top),0.5rem)]">
-          <div className="flex shrink-0 items-center gap-1.5">
-            <AgoraIcon className="size-5 text-foreground" noSpin />
-            <span className="text-sm font-semibold tracking-tight text-foreground">Agora</span>
-          </div>
-          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
-            {workspaces.map((w) => (
-              <button
-                key={w.id}
-                type="button"
-                onClick={() => onSelect(w.slug)}
-                className={cn(
-                  "flex shrink-0 items-center gap-1.5 rounded-lg py-1 pl-1 pr-3 text-xs font-medium transition-colors",
-                  w.id === active.id
-                    ? "bg-brand text-brand-foreground"
-                    : "bg-muted text-muted-foreground",
-                )}
-              >
-                <WorkspaceMark workspace={w} />
-                {w.name}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={() => navigate({ name: "create" })}
-            className="flex shrink-0 items-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-brand-foreground"
-          >
-            <Plus className="size-3.5" />
-            {t("shell.new")}
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate({ name: "settings" })}
-            aria-label={t("settings.title")}
-            className="flex shrink-0 items-center justify-center p-1 text-muted-foreground transition-colors active:text-foreground"
-          >
-            <Settings className="size-5" />
-          </button>
-        </header>
-      )}
+    <ToastProvider>
+      <div className="relative flex h-full min-h-0 flex-1 flex-col bg-sidebar dark:bg-background">
+        {isRootTab && !inTelegram && (
+          <header className="flex shrink-0 items-center justify-center gap-[7px] px-4 pb-1 pt-[max(env(safe-area-inset-top),0.5rem)]">
+            <AgoraIcon className="size-5 text-brand" noSpin />
+            <span className="text-base font-semibold tracking-tight text-foreground">
+              Agora
+            </span>
+          </header>
+        )}
 
-      <main className="flex min-h-0 flex-1 flex-col overflow-hidden">{body}</main>
+        <main
+          className={cn(
+            "flex min-h-0 flex-1 flex-col overflow-hidden",
+            isRootTab && inTelegram && "pt-[max(env(safe-area-inset-top),0.375rem)]",
+          )}
+        >
+          {body}
+        </main>
 
-      {isRootTab && <TabBar wsId={wsId} hasChat={hasChat} />}
-    </div>
+        {isRootTab && <TabBar wsId={wsId} />}
+      </div>
+    </ToastProvider>
   );
 }

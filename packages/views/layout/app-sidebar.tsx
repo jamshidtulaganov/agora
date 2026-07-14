@@ -75,6 +75,7 @@ import { workspaceListOptions, myInvitationListOptions, workspaceKeys } from "@a
 import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { inboxKeys, deduplicateInboxItems } from "@agora/core/inbox/queries";
+import { agentTaskSnapshotOptions } from "@agora/core/agents/queries";
 import { api, ApiError } from "@agora/core/api";
 import { useModalStore } from "@agora/core/modals";
 import { useConfigStore } from "@agora/core/config";
@@ -387,6 +388,17 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
     () => deduplicateInboxItems(inboxItems).filter((i) => !i.read).length,
     [inboxItems],
   );
+  // Running-task count for the Inbox badge (replaces the old standalone
+  // "N running" sidebar row). Same shared snapshot every other live surface
+  // reads — no extra network.
+  const { data: taskSnapshot = [] } = useQuery({
+    ...agentTaskSnapshotOptions(wsId ?? ""),
+    enabled: !!wsId,
+  });
+  const runningCount = React.useMemo(
+    () => taskSnapshot.filter((task) => task.status === "running").length,
+    [taskSnapshot],
+  );
   const hasRuntimeUpdates = useMyRuntimesNeedUpdate(wsId);
   const { data: pinnedItems = EMPTY_PINS } = useQuery({
     ...pinListOptions(wsId ?? "", userId ?? ""),
@@ -635,6 +647,8 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                 <kbd className="pointer-events-none ml-auto inline-flex h-5 select-none items-center gap-0.5 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">{t(($) => $.sidebar.new_issue_shortcut)}</kbd>
               </SidebarMenuButton>
             </SidebarMenuItem>
+            {/* The standalone "N running · timer" row was removed (sidebar
+                noise) — the running count now rides the Inbox item as a badge. */}
           </SidebarMenu>
         </SidebarHeader>
 
@@ -655,9 +669,19 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                       >
                         <item.icon />
                         <span>{t(($) => $.nav[item.labelKey])}</span>
-                        {item.key === "inbox" && unreadCount > 0 && (
-                          <span className="ml-auto text-xs">
-                            {unreadCount > 99 ? "99+" : unreadCount}
+                        {item.key === "inbox" && (unreadCount > 0 || runningCount > 0) && (
+                          <span className="ml-auto flex items-center gap-1.5 text-xs">
+                            {/* Live agents badge — pulsing dot + count while
+                                anything runs (the old standalone row, shrunk). */}
+                            {runningCount > 0 && (
+                              <span className="flex items-center gap-1 font-medium text-info">
+                                <span aria-hidden className="size-1.5 rounded-full bg-info motion-safe:animate-pulse" />
+                                {runningCount}
+                              </span>
+                            )}
+                            {unreadCount > 0 && (
+                              <span>{unreadCount > 99 ? "99+" : unreadCount}</span>
+                            )}
                           </span>
                         )}
                       </SidebarMenuButton>

@@ -59,6 +59,66 @@ func TestSubIssueCreationSectionPresentForIssueRuns(t *testing.T) {
 	}
 }
 
+// The TDD contract ships ONLY in DEV (on-assign) briefs: red-first, green,
+// agora-qa MCP tools, tests committed with the code, never hand off red. It
+// must NOT leak into trigger-comment (QA/review), chat, autopilot, or
+// quick-create tasks — their instructions own their procedure.
+func TestTDDContractOnlyInDevBriefs(t *testing.T) {
+	t.Parallel()
+	const marker = "## Test-Driven Delivery"
+
+	dev := buildMetaSkillContent("claude", TaskContextForEnv{
+		IssueID: "11111111-2222-3333-4444-555555555555",
+	})
+	if !strings.Contains(dev, marker) {
+		t.Fatal("dev (on-assign) brief must carry the TDD contract")
+	}
+	for _, want := range []string{
+		"Red first", "SEE IT FAIL", "run_tests", "Commit the tests WITH the code", "Never hand off red",
+	} {
+		if !strings.Contains(dev, want) {
+			t.Errorf("TDD contract missing %q", want)
+		}
+	}
+
+	excluded := map[string]TaskContextForEnv{
+		"trigger-comment (QA/review)": {IssueID: "11111111-2222-3333-4444-555555555555", TriggerCommentID: "c-1"},
+		"chat":                        {IssueID: "11111111-2222-3333-4444-555555555555", ChatSessionID: "s-1"},
+		"autopilot":                   {IssueID: "11111111-2222-3333-4444-555555555555", AutopilotRunID: "r-1"},
+		"quick-create":                {IssueID: "11111111-2222-3333-4444-555555555555", QuickCreatePrompt: "do x"},
+		"no-issue":                    {},
+	}
+	for name, ctx := range excluded {
+		if out := buildMetaSkillContent("claude", ctx); strings.Contains(out, marker) {
+			t.Errorf("%s brief must NOT carry the TDD contract", name)
+		}
+	}
+}
+
+// The progress contract — a plain-language plan + a `PROGRESS:` headline —
+// must ship in every agent brief so the platform surfaces the agent's OWN
+// human-readable progress instead of reverse-engineering tool calls. This
+// canary locks the section + its two required directives into the brief.
+func TestProgressContractPresentInBrief(t *testing.T) {
+	t.Parallel()
+	out := buildMetaSkillContent("claude", TaskContextForEnv{
+		IssueID: "11111111-2222-3333-4444-555555555555",
+	})
+	if !strings.Contains(out, "## Progress You Show The Human") {
+		t.Fatal("expected the progress-contract section in the brief")
+	}
+	for _, want := range []string{
+		"TodoWrite",
+		"shown to them VERBATIM",
+		"starting with `PROGRESS:`",
+		"present-continuous",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("progress contract missing %q", want)
+		}
+	}
+}
+
 // The brief must no longer carry any parent-notification guidance. PR
 // #2918 added a "Tell the parent when you finish a child" rule that
 // turned into noise (self-mention loops, planner ack ping-pong,

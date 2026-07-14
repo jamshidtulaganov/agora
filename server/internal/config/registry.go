@@ -25,6 +25,11 @@ type Def struct {
 	Label       string
 	Description string
 	Default     string // used when neither DB override nor env is set (bool/int/string only)
+	// ProjectScoped marks a key a project may override for its own issues
+	// (pipeline behavior — QA / sprint / review / automation). A project
+	// override beats the instance value; non-scoped keys (auth, platform,
+	// secrets, integrations) stay instance-global. Never true for secrets.
+	ProjectScoped bool
 }
 
 // Editable reports whether a human may set this key from the UI. Secrets are
@@ -35,26 +40,28 @@ func (d Def) Editable() bool { return d.Kind != KindSecret }
 // becomes readable via config.Bool/etc AND appears in Settings → Configs.
 var Registry = []Def{
 	// ---- QA automation -------------------------------------------------
-	{Key: "AGORA_AUTO_QA_ENABLED", Kind: KindBool, Category: "QA", Label: "Auto QA on in-review", Description: "Fire a run_qa gate automatically when an issue moves to in_review."},
-	{Key: "AGORA_QA_GATE_ENFORCED", Kind: KindBool, Category: "QA", Label: "Enforce QA gate before done", Description: "Block in_review → done unless a qa:pass verdict exists."},
+	{Key: "AGORA_AUTO_QA_ENABLED", Kind: KindBool, Category: "QA", Label: "Auto QA on in-review", Description: "Fire a run_qa gate automatically when an issue moves to in_review.", ProjectScoped: true},
+	{Key: "AGORA_QA_GATE_ENFORCED", Kind: KindBool, Category: "QA", Label: "Enforce QA gate before done", Description: "Block in_review → done unless a qa:pass verdict exists.", ProjectScoped: true},
 	{Key: "AGORA_QA_COMPILE_ENABLED", Kind: KindBool, Category: "QA", Label: "Compile tests", Description: "Enable the compile_tests slice action for Playwright scripts."},
-	{Key: "AGORA_QA_FAIL_AUTOROUTE_ENABLED", Kind: KindBool, Category: "QA", Label: "Auto-route QA failures", Description: "On qa:fail, reset to todo and route back to the dev-squad lead."},
-	{Key: "AGORA_QA_FAIL_AUTO_FILE_BUG_ENABLED", Kind: KindBool, Category: "QA", Label: "Auto-file bug on QA fail", Description: "Open a bug issue automatically when a QA gate fails."},
-	{Key: "AGORA_QA_DISCRIMINATION_ENFORCED", Kind: KindBool, Category: "QA", Label: "Require discriminating test", Description: "Require a fail-before/pass-after test run before qa:pass counts."},
-	{Key: "AGORA_RISK_TIER_GATE_ENFORCED", Kind: KindBool, Category: "QA", Label: "Enforce risk-tier gate", Description: "Gate QA depth on the issue's risk tier."},
+	{Key: "AGORA_QA_FAIL_AUTOROUTE_ENABLED", Kind: KindBool, Category: "QA", Label: "Auto-route QA failures", Description: "On qa:fail, reset to todo and route back to the dev-squad lead.", Default: "true", ProjectScoped: true},
+	{Key: "AGORA_QA_FAIL_AUTO_FILE_BUG_ENABLED", Kind: KindBool, Category: "QA", Label: "Auto-file bug on QA fail", Description: "Open a bug issue automatically when a QA gate fails.", ProjectScoped: true},
+	{Key: "AGORA_QA_DISCRIMINATION_ENFORCED", Kind: KindBool, Category: "QA", Label: "Require discriminating test", Description: "Require a fail-before/pass-after test run before qa:pass counts.", ProjectScoped: true},
+	{Key: "AGORA_RISK_TIER_GATE_ENFORCED", Kind: KindBool, Category: "QA", Label: "Enforce risk-tier gate", Description: "Gate QA depth on the issue's risk tier.", ProjectScoped: true},
 	{Key: "AGORA_QA_WATCHDOG_WINDOW_HOURS", Kind: KindInt, Category: "QA", Label: "QA watchdog window (hours)", Description: "How long a silent QA gate waits before escalating to qa:stale.", Default: "24"},
 
 	// ---- Sprint / dev flow ---------------------------------------------
+	// (Instance-global — these couple to the daemon / worktree model, so they
+	// are not per-project overridable today.)
 	{Key: "AGORA_SPRINT_PR_MODE", Kind: KindBool, Category: "Sprint", Label: "Sprint PR-review mode", Description: "Dev tasks open PRs into the sprint branch; QA gates the PR branch."},
 	{Key: "AGORA_SPRINT_WORKTREE_ENABLED", Kind: KindBool, Category: "Sprint", Label: "Shared sprint worktree", Description: "Put concurrent sprint tasks on one shared sprint branch."},
 	{Key: "AGORA_SPRINT_AUTO_MERGE", Kind: KindBool, Category: "Sprint", Label: "Auto-merge on qa:pass", Description: "Squad lead auto-merges a PR into the sprint branch after qa:pass."},
 	{Key: "AGORA_SQUAD_FAILURE_RECOVERY_ENABLED", Kind: KindBool, Category: "Sprint", Label: "Squad failure recovery", Description: "Recover a squad run when a member task fails mid-orchestration."},
 
 	// ---- Review gate -----------------------------------------------------
-	{Key: "AGORA_AUTO_REVIEW_ENABLED", Kind: KindBool, Category: "Review", Label: "Auto review on qa:pass", Description: "Dispatch a run_review code review (reviewer ≠ author) automatically when an issue gains qa:pass and has a pull request. Default off — enable via Settings → Configs."},
+	{Key: "AGORA_AUTO_REVIEW_ENABLED", Kind: KindBool, Category: "Review", Label: "Auto review on qa:pass", Description: "Dispatch a run_review code review (reviewer ≠ author) automatically when an issue gains qa:pass and has a pull request. Default off — enable per project.", ProjectScoped: true},
 
 	// ---- Docs / knowledge ----------------------------------------------
-	{Key: "AGORA_AUTO_DOCS_ENABLED", Kind: KindBool, Category: "Automation", Label: "Auto docs", Description: "Run the auto_docs slice action to keep a docs repo in sync."},
+	{Key: "AGORA_AUTO_DOCS_ENABLED", Kind: KindBool, Category: "Automation", Label: "Auto docs", Description: "Run the auto_docs slice action to keep a docs repo in sync.", ProjectScoped: true},
 
 	// ---- Remote boxes / QA host ----------------------------------------
 	{Key: "AGORA_REMOTE_BOXES_ENABLED", Kind: KindBool, Category: "Remote boxes", Label: "Remote boxes", Description: "Enable the connected-box / remote QA-box onboarding surface."},
@@ -79,6 +86,8 @@ var Registry = []Def{
 	{Key: "AGORA_LARK_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "Lark seal key", Description: "Secretbox key for Lark integration."},
 	{Key: "AGORA_ZOHO_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "Zoho seal key", Description: "Secretbox key for Zoho integration."},
 	{Key: "AGORA_FIGMA_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "Figma seal key", Description: "Secretbox key for Figma integration."},
+	{Key: "AGORA_RELEASE_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "Release integration seal key", Description: "Secretbox key for per-workspace release-integration webhook URLs / signing secrets."},
+	{Key: "AGORA_MCP_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "MCP credential seal key", Description: "Secretbox key for per-workspace remote-MCP auth headers (bearer tokens)."},
 	{Key: "TELEGRAM_BOT_TOKEN", Kind: KindSecret, Category: "Secrets", Label: "Telegram bot token", Description: "Bot API token."},
 	{Key: "ZHIPU_API_KEY", Kind: KindSecret, Category: "Secrets", Label: "Zhipu API key", Description: "GLM model API key."},
 	{Key: "BITRIX_WEBHOOK_URL", Kind: KindSecret, Category: "Secrets", Label: "Bitrix webhook URL", Description: "Inbound Bitrix REST webhook (carries a token)."},
@@ -100,4 +109,22 @@ var byKey = func() map[string]Def {
 func Lookup(key string) (Def, bool) {
 	d, ok := byKey[key]
 	return d, ok
+}
+
+// IsProjectScoped reports whether a key may be overridden per project.
+func IsProjectScoped(key string) bool {
+	d, ok := byKey[key]
+	return ok && d.ProjectScoped
+}
+
+// ProjectScopedRegistry returns the catalog subset a project may override,
+// in registry order.
+func ProjectScopedRegistry() []Def {
+	out := make([]Def, 0, len(Registry))
+	for _, d := range Registry {
+		if d.ProjectScoped {
+			out = append(out, d)
+		}
+	}
+	return out
 }
