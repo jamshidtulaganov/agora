@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1715,12 +1716,35 @@ func (h *Handler) maybeAutoFileBugOnQAFail(ctx context.Context, issue db.Issue, 
 //   - squad-assigned   -> the squad's lead (the orchestrator)
 //   - agent in a squad -> that squad's lead
 //   - solo agent       -> the agent itself (it orchestrates its own task,
-//                         driving its dev->QA->review loop and absorbing QA-fail
-//                         feedback until it is given a crew)
+//     driving its dev->QA->review loop and absorbing QA-fail
+//     feedback until it is given a crew)
 //
 // Only a bare/unassigned issue, or one owned by a human member, resolves to
 // false: nothing agent-driven is running, so there is no orchestrator to route
 // to. The orchestrator is attached at assignment, which is when work starts.
+// dispatchAuthor decides WHO the pipeline shows as asking a stage agent to
+// run. The ORCHESTRATOR owns the pipeline, so it — not the human who merely
+// nudged the status — should be seen dispatching QA / review / gen-tests
+// ("Dev Lead → QA Tester", not "Jamshid → [wall of text]"). Resolution:
+//  1. the issue's orchestrator (squad lead, or the solo agent's squad lead);
+//  2. a solo agent-assigned issue with no squad → the assignee agent IS its own
+//     orchestrator;
+//  3. otherwise fall back to the triggering actor (human / system).
+//
+// The returned pair authors the dispatch comment AND is passed to
+// triggerTasksForComment as the actor, so self-trigger suppression stays
+// consistent with the author.
+func (h *Handler) dispatchAuthor(ctx context.Context, issue db.Issue, fallbackType, fallbackID string) (string, pgtype.UUID) {
+	if orch, ok := h.orchestratorForIssue(ctx, issue); ok {
+		return "agent", orch.ID
+	}
+	if issue.AssigneeType.Valid && issue.AssigneeType.String == "agent" && issue.AssigneeID.Valid {
+		return "agent", issue.AssigneeID
+	}
+	id, _ := actorAuthorID(fallbackID)
+	return fallbackType, id
+}
+
 func (h *Handler) orchestratorForIssue(ctx context.Context, issue db.Issue) (db.Agent, bool) {
 	if !issue.AssigneeType.Valid || !issue.AssigneeID.Valid {
 		return db.Agent{}, false
@@ -2023,7 +2047,25 @@ const qaTrivialCeiling = " SCOPE — TRIVIAL / low-risk change: gate it SOLO and
 //   - PR diff size (HINT only): a non-empty, small diff (<=2 files AND <=20
 //     lines). A 0/0/0 PR row is unsynced webhook stats = UNKNOWN ⇒ stays full,
 //     never downgraded on absent data.
-func (h *Handler) issueQAScopeTrivial(ctx context.Context, issue db.Issue) bool {
+//
+// qaScope is the QA gate DEPTH decision for an issue.
+type qaScope int
+
+const (
+	qaScopeFull  qaScope = iota // full baseline + matrix + suite (guarded / large)
+	qaScopeLight                // fast deterministic smoke (labelled/confirmed small)
+	qaScopeSelf                 // unknown size — the agent sizes the diff from git itself
+)
+
+// issueQAScope decides the QA gate depth from the signals available to the
+// BACKEND. It is deliberately three-way: the old binary "trivial?" collapsed
+// the UNKNOWN case (no size label AND no PR — the common sprint-mode path,
+// where there is no diff signal at all) into "full", so a genuinely one-line
+// change on a shared sprint branch always paid the full baseline+matrix+suite
+// gate (~8 min). qaScopeSelf pushes that decision to the ONE place the diff
+// actually exists — the QA agent's checkout — which can `git diff` the change
+// and size it directly, no GitHub PR required.
+func (h *Handler) issueQAScope(ctx context.Context, issue db.Issue) qaScope {
 	if labels, err := h.Queries.ListLabelsByIssue(ctx, db.ListLabelsByIssueParams{
 		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
 	}); err == nil {
@@ -2032,18 +2074,103 @@ func (h *Handler) issueQAScopeTrivial(ctx context.Context, issue db.Issue) bool 
 			has[strings.ToLower(strings.TrimSpace(l.Name))] = true
 		}
 		if has["risk:guarded"] || has["risk:critical"] {
-			return false // high blast radius — always full QA
+			return qaScopeFull // high blast radius — always full QA
 		}
 		if has["tier:trivial"] || has["tier:light"] || has["risk:safe"] || has["type:docs"] {
-			return true
+			return qaScopeLight
 		}
 	}
 	prs, err := h.Queries.ListPullRequestsByIssue(ctx, issue.ID)
 	if err != nil || len(prs) == 0 {
-		return false // no PR / unknown → full
+		return qaScopeSelf // no PR / unknown → let the agent size it from git
 	}
 	pr := prs[0]
-	return pr.ChangedFiles > 0 && pr.ChangedFiles <= 2 && (pr.Additions+pr.Deletions) <= 20
+	if pr.ChangedFiles == 0 {
+		// A PR row with ZERO diff stats is a PR whose stats never synced (the
+		// PR-open webhook payload carries no file counts) — that is UNKNOWN,
+		// not "confirmed large". Treating it as large routed every synced-but-
+		// unstated PR to the full lead-delegated gate and (worse) armed the
+		// visual-evidence floor, staling honest light passes.
+		return qaScopeSelf
+	}
+	if pr.ChangedFiles <= 2 && (pr.Additions+pr.Deletions) <= 20 {
+		return qaScopeLight
+	}
+	return qaScopeFull
+}
+
+// issueQAScopeTrivial reports whether the change is DEFINITELY light — used by
+// the roster / routing shedding (specialist drop, solo runner). The UNKNOWN
+// (self-sized) case stays false here on purpose: the agent scopes its own gate
+// DEPTH, but the backend keeps the full roster/routing until size is confirmed.
+func (h *Handler) issueQAScopeTrivial(ctx context.Context, issue db.Issue) bool {
+	return h.issueQAScope(ctx, issue) == qaScopeLight
+}
+
+// qaTierScopeClause scales the QA GATE DEPTH to the change's blast radius (the
+// "scale QA depth to tier" lever). A trivial / tiny-diff change does NOT need
+// the full baseline-checkout + build/lint/test matrix + authored e2e suite — a
+// fast, targeted deterministic smoke of the ONE behavior it changed is a
+// proportionate gate (and still catches a wrong fix, e.g. a button mislabeled
+// "Great" instead of "Greet"). The gate STILL runs — verification is never
+// skipped — it just scopes its depth. Full-scope changes get the whole gate
+// (empty clause). Appended to the run_qa instruction.
+// qaLightGateBody is the LIGHT-gate procedure, shared by the explicit-light
+// clause and the self-sized clause (which runs it only after the agent confirms
+// the diff is small). It sheds the heavy ceremony but keeps a real, specific
+// assertion so a light gate is never a hollow one.
+const qaLightGateBody = "shed the heavy CEREMONY but KEEP the real check — a fast gate is NOT a hollow one. Do NOT check out the merge-base for a full baseline comparison, do NOT run the whole build/lint/test matrix unless it finishes in a few seconds, and do NOT author a broad new e2e suite. BUT you MUST still verify the change is CORRECT against the PLAN (acceptance criteria): (a) if a pre-authored test case covering this change's criterion exists, RUN IT — it encodes the expected behavior, and its result is your verdict. (b) Otherwise run ONE DETERMINISTIC SMOKE that asserts the SPECIFIC EXPECTED OUTCOME the plan states — the EXACT expected value, not mere presence. Example: for \"the greet button should read Greet\", assert the button's text EQUALS \"Greet\" (a check that FAILS if it reads \"Great\" or \"Get greeting\"); for \"clicking Greet shows Hello, X\", assert that exact text appears AND the request returns 200. NEVER pass on \"the element renders\" or \"it has some text\" — a hollow pass green-lights a wrong fix and defeats the gate. (c) If the plan does not give a concrete expected value you can assert against, do NOT hollow-pass: verify what the criterion DOES specify and record any criterion you cannot ground-truth as a COVERAGE GAP in the verdict. Keep the whole gate under ~1 minute. If the change looks risky beyond its size, escalate to the full gate."
+
+// qaTierScopeClause scales the QA GATE DEPTH to the change's blast radius (the
+// "scale QA depth to tier" lever). qaScopeFull gets the whole gate (empty
+// clause). qaScopeLight gets the fast deterministic smoke. qaScopeSelf — the
+// unknown case, where the backend has no size signal (no label, no PR, e.g. the
+// sprint-mode shared-branch flow) — hands the decision to the agent: size the
+// diff from git FIRST, then run light if it is genuinely tiny, full otherwise.
+// Appended to the run_qa instruction.
+func qaTierScopeClause(scope qaScope) string {
+	switch scope {
+	case qaScopeLight:
+		return " QA SCOPE — LIGHT: this is a TRIVIAL / tiny-diff change, so " + qaLightGateBody
+	case qaScopeSelf:
+		return " QA SCOPE — SELF-SIZED: there is no size label and no PR to measure this change, so SIZE IT YOURSELF before choosing the gate depth — do not blindly run the full gate on what may be a one-line change. FIRST run `git diff --numstat` (or `git diff --stat`) for THIS task's commits against the base you would otherwise baseline against. If the change touches ≤3 files AND ≤15 changed lines total AND carries no risk:guarded / risk:critical label, run the LIGHT gate: " + qaLightGateBody + " Otherwise (more files/lines, or any risk label) run the FULL gate described above."
+	default:
+		return ""
+	}
+}
+
+// genTestCountClause scales the NUMBER of authored test cases to the change's
+// blast radius — the authoring-side twin of qaTierScopeClause. The default
+// gen_test_cases prompt authors a full positive+negative matrix across every
+// applicable layer; on a one-line change that is 3-4 cases the light gate then
+// runs one by one (each an app boot + Playwright drive), which is the bulk of a
+// trivial task's QA wall-clock. This caps the fan-out for small work WITHOUT
+// dropping the positive/negative discipline: a trivial change still gets the
+// one assertion that would catch a wrong fix plus the one negative that pins
+// the wrong value — just not a 4-case cross-layer matrix. Full-scope work keeps
+// the whole matrix (empty clause). Appended to the gen_test_cases instruction.
+func genTestCountClause(scope qaScope, sprintMode bool) string {
+	var clause string
+	switch scope {
+	case qaScopeLight:
+		clause = " CASE COUNT — MINIMAL (trivial/tiny change): author the FEWEST cases that lock the criterion, NOT a full matrix. ONE positive asserting the EXACT expected value, plus ONE negative asserting the specific WRONG value it must NOT be (e.g. the label reads \"Greet\" and NOT \"Get greeting\"). Stay on the SINGLE layer this change touches — do not fan out [e2e]+[api]+[unit]+[smoke] for a one-line change. Two focused cases beat four shallow ones here."
+	case qaScopeSelf:
+		clause = " CASE COUNT — SIZE-AWARE: match the number of cases to the change's ACTUAL size. Judge size from the plan now (and from `git diff` if a diff already exists). A one-line / one-field / one-label change needs ~2 cases — one positive on the exact expected value, one negative on the wrong value — on the single layer it touches. A multi-file or multi-behavior change earns the full positive+negative matrix across the layers it touches. Do NOT author a 4-case cross-layer matrix for a trivial change, and do NOT author only a happy-path case for a broad one."
+	}
+	// LAYER FOLLOWS THE CHANGE — UNIVERSAL (every issue, sprint or not): the
+	// authored layers must match the surface the issue actually changed. A
+	// button-text change gets ONE smoke asserting the exact label — no [api],
+	// no [e2e] matrix. This is the per-issue half of "test exactly what's
+	// needed"; the scope clause above controls COUNT, this controls LAYER.
+	clause += " LAYER FOLLOWS THE CHANGE: every issue gets ONE [smoke] case asserting the changed behavior's exact expected outcome (for a UI text/content change, a DOM-text assert IS the smoke — that is enough). Add MORE layers only for the surface this issue actually changed: an endpoint/response changed → ONE [api] case asserting the exact status + shape; pure logic/function changed → ONE [unit] case; the UI interaction ITSELF is the change (a click/keystroke/flow) → ONE [e2e] case, and only then. Do NOT author cases for surfaces the issue did not touch."
+	// Sprint mode adds the deferral: browser e2e depth runs ONCE at sprint end
+	// (the sprint-end regression autopilot executes every task's promoted cases
+	// + the project base suite against staging), so per-task e2e authoring
+	// would just re-pay that cost on every task.
+	if sprintMode {
+		clause += " SPRINT MODE: the broad cross-layer e2e matrix belongs to the SPRINT-END regression, not the per-task gate — keep the per-task set to the smoke tier above."
+	}
+	return clause
 }
 
 // filterQAAgentsForScope drops specialist reviewers (Security / Designer) from a
@@ -2131,12 +2258,17 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	// non-squad assignments are UNCHANGED below: they still fan across the whole
 	// QA roster so many in_review issues run QA concurrently instead of queuing
 	// behind one agent — this branch never touches that path.
-	// A trivial / low-risk change (doc-only, risk:safe, tiny diff) is gated SOLO
-	// and fast: it does NOT route to the QA lead (which would delegate = 2 agents
-	// minimum) and its roster excludes specialist reviewers, so a one-file docs
-	// change never spins up a review panel. Guarded/critical/unknown work is
-	// unaffected — it takes the exact path it does today.
-	trivial := h.issueQAScopeTrivial(ctx, issue)
+	// Only CONFIRMED full-scope work (guarded/critical, or a confirmed large
+	// diff) routes to the QA LEAD for delegation — a real 2-agent hop worth
+	// paying when the blast radius is high. A trivial/light change AND an
+	// UNKNOWN (self-sized) change are BOTH gated SOLO: no lead delegation hop,
+	// one least-busy runner picks it up directly. Self-sized stays solo because
+	// the delegation hop is pure latency on what is usually a small change — the
+	// runner still escalates its own gate DEPTH to full if its `git diff` shows
+	// the change is large. A trivial roster also excludes specialist reviewers,
+	// so a one-file docs change never spins up a review panel.
+	qaScopeDecision := h.issueQAScope(ctx, issue)
+	trivial := qaScopeDecision == qaScopeLight
 
 	var runner db.Agent
 	var agents []db.Agent
@@ -2149,7 +2281,7 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 		agents = []db.Agent{cast}
 	}
 	devOrchestrated := h.issueDevOrchestrated(ctx, issue)
-	if runner.ID == (pgtype.UUID{}) && devOrchestrated && !trivial {
+	if runner.ID == (pgtype.UUID{}) && devOrchestrated && qaScopeDecision == qaScopeFull {
 		if leader, ok := h.qaSquadLeader(ctx, issue.WorkspaceID); ok {
 			runner = leader
 			agents = []db.Agent{leader}
@@ -2183,7 +2315,8 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 		sid := uuidToString(sprint.ID)
 		branch := SprintBranchFor(sprint)
 		sprintNote = " SPRINT CONTEXT: this task is on the shared sprint branch " + branch +
-			"; for the scope=task baseline use <sprintId>=" + sid + " (refs/sprint/" + sid + "/last-green)."
+			"; for the scope=task baseline use <sprintId>=" + sid + " (refs/sprint/" + sid + "/last-green)." +
+			" PER-TASK E2E DEFERRAL: in sprint mode the per-task gate is a SMOKE gate — run the pre-authored/committed cases and ONE deterministic smoke of the changed behavior, but do NOT author or run a broad browser e2e suite per task. E2E depth belongs to the SPRINT-END REGRESSION (the project's sprint-end autopilot runs every task's promoted cases + the project base suite against staging in one pass) — per-task e2e would re-pay that cost on every task for no extra coverage."
 		// QA smokes the project's staging URL (qa_smoke_url), where the team's CI
 		// deploys the sprint branch — there is no Agora-managed QA box. Left "" here
 		// so it falls through to the project qa_smoke_url appended below.
@@ -2197,27 +2330,30 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 		}
 	}
 
-	// The developer's own machine ranks ahead of the project's staging (non-sprint
-	// path only — sprint QA smokes the staging URL, handled above). Order: dev_apps
-	// URL (concrete, already running) > local_directory (folder on an online
-	// daemon — pin + start-via-preview, no URL yet) > the project qa_smoke_url
-	// (left "" here, appended below). Sprint mode already set scope=task, so leave
-	// this alone there.
+	// Reuse the dev's ALREADY-RUNNING app (dev_apps) whenever one is registered:
+	// it is the freshest build of exactly this change, so QA skips the cold app
+	// boot that dominates even a light gate. This now applies in SPRINT mode too
+	// (previously sprint went straight to the project qa_smoke_url and QA
+	// cold-booted its own copy), EXCEPT PR-review mode — there QA must test the
+	// PR branch on the staging deploy, not whatever branch the dev box serves.
+	// Order: dev_apps URL (running) > local_directory (non-sprint) > project
+	// qa_smoke_url (left "" here, appended below).
 	localDirQAPath := ""
+	if smokeURL == "" && !(scope == "task" && sprintPRModeEnabled()) {
+		smokeURL = h.devLocalAppURL(ctx, issue)
+	}
 	if scope != "task" && smokeURL == "" {
-		if url := h.devLocalAppURL(ctx, issue); url != "" {
-			smokeURL = url
-		} else if _, lp, ok := h.localDirectoryQATarget(ctx, issue); ok {
+		if _, lp, ok := h.localDirectoryQATarget(ctx, issue); ok {
 			localDirQAPath = lp
 		}
 		// else: no dev-local app and no local_directory — leave smokeURL "" so QA
 		// falls through to the project's qa_smoke_url (appended below).
 	}
 
-	instruction := buildSliceInstruction(sliceActionRunQA, scope) + sprintNote
+	instruction := buildSliceInstruction(sliceActionRunQA, scope) + sprintNote + qaTierScopeClause(qaScopeDecision)
 	if smokeURL != "" {
-		instruction += " SMOKE TARGET: the branch is served at " + smokeURL +
-			" — smoke THAT url. It OVERRIDES any project smoke url below."
+		instruction += " SMOKE TARGET: the change is ALREADY RUNNING at " + smokeURL +
+			" (the dev's live app for this exact branch) — smoke THAT url to skip a cold app boot; it OVERRIDES any project smoke url below. If it is unreachable (dev app torn down, or serving a different branch), bring the app up yourself from the branch and smoke that instead."
 	} else if localDirQAPath != "" {
 		instruction += qaLocalDirectoryClause(localDirQAPath)
 	}
@@ -2290,11 +2426,15 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 		}
 	}
 
-	authorID, ok := actorAuthorID(actorID)
-	if !ok {
-		slog.Warn("auto run_qa: invalid actor id, skipping", "actor_id", actorID, "issue_id", uuidToString(issue.ID))
+	// The ORCHESTRATOR is shown asking QA to run — not the human who nudged the
+	// status. Author + trigger-actor both resolve to it (falls back to the
+	// actor when there is no agent orchestrator).
+	authorType, authorID := h.dispatchAuthor(ctx, issue, actorType, actorID)
+	if !authorID.Valid {
+		slog.Warn("auto run_qa: no valid dispatch author, skipping", "actor_id", actorID, "issue_id", uuidToString(issue.ID))
 		return
 	}
+	authorIDStr := uuidToString(authorID)
 	// QADispatchAutoMarker (Phase 3): tag this dispatch as AUTO-fired so the
 	// verdict capture records triggered_by="auto" — a manual Re-run (the
 	// CreateSliceAction path) carries no such marker and records "agent".
@@ -2302,7 +2442,7 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID:     issue.ID,
 		WorkspaceID: issue.WorkspaceID,
-		AuthorType:  actorType,
+		AuthorType:  authorType,
 		AuthorID:    authorID,
 		Content:     content,
 		Type:        "comment",
@@ -2312,7 +2452,7 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 		slog.Warn("auto run_qa: create comment failed", "error", err, "issue_id", uuidToString(issue.ID))
 		return
 	}
-	h.triggerTasksForComment(ctx, issue, comment, nil, actorType, actorID, nil)
+	h.triggerTasksForComment(ctx, issue, comment, nil, authorType, authorIDStr, nil)
 	slog.Info("auto run_qa fired on in_review",
 		"issue_id", uuidToString(issue.ID), "agent_id", uuidToString(runner.ID),
 		"qa_agents", len(agents))
@@ -2380,7 +2520,11 @@ func (h *Handler) maybeGenTests(ctx context.Context, issue db.Issue, actorType, 
 	}
 	runner := h.pickLeastBusyQAAgent(ctx, free)
 
+	// Sprint membership shifts the authored tier: per-task = smoke, e2e depth
+	// deferred to the sprint-end regression (issue_to_sprint is the signal).
+	_, sprintErr := h.Queries.GetSprintForIssue(ctx, issue.ID)
 	instruction := buildSliceInstruction(sliceActionGenTests, "") +
+		genTestCountClause(h.issueQAScope(ctx, issue), sprintErr == nil) +
 		h.sliceActionQAManifestContext(ctx, issue) +
 		h.sliceActionQADocsContext(ctx, issue) +
 		qaPlanContext(issue.Description.String, issue.AcceptanceCriteria)
@@ -2390,16 +2534,16 @@ func (h *Handler) maybeGenTests(ctx context.Context, issue db.Issue, actorType, 
 		// reaches in_review, so scripts are mandatory here, not optional.
 		instruction += " SHIFT-LEFT PREP: the developer is still working on this task — do NOT look for a diff or a deployed change, and do NOT run anything. Author the cases from the acceptance criteria + the PROJECT QA MANIFEST above, and for EVERY automatable case also emit its runnable Playwright script (the script field) targeting the manifest's base_url/auth/routes — the in_review gate will only EXECUTE what you prepare now."
 	}
-	authorID, ok := actorAuthorID(actorID)
-	if !ok {
-		slog.Warn("auto gen_test_cases: invalid actor id, skipping", "actor_id", actorID, "issue_id", uuidToString(issue.ID))
+	authorType, authorID := h.dispatchAuthor(ctx, issue, actorType, actorID)
+	if !authorID.Valid {
+		slog.Warn("auto gen_test_cases: no valid dispatch author, skipping", "actor_id", actorID, "issue_id", uuidToString(issue.ID))
 		return
 	}
 	content := agentProtocolMarker("gen_test_cases") + fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID:     issue.ID,
 		WorkspaceID: issue.WorkspaceID,
-		AuthorType:  actorType,
+		AuthorType:  authorType,
 		AuthorID:    authorID,
 		Content:     content,
 		Type:        "comment",
@@ -2409,7 +2553,7 @@ func (h *Handler) maybeGenTests(ctx context.Context, issue db.Issue, actorType, 
 		slog.Warn("auto gen_test_cases: create comment failed", "error", err, "issue_id", uuidToString(issue.ID))
 		return
 	}
-	h.triggerTasksForComment(ctx, issue, comment, nil, actorType, actorID, nil)
+	h.triggerTasksForComment(ctx, issue, comment, nil, authorType, uuidToString(authorID), nil)
 	slog.Info("auto gen_test_cases fired",
 		"issue_id", uuidToString(issue.ID), "agent_id", uuidToString(runner.ID), "prep", prep)
 }
@@ -2481,16 +2625,16 @@ func (h *Handler) maybeRunTestsOnInReview(ctx context.Context, issue db.Issue, a
 	instruction += h.sliceActionPriorHumanResultsContext(ctx, issue)
 	instruction += baseSuite
 
-	authorID, ok := actorAuthorID(actorID)
-	if !ok {
-		slog.Warn("auto run_test_cases: invalid actor id, skipping", "actor_id", actorID, "issue_id", uuidToString(issue.ID))
+	authorType, authorID := h.dispatchAuthor(ctx, issue, actorType, actorID)
+	if !authorID.Valid {
+		slog.Warn("auto run_test_cases: no valid dispatch author, skipping", "actor_id", actorID, "issue_id", uuidToString(issue.ID))
 		return
 	}
 	content := agentProtocolMarker("run_test_cases") + fmt.Sprintf("[@%s](mention://agent/%s) ", sanitizeMentionLabel(runner.Name), uuidToString(runner.ID)) + instruction
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID:     issue.ID,
 		WorkspaceID: issue.WorkspaceID,
-		AuthorType:  actorType,
+		AuthorType:  authorType,
 		AuthorID:    authorID,
 		Content:     content,
 		Type:        "comment",
@@ -2500,7 +2644,7 @@ func (h *Handler) maybeRunTestsOnInReview(ctx context.Context, issue db.Issue, a
 		slog.Warn("auto run_test_cases: create comment failed", "error", err, "issue_id", uuidToString(issue.ID))
 		return
 	}
-	h.triggerTasksForComment(ctx, issue, comment, nil, actorType, actorID, nil)
+	h.triggerTasksForComment(ctx, issue, comment, nil, authorType, uuidToString(authorID), nil)
 	slog.Info("auto run_test_cases fired on in_review", "issue_id", uuidToString(issue.ID), "agent_id", uuidToString(runner.ID))
 }
 
@@ -2883,6 +3027,47 @@ func (h *Handler) sliceActionPriorHumanResultsContext(ctx context.Context, issue
 // respecting its modality, and a failing defined case blocks a "pass" verdict.
 // "" when the issue has no cases (the gate still runs the smoke/plan checks it
 // always has — this is additive, not a hard requirement to have cases).
+// caseRunRank orders cases FAIL-FIRST for the gate listing: a case that failed
+// last time is the likeliest regression signal, so it runs (and streams its
+// verdict) first; blocked/skipped next (couldn't run — needs attention);
+// never-run before green (unknown beats confirmed); settled passes last. This
+// is the B4 prioritization lever — signal lands in the first seconds of the
+// gate instead of after the green tail.
+func caseRunRank(latestStatus string) int {
+	switch latestStatus {
+	case "fail":
+		return 0
+	case "blocked", "skip":
+		return 1
+	case "":
+		return 2 // never run
+	default: // pass
+		return 3
+	}
+}
+
+// orderCasesFailFirst sorts cases by their latest run verdict (fail-first,
+// stable within a rank so authoring order is preserved). Best-effort: a query
+// error leaves the original order.
+func (h *Handler) orderCasesFailFirst(ctx context.Context, issue db.Issue, cases []db.TestCase) []db.TestCase {
+	runs, err := h.Queries.ListLatestRunsForIssueCases(ctx, db.ListLatestRunsForIssueCasesParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		return cases
+	}
+	latest := make(map[string]string, len(runs))
+	for _, r := range runs {
+		latest[uuidToString(r.TestCaseID)] = r.Status
+	}
+	sorted := make([]db.TestCase, len(cases))
+	copy(sorted, cases)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return caseRunRank(latest[uuidToString(sorted[i].ID)]) < caseRunRank(latest[uuidToString(sorted[j].ID)])
+	})
+	return sorted
+}
+
 func (h *Handler) sliceActionGateTestCasesContext(ctx context.Context, issue db.Issue) string {
 	cases, err := h.Queries.ListAutomatedTestCasesForIssue(ctx, db.ListAutomatedTestCasesForIssueParams{
 		IssueID:     issue.ID,
@@ -2891,7 +3076,9 @@ func (h *Handler) sliceActionGateTestCasesContext(ctx context.Context, issue db.
 	if err != nil || len(cases) == 0 {
 		return ""
 	}
+	cases = h.orderCasesFailFirst(ctx, issue, cases)
 	var b strings.Builder
+	b.WriteString(" CASES ARE LISTED FAIL-FIRST (last-failed, then blocked, then never-run, then passing) — RUN THEM IN LISTED ORDER so a regression signals in the first seconds of the gate, not after the green tail.")
 	b.WriteString(" DEFINED TEST CASES — PART OF THIS GATE (not optional): the team has defined the following " +
 		"automated cases for this issue. EXECUTE every one, respecting its modality (ui = drive a real browser; " +
 		"api = deterministic HTTP/response assertion; unit = run it as a unit check; manual = perform it by hand " +
@@ -3183,6 +3370,52 @@ type CreateSliceActionRequest struct {
 	Scope   string `json:"scope"`
 	AgentID string `json:"agent_id"`
 	Ref     string `json:"ref"`
+	// Force overrides the stage guard (sliceActionStageGuard) — the human
+	// stays sovereign, but only EXPLICITLY: the default click gets the warning.
+	Force bool `json:"force"`
+}
+
+// sliceActionStageGuard is the pipeline's "brain" for HUMAN-fired stage
+// actions: it checks the action against the issue's actual state and returns
+// a human-readable refusal ("" = allowed). Machine paths never hit this (the
+// automations are already transition-gated); force=true skips it. The point:
+// a click that contradicts the pipeline state gets a WARNING with the reason
+// and the next step, not a silent dispatch that wastes an agent run.
+func (h *Handler) sliceActionStageGuard(ctx context.Context, issue db.Issue, kind string) string {
+	has := map[string]bool{}
+	if labels, err := h.Queries.ListLabelsByIssue(ctx, db.ListLabelsByIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
+	}); err == nil {
+		for _, l := range labels {
+			has[strings.ToLower(strings.TrimSpace(l.Name))] = true
+		}
+	}
+	switch kind {
+	case sliceActionRunQA:
+		switch issue.Status {
+		case "done", "cancelled":
+			return "this task is already finished (" + issue.Status + ") — reopen it before running QA"
+		case "todo", "in_progress":
+			if has["qa:fail"] {
+				return "QA already failed and the fix is still in progress — fix the failing cases first, move the task to review, then QA re-runs"
+			}
+			return "dev is not finished yet (status: " + issue.Status + ") — QA gates a change that is in review"
+		case "backlog":
+			return "this task has not been started (backlog) — there is nothing to QA yet"
+		}
+	case sliceActionRunReview:
+		switch issue.Status {
+		case "done", "cancelled":
+			return "this task is already finished (" + issue.Status + ")"
+		}
+		if has["qa:fail"] {
+			return "QA is FAILING — review is disabled until the failing cases are fixed and QA passes"
+		}
+		if has["qa:stale"] {
+			return "the QA verdict is stale (not trustworthy) — re-run QA before review"
+		}
+	}
+	return ""
 }
 
 // CreateSliceActionResponse is returned on a successful fire. It echoes the
@@ -3236,6 +3469,16 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 	if !isKnownSliceActionKind(req.Kind) {
 		writeError(w, http.StatusBadRequest, "unknown slice action kind")
 		return
+	}
+
+	// Stage brain: refuse a human dispatch that contradicts the pipeline state
+	// (QA on a done task, review on a failing one, …) with the reason and the
+	// next step. force=true overrides — explicitly.
+	if !req.Force {
+		if reason := h.sliceActionStageGuard(r.Context(), issue, req.Kind); reason != "" {
+			writeError(w, http.StatusConflict, reason)
+			return
+		}
 	}
 
 	// deploy targets ONE configured project environment (scope = the

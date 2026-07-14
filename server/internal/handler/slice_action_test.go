@@ -159,16 +159,21 @@ func TestBuildSliceInstructionRunQA(t *testing.T) {
 			t.Errorf("run_qa smoke must be deterministic-first / vision-last (%q), got: %s", want, got)
 		}
 	}
-	// Plan-driven test derivation (Feature 2): step 4 must author tests from the
-	// TASK PLAN (acceptance criteria + description), asserting INTENDED behavior —
-	// NOT re-derive them from the diff it is judging (which is circular: the agent
-	// that wrote the code then writes tests that only confirm the code does what
-	// the code does). A plan↔implementation divergence must make the test FAIL,
-	// never be rewritten to match the code.
-	for _, want := range []string{"task plan", "intended behavior", "acceptance criteri", "match the code", "coverage gap"} {
+	// Shift-left model: the QA test cases are authored FROM THE PLAN by the
+	// parallel gen_test_cases step (in parallel with dev), so step 4 must PREFER
+	// running that PRE-AUTHORED suite and only BACKFILL what's missing — not
+	// re-author cold (QA's dominant time cost). It must still enforce
+	// plan-alignment (assert the acceptance criteria, not ECHO the code) and
+	// surface any criterion left as a COVERAGE GAP.
+	for _, want := range []string{"pre-authored", "backfill", "acceptance criteri", "coverage gap"} {
 		if !strings.Contains(lower, strings.ToLower(want)) {
-			t.Errorf("run_qa step 4 must be plan-driven (%q), got: %s", want, got)
+			t.Errorf("run_qa step 4 must prefer the pre-authored suite + backfill (%q), got: %s", want, got)
 		}
+	}
+	// A self-referential test (passes even when the code is wrong) must be
+	// rejected — the anti-circular guard survives the model change.
+	if !strings.Contains(lower, "echoes the implementation") {
+		t.Errorf("run_qa step 4 must reject cases that echo the implementation; got: %s", got)
 	}
 	// Regression guard: the recipe must no longer derive tests FROM THE DIFF (the
 	// circular pre-Feature-2 wording).
@@ -2030,5 +2035,158 @@ func TestCreateSliceActionExplicitAgentOverridesAssignee(t *testing.T) {
 	}
 	if got := countPendingTasksForAgent(t, issueID, assigneeX); got != 0 {
 		t.Errorf("expected 0 queued tasks for assignee X (suppressed), got %d", got)
+	}
+}
+
+func TestQATierScopeClause(t *testing.T) {
+	// Full-scope change → no extra clause (the whole gate runs).
+	if got := qaTierScopeClause(qaScopeFull); got != "" {
+		t.Errorf("full scope should add no clause, got: %q", got)
+	}
+	// Trivial change → a LIGHT-scope directive: fast smoke, skip baseline, no
+	// broad e2e authoring — but the gate still runs (verification never skipped).
+	c := qaTierScopeClause(qaScopeLight)
+	// Sheds ceremony...
+	for _, want := range []string{"LIGHT", "DETERMINISTIC SMOKE", "Do NOT check out the merge-base", "do NOT author a broad new e2e suite"} {
+		if !strings.Contains(c, want) {
+			t.Errorf("trivial clause missing %q, got: %s", want, c)
+		}
+	}
+	// ...but KEEPS the real check: it must assert the SPECIFIC EXPECTED value
+	// from the plan and explicitly forbid a hollow "renders" pass (the accuracy
+	// gap that green-lit a wrong fix). This is the fast+accurate contract.
+	for _, want := range []string{"SPECIFIC EXPECTED OUTCOME", "EXACT expected value", "NEVER pass on", "COVERAGE GAP"} {
+		if !strings.Contains(c, want) {
+			t.Errorf("trivial clause must keep the ground-truth assertion (%q), got: %s", want, c)
+		}
+	}
+	// It must NOT tell the agent to skip verification entirely — the gate scales
+	// depth, it does not disappear.
+	if strings.Contains(strings.ToLower(c), "skip qa") || strings.Contains(strings.ToLower(c), "no gate") {
+		t.Errorf("trivial clause must scale the gate, not skip it; got: %s", c)
+	}
+
+	// SELF-SIZED (unknown: no label, no PR — the sprint-mode gap): the agent must
+	// be told to measure the diff from git FIRST, then run the SAME light body if
+	// it is genuinely tiny — so a one-line sprint-branch change isn't stuck on the
+	// full gate just because there is no PR to read.
+	s := qaTierScopeClause(qaScopeSelf)
+	for _, want := range []string{"SELF-SIZED", "git diff --numstat", "≤3 files", "≤15 changed lines", "DETERMINISTIC SMOKE", "FULL gate"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("self-sized clause missing %q, got: %s", want, s)
+		}
+	}
+}
+
+// TestGenTestCountClause pins the authoring-side count scaling: full scope adds
+// nothing (full matrix), light caps to a minimal positive+negative on one
+// layer, and self-sized tells the agent to match the count to the change's
+// actual size — the twin lever to qaTierScopeClause that stops a one-line
+// change from generating a 4-case matrix the light gate then runs one by one.
+func TestGenTestCountClause(t *testing.T) {
+	// Full scope: no COUNT cap, but the LAYER rule is UNIVERSAL — a button-text
+	// issue must not spawn [api]/[e2e] cases regardless of scope.
+	full := genTestCountClause(qaScopeFull, false)
+	if strings.Contains(full, "CASE COUNT") {
+		t.Errorf("full scope must not cap the count, got: %q", full)
+	}
+	for _, want := range []string{"LAYER FOLLOWS THE CHANGE", "ONE [smoke]", "endpoint/response changed → ONE [api]", "Do NOT author cases for surfaces the issue did not touch"} {
+		if !strings.Contains(full, want) {
+			t.Errorf("universal layer clause missing %q", want)
+		}
+	}
+	if strings.Contains(full, "SPRINT") {
+		t.Errorf("non-sprint clause must not mention sprint, got: %q", full)
+	}
+	light := genTestCountClause(qaScopeLight, false)
+	for _, want := range []string{"MINIMAL", "ONE positive", "ONE negative", "SINGLE layer"} {
+		if !strings.Contains(light, want) {
+			t.Errorf("light count clause missing %q, got: %s", want, light)
+		}
+	}
+	self := genTestCountClause(qaScopeSelf, false)
+	for _, want := range []string{"SIZE-AWARE", "git diff", "full positive+negative matrix"} {
+		if !strings.Contains(self, want) {
+			t.Errorf("self-sized count clause missing %q, got: %s", want, self)
+		}
+	}
+	// Neither scaling clause may tell the agent to DROP negative cases wholesale
+	// — the positive/negative discipline survives; only the fan-out shrinks.
+	for _, c := range []string{light, self} {
+		if strings.Contains(strings.ToLower(c), "skip negative") || strings.Contains(strings.ToLower(c), "no negative") {
+			t.Errorf("count clause must keep positive+negative discipline, got: %s", c)
+		}
+	}
+
+	// SPRINT MODE adds the deferral on top of the universal layer rule: the
+	// broad cross-layer matrix belongs to the sprint-end regression.
+	sprint := genTestCountClause(qaScopeFull, true)
+	for _, want := range []string{"LAYER FOLLOWS THE CHANGE", "SPRINT MODE", "SPRINT-END regression"} {
+		if !strings.Contains(sprint, want) {
+			t.Errorf("sprint clause missing %q, got: %s", want, sprint)
+		}
+	}
+	if got := genTestCountClause(qaScopeLight, true); !strings.Contains(got, "MINIMAL") ||
+		!strings.Contains(got, "LAYER FOLLOWS THE CHANGE") || !strings.Contains(got, "SPRINT MODE") {
+		t.Errorf("sprint+light must carry count + layer + sprint clauses, got: %s", got)
+	}
+}
+
+// TestSliceActionStageGuard pins the stage "brain": a human dispatch that
+// contradicts the pipeline state is refused with the reason + next step —
+// QA on a finished/backlog task, QA re-run while the fix is still in dev,
+// review on a failing or stale-QA task. force=true bypasses (checked at the
+// handler layer; the guard itself only reports).
+func TestSliceActionStageGuard(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("no database")
+	}
+	ctx := context.Background()
+
+	mk := func(status string, labels ...string) db.Issue {
+		id := createTestIssue(t, "guard "+status+strings.Join(labels, ""), status, "medium")
+		t.Cleanup(func() { deleteTestIssue(t, id) })
+		for _, name := range labels {
+			attachLabelToTestIssue(t, id, name)
+		}
+		issue, err := testHandler.Queries.GetIssue(ctx, parseUUID(id))
+		if err != nil {
+			t.Fatalf("GetIssue: %v", err)
+		}
+		return issue
+	}
+
+	// run_qa refusals
+	for _, tc := range []struct {
+		issue db.Issue
+		want  string
+	}{
+		{mk("done"), "already finished"},
+		{mk("backlog"), "not been started"},
+		{mk("in_progress"), "dev is not finished"},
+		{mk("todo", "qa:fail"), "fix the failing cases first"},
+	} {
+		if got := testHandler.sliceActionStageGuard(ctx, tc.issue, sliceActionRunQA); !strings.Contains(got, tc.want) {
+			t.Errorf("run_qa guard on %s = %q, want contains %q", tc.issue.Status, got, tc.want)
+		}
+	}
+	// run_qa allowed in review
+	if got := testHandler.sliceActionStageGuard(ctx, mk("in_review"), sliceActionRunQA); got != "" {
+		t.Errorf("run_qa in_review must be allowed, got %q", got)
+	}
+
+	// run_review refusals
+	if got := testHandler.sliceActionStageGuard(ctx, mk("in_review", "qa:fail"), sliceActionRunReview); !strings.Contains(got, "review is disabled") {
+		t.Errorf("run_review with qa:fail = %q, want disabled", got)
+	}
+	if got := testHandler.sliceActionStageGuard(ctx, mk("in_review", "qa:stale"), sliceActionRunReview); !strings.Contains(got, "stale") {
+		t.Errorf("run_review with qa:stale = %q, want stale warning", got)
+	}
+	if got := testHandler.sliceActionStageGuard(ctx, mk("done"), sliceActionRunReview); !strings.Contains(got, "already finished") {
+		t.Errorf("run_review on done = %q", got)
+	}
+	// run_review allowed on green
+	if got := testHandler.sliceActionStageGuard(ctx, mk("in_review", "qa:pass"), sliceActionRunReview); got != "" {
+		t.Errorf("run_review with qa:pass must be allowed, got %q", got)
 	}
 }

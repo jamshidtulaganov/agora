@@ -326,9 +326,12 @@ func (h *Handler) maybeRunReviewOnQAPass(ctx context.Context, issue db.Issue, la
 		instruction += "\n" + brief
 	}
 
-	authorID, ok := actorAuthorID(userID)
-	if !ok {
-		slog.Warn("auto run_review: invalid actor id, skipping", "actor_id", userID, "issue_id", uuidToString(issue.ID))
+	// The ORCHESTRATOR is shown dispatching the review — not the human who
+	// merely nudged the status (falls back to the actor when there is no agent
+	// orchestrator).
+	authorType, authorID := h.dispatchAuthor(ctx, issue, "member", userID)
+	if !authorID.Valid {
+		slog.Warn("auto run_review: no valid dispatch author, skipping", "actor_id", userID, "issue_id", uuidToString(issue.ID))
 		return
 	}
 	content := agentProtocolMarker(sliceActionRunReview) + reviewDispatchMarker + "\n" +
@@ -336,7 +339,7 @@ func (h *Handler) maybeRunReviewOnQAPass(ctx context.Context, issue db.Issue, la
 	comment, err := h.Queries.CreateComment(ctx, db.CreateCommentParams{
 		IssueID:     issue.ID,
 		WorkspaceID: issue.WorkspaceID,
-		AuthorType:  "member",
+		AuthorType:  authorType,
 		AuthorID:    authorID,
 		Content:     content,
 		Type:        "comment",
@@ -346,7 +349,7 @@ func (h *Handler) maybeRunReviewOnQAPass(ctx context.Context, issue db.Issue, la
 		slog.Warn("auto run_review: create comment failed", "error", err, "issue_id", uuidToString(issue.ID))
 		return
 	}
-	h.triggerTasksForComment(ctx, issue, comment, nil, "member", userID, nil)
+	h.triggerTasksForComment(ctx, issue, comment, nil, authorType, uuidToString(authorID), nil)
 	slog.Info("auto run_review fired on qa:pass",
 		"issue_id", uuidToString(issue.ID), "reviewer_agent_id", uuidToString(reviewer.ID))
 }
