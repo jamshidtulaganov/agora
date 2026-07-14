@@ -19,6 +19,7 @@ import { useWorkspaceId } from "@agora/core";
 import { issueDetailOptions, issueKeys } from "@agora/core/issues/queries";
 import { issuePullRequestsOptions } from "@agora/core/github";
 import { useWorkspacePaths } from "@agora/core/paths";
+import { agentListOptions } from "@agora/core/workspace/queries";
 import type { MergeGateStatus, ReviewFinding, ReviewVerdict } from "@agora/core/types";
 import { Badge } from "@agora/ui/components/ui/badge";
 import { Button } from "@agora/ui/components/ui/button";
@@ -29,6 +30,7 @@ import { AppLink } from "../../navigation";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { PullRequestList } from "./pull-request-list";
 import { verdictIcon, verdictTone } from "../../qa/components/verdict";
+import { PropertyPicker, PickerItem, PickerEmpty } from "./pickers/property-picker";
 
 // The Review lens v2 — the human half of "agent reviews, human approves"
 // (docs/review-stage-plan.md). Same wide two-column workbench shape as the
@@ -240,6 +242,61 @@ function FindingRow({ finding }: { finding: ReviewFinding }) {
   );
 }
 
+// Explicit reviewer picker — a chevron split-button next to Run/Re-run review.
+// Server-side auto-resolution (resolveReviewerAgent) needs a cast reviewer, an
+// orchestrator, or squad membership; a workspace without any of those wiring
+// has no way to satisfy "Run review" and the button 409s with no recourse.
+// This lets a human name a reviewer explicitly — sliceAction already accepts
+// agentId (resolveSliceActionAgent path (a)), so no backend change needed.
+// Excludes the issue's author agent: the server rejects a self-review anyway.
+function ReviewerPicker({
+  authorAgentId,
+  onSelect,
+  disabled,
+}: {
+  authorAgentId: string | null;
+  onSelect: (agentId: string) => void;
+  disabled?: boolean;
+}) {
+  const { t } = useT("issues");
+  const wsId = useWorkspaceId();
+  const [open, setOpen] = useState(false);
+  const { data: agents = [] } = useQuery(agentListOptions(wsId));
+  const eligible = agents.filter((a) => !a.archived_at && a.id !== authorAgentId);
+
+  return (
+    <PropertyPicker
+      open={open}
+      onOpenChange={setOpen}
+      width="w-56"
+      align="end"
+      triggerRender={
+        <Button variant="outline" size="sm" disabled={disabled} className="px-1.5" />
+      }
+      trigger={<ChevronDown className="size-3.5" />}
+      tooltip={t(($) => $.review_lens.pick_reviewer)}
+    >
+      {eligible.length === 0 ? (
+        <PickerEmpty />
+      ) : (
+        eligible.map((a) => (
+          <PickerItem
+            key={a.id}
+            selected={false}
+            onClick={() => {
+              onSelect(a.id);
+              setOpen(false);
+            }}
+          >
+            <ActorAvatar actorType="agent" actorId={a.id} size={18} showStatusDot />
+            <span className="truncate">{a.name}</span>
+          </PickerItem>
+        ))
+      )}
+    </PropertyPicker>
+  );
+}
+
 function ReviewVerdictCard({
   review,
   stale,
@@ -350,6 +407,12 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
 
   const hasOverride = (issue?.labels ?? []).some((l) => l.name === "merge:override");
   const hasVerdict = review?.verdict === "pass" || review?.verdict === "fail";
+  // Stage brain (frontend half): review is DISABLED while QA is failing or
+  // stale — the backend refuses the dispatch too (409); this disables the
+  // affordance up front with the reason, instead of letting the click bounce.
+  const qaFailing = (issue?.labels ?? []).some((l) => l.name === "qa:fail");
+  const qaStale = (issue?.labels ?? []).some((l) => l.name === "qa:stale");
+  const reviewBlocked = qaFailing || qaStale;
 
   // Stale hint: the backend PR payload carries no head SHA, so we approximate
   // "the reviewed commit is no longer the PR head" with "an open PR was
@@ -383,17 +446,32 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
     void qc.invalidateQueries({ queryKey: ["merge-readiness", issueId] });
   };
 
+  // No-reviewer-resolves is a distinct, recoverable state (not just a toast):
+  // the human can pick a reviewer explicitly via the picker instead of first
+  // going to set up a squad/cast. Cleared on any run attempt so a fresh
+  // failure always re-surfaces the hint.
+  const [noReviewerAvailable, setNoReviewerAvailable] = useState(false);
+
   const runReview = useMutation({
-    mutationFn: () => api.sliceAction(issueId, { kind: "run_review" }),
+    mutationFn: (agentId?: string) =>
+      api.sliceAction(issueId, { kind: "run_review", agentId }),
     onSuccess: () => {
+      setNoReviewerAvailable(false);
       toast.success(t(($) => $.review_lens.toast_review_dispatched));
       void qc.invalidateQueries({ queryKey: issueKeys.timeline(issueId) });
     },
     onError: (e) => {
       const msg = e instanceof Error ? e.message : "";
+      if (msg.includes("no reviewer distinct from the author")) {
+        setNoReviewerAvailable(true);
+        toast.error(t(($) => $.review_lens.toast_no_reviewer));
+        return;
+      }
       toast.error(msg || t(($) => $.review_lens.toast_review_dispatch_failed));
     },
   });
+
+  const authorAgentId = issue?.assignee_type === "agent" ? issue.assignee_id : null;
 
   const decide = useMutation({
     mutationFn: (body: { action: "approve" | "request_changes"; note?: string }) =>
@@ -479,24 +557,57 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
                 <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
                   {t(($) => $.review_lens.verdict_heading)}
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => runReview.mutate()}
-                  disabled={runReview.isPending}
-                >
-                  {runReview.isPending ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : hasVerdict ? (
-                    t(($) => $.review_lens.rerun_review)
-                  ) : (
-                    t(($) => $.review_lens.run_review)
-                  )}
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => runReview.mutate(undefined)}
+                    disabled={runReview.isPending || reviewBlocked}
+                    title={
+                      reviewBlocked
+                        ? qaFailing
+                          ? t(($) => $.review_lens.blocked_qa_fail)
+                          : t(($) => $.review_lens.blocked_qa_stale)
+                        : undefined
+                    }
+                  >
+                    {runReview.isPending ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : hasVerdict ? (
+                      t(($) => $.review_lens.rerun_review)
+                    ) : (
+                      t(($) => $.review_lens.run_review)
+                    )}
+                  </Button>
+                  <ReviewerPicker
+                    authorAgentId={authorAgentId}
+                    disabled={runReview.isPending || reviewBlocked}
+                    onSelect={(agentId) => runReview.mutate(agentId)}
+                  />
+                </div>
               </div>
+
+              {/* Stage-brain banner: WHY review is disabled + the next step. */}
+              {reviewBlocked && (
+                <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-[12px] text-amber-700 dark:text-amber-400">
+                  <span aria-hidden>⚠</span>
+                  <span>
+                    {qaFailing
+                      ? t(($) => $.review_lens.blocked_qa_fail)
+                      : t(($) => $.review_lens.blocked_qa_stale)}
+                  </span>
+                </div>
+              )}
 
               {reviewLoading ? (
                 <p className="text-sm text-muted-foreground">{t(($) => $.timeline.loading)}</p>
+              ) : noReviewerAvailable ? (
+                <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-5 text-center">
+                  <p className="text-xs font-medium">{t(($) => $.review_lens.no_reviewer_title)}</p>
+                  <p className="mt-1 text-[12px] text-muted-foreground">
+                    {t(($) => $.review_lens.no_reviewer_body)}
+                  </p>
+                </div>
               ) : !review || !hasVerdict ? (
                 <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-5 text-center">
                   <p className="text-xs font-medium">{t(($) => $.review_lens.no_review_title)}</p>

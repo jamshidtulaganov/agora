@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { Sparkles, Plus, Bot, User, Loader2, FlaskConical, Play, CircleStop, Check, X, Film, ListChecks, RotateCcw, Bug, MoreHorizontal, ChevronRight } from "lucide-react";
+import { Sparkles, Plus, Bot, User, Loader2, FlaskConical, Play, CircleStop, Check, X, Film, ListChecks, RotateCcw, Bug, MoreHorizontal, ChevronRight, Circle } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core/hooks";
@@ -788,6 +788,46 @@ function CaseRow({
           )}
         </div>
       </div>
+      {/* While this case is RUNNING, surface WHAT it checks as a live checklist
+          right under the title — the agent's own to-do for this test — so the
+          human isn't left watching a spinner with no idea what's being verified.
+          We can't mark WHICH step is live (the agent emits per-case, not
+          per-step, markers), so every step reads as a neutral checklist item;
+          the header spinner carries the "in progress" signal. Falls back to the
+          case's single `expected` when it has no structured steps. */}
+      {isRunning && (parsedSteps.length > 0 || c.expected) && (
+        <div className="mt-2 rounded-md border border-info/30 bg-info/5 px-2 py-1.5">
+          <div className="mb-1 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-info">
+            <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden />
+            {t(($) => $.test_cases.checking_now)}
+          </div>
+          {parsedSteps.length > 0 ? (
+            <ol className="space-y-0.5">
+              {parsedSteps.map((s, i) => (
+                <li key={i} className="flex items-start gap-1.5 text-[11px]">
+                  <Circle className="mt-[3px] size-2.5 shrink-0 text-info/50" aria-hidden />
+                  <span className="min-w-0 text-foreground/85">
+                    {s.action}
+                    {s.expects && (
+                      <span className="text-muted-foreground">
+                        {" → "}
+                        {t(($) => $.test_cases.step_expects_inline)} {s.expects}
+                      </span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <div className="flex items-start gap-1.5 text-[11px]">
+              <Circle className="mt-[3px] size-2.5 shrink-0 text-info/50" aria-hidden />
+              <span className="min-w-0 text-foreground/85">
+                {t(($) => $.test_cases.step_expects_inline)} {c.expected}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
       {stepRunOpen && (
         <StepRunChecklist
           steps={parsedSteps}

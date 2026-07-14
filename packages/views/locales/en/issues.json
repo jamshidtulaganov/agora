@@ -410,6 +410,10 @@
       "inspect": "checking output"
     }
   },
+  "plan_panel": {
+    "title": "Plan",
+    "progress": "{{done}}/{{total}}"
+  },
   "live_editor": {
     "live": "Live",
     "idle_title": "Nothing running yet",
@@ -478,6 +482,13 @@
     "out_of_date": "Out of date — re-run",
     "checks_count": "{{count}} checks",
     "captured": "Captured"
+  },
+  "qa_cases": {
+    "title": "Test cases",
+    "progress": "{{passed}}/{{total}} passed",
+    "failed": "· {{count}} failed",
+    "negative": "neg",
+    "flaky": "flaky"
   },
   "qa_review": {
     "back": "Back to QA queue",
@@ -572,6 +583,7 @@
     "step_action_ph": "Step action, e.g. Click Save",
     "step_expects_ph": "Expects (optional)",
     "step_expects_inline": "expects:",
+    "checking_now": "Checking now",
     "add_step": "Add step",
     "remove_step": "Remove step",
     "expected_ph": "Overall expected result",
@@ -1064,7 +1076,9 @@
     "gate_review": "Code review",
     "gate_state_failed": "failed",
     "gate_state_pending": "not run yet",
-    "details": "Details"
+    "details": "Details",
+    "blocked_qa_fail": "QA is failing — fix the failing cases first; review unlocks when QA passes.",
+    "blocked_qa_stale": "The QA verdict is stale — re-run QA before review."
   },
   "sprint_deploy": {
     "heading": "Deploy",

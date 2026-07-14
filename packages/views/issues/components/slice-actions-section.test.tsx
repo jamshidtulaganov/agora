@@ -84,6 +84,8 @@ afterEach(() => cleanup());
 describe("SliceActionsSection", () => {
   it("renders the four action buttons when the issue has an agent assignee", () => {
     renderWithI18n(<SliceActionsSection issueId="issue-1" />);
+    // The section is collapsed by default (rail simplicity) — expand it first.
+    fireEvent.click(screen.getByRole("button", { name: /AI actions/i }));
 
     expect(screen.getByRole("button", { name: "Draft code" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Write docs" })).toBeInTheDocument();
@@ -95,6 +97,8 @@ describe("SliceActionsSection", () => {
     queryState.issue = makeIssue({ assignee_type: "member", assignee_id: "user-2" });
     queryState.agents = [];
     renderWithI18n(<SliceActionsSection issueId="issue-1" />);
+    // The section is collapsed by default (rail simplicity) — expand it first.
+    fireEvent.click(screen.getByRole("button", { name: /AI actions/i }));
 
     expect(screen.getByText(/Assignee picker/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Draft code" })).not.toBeInTheDocument();
@@ -104,6 +108,8 @@ describe("SliceActionsSection", () => {
     queryState.issue = makeIssue({ assignee_type: "member", assignee_id: "user-2" });
     queryState.agents = [makeAgent()];
     renderWithI18n(<SliceActionsSection issueId="issue-1" />);
+    // The section is collapsed by default (rail simplicity) — expand it first.
+    fireEvent.click(screen.getByRole("button", { name: /AI actions/i }));
 
     expect(screen.getByRole("button", { name: "Draft code" })).toBeInTheDocument();
     expect(screen.queryByText(/Assignee picker/i)).not.toBeInTheDocument();
@@ -117,12 +123,16 @@ describe("SliceActionsSection", () => {
       makeAgent({ id: "agent-y", owner_id: "someone-else" }),
     ];
     renderWithI18n(<SliceActionsSection issueId="issue-1" />);
+    // The section is collapsed by default (rail simplicity) — expand it first.
+    fireEvent.click(screen.getByRole("button", { name: /AI actions/i }));
 
     expect(screen.getByText(/Assignee picker/i)).toBeInTheDocument();
   });
 
   it("fires api.sliceAction with the kind and trimmed scope, then toasts success", async () => {
     renderWithI18n(<SliceActionsSection issueId="issue-1" />);
+    // The section is collapsed by default (rail simplicity) — expand it first.
+    fireEvent.click(screen.getByRole("button", { name: /AI actions/i }));
 
     const scopeInput = screen.getByPlaceholderText(/Scope \(optional\)/i);
     fireEvent.change(scopeInput, { target: { value: "  the login form  " } });
@@ -140,6 +150,8 @@ describe("SliceActionsSection", () => {
 
   it("omits scope from the body when the scope input is empty", async () => {
     renderWithI18n(<SliceActionsSection issueId="issue-1" />);
+    // The section is collapsed by default (rail simplicity) — expand it first.
+    fireEvent.click(screen.getByRole("button", { name: /AI actions/i }));
 
     fireEvent.click(screen.getByRole("button", { name: "Draft code" }));
 
@@ -151,6 +163,8 @@ describe("SliceActionsSection", () => {
   it("toasts an error when the action fails", async () => {
     mockSliceAction.mockRejectedValueOnce(new Error("boom"));
     renderWithI18n(<SliceActionsSection issueId="issue-1" />);
+    // The section is collapsed by default (rail simplicity) — expand it first.
+    fireEvent.click(screen.getByRole("button", { name: /AI actions/i }));
 
     fireEvent.click(screen.getByRole("button", { name: "Write docs" }));
 

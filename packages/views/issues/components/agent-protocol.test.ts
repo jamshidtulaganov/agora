@@ -60,6 +60,7 @@ describe("parseAgentProtocol — explicit backend marker", () => {
     expect(mk("run_test_cases")).toBe("gen_tests");
     expect(mk("compile_tests")).toBe("gen_tests");
     expect(mk("review_part")).toBe("review");
+    expect(mk("run_review")).toBe("review");
     expect(mk("design_proposal")).toBe("design");
     expect(mk("draft_code")).toBe("delegate");
     expect(mk("something_new")).toBe("delegate");
@@ -68,5 +69,14 @@ describe("parseAgentProtocol — explicit backend marker", () => {
   it("honors a marked comment even below the length floor (marker is authoritative)", () => {
     const c = `<!--agent-protocol:run_qa-->\n${mention} go.`;
     expect(parseAgentProtocol(c, "agent")).not.toBeNull();
+  });
+
+  it("honors a MARKED comment from a MEMBER author (human-triggered Run review/QA)", () => {
+    // A human clicking "Run review" posts the marked prompt attributed to the
+    // member — it must still collapse into a headline, not dump the template.
+    const c = `<!--agent-protocol:run_review-->\n${mention} Review this issue's pull request as an INDEPENDENT code reviewer. ${"r".repeat(400)}`;
+    const p = parseAgentProtocol(c, "member");
+    expect(p).not.toBeNull();
+    expect(p!.kind).toBe("review");
   });
 })

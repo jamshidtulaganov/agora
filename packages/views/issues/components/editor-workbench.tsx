@@ -16,7 +16,6 @@ import {
   Loader2,
   PanelRightClose,
   PanelRightOpen,
-  Play,
   TriangleAlert,
   Users,
 } from "lucide-react";
@@ -29,12 +28,9 @@ import { LiveAgentCodeEditor } from "./live-agent-code-editor";
 import { useEditorAppErrors } from "./use-editor-app-errors";
 import { AgentWorkingIndicator } from "./agent-working-indicator";
 import { EditorReviewBar } from "./editor-review-bar";
-import {
-  EditorPreviewPane,
-  parseTestOutput,
-  type TestRunState,
-} from "./editor-preview-pane";
+import { parseTestOutput, type TestRunState } from "./editor-preview-pane";
 import { EditorBrowserPane } from "./editor-browser-pane";
+import { runEditorTest } from "./editor-test-run";
 import { EditorContextPanel } from "./editor-context-panel";
 import { EditorAskBar } from "./editor-ask-bar";
 import { EditorChangesList } from "./editor-changes-list";
@@ -76,7 +72,10 @@ export interface EditorDaemon {
   env?: Record<string, string>;
 }
 
-export type EditorWorkbenchPane = "live" | "code" | "preview" | "browser";
+// "app" is the merged vibe-coder view: the interactive shared browser (auto-
+// starts the dev server and shows the running app) — it absorbed the former
+// separate "preview" and "browser" tabs. "live" = Watch the agent, "code" = IDE.
+export type EditorWorkbenchPane = "live" | "code" | "app";
 
 type AgentLiveStatus = "running" | "queued" | "done" | "failed";
 
@@ -172,9 +171,7 @@ const EDITOR_UNREACHABLE_LABEL =
 // raw-string convention (they don't use useT()).
 const BROWSER_STARTING_LABEL = "starting browser…";
 const BROWSER_UNAVAILABLE_LABEL =
-  "Live browser unavailable — no live worktree yet. Assign an agent or wait for the daemon to come online, then reopen this tab.";
-const PREVIEW_UNAVAILABLE_LABEL =
-  "Preview runs the app's dev server next to the editor — available on self-host runtimes for now. On cloud runtimes, use the Browser tab to watch the live QA Chromium instead.";
+  "Live app unavailable — no live worktree yet. Assign an agent or wait for the daemon to come online, then reopen this tab.";
 
 export interface EditorSession {
   state: LaunchState;
@@ -410,8 +407,8 @@ export function EditorWorkbench({
   });
   const projectSettings = project?.settings;
 
-  // Lifted test-run state — shared between EditorPreviewPane (button + bottom
-  // bar); parseTestOutput summarizes the raw runner output for that bar.
+  // Lifted test-run state — drives the App tab's Run-tests button + its inline
+  // pass/fail pill; parseTestOutput summarizes the raw runner output.
   const [testRunState, setTestRunState] = useState<TestRunState>({
     testState: "idle",
     testOut: "",
@@ -426,6 +423,18 @@ export function EditorWorkbench({
       ...result,
       parsedTests: parseTestOutput(result.testOut),
     });
+  };
+
+  // Run-tests trigger for the merged App tab — the former Preview pane's button,
+  // folded into the App view. Uses the shared runEditorTest helper against the
+  // agent's worktree and feeds the lifted testRunState so the inline pass/fail
+  // pill renders. No-op unless a daemon + selected agent are present.
+  const runAppTests = async () => {
+    if (!daemon || !selectedAgent) return;
+    handleTestResult({ testState: "running", testOut: "", testPassed: null, testCmd: "" });
+    handleTestResult(
+      await runEditorTest(daemon.url, selectedAgent.work_dir, projectSettings?.qa_test_cmd),
+    );
   };
 
   // Right panel: watch the agent's live file edits, or chat to steer it. Full
@@ -448,14 +457,15 @@ export function EditorWorkbench({
   const leftPane = leftPaneProp ?? ownLeftPane;
   const setLeftPane = onLeftPaneChange ?? setOwnLeftPane;
 
-  // App-health watcher: while the vibe views (Watch/Preview) are up, count the
+  // App-health watcher: while the vibe views (Watch / App) are up, count the
   // running app's console errors + failed requests via an events-only browser
-  // stream, so the banner below surfaces "your app has problems" without the
-  // user being on the Browser tab. Needs a daemon that supports events_only.
+  // stream, so the banner below surfaces "your app has problems" even before
+  // the user opens the interactive App view. Needs a daemon that supports
+  // events_only.
   const { errorCount: appErrorCount } = useEditorAppErrors({
     daemonUrl: daemon?.url,
     workdir: selectedAgent?.work_dir,
-    enabled: leftPane === "live" || leftPane === "preview",
+    enabled: leftPane === "live" || leftPane === "app",
   });
 
   // Is an agent currently running on this issue? Drives the Live tab's pulse
@@ -682,10 +692,10 @@ export function EditorWorkbench({
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1 text-xs">
-            {/* Vibe-coder first: Watch the agent → Preview the running app →
-                Browser (open + use it) | Code (the IDE, for developers). The
-                three left of the divider are all "see / use your app"; Code is
-                the advanced developer view. */}
+            {/* Vibe-coder first: Watch the agent → App (see + use the running
+                app: the interactive shared browser, dev server auto-started) |
+                Code (the IDE, for developers). App merges the former Preview +
+                Browser tabs — one place to see and drive your app. */}
             <button
               type="button"
               onClick={() => setLeftPane("live")}
@@ -707,30 +717,44 @@ export function EditorWorkbench({
             </button>
             <button
               type="button"
-              onClick={() => setLeftPane("preview")}
-              title="See your app running"
+              onClick={() => setLeftPane("app")}
+              title="See + use your running app — you and the agent share one browser"
               className={cn(
                 "rounded px-2 py-0.5 font-medium transition-colors",
-                leftPane === "preview"
+                leftPane === "app"
                   ? "bg-accent text-foreground"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
-              Preview
+              App
             </button>
-            <button
-              type="button"
-              onClick={() => setLeftPane("browser")}
-              title="Open your app in a browser — you and the agent share it"
-              className={cn(
-                "rounded px-2 py-0.5 font-medium transition-colors",
-                leftPane === "browser"
-                  ? "bg-accent text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              Browser
-            </button>
+            {/* Run tests — folded in from the old Preview pane. Only meaningful
+                on a self-host runtime with a live worktree (daemon + agent). */}
+            {daemon && selectedAgent && (
+              <button
+                type="button"
+                onClick={() => void runAppTests()}
+                disabled={testRunState.testState === "running"}
+                title="Run the project's tests in the agent's worktree"
+                className={cn(
+                  "flex items-center gap-1 rounded px-2 py-0.5 font-medium transition-colors",
+                  "text-muted-foreground hover:text-foreground disabled:opacity-60",
+                )}
+              >
+                {testRunState.testState === "running" ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : testRunState.testState === "done" && testRunState.testPassed !== null ? (
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "size-1.5 rounded-full",
+                      testRunState.testPassed ? "bg-emerald-500" : "bg-destructive",
+                    )}
+                  />
+                ) : null}
+                Run tests
+              </button>
+            )}
             {/* Divider: left = see / use your app (vibe coder); Code = the
                 developer IDE. */}
             <span aria-hidden className="mx-1 h-3.5 w-px shrink-0 bg-border" />
@@ -749,7 +773,7 @@ export function EditorWorkbench({
             </button>
           </div>
           <div className="relative min-h-0 flex-1">
-            {appErrorCount > 0 && (leftPane === "live" || leftPane === "preview") && (
+            {appErrorCount > 0 && leftPane === "live" && (
               <div className="absolute inset-x-0 top-0 z-20 flex items-center gap-2 border-b border-destructive/30 bg-destructive/10 px-3 py-1.5 text-[11px] text-destructive">
                 <TriangleAlert className="size-3.5 shrink-0" />
                 <span className="flex-1 truncate">
@@ -757,7 +781,7 @@ export function EditorWorkbench({
                 </span>
                 <button
                   type="button"
-                  onClick={() => setLeftPane("browser")}
+                  onClick={() => setLeftPane("app")}
                   className="shrink-0 font-medium underline underline-offset-2 transition-opacity hover:opacity-80"
                 >
                   Inspect
@@ -772,7 +796,7 @@ export function EditorWorkbench({
                 />
               </div>
             )}
-            {/* Code-server stays mounted (hidden) so switching to Preview
+            {/* Code-server stays mounted (hidden) so switching to the App tab
                 and back never reloads VS Code. */}
             <div
               className={cn(
@@ -793,38 +817,18 @@ export function EditorWorkbench({
                 </div>
               )}
             </div>
-            {leftPane === "preview" &&
-              (daemon && selectedAgent ? (
-                <div className="absolute inset-0 flex">
-                  <EditorPreviewPane
-                    daemonUrl={daemon.url}
-                    workdir={selectedAgent.work_dir}
-                    defaultDevCommand={projectSettings?.qa_smoke_cmd}
-                    defaultTestCommand={projectSettings?.qa_test_cmd}
-                    testRunState={testRunState}
-                    onTestResult={handleTestResult}
-                  />
-                </div>
-              ) : (
-                // Cloud mode: the preview pane drives the daemon's
-                // /editor/preview API from the BROWSER, which only works
-                // when the daemon is reachable directly (self-host).
-                // Without this the tab rendered a silently blank pane.
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
-                  <span className="flex size-11 items-center justify-center rounded-full bg-muted">
-                    <Play className="size-5 text-muted-foreground/60" />
-                  </span>
-                  <p className="max-w-[300px] text-[11px] leading-relaxed text-muted-foreground">
-                    {PREVIEW_UNAVAILABLE_LABEL}
-                  </p>
-                </div>
-              ))}
-            {leftPane === "browser" &&
+            {/* App — the merged Preview + Browser view. The shared interactive
+                Chromium with autoPreview auto-starts the dev server in the
+                agent's worktree and navigates to it, so you SEE the running app
+                AND drive it, sharing one browser with the agent. Self-host only
+                (needs a direct daemon + a live worktree). */}
+            {leftPane === "app" &&
               (daemon && selectedAgent ? (
                 <div className="absolute inset-0 flex">
                   <EditorBrowserPane
                     daemonUrl={daemon.url}
                     workdir={selectedAgent.work_dir}
+                    autoPreview
                   />
                 </div>
               ) : (

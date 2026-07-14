@@ -197,6 +197,34 @@ describe("TestCasesPanel — running case + fail expansion", () => {
     expect(screen.queryByText("Running")).not.toBeInTheDocument();
   });
 
+  it("shows the running case's steps as a live checklist so the human sees WHAT is being verified", async () => {
+    apiMocks.getIssueTestCases.mockResolvedValue({
+      test_cases: [automatedCase({ id: "tc-1", steps: "1. add to cart\n2. pay" })],
+    });
+    qaLiveProgressMocks.useRunningTestCaseId.mockReturnValue("tc-1");
+
+    renderPanel();
+
+    // The "Checking now" checklist header appears with the case's own steps —
+    // without the user having to click to expand the collapsed row.
+    expect(await screen.findByText("Checking now")).toBeInTheDocument();
+    expect(screen.getByText(/add to cart/)).toBeInTheDocument();
+    expect(screen.getByText(/pay/)).toBeInTheDocument();
+  });
+
+  it("does NOT show the checklist for a case that is not running", async () => {
+    apiMocks.getIssueTestCases.mockResolvedValue({
+      test_cases: [automatedCase({ id: "tc-1", steps: "1. add to cart\n2. pay" })],
+    });
+    qaLiveProgressMocks.useRunningTestCaseId.mockReturnValue(null);
+
+    renderPanel();
+
+    await screen.findByText("Checkout — happy path");
+    // Collapsed, not running → the "Checking now" checklist stays hidden.
+    expect(screen.queryByText("Checking now")).not.toBeInTheDocument();
+  });
+
   it("opens a fail row automatically and shows the agent's WHY output; a pass row stays collapsed", async () => {
     apiMocks.getIssueTestCases.mockResolvedValue({
       test_cases: [

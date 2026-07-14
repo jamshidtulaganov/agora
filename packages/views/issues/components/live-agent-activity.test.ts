@@ -438,6 +438,46 @@ describe("deriveTodos", () => {
     expect(deriveTodos([tool(1, "Bash", { command: "ls" })])).toEqual([]);
     expect(deriveTodos([tool(1, "TodoWrite", { todos: "nope" })])).toEqual([]);
   });
+
+  it("parses a fenced ```todo block from text (providers without a todo tool)", () => {
+    const todos = deriveTodos([
+      text(1, "PROGRESS: Fixing the typo\n```todo\n- [x] Read the code\n- [~] Fix the typo\n- [ ] Run the tests\n```"),
+    ]);
+    expect(todos).toEqual([
+      { content: "Read the code", status: "completed" },
+      { content: "Fix the typo", status: "in_progress" },
+      { content: "Run the tests", status: "pending" },
+    ]);
+  });
+
+  it("uses the LATEST fenced ```todo block (each rewrites the list)", () => {
+    const todos = deriveTodos([
+      text(1, "```todo\n- [~] Read the code\n- [ ] Fix the typo\n```"),
+      text(2, "```todo\n- [x] Read the code\n- [x] Fix the typo\n- [~] Run the tests\n```"),
+    ]);
+    expect(todos).toEqual([
+      { content: "Read the code", status: "completed" },
+      { content: "Fix the typo", status: "completed" },
+      { content: "Run the tests", status: "in_progress" },
+    ]);
+  });
+
+  it("prefers a TodoWrite tool call over a text block, but falls back to the block", () => {
+    // Tool present → wins.
+    expect(
+      deriveTodos([
+        text(1, "```todo\n- [ ] from text\n```"),
+        tool(2, "TodoWrite", { todos: [{ content: "from tool", status: "pending" }] }),
+      ]),
+    ).toEqual([{ content: "from tool", status: "pending" }]);
+    // Only a malformed tool → falls through to the block.
+    expect(
+      deriveTodos([
+        text(1, "```todo\n- [~] from text\n```"),
+        tool(2, "TodoWrite", { todos: "nope" }),
+      ]),
+    ).toEqual([{ content: "from text", status: "in_progress" }]);
+  });
 });
 
 describe("unwrapShell", () => {

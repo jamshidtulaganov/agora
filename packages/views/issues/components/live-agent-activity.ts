@@ -783,11 +783,46 @@ export function deriveProgressHeadline(items: TimelineItem[]): string | null {
 
 const TODO_TOOLS = new Set(["todowrite", "todo_write", "todo", "update_todos"]);
 
+// Provider-agnostic plan fallback. Claude Code has a TodoWrite tool; codex /
+// gemini / etc. do NOT, so a runtime without it would show no to-do list at
+// all. The runtime brief therefore asks EVERY agent to also emit its checklist
+// as a fenced ```todo block in its streamed text (see runtime_config.go). Each
+// block REWRITES the whole list (like TodoWrite), so the latest block wins.
+// Markers: `[ ]` pending, `[x]`/`[X]` done, `[~]`/`[>]` in progress.
+const TODO_FENCE_RE = /```todo[^\n]*\n([\s\S]*?)```/gi;
+const TODO_LINE_RE = /^\s*[-*]\s*\[([ xX~>])\]\s*(.+?)\s*$/;
+
+function deriveTodosFromText(items: TimelineItem[]): TodoItem[] {
+  let block: string | null = null;
+  for (const item of items) {
+    if (item.type !== "text" || !item.content) continue;
+    // Latest fenced ```todo block anywhere in this text item wins.
+    const re = new RegExp(TODO_FENCE_RE);
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(item.content)) !== null) block = m[1]!;
+  }
+  if (block == null) return [];
+  const out: TodoItem[] = [];
+  for (const line of block.split("\n")) {
+    const m = line.match(TODO_LINE_RE);
+    if (!m) continue;
+    const content = m[2]!.trim();
+    if (!content) continue;
+    const marker = m[1]!.toLowerCase();
+    const status: TodoStatus =
+      marker === "x" ? "completed" : marker === "~" || marker === ">" ? "in_progress" : "pending";
+    out.push({ content, status });
+  }
+  return out;
+}
+
 /**
- * The agent's current to-do list, parsed from the most recent TodoWrite-style
- * tool call. Defensive: unknown shapes / missing fields degrade to an empty
- * list rather than throwing (the payload is untyped JSON off the wire). Returns
- * [] when the agent doesn't maintain a plan. Preserves the agent's order.
+ * The agent's current to-do list. Prefers the most recent TodoWrite-style tool
+ * call (Claude Code); falls back to the latest fenced ```todo block in the
+ * agent's text (provider-agnostic — codex/gemini/etc.). Defensive: unknown
+ * shapes / missing fields degrade to an empty list rather than throwing (the
+ * payload is untyped JSON off the wire). Returns [] when the agent maintains no
+ * plan. Preserves the agent's order.
  */
 export function deriveTodos(items: TimelineItem[]): TodoItem[] {
   for (let i = items.length - 1; i >= 0; i--) {
@@ -795,7 +830,9 @@ export function deriveTodos(items: TimelineItem[]): TodoItem[] {
     if (item.type !== "tool_use") continue;
     if (!TODO_TOOLS.has((item.tool ?? "").trim().toLowerCase())) continue;
     const raw = (item.input as Record<string, unknown> | undefined)?.todos;
-    if (!Array.isArray(raw)) return [];
+    // A TodoWrite call with a malformed payload → fall through to the text
+    // block rather than showing nothing.
+    if (!Array.isArray(raw)) return deriveTodosFromText(items);
     const out: TodoItem[] = [];
     for (const entry of raw) {
       if (!entry || typeof entry !== "object") continue;
@@ -816,5 +853,6 @@ export function deriveTodos(items: TimelineItem[]): TodoItem[] {
     }
     return out;
   }
-  return [];
+  // No TodoWrite-style tool call in the stream → try the fenced ```todo block.
+  return deriveTodosFromText(items);
 }

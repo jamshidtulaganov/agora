@@ -73,7 +73,8 @@ export function useStepText(step: ActivityStep): string {
 
 // Subscribe a single task's live message cache and derive its step trail +
 // changeset. Encapsulates the shared plumbing so the surfaces below only render.
-function useTaskLive(taskId: string) {
+// Exported for the issue plan panel's solo (undecomposed) fallback.
+export function useTaskLive(taskId: string) {
   const { data: messages = [] } = useQuery(taskMessagesOptions(taskId));
   const timeline = useMemo(() => buildTimeline(messages), [messages]);
   const steps = useMemo(() => deriveMilestoneSteps(timeline), [timeline]);

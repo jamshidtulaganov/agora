@@ -25,12 +25,6 @@ import { BreadcrumbHeader, type BreadcrumbSegment } from "../../layout/breadcrum
 import { CockpitFrame } from "../../layout/cockpit-frame";
 import { InspectorSection } from "../../layout/inspector-section";
 import { Skeleton } from "@agora/ui/components/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger } from "@agora/ui/components/ui/tabs";
-import {
-  classifyEntryRoot,
-  activityTabCounts,
-  type ActivityTab,
-} from "./activity-tabs";
 import { Button, buttonVariants } from "@agora/ui/components/ui/button";
 import { ContentEditor, type ContentEditorRef, TitleEditor, useFileDropZone, FileDropOverlay } from "../../editor";
 import { FileUploadButton } from "@agora/ui/components/common/file-upload-button";
@@ -72,7 +66,6 @@ import { EditorSection } from "./editor-section";
 import { QAEvidenceSection } from "./qa-evidence-section";
 import { IssueRepoSection } from "./issue-repo-section";
 import { WorkModeSwitch } from "./work-mode-switch";
-import { AgentWorkingIndicator } from "./agent-working-indicator";
 import { SliceActionsSection } from "./slice-actions-section";
 import { PullRequestList } from "./pull-request-list";
 import { FigmaLinksSection } from "./figma-links-section";
@@ -80,6 +73,7 @@ import { DesignProposalSection } from "./design-proposal-section";
 import { DesignAuditSection } from "./design-audit-section";
 import { SDLCStepper } from "./sdlc-stepper";
 import { StageTrailing } from "./stage-live-process";
+import { IssuePlanPanel } from "./issue-plan-panel";
 import { useStagePipeline } from "./use-stage-pipeline";
 import { useLensParam, getLens, isLensRegistered } from "../lens";
 import { useGitHubSettings } from "@agora/core/github";
@@ -385,8 +379,10 @@ function ActivityBlock({
     truncateOlder && !showOlder && entries.length > LAST_ACTIVITY_BLOCK_VISIBLE_LIMIT
       ? entries.length - LAST_ACTIVITY_BLOCK_VISIBLE_LIMIT
       : 0;
+  // Entries arrive newest-first, so "the most recent N" = the FIRST N; the
+  // hidden remainder is the older tail below.
   const visibleEntries =
-    hiddenOlderCount > 0 ? entries.slice(-LAST_ACTIVITY_BLOCK_VISIBLE_LIMIT) : entries;
+    hiddenOlderCount > 0 ? entries.slice(0, LAST_ACTIVITY_BLOCK_VISIBLE_LIMIT) : entries;
   // Hide the "v N activities" collapse header while we're in the truncated
   // default state. The "Show N more" link is the only control users need
   // when they're glancing at recent activity — stacking two chevron rows
@@ -404,16 +400,6 @@ function ActivityBlock({
         >
           <ChevronDown className="h-3 w-3 shrink-0" />
           <span>{t(($) => $.activity.activity_count, { count: entries.length })}</span>
-        </button>
-      )}
-      {hiddenOlderCount > 0 && (
-        <button
-          type="button"
-          onClick={onToggleShowOlder}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ChevronRight className="h-3 w-3 shrink-0" />
-          <span>{t(($) => $.activity.show_more_activities, { count: hiddenOlderCount })}</span>
         </button>
       )}
       {visibleEntries.map((entry) => {
@@ -467,6 +453,18 @@ function ActivityBlock({
           </div>
         );
       })}
+      {/* Older tail sits BELOW the visible newest entries (newest-first feed),
+          so the reveal control follows the list instead of leading it. */}
+      {hiddenOlderCount > 0 && (
+        <button
+          type="button"
+          onClick={onToggleShowOlder}
+          className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ChevronRight className="h-3 w-3 shrink-0" />
+          <span>{t(($) => $.activity.show_more_activities, { count: hiddenOlderCount })}</span>
+        </button>
+      )}
     </div>
   );
 }
@@ -838,14 +836,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // this, every WS event (including reactions, edits, AI streaming on an
   // unrelated thread) hands every card a brand-new prop reference and forces
   // every thread subtree to re-render in lockstep.
-  // Activity tab: which slice of the feed to show. Ephemeral UI state (not
-  // persisted) — resets to the unified "all" view on each issue open.
-  const [activityTab, setActivityTab] = useState<ActivityTab>("all");
-
-  // Per-tab top-level counts for the tab badges. Computed off the full timeline
-  // so the badges stay stable regardless of the active tab.
-  const tabCounts = useMemo(() => activityTabCounts(timeline), [timeline]);
-
   // Best-effort prefill for the "post summary to Bitrix" action: the most recent
   // agent comment (the agent's final summary — branch name + bug causes usually
   // live here). The human reviews/edits before posting.
@@ -859,26 +849,21 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     return "";
   }, [timeline]);
 
-  // The timeline slice fed into the grouping pipeline for the active tab. "all"
-  // passes through; otherwise keep only entries whose thread root matches the
-  // tab, so a thread never splits across tabs.
-  const filteredTimeline = useMemo(() => {
-    if (activityTab === "all") return timeline;
-    const byId = new Map(timeline.map((e) => [e.id, e]));
-    return timeline.filter((e) => classifyEntryRoot(e, byId) === activityTab);
-  }, [timeline, activityTab]);
-
   const prevThreadRepliesRef = useRef<Map<string, TimelineEntry[]>>(new Map());
   const timelineView = useMemo(() => {
     // Group entries: top-level = activities + root comments; replies are
     // bucketed under their parent's id and rendered nested inside CommentCard.
     // No orphan rescue needed: the timeline is fetched in full, so every
     // reply's parent is always in the same array.
-    const topLevel = filteredTimeline.filter(
-      (e) => e.type === "activity" || !e.parent_id,
-    );
+    // NEWEST FIRST: the timeline arrives oldest-first (ASC); reverse the
+    // top-level entries so the latest comment/activity leads the feed. Replies
+    // inside a thread deliberately KEEP chronological order (a conversation
+    // still reads top-down inside its card) — only the top level flips.
+    const topLevel = timeline
+      .filter((e) => e.type === "activity" || !e.parent_id)
+      .reverse();
     const repliesByParent = new Map<string, TimelineEntry[]>();
-    for (const e of filteredTimeline) {
+    for (const e of timeline) {
       if (e.type === "comment" && e.parent_id) {
         const list = repliesByParent.get(e.parent_id) ?? [];
         list.push(e);
@@ -945,7 +930,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     }
 
     return { threadReplies, groups };
-  }, [filteredTimeline]);
+  }, [timeline]);
 
   // Flat array consumed by <Virtuoso>. Recomputed when timelineView.groups
   // changes (timeline events) or expandedResolved flips (user toggles a
@@ -963,10 +948,10 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     [timelineView.groups, expandedResolved],
   );
 
-  // ID of the trailing activity block — the only one expanded by default.
+  // ID of the NEWEST activity block — the only one expanded by default. The
+  // feed is newest-first, so the newest block is the FIRST activities group.
   const lastActivityGroupId = useMemo(() => {
-    for (let i = timelineView.groups.length - 1; i >= 0; i--) {
-      const g = timelineView.groups[i]!;
+    for (const g of timelineView.groups) {
       if (g.type === "activities") return g.entries[0]!.id;
     }
     return null;
@@ -1601,18 +1586,13 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       {/* How to work this issue — two modes. Prompts: hand the agent scoped
           slice-actions. Editor: co-code live in the embedded editor. The choice
           persists per issue (work_mode in metadata) and drives which agents do. */}
-      <div className="space-y-1.5">
-        <WorkModeSwitch
-          value={getWorkMode(issue)}
-          onChange={handleWorkModeChange}
-          disabled={setWorkMode.isPending}
-        />
-        <p className="px-1 text-[11px] leading-snug text-muted-foreground">
-          {getWorkMode(issue) === "in_editor"
-            ? "Co-code live in the editor — agents run on the worktree, you watch and edit."
-            : "Hand the agent scoped prompts — draft code, docs, tests, or review."}
-        </p>
-      </div>
+      {/* Explainer prose removed — the switch labels carry the meaning
+          (rail simplicity: controls, not paragraphs). */}
+      <WorkModeSwitch
+        value={getWorkMode(issue)}
+        onChange={handleWorkModeChange}
+        disabled={setWorkMode.isPending}
+      />
 
       {/* Prompts mode — AI slice-actions (draft code / docs / tests / review). */}
       {getWorkMode(issue) === "full_pipeline" && (
@@ -1631,16 +1611,13 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
         />
       )}
 
-      {/* QA evidence — the frozen run_qa verdict (command table + new-failure
-          attribution) read from one indexed row. Self-gating: hides unless the
-          issue is in_review or already has a captured verdict. */}
-      <QAEvidenceSection issueId={id} status={issue.status} />
+      {/* Live test-case progress lives in the PLAN card (nested children of
+          the QA step); the QA verdict lives in the BODY right under the plan —
+          the rail carries controls and settled metadata only. */}
 
-      {/* Chat-style "agent is working / typing…" row — appears the moment a
-          comment or assignment puts the issue's agent into a queued/running
-          task, disappears when the run ends. Self-contained; reuses the agent
-          task snapshot (WS-invalidated), so it tracks the conversation live. */}
-      <AgentWorkingIndicator issueId={id} />
+      {/* "Agent is working" indicator REMOVED from the rail — it duplicated
+          the header chip (IssueAgentHeaderChip) and the stepper's live
+          headline; three copies of the same signal was noise. */}
 
       {/* Execution log — active runs + collapsed past runs. Self-contained;
           owns its own collapse state and WS subscriptions. Hides itself
@@ -2072,6 +2049,30 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             );
           })()}
 
+          {/* Plan — the CURRENT stage's live progress, placed between the
+              description and Activity so the page reads what → how → history:
+              the task's identity leads, the execution plan follows, the
+              feed closes. Self-hides when there's no plan yet; the stepper's
+              trailing headline stays the compact top-of-page live signal. */}
+          <div className="mt-8">
+            <IssuePlanPanel
+              childIssues={childIssues}
+              currentTaskId={
+                stagePipeline.stages.find((s) => s.stage === stagePipeline.current)?.taskId ?? null
+              }
+              orchestratorAgentId={issue.orchestrator_agent_id}
+              issueId={id}
+              stage={stagePipeline.current}
+            />
+          </div>
+
+          {/* QA verdict — right under the plan, same reading flow: what the
+              task is → how it ran → the verdict → the discussion. Self-hides
+              until a verdict exists. */}
+          <div className="mt-4">
+            <QAEvidenceSection issueId={id} status={issue.status} />
+          </div>
+
           <div className="my-8 border-t" />
 
           {/* Activity / Comments */}
@@ -2157,43 +2158,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 first commit. Without this null guard Virtuoso falls back to
                 its own scroller, grabs 0 height inside overflow-y-auto, and
                 miscomputes total-height on first paint. */}
-            {/* Activity tabs: split the mixed feed — Bitrix comments, agent
-                responses, and people discussion each get their own view, with
-                the unified "All" as default. Agent responses already lead the
-                feed (newest-first). Hidden until there's more than one origin,
-                so a plain human thread isn't cluttered with empty tabs. */}
-            {tabCounts.all > 0 &&
-              [tabCounts.agents, tabCounts.bitrix, tabCounts.people].filter(
-                (n) => n > 0,
-              ).length > 1 && (
-                <Tabs
-                  value={activityTab}
-                  onValueChange={(v) => setActivityTab(v as ActivityTab)}
-                  className="mt-4"
-                >
-                  <TabsList variant="line">
-                    <TabsTrigger value="all">
-                      {t(($) => $.activity_tabs.all)} · {tabCounts.all}
-                    </TabsTrigger>
-                    {tabCounts.agents > 0 && (
-                      <TabsTrigger value="agents">
-                        {t(($) => $.activity_tabs.agents)} · {tabCounts.agents}
-                      </TabsTrigger>
-                    )}
-                    {tabCounts.bitrix > 0 && (
-                      <TabsTrigger value="bitrix">
-                        {t(($) => $.activity_tabs.bitrix)} · {tabCounts.bitrix}
-                      </TabsTrigger>
-                    )}
-                    {tabCounts.people > 0 && (
-                      <TabsTrigger value="people">
-                        {t(($) => $.activity_tabs.people)} · {tabCounts.people}
-                      </TabsTrigger>
-                    )}
-                  </TabsList>
-                </Tabs>
-              )}
-
+            {/* Unified newest-first feed — the origin-split tabs (All/Agents/
+                Bitrix/People) were removed: one feed, latest activity on top. */}
             {timelineLoading && timelineView.groups.length === 0 ? (
               <TimelineSkeleton />
             ) : (
@@ -2277,18 +2243,20 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       railCollapsed={wideLens}
       header={renderHeader}
       topStrip={
-        <SDLCStepper
-          pipeline={stagePipeline}
-          activeLens={activeLens}
-          isLensAvailable={(stage) => isLensRegistered(stage)}
-          onSelectStage={setLens}
-          trailing={
-            <StageTrailing
-              pipeline={stagePipeline}
-              orchestratorAgentId={issue.orchestrator_agent_id}
-            />
-          }
-        />
+        <>
+          <SDLCStepper
+            pipeline={stagePipeline}
+            activeLens={activeLens}
+            isLensAvailable={(stage) => isLensRegistered(stage)}
+            onSelectStage={setLens}
+            trailing={
+              <StageTrailing
+                pipeline={stagePipeline}
+                orchestratorAgentId={issue.orchestrator_agent_id}
+              />
+            }
+          />
+        </>
       }
       rail={sidebarContent}
     >

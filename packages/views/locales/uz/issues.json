@@ -410,6 +410,10 @@
       "inspect": "natijani tekshirmoqda"
     }
   },
+  "plan_panel": {
+    "title": "Reja",
+    "progress": "{{done}}/{{total}}"
+  },
   "live_editor": {
     "live": "Jonli",
     "idle_title": "Hozircha hech nima ishlamayapti",
@@ -478,6 +482,13 @@
     "out_of_date": "Eskirgan — qayta ishga tushiring",
     "checks_count": "{{count}} ta tekshiruv",
     "captured": "Olingan"
+  },
+  "qa_cases": {
+    "title": "Test holatlari",
+    "progress": "{{passed}}/{{total}} o‘tdi",
+    "failed": "· {{count}} yiqildi",
+    "negative": "neg",
+    "flaky": "beqaror"
   },
   "qa_review": {
     "back": "QA navbatiga qaytish",
@@ -572,6 +583,7 @@
     "step_action_ph": "Qadam amali, masalan: Saqlashni bosish",
     "step_expects_ph": "Kutiladi (ixtiyoriy)",
     "step_expects_inline": "kutiladi:",
+    "checking_now": "Hozir tekshirilmoqda",
     "add_step": "Qadam qo'shish",
     "remove_step": "Qadamni o'chirish",
     "expected_ph": "Umumiy kutilgan natija",
@@ -1064,7 +1076,9 @@
     "gate_review": "Kod ko‘rigi",
     "gate_state_failed": "o‘tmadi",
     "gate_state_pending": "hali ishga tushmagan",
-    "details": "Batafsil"
+    "details": "Batafsil",
+    "blocked_qa_fail": "QA yiqilgan — avval yiqilgan keyslarni tuzating; QA o‘tgach review ochiladi.",
+    "blocked_qa_stale": "QA verdikti eskirgan — reviewdan oldin QA’ni qayta yuguring."
   },
   "sprint_deploy": {
     "heading": "Deploy",

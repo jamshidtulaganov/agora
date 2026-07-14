@@ -399,6 +399,10 @@
       "inspect": "正在检查输出"
     }
   },
+  "plan_panel": {
+    "title": "计划",
+    "progress": "{{done}}/{{total}}"
+  },
   "live_editor": {
     "live": "实时",
     "idle_title": "暂无运行",
@@ -467,6 +471,13 @@
     "out_of_date": "已过期 — 请重新运行",
     "checks_count": "{{count}} 项检查",
     "captured": "捕获于"
+  },
+  "qa_cases": {
+    "title": "测试用例",
+    "progress": "{{passed}}/{{total}} 通过",
+    "failed": "· {{count}} 失败",
+    "negative": "负例",
+    "flaky": "不稳定"
   },
   "qa_review": {
     "back": "返回 QA 队列",
@@ -561,6 +572,7 @@
     "step_action_ph": "步骤操作，例如：点击保存",
     "step_expects_ph": "预期结果（可选）",
     "step_expects_inline": "预期：",
+    "checking_now": "正在检查",
     "add_step": "添加步骤",
     "remove_step": "删除步骤",
     "expected_ph": "总体预期结果",
@@ -1049,7 +1061,9 @@
     "gate_review": "代码审查",
     "gate_state_failed": "未通过",
     "gate_state_pending": "尚未运行",
-    "details": "详情"
+    "details": "详情",
+    "blocked_qa_fail": "QA 未通过——请先修复失败用例；QA 通过后评审解锁。",
+    "blocked_qa_stale": "QA 结论已过期——评审前请重新运行 QA。"
   },
   "sprint_deploy": {
     "heading": "部署",

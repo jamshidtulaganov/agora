@@ -36,9 +36,12 @@ export function QAEvidenceSection({ issueId, status }: QAEvidenceSectionProps) {
 
   const { data: evidence, isLoading } = useQuery(qaEvidenceOptions(issueId));
 
-  // Don't intrude on tasks where QA isn't relevant yet: hide unless there's a
-  // captured verdict or the issue is actively in review.
-  if (!evidence && status !== "in_review") return null;
+  // Rail simplicity: render ONLY when a verdict actually exists. The old
+  // in_review empty state (dashed "no verdict yet" box + hint + Re-run) was
+  // noise — the plan card + stepper already show QA running; this box appears
+  // the moment there is a verdict to show.
+  if (!evidence) return null;
+  void status;
 
   const verdict = evidence?.verdict ?? "";
   const verdictIcon =

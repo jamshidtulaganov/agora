@@ -25,11 +25,18 @@ vi.mock("./live-agent-code-editor", () => ({
   LiveAgentCodeEditor: () => <div data-testid="live-agent-editor" />,
 }));
 vi.mock("./editor-preview-pane", () => ({
-  EditorPreviewPane: () => <div data-testid="preview-pane" />,
   parseTestOutput: () => ({ failed: [], failedCount: 0, passedCount: 0 }),
 }));
 vi.mock("./editor-browser-pane", () => ({
   EditorBrowserPane: () => <div data-testid="browser-pane" />,
+}));
+vi.mock("./editor-test-run", () => ({
+  runEditorTest: vi.fn(async () => ({
+    testState: "done",
+    testOut: "",
+    testPassed: true,
+    testCmd: "npm test",
+  })),
 }));
 vi.mock("./editor-context-panel", () => ({
   EditorContextPanel: () => <div data-testid="context-panel" />,
@@ -99,7 +106,8 @@ describe("EditorWorkbench", () => {
   it("renders the pane switcher, ask bar, agent chips, and the Watch pane by default", () => {
     renderWorkbench();
 
-    for (const name of ["Watch", "Code", "Preview", "Browser"]) {
+    // Preview + Browser merged into one "App" tab.
+    for (const name of ["Watch", "Code", "App"]) {
       expect(screen.getByRole("button", { name })).toBeInTheDocument();
     }
     expect(screen.getByTestId("ask-bar")).toBeInTheDocument();
@@ -110,21 +118,17 @@ describe("EditorWorkbench", () => {
     // Code never reloads VS Code.
     expect(screen.getByTestId("live-agent-editor")).toBeInTheDocument();
     expect(screen.getByTitle("code editor (expanded)")).toBeInTheDocument();
-    expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("browser-pane")).not.toBeInTheDocument();
   });
 
-  it("switching panes swaps the mounted pane; the code iframe stays mounted (hidden)", () => {
+  it("switching to App mounts the browser pane; the code iframe stays mounted (hidden)", () => {
     renderWorkbench();
 
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
-    expect(screen.getByTestId("preview-pane")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "App" }));
+    expect(screen.getByTestId("browser-pane")).toBeInTheDocument();
     // Code-server never unmounts on a pane switch — switching back must not
     // reload VS Code.
     expect(screen.getByTitle("code editor (expanded)")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Browser" }));
-    expect(screen.getByTestId("browser-pane")).toBeInTheDocument();
-    expect(screen.queryByTestId("preview-pane")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Watch" }));
     expect(screen.getByTestId("live-agent-editor")).toBeInTheDocument();
@@ -133,15 +137,15 @@ describe("EditorWorkbench", () => {
 
   it("supports a controlled left pane (the Dialog host's contract)", () => {
     const onLeftPaneChange = vi.fn();
-    renderWorkbench({ leftPane: "preview", onLeftPaneChange });
+    renderWorkbench({ leftPane: "live", onLeftPaneChange });
 
-    expect(screen.getByTestId("preview-pane")).toBeInTheDocument();
+    expect(screen.getByTestId("live-agent-editor")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Browser" }));
-    expect(onLeftPaneChange).toHaveBeenCalledWith("browser");
+    fireEvent.click(screen.getByRole("button", { name: "App" }));
+    expect(onLeftPaneChange).toHaveBeenCalledWith("app");
     // Controlled: the pane doesn't move until the host re-renders with the
     // new value.
-    expect(screen.getByTestId("preview-pane")).toBeInTheDocument();
+    expect(screen.getByTestId("live-agent-editor")).toBeInTheDocument();
   });
 
   it("switches the right rail between Activity and Context (no Chat tab)", () => {

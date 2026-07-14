@@ -110,7 +110,7 @@ beforeEach(() => {
 describe("LiveAgentCodeEditor", () => {
   it("shows the idle empty state when no agent is running", () => {
     renderWithI18n(<LiveAgentCodeEditor issueId="issue-1" />);
-    expect(screen.getByText("No live run")).toBeInTheDocument();
+    expect(screen.getByText("Nothing running yet")).toBeInTheDocument();
   });
 
   it("ignores terminal and unrelated tasks", () => {
@@ -119,7 +119,7 @@ describe("LiveAgentCodeEditor", () => {
       makeTask({ id: "t-other", issue_id: "issue-2" }),
     ];
     renderWithI18n(<LiveAgentCodeEditor issueId="issue-1" />);
-    expect(screen.getByText("No live run")).toBeInTheDocument();
+    expect(screen.getByText("Nothing running yet")).toBeInTheDocument();
   });
 
   it("shows the warming-up state for a run with no edits yet", () => {

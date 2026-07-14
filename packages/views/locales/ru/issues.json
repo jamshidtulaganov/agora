@@ -410,6 +410,10 @@
       "inspect": "проверяет вывод"
     }
   },
+  "plan_panel": {
+    "title": "План",
+    "progress": "{{done}}/{{total}}"
+  },
   "live_editor": {
     "live": "Live",
     "idle_title": "Пока ничего не выполняется",
@@ -478,6 +482,13 @@
     "out_of_date": "Устарело — перезапустите",
     "checks_count": "{{count}} проверок",
     "captured": "Получено"
+  },
+  "qa_cases": {
+    "title": "Тест-кейсы",
+    "progress": "{{passed}}/{{total}} пройдено",
+    "failed": "· {{count}} провал.",
+    "negative": "нег",
+    "flaky": "нестаб."
   },
   "qa_review": {
     "back": "Назад к очереди QA",
@@ -572,6 +583,7 @@
     "step_action_ph": "Действие шага, напр. Нажать «Сохранить»",
     "step_expects_ph": "Ожидается (необязательно)",
     "step_expects_inline": "ожидается:",
+    "checking_now": "Проверяется сейчас",
     "add_step": "Добавить шаг",
     "remove_step": "Удалить шаг",
     "expected_ph": "Итоговый ожидаемый результат",
@@ -1064,7 +1076,9 @@
     "gate_review": "Код-ревью",
     "gate_state_failed": "не пройдено",
     "gate_state_pending": "ещё не запускалось",
-    "details": "Подробнее"
+    "details": "Подробнее",
+    "blocked_qa_fail": "QA не пройден — сначала исправьте падающие кейсы; ревью откроется после прохождения QA.",
+    "blocked_qa_stale": "Вердикт QA устарел — перезапустите QA перед ревью."
   },
   "sprint_deploy": {
     "heading": "Деплой",
