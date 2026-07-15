@@ -90,8 +90,8 @@ win:
   artifactName: agora-desktop-${version}-windows-${arch}.${ext}
 publish:
   provider: github
-  owner: agora-ai
-  repo: agora
+  owner: jamshidtulaganov
+  repo: agora-cli
   # Align with our CLI release flow which pre-creates a *published* GitHub
   # Release via `gh release create`. The electron-builder default of
   # `releaseType: draft` conflicts with `existingType=release` and causes

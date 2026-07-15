@@ -1,10 +1,10 @@
 # Agora installer for Windows — one command to get started.
 #
 # Install CLI (default): connects to agora.dev
-#   irm https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.ps1 | iex
 #
 # Self-host: starts a local Agora server + installs CLI + configures
-#   $env:AGORA_MODE="local"; irm https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.ps1 | iex
+#   $env:AGORA_MODE="local"; irm https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.ps1 | iex
 #
 
 $ErrorActionPreference = "Stop"
@@ -13,7 +13,7 @@ $ErrorActionPreference = "Stop"
 # Configuration
 # ---------------------------------------------------------------------------
 $RepoUrl       = "https://github.com/jamshidtulaganov/agora.git"
-$RepoWebUrl    = "https://github.com/jamshidtulaganov/agora"
+$ReleaseRepoWebUrl = "https://github.com/jamshidtulaganov/agora-cli"
 $DefaultInstallDir = Join-Path $env:USERPROFILE ".agora\server"
 $InstallDir    = if ($env:AGORA_INSTALL_DIR) { $env:AGORA_INSTALL_DIR } else { $DefaultInstallDir }
 
@@ -85,7 +85,7 @@ function Get-SelfHostFrontendPort {
 
 function Get-LatestVersion {
     try {
-        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/jamshidtulaganov/agora/releases/latest" -ErrorAction Stop
+        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/jamshidtulaganov/agora-cli/releases/latest" -ErrorAction Stop
         return $release.tag_name
     } catch {
         return $null
@@ -246,7 +246,7 @@ function Install-CliBinary {
     }
 
     $version = $latest.TrimStart('v')
-    $url = "https://github.com/jamshidtulaganov/agora/releases/download/$latest/agora-cli-$version-windows-$arch.zip"
+    $url = "$ReleaseRepoWebUrl/releases/download/$latest/agora-cli-$version-windows-$arch.zip"
     $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "agora-install"
 
     if (Test-Path $tmpDir) { Remove-Item $tmpDir -Recurse -Force }
@@ -261,7 +261,7 @@ function Install-CliBinary {
     }
 
     # Verify SHA256 checksum
-    $checksumUrl = "https://github.com/jamshidtulaganov/agora/releases/download/$latest/checksums.txt"
+    $checksumUrl = "$ReleaseRepoWebUrl/releases/download/$latest/checksums.txt"
     try {
         $checksums = Invoke-WebRequest -Uri $checksumUrl -UseBasicParsing -ErrorAction Stop
         $checksumContent = if ($checksums.Content -is [byte[]]) {
@@ -287,10 +287,12 @@ function Install-CliBinary {
             }
             Write-Ok "Checksum verified"
         } else {
-            Write-Warn "Could not find checksum entry for $releaseAsset — skipping verification."
+            Remove-Item $tmpDir -Recurse -Force
+            Write-Fail "Could not find checksum entry for $releaseAsset. Refusing an unverified install."
         }
     } catch {
-        Write-Warn "Could not download checksums.txt — skipping verification."
+        Remove-Item $tmpDir -Recurse -Force
+        Write-Fail "Could not verify checksums.txt. Refusing an unverified install: $_"
     }
 
     Expand-Archive -Path (Join-Path $tmpDir "agora.zip") -DestinationPath $tmpDir -Force
@@ -488,7 +490,7 @@ function Start-DefaultInstall {
     Write-Host "     agora setup self-host      " -NoNewline; Write-Host "# Connect to a self-hosted server" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  Self-hosting? Install the server first:"
-    Write-Host '     $env:AGORA_MODE="with-server"; irm https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.ps1 | iex'
+    Write-Host '     $env:AGORA_MODE="with-server"; irm https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.ps1 | iex'
     Write-Host ""
 }
 
@@ -524,7 +526,7 @@ function Start-LocalInstall {
     Write-Host "  or read the generated code from backend logs when Resend is unset."
     Write-Host ""
     Write-Host "  To stop all services:"
-    Write-Host '     $env:AGORA_MODE="stop"; irm https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.ps1 | iex'
+    Write-Host '     $env:AGORA_MODE="stop"; irm https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.ps1 | iex'
     Write-Host ""
 }
 

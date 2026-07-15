@@ -83,6 +83,42 @@ jobs:
           # the separate public distribution repo.
           GITHUB_TOKEN: ${{ secrets.AGORA_CLI_RELEASE_TOKEN }}
 
+  # The source repository is private, while the one-line installers must stay
+  # publicly readable. Keep the root scripts in our public distribution repo
+  # in lockstep with every verified release tag.
+  sync-public-installers:
+    needs: verify
+    if: github.repository_owner == 'jamshidtulaganov'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Agora source
+        uses: actions/checkout@v4
+
+      - name: Checkout public distribution repo
+        uses: actions/checkout@v4
+        with:
+          repository: jamshidtulaganov/agora-cli
+          token: ${{ secrets.AGORA_CLI_RELEASE_TOKEN }}
+          path: public-distribution
+
+      - name: Sync public installers
+        shell: bash
+        run: |
+          cp scripts/install.sh public-distribution/install.sh
+          cp scripts/install.ps1 public-distribution/install.ps1
+          chmod +x public-distribution/install.sh
+
+          cd public-distribution
+          git config user.name "agora-release-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add install.sh install.ps1
+          if git diff --cached --quiet; then
+            echo "Public installers are already current."
+            exit 0
+          fi
+          git commit -m "chore: sync installers for ${{ needs.verify.outputs.tag_name }}"
+          git push origin HEAD:main
+
   # Multi-arch images are built natively per platform on dedicated runners
   # (amd64 on ubuntu-latest, arm64 on ubuntu-24.04-arm) and merged into a
   # manifest list. This avoids QEMU emulation, which was making the Next.js
@@ -323,7 +359,7 @@ jobs:
 
   helm-chart:
     needs: [verify, docker-backend-merge, docker-web-merge]
-    if: github.repository_owner == 'agora-ai'
+    if: github.repository_owner == 'jamshidtulaganov'
     runs-on: ubuntu-latest
     concurrency:
       group: release-helm-chart-${{ github.ref }}
@@ -409,9 +445,9 @@ jobs:
       - name: Package Desktop installers (${{ matrix.target }})
         working-directory: apps/desktop
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.AGORA_CLI_RELEASE_TOKEN }}
           # electron-builder's GitHub publisher reads this:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.AGORA_CLI_RELEASE_TOKEN }}
           # Disable code signing on Linux/Windows for now — the public
           # release is unsigned for these platforms, the CLI carries the
           # trust boundary. Set CSC_LINK in repo secrets to enable

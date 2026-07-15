@@ -65,7 +65,7 @@ changelog:
       - "^test:"
       - "^chore:"
 
-# Homebrew tap disabled — agora-ai/homebrew-tap isn't ours. Distribution is via
+# Homebrew tap disabled — the previous tap was not owned by this project. Distribution is via
 # the public agora-cli repo's release binaries (curl install.sh). To add
 # `brew install` later, create your own tap repo and re-add a `brews:` block
 # pointing at it (with a PAT in HOMEBREW_TAP_GITHUB_TOKEN).

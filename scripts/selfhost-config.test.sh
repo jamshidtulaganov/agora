@@ -52,6 +52,7 @@ tmp_env="$(mktemp)"
 trap 'rm -f "$tmp_env"' EXIT
 sed 's/^FRONTEND_PORT=.*/FRONTEND_PORT=3100/' .env.example >"$tmp_env"
 printf '\nBACKEND_PORT=9100\n' >>"$tmp_env"
+printf 'AGORA_DAEMON_INTERNAL=host.docker.internal:20038\n' >>"$tmp_env"
 
 local_env="$(
   env -i PATH="$PATH" bash -c '
@@ -71,7 +72,8 @@ local_env="$(
       "GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}" \
       "AGORA_SERVER_URL=${AGORA_SERVER_URL}" \
       "LOCAL_UPLOAD_BASE_URL=${LOCAL_UPLOAD_BASE_URL}" \
-      "PLAYWRIGHT_BASE_URL=${PLAYWRIGHT_BASE_URL}"
+      "PLAYWRIGHT_BASE_URL=${PLAYWRIGHT_BASE_URL}" \
+      "AGORA_DAEMON_INTERNAL=${AGORA_DAEMON_INTERNAL}"
   ' _ "$tmp_env"
 )"
 
@@ -83,5 +85,6 @@ require_env "$local_env" 'GOOGLE_REDIRECT_URI=http://localhost:3100/auth/callbac
 require_env "$local_env" 'AGORA_SERVER_URL=ws://localhost:9100/ws'
 require_env "$local_env" 'LOCAL_UPLOAD_BASE_URL=http://localhost:9100'
 require_env "$local_env" 'PLAYWRIGHT_BASE_URL=http://localhost:3100'
+require_env "$local_env" 'AGORA_DAEMON_INTERNAL='
 
 echo "self-host env derivation ok"

@@ -7,7 +7,7 @@ The `agora` CLI connects your local machine to Agora. It handles authentication,
 ### Homebrew (macOS/Linux)
 
 ```bash
-brew install agora-ai/tap/agora
+curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.sh | bash
 ```
 
 ### Build from Source
@@ -22,7 +22,7 @@ cp server/bin/agora /usr/local/bin/agora
 ### Update
 
 ```bash
-brew upgrade agora-ai/tap/agora
+agora update
 ```
 
 For install script or manual installs, use:

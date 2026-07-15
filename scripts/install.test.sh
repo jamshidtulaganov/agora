@@ -3,9 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Build a self-contained sandbox with stub `curl` and a tarball that the
-# release-binary fallback path will download. Each test supplies its own
-# `brew` stub to model a specific Homebrew failure mode.
+# Build a self-contained sandbox with stub `curl` and the release tarball that
+# the official agora-cli GitHub Release path downloads.
 _setup_sandbox() {
   local tmp="$1"
   local stub_bin="$tmp/stub-bin"
@@ -19,11 +18,27 @@ echo "agora v0.3.2 (commit: test)"
 STUB
   chmod +x "$payload_dir/agora"
   tar -czf "$tmp/agora.tar.gz" -C "$payload_dir" agora
+  if command -v shasum >/dev/null 2>&1; then
+    checksum="$(shasum -a 256 "$tmp/agora.tar.gz" | awk '{print $1}')"
+  else
+    checksum="$(sha256sum "$tmp/agora.tar.gz" | awk '{print $1}')"
+  fi
+
+  # Keep the fixture portable when the host architecture differs from the
+  # current macOS ARM development machine.
+  case "$(uname -s)-$(uname -m)" in
+    Darwin-x86_64) asset="agora-cli-0.3.2-darwin-amd64.tar.gz" ;;
+    Darwin-arm64) asset="agora-cli-0.3.2-darwin-arm64.tar.gz" ;;
+    Linux-x86_64) asset="agora-cli-0.3.2-linux-amd64.tar.gz" ;;
+    Linux-aarch64|Linux-arm64) asset="agora-cli-0.3.2-linux-arm64.tar.gz" ;;
+    *) echo "unsupported test platform" >&2; return 1 ;;
+  esac
+  printf '%s  %s\n' "$checksum" "$asset" >"$tmp/checksums.txt"
 
   cat >"$stub_bin/curl" <<'STUB'
 #!/usr/bin/env bash
 if [[ "$*" == *"-sI"* ]]; then
-  printf 'HTTP/2 302\r\nlocation: https://github.com/jamshidtulaganov/agora/releases/tag/v0.3.2\r\n'
+  printf 'HTTP/2 302\r\nlocation: https://github.com/jamshidtulaganov/agora-cli/releases/tag/v0.3.2\r\n'
   exit 0
 fi
 
@@ -44,7 +59,10 @@ if [[ -z "$out" ]]; then
   echo "stub curl expected -o" >&2
   exit 2
 fi
-cp "$AGORA_TEST_ARCHIVE" "$out"
+case "$out" in
+  *checksums.txt) cp "$AGORA_TEST_CHECKSUMS" "$out" ;;
+  *) cp "$AGORA_TEST_ARCHIVE" "$out" ;;
+esac
 STUB
   chmod +x "$stub_bin/curl"
 }
@@ -56,6 +74,7 @@ _run_installer() {
   if ! PATH="$tmp/stub-bin:$tmp/install-bin:/usr/bin:/bin" \
     AGORA_BIN_DIR="$tmp/install-bin" \
     AGORA_TEST_ARCHIVE="$tmp/agora.tar.gz" \
+    AGORA_TEST_CHECKSUMS="$tmp/checksums.txt" \
     bash "$ROOT_DIR/scripts/install.sh" >"$out" 2>"$err"; then
     echo "install.sh exited non-zero" >&2
     cat "$out" >&2 || true
@@ -70,14 +89,14 @@ _run_installer() {
     return 1
   fi
 
-  if ! grep -q "Homebrew output (last 80 lines):" "$err"; then
-    echo "expected diagnostic tail in stderr" >&2
+  if ! grep -q "Installing Agora CLI from GitHub Releases" "$out"; then
+    echo "expected GitHub Release install path" >&2
     cat "$err" >&2 || true
     return 1
   fi
 }
 
-test_brew_install_failure_falls_back_to_release_binary() {
+test_installs_from_owned_release_even_when_brew_exists() {
   local tmp
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
@@ -85,51 +104,34 @@ test_brew_install_failure_falls_back_to_release_binary() {
   _setup_sandbox "$tmp"
   cat >"$tmp/stub-bin/brew" <<'STUB'
 #!/usr/bin/env bash
-case "${1:-}" in
-  tap)
-    exit 0
-    ;;
-  install)
-    echo "simulated brew install failure" >&2
-    exit 42
-    ;;
-  list)
-    exit 1
-    ;;
-  *)
-    exit 0
-    ;;
-esac
+echo "brew must not be used by the Agora-owned release installer" >&2
+exit 91
 STUB
   chmod +x "$tmp/stub-bin/brew"
 
   _run_installer "$tmp"
 }
 
-test_brew_tap_failure_falls_back_to_release_binary() {
+test_upgrades_existing_cli_from_owned_release() {
   local tmp
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
 
   _setup_sandbox "$tmp"
-  cat >"$tmp/stub-bin/brew" <<'STUB'
+  cat >"$tmp/install-bin/agora" <<'STUB'
 #!/usr/bin/env bash
-case "${1:-}" in
-  tap)
-    echo "simulated brew tap failure" >&2
-    exit 17
-    ;;
-  *)
-    echo "brew $* should not be reached after tap failure" >&2
-    exit 99
-    ;;
-esac
+echo "agora v0.3.1 (commit: previous)"
 STUB
-  chmod +x "$tmp/stub-bin/brew"
+  chmod +x "$tmp/install-bin/agora"
 
   _run_installer "$tmp"
+
+  if [[ "$("$tmp/install-bin/agora" version)" != *"v0.3.2"* ]]; then
+    echo "expected existing CLI to be upgraded from the owned release" >&2
+    return 1
+  fi
 }
 
-test_brew_install_failure_falls_back_to_release_binary
-test_brew_tap_failure_falls_back_to_release_binary
+test_installs_from_owned_release_even_when_brew_exists
+test_upgrades_existing_cli_from_owned_release
 echo "install.sh tests passed"

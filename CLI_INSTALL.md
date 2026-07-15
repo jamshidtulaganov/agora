@@ -7,7 +7,7 @@
 Give this instruction to your AI agent:
 
 ```
-Fetch https://github.com/jamshidtulaganov/agora/blob/main/CLI_INSTALL.md and follow the instructions to install Agora CLI, log in, and start the daemon on this machine.
+Fetch https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.sh and use it to install Agora CLI, then run `agora setup` to log in and start the daemon on this machine.
 ```
 
 ---
@@ -29,37 +29,17 @@ agora version
 
 > **Windows users:** Skip to [Option C: Windows (PowerShell)](#option-c-windows-powershell) below.
 
-### Option A: Homebrew (preferred — macOS/Linux)
-
-Check if Homebrew is available:
+### Option A: Official installer (preferred — macOS/Linux)
 
 ```bash
-which brew
+curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.sh | bash
 ```
 
-If `brew` is found, install via Homebrew:
+Then verify with `agora version`. To upgrade later, run `agora update`.
 
-```bash
-brew install agora-ai/tap/agora
-```
+### Option B: Manual GitHub Release download (macOS/Linux)
 
-Then verify:
-
-```bash
-agora version
-```
-
-If the version prints successfully, skip to **Step 3**.
-
-To upgrade later, run:
-
-```bash
-brew upgrade agora-ai/tap/agora
-```
-
-### Option B: Download from GitHub Releases (macOS/Linux, no Homebrew)
-
-If Homebrew is not available, download the binary directly.
+To install manually, download the binary directly from Agora's public distribution repository.
 
 Detect OS and architecture, then download the correct archive:
 
@@ -73,11 +53,11 @@ if [ "$ARCH" = "x86_64" ]; then
 fi
 
 # Get the latest release tag from GitHub
-LATEST=$(curl -sI https://github.com/jamshidtulaganov/agora/releases/latest | grep -i '^location:' | sed 's/.*tag\///' | tr -d '\r\n')
+LATEST=$(curl -sI https://github.com/jamshidtulaganov/agora-cli/releases/latest | grep -i '^location:' | sed 's/.*tag\///' | tr -d '\r\n')
 
 # Download and extract
 VERSION="${LATEST#v}"
-curl -sL "https://github.com/jamshidtulaganov/agora/releases/download/${LATEST}/agora-cli-${VERSION}-${OS}-${ARCH}.tar.gz" -o /tmp/agora.tar.gz
+curl -sL "https://github.com/jamshidtulaganov/agora-cli/releases/download/${LATEST}/agora-cli-${VERSION}-${OS}-${ARCH}.tar.gz" -o /tmp/agora.tar.gz
 tar -xzf /tmp/agora.tar.gz -C /tmp agora
 sudo mv /tmp/agora /usr/local/bin/agora
 rm /tmp/agora.tar.gz
@@ -99,7 +79,7 @@ agora version
 Run in PowerShell (no admin required):
 
 ```powershell
-irm https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.ps1 | iex
 ```
 
 This downloads the latest Windows binary from GitHub Releases, installs it to `%USERPROFILE%\.agora\bin\`, and adds it to your user PATH.

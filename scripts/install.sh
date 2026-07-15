@@ -2,10 +2,10 @@
 # Agora installer — installs the CLI and optionally provisions a self-host server.
 #
 # Install / upgrade CLI only:
-#   curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.sh | bash
 #
 # Install CLI + provision self-host server:
-#   curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.sh | bash -s -- --with-server
+#   curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.sh | bash -s -- --with-server
 #
 # After installation, run `agora setup` to configure your environment.
 #
@@ -15,9 +15,8 @@ set -euo pipefail
 # Configuration
 # ---------------------------------------------------------------------------
 REPO_URL="https://github.com/jamshidtulaganov/agora.git"
-REPO_WEB_URL="https://github.com/jamshidtulaganov/agora"  # without .git, for GitHub web APIs
+RELEASE_REPO_WEB_URL="https://github.com/jamshidtulaganov/agora-cli"
 INSTALL_DIR="${AGORA_INSTALL_DIR:-$HOME/.agora/server}"
-BREW_PACKAGE="agora-ai/tap/agora"
 
 # Colors (disabled when not a terminal)
 if [ -t 1 ] || [ -t 2 ]; then
@@ -40,6 +39,24 @@ warn()  { printf "${BOLD}${YELLOW}⚠ %s${RESET}\n" "$*" >&2; }
 fail()  { printf "${BOLD}${RED}✗ %s${RESET}\n" "$*" >&2; exit 1; }
 
 command_exists() { command -v "$1" >/dev/null 2>&1; }
+
+verify_sha256() {
+  local file="$1"
+  local expected="$2"
+  local actual expected_normalized
+  if command_exists shasum; then
+    actual=$(shasum -a 256 "$file" | awk '{print $1}')
+  elif command_exists sha256sum; then
+    actual=$(sha256sum "$file" | awk '{print $1}')
+  else
+    fail "A SHA-256 tool (shasum or sha256sum) is required to verify the CLI release."
+  fi
+  actual=$(printf '%s' "$actual" | tr '[:upper:]' '[:lower:]')
+  expected_normalized=$(printf '%s' "$expected" | tr '[:upper:]' '[:lower:]')
+  if [ "$actual" != "$expected_normalized" ]; then
+    return 1
+  fi
+}
 
 env_file_value() {
   local file="$1"
@@ -87,7 +104,7 @@ detect_os() {
     Linux)  OS="linux" ;;
     MINGW*|MSYS*|CYGWIN*)
             fail "This script does not support Windows. Use the PowerShell installer instead:
-  irm https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.ps1 | iex" ;;
+  irm https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.ps1 | iex" ;;
     *)      fail "Unsupported operating system: $(uname -s). Agora supports macOS, Linux, and Windows." ;;
   esac
 
@@ -103,53 +120,20 @@ detect_os() {
 # ---------------------------------------------------------------------------
 # CLI Installation
 # ---------------------------------------------------------------------------
-_dump_brew_log() {
-  local log="$1"
-  if [ -s "$log" ]; then
-    warn "Homebrew output (last 80 lines):"
-    tail -n 80 "$log" | sed 's/^/  /' >&2
-  fi
-}
-
-install_cli_brew() {
-  info "Installing Agora CLI via Homebrew..."
-  local brew_log
-  brew_log=$(mktemp)
-  if ! brew tap agora-ai/tap >"$brew_log" 2>&1; then
-    warn "Failed to add Homebrew tap. Falling back to GitHub Releases binary install."
-    _dump_brew_log "$brew_log"
-    rm -f "$brew_log"
-    return 1
-  fi
-  # brew install exits non-zero if already installed on older Homebrew versions
-  if ! brew install "$BREW_PACKAGE" >"$brew_log" 2>&1; then
-    if brew list "$BREW_PACKAGE" >/dev/null 2>&1; then
-      rm -f "$brew_log"
-      ok "Agora CLI already installed via Homebrew"
-    else
-      warn "Failed to install agora via Homebrew. Falling back to GitHub Releases binary install."
-      _dump_brew_log "$brew_log"
-      rm -f "$brew_log"
-      return 1
-    fi
-  else
-    rm -f "$brew_log"
-    ok "Agora CLI installed via Homebrew"
-  fi
-}
-
 install_cli_binary() {
   info "Installing Agora CLI from GitHub Releases..."
 
   # Get latest release tag
   local latest
-  latest=$(curl -sI "$REPO_WEB_URL/releases/latest" 2>/dev/null | grep -i '^location:' | sed 's/.*tag\///' | tr -d '\r\n' || true)
+  latest=$(curl -sI "$RELEASE_REPO_WEB_URL/releases/latest" 2>/dev/null | grep -i '^location:' | sed 's/.*tag\///' | tr -d '\r\n' || true)
   if [ -z "$latest" ]; then
     fail "Could not determine latest release. Check your network connection."
   fi
 
   local version="${latest#v}"
-  local url="https://github.com/jamshidtulaganov/agora/releases/download/${latest}/agora-cli-${version}-${OS}-${ARCH}.tar.gz"
+  local asset_name="agora-cli-${version}-${OS}-${ARCH}.tar.gz"
+  local url="$RELEASE_REPO_WEB_URL/releases/download/${latest}/${asset_name}"
+  local checksums_url="$RELEASE_REPO_WEB_URL/releases/download/${latest}/checksums.txt"
   local tmp_dir
   tmp_dir=$(mktemp -d)
 
@@ -158,6 +142,22 @@ install_cli_binary() {
     rm -rf "$tmp_dir"
     fail "Failed to download CLI binary."
   fi
+
+  if ! curl -fsSL "$checksums_url" -o "$tmp_dir/checksums.txt"; then
+    rm -rf "$tmp_dir"
+    fail "Failed to download release checksums; refusing an unverified install."
+  fi
+  local expected_checksum
+  expected_checksum=$(awk -v asset="$asset_name" '$2 == asset { print $1; exit }' "$tmp_dir/checksums.txt")
+  if [ -z "$expected_checksum" ]; then
+    rm -rf "$tmp_dir"
+    fail "Release checksum for $asset_name was not found."
+  fi
+  if ! verify_sha256 "$tmp_dir/agora.tar.gz" "$expected_checksum"; then
+    rm -rf "$tmp_dir"
+    fail "CLI checksum verification failed."
+  fi
+  ok "Checksum verified"
 
   tar -xzf "$tmp_dir/agora.tar.gz" -C "$tmp_dir" agora
 
@@ -175,6 +175,7 @@ install_cli_binary() {
     mv "$tmp_dir/agora" "$bin_dir/agora"
   elif command_exists sudo; then
     sudo mv "$tmp_dir/agora" "$bin_dir/agora"
+  else
     bin_dir="$HOME/.local/bin"
     mkdir -p "$bin_dir"
     mv "$tmp_dir/agora" "$bin_dir/agora"
@@ -202,7 +203,7 @@ add_to_path() {
 
 get_latest_version() {
   # grep exits 1 when no match; use `|| true` to avoid triggering pipefail
-  curl -sI "$REPO_WEB_URL/releases/latest" 2>/dev/null | grep -i '^location:' | sed 's/.*tag\///' | tr -d '\r\n' || true
+  curl -sI "$RELEASE_REPO_WEB_URL/releases/latest" 2>/dev/null | grep -i '^location:' | sed 's/.*tag\///' | tr -d '\r\n' || true
 }
 
 get_selfhost_ref() {
@@ -254,17 +255,6 @@ pull_official_selfhost_images() {
   exit 1
 }
 
-upgrade_cli_brew() {
-  info "Upgrading Agora CLI via Homebrew..."
-  brew update 2>/dev/null || true
-  if brew upgrade "$BREW_PACKAGE" 2>/dev/null; then
-    ok "Agora CLI upgraded via Homebrew"
-  else
-    # brew upgrade exits non-zero if already up to date
-    ok "Agora CLI is already the latest version"
-  fi
-}
-
 install_cli() {
   if command_exists agora; then
     local current_ver
@@ -284,11 +274,7 @@ install_cli() {
     fi
 
     info "Agora CLI $current_ver installed, latest is $latest_ver — upgrading..."
-    if command_exists brew && brew list "$BREW_PACKAGE" >/dev/null 2>&1; then
-      upgrade_cli_brew
-    else
-      install_cli_binary
-    fi
+    install_cli_binary
 
     local new_ver
     new_ver=$(agora version 2>/dev/null | awk '{print $2}' || echo "unknown")
@@ -296,11 +282,7 @@ install_cli() {
     return 0
   fi
 
-  if command_exists brew; then
-    install_cli_brew || install_cli_binary
-  else
-    install_cli_binary
-  fi
+  install_cli_binary
 
   # Verify
   if ! command_exists agora; then
@@ -433,7 +415,7 @@ run_default() {
   printf "     ${CYAN}agora setup self-host${RESET}       # Connect to a self-hosted server\n"
   printf "\n"
   printf "  ${BOLD}Self-hosting?${RESET} Install the server first:\n"
-  printf "     curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.sh | bash -s -- --with-server\n"
+  printf "     curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.sh | bash -s -- --with-server\n"
   printf "\n"
 }
 
@@ -471,7 +453,7 @@ run_with_server() {
   printf "  or read the generated code from backend logs when Resend is unset.\n"
   printf "\n"
   printf "  ${BOLD}To stop all services:${RESET}\n"
-  printf "     curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.sh | bash -s -- --stop\n"
+  printf "     curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.sh | bash -s -- --stop\n"
   printf "\n"
 }
 

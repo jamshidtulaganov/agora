@@ -64,26 +64,18 @@ Agora manages the full agent lifecycle: from task assignment to execution monito
 
 ## Quick Install
 
-### macOS / Linux (Homebrew - recommended)
+### macOS / Linux (official GitHub Release)
 
 ```bash
-brew install agora-ai/tap/agora
+curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.sh | bash
 ```
 
-Use `brew upgrade agora-ai/tap/agora` to keep the CLI current.
-
-### macOS / Linux (install script)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.sh | bash
-```
-
-Use this if Homebrew is not available. The script installs the Agora CLI on macOS and Linux by using Homebrew when it is on `PATH`, otherwise it downloads the binary directly.
+The installer downloads the checksummed CLI binary from Agora's own public `agora-cli` release repository. Use `agora update` to keep it current.
 
 ### Windows (PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.ps1 | iex
 ```
 
 Then configure, authenticate, and start the daemon in one command:
@@ -95,7 +87,7 @@ agora setup          # Connect to Agora Cloud, log in, start daemon
 > **Self-hosting?** Add `--with-server` to deploy a full Agora server on your machine:
 >
 > ```bash
-> curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.sh | bash -s -- --with-server
+> curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.sh | bash -s -- --with-server
 > agora setup self-host
 > ```
 >

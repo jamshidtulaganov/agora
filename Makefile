@@ -100,7 +100,7 @@ selfhost: ## Create .env if needed, then pull and start the official self-hosted
 		echo "        or read the generated code from backend logs when Resend is unset."; \
 		echo ""; \
 		echo "Next — install the CLI and connect your machine:"; \
-		echo "  brew install agora-ai/tap/agora"; \
+		echo "  curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.sh | bash"; \
 		echo "  agora setup self-host"; \
 	else \
 		echo ""; \
@@ -147,7 +147,7 @@ selfhost-build: ## Build backend/web from the current checkout and start the sel
 		echo "Local tags: agora-backend:dev and agora-web:dev."; \
 		echo ""; \
 		echo "Next — install the CLI and connect your machine:"; \
-		echo "  brew install agora-ai/tap/agora"; \
+		echo "  curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.sh | bash"; \
 		echo "  agora setup self-host"; \
 	else \
 		echo ""; \

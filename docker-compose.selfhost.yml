@@ -117,6 +117,7 @@ services:
       # on the host, so set host.docker.internal:<health-port> and bind the
       # daemon to 0.0.0.0 (AGORA_HEALTH_BIND=0.0.0.0) so the container can reach it.
       AGORA_DAEMON_INTERNAL: ${AGORA_DAEMON_INTERNAL:-}
+      AGORA_CLI_RELEASES_URL: ${AGORA_CLI_RELEASES_URL:-}
       ALLOW_SIGNUP: ${ALLOW_SIGNUP:-true}
       ALLOWED_EMAILS: ${ALLOWED_EMAILS:-}
       ALLOWED_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:-}

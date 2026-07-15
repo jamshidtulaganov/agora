@@ -64,18 +64,10 @@ Agora 管理完整的 Agent 生命周期：从任务分配到执行监控再到�
 
 ## 快速安装
 
-### macOS / Linux（推荐 Homebrew）
+### macOS / Linux（官方 GitHub Release）
 
 ```bash
-brew install agora-ai/tap/agora
-```
-
-后续可用 `brew upgrade agora-ai/tap/agora` 更新 CLI。
-
-### macOS / Linux（安装脚本）
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.sh | bash
 ```
 
 如果没有 Homebrew，可以使用安装脚本。脚本会安装 Agora CLI：检测到 `brew` 时通过 Homebrew 安装，否则直接下载二进制。
@@ -83,7 +75,7 @@ curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts
 ### Windows (PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.ps1 | iex
 ```
 
 安装完成后，一条命令完成配置、认证和启动：
@@ -95,7 +87,7 @@ agora setup          # 连接 Agora Cloud，登录，启动 daemon
 > **自部署？** 加上 `--with-server` 在本地部署完整的 Agora 服务：
 >
 > ```bash
-> curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.sh | bash -s -- --with-server
+> curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.sh | bash -s -- --with-server
 > agora setup self-host
 > ```
 >

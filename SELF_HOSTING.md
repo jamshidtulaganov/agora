@@ -18,7 +18,7 @@ Two commands to set up everything — server, CLI, and configuration:
 
 ```bash
 # 1. Install CLI + provision the self-host server
-curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.sh | bash -s -- --with-server
+curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.sh | bash -s -- --with-server
 
 # 2. Configure CLI, authenticate, and start the daemon
 agora setup self-host
@@ -30,10 +30,10 @@ Open http://localhost:3000. To log in, configure `RESEND_API_KEY` in `.env` for 
 
 > **Prerequisites:** Docker and Docker Compose must be installed. The script checks for this and provides install links if missing.
 >
-> **CLI only?** If the self-host server is already running and you only need the CLI on a macOS/Linux machine, install it with Homebrew:
+> **CLI only?** If the self-host server is already running and you only need the CLI on a macOS/Linux machine, install it from Agora's own GitHub Release:
 >
 > ```bash
-> brew install agora-ai/tap/agora
+> curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.sh | bash
 > ```
 
 ---
@@ -86,7 +86,7 @@ Each team member who wants to run AI agents locally needs to:
 ### a) Install the CLI and an AI agent
 
 ```bash
-brew install agora-ai/tap/agora
+curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.sh | bash
 ```
 
 You also need at least one AI agent CLI installed:
@@ -392,7 +392,7 @@ External cron / systemd timer / Kubernetes `CronJob` setups that call `SELECT ro
 If you installed via the install script:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora/main/scripts/install.sh | bash -s -- --stop
+curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.sh | bash -s -- --stop
 ```
 
 If you cloned the repo manually:

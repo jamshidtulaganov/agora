@@ -8,6 +8,7 @@ interface ConfigState {
   telegramBotUsername: string;
   daemonServerUrl: string;
   daemonAppUrl: string;
+  cliReleasesUrl: string;
   // Self-host gate (#3433): when true, every "Create workspace" affordance
   // must be hidden. Defaults to false so unknown / older servers behave like
   // the managed-cloud case.
@@ -38,6 +39,7 @@ interface ConfigState {
     daemonServerUrl?: string;
     daemonAppUrl?: string;
   }) => void;
+  setRuntimeConfig: (config: { cliReleasesUrl?: string }) => void;
 }
 
 export const configStore = createStore<ConfigState>((set) => ({
@@ -47,6 +49,7 @@ export const configStore = createStore<ConfigState>((set) => ({
   telegramBotUsername: "",
   daemonServerUrl: "",
   daemonAppUrl: "",
+  cliReleasesUrl: "",
   workspaceCreationDisabled: false,
   telegramOnly: false,
   bitrixEnabled: false,
@@ -75,6 +78,7 @@ export const configStore = createStore<ConfigState>((set) => ({
     }),
   setDaemonConfig: ({ daemonServerUrl = "", daemonAppUrl = "" }) =>
     set({ daemonServerUrl, daemonAppUrl }),
+  setRuntimeConfig: ({ cliReleasesUrl = "" }) => set({ cliReleasesUrl }),
 }));
 
 export function useConfigStore(): ConfigState;
