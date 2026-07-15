@@ -18,14 +18,8 @@ agora squad member list <squad-id> --output json
 agora issue comment list <issue-id> --recent 20 --output json
 ```
 
-If command shape is unclear, check help:
-
-```bash
-agora squad --help
-agora squad member --help
-agora issue update --help
-agora issue comment add --help
-```
+If command shape is unclear, check `--help` on the subcommand (`agora squad --help`,
+`agora squad member --help`, `agora issue update --help`, `agora issue comment add --help`).
 
 Do not assign, comment, mention, update, delete, or record squad activity just to
 test. These can mutate workspace state or trigger agent runs.

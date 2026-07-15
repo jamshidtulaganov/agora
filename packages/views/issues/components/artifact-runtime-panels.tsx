@@ -57,8 +57,10 @@ function RuntimeSkeleton() {
   return <Skeleton className="min-h-80 w-full rounded-lg motion-reduce:animate-none" />;
 }
 
-function previewKey(artifactId: string, repo: string) {
-  return ["artifact-preview", artifactId, repo] as const;
+function previewKey(artifactId: string, repo: string, capability: string) {
+  // The capability token is part of the key: a rotated token must produce a
+  // fresh fetch instead of serving a status cached under the stale grant.
+  return ["artifact-preview", artifactId, repo, capability] as const;
 }
 
 export function ArtifactPreviewPanel({ issueId }: { issueId: string }) {
@@ -71,7 +73,7 @@ export function ArtifactPreviewPanel({ issueId }: { issueId: string }) {
   const artifact = data?.artifact;
   const capability = data?.capabilities.preview;
   const selectedRepo = selectedArtifactRepo(data, repoName);
-  const key = previewKey(artifact?.id ?? "", selectedRepo?.repo ?? "");
+  const key = previewKey(artifact?.id ?? "", selectedRepo?.repo ?? "", capability ?? "");
 
   const statusQuery = useQuery({
     queryKey: key,
@@ -212,8 +214,10 @@ export function ArtifactPreviewPanel({ issueId }: { issueId: string }) {
   );
 }
 
-function checksKey(artifactId: string, repo: string) {
-  return ["artifact-checks", artifactId, repo] as const;
+function checksKey(artifactId: string, repo: string, capability: string) {
+  // Same rotation rule as previewKey: a fresh capability grant must never be
+  // answered from a cache entry produced under the previous token.
+  return ["artifact-checks", artifactId, repo, capability] as const;
 }
 
 function cleanOutput(value: string): string {
@@ -230,7 +234,7 @@ export function ArtifactChecksPanel({ issueId }: { issueId: string }) {
   const capability = data?.capabilities.checks;
   const selectedRepo = selectedArtifactRepo(data, repoName);
   const checksQuery = useQuery({
-    queryKey: checksKey(artifact?.id ?? "", selectedRepo?.repo ?? ""),
+    queryKey: checksKey(artifact?.id ?? "", selectedRepo?.repo ?? "", capability ?? ""),
     queryFn: async () => {
       const raw = await artifactDaemonPost(data?.daemon_url ?? "", "/artifact/checks", {
         capability: capability ?? "",

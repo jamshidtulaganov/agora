@@ -46,7 +46,7 @@ import { AppLink } from "../../navigation";
 // Multiple repos per project are supported (the vision's multi-repo case): the
 // connect affordance stays available so more can be added.
 //
-// Plain strings (no i18n) to match the sibling editor-section.tsx.
+// Plain strings (no i18n), matching the other dev-workspace sections.
 
 function isGithubRef(
   r: ProjectResource,
