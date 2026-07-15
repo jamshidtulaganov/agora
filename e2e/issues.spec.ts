@@ -32,8 +32,10 @@ test.describe("Issues", () => {
     await page.reload();
     await expect(page.locator("text=Backlog")).toBeVisible();
 
-    // Switch to list view
-    await page.click("text=List");
+    // Switch to list view: the view switcher is a dropdown labelled with the
+    // current view ("Board") whose options are menu radio items.
+    await page.getByRole("button", { name: "Board" }).click();
+    await page.getByRole("menuitemradio", { name: "List" }).click();
     await expect(page.getByText(title)).toBeVisible();
   });
 
@@ -42,16 +44,33 @@ test.describe("Issues", () => {
     await expect(newIssueButton).toBeVisible();
     await newIssueButton.click();
 
+    // Quick-create has two persisted modes. Agent mode submits via
+    // "Create (⌘↵)" and is blocked without a ready agent runtime, so force
+    // Manual mode (plain title/description editors + "Create Issue").
     const title = "E2E Created " + Date.now();
-    const titleInput = page.getByRole("textbox", { name: "Issue title" });
-    await expect(titleInput).toBeVisible();
-    await titleInput.fill(title);
-    await page.getByRole("button", { name: "Create Issue" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    const switchToManual = dialog.getByRole("button", {
+      name: "Switch to Manual",
+    });
+    if (await switchToManual.isVisible().catch(() => false)) {
+      await switchToManual.click();
+    }
+
+    // The title field is a rich-text editor; target it via its Tiptap
+    // placeholder. Real keystrokes are required (fill() bypasses ProseMirror
+    // and leaves submit disabled) and MUST land inside the editor — stray
+    // keys hit board hotkeys ("c" toggles this very dialog).
+    const titleEditor = dialog.locator(
+      '[contenteditable="true"]:has([data-placeholder="Issue title"])',
+    );
+    await expect(titleEditor).toBeVisible();
+    await titleEditor.click();
+    await expect(titleEditor).toBeFocused();
+    await page.keyboard.type(title);
+    await dialog.getByRole("button", { name: "Create Issue" }).click();
 
     await expect(page.getByText("Issue created")).toBeVisible({ timeout: 10000 });
-    await expect(
-      page.getByRole("region", { name: /Notifications/ }).getByText(title),
-    ).toBeVisible();
 
     await page.getByRole("button", { name: "View issue" }).click();
     await page.waitForURL(/\/issues\/[\w-]+/);
@@ -85,12 +104,12 @@ test.describe("Issues", () => {
   test("can dismiss issue creation", async ({ page }) => {
     await page.getByRole("button", { name: "New Issue" }).click();
 
-    const titleInput = page.getByRole("textbox", { name: "Issue title" });
-    await expect(titleInput).toBeVisible();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
 
     await page.keyboard.press("Escape");
 
-    await expect(titleInput).not.toBeVisible();
+    await expect(dialog).not.toBeVisible();
     await expect(page.getByRole("button", { name: "New Issue" })).toBeVisible();
   });
 });

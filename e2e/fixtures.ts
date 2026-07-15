@@ -25,6 +25,13 @@ export class TestApiClient {
   private workspaceId: string | null = null;
   private createdIssueIds: string[] = [];
 
+  /** Adopt a token minted elsewhere (global setup) instead of logging in.
+   *  Parallel workers re-running send-code for the same email trip the
+   *  per-email cooldown; one login shared via this method avoids it. */
+  useToken(token: string) {
+    this.token = token;
+  }
+
   async login(email: string, name: string) {
     const client = new pg.Client(DATABASE_URL);
     await client.connect();
@@ -96,7 +103,10 @@ export class TestApiClient {
 
   async ensureWorkspace(name = "E2E Workspace", slug = "e2e-workspace") {
     const workspaces = await this.getWorkspaces();
-    const workspace = workspaces.find((item) => item.slug === slug) ?? workspaces[0];
+    // Exact slug only — falling back to workspaces[0] silently hands a test
+    // the DEFAULT workspace when it asked for a fresh one, so a rename test
+    // mutates shared state and breaks every parallel name-based lookup.
+    const workspace = workspaces.find((item) => item.slug === slug);
     if (workspace) {
       this.workspaceId = workspace.id;
       this.workspaceSlug = workspace.slug;
@@ -114,7 +124,7 @@ export class TestApiClient {
     }
 
     const refreshed = await this.getWorkspaces();
-    const created = refreshed.find((item) => item.slug === slug) ?? refreshed[0];
+    const created = refreshed.find((item) => item.slug === slug);
     if (created) {
       this.workspaceId = created.id;
       return created;

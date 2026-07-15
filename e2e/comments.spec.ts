@@ -4,11 +4,14 @@ import type { TestApiClient } from "./fixtures";
 
 test.describe("Comments", () => {
   let api: TestApiClient;
+  let slug: string;
+  let issueId: string;
 
   test.beforeEach(async ({ page }) => {
     api = await createTestApi();
-    await api.createIssue("E2E Comment Test " + Date.now());
-    await loginAsDefault(page);
+    const issue = await api.createIssue("E2E Comment Test " + Date.now());
+    issueId = issue.id;
+    slug = await loginAsDefault(page);
   });
 
   test.afterEach(async () => {
@@ -16,25 +19,36 @@ test.describe("Comments", () => {
   });
 
   test("can add a comment on an issue", async ({ page }) => {
-    // Wait for issues to load and click first one. `*=` matches both legacy
-    // `/issues/{id}` and URL-refactored `/{slug}/issues/{id}` hrefs.
-    const issueLink = page.locator('a[href*="/issues/"]').first();
-    await expect(issueLink).toBeVisible({ timeout: 5000 });
-    await issueLink.click();
-    await page.waitForURL(/\/issues\/[\w-]+/);
+    // Go straight to the fixture issue — clicking the board's first link
+    // races other parallel workers deleting THEIR issues.
+    await page.goto(`/${slug}/issues/${issueId}`);
 
     // Wait for issue detail to load
     await expect(page.locator("text=Properties")).toBeVisible();
 
-    // Type a comment
+    // The comment composer is a rich-text editor (contenteditable), not an
+    // <input>. It is the last editable region on the detail page (title and
+    // description editors come first).
     const commentText = "E2E comment " + Date.now();
-    const commentInput = page.locator(
-      'input[placeholder="Leave a comment..."]',
+    // Target the comment composer via its Tiptap placeholder — the detail
+    // page mounts several editors (title, description, chat). The
+    // placeholder node disappears on first keystroke, so use it only to
+    // click, then type through the keyboard (real keystrokes are required:
+    // fill() bypasses ProseMirror and leaves the send button disabled).
+    const composer = page.locator(
+      '[contenteditable="true"]:has([data-placeholder="Leave a comment..."])',
     );
-    await commentInput.fill(commentText);
+    await composer.click();
+    await expect(composer).toBeFocused();
+    await page.keyboard.type(commentText);
 
-    // Submit the comment
-    await page.locator('form button[type="submit"]').last().click();
+    // Submit via the composer's send button. Filter to the visible one —
+    // the chat dock mounts its own Send later in the DOM.
+    await page
+      .getByRole("button", { name: "Send" })
+      .locator("visible=true")
+      .first()
+      .click();
 
     // Comment should appear in the activity section
     await expect(page.locator(`text=${commentText}`)).toBeVisible({
@@ -43,15 +57,15 @@ test.describe("Comments", () => {
   });
 
   test("comment submit button is disabled when empty", async ({ page }) => {
-    const issueLink = page.locator('a[href*="/issues/"]').first();
-    await expect(issueLink).toBeVisible({ timeout: 5000 });
-    await issueLink.click();
-    await page.waitForURL(/\/issues\/[\w-]+/);
+    await page.goto(`/${slug}/issues/${issueId}`);
 
     await expect(page.locator("text=Properties")).toBeVisible();
 
-    // Submit button should be disabled when input is empty
-    const submitBtn = page.locator('form button[type="submit"]').last();
+    // Send button should be disabled while the composer is empty
+    const submitBtn = page
+      .getByRole("button", { name: "Send" })
+      .locator("visible=true")
+      .first();
     await expect(submitBtn).toBeDisabled();
   });
 });

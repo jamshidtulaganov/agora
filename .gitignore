@@ -72,3 +72,4 @@ data/
 # Playwright MCP artifacts
 .playwright-mcp/
 server/.gocache/
+e2e/.auth/

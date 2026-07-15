@@ -5,11 +5,10 @@ test.describe("Authentication", () => {
   test("login page renders correctly", async ({ page }) => {
     await page.goto("/login");
 
-    await expect(page.locator("h1")).toContainText("Agora");
-    await expect(page.locator('input[placeholder="Email"]')).toBeVisible();
-    await expect(page.locator('input[placeholder="Name"]')).toBeVisible();
+    await expect(page.getByText("Sign in to Agora")).toBeVisible();
+    await expect(page.locator('input[type="email"]')).toBeVisible();
     await expect(page.locator('button[type="submit"]')).toContainText(
-      "Sign in",
+      "Continue",
     );
   });
 
@@ -17,7 +16,7 @@ test.describe("Authentication", () => {
     await loginAsDefault(page);
 
     await expect(page).toHaveURL(/\/issues/);
-    await expect(page.locator("text=All Issues")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Issues" })).toBeVisible();
   });
 
   test("unauthenticated user is redirected to /login", async ({ page }) => {
@@ -36,11 +35,9 @@ test.describe("Authentication", () => {
   test("logout redirects to /login", async ({ page }) => {
     await loginAsDefault(page);
 
-    // Open the workspace dropdown menu
+    // Open the workspace dropdown menu and sign out
     await openWorkspaceMenu(page);
-
-    // Click Sign out
-    await page.locator("text=Sign out").click();
+    await page.getByRole("menuitem", { name: "Log out" }).click();
 
     await page.waitForURL("**/login", { timeout: 10000 });
     await expect(page).toHaveURL(/\/login/);
