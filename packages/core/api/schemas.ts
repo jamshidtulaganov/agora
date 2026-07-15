@@ -20,11 +20,127 @@ import type {
   ListIssuesResponse,
   ListWebhookDeliveriesResponse,
   ReleaseIntegration,
+  OrchestrationRun,
+  IssueArtifactResponse,
   Squad,
   TimelineEntry,
   User,
   WebhookDelivery,
 } from "../types";
+
+const OrchestrationStepSchema = z.object({
+  id: z.string(),
+  key: z.string(),
+  title: z.string(),
+  stage: z.string(),
+  status: z.string(),
+  position: z.number(),
+  agent_id: z.string().optional(),
+  model: z.string().optional(),
+  task_id: z.string().optional(),
+  approval_required: z.boolean().default(false),
+  approved_by: z.string().optional(),
+  attempt: z.number().default(0),
+  max_attempts: z.number().default(1),
+  instructions: z.string().default(""),
+  output: z.unknown().optional(),
+  error: z.string().optional(),
+  depends_on_step_ids: z.array(z.string()).nullish().transform((value) => value ?? []),
+  parent_step_id: z.string().optional(),
+  squad_id: z.string().optional(),
+  controller_agent_id: z.string().optional(),
+  worktree_branch: z.string().optional(),
+  base_sha: z.string().optional(),
+  head_sha: z.string().optional(),
+  merge_status: z.enum(["not_checked", "clean", "conflicts", "uncommitted", "unavailable"]).default("not_checked"),
+  conflict_files: z.array(z.string()).nullish().transform((value) => value ?? []),
+  kind: z.enum(["task", "integration"]).default("task"),
+  capability: z.enum(["coordination", "implementation", "backend", "frontend", "mobile", "infrastructure", "documentation", "integration", "qa", "review", "release"]).default("implementation"),
+  integration_status: z.enum(["not_required", "pending", "complete", "missing_heads", "conflicts"]).default("not_required"),
+  integrated_head_shas: z.array(z.string()).nullish().transform((value) => value ?? []),
+  missing_head_shas: z.array(z.string()).nullish().transform((value) => value ?? []),
+}).loose();
+
+const OrchestrationEventSchema = z.object({
+  id: z.string(),
+  step_id: z.string().optional(),
+  kind: z.string(),
+  actor_type: z.string(),
+  actor_id: z.string().optional(),
+  details: z.record(z.string(), z.unknown()).default({}),
+  created_at: z.string(),
+}).loose();
+
+const OrchestrationPlanRevisionSchema = z.object({
+  id: z.string(), version: z.number(), actor_type: z.string(), actor_id: z.string().optional(),
+  reason: z.string(), patch: z.record(z.string(), z.unknown()).default({}), created_at: z.string(),
+}).loose();
+
+export const OrchestrationRunSchema = z.object({
+  id: z.string(),
+  issue_id: z.string(),
+  status: z.string(),
+  mode: z.string(),
+  execution_strategy: z.enum(["human", "solo", "squad", "custom"]).default("custom"),
+  progression_policy: z.enum(["automatic", "gated", "manual"]).default("automatic"),
+  policy: z.record(z.string(), z.unknown()).default({}),
+  owner_type: z.enum(["agent", "squad", "member", "unassigned"]).default("unassigned"),
+  owner_id: z.string().optional(),
+  controller_agent_id: z.string().optional(),
+  base_git_states: z.array(z.object({ repo: z.string(), head_sha: z.string() }).loose()).nullish().transform((value) => value ?? []),
+  execution_mode: z.enum(["direct", "squad", "orchestrated"]).default("orchestrated"),
+  plan_version: z.number().default(1),
+  revisions: z.array(OrchestrationPlanRevisionSchema).default([]),
+  started_at: z.string().optional(),
+  completed_at: z.string().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  steps: z.array(OrchestrationStepSchema).default([]),
+  events: z.array(OrchestrationEventSchema).default([]),
+}).loose();
+
+export const EMPTY_ORCHESTRATION_RUN: OrchestrationRun | null = null;
+
+const ArtifactRepoRefSchema = z.object({
+  repo: z.string(),
+  branch: z.string().optional(),
+  base_sha: z.string(),
+  head_sha: z.string(),
+  merge_status: z.string(),
+}).strip();
+
+const IssueArtifactSummarySchema = z.object({
+  id: z.string(),
+  run_id: z.string(),
+  step_id: z.string(),
+  step_key: z.string(),
+  title: z.string(),
+  kind: z.string(),
+  capability: z.string(),
+  canonical: z.boolean().default(false),
+  repos: z.array(ArtifactRepoRefSchema).default([]),
+  completed_at: z.string().optional(),
+}).strip();
+
+export const IssueArtifactResponseSchema = z.object({
+  run_id: z.string().default(""),
+  run_status: z.string().default(""),
+  ready: z.boolean().default(false),
+  reason: z.string().optional(),
+  artifact: IssueArtifactSummarySchema.optional(),
+  components: z.array(IssueArtifactSummarySchema).default([]),
+  daemon_url: z.string().default(""),
+  capabilities: z.record(z.string(), z.string()).default({}),
+}).strip();
+
+export const EMPTY_ISSUE_ARTIFACT: IssueArtifactResponse = {
+  run_id: "",
+  run_status: "",
+  ready: false,
+  components: [],
+  daemon_url: "",
+  capabilities: {},
+};
 import type { CloudRuntimeNode } from "../runtimes/cloud-runtime";
 
 export interface AppConfigResponse {
@@ -37,6 +153,7 @@ export interface AppConfigResponse {
   analytics_environment?: string;
   daemon_server_url?: string;
   daemon_app_url?: string;
+  cli_releases_url?: string;
   workspace_creation_disabled?: boolean;
   telegram_only?: boolean;
   bitrix_enabled?: boolean;
@@ -897,6 +1014,11 @@ export const QAResultSchema = z.object({
   summary: z.string().default(""),
   commands: z.array(z.object({
     cmd: z.string().default(""),
+    // Human-readable QA evidence. Optional for compatibility with historical
+    // command-only verdicts; the presentation layer supplies safe fallbacks.
+    title: z.string().default(""),
+    expected: z.string().default(""),
+    observed: z.string().default(""),
     baseline_exit: z.number().nullable().default(null),
     // Nullable + symmetric with baseline_exit: a command that ran on only ONE
     // side reports null for the other (real agents emit branch_exit:null for a
@@ -1022,15 +1144,17 @@ export const EMPTY_REVIEW_VERDICT = {
   reviewer_agent_id: "",
 };
 
-// POST /api/issues/:id/review-decision — approve returns {action,
-// merged_dispatch}, request_changes returns {action, status, dispatched};
-// one lenient schema covers both with zero-value defaults. The UI only
-// toasts + invalidates on success, so a degraded body is harmless.
+// POST /api/issues/:id/review-decision — request_changes also returns the
+// versioned correction DAG identity. A lenient schema keeps approve responses
+// compatible while preserving the durable handoff when present.
 export const ReviewDecisionResponseSchema = z.object({
   action: z.string().default(""),
   merged_dispatch: z.boolean().default(false),
   status: z.string().default(""),
   dispatched: z.boolean().default(false),
+  plan_version: z.number().default(0),
+  revision_id: z.string().default(""),
+  correction_step_id: z.string().default(""),
 }).loose();
 
 export const EMPTY_REVIEW_DECISION = {
@@ -1038,6 +1162,9 @@ export const EMPTY_REVIEW_DECISION = {
   merged_dispatch: false,
   status: "",
   dispatched: false,
+  plan_version: 0,
+  revision_id: "",
+  correction_step_id: "",
 };
 
 // A test case's run history (GET /api/test-cases/:id/runs) — Phase 3 run
@@ -1232,29 +1359,6 @@ export const BuildBaseSuiteResponseSchema = z.object({
 }).loose();
 
 export const EMPTY_BUILD_BASE_SUITE = { status: "", issue_id: "" };
-
-// GET /api/issues/:id/editor — resolves where (and how) to reach a live view
-// of an issue's worktree. Two real shapes share one endpoint: self-host (a
-// daemon_url + the agents that have a worktree, most-recent first) or cloud
-// (a single proxied editor_url). `mode` is the discriminant; everything else
-// is optional so an unrecognized/future mode degrades to "nothing to show"
-// instead of crashing a consumer that only handles one mode.
-export const EditorAgentSchema = z.object({
-  agent_id: z.string().default(""),
-  agent_name: z.string().default(""),
-  work_dir: z.string().default(""),
-  status: z.string().default(""),
-}).loose();
-
-export const GetIssueEditorResponseSchema = z.object({
-  mode: z.string().default(""),
-  daemon_url: z.string().default(""),
-  user_id: z.string().default(""),
-  agents: z.array(EditorAgentSchema).default([]),
-  editor_url: z.string().default(""),
-}).loose();
-
-export const EMPTY_ISSUE_EDITOR = { mode: "", daemon_url: "", user_id: "", agents: [], editor_url: "" };
 
 // Where the Live-testing bay reaches a CDP browser for an issue — self-host
 // (direct daemon_url) or cloud (a same-origin /browser/proxy/<token> base the
@@ -1588,25 +1692,6 @@ export const EMPTY_CREATE_BILLING_PORTAL_SESSION_RESPONSE: CreateBillingPortalSe
 // Everything beyond `configured` defaults so an older server shape degrades to
 // a "not configured" style rendering instead of knocking the settings section
 // into an error. Check `configured === true` explicitly downstream.
-// Editor account integration (per-user PATs for the co-code editor env).
-// Tokens are write-only; the API returns a masked tail per provider.
-export const EditorTokensResponseSchema = z.object({
-  tokens: z
-    .array(
-      z.object({
-        provider: z.string().default(""),
-        masked: z.string().default(""),
-        workspace_id: z.string().default(""),
-        updated_at: z.string().default(""),
-      }).loose(),
-    )
-    .default([]),
-}).loose();
-
-export type EditorTokensResponse = z.infer<typeof EditorTokensResponseSchema>;
-
-export const EMPTY_EDITOR_TOKENS: EditorTokensResponse = { tokens: [] };
-
 export const FigmaCredentialStatusSchema = z.object({
   configured: z.boolean().default(false),
   label: z.string().default(""),

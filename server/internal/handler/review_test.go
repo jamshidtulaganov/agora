@@ -182,6 +182,103 @@ func issueComments(t *testing.T, issue db.Issue) []db.Comment {
 	return comments
 }
 
+type reviewCorrectionFixture struct {
+	RunID      string
+	WorkStepID string
+	BaseStepID string
+	ReleaseID  string
+}
+
+// seedReviewCorrectionRun models the moment at which a human is reviewing an
+// exact integrated artifact: development, integration, QA, and review are
+// complete; release is waiting for the human gate.
+func seedReviewCorrectionRun(t *testing.T, issue db.Issue, agentID string) reviewCorrectionFixture {
+	t.Helper()
+	ctx := context.Background()
+	fixture := reviewCorrectionFixture{}
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO orchestration_run (
+			workspace_id, issue_id, status, created_by, execution_strategy,
+			progression_policy, owner_type, owner_id, controller_agent_id
+		)
+		VALUES ($1, $2, 'waiting_approval', $3, 'solo', 'automatic', 'agent', $4, $4)
+		RETURNING id::text
+	`, testWorkspaceID, uuidToString(issue.ID), testUserID, agentID).Scan(&fixture.RunID); err != nil {
+		t.Fatalf("seed review orchestration run: %v", err)
+	}
+	baseSHA := strings.Repeat("a", 40)
+	workSHA := strings.Repeat("b", 40)
+	integrationSHA := strings.Repeat("c", 40)
+	workGit, _ := json.Marshal([]RepoGitStateResponse{{
+		Repo: "app", Branch: "agent/work", BaseSHA: baseSHA, HeadSHA: workSHA, MergeStatus: "clean",
+	}})
+	integrationGit, _ := json.Marshal([]RepoGitStateResponse{{
+		Repo: "app", Branch: "agent/integration", BaseSHA: baseSHA, HeadSHA: integrationSHA, MergeStatus: "clean",
+	}})
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO orchestration_step (
+			run_id, step_key, title, stage, status, position, agent_id,
+			step_kind, capability, merge_status, git_states, base_sha, head_sha, completed_at
+		)
+		VALUES ($1, 'work', 'Implement original change', 'dev', 'completed', 0, $2,
+			'task', 'implementation', 'clean', $3, $4, $5, now())
+		RETURNING id::text
+	`, fixture.RunID, agentID, workGit, baseSHA, workSHA).Scan(&fixture.WorkStepID); err != nil {
+		t.Fatalf("seed completed work step: %v", err)
+	}
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO orchestration_step (
+			run_id, step_key, title, stage, status, position, agent_id,
+			depends_on_step_id, step_kind, capability, merge_status,
+			integration_status, git_states, base_sha, head_sha, completed_at
+		)
+		VALUES ($1, 'integrate', 'Integrate original change', 'dev', 'completed', 1, $2,
+			$3, 'integration', 'integration', 'clean', 'complete', $4, $5, $6, now())
+		RETURNING id::text
+	`, fixture.RunID, agentID, fixture.WorkStepID, integrationGit, baseSHA, integrationSHA).Scan(&fixture.BaseStepID); err != nil {
+		t.Fatalf("seed completed integration step: %v", err)
+	}
+	stepID := func(key, title, stage, status string, position int, dependency string, approval bool) string {
+		var id string
+		var routedAgent any = agentID
+		capability := stage
+		if stage == "release" {
+			routedAgent = nil
+		}
+		if err := testPool.QueryRow(ctx, `
+			INSERT INTO orchestration_step (
+				run_id, step_key, title, stage, status, position, agent_id,
+				depends_on_step_id, approval_required, step_kind, capability,
+				controller_agent_id, completed_at
+			)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'task', $10, $11,
+				CASE WHEN $5 = 'completed' THEN now() ELSE NULL END)
+			RETURNING id::text
+		`, fixture.RunID, key, title, stage, status, position, routedAgent, dependency, approval, capability, agentID).Scan(&id); err != nil {
+			t.Fatalf("seed %s step: %v", stage, err)
+		}
+		return id
+	}
+	qaID := stepID("qa", "Verify original integration", "qa", "completed", 2, fixture.BaseStepID, false)
+	reviewID := stepID("review", "Review original integration", "review", "completed", 3, fixture.BaseStepID, false)
+	fixture.ReleaseID = stepID("release", "Approve original release", "release", "waiting_approval", 4, qaID, true)
+	for _, dependency := range [][2]string{
+		{fixture.BaseStepID, fixture.WorkStepID},
+		{qaID, fixture.BaseStepID},
+		{reviewID, fixture.BaseStepID},
+		{fixture.ReleaseID, qaID},
+		{fixture.ReleaseID, reviewID},
+	} {
+		if _, err := testPool.Exec(ctx, `
+			INSERT INTO orchestration_step_dependency (step_id, depends_on_step_id)
+			VALUES ($1, $2)
+		`, dependency[0], dependency[1]); err != nil {
+			t.Fatalf("seed step dependency: %v", err)
+		}
+	}
+	return fixture
+}
+
 // ---- review-decision endpoint ------------------------------------------------
 
 // TestCreateReviewDecisionMachineActorForbidden asserts the route-level
@@ -208,6 +305,13 @@ func TestCreateReviewDecisionApproveGateViolations(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
+	seedRelease := func(t *testing.T, title, metadata string) db.Issue {
+		t.Helper()
+		agentID := createHandlerTestAgent(t, title+" release worker", nil)
+		issue := seedReviewDecisionIssue(t, title, "in_review", agentID, metadata)
+		seedReviewCorrectionRun(t, issue, agentID)
+		return issue
+	}
 
 	post := func(issue db.Issue, body map[string]any) *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()
@@ -225,7 +329,7 @@ func TestCreateReviewDecisionApproveGateViolations(t *testing.T) {
 	})
 
 	t.Run("approve with no gates passing is 409", func(t *testing.T) {
-		issue := seedReviewDecisionIssue(t, "review 409 no gates", "in_review", "", "")
+		issue := seedRelease(t, "review 409 no gates", "")
 		w := post(issue, map[string]any{"action": "approve"})
 		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "merge_gates_not_satisfied") {
 			t.Fatalf("expected 409 merge_gates_not_satisfied, got %d: %s", w.Code, w.Body.String())
@@ -235,7 +339,7 @@ func TestCreateReviewDecisionApproveGateViolations(t *testing.T) {
 	// ci:fail must block approve — the spine requires ci at every tier, which
 	// the old bespoke qa/review-only check missed.
 	t.Run("approve with ci:fail is 409", func(t *testing.T) {
-		issue := seedReviewDecisionIssue(t, "review 409 ci fail", "in_review", "", "")
+		issue := seedRelease(t, "review 409 ci fail", "")
 		attachTestLabel(t, uuidToString(issue.ID), "qa:pass")
 		attachTestLabel(t, uuidToString(issue.ID), "ci:fail")
 		w := post(issue, map[string]any{"action": "approve"})
@@ -245,7 +349,7 @@ func TestCreateReviewDecisionApproveGateViolations(t *testing.T) {
 	})
 
 	t.Run("approve with review:fail is 409", func(t *testing.T) {
-		issue := seedReviewDecisionIssue(t, "review 409 fail", "in_review", "", "")
+		issue := seedRelease(t, "review 409 fail", "")
 		attachTestLabel(t, uuidToString(issue.ID), "ci:pass")
 		attachTestLabel(t, uuidToString(issue.ID), "qa:pass")
 		attachTestLabel(t, uuidToString(issue.ID), "review:fail")
@@ -259,7 +363,7 @@ func TestCreateReviewDecisionApproveGateViolations(t *testing.T) {
 	// yet → approve must 409 rather than merge past a pending review.
 	t.Run("approve with review gate applying but no verdict is 409", func(t *testing.T) {
 		t.Setenv("AGORA_AUTO_REVIEW_ENABLED", "1")
-		issue := seedReviewDecisionIssue(t, "review 409 pending", "in_review", "", `{"pr_number": 11}`)
+		issue := seedRelease(t, "review 409 pending", `{"pr_number": 11}`)
 		attachTestLabel(t, uuidToString(issue.ID), "ci:pass")
 		attachTestLabel(t, uuidToString(issue.ID), "qa:pass")
 		w := post(issue, map[string]any{"action": "approve"})
@@ -270,6 +374,8 @@ func TestCreateReviewDecisionApproveGateViolations(t *testing.T) {
 
 	t.Run("merge:override bypasses the gates", func(t *testing.T) {
 		issue := seedReviewDecisionIssue(t, "review override bypass", "in_review", "", "")
+		agentID := createHandlerTestAgent(t, "Review override release", nil)
+		seedReviewCorrectionRun(t, issue, agentID)
 		attachTestLabel(t, uuidToString(issue.ID), "merge:override")
 		w := post(issue, map[string]any{"action": "approve"})
 		if w.Code != http.StatusOK {
@@ -278,15 +384,16 @@ func TestCreateReviewDecisionApproveGateViolations(t *testing.T) {
 	})
 }
 
-// TestCreateReviewDecisionApproveDispatch: a green-gated approve stamps
-// merge:approved and writes the member-authored merge order @mentioning the
-// dev squad leader.
+// TestCreateReviewDecisionApproveDispatch: a green-gated compatibility approve
+// stamps merge:approved and queues the persisted release worker without a
+// mention-triggered second scheduler.
 func TestCreateReviewDecisionApproveDispatch(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
-	leaderID, authorID := seedReviewSquad(t, "Review Approve Squad")
+	_, authorID := seedReviewSquad(t, "Review Approve Squad")
 	issue := seedReviewDecisionIssue(t, "review approve dispatch", "in_review", authorID, "")
+	fixture := seedReviewCorrectionRun(t, issue, authorID)
 	// Green the full readiness spine: ci + qa + review (review:pass makes the
 	// review gate apply for this full-tier issue).
 	attachTestLabel(t, uuidToString(issue.ID), "ci:pass")
@@ -315,17 +422,54 @@ func TestCreateReviewDecisionApproveDispatch(t *testing.T) {
 		t.Error("merge:approved label not attached")
 	}
 
-	foundOrder := false
 	for _, c := range issueComments(t, issue) {
-		if strings.Contains(c.Content, "mention://agent/"+leaderID) && strings.Contains(c.Content, "gh pr merge") {
-			foundOrder = true
-			if c.AuthorType != "member" {
-				t.Errorf("merge order author_type = %s, want member", c.AuthorType)
-			}
+		if strings.Contains(c.Content, "mention://agent/") {
+			t.Fatalf("release approval created a mention side scheduler: %s", c.Content)
 		}
 	}
-	if !foundOrder {
-		t.Error("no member-authored merge order @mentioning the squad leader was written")
+	var releaseStatus, releaseAgentID string
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT status, agent_id::text FROM orchestration_step WHERE id=$1
+	`, fixture.ReleaseID).Scan(&releaseStatus, &releaseAgentID); err != nil {
+		t.Fatal(err)
+	}
+	if releaseStatus != "queued" || releaseAgentID != authorID {
+		t.Fatalf("release = %s/%s, want queued/%s", releaseStatus, releaseAgentID, authorID)
+	}
+	var queued int
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT count(*) FROM agent_task_queue
+		WHERE orchestration_step_id=$1 AND agent_id=$2 AND status IN ('queued','dispatched','running')
+	`, fixture.ReleaseID, authorID).Scan(&queued); err != nil {
+		t.Fatal(err)
+	}
+	if queued != 1 {
+		t.Fatalf("persisted release tasks = %d, want 1", queued)
+	}
+}
+
+func TestApproveOrchestrationReleaseRechecksReadiness(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	agentID := createHandlerTestAgent(t, "Release readiness agent", nil)
+	issue := seedReviewDecisionIssue(t, "release readiness", "in_review", agentID, "")
+	fixture := seedReviewCorrectionRun(t, issue, agentID)
+	post := func() *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		req := newRequest("POST", "/api/issues/"+uuidToString(issue.ID)+"/orchestration/steps/"+fixture.ReleaseID+"/approve", nil)
+		req = withURLParams(req, "id", uuidToString(issue.ID), "stepId", fixture.ReleaseID)
+		testHandler.ApproveOrchestrationStep(w, req)
+		return w
+	}
+	if w := post(); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "merge_gates_not_satisfied") {
+		t.Fatalf("unready release: expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+	attachTestLabel(t, uuidToString(issue.ID), "ci:pass")
+	attachTestLabel(t, uuidToString(issue.ID), "qa:pass")
+	attachTestLabel(t, uuidToString(issue.ID), "review:pass")
+	if w := post(); w.Code != http.StatusOK {
+		t.Fatalf("ready release: expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -335,6 +479,7 @@ func TestCreateReviewDecisionRequestChanges(t *testing.T) {
 	}
 	authorID := createHandlerTestAgent(t, "Review RC Author", nil)
 	issue := seedReviewDecisionIssue(t, "review request changes", "in_review", authorID, "")
+	fixture := seedReviewCorrectionRun(t, issue, authorID)
 	attachTestLabel(t, uuidToString(issue.ID), "review:fail")
 
 	post := func(body map[string]any) *httptest.ResponseRecorder {
@@ -350,9 +495,24 @@ func TestCreateReviewDecisionRequestChanges(t *testing.T) {
 		t.Fatalf("empty note: expected 400, got %d: %s", w.Code, w.Body.String())
 	}
 
-	w := post(map[string]any{"action": "request_changes", "note": "fix the nil deref in the handler"})
+	w := post(map[string]any{
+		"action": "request_changes", "note": "fix the nil deref in the handler",
+		"expected_version": 1, "target_step_id": fixture.WorkStepID,
+	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Action           string `json:"action"`
+		PlanVersion      int32  `json:"plan_version"`
+		RevisionID       string `json:"revision_id"`
+		CorrectionStepID string `json:"correction_step_id"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Action != "request_changes" || response.PlanVersion != 2 || response.RevisionID == "" || response.CorrectionStepID == "" {
+		t.Fatalf("unexpected revision response: %+v", response)
 	}
 
 	var status string
@@ -361,14 +521,64 @@ func TestCreateReviewDecisionRequestChanges(t *testing.T) {
 		t.Errorf("issue status = %q, want in_progress", status)
 	}
 
-	found := false
+	foundAudit := false
 	for _, c := range issueComments(t, issue) {
-		if strings.Contains(c.Content, "mention://agent/"+authorID) && strings.Contains(c.Content, "fix the nil deref") {
-			found = true
+		if strings.Contains(c.Content, "mention://agent/") {
+			t.Fatalf("request changes created a second mention scheduler: %s", c.Content)
+		}
+		if strings.Contains(c.Content, "Plan revised to v2") && strings.Contains(c.Content, "fix the nil deref") {
+			foundAudit = true
 		}
 	}
-	if !found {
-		t.Error("no @mention comment routing the note to the author agent was written")
+	if !foundAudit {
+		t.Error("no inert plan-revision audit comment was written")
+	}
+
+	var runVersion int32
+	if err := testPool.QueryRow(context.Background(), `SELECT plan_version FROM orchestration_run WHERE id=$1`, fixture.RunID).Scan(&runVersion); err != nil {
+		t.Fatal(err)
+	}
+	if runVersion != 2 {
+		t.Fatalf("run plan_version = %d, want 2", runVersion)
+	}
+	var retiredStatus string
+	var retiredVersion int32
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT status, retired_in_version FROM orchestration_step WHERE id=$1
+	`, fixture.ReleaseID).Scan(&retiredStatus, &retiredVersion); err != nil {
+		t.Fatal(err)
+	}
+	if retiredStatus != "skipped" || retiredVersion != 2 {
+		t.Fatalf("old release = %s/v%d, want skipped/v2", retiredStatus, retiredVersion)
+	}
+	rows, err := testPool.Query(context.Background(), `
+		SELECT step_key, stage, status, introduced_in_version
+		FROM orchestration_step WHERE run_id=$1 AND introduced_in_version=2 ORDER BY position
+	`, fixture.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var revised []string
+	for rows.Next() {
+		var key, stage, stepStatus string
+		var version int32
+		if err := rows.Scan(&key, &stage, &stepStatus, &version); err != nil {
+			t.Fatal(err)
+		}
+		revised = append(revised, key+":"+stage+":"+stepStatus)
+	}
+	if want := []string{"changes-v2:dev:queued", "integrate-v2:dev:pending", "qa-v2:qa:pending", "review-v2:review:pending", "release-v2:release:pending"}; !reflect.DeepEqual(revised, want) {
+		t.Fatalf("revision DAG = %#v, want %#v", revised, want)
+	}
+	var baseDependency string
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT depends_on_step_id::text FROM orchestration_step_dependency WHERE step_id=$1
+	`, response.CorrectionStepID).Scan(&baseDependency); err != nil {
+		t.Fatal(err)
+	}
+	if baseDependency != fixture.BaseStepID {
+		t.Fatalf("correction base = %s, want exact integration %s", baseDependency, fixture.BaseStepID)
 	}
 
 	// review:fail is deliberately KEPT until a re-review replaces it.
@@ -387,6 +597,7 @@ func TestRequestChangesNeutralizesNoteMentions(t *testing.T) {
 	authorID := createHandlerTestAgent(t, "RC Note Author", nil)
 	evilID := createHandlerTestAgent(t, "RC Note Evil", nil)
 	issue := seedReviewDecisionIssue(t, "review rc note mention", "in_review", authorID, "")
+	seedReviewCorrectionRun(t, issue, authorID)
 
 	note := "please fix, also [@evil](mention://agent/" + evilID + ") must not be pinged"
 	w := httptest.NewRecorder()
@@ -402,6 +613,14 @@ func TestRequestChangesNeutralizesNoteMentions(t *testing.T) {
 		if strings.Contains(c.Content, "](mention://agent/"+evilID) {
 			t.Fatalf("the note's smuggled mention survived as a live trigger: %.200s", c.Content)
 		}
+	}
+}
+
+func TestBuildReviewCorrectionPlanRejectsActiveWork(t *testing.T) {
+	run := db.OrchestrationRun{ControllerAgentID: parseUUID("11111111-1111-4111-8111-111111111111")}
+	steps := []db.OrchestrationStep{{Status: "running", Stage: "dev", StepKind: "task"}}
+	if _, err := buildReviewCorrectionPlan(run, steps, ""); err == nil || !strings.Contains(err.Error(), "active orchestration work") {
+		t.Fatalf("running work must block a revision, got %v", err)
 	}
 }
 

@@ -7,14 +7,13 @@ import { QALiveBrowser } from "./qa-live-browser";
 
 // QALiveBrowser is the QA lens's live-testing bay — signal-driven, not
 // default-on (see the component's own comment). These tests cover the
-// mount-gate itself: `active=false` must fire ZERO of the editor/browser/
+// mount-gate itself: `active=false` must fire ZERO of the browser/
 // preview requests (the bug this whole rework exists to fix — opening the QA
 // lens used to auto-connect a CDP Chromium and auto-boot a dev server as a
 // side effect of merely mounting this component) and render only the compact
 // idle card; `active=true` fires the requests and renders the real pane.
 
 const apiMocks = vi.hoisted(() => ({
-  getIssueEditor: vi.fn(),
   getIssueBrowser: vi.fn(),
   getIssueQAPreviewURL: vi.fn(),
 }));
@@ -48,7 +47,6 @@ function renderBrowser(props: Partial<Parameters<typeof QALiveBrowser>[0]> = {})
 describe("QALiveBrowser", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    apiMocks.getIssueEditor.mockResolvedValue({ agents: [] });
     apiMocks.getIssueBrowser.mockResolvedValue({ mode: "self-host", daemon_url: "http://127.0.0.1:9" });
     apiMocks.getIssueQAPreviewURL.mockResolvedValue({ url: "https://qa.example.test" });
   });
@@ -59,10 +57,9 @@ describe("QALiveBrowser", () => {
     expect(await screen.findByText("Most QA doesn't need a browser — open this to watch or drive the running app.")).toBeInTheDocument();
     expect(screen.queryByTestId("editor-browser-pane")).not.toBeInTheDocument();
 
-    // No editor/browser/preview call should ever fire while idle — this is
+    // No browser/preview call should ever fire while idle — this is
     // the exact regression (auto-connect CDP + auto-boot a dev server on
     // mere mount) the mount-gate exists to prevent.
-    expect(apiMocks.getIssueEditor).not.toHaveBeenCalled();
     expect(apiMocks.getIssueBrowser).not.toHaveBeenCalled();
     expect(apiMocks.getIssueQAPreviewURL).not.toHaveBeenCalled();
   });
@@ -80,11 +77,10 @@ describe("QALiveBrowser", () => {
     expect(await screen.findByText("Live")).toBeInTheDocument();
   });
 
-  it("active=true: fetches editor/browser/preview and mounts the real pane", async () => {
+  it("active=true: fetches browser/preview and mounts the configured QA target", async () => {
     renderBrowser({ active: true });
 
     expect(await screen.findByTestId("editor-browser-pane")).toBeInTheDocument();
-    expect(apiMocks.getIssueEditor).toHaveBeenCalledWith("issue-1");
     expect(apiMocks.getIssueBrowser).toHaveBeenCalledWith("issue-1");
     expect(apiMocks.getIssueQAPreviewURL).toHaveBeenCalledWith("issue-1");
   });

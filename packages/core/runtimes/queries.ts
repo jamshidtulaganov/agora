@@ -12,7 +12,8 @@ export const runtimeKeys = {
   // by-hour now follows the viewer's tz, like the other reports.
   usageByHour: (rid: string, days: number, tz: string) =>
     ["runtimes", "usage", "by-hour", rid, days, tz] as const,
-  latestVersion: () => ["runtimes", "latestVersion"] as const,
+  latestVersion: (releasesUrl: string) =>
+    ["runtimes", "latestVersion", releasesUrl] as const,
 };
 
 // `tz` is the viewer's IANA name — all reports follow the viewer's tz.
@@ -55,15 +56,12 @@ export function runtimeListOptions(wsId: string, owner?: "me") {
   });
 }
 
-const GITHUB_RELEASES_URL =
-  "https://api.github.com/repos/jamshidtulaganov/agora/releases/latest";
-
-export function latestCliVersionOptions() {
+export function latestCliVersionOptions(releasesUrl: string) {
   return queryOptions({
-    queryKey: runtimeKeys.latestVersion(),
+    queryKey: runtimeKeys.latestVersion(releasesUrl),
     queryFn: async (): Promise<string | null> => {
       try {
-        const resp = await fetch(GITHUB_RELEASES_URL, {
+        const resp = await fetch(releasesUrl, {
           headers: { Accept: "application/vnd.github+json" },
         });
         if (!resp.ok) return null;
@@ -73,6 +71,7 @@ export function latestCliVersionOptions() {
         return null;
       }
     },
+    enabled: Boolean(releasesUrl),
     staleTime: 10 * 60 * 1000, // 10 minutes
   });
 }

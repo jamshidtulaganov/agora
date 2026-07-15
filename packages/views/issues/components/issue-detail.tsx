@@ -54,26 +54,21 @@ import { LocalDirectoryHint } from "../../projects/components/local-directory-hi
 import { BitrixAssigneeChip, BitrixTaskLink, BitrixSummaryAction } from "../../bitrix";
 import { CommentCard } from "./comment-card";
 import { CollapsibleDescription } from "./collapsible-description";
-import { LiveAgentChangesFeed } from "./live-agent-changes-feed";
 import { CommentInput } from "./comment-input";
 import { ResolvedThreadBar } from "./resolved-thread-bar";
 import { collectThreadReplies, deriveThreadResolution } from "./thread-utils";
 import { IssueAgentHeaderChip } from "./issue-agent-header-chip";
 import { StageCastPicker } from "./stage-cast-picker";
 import { PipelineModePicker } from "./pipeline-mode-picker";
-import { ExecutionLogSection } from "./execution-log-section";
-import { EditorSection } from "./editor-section";
 import { QAEvidenceSection } from "./qa-evidence-section";
 import { IssueRepoSection } from "./issue-repo-section";
-import { WorkModeSwitch } from "./work-mode-switch";
-import { SliceActionsSection } from "./slice-actions-section";
 import { PullRequestList } from "./pull-request-list";
 import { FigmaLinksSection } from "./figma-links-section";
 import { DesignProposalSection } from "./design-proposal-section";
 import { DesignAuditSection } from "./design-audit-section";
 import { SDLCStepper } from "./sdlc-stepper";
 import { StageTrailing } from "./stage-live-process";
-import { IssuePlanPanel } from "./issue-plan-panel";
+import { IssueExecution } from "./issue-execution";
 import { useStagePipeline } from "./use-stage-pipeline";
 import { useLensParam, getLens, isLensRegistered } from "../lens";
 import { useGitHubSettings } from "@agora/core/github";
@@ -85,7 +80,6 @@ import { useActorName } from "@agora/core/workspace/hooks";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { useRecentContextStore } from "@agora/core/chat";
 import { issueListOptions, issueDetailOptions, childIssuesOptions, issueUsageOptions, issueAttachmentsOptions } from "@agora/core/issues/queries";
-import { getWorkMode, useSetWorkMode, type WorkMode } from "@agora/core/issues/work-mode";
 import { projectDetailOptions } from "@agora/core/projects/queries";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { issueLabelsOptions } from "@agora/core/labels";
@@ -1204,22 +1198,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const actions = useIssueActions(issue);
   const handleUpdateField = actions.updateField;
 
-  // Per-issue work mode (full_pipeline | in_editor) — stored in issue metadata.
-  const setWorkMode = useSetWorkMode(wsId, id);
-  const handleWorkModeChange = useCallback(
-    (mode: WorkMode) => {
-      setWorkMode.mutate(mode, {
-        onError: (err: unknown) =>
-          toast.error(
-            err instanceof Error && err.message
-              ? err.message
-              : "Failed to update mode",
-          ),
-      });
-    },
-    [setWorkMode],
-  );
-
   // Labels live in their own query (not on the issue body) — fetch the count
   // here so seeding can decide whether the "Labels" optional row should be
   // shown for an issue that already has labels attached.
@@ -1379,45 +1357,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               )}
             </div>
           </PropRow>
-          {issue.orchestrator_agent_id && (
-            <PropRow label={t(($) => $.detail.prop_orchestrator)}>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <span className="flex items-center gap-1.5 truncate">
-                      <ActorAvatar actorType="agent" actorId={issue.orchestrator_agent_id} size={16} />
-                      <span className="truncate">{getActorName("agent", issue.orchestrator_agent_id)}</span>
-                    </span>
-                  }
-                />
-                <TooltipContent side="top">{t(($) => $.detail.prop_orchestrator_hint)}</TooltipContent>
-              </Tooltip>
-            </PropRow>
-          )}
-          {issue.orchestrator_agent_id && (
-            <>
-              <PropRow label={t(($) => $.detail.prop_pipeline)}>
-                <PipelineModePicker
-                  issueId={issue.id}
-                  mode={metaString(issue.metadata, "pipeline_mode")}
-                />
-              </PropRow>
-              <PropRow label={t(($) => $.detail.prop_qa_agent)}>
-                <StageCastPicker
-                  issueId={issue.id}
-                  stageKey="cast_qa_agent_id"
-                  agentId={metaString(issue.metadata, "cast_qa_agent_id")}
-                />
-              </PropRow>
-              <PropRow label={t(($) => $.detail.prop_review_agent)}>
-                <StageCastPicker
-                  issueId={issue.id}
-                  stageKey="cast_review_agent_id"
-                  agentId={metaString(issue.metadata, "cast_review_agent_id")}
-                />
-              </PropRow>
-            </>
-          )}
           <PropRow label={t(($) => $.detail.prop_project)}>
             <ProjectPicker
               projectId={issue.project_id}
@@ -1521,6 +1460,49 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
         </div>
       </InspectorSection>
 
+      {/* Model routing is powerful but secondary to everyday issue editing.
+          Keep it one level deeper so the rail opens with the fields most
+          people change, while operators can still inspect the full cast. */}
+      {issue.orchestrator_agent_id && (
+        <InspectorSection title={t(($) => $.detail.section_orchestration)}>
+          <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 pl-2">
+            <PropRow label={t(($) => $.detail.prop_orchestrator)}>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <span className="flex items-center gap-1.5 truncate">
+                      <ActorAvatar actorType="agent" actorId={issue.orchestrator_agent_id} size={16} />
+                      <span className="truncate">{getActorName("agent", issue.orchestrator_agent_id)}</span>
+                    </span>
+                  }
+                />
+                <TooltipContent side="top">{t(($) => $.detail.prop_orchestrator_hint)}</TooltipContent>
+              </Tooltip>
+            </PropRow>
+            <PropRow label={t(($) => $.detail.prop_pipeline)}>
+              <PipelineModePicker
+                issueId={issue.id}
+                mode={metaString(issue.metadata, "pipeline_mode")}
+              />
+            </PropRow>
+            <PropRow label={t(($) => $.detail.prop_qa_agent)}>
+              <StageCastPicker
+                issueId={issue.id}
+                stageKey="cast_qa_agent_id"
+                agentId={metaString(issue.metadata, "cast_qa_agent_id")}
+              />
+            </PropRow>
+            <PropRow label={t(($) => $.detail.prop_review_agent)}>
+              <StageCastPicker
+                issueId={issue.id}
+                stageKey="cast_review_agent_id"
+                agentId={metaString(issue.metadata, "cast_review_agent_id")}
+              />
+            </PropRow>
+          </div>
+        </InspectorSection>
+      )}
+
       {/* Parent issue — standalone section, only when the issue has a
           parent. Setting a parent is reachable via the issue actions menu;
           this card surfaces an existing parent without occupying sidebar
@@ -1544,7 +1526,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           (or the GitHub master switch is off). Backend data is kept either
           way so re-enabling restores the section instantly. */}
       {githubSettings.prSidebar && (
-        <InspectorSection title={t(($) => $.detail.section_pull_requests)} defaultOpen>
+        <InspectorSection title={t(($) => $.detail.section_pull_requests)}>
           <div className="pl-2"><PullRequestList issueId={id} /></div>
         </InspectorSection>
       )}
@@ -1563,7 +1545,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       <DesignAuditSection issueId={id} />
 
       {/* Details */}
-      <InspectorSection title={t(($) => $.detail.section_details)} defaultOpen>
+      <InspectorSection title={t(($) => $.detail.section_details)}>
         <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 pl-2">
           <PropRow label={t(($) => $.detail.prop_created_by)}>
             <ActorAvatar actorType={issue.creator_type} actorId={issue.creator_id} size={18} enableHoverCard />
@@ -1583,34 +1565,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           none, so agents don't run in a slim worktree with no project code. */}
       <IssueRepoSection projectId={issue.project_id} />
 
-      {/* How to work this issue — two modes. Prompts: hand the agent scoped
-          slice-actions. Editor: co-code live in the embedded editor. The choice
-          persists per issue (work_mode in metadata) and drives which agents do. */}
-      {/* Explainer prose removed — the switch labels carry the meaning
-          (rail simplicity: controls, not paragraphs). */}
-      <WorkModeSwitch
-        value={getWorkMode(issue)}
-        onChange={handleWorkModeChange}
-        disabled={setWorkMode.isPending}
-      />
-
-      {/* Prompts mode — AI slice-actions (draft code / docs / tests / review). */}
-      {getWorkMode(issue) === "full_pipeline" && (
-        <SliceActionsSection issueId={id} />
-      )}
-
-      {/* Editor mode — live browser VS Code on the agent's worktree. */}
-      {getWorkMode(issue) === "in_editor" && (
-        <EditorSection
-          issueId={id}
-          defaultOpen
-          coCode
-          issueKey={issue.identifier}
-          issueTitle={issue.title}
-          projectId={issue.project_id}
-        />
-      )}
-
       {/* Live test-case progress lives in the PLAN card (nested children of
           the QA step); the QA verdict lives in the BODY right under the plan —
           the rail carries controls and settled metadata only. */}
@@ -1618,11 +1572,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       {/* "Agent is working" indicator REMOVED from the rail — it duplicated
           the header chip (IssueAgentHeaderChip) and the stepper's live
           headline; three copies of the same signal was noise. */}
-
-      {/* Execution log — active runs + collapsed past runs. Self-contained;
-          owns its own collapse state and WS subscriptions. Hides itself
-          when there are no runs to show. */}
-      <ExecutionLogSection issueId={id} />
 
       {/* Token usage */}
       {usage && usage.task_count > 0 && (
@@ -2049,21 +1998,10 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             );
           })()}
 
-          {/* Plan — the CURRENT stage's live progress, placed between the
-              description and Activity so the page reads what → how → history:
-              the task's identity leads, the execution plan follows, the
-              feed closes. Self-hides when there's no plan yet; the stepper's
-              trailing headline stays the compact top-of-page live signal. */}
+          {/* One execution surface: compact issue status, human-facing active
+              work, and an advanced drawer for plan/history/Git evidence. */}
           <div className="mt-8">
-            <IssuePlanPanel
-              childIssues={childIssues}
-              currentTaskId={
-                stagePipeline.stages.find((s) => s.stage === stagePipeline.current)?.taskId ?? null
-              }
-              orchestratorAgentId={issue.orchestrator_agent_id}
-              issueId={id}
-              stage={stagePipeline.current}
-            />
+            <IssueExecution issueId={id} />
           </div>
 
           {/* QA verdict — right under the plan, same reading flow: what the
@@ -2134,19 +2072,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             <div className="my-4">
               <CommentInput key={id} issueId={id} onSubmit={submitComment} />
             </div>
-
-            {/* Live agent activity — the running agent's work (file-change
-                diffs, or a readable step trail for non-coding runs) shown as
-                the FIRST item in the activity feed, right after the task, so
-                "what's happening now" leads the timeline. Renders nothing when
-                no agent is running on this issue. */}
-            <LiveAgentChangesFeed issueId={id} />
-
-            {/* The "agent is working" live signal now lives in the header
-                (IssueAgentHeaderChip) so it stays in one fixed place and
-                doesn't compete with sticky banners in this content column.
-                The per-task timeline + past runs live in the right panel
-                via ExecutionLogSection. */}
 
             {/* Timeline entries — virtualized via react-virtuoso to keep
                 first-paint cost O(viewport) instead of O(N). On a 500-comment

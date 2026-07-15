@@ -671,12 +671,19 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                         <span>{t(($) => $.nav[item.labelKey])}</span>
                         {item.key === "inbox" && (unreadCount > 0 || runningCount > 0) && (
                           <span className="ml-auto flex items-center gap-1.5 text-xs">
-                            {/* Live agents badge — pulsing dot + count while
-                                anything runs (the old standalone row, shrunk). */}
+                            {/* Live-agents indicator = pulsing dot ONLY, no number.
+                                A count here is indistinguishable from the unread
+                                count sitting beside it (one slot, two meanings);
+                                the running count lives on the Agents page. Dot =
+                                "agents working", number = unread. Label kept for
+                                screen readers + hover title. */}
                             {runningCount > 0 && (
-                              <span className="flex items-center gap-1 font-medium text-info">
+                              <span
+                                className="flex items-center"
+                                title={t(($) => $.running.active, { count: runningCount })}
+                              >
                                 <span aria-hidden className="size-1.5 rounded-full bg-info motion-safe:animate-pulse" />
-                                {runningCount}
+                                <span className="sr-only">{t(($) => $.running.active, { count: runningCount })}</span>
                               </span>
                             )}
                             {unreadCount > 0 && (

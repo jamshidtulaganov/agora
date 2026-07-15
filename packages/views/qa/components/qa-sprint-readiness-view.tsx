@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { GitBranch, Rocket, Play, Plus, Loader2, HelpCircle, ChevronDown, ChevronRight, MoreHorizontal } from "lucide-react";
+import { GitBranch, Rocket, Play, Plus, Loader2, HelpCircle, ChevronDown, ChevronRight, MoreHorizontal, Check, Circle, OctagonAlert } from "lucide-react";
 import { api } from "@agora/core/api";
 import { sprintReadinessOptions } from "@agora/core/qa/queries";
 import type { SprintReadinessResponse } from "@agora/core/api/schemas";
@@ -85,7 +85,9 @@ export function QASprintReadinessView({
 
   return (
     <div className="flex w-full flex-col gap-6 px-8 py-8">
-      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+      <ReleaseCommand sprints={sprints} onSeeBlockers={onSeeBlockers} />
+
+      <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         <span>{t(($) => $.qa_cockpit.view_ship)}</span>
         <HoverCard>
           <HoverCardTrigger
@@ -122,6 +124,110 @@ export function QASprintReadinessView({
 }
 
 type SprintData = SprintReadinessResponse["sprints"][number];
+
+type ReleasePathState = "pass" | "active" | "fail" | "pending";
+
+function ReleasePathStep({
+  label,
+  state,
+  last,
+}: {
+  label: string;
+  state: ReleasePathState;
+  last?: boolean;
+}) {
+  const Icon = state === "pass" ? Check : state === "fail" ? OctagonAlert : Circle;
+  return (
+    <div className="flex min-w-0 flex-1 items-center">
+      <div className="flex min-w-0 items-center gap-2">
+        <span
+          className={cn(
+            "flex size-6 shrink-0 items-center justify-center rounded-full border",
+            state === "pass" && "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+            state === "fail" && "border-destructive/40 bg-destructive/10 text-destructive",
+            state === "active" && "border-brand/40 bg-brand/10 text-brand",
+            state === "pending" && "border-border bg-background text-muted-foreground/60",
+          )}
+        >
+          <Icon className={cn("size-3", state === "active" && "fill-current")} aria-hidden />
+        </span>
+        <span className={cn("truncate text-[11px] font-medium", state === "pending" ? "text-muted-foreground" : "text-foreground")}>{label}</span>
+      </div>
+      {!last && <span className={cn("mx-3 h-px min-w-4 flex-1", state === "pass" ? "bg-emerald-500/30" : "bg-border")} aria-hidden />}
+    </div>
+  );
+}
+
+function ReleaseCommand({
+  sprints,
+  onSeeBlockers,
+}: {
+  sprints: SprintData[];
+  onSeeBlockers?: () => void;
+}) {
+  const { t } = useT("issues");
+  const total = sprints.reduce((sum, sprint) => sum + sprint.total, 0);
+  const passed = sprints.reduce((sum, sprint) => sum + sprint.passed, 0);
+  const failed = sprints.reduce((sum, sprint) => sum + sprint.failed, 0);
+  const remaining = Math.max(0, total - passed);
+  const allReady = sprints.every((sprint) => sprint.mergeable);
+  const regressionFailed = sprints.some((sprint) =>
+    sprint.regression ? regressionStatusMeta(sprint.regression.status).failed : false,
+  );
+  const regressionPassed = sprints.every((sprint) =>
+    sprint.regression ? regressionStatusMeta(sprint.regression.status).done : false,
+  );
+  const headline = allReady
+    ? t(($) => $.qa_cockpit.release_command_ready)
+    : failed > 0
+      ? t(($) => $.qa_cockpit.release_command_blocked, { count: failed })
+      : t(($) => $.qa_cockpit.release_command_progress, { count: remaining });
+
+  const qaState: ReleasePathState = failed > 0 ? "fail" : remaining === 0 ? "pass" : "active";
+  const regressionState: ReleasePathState = regressionFailed
+    ? "fail"
+    : regressionPassed
+      ? "pass"
+      : qaState === "pass"
+        ? "active"
+        : "pending";
+
+  return (
+    <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
+      <div className="flex flex-col gap-5 px-5 py-5 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            {t(($) => $.qa_cockpit.release_command_title)}
+          </div>
+          <h1 className="mt-1 max-w-2xl text-xl font-semibold tracking-tight text-pretty text-foreground">
+            {headline}
+          </h1>
+          <p className="mt-1 text-[12px] text-muted-foreground tabular-nums">
+            {t(($) => $.qa_cockpit.health_rollup, {
+              ready: sprints.filter((sprint) => sprint.mergeable).length,
+              sprints: sprints.length,
+            })}
+          </p>
+        </div>
+        {failed > 0 && onSeeBlockers ? (
+          <Button size="sm" variant="destructive" onClick={onSeeBlockers} className="shrink-0">
+            {t(($) => $.qa_cockpit.see_blockers, { count: failed })}
+          </Button>
+        ) : null}
+      </div>
+      <div className="border-t bg-muted/20 px-5 py-3.5">
+        <div className="overflow-x-auto">
+          <div className="flex min-w-[520px] items-center">
+            <ReleasePathStep label={t(($) => $.qa_cockpit.release_path_scope)} state={total > 0 ? "pass" : "pending"} />
+            <ReleasePathStep label={t(($) => $.qa_cockpit.release_path_qa)} state={qaState} />
+            <ReleasePathStep label={t(($) => $.qa_cockpit.release_path_regression)} state={regressionState} />
+            <ReleasePathStep label={t(($) => $.qa_cockpit.release_path_deploy)} state={allReady ? "active" : "pending"} last />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function RegressionGate({ gate, issueHref }: { gate: SprintData["regression"]; issueHref: (id: string) => string }) {
   const { t } = useT("issues");

@@ -534,6 +534,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Get("/tasks/{taskId}/status", h.GetTaskStatus)
 		r.Post("/tasks/{taskId}/start", h.StartTask)
 		r.Post("/tasks/{taskId}/wait-local-directory", h.MarkTaskWaitingLocalDirectory)
+		r.Post("/tasks/{taskId}/orchestration-base", h.PinOrchestrationRunBase)
 		r.Post("/tasks/{taskId}/progress", h.ReportTaskProgress)
 		r.Post("/tasks/{taskId}/complete", h.CompleteTask)
 		r.Post("/tasks/{taskId}/fail", h.FailTask)
@@ -548,6 +549,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 		r.Post("/runtimes/{runtimeId}/recover-orphans", h.RecoverOrphanedTasks)
 		r.Post("/tasks/{taskId}/session", h.PinTaskSession)
+		r.Post("/artifact-capabilities/verify", h.VerifyArtifactCapability)
 	})
 
 	// Protected API routes
@@ -567,30 +569,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// WITHOUT the X-Workspace header needing to match first — lets a deep
 		// link opened in the wrong/last workspace switch to the right one.
 		r.Get("/api/issues/{id}/locate", h.LocateIssue)
-		// Live code editor reverse-proxy (cloud mode): /editor/proxy/{token}/*
-		// streams (HTTP + WebSocket) to the code-server the backend launched on
-		// the remote daemon for that token. Authed via the session cookie the
-		// iframe carries; the token is the per-session capability.
-		// The no-slash form redirects to the canonical slash form (serving at a
-		// slash-less base would break code-server's relative asset URLs). Web
-		// used to arrive slash-less because Next's trailing-slash normalization
-		// 308-stripped /editor/proxy/{token}/?folder=… before proxying; that
-		// fell through to the API 404 whose frame-ancestors 'none' CSP blocked
-		// the editor iframe. Next now skips that redirect
-		// (skipTrailingSlashRedirect), so this route is the defensive belt.
-		r.HandleFunc("/editor/proxy/{token}", func(w http.ResponseWriter, r *http.Request) {
-			target := r.URL.Path + "/"
-			if r.URL.RawQuery != "" {
-				target += "?" + r.URL.RawQuery
-			}
-			http.Redirect(w, r, target, http.StatusTemporaryRedirect)
-		})
-		r.HandleFunc("/editor/proxy/{token}/*", h.ProxyEditor)
 		// Playwright trace-viewer reverse-proxy (Slice 3 of QA observability):
 		// /trace/proxy/{token}/* streams (HTTP + WebSocket) to the
 		// `playwright show-trace` viewer the backend launched on the daemon that
-		// holds the trace .zip. Same authed-session + capability-token model as
-		// the editor proxy above.
+		// holds the trace .zip. Uses an authed-session + capability-token model.
 		r.HandleFunc("/trace/proxy/{token}/*", h.ProxyTrace)
 		// Live QA browser reverse-proxy (cloud mode): /browser/proxy/{token}/
 		// editor/browser/* streams the daemon's CDP screencast (HTTP + WebSocket)
@@ -605,14 +587,6 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// SD: external-identity mapping (e.g. Bitrix RESPONSIBLE_ID -> member).
 		r.Get("/api/me/links", h.ListMyLinks)
 		r.Post("/api/me/links/bitrix", h.LinkBitrixIdentity)
-		// Editor account integration (Settings): per-user PATs injected into
-		// the co-code editor env. Reads are session-level; writes are
-		// human-only (an agent's task token must not be able to plant a
-		// token into the human's editor environment).
-		r.Get("/api/me/editor-tokens", h.ListEditorTokens)
-		r.With(handler.RequireHumanActor).Put("/api/me/editor-tokens", h.PutEditorToken)
-		r.With(handler.RequireHumanActor).Delete("/api/me/editor-tokens/{provider}", h.DeleteEditorToken)
-
 		// Instance configuration (Settings → Configs). Owner-only (enforced in
 		// the handler); mutations are human-only so an agent's task token can
 		// never flip a global feature flag.
@@ -982,7 +956,14 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// merge or reject a review on the human's behalf.
 					r.With(handler.RequireHumanActor).Post("/review-decision", h.CreateReviewDecision)
 					r.Get("/task-runs", h.ListTasksByIssue)
-					r.Get("/editor", h.GetIssueEditor)
+					r.Get("/orchestration", h.GetIssueOrchestration)
+					r.Get("/artifact", h.GetIssueArtifact)
+					r.With(handler.RequireHumanActor).Post("/orchestration", h.CreateIssueOrchestration)
+					r.With(handler.RequireHumanActor).Patch("/orchestration", h.EditIssueOrchestration)
+					r.With(handler.RequireHumanActor).Post("/orchestration/start", h.StartIssueOrchestration)
+					r.With(handler.RequireHumanActor).Post("/orchestration/steps/{stepId}/approve", h.ApproveOrchestrationStep)
+					r.With(handler.RequireHumanActor).Post("/orchestration/steps/{stepId}/retry", h.RetryOrchestrationStep)
+					r.With(handler.RequireHumanActor).Post("/orchestration/steps/{stepId}/cancel-branch", h.CancelOrchestrationBranch)
 					r.Get("/browser", h.GetIssueBrowser)
 					r.Get("/qa-preview-url", h.GetIssueQAPreviewURL)
 					r.Get("/usage", h.GetIssueUsage)

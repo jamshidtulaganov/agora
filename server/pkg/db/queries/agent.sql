@@ -141,14 +141,15 @@ ORDER BY created_at DESC;
 -- applyIssueCostTier and migration 146.
 INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, status, priority, trigger_comment_id,
-    trigger_summary, force_fresh_session, is_leader_task, model_override
+    trigger_summary, force_fresh_session, is_leader_task, model_override,
+    orchestration_step_id
 )
 VALUES (
     $1, $2, $3, 'queued', $4, sqlc.narg(trigger_comment_id),
     sqlc.narg(trigger_summary),
     COALESCE(sqlc.narg('force_fresh_session')::boolean, FALSE),
     COALESCE(sqlc.narg('is_leader_task')::boolean, FALSE),
-    sqlc.narg('model_override')
+    sqlc.narg('model_override'), sqlc.narg('orchestration_step_id')
 )
 RETURNING *;
 

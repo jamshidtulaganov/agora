@@ -27,6 +27,8 @@ import (
 // changes one place.
 const ChecksumManifestName = "checksums.txt"
 
+const agoraReleaseAPIBase = "https://api.github.com/repos/jamshidtulaganov/agora-cli/releases"
+
 const DefaultUpdateDownloadTimeout = 120 * time.Second
 
 // GitHubRelease is the subset of the GitHub releases API response we need.
@@ -223,7 +225,7 @@ func verifyAssetSHA256(data []byte, expectedHex, assetName string) error {
 
 func fetchReleaseByTag(tag string) (*GitHubRelease, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/multica-ai/multica/releases/tags/"+tag, nil)
+	req, err := http.NewRequest(http.MethodGet, agoraReleaseAPIBase+"/tags/"+tag, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +251,7 @@ func fetchReleaseByTag(tag string) (*GitHubRelease, error) {
 // FetchLatestRelease fetches the latest release tag from the agora GitHub repo.
 func FetchLatestRelease() (*GitHubRelease, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/multica-ai/multica/releases/latest", nil)
+	req, err := http.NewRequest(http.MethodGet, agoraReleaseAPIBase+"/latest", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -315,17 +317,6 @@ func GetBrewPrefix() string {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
-}
-
-// UpdateViaBrew runs `brew upgrade agora-ai/tap/agora`.
-// Returns the combined output and any error.
-func UpdateViaBrew() (string, error) {
-	cmd := exec.Command("brew", "upgrade", "agora-ai/tap/agora")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return string(out), fmt.Errorf("brew upgrade failed: %w", err)
-	}
-	return string(out), nil
 }
 
 func updateDownloadTimeoutOrDefault(timeout time.Duration) time.Duration {

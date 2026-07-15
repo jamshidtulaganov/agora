@@ -467,6 +467,55 @@ Contracts:
   model for a subagent it just created — is a manual `--model` flag, not
   platform-driven.
 
+## Persisted issue orchestration
+
+Source:
+
+```text
+server/migrations/160_issue_orchestration.up.sql
+server/migrations/169_orchestration_run_base_git_states.up.sql
+server/migrations/170_orchestration_step_capability.up.sql
+server/pkg/db/queries/orchestration.sql
+server/internal/handler/orchestration.go
+server/internal/service/task.go              # orchestration terminal callback
+server/internal/handler/daemon.go             # authoritative per-step model route
+server/internal/daemon/prompt.go              # per-step handoff contract
+server/internal/daemon/local_worktree.go      # pinned bases, detached verification worktrees, Git evidence
+packages/views/issues/components/issue-execution.tsx # status bar, Active Work, advanced execution drawer
+docs/orchestration-worktree-smoke.md                  # real Git branch→integration→QA/review smoke
+server/internal/handler/orchestration_squad_selection_test.go # capability proposal/reroute integration test
+```
+
+Contracts:
+
+- one issue can have only one active (`draft`, `running`, or
+  `waiting_approval`) orchestration run;
+- steps are dependency-linked; the backend dispatches every ready step up to
+  the run capacity while serializing concurrent work assigned to one agent;
+- every step persists a capability; planner output must be an acyclic DAG and
+  parallel development branches must converge before QA/review;
+- draft runs are plan proposals and edits never auto-start them; pending work
+  can be rerouted only to a ready, capability-compatible worker inside the
+  controller/step-squad boundary, and every accepted edit creates a plan
+  revision event;
+- structural `add_child` edits are draft-only, insert development work before
+  the pending integration join, and add the new branch as an integration
+  dependency so proposal edits cannot create an orphan branch;
+- `agent_task_queue.orchestration_step_id` is written in the task INSERT, so a
+  fast daemon cannot complete before the task-to-step relationship exists;
+- explicit orchestration `model_override` is authoritative and is not replaced
+  by issue cost-tier labels;
+- orchestration owns retry for linked tasks, preventing the generic task retry
+  path from creating a second competing attempt;
+- the first local worker atomically pins `orchestration_run.base_git_states`;
+  every parallel worktree starts from that immutable per-repository snapshot;
+- integration completion records per-repository HEADs and daemon-verified
+  ancestry for every dependency commit;
+- QA/review worktrees are detached at those exact integration HEADs and the
+  server rejects a dirty worktree or a moved HEAD;
+- agent completion advances to the next step, exhausted retry budgets fail the
+  run, and human approval gates pause it with a durable audit event.
+
 ## Tests
 
 Relevant test groups:

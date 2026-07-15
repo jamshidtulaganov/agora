@@ -14,7 +14,7 @@ import type { ProjectSettings } from "@agora/core/types";
 //
 // Surfaces the project.settings keys the QA flows read — qa_smoke_cmd (how to
 // bring the app up), qa_smoke_url (where it serves), and qa_test_cmd (how to
-// run the test suite, consumed by the co-code Tests pane) — so a human
+// run the test suite, consumed by the issue Checks surface) — so a human
 // configures them from the UI instead of hand-editing the settings JSON.
 // Empty values clear the override (the flows fall back to auto-detect). Saves
 // merge into the existing settings blob so unrelated keys (sprint_mode, etc.)

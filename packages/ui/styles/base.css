@@ -294,6 +294,30 @@
   animation: sdlc-breathe 2s ease-in-out infinite;
 }
 
+/* A task is actively executing: a compact rotating progress ring. Keeping the
+ * center still makes it readable even when motion is reduced or in a captured
+ * screenshot. */
+@keyframes sdlc-running-ring {
+  to { transform: rotate(360deg); }
+}
+
+@utility animate-sdlc-running-ring {
+  animation: sdlc-running-ring 900ms linear infinite;
+}
+
+/* Directional hand-off into the currently running stage. Only one connector
+ * can flow at a time, so the strip stays calm even with parallel workers. */
+@keyframes sdlc-flow {
+  0% { transform: translateX(-150%); opacity: 0; }
+  25% { opacity: 0.9; }
+  75% { opacity: 0.9; }
+  100% { transform: translateX(300%); opacity: 0; }
+}
+
+@utility animate-sdlc-flow {
+  animation: sdlc-flow 1.4s ease-in-out infinite;
+}
+
 /* One-shot pop played when a stage dot/icon is (re)mounted — either the
  * stepper's initial mount, or a state flip (e.g. QA running -> passed via a
  * WS-driven refetch) via a `key={state}` remount at the call site. Same

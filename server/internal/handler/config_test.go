@@ -18,6 +18,7 @@ func TestGetConfigIncludesRuntimeAuthConfig(t *testing.T) {
 	t.Setenv("POSTHOG_HOST", "https://eu.i.posthog.com")
 	t.Setenv("AGORA_PUBLIC_URL", "https://api.example.com/")
 	t.Setenv("AGORA_APP_URL", "https://app.example.com/")
+	t.Setenv("AGORA_CLI_RELEASES_URL", "https://api.github.com/repos/jamshidtulaganov/agora-cli/releases/latest")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
 	w := httptest.NewRecorder()
@@ -59,6 +60,25 @@ func TestGetConfigIncludesRuntimeAuthConfig(t *testing.T) {
 	if cfg.DaemonAppURL != "https://app.example.com" {
 		t.Fatalf("daemon_app_url: want https://app.example.com, got %q", cfg.DaemonAppURL)
 	}
+	if cfg.CLIReleasesURL != "https://api.github.com/repos/jamshidtulaganov/agora-cli/releases/latest" {
+		t.Fatalf("cli_releases_url: unexpected %q", cfg.CLIReleasesURL)
+	}
+}
+
+func TestCLIReleasesURLFromEnv(t *testing.T) {
+	t.Run("defaults to Agora distribution", func(t *testing.T) {
+		t.Setenv("AGORA_CLI_RELEASES_URL", "")
+		if got := cliReleasesURLFromEnv(); got != defaultCLIReleasesURL {
+			t.Fatalf("default releases URL: want %q, got %q", defaultCLIReleasesURL, got)
+		}
+	})
+
+	t.Run("can be disabled for an independently distributed fork", func(t *testing.T) {
+		t.Setenv("AGORA_CLI_RELEASES_URL", "off")
+		if got := cliReleasesURLFromEnv(); got != "" {
+			t.Fatalf("disabled releases URL: want empty, got %q", got)
+		}
+	})
 }
 
 func TestGetConfigUsesAppURLForSameOriginDaemonSetup(t *testing.T) {

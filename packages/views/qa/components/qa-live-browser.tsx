@@ -16,7 +16,7 @@ import { useT } from "../../i18n";
 //
 // `active` is the mount-gate — owned by the parent (QALensBody), which
 // derives it from either a live QA-squad run (useQaRunningTasks) or the user
-// explicitly clicking "Open live testing". When `active` is false: the editor/
+// explicitly clicking "Open live testing". When `active` is false: the
 // browser/preview queries below are `enabled: false` (zero network), and this
 // renders ONLY the compact card — no EditorBrowserPane, no WebSocket, no
 // Chromium, no autoPreview dev-server boot.
@@ -38,10 +38,11 @@ import { useT } from "../../i18n";
 //    opened in a Chromium keyed by the target URL. Keying by URL means every
 //    issue that shares the box reuses ONE warm Chromium — the daemon keeps it
 //    alive between opens, so only the very first open pays the spawn.
-// 2. Agent-worktree CDP — a Chromium driven against an AGENT's own per-issue
-//    checkout (its dev-server preview). Opt-in ("Start"), since spawning
-//    against a checkout is heavier and only wanted for worktree-QA'd projects.
-// 3. New-tab link — no reachable daemon; hand off to the browser.
+// 2. New-tab link — no reachable daemon; hand off to the browser.
+//
+// A mutable development worktree is deliberately not a QA source. Product
+// verification must target the configured QA environment or the immutable
+// integration artifact surfaced by the Product/Evidence views.
 //
 // Editor + preview metadata are only fetched while active (cheap — no
 // Chromium by themselves, but still real requests we don't want to fire on
@@ -69,12 +70,6 @@ export function QALiveBrowser({
 }) {
   const { t } = useT("issues");
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["issue-editor", issueId],
-    queryFn: () => api.getIssueEditor(issueId),
-    staleTime: 30_000,
-    enabled: active,
-  });
   const { data: browser, isLoading: browserLoading } = useQuery({
     queryKey: ["issue-browser", issueId],
     queryFn: () => api.getIssueBrowser(issueId),
@@ -125,28 +120,20 @@ export function QALiveBrowser({
       : browser?.mode === "cloud"
         ? browser.browser_url
         : "";
-  // Worktree browsing needs an agent work_dir; the editor endpoint returns the
-  // roster in both modes (cloud included, when a worktree still exists).
-  const agent = data?.agents?.[0];
   const previewUrl = preview?.url ?? "";
 
   // A deployed QA target + a reachable daemon → drive it in a CDP Chromium.
   // Auto-streams: the box is exactly what the QA engineer came to see, and the
   // per-URL warm Chromium makes repeat opens instant.
   const boxBrowse = !!daemonUrl && !!previewUrl;
-  // No box, but the issue has an agent worktree → offer that checkout's browser.
-  const agentBrowse = !boxBrowse && !!daemonUrl && !!agent;
   // No daemon at all → the target can only open in a real tab.
-  const linkOnly = !isLoading && !browserLoading && !boxBrowse && !agentBrowse && !!previewUrl;
+  const linkOnly = !browserLoading && !boxBrowse && !!previewUrl;
 
-  // The local-worktree lane AUTO-connects: opening the QA review IS the intent
-  // to watch the app, so it drives the CDP browser straight away — and the pane
-  // auto-starts the dev server (autoPreview) so localhost comes up by itself,
-  // no manual "Start" / "Load dev preview" clicks.
-  const live = boxBrowse || agentBrowse;
+  // Opening the QA review is explicit intent to watch the configured target,
+  // so the CDP connection may start immediately once both URLs are available.
+  const live = boxBrowse;
   // Which environment is under test, surfaced as a chip so neither the reviewer
-  // nor the QA agent is ever unsure: a deployed box's host, or the local
-  // worktree on the developer's daemon.
+  // nor the QA agent is ever unsure: the configured QA target's host.
   const envLabel = boxBrowse
     ? (() => {
         try {
@@ -155,9 +142,7 @@ export function QALiveBrowser({
           return previewUrl;
         }
       })()
-    : agentBrowse
-      ? t(($) => $.qa_review.env_local)
-      : "";
+    : "";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card">
@@ -201,12 +186,6 @@ export function QALiveBrowser({
         <div className="min-h-0 flex-1">
           <EditorBrowserPane daemonUrl={daemonUrl} workdir={`qa-target:${previewUrl}`} initialUrl={previewUrl} />
         </div>
-      ) : agentBrowse ? (
-        // Local worktree on the dev's daemon: drive its CDP browser and let the
-        // pane auto-start the dev server on localhost (autoPreview).
-        <div className="min-h-0 flex-1">
-          <EditorBrowserPane daemonUrl={daemonUrl} workdir={agent!.work_dir} autoPreview />
-        </div>
       ) : linkOnly ? (
         // No reachable daemon to drive a Chromium — hand the target off to a
         // real browser tab (never an iframe: the box's CSP would blank it).
@@ -229,7 +208,7 @@ export function QALiveBrowser({
         </div>
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-10 text-center">
-          {isLoading || browserLoading || previewLoading ? (
+          {browserLoading || previewLoading ? (
             <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
               <Loader2 className="size-3.5 animate-spin" />
               {t(($) => $.qa_review.live_browser_loading)}

@@ -88,6 +88,11 @@ export const issueKeys = {
     [...issueKeys.subscribersAll(), issueId] as const,
   usageAll: () => ["issues", "usage"] as const,
   usage: (issueId: string) => [...issueKeys.usageAll(), issueId] as const,
+  orchestrationAll: () => ["issues", "orchestration"] as const,
+  orchestration: (issueId: string) => [...issueKeys.orchestrationAll(), issueId] as const,
+  artifactAll: () => ["issues", "artifact"] as const,
+  artifact: (issueId: string, stepId?: string) =>
+    [...issueKeys.artifactAll(), issueId, stepId ?? "canonical"] as const,
   qaEvidenceAll: () => ["issues", "qa-evidence"] as const,
   /** Latest persisted run_qa verdict for an issue (the QA section reads this). */
   qaEvidence: (issueId: string) => [...issueKeys.qaEvidenceAll(), issueId] as const,
@@ -525,6 +530,19 @@ export function issueUsageOptions(issueId: string) {
   return queryOptions({
     queryKey: issueKeys.usage(issueId),
     queryFn: () => api.getIssueUsage(issueId),
+  });
+}
+export function issueOrchestrationOptions(issueId: string) {
+  return queryOptions({
+    queryKey: issueKeys.orchestration(issueId),
+    queryFn: () => api.getIssueOrchestration(issueId),
+  });
+}
+export function issueArtifactOptions(issueId: string, stepId?: string) {
+  return queryOptions({
+    queryKey: issueKeys.artifact(issueId, stepId),
+    queryFn: () => api.getIssueArtifact(issueId, stepId),
+    staleTime: 20 * 60 * 1000,
   });
 }
 export function qaEvidenceOptions(issueId: string) {

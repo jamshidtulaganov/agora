@@ -33,7 +33,6 @@ function randomInput(rand: () => number): StagePipelineInput {
   return {
     status: pick(STATUSES),
     labels,
-    workMode: maybe(rand() < 0.5 ? "full_pipeline" : "in_editor"),
     prNumber: maybe(rand() < 0.5 ? Math.floor(rand() * 1000) : null),
     mergeGates: maybe({ ci: pick(GATE_STATES), qa: pick(GATE_STATES), tier: pick(["trivial", "light", "full", ""]) }),
     prMerged: maybe(rand() < 0.5),

@@ -499,7 +499,9 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 	b.WriteString("- `agora issue comment list <issue-id> [--thread <comment-id> [--tail N] | --recent N] [--before <ts> --before-id <uuid>] [--since <RFC3339>] --output json` — List comments on an issue. Default returns the full flat timeline (server cap 2000). On busy issues prefer the thread-aware reads: `--thread <comment-id>` returns one conversation (root + every reply); `--thread <id> --tail N` caps replies to the N most recent (root is always included, even at `--tail 0`); `--recent N` returns the N most recently active threads. `--before` / `--before-id` walks older replies under `--thread --tail` (stderr label: `Next reply cursor`) or older threads under `--recent` (stderr label: `Next thread cursor`). `--since` is for incremental polling and may combine with `--thread` (with or without `--tail`) or `--recent`.\n")
 	b.WriteString("- `agora issue create --title \"...\" [--description \"...\" | --description-stdin | --description-file <path>] [--priority X] [--status X] [--assignee X | --assignee-id <uuid>] [--parent <issue-id>] [--project <project-id>] [--due-date <RFC3339>] [--attachment <path>]` — Create a new issue; `--attachment` may be repeated.\n")
 	b.WriteString("- `agora issue update <id> [--title X] [--description X | --description-stdin | --description-file <path>] [--priority X] [--status X] [--assignee X | --assignee-id <uuid>] [--parent <issue-id>] [--project <project-id>] [--due-date <RFC3339>]` — Update issue fields; use `--parent \"\"` to clear parent.\n")
-	b.WriteString("- `agora repo checkout <url> [--ref <branch-or-sha>]` — Check out a repository into the working directory (creates a git worktree with a dedicated branch; use `--ref` for review/QA on a specific branch, tag, or commit)\n")
+	if !ctx.PreprovisionedWorktree {
+		b.WriteString("- `agora repo checkout <url> [--ref <branch-or-sha>]` — Check out a repository into the working directory (creates a git worktree with a dedicated branch; use `--ref` for review/QA on a specific branch, tag, or commit)\n")
+	}
 	b.WriteString("- `agora issue status <id> <status>` — Shortcut for `issue update --status` when you only need to flip status (todo, in_progress, in_review, done, blocked, backlog, cancelled)\n")
 	// Available Commands lists `agora issue comment add` with all three input
 	// modes, but the menu entry now actively steers agents away from inlining
@@ -583,7 +585,8 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 	// they arrive via trigger comments (TriggerCommentID set) or carry their
 	// own mode markers, and their instructions own their procedure.
 	if ctx.IssueID != "" && ctx.TriggerCommentID == "" && ctx.ChatSessionID == "" &&
-		ctx.AutopilotRunID == "" && ctx.QuickCreatePrompt == "" {
+		ctx.AutopilotRunID == "" && ctx.QuickCreatePrompt == "" && !ctx.OrchestrationReadOnly &&
+		(!ctx.OrchestrationStep || ctx.OrchestrationStage == "dev") {
 		b.WriteString("## Test-Driven Delivery\n\n")
 		b.WriteString("Work test-first — the QA gate re-runs your tests, and a red hand-off is a guaranteed bounce (slow for everyone):\n\n")
 		b.WriteString("1. **Red first.** Before implementing, write (or extend) a test in the repo's OWN framework that encodes the EXACT expected outcome from the plan — the exact value/status/text, not mere presence. Run it and SEE IT FAIL against the current code: a test that passes before your change proves nothing about it.\n")
@@ -594,7 +597,24 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 	}
 
 	// Inject available repositories section.
-	if ctx.LocalWorkDir != "" {
+	if ctx.PreprovisionedWorktree {
+		b.WriteString("## Working Directory (managed orchestration worktree)\n\n")
+		b.WriteString("The daemon has already placed you inside the isolated repository worktree for this orchestration step. The code is ALREADY present in the current working directory. Do **NOT** run `agora repo checkout`; it would move the task away from the commit and branch that the orchestration engine is verifying. Work only in the current directory.\n")
+		if ctx.OrchestrationReadOnly {
+			b.WriteString("This worktree is pinned to the exact integrated commit for read-only verification. Do not edit files, create commits or branches, switch branches, reset, pull, fetch-and-checkout, or otherwise move HEAD. You may inspect files and run non-mutating checks only.\n")
+		}
+		if len(ctx.Repos) > 0 {
+			b.WriteString("\nFor reference, these repositories are already represented by the managed worktree and must not be checked out again:\n\n")
+			for _, repo := range ctx.Repos {
+				if repo.Description != "" {
+					fmt.Fprintf(&b, "- %s — %s\n", repo.URL, repo.Description)
+				} else {
+					fmt.Fprintf(&b, "- %s\n", repo.URL)
+				}
+			}
+		}
+		b.WriteString("\n")
+	} else if ctx.LocalWorkDir != "" {
 		// In-place (local_directory) mode: the agent is ALREADY inside the
 		// project's code at ctx.LocalWorkDir. Do NOT tell it to `agora repo
 		// checkout` — that would nest a worktree and the agent would edit the
@@ -642,7 +662,9 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 				fmt.Fprintf(&b, "- %s\n", formatProjectResource(r))
 			}
 			b.WriteString("\nResources are pointers — open them only when relevant to the task. ")
-			if ctx.LocalWorkDir != "" {
+			if ctx.PreprovisionedWorktree {
+				b.WriteString("The orchestration daemon has already provisioned the repository in the current working directory; do NOT run `agora repo checkout` for the `github_repo` resources.\n\n")
+			} else if ctx.LocalWorkDir != "" {
 				b.WriteString("A `local_directory` resource applies here: you are running in place inside it (see **Working Directory** above), so do NOT `agora repo checkout` the `github_repo` resources — the code is already in your working directory.\n\n")
 			} else {
 				b.WriteString("For `github_repo` resources, use `agora repo checkout <url>` to fetch the code. Add `--ref <branch-or-sha>` when a task or handoff names an exact revision.\n\n")
@@ -728,6 +750,16 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 		}
 		b.WriteString("- Complete the autopilot instructions directly\n")
 		b.WriteString("- Do not run `agora issue get`, `agora issue comment add`, or `agora issue status` for this run unless the autopilot instructions explicitly tell you to create or update an issue\n\n")
+	} else if ctx.OrchestrationStep {
+		b.WriteString("**This task is one persisted orchestration step.** The orchestration engine owns stage transitions, assignment, retries, QA/review dispatch, and release.\n\n")
+		fmt.Fprintf(&b, "1. Run `agora issue get %s --output json` and read the recent issue handoff comments.\n", ctx.IssueID)
+		b.WriteString("2. Complete only the assigned step. Do not change issue status or assignee, dispatch another stage, create sub-issues, or mention another agent to start work.\n")
+		if ctx.OrchestrationReadOnly {
+			b.WriteString("3. Verify the exact integrated checkout without editing files, committing, switching branches, or moving HEAD.\n")
+		} else {
+			b.WriteString("3. Leave the current worktree clean and commit every intended change before handing off.\n")
+		}
+		fmt.Fprintf(&b, "4. Post concise evidence for this step with `agora issue comment add %s` using the platform-correct non-inline mode from ## Comment Formatting.\n\n", ctx.IssueID)
 	} else if ctx.TriggerCommentID != "" {
 		// Comment-triggered: focus on reading and replying
 		b.WriteString("**This task was triggered by a NEW comment.** Your primary job is to respond to THIS specific comment, even if you have handled similar requests before in this session.\n\n")
@@ -779,7 +811,7 @@ func buildMetaSkillContent(provider string, ctx TaskContextForEnv) string {
 	// `done`, and the agent has nothing to do or avoid on that path.
 	// Section is skipped for chat, quick-create, and run-only autopilot
 	// runs (no parent/child semantics there).
-	if ctx.IssueID != "" && ctx.ChatSessionID == "" && ctx.QuickCreatePrompt == "" && ctx.AutopilotRunID == "" {
+	if ctx.IssueID != "" && ctx.ChatSessionID == "" && ctx.QuickCreatePrompt == "" && ctx.AutopilotRunID == "" && !ctx.OrchestrationStep {
 		b.WriteString("## Sub-issue Creation\n\n")
 		b.WriteString("**Choosing `--status` when creating sub-issues.** `--status todo` = **start now** (the default — an agent assignee fires immediately). `--status backlog` = **wait** (assignee is set but no trigger fires; promote later with `agora issue status <child-id> todo`). Parallel children: all `--status todo`. Strict serial Step 1→2→3: only Step 1 is `todo`; Steps 2/3 are `--status backlog` from the start, promoted in turn.\n\n")
 	}

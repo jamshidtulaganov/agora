@@ -81,6 +81,20 @@ export type {
 } from "./chat";
 export type { StorageAdapter } from "./storage";
 export type {
+  OrchestrationRun,
+  OrchestrationRunStatus,
+  ExecutionStrategy,
+  ProgressionPolicy,
+  OrchestrationStep,
+  OrchestrationStepStatus,
+  OrchestrationStage,
+  OrchestrationEvent,
+  CreateOrchestrationRequest,
+  CreateOrchestrationStepRequest,
+  OrchestrationPlanRevision,
+  EditOrchestrationRequest,
+} from "./orchestration";
+export type {
   Project,
   ProjectSettings,
   ProjectStatus,
@@ -218,4 +232,15 @@ export type {
   TestRunHistoryItem,
   TestCaseRunsResponse,
 } from "./test-case";
-export type { EditorAgent, GetIssueEditorResponse, IssueBrowserResponse, IssueQAPreviewURLResponse } from "./editor-live";
+export type { IssueBrowserResponse, IssueQAPreviewURLResponse } from "./editor-live";
+export type {
+  ArtifactRepoRef,
+  IssueArtifactSummary,
+  IssueArtifactResponse,
+  ArtifactChangedFile,
+  ArtifactRepoChanges,
+  ArtifactChangesResponse,
+  ArtifactFileResponse,
+  ArtifactPreviewResponse,
+  ArtifactChecksResponse,
+} from "./artifact";

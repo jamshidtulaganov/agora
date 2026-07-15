@@ -38,7 +38,7 @@ import (
 // asks that daemon to spawn `playwright show-trace`, and returns a same-origin
 // reverse-proxy URL the frontend iframes. GET /api/qa/trace/{testRunId}.
 //
-// Like GetIssueEditor it takes only an id and authorizes off the resolved
+// It takes only an id and authorizes off the resolved
 // entity's own workspace (the issue's), so no X-Workspace-ID header is required.
 func (h *Handler) LaunchTrace(w http.ResponseWriter, r *http.Request) {
 	userID, ok := requireUserID(w, r)
@@ -92,7 +92,7 @@ func (h *Handler) LaunchTrace(w http.ResponseWriter, r *http.Request) {
 		// Older runs recorded traces under /tmp, which the OS purges within days;
 		// a GC'd worktree or daemon reinstall loses them too. That is an expired
 		// artifact, not a server fault — answer 410 with an actionable message
-		// (mirrors GetIssueEditor's worktree_gone contract).
+		// (mirrors the artifact-runtime-gone contract).
 		if strings.Contains(lerr.Error(), "trace file does not exist") {
 			writeJSON(w, http.StatusGone, map[string]string{
 				"reason": "trace_gone",
@@ -107,7 +107,7 @@ func (h *Handler) LaunchTrace(w http.ResponseWriter, r *http.Request) {
 	// <host>:<port> directly: the show-trace process binds the DAEMON HOST's
 	// loopback, which a containerized (self-host Docker) or remote-node (cloud)
 	// backend cannot dial directly. Same routing model as the live code editor
-	// (/editor/local/{port}), which reaches code-server through this same
+	// (/trace/local/{port}), which reaches the trace viewer through this same
 	// daemon base for the identical reason.
 	tok := registerTraceTarget(daemonBase, fmt.Sprintf("/trace/local/%d", port), uuidToString(issue.WorkspaceID))
 	writeJSON(w, http.StatusOK, map[string]string{
@@ -119,7 +119,7 @@ func (h *Handler) LaunchTrace(w http.ResponseWriter, r *http.Request) {
 // to launch the trace viewer (POST /trace/launch) and to reverse-proxy it
 // afterward (GET /trace/local/{port}/*, via ProxyTrace). Cloud/Remote Box
 // (internal set) → the daemon's private address; self-host (internal empty) →
-// the local daemon health port. Mirrors GetIssueEditor's resolution, except
+// the local daemon health port. It uses the same runtime resolution as artifacts,
 // unlike the old two-value split there is no separate "proxy host:port" —
 // both operations always go through the SAME daemon base, because the trace
 // viewer's port is only reachable THROUGH the daemon's own reverse proxy, not
@@ -160,9 +160,8 @@ func launchTraceOnDaemon(ctx context.Context, base, tracePath string) (int, erro
 		return 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	// show-trace has to unzip the trace and bring up its server; give it room
-	// past the editor's 30s (a large trace can take longer to load than a bare
-	// code-server spawn).
+	// show-trace has to unzip the trace and bring up its server; a large trace
+	// needs a generous startup window.
 	resp, err := (&http.Client{Timeout: 60 * time.Second}).Do(req)
 	if err != nil {
 		return 0, err
@@ -234,7 +233,7 @@ func lookupTraceTarget(tok string) (traceTarget, bool) {
 // ProxyTrace reverse-proxies /trace/proxy/{token}/* (HTTP + WebSocket) to the
 // `playwright show-trace` server bound on the daemon for that token. Lives
 // behind the authed session (the iframe carries the user cookie); the token is
-// the capability that maps to a specific viewer. Identical model to ProxyEditor.
+// the capability that maps to a specific viewer.
 func (h *Handler) ProxyTrace(w http.ResponseWriter, r *http.Request) {
 	tok := chi.URLParam(r, "token")
 	t, ok := lookupTraceTarget(tok)
@@ -280,7 +279,7 @@ func (h *Handler) ProxyTrace(w http.ResponseWriter, r *http.Request) {
 	// which must be iframed by the QA panel's TraceOverlay. Drop ours so the
 	// upstream's headers stand; the capability token + the per-request
 	// membership check above remain the actual access control (same model as
-	// ProxyEditor, editor.go).
+	// other capability-gated proxies).
 	w.Header().Del("Content-Security-Policy")
 	proxy.ServeHTTP(w, r)
 }

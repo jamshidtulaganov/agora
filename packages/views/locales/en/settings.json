@@ -625,18 +625,5 @@
       "error_save_failed": "Couldn't save the sync config.",
       "error_delete_failed": "Couldn't delete the sync config."
     }
-  },
-  "editor_accounts": {
-    "title": "Editor accounts",
-    "description": "Personal access tokens injected into your co-code editor (gh CLI and HTTPS git in the editor terminal authenticate automatically). Stored encrypted; shown masked.",
-    "token_placeholder": "Paste a personal access token…",
-    "save": "Save",
-    "remove": "Remove",
-    "toast_saved": "Token saved",
-    "toast_save_failed": "Failed to save token",
-    "toast_removed": "Token removed",
-    "toast_remove_failed": "Failed to remove token",
-    "scope_global": "Global (all workspaces)",
-    "scope_unknown_workspace": "Unknown workspace"
   }
 }

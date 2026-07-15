@@ -165,7 +165,7 @@ describe("QALensBody", () => {
     expect(screen.queryByText("agent")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Override" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send back to dev" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Re-run QA" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run checks again" })).toBeInTheDocument();
     // Pass/Fail buttons are gone — the chip + Override dropdown replace them.
     expect(screen.queryByRole("button", { name: "Pass" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Fail" })).not.toBeInTheDocument();

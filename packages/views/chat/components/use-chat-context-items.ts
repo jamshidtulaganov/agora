@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
+import { ApiError } from "@agora/core/api";
 import { selectRecentContexts, useRecentContextStore, type RecentContextEntry } from "@agora/core/chat";
 import { issueDetailOptions } from "@agora/core/issues/queries";
 import { projectDetailOptions } from "@agora/core/projects/queries";
@@ -100,6 +101,19 @@ export function useChatContextItems(wsId: string): MentionItem[] {
     })),
   });
 
+  // A deleted/restricted context must not remain a permanent background
+  // request. This also self-heals after a local database is re-seeded while
+  // the same browser profile stays open.
+  useEffect(() => {
+    recentQueries.forEach((query, index) => {
+      const entry = visibleRecentEntries[index];
+      if (!entry || !(query.error instanceof ApiError)) return;
+      if (query.error.status === 403 || query.error.status === 404) {
+        useRecentContextStore.getState().forgetContext(wsId, entry);
+      }
+    });
+  }, [recentQueries, visibleRecentEntries, wsId]);
+
   return useMemo(() => {
     const currentItems: MentionItem[] = [];
     if (currentIssue) currentItems.push(issueToMentionItem(currentIssue, "current"));
@@ -114,4 +128,3 @@ export function useChatContextItems(wsId: string): MentionItem[] {
     return [...currentItems, ...recentItems];
   }, [currentIssue, currentProject, recentQueries, visibleRecentEntries]);
 }
-

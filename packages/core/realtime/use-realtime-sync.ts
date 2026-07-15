@@ -328,9 +328,16 @@ function invalidateWorkspaceScopedQueries(qc: QueryClient): void {
   // get marked stale here and refetch on next mount; the one mounted issue
   // refetches immediately, same as its own useWSReconnect already does.
   qc.invalidateQueries({ queryKey: issueKeys.timelineAll() });
+  qc.invalidateQueries({ queryKey: issueKeys.commentTriggerPreviewAll() });
   qc.invalidateQueries({ queryKey: issueKeys.reactionsAll() });
   qc.invalidateQueries({ queryKey: issueKeys.subscribersAll() });
   qc.invalidateQueries({ queryKey: issueKeys.usageAll() });
+  qc.invalidateQueries({ queryKey: issueKeys.orchestrationAll() });
+  qc.invalidateQueries({ queryKey: issueKeys.artifactAll() });
+  qc.invalidateQueries({ queryKey: issueKeys.qaEvidenceAll() });
+  qc.invalidateQueries({ queryKey: issueKeys.reviewVerdictAll() });
+  qc.invalidateQueries({ queryKey: issueKeys.testCasesAll() });
+  qc.invalidateQueries({ queryKey: issueKeys.deployEventsAll() });
   qc.invalidateQueries({ queryKey: issueKeys.attachmentsAll() });
   qc.invalidateQueries({ queryKey: issueKeys.tasksAll() });
   qc.invalidateQueries({ queryKey: workspaceKeys.list() });
@@ -521,6 +528,12 @@ export function useRealtimeSync(
         // shape as the tasks invalidation above — any task lifecycle
         // event shifts the aggregated usage numbers.
         qc.invalidateQueries({ queryKey: ["issues", "usage"] });
+        qc.invalidateQueries({ queryKey: issueKeys.orchestrationAll() });
+        // Completed tasks publish immutable branch/base/head state. Refresh
+        // the artifact selector at the same lifecycle boundary so Changes
+        // does not keep showing the pre-completion "integration pending"
+        // response for its 20-minute immutable-artifact cache window.
+        qc.invalidateQueries({ queryKey: issueKeys.artifactAll() });
         // Squad members-status reads the same task lifecycle to flip
         // working ↔ idle for each agent member.
         invalidateSquadMemberStatusQueries(qc, wsId);

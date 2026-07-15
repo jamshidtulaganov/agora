@@ -32,12 +32,14 @@ export interface ReviewVerdict {
 }
 
 // POST /api/issues/{id}/review-decision response. The two actions return
-// different shapes (approve → merged_dispatch, request_changes → status +
-// dispatched); this merges both with zero-value defaults so one lenient
-// schema covers either.
+// different shapes. request_changes returns the durable plan revision identity
+// so the UI can confirm that work entered the orchestration DAG.
 export interface ReviewDecisionResponse {
   action: string;
   merged_dispatch: boolean;
   status: string;
   dispatched: boolean;
+  plan_version: number;
+  revision_id: string;
+  correction_step_id: string;
 }

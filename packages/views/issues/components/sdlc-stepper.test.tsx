@@ -70,6 +70,12 @@ describe("SDLCStepper", () => {
     expect(screen.getByTestId("sdlc-stage-qa")).toHaveAttribute("data-state", "running");
     expect(screen.getByTestId("sdlc-stage-qa").className).not.toContain("opacity-40");
     expect(screen.getByTestId("sdlc-stage-review")).toHaveAttribute("data-state", "pending");
+    expect(screen.getByTestId("sdlc-stage-qa")).toHaveAttribute("aria-label", "QA: Running");
+    expect(screen.getByTestId("sdlc-stage-qa")).toHaveAttribute("aria-current", "step");
+    expect(screen.getByTestId("sdlc-stage-dev")).not.toHaveAttribute("aria-current");
+    expect(screen.getByTestId("sdlc-stage-qa").innerHTML).toContain(
+      "motion-safe:animate-sdlc-running-ring",
+    );
   });
 
   it("renders an unregistered-lens stage as non-interactive and ignores clicks", () => {
@@ -99,15 +105,13 @@ describe("SDLCStepper", () => {
     expect(onSelectStage).toHaveBeenCalledTimes(1);
   });
 
-  it("marks the stage matching the active lens as selected (bg fill + underlined label)", () => {
+  it("marks the stage matching the active lens with the Agora brand tint", () => {
     renderStepper(BASE_PIPELINE, { activeLens: "qa", isLensAvailable: (stage) => stage === "qa" });
     const qa = screen.getByTestId("sdlc-stage-qa");
     const dev = screen.getByTestId("sdlc-stage-dev");
-    // Selected: subtle fill on the stage, underline on the LABEL span only.
-    expect(qa.className).toContain("bg-accent");
-    expect(qa.querySelector(".underline")).not.toBeNull();
-    expect(dev.className).not.toContain("bg-accent");
-    expect(dev.querySelector(".underline")).toBeNull();
+    expect(qa.className).toContain("bg-brand");
+    expect(qa.querySelector(".underline")).toBeNull();
+    expect(dev.className).not.toContain("bg-brand");
   });
 
   it("never surfaces the stage detail (the jargon chip was dropped)", () => {

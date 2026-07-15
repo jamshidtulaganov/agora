@@ -98,6 +98,10 @@ type TaskContextForEnv struct {
 	AutopilotTriggerPayload string
 	QuickCreatePrompt       string // non-empty for quick-create tasks
 	IsSquadLeader           bool   // true when the agent is acting as a squad leader (may exit silently on no_action)
+	OrchestrationStep       bool   // true when the persisted orchestration engine, not the agent, owns stage transitions
+	OrchestrationStage      string
+	OrchestrationReadOnly   bool // true for verification steps that must not mutate the integrated checkout
+	PreprovisionedWorktree  bool // true when the daemon already placed the agent inside an isolated repository worktree
 	// WorkspaceContext is the workspace-level system prompt (workspace.context
 	// in the DB). Rendered into the brief as `## Workspace Context` when
 	// non-empty so every agent in the workspace sees the same shared context,

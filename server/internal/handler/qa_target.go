@@ -137,7 +137,7 @@ func qaLocalDirectoryClause(localPath string) string {
 // project's configured qa_smoke_url (the team's BYO staging). "" when neither
 // resolves — e.g. a local_directory project (the Live pane drives the local
 // daemon preview instead) or an Agora-self-repo issue with only a per-task
-// worktree (GetIssueEditor's CDP-driven browser covers that).
+// worktree (the exact artifact Product view covers that).
 func (h *Handler) resolveQAPreviewURL(ctx context.Context, issue db.Issue) string {
 	// A concrete declared dev_apps URL (the dev's own running app) wins.
 	if url := h.devLocalAppURL(ctx, issue); url != "" {

@@ -31,7 +31,7 @@ type postBitrixSummaryRequest struct {
 //     its own summary — a human must trigger it (the whole point of the gate);
 //   - the caller must be a workspace member (loadIssueForUser);
 //   - the summary text is supplied by the human — the UI prefills it from the
-//     agent's final comment + the co-code branch and the human reviews/edits
+//     agent's final comment + the integration artifact and human reviews
 //     before submitting, so nothing reaches Bitrix without this explicit action.
 //
 // POST /api/issues/{id}/bitrix-summary.

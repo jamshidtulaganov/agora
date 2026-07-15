@@ -81,7 +81,14 @@ export function useTaskLive(taskId: string) {
   const changes = useMemo(() => deriveFileChanges(timeline), [timeline]);
   const todos = useMemo(() => deriveTodos(timeline), [timeline]);
   const headline = useMemo(() => deriveProgressHeadline(timeline), [timeline]);
-  return { steps, changes, todos, headline };
+  const latestMessageAt = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message?.created_at) return message.created_at;
+    }
+    return undefined;
+  }, [messages]);
+  return { steps, changes, todos, headline, latestMessageAt };
 }
 
 // ─── To-do list: the agent's own plan + "now doing" ─────────────────────────

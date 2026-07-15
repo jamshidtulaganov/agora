@@ -84,9 +84,12 @@ export function WorkspaceAgentWorkingChip({
   // every interactive state. Button's `outline` variant ships
   // `hover:text-foreground` + `aria-expanded:bg-muted aria-expanded:text-foreground`,
   // which would otherwise repaint the brand chip back to neutral on
-  // hover and while the HoverCard is open.
+  // hover and while the HoverCard is open. It also ships `dark:bg-input/30`
+  // / `dark:border-input`; tailwind-merge treats those `dark:` rules as
+  // non-conflicting with the base `bg-brand`, so they win in dark theme
+  // unless overridden — hence the explicit `dark:` re-pins below.
   const activeClass = value
-    ? "border-brand bg-brand text-brand-foreground hover:bg-brand/90 hover:text-brand-foreground aria-expanded:bg-brand aria-expanded:text-brand-foreground"
+    ? "border-brand bg-brand text-brand-foreground hover:bg-brand/90 hover:text-brand-foreground aria-expanded:bg-brand aria-expanded:text-brand-foreground dark:border-brand dark:bg-brand dark:hover:bg-brand/90 dark:aria-expanded:bg-brand"
     : hasAgents
       ? "text-foreground"
       : "text-muted-foreground";

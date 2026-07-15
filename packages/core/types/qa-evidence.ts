@@ -7,6 +7,12 @@
 // diff classification (new_failure is the only kind that blocks the gate).
 export interface QACommand {
   cmd: string;
+  // Human-facing description emitted by newer QA agents. Older evidence rows
+  // omit these fields; the UI derives a conservative label from `cmd` and
+  // keeps the raw command behind Technical details.
+  title?: string;
+  expected?: string;
+  observed?: string;
   baseline_exit: number | null;
   // Nullable, symmetric with baseline_exit — null when the command ran on the
   // baseline side only (a real run_qa agent emits this).

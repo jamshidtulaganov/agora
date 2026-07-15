@@ -36,11 +36,11 @@ import (
 // for this issue. GET /api/issues/{id}/browser.
 //
 // Self-host (no internal daemon addr): the browser dials the local daemon
-// directly — return its base URL, exactly like GetIssueEditor's self-host arm.
+// directly — return its browser-facing base URL.
 // Cloud / Remote Box: return a same-origin proxied base the pane can use for
 // both the start POST and the stream WebSocket.
 //
-// Unlike GetIssueEditor this never depends on a worktree existing: the bay's
+// This never depends on a worktree existing: the bay's
 // primary use is driving the DEPLOYED QA target (workdir key
 // "qa-target:<url>"), which needs only a reachable daemon — so a GC'd
 // worktree or an issue with no dev task yet must not take the live bay down.
@@ -125,24 +125,18 @@ func lookupBrowserTarget(tok string) (browserTarget, bool) {
 // browserProxyPathAllowed gates which upstream paths the browser proxy will
 // forward. Unlike the trace proxy (whose upstream is a dedicated show-trace
 // server), this proxy's upstream is the daemon's WHOLE health mux — which also
-// serves /editor/launch, /trace/launch, /update and friends. The capability
+// serves preview, trace, update, and other internal routes. The capability
 // token grants exactly the PANE surface the frontend drives — the live
 // browser, the dev-server preview (start/stop/status + the proxied app via
-// /editor/local/), and the one-shot test run — nothing else: no editor
-// launch, no repo checkout, no updater.
+// /editor/local/), and the one-shot test run — nothing else: no mutable
+// repository actions, no checkout, no updater.
 func browserProxyPathAllowed(p string) bool {
-	return strings.HasPrefix(p, "/editor/browser/") ||
+	return strings.HasPrefix(p, "/artifact/") ||
+		strings.HasPrefix(p, "/editor/browser/") ||
 		p == "/editor/preview" ||
 		strings.HasPrefix(p, "/editor/preview/") ||
 		p == "/editor/test" ||
-		strings.HasPrefix(p, "/editor/local/") ||
-		// Review surface: the changes summary the pane polls, plus the two
-		// human review actions (Accept→PR / Discard). Same trust as self-host
-		// (there the browser hits the daemon directly) — the token is
-		// workspace-membership-gated. Still excludes launch/checkout/updater.
-		p == "/editor/changes" ||
-		p == "/editor/open-pr" ||
-		p == "/editor/discard"
+		strings.HasPrefix(p, "/editor/local/")
 }
 
 // ProxyBrowser reverse-proxies /browser/proxy/{token}/editor/browser/* (HTTP +
@@ -156,7 +150,7 @@ func (h *Handler) ProxyBrowser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Re-verify workspace membership on every proxied request (F8), matching
-	// ProxyEditor/ProxyTrace: a leaked token must not let a non-member watch —
+	// A leaked token must not let a non-member watch —
 	// or drive — another tenant's QA browser.
 	userID, ok := requireUserID(w, r)
 	if !ok {

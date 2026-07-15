@@ -288,6 +288,9 @@ func (h *Handler) sliceActionReviewPRContext(ctx context.Context, issue db.Issue
 // Best-effort + detached: any miss silently no-ops so a label attach never
 // fails because of it.
 func (h *Handler) maybeRunReviewOnQAPass(ctx context.Context, issue db.Issue, labelName, userID string) {
+	if h.orchestrationOwnsIssuePipeline(ctx, issue.ID) {
+		return
+	}
 	if !h.autoReviewEnabled(ctx, issue) {
 		return
 	}

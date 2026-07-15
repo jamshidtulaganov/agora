@@ -95,34 +95,35 @@ type AgentSkill struct {
 }
 
 type AgentTaskQueue struct {
-	ID                pgtype.UUID        `json:"id"`
-	AgentID           pgtype.UUID        `json:"agent_id"`
-	IssueID           pgtype.UUID        `json:"issue_id"`
-	Status            string             `json:"status"`
-	Priority          int32              `json:"priority"`
-	DispatchedAt      pgtype.Timestamptz `json:"dispatched_at"`
-	StartedAt         pgtype.Timestamptz `json:"started_at"`
-	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
-	Result            []byte             `json:"result"`
-	Error             pgtype.Text        `json:"error"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	Context           []byte             `json:"context"`
-	RuntimeID         pgtype.UUID        `json:"runtime_id"`
-	SessionID         pgtype.Text        `json:"session_id"`
-	WorkDir           pgtype.Text        `json:"work_dir"`
-	TriggerCommentID  pgtype.UUID        `json:"trigger_comment_id"`
-	ChatSessionID     pgtype.UUID        `json:"chat_session_id"`
-	AutopilotRunID    pgtype.UUID        `json:"autopilot_run_id"`
-	Attempt           int32              `json:"attempt"`
-	MaxAttempts       int32              `json:"max_attempts"`
-	ParentTaskID      pgtype.UUID        `json:"parent_task_id"`
-	FailureReason     pgtype.Text        `json:"failure_reason"`
-	TriggerSummary    pgtype.Text        `json:"trigger_summary"`
-	ForceFreshSession bool               `json:"force_fresh_session"`
-	IsLeaderTask      bool               `json:"is_leader_task"`
-	WaitReason        pgtype.Text        `json:"wait_reason"`
-	InitiatorUserID   pgtype.UUID        `json:"initiator_user_id"`
-	ModelOverride     pgtype.Text        `json:"model_override"`
+	ID                  pgtype.UUID        `json:"id"`
+	AgentID             pgtype.UUID        `json:"agent_id"`
+	IssueID             pgtype.UUID        `json:"issue_id"`
+	Status              string             `json:"status"`
+	Priority            int32              `json:"priority"`
+	DispatchedAt        pgtype.Timestamptz `json:"dispatched_at"`
+	StartedAt           pgtype.Timestamptz `json:"started_at"`
+	CompletedAt         pgtype.Timestamptz `json:"completed_at"`
+	Result              []byte             `json:"result"`
+	Error               pgtype.Text        `json:"error"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	Context             []byte             `json:"context"`
+	RuntimeID           pgtype.UUID        `json:"runtime_id"`
+	SessionID           pgtype.Text        `json:"session_id"`
+	WorkDir             pgtype.Text        `json:"work_dir"`
+	TriggerCommentID    pgtype.UUID        `json:"trigger_comment_id"`
+	ChatSessionID       pgtype.UUID        `json:"chat_session_id"`
+	AutopilotRunID      pgtype.UUID        `json:"autopilot_run_id"`
+	Attempt             int32              `json:"attempt"`
+	MaxAttempts         int32              `json:"max_attempts"`
+	ParentTaskID        pgtype.UUID        `json:"parent_task_id"`
+	FailureReason       pgtype.Text        `json:"failure_reason"`
+	TriggerSummary      pgtype.Text        `json:"trigger_summary"`
+	ForceFreshSession   bool               `json:"force_fresh_session"`
+	IsLeaderTask        bool               `json:"is_leader_task"`
+	WaitReason          pgtype.Text        `json:"wait_reason"`
+	InitiatorUserID     pgtype.UUID        `json:"initiator_user_id"`
+	ModelOverride       pgtype.Text        `json:"model_override"`
+	OrchestrationStepID pgtype.UUID        `json:"orchestration_step_id"`
 }
 
 type Attachment struct {
@@ -636,6 +637,103 @@ type NotificationPreference struct {
 	UserID      pgtype.UUID        `json:"user_id"`
 	Preferences []byte             `json:"preferences"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type OrchestrationEvent struct {
+	ID        pgtype.UUID        `json:"id"`
+	RunID     pgtype.UUID        `json:"run_id"`
+	StepID    pgtype.UUID        `json:"step_id"`
+	Kind      string             `json:"kind"`
+	ActorType string             `json:"actor_type"`
+	ActorID   pgtype.UUID        `json:"actor_id"`
+	Details   []byte             `json:"details"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type OrchestrationPlanRevision struct {
+	ID        pgtype.UUID        `json:"id"`
+	RunID     pgtype.UUID        `json:"run_id"`
+	Version   int32              `json:"version"`
+	ActorType string             `json:"actor_type"`
+	ActorID   pgtype.UUID        `json:"actor_id"`
+	Reason    string             `json:"reason"`
+	Patch     []byte             `json:"patch"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type OrchestrationRun struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	IssueID     pgtype.UUID `json:"issue_id"`
+	Status      string      `json:"status"`
+	// Deprecated compatibility alias for progression_policy (auto/manual).
+	Mode        string             `json:"mode"`
+	Policy      []byte             `json:"policy"`
+	CreatedBy   pgtype.UUID        `json:"created_by"`
+	StartedAt   pgtype.Timestamptz `json:"started_at"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	PlanVersion int32              `json:"plan_version"`
+	// Who performs the issue: human, one agent, a lead-managed squad, or an explicitly routed custom DAG.
+	ExecutionStrategy string `json:"execution_strategy"`
+	// How ready steps advance: automatic, explicit configured gates, or manual controller progression.
+	ProgressionPolicy string `json:"progression_policy"`
+	// Accountable owner snapshot at run creation; legacy rows are best-effort backfilled from immutable step routing.
+	OwnerType         string      `json:"owner_type"`
+	OwnerID           pgtype.UUID `json:"owner_id"`
+	ControllerAgentID pgtype.UUID `json:"controller_agent_id"`
+	// Immutable run-level repository bases: [{repo, head_sha}]. First daemon proposal wins; all worker worktrees use the stored commits.
+	BaseGitStates []byte `json:"base_git_states"`
+}
+
+type OrchestrationStep struct {
+	ID                  pgtype.UUID        `json:"id"`
+	RunID               pgtype.UUID        `json:"run_id"`
+	StepKey             string             `json:"step_key"`
+	Title               string             `json:"title"`
+	Stage               string             `json:"stage"`
+	Status              string             `json:"status"`
+	Position            int32              `json:"position"`
+	AgentID             pgtype.UUID        `json:"agent_id"`
+	ModelOverride       pgtype.Text        `json:"model_override"`
+	TaskID              pgtype.UUID        `json:"task_id"`
+	DependsOnStepID     pgtype.UUID        `json:"depends_on_step_id"`
+	ApprovalRequired    bool               `json:"approval_required"`
+	ApprovedBy          pgtype.UUID        `json:"approved_by"`
+	ApprovedAt          pgtype.Timestamptz `json:"approved_at"`
+	Attempt             int32              `json:"attempt"`
+	MaxAttempts         int32              `json:"max_attempts"`
+	Instructions        string             `json:"instructions"`
+	Output              []byte             `json:"output"`
+	Error               pgtype.Text        `json:"error"`
+	StartedAt           pgtype.Timestamptz `json:"started_at"`
+	CompletedAt         pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	ParentStepID        pgtype.UUID        `json:"parent_step_id"`
+	IntroducedInVersion int32              `json:"introduced_in_version"`
+	RetiredInVersion    pgtype.Int4        `json:"retired_in_version"`
+	SupersedesStepID    pgtype.UUID        `json:"supersedes_step_id"`
+	SquadID             pgtype.UUID        `json:"squad_id"`
+	ControllerAgentID   pgtype.UUID        `json:"controller_agent_id"`
+	WorktreeBranch      pgtype.Text        `json:"worktree_branch"`
+	BaseSha             pgtype.Text        `json:"base_sha"`
+	HeadSha             pgtype.Text        `json:"head_sha"`
+	MergeStatus         string             `json:"merge_status"`
+	ConflictFiles       []byte             `json:"conflict_files"`
+	StepKind            string             `json:"step_kind"`
+	IntegrationStatus   string             `json:"integration_status"`
+	IntegratedHeadShas  []byte             `json:"integrated_head_shas"`
+	MissingHeadShas     []byte             `json:"missing_head_shas"`
+	GitStates           []byte             `json:"git_states"`
+	// Stable responsibility category used by the squad planner, rerouting validation, and Active Work UI.
+	Capability string `json:"capability"`
+}
+
+type OrchestrationStepDependency struct {
+	StepID          pgtype.UUID `json:"step_id"`
+	DependsOnStepID pgtype.UUID `json:"depends_on_step_id"`
 }
 
 type PersonalAccessToken struct {

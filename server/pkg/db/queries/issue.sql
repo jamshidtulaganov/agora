@@ -62,12 +62,13 @@ WHERE i.workspace_id = $1
     ))
   )
   -- Restricted visibility: a non-owner member sees ONLY issues that are theirs
-  -- — assigned to them directly, to an agent they own, or to a squad they (or
-  -- an agent they own) belong to / lead. NULL disables the gate (owners see
+  -- — created by them, assigned to them directly, to an agent they own, or to
+  -- a squad they (or an agent they own) belong to / lead. NULL disables the gate (owners see
   -- everything). This is the AND-gate counterpart of involves_user_id, and it
   -- additionally covers DIRECT member assignment.
   AND (
     sqlc.narg('restrict_to_user')::uuid IS NULL
+    OR (i.creator_type = 'member' AND i.creator_id = sqlc.narg('restrict_to_user')::uuid)
     OR (i.assignee_type = 'member' AND i.assignee_id = sqlc.narg('restrict_to_user')::uuid)
     OR (i.assignee_type = 'agent' AND i.assignee_id IN (
           SELECT a.id FROM agent a
@@ -97,14 +98,16 @@ SELECT * FROM issue
 WHERE id = $1 AND workspace_id = $2;
 
 -- name: IssueBelongsToUser :one
--- Whether the issue is owned by the user: assigned to them directly (member),
--- to an agent they own, or to a squad they (or an agent they own) belong to /
--- lead. Gates issue detail for non-owner members (mirrors issueOwnershipClause).
+-- Whether the issue is owned by the user: created by them, assigned to them
+-- directly (member), to an agent they own, or to a squad they (or an agent they
+-- own) belong to / lead. Gates issue detail for non-owner members (mirrors
+-- issueOwnershipClause).
 SELECT EXISTS (
   SELECT 1 FROM issue i
   WHERE i.id = @issue_id AND i.workspace_id = @workspace_id
     AND (
-      (i.assignee_type = 'member' AND i.assignee_id = @user_id)
+      (i.creator_type = 'member' AND i.creator_id = @user_id)
+      OR (i.assignee_type = 'member' AND i.assignee_id = @user_id)
       OR (i.assignee_type = 'agent' AND i.assignee_id IN (
             SELECT a.id FROM agent a WHERE a.workspace_id = @workspace_id AND a.owner_id = @user_id))
       OR (i.assignee_type = 'squad' AND i.assignee_id IN (
@@ -269,6 +272,7 @@ WHERE i.workspace_id = $1
   -- Restricted visibility (non-owner): only the caller's own issues. See ListIssues.
   AND (
     sqlc.narg('restrict_to_user')::uuid IS NULL
+    OR (i.creator_type = 'member' AND i.creator_id = sqlc.narg('restrict_to_user')::uuid)
     OR (i.assignee_type = 'member' AND i.assignee_id = sqlc.narg('restrict_to_user')::uuid)
     OR (i.assignee_type = 'agent' AND i.assignee_id IN (
           SELECT a.id FROM agent a
@@ -349,6 +353,7 @@ WHERE i.workspace_id = sqlc.arg('workspace_id')
   AND i.parent_issue_id = ANY(sqlc.arg('parent_ids')::uuid[])
   AND (
     sqlc.narg('restrict_to_user')::uuid IS NULL
+    OR (i.creator_type = 'member' AND i.creator_id = sqlc.narg('restrict_to_user')::uuid)
     OR (i.assignee_type = 'member' AND i.assignee_id = sqlc.narg('restrict_to_user')::uuid)
     OR (i.assignee_type = 'agent' AND i.assignee_id IN (
           SELECT a.id FROM agent a
@@ -398,6 +403,7 @@ WHERE i.workspace_id = sqlc.arg('workspace_id')
   AND i.parent_issue_id IS NOT NULL
   AND (
     sqlc.narg('restrict_to_user')::uuid IS NULL
+    OR (i.creator_type = 'member' AND i.creator_id = sqlc.narg('restrict_to_user')::uuid)
     OR (i.assignee_type = 'member' AND i.assignee_id = sqlc.narg('restrict_to_user')::uuid)
     OR (i.assignee_type = 'agent' AND i.assignee_id IN (
           SELECT a.id FROM agent a

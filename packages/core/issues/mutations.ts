@@ -31,6 +31,7 @@ import { useRecentIssuesStore } from "./stores";
 import type { GroupedIssuesResponse, Issue, IssueAssigneeGroup, IssueReaction, IssueStatus } from "../types";
 import type {
   CreateIssueRequest,
+  CreateOrchestrationRequest,
   UpdateIssueRequest,
   ListIssuesCache,
 } from "../types";
@@ -945,6 +946,75 @@ export function useDeleteIssueMetadataKey() {
       api.deleteIssueMetadataKey(vars.issueId, vars.key),
     onSettled: (_data, _err, vars) => {
       qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, vars.issueId) });
+    },
+  });
+}
+
+export function useCreateIssueOrchestration() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { issueId: string; data: CreateOrchestrationRequest }) =>
+      api.createIssueOrchestration(vars.issueId, vars.data),
+    onSettled: (_data, _err, vars) => {
+      qc.invalidateQueries({ queryKey: issueKeys.orchestration(vars.issueId) });
+      qc.invalidateQueries({ queryKey: issueKeys.artifact(vars.issueId) });
+    },
+  });
+}
+
+export function useStartIssueOrchestration() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (issueId: string) => api.startIssueOrchestration(issueId),
+    onSettled: (_data, _err, issueId) => {
+      qc.invalidateQueries({ queryKey: issueKeys.orchestration(issueId) });
+      qc.invalidateQueries({ queryKey: issueKeys.artifact(issueId) });
+    },
+  });
+}
+
+export function useEditIssueOrchestration() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { issueId: string; data: import("../types").EditOrchestrationRequest }) => api.editIssueOrchestration(vars.issueId, vars.data),
+    onSettled: (_data, _err, vars) => {
+      qc.invalidateQueries({ queryKey: issueKeys.orchestration(vars.issueId) });
+      qc.invalidateQueries({ queryKey: issueKeys.artifact(vars.issueId) });
+    },
+  });
+}
+
+export function useApproveOrchestrationStep() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { issueId: string; stepId: string }) =>
+      api.approveOrchestrationStep(vars.issueId, vars.stepId),
+    onSettled: (_data, _err, vars) => {
+      qc.invalidateQueries({ queryKey: issueKeys.orchestration(vars.issueId) });
+      qc.invalidateQueries({ queryKey: issueKeys.artifact(vars.issueId) });
+    },
+  });
+}
+
+export function useCancelOrchestrationBranch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { issueId: string; stepId: string }) => api.cancelOrchestrationBranch(vars.issueId, vars.stepId),
+    onSettled: (_data, _err, vars) => {
+      qc.invalidateQueries({ queryKey: issueKeys.orchestration(vars.issueId) });
+      qc.invalidateQueries({ queryKey: issueKeys.artifact(vars.issueId) });
+    },
+  });
+}
+
+export function useRetryOrchestrationStep() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { issueId: string; stepId: string }) =>
+      api.retryOrchestrationStep(vars.issueId, vars.stepId),
+    onSettled: (_data, _err, vars) => {
+      qc.invalidateQueries({ queryKey: issueKeys.orchestration(vars.issueId) });
+      qc.invalidateQueries({ queryKey: issueKeys.artifact(vars.issueId) });
     },
   });
 }

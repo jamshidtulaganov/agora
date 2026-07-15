@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -65,6 +66,7 @@ type provisionedWorktree struct {
 	SrcRepo string // the developer's checkout the worktree hangs off
 	Path    string // the worktree directory inside the env
 	Branch  string // agent/<issue>/<repo>
+	BaseSHA string // source HEAD when this isolated attempt was created
 }
 
 // worktreeRun is the result of provisioning: the created worktrees + the
@@ -80,6 +82,13 @@ type worktreeRun struct {
 // short, filesystem-safe issue identifier used in the branch name so a repo's
 // worktrees are reused per issue (dev → QA → fix).
 func provisionLocalWorktrees(ctx context.Context, parent, issueKey, workDir string, log *slog.Logger) (*worktreeRun, error) {
+	return provisionLocalWorktreesAt(ctx, parent, issueKey, workDir, nil, false, log)
+}
+
+// provisionLocalWorktreesAt creates each worktree from an explicit immutable
+// per-repository commit when baseRefs is non-empty. Read-only verification
+// worktrees are detached at that commit and never receive an agent branch.
+func provisionLocalWorktreesAt(ctx context.Context, parent, issueKey, workDir string, baseRefs []OrchestrationGitHead, readOnly bool, log *slog.Logger) (*worktreeRun, error) {
 	repos, err := detectLocalRepos(ctx, parent)
 	if err != nil {
 		return nil, err
@@ -104,16 +113,307 @@ func provisionLocalWorktrees(ctx context.Context, parent, issueKey, workDir stri
 		if !single {
 			target = filepath.Join(workDir, repo.Name)
 		}
+		baseRef := "HEAD"
+		if len(baseRefs) > 0 {
+			baseRef = orchestrationBaseRefForRepo(baseRefs, repo.Name)
+			if baseRef == "" {
+				cleanupWorktrees(ctx, run, log)
+				return nil, fmt.Errorf("orchestration base snapshot has no commit for repository %q", repo.Name)
+			}
+		}
 		branch := localAgentBranchName(issueKey, repo.Name)
-		if err := addWorktree(ctx, repo.SrcPath, target, branch, log); err != nil {
+		if readOnly {
+			branch = ""
+		}
+		if err := addWorktreeAt(ctx, repo.SrcPath, target, branch, baseRef, readOnly); err != nil {
 			// Roll back anything already created so a partial failure doesn't
 			// leak worktrees in the user's repos.
 			cleanupWorktrees(ctx, run, log)
 			return nil, err
 		}
-		run.worktrees = append(run.worktrees, provisionedWorktree{SrcRepo: repo.SrcPath, Path: target, Branch: branch})
+		baseSHA, _ := gitOutput(ctx, target, "rev-parse", "HEAD")
+		run.worktrees = append(run.worktrees, provisionedWorktree{SrcRepo: repo.SrcPath, Path: target, Branch: branch, BaseSHA: baseSHA})
 	}
 	return run, nil
+}
+
+func orchestrationBaseRefForRepo(baseRefs []OrchestrationGitHead, repo string) string {
+	// A single repository's name is derived from the source checkout basename.
+	// When the source is itself a linked integration worktree that basename is
+	// the task directory, not the original repository name recorded in Git
+	// evidence. There is only one possible mapping, so use it directly.
+	if len(baseRefs) == 1 {
+		return strings.TrimSpace(baseRefs[0].HeadSHA)
+	}
+	for _, base := range baseRefs {
+		if base.Repo == repo {
+			return strings.TrimSpace(base.HeadSHA)
+		}
+	}
+	return ""
+}
+
+// snapshotLocalRepoHeads returns the full source HEAD for every repository in
+// a local_directory. The server compare-and-set endpoint turns this proposal
+// into the immutable run base used by all parallel workers.
+func snapshotLocalRepoHeads(ctx context.Context, parent string) ([]OrchestrationGitHead, error) {
+	repos, err := detectLocalRepos(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	if len(repos) == 0 {
+		return nil, fmt.Errorf("local_directory %q contains no git repositories", parent)
+	}
+	refs := make([]OrchestrationGitHead, 0, len(repos))
+	for _, repo := range repos {
+		head, headErr := gitOutput(ctx, repo.SrcPath, "rev-parse", "HEAD")
+		if headErr != nil {
+			return nil, fmt.Errorf("resolve HEAD for repository %q: %w", repo.Name, headErr)
+		}
+		if head == "" {
+			return nil, fmt.Errorf("resolve HEAD for repository %q: empty commit", repo.Name)
+		}
+		refs = append(refs, OrchestrationGitHead{Repo: repo.Name, HeadSHA: head})
+	}
+	return refs, nil
+}
+
+type worktreeMergeState struct {
+	Branch             string
+	BaseSHA            string
+	HeadSHA            string
+	Status             string
+	ConflictFiles      []string
+	IntegrationStatus  string
+	IntegratedHeadSHAs []string
+	MissingHeadSHAs    []string
+	// RepoStates holds one entry per provisioned repo. The single-value fields
+	// above mirror the primary (first) repo plus the aggregated worst status,
+	// for older servers and existing readers.
+	RepoStates []RepoGitState
+}
+
+// mergeStatusSeverity orders per-repo statuses so a multi-repo aggregate
+// surfaces the worst one: a conflict anywhere beats uncommitted anywhere
+// beats an unreadable repo beats clean.
+var mergeStatusSeverity = map[string]int{"clean": 0, "not_checked": 1, "unavailable": 2, "uncommitted": 3, "conflicts": 4}
+
+func worseMergeStatus(a, b string) string {
+	if mergeStatusSeverity[b] > mergeStatusSeverity[a] {
+		return b
+	}
+	return a
+}
+
+// applyRepoStates mirrors the primary (first) repo into the legacy
+// single-value fields and folds every repo's status into the aggregate
+// Status/ConflictFiles. Multi-repo conflict paths get a "repo/" prefix so the
+// aggregate list stays unambiguous.
+func applyRepoStates(state *worktreeMergeState) {
+	if len(state.RepoStates) == 0 {
+		return
+	}
+	primary := state.RepoStates[0]
+	state.Branch, state.BaseSHA, state.HeadSHA = primary.Branch, primary.BaseSHA, primary.HeadSHA
+	state.Status = primary.MergeStatus
+	state.ConflictFiles = nil
+	multi := len(state.RepoStates) > 1
+	for _, repoState := range state.RepoStates {
+		state.Status = worseMergeStatus(state.Status, repoState.MergeStatus)
+		for _, file := range repoState.ConflictFiles {
+			if multi {
+				state.ConflictFiles = append(state.ConflictFiles, repoState.Repo+"/"+file)
+			} else {
+				state.ConflictFiles = append(state.ConflictFiles, file)
+			}
+		}
+	}
+}
+
+// dependencyHead is one commit the integration HEAD must contain, flattened
+// from a dependency's per-repo heads (or its legacy single head).
+type dependencyHead struct {
+	key string
+	sha string
+}
+
+func requiredDependencyHeads(dependencies []OrchestrationGitDependency) []dependencyHead {
+	var heads []dependencyHead
+	seen := map[string]bool{}
+	for _, dependency := range dependencies {
+		expanded := dependency.Heads
+		if len(expanded) == 0 {
+			expanded = []OrchestrationGitHead{{Branch: dependency.Branch, HeadSHA: dependency.HeadSHA}}
+		}
+		for _, head := range expanded {
+			sha := strings.TrimSpace(head.HeadSHA)
+			if sha == "" {
+				heads = append(heads, dependencyHead{key: dependency.Key})
+				continue
+			}
+			if seen[sha] {
+				continue
+			}
+			seen[sha] = true
+			heads = append(heads, dependencyHead{key: dependency.Key, sha: sha})
+		}
+	}
+	return heads
+}
+
+// integratedInRepos reports whether sha is an ancestor of HEAD in the repo
+// that actually contains it. A commit that exists in some repo but is not an
+// ancestor of that repo's HEAD is NOT integrated — another repo must not mask
+// that.
+func integratedInRepos(ctx context.Context, repoDirs []string, sha string) bool {
+	for _, dir := range repoDirs {
+		if exec.CommandContext(ctx, "git", "-C", dir, "cat-file", "-e", sha+"^{commit}").Run() != nil {
+			continue
+		}
+		if exec.CommandContext(ctx, "git", "-C", dir, "merge-base", "--is-ancestor", sha, "HEAD").Run() == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// verifyIntegratedHeads proves that every direct dependency commit is an
+// ancestor of the integration task's final HEAD in the repo that owns it.
+// repoDirs lists one checkout per repo — the integration worktrees for
+// local_directory, or the detected checkouts under the env workdir for
+// managed resources. This check is performed by the daemon after the agent
+// exits, so prose output cannot bypass the gate.
+func verifyIntegratedHeads(ctx context.Context, repoDirs []string, dependencies []OrchestrationGitDependency, state worktreeMergeState) worktreeMergeState {
+	state.IntegrationStatus = "missing_heads"
+	required := requiredDependencyHeads(dependencies)
+	if len(repoDirs) == 0 {
+		for _, head := range required {
+			if head.sha != "" {
+				state.MissingHeadSHAs = append(state.MissingHeadSHAs, head.sha)
+			} else {
+				state.MissingHeadSHAs = append(state.MissingHeadSHAs, "step:"+head.key)
+			}
+		}
+		return state
+	}
+	for _, head := range required {
+		if head.sha == "" {
+			state.MissingHeadSHAs = append(state.MissingHeadSHAs, "step:"+head.key)
+			continue
+		}
+		if integratedInRepos(ctx, repoDirs, head.sha) {
+			state.IntegratedHeadSHAs = append(state.IntegratedHeadSHAs, head.sha)
+		} else {
+			state.MissingHeadSHAs = append(state.MissingHeadSHAs, head.sha)
+		}
+	}
+	if state.Status == "conflicts" {
+		state.IntegrationStatus = "conflicts"
+		return state
+	}
+	if state.Status != "clean" {
+		state.MissingHeadSHAs = append(state.MissingHeadSHAs, "worktree:"+state.Status)
+	}
+	if len(state.MissingHeadSHAs) == 0 {
+		state.IntegrationStatus = "complete"
+	}
+	return state
+}
+
+// inspectManagedWorktreeMergeState locates every repository checked out on
+// demand under an execenv work directory and preflights each task branch
+// against its remote default branch. Managed GitHub resources are usually
+// placed one directory below workDir by `agora repo checkout`.
+func inspectManagedWorktreeMergeState(ctx context.Context, workDir string) worktreeMergeState {
+	state := worktreeMergeState{Status: "unavailable"}
+	repos, err := detectLocalRepos(ctx, workDir)
+	if err != nil || len(repos) == 0 {
+		return state
+	}
+	for _, repo := range repos {
+		state.RepoStates = append(state.RepoStates, inspectManagedRepo(ctx, repo))
+	}
+	applyRepoStates(&state)
+	return state
+}
+
+func inspectManagedRepo(ctx context.Context, repo localRepo) RepoGitState {
+	repoState := RepoGitState{Repo: repo.Name, MergeStatus: "unavailable"}
+	dir := repo.SrcPath
+	repoState.Branch, _ = gitOutput(ctx, dir, "symbolic-ref", "--short", "-q", "HEAD")
+	repoState.HeadSHA, _ = gitOutput(ctx, dir, "rev-parse", "HEAD")
+	dirty, _ := gitOutput(ctx, dir, "status", "--porcelain")
+	if strings.TrimSpace(dirty) != "" {
+		repoState.MergeStatus = "uncommitted"
+		return repoState
+	}
+	target, err := gitOutput(ctx, dir, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+	if err != nil || target == "" {
+		for _, candidate := range []string{"origin/main", "origin/master"} {
+			if _, candidateErr := gitOutput(ctx, dir, "rev-parse", "--verify", candidate); candidateErr == nil {
+				target = candidate
+				break
+			}
+		}
+	}
+	if target == "" || repoState.HeadSHA == "" {
+		return repoState
+	}
+	repoState.BaseSHA, _ = gitOutput(ctx, dir, "merge-base", repoState.HeadSHA, target)
+	return mergeTreePreflight(ctx, dir, target, repoState)
+}
+
+func mergeTreePreflight(ctx context.Context, repo, target string, repoState RepoGitState) RepoGitState {
+	cmd := exec.CommandContext(ctx, "git", "-C", repo, "merge-tree", "--write-tree", target, repoState.HeadSHA)
+	out, mergeErr := cmd.CombinedOutput()
+	if mergeErr == nil {
+		repoState.MergeStatus = "clean"
+		return repoState
+	}
+	repoState.MergeStatus = "conflicts"
+	seen := map[string]bool{}
+	for _, line := range strings.Split(string(out), "\n") {
+		const marker = "Merge conflict in "
+		if index := strings.Index(line, marker); index >= 0 {
+			name := strings.TrimSpace(line[index+len(marker):])
+			if name != "" && !seen[name] {
+				seen[name] = true
+				repoState.ConflictFiles = append(repoState.ConflictFiles, name)
+			}
+		}
+	}
+	sort.Strings(repoState.ConflictFiles)
+	return repoState
+}
+
+// inspectWorktreeMergeState performs a non-mutating merge-tree preflight of
+// every provisioned worktree against its source checkout's current HEAD. The
+// developer's branch and working tree are never checked out or modified.
+func inspectWorktreeMergeState(ctx context.Context, run *worktreeRun) worktreeMergeState {
+	state := worktreeMergeState{Status: "unavailable"}
+	if run == nil || len(run.worktrees) == 0 {
+		return state
+	}
+	for _, wt := range run.worktrees {
+		state.RepoStates = append(state.RepoStates, inspectLocalWorktreeRepo(ctx, wt))
+	}
+	applyRepoStates(&state)
+	return state
+}
+
+func inspectLocalWorktreeRepo(ctx context.Context, wt provisionedWorktree) RepoGitState {
+	repoState := RepoGitState{Repo: filepath.Base(wt.SrcRepo), Branch: wt.Branch, BaseSHA: wt.BaseSHA, MergeStatus: "unavailable"}
+	repoState.HeadSHA, _ = gitOutput(ctx, wt.Path, "rev-parse", "HEAD")
+	dirty, _ := gitOutput(ctx, wt.Path, "status", "--porcelain")
+	if strings.TrimSpace(dirty) != "" {
+		repoState.MergeStatus = "uncommitted"
+		return repoState
+	}
+	target, err := gitOutput(ctx, wt.SrcRepo, "rev-parse", "HEAD")
+	if err != nil || repoState.HeadSHA == "" {
+		return repoState
+	}
+	return mergeTreePreflight(ctx, wt.SrcRepo, target, repoState)
 }
 
 // worktreeSidecars are the daemon-written context files that must never be
@@ -126,7 +426,17 @@ var worktreeSidecars = []string{
 // addWorktree creates one worktree, reusing an existing branch on retry (a
 // re-claimed task may have left the branch behind).
 func addWorktree(ctx context.Context, srcRepo, target, branch string, log *slog.Logger) error {
-	if err := gitRun(ctx, srcRepo, "worktree", "add", target, "-b", branch, "HEAD"); err != nil {
+	return addWorktreeAt(ctx, srcRepo, target, branch, "HEAD", false)
+}
+
+func addWorktreeAt(ctx context.Context, srcRepo, target, branch, baseRef string, readOnly bool) error {
+	if readOnly {
+		if err := gitRun(ctx, srcRepo, "worktree", "add", "--detach", target, baseRef); err != nil {
+			return fmt.Errorf("git detached worktree add for %q at %s: %w", srcRepo, baseRef, err)
+		}
+		return nil
+	}
+	if err := gitRun(ctx, srcRepo, "worktree", "add", target, "-b", branch, baseRef); err != nil {
 		// Branch may already exist (re-claim); add the worktree on it.
 		if reuse := gitRun(ctx, srcRepo, "worktree", "add", target, branch); reuse != nil {
 			return fmt.Errorf("git worktree add for %q: %w", srcRepo, err)
@@ -183,6 +493,10 @@ func finalizeWorktrees(ctx context.Context, run *worktreeRun, agentName string, 
 // second return is true when the worktrees were REUSED. workDir is the
 // issue-keyed env dir (persists across the issue's tasks).
 func provisionOrReuseWorktrees(ctx context.Context, parent, issueKey, workDir string, log *slog.Logger) (*worktreeRun, bool, error) {
+	return provisionOrReuseWorktreesAt(ctx, parent, issueKey, workDir, nil, false, log)
+}
+
+func provisionOrReuseWorktreesAt(ctx context.Context, parent, issueKey, workDir string, baseRefs []OrchestrationGitHead, readOnly bool, log *slog.Logger) (*worktreeRun, bool, error) {
 	repos, err := detectLocalRepos(ctx, parent)
 	if err != nil {
 		return nil, false, err
@@ -201,8 +515,17 @@ func provisionOrReuseWorktrees(ctx context.Context, parent, issueKey, workDir st
 			target = filepath.Join(workDir, repo.Name)
 		}
 		if isGitWorkTree(ctx, target) {
+			baseSHA := orchestrationBaseRefForRepo(baseRefs, repo.Name)
+			if baseSHA == "" {
+				sourceHead, _ := gitOutput(ctx, repo.SrcPath, "rev-parse", "HEAD")
+				baseSHA, _ = gitOutput(ctx, target, "merge-base", "HEAD", sourceHead)
+			}
+			branch := localAgentBranchName(issueKey, repo.Name)
+			if readOnly {
+				branch = ""
+			}
 			reuse.worktrees = append(reuse.worktrees, provisionedWorktree{
-				SrcRepo: repo.SrcPath, Path: target, Branch: localAgentBranchName(issueKey, repo.Name),
+				SrcRepo: repo.SrcPath, Path: target, Branch: branch, BaseSHA: baseSHA,
 			})
 		} else {
 			allPresent = false
@@ -220,7 +543,7 @@ func provisionOrReuseWorktrees(ctx context.Context, parent, issueKey, workDir st
 	for _, repo := range repos {
 		_ = gitRun(ctx, repo.SrcPath, "worktree", "prune")
 	}
-	run, err := provisionLocalWorktrees(ctx, parent, issueKey, workDir, log)
+	run, err := provisionLocalWorktreesAt(ctx, parent, issueKey, workDir, baseRefs, readOnly, log)
 	if err == nil {
 		touchDir(workDir)
 	}
@@ -265,6 +588,10 @@ func sanitizeResourcesForWorktree(resources []ProjectResourceData, worktreeMode 
 // issue's dev → QA → fix tasks.
 func (d *Daemon) worktreeEnvDir(ws, issueKey string) string {
 	return filepath.Join(d.cfg.WorkspacesRoot, ws, ".worktrees", shortID(issueKey))
+}
+
+func (d *Daemon) orchestrationWorktreeEnvDir(ws, issueKey, stepID, taskID string) string {
+	return filepath.Join(d.worktreeEnvDir(ws, issueKey), "steps", shortID(stepID), shortID(taskID))
 }
 
 // worktreeEnvTTL is how long an idle issue-worktree env is kept before the
@@ -324,17 +651,20 @@ func (d *Daemon) sweepWorktreeEnvs(ctx context.Context, isActive func(path strin
 // envDir. The agent branches are kept — they hold the committed work.
 func cleanupWorktreeEnvDir(ctx context.Context, envDir string, log *slog.Logger) {
 	removed := false
-	if entries, err := os.ReadDir(envDir); err == nil {
-		for _, e := range entries {
-			if !e.IsDir() {
-				continue
-			}
-			sub := filepath.Join(envDir, e.Name())
-			if isGitWorkTree(ctx, sub) {
-				removeOneWorktree(ctx, sub, log)
-				removed = true
-			}
+	var worktrees []string
+	_ = filepath.WalkDir(envDir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || !entry.IsDir() || path == envDir {
+			return nil
 		}
+		if isGitWorkTree(ctx, path) {
+			worktrees = append(worktrees, path)
+			return filepath.SkipDir
+		}
+		return nil
+	})
+	for _, worktree := range worktrees {
+		removeOneWorktree(ctx, worktree, log)
+		removed = true
 	}
 	if !removed && isGitWorkTree(ctx, envDir) { // single-repo env
 		removeOneWorktree(ctx, envDir, log)

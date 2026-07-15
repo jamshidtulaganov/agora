@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseQAResultBlock } from "./qa-result";
+import { describeQACommand, parseQAResultBlock } from "./qa-result";
 
 // The qa-result block is agent-authored, untrusted content. parseQAResultBlock
 // must extract it deterministically when valid and fail CLOSED (return null, so
@@ -16,7 +16,15 @@ describe("parseQAResultBlock", () => {
           summary: "no new failures",
           commands: [
             { cmd: "pnpm build", baseline_exit: 1, branch_exit: 1, kind: "pre_existing" },
-            { cmd: "pnpm test -- new.spec", baseline_exit: null, branch_exit: 0, kind: "pass" },
+            {
+              title: "Greeting appears after submit",
+              expected: "The greeting is visible",
+              observed: "The greeting appeared",
+              cmd: "pnpm test -- new.spec",
+              baseline_exit: null,
+              branch_exit: 0,
+              kind: "pass",
+            },
           ],
           screenshots: ["/tmp/a.png"],
         }),
@@ -27,6 +35,9 @@ describe("parseQAResultBlock", () => {
     expect(r!.summary).toBe("no new failures");
     expect(r!.commands).toHaveLength(2);
     expect(r!.commands[1]!.baseline_exit).toBeNull();
+    expect(r!.commands[1]!.title).toBe("Greeting appears after submit");
+    expect(r!.commands[1]!.expected).toBe("The greeting is visible");
+    expect(r!.commands[1]!.observed).toBe("The greeting appeared");
     expect(r!.screenshots).toEqual(["/tmp/a.png"]);
   });
 
@@ -72,5 +83,33 @@ describe("parseQAResultBlock", () => {
       wrap(JSON.stringify({ verdict: "pass", commands: [], screenshots: ["ok", 5, null] })),
     );
     expect(r!.screenshots).toEqual(["ok"]);
+  });
+});
+
+describe("describeQACommand", () => {
+  const command = (cmd: string, title = "") => ({
+    cmd,
+    title,
+    expected: "",
+    observed: "",
+    baseline_exit: 0,
+    branch_exit: 0,
+    kind: "pass" as const,
+    error: "",
+  });
+
+  it("prefers the agent's human-facing title", () => {
+    expect(describeQACommand(command("node /tmp/case-123.mjs", "Greeting renders"))).toEqual({
+      key: "reported",
+      reported: "Greeting renders",
+    });
+  });
+
+  it("does not expose temporary case paths as the check name", () => {
+    expect(describeQACommand(command("node /tmp/case-11df7aa2.mjs"))).toEqual({ key: "automated_case" });
+  });
+
+  it("recognizes a required-file assertion without using the path as its title", () => {
+    expect(describeQACommand(command("check: docs/smoke.md exists with exact content"))).toEqual({ key: "required_file" });
   });
 });

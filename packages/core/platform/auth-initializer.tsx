@@ -12,6 +12,9 @@ import {
 } from "../analytics";
 import { configStore } from "../config";
 import { workspaceKeys } from "../workspace/queries";
+import { useChatStore } from "../chat";
+import { useRecentContextStore } from "../chat/recent-context-store";
+import { useRecentIssuesStore } from "../issues/stores/recent-issues-store";
 import { createLogger } from "../logger";
 import { defaultStorage } from "./storage";
 import { setCurrentWorkspace } from "./workspace-storage";
@@ -20,6 +23,11 @@ import type { StorageAdapter } from "../types/storage";
 import type { User } from "../types";
 
 const logger = createLogger("auth");
+
+export function isStaleCookieSessionError(error: unknown): boolean {
+  const status = (error as { status?: number } | null)?.status;
+  return status === 401 || status === 404;
+}
 
 export function AuthInitializer({
   children,
@@ -74,6 +82,9 @@ export function AuthInitializer({
           daemonServerUrl: cfg.daemon_server_url,
           daemonAppUrl: cfg.daemon_app_url,
         });
+        configStore.getState().setRuntimeConfig({
+          cliReleasesUrl: cfg.cli_releases_url,
+        });
         if (cfg.posthog_key) {
           initAnalytics({
             key: cfg.posthog_key,
@@ -88,12 +99,21 @@ export function AuthInitializer({
       });
 
     const onAuthSuccess = (user: User) => {
+      // Browser-persisted recents are actor-scoped as well as workspace-
+      // scoped. Establish the actor before dashboard children can hydrate
+      // their recent issue/context queries.
+      useRecentContextStore.getState().setIdentity(user.id);
+      useRecentIssuesStore.getState().setIdentity(user.id);
+      useChatStore.getState().setIdentity(user.id);
       onLogin?.();
       useAuthStore.setState({ user, isLoading: false });
       identifyAnalytics(user.id, { email: user.email, name: user.name });
     };
 
     const onAuthFailure = () => {
+      useRecentContextStore.getState().setIdentity(null);
+      useRecentIssuesStore.getState().setIdentity(null);
+      useChatStore.getState().setIdentity(null);
       onLogout?.();
       resetAnalytics();
       useAuthStore.setState({ user: null, isLoading: false });
@@ -113,11 +133,17 @@ export function AuthInitializer({
           qc.setQueryData(workspaceKeys.list(), wsList);
         })
         .catch((err) => {
-          // A 401 here just means "no valid session" — the normal state for a
-          // logged-out visitor on a public page. Don't surface it as an error.
-          const status = (err as { status?: number } | null)?.status;
-          if (status === 401) {
-            logger.debug("cookie auth init: no active session");
+          // A 401 means the cookie is invalid/expired. A 404 means the JWT is
+          // valid but its user was removed or the local database was replaced
+          // (common when switching self-hosted dev databases). Both are stale
+          // sessions, not application failures: clear the HttpOnly cookie so
+          // reloads do not repeat the same failed bootstrap.
+          if (isStaleCookieSessionError(err)) {
+            logger.debug("cookie auth init: stale or inactive session");
+            api.logout().catch(() => {
+              // The client is already logged out locally. A network failure
+              // here should not turn normal session recovery into an error.
+            });
           } else {
             logger.error("cookie auth init failed", err);
           }

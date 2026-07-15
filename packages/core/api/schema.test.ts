@@ -24,6 +24,94 @@ afterEach(() => {
 // app in past incidents. The contract is: a malformed response degrades to
 // an empty/safe shape, never throws into React.
 describe("ApiClient schema fallback", () => {
+  describe("getIssueArtifact", () => {
+    it("parses a canonical artifact without exposing a filesystem path", async () => {
+      stubFetchJson({
+        run_id: "run-1",
+        run_status: "running",
+        ready: true,
+        artifact: {
+          id: "artifact-1",
+          run_id: "run-1",
+          step_id: "step-1",
+          step_key: "integrate",
+          title: "Integration",
+          kind: "integration",
+          capability: "integration",
+          canonical: true,
+          repos: [{
+            repo: "agora",
+            base_sha: "a".repeat(40),
+            head_sha: "b".repeat(40),
+            merge_status: "clean",
+          }],
+        },
+        components: [],
+        daemon_url: "http://127.0.0.1:9999",
+        capabilities: { changes: "opaque" },
+        work_dir: "/must/not/cross/the/boundary",
+      });
+      const client = new ApiClient("https://api.example.test");
+      const artifact = await client.getIssueArtifact("issue-1");
+      expect(artifact.artifact?.canonical).toBe(true);
+      expect(artifact).not.toHaveProperty("work_dir");
+    });
+
+    it("falls back to a safe unavailable state for a malformed body", async () => {
+      stubFetchJson({ ready: "yes", components: null });
+      const client = new ApiClient("https://api.example.test");
+      await expect(client.getIssueArtifact("issue-1")).resolves.toEqual({
+        run_id: "",
+        run_status: "",
+        ready: false,
+        components: [],
+        daemon_url: "",
+        capabilities: {},
+      });
+    });
+  });
+
+  describe("getIssueOrchestration", () => {
+    it("falls back to null when the execution graph is malformed", async () => {
+      stubFetchJson({ id: "run-1", steps: "not-an-array" });
+      const client = new ApiClient("https://api.example.test");
+      await expect(client.getIssueOrchestration("issue-1")).resolves.toBeNull();
+    });
+
+    it("accepts a valid graph and defaults missing event details", async () => {
+      stubFetchJson({
+        id: "run-1",
+        issue_id: "issue-1",
+        status: "running",
+        mode: "auto",
+        policy: {},
+        created_at: "2026-07-15T00:00:00Z",
+        updated_at: "2026-07-15T00:00:00Z",
+        steps: [],
+        events: [{ id: "event-1", kind: "plan_created", actor_type: "system", created_at: "2026-07-15T00:00:00Z" }],
+      });
+      const client = new ApiClient("https://api.example.test");
+      const run = await client.getIssueOrchestration("issue-1");
+      expect(run?.events[0]?.details).toEqual({});
+    });
+
+    it("preserves integration gate evidence", async () => {
+      stubFetchJson({
+        id: "run-1", issue_id: "issue-1", status: "running", mode: "auto", policy: {},
+        created_at: "2026-07-15T00:00:00Z", updated_at: "2026-07-15T00:00:00Z",
+        steps: [{
+          id: "step-1", key: "integrate", title: "Integrate", stage: "review", status: "completed", position: 2,
+          approval_required: false, attempt: 1, max_attempts: 2, instructions: "", depends_on_step_ids: ["dev-1"],
+          merge_status: "clean", conflict_files: [], kind: "integration", integration_status: "complete",
+          integrated_head_shas: ["abc123"], missing_head_shas: [],
+        }], events: [],
+      });
+      const client = new ApiClient("https://api.example.test");
+      const run = await client.getIssueOrchestration("issue-1");
+      expect(run?.steps[0]).toMatchObject({ kind: "integration", integration_status: "complete", integrated_head_shas: ["abc123"] });
+    });
+  });
+
   describe("listTimeline", () => {
     it("falls back to an empty array when the body is null", async () => {
       stubFetchJson(null);

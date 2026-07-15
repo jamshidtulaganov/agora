@@ -430,6 +430,11 @@ export function ManualCreatePanel({
       parentIssue?.identifier ?? (data?.parent_issue_identifier as string | undefined);
     onSwitchMode?.({
       prompt,
+      // Preserve exact field boundaries for a Manual → Agent → Manual
+      // round-trip. If the prompt is edited in agent mode, the quick panel
+      // intentionally re-splits the edited text instead.
+      manual_title: title.trim(),
+      manual_description: desc,
       ...(assigneeId && assigneeType === "agent"
         ? { agent_id: assigneeId }
         : assigneeId && assigneeType === "squad"

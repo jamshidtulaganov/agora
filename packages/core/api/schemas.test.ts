@@ -19,6 +19,7 @@ import {
   EMPTY_MCP_CREDENTIAL_STATUS,
   EMPTY_MCP_CREDENTIAL_LIST,
   IssueDeployEventsResponseSchema,
+  OrchestrationRunSchema,
   ListIssuesResponseSchema,
   ListTestCasesResponseSchema,
   TestCaseSchema,
@@ -479,14 +480,23 @@ describe("ReviewDecisionResponseSchema (review-decision)", () => {
   it("parses both action shapes", () => {
     expect(
       ReviewDecisionResponseSchema.parse({ action: "approve", merged_dispatch: true }),
-    ).toMatchObject({ action: "approve", merged_dispatch: true, status: "", dispatched: false });
+    ).toMatchObject({
+      action: "approve", merged_dispatch: true, status: "", dispatched: false,
+      plan_version: 0, revision_id: "", correction_step_id: "",
+    });
     expect(
       ReviewDecisionResponseSchema.parse({
         action: "request_changes",
         status: "in_progress",
         dispatched: true,
+        plan_version: 2,
+        revision_id: "revision-2",
+        correction_step_id: "changes-v2",
       }),
-    ).toMatchObject({ action: "request_changes", status: "in_progress", dispatched: true });
+    ).toMatchObject({
+      action: "request_changes", status: "in_progress", dispatched: true,
+      plan_version: 2, revision_id: "revision-2", correction_step_id: "changes-v2",
+    });
   });
 
   it("falls back to the zero-value decision on a malformed body", () => {
@@ -510,7 +520,15 @@ describe("QAEvidenceSchema (evidence-first QA)", () => {
         verdict: "fail",
         summary: "1 new failure",
         commands: [
-          { cmd: "go test ./...", baseline_exit: 0, branch_exit: 1, kind: "new_failure" },
+          {
+            title: "API returns a greeting",
+            expected: "A successful greeting response",
+            observed: "The endpoint returned an error",
+            cmd: "go test ./...",
+            baseline_exit: 0,
+            branch_exit: 1,
+            kind: "new_failure",
+          },
         ],
         screenshots: ["/var/www/x.png"],
       },
@@ -518,6 +536,9 @@ describe("QAEvidenceSchema (evidence-first QA)", () => {
     });
     expect(parsed.verdict).toBe("fail");
     expect(parsed.result?.commands[0]!.kind).toBe("new_failure");
+    expect(parsed.result?.commands[0]!.title).toBe("API returns a greeting");
+    expect(parsed.result?.commands[0]!.expected).toBe("A successful greeting response");
+    expect(parsed.result?.commands[0]!.observed).toBe("The endpoint returned an error");
   });
 
   it("falls back to null on a malformed body instead of throwing", () => {
@@ -1108,5 +1129,58 @@ describe("QAVerdictsResponseSchema — Phase 3 reconciled_state per entry", () =
     expect(parsed.verdicts["issue-1"]!.reconciled_state).toBe("stale");
     expect(parsed.verdicts["issue-1"]!.triggered_by).toBe("auto");
     expect(parsed.verdicts["issue-2"]!.reconciled_state).toBe("");
+  });
+});
+
+describe("OrchestrationRunSchema — execution semantics", () => {
+  const baseRun = {
+    id: "run-1",
+    issue_id: "issue-1",
+    status: "running",
+    mode: "auto",
+    policy: {},
+    plan_version: 1,
+    revisions: [],
+    created_at: "2026-07-15T00:00:00Z",
+    updated_at: "2026-07-15T00:00:00Z",
+    steps: [],
+    events: [],
+  };
+
+  it("parses the stable owner/controller snapshot independently from strategy", () => {
+    const parsed = OrchestrationRunSchema.parse({
+      ...baseRun,
+      execution_strategy: "squad",
+      progression_policy: "gated",
+      owner_type: "squad",
+      owner_id: "squad-1",
+      controller_agent_id: "agent-lead",
+      execution_mode: "squad",
+    });
+
+    expect(parsed.execution_strategy).toBe("squad");
+    expect(parsed.progression_policy).toBe("gated");
+    expect(parsed.owner_id).toBe("squad-1");
+    expect(parsed.controller_agent_id).toBe("agent-lead");
+  });
+
+  it("keeps an older server response readable during the compatibility window", () => {
+    const parsed = OrchestrationRunSchema.parse(baseRun);
+    expect(parsed.execution_strategy).toBe("custom");
+    expect(parsed.progression_policy).toBe("automatic");
+    expect(parsed.owner_type).toBe("unassigned");
+    expect(parsed.execution_mode).toBe("orchestrated");
+    expect(parsed.base_git_states).toEqual([]);
+  });
+
+  it("parses an immutable multi-repository base snapshot", () => {
+    const parsed = OrchestrationRunSchema.parse({
+      ...baseRun,
+      base_git_states: [
+        { repo: "api", head_sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { repo: "web", head_sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+      ],
+    });
+    expect(parsed.base_git_states.map((state) => state.repo)).toEqual(["api", "web"]);
   });
 });

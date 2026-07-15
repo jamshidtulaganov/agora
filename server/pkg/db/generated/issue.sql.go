@@ -20,6 +20,7 @@ WHERE i.workspace_id = $1
   AND i.parent_issue_id IS NOT NULL
   AND (
     $2::uuid IS NULL
+    OR (i.creator_type = 'member' AND i.creator_id = $2::uuid)
     OR (i.assignee_type = 'member' AND i.assignee_id = $2::uuid)
     OR (i.assignee_type = 'agent' AND i.assignee_id IN (
           SELECT a.id FROM agent a
@@ -654,7 +655,8 @@ SELECT EXISTS (
   SELECT 1 FROM issue i
   WHERE i.id = $1 AND i.workspace_id = $2
     AND (
-      (i.assignee_type = 'member' AND i.assignee_id = $3)
+      (i.creator_type = 'member' AND i.creator_id = $3)
+      OR (i.assignee_type = 'member' AND i.assignee_id = $3)
       OR (i.assignee_type = 'agent' AND i.assignee_id IN (
             SELECT a.id FROM agent a WHERE a.workspace_id = $2 AND a.owner_id = $3))
       OR (i.assignee_type = 'squad' AND i.assignee_id IN (
@@ -675,9 +677,10 @@ type IssueBelongsToUserParams struct {
 	UserID      pgtype.UUID `json:"user_id"`
 }
 
-// Whether the issue is owned by the user: assigned to them directly (member),
-// to an agent they own, or to a squad they (or an agent they own) belong to /
-// lead. Gates issue detail for non-owner members (mirrors issueOwnershipClause).
+// Whether the issue is owned by the user: created by them, assigned to them
+// directly (member), to an agent they own, or to a squad they (or an agent they
+// own) belong to / lead. Gates issue detail for non-owner members (mirrors
+// issueOwnershipClause).
 func (q *Queries) IssueBelongsToUser(ctx context.Context, arg IssueBelongsToUserParams) (bool, error) {
 	row := q.db.QueryRow(ctx, issueBelongsToUser, arg.IssueID, arg.WorkspaceID, arg.UserID)
 	var exists bool
@@ -743,6 +746,7 @@ WHERE i.workspace_id = $1
   AND i.parent_issue_id = ANY($2::uuid[])
   AND (
     $3::uuid IS NULL
+    OR (i.creator_type = 'member' AND i.creator_id = $3::uuid)
     OR (i.assignee_type = 'member' AND i.assignee_id = $3::uuid)
     OR (i.assignee_type = 'agent' AND i.assignee_id IN (
           SELECT a.id FROM agent a
@@ -873,12 +877,13 @@ WHERE i.workspace_id = $1
     ))
   )
   -- Restricted visibility: a non-owner member sees ONLY issues that are theirs
-  -- — assigned to them directly, to an agent they own, or to a squad they (or
-  -- an agent they own) belong to / lead. NULL disables the gate (owners see
+  -- — created by them, assigned to them directly, to an agent they own, or to
+  -- a squad they (or an agent they own) belong to / lead. NULL disables the gate (owners see
   -- everything). This is the AND-gate counterpart of involves_user_id, and it
   -- additionally covers DIRECT member assignment.
   AND (
     $14::uuid IS NULL
+    OR (i.creator_type = 'member' AND i.creator_id = $14::uuid)
     OR (i.assignee_type = 'member' AND i.assignee_id = $14::uuid)
     OR (i.assignee_type = 'agent' AND i.assignee_id IN (
           SELECT a.id FROM agent a
@@ -1050,6 +1055,7 @@ WHERE i.workspace_id = $1
   -- Restricted visibility (non-owner): only the caller's own issues. See ListIssues.
   AND (
     $9::uuid IS NULL
+    OR (i.creator_type = 'member' AND i.creator_id = $9::uuid)
     OR (i.assignee_type = 'member' AND i.assignee_id = $9::uuid)
     OR (i.assignee_type = 'agent' AND i.assignee_id IN (
           SELECT a.id FROM agent a

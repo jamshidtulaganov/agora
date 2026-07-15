@@ -210,6 +210,31 @@ func TestShouldEnqueueSquadLeaderOnComment_SkipsWhenMemberMentionsAnyone(t *test
 	}
 }
 
+func TestCommentAgentTriggers_SuppressedWhileOrchestrationOwnsIssue(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	fx := newSquadCommentTriggerFixture(t)
+	ctx := context.Background()
+
+	var runID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO orchestration_run (workspace_id, issue_id, status, created_by)
+		VALUES ($1, $2, 'running', $3)
+		RETURNING id
+	`, testWorkspaceID, util.UUIDToString(fx.Issue.ID), testUserID).Scan(&runID); err != nil {
+		t.Fatalf("create active orchestration: %v", err)
+	}
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `DELETE FROM orchestration_run WHERE id = $1`, runID)
+	})
+
+	content := "handoff [@Other](mention://agent/" + fx.OtherID + ")"
+	if got := testHandler.computeCommentAgentTriggers(ctx, fx.Issue, content, nil, "agent", fx.LeaderID); len(got) != 0 {
+		t.Fatalf("active orchestration comment produced %d agent trigger(s), want 0", len(got))
+	}
+}
+
 // TestShouldEnqueueSquadLeaderOnComment_LeaderSelfTriggerByRole covers the
 // role-aware self-trigger guard added for MUL-2218. The leader agent itself
 // should be skipped only when its last activity on the issue was a leader

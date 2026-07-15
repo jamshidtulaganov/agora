@@ -347,6 +347,48 @@ func TestMaybeRunQAOnInReviewDisabled(t *testing.T) {
 	}
 }
 
+// A running orchestration already owns QA/review as persisted DAG steps. The
+// legacy in_review reflex must not create an unrelated run_qa task that races
+// the integration gate or holds the same local_directory lock.
+func TestMaybeRunQAOnInReviewSuppressedByActiveOrchestration(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	t.Setenv("AGORA_AUTO_QA_ENABLED", "true")
+	ctx := context.Background()
+	_, _, devMemberID := leadOrchestratorTestFixture(t, ctx, "orchestration-owns-pipeline")
+	issueID := sliceActionTestIssue(t, "agent", devMemberID)
+	issue, err := testHandler.Queries.GetIssue(ctx, testUUID(issueID))
+	if err != nil {
+		t.Fatalf("load issue: %v", err)
+	}
+	var runID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO orchestration_run (
+			workspace_id, issue_id, status, mode, policy, created_by,
+			execution_strategy, progression_policy, owner_type
+		)
+		VALUES ($1, $2, 'running', 'auto', '{}'::jsonb, $3, 'squad', 'automatic', 'unassigned')
+		RETURNING id
+	`, testWorkspaceID, issueID, testUserID).Scan(&runID); err != nil {
+		t.Fatalf("create active orchestration: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM orchestration_run WHERE id = $1`, runID) })
+
+	var before int
+	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM comment WHERE issue_id = $1`, issueID).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	testHandler.maybeRunQAOnInReview(ctx, issue, "member", testUserID)
+	var after int
+	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM comment WHERE issue_id = $1`, issueID).Scan(&after); err != nil {
+		t.Fatal(err)
+	}
+	if after != before {
+		t.Fatalf("active orchestration allowed legacy auto-QA comment: %d -> %d", before, after)
+	}
+}
+
 // leadOrchestratorTestFixture creates a runtime + a QA squad (leader
 // qaLeaderID) + a dev squad (leader devLeaderID, one member devMemberID) —
 // the minimal orchestrator-pair setup for the leader-to-leader routing tests.

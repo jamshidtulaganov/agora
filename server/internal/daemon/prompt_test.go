@@ -5,6 +5,56 @@ import (
 	"testing"
 )
 
+func TestBuildOrchestrationPromptCarriesStepContract(t *testing.T) {
+	out := BuildPrompt(Task{
+		IssueID:                   "issue-1",
+		OrchestrationStepID:       "step-1",
+		OrchestrationStepTitle:    "Verify authentication",
+		OrchestrationStage:        "qa",
+		OrchestrationInstructions: "Run the browser suite and report failing cases.",
+	}, "codex")
+	for _, want := range []string{"Verify authentication", "Stage: qa", "Run the browser suite", "evidence the next agent needs", "engine owns issue status", "do not change the issue status", "run_qa", "@mention another agent"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("orchestration prompt missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestBuildOrchestrationPromptCarriesIntegrationContract(t *testing.T) {
+	out := BuildPrompt(Task{
+		IssueID:                "issue-1",
+		OrchestrationStepID:    "step-integrate",
+		OrchestrationStepKind:  "integration",
+		OrchestrationStepTitle: "Integrate parallel branches",
+		OrchestrationStage:     "review",
+		OrchestrationDependencies: []OrchestrationGitDependency{
+			{Key: "api", Branch: "agent/api", HeadSHA: "abc123"},
+			{Key: "web", Branch: "agent/web", HeadSHA: "def456"},
+		},
+	}, "codex")
+	for _, want := range []string{"enforced integration gate", "agent/api", "abc123", "agent/web", "def456", "git merge --no-ff", "independently verify"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("integration prompt missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestBuildOrchestrationPromptCarriesReadOnlyVerificationContract(t *testing.T) {
+	out := BuildPrompt(Task{
+		IssueID:                "issue-1",
+		OrchestrationStepID:    "step-qa",
+		OrchestrationStepTitle: "Verify integrated result",
+		OrchestrationStage:     "qa",
+		OrchestrationReadOnly:  true,
+		OrchestrationBaseRefs:  []OrchestrationGitHead{{Repo: "api", HeadSHA: "abc"}},
+	}, "codex")
+	for _, want := range []string{"read-only verification step", "exact integrated commit", "repository is already present in the current working directory", "do not run `agora repo checkout`", "do not edit files", "move HEAD"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("read-only prompt missing %q:\n%s", want, out)
+		}
+	}
+}
+
 // TestBuildQuickCreatePromptRules locks in the rules that govern how the
 // quick-create agent is allowed to translate raw user input into the issue
 // description body. Each substring corresponds to a concrete failure mode

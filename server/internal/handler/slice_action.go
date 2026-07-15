@@ -145,6 +145,15 @@ func buildSliceInstruction(kind, scope string) string {
 			"advisory and the human reviewer decides what to do next."
 	case sliceActionRunQA:
 		base = sliceActionTemplate("run_qa")
+		// The deterministic command remains the source of truth, but the issue
+		// page is read by humans who need to understand the behavior being
+		// checked. Keep these additive fields optional for old runtimes while
+		// requiring new QA turns to emit them.
+		base += " HUMAN-READABLE EVIDENCE: in every object inside the qa-result `commands` array, also emit " +
+			"`title` (a plain-language behavior or quality being checked, never a shell command or file path), " +
+			"`expected` (what a user should observe when it passes), and `observed` (what actually happened; " +
+			"required for every new_failure). Keep `cmd`, exit codes, and `error` as technical evidence. " +
+			"Write `summary` as one plain-language sentence with no temporary paths, branch names, commands, or exit codes."
 		if guidance := qaBaselineGuidanceFor(strings.ToLower(strings.TrimSpace(scope))); guidance != "" {
 			base += guidance
 		}
@@ -808,7 +817,7 @@ func sprintWorktreeEnabled() bool {
 // into the sprint branch — for the squad lead to review + merge — instead of
 // committing straight onto the shared branch. Mirrors the daemon-side gate of the
 // same name; both read AGORA_SPRINT_PR_MODE so the agent instruction path and the
-// co-code accept path switch together. Default OFF → direct-commit sprint mode.
+// legacy sprint accept-path switch together. Default OFF → direct-commit sprint mode.
 // Only meaningful when sprintWorktreeEnabled() + the project is in sprint mode.
 func sprintPRModeEnabled() bool { return util.SprintPRModeEnabled() }
 
@@ -970,6 +979,9 @@ func (h *Handler) resolveAutoDocsAgent(ctx context.Context, issue db.Issue, user
 // (context.Background) by the caller so it doesn't block or get cancelled with
 // the request.
 func (h *Handler) maybeAutoDocsOnLabel(ctx context.Context, issue db.Issue, labelName, userID string) {
+	if h.orchestrationOwnsIssuePipeline(ctx, issue.ID) {
+		return
+	}
 	if !h.autoDocsEnabled(ctx, issue) {
 		return
 	}
@@ -1522,6 +1534,9 @@ func (h *Handler) maybeRecoverSquadTaskFailure(ctx context.Context, task db.Agen
 // keeps today's manual triage), or the squad's leader IS the failing agent
 // itself (reassigning to itself teaches nothing).
 func (h *Handler) maybeRouteToDevLeadOnQAFail(ctx context.Context, issue db.Issue, labelName, userID string) {
+	if h.orchestrationOwnsIssuePipeline(ctx, issue.ID) {
+		return
+	}
 	if !h.qaFailAutorouteEnabled(ctx, issue) {
 		return
 	}
@@ -1629,6 +1644,9 @@ func (h *Handler) qaFailAutoFileBugEnabled(ctx context.Context, issue db.Issue) 
 // a `qa_bug_filed` metadata stamp on the parent so repeated qa:fail labels
 // (re-QA loops) don't spawn duplicate bugs.
 func (h *Handler) maybeAutoFileBugOnQAFail(ctx context.Context, issue db.Issue, labelName, actorID string) {
+	if h.orchestrationOwnsIssuePipeline(ctx, issue.ID) {
+		return
+	}
 	if !h.qaFailAutoFileBugEnabled(ctx, issue) {
 		return
 	}
@@ -1800,6 +1818,9 @@ func (h *Handler) orchestratorForIssue(ctx context.Context, issue db.Issue) (db.
 // instead of merging. Detached + best-effort (mirrors maybeRouteToDevLeadOnQAFail),
 // gated by AGORA_SPRINT_PR_MODE + a sprint + a dev squad. No-op otherwise.
 func (h *Handler) maybeMergeOnQAPass(ctx context.Context, issue db.Issue, labelName, userID string) {
+	if h.orchestrationOwnsIssuePipeline(ctx, issue.ID) {
+		return
+	}
 	if !sprintPRModeEnabled() {
 		return
 	}
@@ -2222,6 +2243,9 @@ func lockIssueQA(issueID string) func() {
 // Gated by AGORA_AUTO_QA_ENABLED; the caller guards the prev!=in_review→in_review
 // transition so it runs once per entry.
 func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, actorType, actorID string) {
+	if h.orchestrationOwnsIssuePipeline(ctx, issue.ID) {
+		return
+	}
 	if !h.autoQAEnabled(ctx, issue) {
 		return
 	}
@@ -2473,6 +2497,9 @@ func (h *Handler) maybeRunQAOnInReview(ctx context.Context, issue db.Issue, acto
 // Best-effort + detached, gated by AGORA_AUTO_QA_ENABLED, mirrors
 // maybeRunQAOnInReview.
 func (h *Handler) maybeGenTests(ctx context.Context, issue db.Issue, actorType, actorID string, prep bool) {
+	if h.orchestrationOwnsIssuePipeline(ctx, issue.ID) {
+		return
+	}
 	if !h.autoQAEnabled(ctx, issue) {
 		return
 	}
@@ -2567,6 +2594,9 @@ func (h *Handler) maybeGenTests(ctx context.Context, issue db.Issue, actorType, 
 // maybeGenTests. Fires alongside run_qa (the gate) and gen_tests
 // (authoring) — three facets of one in_review.
 func (h *Handler) maybeRunTestsOnInReview(ctx context.Context, issue db.Issue, actorType, actorID string) {
+	if h.orchestrationOwnsIssuePipeline(ctx, issue.ID) {
+		return
+	}
 	if !h.autoQAEnabled(ctx, issue) {
 		return
 	}
@@ -3468,6 +3498,15 @@ func (h *Handler) CreateSliceAction(w http.ResponseWriter, r *http.Request) {
 	req.Kind = strings.TrimSpace(req.Kind)
 	if !isKnownSliceActionKind(req.Kind) {
 		writeError(w, http.StatusBadRequest, "unknown slice action kind")
+		return
+	}
+	// A started orchestration is the issue's only dispatcher. Editor buttons
+	// and other legacy slice-action clients must use the persisted DAG's retry,
+	// reroute, QA/review, and release controls instead of creating an unrelated
+	// task that can contend for the same worktree or certify a pre-integration
+	// commit. This is an ownership invariant, so force=true does not bypass it.
+	if h.orchestrationOwnsIssuePipeline(r.Context(), issue.ID) {
+		writeError(w, http.StatusConflict, "active orchestration owns this issue pipeline — use its execution controls")
 		return
 	}
 

@@ -150,11 +150,9 @@ type Daemon struct {
 	activeEnvRootsMu sync.Mutex
 	activeEnvRoots   map[string]int // env root path -> reference count (handles reuse paths marked twice)
 
-	// localPathLocks serialises agent tasks whose project resource is a
-	// local_directory pinned to this daemon. Two tasks targeting the same
-	// on-disk path run sequentially; the second blocks on the lock and is
-	// surfaced via the server-side waiting_local_directory status while it
-	// waits. See MUL-2663.
+	// localPathLocks serialises direct local_directory sessions and the short
+	// git worktree add/remove/prune mutations used by isolated orchestration
+	// workers. Worktree agents do not hold this lock while the model runs.
 	localPathLocks *LocalPathLocker
 
 	// bgSyncs tracks background goroutines started by registerTaskRepos so
@@ -166,7 +164,7 @@ type Daemon struct {
 
 	runner             taskRunner    // executes agent tasks; set to d.runTask by New(), overridable in tests
 	cancelPollInterval time.Duration // how often handleTask polls for server-side cancellation; overridable in tests
-	// runUpdateFn executes the brew-or-download upgrade. Set to d.runUpdate by
+	// runUpdateFn executes the GitHub Release upgrade. Set to d.runUpdate by
 	// New() and overridable in tests so the auto-update poller can be exercised
 	// without touching the real network or the brew CLI.
 	runUpdateFn func(targetVersion string) (string, error)
@@ -803,7 +801,7 @@ func (d *Daemon) registerRuntimesForWorkspace(ctx context.Context, workspaceID s
 		"device_name":       d.cfg.DeviceName,
 		"cli_version":       d.cfg.CLIVersion,
 		"launched_by":       d.cfg.LaunchedBy,
-		// The local health/editor port this daemon serves /editor/launch on. The
+		// The local health/runtime port this daemon uses for preview, checks, and QA. The
 		// backend persists it per-runtime so the editor endpoint can point the
 		// browser at the RIGHT port instead of assuming the default 19514 — named
 		// profiles (and worktrees) are offset off 19514, so the assumption breaks.
@@ -1742,21 +1740,12 @@ func (d *Daemon) handleUpdate(ctx context.Context, runtimeID string, update *Pen
 	d.triggerRestart()
 }
 
-// runUpdate executes the brew-or-download upgrade against targetVersion and
-// returns the human-readable output (always populated, even on failure when
-// brew gives us a useful diagnostic). The caller is responsible for the
+// runUpdate executes the checksummed agora-cli GitHub Release upgrade against
+// targetVersion and returns the human-readable output. The caller is responsible for the
 // `updating` CAS guard and for reporting status back to the server / triggering
 // the restart — extracted so the server-triggered path (handleUpdate) and the
 // auto-update poller (autoUpdateLoop) share the exact same execution body.
 func (d *Daemon) runUpdate(targetVersion string) (string, error) {
-	if cli.IsBrewInstall() {
-		d.logger.Info("updating CLI via Homebrew...")
-		out, err := cli.UpdateViaBrew()
-		if err != nil {
-			return out, fmt.Errorf("brew upgrade failed: %w", err)
-		}
-		return out, nil
-	}
 	d.logger.Info("updating CLI via direct download...", "target_version", targetVersion)
 	out, err := cli.UpdateViaDownload(targetVersion)
 	if err != nil {
@@ -2243,29 +2232,10 @@ func (d *Daemon) watchTaskCancellation(ctx context.Context, taskID string, pollI
 	return cancelled
 }
 
-// ensureCoCodeBranch puts every git repo under workdir on branch (switching to
-// it if it exists, else creating it from the current HEAD), so an in_editor
-// agent's commits land on the feature branch instead of main. Best-effort and
-// idempotent — safe to call before every run.
-func (d *Daemon) ensureCoCodeBranch(workdir, branch string, log *slog.Logger) {
-	for _, repo := range gitReposUnder(workdir) {
-		if strings.TrimSpace(runGit(repo, "rev-parse", "--abbrev-ref", "HEAD")) == branch {
-			continue
-		}
-		if strings.TrimSpace(runGit(repo, "rev-parse", "--verify", "--quiet", branch)) != "" {
-			_ = runGit(repo, "checkout", branch)
-		} else {
-			_ = runGit(repo, "checkout", "-b", branch)
-		}
-		log.Info("co-code: worktree repo on feature branch", "repo", filepath.Base(repo), "branch", branch)
-	}
-}
-
 // ensureSprintBranch puts every git repo under workdir onto a per-task LOCAL
 // branch (sprint-wt-<shortTaskID>) whose UPSTREAM is the SHARED remote sprint
 // branch (origin/<sprintBranch>), then rebases onto that branch's tip
-// (pull-before-work). Unlike ensureCoCodeBranch — one local feature branch per
-// issue — the sprint branch is shared by N concurrent tasks, and git rejects
+// (pull-before-work). The sprint branch is shared by N concurrent tasks, and git rejects
 // two worktrees checked out on the same local branch name; the per-task alias
 // sidesteps that while keeping a single shared upstream so commits/pulls target
 // the team's branch. Best-effort + idempotent. SAFETY: never auto-creates or
@@ -2547,6 +2517,12 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 		}
 		return nil, nil, true
 	}
+	// Isolated worktree tasks only need mutual exclusion while Git mutates the
+	// shared source repository's worktree metadata. ProvisionWorkDir acquires
+	// that short lock; the agent session itself remains parallel.
+	if assignment.isWorktreeMode() {
+		return nil, nil, false
+	}
 
 	// While the lock is contended the daemon would otherwise sit blocked on
 	// the path mutex with no signal back from the server — the main
@@ -2621,13 +2597,6 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 	}
 	taskLog.Info("local_directory: lock acquired")
 
-	// Worktree isolation runs the agent in a managed worktree, not the user's
-	// folder, so the in-place git-safety (snapshot + agent branch on the user's
-	// checkout) does not apply — worktree provisioning does its own branching.
-	if assignment.isWorktreeMode() {
-		return release, nil, false
-	}
-
 	// Now that the path is ours for the whole task, put a git work tree on an
 	// isolated agent branch (and snapshot any pre-existing dirty state) so the
 	// agent's commits never land on the user's branch. Plain folders return a
@@ -2663,7 +2632,7 @@ func (d *Daemon) reportTaskResult(ctx context.Context, taskID string, result Tas
 	switch result.Status {
 	case "completed":
 		taskLog.Info("task completed", "status", result.Status)
-		err := d.client.CompleteTask(ctx, taskID, result.Comment, result.BranchName, result.SessionID, result.WorkDir)
+		err := d.client.CompleteTask(ctx, taskID, result.Comment, result.BranchName, result.SessionID, result.WorkDir, result.BaseSHA, result.HeadSHA, result.MergeStatus, result.ConflictFiles, result.IntegrationStatus, result.IntegratedHeadSHAs, result.MissingHeadSHAs, result.GitStates)
 		if err == nil {
 			return
 		}
@@ -2787,7 +2756,7 @@ func gateResumeToReusedWorkdir(task *Task, taskCtx *execenv.TaskContextForEnv, e
 	return reused
 }
 
-func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot int, taskLog *slog.Logger) (TaskResult, error) {
+func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot int, taskLog *slog.Logger) (taskResult TaskResult, taskErr error) {
 	// Refuse to spawn an agent without a workspace. An empty workspace_id
 	// here would make AGORA_WORKSPACE_ID empty in the agent env, and the
 	// CLI would otherwise silently fall back to the user-global config — a
@@ -2857,6 +2826,10 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		AutopilotTriggerPayload:          strings.TrimSpace(string(task.AutopilotTriggerPayload)),
 		QuickCreatePrompt:                task.QuickCreatePrompt,
 		IsSquadLeader:                    strings.Contains(instructions, "## Squad Operating Protocol"),
+		OrchestrationStep:                task.OrchestrationStepID != "",
+		OrchestrationStage:               task.OrchestrationStage,
+		OrchestrationReadOnly:            task.OrchestrationReadOnly,
+		PreprovisionedWorktree:           task.OrchestrationStepID != "" && worktreeMode,
 		RequestingUserName:               task.RequestingUserName,
 		RequestingUserProfileDescription: task.RequestingUserProfileDescription,
 		InitiatorType:                    task.InitiatorType,
@@ -2883,6 +2856,42 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 
 	// Try to reuse the workdir from a previous task on the same (agent, issue) pair.
 	var env *execenv.Environment
+	var orchestrationWorktrees *worktreeRun
+	defer func() {
+		if taskErr != nil || taskResult.Status != "completed" || task.OrchestrationStepID == "" {
+			return
+		}
+		state := worktreeMergeState{Status: "unavailable"}
+		if orchestrationWorktrees != nil {
+			state = inspectWorktreeMergeState(ctx, orchestrationWorktrees)
+		} else if env != nil && env.WorkDir != "" {
+			state = inspectManagedWorktreeMergeState(ctx, env.WorkDir)
+		}
+		if task.OrchestrationStepKind == "integration" {
+			var repoDirs []string
+			if orchestrationWorktrees != nil && len(orchestrationWorktrees.worktrees) > 0 {
+				for _, worktree := range orchestrationWorktrees.worktrees {
+					repoDirs = append(repoDirs, worktree.Path)
+				}
+			} else if env != nil {
+				if repos, detectErr := detectLocalRepos(ctx, env.WorkDir); detectErr == nil {
+					for _, repo := range repos {
+						repoDirs = append(repoDirs, repo.SrcPath)
+					}
+				}
+			}
+			state = verifyIntegratedHeads(ctx, repoDirs, task.OrchestrationDependencies, state)
+		}
+		taskResult.BranchName = state.Branch
+		taskResult.BaseSHA = state.BaseSHA
+		taskResult.HeadSHA = state.HeadSHA
+		taskResult.MergeStatus = state.Status
+		taskResult.ConflictFiles = state.ConflictFiles
+		taskResult.IntegrationStatus = state.IntegrationStatus
+		taskResult.IntegratedHeadSHAs = state.IntegratedHeadSHAs
+		taskResult.MissingHeadSHAs = state.MissingHeadSHAs
+		taskResult.GitStates = state.RepoStates
+	}()
 	codexVersion := d.agentVersion("codex")
 	openclawBin := ""
 	if provider == "openclaw" {
@@ -2892,6 +2901,15 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// LocalWorkDir into execenv. handleTask already validated + locked the
 	// path; this call is a pure JSON parse over the same task payload.
 	localAssignment, _ := findLocalDirectoryAssignment(task.ProjectResources, d.cfg.DaemonID)
+	if localAssignment != nil && localAssignment.isWorktreeMode() && task.OrchestrationStepID != "" {
+		issueKey := task.IssueID
+		if issueKey == "" {
+			issueKey = task.ID
+		}
+		issueWorktreeRoot := d.worktreeEnvDir(task.WorkspaceID, issueKey)
+		d.markActiveEnvRoot(issueWorktreeRoot)
+		defer d.unmarkActiveEnvRoot(issueWorktreeRoot)
+	}
 	// Worktree-isolation state: set by the ProvisionWorkDir hook below (worktree
 	// mode only). Cleaned up when the task ends. Stage 1 removes the worktrees
 	// at task end; the agent branches (which hold the commits) are kept.
@@ -2945,17 +2963,56 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		}
 		if localAssignment != nil {
 			if localAssignment.isWorktreeMode() {
-				// Worktree isolation: an ISSUE-KEYED worktree env (one worktree
-				// per repo, cut from the user's checkout) that persists across
-				// the issue's tasks so QA reuses the dev's exact tree. The hook
-				// provisions on the first task and reuses thereafter.
+				// Worktree isolation: orchestration steps get task-scoped
+				// worktrees from a pinned run base (or the exact integration HEAD
+				// for read-only QA/review). Ordinary issue tasks retain the legacy
+				// issue-scoped reuse path.
 				issueKey := task.IssueID
 				if issueKey == "" {
 					issueKey = task.ID
 				}
-				prepParams.WorktreeEnvDir = d.worktreeEnvDir(task.WorkspaceID, issueKey)
+				isolationKey := issueKey
+				if task.OrchestrationStepID != "" {
+					isolationKey = shortID(task.OrchestrationStepID) + "-" + shortID(task.ID)
+					prepParams.WorktreeEnvDir = d.orchestrationWorktreeEnvDir(task.WorkspaceID, issueKey, task.OrchestrationStepID, task.ID)
+				} else {
+					prepParams.WorktreeEnvDir = d.worktreeEnvDir(task.WorkspaceID, issueKey)
+				}
 				prepParams.ProvisionWorkDir = func(workDir string) error {
-					_, _, perr := provisionOrReuseWorktrees(ctx, localAssignment.AbsPath, issueKey, workDir, taskLog)
+					baseRefs := append([]OrchestrationGitHead(nil), task.OrchestrationBaseRefs...)
+					if task.OrchestrationStepID != "" && len(baseRefs) == 0 {
+						proposed, snapshotErr := snapshotLocalRepoHeads(ctx, localAssignment.AbsPath)
+						if snapshotErr != nil {
+							return snapshotErr
+						}
+						canonical, pinErr := d.client.PinOrchestrationBase(ctx, task.ID, proposed)
+						if pinErr != nil {
+							return fmt.Errorf("pin orchestration run base: %w", pinErr)
+						}
+						if len(canonical) == 0 {
+							return fmt.Errorf("pin orchestration run base: server returned an empty snapshot")
+						}
+						baseRefs = canonical
+					}
+					if task.OrchestrationReadOnly && len(baseRefs) == 0 {
+						return fmt.Errorf("read-only orchestration verification requires an integration base")
+					}
+
+					// git worktree add/remove/prune mutate shared metadata in the
+					// source repository. Serialize only that short lifecycle window;
+					// release before the model session starts so workers run in
+					// parallel in their isolated directories.
+					release, lockErr := d.localPathLocks.Acquire(ctx, localAssignment.RealPath, task.ID, func(holder string) {
+						taskLog.Debug("local_directory: waiting for worktree metadata lock", "holder", shortID(holder))
+					})
+					if lockErr != nil {
+						return fmt.Errorf("acquire worktree metadata lock: %w", lockErr)
+					}
+					defer release()
+					run, _, perr := provisionOrReuseWorktreesAt(ctx, localAssignment.AbsPath, isolationKey, workDir, baseRefs, task.OrchestrationReadOnly, taskLog)
+					if perr == nil && task.OrchestrationStepID != "" {
+						orchestrationWorktrees = run
+					}
 					return perr
 				}
 			} else {
@@ -3009,15 +3066,16 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// up stale Agora instructions (issue id, trigger comment id, reply
 	// rules) and start acting on the previous task's context. Excise the
 	// marker block on the way out instead.
-	if env.LocalDirectory {
+	if env.LocalDirectory || orchestrationWorktrees != nil {
 		defer func() {
 			if cerr := execenv.CleanupRuntimeConfig(env.WorkDir, provider); cerr != nil {
 				d.logger.Warn("execenv: cleanup runtime config failed (non-fatal)", "error", cerr)
 			}
 			// Excise the sidecar tree (.agent_context/, .agora/,
 			// provider-specific .claude/skills/ etc.) that Prepare wrote
-			// into the user's repo. Without this pass the user's tree
-			// accumulates one directory layer per task — see MUL-2784.
+			// into the user's repo or orchestration worktree. Without this
+			// pass the tree accumulates one directory layer per task and the
+			// post-run Git verifier mistakes daemon scaffolding for agent edits.
 			// CleanupRuntimeConfig handles the runtime brief inside
 			// CLAUDE.md / AGENTS.md / GEMINI.md; CleanupSidecars handles
 			// every other file Prepare placed under WorkDir. Together
@@ -3155,26 +3213,15 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		taskLog.Info("resuming session", "session_id", task.PriorSessionID)
 	}
 
-	// Co-code branch isolation (in_editor): before the agent runs, put every
-	// repo in the worktree on the issue's dedicated feature branch so commits
-	// and pushes can NEVER land on main — the git-level guarantee behind the
-	// review gate. A resumed Claude session keeps its original system prompt, so
-	// instructions alone don't hold; forcing HEAD onto the branch here does.
-	// No-op on the full-pipeline path (CoCodeBranch empty) or before any repo is
-	// checked out (first run — the fresh-session instruction covers that turn).
-	if task.CoCodeBranch != "" && env.WorkDir != "" {
-		d.ensureCoCodeBranch(env.WorkDir, task.CoCodeBranch, taskLog)
-	}
-
 	// Sprint-worktree sync: put every repo on a per-task local alias tracking the
 	// SHARED origin/<sprintBranch> and rebase onto its tip (pull-before-work) so
 	// this task builds on teammates' merged commits. The same CI-on-shared-branch
-	// guarantee as CoCodeBranch above, generalized to a branch shared by N tasks.
+	// guarantee on a branch shared by N tasks.
 	// No-op unless the server enabled sprint-worktree mode for this issue.
 	if task.SprintBranch != "" && env.WorkDir != "" {
 		d.ensureSprintBranch(env.WorkDir, task.SprintBranch, shortID(task.ID), taskLog)
 		// Share each repo's installed-deps dir across all worktrees on this
-		// sprint branch so N co-editors don't cost N× node_modules/vendor on
+		// sprint branch so N workers don't cost N× node_modules/vendor on
 		// disk (the reason sprint mode exists). Best-effort; a failure leaves a
 		// normal per-task install.
 		d.linkSharedSprintDeps(env.WorkDir, task.WorkspaceID, task.SprintBranch, taskLog)

@@ -729,13 +729,15 @@ describe("IssueDetail (shared)", () => {
     expect(screen.queryByRole("button", { name: /^Metadata\b/ })).not.toBeInTheDocument();
   });
 
-  it("renders Details section with Created by and dates", async () => {
+  it("reveals Created by and dates when Details is opened", async () => {
     renderIssueDetail();
 
     await waitFor(() => {
       expect(screen.getByText("Details")).toBeInTheDocument();
     });
 
+    expect(screen.queryByText("Created by")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
     expect(screen.getByText("Created by")).toBeInTheDocument();
     expect(screen.getByText("Created")).toBeInTheDocument();
     expect(screen.getByText("Updated")).toBeInTheDocument();

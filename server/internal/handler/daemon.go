@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/analytics"
 	"github.com/multica-ai/multica/server/internal/auth"
@@ -177,7 +178,7 @@ type DaemonRegisterRequest struct {
 	CLIVersion      string   `json:"cli_version"` // agora CLI version
 	LaunchedBy      string   `json:"launched_by"` // "desktop" when spawned by the Electron app
 	// EditorPort is the local health/editor port this daemon serves
-	// /editor/launch on (default 19514; named profiles + worktrees are offset).
+	// runtime capability surface on (default 19514; named profiles are offset).
 	// Persisted per-runtime so the editor endpoint points the browser at the
 	// correct port. Zero from older daemons that don't report it — the editor
 	// endpoint then falls back to the legacy 19514 default.
@@ -1265,6 +1266,33 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 
 	// Build response with fresh agent data (name + skills + custom_env + custom_args).
 	resp := taskToResponse(*task, runtimeWorkspaceID)
+	if task.OrchestrationStepID.Valid {
+		if step, err := h.Queries.GetOrchestrationStep(r.Context(), task.OrchestrationStepID); err == nil {
+			resp.OrchestrationStepID = uuidToString(step.ID)
+			resp.OrchestrationStepTitle = step.Title
+			resp.OrchestrationStage = step.Stage
+			resp.OrchestrationInstructions = step.Instructions
+			resp.OrchestrationStepKind = step.StepKind
+			if run, runErr := h.Queries.GetOrchestrationRunByStep(r.Context(), step.ID); runErr == nil {
+				resp.OrchestrationBaseRefs = decodeOrchestrationGitHeads(run.BaseGitStates)
+			}
+			if dependencies, depErr := h.Queries.ListOrchestrationStepGitDependencies(r.Context(), step.ID); depErr == nil {
+				for _, dependency := range dependencies {
+					heads := decodeOrchestrationGitHeads(dependency.GitStates)
+					resp.OrchestrationDependencies = append(resp.OrchestrationDependencies, OrchestrationGitDependencyResponse{
+						StepID: uuidToString(dependency.ID), Key: dependency.StepKey,
+						Branch: dependency.WorktreeBranch.String, HeadSHA: dependency.HeadSha.String, Heads: heads,
+					})
+					if dependencyStep, dependencyErr := h.Queries.GetOrchestrationStep(r.Context(), dependency.ID); dependencyErr == nil {
+						if baseRefs, readOnly, useDependency := orchestrationDependencyArtifactBase(step, dependencyStep, heads); useDependency {
+							resp.OrchestrationBaseRefs = baseRefs
+							resp.OrchestrationReadOnly = readOnly
+						}
+					}
+				}
+			}
+		}
+	}
 	if agent, err := h.Queries.GetAgent(r.Context(), task.AgentID); err == nil {
 		// Workspace-bound skills first, then platform built-in skills. Built-in
 		// names carry a "agora-" prefix so their on-disk slugs never collide
@@ -1374,11 +1402,10 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 			resp.WorkspaceID = uuidToString(issue.WorkspaceID)
 			resp.ThreadName = issue.Title
 
-			// Per-task model override (agent_task_queue.model_override): wins
-			// over the agent's configured model, but loses to the issue
-			// cost-tier labels applied just below. Set by knowledge-capture to
-			// escalate a large-thread distillation off the synthesizer's cheap
-			// default model. The model string is opaque and forwarded verbatim.
+			// Per-task model override (agent_task_queue.model_override) wins over
+			// the agent default. Normal tasks may still be adjusted by cost-tier
+			// labels below; orchestration routes are explicit human/planner
+			// decisions and therefore remain authoritative.
 			if resp.Agent != nil && task.ModelOverride.Valid && task.ModelOverride.String != "" {
 				slog.Info("per-task model override applied",
 					"task_id", uuidToString(task.ID),
@@ -1394,7 +1421,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 			// daemon and forwarded verbatim to the CLI, so setting it here
 			// fully controls both the model and — via the [1m] suffix — the 1M
 			// context window. See applyIssueCostTier for the policy.
-			if resp.Agent != nil {
+			if resp.Agent != nil && !task.OrchestrationStepID.Valid {
 				labelRows, _ := h.listLabelsForIssueSafe(r, issue.ID, issue.WorkspaceID)
 				labelSet := make(map[string]bool, len(labelRows))
 				for _, l := range labelRows {
@@ -1465,12 +1492,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 			// to a sprint with a branch, hand the daemon the SHARED sprint branch
 			// so N concurrent tasks check out onto it (each via a per-task local
 			// alias) instead of forking a per-task branch. Checked BEFORE the
-			// in_editor block below and takes precedence over it: sprint-worktree's
-			// whole target scenario IS in_editor co-code (N developers, each with
-			// their own live editor, on the SAME sprint branch) — not a separate
-			// non-editor mode, so it must win the branch-force, not lose to it.
-			// Old daemons ignore the field (omitempty) and keep forking — fully
-			// reversible.
+			// Old daemons ignore the field (omitempty) and keep forking.
 			if resp.Agent != nil && sprintWorktreeEnabled() {
 				if sprint, err := h.Queries.GetSprintForIssue(r.Context(), issue.ID); err == nil {
 					if b := SprintBranchFor(sprint); b != "" {
@@ -1478,21 +1500,6 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
-
-			// In-editor co-code mode: a human works alongside the agent in the
-			// live browser editor on this worktree — append guidance so the agent
-			// works incrementally and treats the human's edits as authoritative.
-			// The branch force (CoCodeBranch) is skipped when sprint-worktree
-			// already claimed the branch above — forcing BOTH would race two
-			// different git-branch mechanisms on the same worktree.
-			if resp.Agent != nil && metaString(issue.Metadata, "work_mode") == "in_editor" {
-				resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + inEditorCoCodeNote)
-				if resp.SprintBranch == "" {
-					issueKey := fmt.Sprintf("%s-%d", h.getIssuePrefix(r.Context(), issue.WorkspaceID), issue.Number)
-					resp.CoCodeBranch = coCodeBranchName(issueKey, issue.Title)
-				}
-			}
-
 			// Per-issue human context (the Context panel): rules, focus files,
 			// links, constraints — injected into every agent run on this issue.
 			if resp.Agent != nil {
@@ -2194,6 +2201,13 @@ func (h *Handler) StartTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if task.OrchestrationStepID.Valid {
+		if step, stepErr := h.Queries.SetOrchestrationStepRunning(r.Context(), task.ID); stepErr == nil {
+			h.createOrchestrationEvent(r.Context(), step.RunID, step.ID, "step_started", "agent", task.AgentID, map[string]any{"task_id": taskID})
+		} else if !errors.Is(stepErr, pgx.ErrNoRows) {
+			slog.Warn("start task: orchestration step transition failed", "task_id", taskID, "error", stepErr)
+		}
+	}
 
 	slog.Info("task started", "task_id", taskID, "agent_id", uuidToString(task.AgentID))
 	writeJSON(w, http.StatusOK, taskToResponse(*task, workspaceID))
@@ -2272,19 +2286,196 @@ func (h *Handler) ReportTaskProgress(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+func decodeOrchestrationGitHeads(raw []byte) []OrchestrationGitHeadResponse {
+	if len(raw) == 0 {
+		return nil
+	}
+	var heads []OrchestrationGitHeadResponse
+	if err := json.Unmarshal(raw, &heads); err != nil {
+		return nil
+	}
+	result := make([]OrchestrationGitHeadResponse, 0, len(heads))
+	seen := make(map[string]bool, len(heads))
+	for _, head := range heads {
+		head.Repo = strings.TrimSpace(head.Repo)
+		head.Branch = strings.TrimSpace(head.Branch)
+		head.HeadSHA = strings.TrimSpace(head.HeadSHA)
+		key := head.Repo + "\x00" + head.HeadSHA
+		if head.HeadSHA == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		result = append(result, head)
+	}
+	return result
+}
+
+func validFullGitCommitSHA(value string) bool {
+	value = strings.TrimSpace(value)
+	if len(value) != 40 && len(value) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
+func readOnlyVerificationMatches(expected []OrchestrationGitHeadResponse, reported []RepoGitStateResponse, aggregateStatus string) bool {
+	if len(expected) == 0 || aggregateStatus != "clean" {
+		return false
+	}
+	byRepo := make(map[string]RepoGitStateResponse, len(reported))
+	for _, state := range reported {
+		byRepo[strings.TrimSpace(state.Repo)] = state
+	}
+	for _, head := range expected {
+		state, ok := byRepo[head.Repo]
+		if !ok || state.MergeStatus != "clean" || !strings.EqualFold(strings.TrimSpace(state.HeadSHA), strings.TrimSpace(head.HeadSHA)) {
+			return false
+		}
+	}
+	return true
+}
+
+// PinOrchestrationRunBase atomically records the first local repository
+// snapshot proposed for a run and returns the canonical snapshot. The server
+// cannot inspect local_directory resources itself, so concurrent workers use
+// this compare-and-set endpoint before creating any worktrees.
+func (h *Handler) PinOrchestrationRunBase(w http.ResponseWriter, r *http.Request) {
+	taskID := chi.URLParam(r, "taskId")
+	task, _, ok := h.requireDaemonTaskAccessWithWorkspace(w, r, taskID)
+	if !ok {
+		return
+	}
+	if !task.OrchestrationStepID.Valid {
+		writeError(w, http.StatusConflict, "task is not part of an orchestration")
+		return
+	}
+	var req struct {
+		BaseRefs []OrchestrationGitHeadResponse `json:"base_refs"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.BaseRefs) == 0 {
+		writeError(w, http.StatusBadRequest, "base_refs must contain at least one repository commit")
+		return
+	}
+	seenRepos := make(map[string]bool, len(req.BaseRefs))
+	for i := range req.BaseRefs {
+		req.BaseRefs[i].Repo = strings.TrimSpace(req.BaseRefs[i].Repo)
+		req.BaseRefs[i].Branch = ""
+		req.BaseRefs[i].HeadSHA = strings.ToLower(strings.TrimSpace(req.BaseRefs[i].HeadSHA))
+		if req.BaseRefs[i].Repo == "" || seenRepos[req.BaseRefs[i].Repo] || !validFullGitCommitSHA(req.BaseRefs[i].HeadSHA) {
+			writeError(w, http.StatusBadRequest, "base_refs require unique repository names and full commit SHAs")
+			return
+		}
+		seenRepos[req.BaseRefs[i].Repo] = true
+	}
+	sort.Slice(req.BaseRefs, func(i, j int) bool { return req.BaseRefs[i].Repo < req.BaseRefs[j].Repo })
+	payload, _ := json.Marshal(req.BaseRefs)
+	run, err := h.Queries.PinOrchestrationRunBaseGitStates(r.Context(), db.PinOrchestrationRunBaseGitStatesParams{
+		BaseGitStates: payload,
+		StepID:        task.OrchestrationStepID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		run, err = h.Queries.GetOrchestrationRunByStep(r.Context(), task.OrchestrationStepID)
+	}
+	if err != nil {
+		writeError(w, http.StatusConflict, "could not pin orchestration base")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"base_refs": decodeOrchestrationGitHeads(run.BaseGitStates)})
+}
+
 // CompleteTask marks a running task as completed.
 type TaskCompleteRequest struct {
-	PRURL     string `json:"pr_url"`
-	Output    string `json:"output"`
-	SessionID string `json:"session_id"` // Claude session ID for future resumption
-	WorkDir   string `json:"work_dir"`   // working directory used during execution
+	PRURL              string                 `json:"pr_url"`
+	Output             string                 `json:"output"`
+	SessionID          string                 `json:"session_id"` // Claude session ID for future resumption
+	WorkDir            string                 `json:"work_dir"`   // working directory used during execution
+	BranchName         string                 `json:"branch_name"`
+	BaseSHA            string                 `json:"base_sha"`
+	HeadSHA            string                 `json:"head_sha"`
+	MergeStatus        string                 `json:"merge_status"`
+	ConflictFiles      []string               `json:"conflict_files"`
+	IntegrationStatus  string                 `json:"integration_status"`
+	IntegratedHeadSHAs []string               `json:"integrated_head_shas"`
+	MissingHeadSHAs    []string               `json:"missing_head_shas"`
+	GitStates          []RepoGitStateResponse `json:"git_states"`
+}
+
+type RepoGitStateResponse struct {
+	Repo          string   `json:"repo"`
+	Branch        string   `json:"branch,omitempty"`
+	BaseSHA       string   `json:"base_sha,omitempty"`
+	HeadSHA       string   `json:"head_sha,omitempty"`
+	MergeStatus   string   `json:"merge_status,omitempty"`
+	ConflictFiles []string `json:"conflict_files,omitempty"`
+}
+
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		result = append(result, value)
+	}
+	return result
+}
+
+// modifyingDevGitEvidenceError rejects a code/documentation worker that
+// reports success without leaving a real committed branch delta. Planning and
+// read-only verification may legitimately keep HEAD at the base; a non-
+// integration dev step may not silently turn an explicit refusal or no-op into
+// a successful handoff. Projects without any Git evidence remain supported.
+func modifyingDevGitEvidenceError(step db.OrchestrationStep, req TaskCompleteRequest) string {
+	if step.Stage != "dev" || step.StepKind == "integration" {
+		return ""
+	}
+	hasGitEvidence := strings.TrimSpace(req.BaseSHA) != "" || strings.TrimSpace(req.HeadSHA) != "" ||
+		strings.TrimSpace(req.BranchName) != "" || len(req.GitStates) > 0
+	if !hasGitEvidence {
+		return ""
+	}
+	if req.MergeStatus != "clean" {
+		return "development gate failed: the worker branch must be committed and clean"
+	}
+	if strings.TrimSpace(req.BranchName) == "" {
+		return "development gate failed: the worker branch name is missing"
+	}
+	changed := false
+	if len(req.GitStates) > 0 {
+		for _, state := range req.GitStates {
+			base := strings.TrimSpace(state.BaseSHA)
+			head := strings.TrimSpace(state.HeadSHA)
+			if base == "" || head == "" {
+				return "development gate failed: exact base and head commits are required"
+			}
+			if strings.TrimSpace(state.MergeStatus) != "clean" {
+				return "development gate failed: every worker repository must be clean"
+			}
+			changed = changed || base != head
+		}
+	} else {
+		base := strings.TrimSpace(req.BaseSHA)
+		head := strings.TrimSpace(req.HeadSHA)
+		if base == "" || head == "" {
+			return "development gate failed: exact base and head commits are required"
+		}
+		changed = base != head
+	}
+	if !changed {
+		return "development gate failed: worker HEAD is identical to its immutable base"
+	}
+	return ""
 }
 
 func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskId")
 
 	// Verify the caller owns this task's workspace.
-	_, workspaceID, ok := h.requireDaemonTaskAccessWithWorkspace(w, r, taskID)
+	accessTask, workspaceID, ok := h.requireDaemonTaskAccessWithWorkspace(w, r, taskID)
 	if !ok {
 		return
 	}
@@ -2292,6 +2483,115 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 	var req TaskCompleteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.ConflictFiles == nil {
+		req.ConflictFiles = []string{}
+	}
+	if req.IntegratedHeadSHAs == nil {
+		req.IntegratedHeadSHAs = []string{}
+	}
+	if req.MissingHeadSHAs == nil {
+		req.MissingHeadSHAs = []string{}
+	}
+	if req.GitStates == nil {
+		req.GitStates = []RepoGitStateResponse{}
+	}
+	integrationRejected := false
+	developmentRejected := ""
+	if accessTask.OrchestrationStepID.Valid {
+		if req.MergeStatus == "" {
+			req.MergeStatus = "not_checked"
+		}
+		switch req.MergeStatus {
+		case "not_checked", "clean", "conflicts", "uncommitted", "unavailable":
+		default:
+			writeError(w, http.StatusBadRequest, "invalid merge_status")
+			return
+		}
+		step, stepErr := h.Queries.GetOrchestrationStep(r.Context(), accessTask.OrchestrationStepID)
+		if stepErr != nil {
+			writeError(w, http.StatusConflict, "orchestration step no longer exists")
+			return
+		}
+		developmentRejected = modifyingDevGitEvidenceError(step, req)
+		if step.Stage == "qa" || step.Stage == "review" {
+			var expected []OrchestrationGitHeadResponse
+			dependencies, depErr := h.Queries.ListOrchestrationStepGitDependencies(r.Context(), step.ID)
+			if depErr != nil {
+				writeError(w, http.StatusConflict, "could not verify integration handoff")
+				return
+			}
+			for _, dependency := range dependencies {
+				dependencyStep, dependencyErr := h.Queries.GetOrchestrationStep(r.Context(), dependency.ID)
+				if dependencyErr == nil && dependencyStep.StepKind == "integration" && dependencyStep.IntegrationStatus == "complete" {
+					expected = append(expected, decodeOrchestrationGitHeads(dependency.GitStates)...)
+				}
+			}
+			if len(expected) > 0 && !readOnlyVerificationMatches(expected, req.GitStates, req.MergeStatus) {
+				writeError(w, http.StatusConflict, "verification worktree changed or no longer matches the integrated HEAD")
+				return
+			}
+		}
+		if step.StepKind == "integration" {
+			if req.MergeStatus == "conflicts" {
+				req.IntegrationStatus = "conflicts"
+			}
+			integrated := make(map[string]bool, len(req.IntegratedHeadSHAs))
+			for _, head := range req.IntegratedHeadSHAs {
+				integrated[strings.TrimSpace(head)] = true
+			}
+			dependencies, depErr := h.Queries.ListOrchestrationStepGitDependencies(r.Context(), step.ID)
+			if depErr != nil {
+				writeError(w, http.StatusConflict, "could not verify integration dependencies")
+				return
+			}
+			missing := append([]string(nil), req.MissingHeadSHAs...)
+			for _, dependency := range dependencies {
+				head := strings.TrimSpace(dependency.HeadSha.String)
+				if head == "" {
+					missing = append(missing, "step:"+dependency.StepKey)
+				} else if !integrated[head] {
+					missing = append(missing, head)
+				}
+			}
+			req.MissingHeadSHAs = uniqueStrings(missing)
+			if len(req.MissingHeadSHAs) > 0 && req.IntegrationStatus != "conflicts" {
+				req.IntegrationStatus = "missing_heads"
+			}
+			if req.IntegrationStatus == "" || req.IntegrationStatus == "pending" || req.IntegrationStatus == "not_required" {
+				req.IntegrationStatus = "missing_heads"
+			}
+			integrationRejected = req.IntegrationStatus != "complete" || len(req.MissingHeadSHAs) > 0
+		} else {
+			req.IntegrationStatus = "not_required"
+		}
+		switch req.IntegrationStatus {
+		case "not_required", "pending", "complete", "missing_heads", "conflicts":
+		default:
+			writeError(w, http.StatusBadRequest, "invalid integration_status")
+			return
+		}
+		conflicts, _ := json.Marshal(req.ConflictFiles)
+		integratedHeads, _ := json.Marshal(req.IntegratedHeadSHAs)
+		missingHeads, _ := json.Marshal(req.MissingHeadSHAs)
+		gitStates, _ := json.Marshal(req.GitStates)
+		if err := h.Queries.UpdateOrchestrationStepGitStateByTask(r.Context(), db.UpdateOrchestrationStepGitStateByTaskParams{
+			TaskID: parseUUID(taskID), WorktreeBranch: req.BranchName, BaseSha: req.BaseSHA,
+			HeadSha: req.HeadSHA, MergeStatus: req.MergeStatus, ConflictFiles: conflicts,
+			IntegrationStatus: req.IntegrationStatus, IntegratedHeadShas: integratedHeads, MissingHeadShas: missingHeads,
+			GitStates: gitStates,
+		}); err != nil {
+			writeError(w, http.StatusConflict, "could not record orchestration git state")
+			return
+		}
+	}
+	if developmentRejected != "" {
+		writeError(w, http.StatusConflict, developmentRejected)
+		return
+	}
+	if integrationRejected {
+		writeError(w, http.StatusConflict, "integration gate failed: every dependency commit must be present in the integration head")
 		return
 	}
 
@@ -2573,6 +2873,29 @@ func taskMessageToPayload(m db.TaskMessage, taskID, issueID string) protocol.Tas
 		Output:    m.Output.String,
 		CreatedAt: createdAt,
 	}
+}
+
+// orchestrationDependencyArtifactBase defines which consumers open an exact
+// completed integration artifact. QA/review are detached read-only consumers;
+// a development correction is writable but still branches from that exact
+// artifact rather than the original run base.
+func orchestrationDependencyArtifactBase(step, dependency db.OrchestrationStep, heads []OrchestrationGitHeadResponse) ([]OrchestrationGitHeadResponse, bool, bool) {
+	if len(heads) == 0 {
+		return nil, false, false
+	}
+	if step.Stage == "release" && dependency.Status == "completed" && (dependency.Stage == "qa" || dependency.Stage == "review") {
+		return heads, true, true
+	}
+	if dependency.StepKind != "integration" || dependency.IntegrationStatus != "complete" {
+		return nil, false, false
+	}
+	if step.Stage == "qa" || step.Stage == "review" {
+		return heads, true, true
+	}
+	if step.Stage == "dev" && step.StepKind == "task" {
+		return heads, false, true
+	}
+	return nil, false, false
 }
 
 // ListTaskMessages returns the persisted messages for a task (for catch-up after reconnect).

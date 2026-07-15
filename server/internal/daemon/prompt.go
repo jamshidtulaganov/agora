@@ -27,11 +27,38 @@ func BuildPrompt(task Task, provider string) string {
 	if task.QuickCreatePrompt != "" {
 		return buildQuickCreatePrompt(task)
 	}
+	if task.OrchestrationStepID != "" {
+		return buildOrchestrationPrompt(task)
+	}
 	var b strings.Builder
 	b.WriteString("You are running as a local coding agent for a Agora workspace.\n\n")
 	fmt.Fprintf(&b, "Your assigned issue ID is: %s\n\n", task.IssueID)
 	fmt.Fprintf(&b, "Start by running `agora issue get %s --output json` to understand your task, then complete it.\n", task.IssueID)
 	fmt.Fprintf(&b, "For comment history, follow the rule in your runtime workflow file (assignment-triggered tasks treat the read as mandatory). `agora issue comment list %s --output json` returns all comments for the issue (server caps at 2000). On long-running issues use `--recent 20 --output json` to read the 20 most recently active threads, then page older threads via the stderr `Next thread cursor: ...` line and the matching `--before` / `--before-id` until you have enough history. `--since <RFC3339>` is still available for incremental polling and may combine with `--recent`.\n", task.IssueID)
+	return b.String()
+}
+
+func buildOrchestrationPrompt(task Task) string {
+	var b strings.Builder
+	b.WriteString("You are executing one step in a persisted multi-agent orchestration. Complete only this step, leave a concise issue comment with the evidence the next agent needs, and do not start a later stage yourself. The orchestration engine owns issue status, assignment, QA/review dispatch, and release: do not change the issue status or assignee, invoke run_qa/run_review/release actions, or @mention another agent to start work.\n\n")
+	fmt.Fprintf(&b, "Issue ID: %s\n", task.IssueID)
+	fmt.Fprintf(&b, "Orchestration step: %s\n", task.OrchestrationStepTitle)
+	fmt.Fprintf(&b, "Stage: %s\n\n", task.OrchestrationStage)
+	if strings.TrimSpace(task.OrchestrationInstructions) != "" {
+		fmt.Fprintf(&b, "Step instructions:\n%s\n\n", task.OrchestrationInstructions)
+	}
+	if task.OrchestrationReadOnly {
+		b.WriteString("This is a read-only verification step opened at the exact integrated commit. The repository is already present in the current working directory: do not run `agora repo checkout` or any command that fetches and checks out another ref. Inspect and run non-mutating checks only; do not edit files, create commits or branches, switch branches, reset, pull, or move HEAD. The daemon reports the repository state and the server rejects verification that no longer matches the integration handoff.\n\n")
+	}
+	if task.OrchestrationStepKind == "integration" {
+		b.WriteString("This is an enforced integration gate. Merge every dependency commit below into this task's isolated branch, resolve conflicts, run the relevant verification, and leave the repository clean with all changes committed. Do not push, release, or claim success while a dependency is missing. The daemon will independently verify that every listed commit is an ancestor of your final HEAD; a prose summary cannot bypass this check.\n\n")
+		b.WriteString("Dependency commits (merge in this order):\n")
+		for _, dependency := range task.OrchestrationDependencies {
+			fmt.Fprintf(&b, "- %s: branch=%s head=%s\n", dependency.Key, dependency.Branch, dependency.HeadSHA)
+		}
+		b.WriteString("\nFor a GitHub resource, check out the project repository first, then merge each exact head SHA with `git merge --no-ff <sha>`. For a local-directory worktree, the repository is already present and the dependency branches live in its shared source repository. If a commit is unavailable or a conflict cannot be resolved safely, report the concrete blocker instead of completing the step. Finish with `git status --short`, `git log --oneline --decorate -n 12`, and the project checks appropriate to the changed code.\n\n")
+	}
+	fmt.Fprintf(&b, "Start with `agora issue get %s --output json` and `agora issue comment list %s --recent 20 --output json`. Use the shared issue as the handoff record. When the step is genuinely complete, post a comment summarizing what changed, evidence produced, risks, and anything the next stage must verify.\n", task.IssueID, task.IssueID)
 	return b.String()
 }
 

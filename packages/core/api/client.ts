@@ -76,6 +76,8 @@ import type {
   PendingChatTasksResponse,
   SendChatMessageResponse,
   CancelTaskResponse,
+  OrchestrationRun,
+  CreateOrchestrationRequest,
   Project,
   WorkspaceLabs,
   PolicyFleetHealth,
@@ -86,9 +88,9 @@ import type {
   UpdateTestCaseRequest,
   CreateTestRunRequest,
   BuildBaseSuiteResponse,
-  GetIssueEditorResponse,
   IssueBrowserResponse,
   IssueQAPreviewURLResponse,
+  IssueArtifactResponse,
   CreateProjectRequest,
   UpdateProjectRequest,
   ListProjectsResponse,
@@ -282,11 +284,11 @@ import {
   type TestCaseRunsParsed,
   LaunchTraceResponseSchema,
   EMPTY_LAUNCH_TRACE,
-  GetIssueEditorResponseSchema,
-  EMPTY_ISSUE_EDITOR,
   EMPTY_ISSUE_BROWSER,
   IssueBrowserResponseSchema,
   IssueQAPreviewURLResponseSchema,
+  IssueArtifactResponseSchema,
+  EMPTY_ISSUE_ARTIFACT,
   EMPTY_ISSUE_QA_PREVIEW_URL,
   QAMetricsResponseSchema,
   EMPTY_QA_METRICS,
@@ -305,9 +307,6 @@ import {
   ProjectConfigListSchema,
   EMPTY_PROJECT_CONFIG,
   type ProjectConfigEntry,
-  EditorTokensResponseSchema,
-  EMPTY_EDITOR_TOKENS,
-  type EditorTokensResponse,
   QAVerdictsResponseSchema,
   EMPTY_QA_VERDICTS,
   type QAVerdictsResponse,
@@ -315,6 +314,8 @@ import {
   EMPTY_REVIEW_VERDICT,
   ReviewDecisionResponseSchema,
   EMPTY_REVIEW_DECISION,
+  OrchestrationRunSchema,
+  EMPTY_ORCHESTRATION_RUN,
 } from "./schemas";
 
 /** Identifies the calling client to the server.
@@ -1599,6 +1600,65 @@ export class ApiClient {
     return this.fetch(`/api/issues/${issueId}/usage`);
   }
 
+  async getIssueOrchestration(issueId: string): Promise<OrchestrationRun | null> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/orchestration`);
+    if (raw === null) return null;
+    return parseWithFallback(raw, OrchestrationRunSchema, EMPTY_ORCHESTRATION_RUN, {
+      endpoint: "GET /api/issues/{id}/orchestration",
+    });
+  }
+
+  async getIssueArtifact(issueId: string, stepId?: string): Promise<IssueArtifactResponse> {
+    const query = stepId ? `?step_id=${encodeURIComponent(stepId)}` : "";
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/artifact${query}`);
+    return parseWithFallback(raw, IssueArtifactResponseSchema, EMPTY_ISSUE_ARTIFACT, {
+      endpoint: "GET /api/issues/{id}/artifact",
+    });
+  }
+
+  async createIssueOrchestration(issueId: string, data: CreateOrchestrationRequest): Promise<OrchestrationRun | null> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/orchestration`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(raw, OrchestrationRunSchema, EMPTY_ORCHESTRATION_RUN, {
+      endpoint: "POST /api/issues/{id}/orchestration",
+    });
+  }
+
+  async startIssueOrchestration(issueId: string): Promise<OrchestrationRun | null> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/orchestration/start`, { method: "POST" });
+    return parseWithFallback(raw, OrchestrationRunSchema, EMPTY_ORCHESTRATION_RUN, {
+      endpoint: "POST /api/issues/{id}/orchestration/start",
+    });
+  }
+
+  async editIssueOrchestration(issueId: string, data: import("../types").EditOrchestrationRequest): Promise<OrchestrationRun | null> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/orchestration`, { method: "PATCH", body: JSON.stringify(data) });
+    return parseWithFallback(raw, OrchestrationRunSchema, EMPTY_ORCHESTRATION_RUN, { endpoint: "PATCH /api/issues/{id}/orchestration" });
+  }
+
+  async approveOrchestrationStep(issueId: string, stepId: string): Promise<OrchestrationRun | null> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/orchestration/steps/${stepId}/approve`, { method: "POST" });
+    return parseWithFallback(raw, OrchestrationRunSchema, EMPTY_ORCHESTRATION_RUN, {
+      endpoint: "POST /api/issues/{id}/orchestration/steps/{stepId}/approve",
+    });
+  }
+
+  async cancelOrchestrationBranch(issueId: string, stepId: string): Promise<OrchestrationRun | null> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/orchestration/steps/${stepId}/cancel-branch`, { method: "POST" });
+    return parseWithFallback(raw, OrchestrationRunSchema, EMPTY_ORCHESTRATION_RUN, {
+      endpoint: "POST /api/issues/{id}/orchestration/steps/{stepId}/cancel-branch",
+    });
+  }
+
+  async retryOrchestrationStep(issueId: string, stepId: string): Promise<OrchestrationRun | null> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/orchestration/steps/${stepId}/retry`, { method: "POST" });
+    return parseWithFallback(raw, OrchestrationRunSchema, EMPTY_ORCHESTRATION_RUN, {
+      endpoint: "POST /api/issues/{id}/orchestration/steps/{stepId}/retry",
+    });
+  }
+
   async cancelTask(issueId: string, taskId: string): Promise<AgentTask> {
     return this.fetch(`/api/issues/${issueId}/tasks/${taskId}/cancel`, {
       method: "POST",
@@ -1649,17 +1709,24 @@ export class ApiClient {
   // deterministic gates server-side (409 with qa_gate_not_passed / qa_failed /
   // review_failed in the message when they block; merge:override bypasses)
   // and dispatches the merge order to the squad lead; request_changes needs a
-  // non-empty note (400 otherwise) and drops the issue back to in_progress.
+  // non-empty note and atomically creates the next correction DAG revision.
   // Human-only: the route 403s machine actors.
   async reviewDecision(
     issueId: string,
-    body: { action: "approve" | "request_changes"; note?: string },
+    body: {
+      action: "approve" | "request_changes";
+      note?: string;
+      expectedVersion?: number;
+      targetStepId?: string;
+    },
   ): Promise<ReviewDecisionResponse> {
     const raw = await this.fetch<unknown>(`/api/issues/${issueId}/review-decision`, {
       method: "POST",
       body: JSON.stringify({
         action: body.action,
         ...(body.note ? { note: body.note } : {}),
+        ...(body.expectedVersion ? { expected_version: body.expectedVersion } : {}),
+        ...(body.targetStepId ? { target_step_id: body.targetStepId } : {}),
       }),
     });
     return parseWithFallback(raw, ReviewDecisionResponseSchema, EMPTY_REVIEW_DECISION, {
@@ -2524,24 +2591,6 @@ export class ApiClient {
     });
   }
 
-  // Resolves where to reach a live view of an issue's worktree — self-host
-  // (daemon_url + agents, most-recent first) or cloud (a proxied editor_url).
-  // 404 means no agent has a worktree on this issue yet, a benign/expected
-  // state (e.g. before the first dev task runs) — degrades to the empty
-  // fallback (mode: "") rather than throwing, so a QA-page consumer can just
-  // check `mode` instead of try/catching a routine 404.
-  async getIssueEditor(issueId: string): Promise<GetIssueEditorResponse> {
-    try {
-      const raw = await this.fetch<unknown>(`/api/issues/${issueId}/editor`);
-      return parseWithFallback(raw, GetIssueEditorResponseSchema, EMPTY_ISSUE_EDITOR, {
-        endpoint: "GET /api/issues/:id/editor",
-      });
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 404) return EMPTY_ISSUE_EDITOR;
-      throw e;
-    }
-  }
-
   // Resolves where the Live-testing bay reaches a CDP browser for the issue:
   // self-host (daemon_url, dialed directly) or cloud (browser_url — a
   // same-origin reverse-proxy base). Never requires a worktree; 404 (issue
@@ -3153,32 +3202,6 @@ export class ApiClient {
 
   async deleteReleaseIntegration(workspaceId: string, integrationId: string): Promise<void> {
     await this.fetch(`/api/workspaces/${workspaceId}/release-integrations/${integrationId}`, {
-      method: "DELETE",
-    });
-  }
-
-  // Editor account integration (Settings → Account): per-user PATs the daemon
-  // injects into the co-code editor env (GH_TOKEN/GITHUB_TOKEN/GITLAB_TOKEN).
-  // Tokens are write-only — reads return a masked tail.
-  async listEditorTokens(): Promise<EditorTokensResponse> {
-    const raw = await this.fetch<unknown>(`/api/me/editor-tokens`);
-    return parseWithFallback(raw, EditorTokensResponseSchema, EMPTY_EDITOR_TOKENS, {
-      endpoint: "GET /api/me/editor-tokens",
-    });
-  }
-
-  // workspaceId scopes the token to one workspace (overrides the global
-  // default for editors opened on that workspace's issues); omit for global.
-  async putEditorToken(provider: "github" | "gitlab", token: string, workspaceId?: string): Promise<void> {
-    await this.fetch(`/api/me/editor-tokens`, {
-      method: "PUT",
-      body: JSON.stringify({ provider, token, ...(workspaceId ? { workspace_id: workspaceId } : {}) }),
-    });
-  }
-
-  async deleteEditorToken(provider: "github" | "gitlab", workspaceId?: string): Promise<void> {
-    const qs = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
-    await this.fetch(`/api/me/editor-tokens/${provider}${qs}`, {
       method: "DELETE",
     });
   }

@@ -1485,3 +1485,72 @@ func TestStandardBriefKeepsRepoCheckout(t *testing.T) {
 		t.Error("standard brief must not carry the in-place section")
 	}
 }
+
+func TestManagedOrchestrationWorktreeSuppressesCheckoutAndGenericWorkflow(t *testing.T) {
+	t.Parallel()
+	ctx := TaskContextForEnv{
+		IssueID:                "55555555-6666-7777-8888-999999999999",
+		OrchestrationStep:      true,
+		OrchestrationStage:     "plan",
+		PreprovisionedWorktree: true,
+		Repos: []RepoContextForEnv{
+			{URL: "ssh://git@example.com/org/app.git"},
+		},
+		ProjectResources: []ProjectResourceForEnv{{ResourceType: "github_repo"}},
+	}
+	out := buildMetaSkillContent("claude", ctx)
+
+	for _, forbidden := range []string{
+		"Use `agora repo checkout <url>` to check out a repository into your working directory.",
+		"use `agora repo checkout <url>` to fetch the code",
+		"You are responsible for managing the issue status throughout your work",
+		"When done, run `agora issue status",
+		"## Sub-issue Creation",
+		"## Test-Driven Delivery",
+	} {
+		if strings.Contains(out, forbidden) {
+			t.Errorf("managed orchestration brief contains conflicting guidance %q", forbidden)
+		}
+	}
+	for _, required := range []string{
+		"Working Directory (managed orchestration worktree)",
+		"Do **NOT** run `agora repo checkout`",
+		"The orchestration engine owns stage transitions",
+		"Do not change issue status or assignee",
+	} {
+		if !strings.Contains(out, required) {
+			t.Errorf("managed orchestration brief missing %q", required)
+		}
+	}
+}
+
+func TestReadOnlyOrchestrationBriefSuppressesMutationWorkflow(t *testing.T) {
+	t.Parallel()
+	ctx := TaskContextForEnv{
+		IssueID:                "55555555-6666-7777-8888-999999999999",
+		OrchestrationStep:      true,
+		OrchestrationReadOnly:  true,
+		PreprovisionedWorktree: true,
+		Repos:                  []RepoContextForEnv{{URL: "ssh://git@example.com/org/app.git"}},
+	}
+	out := buildMetaSkillContent("codex", ctx)
+
+	for _, forbidden := range []string{
+		"## Test-Driven Delivery",
+		"Leave the current worktree clean and commit every intended change",
+		"When done, run `agora issue status",
+	} {
+		if strings.Contains(out, forbidden) {
+			t.Errorf("read-only orchestration brief contains mutation guidance %q", forbidden)
+		}
+	}
+	for _, required := range []string{
+		"pinned to the exact integrated commit",
+		"Do not edit files, create commits or branches",
+		"Verify the exact integrated checkout",
+	} {
+		if !strings.Contains(out, required) {
+			t.Errorf("read-only orchestration brief missing %q", required)
+		}
+	}
+}

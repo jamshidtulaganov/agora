@@ -18,6 +18,13 @@ export function useCreateChatSession() {
     },
     onSuccess: (session) => {
       logger.info("createChatSession.success", { sessionId: session.id, agentId: session.agent_id });
+      // Seed membership before ChatWindow flips activeSessionId. This makes
+      // it safe to gate message/pending-task queries on the authoritative
+      // session list without clearing a just-created session during refetch.
+      qc.setQueryData<ChatSession[]>(chatKeys.sessions(wsId), (current) => {
+        const withoutDuplicate = (current ?? []).filter((item) => item.id !== session.id);
+        return [session, ...withoutDuplicate];
+      });
     },
     onError: (err) => {
       logger.error("createChatSession.error", err);

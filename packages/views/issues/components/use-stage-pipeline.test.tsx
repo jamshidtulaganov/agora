@@ -21,6 +21,7 @@ const apiMocks = vi.hoisted(() => ({
   getIssue: vi.fn(),
   listLabelsForIssue: vi.fn(),
   listIssuePullRequests: vi.fn(),
+  getIssueOrchestration: vi.fn(),
   mergeReadiness: vi.fn(),
   getAgentTaskSnapshot: vi.fn(),
   listSquads: vi.fn(),
@@ -77,6 +78,59 @@ function pullRequest(over: Record<string, unknown> = {}) {
   };
 }
 
+function orchestrationStep(
+  key: string,
+  stage: "plan" | "dev" | "qa" | "review" | "release",
+  status: string,
+  over: Record<string, unknown> = {},
+) {
+  return {
+    id: `step-${key}`,
+    key,
+    title: key,
+    stage,
+    status,
+    position: 0,
+    approval_required: false,
+    attempt: 1,
+    max_attempts: 2,
+    instructions: "",
+    depends_on_step_ids: [],
+    merge_status: "clean",
+    conflict_files: [],
+    kind: "task",
+    capability: stage === "plan" ? "coordination" : stage,
+    integration_status: "not_required",
+    integrated_head_shas: [],
+    missing_head_shas: [],
+    ...over,
+  };
+}
+
+function orchestrationRun(
+  status: "running" | "waiting_approval" | "completed" | "failed" | "cancelled",
+  steps: ReturnType<typeof orchestrationStep>[],
+) {
+  return {
+    id: "run-1",
+    issue_id: "issue-1",
+    status,
+    mode: "auto",
+    execution_strategy: "squad",
+    progression_policy: "automatic",
+    policy: {},
+    owner_type: "squad",
+    base_git_states: [],
+    execution_mode: "squad",
+    plan_version: 1,
+    revisions: [],
+    created_at: "",
+    updated_at: "",
+    steps,
+    events: [],
+  };
+}
+
 function createWrapper(qc: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
@@ -98,6 +152,7 @@ describe("useStagePipeline — 3-stage assembly", () => {
     apiMocks.getIssue.mockResolvedValue(baseIssue());
     apiMocks.listLabelsForIssue.mockResolvedValue([]);
     apiMocks.listIssuePullRequests.mockResolvedValue({ pull_requests: [pullRequest()] });
+    apiMocks.getIssueOrchestration.mockResolvedValue(null);
     apiMocks.mergeReadiness.mockResolvedValue({ ready: false, tier: "light", gates: [], reviews: [] });
     apiMocks.getAgentTaskSnapshot.mockResolvedValue([]);
     apiMocks.listSquads.mockResolvedValue([]);
@@ -141,5 +196,48 @@ describe("useStagePipeline — 3-stage assembly", () => {
     const { result } = renderPipeline();
     await waitFor(() => expect(stageState(result.current.stages, "qa")).toBe("running"));
     expect(stageState(result.current.stages, "dev")).toBe("running");
+  });
+
+  it("uses the orchestration DAG as the stage source while QA and Review run in parallel", async () => {
+    apiMocks.getIssueOrchestration.mockResolvedValue(
+      orchestrationRun("running", [
+        orchestrationStep("plan", "plan", "completed"),
+        orchestrationStep("dev", "dev", "completed"),
+        orchestrationStep("integrate", "dev", "completed"),
+        orchestrationStep("qa", "qa", "running", { task_id: "task-qa" }),
+        orchestrationStep("review", "review", "running", { task_id: "task-review" }),
+        orchestrationStep("release", "release", "pending"),
+      ]),
+    );
+    const { result } = renderPipeline();
+    await waitFor(() => expect(stageState(result.current.stages, "qa")).toBe("running"));
+    expect(stageState(result.current.stages, "dev")).toBe("passed");
+    expect(stageState(result.current.stages, "review")).toBe("running");
+    expect(result.current.current).toBe("qa");
+    expect(result.current.stages.find((stage) => stage.stage === "qa")?.taskId).toBe("task-qa");
+    expect(result.current.stages.find((stage) => stage.stage === "review")?.taskId).toBe(
+      "task-review",
+    );
+  });
+
+  it("maps release approval onto the Review stage after the DAG completes", async () => {
+    apiMocks.getIssueOrchestration.mockResolvedValue(
+      orchestrationRun("waiting_approval", [
+        orchestrationStep("plan", "plan", "completed"),
+        orchestrationStep("dev", "dev", "completed"),
+        orchestrationStep("integrate", "dev", "completed"),
+        orchestrationStep("qa", "qa", "completed"),
+        orchestrationStep("review", "review", "completed"),
+        orchestrationStep("release", "release", "waiting_approval"),
+      ]),
+    );
+    const { result } = renderPipeline();
+    await waitFor(() => expect(result.current.current).toBe("review"));
+    expect(stageState(result.current.stages, "dev")).toBe("passed");
+    expect(stageState(result.current.stages, "qa")).toBe("passed");
+    expect(stageState(result.current.stages, "review")).toBe("active");
+    expect(result.current.stages.find((stage) => stage.stage === "review")?.detail).toBe(
+      "awaiting approval",
+    );
   });
 });

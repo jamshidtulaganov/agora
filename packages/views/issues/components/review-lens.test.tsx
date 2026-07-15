@@ -8,18 +8,21 @@ import { ReviewLensBody } from "./review-lens";
 
 // ReviewLensBody v2 — "agent reviews, human approves"
 // (docs/review-stage-plan.md). Covers: the verdict card off
-// api.getReviewVerdict, the empty state + Run review dispatch, the findings
-// list, the human decision bar (approve confirm → api.reviewDecision;
-// request_changes requires a note), the stale hint, and the v1 surface it
-// keeps (gate cards, merge:override badge, deploy pointer).
+// api.getReviewVerdict, plan-owned review/release controls, versioned request
+// changes, the shared artifact tabs, and the stale-review signal.
 
 const apiMocks = vi.hoisted(() => ({
   getIssue: vi.fn(),
+  getIssueOrchestration: vi.fn(),
   mergeReadiness: vi.fn(),
   getReviewVerdict: vi.fn(),
   reviewDecision: vi.fn(),
-  sliceAction: vi.fn(),
+  approveOrchestrationStep: vi.fn(),
   listIssuePullRequests: vi.fn(),
+}));
+const navigationMocks = vi.hoisted(() => ({
+  replace: vi.fn(),
+  searchParams: new URLSearchParams("lens=review"),
 }));
 const toastMocks = vi.hoisted(() => ({
   success: vi.fn(),
@@ -42,6 +45,11 @@ vi.mock("../../navigation", () => ({
       {children}
     </a>
   ),
+  useNavigation: () => ({
+    pathname: "/demo/issues/issue-1",
+    searchParams: navigationMocks.searchParams,
+    replace: navigationMocks.replace,
+  }),
 }));
 // ActorAvatar needs the workspace actor stores — identity is not under test.
 vi.mock("../../common/actor-avatar", () => ({
@@ -51,6 +59,16 @@ vi.mock("../../common/actor-avatar", () => ({
 }));
 vi.mock("./pull-request-list", () => ({
   PullRequestList: () => <div data-testid="pull-request-list" />,
+}));
+vi.mock("./artifact-code-viewer", () => ({
+  ArtifactCodeViewer: () => <div>Exact artifact code</div>,
+}));
+vi.mock("./artifact-runtime-panels", () => ({
+  ArtifactPreviewPanel: () => <div>Exact product preview</div>,
+  ArtifactChecksPanel: () => <div>Exact artifact checks</div>,
+}));
+vi.mock("./qa-evidence-section", () => ({
+  QAEvidenceSection: () => <div>Recorded QA evidence</div>,
 }));
 
 function baseIssue(over: Record<string, unknown> = {}) {
@@ -119,6 +137,39 @@ function readyReadiness(over: Record<string, unknown> = {}) {
   };
 }
 
+function activeOrchestration(over: Record<string, unknown> = {}) {
+  return {
+    id: "run-1",
+    issue_id: "issue-1",
+    status: "waiting_approval",
+    plan_version: 1,
+    steps: [
+      {
+        id: "work-1",
+        key: "work",
+        title: "Implement auth flow",
+        stage: "dev",
+        status: "completed",
+        position: 0,
+        agent_id: "agent-author",
+        kind: "task",
+        capability: "backend",
+      },
+      {
+        id: "release-1",
+        key: "release",
+        title: "Approve release",
+        stage: "release",
+        status: "waiting_approval",
+        position: 1,
+        kind: "task",
+        capability: "release",
+      },
+    ],
+    ...over,
+  };
+}
+
 function renderLens() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -133,8 +184,11 @@ function renderLens() {
 describe("ReviewLensBody", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    navigationMocks.searchParams = new URLSearchParams("lens=review");
     apiMocks.getIssue.mockResolvedValue(baseIssue());
+    apiMocks.getIssueOrchestration.mockResolvedValue(activeOrchestration());
     apiMocks.getReviewVerdict.mockResolvedValue(NONE_VERDICT);
+    apiMocks.approveOrchestrationStep.mockResolvedValue(activeOrchestration({ status: "running" }));
     apiMocks.listIssuePullRequests.mockResolvedValue({ pull_requests: [] });
     apiMocks.mergeReadiness.mockResolvedValue({
       ready: false,
@@ -193,16 +247,12 @@ describe("ReviewLensBody", () => {
     await screen.findByText("Review not run yet");
   });
 
-  it("shows the 'No review yet' empty state and dispatches run_review from its button", async () => {
-    apiMocks.sliceAction.mockResolvedValue({ kind: "run_review" });
+  it("shows plan-owned review progress without a manual side-task control", async () => {
     renderLens();
 
     await screen.findByText("No review yet");
-    fireEvent.click(screen.getByRole("button", { name: "Run review" }));
-    await waitFor(() =>
-      expect(apiMocks.sliceAction).toHaveBeenCalledWith("issue-1", { kind: "run_review" }),
-    );
-    expect(toastMocks.success).toHaveBeenCalled();
+    expect(screen.getByText("The result appears here when the execution plan's review step completes.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Run review" })).not.toBeInTheDocument();
   });
 
   it("renders the verdict card: verdict, summary, reviewer, commit, files reviewed", async () => {
@@ -221,8 +271,7 @@ describe("ReviewLensBody", () => {
     expect(screen.getByText("deadbee")).toBeInTheDocument();
     expect(screen.getByText("7 files reviewed")).toBeInTheDocument();
     expect(screen.getByText("1 × Minor")).toBeInTheDocument();
-    // With a verdict present the dispatch button flips to re-run.
-    expect(screen.getByRole("button", { name: "Re-run review" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Re-run review" })).not.toBeInTheDocument();
   });
 
   it("renders findings with severity, file:line, and expandable detail (blockers first)", async () => {
@@ -255,23 +304,22 @@ describe("ReviewLensBody", () => {
     expect(rows[1]).toHaveTextContent("docs/x.md");
   });
 
-  it("approves through the confirm panel and fires api.reviewDecision", async () => {
+  it("approves through the confirm panel and queues the persisted release step", async () => {
     apiMocks.getReviewVerdict.mockResolvedValue(passVerdict());
     apiMocks.mergeReadiness.mockResolvedValue(readyReadiness());
-    apiMocks.reviewDecision.mockResolvedValue({ action: "approve", merged_dispatch: true });
     renderLens();
 
     const approveBtn = await screen.findByRole("button", { name: "Approve & merge" });
     await waitFor(() => expect(approveBtn).toBeEnabled());
     fireEvent.click(approveBtn);
 
-    // Confirm panel = a single body line (no gate recap), then the dispatch.
-    await screen.findByText("Dispatch the merge order to the squad lead?");
-    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await screen.findByText("Approve this exact reviewed artifact and start the persisted release worker?");
+    fireEvent.click(screen.getByRole("button", { name: "Approve release" }));
     await waitFor(() =>
-      expect(apiMocks.reviewDecision).toHaveBeenCalledWith("issue-1", { action: "approve" }),
+      expect(apiMocks.approveOrchestrationStep).toHaveBeenCalledWith("issue-1", "release-1"),
     );
-    expect(toastMocks.success).toHaveBeenCalled();
+    expect(apiMocks.reviewDecision).not.toHaveBeenCalledWith("issue-1", { action: "approve" });
+    expect(toastMocks.success).toHaveBeenCalledWith("Release approved — the merge worker started");
   });
 
   it("disables Approve & merge while merge-readiness is not ready", async () => {
@@ -310,25 +358,21 @@ describe("ReviewLensBody", () => {
     await waitFor(() => expect(approveBtn).toBeEnabled());
   });
 
-  it("toasts the merge-by-hand variant when approve returns merged_dispatch:false", async () => {
-    apiMocks.getReviewVerdict.mockResolvedValue(passVerdict());
-    apiMocks.mergeReadiness.mockResolvedValue(readyReadiness());
-    // No squad lead resolved on the backend — nothing was dispatched.
-    apiMocks.reviewDecision.mockResolvedValue({ action: "approve", merged_dispatch: false });
+  it("keeps code, product, and evidence as explicit deep-linked review views", async () => {
+    renderLens();
+    fireEvent.click(await screen.findByRole("tab", { name: "Code" }));
+    expect(navigationMocks.replace).toHaveBeenCalledWith(
+      "/demo/issues/issue-1?lens=review&review_tab=code",
+    );
+  });
+
+  it("renders recorded QA and exact-head checks in the Evidence view", async () => {
+    navigationMocks.searchParams = new URLSearchParams("lens=review&review_tab=evidence");
     renderLens();
 
-    const approveBtn = await screen.findByRole("button", { name: "Approve & merge" });
-    await waitFor(() => expect(approveBtn).toBeEnabled());
-    fireEvent.click(approveBtn);
-
-    await screen.findByText("Dispatch the merge order to the squad lead?");
-    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
-    await waitFor(() =>
-      expect(apiMocks.reviewDecision).toHaveBeenCalledWith("issue-1", { action: "approve" }),
-    );
-    expect(toastMocks.success).toHaveBeenCalledWith(
-      "Approved — merge it by hand (no squad lead to dispatch to)",
-    );
+    expect(await screen.findByText("Recorded QA evidence")).toBeInTheDocument();
+    expect(screen.getByText("Exact artifact checks")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Run QA" })).not.toBeInTheDocument();
   });
 
   it("request changes requires a note, then fires api.reviewDecision with it", async () => {
@@ -337,11 +381,16 @@ describe("ReviewLensBody", () => {
       action: "request_changes",
       status: "in_progress",
       dispatched: true,
+      plan_version: 2,
+      revision_id: "revision-2",
+      correction_step_id: "changes-2",
     });
     renderLens();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Request changes" }));
-    const submit = await screen.findByRole("button", { name: "Send back to author" });
+    const requestChanges = await screen.findByRole("button", { name: "Request changes" });
+    await waitFor(() => expect(requestChanges).toBeEnabled());
+    fireEvent.click(requestChanges);
+    const submit = await screen.findByRole("button", { name: "Create correction cycle" });
 
     // Empty note is rejected client-side — the API must not be called.
     fireEvent.click(submit);
@@ -356,8 +405,22 @@ describe("ReviewLensBody", () => {
       expect(apiMocks.reviewDecision).toHaveBeenCalledWith("issue-1", {
         action: "request_changes",
         note: "Fix the auth check",
+        expectedVersion: 1,
+        targetStepId: "work-1",
       }),
     );
+    expect(toastMocks.success).toHaveBeenCalledWith("Correction cycle added as plan v2");
+  });
+
+  it("disables request changes when no active execution plan exists", async () => {
+    apiMocks.getIssueOrchestration.mockResolvedValue(null);
+    renderLens();
+
+    const requestChanges = await screen.findByRole("button", { name: "Request changes" });
+    await waitFor(() => expect(requestChanges).toBeDisabled());
+    expect(
+      screen.getByText("Request changes requires an active execution plan."),
+    ).toBeInTheDocument();
   });
 
   it("shows the stale hint when an open PR was updated after the review", async () => {

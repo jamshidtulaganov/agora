@@ -14,10 +14,16 @@ export interface RecentIssueEntry {
 }
 
 interface RecentIssuesState {
+  identityId: string | null;
   byWorkspace: Record<string, RecentIssueEntry[]>;
+  setIdentity: (identityId: string | null) => void;
   recordVisit: (wsId: string, id: string) => void;
   forgetIssue: (wsId: string, id: string) => void;
   pruneWorkspaces: (activeWsIds: string[]) => void;
+}
+
+function bucketKey(identityId: string | null, wsId: string): string | null {
+  return identityId ? `${identityId}:${wsId}` : null;
 }
 
 // Namespace by workspace id (UUID) instead of namespacing the storage key by
@@ -33,17 +39,21 @@ interface RecentIssuesState {
 export const useRecentIssuesStore = create<RecentIssuesState>()(
   persist(
     (set) => ({
+      identityId: null,
       byWorkspace: {},
+      setIdentity: (identityId) => set({ identityId }),
       recordVisit: (wsId, id) =>
         set((state) => {
-          const bucket = state.byWorkspace[wsId] ?? EMPTY;
+          const key = bucketKey(state.identityId, wsId);
+          if (!key) return state;
+          const bucket = state.byWorkspace[key] ?? EMPTY;
           const filtered = bucket.filter((i) => i.id !== id);
           const updated: RecentIssueEntry = { id, visitedAt: Date.now() };
           const nextBucket = [updated, ...filtered].slice(0, MAX_RECENT_ISSUES);
 
           let nextByWorkspace = {
             ...state.byWorkspace,
-            [wsId]: nextBucket,
+            [key]: nextBucket,
           };
 
           // LRU defense: if pruneWorkspaces never gets a chance to run (offline,
@@ -65,26 +75,33 @@ export const useRecentIssuesStore = create<RecentIssuesState>()(
         }),
       forgetIssue: (wsId, id) =>
         set((state) => {
-          const bucket = state.byWorkspace[wsId];
+          const key = bucketKey(state.identityId, wsId);
+          if (!key) return state;
+          const bucket = state.byWorkspace[key];
           if (!bucket) return state;
           const nextBucket = bucket.filter((entry) => entry.id !== id);
           if (nextBucket.length === bucket.length) return state;
           if (nextBucket.length === 0) {
-            const { [wsId]: _, ...rest } = state.byWorkspace;
+            const { [key]: _, ...rest } = state.byWorkspace;
             return { byWorkspace: rest };
           }
           return {
-            byWorkspace: { ...state.byWorkspace, [wsId]: nextBucket },
+            byWorkspace: { ...state.byWorkspace, [key]: nextBucket },
           };
         }),
       pruneWorkspaces: (activeWsIds) =>
         set((state) => {
+          if (!state.identityId) return state;
           const allow = new Set(activeWsIds);
           let changed = false;
           const next: Record<string, RecentIssueEntry[]> = {};
-          for (const [wsId, items] of Object.entries(state.byWorkspace)) {
-            if (allow.has(wsId)) next[wsId] = items;
-            else changed = true;
+          const prefix = `${state.identityId}:`;
+          for (const [key, items] of Object.entries(state.byWorkspace)) {
+            if (!key.startsWith(prefix) || allow.has(key.slice(prefix.length))) {
+              next[key] = items;
+            } else {
+              changed = true;
+            }
           }
           return changed ? { byWorkspace: next } : state;
         }),
@@ -98,7 +115,10 @@ export const useRecentIssuesStore = create<RecentIssuesState>()(
       // `agora_recent_issues:<slug>`). Both shapes are unsafe to surface
       // because v0 entries don't know which workspace they belonged to —
       // drop them and let the cache repopulate as the user visits issues.
-      version: 1,
+      // v1 was workspace-scoped but not actor-scoped. That leaked stale IDs
+      // when two users shared a browser profile (or a local DB was replaced).
+      // Drop it once; v2 buckets are keyed by user id + workspace id.
+      version: 2,
       migrate: () => ({ byWorkspace: {} }),
     },
   ),
@@ -106,5 +126,7 @@ export const useRecentIssuesStore = create<RecentIssuesState>()(
 
 export function selectRecentIssues(wsId: string | null) {
   return (state: RecentIssuesState) =>
-    wsId ? (state.byWorkspace[wsId] ?? EMPTY) : EMPTY;
+    wsId
+      ? (state.byWorkspace[bucketKey(state.identityId, wsId) ?? ""] ?? EMPTY)
+      : EMPTY;
 }

@@ -102,9 +102,9 @@ describe("useRealtimeSync — ws instance change", () => {
     rerender({ ws: ws2 });
 
     // Should have called invalidateQueries for all workspace-scoped keys
-    // (15 workspace-scoped + 6 per-issue prefixes + 1 workspaceKeys.list()
-    // = 22 calls)
-    expect(invalidateSpy).toHaveBeenCalledTimes(22);
+    // (15 workspace-scoped + 12 per-issue prefixes + 1 workspaceKeys.list()
+    // + 1 artifact prefix = 29 calls)
+    expect(invalidateSpy).toHaveBeenCalledTimes(29);
   });
 
   it("does not re-invalidate when rerendered with the same ws instance", () => {
@@ -158,9 +158,16 @@ describe("useRealtimeSync — ws instance change", () => {
 
     const calls = invalidateSpy.mock.calls.map((call: [{ queryKey?: unknown }, ...unknown[]]) => call[0].queryKey);
     expect(calls).toContainEqual(["issues", "timeline"]);
+    expect(calls).toContainEqual(["issues", "comment-trigger-preview"]);
     expect(calls).toContainEqual(["issues", "reactions"]);
     expect(calls).toContainEqual(["issues", "subscribers"]);
     expect(calls).toContainEqual(["issues", "usage"]);
+    expect(calls).toContainEqual(["issues", "orchestration"]);
+    expect(calls).toContainEqual(["issues", "artifact"]);
+    expect(calls).toContainEqual(["issues", "qa-evidence"]);
+    expect(calls).toContainEqual(["issues", "review-verdict"]);
+    expect(calls).toContainEqual(["issues", "test-cases"]);
+    expect(calls).toContainEqual(["issues", "deploy-events"]);
     expect(calls).toContainEqual(["issues", "attachments"]);
     expect(calls).toContainEqual(["issues", "tasks"]);
   });

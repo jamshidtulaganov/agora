@@ -35,6 +35,9 @@ type AppConfig struct {
 	// with the operator's own domains instead of Agora Cloud defaults.
 	DaemonServerURL string `json:"daemon_server_url,omitempty"`
 	DaemonAppURL    string `json:"daemon_app_url,omitempty"`
+	// CLIReleasesURL is a GitHub-compatible `releases/latest` endpoint. Agora's
+	// own public distribution is the default; forks can override or disable it.
+	CLIReleasesURL string `json:"cli_releases_url,omitempty"`
 
 	// TelegramBotUsername is the bot's @username (without the @) used to
 	// build the t.me login deep link. Exposed (omitempty) so the web app
@@ -76,6 +79,8 @@ type AppConfig struct {
 	LarkEnabled   bool `json:"lark_enabled,omitempty"`
 }
 
+const defaultCLIReleasesURL = "https://api.github.com/repos/jamshidtulaganov/agora-cli/releases/latest"
+
 // GetConfig is mounted on the public (unauthenticated) route group because
 // the web app calls it before login to decide whether to render the Google
 // sign-in button and signup UI. Only add fields here that are safe to expose
@@ -87,6 +92,7 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		WorkspaceCreationDisabled: config.Bool("DISABLE_WORKSPACE_CREATION"),
 		TelegramOnly:              config.Bool("AGORA_TELEGRAM_ONLY"),
 		RemoteBoxesEnabled:        config.Bool("AGORA_REMOTE_BOXES_ENABLED"),
+		CLIReleasesURL:            cliReleasesURLFromEnv(),
 		// Same env gates the integration endpoints themselves check:
 		// bitrixEndpointsEnabled() = BITRIX_WEBHOOK_URL set; zohoConfigured() =
 		// Zoho OAuth client/secret/refresh set; Lark keys off the master
@@ -116,6 +122,17 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, config)
+}
+
+func cliReleasesURLFromEnv() string {
+	raw := strings.TrimSpace(os.Getenv("AGORA_CLI_RELEASES_URL"))
+	if strings.EqualFold(raw, "off") || strings.EqualFold(raw, "disabled") {
+		return ""
+	}
+	if raw != "" {
+		return raw
+	}
+	return defaultCLIReleasesURL
 }
 
 func daemonSetupURLsFromEnv() (string, string) {

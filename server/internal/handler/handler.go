@@ -236,6 +236,9 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 	taskSvc.OnReviewVerdictLabeled = func(ctx context.Context, issue db.Issue, verdict, actorID string) {
 		go h.maybeMergeOnQAPass(context.Background(), issue, "review:"+verdict, actorID)
 	}
+	taskSvc.OnOrchestrationTaskTerminal = func(ctx context.Context, task db.AgentTaskQueue) {
+		h.handleOrchestrationTaskTerminal(ctx, task)
+	}
 	// Bitrix24 outbound status mirror. No-op when BITRIX_WEBHOOK_URL is unset,
 	// so self-hosted deployments without Bitrix pay nothing.
 	h.registerBitrixOutbound()
@@ -655,8 +658,8 @@ func (h *Handler) loadIssueForUser(w http.ResponseWriter, r *http.Request, issue
 	}
 
 	// Visibility gate (read-only). A non-owner human member may only READ issues
-	// they own — assigned to them, to an agent they own, or to a squad they/their
-	// agent belong to or lead (see issueAccessDenied). Scoped to GET so every
+	// they own — created by them, assigned to them, to an agent they own, or to a
+	// squad they/their agent belong to or lead (see issueAccessDenied). Scoped to GET so every
 	// mutation keeps its own authorization and agents/daemons (X-Actor-Source)
 	// stay exempt. Returns 404 (not 403) so a non-owned issue's existence is not
 	// revealed. This is the choke point that closes the single-issue read

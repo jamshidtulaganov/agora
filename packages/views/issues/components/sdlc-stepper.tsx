@@ -50,7 +50,7 @@ function stateTextClass(state: StageState): string {
       return "text-destructive";
     case "active":
     case "running":
-      return "text-foreground font-medium";
+      return "text-brand font-medium";
     case "skipped":
     case "pending":
     default:
@@ -75,15 +75,24 @@ function StageDot({ state }: { state: StageState }) {
         <XCircle aria-hidden className="size-3.5 shrink-0 text-destructive transition-colors duration-300" />
       );
     case "active":
-    case "running":
-      // The single "current / live" dot: a gentle breathing halo (custom
-      // `sdlc-breathe` keyframe, see packages/ui/styles/base.css). Whether the
-      // stage is merely current or actively running, it reads as "this is where
-      // work is now" — one calm animation, not two competing ones.
+      // Active without a task means the pipeline is parked at this gate (for
+      // example, waiting for human approval). A slow breath reads as "current"
+      // without implying that compute is still running.
       return (
         <span aria-hidden className="relative inline-flex size-2.5 shrink-0 items-center justify-center">
-          <span className="absolute inline-flex size-4 rounded-full bg-primary/20 motion-safe:animate-sdlc-breathe" />
-          <span className="relative inline-flex size-2.5 rounded-full bg-primary ring-2 ring-primary/30 transition-colors duration-300" />
+          <span className="absolute inline-flex size-4 rounded-full bg-brand/20 motion-safe:animate-sdlc-breathe" />
+          <span className="relative inline-flex size-2.5 rounded-full bg-brand ring-2 ring-brand/30 transition-colors duration-300" />
+        </span>
+      );
+    case "running":
+      // Running is deliberately distinct from merely active: the ring rotates
+      // around a stable core, so a still screenshot remains legible while live
+      // users also see continuous progress. `motion-safe` preserves the static
+      // ring for people who request reduced motion.
+      return (
+        <span aria-hidden className="relative inline-flex size-4 shrink-0 items-center justify-center">
+          <span className="absolute inset-0 rounded-full border border-brand/25 border-t-brand motion-safe:animate-sdlc-running-ring" />
+          <span className="relative inline-flex size-1.5 rounded-full bg-brand shadow-[0_0_0_2px_color-mix(in_oklab,var(--brand)_18%,transparent)]" />
         </span>
       );
     case "skipped":
@@ -117,12 +126,58 @@ function connectorClassName(
 ): string {
   const currentIsLive = currentState !== "failed" && currentState !== "blocked";
   if (leadsIntoCurrent && currentIsLive) {
-    return "bg-info/30";
+    return "bg-brand/30";
   }
   if (prevState === "passed") {
     return "bg-emerald-500/40 dark:bg-emerald-500/35";
   }
   return "bg-border";
+}
+
+function StageConnector({
+  prevState,
+  leadsIntoCurrent,
+  currentState,
+}: {
+  prevState: StageState;
+  leadsIntoCurrent: boolean;
+  currentState: StageState;
+}) {
+  const flowing = leadsIntoCurrent && currentState === "running";
+  return (
+    <span
+      aria-hidden
+      data-flowing={flowing || undefined}
+      className={cn(
+        "relative mx-1.5 h-px w-4 shrink-0 overflow-hidden transition-colors duration-300",
+        connectorClassName(prevState, leadsIntoCurrent, currentState),
+      )}
+    >
+      {flowing && (
+        <span className="absolute inset-y-0 left-0 w-1/2 bg-brand motion-safe:animate-sdlc-flow" />
+      )}
+    </span>
+  );
+}
+
+function stateLabel(state: StageState, t: ReturnType<typeof useT<"issues">>["t"]): string {
+  switch (state) {
+    case "active":
+      return t(($) => $.sdlc.state.active);
+    case "running":
+      return t(($) => $.sdlc.state.running);
+    case "passed":
+      return t(($) => $.sdlc.state.passed);
+    case "failed":
+      return t(($) => $.sdlc.state.failed);
+    case "blocked":
+      return t(($) => $.sdlc.state.blocked);
+    case "skipped":
+      return t(($) => $.sdlc.state.skipped);
+    case "pending":
+    default:
+      return t(($) => $.sdlc.state.pending);
+  }
 }
 
 function stageLabel(stage: SDLCStage, t: ReturnType<typeof useT<"issues">>["t"]): string {
@@ -159,6 +214,7 @@ export function SDLCStepper({ pipeline, activeLens, isLensAvailable, onSelectSta
         const interactive = isLensAvailable(snapshot.stage);
         const selected = activeLens === snapshot.stage;
         const label = stageLabel(snapshot.stage, t);
+        const accessibleLabel = `${label}: ${stateLabel(snapshot.state, t)}`;
         // `noUncheckedIndexedAccess` makes `stages[i - 1]` possibly
         // undefined even though `i > 0` guarantees it exists; the `??
         // "pending"` fallback is unreachable at runtime and only satisfies
@@ -183,13 +239,14 @@ export function SDLCStepper({ pipeline, activeLens, isLensAvailable, onSelectSta
             <StageDot state={snapshot.state} />
           </span>
         );
-        // Underline (the "selected lens" indicator) marks the active lens.
+        // The selected lens uses Agora's brand tint; the dot still communicates
+        // workflow state independently (pass/fail/running/pending).
         const labelSpan = (
           <span
             className={cn(
               "transition-colors duration-300",
               stateTextClass(snapshot.state),
-              selected && "underline decoration-primary decoration-2 underline-offset-4",
+              selected && "text-brand",
             )}
           >
             {label}
@@ -200,20 +257,19 @@ export function SDLCStepper({ pipeline, activeLens, isLensAvailable, onSelectSta
         // stage's own lens. The stepper stays a clean [dot] [label] beat.
 
         const stageClass = cn(
-          "flex items-center gap-1.5 rounded-md px-1.5 py-1 transition-colors duration-300",
+          "relative flex items-center gap-1.5 rounded-md px-1.5 py-1 outline-none transition-[color,background-color,box-shadow] duration-300 focus-visible:ring-2 focus-visible:ring-ring/60",
           snapshot.state === "skipped" && "opacity-40",
-          selected && "bg-accent/50",
+          snapshot.state === "running" && "bg-brand/[0.06] shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--brand)_12%,transparent)]",
+          selected && "bg-brand/[0.08]",
         );
 
         return (
           <div key={snapshot.stage} className="flex shrink-0 items-center">
             {i > 0 && (
-              <span
-                aria-hidden
-                className={cn(
-                  "mx-1.5 h-px w-4 shrink-0 transition-colors duration-300",
-                  connectorClassName(prevState, snapshot.stage === pipeline.current, snapshot.state),
-                )}
+              <StageConnector
+                prevState={prevState}
+                leadsIntoCurrent={snapshot.stage === pipeline.current}
+                currentState={snapshot.state}
               />
             )}
             {snapshot.taskId ? (
@@ -227,6 +283,8 @@ export function SDLCStepper({ pipeline, activeLens, isLensAvailable, onSelectSta
                       type="button"
                       data-testid={`sdlc-stage-${snapshot.stage}`}
                       data-state={snapshot.state}
+                      aria-label={accessibleLabel}
+                      aria-current={snapshot.stage === pipeline.current ? "step" : undefined}
                       className={cn(stageClass, "hover:bg-accent/60")}
                     />
                   }
@@ -240,7 +298,7 @@ export function SDLCStepper({ pipeline, activeLens, isLensAvailable, onSelectSta
                     <button
                       type="button"
                       onClick={() => onSelectStage(snapshot.stage)}
-                      className="mt-2 flex w-full items-center justify-center rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      className="mt-2 flex w-full items-center justify-center rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"
                     >
                       {t(($) => $.live_activity.open_view, { stage: label })}
                     </button>
@@ -252,6 +310,8 @@ export function SDLCStepper({ pipeline, activeLens, isLensAvailable, onSelectSta
                 type="button"
                 data-testid={`sdlc-stage-${snapshot.stage}`}
                 data-state={snapshot.state}
+                aria-label={accessibleLabel}
+                aria-current={snapshot.stage === pipeline.current ? "step" : undefined}
                 onClick={() => onSelectStage(snapshot.stage)}
                 className={cn(stageClass, "hover:bg-accent/60")}
               >
@@ -262,6 +322,8 @@ export function SDLCStepper({ pipeline, activeLens, isLensAvailable, onSelectSta
               <div
                 data-testid={`sdlc-stage-${snapshot.stage}`}
                 data-state={snapshot.state}
+                aria-label={accessibleLabel}
+                aria-current={snapshot.stage === pipeline.current ? "step" : undefined}
                 className={cn(stageClass, "cursor-default")}
               >
                 {dot}

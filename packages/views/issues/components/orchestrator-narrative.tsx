@@ -34,6 +34,7 @@ export function OrchestratorNarrative({
   if (!orchestratorAgentId) return null;
 
   const state = pipeline.stages.find((s) => s.stage === pipeline.current)?.state ?? "pending";
+  const detail = pipeline.stages.find((s) => s.stage === pipeline.current)?.detail;
   let phrase: string;
   switch (pipeline.current) {
     case "dev":
@@ -48,7 +49,9 @@ export function OrchestratorNarrative({
           ? t(($) => $.detail.narr_changes)
           : state === "passed"
             ? t(($) => $.detail.narr_ready)
-            : t(($) => $.detail.narr_reviewing);
+            : detail === "awaiting approval"
+              ? t(($) => $.detail.narr_approval)
+              : t(($) => $.detail.narr_reviewing);
       break;
     default:
       phrase = t(($) => $.detail.narr_working);

@@ -1207,6 +1207,14 @@ func (h *Handler) computeCommentAgentTriggers(ctx context.Context, issue db.Issu
 	if isNoteComment(content) {
 		return nil
 	}
+	// A persisted orchestration is the issue's sole dispatcher. Handoff
+	// comments from plan/dev/QA/review agents are evidence for the DAG, not new
+	// on-comment work. Allowing the normal assignee or explicit-mention path to
+	// enqueue here creates a second session outside the graph, which can occupy
+	// the same agent's unique queue slot and certify a different worktree.
+	if h.orchestrationOwnsIssuePipeline(ctx, issue.ID) {
+		return nil
+	}
 
 	seen := make(map[string]struct{})
 	triggers := make([]commentAgentTrigger, 0, 2)

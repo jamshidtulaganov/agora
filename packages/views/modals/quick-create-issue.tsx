@@ -53,6 +53,29 @@ type ActorSelection =
   | { type: "agent"; id: string }
   | { type: "squad"; id: string };
 
+/**
+ * Convert a free-form quick-create prompt into the two explicit fields used by
+ * manual creation. The first non-empty markdown line is the title; everything
+ * after it remains the description. Keeping this deterministic is important:
+ * switching modes must never strand the user's only line in the description
+ * while leaving the required title blank.
+ */
+export function promptToManualIssueDraft(markdown: string): {
+  title: string;
+  description: string;
+} {
+  const normalized = markdown.trim();
+  if (!normalized) return { title: "", description: "" };
+
+  const lines = normalized.split(/\r?\n/);
+  const firstContentIndex = lines.findIndex((line) => line.trim().length > 0);
+  if (firstContentIndex < 0) return { title: "", description: "" };
+
+  const title = lines[firstContentIndex]!.trim().replace(/^#{1,6}\s+/, "");
+  const description = lines.slice(firstContentIndex + 1).join("\n").trim();
+  return { title, description };
+}
+
 // AgentCreatePanel — agent-mode body of the create-issue dialog. Renders
 // only the inner content; the surrounding `<Dialog>` AND `<DialogContent>`
 // (Portal + Overlay + Popup) are owned by CreateIssueDialog so mode-switching
@@ -365,12 +388,10 @@ export function AgentCreatePanel({
     }
   };
 
-  // Switch to the manual form, carrying what the user typed over as the
-  // description (markdown, including any pasted images) so they don't lose
-  // their work. The picked actor (agent or squad) becomes the default
-  // assignee candidate (still editable). We seed the shared issue-draft
-  // store directly because the manual panel reads its initial values from
-  // there. Persist the mode flip so the next `c` lands in manual.
+  // Switch to the manual form without accidentally dispatching the actor that
+  // belonged to quick-create. The first prompt line becomes the required title
+  // and the remaining markdown becomes the description. Manual mode starts
+  // unassigned; choosing an assignee there must be an explicit user action.
   const switchToManual = () => {
     const md = editorRef.current?.getMarkdown() ?? "";
     // Carry the typed prompt into the manual description ONLY when it's the
@@ -380,11 +401,23 @@ export function AgentCreatePanel({
     // "Extract the coding conventions…" body into later "Create manually" opens.
     const actionPrefill = String((data?.prompt as string) ?? "").trim();
     const isUnmodifiedActionPrefill = actionPrefill !== "" && md.trim() === actionPrefill;
+    const manualRoundTripTitle = data?.manual_title;
+    const manualRoundTripDescription = data?.manual_description;
+    const hasManualRoundTrip =
+      typeof manualRoundTripTitle === "string" &&
+      typeof manualRoundTripDescription === "string";
+    const nextDraft = isUnmodifiedActionPrefill
+      ? hasManualRoundTrip
+        ? {
+            title: manualRoundTripTitle,
+            description: manualRoundTripDescription,
+          }
+        : { title: "", description: "" }
+      : promptToManualIssueDraft(md);
     useIssueDraftStore.getState().setDraft({
-      ...(isUnmodifiedActionPrefill ? {} : { description: md }),
-      ...(actor
-        ? { assigneeType: actor.type, assigneeId: actor.id }
-        : {}),
+      ...nextDraft,
+      assigneeType: undefined,
+      assigneeId: undefined,
     });
     // Drop the persisted agent-prompt draft so it can't resurface on the next
     // open (the manual path owns the draft from here).
@@ -396,11 +429,16 @@ export function AgentCreatePanel({
     // the user's selection (and the sub-issue intent seeded by
     // openCreateSubIssue) across the mode flip without piping a third store
     // through.
-    const carry: Record<string, unknown> = {};
+    const carry: Record<string, unknown> = {
+      // Explicit nulls override a persisted manual draft assignee. Omitting
+      // these keys lets ManualCreatePanel fall back to stale agent state.
+      assignee_type: null,
+      assignee_id: null,
+    };
     if (projectId) carry.project_id = projectId;
     if (parentIssueId) carry.parent_issue_id = parentIssueId;
     if (parentIssueIdentifier) carry.parent_issue_identifier = parentIssueIdentifier;
-    onSwitchMode?.(Object.keys(carry).length > 0 ? carry : null);
+    onSwitchMode?.(carry);
   };
 
   return (

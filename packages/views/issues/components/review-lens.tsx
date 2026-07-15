@@ -8,44 +8,62 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleDashed,
+  Code2,
+  Eye,
   ExternalLink,
   Info,
+  LayoutDashboard,
   Loader2,
   OctagonAlert,
   Rocket,
+  ShieldCheck,
 } from "lucide-react";
 import { api } from "@agora/core/api";
 import { useWorkspaceId } from "@agora/core";
-import { issueDetailOptions, issueKeys } from "@agora/core/issues/queries";
+import {
+  issueDetailOptions,
+  issueKeys,
+  issueOrchestrationOptions,
+} from "@agora/core/issues/queries";
 import { issuePullRequestsOptions } from "@agora/core/github";
 import { useWorkspacePaths } from "@agora/core/paths";
-import { agentListOptions } from "@agora/core/workspace/queries";
 import type { MergeGateStatus, ReviewFinding, ReviewVerdict } from "@agora/core/types";
 import { Badge } from "@agora/ui/components/ui/badge";
 import { Button } from "@agora/ui/components/ui/button";
 import { Textarea } from "@agora/ui/components/ui/textarea";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@agora/ui/components/ui/native-select";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@agora/ui/components/ui/tabs";
 import { cn } from "@agora/ui/lib/utils";
 import { useT } from "../../i18n";
-import { AppLink } from "../../navigation";
+import { AppLink, useNavigation } from "../../navigation";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { PullRequestList } from "./pull-request-list";
 import { verdictIcon, verdictTone } from "../../qa/components/verdict";
-import { PropertyPicker, PickerItem, PickerEmpty } from "./pickers/property-picker";
+import { ArtifactCodeViewer } from "./artifact-code-viewer";
+import { ArtifactChecksPanel, ArtifactPreviewPanel } from "./artifact-runtime-panels";
+import { QAEvidenceSection } from "./qa-evidence-section";
 
-// The Review lens v2 — the human half of "agent reviews, human approves"
-// (docs/review-stage-plan.md). Same wide two-column workbench shape as the
-// QA/Dev/Design lenses.
-// LEFT (1fr, primary): the agent's code-review verdict card (vibe altitude:
-// verdict + plain-language summary + finding counts), the human decision bar
-// (Approve & merge / Request changes → POST review-decision, a human-only
-// endpoint), the findings list (engineer altitude: severity / file:line /
-// detail), then the issue's PR list.
-// RIGHT (~380px): ONE merge-readiness banner (Ready to merge / N blocking /
-// Review not run yet / Merging…) — the single conclusion, with the per-gate
-// breakdown folded behind a Details disclosure and the "why" (blocker reasons)
-// shown inline. No tier surfaced. Plus the merge:override badge and the
-// sprint-deploy pointer. Shares the ["merge-readiness", issueId] query key with
-// EditorGates so the cache (and the 15s poll) is shared, not duplicated.
+const REVIEW_TAB_QUERY_KEY = "review_tab";
+const REVIEW_TABS = ["overview", "code", "product", "evidence"] as const;
+type ReviewTab = (typeof REVIEW_TABS)[number];
+
+function isReviewTab(value: string | null): value is ReviewTab {
+  return REVIEW_TABS.some((tab) => tab === value);
+}
+
+// Unified Review workspace. The overview is the human decision surface while
+// Code, Product, and Evidence expose the exact integrated artifact behind that
+// decision. Review and release execution remain DAG-owned: this surface can
+// approve the persisted release step or create a versioned correction cycle,
+// but it never creates parallel side tasks.
 
 type IssuesT = ReturnType<typeof useT<"issues">>["t"];
 
@@ -242,61 +260,6 @@ function FindingRow({ finding }: { finding: ReviewFinding }) {
   );
 }
 
-// Explicit reviewer picker — a chevron split-button next to Run/Re-run review.
-// Server-side auto-resolution (resolveReviewerAgent) needs a cast reviewer, an
-// orchestrator, or squad membership; a workspace without any of those wiring
-// has no way to satisfy "Run review" and the button 409s with no recourse.
-// This lets a human name a reviewer explicitly — sliceAction already accepts
-// agentId (resolveSliceActionAgent path (a)), so no backend change needed.
-// Excludes the issue's author agent: the server rejects a self-review anyway.
-function ReviewerPicker({
-  authorAgentId,
-  onSelect,
-  disabled,
-}: {
-  authorAgentId: string | null;
-  onSelect: (agentId: string) => void;
-  disabled?: boolean;
-}) {
-  const { t } = useT("issues");
-  const wsId = useWorkspaceId();
-  const [open, setOpen] = useState(false);
-  const { data: agents = [] } = useQuery(agentListOptions(wsId));
-  const eligible = agents.filter((a) => !a.archived_at && a.id !== authorAgentId);
-
-  return (
-    <PropertyPicker
-      open={open}
-      onOpenChange={setOpen}
-      width="w-56"
-      align="end"
-      triggerRender={
-        <Button variant="outline" size="sm" disabled={disabled} className="px-1.5" />
-      }
-      trigger={<ChevronDown className="size-3.5" />}
-      tooltip={t(($) => $.review_lens.pick_reviewer)}
-    >
-      {eligible.length === 0 ? (
-        <PickerEmpty />
-      ) : (
-        eligible.map((a) => (
-          <PickerItem
-            key={a.id}
-            selected={false}
-            onClick={() => {
-              onSelect(a.id);
-              setOpen(false);
-            }}
-          >
-            <ActorAvatar actorType="agent" actorId={a.id} size={18} showStatusDot />
-            <span className="truncate">{a.name}</span>
-          </PickerItem>
-        ))
-      )}
-    </PropertyPicker>
-  );
-}
-
 function ReviewVerdictCard({
   review,
   stale,
@@ -385,13 +348,20 @@ function ReviewVerdictCard({
 export function ReviewLensBody({ issueId }: { issueId: string }) {
   const wsId = useWorkspaceId();
   const wp = useWorkspacePaths();
+  const navigation = useNavigation();
   const qc = useQueryClient();
   const { t } = useT("issues");
+  const requestedTab = navigation.searchParams.get(REVIEW_TAB_QUERY_KEY);
+  const activeTab: ReviewTab = isReviewTab(requestedTab) ? requestedTab : "overview";
 
   const [decision, setDecision] = useState<"approve" | "changes" | null>(null);
   const [note, setNote] = useState("");
+  const [targetStepId, setTargetStepId] = useState("");
 
   const { data: issue } = useQuery(issueDetailOptions(wsId, issueId));
+  const { data: orchestration, isLoading: orchestrationLoading } = useQuery(
+    issueOrchestrationOptions(issueId),
+  );
   const { data: readiness, isLoading } = useQuery({
     queryKey: ["merge-readiness", issueId],
     queryFn: () => api.mergeReadiness(issueId),
@@ -407,12 +377,27 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
 
   const hasOverride = (issue?.labels ?? []).some((l) => l.name === "merge:override");
   const hasVerdict = review?.verdict === "pass" || review?.verdict === "fail";
-  // Stage brain (frontend half): review is DISABLED while QA is failing or
-  // stale — the backend refuses the dispatch too (409); this disables the
-  // affordance up front with the reason, instead of letting the click bounce.
-  const qaFailing = (issue?.labels ?? []).some((l) => l.name === "qa:fail");
-  const qaStale = (issue?.labels ?? []).some((l) => l.name === "qa:stale");
-  const reviewBlocked = qaFailing || qaStale;
+  const correctionTargets = [...(orchestration?.steps ?? [])]
+    .filter(
+      (step) =>
+        step.stage === "dev" &&
+        step.kind === "task" &&
+        step.status === "completed" &&
+        !!step.agent_id,
+    )
+    .sort((a, b) => b.position - a.position);
+  const selectedTargetId = targetStepId || correctionTargets[0]?.id || "";
+  const selectedTarget = correctionTargets.find((step) => step.id === selectedTargetId);
+  const hasActivePlanWork = (orchestration?.steps ?? []).some(
+    (step) => step.status === "queued" || step.status === "running",
+  );
+  const requestChangesBlockedReason = orchestrationLoading
+    ? t(($) => $.review_lens.correction_loading)
+    : !orchestration
+      ? t(($) => $.review_lens.correction_requires_plan)
+      : hasActivePlanWork
+        ? t(($) => $.review_lens.correction_wait_for_work)
+        : "";
 
   // Stale hint: the backend PR payload carries no head SHA, so we approximate
   // "the reviewed commit is no longer the PR head" with "an open PR was
@@ -438,57 +423,64 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
   // wins unconditionally; the normal path still needs a clean pass + a ready
   // gate grid.
   const canApprove = hasOverride || (review?.verdict === "pass" && readiness?.ready === true);
+  const releaseStep = [...(orchestration?.steps ?? [])]
+    .filter((step) => step.stage === "release")
+    .sort((a, b) => b.position - a.position)[0];
+  const reviewPlanStep = [...(orchestration?.steps ?? [])]
+    .filter((step) => step.stage === "review")
+    .sort((a, b) => b.position - a.position)[0];
+  const reviewPlanStatus = reviewPlanStep?.status === "completed"
+    ? t(($) => $.review_lens.plan_review_completed)
+    : reviewPlanStep?.status === "queued" || reviewPlanStep?.status === "running"
+      ? t(($) => $.review_lens.plan_review_running)
+      : reviewPlanStep?.status === "failed" || reviewPlanStep?.status === "cancelled"
+        ? t(($) => $.review_lens.plan_review_failed)
+        : t(($) => $.review_lens.plan_review_waiting);
+  const releaseWaiting = releaseStep?.status === "waiting_approval";
+  const releaseRunning = releaseStep?.status === "queued" || releaseStep?.status === "running";
+  const releaseBlockedReason = orchestrationLoading
+    ? t(($) => $.review_lens.release_loading)
+    : !orchestration
+      ? t(($) => $.review_lens.release_requires_plan)
+      : !releaseStep
+        ? t(($) => $.review_lens.release_gate_missing)
+        : releaseRunning
+          ? t(($) => $.review_lens.release_in_progress)
+          : releaseStep.status === "completed"
+            ? t(($) => $.review_lens.release_completed)
+            : !releaseWaiting
+              ? t(($) => $.review_lens.release_waiting_for_gates)
+              : "";
+
+  const setTab = (value: string) => {
+    if (!isReviewTab(value)) return;
+    const params = new URLSearchParams(navigation.searchParams);
+    params.set(REVIEW_TAB_QUERY_KEY, value);
+    navigation.replace(`${navigation.pathname}?${params.toString()}`);
+  };
 
   const refreshDecision = () => {
     void qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, issueId) });
     void qc.invalidateQueries({ queryKey: issueKeys.timeline(issueId) });
     void qc.invalidateQueries({ queryKey: issueKeys.reviewVerdict(issueId) });
+    void qc.invalidateQueries({ queryKey: issueKeys.orchestration(issueId) });
+    void qc.invalidateQueries({ queryKey: issueKeys.artifact(issueId) });
     void qc.invalidateQueries({ queryKey: ["merge-readiness", issueId] });
   };
 
-  // No-reviewer-resolves is a distinct, recoverable state (not just a toast):
-  // the human can pick a reviewer explicitly via the picker instead of first
-  // going to set up a squad/cast. Cleared on any run attempt so a fresh
-  // failure always re-surfaces the hint.
-  const [noReviewerAvailable, setNoReviewerAvailable] = useState(false);
-
-  const runReview = useMutation({
-    mutationFn: (agentId?: string) =>
-      api.sliceAction(issueId, { kind: "run_review", agentId }),
-    onSuccess: () => {
-      setNoReviewerAvailable(false);
-      toast.success(t(($) => $.review_lens.toast_review_dispatched));
-      void qc.invalidateQueries({ queryKey: issueKeys.timeline(issueId) });
-    },
-    onError: (e) => {
-      const msg = e instanceof Error ? e.message : "";
-      if (msg.includes("no reviewer distinct from the author")) {
-        setNoReviewerAvailable(true);
-        toast.error(t(($) => $.review_lens.toast_no_reviewer));
-        return;
-      }
-      toast.error(msg || t(($) => $.review_lens.toast_review_dispatch_failed));
-    },
-  });
-
-  const authorAgentId = issue?.assignee_type === "agent" ? issue.assignee_id : null;
-
   const decide = useMutation({
-    mutationFn: (body: { action: "approve" | "request_changes"; note?: string }) =>
+    mutationFn: (body: {
+      action: "request_changes";
+      note?: string;
+      expectedVersion?: number;
+      targetStepId?: string;
+    }) =>
       api.reviewDecision(issueId, body),
-    onSuccess: (res, vars) => {
-      toast.success(
-        vars.action === "approve"
-          ? // When no squad lead resolves, the backend returns
-            // merged_dispatch:false — nothing was dispatched, so tell the
-            // human to merge it by hand instead of claiming a dispatch.
-            res.merged_dispatch
-            ? t(($) => $.review_lens.toast_approved)
-            : t(($) => $.review_lens.toast_approved_manual)
-          : t(($) => $.review_lens.toast_changes_requested),
-      );
+    onSuccess: (res) => {
+      toast.success(t(($) => $.review_lens.toast_changes_requested, { version: res.plan_version }));
       setDecision(null);
       setNote("");
+      setTargetStepId("");
       refreshDecision();
     },
     onError: (e) => {
@@ -497,12 +489,34 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
     },
   });
 
+  const approveRelease = useMutation({
+    mutationFn: () => api.approveOrchestrationStep(issueId, releaseStep?.id ?? ""),
+    onSuccess: () => {
+      toast.success(t(($) => $.review_lens.toast_release_started));
+      setDecision(null);
+      refreshDecision();
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error && error.message ? error.message : t(($) => $.review_lens.toast_decision_failed));
+      refreshDecision();
+    },
+  });
+
   const submitChanges = () => {
     if (!note.trim()) {
       toast.error(t(($) => $.review_lens.changes_note_required));
       return;
     }
-    decide.mutate({ action: "request_changes", note: note.trim() });
+    if (!orchestration || requestChangesBlockedReason) {
+      toast.error(requestChangesBlockedReason || t(($) => $.review_lens.correction_requires_plan));
+      return;
+    }
+    decide.mutate({
+      action: "request_changes",
+      note: note.trim(),
+      expectedVersion: orchestration.plan_version,
+      ...(selectedTargetId ? { targetStepId: selectedTargetId } : {}),
+    });
   };
 
   const sortedFindings = [...(review?.findings ?? [])].sort(
@@ -532,8 +546,8 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
     }
   }
 
-  const merging = decide.isPending && decision === "approve";
-  const bannerKind: BannerKind = merging
+  const releasing = approveRelease.isPending || releaseRunning;
+  const bannerKind: BannerKind = releasing
     ? "merging"
     : canApprove
       ? "ready"
@@ -546,7 +560,30 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
     : (blockers[0] ?? "");
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="flex h-[calc(100vh-6rem)] min-h-0 w-full flex-col px-4 py-4">
+      <Tabs value={activeTab} onValueChange={setTab} className="min-h-0 flex-1 gap-3">
+        <div className="flex min-w-0 items-center gap-3 border-b">
+          <TabsList variant="line" className="no-scrollbar min-w-0 max-w-full justify-start overflow-x-auto">
+            <TabsTrigger value="overview">
+              <LayoutDashboard aria-hidden />
+              {t(($) => $.review_workspace.overview)}
+            </TabsTrigger>
+            <TabsTrigger value="code">
+              <Code2 aria-hidden />
+              {t(($) => $.review_workspace.code)}
+            </TabsTrigger>
+            <TabsTrigger value="product">
+              <Eye aria-hidden />
+              {t(($) => $.review_workspace.product)}
+            </TabsTrigger>
+            <TabsTrigger value="evidence">
+              <ShieldCheck aria-hidden />
+              {t(($) => $.review_workspace.evidence)}
+            </TabsTrigger>
+          </TabsList>
+        </div>
+        <TabsContent value="overview" className="min-h-0 overflow-auto">
+          <div className="flex-1 overflow-y-auto">
       <div className="w-full px-8 py-8">
         <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start lg:gap-6">
           {/* Verdict + decision + findings + PR list — the primary content. */}
@@ -557,62 +594,28 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
                 <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
                   {t(($) => $.review_lens.verdict_heading)}
                 </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => runReview.mutate(undefined)}
-                    disabled={runReview.isPending || reviewBlocked}
-                    title={
-                      reviewBlocked
-                        ? qaFailing
-                          ? t(($) => $.review_lens.blocked_qa_fail)
-                          : t(($) => $.review_lens.blocked_qa_stale)
-                        : undefined
-                    }
-                  >
-                    {runReview.isPending ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : hasVerdict ? (
-                      t(($) => $.review_lens.rerun_review)
-                    ) : (
-                      t(($) => $.review_lens.run_review)
+                {reviewPlanStep && (
+                  <Badge variant="outline" className={cn(
+                    "font-normal",
+                    reviewPlanStep.status === "completed" && "text-success",
+                    (reviewPlanStep.status === "queued" || reviewPlanStep.status === "running") && "text-brand",
+                    (reviewPlanStep.status === "failed" || reviewPlanStep.status === "cancelled") && "text-destructive",
+                  )}>
+                    {(reviewPlanStep.status === "queued" || reviewPlanStep.status === "running") && (
+                      <span className="size-1.5 rounded-full bg-brand motion-safe:animate-pulse" aria-hidden />
                     )}
-                  </Button>
-                  <ReviewerPicker
-                    authorAgentId={authorAgentId}
-                    disabled={runReview.isPending || reviewBlocked}
-                    onSelect={(agentId) => runReview.mutate(agentId)}
-                  />
-                </div>
+                    {reviewPlanStatus}
+                  </Badge>
+                )}
               </div>
-
-              {/* Stage-brain banner: WHY review is disabled + the next step. */}
-              {reviewBlocked && (
-                <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-[12px] text-amber-700 dark:text-amber-400">
-                  <span aria-hidden>⚠</span>
-                  <span>
-                    {qaFailing
-                      ? t(($) => $.review_lens.blocked_qa_fail)
-                      : t(($) => $.review_lens.blocked_qa_stale)}
-                  </span>
-                </div>
-              )}
 
               {reviewLoading ? (
                 <p className="text-sm text-muted-foreground">{t(($) => $.timeline.loading)}</p>
-              ) : noReviewerAvailable ? (
-                <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-5 text-center">
-                  <p className="text-xs font-medium">{t(($) => $.review_lens.no_reviewer_title)}</p>
-                  <p className="mt-1 text-[12px] text-muted-foreground">
-                    {t(($) => $.review_lens.no_reviewer_body)}
-                  </p>
-                </div>
               ) : !review || !hasVerdict ? (
                 <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-5 text-center">
                   <p className="text-xs font-medium">{t(($) => $.review_lens.no_review_title)}</p>
                   <p className="mt-1 text-[12px] text-muted-foreground">
-                    {t(($) => $.review_lens.no_review_body)}
+                    {t(($) => $.review_lens.no_review_plan_body)}
                   </p>
                 </div>
               ) : (
@@ -630,7 +633,7 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
                     <Button
                       size="sm"
                       onClick={() => setDecision("approve")}
-                      disabled={!canApprove || decide.isPending}
+                      disabled={!canApprove || !releaseWaiting || decide.isPending || approveRelease.isPending}
                     >
                       {t(($) => $.review_lens.approve_merge)}
                     </Button>
@@ -638,7 +641,7 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
                       size="sm"
                       variant="outline"
                       onClick={() => setDecision("changes")}
-                      disabled={decide.isPending}
+                      disabled={decide.isPending || approveRelease.isPending || !!requestChangesBlockedReason}
                     >
                       {t(($) => $.review_lens.request_changes)}
                     </Button>
@@ -646,7 +649,7 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
                   {/* Always say why: awaiting-you when ready, the top blocker
                       when Approve is disabled (the reason a disabled control
                       must state inline). */}
-                  {canApprove ? (
+                  {canApprove && releaseWaiting ? (
                     <p className="text-[11px] text-muted-foreground">
                       {t(($) => $.review_lens.awaiting_approval)}
                     </p>
@@ -656,6 +659,18 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
                       {disabledReason}
                     </p>
                   ) : null}
+                  {releaseBlockedReason && (
+                    <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <CircleDashed className="size-3 shrink-0" aria-hidden />
+                      {releaseBlockedReason}
+                    </p>
+                  )}
+                  {requestChangesBlockedReason && (
+                    <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <CircleDashed className="size-3 shrink-0" aria-hidden />
+                      {requestChangesBlockedReason}
+                    </p>
+                  )}
                 </div>
               ) : decision === "approve" ? (
                 <div className="space-y-2">
@@ -667,17 +682,17 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
                       variant="ghost"
                       size="sm"
                       onClick={() => setDecision(null)}
-                      disabled={decide.isPending}
+                      disabled={approveRelease.isPending}
                     >
                       {t(($) => $.review_lens.cancel)}
                     </Button>
                     <Button
                       size="sm"
-                      onClick={() => decide.mutate({ action: "approve" })}
-                      disabled={decide.isPending}
+                      onClick={() => approveRelease.mutate()}
+                      disabled={approveRelease.isPending || !releaseWaiting}
                     >
-                      {decide.isPending ? (
-                        <Loader2 className="size-3.5 animate-spin" />
+                      {approveRelease.isPending ? (
+                        <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
                       ) : (
                         t(($) => $.review_lens.approve_confirm)
                       )}
@@ -686,6 +701,40 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
                 </div>
               ) : (
                 <div className="space-y-2">
+                  <div className="rounded-md border bg-muted/20 px-3 py-2">
+                    <p className="text-xs font-medium">
+                      {t(($) => $.review_lens.correction_plan_revision, {
+                        current: orchestration?.plan_version ?? 0,
+                        next: (orchestration?.plan_version ?? 0) + 1,
+                      })}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      {t(($) => $.review_lens.correction_cycle_hint)}
+                    </p>
+                  </div>
+                  {correctionTargets.length > 1 ? (
+                    <div className="space-y-1">
+                      <label htmlFor="review-correction-target" className="text-[11px] font-medium text-muted-foreground">
+                        {t(($) => $.review_lens.correction_route_label)}
+                      </label>
+                      <NativeSelect
+                        id="review-correction-target"
+                        className="w-full"
+                        value={selectedTargetId}
+                        onChange={(event) => setTargetStepId(event.target.value)}
+                      >
+                        {correctionTargets.map((step) => (
+                          <NativeSelectOption key={step.id} value={step.id}>
+                            {step.title} · {step.capability}
+                          </NativeSelectOption>
+                        ))}
+                      </NativeSelect>
+                    </div>
+                  ) : selectedTarget ? (
+                    <p className="text-[11px] text-muted-foreground">
+                      {t(($) => $.review_lens.correction_route_single, { target: selectedTarget.title })}
+                    </p>
+                  ) : null}
                   <Textarea
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
@@ -701,7 +750,7 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
                     >
                       {t(($) => $.review_lens.cancel)}
                     </Button>
-                    <Button size="sm" onClick={submitChanges} disabled={decide.isPending}>
+                    <Button size="sm" onClick={submitChanges} disabled={decide.isPending || !!requestChangesBlockedReason}>
                       {decide.isPending ? (
                         <Loader2 className="size-3.5 animate-spin" />
                       ) : (
@@ -812,6 +861,19 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
           </div>
         </div>
       </div>
+          </div>
+        </TabsContent>
+        <TabsContent value="code" className="min-h-0 overflow-auto">
+          <ArtifactCodeViewer issueId={issueId} className="min-h-[34rem]" />
+        </TabsContent>
+        <TabsContent value="product" className="min-h-0 overflow-auto">
+          <ArtifactPreviewPanel issueId={issueId} />
+        </TabsContent>
+        <TabsContent value="evidence" className="min-h-0 space-y-4 overflow-auto">
+          <QAEvidenceSection issueId={issueId} status={issue?.status ?? "in_review"} allowRerun={false} />
+          <ArtifactChecksPanel issueId={issueId} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

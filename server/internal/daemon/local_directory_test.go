@@ -639,3 +639,51 @@ func TestAcquireLocalDirectoryLock_UnapprovedPathFailsTask(t *testing.T) {
 		t.Errorf("FailTask called again after approval: %d calls", got)
 	}
 }
+
+func TestAcquireLocalDirectoryLock_WorktreeModeDoesNotHoldSessionLock(t *testing.T) {
+	// No t.Parallel(): the allowlist is process-global.
+	dir := t.TempDir()
+	t.Setenv("AGORA_LOCAL_DIR_ALLOWLIST", dir)
+	realDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	locker := NewLocalPathLocker()
+	heldRelease, err := locker.Acquire(context.Background(), realDir, "metadata-mutation", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer heldRelease()
+
+	const daemonID = "d-worktree-parallel"
+	ref, err := json.Marshal(localDirectoryRef{LocalPath: dir, DaemonID: daemonID, Isolation: "worktree"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{
+		client:         NewClient("http://127.0.0.1:1"),
+		logger:         slog.Default(),
+		localPathLocks: locker,
+		cfg:            Config{DaemonID: daemonID},
+	}
+
+	done := make(chan struct{})
+	go func() {
+		release, localGit, abort := d.acquireLocalDirectoryLockIfNeeded(context.Background(), Task{
+			ID: "worker-task",
+			ProjectResources: []ProjectResourceData{{
+				ID: "resource", ResourceType: localDirectoryResourceType, ResourceRef: ref,
+			}},
+		}, slog.Default())
+		if release != nil || localGit != nil || abort {
+			t.Errorf("worktree session should bypass the long-lived path lock: release=%v localGit=%v abort=%v", release != nil, localGit != nil, abort)
+		}
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("worktree-mode task blocked on the session path lock")
+	}
+}

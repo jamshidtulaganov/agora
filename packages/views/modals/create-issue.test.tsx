@@ -727,6 +727,8 @@ describe("CreateIssueModal", () => {
     expect(onSwitchMode.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
         prompt: "Refactor auth",
+        manual_title: "Refactor auth",
+        manual_description: "",
         project_id: "proj-1",
       }),
     );

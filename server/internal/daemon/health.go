@@ -3,8 +3,6 @@ package daemon
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,7 +21,6 @@ import (
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/daemon/repocache"
-	"github.com/multica-ai/multica/server/internal/util"
 )
 
 // HealthResponse is returned by the daemon's local health endpoint.
@@ -57,7 +54,7 @@ type healthWorkspace struct {
 func (d *Daemon) listenHealth() (net.Listener, error) {
 	host := "127.0.0.1"
 	if v := strings.TrimSpace(os.Getenv("AGORA_HEALTH_BIND")); v != "" {
-		host = v // cloud sets 0.0.0.0 so the backend can reach /editor/launch over 6PN
+		host = v // cloud exposes the capability-gated runtime surface over 6PN
 	}
 	addr := fmt.Sprintf("%s:%d", host, d.cfg.HealthPort)
 	ln, err := net.Listen("tcp", addr)
@@ -234,290 +231,16 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 		json.NewEncoder(w).Encode(result)
 	})
 
-	// --- live code editor (code-server) per task worktree ---
-	// Spawns a browser VS Code (code-server) bound to localhost, pointed at a
-	// task's workdir, so a human can watch + edit the agent's code live. The
-	// daemon, the browser and code-server are all on the same host for
-	// self-host, so the URL we return (127.0.0.1:<port>) is directly reachable.
-	// Reused per workdir. CORS is scoped to localhost origins (the Agora app).
-	// (The editors registry lives at package level so editorLocalProxyHandler
-	// can gate its per-port reverse proxy on live instances.)
-
-	mux.HandleFunc("/editor/launch", func(w http.ResponseWriter, r *http.Request) {
-		if origin := r.Header.Get("Origin"); strings.HasPrefix(origin, "http://localhost") || strings.HasPrefix(origin, "http://127.0.0.1") {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		}
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		var req struct {
-			WorkDir string `json:"workdir"`
-			UserID  string `json:"user_id"`
-			// Env carries the user's editor account tokens (Settings →
-			// editor integration) into the code-server process, so gh CLI /
-			// HTTPS git in its terminals are authenticated. ALLOWLISTED
-			// below — in self-host mode this request comes from the browser,
-			// and arbitrary env injection into a process that runs shells
-			// must be impossible.
-			Env map[string]string `json:"env"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		workdir := strings.TrimSpace(req.WorkDir)
-		if workdir == "" {
-			http.Error(w, "workdir is required", http.StatusBadRequest)
-			return
-		}
-		// One code-server per (user, worktree): different humans on the same
-		// worktree each get an isolated VS Code (own --user-data-dir → own
-		// session/layout, no single-window blocking). They still share the
-		// files on disk (last-save-wins; VS Code reloads external changes).
-		key := strings.TrimSpace(req.UserID) + "\x00" + workdir
-		if info, err := os.Stat(workdir); err != nil || !info.IsDir() {
-			http.Error(w, "workdir does not exist", http.StatusBadRequest)
-			return
-		}
-
-		bin, err := exec.LookPath("code-server")
-		if err != nil {
-			http.Error(w, "code-server is not installed on the daemon host", http.StatusNotImplemented)
-			return
-		}
-
-		editorsMu.Lock()
-		defer editorsMu.Unlock()
-
-		// Reuse a still-running editor for this (user, workdir).
-		if e, ok := editors[key]; ok {
-			if e.cmd.ProcessState == nil {
-				writeEditorURL(w, e.port, workdir)
-				return
-			}
-			delete(editors, key)
-		}
-
-		// Allocate a free localhost port.
-		pl, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			http.Error(w, "failed to allocate a port", http.StatusInternalServerError)
-			return
-		}
-		port := pl.Addr().(*net.TCPAddr).Port
-		pl.Close()
-
-		userDataDir, err := editorUserDataDir(key)
-		if err != nil {
-			http.Error(w, "failed to prepare editor data dir: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		cmd := exec.Command(bin,
-			"--bind-addr", fmt.Sprintf("%s:%d", editorBindHost(), port),
-			"--auth", "none",
-			// The agent authored its own isolated worktree branch, so open it
-			// trusted — no workspace-trust prompt. Belt-and-suspenders with the
-			// seeded settings.json (security.workspace.trust.enabled=false).
-			"--disable-workspace-trust",
-			"--user-data-dir", userDataDir,
-			workdir,
-		)
-		// Scrub PORT (and CODE_SERVER_*) from the child env: code-server honors
-		// a PORT env var and it overrides --bind-addr's port. The daemon
-		// commonly inherits PORT=8080 — the backend's port, via make/.env — so
-		// every spawned editor tried to bind the backend's own port and died
-		// instantly with EADDRINUSE (the silent-death 502 at the proxy).
-		env := os.Environ()
-		filtered := env[:0]
-		for _, kv := range env {
-			if strings.HasPrefix(kv, "PORT=") || strings.HasPrefix(kv, "CODE_SERVER_") {
-				continue
-			}
-			filtered = append(filtered, kv)
-		}
-		// User editor tokens from the launch request — STRICT allowlist (the
-		// self-host launch comes from the browser; nothing outside these
-		// token vars may reach a shell-running process's environment).
-		for _, k := range []string{"GH_TOKEN", "GITHUB_TOKEN", "GITLAB_TOKEN"} {
-			if v := strings.TrimSpace(req.Env[k]); v != "" && !strings.ContainsAny(v, "\n\r\x00") {
-				filtered = append(filtered, k+"="+v)
-			}
-		}
-		cmd.Env = filtered
-		// code-server's own output is the ONLY evidence when it dies right after
-		// launch — a silent-death instance previously left nothing but a 502 at
-		// the proxy. Tee it to a log in the instance's user-data dir.
-		logPath := filepath.Join(userDataDir, "code-server.log")
-		if lf, lerr := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); lerr == nil {
-			cmd.Stdout = lf
-			cmd.Stderr = lf
-		}
-		if err := cmd.Start(); err != nil {
-			http.Error(w, "failed to launch code-server: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		editors[key] = &editorProc{port: port, cmd: cmd}
-		// Reap the child so (a) it never zombies and (b) ProcessState flips
-		// non-nil on exit, which is exactly what the reuse check above keys on —
-		// without Wait, a dead editor read as "still running" forever and every
-		// later open handed out the dead instance's port (502 at the proxy).
-		go func(c *exec.Cmd, k, lp string) {
-			err := c.Wait()
-			d.logger.Warn("code-server editor exited", "workdir", k, "error", err, "log", lp)
-		}(cmd, key, logPath)
-		d.logger.Info("launched code-server editor", "workdir", workdir, "port", port, "user", req.UserID, "log", logPath)
-		writeEditorURL(w, port, workdir)
-	})
-
-	// --- editor reverse-proxy: /editor/local/{port}/* → 127.0.0.1:{port} ---
-	// The backend reaches a spawned code-server THROUGH this health listener
-	// (the one address proven reachable over the Fly 6PN) instead of dialing
-	// the code-server port directly — direct port dials were unreachable on
-	// cloud nodes. Only ports of live, daemon-tracked editors are proxied, so
-	// this is not an open proxy into the machine. WebSocket upgrades pass
-	// through (httputil.ReverseProxy handles Upgrade natively).
-	mux.HandleFunc("/editor/local/", editorLocalProxyHandler)
-
-	// --- agent changes (git diff) for a task worktree ---
-	// For each git repo under the worktree, returns the agent's changes vs the
-	// merge-base with the default branch (everything it did since branching) —
-	// file list + unified diff. Powers the Agora-native "Changes" review panel.
-	mux.HandleFunc("/editor/changes", func(w http.ResponseWriter, r *http.Request) {
-		if origin := r.Header.Get("Origin"); strings.HasPrefix(origin, "http://localhost") || strings.HasPrefix(origin, "http://127.0.0.1") {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		}
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		var req struct {
-			WorkDir string `json:"workdir"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		workdir := strings.TrimSpace(req.WorkDir)
-		if workdir == "" {
-			http.Error(w, "workdir is required", http.StatusBadRequest)
-			return
-		}
-		if info, err := os.Stat(workdir); err != nil || !info.IsDir() {
-			http.Error(w, "workdir does not exist", http.StatusBadRequest)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"repos": gitWorktreeChanges(workdir)})
-	})
-
-	// --- accept: open a pull request for the worktree changes ---
-	// The human's "Accept" in co-code mode: commit any pending edits, push the
-	// branch, and open (or reuse the existing open) GitHub PR for each repo under
-	// the worktree that is ahead of its base. Opening the PR also triggers CI, so
-	// the dev reviews/merges in their normal GitHub flow. Uses `gh`, authenticated
-	// on the daemon host. CORS scoped to localhost (the Agora app).
-	mux.HandleFunc("/editor/open-pr", func(w http.ResponseWriter, r *http.Request) {
-		if origin := r.Header.Get("Origin"); strings.HasPrefix(origin, "http://localhost") || strings.HasPrefix(origin, "http://127.0.0.1") {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		}
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		var req struct {
-			WorkDir string `json:"workdir"`
-			Title   string `json:"title"`
-			Body    string `json:"body"`
-			Base    string `json:"base"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		workdir := strings.TrimSpace(req.WorkDir)
-		if workdir == "" {
-			http.Error(w, "workdir is required", http.StatusBadRequest)
-			return
-		}
-		if info, err := os.Stat(workdir); err != nil || !info.IsDir() {
-			http.Error(w, "workdir does not exist", http.StatusBadRequest)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"results": openWorktreePR(workdir, strings.TrimSpace(req.Title), req.Body, strings.TrimSpace(req.Base)),
-		})
-	})
-
-	// --- reject: discard the worktree changes ---
-	// The human's "Discard" in co-code mode: reset each repo under the worktree to
-	// its base (merge-base with the default branch) and remove untracked files.
-	// Local only — any already-pushed commits stay on the remote and remain
-	// recoverable; this just clears the live worktree so the next run starts clean.
-	mux.HandleFunc("/editor/discard", func(w http.ResponseWriter, r *http.Request) {
-		if origin := r.Header.Get("Origin"); strings.HasPrefix(origin, "http://localhost") || strings.HasPrefix(origin, "http://127.0.0.1") {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		}
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		var req struct {
-			WorkDir string `json:"workdir"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		workdir := strings.TrimSpace(req.WorkDir)
-		if workdir == "" {
-			http.Error(w, "workdir is required", http.StatusBadRequest)
-			return
-		}
-		if info, err := os.Stat(workdir); err != nil || !info.IsDir() {
-			http.Error(w, "workdir does not exist", http.StatusBadRequest)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"repos": discardWorktreeChanges(workdir)})
-	})
+	// Preview reverse-proxy. The historical path remains wire-compatible with
+	// existing agents, but only daemon-tracked preview processes are reachable.
+	mux.HandleFunc("/editor/local/", previewLocalProxyHandler)
 
 	// --- live preview: run the project's dev server in the worktree ---
 	// The vibecoder's "Verify": see the app RUN, not the diff. Starts the repo's
 	// dev server (detected from package.json, or a caller-supplied command),
 	// scans its output for the port it bound, and returns a localhost URL the app
 	// iframes. One per repo dir; reused while alive. CORS scoped to localhost.
-	// (The previews registry lives at package level so editorLocalProxyHandler
+	// (The previews registry lives at package level so previewLocalProxyHandler
 	// can proxy a running dev-server's port for cloud mode.)
 
 	mux.HandleFunc("/editor/preview", func(w http.ResponseWriter, r *http.Request) {
@@ -801,7 +524,7 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 		}
 		delete(traces, tracePath)
 
-		host := editorBindHost()
+		host := runtimeProcessBindHost()
 		pl, err := net.Listen("tcp", fmt.Sprintf("%s:0", host))
 		if err != nil {
 			http.Error(w, "failed to allocate a port", http.StatusInternalServerError)
@@ -852,6 +575,8 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 	mux.HandleFunc("/trace/local/", traceLocalProxyHandler)
 
 	// --- embedded browser (general browser pane: preview URLs + watch automation) ---
+	d.registerArtifactHandlers(mux)
+
 	bm := newBrowserManager(d.logger)
 	mux.HandleFunc("/editor/browser/start", bm.handleStart)
 	mux.HandleFunc("/editor/browser/stop", bm.handleStop)
@@ -862,14 +587,7 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 	go func() {
 		<-ctx.Done()
 		srv.Close()
-		// Best-effort: stop any editors we spawned.
-		editorsMu.Lock()
-		for _, e := range editors {
-			if e.cmd.Process != nil {
-				_ = e.cmd.Process.Kill()
-			}
-		}
-		editorsMu.Unlock()
+		d.shutdownArtifactPreviews()
 		previewsMu.Lock()
 		for _, p := range previews {
 			killProcessGroup(p.cmd)
@@ -889,25 +607,9 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 	}
 }
 
-// editorProc tracks one spawned code-server instance: its port and the running
-// command (ProcessState flips non-nil once the reaper's Wait returns, which is
-// how both the launch-reuse check and the local proxy detect a dead editor).
-type editorProc struct {
-	port int
-	cmd  *exec.Cmd
-}
-
-// editors registers live code-server instances by (user, workdir) key. Package
-// level (not serveHealth-local) so editorLocalProxyHandler can validate that a
-// requested port belongs to a tracked live editor.
-var (
-	editors   = make(map[string]*editorProc)
-	editorsMu sync.Mutex
-)
-
 // previews registers running dev-server processes by repo dir. Package level
-// for the same reason as editors: the local proxy forwards a preview's port so
-// the cloud app can iframe the dev server through the backend proxy chain.
+// so the local proxy can validate a preview port before forwarding it through
+// the cloud backend proxy chain.
 var (
 	previews   = make(map[string]*previewProc)
 	previewsMu sync.Mutex
@@ -915,7 +617,7 @@ var (
 
 // traces registers running `playwright show-trace` viewers by trace .zip path.
 // Package level so traceLocalProxyHandler can gate its per-port reverse proxy
-// on live instances — mirrors editors/previews above. The backend reaches a
+// on live instances — mirrors previews above. The backend reaches a
 // tracked viewer THROUGH this health listener (/trace/local/{port}), never by
 // dialing the viewer's port directly: the viewer binds the DAEMON HOST's
 // loopback, which is unreachable from a containerized (self-host Docker) or
@@ -962,11 +664,6 @@ func pruneOldTraceViewers(maxKeep int) {
 	}
 }
 
-// editorLocalProxyHandler serves /editor/local/{port}/* by reverse-proxying to
-// the code-server bound on 127.0.0.1:{port}. Gated to ports of live,
-// daemon-tracked editors — never an open proxy into the machine. Split out of
-// serveHealth so the gate + path rewrite are unit-testable. WebSocket upgrades
-// pass through (httputil.ReverseProxy handles Upgrade natively).
 // loopbackHostPort returns "host:port" (IPv6 bracketed) for the loopback
 // interface actually accepting TCP on port. Dev servers on macOS frequently
 // bind IPv6 [::1] ONLY — Node/Vite resolve "localhost" to ::1 first — so the
@@ -990,37 +687,28 @@ func loopbackHostPort(port int) string {
 // whichever loopback stack is actually listening (see loopbackHostPort).
 func previewURL(port int) string { return "http://" + loopbackHostPort(port) + "/" }
 
-func editorLocalProxyHandler(w http.ResponseWriter, r *http.Request) {
+// previewLocalProxyHandler serves /editor/local/{port}/* for daemon-tracked
+// preview processes only. The legacy route name is kept for agent protocol
+// compatibility; it is not an editor or an open loopback proxy.
+func previewLocalProxyHandler(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/editor/local/")
 	portStr, tail, _ := strings.Cut(rest, "/")
 	port, err := strconv.Atoi(portStr)
 	if err != nil || port <= 0 || port > 65535 {
-		http.Error(w, "invalid editor port", http.StatusBadRequest)
+		http.Error(w, "invalid preview port", http.StatusBadRequest)
 		return
 	}
-	editorsMu.Lock()
 	alive := false
-	for _, e := range editors {
-		if e.port == port && e.cmd.ProcessState == nil {
+	previewsMu.Lock()
+	for _, p := range previews {
+		if p.port == port && p.running() {
 			alive = true
 			break
 		}
 	}
-	editorsMu.Unlock()
+	previewsMu.Unlock()
 	if !alive {
-		// Not an editor — a running dev-server preview's port is equally
-		// proxyable (the cloud app iframes the preview through this route).
-		previewsMu.Lock()
-		for _, p := range previews {
-			if p.port == port && p.running() {
-				alive = true
-				break
-			}
-		}
-		previewsMu.Unlock()
-	}
-	if !alive {
-		http.Error(w, "no live editor on this port", http.StatusNotFound)
+		http.Error(w, "no live preview on this port", http.StatusNotFound)
 		return
 	}
 	target := &url.URL{Scheme: "http", Host: loopbackHostPort(port)}
@@ -1037,7 +725,7 @@ func editorLocalProxyHandler(w http.ResponseWriter, r *http.Request) {
 // traceLocalProxyHandler serves /trace/local/{port}/* by reverse-proxying to
 // the `playwright show-trace` viewer bound on loopback:{port}. Gated to ports
 // of live, daemon-tracked trace viewers (the traces registry) — never an open
-// proxy into the machine. Mirrors editorLocalProxyHandler's shape exactly.
+// proxy into the machine. Mirrors previewLocalProxyHandler's shape exactly.
 // WebSocket upgrades pass through (httputil.ReverseProxy handles Upgrade
 // natively) and show-trace's relative redirect (Location: ./trace/index.html)
 // resolves fine under this prefix since we never rewrite Location headers.
@@ -1073,23 +761,6 @@ func traceLocalProxyHandler(w http.ResponseWriter, r *http.Request) {
 	proxy.ServeHTTP(w, r)
 }
 
-// writeEditorURL replies with the localhost code-server URL + the raw port. The
-// url is for self-host (browser hits 127.0.0.1 directly); the port lets the
-// cloud backend reverse-proxy to <daemon>.internal:<port> over the private net.
-func writeEditorURL(w http.ResponseWriter, port int, workdir string) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"url":  fmt.Sprintf("http://127.0.0.1:%d/?folder=%s", port, url.QueryEscape(workdir)),
-		"port": port,
-		// proxy_path lets the backend reach this editor THROUGH the health
-		// server (already 6PN-reachable) instead of dialing the code-server
-		// port directly. Direct port dials proved unreachable on Fly cloud
-		// nodes even with a wildcard bind — routing through the one known-good
-		// listener kills that failure class. Old backends ignore the field.
-		"proxy_path": fmt.Sprintf("/editor/local/%d/", port),
-	})
-}
-
 // writeTracePort replies with the port `playwright show-trace` bound. The
 // backend maps it to a reverse-proxy token (self-host and cloud both reach the
 // viewer only through the backend proxy, so no direct URL is returned here).
@@ -1102,7 +773,7 @@ func writeTracePort(w http.ResponseWriter, port int) {
 // bound port (up to timeout), or the process exits. host may be 0.0.0.0 (the
 // cloud bind); we dial loopback in that case since 0.0.0.0 isn't a connect
 // target. Returns true once reachable.
-func waitTraceReady(tp *previewProc, host string, port int, timeout time.Duration) bool {
+func waitTCPReady(running func() bool, host string, port int, timeout time.Duration) bool {
 	dialHost := host
 	if dialHost == "0.0.0.0" || dialHost == "" {
 		dialHost = "127.0.0.1"
@@ -1110,7 +781,7 @@ func waitTraceReady(tp *previewProc, host string, port int, timeout time.Duratio
 	addr := net.JoinHostPort(dialHost, strconv.Itoa(port))
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		if !tp.running() {
+		if running != nil && !running() {
 			return false
 		}
 		conn, err := net.DialTimeout("tcp", addr, time.Second)
@@ -1123,6 +794,10 @@ func waitTraceReady(tp *previewProc, host string, port int, timeout time.Duratio
 	return false
 }
 
+func waitTraceReady(tp *previewProc, host string, port int, timeout time.Duration) bool {
+	return waitTCPReady(tp.running, host, port, timeout)
+}
+
 // shellSingleQuote wraps s in single quotes for safe interpolation into a
 // `sh -c` command line (the trace path could contain spaces). Any embedded
 // single quote is escaped the POSIX way ('\”).
@@ -1130,61 +805,12 @@ func shellSingleQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// --- git-diff helpers for the /editor/changes endpoint ---
+// --- artifact diff helpers ---
 
 type changedFile struct {
 	Path      string `json:"path"`
 	Additions int    `json:"additions"`
 	Deletions int    `json:"deletions"`
-}
-
-type repoChanges struct {
-	Repo   string        `json:"repo"`
-	Branch string        `json:"branch"`
-	Base   string        `json:"base"`
-	Files  []changedFile `json:"files"`
-	Diff   string        `json:"diff"`
-}
-
-// gitWorktreeChanges finds each git repo directly under the worktree and returns
-// the agent's changes vs the merge-base with the default branch.
-func gitWorktreeChanges(workdir string) []repoChanges {
-	out := []repoChanges{}
-	entries, err := os.ReadDir(workdir)
-	if err != nil {
-		return out
-	}
-	for _, e := range entries {
-		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
-			continue
-		}
-		repo := filepath.Join(workdir, e.Name())
-		if strings.TrimSpace(runGit(repo, "rev-parse", "--is-inside-work-tree")) != "true" {
-			continue
-		}
-		base := resolveDiffBase(repo)
-		branch := strings.TrimSpace(runGit(repo, "rev-parse", "--abbrev-ref", "HEAD"))
-		var numstat, diff string
-		if base != "" {
-			numstat = runGit(repo, "diff", "--numstat", base)
-			diff = runGit(repo, "diff", base)
-		} else {
-			numstat = runGit(repo, "diff", "--numstat")
-			diff = runGit(repo, "diff")
-		}
-		const maxDiff = 400000
-		if len(diff) > maxDiff {
-			diff = diff[:maxDiff] + "\n\u2026 (diff truncated)"
-		}
-		out = append(out, repoChanges{
-			Repo:   e.Name(),
-			Branch: branch,
-			Base:   base,
-			Files:  parseNumstat(numstat),
-			Diff:   diff,
-		})
-	}
-	return out
 }
 
 func runGit(dir string, args ...string) string {
@@ -1194,20 +820,6 @@ func runGit(dir string, args ...string) string {
 		return ""
 	}
 	return string(out)
-}
-
-func resolveDiffBase(repo string) string {
-	if ref := strings.TrimSpace(runGit(repo, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")); ref != "" {
-		if b := strings.TrimSpace(runGit(repo, "merge-base", "HEAD", ref)); b != "" {
-			return b
-		}
-	}
-	for _, cand := range []string{"origin/main", "origin/master", "main", "master"} {
-		if b := strings.TrimSpace(runGit(repo, "merge-base", "HEAD", cand)); b != "" {
-			return b
-		}
-	}
-	return ""
 }
 
 func parseNumstat(s string) []changedFile {
@@ -1227,7 +839,7 @@ func parseNumstat(s string) []changedFile {
 	return files
 }
 
-// --- accept/reject (open-pr / discard) helpers for co-code mode ---
+// --- sprint branch landing helpers ---
 
 type prOpenResult struct {
 	Repo    string `json:"repo"`
@@ -1236,12 +848,6 @@ type prOpenResult struct {
 	Created bool   `json:"created"`
 	Skipped string `json:"skipped,omitempty"`
 	Error   string `json:"error,omitempty"`
-}
-
-type repoDiscardResult struct {
-	Repo  string `json:"repo"`
-	OK    bool   `json:"ok"`
-	Error string `json:"error,omitempty"`
 }
 
 // gitReposUnder returns the paths of git work-trees directly under workdir.
@@ -1271,81 +877,6 @@ func runInDir(dir, name string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
-// openWorktreePR commits pending edits, pushes the branch, and opens (or reuses
-// the existing open) GitHub PR for each repo under the worktree that is ahead of
-// its base. Skips the default branch and repos with no changes.
-func openWorktreePR(workdir, title, body, base string) []prOpenResult {
-	out := []prOpenResult{}
-	for _, repo := range gitReposUnder(workdir) {
-		branch := strings.TrimSpace(runGit(repo, "rev-parse", "--abbrev-ref", "HEAD"))
-		res := prOpenResult{Repo: filepath.Base(repo), Branch: branch}
-		// Sprint-worktree mode: a per-task alias (sprint-wt-*) tracking the
-		// SHARED origin/<sprintBranch>. Two accept models, selected by env:
-		//   - AGORA_SPRINT_PR_MODE off (default): push the task's commits straight
-		//     onto the integration branch (no per-task PR).
-		//   - AGORA_SPRINT_PR_MODE on: open a PR FROM the task's own branch INTO
-		//     the sprint branch, for the squad lead to review + merge. The sprint
-		//     branch still merges to main via the sprint-end QA/deploy flow.
-		if sprintBranch, ok := sprintUpstreamBranch(repo, branch); ok {
-			if sprintPRModeEnabled() {
-				out = append(out, openSprintPR(repo, branch, sprintBranch, title, body))
-			} else {
-				out = append(out, pushToSprintBranch(repo, branch, sprintBranch))
-			}
-			continue
-		}
-		defBranch := strings.TrimPrefix(strings.TrimSpace(runGit(repo, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")), "origin/")
-		if branch == "" || branch == "HEAD" || (defBranch != "" && branch == defBranch) {
-			res.Skipped = "not on a feature branch"
-			out = append(out, res)
-			continue
-		}
-		// Commit any uncommitted edits (e.g. the human's live code-server edits).
-		if strings.TrimSpace(runGit(repo, "status", "--porcelain")) != "" {
-			_ = runGit(repo, "add", "-A")
-			_, _ = runInDir(repo, "git", "commit", "-m", "Co-code changes (Agora)")
-		}
-		baseSHA := resolveDiffBase(repo)
-		if baseSHA != "" {
-			if ahead := strings.TrimSpace(runGit(repo, "rev-list", "--count", baseSHA+"..HEAD")); ahead == "" || ahead == "0" {
-				res.Skipped = "no changes vs base"
-				out = append(out, res)
-				continue
-			}
-		}
-		if pout, err := runInDir(repo, "git", "push", "-u", "origin", branch); err != nil {
-			res.Error = "push failed: " + firstLine(pout)
-			out = append(out, res)
-			continue
-		}
-		// Reuse an existing open PR for this head branch if one exists.
-		if existing, err := runInDir(repo, "gh", "pr", "list", "--head", branch, "--state", "open", "--json", "url", "-q", ".[0].url"); err == nil && strings.HasPrefix(existing, "http") {
-			res.URL = existing
-			out = append(out, res)
-			continue
-		}
-		args := []string{"pr", "create", "--head", branch}
-		if base != "" {
-			args = append(args, "--base", base)
-		}
-		if title != "" {
-			args = append(args, "--title", title, "--body", body)
-		} else {
-			args = append(args, "--fill")
-		}
-		cout, err := runInDir(repo, "gh", args...)
-		if err != nil {
-			res.Error = "gh pr create failed: " + firstLine(cout)
-			out = append(out, res)
-			continue
-		}
-		res.URL = lastURL(cout)
-		res.Created = true
-		out = append(out, res)
-	}
-	return out
-}
-
 // sprintUpstreamBranch returns the SHARED sprint branch a per-task alias tracks,
 // when this repo is in sprint-worktree mode. The alias is sprint-wt-<taskID> and
 // its upstream is origin/<sprintBranch> (set by ensureSprintBranch); the shared
@@ -1369,10 +900,10 @@ func sprintUpstreamBranch(repo, branch string) (string, bool) {
 // error so the human/agent resolves it; the daemon never drops or force-pushes.
 func pushToSprintBranch(repo, alias, sprintBranch string) prOpenResult {
 	res := prOpenResult{Repo: filepath.Base(repo), Branch: sprintBranch}
-	// Commit any uncommitted edits (e.g. the human's live code-server edits).
+	// Commit any uncommitted task edits before updating the sprint branch.
 	if strings.TrimSpace(runGit(repo, "status", "--porcelain")) != "" {
 		_ = runGit(repo, "add", "-A")
-		_, _ = runInDir(repo, "git", "commit", "-m", "Co-code changes (Agora)")
+		_, _ = runInDir(repo, "git", "commit", "-m", "Sprint task changes (Agora)")
 	}
 	if baseSHA := strings.TrimSpace(runGit(repo, "merge-base", "HEAD", "origin/"+sprintBranch)); baseSHA != "" {
 		if ahead := strings.TrimSpace(runGit(repo, "rev-list", "--count", baseSHA+"..HEAD")); ahead == "" || ahead == "0" {
@@ -1399,13 +930,6 @@ func pushToSprintBranch(repo, alias, sprintBranch string) prOpenResult {
 	return res
 }
 
-// sprintPRModeEnabled gates the per-task-PR-into-the-sprint-branch model (Phase 1
-// of auto sprint review): a sprint task opens a PR from its own branch INTO the
-// sprint branch — for the squad lead to review + merge — instead of pushing its
-// commits straight onto the shared branch. Default OFF, so the direct-push model
-// (pushToSprintBranch) stays the default and the switch is fully reversible.
-func sprintPRModeEnabled() bool { return util.SprintPRModeEnabled() }
-
 // openSprintPR opens (or reuses) a GitHub PR from the task's per-task sprint alias
 // INTO the shared sprint branch. Unlike pushToSprintBranch it never writes to the
 // shared branch: it pushes the alias as its OWN remote head (WITHOUT -u, so the
@@ -1414,10 +938,10 @@ func sprintPRModeEnabled() bool { return util.SprintPRModeEnabled() }
 // force-updates the head (the task owns that branch) and reuses the open PR.
 func openSprintPR(repo, alias, sprintBranch, title, body string) prOpenResult {
 	res := prOpenResult{Repo: filepath.Base(repo), Branch: alias}
-	// Commit any uncommitted edits (e.g. the human's live code-server edits).
+	// Commit any uncommitted task edits before opening the sprint PR.
 	if strings.TrimSpace(runGit(repo, "status", "--porcelain")) != "" {
 		_ = runGit(repo, "add", "-A")
-		_, _ = runInDir(repo, "git", "commit", "-m", "Co-code changes (Agora)")
+		_, _ = runInDir(repo, "git", "commit", "-m", "Sprint task changes (Agora)")
 	}
 	// Nothing to review if the alias is not ahead of the sprint branch.
 	if baseSHA := strings.TrimSpace(runGit(repo, "merge-base", "HEAD", "origin/"+sprintBranch)); baseSHA != "" {
@@ -1454,30 +978,6 @@ func openSprintPR(repo, alias, sprintBranch, title, body string) prOpenResult {
 	return res
 }
 
-// discardWorktreeChanges resets each repo under the worktree to its base and
-// removes untracked files. Local only — pushed commits stay on the remote.
-func discardWorktreeChanges(workdir string) []repoDiscardResult {
-	out := []repoDiscardResult{}
-	for _, repo := range gitReposUnder(workdir) {
-		res := repoDiscardResult{Repo: filepath.Base(repo)}
-		base := resolveDiffBase(repo)
-		if base == "" {
-			res.Error = "could not resolve base"
-			out = append(out, res)
-			continue
-		}
-		if rout, err := runInDir(repo, "git", "reset", "--hard", base); err != nil {
-			res.Error = "reset failed: " + firstLine(rout)
-			out = append(out, res)
-			continue
-		}
-		_, _ = runInDir(repo, "git", "clean", "-fd")
-		res.OK = true
-		out = append(out, res)
-	}
-	return out
-}
-
 func firstLine(s string) string {
 	s = strings.TrimSpace(s)
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
@@ -1497,7 +997,7 @@ func lastURL(s string) string {
 	return strings.TrimSpace(s)
 }
 
-// --- live preview (dev server) helpers for co-code mode ---
+// --- live preview (dev server) helpers ---
 
 type previewProc struct {
 	port    int
@@ -1692,162 +1192,12 @@ func tailLog(s string) string {
 	return s
 }
 
-// editorBindHost is the host code-server binds to. Self-host = 127.0.0.1
-// (loopback). Cloud sets AGORA_EDITOR_BIND=0.0.0.0 so the backend can reach the
-// spawned code-server over the fly private network (6PN); access is gated by
-// the backend proxy + the org-private 6PN, not a public listener.
-func editorBindHost() string {
+// runtimeProcessBindHost is used for daemon-spawned observability helpers such
+// as Playwright trace viewer. The historical environment variable name remains
+// supported for deployment compatibility.
+func runtimeProcessBindHost() string {
 	if v := strings.TrimSpace(os.Getenv("AGORA_EDITOR_BIND")); v != "" {
 		return v
 	}
 	return "127.0.0.1"
-}
-
-// editorUserDataDir returns a stable, isolated code-server --user-data-dir for a
-// (user, workdir) key, so concurrent editors never share a VS Code profile lock.
-// Hashed to keep the path short and filesystem-safe.
-func editorUserDataDir(key string) (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256([]byte(key))
-	dir := filepath.Join(home, ".agora", "code-server", hex.EncodeToString(sum[:8]))
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", err
-	}
-	// Seed the editor profile on first launch. Two layers (write-if-absent so a
-	// human's later in-editor edits persist across relaunches):
-	//
-	//   User/settings.json + User/keybindings.json — copied VERBATIM from the
-	//   host's own VS Code profile when one exists, so the co-code editor opens
-	//   with the reviewer's familiar theme/keybinds/settings. Verbatim because
-	//   VS Code settings are JSONC (comments, trailing commas) — parsing with
-	//   encoding/json would corrupt them. No host profile → minimal "{}".
-	//
-	//   Machine/settings.json — our co-code invariants. Machine scope overrides
-	//   User scope, so they hold regardless of what the copied profile says: no
-	//   workspace-trust prompt (the agent authored its own isolated branch — it
-	//   is the author, the human is the reviewer), no Getting-Started tab
-	//   covering the code, no telemetry, and a TRIMMED chrome for the co-code
-	//   surface — the vibe coder embeds this IDE, so hide the status bar,
-	//   minimap, breadcrumbs, layout controls, the SCM commit graph + git action
-	//   buttons that read as raw-git clutter. The activity bar stays so Explorer
-	//   / Source Control are still one click away for a dev who opens Code.
-	userDir := filepath.Join(dir, "User")
-	settingsPath := filepath.Join(userDir, "settings.json")
-	if _, statErr := os.Stat(settingsPath); os.IsNotExist(statErr) {
-		if mkErr := os.MkdirAll(userDir, 0o700); mkErr == nil {
-			seeded := false
-			if hostDir, ok := hostVSCodeUserDir(); ok {
-				if b, rerr := os.ReadFile(filepath.Join(hostDir, "settings.json")); rerr == nil {
-					seeded = os.WriteFile(settingsPath, b, 0o600) == nil
-				}
-				if b, rerr := os.ReadFile(filepath.Join(hostDir, "keybindings.json")); rerr == nil {
-					_ = os.WriteFile(filepath.Join(userDir, "keybindings.json"), b, 0o600)
-				}
-			}
-			if !seeded {
-				_ = os.WriteFile(settingsPath, []byte("{}\n"), 0o600)
-			}
-			// Inherit auth/session state from the newest sibling profile.
-			// code-server keeps SecretStorage (e.g. the "Sign in with GitHub"
-			// session) in User/globalStorage/state.vscdb INSIDE the per-
-			// (user, worktree) profile — so without this, every new worktree
-			// editor demanded a fresh sign-in. Copying the newest sibling's
-			// state.vscdb means: sign in once, every later editor inherits.
-			inheritEditorGlobalStorage(filepath.Dir(dir), dir, userDir)
-		}
-	}
-	machineDir := filepath.Join(dir, "Machine")
-	machinePath := filepath.Join(machineDir, "settings.json")
-	if _, statErr := os.Stat(machinePath); os.IsNotExist(statErr) {
-		if mkErr := os.MkdirAll(machineDir, 0o700); mkErr == nil {
-			_ = os.WriteFile(machinePath, []byte(`{
-  "security.workspace.trust.enabled": false,
-  "workbench.startupEditor": "none",
-  "workbench.tips.enabled": false,
-  "telemetry.telemetryLevel": "off",
-  "workbench.statusBar.visible": false,
-  "workbench.layoutControl.enabled": false,
-  "breadcrumbs.enabled": false,
-  "editor.minimap.enabled": false,
-  "scm.showHistoryGraph": false,
-  "git.openRepositoryInParentFolders": "never",
-  "git.showActionButton": {
-    "commit": false,
-    "publish": false,
-    "sync": false
-  },
-  "outline.showVariables": false,
-  "explorer.compactFolders": false
-}
-`), 0o600)
-		}
-	}
-	return dir, nil
-}
-
-// inheritEditorGlobalStorage copies User/globalStorage/state.vscdb from the
-// most recently modified sibling editor profile into a NEWLY created one, so a
-// GitHub (or any extension) sign-in done once carries into every later
-// worktree's editor. Best-effort: no sibling with auth state → fresh profile,
-// exactly as before.
-func inheritEditorGlobalStorage(root, selfDir, userDir string) {
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		return
-	}
-	var newest string
-	var newestMod int64
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		cand := filepath.Join(root, e.Name())
-		if cand == selfDir {
-			continue
-		}
-		db := filepath.Join(cand, "User", "globalStorage", "state.vscdb")
-		info, serr := os.Stat(db)
-		if serr != nil {
-			continue
-		}
-		if m := info.ModTime().UnixNano(); m > newestMod {
-			newest, newestMod = db, m
-		}
-	}
-	if newest == "" {
-		return
-	}
-	b, err := os.ReadFile(newest)
-	if err != nil {
-		return
-	}
-	gsDir := filepath.Join(userDir, "globalStorage")
-	if err := os.MkdirAll(gsDir, 0o700); err != nil {
-		return
-	}
-	_ = os.WriteFile(filepath.Join(gsDir, "state.vscdb"), b, 0o600)
-}
-
-// hostVSCodeUserDir locates the host machine's own VS Code user profile so the
-// co-code editor can open with the reviewer's familiar settings. Self-host
-// daemons run on the developer's machine where this exists; cloud daemons
-// simply won't find one (ok=false → minimal seed).
-func hostVSCodeUserDir() (string, bool) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", false
-	}
-	candidates := []string{
-		filepath.Join(home, "Library", "Application Support", "Code", "User"), // macOS
-		filepath.Join(home, ".config", "Code", "User"),                        // Linux
-	}
-	for _, c := range candidates {
-		if _, err := os.Stat(filepath.Join(c, "settings.json")); err == nil {
-			return c, true
-		}
-	}
-	return "", false
 }

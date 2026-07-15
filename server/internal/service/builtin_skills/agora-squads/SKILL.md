@@ -18,7 +18,7 @@ agora squad member list <squad-id> --output json
 agora issue comment list <issue-id> --recent 20 --output json
 ```
 
-If the command shape is unclear, check help instead of guessing:
+If command shape is unclear, check help:
 
 ```bash
 agora squad --help
@@ -27,15 +27,15 @@ agora issue update --help
 agora issue comment add --help
 ```
 
-Do not assign, comment, mention, update, delete, or record squad activity just
-to test. These can mutate workspace state or trigger agent runs.
+Do not assign, comment, mention, update, delete, or record squad activity just to
+test. These can mutate workspace state or trigger agent runs.
 
 ## Core model
 
-A Agora squad is a workspace routing and coordination object.
+An Agora squad is a workspace routing and coordination object.
 
-A squad is not an agent. It does not run work by itself. Current behavior:
-squad-routed work runs through the squad's `leader_id` agent.
+A squad is not an agent and does not run work by itself. Squad-routed work runs
+through the squad's `leader_id` agent.
 
 Important consequences:
 
@@ -91,42 +91,37 @@ Prefer `--output json` for reads. Use `--help` before writes.
 - `id` — squad UUID.
 - `workspace_id` — workspace the squad belongs to.
 - `name` — display name; unique per workspace.
-- `description` — human-facing metadata/display text. Do not assume runtime
+- `description` — human-facing metadata/display text; do not assume runtime
   prompt impact unless source proves a consumer.
-- `instructions` — squad-level instructions added to the squad leader briefing.
-  They are not directly injected into every squad member.
+- `instructions` — squad-level instructions added to the squad leader briefing,
+  not directly injected into every squad member.
 - `avatar_url` — optional squad avatar URL.
 - `leader_id` — agent ID of the squad leader; the runtime target for
   squad-routed work.
 - `creator_id` — creator of the squad.
-- `archived_at` / `archived_by` — archive metadata. Archived squads are rejected
+- `archived_at` / `archived_by` — archive metadata; archived squads are rejected
   by assignment/autopilot routing paths.
 - `member_count` — list response count of squad members.
 - `member_preview` — list response preview of squad members.
 
 Use `instructions` for leader-facing coordination policy: squad responsibility,
-delegation expectations, when to ask humans, and review/handoff rules. Do not
-write it as if every member automatically receives it.
+delegation, human escalation, and handoff rules. Members do not receive it.
 
 ## Squad member fields
 
 - `member_type` — `agent` or `member`.
 - `member_id` — ID of the agent or workspace member.
-- `role` — roster role label. Current behavior: non-empty `role` appears in the
-  leader briefing roster. Do not assume it creates scheduling, permissions, or
-  routing behavior.
+- `role` — roster role label. Non-empty `role` appears in the leader briefing;
+  it does not create scheduling, permissions, or routing behavior.
 
 ## Creation and leader membership
 
-Creating a squad requires `leader_id`. The leader must be a workspace agent.
-Create/update does not reject an archived leader: the lookup only checks the
-agent exists in the workspace. An archived leader fails closed later, at
-routing/dispatch — assignment, autopilot admission, and the comment/mention
-readiness gate all reject an archived leader before any task is enqueued.
+Creating a squad requires `leader_id`, which must be a workspace agent.
+Create/update only checks that the agent exists, so an archived leader fails
+closed later: assignment, autopilot admission, and comment/mention readiness
+all reject it before enqueueing work.
 
-On create, the backend attempts to add the leader as a squad member with role
-`leader`. When updating `leader_id`, if the new leader is not already a member,
-the backend adds the new leader as a squad member with role `leader`.
+On create, the backend adds the leader as a member with role `leader`; updating `leader_id` does the same if needed.
 
 ## Leader briefing
 
@@ -137,8 +132,8 @@ agent instructions. The briefing includes:
 - Squad Roster;
 - Squad Instructions, only when `instructions` is non-empty.
 
-Roster entries include member name, member type, mention markdown, and non-empty
-role. Archived agent members are skipped from the briefing roster.
+Roster entries include member name, type, mention markdown, and non-empty role;
+archived agents are skipped.
 
 ## Issue assignment behavior
 
@@ -159,22 +154,19 @@ Current behavior:
   new assignee path.
 
 **Design-decomposed sub-issues promote themselves — do NOT touch their status.**
-When a parent's sub-issues came from an approved *design proposal* (each carries
-a `design_plan_index` in its metadata and a "Design context" section in its
-description), the platform promotes the waiting `backlog` siblings automatically
-the moment their prerequisites finish. The child-done system comment on such a
-parent says so explicitly. As leader, never flip a design sub-issue's status
-yourself — you would double-promote or start a sub-issue whose dependencies are
-not yet met. Just work the sub-issues that are already `todo`.
+For sub-issues from an approved *design proposal* (`design_plan_index` metadata
+and a "Design context" description), the platform promotes waiting `backlog`
+siblings when prerequisites finish. The child-done system comment confirms it.
+Never flip their status yourself: that can double-promote or start blocked work.
+Only work design sub-issues already in `todo`.
 
-Assignment validation rejects a missing type/id pair, non-existent squad,
-archived squad, archived leader, and private leader when the actor cannot access
-it.
+Assignment rejects a missing type/id pair, non-existent or archived squad,
+archived leader, and an inaccessible private leader.
 
 ## Comment and mention behavior
 
-If an issue is assigned to a squad, a new comment can wake the squad leader. This
-is leader routing, not member fan-out.
+On a squad-assigned issue, a new comment can wake the leader; it never fans out
+to members.
 
 Squad mention format:
 
@@ -182,16 +174,14 @@ Squad mention format:
 [@Squad Name](mention://squad/<squad-id>)
 ```
 
-Current behavior: resolve the squad, read `leader_id`, enqueue a leader task,
-and use the current comment as the trigger comment. It does not enqueue every
-squad member.
+Current behavior resolves the squad, reads `leader_id`, and enqueues a leader
+task with the current comment as trigger. It does not enqueue every member.
 
 ## QA squad leader routing
 
-The auto-QA trigger (`in_review`) and the QA-fail auto-reassignment both prefer
-squad LEADERS over individual agents when the work is squad-orchestrated —
-this is the "dev lead and QA lead are always in communication" product rule,
-not a general squad behavior. Two separate mechanisms:
+Auto-QA (`in_review`) and QA-fail reassignment prefer squad LEADERS for
+squad-orchestrated work. This is the dev/QA lead communication rule, not a
+general squad behavior. Two mechanisms:
 
 - **`in_review` → auto `run_qa`.** If the issue's assignee is a squad, or an
   agent who belongs to any squad, the trigger routes to the QA squad's LEADER
@@ -362,6 +352,21 @@ skills and MCP servers that agent needs, and which model fits the task's
 difficulty, and it can create or archive its own subagents to do that. This
 section is product guidance for briefing a leader this way; it does not
 change squad's routing mechanics above (routing to `leader_id` only).
+
+When the issue uses a persisted orchestration run, workers are independent
+agent tasks with separate sessions, branches, and worktrees. The run pins one
+immutable repository base before parallel work begins; an integration step
+must contain every dependency HEAD, and QA/review verify detached copies of
+the exact integrated HEAD without editing them. Planner output persists an
+explicit capability per step and is rejected unless it is an acyclic DAG whose
+parallel development branches converge before QA/review. A draft run is the
+proposal boundary. A controller may recommend routing in its plan handoff; a
+human accepts structural proposal edits or reroutes through the orchestration
+API. Draft edits stay draft until the explicit Start action. Every accepted
+route is readiness- and capability-checked against the run controller or the
+step's squad before it becomes a versioned plan revision. Neither controller
+nor worker may treat an issue comment as proof that Git handoff or integration
+succeeded—the daemon and server verify the commit state.
 
 **Dev lead and QA lead are siblings, not a hierarchy.** Structure work as two
 squads per unit of work — one dev squad, one QA squad — each with its own

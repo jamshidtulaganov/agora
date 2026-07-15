@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { useRecentIssuesStore, selectRecentIssues } from "./recent-issues-store";
 
 beforeEach(() => {
-  useRecentIssuesStore.setState({ byWorkspace: {} });
+  useRecentIssuesStore.setState({ identityId: "user-1", byWorkspace: {} });
 });
+
+const bucket = (wsId: string) => `user-1:${wsId}`;
 
 describe("useRecentIssuesStore.recordVisit", () => {
   it("keeps visits namespaced by workspace id", () => {
@@ -12,8 +14,8 @@ describe("useRecentIssuesStore.recordVisit", () => {
     recordVisit("ws-b", "issue-2");
 
     const state = useRecentIssuesStore.getState().byWorkspace;
-    expect(state["ws-a"]?.map((e) => e.id)).toEqual(["issue-1"]);
-    expect(state["ws-b"]?.map((e) => e.id)).toEqual(["issue-2"]);
+    expect(state[bucket("ws-a")]?.map((e) => e.id)).toEqual(["issue-1"]);
+    expect(state[bucket("ws-b")]?.map((e) => e.id)).toEqual(["issue-2"]);
   });
 
   it("moves the most recent visit to the front and dedupes", () => {
@@ -24,14 +26,14 @@ describe("useRecentIssuesStore.recordVisit", () => {
 
     const ids = useRecentIssuesStore
       .getState()
-      .byWorkspace["ws-a"]?.map((e) => e.id);
+      .byWorkspace[bucket("ws-a")]?.map((e) => e.id);
     expect(ids).toEqual(["issue-1", "issue-2"]);
   });
 
   it("caps each workspace's bucket at 20 entries", () => {
     const { recordVisit } = useRecentIssuesStore.getState();
     for (let i = 0; i < 25; i++) recordVisit("ws-a", `issue-${i}`);
-    expect(useRecentIssuesStore.getState().byWorkspace["ws-a"]).toHaveLength(20);
+    expect(useRecentIssuesStore.getState().byWorkspace[bucket("ws-a")]).toHaveLength(20);
   });
 });
 
@@ -46,7 +48,7 @@ describe("useRecentIssuesStore.forgetIssue", () => {
 
     const ids = useRecentIssuesStore
       .getState()
-      .byWorkspace["ws-a"]?.map((e) => e.id);
+      .byWorkspace[bucket("ws-a")]?.map((e) => e.id);
     expect(ids).toEqual(["issue-3", "issue-1"]);
   });
 
@@ -58,8 +60,8 @@ describe("useRecentIssuesStore.forgetIssue", () => {
     forgetIssue("ws-a", "issue-1");
 
     const state = useRecentIssuesStore.getState().byWorkspace;
-    expect(state["ws-a"]).toBeUndefined();
-    expect(state["ws-b"]?.map((e) => e.id)).toEqual(["issue-2"]);
+    expect(state[bucket("ws-a")]).toBeUndefined();
+    expect(state[bucket("ws-b")]?.map((e) => e.id)).toEqual(["issue-2"]);
   });
 
   it("does not touch other workspaces' buckets", () => {
@@ -70,8 +72,8 @@ describe("useRecentIssuesStore.forgetIssue", () => {
     forgetIssue("ws-a", "issue-1");
 
     const state = useRecentIssuesStore.getState().byWorkspace;
-    expect(state["ws-a"]).toBeUndefined();
-    expect(state["ws-b"]?.map((e) => e.id)).toEqual(["issue-1"]);
+    expect(state[bucket("ws-a")]).toBeUndefined();
+    expect(state[bucket("ws-b")]?.map((e) => e.id)).toEqual(["issue-1"]);
   });
 
   it("is a no-op when the id is not in the bucket", () => {
@@ -103,7 +105,7 @@ describe("useRecentIssuesStore.pruneWorkspaces", () => {
 
     pruneWorkspaces(["ws-a", "ws-c"]);
     const state = useRecentIssuesStore.getState().byWorkspace;
-    expect(Object.keys(state).sort()).toEqual(["ws-a", "ws-c"]);
+    expect(Object.keys(state).sort()).toEqual([bucket("ws-a"), bucket("ws-c")]);
   });
 
   it("is a no-op when every bucket is still active", () => {
@@ -120,6 +122,18 @@ describe("selectRecentIssues", () => {
     useRecentIssuesStore.getState().recordVisit("ws-a", "issue-1");
     const items = selectRecentIssues("ws-a")(useRecentIssuesStore.getState());
     expect(items.map((e) => e.id)).toEqual(["issue-1"]);
+  });
+
+  it("does not expose another user's recents in the same workspace", () => {
+    useRecentIssuesStore.getState().recordVisit("ws-a", "issue-user-1");
+    useRecentIssuesStore.getState().setIdentity("user-2");
+
+    expect(selectRecentIssues("ws-a")(useRecentIssuesStore.getState())).toEqual([]);
+
+    useRecentIssuesStore.getState().recordVisit("ws-a", "issue-user-2");
+    expect(selectRecentIssues("ws-a")(useRecentIssuesStore.getState()).map((e) => e.id)).toEqual([
+      "issue-user-2",
+    ]);
   });
 
   it("returns a stable empty array when wsId is null or unknown", () => {

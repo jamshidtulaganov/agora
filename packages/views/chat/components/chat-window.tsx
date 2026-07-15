@@ -191,14 +191,21 @@ export function ChatWindow() {
   const { data: members = [] } = useQuery(memberListOptions(wsId));
   // Single sessions cache — eliminates the separate active/all queries
   // that used to drift during the WS-invalidate window.
-  const { data: sessions = [] } = useQuery(chatSessionsOptions(wsId));
+  const { data: sessions = [], isSuccess: sessionsLoaded } = useQuery(
+    chatSessionsOptions(wsId),
+  );
+  const activeSessionIsKnown = Boolean(
+    activeSessionId && sessions.some((session) => session.id === activeSessionId),
+  );
   const {
     data: rawMessagePages,
     isLoading: messagesLoading,
     fetchNextPage: fetchOlderMessages,
     hasNextPage: hasOlderMessages,
     isFetchingNextPage: isFetchingOlderMessages,
-  } = useInfiniteQuery(chatMessagesPageOptions(activeSessionId ?? ""));
+  } = useInfiniteQuery(
+    chatMessagesPageOptions(activeSessionIsKnown ? activeSessionId! : ""),
+  );
   // When no active session, always show empty — don't use stale cache.
   // Page 0 contains the latest chronological window; later cursor pages are
   // older chronological windows. Reverse pages so older fetched pages render
@@ -222,7 +229,7 @@ export function ChatWindow() {
   //
   // This is the SOLE source for pendingTaskId — no mirror in the store.
   const { data: pendingTask } = useQuery(
-    pendingChatTaskOptions(activeSessionId ?? ""),
+    pendingChatTaskOptions(activeSessionIsKnown ? activeSessionId! : ""),
   );
   const pendingTaskId = pendingTask?.task_id ?? null;
   const stopRequestedBeforeTaskRef = useRef(false);
@@ -246,6 +253,14 @@ export function ChatWindow() {
   const qc = useQueryClient();
   const createSession = useCreateChatSession();
   const markRead = useMarkChatSessionRead();
+
+  // Persisted sessions are actor-scoped, but the server remains the source of
+  // truth after deletes or a local DB reset. Validate membership before any
+  // per-session request so a stale UUID never emits 403s on page load.
+  useEffect(() => {
+    if (!sessionsLoaded || !activeSessionId || activeSessionIsKnown) return;
+    setActiveSession(null);
+  }, [activeSessionId, activeSessionIsKnown, sessionsLoaded, setActiveSession]);
 
   const currentMember = members.find((m) => m.user_id === user?.id);
   const memberRole = currentMember?.role;
@@ -673,6 +688,7 @@ export function ChatWindow() {
                 <Button
                   variant="ghost"
                   size="icon-sm"
+                  aria-label={t(($) => $.window.new_chat_tooltip)}
                   className="rounded-full text-muted-foreground"
                   onClick={handleNewChat}
                 />
@@ -698,6 +714,12 @@ export function ChatWindow() {
                 <Button
                   variant="ghost"
                   size="icon-sm"
+                  aria-label={
+                    isExpanded || isAtMax
+                      ? t(($) => $.window.restore_tooltip)
+                      : t(($) => $.window.expand_tooltip)
+                  }
+                  aria-pressed={isExpanded || isAtMax}
                   className="text-muted-foreground"
                   onClick={toggleExpand}
                 />
@@ -715,6 +737,7 @@ export function ChatWindow() {
                 <Button
                   variant="ghost"
                   size="icon-sm"
+                  aria-label={t(($) => $.window.minimize_tooltip)}
                   className="text-muted-foreground"
                   onClick={handleMinimize}
                 />

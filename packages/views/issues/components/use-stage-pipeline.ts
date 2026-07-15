@@ -1,11 +1,10 @@
 "use client";
 
-// Assembles `StagePipelineInput` from queries issue-detail (and its
-// sibling sections) already fetch, then derives the SDLC stepper's
-// pipeline. No new endpoints — every signal here is read from an existing,
-// already-cached query, sharing cache entries where the query key matches
-// an existing consumer. See docs/sdlc-stage-cockpit-plan.md section 2 and
-// phase C.
+// Assembles `StagePipelineInput` from queries issue-detail (and its sibling
+// sections) already fetch, then derives the SDLC stepper's pipeline. When an
+// orchestration run owns the issue, its DAG is the authoritative stage signal;
+// otherwise the legacy issue/label/PR projection remains the fallback. Every
+// query shares an existing cache entry with the execution/editor surfaces.
 //
 // Deploy is NOT assembled here — it left the issue-level pipeline (stage-
 // cockpit rehome, part 1) and now lives at the sprint level
@@ -22,12 +21,22 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@agora/core/api";
 import { agentTaskSnapshotOptions } from "@agora/core/agents";
-import { issueDetailOptions } from "@agora/core/issues/queries";
-import { getWorkMode } from "@agora/core/issues/work-mode";
+import { issueDetailOptions, issueOrchestrationOptions } from "@agora/core/issues/queries";
 import { issueLabelsOptions } from "@agora/core/labels";
 import { issuePullRequestsOptions } from "@agora/core/github";
-import { deriveStagePipeline, type SDLCStage, type StagePipeline, type MergeGateState } from "@agora/core/issues";
-import type { MergeGateStatus } from "@agora/core/types";
+import {
+  deriveStagePipeline,
+  type SDLCStage,
+  type StagePipeline,
+  type StageSnapshot,
+  type StageState,
+  type MergeGateState,
+} from "@agora/core/issues";
+import type {
+  MergeGateStatus,
+  OrchestrationRun,
+  OrchestrationStep,
+} from "@agora/core/types";
 
 // Agent-id set for every squad whose name contains `needle` (leader + agent
 // members). Used to attribute a running task to a stage: QA-squad agents ->
@@ -62,15 +71,102 @@ function gateStatus(gates: MergeGateStatus[], name: string): MergeGateState {
   return gates.find((g) => g.name === name)?.status ?? "pending";
 }
 
+function orchestrationStepState(steps: OrchestrationStep[]): StageState {
+  if (steps.some((step) => step.status === "failed")) return "failed";
+  if (steps.some((step) => step.status === "running" || step.status === "queued")) {
+    return "running";
+  }
+  if (steps.some((step) => step.status === "waiting_approval")) return "active";
+  if (steps.some((step) => step.status === "cancelled")) return "blocked";
+  if (
+    steps.length > 0 &&
+    steps.every((step) => step.status === "completed" || step.status === "skipped")
+  ) {
+    return "passed";
+  }
+  return "pending";
+}
+
+function liveTaskId(steps: OrchestrationStep[]): string | undefined {
+  return steps.find(
+    (step) =>
+      (step.status === "running" || step.status === "queued") && !!step.task_id,
+  )?.task_id;
+}
+
+/**
+ * Project the authoritative orchestration DAG onto the compact Dev → QA →
+ * Review strip. Plan + integration belong to Dev; the release approval gate is
+ * represented by Review's active state because release is intentionally not a
+ * separate issue-level stage.
+ */
+export function deriveOrchestrationStagePipeline(
+  run: OrchestrationRun | null | undefined,
+): StagePipeline | null {
+  if (!run || run.status === "draft") return null;
+
+  const devSteps = run.steps.filter(
+    (step) => step.stage === "plan" || step.stage === "dev",
+  );
+  const qaSteps = run.steps.filter((step) => step.stage === "qa");
+  const reviewSteps = run.steps.filter((step) => step.stage === "review");
+  const releaseSteps = run.steps.filter((step) => step.stage === "release");
+
+  const makeSnapshot = (
+    stage: SDLCStage,
+    steps: OrchestrationStep[],
+  ): StageSnapshot => {
+    const taskId = liveTaskId(steps);
+    return {
+      stage,
+      state: orchestrationStepState(steps),
+      ...(taskId ? { taskId } : {}),
+    };
+  };
+
+  const stages: StageSnapshot[] = [
+    makeSnapshot("dev", devSteps),
+    makeSnapshot("qa", qaSteps),
+    makeSnapshot("review", reviewSteps),
+  ];
+
+  const review = stages[2]!;
+  const releaseState = orchestrationStepState(releaseSteps);
+  if (run.status === "completed" || releaseState === "passed") {
+    review.state = "passed";
+  } else if (run.status === "waiting_approval" || releaseState === "active") {
+    // Agent review is complete, but the human release decision still gates the
+    // outcome. This is the same "awaiting approval" meaning used by the legacy
+    // review projection.
+    review.state = "active";
+    review.detail = "awaiting approval";
+  } else if (releaseState === "failed" || releaseState === "blocked") {
+    review.state = releaseState;
+  }
+
+  const currentIndex = stages.findIndex(
+    (stage) => stage.state !== "passed" && stage.state !== "skipped",
+  );
+  const resolvedIndex = currentIndex === -1 ? stages.length - 1 : currentIndex;
+  const current = stages[resolvedIndex]!.stage;
+  if (
+    stages[resolvedIndex]!.state === "pending" &&
+    run.status !== "cancelled"
+  ) {
+    stages[resolvedIndex] = { ...stages[resolvedIndex]!, state: "active" };
+  }
+  return { stages, current };
+}
+
 export function useStagePipeline(wsId: string, issueId: string): StagePipeline {
   const { data: issue } = useQuery(issueDetailOptions(wsId, issueId));
   const { data: labels = [] } = useQuery(issueLabelsOptions(wsId, issueId));
   const { data: prs } = useQuery(issuePullRequestsOptions(issueId));
+  const { data: orchestration } = useQuery(issueOrchestrationOptions(issueId));
 
   const status = issue?.status ?? "todo";
 
-  // Same queryKey as EditorGates (editor-gates.tsx) — shares the cache when
-  // both are mounted on the same issue. Poll only while the review stage is
+  // Poll only while the review stage is still moving. Once it isn't, the gates are
   // still moving (in_review); once it isn't, the gates are effectively
   // frozen and polling would just churn the network for no signal change.
   const { data: mergeReadiness } = useQuery({
@@ -105,10 +201,9 @@ export function useStagePipeline(wsId: string, issueId: string): StagePipeline {
     const matchedPr =
       prNumber != null ? (prs?.pull_requests ?? []).find((pr) => pr.number === prNumber) : undefined;
 
-    return deriveStagePipeline({
+    const fallback = deriveStagePipeline({
       status,
       labels,
-      workMode: getWorkMode(issue),
       prNumber,
       mergeGates: mergeReadiness
         ? {
@@ -120,5 +215,17 @@ export function useStagePipeline(wsId: string, issueId: string): StagePipeline {
       prMerged: matchedPr ? matchedPr.state === "merged" : undefined,
       runningTaskByStage,
     });
-  }, [status, labels, issue, prs, mergeReadiness, snapshot, qaAgentIds, reviewAgentIds, issueId]);
+    return deriveOrchestrationStagePipeline(orchestration) ?? fallback;
+  }, [
+    status,
+    labels,
+    issue,
+    prs,
+    mergeReadiness,
+    snapshot,
+    qaAgentIds,
+    reviewAgentIds,
+    issueId,
+    orchestration,
+  ]);
 }

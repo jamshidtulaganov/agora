@@ -62,25 +62,6 @@ describe("deriveStagePipeline — dev stage", () => {
     expect(find(pipeline, "dev").state).toBe("pending");
   });
 
-  it("sets an 'in editor' detail while pending in in_editor work mode", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ workMode: "in_editor", status: "cancelled" }),
-    );
-    expect(find(pipeline, "dev")).toMatchObject({ state: "pending", detail: "in editor" });
-  });
-
-  it("sets an 'in editor' detail while running in in_editor work mode", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ workMode: "in_editor", runningTaskStages: ["dev"] }),
-    );
-    expect(find(pipeline, "dev")).toMatchObject({ state: "running", detail: "in editor" });
-  });
-
-  it("does not set an 'in editor' detail once passed", () => {
-    const pipeline = deriveStagePipeline(baseInput({ workMode: "in_editor", prNumber: 1 }));
-    expect(find(pipeline, "dev")).toEqual({ stage: "dev", state: "passed" });
-  });
-
   it("precedence: an opened PR wins over a blocked status", () => {
     const pipeline = deriveStagePipeline(baseInput({ prNumber: 7, status: "blocked" }));
     expect(find(pipeline, "dev").state).toBe("passed");
@@ -110,6 +91,28 @@ describe("deriveStagePipeline — qa stage", () => {
 
   it("is running when a qa task is attributed as running", () => {
     const pipeline = deriveStagePipeline(baseInput({ runningTaskStages: ["qa"] }));
+    expect(find(pipeline, "qa").state).toBe("running");
+  });
+
+  it("shows a fresh QA rerun as running even while the previous fail label remains", () => {
+    const pipeline = deriveStagePipeline(
+      baseInput({
+        status: "in_review",
+        labels: [{ name: "qa:fail" }],
+        runningTaskStages: ["qa"],
+      }),
+    );
+    expect(find(pipeline, "qa").state).toBe("running");
+  });
+
+  it("shows a fresh QA rerun as running even while the previous blocked label remains", () => {
+    const pipeline = deriveStagePipeline(
+      baseInput({
+        status: "in_review",
+        labels: [{ name: "qa:blocked" }],
+        runningTaskStages: ["qa"],
+      }),
+    );
     expect(find(pipeline, "qa").state).toBe("running");
   });
 
@@ -256,18 +259,18 @@ describe("deriveStagePipeline — review stage v2 (agent reviews, human approves
     expect(find(pipeline, "review").state).toBe("pending");
   });
 
-  it("is active 'merging…' once merge:approved is stamped", () => {
+  it("is active 'approved' once merge:approved is stamped", () => {
     const pipeline = deriveStagePipeline(
       baseInput({ labels: [{ name: "merge:approved" }, { name: "qa:pass" }] }),
     );
-    expect(find(pipeline, "review")).toMatchObject({ state: "active", detail: "merging…" });
+    expect(find(pipeline, "review")).toMatchObject({ state: "active", detail: "approved" });
   });
 
   it("precedence: merge:approved wins over review:fail (the human decided)", () => {
     const pipeline = deriveStagePipeline(
       baseInput({ labels: [{ name: "merge:approved" }, { name: "review:fail" }] }),
     );
-    expect(find(pipeline, "review")).toMatchObject({ state: "active", detail: "merging…" });
+    expect(find(pipeline, "review")).toMatchObject({ state: "active", detail: "approved" });
   });
 
   it("precedence: merge:override wins over merge:approved", () => {

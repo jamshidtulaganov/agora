@@ -743,8 +743,8 @@ func (h *Handler) SearchIssues(w http.ResponseWriter, r *http.Request) {
 // issueVisibilityRestriction returns the user id that an issue list must be
 // scoped to when the caller is NOT a workspace owner. Owners see every issue in
 // the workspace; everyone else (admin or member) sees only issues that are
-// theirs — assigned to them directly, to an agent they own, or to a squad they
-// (or an agent they own) belong to / lead. The returned UUID feeds the
+// theirs — created by them, assigned to them directly, to an agent they own, or
+// to a squad they (or an agent they own) belong to / lead. The returned UUID feeds the
 // restrict_to_user narg; an unset UUID (Valid=false) disables the gate.
 //
 // Fail-CLOSED: only a confirmed `owner` role gets an unrestricted view. A member
@@ -786,14 +786,16 @@ func (h *Handler) issueVisibilityRestriction(r *http.Request) pgtype.UUID {
 
 // issueOwnershipClause returns a dynamic-SQL WHERE fragment (an AND-gate) that
 // keeps only issues owned by the user bound to `ref` (a $N placeholder already
-// registered in the caller's args): assigned to them directly (member), to an
-// agent they own, or to a squad they (or an agent they own) belong to / lead.
+// registered in the caller's args): created by them, assigned to them directly
+// (member), to an agent they own, or to a squad they (or an agent they own)
+// belong to / lead.
 // `wsRef` is the placeholder holding the workspace id ("$1" for the list/board
 // builders, "$4" for search). Shared by the paged list, the grouped board, and
 // search so the non-owner visibility gate is identical everywhere.
 func issueOwnershipClause(ref, wsRef string) string {
 	return fmt.Sprintf(`(
-    (i.assignee_type = 'member' AND i.assignee_id = %[1]s::uuid)
+    (i.creator_type = 'member' AND i.creator_id = %[1]s::uuid)
+    OR (i.assignee_type = 'member' AND i.assignee_id = %[1]s::uuid)
     OR (i.assignee_type = 'agent' AND i.assignee_id IN (
           SELECT a.id FROM agent a WHERE a.workspace_id = %[2]s AND a.owner_id = %[1]s::uuid))
     OR (i.assignee_type = 'squad' AND i.assignee_id IN (
@@ -2927,7 +2929,8 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	// — automating the QA team's previously-manual smoke. Detached + best-effort
 	// (AGORA_AUTO_QA_ENABLED); guarded to a genuine prev!=in_review→in_review
 	// transition so it runs once per entry.
-	if statusChanged && issue.Status == "in_review" && prevIssue.Status != "in_review" {
+	if statusChanged && issue.Status == "in_review" && prevIssue.Status != "in_review" &&
+		!h.orchestrationOwnsIssuePipeline(r.Context(), issue.ID) {
 		// Sequential in ONE goroutine: run_qa (the gate) fires FIRST and enqueues
 		// a task for its QA agent; gen_test_cases then picks a DIFFERENT QA agent
 		// (one with no pending task on this issue) so the per-(issue,agent) dedup
@@ -2956,7 +2959,8 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	// against the project QA manifest IN THE BACKGROUND, while the dev agent
 	// is still implementing — so the in_review gate only executes a suite that
 	// is already sitting ready. Idempotent (skips when cases exist).
-	if statusChanged && issue.Status == "in_progress" && prevIssue.Status != "in_progress" {
+	if statusChanged && issue.Status == "in_progress" && prevIssue.Status != "in_progress" &&
+		!h.orchestrationOwnsIssuePipeline(r.Context(), issue.ID) {
 		safeGo("autoGenTests:in_progress", func() {
 			h.maybeGenTests(context.Background(), issue, actorType, actorID, true)
 		})

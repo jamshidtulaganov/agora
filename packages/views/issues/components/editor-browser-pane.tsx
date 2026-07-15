@@ -1,14 +1,16 @@
-/* eslint-disable i18next/no-literal-string -- co-code editor surface; i18n follow-up */
+/* eslint-disable i18next/no-literal-string -- low-level QA browser controls */
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { RotateCw, Loader2, TriangleAlert, Globe, Copy, Check, ChevronUp, ChevronDown, Trash2 } from "lucide-react";
-import { proxyHeaders, absoluteBase } from "./editor-proxy-fetch";
+import { RotateCw, Loader2, TriangleAlert, Globe, ChevronUp, ChevronDown, Trash2 } from "lucide-react";
+import { Button } from "@agora/ui/components/ui/button";
+import { Input } from "@agora/ui/components/ui/input";
+import { daemonProxyHeaders as proxyHeaders, absoluteDaemonBase as absoluteBase } from "./daemon-proxy-fetch";
 
 // Embedded browser ("general browser pane"). Opens a WebSocket to the daemon,
 // which screencasts a headless Chromium (CDP) — frames render here, and mouse /
 // keyboard / navigation are forwarded back, so it's an interactive browser
-// inside the editor. It loads any URL (incl. the dev-server preview), and the
+// inside the QA surface. It loads the configured QA target, and the
 // same Chromium is what an automation script attaches to via
 // `connectOverCDP(<cdp_url>)` — so you watch the automation run. Self-host only.
 
@@ -33,40 +35,28 @@ const MAX_INSPECTOR_EVENTS = 200;
 // same-origin path base (cloud: /browser/proxy/<token> — the backend
 // reverse-proxies to the remote daemon). Normalize to absolute so the
 // http→ws scheme swap for the stream URL works in both shapes.
-// proxyHeaders / absoluteBase now live in editor-proxy-fetch (shared with the
-// preview / changes / review-bar panes, which need the same cloud-vs-self-host
-// request shaping).
+// proxyHeaders / absoluteBase live in daemon-proxy-fetch (shared with the
+// artifact runtime panels, which need the same cloud-vs-self-host request shaping).
 
 export function EditorBrowserPane({
   daemonUrl,
   workdir,
   initialUrl,
-  autoPreview,
 }: {
   daemonUrl: string;
   workdir: string;
-  // When set, the browser navigates straight here on connect instead of
-  // showing the blank "type a URL" state. Used by QA to point the CDP
+  // The browser navigates straight here on connect. Used by QA to point the CDP
   // Chromium at a deployed target (e.g. agora.sdteam.uz) that a plain iframe
   // can't embed (its CSP frame-ancestors blanks cross-origin embeds; a real
   // top-level navigation isn't subject to it).
-  initialUrl?: string;
-  // When set (and no initialUrl), auto-START the dev server for `workdir` via
-  // the daemon on connect and navigate to its 127.0.0.1 URL — no manual "Load
-  // dev preview" click. Used by QA's local-worktree lane so opening the review
-  // brings the app up on localhost by itself. Boot can take up to ~40s.
-  autoPreview?: boolean;
+  initialUrl: string;
 }) {
-  const [address, setAddress] = useState(initialUrl ?? "");
-  const [autoBooting, setAutoBooting] = useState(false);
+  const [address, setAddress] = useState(initialUrl);
   const [state, setState] = useState<StreamState>("connecting");
   const [err, setErr] = useState("");
-  const [cdpUrl, setCdpUrl] = useState("");
   const [frame, setFrame] = useState("");
-  const [copied, setCopied] = useState(false);
   const [nonce, setNonce] = useState(0);
   const [hasNavigated, setHasNavigated] = useState(false);
-  const [note, setNote] = useState("");
   const [events, setEvents] = useState<InspectorEvent[]>([]);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   // The strip auto-expands when the first error lands (a tester shouldn't
@@ -94,35 +84,6 @@ export function EditorBrowserPane({
     setEvents([]);
     setInspectorOpen(false);
     userCollapsedRef.current = false;
-    // Auto-start the dev server for this workdir and drive the browser to it.
-    // POST /editor/preview is idempotent — it reuses an already-running server,
-    // else detects the command, installs deps, and returns the bound URL.
-    const bootPreview = async (ws: WebSocket) => {
-      setAutoBooting(true);
-      setNote("");
-      try {
-        const r = await fetch(`${base}/editor/preview`, {
-          method: "POST",
-          headers: proxyHeaders(daemonUrl),
-          body: JSON.stringify({ workdir }),
-        });
-        const s = (await r.json()) as { url?: string; needs_command?: boolean; error?: string };
-        if (closed) return;
-        if (s.url) {
-          setAddress(s.url);
-          setHasNavigated(true);
-          ws.send(JSON.stringify({ type: "navigate", url: s.url }));
-        } else if (s.needs_command) {
-          setNote("Could not auto-detect the dev command — start the app from the Preview tab.");
-        } else {
-          setNote(s.error || "Could not start the dev server.");
-        }
-      } catch {
-        if (!closed) setNote("Could not reach the daemon to start the preview.");
-      } finally {
-        if (!closed) setAutoBooting(false);
-      }
-    };
     void (async () => {
       try {
         const r = await fetch(`${base}/editor/browser/start`, {
@@ -137,7 +98,6 @@ export function EditorBrowserPane({
           setErr(d.error);
           return;
         }
-        if (d.cdp_url) setCdpUrl(d.cdp_url);
       } catch {
         if (!closed) {
           setState("error");
@@ -160,10 +120,6 @@ export function EditorBrowserPane({
         if (target) {
           setHasNavigated(true);
           ws.send(JSON.stringify({ type: "navigate", url: target }));
-        } else if (autoPreview) {
-          // Blank first (never flash Chromium's start page), then boot + navigate.
-          ws.send(JSON.stringify({ type: "navigate", url: "about:blank" }));
-          void bootPreview(ws);
         } else {
           ws.send(JSON.stringify({ type: "navigate", url: "about:blank" }));
         }
@@ -229,7 +185,7 @@ export function EditorBrowserPane({
         frameUrlRef.current = "";
       }
     };
-  }, [daemonUrl, workdir, nonce, initialUrl, autoPreview]);
+  }, [daemonUrl, workdir, nonce, initialUrl]);
 
   const toCdp = (e: React.MouseEvent) => {
     const img = imgRef.current;
@@ -285,40 +241,8 @@ export function EditorBrowserPane({
     send({ type: "navigate", url: u });
   };
 
-  // Jump straight to the running dev-server preview — the thing a vibecoder
-  // most often wants to see in a full browser.
-  const loadPreview = async () => {
-    setNote("");
-    try {
-      const r = await fetch(`${absoluteBase(daemonUrl)}/editor/preview/status`, {
-        method: "POST",
-        headers: proxyHeaders(daemonUrl),
-        body: JSON.stringify({ workdir }),
-      });
-      const s = (await r.json()) as { running?: boolean; url?: string };
-      if (s.running && s.url) {
-        setAddress(s.url);
-        setHasNavigated(true);
-        send({ type: "navigate", url: s.url });
-      } else {
-        setNote("No dev server running — start one in the Preview tab first.");
-      }
-    } catch {
-      setNote("Could not reach the daemon.");
-    }
-  };
-
-  const copyCdp = () => {
-    void navigator.clipboard?.writeText(cdpUrl);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1500);
-  };
-
   const consoleCount = events.filter((e) => e.kind === "console").length;
   const networkCount = events.filter((e) => e.kind === "network").length;
-
-  const iconBtn =
-    "shrink-0 rounded-md border border-border p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground";
 
   return (
     <div className="flex min-w-0 flex-1 flex-col bg-background">
@@ -326,124 +250,89 @@ export function EditorBrowserPane({
         onSubmit={go}
         className="flex shrink-0 items-center gap-1.5 border-b border-border px-2 py-1.5"
       >
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="icon-sm"
           onClick={() => send({ type: "reload" })}
           title="Reload"
-          className={iconBtn}
+          aria-label="Reload QA target"
         >
           <RotateCw className="h-3.5 w-3.5" />
-        </button>
-        <input
+        </Button>
+        <Input
           value={address}
           onChange={(e) => setAddress(e.target.value)}
           placeholder="Enter a URL (e.g. localhost:3000) and press Enter"
           spellCheck={false}
-          className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 font-mono text-xs outline-none focus:border-primary/50"
+          aria-label="QA target URL"
+          className="min-w-0 flex-1 font-mono text-xs"
         />
-        <button
-          type="submit"
-          className="shrink-0 rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-        >
+        <Button type="submit" size="sm" className="shrink-0">
           Go
-        </button>
-        {cdpUrl && (
-          <button
-            type="button"
-            onClick={copyCdp}
-            title={`Automation: connectOverCDP("${cdpUrl}")`}
-            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border px-1.5 py-1 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            {copied ? (
-              <Check className="h-3 w-3 text-emerald-500" />
-            ) : (
-              <Copy className="h-3 w-3" />
-            )}
-            CDP
-          </button>
-        )}
+        </Button>
       </form>
 
       <div
         tabIndex={0}
         onKeyDown={onKey}
-        className="relative min-h-0 flex-1 overflow-auto bg-neutral-900 outline-none"
+        aria-label="Interactive QA browser"
+        className="relative min-h-0 flex-1 overflow-auto bg-neutral-900 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         {state === "live" && frame ? (
           <>
-          <img
-            ref={imgRef}
-            src={frame}
-            alt="browser"
-            draggable={false}
-            onMouseMove={(e) => {
-              const { x, y } = toCdp(e);
-              send({ type: "mouse", cdpType: "mouseMoved", x, y });
-            }}
-            onMouseDown={(e) => {
-              const { x, y } = toCdp(e);
-              send({
-                type: "mouse",
-                cdpType: "mousePressed",
-                x,
-                y,
-                button: btn(e),
-                clickCount: 1,
-              });
-            }}
-            onMouseUp={(e) => {
-              const { x, y } = toCdp(e);
-              send({
-                type: "mouse",
-                cdpType: "mouseReleased",
-                x,
-                y,
-                button: btn(e),
-                clickCount: 1,
-              });
-            }}
-            onWheel={(e) => {
-              const { x, y } = toCdp(e);
-              send({ type: "wheel", x, y, deltaX: e.deltaX, deltaY: e.deltaY });
-            }}
-            onContextMenu={(e) => e.preventDefault()}
-            className="w-full select-none"
-          />
-          {!hasNavigated ? (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/85">
-              <div className="pointer-events-auto flex flex-col items-center gap-2 px-6 text-center text-xs text-muted-foreground">
-                {autoBooting ? (
-                  <>
-                    <Loader2 className="h-6 w-6 animate-spin" />
-                    <span>Starting the dev server on this daemon…</span>
-                  </>
-                ) : (
-                  <>
-                    <Globe className="h-6 w-6" />
-                    <span>Type a URL above to browse the web —</span>
-                    <button
-                      type="button"
-                      onClick={() => void loadPreview()}
-                      className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-                    >
-                      Load dev preview
-                    </button>
-                  </>
-                )}
-                {note && (
-                  <span className="text-[10px] text-amber-600 dark:text-amber-400">
-                    {note}
-                  </span>
-                )}
+            <img
+              ref={imgRef}
+              src={frame}
+              alt="QA target preview"
+              draggable={false}
+              onMouseMove={(e) => {
+                const { x, y } = toCdp(e);
+                send({ type: "mouse", cdpType: "mouseMoved", x, y });
+              }}
+              onMouseDown={(e) => {
+                const { x, y } = toCdp(e);
+                send({
+                  type: "mouse",
+                  cdpType: "mousePressed",
+                  x,
+                  y,
+                  button: btn(e),
+                  clickCount: 1,
+                });
+              }}
+              onMouseUp={(e) => {
+                const { x, y } = toCdp(e);
+                send({
+                  type: "mouse",
+                  cdpType: "mouseReleased",
+                  x,
+                  y,
+                  button: btn(e),
+                  clickCount: 1,
+                });
+              }}
+              onWheel={(e) => {
+                const { x, y } = toCdp(e);
+                send({ type: "wheel", x, y, deltaX: e.deltaX, deltaY: e.deltaY });
+              }}
+              onContextMenu={(e) => e.preventDefault()}
+              className="w-full select-none"
+            />
+            {!hasNavigated ? (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/85">
+                <div className="pointer-events-auto flex flex-col items-center gap-2 px-6 text-center text-xs text-muted-foreground">
+                  <Globe className="h-6 w-6" />
+                  <span>Enter a QA target URL above.</span>
+                </div>
               </div>
-            </div>
-          ) : null}
+            ) : null}
           </>
         ) : (
           <div className="flex h-full items-center justify-center p-4 text-center text-xs text-muted-foreground">
             {state === "connecting" ? (
               <span className="inline-flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
                 starting Chromium…
               </span>
             ) : state === "error" ? (
@@ -458,7 +347,7 @@ export function EditorBrowserPane({
                 <button
                   type="button"
                   onClick={() => setNonce((n) => n + 1)}
-                  className="underline hover:no-underline"
+                  className="rounded-sm underline outline-none hover:no-underline focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   reconnect
                 </button>
@@ -475,31 +364,36 @@ export function EditorBrowserPane({
           even while collapsed. */}
       <div className="shrink-0 border-t border-border bg-background">
         <div className="flex items-center gap-2 px-2 py-1">
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={() =>
               setInspectorOpen((o) => {
                 userCollapsedRef.current = o; // closing = explicit user choice
                 return !o;
               })
             }
-            className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="h-6 gap-1.5 px-1.5 text-[10px] text-muted-foreground"
           >
             {inspectorOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
             Console
             <span className={consoleCount > 0 ? "text-destructive" : ""}>{consoleCount}</span>
             · Network
             <span className={networkCount > 0 ? "text-destructive" : ""}>{networkCount}</span>
-          </button>
+          </Button>
           {events.length > 0 && (
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               onClick={() => setEvents([])}
               title="Clear"
-              className="ml-auto rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              aria-label="Clear QA browser errors"
+              className="ml-auto text-muted-foreground"
             >
               <Trash2 className="h-3 w-3" />
-            </button>
+            </Button>
           )}
         </div>
         {inspectorOpen && (

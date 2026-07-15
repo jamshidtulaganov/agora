@@ -68,6 +68,7 @@ export interface ChatTimelineItem {
 }
 
 export interface ChatState {
+  identityId: string | null;
   isOpen: boolean;
   activeSessionId: string | null;
   selectedAgentId: string | null;
@@ -77,6 +78,7 @@ export interface ChatState {
   chatWidth: number;
   chatHeight: number;
   isExpanded: boolean;
+  setIdentity: (identityId: string | null) => void;
   setOpen: (open: boolean) => void;
   toggle: () => void;
   setActiveSession: (id: string | null) => void;
@@ -96,9 +98,9 @@ export interface ChatStoreOptions {
 export function createChatStore(options: ChatStoreOptions) {
   const { storage } = options;
 
-  const wsKey = (base: string) => {
+  const identityWorkspaceKey = (base: string, identityId: string | null) => {
     const slug = getCurrentSlug();
-    return slug ? `${base}:${slug}` : base;
+    return slug && identityId ? `${base}:${identityId}:${slug}` : null;
   };
 
   // Resolve initial isOpen from storage. The three-state read (null /
@@ -108,13 +110,30 @@ export function createChatStore(options: ChatStoreOptions) {
   const initialIsOpen = storedOpen === null ? true : storedOpen === "true";
 
   const store = create<ChatState>((set, get) => ({
+    identityId: null,
     isOpen: initialIsOpen,
-    activeSessionId: storage.getItem(wsKey(SESSION_STORAGE_KEY)),
-    selectedAgentId: storage.getItem(wsKey(AGENT_STORAGE_KEY)),
-    inputDrafts: readDrafts(storage, wsKey(DRAFTS_KEY)),
+    // User-owned values stay empty until AuthInitializer establishes the
+    // authenticated identity. Workspace-only keys leaked another user's
+    // session and drafts when a browser profile was reused.
+    activeSessionId: null,
+    selectedAgentId: null,
+    inputDrafts: {},
     chatWidth: Number(storage.getItem(CHAT_WIDTH_KEY)) || CHAT_DEFAULT_W,
     chatHeight: Number(storage.getItem(CHAT_HEIGHT_KEY)) || CHAT_DEFAULT_H,
-    isExpanded: storage.getItem(wsKey(CHAT_EXPANDED_KEY)) === "true",
+    isExpanded: false,
+    setIdentity: (identityId) => {
+      const sessionKey = identityWorkspaceKey(SESSION_STORAGE_KEY, identityId);
+      const agentKey = identityWorkspaceKey(AGENT_STORAGE_KEY, identityId);
+      const draftsKey = identityWorkspaceKey(DRAFTS_KEY, identityId);
+      const expandedKey = identityWorkspaceKey(CHAT_EXPANDED_KEY, identityId);
+      set({
+        identityId,
+        activeSessionId: sessionKey ? storage.getItem(sessionKey) : null,
+        selectedAgentId: agentKey ? storage.getItem(agentKey) : null,
+        inputDrafts: draftsKey ? readDrafts(storage, draftsKey) : {},
+        isExpanded: expandedKey ? storage.getItem(expandedKey) === "true" : false,
+      });
+    },
     setOpen: (open) => {
       logger.debug("setOpen", { from: get().isOpen, to: open });
       storage.setItem(OPEN_KEY, String(open));
@@ -128,23 +147,25 @@ export function createChatStore(options: ChatStoreOptions) {
     },
     setActiveSession: (id) => {
       logger.info("setActiveSession", { from: get().activeSessionId, to: id });
-      if (id) {
-        storage.setItem(wsKey(SESSION_STORAGE_KEY), id);
-      } else {
-        storage.removeItem(wsKey(SESSION_STORAGE_KEY));
+      const key = identityWorkspaceKey(SESSION_STORAGE_KEY, get().identityId);
+      if (key) {
+        if (id) storage.setItem(key, id);
+        else storage.removeItem(key);
       }
       set({ activeSessionId: id });
     },
     setSelectedAgentId: (id) => {
       logger.info("setSelectedAgentId", { from: get().selectedAgentId, to: id });
-      storage.setItem(wsKey(AGENT_STORAGE_KEY), id);
+      const key = identityWorkspaceKey(AGENT_STORAGE_KEY, get().identityId);
+      if (key) storage.setItem(key, id);
       set({ selectedAgentId: id });
     },
     setInputDraft: (sessionId, draft) => {
       // Debug level — onUpdate fires on every keystroke.
       logger.debug("setInputDraft", { sessionId, length: draft.length });
       const next = { ...get().inputDrafts, [sessionId]: draft };
-      writeDrafts(storage, wsKey(DRAFTS_KEY), next);
+      const key = identityWorkspaceKey(DRAFTS_KEY, get().identityId);
+      if (key) writeDrafts(storage, key, next);
       set({ inputDrafts: next });
     },
     clearInputDraft: (sessionId) => {
@@ -156,7 +177,8 @@ export function createChatStore(options: ChatStoreOptions) {
       logger.info("clearInputDraft", { sessionId });
       const next = { ...current };
       delete next[sessionId];
-      writeDrafts(storage, wsKey(DRAFTS_KEY), next);
+      const key = identityWorkspaceKey(DRAFTS_KEY, get().identityId);
+      if (key) writeDrafts(storage, key, next);
       set({ inputDrafts: next });
     },
     setChatSize: (w, h) => {
@@ -164,24 +186,30 @@ export function createChatStore(options: ChatStoreOptions) {
       storage.setItem(CHAT_WIDTH_KEY, String(w));
       storage.setItem(CHAT_HEIGHT_KEY, String(h));
       // Dragging = user chose a manual size → exit expanded mode
-      storage.removeItem(wsKey(CHAT_EXPANDED_KEY));
+      const key = identityWorkspaceKey(CHAT_EXPANDED_KEY, get().identityId);
+      if (key) storage.removeItem(key);
       set({ chatWidth: w, chatHeight: h, isExpanded: false });
     },
     setExpanded: (expanded) => {
       logger.info("setExpanded", { to: expanded });
-      if (expanded) {
-        storage.setItem(wsKey(CHAT_EXPANDED_KEY), "true");
-      } else {
-        storage.removeItem(wsKey(CHAT_EXPANDED_KEY));
+      const key = identityWorkspaceKey(CHAT_EXPANDED_KEY, get().identityId);
+      if (key) {
+        if (expanded) storage.setItem(key, "true");
+        else storage.removeItem(key);
       }
       set({ isExpanded: expanded });
     },
   }));
 
   registerForWorkspaceRehydration(() => {
-    const nextSession = storage.getItem(wsKey(SESSION_STORAGE_KEY));
-    const nextAgent = storage.getItem(wsKey(AGENT_STORAGE_KEY));
-    const nextDrafts = readDrafts(storage, wsKey(DRAFTS_KEY));
+    const identityId = store.getState().identityId;
+    const sessionKey = identityWorkspaceKey(SESSION_STORAGE_KEY, identityId);
+    const agentKey = identityWorkspaceKey(AGENT_STORAGE_KEY, identityId);
+    const draftsKey = identityWorkspaceKey(DRAFTS_KEY, identityId);
+    const expandedKey = identityWorkspaceKey(CHAT_EXPANDED_KEY, identityId);
+    const nextSession = sessionKey ? storage.getItem(sessionKey) : null;
+    const nextAgent = agentKey ? storage.getItem(agentKey) : null;
+    const nextDrafts = draftsKey ? readDrafts(storage, draftsKey) : {};
     logger.info("workspace rehydration", {
       prevSession: store.getState().activeSessionId,
       nextSession,
@@ -193,6 +221,7 @@ export function createChatStore(options: ChatStoreOptions) {
       activeSessionId: nextSession,
       selectedAgentId: nextAgent,
       inputDrafts: nextDrafts,
+      isExpanded: expandedKey ? storage.getItem(expandedKey) === "true" : false,
     });
   });
 

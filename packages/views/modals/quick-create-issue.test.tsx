@@ -10,6 +10,7 @@ const mockSetPrompt = vi.hoisted(() => vi.fn());
 const mockClearPrompt = vi.hoisted(() => vi.fn());
 const mockSetKeepOpen = vi.hoisted(() => vi.fn());
 const mockSetLastMode = vi.hoisted(() => vi.fn());
+const mockSetIssueDraft = vi.hoisted(() => vi.fn());
 const mockToastSuccess = vi.hoisted(() => vi.fn());
 const mockUploadWithToast = vi.hoisted(() => vi.fn());
 
@@ -102,6 +103,12 @@ vi.mock("@agora/core/issues/stores/quick-create-store", () => ({
 vi.mock("@agora/core/issues/stores/create-mode-store", () => ({
   useCreateModeStore: (selector?: (state: { setLastMode: typeof mockSetLastMode }) => unknown) =>
     (selector ? selector({ setLastMode: mockSetLastMode }) : { setLastMode: mockSetLastMode }),
+}));
+
+vi.mock("@agora/core/issues/stores/draft-store", () => ({
+  useIssueDraftStore: {
+    getState: () => ({ setDraft: mockSetIssueDraft }),
+  },
 }));
 
 vi.mock("@agora/core/auth", () => ({
@@ -359,6 +366,60 @@ describe("AgentCreatePanel", () => {
     expect(mockClearPrompt).toHaveBeenCalled();
     expect(mockSetLastMode).toHaveBeenCalledWith("agent");
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("maps the first prompt line to title and clears the hidden actor when switching to manual", async () => {
+    const user = userEvent.setup();
+    const onSwitchMode = vi.fn();
+
+    renderPanel({
+      onClose: vi.fn(),
+      onSwitchMode,
+      isExpanded: false,
+      setIsExpanded: vi.fn(),
+    });
+
+    const editor = screen.getByPlaceholderText(
+      'Tell the agent what to do, e.g. "let Bohan fix the inbox loading slowness in the Web project"',
+    );
+    await user.clear(editor);
+    await user.type(editor, "Fix orchestration race\n\nKeep every worker on the pinned base SHA");
+    await user.click(screen.getByRole("button", { name: /Switch to Manual/i }));
+
+    expect(mockSetIssueDraft).toHaveBeenCalledWith({
+      title: "Fix orchestration race",
+      description: "Keep every worker on the pinned base SHA",
+      assigneeType: undefined,
+      assigneeId: undefined,
+    });
+    expect(onSwitchMode).toHaveBeenCalledWith(
+      expect.objectContaining({ assignee_type: null, assignee_id: null }),
+    );
+  });
+
+  it("restores exact manual fields when switching back without editing the agent prompt", async () => {
+    const user = userEvent.setup();
+
+    renderPanel({
+      onClose: vi.fn(),
+      onSwitchMode: vi.fn(),
+      data: {
+        prompt: "Original title\n\nOriginal body",
+        manual_title: "Original title",
+        manual_description: "Original body",
+      },
+      isExpanded: false,
+      setIsExpanded: vi.fn(),
+    });
+
+    await user.click(screen.getByRole("button", { name: /Switch to Manual/i }));
+
+    expect(mockSetIssueDraft).toHaveBeenCalledWith({
+      title: "Original title",
+      description: "Original body",
+      assigneeType: undefined,
+      assigneeId: undefined,
+    });
   });
 
   it("passes referenced upload attachment ids to quick-create", async () => {

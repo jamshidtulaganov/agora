@@ -153,6 +153,17 @@ func (c *Client) Token() string {
 	return c.token
 }
 
+// VerifyArtifactCapability asks the Agora control plane to introspect an opaque
+// browser capability. Local source paths and exact Git refs are returned only
+// to the authenticated daemon, never to the browser.
+func (c *Client) VerifyArtifactCapability(ctx context.Context, token, purpose string) (ArtifactCapabilityGrant, error) {
+	var grant ArtifactCapabilityGrant
+	err := c.postJSON(ctx, "/api/daemon/artifact-capabilities/verify", map[string]string{
+		"token": token, "purpose": purpose,
+	}, &grant)
+	return grant, err
+}
+
 func (c *Client) ClaimTask(ctx context.Context, runtimeID string) (*Task, error) {
 	var resp struct {
 		Task *Task `json:"task"`
@@ -206,7 +217,7 @@ func (c *Client) ReportTaskMessages(ctx context.Context, taskID string, messages
 	}, nil)
 }
 
-func (c *Client) CompleteTask(ctx context.Context, taskID, output, branchName, sessionID, workDir string) error {
+func (c *Client) CompleteTask(ctx context.Context, taskID, output, branchName, sessionID, workDir, baseSHA, headSHA, mergeStatus string, conflictFiles []string, integrationStatus string, integratedHeadSHAs, missingHeadSHAs []string, gitStates []RepoGitState) error {
 	body := map[string]any{"output": output}
 	if branchName != "" {
 		body["branch_name"] = branchName
@@ -217,7 +228,44 @@ func (c *Client) CompleteTask(ctx context.Context, taskID, output, branchName, s
 	if workDir != "" {
 		body["work_dir"] = workDir
 	}
+	if baseSHA != "" {
+		body["base_sha"] = baseSHA
+	}
+	if headSHA != "" {
+		body["head_sha"] = headSHA
+	}
+	if mergeStatus != "" {
+		body["merge_status"] = mergeStatus
+	}
+	if len(conflictFiles) > 0 {
+		body["conflict_files"] = conflictFiles
+	}
+	if integrationStatus != "" {
+		body["integration_status"] = integrationStatus
+	}
+	if len(integratedHeadSHAs) > 0 {
+		body["integrated_head_shas"] = integratedHeadSHAs
+	}
+	if len(missingHeadSHAs) > 0 {
+		body["missing_head_shas"] = missingHeadSHAs
+	}
+	if len(gitStates) > 0 {
+		body["git_states"] = gitStates
+	}
 	return c.postJSONWithRetry(ctx, fmt.Sprintf("/api/daemon/tasks/%s/complete", taskID), body, nil, defaultTerminalRetrySchedule)
+}
+
+// PinOrchestrationBase proposes the local repository HEADs for an
+// orchestration run. The server atomically accepts the first proposal and
+// always returns the canonical snapshot so parallel workers converge.
+func (c *Client) PinOrchestrationBase(ctx context.Context, taskID string, proposed []OrchestrationGitHead) ([]OrchestrationGitHead, error) {
+	var response struct {
+		BaseRefs []OrchestrationGitHead `json:"base_refs"`
+	}
+	if err := c.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/orchestration-base", taskID), map[string]any{"base_refs": proposed}, &response); err != nil {
+		return nil, err
+	}
+	return response.BaseRefs, nil
 }
 
 func (c *Client) ReportTaskUsage(ctx context.Context, taskID string, usage []TaskUsageEntry) error {

@@ -8,28 +8,34 @@ import {
 } from "lucide-react";
 import { Button } from "@agora/ui/components/ui/button";
 import { api } from "@agora/core/api";
+import { useConfigStore } from "@agora/core/config";
 import type { RuntimeUpdateStatus } from "@agora/core/types";
 import { useT } from "../../i18n";
 
-const GITHUB_RELEASES_URL =
-  "https://api.github.com/repos/jamshidtulaganov/agora-cli/releases/latest";
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 let cachedLatestVersion: string | null = null;
 let cachedAt = 0;
+let cachedReleasesUrl = "";
 
-async function fetchLatestVersion(): Promise<string | null> {
-  if (cachedLatestVersion && Date.now() - cachedAt < CACHE_TTL_MS) {
+async function fetchLatestVersion(releasesUrl: string): Promise<string | null> {
+  if (!releasesUrl) return null;
+  if (
+    cachedReleasesUrl === releasesUrl &&
+    cachedLatestVersion &&
+    Date.now() - cachedAt < CACHE_TTL_MS
+  ) {
     return cachedLatestVersion;
   }
   try {
-    const resp = await fetch(GITHUB_RELEASES_URL, {
+    const resp = await fetch(releasesUrl, {
       headers: { Accept: "application/vnd.github+json" },
     });
     if (!resp.ok) return null;
     const data = await resp.json();
     cachedLatestVersion = data.tag_name ?? null;
     cachedAt = Date.now();
+    cachedReleasesUrl = releasesUrl;
     return cachedLatestVersion;
   } catch {
     return null;
@@ -83,6 +89,7 @@ export function UpdateSection({
   launchedBy,
 }: UpdateSectionProps) {
   const { t } = useT("runtimes");
+  const releasesUrl = useConfigStore((state) => state.cliReleasesUrl);
   const isManaged = launchedBy === "desktop";
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [status, setStatus] = useState<RuntimeUpdateStatus | null>(null);
@@ -103,8 +110,8 @@ export function UpdateSection({
 
   // Fetch latest version on mount.
   useEffect(() => {
-    fetchLatestVersion().then(setLatestVersion);
-  }, []);
+    fetchLatestVersion(releasesUrl).then(setLatestVersion);
+  }, [releasesUrl]);
 
   const markCompleted = useCallback(
     (message: string) => {

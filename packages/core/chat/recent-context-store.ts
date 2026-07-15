@@ -23,10 +23,16 @@ export interface RecentContextEntry {
 }
 
 interface RecentContextState {
+  identityId: string | null;
   byWorkspace: Record<string, RecentContextEntry[]>;
+  setIdentity: (identityId: string | null) => void;
   recordVisit: (wsId: string, entry: Pick<RecentContextEntry, "type" | "id"> & Partial<Pick<RecentContextEntry, "label" | "subtitle" | "status" | "projectStatus" | "icon">>) => void;
   forgetContext: (wsId: string, entry: Pick<RecentContextEntry, "type" | "id">) => void;
   pruneWorkspaces: (activeWsIds: string[]) => void;
+}
+
+function bucketKey(identityId: string | null, wsId: string): string | null {
+  return identityId ? `${identityId}:${wsId}` : null;
 }
 
 function entryKey(entry: Pick<RecentContextEntry, "type" | "id">): string {
@@ -36,12 +42,16 @@ function entryKey(entry: Pick<RecentContextEntry, "type" | "id">): string {
 export const useRecentContextStore = create<RecentContextState>()(
   persist(
     (set) => ({
+      identityId: null,
       byWorkspace: {},
+      setIdentity: (identityId) => set({ identityId }),
       recordVisit: (wsId, entry) =>
         set((state) => {
-          const bucket = state.byWorkspace[wsId] ?? EMPTY;
-          const key = entryKey(entry);
-          const filtered = bucket.filter((item) => entryKey(item) !== key);
+          const bucketId = bucketKey(state.identityId, wsId);
+          if (!bucketId) return state;
+          const bucket = state.byWorkspace[bucketId] ?? EMPTY;
+          const itemKey = entryKey(entry);
+          const filtered = bucket.filter((item) => entryKey(item) !== itemKey);
           const updated: RecentContextEntry = {
             type: entry.type,
             id: entry.id,
@@ -56,7 +66,7 @@ export const useRecentContextStore = create<RecentContextState>()(
 
           let nextByWorkspace = {
             ...state.byWorkspace,
-            [wsId]: nextBucket,
+            [bucketId]: nextBucket,
           };
 
           const ids = Object.keys(nextByWorkspace);
@@ -74,27 +84,34 @@ export const useRecentContextStore = create<RecentContextState>()(
         }),
       forgetContext: (wsId, entry) =>
         set((state) => {
-          const bucket = state.byWorkspace[wsId];
+          const bucketId = bucketKey(state.identityId, wsId);
+          if (!bucketId) return state;
+          const bucket = state.byWorkspace[bucketId];
           if (!bucket) return state;
-          const key = entryKey(entry);
-          const nextBucket = bucket.filter((item) => entryKey(item) !== key);
+          const itemKey = entryKey(entry);
+          const nextBucket = bucket.filter((item) => entryKey(item) !== itemKey);
           if (nextBucket.length === bucket.length) return state;
           if (nextBucket.length === 0) {
-            const { [wsId]: _, ...rest } = state.byWorkspace;
+            const { [bucketId]: _, ...rest } = state.byWorkspace;
             return { byWorkspace: rest };
           }
           return {
-            byWorkspace: { ...state.byWorkspace, [wsId]: nextBucket },
+            byWorkspace: { ...state.byWorkspace, [bucketId]: nextBucket },
           };
         }),
       pruneWorkspaces: (activeWsIds) =>
         set((state) => {
+          if (!state.identityId) return state;
           const allow = new Set(activeWsIds);
           let changed = false;
           const next: Record<string, RecentContextEntry[]> = {};
-          for (const [wsId, items] of Object.entries(state.byWorkspace)) {
-            if (allow.has(wsId)) next[wsId] = items;
-            else changed = true;
+          const prefix = `${state.identityId}:`;
+          for (const [key, items] of Object.entries(state.byWorkspace)) {
+            if (!key.startsWith(prefix) || allow.has(key.slice(prefix.length))) {
+              next[key] = items;
+            } else {
+              changed = true;
+            }
           }
           return changed ? { byWorkspace: next } : state;
         }),
@@ -103,7 +120,9 @@ export const useRecentContextStore = create<RecentContextState>()(
       name: "agora_recent_contexts",
       storage: createJSONStorage(() => defaultStorage),
       partialize: (state) => ({ byWorkspace: state.byWorkspace }),
-      version: 1,
+      // v1 had no actor boundary. v2 prevents one signed-in user from
+      // hydrating another user's persisted issue/project IDs.
+      version: 2,
       migrate: () => ({ byWorkspace: {} }),
     },
   ),
@@ -111,5 +130,7 @@ export const useRecentContextStore = create<RecentContextState>()(
 
 export function selectRecentContexts(wsId: string | null) {
   return (state: RecentContextState) =>
-    wsId ? (state.byWorkspace[wsId] ?? EMPTY) : EMPTY;
+    wsId
+      ? (state.byWorkspace[bucketKey(state.identityId, wsId) ?? ""] ?? EMPTY)
+      : EMPTY;
 }

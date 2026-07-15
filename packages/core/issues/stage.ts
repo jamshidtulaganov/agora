@@ -30,7 +30,6 @@
 
 import { ALL_STATUSES } from "./config/status";
 import type { IssueStatus } from "../types/issue";
-import type { WorkMode } from "./work-mode";
 
 export type SDLCStage = "dev" | "qa" | "review";
 
@@ -69,7 +68,6 @@ export interface StagePipelineInput {
   /** Raw status string off an API response; unknown values are treated as "todo". */
   status: string;
   labels: { name: string }[];
-  workMode?: WorkMode;
   prNumber?: number | null;
   mergeGates?: { ci: MergeGateState; qa: MergeGateState; tier: string } | null;
   prMerged?: boolean;
@@ -111,11 +109,7 @@ function deriveDevStage(
     state = "pending";
   }
 
-  const snapshot: StageSnapshot = { stage: "dev", state };
-  if (input.workMode === "in_editor" && (state === "pending" || state === "running")) {
-    snapshot.detail = "in editor";
-  }
-  return snapshot;
+  return { stage: "dev", state };
 }
 
 function deriveQaStage(
@@ -126,12 +120,16 @@ function deriveQaStage(
   let state: StageState;
   if (labelNames.has("qa:pass") || status === "done") {
     state = "passed";
+  } else if (running.has("qa")) {
+    // A fresh run supersedes the previous cycle's terminal label while it is
+    // in flight. The label remains useful evidence until the new verdict
+    // lands, but the current operational truth is "running". This matches the
+    // Release queue's reconciled live-state precedence.
+    state = "running";
   } else if (labelNames.has("qa:fail")) {
     state = "failed";
   } else if (labelNames.has("qa:blocked")) {
     state = "blocked";
-  } else if (running.has("qa")) {
-    state = "running";
   } else if (status === "in_review") {
     state = "active";
   } else {
@@ -172,10 +170,12 @@ function deriveReviewStage(
     state = "passed";
     detail = "override";
   } else if (labelNames.has("merge:approved")) {
-    // A human approved; the merge order is dispatched but the PR isn't
-    // merged yet (prMerged would have won above once it lands).
+    // Approval and execution are distinct. The backend can record approval
+    // even when no orchestrator resolves and the human must merge manually,
+    // so do not claim that a merge is in progress until the PR is actually
+    // observed as merged.
     state = "active";
-    detail = "merging…";
+    detail = "approved";
   } else if (labelNames.has("review:fail")) {
     state = "failed";
   } else if (gates !== null && (gates.ci === "fail" || gates.qa === "fail")) {
