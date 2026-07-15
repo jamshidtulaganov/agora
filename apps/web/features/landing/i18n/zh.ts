@@ -93,7 +93,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       },
       {
         title: "应用内 review 与发布",
-        body: "在内嵌编辑器里实时看智能体写代码、读 diff、跑 QA 关卡，并以 pull request 合并——不用离开看板。",
+        body: "跟踪进行中的工作，检查精确的集成变更、产品效果和证据，再批准发布——无需离开看板。",
       },
       {
         title: "自动化与自更新文档",
@@ -199,26 +199,26 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         },
       ],
     },
-    cocode: {
-      label: "CO-CODE",
-      title: "在实时编辑器里和智能体结对编辑",
+    review: {
+      label: "产物审查",
+      title: "审查结果，而不是智能体的编辑器",
       description:
-        "打开 co-code 编辑器，在浏览器版 VS Code 里直接引导智能体——同一分支、同一批文件、小步可审查。每次改动实时可见，随时可以自己上手。",
+        "每次开发运行都会生成不可变的集成产物。在人工批准发布前，检查变更、产品表现、检查项和证据。",
       cards: [
         {
-          title: "浏览器版 VS Code，零配置",
+          title: "精确的 integration HEAD",
           description:
-            "Issue 直接打开运行时上的实时编辑会话——不用 clone，不用本地环境。",
+            "Review 和 QA 打开同一个固定 commit，检查期间结果不会漂移。",
         },
         {
-          title: "同一分支，无需交接",
+          title: "产品与证据同屏",
           description:
-            "你和智能体编辑同一个工作树。没有补丁文件，没有\u201c拉我的分支\u201d。",
+            "在同一个决策界面查看变更摘要、preview、checks、截图和 reviewer 结论。",
         },
         {
-          title: "小步引导",
+          title: "人工发布关卡",
           description:
-            "聊天就在代码旁边。编辑中途随时改方向，diff 实时更新。",
+            "将修改请求作为 versioned correction，或批准已验证的产物发布。",
         },
       ],
     },
@@ -306,10 +306,11 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       dailyCost: "\u6bcf\u65e5\u6210\u672c",
       less: "\u5c11",
       more: "\u591a",
-      ccUserMsg: "把图表换成雷达图",
-      ccAgentReply: "好的——把 BarChart 换成 RadarChart 并更新坐标轴。",
-      ccEditing: "Aria 正在编辑 · 同一分支",
-      ccOpenEditor: "在浏览器中打开 VS Code",
+      artifactTitle: "集成产物",
+      artifactExactHead: "精确 HEAD",
+      artifactSummary: "3 个文件已更改 · +42 −11",
+      artifactEvidence: "发布证据",
+      artifactReady: "等待人工批准",
       qaSummary:
         "按 QA 结论排列的 review 队列 · 12 个审核中 · 1 个待修复 · 3 个等待 · 8 个通过",
       qaLaneFail: "待修复",

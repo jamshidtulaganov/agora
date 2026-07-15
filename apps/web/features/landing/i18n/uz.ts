@@ -97,7 +97,7 @@ export function createUzDict(allowSignup: boolean): LandingDict {
       },
       {
         title: "Review va chiqarish — ilova ichida",
-        body: "Agentlar kodini o'rnatilgan muharrirda jonli kuzating, diff o'qing, QA darvozalarini ishga tushiring va doskadan chiqmasdan pull request sifatida merge qiling.",
+        body: "Faol ishni kuzating, aynan integratsiya qilingan o'zgarishlarni tekshiring, mahsulot va dalillarni tasdiqlang, so'ng chiqarishga ruxsat bering — doskadan chiqmasdan.",
       },
       {
         title: "Autopilotlar va o'zi yangilanadigan hujjatlar",
@@ -203,26 +203,26 @@ export function createUzDict(allowSignup: boolean): LandingDict {
         },
       ],
     },
-    cocode: {
-      label: "CO-CODE",
-      title: "Agent bilan jonli muharrirda juft ishlang",
+    review: {
+      label: "NATIJA REVIEW'I",
+      title: "Agent muharririni emas, natijani tekshiring",
       description:
-        "Co-code muharririni oching va agentni brauzerdagi VS Code ichida boshqaring — bitta branch, bitta fayllar, kichik ko'rib chiqiladigan qadamlar. Har bir o'zgarish jonli tushadi, xohlagan payt o'zingiz aralashasiz.",
+        "Har bir development run o'zgarmas integratsiya artifactini yaratadi. Inson release'ni tasdiqlashidan oldin changes, product, checks va evidence'ni tekshiring.",
       cards: [
         {
-          title: "Brauzerda VS Code, sozlashsiz",
+          title: "Aniq integration HEAD",
           description:
-            "Vazifa to'g'ridan-to'g'ri ijro muhitidagi jonli muharrir sessiyasiga ochiladi — clone yo'q, lokal muhit yo'q.",
+            "Review va QA aynan bitta pin qilingan commitni ochadi, shuning uchun tekshiruv paytida natija siljimaydi.",
         },
         {
-          title: "Bitta branch, topshirishlar yo'q",
+          title: "Mahsulot va dalil bir joyda",
           description:
-            "Siz va agent bitta working tree'ni tahrirlaysiz. Patch fayllar yo'q, \u201cbranchimni tortib ol\u201d yo'q.",
+            "Change summary, preview, checks, screenshot va reviewer xulosalarini bitta qaror yuzasida ko'ring.",
         },
         {
-          title: "Kichik qadamlar bilan yo'naltiring",
+          title: "Inson release darvozasi",
           description:
-            "Chat kodning yonida turadi. Agentni tahrir o'rtasida yo'naltiring — diff jonli yangilanadi.",
+            "O'zgarishni versioned correction sifatida qaytaring yoki tekshirilgan artifactni release uchun tasdiqlang.",
         },
       ],
     },
@@ -312,11 +312,11 @@ export function createUzDict(allowSignup: boolean): LandingDict {
       dailyCost: "Kunlik xarajat",
       less: "Kam",
       more: "Ko'p",
-      ccUserMsg: "Grafikni radar ko'rinishiga o'tkaz",
-      ccAgentReply:
-        "Boshladim — BarChart'ni RadarChart'ga almashtirib, o'qlarni yangilayapman.",
-      ccEditing: "Aria tahrirlayapti · bitta branch",
-      ccOpenEditor: "Brauzerda VS Code'da ochish",
+      artifactTitle: "Integratsiya artifacti",
+      artifactExactHead: "Aniq HEAD",
+      artifactSummary: "3 fayl o'zgardi · +42 −11",
+      artifactEvidence: "Release dalillari",
+      artifactReady: "Inson tasdig'iga tayyor",
       qaSummary:
         "Review navbati, QA xulosasi bo'yicha · 12 ta reviewda · 1 tuzatish kerak · 3 kutilmoqda · 8 o'tdi",
       qaLaneFail: "Tuzatish kerak",

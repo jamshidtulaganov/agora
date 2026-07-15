@@ -1303,141 +1303,110 @@ function RuntimesVisual() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Co-code feature visual — browser VS Code pair-editing session      */
+/*  Artifact review visual — exact result, evidence, release gate      */
 /* ------------------------------------------------------------------ */
 
-const ccCodeLines = [
-  { n: 1, code: 'import { RadarChart, PolarGrid, Radar } from "recharts";', tone: "add" },
-  { n: 2, code: "", tone: "" },
-  { n: 3, code: "export function TeamLoadChart({ data }: ChartProps) {", tone: "" },
-  { n: 4, code: "  return (", tone: "" },
-  { n: 5, code: "    <RadarChart data={data} outerRadius={92}>", tone: "add" },
-  { n: 6, code: '      <PolarGrid strokeOpacity={0.25} />', tone: "add" },
-  { n: 7, code: '      <Radar dataKey="load" fill="#2563EB" fillOpacity={0.4} />', tone: "add" },
-  { n: 8, code: "    </RadarChart>", tone: "add" },
-  { n: 9, code: "  );", tone: "" },
-  { n: 10, code: "}", tone: "" },
-];
-
-function CocodeVisual() {
+function ArtifactReviewVisual() {
   const { t } = useLocale();
   const m = t.features.mock;
+  const files = [
+    { name: "team-load-chart.tsx", detail: "+30 −8" },
+    { name: "team-load-chart.test.tsx", detail: "+10 −3" },
+    { name: "dashboard.tsx", detail: "+2" },
+  ];
+
   return (
     <div className="relative aspect-video overflow-hidden rounded-lg border bg-background text-foreground shadow-2xl">
-      {/* Title bar */}
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b bg-background px-4 text-xs">
-        <span className="size-2.5 rounded-full bg-muted-foreground/20" />
-        <span className="size-2.5 rounded-full bg-muted-foreground/20" />
-        <span className="size-2.5 rounded-full bg-muted-foreground/20" />
-        <span className="ml-2 text-muted-foreground">
-          AGORA-204 · co-code · sprint-14
-        </span>
-        <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-info/30 bg-info/10 px-2 py-0.5 text-[10px] font-semibold text-info">
-          <span className="size-1.5 animate-pulse rounded-full bg-info" />
-          LIVE
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b px-4 text-xs">
+        <FileText className="size-3.5 text-muted-foreground" aria-hidden />
+        <span className="font-medium">AGORA-204 · {m.artifactTitle}</span>
+        <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-[10px] font-semibold text-success">
+          <CheckCircle2 className="size-3" aria-hidden />
+          {m.artifactExactHead} · a84c71e
         </span>
       </div>
 
-      <div className="flex h-[calc(100%-40px)]">
-        {/* File tree */}
-        <div className="hidden w-[168px] shrink-0 border-r py-2 sm:block">
-          {[
-            { name: "dashboard", dir: true, depth: 0 },
-            { name: "team-load-chart.tsx", dir: false, depth: 1, active: true },
-            { name: "filters.tsx", dir: false, depth: 1 },
-            { name: "issue-board.tsx", dir: false, depth: 1 },
-            { name: "lib", dir: true, depth: 0 },
-          ].map((f) => (
-            <div
-              key={f.name}
-              className={cn(
-                "flex items-center gap-1.5 py-1 text-xs",
-                f.active
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground",
-              )}
-              style={{ paddingLeft: f.dir ? f.depth * 12 + 10 : f.depth * 12 + 22 }}
-            >
-              {f.dir ? (
-                <>
-                  <ChevronRight className="h-3 w-3 shrink-0 rotate-90" />
-                  <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-                </>
-              ) : (
-                <File className="h-3.5 w-3.5 shrink-0" />
-              )}
-              <span className="truncate">{f.name}</span>
-            </div>
-          ))}
-        </div>
+      <div className="flex h-9 items-end gap-4 border-b px-4 text-[11px] text-muted-foreground">
+        {[
+          { label: "Activity", active: false },
+          { label: "Changes", active: true },
+          { label: "Product", active: false },
+          { label: "Evidence", active: false },
+        ].map((tab) => (
+          <span
+            key={tab.label}
+            className={cn(
+              "flex h-9 items-center border-b-2",
+              tab.active
+                ? "border-foreground font-medium text-foreground"
+                : "border-transparent",
+            )}
+          >
+            {tab.label}
+          </span>
+        ))}
+      </div>
 
-        {/* Editor pane */}
-        <div className="min-w-0 flex-1 overflow-hidden border-r">
-          <div className="flex h-8 items-center border-b px-3">
-            <span className="font-mono text-xs text-muted-foreground">
-              team-load-chart.tsx
-            </span>
-            <span className="ml-2 inline-flex items-center gap-1 rounded bg-info/10 px-1.5 py-0.5 text-[9px] font-semibold text-info">
-              <Bot className="h-2.5 w-2.5" />
-              Aria
+      <div className="grid h-[calc(100%-76px)] grid-cols-1 md:grid-cols-[minmax(0,1fr)_220px]">
+        <div className="min-w-0 p-4 md:border-r">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold">Change summary</p>
+              <p className="mt-0.5 text-[10px] text-muted-foreground">
+                {m.artifactSummary}
+              </p>
+            </div>
+            <span className="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success">
+              Clean integration
             </span>
           </div>
-          <div className="space-y-0 p-3 font-mono text-[11px] leading-[1.7]">
-            {ccCodeLines.map((l) => (
+
+          <div className="overflow-hidden rounded-md border">
+            {files.map((file) => (
               <div
-                key={l.n}
-                className={cn(
-                  "flex gap-3 rounded px-1",
-                  l.tone === "add" && "bg-success/10",
-                )}
+                key={file.name}
+                className="flex items-center gap-2 border-b px-3 py-2 last:border-b-0"
               >
-                <span className="w-4 shrink-0 select-none text-right text-muted-foreground/40">
-                  {l.n}
+                <File className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                <span className="min-w-0 flex-1 truncate font-mono text-[10px]">
+                  {file.name}
                 </span>
-                <span
-                  className={cn(
-                    "whitespace-pre",
-                    l.tone === "add"
-                      ? "text-foreground"
-                      : "text-muted-foreground",
-                  )}
-                >
-                  {l.code}
-                </span>
+                <span className="font-mono text-[10px] text-success">{file.detail}</span>
               </div>
             ))}
-            <div className="flex gap-3 px-1">
-              <span className="w-4 shrink-0" />
-              <span className="inline-flex items-center gap-1 rounded bg-info px-1.5 py-0.5 text-[9px] font-semibold text-white">
-                Aria
-                <span className="inline-block h-3 w-[2px] animate-pulse bg-white" />
-              </span>
-            </div>
+          </div>
+
+          <div className="mt-3 rounded-md bg-muted/50 px-3 py-2 text-[10px] text-muted-foreground">
+            Replaced the workload chart, preserved keyboard navigation, and added
+            regression coverage for empty and partial datasets.
           </div>
         </div>
 
-        {/* Steer panel */}
-        <div className="hidden w-[230px] shrink-0 flex-col p-3 md:flex">
-          <div className="ml-auto max-w-[95%] rounded-xl rounded-br-sm bg-muted px-2.5 py-1.5 text-xs">
-            {m.ccUserMsg}
+        <div className="hidden p-4 md:block">
+          <p className="text-xs font-semibold">{m.artifactEvidence}</p>
+          <div className="mt-3 space-y-3">
+            {[
+              { icon: FileText, label: "Integrated HEAD", value: "a84c71e" },
+              { icon: ShieldCheck, label: "QA checks", value: "5 / 5 passed" },
+              { icon: CheckCircle2, label: "Review", value: "Approved" },
+            ].map((item) => (
+              <div key={item.label} className="flex items-start gap-2">
+                <div className="mt-0.5 rounded-full bg-success/10 p-1 text-success">
+                  <item.icon className="size-3" aria-hidden />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] text-muted-foreground">{item.label}</p>
+                  <p className="truncate text-[11px] font-medium">{item.value}</p>
+                </div>
+              </div>
+            ))}
           </div>
-          <div className="mt-2 flex items-start gap-1.5">
-            <div className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-info/10 text-info">
-              <Bot className="h-2.5 w-2.5" />
-            </div>
-            <div className="rounded-xl rounded-bl-sm border px-2.5 py-1.5 text-xs text-muted-foreground">
-              {m.ccAgentReply}
-            </div>
+          <div className="mt-4 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-center text-[10px] font-semibold text-success">
+            {m.artifactReady}
           </div>
-          <div className="mt-auto space-y-2">
-            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin text-info" />
-              {m.ccEditing}
-            </div>
-            <div className="flex items-center justify-center rounded-md border bg-muted/40 px-2 py-1.5 text-[11px] font-medium">
-              {m.ccOpenEditor}
-            </div>
-          </div>
+          <p className="mt-2 text-center text-[9px] leading-relaxed text-muted-foreground">
+            Human approval is the final release gate.
+          </p>
         </div>
       </div>
     </div>
@@ -1654,7 +1623,7 @@ function buildFeatures(t: LandingDict) {
   const keys = [
     "teammates",
     "autonomous",
-    "cocode",
+    "review",
     "qa",
     "skills",
     "runtimes",
@@ -1662,7 +1631,7 @@ function buildFeatures(t: LandingDict) {
   const visuals = [
     TeammatesVisual,
     AutonomousVisual,
-    CocodeVisual,
+    ArtifactReviewVisual,
     QaVisual,
     SkillsVisual,
     RuntimesVisual,

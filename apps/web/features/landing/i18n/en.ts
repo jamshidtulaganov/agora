@@ -96,7 +96,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       },
       {
         title: "Review and ship in-app",
-        body: "Watch agents code live in an embedded editor, read the diff, run QA gates, and merge as a pull request — without leaving the board.",
+        body: "Follow active work, inspect the exact integrated changes, validate the product and evidence, and approve release — without leaving the board.",
       },
       {
         title: "Autopilots & self-updating docs",
@@ -202,26 +202,26 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         },
       ],
     },
-    cocode: {
-      label: "CO-CODE",
-      title: "Pair-edit with the agent in a live editor",
+    review: {
+      label: "ARTIFACT REVIEW",
+      title: "Review the result, not an agent’s editor",
       description:
-        "Open the co-code editor and steer the agent inside a browser VS Code — same branch, same files, small reviewable steps. Watch every change land live and jump in whenever you want.",
+        "Every development run produces an immutable integrated artifact. Inspect its changes, product behavior, checks, and evidence before a human approves release.",
       cards: [
         {
-          title: "Browser VS Code, zero setup",
+          title: "Exact integrated HEAD",
           description:
-            "The issue opens straight into a live editor session on the runtime — no clone, no local environment.",
+            "Review and QA open the same pinned commit, so the result cannot drift while you inspect it.",
         },
         {
-          title: "Same branch, no handoffs",
+          title: "Product and evidence together",
           description:
-            "You and the agent edit the same working tree. No patch files, no \u201cpull my branch\u201d, no merge dance.",
+            "See the change summary, preview, checks, screenshots, and reviewer findings in one decision surface.",
         },
         {
-          title: "Steer in small steps",
+          title: "Human release gate",
           description:
-            "Chat sits next to the code. Redirect the agent mid-edit and watch the diff update live.",
+            "Request changes as a versioned correction or approve the verified artifact for release.",
         },
       ],
     },
@@ -311,11 +311,11 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       dailyCost: "Daily Cost",
       less: "Less",
       more: "More",
-      ccUserMsg: "Switch the chart to a radar view",
-      ccAgentReply:
-        "On it — swapping BarChart for RadarChart and updating the axes.",
-      ccEditing: "Aria is editing · same branch",
-      ccOpenEditor: "Open in browser VS Code",
+      artifactTitle: "Integration artifact",
+      artifactExactHead: "Exact HEAD",
+      artifactSummary: "3 files changed · +42 −11",
+      artifactEvidence: "Release evidence",
+      artifactReady: "Ready for human approval",
       qaSummary:
         "The review queue, by QA verdict · 12 in review · 1 needs fix · 3 pending · 8 passed",
       qaLaneFail: "Needs fix",

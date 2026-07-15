@@ -93,10 +93,11 @@ type FeaturesMock = {
   dailyCost: string;
   less: string;
   more: string;
-  ccUserMsg: string;
-  ccAgentReply: string;
-  ccEditing: string;
-  ccOpenEditor: string;
+  artifactTitle: string;
+  artifactExactHead: string;
+  artifactSummary: string;
+  artifactEvidence: string;
+  artifactReady: string;
   qaSummary: string;
   qaLaneFail: string;
   qaLanePending: string;
@@ -186,7 +187,7 @@ export type LandingDict = {
   features: {
     teammates: FeatureSection;
     autonomous: FeatureSection;
-    cocode: FeatureSection;
+    review: FeatureSection;
     qa: FeatureSection;
     skills: FeatureSection;
     runtimes: FeatureSection;
