@@ -73,6 +73,9 @@ export function ArtifactPreviewPanel({ issueId }: { issueId: string }) {
   const artifact = data?.artifact;
   const capability = data?.capabilities.preview;
   const selectedRepo = selectedArtifactRepo(data, repoName);
+  // A live local artifact has no frozen repos — the daemon points preview at the
+  // developer's own dev server, so a selected repo isn't required.
+  const isLive = artifact?.kind === "local_directory";
   const key = previewKey(artifact?.id ?? "", selectedRepo?.repo ?? "", capability ?? "");
 
   const statusQuery = useQuery({
@@ -125,7 +128,7 @@ export function ArtifactPreviewPanel({ issueId }: { issueId: string }) {
   });
 
   if (artifactQuery.isLoading) return <RuntimeSkeleton />;
-  if (!artifact || !capability || !data?.daemon_url || !selectedRepo) return <RuntimeUnavailable kind="preview" />;
+  if (!artifact || !capability || !data?.daemon_url || (!selectedRepo && !isLive)) return <RuntimeUnavailable kind="preview" />;
 
   const preview = statusQuery.data;
   const url = preview ? artifactPreviewURL(data.daemon_url, preview) : "";

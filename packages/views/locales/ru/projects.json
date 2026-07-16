@@ -113,7 +113,12 @@
     "local_access_make_read": "Сделать только для чтения — агенты смогут читать, но не изменять папку",
     "local_access_make_write": "Разрешить запись — агенты смогут изменять папку",
     "toast_access_updated": "Доступ к папке обновлён",
-    "toast_access_failed": "Не удалось обновить доступ к папке"
+    "toast_access_failed": "Не удалось обновить доступ к папке",
+    "toast_preview_url_updated": "URL предпросмотра обновлён",
+    "toast_preview_url_failed": "Не удалось обновить URL предпросмотра",
+    "local_preview_url_label": "URL превью dev-сервера",
+    "local_preview_url_add": "Укажите URL dev-сервера для превью",
+    "local_preview_url_set": "Превью: {{url}}"
   },
   "delete_dialog": {
     "title": "Удалить проект",

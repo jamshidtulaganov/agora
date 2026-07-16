@@ -178,7 +178,7 @@ func TestGetIssueArtifactDoesNotExposeWorkdir(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if !response.Ready || response.Artifact == nil || response.Artifact.ID == "" || len(response.Capabilities) != 4 {
+	if !response.Ready || response.Artifact == nil || response.Artifact.ID == "" || len(response.Capabilities) != 3 {
 		t.Fatalf("artifact response incomplete: %+v", response)
 	}
 	for purpose, token := range response.Capabilities {
@@ -248,8 +248,8 @@ func TestGetIssueArtifactLiveLocalFallback(t *testing.T) {
 	if !response.Ready || response.RunStatus != "live" || response.Artifact == nil || response.Artifact.Kind != "local_directory" {
 		t.Fatalf("expected a ready live artifact, got %+v", response)
 	}
-	if len(response.Capabilities) != 4 {
-		t.Fatalf("expected 4 capabilities, got %d", len(response.Capabilities))
+	if len(response.Capabilities) != 3 {
+		t.Fatalf("expected 3 capabilities, got %d", len(response.Capabilities))
 	}
 	rec, ok := lookupArtifactCapability(response.Capabilities["preview"])
 	if !ok {

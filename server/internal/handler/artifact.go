@@ -333,8 +333,12 @@ func (h *Handler) writeLiveLocalArtifact(w http.ResponseWriter, r *http.Request,
 		IssueID: uuidToString(issue.ID), RuntimeID: uuidToString(runtime.ID), DaemonID: ref.DaemonID,
 		SourceRoot: ref.LocalPath, Live: true, PreviewURL: strings.TrimSpace(ref.PreviewURL),
 	}
-	capabilities := make(map[string]string, 4)
-	for _, purpose := range []string{"changes", "file", "preview", "checks"} {
+	// changes/file/preview are live-backed by the daemon; "checks" is not a
+	// live surface (the QA stage runs the agent in the folder directly), so the
+	// Checks tab stays unavailable rather than dead-ending on a grant the daemon
+	// can't serve.
+	capabilities := make(map[string]string, 3)
+	for _, purpose := range []string{"changes", "file", "preview"} {
 		record := baseRecord
 		record.Purpose = purpose
 		token, mintErr := mintArtifactCapability(record)

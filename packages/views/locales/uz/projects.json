@@ -113,7 +113,12 @@
     "local_access_make_read": "Faqat o'qishga o'tkazish — agentlar o'qiydi, lekin papkani o'zgartira olmaydi",
     "local_access_make_write": "Yozishga ruxsat — agentlar papkani tahrirlashi mumkin",
     "toast_access_updated": "Papka ruxsati yangilandi",
-    "toast_access_failed": "Papka ruxsatini yangilab bo'lmadi"
+    "toast_access_failed": "Papka ruxsatini yangilab bo'lmadi",
+    "toast_preview_url_updated": "Preview URL yangilandi",
+    "toast_preview_url_failed": "Preview URL yangilanmadi",
+    "local_preview_url_label": "Dev-server preview URL",
+    "local_preview_url_add": "Preview uchun dev-server URL kiriting",
+    "local_preview_url_set": "Preview: {{url}}"
   },
   "delete_dialog": {
     "title": "Loyihani o‘chirish",

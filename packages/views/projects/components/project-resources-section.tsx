@@ -9,6 +9,7 @@ import {
   FolderGit,
   FolderOpen,
   Lock,
+  MonitorPlay,
   Pencil,
   Plus,
   Search,
@@ -279,6 +280,32 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
     }
   };
 
+  // Set/clear the developer's own dev-server URL that the issue Preview surface
+  // proxies to. Empty string clears it. Sends the full ref (wholesale replace).
+  const handleSetPreviewUrl = async (
+    resource: ProjectResource & { resource_ref: LocalDirectoryResourceRef },
+    nextUrl: string,
+  ) => {
+    const trimmed = nextUrl.trim();
+    if (trimmed === (resource.resource_ref.preview_url ?? "").trim()) return;
+    try {
+      const ref = { ...resource.resource_ref };
+      if (trimmed) ref.preview_url = trimmed;
+      else delete ref.preview_url;
+      await updateResource.mutateAsync({
+        resourceId: resource.id,
+        data: { resource_ref: ref },
+      });
+      toast.success(t(($) => $.resources.toast_preview_url_updated));
+    } catch (err) {
+      toast.error(
+        err instanceof Error && err.message
+          ? err.message
+          : t(($) => $.resources.toast_preview_url_failed),
+      );
+    }
+  };
+
   const handleRenameLocalDirectory = async (
     resource: ProjectResource & { resource_ref: LocalDirectoryResourceRef },
     nextLabel: string,
@@ -346,6 +373,7 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
                   onRemove={() => handleRemove(resource)}
                   onRenameLocalDirectory={handleRenameLocalDirectory}
                   onToggleAccess={handleToggleAccess}
+                  onSetPreviewUrl={handleSetPreviewUrl}
                 />
               ))}
             </div>
@@ -501,6 +529,10 @@ interface ResourceRowProps {
   onToggleAccess: (
     resource: ProjectResource & { resource_ref: LocalDirectoryResourceRef },
   ) => Promise<void>;
+  onSetPreviewUrl: (
+    resource: ProjectResource & { resource_ref: LocalDirectoryResourceRef },
+    nextUrl: string,
+  ) => Promise<void>;
 }
 
 function ResourceRow({
@@ -512,6 +544,7 @@ function ResourceRow({
   onRemove,
   onRenameLocalDirectory,
   onToggleAccess,
+  onSetPreviewUrl,
 }: ResourceRowProps) {
   const { t } = useT("projects");
   if (isGithubRef(resource)) {
@@ -563,6 +596,7 @@ function ResourceRow({
         onRemove={onRemove}
         onRename={onRenameLocalDirectory}
         onToggleAccess={onToggleAccess}
+        onSetPreviewUrl={onSetPreviewUrl}
       />
     );
   }
@@ -596,6 +630,10 @@ interface LocalDirectoryRowProps {
   onToggleAccess: (
     resource: ProjectResource & { resource_ref: LocalDirectoryResourceRef },
   ) => Promise<void>;
+  onSetPreviewUrl: (
+    resource: ProjectResource & { resource_ref: LocalDirectoryResourceRef },
+    nextUrl: string,
+  ) => Promise<void>;
 }
 
 function LocalDirectoryRow({
@@ -605,6 +643,7 @@ function LocalDirectoryRow({
   onRemove,
   onRename,
   onToggleAccess,
+  onSetPreviewUrl,
 }: LocalDirectoryRowProps) {
   const { t } = useT("projects");
   const ref = resource.resource_ref;
@@ -622,6 +661,8 @@ function LocalDirectoryRow({
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(display);
+  const [editingPreview, setEditingPreview] = useState(false);
+  const [previewDraft, setPreviewDraft] = useState(ref.preview_url ?? "");
 
   const startEdit = () => {
     setDraft(display);
@@ -634,6 +675,10 @@ function LocalDirectoryRow({
   const cancel = () => {
     setEditing(false);
     setDraft(display);
+  };
+  const commitPreview = async () => {
+    setEditingPreview(false);
+    await onSetPreviewUrl(resource, previewDraft);
   };
 
   return (
@@ -711,14 +756,55 @@ function LocalDirectoryRow({
         </button>
       )}
       {canEdit && !mismatch && !editing && (
-        <button
-          type="button"
-          onClick={startEdit}
-          className="opacity-0 group-hover:opacity-100 transition-opacity rounded-sm p-0.5 hover:bg-accent"
-          title={t(($) => $.resources.local_rename_tooltip)}
-        >
-          <Pencil className="size-3 text-muted-foreground" />
-        </button>
+        <>
+          {editingPreview ? (
+            <input
+              autoFocus
+              value={previewDraft}
+              placeholder="http://localhost:3000"
+              onChange={(e) => setPreviewDraft(e.target.value)}
+              onBlur={() => void commitPreview()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void commitPreview();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  setEditingPreview(false);
+                  setPreviewDraft(ref.preview_url ?? "");
+                }
+              }}
+              className="w-40 rounded-sm border bg-transparent px-1 py-0.5 text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              aria-label={t(($) => $.resources.local_preview_url_label)}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setPreviewDraft(ref.preview_url ?? "");
+                setEditingPreview(true);
+              }}
+              className={`shrink-0 rounded-sm p-0.5 transition-opacity hover:bg-accent ${
+                ref.preview_url ? "text-brand" : "opacity-0 group-hover:opacity-100 text-muted-foreground"
+              }`}
+              title={
+                ref.preview_url
+                  ? t(($) => $.resources.local_preview_url_set, { url: ref.preview_url })
+                  : t(($) => $.resources.local_preview_url_add)
+              }
+            >
+              <MonitorPlay className="size-3" aria-hidden />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={startEdit}
+            className="opacity-0 group-hover:opacity-100 transition-opacity rounded-sm p-0.5 hover:bg-accent"
+            title={t(($) => $.resources.local_rename_tooltip)}
+          >
+            <Pencil className="size-3 text-muted-foreground" />
+          </button>
+        </>
       )}
       <button
         type="button"

@@ -118,7 +118,12 @@
     "local_access_make_read": "Make read-only — agents can read but never modify this folder",
     "local_access_make_write": "Allow writes — agents may edit this folder",
     "toast_access_updated": "Folder access updated",
-    "toast_access_failed": "Failed to update folder access"
+    "toast_access_failed": "Failed to update folder access",
+    "toast_preview_url_updated": "Preview URL updated",
+    "toast_preview_url_failed": "Failed to update preview URL",
+    "local_preview_url_label": "Dev server preview URL",
+    "local_preview_url_add": "Set your dev server URL for preview",
+    "local_preview_url_set": "Preview: {{url}}"
   },
   "delete_dialog": {
     "title": "Delete project",

@@ -113,7 +113,12 @@
     "local_access_make_read": "设为只读 — 智能体可读取但永不修改此文件夹",
     "local_access_make_write": "允许写入 — 智能体可编辑此文件夹",
     "toast_access_updated": "文件夹访问权限已更新",
-    "toast_access_failed": "更新文件夹访问权限失败"
+    "toast_access_failed": "更新文件夹访问权限失败",
+    "toast_preview_url_updated": "预览地址已更新",
+    "toast_preview_url_failed": "更新预览地址失败",
+    "local_preview_url_label": "开发服务器预览地址",
+    "local_preview_url_add": "设置用于预览的开发服务器地址",
+    "local_preview_url_set": "预览：{{url}}"
   },
   "delete_dialog": {
     "title": "删除项目",
