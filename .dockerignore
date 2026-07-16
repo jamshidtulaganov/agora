@@ -38,8 +38,8 @@ docs/
 apps/desktop
 
 # Other apps not needed for web/backend image builds
+# (apps/docs stays IN the context — Dockerfile.docs builds from it)
 apps/mobile
-apps/docs
 
 # Compiled binaries (root) — build artifacts, rebuilt inside the image
 bin/
