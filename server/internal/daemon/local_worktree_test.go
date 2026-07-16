@@ -606,3 +606,66 @@ func TestSweepWorktreeEnvs_RemovesStale(t *testing.T) {
 		t.Errorf("dangling worktree after sweep:\n%s", out)
 	}
 }
+
+// GAP-3: uncommitted agent work must be persisted onto the branch (and reflected
+// in the captured HEAD) WITHOUT tearing the worktree down, so integration can
+// still read it and nothing is silently lost.
+func TestPersistWorktreeRunChanges_CommitsWithoutCleanup(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	parent := t.TempDir()
+	makeRepo(t, filepath.Join(parent, "svc"))
+	ctx := context.Background()
+	workDir := filepath.Join(t.TempDir(), "work")
+	run, err := provisionLocalWorktrees(ctx, parent, "issue-persist", workDir, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.Join(workDir, "svc")
+	headBefore := gitAt(t, wt, "rev-parse", "HEAD")
+	os.WriteFile(filepath.Join(wt, "feature.js"), []byte("real work"), 0o644)
+
+	summary := persistWorktreeRunChanges(ctx, run, "dev-agent", slog.Default())
+	if summary == "" {
+		t.Fatal("expected a summary when the agent left uncommitted work")
+	}
+	// The worktree is STILL there (unlike finalizeWorktrees).
+	if _, err := os.Stat(wt); err != nil {
+		t.Fatalf("worktree must survive persist: %v", err)
+	}
+	// HEAD advanced and the work is on the branch.
+	headAfter := gitAt(t, wt, "rev-parse", "HEAD")
+	if headAfter == headBefore {
+		t.Fatal("HEAD did not advance — uncommitted work was not persisted")
+	}
+	if got := gitAt(t, filepath.Join(parent, "svc"), "show", run.worktrees[0].Branch+":feature.js"); got != "real work" {
+		t.Errorf("agent work not on branch: %q", got)
+	}
+	// User's checkout untouched.
+	if b := gitAt(t, filepath.Join(parent, "svc"), "symbolic-ref", "--short", "HEAD"); b != "main" {
+		t.Errorf("user checkout moved off main: %q", b)
+	}
+}
+
+// A detached read-only worktree (no branch) must NEVER have work persisted.
+func TestPersistWorktreeRunChanges_SkipsDetachedReadOnly(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	parent := t.TempDir()
+	makeRepo(t, filepath.Join(parent, "svc"))
+	ctx := context.Background()
+	head := gitAt(t, filepath.Join(parent, "svc"), "rev-parse", "HEAD")
+	workDir := filepath.Join(t.TempDir(), "ro")
+	run, err := provisionLocalWorktreesAt(ctx, parent, "issue-ro", workDir,
+		[]OrchestrationGitHead{{Repo: "svc", HeadSHA: head}}, true, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanupWorktrees(ctx, run, slog.Default())
+	os.WriteFile(filepath.Join(workDir, "sneaky.js"), []byte("should not persist"), 0o644)
+	if summary := persistWorktreeRunChanges(ctx, run, "ro-agent", slog.Default()); summary != "" {
+		t.Fatalf("read-only worktree must not persist anything: %q", summary)
+	}
+}

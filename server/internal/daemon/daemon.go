@@ -2517,11 +2517,29 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 		}
 		return nil, nil, true
 	}
-	// Isolated worktree tasks only need mutual exclusion while Git mutates the
-	// shared source repository's worktree metadata. ProvisionWorkDir acquires
-	// that short lock; the agent session itself remains parallel.
-	if assignment.isWorktreeMode() {
+	// Isolated worktree tasks don't need the in-place git prep below. An
+	// ORCHESTRATION step gets a unique per-(step,task) worktree dir and branch,
+	// so parallel steps never collide — they take only the brief provisioning
+	// lock and the agent sessions run fully parallel.
+	//
+	// A NON-orchestration worktree task, however, REUSES the shared per-issue
+	// worktree (dir .worktrees/<issue>, branch agent/<issue>/<repo>). Two such
+	// tasks dispatched concurrently would put two agents in one working directory
+	// on one branch and corrupt each other's edits/commits (GAP-1). Serialize
+	// those for the whole task on the shared worktree env dir — different issues
+	// have different env dirs, so cross-issue parallelism is preserved. No
+	// prepareLocalDirGit: worktree mode never mutates the user's own checkout.
+	worktreeMode := assignment.isWorktreeMode()
+	if worktreeMode && task.OrchestrationStepID != "" {
 		return nil, nil, false
+	}
+	lockKey := assignment.RealPath
+	if worktreeMode {
+		issueKey := task.IssueID
+		if issueKey == "" {
+			issueKey = task.ID
+		}
+		lockKey = d.worktreeEnvDir(task.WorkspaceID, issueKey)
 	}
 
 	// While the lock is contended the daemon would otherwise sit blocked on
@@ -2570,7 +2588,7 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 			}()
 		})
 	}
-	release, err = d.localPathLocks.Acquire(waitCtx, assignment.RealPath, task.ID, onWait)
+	release, err = d.localPathLocks.Acquire(waitCtx, lockKey, task.ID, onWait)
 	if err != nil {
 		// If the wait was cut short because the server finalized the task
 		// (terminal state) or deleted the row, the row is already in a
@@ -2596,6 +2614,13 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 		return nil, nil, true
 	}
 	taskLog.Info("local_directory: lock acquired")
+
+	// Non-orchestration worktree tasks hold the whole-task lock (above) purely to
+	// serialize on the shared per-issue worktree; they never touch the user's
+	// checkout, so skip in-place git prep entirely.
+	if worktreeMode {
+		return release, nil, false
+	}
 
 	// Now that the path is ours for the whole task, put a git work tree on an
 	// isolated agent branch (and snapshot any pre-existing dirty state) so the
@@ -2863,6 +2888,16 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		}
 		state := worktreeMergeState{Status: "unavailable"}
 		if orchestrationWorktrees != nil {
+			// Safety net (GAP-3): an agent that did real work but forgot to
+			// commit would otherwise leave an empty branch — its edits would be
+			// erased when the worktree is torn down, and integration would find
+			// nothing. Commit any uncommitted changes onto the agent branch
+			// BEFORE we read the HEAD, so the captured state reflects the work.
+			agentName := "agent"
+			if task.Agent != nil && task.Agent.Name != "" {
+				agentName = task.Agent.Name
+			}
+			persistWorktreeRunChanges(ctx, orchestrationWorktrees, agentName, taskLog)
 			state = inspectWorktreeMergeState(ctx, orchestrationWorktrees)
 		} else if env != nil && env.WorkDir != "" {
 			state = inspectManagedWorktreeMergeState(ctx, env.WorkDir)

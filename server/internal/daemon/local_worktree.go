@@ -445,17 +445,22 @@ func addWorktreeAt(ctx context.Context, srcRepo, target, branch, baseRef string,
 	return nil
 }
 
-// finalizeWorktrees commits any real (non-sidecar) agent changes in each
+// commitWorktreeChanges commits any real (non-sidecar) agent changes in each
 // worktree onto its agent branch so the work persists after the worktree is
-// removed, then cleans the worktrees up. Returns a short human summary of what
-// landed on which branch (empty when nothing changed). The developer's source
-// checkout is never touched — commits go only onto the agent branches.
-func finalizeWorktrees(ctx context.Context, run *worktreeRun, agentName string, log *slog.Logger) string {
+// removed — WITHOUT cleaning the worktrees up (the caller still needs them, e.g.
+// to inspect the resulting HEAD). Returns a short human summary of what landed
+// on which branch (empty when nothing changed). The developer's source checkout
+// is never touched — commits go only onto the agent branches. Read-only /
+// detached worktrees (no branch) are skipped: nothing is meant to persist.
+func persistWorktreeRunChanges(ctx context.Context, run *worktreeRun, agentName string, log *slog.Logger) string {
 	if run == nil {
 		return ""
 	}
 	var lines []string
 	for _, wt := range run.worktrees {
+		if strings.TrimSpace(wt.Branch) == "" {
+			continue // detached read-only worktree — never persist
+		}
 		status, _ := gitOutput(ctx, wt.Path, "status", "--porcelain")
 		if strings.TrimSpace(status) == "" {
 			continue // agent left this repo untouched
@@ -480,11 +485,18 @@ func finalizeWorktrees(ctx context.Context, run *worktreeRun, agentName string, 
 		}
 		lines = append(lines, fmt.Sprintf("- `%s`: committed on branch `%s`", filepath.Base(wt.Path), wt.Branch))
 	}
-	cleanupWorktrees(ctx, run, log)
 	if len(lines) == 0 {
 		return ""
 	}
 	return "### Agent changes (worktree isolation)\n\nYour source checkout was untouched. The agent's work is committed on these branches:\n\n" + strings.Join(lines, "\n") + "\n"
+}
+
+// finalizeWorktrees commits any real agent changes onto their branches (via
+// commitWorktreeChanges) and then cleans the worktrees up.
+func finalizeWorktrees(ctx context.Context, run *worktreeRun, agentName string, log *slog.Logger) string {
+	summary := persistWorktreeRunChanges(ctx, run, agentName, log)
+	cleanupWorktrees(ctx, run, log)
+	return summary
 }
 
 // provisionOrReuseWorktrees returns the issue's worktrees, reusing them when

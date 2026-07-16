@@ -669,8 +669,10 @@ func TestLocalDirectoryAssignmentAccessMode(t *testing.T) {
 	}
 }
 
-func TestAcquireLocalDirectoryLock_WorktreeModeDoesNotHoldSessionLock(t *testing.T) {
-	// No t.Parallel(): the allowlist is process-global.
+func TestAcquireLocalDirectoryLock_OrchestrationStepBypassesSessionLock(t *testing.T) {
+	// An orchestration step gets a UNIQUE per-(step,task) worktree, so parallel
+	// steps never collide — they take only the brief provisioning lock and must
+	// NOT hold a long-lived session lock.
 	dir := t.TempDir()
 	t.Setenv("AGORA_LOCAL_DIR_ALLOWLIST", dir)
 	realDir, err := filepath.EvalSymlinks(dir)
@@ -684,35 +686,83 @@ func TestAcquireLocalDirectoryLock_WorktreeModeDoesNotHoldSessionLock(t *testing
 	}
 	defer heldRelease()
 
-	const daemonID = "d-worktree-parallel"
-	ref, err := json.Marshal(localDirectoryRef{LocalPath: dir, DaemonID: daemonID, Isolation: "worktree"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	d := &Daemon{
-		client:         NewClient("http://127.0.0.1:1"),
-		logger:         slog.Default(),
-		localPathLocks: locker,
-		cfg:            Config{DaemonID: daemonID},
-	}
+	const daemonID = "d-orch-parallel"
+	ref, _ := json.Marshal(localDirectoryRef{LocalPath: dir, DaemonID: daemonID, Isolation: "worktree"})
+	d := &Daemon{client: NewClient("http://127.0.0.1:1"), logger: slog.Default(), localPathLocks: locker, cfg: Config{DaemonID: daemonID, WorkspacesRoot: t.TempDir()}}
 
 	done := make(chan struct{})
 	go func() {
 		release, localGit, abort := d.acquireLocalDirectoryLockIfNeeded(context.Background(), Task{
-			ID: "worker-task",
-			ProjectResources: []ProjectResourceData{{
-				ID: "resource", ResourceType: localDirectoryResourceType, ResourceRef: ref,
-			}},
+			ID: "step-task", IssueID: "issue-1", OrchestrationStepID: "step-1",
+			ProjectResources: []ProjectResourceData{{ID: "r", ResourceType: localDirectoryResourceType, ResourceRef: ref}},
 		}, slog.Default())
 		if release != nil || localGit != nil || abort {
-			t.Errorf("worktree session should bypass the long-lived path lock: release=%v localGit=%v abort=%v", release != nil, localGit != nil, abort)
+			t.Errorf("orchestration step must bypass the session lock: release=%v localGit=%v abort=%v", release != nil, localGit != nil, abort)
 		}
 		close(done)
 	}()
-
 	select {
 	case <-done:
 	case <-time.After(250 * time.Millisecond):
-		t.Fatal("worktree-mode task blocked on the session path lock")
+		t.Fatal("orchestration worktree step blocked on the session lock")
+	}
+}
+
+func TestAcquireLocalDirectoryLock_NonOrchWorktreeSerializesPerIssue(t *testing.T) {
+	// GAP-1: two NON-orchestration worktree tasks on the SAME issue reuse the
+	// shared per-issue worktree; they must serialize on the env dir for the whole
+	// task. Different issues (different env dirs) stay parallel.
+	dir := t.TempDir()
+	t.Setenv("AGORA_LOCAL_DIR_ALLOWLIST", dir)
+	locker := NewLocalPathLocker()
+	const daemonID = "d-nonorch"
+	ref, _ := json.Marshal(localDirectoryRef{LocalPath: dir, DaemonID: daemonID, Isolation: "worktree"})
+	d := &Daemon{client: NewClient("http://127.0.0.1:1"), logger: slog.Default(), localPathLocks: locker, cfg: Config{DaemonID: daemonID, WorkspacesRoot: t.TempDir()}}
+	mk := func(taskID, issueID string) Task {
+		return Task{ID: taskID, IssueID: issueID, WorkspaceID: "ws1", ProjectResources: []ProjectResourceData{{ID: "r", ResourceType: localDirectoryResourceType, ResourceRef: ref}}}
+	}
+
+	// First task on issue-A holds the whole-task lock.
+	rel1, _, abort1 := d.acquireLocalDirectoryLockIfNeeded(context.Background(), mk("t1", "issue-A"), slog.Default())
+	if rel1 == nil || abort1 {
+		t.Fatalf("non-orch worktree task must hold a whole-task lock: rel=%v abort=%v", rel1 != nil, abort1)
+	}
+
+	// A DIFFERENT issue must NOT block (distinct env dir).
+	otherDone := make(chan func(), 1)
+	go func() {
+		rel, _, _ := d.acquireLocalDirectoryLockIfNeeded(context.Background(), mk("t2", "issue-B"), slog.Default())
+		otherDone <- rel
+	}()
+	select {
+	case rel := <-otherDone:
+		if rel == nil {
+			t.Fatal("cross-issue task should acquire its own lock")
+		}
+		rel()
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("cross-issue non-orch task blocked — env-dir keying broken")
+	}
+
+	// The SAME issue MUST block until the first releases.
+	sameDone := make(chan struct{})
+	go func() {
+		rel, _, _ := d.acquireLocalDirectoryLockIfNeeded(context.Background(), mk("t3", "issue-A"), slog.Default())
+		if rel != nil {
+			rel()
+		}
+		close(sameDone)
+	}()
+	select {
+	case <-sameDone:
+		t.Fatal("same-issue non-orch task must serialize, but acquired immediately")
+	case <-time.After(150 * time.Millisecond):
+		// still blocked — correct
+	}
+	rel1() // release the first; now the same-issue task can proceed
+	select {
+	case <-sameDone:
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("same-issue task did not proceed after release")
 	}
 }
