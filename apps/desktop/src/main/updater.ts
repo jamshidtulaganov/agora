@@ -1,5 +1,13 @@
 import { autoUpdater, type UpdateDownloadedEvent } from "electron-updater";
+import log from "electron-log";
 import { app, type BrowserWindow, ipcMain } from "electron";
+
+// Persist updater diagnostics to ~/Library/Logs/Agora/main.log (and the
+// platform equivalents). Without a logger, electron-updater's default is
+// `console`, whose output goes to a packaged app's stdout that nobody ever
+// reads — a Squirrel.Mac rejection then leaves no trace anywhere on disk.
+autoUpdater.logger = log;
+log.transports.file.level = "info";
 
 // Silent background updates: electron-updater downloads on its own as soon
 // as `update-available` fires; we only surface UI when the package is fully
@@ -20,6 +28,11 @@ if (process.platform === "win32" && process.arch === "arm64") {
 const STARTUP_CHECK_DELAY_MS = 5_000;
 const PERIODIC_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
+// How long to wait for `quitAndInstall` to actually tear the app down before
+// declaring the install a failure. On success the process is gone long before
+// this fires; the timer only ever resolves on the failure path.
+const INSTALL_GRACE_MS = 10_000;
+
 export type ManualUpdateCheckResult =
   | {
       ok: true;
@@ -28,6 +41,10 @@ export type ManualUpdateCheckResult =
       available: boolean;
     }
   | { ok: false; error: string };
+
+// `quitAndInstall` only ever reports failure: a successful install never
+// returns, because the process is replaced.
+export type InstallUpdateResult = { ok: false; error: string };
 
 type RendererChannel =
   | "updater:update-available"
@@ -85,6 +102,11 @@ function checkForUpdatesOnce(): Promise<unknown> {
 }
 
 export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null): void {
+  // Retained so a failed install can explain *why* rather than reporting a
+  // bare timeout. electron-updater surfaces Squirrel.Mac's rejection through
+  // the `error` event, long before the user ever clicks "Restart now".
+  let lastUpdaterError: Error | null = null;
+
   autoUpdater.on("update-available", (info) => {
     // Forwarded for renderer-side state tracking only; the notification UI
     // does not render an "available" affordance with autoDownload=true.
@@ -108,7 +130,8 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null): voi
   });
 
   autoUpdater.on("error", (err) => {
-    console.error("Auto-updater error:", err);
+    lastUpdaterError = err instanceof Error ? err : new Error(String(err));
+    log.error("Auto-updater error:", err);
   });
 
   // Retained for IPC back-compat with older renderer bundles. With
@@ -117,8 +140,32 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null): voi
     return autoUpdater.downloadUpdate();
   });
 
-  ipcMain.handle("updater:install", () => {
-    autoUpdater.quitAndInstall(false, true);
+  // `autoUpdater.quitAndInstall()` is not a promise and does not throw when it
+  // cannot install. On macOS it hands off to Squirrel.Mac, which validates the
+  // update against the running app's designated requirement; on rejection
+  // electron-updater's MacUpdater.quitAndInstall() simply parks an
+  // `update-downloaded` listener that never fires and returns normally. The
+  // click then does nothing, forever, with no error anywhere — so treat "still
+  // running after the grace period" as the failure signal.
+  ipcMain.handle("updater:install", async (): Promise<InstallUpdateResult> => {
+    try {
+      autoUpdater.quitAndInstall(false, true);
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      log.error("Failed to install update:", err);
+      return { ok: false, error };
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, INSTALL_GRACE_MS));
+
+    const detail =
+      lastUpdaterError?.message ??
+      "the installer did not start and reported no error";
+    log.error(`Update install did not restart the app: ${detail}`);
+    return {
+      ok: false,
+      error: `Couldn't apply the update automatically: ${detail}`,
+    };
   });
 
   ipcMain.handle("updater:check", async (): Promise<ManualUpdateCheckResult> => {
