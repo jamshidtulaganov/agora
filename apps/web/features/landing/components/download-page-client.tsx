@@ -70,7 +70,7 @@ export function DownloadPageClient({ release }: DownloadPageClientProps) {
 
   return (
     <>
-      <LandingHeader variant="light" />
+      <LandingHeader />
       <main className="bg-white text-[#18181B] dark:bg-[#05070b] dark:text-white">
         <div className="mx-auto max-w-[1320px] px-4 py-16 sm:px-6 sm:py-20 lg:px-8 lg:py-24">
           {/* Detected-platform hero */}
