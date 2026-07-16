@@ -37,7 +37,13 @@ type ArtifactCapabilityGrant struct {
 	DaemonID    string            `json:"daemon_id,omitempty"`
 	SourceRoot  string            `json:"source_root"`
 	Repos       []ArtifactRepoRef `json:"repos"`
-	ExpiresAt   time.Time         `json:"expires_at"`
+	// Live: the grant points at a local_directory's LIVE working tree — no
+	// orchestration step, no frozen base/head SHAs. changes/file read the
+	// folder's current (possibly uncommitted) state; preview proxies to
+	// PreviewURL (the developer's own dev server) instead of spawning one.
+	Live       bool      `json:"live,omitempty"`
+	PreviewURL string    `json:"preview_url,omitempty"`
+	ExpiresAt  time.Time `json:"expires_at"`
 }
 
 type artifactCapabilityRequest struct {

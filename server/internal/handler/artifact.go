@@ -273,6 +273,90 @@ func (h *Handler) artifactRuntimeLocation(ctx context.Context, taskID pgtype.UUI
 
 // GetIssueArtifact returns immutable Git identity plus short-lived opaque
 // capabilities. Raw filesystem paths never cross this API boundary.
+// liveLocalArtifactID is deterministic per (issue, folder) so the frontend's
+// query cache keys stay stable across polls of a live local working tree.
+func liveLocalArtifactID(issueID, localPath string) string {
+	h := sha256.Sum256([]byte("live\x00" + issueID + "\x00" + localPath))
+	return "live-" + hex.EncodeToString(h[:8])
+}
+
+// writeLiveLocalArtifact serves the issue's project local_directory as a LIVE
+// artifact — its working tree, no orchestration step — when one is attached on
+// an online daemon. Returns true when it wrote a response. This is what makes
+// Changes/Preview/Checks reflect the folder's current state (and proxy to the
+// developer's own dev server) even with no orchestration run.
+func (h *Handler) writeLiveLocalArtifact(w http.ResponseWriter, r *http.Request, issue db.Issue) bool {
+	if !issue.ProjectID.Valid {
+		return false
+	}
+	resources, err := h.Queries.ListProjectResources(r.Context(), issue.ProjectID)
+	if err != nil {
+		return false
+	}
+	var ref localDirectoryRef
+	found := false
+	for _, res := range resources {
+		if res.ResourceType != "local_directory" {
+			continue
+		}
+		if json.Unmarshal(res.ResourceRef, &ref) != nil {
+			continue
+		}
+		if strings.TrimSpace(ref.LocalPath) != "" && strings.TrimSpace(ref.DaemonID) != "" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return false
+	}
+	runtime, err := h.Queries.GetOnlineRuntimeForDaemon(r.Context(), db.GetOnlineRuntimeForDaemonParams{
+		WorkspaceID: issue.WorkspaceID, DaemonID: pgtype.Text{String: ref.DaemonID, Valid: true},
+	})
+	if err != nil {
+		return false // daemon offline — no live surface, fall through
+	}
+	var meta struct {
+		EditorAddr string `json:"editor_addr"`
+		EditorPort string `json:"editor_port"`
+	}
+	_ = json.Unmarshal(runtime.Metadata, &meta)
+
+	artifactID := liveLocalArtifactID(uuidToString(issue.ID), ref.LocalPath)
+	summary := artifactSummary{
+		ID: artifactID, StepKey: "local", Title: "Local working tree",
+		Kind: "local_directory", Capability: "implementation", Canonical: true,
+		Repos: []artifactRepoRef{},
+	}
+	baseRecord := artifactCapabilityRecord{
+		ArtifactID: artifactID, WorkspaceID: uuidToString(issue.WorkspaceID),
+		IssueID: uuidToString(issue.ID), RuntimeID: uuidToString(runtime.ID), DaemonID: ref.DaemonID,
+		SourceRoot: ref.LocalPath, Live: true, PreviewURL: strings.TrimSpace(ref.PreviewURL),
+	}
+	capabilities := make(map[string]string, 4)
+	for _, purpose := range []string{"changes", "file", "preview", "checks"} {
+		record := baseRecord
+		record.Purpose = purpose
+		token, mintErr := mintArtifactCapability(record)
+		if mintErr != nil {
+			writeError(w, http.StatusInternalServerError, "mint artifact capability failed")
+			return true
+		}
+		capabilities[purpose] = token
+	}
+	response := issueArtifactResponse{
+		Ready: true, RunStatus: "live", Artifact: &summary,
+		Components: []artifactSummary{summary}, Capabilities: capabilities,
+	}
+	if internal := resolveDaemonInternalAddr(meta.EditorAddr); internal != "" {
+		response.DaemonURL = "/browser/proxy/" + registerBrowserTarget(internal, uuidToString(issue.WorkspaceID))
+	} else {
+		response.DaemonURL = daemonEditorBase(meta.EditorPort)
+	}
+	writeJSON(w, http.StatusOK, response)
+	return true
+}
+
 func (h *Handler) GetIssueArtifact(w http.ResponseWriter, r *http.Request) {
 	issue, ok := h.loadIssueForUser(w, r, chi.URLParam(r, "id"))
 	if !ok {
@@ -280,6 +364,9 @@ func (h *Handler) GetIssueArtifact(w http.ResponseWriter, r *http.Request) {
 	}
 	run, err := h.Queries.GetLatestOrchestrationRunForIssue(r.Context(), issue.ID)
 	if errors.Is(err, pgx.ErrNoRows) {
+		if h.writeLiveLocalArtifact(w, r, issue) {
+			return
+		}
 		writeJSON(w, http.StatusOK, issueArtifactResponse{Ready: false, Reason: "no orchestration run", Components: []artifactSummary{}})
 		return
 	}
@@ -303,6 +390,12 @@ func (h *Handler) GetIssueArtifact(w http.ResponseWriter, r *http.Request) {
 	if !canonicalOK {
 		response.Reason = "integration artifact is not ready"
 		if requestedStepID == "" {
+			// No orchestration artifact yet — prefer the live local working tree
+			// when the project has a local_directory on an online daemon, so the
+			// dev surface is usable during (and independent of) a run.
+			if h.writeLiveLocalArtifact(w, r, issue) {
+				return
+			}
 			writeJSON(w, http.StatusOK, response)
 			return
 		}

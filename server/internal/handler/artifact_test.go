@@ -188,3 +188,100 @@ func TestGetIssueArtifactDoesNotExposeWorkdir(t *testing.T) {
 		}
 	}
 }
+
+// TestGetIssueArtifactLiveLocalFallback: an issue whose project has a
+// local_directory on an ONLINE daemon and no orchestration artifact serves a
+// LIVE artifact (working tree) with a preview grant carrying the dev-server URL.
+func TestGetIssueArtifactLiveLocalFallback(t *testing.T) {
+	ctx := context.Background()
+	const daemonID = "d-live-local-test"
+	const localPath = "/Users/dev/my-project"
+	const previewURL = "http://localhost:5173"
+
+	// Online runtime for the daemon that owns the folder.
+	var runtimeID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_runtime (workspace_id, name, runtime_mode, provider, status, daemon_id, metadata, last_seen_at)
+		VALUES ($1, 'Live Local RT', 'local', 'claude', 'online', $2, '{"editor_port":"7080"}'::jsonb, now())
+		RETURNING id::text`, testWorkspaceID, daemonID).Scan(&runtimeID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM agent_runtime WHERE id = $1`, runtimeID) })
+
+	// Project + local_directory resource pinned to that daemon, with a preview URL.
+	var projectID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO project (workspace_id, title) VALUES ($1, 'Live Local') RETURNING id::text
+	`, testWorkspaceID).Scan(&projectID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM project WHERE id = $1`, projectID) })
+	refJSON, _ := json.Marshal(map[string]any{"local_path": localPath, "daemon_id": daemonID, "preview_url": previewURL})
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO project_resource (project_id, workspace_id, resource_type, resource_ref)
+		VALUES ($1, $2, 'local_directory', $3)`, projectID, testWorkspaceID, refJSON); err != nil {
+		t.Fatal(err)
+	}
+
+	var issueID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO issue (workspace_id, title, creator_type, creator_id, project_id)
+		VALUES ($1, 'live local issue', 'member', $2, $3) RETURNING id::text
+	`, testWorkspaceID, testUserID, projectID).Scan(&issueID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM issue WHERE id = $1`, issueID) })
+
+	req := withURLParam(newRequest(http.MethodGet, "/api/issues/"+issueID+"/artifact", nil), "id", issueID)
+	w := httptest.NewRecorder()
+	testHandler.GetIssueArtifact(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), localPath) {
+		t.Fatalf("live-local response leaked raw local_path: %s", w.Body.String())
+	}
+	var response issueArtifactResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Ready || response.RunStatus != "live" || response.Artifact == nil || response.Artifact.Kind != "local_directory" {
+		t.Fatalf("expected a ready live artifact, got %+v", response)
+	}
+	if len(response.Capabilities) != 4 {
+		t.Fatalf("expected 4 capabilities, got %d", len(response.Capabilities))
+	}
+	rec, ok := lookupArtifactCapability(response.Capabilities["preview"])
+	if !ok {
+		t.Fatal("preview capability did not verify")
+	}
+	if !rec.Live || rec.SourceRoot != localPath || rec.PreviewURL != previewURL || rec.DaemonID != daemonID {
+		t.Fatalf("preview grant not a live-local grant: %+v", rec)
+	}
+}
+
+// Offline daemon => no live surface; the endpoint falls through to the
+// standard "no orchestration run" response.
+func TestGetIssueArtifactLiveLocalOfflineDaemonFallsThrough(t *testing.T) {
+	ctx := context.Background()
+	var projectID, issueID string
+	if err := testPool.QueryRow(ctx, `INSERT INTO project (workspace_id, title) VALUES ($1, 'Offline Local') RETURNING id::text`, testWorkspaceID).Scan(&projectID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM project WHERE id = $1`, projectID) })
+	refJSON, _ := json.Marshal(map[string]any{"local_path": "/Users/dev/off", "daemon_id": "d-offline-none"})
+	testPool.Exec(ctx, `INSERT INTO project_resource (project_id, workspace_id, resource_type, resource_ref) VALUES ($1, $2, 'local_directory', $3)`, projectID, testWorkspaceID, refJSON)
+	if err := testPool.QueryRow(ctx, `INSERT INTO issue (workspace_id, title, creator_type, creator_id, project_id) VALUES ($1, 'offline local', 'member', $2, $3) RETURNING id::text`, testWorkspaceID, testUserID, projectID).Scan(&issueID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM issue WHERE id = $1`, issueID) })
+
+	req := withURLParam(newRequest(http.MethodGet, "/api/issues/"+issueID+"/artifact", nil), "id", issueID)
+	w := httptest.NewRecorder()
+	testHandler.GetIssueArtifact(w, req)
+	var response issueArtifactResponse
+	json.Unmarshal(w.Body.Bytes(), &response)
+	if response.Ready || response.Reason != "no orchestration run" {
+		t.Fatalf("offline daemon should fall through, got %+v", response)
+	}
+}
