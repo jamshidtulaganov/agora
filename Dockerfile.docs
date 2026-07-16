@@ -18,7 +18,12 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json .npmrc ./
 COPY apps/docs/package.json apps/docs/
 # postinstall runs fumadocs-mdx which reads apps/docs/source.config.ts
 COPY apps/docs/source.config.ts apps/docs/source.config.ts
+# The builder stage copies the whole packages/ tree, so the store must hold
+# every workspace member's deps — not just @agora/ui's — or the offline
+# re-link fails (same member set as Dockerfile.web).
+COPY packages/core/package.json packages/core/
 COPY packages/ui/package.json packages/ui/
+COPY packages/views/package.json packages/views/
 COPY packages/tsconfig/package.json packages/tsconfig/
 COPY packages/eslint-config/package.json packages/eslint-config/
 
