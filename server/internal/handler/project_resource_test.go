@@ -406,6 +406,9 @@ func TestProjectResourceLocalDirectoryValidation(t *testing.T) {
 		{"missing daemon_id", map[string]any{"local_path": "/Users/foo/work"}},
 		{"blank daemon_id", map[string]any{"local_path": "/Users/foo/work", "daemon_id": ""}},
 		{"wrong type in payload", map[string]any{"local_path": 42, "daemon_id": "d1"}},
+		{"invalid access", map[string]any{"local_path": "/Users/foo/work", "daemon_id": "d1", "access": "admin"}},
+		{"read access needs worktree", map[string]any{"local_path": "/Users/foo/work", "daemon_id": "d1", "access": "read", "isolation": "in_place"}},
+		{"read access rejects default in_place", map[string]any{"local_path": "/Users/foo/work", "daemon_id": "d1", "access": "read"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -123,6 +123,12 @@ type localDirectoryRef struct {
 	// the developer's own checkout so tasks on different issues run in parallel
 	// without touching the user's tree. Empty means in_place (back-compat).
 	Isolation string `json:"isolation,omitempty"`
+	// Access is the resource permission: "write" (default, back-compat) lets
+	// the pipeline modify the folder (in_place edits or worktree write-back);
+	// "read" treats the folder as reference material only — the daemon forces
+	// worktree isolation and disables every write-back path into the user's
+	// checkout, so agents can read the code but never mutate it.
+	Access string `json:"access,omitempty"`
 }
 
 func validateLocalDirectoryRef(ref json.RawMessage) (json.RawMessage, error) {
@@ -147,6 +153,17 @@ func validateLocalDirectoryRef(ref json.RawMessage) (json.RawMessage, error) {
 	case "", "in_place", "worktree":
 	default:
 		return nil, errors.New("local_directory: isolation must be in_place or worktree")
+	}
+	payload.Access = strings.TrimSpace(payload.Access)
+	switch payload.Access {
+	case "", "read", "write":
+	default:
+		return nil, errors.New("local_directory: access must be read or write")
+	}
+	// Read access is only meaningful with an isolated working tree: in_place
+	// would hand the agent the user's folder as its writable workdir.
+	if payload.Access == "read" && payload.Isolation == "in_place" {
+		return nil, errors.New("local_directory: access=read requires isolation=worktree (in-place execution writes to the folder)")
 	}
 	out, err := json.Marshal(payload)
 	if err != nil {

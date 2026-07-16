@@ -640,6 +640,35 @@ func TestAcquireLocalDirectoryLock_UnapprovedPathFailsTask(t *testing.T) {
 	}
 }
 
+func TestLocalDirectoryAssignmentAccessMode(t *testing.T) {
+	cases := []struct {
+		name             string
+		ref              localDirectoryRef
+		wantReadOnly     bool
+		wantWorktreeMode bool
+	}{
+		{"default write in-place", localDirectoryRef{}, false, false},
+		{"explicit write worktree", localDirectoryRef{Isolation: "worktree"}, false, true},
+		{"read forces worktree", localDirectoryRef{Access: "read", Isolation: "worktree"}, true, true},
+		{"read forces worktree even if isolation blank", localDirectoryRef{Access: "read"}, true, true},
+		{"read forces worktree even if isolation says in_place", localDirectoryRef{Access: "read", Isolation: "in_place"}, true, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &localDirectoryAssignment{Ref: tc.ref}
+			if a.isReadOnly() != tc.wantReadOnly {
+				t.Errorf("isReadOnly() = %v, want %v", a.isReadOnly(), tc.wantReadOnly)
+			}
+			if a.isWorktreeMode() != tc.wantWorktreeMode {
+				t.Errorf("isWorktreeMode() = %v, want %v", a.isWorktreeMode(), tc.wantWorktreeMode)
+			}
+		})
+	}
+	if (*localDirectoryAssignment)(nil).isReadOnly() {
+		t.Error("nil assignment must not be read-only")
+	}
+}
+
 func TestAcquireLocalDirectoryLock_WorktreeModeDoesNotHoldSessionLock(t *testing.T) {
 	// No t.Parallel(): the allowlist is process-global.
 	dir := t.TempDir()

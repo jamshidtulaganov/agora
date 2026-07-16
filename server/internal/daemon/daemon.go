@@ -3009,7 +3009,12 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 						return fmt.Errorf("acquire worktree metadata lock: %w", lockErr)
 					}
 					defer release()
-					run, _, perr := provisionOrReuseWorktreesAt(ctx, localAssignment.AbsPath, isolationKey, workDir, baseRefs, task.OrchestrationReadOnly, taskLog)
+					// Read-only comes from either the orchestration step (QA/review
+					// verify on a detached copy) OR the resource's own access grant
+					// (folder attached read-only). Either forces a detached, no-branch
+					// worktree — nothing lands in the user's checkout.
+					readOnly := task.OrchestrationReadOnly || localAssignment.isReadOnly()
+					run, _, perr := provisionOrReuseWorktreesAt(ctx, localAssignment.AbsPath, isolationKey, workDir, baseRefs, readOnly, taskLog)
 					if perr == nil && task.OrchestrationStepID != "" {
 						orchestrationWorktrees = run
 					}

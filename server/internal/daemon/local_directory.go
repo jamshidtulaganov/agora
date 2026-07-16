@@ -31,11 +31,27 @@ type localDirectoryRef struct {
 	// developer's own checkout instead of running the agent directly in the
 	// folder. Empty = in_place (back-compat with older servers).
 	Isolation string `json:"isolation,omitempty"`
+	// Access: "write" (default/empty, back-compat) or "read". Read access is a
+	// hard read-only grant: the daemon runs the agent in an isolated worktree
+	// (never in-place) and tears that worktree down WITHOUT keeping the agent
+	// branch, so nothing the agent does can land in the user's checkout.
+	Access string `json:"access,omitempty"`
 }
 
-// isWorktreeMode reports whether the assignment requests worktree isolation.
+// isReadOnly reports whether the folder is attached as read-only reference
+// material. Read-only implies worktree isolation and no write-back.
+func (a *localDirectoryAssignment) isReadOnly() bool {
+	return a != nil && strings.TrimSpace(a.Ref.Access) == "read"
+}
+
+// isWorktreeMode reports whether the assignment runs in an isolated worktree.
+// Read-only access forces it on regardless of the isolation field, so an older
+// or misconfigured ref can never hand a read-only folder to the agent in-place.
 func (a *localDirectoryAssignment) isWorktreeMode() bool {
-	return a != nil && strings.TrimSpace(a.Ref.Isolation) == "worktree"
+	if a == nil {
+		return false
+	}
+	return a.isReadOnly() || strings.TrimSpace(a.Ref.Isolation) == "worktree"
 }
 
 // localDirectoryAssignment is the resolved view of a task's local_directory

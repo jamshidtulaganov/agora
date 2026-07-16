@@ -158,6 +158,12 @@ export interface LocalDirectoryResourceRef {
   local_path: string;
   daemon_id: string;
   label?: string;
+  /** "in_place" (default) or "worktree" — how the agent workdir is derived. */
+  isolation?: "in_place" | "worktree";
+  /** Resource permission. "write" (default) allows in-place edits or worktree
+   *  write-back; "read" forces worktree isolation and blocks every write-back
+   *  path, so agents treat the folder as reference material only. */
+  access?: "read" | "write";
 }
 
 export type ProjectResourceRef =
