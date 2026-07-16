@@ -1,0 +1,70 @@
+# sd-agora-docs — the documentation site (Next.js + Fumadocs, standalone).
+# Mirrors Dockerfile.web. Build context MUST be the repo root:
+#
+#   fly deploy --config deploy/fly/docs/fly.toml --dockerfile Dockerfile.docs .
+#
+# The site serves under basePath /docs; the web app reverse-proxies
+# /docs/:path* to it via the DOCS_URL rewrite (apps/web/next.config.ts).
+
+# --- Dependencies ---
+FROM node:22-alpine AS deps
+
+RUN corepack enable && corepack prepare pnpm@10.28.2 --activate
+
+WORKDIR /app
+
+# Copy workspace config and the package.json subset this app needs.
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json .npmrc ./
+COPY apps/docs/package.json apps/docs/
+# postinstall runs fumadocs-mdx which reads apps/docs/source.config.ts
+COPY apps/docs/source.config.ts apps/docs/source.config.ts
+COPY packages/ui/package.json packages/ui/
+COPY packages/tsconfig/package.json packages/tsconfig/
+COPY packages/eslint-config/package.json packages/eslint-config/
+
+RUN pnpm install --frozen-lockfile
+
+# --- Build ---
+FROM node:22-alpine AS builder
+
+RUN corepack enable && corepack prepare pnpm@10.28.2 --activate
+
+WORKDIR /app
+
+# Copy installed dependencies (preserves pnpm symlink structure)
+COPY --from=deps /app ./
+
+# Copy source
+COPY package.json turbo.json pnpm-workspace.yaml ./
+COPY apps/docs/ apps/docs/
+COPY packages/ packages/
+
+# Re-link after source overlay (fixes any symlinks overwritten by COPY)
+RUN pnpm install --frozen-lockfile --offline
+
+ENV STANDALONE=true
+
+RUN pnpm --filter @agora/docs build
+
+# --- Runtime ---
+FROM node:22-alpine AS runner
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
+
+# Copy standalone output (includes traced node_modules)
+COPY --from=builder --chown=nextjs:nodejs /app/apps/docs/.next/standalone ./
+# Copy static files (not included in standalone)
+COPY --from=builder --chown=nextjs:nodejs /app/apps/docs/.next/static ./apps/docs/.next/static
+
+USER nextjs
+
+EXPOSE 3000
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+CMD ["node", "apps/docs/server.js"]

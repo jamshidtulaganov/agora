@@ -47,7 +47,7 @@ jobs:
         # ~50s of expo-lint + tsc to every web/desktop PR. Keep this
         # filter in sync with the root package.json scripts, which also
         # exclude @agora/mobile.
-        run: pnpm exec turbo build typecheck lint test --filter='!@agora/docs' --filter='!@agora/mobile'
+        run: pnpm exec turbo build typecheck lint test --filter='!@agora/mobile'
 
   backend:
     runs-on: ubuntu-latest

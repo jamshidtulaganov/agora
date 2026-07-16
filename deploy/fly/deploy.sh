@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # One-shot fly.io deploy for Agora: sd-agora-db (pgvector) + sd-agora-backend (Go) +
-# sd-agora-web (Next.js) + sd-agora-tg (Telegram Mini App). Idempotent — safe to
-# re-run; the web app and the Telegram Mini App are the only public apps.
+# sd-agora-web (Next.js) + sd-agora-docs (docs site) + sd-agora-tg (Telegram
+# Mini App). Idempotent — safe to
+# re-run.
 #
 # Prereqs:
 #   - flyctl logged in:  fly auth login
@@ -80,6 +81,14 @@ deploy_web() {
   echo "web: https://sd-agora-web.fly.dev"
 }
 
+deploy_docs() {
+  echo "==> sd-agora-docs (documentation site)"
+  ensure_app sd-agora-docs
+  fly deploy --config "$FLYDIR/docs/fly.toml" --app sd-agora-docs \
+    --dockerfile Dockerfile.docs --yes .
+  echo "docs: proxied at https://sd-agora-web.fly.dev/docs (direct: https://sd-agora-docs.fly.dev/docs)"
+}
+
 deploy_telegram() {
   echo "==> sd-agora-tg (Telegram Mini App)"
   ensure_app sd-agora-tg
@@ -113,9 +122,10 @@ case "${1:-all}" in
   backend) deploy_backend ;;
   web) deploy_web ;;
   telegram) deploy_telegram ;;
+  docs) deploy_docs ;;
   daemon) deploy_daemon ;;
-  all) deploy_db; deploy_backend; deploy_web; deploy_telegram ;;
-  *) echo "usage: deploy.sh [db|backend|web|telegram|daemon|all]"; exit 1 ;;
+  all) deploy_db; deploy_backend; deploy_web; deploy_docs; deploy_telegram ;;
+  *) echo "usage: deploy.sh [db|backend|web|telegram|docs|daemon|all]"; exit 1 ;;
 esac
 
 echo "Done. Remember: add https://sd-agora-web.fly.dev/auth/callback to Google OAuth redirect URIs."

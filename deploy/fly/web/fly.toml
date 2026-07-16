@@ -1,4 +1,4 @@
-# sd-agora-web — Next.js (standalone). The ONLY public app.
+# sd-agora-web — Next.js (standalone). Public entry point.
 # Proxies /api, /ws, /auth, /uploads to the backend over the private network.
 # REMOTE_API_URL is read at runtime by next.config rewrites(), so it is a plain
 # env here (no rebuild needed to repoint the backend).
@@ -17,6 +17,9 @@ primary_region = "fra"
   HOSTNAME = "0.0.0.0"
   # Private 6PN address of the backend — never leaves the org network.
   REMOTE_API_URL = "http://sd-agora-backend.internal:8080"
+  # Docs site: /docs/:path* is reverse-proxied here (next.config rewrites,
+  # read at runtime like REMOTE_API_URL).
+  DOCS_URL = "https://sd-agora-docs.fly.dev"
 
 [http_service]
   internal_port = 3000

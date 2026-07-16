@@ -1,0 +1,30 @@
+# sd-agora-docs — the documentation site (Next.js + Fumadocs, standalone).
+# Public so the fly proxy handles connectivity; the canonical entry point is
+# still the web app, which reverse-proxies /docs/:path* here via its DOCS_URL
+# rewrite (visiting this host directly just redirects / to /docs).
+#
+# Build context MUST be the repo root. Deploy from repo root:
+#
+#   fly deploy --config deploy/fly/docs/fly.toml --dockerfile Dockerfile.docs .
+
+app = "sd-agora-docs"
+primary_region = "fra"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  HOSTNAME = "0.0.0.0"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+[[restart]]
+  policy = "always"
