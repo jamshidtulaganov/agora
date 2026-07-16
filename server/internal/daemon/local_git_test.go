@@ -273,3 +273,32 @@ func TestFinalize_Idempotent(t *testing.T) {
 	}
 	_ = first
 }
+
+// GAP-2: if the human switches the shared checkout to another branch during an
+// in_place run, finalize must NOT restore/delete — it leaves the human's move
+// intact.
+func TestFinalize_HumanSwitchedBranch_LeavesUntouched(t *testing.T) {
+	dir := gitFixture(t)
+	ctx := context.Background()
+	g, err := prepareLocalDirGit(ctx, dir, "dev", "task-humanswitch", slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	agentBranch := g.branch
+	// The human, unaware they're on the agent branch, creates + switches to
+	// their own branch mid-run.
+	gitAt(t, dir, "checkout", "-q", "-b", "human-hotfix")
+
+	summary := finalizeLocalDirGit(ctx, g, slog.Default())
+	if summary != "" {
+		t.Errorf("human-switched finalize should be a no-op, got: %s", summary)
+	}
+	// Still on the human's branch — restore did NOT clobber it.
+	if cur := gitAt(t, dir, "symbolic-ref", "--short", "HEAD"); cur != "human-hotfix" {
+		t.Errorf("HEAD = %q, want human-hotfix (untouched)", cur)
+	}
+	// The agent branch was NOT deleted (we didn't touch anything).
+	if b := gitAt(t, dir, "branch", "--list", agentBranch); b == "" {
+		t.Errorf("agent branch should be left intact when the human intervened")
+	}
+}

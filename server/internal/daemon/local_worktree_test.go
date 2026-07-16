@@ -669,3 +669,38 @@ func TestPersistWorktreeRunChanges_SkipsDetachedReadOnly(t *testing.T) {
 		t.Fatalf("read-only worktree must not persist anything: %q", summary)
 	}
 }
+
+// GAP-4: the TTL sweep must SKIP an issue worktree env that a running task has
+// marked active, even when its mtime is past the TTL — otherwise a long-running
+// task's worktrees get remove --force'd mid-execution.
+func TestSweepWorktreeEnvs_SkipsActiveEnv(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	root := t.TempDir()
+	ws := "ws1"
+	parent := t.TempDir()
+	makeRepo(t, filepath.Join(parent, "svc"))
+	ctx := context.Background()
+	env := filepath.Join(root, ws, ".worktrees", "issue-live")
+	if _, err := provisionLocalWorktrees(ctx, parent, "issue-live", env, slog.Default()); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-72 * time.Hour)
+	os.Chtimes(env, old, old)
+
+	d := &Daemon{cfg: Config{WorkspacesRoot: root}, activeEnvRoots: map[string]int{}}
+	d.markActiveEnvRoot(env) // a task is running on this issue
+
+	d.sweepWorktreeEnvs(ctx, d.isActiveEnvRoot, slog.Default())
+	if _, err := os.Stat(env); err != nil {
+		t.Fatalf("active env must survive the sweep: %v", err)
+	}
+
+	// Once the task finishes (unmarked), the stale env is reclaimed.
+	d.unmarkActiveEnvRoot(env)
+	d.sweepWorktreeEnvs(ctx, d.isActiveEnvRoot, slog.Default())
+	if _, err := os.Stat(env); !os.IsNotExist(err) {
+		t.Error("idle env should be swept once inactive")
+	}
+}

@@ -82,7 +82,7 @@ func (d *Daemon) runGC(ctx context.Context) {
 	// Reclaim idle issue-worktree envs (local_directory isolation:"worktree").
 	// These persist across an issue's tasks so QA reuses the dev's tree; the
 	// sweep removes them (git worktree remove + prune) once idle past the TTL.
-	d.sweepWorktreeEnvs(ctx, nil, d.logger)
+	d.sweepWorktreeEnvs(ctx, d.isActiveEnvRoot, d.logger)
 
 	// Prune stale worktree references from all bare repo caches.
 	d.pruneRepoWorktrees(root)

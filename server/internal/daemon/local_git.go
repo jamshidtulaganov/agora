@@ -205,6 +205,18 @@ func finalizeLocalDirGit(ctx context.Context, g *localDirGit, log *slog.Logger) 
 	// agent died before removing it, this keeps the user's .git/worktrees clean.
 	_ = gitRun(ctx, g.dir, "worktree", "prune")
 
+	// GAP-2: in_place shares the user's ONE working tree. If the human switched
+	// branches while the agent ran (the checkout is no longer on our agent
+	// branch), our restore/delete would clobber the human's deliberate move.
+	// Leave everything exactly as the human left it and just report.
+	if cur, curErr := gitOutput(ctx, g.dir, "symbolic-ref", "--short", "-q", "HEAD"); curErr == nil {
+		if cur != "" && cur != g.branch {
+			log.Warn("local_directory: checkout moved off the agent branch during the run — leaving it untouched (human intervened)",
+				"agent_branch", g.branch, "current_branch", cur)
+			return ""
+		}
+	}
+
 	newHead, err := gitOutput(ctx, g.dir, "rev-parse", "HEAD")
 	if err != nil {
 		log.Warn("local_directory: read post-run HEAD failed", "error", err)

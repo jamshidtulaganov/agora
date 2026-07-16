@@ -2323,6 +2323,20 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 	if localRelease != nil {
 		defer localRelease()
 	}
+	// GAP-4: the shared per-issue worktree env (.worktrees/<issue>) is not a task
+	// env root, so the task-dir active-mark doesn't cover it and the TTL sweep
+	// could reclaim it mid-task on a long-running issue. Mark the issue worktree
+	// env root active for the whole task (all worktree modes: orchestration steps
+	// nest under it, non-orch reuses it) so sweepWorktreeEnvs skips it while live.
+	if assignment, _ := findLocalDirectoryAssignment(task.ProjectResources, d.cfg.DaemonID); assignment != nil && assignment.isWorktreeMode() {
+		issueKey := task.IssueID
+		if issueKey == "" {
+			issueKey = task.ID
+		}
+		worktreeEnvRoot := d.worktreeEnvDir(task.WorkspaceID, issueKey)
+		d.markActiveEnvRoot(worktreeEnvRoot)
+		defer d.unmarkActiveEnvRoot(worktreeEnvRoot)
+	}
 	// Backstop: whatever exit this task takes, restore the user's branch (or
 	// keep the agent branch when it holds commits). finalizeLocalDirGit is
 	// idempotent, so the explicit calls below on the reported paths win and
