@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { RotateCw, Loader2, TriangleAlert, Globe, ChevronUp, ChevronDown, Trash2 } from "lucide-react";
 import { Button } from "@agora/ui/components/ui/button";
 import { Input } from "@agora/ui/components/ui/input";
-import { daemonProxyHeaders as proxyHeaders, absoluteDaemonBase as absoluteBase } from "./daemon-proxy-fetch";
+import { daemonProxyHeaders as proxyHeaders, absoluteDaemonBase as absoluteBase } from "../../platform/daemon-proxy-fetch";
 
 // Embedded browser ("general browser pane"). Opens a WebSocket to the daemon,
 // which screencasts a headless Chromium (CDP) — frames render here, and mouse /

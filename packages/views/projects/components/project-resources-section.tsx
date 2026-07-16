@@ -1,7 +1,7 @@
 /* eslint-disable i18next/no-literal-string -- project admin panel; i18n follow-up */
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   BookOpen,
@@ -13,6 +13,7 @@ import {
   Pencil,
   Plus,
   Search,
+  Server,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -22,6 +23,7 @@ import {
   useDeleteProjectResource,
   useUpdateProjectResource,
 } from "@agora/core/projects";
+import { runtimeListOptions } from "@agora/core/runtimes";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { api } from "@agora/core/api";
 import { useCurrentWorkspace } from "@agora/core/paths";
@@ -49,6 +51,7 @@ import {
   validateLocalDirectory,
   type ValidateLocalDirectoryResult,
 } from "../../platform";
+import { FolderBrowserDialog } from "./folder-browser-dialog";
 import { useT } from "../../i18n";
 
 // Project Resources sidebar section.
@@ -82,6 +85,33 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
   const { data: resources = [] } = useQuery(
     projectResourcesOptions(wsId, projectId),
   );
+  // Workspace runtimes power the web daemon picker (which machine hosts the
+  // folder) and the machine-name label on each local_directory row. On desktop
+  // the native picker owns "this machine", so the list is only load-bearing on
+  // web — but it's a cheap cached list, so query unconditionally.
+  const { data: runtimes = [] } = useQuery(runtimeListOptions(wsId));
+  // daemon_id → machine name, for labelling rows by host on web.
+  const daemonLabelById = new Map<string, string>();
+  for (const rt of runtimes) {
+    if (rt.daemon_id && !daemonLabelById.has(rt.daemon_id)) {
+      daemonLabelById.set(rt.daemon_id, rt.name);
+    }
+  }
+  // Online daemons the web picker can attach a folder to: one entry per
+  // daemon_id (a daemon may register several provider rows), online only,
+  // preferring the local-mode row's name for the label.
+  const daemonOptions: DaemonOption[] = [];
+  const seenDaemonIds = new Set<string>();
+  for (const rt of runtimes) {
+    if (!rt.daemon_id || rt.status !== "online") continue;
+    if (seenDaemonIds.has(rt.daemon_id)) continue;
+    seenDaemonIds.add(rt.daemon_id);
+    daemonOptions.push({
+      daemonId: rt.daemon_id,
+      label: rt.name,
+      mode: rt.runtime_mode,
+    });
+  }
   // Primary repo = the first github_repo by position (the order the backend
   // hands the agent; the human reorders to choose which an agent works in).
   const githubRepos = resources.filter(isGithubRef);
@@ -117,10 +147,23 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
   // read-only on web because the daemon-id check can't be performed in the
   // browser.
   const desktopMode = isDesktopShell();
+  // Web has no native folder picker and no "this machine" daemon, so it drives
+  // attachment through the daemon picker instead: the human names the host and
+  // types the absolute path, and the daemon validates + approves it at task
+  // time (`agora daemon allow-dir` / the desktop picker / the env allowlist).
+  const webMode = !desktopMode;
   const localDaemonId = daemonStatus.daemonId;
 
   const attachedUrls = new Set(
     resources.filter(isGithubRef).map((r) => r.resource_ref.url),
+  );
+  // Every daemon that already has a local_directory in this project — the web
+  // picker greys these out because the backend allows at most one folder per
+  // (project, daemon).
+  const attachedDaemonIds = new Set(
+    resources
+      .filter(isLocalDirectoryRef)
+      .map((r) => r.resource_ref.daemon_id),
   );
   const attachedLocalPaths = new Set(
     resources
@@ -234,6 +277,45 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
       toast.error(msg);
     } finally {
       setPicking(false);
+    }
+  };
+
+  // Web attach: the human picked a host daemon + typed an absolute path in the
+  // popover. There's no browser-side validation — the server checks daemon
+  // access + path shape, and the daemon checks the folder exists + is approved
+  // at task time. Returns true on success so the popover can close/reset.
+  const handleAttachLocalDirectoryWeb = async (v: {
+    daemonId: string;
+    path: string;
+    access: "read" | "write";
+    previewUrl: string;
+  }): Promise<boolean> => {
+    const path = v.path.trim();
+    if (!v.daemonId || !path) return false;
+    const ref: LocalDirectoryResourceRef = {
+      local_path: path,
+      daemon_id: v.daemonId,
+      access: v.access,
+    };
+    // access=read is only valid with worktree isolation (the server rejects
+    // read + in_place), so pin it here to match.
+    if (v.access === "read") ref.isolation = "worktree";
+    const preview = v.previewUrl.trim();
+    if (preview) ref.preview_url = preview;
+    try {
+      await createResource.mutateAsync({
+        resource_type: "local_directory",
+        resource_ref: ref,
+      });
+      toast.success(t(($) => $.resources.toast_local_attached));
+      return true;
+    } catch (err) {
+      toast.error(
+        err instanceof Error && err.message
+          ? err.message
+          : t(($) => $.resources.toast_local_pick_failed),
+      );
+      return false;
     }
   };
 
@@ -369,7 +451,16 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
                   }
                   hasMultipleRepos={githubRepoCount > 1}
                   localDaemonId={localDaemonId}
-                  canEdit={desktopMode}
+                  webMode={webMode}
+                  daemonLabel={
+                    isLocalDirectoryRef(resource)
+                      ? daemonLabelById.get(resource.resource_ref.daemon_id)
+                      : undefined
+                  }
+                  // Web edits are gated server-side (requireLocalDirectoryDaemon
+                  // Access re-checks owner/admin on every update), so allow the
+                  // controls optimistically and surface a 403 as a toast.
+                  canEdit={desktopMode || webMode}
                   onRemove={() => handleRemove(resource)}
                   onRenameLocalDirectory={handleRenameLocalDirectory}
                   onToggleAccess={handleToggleAccess}
@@ -497,6 +588,15 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
               )}
             </div>
           )}
+          {webMode && (
+            <AddLocalDirectoryWebPopover
+              wsId={wsId}
+              daemonOptions={daemonOptions}
+              attachedDaemonIds={attachedDaemonIds}
+              submitting={createResource.isPending}
+              onSubmit={handleAttachLocalDirectoryWeb}
+            />
+          )}
           {resources.some((r) => r.resource_type === "github_repo") && (
             <Button
               variant="ghost"
@@ -515,9 +615,17 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
   );
 }
 
+interface DaemonOption {
+  daemonId: string;
+  label: string;
+  mode: "local" | "cloud";
+}
+
 interface ResourceRowProps {
   resource: ProjectResource;
   localDaemonId: string | null;
+  webMode: boolean;
+  daemonLabel?: string;
   canEdit: boolean;
   isPrimaryRepo?: boolean;
   hasMultipleRepos?: boolean;
@@ -538,6 +646,8 @@ interface ResourceRowProps {
 function ResourceRow({
   resource,
   localDaemonId,
+  webMode,
+  daemonLabel,
   canEdit,
   isPrimaryRepo,
   hasMultipleRepos,
@@ -592,6 +702,8 @@ function ResourceRow({
       <LocalDirectoryRow
         resource={resource}
         localDaemonId={localDaemonId}
+        webMode={webMode}
+        daemonLabel={daemonLabel}
         canEdit={canEdit}
         onRemove={onRemove}
         onRename={onRenameLocalDirectory}
@@ -621,6 +733,8 @@ function ResourceRow({
 interface LocalDirectoryRowProps {
   resource: ProjectResource & { resource_ref: LocalDirectoryResourceRef };
   localDaemonId: string | null;
+  webMode: boolean;
+  daemonLabel?: string;
   canEdit: boolean;
   onRemove: () => void;
   onRename: (
@@ -639,6 +753,8 @@ interface LocalDirectoryRowProps {
 function LocalDirectoryRow({
   resource,
   localDaemonId,
+  webMode,
+  daemonLabel,
   canEdit,
   onRemove,
   onRename,
@@ -657,7 +773,12 @@ function LocalDirectoryRow({
   // rename is hidden on foreign / unknown-daemon rows because the label
   // belongs to the owning device. Delete stays available so the user can
   // drop a stale registration from any device.
-  const mismatch = isForeignDaemon || isLocalUnknown;
+  //
+  // Web has no "this machine", so the desktop mismatch rule (any row not on the
+  // local daemon) would de-emphasize every row. Instead web manages folders on
+  // ANY of its daemons — the server re-checks owner/admin per edit — so nothing
+  // is a mismatch here; the machine name is shown so the host stays clear.
+  const mismatch = webMode ? false : isForeignDaemon || isLocalUnknown;
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(display);
@@ -716,6 +837,9 @@ function LocalDirectoryRow({
           <TooltipContent side="top">
             <div className="space-y-0.5 text-[11px]">
               <div className="font-mono">{ref.local_path}</div>
+              {webMode && daemonLabel && (
+                <div className="text-muted-foreground">On {daemonLabel}</div>
+              )}
               {mismatch && (
                 <div className="text-muted-foreground">
                   {isLocalUnknown
@@ -726,6 +850,15 @@ function LocalDirectoryRow({
             </div>
           </TooltipContent>
         </Tooltip>
+      )}
+      {webMode && daemonLabel && !editing && (
+        <span
+          className="inline-flex max-w-[38%] shrink-0 items-center gap-0.5 rounded bg-muted/60 px-1 py-0.5 text-[9px] text-muted-foreground"
+          title={daemonLabel}
+        >
+          <Server className="size-2.5" aria-hidden />
+          <span className="truncate">{daemonLabel}</span>
+        </span>
       )}
       {!editing && (
         <button
@@ -815,6 +948,236 @@ function LocalDirectoryRow({
         <Trash2 className="size-3 text-muted-foreground" />
       </button>
     </div>
+  );
+}
+
+// Web attach flow for a local_directory. The browser can't OS-pick a folder or
+// probe the filesystem, so the human names the host daemon + types an absolute
+// path; validation + owner-approval happen on the server and daemon. Desktop
+// keeps its native picker (handleAttachLocalDirectory) instead of this.
+function AddLocalDirectoryWebPopover({
+  wsId,
+  daemonOptions,
+  attachedDaemonIds,
+  submitting,
+  onSubmit,
+}: {
+  wsId: string;
+  daemonOptions: DaemonOption[];
+  attachedDaemonIds: Set<string>;
+  submitting: boolean;
+  onSubmit: (v: {
+    daemonId: string;
+    path: string;
+    access: "read" | "write";
+    previewUrl: string;
+  }) => Promise<boolean>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [browseOpen, setBrowseOpen] = useState(false);
+  const [daemonId, setDaemonId] = useState("");
+  const [path, setPath] = useState("");
+  const [access, setAccess] = useState<"read" | "write">("write");
+  const [previewUrl, setPreviewUrl] = useState("");
+
+  // One folder per (project, daemon), so hide daemons already attached here.
+  const available = daemonOptions.filter(
+    (d) => !attachedDaemonIds.has(d.daemonId),
+  );
+
+  // Default to the first attachable daemon when the popover opens (or the
+  // current pick drops out of the list), so a lone daemon needs no selection.
+  useEffect(() => {
+    if (!open) return;
+    if (daemonId && available.some((d) => d.daemonId === daemonId)) return;
+    setDaemonId(available[0]?.daemonId ?? "");
+  }, [open, available, daemonId]);
+
+  const reset = () => {
+    setPath("");
+    setAccess("write");
+    setPreviewUrl("");
+  };
+
+  const canSubmit = Boolean(daemonId) && path.trim().length > 0 && !submitting;
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    const ok = await onSubmit({ daemonId, path, access, previewUrl });
+    if (ok) {
+      reset();
+      setOpen(false);
+    }
+  };
+
+  const segBase =
+    "flex-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors";
+  const segActive = "border-brand/40 bg-brand/10 text-brand";
+  const segIdle =
+    "border-border bg-transparent text-muted-foreground hover:bg-accent";
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(v) => {
+        // The folder picker renders in a portal, so a click inside it reads as
+        // "outside" this popover and would dismiss the form underneath it.
+        if (!v && browseOpen) return;
+        setOpen(v);
+        if (!v) reset();
+      }}
+    >
+      <PopoverTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-full justify-start px-2 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <FolderOpen className="size-3" />
+            Add local folder
+          </Button>
+        }
+      />
+      <PopoverContent align="start" className="w-72 space-y-2 p-2">
+        <div className="text-xs font-medium text-muted-foreground">
+          Attach a local folder
+        </div>
+        {available.length === 0 ? (
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            No online runtime can host a folder. Start a daemon on the machine
+            with your code (<span className="font-mono">agora daemon start</span>
+            ) or open the desktop app there, then reopen this menu.
+          </p>
+        ) : (
+          <>
+            <label className="block space-y-1">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Machine
+              </span>
+              <div className="flex items-center gap-1.5">
+                <Server className="size-3.5 shrink-0 text-muted-foreground" />
+                <select
+                  value={daemonId}
+                  onChange={(e) => setDaemonId(e.target.value)}
+                  className="h-8 w-full rounded-md border bg-transparent px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  {available.map((d) => (
+                    <option key={d.daemonId} value={d.daemonId}>
+                      {d.label}
+                      {d.mode === "cloud" ? " (cloud)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </label>
+            <div className="space-y-1">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Folder
+              </span>
+              <div className="flex items-center gap-1.5">
+                <input
+                  value={path}
+                  onChange={(e) => setPath(e.target.value)}
+                  placeholder="/Users/you/Projects/app"
+                  spellCheck={false}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  aria-label="Absolute path"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void submit();
+                    }
+                  }}
+                  className="h-8 min-w-0 flex-1 rounded-md border bg-transparent px-2 font-mono text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+                />
+                {/* Browse fills the input; the input stays the source of truth
+                    so a path can still be typed or corrected afterwards. */}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 shrink-0 px-2 text-xs"
+                  disabled={!daemonId}
+                  onClick={() => setBrowseOpen(true)}
+                >
+                  <FolderOpen className="size-3" />
+                  Browse
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Access
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setAccess("write")}
+                  className={`${segBase} ${access === "write" ? segActive : segIdle}`}
+                >
+                  Read &amp; write
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAccess("read")}
+                  className={`${segBase} ${access === "read" ? segActive : segIdle}`}
+                >
+                  Read-only
+                </button>
+              </div>
+              {access === "read" && (
+                <p className="text-[10px] text-muted-foreground">
+                  Runs in an isolated worktree; the folder is never modified.
+                </p>
+              )}
+            </div>
+            <label className="block space-y-1">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Preview URL (optional)
+              </span>
+              <input
+                value={previewUrl}
+                onChange={(e) => setPreviewUrl(e.target.value)}
+                placeholder="http://localhost:3000"
+                spellCheck={false}
+                autoCapitalize="none"
+                autoCorrect="off"
+                className="h-8 w-full rounded-md border bg-transparent px-2 text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </label>
+            <p className="text-[10px] leading-relaxed text-muted-foreground">
+              The machine&apos;s owner approves the folder before agents run
+              there — desktop approves on pick; on a headless daemon run{" "}
+              <span className="font-mono">agora daemon allow-dir &lt;path&gt;</span>
+              .
+            </p>
+            <Button
+              size="sm"
+              className="h-7 w-full text-xs"
+              disabled={!canSubmit}
+              onClick={() => void submit()}
+            >
+              {submitting ? "Attaching…" : "Attach folder"}
+            </Button>
+            <FolderBrowserDialog
+              open={browseOpen}
+              onOpenChange={setBrowseOpen}
+              wsId={wsId}
+              daemonId={daemonId}
+              daemonLabel={
+                available.find((d) => d.daemonId === daemonId)?.label ?? ""
+              }
+              // Reopen where the typed path points, so correcting a path keeps
+              // its place; "" lands on the machine's home.
+              initialPath={path.trim()}
+              onSelect={setPath}
+            />
+          </>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 

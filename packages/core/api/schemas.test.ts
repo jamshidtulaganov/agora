@@ -42,7 +42,16 @@ import {
   SquadSchema,
   UserSchema,
 } from "./schemas";
-import { EMPTY_ISSUE_BROWSER, EMPTY_WORKSPACE_LABS, IssueBrowserResponseSchema, WorkspaceLabsSchema } from "./schemas";
+import {
+  EMPTY_DAEMON_BROWSE_TARGET,
+  EMPTY_FS_LIST,
+  EMPTY_ISSUE_BROWSER,
+  EMPTY_WORKSPACE_LABS,
+  DaemonBrowseTargetSchema,
+  FsListResponseSchema,
+  IssueBrowserResponseSchema,
+  WorkspaceLabsSchema,
+} from "./schemas";
 import { parseWithFallback } from "./schema";
 import type { ListTestCasesResponse } from "../types/test-case";
 
@@ -975,6 +984,129 @@ describe("IssueBrowserResponseSchema", () => {
       endpoint,
     );
     expect(parsed.mode).toBe("edge-pop"); // renders as "unavailable", not a crash
+  });
+});
+
+describe("DaemonBrowseTargetSchema", () => {
+  const endpoint = { endpoint: "GET /api/runtimes/by-daemon/:daemonId/browse" };
+
+  it("parses both modes and defaults missing fields", () => {
+    const selfHost = parseWithFallback(
+      { mode: "self-host", daemon_url: "http://127.0.0.1:19514" },
+      DaemonBrowseTargetSchema,
+      EMPTY_DAEMON_BROWSE_TARGET,
+      endpoint,
+    );
+    expect(selfHost.daemon_url).toBe("http://127.0.0.1:19514");
+
+    const cloud = parseWithFallback(
+      { mode: "cloud", daemon_url: "/browser/proxy/abc123" },
+      DaemonBrowseTargetSchema,
+      EMPTY_DAEMON_BROWSE_TARGET,
+      endpoint,
+    );
+    expect(cloud.daemon_url).toBe("/browser/proxy/abc123");
+
+    // A registered-but-stopped machine: mode carries the state, url is blank.
+    const offline = parseWithFallback({ mode: "offline" }, DaemonBrowseTargetSchema, EMPTY_DAEMON_BROWSE_TARGET, endpoint);
+    expect(offline.mode).toBe("offline");
+    expect(offline.daemon_url).toBe(""); // absent → defaulted, never undefined
+  });
+
+  it("degrades wrong-typed fields to the empty fallback instead of throwing", () => {
+    const parsed = parseWithFallback(
+      { mode: 7, daemon_url: null },
+      DaemonBrowseTargetSchema,
+      EMPTY_DAEMON_BROWSE_TARGET,
+      endpoint,
+    );
+    expect(parsed).toEqual(EMPTY_DAEMON_BROWSE_TARGET);
+  });
+
+  it("falls back on null / non-object bodies", () => {
+    for (const body of [null, [], "nope"]) {
+      const parsed = parseWithFallback(body, DaemonBrowseTargetSchema, EMPTY_DAEMON_BROWSE_TARGET, endpoint);
+      expect(parsed.mode).toBe("");
+    }
+  });
+
+  it("tolerates an unknown future mode (consumer checks mode itself)", () => {
+    const parsed = parseWithFallback(
+      { mode: "mesh", daemon_url: "/browser/proxy/x" },
+      DaemonBrowseTargetSchema,
+      EMPTY_DAEMON_BROWSE_TARGET,
+      endpoint,
+    );
+    expect(parsed.mode).toBe("mesh");
+  });
+});
+
+describe("FsListResponseSchema", () => {
+  const endpoint = { endpoint: "GET /editor/fs/list" };
+
+  it("parses a listing and defaults absent entry flags", () => {
+    const parsed = parseWithFallback(
+      {
+        path: "/Users/dev",
+        parent: "",
+        home: "/Users/dev",
+        entries: [{ name: "code", path: "/Users/dev/code", is_dir: true, is_git_repo: true }],
+      },
+      FsListResponseSchema,
+      EMPTY_FS_LIST,
+      endpoint,
+    );
+    expect(parsed.path).toBe("/Users/dev");
+    expect(parsed.parent).toBe(""); // root boundary — UI hides "up one level"
+    expect(parsed.entries[0]!.is_git_repo).toBe(true);
+    expect(parsed.entries[0]!.is_symlink).toBe(false); // absent → defaulted
+    expect(parsed.truncated).toBe(false);
+  });
+
+  it("defaults entries to [] so an older daemon renders empty, not undefined", () => {
+    const parsed = parseWithFallback({ path: "/srv" }, FsListResponseSchema, EMPTY_FS_LIST, endpoint);
+    expect(parsed.entries).toEqual([]);
+  });
+
+  it("degrades a null entries array to the empty fallback instead of throwing", () => {
+    const parsed = parseWithFallback(
+      { path: "/srv", entries: null },
+      FsListResponseSchema,
+      EMPTY_FS_LIST,
+      endpoint,
+    );
+    expect(parsed).toEqual(EMPTY_FS_LIST);
+  });
+
+  it("degrades wrong-typed entry fields to the empty fallback", () => {
+    const parsed = parseWithFallback(
+      { path: "/srv", entries: [{ name: 5, path: false }] },
+      FsListResponseSchema,
+      EMPTY_FS_LIST,
+      endpoint,
+    );
+    expect(parsed).toEqual(EMPTY_FS_LIST);
+  });
+
+  it("falls back on null / non-object bodies", () => {
+    for (const body of [null, [], "nope"]) {
+      const parsed = parseWithFallback(body, FsListResponseSchema, EMPTY_FS_LIST, endpoint);
+      expect(parsed.entries).toEqual([]);
+    }
+  });
+
+  it("tolerates unknown future fields on the listing and its entries", () => {
+    const parsed = parseWithFallback(
+      {
+        path: "/Users/dev",
+        entries: [{ name: "code", path: "/Users/dev/code", is_dir: true, mtime: 123 }],
+        cursor: "next",
+      },
+      FsListResponseSchema,
+      EMPTY_FS_LIST,
+      endpoint,
+    );
+    expect(parsed.entries[0]!.name).toBe("code");
   });
 });
 

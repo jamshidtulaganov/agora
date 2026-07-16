@@ -89,6 +89,7 @@ import type {
   CreateTestRunRequest,
   BuildBaseSuiteResponse,
   IssueBrowserResponse,
+  DaemonBrowseTarget,
   IssueQAPreviewURLResponse,
   IssueArtifactResponse,
   CreateProjectRequest,
@@ -286,6 +287,8 @@ import {
   EMPTY_LAUNCH_TRACE,
   EMPTY_ISSUE_BROWSER,
   IssueBrowserResponseSchema,
+  EMPTY_DAEMON_BROWSE_TARGET,
+  DaemonBrowseTargetSchema,
   IssueQAPreviewURLResponseSchema,
   IssueArtifactResponseSchema,
   EMPTY_ISSUE_ARTIFACT,
@@ -2603,6 +2606,26 @@ export class ApiClient {
       });
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) return EMPTY_ISSUE_BROWSER;
+      throw e;
+    }
+  }
+
+  // Resolves where the web folder picker walks one daemon's filesystem. Keyed
+  // by daemon_id (the machine) rather than an issue: attaching a local folder
+  // to a project happens with no issue in hand. The backend gates this on the
+  // caller owning that daemon's runtime (or being a workspace admin). A
+  // registered-but-stopped machine returns mode="offline" with a blank
+  // daemon_url; 404 degrades to the empty fallback so consumers check `mode`.
+  async getDaemonBrowseTarget(daemonId: string): Promise<DaemonBrowseTarget> {
+    try {
+      const raw = await this.fetch<unknown>(
+        `/api/runtimes/by-daemon/${encodeURIComponent(daemonId)}/browse`,
+      );
+      return parseWithFallback(raw, DaemonBrowseTargetSchema, EMPTY_DAEMON_BROWSE_TARGET, {
+        endpoint: "GET /api/runtimes/by-daemon/:daemonId/browse",
+      });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return EMPTY_DAEMON_BROWSE_TARGET;
       throw e;
     }
   }

@@ -1,4 +1,4 @@
-import { absoluteDaemonBase, daemonProxyHeaders } from "./daemon-proxy-fetch";
+import { absoluteDaemonBase, daemonProxyHeaders } from "../../platform/daemon-proxy-fetch";
 
 export async function artifactDaemonPost(
   daemonUrl: string,

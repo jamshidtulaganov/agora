@@ -1375,6 +1375,58 @@ export const IssueBrowserResponseSchema = z
 
 export const EMPTY_ISSUE_BROWSER = { mode: "", daemon_url: "", browser_url: "" };
 
+// Where the web folder picker walks ONE daemon's filesystem — self-host (a
+// direct http://127.0.0.1:<port> base) or cloud (a same-origin
+// /browser/proxy/<token> base). mode is server-driven and read as a plain
+// string: an unknown future value must render the picker's generic
+// "unavailable" state, never crash. mode="offline" means the machine is
+// registered but not running, and daemon_url is blank.
+export const DaemonBrowseTargetSchema = z
+  .object({
+    mode: z.string().default(""),
+    daemon_url: z.string().default(""),
+  })
+  .loose();
+
+export const EMPTY_DAEMON_BROWSE_TARGET = { mode: "", daemon_url: "" };
+
+// One directory listing from the daemon's folder picker (GET /editor/fs/list).
+// entries defaults to [] so a drifted/older daemon renders "no subfolders"
+// instead of spinning. parent is blank at a browsable-root boundary — the UI
+// uses that to hide "up one level" rather than walking out of the allowed roots.
+export const FsListEntrySchema = z
+  .object({
+    name: z.string().default(""),
+    path: z.string().default(""),
+    is_dir: z.boolean().default(false),
+    is_git_repo: z.boolean().default(false),
+    is_symlink: z.boolean().default(false),
+  })
+  .loose();
+
+export const FsListResponseSchema = z
+  .object({
+    path: z.string().default(""),
+    parent: z.string().default(""),
+    home: z.string().default(""),
+    entries: z.array(FsListEntrySchema).default([]),
+    truncated: z.boolean().default(false),
+  })
+  .loose();
+
+export type FsListParsed = z.infer<typeof FsListResponseSchema>;
+
+// Typed so `entries` keeps its element type through parseWithFallback — an
+// untyped [] infers as never[] and poisons every consumer of a fallen-back
+// listing.
+export const EMPTY_FS_LIST: FsListParsed = {
+  path: "",
+  parent: "",
+  home: "",
+  entries: [],
+  truncated: false,
+};
+
 // The issue's resolved QA preview target — a deployed connected box (e.g. a
 // per-developer or per-project QA box) or the project's configured
 // qa_smoke_url. "" means nothing resolves; the frontend shows its own empty

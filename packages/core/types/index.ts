@@ -232,7 +232,13 @@ export type {
   TestRunHistoryItem,
   TestCaseRunsResponse,
 } from "./test-case";
-export type { IssueBrowserResponse, IssueQAPreviewURLResponse } from "./editor-live";
+export type {
+  IssueBrowserResponse,
+  IssueQAPreviewURLResponse,
+  DaemonBrowseTarget,
+  FsListEntry,
+  FsListResponse,
+} from "./editor-live";
 export type {
   ArtifactRepoRef,
   IssueArtifactSummary,
