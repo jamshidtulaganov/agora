@@ -535,8 +535,9 @@ describe("IssuesPage (shared)", () => {
 
     // "Test User" renders both as the assignee group header and on the
     // assignee chip of each card grouped under that header, so a unique
-    // match is not guaranteed.
-    await screen.findAllByText("Test User");
+    // match is not guaranteed. Explicit 5s budget: the default 1s findBy
+    // window flakes on slow CI runners while staying instant locally.
+    await screen.findAllByText("Test User", {}, { timeout: 5000 });
     expect(screen.getAllByText("Agent One").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Squad One").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("No assignee")).toBeInTheDocument();
