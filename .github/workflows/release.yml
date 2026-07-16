@@ -399,10 +399,9 @@ jobs:
         run: helm show chart "$OCI_REGISTRY/agora" --version "$CHART_VERSION"
 
   # Build the Desktop installers for Linux and Windows and upload them to
-  # the GitHub Release that the `release` job above just published. macOS
-  # Desktop continues to ship via the manual `release-desktop` skill so it
-  # can be signed + notarized with Apple Developer credentials that are
-  # not (yet) wired into CI.
+  # the GitHub Release that the `release` job above just published. macOS is
+  # built separately by `desktop-mac` below, because it is the one platform
+  # whose auto-update hard-requires a real code signature.
   desktop:
     needs: release
     strategy:
@@ -452,5 +451,165 @@ jobs:
           # release is unsigned for these platforms, the CLI carries the
           # trust boundary. Set CSC_LINK in repo secrets to enable
           # Windows signing later.
+          #
+          # This matrix is Linux + Windows ONLY, and this variable must never
+          # reach a macOS build: it forces an ad-hoc signature, whose designated
+          # requirement is a bare cdhash of that exact binary. Squirrel.Mac then
+          # rejects every subsequent version, so "Restart now" silently does
+          # nothing forever — and the broken updater is the very thing that
+          # would have shipped the fix. Unsigned auto-update is fine here only
+          # because Windows skips verification when no publisherName is present
+          # (NsisUpdater.verifySignature) and Linux never verifies at all.
+          # macOS is built by `desktop-mac` below, without this variable.
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: node scripts/package.mjs --${{ matrix.target }} --x64 --arm64 --publish always
+
+  # `secrets` is not available in a job-level `if:`, so resolve the signing
+  # config into a plain output here and gate the macOS job on that. Doing it in
+  # a separate (cheap, Linux) job keeps `desktop-mac` from spinning up an
+  # expensive macOS runner only to skip.
+  desktop-mac-gate:
+    needs: release
+    runs-on: ubuntu-latest
+    outputs:
+      signing_configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - name: Check for Developer ID signing secrets
+        id: check
+        # `${!name}` is a bash indirect expansion; pin the shell rather than
+        # relying on the runner default.
+        shell: bash
+        # Checks every secret the mac build actually needs, and names the
+        # missing ones. A partial config would otherwise pass a laxer gate and
+        # then die ~20 minutes into a macOS build at the notarization step.
+        # CSC_KEY_PASSWORD is intentionally not required: a .p12 exported
+        # without a password is legal.
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=""
+          for name in CSC_LINK APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then
+              missing="$missing $name"
+            fi
+          done
+
+          if [ -z "$missing" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "All Developer ID signing secrets present — building macOS Desktop."
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=macOS Desktop not built::No macOS artifacts were published for this release. Missing repo secrets:${missing}. See the desktop-mac job in this workflow for how to obtain them."
+          fi
+
+  # Build, sign, notarize and publish the macOS Desktop app.
+  #
+  # Separate from the `desktop` matrix above for three reasons: it needs the
+  # Apple secrets, it must NOT inherit that job's CSC_IDENTITY_AUTO_DISCOVERY=false,
+  # and it runs on a macOS runner (codesign/notarytool are macOS-only).
+  #
+  # Required repo secrets — until all are set the job is skipped, so releases
+  # stay green while the Apple Developer enrollment is pending:
+  #   CSC_LINK                    base64 of the exported Developer ID .p12
+  #                               (`base64 -i cert.p12 | pbcopy`)
+  #   CSC_KEY_PASSWORD            the .p12 export password
+  #   APPLE_ID                    Apple ID used for notarization
+  #   APPLE_APP_SPECIFIC_PASSWORD app-specific password from appleid.apple.com
+  #   APPLE_TEAM_ID               10-char Team ID from the Membership page
+  #
+  # electron-builder imports CSC_LINK into a temporary keychain itself, so no
+  # manual `security create-keychain` dance is needed here.
+  #
+  # arm64 only, matching what we ship today. Adding Intel is NOT just another
+  # arch flag: electron-builder does not arch-suffix `latest-mac.yml`, so a
+  # second mac invocation would overwrite the first one's update metadata —
+  # the same collision `builderArgsForTarget` already works around for Windows
+  # arm64, and it would need the same explicit channel treatment.
+  desktop-mac:
+    needs: [release, desktop-mac-gate]
+    if: needs.desktop-mac-gate.outputs.signing_configured == 'true'
+    runs-on: macos-latest
+    # Notarization waits on Apple's service. Cap it so a hung submission cannot
+    # burn hours of (10x-priced) macOS runner time.
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # package.mjs derives the version from `git describe --tags`.
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Package, sign, notarize and publish Desktop (macOS arm64)
+        working-directory: apps/desktop
+        env:
+          GH_TOKEN: ${{ secrets.AGORA_CLI_RELEASE_TOKEN }}
+          # electron-builder's GitHub publisher reads this:
+          GITHUB_TOKEN: ${{ secrets.AGORA_CLI_RELEASE_TOKEN }}
+          # Signing identity. Deliberately no CSC_IDENTITY_AUTO_DISCOVERY here —
+          # setting it to "false" is what produced the ad-hoc builds that cannot
+          # auto-update. package.mjs refuses to publish a mac target if it is set.
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          # Notarization (electron-builder.yml sets `notarize: true`).
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: node scripts/package.mjs --mac --arm64 --publish always
+
+      # package.mjs already fails the build on an ad-hoc/unsigned bundle. These
+      # checks cover what it cannot: that notarization actually stapled, and
+      # that the asar is not corrupt (three separate local mac builds have
+      # shipped a corrupt app.asar, which exits 1 with no output at all).
+      #
+      # electron-builder uploads as it builds, so a failure here means the bad
+      # assets are already attached to the release — delete them from the
+      # release before anyone downloads, then re-run.
+      - name: Verify notarization and asar integrity
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$PWD/dist/mac-arm64/Agora.app"
+          ASAR="$APP/Contents/Resources/app.asar"
+
+          echo "--- Gatekeeper assessment ---"
+          spctl -a -t exec -vv "$APP"
+
+          echo "--- Stapled notarization ticket ---"
+          xcrun stapler validate "$APP"
+
+          # Reading package.json back out exercises the archive's header
+          # offsets, which is exactly what corrupts. Uses @electron/asar's Node
+          # API (returns a Buffer, writes nothing) rather than its `extract-file`
+          # CLI, which would dump package.json into the working directory and
+          # clobber apps/desktop/package.json. Same @electron/asar version that
+          # electron-builder used to write the archive, so a version skew cannot
+          # mask a corrupt one.
+          echo "--- asar integrity ---"
+          node -e '
+            const asar = require("@electron/asar");
+            const raw = asar.extractFile(process.argv[1], "package.json");
+            const p = JSON.parse(raw.toString("utf8"));
+            console.log("app.asar OK — " + p.productName + " " + p.version);
+          ' "$ASAR"
