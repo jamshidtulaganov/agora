@@ -65,10 +65,15 @@ func TestArtifactCapabilityIsSignedPurposeBoundAndExpiring(t *testing.T) {
 	if !ok || record.Purpose != "changes" || record.SourceRoot != "/private/path" {
 		t.Fatalf("minted capability did not round-trip: ok=%v record=%+v", ok, record)
 	}
-	tampered := token[:len(token)-1] + "0"
-	if tampered == token {
-		tampered = token[:len(token)-1] + "1"
+	// Tamper a middle character: every one of its base64 bits is significant,
+	// so the decoded payload always changes. The FINAL character has unused
+	// low bits — flipping it can decode to identical bytes and verify.
+	mid := len(token) / 2
+	replacement := byte('0')
+	if token[mid] == replacement {
+		replacement = '1'
 	}
+	tampered := token[:mid] + string(replacement) + token[mid+1:]
 	if _, ok := lookupArtifactCapability(tampered); ok {
 		t.Fatal("tampered capability verified")
 	}
