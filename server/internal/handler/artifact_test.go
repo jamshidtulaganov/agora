@@ -178,7 +178,7 @@ func TestGetIssueArtifactDoesNotExposeWorkdir(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if !response.Ready || response.Artifact == nil || response.Artifact.ID == "" || len(response.Capabilities) != 3 {
+	if !response.Ready || response.Artifact == nil || response.Artifact.ID == "" || len(response.Capabilities) != 4 {
 		t.Fatalf("artifact response incomplete: %+v", response)
 	}
 	for purpose, token := range response.Capabilities {
