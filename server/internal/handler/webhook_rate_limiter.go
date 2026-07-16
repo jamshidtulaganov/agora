@@ -2,11 +2,16 @@ package handler
 
 import (
 	"context"
+	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 )
+
+// webhookLimiterSeq disambiguates ZSET members minted in the same instant.
+var webhookLimiterSeq atomic.Uint64
 
 // WebhookRateLimit is a coarse per-token sliding-window limiter.
 //
@@ -102,24 +107,32 @@ const (
 //	ARGV[2] = cutoff (unix nanos as string)
 //	ARGV[3] = limit
 //	ARGV[4] = expiry seconds (TTL refresh, larger than window)
+//	ARGV[5] = unique member for this request
 //
 // Returns 1 when the request is admitted, 0 when it should be rejected.
 //
 // We trim first, then count, then optionally insert. Doing all three in a
 // single Lua call avoids the classic "two pods both see count=limit-1 and
 // both insert" race.
+//
+// The member MUST be the caller-supplied unique string, never
+// tostring(tonumber(nanos)): Lua numbers are float64, whose integer precision
+// ends at 2^53 — present-day unix nanos (~1.7e18) quantize to ~256ns steps,
+// so near-simultaneous requests collapsed to the SAME member and ZADD
+// updated instead of inserting, undercounting bursts past the limit.
 const webhookLimiterAllowSrc = `
 local key = KEYS[1]
 local now = tonumber(ARGV[1])
 local cutoff = tonumber(ARGV[2])
 local limit = tonumber(ARGV[3])
 local ttl = tonumber(ARGV[4])
+local member = ARGV[5]
 redis.call('ZREMRANGEBYSCORE', key, '-inf', cutoff)
 local count = redis.call('ZCARD', key)
 if count >= limit then
     return 0
 end
-redis.call('ZADD', key, now, tostring(now))
+redis.call('ZADD', key, now, member)
 redis.call('EXPIRE', key, ttl)
 return 1
 `
@@ -169,11 +182,15 @@ func (l *redisWebhookRateLimiter) Allow(ctx context.Context, key string) bool {
 	if prefix == "" {
 		prefix = webhookLimiterKeyPrefix
 	}
+	// Exact-nanos string plus a process-wide sequence: two requests in the
+	// same instant (or within float64's ~256ns quantum at current epochs)
+	// must still insert DISTINCT ZSET members, or the window undercounts.
+	member := strconv.FormatInt(now, 10) + "-" + strconv.FormatUint(webhookLimiterSeq.Add(1), 10)
 	res, err := webhookLimiterAllowScript.Run(
 		ctx,
 		l.rdb,
 		[]string{prefix + key},
-		now, cutoff, l.cfg.Limit, ttlSeconds,
+		now, cutoff, l.cfg.Limit, ttlSeconds, member,
 	).Int()
 	if err != nil {
 		// Fail open on Redis errors — webhook ingress should keep working
