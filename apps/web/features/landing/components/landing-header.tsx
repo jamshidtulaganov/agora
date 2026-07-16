@@ -30,6 +30,7 @@ export function LandingHeader({
   const navLinks = [
     { href: "/guide", label: t.header.guide },
     { href: "/usecases", label: t.header.useCases },
+    { href: "/download", label: t.header.download },
   ];
   const ctaHref = user ? "/" : "/login";
   const ctaLabel = user ? t.header.dashboard : t.header.cta;

@@ -133,6 +133,7 @@ export type LandingDict = {
     changelog: string;
     useCases: string;
     guide: string;
+    download: string;
     navigation: string;
     openMenu: string;
     closeMenu: string;
