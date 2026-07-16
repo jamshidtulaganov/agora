@@ -107,7 +107,13 @@
     "local_validate_not_a_directory": "Путь не является каталогом.",
     "local_validate_not_readable": "Каталог недоступен для чтения.",
     "local_validate_not_writable": "Каталог недоступен для записи.",
-    "local_validate_unsupported": "Локальные каталоги можно выбирать только в desktop-приложении."
+    "local_validate_unsupported": "Локальные каталоги можно выбирать только в desktop-приложении.",
+    "local_access_read": "Только чтение",
+    "local_access_write": "Чтение и запись",
+    "local_access_make_read": "Сделать только для чтения — агенты смогут читать, но не изменять папку",
+    "local_access_make_write": "Разрешить запись — агенты смогут изменять папку",
+    "toast_access_updated": "Доступ к папке обновлён",
+    "toast_access_failed": "Не удалось обновить доступ к папке"
   },
   "delete_dialog": {
     "title": "Удалить проект",

@@ -107,7 +107,13 @@
     "local_validate_not_a_directory": "Yo‘l katalog emas.",
     "local_validate_not_readable": "Katalog o‘qib bo‘lmaydi.",
     "local_validate_not_writable": "Katalogga yozib bo‘lmaydi.",
-    "local_validate_unsupported": "Lokal kataloglarni faqat desktop ilovasida tanlash mumkin."
+    "local_validate_unsupported": "Lokal kataloglarni faqat desktop ilovasida tanlash mumkin.",
+    "local_access_read": "Faqat o'qish",
+    "local_access_write": "O'qish va yozish",
+    "local_access_make_read": "Faqat o'qishga o'tkazish — agentlar o'qiydi, lekin papkani o'zgartira olmaydi",
+    "local_access_make_write": "Yozishga ruxsat — agentlar papkani tahrirlashi mumkin",
+    "toast_access_updated": "Papka ruxsati yangilandi",
+    "toast_access_failed": "Papka ruxsatini yangilab bo'lmadi"
   },
   "delete_dialog": {
     "title": "Loyihani o‘chirish",

@@ -8,6 +8,7 @@ import {
   ChevronRight,
   FolderGit,
   FolderOpen,
+  Lock,
   Pencil,
   Plus,
   Search,
@@ -248,6 +249,36 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
     }
   };
 
+  // Flip a folder between read-only and read-write. UpdateProjectResource
+  // replaces resource_ref wholesale, so send the full ref. access=read is only
+  // valid with worktree isolation (the server rejects read + in_place), so
+  // switching to read forces isolation along with it.
+  const handleToggleAccess = async (
+    resource: ProjectResource & { resource_ref: LocalDirectoryResourceRef },
+  ) => {
+    const ref = resource.resource_ref;
+    const nextAccess = (ref.access ?? "write") === "write" ? "read" : "write";
+    try {
+      await updateResource.mutateAsync({
+        resourceId: resource.id,
+        data: {
+          resource_ref: {
+            ...ref,
+            access: nextAccess,
+            isolation: nextAccess === "read" ? "worktree" : ref.isolation,
+          },
+        },
+      });
+      toast.success(t(($) => $.resources.toast_access_updated));
+    } catch (err) {
+      toast.error(
+        err instanceof Error && err.message
+          ? err.message
+          : t(($) => $.resources.toast_access_failed),
+      );
+    }
+  };
+
   const handleRenameLocalDirectory = async (
     resource: ProjectResource & { resource_ref: LocalDirectoryResourceRef },
     nextLabel: string,
@@ -314,6 +345,7 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
                   canEdit={desktopMode}
                   onRemove={() => handleRemove(resource)}
                   onRenameLocalDirectory={handleRenameLocalDirectory}
+                  onToggleAccess={handleToggleAccess}
                 />
               ))}
             </div>
@@ -466,6 +498,9 @@ interface ResourceRowProps {
     resource: ProjectResource & { resource_ref: LocalDirectoryResourceRef },
     nextLabel: string,
   ) => Promise<void>;
+  onToggleAccess: (
+    resource: ProjectResource & { resource_ref: LocalDirectoryResourceRef },
+  ) => Promise<void>;
 }
 
 function ResourceRow({
@@ -476,6 +511,7 @@ function ResourceRow({
   hasMultipleRepos,
   onRemove,
   onRenameLocalDirectory,
+  onToggleAccess,
 }: ResourceRowProps) {
   const { t } = useT("projects");
   if (isGithubRef(resource)) {
@@ -526,6 +562,7 @@ function ResourceRow({
         canEdit={canEdit}
         onRemove={onRemove}
         onRename={onRenameLocalDirectory}
+        onToggleAccess={onToggleAccess}
       />
     );
   }
@@ -556,6 +593,9 @@ interface LocalDirectoryRowProps {
     resource: ProjectResource & { resource_ref: LocalDirectoryResourceRef },
     nextLabel: string,
   ) => Promise<void>;
+  onToggleAccess: (
+    resource: ProjectResource & { resource_ref: LocalDirectoryResourceRef },
+  ) => Promise<void>;
 }
 
 function LocalDirectoryRow({
@@ -564,9 +604,11 @@ function LocalDirectoryRow({
   canEdit,
   onRemove,
   onRename,
+  onToggleAccess,
 }: LocalDirectoryRowProps) {
   const { t } = useT("projects");
   const ref = resource.resource_ref;
+  const readOnly = ref.access === "read";
   const display = (ref.label || resource.label || ref.local_path).trim() ||
     ref.local_path;
   const isForeignDaemon =
@@ -639,6 +681,34 @@ function LocalDirectoryRow({
             </div>
           </TooltipContent>
         </Tooltip>
+      )}
+      {!editing && (
+        <button
+          type="button"
+          disabled={!canEdit || mismatch}
+          onClick={() => void onToggleAccess(resource)}
+          className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+            readOnly
+              ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+              : "border-border bg-muted/40 text-muted-foreground"
+          } ${canEdit && !mismatch ? "hover:bg-accent" : "cursor-default"}`}
+          title={
+            !canEdit || mismatch
+              ? undefined
+              : readOnly
+                ? t(($) => $.resources.local_access_make_write)
+                : t(($) => $.resources.local_access_make_read)
+          }
+        >
+          {readOnly ? (
+            <Lock className="size-2.5" aria-hidden />
+          ) : (
+            <Pencil className="size-2.5" aria-hidden />
+          )}
+          {readOnly
+            ? t(($) => $.resources.local_access_read)
+            : t(($) => $.resources.local_access_write)}
+        </button>
       )}
       {canEdit && !mismatch && !editing && (
         <button

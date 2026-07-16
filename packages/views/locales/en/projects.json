@@ -112,7 +112,13 @@
     "local_validate_not_a_directory": "Path is not a directory.",
     "local_validate_not_readable": "Directory is not readable.",
     "local_validate_not_writable": "Directory is not writable.",
-    "local_validate_unsupported": "Local directories can only be picked on the desktop app."
+    "local_validate_unsupported": "Local directories can only be picked on the desktop app.",
+    "local_access_read": "Read-only",
+    "local_access_write": "Read-write",
+    "local_access_make_read": "Make read-only — agents can read but never modify this folder",
+    "local_access_make_write": "Allow writes — agents may edit this folder",
+    "toast_access_updated": "Folder access updated",
+    "toast_access_failed": "Failed to update folder access"
   },
   "delete_dialog": {
     "title": "Delete project",

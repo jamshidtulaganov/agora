@@ -107,7 +107,13 @@
     "local_validate_not_a_directory": "该路径不是目录。",
     "local_validate_not_readable": "目录不可读。",
     "local_validate_not_writable": "目录不可写。",
-    "local_validate_unsupported": "本地目录仅能在桌面端选择。"
+    "local_validate_unsupported": "本地目录仅能在桌面端选择。",
+    "local_access_read": "只读",
+    "local_access_write": "读写",
+    "local_access_make_read": "设为只读 — 智能体可读取但永不修改此文件夹",
+    "local_access_make_write": "允许写入 — 智能体可编辑此文件夹",
+    "toast_access_updated": "文件夹访问权限已更新",
+    "toast_access_failed": "更新文件夹访问权限失败"
   },
   "delete_dialog": {
     "title": "删除项目",
