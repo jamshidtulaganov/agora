@@ -122,6 +122,15 @@ func artifactRepoPath(ctx context.Context, grant ArtifactCapabilityGrant, ref Ar
 	return repo, nil
 }
 
+// artifactGitOutputAllowFail runs git and returns stdout even on a non-zero
+// exit (e.g. `git diff --no-index` returns 1 when the files differ, which is
+// the normal "there is a diff" case, not an error).
+func artifactGitOutputAllowFail(ctx context.Context, repo string, args ...string) string {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", repo}, args...)...)
+	out, _ := cmd.Output()
+	return string(out)
+}
+
 func artifactGitBytes(ctx context.Context, repo string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", repo}, args...)...)
 	out, err := cmd.Output()
@@ -149,7 +158,64 @@ func artifactGitLines(output []byte) []string {
 	return strings.Split(raw, "\n")
 }
 
+// artifactLiveChanges reports the LIVE working-tree diff of every git repo under
+// a local_directory grant's source root — uncommitted changes vs the current
+// HEAD, plus untracked files — so the Changes surface reflects what the folder
+// looks like right now, not a frozen artifact SHA.
+func artifactLiveChanges(ctx context.Context, grant ArtifactCapabilityGrant) ([]artifactRepoChanges, error) {
+	root := filepath.Clean(strings.TrimSpace(grant.SourceRoot))
+	if root == "." || root == "" {
+		return nil, fmt.Errorf("artifact source is unavailable")
+	}
+	repos, err := detectLocalRepos(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]artifactRepoChanges, 0, len(repos))
+	const maxDiff = 400_000
+	for _, repo := range repos {
+		head, _ := artifactGitBytes(ctx, repo.SrcPath, "rev-parse", "HEAD")
+		headSHA := strings.TrimSpace(string(head))
+		// Working-tree changes vs HEAD (staged + unstaged). Untracked files are
+		// added explicitly below so a brand-new file still shows.
+		numstat, _ := artifactGitBytes(ctx, repo.SrcPath, "diff", "--no-ext-diff", "--numstat", "HEAD", "--")
+		diffBytes, _ := artifactGitBytes(ctx, repo.SrcPath, "diff", "--no-ext-diff", "--no-color", "HEAD", "--")
+		untracked, _ := artifactGitBytes(ctx, repo.SrcPath, "ls-files", "--others", "--exclude-standard")
+		files := parseNumstat(string(numstat))
+		diffText := string(diffBytes)
+		for _, u := range artifactGitLines(untracked) {
+			if strings.TrimSpace(u) == "" {
+				continue
+			}
+			files = append(files, changedFile{Path: u, Additions: 0, Deletions: 0})
+			// Include the untracked content as an add-only diff hunk. --no-index
+			// exits 1 when the files differ (always, vs /dev/null), so capture
+			// output regardless of the non-zero status.
+			add := artifactGitOutputAllowFail(ctx, repo.SrcPath, "diff", "--no-ext-diff", "--no-color", "--no-index", "/dev/null", u)
+			diffText += add
+		}
+		truncated := false
+		if len(diffText) > maxDiff {
+			diffText = diffText[:maxDiff] + "\n… (diff truncated)"
+			truncated = true
+		}
+		treeBytes, _ := artifactGitBytes(ctx, repo.SrcPath, "ls-files")
+		tree := artifactGitLines(treeBytes)
+		if len(tree) > 20_000 {
+			tree = tree[:20_000]
+		}
+		result = append(result, artifactRepoChanges{
+			Repo: repo.Name, BaseSHA: headSHA, HeadSHA: "working",
+			Files: files, Tree: tree, Diff: diffText, Truncated: truncated,
+		})
+	}
+	return result, nil
+}
+
 func artifactChanges(ctx context.Context, grant ArtifactCapabilityGrant) ([]artifactRepoChanges, error) {
+	if grant.Live {
+		return artifactLiveChanges(ctx, grant)
+	}
 	result := make([]artifactRepoChanges, 0, len(grant.Repos))
 	for _, ref := range grant.Repos {
 		repo, err := artifactRepoPath(ctx, grant, ref)
@@ -212,7 +278,77 @@ type artifactFileResponse struct {
 	Truncated bool   `json:"truncated"`
 }
 
+// artifactLiveFile reads a file straight from the local_directory working tree
+// (current on-disk bytes, including uncommitted edits), path-guarded to stay
+// inside one detected repo under the grant's source root.
+func artifactLiveFile(ctx context.Context, grant ArtifactCapabilityGrant, requestedRepo, path string) (artifactFileResponse, error) {
+	path = strings.TrimSpace(path)
+	if !validArtifactFilePath(path) {
+		return artifactFileResponse{}, fmt.Errorf("invalid artifact file path")
+	}
+	root := filepath.Clean(strings.TrimSpace(grant.SourceRoot))
+	repos, err := detectLocalRepos(ctx, root)
+	if err != nil {
+		return artifactFileResponse{}, err
+	}
+	var repo localRepo
+	requestedRepo = strings.TrimSpace(requestedRepo)
+	if requestedRepo == "" && len(repos) == 1 {
+		repo = repos[0]
+	} else {
+		for _, candidate := range repos {
+			if candidate.Name == requestedRepo {
+				repo = candidate
+				break
+			}
+		}
+	}
+	if repo.SrcPath == "" {
+		return artifactFileResponse{}, fmt.Errorf("artifact repository is unavailable")
+	}
+	// Resolve within the repo and confirm containment (no traversal escape).
+	base, err := filepath.EvalSymlinks(repo.SrcPath)
+	if err != nil {
+		return artifactFileResponse{}, fmt.Errorf("artifact repository is unavailable")
+	}
+	full := filepath.Join(base, filepath.FromSlash(path))
+	rel, err := filepath.Rel(base, full)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return artifactFileResponse{}, fmt.Errorf("invalid artifact file path")
+	}
+	info, err := os.Stat(full)
+	if err != nil || info.IsDir() {
+		return artifactFileResponse{}, fmt.Errorf("artifact file not found")
+	}
+	content, err := os.ReadFile(full)
+	if err != nil {
+		return artifactFileResponse{}, fmt.Errorf("artifact file not found")
+	}
+	response := artifactFileResponse{Repo: repo.Name, Path: path, HeadSHA: "working", Size: info.Size(), Encoding: "utf-8"}
+	if strings.IndexByte(string(content), 0) >= 0 {
+		response.Binary = true
+		response.Encoding = "base64"
+		const binaryLimit = 256_000
+		if len(content) > binaryLimit {
+			content = content[:binaryLimit]
+			response.Truncated = true
+		}
+		response.Content = base64.StdEncoding.EncodeToString(content)
+		return response, nil
+	}
+	const textLimit = 1_000_000
+	if len(content) > textLimit {
+		content = content[:textLimit]
+		response.Truncated = true
+	}
+	response.Content = string(content)
+	return response, nil
+}
+
 func artifactFile(ctx context.Context, grant ArtifactCapabilityGrant, requestedRepo, path string) (artifactFileResponse, error) {
+	if grant.Live {
+		return artifactLiveFile(ctx, grant, requestedRepo, path)
+	}
 	ref, err := artifactSelectedRepo(grant, requestedRepo)
 	if err != nil {
 		return artifactFileResponse{}, err
@@ -359,6 +495,26 @@ var artifactPreviews = struct {
 
 func artifactPreviewKey(artifactID, repo string) string { return artifactID + "\x00" + repo }
 
+// liveArtifactPreviewJSON reports a live-local preview: the developer's own dev
+// server URL when configured, else a needs_command signal telling the user to
+// set preview_url on the folder resource.
+func liveArtifactPreviewJSON(grant ArtifactCapabilityGrant) map[string]any {
+	url := strings.TrimSpace(grant.PreviewURL)
+	if url == "" {
+		return map[string]any{
+			"artifact_id":   grant.ArtifactID,
+			"running":       false,
+			"needs_command": true,
+			"error":         "no dev server configured — set the folder's preview URL to your running dev server (e.g. http://localhost:3000)",
+		}
+	}
+	return map[string]any{
+		"artifact_id": grant.ArtifactID,
+		"running":     true,
+		"url":         url,
+	}
+}
+
 func (d *Daemon) closeArtifactPreview(preview *artifactPreview, kill bool) {
 	if preview == nil {
 		return
@@ -444,6 +600,13 @@ func (d *Daemon) registerArtifactHandlers(mux *http.ServeMux) {
 		}
 		grant, req, ok := d.artifactGrant(w, r, "preview")
 		if !ok {
+			return
+		}
+		// Live local grant: point the surface at the developer's own running
+		// dev server instead of spawning one. Nothing to provision.
+		if grant.Live {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(liveArtifactPreviewJSON(grant))
 			return
 		}
 		ref, err := artifactSelectedRepo(grant, req.Repo)
@@ -540,6 +703,11 @@ func (d *Daemon) registerArtifactHandlers(mux *http.ServeMux) {
 		if !ok {
 			return
 		}
+		if grant.Live {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(liveArtifactPreviewJSON(grant))
+			return
+		}
 		ref, err := artifactSelectedRepo(grant, req.Repo)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -565,6 +733,13 @@ func (d *Daemon) registerArtifactHandlers(mux *http.ServeMux) {
 		}
 		grant, req, ok := d.artifactGrant(w, r, "preview")
 		if !ok {
+			return
+		}
+		if grant.Live {
+			// The dev server is the developer's own process — nothing for us to
+			// stop. Report it as unavailable-to-stop so the UI hides the control.
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"artifact_id": grant.ArtifactID, "running": false})
 			return
 		}
 		ref, err := artifactSelectedRepo(grant, req.Repo)

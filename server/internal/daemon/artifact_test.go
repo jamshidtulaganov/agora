@@ -104,3 +104,79 @@ func TestArtifactRuntimeIsDetachedDisposableAndLeavesSourceUntouched(t *testing.
 		t.Fatalf("cleanup mutated source: %q", got)
 	}
 }
+
+func TestArtifactLiveChangesAndFileReadWorkingTree(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	repo := t.TempDir()
+	makeRepo(t, repo) // commits an initial file
+	// A tracked edit + a brand-new untracked file: both must appear live.
+	if err := os.WriteFile(filepath.Join(repo, "app.txt"), []byte("v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	artifactGit(t, repo, "add", "app.txt")
+	artifactGit(t, repo, "commit", "-q", "-m", "app v1")
+	if err := os.WriteFile(filepath.Join(repo, "app.txt"), []byte("v1\nedited uncommitted\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "brand_new.txt"), []byte("fresh untracked\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	grant := ArtifactCapabilityGrant{
+		ArtifactID: "live", Purpose: "changes", SourceRoot: repo, Live: true,
+	}
+	changes, err := artifactLiveChanges(context.Background(), grant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changes) != 1 {
+		t.Fatalf("want 1 repo, got %d", len(changes))
+	}
+	c := changes[0]
+	if c.HeadSHA != "working" {
+		t.Errorf("live head should be \"working\", got %q", c.HeadSHA)
+	}
+	if !strings.Contains(c.Diff, "edited uncommitted") {
+		t.Errorf("live diff missing the uncommitted edit: %s", c.Diff)
+	}
+	if !strings.Contains(c.Diff, "fresh untracked") {
+		t.Errorf("live diff missing untracked content: %s", c.Diff)
+	}
+	paths := map[string]bool{}
+	for _, f := range c.Files {
+		paths[f.Path] = true
+	}
+	if !paths["app.txt"] || !paths["brand_new.txt"] {
+		t.Errorf("changed files missing tracked/untracked entries: %+v", c.Files)
+	}
+
+	// Live file read returns current on-disk bytes (incl. uncommitted edit).
+	file, err := artifactLiveFile(context.Background(), ArtifactCapabilityGrant{SourceRoot: repo, Live: true}, "", "app.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file.Content != "v1\nedited uncommitted\n" || file.HeadSHA != "working" {
+		t.Fatalf("live file read wrong: %+v", file)
+	}
+
+	// Path traversal stays blocked.
+	if _, err := artifactLiveFile(context.Background(), ArtifactCapabilityGrant{SourceRoot: repo, Live: true}, "", "../escape"); err == nil {
+		t.Fatal("expected traversal path to be rejected")
+	}
+}
+
+func TestLiveArtifactPreviewJSON(t *testing.T) {
+	withURL := liveArtifactPreviewJSON(ArtifactCapabilityGrant{ArtifactID: "a", Live: true, PreviewURL: "http://localhost:3000"})
+	if withURL["running"] != true || withURL["url"] != "http://localhost:3000" {
+		t.Fatalf("configured preview should be running with the url: %+v", withURL)
+	}
+	if _, ok := withURL["needs_command"]; ok {
+		t.Error("configured preview must not signal needs_command")
+	}
+	noURL := liveArtifactPreviewJSON(ArtifactCapabilityGrant{ArtifactID: "a", Live: true})
+	if noURL["running"] != false || noURL["needs_command"] != true {
+		t.Fatalf("unset preview should ask for a dev server: %+v", noURL)
+	}
+}
