@@ -134,7 +134,8 @@ interface UpdaterAPI {
     callback: (info: { version: string; releaseNotes?: string }) => void,
   ) => () => void;
   downloadUpdate: () => Promise<void>;
-  installUpdate: () => Promise<void>;
+  // Only ever resolves on failure — a successful install replaces the process.
+  installUpdate: () => Promise<{ ok: false; error: string }>;
   checkForUpdates: () => Promise<
     | { ok: true; currentVersion: string; latestVersion: string; available: boolean }
     | { ok: false; error: string }

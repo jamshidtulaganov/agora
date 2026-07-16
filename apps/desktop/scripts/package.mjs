@@ -21,10 +21,21 @@
 // build, set `CSC_IDENTITY_AUTO_DISCOVERY=false` so electron-builder falls
 // back to an ad-hoc signature instead of requiring a Developer ID cert.
 //
+// That ad-hoc fallback is silent, and for a *published* mac build it is fatal:
+// Squirrel.Mac validates an update against the running app's designated
+// requirement, which for an ad-hoc signature is a bare cdhash of that exact
+// binary. Every later version fails it, so the update downloads, prompts, and
+// then does nothing when the user clicks "Restart now" — with no error. Shipping
+// one strands every existing install permanently, because the broken updater is
+// the thing that would have delivered the fix. `--publish` therefore refuses to
+// build a mac target that is not Developer ID-signed and notarized; use
+// `--publish never` for intentionally unsigned local builds.
+//
 // The `normalizeGitVersion` helper is exported so tests can cover the
 // version-derivation logic without shelling out.
 
 import { execFileSync, spawnSync, execSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { delimiter, dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -265,6 +276,120 @@ function formatTarget(target) {
   return `${PLATFORM_CONFIG[target.platform].label} ${target.arch}`;
 }
 
+/**
+ * Whether this invocation intends to publish artifacts to a GitHub Release,
+ * i.e. whether it is a real release rather than a local smoke build.
+ *
+ * Accepts electron-builder's `--publish <value>`, `--publish=<value>` and the
+ * `-p` alias. `--publish never` is not publishing.
+ */
+export function isPublishingRelease(sharedArgs) {
+  for (let i = 0; i < sharedArgs.length; i += 1) {
+    const token = sharedArgs[i];
+    const inline = /^(?:--publish|-p)=(.*)$/.exec(token);
+    if (inline) return inline[1] !== "never";
+    if (token === "--publish" || token === "-p") {
+      const value = sharedArgs[i + 1];
+      // A bare trailing `--publish` means electron-builder's default (always).
+      if (value === undefined || value.startsWith("-")) return true;
+      return value !== "never";
+    }
+  }
+  return false;
+}
+
+/**
+ * Path of the packaged `.app` for a mac target, relative to `desktopRoot`.
+ *
+ * electron-builder nests the bundle in an arch-suffixed directory inside the
+ * output dir — `mac` for x64, `mac-<arch>` for everything else.
+ */
+export function macAppPath(target, outputRoot = "dist", productName = "Agora") {
+  const archDir = target.arch === "x64" ? "mac" : `mac-${target.arch}`;
+  return `${outputRoot}/${archDir}/${productName}.app`;
+}
+
+/**
+ * Decide whether a packaged mac bundle can actually auto-update, given the
+ * output of `codesign -dv` and `codesign -d -r-`.
+ *
+ * Squirrel.Mac validates a downloaded update against the *running* app's
+ * designated requirement. An ad-hoc signature's DR is a bare `cdhash` of that
+ * exact binary, so every subsequent build fails it by construction and the
+ * update silently never installs (see MacUpdater.quitAndInstall). Only a
+ * Developer ID signature yields a DR stable across builds.
+ */
+export function classifyMacSigning({ codesignOutput = "", requirementOutput = "" } = {}) {
+  if (/code object is not signed at all/.test(codesignOutput)) {
+    return { ok: false, reason: "the bundle is not signed at all" };
+  }
+  if (/^Signature=adhoc$/m.test(codesignOutput)) {
+    return {
+      ok: false,
+      reason:
+        "the bundle is ad-hoc signed (Signature=adhoc, no Team ID). Squirrel.Mac " +
+        "rejects ad-hoc updates, so auto-update can never work for this build",
+    };
+  }
+  if (!/^Authority=Developer ID Application:/m.test(codesignOutput)) {
+    return {
+      ok: false,
+      reason: "the bundle is not signed with a Developer ID Application certificate",
+    };
+  }
+  // Belt and braces: an ad-hoc DR pins to this build's own hash.
+  if (/designated\s*=>\s*cdhash/.test(requirementOutput)) {
+    return {
+      ok: false,
+      reason:
+        "the designated requirement is pinned to this build's cdhash, so the next " +
+        "version cannot satisfy it",
+    };
+  }
+  return { ok: true };
+}
+
+function readCodesign(args, appPath) {
+  // codesign writes its bundle info to stderr, not stdout.
+  const result = spawnSync("codesign", [...args, appPath], { encoding: "utf-8" });
+  return `${result.stdout ?? ""}${result.stderr ?? ""}`;
+}
+
+/**
+ * Hard-fail a release build whose mac bundle cannot auto-update. Publishing an
+ * ad-hoc build strands every existing install: the update downloads, the
+ * "Update ready" prompt appears, and "Restart now" silently does nothing.
+ */
+function verifyMacSigningOrExit(target, outputRoot) {
+  const appPath = resolve(desktopRoot, macAppPath(target, outputRoot));
+  if (!existsSync(appPath)) {
+    console.error(
+      `[package] cannot verify code signature — no app bundle at ${appPath}`,
+    );
+    process.exit(1);
+  }
+
+  const verdict = classifyMacSigning({
+    codesignOutput: readCodesign(["-dv", "--verbose=2"], appPath),
+    requirementOutput: readCodesign(["-d", "-r-"], appPath),
+  });
+
+  if (!verdict.ok) {
+    console.error(
+      `\n[package] REFUSING TO PUBLISH ${formatTarget(target)}: ${verdict.reason}.\n` +
+        "[package] Publishing this build would ship a broken auto-update to every\n" +
+        "[package] existing install — 'Restart now' would do nothing, forever.\n" +
+        "[package] Fix: sign with a Developer ID Application certificate and notarize\n" +
+        "[package] (set CSC_LINK + CSC_KEY_PASSWORD, or install the cert in the login\n" +
+        "[package] keychain, and do NOT set CSC_IDENTITY_AUTO_DISCOVERY=false for mac).\n" +
+        "[package] To build an intentionally unsigned local app, use --publish never.\n",
+    );
+    process.exit(1);
+  }
+
+  console.log(`[package] code signature OK (Developer ID) → ${formatTarget(target)}`);
+}
+
 export function builderArgsForTarget(
   target,
   parsed,
@@ -314,6 +439,23 @@ export function builderArgsForTarget(
   return builderArgs;
 }
 
+/**
+ * Reasons a mac release build is guaranteed to ship a broken auto-update,
+ * detectable from the environment alone — before anything is built.
+ */
+export function macReleaseBlockers(env = process.env) {
+  const blockers = [];
+  if (env.CSC_IDENTITY_AUTO_DISCOVERY === "false") {
+    blockers.push(
+      "CSC_IDENTITY_AUTO_DISCOVERY=false forces an ad-hoc signature — unset it for mac",
+    );
+  }
+  if (!env.APPLE_TEAM_ID) {
+    blockers.push("APPLE_TEAM_ID is not set, so the build would publish un-notarized");
+  }
+  return blockers;
+}
+
 function main() {
   const passthrough = stripLeadingSeparator(process.argv.slice(2));
   const parsed = parsePackageArgs(passthrough);
@@ -321,6 +463,25 @@ function main() {
   console.log(
     `[package] build matrix → ${buildMatrix.map(formatTarget).join(", ")}`,
   );
+
+  // Step 0: refuse an unshippable mac release before spending a build on it.
+  // A published ad-hoc build cannot auto-update and strands every existing
+  // install, so this is a hard stop rather than a warning.
+  const publishing = isPublishingRelease(parsed.sharedArgs);
+  const macTargets = buildMatrix.filter((target) => target.platform === "mac");
+  if (publishing && macTargets.length > 0) {
+    const blockers = macReleaseBlockers();
+    if (blockers.length > 0) {
+      console.error(
+        `\n[package] REFUSING TO PUBLISH ${macTargets.map(formatTarget).join(", ")}:\n` +
+          blockers.map((blocker) => `[package]   - ${blocker}`).join("\n") +
+          "\n[package] An ad-hoc or unsigned mac build cannot auto-update: the download\n" +
+          "[package] succeeds, the prompt appears, and 'Restart now' silently does nothing.\n" +
+          "[package] Use --publish never for an intentionally unsigned local build.\n",
+      );
+      process.exit(1);
+    }
+  }
 
   // Step 1: build the Electron main/preload/renderer bundles. Without
   // this step electron-builder silently packages whatever is already in
@@ -417,6 +578,16 @@ function main() {
     }
     if (result.status !== 0) {
       process.exit(result.status ?? 1);
+    }
+
+    // Step 5: verify what actually came out. electron-builder falls back to an
+    // ad-hoc signature without failing when no Developer ID identity is found,
+    // so the env checks above are necessary but not sufficient.
+    if (publishing && target.platform === "mac" && process.platform === "darwin") {
+      verifyMacSigningOrExit(
+        target,
+        useScopedOutputDir ? `dist/${target.platform}-${target.arch}` : "dist",
+      );
     }
   }
 }

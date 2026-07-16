@@ -260,7 +260,8 @@ const updaterAPI = {
     return () => ipcRenderer.removeListener("updater:update-downloaded", handler);
   },
   downloadUpdate: () => ipcRenderer.invoke("updater:download"),
-  installUpdate: () => ipcRenderer.invoke("updater:install"),
+  installUpdate: (): Promise<{ ok: false; error: string }> =>
+    ipcRenderer.invoke("updater:install"),
   checkForUpdates: (): Promise<
     | { ok: true; currentVersion: string; latestVersion: string; available: boolean }
     | { ok: false; error: string }
