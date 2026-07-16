@@ -51,9 +51,11 @@ Use `--ref '<json>'` only for resource types or payloads not covered by shortcut
 `local_directory` resources are **human-only**: any create, update, or delete of
 a `local_directory` resource attempted with an agent task token or cloud PAT
 returns 403 — including bundling one into project create. Do not retry; ask the
-user to attach the directory themselves (Desktop folder picker, or
+user to attach the directory themselves. They have three ways: the web project
+panel's "Add local folder" (pick the machine, then Browse its folders or type an
+absolute path), the Desktop folder picker, or
 `agora project resource add <project-id> --type local_directory --local-path <abs-path> --daemon-id <daemon-id>`
-from their own CLI session). The ref's `daemon_id` must also resolve to a
+from their own CLI session. The ref's `daemon_id` must also resolve to a
 daemon runtime registered in the workspace that the human caller may use
 (runtime owner, workspace owner/admin, or `visibility=public`); unknown daemon
 ids are rejected with 400.
@@ -64,11 +66,13 @@ desktop folder picker records it automatically; otherwise the machine owner
 runs `agora daemon allow-dir <path>` on the daemon host (headless daemons can
 set `AGORA_LOCAL_DIR_ALLOWLIST`). A task against an unapproved path fails with
 `local_directory_error` and a message naming the exact command — relay it to
-the user instead of retrying.
+the user instead of retrying. Browsing a folder in the web picker is **not**
+approval: it is a read-only listing, so a web-attached folder still needs
+`agora daemon allow-dir` before tasks run there.
 
 ## When to add a resource
 
-Add/update a project resource when the user asks for durable project context: "把这个 GitHub repo 绑到项目上", "以后都用这个 repo", "agent 总是拿不到这个项目的仓库", or "这个项目要在我的本地目录里跑" — for the last one, `local_directory` is human-only, so guide the user through attaching it instead of calling the API yourself.
+Add/update a project resource when the user asks for durable project context: "把这个 GitHub repo 绑到项目上", "以后都用这个 repo", "agent 总是拿不到这个项目的仓库", or "这个项目要在我的本地目录里跑" — for the last one, `local_directory` is human-only, so guide the user through attaching it instead of calling the API yourself (web 项目面板的 "Add local folder"：先选机器，再浏览目录或直接填绝对路径；桌面端用文件夹选择器；或用 CLI `agora project resource add`).
 
 Project resources are durable and affect future tasks. `agora repo checkout`
 is task-local checkout state.
