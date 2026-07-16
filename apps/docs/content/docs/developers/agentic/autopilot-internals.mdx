@@ -153,7 +153,7 @@ Two more terminal transitions exist outside the sync trio: `FailAutopilotRunsByI
 
 `source` is set verbatim from the `DispatchAutopilot` argument and stored on the run. Across the system the values are `"schedule"`, `"webhook"`, and `"manual"`. For `webhook` runs, `buildIssueDescription` additionally inlines the trigger payload into the issue body (parsing `event` / `eventPayload` from the envelope) so the agent sees the event context, which it otherwise never would.
 
-## issue_title_template supports only {{date}}
+## issue_title_template supports only `{{date}}`
 
 `ValidateIssueTitleTemplate` rejects any `{{...}}` token outside the supported set. `SupportedIssueTitleTemplateVariables` is exactly `["date"]`. An empty template is valid (the autopilot falls back to its own `Title`).
 

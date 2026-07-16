@@ -153,7 +153,7 @@ s.TaskSvc.NotifyTaskEnqueued(ctx, task)
 
 `source` устанавливается дословно из аргумента `DispatchAutopilot` и сохраняется в запуске. По всей системе значения таковы: `"schedule"`, `"webhook"` и `"manual"`. Для запусков `webhook` `buildIssueDescription` дополнительно встраивает payload триггера в тело issue (разбирая `event` / `eventPayload` из конверта), чтобы агент видел контекст события, который иначе он никогда бы не увидел.
 
-## issue_title_template поддерживает только {{date}}
+## issue_title_template поддерживает только `{{date}}`
 
 `ValidateIssueTitleTemplate` отклоняет любой токен `{{...}}` вне поддерживаемого набора. `SupportedIssueTitleTemplateVariables` — это в точности `["date"]`. Пустой шаблон допустим (autopilot откатывается к собственному `Title`).
 

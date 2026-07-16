@@ -153,7 +153,7 @@ Sinxronizatsiya uchligidan tashqarida yana ikkita yakuniy oʻtish mavjud: `FailA
 
 `source` `DispatchAutopilot` argumentidan soʻzma-soʻz oʻrnatiladi va run-da saqlanadi. Tizim boʻylab qiymatlar `"schedule"`, `"webhook"` va `"manual"`. `webhook` run-lari uchun `buildIssueDescription` qoʻshimcha ravishda trigger payload-ini issue tanasiga inline qiladi (konvertdan `event` / `eventPayload`ni parse qilib), shunda agent hodisa kontekstini koʻradi, aks holda hech qachon koʻrmasdi.
 
-## issue_title_template faqat {{date}}ni qoʻllab-quvvatlaydi
+## issue_title_template faqat `{{date}}`ni qoʻllab-quvvatlaydi
 
 `ValidateIssueTitleTemplate` qoʻllab-quvvatlanadigan toʻplamdan tashqaridagi har qanday `{{...}}` tokenni rad etadi. `SupportedIssueTitleTemplateVariables` aynan `["date"]`. Boʻsh shablon yaroqli (autopilot oʻzining `Title`iga qaytadi).
 
