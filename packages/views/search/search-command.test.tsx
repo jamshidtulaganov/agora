@@ -254,7 +254,10 @@ describe("SearchCommand", () => {
     });
   });
 
-  it("closes on a single Escape press from the search input", async () => {
+  // 15s budget: this test repeatedly lands just over the 5s default on slow
+  // CI runners (userEvent.setup + keyboard round-trips), while staying ~1s
+  // locally. The assertion itself is unchanged.
+  it("closes on a single Escape press from the search input", { timeout: 15000 }, async () => {
     const user = userEvent.setup();
 
     renderSearch();
