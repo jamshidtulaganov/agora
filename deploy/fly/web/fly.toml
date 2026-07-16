@@ -1,12 +1,18 @@
 # sd-agora-web — Next.js (standalone). Public entry point.
-# Proxies /api, /ws, /auth, /uploads to the backend over the private network.
-# REMOTE_API_URL is read at runtime by next.config rewrites(), so it is a plain
-# env here (no rebuild needed to repoint the backend).
+# Proxies /api, /ws, /auth, /uploads to the backend, and /docs to the docs
+# site, over the private network.
+#
+# next.config rewrites() runs at `next build` time and its resolved
+# destination is baked into routes-manifest.json — REMOTE_API_URL and
+# DOCS_URL are build-time only. The [env] entries below do NOT affect
+# routing; they exist only for other runtime code paths. Changing either
+# backend requires a rebuild with the matching --build-arg.
 #
 # Build context MUST be the repo root. Deploy from repo root:
 #
 #   fly deploy --config deploy/fly/web/fly.toml --dockerfile Dockerfile.web \
-#     --build-arg REMOTE_API_URL=http://sd-agora-backend.internal:8080 .
+#     --build-arg REMOTE_API_URL=http://sd-agora-backend.internal:8080 \
+#     --build-arg DOCS_URL=http://sd-agora-docs.internal:3000 .
 
 app = "sd-agora-web"
 primary_region = "fra"
@@ -17,9 +23,7 @@ primary_region = "fra"
   HOSTNAME = "0.0.0.0"
   # Private 6PN address of the backend — never leaves the org network.
   REMOTE_API_URL = "http://sd-agora-backend.internal:8080"
-  # Docs site: /docs/:path* is reverse-proxied here (next.config rewrites,
-  # read at runtime like REMOTE_API_URL).
-  DOCS_URL = "https://sd-agora-docs.fly.dev"
+  DOCS_URL = "http://sd-agora-docs.internal:3000"
 
 [http_service]
   internal_port = 3000

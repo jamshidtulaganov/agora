@@ -36,13 +36,18 @@ COPY packages/ packages/
 # Re-link after source overlay (fixes any symlinks overwritten by COPY)
 RUN pnpm install --frozen-lockfile --offline
 
-# Set build-time env: tells Next.js rewrites to proxy API calls to the backend service
+# Set build-time env: tells Next.js rewrites to proxy API/docs calls to their
+# backing services. rewrites() runs during `next build` and its resolved
+# destination is baked into routes-manifest.json — setting DOCS_URL as a
+# runtime-only Fly secret has no effect after the image is built.
 ARG REMOTE_API_URL=http://backend:8080
 ARG NEXT_PUBLIC_WS_URL
 ARG NEXT_PUBLIC_APP_VERSION=dev
+ARG DOCS_URL=http://localhost:4000
 ENV REMOTE_API_URL=$REMOTE_API_URL
 ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 ENV NEXT_PUBLIC_APP_VERSION=$NEXT_PUBLIC_APP_VERSION
+ENV DOCS_URL=$DOCS_URL
 ENV STANDALONE=true
 
 # Build the web app (standalone output for minimal runtime).
