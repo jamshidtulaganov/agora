@@ -557,17 +557,22 @@ func registerNotificationListeners(bus *events.Bus, queries *db.Queries) {
 		// Track who already got notified to avoid duplicates
 		skip := map[string]bool{e.ActorID: true}
 
-		// Direct notification to assignee
+		// Direct notification to assignee. A squad assignee resolves to its
+		// leader agent (inbox_item accepts member/agent only) — see
+		// resolveAssigneeRecipient.
 		if issue.AssigneeType != nil && issue.AssigneeID != nil {
 			skip[*issue.AssigneeID] = true
-			notifyDirect(ctx, queries, bus,
-				*issue.AssigneeType, *issue.AssigneeID,
-				issue.WorkspaceID, e, issue.ID, issue.Status,
-				"issue_assigned", "action_required",
-				issue.Title,
-				"",
-				emptyDetails,
-			)
+			if rt, rid, ok := resolveAssigneeRecipient(queries, *issue.AssigneeType, *issue.AssigneeID); ok {
+				skip[rid] = true
+				notifyDirect(ctx, queries, bus,
+					rt, rid,
+					issue.WorkspaceID, e, issue.ID, issue.Status,
+					"issue_assigned", "action_required",
+					issue.Title,
+					"",
+					emptyDetails,
+				)
+			}
 		}
 
 		// Notify @mentions in description
@@ -612,16 +617,18 @@ func registerNotificationListeners(bus *events.Bus, queries *db.Queries) {
 			}
 			assigneeDetails, _ := json.Marshal(detailsMap)
 
-			// Direct: notify new assignee about assignment
+			// Direct: notify new assignee about assignment (squad -> leader agent).
 			if issue.AssigneeType != nil && issue.AssigneeID != nil {
-				notifyDirect(ctx, queries, bus,
-					*issue.AssigneeType, *issue.AssigneeID,
-					e.WorkspaceID, e, issue.ID, issue.Status,
-					"issue_assigned", "action_required",
-					issue.Title,
-					"",
-					assigneeDetails,
-				)
+				if rt, rid, ok := resolveAssigneeRecipient(queries, *issue.AssigneeType, *issue.AssigneeID); ok {
+					notifyDirect(ctx, queries, bus,
+						rt, rid,
+						e.WorkspaceID, e, issue.ID, issue.Status,
+						"issue_assigned", "action_required",
+						issue.Title,
+						"",
+						assigneeDetails,
+					)
+				}
 			}
 
 			// Direct: notify old assignee about unassignment

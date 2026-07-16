@@ -30,10 +30,14 @@ func registerSubscriberListeners(bus *events.Bus, queries *db.Queries) {
 		// Subscribe the creator
 		addSubscriber(bus, queries, e.WorkspaceID, issue.ID, issue.CreatorType, issue.CreatorID, "creator")
 
-		// Subscribe the assignee if exists and different from creator
+		// Subscribe the assignee if exists and different from creator. A squad
+		// assignee resolves to its leader agent (subscriber accepts member/agent
+		// only) — see resolveAssigneeRecipient.
 		if issue.AssigneeType != nil && issue.AssigneeID != nil &&
 			!(*issue.AssigneeType == issue.CreatorType && *issue.AssigneeID == issue.CreatorID) {
-			addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *issue.AssigneeType, *issue.AssigneeID, "assignee")
+			if rt, rid, ok := resolveAssigneeRecipient(queries, *issue.AssigneeType, *issue.AssigneeID); ok {
+				addSubscriber(bus, queries, e.WorkspaceID, issue.ID, rt, rid, "assignee")
+			}
 		}
 
 		// Subscribe @mentioned users in description
@@ -55,10 +59,12 @@ func registerSubscriberListeners(bus *events.Bus, queries *db.Queries) {
 			return
 		}
 
-		// Subscribe new assignee if assignee changed
+		// Subscribe new assignee if assignee changed (squad -> leader agent).
 		if assigneeChanged, _ := payload["assignee_changed"].(bool); assigneeChanged {
 			if issue.AssigneeType != nil && issue.AssigneeID != nil {
-				addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *issue.AssigneeType, *issue.AssigneeID, "assignee")
+				if rt, rid, ok := resolveAssigneeRecipient(queries, *issue.AssigneeType, *issue.AssigneeID); ok {
+					addSubscriber(bus, queries, e.WorkspaceID, issue.ID, rt, rid, "assignee")
+				}
 			}
 		}
 

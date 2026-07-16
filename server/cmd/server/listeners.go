@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -9,8 +10,38 @@ import (
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/handler"
 	"github.com/multica-ai/multica/server/internal/realtime"
+	"github.com/multica-ai/multica/server/internal/util"
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
+
+// resolveAssigneeRecipient maps an issue assignee to a concrete notifiable /
+// subscribable identity. The inbox_item and issue_subscriber tables only
+// accept a 'member' or 'agent' recipient (CHECK constraint), so a SQUAD
+// assignee must resolve to the squad's leader agent — mirroring how all
+// squad-routed work runs through leader_id. Without this, assigning an issue
+// to a squad silently dropped the assignment inbox notification and the
+// assignee subscription (both writes failed the CHECK, were logged, and
+// swallowed). Returns ok=false when the assignee cannot be resolved (blank id,
+// or a squad with no valid leader) so callers skip the write cleanly.
+func resolveAssigneeRecipient(queries *db.Queries, assigneeType, assigneeID string) (string, string, bool) {
+	switch assigneeType {
+	case "member", "agent":
+		return assigneeType, assigneeID, assigneeID != ""
+	case "squad":
+		sid, err := util.ParseUUID(assigneeID)
+		if err != nil {
+			return "", "", false
+		}
+		squad, err := queries.GetSquad(context.Background(), sid)
+		if err != nil || !squad.LeaderID.Valid {
+			return "", "", false
+		}
+		return "agent", util.UUIDToString(squad.LeaderID), true
+	default:
+		return "", "", false
+	}
+}
 
 // registerListeners wires up event bus listeners for WS broadcasting.
 // Personal events (inbox, invites) are sent only to the target user via

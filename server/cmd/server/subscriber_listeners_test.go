@@ -161,6 +161,73 @@ func TestSubscriberIssueCreated_CreatorAndAssignee(t *testing.T) {
 	}
 }
 
+// createTestSquad inserts a runtime + leader agent + squad and returns the
+// squad id and leader-agent id. Cleaned up via t.Cleanup.
+func createTestSquad(t *testing.T, workspaceID, ownerID string) (squadID, leaderID string) {
+	t.Helper()
+	ctx := context.Background()
+	var runtimeID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_runtime (workspace_id, name, runtime_mode, provider, status, owner_id, last_seen_at, visibility)
+		VALUES ($1, 'sub-test-rt', 'local', 'claude', 'online', $2, now(), 'public') RETURNING id
+	`, workspaceID, ownerID).Scan(&runtimeID); err != nil {
+		t.Fatalf("create runtime: %v", err)
+	}
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent (workspace_id, name, runtime_mode, runtime_id, visibility, status, owner_id, description, instructions)
+		VALUES ($1, 'Sub Test Lead', 'local', $2, 'workspace', 'idle', $3, '', '') RETURNING id
+	`, workspaceID, runtimeID, ownerID).Scan(&leaderID); err != nil {
+		t.Fatalf("create leader agent: %v", err)
+	}
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO squad (workspace_id, name, leader_id, creator_id) VALUES ($1, 'Sub Test Squad', $2, $3) RETURNING id
+	`, workspaceID, leaderID, ownerID).Scan(&squadID); err != nil {
+		t.Fatalf("create squad: %v", err)
+	}
+	testPool.Exec(ctx, `INSERT INTO squad_member (squad_id, member_type, member_id, role) VALUES ($1, 'agent', $2, 'leader')`, squadID, leaderID)
+	t.Cleanup(func() {
+		testPool.Exec(ctx, `DELETE FROM squad WHERE id = $1`, squadID)
+		testPool.Exec(ctx, `DELETE FROM agent WHERE id = $1`, leaderID)
+		testPool.Exec(ctx, `DELETE FROM agent_runtime WHERE id = $1`, runtimeID)
+	})
+	return squadID, leaderID
+}
+
+// A squad assignee must be subscribed as its LEADER AGENT — issue_subscriber
+// accepts only member/agent, so passing 'squad' through silently failed the
+// CHECK (regression: surfaced under concurrent squad assignment stress).
+func TestSubscriberIssueCreated_SquadResolvesToLeader(t *testing.T) {
+	queries := db.New(testPool)
+	bus := events.New()
+	registerSubscriberListeners(bus, queries)
+
+	squadID, leaderID := createTestSquad(t, testWorkspaceID, testUserID)
+	issueID := createTestIssue(t, testWorkspaceID, testUserID)
+	t.Cleanup(func() { cleanupTestIssue(t, issueID) })
+
+	squadType := "squad"
+	bus.Publish(events.Event{
+		Type:        protocol.EventIssueCreated,
+		WorkspaceID: testWorkspaceID,
+		ActorType:   "member",
+		ActorID:     testUserID,
+		Payload: map[string]any{
+			"issue": handler.IssueResponse{
+				ID: issueID, WorkspaceID: testWorkspaceID, Title: "squad issue",
+				Status: "todo", Priority: "medium", CreatorType: "member", CreatorID: testUserID,
+				AssigneeType: &squadType, AssigneeID: &squadID,
+			},
+		},
+	})
+
+	if !isSubscribed(t, queries, issueID, "agent", leaderID) {
+		t.Fatal("squad assignee should subscribe the leader agent")
+	}
+	if isSubscribed(t, queries, issueID, "squad", squadID) {
+		t.Fatal("the squad itself must never be written as a subscriber")
+	}
+}
+
 func TestSubscriberIssueCreated_SelfAssign(t *testing.T) {
 	queries := db.New(testPool)
 	bus := events.New()
