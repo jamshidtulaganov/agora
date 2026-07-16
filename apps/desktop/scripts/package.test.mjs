@@ -2,7 +2,11 @@ import { delimiter, resolve } from "node:path";
 import { describe, it, expect } from "vitest";
 import {
   builderArgsForTarget,
+  classifyMacSigning,
   envWithLocalBins,
+  isPublishingRelease,
+  macAppPath,
+  macReleaseBlockers,
   normalizeGitVersion,
   parsePackageArgs,
   resolveBuildMatrix,
@@ -269,5 +273,156 @@ describe("envWithLocalBins", () => {
       workspaceBin,
       "runner-bin",
     ]);
+  });
+});
+
+describe("isPublishingRelease", () => {
+  it("is false for a local build with no publish flag", () => {
+    expect(isPublishingRelease([])).toBe(false);
+    expect(isPublishingRelease(["--dir"])).toBe(false);
+  });
+
+  it("is false for an explicit --publish never", () => {
+    expect(isPublishingRelease(["--publish", "never"])).toBe(false);
+    expect(isPublishingRelease(["--publish=never"])).toBe(false);
+    expect(isPublishingRelease(["-p", "never"])).toBe(false);
+  });
+
+  it("is true for a real release", () => {
+    expect(isPublishingRelease(["--publish", "always"])).toBe(true);
+    expect(isPublishingRelease(["--publish=always"])).toBe(true);
+    expect(isPublishingRelease(["-p", "onTag"])).toBe(true);
+  });
+
+  it("treats a bare trailing --publish as publishing", () => {
+    expect(isPublishingRelease(["--publish"])).toBe(true);
+    expect(isPublishingRelease(["--publish", "--dir"])).toBe(true);
+  });
+});
+
+describe("macAppPath", () => {
+  it("uses the arch-suffixed directory electron-builder emits", () => {
+    expect(macAppPath({ platform: "mac", arch: "arm64" })).toBe(
+      "dist/mac-arm64/Agora.app",
+    );
+    expect(macAppPath({ platform: "mac", arch: "universal" })).toBe(
+      "dist/mac-universal/Agora.app",
+    );
+  });
+
+  it("uses the bare `mac` directory for x64", () => {
+    expect(macAppPath({ platform: "mac", arch: "x64" })).toBe("dist/mac/Agora.app");
+  });
+
+  it("nests inside a scoped output dir for multi-target builds", () => {
+    expect(macAppPath({ platform: "mac", arch: "arm64" }, "dist/mac-arm64")).toBe(
+      "dist/mac-arm64/mac-arm64/Agora.app",
+    );
+  });
+});
+
+describe("classifyMacSigning", () => {
+  // Verbatim `codesign -dv --verbose=2` output from the ad-hoc 0.3.49 build
+  // that shipped a permanently broken auto-update.
+  const ADHOC_CODESIGN = [
+    "Executable=/Applications/Agora.app/Contents/MacOS/Agora",
+    "Identifier=ai.agora.desktop",
+    "Format=app bundle with Mach-O thin (arm64)",
+    'CodeDirectory v=20500 size=433 flags=0x10002(adhoc,runtime) hashes=3+7 location=embedded',
+    "Signature=adhoc",
+    "Info.plist entries=33",
+    "TeamIdentifier=not set",
+  ].join("\n");
+
+  const DEVELOPER_ID_CODESIGN = [
+    "Executable=/Applications/Agora.app/Contents/MacOS/Agora",
+    "Identifier=ai.agora.desktop",
+    "Signature size=9000",
+    "Authority=Developer ID Application: Agora (ABCDE12345)",
+    "Authority=Developer ID Certification Authority",
+    "Authority=Apple Root CA",
+    "TeamIdentifier=ABCDE12345",
+  ].join("\n");
+
+  const DEVELOPER_ID_REQUIREMENT =
+    'designated => identifier "ai.agora.desktop" and anchor apple generic and ' +
+    "certificate leaf[subject.OU] = ABCDE12345";
+
+  it("rejects the ad-hoc signature that broke 0.3.49→0.3.50", () => {
+    const verdict = classifyMacSigning({
+      codesignOutput: ADHOC_CODESIGN,
+      requirementOutput: '# designated => cdhash H"2d6e2a50cb584028721f2a4ec287c3e8"',
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.reason).toMatch(/ad-hoc/);
+  });
+
+  it("rejects a bundle that is not signed at all", () => {
+    const verdict = classifyMacSigning({
+      codesignOutput: "Agora.app: code object is not signed at all",
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.reason).toMatch(/not signed at all/);
+  });
+
+  it("rejects a signature that is not Developer ID", () => {
+    const verdict = classifyMacSigning({
+      codesignOutput: [
+        "Signature size=9000",
+        "Authority=Apple Development: someone (ABCDE12345)",
+        "TeamIdentifier=ABCDE12345",
+      ].join("\n"),
+      requirementOutput: DEVELOPER_ID_REQUIREMENT,
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.reason).toMatch(/Developer ID Application certificate/);
+  });
+
+  it("rejects a cdhash-pinned designated requirement even if the authority looks right", () => {
+    const verdict = classifyMacSigning({
+      codesignOutput: DEVELOPER_ID_CODESIGN,
+      requirementOutput: 'designated => cdhash H"2d6e2a50cb584028721f2a4ec287c3e8"',
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.reason).toMatch(/cdhash/);
+  });
+
+  it("accepts a Developer ID signature with a stable designated requirement", () => {
+    expect(
+      classifyMacSigning({
+        codesignOutput: DEVELOPER_ID_CODESIGN,
+        requirementOutput: DEVELOPER_ID_REQUIREMENT,
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  it("rejects empty codesign output rather than defaulting to OK", () => {
+    expect(classifyMacSigning({}).ok).toBe(false);
+    expect(classifyMacSigning().ok).toBe(false);
+  });
+});
+
+describe("macReleaseBlockers", () => {
+  it("flags the forced ad-hoc signature that shipped the broken 0.3.49 build", () => {
+    expect(
+      macReleaseBlockers({
+        CSC_IDENTITY_AUTO_DISCOVERY: "false",
+        APPLE_TEAM_ID: "ABCDE12345",
+      }),
+    ).toEqual([expect.stringMatching(/CSC_IDENTITY_AUTO_DISCOVERY/)]);
+  });
+
+  it("flags a missing APPLE_TEAM_ID", () => {
+    expect(macReleaseBlockers({})).toEqual([
+      expect.stringMatching(/APPLE_TEAM_ID/),
+    ]);
+  });
+
+  it("reports both problems at once rather than one at a time", () => {
+    expect(macReleaseBlockers({ CSC_IDENTITY_AUTO_DISCOVERY: "false" })).toHaveLength(2);
+  });
+
+  it("passes a properly configured release environment", () => {
+    expect(macReleaseBlockers({ APPLE_TEAM_ID: "ABCDE12345" })).toEqual([]);
   });
 });
