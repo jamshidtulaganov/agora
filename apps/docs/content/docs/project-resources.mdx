@@ -17,7 +17,7 @@ A project is no longer just a label. It is a small **resource container**:
 
 This shape is intentional — it's the same pattern Agora already uses for agent providers: a `type` discriminator and a typed payload. It keeps the schema stable so adding "Notion page", "Google Doc", "uploaded file", or "external URL" later is a small, additive change.
 
-Today two resource types ship: [`github_repo`](#resource-type-github_repo) (clone-per-task into an isolated worktree) and [`local_directory`](#resource-type-local_directory) (run directly inside a folder on a specific daemon's machine).
+Today two resource types ship: [`github_repo`](#resource-type-github_repo) (clone-per-task into an isolated worktree) and [`local_directory`](#resource-type-local_directory) (work against a folder that already exists on a specific daemon's machine — in place, or in a worktree cut from it).
 
 ## Resource type: `github_repo`
 
@@ -45,41 +45,120 @@ For repos that can't reasonably be re-cloned per task — multi-gigabyte game ch
   "resource_ref": {
     "local_path": "/Users/me/code/big-game",
     "daemon_id": "0001234e-…",
-    "label": "main checkout"
+    "label": "main checkout",
+    "isolation": "in_place",
+    "access": "write",
+    "preview_url": "http://localhost:3000"
   }
 }
 ```
 
-The trade-off vs. `github_repo` is intentional: only the bound daemon can pick up tasks against the directory, and tasks on the same directory run **serially** instead of in parallel. In exchange you keep your existing checkout, your existing branch, your existing dirty state — Agora never re-clones it.
+Only `local_path` and `daemon_id` are required. The other three are the knobs that decide how the agent works in the folder — [`isolation` and `access`](#how-the-agent-works-in-the-folder-isolation--access) and [`preview_url`](#preview-point-qa-at-your-own-dev-server) — each covered below.
+
+The trade-off vs. `github_repo` is intentional: only the bound daemon can pick up tasks against the directory. In exchange you keep your existing checkout, your existing branch, your existing dirty state — Agora never re-clones it.
 
 ### When to pick `local_directory` over `github_repo`
 
 | Concern | `github_repo` (worktree) | `local_directory` |
 | --- | --- | --- |
-| Checkout cost per task | Fresh clone + worktree | None — agent runs in place |
-| Concurrency on the same repo | Many tasks in parallel | One at a time per directory |
-| Branch / dirty state | Each task gets a fresh branch from the default | Agent commits go on an isolated `agent/…` branch off your current HEAD; dirty tracked state is snapshotted first |
+| Checkout cost per task | Fresh clone + worktree | None — the code is already there |
+| Concurrency on the same repo | Many tasks in parallel | Serial with `in_place`; parallel per issue with `isolation: worktree` |
+| Branch / dirty state | Each task gets a fresh branch from the default | `in_place`: agent commits go on an isolated `agent/…` branch off your current HEAD, dirty tracked state snapshotted first. `worktree`: your checkout isn't touched at all |
 | Where it can run | Any daemon | Exactly one daemon (the one bound) |
-| Disk footprint | One worktree per task | Zero overhead — your existing folder |
+| Disk footprint | One worktree per task | Zero for `in_place`; one worktree per issue for `worktree` |
 
-Pick `local_directory` when **either** of these matches:
+The one-line rule: **reach for `local_directory` when the code is already on a machine and getting it again is the expensive part** — or when you want to watch the work land in the checkout you already have open.
 
-1. **Re-cloning is prohibitively expensive** — a multi-gigabyte game checkout, a monorepo with heavy LFS assets, or anything where the per-task `git clone` would dominate the actual work. You trade concurrency for a clone-free run.
-2. **Your changes are fine-grained and you want to review them locally as they happen** — you're iterating on a single component, you want to flip between the agent's edits and your editor every few minutes, and you'd rather have your existing checkout be the source of truth than a per-task worktree you have to dig out of `~/agora_workspaces/`.
+### Use cases
 
-The trade-off you accept in both cases is the same: **this version ships no file-level write lock.** The per-directory serial gate (one task at a time on the same folder) is the only protection against agents in two different issues touching the same files at the same time. If you point two issues' agents at the same `local_directory`, their tasks queue rather than parallelise — that's by design. If you need real parallelism on the same codebase, stay on `github_repo`.
+Concrete situations where teams reach for this, and what to set for each.
+
+#### 1. The repo is too big to clone per task
+
+A multi-gigabyte game checkout, a monorepo with heavy LFS assets, a project whose `npm install` takes ten minutes. The per-task `git clone` would dominate the actual work.
+
+Attach the checkout with the defaults (`in_place`, `write`). The agent runs in the folder you already have — no clone, no copy, no second copy of the assets on disk.
+
+#### 2. You want to watch the agent work in your own editor
+
+You're iterating on one component and want to flip between the agent's edits and your editor every few minutes, rather than digging a per-task worktree out of `~/agora_workspaces/`.
+
+Defaults again. The agent's commits land on an `agent/…` branch cut from your `HEAD`, so your branch never moves and you can review the diff in place.
+
+#### 3. A reference codebase the agent must read but never touch
+
+An old monolith, a vendor SDK, a sibling service whose API you're integrating against — you want the agent to *learn* from the code, not edit it.
+
+Set **`access: read`**. The folder becomes reference material: the agent reads it through an isolated worktree and every write-back path into your checkout is disabled. Safer than trusting a prompt to say "don't edit this."
+
+#### 4. Several issues in flight on one checkout
+
+Three agents on three issues, one local repo. With the default `in_place` they queue behind each other — correct, but slow.
+
+Set **`isolation: worktree`**. Each issue gets its own git worktree cut from your checkout, so issues run in parallel and your working tree stays untouched.
+
+#### 5. QA should test the app you already have running
+
+Your dev server is up on `localhost:3000` with the exact state you're debugging, and you don't want QA to spawn a second one.
+
+Set **`preview_url: http://localhost:3000`**. The issue's Preview surface proxies to your server, so reviewers and the QA agent see precisely what you see.
+
+#### 6. A team where everyone works locally
+
+A shared project, and each teammate wants agents to run on their own machine.
+
+Each person attaches **their own** `local_directory` — one per (project, daemon), each pointing at their own path on their own host. A task runs on the daemon that owns the receiving agent's runtime, and that daemon picks the row matching its own ID. Nobody's folder is visible to anyone else's daemon.
+
+#### When *not* to use it
+
+If any daemon should be able to pick up the work, and cloning is cheap, stay on `github_repo`. `local_directory` binds the work to one machine — that's the whole point, and it's a cost when the machine is asleep.
 
 ### Attaching a local directory
 
-The folder picker lives in the **Desktop app** only — the web app has no way to read OS paths, so the "Add local directory" button is hidden there. On Desktop:
+Three ways, depending on where you are. All three end at the same resource row — pick whichever is in front of you.
 
-1. Open the project → **Resources** panel.
-2. Click **Add local directory**. A native folder picker opens.
-3. Pick the folder. The path is bound to **the daemon currently registered by this Desktop install** — the resource record stores both the path and that daemon's ID. Picking also records your **owner approval** for the folder (see below), so tasks can run there immediately.
+#### From the web
 
-On Desktop the button stays visible but is **disabled with a hint** when the daemon on this machine is offline, or when the project already has a `local_directory` bound to this daemon — so you can see *why* it's unavailable. (On the web app the button is hidden outright, since there's no folder picker available there at all.) To bind another machine's directory, install Desktop on that machine and add the resource from there.
+Open the project → **Resources** panel → **Add local folder**.
 
-From the CLI (works on web-only environments too, as long as you supply the daemon ID yourself):
+1. **Machine** — pick which host holds the code, from the workspace's online daemons. (A machine you can't use doesn't appear; see [who can attach one](#who-can-attach-one).)
+2. **Folder** — click **Browse** to walk that machine's folders, or type an absolute path if you already know it.
+3. **Access** — *Read & write* (default) or *Read-only*. See [`isolation` + `access`](#how-the-agent-works-in-the-folder-isolation--access).
+4. **Preview URL** — optional; your own dev server, e.g. `http://localhost:3000`.
+5. **Attach folder**.
+
+The web attach does **not** record approval — the machine's owner still has to approve the path with `agora daemon allow-dir` before tasks run there. See [owner approval](#owner-approval-on-the-machine).
+
+#### The folder browser
+
+A browser cannot open an OS folder picker for *another* machine — and even for your own, `<input type="file">` never hands JavaScript an absolute path. So **Browse** asks the daemon to list its own directories instead, one level at a time. You navigate the machine's real folders, and Agora gets the real path.
+
+What you'll see:
+
+- **Only folders**, since a folder is what you're attaching. Git repositories are badged **repo**, so a checkout is obvious at a glance.
+- **Starting at the machine's home directory.** You can go up until you hit the top of what the machine shares — no further.
+- **Only what the machine offers**: the daemon serves its home directory plus any folder its owner has already approved. Everything else is refused, so a picker cannot be used to read someone's whole disk.
+- **Nothing sensitive.** Credential and OS stores — `~/.ssh`, `~/.aws`, `~/Library`, `AppData`, dot-directories under `$HOME` — are never listed and cannot be opened, so no row leads to a dead end.
+
+**Browsing is not approval.** The listing is read-only and grants nothing: seeing a folder in the picker doesn't let an agent run in it. Approval is a separate, deliberate act by the machine's owner.
+
+If the machine is switched off, the picker says so rather than hanging — start its daemon, or type the path and attach now, approve later.
+
+<Callout type="info">
+The folder browser needs the machine's daemon on **v0.3.50 or newer** — the listing is served by the daemon itself, not the backend. Against an older daemon the browser shows the error inline; type the path directly, or update that machine's CLI.
+</Callout>
+
+#### From the Desktop app
+
+Open the project → **Resources** → **Add local directory**. A native folder picker opens, bound to **the daemon this Desktop install registers**.
+
+Picking the folder also records your **owner approval** automatically — you're sitting at the machine, so consent is implicit. This is the only route where attach and approve happen in one step.
+
+The button is **disabled with a hint** when this machine's daemon is offline, or when the project already has a `local_directory` on this daemon — so you can see *why* it's unavailable.
+
+#### From the CLI
+
+Useful for headless hosts, scripts, and any machine you're already SSH'd into:
 
 ```bash
 agora project resource add <project-id> \
@@ -92,7 +171,13 @@ agora project resource update <project-id> <resource-id> \
   --local-path /Users/me/code/big-game-new
 ```
 
-`--daemon-id` comes from `agora daemon list`. The CLI also accepts the generic `--ref '<json>'` escape hatch if you'd rather pass the payload directly.
+`--daemon-id` comes from `agora daemon list`. The CLI also accepts the generic `--ref '<json>'` escape hatch if you'd rather pass the payload directly — that's how you set `isolation`, `access`, or `preview_url` from the command line:
+
+```bash
+agora project resource add <project-id> \
+  --type local_directory \
+  --ref '{"local_path":"/srv/legacy","daemon_id":"<daemon-uuid>","access":"read","isolation":"worktree"}'
+```
 
 ### Who can attach one
 
@@ -113,9 +198,53 @@ Attaching the resource is not enough by itself: **the machine's owner must appro
 - **`agora daemon allow-dir <path>`** — run on the daemon host as the OS user the daemon runs as. Approvals are stored in `~/.agora/local-dirs.json` and re-read on every task, so no daemon restart is needed.
 - **`AGORA_LOCAL_DIR_ALLOWLIST`** — a path-list-separated list of absolute paths, for headless or containerized daemons where neither the picker nor a CLI round-trip exists.
 
-Approving a folder covers everything beneath it. A task against an unapproved path fails fast with a message that names the exact `allow-dir` command to run — approve and re-dispatch, nothing else to clean up. Resources attached from the CLI (or from another machine) always need one of the manual approval paths, since no picker ran on the daemon host.
+Approving a folder covers everything beneath it. A task against an unapproved path fails fast with a message that names the exact `allow-dir` command to run — approve and re-dispatch, nothing else to clean up.
+
+**Attaching from the web or the CLI always needs a manual approval**, because no picker ran on the daemon host. That includes a folder you found with the web [folder browser](#the-folder-browser): browsing is a read-only listing and grants nothing. The split is deliberate — attaching is a workspace action anyone with your credentials could take, while approving is a local act by the person sitting at the machine. Only the Desktop picker collapses the two, because there the two people are the same person.
 
 Manage approvals on the daemon host with `agora daemon list-dirs` (show what's approved, file and env sources) and `agora daemon revoke-dir <path>` (remove a file approval; env approvals are revoked by unsetting `AGORA_LOCAL_DIR_ALLOWLIST`).
+
+### How the agent works in the folder: `isolation` + `access`
+
+Two fields decide what the agent may do with your checkout. Both default to the original behaviour, so a resource attached before they existed keeps working unchanged.
+
+**`isolation`** — where the agent's working tree comes from:
+
+| Value | What happens | Use when |
+| --- | --- | --- |
+| `in_place` *(default)* | The agent works **directly in your folder**. Commits go on an isolated `agent/<name>/<task>` branch cut from your `HEAD`; your branch ref never moves. Tasks on the folder run **one at a time**. | You want to watch the work land in the checkout you already have open. |
+| `worktree` | The agent works in an isolated **git worktree cut from your checkout**, kept under `~/agora_workspaces/<ws>/.worktrees/<issue>/` — outside your folder. Your working tree is never touched. One worktree per issue, reused across that issue's dev → QA → fix tasks, so **different issues run in parallel**. | Several issues are in flight on one checkout, or you want your tree left alone. |
+
+**`access`** — what the agent may do:
+
+| Value | What happens |
+| --- | --- |
+| `write` *(default)* | The agent may modify the folder — in-place edits, or worktree write-back. |
+| `read` | The folder is **reference material only**. Every write-back path into your checkout is disabled, and the agent reads it through a detached worktree. |
+
+`access: read` **forces `isolation: worktree`** — running in place is inherently a write. The API rejects `read` + `in_place` with a `400` rather than silently "fixing" it, and the daemon forces worktree mode even if an older ref slips through, so a read-only folder can never be handed to an agent in place.
+
+In the web UI these are the **Read & write / Read-only** toggle on the attach form and on each resource row. Flipping a row to *Read-only* switches it to worktree isolation at the same time.
+
+<Callout type="warning">
+There is no file-level write lock. For `in_place`, the per-folder serial gate — one task at a time — is the only thing stopping agents on two issues from touching the same files at once. If you need real parallelism on one checkout, use `isolation: worktree` (each issue gets its own tree) rather than pointing two issues at the same in-place folder.
+</Callout>
+
+### Preview: point QA at your own dev server
+
+`preview_url` is your **own locally-running dev server** — the one you already have up while you work:
+
+```json
+"preview_url": "http://localhost:3000"
+```
+
+When set, the issue's **Preview** surface proxies to that server instead of spawning one. Reviewers and the QA agent see exactly the app you see, in the state you're running it — no second server, no waiting for a build.
+
+- Only `localhost`, `127.0.0.1`, `::1`, and private-LAN addresses are accepted. The **daemon** reaches your server, not the public internet — the URL never has to be routable from outside your machine.
+- Leave it empty and Preview falls back to starting the project's dev server itself (the detection described under [QA on a local directory](#qa-on-a-local-directory)).
+- Set it from the web via the **screen icon** on the resource row, or with `--ref` from the CLI.
+
+If your server isn't running when someone opens Preview, the surface simply reports that it can't reach it — nothing is started behind your back.
 
 ### Path rules
 
@@ -132,7 +261,7 @@ The blacklist is intentionally aggressive — picking your home directory would 
 
 ### One per (project, daemon)
 
-A project may hold **at most one `local_directory` per daemon**. Attempting to add a second one on the same daemon returns a `409` from the API; the Desktop button hides itself when the limit is already reached and surfaces a tooltip explaining why.
+A project may hold **at most one `local_directory` per daemon**. Attempting to add a second one on the same daemon returns a `409` from the API. Both apps mirror the limit rather than letting you discover it as an error: the Desktop button explains why it's disabled, and the web machine picker simply stops offering a machine that already has a folder on this project.
 
 Different daemons are independent — a shared project can have one `local_directory` per teammate's machine, each binding the same project to a different folder on a different host. When the daemon claims a task, it picks the row that matches its own ID and ignores the rest.
 
@@ -189,10 +318,11 @@ Watching the QA agent drive a browser live works when your daemon is reachable f
 
 The first release deliberately ships with sharper edges than `github_repo`. Expect this list to shrink over time — what's documented here is what's true today:
 
-- **Untracked files aren't snapshotted.** The dirty-tree backup captures tracked modifications only; an agent that overwrites or deletes an untracked file leaves nothing to recover from. Commit or stash untracked work you care about before a risky run.
+- **Untracked files aren't snapshotted.** The dirty-tree backup captures tracked modifications only; an agent that overwrites or deletes an untracked file leaves nothing to recover from. Commit or stash untracked work you care about before a risky run. (Applies to `in_place`; with `isolation: worktree` the agent never works in your tree at all.)
 - **You're left on the agent branch after a run with commits.** The daemon doesn't switch you back automatically (that would rewrite your working tree). The result comment gives you the return command.
 - **No automatic PR.** When the task ends, the changes sit on the agent branch — nothing is pushed and no PR is opened. Push and open the PR yourself when you're ready.
 - **`waiting_local_directory` shows status, not the holder.** The badge tells you the task is parked; it doesn't surface which task or which file path is currently holding the directory.
+- **The folder browser lists, it doesn't search.** There's no filter box or "recent folders" — you walk the tree, or paste a path you already know.
 
 These are tracked as the agent-task-lifecycle follow-up to the local-directory work; until that ships, treat `local_directory` as "the agent runs in your folder, the same way you would."
 
