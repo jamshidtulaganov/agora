@@ -2,6 +2,7 @@
   "title": "Documentation",
   "pages": [
     "index",
+    "---Get started---",
     "how-agora-works",
     "cloud-quickstart",
     "self-host-quickstart",
@@ -22,6 +23,7 @@
     "daemon-runtimes",
     "install-agent-runtime",
     "tasks",
+    "orchestration",
     "providers",
     "---Collaborating with agents---",
     "assigning-issues",

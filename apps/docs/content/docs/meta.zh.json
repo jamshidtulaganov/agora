@@ -2,6 +2,7 @@
   "title": "Documentation",
   "pages": [
     "index",
+    "---开始使用---",
     "how-agora-works",
     "cloud-quickstart",
     "self-host-quickstart",
@@ -20,6 +21,7 @@
     "---智能体怎么运行---",
     "daemon-runtimes",
     "tasks",
+    "orchestration",
     "providers",
     "---与智能体协作---",
     "assigning-issues",

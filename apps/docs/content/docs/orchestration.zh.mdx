@@ -1,0 +1,154 @@
+---
+title: 编排（Orchestration）
+description: Agora 如何把一个 issue 跨多个智能体、多个阶段跑起来 —— 默认分配会发生什么，以及把 issue 变成 plan → dev → QA → review → release 流水线的可选「编排运行」。
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Agora 里的「编排（orchestration）」指两件不同的事，把它们分清楚正是这一页的意义：
+
+1. **编排者（orchestrator）** —— **拥有**某个 issue 流水线的那个智能体。每个由智能体承担的 issue 都自动有一个。它决定谁做 QA、谁做 review，也是 QA 失败时工作回流的落点。你不用去开启它，它天然就在。
+2. **编排运行（orchestration run）** —— 你在单个 issue 上 **手动开启** 的可选流水线。它把这一个 issue 变成一张阶段 DAG（plan → dev → QA → review → release），由 Agora 一步步驱动。大多数 issue 从不用它。用一个按钮开启。
+
+本页接下来先讲 **默认** 分配一个 issue 会发生什么，再讲编排者，最后讲编排运行。
+
+<Callout type="info">
+分配一个 issue —— 哪怕分给整个 squad —— 都 **不会** 开启编排运行。这是常见的误解。分配启动的是一个普通 [task](/tasks)；编排运行是你另外显式开启的东西。两者下面都会讲。
+</Callout>
+
+## 分配一个 issue 会做什么
+
+这是日常流程 —— 没有运行、没有流水线，只有一个 [task](/tasks)。
+
+- **分给单个 [智能体](/agents)** → 那个智能体拿到一条直接任务并开始干活，状态变为进行中。
+- **分给一个 [squad](/squads)** → squad 的 **leader** 拿到一条任务，被要求 **协调而非亲自写代码**：把 issue 拆成最小的、可独立交付的子 issue，再按能力把它们分给 squad 成员（通常是 @mention 到子 issue 上）。
+
+squad leader 的拆分是 **指令驱动** 的 —— leader 是一个按简报行事的智能体，所以它带着判断去拆解，跟人类 lead 一样。这 **不是** 编排运行搭出来的那张固定阶段图。两种机制，别混为一谈。
+
+## 编排者
+
+每个由智能体承担的 issue 都恰好有一个 **编排者** —— 端到端拥有这条流水线的那个智能体。它是自动解析出来的：
+
+| 当 issue… | 编排者 |
+| --- | --- |
+| 分给一个 squad | 该 squad 的 leader |
+| 分给一个属于某 squad 的智能体 | 那个 squad 的 leader |
+| 分给一个独立智能体（不属于任何 squad） | **该智能体自己** |
+| 分给一个人，或者没分配 | 无 |
+
+独立智能体成为自己的编排者这一点很关键：它意味着即便一条单智能体任务也有一个所有者去驱动各阶段、接住 QA 反馈，所以任何任务都不会处于无人负责的状态。
+
+编排者拥有什么：
+
+- **选角（casting）。** 它按 issue 挑选由哪个智能体做 QA、哪个做 review。在 UI 里这就是 issue 上的 **stage-cast 选择器** —— 留在 *Auto* 就由工作区默认名单来定，或者钉住某个具体智能体。
+- **QA 失败反馈。** 当 QA 关卡失败时，issue 会被路由 **回到编排者**（而不是烂在队列里），好让它派发修复。见 [失败与重试](#失败与重试)。
+- **叙事线。** 阶段步进条展示的是编排者的交接 —— 「Dev Lead → QA Tester」—— 而不是谁碰了一下状态。
+
+当一个 issue 有编排者时，issue 详情会显示一行 **「Orchestrated by …」**。由人承担或分给成员的 issue 没有编排者，也没有这一行。
+
+## 编排运行
+
+**编排运行** 是那条可选流水线。你从 issue 上的 **执行面板** 开启它 —— 空状态里有一个 **Start** 按钮和一个 **Customize** 展开项。只有人能开启、批准、重试或取消一次运行；智能体不能。
+
+一次运行把 issue 变成一张 **DAG** —— 一张图，每个步骤都等着它前面的步骤。Agora 会在依赖完成时派发步骤、让互相独立的分支并行、并在审批关卡处暂停。
+
+### 选择策略
+
+**Customize** 面板提供四种策略：
+
+| 策略 | 运行的形状 |
+| --- | --- |
+| **`solo`** | 两步：**work → release**。没有 plan、没有 QA、没有 review。小而自足的改动的快车道。 |
+| **`squad`** | 完整流水线：**plan → N 条并行 dev 分支 → integrate →（QA ∥ review）→ release**。 |
+| **`human`** | 单个 **human-work** 步骤加一道审批关卡 —— 你自己勾掉的一个检查点，没有智能体。 |
+| **`automatic`** | Agora 依据 issue 的分配情况推断出 `solo` 或 `squad`。 |
+
+面板上的其他选项：
+
+- **并行 worker 数** —— squad 运行扇出成多少条 dev 分支（默认 **3**，范围 1–10）。实际条数还受开始时有多少 squad 成员 *就绪* 限制；没有可用 worker 时收敛成单个 dev 步骤。
+- **推进（Progression）** —— `automatic`（步骤自行推进），或 `manual`（每批之后暂停，等你点 **Continue**）。
+- **先看计划（Review plan first）** —— 把运行创建成 **草稿（draft）**，让你先审生成的计划再跑，而不是立即开跑。
+
+### 各阶段
+
+一次 squad 运行有五个阶段。它们的顺序和之间的汇合点：
+
+```
+plan ─▶ dev-frontend ─┐
+       dev-backend  ──┼─▶ integrate ─┬─▶ qa    ──┐
+       dev-…        ──┘              └─▶ review ──┴─▶ release （审批）
+```
+
+- **plan** —— 控制者拟出拆分方案。
+- **dev** —— 每种能力（frontend / backend / mobile / infra / docs / …）一个步骤，**并行**跑。
+- **integrate** —— 把并行 dev 分支合回一处的汇合步骤。它是一种步骤 *kind*，本身不是一个独立阶段 —— 它归属在 `dev` 里。只要一次运行有两条及以上 dev 分支，QA 或 review 之前就必须有一道 integrate 汇合。
+- **qa** 与 **review** —— 两者都依赖 integrate，并且彼此 **并行**。
+- **release** —— 依赖 **qa 和 review 两者**，且是一道 **审批关卡**：由人批准。批准时会重新检查合并关卡，若不满足则连同原因一起拒绝。
+
+<Callout type="info">
+**solo** 运行只有 **work → release** —— **没有 QA、没有 review 步骤**。想要 QA 或 review 阶段，就用 squad 运行（或自定义计划）。这一点常让「以为每次运行都有关卡」的人意外。
+</Callout>
+
+issue 层面没有独立的 `deploy` 阶段，也没有 `design` 阶段。**部署（deploy）** 是 **sprint 级** 的事 —— 它在 [Release 页面](#release-页面) 的 Ship 标签里，不在 issue 上。**设计（design）** 是 dev 工作的一个输入（issue 上一个可选的设计视图），不是一个阶段。
+
+### 你看到什么：阶段步进条
+
+运行进行时，issue 上会显示一条三点 **阶段步进条**：**Dev → QA → Review**。它是派生视图 —— issue 上并没有存储 `stage` 字段。五个 DAG 阶段折叠到这三个点上：
+
+- `plan` + `dev`（含 integrate）→ **Dev**
+- `qa` → **QA**
+- `review`（以及 `release`，显示为「awaiting approval」）→ **Review**
+
+点某个阶段会打开一个实时的「此刻在发生什么」浮层。对由人承担的 issue（没有编排者），步进条仍显示朴素的状态投影；编排者叙事只在有运行或编排者拥有流水线时才出现。
+
+### Release 页面
+
+工作区的 **[Release](/tasks) 页面**（`/{workspace}/qa`）是 **外层** 循环 —— 跨多个 issue 做发布决策的地方，相对于挂在 issue 上的单 issue QA 而言。它的标签：
+
+- **Ship** 和 **Queue** 是两个主标签（有 sprint 活跃时 Ship 为默认，否则 Queue）。
+- **Bugs**、**Test suite**、**Metrics** 收在 **⋯** 溢出菜单里。
+- **Deploy** 在 **Ship** 标签里 —— 环境、部署触发、历史 —— 因为部署是 sprint 级的决策。
+
+## 失败与重试
+
+两套机制，行为不同。搞清楚你在哪一套里，能避开 Agora 里最出人意料的行为。
+
+**没有运行时（默认流程）：** QA 关卡失败时，Agora 把 issue 路由 **回到它的编排者** —— 重新分配、状态重置为待办、并发一条 @mention 编排者、带失败摘要的评论 —— 好让修复被派发出去。每个 issue 最多重试 **5 次**（QA 通过后计数清零）；超过之后就留给人处理，并继续显示在 QA 队列里。这个行为 **默认开启**。
+
+**在运行内部：** 失败的步骤会 **原地重试** —— 同一步骤、同一智能体 —— 直到用完预算（dev / integrate / QA / review 各 **2** 次；release 和 human-work 各 **1** 次）。QA 步骤失败 **不会把工作弹回 dev**；它重试 QA，预算用尽则 **整个运行失败**。之后由人用运行上的 **Retry** 或 **Cancel branch** 控件处理。这种不对称 —— 运行外自动回流到 dev、运行内原地重试 —— 在你把一个 issue 挪进编排运行时值得记住。
+
+运行上你可能还会看到的状态：
+
+- **waiting_approval** —— 某步骤是一道审批关卡，正等人。
+- 一个 **正忙的智能体** 被当作背压而非失败：步骤保持 pending，在智能体空出来之前不消耗次数。
+- **并发** 默认 3（可配 1–10），且一个智能体在一次运行里最多同时持有一个活跃步骤。
+- **取消一条任务** 会取消它的步骤并使运行失败；只取消 **一条分支** 则其余部分仍可能收敛到 release。
+
+## 配置与默认值
+
+几乎每一项流水线自动化都是 **可选（opt-in）** 的。开箱状态下，只有这些是开着的：
+
+| 默认开启 | 作用 |
+| --- | --- |
+| QA 失败自动回流 | 把失败的 QA 路由回编排者（上面那套 5 次重试）。可按项目覆盖。 |
+| `labs.qa_dev_boxes` | QA 可以打到一台已部署的 box 上。工作区级。 |
+
+其余一切 **默认关闭**，除非你去开 —— 别假设它们在跑：
+
+- **自动 QA**（issue 到 In Review 时自动起一道 QA 关卡）—— **关**。按工作区经 `labs.qa_dev_runtimes` 开、按项目经各 QA 开关开。
+- **自动 review**（自动派一个 reviewer）—— **关**，按项目开。
+- **Sprint 模式** —— 共享 sprint 分支（`AGORA_SPRINT_PR_MODE`）、sprint worktree、sprint 自动合并 —— 全 **关**。默认 dev 流程是「每任务一个 fork + 一个你自己合的 PR」。
+- **Squad 失败恢复**、**QA 关卡强制**、**风险分级关卡** —— 全 **关**。
+
+实例级和项目级开关在 **Settings → Configs**（在允许覆盖的开关上，项目值覆盖实例值）。工作区的 `labs.*` 开关在 **Settings → Labs**。按 issue 的行为 —— 策略、推进、选角 —— 在 issue 的执行面板和 stage-cast 选择器里设，不在设置里。
+
+<Callout type="warning">
+正因为大量东西是可选的，开箱的 Agora 跑的是 **简单** 流程：分配 → 智能体干活 → PR → 你审查并合并。编排运行、自动 QA、sprint 模式，是团队成长到那一步时你有意去用的东西 —— 不是你必须绕过的默认项。
+</Callout>
+
+## 下一步
+
+- [Squads](/squads) —— squad 的 leader 和成员怎么配。
+- [Tasks](/tasks) —— 一次分配或一个运行步骤派发的单位。
+- [项目资源](/project-resources) —— 绑定运行里 dev 步骤要工作的仓库和文件夹。
+- [分配 issue](/assigning-issues) —— 日常的、无运行的路径。
