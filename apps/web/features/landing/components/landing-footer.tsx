@@ -12,16 +12,16 @@ export function LandingFooter() {
   const { t, locale, setLocale } = useLocale();
   const user = useAuthStore((s) => s.user);
   // New-startup posture: hide GitHub / open-source surfaces, social, and the
-  // company/about pages, plus links we don't surface yet (changelog, docs —
-  // also removed from the top nav). Groups left with no links are dropped.
+  // company/about pages, plus links we don't surface yet (changelog). Groups
+  // left with no links are dropped. Docs are surfaced — they're the depth
+  // behind /guide, and the top nav links them too.
   const isHidden = (href: string) =>
     href === githubUrl ||
     href === twitterUrl ||
     href === "#open-source" ||
     href === "/about" ||
     href === "/contact-sales" ||
-    href === "/changelog" ||
-    href.startsWith("/docs");
+    href === "/changelog";
   const groups = Object.values(t.footer.groups)
     .map((group) => ({
       ...group,

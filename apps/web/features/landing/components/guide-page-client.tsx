@@ -28,6 +28,10 @@ type Step = {
   points: string[];
   icon: React.ComponentType<{ className?: string }>;
   visual: React.ComponentType;
+  /** The docs page this step is the short version of. The guide is the
+   *  on-ramp; every step hands off to the depth rather than dead-ending. */
+  docsHref: string;
+  docsLabel: string;
 };
 
 const STEPS: Step[] = [
@@ -43,6 +47,8 @@ const STEPS: Step[] = [
     ],
     icon: Plus,
     visual: WorkspaceVisual,
+    docsHref: "/docs/workspaces",
+    docsLabel: "Workspaces & members",
   },
   {
     label: "Runtime",
@@ -56,6 +62,8 @@ const STEPS: Step[] = [
     ],
     icon: Monitor,
     visual: RuntimeVisual,
+    docsHref: "/docs/daemon-runtimes",
+    docsLabel: "Runtimes & the daemon",
   },
   {
     label: "Create issue",
@@ -69,6 +77,8 @@ const STEPS: Step[] = [
     ],
     icon: ListChecks,
     visual: IssueVisual,
+    docsHref: "/docs/issues",
+    docsLabel: "Issues",
   },
   {
     label: "Assign",
@@ -82,6 +92,8 @@ const STEPS: Step[] = [
     ],
     icon: UserPlus,
     visual: AssignVisual,
+    docsHref: "/docs/assigning-issues",
+    docsLabel: "Assigning issues to agents",
   },
   {
     label: "Watch",
@@ -95,6 +107,8 @@ const STEPS: Step[] = [
     ],
     icon: Bot,
     visual: WatchVisual,
+    docsHref: "/docs/tasks",
+    docsLabel: "Tasks & execution",
   },
   {
     label: "Review",
@@ -108,6 +122,8 @@ const STEPS: Step[] = [
     ],
     icon: GitPullRequest,
     visual: ReviewVisual,
+    docsHref: "/docs/github-integration",
+    docsLabel: "GitHub integration",
   },
   {
     label: "Skills",
@@ -121,6 +137,8 @@ const STEPS: Step[] = [
     ],
     icon: Sparkles,
     visual: SkillsVisual,
+    docsHref: "/docs/skills",
+    docsLabel: "Skills",
   },
 ];
 
@@ -305,6 +323,17 @@ export function GuidePageClient() {
                           </li>
                         ))}
                       </ul>
+                    </Reveal>
+
+                    <Reveal delay={220}>
+                      <Link
+                        href={step.docsHref}
+                        className="mt-6 inline-flex items-center gap-1.5 text-[14px] font-medium transition-opacity hover:opacity-80"
+                        style={{ color: ACCENT }}
+                      >
+                        {step.docsLabel}
+                        <ArrowRight className="size-3.5" aria-hidden />
+                      </Link>
                     </Reveal>
 
                     <Reveal className="mt-12">

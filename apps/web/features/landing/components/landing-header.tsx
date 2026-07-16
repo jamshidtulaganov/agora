@@ -7,7 +7,7 @@ import { AgoraIcon } from "@agora/ui/components/common/agora-icon";
 import { ThemeToggle } from "@agora/ui/components/common/theme-toggle";
 import { cn } from "@agora/ui/lib/utils";
 import { useAuthStore } from "@agora/core/auth";
-import { localeLabels, locales, useLocale, type Locale } from "../i18n";
+import { docsHrefForLocale, localeLabels, locales, useLocale, type Locale } from "../i18n";
 import { headerButtonClassName } from "./shared";
 
 // Compact code shown on the switcher button; the dropdown uses the full
@@ -24,11 +24,14 @@ export function LandingHeader({
 }: {
   variant?: "dark" | "light" | "auto";
 }) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const user = useAuthStore((s) => s.user);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  // Guide is the on-ramp; Docs is the depth behind it. The docs href is
+  // locale-aware because the docs site serves zh under its own prefix.
   const navLinks = [
     { href: "/guide", label: t.header.guide },
+    { href: docsHrefForLocale(locale), label: t.header.docs },
     { href: "/usecases", label: t.header.useCases },
     { href: "/download", label: t.header.download },
   ];
