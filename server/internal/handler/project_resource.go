@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -129,6 +130,35 @@ type localDirectoryRef struct {
 	// worktree isolation and disables every write-back path into the user's
 	// checkout, so agents can read the code but never mutate it.
 	Access string `json:"access,omitempty"`
+	// PreviewURL is the developer's own locally-running dev server (e.g.
+	// http://localhost:3000). When set, the issue Preview surface proxies to it
+	// instead of spawning a server, so QA/reviewers see the exact app the dev is
+	// running. localhost/127.0.0.1/LAN only — the daemon reaches it, not the
+	// public internet.
+	PreviewURL string `json:"preview_url,omitempty"`
+}
+
+// validateLocalPreviewURL accepts only an http(s) URL pointing at a local host
+// (localhost / 127.0.0.1 / ::1 / RFC-1918 LAN). The daemon — running on the
+// same machine as the dev server — proxies to it, so a public host would be
+// both useless and an SSRF footgun.
+func validateLocalPreviewURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return errors.New("local_directory: preview_url must be a valid URL")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return errors.New("local_directory: preview_url must be http or https")
+	}
+	host := u.Hostname()
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+		return nil
+	}
+	ip := net.ParseIP(host)
+	if ip != nil && (ip.IsLoopback() || ip.IsPrivate()) {
+		return nil
+	}
+	return errors.New("local_directory: preview_url must point at localhost or a private LAN address")
 }
 
 func validateLocalDirectoryRef(ref json.RawMessage) (json.RawMessage, error) {
@@ -164,6 +194,12 @@ func validateLocalDirectoryRef(ref json.RawMessage) (json.RawMessage, error) {
 	// would hand the agent the user's folder as its writable workdir.
 	if payload.Access == "read" && payload.Isolation == "in_place" {
 		return nil, errors.New("local_directory: access=read requires isolation=worktree (in-place execution writes to the folder)")
+	}
+	payload.PreviewURL = strings.TrimSpace(payload.PreviewURL)
+	if payload.PreviewURL != "" {
+		if err := validateLocalPreviewURL(payload.PreviewURL); err != nil {
+			return nil, err
+		}
 	}
 	out, err := json.Marshal(payload)
 	if err != nil {

@@ -69,7 +69,14 @@ type artifactCapabilityRecord struct {
 	DaemonID    string            `json:"daemon_id,omitempty"`
 	SourceRoot  string            `json:"source_root"`
 	Repos       []artifactRepoRef `json:"repos"`
-	ExpiresAt   time.Time         `json:"expires_at"`
+	// Live marks a grant that points at a local_directory's LIVE working tree
+	// (no orchestration step, no frozen SHAs). The daemon reads the folder's
+	// uncommitted working state for changes/file and does not require repo
+	// base/head SHAs. PreviewURL is the developer's own running dev server that
+	// the preview surface proxies to instead of spawning one.
+	Live       bool      `json:"live,omitempty"`
+	PreviewURL string    `json:"preview_url,omitempty"`
+	ExpiresAt  time.Time `json:"expires_at"`
 }
 
 const artifactCapabilityAAD = "agora-artifact-capability-v1"

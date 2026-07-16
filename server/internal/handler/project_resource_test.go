@@ -409,6 +409,9 @@ func TestProjectResourceLocalDirectoryValidation(t *testing.T) {
 		{"invalid access", map[string]any{"local_path": "/Users/foo/work", "daemon_id": "d1", "access": "admin"}},
 		{"read access needs worktree", map[string]any{"local_path": "/Users/foo/work", "daemon_id": "d1", "access": "read", "isolation": "in_place"}},
 		{"read access rejects default in_place", map[string]any{"local_path": "/Users/foo/work", "daemon_id": "d1", "access": "read"}},
+		{"preview_url not a url", map[string]any{"local_path": "/Users/foo/work", "daemon_id": "d1", "preview_url": "not a url"}},
+		{"preview_url wrong scheme", map[string]any{"local_path": "/Users/foo/work", "daemon_id": "d1", "preview_url": "ftp://localhost:3000"}},
+		{"preview_url public host", map[string]any{"local_path": "/Users/foo/work", "daemon_id": "d1", "preview_url": "https://example.com"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1114,5 +1117,33 @@ func TestCreateProjectBundledLocalDirectoryDaemonConflict(t *testing.T) {
 	}()
 	if len(resp.Resources) != 2 {
 		t.Errorf("per-daemon bundle: expected 2 resources, got %d", len(resp.Resources))
+	}
+}
+
+func TestValidateLocalPreviewURL(t *testing.T) {
+	ok := []string{
+		"http://localhost:3000",
+		"https://localhost",
+		"http://127.0.0.1:8080/app",
+		"http://[::1]:5173",
+		"http://192.168.1.20:3000",
+		"http://10.0.0.5:4000",
+	}
+	for _, u := range ok {
+		if err := validateLocalPreviewURL(u); err != nil {
+			t.Errorf("expected %q valid, got %v", u, err)
+		}
+	}
+	bad := []string{
+		"not a url",
+		"ftp://localhost:3000",
+		"https://example.com",
+		"http://8.8.8.8",
+		"http://agora.dev",
+	}
+	for _, u := range bad {
+		if err := validateLocalPreviewURL(u); err == nil {
+			t.Errorf("expected %q rejected", u)
+		}
 	}
 }

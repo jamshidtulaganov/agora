@@ -164,6 +164,10 @@ export interface LocalDirectoryResourceRef {
    *  write-back; "read" forces worktree isolation and blocks every write-back
    *  path, so agents treat the folder as reference material only. */
   access?: "read" | "write";
+  /** The developer's own locally-running dev server (e.g. http://localhost:3000).
+   *  When set, the issue Preview surface proxies to it instead of spawning one.
+   *  localhost / 127.0.0.1 / private-LAN only. */
+  preview_url?: string;
 }
 
 export type ProjectResourceRef =
