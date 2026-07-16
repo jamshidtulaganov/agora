@@ -1971,6 +1971,10 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       },
       safariMacHint: "On an Intel Mac? Use the CLI below.",
       archFallbackHint: "Wrong architecture? See all formats below.",
+      macGatekeeper: {
+        title: "First launch on macOS",
+        body: "Agora isn't notarized by Apple yet, so macOS blocks it the first time you open it. Click Done — not Move to Trash — then go to System Settings → Privacy & Security and click Open Anyway.",
+      },
     },
     allPlatforms: {
       title: "All platforms",

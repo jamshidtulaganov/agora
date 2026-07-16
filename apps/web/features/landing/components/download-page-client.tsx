@@ -270,6 +270,10 @@ function DownloadHero({
   let primary: { label: string; href: string; onClick: () => void } | null = null;
   let secondary: { label: string; href: string; onClick: () => void } | null = null;
   let hint: string | null = null;
+  // Separate from `hint`, which is a single mutually-exclusive slot — the
+  // Gatekeeper steps must survive alongside an arch hint, because without
+  // them the download cannot be opened at all.
+  let macNote: { title: string; body: string } | null = null;
 
   if (detect?.os === "mac" && versionAvailable) {
     if (assets.macArm64Dmg) {
@@ -290,6 +294,7 @@ function DownloadHero({
         };
       }
       if (!detect.archConfident) hint = h.safariMacHint;
+      macNote = h.macGatekeeper;
     } else {
       title = h.macIntel.title;
       sub = h.macIntel.sub;
@@ -370,6 +375,16 @@ function DownloadHero({
         ) : null}
         {hint ? (
           <p className="mt-4 text-[13px] text-[#71717A] dark:text-white/40">{hint}</p>
+        ) : null}
+        {macNote ? (
+          <div className="mt-6 max-w-[560px] rounded-[12px] border border-zinc-200 px-4 py-3 dark:border-white/10">
+            <p className="text-[13px] font-semibold text-[#18181B] dark:text-white/80">
+              {macNote.title}
+            </p>
+            <p className="mt-1 text-[13px] leading-[1.6] text-[#71717A] dark:text-white/50">
+              {macNote.body}
+            </p>
+          </div>
         ) : null}
       </div>
     </Reveal>

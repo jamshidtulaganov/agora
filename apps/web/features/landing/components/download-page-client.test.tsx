@@ -85,6 +85,57 @@ describe("DownloadPageClient", () => {
     expect(screen.getAllByText(dict.download.hero.macArm64.title).length).toBeGreaterThan(0);
   });
 
+  it("shows the Gatekeeper first-launch steps on macOS", async () => {
+    // The mac builds are not notarized, so macOS blocks the first launch
+    // outright. Without these steps on the page the download is unusable.
+    render(<DownloadPageClient release={fullRelease()} />);
+    await waitFor(() =>
+      expect(
+        screen.getByText(dict.download.hero.macGatekeeper.title),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByText(dict.download.hero.macGatekeeper.body),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the Gatekeeper note alongside the arch hint, not instead of it", async () => {
+    detectOSMock.mockResolvedValue({ os: "mac", arch: "arm64", archConfident: false });
+    render(<DownloadPageClient release={fullRelease()} />);
+    await waitFor(() =>
+      expect(screen.getByText(dict.download.hero.safariMacHint)).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByText(dict.download.hero.macGatekeeper.title),
+    ).toBeInTheDocument();
+  });
+
+  it("omits the Gatekeeper note on non-mac platforms", async () => {
+    detectOSMock.mockResolvedValue({ os: "windows", arch: "x64", archConfident: true });
+    render(<DownloadPageClient release={fullRelease()} />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("link", { name: dict.download.hero.winX64.primary }),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByText(dict.download.hero.macGatekeeper.title),
+    ).not.toBeInTheDocument();
+  });
+
+  it("omits the Gatekeeper note when there is no mac build to download", async () => {
+    const release = fullRelease();
+    delete release.assets.macArm64Dmg;
+    delete release.assets.macArm64Zip;
+    render(<DownloadPageClient release={release} />);
+    await waitFor(() =>
+      expect(screen.getByText(dict.download.hero.macIntel.intelHint)).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByText(dict.download.hero.macGatekeeper.title),
+    ).not.toBeInTheDocument();
+  });
+
   it("lists every platform row with direct asset links", () => {
     render(<DownloadPageClient release={fullRelease()} />);
     expect(screen.getByText(dict.download.allPlatforms.winX64Label)).toBeInTheDocument();

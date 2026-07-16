@@ -309,6 +309,10 @@ export type LandingDict = {
       unknown: { title: string; sub: string };
       safariMacHint: string;
       archFallbackHint: string;
+      // Shown to macOS visitors whenever a mac build is offered. The builds
+      // are not notarized by Apple, so Gatekeeper blocks the first launch
+      // outright — without these steps the download is unusable.
+      macGatekeeper: { title: string; body: string };
     };
     allPlatforms: {
       title: string;

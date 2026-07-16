@@ -1973,6 +1973,10 @@ export function createUzDict(allowSignup: boolean): LandingDict {
       },
       safariMacHint: "Intel Mac'damisiz? Quyidagi CLI'dan foydalaning.",
       archFallbackHint: "Arxitektura noto'g'rimi? Quyida barcha formatlarni ko'ring.",
+      macGatekeeper: {
+        title: "macOS'da birinchi ishga tushirish",
+        body: "Agora hali Apple tomonidan notarizatsiya qilinmagan, shuning uchun macOS uni birinchi ochishda bloklaydi. Done tugmasini bosing — Move to Trash emas — so'ng System Settings → Privacy & Security bo'limini oching va Open Anyway tugmasini bosing.",
+      },
     },
     allPlatforms: {
       title: "Barcha platformalar",

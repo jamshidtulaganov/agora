@@ -1973,6 +1973,10 @@ export function createRuDict(allowSignup: boolean): LandingDict {
       },
       safariMacHint: "На Mac с Intel? Используйте CLI ниже.",
       archFallbackHint: "Неверная архитектура? Смотрите все форматы ниже.",
+      macGatekeeper: {
+        title: "Первый запуск на macOS",
+        body: "Agora пока не заверена в Apple, поэтому при первом открытии macOS её блокирует. Нажмите «Готово» — не «Переместить в Корзину» — затем откройте «Системные настройки» → «Конфиденциальность и безопасность» и нажмите «Всё равно открыть».",
+      },
     },
     allPlatforms: {
       title: "Все платформы",

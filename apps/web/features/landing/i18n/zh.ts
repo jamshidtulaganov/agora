@@ -1964,6 +1964,10 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       },
       safariMacHint: "在 Intel Mac 上？请使用下方 CLI。",
       archFallbackHint: "架构不对？下方是所有可选格式。",
+      macGatekeeper: {
+        title: "macOS 首次启动",
+        body: 'Agora 尚未通过 Apple 公证，首次打开时会被 macOS 拦截。请点击"完成"，不要点"移到废纸篓"，然后打开"系统设置"→"隐私与安全性"，点击"仍要打开"。',
+      },
     },
     allPlatforms: {
       title: "所有平台",
