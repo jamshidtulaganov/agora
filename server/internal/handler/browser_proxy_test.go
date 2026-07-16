@@ -26,6 +26,8 @@ func TestBrowserProxyPathAllowed(t *testing.T) {
 		"/editor/test",
 		"/editor/local/42873/",
 		"/editor/local/42873/assets/index.js",
+		// Folder picker: read-only directory listing for the web attach flow.
+		"/editor/fs/list",
 	}
 	for _, p := range allowed {
 		if !browserProxyPathAllowed(p) {
@@ -43,6 +45,14 @@ func TestBrowserProxyPathAllowed(t *testing.T) {
 		"/editor/browserish", // prefix-confusion sibling
 		"/editor/localhost",  // not the /editor/local/ route
 		"/editor/previewx",   // exact/slashed only — not a prefix sibling
+		// The fs surface is exactly one read-only route; a future sibling under
+		// /editor/fs/ must not ride in on this token.
+		"/editor/fs",
+		"/editor/fs/",
+		"/editor/fs/list/",
+		"/editor/fs/listx",
+		"/editor/fs/write",
+		"/editor/fslist",
 		"/editor/changes",    // exact artifact endpoint replaces mutable worktree diff
 		"/editor/open-pr",    // release is owned by orchestration
 		"/editor/discard",    // correction is owned by versioned orchestration

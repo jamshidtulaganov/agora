@@ -625,29 +625,7 @@ func (h *Handler) requireLocalDirectoryDaemonAccess(w http.ResponseWriter, r *ht
 		writeError(w, http.StatusBadRequest, errPrefix+"invalid local_directory payload")
 		return false
 	}
-	runtimes, err := h.Queries.ListAgentRuntimesByDaemonID(r.Context(), db.ListAgentRuntimesByDaemonIDParams{
-		WorkspaceID: workspaceID,
-		DaemonID:    pgtype.Text{String: ref.DaemonID, Valid: true},
-	})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, errPrefix+"failed to look up daemon runtimes")
-		return false
-	}
-	if len(runtimes) == 0 {
-		writeError(w, http.StatusBadRequest, errPrefix+"unknown daemon_id: no runtime is registered for this daemon in the workspace")
-		return false
-	}
-	member, ok := h.workspaceMember(w, r, uuidToString(workspaceID))
-	if !ok {
-		return false
-	}
-	for _, rt := range runtimes {
-		if canUseRuntimeForAgent(member, rt) {
-			return true
-		}
-	}
-	writeError(w, http.StatusForbidden, errPrefix+"this daemon's runtime is private; only its owner or a workspace admin can bind its local directories")
-	return false
+	return h.requireDaemonAccess(w, r, workspaceID, ref.DaemonID, errPrefix)
 }
 
 // DeleteProjectResource removes a resource from a project.

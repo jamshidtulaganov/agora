@@ -495,6 +495,50 @@ func canUseRuntimeForAgent(member db.Member, rt db.AgentRuntime) bool {
 	return rt.OwnerID.Valid && uuidToString(rt.OwnerID) == uuidToString(member.UserID)
 }
 
+// requireDaemonAccess gates a human action that targets one MACHINE, addressed
+// by daemon_id (TEXT — a daemon registration id, not a UUID column, so it is
+// carried as pgtype.Text rather than parsed as a UUID). Two gates, mirroring
+// agent→runtime binding (CreateAgent):
+//
+//  1. The daemon_id must resolve to at least one agent_runtime row in the
+//     workspace — otherwise it names a machine nobody registered (typo'd, or
+//     copied from another workspace) → 400.
+//  2. canUseRuntimeForAgent must pass for at least one of those rows —
+//     runtime owner, workspace owner/admin, or visibility=public. One daemon
+//     can carry several rows (one per provider); ANY accessible row grants the
+//     action, because it targets the machine, not a specific provider → 403.
+//
+// Rows match regardless of status, so the owner of an OFFLINE daemon still
+// passes; a caller that additionally needs the daemon reachable resolves that
+// separately (and should degrade rather than 500). errPrefix lets a bundled
+// caller name the offending resource index; pass "" elsewhere. Returns false
+// after writing the error response.
+func (h *Handler) requireDaemonAccess(w http.ResponseWriter, r *http.Request, workspaceID pgtype.UUID, daemonID, errPrefix string) bool {
+	runtimes, err := h.Queries.ListAgentRuntimesByDaemonID(r.Context(), db.ListAgentRuntimesByDaemonIDParams{
+		WorkspaceID: workspaceID,
+		DaemonID:    pgtype.Text{String: daemonID, Valid: true},
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, errPrefix+"failed to look up daemon runtimes")
+		return false
+	}
+	if len(runtimes) == 0 {
+		writeError(w, http.StatusBadRequest, errPrefix+"unknown daemon_id: no runtime is registered for this daemon in the workspace")
+		return false
+	}
+	member, ok := h.workspaceMember(w, r, uuidToString(workspaceID))
+	if !ok {
+		return false
+	}
+	for _, rt := range runtimes {
+		if canUseRuntimeForAgent(member, rt) {
+			return true
+		}
+	}
+	writeError(w, http.StatusForbidden, errPrefix+"this daemon's runtime is private; only its owner or a workspace admin can bind its local directories")
+	return false
+}
+
 func (h *Handler) ListAgentRuntimes(w http.ResponseWriter, r *http.Request) {
 	workspaceID := h.resolveWorkspaceID(r)
 

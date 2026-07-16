@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httputil"
@@ -86,6 +87,61 @@ func (h *Handler) GetIssueBrowser(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetDaemonBrowseTarget resolves the base URL the web folder picker walks one
+// daemon's filesystem through (GET <daemon_url>/editor/fs/list?path=…).
+//
+// The issue-scoped resolvers (GetIssueBrowser, the artifact live surface) can't
+// serve this: attaching a local folder to a PROJECT happens with no issue in
+// hand, so the target is addressed by daemon_id instead.
+//
+// Authorization mirrors attaching a local_directory exactly (requireDaemonAccess:
+// the daemon must be registered in this workspace and the caller must own it or
+// be a workspace owner/admin). For cloud the returned base is a /browser/proxy
+// token, so ProxyBrowser re-checks workspace membership on every listing
+// request; for self-host it is the loopback daemon the caller's own box serves.
+func (h *Handler) GetDaemonBrowseTarget(w http.ResponseWriter, r *http.Request) {
+	workspaceID := h.resolveWorkspaceID(r)
+	if strings.TrimSpace(workspaceID) == "" {
+		writeError(w, http.StatusBadRequest, "workspace is required")
+		return
+	}
+	daemonID := strings.TrimSpace(chi.URLParam(r, "daemonId"))
+	if daemonID == "" {
+		writeError(w, http.StatusBadRequest, "daemon id is required")
+		return
+	}
+	if !h.requireDaemonAccess(w, r, parseUUID(workspaceID), daemonID, "") {
+		return
+	}
+	runtime, err := h.Queries.GetOnlineRuntimeForDaemon(r.Context(), db.GetOnlineRuntimeForDaemonParams{
+		WorkspaceID: parseUUID(workspaceID),
+		DaemonID:    pgtype.Text{String: daemonID, Valid: true},
+	})
+	if err != nil {
+		// The access gate matches rows of any status, so an authorized caller
+		// can land here for a daemon that is simply switched off. Report that
+		// as a state the picker renders ("machine offline"), not a 500.
+		writeJSON(w, http.StatusOK, map[string]string{"mode": "offline", "daemon_url": ""})
+		return
+	}
+	var meta struct {
+		EditorAddr string `json:"editor_addr"`
+		EditorPort string `json:"editor_port"`
+	}
+	_ = json.Unmarshal(runtime.Metadata, &meta)
+	if internal := resolveDaemonInternalAddr(meta.EditorAddr); internal != "" {
+		writeJSON(w, http.StatusOK, map[string]string{
+			"mode":       "cloud",
+			"daemon_url": "/browser/proxy/" + registerBrowserTarget(internal, workspaceID),
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{
+		"mode":       "self-host",
+		"daemon_url": daemonEditorBase(meta.EditorPort),
+	})
+}
+
 // --- cloud reverse-proxy: token -> the daemon health mux, /editor/browser/* only ---
 
 type browserTarget struct {
@@ -136,6 +192,11 @@ func browserProxyPathAllowed(p string) bool {
 		p == "/editor/preview" ||
 		strings.HasPrefix(p, "/editor/preview/") ||
 		p == "/editor/test" ||
+		// Folder picker: read-only directory listing for the web "Add local
+		// folder" flow. Matched exactly — a HasPrefix("/editor/fs/") would
+		// also admit any future sibling route under that namespace, and this
+		// proxy's upstream is the daemon's WHOLE health mux.
+		p == "/editor/fs/list" ||
 		strings.HasPrefix(p, "/editor/local/")
 }
 

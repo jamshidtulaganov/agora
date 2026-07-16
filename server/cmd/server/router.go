@@ -1264,6 +1264,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// Runtimes
 			r.Route("/api/runtimes", func(r chi.Router) {
 				r.Get("/", h.ListAgentRuntimes)
+				// Addressed by daemon_id (the machine), not runtimeId: one
+				// daemon carries a runtime row per provider, and the web
+				// folder picker targets the box. Returns the base its
+				// /editor/fs/list listings go through.
+				r.Get("/by-daemon/{daemonId}/browse", h.GetDaemonBrowseTarget)
 				r.Route("/{runtimeId}", func(r chi.Router) {
 					r.Patch("/", h.UpdateAgentRuntime)
 					r.Get("/usage", h.GetRuntimeUsage)
