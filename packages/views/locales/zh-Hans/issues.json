@@ -1379,7 +1379,9 @@
     "checks_failed": "检查失败",
     "detected_checks": "检测到的项目检查",
     "exit_code": "退出码 {{code}}",
-    "view_check_output": "查看检查输出"
+    "view_check_output": "查看检查输出",
+    "show_more": "展开",
+    "show_less": "收起"
   },
   "artifact": {
     "title": "代码变更",

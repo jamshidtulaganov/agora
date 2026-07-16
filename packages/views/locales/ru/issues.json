@@ -1394,7 +1394,9 @@
     "checks_failed": "Проверки не пройдены",
     "detected_checks": "Найденные проверки проекта",
     "exit_code": "код выхода {{code}}",
-    "view_check_output": "Показать вывод проверок"
+    "view_check_output": "Показать вывод проверок",
+    "show_more": "Показать больше",
+    "show_less": "Свернуть"
   },
   "artifact": {
     "title": "Изменения кода",

@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
   CheckCircle2,
+  ChevronDown,
   Circle,
   Clock3,
   Eye,
@@ -83,17 +84,47 @@ function handoffSummary(value: unknown): string {
   return paragraphs.slice(-2).join("\n\n");
 }
 
+// A worker's brief or handoff can be arbitrarily long (agents write a lot).
+// Clamp by default and reveal on demand so ten workers stay scannable.
+const CLAMP_THRESHOLD_CHARS = 280;
+const CLAMP_THRESHOLD_LINES = 4;
+
+function ClampedText({ text, clampClass }: { text: string; clampClass: string }) {
+  const { t } = useT("issues");
+  const [expanded, setExpanded] = useState(false);
+  const long = text.length > CLAMP_THRESHOLD_CHARS || text.split("\n").length > CLAMP_THRESHOLD_LINES;
+  return (
+    <div className="min-w-0">
+      <p className={cn("whitespace-pre-wrap leading-relaxed text-foreground/80", !expanded && long && clampClass)}>
+        {text}
+      </p>
+      {long && (
+        <button
+          type="button"
+          className="mt-1 text-[11px] font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? t(($) => $.dev_workspace.show_less) : t(($) => $.dev_workspace.show_more)}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function DevActivityCard({
   step,
   task,
   instruction,
+  defaultOpen,
 }: {
   step?: OrchestrationStep;
   task?: AgentTask;
   instruction?: string;
+  defaultOpen: boolean;
 }) {
   const { t } = useT("issues");
   const { getAgentName } = useActorName();
+  const [open, setOpen] = useState(defaultOpen);
   const agentId = step?.agent_id ?? task?.agent_id ?? "";
   const status = task?.status ?? step?.status;
   const meta = statusMeta(status);
@@ -112,67 +143,86 @@ function DevActivityCard({
 
   return (
     <article className="min-w-0 overflow-hidden rounded-lg border bg-background">
-      <header className="flex items-start gap-2 border-b px-3 py-2.5">
-        {agentId ? <ActorAvatar actorType="agent" actorId={agentId} size={24} /> : <span className="flex size-6 items-center justify-center rounded-md border bg-muted"><Radio className="size-3" aria-hidden /></span>}
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate text-xs font-semibold" title={title}>{title}</h3>
-          <p className="truncate text-[11px] text-muted-foreground">
+      {/* The whole header is the expand/collapse control: with ten workers on
+          screen, rows must scan like a checklist and open only on demand. */}
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/30"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {agentId ? <ActorAvatar actorType="agent" actorId={agentId} size={24} /> : <span className="flex size-6 shrink-0 items-center justify-center rounded-md border bg-muted"><Radio className="size-3" aria-hidden /></span>}
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-xs font-semibold" title={title}>{title}</span>
+          <span className="block truncate text-[11px] text-muted-foreground">
             {agentId ? getAgentName(agentId) : t(($) => $.dev_workspace.unassigned_worker)}
-          </p>
-        </div>
-        <Badge variant="outline" className={cn("font-normal", meta.tone)}>
+          </span>
+        </span>
+        {!open && status === "completed" && sha && (
+          <span className="hidden items-center gap-1 font-mono text-[10px] text-muted-foreground sm:flex">
+            {sha.slice(0, 8)}
+          </span>
+        )}
+        <Badge variant="outline" className={cn("shrink-0 font-normal", meta.tone)}>
           <meta.Icon className={cn(meta.spin && "animate-spin motion-reduce:animate-none")} aria-hidden />
           {labels[meta.key]}
         </Badge>
-      </header>
-      {instruction && (
-        <div className="border-b bg-muted/20 px-3 py-2.5">
-          <p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-            {t(($) => $.dev_workspace.task_brief)}
-          </p>
-          <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-foreground/80">
-            {instruction}
-          </p>
+        <ChevronDown className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} aria-hidden />
+      </button>
+      {open && (
+        <div className="border-t">
+          {instruction && (
+            <div className="border-b bg-muted/20 px-3 py-2.5 text-xs">
+              <p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                {t(($) => $.dev_workspace.task_brief)}
+              </p>
+              <div className="mt-1">
+                <ClampedText text={instruction} clampClass="line-clamp-3" />
+              </div>
+            </div>
+          )}
+          <div className="p-3">
+            {task && activeTask(status) ? (
+              <StageLiveProcessBody taskId={task.id} />
+            ) : status === "completed" ? (
+              <div className="space-y-2 text-xs">
+                <div className="flex items-center gap-1.5 text-success">
+                  <CheckCircle2 className="size-3.5" aria-hidden />
+                  <span className="font-medium">{t(($) => $.dev_workspace.handoff_complete)}</span>
+                </div>
+                <p className="text-muted-foreground">{t(($) => $.dev_workspace.handoff_complete_description)}</p>
+                {handoff && (
+                  <div className="rounded-md border bg-muted/20 px-2.5 py-2">
+                    <p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                      {t(($) => $.dev_workspace.agent_handoff)}
+                    </p>
+                    <div className="mt-1">
+                      <ClampedText text={handoff} clampClass="line-clamp-6" />
+                    </div>
+                  </div>
+                )}
+                {sha && (
+                  <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2 py-1.5 font-mono text-[11px]">
+                    <span className="text-muted-foreground">HEAD</span>
+                    <span>{sha.slice(0, 8)}</span>
+                    {step?.merge_status === "clean" && <span className="ml-auto text-success">{t(($) => $.dev_workspace.clean)}</span>}
+                  </div>
+                )}
+              </div>
+            ) : failed ? (
+              <div className="flex items-start gap-2 text-xs text-destructive">
+                <OctagonAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                <p className="min-w-0">{t(($) => $.dev_workspace.worker_failed_description)}</p>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Clock3 className="size-3.5" aria-hidden />
+                {t(($) => $.dev_workspace.waiting_for_worker)}
+              </div>
+            )}
+          </div>
         </div>
       )}
-      <div className="p-3">
-        {task && activeTask(status) ? (
-          <StageLiveProcessBody taskId={task.id} />
-        ) : status === "completed" ? (
-          <div className="space-y-2 text-xs">
-            <div className="flex items-center gap-1.5 text-success">
-              <CheckCircle2 className="size-3.5" aria-hidden />
-              <span className="font-medium">{t(($) => $.dev_workspace.handoff_complete)}</span>
-            </div>
-            <p className="text-muted-foreground">{t(($) => $.dev_workspace.handoff_complete_description)}</p>
-            {handoff && (
-              <div className="rounded-md border bg-muted/20 px-2.5 py-2">
-                <p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-                  {t(($) => $.dev_workspace.agent_handoff)}
-                </p>
-                <p className="mt-1 whitespace-pre-wrap leading-relaxed text-foreground/80">{handoff}</p>
-              </div>
-            )}
-            {sha && (
-              <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2 py-1.5 font-mono text-[11px]">
-                <span className="text-muted-foreground">HEAD</span>
-                <span>{sha.slice(0, 8)}</span>
-                {step?.merge_status === "clean" && <span className="ml-auto text-success">{t(($) => $.dev_workspace.clean)}</span>}
-              </div>
-            )}
-          </div>
-        ) : failed ? (
-          <div className="flex items-start gap-2 text-xs text-destructive">
-            <OctagonAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-            <p className="min-w-0">{t(($) => $.dev_workspace.worker_failed_description)}</p>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Clock3 className="size-3.5" aria-hidden />
-            {t(($) => $.dev_workspace.waiting_for_worker)}
-          </div>
-        )}
-      </div>
     </article>
   );
 }
@@ -230,15 +280,27 @@ function DevActivity({ issueId }: { issueId: string }) {
         )}
         {complete > 0 && <span>· {t(($) => $.dev_workspace.completed_count, { count: complete })}</span>}
       </div>
-      <div className={cn("grid gap-3", lanes.length > 1 && "lg:grid-cols-2")}>
-        {lanes.map(({ step, task }, index) => (
-          <DevActivityCard
-            key={step?.id ?? task?.id ?? index}
-            step={step}
-            task={task}
-            instruction={step?.instructions?.trim() || task?.trigger_summary?.trim() || issue?.description?.trim() || undefined}
-          />
-        ))}
+      {/* One column of collapsible rows: with many parallel workers a grid of
+          fully-expanded cards is unreadable. Attention goes where action is —
+          active and failed workers open by default, settled ones stay folded
+          (small runs of ≤2 keep everything open, nothing to scan past). */}
+      <div className="space-y-2">
+        {lanes.map(({ step, task }, index) => {
+          const status = task?.status ?? step?.status;
+          // Queued/waiting rows stay folded too: in a big run most workers
+          // are queued, and their bodies carry no information beyond the
+          // status badge already on the row.
+          const inMotion = status === "running" || status === "dispatched";
+          return (
+            <DevActivityCard
+              key={step?.id ?? task?.id ?? index}
+              step={step}
+              task={task}
+              instruction={step?.instructions?.trim() || task?.trigger_summary?.trim() || issue?.description?.trim() || undefined}
+              defaultOpen={lanes.length <= 2 || inMotion || status === "failed" || status === "cancelled"}
+            />
+          );
+        })}
       </div>
     </section>
   );

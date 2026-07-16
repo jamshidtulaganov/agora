@@ -1394,7 +1394,9 @@
     "checks_failed": "Checks failed",
     "detected_checks": "Detected project checks",
     "exit_code": "exit {{code}}",
-    "view_check_output": "View check output"
+    "view_check_output": "View check output",
+    "show_more": "Show more",
+    "show_less": "Show less"
   },
   "artifact": {
     "title": "Code changes",

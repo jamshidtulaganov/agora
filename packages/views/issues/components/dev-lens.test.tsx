@@ -176,4 +176,44 @@ describe("DevLensBody", () => {
     expect(screen.getByText("aaaaaaaa")).toBeInTheDocument();
     expect(screen.getByText("clean")).toBeInTheDocument();
   });
+
+  it("folds settled workers when many run in parallel and expands on click", async () => {
+    // 3+ lanes: completed workers must collapse to a scannable row (no brief,
+    // no handoff) while the running one stays open; clicking the row expands.
+    mocks.getIssueOrchestration.mockResolvedValue({
+      id: "run-1",
+      issue_id: "issue-1",
+      status: "running",
+      steps: [
+        step({
+          status: "completed",
+          head_sha: "a".repeat(40),
+          merge_status: "clean",
+          output: { output: "Implemented the requested feature." },
+        }),
+        step({ id: "step-2", key: "backend", title: "Build backend", agent_id: "agent-2", task_id: "task-2", position: 2 }),
+        step({
+          id: "step-3", key: "docs", title: "Update docs", agent_id: "agent-3", task_id: "task-3", position: 3,
+          status: "completed", head_sha: "b".repeat(40), merge_status: "clean",
+        }),
+      ],
+    });
+    mocks.listTasksByIssue.mockResolvedValue([
+      task({ status: "completed", completed_at: "2026-07-15T00:10:00Z" }),
+      task({ id: "task-2", agent_id: "agent-2" }),
+      task({ id: "task-3", agent_id: "agent-3", status: "completed", completed_at: "2026-07-15T00:12:00Z" }),
+    ]);
+    renderLens();
+
+    expect(await screen.findByText("Build frontend")).toBeInTheDocument();
+    // Settled workers are folded: their handoff evidence is not rendered.
+    expect(screen.queryByText("Committed handoff ready")).not.toBeInTheDocument();
+    // The running worker stays open with its live process.
+    expect(screen.getByText("Live task-2")).toBeInTheDocument();
+
+    // Expanding a folded completed row reveals its handoff evidence.
+    fireEvent.click(screen.getByRole("button", { name: /Build frontend/ }));
+    expect(await screen.findByText("Committed handoff ready")).toBeInTheDocument();
+    expect(screen.getByText(/Implemented the requested feature/)).toBeInTheDocument();
+  });
 });

@@ -1394,7 +1394,9 @@
     "checks_failed": "Tekshiruvlar o‘tmadi",
     "detected_checks": "Aniqlangan loyiha tekshiruvlari",
     "exit_code": "exit {{code}}",
-    "view_check_output": "Tekshiruv natijasini ko‘rish"
+    "view_check_output": "Tekshiruv natijasini ko‘rish",
+    "show_more": "Ko'proq ko'rsatish",
+    "show_less": "Yig'ish"
   },
   "artifact": {
     "title": "Kod o‘zgarishlari",
