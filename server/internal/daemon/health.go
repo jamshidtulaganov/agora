@@ -477,6 +477,38 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 		})
 	})
 
+	// --- folder picker: list this machine's directories for the web UI ---
+	// A browser cannot OS-pick a folder on THIS machine (and <input type="file">
+	// never yields an absolute path), so the web "Add local folder" flow walks
+	// the filesystem through here instead of making the human type a path.
+	// Read-only and grants nothing: see fs_browse.go for the browsable-root
+	// gates. Reached via the backend's /browser/proxy/{token} (cloud) or dialed
+	// directly on loopback (self-host); CORS scoped to localhost like the rest.
+	mux.HandleFunc("/editor/fs/list", func(w http.ResponseWriter, r *http.Request) {
+		if origin := r.Header.Get("Origin"); strings.HasPrefix(origin, "http://localhost") || strings.HasPrefix(origin, "http://127.0.0.1") {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		}
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		hidden := r.URL.Query().Get("hidden")
+		result, status, err := browseLocalDir(r.URL.Query().Get("path"), hidden == "1" || hidden == "true")
+		if err != nil {
+			http.Error(w, err.Error(), status)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(result)
+	})
+
 	// --- Playwright trace viewer: `playwright show-trace` for a captured trace ---
 	// The backend calls this over 6PN (cloud) or loopback (self-host) to bring up
 	// the full Playwright trace viewer for a run's trace .zip, then reverse-proxies
