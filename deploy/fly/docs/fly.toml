@@ -13,7 +13,13 @@ primary_region = "fra"
 [env]
   NODE_ENV = "production"
   PORT = "3000"
-  HOSTNAME = "0.0.0.0"
+  # Must be "::", not "0.0.0.0". The web app reaches us over 6PN
+  # (sd-agora-docs.internal), and Fly's private network is IPv6-only — a
+  # Next.js standalone server bound to 0.0.0.0 listens on IPv4 only, so every
+  # 6PN connection gets ECONNREFUSED even though the machine is healthy and
+  # the public fly.dev hostname serves fine. sd-agora-backend does not need
+  # this because Go's default listener is already dual-stack.
+  HOSTNAME = "::"
 
 [http_service]
   internal_port = 3000
