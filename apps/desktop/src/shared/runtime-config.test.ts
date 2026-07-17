@@ -7,12 +7,12 @@ import {
 } from "./runtime-config";
 
 describe("runtime config", () => {
-  it("uses cloud defaults without a desktop.json file", () => {
+  it("uses production defaults without a desktop.json file", () => {
     expect(DEFAULT_RUNTIME_CONFIG).toEqual({
       schemaVersion: 1,
-      apiUrl: "https://api.agora.dev",
-      wsUrl: "wss://api.agora.dev/ws",
-      appUrl: "https://agora.dev",
+      apiUrl: "https://sd-agora-web.fly.dev",
+      wsUrl: "wss://sd-agora-web.fly.dev/ws",
+      appUrl: "https://sd-agora-web.fly.dev",
     });
   });
 

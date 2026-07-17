@@ -34,7 +34,7 @@ describe("loadRuntimeConfig", () => {
     });
   });
 
-  it("uses cloud defaults when packaged config is absent", async () => {
+  it("uses production defaults when packaged config is absent", async () => {
     const dir = await mkdtemp(join(tmpdir(), "agora-desktop-config-"));
     await expect(
       loadRuntimeConfig({
@@ -46,9 +46,9 @@ describe("loadRuntimeConfig", () => {
       ok: true,
       config: {
         schemaVersion: 1,
-        apiUrl: "https://api.agora.dev",
-        wsUrl: "wss://api.agora.dev/ws",
-        appUrl: "https://agora.dev",
+        apiUrl: "https://sd-agora-web.fly.dev",
+        wsUrl: "wss://sd-agora-web.fly.dev/ws",
+        appUrl: "https://sd-agora-web.fly.dev",
       },
     });
   });

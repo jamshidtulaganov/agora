@@ -13,11 +13,16 @@ export type RuntimeConfigResult =
   | { ok: true; config: RuntimeConfig }
   | { ok: false; error: RuntimeConfigError };
 
+// Packaged-app default when ~/.agora/desktop.json is absent (every fresh
+// install). Must point at the real production deployment: the backend
+// (sd-agora-backend) is private-network only, so api/ws/app all go through
+// the web app, which same-origin-proxies /api, /ws, /auth and /uploads.
+// A power user overrides this via ~/.agora/desktop.json (self-host, staging).
 export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
   schemaVersion: 1,
-  apiUrl: "https://api.agora.dev",
-  wsUrl: "wss://api.agora.dev/ws",
-  appUrl: "https://agora.dev",
+  apiUrl: "https://sd-agora-web.fly.dev",
+  wsUrl: "wss://sd-agora-web.fly.dev/ws",
+  appUrl: "https://sd-agora-web.fly.dev",
 });
 
 const LOCAL_DEV_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
