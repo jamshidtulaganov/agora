@@ -92,6 +92,15 @@ const desktopAPI = {
       ipcRenderer.removeListener("invite:open", handler);
     };
   },
+  /** Fetch (and clear) a deep link that arrived before the renderer mounted
+   *  its listeners — cold start via agora:// link tap. Call AFTER subscribing
+   *  via onAuthToken/onInviteOpen so nothing falls between the two paths. */
+  consumePendingDeepLink: () =>
+    ipcRenderer.invoke("deeplink:consume-pending") as Promise<
+      | { type: "auth"; token: string }
+      | { type: "invite"; invitationId: string }
+      | null
+    >,
   /** Open a URL in the default browser */
   openExternal: (url: string) => ipcRenderer.invoke("shell:openExternal", url),
   /** Download a file by URL through Electron's native download system.

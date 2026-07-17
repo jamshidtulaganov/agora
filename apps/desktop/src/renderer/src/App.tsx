@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CoreProvider } from "@agora/core/platform";
 import { pickLocale, type SupportedLocale } from "@agora/core/i18n";
@@ -34,6 +41,17 @@ const HTML_LANG: Record<SupportedLocale, string> = {
 };
 
 
+// Route an inbound invite deep link: with a session, open the overlay; with
+// none, park the id so the post-login effect in AppContent can deliver it.
+function openOrParkInvite(invitationId: string) {
+  const store = useWindowOverlayStore.getState();
+  if (useAuthStore.getState().user) {
+    store.open({ type: "invite", invitationId });
+  } else {
+    store.setPendingInvitation(invitationId);
+  }
+}
+
 function AppContent() {
   const user = useAuthStore((s) => s.user);
   const isLoading = useAuthStore((s) => s.isLoading);
@@ -59,21 +77,31 @@ function AppContent() {
   }, [runtimeConfig]);
 
   // Listen for invite IDs delivered via deep link (agora://invite/<id>).
-  // We open the overlay regardless of login state — if the user isn't logged
-  // in, InvitePage's queries will fail and render the "not found" state,
-  // which is acceptable; the expected pre-flight happens in the web app
-  // (login + next=/invite/... dance) before the deep link is ever dispatched.
+  // Logged in → open the invite overlay directly. Logged out → InvitePage's
+  // queries would 401 and render a misleading "not found", so park the id
+  // instead; the effect below opens the overlay as soon as login completes.
   useEffect(() => {
-    return window.desktopAPI.onInviteOpen((invitationId) => {
-      useWindowOverlayStore.getState().open({ type: "invite", invitationId });
-    });
+    return window.desktopAPI.onInviteOpen(openOrParkInvite);
   }, []);
 
-  // Listen for auth token delivered via deep link (agora://auth/callback?token=...).
+  // Deliver a parked invite once the user is logged in. Runs synchronously on
+  // the login commit, so it wins over the async onboarding/invitations
+  // overlay decision below (which re-checks `overlay` before opening).
+  const pendingInvitationId = useWindowOverlayStore(
+    (s) => s.pendingInvitationId,
+  );
+  useEffect(() => {
+    if (!user || !pendingInvitationId) return;
+    const store = useWindowOverlayStore.getState();
+    store.clearPendingInvitation();
+    store.open({ type: "invite", invitationId: pendingInvitationId });
+  }, [user, pendingInvitationId]);
+
+  // Auth token delivered via deep link (agora://auth/callback?token=...).
   // daemonAPI.syncToken is handled separately by the [user] effect below, which
   // fires whenever a user logs in (deep link, session restore, account switch).
-  useEffect(() => {
-    return window.desktopAPI.onAuthToken(async (token) => {
+  const handleDeepLinkAuthToken = useCallback(
+    async (token: string) => {
       setBootstrapping(true);
       try {
         await useAuthStore.getState().loginWithToken(token);
@@ -89,8 +117,31 @@ function AppContent() {
       } finally {
         setBootstrapping(false);
       }
+    },
+    [qc],
+  );
+
+  useEffect(() => {
+    return window.desktopAPI.onAuthToken(handleDeepLinkAuthToken);
+  }, [handleDeepLinkAuthToken]);
+
+  // Cold start via deep link: the OS delivered agora://… before the two
+  // listeners above existed, so main parked the payload. Fetch it exactly
+  // once, after the live subscriptions are in place.
+  useEffect(() => {
+    let cancelled = false;
+    void window.desktopAPI.consumePendingDeepLink?.().then((action) => {
+      if (cancelled || !action) return;
+      if (action.type === "auth") {
+        void handleDeepLinkAuthToken(action.token);
+      } else if (action.type === "invite") {
+        openOrParkInvite(action.invitationId);
+      }
     });
-  }, [qc]);
+    return () => {
+      cancelled = true;
+    };
+  }, [handleDeepLinkAuthToken]);
 
   // Sync token and start the daemon whenever the user logs in.
   useEffect(() => {
@@ -279,6 +330,7 @@ function BlockingRuntimeConfigError({ message }: { message: string }) {
 async function handleDaemonLogout() {
   useTabStore.getState().reset();
   useWindowOverlayStore.getState().close();
+  useWindowOverlayStore.getState().clearPendingInvitation();
   // Drop any post-onboarding welcome signal so user B logging in next
   // doesn't inherit user A's pending modal state.
   useWelcomeStore.getState().reset();

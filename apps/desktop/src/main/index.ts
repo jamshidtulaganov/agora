@@ -69,18 +69,28 @@ let runtimeConfigResult: RuntimeConfigResult = {
 
 // --- Deep link helpers ---------------------------------------------------
 
-function handleDeepLink(url: string): void {
+type DeepLinkAction =
+  | { type: "auth"; token: string }
+  | { type: "invite"; invitationId: string };
+
+// Cold-start race: a deep link (open-url / argv) can arrive before the
+// renderer has mounted its IPC listeners, so a bare webContents.send would
+// vanish. Every recognized action is parked here as well; the renderer calls
+// deeplink:consume-pending right after subscribing and receives whatever it
+// missed. Warm-delivered actions are consumed live and their parked copy goes
+// stale — the TTL keeps a later boot from replaying them.
+const DEEP_LINK_PENDING_TTL_MS = 2 * 60 * 1000;
+let pendingDeepLink: { action: DeepLinkAction; at: number } | null = null;
+
+function parseDeepLink(url: string): DeepLinkAction | null {
   try {
     const parsed = new URL(url);
-    if (parsed.protocol !== `${PROTOCOL}:`) return;
+    if (parsed.protocol !== `${PROTOCOL}:`) return null;
 
     // agora://auth/callback?token=<jwt>
     if (parsed.hostname === "auth" && parsed.pathname === "/callback") {
       const token = parsed.searchParams.get("token");
-      if (token && mainWindow) {
-        mainWindow.webContents.send("auth:token", token);
-      }
-      return;
+      return token ? { type: "auth", token } : null;
     }
 
     // agora://invite/<invitationId>
@@ -89,14 +99,38 @@ function handleDeepLink(url: string): void {
     // route persistence, so deep-linking the same invite twice stays safe.
     if (parsed.hostname === "invite") {
       const id = parsed.pathname.replace(/^\//, "");
-      if (id && mainWindow) {
-        mainWindow.webContents.send("invite:open", decodeURIComponent(id));
-      }
-      return;
+      return id ? { type: "invite", invitationId: decodeURIComponent(id) } : null;
     }
+
+    return null;
   } catch {
-    // Ignore malformed URLs
+    // Malformed URL
+    return null;
   }
+}
+
+function dispatchDeepLink(action: DeepLinkAction): void {
+  if (!mainWindow) return;
+  if (action.type === "auth") {
+    mainWindow.webContents.send("auth:token", action.token);
+  } else {
+    mainWindow.webContents.send("invite:open", action.invitationId);
+  }
+}
+
+function handleDeepLink(url: string): void {
+  const action = parseDeepLink(url);
+  if (!action) return;
+  pendingDeepLink = { action, at: Date.now() };
+  dispatchDeepLink(action);
+}
+
+function consumePendingDeepLink(): DeepLinkAction | null {
+  if (!pendingDeepLink) return null;
+  const { action, at } = pendingDeepLink;
+  pendingDeepLink = null;
+  if (Date.now() - at > DEEP_LINK_PENDING_TTL_MS) return null;
+  return action;
 }
 
 // --- Window creation -----------------------------------------------------
@@ -376,6 +410,12 @@ if (!gotTheLock) {
         return;
       }
       downloadURLSafely(mainWindow, url);
+    });
+
+    // Deep link that arrived before the renderer subscribed (cold start via
+    // link tap). Single-consume; see the pendingDeepLink comment above.
+    ipcMain.handle("deeplink:consume-pending", () => {
+      return consumePendingDeepLink();
     });
 
     // Sync IPC: app version + normalized OS for preload. Sync (not invoke) so
