@@ -5,20 +5,18 @@ import { AgoraIcon } from "@agora/ui/components/common/agora-icon";
 import { cn } from "@agora/ui/lib/utils";
 import { useAuthStore } from "@agora/core/auth";
 import { captureDownloadIntent } from "@agora/core/analytics";
-import { githubUrl, twitterUrl } from "./shared";
+import { twitterUrl } from "./shared";
 import { useLocale, locales, localeLabels } from "../i18n";
 
 export function LandingFooter() {
   const { t, locale, setLocale } = useLocale();
   const user = useAuthStore((s) => s.user);
-  // New-startup posture: hide GitHub / open-source surfaces, social, and the
-  // company/about pages, plus links we don't surface yet (changelog). Groups
-  // left with no links are dropped. Docs are surfaced — they're the depth
-  // behind /guide, and the top nav links them too.
+  // New-startup posture: hide social and the company/about pages, plus links
+  // we don't surface yet (changelog). Groups left with no links are dropped.
+  // Docs are surfaced — they're the depth behind /guide, and the top nav
+  // links them too.
   const isHidden = (href: string) =>
-    href === githubUrl ||
     href === twitterUrl ||
-    href === "#open-source" ||
     href === "/about" ||
     href === "/contact-sales" ||
     href === "/changelog";

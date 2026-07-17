@@ -126,7 +126,6 @@ export type ContactSalesOption = { value: string; label: string };
 
 export type LandingDict = {
   header: {
-    github: string;
     cta: string;
     dashboard: string;
     docs: string;
@@ -223,16 +222,7 @@ export type LandingDict = {
     headlineFaded: string;
     steps: { title: string; description: string }[];
     cta: string;
-    ctaGithub: string;
     ctaDocs: string;
-  };
-  openSource: {
-    label: string;
-    headlineLine1: string;
-    headlineLine2: string;
-    description: string;
-    cta: string;
-    highlights: { title: string; description: string }[];
   };
   faq: {
     label: string;

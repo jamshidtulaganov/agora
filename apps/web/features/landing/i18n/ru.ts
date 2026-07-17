@@ -1,10 +1,8 @@
-import { githubUrl } from "../components/shared";
 import type { LandingDict } from "./types";
 
 export function createRuDict(allowSignup: boolean): LandingDict {
   return {
   header: {
-    github: "GitHub",
     cta: "Начать",
     dashboard: "Дашборд",
     docs: "Документация",
@@ -401,39 +399,7 @@ export function createRuDict(allowSignup: boolean): LandingDict {
       },
     ],
     cta: "Начать",
-    ctaGithub: "Открыть на GitHub",
     ctaDocs: "Читать документацию",
-  },
-
-  openSource: {
-    label: "Открытый исходный код",
-    headlineLine1: "Открытый исходный код",
-    headlineLine2: "для всех.",
-    description:
-      "Agora полностью с открытым исходным кодом. Изучайте каждую строку, размещайте у себя (self-host) на своих условиях и формируйте будущее совместной работы людей и агентов.",
-    cta: "Поставить звезду на GitHub",
-    highlights: [
-      {
-        title: "Размещение где угодно",
-        description:
-          "Запускайте Agora на собственной инфраструктуре. Docker Compose, один бинарный файл или Kubernetes — ваши данные никогда не покидают вашу сеть.",
-      },
-      {
-        title: "Без привязки к вендору",
-        description:
-          "Используйте своего провайдера LLM, меняйте бэкенды агентов, расширяйте API. Вы владеете всем стеком сверху донизу.",
-      },
-      {
-        title: "Прозрачность по умолчанию",
-        description:
-          "Каждую строку кода можно проверить. Видно, как именно агенты принимают решения, как маршрутизируются задачи и куда идут ваши данные.",
-      },
-      {
-        title: "Развитие сообществом",
-        description:
-          "Создаётся вместе с сообществом, а не только для него. Добавляйте Skill, интеграции и бэкенды агентов, которые приносят пользу всем.",
-      },
-    ],
   },
 
   faq: {
@@ -494,7 +460,6 @@ export function createRuDict(allowSignup: boolean): LandingDict {
         label: "Ресурсы",
         links: [
           { label: "Документация", href: "/docs" },
-          { label: "API", href: githubUrl },
           { label: "X (Twitter)", href: "https://x.com/AgoraAI" },
         ],
       },
@@ -503,7 +468,6 @@ export function createRuDict(allowSignup: boolean): LandingDict {
         links: [
           { label: "О нас", href: "/about" },
           { label: "Связаться с отделом продаж", href: "/contact-sales" },
-          { label: "GitHub", href: githubUrl },
         ],
       },
     },
@@ -530,7 +494,7 @@ export function createRuDict(allowSignup: boolean): LandingDict {
       "Как и Multics в своё время, ставка делается на мультиплексирование: маленькая команда не должна ощущаться маленькой. С правильной системой два инженера и флот агентов могут работать как двадцать человек.",
       "Платформа полностью с открытым исходным кодом и допускает размещение у себя. Ваши данные остаются на вашей инфраструктуре. Изучайте каждую строку, расширяйте API, подключайте своих провайдеров LLM и вносите вклад в сообщество.",
     ],
-    cta: "Открыть на GitHub",
+    cta: "Начать",
   },
 
   changelog: {
@@ -2120,7 +2084,7 @@ export function createRuDict(allowSignup: boolean): LandingDict {
     success: {
       title: "Спасибо — мы получили вашу заявку.",
       message:
-        "Сотрудник команды Agora ответит в течение трёх рабочих дней. А пока вы можете изучить документацию или поставить нам звезду на GitHub.",
+        "Сотрудник команды Agora ответит в течение трёх рабочих дней. А пока вы можете изучить документацию.",
       cta: "Вернуться на главную",
     },
     errors: {

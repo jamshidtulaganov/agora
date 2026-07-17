@@ -1,10 +1,8 @@
-import { githubUrl } from "../components/shared";
 import type { LandingDict } from "./types";
 
 export function createUzDict(allowSignup: boolean): LandingDict {
   return {
   header: {
-    github: "GitHub",
     cta: "Boshlash",
     dashboard: "Boshqaruv paneli",
     docs: "Hujjatlar",
@@ -401,39 +399,7 @@ export function createUzDict(allowSignup: boolean): LandingDict {
       },
     ],
     cta: "Boshlash",
-    ctaGithub: "GitHub'da ko'rish",
     ctaDocs: "Hujjatlarni o'qish",
-  },
-
-  openSource: {
-    label: "Ochiq kod",
-    headlineLine1: "Hamma uchun",
-    headlineLine2: "ochiq kod.",
-    description:
-      "Agora to'liq ochiq kodli. Har bir qatorni tekshiring, o'z shartlaringizda self-host qiling va inson + agent hamkorligining kelajagini shakllantiring.",
-    cta: "GitHub'da yulduzcha qo'ying",
-    highlights: [
-      {
-        title: "Istalgan joyda self-host",
-        description:
-          "Agora'ni o'z infratuzilmangizda ishga tushiring. Docker Compose, bitta binary yoki Kubernetes — ma'lumotlaringiz tarmog'ingizdan chiqmaydi.",
-      },
-      {
-        title: "Vendorga bog'lanish yo'q",
-        description:
-          "O'z LLM provayderingizni keltiring, agent backendlarini almashtiring, API'ni kengaytiring. Stek to'liq sizniki, boshidan oxirigacha.",
-      },
-      {
-        title: "Standart bo'yicha shaffof",
-        description:
-          "Kodning har bir qatori tekshiriladi. Agentlaringiz qanday qaror qabul qilishini, vazifalar qanday yo'naltirilishini va ma'lumotlaringiz qayerga oqishini aniq ko'ring.",
-      },
-      {
-        title: "Hamjamiyat asosida",
-        description:
-          "Hamjamiyat bilan birga qurilgan, faqat u uchun emas. Hammaga foydali ko'nikmalar, integratsiyalar va agent backendlarini qo'shing.",
-      },
-    ],
   },
 
   faq: {
@@ -494,7 +460,6 @@ export function createUzDict(allowSignup: boolean): LandingDict {
         label: "Resurslar",
         links: [
           { label: "Hujjatlar", href: "/docs" },
-          { label: "API", href: githubUrl },
           { label: "X (Twitter)", href: "https://x.com/AgoraAI" },
         ],
       },
@@ -503,7 +468,6 @@ export function createUzDict(allowSignup: boolean): LandingDict {
         links: [
           { label: "Biz haqimizda", href: "/about" },
           { label: "Savdo bilan bog'lanish", href: "/contact-sales" },
-          { label: "GitHub", href: githubUrl },
         ],
       },
     },
@@ -530,7 +494,7 @@ export function createUzDict(allowSignup: boolean): LandingDict {
       "O'z davridagi Multics kabi, garov multipleksatsiyaga qo'yilgan: kichik jamoa o'zini kichik his qilmasligi kerak. To'g'ri tizim bilan ikki muhandis va bir to'da agent yigirma kishidek harakat qila oladi.",
       "Platforma to'liq ochiq kodli va self-host qilinadi. Ma'lumotlaringiz o'z infratuzilmangizda qoladi. Har bir qatorni tekshiring, API'ni kengaytiring, o'z LLM provayderlaringizni keltiring va hamjamiyatga hissa qo'shing.",
     ],
-    cta: "GitHub'da ko'rish",
+    cta: "Boshlash",
   },
 
   changelog: {
@@ -2120,7 +2084,7 @@ export function createUzDict(allowSignup: boolean): LandingDict {
     success: {
       title: "Rahmat — qabul qildik.",
       message:
-        "Agora jamoasi a'zosi uch ish kuni ichida javob beradi. Shu vaqt ichida hujjatlarni ko'rib chiqishingiz yoki GitHub'da bizga yulduzcha qo'yishingiz mumkin.",
+        "Agora jamoasi a'zosi uch ish kuni ichida javob beradi. Shu vaqt ichida hujjatlarni ko'rib chiqishingiz mumkin.",
       cta: "Bosh sahifaga qaytish",
     },
     errors: {

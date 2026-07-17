@@ -1,10 +1,8 @@
-import { githubUrl } from "../components/shared";
 import type { LandingDict } from "./types";
 
 export function createEnDict(allowSignup: boolean): LandingDict {
   return {
   header: {
-    github: "GitHub",
     cta: "Get started",
     dashboard: "Dashboard",
     docs: "Docs",
@@ -399,39 +397,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       },
     ],
     cta: "Get started",
-    ctaGithub: "View on GitHub",
     ctaDocs: "Read the docs",
-  },
-
-  openSource: {
-    label: "Open source",
-    headlineLine1: "Open source",
-    headlineLine2: "for all.",
-    description:
-      "Agora is built for human + agent teams. Self-host on your own infrastructure, or use our hosted cloud version.",
-    cta: "Star on GitHub",
-    highlights: [
-      {
-        title: "Self-host anywhere",
-        description:
-          "Run Agora on your own infrastructure. Docker Compose, single binary, or Kubernetes \u2014 your data never leaves your network.",
-      },
-      {
-        title: "No vendor lock-in",
-        description:
-          "Bring your own LLM provider, swap agent backends, extend the API. You own the stack, top to bottom.",
-      },
-      {
-        title: "Transparent by default",
-        description:
-          "Every line of code is auditable. See exactly how your agents make decisions, how tasks are routed, and where your data flows.",
-      },
-      {
-        title: "Community-driven",
-        description:
-          "Built with the community, not just for it. Contribute skills, integrations, and agent backends that benefit everyone.",
-      },
-    ],
   },
 
   faq: {
@@ -492,7 +458,6 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         label: "Resources",
         links: [
           { label: "Documentation", href: "/docs" },
-          { label: "API", href: githubUrl },
           { label: "X (Twitter)", href: "https://x.com/AgoraAI" },
         ],
       },
@@ -501,7 +466,6 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         links: [
           { label: "About", href: "/about" },
           { label: "Contact Sales", href: "/contact-sales" },
-          { label: "GitHub", href: githubUrl },
         ],
       },
     },
@@ -528,7 +492,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       "Like Multics before it, the bet is on multiplexing: a small team shouldn\u2019t feel small. With the right system, two engineers and a fleet of agents can move like twenty.",
       "Your data stays on your infrastructure. Code execution happens on your machine or your own cloud — Agora servers only coordinate task state and broadcast events.",
     ],
-    cta: "View on GitHub",
+    cta: "Get started",
   },
 
   changelog: {
@@ -2118,7 +2082,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
     success: {
       title: "Thanks — we got it.",
       message:
-        "A member of the Agora team will respond within three business days. In the meantime, feel free to explore the docs or star us on GitHub.",
+        "A member of the Agora team will respond within three business days. In the meantime, feel free to explore the docs.",
       cta: "Back to home",
     },
     errors: {

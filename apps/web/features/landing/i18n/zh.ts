@@ -1,10 +1,8 @@
-import { githubUrl } from "../components/shared";
 import type { LandingDict } from "./types";
 
 export function createZhDict(allowSignup: boolean): LandingDict {
   return {
   header: {
-    github: "GitHub",
     cta: "\u5f00\u59cb\u4f7f\u7528",
     dashboard: "\u8fdb\u5165\u5de5\u4f5c\u53f0",
     docs: "\u6587\u6863",
@@ -394,39 +392,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       },
     ],
     cta: "\u5f00\u59cb\u4f7f\u7528",
-    ctaGithub: "\u5728 GitHub \u4e0a\u67e5\u770b",
     ctaDocs: "\u9605\u8bfb\u6587\u6863",
-  },
-
-  openSource: {
-    label: "\u5f00\u6e90",
-    headlineLine1: "\u5f00\u6e90",
-    headlineLine2: "\u4e3a\u6240\u6709\u4eba\u3002",
-    description:
-      "Agora \u5b8c\u5168\u5f00\u6e90\u3002\u5ba1\u67e5\u6bcf\u4e00\u884c\u4ee3\u7801\uff0c\u6309\u4f60\u7684\u65b9\u5f0f\u81ea\u6258\u7ba1\uff0c\u5851\u9020\u4eba\u7c7b + 智能体 \u534f\u4f5c\u7684\u672a\u6765\u3002",
-    cta: "\u5728 GitHub \u4e0a Star",
-    highlights: [
-      {
-        title: "\u968f\u5904\u81ea\u6258\u7ba1",
-        description:
-          "\u5728\u4f60\u81ea\u5df1\u7684\u57fa\u7840\u8bbe\u65bd\u4e0a\u8fd0\u884c Agora\u3002Docker Compose\u3001\u5355\u4e2a\u4e8c\u8fdb\u5236\u6216 Kubernetes\u2014\u2014\u4f60\u7684\u6570\u636e\u6c38\u8fdc\u4e0d\u4f1a\u79bb\u5f00\u4f60\u7684\u7f51\u7edc\u3002",
-      },
-      {
-        title: "\u65e0\u4f9b\u5e94\u5546\u9501\u5b9a",
-        description:
-          "\u81ea\u5e26 LLM \u63d0\u4f9b\u5546\u3001\u66f4\u6362 智能体 \u540e\u7aef\u3001\u6269\u5c55 API\u3002\u4f60\u62e5\u6709\u6574\u4e2a\u6280\u672f\u6808\u7684\u63a7\u5236\u6743\u3002",
-      },
-      {
-        title: "\u9ed8\u8ba4\u900f\u660e",
-        description:
-          "\u6bcf\u4e00\u884c\u4ee3\u7801\u90fd\u53ef\u5ba1\u8ba1\u3002\u786e\u5207\u4e86\u89e3\u4f60\u7684 智能体 \u5982\u4f55\u505a\u51b3\u7b56\u3001\u4efb\u52a1\u5982\u4f55\u8def\u7531\u3001\u6570\u636e\u6d41\u5411\u4f55\u65b9\u3002",
-      },
-      {
-        title: "\u793e\u533a\u9a71\u52a8",
-        description:
-          "\u4e0e\u793e\u533a\u4e00\u8d77\u5efa\u8bbe\uff0c\u800c\u4e0d\u4ec5\u4ec5\u662f\u4e3a\u793e\u533a\u5efa\u8bbe\u3002\u8d21\u732e\u6280\u80fd\u3001\u96c6\u6210\u548c 智能体 \u540e\u7aef\uff0c\u8ba9\u6bcf\u4e2a\u4eba\u53d7\u76ca\u3002",
-      },
-    ],
   },
 
   faq: {
@@ -487,7 +453,6 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         label: "\u8d44\u6e90",
         links: [
           { label: "\u6587\u6863", href: "/docs/zh" },
-          { label: "API", href: githubUrl },
           { label: "X (Twitter)", href: "https://x.com/AgoraAI" },
         ],
       },
@@ -496,7 +461,6 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         links: [
           { label: "\u5173\u4e8e\u6211\u4eec", href: "/about" },
           { label: "\u8054\u7cfb\u5546\u52a1", href: "/contact-sales" },
-          { label: "GitHub", href: githubUrl },
         ],
       },
     },
@@ -523,7 +487,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       "\u548c\u5f53\u5e74\u7684 Multics \u4e00\u6837\uff0c\u8fd9\u4e00\u5224\u65ad\u5efa\u7acb\u5728\u201c\u591a\u8def\u590d\u7528\u201d\u4e4b\u4e0a\u3002\u4e00\u4e2a\u5c0f\u56e2\u961f\u4e0d\u8be5\u56e0\u4e3a\u4eba\u6570\u5c11\u5c31\u663e\u5f97\u80fd\u529b\u6709\u9650\u3002\u6709\u4e86\u5408\u9002\u7684\u7cfb\u7edf\uff0c\u4e24\u540d\u5de5\u7a0b\u5e08\u52a0\u4e0a\u4e00\u7ec4 agents\uff0c\u5c31\u80fd\u53d1\u6325\u51fa\u4e8c\u5341\u4eba\u56e2\u961f\u7684\u63a8\u8fdb\u901f\u5ea6\u3002",
       "\u8fd9\u4e2a\u5e73\u53f0\u662f\u5b8c\u5168\u5f00\u6e90\u5e76\u652f\u6301\u81ea\u6258\u7ba1\u7684\u3002\u4f60\u7684\u6570\u636e\u59cb\u7ec8\u4fdd\u7559\u5728\u81ea\u5df1\u7684\u57fa\u7840\u8bbe\u65bd\u4e2d\u3002\u4f60\u53ef\u4ee5\u5ba1\u67e5\u6bcf\u4e00\u884c\u4ee3\u7801\uff0c\u6269\u5c55 API\uff0c\u63a5\u5165\u81ea\u5df1\u7684 LLM providers\uff0c\u4e5f\u53ef\u4ee5\u5411\u793e\u533a\u8d21\u732e\u4ee3\u7801\u3002",
     ],
-    cta: "\u5728 GitHub \u4e0a\u67e5\u770b",
+    cta: "\u5f00\u59cb\u4f7f\u7528",
   },
 
   changelog: {
@@ -2110,7 +2074,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
     success: {
       title: "已收到，谢谢！",
       message:
-        "Agora 团队会在三个工作日内回复你。在此期间，欢迎查看我们的文档，或在 GitHub 上为我们点个 Star。",
+        "Agora 团队会在三个工作日内回复你。在此期间，欢迎查看我们的文档。",
       cta: "返回首页",
     },
     errors: {
