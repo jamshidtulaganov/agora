@@ -1998,7 +1998,8 @@ export function createUzDict(allowSignup: boolean): LandingDict {
     cli: {
       title: "CLI'ni afzal ko'rasizmi?",
       sub: "Serverlar, masofaviy dev-mashinalar va headless sozlamalar uchun. Desktop'dagi kabi bir xil Daemon, terminal orqali o'rnatiladi.",
-      installLabel: "O'rnatish",
+      installUnixLabel: "O'rnatish — macOS / Linux",
+      installWindowsLabel: "O'rnatish — Windows (PowerShell)",
       startLabel: "Daemon'ni ishga tushirish",
       sshNote: "Allaqachon serverdamisiz? Xuddi shu buyruqlar SSH orqali ishlaydi.",
       copyLabel: "Nusxalash",

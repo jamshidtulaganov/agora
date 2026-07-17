@@ -1998,7 +1998,8 @@ export function createRuDict(allowSignup: boolean): LandingDict {
     cli: {
       title: "Предпочитаете CLI?",
       sub: "Для серверов, удалённых dev-машин и headless-настроек. Тот же Daemon, что и в десктопе, устанавливается через терминал.",
-      installLabel: "Установить",
+      installUnixLabel: "Установить — macOS / Linux",
+      installWindowsLabel: "Установить — Windows (PowerShell)",
       startLabel: "Запустить Daemon",
       sshNote: "Уже на сервере? Те же команды работают по SSH.",
       copyLabel: "Копировать",

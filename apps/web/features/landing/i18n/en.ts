@@ -1996,7 +1996,8 @@ export function createEnDict(allowSignup: boolean): LandingDict {
     cli: {
       title: "Prefer the CLI?",
       sub: "For servers, remote dev boxes, and headless setups. Same daemon as Desktop, installed via terminal.",
-      installLabel: "Install",
+      installUnixLabel: "Install — macOS / Linux",
+      installWindowsLabel: "Install — Windows (PowerShell)",
       startLabel: "Start daemon",
       sshNote: "Already on a server? Same commands work over SSH.",
       copyLabel: "Copy",

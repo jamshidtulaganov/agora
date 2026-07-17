@@ -333,7 +333,8 @@ export type LandingDict = {
     cli: {
       title: string;
       sub: string;
-      installLabel: string;
+      installUnixLabel: string;
+      installWindowsLabel: string;
       startLabel: string;
       sshNote: string;
       copyLabel: string;

@@ -17,8 +17,10 @@ import { hasAnyAsset } from "../utils/parse-release-assets";
 
 const ACCENT = "#2563EB";
 
-const CLI_INSTALL_CMD =
+const CLI_INSTALL_CMD_UNIX =
   "curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.sh | bash";
+const CLI_INSTALL_CMD_WINDOWS =
+  "irm https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.ps1 | iex";
 const CLI_START_CMD = "agora daemon start";
 
 interface DownloadPageClientProps {
@@ -199,8 +201,14 @@ export function DownloadPageClient({ release }: DownloadPageClientProps) {
               </p>
               <div className="mt-6 flex max-w-[760px] flex-col gap-3">
                 <CommandBlock
-                  label={t.download.cli.installLabel}
-                  command={CLI_INSTALL_CMD}
+                  label={t.download.cli.installUnixLabel}
+                  command={CLI_INSTALL_CMD_UNIX}
+                  copyLabel={t.download.cli.copyLabel}
+                  copiedLabel={t.download.cli.copiedLabel}
+                />
+                <CommandBlock
+                  label={t.download.cli.installWindowsLabel}
+                  command={CLI_INSTALL_CMD_WINDOWS}
                   copyLabel={t.download.cli.copyLabel}
                   copiedLabel={t.download.cli.copiedLabel}
                 />
