@@ -3153,7 +3153,11 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	if pack != "" {
 		prompt = pack + "\n\n" + prompt
 	}
-	taskResult.ContextPack = packStats
+	// Stamp the stats on the way out rather than assigning taskResult here:
+	// every return path below hands back a fresh TaskResult literal, which
+	// would overwrite the named return and silently drop this telemetry (the
+	// A/B would then see zero rows no matter how many tasks ran).
+	defer func() { taskResult.ContextPack = packStats }()
 
 	// Pass the daemon's auth credentials and context so the spawned agent CLI
 	// can call the Agora API and the local daemon (e.g. `agora repo checkout`).
