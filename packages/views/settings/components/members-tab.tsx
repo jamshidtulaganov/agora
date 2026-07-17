@@ -42,6 +42,7 @@ import { useWorkspaceId } from "@agora/core/hooks";
 import { useCurrentWorkspace, paths } from "@agora/core/paths";
 import { memberListOptions, invitationListOptions, workspaceKeys } from "@agora/core/workspace/queries";
 import { api } from "@agora/core/api";
+import { useShareableOrigin } from "../../platform";
 import { useT } from "../../i18n";
 
 const ROLE_ICONS: Record<MemberRole, typeof Crown> = {
@@ -197,10 +198,16 @@ function InvitationRow({
   const rc = roleConfig[invitation.role];
 
   // Shareable invite link (bearer): any logged-in user who opens it joins.
-  // The page is served same-origin at /invite/<id>, so window.location.origin
-  // yields the public URL the admin can paste into Telegram/chat.
+  // On web the page is served same-origin at /invite/<id>; on desktop the
+  // renderer runs from file://, so useShareableOrigin falls back to the
+  // server-advertised app URL — never copy a file:///invite/... link.
+  const shareableOrigin = useShareableOrigin();
   const handleCopyLink = async () => {
-    const url = `${window.location.origin}${paths.invite(invitation.id)}`;
+    if (!shareableOrigin) {
+      toast.error(t(($) => $.members.toast_invitation_failed));
+      return;
+    }
+    const url = `${shareableOrigin}${paths.invite(invitation.id)}`;
     try {
       await navigator.clipboard.writeText(url);
       toast.success(t(($) => $.members.link_copied));

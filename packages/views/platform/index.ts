@@ -1,6 +1,7 @@
 export { useImmersiveMode } from "./use-immersive-mode";
 export { useDesktopUnreadBadge } from "./use-desktop-unread-badge";
 export { DragStrip } from "./drag-strip";
+export { useShareableOrigin } from "./shareable-origin";
 export { openExternal } from "./open-external";
 export {
   isDesktopShell,
