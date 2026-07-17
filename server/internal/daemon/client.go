@@ -268,13 +268,19 @@ func (c *Client) PinOrchestrationBase(ctx context.Context, taskID string, propos
 	return response.BaseRefs, nil
 }
 
-func (c *Client) ReportTaskUsage(ctx context.Context, taskID string, usage []TaskUsageEntry) error {
-	if len(usage) == 0 {
+// ReportTaskUsage reports per-model token usage and, when the task was part of
+// the repo-context-pack experiment, that task's pack stats. Both ride the same
+// request because both are per-task telemetry emitted at the same moment;
+// contextPack is optional and older servers ignore the field.
+func (c *Client) ReportTaskUsage(ctx context.Context, taskID string, usage []TaskUsageEntry, contextPack *TaskContextPackStats) error {
+	if len(usage) == 0 && contextPack == nil {
 		return nil
 	}
-	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/usage", taskID), map[string]any{
-		"usage": usage,
-	}, nil)
+	body := map[string]any{"usage": usage}
+	if contextPack != nil {
+		body["context_pack"] = contextPack
+	}
+	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/usage", taskID), body, nil)
 }
 
 func (c *Client) FailTask(ctx context.Context, taskID, errMsg, sessionID, workDir, failureReason string) error {

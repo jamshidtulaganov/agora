@@ -1094,6 +1094,29 @@ func logHeartbeatEndpointSlow(runtimeID, outcome, authPath string, start time.Ti
 	)
 }
 
+// issueBodyQueryMaxRunes caps the issue description carried on a claim. The
+// daemon uses it purely as a retrieval query for the repo context pack, and a
+// BM25 query saturates long before this — past a few hundred terms extra text
+// only adds noise. The agent still reads the full issue via `agora issue get`.
+const issueBodyQueryMaxRunes = 4000
+
+// truncateRunes shortens s to maxRunes. It counts RUNES, not bytes: issue
+// descriptions are routinely Russian, Uzbek, or Chinese, and a byte slice
+// would cut a multibyte character in half and emit invalid UTF-8.
+func truncateRunes(s string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+	n := 0
+	for i := range s {
+		n++
+		if n > maxRunes {
+			return s[:i]
+		}
+	}
+	return s
+}
+
 // logClaimEndpointSlow emits one structured log when the /tasks/claim endpoint
 // exceeds 500ms, splitting auth / claim / response-build phases so the prod
 // tail can be diagnosed without flooding logs at normal poll rates.
@@ -1401,6 +1424,10 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		if issue, err := h.Queries.GetIssue(r.Context(), task.IssueID); err == nil {
 			resp.WorkspaceID = uuidToString(issue.WorkspaceID)
 			resp.ThreadName = issue.Title
+			// Retrieval query material for the daemon's repo context pack.
+			// Capped because a 40k-char description would bloat every claim
+			// response to feed a ranker that saturates long before that.
+			resp.IssueBody = truncateRunes(issue.Description.String, issueBodyQueryMaxRunes)
 
 			// Per-task model override (agent_task_queue.model_override) wins over
 			// the agent default. Normal tasks may still be adjusted by cost-tier
@@ -2672,6 +2699,20 @@ type TaskUsagePayload struct {
 	CacheWriteTokens int64  `json:"cache_write_tokens"`
 }
 
+// TaskContextPackPayload mirrors daemon.TaskContextPackStats — what the
+// dispatch-time repo context pack did for one task, and which experiment arm
+// it landed in. Reported by the daemon alongside token usage.
+type TaskContextPackPayload struct {
+	Arm           int  `json:"arm"`
+	FilesScanned  int  `json:"files_scanned"`
+	FilesInPack   int  `json:"files_in_pack"`
+	SymbolsInPack int  `json:"symbols_in_pack"`
+	PackTokens    int  `json:"pack_tokens"`
+	BuildMs       int  `json:"build_ms"`
+	Degraded      bool `json:"degraded"`
+	Partial       bool `json:"partial"`
+}
+
 func (h *Handler) ReportTaskUsage(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskId")
 
@@ -2682,11 +2723,31 @@ func (h *Handler) ReportTaskUsage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Usage []TaskUsagePayload `json:"usage"`
+		Usage       []TaskUsagePayload      `json:"usage"`
+		ContextPack *TaskContextPackPayload `json:"context_pack,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
+	}
+
+	// Repo context-pack telemetry (see internal/repoindex). Never fatal: this
+	// is measurement, and a failure to record it must not fail the task's
+	// usage report, which is billing data.
+	if req.ContextPack != nil {
+		if err := h.Queries.UpsertTaskContextStats(r.Context(), db.UpsertTaskContextStatsParams{
+			TaskID:        parseUUID(taskID),
+			Arm:           int16(req.ContextPack.Arm),
+			FilesScanned:  int32(req.ContextPack.FilesScanned),
+			FilesInPack:   int32(req.ContextPack.FilesInPack),
+			SymbolsInPack: int32(req.ContextPack.SymbolsInPack),
+			PackTokens:    int32(req.ContextPack.PackTokens),
+			BuildMs:       int32(req.ContextPack.BuildMs),
+			Degraded:      req.ContextPack.Degraded,
+			Partial:       req.ContextPack.Partial,
+		}); err != nil {
+			slog.Warn("upsert task context stats failed", "task_id", taskID, "error", err)
+		}
 	}
 
 	for _, u := range req.Usage {

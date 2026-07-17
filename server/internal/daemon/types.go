@@ -54,6 +54,7 @@ type Task struct {
 	// into the brief. Empty when the owner hasn't set one.
 	WorkspaceContext          string                       `json:"workspace_context,omitempty"`
 	ThreadName                string                       `json:"thread_name,omitempty"` // semantic title for provider-native session/thread history
+	IssueBody                 string                       `json:"issue_body,omitempty"`  // truncated issue description; retrieval-query material for the repo context pack (see internal/repoindex). Empty against older servers — the pack then ranks on the title alone.
 	Agent                     *AgentData                   `json:"agent,omitempty"`
 	Repos                     []RepoData                   `json:"repos,omitempty"`
 	ProjectID                 string                       `json:"project_id,omitempty"`                  // issue's project, when present
@@ -227,4 +228,23 @@ type TaskResult struct {
 	MissingHeadSHAs    []string         `json:"missing_head_shas,omitempty"`
 	GitStates          []RepoGitState   `json:"git_states,omitempty"` // per-repo evidence; legacy single fields mirror the primary repo
 	Usage              []TaskUsageEntry `json:"usage,omitempty"`      // per-model token usage
+	// ContextPack reports what the repo context pack did for this task.
+	// Nil when the daemon built no pack at all (control arm, non-code task,
+	// or opt-out). Read together with the A/B arm to separate "treatment"
+	// from "treatment that actually received a pack".
+	ContextPack *TaskContextPackStats `json:"context_pack,omitempty"`
+}
+
+// TaskContextPackStats is the per-task telemetry for the pushed repo map.
+// Grain is the TASK, not (task, provider, model) — these are counters about
+// one prompt-build, so they cannot ride on task_usage.
+type TaskContextPackStats struct {
+	Arm           int  `json:"arm"`           // 0 = control, 1 = treatment
+	FilesScanned  int  `json:"files_scanned"` // corpus the ranker saw
+	FilesInPack   int  `json:"files_in_pack"` // files rendered into the prompt
+	SymbolsInPack int  `json:"symbols_in_pack"`
+	PackTokens    int  `json:"pack_tokens"` // what the pack COST, so net savings are computable
+	BuildMs       int  `json:"build_ms"`
+	Degraded      bool `json:"degraded"` // treatment arm but no usable pack
+	Partial       bool `json:"partial"`  // corpus truncated at the scan cap
 }

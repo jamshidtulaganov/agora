@@ -917,6 +917,19 @@ type SysCronExecution struct {
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
+type TaskContextStat struct {
+	TaskID        pgtype.UUID        `json:"task_id"`
+	Arm           int16              `json:"arm"`
+	FilesScanned  int32              `json:"files_scanned"`
+	FilesInPack   int32              `json:"files_in_pack"`
+	SymbolsInPack int32              `json:"symbols_in_pack"`
+	PackTokens    int32              `json:"pack_tokens"`
+	BuildMs       int32              `json:"build_ms"`
+	Degraded      bool               `json:"degraded"`
+	Partial       bool               `json:"partial"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
 type TaskMessage struct {
 	ID        pgtype.UUID        `json:"id"`
 	TaskID    pgtype.UUID        `json:"task_id"`
