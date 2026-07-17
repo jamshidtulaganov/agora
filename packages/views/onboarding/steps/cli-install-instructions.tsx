@@ -10,6 +10,8 @@ import { useT } from "../../i18n";
 
 const INSTALL_CMD =
   "curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.sh | bash";
+const INSTALL_CMD_WINDOWS =
+  "irm https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.ps1 | iex";
 // Remote deployment: pin the CLI to this server (otherwise `agora setup
 // self-host` defaults to localhost:8080/:3000 and the daemon never connects).
 const SETUP_CMD =
@@ -43,25 +45,40 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+function CommandRow({ cmd }: { cmd: string }) {
+  return (
+    <div className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2.5 font-mono text-sm">
+      <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <code
+        className={cn(
+          "min-w-0 flex-1 whitespace-pre-wrap break-all",
+          CODE_LIGATURE_CLASS,
+        )}
+      >
+        {cmd}
+      </code>
+      <CopyButton text={cmd} />
+    </div>
+  );
+}
+
 function Step({ n, label, cmd }: { n: number; label: string; cmd: string }) {
   return (
     <div>
       <p className="mb-1.5 text-xs font-medium text-foreground">
         {n}. {label}
       </p>
-      <div className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2.5 font-mono text-sm">
-        <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        <code
-          className={cn(
-            "min-w-0 flex-1 whitespace-pre-wrap break-all",
-            CODE_LIGATURE_CLASS,
-          )}
-        >
-          {cmd}
-        </code>
-        <CopyButton text={cmd} />
-      </div>
+      <CommandRow cmd={cmd} />
     </div>
+  );
+}
+
+/* Children are platform names — not translatable content. */
+function OsCaption({ children }: { children: string }) {
+  return (
+    <p className="mb-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+      {children}
+    </p>
   );
 }
 
@@ -81,7 +98,21 @@ export function CliInstallInstructions() {
         <p className="text-xs leading-[1.55] text-muted-foreground">
           {t(($) => $.cli_install.intro)}
         </p>
-        <Step n={1} label={t(($) => $.cli_install.step1_label)} cmd={INSTALL_CMD} />
+        <div>
+          <p className="mb-1.5 text-xs font-medium text-foreground">
+            1. {t(($) => $.cli_install.step1_label)}
+          </p>
+          <div className="space-y-2">
+            <div>
+              <OsCaption>{"macOS / Linux"}</OsCaption>
+              <CommandRow cmd={INSTALL_CMD} />
+            </div>
+            <div>
+              <OsCaption>{"Windows (PowerShell)"}</OsCaption>
+              <CommandRow cmd={INSTALL_CMD_WINDOWS} />
+            </div>
+          </div>
+        </div>
         <Step n={2} label={t(($) => $.cli_install.step2_label)} cmd={SETUP_CMD} />
       </CardContent>
     </Card>

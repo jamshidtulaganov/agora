@@ -13,6 +13,19 @@ const ligatureClasses = [
 ];
 
 describe("CliInstallInstructions", () => {
+  it("shows install commands for both macOS/Linux and Windows", () => {
+    render(
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <CliInstallInstructions />
+      </I18nProvider>,
+    );
+
+    expect(
+      screen.getByText(/^curl -fsSL .*install\.sh \| bash$/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/^irm .*install\.ps1 \| iex$/)).toBeInTheDocument();
+  });
+
   it("disables font ligatures in CLI command code", () => {
     render(
       <I18nProvider locale="en" resources={TEST_RESOURCES}>

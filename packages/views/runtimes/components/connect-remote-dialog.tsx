@@ -27,6 +27,8 @@ type Step = "instructions" | "success";
 
 const INSTALL_CMD =
   "curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.sh | bash";
+const INSTALL_CMD_WINDOWS =
+  "irm https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.ps1 | iex";
 const CLOUD_SERVER_URL = "https://api.agora.dev";
 const CLOUD_APP_URL = "https://agora.dev";
 
@@ -149,6 +151,26 @@ function CopyButton({ text, ariaLabel }: { text: string; ariaLabel: string }) {
   );
 }
 
+function CommandRow({ cmd, copyAria }: { cmd: string; copyAria: string }) {
+  return (
+    <div className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2.5 font-mono text-sm">
+      <Terminal
+        className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"
+        aria-hidden
+      />
+      <code
+        className={cn(
+          "min-w-0 flex-1 break-all whitespace-pre-wrap tabular-nums",
+          CODE_LIGATURE_CLASS,
+        )}
+      >
+        {cmd}
+      </code>
+      <CopyButton text={cmd} ariaLabel={copyAria} />
+    </div>
+  );
+}
+
 function CommandStep({
   n,
   label,
@@ -165,22 +187,17 @@ function CommandStep({
       <p className="mb-1.5 text-xs font-medium text-foreground">
         {n}. {label}
       </p>
-      <div className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2.5 font-mono text-sm">
-        <Terminal
-          className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"
-          aria-hidden
-        />
-        <code
-          className={cn(
-            "min-w-0 flex-1 break-all whitespace-pre-wrap tabular-nums",
-            CODE_LIGATURE_CLASS,
-          )}
-        >
-          {cmd}
-        </code>
-        <CopyButton text={cmd} ariaLabel={copyAria} />
-      </div>
+      <CommandRow cmd={cmd} copyAria={copyAria} />
     </div>
+  );
+}
+
+/* Children are platform names — not translatable content. */
+function OsCaption({ children }: { children: string }) {
+  return (
+    <p className="mb-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+      {children}
+    </p>
   );
 }
 
@@ -206,12 +223,27 @@ function InstructionsStep({ onClose }: { onClose: () => void }) {
 
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         <div className="space-y-4">
-          <CommandStep
-            n={1}
-            label={t(($) => $.connect.step1_label)}
-            cmd={INSTALL_CMD}
-            copyAria={t(($) => $.connect.copy_aria)}
-          />
+          <div>
+            <p className="mb-1.5 text-xs font-medium text-foreground">
+              1. {t(($) => $.connect.step1_label)}
+            </p>
+            <div className="space-y-2">
+              <div>
+                <OsCaption>{"macOS / Linux"}</OsCaption>
+                <CommandRow
+                  cmd={INSTALL_CMD}
+                  copyAria={t(($) => $.connect.copy_aria)}
+                />
+              </div>
+              <div>
+                <OsCaption>{"Windows (PowerShell)"}</OsCaption>
+                <CommandRow
+                  cmd={INSTALL_CMD_WINDOWS}
+                  copyAria={t(($) => $.connect.copy_aria)}
+                />
+              </div>
+            </div>
+          </div>
 
           <div>
             <CommandStep
@@ -270,7 +302,6 @@ function TroubleshootingDetails({ tokenCmd }: { tokenCmd: string }) {
           <li className="flex items-center gap-1.5">
             <span>{t(($) => $.connect.trouble_check_status)}</span>
             {/* CLI command — literal shell string, not i18n content. */}
-            {/* eslint-disable-next-line i18next/no-literal-string */}
             <code
               className={cn(
                 "rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground",
@@ -283,7 +314,6 @@ function TroubleshootingDetails({ tokenCmd }: { tokenCmd: string }) {
           <li className="flex items-center gap-1.5">
             <span>{t(($) => $.connect.trouble_view_logs)}</span>
             {/* CLI command — literal shell string, not i18n content. */}
-            {/* eslint-disable-next-line i18next/no-literal-string */}
             <code
               className={cn(
                 "rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground",

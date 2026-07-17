@@ -66,6 +66,17 @@ const ligatureClasses = [
 ];
 
 describe("ConnectRemoteDialog", () => {
+  it("shows install commands for both macOS/Linux and Windows", () => {
+    const { baseElement } = renderDialog();
+
+    expect(baseElement).toHaveTextContent(
+      "curl -fsSL https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.sh | bash",
+    );
+    expect(baseElement).toHaveTextContent(
+      "irm https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.ps1 | iex",
+    );
+  });
+
   it("uses cloud setup commands by default", () => {
     const { baseElement } = renderDialog();
 
