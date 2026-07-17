@@ -264,7 +264,25 @@ WHERE id = $1 AND status IN ('pending', 'waiting_approval')
 RETURNING *;
 
 -- name: ReroutePendingOrchestrationStep :one
+-- "Pending" here means "execution is still ahead of it", which covers
+-- waiting_approval as well as pending — the same sense
+-- RetirePendingOrchestrationStep above uses.
+--
+-- A step reaches waiting_approval from either side of a run
+-- (WaitOrchestrationStepApproval parks a pending step before it dispatches;
+-- CompleteOrchestrationStep parks an approval_required step that reported
+-- completion), but both release the same way: ApproveOrchestrationStep sets
+-- status back to 'pending' with agent_id = COALESCE(agent_id,
+-- controller_agent_id). So a waiting_approval step's agent_id governs the run
+-- that FOLLOWS approval, and rerouting before approval is what decides who
+-- executes it.
+--
+-- Unlike retire / add_child, reroute is NOT restricted to draft runs (see
+-- EditIssueOrchestration) — it serves live runs, and a live run is precisely
+-- what pauses at waiting_approval. Narrowing this to status = 'pending' would
+-- make reroute silently no-op at the one moment a human is looking at the gate.
+-- Pinned by TestReroutePendingOrchestrationStepCoversWaitingApproval.
 UPDATE orchestration_step
 SET agent_id = $2, model_override = $3, instructions = $4, updated_at = now()
-WHERE id = $1 AND status = 'pending'
+WHERE id = $1 AND status IN ('pending', 'waiting_approval')
 RETURNING *;

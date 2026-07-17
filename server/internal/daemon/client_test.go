@@ -253,3 +253,46 @@ func TestNormalizeGOOS(t *testing.T) {
 		}
 	}
 }
+
+// TestReportTaskUsageSendsContextPack pins the wire contract for the repo
+// context-pack telemetry: the stats must ride the usage report, and a task
+// that produced no usage at all (cancelled, failed early) must still report
+// its arm — otherwise the A/B silently loses that task from its denominator.
+func TestReportTaskUsageSendsContextPack(t *testing.T) {
+	var gotBody map[string]any
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		json.NewDecoder(r.Body).Decode(&gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"ok": "1"})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	c.SetToken("tok")
+
+	stats := &TaskContextPackStats{Arm: 1, FilesScanned: 3, FilesInPack: 3, PackTokens: 280, BuildMs: 8}
+	if err := c.ReportTaskUsage(context.Background(), "task-1", nil, stats); err != nil {
+		t.Fatalf("ReportTaskUsage: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("usage-less task with stats: %d calls, want 1 — the arm would go unrecorded", calls)
+	}
+	pack, ok := gotBody["context_pack"].(map[string]any)
+	if !ok {
+		t.Fatalf("context_pack missing from body: %#v", gotBody)
+	}
+	if pack["arm"] != float64(1) || pack["pack_tokens"] != float64(280) {
+		t.Errorf("context_pack = %#v, want arm 1 / pack_tokens 280", pack)
+	}
+
+	// Nothing to say at all: no usage and no stats must not POST.
+	calls = 0
+	if err := c.ReportTaskUsage(context.Background(), "task-2", nil, nil); err != nil {
+		t.Fatalf("ReportTaskUsage(empty): %v", err)
+	}
+	if calls != 0 {
+		t.Errorf("empty report made %d calls, want 0", calls)
+	}
+}

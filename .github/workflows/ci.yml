@@ -91,6 +91,23 @@ jobs:
           go-version: "1.26.1"
           cache-dependency-path: server/go.sum
 
+      - name: Verify sqlc generated code is up to date
+        # Re-runs the generator and fails on any drift from the checked-in Go
+        # output, so pkg/db/queries/*.sql stays the single source of truth.
+        # Without this, a hand-edit to pkg/db/generated survives review and the
+        # next `make sqlc` silently reverts it — which is exactly how
+        # ReroutePendingOrchestrationStep shipped running one WHERE clause
+        # while its .sql declared another.
+        #
+        # The version is PINNED because sqlc's output ordering changes between
+        # releases: an unpinned check would fail on version skew rather than on
+        # real drift. Bump this together with the regenerated output, and keep
+        # it in sync with whatever `make sqlc` runs locally.
+        run: |
+          go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
+          cd server && "$(go env GOPATH)/bin/sqlc" generate
+          git diff --exit-code -- pkg/db/generated
+
       - name: Build
         run: cd server && go build ./...
 

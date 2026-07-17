@@ -267,8 +267,14 @@ type AgentTaskResponse struct {
 	// as `## Workspace Context` so every agent running in this workspace —
 	// regardless of issue / chat / autopilot / quick-create — sees the same
 	// shared context. Empty when the workspace owner hasn't set it.
-	WorkspaceContext string                `json:"workspace_context,omitempty"`
-	ThreadName       string                `json:"thread_name,omitempty"` // semantic title for provider-native session/thread history
+	WorkspaceContext string `json:"workspace_context,omitempty"`
+	ThreadName       string `json:"thread_name,omitempty"` // semantic title for provider-native session/thread history
+	// IssueBody is the issue description, truncated, sent so the daemon can
+	// rank the repository against the task WITHOUT a second round trip. It is
+	// retrieval-query material only — the agent still reads the authoritative
+	// issue via `agora issue get`, so truncation here costs nothing. Old
+	// daemons ignore the field (omitempty).
+	IssueBody        string                `json:"issue_body,omitempty"`
 	Status           string                `json:"status"`
 	Priority         int32                 `json:"priority"`
 	DispatchedAt     *string               `json:"dispatched_at"`

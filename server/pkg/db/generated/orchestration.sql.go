@@ -26,33 +26,6 @@ func (q *Queries) AddOrchestrationStepDependency(ctx context.Context, arg AddOrc
 	return err
 }
 
-const stageOrchestrationStepPositionShift = `-- name: StageOrchestrationStepPositionShift :exec
-UPDATE orchestration_step
-SET position = -position - 1, updated_at = now()
-WHERE run_id = $1 AND position >= $2
-`
-
-type StageOrchestrationStepPositionShiftParams struct {
-	RunID    pgtype.UUID `json:"run_id"`
-	Position int32       `json:"position"`
-}
-
-func (q *Queries) StageOrchestrationStepPositionShift(ctx context.Context, arg StageOrchestrationStepPositionShiftParams) error {
-	_, err := q.db.Exec(ctx, stageOrchestrationStepPositionShift, arg.RunID, arg.Position)
-	return err
-}
-
-const finishOrchestrationStepPositionShift = `-- name: FinishOrchestrationStepPositionShift :exec
-UPDATE orchestration_step
-SET position = -position, updated_at = now()
-WHERE run_id = $1 AND position < 0
-`
-
-func (q *Queries) FinishOrchestrationStepPositionShift(ctx context.Context, runID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, finishOrchestrationStepPositionShift, runID)
-	return err
-}
-
 const advanceOrchestrationPlanVersion = `-- name: AdvanceOrchestrationPlanVersion :one
 UPDATE orchestration_run
 SET plan_version = plan_version + 1, updated_at = now()
@@ -801,6 +774,17 @@ func (q *Queries) FailOrchestrationStepByID(ctx context.Context, arg FailOrchest
 		&i.Capability,
 	)
 	return i, err
+}
+
+const finishOrchestrationStepPositionShift = `-- name: FinishOrchestrationStepPositionShift :exec
+UPDATE orchestration_step
+SET position = -position, updated_at = now()
+WHERE run_id = $1 AND position < 0
+`
+
+func (q *Queries) FinishOrchestrationStepPositionShift(ctx context.Context, runID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, finishOrchestrationStepPositionShift, runID)
+	return err
 }
 
 const getActiveOrchestrationRunForIssue = `-- name: GetActiveOrchestrationRunForIssue :one
@@ -1600,6 +1584,24 @@ type ReroutePendingOrchestrationStepParams struct {
 	Instructions  string      `json:"instructions"`
 }
 
+// "Pending" here means "execution is still ahead of it", which covers
+// waiting_approval as well as pending — the same sense
+// RetirePendingOrchestrationStep above uses.
+//
+// A step reaches waiting_approval from either side of a run
+// (WaitOrchestrationStepApproval parks a pending step before it dispatches;
+// CompleteOrchestrationStep parks an approval_required step that reported
+// completion), but both release the same way: ApproveOrchestrationStep sets
+// status back to 'pending' with agent_id = COALESCE(agent_id,
+// controller_agent_id). So a waiting_approval step's agent_id governs the run
+// that FOLLOWS approval, and rerouting before approval is what decides who
+// executes it.
+//
+// Unlike retire / add_child, reroute is NOT restricted to draft runs (see
+// EditIssueOrchestration) — it serves live runs, and a live run is precisely
+// what pauses at waiting_approval. Narrowing this to status = 'pending' would
+// make reroute silently no-op at the one moment a human is looking at the gate.
+// Pinned by TestReroutePendingOrchestrationStepCoversWaitingApproval.
 func (q *Queries) ReroutePendingOrchestrationStep(ctx context.Context, arg ReroutePendingOrchestrationStepParams) (OrchestrationStep, error) {
 	row := q.db.QueryRow(ctx, reroutePendingOrchestrationStep,
 		arg.ID,
@@ -1861,6 +1863,22 @@ func (q *Queries) SetOrchestrationStepRunning(ctx context.Context, id pgtype.UUI
 		&i.Capability,
 	)
 	return i, err
+}
+
+const stageOrchestrationStepPositionShift = `-- name: StageOrchestrationStepPositionShift :exec
+UPDATE orchestration_step
+SET position = -position - 1, updated_at = now()
+WHERE run_id = $1 AND position >= $2
+`
+
+type StageOrchestrationStepPositionShiftParams struct {
+	RunID    pgtype.UUID `json:"run_id"`
+	Position int32       `json:"position"`
+}
+
+func (q *Queries) StageOrchestrationStepPositionShift(ctx context.Context, arg StageOrchestrationStepPositionShiftParams) error {
+	_, err := q.db.Exec(ctx, stageOrchestrationStepPositionShift, arg.RunID, arg.Position)
+	return err
 }
 
 const startOrchestrationRun = `-- name: StartOrchestrationRun :one

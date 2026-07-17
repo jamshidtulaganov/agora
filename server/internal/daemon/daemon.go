@@ -2396,8 +2396,11 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 	// goroutine. Both claude.go and codex.go populate result.Usage even when
 	// runCtx is cancelled, so dropping this on the cancelled path silently
 	// under-reports billing.
-	if len(result.Usage) > 0 {
-		if usageErr := d.client.ReportTaskUsage(ctx, task.ID, result.Usage); usageErr != nil {
+	// The context-pack stats ride along here for the same reason: a task that
+	// errored or was cancelled still consumed its arm, and dropping it would
+	// bias the experiment toward whichever arm fails less.
+	if len(result.Usage) > 0 || result.ContextPack != nil {
+		if usageErr := d.client.ReportTaskUsage(ctx, task.ID, result.Usage, result.ContextPack); usageErr != nil {
 			taskLog.Warn("report task usage failed", "error", usageErr)
 		}
 	}
@@ -3141,6 +3144,20 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	}
 
 	prompt := BuildPrompt(task, provider)
+
+	// Prepend the repo context pack (ranked map of the files most likely to
+	// matter for this issue) so the agent can skip rediscovering the tree.
+	// Fails soft to the empty string: control-arm tasks, non-code tasks, an
+	// unreadable workdir, or a slow scan all leave the prompt untouched.
+	pack, packStats := d.buildRepoPack(ctx, task, env.WorkDir, taskLog)
+	if pack != "" {
+		prompt = pack + "\n\n" + prompt
+	}
+	// Stamp the stats on the way out rather than assigning taskResult here:
+	// every return path below hands back a fresh TaskResult literal, which
+	// would overwrite the named return and silently drop this telemetry (the
+	// A/B would then see zero rows no matter how many tasks ran).
+	defer func() { taskResult.ContextPack = packStats }()
 
 	// Pass the daemon's auth credentials and context so the spawned agent CLI
 	// can call the Agora API and the local daemon (e.g. `agora repo checkout`).

@@ -311,7 +311,20 @@ migrate-down: ## Create the target DB if needed, then roll back database migrati
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
 	cd server && go run ./cmd/migrate down
 
+# pkg/db/queries/*.sql is the ONLY source of truth — never hand-edit
+# pkg/db/generated, because the next run of this target silently reverts it.
+# CI re-runs the generator and fails on drift ("Verify sqlc generated code is
+# up to date"), pinned to SQLC_VERSION; sqlc's output ordering changes between
+# releases, so install this exact version locally or CI will disagree with you:
+#   go install github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)
+SQLC_VERSION := v1.31.1
+
 sqlc: ## Regenerate sqlc code
+	@have=$$(sqlc version 2>/dev/null); \
+	if [ "$$have" != "$(SQLC_VERSION)" ]; then \
+		echo "warning: sqlc $$have installed, CI pins $(SQLC_VERSION) — output may drift"; \
+		echo "         go install github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)"; \
+	fi
 	cd server && sqlc generate
 
 # Cleanup
