@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/analytics"
 	"github.com/multica-ai/multica/server/internal/auth"
+	"github.com/multica-ai/multica/server/internal/config"
 	"github.com/multica-ai/multica/server/internal/logger"
 	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
@@ -294,7 +295,23 @@ func isUndeliverableEmailDomain(email string) bool {
 	return false
 }
 
+// telegramOnlyLoginGate writes a 403 and reports true when AGORA_TELEGRAM_ONLY
+// is set. The operator has declared Telegram the sole sign-in method; the
+// frontend hides email/Google, but that hiding is honest only if the endpoints
+// themselves refuse direct calls (stale desktop builds, curl). Telegram-side
+// endpoints are unaffected.
+func telegramOnlyLoginGate(w http.ResponseWriter) bool {
+	if !config.Bool("AGORA_TELEGRAM_ONLY") {
+		return false
+	}
+	writeError(w, http.StatusForbidden, "email and Google login are disabled on this server — sign in with Telegram")
+	return true
+}
+
 func (h *Handler) SendCode(w http.ResponseWriter, r *http.Request) {
+	if telegramOnlyLoginGate(w) {
+		return
+	}
 	var req SendCodeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -395,6 +412,9 @@ func (h *Handler) SendCode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) VerifyCode(w http.ResponseWriter, r *http.Request) {
+	if telegramOnlyLoginGate(w) {
+		return
+	}
 	var req VerifyCodeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -529,6 +549,9 @@ type googleUserInfo struct {
 }
 
 func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
+	if telegramOnlyLoginGate(w) {
+		return
+	}
 	var req GoogleLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")

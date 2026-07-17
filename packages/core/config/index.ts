@@ -24,6 +24,11 @@ interface ConfigState {
   bitrixEnabled: boolean;
   zohoEnabled: boolean;
   larkEnabled: boolean;
+  // True once the /api/config fetch has settled (success OR failure). The
+  // login page renders a loading state until then so a telegram_only server
+  // never flashes the email/Google form while the response is in flight.
+  authConfigLoaded: boolean;
+  markAuthConfigLoaded: () => void;
   setCdnDomain: (domain: string) => void;
   setAuthConfig: (config: {
     allowSignup: boolean;
@@ -55,6 +60,8 @@ export const configStore = createStore<ConfigState>((set) => ({
   bitrixEnabled: false,
   zohoEnabled: false,
   larkEnabled: false,
+  authConfigLoaded: false,
+  markAuthConfigLoaded: () => set({ authConfigLoaded: true }),
   setCdnDomain: (domain) => set({ cdnDomain: domain }),
   setAuthConfig: ({
     allowSignup,
@@ -75,6 +82,7 @@ export const configStore = createStore<ConfigState>((set) => ({
       bitrixEnabled,
       zohoEnabled,
       larkEnabled,
+      authConfigLoaded: true,
     }),
   setDaemonConfig: ({ daemonServerUrl = "", daemonAppUrl = "" }) =>
     set({ daemonServerUrl, daemonAppUrl }),

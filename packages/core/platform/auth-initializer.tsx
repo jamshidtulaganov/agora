@@ -95,7 +95,10 @@ export function AuthInitializer({
         }
       })
       .catch(() => {
-        /* config is optional — legacy file card matching degrades gracefully */
+        // Config is optional — legacy file card matching degrades gracefully.
+        // Still mark it settled so the login page stops waiting and falls
+        // back to the default method set (email + Google).
+        configStore.getState().markAuthConfigLoaded();
       });
 
     const onAuthSuccess = (user: User) => {

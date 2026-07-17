@@ -85,6 +85,7 @@ vi.mock("@agora/core/api", () => ({
 }));
 
 import LoginPage from "./page";
+import { configStore } from "@agora/core/config";
 
 describe("LoginPage", () => {
   beforeEach(() => {
@@ -92,6 +93,9 @@ describe("LoginPage", () => {
     searchParamsState.params = new URLSearchParams();
     authStateRef.state.user = null;
     authStateRef.state.isLoading = false;
+    // The shared LoginPage waits for /api/config before showing any sign-in
+    // method; these tests exercise the settled default-method state.
+    configStore.setState({ authConfigLoaded: true });
   });
 
   it("renders login form with email input and continue button", () => {

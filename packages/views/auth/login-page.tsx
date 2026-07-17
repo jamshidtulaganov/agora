@@ -118,6 +118,8 @@ export function LoginPage({
   // Surfaced via the config store (AGORA_TELEGRAM_ONLY → /api/config), the same
   // way telegramBotUsername flows through.
   const telegramOnly = useConfigStore((s) => s.telegramOnly);
+  // False until the /api/config fetch settles — gates the method picker below.
+  const authConfigLoaded = useConfigStore((s) => s.authConfigLoaded);
   const [step, setStep] = useState<
     "email" | "code" | "cli_confirm" | "telegram"
   >("email");
@@ -543,6 +545,35 @@ export function LoginPage({
               {t(($) => $.common.back)}
             </Button>
           </CardFooter>
+        </Card>
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Config loading gate
+  // -------------------------------------------------------------------------
+  // Which sign-in methods exist is server-driven (/api/config): a
+  // telegram_only deployment hides email/Google entirely. Until that fetch
+  // settles we don't know the method set, so render a neutral shell instead
+  // of flashing the email form and swapping it out from under the user.
+  if (!authConfigLoaded) {
+    return (
+      <div className="flex min-h-svh items-center justify-center">
+        <Card className="w-full max-w-sm">
+          <CardHeader className="text-center">
+            {logo && <div className="mx-auto mb-4">{logo}</div>}
+            <CardTitle className="text-2xl">
+              {t(($) => $.signin.title)}
+            </CardTitle>
+          </CardHeader>
+          <CardContent
+            className="flex justify-center py-6"
+            role="status"
+            aria-live="polite"
+          >
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" />
+          </CardContent>
         </Card>
       </div>
     );

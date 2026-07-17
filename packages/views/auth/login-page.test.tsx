@@ -42,6 +42,7 @@ const mockSetQueryData = vi.hoisted(() => vi.fn());
 const mockConfigState = vi.hoisted(() => ({
   telegramBotUsername: "",
   telegramOnly: false,
+  authConfigLoaded: true,
 }));
 
 vi.mock("@tanstack/react-query", async () => {
@@ -122,6 +123,8 @@ describe("LoginPage", () => {
     mockConfigState.telegramBotUsername = "";
     // Default: all sign-in methods enabled (telegram_only off).
     mockConfigState.telegramOnly = false;
+    // Default: /api/config already settled (the common steady state).
+    mockConfigState.authConfigLoaded = true;
     localStorage.clear();
     // Reset window.location for tests that change it
     Object.defineProperty(window, "location", {
@@ -658,6 +661,46 @@ describe("LoginPage", () => {
     // With Google AND Telegram both present, a divider separates each
     // alternative auth method: email-form │ or │ Google │ or │ Telegram.
     expect(screen.getAllByText(/^or$/i)).toHaveLength(2);
+    expect(
+      screen.getByRole("button", { name: /continue with telegram/i }),
+    ).toBeInTheDocument();
+  });
+
+  // -------------------------------------------------------------------------
+  // Config loading gate — no method flash before /api/config settles
+  // -------------------------------------------------------------------------
+
+  it("renders a neutral loading shell (no email form, no Google) until config settles", () => {
+    mockConfigState.authConfigLoaded = false;
+    renderWithI18n(
+      <LoginPage
+        onSuccess={onSuccess}
+        google={{ clientId: "goog-123", redirectUri: "http://localhost/cb" }}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/email/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /continue with google/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /continue with telegram/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders the resolved method set once config settles (telegram_only)", () => {
+    mockConfigState.authConfigLoaded = false;
+    const { rerender } = renderWithI18n(<LoginPage onSuccess={onSuccess} />);
+    expect(screen.getByRole("status")).toBeInTheDocument();
+
+    mockConfigState.authConfigLoaded = true;
+    mockConfigState.telegramOnly = true;
+    mockConfigState.telegramBotUsername = "agora_bot";
+    rerender(<LoginPage onSuccess={onSuccess} />);
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/email/i)).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /continue with telegram/i }),
     ).toBeInTheDocument();
