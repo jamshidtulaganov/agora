@@ -64,7 +64,7 @@ Grab the installer for your platform from the [Agora downloads page](https://ago
 | Windows ARM64 | `.exe` (with `arm64` suffix) |
 | Linux | `.AppImage` |
 
-On first launch you'll need to sign in — the same email + verification code flow as the web app. Once you're in, Desktop syncs your workspace list automatically.
+On first launch you'll need to sign in — the same sign-in methods as the web app (on the managed deployment that's the Telegram one-time code; self-hosted instances may also offer email + verification code or Google). Once you're in, Desktop syncs your workspace list automatically.
 
 <Callout type="info">
 **Desktop defaults to Agora Cloud, but can be pointed at a self-hosted instance with a local config file.** There is still no in-app "connect to self-host" picker. Desktop reads `~/.agora/desktop.json` before the renderer starts; if the file is missing, it uses the Cloud defaults.
