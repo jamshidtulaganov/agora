@@ -3188,6 +3188,20 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		"AGORA_TASK_ID":      task.ID,
 		"AGORA_TASK_SLOT":    strconv.Itoa(slot),
 	}
+	// Shared, persistent dependency caches (WorkspacesRoot/.depcache): pnpm's
+	// content-addressed store turns `pnpm install` into hardlinks and the
+	// npm/yarn/go/cargo/pip caches are safe for concurrent worktrees, so a new
+	// task doesn't reinstall from zero — the biggest cold cost left once repo
+	// checkout is already served from the mirror cache. Skipped in
+	// local_directory mode: that runs inside the user's own already-installed
+	// project, and repointing their package store to an empty cache would force
+	// a needless fresh install. Set BEFORE task.Agent.CustomEnv below, so an
+	// agent can still override any of these for its own toolchain.
+	if !env.LocalDirectory {
+		for k, v := range sharedDepCacheEnv(d.cfg.WorkspacesRoot, d.logger) {
+			agentEnv[k] = v
+		}
+	}
 	// Sprint-worktree: hand the agent's `agora repo checkout` the shared sprint
 	// branch so the FIRST checkout (on a fresh workdir, before ensureSprintBranch
 	// at runTask has any repo to act on) lands the worktree on the shared branch
