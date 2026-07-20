@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -127,63 +126,11 @@ func (h *Handler) DispatchSprintRegression(ctx context.Context, sprintID, wsID p
 
 	// The QA target + primary repo + base suite ride in the payload: an
 	// issue-less run gets none of the per-issue slice injection, so this payload
-	// IS the whole QA contract for the run. QA target = the project's
-	// qa_smoke_url (the team's BYO staging serving the sprint branch).
-	var qaTarget, repoURL, resultsIssue string
-	var cases []sprintRegressionCase
-	if project, perr := h.Queries.GetProject(ctx, sprint.ProjectID); perr == nil {
-		var ps struct {
-			QASmokeURL string `json:"qa_smoke_url"`
-			BaseSuite  string `json:"base_suite_issue_id"`
-		}
-		if len(project.Settings) > 0 {
-			_ = json.Unmarshal(project.Settings, &ps)
-		}
-		qaTarget = strings.TrimSpace(ps.QASmokeURL)
-		if strings.TrimSpace(ps.BaseSuite) != "" {
-			if bid, berr := parseUUIDErr(strings.TrimSpace(ps.BaseSuite)); berr == nil {
-				if bi, ierr := h.Queries.GetIssue(ctx, bid); ierr == nil {
-					resultsIssue = fmt.Sprintf("%s-%d", h.getIssuePrefix(ctx, sprint.WorkspaceID), bi.Number)
-				}
-			}
-		}
-	}
-	for _, r := range h.listProjectResourcesForProject(ctx, sprint.ProjectID) {
-		if r.ResourceType != "github_repo" {
-			continue
-		}
-		var ref struct {
-			URL string `json:"url"`
-		}
-		if json.Unmarshal(r.ResourceRef, &ref) == nil && strings.TrimSpace(ref.URL) != "" {
-			repoURL = strings.TrimSpace(ref.URL)
-			break
-		}
-	}
-	if baseCases, cerr := h.Queries.ListAutomatedTestCasesForProject(ctx, db.ListAutomatedTestCasesForProjectParams{
-		ProjectID: sprint.ProjectID, WorkspaceID: sprint.WorkspaceID,
-	}); cerr == nil {
-		for _, c := range baseCases {
-			cases = append(cases, sprintRegressionCase{
-				ID: uuidToString(c.ID), Title: c.Title, Script: c.Script,
-			})
-		}
-	}
-	if resultsIssue == "" && len(tasks) > 0 {
-		resultsIssue = tasks[0].Key
-	}
-
-	payload, err := json.Marshal(sprintRegressionPayload{
-		Scope: "regression", Branch: branch, Baseline: "sprint-root", SprintID: uuidToString(sprint.ID),
-		Tasks:        tasks,
-		Directive:    strings.TrimSpace(qaBaselineGuidanceFor("regression")),
-		QATarget:     qaTarget,
-		RepoURL:      repoURL,
-		ResultsIssue: resultsIssue,
-		Cases:        cases,
-	})
+	// IS the whole QA contract for the run. Assembled by the shared builder,
+	// which the generic deploy-triggered project regression reuses verbatim.
+	payload, err := h.assembleRegressionPayload(ctx, sprint.ProjectID, sprint.WorkspaceID, branch, "sprint-root", uuidToString(sprint.ID), tasks)
 	if err != nil {
-		return db.AutopilotRun{}, fmt.Errorf("marshal payload: %w", err)
+		return db.AutopilotRun{}, fmt.Errorf("assemble regression payload: %w", err)
 	}
 
 	// Pick the QA-regression autopilot, not just autopilots[0]. A project may

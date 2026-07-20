@@ -542,12 +542,32 @@ func (h *Handler) HandleAutopilotWebhook(w http.ResponseWriter, r *http.Request)
 	// 12. Dispatch synchronously. DispatchAutopilot publishes WS events,
 	//     persists trigger_payload on autopilot_run, runs the admission
 	//     check (offline runtime → skipped), and bumps last_run_at.
+	//
+	//     Generic deploy-regression bridge: when this run-only autopilot's
+	//     project opted into deploy-triggered regression (settings flag +
+	//     qa_smoke_url + a standing base suite), swap the raw webhook envelope
+	//     for the project regression contract so the dispatched agent runs the
+	//     whole base suite against qa_smoke_url ("did the shipped commit break
+	//     any existing feature?"). Falls back to the envelope on any failure.
+	dispatchPayload := envelopeBytes
+	if h.projectRegressionEligible(r.Context(), autopilot) {
+		branch, sha := deployedRefFromEnvelope(envelope)
+		if regPayload, perr := h.buildProjectRegressionPayload(r.Context(), autopilot, branch, sha); perr == nil {
+			dispatchPayload = regPayload
+		} else {
+			slog.Warn("deploy regression: payload build failed, using raw envelope",
+				"autopilot_id", uuidToString(autopilot.ID),
+				"project_id", uuidToString(autopilot.ProjectID),
+				"error", perr,
+			)
+		}
+	}
 	run, err := h.AutopilotService.DispatchAutopilot(
 		r.Context(),
 		autopilot,
 		trigRow.ID,
 		"webhook",
-		envelopeBytes,
+		dispatchPayload,
 	)
 	if err != nil {
 		slog.Warn("webhook dispatch failed",
