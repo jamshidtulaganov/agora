@@ -26,7 +26,7 @@ import (
 // baseline=sprint-root) and generic deploy regression (branch=deployed branch,
 // baseline=deployed). buildIssueDescription renders this into the agent's
 // instruction with the cases embedded.
-func (h *Handler) assembleRegressionPayload(ctx context.Context, projectID, wsID pgtype.UUID, branch, baseline, sprintID string, tasks []sprintRegressionTask) ([]byte, error) {
+func (h *Handler) assembleRegressionPayload(ctx context.Context, projectID, wsID pgtype.UUID, branch, baseline, sprintID, directive string, tasks []sprintRegressionTask) ([]byte, error) {
 	var qaTarget, repoURL, resultsIssue string
 	var cases []sprintRegressionCase
 	if project, perr := h.Queries.GetProject(ctx, projectID); perr == nil {
@@ -71,16 +71,27 @@ func (h *Handler) assembleRegressionPayload(ctx context.Context, projectID, wsID
 		resultsIssue = tasks[0].Key
 	}
 
+	dir := strings.TrimSpace(directive)
+	if dir == "" {
+		dir = strings.TrimSpace(qaBaselineGuidanceFor("regression"))
+	}
 	return json.Marshal(sprintRegressionPayload{
 		Scope: "regression", Branch: branch, Baseline: baseline, SprintID: sprintID,
 		Tasks:        tasks,
-		Directive:    strings.TrimSpace(qaBaselineGuidanceFor("regression")),
+		Directive:    dir,
 		QATarget:     qaTarget,
 		RepoURL:      repoURL,
 		ResultsIssue: resultsIssue,
 		Cases:        cases,
 	})
 }
+
+// deployRegressionDirective steers the agent to treat a deploy-triggered run as
+// a post-deploy regression (run the whole base suite against the deployed app),
+// NOT a sprint-branch diff — and to emit the machine-readable results block so
+// per-case results (which feature broke) reach the QA cockpit, not just a prose
+// verdict.
+const deployRegressionDirective = "This is a POST-DEPLOY regression, not a sprint regression. The commit just shipped to the deployed app (the QA target below). Do NOT compute a sprint-root baseline or diff branches — the baseline is \"every feature worked before this deploy\". Run EVERY case in the embedded base suite against the QA target via the agora-qa MCP `run_case_script` tool (verdict = process exit code; passed == exit 0). Then post a machine-readable ```test-runs``` block on the results issue with one entry per case ({id, title, status: pass|fail, output}) — REQUIRED, since a prose summary alone loses per-feature granularity. Verdict: qa:pass only if ALL cases pass; on any failure, qa:fail and name each failing case — that case IS the feature the new commit broke."
 
 // projectRegressionEligible reports whether a webhook-triggered autopilot should
 // run its project's base suite as a deploy regression. Generic gate (no project
@@ -127,7 +138,7 @@ func (h *Handler) buildProjectRegressionPayload(ctx context.Context, ap db.Autop
 		}
 		baseline = "deployed@" + s
 	}
-	return h.assembleRegressionPayload(ctx, ap.ProjectID, ap.WorkspaceID, branch, baseline, "", nil)
+	return h.assembleRegressionPayload(ctx, ap.ProjectID, ap.WorkspaceID, branch, baseline, "", deployRegressionDirective, nil)
 }
 
 // gitlabDeployRef is the subset of a GitLab Push / Deploy / Pipeline webhook body

@@ -128,7 +128,7 @@ func (h *Handler) DispatchSprintRegression(ctx context.Context, sprintID, wsID p
 	// issue-less run gets none of the per-issue slice injection, so this payload
 	// IS the whole QA contract for the run. Assembled by the shared builder,
 	// which the generic deploy-triggered project regression reuses verbatim.
-	payload, err := h.assembleRegressionPayload(ctx, sprint.ProjectID, sprint.WorkspaceID, branch, "sprint-root", uuidToString(sprint.ID), tasks)
+	payload, err := h.assembleRegressionPayload(ctx, sprint.ProjectID, sprint.WorkspaceID, branch, "sprint-root", uuidToString(sprint.ID), "", tasks)
 	if err != nil {
 		return db.AutopilotRun{}, fmt.Errorf("assemble regression payload: %w", err)
 	}
