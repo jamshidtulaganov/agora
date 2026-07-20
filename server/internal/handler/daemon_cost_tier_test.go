@@ -16,6 +16,8 @@ func TestApplyIssueCostTier(t *testing.T) {
 		{"1m stripped by default", "claude-opus-4-8[1m]", "medium", "claude", nil, "claude-opus-4-8", "medium"},
 		{"1m kept when context:large", "claude-opus-4-8[1m]", "medium", "claude", []string{"context:large"}, "claude-opus-4-8[1m]", "medium"},
 		{"tier:light -> sonnet, no thinking", "claude-opus-4-8[1m]", "high", "claude", []string{"tier:light"}, "claude-sonnet-4-6", ""},
+		{"tier:medium -> sonnet, no thinking (leaner default)", "claude-opus-4-8[1m]", "high", "claude", []string{"tier:medium"}, "claude-sonnet-4-6", ""},
+		{"codex + tier:medium: model untouched", "gpt-5-codex", "high", "codex", []string{"tier:medium"}, "gpt-5-codex", "high"},
 		{"tier:trivial -> haiku, no thinking", "claude-opus-4-8", "high", "claude", []string{"tier:trivial"}, "claude-haiku-4-5-20251001", ""},
 		{"trivial beats light", "claude-opus-4-8[1m]", "high", "claude", []string{"tier:light", "tier:trivial"}, "claude-haiku-4-5-20251001", ""},
 		{"light + context:large keeps sonnet (no 1m to strip)", "claude-opus-4-8[1m]", "high", "claude", []string{"tier:light", "context:large"}, "claude-sonnet-4-6", ""},

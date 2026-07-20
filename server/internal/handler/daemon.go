@@ -1173,6 +1173,12 @@ func applyIssueCostTier(model, thinking, provider string, labels map[string]bool
 		model, thinking = "claude-haiku-4-5-20251001", ""
 	case labels["tier:light"]:
 		model, thinking = "claude-sonnet-4-6", ""
+	case labels["tier:medium"]:
+		// Leaner default (AGORA_MEDIUM_TIER, injected at claim — never a persisted
+		// label): a normal, un-escalated task runs on sonnet rather than the
+		// agent's opus[1m] default. Same model as tier:light; the tiers differ
+		// only in QA scope (light ⇒ smoke; medium ⇒ smoke via issueQAScope).
+		model, thinking = "claude-sonnet-4-6", ""
 	case labels["tier:heavy"]:
 		// The only tier that RAISES capability: hardest tasks get the top model
 		// with extended thinking. Lets a lead label a genuinely hard issue up,
@@ -1453,6 +1459,16 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				labelSet := make(map[string]bool, len(labelRows))
 				for _, l := range labelRows {
 					labelSet[strings.ToLower(strings.TrimSpace(l.Name))] = true
+				}
+				// Flag-gated leaner default: a project on AGORA_MEDIUM_TIER treats
+				// an un-escalated, un-tiered issue as tier:medium so applyIssueCostTier
+				// picks sonnet over the agent's (often opus[1m]) default — faster
+				// wall clock, cheaper. risk:guarded/critical + context:large keep the
+				// full opus path (mediumTierApplies). Injected into the runtime
+				// labelSet only (never persisted), so it drives THIS run's model
+				// without overriding a human's tier: decision.
+				if h.mediumTierEnabled(r.Context(), issue) && mediumTierApplies(labelSet) {
+					labelSet["tier:medium"] = true
 				}
 				if m, tl := applyIssueCostTier(resp.Agent.Model, resp.Agent.ThinkingLevel, runtime.Provider, labelSet); m != resp.Agent.Model || tl != resp.Agent.ThinkingLevel {
 					slog.Info("issue cost-tier applied",

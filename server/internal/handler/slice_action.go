@@ -803,6 +803,30 @@ func (h *Handler) autoQAEnabled(ctx context.Context, issue db.Issue) bool {
 	return config.BoolFrom(h.projectConfigOverrides(ctx, issue), "AGORA_AUTO_QA_ENABLED")
 }
 
+// mediumTierEnabled gates the leaner default pipeline (AGORA_MEDIUM_TIER). When
+// on for a project, an un-escalated, un-tiered issue is treated as tier:medium:
+// its dev+QA runs use sonnet instead of the agent's (often opus[1m]) default and
+// QA takes the fast smoke path. Project-scoped, default off.
+func (h *Handler) mediumTierEnabled(ctx context.Context, issue db.Issue) bool {
+	return config.BoolFrom(h.projectConfigOverrides(ctx, issue), "AGORA_MEDIUM_TIER")
+}
+
+// mediumTierApplies reports whether the medium-tier default may act on an issue
+// from its label set alone (the flag is checked separately by the caller). It is
+// a pure fail-safe: any EXPLICIT tier: label (a human already decided) or any
+// escalation signal (risk:guarded/critical, context:large) opts the issue OUT,
+// so medium only ever claims the genuinely-unclassified middle — never a task a
+// human up-tiered or a high-blast-radius change.
+func mediumTierApplies(labels map[string]bool) bool {
+	switch {
+	case labels["tier:trivial"], labels["tier:light"], labels["tier:medium"], labels["tier:heavy"]:
+		return false
+	case labels["risk:guarded"], labels["risk:critical"], labels["context:large"]:
+		return false
+	}
+	return true
+}
+
 // sprintWorktreeEnabled gates the shared-sprint-branch worktree model
 // (worktree-per-task on one sprint branch, so N users work one sprint branch in
 // parallel each with their own co-editor). Default OFF — the per-task fork model
@@ -2098,6 +2122,14 @@ func (h *Handler) issueQAScope(ctx context.Context, issue db.Issue) qaScope {
 			return qaScopeFull // high blast radius — always full QA
 		}
 		if has["tier:trivial"] || has["tier:light"] || has["risk:safe"] || has["type:docs"] {
+			return qaScopeLight
+		}
+		// Medium-tier default (flag-gated): an un-escalated, un-tiered issue takes
+		// the fast smoke path instead of qaScopeSelf's agent-side self-sizing
+		// round-trip. Escalation labels already returned above (guarded/critical
+		// ⇒ full), and mediumTierApplies re-checks them, so this only claims the
+		// genuinely-unclassified middle.
+		if h.mediumTierEnabled(ctx, issue) && mediumTierApplies(has) {
 			return qaScopeLight
 		}
 	}

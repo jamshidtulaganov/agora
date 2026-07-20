@@ -47,6 +47,7 @@ var Registry = []Def{
 	{Key: "AGORA_QA_FAIL_AUTO_FILE_BUG_ENABLED", Kind: KindBool, Category: "QA", Label: "Auto-file bug on QA fail", Description: "Open a bug issue automatically when a QA gate fails.", ProjectScoped: true},
 	{Key: "AGORA_QA_DISCRIMINATION_ENFORCED", Kind: KindBool, Category: "QA", Label: "Require discriminating test", Description: "Require a fail-before/pass-after test run before qa:pass counts.", ProjectScoped: true},
 	{Key: "AGORA_RISK_TIER_GATE_ENFORCED", Kind: KindBool, Category: "QA", Label: "Enforce risk-tier gate", Description: "Gate QA depth on the issue's risk tier.", ProjectScoped: true},
+	{Key: "AGORA_MEDIUM_TIER", Kind: KindBool, Category: "QA", Label: "Medium-tier default", Description: "Treat an un-escalated, un-tiered issue as tier:medium: dev+QA run on sonnet (not the agent's opus default) and QA takes the fast smoke path. risk:guarded/critical and context:large still get the full opus path.", ProjectScoped: true},
 	{Key: "AGORA_QA_WATCHDOG_WINDOW_HOURS", Kind: KindInt, Category: "QA", Label: "QA watchdog window (hours)", Description: "How long a silent QA gate waits before escalating to qa:stale.", Default: "24"},
 
 	// ---- Sprint / dev flow ---------------------------------------------
