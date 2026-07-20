@@ -827,6 +827,17 @@ func mediumTierApplies(labels map[string]bool) bool {
 	return true
 }
 
+// leanBriefApplies reports whether the heavy navigation context blocks (QA
+// manifest, QA docs, design manifest) should be SKIPPED on this claim to keep a
+// small task's brief lean — less first-turn input, less priming to over-build.
+// Same gate as the model + QA-scope downgrades: the medium-tier flag is on and
+// the issue is un-escalated/un-tiered (mediumTierApplies). risk:guarded/critical
+// and explicitly-tiered issues keep the full brief. labels is the issue's
+// resolved label set (lower-cased), passed in so the caller reads it once.
+func (h *Handler) leanBriefApplies(ctx context.Context, issue db.Issue, labels map[string]bool) bool {
+	return mediumTierApplies(labels) && h.mediumTierEnabled(ctx, issue)
+}
+
 // sprintWorktreeEnabled gates the shared-sprint-branch worktree model
 // (worktree-per-task on one sprint branch, so N users work one sprint branch in
 // parallel each with their own co-editor). Default OFF — the per-task fork model

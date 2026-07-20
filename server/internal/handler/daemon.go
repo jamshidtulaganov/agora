@@ -1599,9 +1599,26 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
+			// Lean-brief gate: on a flag-gated medium (un-escalated, un-tiered)
+			// task, skip the heavy navigation blocks below (QA manifest, QA docs,
+			// design manifest) to keep first-turn input small and avoid priming a
+			// small change to over-build. Same predicate as the model + QA-scope
+			// downgrades, so a medium task is coherently lean end to end. Escalated
+			// / explicitly-tiered issues keep the full brief.
+			lean := false
+			if resp.Agent != nil {
+				labelRows, _ := h.listLabelsForIssueSafe(r, issue.ID, issue.WorkspaceID)
+				labelSet := make(map[string]bool, len(labelRows))
+				for _, l := range labelRows {
+					labelSet[strings.ToLower(strings.TrimSpace(l.Name))] = true
+				}
+				lean = h.leanBriefApplies(r.Context(), issue, labelSet)
+			}
+
 			// Project risk map rides along on every claim so dev, QA, and design
 			// agents all classify their diff by module blast radius (critical /
-			// guarded / safe) before acting.
+			// guarded / safe) before acting. Cheap + safety-relevant ⇒ kept even
+			// on a lean brief.
 			if resp.Agent != nil {
 				if note := h.sliceActionRiskMapContext(r.Context(), issue); note != "" {
 					resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + strings.TrimSpace(note))
@@ -1610,8 +1627,10 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 
 			// Project QA manifest rides along on EVERY claim — orchestrator, dev,
 			// and QA agents alike navigate by the app's KNOWN map (auth, routes,
-			// golden flows) instead of re-reading the code each run.
-			if resp.Agent != nil {
+			// golden flows) instead of re-reading the code each run. Skipped on a
+			// lean brief (the heaviest block; a small scoped change rarely needs
+			// the full app map).
+			if resp.Agent != nil && !lean {
 				if note := h.sliceActionQAManifestContext(r.Context(), issue); note != "" {
 					resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + strings.TrimSpace(note))
 				}
@@ -1626,6 +1645,12 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				if note := h.sliceActionDesignManifestContext(r.Context(), issue); note != "" {
 					resp.Agent.Instructions = strings.TrimSpace(resp.Agent.Instructions + "\n\n" + strings.TrimSpace(note))
 				}
+			}
+
+			// Kept even on a lean brief: conventions (house style — matters more,
+			// not less, with QA scoped down), self-verify, and figma access are
+			// cheap and quality-relevant, so they ride along on EVERY claim.
+			if resp.Agent != nil {
 				// Project conventions (human-authored coding rules) ride along on
 				// EVERY claim so any agent — dev, QA, design — writes to the
 				// project's house style instead of re-inventing it.
