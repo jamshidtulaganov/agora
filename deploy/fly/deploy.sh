@@ -75,9 +75,13 @@ deploy_backend() {
 deploy_web() {
   echo "==> sd-agora-web"
   ensure_app sd-agora-web
+  # DOCS_URL is baked into routes-manifest.json at build time (see Dockerfile.web);
+  # a runtime [env] entry does NOT affect the /docs rewrite. Omitting it bakes the
+  # localhost:4000 default and /docs 500s in prod.
   fly deploy --config "$FLYDIR/web/fly.toml" --app sd-agora-web \
     --dockerfile Dockerfile.web \
-    --build-arg REMOTE_API_URL=http://sd-agora-backend.internal:8080 --yes .
+    --build-arg REMOTE_API_URL=http://sd-agora-backend.internal:8080 \
+    --build-arg DOCS_URL=http://sd-agora-docs.internal:3000 --yes .
   echo "web: https://sd-agora-web.fly.dev"
 }
 
