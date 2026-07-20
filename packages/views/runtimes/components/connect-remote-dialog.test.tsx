@@ -65,6 +65,31 @@ const ligatureClasses = [
   "[font-feature-settings:'liga'_0]",
 ];
 
+function withUserAgent(ua: string): () => void {
+  const original = Object.getOwnPropertyDescriptor(window.navigator, "userAgent");
+  Object.defineProperty(window.navigator, "userAgent", {
+    value: ua,
+    configurable: true,
+  });
+  return () => {
+    if (original) {
+      Object.defineProperty(window.navigator, "userAgent", original);
+    } else {
+      Reflect.deleteProperty(window.navigator, "userAgent");
+    }
+  };
+}
+
+function installCommandOrder(baseElement: HTMLElement) {
+  const codes = Array.from(baseElement.querySelectorAll("code")).map(
+    (node) => node.textContent ?? "",
+  );
+  return {
+    unix: codes.findIndex((c) => c.includes("curl -fsSL")),
+    windows: codes.findIndex((c) => c.includes("irm ")),
+  };
+}
+
 describe("ConnectRemoteDialog", () => {
   it("shows install commands for both macOS/Linux and Windows", () => {
     const { baseElement } = renderDialog();
@@ -75,6 +100,31 @@ describe("ConnectRemoteDialog", () => {
     expect(baseElement).toHaveTextContent(
       "irm https://raw.githubusercontent.com/jamshidtulaganov/agora-cli/main/install.ps1 | iex",
     );
+  });
+
+  it("leads with the macOS/Linux command by default", () => {
+    const { baseElement } = renderDialog();
+
+    const order = installCommandOrder(baseElement);
+    expect(order.unix).toBeGreaterThanOrEqual(0);
+    expect(order.windows).toBeGreaterThanOrEqual(0);
+    expect(order.unix).toBeLessThan(order.windows);
+  });
+
+  it("leads with the Windows command on a Windows device", () => {
+    const restore = withUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    );
+    try {
+      const { baseElement } = renderDialog();
+
+      const order = installCommandOrder(baseElement);
+      expect(order.windows).toBeGreaterThanOrEqual(0);
+      expect(order.unix).toBeGreaterThanOrEqual(0);
+      expect(order.windows).toBeLessThan(order.unix);
+    } finally {
+      restore();
+    }
   });
 
   it("uses cloud setup commands by default", () => {

@@ -6,6 +6,7 @@ import { Card, CardContent } from "@agora/ui/components/ui/card";
 import { CODE_LIGATURE_CLASS } from "@agora/ui/lib/code-style";
 import { cn } from "@agora/ui/lib/utils";
 import { copyText } from "@agora/ui/lib/clipboard";
+import { detectDeviceOS } from "../../common/detect-device-os";
 import { useT } from "../../i18n";
 
 const INSTALL_CMD =
@@ -92,6 +93,14 @@ function OsCaption({ children }: { children: string }) {
  */
 export function CliInstallInstructions() {
   const { t } = useT("onboarding");
+  // Lead with the command for the viewer's own OS; both stay visible for
+  // installs onto a different machine. Rendered only inside the post-click
+  // CLI dialog, so reading navigator at render time cannot desync SSR HTML.
+  const installRows = [
+    { key: "unix", caption: "macOS / Linux", cmd: INSTALL_CMD },
+    { key: "windows", caption: "Windows (PowerShell)", cmd: INSTALL_CMD_WINDOWS },
+  ];
+  if (detectDeviceOS() === "windows") installRows.reverse();
   return (
     <Card className="w-full">
       <CardContent className="space-y-4 pt-4">
@@ -103,14 +112,12 @@ export function CliInstallInstructions() {
             1. {t(($) => $.cli_install.step1_label)}
           </p>
           <div className="space-y-2">
-            <div>
-              <OsCaption>{"macOS / Linux"}</OsCaption>
-              <CommandRow cmd={INSTALL_CMD} />
-            </div>
-            <div>
-              <OsCaption>{"Windows (PowerShell)"}</OsCaption>
-              <CommandRow cmd={INSTALL_CMD_WINDOWS} />
-            </div>
+            {installRows.map((row) => (
+              <div key={row.key}>
+                <OsCaption>{row.caption}</OsCaption>
+                <CommandRow cmd={row.cmd} />
+              </div>
+            ))}
           </div>
         </div>
         <Step n={2} label={t(($) => $.cli_install.step2_label)} cmd={SETUP_CMD} />

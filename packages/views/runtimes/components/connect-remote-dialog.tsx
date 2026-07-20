@@ -20,6 +20,7 @@ import { Button } from "@agora/ui/components/ui/button";
 import { CODE_LIGATURE_CLASS } from "@agora/ui/lib/code-style";
 import { copyText } from "@agora/ui/lib/clipboard";
 import { cn } from "@agora/ui/lib/utils";
+import { detectDeviceOS } from "../../common/detect-device-os";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 
@@ -210,6 +211,15 @@ function InstructionsStep({ onClose }: { onClose: () => void }) {
   const daemonServerUrl = useConfigStore((s) => s.daemonServerUrl);
   const daemonAppUrl = useConfigStore((s) => s.daemonAppUrl);
   const { setupCmd, tokenCmd } = daemonCommands(daemonServerUrl, daemonAppUrl);
+  // Lead with the command for the viewer's own OS. Both stay visible — this
+  // dialog also covers installing onto a remote server whose OS may differ.
+  // Safe to read navigator directly: the dialog only mounts after a click,
+  // so it is never part of server-rendered HTML (no hydration mismatch).
+  const installRows = [
+    { key: "unix", caption: "macOS / Linux", cmd: INSTALL_CMD },
+    { key: "windows", caption: "Windows (PowerShell)", cmd: INSTALL_CMD_WINDOWS },
+  ];
+  if (detectDeviceOS() === "windows") installRows.reverse();
   return (
     <>
       <DialogHeader className="px-6 pt-6 pb-2">
@@ -228,20 +238,15 @@ function InstructionsStep({ onClose }: { onClose: () => void }) {
               1. {t(($) => $.connect.step1_label)}
             </p>
             <div className="space-y-2">
-              <div>
-                <OsCaption>{"macOS / Linux"}</OsCaption>
-                <CommandRow
-                  cmd={INSTALL_CMD}
-                  copyAria={t(($) => $.connect.copy_aria)}
-                />
-              </div>
-              <div>
-                <OsCaption>{"Windows (PowerShell)"}</OsCaption>
-                <CommandRow
-                  cmd={INSTALL_CMD_WINDOWS}
-                  copyAria={t(($) => $.connect.copy_aria)}
-                />
-              </div>
+              {installRows.map((row) => (
+                <div key={row.key}>
+                  <OsCaption>{row.caption}</OsCaption>
+                  <CommandRow
+                    cmd={row.cmd}
+                    copyAria={t(($) => $.connect.copy_aria)}
+                  />
+                </div>
+              ))}
             </div>
           </div>
 
