@@ -197,10 +197,10 @@ general squad behavior. Two mechanisms:
 - **`in_progress` → shift-left QA prep (same opt-in flag).** With
   `AGORA_AUTO_QA_ENABLED` on, entering `in_progress` gives a QA agent a
   background `gen_test_cases` task: author the cases AND compile their
-  Playwright scripts against the project QA manifest while the dev is still
-  implementing — no diff-reading, no execution. Runs PARALLEL to dev, blocks
-  nothing, and by `in_review` the suite already exists so the gate only
-  EXECUTES it. Idempotent: skipped when the issue already has test cases.
+  Playwright scripts against the project QA manifest — no diff-reading, no
+  execution — so by `in_review` the gate only EXECUTES the suite. Nothing waits
+  on it, but it is not necessarily CONCURRENT with dev: in `local_directory`
+  mode the per-issue worktree lock parks it until dev finishes. Idempotent.
 - **`qa:fail` label → auto-reassignment.** The issue is handed back to its
   ORCHESTRATOR (`orchestratorForIssue`, a TOTAL resolver: the squad lead for a
   squad-assigned or squad-member issue, or — for a solo agent with no squad —

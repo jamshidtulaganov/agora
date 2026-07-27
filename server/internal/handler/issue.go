@@ -2953,11 +2953,17 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Shift-left QA prep on dev start: when a project opted into automatic QA,
-	// a QA agent authors this issue's test cases IN THE BACKGROUND while the dev
-	// agent is still implementing, so the gate later executes a suite that is
-	// already sitting ready. Off the critical path by construction — it runs
-	// parallel to dev and blocks nothing. Self-gated on AGORA_AUTO_QA_ENABLED
+	// a QA agent authors this issue's test cases so the gate later executes a
+	// suite that is already sitting ready. Off the critical path — nothing waits
+	// on it, and dev is never blocked by it. Self-gated on AGORA_AUTO_QA_ENABLED
 	// and idempotent (skips when cases exist).
+	//
+	// It is NOT necessarily concurrent with dev, despite firing at dev start. In
+	// local_directory mode the daemon holds a per-issue worktree lock, so this
+	// task sits in `waiting_local_directory` until the dev task releases it —
+	// observed live on EED-221. It runs genuinely parallel only where each task
+	// gets its own checkout. Either way it is prep, not a gate: the worst case is
+	// that the cases land later than intended and run_qa authors its own.
 	if statusChanged && issue.Status == "in_progress" && prevIssue.Status != "in_progress" &&
 		!h.orchestrationOwnsIssuePipeline(r.Context(), issue.ID) {
 		safeGo("autoGenTests:in_progress", func() {
