@@ -643,8 +643,11 @@ func defaultOrchestrationStepsWithMembers(issue db.Issue, routing orchestrationR
 		return []orchestrationStepRequest{
 			{Key: "work", Title: "Implement and verify the change", Stage: "dev", Capability: "implementation", AgentID: uuidToString(development), MaxAttempts: 2},
 			{
+				// UNROUTED ON PURPOSE — see the release-step note on the squad
+				// plan below. The agent is bound at approval time from
+				// controller_agent_id, so both attempts stay post-approval.
 				Key: "release", Title: "Approve and merge the change", Stage: "release", Capability: "release",
-				AgentID: uuidToString(releaseAgent), ApprovalRequired: true, MaxAttempts: 1, DependsOnKeys: []string{"work"},
+				ApprovalRequired: true, MaxAttempts: 2, DependsOnKeys: []string{"work"},
 				Instructions: "After human approval, merge only the exact reviewed change into its configured target branch. Verify the pull request identity and reviewed HEAD before merging; stop and report if either moved.",
 			},
 		}
@@ -733,8 +736,19 @@ func defaultOrchestrationStepsWithMembers(issue db.Issue, routing orchestrationR
 		orchestrationStepRequest{Key: "qa", Title: "Verify the integrated result", Stage: "qa", Capability: "qa", AgentID: uuidToString(qaAgent), MaxAttempts: 2, DependsOnKeys: []string{"integrate"}, SquadID: squadID},
 		orchestrationStepRequest{Key: "review", Title: "Review the integrated result", Stage: "review", Capability: "review", AgentID: uuidToString(reviewAgent), MaxAttempts: 2, DependsOnKeys: []string{"integrate"}, SquadID: squadID},
 		orchestrationStepRequest{
+			// UNROUTED ON PURPOSE. A release step that carries an agent_id is
+			// dispatched by the scheduler like any other step — BEFORE the human
+			// approves — because the park rule is `ApprovalRequired && !AgentID`.
+			// That burned a whole agent turn on work nobody had authorized yet,
+			// and with MaxAttempts 1 it also consumed the only attempt, so the
+			// post-approval QueueOrchestrationStep failed and the merge never
+			// ran at all. Leaving agent_id NULL parks the step until approval;
+			// ApproveOrchestrationStep then binds the agent from
+			// controller_agent_id (COALESCE) and dispatches it. MaxAttempts 2
+			// because both attempts are now post-approval and a merge is worth
+			// one retry.
 			Key: "release", Title: "Approve and merge the change", Stage: "release", Capability: "release",
-			AgentID: uuidToString(controller), ApprovalRequired: true, MaxAttempts: 1, DependsOnKeys: []string{"qa", "review"}, SquadID: squadID,
+			ApprovalRequired: true, MaxAttempts: 2, DependsOnKeys: []string{"qa", "review"}, SquadID: squadID,
 			Instructions: "After human approval, merge only the exact integrated artifact verified by QA and review into its configured target branch. Verify the pull request identity and reviewed HEAD before merging; stop and report if either moved.",
 		},
 	)
@@ -976,16 +990,33 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 				writeError(w, http.StatusBadRequest, "squad or squad leader not found")
 				return
 			}
-			if !agentID.Valid {
+			// An approval-required step is left UNROUTED on purpose: the
+			// scheduler parks a step only while `ApprovalRequired && !AgentID`,
+			// so filling the agent here would dispatch it before the human
+			// approved. controller_agent_id below still records WHO will run it;
+			// ApproveOrchestrationStep binds it at approval time.
+			if !agentID.Valid && !input.ApprovalRequired {
 				agentID = controllerAgentID
 			}
-			if agentID != controllerAgentID {
+			if agentID.Valid && agentID != controllerAgentID {
 				isMember, memberErr := h.Queries.IsSquadMember(r.Context(), db.IsSquadMemberParams{SquadID: squadID, MemberType: "agent", MemberID: agentID})
 				if memberErr != nil || !isMember {
 					h.Queries.SetOrchestrationRunStatus(r.Context(), db.SetOrchestrationRunStatusParams{ID: run.ID, Status: "cancelled"})
 					writeError(w, http.StatusBadRequest, "squad step agent must be the leader or a member of that squad")
 					return
 				}
+			}
+		}
+		// A parked approval step needs a controller to bind to when the human
+		// approves. The squad branch above supplies one; a SOLO plan has no
+		// squad, so without this fallback controller_agent_id stays NULL,
+		// ApproveOrchestrationStep's COALESCE yields NULL, and the step is
+		// marked `completed` with no merge ever dispatched — the approval
+		// silently does nothing.
+		if input.ApprovalRequired && !agentID.Valid && !controllerAgentID.Valid {
+			controllerAgentID = routing.ControllerAgent
+			if !controllerAgentID.Valid {
+				controllerAgentID = routing.DevelopmentAgent
 			}
 		}
 		if !agentID.Valid && !input.ApprovalRequired {

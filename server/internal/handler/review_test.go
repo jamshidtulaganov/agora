@@ -298,11 +298,14 @@ func TestCreateReviewDecisionApproveGateViolations(t *testing.T) {
 		}
 	})
 
-	t.Run("approve with no gates passing is 409", func(t *testing.T) {
-		issue := seedRelease(t, "review 409 no gates", "")
+	// Review and merge are HUMAN work. A gate that never ran is not a reason to
+	// refuse the human's approval — requiring a pass from every gate is what
+	// made Ready structurally false on every issue and stalled every merge.
+	t.Run("approve with no gate having run at all is 200", func(t *testing.T) {
+		issue := seedRelease(t, "review 200 no gates", "")
 		w := post(issue, map[string]any{"action": "approve"})
-		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "merge_gates_not_satisfied") {
-			t.Fatalf("expected 409 merge_gates_not_satisfied, got %d: %s", w.Code, w.Body.String())
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 with no gate signal, got %d: %s", w.Code, w.Body.String())
 		}
 	})
 
@@ -329,16 +332,18 @@ func TestCreateReviewDecisionApproveGateViolations(t *testing.T) {
 		}
 	})
 
-	// The review gate applies (auto-review on + a PR) but no verdict has landed
-	// yet → approve must 409 rather than merge past a pending review.
-	t.Run("approve with review gate applying but no verdict is 409", func(t *testing.T) {
+	// An agent review that is still in flight does NOT hold the human back. The
+	// human clicking Approve has reviewed the change themselves — that is the
+	// product's review step. A landed review:fail still blocks (sibling test
+	// above); only "hasn't spoken yet" is now a non-signal.
+	t.Run("approve while an agent review is still pending is 200", func(t *testing.T) {
 		t.Setenv("AGORA_AUTO_REVIEW_ENABLED", "1")
-		issue := seedRelease(t, "review 409 pending", `{"pr_number": 11}`)
+		issue := seedRelease(t, "review 200 pending", `{"pr_number": 11}`)
 		attachTestLabel(t, uuidToString(issue.ID), "ci:pass")
 		attachTestLabel(t, uuidToString(issue.ID), "qa:pass")
 		w := post(issue, map[string]any{"action": "approve"})
-		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "review") {
-			t.Fatalf("expected 409 for a pending review gate, got %d: %s", w.Code, w.Body.String())
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 with a pending agent review, got %d: %s", w.Code, w.Body.String())
 		}
 	})
 
@@ -432,14 +437,37 @@ func TestApproveOrchestrationReleaseRechecksReadiness(t *testing.T) {
 		testHandler.ApproveOrchestrationStep(w, req)
 		return w
 	}
+	// A RED gate still blocks the approval — that is the whole job of the
+	// recheck. (A gate that never ran does not; see the sibling test below.)
+	attachTestLabel(t, uuidToString(issue.ID), "ci:fail")
 	if w := post(); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "merge_gates_not_satisfied") {
-		t.Fatalf("unready release: expected 409, got %d: %s", w.Code, w.Body.String())
+		t.Fatalf("release over a red ci gate: expected 409, got %d: %s", w.Code, w.Body.String())
 	}
 	attachTestLabel(t, uuidToString(issue.ID), "ci:pass")
 	attachTestLabel(t, uuidToString(issue.ID), "qa:pass")
 	attachTestLabel(t, uuidToString(issue.ID), "review:pass")
 	if w := post(); w.Code != http.StatusOK {
 		t.Fatalf("ready release: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// The bug this whole change exists to kill: with no gate having run at all,
+// approval must go through. Requiring a pass from a reporter that never speaks
+// (ci:pass is only ever written by a manually fired run_ci) made Ready
+// structurally false on every issue and turned every merge into a hand-merge.
+func TestApproveOrchestrationReleaseAllowsUnrunGates(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	agentID := createHandlerTestAgent(t, "Release unrun-gates agent", nil)
+	issue := seedReviewDecisionIssue(t, "release unrun gates", "in_review", agentID, "")
+	fixture := seedReviewCorrectionRun(t, issue, agentID)
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/api/issues/"+uuidToString(issue.ID)+"/orchestration/steps/"+fixture.ReleaseID+"/approve", nil)
+	req = withURLParams(req, "id", uuidToString(issue.ID), "stepId", fixture.ReleaseID)
+	testHandler.ApproveOrchestrationStep(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("approval with no gate signal at all: expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

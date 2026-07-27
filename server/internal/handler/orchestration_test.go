@@ -41,8 +41,15 @@ func TestDefaultOrchestrationStepsRouteStageCast(t *testing.T) {
 	if steps[2].Kind != "integration" || len(steps[2].DependsOnKeys) != 1 || steps[2].DependsOnKeys[0] != "dev" {
 		t.Fatalf("integration must join implementation before QA/review: %#v", steps[2])
 	}
-	if !steps[5].ApprovalRequired || steps[5].AgentID != dev {
-		t.Fatalf("release step must become controller-owned work after human approval: %#v", steps[5])
+	// UNROUTED on purpose: the scheduler parks a step only while
+	// `ApprovalRequired && !AgentID`, so a release step carrying an agent_id is
+	// dispatched BEFORE the human approves. The agent is bound at approval time
+	// from controller_agent_id instead.
+	if !steps[5].ApprovalRequired || steps[5].AgentID != "" {
+		t.Fatalf("release step must stay unrouted until human approval: %#v", steps[5])
+	}
+	if steps[5].MaxAttempts < 2 {
+		t.Fatalf("release needs both attempts post-approval, got MaxAttempts=%d", steps[5].MaxAttempts)
 	}
 	if len(steps[3].DependsOnKeys) != 1 || steps[3].DependsOnKeys[0] != "integrate" ||
 		len(steps[4].DependsOnKeys) != 1 || steps[4].DependsOnKeys[0] != "integrate" {
@@ -82,8 +89,8 @@ func TestSoloOrchestrationUsesOneAgentWithoutArtificialBranches(t *testing.T) {
 	if steps[0].AgentID != uuidToString(agent) || steps[0].Key != "work" {
 		t.Fatalf("solo work must stay with the assigned agent: %#v", steps[0])
 	}
-	if steps[1].Key != "release" || !steps[1].ApprovalRequired || steps[1].AgentID != uuidToString(agent) || len(steps[1].DependsOnKeys) != 1 {
-		t.Fatalf("solo release gate is malformed: %#v", steps[1])
+	if steps[1].Key != "release" || !steps[1].ApprovalRequired || steps[1].AgentID != "" || len(steps[1].DependsOnKeys) != 1 {
+		t.Fatalf("solo release gate is malformed (it must stay unrouted until approval): %#v", steps[1])
 	}
 }
 
@@ -128,8 +135,8 @@ func TestSquadOrchestrationBuildsCapabilityAwareParallelBranches(t *testing.T) {
 	if !strings.Contains(byKey["plan"].Instructions, "non-overlapping outcome") || !strings.Contains(byKey["plan"].Instructions, "recommend the exact reroute") {
 		t.Fatalf("controller plan step lacks an actionable worker handoff contract: %q", byKey["plan"].Instructions)
 	}
-	if byKey["release"].AgentID != uuidToString(leader) || !byKey["release"].ApprovalRequired {
-		t.Fatalf("release must become leader-owned persisted work after approval: %#v", byKey["release"])
+	if byKey["release"].AgentID != "" || !byKey["release"].ApprovalRequired {
+		t.Fatalf("release must stay unrouted until approval binds the controller: %#v", byKey["release"])
 	}
 }
 
