@@ -1,19 +1,30 @@
 // SDLC stage pipeline — derived, never stored.
 //
 // There is no `stage` column on Issue. The issue's position in the
-// Dev -> QA -> Review cycle is derived client-side from signals that already
+// Build -> Review cycle is derived client-side from signals that already
 // exist (status, labels, PR/merge state, running task attribution). This
 // keeps the pipeline a pure projection of data the backend already owns — no
 // new source of truth, no migration.
 //
-// Design is NOT a stage in this pipeline. For Agora's ICP (small vibe-coding
-// dev teams, usually without a dedicated designer), design is an INPUT to the
-// dev build — not a co-equal SDLC stage with its own reviewer ceremony. A
-// Figma link on an issue is injected as context into the dev build task (see
+// TWO stages, because there are exactly two owners: an agent BUILDS, a human
+// REVIEWS and merges. Everything the machine does before the human looks is
+// "dev"; everything from "a human must now decide" onward is "review".
+//
+// QA is NOT a stage in this pipeline. It used to be the middle beat, but QA
+// no longer runs automatically on the way to review — it is an ON-DEMAND
+// action (the Release page, the QA lens, the manual `run_qa` slice action),
+// so it is not a gate the issue walks through and not a dot the user waits
+// on. Its verdict labels (qa:pass / qa:fail) remain ADVISORY signal surfaced
+// by the review lens and the merge-readiness endpoint: a qa:fail still blocks
+// (a known-red gate should never be merged over), a never-run QA never does.
+//
+// Design is NOT a stage either. For Agora's ICP (small vibe-coding dev teams,
+// usually without a dedicated designer), design is an INPUT to the dev build
+// — not a co-equal SDLC stage with its own reviewer ceremony. A Figma link on
+// an issue is injected as context into the dev build task (see
 // sliceActionDraftCode in server/internal/handler/slice_action.go), and the
 // design lens/machinery stays available as an OPTIONAL, deep-linkable view
-// (`?lens=design`, see packages/views/issues/lens.ts) for teams that want it
-// — it's just no longer a stepper stage the user clicks through.
+// (`?lens=design`, see packages/views/issues/lens.ts) for teams that want it.
 //
 // Deploy is also NOT part of this pipeline. It used to be a stage here, but
 // deploy is a SPRINT-level concern (a shared branch deployed as a cycle, not
@@ -31,7 +42,7 @@
 import { ALL_STATUSES } from "./config/status";
 import type { IssueStatus } from "../types/issue";
 
-export type SDLCStage = "dev" | "qa" | "review";
+export type SDLCStage = "dev" | "review";
 
 export type StageState =
   | "pending"
@@ -62,14 +73,19 @@ export interface StagePipeline {
   current: SDLCStage;
 }
 
-export type MergeGateState = "pass" | "fail" | "pending";
-
 export interface StagePipelineInput {
   /** Raw status string off an API response; unknown values are treated as "todo". */
   status: string;
   labels: { name: string }[];
   prNumber?: number | null;
-  mergeGates?: { ci: MergeGateState; qa: MergeGateState; tier: string } | null;
+  /**
+   * True when a merge gate has explicitly FAILED (a red qa/ci/review verdict).
+   * Gates that are merely *pending* never reach this flag: nothing machine-run
+   * is required before a human may review, so a gate that never ran must not
+   * park the review stage. See computeMergeReadiness in
+   * server/internal/handler/merge_readiness.go.
+   */
+  gateFailed?: boolean;
   prMerged?: boolean;
   /** Stages a currently-running agent task is attributed to (caller-derived). */
   runningTaskStages?: SDLCStage[];
@@ -82,7 +98,7 @@ export interface StagePipelineInput {
   runningTaskByStage?: Partial<Record<SDLCStage, string>>;
 }
 
-const STAGE_ORDER: SDLCStage[] = ["dev", "qa", "review"];
+const STAGE_ORDER: SDLCStage[] = ["dev", "review"];
 
 const KNOWN_STATUSES = new Set<string>(ALL_STATUSES);
 
@@ -112,54 +128,26 @@ function deriveDevStage(
   return { stage: "dev", state };
 }
 
-function deriveQaStage(
-  status: IssueStatus,
-  labelNames: Set<string>,
-  running: Set<SDLCStage>,
-): StageSnapshot {
-  let state: StageState;
-  if (labelNames.has("qa:pass") || status === "done") {
-    state = "passed";
-  } else if (running.has("qa")) {
-    // A fresh run supersedes the previous cycle's terminal label while it is
-    // in flight. The label remains useful evidence until the new verdict
-    // lands, but the current operational truth is "running". This matches the
-    // Release queue's reconciled live-state precedence.
-    state = "running";
-  } else if (labelNames.has("qa:fail")) {
-    state = "failed";
-  } else if (labelNames.has("qa:blocked")) {
-    state = "blocked";
-  } else if (status === "in_review") {
-    state = "active";
-  } else {
-    state = "pending";
-  }
-
-  const snapshot: StageSnapshot = { stage: "qa", state };
-  if (labelNames.has("qa:stale") && state !== "passed") {
-    snapshot.detail = "stale";
-  }
-  return snapshot;
-}
-
-// Review stage v2 ("agent reviews, human approves"): the reviewer agent's
-// verdict lands as review:pass / review:fail labels (server-captured from the
-// ```review-result``` block), and a human's Approve & merge decision stamps
-// merge:approved. Signal precedence, strongest first:
-//   merged/done > merge:override > merge:approved ("merging…", the dispatch
-//   is out but the PR hasn't merged yet) > review:fail > ci/qa gate fail >
-//   review:pass with QA passed ("awaiting approval") > pending-gates active >
-//   pending.
+// Review = "a human now owns this". The stage opens the moment the work is
+// ready to look at (in_review) and closes when the PR merges. An optional
+// agent reviewer may run first and land review:pass / review:fail
+// (server-captured from the ```review-result``` block); a human's Approve &
+// merge decision stamps merge:approved. Signal precedence, strongest first:
+//   merged/done > merge:override > merge:approved ("approved", the dispatch is
+//   out but the PR hasn't merged yet) > review:fail > a FAILED merge gate >
+//   a reviewer agent running > review:pass ("awaiting approval") > in_review
+//   (awaiting the human) > pending.
+//
+// A merely PENDING gate never parks this stage: no machine verdict is required
+// before a human may review, so "QA never ran" reads as ready-for-you, not as
+// a wait. Only an explicit red gate (gateFailed) stops it.
 function deriveReviewStage(
   input: StagePipelineInput,
   status: IssueStatus,
   labelNames: Set<string>,
-  qaStage: StageSnapshot,
   running: Set<SDLCStage>,
 ): StageSnapshot {
   const overrideLabel = labelNames.has("merge:override");
-  const gates = input.mergeGates ?? null;
 
   let state: StageState;
   let detail: string | undefined;
@@ -178,22 +166,18 @@ function deriveReviewStage(
     detail = "approved";
   } else if (labelNames.has("review:fail")) {
     state = "failed";
-  } else if (gates !== null && (gates.ci === "fail" || gates.qa === "fail")) {
+  } else if (input.gateFailed === true) {
     state = "failed";
   } else if (running.has("review")) {
     // A reviewer agent is executing on this issue right now — no verdict label
     // has landed yet, so the stage reads "running" (the breathing dot) and can
-    // bind to that run's live process, just like dev/qa.
+    // bind to that run's live process, just like dev.
     state = "running";
-  } else if (labelNames.has("review:pass") && qaStage.state === "passed") {
-    // Both machine gates are green — the stage now waits on the HUMAN.
+  } else if (labelNames.has("review:pass")) {
+    // The optional agent reviewer signed off — the stage now waits on the HUMAN.
     state = "active";
     detail = "awaiting approval";
-  } else if (
-    gates !== null &&
-    (gates.ci === "pending" || gates.qa === "pending") &&
-    qaStage.state === "passed"
-  ) {
+  } else if (status === "in_review") {
     state = "active";
   } else {
     state = "pending";
@@ -221,7 +205,7 @@ function finalizePipeline(stages: StageSnapshot[], status: IssueStatus): StagePi
 
   if (!target) {
     // Every stage is passed/skipped (or status forced them there): pin
-    // current to the last non-skipped stage. No stage in this 3-stage model
+    // current to the last non-skipped stage. No stage in this 2-stage model
     // normally derives to "skipped" (skipped stays a valid StageState for
     // future use), so this fallback is effectively unreachable — kept for
     // defensiveness (fuzz-tested).
@@ -255,12 +239,9 @@ export function deriveStagePipeline(input: StagePipelineInput): StagePipeline {
   ]);
 
   const dev = deriveDevStage(input, status, running);
-  const qa = deriveQaStage(status, labelNames, running);
-  const review = deriveReviewStage(input, status, labelNames, qa, running);
+  const review = deriveReviewStage(input, status, labelNames, running);
 
-  let stages: StageSnapshot[] = STAGE_ORDER.map(
-    (stage) => ({ dev, qa, review })[stage],
-  );
+  let stages: StageSnapshot[] = STAGE_ORDER.map((stage) => ({ dev, review })[stage]);
 
   // Bind each stage to its running task id (if any). Done before the done/finalize
   // passes, which spread-copy snapshots and preserve the field.

@@ -22,9 +22,16 @@ function find(pipeline: StagePipeline, stage: SDLCStage) {
 }
 
 describe("deriveStagePipeline — stage order", () => {
-  it("always returns the three stages in dev/qa/review order", () => {
+  it("always returns the two stages in dev/review order", () => {
     const pipeline = deriveStagePipeline(baseInput());
-    expect(pipeline.stages.map((s) => s.stage)).toEqual(["dev", "qa", "review"]);
+    expect(pipeline.stages.map((s) => s.stage)).toEqual(["dev", "review"]);
+  });
+
+  it("never emits a qa stage — QA left the pipeline as an on-demand action", () => {
+    const pipeline = deriveStagePipeline(
+      baseInput({ status: "in_review", labels: [{ name: "qa:pass" }] }),
+    );
+    expect(pipeline.stages.some((s) => (s.stage as string) === "qa")).toBe(false);
   });
 });
 
@@ -68,86 +75,6 @@ describe("deriveStagePipeline — dev stage", () => {
   });
 });
 
-describe("deriveStagePipeline — qa stage", () => {
-  it("passes on a qa:pass label", () => {
-    const pipeline = deriveStagePipeline(baseInput({ labels: [{ name: "qa:pass" }] }));
-    expect(find(pipeline, "qa").state).toBe("passed");
-  });
-
-  it("passes when the issue is done, with no labels", () => {
-    const pipeline = deriveStagePipeline(baseInput({ status: "done" }));
-    expect(find(pipeline, "qa").state).toBe("passed");
-  });
-
-  it("fails on a qa:fail label", () => {
-    const pipeline = deriveStagePipeline(baseInput({ labels: [{ name: "qa:fail" }] }));
-    expect(find(pipeline, "qa").state).toBe("failed");
-  });
-
-  it("is blocked on a qa:blocked label", () => {
-    const pipeline = deriveStagePipeline(baseInput({ labels: [{ name: "qa:blocked" }] }));
-    expect(find(pipeline, "qa").state).toBe("blocked");
-  });
-
-  it("is running when a qa task is attributed as running", () => {
-    const pipeline = deriveStagePipeline(baseInput({ runningTaskStages: ["qa"] }));
-    expect(find(pipeline, "qa").state).toBe("running");
-  });
-
-  it("shows a fresh QA rerun as running even while the previous fail label remains", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({
-        status: "in_review",
-        labels: [{ name: "qa:fail" }],
-        runningTaskStages: ["qa"],
-      }),
-    );
-    expect(find(pipeline, "qa").state).toBe("running");
-  });
-
-  it("shows a fresh QA rerun as running even while the previous blocked label remains", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({
-        status: "in_review",
-        labels: [{ name: "qa:blocked" }],
-        runningTaskStages: ["qa"],
-      }),
-    );
-    expect(find(pipeline, "qa").state).toBe("running");
-  });
-
-  it("is active while in_review with no gating label", () => {
-    const pipeline = deriveStagePipeline(baseInput({ status: "in_review" }));
-    expect(find(pipeline, "qa").state).toBe("active");
-  });
-
-  it("is pending outside in_review with no label and nothing running", () => {
-    const pipeline = deriveStagePipeline(baseInput());
-    expect(find(pipeline, "qa").state).toBe("pending");
-  });
-
-  it("sets a 'stale' detail when qa:stale is present and the stage hasn't passed", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ status: "in_review", labels: [{ name: "qa:stale" }] }),
-    );
-    expect(find(pipeline, "qa")).toMatchObject({ state: "active", detail: "stale" });
-  });
-
-  it("suppresses the 'stale' detail once qa:pass has landed", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ labels: [{ name: "qa:pass" }, { name: "qa:stale" }] }),
-    );
-    expect(find(pipeline, "qa")).toEqual({ stage: "qa", state: "passed" });
-  });
-
-  it("precedence: status done wins over a qa:fail label", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ status: "done", labels: [{ name: "qa:fail" }] }),
-    );
-    expect(find(pipeline, "qa").state).toBe("passed");
-  });
-});
-
 describe("deriveStagePipeline — review stage", () => {
   it("passes once the PR is merged", () => {
     const pipeline = deriveStagePipeline(baseInput({ prMerged: true }));
@@ -166,102 +93,83 @@ describe("deriveStagePipeline — review stage", () => {
     expect(find(pipeline, "review")).toMatchObject({ state: "passed", detail: "override" });
   });
 
-  it("fails when the CI gate fails", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ mergeGates: { ci: "fail", qa: "pass", tier: "full" } }),
-    );
+  it("fails when a merge gate has explicitly failed", () => {
+    const pipeline = deriveStagePipeline(baseInput({ gateFailed: true }));
     expect(find(pipeline, "review").state).toBe("failed");
   });
 
-  it("fails when the QA gate fails", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ mergeGates: { ci: "pass", qa: "fail", tier: "full" } }),
-    );
-    expect(find(pipeline, "review").state).toBe("failed");
-  });
-
-  it("is active with no tier detail when a gate is pending and the qa stage has passed", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({
-        labels: [{ name: "qa:pass" }],
-        mergeGates: { ci: "pending", qa: "pass", tier: "light" },
-      }),
-    );
-    // Tier is internal gate-policy jargon — never surfaced as a stepper detail.
+  it("is active — not parked — while in_review with no gate signal at all", () => {
+    // This is the whole point of the two-stage model: nothing machine-run is a
+    // precondition for a human looking at the diff, so "no QA ever ran" reads
+    // as ready-for-you rather than as a wait.
+    const pipeline = deriveStagePipeline(baseInput({ status: "in_review" }));
     expect(find(pipeline, "review")).toEqual({ stage: "review", state: "active" });
   });
 
-  it("stays pending (no tier detail) when a gate is pending but the qa stage hasn't passed yet", () => {
+  it("stays active in_review even when a QA verdict label is absent entirely", () => {
     const pipeline = deriveStagePipeline(
-      baseInput({ mergeGates: { ci: "pending", qa: "pending", tier: "light" } }),
+      baseInput({ status: "in_review", prNumber: 3, gateFailed: false }),
     );
+    expect(find(pipeline, "review").state).toBe("active");
+  });
+
+  it("is pending with no merge signals at all and not yet in review", () => {
+    const pipeline = deriveStagePipeline(baseInput({ status: "cancelled" }));
     expect(find(pipeline, "review")).toEqual({ stage: "review", state: "pending" });
   });
 
-  it("is pending with no merge signals at all", () => {
-    const pipeline = deriveStagePipeline(baseInput());
-    expect(find(pipeline, "review")).toEqual({ stage: "review", state: "pending" });
-  });
-
-  it("never surfaces the gate tier as detail on a failed gate", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ mergeGates: { ci: "fail", qa: "pass", tier: "trivial" } }),
-    );
+  it("never surfaces a tier detail on a failed gate", () => {
+    const pipeline = deriveStagePipeline(baseInput({ gateFailed: true }));
     expect(find(pipeline, "review")).toEqual({ stage: "review", state: "failed" });
   });
 
-  it("precedence: the override detail wins over the gate tier", () => {
+  it("precedence: the override detail wins over a failed gate", () => {
     const pipeline = deriveStagePipeline(
-      baseInput({
-        labels: [{ name: "merge:override" }],
-        mergeGates: { ci: "fail", qa: "fail", tier: "full" },
-      }),
+      baseInput({ labels: [{ name: "merge:override" }], gateFailed: true }),
     );
     expect(find(pipeline, "review")).toMatchObject({ state: "passed", detail: "override" });
   });
 
   it("precedence: a merged PR wins over a failing gate", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ prMerged: true, mergeGates: { ci: "fail", qa: "fail", tier: "full" } }),
-    );
+    const pipeline = deriveStagePipeline(baseInput({ prMerged: true, gateFailed: true }));
     expect(find(pipeline, "review").state).toBe("passed");
   });
 });
 
-describe("deriveStagePipeline — review stage v2 (agent reviews, human approves)", () => {
+describe("deriveStagePipeline — review stage verdict labels", () => {
   it("fails on a review:fail label", () => {
     const pipeline = deriveStagePipeline(baseInput({ labels: [{ name: "review:fail" }] }));
     expect(find(pipeline, "review").state).toBe("failed");
   });
 
-  it("review:fail wins over green ci/qa merge gates", () => {
+  it("review:fail wins over an otherwise-green pipeline", () => {
     const pipeline = deriveStagePipeline(
-      baseInput({
-        labels: [{ name: "review:fail" }],
-        mergeGates: { ci: "pass", qa: "pass", tier: "full" },
-      }),
+      baseInput({ status: "in_review", labels: [{ name: "review:fail" }], gateFailed: false }),
     );
     expect(find(pipeline, "review")).toEqual({ stage: "review", state: "failed" });
   });
 
-  it("is active 'awaiting approval' on review:pass once the qa stage has passed", () => {
+  it("is running while a reviewer agent is executing", () => {
     const pipeline = deriveStagePipeline(
-      baseInput({ labels: [{ name: "review:pass" }, { name: "qa:pass" }] }),
+      baseInput({ status: "in_review", runningTaskStages: ["review"] }),
     );
+    expect(find(pipeline, "review").state).toBe("running");
+  });
+
+  it("is active 'awaiting approval' on review:pass, with no QA precondition", () => {
+    // An agent reviewer signed off. Previously this ALSO required the qa stage
+    // to have passed; QA is no longer a stage, so the sign-off alone parks the
+    // pipeline on the human.
+    const pipeline = deriveStagePipeline(baseInput({ labels: [{ name: "review:pass" }] }));
     expect(find(pipeline, "review")).toMatchObject({
       state: "active",
       detail: "awaiting approval",
     });
   });
 
-  it("does not go 'awaiting approval' on review:pass while qa hasn't passed", () => {
-    const pipeline = deriveStagePipeline(baseInput({ labels: [{ name: "review:pass" }] }));
-    expect(find(pipeline, "review").state).toBe("pending");
-  });
-
   it("is active 'approved' once merge:approved is stamped", () => {
     const pipeline = deriveStagePipeline(
-      baseInput({ labels: [{ name: "merge:approved" }, { name: "qa:pass" }] }),
+      baseInput({ labels: [{ name: "merge:approved" }] }),
     );
     expect(find(pipeline, "review")).toMatchObject({ state: "active", detail: "approved" });
   });
@@ -290,11 +198,28 @@ describe("deriveStagePipeline — review stage v2 (agent reviews, human approves
     expect(find(pipeline, "review").state).toBe("passed");
   });
 
+  it("precedence: review:fail wins over a failed gate (the specific reason shows)", () => {
+    const pipeline = deriveStagePipeline(
+      baseInput({ labels: [{ name: "review:fail" }], gateFailed: true }),
+    );
+    expect(find(pipeline, "review").state).toBe("failed");
+  });
+
   it("status done forces review passed even with review:fail present", () => {
     const pipeline = deriveStagePipeline(
       baseInput({ status: "done", labels: [{ name: "review:fail" }] }),
     );
     expect(find(pipeline, "review").state).toBe("passed");
+  });
+
+  it("ignores qa:* labels entirely — they are merge-gate signal, not stage state", () => {
+    const withQaFail = deriveStagePipeline(
+      baseInput({ status: "in_review", labels: [{ name: "qa:fail" }] }),
+    );
+    const withoutLabels = deriveStagePipeline(baseInput({ status: "in_review" }));
+    // A raw qa:fail label alone changes nothing; only the resolved gateFailed
+    // flag (computed server-side from the reconciled QA state) does.
+    expect(withQaFail).toEqual(withoutLabels);
   });
 });
 
@@ -302,13 +227,12 @@ describe("deriveStagePipeline — running attribution is per-stage", () => {
   it("only marks the stages the caller attributed as running", () => {
     // dev is stage index 0, so a non-cancelled status promotes its pending
     // base state to "active" (the current-stage promotion) — use cancelled
-    // to observe that "qa" is the only stage marked "running".
+    // to observe that "review" is the only stage marked "running".
     const pipeline = deriveStagePipeline(
-      baseInput({ status: "cancelled", runningTaskStages: ["qa"] }),
+      baseInput({ status: "cancelled", runningTaskStages: ["review"] }),
     );
-    expect(find(pipeline, "qa").state).toBe("running");
+    expect(find(pipeline, "review").state).toBe("running");
     expect(find(pipeline, "dev").state).toBe("pending"); // not attributed, stays pending
-    expect(find(pipeline, "review").state).toBe("pending");
   });
 });
 
@@ -318,9 +242,8 @@ describe("deriveStagePipeline — current stage resolution", () => {
     // dev is the first open (non-passed) stage.
     expect(pipeline.current).toBe("dev");
     expect(find(pipeline, "dev").state).toBe("active");
-    // qa/review are also pending in this scenario but are NOT current, so
-    // they must stay pending rather than also being promoted.
-    expect(find(pipeline, "qa").state).toBe("pending");
+    // review is also pending in this scenario but is NOT current, so it must
+    // stay pending rather than also being promoted.
     expect(find(pipeline, "review").state).toBe("pending");
   });
 
@@ -331,21 +254,16 @@ describe("deriveStagePipeline — current stage resolution", () => {
   });
 
   it("does not re-promote a stage whose base state is already active", () => {
-    // status in_review => dev auto-passes; qa lands on its own "active" via
-    // the in_review branch (not via current-promotion).
+    // status in_review => dev auto-passes; review lands on its own "active"
+    // via the in_review branch (not via current-promotion).
     const pipeline = deriveStagePipeline(baseInput({ status: "in_review" }));
-    expect(pipeline.current).toBe("qa");
-    expect(find(pipeline, "qa").state).toBe("active");
+    expect(pipeline.current).toBe("review");
+    expect(find(pipeline, "review").state).toBe("active");
   });
 
   it("advances current past every passed stage", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({
-        prNumber: 1,
-        labels: [{ name: "qa:pass" }],
-      }),
-    );
-    // dev/qa passed -> review is first open.
+    const pipeline = deriveStagePipeline(baseInput({ prNumber: 1 }));
+    // dev passed -> review is first open.
     expect(pipeline.current).toBe("review");
     expect(find(pipeline, "review").state).toBe("active"); // promoted from pending
   });
@@ -360,11 +278,9 @@ describe("deriveStagePipeline — done status", () => {
     expect(pipeline.current).toBe("review");
   });
 
-  it("forces a stage that would otherwise be failed/blocked to passed", () => {
-    const pipeline = deriveStagePipeline(
-      baseInput({ status: "done", labels: [{ name: "qa:fail" }] }),
-    );
-    expect(find(pipeline, "qa").state).toBe("passed");
+  it("forces a stage that would otherwise be failed to passed", () => {
+    const pipeline = deriveStagePipeline(baseInput({ status: "done", gateFailed: true }));
+    expect(find(pipeline, "review").state).toBe("passed");
   });
 });
 
@@ -377,12 +293,7 @@ describe("deriveStagePipeline — cancelled status", () => {
 
   it("falls back to the last passed stage when everything is passed", () => {
     const pipeline = deriveStagePipeline(
-      baseInput({
-        status: "cancelled",
-        prNumber: 1,
-        labels: [{ name: "qa:pass" }],
-        prMerged: true,
-      }),
+      baseInput({ status: "cancelled", prNumber: 1, prMerged: true }),
     );
     expect(pipeline.current).toBe("review");
     for (const s of pipeline.stages) {

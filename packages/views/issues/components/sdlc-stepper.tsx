@@ -1,17 +1,17 @@
 "use client";
 
-// The SDLC stepper strip — Dev → QA → Review — mounted via CockpitFrame's
+// The SDLC stepper strip — Dev → Review — mounted via CockpitFrame's
 // `topStrip` slot. Renders the pipeline `deriveStagePipeline` already
 // computed; owns no state of its own beyond click handling, which it
 // delegates entirely to the caller (lens switching lives in lens.ts).
-// See docs/sdlc-stage-cockpit-plan.md section 1/3 (phase C). Deploy is not a
-// stage here — it moved to the sprint level (qa-sprint-readiness-view.tsx).
-// Design is not a stage here either — for Agora's ICP (small vibe-coding
-// dev teams, usually without a dedicated designer) it's an INPUT injected
-// into the dev build task, not a stepper stage with its own reviewer
-// ceremony. The design lens/machinery stays reachable as an optional,
-// deep-linkable view (`?lens=design`) for teams that want it — see
-// figma-links-section.tsx's "Open design view" entry point and lens.ts.
+// See docs/sdlc-stage-cockpit-plan.md section 1/3 (phase C).
+//
+// Two beats, two owners: an agent builds, a human reviews and merges. QA,
+// design and deploy are not stages here — QA is an on-demand action (its lens
+// stays reachable at `?lens=qa`), design is an INPUT injected into the dev
+// build task (`?lens=design`, see figma-links-section.tsx's "Open design view"
+// entry point and lens.ts), and deploy moved to the sprint level
+// (qa-sprint-readiness-view.tsx).
 
 import { useEffect, useRef, type ReactNode } from "react";
 import { CheckCircle2, XCircle } from "lucide-react";
@@ -184,8 +184,6 @@ function stageLabel(stage: SDLCStage, t: ReturnType<typeof useT<"issues">>["t"])
   switch (stage) {
     case "dev":
       return t(($) => $.sdlc.dev);
-    case "qa":
-      return t(($) => $.sdlc.qa);
     case "review":
       return t(($) => $.sdlc.review);
   }
@@ -195,9 +193,9 @@ export function SDLCStepper({ pipeline, activeLens, isLensAvailable, onSelectSta
   const { t } = useT("issues");
 
   // Per-stage previous state, committed after each paint. The flip animation
-  // plays ONLY on a genuine state change (e.g. QA running -> passed via a WS
-  // invalidation), never on first mount — so loading an issue doesn't pop all
-  // four dots at once. `prev === undefined` (first render) => no flip.
+  // plays ONLY on a genuine state change (e.g. dev running -> passed via a WS
+  // invalidation), never on first mount — so loading an issue doesn't pop both
+  // dots at once. `prev === undefined` (first render) => no flip.
   const prevStatesRef = useRef<Partial<Record<SDLCStage, StageState>>>({});
   useEffect(() => {
     const next: Partial<Record<SDLCStage, StageState>> = {};

@@ -146,7 +146,7 @@ function stageState(stages: { stage: string; state: string }[], stage: string) {
   return stages.find((s) => s.stage === stage)?.state;
 }
 
-describe("useStagePipeline — 3-stage assembly", () => {
+describe("useStagePipeline — 2-stage assembly", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     apiMocks.getIssue.mockResolvedValue(baseIssue());
@@ -159,10 +159,10 @@ describe("useStagePipeline — 3-stage assembly", () => {
     apiMocks.listSquadMembers.mockResolvedValue([]);
   });
 
-  it("derives a 3-stage pipeline — design and deploy are not stages anymore", async () => {
+  it("derives a 2-stage pipeline — qa, design and deploy are not stages anymore", async () => {
     const { result } = renderPipeline();
     await waitFor(() => expect(stageState(result.current.stages, "dev")).toBe("passed"));
-    expect(result.current.stages.map((s) => s.stage)).toEqual(["dev", "qa", "review"]);
+    expect(result.current.stages.map((s) => s.stage)).toEqual(["dev", "review"]);
   });
 
   it("passes the dev stage from the issue's pr_number metadata", async () => {
@@ -184,21 +184,20 @@ describe("useStagePipeline — 3-stage assembly", () => {
     await waitFor(() => expect(stageState(result.current.stages, "review")).toBe("passed"));
   });
 
-  it("attributes a running QA-squad agent task to the qa stage, others to dev", async () => {
+  it("attributes an on-demand QA-squad task to dev — only a reviewer maps to review", async () => {
     apiMocks.getIssue.mockResolvedValue(baseIssue({ metadata: {} }));
     apiMocks.listSquads.mockResolvedValue([{ id: "sq-1", name: "QA Squad", leader_id: "agent-qa" }]);
     apiMocks.listSquadMembers.mockResolvedValue([]);
     apiMocks.getAgentTaskSnapshot.mockResolvedValue([
       { issue_id: "issue-1", agent_id: "agent-qa", status: "running" },
-      { issue_id: "issue-1", agent_id: "agent-dev", status: "running" },
       { issue_id: "other-issue", agent_id: "agent-dev", status: "running" },
     ]);
     const { result } = renderPipeline();
-    await waitFor(() => expect(stageState(result.current.stages, "qa")).toBe("running"));
-    expect(stageState(result.current.stages, "dev")).toBe("running");
+    await waitFor(() => expect(stageState(result.current.stages, "dev")).toBe("running"));
+    expect(stageState(result.current.stages, "review")).not.toBe("running");
   });
 
-  it("uses the orchestration DAG as the stage source while QA and Review run in parallel", async () => {
+  it("folds the DAG's qa step into Dev — machine work is one beat, the human is the other", async () => {
     apiMocks.getIssueOrchestration.mockResolvedValue(
       orchestrationRun("running", [
         orchestrationStep("plan", "plan", "completed"),
@@ -210,11 +209,13 @@ describe("useStagePipeline — 3-stage assembly", () => {
       ]),
     );
     const { result } = renderPipeline();
-    await waitFor(() => expect(stageState(result.current.stages, "qa")).toBe("running"));
-    expect(stageState(result.current.stages, "dev")).toBe("passed");
+    // The qa step is still RUNNING, so Dev (which now owns plan+dev+qa) reads
+    // running and binds to that task rather than a separate QA dot.
+    await waitFor(() => expect(stageState(result.current.stages, "dev")).toBe("running"));
     expect(stageState(result.current.stages, "review")).toBe("running");
-    expect(result.current.current).toBe("qa");
-    expect(result.current.stages.find((stage) => stage.stage === "qa")?.taskId).toBe("task-qa");
+    expect(result.current.current).toBe("dev");
+    expect(result.current.stages.map((stage) => stage.stage)).toEqual(["dev", "review"]);
+    expect(result.current.stages.find((stage) => stage.stage === "dev")?.taskId).toBe("task-qa");
     expect(result.current.stages.find((stage) => stage.stage === "review")?.taskId).toBe(
       "task-review",
     );
@@ -234,7 +235,6 @@ describe("useStagePipeline — 3-stage assembly", () => {
     const { result } = renderPipeline();
     await waitFor(() => expect(result.current.current).toBe("review"));
     expect(stageState(result.current.stages, "dev")).toBe("passed");
-    expect(stageState(result.current.stages, "qa")).toBe("passed");
     expect(stageState(result.current.stages, "review")).toBe("active");
     expect(result.current.stages.find((stage) => stage.stage === "review")?.detail).toBe(
       "awaiting approval",

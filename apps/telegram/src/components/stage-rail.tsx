@@ -1,26 +1,24 @@
 import type { SDLCStage, StagePipeline, StageState } from "@agora/core/issues";
 import { cn } from "../lib/cn";
 
-// Renders the derived SDLC pipeline (Dev → QA → Review) as the design's
+// Renders the derived SDLC pipeline (Dev → Review) as the design's
 // dot-and-connector rail. Two sizes: "sm" for task-list cards, "lg" for the
 // detail screen's cycle-position card. A `done` issue renders the whole rail
-// in success green ("Merged" treatment in the design). Design left the
-// pipeline as its own stage (it's now a dev-build input, not a stepper
-// stage) — see packages/core/issues/stage.ts.
+// in success green ("Merged" treatment in the design). Design and QA both left
+// the pipeline as stages — design is a dev-build input, QA is an on-demand
+// action — see packages/core/issues/stage.ts.
 
-export const STAGE_ORDER: SDLCStage[] = ["dev", "qa", "review"];
+export const STAGE_ORDER: SDLCStage[] = ["dev", "review"];
 
 // Per-stage accent used for the *current* node, group swatches and the cycle
 // distribution bar. Semantic tokens only — dark mode comes for free.
 export const STAGE_DOT_BG: Record<SDLCStage, string> = {
   dev: "bg-warning",
-  qa: "bg-info",
   review: "bg-brand",
 };
 
 export const STAGE_TEXT: Record<SDLCStage, string> = {
   dev: "text-warning",
-  qa: "text-info",
   review: "text-brand",
 };
 
@@ -83,7 +81,6 @@ function Node({
             className={cn(
               "absolute inset-0 rounded-full ring-[3px]",
               STAGE_DOT_BG[stage],
-              stage === "qa" && "ring-info/20",
               stage === "dev" && "ring-warning/20",
               stage === "review" && "ring-brand/20",
             )}
@@ -143,7 +140,7 @@ export function StageSegments({
   className?: string;
 }) {
   const currentIdx = STAGE_ORDER.indexOf(pipeline.current);
-  const weights: Record<SDLCStage, number> = { dev: 5, qa: 3, review: 2 };
+  const weights: Record<SDLCStage, number> = { dev: 6, review: 4 };
   return (
     <div className={cn("flex items-center gap-[3px]", className)}>
       {pipeline.stages.map((s, i) => {

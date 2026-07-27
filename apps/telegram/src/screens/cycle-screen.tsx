@@ -23,9 +23,9 @@ import { cn } from "../lib/cn";
 type Bucket = SDLCStage | "done";
 
 // Left-to-right pipeline order for the stacked bar + legend.
-const SEGMENT_ORDER: Bucket[] = ["dev", "qa", "review", "done"];
-// Attention-first order for the stages list (QA and Dev are where work piles up).
-const LIST_ORDER: Bucket[] = ["qa", "dev", "review", "done"];
+const SEGMENT_ORDER: Bucket[] = ["dev", "review", "done"];
+// Attention-first order for the stages list: review is where a human is needed.
+const LIST_ORDER: Bucket[] = ["review", "dev", "done"];
 
 const BUCKET_BG: Record<Bucket, string> = { ...STAGE_DOT_BG, done: "bg-success" };
 const BUCKET_TEXT: Record<Bucket, string> = { ...STAGE_TEXT, done: "text-success" };
@@ -95,7 +95,7 @@ export function CycleScreen() {
   }, [issues]);
 
   const counts = useMemo(() => {
-    const acc: Record<Bucket, number> = { dev: 0, qa: 0, review: 0, done: 0 };
+    const acc: Record<Bucket, number> = { dev: 0, review: 0, done: 0 };
     for (const d of derived) acc[d.bucket] += 1;
     return acc;
   }, [derived]);

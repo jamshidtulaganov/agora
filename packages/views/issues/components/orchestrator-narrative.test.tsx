@@ -30,7 +30,6 @@ describe("OrchestratorNarrative", () => {
       current: "review",
       stages: [
         { stage: "dev", state: "passed" },
-        { stage: "qa", state: "passed" },
         { stage: "review", state: "active", detail: "awaiting approval" },
       ],
     });

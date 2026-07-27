@@ -16,6 +16,13 @@
 // stage (see packages/core/issues/stage.ts); this hook no longer needs
 // qa_evidence's design verdict or a figma-refs check, so that query was
 // dropped along with the design fields.
+//
+// QA is NOT a stage either — it no longer runs on the way to review, so it is
+// not a beat the issue walks through (see packages/core/issues/stage.ts). This
+// hook therefore no longer resolves the QA squad's agent ids; a QA agent's run
+// attributes to "dev" like any other machine work. QA's verdict still reaches
+// the pipeline as merge-gate signal: an explicitly FAILED gate fails the review
+// stage, a gate that never ran does nothing.
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -30,7 +37,6 @@ import {
   type StagePipeline,
   type StageSnapshot,
   type StageState,
-  type MergeGateState,
 } from "@agora/core/issues";
 import type {
   MergeGateStatus,
@@ -39,10 +45,10 @@ import type {
 } from "@agora/core/types";
 
 // Agent-id set for every squad whose name contains `needle` (leader + agent
-// members). Used to attribute a running task to a stage: QA-squad agents ->
-// "qa", review-squad agents -> "review", everything else -> "dev". Same
-// queryKey shape as qa-live-progress.tsx:88-110, so the QA lookup shares one
-// cache entry with that component instead of double-fetching squads + members.
+// members). Used to attribute a running task to a stage: review-squad agents
+// -> "review", everything else -> "dev". Same queryKey shape as
+// qa-live-progress.tsx:88-110, so the lookup shares one cache entry with that
+// component instead of double-fetching squads + members.
 function squadAgentIdsOptions(wsId: string, needle: string) {
   return {
     queryKey: [`${needle}-squad-agent-ids`, wsId] as const,
@@ -67,8 +73,11 @@ function squadAgentIdsOptions(wsId: string, needle: string) {
   };
 }
 
-function gateStatus(gates: MergeGateStatus[], name: string): MergeGateState {
-  return gates.find((g) => g.name === name)?.status ?? "pending";
+// Any explicitly-red gate fails the review stage. A `pending` gate is NOT a
+// signal — with QA off the automatic path most issues carry gates that never
+// ran, and treating those as a wait is exactly the stall this pipeline removed.
+function anyGateFailed(gates: MergeGateStatus[]): boolean {
+  return gates.some((g) => g.status === "fail");
 }
 
 function orchestrationStepState(steps: OrchestrationStep[]): StageState {
@@ -95,10 +104,11 @@ function liveTaskId(steps: OrchestrationStep[]): string | undefined {
 }
 
 /**
- * Project the authoritative orchestration DAG onto the compact Dev → QA →
- * Review strip. Plan + integration belong to Dev; the release approval gate is
- * represented by Review's active state because release is intentionally not a
- * separate issue-level stage.
+ * Project the authoritative orchestration DAG onto the compact Dev → Review
+ * strip. Everything the machine does — plan, dev, and the DAG's own qa step —
+ * is Dev; the human's decision (review + the release approval gate) is Review.
+ * Release is intentionally not a separate issue-level stage, so it is
+ * represented by Review's active state.
  */
 export function deriveOrchestrationStagePipeline(
   run: OrchestrationRun | null | undefined,
@@ -106,9 +116,8 @@ export function deriveOrchestrationStagePipeline(
   if (!run || run.status === "draft") return null;
 
   const devSteps = run.steps.filter(
-    (step) => step.stage === "plan" || step.stage === "dev",
+    (step) => step.stage === "plan" || step.stage === "dev" || step.stage === "qa",
   );
-  const qaSteps = run.steps.filter((step) => step.stage === "qa");
   const reviewSteps = run.steps.filter((step) => step.stage === "review");
   const releaseSteps = run.steps.filter((step) => step.stage === "release");
 
@@ -126,11 +135,10 @@ export function deriveOrchestrationStagePipeline(
 
   const stages: StageSnapshot[] = [
     makeSnapshot("dev", devSteps),
-    makeSnapshot("qa", qaSteps),
     makeSnapshot("review", reviewSteps),
   ];
 
-  const review = stages[2]!;
+  const review = stages[1]!;
   const releaseState = orchestrationStepState(releaseSteps);
   if (run.status === "completed" || releaseState === "passed") {
     review.state = "passed";
@@ -177,23 +185,18 @@ export function useStagePipeline(wsId: string, issueId: string): StagePipeline {
   });
 
   const { data: snapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
-  const { data: qaAgentIds } = useQuery(squadAgentIdsOptions(wsId, "qa"));
   const { data: reviewAgentIds } = useQuery(squadAgentIdsOptions(wsId, "review"));
 
   return useMemo(() => {
     // Attribute each running task to a stage AND record its task id so the
     // stepper can bind the stage to that run's live process. Review-squad
-    // agents -> "review", QA-squad -> "qa", everything else -> "dev". First
-    // task per stage wins (a stage is one run; taskId is what the live feed
-    // subscribes to).
+    // agents -> "review", everything else (dev agents, and an on-demand QA
+    // run) -> "dev". First task per stage wins (a stage is one run; taskId is
+    // what the live feed subscribes to).
     const runningTaskByStage: Partial<Record<SDLCStage, string>> = {};
     for (const task of snapshot) {
       if (task.issue_id !== issueId || task.status !== "running") continue;
-      const stage: SDLCStage = reviewAgentIds?.has(task.agent_id)
-        ? "review"
-        : qaAgentIds?.has(task.agent_id)
-          ? "qa"
-          : "dev";
+      const stage: SDLCStage = reviewAgentIds?.has(task.agent_id) ? "review" : "dev";
       if (!runningTaskByStage[stage]) runningTaskByStage[stage] = task.id;
     }
 
@@ -205,13 +208,7 @@ export function useStagePipeline(wsId: string, issueId: string): StagePipeline {
       status,
       labels,
       prNumber,
-      mergeGates: mergeReadiness
-        ? {
-            ci: gateStatus(mergeReadiness.gates, "ci"),
-            qa: gateStatus(mergeReadiness.gates, "qa"),
-            tier: mergeReadiness.tier,
-          }
-        : null,
+      gateFailed: mergeReadiness ? anyGateFailed(mergeReadiness.gates) : false,
       prMerged: matchedPr ? matchedPr.state === "merged" : undefined,
       runningTaskByStage,
     });
@@ -223,7 +220,6 @@ export function useStagePipeline(wsId: string, issueId: string): StagePipeline {
     prs,
     mergeReadiness,
     snapshot,
-    qaAgentIds,
     reviewAgentIds,
     issueId,
     orchestration,

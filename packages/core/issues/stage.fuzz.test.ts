@@ -13,7 +13,7 @@ function mulberry32(seed: number) {
   };
 }
 
-const STAGES: SDLCStage[] = ["dev", "qa", "review"];
+const STAGES: SDLCStage[] = ["dev", "review"];
 const STATUSES = [
   "backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled",
   // enum drift — future/garbage statuses must never crash the pipeline
@@ -24,8 +24,6 @@ const LABELS = [
   "review:pass", "review:fail", "merge:approved",
   "bug", "ci:pass", "ci:fail", "tier:light", "qa:PASS", "qa: pass", "",
 ];
-const GATE_STATES = ["pass", "fail", "pending"] as const;
-
 function randomInput(rand: () => number): StagePipelineInput {
   const pick = <T,>(arr: readonly T[]): T => arr[Math.floor(rand() * arr.length)] as T;
   const maybe = <T,>(v: T): T | undefined => (rand() < 0.5 ? v : undefined);
@@ -34,7 +32,7 @@ function randomInput(rand: () => number): StagePipelineInput {
     status: pick(STATUSES),
     labels,
     prNumber: maybe(rand() < 0.5 ? Math.floor(rand() * 1000) : null),
-    mergeGates: maybe({ ci: pick(GATE_STATES), qa: pick(GATE_STATES), tier: pick(["trivial", "light", "full", ""]) }),
+    gateFailed: maybe(rand() < 0.5),
     prMerged: maybe(rand() < 0.5),
     runningTaskStages: maybe(
       Array.from({ length: Math.floor(rand() * 3) }, () => pick(STAGES)),
@@ -55,10 +53,10 @@ describe("deriveStagePipeline fuzz — 10k adversarial inputs", () => {
       }
       const ctx = () => `input #${i}: ${JSON.stringify(input)} → ${JSON.stringify(pipeline)}`;
 
-      // 1. Always exactly the 3 stages, in canonical order.
+      // 1. Always exactly the 2 stages, in canonical order.
       expect(pipeline.stages.map((s) => s.stage), ctx()).toEqual(STAGES);
 
-      // 2. current is always one of the 3.
+      // 2. current is always one of the 2.
       expect(STAGES, ctx()).toContain(pipeline.current);
 
       // 3. Every state is a known StageState.
@@ -69,7 +67,7 @@ describe("deriveStagePipeline fuzz — 10k adversarial inputs", () => {
         ).toContain(s.state);
       }
 
-      // 4. done → every stage passed (no stage in this 3-stage model ever
+      // 4. done → every stage passed (no stage in this 2-stage model ever
       //    derives to "skipped").
       if (input.status === "done") {
         for (const s of pipeline.stages) {
@@ -90,15 +88,13 @@ describe("deriveStagePipeline fuzz — 10k adversarial inputs", () => {
       }
 
       // 6. At most ONE stage got the pending→active promotion (active can also
-      //    come from explicit rules: qa active on in_review, review active on
-      //    pending gates / review:pass+qa:pass "awaiting approval" /
-      //    merge:approved "merging…" — so we assert promotion discipline only
-      //    when the input rules out every explicit active).
+      //    come from explicit rules: review active on in_review / review:pass
+      //    "awaiting approval" / merge:approved — so we assert promotion
+      //    discipline only when the input rules out every explicit active).
       const labelSet = new Set(input.labels.map((l) => l.name));
       const reviewExplicitActive =
-        labelSet.has("merge:approved") ||
-        (labelSet.has("review:pass") && labelSet.has("qa:pass"));
-      if (input.status !== "in_review" && !input.mergeGates && !reviewExplicitActive) {
+        labelSet.has("merge:approved") || labelSet.has("review:pass");
+      if (input.status !== "in_review" && !reviewExplicitActive) {
         const actives = pipeline.stages.filter((s) => s.state === "active");
         expect(actives.length, ctx()).toBeLessThanOrEqual(1);
       }

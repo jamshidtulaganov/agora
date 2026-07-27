@@ -9,11 +9,10 @@ import { SDLCStepper } from "./sdlc-stepper";
 const TEST_RESOURCES = { en: { common: enCommon, issues: enIssues } };
 
 const BASE_PIPELINE: StagePipeline = {
-  current: "qa",
+  current: "review",
   stages: [
     { stage: "dev", state: "passed" },
-    { stage: "qa", state: "running" },
-    { stage: "review", state: "pending" },
+    { stage: "review", state: "running" },
   ],
 };
 
@@ -41,39 +40,37 @@ function renderStepper(
 }
 
 describe("SDLCStepper", () => {
-  it("renders all 3 stages with their translated labels", () => {
+  it("renders both stages with their translated labels", () => {
     renderStepper(BASE_PIPELINE);
     expect(screen.getByTestId("sdlc-stage-dev")).toBeInTheDocument();
-    expect(screen.getByTestId("sdlc-stage-qa")).toBeInTheDocument();
     expect(screen.getByTestId("sdlc-stage-review")).toBeInTheDocument();
     expect(screen.getByText("Dev")).toBeInTheDocument();
-    expect(screen.getByText("QA")).toBeInTheDocument();
     expect(screen.getByText("Review")).toBeInTheDocument();
+    // QA is not a stage — it is an on-demand action reachable at ?lens=qa.
+    expect(screen.queryByTestId("sdlc-stage-qa")).toBeNull();
   });
 
   it("stamps data-state per stage and dims skipped stages", () => {
-    // "skipped" is no longer produced by deriveStagePipeline in the 3-stage
-    // model (design owned the only skip path), but the StageState stays
-    // valid and SDLCStepper is a pure renderer of whatever it's given —
-    // covering the visual treatment doesn't depend on derivation reachability.
+    // "skipped" is no longer produced by deriveStagePipeline in the 2-stage
+    // model, but the StageState stays valid and SDLCStepper is a pure renderer
+    // of whatever it's given — covering the visual treatment doesn't depend on
+    // derivation reachability.
     const pipeline: StagePipeline = {
-      current: "qa",
+      current: "review",
       stages: [
         { stage: "dev", state: "skipped" },
-        { stage: "qa", state: "running" },
-        { stage: "review", state: "pending" },
+        { stage: "review", state: "running" },
       ],
     };
     renderStepper(pipeline);
     expect(screen.getByTestId("sdlc-stage-dev")).toHaveAttribute("data-state", "skipped");
     expect(screen.getByTestId("sdlc-stage-dev").className).toContain("opacity-40");
-    expect(screen.getByTestId("sdlc-stage-qa")).toHaveAttribute("data-state", "running");
-    expect(screen.getByTestId("sdlc-stage-qa").className).not.toContain("opacity-40");
-    expect(screen.getByTestId("sdlc-stage-review")).toHaveAttribute("data-state", "pending");
-    expect(screen.getByTestId("sdlc-stage-qa")).toHaveAttribute("aria-label", "QA: Running");
-    expect(screen.getByTestId("sdlc-stage-qa")).toHaveAttribute("aria-current", "step");
+    expect(screen.getByTestId("sdlc-stage-review")).toHaveAttribute("data-state", "running");
+    expect(screen.getByTestId("sdlc-stage-review").className).not.toContain("opacity-40");
+    expect(screen.getByTestId("sdlc-stage-review")).toHaveAttribute("aria-label", "Review: Running");
+    expect(screen.getByTestId("sdlc-stage-review")).toHaveAttribute("aria-current", "step");
     expect(screen.getByTestId("sdlc-stage-dev")).not.toHaveAttribute("aria-current");
-    expect(screen.getByTestId("sdlc-stage-qa").innerHTML).toContain(
+    expect(screen.getByTestId("sdlc-stage-review").innerHTML).toContain(
       "motion-safe:animate-sdlc-running-ring",
     );
   });
@@ -89,15 +86,15 @@ describe("SDLCStepper", () => {
 
   it("renders a registered-lens stage as interactive and calls onSelectStage on click", () => {
     const { onSelectStage } = renderStepper(BASE_PIPELINE, {
-      isLensAvailable: (stage) => stage === "qa",
+      isLensAvailable: (stage) => stage === "review",
     });
-    const qaStage = screen.getByTestId("sdlc-stage-qa");
-    expect(qaStage.tagName).toBe("BUTTON");
-    fireEvent.click(qaStage);
+    const reviewStage = screen.getByTestId("sdlc-stage-review");
+    expect(reviewStage.tagName).toBe("BUTTON");
+    fireEvent.click(reviewStage);
     expect(onSelectStage).toHaveBeenCalledTimes(1);
-    expect(onSelectStage).toHaveBeenCalledWith("qa");
+    expect(onSelectStage).toHaveBeenCalledWith("review");
 
-    // Dev remains unregistered even though QA is — only the registered
+    // Dev remains unregistered even though Review is — only the registered
     // stage becomes clickable.
     const devStage = screen.getByTestId("sdlc-stage-dev");
     expect(devStage.tagName).toBe("DIV");
@@ -106,11 +103,14 @@ describe("SDLCStepper", () => {
   });
 
   it("marks the stage matching the active lens with the Agora brand tint", () => {
-    renderStepper(BASE_PIPELINE, { activeLens: "qa", isLensAvailable: (stage) => stage === "qa" });
-    const qa = screen.getByTestId("sdlc-stage-qa");
+    renderStepper(BASE_PIPELINE, {
+      activeLens: "review",
+      isLensAvailable: (stage) => stage === "review",
+    });
+    const review = screen.getByTestId("sdlc-stage-review");
     const dev = screen.getByTestId("sdlc-stage-dev");
-    expect(qa.className).toContain("bg-brand");
-    expect(qa.querySelector(".underline")).toBeNull();
+    expect(review.className).toContain("bg-brand");
+    expect(review.querySelector(".underline")).toBeNull();
     expect(dev.className).not.toContain("bg-brand");
   });
 
@@ -119,7 +119,6 @@ describe("SDLCStepper", () => {
       current: "review",
       stages: [
         { stage: "dev", state: "passed" },
-        { stage: "qa", state: "passed", detail: "stale" },
         { stage: "review", state: "active", detail: "light" },
       ],
     };

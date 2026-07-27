@@ -19,8 +19,8 @@ import { useT } from "../../i18n";
  * The plain-language phrase is keyed off the current stage + its state. The
  * stepper dots already show pass/fail/running per stage; this is the one-line
  * "what the orchestrator is doing right now" a non-engineer reads at a glance —
- * one phrase per stage, plus the states that change the next move (qa:fail,
- * review outcome).
+ * one phrase per stage, plus the states that change the next move (a failed
+ * gate, the review outcome).
  */
 export function OrchestratorNarrative({
   pipeline,
@@ -39,9 +39,6 @@ export function OrchestratorNarrative({
   switch (pipeline.current) {
     case "dev":
       phrase = t(($) => $.detail.narr_building);
-      break;
-    case "qa":
-      phrase = state === "failed" ? t(($) => $.detail.narr_qa_failed) : t(($) => $.detail.narr_testing);
       break;
     case "review":
       phrase =
