@@ -2842,8 +2842,9 @@ func qaBaselineGuidanceFor(scope string) string {
 	switch scope {
 	case "task":
 		return " SPRINT-BRANCH BASELINE (scope=task): this runs on a SHARED sprint branch where the plain " +
-			"merge-base froze at sprint start and can no longer tell which task turned a check red. For the BASELINE " +
-			"step above, diff against the MOVING last-green ref for this sprint instead of the merge-base — read its SHA " +
+			"merge-base froze at sprint start and can no longer tell which task turned a check red. IF the BASELINE " +
+			"step runs at all (it only does when a branch command went red), diff against the MOVING last-green ref " +
+			"for this sprint instead of the merge-base — read its SHA " +
 			"with `git rev-parse refs/sprint/<sprintId>/last-green` (the orchestrator provides <sprintId>) and check that " +
 			"SHA out as the baseline. The delta from last-green to the branch tip is exactly what landed since the last " +
 			"fully-green run, so a NEW failure is attributable to THIS task. If the ref is missing (never created, or a " +

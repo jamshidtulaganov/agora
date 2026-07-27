@@ -278,8 +278,8 @@ dev-machine tiers are gated by `labs.qa_dev_runtimes` (default off). When a
 instruction tells the agent the app lives at that path on THIS machine —
 start it via the daemon's `/editor/preview` and smoke the returned
 `127.0.0.1:<port>`. Critically, the agent must NEVER `git checkout`/`reset`/
-`stash` or edit files in the user's folder; the run_qa baseline uses a
-throwaway `git worktree add <tmp> <merge-base>` instead. (The daemon also
+`stash` or edit files in the user's folder; when run_qa needs a baseline at
+all it uses a throwaway `git worktree add <tmp> <merge-base>` instead. (The daemon also
 isolates the run on an `agent/…` branch and restores the user's branch when no
 commits were made — so a read-only QA gate leaves the developer's tree
 pristine.)
