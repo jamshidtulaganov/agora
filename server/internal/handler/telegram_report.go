@@ -2,8 +2,11 @@ package handler
 
 import (
 	"context"
+	"html"
 	"log/slog"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/config"
@@ -121,11 +124,50 @@ func (h *Handler) SendAutopilotReport(ctx context.Context, runID string) {
 		return
 	}
 
-	text := truncateForTelegram(ap.Title + "\n\n" + body)
-	if err := h.telegramBot.SendMessage(ctx, chatID, text); err != nil {
+	// Send the report as an attached HTML document, not as message text.
+	// Telegram renders no markdown table, and the table IS the report — pasted
+	// inline it collapses into unreadable pipe soup on a phone. The caption
+	// carries the headline so the chat still shows something meaningful without
+	// opening the file.
+	title := ap.Title + " — " + time.Now().Format("02.01.2006")
+	doc := renderReportHTML(title, body)
+	filename := "bitrix-hisobot-" + time.Now().Format("2006-01-02") + ".html"
+
+	if err := h.telegramBot.SendDocument(ctx, chatID, filename, doc, reportCaption(title, body)); err != nil {
 		slog.Warn("autopilot report: telegram send failed",
 			"run_id", runID, "chat_id", chatID, "error", err)
 		return
 	}
 	slog.Info("autopilot report posted to telegram", "run_id", runID, "autopilot", ap.Title)
+}
+
+// telegramCaptionLimit is the Bot API cap on a document caption. Overflowing it
+// rejects the whole upload, so the caption is a headline, never the report.
+const telegramCaptionLimit = 1024
+
+// reportCaption builds the short HTML blurb shown next to the attachment: the
+// title plus the report's first substantive line, so the chat conveys the
+// finding at a glance and the file carries the detail.
+func reportCaption(title, body string) string {
+	caption := "<b>" + html.EscapeString(title) + "</b>"
+
+	for _, line := range strings.Split(body, "\n") {
+		t := strings.TrimSpace(line)
+		// Skip headings, rules and empties — the first real sentence is wanted.
+		if t == "" || strings.HasPrefix(t, "#") || strings.HasPrefix(t, "-") || strings.HasPrefix(t, "|") {
+			continue
+		}
+		// Strip markdown emphasis; Telegram captions take HTML, not markdown.
+		t = strings.ReplaceAll(t, "**", "")
+		t = strings.ReplaceAll(t, "`", "")
+		caption += "\n\n" + html.EscapeString(t)
+		break
+	}
+	// Telegram counts CHARACTERS, not bytes. Byte-limiting would cut an Uzbek
+	// or Russian caption at roughly half its allowed length, since Cyrillic is
+	// two bytes per character. One rune is reserved for the ellipsis.
+	if utf8.RuneCountInString(caption) > telegramCaptionLimit {
+		caption = truncateRunes(caption, telegramCaptionLimit-1) + "…"
+	}
+	return caption
 }

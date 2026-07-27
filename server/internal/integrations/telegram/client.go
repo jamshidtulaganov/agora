@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"time"
@@ -442,4 +443,72 @@ func ParseStartPayload(text string) (nonce string, ok bool) {
 		return "", false
 	}
 	return nonce, true
+}
+
+// SendDocument uploads a file to a chat with an optional caption.
+//
+// Unlike every other method here it is multipart, not JSON — the Bot API takes
+// file bytes as a form part. Used to deliver a rendered report as an openable
+// document rather than pasting a wall of text into the chat: Telegram cannot
+// render a markdown table, so a long report posted as a message is unreadable
+// on a phone.
+//
+// caption is HTML (same parse mode as SendMessage) and Telegram caps it at
+// 1024 characters — callers keep it to a headline, not the report.
+func (c *BotClient) SendDocument(ctx context.Context, chatID, filename string, data []byte, caption string) error {
+	if c.token == "" {
+		return ErrNoToken
+	}
+
+	var buf bytes.Buffer
+	form := multipart.NewWriter(&buf)
+	if err := form.WriteField("chat_id", chatID); err != nil {
+		return fmt.Errorf("telegram: sendDocument chat_id: %w", err)
+	}
+	if caption != "" {
+		if err := form.WriteField("caption", caption); err != nil {
+			return fmt.Errorf("telegram: sendDocument caption: %w", err)
+		}
+		if err := form.WriteField("parse_mode", "HTML"); err != nil {
+			return fmt.Errorf("telegram: sendDocument parse_mode: %w", err)
+		}
+	}
+	part, err := form.CreateFormFile("document", filename)
+	if err != nil {
+		return fmt.Errorf("telegram: sendDocument part: %w", err)
+	}
+	if _, err := part.Write(data); err != nil {
+		return fmt.Errorf("telegram: sendDocument write: %w", err)
+	}
+	if err := form.Close(); err != nil {
+		return fmt.Errorf("telegram: sendDocument close: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/bot%s/sendDocument", c.baseURL(), c.token)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, &buf)
+	if err != nil {
+		return fmt.Errorf("telegram: new sendDocument request: %w", err)
+	}
+	req.Header.Set("Content-Type", form.FormDataContentType())
+
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return fmt.Errorf("telegram: sendDocument http: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("telegram: read sendDocument response: %w", err)
+	}
+	var parsed telegramResponse
+	if jsonErr := json.Unmarshal(raw, &parsed); jsonErr != nil {
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return fmt.Errorf("telegram: sendDocument http %d", resp.StatusCode)
+		}
+		return fmt.Errorf("telegram: decode sendDocument response: %w", jsonErr)
+	}
+	if !parsed.OK {
+		return fmt.Errorf("telegram: sendDocument failed: code=%d description=%q", parsed.ErrorCode, parsed.Description)
+	}
+	return nil
 }
