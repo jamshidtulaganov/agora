@@ -342,6 +342,7 @@ func main() {
 	// mention, comment, …) with a Mini App deep link. No-op when the bot is
 	// unconfigured. Registered after h exists; shares the same bus instance.
 	registerTelegramPushListeners(bus, h)
+	registerAutopilotReportListener(bus, h)
 	// Lark bot push: DM members a card from the issue's assigned-agent bot for
 	// each new inbox item. No-op unless Lark is wired and the recipient bound
 	// their Lark identity. Shares the same bus instance.

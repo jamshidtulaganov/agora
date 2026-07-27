@@ -61,6 +61,9 @@ var Registry = []Def{
 	// ---- Review gate -----------------------------------------------------
 	{Key: "AGORA_AUTO_REVIEW_ENABLED", Kind: KindBool, Category: "Review", Label: "Auto review on qa:pass", Description: "Dispatch a run_review code review (reviewer ≠ author) automatically when an issue gains qa:pass and has a pull request. Default off — enable per project.", ProjectScoped: true},
 
+	// ---- Reporting -------------------------------------------------------
+	{Key: "AGORA_TELEGRAM_REPORT_CHAT_ID", Kind: KindString, Category: "Automation", Label: "Telegram report chat", Description: "Telegram chat the bot posts autopilot reports to when a run completes. Group ids are negative (e.g. -1001234567890) \u2014 add the bot to the group first. Empty disables posting. Project-scoped, so different projects can report to different chats.", ProjectScoped: true},
+
 	// ---- Docs / knowledge ----------------------------------------------
 	{Key: "AGORA_AUTO_DOCS_ENABLED", Kind: KindBool, Category: "Automation", Label: "Auto docs", Description: "Run the auto_docs slice action to keep a docs repo in sync.", ProjectScoped: true},
 

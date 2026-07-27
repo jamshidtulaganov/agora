@@ -1178,7 +1178,7 @@ func (q *Queries) UpdateAutopilotLastRunAt(ctx context.Context, id pgtype.UUID) 
 const updateAutopilotRunCompleted = `-- name: UpdateAutopilotRunCompleted :one
 UPDATE autopilot_run
 SET status = 'completed', completed_at = now(), result = $2
-WHERE id = $1
+WHERE id = $1 AND completed_at IS NULL
 RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, squad_id
 `
 
@@ -1187,6 +1187,12 @@ type UpdateAutopilotRunCompletedParams struct {
 	Result []byte      `json:"result"`
 }
 
+// Idempotent: a run completes ONCE. SyncRunFromIssue treats both `in_review`
+// and `done` as completion, so an issue moving in_review -> done fired this
+// twice — re-stamping completed_at, double-recording the analytics event, and
+// re-publishing autopilot:run_done (which any notifier downstream would turn
+// into a duplicate message). The guard makes the second call return no rows,
+// which callers treat as "already completed, nothing to do".
 func (q *Queries) UpdateAutopilotRunCompleted(ctx context.Context, arg UpdateAutopilotRunCompletedParams) (AutopilotRun, error) {
 	row := q.db.QueryRow(ctx, updateAutopilotRunCompleted, arg.ID, arg.Result)
 	var i AutopilotRun

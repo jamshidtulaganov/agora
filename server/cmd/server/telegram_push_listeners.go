@@ -64,3 +64,32 @@ func derefString(v any) string {
 	}
 	return ""
 }
+
+// registerAutopilotReportListener posts a completed autopilot run's write-up to
+// its configured Telegram chat. Hangs off autopilot:run_done, which the service
+// publishes exactly once per run — UpdateAutopilotRunCompleted is guarded on
+// completed_at, so an issue walking in_review -> done cannot publish twice and
+// the group cannot receive the same report twice.
+//
+// Only `completed` runs post: a failed run has no report worth broadcasting,
+// and the failure already surfaces in the run list.
+func registerAutopilotReportListener(bus *events.Bus, h *handler.Handler) {
+	if !h.TelegramPushEnabled() {
+		return
+	}
+	bus.Subscribe(protocol.EventAutopilotRunDone, func(e events.Event) {
+		payload, ok := e.Payload.(map[string]any)
+		if !ok {
+			return
+		}
+		if status, _ := payload["status"].(string); status != "completed" {
+			return
+		}
+		runID, _ := payload["run_id"].(string)
+		if runID == "" {
+			return
+		}
+		// Detached: the Bot API call must not sit on the event bus.
+		go h.SendAutopilotReport(context.Background(), runID)
+	})
+}

@@ -203,9 +203,15 @@ WHERE id = $1
 RETURNING *;
 
 -- name: UpdateAutopilotRunCompleted :one
+-- Idempotent: a run completes ONCE. SyncRunFromIssue treats both `in_review`
+-- and `done` as completion, so an issue moving in_review -> done fired this
+-- twice — re-stamping completed_at, double-recording the analytics event, and
+-- re-publishing autopilot:run_done (which any notifier downstream would turn
+-- into a duplicate message). The guard makes the second call return no rows,
+-- which callers treat as "already completed, nothing to do".
 UPDATE autopilot_run
 SET status = 'completed', completed_at = now(), result = sqlc.narg('result')
-WHERE id = $1
+WHERE id = $1 AND completed_at IS NULL
 RETURNING *;
 
 -- name: UpdateAutopilotRunFailed :one

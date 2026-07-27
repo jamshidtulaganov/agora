@@ -413,6 +413,14 @@ func (s *AutopilotService) SyncRunFromIssue(ctx context.Context, issue db.Issue)
 			ID: run.ID,
 		})
 		if err != nil {
+			// No rows means the run already completed — this switch treats BOTH
+			// in_review and done as completion, so an issue walking
+			// in_review -> done arrives here twice. Returning quietly keeps the
+			// analytics event and the run_done publish (and anything they feed,
+			// like a Telegram report) to exactly one per run.
+			if errors.Is(err, pgx.ErrNoRows) {
+				return
+			}
 			slog.Warn("failed to complete autopilot run", "run_id", util.UUIDToString(run.ID), "error", err)
 			return
 		}
@@ -457,6 +465,9 @@ func (s *AutopilotService) SyncRunFromTask(ctx context.Context, task db.AgentTas
 			Result: task.Result,
 		})
 		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return // already completed — see SyncRunFromIssue
+			}
 			slog.Warn("failed to complete autopilot run from task", "run_id", util.UUIDToString(run.ID), "error", err)
 			return
 		}
