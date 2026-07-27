@@ -224,6 +224,17 @@ server/internal/handler/label.go          # AttachLabel wires maybeRouteToDevLea
 
 Contracts:
 
+- **QA is off the dev → review path.** `issue.go`'s in_review hook dispatches
+  exactly ONE task, `maybeRunQAOnInReview`, and that helper self-gates on
+  `autoQAEnabled` (`AGORA_AUTO_QA_ENABLED`, no registry default ⇒ OFF). The hook
+  no longer chains `maybeGenTests` / `maybeCompileTestCases` /
+  `maybeRunTestsOnInReview` behind it. Those three still exist and still run —
+  from the manual slice-action endpoint, from `test_case.go`'s post-write
+  trigger, and from `comment.go`'s author→compile→run self-sequencing chain —
+  but nothing fires them automatically on a status transition.
+- `clearStaleQAGateLabels` runs on EVERY genuine in_review entry, outside the
+  QA gate, because it is a DB-only correctness sweep (the diff changed, so the
+  previous cycle's verdicts are stale) and must not depend on QA configuration.
 - `enforceQAGateBeforeDone` ALSO enforces a RISK-TIER human-sign-off gate when
   `riskTierGateEnforced()` (env AGORA_RISK_TIER_GATE_ENFORCED, default off): a
   CRITICAL-tier issue (issueRiskTier == "critical") can only be moved to done by a
@@ -355,9 +366,17 @@ Contracts:
   gate is advisory — qa:pass alone drives the chain, never a silent stall. The
   human-facing READY note is deduped by `<!-- ready-for-human-merge -->` under
   the per-issue `lockIssueQA` lock.
+- `computeMergeReadiness` blocks on a RED gate only. It walks `blockingGates`
+  (`{qa, review}`), skips any gate that resolves to `pending`, and reports
+  `ready=false` only when one resolved to `fail`. A gate that never ran is not
+  reported at all. `ci` is NOT a gate: `ci:pass` is written only by a manually
+  fired `run_ci` slice action and nothing auto-dispatches it, so the old
+  `required: {ci, qa}` default tier made `Ready` structurally false on every
+  issue — the Approve button never enabled and every merge became a hand-merge.
+  `reviewTier` now carries only `{name, reviews}`; `reviews` is advisory.
 - `POST /review-decision` (human-only): `approve` computes the SAME
-  `computeMergeReadiness` spine the GET endpoint uses (ci + qa + review-when-
-  required) and 409s with the blocked reasons unless ready (`merge:override`
+  `computeMergeReadiness` spine the GET endpoint uses and 409s with the blocked
+  reasons unless ready (`merge:override`
   bypasses); on success it attaches `merge:approved` (#2563eb, broadcasting the
   FULL label set), posts a system comment, and dispatches a member-authored
   `gh pr merge` order to the dev squad leader;
@@ -425,9 +444,9 @@ Contracts:
   (before the `UpdateIssue` DB write) and at `req.Updates.Status` in
   `BatchUpdateIssues`; because the written status becomes `in_review`, the
   existing prev!=in_review→in_review hook fires and routes to the QA lead;
-- the batch path previously had NO `maybeRunQAOnInReview` hook (only
-  knowledge-capture on done) — it now mirrors the single path's in_review
-  hook so a gate-redirect there also reaches the QA lead;
+- the batch path mirrors the single path's in_review hook (stale-label sweep +
+  the opt-in `maybeRunQAOnInReview`) so a gate-redirect there behaves
+  identically;
 - when the gate is OFF (default), there is NO status-transition validation
   anywhere: `UpdateIssue`/`UpdateIssueStatus` accept any→any within the
   status CHECK constraint (issue.sql), and routing through `in_review` is

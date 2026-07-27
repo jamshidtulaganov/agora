@@ -177,25 +177,29 @@ Auto-QA (`in_review`) and QA-fail reassignment prefer squad LEADERS for
 squad-orchestrated work. This is the dev/QA lead communication rule, not a
 general squad behavior. Two mechanisms:
 
-- **`in_review` → auto `run_qa`.** If the issue's assignee is a squad, or an
-  agent who belongs to any squad, the trigger routes to the QA squad's LEADER
-  specifically (matched by squad name containing "qa", case-insensitive) —
-  not the least-busy pick from the whole QA roster. Solo-agent / non-squad
-  assignments are unchanged: they still fan across the whole QA roster so
-  many `in_review` issues run concurrently. A per-issue **QA cast**
-  (`cast_qa_agent_id` metadata) overrides ALL of this: when set, QA runs on
-  that exact agent (see *Stage casting* below).
+- **`in_review` → auto `run_qa`, OPT-IN ONLY.** QA is not on the dev → review
+  path: an issue entering `in_review` goes to the human who reviews and merges
+  it, and no QA agent is summoned unless the project set `AGORA_AUTO_QA_ENABLED`
+  (default off). Opted in, exactly ONE task fires — the gate. The old
+  four-dispatch fan-out (`run_qa` + `gen_test_cases` + `compile_tests` +
+  `run_test_cases`, each routed to a DIFFERENT QA agent and so each cold) is
+  gone. Routing when it does fire: a squad assignee (or an agent in any squad)
+  goes to the QA squad's LEADER (squad name contains "qa", case-insensitive);
+  solo / non-squad assignments fan across the whole QA roster so many
+  `in_review` issues run concurrently. A per-issue **QA cast**
+  (`cast_qa_agent_id`) overrides all of it (see *Stage casting*).
 - **Manual QA actions → QA lead, never the dev.** A manually-fired QA-family
   slice action (`run_qa` / `gen_test_cases` / `run_test_cases`, e.g. the QA
   review page's "Re-run QA") with no explicit agent defaults to the QA squad
   LEADER — not the issue's dev assignee. QA validation is owned by QA, never by
   the developer whose work is under test. Falls back to the assignee/own-agent
   only when the workspace has no ready QA squad leader.
-- **`in_progress` → shift-left QA prep.** The moment a task enters
-  `in_progress`, a QA agent gets a background `gen_test_cases` task: author
-  the cases AND compile their Playwright scripts against the project QA
-  manifest while the dev is still implementing — no diff-reading, no
-  execution. By `in_review` the suite already exists, so the gate only
+- **`in_progress` → shift-left QA prep (same opt-in flag).** With
+  `AGORA_AUTO_QA_ENABLED` on, entering `in_progress` gives a QA agent a
+  background `gen_test_cases` task: author the cases AND compile their
+  Playwright scripts against the project QA manifest while the dev is still
+  implementing — no diff-reading, no execution. Runs PARALLEL to dev, blocks
+  nothing, and by `in_review` the suite already exists so the gate only
   EXECUTES it. Idempotent: skipped when the issue already has test cases.
 - **`qa:fail` label → auto-reassignment.** The issue is handed back to its
   ORCHESTRATOR (`orchestratorForIssue`, a TOTAL resolver: the squad lead for a
@@ -326,13 +330,11 @@ STRUCTURALLY rather than by instruction: when `AGORA_QA_GATE_ENFORCED` is on,
 a squad-orchestrated issue **cannot** be moved straight to `done`. A direct
 `→done` write (from any actor, agent or human) is rewritten to `→in_review`
 when all of these hold: the dev side is squad-orchestrated, the issue does
-NOT already carry `qa:pass`, and it isn't already in `in_review`. The
-redirect fires `maybeRunQAOnInReview` (routing to the QA lead), so the loop
-is dev → in_review → QA → `qa:pass` → done. Once `qa:pass` is present, the
-`→done` write passes through untouched, so the loop always converges. This
-means a dev lead that "self-approves" its own subordinate's work and jumps
-to `done` is silently routed through QA instead of bypassing it. The gate
-applies on both the single-issue update and the board batch-update paths.
+NOT already carry `qa:pass`, and it isn't already in `in_review`. A dev lead
+that "self-approves" its own subordinate's work and jumps to `done` is
+therefore routed back for review instead of bypassing it. Once `qa:pass` is
+present the `→done` write passes through untouched, so the loop converges.
+The gate applies on both the single-issue and board batch-update paths.
 When the gate is off (default), status transitions are unvalidated — any
 status can be set from any other, and routing through `in_review` is purely
 a matter of the leader's instructions.

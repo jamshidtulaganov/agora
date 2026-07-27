@@ -2924,41 +2924,40 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		h.maybePromoteTestCasesOnDone(r.Context(), issue)
 	}
 
-	// Auto-QA on in_review: when an issue enters in_review, fire the QA squad's
-	// run_qa (deterministic smoke on the assignee dev's box + plan-driven tests)
-	// — automating the QA team's previously-manual smoke. Detached + best-effort
-	// (AGORA_AUTO_QA_ENABLED); guarded to a genuine prev!=in_review→in_review
-	// transition so it runs once per entry.
+	// Entering in_review starts a FRESH review cycle: the diff just changed, so
+	// the previous cycle's QA verdict, reviewer verdict and human approval are
+	// all stale and must not survive into it. Cheap DB-only sweep — no agent
+	// dispatch — so it runs on every entry regardless of QA configuration.
+	//
+	// QA is NOT on the dev → review path. An issue entering in_review goes
+	// straight to the human who reviews and merges it. The QA machinery is
+	// intact and ON DEMAND (the Release page, the QA lens, and the manual
+	// run_qa / gen_test_cases / run_test_cases slice actions), and a landed
+	// qa:fail still blocks the merge (computeMergeReadiness). A project that
+	// wants the gate back can opt in with AGORA_AUTO_QA_ENABLED — and then it
+	// gets ONE dispatch, the gate itself.
+	//
+	// What is gone unconditionally is the four-dispatch fan-out that used to
+	// fire here: run_qa + gen_test_cases + compile_tests + run_test_cases, each
+	// deliberately routed to a DIFFERENT QA agent and therefore each guaranteed
+	// a cold boot. run_test_cases alone measured +920s median / +5276s p90 on
+	// the in_review tail while duplicating cases run_qa already executes (its
+	// gate context carries the same case list) — and in six weeks of production
+	// it produced zero durable test_run rows.
 	if statusChanged && issue.Status == "in_review" && prevIssue.Status != "in_review" &&
 		!h.orchestrationOwnsIssuePipeline(r.Context(), issue.ID) {
-		// Sequential in ONE goroutine: run_qa (the gate) fires FIRST and enqueues
-		// a task for its QA agent; gen_test_cases then picks a DIFFERENT QA agent
-		// (one with no pending task on this issue) so the per-(issue,agent) dedup
-		// no longer drops one of them. Found in the demo run (SD-320): both raced
-		// to the same agent and the gate verdict was silently suppressed.
-		safeGo("autoQA:in_review", func() {
-			// Fresh QA cycle: drop the PREVIOUS cycle's verdict labels so the
-			// issue reads "pending" until the new verdict lands. Without this a
-			// stale qa:fail from the failed attempt survives the fix and keeps
-			// the issue in "need fix" forever (audit P0 sticky-label defect).
+		safeGo("freshReviewCycle:in_review", func() {
 			h.clearStaleQAGateLabels(context.Background(), issue)
 			h.maybeRunQAOnInReview(context.Background(), issue, actorType, actorID)
-			h.maybeGenTests(context.Background(), issue, actorType, actorID, false)
-			// Compile any automated cases still missing a Playwright script
-			// (gen-authored or pre-existing) so run_test_cases EXECUTES them in a
-			// real browser — which is what makes the run watchable live + captures
-			// a trace. Without it the cases stay hand-driven (HTTP), so the live
-			// pane never shows the browser. Best-effort, gated by compile-enabled.
-			h.maybeCompileTestCases(context.Background(), issue)
-			h.maybeRunTestsOnInReview(context.Background(), issue, actorType, actorID)
 		})
 	}
 
-	// Shift-left QA prep on dev start: the moment an issue enters in_progress,
-	// a QA agent authors the test cases + compiles their Playwright scripts
-	// against the project QA manifest IN THE BACKGROUND, while the dev agent
-	// is still implementing — so the in_review gate only executes a suite that
-	// is already sitting ready. Idempotent (skips when cases exist).
+	// Shift-left QA prep on dev start: when a project opted into automatic QA,
+	// a QA agent authors this issue's test cases IN THE BACKGROUND while the dev
+	// agent is still implementing, so the gate later executes a suite that is
+	// already sitting ready. Off the critical path by construction — it runs
+	// parallel to dev and blocks nothing. Self-gated on AGORA_AUTO_QA_ENABLED
+	// and idempotent (skips when cases exist).
 	if statusChanged && issue.Status == "in_progress" && prevIssue.Status != "in_progress" &&
 		!h.orchestrationOwnsIssuePipeline(r.Context(), issue.ID) {
 		safeGo("autoGenTests:in_progress", func() {
@@ -3550,23 +3549,17 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			h.maybePromoteTestCasesOnDone(r.Context(), issue)
 		}
 
-		// Auto-QA on in_review (batch-path mirror of UpdateIssue). Also fires when
-		// the QA gate above redirects a board drag-to-done into in_review, so a
-		// squad-orchestrated issue always reaches the QA lead regardless of path.
+		// Fresh review cycle + opt-in QA gate (batch-path mirror of UpdateIssue).
+		// See the single-update path for why the fan-out is gone.
 		if statusChanged && issue.Status == "in_review" && prevIssue.Status != "in_review" {
 			issueCopy := issue
-			safeGo("autoQA:in_review:batch", func() {
-				// Fresh QA cycle — see the single-update path for rationale.
+			safeGo("freshReviewCycle:in_review:batch", func() {
 				h.clearStaleQAGateLabels(context.Background(), issueCopy)
 				h.maybeRunQAOnInReview(context.Background(), issueCopy, actorType, actorID)
-				h.maybeGenTests(context.Background(), issueCopy, actorType, actorID, false)
-				h.maybeCompileTestCases(context.Background(), issueCopy)
-				h.maybeRunTestsOnInReview(context.Background(), issueCopy, actorType, actorID)
 			})
 		}
 
-		// Shift-left QA prep on dev start (batch-path mirror of UpdateIssue):
-		// author + compile the suite in the background while the dev works.
+		// Shift-left QA prep on dev start (batch-path mirror of UpdateIssue).
 		if statusChanged && issue.Status == "in_progress" && prevIssue.Status != "in_progress" {
 			issueCopy := issue
 			safeGo("autoGenTests:in_progress:batch", func() {
