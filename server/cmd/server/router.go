@@ -625,6 +625,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Get("/api/bitrix/groups", h.ListBitrixGroups)
 		r.Get("/api/bitrix/users", h.ListBitrixUsers)
 		r.Get("/api/bitrix/tasks", h.ListBitrixTasks)
+		// Portal-wide task rollup for a date window (defaults to year-to-date).
+		r.Get("/api/bitrix/analytics", h.GetBitrixAnalytics)
 		r.Post("/api/bitrix/import", h.ImportBitrixTasks)
 		// Self-scoped import: any logged-in member pulls ONLY their own Bitrix
 		// tasks (RESPONSIBLE = their linked id). No operator role, no way to

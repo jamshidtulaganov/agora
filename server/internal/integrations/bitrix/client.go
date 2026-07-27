@@ -78,6 +78,29 @@ type Task struct {
 	// ListGroups / GetGroup lookup when this is blank.
 	GroupName string
 	Tags      []string
+	// CreatedAt / ClosedAt are the Bitrix task lifecycle timestamps, in the
+	// portal's own format ("2026-01-14T09:12:03+05:00"). Only populated by
+	// calls that SELECT them (see ListTasksSince) — the import paths do not,
+	// so they are empty there. Kept as strings because Bitrix is inconsistent
+	// about offsets across portals; callers parse with ParseTime.
+	CreatedAt string
+	ClosedAt  string
+}
+
+// ParseTime parses a Bitrix timestamp, returning ok=false for the empty string
+// or an unrecognised shape. Bitrix returns RFC3339 on modern portals but has
+// been observed emitting a space-separated form, so both are accepted.
+func ParseTime(s string) (time.Time, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}, false
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02 15:04:05", "2006-01-02T15:04:05"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
 }
 
 // jsonStr decodes a value that Bitrix may send as either a JSON string or a
@@ -137,6 +160,11 @@ type rawTask struct {
 	// (the coarse Bitrix task state). Resolved to a name via task.stages.get.
 	StageID    jsonStr `json:"stageId"`
 	StageUpper jsonStr `json:"STAGE_ID"`
+	// Lifecycle timestamps — present only when the request SELECTs them.
+	CreatedDate      jsonStr `json:"createdDate"`
+	CreatedDateUpper jsonStr `json:"CREATED_DATE"`
+	ClosedDate       jsonStr `json:"closedDate"`
+	ClosedDateUpper  jsonStr `json:"CLOSED_DATE"`
 	// Task comment CHAT id — newer tasks keep discussion in a chat dialog
 	// (chat<ChatID>) rather than the legacy task.commentitem feed.
 	ChatID    jsonStr `json:"chatId"`
@@ -210,6 +238,8 @@ func (rt rawTask) toTask() Task {
 		GroupID:       groupID,
 		GroupName:     firstNonEmpty(rt.Group.Name, rt.Group.NameUpper, rt.GroupUp.Name, rt.GroupUp.NameUpper),
 		Tags:          []string(tags),
+		CreatedAt:     firstNonEmpty(rt.CreatedDate, rt.CreatedDateUpper),
+		ClosedAt:      firstNonEmpty(rt.ClosedDate, rt.ClosedDateUpper),
 	}
 }
 
@@ -482,6 +512,12 @@ const (
 	bitrixMaxTasksPerImport = 5000
 )
 
+// MaxTasksPerRequest exposes the safety cap so callers can tell a COMPLETE
+// result from a truncated one. Hitting it means the window held more tasks
+// than one call returns, and the caller should narrow the range rather than
+// report the totals as portal-wide truth.
+const MaxTasksPerRequest = bitrixMaxTasksPerImport
+
 // ListTasks returns ALL tasks in a Bitrix workgroup, newest first. It POSTs
 // tasks.task.list filtered by GROUP_ID (and TAG when tag != ""), selecting the
 // fields Agora maps, and follows the response's `next` offset across every page
@@ -536,6 +572,68 @@ func (c *Client) ListTasks(ctx context.Context, groupID, tag string) ([]Task, er
 		// an empty page, the safety cap, or a `next` that doesn't advance the
 		// offset (defensive against a portal echoing the same start).
 		if parsed.Next == nil || len(parsed.Result.Tasks) == 0 || len(tasks) >= bitrixMaxTasksPerImport || *parsed.Next <= start {
+			break
+		}
+		start = *parsed.Next
+	}
+	return tasks, nil
+}
+
+// ListTasksSince returns every task CREATED at or after `since`, across all
+// workgroups, with the lifecycle fields analytics needs.
+//
+// Distinct from ListTasks in three ways that matter:
+//   - filters by date, not by group, so a portal-wide year-to-date view is one
+//     call chain instead of one per workgroup;
+//   - SELECTs CREATED_DATE / CLOSED_DATE, which the import path deliberately
+//     omits (it only needs identity + routing), so without this the tasks carry
+//     no timestamps and no time-series is possible;
+//   - applies no TAG filter — analytics must count the whole portal, whereas
+//     the importer intentionally narrows to its own tag.
+//
+// Paging follows Bitrix's `next` offset and stops on the same guards as
+// ListTasks, including the bitrixMaxTasksPerImport safety cap; a portal with
+// more matching tasks than that cap returns the newest ones (order[ID] DESC)
+// and the caller should narrow the window rather than assume completeness.
+func (c *Client) ListTasksSince(ctx context.Context, since time.Time) ([]Task, error) {
+	if c.baseURL == "" {
+		return nil, errors.New("bitrix: empty base URL")
+	}
+	endpoint := c.baseURL + "tasks.task.list"
+
+	tasks := make([]Task, 0, bitrixTaskPageSize)
+	start := 0
+	for {
+		form := url.Values{}
+		form.Set("filter[>=CREATED_DATE]", since.Format("2006-01-02 15:04:05"))
+		for _, f := range []string{
+			"ID", "TITLE", "GROUP_ID", "RESPONSIBLE_ID", "STATUS",
+			"CREATED_DATE", "CLOSED_DATE",
+		} {
+			form.Add("select[]", f)
+		}
+		form.Set("order[ID]", "DESC")
+		if start > 0 {
+			form.Set("start", strconv.Itoa(start))
+		}
+
+		body, err := c.post(ctx, endpoint, form)
+		if err != nil {
+			return nil, err
+		}
+
+		var parsed listTasksResponse
+		if err := json.Unmarshal(body, &parsed); err != nil {
+			return nil, fmt.Errorf("bitrix: decode tasks.task.list: %w", err)
+		}
+		if parsed.Error != "" {
+			return nil, fmt.Errorf("bitrix: tasks.task.list error %s: %s", parsed.Error, parsed.ErrorDesc)
+		}
+		for _, rt := range parsed.Result.Tasks {
+			tasks = append(tasks, rt.toTask())
+		}
+		if parsed.Next == nil || len(parsed.Result.Tasks) == 0 ||
+			len(tasks) >= bitrixMaxTasksPerImport || *parsed.Next <= start {
 			break
 		}
 		start = *parsed.Next
