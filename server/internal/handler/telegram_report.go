@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"html"
 	"log/slog"
 	"strings"
@@ -130,7 +131,19 @@ func (h *Handler) SendAutopilotReport(ctx context.Context, runID string) {
 	}
 	body := h.autopilotReportBody(ctx, run.IssueID, ap.WorkspaceID)
 	if body == "" {
-		slog.Info("autopilot report: nothing to post", "run_id", runID, "autopilot", ap.Title)
+		// Stranded-output recovery, borrowed from hamroh's `dropped_text`
+		// safety net: a completed run that produced no postable comment is not
+		// deliberate silence, it is a report that failed to reach anyone. The
+		// agent's task output usually still holds the text, so recover it
+		// rather than letting the group see nothing and assume all is well.
+		body = autopilotRunOutput(run.Result)
+	}
+	if body == "" {
+		// Nothing anywhere. WARN, not INFO: a scheduled report that silently
+		// produced nothing is a failure, and it is invisible by construction —
+		// the only symptom is a group that stays quiet on Monday morning.
+		slog.Warn("autopilot report: run completed with no recoverable report",
+			"run_id", runID, "autopilot", ap.Title, "issue_id", uuidToString(run.IssueID))
 		return
 	}
 
@@ -180,4 +193,20 @@ func reportCaption(title, body string) string {
 		caption = truncateRunes(caption, telegramCaptionLimit-1) + "…"
 	}
 	return caption
+}
+
+// autopilotRunOutput digs the agent's final output out of a stored run result.
+// Best-effort by design: the payload shape varies by task kind, and a miss just
+// means there was nothing to recover.
+func autopilotRunOutput(result []byte) string {
+	if len(result) == 0 {
+		return ""
+	}
+	var payload struct {
+		Output string `json:"output"`
+	}
+	if json.Unmarshal(result, &payload) != nil {
+		return ""
+	}
+	return strings.TrimSpace(util.UnescapeBackslashEscapes(payload.Output))
 }

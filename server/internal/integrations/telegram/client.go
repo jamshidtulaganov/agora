@@ -128,6 +128,42 @@ type telegramResponse struct {
 	OK          bool   `json:"ok"`
 	ErrorCode   int    `json:"error_code"`
 	Description string `json:"description"`
+	// Parameters carries Telegram's own backoff instruction on a 429. Ignoring
+	// it and retrying immediately deepens the flood window instead of clearing
+	// it, so the wait is taken from here rather than guessed.
+	Parameters struct {
+		RetryAfter int `json:"retry_after"`
+	} `json:"parameters"`
+}
+
+// Flood control: Telegram answers 429 with `parameters.retry_after` seconds.
+// A long multi-part report or a burst of agent replies will hit this in a busy
+// group, and a dropped message there reads as the bot being broken.
+const (
+	// telegramFloodRetries bounds the retries so a permanently throttled bot
+	// fails loudly instead of blocking a goroutine forever.
+	telegramFloodRetries = 3
+	// telegramMaxRetryAfter caps how long one retry will wait. Telegram can
+	// answer with minutes during a hard throttle; blocking that long is worse
+	// than surfacing the failure to the caller.
+	telegramMaxRetryAfter = 30 * time.Second
+)
+
+// floodWait returns how long to wait before retrying, and whether a retry is
+// warranted at all. Only 429 is retried — every other error is terminal and
+// retrying it would just repeat the same rejection.
+func floodWait(parsed telegramResponse) (time.Duration, bool) {
+	if parsed.ErrorCode != 429 {
+		return 0, false
+	}
+	wait := time.Duration(parsed.Parameters.RetryAfter) * time.Second
+	if wait <= 0 {
+		wait = time.Second // Telegram omitted the hint; back off a little anyway
+	}
+	if wait > telegramMaxRetryAfter {
+		return 0, false
+	}
+	return wait, true
 }
 
 // SendMessage delivers text to a chat via the bot's sendMessage method. chatID
@@ -168,36 +204,49 @@ func (c *BotClient) sendMessage(ctx context.Context, reqBody sendMessageRequest)
 	}
 
 	url := fmt.Sprintf("%s/bot%s/sendMessage", c.baseURL(), c.token)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("telegram: new request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient().Do(req)
-	if err != nil {
-		return fmt.Errorf("telegram: sendMessage http: %w", err)
-	}
-	defer resp.Body.Close()
-
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("telegram: read sendMessage response: %w", err)
-	}
-
-	var parsed telegramResponse
-	// A non-2xx with a parseable envelope yields the richer description; an
-	// unparseable body falls back to the status code.
-	if jsonErr := json.Unmarshal(raw, &parsed); jsonErr != nil {
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return fmt.Errorf("telegram: sendMessage http %d", resp.StatusCode)
+	// Retry only on flood control, honouring Telegram's own retry_after. A busy
+	// group throttles a multi-part report otherwise, and a dropped message
+	// there reads as the bot being broken.
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			return fmt.Errorf("telegram: new request: %w", err)
 		}
-		return fmt.Errorf("telegram: decode sendMessage response: %w", jsonErr)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.httpClient().Do(req)
+		if err != nil {
+			return fmt.Errorf("telegram: sendMessage http: %w", err)
+		}
+		raw, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return fmt.Errorf("telegram: read sendMessage response: %w", readErr)
+		}
+
+		var parsed telegramResponse
+		// A non-2xx with a parseable envelope yields the richer description; an
+		// unparseable body falls back to the status code.
+		if jsonErr := json.Unmarshal(raw, &parsed); jsonErr != nil {
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				return fmt.Errorf("telegram: sendMessage http %d", resp.StatusCode)
+			}
+			return fmt.Errorf("telegram: decode sendMessage response: %w", jsonErr)
+		}
+		if parsed.OK {
+			return nil
+		}
+		wait, retry := floodWait(parsed)
+		if !retry || attempt >= telegramFloodRetries {
+			return fmt.Errorf("telegram: sendMessage failed: code=%d description=%q", parsed.ErrorCode, parsed.Description)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(wait):
+		}
 	}
-	if !parsed.OK {
-		return fmt.Errorf("telegram: sendMessage failed: code=%d description=%q", parsed.ErrorCode, parsed.Description)
-	}
-	return nil
 }
 
 // call POSTs a JSON body to an arbitrary Bot API method and checks the ok
@@ -456,6 +505,10 @@ func ParseStartPayload(text string) (nonce string, ok bool) {
 // caption is HTML (same parse mode as SendMessage) and Telegram caps it at
 // 1024 characters — callers keep it to a headline, not the report.
 func (c *BotClient) SendDocument(ctx context.Context, chatID, filename string, data []byte, caption string) error {
+	return c.sendDocumentAttempt(ctx, chatID, filename, data, caption, 0)
+}
+
+func (c *BotClient) sendDocumentAttempt(ctx context.Context, chatID, filename string, data []byte, caption string, attempt int) error {
 	if c.token == "" {
 		return ErrNoToken
 	}
@@ -508,6 +561,18 @@ func (c *BotClient) SendDocument(ctx context.Context, chatID, filename string, d
 		return fmt.Errorf("telegram: decode sendDocument response: %w", jsonErr)
 	}
 	if !parsed.OK {
+		// A throttled upload is the weekly report going missing, so honour
+		// Telegram's backoff once rather than dropping it. The multipart body
+		// is rebuilt by the recursive call — a consumed reader cannot be
+		// replayed.
+		if wait, retry := floodWait(parsed); retry && attempt < telegramFloodRetries {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(wait):
+			}
+			return c.sendDocumentAttempt(ctx, chatID, filename, data, caption, attempt+1)
+		}
 		return fmt.Errorf("telegram: sendDocument failed: code=%d description=%q", parsed.ErrorCode, parsed.Description)
 	}
 	return nil

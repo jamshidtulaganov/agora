@@ -55,3 +55,29 @@ func TestTruncateForTelegram(t *testing.T) {
 		}
 	})
 }
+
+// Stranded-output recovery: a completed run whose agent left no postable
+// comment is a report that failed to reach anyone, not deliberate silence.
+func TestAutopilotRunOutput(t *testing.T) {
+	t.Run("recovers the agent's output", func(t *testing.T) {
+		got := autopilotRunOutput([]byte(`{"output":"Haftalik hisobot\n\nBacklog +41."}`))
+		if got != "Haftalik hisobot\n\nBacklog +41." {
+			t.Errorf("got %q", got)
+		}
+	})
+
+	t.Run("unescapes literal backslash-n the same way the comment path does", func(t *testing.T) {
+		got := autopilotRunOutput([]byte(`{"output":"line one\\nline two"}`))
+		if got != "line one\nline two" {
+			t.Errorf("got %q, want a real newline", got)
+		}
+	})
+
+	t.Run("nothing to recover yields empty, not garbage", func(t *testing.T) {
+		for _, in := range [][]byte{nil, {}, []byte(`{}`), []byte(`not json`), []byte(`{"output":"   "}`)} {
+			if got := autopilotRunOutput(in); got != "" {
+				t.Errorf("input %q recovered %q, want empty", in, got)
+			}
+		}
+	})
+}
