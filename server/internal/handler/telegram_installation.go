@@ -51,6 +51,11 @@ type TelegramInstallationResponse struct {
 	ChatID      string `json:"chat_id,omitempty"`
 	Status      string `json:"status"`
 	InstalledAt string `json:"installed_at"`
+	// AccessPolicy governs who may INSTRUCT this agent through the bot.
+	// Reporting is unaffected — a 'closed' bot still speaks, it just takes no
+	// orders.
+	AccessPolicy   string   `json:"access_policy"`
+	AllowedUserIDs []string `json:"allowed_user_ids"`
 }
 
 func telegramInstallationToResponse(row db.TelegramInstallation) TelegramInstallationResponse {
@@ -65,6 +70,11 @@ func telegramInstallationToResponse(row db.TelegramInstallation) TelegramInstall
 	}
 	if row.InstalledAt.Valid {
 		resp.InstalledAt = row.InstalledAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
+	}
+	resp.AccessPolicy = row.AccessPolicy
+	resp.AllowedUserIDs = make([]string, 0, len(row.AllowedTelegramUserIds))
+	for _, id := range row.AllowedTelegramUserIds {
+		resp.AllowedUserIDs = append(resp.AllowedUserIDs, strconv.FormatInt(id, 10))
 	}
 	return resp
 }
@@ -197,4 +207,68 @@ func (h *Handler) agentTelegramClient(ctx context.Context, agentID pgtype.UUID) 
 		chat = row.ChatID.String
 	}
 	return telegram.NewBotClient(string(token)), chat
+}
+
+type setTelegramAccessRequest struct {
+	// Policy: "closed" (default), "allowlist", or "open".
+	Policy string `json:"policy"`
+	// AllowedUserIDs are numeric Telegram user ids, as strings so a JS client
+	// cannot lose precision on a 64-bit id.
+	AllowedUserIDs []string `json:"allowed_user_ids"`
+}
+
+// SetAgentTelegramAccess handles PUT /api/agents/{id}/telegram/access.
+//
+// Owner/admin only, and human-only at the route: an agent must not be able to
+// widen the door it is reached through.
+func (h *Handler) SetAgentTelegramAccess(w http.ResponseWriter, r *http.Request) {
+	agent, ok := h.loadAgentForUser(w, r, chi.URLParam(r, "id"))
+	if !ok {
+		return
+	}
+	if _, ok := h.requireWorkspaceRole(w, r, uuidToString(agent.WorkspaceID),
+		"agent not found", "owner", "admin"); !ok {
+		return
+	}
+
+	var req setTelegramAccessRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	policy := strings.TrimSpace(req.Policy)
+	switch policy {
+	case "closed", "allowlist", "open":
+	default:
+		writeError(w, http.StatusBadRequest, "policy must be closed, allowlist or open")
+		return
+	}
+
+	ids := make([]int64, 0, len(req.AllowedUserIDs))
+	for _, raw := range req.AllowedUserIDs {
+		id, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "allowed_user_ids must be numeric Telegram user ids")
+			return
+		}
+		ids = append(ids, id)
+	}
+	// An allowlist with nobody on it is almost certainly a mistake — it reads
+	// as "allow these people" while behaving exactly like closed.
+	if policy == "allowlist" && len(ids) == 0 {
+		writeError(w, http.StatusBadRequest, "allowlist policy needs at least one allowed_user_id (use closed to block everyone)")
+		return
+	}
+
+	row, err := h.Queries.SetTelegramInstallationAccess(r.Context(), db.SetTelegramInstallationAccessParams{
+		AgentID:                agent.ID,
+		AccessPolicy:           policy,
+		AllowedTelegramUserIds: ids,
+		WorkspaceID:            agent.WorkspaceID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "no telegram bot installed for this agent")
+		return
+	}
+	writeJSON(w, http.StatusOK, telegramInstallationToResponse(row))
 }

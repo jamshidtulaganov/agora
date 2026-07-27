@@ -1004,18 +1004,20 @@ type TaskUsageHourlyRollupState struct {
 }
 
 type TelegramInstallation struct {
-	ID                pgtype.UUID        `json:"id"`
-	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
-	AgentID           pgtype.UUID        `json:"agent_id"`
-	BotTokenEncrypted []byte             `json:"bot_token_encrypted"`
-	BotUsername       string             `json:"bot_username"`
-	BotUserID         int64              `json:"bot_user_id"`
-	ChatID            pgtype.Text        `json:"chat_id"`
-	InstallerUserID   pgtype.UUID        `json:"installer_user_id"`
-	Status            string             `json:"status"`
-	InstalledAt       pgtype.Timestamptz `json:"installed_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	ChatSessionID     pgtype.UUID        `json:"chat_session_id"`
+	ID                     pgtype.UUID        `json:"id"`
+	WorkspaceID            pgtype.UUID        `json:"workspace_id"`
+	AgentID                pgtype.UUID        `json:"agent_id"`
+	BotTokenEncrypted      []byte             `json:"bot_token_encrypted"`
+	BotUsername            string             `json:"bot_username"`
+	BotUserID              int64              `json:"bot_user_id"`
+	ChatID                 pgtype.Text        `json:"chat_id"`
+	InstallerUserID        pgtype.UUID        `json:"installer_user_id"`
+	Status                 string             `json:"status"`
+	InstalledAt            pgtype.Timestamptz `json:"installed_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	ChatSessionID          pgtype.UUID        `json:"chat_session_id"`
+	AccessPolicy           string             `json:"access_policy"`
+	AllowedTelegramUserIds []int64            `json:"allowed_telegram_user_ids"`
 }
 
 type TestCase struct {

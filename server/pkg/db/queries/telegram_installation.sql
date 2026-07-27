@@ -53,3 +53,9 @@ RETURNING *;
 -- the bot and chat it should be posted to.
 SELECT * FROM telegram_installation
 WHERE chat_session_id = $1 AND status = 'active';
+
+-- name: SetTelegramInstallationAccess :one
+UPDATE telegram_installation
+SET access_policy = $2, allowed_telegram_user_ids = $3, updated_at = now()
+WHERE agent_id = $1 AND workspace_id = $4
+RETURNING *;

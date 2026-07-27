@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/integrations/telegram"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
@@ -132,23 +131,28 @@ func (h *Handler) handleAgentGroupMessage(ctx context.Context, row db.TelegramIn
 	if text == "" {
 		return
 	}
+
+	// Authorization BEFORE any work. These agents hold repo, git, QA and deploy
+	// tooling, so an inbound group message is an instruction to something that
+	// can change code — not a chat line. Everyone in the group can send one.
+	if !telegramSenderAllowed(row, msg.Chat.ID, msg.From.ID) {
+		slog.Info("telegram agent chat: sender not allowed",
+			"bot", row.BotUsername, "policy", row.AccessPolicy,
+			"from", msg.From.ID, "chat", msg.Chat.ID)
+		return
+	}
+
 	// Strip the @mention so the agent reads the request, not the addressing.
 	text = strings.TrimSpace(strings.ReplaceAll(text, "@"+row.BotUsername, ""))
 	if text == "" {
 		return
 	}
 
+	// The chat is NOT learned from an inbound message. It is bound at install
+	// time, deliberately: learning it here would mean whichever group first
+	// messaged the bot became its trusted chat, so an invite would grant
+	// itself authorization. The gate above already required the bound chat.
 	chatID := strconv.FormatInt(msg.Chat.ID, 10)
-	// Remember which chat this agent lives in the first time it is addressed,
-	// so replies and reports find their way back without manual configuration.
-	if !row.ChatID.Valid || row.ChatID.String != chatID {
-		if updated, err := h.Queries.SetTelegramInstallationChat(ctx, db.SetTelegramInstallationChatParams{
-			AgentID: row.AgentID,
-			ChatID:  pgtype.Text{String: chatID, Valid: true},
-		}); err == nil {
-			row = updated
-		}
-	}
 
 	session, row, err := h.agentTelegramSession(ctx, row)
 	if err != nil {
@@ -259,4 +263,36 @@ func decodeTelegramUpdate(raw json.RawMessage) (telegramUpdate, bool) {
 		return telegramUpdate{}, false
 	}
 	return update, true
+}
+
+// telegramSenderAllowed decides whether this message may instruct the agent.
+//
+// Two independent gates, both of which must pass:
+//
+//  1. The CHAT must be the one this installation is bound to. Without it,
+//     adding the bot to any other group would silently grant that group the
+//     same power — an invite is not an authorization.
+//  2. The SENDER must satisfy the policy. 'closed' (the default) refuses
+//     everyone, so an installation created only to deliver reports never
+//     accepts instructions by accident.
+//
+// PURE, so the policy is unit-testable without a database or Telegram.
+func telegramSenderAllowed(row db.TelegramInstallation, chatID, fromID int64) bool {
+	// An unbound installation has no group to trust yet.
+	if !row.ChatID.Valid || row.ChatID.String != strconv.FormatInt(chatID, 10) {
+		return false
+	}
+	switch row.AccessPolicy {
+	case "open":
+		return true
+	case "allowlist":
+		for _, allowed := range row.AllowedTelegramUserIds {
+			if allowed == fromID {
+				return true
+			}
+		}
+		return false
+	default: // "closed", and anything unrecognised — fail shut, never open
+		return false
+	}
 }

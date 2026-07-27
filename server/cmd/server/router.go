@@ -1212,6 +1212,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/telegram", h.GetAgentTelegramBot)
 					r.With(handler.RequireHumanActor).Put("/telegram", h.InstallAgentTelegramBot)
 					r.With(handler.RequireHumanActor).Delete("/telegram", h.DeleteAgentTelegramBot)
+					r.With(handler.RequireHumanActor).Put("/telegram/access", h.SetAgentTelegramAccess)
 					r.Post("/skills/add", h.AddAgentSkills)
 					// Dedicated env-management endpoint. Owner/admin only;
 					// agent actors are denied. Every reveal / write is
