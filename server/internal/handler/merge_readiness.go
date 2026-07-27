@@ -10,32 +10,41 @@ import (
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
-// Merge-readiness gate (Phase D of the review-system build). Deterministic:
-// aggregates the pipeline's gate LABELS (ci:pass/ci:fail from run_ci, qa:pass/
-// qa:fail from run_qa) into a single ready/blocked signal, tiered by blast
-// radius. It is a SIGNAL for the human who owns the merge — it NEVER merges
-// anything and runs no agent reasoning, so a confident paragraph cannot talk it
-// out of its verdict.
+// Merge-readiness signal. Deterministic: aggregates the pipeline's gate
+// verdicts (qa:pass/qa:fail from run_qa, review:pass/review:fail from
+// run_review) into a single ready/blocked answer for the HUMAN who owns the
+// merge. It NEVER merges anything and runs no agent reasoning, so a confident
+// paragraph cannot talk it out of its verdict.
 //
-// `billing` is PROD and every agent PR targets it, so the default ("full") tier
-// requires the full stack of deterministic gates. A `tier:light` label downgrades
-// a genuinely low-risk change (docs/config) to the CI-only gate — match the
-// review effort to the cost of being wrong, not to the author.
+// A GATE THAT NEVER RAN NEVER BLOCKS. Review and merge are human work here, so
+// nothing machine-run is a precondition for a human looking at a diff. Only an
+// explicitly RED gate blocks — merging over a known-failing verdict is the one
+// thing this endpoint exists to stop. A gate with no signal at all is simply
+// not reported.
 //
-// The reviewer gate (Review stage v2) IS label-backed now: run_review's
-// captured ```review-result``` verdict attaches review:pass / review:fail
-// (service.CaptureReviewEvidence), so "review" joins `required` for the full
-// tier — but ONLY when the gate is actually required (see reviewGateRequired):
-// there is a diff to review (a known PR or a landed verdict) AND the review is
-// active (auto-review enabled or a manual verdict landed). When auto-review is
-// off and no manual review ran, the gate is omitted entirely — advisory, never
-// a dangling "pending" that stalls the merge. Security findings remain advisory
-// (no sec:pass label yet).
+// This is the fix for the class of bug that made the old version useless: the
+// default tier used to `require` a `ci` gate that nothing in the product ever
+// emitted (ci:pass is written only by a manually-fired run_ci slice action, and
+// nothing auto-dispatches it), so `Ready` was structurally false on every
+// default-tier issue and every merge degenerated into a hand-merge whenever a
+// human happened to notice. The same shape had already been found and fixed for
+// the reviewer gate (see reviewGateRequired) and never for ci. Rather than
+// patch one gate, no PENDING gate blocks now.
+//
+// Tier survives only as ADVISORY guidance (`reviews`): which reviewer fleet a
+// change of this blast radius deserves. It gates nothing.
 
 type gateStatus struct {
-	Name   string `json:"name"`   // "ci" | "qa" | "review"
+	Name   string `json:"name"`   // "qa" | "review"
 	Status string `json:"status"` // "pass" | "fail" | "pending"
 }
+
+// blockingGates are the gates whose RED verdict blocks a merge. Same set for
+// every tier: a landed qa:fail or review:fail is a real signal regardless of
+// how big the change is, and no gate is a precondition (see the package
+// comment). `ci` is deliberately absent — nothing in the product emits ci:pass
+// without a human manually firing run_ci.
+var blockingGates = []string{"qa", "review"}
 
 // MergeReadinessResponse is the deterministic gate verdict for an issue's PR.
 type MergeReadinessResponse struct {
@@ -46,33 +55,29 @@ type MergeReadinessResponse struct {
 	Reviews []string     `json:"reviews"`           // recommended reviewer fleet for this tier (advisory)
 }
 
-// reviewTier maps an issue's blast radius to its review effort. `required` is the
-// set of deterministic, label-backed gates that must pass before merge — only
-// gates the pipeline actually emits (ci via run_ci, qa via run_qa). `reviews` is
-// the recommended reviewer fleet for the tier: advisory guidance so a human does
-// not fire a full QA + Security + code-review pass on a one-line change. reviews
-// is intentionally kept OUT of required — listing a reviewer that does not yet
-// emit a pass label there would deadlock the gate forever.
+// reviewTier maps an issue's blast radius to its review effort. `reviews` is
+// the recommended reviewer fleet for the tier: ADVISORY guidance so a human
+// does not fire a full QA + Security + code-review pass on a one-line change.
+// The tier gates nothing — see blockingGates and the package comment. It used
+// to carry a `required` set, and requiring a gate no reporter emitted is
+// exactly what deadlocked the merge.
 type reviewTier struct {
-	name     string
-	required []string
-	reviews  []string
+	name    string
+	reviews []string
 }
 
-// reviewTierForLabels resolves the review tier from the issue's label set.
-// `billing` is PROD and every agent PR targets it, so the default (no tier
-// label) is the full fleet. tier:light and tier:trivial both gate on CI alone —
-// the trivial/light split drives the MODEL (see applyIssueCostTier), not the
-// merge gate — and both skip the heavy QA + Security + code-review fleet that a
-// full-blast change warrants.
+// reviewTierForLabels resolves the review tier from the issue's label set. The
+// default (no tier label) recommends the full fleet; tier:light and
+// tier:trivial recommend a spot-check. The trivial/light split also drives the
+// MODEL (see applyIssueCostTier) — that is where it earns its keep.
 func reviewTierForLabels(labels map[string]bool) reviewTier {
 	switch {
 	case labels["tier:trivial"]:
-		return reviewTier{name: "trivial", required: []string{"ci"}, reviews: []string{"ci"}}
+		return reviewTier{name: "trivial", reviews: []string{"code-review"}}
 	case labels["tier:light"]:
-		return reviewTier{name: "light", required: []string{"ci"}, reviews: []string{"ci"}}
+		return reviewTier{name: "light", reviews: []string{"code-review"}}
 	default:
-		return reviewTier{name: "full", required: []string{"ci", "qa"}, reviews: []string{"ci", "qa", "security", "code-review"}}
+		return reviewTier{name: "full", reviews: []string{"qa", "security", "code-review"}}
 	}
 }
 
@@ -105,20 +110,6 @@ func reviewGateRequired(t reviewTier, hasPR bool, labels map[string]bool, autoRe
 		return false
 	}
 	return autoReview || hasVerdict
-}
-
-// requiredGatesWithReview appends the "review" gate to a tier's required set
-// when the reviewer gate is required (see reviewGateRequired). PURE
-// (unit-tested without a DB): the caller computes reviewRequired. When the gate
-// is not required the review gate is omitted entirely — never left dangling as
-// "pending".
-func requiredGatesWithReview(t reviewTier, reviewRequired bool) []string {
-	if !reviewRequired {
-		return t.required
-	}
-	out := make([]string, 0, len(t.required)+1)
-	out = append(out, t.required...)
-	return append(out, "review")
 }
 
 // gateFromLabels resolves one gate's status from the issue's label set: a
@@ -194,12 +185,15 @@ func (h *Handler) computeMergeReadiness(ctx context.Context, issue db.Issue) Mer
 	}
 
 	t := reviewTierForLabels(labels)
-	required := requiredGatesWithReview(t, reviewGateRequired(t, h.issueHasKnownPR(ctx, issue), labels, h.autoReviewEnabled(ctx, issue)))
 
-	gates := make([]gateStatus, 0, len(required))
+	// Report every gate that has actually SPOKEN, and block only on a red one.
+	// A gate that never ran is not reported at all — it is not a wait, and
+	// rendering a permanent "pending" chip for a QA run nobody asked for is the
+	// noise this endpoint used to be made of.
+	gates := make([]gateStatus, 0, len(blockingGates))
 	blocked := make([]string, 0)
 	ready := true
-	for _, g := range required {
+	for _, g := range blockingGates {
 		var st, reason string
 		if g == "qa" {
 			// The qa gate is RECONCILED (labels + per-case run results + live
@@ -209,12 +203,13 @@ func (h *Handler) computeMergeReadiness(ctx context.Context, issue db.Issue) Mer
 			st = gateFromLabels(labels, g)
 			if st == "fail" {
 				reason = g + " failed (" + g + ":fail)"
-			} else if st == "pending" {
-				reason = g + " has not passed yet"
 			}
 		}
+		if st == "pending" {
+			continue // never ran, or still running — not a blocker either way
+		}
 		gates = append(gates, gateStatus{Name: g, Status: st})
-		if st != "pass" {
+		if st == "fail" {
 			ready = false
 			blocked = append(blocked, reason)
 		}

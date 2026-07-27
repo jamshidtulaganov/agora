@@ -14,36 +14,6 @@ import (
 
 // ---- pure tests ------------------------------------------------------------
 
-func TestRequiredGatesWithReview(t *testing.T) {
-	full := reviewTierForLabels(map[string]bool{})
-	light := reviewTierForLabels(map[string]bool{"tier:light": true})
-	trivial := reviewTierForLabels(map[string]bool{"tier:trivial": true})
-
-	tests := []struct {
-		name          string
-		tier          reviewTier
-		reviewRequire bool
-		want          []string
-	}{
-		{"full tier with review required appends review", full, true, []string{"ci", "qa", "review"}},
-		{"full tier without review required omits review", full, false, []string{"ci", "qa"}},
-		{"light tier never appends review", light, false, []string{"ci"}},
-		{"trivial tier never appends review", trivial, false, []string{"ci"}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := requiredGatesWithReview(tt.tier, tt.reviewRequire); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("requiredGatesWithReview(%s, %v) = %v, want %v", tt.tier.name, tt.reviewRequire, got, tt.want)
-			}
-		})
-	}
-
-	// The append must never mutate the tier's own required slice.
-	if !reflect.DeepEqual(full.required, []string{"ci", "qa"}) {
-		t.Errorf("full.required mutated to %v", full.required)
-	}
-}
-
 // TestReviewGateRequired covers the coupling fix: the review gate is required
 // only for a full-tier issue that has a diff to review AND an active review
 // (auto-review enabled OR a manual verdict landed). Flag off + no manual
