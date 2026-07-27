@@ -199,3 +199,28 @@ func TestRegistryKeysUnique(t *testing.T) {
 		}
 	}
 }
+
+// The medium-tier default is ON: an un-escalated, un-tiered task runs on sonnet
+// with a lean brief instead of the agent's opus[1m] default. It is the pipeline's
+// only cross-cutting model lever, so a silent flip back to off would quietly
+// double every task's cost and wall clock — pin it.
+func TestMediumTierDefaultsOn(t *testing.T) {
+	const key = "AGORA_MEDIUM_TIER"
+	singleton = nil
+	t.Setenv(key, "")
+
+	if !Bool(key) {
+		t.Error("AGORA_MEDIUM_TIER must default to on")
+	}
+	if Source(key) != "default" {
+		t.Errorf("source: got %q, want default", Source(key))
+	}
+	// Still switchable off, per project and per instance.
+	if BoolFrom(map[string]string{key: "false"}, key) {
+		t.Error("a project override must be able to turn medium tier off")
+	}
+	t.Setenv(key, "false")
+	if Bool(key) {
+		t.Error("an instance env value must be able to turn medium tier off")
+	}
+}
