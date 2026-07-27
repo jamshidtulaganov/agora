@@ -343,6 +343,9 @@ func main() {
 	// unconfigured. Registered after h exists; shares the same bus instance.
 	registerTelegramPushListeners(bus, h)
 	registerAutopilotReportListener(bus, h)
+	registerAgentChatReplyListener(bus, h)
+	// One long-poll loop per installed agent bot (no public URL needed).
+	h.StartAgentTelegramPollers(context.Background())
 	// Lark bot push: DM members a card from the issue's assigned-agent bot for
 	// each new inbox item. No-op unless Lark is wired and the recipient bound
 	// their Lark identity. Shares the same bus instance.

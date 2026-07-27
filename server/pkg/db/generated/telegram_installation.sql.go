@@ -26,7 +26,7 @@ func (q *Queries) DeleteTelegramInstallation(ctx context.Context, arg DeleteTele
 }
 
 const getTelegramInstallationByAgent = `-- name: GetTelegramInstallationByAgent :one
-SELECT id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at FROM telegram_installation WHERE agent_id = $1
+SELECT id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id FROM telegram_installation WHERE agent_id = $1
 `
 
 func (q *Queries) GetTelegramInstallationByAgent(ctx context.Context, agentID pgtype.UUID) (TelegramInstallation, error) {
@@ -44,12 +44,13 @@ func (q *Queries) GetTelegramInstallationByAgent(ctx context.Context, agentID pg
 		&i.Status,
 		&i.InstalledAt,
 		&i.UpdatedAt,
+		&i.ChatSessionID,
 	)
 	return i, err
 }
 
 const getTelegramInstallationByBotUser = `-- name: GetTelegramInstallationByBotUser :one
-SELECT id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at FROM telegram_installation WHERE bot_user_id = $1 AND status = 'active'
+SELECT id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id FROM telegram_installation WHERE bot_user_id = $1 AND status = 'active'
 `
 
 // Inbound routing: an update carries the receiving bot's id, which identifies
@@ -69,12 +70,40 @@ func (q *Queries) GetTelegramInstallationByBotUser(ctx context.Context, botUserI
 		&i.Status,
 		&i.InstalledAt,
 		&i.UpdatedAt,
+		&i.ChatSessionID,
+	)
+	return i, err
+}
+
+const getTelegramInstallationBySession = `-- name: GetTelegramInstallationBySession :one
+SELECT id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id FROM telegram_installation
+WHERE chat_session_id = $1 AND status = 'active'
+`
+
+// Outbound routing: an assistant reply lands on a session, and this resolves
+// the bot and chat it should be posted to.
+func (q *Queries) GetTelegramInstallationBySession(ctx context.Context, chatSessionID pgtype.UUID) (TelegramInstallation, error) {
+	row := q.db.QueryRow(ctx, getTelegramInstallationBySession, chatSessionID)
+	var i TelegramInstallation
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.AgentID,
+		&i.BotTokenEncrypted,
+		&i.BotUsername,
+		&i.BotUserID,
+		&i.ChatID,
+		&i.InstallerUserID,
+		&i.Status,
+		&i.InstalledAt,
+		&i.UpdatedAt,
+		&i.ChatSessionID,
 	)
 	return i, err
 }
 
 const listActiveTelegramInstallations = `-- name: ListActiveTelegramInstallations :many
-SELECT id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at FROM telegram_installation WHERE status = 'active' ORDER BY installed_at
+SELECT id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id FROM telegram_installation WHERE status = 'active' ORDER BY installed_at
 `
 
 // Every active bot across all workspaces — the poller opens one long-poll loop
@@ -100,6 +129,7 @@ func (q *Queries) ListActiveTelegramInstallations(ctx context.Context) ([]Telegr
 			&i.Status,
 			&i.InstalledAt,
 			&i.UpdatedAt,
+			&i.ChatSessionID,
 		); err != nil {
 			return nil, err
 		}
@@ -112,7 +142,7 @@ func (q *Queries) ListActiveTelegramInstallations(ctx context.Context) ([]Telegr
 }
 
 const listTelegramInstallations = `-- name: ListTelegramInstallations :many
-SELECT id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at FROM telegram_installation
+SELECT id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id FROM telegram_installation
 WHERE workspace_id = $1
 ORDER BY installed_at DESC
 `
@@ -138,6 +168,7 @@ func (q *Queries) ListTelegramInstallations(ctx context.Context, workspaceID pgt
 			&i.Status,
 			&i.InstalledAt,
 			&i.UpdatedAt,
+			&i.ChatSessionID,
 		); err != nil {
 			return nil, err
 		}
@@ -153,7 +184,7 @@ const setTelegramInstallationChat = `-- name: SetTelegramInstallationChat :one
 UPDATE telegram_installation
 SET chat_id = $2, updated_at = now()
 WHERE agent_id = $1
-RETURNING id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at
+RETURNING id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id
 `
 
 type SetTelegramInstallationChatParams struct {
@@ -176,6 +207,39 @@ func (q *Queries) SetTelegramInstallationChat(ctx context.Context, arg SetTelegr
 		&i.Status,
 		&i.InstalledAt,
 		&i.UpdatedAt,
+		&i.ChatSessionID,
+	)
+	return i, err
+}
+
+const setTelegramInstallationSession = `-- name: SetTelegramInstallationSession :one
+UPDATE telegram_installation
+SET chat_session_id = $2, updated_at = now()
+WHERE agent_id = $1
+RETURNING id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id
+`
+
+type SetTelegramInstallationSessionParams struct {
+	AgentID       pgtype.UUID `json:"agent_id"`
+	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+}
+
+func (q *Queries) SetTelegramInstallationSession(ctx context.Context, arg SetTelegramInstallationSessionParams) (TelegramInstallation, error) {
+	row := q.db.QueryRow(ctx, setTelegramInstallationSession, arg.AgentID, arg.ChatSessionID)
+	var i TelegramInstallation
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.AgentID,
+		&i.BotTokenEncrypted,
+		&i.BotUsername,
+		&i.BotUserID,
+		&i.ChatID,
+		&i.InstallerUserID,
+		&i.Status,
+		&i.InstalledAt,
+		&i.UpdatedAt,
+		&i.ChatSessionID,
 	)
 	return i, err
 }
@@ -193,7 +257,7 @@ ON CONFLICT (agent_id) DO UPDATE SET
     installer_user_id   = EXCLUDED.installer_user_id,
     status              = 'active',
     updated_at          = now()
-RETURNING id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at
+RETURNING id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id
 `
 
 type UpsertTelegramInstallationParams struct {
@@ -231,6 +295,7 @@ func (q *Queries) UpsertTelegramInstallation(ctx context.Context, arg UpsertTele
 		&i.Status,
 		&i.InstalledAt,
 		&i.UpdatedAt,
+		&i.ChatSessionID,
 	)
 	return i, err
 }

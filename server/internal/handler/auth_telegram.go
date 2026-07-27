@@ -170,6 +170,7 @@ type telegramUpdate struct {
 		From *struct {
 			ID           int64  `json:"id"`
 			FirstName    string `json:"first_name"`
+			Username     string `json:"username"`
 			LanguageCode string `json:"language_code"`
 		} `json:"from"`
 		Chat *struct {

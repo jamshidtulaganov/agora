@@ -41,3 +41,15 @@ RETURNING *;
 
 -- name: DeleteTelegramInstallation :exec
 DELETE FROM telegram_installation WHERE agent_id = $1 AND workspace_id = $2;
+
+-- name: SetTelegramInstallationSession :one
+UPDATE telegram_installation
+SET chat_session_id = $2, updated_at = now()
+WHERE agent_id = $1
+RETURNING *;
+
+-- name: GetTelegramInstallationBySession :one
+-- Outbound routing: an assistant reply lands on a session, and this resolves
+-- the bot and chat it should be posted to.
+SELECT * FROM telegram_installation
+WHERE chat_session_id = $1 AND status = 'active';

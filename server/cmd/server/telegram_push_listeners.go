@@ -93,3 +93,25 @@ func registerAutopilotReportListener(bus *events.Bus, h *handler.Handler) {
 		go h.SendAutopilotReport(context.Background(), runID)
 	})
 }
+
+// registerAgentChatReplyListener posts an agent's chat reply back to the
+// Telegram group it was asked in.
+//
+// Hangs off EventTaskCompleted rather than a chat-specific event because the
+// assistant message is written on the task-completion path — there is no
+// separate "assistant replied" event to subscribe to. Tasks with no chat
+// session are ignored here, and SendAgentChatReplyToTelegram then no-ops for
+// any session no bot is bound to, so ordinary web chat is untouched.
+func registerAgentChatReplyListener(bus *events.Bus, h *handler.Handler) {
+	bus.Subscribe(protocol.EventTaskCompleted, func(e events.Event) {
+		payload, ok := e.Payload.(map[string]any)
+		if !ok {
+			return
+		}
+		sessionID, _ := payload["chat_session_id"].(string)
+		if sessionID == "" {
+			return
+		}
+		go h.SendAgentChatReplyToTelegram(context.Background(), sessionID)
+	})
+}

@@ -1015,6 +1015,7 @@ type TelegramInstallation struct {
 	Status            string             `json:"status"`
 	InstalledAt       pgtype.Timestamptz `json:"installed_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	ChatSessionID     pgtype.UUID        `json:"chat_session_id"`
 }
 
 type TestCase struct {

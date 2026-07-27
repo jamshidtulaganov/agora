@@ -114,7 +114,17 @@ func (h *Handler) SendAutopilotReport(ctx context.Context, runID string) {
 	if err != nil {
 		return
 	}
-	chatID := h.autopilotReportChatID(ctx, ap)
+	// Prefer the agent's OWN bot and chat when one is installed: a report from
+	// "sd-bridge-lead" should arrive under that agent's identity, not the
+	// platform bot's. Falls back to the platform bot + configured chat, which
+	// is what every workspace without installations still uses.
+	bot, chatID := h.agentTelegramClient(ctx, ap.AssigneeID)
+	if bot == nil {
+		bot = h.telegramBot
+	}
+	if chatID == "" {
+		chatID = h.autopilotReportChatID(ctx, ap)
+	}
 	if chatID == "" {
 		return
 	}
@@ -133,7 +143,7 @@ func (h *Handler) SendAutopilotReport(ctx context.Context, runID string) {
 	doc := renderReportHTML(title, body)
 	filename := "bitrix-hisobot-" + time.Now().Format("2006-01-02") + ".html"
 
-	if err := h.telegramBot.SendDocument(ctx, chatID, filename, doc, reportCaption(title, body)); err != nil {
+	if err := bot.SendDocument(ctx, chatID, filename, doc, reportCaption(title, body)); err != nil {
 		slog.Warn("autopilot report: telegram send failed",
 			"run_id", runID, "chat_id", chatID, "error", err)
 		return
