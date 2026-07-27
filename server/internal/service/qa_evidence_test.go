@@ -5,6 +5,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
 func TestParseQAResultBlock(t *testing.T) {
@@ -236,4 +239,78 @@ func TestAnnotatePhaseCheck(t *testing.T) {
 	if got := annotatePhaseCheck("{not json", phaseTimingCheck{Trust: "ok"}); got != "{not json" {
 		t.Errorf("bad raw must pass through unchanged, got %q", got)
 	}
+}
+
+func TestDerivePhasesFromStream(t *testing.T) {
+	base := time.Date(2026, 7, 27, 9, 25, 11, 0, time.UTC)
+	msg := func(offsetSec int, content string) db.TaskMessage {
+		return db.TaskMessage{
+			Content:   pgtype.Text{String: content, Valid: true},
+			CreatedAt: pgtype.Timestamptz{Time: base.Add(time.Duration(offsetSec) * time.Second), Valid: true},
+		}
+	}
+	ended := base.Add(370 * time.Second)
+
+	t.Run("rebuilds windows from message timestamps", func(t *testing.T) {
+		got := derivePhasesFromStream([]db.TaskMessage{
+			msg(0, "PHASE: checks"),
+			msg(30, "some ordinary output, no marker"),
+			msg(112, "PHASE: baseline skipped — every branch command passed"),
+			msg(113, "PHASE: smoke"),
+			msg(298, "PHASE: cases"),
+		}, ended)
+
+		if len(got) != 4 {
+			t.Fatalf("phases = %d, want 4: %+v", len(got), got)
+		}
+		// checks runs until the next marker, not until the end of the task.
+		if got[0].Phase != "checks" || got[0].StartedAt != base.Format(time.RFC3339) ||
+			got[0].FinishedAt != base.Add(112*time.Second).Format(time.RFC3339) {
+			t.Errorf("checks window wrong: %+v", got[0])
+		}
+		// A skipped phase carries a reason and NO window.
+		if !got[1].Skipped || got[1].StartedAt != "" || got[1].FinishedAt != "" {
+			t.Errorf("skipped baseline must carry no window: %+v", got[1])
+		}
+		if !strings.Contains(got[1].Note, "every branch command passed") {
+			t.Errorf("skipped note lost: %q", got[1].Note)
+		}
+		// The last phase closes at the supplied end.
+		if got[3].Phase != "cases" || got[3].FinishedAt != ended.Format(time.RFC3339) {
+			t.Errorf("last phase must close at endedAt: %+v", got[3])
+		}
+	})
+
+	t.Run("the timestamps come from the stream, not from anything the agent wrote", func(t *testing.T) {
+		// The agent claims a wildly wrong time INSIDE the marker line; the
+		// derivation must ignore the text and use the message's own clock.
+		got := derivePhasesFromStream([]db.TaskMessage{
+			msg(0, "PHASE: checks started_at 1999-01-01T00:00:00Z"),
+			msg(60, "PHASE: smoke"),
+		}, ended)
+		if got[0].StartedAt != base.Format(time.RFC3339) {
+			t.Errorf("started_at = %q, want the message timestamp", got[0].StartedAt)
+		}
+	})
+
+	t.Run("no markers yields nothing so the caller can fall back", func(t *testing.T) {
+		if got := derivePhasesFromStream([]db.TaskMessage{msg(0, "just working")}, ended); got != nil {
+			t.Errorf("got %+v, want nil", got)
+		}
+	})
+
+	t.Run("unknown phase names are ignored", func(t *testing.T) {
+		if got := derivePhasesFromStream([]db.TaskMessage{msg(0, "PHASE: deploying")}, ended); got != nil {
+			t.Errorf("got %+v, want nil for an off-contract name", got)
+		}
+	})
+
+	t.Run("markers are matched case-insensitively and mid-message", func(t *testing.T) {
+		got := derivePhasesFromStream([]db.TaskMessage{
+			msg(0, "Running the suite now.\nphase: Checks\nmore text"),
+		}, ended)
+		if len(got) != 1 || got[0].Phase != "checks" {
+			t.Fatalf("got %+v, want one checks phase", got)
+		}
+	})
 }

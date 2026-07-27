@@ -171,6 +171,12 @@ type phaseTimingCheck struct {
 	Reason       string `json:"reason,omitempty"`
 	DispatchedAt string `json:"dispatched_at,omitempty"`
 	CapturedAt   string `json:"captured_at"`
+	// Measured is the phase timeline rebuilt from the agent's STREAM
+	// (task_message.created_at — a platform clock), present whenever the run
+	// emitted `PHASE:` markers. When it is set it SUPERSEDES the agent's
+	// self-reported windows entirely, and Trust reads "measured". Aggregate
+	// this, not `phases`.
+	Measured []qaResultPhase `json:"measured,omitempty"`
 }
 
 // checkPhaseTimings reconciles agent-reported phase windows against the only
@@ -245,6 +251,110 @@ func checkPhaseTimings(phases []qaResultPhase, dispatchedAt time.Time, hasDispat
 
 	out.Trust = "ok"
 	return out
+}
+
+// qaPhaseMarkerRe matches the in-band phase announcement the run_qa recipe
+// emits on its own line, e.g. `PHASE: checks` / `PHASE: baseline skipped — every
+// branch command passed`. Same convention as the `PROGRESS:` headline and the
+// `RUNNING test_case:` markers: the agent supplies the NAME, the platform
+// supplies the CLOCK.
+var qaPhaseMarkerRe = regexp.MustCompile(`(?mi)^[^\S\n]*PHASE:[^\S\n]*(checks|baseline|smoke|cases|materialize)\b[^\S\n]*(.*)$`)
+
+// derivePhasesFromStream reconstructs the phase timeline from the agent's
+// STREAM rather than from its self-report. Every timestamp here is a
+// task_message.created_at — written by the server as the daemon streams the
+// agent's output — so it is a real clock reading no matter what the agent later
+// claims in its fence.
+//
+// A phase runs from its own marker until the next one; the last phase ends at
+// endedAt (the task's completion, or the capture moment while it is still in
+// flight). A marker whose trailing text mentions skipping records the phase as
+// skipped and carries no window, matching the fence contract.
+//
+// PURE, so the reconstruction is unit-testable without a daemon or a DB.
+func derivePhasesFromStream(messages []db.TaskMessage, endedAt time.Time) []qaResultPhase {
+	type mark struct {
+		phase   string
+		note    string
+		skipped bool
+		at      time.Time
+	}
+	var marks []mark
+	for _, m := range messages {
+		if !m.CreatedAt.Valid || !m.Content.Valid {
+			continue
+		}
+		for _, hit := range qaPhaseMarkerRe.FindAllStringSubmatch(m.Content.String, -1) {
+			trailer := strings.TrimSpace(hit[2])
+			marks = append(marks, mark{
+				phase:   strings.ToLower(hit[1]),
+				note:    trailer,
+				skipped: strings.Contains(strings.ToLower(trailer), "skip"),
+				at:      m.CreatedAt.Time.UTC(),
+			})
+		}
+	}
+	if len(marks) == 0 {
+		return nil
+	}
+
+	out := make([]qaResultPhase, 0, len(marks))
+	for i, mk := range marks {
+		ph := qaResultPhase{Phase: mk.phase, Note: mk.note}
+		if mk.skipped {
+			ph.Skipped = true
+			out = append(out, ph)
+			continue
+		}
+		// The window closes at the NEXT marker of any kind — including a skipped
+		// one, which still marks the moment this phase stopped.
+		end := endedAt.UTC()
+		if i+1 < len(marks) {
+			end = marks[i+1].at
+		}
+		if end.Before(mk.at) {
+			end = mk.at // never emit a negative window from clock weirdness
+		}
+		ph.StartedAt = mk.at.Format(time.RFC3339)
+		ph.FinishedAt = end.Format(time.RFC3339)
+		out = append(out, ph)
+	}
+	return out
+}
+
+// qaGateStreamPhases finds the agent task this verdict came from and rebuilds
+// its phase timeline from the streamed messages. Best-effort: any miss (no
+// matching task, no markers, a query error) returns nil and the caller falls
+// back to the agent's self-report.
+//
+// The task is matched on trigger_comment_id — the dispatch comment is what
+// fired this gate, so it identifies the run unambiguously even when an issue
+// has several QA tasks over its lifetime.
+func (s *TaskService) qaGateStreamPhases(ctx context.Context, issue db.Issue, triggerCommentID pgtype.UUID, capturedAt time.Time) []qaResultPhase {
+	if !triggerCommentID.Valid {
+		return nil
+	}
+	tasks, err := s.Queries.ListTasksByIssue(ctx, issue.ID)
+	if err != nil {
+		return nil
+	}
+	for _, task := range tasks {
+		if !task.TriggerCommentID.Valid || task.TriggerCommentID != triggerCommentID {
+			continue
+		}
+		messages, msgErr := s.Queries.ListTaskMessages(ctx, task.ID)
+		if msgErr != nil {
+			return nil
+		}
+		// The gate is usually still running when it posts its verdict, so the
+		// task has no completed_at yet — the capture moment is the true end.
+		endedAt := capturedAt
+		if task.CompletedAt.Valid && task.CompletedAt.Time.After(capturedAt) {
+			endedAt = task.CompletedAt.Time
+		}
+		return derivePhasesFromStream(messages, endedAt)
+	}
+	return nil
 }
 
 // annotatePhaseCheck attaches the server's verdict to the stored payload under
@@ -343,10 +453,27 @@ func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, con
 	// before the row is written, so a measurement query can exclude junk rather
 	// than average it in. Never blocks the verdict — an implausible clock costs
 	// the timings their trust, nothing else.
+	capturedAt := time.Now()
 	dispatchedAt, hasDispatch := s.qaDispatchedAt(ctx, triggerCommentID)
-	if check := checkPhaseTimings(p.PhaseTimings(), dispatchedAt, hasDispatch, time.Now()); check.Trust != "absent" {
+	check := checkPhaseTimings(p.PhaseTimings(), dispatchedAt, hasDispatch, capturedAt)
+
+	// Prefer the STREAM. `PHASE:` markers are stamped with task_message
+	// .created_at as the daemon streams them, so they are a platform clock
+	// reading; the fence's own timestamps are whatever the agent chose to
+	// write down afterwards. When the stream has markers, its timeline wins and
+	// the self-report is demoted to an unused claim.
+	if measured := s.qaGateStreamPhases(ctx, issue, triggerCommentID, capturedAt); len(measured) > 0 {
+		check = phaseTimingCheck{
+			Trust:        "measured",
+			Reason:       "rebuilt from PHASE: markers in the agent's stream (platform clock)",
+			DispatchedAt: check.DispatchedAt,
+			CapturedAt:   check.CapturedAt,
+			Measured:     measured,
+		}
+	}
+	if check.Trust != "absent" {
 		raw = annotatePhaseCheck(raw, check)
-		if check.Trust != "ok" {
+		if check.Trust != "ok" && check.Trust != "measured" {
 			slog.Info("qa phase timings not trusted", "issue_id", util.UUIDToString(issue.ID),
 				"trust", check.Trust, "reason", check.Reason)
 		}

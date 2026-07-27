@@ -38,20 +38,33 @@ here at all, so treat a missing array as "unknown", not "zero".
 
 ## Trust — read this before averaging anything
 
-These timestamps are **self-reported by the agent**. Nothing in the harness
-measures them, and the very first live gate proved why that matters: every
-boundary landed on an exact minute and every phase was exactly 120s. The agent
-reconstructed the numbers afterwards instead of reading a clock, and its
-reported `started_at` was 98 seconds *before* its own dispatch comment existed.
+The fence's own timestamps are **self-reported by the agent**, and the first
+live gate showed exactly how little that is worth: every boundary landed on an
+exact minute, every phase was exactly 120s, and the reported `started_at` was 98
+seconds *before* the gate's own dispatch comment existed. The agent
+reconstructed the numbers afterwards instead of reading a clock.
 
-So the capture path reconciles them against the two timestamps the server does
-know — when the gate was dispatched, and when the verdict landed — and records
-its judgement at `result_json._phase_timing`. The underscore marks the key
+So the platform stopped asking it to. The recipe now has the agent ANNOUNCE
+each phase in-band — a bare `PHASE: checks` line, or
+`PHASE: baseline skipped — every branch command passed` — and the daemon
+timestamps those lines as it streams them into `task_message.created_at`. The
+agent supplies the NAME; the platform supplies the CLOCK. Same convention as
+the `PROGRESS:` headline and the `RUNNING test_case:` markers.
+
+At capture, `derivePhasesFromStream` rebuilds the timeline from those message
+timestamps and stores it at **`result_json._phase_timing.measured`**, with
+`trust = "measured"`. When present it SUPERSEDES the fence's `phases` entirely —
+aggregate `measured`, never `phases`. The underscore marks the key
 server-owned; everything without one is the agent's fence as it wrote it.
+
+A run with no markers (an older pinned template, or an agent that ignored the
+instruction) falls back to reconciling the self-report against the dispatch and
+capture times, which yields the weaker levels below.
 
 | `trust` | meaning | safe to aggregate? |
 |---|---|---|
-| `ok` | inside the real window, not obviously synthesised | yes |
+| `measured` | rebuilt from stream markers — a platform clock | **yes, this is the real one** |
+| `ok` | self-reported, inside the real window, not obviously synthesised | weakly |
 | `estimated` | plausible, but every boundary is on an exact minute | directionally only |
 | `implausible` | contradicts harness truth (pre-dispatch start, post-capture end, negative duration) | **no** |
 | `absent` | no timed phases (all skipped) | n/a |
@@ -78,8 +91,10 @@ SELECT
   count(*) FILTER (WHERE ph->>'skipped' = 'true')     AS baseline_skipped,
   round(100.0 * count(*) FILTER (WHERE ph->>'skipped' = 'true') / count(*), 1) AS pct_skipped
 FROM qa_evidence e
-CROSS JOIN LATERAL jsonb_array_elements(e.result_json->'phases') ph
-WHERE jsonb_typeof(e.result_json->'phases') = 'array'
+CROSS JOIN LATERAL jsonb_array_elements(
+  COALESCE(e.result_json->'_phase_timing'->'measured', e.result_json->'phases')
+) ph
+WHERE jsonb_typeof(COALESCE(e.result_json->'_phase_timing'->'measured', e.result_json->'phases')) = 'array'
   AND ph->>'phase' = 'baseline';
 ```
 
@@ -105,9 +120,8 @@ WITH p AS (
            (ph->>'finished_at')::timestamptz - (ph->>'started_at')::timestamptz
          )) AS secs
   FROM qa_evidence e
-  CROSS JOIN LATERAL jsonb_array_elements(e.result_json->'phases') ph
-  WHERE jsonb_typeof(e.result_json->'phases') = 'array'
-    AND e.result_json->'_phase_timing'->>'trust' = 'ok'   -- never average junk
+  CROSS JOIN LATERAL jsonb_array_elements(e.result_json->'_phase_timing'->'measured') ph
+  WHERE e.result_json->'_phase_timing'->>'trust' = 'measured'  -- platform clock only
     AND ph->>'started_at' IS NOT NULL
     AND ph->>'finished_at' IS NOT NULL
 )
@@ -134,9 +148,8 @@ WITH g AS (
            (ph->>'finished_at')::timestamptz - (ph->>'started_at')::timestamptz
          ))) AS total_secs
   FROM qa_evidence e
-  CROSS JOIN LATERAL jsonb_array_elements(e.result_json->'phases') ph
-  WHERE jsonb_typeof(e.result_json->'phases') = 'array'
-    AND e.result_json->'_phase_timing'->>'trust' = 'ok'
+  CROSS JOIN LATERAL jsonb_array_elements(e.result_json->'_phase_timing'->'measured') ph
+  WHERE e.result_json->'_phase_timing'->>'trust' = 'measured'
   GROUP BY e.id
 )
 SELECT skipped_baseline, count(*) AS n,
