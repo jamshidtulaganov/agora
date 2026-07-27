@@ -1003,6 +1003,20 @@ type TaskUsageHourlyRollupState struct {
 	LastError         pgtype.Text        `json:"last_error"`
 }
 
+type TelegramInstallation struct {
+	ID                pgtype.UUID        `json:"id"`
+	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
+	AgentID           pgtype.UUID        `json:"agent_id"`
+	BotTokenEncrypted []byte             `json:"bot_token_encrypted"`
+	BotUsername       string             `json:"bot_username"`
+	BotUserID         int64              `json:"bot_user_id"`
+	ChatID            pgtype.Text        `json:"chat_id"`
+	InstallerUserID   pgtype.UUID        `json:"installer_user_id"`
+	Status            string             `json:"status"`
+	InstalledAt       pgtype.Timestamptz `json:"installed_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
 type TestCase struct {
 	ID            pgtype.UUID        `json:"id"`
 	WorkspaceID   pgtype.UUID        `json:"workspace_id"`

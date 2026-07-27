@@ -512,3 +512,52 @@ func (c *BotClient) SendDocument(ctx context.Context, chatID, filename string, d
 	}
 	return nil
 }
+
+// BotUser is the identity getMe returns for the token's own bot.
+type BotUser struct {
+	ID       int64
+	Username string
+}
+
+// GetMe verifies a bot token and returns the bot's identity.
+//
+// Called before an installation is stored: a token accepted here is one that
+// actually works, so an install cannot succeed with a dead credential and then
+// fail silently later, at the moment someone is waiting for a reply in a group.
+// It also supplies the username and id that inbound routing needs, which a human
+// would otherwise have to copy across by hand.
+func (c *BotClient) GetMe(ctx context.Context) (BotUser, error) {
+	if c.token == "" {
+		return BotUser{}, ErrNoToken
+	}
+	url := fmt.Sprintf("%s/bot%s/getMe", c.baseURL(), c.token)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return BotUser{}, fmt.Errorf("telegram: new getMe request: %w", err)
+	}
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return BotUser{}, fmt.Errorf("telegram: getMe http: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return BotUser{}, fmt.Errorf("telegram: read getMe response: %w", err)
+	}
+	var parsed struct {
+		OK          bool   `json:"ok"`
+		ErrorCode   int    `json:"error_code"`
+		Description string `json:"description"`
+		Result      struct {
+			ID       int64  `json:"id"`
+			Username string `json:"username"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return BotUser{}, fmt.Errorf("telegram: decode getMe response: %w", err)
+	}
+	if !parsed.OK {
+		return BotUser{}, fmt.Errorf("telegram: getMe failed: code=%d description=%q", parsed.ErrorCode, parsed.Description)
+	}
+	return BotUser{ID: parsed.Result.ID, Username: parsed.Result.Username}, nil
+}

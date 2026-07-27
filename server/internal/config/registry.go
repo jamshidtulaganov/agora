@@ -88,6 +88,7 @@ var Registry = []Def{
 	{Key: "JWT_SECRET", Kind: KindSecret, Category: "Secrets", Label: "JWT secret", Description: "Token signing key."},
 	{Key: "AGORA_GIT_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "Git credential seal key", Description: "Secretbox key for per-workspace git PATs."},
 	{Key: "AGORA_LARK_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "Lark seal key", Description: "Secretbox key for Lark integration."},
+	{Key: "AGORA_TELEGRAM_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "Telegram seal key", Description: "Secretbox key for per-agent Telegram bot tokens (telegram_installation)."},
 	{Key: "AGORA_ZOHO_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "Zoho seal key", Description: "Secretbox key for Zoho integration."},
 	{Key: "AGORA_FIGMA_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "Figma seal key", Description: "Secretbox key for Figma integration."},
 	{Key: "AGORA_RELEASE_SECRET_KEY", Kind: KindSecret, Category: "Secrets", Label: "Release integration seal key", Description: "Secretbox key for per-workspace release-integration webhook URLs / signing secrets."},
