@@ -37,6 +37,50 @@ type qaResultPayload struct {
 	Screenshots []json.RawMessage `json:"screenshots"`
 	CommitSha   string            `json:"commit_sha"`
 	StartedAt   string            `json:"started_at"`
+	// Held as RawMessage, not []qaResultPhase, ON PURPOSE: RawMessage accepts
+	// ANY valid JSON value here, so an agent that emits a string, an object, or
+	// nonsense for `phases` still gets its verdict captured. Decoding it into a
+	// typed slice is a separate, failable step — see PhaseTimings.
+	Phases json.RawMessage `json:"phases"`
+}
+
+// qaResultPhase is one step of the gate recipe with its wall-clock window, so
+// the platform can measure WHERE a gate spends its time instead of seeing one
+// opaque task duration. The whole fence is persisted verbatim into
+// qa_evidence.result_json, so these ride along with no schema change and are
+// queryable directly (see docs/qa-phase-timing.md).
+//
+// The load-bearing entry is `baseline` with Skipped=true: the recipe runs the
+// branch first and only re-runs RED commands against the merge-base, so the
+// share of gates that skip the baseline entirely — and the time that saves
+// versus the ones that can't — is the whole reason this field exists.
+//
+// Every field is optional and unvalidated on purpose. Phase timings are
+// telemetry, never a gate: a missing, malformed, or absent-entirely `phases`
+// array must never cost an agent its verdict. Older agents (and any runtime
+// pinned to an older template) simply report nothing here.
+type qaResultPhase struct {
+	Phase      string `json:"phase"`
+	StartedAt  string `json:"started_at"`
+	FinishedAt string `json:"finished_at"`
+	Skipped    bool   `json:"skipped"`
+	Note       string `json:"note"`
+}
+
+// PhaseTimings decodes the optional phase array. Any problem — absent, wrong
+// type, malformed entries — yields nil rather than an error: a verdict must
+// never be lost over its telemetry. The verbatim payload still reaches
+// qa_evidence.result_json either way, so a malformed array remains inspectable
+// in the row even when this returns nothing.
+func (p qaResultPayload) PhaseTimings() []qaResultPhase {
+	if len(p.Phases) == 0 {
+		return nil
+	}
+	var out []qaResultPhase
+	if json.Unmarshal(p.Phases, &out) != nil {
+		return nil
+	}
+	return out
 }
 
 // commitShaRe is the accepted commit_sha shape: 7-40 hex chars (a short or

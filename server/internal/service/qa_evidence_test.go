@@ -1,6 +1,9 @@
 package service
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseQAResultBlock(t *testing.T) {
 	t.Run("valid block amid prose", func(t *testing.T) {
@@ -51,6 +54,77 @@ func TestParseQAResultBlock(t *testing.T) {
 		_, p, ok := parseQAResultBlock(content)
 		if !ok || p.Verdict != "pass" {
 			t.Errorf("ok=%v verdict=%q, want ok=true pass", ok, p.Verdict)
+		}
+	})
+}
+
+// Phase timings are TELEMETRY, never a gate. The parser must read them when
+// present, tolerate them absent (older agents / an older pinned template), and
+// never reject a verdict because of them.
+func TestParseQAResultBlockPhases(t *testing.T) {
+	t.Run("phases parse, including a skipped baseline", func(t *testing.T) {
+		content := "```qa-result\n" + `{"verdict":"pass","summary":"green","commands":[{"cmd":"go test ./...","branch_exit":0,"kind":"pass"}],"screenshots":[],` +
+			`"phases":[` +
+			`{"phase":"checks","started_at":"2026-07-27T10:00:00Z","finished_at":"2026-07-27T10:04:00Z"},` +
+			`{"phase":"baseline","skipped":true,"note":"every branch command passed"},` +
+			`{"phase":"smoke","started_at":"2026-07-27T10:04:00Z","finished_at":"2026-07-27T10:05:30Z"}` +
+			`]}` + "\n```"
+		raw, p, ok := parseQAResultBlock(content)
+		if !ok {
+			t.Fatal("expected ok=true")
+		}
+		phases := p.PhaseTimings()
+		if len(phases) != 3 {
+			t.Fatalf("phases len = %d, want 3", len(phases))
+		}
+		if phases[0].Phase != "checks" || phases[0].StartedAt == "" || phases[0].FinishedAt == "" {
+			t.Errorf("checks phase malformed: %+v", phases[0])
+		}
+		// The datapoint the whole field exists for.
+		if phases[1].Phase != "baseline" || !phases[1].Skipped || phases[1].Note == "" {
+			t.Errorf("skipped baseline phase malformed: %+v", phases[1])
+		}
+		if phases[1].StartedAt != "" || phases[1].FinishedAt != "" {
+			t.Errorf("a skipped phase must carry no timestamps: %+v", phases[1])
+		}
+		// result_json is stored verbatim, so the phases must survive into the row
+		// without any schema change.
+		if !strings.Contains(raw, `"phases"`) {
+			t.Error("raw payload must carry phases through to qa_evidence.result_json")
+		}
+	})
+
+	t.Run("absent phases is not an error", func(t *testing.T) {
+		content := "```qa-result\n" + `{"verdict":"pass","summary":"green","commands":[],"screenshots":[]}` + "\n```"
+		_, p, ok := parseQAResultBlock(content)
+		if !ok {
+			t.Fatal("a verdict without phases must still capture")
+		}
+		if len(p.PhaseTimings()) != 0 {
+			t.Errorf("phases = %+v, want empty", p.PhaseTimings())
+		}
+	})
+
+	t.Run("malformed phases must not cost the agent its verdict", func(t *testing.T) {
+		// Telemetry is never a gate. A wrong-typed phases value must still
+		// capture the verdict; only the timings are dropped.
+		for _, bad := range []string{`"not-an-array"`, `42`, `{"phase":"checks"}`, `[1,2,3]`} {
+			content := "```qa-result\n" + `{"verdict":"pass","summary":"x","commands":[],"phases":` + bad + `}` + "\n```"
+			raw, p, ok := parseQAResultBlock(content)
+			if !ok {
+				t.Fatalf("phases=%s cost the agent its verdict", bad)
+			}
+			if p.Verdict != "pass" {
+				t.Errorf("phases=%s: verdict = %q, want pass", bad, p.Verdict)
+			}
+			if got := p.PhaseTimings(); got != nil {
+				t.Errorf("phases=%s: timings = %+v, want nil", bad, got)
+			}
+			// The raw payload still reaches result_json, so the bad value stays
+			// inspectable in the row.
+			if !strings.Contains(raw, "phases") {
+				t.Errorf("phases=%s: raw lost the field", bad)
+			}
 		}
 	})
 }
