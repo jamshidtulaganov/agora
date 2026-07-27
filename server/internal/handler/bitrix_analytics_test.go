@@ -81,3 +81,19 @@ func TestBitrixParseTime(t *testing.T) {
 		t.Errorf("parsed to %v, want 2 April", got)
 	}
 }
+
+// The first live weekly report could not state a week-over-week change: the
+// endpoint only accepted `since`, so a PAST window was unreachable and the
+// agent correctly reported the delta as unavailable. untilLabel is the visible
+// half of that fix — a bounded request must not be labelled as ending today.
+func TestUntilLabel(t *testing.T) {
+	now := time.Date(2026, 7, 27, 18, 0, 0, 0, time.UTC)
+
+	if got := untilLabel(time.Time{}, now); got != "2026-07-27" {
+		t.Errorf("unbounded window = %q, want today", got)
+	}
+	bounded := time.Date(2026, 7, 20, 23, 59, 59, 0, time.UTC)
+	if got := untilLabel(bounded, now); got != "2026-07-20" {
+		t.Errorf("bounded window = %q, want its own end date — labelling it today would pass a historical window off as current", got)
+	}
+}

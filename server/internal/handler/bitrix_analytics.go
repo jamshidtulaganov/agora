@@ -46,10 +46,13 @@ type bitrixAnalyticsBucket struct {
 }
 
 type bitrixAnalyticsResponse struct {
-	Since       string                  `json:"since"`
-	Until       string                  `json:"until"`
-	Total       int                     `json:"total"`
-	Completed   int                     `json:"completed"`
+	Since     string `json:"since"`
+	Until     string `json:"until"`
+	Total     int    `json:"total"`
+	Completed int    `json:"completed"`
+	// Open is everything NOT completed — it therefore INCLUDES awaiting_control
+	// and deferred. Use by_status for the finer split; `open` + `completed`
+	// always equals `total`, which by_status alone does not guarantee.
 	Open        int                     `json:"open"`
 	ByStatus    []bitrixAnalyticsBucket `json:"by_status"`
 	ByMonth     []bitrixAnalyticsBucket `json:"by_month"`
@@ -82,9 +85,12 @@ func sortedBuckets(counts map[string]int, labels map[string]string, byKey bool) 
 	return out
 }
 
-// GetBitrixAnalytics handles GET /api/bitrix/analytics?since=YYYY-MM-DD.
-// Defaults to the start of the current year in the server's local zone, which
-// is what "this year so far" means to the humans reading it.
+// GetBitrixAnalytics handles
+// GET /api/bitrix/analytics?since=YYYY-MM-DD&until=YYYY-MM-DD.
+//
+// `since` defaults to the start of the current year in the server's local zone,
+// which is what "this year so far" means to the humans reading it. `until` is
+// optional and inclusive; omitting it means "up to now".
 func (h *Handler) GetBitrixAnalytics(w http.ResponseWriter, r *http.Request) {
 	if !h.requireBitrixOperator(w, r) {
 		return
@@ -105,8 +111,26 @@ func (h *Handler) GetBitrixAnalytics(w http.ResponseWriter, r *http.Request) {
 		since = parsed
 	}
 
+	// `until` makes a PAST window reconstructible, which is what any
+	// week-over-week comparison needs: without it a weekly report can state
+	// the current level but never the change. Bounded to end-of-day so
+	// `until=2026-07-20` includes the 20th.
+	var until time.Time
+	if raw := strings.TrimSpace(r.URL.Query().Get("until")); raw != "" {
+		parsed, err := time.ParseInLocation("2006-01-02", raw, now.Location())
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "until must be YYYY-MM-DD")
+			return
+		}
+		until = parsed.Add(24*time.Hour - time.Second)
+		if until.Before(since) {
+			writeError(w, http.StatusBadRequest, "until must not be before since")
+			return
+		}
+	}
+
 	client := bitrix.NewClient(bitrixWebhookURL())
-	tasks, err := client.ListTasksSince(r.Context(), since)
+	tasks, err := client.ListTasksBetween(r.Context(), since, until)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "failed to list bitrix tasks: "+err.Error())
 		return
@@ -134,7 +158,7 @@ func (h *Handler) GetBitrixAnalytics(w http.ResponseWriter, r *http.Request) {
 
 	resp := bitrixAnalyticsResponse{
 		Since:             since.Format("2006-01-02"),
-		Until:             now.Format("2006-01-02"),
+		Until:             untilLabel(until, now),
 		Total:             len(tasks),
 		MedianDaysToClose: -1,
 		Truncated:         len(tasks) >= bitrix.MaxTasksPerRequest,
@@ -192,4 +216,14 @@ func (h *Handler) GetBitrixAnalytics(w http.ResponseWriter, r *http.Request) {
 	resp.ByAssignee = sortedBuckets(byAssignee, userNames, false)
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// untilLabel reports the window's real upper bound: the caller's `until` when
+// one was given, otherwise today. Echoing "today" for a bounded request would
+// mislabel a historical window as current.
+func untilLabel(until, now time.Time) string {
+	if until.IsZero() {
+		return now.Format("2006-01-02")
+	}
+	return until.Format("2006-01-02")
 }

@@ -596,6 +596,17 @@ func (c *Client) ListTasks(ctx context.Context, groupID, tag string) ([]Task, er
 // more matching tasks than that cap returns the newest ones (order[ID] DESC)
 // and the caller should narrow the window rather than assume completeness.
 func (c *Client) ListTasksSince(ctx context.Context, since time.Time) ([]Task, error) {
+	return c.ListTasksBetween(ctx, since, time.Time{})
+}
+
+// ListTasksBetween is ListTasksSince with a closed upper bound. A zero `until`
+// means "up to now" and adds no upper filter.
+//
+// The bound exists so a caller can reconstruct a PAST window — "the same period
+// a week ago" — which is what any week-over-week comparison needs. Without it a
+// weekly report can only ever state the current level, never the change, and
+// the change is the whole point of running it weekly.
+func (c *Client) ListTasksBetween(ctx context.Context, since, until time.Time) ([]Task, error) {
 	if c.baseURL == "" {
 		return nil, errors.New("bitrix: empty base URL")
 	}
@@ -606,6 +617,9 @@ func (c *Client) ListTasksSince(ctx context.Context, since time.Time) ([]Task, e
 	for {
 		form := url.Values{}
 		form.Set("filter[>=CREATED_DATE]", since.Format("2006-01-02 15:04:05"))
+		if !until.IsZero() {
+			form.Set("filter[<=CREATED_DATE]", until.Format("2006-01-02 15:04:05"))
+		}
 		for _, f := range []string{
 			"ID", "TITLE", "GROUP_ID", "RESPONSIBLE_ID", "STATUS",
 			"CREATED_DATE", "CLOSED_DATE",
