@@ -37,17 +37,26 @@ func TestReviewTierForLabels(t *testing.T) {
 	}
 }
 
-// blockingGates must never include a gate nothing emits. `ci:pass` is written
-// only by a manually-fired run_ci slice action and is auto-dispatched by
-// nothing, so requiring it is an unsatisfiable gate — the exact bug this set
-// replaced.
-func TestBlockingGatesExcludeCI(t *testing.T) {
-	for _, g := range blockingGates {
-		if g == "ci" {
-			t.Fatalf("ci must not be a blocking gate: nothing in the product emits ci:pass automatically")
-		}
+// Every gate is WATCHED for a red verdict; none is a precondition. The bug that
+// deadlocked every merge was requiring `ci` to PASS when nothing auto-emits
+// ci:pass — watching it for FAILURE is free and still stops a merge over a
+// manually-run CI that came back red.
+func TestBlockingGatesWatchAllThree(t *testing.T) {
+	if !reflect.DeepEqual(blockingGates, []string{"ci", "qa", "review"}) {
+		t.Errorf("blockingGates = %v, want [ci qa review]", blockingGates)
 	}
-	if !reflect.DeepEqual(blockingGates, []string{"qa", "review"}) {
-		t.Errorf("blockingGates = %v, want [qa review]", blockingGates)
+}
+
+// A tier must never be able to name a gate that must PASS — that is the shape
+// of the original defect. Tiers carry advisory reviewer fleets only.
+func TestReviewTierCarriesOnlyAdvisoryReviews(t *testing.T) {
+	for _, labels := range []map[string]bool{{}, {"tier:light": true}, {"tier:trivial": true}} {
+		tier := reviewTierForLabels(labels)
+		if tier.name == "" {
+			t.Fatalf("tier for %v has no name", labels)
+		}
+		if len(tier.reviews) == 0 {
+			t.Errorf("tier %q should still recommend a reviewer fleet", tier.name)
+		}
 	}
 }

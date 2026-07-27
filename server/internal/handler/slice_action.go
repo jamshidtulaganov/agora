@@ -2135,14 +2135,14 @@ func (h *Handler) issueQAScope(ctx context.Context, issue db.Issue) qaScope {
 		if has["tier:trivial"] || has["tier:light"] || has["risk:safe"] || has["type:docs"] {
 			return qaScopeLight
 		}
-		// Medium-tier default (flag-gated): an un-escalated, un-tiered issue takes
-		// the fast smoke path instead of qaScopeSelf's agent-side self-sizing
-		// round-trip. Escalation labels already returned above (guarded/critical
-		// ⇒ full), and mediumTierApplies re-checks them, so this only claims the
-		// genuinely-unclassified middle.
-		if h.mediumTierEnabled(ctx, issue) && mediumTierApplies(has) {
-			return qaScopeLight
-		}
+		// The medium-tier default deliberately does NOT shortcut here. It drives
+		// the MODEL and the brief (sonnet + lean context, see applyIssueCostTier
+		// and leanBriefApplies) — that is where its speed comes from. Letting it
+		// also force qaScopeLight would override the self-sizing path below on
+		// exactly the case self-sizing exists for: an unlabeled change of UNKNOWN
+		// size. A large unlabeled diff would then get a fast smoke because nobody
+		// had labelled it, which is the accuracy hole, not a speed win. Depth
+		// stays a function of the real diff.
 	}
 	prs, err := h.Queries.ListPullRequestsByIssue(ctx, issue.ID)
 	if err != nil || len(prs) == 0 {

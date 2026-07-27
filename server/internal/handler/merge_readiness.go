@@ -39,12 +39,16 @@ type gateStatus struct {
 	Status string `json:"status"` // "pass" | "fail" | "pending"
 }
 
-// blockingGates are the gates whose RED verdict blocks a merge. Same set for
-// every tier: a landed qa:fail or review:fail is a real signal regardless of
-// how big the change is, and no gate is a precondition (see the package
-// comment). `ci` is deliberately absent — nothing in the product emits ci:pass
-// without a human manually firing run_ci.
-var blockingGates = []string{"qa", "review"}
+// blockingGates are the gates WATCHED for a red verdict. Same set for every
+// tier: a landed ci:fail, qa:fail or review:fail is a real signal regardless of
+// how big the change is. None of them is a PRECONDITION — a gate that never ran
+// is skipped entirely (see the package comment).
+//
+// `ci` belongs here even though nothing auto-emits ci:pass. The deadlock was
+// never "watch ci"; it was "require ci to PASS", which no reporter could ever
+// satisfy. Watching it costs nothing when it is silent and still stops a merge
+// over a manually-run CI that came back red.
+var blockingGates = []string{"ci", "qa", "review"}
 
 // MergeReadinessResponse is the deterministic gate verdict for an issue's PR.
 type MergeReadinessResponse struct {
