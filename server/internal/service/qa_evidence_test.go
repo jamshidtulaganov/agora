@@ -314,3 +314,72 @@ func TestDerivePhasesFromStream(t *testing.T) {
 		}
 	})
 }
+
+// Regression: the first live run wrote two of its four markers MID-LINE, after
+// a sentence. A line-anchored pattern dropped both — including the skipped
+// baseline, which is the most valuable datapoint the gate produces. Message
+// bodies below are verbatim from that run (task a5c36474).
+func TestDerivePhasesFromStreamMidLineMarkers(t *testing.T) {
+	base := time.Date(2026, 7, 27, 10, 35, 27, 0, time.UTC)
+	msg := func(sec int, content string) db.TaskMessage {
+		return db.TaskMessage{
+			Content:   pgtype.Text{String: content, Valid: true},
+			CreatedAt: pgtype.Timestamptz{Time: base.Add(time.Duration(sec) * time.Second), Valid: true},
+		}
+	}
+	got := derivePhasesFromStream([]db.TaskMessage{
+		msg(0, "New QA run requested.\n\n```todo\n- [~] QA gate\n```\n\nPHASE: checks\n\nPROGRESS: Checking out PR branch"),
+		msg(21, "15/15 tests pass. PHASE: baseline skipped — every branch command passed\n\nPHASE: smoke\n\nPROGRESS: Starting server"),
+		msg(27, "PHASE: cases\n\nPROGRESS: Running 3 defined case scripts"),
+		msg(42, "All 3 case scripts pass. PHASE: materialize skipped — developer committed equivalent tests in server.test.js"),
+	}, base.Add(72*time.Second))
+
+	byPhase := map[string]qaResultPhase{}
+	for _, ph := range got {
+		byPhase[ph.Phase] = ph
+	}
+	for _, want := range []string{"checks", "baseline", "smoke", "cases", "materialize"} {
+		if _, ok := byPhase[want]; !ok {
+			t.Fatalf("phase %q missing — mid-line markers dropped again: %+v", want, got)
+		}
+	}
+	// The two the old pattern lost, both mid-line, both skipped.
+	if !byPhase["baseline"].Skipped || !strings.Contains(byPhase["baseline"].Note, "every branch command passed") {
+		t.Errorf("baseline skip signal lost: %+v", byPhase["baseline"])
+	}
+	if !byPhase["materialize"].Skipped {
+		t.Errorf("materialize skip lost: %+v", byPhase["materialize"])
+	}
+	// checks still closes at the NEXT marker (baseline, mid-line at +21s).
+	if byPhase["checks"].FinishedAt != base.Add(21*time.Second).Format(time.RFC3339) {
+		t.Errorf("checks window wrong: %+v", byPhase["checks"])
+	}
+	// smoke shares its message with the skipped baseline, so it opens at the
+	// same instant and closes at the next marker.
+	if byPhase["smoke"].StartedAt != base.Add(21*time.Second).Format(time.RFC3339) ||
+		byPhase["smoke"].FinishedAt != base.Add(27*time.Second).Format(time.RFC3339) {
+		t.Errorf("smoke window wrong: %+v", byPhase["smoke"])
+	}
+}
+
+func TestDerivePhasesFromStreamFirstAnnouncementWins(t *testing.T) {
+	base := time.Date(2026, 7, 27, 10, 0, 0, 0, time.UTC)
+	msg := func(sec int, content string) db.TaskMessage {
+		return db.TaskMessage{
+			Content:   pgtype.Text{String: content, Valid: true},
+			CreatedAt: pgtype.Timestamptz{Time: base.Add(time.Duration(sec) * time.Second), Valid: true},
+		}
+	}
+	got := derivePhasesFromStream([]db.TaskMessage{
+		msg(0, "PHASE: checks"),
+		msg(60, "PHASE: cases"),
+		msg(90, "Recap: PHASE: checks was clean, PHASE: cases all green"),
+	}, base.Add(120*time.Second))
+
+	if len(got) != 2 {
+		t.Fatalf("a recap must not reopen closed phases: %+v", got)
+	}
+	if got[0].StartedAt != base.Format(time.RFC3339) {
+		t.Errorf("first announcement must win: %+v", got[0])
+	}
+}

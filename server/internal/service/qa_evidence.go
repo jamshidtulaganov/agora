@@ -254,11 +254,18 @@ func checkPhaseTimings(phases []qaResultPhase, dispatchedAt time.Time, hasDispat
 }
 
 // qaPhaseMarkerRe matches the in-band phase announcement the run_qa recipe
-// emits on its own line, e.g. `PHASE: checks` / `PHASE: baseline skipped — every
-// branch command passed`. Same convention as the `PROGRESS:` headline and the
+// emits, e.g. `PHASE: checks` / `PHASE: baseline skipped — every branch command
+// passed`. Same convention as the `PROGRESS:` headline and the
 // `RUNNING test_case:` markers: the agent supplies the NAME, the platform
 // supplies the CLOCK.
-var qaPhaseMarkerRe = regexp.MustCompile(`(?mi)^[^\S\n]*PHASE:[^\S\n]*(checks|baseline|smoke|cases|materialize)\b[^\S\n]*(.*)$`)
+//
+// Deliberately NOT anchored to line start. The recipe asks for the marker on a
+// line by itself, and the first live run showed agents routinely ignoring that
+// — `15/15 tests pass. PHASE: baseline skipped — …` was written mid-line, and a
+// line-anchored pattern silently dropped it along with the skip signal that is
+// the most valuable thing the gate reports. Recognising the marker wherever it
+// appears costs nothing; refusing it on a formatting technicality loses data.
+var qaPhaseMarkerRe = regexp.MustCompile(`(?i)PHASE:[^\S\n]*(checks|baseline|smoke|cases|materialize)\b[^\S\n]*([^\n]*)`)
 
 // derivePhasesFromStream reconstructs the phase timeline from the agent's
 // STREAM rather than from its self-report. Every timestamp here is a
@@ -280,14 +287,24 @@ func derivePhasesFromStream(messages []db.TaskMessage, endedAt time.Time) []qaRe
 		at      time.Time
 	}
 	var marks []mark
+	seen := map[string]bool{}
 	for _, m := range messages {
 		if !m.CreatedAt.Valid || !m.Content.Valid {
 			continue
 		}
 		for _, hit := range qaPhaseMarkerRe.FindAllStringSubmatch(m.Content.String, -1) {
+			phase := strings.ToLower(hit[1])
+			// FIRST announcement wins. A gate runs each phase once, so a repeat
+			// is an agent restating itself (a recap, or quoting the contract
+			// back) — honouring it would reopen a closed phase and corrupt the
+			// window that already closed correctly.
+			if seen[phase] {
+				continue
+			}
+			seen[phase] = true
 			trailer := strings.TrimSpace(hit[2])
 			marks = append(marks, mark{
-				phase:   strings.ToLower(hit[1]),
+				phase:   phase,
 				note:    trailer,
 				skipped: strings.Contains(strings.ToLower(trailer), "skip"),
 				at:      m.CreatedAt.Time.UTC(),
