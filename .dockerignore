@@ -7,6 +7,15 @@
 **/dist
 server/bin
 server/tmp
+# `go build ./cmd/server` from server/ drops the binary here (gitignored, but
+# .gitignore does not apply to a Docker context) — 49MB re-uploaded every deploy.
+server/server
+
+# Agent + task-runner scratch. `.claude/` holds worktrees and transcripts and was
+# measured at 217MB of context on a real deploy; `.turbo/` is a local task cache.
+# Neither is ever read by an image build.
+.claude/
+.turbo/
 
 # Git
 .git
