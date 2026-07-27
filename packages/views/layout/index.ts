@@ -1,4 +1,4 @@
-export { AppSidebar } from "./app-sidebar";
+export { AppSidebar, SIDEBAR_WORKSPACE_NAV_KEYS } from "./app-sidebar";
 export { CockpitFrame } from "./cockpit-frame";
 export { DashboardGuard } from "./dashboard-guard";
 export { DashboardLayout } from "./dashboard-layout";

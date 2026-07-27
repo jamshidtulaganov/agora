@@ -22,6 +22,9 @@ import { MyIssuesPage } from "@agora/views/my-issues";
 import { QAPage } from "@agora/views/qa";
 import { PolicyPage } from "@agora/views/policy";
 import { SkillsPage } from "@agora/views/skills";
+import { McpPage } from "@agora/views/mcp";
+import { PluginsPage } from "@agora/views/plugins";
+import { AiAccountsPage } from "@agora/views/runtimes";
 import { DesktopRuntimesPage } from "./components/desktop-runtimes-page";
 import { DesktopAgentsPage } from "./components/desktop-agents-page";
 import { SquadsPage, SquadDetailPage as SquadDetailPageView } from "@agora/views/squads/components";
@@ -174,6 +177,18 @@ export const appRoutes: RouteObject[] = [
             element: <RuntimeDetailPage />,
             handle: { title: "Runtime" },
           },
+          // The shared sidebar renders ai-accounts / plugins / mcp on BOTH
+          // apps (app-sidebar.tsx configureNav), and paths.ts builds their
+          // URLs, but the desktop router never registered them — every click
+          // landed on the 404 route-error page. See the parity test in
+          // routes.test.tsx: any nav key the sidebar shows must resolve here.
+          {
+            path: "ai-accounts",
+            element: <AiAccountsPage />,
+            handle: { title: "AI accounts" },
+          },
+          { path: "plugins", element: <PluginsPage />, handle: { title: "Plugins" } },
+          { path: "mcp", element: <McpPage />, handle: { title: "MCP" } },
           { path: "skills", element: <SkillsPage />, handle: { title: "Skills" } },
           {
             path: "skills/:id",

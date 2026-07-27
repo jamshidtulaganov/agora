@@ -176,6 +176,24 @@ const configureNav: { key: NavKey; labelKey: NavLabelKey; icon: typeof Inbox }[]
   { key: "settings", labelKey: "settings", icon: Settings },
 ];
 
+/**
+ * Every workspace-scoped nav key this sidebar renders, in nav order.
+ *
+ * Exported so each app can assert its router actually serves them. The sidebar
+ * is shared, so a key added here immediately becomes a clickable link in BOTH
+ * web and desktop — but desktop's router is hand-maintained, and `ai-accounts`,
+ * `plugins` and `mcp` all shipped as links that 404'd on desktop because
+ * nobody added the matching route. See apps/desktop routes.test.tsx.
+ *
+ * Covers all three groups — `personalNav` entries (inbox / my-issues / qa) are
+ * workspace-scoped URLs too, not global ones.
+ */
+export const SIDEBAR_WORKSPACE_NAV_KEYS: NavKey[] = [
+  ...personalNav.map((n) => n.key),
+  ...workspaceNav.map((n) => n.key),
+  ...configureNav.map((n) => n.key),
+];
+
 function DraftDot() {
   const hasDraft = useIssueDraftStore((s) => !!(s.draft.title || s.draft.description));
   if (!hasDraft) return null;
