@@ -139,6 +139,139 @@ func (s *TaskService) qaTriggeredBy(ctx context.Context, triggerCommentID pgtype
 	return "agent"
 }
 
+// qaDispatchedAt returns when the gate's dispatch comment was created — the
+// only piece of HARNESS truth about this run's clock that the capture path can
+// see without a new query. The gate cannot have begun before its own dispatch
+// existed, which is enough to catch a fabricated start time.
+func (s *TaskService) qaDispatchedAt(ctx context.Context, triggerCommentID pgtype.UUID) (time.Time, bool) {
+	if !triggerCommentID.Valid {
+		return time.Time{}, false
+	}
+	trigger, err := s.Queries.GetComment(ctx, triggerCommentID)
+	if err != nil || !trigger.CreatedAt.Valid {
+		return time.Time{}, false
+	}
+	return trigger.CreatedAt.Time.UTC(), true
+}
+
+// phaseTimingCheck is the SERVER's judgement of whether an agent's self-reported
+// phase clock can be trusted. Stored next to the fence (see annotatePhaseCheck)
+// so a measurement query can exclude junk instead of averaging it in.
+//
+// Trust levels:
+//   - "ok"           — timestamps are inside the real dispatch→capture window and
+//     do not look synthesised.
+//   - "estimated"    — plausible window, but the agent clearly ROUNDED (every
+//     boundary on an exact minute). Directionally useful, not a measurement.
+//   - "implausible"  — contradicts harness truth (starts before dispatch, ends
+//     after capture, or a negative duration). Do not aggregate.
+//   - "absent"       — no timed phases reported at all.
+type phaseTimingCheck struct {
+	Trust        string `json:"trust"`
+	Reason       string `json:"reason,omitempty"`
+	DispatchedAt string `json:"dispatched_at,omitempty"`
+	CapturedAt   string `json:"captured_at"`
+}
+
+// checkPhaseTimings reconciles agent-reported phase windows against the only
+// two timestamps the server actually knows: when the gate was dispatched and
+// when its verdict landed. PURE, so the policy is unit-testable without a DB.
+//
+// slack absorbs ordinary clock skew between the agent's machine and the server;
+// it is deliberately generous because the goal is catching FABRICATION (a start
+// time predating the dispatch by minutes, a phase that ends before it begins),
+// not policing a few seconds of drift.
+func checkPhaseTimings(phases []qaResultPhase, dispatchedAt time.Time, hasDispatch bool, capturedAt time.Time) phaseTimingCheck {
+	const slack = 2 * time.Minute
+
+	out := phaseTimingCheck{CapturedAt: capturedAt.UTC().Format(time.RFC3339)}
+	if hasDispatch {
+		out.DispatchedAt = dispatchedAt.UTC().Format(time.RFC3339)
+	}
+
+	type window struct{ start, end time.Time }
+	var windows []window
+	for _, ph := range phases {
+		if ph.Skipped || ph.StartedAt == "" || ph.FinishedAt == "" {
+			continue // a skipped phase carries no clock to check — that is correct
+		}
+		st, errStart := time.Parse(time.RFC3339, ph.StartedAt)
+		fi, errEnd := time.Parse(time.RFC3339, ph.FinishedAt)
+		if errStart != nil || errEnd != nil {
+			out.Trust, out.Reason = "implausible", "phase "+ph.Phase+" has an unparseable timestamp"
+			return out
+		}
+		if fi.Before(st) {
+			out.Trust, out.Reason = "implausible", "phase "+ph.Phase+" finishes before it starts"
+			return out
+		}
+		windows = append(windows, window{st.UTC(), fi.UTC()})
+	}
+	if len(windows) == 0 {
+		out.Trust = "absent"
+		return out
+	}
+
+	for _, w := range windows {
+		if hasDispatch && w.start.Before(dispatchedAt.Add(-slack)) {
+			out.Trust = "implausible"
+			out.Reason = "a phase starts before the gate was dispatched"
+			return out
+		}
+		if w.end.After(capturedAt.Add(slack)) {
+			out.Trust = "implausible"
+			out.Reason = "a phase ends after the verdict was captured"
+			return out
+		}
+	}
+
+	// Rounding tell: an agent that read a real clock does not land EVERY
+	// boundary on an exact minute. Two or more timed phases all reporting :00
+	// seconds is a reconstruction after the fact, not a measurement.
+	if len(windows) >= 2 {
+		rounded := true
+		for _, w := range windows {
+			if w.start.Second() != 0 || w.end.Second() != 0 {
+				rounded = false
+				break
+			}
+		}
+		if rounded {
+			out.Trust = "estimated"
+			out.Reason = "every phase boundary falls on an exact minute — reported to the nearest minute, not measured"
+			return out
+		}
+	}
+
+	out.Trust = "ok"
+	return out
+}
+
+// annotatePhaseCheck attaches the server's verdict to the stored payload under
+// `_phase_timing`. The underscore marks it SERVER-OWNED: everything without one
+// is the agent's fence exactly as it wrote it. Re-serialising loses the original
+// key order, which nothing depends on — the frontend parses this with a zod
+// schema that ignores unknown keys, and no reader compares bytes.
+//
+// Fails open: if the payload will not round-trip, the original raw is stored
+// unannotated rather than lost.
+func annotatePhaseCheck(raw string, check phaseTimingCheck) string {
+	var obj map[string]json.RawMessage
+	if json.Unmarshal([]byte(raw), &obj) != nil {
+		return raw
+	}
+	encoded, err := json.Marshal(check)
+	if err != nil {
+		return raw
+	}
+	obj["_phase_timing"] = encoded
+	merged, err := json.Marshal(obj)
+	if err != nil {
+		return raw
+	}
+	return string(merged)
+}
+
 // captureQAEvidence persists a run_qa verdict comment as a durable qa_evidence
 // row so the issue's QA section + the QA cockpit read one indexed row instead of
 // re-parsing the timeline. Best-effort + detached: a miss (no block, malformed
@@ -204,6 +337,19 @@ func (s *TaskService) CaptureQAEvidence(ctx context.Context, issue db.Issue, con
 		CommitSha:   validCommitSha(p.CommitSha),
 		TriggeredBy: s.qaTriggeredBy(ctx, triggerCommentID),
 		StartedAt:   parseFenceTime(p.StartedAt),
+	}
+
+	// Reconcile the agent's self-reported phase clock against harness truth
+	// before the row is written, so a measurement query can exclude junk rather
+	// than average it in. Never blocks the verdict — an implausible clock costs
+	// the timings their trust, nothing else.
+	dispatchedAt, hasDispatch := s.qaDispatchedAt(ctx, triggerCommentID)
+	if check := checkPhaseTimings(p.PhaseTimings(), dispatchedAt, hasDispatch, time.Now()); check.Trust != "absent" {
+		raw = annotatePhaseCheck(raw, check)
+		if check.Trust != "ok" {
+			slog.Info("qa phase timings not trusted", "issue_id", util.UUIDToString(issue.ID),
+				"trust", check.Trust, "reason", check.Reason)
+		}
 	}
 
 	v := strings.ToLower(strings.TrimSpace(p.Verdict))

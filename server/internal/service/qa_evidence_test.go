@@ -1,8 +1,10 @@
 package service
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseQAResultBlock(t *testing.T) {
@@ -127,4 +129,111 @@ func TestParseQAResultBlockPhases(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestCheckPhaseTimings(t *testing.T) {
+	dispatch := time.Date(2026, 7, 27, 9, 24, 38, 0, time.UTC)
+	captured := time.Date(2026, 7, 27, 9, 31, 30, 0, time.UTC)
+	at := func(h, m, s int) string {
+		return time.Date(2026, 7, 27, h, m, s, 0, time.UTC).Format(time.RFC3339)
+	}
+
+	t.Run("real clock reads are trusted", func(t *testing.T) {
+		got := checkPhaseTimings([]qaResultPhase{
+			{Phase: "checks", StartedAt: at(9, 25, 11), FinishedAt: at(9, 27, 3)},
+			{Phase: "baseline", Skipped: true, Note: "every branch command passed"},
+			{Phase: "smoke", StartedAt: at(9, 27, 3), FinishedAt: at(9, 29, 41)},
+		}, dispatch, true, captured)
+		if got.Trust != "ok" {
+			t.Errorf("trust = %q (%s), want ok", got.Trust, got.Reason)
+		}
+	})
+
+	// The live EED-221 run: every boundary on an exact minute, every phase
+	// exactly 120s. Plausible window, obviously reconstructed.
+	t.Run("all-round boundaries read as estimated", func(t *testing.T) {
+		got := checkPhaseTimings([]qaResultPhase{
+			{Phase: "checks", StartedAt: at(9, 25, 0), FinishedAt: at(9, 27, 0)},
+			{Phase: "smoke", StartedAt: at(9, 27, 0), FinishedAt: at(9, 29, 0)},
+			{Phase: "cases", StartedAt: at(9, 29, 0), FinishedAt: at(9, 31, 0)},
+		}, dispatch, true, captured)
+		if got.Trust != "estimated" {
+			t.Errorf("trust = %q (%s), want estimated", got.Trust, got.Reason)
+		}
+	})
+
+	t.Run("a phase starting before dispatch is implausible", func(t *testing.T) {
+		got := checkPhaseTimings([]qaResultPhase{
+			{Phase: "checks", StartedAt: at(9, 10, 17), FinishedAt: at(9, 27, 3)},
+		}, dispatch, true, captured)
+		if got.Trust != "implausible" {
+			t.Errorf("trust = %q, want implausible", got.Trust)
+		}
+	})
+
+	t.Run("a phase ending after capture is implausible", func(t *testing.T) {
+		got := checkPhaseTimings([]qaResultPhase{
+			{Phase: "checks", StartedAt: at(9, 25, 11), FinishedAt: at(9, 59, 0)},
+		}, dispatch, true, captured)
+		if got.Trust != "implausible" {
+			t.Errorf("trust = %q, want implausible", got.Trust)
+		}
+	})
+
+	t.Run("a negative duration is implausible", func(t *testing.T) {
+		got := checkPhaseTimings([]qaResultPhase{
+			{Phase: "checks", StartedAt: at(9, 27, 0), FinishedAt: at(9, 25, 0)},
+		}, dispatch, true, captured)
+		if got.Trust != "implausible" {
+			t.Errorf("trust = %q, want implausible", got.Trust)
+		}
+	})
+
+	t.Run("only skipped phases is absent, not a failure", func(t *testing.T) {
+		got := checkPhaseTimings([]qaResultPhase{
+			{Phase: "baseline", Skipped: true, Note: "every branch command passed"},
+		}, dispatch, true, captured)
+		if got.Trust != "absent" {
+			t.Errorf("trust = %q, want absent", got.Trust)
+		}
+	})
+
+	// Without a dispatch comment there is no lower bound to check against; the
+	// upper bound and internal consistency still apply.
+	t.Run("no dispatch comment still checks the capture bound", func(t *testing.T) {
+		ok := checkPhaseTimings([]qaResultPhase{
+			{Phase: "checks", StartedAt: at(8, 0, 13), FinishedAt: at(9, 27, 3)},
+		}, time.Time{}, false, captured)
+		if ok.Trust != "ok" {
+			t.Errorf("trust = %q, want ok (no lower bound to violate)", ok.Trust)
+		}
+		bad := checkPhaseTimings([]qaResultPhase{
+			{Phase: "checks", StartedAt: at(9, 25, 11), FinishedAt: at(10, 30, 0)},
+		}, time.Time{}, false, captured)
+		if bad.Trust != "implausible" {
+			t.Errorf("trust = %q, want implausible", bad.Trust)
+		}
+	})
+}
+
+func TestAnnotatePhaseCheck(t *testing.T) {
+	raw := `{"verdict":"pass","summary":"x","phases":[{"phase":"checks"}]}`
+	out := annotatePhaseCheck(raw, phaseTimingCheck{Trust: "estimated", Reason: "rounded"})
+
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(out), &obj); err != nil {
+		t.Fatalf("annotated payload is not valid JSON: %v", err)
+	}
+	if obj["verdict"] != "pass" || obj["phases"] == nil {
+		t.Error("annotation must preserve the agent's own fields")
+	}
+	ann, ok := obj["_phase_timing"].(map[string]any)
+	if !ok || ann["trust"] != "estimated" {
+		t.Errorf("_phase_timing = %v, want trust=estimated", obj["_phase_timing"])
+	}
+
+	// Fails open: unparseable input is stored as-is rather than lost.
+	if got := annotatePhaseCheck("{not json", phaseTimingCheck{Trust: "ok"}); got != "{not json" {
+		t.Errorf("bad raw must pass through unchanged, got %q", got)
+	}
 }

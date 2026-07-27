@@ -3,8 +3,10 @@
 `run_qa` reports one duration per task, which is useless for deciding whether a
 recipe change helped. The gate now emits a `phases` array inside its
 ```` ```qa-result ```` fence, and because `CaptureQAEvidence` persists that
-fence **verbatim** into `qa_evidence.result_json`, the timings are queryable
-with plain SQL — no migration, no new endpoint.
+fence into `qa_evidence.result_json`, the timings are queryable with plain SQL
+— no migration, no new endpoint. The stored object is the agent's fence exactly
+as written, plus server-owned keys prefixed with `_` (today just
+`_phase_timing`, see **Trust** below).
 
 ## The contract
 
@@ -34,6 +36,32 @@ anything it can't decode. An agent that emits garbage timings loses its
 timings, never its verdict. Agents on an older pinned template emit nothing
 here at all, so treat a missing array as "unknown", not "zero".
 
+## Trust — read this before averaging anything
+
+These timestamps are **self-reported by the agent**. Nothing in the harness
+measures them, and the very first live gate proved why that matters: every
+boundary landed on an exact minute and every phase was exactly 120s. The agent
+reconstructed the numbers afterwards instead of reading a clock, and its
+reported `started_at` was 98 seconds *before* its own dispatch comment existed.
+
+So the capture path reconciles them against the two timestamps the server does
+know — when the gate was dispatched, and when the verdict landed — and records
+its judgement at `result_json._phase_timing`. The underscore marks the key
+server-owned; everything without one is the agent's fence as it wrote it.
+
+| `trust` | meaning | safe to aggregate? |
+|---|---|---|
+| `ok` | inside the real window, not obviously synthesised | yes |
+| `estimated` | plausible, but every boundary is on an exact minute | directionally only |
+| `implausible` | contradicts harness truth (pre-dispatch start, post-capture end, negative duration) | **no** |
+| `absent` | no timed phases (all skipped) | n/a |
+
+Rows captured before this check shipped carry no `_phase_timing` at all — treat
+those as unknown, not as `ok`. **Every query below filters on trust.** A
+`skipped` flag needs no such caveat: it is a boolean the agent either set or
+didn't, with no clock involved, so the baseline skip rate is trustworthy even
+when the durations are not.
+
 ## What this exists to answer
 
 The gate used to build the merge-base first and the branch second, running the
@@ -55,6 +83,19 @@ WHERE jsonb_typeof(e.result_json->'phases') = 'array'
   AND ph->>'phase' = 'baseline';
 ```
 
+### How much of the data is even usable
+
+Run this first. If most rows are `estimated`, the percentiles below are
+describing the agents' rounding habits, not the gate.
+
+```sql
+SELECT COALESCE(result_json->'_phase_timing'->>'trust', 'unchecked') AS trust,
+       count(*) AS gates
+FROM qa_evidence
+WHERE jsonb_typeof(result_json->'phases') = 'array'
+GROUP BY 1 ORDER BY gates DESC;
+```
+
 ### Per-phase duration percentiles
 
 ```sql
@@ -66,6 +107,7 @@ WITH p AS (
   FROM qa_evidence e
   CROSS JOIN LATERAL jsonb_array_elements(e.result_json->'phases') ph
   WHERE jsonb_typeof(e.result_json->'phases') = 'array'
+    AND e.result_json->'_phase_timing'->>'trust' = 'ok'   -- never average junk
     AND ph->>'started_at' IS NOT NULL
     AND ph->>'finished_at' IS NOT NULL
 )
@@ -94,6 +136,7 @@ WITH g AS (
   FROM qa_evidence e
   CROSS JOIN LATERAL jsonb_array_elements(e.result_json->'phases') ph
   WHERE jsonb_typeof(e.result_json->'phases') = 'array'
+    AND e.result_json->'_phase_timing'->>'trust' = 'ok'
   GROUP BY e.id
 )
 SELECT skipped_baseline, count(*) AS n,
@@ -107,9 +150,9 @@ Read that last one carefully before drawing a conclusion: a gate skips the
 baseline precisely *because* every branch command passed, so the two groups are
 not comparable populations — the skipped group is biased toward healthy
 branches, which are cheaper for reasons beyond the baseline. The honest
-per-gate saving is the `baseline` phase's own p50 from the second query. Use
-the third only to sanity-check that the totals moved in the direction the
-first two predict.
+per-gate saving is the `baseline` phase's own p50 from the per-phase query. Use
+this last one only to sanity-check that the totals moved in the direction the
+others predict.
 
 ## Local connection
 
