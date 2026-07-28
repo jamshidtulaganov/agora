@@ -1,8 +1,12 @@
 package handler
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	"github.com/multica-ai/multica/server/internal/integrations/telegram"
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
 func TestTruncateForTelegram(t *testing.T) {
@@ -80,4 +84,72 @@ func TestAutopilotRunOutput(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestChooseAutopilotDestinationKeepsBotAndChatPaired(t *testing.T) {
+	agentBot := telegram.NewBotClient("agent-token")
+	platformBot := telegram.NewBotClient("platform-token")
+
+	bot, chat := chooseAutopilotDestination(agentBot, "-100-agent", false, platformBot, "")
+	if bot != agentBot || chat != "-100-agent" {
+		t.Fatalf("complete agent destination = (%p, %q), want agent pair", bot, chat)
+	}
+
+	bot, chat = chooseAutopilotDestination(agentBot, "-100-agent", true, platformBot, "-100-project")
+	if bot != agentBot || chat != "-100-project" {
+		t.Fatalf("reachable project override = (%p, %q), want agent/project pair", bot, chat)
+	}
+
+	bot, chat = chooseAutopilotDestination(agentBot, "-100-agent", false, platformBot, "-100-project")
+	if bot != platformBot || chat != "-100-project" {
+		t.Fatalf("agent without chat = (%p, %q), want platform pair", bot, chat)
+	}
+
+	bot, chat = chooseAutopilotDestination(agentBot, "-100-agent", false, nil, "-100-project")
+	if bot != nil || chat != "" {
+		t.Fatalf("chat without its bot = (%p, %q), want no destination", bot, chat)
+	}
+}
+
+func TestRunOnlyAutopilotReportUsesRunResult(t *testing.T) {
+	h := &Handler{}
+	run := db.AutopilotRun{Result: []byte(`{"output":"run-only weekly report"}`)}
+	got := h.autopilotRunReportBody(context.Background(), run, db.Autopilot{})
+	if got != "run-only weekly report" {
+		t.Fatalf("body = %q, want the run result", got)
+	}
+}
+
+func TestAutopilotSpeakerAgentResolvesSquadLeader(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := t.Context()
+	var leaderID string
+	if err := testPool.QueryRow(ctx,
+		`SELECT id::text FROM agent WHERE workspace_id = $1::uuid LIMIT 1`,
+		testWorkspaceID,
+	).Scan(&leaderID); err != nil {
+		t.Fatalf("load fixture agent: %v", err)
+	}
+	var squadID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO squad (workspace_id, name, leader_id, creator_id)
+		VALUES ($1::uuid, $2, $3::uuid, $4::uuid)
+		RETURNING id::text`,
+		testWorkspaceID, "telegram destination fixture", leaderID, testUserID,
+	).Scan(&squadID); err != nil {
+		t.Fatalf("create squad: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = testPool.Exec(context.Background(), `DELETE FROM squad WHERE id = $1::uuid`, squadID)
+	})
+
+	got, ok := testHandler.autopilotSpeakerAgent(ctx, db.Autopilot{
+		AssigneeType: "squad",
+		AssigneeID:   parseUUID(squadID),
+	})
+	if !ok || uuidToString(got) != leaderID {
+		t.Fatalf("speaker = %s, ok=%v; want leader %s", uuidToString(got), ok, leaderID)
+	}
 }

@@ -77,3 +77,13 @@ func TestParseQuestionCallbackRejectsForeignPayloads(t *testing.T) {
 		}
 	}
 }
+
+func TestTelegramQuestionMatchesOnlyItsOriginalChat(t *testing.T) {
+	question := db.TelegramQuestion{ChatID: "-100123"}
+	if !telegramQuestionMatchesChat(question, -100123) {
+		t.Fatal("question did not match the chat where it was asked")
+	}
+	if telegramQuestionMatchesChat(question, -100456) {
+		t.Fatal("a different allowed chat could answer the question")
+	}
+}

@@ -89,5 +89,8 @@ something you were going to do anyway is a formality that buys nothing.
 
 ## What the platform does without you
 
-When an autopilot run completes, the platform posts your write-up to the group
-by itself. You do not need to send it — doing so posts it twice.
+When an autopilot run completes, the platform posts your write-up to the
+configured group by itself. A project-specific destination takes precedence;
+otherwise it uses the executing agent's default group. For a squad run, the
+executing agent is the squad leader. You do not need to send the report —
+doing so posts it twice.
