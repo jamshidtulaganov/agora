@@ -12,9 +12,9 @@ import (
 // Telegram renders no markdown table. A reply containing one, pasted as message
 // text, arrives as raw pipes and dashes — which is exactly what a question like
 // "how many tasks per month" produces, so the most useful answers were the ones
-// that arrived unreadable. The weekly report already solved this by attaching a
-// rendered HTML page; this applies the same treatment to replies, but only when
-// the reply needs it.
+// that arrived unreadable. Those replies go out as a spreadsheet instead: the
+// numbers stay sortable and summable, which is what happens to a per-month or
+// per-person breakdown the moment someone wants to act on it.
 //
 // Short prose stays a message on purpose. Turning "2417 ta, yil boshidan"
 // into a file the reader must download and open is worse than the pipe soup —
@@ -48,16 +48,16 @@ func containsMarkdownTable(text string) bool {
 	return false
 }
 
-// replyDocumentFilename names the attachment after the day it was produced.
+// replyDocumentFilename names the attachment after the minute it was produced.
 // Several answers in one chat otherwise arrive as indistinguishable files, and
 // a reader scrolling back cannot tell which question a file answered.
 func replyDocumentFilename(now time.Time) string {
-	return "javob-" + now.Format("2006-01-02-1504") + ".html"
+	return "javob-" + now.Format("2006-01-02-1504") + ".xlsx"
 }
 
-// replyDocumentTitle is the heading of the generated page. Kept generic — the
-// agent's own first line carries the subject, and inventing a title here would
-// put words in its mouth.
+// replyDocumentTitle names the worksheet. Kept generic — the agent's own first
+// line carries the subject, and inventing a title here would put words in its
+// mouth. Excel caps a sheet name at 31 characters; the writer enforces it.
 func replyDocumentTitle(now time.Time) string {
 	return "Javob — " + now.Format("02.01.2006 15:04")
 }

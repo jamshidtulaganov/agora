@@ -8,7 +8,8 @@ import (
 
 func TestReplyNeedsDocumentForTables(t *testing.T) {
 	// The regression this exists for: a per-month breakdown arrived in the
-	// group as raw pipes because Telegram renders no markdown table.
+	// group as raw pipes because Telegram renders no markdown table. It now
+	// leaves as a spreadsheet, so the counts stay sortable.
 	table := "Shu yil 2417 ta vazifa ochildi.\n\n| Oy | Yaratildi |\n|---|---|\n| Yanvar | 360 |\n"
 	if !replyNeedsDocument(table) {
 		t.Fatal("a reply containing a table must be attached, not posted inline")
@@ -70,7 +71,7 @@ func TestReplyDocumentFilenameIsDistinct(t *testing.T) {
 	if a == b {
 		t.Fatalf("filenames collide: %s", a)
 	}
-	if !strings.HasSuffix(a, ".html") {
-		t.Fatalf("got %s, want an .html attachment", a)
+	if !strings.HasSuffix(a, ".xlsx") {
+		t.Fatalf("got %s, want an .xlsx attachment", a)
 	}
 }

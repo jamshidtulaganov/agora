@@ -147,14 +147,20 @@ func (h *Handler) SendAutopilotReport(ctx context.Context, runID string) {
 		return
 	}
 
-	// Send the report as an attached HTML document, not as message text.
-	// Telegram renders no markdown table, and the table IS the report — pasted
-	// inline it collapses into unreadable pipe soup on a phone. The caption
-	// carries the headline so the chat still shows something meaningful without
-	// opening the file.
+	// Send the report as an attached spreadsheet, not as message text. Telegram
+	// renders no markdown table, and the table IS the report — pasted inline it
+	// collapses into unreadable pipe soup on a phone. A spreadsheet goes
+	// further than a rendered page: the per-assignee and per-month breakdowns
+	// stay sortable and summable, which is what anyone acting on the report
+	// does with them first. The caption carries the headline so the chat still
+	// shows something meaningful without opening the file.
 	title := ap.Title + " — " + time.Now().Format("02.01.2006")
-	doc := renderReportHTML(title, body)
-	filename := "bitrix-hisobot-" + time.Now().Format("2006-01-02") + ".html"
+	doc, err := renderReportXLSX(title, body)
+	if err != nil {
+		slog.Warn("autopilot report: xlsx render failed", "run_id", runID, "error", err)
+		return
+	}
+	filename := "bitrix-hisobot-" + time.Now().Format("2006-01-02") + ".xlsx"
 
 	if err := bot.SendDocument(ctx, chatID, filename, doc, reportCaption(title, body)); err != nil {
 		slog.Warn("autopilot report: telegram send failed",
