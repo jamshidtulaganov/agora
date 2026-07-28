@@ -364,6 +364,20 @@ func (h *Handler) SendAgentChatReplyToTelegram(ctx context.Context, chatSessionI
 	if reply == "" {
 		return
 	}
+	// A reply carrying a table, or one too long to read in a group, goes out as
+	// a rendered HTML attachment: Telegram displays no markdown table, so the
+	// most useful answers were arriving as raw pipes. Short prose stays a
+	// message — a chat where every answer is a file stops being a chat.
+	if replyNeedsDocument(reply) {
+		now := time.Now()
+		doc := renderReportHTML(replyDocumentTitle(now), reply)
+		if err := bot.SendDocument(ctx, chatID, replyDocumentFilename(now), doc, replyCaption(reply)); err != nil {
+			slog.Warn("telegram agent chat: reply document send failed", "chat_id", chatID, "error", err)
+			return
+		}
+		slog.Info("telegram agent chat: replied with document", "chat_id", chatID)
+		return
+	}
 	if err := bot.SendMessage(ctx, chatID, truncateForTelegram(reply)); err != nil {
 		slog.Warn("telegram agent chat: reply send failed", "chat_id", chatID, "error", err)
 		return
