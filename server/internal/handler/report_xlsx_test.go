@@ -70,3 +70,27 @@ func TestRenderReportXLSXProducesAWorkbook(t *testing.T) {
 		t.Fatalf("output is not a zip archive (%d bytes)", len(data))
 	}
 }
+
+func TestMarkdownToSheetSizesColumnsToTheTables(t *testing.T) {
+	// The bug this guards: with no widths, Excel clips "Median yopilish (kun)"
+	// to "Median yo" and the number beside it stops meaning anything.
+	body := "| Ko'rsatkich | Qiymat |\n|---|---|\n| Median yopilish (kun) | 4.5 |\n"
+	sheet := markdownToSheet("S", body)
+	if len(sheet.ColWidths) < 2 {
+		t.Fatalf("no column widths derived: %+v", sheet.ColWidths)
+	}
+	if sheet.ColWidths[0] < float64(len("Median yopilish (kun)")) {
+		t.Fatalf("first column is narrower than its widest label: %v", sheet.ColWidths[0])
+	}
+}
+
+func TestProseDoesNotStretchTheLabelColumn(t *testing.T) {
+	// A one-cell row is prose. Measuring it would stretch column A to sentence
+	// length and leave every table on the sheet with an absurd label column —
+	// Excel already spills a long value into empty neighbours.
+	long := "Iyun-iyulda yopilish keskin tushdi va bu holat sprintdan tashqari kelayotgan ishlar bilan bog'liq."
+	sheet := markdownToSheet("S", "| Oy | Soni |\n|---|---|\n| May | 305 |\n\n"+long)
+	if sheet.ColWidths[0] > 20 {
+		t.Fatalf("prose stretched the label column to %v", sheet.ColWidths[0])
+	}
+}

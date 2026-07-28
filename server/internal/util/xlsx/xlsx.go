@@ -66,6 +66,59 @@ func AutoCell(s string) Cell {
 type Sheet struct {
 	Name string
 	Rows [][]Cell
+	// ColWidths sets per-column width in Excel's character units. Empty means
+	// the default width, which is almost never right: a label like
+	// "Median yopilish (kun)" is clipped to "Median yo" and the reader cannot
+	// tell what they are looking at. Use AutoWidths to derive them.
+	ColWidths []float64
+}
+
+// Width bounds, in Excel's character units.
+const (
+	// minColWidth keeps a narrow numeric column from collapsing to a sliver.
+	minColWidth = 9
+	// maxColWidth stops one long sentence from pushing a column off-screen.
+	// Text past it still displays: Excel overflows into empty neighbours.
+	maxColWidth = 46
+	// widthPadding covers the fact that Excel's character unit is based on the
+	// default font's digit width, so proportional text needs a little slack.
+	widthPadding = 2.5
+)
+
+// AutoWidths derives column widths from cell content.
+//
+// Only rows with more than one cell are measured — those are the tables. A
+// single-cell row is prose (a heading, the headline, a bullet), and measuring
+// it would stretch the first column to sentence length, leaving every table on
+// the sheet with one absurdly wide label column.
+//
+// Prose is not lost by this: Excel spills a long value into adjacent cells when
+// they are empty, which is exactly the case for a one-cell row.
+func AutoWidths(rows [][]Cell) []float64 {
+	widths := []float64{}
+	for _, row := range rows {
+		if len(row) < 2 {
+			continue
+		}
+		for i, cell := range row {
+			for len(widths) <= i {
+				widths = append(widths, minColWidth)
+			}
+			text := cell.Text
+			if cell.Numeric {
+				text = strconv.FormatFloat(cell.Number, 'f', -1, 64)
+			}
+			if w := float64(len([]rune(text))) + widthPadding; w > widths[i] {
+				widths[i] = w
+			}
+		}
+	}
+	for i := range widths {
+		if widths[i] > maxColWidth {
+			widths[i] = maxColWidth
+		}
+	}
+	return widths
 }
 
 // columnName converts a zero-based index to a spreadsheet column: 0→A, 25→Z,
@@ -203,7 +256,17 @@ func Write(sheets []Sheet) ([]byte, error) {
 func sheetXML(sheet Sheet) string {
 	var b strings.Builder
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-		`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>`)
+		`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`)
+	if len(sheet.ColWidths) > 0 {
+		// <cols> must precede <sheetData>; Excel rejects the sheet otherwise.
+		b.WriteString(`<cols>`)
+		for i, w := range sheet.ColWidths {
+			b.WriteString(fmt.Sprintf(`<col min="%d" max="%d" width="%s" customWidth="1"/>`,
+				i+1, i+1, strconv.FormatFloat(w, 'f', 2, 64)))
+		}
+		b.WriteString(`</cols>`)
+	}
+	b.WriteString(`<sheetData>`)
 	for r, row := range sheet.Rows {
 		b.WriteString(fmt.Sprintf(`<row r="%d">`, r+1))
 		for c, cell := range row {

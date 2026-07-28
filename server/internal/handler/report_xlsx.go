@@ -78,6 +78,9 @@ func markdownToSheet(name, body string) xlsx.Sheet {
 			sheet.Rows = append(sheet.Rows, []xlsx.Cell{xlsx.TextCell(stripInlineMarkdown(trimmed))})
 		}
 	}
+	// Derived last, from the finished rows: a label like "Median yopilish
+	// (kun)" clipped to "Median yo" makes the number beside it meaningless.
+	sheet.ColWidths = xlsx.AutoWidths(sheet.Rows)
 	return sheet
 }
 

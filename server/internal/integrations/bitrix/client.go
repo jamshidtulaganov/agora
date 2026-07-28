@@ -65,7 +65,14 @@ type Task struct {
 	Description   string
 	Status        string
 	ResponsibleID string
-	GroupID       string
+	// CreatedByID is the Bitrix user who OPENED the task. Distinct from
+	// ResponsibleID: a breakdown by assignee shows where work landed, by
+	// creator shows where it comes from, and only the second one tells you
+	// whether a sprint plan matches reality.
+	CreatedByID string
+	// Priority is Bitrix's numeric urgency: 0 low, 1 normal, 2 high.
+	Priority string
+	GroupID  string
 	// StageID is the scrum/kanban STAGE_ID (the live kanban column), resolved to
 	// a human stage name via task.stages.get. Empty for tasks not on a kanban.
 	StageID string
@@ -153,8 +160,14 @@ type rawTask struct {
 	StatusUpper jsonStr `json:"STATUS"`
 	Responsible jsonStr `json:"responsibleId"`
 	RespUpper   jsonStr `json:"RESPONSIBLE_ID"`
-	GroupID     jsonStr `json:"groupId"`
-	GroupUpper  jsonStr `json:"GROUP_ID"`
+	// CreatedBy answers "where is the work coming from" — the question a
+	// per-assignee breakdown cannot, since it only shows where work landed.
+	CreatedBy      jsonStr `json:"createdBy"`
+	CreatedByUpper jsonStr `json:"CREATED_BY"`
+	Priority       jsonStr `json:"priority"`
+	PriorityUpper  jsonStr `json:"PRIORITY"`
+	GroupID        jsonStr `json:"groupId"`
+	GroupUpper     jsonStr `json:"GROUP_ID"`
 	// Scrum/kanban STAGE_ID — the live kanban column the dev team moves the task
 	// through (Новые / Code Review / Testing / Сделаны …), distinct from STATUS
 	// (the coarse Bitrix task state). Resolved to a name via task.stages.get.
@@ -235,6 +248,8 @@ func (rt rawTask) toTask() Task {
 		StageID:       firstNonEmpty(rt.StageID, rt.StageUpper),
 		ChatID:        firstNonEmpty(rt.ChatID, rt.ChatUpper),
 		ResponsibleID: firstNonEmpty(rt.Responsible, rt.RespUpper),
+		CreatedByID:   firstNonEmpty(rt.CreatedBy, rt.CreatedByUpper),
+		Priority:      firstNonEmpty(rt.Priority, rt.PriorityUpper),
 		GroupID:       groupID,
 		GroupName:     firstNonEmpty(rt.Group.Name, rt.Group.NameUpper, rt.GroupUp.Name, rt.GroupUp.NameUpper),
 		Tags:          []string(tags),
@@ -621,8 +636,8 @@ func (c *Client) ListTasksBetween(ctx context.Context, since, until time.Time) (
 			form.Set("filter[<=CREATED_DATE]", until.Format("2006-01-02 15:04:05"))
 		}
 		for _, f := range []string{
-			"ID", "TITLE", "GROUP_ID", "RESPONSIBLE_ID", "STATUS",
-			"CREATED_DATE", "CLOSED_DATE", "TAGS",
+			"ID", "TITLE", "GROUP_ID", "RESPONSIBLE_ID", "CREATED_BY", "STATUS",
+			"PRIORITY", "STAGE_ID", "CREATED_DATE", "CLOSED_DATE", "TAGS",
 		} {
 			form.Add("select[]", f)
 		}

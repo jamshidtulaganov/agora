@@ -39,6 +39,10 @@ func bitrixStatusBucket(status string) string {
 	}
 }
 
+// bitrixPriorityLabels names Bitrix's numeric priorities, so a report does not
+// have to explain what "2" means to its reader.
+var bitrixPriorityLabels = map[string]string{"0": "past", "1": "o'rta", "2": "yuqori"}
+
 type bitrixAnalyticsBucket struct {
 	Key   string `json:"key"`
 	Label string `json:"label,omitempty"`
@@ -62,6 +66,15 @@ type bitrixAnalyticsResponse struct {
 	// under both. The sum therefore exceeds `total` and is not a partition —
 	// reporting it as one would double-count the work.
 	ByTag []bitrixAnalyticsBucket `json:"by_tag"`
+	// ByCreator answers "where is the work coming from" — the question
+	// by_assignee cannot, since it only shows where work landed. A sprint plan
+	// that does not match this column is not the plan being followed.
+	ByCreator []bitrixAnalyticsBucket `json:"by_creator"`
+	// ByPriority uses Bitrix's numeric urgency: 0 low, 1 normal, 2 high.
+	ByPriority []bitrixAnalyticsBucket `json:"by_priority"`
+	// ByStage is the live kanban column, distinct from by_status: a task can be
+	// "open" for weeks while sitting in Code Review, and only this shows where.
+	ByStage []bitrixAnalyticsBucket `json:"by_stage"`
 	// Untagged is the count with no tag at all, which by_tag cannot express and
 	// is usually the largest single group in a portal that tags loosely.
 	Untagged    int                     `json:"untagged"`
@@ -87,7 +100,77 @@ type bitrixAnalyticsResponse struct {
 type bitrixAnalyticsFilters struct {
 	Tag      string `json:"tag,omitempty"`
 	Assignee string `json:"assignee,omitempty"`
+	Creator  string `json:"creator,omitempty"`
 	Group    string `json:"group,omitempty"`
+	Status   string `json:"status,omitempty"`
+	Stage    string `json:"stage,omitempty"`
+	Priority string `json:"priority,omitempty"`
+	Title    string `json:"title,omitempty"`
+	Closed   string `json:"closed,omitempty"`
+}
+
+// bitrixFilterParams is the closed set of accepted filter keys, alongside the
+// date bounds. Anything outside it is a 400.
+//
+// Rejecting unknown keys is the important half. A silently ignored `?priorty=2`
+// returns the portal-wide rollup, which the caller then reports as "high
+// priority tasks" — a wrong number stated confidently, and the response's own
+// `filters` echo would agree with it. Failing the request is the only outcome
+// that cannot be misread.
+var bitrixFilterParams = map[string]bool{
+	"since": true, "until": true,
+	"tag": true, "assignee": true, "creator": true, "group": true,
+	"status": true, "stage": true, "priority": true, "title": true, "closed": true,
+}
+
+// matches reports whether a task survives every active filter. Empty fields do
+// not constrain, so filters compose: tag=BUG&creator=525&closed=false is one
+// question, not three requests.
+func (f bitrixAnalyticsFilters) matches(t *bitrix.Task) bool {
+	if f.Tag != "" && !matchesTag(t, f.Tag) {
+		return false
+	}
+	if f.Assignee != "" && strings.TrimSpace(t.ResponsibleID) != f.Assignee {
+		return false
+	}
+	if f.Creator != "" && strings.TrimSpace(t.CreatedByID) != f.Creator {
+		return false
+	}
+	if f.Group != "" && strings.TrimSpace(t.GroupID) != f.Group {
+		return false
+	}
+	if f.Stage != "" && !strings.EqualFold(strings.TrimSpace(t.StageID), f.Stage) {
+		return false
+	}
+	if f.Priority != "" && strings.TrimSpace(t.Priority) != f.Priority {
+		return false
+	}
+	if f.Status != "" {
+		// Accepts either the coarse bucket ("open", "completed") or Bitrix's
+		// raw numeric STATUS. A caller reading by_status sees bucket names, so
+		// requiring the number there would mean translating by hand.
+		if !strings.EqualFold(bitrixStatusBucket(t.Status), f.Status) &&
+			strings.TrimSpace(t.Status) != f.Status {
+			return false
+		}
+	}
+	if f.Closed != "" {
+		_, hasClosed := bitrix.ParseTime(t.ClosedAt)
+		if (f.Closed == "true") != hasClosed {
+			return false
+		}
+	}
+	if f.Title != "" && !strings.Contains(
+		strings.ToLower(t.Title), strings.ToLower(f.Title)) {
+		return false
+	}
+	return true
+}
+
+// active reports whether any filter constrains the set.
+func (f bitrixAnalyticsFilters) active() bool {
+	return f.Tag != "" || f.Assignee != "" || f.Creator != "" || f.Group != "" ||
+		f.Status != "" || f.Stage != "" || f.Priority != "" || f.Title != "" || f.Closed != ""
 }
 
 // matchesTag reports whether a task carries the tag, case-insensitively.
@@ -119,13 +202,16 @@ func sortedBuckets(counts map[string]int, labels map[string]string, byKey bool) 
 	return out
 }
 
-// GetBitrixAnalytics handles
-// GET /api/bitrix/analytics?since=&until=&tag=&assignee=&group=.
+// GetBitrixAnalytics handles GET /api/bitrix/analytics.
 //
-// tag / assignee / group narrow the ENTIRE rollup, not just the total, so
-// "BUG-tagged tasks per month, per person" is one request. The response echoes
-// the filters back: a filtered rollup that looks portal-wide is worse than no
-// rollup at all.
+// Windows: since, until (inclusive, YYYY-MM-DD).
+// Filters: tag, assignee, creator, group, status, stage, priority, title,
+// closed. They compose, and each narrows the ENTIRE rollup rather than just
+// the total — so "BUG-tagged tasks opened by 525, per month" is one request.
+//
+// The response echoes the filters back, and an unrecognised parameter is a 400
+// rather than a no-op: a filtered rollup that reads as portal-wide is worse
+// than no rollup at all.
 //
 // `since` defaults to the start of the current year in the server's local zone,
 // which is what "this year so far" means to the humans reading it. `until` is
@@ -168,10 +254,27 @@ func (h *Handler) GetBitrixAnalytics(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	query := r.URL.Query()
+	for key := range query {
+		if !bitrixFilterParams[key] {
+			writeError(w, http.StatusBadRequest, "unknown filter: "+key)
+			return
+		}
+	}
 	filters := bitrixAnalyticsFilters{
-		Tag:      strings.TrimSpace(r.URL.Query().Get("tag")),
-		Assignee: strings.TrimSpace(r.URL.Query().Get("assignee")),
-		Group:    strings.TrimSpace(r.URL.Query().Get("group")),
+		Tag:      strings.TrimSpace(query.Get("tag")),
+		Assignee: strings.TrimSpace(query.Get("assignee")),
+		Creator:  strings.TrimSpace(query.Get("creator")),
+		Group:    strings.TrimSpace(query.Get("group")),
+		Status:   strings.TrimSpace(query.Get("status")),
+		Stage:    strings.TrimSpace(query.Get("stage")),
+		Priority: strings.TrimSpace(query.Get("priority")),
+		Title:    strings.TrimSpace(query.Get("title")),
+		Closed:   strings.ToLower(strings.TrimSpace(query.Get("closed"))),
+	}
+	if filters.Closed != "" && filters.Closed != "true" && filters.Closed != "false" {
+		writeError(w, http.StatusBadRequest, "closed must be true or false")
+		return
 	}
 
 	client := bitrix.NewClient(bitrixWebhookURL())
@@ -210,20 +313,12 @@ func (h *Handler) GetBitrixAnalytics(w http.ResponseWriter, r *http.Request) {
 	// the filtered subset — a truncated window makes a filtered count a floor,
 	// which the caller must know before quoting it.
 	truncated := len(tasks) >= bitrix.MaxTasksPerRequest
-	if filters.Tag != "" || filters.Assignee != "" || filters.Group != "" {
+	if filters.active() {
 		kept := tasks[:0]
 		for i := range tasks {
-			t := &tasks[i]
-			if filters.Tag != "" && !matchesTag(t, filters.Tag) {
-				continue
+			if filters.matches(&tasks[i]) {
+				kept = append(kept, tasks[i])
 			}
-			if filters.Assignee != "" && strings.TrimSpace(t.ResponsibleID) != filters.Assignee {
-				continue
-			}
-			if filters.Group != "" && strings.TrimSpace(t.GroupID) != filters.Group {
-				continue
-			}
-			kept = append(kept, *t)
 		}
 		tasks = kept
 	}
@@ -242,6 +337,9 @@ func (h *Handler) GetBitrixAnalytics(w http.ResponseWriter, r *http.Request) {
 	byGroup := map[string]int{}
 	byAssignee := map[string]int{}
 	byTag := map[string]int{}
+	byCreator := map[string]int{}
+	byPriority := map[string]int{}
+	byStage := map[string]int{}
 	closedByMonth := map[string]int{}
 	var closeDurations []float64
 
@@ -270,6 +368,15 @@ func (h *Handler) GetBitrixAnalytics(w http.ResponseWriter, r *http.Request) {
 		}
 		if a := strings.TrimSpace(t.ResponsibleID); a != "" {
 			byAssignee[a]++
+		}
+		if c := strings.TrimSpace(t.CreatedByID); c != "" {
+			byCreator[c]++
+		}
+		if pr := strings.TrimSpace(t.Priority); pr != "" {
+			byPriority[pr]++
+		}
+		if st := strings.TrimSpace(t.StageID); st != "" {
+			byStage[st]++
 		}
 		tagged := false
 		for _, raw := range t.Tags {
@@ -311,6 +418,9 @@ func (h *Handler) GetBitrixAnalytics(w http.ResponseWriter, r *http.Request) {
 	resp.ByGroup = sortedBuckets(byGroup, groupNames, false)
 	resp.ByAssignee = sortedBuckets(byAssignee, userNames, false)
 	resp.ByTag = sortedBuckets(byTag, nil, false)
+	resp.ByCreator = sortedBuckets(byCreator, userNames, false)
+	resp.ByPriority = sortedBuckets(byPriority, bitrixPriorityLabels, false)
+	resp.ByStage = sortedBuckets(byStage, nil, false)
 
 	writeJSON(w, http.StatusOK, resp)
 }
