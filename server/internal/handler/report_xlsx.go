@@ -23,9 +23,24 @@ import (
 // finding that made them worth sending.
 
 // markdownToSheet converts a report body into one worksheet.
-func markdownToSheet(name, body string) xlsx.Sheet {
+//
+// title becomes the document heading in the first row. The sheet TAB is capped
+// at 31 characters by Excel, so a report called "Weekly Bitrix report — backlog
+// growth & load" would arrive truncated to nonsense; carrying it as a cell
+// keeps it readable.
+func markdownToSheet(name, title, body string) xlsx.Sheet {
 	sheet := xlsx.Sheet{Name: name}
+	if strings.TrimSpace(title) != "" {
+		sheet.Rows = append(sheet.Rows,
+			[]xlsx.Cell{xlsx.TextCell(title).With(xlsx.StyleTitle)},
+			nil,
+		)
+	}
 	lines := strings.Split(body, "\n")
+	// The report's first prose line carries the finding, whether or not a title
+	// row precedes it — the title names the document, the headline states what
+	// it found.
+	headline := true
 
 	for i := 0; i < len(lines); i++ {
 		trimmed := strings.TrimSpace(lines[i])
@@ -35,11 +50,11 @@ func markdownToSheet(name, body string) xlsx.Sheet {
 			sheet.Rows = append(sheet.Rows, nil) // a blank spacer row
 
 		case strings.HasPrefix(trimmed, "#"):
-			// Headings become bold single cells so the sheet keeps the report's
-			// sections; without them a long report is one undifferentiated run
-			// of rows.
+			// Headings keep the report's sections; without them a long report
+			// is one undifferentiated run of rows.
 			sheet.Rows = append(sheet.Rows, []xlsx.Cell{
-				xlsx.HeaderCell(strings.TrimSpace(strings.TrimLeft(trimmed, "# "))),
+				xlsx.TextCell(strings.TrimSpace(strings.TrimLeft(trimmed, "# "))).
+					With(xlsx.StyleSection),
 			})
 
 		case strings.Trim(trimmed, "-") == "" && strings.HasPrefix(trimmed, "---"):
@@ -53,16 +68,24 @@ func markdownToSheet(name, body string) xlsx.Sheet {
 				headerCells = append(headerCells, xlsx.HeaderCell(stripInlineMarkdown(h)))
 			}
 			sheet.Rows = append(sheet.Rows, headerCells)
+			width := len(headerCells)
 
 			i += 2
 			for i < len(lines) && strings.HasPrefix(strings.TrimSpace(lines[i]), "|") {
 				cells := splitTableRow(strings.TrimSpace(lines[i]))
-				row := make([]xlsx.Cell, 0, len(cells))
+				row := make([]xlsx.Cell, 0, width)
 				for _, c := range cells {
 					// AutoCell is what makes the file worth sending: a count
 					// stored as text cannot be summed or sorted, which is the
 					// only reason to ship a spreadsheet instead of a page.
-					row = append(row, xlsx.AutoCell(stripInlineMarkdown(c)))
+					// TableCell then borders it and picks the number format.
+					row = append(row, xlsx.TableCell(xlsx.AutoCell(stripInlineMarkdown(c))))
+				}
+				// Pad a short row to the header's width. A ragged markdown row
+				// would otherwise leave the table's right edge open on that
+				// line, which reads as a rendering fault.
+				for len(row) < width {
+					row = append(row, xlsx.TextCell("").With(xlsx.StyleTableText))
 				}
 				sheet.Rows = append(sheet.Rows, row)
 				i++
@@ -75,7 +98,15 @@ func markdownToSheet(name, body string) xlsx.Sheet {
 			})
 
 		default:
-			sheet.Rows = append(sheet.Rows, []xlsx.Cell{xlsx.TextCell(stripInlineMarkdown(trimmed))})
+			// The report's first prose line is its finding, and it is what the
+			// Telegram caption shows. Giving it weight in the file too keeps
+			// the two views of the report consistent.
+			cell := xlsx.TextCell(stripInlineMarkdown(trimmed))
+			if headline {
+				cell = cell.With(xlsx.StyleStrong)
+				headline = false
+			}
+			sheet.Rows = append(sheet.Rows, []xlsx.Cell{cell})
 		}
 	}
 	// Derived last, from the finished rows: a label like "Median yopilish
@@ -95,5 +126,14 @@ func stripInlineMarkdown(s string) string {
 
 // renderReportXLSX builds the workbook for a report body.
 func renderReportXLSX(title, body string) ([]byte, error) {
-	return xlsx.Write([]xlsx.Sheet{markdownToSheet(title, body)})
+	return xlsx.Write([]xlsx.Sheet{markdownToSheet(sheetTabName(title), title, body)})
+}
+
+// sheetTabName is the short label on the tab. The full title lives in the first
+// row, so this only has to be recognisable, not complete.
+func sheetTabName(title string) string {
+	if dash := strings.Index(title, " — "); dash > 0 {
+		return strings.TrimSpace(title[:dash])
+	}
+	return strings.TrimSpace(title)
 }

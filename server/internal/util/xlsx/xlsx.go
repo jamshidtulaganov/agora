@@ -18,8 +18,29 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
+)
+
+// Style selects one of the workbook's predefined cell formats. Styles are a
+// closed set rather than free-form formatting: a report has a handful of roles
+// — title, section, table header, table cell — and letting each caller invent
+// its own font would produce a different-looking file every week.
+//
+// The values are indices into cellXfs, so their ORDER must match the order
+// they are written in styles.xml.
+type Style int
+
+const (
+	StyleNormal Style = iota
+	StyleTitle
+	StyleSection
+	StyleTableHeader
+	StyleTableText
+	StyleTableInt
+	StyleTableDecimal
+	StyleStrong
 )
 
 // Cell is one value. Number wins when Numeric is true; otherwise Text is used.
@@ -27,20 +48,40 @@ type Cell struct {
 	Text    string
 	Number  float64
 	Numeric bool
-	// Header marks a cell for the bold style. Applied per cell rather than per
-	// row because a report block's first row is a header while a prose line
-	// above it is not.
-	Header bool
+	// Style is applied per cell rather than per row: a report block's first row
+	// is a header while the prose line above it is not.
+	Style Style
+}
+
+// With returns the cell restyled. Lets a caller build a value with AutoCell and
+// then place it — the value's type and its role in the sheet are separate
+// decisions.
+func (c Cell) With(s Style) Cell {
+	c.Style = s
+	return c
 }
 
 // Text returns a text cell.
 func TextCell(s string) Cell { return Cell{Text: s} }
 
-// HeaderCell returns a bold text cell.
-func HeaderCell(s string) Cell { return Cell{Text: s, Header: true} }
+// HeaderCell returns a table-header cell.
+func HeaderCell(s string) Cell { return Cell{Text: s, Style: StyleTableHeader} }
 
 // NumberCell returns a numeric cell.
 func NumberCell(f float64) Cell { return Cell{Number: f, Numeric: true} }
+
+// TableCell styles a value for use inside a table: bordered, with numbers
+// right-aligned and thousands-separated. Whole numbers and decimals get
+// different formats so a count does not render as "360.00".
+func TableCell(c Cell) Cell {
+	if !c.Numeric {
+		return c.With(StyleTableText)
+	}
+	if c.Number == math.Trunc(c.Number) {
+		return c.With(StyleTableInt)
+	}
+	return c.With(StyleTableDecimal)
+}
 
 // AutoCell returns a numeric cell when the string parses as a number, and a
 // text cell otherwise. Thousands separators and the surrounding whitespace a
@@ -202,25 +243,7 @@ func Write(sheets []Sheet) ([]byte, error) {
 	}
 	contentTypes.WriteString(`</Types>`)
 
-	// The styles part carries exactly two cell formats: plain (index 0) and
-	// bold (index 1). Excel requires the full font/fill/border/cellStyleXfs
-	// scaffolding even when almost all of it is empty.
-	styles := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-		`<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
-		`<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font>` +
-		`<font><b/><sz val="11"/><name val="Calibri"/></font></fonts>` +
-		`<fills count="1"><fill><patternFill patternType="none"/></fill></fills>` +
-		`<borders count="1"><border/></borders>` +
-		`<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
-		`<cellXfs count="2">` +
-		`<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>` +
-		`<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>` +
-		`</cellXfs>` +
-		// cellStyles is not optional in practice: without the Normal style,
-		// readers warn about a missing default and the pickier ones substitute
-		// their own, which loses the bold header.
-		`<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>` +
-		`</styleSheet>`
+	styles := reportStyles()
 
 	parts := map[string]string{
 		"[Content_Types].xml": contentTypes.String(),
@@ -250,13 +273,85 @@ func Write(sheets []Sheet) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// Report palette. Kept here, in one place, so every workbook this package
+// produces looks like the same document rather than a fresh improvisation.
+const (
+	brandHex = "2563EB" // Agora royal blue — titles and table headers
+	inkHex   = "1F2937" // body text; pure black reads as harsh on screen
+	ruleHex  = "D1D5DB" // table borders, light enough not to fight the numbers
+)
+
+// reportStyles builds styles.xml. Excel requires the full
+// fonts/fills/borders/cellStyleXfs scaffolding even where most of it is empty,
+// and it requires fills[0]=none and fills[1]=gray125 in exactly those slots —
+// a solid fill placed at index 1 is silently ignored.
+func reportStyles() string {
+	return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+		`<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+		// 164 is the first index available for a custom format; 0-163 are
+		// reserved by the spec for the built-ins.
+		`<numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0.00"/></numFmts>` +
+		`<fonts count="5">` +
+		`<font><sz val="11"/><color rgb="FF` + inkHex + `"/><name val="Calibri"/></font>` +
+		`<font><b/><sz val="11"/><color rgb="FF` + inkHex + `"/><name val="Calibri"/></font>` +
+		`<font><b/><sz val="15"/><color rgb="FF` + brandHex + `"/><name val="Calibri"/></font>` +
+		`<font><b/><sz val="12"/><color rgb="FF` + inkHex + `"/><name val="Calibri"/></font>` +
+		`<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>` +
+		`</fonts>` +
+		`<fills count="3">` +
+		`<fill><patternFill patternType="none"/></fill>` +
+		`<fill><patternFill patternType="gray125"/></fill>` +
+		`<fill><patternFill patternType="solid"><fgColor rgb="FF` + brandHex + `"/>` +
+		`<bgColor indexed="64"/></patternFill></fill>` +
+		`</fills>` +
+		`<borders count="2"><border/>` +
+		`<border>` +
+		`<left style="thin"><color rgb="FF` + ruleHex + `"/></left>` +
+		`<right style="thin"><color rgb="FF` + ruleHex + `"/></right>` +
+		`<top style="thin"><color rgb="FF` + ruleHex + `"/></top>` +
+		`<bottom style="thin"><color rgb="FF` + ruleHex + `"/></bottom>` +
+		`</border></borders>` +
+		`<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
+		// Order here defines the Style constants. Do not reorder.
+		`<cellXfs count="8">` +
+		// 0 normal
+		`<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>` +
+		// 1 title
+		`<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>` +
+		// 2 section heading
+		`<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/>` +
+		// 3 table header — white on brand, centred, so a long table keeps an
+		// obvious top even when the reader has scrolled past it
+		`<xf numFmtId="0" fontId="4" fillId="2" borderId="1" xfId="0" applyFont="1" ` +
+		`applyFill="1" applyBorder="1" applyAlignment="1">` +
+		`<alignment horizontal="center" vertical="center" wrapText="1"/></xf>` +
+		// 4 table text
+		`<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" ` +
+		`applyAlignment="1"><alignment vertical="center"/></xf>` +
+		// 5 table integer — thousands separated, right aligned so digits line up
+		`<xf numFmtId="3" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" ` +
+		`applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>` +
+		// 6 table decimal
+		`<xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" ` +
+		`applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>` +
+		// 7 strong prose
+		`<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>` +
+		`</cellXfs>` +
+		`<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>` +
+		`</styleSheet>`
+}
+
 // sheetXML renders one worksheet. Uses inline strings rather than a shared
 // string table: the table saves space only when values repeat, which a report
 // sheet's labels barely do, and it adds a second part that must stay in sync.
 func sheetXML(sheet Sheet) string {
 	var b strings.Builder
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-		`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">`)
+		`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+		// Gridlines off: the tables carry their own borders, and the default
+		// grid makes the prose between them look like empty spreadsheet rather
+		// than part of a document.
+		`<sheetViews><sheetView showGridLines="0" workbookViewId="0"/></sheetViews>`)
 	if len(sheet.ColWidths) > 0 {
 		// <cols> must precede <sheetData>; Excel rejects the sheet otherwise.
 		b.WriteString(`<cols>`)
@@ -268,12 +363,18 @@ func sheetXML(sheet Sheet) string {
 	}
 	b.WriteString(`<sheetData>`)
 	for r, row := range sheet.Rows {
-		b.WriteString(fmt.Sprintf(`<row r="%d">`, r+1))
+		// Header rows get extra height so the centred white label has room to
+		// breathe; everything else uses the sheet default.
+		attrs := ""
+		if len(row) > 0 && row[0].Style == StyleTableHeader {
+			attrs = ` ht="22" customHeight="1"`
+		}
+		b.WriteString(fmt.Sprintf(`<row r="%d"%s>`, r+1, attrs))
 		for c, cell := range row {
 			ref := columnName(c) + strconv.Itoa(r+1)
 			style := ""
-			if cell.Header {
-				style = ` s="1"`
+			if cell.Style != StyleNormal {
+				style = fmt.Sprintf(` s="%d"`, int(cell.Style))
 			}
 			if cell.Numeric {
 				b.WriteString(fmt.Sprintf(`<c r="%s"%s><v>%s</v></c>`,
@@ -281,7 +382,13 @@ func sheetXML(sheet Sheet) string {
 				continue
 			}
 			if cell.Text == "" {
-				continue // an empty cell needs no element at all
+				// A styled empty cell still needs an element, or a table row
+				// with a blank field loses its border and the grid breaks.
+				if cell.Style == StyleNormal {
+					continue
+				}
+				b.WriteString(fmt.Sprintf(`<c r="%s"%s/>`, ref, style))
+				continue
 			}
 			b.WriteString(fmt.Sprintf(`<c r="%s"%s t="inlineStr"><is><t xml:space="preserve">%s</t></is></c>`,
 				ref, style, escape(cell.Text)))
