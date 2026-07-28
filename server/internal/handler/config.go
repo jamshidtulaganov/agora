@@ -77,6 +77,11 @@ type AppConfig struct {
 	BitrixEnabled bool `json:"bitrix_enabled,omitempty"`
 	ZohoEnabled   bool `json:"zoho_enabled,omitempty"`
 	LarkEnabled   bool `json:"lark_enabled,omitempty"`
+	// TelegramBotsEnabled gates the per-agent bot surface, which is separate
+	// from TelegramOnly (login mode) and from the platform bot token: an agent
+	// bot's credential is sealed at rest, so without the key no install can
+	// succeed and the UI must not offer one.
+	TelegramBotsEnabled bool `json:"telegram_bots_enabled,omitempty"`
 }
 
 const defaultCLIReleasesURL = "https://api.github.com/repos/jamshidtulaganov/agora-cli/releases/latest"
@@ -100,6 +105,10 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		BitrixEnabled: bitrixEndpointsEnabled(),
 		ZohoEnabled:   zohoConfigured(),
 		LarkEnabled:   strings.TrimSpace(os.Getenv("AGORA_LARK_SECRET_KEY")) != "",
+		// Same key InstallAgentTelegramBot requires; offering the flow without
+		// it would fail at the last step, after the operator has already pasted
+		// a live bot token.
+		TelegramBotsEnabled: strings.TrimSpace(os.Getenv("AGORA_TELEGRAM_SECRET_KEY")) != "",
 	}
 	if h.Storage != nil {
 		config.CdnDomain = h.Storage.CdnDomain()

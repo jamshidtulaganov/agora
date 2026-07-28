@@ -92,6 +92,8 @@
     "./github/queries": "./github/queries.ts",
     "./lark": "./lark/index.ts",
     "./lark/queries": "./lark/queries.ts",
+    "./telegram": "./telegram/index.ts",
+    "./telegram/queries": "./telegram/queries.ts",
     "./figma": "./figma/index.ts",
     "./design": "./design/index.ts",
     "./feedback": "./feedback/index.ts",

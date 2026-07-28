@@ -12,8 +12,10 @@ import {
   EMPTY_FIGMA_CREDENTIAL_STATUS,
   EMPTY_LIST_TEST_CASES,
   EMPTY_TEST_CASE,
+  EMPTY_TELEGRAM_INSTALLATIONS,
   EMPTY_USER,
   FigmaCredentialStatusSchema,
+  ListTelegramInstallationsSchema,
   McpCredentialStatusSchema,
   McpCredentialListSchema,
   EMPTY_MCP_CREDENTIAL_STATUS,
@@ -1314,5 +1316,83 @@ describe("OrchestrationRunSchema — execution semantics", () => {
       ],
     });
     expect(parsed.base_git_states.map((state) => state.repo)).toEqual(["api", "web"]);
+  });
+});
+
+describe("ListTelegramInstallationsSchema", () => {
+  it("parses a well-formed response", () => {
+    const parsed = parseWithFallback(
+      {
+        installations: [
+          {
+            agent_id: "a1",
+            bot_username: "sd_pm_agent_bot",
+            bot_user_id: "8935986908",
+            status: "active",
+            access_policy: "allowlist",
+            allowed_user_ids: ["905434593"],
+            allowed_chat_ids: ["-1004336001519"],
+          },
+        ],
+        configured: true,
+      },
+      ListTelegramInstallationsSchema,
+      EMPTY_TELEGRAM_INSTALLATIONS,
+      { endpoint: "GET /api/workspaces/{id}/telegram/installations" },
+    );
+    expect(parsed.configured).toBe(true);
+    expect(parsed.installations[0]?.bot_username).toBe("sd_pm_agent_bot");
+    expect(parsed.installations[0]?.allowed_chat_ids).toEqual(["-1004336001519"]);
+  });
+
+  it("defaults configured to false when the field is missing", () => {
+    // Claiming the deployment is configured would show an install form that
+    // cannot succeed — the operator finds out only after pasting a live token.
+    const parsed = parseWithFallback(
+      { installations: [] },
+      ListTelegramInstallationsSchema,
+      EMPTY_TELEGRAM_INSTALLATIONS,
+      { endpoint: "GET /api/workspaces/{id}/telegram/installations" },
+    );
+    expect(parsed.configured).toBe(false);
+  });
+
+  it("survives a malformed installation row", () => {
+    // A settings panel that white-screens on a drifted field is worse than one
+    // showing a stale-but-benign row.
+    const parsed = parseWithFallback(
+      {
+        installations: [{ agent_id: "a1", allowed_user_ids: "not-an-array", access_policy: 42 }],
+        configured: true,
+      },
+      ListTelegramInstallationsSchema,
+      EMPTY_TELEGRAM_INSTALLATIONS,
+      { endpoint: "GET /api/workspaces/{id}/telegram/installations" },
+    );
+    // access_policy is the wrong type, so the row fails and the array's catch
+    // downgrades the list rather than throwing into the UI.
+    expect(Array.isArray(parsed.installations)).toBe(true);
+  });
+
+  it("falls back when the body is not an object at all", () => {
+    const parsed = parseWithFallback(
+      null,
+      ListTelegramInstallationsSchema,
+      EMPTY_TELEGRAM_INSTALLATIONS,
+      { endpoint: "GET /api/workspaces/{id}/telegram/installations" },
+    );
+    expect(parsed).toEqual(EMPTY_TELEGRAM_INSTALLATIONS);
+  });
+
+  it("keeps chat ids as strings so a 64-bit id survives", () => {
+    // Chat ids are past 2^53. Parsed as numbers they round silently, and the
+    // bot then answers a chat that does not exist.
+    const parsed = parseWithFallback(
+      { installations: [{ agent_id: "a", allowed_chat_ids: ["-1004336001519"] }], configured: true },
+      ListTelegramInstallationsSchema,
+      EMPTY_TELEGRAM_INSTALLATIONS,
+      { endpoint: "GET /api/workspaces/{id}/telegram/installations" },
+    );
+    expect(parsed.installations[0]?.allowed_chat_ids?.[0]).toBe("-1004336001519");
   });
 });

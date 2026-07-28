@@ -24,6 +24,10 @@ interface ConfigState {
   bitrixEnabled: boolean;
   zohoEnabled: boolean;
   larkEnabled: boolean;
+  // Per-agent Telegram bots. Separate from telegramOnly (a login mode) and
+  // from the platform bot: an agent bot's token is sealed at rest, so without
+  // the seal key no install can succeed and the panel must not offer one.
+  telegramBotsEnabled: boolean;
   // True once the /api/config fetch has settled (success OR failure). The
   // login page renders a loading state until then so a telegram_only server
   // never flashes the email/Google form while the response is in flight.
@@ -39,6 +43,7 @@ interface ConfigState {
     bitrixEnabled?: boolean;
     zohoEnabled?: boolean;
     larkEnabled?: boolean;
+    telegramBotsEnabled?: boolean;
   }) => void;
   setDaemonConfig: (config: {
     daemonServerUrl?: string;
@@ -60,6 +65,7 @@ export const configStore = createStore<ConfigState>((set) => ({
   bitrixEnabled: false,
   zohoEnabled: false,
   larkEnabled: false,
+  telegramBotsEnabled: false,
   authConfigLoaded: false,
   markAuthConfigLoaded: () => set({ authConfigLoaded: true }),
   setCdnDomain: (domain) => set({ cdnDomain: domain }),
@@ -72,6 +78,7 @@ export const configStore = createStore<ConfigState>((set) => ({
     bitrixEnabled = false,
     zohoEnabled = false,
     larkEnabled = false,
+    telegramBotsEnabled = false,
   }) =>
     set({
       allowSignup,
@@ -82,6 +89,7 @@ export const configStore = createStore<ConfigState>((set) => ({
       bitrixEnabled,
       zohoEnabled,
       larkEnabled,
+      telegramBotsEnabled,
       authConfigLoaded: true,
     }),
   setDaemonConfig: ({ daemonServerUrl = "", daemonAppUrl = "" }) =>

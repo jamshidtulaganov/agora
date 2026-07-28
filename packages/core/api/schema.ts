@@ -43,10 +43,15 @@ export function parseWithFallback<T>(
 ): T {
   const result = schema.safeParse(data);
   if (result.success) return result.data as T;
+  // opts is required by the type, so a missing one means an untyped or JS
+  // caller. Guard anyway: this function exists to keep a drifted response from
+  // reaching the UI, and throwing on its own logging path would do exactly the
+  // thing it prevents — and only in the failure case, where nobody is looking.
+  const endpoint = opts?.endpoint ?? "unknown endpoint";
   schemaLogger.warn(
-    `API response failed schema validation: ${opts.endpoint}`,
+    `API response failed schema validation: ${endpoint}`,
     {
-      endpoint: opts.endpoint,
+      endpoint,
       issues: result.error.issues,
       received: data,
     },

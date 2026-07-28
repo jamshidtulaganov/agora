@@ -154,6 +154,12 @@ export type {
   RedeemLarkBindingTokenResponse,
 } from "./lark";
 export type {
+  TelegramInstallation,
+  ListTelegramInstallationsResponse,
+  TelegramBindLinkResponse,
+  SetTelegramAccessRequest,
+} from "./telegram";
+export type {
   Autopilot,
   AutopilotStatus,
   AutopilotExecutionMode,

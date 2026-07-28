@@ -183,6 +183,37 @@ func (h *Handler) InstallAgentTelegramBot(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, telegramInstallationToResponse(row))
 }
 
+// ListWorkspaceTelegramInstallations handles
+// GET /api/workspaces/{id}/telegram/installations.
+//
+// Member-visible, like the Lark list: the Integrations tab must not render
+// blank for a non-admin. Nothing here is a management handle — every write
+// route re-checks owner/admin — and the response carries no token, so listing
+// is safe for anyone already inside the workspace.
+func (h *Handler) ListWorkspaceTelegramInstallations(w http.ResponseWriter, r *http.Request) {
+	wsUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "workspace id")
+	if !ok {
+		return
+	}
+	rows, err := h.Queries.ListTelegramInstallations(r.Context(), wsUUID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list telegram bots")
+		return
+	}
+	out := make([]TelegramInstallationResponse, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, telegramInstallationToResponse(row))
+	}
+	// `configured` reports whether an install could succeed at all. Without the
+	// seal key the flow dies at the final step, after the operator has already
+	// pasted a live bot token into a form — so the UI needs to know up front.
+	_, sealErr := telegramSealBox()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"installations": out,
+		"configured":    sealErr == nil,
+	})
+}
+
 // GetAgentTelegramBot handles GET /api/agents/{id}/telegram.
 func (h *Handler) GetAgentTelegramBot(w http.ResponseWriter, r *http.Request) {
 	agent, ok := h.loadAgentForUser(w, r, chi.URLParam(r, "id"))

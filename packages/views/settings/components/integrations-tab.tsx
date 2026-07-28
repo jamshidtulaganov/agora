@@ -1,13 +1,15 @@
 "use client";
 
-import { DatabaseZap, MessageSquare, Palette, Plug, Rocket } from "lucide-react";
+import { DatabaseZap, MessageSquare, Palette, Plug, Rocket, Send } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@agora/core/api";
 import { useConfigStore } from "@agora/core/config";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { zohoConnectionOptions } from "@agora/core/zoho";
 import { larkInstallationsOptions } from "@agora/core/lark";
+import { telegramInstallationsOptions } from "@agora/core/telegram";
 import { LarkTab } from "./lark-tab";
+import { TelegramTab } from "./telegram-tab";
 import { BitrixTab } from "./bitrix-tab";
 import { ZohoTab } from "./zoho-tab";
 import { McpServersTab } from "./mcp-servers-tab";
@@ -36,6 +38,7 @@ export function IntegrationsTab() {
   const bitrixEnabled = useConfigStore((s) => s.bitrixEnabled);
   const zohoEnabled = useConfigStore((s) => s.zohoEnabled);
   const larkEnabled = useConfigStore((s) => s.larkEnabled);
+  const telegramBotsEnabled = useConfigStore((s) => s.telegramBotsEnabled);
 
   const { data: figmaStatus } = useQuery({
     queryKey: ["figma-credential", wsId],
@@ -54,6 +57,12 @@ export function IntegrationsTab() {
   const { data: larkData } = useQuery({
     ...larkInstallationsOptions(wsId),
     enabled: !!wsId && larkEnabled,
+  });
+  // Same options factory the tab body spreads, so the card header and the
+  // panel share one cache entry instead of fetching twice.
+  const { data: telegramData } = useQuery({
+    ...telegramInstallationsOptions(wsId),
+    enabled: !!wsId && telegramBotsEnabled,
   });
 
   const status = (connected: boolean): "connected" | "not_connected" =>
@@ -108,6 +117,17 @@ export function IntegrationsTab() {
             status={status(zohoConnection?.configured === true)}
           >
             <ZohoTab />
+          </IntegrationCard>
+        ) : null}
+
+        {telegramBotsEnabled ? (
+          <IntegrationCard
+            icon={<Send className="h-4 w-4" />}
+            name={t(($) => $.integrations.telegram.name)}
+            description={t(($) => $.integrations.telegram.description)}
+            status={status(telegramData?.configured === true)}
+          >
+            <TelegramTab />
           </IntegrationCard>
         ) : null}
 

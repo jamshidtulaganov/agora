@@ -821,6 +821,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
 					r.Get("/lark/installations", h.ListLarkInstallations)
+					// Workspace-wide view of the per-agent Telegram bots. The
+					// write routes stay on /agents/{id}/telegram — this is the
+					// read side the Settings tab renders.
+					r.Get("/telegram/installations", h.ListWorkspaceTelegramInstallations)
 				})
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))

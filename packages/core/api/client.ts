@@ -136,6 +136,10 @@ import type {
   ListGitHubInstallationsResponse,
   GitHubConnectResponse,
   ListLarkInstallationsResponse,
+  ListTelegramInstallationsResponse,
+  SetTelegramAccessRequest,
+  TelegramBindLinkResponse,
+  TelegramInstallation,
   BeginLarkInstallResponse,
   LarkInstallStatusResponse,
   RedeemLarkBindingTokenResponse,
@@ -304,6 +308,12 @@ import {
   McpCredentialStatusSchema,
   McpCredentialListSchema,
   EMPTY_MCP_CREDENTIAL_LIST,
+  EMPTY_TELEGRAM_BIND_LINK,
+  EMPTY_TELEGRAM_INSTALLATION,
+  EMPTY_TELEGRAM_INSTALLATIONS,
+  ListTelegramInstallationsSchema,
+  TelegramBindLinkSchema,
+  TelegramInstallationSchema,
   EMPTY_MCP_CREDENTIAL_STATUS,
   ReleaseIntegrationListSchema,
   EMPTY_RELEASE_INTEGRATIONS,
@@ -3313,6 +3323,65 @@ export class ApiClient {
   }
 
   // Lark integration
+  // ---- Per-agent Telegram bots ----
+  //
+  // Parsed, not cast. This response feeds a settings panel inside an installed
+  // desktop build that will outlive the server it was compiled against, so a
+  // drifted field must downgrade rather than white-screen the page
+  // (CLAUDE.md → API Response Compatibility).
+  async listTelegramInstallations(workspaceId: string): Promise<ListTelegramInstallationsResponse> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/telegram/installations`);
+    return parseWithFallback(raw, ListTelegramInstallationsSchema, EMPTY_TELEGRAM_INSTALLATIONS, {
+      endpoint: "GET /api/workspaces/{id}/telegram/installations",
+    });
+  }
+
+  async installAgentTelegramBot(
+    workspaceId: string,
+    agentId: string,
+    botToken: string,
+    chatId?: string,
+  ): Promise<TelegramInstallation> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/agents/${agentId}/telegram`, {
+      method: "PUT",
+      body: JSON.stringify({ bot_token: botToken, chat_id: chatId ?? "" }),
+    });
+    return parseWithFallback(raw, TelegramInstallationSchema, EMPTY_TELEGRAM_INSTALLATION, {
+      endpoint: "PUT /api/workspaces/{id}/agents/{id}/telegram",
+    });
+  }
+
+  async deleteAgentTelegramBot(workspaceId: string, agentId: string): Promise<void> {
+    await this.fetch(`/api/workspaces/${workspaceId}/agents/${agentId}/telegram`, { method: "DELETE" });
+  }
+
+  async setAgentTelegramAccess(
+    workspaceId: string,
+    agentId: string,
+    body: SetTelegramAccessRequest,
+  ): Promise<TelegramInstallation> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/agents/${agentId}/telegram/access`,
+      { method: "PUT", body: JSON.stringify(body) },
+    );
+    return parseWithFallback(raw, TelegramInstallationSchema, EMPTY_TELEGRAM_INSTALLATION, {
+      endpoint: "PUT /api/workspaces/{id}/agents/{id}/telegram/access",
+    });
+  }
+
+  async createAgentTelegramBindLink(
+    workspaceId: string,
+    agentId: string,
+  ): Promise<TelegramBindLinkResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/agents/${agentId}/telegram/bind-link`,
+      { method: "POST" },
+    );
+    return parseWithFallback(raw, TelegramBindLinkSchema, EMPTY_TELEGRAM_BIND_LINK, {
+      endpoint: "POST /api/workspaces/{id}/agents/{id}/telegram/bind-link",
+    });
+  }
+
   async listLarkInstallations(workspaceId: string): Promise<ListLarkInstallationsResponse> {
     return this.fetch(`/api/workspaces/${workspaceId}/lark/installations`);
   }

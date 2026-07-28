@@ -418,6 +418,10 @@
     "lark": {
       "name": "Lark",
       "description": "Har bir agentni jamoa DM yozib, eslatib turadigan Lark botiga ulang."
+    },
+    "telegram": {
+      "name": "Telegram",
+      "description": "Agentga o'z botini bering — guruhda javob bera olsin."
     }
   },
   "figma": {
@@ -625,5 +629,57 @@
       "error_save_failed": "Sinxronlash konfiguratsiyasini saqlab bo'lmadi.",
       "error_delete_failed": "Sinxronlash konfiguratsiyasini o'chirib bo'lmadi."
     }
+  },
+  "telegram": {
+    "page_description": "Agentga o'z Telegram botini bering — guruhda o'z nomidan gapiradi va unga javob berish mumkin bo'ladi.",
+    "connect_button": "Bot ulash",
+    "loading": "Ulangan botlar yuklanmoqda…",
+    "not_configured_title": "Telegram botlar mavjud emas",
+    "not_configured_description": "Bu o'rnatmada token uchun shifrlash kaliti yo'q, shuning uchun ulash yakunlanmaydi. Administratordan AGORA_TELEGRAM_SECRET_KEY ni o'rnatishni so'rang.",
+    "empty_title": "Ulangan bot yo'q",
+    "empty_description": "Telegram'dagi @BotFather orqali bot yarating, keyin uni shu yerda agentga ulang.",
+    "status_revoked": "Bekor qilingan",
+    "groups_count": "{{count}} ta guruh",
+    "add_group": "Guruh qo'shish",
+    "manage_access": "Ruxsat",
+    "cancel": "Bekor qilish",
+    "close": "Yopish",
+    "install_title": "Telegram bot ulash",
+    "install_description": "Har agentga bitta bot. @BotFather'da yarating va tokenini kiriting — token serverda shifrlanadi va boshqa ko'rsatilmaydi.",
+    "install_agent_label": "Agent",
+    "install_agent_placeholder": "Agentni tanlang",
+    "install_no_agents": "Barcha agentlarda bot bor.",
+    "install_token_label": "Bot tokeni",
+    "install_token_hint": "@BotFather'dan olinadi. Bot guruhdagi hamma xabarni o'qishi kerak bo'lsa (faqat javob va murojaatni emas), privacy mode'ni o'chiring.",
+    "install_submit": "Ulash",
+    "toast_connected": "Bot ulandi",
+    "toast_connect_failed": "Telegram bu tokenni qabul qilmadi",
+    "disconnect_title": "Bot uzilsinmi?",
+    "disconnect_description": "Agent Telegram'da xabar qabul qilmaydi va yubormaydi. Saqlangan token o'chiriladi — qayta ulash uchun u yana kerak bo'ladi.",
+    "disconnect_confirm": "Uzish",
+    "toast_disconnected": "Bot uzildi",
+    "toast_disconnect_failed": "Botni uzib bo'lmadi",
+    "bind_title": "Guruh qo'shish",
+    "bind_description": "Botni guruhga qo'shish uchun skanerlang. Kodda bir martalik token bor — guruhga taklif qilinish o'z-o'zidan unda ish qilish huquqi emas.",
+    "bind_generate": "Kod yaratish",
+    "bind_open_link": "Telegram'da ochish",
+    "bind_expiry_hint": "10 daqiqa amal qiladi, bir marta ishlatiladi.",
+    "bind_failed": "Kod yaratilmadi. Qayta urinib ko'ring.",
+    "bind_done": "Tayyor",
+    "access_title": "Kim agentga buyruq bera oladi",
+    "access_description": "Hisobotlarga ta'sir qilmaydi: yopiq bot ham hisobotini yuboraveradi, faqat buyruq qabul qilmaydi.",
+    "access_policy_label": "Siyosat",
+    "policy_closed": "Yopiq",
+    "policy_allowlist": "Ruxsat ro'yxati",
+    "policy_open": "Ochiq",
+    "policy_unknown": "Noma'lum siyosat",
+    "policy_hint": "Yopiq — hech kimga. Ruxsat ro'yxati — faqat quyidagilarga. Ochiq — ruxsat berilgan guruhdagi hammaga.",
+    "access_chats_label": "Ruxsat berilgan guruhlar",
+    "access_chats_hint": "Raqamli chat id'lari, har qatorda bittadan. Guruh id'si manfiy bo'ladi. QR orqali guruh qo'shsangiz, bu maydon o'zi to'ladi.",
+    "access_users_label": "Ruxsat berilgan foydalanuvchilar",
+    "access_users_hint": "Raqamli Telegram id'lari, har qatorda bittadan. Faqat «ruxsat ro'yxati» siyosatida ishlatiladi.",
+    "access_save": "Saqlash",
+    "toast_access_saved": "Ruxsat yangilandi",
+    "toast_access_failed": "Ruxsatni yangilab bo'lmadi"
   }
 }

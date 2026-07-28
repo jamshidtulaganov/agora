@@ -418,6 +418,10 @@
     "lark": {
       "name": "Lark",
       "description": "Connect each agent to a Lark bot your team can DM and mention."
+    },
+    "telegram": {
+      "name": "Telegram",
+      "description": "Give an agent its own bot so it can answer in a group."
     }
   },
   "figma": {
@@ -625,5 +629,57 @@
       "error_save_failed": "Couldn't save the sync config.",
       "error_delete_failed": "Couldn't delete the sync config."
     }
+  },
+  "telegram": {
+    "page_description": "Give an agent its own Telegram bot so it can speak in a group under its own name and be replied to.",
+    "connect_button": "Connect a bot",
+    "loading": "Loading connected bots…",
+    "not_configured_title": "Telegram bots are not available",
+    "not_configured_description": "This deployment has no encryption key for bot tokens, so an installation cannot be completed. Ask an operator to set AGORA_TELEGRAM_SECRET_KEY.",
+    "empty_title": "No bots connected",
+    "empty_description": "Create a bot in Telegram's @BotFather, then connect it to an agent here.",
+    "status_revoked": "Revoked",
+    "groups_count": "{{count}} group(s)",
+    "add_group": "Add group",
+    "manage_access": "Access",
+    "cancel": "Cancel",
+    "close": "Close",
+    "install_title": "Connect a Telegram bot",
+    "install_description": "Each agent gets one bot. Create it in @BotFather, then paste its token — the token is encrypted on the server and never shown again.",
+    "install_agent_label": "Agent",
+    "install_agent_placeholder": "Pick an agent",
+    "install_no_agents": "Every agent already has a bot.",
+    "install_token_label": "Bot token",
+    "install_token_hint": "From @BotFather. Turn off the bot's privacy mode if it should read every group message, not only replies and mentions.",
+    "install_submit": "Connect",
+    "toast_connected": "Bot connected",
+    "toast_connect_failed": "Telegram rejected this bot token",
+    "disconnect_title": "Disconnect this bot?",
+    "disconnect_description": "The agent stops receiving and sending messages in Telegram. Its stored token is deleted; reconnecting needs the token again.",
+    "disconnect_confirm": "Disconnect",
+    "toast_disconnected": "Bot disconnected",
+    "toast_disconnect_failed": "Could not disconnect the bot",
+    "bind_title": "Add a group",
+    "bind_description": "Scan to add the bot to a group. The code carries a single-use token — being invited to a group is not by itself permission to act in it.",
+    "bind_generate": "Generate code",
+    "bind_open_link": "Open in Telegram instead",
+    "bind_expiry_hint": "Valid for 10 minutes and usable once.",
+    "bind_failed": "Could not generate a code. Try again.",
+    "bind_done": "Done",
+    "access_title": "Who may instruct this agent",
+    "access_description": "Reporting is unaffected: a closed bot still posts its reports, it just takes no orders.",
+    "access_policy_label": "Policy",
+    "policy_closed": "Closed",
+    "policy_allowlist": "Allowlist",
+    "policy_open": "Open",
+    "policy_unknown": "Unknown policy",
+    "policy_hint": "Closed refuses everyone. Allowlist admits only the users below. Open admits anyone in an allowed group.",
+    "access_chats_label": "Allowed groups",
+    "access_chats_hint": "Numeric chat ids, one per line. Group ids are negative. Adding a group by QR fills this in for you.",
+    "access_users_label": "Allowed users",
+    "access_users_hint": "Numeric Telegram user ids, one per line. Only used by the allowlist policy.",
+    "access_save": "Save",
+    "toast_access_saved": "Access updated",
+    "toast_access_failed": "Could not update access"
   }
 }

@@ -23,6 +23,8 @@ import type {
   OrchestrationRun,
   IssueArtifactResponse,
   Squad,
+  TelegramBindLinkResponse,
+  TelegramInstallation,
   TimelineEntry,
   User,
   WebhookDelivery,
@@ -159,6 +161,7 @@ export interface AppConfigResponse {
   bitrix_enabled?: boolean;
   zoho_enabled?: boolean;
   lark_enabled?: boolean;
+  telegram_bots_enabled?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -303,6 +306,7 @@ export const AppConfigSchema = z.object({
   bitrix_enabled: BooleanWithDefaultSchema(false).optional(),
   zoho_enabled: BooleanWithDefaultSchema(false).optional(),
   lark_enabled: BooleanWithDefaultSchema(false).optional(),
+  telegram_bots_enabled: BooleanWithDefaultSchema(false).optional(),
 }).loose();
 
 export const EMPTY_APP_CONFIG: AppConfigResponse = {
@@ -1848,3 +1852,56 @@ export const ProjectConfigListSchema = z.object({
 export type ProjectConfigEntry = z.infer<typeof ProjectConfigEntrySchema>;
 
 export const EMPTY_PROJECT_CONFIG: { configs: ProjectConfigEntry[] } = { configs: [] };
+
+// Per-agent Telegram bots. Every field is defaulted: this response is consumed
+// by an installed desktop build that will outlive the server it was built
+// against, and a settings panel that white-screens on a drifted field is worse
+// than one showing a stale-but-benign row (CLAUDE.md → API Response
+// Compatibility).
+export const TelegramInstallationSchema = z.object({
+  agent_id: z.string().default(""),
+  bot_username: z.string().default(""),
+  bot_user_id: z.string().default(""),
+  chat_id: z.string().optional(),
+  status: z.string().default("active"),
+  installed_at: z.string().optional(),
+  // Unknown policy values must not crash the panel — the UI renders a generic
+  // fallback and the operator can still correct it.
+  access_policy: z.string().default("closed"),
+  // Ids arrive as strings so a 64-bit chat id survives JSON; a malformed list
+  // downgrades to empty rather than dropping the whole installation.
+  allowed_user_ids: z.array(z.string()).catch([]).optional(),
+  allowed_chat_ids: z.array(z.string()).catch([]).optional(),
+}).loose();
+
+export const ListTelegramInstallationsSchema = z.object({
+  installations: z.array(TelegramInstallationSchema).catch([]),
+  // Defaults to FALSE, not true: claiming the deployment is configured when
+  // the field is missing would show an install form that cannot succeed.
+  configured: z.boolean().default(false),
+}).loose();
+
+export const EMPTY_TELEGRAM_INSTALLATIONS: {
+  installations: TelegramInstallation[];
+  configured: boolean;
+} = { installations: [], configured: false };
+
+export const EMPTY_TELEGRAM_INSTALLATION: TelegramInstallation = {
+  agent_id: "",
+  bot_username: "",
+  bot_user_id: "",
+  status: "active",
+  access_policy: "closed",
+};
+
+export const TelegramBindLinkSchema = z.object({
+  group_url: z.string().default(""),
+  bot_username: z.string().default(""),
+  expires_at: z.string().default(""),
+}).loose();
+
+export const EMPTY_TELEGRAM_BIND_LINK: TelegramBindLinkResponse = {
+  group_url: "",
+  bot_username: "",
+  expires_at: "",
+};
