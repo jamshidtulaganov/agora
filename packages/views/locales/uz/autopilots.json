@@ -291,7 +291,11 @@
       "thursday": "Payshanba",
       "friday": "Juma",
       "saturday": "Shanba"
-    }
+    },
+    "section_telegram": "Telegram",
+    "telegram_destination": "Hisobot @{{bot}} orqali {{chat}} chatiga tushadi.",
+    "telegram_no_chat": "@{{bot}} o'rnatilgan, lekin hech qaysi guruhga bog'lanmagan — hisobot yuborilmaydi.",
+    "telegram_no_bot": "Bu agentda Telegram bot yo'q, hisobot Agora ichida qoladi. Ulash: Sozlamalar → Integratsiyalar → Telegram."
   },
   "trigger_config": {
     "frequencies": {

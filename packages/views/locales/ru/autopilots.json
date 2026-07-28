@@ -291,7 +291,11 @@
       "thursday": "Четверг",
       "friday": "Пятница",
       "saturday": "Суббота"
-    }
+    },
+    "section_telegram": "Telegram",
+    "telegram_destination": "Отчёты уходят в @{{bot}}, чат {{chat}}.",
+    "telegram_no_chat": "@{{bot}} подключён, но не привязан ни к одной группе — отчёты не отправятся.",
+    "telegram_no_bot": "У этого агента нет Telegram-бота, отчёты останутся в Agora. Подключить: Настройки → Интеграции → Telegram."
   },
   "trigger_config": {
     "frequencies": {

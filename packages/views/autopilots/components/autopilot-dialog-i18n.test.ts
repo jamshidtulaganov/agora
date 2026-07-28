@@ -70,3 +70,38 @@ describe("autopilot dialog partial-success toast", () => {
     });
   });
 });
+
+// The Telegram delivery line is pure interpolation, and interpolation is where
+// these strings break: a template written `{bot}` instead of `{{bot}}`, or a
+// call site passing `botName` where the template says `bot`, both render a
+// destination with a hole in it — and the whole point of the line is telling
+// the reader exactly where the report lands.
+describe("telegram delivery strings", () => {
+  const locales = [
+    ["en", enAutopilots],
+    ["zh-Hans", zhAutopilots],
+  ] as const;
+
+  for (const [locale, resource] of locales) {
+    it(`interpolates bot and chat in ${locale}`, () => {
+      const i18n = createI18n(locale, { [locale]: { autopilots: resource } });
+      const t = i18n.getFixedT(locale, "autopilots") as TFunction<"autopilots">;
+
+      const withChat = t(($) => $.dialog.telegram_destination, {
+        bot: "sd_pm_agent_bot",
+        chat: "-1004336001519",
+      });
+      expect(withChat).toContain("sd_pm_agent_bot");
+      expect(withChat).toContain("-1004336001519");
+      expect(withChat).not.toContain("{{");
+
+      const noChat = t(($) => $.dialog.telegram_no_chat, { bot: "sd_pm_agent_bot" });
+      expect(noChat).toContain("sd_pm_agent_bot");
+      expect(noChat).not.toContain("{{");
+
+      // The no-bot line takes no variables; a stray placeholder there would
+      // reach the reader verbatim.
+      expect(t(($) => $.dialog.telegram_no_bot)).not.toContain("{{");
+    });
+  }
+});

@@ -97,8 +97,7 @@
     "running": "Running",
     "skipped": "Skipped",
     "completed": "Completed",
-    "failed": "Failed",
-    "skipped": "Skipped"
+    "failed": "Failed"
   },
   "run_source": {
     "schedule": "Schedule",
@@ -292,7 +291,11 @@
       "thursday": "Thursday",
       "friday": "Friday",
       "saturday": "Saturday"
-    }
+    },
+    "section_telegram": "Telegram",
+    "telegram_destination": "Reports post to @{{bot}} in chat {{chat}}.",
+    "telegram_no_chat": "@{{bot}} is installed but bound to no group yet — reports will not be posted.",
+    "telegram_no_bot": "This agent has no Telegram bot, so reports stay in Agora. Connect one in Settings → Integrations → Telegram."
   },
   "trigger_config": {
     "frequencies": {
