@@ -41,7 +41,25 @@ const (
 	StyleTableInt
 	StyleTableDecimal
 	StyleStrong
+	StyleTableTextBand
+	StyleTableIntBand
+	StyleTableDecimalBand
 )
+
+// Banded returns the alternating-fill variant of a table style, or the style
+// unchanged when it has none.
+func (s Style) Banded() Style {
+	switch s {
+	case StyleTableText:
+		return StyleTableTextBand
+	case StyleTableInt:
+		return StyleTableIntBand
+	case StyleTableDecimal:
+		return StyleTableDecimalBand
+	default:
+		return s
+	}
+}
 
 // Cell is one value. Number wins when Numeric is true; otherwise Text is used.
 type Cell struct {
@@ -107,6 +125,16 @@ func AutoCell(s string) Cell {
 type Sheet struct {
 	Name string
 	Rows [][]Cell
+	// FreezeHeaderRow freezes everything above the given 1-based row, so a
+	// table's header stays visible while the reader scrolls. Zero disables it.
+	// Only meaningful on a sheet holding ONE table — freezing a mid-sheet row
+	// on a sheet with several would pin an arbitrary one.
+	FreezeHeaderRow int
+	// AutoFilterRange is the A1 range the filter dropdowns cover, e.g.
+	// "A1:C12". This is what turns a report into something a reader can
+	// interrogate: sort by count, filter to one person, without touching the
+	// source. Empty disables it.
+	AutoFilterRange string
 	// ColWidths sets per-column width in Excel's character units. Empty means
 	// the default width, which is almost never right: a label like
 	// "Median yopilish (kun)" is clipped to "Median yo" and the reader cannot
@@ -161,6 +189,9 @@ func AutoWidths(rows [][]Cell) []float64 {
 	}
 	return widths
 }
+
+// ColumnName is columnName for callers building an A1 range.
+func ColumnName(i int) string { return columnName(i) }
 
 // columnName converts a zero-based index to a spreadsheet column: 0→A, 25→Z,
 // 26→AA. Reports are narrow, but a by-month table plus a total column already
@@ -279,6 +310,7 @@ const (
 	brandHex = "2563EB" // Agora royal blue — titles and table headers
 	inkHex   = "1F2937" // body text; pure black reads as harsh on screen
 	ruleHex  = "D1D5DB" // table borders, light enough not to fight the numbers
+	bandHex  = "F3F6FB" // alternating row tint; barely there by design
 )
 
 // reportStyles builds styles.xml. Excel requires the full
@@ -303,6 +335,8 @@ func reportStyles() string {
 		`<fill><patternFill patternType="gray125"/></fill>` +
 		`<fill><patternFill patternType="solid"><fgColor rgb="FF` + brandHex + `"/>` +
 		`<bgColor indexed="64"/></patternFill></fill>` +
+		`<fill><patternFill patternType="solid"><fgColor rgb="FF` + bandHex + `"/>` +
+		`<bgColor indexed="64"/></patternFill></fill>` +
 		`</fills>` +
 		`<borders count="2"><border/>` +
 		`<border>` +
@@ -313,7 +347,7 @@ func reportStyles() string {
 		`</border></borders>` +
 		`<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
 		// Order here defines the Style constants. Do not reorder.
-		`<cellXfs count="8">` +
+		`<cellXfs count="11">` +
 		// 0 normal
 		`<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>` +
 		// 1 title
@@ -336,6 +370,17 @@ func reportStyles() string {
 		`applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>` +
 		// 7 strong prose
 		`<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>` +
+		// 8-10 banded variants of the table styles. Alternating fill is what
+		// keeps the eye on one row across a wide table; without it a
+		// twenty-row breakdown is where misreadings happen.
+		`<xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1" ` +
+		`applyAlignment="1"><alignment vertical="center"/></xf>` +
+		`<xf numFmtId="3" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" ` +
+		`applyFill="1" applyBorder="1" applyAlignment="1">` +
+		`<alignment horizontal="right" vertical="center"/></xf>` +
+		`<xf numFmtId="164" fontId="0" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" ` +
+		`applyFill="1" applyBorder="1" applyAlignment="1">` +
+		`<alignment horizontal="right" vertical="center"/></xf>` +
 		`</cellXfs>` +
 		`<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>` +
 		`</styleSheet>`
@@ -351,7 +396,16 @@ func sheetXML(sheet Sheet) string {
 		// Gridlines off: the tables carry their own borders, and the default
 		// grid makes the prose between them look like empty spreadsheet rather
 		// than part of a document.
-		`<sheetViews><sheetView showGridLines="0" workbookViewId="0"/></sheetViews>`)
+		`<sheetViews><sheetView showGridLines="0" workbookViewId="0">`)
+	if sheet.FreezeHeaderRow > 0 {
+		// ySplit counts the rows ABOVE the split, so freezing "through row N"
+		// means a split of N with the pane starting at N+1.
+		b.WriteString(fmt.Sprintf(
+			`<pane ySplit="%d" topLeftCell="A%d" activePane="bottomLeft" state="frozen"/>`+
+				`<selection pane="bottomLeft"/>`,
+			sheet.FreezeHeaderRow, sheet.FreezeHeaderRow+1))
+	}
+	b.WriteString(`</sheetView></sheetViews>`)
 	if len(sheet.ColWidths) > 0 {
 		// <cols> must precede <sheetData>; Excel rejects the sheet otherwise.
 		b.WriteString(`<cols>`)
@@ -395,6 +449,11 @@ func sheetXML(sheet Sheet) string {
 		}
 		b.WriteString(`</row>`)
 	}
-	b.WriteString(`</sheetData></worksheet>`)
+	b.WriteString(`</sheetData>`)
+	if sheet.AutoFilterRange != "" {
+		// autoFilter must follow sheetData; Excel rejects the sheet otherwise.
+		b.WriteString(fmt.Sprintf(`<autoFilter ref="%s"/>`, sheet.AutoFilterRange))
+	}
+	b.WriteString(`</worksheet>`)
 	return b.String()
 }

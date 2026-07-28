@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/multica-ai/multica/server/internal/util/xlsx"
@@ -47,7 +48,12 @@ func markdownToSheet(name, title, body string) xlsx.Sheet {
 
 		switch {
 		case trimmed == "":
-			sheet.Rows = append(sheet.Rows, nil) // a blank spacer row
+			// One spacer, never a run of them. Markdown carries blank lines
+			// freely and section splitting adds more; a sheet with four empty
+			// rows between blocks reads as a broken export.
+			if n := len(sheet.Rows); n == 0 || len(sheet.Rows[n-1]) > 0 {
+				sheet.Rows = append(sheet.Rows, nil)
+			}
 
 		case strings.HasPrefix(trimmed, "#"):
 			// Headings keep the report's sections; without them a long report
@@ -58,7 +64,9 @@ func markdownToSheet(name, title, body string) xlsx.Sheet {
 			})
 
 		case strings.Trim(trimmed, "-") == "" && strings.HasPrefix(trimmed, "---"):
-			sheet.Rows = append(sheet.Rows, nil) // a rule is just a break here
+			if n := len(sheet.Rows); n == 0 || len(sheet.Rows[n-1]) > 0 {
+				sheet.Rows = append(sheet.Rows, nil) // a rule is just a break
+			}
 
 		case strings.HasPrefix(trimmed, "|") && i+1 < len(lines) && isTableDivider(lines[i+1]):
 			// Header row, then the divider is skipped, then the body rows.
@@ -109,6 +117,11 @@ func markdownToSheet(name, title, body string) xlsx.Sheet {
 			sheet.Rows = append(sheet.Rows, []xlsx.Cell{cell})
 		}
 	}
+	// A report body almost always ends in a newline, which would otherwise
+	// leave a trailing empty row under every sheet.
+	for len(sheet.Rows) > 0 && len(sheet.Rows[len(sheet.Rows)-1]) == 0 {
+		sheet.Rows = sheet.Rows[:len(sheet.Rows)-1]
+	}
 	// Derived last, from the finished rows: a label like "Median yopilish
 	// (kun)" clipped to "Median yo" makes the number beside it meaningless.
 	sheet.ColWidths = xlsx.AutoWidths(sheet.Rows)
@@ -125,8 +138,160 @@ func stripInlineMarkdown(s string) string {
 }
 
 // renderReportXLSX builds the workbook for a report body.
+//
+// One sheet per section that contains a table, plus a summary sheet carrying
+// the title, the finding and the prose. That is the shape a reader expects
+// from a report workbook: the overview opens first, and each breakdown is its
+// own tab they can sort and filter without disturbing anything else.
+//
+// A report with no tables stays a single sheet — splitting prose across tabs
+// would be structure for its own sake.
 func renderReportXLSX(title, body string) ([]byte, error) {
-	return xlsx.Write([]xlsx.Sheet{markdownToSheet(sheetTabName(title), title, body)})
+	sections := splitReportSections(body)
+	tabled := 0
+	for _, sec := range sections {
+		if sec.hasTable {
+			tabled++
+		}
+	}
+	if tabled < 2 {
+		return xlsx.Write([]xlsx.Sheet{markdownToSheet(sheetTabName(title), title, body)})
+	}
+
+	sheets := make([]xlsx.Sheet, 0, tabled+1)
+	// The summary keeps every section's prose, so nothing is lost by the split
+	// — a reader who never opens a data tab still gets the whole narrative.
+	summary := markdownToSheet(sheetTabName(title), title, summaryBody(sections))
+	sheets = append(sheets, summary)
+
+	used := map[string]bool{sanitizedLower(summary.Name): true}
+	for _, sec := range sections {
+		if !sec.hasTable {
+			continue
+		}
+		sheet := markdownToSheet(uniqueSheetName(sec.heading, used), "", sec.body)
+		applyTableAffordances(&sheet)
+		sheets = append(sheets, sheet)
+	}
+	return xlsx.Write(sheets)
+}
+
+// reportSection is one `##` block of the report.
+type reportSection struct {
+	heading  string
+	body     string
+	hasTable bool
+}
+
+// splitReportSections cuts the report at its headings. Text before the first
+// heading is the lead — the finding — and is kept as an unnamed section so it
+// still opens the summary.
+func splitReportSections(body string) []reportSection {
+	lines := strings.Split(body, "\n")
+	sections := []reportSection{{}}
+	for i := 0; i < len(lines); i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(trimmed, "#") {
+			sections = append(sections, reportSection{
+				heading: strings.TrimSpace(strings.TrimLeft(trimmed, "# ")),
+			})
+			continue
+		}
+		cur := &sections[len(sections)-1]
+		if strings.HasPrefix(trimmed, "|") && i+1 < len(lines) && isTableDivider(lines[i+1]) {
+			cur.hasTable = true
+		}
+		cur.body += lines[i] + "\n"
+	}
+	return sections
+}
+
+// summaryBody rebuilds the prose-only report: every section's heading survives,
+// and a section whose content moved to its own tab is replaced by a pointer to
+// it rather than silently vanishing.
+func summaryBody(sections []reportSection) string {
+	var b strings.Builder
+	for _, sec := range sections {
+		if sec.heading != "" {
+			b.WriteString("## " + sec.heading + "\n\n")
+		}
+		if sec.hasTable {
+			b.WriteString("Alohida varaqda: " + sec.heading + "\n\n")
+			// Prose that sat alongside the table is kept — it usually explains
+			// the number, and the number without it is a bare column.
+			b.WriteString(proseOnly(sec.body))
+			continue
+		}
+		b.WriteString(sec.body)
+	}
+	return b.String()
+}
+
+// proseOnly drops table rows, keeping the sentences around them.
+func proseOnly(body string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(body, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "|") {
+			continue
+		}
+		b.WriteString(line + "\n")
+	}
+	return b.String()
+}
+
+// applyTableAffordances turns a one-table sheet into something interrogable:
+// the header stays put while scrolling, and the filter lets a reader sort by
+// count or narrow to one person without editing anything.
+func applyTableAffordances(sheet *xlsx.Sheet) {
+	headerRow, lastRow, width := 0, 0, 0
+	for i, row := range sheet.Rows {
+		if len(row) < 2 {
+			continue
+		}
+		if headerRow == 0 && row[0].Style == xlsx.StyleTableHeader {
+			headerRow, width = i+1, len(row)
+		}
+		if headerRow > 0 && i+1 > lastRow {
+			lastRow = i + 1
+		}
+	}
+	if headerRow == 0 || width == 0 {
+		return
+	}
+	sheet.FreezeHeaderRow = headerRow
+	sheet.AutoFilterRange = "A" + strconv.Itoa(headerRow) + ":" +
+		xlsx.ColumnName(width-1) + strconv.Itoa(lastRow)
+
+	// Band every other data row. Applied here rather than during conversion
+	// because only now is it known which rows belong to one table.
+	for i := headerRow; i < len(sheet.Rows); i++ {
+		if (i-headerRow)%2 == 1 {
+			for c := range sheet.Rows[i] {
+				sheet.Rows[i][c].Style = sheet.Rows[i][c].Style.Banded()
+			}
+		}
+	}
+}
+
+// uniqueSheetName keeps Excel from rejecting a workbook over duplicate tabs,
+// which two sections with the same heading would otherwise produce.
+func uniqueSheetName(name string, used map[string]bool) string {
+	base := strings.TrimSpace(name)
+	if base == "" {
+		base = "Sheet"
+	}
+	candidate := base
+	for n := 2; used[sanitizedLower(candidate)]; n++ {
+		candidate = base + " " + strconv.Itoa(n)
+	}
+	used[sanitizedLower(candidate)] = true
+	return candidate
+}
+
+// sanitizedLower is the identity Excel compares tab names by: it treats them
+// case-insensitively, so "Oylar" and "oylar" collide.
+func sanitizedLower(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
 }
 
 // sheetTabName is the short label on the tab. The full title lives in the first

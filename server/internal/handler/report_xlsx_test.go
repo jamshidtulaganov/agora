@@ -1,6 +1,10 @@
 package handler
 
 import (
+	"archive/zip"
+	"bytes"
+	"html"
+	"strings"
 	"testing"
 
 	"github.com/multica-ai/multica/server/internal/util/xlsx"
@@ -142,4 +146,129 @@ func TestNumbersGetTheRightTableFormat(t *testing.T) {
 		}
 	}
 	t.Fatal("numeric row not found")
+}
+
+func TestReportSplitsSectionsIntoSheets(t *testing.T) {
+	// A reader expects a report workbook to open on an overview and keep each
+	// breakdown on its own tab — sortable and filterable without disturbing
+	// anything else.
+	body := "Backlog o'sdi.\n\n" +
+		"## Oylar\n\n| Oy | Soni |\n|---|---|\n| Yanvar | 360 |\n| Fevral | 435 |\n\n" +
+		"## Xodimlar\n\n| Kim | Ochiq |\n|---|---|\n| A | 10 |\n| B | 8 |\n"
+	data, err := renderReportXLSX("Hisobot — 28.07.2026", body)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	names := sheetNames(t, data)
+	if len(names) != 3 {
+		t.Fatalf("got sheets %v, want a summary plus two data tabs", names)
+	}
+	if names[1] != "Oylar" || names[2] != "Xodimlar" {
+		t.Fatalf("data tabs are not named after their sections: %v", names)
+	}
+}
+
+func TestSingleTableReportStaysOneSheet(t *testing.T) {
+	// Splitting one table across tabs is structure for its own sake.
+	body := "Xulosa.\n\n## Oylar\n\n| Oy | Soni |\n|---|---|\n| Yanvar | 360 |\n"
+	data, err := renderReportXLSX("Hisobot", body)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if names := sheetNames(t, data); len(names) != 1 {
+		t.Fatalf("got %v, want a single sheet", names)
+	}
+}
+
+func TestSummaryKeepsEverySectionsProse(t *testing.T) {
+	// Nothing may be lost to the split: a reader who never opens a data tab
+	// still gets the whole narrative.
+	sections := splitReportSections(
+		"Lead line.\n\n## Oylar\n\nBu oyna to'liq emas.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n")
+	got := summaryBody(sections)
+	for _, want := range []string{"Lead line.", "## Oylar", "Bu oyna to'liq emas.", "Alohida varaqda: Oylar"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("summary lost %q:\n%s", want, got)
+		}
+	}
+	// The table itself moved out; leaving it in both places doubles the report.
+	if strings.Contains(got, "| 1 | 2 |") {
+		t.Error("the table was duplicated into the summary")
+	}
+}
+
+func TestDataSheetGetsFilterAndFrozenHeader(t *testing.T) {
+	// These are what turn a report into something a reader can interrogate.
+	sheet := markdownToSheet("Oylar", "", "| Oy | Soni |\n|---|---|\n| Yanvar | 360 |\n| Fevral | 435 |\n")
+	applyTableAffordances(&sheet)
+	if sheet.FreezeHeaderRow != 1 {
+		t.Errorf("freeze row = %d, want the header row", sheet.FreezeHeaderRow)
+	}
+	if sheet.AutoFilterRange != "A1:B3" {
+		t.Errorf("filter range = %q, want A1:B3", sheet.AutoFilterRange)
+	}
+	// Alternating fill: without it the eye loses the row on a wide table.
+	if sheet.Rows[2][0].Style != xlsx.StyleTableTextBand {
+		t.Errorf("second data row is not banded: %v", sheet.Rows[2][0].Style)
+	}
+}
+
+func TestDuplicateSectionNamesGetDistinctTabs(t *testing.T) {
+	// Excel rejects the whole workbook over duplicate tab names, and it
+	// compares them case-insensitively.
+	used := map[string]bool{}
+	a := uniqueSheetName("Oylar", used)
+	b := uniqueSheetName("oylar", used)
+	if a == b {
+		t.Fatalf("both sections got the tab %q", a)
+	}
+}
+
+func TestBlankRunsCollapse(t *testing.T) {
+	// Four empty rows between blocks reads as a broken export.
+	sheet := markdownToSheet("S", "", "bir\n\n\n\n\nikki\n")
+	run, longest := 0, 0
+	for _, row := range sheet.Rows {
+		if len(row) == 0 {
+			run++
+			if run > longest {
+				longest = run
+			}
+			continue
+		}
+		run = 0
+	}
+	if longest > 1 {
+		t.Fatalf("got a run of %d blank rows, want at most one", longest)
+	}
+	// And nothing trailing: a body ending in a newline must not leave an empty
+	// row under every sheet.
+	if len(sheet.Rows) > 0 && len(sheet.Rows[len(sheet.Rows)-1]) == 0 {
+		t.Fatal("sheet ends on a blank row")
+	}
+}
+
+// sheetNames reads the tab names back out of a written workbook.
+func sheetNames(t *testing.T, data []byte) []string {
+	t.Helper()
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("not a zip: %v", err)
+	}
+	for _, f := range zr.File {
+		if f.Name != "xl/workbook.xml" {
+			continue
+		}
+		rc, _ := f.Open()
+		buf := new(bytes.Buffer)
+		buf.ReadFrom(rc)
+		rc.Close()
+		var names []string
+		for _, part := range strings.Split(buf.String(), `<sheet name="`)[1:] {
+			names = append(names, html.UnescapeString(part[:strings.Index(part, `"`)]))
+		}
+		return names
+	}
+	t.Fatal("workbook.xml missing")
+	return nil
 }
