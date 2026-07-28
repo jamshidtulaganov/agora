@@ -100,9 +100,12 @@ func (h *Handler) autopilotReportBody(ctx context.Context, issueID, workspaceID 
 // Detached — the caller is an event subscriber, not a request, but the Bot API
 // call still should not hold the bus.
 func (h *Handler) SendAutopilotReport(ctx context.Context, runID string) {
-	if !h.TelegramPushEnabled() {
-		return
-	}
+	// Deliberately NOT gated on TelegramPushEnabled(). That flag asks whether
+	// the PLATFORM bot exists, which is the wrong question here: an autopilot
+	// whose agent owns its own bot needs nothing from the platform bot, and
+	// gating on it silently killed reports on any deployment that had per-agent
+	// bots but no TELEGRAM_BOT_TOKEN. The real gate is further down — no bot
+	// and no chat means no destination, and that path already returns.
 	runUUID, err := util.ParseUUID(runID)
 	if err != nil {
 		return
@@ -126,7 +129,9 @@ func (h *Handler) SendAutopilotReport(ctx context.Context, runID string) {
 	if chatID == "" {
 		chatID = h.autopilotReportChatID(ctx, ap)
 	}
-	if chatID == "" {
+	// Both fallbacks exhausted: no bot to speak with, or nowhere to speak.
+	// This is the real gate — reached whether or not a platform bot exists.
+	if bot == nil || chatID == "" {
 		return
 	}
 	body := h.autopilotReportBody(ctx, run.IssueID, ap.WorkspaceID)
