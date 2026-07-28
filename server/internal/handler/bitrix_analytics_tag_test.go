@@ -2,6 +2,7 @@ package handler
 
 import (
 	"testing"
+	"time"
 
 	"github.com/multica-ai/multica/server/internal/integrations/bitrix"
 )
@@ -108,6 +109,8 @@ func TestEveryFilterParamIsAccepted(t *testing.T) {
 	for _, key := range []string{
 		"since", "until", "tag", "assignee", "creator", "group",
 		"status", "stage", "priority", "title", "closed",
+		"sprint", "flow", "parent", "involves", "overdue",
+		"deadline_from", "deadline_to", "closed_from", "closed_to",
 	} {
 		if !bitrixFilterParams[key] {
 			t.Errorf("%s would be rejected as unknown", key)
@@ -115,5 +118,83 @@ func TestEveryFilterParamIsAccepted(t *testing.T) {
 	}
 	if bitrixFilterParams["priorty"] {
 		t.Error("a misspelling must not be accepted")
+	}
+}
+
+func TestOverdueIgnoresClosedTasks(t *testing.T) {
+	// A closed task that missed its deadline is history, not something to act
+	// on. Counting it would make the overdue number grow forever and stop
+	// meaning anything.
+	past := time.Now().AddDate(0, 0, -5).Format("2006-01-02T15:04:05-07:00")
+	if !taskIsOverdue(&bitrix.Task{Deadline: past}) {
+		t.Error("an open task past its deadline must count as overdue")
+	}
+	if taskIsOverdue(&bitrix.Task{Deadline: past, ClosedAt: past}) {
+		t.Error("a closed task must not count as overdue")
+	}
+	future := time.Now().AddDate(0, 0, 5).Format("2006-01-02T15:04:05-07:00")
+	if taskIsOverdue(&bitrix.Task{Deadline: future}) {
+		t.Error("a task due in the future is not overdue")
+	}
+	// No deadline is not "overdue" — it is undated, which is a different
+	// problem and is reported separately.
+	if taskIsOverdue(&bitrix.Task{}) {
+		t.Error("a task with no deadline must not count as overdue")
+	}
+}
+
+func TestInvolvesMatchesEveryRole(t *testing.T) {
+	// "How loaded is this person" is a different question from "what were they
+	// assigned": an auditor on twenty tasks carries real load that
+	// by_assignee shows as zero.
+	task := &bitrix.Task{ResponsibleID: "10", Accomplices: []string{"20"}, Auditors: []string{"30"}}
+	for _, id := range []string{"10", "20", "30"} {
+		if !taskInvolves(task, id) {
+			t.Errorf("user %s is on the task but was not matched", id)
+		}
+	}
+	if taskInvolves(task, "40") {
+		t.Error("an uninvolved user matched")
+	}
+}
+
+func TestDeadlineWindowExcludesUndatedTasks(t *testing.T) {
+	// A task with no deadline cannot satisfy a deadline window. Treating it as
+	// a match would drop every undated task into a "due this week" answer.
+	from := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 7, 31, 23, 59, 59, 0, time.UTC)
+	f := bitrixAnalyticsFilters{DeadlineFrom: "2026-07-01", deadlineFrom: from, DeadlineTo: "2026-07-31", deadlineTo: to}
+	if f.matches(&bitrix.Task{}) {
+		t.Error("an undated task matched a deadline window")
+	}
+	if !f.matches(&bitrix.Task{Deadline: "2026-07-15T10:00:00+05:00"}) {
+		t.Error("a task inside the window was rejected")
+	}
+	if f.matches(&bitrix.Task{Deadline: "2026-08-02T10:00:00+05:00"}) {
+		t.Error("a task after the window matched")
+	}
+}
+
+func TestStageFilterAcceptsAName(t *testing.T) {
+	// The stage is the field this team works in — To Do, Code Review, Need
+	// merge — and nobody knows that Code Review is stage 1247. A name can map
+	// to several ids because stages are defined per group.
+	names := map[string]string{"1247": "Code Review", "1390": "Code review", "1250": "Testing"}
+	ids := stageIDsNamed(names, "code review")
+	if len(ids) != 2 || !ids["1247"] || !ids["1390"] {
+		t.Fatalf("name resolved to %v, want both Code Review stages", ids)
+	}
+	f := bitrixAnalyticsFilters{Stage: "Code Review", stageIDs: ids}
+	if !f.matches(&bitrix.Task{StageID: "1390"}) {
+		t.Error("a task in a matching stage was rejected")
+	}
+	if f.matches(&bitrix.Task{StageID: "1250"}) {
+		t.Error("a task in Testing matched Code Review")
+	}
+	// An id still works when no name resolves, so callers reading by_stage keys
+	// are not forced to translate.
+	byID := bitrixAnalyticsFilters{Stage: "1250"}
+	if !byID.matches(&bitrix.Task{StageID: "1250"}) {
+		t.Error("a raw stage id stopped working")
 	}
 }

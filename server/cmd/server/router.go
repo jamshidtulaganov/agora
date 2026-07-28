@@ -628,6 +628,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// Read-only task detail + discussion. No POST/PUT counterpart exists
 		// by design: a Bitrix task is a company-wide record, and an agent
 		// writing into one is not an action that can be quietly undone.
+		// The portal's own field catalogue. Custom fields are named
+		// UF_AUTO_<digits> and mean nothing without their titles, so this is
+		// how a caller discovers that "RICE" is UF_AUTO_809721135658 rather
+		// than working from a list that goes stale the next time someone adds
+		// a field in the admin UI.
+		r.Get("/api/bitrix/fields", h.ListBitrixFields)
 		r.Get("/api/bitrix/tasks/{id}", h.GetBitrixTask)
 		r.Get("/api/bitrix/tasks/{id}/comments", h.ListBitrixTaskComments)
 		// Portal-wide task rollup for a date window (defaults to year-to-date).

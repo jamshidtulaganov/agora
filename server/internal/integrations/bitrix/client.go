@@ -73,6 +73,24 @@ type Task struct {
 	// Priority is Bitrix's numeric urgency: 0 low, 1 normal, 2 high.
 	Priority string
 	GroupID  string
+	// Deadline is what "overdue" is measured against. A portal that tracks
+	// deadlines and a rollup that cannot see them disagree about the single
+	// number a manager looks for first.
+	Deadline string
+	// SprintID / FlowID / ParentID place the task in the team's own structure:
+	// which sprint, which intake flow, which epic. GROUP_ID answers none of
+	// these — a project can run many sprints.
+	SprintID string
+	FlowID   string
+	ParentID string
+	// TimeEstimate and DurationFact are planned vs actual, in seconds. The gap
+	// between them is the only measure of whether estimates mean anything.
+	TimeEstimate string
+	DurationFact string
+	// Accomplices and Auditors are the other people attached to a task.
+	// RESPONSIBLE_ID alone understates who is involved.
+	Accomplices []string
+	Auditors    []string
 	// StageID is the scrum/kanban STAGE_ID (the live kanban column), resolved to
 	// a human stage name via task.stages.get. Empty for tasks not on a kanban.
 	StageID string
@@ -166,6 +184,22 @@ type rawTask struct {
 	CreatedByUpper jsonStr `json:"CREATED_BY"`
 	Priority       jsonStr `json:"priority"`
 	PriorityUpper  jsonStr `json:"PRIORITY"`
+	Deadline       jsonStr `json:"deadline"`
+	DeadlineUpper  jsonStr `json:"DEADLINE"`
+	SprintID       jsonStr `json:"sprintId"`
+	SprintUpper    jsonStr `json:"SPRINT_ID"`
+	FlowID         jsonStr `json:"flowId"`
+	FlowUpper      jsonStr `json:"FLOW_ID"`
+	ParentID       jsonStr `json:"parentId"`
+	ParentUpper    jsonStr `json:"PARENT_ID"`
+	TimeEstimate   jsonStr `json:"timeEstimate"`
+	TimeEstUpper   jsonStr `json:"TIME_ESTIMATE"`
+	DurationFact   jsonStr `json:"durationFact"`
+	DurFactUpper   jsonStr `json:"DURATION_FACT"`
+	Accomplices    rawIDs  `json:"accomplices"`
+	AccompUpper    rawIDs  `json:"ACCOMPLICES"`
+	Auditors       rawIDs  `json:"auditors"`
+	AuditorsUpper  rawIDs  `json:"AUDITORS"`
 	GroupID        jsonStr `json:"groupId"`
 	GroupUpper     jsonStr `json:"GROUP_ID"`
 	// Scrum/kanban STAGE_ID — the live kanban column the dev team moves the task
@@ -250,12 +284,55 @@ func (rt rawTask) toTask() Task {
 		ResponsibleID: firstNonEmpty(rt.Responsible, rt.RespUpper),
 		CreatedByID:   firstNonEmpty(rt.CreatedBy, rt.CreatedByUpper),
 		Priority:      firstNonEmpty(rt.Priority, rt.PriorityUpper),
+		Deadline:      firstNonEmpty(rt.Deadline, rt.DeadlineUpper),
+		SprintID:      firstNonEmpty(rt.SprintID, rt.SprintUpper),
+		FlowID:        firstNonEmpty(rt.FlowID, rt.FlowUpper),
+		ParentID:      firstNonEmpty(rt.ParentID, rt.ParentUpper),
+		TimeEstimate:  firstNonEmpty(rt.TimeEstimate, rt.TimeEstUpper),
+		DurationFact:  firstNonEmpty(rt.DurationFact, rt.DurFactUpper),
+		Accomplices:   firstNonEmptyIDs(rt.Accomplices, rt.AccompUpper),
+		Auditors:      firstNonEmptyIDs(rt.Auditors, rt.AuditorsUpper),
 		GroupID:       groupID,
 		GroupName:     firstNonEmpty(rt.Group.Name, rt.Group.NameUpper, rt.GroupUp.Name, rt.GroupUp.NameUpper),
 		Tags:          []string(tags),
 		CreatedAt:     firstNonEmpty(rt.CreatedDate, rt.CreatedDateUpper),
 		ClosedAt:      firstNonEmpty(rt.ClosedDate, rt.ClosedDateUpper),
 	}
+}
+
+// rawIDs decodes a Bitrix id list, which arrives as an array of numbers, an
+// array of strings, or an empty object depending on the field and the task.
+// Anything unrecognised decodes to empty rather than failing the response — a
+// missing accomplice list must not cost the whole rollup.
+type rawIDs []string
+
+func (r *rawIDs) UnmarshalJSON(b []byte) error {
+	trimmed := bytes.TrimSpace(b)
+	if len(trimmed) == 0 || trimmed[0] != '[' {
+		return nil
+	}
+	var raw []jsonStr
+	if err := json.Unmarshal(trimmed, &raw); err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	for _, v := range raw {
+		if s := strings.TrimSpace(v.String()); s != "" {
+			out = append(out, s)
+		}
+	}
+	*r = out
+	return nil
+}
+
+// firstNonEmptyIDs picks whichever casing the portal used.
+func firstNonEmptyIDs(vals ...rawIDs) []string {
+	for _, v := range vals {
+		if len(v) > 0 {
+			return []string(v)
+		}
+	}
+	return nil
 }
 
 // rawTags carries the raw JSON of the tags field so parseTags can normalize
@@ -638,6 +715,8 @@ func (c *Client) ListTasksBetween(ctx context.Context, since, until time.Time) (
 		for _, f := range []string{
 			"ID", "TITLE", "GROUP_ID", "RESPONSIBLE_ID", "CREATED_BY", "STATUS",
 			"PRIORITY", "STAGE_ID", "CREATED_DATE", "CLOSED_DATE", "TAGS",
+			"DEADLINE", "SPRINT_ID", "FLOW_ID", "PARENT_ID",
+			"TIME_ESTIMATE", "DURATION_FACT", "ACCOMPLICES", "AUDITORS",
 		} {
 			form.Add("select[]", f)
 		}
@@ -1780,4 +1859,55 @@ func ParseWebhookEvent(values url.Values) (event string, taskID string, ok bool)
 		}
 	}
 	return event, "", false
+}
+
+// FieldDef is one entry from tasks.task.getFields.
+type FieldDef struct {
+	Type  string
+	Title string
+}
+
+// GetTaskFields returns the portal's task-field catalogue, standard and custom
+// alike. Custom field names are opaque (UF_AUTO_809721135658) and their meaning
+// lives only in the title, so a caller has no way to use them without this.
+func (c *Client) GetTaskFields(ctx context.Context) (map[string]FieldDef, error) {
+	if c.baseURL == "" {
+		return nil, errors.New("bitrix: empty base URL")
+	}
+	body, err := c.post(ctx, c.baseURL+"tasks.task.getFields", url.Values{})
+	if err != nil {
+		return nil, err
+	}
+	var parsed struct {
+		Result struct {
+			Fields map[string]struct {
+				// Bitrix sends null for a field with no label, and the two
+				// casings appear on different portals.
+				Type       *string `json:"type"`
+				Title      *string `json:"title"`
+				TitleUpper *string `json:"TITLE"`
+			} `json:"fields"`
+		} `json:"result"`
+		Error     string `json:"error"`
+		ErrorDesc string `json:"error_description"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("bitrix: decode tasks.task.getFields: %w", err)
+	}
+	if parsed.Error != "" {
+		return nil, fmt.Errorf("bitrix: tasks.task.getFields error %s: %s", parsed.Error, parsed.ErrorDesc)
+	}
+	out := make(map[string]FieldDef, len(parsed.Result.Fields))
+	deref := func(vals ...*string) string {
+		for _, v := range vals {
+			if v != nil && strings.TrimSpace(*v) != "" {
+				return strings.TrimSpace(*v)
+			}
+		}
+		return ""
+	}
+	for name, def := range parsed.Result.Fields {
+		out[name] = FieldDef{Type: deref(def.Type), Title: deref(def.Title, def.TitleUpper)}
+	}
+	return out, nil
 }
