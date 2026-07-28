@@ -622,7 +622,7 @@ func (c *Client) ListTasksBetween(ctx context.Context, since, until time.Time) (
 		}
 		for _, f := range []string{
 			"ID", "TITLE", "GROUP_ID", "RESPONSIBLE_ID", "STATUS",
-			"CREATED_DATE", "CLOSED_DATE",
+			"CREATED_DATE", "CLOSED_DATE", "TAGS",
 		} {
 			form.Add("select[]", f)
 		}

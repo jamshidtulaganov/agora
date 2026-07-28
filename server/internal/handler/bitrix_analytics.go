@@ -53,11 +53,18 @@ type bitrixAnalyticsResponse struct {
 	// Open is everything NOT completed — it therefore INCLUDES awaiting_control
 	// and deferred. Use by_status for the finer split; `open` + `completed`
 	// always equals `total`, which by_status alone does not guarantee.
-	Open        int                     `json:"open"`
-	ByStatus    []bitrixAnalyticsBucket `json:"by_status"`
-	ByMonth     []bitrixAnalyticsBucket `json:"by_month"`
-	ByGroup     []bitrixAnalyticsBucket `json:"by_group"`
-	ByAssignee  []bitrixAnalyticsBucket `json:"by_assignee"`
+	Open       int                     `json:"open"`
+	ByStatus   []bitrixAnalyticsBucket `json:"by_status"`
+	ByMonth    []bitrixAnalyticsBucket `json:"by_month"`
+	ByGroup    []bitrixAnalyticsBucket `json:"by_group"`
+	ByAssignee []bitrixAnalyticsBucket `json:"by_assignee"`
+	// ByTag counts each tag SEPARATELY, so a task carrying two tags is counted
+	// under both. The sum therefore exceeds `total` and is not a partition —
+	// reporting it as one would double-count the work.
+	ByTag []bitrixAnalyticsBucket `json:"by_tag"`
+	// Untagged is the count with no tag at all, which by_tag cannot express and
+	// is usually the largest single group in a portal that tags loosely.
+	Untagged    int                     `json:"untagged"`
 	ClosedByMon []bitrixAnalyticsBucket `json:"closed_by_month"`
 	// MedianDaysToClose is over tasks that carry BOTH timestamps. Reported as
 	// -1 when no task in the window closed, so "no data" is distinguishable
@@ -66,6 +73,33 @@ type bitrixAnalyticsResponse struct {
 	// Truncated warns that the portal returned as many tasks as the client's
 	// safety cap allows, so older tasks in the window are missing.
 	Truncated bool `json:"truncated"`
+	// Filters echoes what was actually measured. Without it a filtered rollup
+	// is indistinguishable from a portal-wide one, and a report that says
+	// "2417 tasks" when it measured only the BUG-tagged ones is worse than no
+	// report at all.
+	Filters bitrixAnalyticsFilters `json:"filters"`
+}
+
+// bitrixAnalyticsFilters narrows the whole rollup, not just the totals: every
+// series below (by_month, by_assignee, median, …) is computed over the filtered
+// set. That is what makes "BUG tasks per month, per person" answerable in one
+// request instead of forcing the caller to bucket by hand.
+type bitrixAnalyticsFilters struct {
+	Tag      string `json:"tag,omitempty"`
+	Assignee string `json:"assignee,omitempty"`
+	Group    string `json:"group,omitempty"`
+}
+
+// matchesTag reports whether a task carries the tag, case-insensitively.
+// Bitrix tags are free text typed by humans, so "BUG", "bug" and "Bug" are one
+// tag in everything except storage.
+func matchesTag(task *bitrix.Task, want string) bool {
+	for _, t := range task.Tags {
+		if strings.EqualFold(strings.TrimSpace(t), want) {
+			return true
+		}
+	}
+	return false
 }
 
 func sortedBuckets(counts map[string]int, labels map[string]string, byKey bool) []bitrixAnalyticsBucket {
@@ -86,7 +120,12 @@ func sortedBuckets(counts map[string]int, labels map[string]string, byKey bool) 
 }
 
 // GetBitrixAnalytics handles
-// GET /api/bitrix/analytics?since=YYYY-MM-DD&until=YYYY-MM-DD.
+// GET /api/bitrix/analytics?since=&until=&tag=&assignee=&group=.
+//
+// tag / assignee / group narrow the ENTIRE rollup, not just the total, so
+// "BUG-tagged tasks per month, per person" is one request. The response echoes
+// the filters back: a filtered rollup that looks portal-wide is worse than no
+// rollup at all.
 //
 // `since` defaults to the start of the current year in the server's local zone,
 // which is what "this year so far" means to the humans reading it. `until` is
@@ -129,6 +168,12 @@ func (h *Handler) GetBitrixAnalytics(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	filters := bitrixAnalyticsFilters{
+		Tag:      strings.TrimSpace(r.URL.Query().Get("tag")),
+		Assignee: strings.TrimSpace(r.URL.Query().Get("assignee")),
+		Group:    strings.TrimSpace(r.URL.Query().Get("group")),
+	}
+
 	client := bitrix.NewClient(bitrixWebhookURL())
 	tasks, err := client.ListTasksBetween(r.Context(), since, until)
 	if err != nil {
@@ -156,18 +201,47 @@ func (h *Handler) GetBitrixAnalytics(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Filtering happens here rather than in the Bitrix query: the window is
+	// fetched whole anyway for the date bounds, and tag matching in particular
+	// cannot be expressed reliably in a portal filter (tags are free text and
+	// the REST filter is exact-match, case-sensitive).
+	//
+	// The truncation warning below therefore still refers to the WINDOW, not
+	// the filtered subset — a truncated window makes a filtered count a floor,
+	// which the caller must know before quoting it.
+	truncated := len(tasks) >= bitrix.MaxTasksPerRequest
+	if filters.Tag != "" || filters.Assignee != "" || filters.Group != "" {
+		kept := tasks[:0]
+		for i := range tasks {
+			t := &tasks[i]
+			if filters.Tag != "" && !matchesTag(t, filters.Tag) {
+				continue
+			}
+			if filters.Assignee != "" && strings.TrimSpace(t.ResponsibleID) != filters.Assignee {
+				continue
+			}
+			if filters.Group != "" && strings.TrimSpace(t.GroupID) != filters.Group {
+				continue
+			}
+			kept = append(kept, *t)
+		}
+		tasks = kept
+	}
+
 	resp := bitrixAnalyticsResponse{
 		Since:             since.Format("2006-01-02"),
 		Until:             untilLabel(until, now),
 		Total:             len(tasks),
 		MedianDaysToClose: -1,
-		Truncated:         len(tasks) >= bitrix.MaxTasksPerRequest,
+		Truncated:         truncated,
+		Filters:           filters,
 	}
 
 	byStatus := map[string]int{}
 	byMonth := map[string]int{}
 	byGroup := map[string]int{}
 	byAssignee := map[string]int{}
+	byTag := map[string]int{}
 	closedByMonth := map[string]int{}
 	var closeDurations []float64
 
@@ -197,6 +271,28 @@ func (h *Handler) GetBitrixAnalytics(w http.ResponseWriter, r *http.Request) {
 		if a := strings.TrimSpace(t.ResponsibleID); a != "" {
 			byAssignee[a]++
 		}
+		tagged := false
+		for _, raw := range t.Tags {
+			tag := strings.TrimSpace(raw)
+			if tag == "" {
+				continue
+			}
+			// Fold case so "BUG" and "bug" are one bucket. The first spelling
+			// seen wins as the display key, which keeps the portal's own
+			// casing rather than shouting or flattening it.
+			key := tag
+			for existing := range byTag {
+				if strings.EqualFold(existing, tag) {
+					key = existing
+					break
+				}
+			}
+			byTag[key]++
+			tagged = true
+		}
+		if !tagged {
+			resp.Untagged++
+		}
 	}
 
 	if len(closeDurations) > 0 {
@@ -214,6 +310,7 @@ func (h *Handler) GetBitrixAnalytics(w http.ResponseWriter, r *http.Request) {
 	resp.ClosedByMon = sortedBuckets(closedByMonth, nil, true)
 	resp.ByGroup = sortedBuckets(byGroup, groupNames, false)
 	resp.ByAssignee = sortedBuckets(byAssignee, userNames, false)
+	resp.ByTag = sortedBuckets(byTag, nil, false)
 
 	writeJSON(w, http.StatusOK, resp)
 }
