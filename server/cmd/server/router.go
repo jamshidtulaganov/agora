@@ -625,6 +625,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Get("/api/bitrix/groups", h.ListBitrixGroups)
 		r.Get("/api/bitrix/users", h.ListBitrixUsers)
 		r.Get("/api/bitrix/tasks", h.ListBitrixTasks)
+		// Read-only task detail + discussion. No POST/PUT counterpart exists
+		// by design: a Bitrix task is a company-wide record, and an agent
+		// writing into one is not an action that can be quietly undone.
+		r.Get("/api/bitrix/tasks/{id}", h.GetBitrixTask)
+		r.Get("/api/bitrix/tasks/{id}/comments", h.ListBitrixTaskComments)
 		// Portal-wide task rollup for a date window (defaults to year-to-date).
 		r.Get("/api/bitrix/analytics", h.GetBitrixAnalytics)
 		r.Post("/api/bitrix/import", h.ImportBitrixTasks)
