@@ -1038,6 +1038,21 @@ type TelegramInstallation struct {
 	AllowedChatIds         []int64            `json:"allowed_chat_ids"`
 }
 
+type TelegramQuestion struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	AgentID     pgtype.UUID        `json:"agent_id"`
+	ChatID      string             `json:"chat_id"`
+	Prompt      string             `json:"prompt"`
+	Options     []string           `json:"options"`
+	MessageID   pgtype.Int8        `json:"message_id"`
+	Answer      pgtype.Text        `json:"answer"`
+	AnsweredBy  pgtype.Int8        `json:"answered_by"`
+	AnsweredAt  pgtype.Timestamptz `json:"answered_at"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type TestCase struct {
 	ID            pgtype.UUID        `json:"id"`
 	WorkspaceID   pgtype.UUID        `json:"workspace_id"`

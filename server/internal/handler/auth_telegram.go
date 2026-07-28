@@ -188,7 +188,10 @@ type telegramUpdate struct {
 			LanguageCode string `json:"language_code"`
 		} `json:"from"`
 		Message *struct {
-			Chat *struct {
+			// MessageID lets a handler replace the keyboard once a choice is
+			// made, so a settled question cannot be answered twice.
+			MessageID int64 `json:"message_id"`
+			Chat      *struct {
 				ID   int64  `json:"id"`
 				Type string `json:"type"`
 			} `json:"chat"`

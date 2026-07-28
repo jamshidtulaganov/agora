@@ -1205,6 +1205,19 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			})
 
 			// Agents
+			// What a RUNNING agent may do with its own bot. Deliberately under
+			// /me: the acting agent is resolved from its task token, so an
+			// agent cannot name a different agent's bot.
+			r.Route("/api/agents/me/telegram", func(r chi.Router) {
+				r.Get("/chats", h.ListAgentTelegramChats)
+				r.Post("/send", h.SendAgentTelegramMessage)
+				// Ask the room a question and poll for the answer. Split
+				// rather than blocking: a decision takes minutes, and a held
+				// request lets a proxy timeout decide the outcome.
+				r.Post("/ask", h.AskAgentTelegramQuestion)
+				r.Get("/questions/{id}", h.GetAgentTelegramQuestion)
+			})
+
 			r.Route("/api/agents", func(r chi.Router) {
 				r.Get("/", h.ListAgents)
 				r.Post("/", h.CreateAgent)

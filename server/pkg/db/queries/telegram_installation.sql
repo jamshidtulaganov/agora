@@ -115,3 +115,22 @@ WHERE status = 'active' AND id IN (
     SELECT tcs.chat_session_id FROM telegram_chat_session tcs
     WHERE tcs.agent_id = $1 AND tcs.chat_id = $2
 );
+
+-- name: CreateTelegramQuestion :one
+INSERT INTO telegram_question (workspace_id, agent_id, chat_id, prompt, options, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING *;
+
+-- name: SetTelegramQuestionMessage :exec
+UPDATE telegram_question SET message_id = $2 WHERE id = $1;
+
+-- name: GetTelegramQuestion :one
+SELECT * FROM telegram_question WHERE id = $1;
+
+-- name: AnswerTelegramQuestion :one
+-- Guarded on answer IS NULL so the first responder wins. Two people tapping at
+-- once must not leave the agent unsure which decision it acted on.
+UPDATE telegram_question
+SET answer = $2, answered_by = $3, answered_at = now()
+WHERE id = $1 AND answer IS NULL AND expires_at > now()
+RETURNING *;

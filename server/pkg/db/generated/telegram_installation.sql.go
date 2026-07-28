@@ -11,6 +11,41 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const answerTelegramQuestion = `-- name: AnswerTelegramQuestion :one
+UPDATE telegram_question
+SET answer = $2, answered_by = $3, answered_at = now()
+WHERE id = $1 AND answer IS NULL AND expires_at > now()
+RETURNING id, workspace_id, agent_id, chat_id, prompt, options, message_id, answer, answered_by, answered_at, expires_at, created_at
+`
+
+type AnswerTelegramQuestionParams struct {
+	ID         pgtype.UUID `json:"id"`
+	Answer     pgtype.Text `json:"answer"`
+	AnsweredBy pgtype.Int8 `json:"answered_by"`
+}
+
+// Guarded on answer IS NULL so the first responder wins. Two people tapping at
+// once must not leave the agent unsure which decision it acted on.
+func (q *Queries) AnswerTelegramQuestion(ctx context.Context, arg AnswerTelegramQuestionParams) (TelegramQuestion, error) {
+	row := q.db.QueryRow(ctx, answerTelegramQuestion, arg.ID, arg.Answer, arg.AnsweredBy)
+	var i TelegramQuestion
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.AgentID,
+		&i.ChatID,
+		&i.Prompt,
+		&i.Options,
+		&i.MessageID,
+		&i.Answer,
+		&i.AnsweredBy,
+		&i.AnsweredAt,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const archiveTelegramChatSession = `-- name: ArchiveTelegramChatSession :exec
 UPDATE chat_session SET status = 'archived', updated_at = now()
 WHERE status = 'active' AND id IN (
@@ -90,6 +125,48 @@ func (q *Queries) CreateTelegramBindingToken(ctx context.Context, arg CreateTele
 		&i.CreatedBy,
 		&i.ExpiresAt,
 		&i.ConsumedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createTelegramQuestion = `-- name: CreateTelegramQuestion :one
+INSERT INTO telegram_question (workspace_id, agent_id, chat_id, prompt, options, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, workspace_id, agent_id, chat_id, prompt, options, message_id, answer, answered_by, answered_at, expires_at, created_at
+`
+
+type CreateTelegramQuestionParams struct {
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	AgentID     pgtype.UUID        `json:"agent_id"`
+	ChatID      string             `json:"chat_id"`
+	Prompt      string             `json:"prompt"`
+	Options     []string           `json:"options"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+}
+
+func (q *Queries) CreateTelegramQuestion(ctx context.Context, arg CreateTelegramQuestionParams) (TelegramQuestion, error) {
+	row := q.db.QueryRow(ctx, createTelegramQuestion,
+		arg.WorkspaceID,
+		arg.AgentID,
+		arg.ChatID,
+		arg.Prompt,
+		arg.Options,
+		arg.ExpiresAt,
+	)
+	var i TelegramQuestion
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.AgentID,
+		&i.ChatID,
+		&i.Prompt,
+		&i.Options,
+		&i.MessageID,
+		&i.Answer,
+		&i.AnsweredBy,
+		&i.AnsweredAt,
+		&i.ExpiresAt,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -245,6 +322,30 @@ func (q *Queries) GetTelegramInstallationBySession(ctx context.Context, chatSess
 		&i.AccessPolicy,
 		&i.AllowedTelegramUserIds,
 		&i.AllowedChatIds,
+	)
+	return i, err
+}
+
+const getTelegramQuestion = `-- name: GetTelegramQuestion :one
+SELECT id, workspace_id, agent_id, chat_id, prompt, options, message_id, answer, answered_by, answered_at, expires_at, created_at FROM telegram_question WHERE id = $1
+`
+
+func (q *Queries) GetTelegramQuestion(ctx context.Context, id pgtype.UUID) (TelegramQuestion, error) {
+	row := q.db.QueryRow(ctx, getTelegramQuestion, id)
+	var i TelegramQuestion
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.AgentID,
+		&i.ChatID,
+		&i.Prompt,
+		&i.Options,
+		&i.MessageID,
+		&i.Answer,
+		&i.AnsweredBy,
+		&i.AnsweredAt,
+		&i.ExpiresAt,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -478,6 +579,20 @@ func (q *Queries) SetTelegramInstallationSession(ctx context.Context, arg SetTel
 		&i.AllowedChatIds,
 	)
 	return i, err
+}
+
+const setTelegramQuestionMessage = `-- name: SetTelegramQuestionMessage :exec
+UPDATE telegram_question SET message_id = $2 WHERE id = $1
+`
+
+type SetTelegramQuestionMessageParams struct {
+	ID        pgtype.UUID `json:"id"`
+	MessageID pgtype.Int8 `json:"message_id"`
+}
+
+func (q *Queries) SetTelegramQuestionMessage(ctx context.Context, arg SetTelegramQuestionMessageParams) error {
+	_, err := q.db.Exec(ctx, setTelegramQuestionMessage, arg.ID, arg.MessageID)
+	return err
 }
 
 const upsertTelegramChatSession = `-- name: UpsertTelegramChatSession :one

@@ -177,6 +177,10 @@ func (h *Handler) pollAgentTelegram(ctx context.Context, row db.TelegramInstalla
 			if update.UpdateID >= offset {
 				offset = update.UpdateID + 1
 			}
+			if update.CallbackQuery != nil {
+				h.handleAgentCallback(ctx, row, update)
+				continue
+			}
 			h.handleAgentGroupMessage(ctx, row, update)
 		}
 	}
