@@ -131,6 +131,7 @@ func (h *Handler) SendAutopilotReport(ctx context.Context, runID string) {
 		return
 	}
 	body := h.autopilotRunReportBody(ctx, run, ap)
+	body = stripReportPreamble(body)
 	if body == "" {
 		// Nothing anywhere. WARN, not INFO: a scheduled report that silently
 		// produced nothing is a failure, and it is invisible by construction —
@@ -398,4 +399,37 @@ func (h *Handler) GetAutopilotTelegramDestination(w http.ResponseWriter, r *http
 	}
 	destination := h.resolveAutopilotTelegramDestination(r.Context(), ap)
 	writeJSON(w, http.StatusOK, destination.AutopilotTelegramDestinationResponse)
+}
+
+// stripReportPreamble drops a lead-in the agent wrote to itself.
+//
+// A run_only report is the agent's whole final message, and models habitually
+// open one with a line addressed to the operator — "Data tayyor. Hisobotni
+// tuzaman:", "Final natija yozaman:" — before the content. Instructing them not
+// to works most of the time, which is the problem: the group periodically gets
+// a status line that means nothing to it, at the top of the message.
+//
+// Narrow by construction: only a FIRST paragraph ending in a colon, only when
+// something follows it. A report does not open that way, so nothing real
+// matches — and if the shape ever changes, the failure is a preamble surviving
+// rather than content being eaten.
+func stripReportPreamble(body string) string {
+	trimmed := strings.TrimSpace(body)
+	blank := strings.Index(trimmed, "\n\n")
+	if blank < 0 {
+		return trimmed
+	}
+	first := strings.TrimSpace(trimmed[:blank])
+	rest := strings.TrimSpace(trimmed[blank:])
+	if rest == "" || !strings.HasSuffix(first, ":") {
+		return trimmed
+	}
+	// A colon-terminated line that is itself structure — a heading, a list
+	// item, a table row — is content, not narration.
+	if strings.HasPrefix(first, "#") || strings.HasPrefix(first, "|") ||
+		strings.HasPrefix(first, "-") || strings.HasPrefix(first, "*") ||
+		strings.Contains(first, "\n") {
+		return trimmed
+	}
+	return rest
 }

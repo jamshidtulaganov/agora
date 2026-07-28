@@ -173,3 +173,45 @@ func TestTabularReportBecomesASpreadsheet(t *testing.T) {
 		t.Fatal("a report carrying a table would be pasted as text")
 	}
 }
+
+func TestStripsAgentPreamble(t *testing.T) {
+	// Both openers observed live. Instructing the model not to write them works
+	// most of the time, which is exactly why the platform has to handle it: the
+	// group periodically got a status line meant for the operator.
+	for _, preamble := range []string{
+		"Data tayyor. Hisobotni tuzaman:",
+		"Autopilot run-only rejimida — platforma xabarni o'zi yuboradi. Final natija yozaman:",
+	} {
+		got := stripReportPreamble(preamble + "\n\n**Sprint 11** · 29-iyul\n58 vazifa\n")
+		if strings.Contains(got, "tuzaman") || strings.Contains(got, "Final natija") {
+			t.Errorf("preamble survived: %q", got)
+		}
+		if !strings.HasPrefix(got, "**Sprint 11**") {
+			t.Errorf("content lost: %q", got)
+		}
+	}
+}
+
+func TestKeepsReportsThatSimplyStartWithAColon(t *testing.T) {
+	// Narrow by construction: content that happens to end a line with a colon
+	// must survive. The failure mode to prefer is a preamble slipping through,
+	// never a report losing its first line.
+	for _, body := range []string{
+		"## Asosiy raqamlar:\n\n| a | b |\n|---|---|\n",
+		"- Birinchi band:\n\n| a | b |\n|---|---|\n",
+		"**Sprint 11** · 29-iyul\n58 vazifa · 8 yopilgan\n",
+	} {
+		if got := stripReportPreamble(body); !strings.HasPrefix(got, strings.TrimSpace(strings.Split(body, "\n")[0])) {
+			t.Errorf("content was eaten:\nin:  %q\nout: %q", body, got)
+		}
+	}
+}
+
+func TestStripPreambleLeavesASingleBlockAlone(t *testing.T) {
+	// With nothing after it, a colon line IS the report — dropping it would
+	// leave the group with an empty message.
+	body := "Bugun yangilik yo'q:"
+	if got := stripReportPreamble(body); got != body {
+		t.Fatalf("a lone line was dropped: %q", got)
+	}
+}
