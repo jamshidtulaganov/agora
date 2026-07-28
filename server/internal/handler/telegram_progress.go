@@ -217,7 +217,7 @@ func (h *Handler) RelayAutopilotProgress(ctx context.Context, taskID, issueID, c
 	// Named so the group can tell which of several autopilots is speaking, and
 	// kept to one line: this is a status ping, not a report.
 	text := ap.Title + ": " + truncateRunes(headline, 200)
-	if err := bot.SendMessage(ctx, chatID, text); err != nil {
+	if err := bot.SendMarkdown(ctx, chatID, text); err != nil {
 		telegramProgressRelay.finish(runID, reservation, false, time.Now())
 		slog.Debug("autopilot progress relay: send failed", "run_id", uuidToString(run.ID), "error", err)
 		return

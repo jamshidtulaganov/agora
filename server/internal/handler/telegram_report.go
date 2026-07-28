@@ -150,7 +150,9 @@ func (h *Handler) SendAutopilotReport(ctx context.Context, runID string) {
 	// has to download and open a file to learn one sentence, so they stop
 	// looking. Same rule the chat replies use, for the same reason.
 	if !replyNeedsDocument(body) {
-		if err := bot.SendMessage(ctx, chatID, truncateForTelegram(body)); err != nil {
+		// Markdown, not plain: agents write `**bold**` and readers were seeing
+		// the asterisks around the number that mattered.
+		if err := bot.SendMarkdown(ctx, chatID, truncateForTelegram(body)); err != nil {
 			slog.Warn("autopilot report: telegram send failed",
 				"run_id", runID, "chat_id", chatID, "error", err)
 			return
@@ -161,12 +163,12 @@ func (h *Handler) SendAutopilotReport(ctx context.Context, runID string) {
 	}
 
 	title := ap.Title + " — " + time.Now().Format("02.01.2006")
-	doc, err := renderReportXLSX(title, body)
+	doc, err := renderReportPDF(title, body)
 	if err != nil {
-		slog.Warn("autopilot report: xlsx render failed", "run_id", runID, "error", err)
+		slog.Warn("autopilot report: pdf render failed", "run_id", runID, "error", err)
 		return
 	}
-	filename := "bitrix-hisobot-" + time.Now().Format("2006-01-02") + ".xlsx"
+	filename := "hisobot-" + time.Now().Format("2006-01-02") + ".pdf"
 
 	if err := bot.SendDocument(ctx, chatID, filename, doc, reportCaption(title, body)); err != nil {
 		slog.Warn("autopilot report: telegram send failed",

@@ -376,12 +376,12 @@ func (h *Handler) SendAgentChatReplyToTelegram(ctx context.Context, chatSessionI
 	// message — a chat where every answer is a file stops being a chat.
 	if replyNeedsDocument(reply) {
 		now := time.Now()
-		doc, err := renderReportXLSX(replyDocumentTitle(now), reply)
+		doc, err := renderReportPDF(replyDocumentTitle(now), reply)
 		if err != nil {
 			// Fall back to text rather than going silent. A reply the reader
-			// has to squint at beats no reply at all, and a spreadsheet writer
+			// has to squint at beats no reply at all, and a document renderer
 			// failing is not the agent's answer being wrong.
-			slog.Warn("telegram agent chat: xlsx render failed, sending text", "error", err)
+			slog.Warn("telegram agent chat: pdf render failed, sending text", "error", err)
 		} else if sendErr := bot.SendDocument(ctx, chatID, replyDocumentFilename(now), doc, replyCaption(reply)); sendErr != nil {
 			slog.Warn("telegram agent chat: reply document send failed", "chat_id", chatID, "error", sendErr)
 			return
@@ -390,7 +390,7 @@ func (h *Handler) SendAgentChatReplyToTelegram(ctx context.Context, chatSessionI
 			return
 		}
 	}
-	if err := bot.SendMessage(ctx, chatID, truncateForTelegram(reply)); err != nil {
+	if err := bot.SendMarkdown(ctx, chatID, truncateForTelegram(reply)); err != nil {
 		slog.Warn("telegram agent chat: reply send failed", "chat_id", chatID, "error", err)
 		return
 	}

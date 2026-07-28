@@ -144,7 +144,9 @@ func (h *Handler) SendAgentTelegramMessage(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusServiceUnavailable, "this agent's bot is not available")
 		return
 	}
-	if err := bot.SendMessage(r.Context(), chatID, truncateRunes(text, telegramAgentMessageLimit)); err != nil {
+	// Markdown: an agent writing `**deploy failed**` should not have the
+	// asterisks reach the room.
+	if err := bot.SendMarkdown(r.Context(), chatID, truncateRunes(text, telegramAgentMessageLimit)); err != nil {
 		slog.Warn("agent telegram send failed", "bot", row.BotUsername, "chat", chatID, "error", err)
 		writeError(w, http.StatusBadGateway, "telegram rejected the message")
 		return
