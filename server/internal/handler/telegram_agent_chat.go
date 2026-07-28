@@ -205,6 +205,13 @@ func (h *Handler) handleAgentGroupMessage(ctx context.Context, row db.TelegramIn
 		return
 	}
 
+	// Binding runs BEFORE authorization: a scan is how a group becomes trusted
+	// in the first place, so requiring it to already be trusted would make the
+	// flow impossible. The one-time token is the authorization there.
+	if h.tryBindTelegramGroup(ctx, row, msg.Chat.ID, text) {
+		return
+	}
+
 	// Authorization BEFORE any work. These agents hold repo, git, QA and deploy
 	// tooling, so an inbound group message is an instruction to something that
 	// can change code — not a chat line. Everyone in the group can send one.

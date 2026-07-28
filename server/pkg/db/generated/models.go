@@ -1003,6 +1003,16 @@ type TaskUsageHourlyRollupState struct {
 	LastError         pgtype.Text        `json:"last_error"`
 }
 
+type TelegramBindingToken struct {
+	TokenHash   string             `json:"token_hash"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	AgentID     pgtype.UUID        `json:"agent_id"`
+	CreatedBy   pgtype.UUID        `json:"created_by"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+	ConsumedAt  pgtype.Timestamptz `json:"consumed_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type TelegramInstallation struct {
 	ID                     pgtype.UUID        `json:"id"`
 	WorkspaceID            pgtype.UUID        `json:"workspace_id"`

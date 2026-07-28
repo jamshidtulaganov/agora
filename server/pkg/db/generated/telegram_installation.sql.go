@@ -11,6 +11,74 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const consumeTelegramBindingToken = `-- name: ConsumeTelegramBindingToken :one
+UPDATE telegram_binding_token
+SET consumed_at = now()
+WHERE token_hash = $1 AND consumed_at IS NULL AND expires_at > now()
+RETURNING token_hash, workspace_id, agent_id, created_by, expires_at, consumed_at, created_at
+`
+
+// Single-use and time-bound in ONE statement: a concurrent redemption of the
+// same token matches zero rows rather than binding twice.
+func (q *Queries) ConsumeTelegramBindingToken(ctx context.Context, tokenHash string) (TelegramBindingToken, error) {
+	row := q.db.QueryRow(ctx, consumeTelegramBindingToken, tokenHash)
+	var i TelegramBindingToken
+	err := row.Scan(
+		&i.TokenHash,
+		&i.WorkspaceID,
+		&i.AgentID,
+		&i.CreatedBy,
+		&i.ExpiresAt,
+		&i.ConsumedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createTelegramBindingToken = `-- name: CreateTelegramBindingToken :one
+INSERT INTO telegram_binding_token (token_hash, workspace_id, agent_id, created_by, expires_at)
+VALUES ($1, $2, $3, $5, $4)
+RETURNING token_hash, workspace_id, agent_id, created_by, expires_at, consumed_at, created_at
+`
+
+type CreateTelegramBindingTokenParams struct {
+	TokenHash   string             `json:"token_hash"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	AgentID     pgtype.UUID        `json:"agent_id"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+	CreatedBy   pgtype.UUID        `json:"created_by"`
+}
+
+func (q *Queries) CreateTelegramBindingToken(ctx context.Context, arg CreateTelegramBindingTokenParams) (TelegramBindingToken, error) {
+	row := q.db.QueryRow(ctx, createTelegramBindingToken,
+		arg.TokenHash,
+		arg.WorkspaceID,
+		arg.AgentID,
+		arg.ExpiresAt,
+		arg.CreatedBy,
+	)
+	var i TelegramBindingToken
+	err := row.Scan(
+		&i.TokenHash,
+		&i.WorkspaceID,
+		&i.AgentID,
+		&i.CreatedBy,
+		&i.ExpiresAt,
+		&i.ConsumedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const deleteExpiredTelegramBindingTokens = `-- name: DeleteExpiredTelegramBindingTokens :exec
+DELETE FROM telegram_binding_token WHERE expires_at < now() - interval '1 day'
+`
+
+func (q *Queries) DeleteExpiredTelegramBindingTokens(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteExpiredTelegramBindingTokens)
+	return err
+}
+
 const deleteTelegramInstallation = `-- name: DeleteTelegramInstallation :exec
 DELETE FROM telegram_installation WHERE agent_id = $1 AND workspace_id = $2
 `

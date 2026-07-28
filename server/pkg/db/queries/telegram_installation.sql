@@ -59,3 +59,19 @@ UPDATE telegram_installation
 SET access_policy = $2, allowed_telegram_user_ids = $3, updated_at = now()
 WHERE agent_id = $1 AND workspace_id = $4
 RETURNING *;
+
+-- name: CreateTelegramBindingToken :one
+INSERT INTO telegram_binding_token (token_hash, workspace_id, agent_id, created_by, expires_at)
+VALUES ($1, $2, $3, sqlc.narg('created_by'), $4)
+RETURNING *;
+
+-- name: ConsumeTelegramBindingToken :one
+-- Single-use and time-bound in ONE statement: a concurrent redemption of the
+-- same token matches zero rows rather than binding twice.
+UPDATE telegram_binding_token
+SET consumed_at = now()
+WHERE token_hash = $1 AND consumed_at IS NULL AND expires_at > now()
+RETURNING *;
+
+-- name: DeleteExpiredTelegramBindingTokens :exec
+DELETE FROM telegram_binding_token WHERE expires_at < now() - interval '1 day';
