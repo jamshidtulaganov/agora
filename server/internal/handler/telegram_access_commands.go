@@ -78,7 +78,10 @@ func (h *Handler) handleTelegramAccessCommand(ctx context.Context, row db.Telegr
 		// answers forward: once it has said "that data is not available", it
 		// keeps saying so from memory even after the capability is added —
 		// re-asking cannot dislodge a claim the session already holds.
-		if err := h.Queries.DeleteTelegramChatSession(ctx, db.DeleteTelegramChatSessionParams{
+		// Archived, not deleted: a task still running against this session must
+		// keep its route back to the chat, otherwise /reset silently throws
+		// away an answer that was already being written.
+		if err := h.Queries.ArchiveTelegramChatSession(ctx, db.ArchiveTelegramChatSessionParams{
 			AgentID: row.AgentID,
 			ChatID:  chatID,
 		}); err != nil {

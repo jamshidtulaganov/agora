@@ -214,3 +214,109 @@ func TestResetIsRecognisedAsACommand(t *testing.T) {
 		}
 	}
 }
+
+func TestChatSessionHistorySurvivesANewSession(t *testing.T) {
+	// The bug: the mapping table allowed one row per chat, so opening a new
+	// session REPLACED the link and any task still running against the previous
+	// one lost its route home. It wrote an answer nobody could receive.
+	ctx := t.Context()
+	agentID := parseUUID(testAgentIDForTelegram(t))
+	const chatID = "-100999000111"
+	t.Cleanup(func() {
+		testPool.Exec(ctx, `DELETE FROM telegram_chat_session WHERE chat_id = $1`, chatID)
+	})
+
+	newSession := func(title string) db.ChatSession {
+		s, err := testHandler.Queries.CreateChatSession(ctx, db.CreateChatSessionParams{
+			WorkspaceID: parseUUID(testWorkspaceID),
+			AgentID:     agentID,
+			CreatorID:   parseUUID(testUserID),
+			Title:       title,
+		})
+		if err != nil {
+			t.Fatalf("create session: %v", err)
+		}
+		if _, err := testHandler.Queries.UpsertTelegramChatSession(ctx, db.UpsertTelegramChatSessionParams{
+			AgentID: agentID, ChatID: chatID, ChatSessionID: s.ID,
+		}); err != nil {
+			t.Fatalf("link session: %v", err)
+		}
+		return s
+	}
+
+	first := newSession("first")
+	// Retire it the way /reset does, then open the next conversation.
+	if err := testHandler.Queries.ArchiveTelegramChatSession(ctx, db.ArchiveTelegramChatSessionParams{
+		AgentID: agentID, ChatID: chatID,
+	}); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	second := newSession("second")
+
+	// The old mapping must still resolve: a late reply from the superseded
+	// session has to reach the chat that asked.
+	old, err := testHandler.Queries.GetTelegramChatSessionBySession(ctx, first.ID)
+	if err != nil {
+		t.Fatalf("the superseded session lost its route home: %v", err)
+	}
+	if old.ChatID != chatID {
+		t.Fatalf("old mapping points at %s", old.ChatID)
+	}
+
+	// And "current" must be the new one, not the archived predecessor.
+	current, err := testHandler.Queries.GetTelegramChatSession(ctx, db.GetTelegramChatSessionParams{
+		AgentID: agentID, ChatID: chatID,
+	})
+	if err != nil {
+		t.Fatalf("no current session: %v", err)
+	}
+	if uuidToString(current.ChatSessionID) != uuidToString(second.ID) {
+		t.Fatal("current resolved to the archived session")
+	}
+}
+
+func TestArchiveRetiresEveryActiveSession(t *testing.T) {
+	// /reset must not leave an older active session behind — the lookup would
+	// resume it, which is the stale-conversation failure /reset exists to fix.
+	ctx := t.Context()
+	agentID := parseUUID(testAgentIDForTelegram(t))
+	const chatID = "-100999000222"
+	t.Cleanup(func() {
+		testPool.Exec(ctx, `DELETE FROM telegram_chat_session WHERE chat_id = $1`, chatID)
+	})
+	for _, title := range []string{"older", "newer"} {
+		s, err := testHandler.Queries.CreateChatSession(ctx, db.CreateChatSessionParams{
+			WorkspaceID: parseUUID(testWorkspaceID), AgentID: agentID,
+			CreatorID: parseUUID(testUserID), Title: title,
+		})
+		if err != nil {
+			t.Fatalf("create %s: %v", title, err)
+		}
+		if _, err := testHandler.Queries.UpsertTelegramChatSession(ctx, db.UpsertTelegramChatSessionParams{
+			AgentID: agentID, ChatID: chatID, ChatSessionID: s.ID,
+		}); err != nil {
+			t.Fatalf("link %s: %v", title, err)
+		}
+	}
+	if err := testHandler.Queries.ArchiveTelegramChatSession(ctx, db.ArchiveTelegramChatSessionParams{
+		AgentID: agentID, ChatID: chatID,
+	}); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	if _, err := testHandler.Queries.GetTelegramChatSession(ctx, db.GetTelegramChatSessionParams{
+		AgentID: agentID, ChatID: chatID,
+	}); err == nil {
+		t.Fatal("an active session survived the reset")
+	}
+}
+
+// testAgentIDForTelegram returns the suite's fixture agent.
+func testAgentIDForTelegram(t *testing.T) string {
+	t.Helper()
+	var id string
+	if err := testPool.QueryRow(t.Context(),
+		`SELECT id::text FROM agent WHERE workspace_id = $1::uuid LIMIT 1`, testWorkspaceID).Scan(&id); err != nil {
+		t.Fatalf("no fixture agent: %v", err)
+	}
+	return id
+}

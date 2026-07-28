@@ -85,15 +85,33 @@ RETURNING *;
 -- name: UpsertTelegramChatSession :one
 INSERT INTO telegram_chat_session (agent_id, chat_id, chat_session_id)
 VALUES ($1, $2, $3)
-ON CONFLICT (agent_id, chat_id) DO UPDATE SET chat_session_id = EXCLUDED.chat_session_id
+ON CONFLICT (chat_session_id) DO NOTHING
 RETURNING *;
 
 -- name: GetTelegramChatSession :one
-SELECT * FROM telegram_chat_session WHERE agent_id = $1 AND chat_id = $2;
+-- The chat's CURRENT conversation: the newest mapping whose session is still
+-- active. Older rows are kept so a late reply from a superseded session can
+-- still find its way back to the chat that asked.
+SELECT tcs.* FROM telegram_chat_session tcs
+JOIN chat_session cs ON cs.id = tcs.chat_session_id
+WHERE tcs.agent_id = $1 AND tcs.chat_id = $2 AND cs.status = 'active'
+ORDER BY tcs.created_at DESC
+LIMIT 1;
 
 -- name: GetTelegramChatSessionBySession :one
 -- Outbound: which chat asked the question this session answers.
 SELECT * FROM telegram_chat_session WHERE chat_session_id = $1;
 
--- name: DeleteTelegramChatSession :exec
-DELETE FROM telegram_chat_session WHERE agent_id = $1 AND chat_id = $2;
+-- name: ArchiveTelegramChatSession :exec
+-- /reset: retire the chat's current conversation. Archives the session rather
+-- than dropping the mapping, so a task still running against it can still
+-- deliver its answer.
+-- Archives EVERY active session for the chat, not just the newest. The lookup
+-- above resolves the newest active one, so leaving an older active row behind
+-- would make /reset resume a stale conversation instead of starting a fresh
+-- one — the exact failure /reset exists to fix.
+UPDATE chat_session SET status = 'archived', updated_at = now()
+WHERE status = 'active' AND id IN (
+    SELECT tcs.chat_session_id FROM telegram_chat_session tcs
+    WHERE tcs.agent_id = $1 AND tcs.chat_id = $2
+);

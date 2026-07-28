@@ -11,6 +11,31 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const archiveTelegramChatSession = `-- name: ArchiveTelegramChatSession :exec
+UPDATE chat_session SET status = 'archived', updated_at = now()
+WHERE status = 'active' AND id IN (
+    SELECT tcs.chat_session_id FROM telegram_chat_session tcs
+    WHERE tcs.agent_id = $1 AND tcs.chat_id = $2
+)
+`
+
+type ArchiveTelegramChatSessionParams struct {
+	AgentID pgtype.UUID `json:"agent_id"`
+	ChatID  string      `json:"chat_id"`
+}
+
+// /reset: retire the chat's current conversation. Archives the session rather
+// than dropping the mapping, so a task still running against it can still
+// deliver its answer.
+// Archives EVERY active session for the chat, not just the newest. The lookup
+// above resolves the newest active one, so leaving an older active row behind
+// would make /reset resume a stale conversation instead of starting a fresh
+// one — the exact failure /reset exists to fix.
+func (q *Queries) ArchiveTelegramChatSession(ctx context.Context, arg ArchiveTelegramChatSessionParams) error {
+	_, err := q.db.Exec(ctx, archiveTelegramChatSession, arg.AgentID, arg.ChatID)
+	return err
+}
+
 const consumeTelegramBindingToken = `-- name: ConsumeTelegramBindingToken :one
 UPDATE telegram_binding_token
 SET consumed_at = now()
@@ -79,20 +104,6 @@ func (q *Queries) DeleteExpiredTelegramBindingTokens(ctx context.Context) error 
 	return err
 }
 
-const deleteTelegramChatSession = `-- name: DeleteTelegramChatSession :exec
-DELETE FROM telegram_chat_session WHERE agent_id = $1 AND chat_id = $2
-`
-
-type DeleteTelegramChatSessionParams struct {
-	AgentID pgtype.UUID `json:"agent_id"`
-	ChatID  string      `json:"chat_id"`
-}
-
-func (q *Queries) DeleteTelegramChatSession(ctx context.Context, arg DeleteTelegramChatSessionParams) error {
-	_, err := q.db.Exec(ctx, deleteTelegramChatSession, arg.AgentID, arg.ChatID)
-	return err
-}
-
 const deleteTelegramInstallation = `-- name: DeleteTelegramInstallation :exec
 DELETE FROM telegram_installation WHERE agent_id = $1 AND workspace_id = $2
 `
@@ -108,7 +119,11 @@ func (q *Queries) DeleteTelegramInstallation(ctx context.Context, arg DeleteTele
 }
 
 const getTelegramChatSession = `-- name: GetTelegramChatSession :one
-SELECT agent_id, chat_id, chat_session_id, created_at FROM telegram_chat_session WHERE agent_id = $1 AND chat_id = $2
+SELECT tcs.agent_id, tcs.chat_id, tcs.chat_session_id, tcs.created_at FROM telegram_chat_session tcs
+JOIN chat_session cs ON cs.id = tcs.chat_session_id
+WHERE tcs.agent_id = $1 AND tcs.chat_id = $2 AND cs.status = 'active'
+ORDER BY tcs.created_at DESC
+LIMIT 1
 `
 
 type GetTelegramChatSessionParams struct {
@@ -116,6 +131,9 @@ type GetTelegramChatSessionParams struct {
 	ChatID  string      `json:"chat_id"`
 }
 
+// The chat's CURRENT conversation: the newest mapping whose session is still
+// active. Older rows are kept so a late reply from a superseded session can
+// still find its way back to the chat that asked.
 func (q *Queries) GetTelegramChatSession(ctx context.Context, arg GetTelegramChatSessionParams) (TelegramChatSession, error) {
 	row := q.db.QueryRow(ctx, getTelegramChatSession, arg.AgentID, arg.ChatID)
 	var i TelegramChatSession
@@ -465,7 +483,7 @@ func (q *Queries) SetTelegramInstallationSession(ctx context.Context, arg SetTel
 const upsertTelegramChatSession = `-- name: UpsertTelegramChatSession :one
 INSERT INTO telegram_chat_session (agent_id, chat_id, chat_session_id)
 VALUES ($1, $2, $3)
-ON CONFLICT (agent_id, chat_id) DO UPDATE SET chat_session_id = EXCLUDED.chat_session_id
+ON CONFLICT (chat_session_id) DO NOTHING
 RETURNING agent_id, chat_id, chat_session_id, created_at
 `
 

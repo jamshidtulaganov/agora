@@ -301,11 +301,13 @@ func (h *Handler) handleAgentGroupMessage(ctx context.Context, row db.TelegramIn
 // installation, so the thread survives a human renaming the session — matching
 // on a title prefix would silently start a new conversation and lose context.
 func (h *Handler) agentTelegramSession(ctx context.Context, row db.TelegramInstallation, chatID string) (db.ChatSession, error) {
+	// The query already restricts to an active session, so a hit is usable as
+	// is; a miss means this chat has no live conversation and needs a new one.
 	if link, err := h.Queries.GetTelegramChatSession(ctx, db.GetTelegramChatSessionParams{
 		AgentID: row.AgentID,
 		ChatID:  chatID,
 	}); err == nil {
-		if s, sErr := h.Queries.GetChatSession(ctx, link.ChatSessionID); sErr == nil && s.Status == "active" {
+		if s, sErr := h.Queries.GetChatSession(ctx, link.ChatSessionID); sErr == nil {
 			return s, nil
 		}
 	}
