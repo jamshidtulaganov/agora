@@ -12,9 +12,11 @@ import {
   EMPTY_FIGMA_CREDENTIAL_STATUS,
   EMPTY_LIST_TEST_CASES,
   EMPTY_TEST_CASE,
+  EMPTY_AUTOPILOT_TELEGRAM_DESTINATION,
   EMPTY_TELEGRAM_INSTALLATIONS,
   EMPTY_USER,
   FigmaCredentialStatusSchema,
+  AutopilotTelegramDestinationSchema,
   ListTelegramInstallationsSchema,
   McpCredentialStatusSchema,
   McpCredentialListSchema,
@@ -1394,5 +1396,38 @@ describe("ListTelegramInstallationsSchema", () => {
       { endpoint: "GET /api/workspaces/{id}/telegram/installations" },
     );
     expect(parsed.installations[0]?.allowed_chat_ids?.[0]).toBe("-1004336001519");
+  });
+});
+
+describe("AutopilotTelegramDestinationSchema", () => {
+  it("parses an agent delivery", () => {
+    const parsed = parseWithFallback(
+      {
+        delivers: true,
+        via: "agent",
+        bot_username: "sd_pm_agent_bot",
+        chat_id: "-1004336001519",
+        from_project_config: true,
+      },
+      AutopilotTelegramDestinationSchema,
+      EMPTY_AUTOPILOT_TELEGRAM_DESTINATION,
+      { endpoint: "GET /api/autopilots/{id}/telegram-destination" },
+    );
+    expect(parsed).toMatchObject({
+      delivers: true,
+      via: "agent",
+      chat_id: "-1004336001519",
+      from_project_config: true,
+    });
+  });
+
+  it("fails closed on a malformed response", () => {
+    const parsed = parseWithFallback(
+      { delivers: "yes", chat_id: null },
+      AutopilotTelegramDestinationSchema,
+      EMPTY_AUTOPILOT_TELEGRAM_DESTINATION,
+      { endpoint: "GET /api/autopilots/{id}/telegram-destination" },
+    );
+    expect(parsed).toEqual(EMPTY_AUTOPILOT_TELEGRAM_DESTINATION);
   });
 });

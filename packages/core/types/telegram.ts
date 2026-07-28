@@ -52,3 +52,18 @@ export interface SetTelegramAccessRequest {
    * accidentally unbind every group. */
   allowed_chat_ids?: string[];
 }
+
+/** Where an autopilot's report will land, resolved by the server.
+ *
+ * Server-side because the precedence — project override, then the agent's own
+ * bot if it can reach that chat, then the platform bot — would drift if a
+ * second copy lived in the client, and a dialog that confidently names the
+ * wrong group is worse than one that says nothing. */
+export interface AutopilotTelegramDestination {
+  delivers: boolean;
+  /** "agent" or "platform": which identity the report arrives as. */
+  via?: string;
+  bot_username?: string;
+  chat_id?: string;
+  from_project_config: boolean;
+}

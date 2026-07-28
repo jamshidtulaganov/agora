@@ -293,9 +293,10 @@
       "saturday": "Суббота"
     },
     "section_telegram": "Telegram",
-    "telegram_destination": "Отчёты уходят в @{{bot}}, чат {{chat}}.",
-    "telegram_no_chat": "@{{bot}} подключён, но не привязан ни к одной группе — отчёты не отправятся.",
-    "telegram_no_bot": "У этого агента нет Telegram-бота, отчёты останутся в Agora. Подключить: Настройки → Интеграции → Telegram."
+    "telegram_via_agent": "Отчёты уходят от имени @{{bot}} в чат {{chat}}.",
+    "telegram_via_platform": "Отчёты уходят в чат {{chat}} через бота воркспейса.",
+    "telegram_from_project": "(из настройки проекта)",
+    "telegram_no_delivery": "Отчёты остаются в Agora — назначение в Telegram не настроено."
   },
   "trigger_config": {
     "frequencies": {

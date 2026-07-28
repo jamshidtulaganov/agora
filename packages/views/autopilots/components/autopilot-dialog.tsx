@@ -39,8 +39,7 @@ import { TimeInput } from "@agora/ui/components/ui/time-input";
 import { TimezonePicker } from "./pickers/timezone-picker";
 import { useCurrentWorkspace } from "@agora/core/paths";
 import { useWorkspaceId } from "@agora/core/hooks";
-import { useConfigStore } from "@agora/core/config";
-import { telegramInstallationsOptions } from "@agora/core/telegram";
+import { autopilotTelegramDestinationOptions } from "@agora/core/telegram";
 import { agentListOptions, squadListOptions } from "@agora/core/workspace/queries";
 import { projectListOptions } from "@agora/core/projects/queries";
 import {
@@ -639,7 +638,7 @@ export function AutopilotDialog(props: AutopilotDialogProps) {
 
             <OutputModeSection mode={executionMode} onChange={setExecutionMode} />
 
-            <TelegramDeliverySection assigneeType={assigneeType} assigneeId={assigneeId} />
+            <TelegramDeliverySection autopilotId={isCreate ? undefined : props.autopilotId} />
 
             {executionMode === "create_issue" && (
               <ProjectSection
@@ -776,55 +775,43 @@ function AgentSection({
 
 // Where this autopilot's report will land.
 //
-// Read-only, and that is the point: the destination is not a property of the
-// autopilot but of its ASSIGNEE — a report from an agent arrives under that
-// agent's own bot. Offering a picker here would imply otherwise and then have
-// to explain why changing it moved every other autopilot on the same agent.
+// Read-only, and resolved by the SERVER. The precedence — a project's
+// configured chat, then the agent's own bot if it can reach that chat, then the
+// platform bot — is subtle enough that a second copy of it here would drift
+// from the sender, and a dialog that confidently names the wrong group is worse
+// than one that says nothing.
 //
-// It exists because without it the question "where does this go?" could only be
-// answered by opening two other screens, and the most common answer — nowhere,
-// because the agent has no bot — was invisible until a report failed to arrive.
-function TelegramDeliverySection({
-  assigneeType,
-  assigneeId,
-}: {
-  assigneeType: AutopilotAssigneeType;
-  assigneeId: string;
-}) {
+// It exists because without it "where does this go?" could only be answered by
+// opening two other screens, and the most common answer — nowhere — was
+// invisible until a report failed to arrive.
+//
+// Only shown for an existing autopilot: a draft has no id to resolve against,
+// and guessing from the assignee alone is what this replaced.
+function TelegramDeliverySection({ autopilotId }: { autopilotId?: string }) {
   const { t } = useT("autopilots");
   const wsId = useWorkspaceId();
-  const telegramBotsEnabled = useConfigStore((s) => s.telegramBotsEnabled);
   const { data } = useQuery({
-    ...telegramInstallationsOptions(wsId),
-    enabled: !!wsId && telegramBotsEnabled,
+    ...autopilotTelegramDestinationOptions(wsId, autopilotId ?? ""),
+    enabled: !!wsId && !!autopilotId,
   });
-
-  // A squad's report comes from its leader, whose bot this dialog cannot know
-  // without resolving the squad. Rather than guess, say nothing — a wrong
-  // destination shown confidently is worse than none.
-  if (!telegramBotsEnabled || assigneeType !== "agent" || !assigneeId) return null;
-
-  const installation = (data?.installations ?? []).find(
-    (i) => i.agent_id === assigneeId && i.status === "active",
-  );
+  if (!autopilotId || !data) return null;
 
   return (
     <div>
       <SectionLabel>{t(($) => $.dialog.section_telegram)}</SectionLabel>
-      {installation ? (
-        <p className="text-xs text-muted-foreground">
-          {installation.chat_id
-            ? t(($) => $.dialog.telegram_destination, {
-                bot: installation.bot_username,
-                chat: installation.chat_id ?? "",
+      <p className="text-xs text-muted-foreground">
+        {data.delivers !== true
+          ? t(($) => $.dialog.telegram_no_delivery)
+          : data.via === "agent" && data.bot_username
+            ? t(($) => $.dialog.telegram_via_agent, {
+                bot: data.bot_username ?? "",
+                chat: data.chat_id ?? "",
               })
-            : t(($) => $.dialog.telegram_no_chat, { bot: installation.bot_username })}
-        </p>
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          {t(($) => $.dialog.telegram_no_bot)}
-        </p>
-      )}
+            : t(($) => $.dialog.telegram_via_platform, { chat: data.chat_id ?? "" })}
+        {data.delivers === true && data.from_project_config === true
+          ? " " + t(($) => $.dialog.telegram_from_project)
+          : ""}
+      </p>
     </div>
   );
 }

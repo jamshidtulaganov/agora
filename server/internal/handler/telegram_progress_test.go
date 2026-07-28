@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/integrations/telegram"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -38,11 +39,11 @@ func TestProgressStaysSilentOnAShortRun(t *testing.T) {
 	// channel.
 	s := &progressRelayState{last: map[string]progressRelayEntry{}}
 	started := time.Now()
-	if s.shouldPost("run-1", "working", started, started.Add(30*time.Second)) {
-		t.Fatal("posted before the start delay")
+	if _, ok := s.reserve("run-1", "working", started, started.Add(30*time.Second)); ok {
+		t.Fatal("reserved before the start delay")
 	}
-	if !s.shouldPost("run-1", "working", started, started.Add(telegramProgressStartDelay+time.Second)) {
-		t.Fatal("did not post once the run was long enough")
+	if _, ok := s.reserve("run-1", "working", started, started.Add(telegramProgressStartDelay+time.Second)); !ok {
+		t.Fatal("did not reserve once the run was long enough")
 	}
 }
 
@@ -50,19 +51,23 @@ func TestProgressSuppressesRepeatsAndFloods(t *testing.T) {
 	s := &progressRelayState{last: map[string]progressRelayEntry{}}
 	started := time.Now()
 	base := started.Add(telegramProgressStartDelay + time.Second)
-	if !s.shouldPost("run-1", "step one", started, base) {
-		t.Fatal("first post was suppressed")
+
+	res, ok := s.reserve("run-1", "step one", started, base)
+	if !ok {
+		t.Fatal("first reservation was refused")
 	}
+	s.finish("run-1", res, true, base)
+
 	// Same headline again is not news.
-	if s.shouldPost("run-1", "step one", started, base.Add(telegramProgressInterval+time.Minute)) {
-		t.Error("an unchanged headline was posted again")
+	if _, ok := s.reserve("run-1", "step one", started, base.Add(telegramProgressInterval+time.Minute)); ok {
+		t.Error("an unchanged headline was reserved again")
 	}
 	// A new headline still waits for the interval.
-	if s.shouldPost("run-1", "step two", started, base.Add(time.Minute)) {
-		t.Error("posted inside the throttle interval")
+	if _, ok := s.reserve("run-1", "step two", started, base.Add(time.Minute)); ok {
+		t.Error("reserved inside the throttle interval")
 	}
-	if !s.shouldPost("run-1", "step two", started, base.Add(telegramProgressInterval+time.Second)) {
-		t.Error("a changed headline was suppressed past the interval")
+	if _, ok := s.reserve("run-1", "step two", started, base.Add(telegramProgressInterval+time.Second)); !ok {
+		t.Error("a changed headline was refused past the interval")
 	}
 }
 
@@ -71,8 +76,10 @@ func TestProgressStateIsPerRun(t *testing.T) {
 	s := &progressRelayState{last: map[string]progressRelayEntry{}}
 	started := time.Now()
 	at := started.Add(telegramProgressStartDelay + time.Second)
-	if !s.shouldPost("run-1", "x", started, at) || !s.shouldPost("run-2", "x", started, at) {
-		t.Fatal("one run's post suppressed another's")
+	_, okA := s.reserve("run-1", "x", started, at)
+	_, okB := s.reserve("run-2", "x", started, at)
+	if !okA || !okB {
+		t.Fatal("one run's reservation suppressed another's")
 	}
 }
 
@@ -81,10 +88,36 @@ func TestForgetDropsRunState(t *testing.T) {
 	s := &progressRelayState{last: map[string]progressRelayEntry{}}
 	started := time.Now()
 	at := started.Add(telegramProgressStartDelay + time.Second)
-	s.shouldPost("run-1", "x", started, at)
+	s.reserve("run-1", "x", started, at)
 	s.forget("run-1")
 	if _, ok := s.last["run-1"]; ok {
 		t.Fatal("run state survived forget")
+	}
+}
+
+func TestProgressFailedDeliveryRollsBackReservation(t *testing.T) {
+	s := &progressRelayState{last: map[string]progressRelayEntry{}}
+	started := time.Now()
+	at := started.Add(telegramProgressStartDelay + time.Second)
+	reservation, ok := s.reserve("run-1", "still working", started, at)
+	if !ok {
+		t.Fatal("first delivery was not reserved")
+	}
+	s.finish("run-1", reservation, false, at)
+	if _, ok := s.reserve("run-1", "still working", started, at.Add(time.Second)); !ok {
+		t.Fatal("failed delivery permanently suppressed the same headline")
+	}
+}
+
+func TestProgressPendingReservationSuppressesConcurrentDuplicate(t *testing.T) {
+	s := &progressRelayState{last: map[string]progressRelayEntry{}}
+	started := time.Now()
+	at := started.Add(telegramProgressStartDelay + time.Second)
+	if _, ok := s.reserve("run-1", "still working", started, at); !ok {
+		t.Fatal("first delivery was not reserved")
+	}
+	if _, ok := s.reserve("run-1", "still working", started, at); ok {
+		t.Fatal("concurrent duplicate received a second reservation")
 	}
 }
 
@@ -155,5 +188,70 @@ func TestRelayNeedsAtLeastOneKey(t *testing.T) {
 	if _, err := testHandler.Queries.GetActiveAutopilotRunForTaskOrIssue(ctx,
 		db.GetActiveAutopilotRunForTaskOrIssueParams{}); err == nil {
 		t.Fatal("a query with no keys matched a run")
+	}
+}
+
+func TestDestinationPrefersTheProjectChat(t *testing.T) {
+	// The project override is a specific instruction ("this project reports
+	// HERE"); the agent's default chat is a general one. Letting the general
+	// win sent two projects' reports into whichever group their shared agent
+	// happened to be bound to.
+	agentBot := &telegram.BotClient{}
+	platformBot := &telegram.BotClient{}
+
+	bot, chat := chooseAutopilotDestination(agentBot, "-100agent", true, platformBot, "-100project")
+	if bot != agentBot || chat != "-100project" {
+		t.Fatalf("got chat %q, want the project chat spoken by the agent bot", chat)
+	}
+
+	// The agent's bot is only used where it can actually reach — otherwise the
+	// send fails silently at the Bot API.
+	bot, chat = chooseAutopilotDestination(agentBot, "-100agent", false, platformBot, "-100project")
+	if bot != platformBot || chat != "-100project" {
+		t.Fatalf("got %v/%q, want the platform bot in the project chat", bot == agentBot, chat)
+	}
+}
+
+func TestDestinationFallsBackToTheAgentDefault(t *testing.T) {
+	agentBot := &telegram.BotClient{}
+	bot, chat := chooseAutopilotDestination(agentBot, "-100agent", false, nil, "")
+	if bot != agentBot || chat != "-100agent" {
+		t.Fatalf("got %q, want the agent's own chat when no project chat is set", chat)
+	}
+	// Nothing anywhere is not a delivery.
+	if bot, chat := chooseAutopilotDestination(nil, "", false, nil, ""); bot != nil || chat != "" {
+		t.Fatal("a destination appeared from nowhere")
+	}
+	// A project chat with no bot able to reach it is also not a delivery.
+	if bot, _ := chooseAutopilotDestination(nil, "", false, nil, "-100project"); bot != nil {
+		t.Fatal("a project chat resolved without any bot")
+	}
+}
+
+func TestThrottleOnlyAdvancesOnDelivery(t *testing.T) {
+	// A headline marked sent and then dropped by a Bot API error would never be
+	// retried, because the next identical headline reads as a repeat. A failed
+	// delivery must roll the reservation back.
+	s := &progressRelayState{last: map[string]progressRelayEntry{}}
+	started := time.Now()
+	at := started.Add(telegramProgressStartDelay + time.Second)
+
+	res, ok := s.reserve("run-1", "step one", started, at)
+	if !ok {
+		t.Fatal("first headline was refused")
+	}
+	// While in flight, a second event must not send the same update again.
+	if _, ok := s.reserve("run-1", "step one", started, at.Add(time.Second)); ok {
+		t.Error("a reservation in flight did not block a concurrent send")
+	}
+	// Delivery failed: the headline becomes eligible again.
+	s.finish("run-1", res, false, at)
+	res2, ok := s.reserve("run-1", "step one", started, at.Add(2*time.Second))
+	if !ok {
+		t.Fatal("an undelivered headline was treated as sent")
+	}
+	s.finish("run-1", res2, true, at.Add(2*time.Second))
+	if _, ok := s.reserve("run-1", "step one", started, at.Add(3*time.Second)); ok {
+		t.Fatal("a delivered headline was offered again")
 	}
 }

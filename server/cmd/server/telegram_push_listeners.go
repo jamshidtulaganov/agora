@@ -84,17 +84,19 @@ func registerAutopilotReportListener(bus *events.Bus, h *handler.Handler) {
 		if !ok {
 			return
 		}
-		if status, _ := payload["status"].(string); status != "completed" {
-			return
-		}
 		runID, _ := payload["run_id"].(string)
 		if runID == "" {
 			return
 		}
+		// The run is over whatever its outcome, so its throttle state is dead
+		// weight. Dropping it only for `completed` leaked an entry for every
+		// run that failed or was cancelled — small each, unbounded over weeks.
+		h.ForgetAutopilotProgress(runID)
+		if status, _ := payload["status"].(string); status != "completed" {
+			return
+		}
 		// Detached: the Bot API call must not sit on the event bus.
 		go h.SendAutopilotReport(context.Background(), runID)
-		// The run is over; its progress throttle has nothing left to suppress.
-		h.ForgetAutopilotProgress(runID)
 	})
 }
 

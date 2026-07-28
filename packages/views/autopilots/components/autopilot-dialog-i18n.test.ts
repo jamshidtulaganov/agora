@@ -87,7 +87,7 @@ describe("telegram delivery strings", () => {
       const i18n = createI18n(locale, { [locale]: { autopilots: resource } });
       const t = i18n.getFixedT(locale, "autopilots") as TFunction<"autopilots">;
 
-      const withChat = t(($) => $.dialog.telegram_destination, {
+      const withChat = t(($) => $.dialog.telegram_via_agent, {
         bot: "sd_pm_agent_bot",
         chat: "-1004336001519",
       });
@@ -95,13 +95,14 @@ describe("telegram delivery strings", () => {
       expect(withChat).toContain("-1004336001519");
       expect(withChat).not.toContain("{{");
 
-      const noChat = t(($) => $.dialog.telegram_no_chat, { bot: "sd_pm_agent_bot" });
-      expect(noChat).toContain("sd_pm_agent_bot");
-      expect(noChat).not.toContain("{{");
+      const platform = t(($) => $.dialog.telegram_via_platform, {
+        chat: "-1004336001519",
+      });
+      expect(platform).toContain("-1004336001519");
+      expect(platform).not.toContain("{{");
 
-      // The no-bot line takes no variables; a stray placeholder there would
-      // reach the reader verbatim.
-      expect(t(($) => $.dialog.telegram_no_bot)).not.toContain("{{");
+      expect(t(($) => $.dialog.telegram_from_project)).not.toContain("{{");
+      expect(t(($) => $.dialog.telegram_no_delivery)).not.toContain("{{");
     });
   }
 });

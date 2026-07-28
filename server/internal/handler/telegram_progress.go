@@ -48,13 +48,22 @@ const telegramProgressInterval = 5 * time.Minute
 // progressRelayState remembers what was already said about a run, so a repeated
 // headline does not become a repeated message.
 type progressRelayState struct {
-	mu   sync.Mutex
-	last map[string]progressRelayEntry
+	mu        sync.Mutex
+	last      map[string]progressRelayEntry
+	nextToken uint64
 }
 
 type progressRelayEntry struct {
 	headline string
 	postedAt time.Time
+	pending  bool
+	token    uint64
+}
+
+type progressRelayReservation struct {
+	token       uint64
+	previous    progressRelayEntry
+	hadPrevious bool
 }
 
 var telegramProgressRelay = &progressRelayState{last: map[string]progressRelayEntry{}}
@@ -67,26 +76,65 @@ func (s *progressRelayState) forget(runID string) {
 	delete(s.last, runID)
 }
 
-// shouldPost decides whether this headline is worth a message, and records the
-// decision. Returns false for a repeat, for a post inside the interval, and for
-// the first headline of a run that has not been going long enough.
-func (s *progressRelayState) shouldPost(runID, headline string, startedAt, now time.Time) bool {
+// reserve decides whether this headline is worth a message and reserves the
+// run while the Bot API call is in flight. Reserving prevents two concurrent
+// task-message events from posting the same update; finish rolls the
+// reservation back when delivery fails.
+func (s *progressRelayState) reserve(
+	runID, headline string,
+	startedAt, now time.Time,
+) (progressRelayReservation, bool) {
 	if now.Sub(startedAt) < telegramProgressStartDelay {
-		return false
+		return progressRelayReservation{}, false
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	prev, seen := s.last[runID]
 	if seen {
+		if prev.pending {
+			return progressRelayReservation{}, false
+		}
 		if prev.headline == headline {
-			return false
+			return progressRelayReservation{}, false
 		}
 		if now.Sub(prev.postedAt) < telegramProgressInterval {
-			return false
+			return progressRelayReservation{}, false
 		}
 	}
-	s.last[runID] = progressRelayEntry{headline: headline, postedAt: now}
-	return true
+	s.nextToken++
+	token := s.nextToken
+	s.last[runID] = progressRelayEntry{
+		headline: headline,
+		postedAt: now,
+		pending:  true,
+		token:    token,
+	}
+	return progressRelayReservation{token: token, previous: prev, hadPrevious: seen}, true
+}
+
+func (s *progressRelayState) finish(
+	runID string,
+	reservation progressRelayReservation,
+	delivered bool,
+	now time.Time,
+) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, ok := s.last[runID]
+	if !ok || current.token != reservation.token {
+		return
+	}
+	if delivered {
+		current.pending = false
+		current.postedAt = now
+		s.last[runID] = current
+		return
+	}
+	if reservation.hadPrevious {
+		s.last[runID] = reservation.previous
+	} else {
+		delete(s.last, runID)
+	}
 }
 
 // progressHeadline extracts the agent's own `PROGRESS:` line.
@@ -148,8 +196,10 @@ func (h *Handler) RelayAutopilotProgress(ctx context.Context, taskID, issueID, c
 		return
 	}
 
-	if !telegramProgressRelay.shouldPost(
-		uuidToString(run.ID), headline, run.TriggeredAt.Time, time.Now()) {
+	runID := uuidToString(run.ID)
+	reservation, reserved := telegramProgressRelay.reserve(
+		runID, headline, run.TriggeredAt.Time, time.Now())
+	if !reserved {
 		slog.Debug("progress relay: throttled", "run_id", uuidToString(run.ID),
 			"elapsed", time.Since(run.TriggeredAt.Time).String())
 		return
@@ -159,6 +209,7 @@ func (h *Handler) RelayAutopilotProgress(ctx context.Context, taskID, issueID, c
 	// are one decision. See autopilotDestination.
 	bot, chatID := h.autopilotDestination(ctx, ap)
 	if bot == nil || chatID == "" {
+		telegramProgressRelay.finish(runID, reservation, false, time.Now())
 		slog.Debug("progress relay: nowhere to send", "autopilot", ap.Title,
 			"has_bot", bot != nil, "chat", chatID)
 		return
@@ -167,9 +218,11 @@ func (h *Handler) RelayAutopilotProgress(ctx context.Context, taskID, issueID, c
 	// kept to one line: this is a status ping, not a report.
 	text := ap.Title + ": " + truncateRunes(headline, 200)
 	if err := bot.SendMessage(ctx, chatID, text); err != nil {
+		telegramProgressRelay.finish(runID, reservation, false, time.Now())
 		slog.Debug("autopilot progress relay: send failed", "run_id", uuidToString(run.ID), "error", err)
 		return
 	}
+	telegramProgressRelay.finish(runID, reservation, true, time.Now())
 	slog.Info("autopilot progress posted", "run_id", uuidToString(run.ID),
 		"autopilot", ap.Title, "chat", chatID)
 }

@@ -293,9 +293,10 @@
       "saturday": "Saturday"
     },
     "section_telegram": "Telegram",
-    "telegram_destination": "Reports post to @{{bot}} in chat {{chat}}.",
-    "telegram_no_chat": "@{{bot}} is installed but bound to no group yet — reports will not be posted.",
-    "telegram_no_bot": "This agent has no Telegram bot, so reports stay in Agora. Connect one in Settings → Integrations → Telegram."
+    "telegram_via_agent": "Reports post as @{{bot}} to chat {{chat}}.",
+    "telegram_via_platform": "Reports post to chat {{chat}} via the workspace bot.",
+    "telegram_from_project": "(from the project's setting)",
+    "telegram_no_delivery": "Reports stay in Agora — no Telegram destination is configured for this autopilot."
   },
   "trigger_config": {
     "frequencies": {

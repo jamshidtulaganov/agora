@@ -136,6 +136,7 @@ import type {
   ListGitHubInstallationsResponse,
   GitHubConnectResponse,
   ListLarkInstallationsResponse,
+  AutopilotTelegramDestination,
   ListTelegramInstallationsResponse,
   SetTelegramAccessRequest,
   TelegramBindLinkResponse,
@@ -308,6 +309,8 @@ import {
   McpCredentialStatusSchema,
   McpCredentialListSchema,
   EMPTY_MCP_CREDENTIAL_LIST,
+  AutopilotTelegramDestinationSchema,
+  EMPTY_AUTOPILOT_TELEGRAM_DESTINATION,
   EMPTY_TELEGRAM_BIND_LINK,
   EMPTY_TELEGRAM_INSTALLATION,
   EMPTY_TELEGRAM_INSTALLATIONS,
@@ -3323,6 +3326,13 @@ export class ApiClient {
   }
 
   // Lark integration
+  async getAutopilotTelegramDestination(autopilotId: string): Promise<AutopilotTelegramDestination> {
+    const raw = await this.fetch<unknown>(`/api/autopilots/${autopilotId}/telegram-destination`);
+    return parseWithFallback(raw, AutopilotTelegramDestinationSchema, EMPTY_AUTOPILOT_TELEGRAM_DESTINATION, {
+      endpoint: "GET /api/autopilots/{id}/telegram-destination",
+    });
+  }
+
   // ---- Per-agent Telegram bots ----
   //
   // Parsed, not cast. This response feeds a settings panel inside an installed

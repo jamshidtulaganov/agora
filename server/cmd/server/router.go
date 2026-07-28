@@ -1161,6 +1161,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Patch("/", h.UpdateAutopilot)
 					r.Delete("/", h.DeleteAutopilot)
 					r.Post("/trigger", h.TriggerAutopilot)
+					// Where this autopilot's report will land. Resolved
+					// server-side so the dialog and the sender cannot drift.
+					r.Get("/telegram-destination", h.GetAutopilotTelegramDestination)
 					r.Get("/runs", h.ListAutopilotRuns)
 					r.Get("/runs/{runId}", h.GetAutopilotRun)
 					r.Get("/deliveries", h.ListAutopilotDeliveries)

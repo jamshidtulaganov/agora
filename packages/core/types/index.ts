@@ -158,6 +158,7 @@ export type {
   ListTelegramInstallationsResponse,
   TelegramBindLinkResponse,
   SetTelegramAccessRequest,
+  AutopilotTelegramDestination,
 } from "./telegram";
 export type {
   Autopilot,

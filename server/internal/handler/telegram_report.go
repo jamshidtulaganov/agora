@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"html"
 	"log/slog"
+	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/config"
 	"github.com/multica-ai/multica/server/internal/integrations/telegram"
@@ -127,18 +130,7 @@ func (h *Handler) SendAutopilotReport(ctx context.Context, runID string) {
 	if bot == nil || chatID == "" {
 		return
 	}
-	body := ""
-	if run.IssueID.Valid {
-		body = h.autopilotReportBody(ctx, run.IssueID, ap.WorkspaceID)
-	}
-	if body == "" {
-		// Stranded-output recovery, borrowed from hamroh's `dropped_text`
-		// safety net: a completed run that produced no postable comment is not
-		// deliberate silence, it is a report that failed to reach anyone. The
-		// agent's task output usually still holds the text, so recover it
-		// rather than letting the group see nothing and assume all is well.
-		body = autopilotRunOutput(run.Result)
-	}
+	body := h.autopilotRunReportBody(ctx, run, ap)
 	if body == "" {
 		// Nothing anywhere. WARN, not INFO: a scheduled report that silently
 		// produced nothing is a failure, and it is invisible by construction —
@@ -169,6 +161,20 @@ func (h *Handler) SendAutopilotReport(ctx context.Context, runID string) {
 		return
 	}
 	slog.Info("autopilot report posted to telegram", "run_id", runID, "autopilot", ap.Title)
+}
+
+func (h *Handler) autopilotRunReportBody(ctx context.Context, run db.AutopilotRun, ap db.Autopilot) string {
+	body := ""
+	if run.IssueID.Valid {
+		body = h.autopilotReportBody(ctx, run.IssueID, ap.WorkspaceID)
+	}
+	if body != "" {
+		return body
+	}
+	// Stranded-output recovery, borrowed from hamroh's `dropped_text`
+	// safety net: a completed run that produced no postable comment — or a
+	// run_only execution with no issue by design — recovers its task result.
+	return autopilotRunOutput(run.Result)
 }
 
 // telegramCaptionLimit is the Bot API cap on a document caption. Overflowing it
@@ -231,26 +237,150 @@ func autopilotRunOutput(result []byte) string {
 // bot with its configured chat, which is what every workspace without
 // installations uses.
 func (h *Handler) autopilotDestination(ctx context.Context, ap db.Autopilot) (*telegram.BotClient, string) {
-	agentBot, agentChat := h.agentTelegramClient(ctx, ap.AssigneeID)
-	return chooseAutopilotDestination(
-		agentBot,
-		agentChat,
-		h.telegramBot,
-		h.autopilotReportChatID(ctx, ap),
-	)
+	destination := h.resolveAutopilotTelegramDestination(ctx, ap)
+	return destination.bot, destination.ChatID
 }
 
+type resolvedAutopilotTelegramDestination struct {
+	AutopilotTelegramDestinationResponse
+	bot *telegram.BotClient
+}
+
+func (h *Handler) resolveAutopilotTelegramDestination(
+	ctx context.Context,
+	ap db.Autopilot,
+) resolvedAutopilotTelegramDestination {
+	agentID, ok := h.autopilotSpeakerAgent(ctx, ap)
+
+	var agentBot *telegram.BotClient
+	var agentChat string
+	var agentBotUsername string
+	agentReachesProjectChat := false
+	projectChat := h.autopilotReportChatID(ctx, ap)
+	if ok {
+		agentBot, agentChat = h.agentTelegramClient(ctx, agentID)
+		if row, err := h.Queries.GetTelegramInstallationByAgent(ctx, agentID); err == nil &&
+			row.Status == "active" {
+			agentBotUsername = row.BotUsername
+		}
+		if agentBot != nil && projectChat != "" {
+			agentReachesProjectChat = h.agentReachesChat(ctx, agentID, projectChat)
+		}
+	}
+	bot, chatID := chooseAutopilotDestination(
+		agentBot, agentChat, agentReachesProjectChat,
+		h.telegramBot, projectChat,
+	)
+	if bot == nil || chatID == "" {
+		return resolvedAutopilotTelegramDestination{}
+	}
+	via := "platform"
+	username := ""
+	if bot == agentBot {
+		via = "agent"
+		username = agentBotUsername
+	}
+	return resolvedAutopilotTelegramDestination{
+		AutopilotTelegramDestinationResponse: AutopilotTelegramDestinationResponse{
+			Delivers:          true,
+			Via:               via,
+			BotUsername:       username,
+			ChatID:            chatID,
+			FromProjectConfig: projectChat != "" && projectChat == chatID,
+		},
+		bot: bot,
+	}
+}
+
+// autopilotSpeakerAgent is the agent whose identity a report should carry.
+//
+// For a squad assignee that is the LEADER: the squad id is not an agent id, so
+// looking up an installation by it finds nothing, and every squad autopilot
+// fell through to the platform bot even when its leader had a bot of its own.
+func (h *Handler) autopilotSpeakerAgent(ctx context.Context, ap db.Autopilot) (pgtype.UUID, bool) {
+	if ap.AssigneeType != "squad" {
+		return ap.AssigneeID, ap.AssigneeID.Valid
+	}
+	squad, err := h.Queries.GetSquad(ctx, ap.AssigneeID)
+	if err != nil || squad.ArchivedAt.Valid || !squad.LeaderID.Valid {
+		return pgtype.UUID{}, false
+	}
+	return squad.LeaderID, true
+}
+
+// agentReachesChat reports whether the agent's bot is bound to a chat.
+// Membership is proven from allowed_chat_ids rather than assumed: posting
+// through a bot that is not in the room fails at the Bot API, silently.
+func (h *Handler) agentReachesChat(ctx context.Context, agentID pgtype.UUID, chatID string) bool {
+	row, err := h.Queries.GetTelegramInstallationByAgent(ctx, agentID)
+	if err != nil {
+		return false
+	}
+	parsed, err := strconv.ParseInt(strings.TrimSpace(chatID), 10, 64)
+	if err != nil {
+		return false
+	}
+	return telegramChatAllowed(row, parsed)
+}
+
+// chooseAutopilotDestination applies the precedence, and the order matters:
+//
+//  1. A project's configured chat beats the agent's default. The override is a
+//     specific instruction ("this project reports HERE"); the agent's default
+//     is a general one, and letting the general win sent two projects' reports
+//     into whichever group their shared agent happened to be bound to.
+//  2. Inside that chat the agent's own bot speaks if it can reach it, so a
+//     report from "sd-bridge-lead" arrives as that agent rather than as Agora.
+//  3. Otherwise the platform bot — the only one a workspace without
+//     installations has.
 func chooseAutopilotDestination(
 	agentBot *telegram.BotClient,
 	agentChat string,
+	agentReachesProjectChat bool,
 	platformBot *telegram.BotClient,
-	platformChat string,
+	projectChat string,
 ) (*telegram.BotClient, string) {
+	if projectChat != "" {
+		if agentBot != nil && agentReachesProjectChat {
+			return agentBot, projectChat
+		}
+		if platformBot != nil {
+			return platformBot, projectChat
+		}
+		return nil, ""
+	}
 	if agentBot != nil && agentChat != "" {
 		return agentBot, agentChat
 	}
-	if platformBot != nil && platformChat != "" {
-		return platformBot, platformChat
-	}
 	return nil, ""
+}
+
+// AutopilotTelegramDestinationResponse tells the UI where a report will land.
+//
+// Server-side on purpose. The precedence — project override, then the agent's
+// own bot if it can reach that chat, then the platform bot — is subtle enough
+// that a second implementation in TypeScript would drift, and a dialog that
+// confidently names the wrong group is worse than one that says nothing.
+type AutopilotTelegramDestinationResponse struct {
+	// Delivers is false when nothing will be sent; the UI shows the reason
+	// rather than a chat.
+	Delivers bool `json:"delivers"`
+	// Via is "agent" or "platform" — which identity the report arrives as.
+	Via         string `json:"via,omitempty"`
+	BotUsername string `json:"bot_username,omitempty"`
+	ChatID      string `json:"chat_id,omitempty"`
+	// FromProjectConfig marks a chat that came from the project override, so
+	// the UI can say where the setting lives.
+	FromProjectConfig bool `json:"from_project_config"`
+}
+
+// GetAutopilotTelegramDestination handles
+// GET /api/autopilots/{id}/telegram-destination.
+func (h *Handler) GetAutopilotTelegramDestination(w http.ResponseWriter, r *http.Request) {
+	ap, ok := h.loadAutopilotInWorkspace(w, r, chi.URLParam(r, "id"), h.resolveWorkspaceID(r))
+	if !ok {
+		return
+	}
+	destination := h.resolveAutopilotTelegramDestination(r.Context(), ap)
+	writeJSON(w, http.StatusOK, destination.AutopilotTelegramDestinationResponse)
 }

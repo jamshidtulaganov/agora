@@ -23,6 +23,7 @@ import type {
   OrchestrationRun,
   IssueArtifactResponse,
   Squad,
+  AutopilotTelegramDestination,
   TelegramBindLinkResponse,
   TelegramInstallation,
   TimelineEntry,
@@ -1904,4 +1905,20 @@ export const EMPTY_TELEGRAM_BIND_LINK: TelegramBindLinkResponse = {
   group_url: "",
   bot_username: "",
   expires_at: "",
+};
+
+export const AutopilotTelegramDestinationSchema = z.object({
+  // Defaults to FALSE: a server that predates this endpoint, or a drifted
+  // response, must read as "nothing will be sent" rather than promising a
+  // delivery the dialog cannot back up.
+  delivers: z.boolean().default(false),
+  via: z.string().optional(),
+  bot_username: z.string().optional(),
+  chat_id: z.string().optional(),
+  from_project_config: z.boolean().default(false),
+}).loose();
+
+export const EMPTY_AUTOPILOT_TELEGRAM_DESTINATION: AutopilotTelegramDestination = {
+  delivers: false,
+  from_project_config: false,
 };

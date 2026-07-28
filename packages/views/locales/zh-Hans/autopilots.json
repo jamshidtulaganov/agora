@@ -293,9 +293,10 @@
       "saturday": "周六"
     },
     "section_telegram": "Telegram",
-    "telegram_destination": "报告将通过 @{{bot}} 发送到聊天 {{chat}}。",
-    "telegram_no_chat": "@{{bot}} 已安装但尚未绑定任何群组——报告不会发送。",
-    "telegram_no_bot": "该智能体没有 Telegram 机器人，报告仅保留在 Agora 中。前往 设置 → 集成 → Telegram 连接。"
+    "telegram_via_agent": "报告以 @{{bot}} 的身份发送到聊天 {{chat}}。",
+    "telegram_via_platform": "报告通过工作区机器人发送到聊天 {{chat}}。",
+    "telegram_from_project": "（来自项目设置）",
+    "telegram_no_delivery": "报告仅保留在 Agora——该自动驾驶未配置 Telegram 目标。"
   },
   "trigger_config": {
     "frequencies": {

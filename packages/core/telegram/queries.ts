@@ -9,6 +9,8 @@ import { api } from "../api";
 export const telegramKeys = {
   all: (wsId: string) => ["telegram", wsId] as const,
   installations: (wsId: string) => [...telegramKeys.all(wsId), "installations"] as const,
+  autopilotDestination: (wsId: string, autopilotId: string) =>
+    [...telegramKeys.all(wsId), "autopilot-destination", autopilotId] as const,
 };
 
 /** Shared options object rather than a hook: several panels read the same list
@@ -19,4 +21,11 @@ export const telegramInstallationsOptions = (wsId: string) =>
     queryKey: telegramKeys.installations(wsId),
     queryFn: () => api.listTelegramInstallations(wsId),
     enabled: !!wsId,
+  });
+
+export const autopilotTelegramDestinationOptions = (wsId: string, autopilotId: string) =>
+  queryOptions({
+    queryKey: telegramKeys.autopilotDestination(wsId, autopilotId),
+    queryFn: () => api.getAutopilotTelegramDestination(autopilotId),
+    enabled: !!wsId && !!autopilotId,
   });

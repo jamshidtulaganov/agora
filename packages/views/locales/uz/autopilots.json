@@ -293,9 +293,10 @@
       "saturday": "Shanba"
     },
     "section_telegram": "Telegram",
-    "telegram_destination": "Hisobot @{{bot}} orqali {{chat}} chatiga tushadi.",
-    "telegram_no_chat": "@{{bot}} o'rnatilgan, lekin hech qaysi guruhga bog'lanmagan — hisobot yuborilmaydi.",
-    "telegram_no_bot": "Bu agentda Telegram bot yo'q, hisobot Agora ichida qoladi. Ulash: Sozlamalar → Integratsiyalar → Telegram."
+    "telegram_via_agent": "Hisobot @{{bot}} nomidan {{chat}} chatiga tushadi.",
+    "telegram_via_platform": "Hisobot {{chat}} chatiga workspace boti orqali tushadi.",
+    "telegram_from_project": "(loyiha sozlamasidan)",
+    "telegram_no_delivery": "Hisobot Agora ichida qoladi — bu autopilot uchun Telegram manzili sozlanmagan."
   },
   "trigger_config": {
     "frequencies": {
