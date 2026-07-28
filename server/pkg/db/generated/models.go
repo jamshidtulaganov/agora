@@ -1013,6 +1013,13 @@ type TelegramBindingToken struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type TelegramChatSession struct {
+	AgentID       pgtype.UUID        `json:"agent_id"`
+	ChatID        string             `json:"chat_id"`
+	ChatSessionID pgtype.UUID        `json:"chat_session_id"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
 type TelegramInstallation struct {
 	ID                     pgtype.UUID        `json:"id"`
 	WorkspaceID            pgtype.UUID        `json:"workspace_id"`
@@ -1028,6 +1035,8 @@ type TelegramInstallation struct {
 	ChatSessionID          pgtype.UUID        `json:"chat_session_id"`
 	AccessPolicy           string             `json:"access_policy"`
 	AllowedTelegramUserIds []int64            `json:"allowed_telegram_user_ids"`
+	AllowedChatIds         []int64            `json:"allowed_chat_ids"`
+	AdminTelegramUserIds   []int64            `json:"admin_telegram_user_ids"`
 }
 
 type TestCase struct {

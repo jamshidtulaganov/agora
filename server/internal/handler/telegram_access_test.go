@@ -18,7 +18,7 @@ const (
 func installation(policy string, allowed ...int64) db.TelegramInstallation {
 	return db.TelegramInstallation{
 		BotUsername:            "sd_pm_agent_bot",
-		ChatID:                 pgtype.Text{String: "-1003107704922", Valid: true},
+		AllowedChatIds:         []int64{testBoundChat},
 		AccessPolicy:           policy,
 		AllowedTelegramUserIds: allowed,
 	}
@@ -52,7 +52,7 @@ func TestTelegramSenderAllowedRequiresTheBoundChat(t *testing.T) {
 	}
 	// Never bound to any chat at all.
 	unbound := installation("open")
-	unbound.ChatID = pgtype.Text{}
+	unbound.AllowedChatIds = nil
 	if telegramSenderAllowed(unbound, testBoundChat, testAllowedUID) {
 		t.Error("unbound installation admitted a sender")
 	}

@@ -121,7 +121,7 @@ func (h *Handler) CreateAgentTelegramBindLink(w http.ResponseWriter, r *http.Req
 // trusted in the first place, so requiring it to already be trusted would make
 // the flow impossible. The token is the authorization here — it was minted by
 // an owner/admin minutes earlier and is single-use.
-func (h *Handler) tryBindTelegramGroup(ctx context.Context, row db.TelegramInstallation, chatIDNum int64, rawText string) bool {
+func (h *Handler) tryBindTelegramGroup(ctx context.Context, row db.TelegramInstallation, chatIDNum, fromID int64, rawText string) bool {
 	text := strings.TrimSpace(rawText)
 	if !strings.HasPrefix(text, "/start") {
 		return false
@@ -150,21 +150,51 @@ func (h *Handler) tryBindTelegramGroup(ctx context.Context, row db.TelegramInsta
 	}
 
 	chatID := strconv.FormatInt(chatIDNum, 10)
-	if _, err := h.Queries.SetTelegramInstallationChat(ctx, db.SetTelegramInstallationChatParams{
-		AgentID: row.AgentID,
-		ChatID:  pgtype.Text{String: chatID, Valid: true},
+	// ADD to the allowed set rather than replacing it — one agent can serve
+	// several rooms, and binding a second must not silently evict the first.
+	if _, err := h.Queries.SetTelegramInstallationChats(ctx, db.SetTelegramInstallationChatsParams{
+		AgentID:        row.AgentID,
+		AllowedChatIds: toggleID(row.AllowedChatIds, chatIDNum, true),
 	}); err != nil {
 		slog.Warn("telegram bind: failed to store chat", "error", err)
 		return true
 	}
-	slog.Info("telegram bind: group bound", "bot", row.BotUsername, "chat", chatID)
+	// chat_id is the REPORT destination, not an authorization. Set it only if
+	// unset, so binding a second group does not redirect the weekly report away
+	// from the room that has been receiving it.
+	if !row.ChatID.Valid {
+		if _, err := h.Queries.SetTelegramInstallationChat(ctx, db.SetTelegramInstallationChatParams{
+			AgentID: row.AgentID,
+			ChatID:  pgtype.Text{String: chatID, Valid: true},
+		}); err != nil {
+			slog.Warn("telegram bind: failed to store report chat", "error", err)
+		}
+	}
+
+	// Seed the redeemer as an admin so /allow and /deny are usable immediately.
+	// This is not a shortcut around authorization: the token they just spent was
+	// minted seconds earlier by an Agora owner/admin, is single-use, and expires
+	// in ten minutes. Whoever holds it was handed it deliberately. Without this
+	// the access commands would be unreachable — nobody could ever be first.
+	admins := toggleID(row.AdminTelegramUserIds, fromID, true)
+	if _, err := h.Queries.SetTelegramInstallationAdmins(ctx, db.SetTelegramInstallationAdminsParams{
+		AgentID:              row.AgentID,
+		AdminTelegramUserIds: admins,
+		WorkspaceID:          row.WorkspaceID,
+	}); err != nil {
+		slog.Warn("telegram bind: failed to seed admin", "error", err)
+	}
+	slog.Info("telegram bind: group bound", "bot", row.BotUsername, "chat", chatID, "admin", fromID)
 
 	// Confirm in the group so the operator sees the scan worked. Access is
 	// still whatever the policy says — binding a chat is not granting it.
 	if bot, _ := h.agentTelegramClient(ctx, row.AgentID); bot != nil {
 		_ = bot.SendMessage(ctx, chatID,
 			"Ulandi. Bu guruh endi shu agentga bog'landi.\n"+
-				"Kim yozishi mumkinligi Agora sozlamalarida belgilanadi.")
+				"Siz administrator bo'ldingiz.\n\n"+
+				"/allow user <id> — kimgadir buyruq berish huquqi\n"+
+				"/deny user <id> — huquqni olib tashlash\n"+
+				"/access — hozirgi holat")
 	}
 	return true
 }

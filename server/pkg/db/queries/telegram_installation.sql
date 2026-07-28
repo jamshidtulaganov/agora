@@ -75,3 +75,28 @@ RETURNING *;
 
 -- name: DeleteExpiredTelegramBindingTokens :exec
 DELETE FROM telegram_binding_token WHERE expires_at < now() - interval '1 day';
+
+-- name: SetTelegramInstallationChats :one
+UPDATE telegram_installation
+SET allowed_chat_ids = $2, updated_at = now()
+WHERE agent_id = $1
+RETURNING *;
+
+-- name: SetTelegramInstallationAdmins :one
+UPDATE telegram_installation
+SET admin_telegram_user_ids = $2, updated_at = now()
+WHERE agent_id = $1 AND workspace_id = $3
+RETURNING *;
+
+-- name: UpsertTelegramChatSession :one
+INSERT INTO telegram_chat_session (agent_id, chat_id, chat_session_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (agent_id, chat_id) DO UPDATE SET chat_session_id = EXCLUDED.chat_session_id
+RETURNING *;
+
+-- name: GetTelegramChatSession :one
+SELECT * FROM telegram_chat_session WHERE agent_id = $1 AND chat_id = $2;
+
+-- name: GetTelegramChatSessionBySession :one
+-- Outbound: which chat asked the question this session answers.
+SELECT * FROM telegram_chat_session WHERE chat_session_id = $1;

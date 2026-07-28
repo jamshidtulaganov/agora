@@ -56,6 +56,37 @@ type TelegramInstallationResponse struct {
 	// orders.
 	AccessPolicy   string   `json:"access_policy"`
 	AllowedUserIDs []string `json:"allowed_user_ids"`
+	// AllowedChatIDs are the groups that may instruct this agent. One agent can
+	// serve several rooms; ChatID above is only where reports are posted.
+	AllowedChatIDs []string `json:"allowed_chat_ids"`
+	// AdminUserIDs may run /allow and /deny from inside Telegram.
+	AdminUserIDs []string `json:"admin_user_ids"`
+}
+
+// idsToStrings renders 64-bit Telegram ids as strings. JSON numbers are IEEE
+// doubles in a browser, which silently rounds ids past 2^53 — a chat id is
+// already in that range.
+func idsToStrings(ids []int64) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, strconv.FormatInt(id, 10))
+	}
+	return out
+}
+
+// parseTelegramIDs converts request ids, rejecting anything non-numeric rather
+// than skipping it: a typo that silently drops an entry looks like a grant that
+// worked.
+func parseTelegramIDs(raw []string) ([]int64, error) {
+	out := make([]int64, 0, len(raw))
+	for _, s := range raw {
+		id, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, nil
 }
 
 func telegramInstallationToResponse(row db.TelegramInstallation) TelegramInstallationResponse {
@@ -72,10 +103,9 @@ func telegramInstallationToResponse(row db.TelegramInstallation) TelegramInstall
 		resp.InstalledAt = row.InstalledAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
 	}
 	resp.AccessPolicy = row.AccessPolicy
-	resp.AllowedUserIDs = make([]string, 0, len(row.AllowedTelegramUserIds))
-	for _, id := range row.AllowedTelegramUserIds {
-		resp.AllowedUserIDs = append(resp.AllowedUserIDs, strconv.FormatInt(id, 10))
-	}
+	resp.AllowedUserIDs = idsToStrings(row.AllowedTelegramUserIds)
+	resp.AllowedChatIDs = idsToStrings(row.AllowedChatIds)
+	resp.AdminUserIDs = idsToStrings(row.AdminTelegramUserIds)
 	return resp
 }
 
@@ -222,6 +252,12 @@ type setTelegramAccessRequest struct {
 	// AllowedUserIDs are numeric Telegram user ids, as strings so a JS client
 	// cannot lose precision on a 64-bit id.
 	AllowedUserIDs []string `json:"allowed_user_ids"`
+	// AllowedChatIDs are the groups allowed to instruct the agent. Omitted
+	// (nil) leaves the current set alone, so a caller editing only the user
+	// list cannot accidentally unbind every group.
+	AllowedChatIDs []string `json:"allowed_chat_ids"`
+	// AdminUserIDs may run /allow and /deny in Telegram. Same nil semantics.
+	AdminUserIDs []string `json:"admin_user_ids"`
 }
 
 // SetAgentTelegramAccess handles PUT /api/agents/{id}/telegram/access.
@@ -251,14 +287,10 @@ func (h *Handler) SetAgentTelegramAccess(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	ids := make([]int64, 0, len(req.AllowedUserIDs))
-	for _, raw := range req.AllowedUserIDs {
-		id, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "allowed_user_ids must be numeric Telegram user ids")
-			return
-		}
-		ids = append(ids, id)
+	ids, err := parseTelegramIDs(req.AllowedUserIDs)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "allowed_user_ids must be numeric Telegram user ids")
+		return
 	}
 	// An allowlist with nobody on it is almost certainly a mistake — it reads
 	// as "allow these people" while behaving exactly like closed.
@@ -276,6 +308,34 @@ func (h *Handler) SetAgentTelegramAccess(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "no telegram bot installed for this agent")
 		return
+	}
+
+	// Chats and admins are updated only when supplied. A PUT that carried the
+	// whole shape would make every partial edit a full overwrite — the failure
+	// mode being that saving a user list silently revokes every bound group.
+	if req.AllowedChatIDs != nil {
+		chats, chatErr := parseTelegramIDs(req.AllowedChatIDs)
+		if chatErr != nil {
+			writeError(w, http.StatusBadRequest, "allowed_chat_ids must be numeric Telegram chat ids")
+			return
+		}
+		if updated, uErr := h.Queries.SetTelegramInstallationChats(r.Context(), db.SetTelegramInstallationChatsParams{
+			AgentID: agent.ID, AllowedChatIds: chats,
+		}); uErr == nil {
+			row = updated
+		}
+	}
+	if req.AdminUserIDs != nil {
+		admins, adminErr := parseTelegramIDs(req.AdminUserIDs)
+		if adminErr != nil {
+			writeError(w, http.StatusBadRequest, "admin_user_ids must be numeric Telegram user ids")
+			return
+		}
+		if updated, uErr := h.Queries.SetTelegramInstallationAdmins(r.Context(), db.SetTelegramInstallationAdminsParams{
+			AgentID: agent.ID, AdminTelegramUserIds: admins, WorkspaceID: agent.WorkspaceID,
+		}); uErr == nil {
+			row = updated
+		}
 	}
 	writeJSON(w, http.StatusOK, telegramInstallationToResponse(row))
 }

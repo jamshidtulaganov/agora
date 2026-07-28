@@ -141,6 +141,14 @@ func (h *Handler) pollAgentTelegram(ctx context.Context, row db.TelegramInstalla
 		slog.Debug("telegram agent poller: deleteWebhook", "error", err)
 	}
 
+	// Publish the command menu so /allow and /deny autocomplete in the group.
+	// Discoverability is the whole reason these live in Telegram at all — an
+	// admin who has to remember the exact syntax will go back to the web UI,
+	// which is the friction the commands exist to remove.
+	if err := bot.SetMyCommands(ctx, agentBotCommands()); err != nil {
+		slog.Debug("telegram agent poller: setMyCommands", "error", err)
+	}
+
 	var offset int64
 	slog.Info("telegram agent poller: listening", "bot", row.BotUsername, "agent_id", uuidToString(row.AgentID))
 
@@ -208,7 +216,29 @@ func (h *Handler) handleAgentGroupMessage(ctx context.Context, row db.TelegramIn
 	// Binding runs BEFORE authorization: a scan is how a group becomes trusted
 	// in the first place, so requiring it to already be trusted would make the
 	// flow impossible. The one-time token is the authorization there.
-	if h.tryBindTelegramGroup(ctx, row, msg.Chat.ID, text) {
+	if h.tryBindTelegramGroup(ctx, row, msg.Chat.ID, msg.From.ID, text) {
+		return
+	}
+	// Re-read once more: binding just mutated the row, and the copy above
+	// predates it. Without this the very first message after a scan would be
+	// judged against the pre-binding access state.
+	if fresh, err := h.Queries.GetTelegramInstallationByAgent(ctx, row.AgentID); err == nil {
+		row = fresh
+	}
+
+	// The room gate is separate from, and ahead of, the person gate: an
+	// untrusted room gets nothing at all, not even a refusal, because a bot
+	// that answers an unknown group confirms which agent it belongs to.
+	if !telegramChatAllowed(row, msg.Chat.ID) {
+		slog.Info("telegram agent chat: chat not allowed",
+			"bot", row.BotUsername, "chat", msg.Chat.ID)
+		return
+	}
+
+	// Access commands sit between the two gates deliberately. They must be
+	// available to an admin who is NOT on the allowlist — the normal state for
+	// whoever installed the bot — but only from a room already trusted.
+	if h.handleTelegramAccessCommand(ctx, row, msg.Chat.ID, msg.From.ID, text) {
 		return
 	}
 
@@ -234,7 +264,7 @@ func (h *Handler) handleAgentGroupMessage(ctx context.Context, row db.TelegramIn
 	// itself authorization. The gate above already required the bound chat.
 	chatID := strconv.FormatInt(msg.Chat.ID, 10)
 
-	session, row, err := h.agentTelegramSession(ctx, row)
+	session, err := h.agentTelegramSession(ctx, row, chatID)
 	if err != nil {
 		slog.Warn("telegram agent chat: no session", "agent_id", uuidToString(row.AgentID), "error", err)
 		return
@@ -270,28 +300,32 @@ func (h *Handler) handleAgentGroupMessage(ctx context.Context, row db.TelegramIn
 // conversation, creating it on first contact. The link is stored on the
 // installation, so the thread survives a human renaming the session — matching
 // on a title prefix would silently start a new conversation and lose context.
-func (h *Handler) agentTelegramSession(ctx context.Context, row db.TelegramInstallation) (db.ChatSession, db.TelegramInstallation, error) {
-	if row.ChatSessionID.Valid {
-		if s, err := h.Queries.GetChatSession(ctx, row.ChatSessionID); err == nil && s.Status == "active" {
-			return s, row, nil
+func (h *Handler) agentTelegramSession(ctx context.Context, row db.TelegramInstallation, chatID string) (db.ChatSession, error) {
+	if link, err := h.Queries.GetTelegramChatSession(ctx, db.GetTelegramChatSessionParams{
+		AgentID: row.AgentID,
+		ChatID:  chatID,
+	}); err == nil {
+		if s, sErr := h.Queries.GetChatSession(ctx, link.ChatSessionID); sErr == nil && s.Status == "active" {
+			return s, nil
 		}
 	}
 	session, err := h.Queries.CreateChatSession(ctx, db.CreateChatSessionParams{
 		WorkspaceID: row.WorkspaceID,
 		AgentID:     row.AgentID,
 		CreatorID:   row.InstallerUserID,
-		Title:       "Telegram: " + row.BotUsername,
+		Title:       "Telegram " + chatID + ": " + row.BotUsername,
 	})
 	if err != nil {
-		return db.ChatSession{}, row, err
+		return db.ChatSession{}, err
 	}
-	if updated, linkErr := h.Queries.SetTelegramInstallationSession(ctx, db.SetTelegramInstallationSessionParams{
+	if _, linkErr := h.Queries.UpsertTelegramChatSession(ctx, db.UpsertTelegramChatSessionParams{
 		AgentID:       row.AgentID,
+		ChatID:        chatID,
 		ChatSessionID: session.ID,
-	}); linkErr == nil {
-		row = updated
+	}); linkErr != nil {
+		return db.ChatSession{}, linkErr
 	}
-	return session, row, nil
+	return session, nil
 }
 
 // SendAgentChatReplyToTelegram posts a finished chat task's assistant reply
@@ -302,16 +336,19 @@ func (h *Handler) SendAgentChatReplyToTelegram(ctx context.Context, chatSessionI
 	if err != nil {
 		return
 	}
-	// Resolving through the installation is what makes this a no-op for every
-	// web-only chat: only a session a bot is bound to has a row here.
-	row, err := h.Queries.GetTelegramInstallationBySession(ctx, sessionUUID)
+	// Resolve the chat that ASKED, not the installation's report destination:
+	// several groups can talk to one agent, and an answer belongs to the room
+	// that raised the question. Only a session a group opened has a row here,
+	// so web-only chats no-op.
+	link, err := h.Queries.GetTelegramChatSessionBySession(ctx, sessionUUID)
 	if err != nil {
 		return
 	}
-	bot, chatID := h.agentTelegramClient(ctx, row.AgentID)
-	if bot == nil || chatID == "" {
+	bot, _ := h.agentTelegramClient(ctx, link.AgentID)
+	if bot == nil {
 		return
 	}
+	chatID := link.ChatID
 	messages, err := h.Queries.ListChatMessages(ctx, sessionUUID)
 	if err != nil || len(messages) == 0 {
 		return
@@ -345,6 +382,30 @@ func decodeTelegramUpdate(raw json.RawMessage) (telegramUpdate, bool) {
 	return update, true
 }
 
+// telegramChatAllowed reports whether this room may address the agent at all.
+// Separate from the sender check because the two answer different questions:
+// which ROOM is trusted, and which PERSON in it.
+func telegramChatAllowed(row db.TelegramInstallation, chatID int64) bool {
+	for _, allowed := range row.AllowedChatIds {
+		if allowed == chatID {
+			return true
+		}
+	}
+	return false
+}
+
+// telegramUserIsAdmin reports whether this person may run /allow and /deny.
+// Deliberately NOT the same list as allowed_telegram_user_ids: being able to
+// ask an agent something must not imply being able to widen who else can.
+func telegramUserIsAdmin(row db.TelegramInstallation, fromID int64) bool {
+	for _, admin := range row.AdminTelegramUserIds {
+		if admin == fromID {
+			return true
+		}
+	}
+	return false
+}
+
 // telegramSenderAllowed decides whether this message may instruct the agent.
 //
 // Two independent gates, both of which must pass:
@@ -358,8 +419,9 @@ func decodeTelegramUpdate(raw json.RawMessage) (telegramUpdate, bool) {
 //
 // PURE, so the policy is unit-testable without a database or Telegram.
 func telegramSenderAllowed(row db.TelegramInstallation, chatID, fromID int64) bool {
-	// An unbound installation has no group to trust yet.
-	if !row.ChatID.Valid || row.ChatID.String != strconv.FormatInt(chatID, 10) {
+	// The chat must be one this installation was bound to. An installation
+	// bound to no chat trusts none — an invite is not an authorization.
+	if !telegramChatAllowed(row, chatID) {
 		return false
 	}
 	switch row.AccessPolicy {
@@ -374,5 +436,15 @@ func telegramSenderAllowed(row db.TelegramInstallation, chatID, fromID int64) bo
 		return false
 	default: // "closed", and anything unrecognised — fail shut, never open
 		return false
+	}
+}
+
+// agentBotCommands is the menu Telegram shows for an agent bot. Kept short on
+// purpose: a long list buries the two commands that matter.
+func agentBotCommands() []telegram.BotCommand {
+	return []telegram.BotCommand{
+		{Command: "access", Description: "Kim ruxsatga ega — hozirgi holat"},
+		{Command: "allow", Description: "Ruxsat berish: /allow user <id> yoki /allow chat"},
+		{Command: "deny", Description: "Ruxsatni olib tashlash: /deny user <id>"},
 	}
 }

@@ -93,8 +93,46 @@ func (q *Queries) DeleteTelegramInstallation(ctx context.Context, arg DeleteTele
 	return err
 }
 
+const getTelegramChatSession = `-- name: GetTelegramChatSession :one
+SELECT agent_id, chat_id, chat_session_id, created_at FROM telegram_chat_session WHERE agent_id = $1 AND chat_id = $2
+`
+
+type GetTelegramChatSessionParams struct {
+	AgentID pgtype.UUID `json:"agent_id"`
+	ChatID  string      `json:"chat_id"`
+}
+
+func (q *Queries) GetTelegramChatSession(ctx context.Context, arg GetTelegramChatSessionParams) (TelegramChatSession, error) {
+	row := q.db.QueryRow(ctx, getTelegramChatSession, arg.AgentID, arg.ChatID)
+	var i TelegramChatSession
+	err := row.Scan(
+		&i.AgentID,
+		&i.ChatID,
+		&i.ChatSessionID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getTelegramChatSessionBySession = `-- name: GetTelegramChatSessionBySession :one
+SELECT agent_id, chat_id, chat_session_id, created_at FROM telegram_chat_session WHERE chat_session_id = $1
+`
+
+// Outbound: which chat asked the question this session answers.
+func (q *Queries) GetTelegramChatSessionBySession(ctx context.Context, chatSessionID pgtype.UUID) (TelegramChatSession, error) {
+	row := q.db.QueryRow(ctx, getTelegramChatSessionBySession, chatSessionID)
+	var i TelegramChatSession
+	err := row.Scan(
+		&i.AgentID,
+		&i.ChatID,
+		&i.ChatSessionID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getTelegramInstallationByAgent = `-- name: GetTelegramInstallationByAgent :one
-SELECT id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id, access_policy, allowed_telegram_user_ids FROM telegram_installation WHERE agent_id = $1
+SELECT id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id, access_policy, allowed_telegram_user_ids, allowed_chat_ids, admin_telegram_user_ids FROM telegram_installation WHERE agent_id = $1
 `
 
 func (q *Queries) GetTelegramInstallationByAgent(ctx context.Context, agentID pgtype.UUID) (TelegramInstallation, error) {
@@ -115,12 +153,14 @@ func (q *Queries) GetTelegramInstallationByAgent(ctx context.Context, agentID pg
 		&i.ChatSessionID,
 		&i.AccessPolicy,
 		&i.AllowedTelegramUserIds,
+		&i.AllowedChatIds,
+		&i.AdminTelegramUserIds,
 	)
 	return i, err
 }
 
 const getTelegramInstallationByBotUser = `-- name: GetTelegramInstallationByBotUser :one
-SELECT id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id, access_policy, allowed_telegram_user_ids FROM telegram_installation WHERE bot_user_id = $1 AND status = 'active'
+SELECT id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id, access_policy, allowed_telegram_user_ids, allowed_chat_ids, admin_telegram_user_ids FROM telegram_installation WHERE bot_user_id = $1 AND status = 'active'
 `
 
 // Inbound routing: an update carries the receiving bot's id, which identifies
@@ -143,12 +183,14 @@ func (q *Queries) GetTelegramInstallationByBotUser(ctx context.Context, botUserI
 		&i.ChatSessionID,
 		&i.AccessPolicy,
 		&i.AllowedTelegramUserIds,
+		&i.AllowedChatIds,
+		&i.AdminTelegramUserIds,
 	)
 	return i, err
 }
 
 const getTelegramInstallationBySession = `-- name: GetTelegramInstallationBySession :one
-SELECT id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id, access_policy, allowed_telegram_user_ids FROM telegram_installation
+SELECT id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id, access_policy, allowed_telegram_user_ids, allowed_chat_ids, admin_telegram_user_ids FROM telegram_installation
 WHERE chat_session_id = $1 AND status = 'active'
 `
 
@@ -172,12 +214,14 @@ func (q *Queries) GetTelegramInstallationBySession(ctx context.Context, chatSess
 		&i.ChatSessionID,
 		&i.AccessPolicy,
 		&i.AllowedTelegramUserIds,
+		&i.AllowedChatIds,
+		&i.AdminTelegramUserIds,
 	)
 	return i, err
 }
 
 const listActiveTelegramInstallations = `-- name: ListActiveTelegramInstallations :many
-SELECT id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id, access_policy, allowed_telegram_user_ids FROM telegram_installation WHERE status = 'active' ORDER BY installed_at
+SELECT id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id, access_policy, allowed_telegram_user_ids, allowed_chat_ids, admin_telegram_user_ids FROM telegram_installation WHERE status = 'active' ORDER BY installed_at
 `
 
 // Every active bot across all workspaces — the poller opens one long-poll loop
@@ -206,6 +250,8 @@ func (q *Queries) ListActiveTelegramInstallations(ctx context.Context) ([]Telegr
 			&i.ChatSessionID,
 			&i.AccessPolicy,
 			&i.AllowedTelegramUserIds,
+			&i.AllowedChatIds,
+			&i.AdminTelegramUserIds,
 		); err != nil {
 			return nil, err
 		}
@@ -218,7 +264,7 @@ func (q *Queries) ListActiveTelegramInstallations(ctx context.Context) ([]Telegr
 }
 
 const listTelegramInstallations = `-- name: ListTelegramInstallations :many
-SELECT id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id, access_policy, allowed_telegram_user_ids FROM telegram_installation
+SELECT id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id, access_policy, allowed_telegram_user_ids, allowed_chat_ids, admin_telegram_user_ids FROM telegram_installation
 WHERE workspace_id = $1
 ORDER BY installed_at DESC
 `
@@ -247,6 +293,8 @@ func (q *Queries) ListTelegramInstallations(ctx context.Context, workspaceID pgt
 			&i.ChatSessionID,
 			&i.AccessPolicy,
 			&i.AllowedTelegramUserIds,
+			&i.AllowedChatIds,
+			&i.AdminTelegramUserIds,
 		); err != nil {
 			return nil, err
 		}
@@ -262,7 +310,7 @@ const setTelegramInstallationAccess = `-- name: SetTelegramInstallationAccess :o
 UPDATE telegram_installation
 SET access_policy = $2, allowed_telegram_user_ids = $3, updated_at = now()
 WHERE agent_id = $1 AND workspace_id = $4
-RETURNING id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id, access_policy, allowed_telegram_user_ids
+RETURNING id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id, access_policy, allowed_telegram_user_ids, allowed_chat_ids, admin_telegram_user_ids
 `
 
 type SetTelegramInstallationAccessParams struct {
@@ -295,6 +343,45 @@ func (q *Queries) SetTelegramInstallationAccess(ctx context.Context, arg SetTele
 		&i.ChatSessionID,
 		&i.AccessPolicy,
 		&i.AllowedTelegramUserIds,
+		&i.AllowedChatIds,
+		&i.AdminTelegramUserIds,
+	)
+	return i, err
+}
+
+const setTelegramInstallationAdmins = `-- name: SetTelegramInstallationAdmins :one
+UPDATE telegram_installation
+SET admin_telegram_user_ids = $2, updated_at = now()
+WHERE agent_id = $1 AND workspace_id = $3
+RETURNING id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id, access_policy, allowed_telegram_user_ids, allowed_chat_ids, admin_telegram_user_ids
+`
+
+type SetTelegramInstallationAdminsParams struct {
+	AgentID              pgtype.UUID `json:"agent_id"`
+	AdminTelegramUserIds []int64     `json:"admin_telegram_user_ids"`
+	WorkspaceID          pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) SetTelegramInstallationAdmins(ctx context.Context, arg SetTelegramInstallationAdminsParams) (TelegramInstallation, error) {
+	row := q.db.QueryRow(ctx, setTelegramInstallationAdmins, arg.AgentID, arg.AdminTelegramUserIds, arg.WorkspaceID)
+	var i TelegramInstallation
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.AgentID,
+		&i.BotTokenEncrypted,
+		&i.BotUsername,
+		&i.BotUserID,
+		&i.ChatID,
+		&i.InstallerUserID,
+		&i.Status,
+		&i.InstalledAt,
+		&i.UpdatedAt,
+		&i.ChatSessionID,
+		&i.AccessPolicy,
+		&i.AllowedTelegramUserIds,
+		&i.AllowedChatIds,
+		&i.AdminTelegramUserIds,
 	)
 	return i, err
 }
@@ -303,7 +390,7 @@ const setTelegramInstallationChat = `-- name: SetTelegramInstallationChat :one
 UPDATE telegram_installation
 SET chat_id = $2, updated_at = now()
 WHERE agent_id = $1
-RETURNING id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id, access_policy, allowed_telegram_user_ids
+RETURNING id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id, access_policy, allowed_telegram_user_ids, allowed_chat_ids, admin_telegram_user_ids
 `
 
 type SetTelegramInstallationChatParams struct {
@@ -329,6 +416,44 @@ func (q *Queries) SetTelegramInstallationChat(ctx context.Context, arg SetTelegr
 		&i.ChatSessionID,
 		&i.AccessPolicy,
 		&i.AllowedTelegramUserIds,
+		&i.AllowedChatIds,
+		&i.AdminTelegramUserIds,
+	)
+	return i, err
+}
+
+const setTelegramInstallationChats = `-- name: SetTelegramInstallationChats :one
+UPDATE telegram_installation
+SET allowed_chat_ids = $2, updated_at = now()
+WHERE agent_id = $1
+RETURNING id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id, access_policy, allowed_telegram_user_ids, allowed_chat_ids, admin_telegram_user_ids
+`
+
+type SetTelegramInstallationChatsParams struct {
+	AgentID        pgtype.UUID `json:"agent_id"`
+	AllowedChatIds []int64     `json:"allowed_chat_ids"`
+}
+
+func (q *Queries) SetTelegramInstallationChats(ctx context.Context, arg SetTelegramInstallationChatsParams) (TelegramInstallation, error) {
+	row := q.db.QueryRow(ctx, setTelegramInstallationChats, arg.AgentID, arg.AllowedChatIds)
+	var i TelegramInstallation
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.AgentID,
+		&i.BotTokenEncrypted,
+		&i.BotUsername,
+		&i.BotUserID,
+		&i.ChatID,
+		&i.InstallerUserID,
+		&i.Status,
+		&i.InstalledAt,
+		&i.UpdatedAt,
+		&i.ChatSessionID,
+		&i.AccessPolicy,
+		&i.AllowedTelegramUserIds,
+		&i.AllowedChatIds,
+		&i.AdminTelegramUserIds,
 	)
 	return i, err
 }
@@ -337,7 +462,7 @@ const setTelegramInstallationSession = `-- name: SetTelegramInstallationSession 
 UPDATE telegram_installation
 SET chat_session_id = $2, updated_at = now()
 WHERE agent_id = $1
-RETURNING id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id, access_policy, allowed_telegram_user_ids
+RETURNING id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id, access_policy, allowed_telegram_user_ids, allowed_chat_ids, admin_telegram_user_ids
 `
 
 type SetTelegramInstallationSessionParams struct {
@@ -363,6 +488,33 @@ func (q *Queries) SetTelegramInstallationSession(ctx context.Context, arg SetTel
 		&i.ChatSessionID,
 		&i.AccessPolicy,
 		&i.AllowedTelegramUserIds,
+		&i.AllowedChatIds,
+		&i.AdminTelegramUserIds,
+	)
+	return i, err
+}
+
+const upsertTelegramChatSession = `-- name: UpsertTelegramChatSession :one
+INSERT INTO telegram_chat_session (agent_id, chat_id, chat_session_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (agent_id, chat_id) DO UPDATE SET chat_session_id = EXCLUDED.chat_session_id
+RETURNING agent_id, chat_id, chat_session_id, created_at
+`
+
+type UpsertTelegramChatSessionParams struct {
+	AgentID       pgtype.UUID `json:"agent_id"`
+	ChatID        string      `json:"chat_id"`
+	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+}
+
+func (q *Queries) UpsertTelegramChatSession(ctx context.Context, arg UpsertTelegramChatSessionParams) (TelegramChatSession, error) {
+	row := q.db.QueryRow(ctx, upsertTelegramChatSession, arg.AgentID, arg.ChatID, arg.ChatSessionID)
+	var i TelegramChatSession
+	err := row.Scan(
+		&i.AgentID,
+		&i.ChatID,
+		&i.ChatSessionID,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -380,7 +532,7 @@ ON CONFLICT (agent_id) DO UPDATE SET
     installer_user_id   = EXCLUDED.installer_user_id,
     status              = 'active',
     updated_at          = now()
-RETURNING id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id, access_policy, allowed_telegram_user_ids
+RETURNING id, workspace_id, agent_id, bot_token_encrypted, bot_username, bot_user_id, chat_id, installer_user_id, status, installed_at, updated_at, chat_session_id, access_policy, allowed_telegram_user_ids, allowed_chat_ids, admin_telegram_user_ids
 `
 
 type UpsertTelegramInstallationParams struct {
@@ -421,6 +573,8 @@ func (q *Queries) UpsertTelegramInstallation(ctx context.Context, arg UpsertTele
 		&i.ChatSessionID,
 		&i.AccessPolicy,
 		&i.AllowedTelegramUserIds,
+		&i.AllowedChatIds,
+		&i.AdminTelegramUserIds,
 	)
 	return i, err
 }
