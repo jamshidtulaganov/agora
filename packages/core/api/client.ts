@@ -3336,23 +3336,28 @@ export class ApiClient {
     });
   }
 
+  // The per-agent routes are NOT workspace-scoped — the server resolves the
+  // workspace from the agent. workspaceId is still taken so callers can key
+  // the cache invalidation that follows.
   async installAgentTelegramBot(
     workspaceId: string,
     agentId: string,
     botToken: string,
     chatId?: string,
   ): Promise<TelegramInstallation> {
-    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/agents/${agentId}/telegram`, {
+    void workspaceId;
+    const raw = await this.fetch<unknown>(`/api/agents/${agentId}/telegram`, {
       method: "PUT",
       body: JSON.stringify({ bot_token: botToken, chat_id: chatId ?? "" }),
     });
     return parseWithFallback(raw, TelegramInstallationSchema, EMPTY_TELEGRAM_INSTALLATION, {
-      endpoint: "PUT /api/workspaces/{id}/agents/{id}/telegram",
+      endpoint: "PUT /api/agents/{id}/telegram",
     });
   }
 
   async deleteAgentTelegramBot(workspaceId: string, agentId: string): Promise<void> {
-    await this.fetch(`/api/workspaces/${workspaceId}/agents/${agentId}/telegram`, { method: "DELETE" });
+    void workspaceId;
+    await this.fetch(`/api/agents/${agentId}/telegram`, { method: "DELETE" });
   }
 
   async setAgentTelegramAccess(
@@ -3360,12 +3365,13 @@ export class ApiClient {
     agentId: string,
     body: SetTelegramAccessRequest,
   ): Promise<TelegramInstallation> {
-    const raw = await this.fetch<unknown>(
-      `/api/workspaces/${workspaceId}/agents/${agentId}/telegram/access`,
-      { method: "PUT", body: JSON.stringify(body) },
-    );
+    void workspaceId;
+    const raw = await this.fetch<unknown>(`/api/agents/${agentId}/telegram/access`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
     return parseWithFallback(raw, TelegramInstallationSchema, EMPTY_TELEGRAM_INSTALLATION, {
-      endpoint: "PUT /api/workspaces/{id}/agents/{id}/telegram/access",
+      endpoint: "PUT /api/agents/{id}/telegram/access",
     });
   }
 
@@ -3373,12 +3379,12 @@ export class ApiClient {
     workspaceId: string,
     agentId: string,
   ): Promise<TelegramBindLinkResponse> {
-    const raw = await this.fetch<unknown>(
-      `/api/workspaces/${workspaceId}/agents/${agentId}/telegram/bind-link`,
-      { method: "POST" },
-    );
+    void workspaceId;
+    const raw = await this.fetch<unknown>(`/api/agents/${agentId}/telegram/bind-link`, {
+      method: "POST",
+    });
     return parseWithFallback(raw, TelegramBindLinkSchema, EMPTY_TELEGRAM_BIND_LINK, {
-      endpoint: "POST /api/workspaces/{id}/agents/{id}/telegram/bind-link",
+      endpoint: "POST /api/agents/{id}/telegram/bind-link",
     });
   }
 

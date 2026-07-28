@@ -132,7 +132,7 @@ describe("TelegramTab", () => {
     expect(screen.getByText("bitrix-manager")).toBeInTheDocument();
     expect(screen.getByText(/@sd_pm_agent_bot/)).toBeInTheDocument();
     expect(screen.getByText(new RegExp(enSettings.telegram.policy_allowlist))).toBeInTheDocument();
-    expect(screen.getByText(/1 group/)).toBeInTheDocument();
+    expect(screen.getByText(/Groups: 1/)).toBeInTheDocument();
   });
 
   it("renders an unknown policy generically instead of blank", () => {

@@ -639,7 +639,7 @@
     "empty_title": "No bots connected",
     "empty_description": "Create a bot in Telegram's @BotFather, then connect it to an agent here.",
     "status_revoked": "Revoked",
-    "groups_count": "{{count}} group(s)",
+    "groups_count": "Groups: {{count}}",
     "add_group": "Add group",
     "manage_access": "Access",
     "cancel": "Cancel",
