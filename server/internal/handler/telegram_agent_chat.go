@@ -394,18 +394,6 @@ func telegramChatAllowed(row db.TelegramInstallation, chatID int64) bool {
 	return false
 }
 
-// telegramUserIsAdmin reports whether this person may run /allow and /deny.
-// Deliberately NOT the same list as allowed_telegram_user_ids: being able to
-// ask an agent something must not imply being able to widen who else can.
-func telegramUserIsAdmin(row db.TelegramInstallation, fromID int64) bool {
-	for _, admin := range row.AdminTelegramUserIds {
-		if admin == fromID {
-			return true
-		}
-	}
-	return false
-}
-
 // telegramSenderAllowed decides whether this message may instruct the agent.
 //
 // Two independent gates, both of which must pass:

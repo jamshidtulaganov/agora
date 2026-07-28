@@ -133,17 +133,67 @@ func TestTelegramSenderAllowedFailsShut(t *testing.T) {
 	}
 }
 
-func TestTelegramUserIsAdminIsSeparateFromAllowed(t *testing.T) {
-	// The whole point of two lists: being able to ask must not imply being able
-	// to grant.
-	row := db.TelegramInstallation{
-		AllowedTelegramUserIds: []int64{42},
-		AdminTelegramUserIds:   []int64{7},
+func TestTelegramCommanderRoleRequiresAWorkspaceAdmin(t *testing.T) {
+	// The authority for /allow and /deny is the caller's Agora role, not a
+	// Telegram-side list. Walks the outcomes against the real DB.
+	ctx := t.Context()
+	row := db.TelegramInstallation{WorkspaceID: parseUUID(testWorkspaceID)}
+
+	link := func(t *testing.T, telegramID, userID string) {
+		t.Helper()
+		if err := testHandler.linkExternalIdentity(ctx, providerTelegram, telegramID, userID); err != nil {
+			t.Fatalf("link %s: %v", telegramID, err)
+		}
+		t.Cleanup(func() {
+			testPool.Exec(ctx, `DELETE FROM user_external_identity WHERE provider = $1 AND external_id = $2`,
+				providerTelegram, telegramID)
+		})
 	}
-	if telegramUserIsAdmin(row, 42) {
-		t.Fatal("an allowed user must not be an admin by default")
+
+	// No linked Agora account at all — the state every stranger in the group is
+	// in. Must not be mistaken for a plain lack of privilege.
+	if got := testHandler.telegramCommanderRole(ctx, row, 987654321012); got != telegramCommanderUnlinked {
+		t.Fatalf("unlinked telegram id: got %v, want unlinked", got)
 	}
-	if !telegramUserIsAdmin(row, 7) {
-		t.Fatal("a listed admin must be recognised")
+
+	// The workspace owner.
+	link(t, "987654321013", testUserID)
+	if got := testHandler.telegramCommanderRole(ctx, row, 987654321013); got != telegramCommanderAdmin {
+		t.Fatalf("workspace owner: got %v, want admin", got)
+	}
+
+	// A plain member of the same workspace. This is the case the feature turns
+	// on: they can be on the allowlist and instruct the agent, yet must not be
+	// able to widen who else can.
+	// Delete first: a run that dies between insert and cleanup would otherwise
+	// leave this test permanently red on the unique email.
+	testPool.Exec(ctx, `DELETE FROM "user" WHERE email = 'tg-member-access@test.local'`)
+	var memberUserID string
+	if err := testPool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ('TG Member', 'tg-member-access@test.local') RETURNING id`).
+		Scan(&memberUserID); err != nil {
+		t.Fatalf("create member user: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM "user" WHERE id = $1`, memberUserID) })
+	if _, err := testPool.Exec(ctx, `INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'member')`,
+		testWorkspaceID, memberUserID); err != nil {
+		t.Fatalf("create membership: %v", err)
+	}
+	link(t, "987654321014", memberUserID)
+	if got := testHandler.telegramCommanderRole(ctx, row, 987654321014); got != telegramCommanderNotAdmin {
+		t.Fatalf("plain member: got %v, want not-admin", got)
+	}
+
+	// Linked to Agora but not a member of THIS workspace. The account exists;
+	// the standing does not.
+	testPool.Exec(ctx, `DELETE FROM "user" WHERE email = 'tg-outsider-access@test.local'`)
+	var outsiderUserID string
+	if err := testPool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ('TG Outsider', 'tg-outsider-access@test.local') RETURNING id`).
+		Scan(&outsiderUserID); err != nil {
+		t.Fatalf("create outsider: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM "user" WHERE id = $1`, outsiderUserID) })
+	link(t, "987654321015", outsiderUserID)
+	if got := testHandler.telegramCommanderRole(ctx, row, 987654321015); got != telegramCommanderNotAdmin {
+		t.Fatalf("outsider: got %v, want not-admin", got)
 	}
 }

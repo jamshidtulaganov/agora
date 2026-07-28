@@ -1036,7 +1036,6 @@ type TelegramInstallation struct {
 	AccessPolicy           string             `json:"access_policy"`
 	AllowedTelegramUserIds []int64            `json:"allowed_telegram_user_ids"`
 	AllowedChatIds         []int64            `json:"allowed_chat_ids"`
-	AdminTelegramUserIds   []int64            `json:"admin_telegram_user_ids"`
 }
 
 type TestCase struct {

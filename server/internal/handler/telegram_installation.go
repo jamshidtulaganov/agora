@@ -59,8 +59,6 @@ type TelegramInstallationResponse struct {
 	// AllowedChatIDs are the groups that may instruct this agent. One agent can
 	// serve several rooms; ChatID above is only where reports are posted.
 	AllowedChatIDs []string `json:"allowed_chat_ids"`
-	// AdminUserIDs may run /allow and /deny from inside Telegram.
-	AdminUserIDs []string `json:"admin_user_ids"`
 }
 
 // idsToStrings renders 64-bit Telegram ids as strings. JSON numbers are IEEE
@@ -105,7 +103,6 @@ func telegramInstallationToResponse(row db.TelegramInstallation) TelegramInstall
 	resp.AccessPolicy = row.AccessPolicy
 	resp.AllowedUserIDs = idsToStrings(row.AllowedTelegramUserIds)
 	resp.AllowedChatIDs = idsToStrings(row.AllowedChatIds)
-	resp.AdminUserIDs = idsToStrings(row.AdminTelegramUserIds)
 	return resp
 }
 
@@ -256,8 +253,6 @@ type setTelegramAccessRequest struct {
 	// (nil) leaves the current set alone, so a caller editing only the user
 	// list cannot accidentally unbind every group.
 	AllowedChatIDs []string `json:"allowed_chat_ids"`
-	// AdminUserIDs may run /allow and /deny in Telegram. Same nil semantics.
-	AdminUserIDs []string `json:"admin_user_ids"`
 }
 
 // SetAgentTelegramAccess handles PUT /api/agents/{id}/telegram/access.
@@ -321,18 +316,6 @@ func (h *Handler) SetAgentTelegramAccess(w http.ResponseWriter, r *http.Request)
 		}
 		if updated, uErr := h.Queries.SetTelegramInstallationChats(r.Context(), db.SetTelegramInstallationChatsParams{
 			AgentID: agent.ID, AllowedChatIds: chats,
-		}); uErr == nil {
-			row = updated
-		}
-	}
-	if req.AdminUserIDs != nil {
-		admins, adminErr := parseTelegramIDs(req.AdminUserIDs)
-		if adminErr != nil {
-			writeError(w, http.StatusBadRequest, "admin_user_ids must be numeric Telegram user ids")
-			return
-		}
-		if updated, uErr := h.Queries.SetTelegramInstallationAdmins(r.Context(), db.SetTelegramInstallationAdminsParams{
-			AgentID: agent.ID, AdminTelegramUserIds: admins, WorkspaceID: agent.WorkspaceID,
 		}); uErr == nil {
 			row = updated
 		}

@@ -171,30 +171,17 @@ func (h *Handler) tryBindTelegramGroup(ctx context.Context, row db.TelegramInsta
 		}
 	}
 
-	// Seed the redeemer as an admin so /allow and /deny are usable immediately.
-	// This is not a shortcut around authorization: the token they just spent was
-	// minted seconds earlier by an Agora owner/admin, is single-use, and expires
-	// in ten minutes. Whoever holds it was handed it deliberately. Without this
-	// the access commands would be unreachable — nobody could ever be first.
-	admins := toggleID(row.AdminTelegramUserIds, fromID, true)
-	if _, err := h.Queries.SetTelegramInstallationAdmins(ctx, db.SetTelegramInstallationAdminsParams{
-		AgentID:              row.AgentID,
-		AdminTelegramUserIds: admins,
-		WorkspaceID:          row.WorkspaceID,
-	}); err != nil {
-		slog.Warn("telegram bind: failed to seed admin", "error", err)
-	}
-	slog.Info("telegram bind: group bound", "bot", row.BotUsername, "chat", chatID, "admin", fromID)
+	slog.Info("telegram bind: group bound", "bot", row.BotUsername, "chat", chatID, "by", fromID)
 
 	// Confirm in the group so the operator sees the scan worked. Access is
 	// still whatever the policy says — binding a chat is not granting it.
 	if bot, _ := h.agentTelegramClient(ctx, row.AgentID); bot != nil {
 		_ = bot.SendMessage(ctx, chatID,
-			"Ulandi. Bu guruh endi shu agentga bog'landi.\n"+
-				"Siz administrator bo'ldingiz.\n\n"+
+			"Ulandi. Bu guruh endi shu agentga bog'landi.\n\n"+
 				"/allow user <id> — kimgadir buyruq berish huquqi\n"+
 				"/deny user <id> — huquqni olib tashlash\n"+
-				"/access — hozirgi holat")
+				"/access — hozirgi holat\n\n"+
+				"Bu buyruqlarni Agora'dagi workspace adminlari ishlata oladi.")
 	}
 	return true
 }

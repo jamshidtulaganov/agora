@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -17,13 +18,13 @@ import (
 // agent in Settings and paste a numeric Telegram user id is enough friction
 // that the real-world outcome is an installation left on `open` instead.
 //
-// Two lists, deliberately not one:
-//   - allowed_telegram_user_ids — may INSTRUCT the agent.
-//   - admin_telegram_user_ids   — may run these commands.
-//
-// Being able to ask an agent to do something must not imply being able to hand
-// that power to anyone else, otherwise the first grant silently becomes a
-// grant of the grant itself.
+// Who may run them is NOT a Telegram-side list. It is the caller's Agora
+// workspace role, resolved through the linked identity. A second list would be
+// a parallel source of truth for "who administers this agent": revoking
+// someone's Agora admin role would leave their Telegram power intact, and
+// nothing would show it. Being able to INSTRUCT an agent (the allowlist) still
+// stays separate from being able to grant that power to others — the first
+// grant must not silently become a grant of the grant itself.
 
 // telegramAccessCommandResult tells the caller whether the message was a
 // command, so a handled command is not also dispatched to the agent.
@@ -58,15 +59,22 @@ func (h *Handler) handleTelegramAccessCommand(ctx context.Context, row db.Telegr
 		}
 	}
 
-	if !telegramUserIsAdmin(row, fromID) {
-		// Named refusal, unlike the silent drop for a plain message: whoever
-		// typed this is a person expecting an answer, and silence reads as a
-		// broken bot. It leaks nothing — they already know the bot is here.
-		reply("Ruxsat yo'q. Bu buyruqni faqat shu botning administratori ishlata oladi.")
+	// Named refusal, unlike the silent drop for a plain message: whoever typed
+	// this is a person expecting an answer, and silence reads as a broken bot.
+	// It leaks nothing they do not already know — the room is trusted and the
+	// bot's presence is visible.
+	switch h.telegramCommanderRole(ctx, row, fromID) {
+	case telegramCommanderUnlinked:
+		reply("Telegram hisobingiz Agora bilan bog'lanmagan.\n" +
+			"Agora'ga shu Telegram akkaunt orqali kiring, keyin qayta urinib ko'ring.")
+		return true
+	case telegramCommanderNotAdmin:
+		reply("Ruxsat yo'q. Bu buyruqlarni faqat Agora'da shu workspace admini yoki egasi ishlata oladi.")
 		return true
 	}
 
 	if cmd == "/access" {
+		slog.Info("telegram access: state requested", "bot", row.BotUsername, "by", fromID)
 		reply(describeTelegramAccess(row))
 		return true
 	}
@@ -215,7 +223,7 @@ func describeTelegramAccess(row db.TelegramInstallation) string {
 	}
 	b.WriteString("\nGuruhlar: " + joinIDs(row.AllowedChatIds))
 	b.WriteString("\nFoydalanuvchilar: " + joinIDs(row.AllowedTelegramUserIds))
-	b.WriteString("\nAdminlar: " + joinIDs(row.AdminTelegramUserIds))
+	b.WriteString("\nBoshqaruv: Agora workspace adminlari")
 	return b.String()
 }
 
@@ -228,4 +236,45 @@ func joinIDs(ids []int64) string {
 		parts = append(parts, strconv.FormatInt(id, 10))
 	}
 	return strings.Join(parts, ", ")
+}
+
+// telegramCommanderRole classifies whoever typed an access command.
+type telegramCommanderStatus int
+
+const (
+	telegramCommanderUnlinked telegramCommanderStatus = iota
+	telegramCommanderNotAdmin
+	telegramCommanderAdmin
+)
+
+// telegramCommanderRole resolves a Telegram user to their role in the
+// installation's workspace. Two distinct refusals rather than one, because the
+// fixes differ: an unlinked account needs a login, a linked non-admin needs a
+// role change, and "ruxsat yo'q" for both would send half of them down the
+// wrong path.
+//
+// Fails to telegramCommanderUnlinked on any error: an identity we cannot
+// resolve is not an identity we may trust.
+func (h *Handler) telegramCommanderRole(ctx context.Context, row db.TelegramInstallation, fromID int64) telegramCommanderStatus {
+	userID, err := h.userIDByExternalIdentity(ctx, providerTelegram, strconv.FormatInt(fromID, 10))
+	if err != nil || userID == "" {
+		return telegramCommanderUnlinked
+	}
+	uid, err := util.ParseUUID(userID)
+	if err != nil {
+		return telegramCommanderUnlinked
+	}
+	member, err := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
+		UserID:      uid,
+		WorkspaceID: row.WorkspaceID,
+	})
+	if err != nil {
+		// Linked to Agora, but not a member of the workspace this agent belongs
+		// to. Reported as not-admin: the account exists, the standing does not.
+		return telegramCommanderNotAdmin
+	}
+	if member.Role == "owner" || member.Role == "admin" {
+		return telegramCommanderAdmin
+	}
+	return telegramCommanderNotAdmin
 }

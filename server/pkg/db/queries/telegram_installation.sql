@@ -82,12 +82,6 @@ SET allowed_chat_ids = $2, updated_at = now()
 WHERE agent_id = $1
 RETURNING *;
 
--- name: SetTelegramInstallationAdmins :one
-UPDATE telegram_installation
-SET admin_telegram_user_ids = $2, updated_at = now()
-WHERE agent_id = $1 AND workspace_id = $3
-RETURNING *;
-
 -- name: UpsertTelegramChatSession :one
 INSERT INTO telegram_chat_session (agent_id, chat_id, chat_session_id)
 VALUES ($1, $2, $3)
