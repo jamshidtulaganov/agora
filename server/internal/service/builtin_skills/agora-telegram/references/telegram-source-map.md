@@ -57,4 +57,8 @@ replacing a settled question's keyboard (`handleAgentCallback`).
 | Claim | Source |
 |---|---|
 | The platform posts the run write-up on `autopilot:run_done` | `server/cmd/server/telegram_push_listeners.go`, `registerAutopilotReportListener` |
-| It resolves the same agent bot and chat | `server/internal/handler/telegram_report.go`, `SendAutopilotReport` |
+| A project report chat overrides the agent default | `server/internal/handler/telegram_report.go`, `autopilotReportChatID` + `chooseAutopilotDestination` |
+| A squad report speaks through its executing leader when that bot can reach the destination | `server/internal/handler/telegram_report.go`, `autopilotSpeakerAgent` + `autopilotDestination` |
+| The platform bot is the fallback for a configured project chat the agent bot cannot reach | `server/internal/handler/telegram_report.go`, `chooseAutopilotDestination` |
+| A short, table-free report is sent as a message; anything else as a PDF | `server/internal/handler/telegram_report.go`, `SendAutopilotReport` → `replyNeedsDocument` |
+| Agent messages are markdown, converted to Telegram HTML | `server/internal/integrations/telegram/markdown.go`, `MarkdownToHTML` / `SendMarkdown` |
