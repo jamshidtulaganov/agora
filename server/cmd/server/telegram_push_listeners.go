@@ -114,7 +114,7 @@ func registerAutopilotProgressListener(bus *events.Bus, h *handler.Handler) {
 		if payload.Content == "" {
 			return
 		}
-		go h.RelayAutopilotProgress(context.Background(), payload.TaskID, payload.Content)
+		go h.RelayAutopilotProgress(context.Background(), payload.TaskID, payload.IssueID, payload.Content)
 	})
 }
 

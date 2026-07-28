@@ -347,7 +347,19 @@ SET status = 'paused', updated_at = now()
 WHERE id = $1 AND status = 'active'
 RETURNING *;
 
--- name: GetAutopilotRunByTask :one
--- Progress relay: is this task an autopilot run, and which one. Only running
--- runs are of interest — a finished run's report has already been posted.
-SELECT * FROM autopilot_run WHERE task_id = $1 AND status = 'running';
+-- name: GetActiveAutopilotRunForTaskOrIssue :one
+-- Progress relay: is this work part of an autopilot run still in flight.
+--
+-- Matches on EITHER key because the two execution modes bind differently:
+-- run_only sets task_id, while create_issue never does — it opens an issue and
+-- the run tracks that, staying at 'issue_created' until it finishes. Keying on
+-- task_id alone made the relay dead for create_issue, which is the common mode.
+--
+-- Bounded by completed_at rather than a status list, so a mode that reports a
+-- status this query has never heard of still counts as in flight.
+SELECT * FROM autopilot_run
+WHERE completed_at IS NULL
+  AND ((sqlc.narg('task_id')::uuid IS NOT NULL AND task_id = sqlc.narg('task_id')::uuid)
+    OR (sqlc.narg('issue_id')::uuid IS NOT NULL AND issue_id = sqlc.narg('issue_id')::uuid))
+ORDER BY triggered_at DESC
+LIMIT 1;

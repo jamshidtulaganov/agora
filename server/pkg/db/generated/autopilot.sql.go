@@ -372,6 +372,51 @@ func (q *Queries) FailAutopilotRunsByIssue(ctx context.Context, issueID pgtype.U
 	return err
 }
 
+const getActiveAutopilotRunForTaskOrIssue = `-- name: GetActiveAutopilotRunForTaskOrIssue :one
+SELECT id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, squad_id FROM autopilot_run
+WHERE completed_at IS NULL
+  AND (($1::uuid IS NOT NULL AND task_id = $1::uuid)
+    OR ($2::uuid IS NOT NULL AND issue_id = $2::uuid))
+ORDER BY triggered_at DESC
+LIMIT 1
+`
+
+type GetActiveAutopilotRunForTaskOrIssueParams struct {
+	TaskID  pgtype.UUID `json:"task_id"`
+	IssueID pgtype.UUID `json:"issue_id"`
+}
+
+// Progress relay: is this work part of an autopilot run still in flight.
+//
+// Matches on EITHER key because the two execution modes bind differently:
+// run_only sets task_id, while create_issue never does — it opens an issue and
+// the run tracks that, staying at 'issue_created' until it finishes. Keying on
+// task_id alone made the relay dead for create_issue, which is the common mode.
+//
+// Bounded by completed_at rather than a status list, so a mode that reports a
+// status this query has never heard of still counts as in flight.
+func (q *Queries) GetActiveAutopilotRunForTaskOrIssue(ctx context.Context, arg GetActiveAutopilotRunForTaskOrIssueParams) (AutopilotRun, error) {
+	row := q.db.QueryRow(ctx, getActiveAutopilotRunForTaskOrIssue, arg.TaskID, arg.IssueID)
+	var i AutopilotRun
+	err := row.Scan(
+		&i.ID,
+		&i.AutopilotID,
+		&i.TriggerID,
+		&i.Source,
+		&i.Status,
+		&i.IssueID,
+		&i.TaskID,
+		&i.TriggeredAt,
+		&i.CompletedAt,
+		&i.FailureReason,
+		&i.TriggerPayload,
+		&i.Result,
+		&i.CreatedAt,
+		&i.SquadID,
+	)
+	return i, err
+}
+
 const getAutopilot = `-- name: GetAutopilot :one
 SELECT id, workspace_id, title, description, assignee_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, assignee_type, project_id FROM autopilot
 WHERE id = $1
@@ -472,34 +517,6 @@ LIMIT 1
 // =====================
 func (q *Queries) GetAutopilotRunByIssue(ctx context.Context, issueID pgtype.UUID) (AutopilotRun, error) {
 	row := q.db.QueryRow(ctx, getAutopilotRunByIssue, issueID)
-	var i AutopilotRun
-	err := row.Scan(
-		&i.ID,
-		&i.AutopilotID,
-		&i.TriggerID,
-		&i.Source,
-		&i.Status,
-		&i.IssueID,
-		&i.TaskID,
-		&i.TriggeredAt,
-		&i.CompletedAt,
-		&i.FailureReason,
-		&i.TriggerPayload,
-		&i.Result,
-		&i.CreatedAt,
-		&i.SquadID,
-	)
-	return i, err
-}
-
-const getAutopilotRunByTask = `-- name: GetAutopilotRunByTask :one
-SELECT id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, squad_id FROM autopilot_run WHERE task_id = $1 AND status = 'running'
-`
-
-// Progress relay: is this task an autopilot run, and which one. Only running
-// runs are of interest — a finished run's report has already been posted.
-func (q *Queries) GetAutopilotRunByTask(ctx context.Context, taskID pgtype.UUID) (AutopilotRun, error) {
-	row := q.db.QueryRow(ctx, getAutopilotRunByTask, taskID)
 	var i AutopilotRun
 	err := row.Scan(
 		&i.ID,

@@ -113,18 +113,26 @@ func progressHeadline(content string) string {
 // says the group has heard enough.
 //
 // Best-effort throughout. A failed relay must never affect the run.
-func (h *Handler) RelayAutopilotProgress(ctx context.Context, taskID, content string) {
+func (h *Handler) RelayAutopilotProgress(ctx context.Context, taskID, issueID, content string) {
 	headline := progressHeadline(content)
 	if headline == "" {
 		return
 	}
-	taskUUID, err := util.ParseUUID(taskID)
-	if err != nil {
+	// Both keys are offered because the two execution modes bind differently:
+	// run_only sets the run's task_id, create_issue only ever sets issue_id.
+	params := db.GetActiveAutopilotRunForTaskOrIssueParams{}
+	if u, err := util.ParseUUID(taskID); err == nil {
+		params.TaskID = u
+	}
+	if u, err := util.ParseUUID(issueID); err == nil {
+		params.IssueID = u
+	}
+	if !params.TaskID.Valid && !params.IssueID.Valid {
 		return
 	}
-	run, err := h.Queries.GetAutopilotRunByTask(ctx, taskUUID)
+	run, err := h.Queries.GetActiveAutopilotRunForTaskOrIssue(ctx, params)
 	if err != nil {
-		return // not an autopilot run, or no longer running
+		return // not an autopilot run, or already finished
 	}
 	ap, err := h.Queries.GetAutopilot(ctx, run.AutopilotID)
 	if err != nil {
