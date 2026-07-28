@@ -149,6 +149,10 @@ func (h *Handler) InstallAgentTelegramBot(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "failed to install telegram bot: "+err.Error())
 		return
 	}
+	// Start listening now rather than at the next restart. Re-installing
+	// cancels the previous loop first — Telegram allows one getUpdates
+	// consumer per bot, and two make both fail with 409.
+	h.startAgentTelegramPoller(row)
 	writeJSON(w, http.StatusOK, telegramInstallationToResponse(row))
 }
 
@@ -183,6 +187,9 @@ func (h *Handler) DeleteAgentTelegramBot(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "failed to remove telegram bot")
 		return
 	}
+	// Stop consuming updates immediately; an uninstalled bot that keeps
+	// polling would still dispatch work for an agent nobody can see.
+	h.stopAgentTelegramPoller(agent.ID)
 	w.WriteHeader(http.StatusNoContent)
 }
 

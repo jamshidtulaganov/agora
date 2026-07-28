@@ -6,8 +6,10 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/integrations/telegram"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
@@ -44,20 +46,78 @@ const (
 	telegramPollBackoff = 30 * time.Second
 )
 
+// agentTelegramPollers tracks the running long-poll loops so one can be
+// replaced or stopped without a server restart.
+//
+// Replacing matters more than it looks: Telegram allows exactly ONE getUpdates
+// consumer per bot, and a second one makes both sides fail with 409 Conflict.
+// Re-installing a bot must therefore cancel the previous loop before starting
+// the new one, or the agent goes deaf while appearing configured.
+type agentTelegramPollers struct {
+	mu     sync.Mutex
+	base   context.Context
+	cancel map[string]context.CancelFunc
+}
+
+func (p *agentTelegramPollers) ready() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.base != nil
+}
+
 // StartAgentTelegramPollers opens a long-poll loop for every active
-// installation. Best-effort: a bot that fails keeps retrying on a backoff
-// without affecting the others or the server.
+// installation and remembers the context, so a bot installed later can be
+// started immediately rather than waiting for the next restart. Best-effort: a
+// bot that fails keeps retrying on a backoff without affecting the others.
 func (h *Handler) StartAgentTelegramPollers(ctx context.Context) {
+	h.tgPollers.mu.Lock()
+	h.tgPollers.base = ctx
+	if h.tgPollers.cancel == nil {
+		h.tgPollers.cancel = map[string]context.CancelFunc{}
+	}
+	h.tgPollers.mu.Unlock()
+
 	rows, err := h.Queries.ListActiveTelegramInstallations(ctx)
 	if err != nil {
 		slog.Warn("telegram agent pollers: list failed", "error", err)
 		return
 	}
 	for _, row := range rows {
-		go h.pollAgentTelegram(ctx, row)
+		h.startAgentTelegramPoller(row)
 	}
 	if len(rows) > 0 {
 		slog.Info("telegram agent pollers started", "count", len(rows))
+	}
+}
+
+// startAgentTelegramPoller (re)starts the loop for one installation, cancelling
+// any loop already running for that agent. Safe to call on every install.
+func (h *Handler) startAgentTelegramPoller(row db.TelegramInstallation) {
+	h.tgPollers.mu.Lock()
+	defer h.tgPollers.mu.Unlock()
+	if h.tgPollers.base == nil {
+		// Pollers were never started (tests, or a deployment that disables
+		// them). Nothing to attach a lifetime to.
+		return
+	}
+	key := uuidToString(row.AgentID)
+	if stop, ok := h.tgPollers.cancel[key]; ok {
+		stop() // never two consumers on one bot
+	}
+	ctx, cancel := context.WithCancel(h.tgPollers.base)
+	h.tgPollers.cancel[key] = cancel
+	go h.pollAgentTelegram(ctx, row)
+}
+
+// stopAgentTelegramPoller ends the loop for one agent, so an uninstalled bot
+// stops consuming updates immediately instead of at the next restart.
+func (h *Handler) stopAgentTelegramPoller(agentID pgtype.UUID) {
+	h.tgPollers.mu.Lock()
+	defer h.tgPollers.mu.Unlock()
+	key := uuidToString(agentID)
+	if stop, ok := h.tgPollers.cancel[key]; ok {
+		stop()
+		delete(h.tgPollers.cancel, key)
 	}
 }
 

@@ -117,6 +117,9 @@ type Handler struct {
 	// May be nil in tests / self-hosted with the metrics listener disabled;
 	// every Record* method is nil-safe and obsmetrics.RecordEvent treats a
 	// nil Metrics as "PostHog only".
+	// tgPollers tracks per-agent Telegram long-poll loops so a bot installed
+	// at runtime starts listening immediately (see telegram_agent_chat.go).
+	tgPollers            agentTelegramPollers
 	Metrics              *obsmetrics.BusinessMetrics
 	PATCache             *auth.PATCache
 	DaemonTokenCache     *auth.DaemonTokenCache

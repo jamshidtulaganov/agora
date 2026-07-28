@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -80,4 +81,73 @@ func TestTelegramSenderAllowedOpen(t *testing.T) {
 	if !telegramSenderAllowed(row, testBoundChat, testOtherUID) {
 		t.Error("open policy refused a sender in the bound chat")
 	}
+}
+
+// A bot installed at runtime must start listening immediately. Before this the
+// poller only opened at startup, so a freshly installed bot was silent until
+// the next deploy while the API reported it active.
+func TestAgentTelegramPollerRegistry(t *testing.T) {
+	agentA := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+	agentB := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
+
+	t.Run("no base context means nothing is started", func(t *testing.T) {
+		// Tests and deployments that never call StartAgentTelegramPollers must
+		// not spawn goroutines with no lifetime to cancel.
+		h := &Handler{}
+		h.startAgentTelegramPoller(db.TelegramInstallation{AgentID: agentA})
+		if h.tgPollers.ready() {
+			t.Error("a poller was registered without a base context")
+		}
+	})
+
+	t.Run("re-install cancels the previous loop", func(t *testing.T) {
+		// Telegram allows ONE getUpdates consumer per bot; a second makes both
+		// fail with 409, so the old loop must be cancelled before the new one.
+		h := &Handler{}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		h.tgPollers.base = ctx
+		h.tgPollers.cancel = map[string]context.CancelFunc{}
+
+		cancelled := false
+		h.tgPollers.cancel[uuidToString(agentA)] = func() { cancelled = true }
+
+		h.startAgentTelegramPoller(db.TelegramInstallation{AgentID: agentA})
+		if !cancelled {
+			t.Error("re-install left the previous loop running")
+		}
+		if _, ok := h.tgPollers.cancel[uuidToString(agentA)]; !ok {
+			t.Error("no replacement loop was registered")
+		}
+	})
+
+	t.Run("uninstall stops only that agent's loop", func(t *testing.T) {
+		h := &Handler{}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		h.tgPollers.base = ctx
+
+		stoppedA, stoppedB := false, false
+		h.tgPollers.cancel = map[string]context.CancelFunc{
+			uuidToString(agentA): func() { stoppedA = true },
+			uuidToString(agentB): func() { stoppedB = true },
+		}
+
+		h.stopAgentTelegramPoller(agentA)
+		if !stoppedA {
+			t.Error("uninstalled agent kept polling")
+		}
+		if stoppedB {
+			t.Error("uninstalling one agent stopped another's loop")
+		}
+		if _, ok := h.tgPollers.cancel[uuidToString(agentA)]; ok {
+			t.Error("cancelled loop left in the registry")
+		}
+	})
+
+	t.Run("stopping an agent with no loop is harmless", func(t *testing.T) {
+		h := &Handler{}
+		h.tgPollers.cancel = map[string]context.CancelFunc{}
+		h.stopAgentTelegramPoller(agentA) // must not panic
+	})
 }
