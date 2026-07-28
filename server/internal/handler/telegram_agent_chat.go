@@ -156,7 +156,7 @@ func (h *Handler) pollAgentTelegram(ctx context.Context, row db.TelegramInstalla
 		if ctx.Err() != nil {
 			return
 		}
-		updates, err := bot.GetUpdates(ctx, offset, telegramPollTimeoutSec)
+		updates, err := bot.GetUpdates(ctx, offset, telegramPollTimeoutSec, "message", "callback_query")
 		if err != nil {
 			if ctx.Err() != nil {
 				return

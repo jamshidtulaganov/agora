@@ -18,6 +18,8 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	// Aliased: GetUpdates has a local variable named url.
+	neturl "net/url"
 	"strings"
 	"time"
 )
@@ -335,13 +337,25 @@ func (c *BotClient) SetMyCommands(ctx context.Context, cmds []BotCommand) error 
 // updates — login only cares about "/start" DMs. This is the self-host path:
 // when the backend has no public URL, Telegram cannot reach the webhook, so the
 // server polls instead.
-func (c *BotClient) GetUpdates(ctx context.Context, offset int64, timeoutSec int) ([]json.RawMessage, error) {
+func (c *BotClient) GetUpdates(ctx context.Context, offset int64, timeoutSec int, kinds ...string) ([]json.RawMessage, error) {
 	if c.token == "" {
 		return nil, ErrNoToken
 	}
-	// allowed_updates=["message"], URL-encoded.
-	url := fmt.Sprintf("%s/bot%s/getUpdates?offset=%d&timeout=%d&allowed_updates=%%5B%%22message%%22%%5D",
-		c.baseURL(), c.token, offset, timeoutSec)
+	// allowed_updates must be passed explicitly, because Telegram's DEFAULT is
+	// not "everything" — it is the last value the bot was configured with, and
+	// omitting it leaves whatever a previous call set. A caller that needs
+	// button taps therefore has to say so; asking only for "message" silently
+	// drops every callback_query, which looks like a bot that ignores its own
+	// buttons.
+	if len(kinds) == 0 {
+		kinds = []string{"message"}
+	}
+	allowed, err := json.Marshal(kinds)
+	if err != nil {
+		return nil, fmt.Errorf("telegram: encode allowed_updates: %w", err)
+	}
+	url := fmt.Sprintf("%s/bot%s/getUpdates?offset=%d&timeout=%d&allowed_updates=%s",
+		c.baseURL(), c.token, offset, timeoutSec, neturl.QueryEscape(string(allowed)))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("telegram: new getUpdates request: %w", err)
