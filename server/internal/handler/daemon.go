@@ -2920,6 +2920,16 @@ func (h *Handler) ReportTaskMessages(w http.ResponseWriter, r *http.Request) {
 			workspaceID = uuidToString(cs.WorkspaceID)
 		}
 	}
+	// Last resort: the agent's workspace. A task bound to neither an issue nor
+	// a chat session — which is exactly what a run_only autopilot produces —
+	// otherwise left workspaceID empty, and the publish below was skipped
+	// entirely. Those tasks streamed nothing: no live messages in the UI, and
+	// no task:message event for anything downstream to react to.
+	if workspaceID == "" {
+		if agent, err := h.Queries.GetAgent(r.Context(), task.AgentID); err == nil {
+			workspaceID = uuidToString(agent.WorkspaceID)
+		}
+	}
 
 	for _, msg := range req.Messages {
 		// Redact sensitive information before persisting or broadcasting.

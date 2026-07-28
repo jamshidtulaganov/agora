@@ -132,7 +132,10 @@ func (h *Handler) RelayAutopilotProgress(ctx context.Context, taskID, issueID, c
 	}
 	run, err := h.Queries.GetActiveAutopilotRunForTaskOrIssue(ctx, params)
 	if err != nil {
-		return // not an autopilot run, or already finished
+		// Debug rather than silence: "the group got no update" is a question
+		// operators do ask, and every skip below is a plausible answer.
+		slog.Debug("progress relay: no live autopilot run", "task_id", taskID, "issue_id", issueID)
+		return
 	}
 	ap, err := h.Queries.GetAutopilot(ctx, run.AutopilotID)
 	if err != nil {
@@ -141,11 +144,14 @@ func (h *Handler) RelayAutopilotProgress(ctx context.Context, taskID, issueID, c
 	// Opt-in, and per project: posting into a team group is outward-facing, so
 	// a workspace should not start narrating its runs because it upgraded.
 	if !h.autopilotProgressEnabled(ctx, ap) {
+		slog.Debug("progress relay: disabled for this autopilot", "autopilot", ap.Title)
 		return
 	}
 
 	if !telegramProgressRelay.shouldPost(
 		uuidToString(run.ID), headline, run.TriggeredAt.Time, time.Now()) {
+		slog.Debug("progress relay: throttled", "run_id", uuidToString(run.ID),
+			"elapsed", time.Since(run.TriggeredAt.Time).String())
 		return
 	}
 
@@ -157,6 +163,8 @@ func (h *Handler) RelayAutopilotProgress(ctx context.Context, taskID, issueID, c
 		chatID = h.autopilotReportChatID(ctx, ap)
 	}
 	if bot == nil || chatID == "" {
+		slog.Debug("progress relay: nowhere to send", "autopilot", ap.Title,
+			"has_bot", bot != nil, "chat", chatID)
 		return
 	}
 	// Named so the group can tell which of several autopilots is speaking, and
