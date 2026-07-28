@@ -132,6 +132,19 @@ func (h *Handler) handleAgentGroupMessage(ctx context.Context, row db.TelegramIn
 		return
 	}
 
+	// Re-read the installation per message. The poller captured its copy at
+	// startup and never refreshes it, so a stale copy meant every message saw
+	// chat_session_id as unset and started a NEW session — the conversation
+	// lost its thread on the second message. Re-reading also picks up policy
+	// and chat changes without a server restart, so revoking access takes
+	// effect immediately rather than at the next deploy.
+	if fresh, err := h.Queries.GetTelegramInstallationByAgent(ctx, row.AgentID); err == nil {
+		row = fresh
+	}
+	if row.Status != "active" {
+		return
+	}
+
 	// Authorization BEFORE any work. These agents hold repo, git, QA and deploy
 	// tooling, so an inbound group message is an instruction to something that
 	// can change code — not a chat line. Everyone in the group can send one.
