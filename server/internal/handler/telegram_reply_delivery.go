@@ -52,7 +52,7 @@ func containsMarkdownTable(text string) bool {
 // Several answers in one chat otherwise arrive as indistinguishable files, and
 // a reader scrolling back cannot tell which question a file answered.
 func replyDocumentFilename(now time.Time) string {
-	return "javob-" + now.Format("2006-01-02-1504") + ".xlsx"
+	return "javob-" + now.Format("2006-01-02-1504") + ".pdf"
 }
 
 // replyDocumentTitle names the worksheet. Kept generic — the agent's own first

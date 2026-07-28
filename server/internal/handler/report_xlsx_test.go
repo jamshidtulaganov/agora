@@ -64,6 +64,9 @@ func TestMarkdownToSheetKeepsHeadingsAndBullets(t *testing.T) {
 	}
 }
 
+// The workbook renderer is kept even though delivery now sends PDF: a caller
+// wanting sortable numbers still has one, and dropping it would make that
+// impossible to get back.
 func TestRenderReportXLSXProducesAWorkbook(t *testing.T) {
 	data, err := renderReportXLSX("Hisobot", "| a | b |\n|---|---|\n| 1 | 2 |\n")
 	if err != nil {
