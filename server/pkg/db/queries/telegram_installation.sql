@@ -94,3 +94,6 @@ SELECT * FROM telegram_chat_session WHERE agent_id = $1 AND chat_id = $2;
 -- name: GetTelegramChatSessionBySession :one
 -- Outbound: which chat asked the question this session answers.
 SELECT * FROM telegram_chat_session WHERE chat_session_id = $1;
+
+-- name: DeleteTelegramChatSession :exec
+DELETE FROM telegram_chat_session WHERE agent_id = $1 AND chat_id = $2;

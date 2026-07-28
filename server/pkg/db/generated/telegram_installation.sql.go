@@ -79,6 +79,20 @@ func (q *Queries) DeleteExpiredTelegramBindingTokens(ctx context.Context) error 
 	return err
 }
 
+const deleteTelegramChatSession = `-- name: DeleteTelegramChatSession :exec
+DELETE FROM telegram_chat_session WHERE agent_id = $1 AND chat_id = $2
+`
+
+type DeleteTelegramChatSessionParams struct {
+	AgentID pgtype.UUID `json:"agent_id"`
+	ChatID  string      `json:"chat_id"`
+}
+
+func (q *Queries) DeleteTelegramChatSession(ctx context.Context, arg DeleteTelegramChatSessionParams) error {
+	_, err := q.db.Exec(ctx, deleteTelegramChatSession, arg.AgentID, arg.ChatID)
+	return err
+}
+
 const deleteTelegramInstallation = `-- name: DeleteTelegramInstallation :exec
 DELETE FROM telegram_installation WHERE agent_id = $1 AND workspace_id = $2
 `

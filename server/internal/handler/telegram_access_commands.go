@@ -47,7 +47,7 @@ func (h *Handler) handleTelegramAccessCommand(ctx context.Context, row db.Telegr
 		cmd = cmd[:at]
 	}
 	switch cmd {
-	case "/allow", "/deny", "/access":
+	case "/allow", "/deny", "/access", "/reset":
 	default:
 		return false
 	}
@@ -70,6 +70,23 @@ func (h *Handler) handleTelegramAccessCommand(ctx context.Context, row db.Telegr
 		return true
 	case telegramCommanderNotAdmin:
 		reply("Ruxsat yo'q. Bu buyruqlarni faqat Agora'da shu workspace admini yoki egasi ishlata oladi.")
+		return true
+	}
+
+	if cmd == "/reset" {
+		// Start a fresh conversation. Needed because an agent carries its
+		// answers forward: once it has said "that data is not available", it
+		// keeps saying so from memory even after the capability is added —
+		// re-asking cannot dislodge a claim the session already holds.
+		if err := h.Queries.DeleteTelegramChatSession(ctx, db.DeleteTelegramChatSessionParams{
+			AgentID: row.AgentID,
+			ChatID:  chatID,
+		}); err != nil {
+			reply("Tozalanmadi, qayta urinib ko'ring.")
+			return true
+		}
+		slog.Info("telegram access: session reset", "bot", row.BotUsername, "chat", chatID, "by", fromID)
+		reply("Suhbat tozalandi. Keyingi savol yangi kontekstdan boshlanadi.")
 		return true
 	}
 
@@ -141,7 +158,7 @@ func (h *Handler) handleTelegramAccessCommand(ctx context.Context, row db.Telegr
 // Returns a user-facing error string rather than an error value — every failure
 // here is something to say back in the group.
 func parseAccessTarget(fields []string, chatIDNum, fromID int64) (target string, id int64, errMsg string) {
-	const usage = "Foydalanish:\n/allow chat — shu guruhga ruxsat\n/allow user <id> — foydalanuvchiga ruxsat\n/access — hozirgi holat"
+	const usage = "Foydalanish:\n/allow chat — shu guruhga ruxsat\n/allow user <id> — foydalanuvchiga ruxsat\n/access — hozirgi holat\n/reset — suhbatni tozalash"
 
 	if len(fields) == 1 {
 		return "chat", chatIDNum, ""

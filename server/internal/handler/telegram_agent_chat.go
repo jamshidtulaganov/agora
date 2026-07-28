@@ -454,5 +454,6 @@ func agentBotCommands() []telegram.BotCommand {
 		{Command: "access", Description: "Kim ruxsatga ega — hozirgi holat"},
 		{Command: "allow", Description: "Ruxsat berish: /allow user <id> yoki /allow chat"},
 		{Command: "deny", Description: "Ruxsatni olib tashlash: /deny user <id>"},
+		{Command: "reset", Description: "Suhbatni tozalash — agent eski javobini takrorlayotgan bo'lsa"},
 	}
 }

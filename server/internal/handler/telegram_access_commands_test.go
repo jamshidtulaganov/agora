@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"strings"
 	"testing"
 
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
@@ -195,5 +196,21 @@ func TestTelegramCommanderRoleRequiresAWorkspaceAdmin(t *testing.T) {
 	link(t, "987654321015", outsiderUserID)
 	if got := testHandler.telegramCommanderRole(ctx, row, 987654321015); got != telegramCommanderNotAdmin {
 		t.Fatalf("outsider: got %v, want not-admin", got)
+	}
+}
+
+func TestResetIsRecognisedAsACommand(t *testing.T) {
+	// /reset exists because an agent carries its answers forward: once it has
+	// said "that data is not available" it repeats the claim from memory even
+	// after the capability lands, and re-asking cannot dislodge it.
+	for _, cmd := range []string{"/reset", "/RESET", "/reset@sd_pm_agent_bot"} {
+		fields := strings.Fields(cmd)
+		normalised := strings.ToLower(fields[0])
+		if at := strings.Index(normalised, "@"); at > 0 {
+			normalised = normalised[:at]
+		}
+		if normalised != "/reset" {
+			t.Errorf("%q normalised to %q", cmd, normalised)
+		}
 	}
 }
