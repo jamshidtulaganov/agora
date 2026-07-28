@@ -142,9 +142,26 @@ type bitrixAnalyticsFilters struct {
 	// not re-parse a date for every row in the window.
 	deadlineFrom, deadlineTo time.Time
 	closedFrom, closedTo     time.Time
+	// TagMatched echoes the spellings the tag query expanded to, so a report
+	// can state what it actually counted rather than implying it matched one
+	// literal label.
+	TagMatched []string `json:"tag_matched,omitempty"`
+	// tagSpellings is TagMatched as a set, for the per-task check.
+	tagSpellings map[string]bool
 	// stageIDs holds the ids a named stage resolved to. Empty means Stage was
 	// given as an id, or matched no stage at all.
 	stageIDs map[string]bool
+}
+
+// sortedTagSet renders the expanded tag set for the response, in stable order
+// so two identical requests do not produce two different-looking echoes.
+func sortedTagSet(set map[string]bool) []string {
+	out := make([]string, 0, len(set))
+	for k := range set {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // stageIDsNamed returns every stage id whose title matches, case-insensitively.
@@ -181,7 +198,7 @@ var bitrixFilterParams = map[string]bool{
 // not constrain, so filters compose: tag=BUG&creator=525&closed=false is one
 // question, not three requests.
 func (f bitrixAnalyticsFilters) matches(t *bitrix.Task) bool {
-	if f.Tag != "" && !matchesTag(t, f.Tag) {
+	if f.Tag != "" && !matchesTag(t, f.tagSpellings) {
 		return false
 	}
 	if f.Assignee != "" && strings.TrimSpace(t.ResponsibleID) != f.Assignee {
@@ -311,12 +328,13 @@ func (f bitrixAnalyticsFilters) active() bool {
 		!f.closedFrom.IsZero() || !f.closedTo.IsZero()
 }
 
-// matchesTag reports whether a task carries the tag, case-insensitively.
-// Bitrix tags are free text typed by humans, so "BUG", "bug" and "Bug" are one
-// tag in everything except storage.
-func matchesTag(task *bitrix.Task, want string) bool {
+// matchesTag reports whether a task carries any spelling of the wanted tag.
+// Bitrix tags are free text typed by humans in more than one language, so
+// "BUG", "bug", "баг" and "#BugReport" are one tag in everything except
+// storage — see bitrix_tag_alias.go.
+func matchesTag(task *bitrix.Task, wanted map[string]bool) bool {
 	for _, t := range task.Tags {
-		if strings.EqualFold(strings.TrimSpace(t), want) {
+		if wanted[normalizeTag(t)] {
 			return true
 		}
 	}
@@ -532,6 +550,10 @@ func (h *Handler) GetBitrixAnalytics(w http.ResponseWriter, r *http.Request) {
 	// name can map to several ids.
 	if filters.Stage != "" {
 		filters.stageIDs = stageIDsNamed(stageNames, filters.Stage)
+	}
+	if filters.Tag != "" {
+		filters.tagSpellings = expandTagQuery(filters.Tag)
+		filters.TagMatched = sortedTagSet(filters.tagSpellings)
 	}
 
 	truncated := len(tasks) >= bitrix.MaxTasksPerRequest

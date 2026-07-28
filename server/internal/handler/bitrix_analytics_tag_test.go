@@ -13,18 +13,18 @@ func TestMatchesTagFoldsCase(t *testing.T) {
 	// "0 BUG tasks" for a portal that types them lowercase.
 	task := &bitrix.Task{Tags: []string{"Bug", " urgent "}}
 	for _, want := range []string{"bug", "BUG", "Bug"} {
-		if !matchesTag(task, want) {
+		if !matchesTag(task, expandTagQuery(want)) {
 			t.Errorf("%q did not match tag Bug", want)
 		}
 	}
 	// Surrounding whitespace in the stored tag must not defeat a match.
-	if !matchesTag(task, "urgent") {
+	if !matchesTag(task, expandTagQuery("urgent")) {
 		t.Error("a padded tag must still match")
 	}
-	if matchesTag(task, "feature") {
+	if matchesTag(task, expandTagQuery("рефакторинг")) {
 		t.Error("an absent tag must not match")
 	}
-	if matchesTag(&bitrix.Task{}, "bug") {
+	if matchesTag(&bitrix.Task{}, expandTagQuery("bug")) {
 		t.Error("a task with no tags must not match")
 	}
 }
@@ -39,7 +39,7 @@ func TestFiltersCompose(t *testing.T) {
 		Title: "Hisobot sahifasi ochilmayapti",
 	}
 	all := bitrixAnalyticsFilters{
-		Tag: "bug", Assignee: "10", Creator: "525", Group: "17",
+		Tag: "bug", tagSpellings: expandTagQuery("bug"), Assignee: "10", Creator: "525", Group: "17",
 		Status: "open", Priority: "2", Stage: "code review", Title: "hisobot",
 	}
 	if !all.matches(task) {
@@ -48,7 +48,7 @@ func TestFiltersCompose(t *testing.T) {
 	// Flipping any single one must reject it — otherwise a filter silently
 	// does nothing and its number is reported as if it applied.
 	for name, f := range map[string]bitrixAnalyticsFilters{
-		"tag":      {Tag: "feature"},
+		"tag":      {Tag: "feature", tagSpellings: expandTagQuery("feature")},
 		"assignee": {Assignee: "11"},
 		"creator":  {Creator: "526"},
 		"group":    {Group: "18"},
@@ -196,5 +196,60 @@ func TestStageFilterAcceptsAName(t *testing.T) {
 	byID := bitrixAnalyticsFilters{Stage: "1250"}
 	if !byID.matches(&bitrix.Task{StageID: "1250"}) {
 		t.Error("a raw stage id stopped working")
+	}
+}
+
+func TestTagQueryExpandsAcrossLanguages(t *testing.T) {
+	// The portal carries баг, BugReport, bug and #BugReport for one idea.
+	// Exact match answers "how many bugs" with whichever spelling the asker
+	// guessed — a wrong number that looks right.
+	got := expandTagQuery("bug")
+	for _, want := range []string{"bug", "баг", "bugreport"} {
+		if !got[want] {
+			t.Errorf("query 'bug' did not expand to %q", want)
+		}
+	}
+	// The reverse direction matters just as much: people ask using the
+	// spelling they see in Bitrix.
+	fromRussian := expandTagQuery("баг")
+	if !fromRussian["bug"] || !fromRussian["bugreport"] {
+		t.Errorf("query 'баг' expanded to %v, missing the group", fromRussian)
+	}
+	// The '#' people type out of habit must not create a separate tag.
+	if !expandTagQuery("#BugReport")["баг"] {
+		t.Error("a leading # defeated the grouping")
+	}
+}
+
+func TestTagQueryDoesNotWidenUnknownTags(t *testing.T) {
+	// A label in no group matches only itself. Widening an unknown tag would
+	// quietly inflate a count nobody can explain.
+	got := expandTagQuery("Somafix2")
+	if len(got) != 1 || !got["somafix2"] {
+		t.Fatalf("unknown tag expanded to %v", got)
+	}
+}
+
+func TestMatchesTagUsesTheExpandedSet(t *testing.T) {
+	task := &bitrix.Task{Tags: []string{"BugReport", "баг"}}
+	if !matchesTag(task, expandTagQuery("bug")) {
+		t.Error("a russian-tagged task was missed by an english query")
+	}
+	if matchesTag(task, expandTagQuery("feature")) {
+		t.Error("an unrelated group matched")
+	}
+	if matchesTag(&bitrix.Task{}, expandTagQuery("bug")) {
+		t.Error("an untagged task matched")
+	}
+}
+
+func TestNormalizeTagIsConservative(t *testing.T) {
+	// Small on purpose: an aggressive normaliser would merge tags that are
+	// genuinely different.
+	if normalizeTag("  #BugReport ") != "bugreport" {
+		t.Errorf("got %q", normalizeTag("  #BugReport "))
+	}
+	if normalizeTag("Настройка сервера") != "настройка сервера" {
+		t.Error("internal spacing must survive normalisation")
 	}
 }
