@@ -325,7 +325,29 @@ func (h *Handler) SetAgentTelegramAccess(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	row, err := h.Queries.SetTelegramInstallationAccess(r.Context(), db.SetTelegramInstallationAccessParams{
+	// Every input is parsed BEFORE the first write. Writing the policy and then
+	// failing to parse chat ids left access half-changed behind a 400 — the
+	// caller sees an error and assumes nothing happened, while the agent's
+	// policy has already moved.
+	var chats []int64
+	if req.AllowedChatIDs != nil {
+		parsed, chatErr := parseTelegramIDs(req.AllowedChatIDs)
+		if chatErr != nil {
+			writeError(w, http.StatusBadRequest, "allowed_chat_ids must be numeric Telegram chat ids")
+			return
+		}
+		chats = parsed
+	}
+
+	tx, err := h.TxStarter.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update telegram access")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	qtx := h.Queries.WithTx(tx)
+
+	row, err := qtx.SetTelegramInstallationAccess(r.Context(), db.SetTelegramInstallationAccessParams{
 		AgentID:                agent.ID,
 		AccessPolicy:           policy,
 		AllowedTelegramUserIds: ids,
@@ -336,20 +358,22 @@ func (h *Handler) SetAgentTelegramAccess(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Chats and admins are updated only when supplied. A PUT that carried the
-	// whole shape would make every partial edit a full overwrite — the failure
-	// mode being that saving a user list silently revokes every bound group.
+	// Chats are updated only when supplied. A PUT that carried the whole shape
+	// would make every partial edit a full overwrite — the failure mode being
+	// that saving a user list silently revokes every bound group.
 	if req.AllowedChatIDs != nil {
-		chats, chatErr := parseTelegramIDs(req.AllowedChatIDs)
-		if chatErr != nil {
-			writeError(w, http.StatusBadRequest, "allowed_chat_ids must be numeric Telegram chat ids")
+		updated, uErr := qtx.SetTelegramInstallationChats(r.Context(), db.SetTelegramInstallationChatsParams{
+			AgentID: agent.ID, AllowedChatIds: chats,
+		})
+		if uErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update the allowed chats")
 			return
 		}
-		if updated, uErr := h.Queries.SetTelegramInstallationChats(r.Context(), db.SetTelegramInstallationChatsParams{
-			AgentID: agent.ID, AllowedChatIds: chats,
-		}); uErr == nil {
-			row = updated
-		}
+		row = updated
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update telegram access")
+		return
 	}
 	writeJSON(w, http.StatusOK, telegramInstallationToResponse(row))
 }

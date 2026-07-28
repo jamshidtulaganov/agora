@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/config"
+	"github.com/multica-ai/multica/server/internal/integrations/telegram"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
@@ -111,30 +112,25 @@ func (h *Handler) SendAutopilotReport(ctx context.Context, runID string) {
 		return
 	}
 	run, err := h.Queries.GetAutopilotRun(ctx, runUUID)
-	if err != nil || !run.IssueID.Valid {
+	if err != nil {
 		return
 	}
+	// No IssueID check: a run_only autopilot never has an issue, and bailing
+	// here meant those runs — the ones that exist precisely to produce output
+	// without opening a ticket — never reported at all. The body lookup below
+	// handles a missing issue on its own and falls back to the run's result.
 	ap, err := h.Queries.GetAutopilot(ctx, run.AutopilotID)
 	if err != nil {
 		return
 	}
-	// Prefer the agent's OWN bot and chat when one is installed: a report from
-	// "sd-bridge-lead" should arrive under that agent's identity, not the
-	// platform bot's. Falls back to the platform bot + configured chat, which
-	// is what every workspace without installations still uses.
-	bot, chatID := h.agentTelegramClient(ctx, ap.AssigneeID)
-	if bot == nil {
-		bot = h.telegramBot
-	}
-	if chatID == "" {
-		chatID = h.autopilotReportChatID(ctx, ap)
-	}
-	// Both fallbacks exhausted: no bot to speak with, or nowhere to speak.
-	// This is the real gate — reached whether or not a platform bot exists.
+	bot, chatID := h.autopilotDestination(ctx, ap)
 	if bot == nil || chatID == "" {
 		return
 	}
-	body := h.autopilotReportBody(ctx, run.IssueID, ap.WorkspaceID)
+	body := ""
+	if run.IssueID.Valid {
+		body = h.autopilotReportBody(ctx, run.IssueID, ap.WorkspaceID)
+	}
 	if body == "" {
 		// Stranded-output recovery, borrowed from hamroh's `dropped_text`
 		// safety net: a completed run that produced no postable comment is not
@@ -220,4 +216,41 @@ func autopilotRunOutput(result []byte) string {
 		return ""
 	}
 	return strings.TrimSpace(util.UnescapeBackslashEscapes(payload.Output))
+}
+
+// autopilotDestination resolves the bot and chat a report goes to, as a PAIR.
+//
+// Picking them independently was a real delivery failure: an agent with an
+// installed bot but no bound group got that agent's bot combined with the
+// PLATFORM bot's configured chat — a group the agent's bot is almost never a
+// member of, so every send failed. A bot and the chat it can reach are one
+// decision, not two.
+//
+// Prefers the agent's own identity, because a report from "sd-bridge-lead"
+// should arrive as that agent rather than as Agora. Falls back to the platform
+// bot with its configured chat, which is what every workspace without
+// installations uses.
+func (h *Handler) autopilotDestination(ctx context.Context, ap db.Autopilot) (*telegram.BotClient, string) {
+	agentBot, agentChat := h.agentTelegramClient(ctx, ap.AssigneeID)
+	return chooseAutopilotDestination(
+		agentBot,
+		agentChat,
+		h.telegramBot,
+		h.autopilotReportChatID(ctx, ap),
+	)
+}
+
+func chooseAutopilotDestination(
+	agentBot *telegram.BotClient,
+	agentChat string,
+	platformBot *telegram.BotClient,
+	platformChat string,
+) (*telegram.BotClient, string) {
+	if agentBot != nil && agentChat != "" {
+		return agentBot, agentChat
+	}
+	if platformBot != nil && platformChat != "" {
+		return platformBot, platformChat
+	}
+	return nil, ""
 }

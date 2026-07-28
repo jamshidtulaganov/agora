@@ -1,12 +1,15 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/cli"
 	"github.com/spf13/cobra"
 )
 
@@ -131,6 +134,41 @@ var (
 // whole wait hammering the API for a value that changes once.
 const telegramAskPollInterval = 3 * time.Second
 
+// telegramAskGrace is how long past the question's own expiry the CLI keeps
+// asking. Small, and only so the server — which owns the real deadline — is
+// what normally ends the wait.
+const telegramAskGrace = 30 * time.Second
+
+// telegramAskMaxFailures bounds consecutive unreadable polls. A question that
+// cannot be read will not become readable by asking again.
+const telegramAskMaxFailures = 5
+
+// askTimeout mirrors the server's default and cap, so the local deadline does
+// not end the wait before the question itself does.
+func askTimeout(seconds int) time.Duration {
+	const (
+		def = 10 * time.Minute
+		max = 60 * time.Minute
+	)
+	if seconds <= 0 {
+		return def
+	}
+	if d := time.Duration(seconds) * time.Second; d < max {
+		return d
+	}
+	return max
+}
+
+func telegramAskPollErrorIsPermanent(err error) bool {
+	var httpErr *cli.HTTPError
+	if !errors.As(err, &httpErr) {
+		return false
+	}
+	return httpErr.StatusCode >= http.StatusBadRequest &&
+		httpErr.StatusCode < http.StatusInternalServerError &&
+		httpErr.StatusCode != http.StatusTooManyRequests
+}
+
 var telegramAskCmd = &cobra.Command{
 	Use:   "ask [question]",
 	Short: "Ask the group a question and wait for someone to choose",
@@ -173,23 +211,45 @@ var telegramAskCmd = &cobra.Command{
 		// caller is a script that will read it.
 		fmt.Fprintf(os.Stderr, "Asked in %s, waiting for an answer...\n", asked.ChatID)
 
+		// A local deadline as well as the server-side expiry. The loop learns
+		// that a question expired by READING it, so a poll that can never
+		// succeed — revoked task token, deleted installation — would otherwise
+		// spin until the whole command is killed, with the agent blocked behind
+		// it. Slack over the requested timeout so the server's own expiry is
+		// what normally ends this.
+		deadline := time.Now().Add(askTimeout(telegramAskTimeout) + telegramAskGrace)
 		path := "/api/agents/me/telegram/questions/" + asked.QuestionID
+		consecutiveFailures := 0
 		for {
 			select {
 			case <-cmd.Context().Done():
 				return cmd.Context().Err()
 			case <-time.After(telegramAskPollInterval):
 			}
+			if time.Now().After(deadline) {
+				return fmt.Errorf("gave up waiting for an answer")
+			}
 			var state struct {
 				Status string `json:"status"`
 				Answer string `json:"answer"`
 			}
 			if err := client.GetJSON(cmd.Context(), path, &state); err != nil {
-				// A transient failure must not be read as "no answer": keep
-				// polling until the question itself expires.
+				// A transient failure must not be read as "no answer". A
+				// permanent one must not be read as transient either: if the
+				// question cannot be read at all, no amount of retrying will
+				// produce a decision.
+				if telegramAskPollErrorIsPermanent(err) {
+					return fmt.Errorf("question can no longer be read: %w", err)
+				}
+				consecutiveFailures++
+				if consecutiveFailures >= telegramAskMaxFailures {
+					return fmt.Errorf("could not read the question after %d attempts: %w",
+						consecutiveFailures, err)
+				}
 				fmt.Fprintf(os.Stderr, "poll failed, retrying: %v\n", err)
 				continue
 			}
+			consecutiveFailures = 0
 			switch state.Status {
 			case "answered":
 				fmt.Fprintln(os.Stdout, state.Answer)

@@ -392,6 +392,16 @@ func (h *Handler) handleAgentCallback(ctx context.Context, row db.TelegramInstal
 	if err != nil || uuidToString(question.AgentID) != uuidToString(row.AgentID) {
 		return
 	}
+	// The answer must come from the room the question was asked in. Being an
+	// allowed chat is not enough: an agent bound to several groups would
+	// otherwise let one of them settle another's decision, and the recorded
+	// answer would name a chat that never saw the question.
+	if !telegramQuestionMatchesChat(question, cb.Message.Chat.ID) {
+		slog.Info("telegram question: tap from a different chat than it was asked in",
+			"question_id", uuidToString(questionID), "asked_in", question.ChatID,
+			"tapped_in", cb.Message.Chat.ID)
+		return
+	}
 	// The label is read from what was STORED, never from the callback payload:
 	// the payload is attacker-controllable and would otherwise let someone
 	// answer with text that was never offered.
@@ -421,6 +431,10 @@ func (h *Handler) handleAgentCallback(ctx context.Context, row db.TelegramInstal
 		_ = bot.EditButtons(ctx, strconv.FormatInt(cb.Message.Chat.ID, 10), cb.Message.MessageID,
 			html.EscapeString(answered.Prompt)+"\n\n<b>"+html.EscapeString(choice)+"</b>", nil)
 	}
+}
+
+func telegramQuestionMatchesChat(question db.TelegramQuestion, chatID int64) bool {
+	return question.ChatID == strconv.FormatInt(chatID, 10)
 }
 
 // parseQuestionCallback reads "q:<uuid>:<index>". Anything else is not ours.

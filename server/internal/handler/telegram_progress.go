@@ -155,13 +155,9 @@ func (h *Handler) RelayAutopilotProgress(ctx context.Context, taskID, issueID, c
 		return
 	}
 
-	bot, chatID := h.agentTelegramClient(ctx, ap.AssigneeID)
-	if bot == nil {
-		bot = h.telegramBot
-	}
-	if chatID == "" {
-		chatID = h.autopilotReportChatID(ctx, ap)
-	}
+	// Same pairing rule as the report: a bot and a chat it can actually reach
+	// are one decision. See autopilotDestination.
+	bot, chatID := h.autopilotDestination(ctx, ap)
 	if bot == nil || chatID == "" {
 		slog.Debug("progress relay: nowhere to send", "autopilot", ap.Title,
 			"has_bot", bot != nil, "chat", chatID)
