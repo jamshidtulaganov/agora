@@ -153,3 +153,23 @@ func TestAutopilotSpeakerAgentResolvesSquadLeader(t *testing.T) {
 		t.Fatalf("speaker = %s, ok=%v; want leader %s", uuidToString(got), ok, leaderID)
 	}
 }
+
+func TestShortReportStaysAMessage(t *testing.T) {
+	// A daily sprint pulse is six lines with no table. Delivering that as an
+	// .xlsx buries it: the reader downloads and opens a file to learn one
+	// sentence, and then stops looking.
+	pulse := "Sprint 11: 58 tadan 8 tasi yopilgan, 6 tasi muddati o'tgan.\n" +
+		"Code Review 18 · Testing 4 · Need merge 2\n" +
+		"Buglar: 21 ta ochiq, 7 ta yopilgan.\n"
+	if replyNeedsDocument(pulse) {
+		t.Fatal("a short table-free report would be sent as a spreadsheet")
+	}
+}
+
+func TestTabularReportBecomesASpreadsheet(t *testing.T) {
+	// The weekly report IS its tables; inline they collapse into pipe soup.
+	weekly := "Backlog o'sdi.\n\n| Oy | Soni |\n|---|---|\n| Yanvar | 360 |\n"
+	if !replyNeedsDocument(weekly) {
+		t.Fatal("a report carrying a table would be pasted as text")
+	}
+}

@@ -140,13 +140,26 @@ func (h *Handler) SendAutopilotReport(ctx context.Context, runID string) {
 		return
 	}
 
-	// Send the report as an attached spreadsheet, not as message text. Telegram
-	// renders no markdown table, and the table IS the report — pasted inline it
-	// collapses into unreadable pipe soup on a phone. A spreadsheet goes
-	// further than a rendered page: the per-assignee and per-month breakdowns
-	// stay sortable and summable, which is what anyone acting on the report
-	// does with them first. The caption carries the headline so the chat still
-	// shows something meaningful without opening the file.
+	// A report with tables goes out as a spreadsheet: Telegram renders no
+	// markdown table, and pasted inline it collapses into unreadable pipe soup
+	// — while a spreadsheet keeps the per-assignee and per-month breakdowns
+	// sortable, which is what anyone acting on the report does first.
+	//
+	// A SHORT report stays a message. A daily sprint pulse is six lines with no
+	// table, and delivering that as a .xlsx attachment buries it: the reader
+	// has to download and open a file to learn one sentence, so they stop
+	// looking. Same rule the chat replies use, for the same reason.
+	if !replyNeedsDocument(body) {
+		if err := bot.SendMessage(ctx, chatID, truncateForTelegram(body)); err != nil {
+			slog.Warn("autopilot report: telegram send failed",
+				"run_id", runID, "chat_id", chatID, "error", err)
+			return
+		}
+		slog.Info("autopilot report posted to telegram", "run_id", runID,
+			"autopilot", ap.Title, "as", "message")
+		return
+	}
+
 	title := ap.Title + " — " + time.Now().Format("02.01.2006")
 	doc, err := renderReportXLSX(title, body)
 	if err != nil {

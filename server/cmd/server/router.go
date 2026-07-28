@@ -634,6 +634,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// than working from a list that goes stale the next time someone adds
 		// a field in the admin UI.
 		r.Get("/api/bitrix/fields", h.ListBitrixFields)
+		// Which workgroup is the current sprint, decided by activity rather
+		// than by name — the names are inconsistent enough that matching them
+		// would quietly report on last month.
+		r.Get("/api/bitrix/sprints", h.ListBitrixSprints)
 		r.Get("/api/bitrix/tasks/{id}", h.GetBitrixTask)
 		r.Get("/api/bitrix/tasks/{id}/comments", h.ListBitrixTaskComments)
 		// Portal-wide task rollup for a date window (defaults to year-to-date).
