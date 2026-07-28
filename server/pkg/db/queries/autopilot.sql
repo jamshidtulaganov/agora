@@ -346,3 +346,8 @@ UPDATE autopilot
 SET status = 'paused', updated_at = now()
 WHERE id = $1 AND status = 'active'
 RETURNING *;
+
+-- name: GetAutopilotRunByTask :one
+-- Progress relay: is this task an autopilot run, and which one. Only running
+-- runs are of interest — a finished run's report has already been posted.
+SELECT * FROM autopilot_run WHERE task_id = $1 AND status = 'running';

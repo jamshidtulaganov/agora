@@ -343,6 +343,7 @@ func main() {
 	// unconfigured. Registered after h exists; shares the same bus instance.
 	registerTelegramPushListeners(bus, h)
 	registerAutopilotReportListener(bus, h)
+	registerAutopilotProgressListener(bus, h)
 	registerAgentChatReplyListener(bus, h)
 	// One long-poll loop per installed agent bot (no public URL needed).
 	h.StartAgentTelegramPollers(context.Background())

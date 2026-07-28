@@ -492,6 +492,34 @@ func (q *Queries) GetAutopilotRunByIssue(ctx context.Context, issueID pgtype.UUI
 	return i, err
 }
 
+const getAutopilotRunByTask = `-- name: GetAutopilotRunByTask :one
+SELECT id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, squad_id FROM autopilot_run WHERE task_id = $1 AND status = 'running'
+`
+
+// Progress relay: is this task an autopilot run, and which one. Only running
+// runs are of interest — a finished run's report has already been posted.
+func (q *Queries) GetAutopilotRunByTask(ctx context.Context, taskID pgtype.UUID) (AutopilotRun, error) {
+	row := q.db.QueryRow(ctx, getAutopilotRunByTask, taskID)
+	var i AutopilotRun
+	err := row.Scan(
+		&i.ID,
+		&i.AutopilotID,
+		&i.TriggerID,
+		&i.Source,
+		&i.Status,
+		&i.IssueID,
+		&i.TaskID,
+		&i.TriggeredAt,
+		&i.CompletedAt,
+		&i.FailureReason,
+		&i.TriggerPayload,
+		&i.Result,
+		&i.CreatedAt,
+		&i.SquadID,
+	)
+	return i, err
+}
+
 const getAutopilotTrigger = `-- name: GetAutopilotTrigger :one
 SELECT id, autopilot_id, kind, enabled, cron_expression, timezone, next_run_at, webhook_token, label, last_fired_at, created_at, updated_at, provider, signing_secret, event_filters FROM autopilot_trigger
 WHERE id = $1

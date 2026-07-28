@@ -74,9 +74,11 @@ func derefString(v any) string {
 // Only `completed` runs post: a failed run has no report worth broadcasting,
 // and the failure already surfaces in the run list.
 func registerAutopilotReportListener(bus *events.Bus, h *handler.Handler) {
-	if !h.TelegramPushEnabled() {
-		return
-	}
+	// No TelegramPushEnabled() guard: that asks whether the PLATFORM bot
+	// exists, and an autopilot whose agent owns its own bot needs nothing from
+	// it. Guarding here refused to even subscribe, so a deployment with
+	// per-agent bots and no TELEGRAM_BOT_TOKEN never reported at all. Whether
+	// there is anywhere to send is decided inside, per run.
 	bus.Subscribe(protocol.EventAutopilotRunDone, func(e events.Event) {
 		payload, ok := e.Payload.(map[string]any)
 		if !ok {
@@ -91,6 +93,28 @@ func registerAutopilotReportListener(bus *events.Bus, h *handler.Handler) {
 		}
 		// Detached: the Bot API call must not sit on the event bus.
 		go h.SendAutopilotReport(context.Background(), runID)
+		// The run is over; its progress throttle has nothing left to suppress.
+		h.ForgetAutopilotProgress(runID)
+	})
+}
+
+// registerAutopilotProgressListener relays an agent's own `PROGRESS:` headline
+// to the autopilot's Telegram chat while a long run is still going.
+//
+// The completed-run report answers "what happened" but not "is it still going",
+// which is the question a group has while a run that usually takes four minutes
+// is twenty minutes in. Throttling and the opt-in flag live in the handler —
+// see telegram_progress.go for why each rule is there.
+func registerAutopilotProgressListener(bus *events.Bus, h *handler.Handler) {
+	bus.Subscribe(protocol.EventTaskMessage, func(e events.Event) {
+		payload, ok := e.Payload.(protocol.TaskMessagePayload)
+		if !ok {
+			return
+		}
+		if payload.Content == "" {
+			return
+		}
+		go h.RelayAutopilotProgress(context.Background(), payload.TaskID, payload.Content)
 	})
 }
 
