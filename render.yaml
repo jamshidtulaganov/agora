@@ -1,14 +1,13 @@
 # yaml-language-server: $schema=https://json.schemastore.org/render.json
 
-# Core Agora deployment. Optional Fly services (daemon and Telegram Mini App)
-# are intentionally separate because they require their own credentials and
-# runtime-specific configuration.
+# Desktop deployment: the Electron app connects directly to the public backend.
+# Optional web, docs, daemon, and Telegram Mini App services are not provisioned.
 
 previews:
   generation: off
 
 services:
-  - type: pserv
+  - type: web
     name: agora-backend
     runtime: docker
     branch: master
@@ -18,6 +17,7 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
     numInstances: 1
+    healthCheckPath: /healthz
     disk:
       name: agora-uploads
       mountPath: /app/data/uploads
@@ -33,59 +33,15 @@ services:
         value: production
       - key: ALLOW_SIGNUP
         value: "true"
-      # Enter the public web URL shown by Render, with no trailing slash.
+      # Enter the public backend URL shown by Render, with no trailing slash.
       # Use the same value for all three variables, for example:
-      # https://agora-web.onrender.com
+      # https://agora-backend.onrender.com
       - key: FRONTEND_ORIGIN
         sync: false
       - key: AGORA_APP_URL
         sync: false
       - key: AGORA_PUBLIC_URL
         sync: false
-
-  - type: web
-    name: agora-web
-    runtime: docker
-    branch: master
-    region: frankfurt
-    plan: starter
-    autoDeployTrigger: checksPass
-    dockerfilePath: ./Dockerfile.web
-    dockerContext: .
-    healthCheckPath: /health
-    maxShutdownDelaySeconds: 60
-    envVars:
-      - key: NODE_ENV
-        value: production
-      # Clear the Dockerfile's local-network defaults so the dynamic Render
-      # private-network references below take precedence during the build.
-      - key: REMOTE_API_URL
-        value: ""
-      - key: REMOTE_API_HOSTPORT
-        fromService:
-          type: pserv
-          name: agora-backend
-          property: hostport
-      - key: DOCS_URL
-        value: ""
-      - key: DOCS_HOSTPORT
-        fromService:
-          type: pserv
-          name: agora-docs
-          property: hostport
-
-  - type: pserv
-    name: agora-docs
-    runtime: docker
-    branch: master
-    region: frankfurt
-    plan: starter
-    autoDeployTrigger: checksPass
-    dockerfilePath: ./Dockerfile.docs
-    dockerContext: .
-    envVars:
-      - key: NODE_ENV
-        value: production
 
 databases:
   - name: agora-db
