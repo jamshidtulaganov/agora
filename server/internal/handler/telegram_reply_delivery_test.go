@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestReplyNeedsDocumentForTables(t *testing.T) {
@@ -73,5 +74,41 @@ func TestReplyDocumentFilenameIsDistinct(t *testing.T) {
 	}
 	if !strings.HasSuffix(a, ".pdf") {
 		t.Fatalf("got %s, want a .pdf attachment", a)
+	}
+}
+
+func TestLinkTargetsDoNotCountTowardTheLimit(t *testing.T) {
+	// The regression: a daily pulse quoting eight Bitrix tasks carries eight
+	// ~70-character URLs Telegram never shows. Counting them pushed a six-line
+	// message over the limit and turned it into a PDF — which cost exactly what
+	// the message existed for: the tags stopped notifying and the links stopped
+	// being tappable in the chat.
+	const url = "https://salesdoc.bitrix24.kz/company/personal/user/0/tasks/task/view/56187/"
+	pulse := "**Sprint 11** · 29-iyul\n58 vazifa · 8 yopilgan\n\n**Muddati o'tgan**\n"
+	for i := 0; i < 8; i++ {
+		pulse += "@softdev_TSA Sardorbek — [#56187](" + url + ") 23-iyun\n"
+	}
+	if utf8.RuneCountInString(pulse) <= telegramInlineLimit {
+		t.Fatal("fixture is too short to exercise the limit")
+	}
+	if replyNeedsDocument(pulse) {
+		t.Fatal("link targets were counted as visible text")
+	}
+}
+
+func TestVisibleTextKeepsTheLabel(t *testing.T) {
+	// Only the target is dropped; the label is what the reader sees and must
+	// still count toward the limit.
+	got := visibleText("see [#56187](https://example.com/a/b/c) today")
+	if !strings.Contains(got, "[#56187]") || strings.Contains(got, "example.com") {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestLongProseStillBecomesADocument(t *testing.T) {
+	// Stripping URLs must not turn the limit off: a genuinely long message
+	// still belongs in a document.
+	if !replyNeedsDocument(strings.Repeat("о", telegramInlineLimit+1)) {
+		t.Fatal("a long message stayed inline")
 	}
 }

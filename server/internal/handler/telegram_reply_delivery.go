@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -26,12 +27,27 @@ import (
 // the API accepts.
 const telegramInlineLimit = 900
 
-// replyNeedsDocument reports whether a reply must go out as an HTML attachment.
+// replyNeedsDocument reports whether a reply must go out as an attachment.
 func replyNeedsDocument(reply string) bool {
-	if utf8.RuneCountInString(reply) > telegramInlineLimit {
+	if utf8.RuneCountInString(visibleText(reply)) > telegramInlineLimit {
 		return true
 	}
 	return containsMarkdownTable(reply)
+}
+
+// markdownLinkTarget matches the `](url)` half of a markdown link.
+var markdownLinkTarget = regexp.MustCompile(`\]\((?:https?://)[^)\s]*\)`)
+
+// visibleText approximates what the reader actually sees, which is what the
+// length limit is about.
+//
+// A message quoting eight Bitrix tasks carries eight ~70-character URLs that
+// Telegram never shows — it renders the label. Counting them pushed a six-line
+// daily pulse over the limit and turned it into a PDF attachment, which cost
+// the thing the message existed for: the tags stopped notifying anyone and the
+// links stopped being tappable in the chat.
+func visibleText(md string) string {
+	return markdownLinkTarget.ReplaceAllString(md, "]")
 }
 
 // containsMarkdownTable looks for a header row followed by a |---|---| divider.

@@ -3,6 +3,7 @@ package handler
 import (
 	"log/slog"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -386,99 +387,13 @@ func (h *Handler) GetBitrixAnalytics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := time.Now()
-	since := time.Date(now.Year(), time.January, 1, 0, 0, 0, 0, now.Location())
-	if raw := strings.TrimSpace(r.URL.Query().Get("since")); raw != "" {
-		parsed, err := time.ParseInLocation("2006-01-02", raw, now.Location())
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "since must be YYYY-MM-DD")
-			return
-		}
-		since = parsed
+	since, until, ok := parseBitrixWindow(w, r.URL.Query())
+	if !ok {
+		return
 	}
-
-	// `until` makes a PAST window reconstructible, which is what any
-	// week-over-week comparison needs: without it a weekly report can state
-	// the current level but never the change. Bounded to end-of-day so
-	// `until=2026-07-20` includes the 20th.
-	var until time.Time
-	if raw := strings.TrimSpace(r.URL.Query().Get("until")); raw != "" {
-		parsed, err := time.ParseInLocation("2006-01-02", raw, now.Location())
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "until must be YYYY-MM-DD")
-			return
-		}
-		until = parsed.Add(24*time.Hour - time.Second)
-		if until.Before(since) {
-			writeError(w, http.StatusBadRequest, "until must not be before since")
-			return
-		}
-	}
-
-	query := r.URL.Query()
-	for key := range query {
-		if !bitrixFilterParams[key] {
-			writeError(w, http.StatusBadRequest, "unknown filter: "+key)
-			return
-		}
-	}
-	filters := bitrixAnalyticsFilters{
-		Tag:      strings.TrimSpace(query.Get("tag")),
-		Assignee: strings.TrimSpace(query.Get("assignee")),
-		Creator:  strings.TrimSpace(query.Get("creator")),
-		Group:    strings.TrimSpace(query.Get("group")),
-		Status:   strings.TrimSpace(query.Get("status")),
-		Stage:    strings.TrimSpace(query.Get("stage")),
-		Priority: strings.TrimSpace(query.Get("priority")),
-		Title:    strings.TrimSpace(query.Get("title")),
-		Closed:   strings.ToLower(strings.TrimSpace(query.Get("closed"))),
-	}
-	filters.Sprint = strings.TrimSpace(query.Get("sprint"))
-	filters.Flow = strings.TrimSpace(query.Get("flow"))
-	filters.Parent = strings.TrimSpace(query.Get("parent"))
-	filters.Involves = strings.TrimSpace(query.Get("involves"))
-	filters.Overdue = strings.ToLower(strings.TrimSpace(query.Get("overdue")))
-	filters.DeadlineFrom = strings.TrimSpace(query.Get("deadline_from"))
-	filters.DeadlineTo = strings.TrimSpace(query.Get("deadline_to"))
-	filters.ClosedFrom = strings.TrimSpace(query.Get("closed_from"))
-	filters.ClosedTo = strings.TrimSpace(query.Get("closed_to"))
-
-	for _, b := range []struct {
-		name  string
-		value string
-	}{{"closed", filters.Closed}, {"overdue", filters.Overdue}} {
-		if b.value != "" && b.value != "true" && b.value != "false" {
-			writeError(w, http.StatusBadRequest, b.name+" must be true or false")
-			return
-		}
-	}
-	// Date bounds are parsed once, here, rather than per task: the window can
-	// hold thousands of rows and re-parsing a constant for each is pure waste.
-	// An upper bound covers the whole day, so deadline_to=2026-07-31 includes
-	// the 31st — a reader means the date, not midnight on it.
-	for _, b := range []struct {
-		raw   string
-		name  string
-		dst   *time.Time
-		endOf bool
-	}{
-		{filters.DeadlineFrom, "deadline_from", &filters.deadlineFrom, false},
-		{filters.DeadlineTo, "deadline_to", &filters.deadlineTo, true},
-		{filters.ClosedFrom, "closed_from", &filters.closedFrom, false},
-		{filters.ClosedTo, "closed_to", &filters.closedTo, true},
-	} {
-		if b.raw == "" {
-			continue
-		}
-		parsed, err := time.ParseInLocation("2006-01-02", b.raw, now.Location())
-		if err != nil {
-			writeError(w, http.StatusBadRequest, b.name+" must be YYYY-MM-DD")
-			return
-		}
-		if b.endOf {
-			parsed = parsed.Add(24*time.Hour - time.Second)
-		}
-		*b.dst = parsed
+	filters, ok := parseBitrixFilters(w, r.URL.Query())
+	if !ok {
+		return
 	}
 
 	client := bitrix.NewClient(bitrixWebhookURL())
@@ -569,7 +484,7 @@ func (h *Handler) GetBitrixAnalytics(w http.ResponseWriter, r *http.Request) {
 
 	resp := bitrixAnalyticsResponse{
 		Since:             since.Format("2006-01-02"),
-		Until:             untilLabel(until, now),
+		Until:             untilLabel(until, time.Now()),
 		Total:             len(tasks),
 		MedianDaysToClose: -1,
 		Truncated:         truncated,
@@ -687,4 +602,103 @@ func untilLabel(until, now time.Time) string {
 		return now.Format("2006-01-02")
 	}
 	return until.Format("2006-01-02")
+}
+
+// parseBitrixWindow reads the date bounds every Bitrix read shares.
+//
+// `since` defaults to the start of the current year, which is what "this year
+// so far" means to the humans reading it. `until` is optional and inclusive —
+// it makes a PAST window reconstructible, which any week-over-week comparison
+// needs: without it a report can state the current level but never the change.
+//
+// Writes the error response itself; ok=false means "already answered".
+func parseBitrixWindow(w http.ResponseWriter, query url.Values) (since, until time.Time, ok bool) {
+	now := time.Now()
+	since = time.Date(now.Year(), time.January, 1, 0, 0, 0, 0, now.Location())
+	if raw := strings.TrimSpace(query.Get("since")); raw != "" {
+		parsed, err := time.ParseInLocation("2006-01-02", raw, now.Location())
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "since must be YYYY-MM-DD")
+			return since, until, false
+		}
+		since = parsed
+	}
+	if raw := strings.TrimSpace(query.Get("until")); raw != "" {
+		parsed, err := time.ParseInLocation("2006-01-02", raw, now.Location())
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "until must be YYYY-MM-DD")
+			return since, until, false
+		}
+		// Bounded to end-of-day so `until=2026-07-20` includes the 20th: a
+		// reader means the date, not midnight on it.
+		until = parsed.Add(24*time.Hour - time.Second)
+		if until.Before(since) {
+			writeError(w, http.StatusBadRequest, "until must not be before since")
+			return since, until, false
+		}
+	}
+	return since, until, true
+}
+
+// parseBitrixFilters reads the filter set shared by the rollup and the task
+// list. One definition on purpose: two copies would drift, and the pair exists
+// precisely so "the tasks behind that number" cannot list a different set than
+// was counted.
+func parseBitrixFilters(w http.ResponseWriter, query url.Values) (bitrixAnalyticsFilters, bool) {
+	now := time.Now()
+	filters := bitrixAnalyticsFilters{
+		Tag:          strings.TrimSpace(query.Get("tag")),
+		Assignee:     strings.TrimSpace(query.Get("assignee")),
+		Creator:      strings.TrimSpace(query.Get("creator")),
+		Group:        strings.TrimSpace(query.Get("group")),
+		Status:       strings.TrimSpace(query.Get("status")),
+		Stage:        strings.TrimSpace(query.Get("stage")),
+		Priority:     strings.TrimSpace(query.Get("priority")),
+		Title:        strings.TrimSpace(query.Get("title")),
+		Closed:       strings.ToLower(strings.TrimSpace(query.Get("closed"))),
+		Sprint:       strings.TrimSpace(query.Get("sprint")),
+		Flow:         strings.TrimSpace(query.Get("flow")),
+		Parent:       strings.TrimSpace(query.Get("parent")),
+		Involves:     strings.TrimSpace(query.Get("involves")),
+		Overdue:      strings.ToLower(strings.TrimSpace(query.Get("overdue"))),
+		DeadlineFrom: strings.TrimSpace(query.Get("deadline_from")),
+		DeadlineTo:   strings.TrimSpace(query.Get("deadline_to")),
+		ClosedFrom:   strings.TrimSpace(query.Get("closed_from")),
+		ClosedTo:     strings.TrimSpace(query.Get("closed_to")),
+	}
+	for _, b := range []struct{ name, value string }{
+		{"closed", filters.Closed}, {"overdue", filters.Overdue},
+	} {
+		if b.value != "" && b.value != "true" && b.value != "false" {
+			writeError(w, http.StatusBadRequest, b.name+" must be true or false")
+			return filters, false
+		}
+	}
+	// Parsed once rather than per task: the window can hold thousands of rows
+	// and re-parsing a constant for each is pure waste.
+	for _, b := range []struct {
+		raw   string
+		name  string
+		dst   *time.Time
+		endOf bool
+	}{
+		{filters.DeadlineFrom, "deadline_from", &filters.deadlineFrom, false},
+		{filters.DeadlineTo, "deadline_to", &filters.deadlineTo, true},
+		{filters.ClosedFrom, "closed_from", &filters.closedFrom, false},
+		{filters.ClosedTo, "closed_to", &filters.closedTo, true},
+	} {
+		if b.raw == "" {
+			continue
+		}
+		parsed, err := time.ParseInLocation("2006-01-02", b.raw, now.Location())
+		if err != nil {
+			writeError(w, http.StatusBadRequest, b.name+" must be YYYY-MM-DD")
+			return filters, false
+		}
+		if b.endOf {
+			parsed = parsed.Add(24*time.Hour - time.Second)
+		}
+		*b.dst = parsed
+	}
+	return filters, true
 }

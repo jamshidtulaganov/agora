@@ -640,6 +640,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// than by name — the names are inconsistent enough that matching them
 		// would quietly report on last month.
 		r.Get("/api/bitrix/sprints", h.ListBitrixSprints)
+		// The tasks behind a number, with links. Same filters as the rollup, so
+		// a caller cannot list a different set than it counted.
+		r.Get("/api/bitrix/task-list", h.ListBitrixTaskDetails)
 		r.Get("/api/bitrix/tasks/{id}", h.GetBitrixTask)
 		r.Get("/api/bitrix/tasks/{id}/comments", h.ListBitrixTaskComments)
 		// Portal-wide task rollup for a date window (defaults to year-to-date).
