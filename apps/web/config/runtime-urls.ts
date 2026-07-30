@@ -4,6 +4,9 @@ export function resolveRemoteApiUrl(env: RuntimeEnv): string {
   const explicitRemote = env.REMOTE_API_URL?.trim();
   if (explicitRemote) return explicitRemote;
 
+  const internalHostport = env.REMOTE_API_HOSTPORT?.trim();
+  if (internalHostport) return `http://${internalHostport}`;
+
   const publicApi = env.NEXT_PUBLIC_API_URL?.trim();
   if (publicApi) return publicApi;
 
@@ -15,4 +18,14 @@ export function resolveRemoteApiUrl(env: RuntimeEnv): string {
   if (port) return `http://localhost:${port}`;
 
   return "http://localhost:8080";
+}
+
+export function resolveDocsUrl(env: RuntimeEnv): string {
+  const explicitRemote = env.DOCS_URL?.trim();
+  if (explicitRemote) return explicitRemote;
+
+  const internalHostport = env.DOCS_HOSTPORT?.trim();
+  if (internalHostport) return `http://${internalHostport}`;
+
+  return "http://localhost:4000";
 }

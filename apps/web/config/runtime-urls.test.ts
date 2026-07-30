@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveRemoteApiUrl } from "./runtime-urls";
+import { resolveDocsUrl, resolveRemoteApiUrl } from "./runtime-urls";
 
 describe("resolveRemoteApiUrl", () => {
   it("prefers REMOTE_API_URL when explicitly configured", () => {
@@ -20,6 +20,15 @@ describe("resolveRemoteApiUrl", () => {
         PORT: "18080",
       }),
     ).toBe("http://localhost:19000");
+  });
+
+  it("uses a Render-style private host and port when configured", () => {
+    expect(
+      resolveRemoteApiUrl({
+        REMOTE_API_HOSTPORT: "agora-backend:10000",
+        NEXT_PUBLIC_API_URL: "https://api.example.com",
+      }),
+    ).toBe("http://agora-backend:10000");
   });
 
   it("derives localhost backend URL from PORT when no API URL is set", () => {
@@ -65,6 +74,7 @@ describe("resolveRemoteApiUrl", () => {
     expect(
       resolveRemoteApiUrl({
         REMOTE_API_URL: "  ",
+        REMOTE_API_HOSTPORT: "  ",
         NEXT_PUBLIC_API_URL: "  ",
         BACKEND_PORT: "  ",
         API_PORT: "  ",
@@ -78,5 +88,26 @@ describe("resolveRemoteApiUrl", () => {
 
   it("falls back to the historical backend port when no env is configured", () => {
     expect(resolveRemoteApiUrl({})).toBe("http://localhost:8080");
+  });
+});
+
+describe("resolveDocsUrl", () => {
+  it("prefers an explicit docs URL", () => {
+    expect(
+      resolveDocsUrl({
+        DOCS_URL: "https://docs.example.com",
+        DOCS_HOSTPORT: "agora-docs:10000",
+      }),
+    ).toBe("https://docs.example.com");
+  });
+
+  it("uses a Render-style private host and port when configured", () => {
+    expect(resolveDocsUrl({ DOCS_HOSTPORT: "agora-docs:10000" })).toBe(
+      "http://agora-docs:10000",
+    );
+  });
+
+  it("falls back to the local docs service", () => {
+    expect(resolveDocsUrl({})).toBe("http://localhost:4000");
   });
 });

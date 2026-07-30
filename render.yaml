@@ -1,0 +1,100 @@
+# yaml-language-server: $schema=https://json.schemastore.org/render.json
+
+# Core Agora deployment. Optional Fly services (daemon and Telegram Mini App)
+# are intentionally separate because they require their own credentials and
+# runtime-specific configuration.
+
+previews:
+  generation: off
+
+services:
+  - type: pserv
+    name: agora-backend
+    runtime: docker
+    branch: master
+    region: frankfurt
+    plan: starter
+    autoDeployTrigger: checksPass
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    numInstances: 1
+    maxShutdownDelaySeconds: 60
+    disk:
+      name: agora-uploads
+      mountPath: /app/data/uploads
+      sizeGB: 1
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: agora-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: APP_ENV
+        value: production
+      - key: ALLOW_SIGNUP
+        value: "true"
+      # Enter the public web URL shown by Render, with no trailing slash.
+      # Use the same value for all three variables, for example:
+      # https://agora-web.onrender.com
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: AGORA_APP_URL
+        sync: false
+      - key: AGORA_PUBLIC_URL
+        sync: false
+
+  - type: web
+    name: agora-web
+    runtime: docker
+    branch: master
+    region: frankfurt
+    plan: starter
+    autoDeployTrigger: checksPass
+    dockerfilePath: ./Dockerfile.web
+    dockerContext: .
+    healthCheckPath: /health
+    maxShutdownDelaySeconds: 60
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Clear the Dockerfile's local-network defaults so the dynamic Render
+      # private-network references below take precedence during the build.
+      - key: REMOTE_API_URL
+        value: ""
+      - key: REMOTE_API_HOSTPORT
+        fromService:
+          type: pserv
+          name: agora-backend
+          property: hostport
+      - key: DOCS_URL
+        value: ""
+      - key: DOCS_HOSTPORT
+        fromService:
+          type: pserv
+          name: agora-docs
+          property: hostport
+
+  - type: pserv
+    name: agora-docs
+    runtime: docker
+    branch: master
+    region: frankfurt
+    plan: starter
+    autoDeployTrigger: checksPass
+    dockerfilePath: ./Dockerfile.docs
+    dockerContext: .
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+databases:
+  - name: agora-db
+    databaseName: agora
+    user: agora
+    region: frankfurt
+    plan: basic-256mb
+    diskSizeGB: 15
+    postgresMajorVersion: "17"
+    ipAllowList: []
+    connectionPool: none
