@@ -46,9 +46,9 @@ describe("loadRuntimeConfig", () => {
       ok: true,
       config: {
         schemaVersion: 1,
-        apiUrl: "https://agora-backend.onrender.com",
-        wsUrl: "wss://agora-backend.onrender.com/ws",
-        appUrl: "https://agora-backend.onrender.com",
+        apiUrl: "https://agora-web-7mav.onrender.com",
+        wsUrl: "wss://agora-web-7mav.onrender.com/ws",
+        appUrl: "https://agora-web-7mav.onrender.com",
       },
     });
   });

@@ -14,14 +14,14 @@ export type RuntimeConfigResult =
   | { ok: false; error: RuntimeConfigError };
 
 // Packaged-app default when ~/.agora/desktop.json is absent (every fresh
-// install). The desktop-only Render deployment exposes the backend directly,
-// so API, WebSocket, auth, and upload traffic all use the same public origin.
+// install). The public Render web service proxies API, WebSocket, auth, and
+// upload traffic to the private backend, keeping one stable client origin.
 // A power user overrides this via ~/.agora/desktop.json (self-host, staging).
 export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
   schemaVersion: 1,
-  apiUrl: "https://agora-backend.onrender.com",
-  wsUrl: "wss://agora-backend.onrender.com/ws",
-  appUrl: "https://agora-backend.onrender.com",
+  apiUrl: "https://agora-web-7mav.onrender.com",
+  wsUrl: "wss://agora-web-7mav.onrender.com/ws",
+  appUrl: "https://agora-web-7mav.onrender.com",
 });
 
 const LOCAL_DEV_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
