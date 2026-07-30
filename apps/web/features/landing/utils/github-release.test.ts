@@ -54,7 +54,6 @@ describe("fetchLatestRelease", () => {
       releasePayload({
         tag: "v0.2.14",
         publishedMinutesAgo: 10,
-        asset: SAMPLE_LATEST_ASSET,
       }),
       releasePayload({
         tag: "v0.2.13",
@@ -66,6 +65,25 @@ describe("fetchLatestRelease", () => {
     const result = await fetchLatestRelease();
     expect(result.version).toBe("v0.2.13");
     expect(result.assets.macArm64Dmg).toBe(SAMPLE_PREV_ASSET.browser_download_url);
+  });
+
+  it("shows a fresh release as soon as its first desktop asset is uploaded", async () => {
+    mockFetchWithReleases([
+      releasePayload({
+        tag: "v0.2.14",
+        publishedMinutesAgo: 10,
+        asset: SAMPLE_LATEST_ASSET,
+      }),
+      releasePayload({
+        tag: "v0.2.13",
+        publishedMinutesAgo: 60 * 24,
+        asset: SAMPLE_PREV_ASSET,
+      }),
+    ]);
+
+    const result = await fetchLatestRelease();
+    expect(result.version).toBe("v0.2.14");
+    expect(result.assets.macArm64Dmg).toBe(SAMPLE_LATEST_ASSET.browser_download_url);
   });
 
   it("uses latest release once it is older than the fresh window", async () => {

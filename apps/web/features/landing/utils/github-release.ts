@@ -1,4 +1,5 @@
 import {
+  hasAnyAsset,
   parseReleaseAssets,
   type DownloadAssets,
 } from "./parse-release-assets";
@@ -82,14 +83,25 @@ export async function fetchLatestRelease(): Promise<LatestRelease> {
       return emptyRelease();
     }
     const previous = stable[1];
+    const latestAssets = parseReleaseAssets(latest.assets ?? []);
+    // Once the new release has at least one desktop installer, expose it
+    // immediately. The previous-release grace window is only for the brief
+    // interval between publishing the release and uploading its first desktop
+    // artifact; otherwise a freshly uploaded Mac build stays hidden for an
+    // unnecessary hour.
     const chosen =
-      previous && isWithinFreshWindow(latest) ? previous : latest;
+      previous && isWithinFreshWindow(latest) && !hasAnyAsset(latestAssets)
+        ? previous
+        : latest;
 
     return {
       version: chosen.tag_name ?? null,
       publishedAt: chosen.published_at ?? null,
       htmlUrl: chosen.html_url ?? null,
-      assets: parseReleaseAssets(chosen.assets ?? []),
+      assets:
+        chosen === latest
+          ? latestAssets
+          : parseReleaseAssets(chosen.assets ?? []),
     };
   } catch (err) {
     console.warn("[download] fetchLatestRelease failed:", err);

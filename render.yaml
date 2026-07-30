@@ -1,7 +1,8 @@
 # yaml-language-server: $schema=https://json.schemastore.org/render.json
 
-# Desktop deployment: the Electron app connects directly to the public backend.
-# Optional web, docs, daemon, and Telegram Mini App services are not provisioned.
+# Agora deployment for desktop + backend, with a lightweight public web entry
+# point for browser login and desktop downloads. Docs, daemon, and Telegram
+# Mini App services are not provisioned.
 
 previews:
   generation: off
@@ -78,6 +79,42 @@ services:
         sync: false
       - key: AGORA_PUBLIC_URL
         sync: false
+
+  - type: web
+    name: agora-web
+    runtime: docker
+    branch: master
+    region: frankfurt
+    # The landing/download site can sleep when idle; keep the paid instance on
+    # the stateful backend where it matters.
+    plan: free
+    autoDeployTrigger: checksPass
+    dockerfilePath: ./Dockerfile.web
+    dockerContext: .
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Keep browser requests same-origin so /auth and /api always pass through
+      # the Next.js proxy. Render preserves omitted variables on existing
+      # services, so explicitly clear any stale direct-backend override that
+      # would otherwise keep producing login 404s.
+      - key: NEXT_PUBLIC_API_URL
+        value: ""
+      - key: NEXT_PUBLIC_WS_URL
+        value: ""
+      # Dockerfile.web consumes these as build args. Render exposes service
+      # env vars as Docker build args as well as runtime environment variables.
+      - key: REMOTE_API_URL
+        value: ""
+      - key: REMOTE_API_HOSTPORT
+        fromService:
+          type: web
+          name: agora-backend
+          property: hostport
+      # Docs are intentionally not deployed in this topology.
+      - key: DOCS_URL
+        value: http://127.0.0.1:4000
 
 databases:
   - name: agora-db
