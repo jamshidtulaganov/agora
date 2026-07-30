@@ -10,9 +10,9 @@ describe("runtime config", () => {
   it("uses production defaults without a desktop.json file", () => {
     expect(DEFAULT_RUNTIME_CONFIG).toEqual({
       schemaVersion: 1,
-      apiUrl: "https://sd-agora-web.fly.dev",
-      wsUrl: "wss://sd-agora-web.fly.dev/ws",
-      appUrl: "https://sd-agora-web.fly.dev",
+      apiUrl: "https://agora-backend.onrender.com",
+      wsUrl: "wss://agora-backend.onrender.com/ws",
+      appUrl: "https://agora-backend.onrender.com",
     });
   });
 

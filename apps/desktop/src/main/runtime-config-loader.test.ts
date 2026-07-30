@@ -46,9 +46,9 @@ describe("loadRuntimeConfig", () => {
       ok: true,
       config: {
         schemaVersion: 1,
-        apiUrl: "https://sd-agora-web.fly.dev",
-        wsUrl: "wss://sd-agora-web.fly.dev/ws",
-        appUrl: "https://sd-agora-web.fly.dev",
+        apiUrl: "https://agora-backend.onrender.com",
+        wsUrl: "wss://agora-backend.onrender.com/ws",
+        appUrl: "https://agora-backend.onrender.com",
       },
     });
   });
