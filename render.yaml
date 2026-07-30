@@ -48,15 +48,14 @@ services:
         sync: false
       - key: TELEGRAM_WEBHOOK_SECRET
         generateValue: true
-      # Browser and desktop clients use the web origin. External integrations
-      # call the backend directly so Telegram webhook delivery reaches the same
-      # stateful service that owns the login nonce.
+      # Keep browser, desktop, and Telegram callback traffic on the same public
+      # origin so the web proxy routes every login step to one backend service.
       - key: FRONTEND_ORIGIN
         value: https://agora-web-7mav.onrender.com
       - key: AGORA_APP_URL
         value: https://agora-web-7mav.onrender.com
       - key: AGORA_PUBLIC_URL
-        value: https://agora-backend-pmug.onrender.com
+        value: https://agora-web-7mav.onrender.com
 
   - type: web
     name: agora-web
