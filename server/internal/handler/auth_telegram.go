@@ -153,6 +153,10 @@ type telegramStartResponse struct {
 // TelegramStart mints a login nonce and returns the bot deep link.
 // POST /auth/telegram/start
 func (h *Handler) TelegramStart(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("X-Agora-Telegram-Login-Store", h.telegramLoginStoreName())
+	if revision := strings.TrimSpace(os.Getenv("RENDER_GIT_COMMIT")); revision != "" {
+		w.Header().Set("X-Agora-Revision", revision)
+	}
 	if !h.telegramLoginEnabled() {
 		writeError(w, http.StatusServiceUnavailable, "Telegram login is not configured")
 		return

@@ -34,3 +34,13 @@ func TestSharedTelegramLoginStoreRequiresQueries(t *testing.T) {
 		t.Fatal("shared store cannot be enabled without database queries")
 	}
 }
+
+func TestTelegramLoginStoreName(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	if got := (&Handler{Queries: &db.Queries{}}).telegramLoginStoreName(); got != "postgres" {
+		t.Fatalf("production store = %q", got)
+	}
+	if got := (&Handler{}).telegramLoginStoreName(); got != "memory" {
+		t.Fatalf("fallback store = %q", got)
+	}
+}

@@ -23,6 +23,13 @@ func (h *Handler) sharedTelegramLoginStoreEnabled() bool {
 		config.String("APP_ENV") == "production"
 }
 
+func (h *Handler) telegramLoginStoreName() string {
+	if h.sharedTelegramLoginStoreEnabled() {
+		return "postgres"
+	}
+	return "memory"
+}
+
 func (h *Handler) startTelegramLogin(ctx context.Context, nonce string) error {
 	if h.sharedTelegramLoginStoreEnabled() {
 		return h.Queries.CreateTelegramLoginAttempt(ctx, nonce)
@@ -45,7 +52,15 @@ func (h *Handler) bindTelegramLogin(
 			FirstName:        firstName,
 			Code:             code,
 		})
-		return err == nil && affected == 1
+		if err != nil {
+			slog.Error("telegram login: failed to bind shared login attempt", "error", err)
+			return false
+		}
+		if affected != 1 {
+			slog.Warn("telegram login: shared login attempt not bindable", "rows_affected", affected)
+			return false
+		}
+		return true
 	}
 	return h.telegramLogins.Bind(nonce, identity, firstName, code)
 }

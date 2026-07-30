@@ -72,6 +72,9 @@ func TestTelegramStartReturnsNonceAndDeepLink(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/auth/telegram/start", nil)
 	testHandler.TelegramStart(w, req)
+	if got := w.Header().Get("X-Agora-Telegram-Login-Store"); got != "memory" {
+		t.Fatalf("login store header = %q, want memory", got)
+	}
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("TelegramStart: expected 200, got %d: %s", w.Code, w.Body.String())
