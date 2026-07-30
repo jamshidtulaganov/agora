@@ -16,7 +16,11 @@ import (
 // the shared store because a rolling deploy can route start, webhook, and
 // verify requests to different backend processes.
 func (h *Handler) sharedTelegramLoginStoreEnabled() bool {
-	return config.Bool("AGORA_TELEGRAM_SHARED_LOGIN_STORE") && h.Queries != nil
+	if h.Queries == nil {
+		return false
+	}
+	return config.Bool("AGORA_TELEGRAM_SHARED_LOGIN_STORE") ||
+		config.String("APP_ENV") == "production"
 }
 
 func (h *Handler) startTelegramLogin(ctx context.Context, nonce string) error {
