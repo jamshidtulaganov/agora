@@ -33,6 +33,42 @@ services:
         value: production
       - key: ALLOW_SIGNUP
         value: "true"
+      # Keep email OTP and Google OAuth visible in the desktop login screen.
+      - key: AGORA_TELEGRAM_ONLY
+        value: "false"
+      # Gmail SMTP for email verification codes. Enter the Gmail address,
+      # an app password, and the sender address during Blueprint creation.
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_TLS
+        value: starttls
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        sync: false
+      - key: SMTP_EHLO_NAME
+        sync: false
+      # Telegram bot OTP login for desktop. Create the bot with @BotFather.
+      # The username is public (without @); token and webhook secret stay secret.
+      - key: TELEGRAM_BOT_USERNAME
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        generateValue: true
+      # Google OAuth web-client credentials. GOOGLE_REDIRECT_URI must be the
+      # backend callback URL:
+      # https://<actual-render-host>/auth/google/desktop/callback
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
       # Enter the public backend URL shown by Render, with no trailing slash.
       # Use the same value for all three variables, for example:
       # https://agora-backend.onrender.com

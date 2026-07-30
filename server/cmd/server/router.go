@@ -476,6 +476,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	r.With(authRL).Post("/auth/send-code", h.SendCode)
 	r.With(authVerifyRL).Post("/auth/verify-code", h.VerifyCode)
 	r.With(authRL).Post("/auth/google", h.GoogleLogin)
+	r.With(authRL).Get("/auth/google/desktop/start", h.GoogleDesktopStart)
+	r.With(authVerifyRL).Get("/auth/google/desktop/callback", h.GoogleDesktopCallback)
 	// Telegram bot-OTP login (PM bot DMs a 6-digit code). start mints the
 	// nonce/deep-link (authRL, same as send-code/google); verify exchanges
 	// nonce+code for a session (authVerifyRL, same per-IP budget as
