@@ -589,3 +589,22 @@ func TestTelegramPollerWebhookGuard(t *testing.T) {
 		})
 	}
 }
+
+func TestTelegramWebhookBaseURLPrecedence(t *testing.T) {
+	t.Setenv("TELEGRAM_WEBHOOK_URL", "https://hooks.example.com/")
+	t.Setenv("FRONTEND_ORIGIN", "https://app.example.com")
+	t.Setenv("AGORA_PUBLIC_URL", "https://api.example.com")
+	if got := telegramWebhookBaseURL(); got != "https://hooks.example.com/" {
+		t.Fatalf("explicit webhook URL = %q", got)
+	}
+
+	t.Setenv("TELEGRAM_WEBHOOK_URL", "")
+	if got := telegramWebhookBaseURL(); got != "https://app.example.com" {
+		t.Fatalf("frontend fallback = %q", got)
+	}
+
+	t.Setenv("FRONTEND_ORIGIN", "")
+	if got := telegramWebhookBaseURL(); got != "https://api.example.com" {
+		t.Fatalf("public URL fallback = %q", got)
+	}
+}

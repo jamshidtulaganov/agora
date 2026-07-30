@@ -122,6 +122,20 @@ func isLocalhostURL(rawURL string) bool {
 	return h == "localhost" || h == "127.0.0.1" || h == "::1"
 }
 
+// telegramWebhookBaseURL resolves the public origin Telegram should call.
+// Login traffic may intentionally enter through a web proxy even when
+// AGORA_PUBLIC_URL points at a separate backend host for files and daemon
+// setup. An explicit value wins; FRONTEND_ORIGIN keeps every browser-auth step
+// on the same proxy; AGORA_PUBLIC_URL remains the self-host fallback.
+func telegramWebhookBaseURL() string {
+	for _, key := range []string{"TELEGRAM_WEBHOOK_URL", "FRONTEND_ORIGIN", "AGORA_PUBLIC_URL"} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 // generateLoginNonce returns a 128-bit URL-safe random nonce for the deep link.
 func generateLoginNonce() (string, error) {
 	var buf [16]byte
@@ -408,17 +422,16 @@ func (h *Handler) RunTelegramLoginPoller(ctx context.Context) {
 // but nothing else registers that webhook, so a manually-set one silently
 // vanishes if Telegram drops a failing endpoint, leaving login broken with no
 // recovery (exactly how it broke once in prod). This (re)registers
-// <AGORA_PUBLIC_URL>/telegram/webhook, guarded by TELEGRAM_WEBHOOK_SECRET, on
-// every boot so the webhook self-heals. No-op unless telegram login is enabled
-// AND AGORA_PUBLIC_URL is genuinely public — a localhost/empty URL is the
-// poller's job (see RunTelegramLoginPoller), and the two are mutually exclusive
-// on that same isLocalhostURL condition so they never fight over the bot.
+// <TELEGRAM_WEBHOOK_URL>/telegram/webhook, guarded by TELEGRAM_WEBHOOK_SECRET,
+// on every boot so the webhook self-heals. TELEGRAM_WEBHOOK_URL falls back to
+// FRONTEND_ORIGIN, then AGORA_PUBLIC_URL. A localhost/empty URL is the poller's
+// job (see RunTelegramLoginPoller).
 // Best-effort: a failure is logged, not fatal.
 func (h *Handler) EnsureLoginWebhook(ctx context.Context) {
 	if !h.telegramLoginEnabled() {
 		return
 	}
-	pubURL := strings.TrimSpace(os.Getenv("AGORA_PUBLIC_URL"))
+	pubURL := telegramWebhookBaseURL()
 	if pubURL == "" || isLocalhostURL(pubURL) {
 		// Not publicly reachable → the long-poll fallback owns delivery.
 		return

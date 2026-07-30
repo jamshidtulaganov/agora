@@ -48,6 +48,8 @@ services:
         sync: false
       - key: TELEGRAM_WEBHOOK_SECRET
         generateValue: true
+      - key: TELEGRAM_WEBHOOK_URL
+        value: https://agora-web-7mav.onrender.com
       # Keep browser, desktop, and Telegram callback traffic on the same public
       # origin so the web proxy routes every login step to one backend service.
       - key: FRONTEND_ORIGIN

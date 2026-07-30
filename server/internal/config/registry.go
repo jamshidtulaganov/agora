@@ -84,6 +84,7 @@ var Registry = []Def{
 	// ---- Platform ------------------------------------------------------
 	{Key: "AGORA_TELEGRAM_ONLY", Kind: KindBool, Category: "Platform", Label: "Telegram-only mode", Description: "Restrict the web app to the Telegram mini-app login flow."},
 	{Key: "AGORA_TELEGRAM_SHARED_LOGIN_STORE", Kind: KindBool, Category: "Platform", Label: "Shared Telegram login store", Description: "Persist short-lived Telegram login state in PostgreSQL for multi-instance and rolling deployments."},
+	{Key: "TELEGRAM_WEBHOOK_URL", Kind: KindString, Category: "Platform", Label: "Telegram webhook URL", Description: "Public origin Telegram calls for login updates; falls back to the frontend or server public URL."},
 	{Key: "ALLOW_SIGNUP", Kind: KindBool, Category: "Platform", Label: "Allow signup", Description: "Allow new-account signup (off = invite-only).", Default: "true"},
 	{Key: "DISABLE_WORKSPACE_CREATION", Kind: KindBool, Category: "Platform", Label: "Disable workspace creation", Description: "Prevent members from creating new workspaces."},
 
