@@ -30,7 +30,7 @@ import (
 //
 // Flow:
 //  1. The web app calls POST /auth/telegram/start. We mint an unguessable
-//     nonce, register it in the in-memory login store, and return a deep link
+//     nonce, register it in the login store, and return a deep link
 //     "https://t.me/<bot>?start=login_<nonce>". The app shows it as a button /
 //     QR.
 //  2. The user taps the link, opening a DM with the bot pre-filled with
@@ -46,10 +46,12 @@ import (
 //     user external identity, then issue the SAME session (JWT + auth cookies)
 //     as the email-code and Google login paths.
 //
-// The login store + bot client are Handler fields wired in New() from env
+// The fallback login store + bot client are Handler fields wired in New() from env
 // (TELEGRAM_BOT_TOKEN / TELEGRAM_BOT_USERNAME / TELEGRAM_WEBHOOK_SECRET).
 // telegramBot is nil when TELEGRAM_BOT_TOKEN is unset, so the start/verify
-// handlers return 503 and /api/config omits telegram_bot_username.
+// handlers return 503 and /api/config omits telegram_bot_username. Cloud
+// deployments enable AGORA_TELEGRAM_SHARED_LOGIN_STORE so nonce state lives in
+// PostgreSQL and survives rolling deploys.
 
 // telegramSyntheticEmailDomain is the local-only domain used to derive a stable
 // user email from a Telegram id. These addresses are never deliverable; they
@@ -151,7 +153,11 @@ func (h *Handler) TelegramStart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to start telegram login")
 		return
 	}
-	h.telegramLogins.Start(nonce)
+	if err := h.startTelegramLogin(r.Context(), nonce); err != nil {
+		slog.Error("telegram login: failed to persist nonce", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to start telegram login")
+		return
+	}
 
 	deepLink := fmt.Sprintf("https://t.me/%s?start=login_%s", telegramBotUsername(), nonce)
 	writeJSON(w, http.StatusOK, telegramStartResponse{Nonce: nonce, DeepLink: deepLink})
@@ -299,7 +305,7 @@ func (h *Handler) processTelegramLoginUpdate(ctx context.Context, update telegra
 		return
 	}
 
-	if !h.telegramLogins.Bind(nonce, telegramID, firstName, code) {
+	if !h.bindTelegramLogin(ctx, nonce, telegramID, firstName, code) {
 		// Stale / expired / unknown nonce. Let the user know so they restart.
 		_ = h.telegramBot.SendMessage(ctx, telegramID,
 			"This login link has expired. Please start again from the app.")
@@ -458,7 +464,7 @@ func (h *Handler) TelegramVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	telegramID, firstName, ok := h.telegramLogins.Verify(nonce, code)
+	telegramID, firstName, ok := h.verifyTelegramLogin(r.Context(), nonce, code)
 	if !ok {
 		// Wrong code, expired, unbound, or already used — all collapse to 401
 		// so we don't leak which failure occurred.

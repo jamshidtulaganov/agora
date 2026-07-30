@@ -38,6 +38,8 @@ services:
       # Google OAuth in clients and rejects those auth endpoints server-side.
       - key: AGORA_TELEGRAM_ONLY
         value: "true"
+      - key: AGORA_TELEGRAM_SHARED_LOGIN_STORE
+        value: "true"
       # Telegram bot OTP login for desktop. Create the bot with @BotFather.
       # The username is public (without @); token and webhook secret stay secret.
       - key: TELEGRAM_BOT_USERNAME

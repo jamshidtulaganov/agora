@@ -163,7 +163,9 @@ type Handler struct {
 	// Telegram bot-OTP login (PM bot DMs a 6-digit code). Both are wired in
 	// New() from env. telegramBot is nil when TELEGRAM_BOT_TOKEN is unset, so
 	// the start/verify handlers 503 and /api/config omits telegram_bot_username.
-	// telegramLogins is the single-node in-memory nonce->code store (5-min TTL).
+	// telegramLogins is the single-node fallback nonce->code store (5-min TTL).
+	// Cloud deployments switch to PostgreSQL with
+	// AGORA_TELEGRAM_SHARED_LOGIN_STORE.
 	telegramBot     *telegram.BotClient
 	telegramLogins  *telegram.LoginStore
 	telegramWizards *telegram.WizardStore

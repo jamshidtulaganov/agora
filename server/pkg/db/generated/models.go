@@ -1038,6 +1038,17 @@ type TelegramInstallation struct {
 	AllowedChatIds         []int64            `json:"allowed_chat_ids"`
 }
 
+type TelegramLoginAttempt struct {
+	Nonce            string             `json:"nonce"`
+	TelegramIdentity string             `json:"telegram_identity"`
+	FirstName        string             `json:"first_name"`
+	Code             string             `json:"code"`
+	Attempts         int32              `json:"attempts"`
+	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
+	ConsumedAt       pgtype.Timestamptz `json:"consumed_at"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
 type TelegramQuestion struct {
 	ID          pgtype.UUID        `json:"id"`
 	WorkspaceID pgtype.UUID        `json:"workspace_id"`
