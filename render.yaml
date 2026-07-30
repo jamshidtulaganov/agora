@@ -18,7 +18,6 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
     numInstances: 1
-    maxShutdownDelaySeconds: 60
     disk:
       name: agora-uploads
       mountPath: /app/data/uploads
