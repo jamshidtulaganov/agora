@@ -38,6 +38,10 @@ interface LoginPageProps {
   mode?: "login" | "signup";
   /** Invite signups create a user profile, then return to the invited team. */
   registrationContext?: "company" | "invitation";
+  /** Email resolved from an invitation link before the form renders. */
+  initialEmail?: string;
+  /** Prevent an invitee from registering a different identity than the invite target. */
+  emailLocked?: boolean;
   /** Logo element rendered above the title. */
   logo?: ReactNode;
   /** Called after successful authentication and any signup setup. */
@@ -93,6 +97,8 @@ async function createCompanyWorkspace(
 export function LoginPage({
   mode = "login",
   registrationContext = "company",
+  initialEmail,
+  emailLocked = false,
   logo,
   onSuccess,
   cliCallback,
@@ -104,7 +110,7 @@ export function LoginPage({
   const isSignup = mode === "signup";
   const isInvitationSignup = isSignup && registrationContext === "invitation";
   const [step, setStep] = useState<"email" | "code" | "cli_confirm">("email");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(() => initialEmail?.trim().toLowerCase() ?? "");
   const [code, setCode] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -116,6 +122,11 @@ export function LoginPage({
   const [existingUser, setExistingUser] = useState<User | null>(null);
   const verifiedSignupUserRef = useRef<User | null>(null);
   const authSourceRef = useRef<"cookie" | "localStorage">("cookie");
+
+  useEffect(() => {
+    const normalized = initialEmail?.trim().toLowerCase();
+    if (normalized) setEmail(normalized);
+  }, [initialEmail]);
 
   useEffect(() => {
     if (!cliCallback || isSignup) return;
@@ -441,6 +452,7 @@ export function LoginPage({
                 placeholder={t(($) => $.common.email_placeholder)}
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
+                disabled={emailLocked}
                 autoComplete="email"
                 autoFocus={!isSignup}
                 required

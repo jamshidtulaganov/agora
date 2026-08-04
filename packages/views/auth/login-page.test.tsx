@@ -442,6 +442,8 @@ describe("LoginPage", () => {
       <LoginPage
         mode="signup"
         registrationContext="invitation"
+        initialEmail="Invited.User@Example.com"
+        emailLocked
         onSuccess={onSuccess}
       />,
     );
@@ -450,6 +452,9 @@ describe("LoginPage", () => {
     expect(
       screen.getByText(/company workspace comes from the invitation/i),
     ).toBeInTheDocument();
+    const emailInput = screen.getByLabelText(/email/i);
+    expect(emailInput).toHaveValue("invited.user@example.com");
+    expect(emailInput).toBeDisabled();
   });
 
   // -------------------------------------------------------------------------

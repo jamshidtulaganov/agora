@@ -2,12 +2,14 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jamshidtulaganov/agora/server/internal/analytics"
 	"github.com/jamshidtulaganov/agora/server/internal/config"
@@ -33,6 +35,14 @@ type InvitationResponse struct {
 	InviterName   string `json:"inviter_name,omitempty"`
 	InviterEmail  string `json:"inviter_email,omitempty"`
 	WorkspaceName string `json:"workspace_name,omitempty"`
+}
+
+// InvitationAuthInfoResponse is the minimum bearer-scoped invitation data
+// needed before authentication. The random invitation UUID is the credential;
+// no workspace or inviter details are disclosed on this public endpoint.
+type InvitationAuthInfoResponse struct {
+	InviteeEmail  string `json:"invitee_email"`
+	AccountExists bool   `json:"account_exists"`
 }
 
 func invitationToResponse(inv db.WorkspaceInvitation) InvitationResponse {
@@ -268,6 +278,37 @@ func (h *Handler) RevokeInvitation(w http.ResponseWriter, r *http.Request) {
 	})
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ---------------------------------------------------------------------------
+// GetInvitationAuthInfo — resolve the auth path for an invitation link.
+// GET /auth/invitations/{id}
+// ---------------------------------------------------------------------------
+
+func (h *Handler) GetInvitationAuthInfo(w http.ResponseWriter, r *http.Request) {
+	invitationID := chi.URLParam(r, "id")
+	invitationUUID, ok := parseUUIDOrBadRequest(w, invitationID, "invitation id")
+	if !ok {
+		return
+	}
+
+	inv, err := h.Queries.GetInvitation(r.Context(), invitationUUID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "invitation not found")
+		return
+	}
+
+	_, err = h.Queries.GetUserByEmail(r.Context(), strings.ToLower(inv.InviteeEmail))
+	accountExists := err == nil
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusInternalServerError, "failed to resolve invitation account")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, InvitationAuthInfoResponse{
+		InviteeEmail:  inv.InviteeEmail,
+		AccountExists: accountExists,
+	})
 }
 
 // ---------------------------------------------------------------------------

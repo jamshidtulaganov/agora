@@ -10,6 +10,58 @@ import (
 
 const invitationTestEmail = "invitation-test@agora.dev"
 
+func TestGetInvitationAuthInfo(t *testing.T) {
+	clearInvitationsForTestWorkspace(t)
+
+	tests := []struct {
+		name          string
+		email         string
+		accountExists bool
+	}{
+		{name: "new invitee", email: "new-invitee@agora.dev", accountExists: false},
+		{name: "existing account", email: handlerTestEmail, accountExists: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var invitationID string
+			if err := testPool.QueryRow(context.Background(), `
+				INSERT INTO workspace_invitation (workspace_id, inviter_id, invitee_email, role)
+				VALUES ($1, $2, $3, 'member')
+				RETURNING id
+			`, parseUUID(testWorkspaceID), parseUUID(testUserID), tt.email).Scan(&invitationID); err != nil {
+				t.Fatalf("seed invitation: %v", err)
+			}
+
+			w := httptest.NewRecorder()
+			req := newRequest("GET", "/auth/invitations/"+invitationID, nil)
+			req = withURLParam(req, "id", invitationID)
+			testHandler.GetInvitationAuthInfo(w, req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("GetInvitationAuthInfo: expected 200, got %d: %s", w.Code, w.Body.String())
+			}
+
+			var resp InvitationAuthInfoResponse
+			if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if resp.InviteeEmail != tt.email || resp.AccountExists != tt.accountExists {
+				t.Fatalf("response = %+v, want email=%q account_exists=%v", resp, tt.email, tt.accountExists)
+			}
+		})
+	}
+}
+
+func TestGetInvitationAuthInfoRejectsMalformedID(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := newRequest("GET", "/auth/invitations/not-a-uuid", nil)
+	req = withURLParam(req, "id", "not-a-uuid")
+	testHandler.GetInvitationAuthInfo(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("GetInvitationAuthInfo: expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func clearInvitationsForTestWorkspace(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()

@@ -204,3 +204,8 @@ export interface Invitation {
   inviter_email?: string;
   workspace_name?: string;
 }
+
+export interface InvitationAuthInfo {
+  invitee_email: string;
+  account_exists: boolean;
+}

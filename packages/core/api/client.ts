@@ -115,6 +115,7 @@ import type {
   PinnedItemType,
   ReorderPinsRequest,
   Invitation,
+  InvitationAuthInfo,
   Autopilot,
   AutopilotTrigger,
   AutopilotRun,
@@ -1889,6 +1890,10 @@ export class ApiClient {
 
   async listMyInvitations(): Promise<Invitation[]> {
     return this.fetch("/api/invitations");
+  }
+
+  async getInvitationAuthInfo(invitationId: string): Promise<InvitationAuthInfo> {
+    return this.fetch(`/auth/invitations/${invitationId}`);
   }
 
   async getInvitation(invitationId: string): Promise<Invitation> {

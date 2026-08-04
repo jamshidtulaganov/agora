@@ -475,6 +475,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	contactSalesRL := middleware.RateLimit(rdb, envPositiveInt("RATE_LIMIT_CONTACT_SALES", 5), time.Hour, trustedProxies)
 	r.With(authRL).Post("/auth/send-code", h.SendCode)
 	r.With(authVerifyRL).Post("/auth/verify-code", h.VerifyCode)
+	r.With(authRL).Get("/auth/invitations/{id}", h.GetInvitationAuthInfo)
 	r.With(authRL).Post("/auth/google", h.GoogleLogin)
 	r.With(authRL).Get("/auth/google/desktop/start", h.GoogleDesktopStart)
 	r.With(authVerifyRL).Get("/auth/google/desktop/callback", h.GoogleDesktopCallback)

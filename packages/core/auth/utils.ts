@@ -19,3 +19,15 @@ export function sanitizeNextUrl(raw: string | null): string | null {
   if (/[\x00-\x1f\\]/.test(raw)) return null;
   return raw;
 }
+
+/** Extract a single invitation id from a previously sanitized next URL. */
+export function invitationIdFromNextUrl(nextUrl: string | null): string | null {
+  if (!nextUrl?.startsWith("/invite/")) return null;
+  const encoded = nextUrl.slice("/invite/".length);
+  if (!encoded || encoded.includes("/")) return null;
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    return null;
+  }
+}

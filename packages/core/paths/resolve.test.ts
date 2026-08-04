@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { Workspace } from "../types";
 import { paths } from "./paths";
-import { resolvePostAuthDestination } from "./resolve";
+import {
+  resolveInvitationAuthDestination,
+  resolvePostAuthDestination,
+} from "./resolve";
 
 function makeWs(slug: string): Workspace {
   return {
@@ -43,5 +46,19 @@ describe("resolvePostAuthDestination", () => {
     // user whose last workspace got deleted or who left it. They skip
     // re-onboarding and go straight to workspace creation.
     expect(resolvePostAuthDestination([], true)).toBe(paths.newWorkspace());
+  });
+});
+
+describe("resolveInvitationAuthDestination", () => {
+  it("routes a new invitee to registration", () => {
+    expect(resolveInvitationAuthDestination("invite-1", false)).toBe(
+      "/signup?next=%2Finvite%2Finvite-1",
+    );
+  });
+
+  it("routes an existing invitee to sign in", () => {
+    expect(resolveInvitationAuthDestination("invite-1", true)).toBe(
+      "/login?next=%2Finvite%2Finvite-1",
+    );
   });
 });

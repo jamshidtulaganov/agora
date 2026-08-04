@@ -43,6 +43,16 @@ export function resolvePostAuthDestination(
   return paths.newWorkspace();
 }
 
+/** Choose the first auth screen for a bearer invitation link. */
+export function resolveInvitationAuthDestination(
+  invitationId: string,
+  accountExists: boolean,
+): string {
+  const invitePath = paths.invite(invitationId);
+  const authPath = accountExists ? paths.login() : paths.signup();
+  return `${authPath}?next=${encodeURIComponent(invitePath)}`;
+}
+
 /**
  * Single source of truth: backed by `users.onboarded_at`, which
  * arrives with the user object on every auth response.
