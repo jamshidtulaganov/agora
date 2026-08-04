@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/multica-ai/multica/server/internal/config"
+	"github.com/jamshidtulaganov/agora/server/internal/config"
 )
 
 // Tag synonyms.

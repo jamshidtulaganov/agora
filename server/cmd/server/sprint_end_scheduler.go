@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/handler"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/handler"
+	"github.com/jamshidtulaganov/agora/server/internal/util"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // sprintEndInterval is how often the scheduler polls for sprints whose window

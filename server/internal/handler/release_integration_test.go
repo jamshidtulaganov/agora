@@ -10,8 +10,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/integrations/githubrelease"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/githubrelease"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // resetReleaseBox clears the sync.Once-cached secretbox so each test controls

@@ -6,11 +6,11 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/realtime"
-	"github.com/multica-ai/multica/server/internal/service"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/events"
+	"github.com/jamshidtulaganov/agora/server/internal/realtime"
+	"github.com/jamshidtulaganov/agora/server/internal/service"
+	"github.com/jamshidtulaganov/agora/server/internal/util"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // setupRerunTestFixture creates an issue assigned to the integration test

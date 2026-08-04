@@ -12,7 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // Project QA manifest — the QA counterpart to the project knowledge base

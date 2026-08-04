@@ -13,8 +13,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/service"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/service"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 type orchestrationPlanRequest struct {

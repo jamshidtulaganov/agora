@@ -11,9 +11,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/events"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/jamshidtulaganov/agora/server/internal/events"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/pkg/protocol"
 )
 
 type fakePatcherQueries struct {

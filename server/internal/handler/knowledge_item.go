@@ -9,8 +9,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/service"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/service"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // Knowledge-item review API — the human half of the KB flywheel. Agents

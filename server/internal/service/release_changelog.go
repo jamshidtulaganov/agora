@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/util"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // ShippedIssue is one issue in a sprint's release changelog: the human-facing

@@ -12,13 +12,13 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/analytics"
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/issueposition"
-	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/jamshidtulaganov/agora/server/internal/analytics"
+	"github.com/jamshidtulaganov/agora/server/internal/events"
+	"github.com/jamshidtulaganov/agora/server/internal/issueposition"
+	obsmetrics "github.com/jamshidtulaganov/agora/server/internal/metrics"
+	"github.com/jamshidtulaganov/agora/server/internal/util"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/pkg/protocol"
 )
 
 // TxStarter abstracts transaction creation (satisfied by pgxpool.Pool).

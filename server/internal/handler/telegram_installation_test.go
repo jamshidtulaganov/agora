@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // A bot token is full control of that bot — it can post to every chat the bot

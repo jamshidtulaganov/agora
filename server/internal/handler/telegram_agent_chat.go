@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/integrations/telegram"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/telegram"
+	"github.com/jamshidtulaganov/agora/server/internal/util"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // Two-way group chat for agents that own a bot.

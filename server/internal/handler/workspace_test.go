@@ -379,14 +379,14 @@ VALUES ($1, $2, 'owner')
 		req := newRequest("PATCH", "/api/workspaces/"+wsID, map[string]any{
 			"repos": []map[string]any{
 				{
-					"url":         "  https://github.com/multica-ai/multica.git  ",
+					"url":         "  https://github.com/jamshidtulaganov/agora.git  ",
 					"description": "  main monorepo  ",
 				},
 				{
-					"url": "https://github.com/multica-ai/multica.git",
+					"url": "https://github.com/jamshidtulaganov/agora.git",
 				},
 				{
-					"url": "git@github.com:multica-ai/multica-cloud.git",
+					"url": "git@github.com:jamshidtulaganov/agora-cloud.git",
 				},
 			},
 		})
@@ -408,10 +408,10 @@ VALUES ($1, $2, 'owner')
 		if len(repos) != 2 {
 			t.Fatalf("expected duplicate URL to be deduped, got %d repos: %s", len(repos), raw)
 		}
-		if repos[0].URL != "https://github.com/multica-ai/multica.git" || repos[0].Description != "main monorepo" {
+		if repos[0].URL != "https://github.com/jamshidtulaganov/agora.git" || repos[0].Description != "main monorepo" {
 			t.Fatalf("first repo not normalized: %+v", repos[0])
 		}
-		if repos[1].URL != "git@github.com:multica-ai/multica-cloud.git" {
+		if repos[1].URL != "git@github.com:jamshidtulaganov/agora-cloud.git" {
 			t.Fatalf("second repo not preserved: %+v", repos[1])
 		}
 	})

@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/jamshidtulaganov/agora/server/internal/events"
+	"github.com/jamshidtulaganov/agora/server/pkg/protocol"
 )
 
 // eventSink captures bus events of specific types for assertions.

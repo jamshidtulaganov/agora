@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // Project autonomy report — the rollout-ladder instrument. Phase 2 made only

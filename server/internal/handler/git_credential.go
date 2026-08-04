@@ -10,8 +10,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/util/secretbox"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/util/secretbox"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // Per-workspace git credentials let one workspace clone private repos across

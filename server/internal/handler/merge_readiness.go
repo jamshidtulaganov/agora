@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/multica-ai/multica/server/internal/service"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/service"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // Merge-readiness signal. Deterministic: aggregates the pipeline's gate

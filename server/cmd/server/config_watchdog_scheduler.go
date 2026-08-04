@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/handler"
+	"github.com/jamshidtulaganov/agora/server/internal/handler"
 )
 
 // configWatchdogInterval — how often the project-config watchdog sweeps

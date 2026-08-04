@@ -32,7 +32,7 @@ func TestProjectResourceLifecycle(t *testing.T) {
 	w = httptest.NewRecorder()
 	req = newRequest("POST", "/api/projects/"+project.ID+"/resources", map[string]any{
 		"resource_type": "github_repo",
-		"resource_ref":  map[string]any{"url": "https://github.com/multica-ai/multica"},
+		"resource_ref":  map[string]any{"url": "https://github.com/jamshidtulaganov/agora"},
 	})
 	req = withURLParam(req, "id", project.ID)
 	testHandler.CreateProjectResource(w, req)
@@ -52,7 +52,7 @@ func TestProjectResourceLifecycle(t *testing.T) {
 	if err := json.Unmarshal(created.ResourceRef, &ref); err != nil {
 		t.Fatalf("decode resource_ref: %v", err)
 	}
-	if ref.URL != "https://github.com/multica-ai/multica" {
+	if ref.URL != "https://github.com/jamshidtulaganov/agora" {
 		t.Errorf("created.ResourceRef.url = %q", ref.URL)
 	}
 
@@ -82,7 +82,7 @@ func TestProjectResourceLifecycle(t *testing.T) {
 	w = httptest.NewRecorder()
 	req = newRequest("POST", "/api/projects/"+project.ID+"/resources", map[string]any{
 		"resource_type": "github_repo",
-		"resource_ref":  map[string]any{"url": "https://github.com/multica-ai/multica"},
+		"resource_ref":  map[string]any{"url": "https://github.com/jamshidtulaganov/agora"},
 	})
 	req = withURLParam(req, "id", project.ID)
 	testHandler.CreateProjectResource(w, req)
@@ -163,8 +163,8 @@ func TestProjectResourceAcceptsSSHRepoURLs(t *testing.T) {
 		name string
 		url  string
 	}{
-		{"scp-like", "git@github.com:multica-ai/multica.git"},
-		{"ssh-scheme", "ssh://git@github.com/multica-ai/multica.git"},
+		{"scp-like", "git@github.com:jamshidtulaganov/agora.git"},
+		{"ssh-scheme", "ssh://git@github.com/jamshidtulaganov/agora.git"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -197,18 +197,18 @@ func TestProjectResourceAcceptsSSHRepoURLs(t *testing.T) {
 
 func TestIsValidGitRepoURL(t *testing.T) {
 	good := []string{
-		"https://github.com/multica-ai/multica",
-		"https://github.com/multica-ai/multica.git",
+		"https://github.com/jamshidtulaganov/agora",
+		"https://github.com/jamshidtulaganov/agora.git",
 		"http://github.example.com/x/y",
-		"ssh://git@github.com/multica-ai/multica.git",
-		"ssh://git@github.com:22/multica-ai/multica.git",
-		"git@github.com:multica-ai/multica.git",
+		"ssh://git@github.com/jamshidtulaganov/agora.git",
+		"ssh://git@github.com:22/jamshidtulaganov/agora.git",
+		"git@github.com:jamshidtulaganov/agora.git",
 		"git@gitlab.example.com:group/sub/repo.git",
 	}
 	bad := []string{
 		"",
 		"not-a-url",
-		"github.com/multica-ai/multica", // no scheme, no scp-style colon
+		"github.com/jamshidtulaganov/agora", // no scheme, no scp-style colon
 		"https://",                      // empty host
 		"git@github.com",                // missing :path
 		"git@:foo/bar",                  // missing host
@@ -469,7 +469,7 @@ func TestCreateProjectAttachesResources(t *testing.T) {
 		"resources": []map[string]any{
 			{
 				"resource_type": "github_repo",
-				"resource_ref":  map[string]any{"url": "https://github.com/multica-ai/multica"},
+				"resource_ref":  map[string]any{"url": "https://github.com/jamshidtulaganov/agora"},
 			},
 		},
 	})

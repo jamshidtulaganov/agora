@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // The risk-map context must carry the tier rules an agent acts on: highest

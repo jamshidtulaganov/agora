@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/integrations/telegram"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/telegram"
 )
 
 type capturedDM struct {

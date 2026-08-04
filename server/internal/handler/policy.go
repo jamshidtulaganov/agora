@@ -3,7 +3,7 @@ package handler
 import (
 	"net/http"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // Policy Agent — the fleet watchdog. A workspace-scoped read of agent SPEED +

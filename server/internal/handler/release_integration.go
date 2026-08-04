@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/multica-ai/multica/server/internal/integrations/releasehook"
-	"github.com/multica-ai/multica/server/internal/util/secretbox"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/releasehook"
+	"github.com/jamshidtulaganov/agora/server/internal/util/secretbox"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // Per-workspace release integrations (release-hub Thread B / Phase 2). A

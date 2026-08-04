@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/multica-ai/multica/server/internal/qamcp"
+	"github.com/jamshidtulaganov/agora/server/internal/qamcp"
 )
 
 // `agora mcp qa` — Agora's own QA MCP server over stdio. The daemon injects

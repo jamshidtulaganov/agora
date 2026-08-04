@@ -3,7 +3,7 @@ package metrics
 import (
 	"sync"
 
-	"github.com/multica-ai/multica/server/pkg/taskfailure"
+	"github.com/jamshidtulaganov/agora/server/pkg/taskfailure"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

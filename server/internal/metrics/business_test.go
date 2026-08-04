@@ -7,8 +7,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
-	"github.com/multica-ai/multica/server/internal/analytics"
-	"github.com/multica-ai/multica/server/pkg/taskfailure"
+	"github.com/jamshidtulaganov/agora/server/internal/analytics"
+	"github.com/jamshidtulaganov/agora/server/pkg/taskfailure"
 )
 
 func TestBusinessMetricsLifecycleCountersAndGauge(t *testing.T) {

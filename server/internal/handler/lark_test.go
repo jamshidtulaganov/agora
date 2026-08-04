@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/integrations/lark"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/lark"
 )
 
 // Lark-handler unit tests focus on the no-config short-circuits —

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/service"
+	"github.com/jamshidtulaganov/agora/server/internal/service"
 )
 
 func sptrDesign(s string) *string { return &s }

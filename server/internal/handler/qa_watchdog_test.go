@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // TestQAWatchdog_EscalatesSilentGate verifies the silent-failure SPOF guard end

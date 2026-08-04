@@ -5,8 +5,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/internal/util"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/util"
 )
 
 // Example is one fine-tuning training record assembled from a run trace:

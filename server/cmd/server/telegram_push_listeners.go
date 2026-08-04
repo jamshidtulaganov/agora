@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/handler"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/jamshidtulaganov/agora/server/internal/events"
+	"github.com/jamshidtulaganov/agora/server/internal/handler"
+	"github.com/jamshidtulaganov/agora/server/pkg/protocol"
 )
 
 // registerTelegramPushListeners fans out a best-effort Telegram DM for each new

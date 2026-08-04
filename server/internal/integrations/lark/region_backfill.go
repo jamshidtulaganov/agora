@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // BackfillRegionFromLegacyOverride is the upgrade-repair path for self-host

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/util"
+	"github.com/jamshidtulaganov/agora/server/internal/util"
 )
 
 // newZohoSprintsHandlerMock serves the Zoho Sprints column-format endpoints for

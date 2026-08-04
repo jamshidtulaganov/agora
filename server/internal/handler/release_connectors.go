@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/multica-ai/multica/server/internal/integrations/bitrix"
-	"github.com/multica-ai/multica/server/internal/integrations/githubrelease"
-	"github.com/multica-ai/multica/server/internal/integrations/gitlabrelease"
-	"github.com/multica-ai/multica/server/internal/integrations/releasehook"
-	"github.com/multica-ai/multica/server/internal/integrations/sentry"
-	"github.com/multica-ai/multica/server/internal/integrations/slack"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/bitrix"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/githubrelease"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/gitlabrelease"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/releasehook"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/sentry"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/slack"
+	"github.com/jamshidtulaganov/agora/server/pkg/protocol"
 )
 
 // Release-integration connectors (release-hub Thread B / Phase 3-4). Each named

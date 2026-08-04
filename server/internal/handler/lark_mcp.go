@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"log/slog"
 
-	"github.com/multica-ai/multica/server/internal/integrations/lark"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/lark"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // injectLarkMcpCreds fills the Lark MCP server's credentials from the agent's

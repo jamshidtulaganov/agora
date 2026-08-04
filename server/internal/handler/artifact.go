@@ -18,9 +18,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/auth"
-	"github.com/multica-ai/multica/server/internal/middleware"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/auth"
+	"github.com/jamshidtulaganov/agora/server/internal/middleware"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 const artifactCapabilityTTL = 30 * time.Minute

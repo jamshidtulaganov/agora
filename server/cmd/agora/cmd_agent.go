@@ -13,8 +13,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/multica-ai/multica/server/internal/cli"
-	"github.com/multica-ai/multica/server/internal/daemon"
+	"github.com/jamshidtulaganov/agora/server/internal/cli"
+	"github.com/jamshidtulaganov/agora/server/internal/daemon"
 )
 
 var agentCmd = &cobra.Command{

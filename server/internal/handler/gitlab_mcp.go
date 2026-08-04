@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // GitLab MCP auto-injection (MCP-P1, docs/deploy-mcp-integration.md §3).

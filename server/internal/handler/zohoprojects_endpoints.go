@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/util"
+	"github.com/jamshidtulaganov/agora/server/internal/util"
 )
 
 // Authenticated Zoho Projects import endpoints (Phase 1, one-way). Unlike the

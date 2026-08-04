@@ -15,7 +15,7 @@ import (
 
 	"github.com/mattn/go-shellwords"
 
-	"github.com/multica-ai/multica/server/internal/cli"
+	"github.com/jamshidtulaganov/agora/server/internal/cli"
 )
 
 const (

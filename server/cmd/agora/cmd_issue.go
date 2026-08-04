@@ -15,8 +15,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/multica-ai/multica/server/internal/cli"
-	"github.com/multica-ai/multica/server/internal/util"
+	"github.com/jamshidtulaganov/agora/server/internal/cli"
+	"github.com/jamshidtulaganov/agora/server/internal/util"
 )
 
 // resolveTextFlag picks between a `--<name>` inline value, a `--<name>-stdin`

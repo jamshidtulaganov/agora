@@ -12,8 +12,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/integrations/zohocrm"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/zohocrm"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // Per-user Zoho identity binding (U1, docs/zoho-dynamic-integration.md):

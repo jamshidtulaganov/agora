@@ -18,12 +18,12 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/analytics"
-	"github.com/multica-ai/multica/server/internal/auth"
-	"github.com/multica-ai/multica/server/internal/integrations/telegram"
-	"github.com/multica-ai/multica/server/internal/logger"
-	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/analytics"
+	"github.com/jamshidtulaganov/agora/server/internal/auth"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/telegram"
+	"github.com/jamshidtulaganov/agora/server/internal/logger"
+	obsmetrics "github.com/jamshidtulaganov/agora/server/internal/metrics"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // Telegram bot-OTP login (NOT the Telegram Login Widget).

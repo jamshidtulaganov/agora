@@ -3,8 +3,8 @@ package handler
 import (
 	"strings"
 
-	"github.com/multica-ai/multica/server/internal/figma"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/figma"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // Figma link extraction is the platform primitive design-as-a-build-input

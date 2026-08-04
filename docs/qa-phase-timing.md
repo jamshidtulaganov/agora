@@ -169,7 +169,7 @@ others predict.
 
 ## Local connection
 
-The default DSN baked into the Go test harness is `multica:multica@…/multica`,
+The default DSN baked into the Go test harness is `agora:agora@…/agora`,
 which is **not** this checkout's database. Use the values from `.env`:
 
 ```bash

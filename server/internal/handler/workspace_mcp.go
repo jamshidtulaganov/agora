@@ -11,8 +11,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/logger"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/logger"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // workspaceMcpActivityUpdated is the activity_log `action` constant for

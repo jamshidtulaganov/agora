@@ -17,8 +17,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/multica-ai/multica/server/internal/auth"
-	"github.com/multica-ai/multica/server/internal/cli"
+	"github.com/jamshidtulaganov/agora/server/internal/auth"
+	"github.com/jamshidtulaganov/agora/server/internal/cli"
 )
 
 // loginTokenPrefixes are the token prefixes `agora login --token` accepts.

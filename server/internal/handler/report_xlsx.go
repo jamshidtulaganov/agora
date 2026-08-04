@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/multica-ai/multica/server/internal/util/xlsx"
+	"github.com/jamshidtulaganov/agora/server/internal/util/xlsx"
 )
 
 // Rendering an agent's markdown report into a spreadsheet.

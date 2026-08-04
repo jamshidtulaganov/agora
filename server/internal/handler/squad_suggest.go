@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // Phase 2 of the hybrid auto-instructions feature: the "tailor" action behind

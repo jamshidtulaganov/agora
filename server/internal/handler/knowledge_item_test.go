@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // Knowledge-item review API tests — the human half of the KB flywheel:

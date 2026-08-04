@@ -8,9 +8,9 @@ import (
 
 	"log/slog"
 
-	"github.com/multica-ai/multica/server/internal/config"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/config"
+	"github.com/jamshidtulaganov/agora/server/internal/util"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // Mid-run progress from a long autopilot into its Telegram group.

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/integrations/bitrix"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/bitrix"
 )
 
 // Which Bitrix workgroup is the team's current sprint.

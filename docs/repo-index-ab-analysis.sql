@@ -2,7 +2,7 @@
 --
 -- Run against the Agora DB once enough tasks have run through both arms:
 --   docker exec agora-postgres-1 psql -U agora -d agora -f docs/repo-index-ab-analysis.sql
---   (prod: fly ssh console -a sd-agora-db, then psql -U multica -d multica)
+--   (prod: fly ssh console -a sd-agora-db, then psql -U agora -d agora)
 --
 -- Arm 0 = control (no pack). Arm 1 = treatment (pack pushed into the prompt).
 -- Assignment is deterministic: hash(task_id), so a retried task keeps its arm.

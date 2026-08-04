@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // NoopConnector satisfies EventConnector by holding the run context

@@ -10,8 +10,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/integrations/zohocrm"
-	"github.com/multica-ai/multica/server/internal/util"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/zohocrm"
+	"github.com/jamshidtulaganov/agora/server/internal/util"
 )
 
 // Agora-hosted Zoho MCP server (U3, docs/zoho-dynamic-integration.md): a

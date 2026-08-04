@@ -10,8 +10,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/multica-ai/multica/server/internal/integrations/llm"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/llm"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // zhipuAPIKey reads the free-model key. Empty => the summarize feature 503s.

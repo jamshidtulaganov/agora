@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // figmaEnvOf pulls mcpServers.figma out of a config payload for assertions.

@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/multica-ai/multica/server/internal/integrations/bitrix"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/bitrix"
 )
 
 // A filtered list of Bitrix tasks, with links.

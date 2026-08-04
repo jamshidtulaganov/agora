@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/integrations/bitrix"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/bitrix"
 )
 
 // Bitrix task analytics — a portal-wide, time-windowed rollup of tasks.task.list.

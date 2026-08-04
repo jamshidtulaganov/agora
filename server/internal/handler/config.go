@@ -1,13 +1,13 @@
 package handler
 
 import (
-	"github.com/multica-ai/multica/server/internal/config"
+	"github.com/jamshidtulaganov/agora/server/internal/config"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 
-	"github.com/multica-ai/multica/server/internal/analytics"
+	"github.com/jamshidtulaganov/agora/server/internal/analytics"
 )
 
 type AppConfig struct {

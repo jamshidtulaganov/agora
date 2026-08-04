@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
-	"github.com/multica-ai/multica/server/internal/config"
+	"github.com/jamshidtulaganov/agora/server/internal/config"
 	"log/slog"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/handler"
+	"github.com/jamshidtulaganov/agora/server/internal/handler"
 )
 
 // bitrixSyncPollInterval is the period for the Bitrix safety-net poll, from

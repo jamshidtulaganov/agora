@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/service"
+	"github.com/jamshidtulaganov/agora/server/internal/service"
 )
 
 // KB-skill re-splice + canManageSkill tests. These exercise the server-side

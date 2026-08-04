@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/daemon"
+	"github.com/jamshidtulaganov/agora/server/internal/daemon"
 )
 
 // The four QA tools. Every result is a JSON object string; every verdict in it

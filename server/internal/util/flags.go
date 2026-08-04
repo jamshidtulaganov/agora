@@ -1,7 +1,7 @@
 package util
 
 import (
-	"github.com/multica-ai/multica/server/internal/config"
+	"github.com/jamshidtulaganov/agora/server/internal/config"
 )
 
 // SprintPRModeEnabled reports whether sprint PR mode is on

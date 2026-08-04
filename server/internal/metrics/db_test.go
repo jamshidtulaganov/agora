@@ -11,7 +11,7 @@ import (
 )
 
 func TestDBCollectorExposesPoolStats(t *testing.T) {
-	pool, err := pgxpool.New(context.Background(), "postgres://multica:multica@127.0.0.1:1/multica?sslmode=disable")
+	pool, err := pgxpool.New(context.Background(), "postgres://agora:agora@127.0.0.1:1/agora?sslmode=disable")
 	if err != nil {
 		t.Fatalf("create pool: %v", err)
 	}

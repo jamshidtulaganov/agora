@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/multica-ai/multica/server/internal/cloudruntime"
+	"github.com/jamshidtulaganov/agora/server/internal/cloudruntime"
 )
 
 // Cloud billing endpoints proxy to the same agora-cloud HTTP service

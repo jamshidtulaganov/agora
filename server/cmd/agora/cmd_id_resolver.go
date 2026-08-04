@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/multica-ai/multica/server/internal/cli"
+	"github.com/jamshidtulaganov/agora/server/internal/cli"
 )
 
 const minShortIDPrefixLen = 4

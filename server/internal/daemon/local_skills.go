@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/multica-ai/multica/server/internal/skill"
+	"github.com/jamshidtulaganov/agora/server/internal/skill"
 )
 
 const (

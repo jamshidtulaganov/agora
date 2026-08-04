@@ -52,7 +52,7 @@ func TestBuildResourceRefFromFlagsGithubMergesHint(t *testing.T) {
 	t.Run("hint-only edit preserves existing url", func(t *testing.T) {
 		cmd := newProjectResourceUpdateTestCmd()
 		_ = cmd.Flags().Set("default-branch-hint", "main")
-		existing := map[string]any{"url": "https://github.com/multica-ai/multica"}
+		existing := map[string]any{"url": "https://github.com/jamshidtulaganov/agora"}
 
 		ref, has, err := buildResourceRefFromFlags(cmd, "github_repo", existing)
 		if err != nil {
@@ -61,7 +61,7 @@ func TestBuildResourceRefFromFlagsGithubMergesHint(t *testing.T) {
 		if !has {
 			t.Fatalf("expected has=true when default-branch-hint is set")
 		}
-		if ref["url"] != "https://github.com/multica-ai/multica" {
+		if ref["url"] != "https://github.com/jamshidtulaganov/agora" {
 			t.Errorf("expected merged url, got %v", ref["url"])
 		}
 		if ref["default_branch_hint"] != "main" {
@@ -73,7 +73,7 @@ func TestBuildResourceRefFromFlagsGithubMergesHint(t *testing.T) {
 		cmd := newProjectResourceUpdateTestCmd()
 		_ = cmd.Flags().Set("default-branch-hint", "")
 		existing := map[string]any{
-			"url":                 "https://github.com/multica-ai/multica",
+			"url":                 "https://github.com/jamshidtulaganov/agora",
 			"default_branch_hint": "stale",
 		}
 		ref, has, err := buildResourceRefFromFlags(cmd, "github_repo", existing)
@@ -83,7 +83,7 @@ func TestBuildResourceRefFromFlagsGithubMergesHint(t *testing.T) {
 		if !has {
 			t.Fatalf("expected has=true")
 		}
-		if ref["url"] != "https://github.com/multica-ai/multica" {
+		if ref["url"] != "https://github.com/jamshidtulaganov/agora" {
 			t.Errorf("expected url to survive empty-hint clear, got %v", ref["url"])
 		}
 		if _, ok := ref["default_branch_hint"]; ok {
@@ -95,7 +95,7 @@ func TestBuildResourceRefFromFlagsGithubMergesHint(t *testing.T) {
 		cmd := newProjectResourceUpdateTestCmd()
 		_ = cmd.Flags().Set("url", "https://github.com/agora-ai/new-repo")
 		existing := map[string]any{
-			"url":                 "https://github.com/multica-ai/multica",
+			"url":                 "https://github.com/jamshidtulaganov/agora",
 			"default_branch_hint": "main",
 		}
 		ref, has, err := buildResourceRefFromFlags(cmd, "github_repo", existing)

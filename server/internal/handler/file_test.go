@@ -21,8 +21,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/multica-ai/multica/server/internal/auth"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/auth"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // createHandlerTestChatSession seeds a chat_session row owned by testUserID

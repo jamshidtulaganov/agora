@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/util"
+	"github.com/jamshidtulaganov/agora/server/internal/util"
 )
 
 // zohoHandlerMock is a fake Zoho Projects REST + OAuth host for the handler-level

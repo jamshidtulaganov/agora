@@ -16,11 +16,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/cli"
-	"github.com/multica-ai/multica/server/internal/daemon/execenv"
-	"github.com/multica-ai/multica/server/internal/daemon/repocache"
-	"github.com/multica-ai/multica/server/pkg/agent"
-	"github.com/multica-ai/multica/server/pkg/taskfailure"
+	"github.com/jamshidtulaganov/agora/server/internal/cli"
+	"github.com/jamshidtulaganov/agora/server/internal/daemon/execenv"
+	"github.com/jamshidtulaganov/agora/server/internal/daemon/repocache"
+	"github.com/jamshidtulaganov/agora/server/pkg/agent"
+	"github.com/jamshidtulaganov/agora/server/pkg/taskfailure"
 )
 
 // ErrRepoNotConfigured is returned by ensureRepoReady when the requested repo

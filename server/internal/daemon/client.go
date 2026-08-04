@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/jamshidtulaganov/agora/server/pkg/protocol"
 )
 
 // requestError is returned by postJSON/getJSON when the server responds with an error status.

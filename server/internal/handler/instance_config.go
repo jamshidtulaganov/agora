@@ -8,8 +8,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/multica-ai/multica/server/internal/config"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/config"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // instanceConfigEntry is one row in the Settings → Configs list.

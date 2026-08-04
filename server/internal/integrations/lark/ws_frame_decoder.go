@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // LarkJSONFrameDecoder decodes the JSON event payload Lark nests

@@ -6,7 +6,7 @@
 -- (per-dev jamshid/shahzod scoped to sd-main; agora-cs -> sd-cs; sandbox =
 -- shared sd-main box), and adds the QA regression autopilot.
 --
--- Run: cat scripts/prod-sdmain-sdteam-2026-07-07.sql | fly ssh console -a sd-agora-db -C 'psql -U multica -d multica'
+-- Run: cat scripts/prod-sdmain-sdteam-2026-07-07.sql | fly ssh console -a sd-agora-db -C 'psql -U agora -d agora'
 
 -- 1) the project itself (full settings from the hardened local copy)
 INSERT INTO project (id, workspace_id, title, description, status, priority, settings)

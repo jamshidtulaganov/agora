@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // CardActionHandler reacts to a member tapping a `"type":"request"` button on

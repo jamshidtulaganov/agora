@@ -432,7 +432,7 @@ func discoverOpenCodeModels(ctx context.Context, executablePath string) ([]Model
 	// Newer opencode (1.15+) syncs its hosted free-model catalog over the
 	// network on `opencode models`, which can take ~6s; the previous 5s cap
 	// timed out and returned an empty list, so the runtime showed online but
-	// the model picker was empty. See multica-ai/multica#3627.
+	// the model picker was empty. See jamshidtulaganov/agora#3627.
 	runCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, executablePath, "models", "--verbose")

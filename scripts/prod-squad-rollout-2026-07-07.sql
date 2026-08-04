@@ -3,7 +3,7 @@
 -- sprints exist, so binding autopilots cannot retro-fire the sprint-end
 -- scheduler. Reviewed against the same rollout applied locally.
 --
--- Run: cat scripts/prod-squad-rollout-2026-07-07.sql | fly ssh console -a sd-agora-db -C 'psql -U multica -d multica'
+-- Run: cat scripts/prod-squad-rollout-2026-07-07.sql | fly ssh console -a sd-agora-db -C 'psql -U agora -d agora'
 
 -- 1) sprint_mode=true for QA-able projects (idempotent merge)
 UPDATE project p SET settings = COALESCE(p.settings,'{}'::jsonb) || '{"sprint_mode": true}'::jsonb

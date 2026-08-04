@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/util/xlsx"
+	"github.com/jamshidtulaganov/agora/server/internal/util/xlsx"
 )
 
 func TestMarkdownToSheetKeepsTableCellsSeparate(t *testing.T) {

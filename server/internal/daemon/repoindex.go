@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/repoindex"
+	"github.com/jamshidtulaganov/agora/server/internal/repoindex"
 )
 
 // Repo context pack: the "push" half of Agora's index-augmented agent work.

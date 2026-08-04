@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // Project risk map — the machine-readable module/blast-radius tiering for a

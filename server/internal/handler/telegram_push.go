@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/integrations/telegram"
-	"github.com/multica-ai/multica/server/internal/util"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/telegram"
+	"github.com/jamshidtulaganov/agora/server/internal/util"
 )
 
 // Bot push: when an inbox item is created for a member, DM that user on Telegram

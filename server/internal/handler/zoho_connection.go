@@ -13,9 +13,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/integrations/zohocrm"
-	"github.com/multica-ai/multica/server/internal/util/secretbox"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/zohocrm"
+	"github.com/jamshidtulaganov/agora/server/internal/util/secretbox"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 // The workspace Zoho connection is the credential root of the dynamic Zoho

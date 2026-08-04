@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/repoindex"
+	"github.com/jamshidtulaganov/agora/server/internal/repoindex"
 )
 
 // findTreatmentTaskID returns a task ID that lands in the given arm, so the

@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/figma"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/figma"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 func issueWith(description, figmaLinksStamp string) db.Issue {

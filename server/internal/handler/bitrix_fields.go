@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/multica-ai/multica/server/internal/integrations/bitrix"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/bitrix"
 )
 
 // The portal's own task-field catalogue.

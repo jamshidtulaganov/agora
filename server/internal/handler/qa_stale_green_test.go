@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/service"
+	"github.com/jamshidtulaganov/agora/server/internal/service"
 )
 
 // seedOpenPR links an OPEN pull request with the given head sha to the issue.

@@ -10,8 +10,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/integrations/githubrelease"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/githubrelease"
+	"github.com/jamshidtulaganov/agora/server/pkg/protocol"
 )
 
 func mustJSON(t *testing.T, v any) []byte {

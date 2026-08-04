@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/multica-ai/multica/server/internal/integrations/bitrix"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/bitrix"
 )
 
 // Read-only Bitrix task surface for agents.

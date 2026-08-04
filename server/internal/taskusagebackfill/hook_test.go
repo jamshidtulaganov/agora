@@ -15,8 +15,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/multica-ai/multica/server/internal/migrations"
-	"github.com/multica-ai/multica/server/internal/taskusagebackfill"
+	"github.com/jamshidtulaganov/agora/server/internal/migrations"
+	"github.com/jamshidtulaganov/agora/server/internal/taskusagebackfill"
 )
 
 // TestHook_DirectV034Upgrade simulates the path described in
@@ -39,7 +39,7 @@ import (
 func TestHook_DirectV034Upgrade(t *testing.T) {
 	adminURL := os.Getenv("DATABASE_URL")
 	if adminURL == "" {
-		adminURL = "postgres://multica:multica@localhost:5432/multica?sslmode=disable"
+		adminURL = "postgres://agora:agora@localhost:5432/agora?sslmode=disable"
 	}
 
 	ctx := context.Background()
@@ -159,7 +159,7 @@ func TestHook_DirectV034Upgrade(t *testing.T) {
 func TestHook_FreshDatabaseStampsWatermarkOnly(t *testing.T) {
 	adminURL := os.Getenv("DATABASE_URL")
 	if adminURL == "" {
-		adminURL = "postgres://multica:multica@localhost:5432/multica?sslmode=disable"
+		adminURL = "postgres://agora:agora@localhost:5432/agora?sslmode=disable"
 	}
 	ctx := context.Background()
 	if !databaseReachable(ctx, adminURL) {

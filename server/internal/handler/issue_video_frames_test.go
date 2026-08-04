@@ -3,7 +3,7 @@ package handler
 import (
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/util"
+	"github.com/jamshidtulaganov/agora/server/internal/util"
 )
 
 // The per-issue frame-extraction lock is what keeps the on-assign background

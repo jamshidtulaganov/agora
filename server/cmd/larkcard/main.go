@@ -13,10 +13,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/multica-ai/multica/server/internal/integrations/lark"
-	"github.com/multica-ai/multica/server/internal/util"
-	"github.com/multica-ai/multica/server/internal/util/secretbox"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/jamshidtulaganov/agora/server/internal/integrations/lark"
+	"github.com/jamshidtulaganov/agora/server/internal/util"
+	"github.com/jamshidtulaganov/agora/server/internal/util/secretbox"
+	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
 func main() {
@@ -88,5 +88,5 @@ func main() {
 	}
 	fmt.Printf("OK sent card message_id=%s to chat=%s\n", msgID, *chatID)
 	fmt.Println("Now TAP a button (status / Assign to me / QA) in Lark, then check:")
-	fmt.Println("  docker logs multica-backend-1 | grep -i 'card action'")
+	fmt.Println("  docker logs agora-backend-1 | grep -i 'card action'")
 }
