@@ -95,9 +95,11 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		AllowSignup:               config.String("ALLOW_SIGNUP") != "false",
 		GoogleClientID:            os.Getenv("GOOGLE_CLIENT_ID"),
 		WorkspaceCreationDisabled: config.Bool("DISABLE_WORKSPACE_CREATION"),
-		TelegramOnly:              config.Bool("AGORA_TELEGRAM_ONLY"),
-		RemoteBoxesEnabled:        config.Bool("AGORA_REMOTE_BOXES_ENABLED"),
-		CLIReleasesURL:            cliReleasesURLFromEnv(),
+		// Agora's hosted authentication is email-first. Ignore stale
+		// Telegram-only values left on older deployments after the migration.
+		TelegramOnly:       false,
+		RemoteBoxesEnabled: config.Bool("AGORA_REMOTE_BOXES_ENABLED"),
+		CLIReleasesURL:     cliReleasesURLFromEnv(),
 		// Same env gates the integration endpoints themselves check:
 		// bitrixEndpointsEnabled() = BITRIX_WEBHOOK_URL set; zohoConfigured() =
 		// Zoho OAuth client/secret/refresh set; Lark keys off the master

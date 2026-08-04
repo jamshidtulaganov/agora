@@ -7,11 +7,10 @@ import (
 	"testing"
 )
 
-// The AGORA_TELEGRAM_ONLY gate must refuse the email-code and Google login
-// endpoints server-side. The frontend hides those methods, but a stale
-// desktop build (or curl) calls the endpoints directly — hiding is only
-// honest if the endpoints themselves 403.
-func TestTelegramOnlyGateRefusesEmailAndGoogleLogin(t *testing.T) {
+// Email authentication remains enabled even when an older deployment still
+// carries AGORA_TELEGRAM_ONLY=true. Agora's current hosted auth is email-first,
+// and stale Render environment values must not disable its endpoints.
+func TestLegacyTelegramOnlyFlagDoesNotBlockEmailAndGoogleLogin(t *testing.T) {
 	t.Setenv("AGORA_TELEGRAM_ONLY", "true")
 	h := newTestHandler(Config{AllowSignup: true})
 
@@ -30,17 +29,14 @@ func TestTelegramOnlyGateRefusesEmailAndGoogleLogin(t *testing.T) {
 			w := httptest.NewRecorder()
 			r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(ep.body))
 			ep.fn(w, r)
-			if w.Code != http.StatusForbidden {
-				t.Fatalf("%s with AGORA_TELEGRAM_ONLY: got %d, want 403 (body: %s)", ep.name, w.Code, w.Body.String())
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("%s with legacy AGORA_TELEGRAM_ONLY: got %d, want 400 field validation (body: %s)", ep.name, w.Code, w.Body.String())
 			}
 		})
 	}
 }
 
-// Without the flag the gate must stay open. Empty-field bodies stop each
-// handler at its own 400 validation (before any DB access), which proves the
-// request got PAST the 403 gate without needing fixtures.
-func TestTelegramOnlyGateOpenByDefault(t *testing.T) {
+func TestEmailAndGoogleLoginOpenByDefault(t *testing.T) {
 	t.Setenv("AGORA_TELEGRAM_ONLY", "")
 	h := newTestHandler(Config{AllowSignup: true})
 

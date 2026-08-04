@@ -19,10 +19,6 @@ const googleDesktopStateCookie = "agora_google_desktop_state"
 // app. The backend owns this flow so a desktop-only deployment does not need a
 // separately hosted Next.js service.
 func (h *Handler) GoogleDesktopStart(w http.ResponseWriter, r *http.Request) {
-	if telegramOnlyLoginGate(w) {
-		return
-	}
-
 	clientID := strings.TrimSpace(os.Getenv("GOOGLE_CLIENT_ID"))
 	redirectURI := strings.TrimSpace(os.Getenv("GOOGLE_REDIRECT_URI"))
 	if clientID == "" || strings.TrimSpace(os.Getenv("GOOGLE_CLIENT_SECRET")) == "" || redirectURI == "" {

@@ -19,6 +19,7 @@ func TestGetConfigIncludesRuntimeAuthConfig(t *testing.T) {
 	t.Setenv("AGORA_PUBLIC_URL", "https://api.example.com/")
 	t.Setenv("AGORA_APP_URL", "https://app.example.com/")
 	t.Setenv("AGORA_CLI_RELEASES_URL", "https://api.github.com/repos/jamshidtulaganov/agora-cli/releases/latest")
+	t.Setenv("AGORA_TELEGRAM_ONLY", "true")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
 	w := httptest.NewRecorder()
@@ -53,6 +54,9 @@ func TestGetConfigIncludesRuntimeAuthConfig(t *testing.T) {
 	}
 	if cfg.WorkspaceCreationDisabled {
 		t.Fatalf("workspace_creation_disabled: want false by default, got true")
+	}
+	if cfg.TelegramOnly {
+		t.Fatal("telegram_only: stale deployment flag must not disable email auth")
 	}
 	if cfg.DaemonServerURL != "https://api.example.com" {
 		t.Fatalf("daemon_server_url: want https://api.example.com, got %q", cfg.DaemonServerURL)
