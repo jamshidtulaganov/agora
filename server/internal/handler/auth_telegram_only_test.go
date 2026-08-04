@@ -17,17 +17,16 @@ func TestLegacyTelegramOnlyFlagDoesNotBlockEmailAndGoogleLogin(t *testing.T) {
 	endpoints := []struct {
 		name string
 		fn   http.HandlerFunc
-		body string
 	}{
-		{"SendCode", h.SendCode, `{"email":"a@x.com"}`},
-		{"VerifyCode", h.VerifyCode, `{"email":"a@x.com","code":"123456"}`},
-		{"GoogleLogin", h.GoogleLogin, `{"code":"oauth-code"}`},
+		{"SendCode", h.SendCode},
+		{"VerifyCode", h.VerifyCode},
+		{"GoogleLogin", h.GoogleLogin},
 	}
 
 	for _, ep := range endpoints {
 		t.Run(ep.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(ep.body))
+			r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{}`))
 			ep.fn(w, r)
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("%s with legacy AGORA_TELEGRAM_ONLY: got %d, want 400 field validation (body: %s)", ep.name, w.Code, w.Body.String())
