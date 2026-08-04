@@ -1,4 +1,6 @@
 export { AppSidebar, SIDEBAR_WORKSPACE_NAV_KEYS } from "./app-sidebar";
+export { NotificationCenter } from "./notification-center";
+export { NotificationToastBridge } from "./notification-toast-bridge";
 export { CockpitFrame } from "./cockpit-frame";
 export { DashboardGuard } from "./dashboard-guard";
 export { DashboardLayout } from "./dashboard-layout";

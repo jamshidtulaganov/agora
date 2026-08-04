@@ -7,6 +7,7 @@ import { inboxKeys } from "../inbox/queries";
 import { issueKeys } from "../issues/queries";
 import { notificationPreferenceKeys } from "../notification-preferences/queries";
 import { workspaceKeys } from "../workspace/queries";
+import { registerForegroundSystemNotificationHandler } from "../platform/system-notification";
 import type {
   ChatDonePayload,
   ChatMessage,
@@ -356,6 +357,30 @@ describe("handleInboxNew", () => {
 
   afterEach(() => {
     delete (globalThis as Record<string, unknown>).desktopAPI;
+    delete (globalThis as Record<string, unknown>).document;
+    registerForegroundSystemNotificationHandler(null);
+  });
+
+  it("uses the shared in-app notification bridge when Agora is focused", async () => {
+    const qc = createQueryClient();
+    qc.setQueryData<Workspace[]>(workspaceKeys.list(), [workspace()]);
+    qc.setQueryData(notificationPreferenceKeys.all("ws-a"), {
+      preferences: { system_notifications: "all" },
+    });
+    const showNotification = stubDesktopAPI();
+    const showForeground = vi.fn();
+    registerForegroundSystemNotificationHandler(showForeground);
+    (globalThis as Record<string, unknown>).document = {
+      hasFocus: () => true,
+    };
+
+    await handleInboxNew(qc, inboxItem());
+
+    expect(showForeground).toHaveBeenCalledWith(
+      expect.objectContaining({ itemId: "item-1", slug: "workspace-a" }),
+    );
+    expect(showNotification).not.toHaveBeenCalled();
+    delete (globalThis as Record<string, unknown>).document;
   });
 
   it("still shows the banner when the slug can't be resolved, with an empty slug so the click is a no-op", async () => {

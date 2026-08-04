@@ -116,6 +116,9 @@ vi.mock("@agora/core/api", async (importOriginal) => {
   };
 });
 vi.mock("@agora/core/inbox/queries", () => ({ deduplicateInboxItems: (items: unknown[]) => items, inboxKeys: { list: () => ["inbox"] } }));
+vi.mock("@agora/core/inbox/mutations", () => ({
+  useMarkAllInboxRead: () => ({ mutate: vi.fn(), isPending: false }),
+}));
 vi.mock("@agora/core/issues/queries", () => ({ issueDetailOptions: () => ({ queryKey: ["issue"] }) }));
 vi.mock("@agora/core/issues/stores/create-mode-store", () => ({
   useCreateModeStore: { getState: () => ({ lastMode: "agent" }) },

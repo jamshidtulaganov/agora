@@ -467,7 +467,9 @@ if (!gotTheLock) {
         },
       ) => {
         if (!Notification.isSupported()) return;
-        const notification = new Notification({ title, body });
+        // Explicitly keep the OS notification sound enabled; platform-level
+        // Do Not Disturb / Focus settings still take precedence.
+        const notification = new Notification({ title, body, silent: false });
         notification.on("click", () => {
           if (!mainWindow) return;
           if (mainWindow.isMinimized()) mainWindow.restore();

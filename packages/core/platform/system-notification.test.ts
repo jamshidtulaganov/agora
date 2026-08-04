@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getWebNotificationPermission,
   isWebNotificationSupported,
+  registerForegroundSystemNotificationHandler,
   registerSystemNotificationClickHandler,
   requestWebNotificationPermission,
+  showForegroundSystemNotification,
   showWebNotification,
   type SystemNotificationPayload,
 } from "./system-notification";
@@ -54,6 +56,7 @@ afterEach(() => {
   FakeNotification.permission = "granted";
   FakeNotification.requestPermission.mockClear();
   registerSystemNotificationClickHandler(null);
+  registerForegroundSystemNotificationHandler(null);
   delete (globalThis as Record<string, unknown>).window;
 });
 
@@ -112,7 +115,11 @@ describe("showWebNotification", () => {
     showWebNotification(payload());
     expect(created).toHaveLength(1);
     expect(created[0]?.title).toBe("Mentioned you");
-    expect(created[0]?.options).toMatchObject({ body: "in a comment", tag: "item-1" });
+    expect(created[0]?.options).toMatchObject({
+      body: "in a comment",
+      tag: "item-1",
+      silent: false,
+    });
   });
 
   it("routes a click to the registered handler and closes the banner", () => {
@@ -138,5 +145,20 @@ describe("showWebNotification", () => {
     }
     installWindow(ThrowingNotification);
     expect(() => showWebNotification(payload())).not.toThrow();
+  });
+});
+
+describe("foreground notification bridge", () => {
+  it("delivers a focused-app notification to the registered host", () => {
+    const handler = vi.fn();
+    registerForegroundSystemNotificationHandler(handler);
+
+    showForegroundSystemNotification(payload());
+
+    expect(handler).toHaveBeenCalledWith(payload());
+  });
+
+  it("is a no-op while no host is registered", () => {
+    expect(() => showForegroundSystemNotification(payload())).not.toThrow();
   });
 });

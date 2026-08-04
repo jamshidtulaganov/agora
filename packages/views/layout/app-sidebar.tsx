@@ -88,6 +88,7 @@ import type { PinnedItem } from "@agora/core/types";
 import { useLogout } from "../auth";
 import { ProjectIcon } from "../projects/components/project-icon";
 import { useT } from "../i18n";
+import { NotificationCenter } from "./notification-center";
 
 // Top-level nav items stay active when the user is on a child route
 // (e.g. "Projects" stays lit on /:slug/projects/:id). Pinned items keep
@@ -402,9 +403,13 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
     queryFn: () => api.listInbox(),
     enabled: !!wsId,
   });
-  const unreadCount = React.useMemo(
-    () => deduplicateInboxItems(inboxItems).filter((i) => !i.read).length,
+  const visibleInboxItems = React.useMemo(
+    () => deduplicateInboxItems(inboxItems),
     [inboxItems],
+  );
+  const unreadCount = React.useMemo(
+    () => visibleInboxItems.filter((i) => !i.read).length,
+    [visibleInboxItems],
   );
   // Running-task count for the Inbox badge (replaces the old standalone
   // "N running" sidebar row). Same shared snapshot every other live surface
@@ -527,11 +532,11 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
         {/* Workspace Switcher */}
         <SidebarHeader className={cn("py-3", headerClassName)} style={headerStyle}>
           <SidebarMenu>
-            <SidebarMenuItem>
+            <SidebarMenuItem className="relative">
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
-                    <SidebarMenuButton>
+                    <SidebarMenuButton className="pr-10">
                       <span className="relative">
                         <WorkspaceAvatar name={workspace?.name ?? "M"} avatarUrl={workspace?.avatar_url} size="sm" />
                         {myInvitations.length > 0 && (
@@ -644,6 +649,9 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                   </DropdownMenuGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
+              <div className="absolute right-0 top-0 z-10">
+                <NotificationCenter items={visibleInboxItems} />
+              </div>
             </SidebarMenuItem>
           </SidebarMenu>
           <SidebarMenu>

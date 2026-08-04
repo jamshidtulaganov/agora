@@ -8,10 +8,12 @@ export { clearWorkspaceStorage } from "./storage-cleanup";
 export { isMac, modKey, enterKey, formatShortcut } from "./keyboard";
 export {
   registerSystemNotificationClickHandler,
+  registerForegroundSystemNotificationHandler,
   isWebNotificationSupported,
   getWebNotificationPermission,
   requestWebNotificationPermission,
   showWebNotification,
+  showForegroundSystemNotification,
   type SystemNotificationPayload,
   type WebNotificationPermission,
 } from "./system-notification";

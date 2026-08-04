@@ -10,7 +10,7 @@ import {
   useSidebar,
 } from "@agora/ui/components/ui/sidebar";
 import { ModalRegistry } from "@agora/views/modals/registry";
-import { AppSidebar } from "@agora/views/layout";
+import { AppSidebar, NotificationToastBridge } from "@agora/views/layout";
 import { SearchCommand, SearchTrigger } from "@agora/views/search";
 import { ChatFab, ChatWindow } from "@agora/views/chat";
 import { WorkspaceSlugProvider, paths, useCurrentWorkspace } from "@agora/core/paths";
@@ -181,6 +181,7 @@ export function DesktopShell() {
           triggered by IndexRedirect, not a route. */}
       <WorkspaceSlugProvider slug={slug}>
         <DesktopInboxBridge />
+        <NotificationToastBridge />
         <div className="flex h-screen">
           <SidebarProvider className="flex-1">
             {slug && <AppSidebar topSlot={<SidebarTopBar />} searchSlot={<SearchTrigger />} />}

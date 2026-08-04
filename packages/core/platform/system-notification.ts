@@ -30,11 +30,13 @@ export interface SystemNotificationPayload {
 }
 
 type ClickHandler = (payload: SystemNotificationPayload) => void;
+type ForegroundHandler = (payload: SystemNotificationPayload) => void;
 
 // Module-level singleton — mirrors how the desktop preload registers its
 // behavior once at boot. The web shell registers a router-aware handler; while
 // unregistered (SSR, tests, pre-mount) a click is a silent no-op.
 let clickHandler: ClickHandler | null = null;
+let foregroundHandler: ForegroundHandler | null = null;
 
 /**
  * Register how a clicked web notification routes (focus + navigate to the
@@ -46,6 +48,24 @@ export function registerSystemNotificationClickHandler(
   handler: ClickHandler | null,
 ): void {
   clickHandler = handler;
+}
+
+/**
+ * Register the shared web/desktop in-app toast + chime renderer. The realtime
+ * layer calls this when Agora is focused, where operating systems commonly
+ * suppress native banners. Passing null unregisters the host bridge.
+ */
+export function registerForegroundSystemNotificationHandler(
+  handler: ForegroundHandler | null,
+): void {
+  foregroundHandler = handler;
+}
+
+/** Show the focused-app notification through the registered host bridge. */
+export function showForegroundSystemNotification(
+  payload: SystemNotificationPayload,
+): void {
+  foregroundHandler?.(payload);
 }
 
 // Read the Notification constructor off `window` (rather than the bare global)
@@ -104,6 +124,9 @@ export function showWebNotification(payload: SystemNotificationPayload): void {
       // Collapse repeat banners for the same inbox row (e.g. a reconnect
       // replays the `inbox:new` event).
       tag: payload.itemId,
+      // Ask the host OS to play its normal notification sound. Browsers may
+      // still honor per-site / Do Not Disturb settings.
+      silent: false,
     });
   } catch {
     // Some engines require an active ServiceWorkerRegistration to construct a

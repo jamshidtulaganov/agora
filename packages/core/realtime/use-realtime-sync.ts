@@ -38,6 +38,7 @@ import {
 } from "../notification-preferences/queries";
 import { workspaceKeys, workspaceListOptions } from "../workspace/queries";
 import {
+  showForegroundSystemNotification,
   showWebNotification,
   type SystemNotificationPayload,
 } from "../platform/system-notification";
@@ -230,11 +231,10 @@ export async function handleInboxNew(
 ): Promise<void> {
   const sourceWsId = item.workspace_id;
   if (sourceWsId) onInboxNew(qc, sourceWsId, item);
-  // Fire a native OS notification only when the app isn't focused. When
-  // the user is already looking at Agora, the inbox sidebar's unread
-  // styling is enough — no need to interrupt with a banner. `desktopAPI`
-  // is injected by the preload script; its absence (web app) skips silently.
-  if (typeof document !== "undefined" && document.hasFocus()) return;
+  // Focused apps use the shared in-app toast + chime bridge; background apps
+  // use browser/Electron native notifications. Resolve preferences and source
+  // workspace first so both delivery paths obey the same mute/deep-link rules.
+  const isFocused = typeof document !== "undefined" && document.hasFocus();
   // Resolve the source workspace's slug once: it pins BOTH the mute check
   // and the deep link to the workspace the inbox item BELONGS to, never the
   // currently active one. Reading `getCurrentSlug()` here was the source of
@@ -279,6 +279,10 @@ export async function handleInboxNew(
     title: item.title,
     body: item.body ?? "",
   };
+  if (isFocused) {
+    showForegroundSystemNotification(payload);
+    return;
+  }
   const desktopAPI = (
     globalThis as unknown as {
       desktopAPI?: {
