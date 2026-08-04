@@ -13,14 +13,7 @@ function requireRuntimeApiUrl(): string {
 }
 
 export function DesktopLoginPage() {
-  const apiUrl = requireRuntimeApiUrl();
-  const handleGoogleLogin = () => {
-    // Backend-only deployments do not have a Next.js /login page. Start OAuth
-    // on the API origin; its callback returns the token through agora://.
-    window.desktopAPI.openExternal(
-      `${apiUrl}/auth/google/desktop/start`,
-    );
-  };
+  requireRuntimeApiUrl();
 
   return (
     <div className="flex h-screen flex-col">
@@ -31,7 +24,6 @@ export function DesktopLoginPage() {
           // Auth store update triggers AppContent re-render → shows DesktopShell.
           // Initial workspace navigation happens in routes.tsx via IndexRedirect.
         }}
-        onGoogleLogin={handleGoogleLogin}
       />
     </div>
   );

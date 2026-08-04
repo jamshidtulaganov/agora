@@ -34,10 +34,28 @@ services:
         value: production
       - key: ALLOW_SIGNUP
         value: "true"
-      # Telegram is the only production login method. This hides email OTP and
-      # Google OAuth in clients and rejects those auth endpoints server-side.
+      # Public auth is email-only. The shared UI does not expose social login,
+      # and the backend must leave email-code endpoints enabled.
       - key: AGORA_TELEGRAM_ONLY
-        value: "true"
+        value: "false"
+      # ZeptoMail SMTP delivers login codes and invitation links. The password
+      # is Agent-specific and must be entered in Render, never committed.
+      - key: SMTP_HOST
+        value: smtp.zeptomail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USERNAME
+        value: emailapikey
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_TLS
+        value: starttls
+      - key: SMTP_TLS_INSECURE
+        value: "false"
+      - key: RESEND_FROM_EMAIL
+        value: noreply@tsst.ai
+      # The platform bot remains available for inbox and agent integrations;
+      # it is no longer presented as a sign-in method.
       - key: AGORA_TELEGRAM_SHARED_LOGIN_STORE
         value: "true"
       # Telegram bot OTP login for desktop. Create the bot with @BotFather.

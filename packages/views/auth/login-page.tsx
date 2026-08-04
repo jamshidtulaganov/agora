@@ -1,72 +1,54 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
 } from "@agora/ui/components/ui/card";
+import { Button } from "@agora/ui/components/ui/button";
 import { Input } from "@agora/ui/components/ui/input";
-import { Button, buttonVariants } from "@agora/ui/components/ui/button";
-import { Label } from "@agora/ui/components/ui/label";
 import {
   InputOTP,
   InputOTPGroup,
   InputOTPSlot,
 } from "@agora/ui/components/ui/input-otp";
+import { Label } from "@agora/ui/components/ui/label";
+import { Textarea } from "@agora/ui/components/ui/textarea";
 import { useAuthStore } from "@agora/core/auth";
-import { useConfigStore } from "@agora/core/config";
-import { workspaceKeys } from "@agora/core/workspace/queries";
 import { api } from "@agora/core/api";
-import type { User } from "@agora/core/types";
+import type { User, Workspace } from "@agora/core/types";
+import { workspaceKeys } from "@agora/core/workspace/queries";
 import { useT } from "../i18n";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface GoogleAuthConfig {
-  clientId: string;
-  redirectUri: string;
-  /** Opaque state passed through Google OAuth (e.g. "platform:desktop"). */
-  state?: string;
-}
+import { isWorkspaceSlugConflict, nameToWorkspaceSlug } from "../workspace/slug";
 
 interface CliCallbackConfig {
-  /** Validated localhost callback URL */
+  /** Validated localhost callback URL. */
   url: string;
-  /** Opaque state to pass back to CLI */
+  /** Opaque state to pass back to CLI. */
   state: string;
 }
 
 interface LoginPageProps {
-  /** Logo element rendered above the title */
+  /** Email sign-in by default; signup also collects the initial profile/workspace. */
+  mode?: "login" | "signup";
+  /** Invite signups create a user profile, then return to the invited team. */
+  registrationContext?: "company" | "invitation";
+  /** Logo element rendered above the title. */
   logo?: ReactNode;
-  /** Called after successful login. The workspace list is seeded into React
-   *  Query before this fires, so the caller can compute a destination URL. */
+  /** Called after successful authentication and any signup setup. */
   onSuccess: () => void;
-  /** Google OAuth config. Omit to disable Google login. */
-  google?: GoogleAuthConfig;
-  /** CLI callback config for authorizing CLI tools. */
+  /** CLI callback config for authorizing CLI tools. Login mode only. */
   cliCallback?: CliCallbackConfig;
-  /** Called after a token is obtained (e.g. to set cookies). */
+  /** Called after a token is obtained (for example, to set cookies). */
   onTokenObtained?: () => void;
-  /** Override Google login handler (e.g. desktop opens browser externally). When provided, renders the Google button even if `google` config is omitted. */
-  onGoogleLogin?: () => void;
-  /** Slot rendered at the bottom of the sign-in card, below the
-   *  Google button. The web shell uses it for a "Prefer the desktop
-   *  app?" prompt; desktop omits it (a download prompt inside the app
-   *  would be absurd). */
+  /** Slot rendered at the bottom of the card. */
   extra?: ReactNode;
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function redirectToCliCallback(url: string, token: string, state: string) {
   const separator = url.includes("?") ? "&" : "?";
@@ -75,8 +57,7 @@ function redirectToCliCallback(url: string, token: string, state: string) {
 
 /**
  * Validate that a CLI callback URL points to a safe host over HTTP.
- * Allows localhost and private/LAN IPs (RFC 1918) to support self-hosted setups
- * on local VMs while blocking arbitrary public hosts.
+ * Allows localhost and private/LAN IPs while blocking arbitrary public hosts.
  */
 export function validateCliCallback(cliCallback: string): boolean {
   try {
@@ -84,7 +65,6 @@ export function validateCliCallback(cliCallback: string): boolean {
     if (cbUrl.protocol !== "http:") return false;
     const h = cbUrl.hostname;
     if (h === "localhost" || h === "127.0.0.1") return true;
-    // Allow RFC 1918 private IPs: 10.x.x.x, 172.16-31.x.x, 192.168.x.x
     if (/^10\./.test(h)) return true;
     if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
     if (/^192\.168\./.test(h)) return true;
@@ -94,57 +74,52 @@ export function validateCliCallback(cliCallback: string): boolean {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+async function createCompanyWorkspace(
+  companyName: string,
+  userID: string,
+): Promise<Workspace> {
+  const baseSlug = nameToWorkspaceSlug(companyName) || "workspace";
+  try {
+    return await api.createWorkspace({ name: companyName, slug: baseSlug });
+  } catch (error) {
+    if (!isWorkspaceSlugConflict(error)) throw error;
+    return api.createWorkspace({
+      name: companyName,
+      slug: `${baseSlug}-${userID.replaceAll("-", "").slice(0, 6).toLowerCase()}`,
+    });
+  }
+}
 
 export function LoginPage({
+  mode = "login",
+  registrationContext = "company",
   logo,
   onSuccess,
-  google,
   cliCallback,
   onTokenObtained,
-  onGoogleLogin,
   extra,
 }: LoginPageProps) {
   const { t } = useT("auth");
   const qc = useQueryClient();
-  // Telegram bot username is configured server-side (omitempty in /api/config)
-  // and surfaced via the config store — the Telegram button keys off it the
-  // same way the Google button keys off google_client_id.
-  const telegramBotUsername = useConfigStore((s) => s.telegramBotUsername);
-  // SD fork: when true, the login page presents ONLY the Telegram path — the
-  // email send-code form, the Google button, and the "or" divider are hidden.
-  // Surfaced via the config store (AGORA_TELEGRAM_ONLY → /api/config), the same
-  // way telegramBotUsername flows through.
-  const telegramOnly = useConfigStore((s) => s.telegramOnly);
-  // False until the /api/config fetch settles — gates the method picker below.
-  const authConfigLoaded = useConfigStore((s) => s.authConfigLoaded);
-  const [step, setStep] = useState<
-    "email" | "code" | "cli_confirm" | "telegram"
-  >("email");
+  const isSignup = mode === "signup";
+  const isInvitationSignup = isSignup && registrationContext === "invitation";
+  const [step, setStep] = useState<"email" | "code" | "cli_confirm">("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [profileDescription, setProfileDescription] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [existingUser, setExistingUser] = useState<User | null>(null);
-  // Telegram bot-OTP flow: nonce + deep_link returned by telegramStartLogin.
-  const [telegramNonce, setTelegramNonce] = useState("");
-  const [telegramDeepLink, setTelegramDeepLink] = useState("");
-  // Tracks how the existing session was detected so handleCliAuthorize
-  // uses the matching token source (cookie → issueCliToken, localStorage → direct).
+  const verifiedSignupUserRef = useRef<User | null>(null);
   const authSourceRef = useRef<"cookie" | "localStorage">("cookie");
 
-  // Check for existing session when CLI callback is present.
-  // Prioritises cookie auth (= current browser session) to avoid authorising
-  // the CLI with a stale or mismatched localStorage token.
   useEffect(() => {
-    if (!cliCallback) return;
-
-    // Ensure no stale bearer token interferes — we want to test the cookie first.
+    if (!cliCallback || isSignup) return;
     api.setToken(null);
-
     api
       .getMe()
       .then((user) => {
@@ -153,10 +128,8 @@ export function LoginPage({
         setStep("cli_confirm");
       })
       .catch(() => {
-        // Cookie auth failed — fall back to localStorage token
         const token = localStorage.getItem("agora_token");
         if (!token) return;
-
         api.setToken(token);
         api
           .getMe()
@@ -170,26 +143,34 @@ export function LoginPage({
             localStorage.removeItem("agora_token");
           });
       });
-  }, [cliCallback]);
+  }, [cliCallback, isSignup]);
 
-  // Cooldown timer for resend
   useEffect(() => {
     if (cooldown <= 0) return;
-    const timer = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    const timer = setTimeout(() => setCooldown((value) => value - 1), 1000);
     return () => clearTimeout(timer);
   }, [cooldown]);
 
+  const signupFieldsComplete =
+    firstName.trim().length > 0 &&
+    lastName.trim().length > 0 &&
+    (isInvitationSignup || companyName.trim().length > 0);
+
   const handleSendCode = useCallback(
-    async (e?: React.FormEvent) => {
-      e?.preventDefault();
+    async (event?: React.FormEvent) => {
+      event?.preventDefault();
       if (!email) {
         setError(t(($) => $.common.email_required));
+        return;
+      }
+      if (isSignup && !signupFieldsComplete) {
+        setError(t(($) => $.signup.required_fields));
         return;
       }
       setLoading(true);
       setError("");
       try {
-        await useAuthStore.getState().sendCode(email);
+        await useAuthStore.getState().sendCode(email, mode);
         setStep("code");
         setCode("");
         setCooldown(60);
@@ -203,8 +184,26 @@ export function LoginPage({
         setLoading(false);
       }
     },
-    [email, t],
+    [email, isSignup, mode, signupFieldsComplete, t],
   );
+
+  const finishSignup = useCallback(
+    async (user: User) => {
+      const updatedUser = await api.updateMe({
+        name: `${firstName.trim()} ${lastName.trim()}`,
+        profile_description: profileDescription.trim(),
+      });
+      useAuthStore.getState().setUser(updatedUser);
+      if (isInvitationSignup) {
+        const workspaces = await api.listWorkspaces();
+        qc.setQueryData(workspaceKeys.list(), workspaces);
+      } else {
+        const workspace = await createCompanyWorkspace(companyName.trim(), user.id);
+        qc.setQueryData(workspaceKeys.list(), [workspace]);
+      }
+      onTokenObtained?.();
+      onSuccess();
+    }, [companyName, firstName, isInvitationSignup, lastName, onSuccess, onTokenObtained, profileDescription, qc]);
 
   const handleVerify = useCallback(
     async (value: string) => {
@@ -212,9 +211,17 @@ export function LoginPage({
       setLoading(true);
       setError("");
       try {
+        if (isSignup) {
+          const user =
+            verifiedSignupUserRef.current ??
+            (await useAuthStore.getState().verifyCode(email, value, "signup"));
+          verifiedSignupUserRef.current = user;
+          await finishSignup(user);
+          return;
+        }
+
         if (cliCallback) {
-          // CLI path: get token directly for the redirect URL
-          const { token } = await api.verifyCode(email, value);
+          const { token } = await api.verifyCode(email, value, "login");
           localStorage.setItem("agora_token", token);
           api.setToken(token);
           onTokenObtained?.();
@@ -222,79 +229,25 @@ export function LoginPage({
           return;
         }
 
-        // Normal path: seed the workspace list into the Query cache so the
-        // caller's onSuccess can read it synchronously to compute a destination
-        // URL (first workspace's slug, or /workspaces/new for zero-workspace
-        // users).
-        await useAuthStore.getState().verifyCode(email, value);
-        const wsList = await api.listWorkspaces();
-        qc.setQueryData(workspaceKeys.list(), wsList);
-        onTokenObtained?.();
-        onSuccess();
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : t(($) => $.errors.code_invalid),
-        );
-        setCode("");
-        setLoading(false);
-      }
-    },
-    [email, onSuccess, cliCallback, onTokenObtained, qc, t],
-  );
-
-  const handleTelegramStart = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const { nonce, deep_link } = await api.telegramStartLogin();
-      setTelegramNonce(nonce);
-      setTelegramDeepLink(deep_link);
-      setCode("");
-      setStep("telegram");
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : `${t(($) => $.errors.telegram_start_failed)} ${t(($) => $.errors.server_unreachable)}`,
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [t]);
-
-  const handleTelegramVerify = useCallback(
-    async (value: string) => {
-      if (value.length !== 6) return;
-      setLoading(true);
-      setError("");
-      try {
-        // Telegram verify returns the same LoginResponse shape as Google/CLI;
-        // establish the session via the canonical token path so the caller's
-        // onSuccess can read the seeded workspace list synchronously.
-        const { token } = await api.telegramVerifyLogin(telegramNonce, value);
-        await useAuthStore.getState().loginWithToken(token);
-        const wsList = await api.listWorkspaces();
-        qc.setQueryData(workspaceKeys.list(), wsList);
+        await useAuthStore.getState().verifyCode(email, value, "login");
+        const workspaces = await api.listWorkspaces();
+        qc.setQueryData(workspaceKeys.list(), workspaces);
         onTokenObtained?.();
         onSuccess();
       } catch (err) {
         setError(
           err instanceof Error ? err.message : t(($) => $.errors.code_invalid),
         );
-        setCode("");
+        if (!verifiedSignupUserRef.current) setCode("");
         setLoading(false);
       }
-    },
-    [telegramNonce, onSuccess, onTokenObtained, qc, t],
-  );
+    }, [cliCallback, email, finishSignup, isSignup, onSuccess, onTokenObtained, qc, t]);
 
   const handleResend = async () => {
     if (cooldown > 0) return;
     setError("");
     try {
-      await useAuthStore.getState().sendCode(email);
+      await useAuthStore.getState().sendCode(email, mode);
       setCooldown(60);
     } catch (err) {
       setError(
@@ -306,21 +259,15 @@ export function LoginPage({
   const handleCliAuthorize = async () => {
     if (!cliCallback) return;
     setLoading(true);
-
     try {
       let token: string;
-
       if (authSourceRef.current === "localStorage") {
-        // Session was detected via localStorage — reuse that token directly.
         const stored = localStorage.getItem("agora_token");
         if (!stored) throw new Error("token missing");
         token = stored;
       } else {
-        // Session was detected via cookie — obtain a bearer token from the server.
-        const res = await api.issueCliToken();
-        token = res.token;
+        token = (await api.issueCliToken()).token;
       }
-
       onTokenObtained?.();
       redirectToCliCallback(cliCallback.url, token, cliCallback.state);
     } catch {
@@ -331,51 +278,20 @@ export function LoginPage({
     }
   };
 
-  const handleGoogleLogin = () => {
-    if (onGoogleLogin) {
-      onGoogleLogin();
-      return;
-    }
-    if (!google) return;
-    const params = new URLSearchParams({
-      client_id: google.clientId,
-      redirect_uri: google.redirectUri,
-      response_type: "code",
-      scope: "openid email profile",
-      access_type: "offline",
-      prompt: "select_account",
-    });
-    if (google.state) params.set("state", google.state);
-    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
-  };
-
-  // -------------------------------------------------------------------------
-  // CLI confirm step
-  // -------------------------------------------------------------------------
-
   if (step === "cli_confirm" && existingUser) {
     return (
-      <div className="flex min-h-svh items-center justify-center">
+      <div className="flex min-h-svh items-center justify-center px-4">
         <Card className="w-full max-w-sm">
           <CardHeader className="text-center">
             {logo && <div className="mx-auto mb-4">{logo}</div>}
-            <CardTitle className="text-2xl">
-              {t(($) => $.cli.title)}
-            </CardTitle>
+            <CardTitle className="text-2xl">{t(($) => $.cli.title)}</CardTitle>
             <CardDescription>
               {t(($) => $.cli.description, { email: existingUser.email })}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
-            <Button
-              onClick={handleCliAuthorize}
-              disabled={loading}
-              className="w-full"
-              size="lg"
-            >
-              {loading
-                ? t(($) => $.cli.authorizing)
-                : t(($) => $.cli.authorize)}
+            <Button onClick={handleCliAuthorize} disabled={loading} className="w-full" size="lg">
+              {loading ? t(($) => $.cli.authorizing) : t(($) => $.cli.authorize)}
             </Button>
             <Button
               variant="ghost"
@@ -393,105 +309,13 @@ export function LoginPage({
     );
   }
 
-  // -------------------------------------------------------------------------
-  // Telegram bot-OTP step
-  // -------------------------------------------------------------------------
-
-  if (step === "telegram") {
-    return (
-      <div className="flex min-h-svh items-center justify-center">
-        <Card className="w-full max-w-sm">
-          <CardHeader className="text-center">
-            {logo && <div className="mx-auto mb-4">{logo}</div>}
-            <CardTitle className="text-2xl">
-              {t(($) => $.telegram.title)}
-            </CardTitle>
-            <CardDescription>
-              {t(($) => $.telegram.description)}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col items-center gap-4">
-            <button
-              type="button"
-              onClick={() =>
-                window.open(
-                  telegramDeepLink,
-                  "tg-login",
-                  "popup=1,width=480,height=680,noopener,noreferrer",
-                )
-              }
-              className={buttonVariants({
-                variant: "default",
-                size: "lg",
-                className: "w-full",
-              })}
-            >
-              <svg
-                className="mr-2 h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-              >
-                <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.56 8.21-1.86 8.77c-.14.62-.51.77-1.03.48l-2.85-2.1-1.37 1.32c-.15.15-.28.28-.57.28l.2-2.9 5.29-4.78c.23-.2-.05-.32-.36-.12L8.66 13.1l-2.82-.88c-.61-.19-.62-.61.13-.9l11.02-4.25c.51-.19.96.12.79.04z" />
-              </svg>
-              {t(($) => $.telegram.open_button, {
-                bot: telegramBotUsername,
-              })}
-            </button>
-            <p className="text-sm text-muted-foreground">
-              {t(($) => $.telegram.code_hint)}
-            </p>
-            <InputOTP
-              maxLength={6}
-              value={code}
-              onChange={(value) => {
-                setCode(value);
-                if (value.length === 6) handleTelegramVerify(value);
-              }}
-              disabled={loading}
-            >
-              <InputOTPGroup>
-                <InputOTPSlot index={0} />
-                <InputOTPSlot index={1} />
-                <InputOTPSlot index={2} />
-                <InputOTPSlot index={3} />
-                <InputOTPSlot index={4} />
-                <InputOTPSlot index={5} />
-              </InputOTPGroup>
-            </InputOTP>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-          </CardContent>
-          <CardFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              className="w-full"
-              onClick={() => {
-                setStep("email");
-                setCode("");
-                setError("");
-              }}
-            >
-              {t(($) => $.common.back)}
-            </Button>
-          </CardFooter>
-        </Card>
-      </div>
-    );
-  }
-
-  // -------------------------------------------------------------------------
-  // Code verification step
-  // -------------------------------------------------------------------------
-
   if (step === "code") {
     return (
-      <div className="flex min-h-svh items-center justify-center">
+      <div className="flex min-h-svh items-center justify-center px-4">
         <Card className="w-full max-w-sm">
           <CardHeader className="text-center">
             {logo && <div className="mx-auto mb-4">{logo}</div>}
-            <CardTitle className="text-2xl">
-              {t(($) => $.verify.title)}
-            </CardTitle>
+            <CardTitle className="text-2xl">{t(($) => $.verify.title)}</CardTitle>
             <CardDescription>
               {t(($) => $.verify.description, { email })}
             </CardDescription>
@@ -502,34 +326,32 @@ export function LoginPage({
               value={code}
               onChange={(value) => {
                 setCode(value);
-                if (value.length === 6) handleVerify(value);
+                if (value.length === 6) void handleVerify(value);
               }}
               disabled={loading}
             >
               <InputOTPGroup>
-                <InputOTPSlot index={0} />
-                <InputOTPSlot index={1} />
-                <InputOTPSlot index={2} />
-                <InputOTPSlot index={3} />
-                <InputOTPSlot index={4} />
-                <InputOTPSlot index={5} />
+                {Array.from({ length: 6 }, (_, index) => (
+                  <InputOTPSlot key={index} index={index} />
+                ))}
               </InputOTPGroup>
             </InputOTP>
-            {error && (
-              <p className="text-sm text-destructive">{error}</p>
-            )}
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <button
-                type="button"
-                onClick={handleResend}
-                disabled={cooldown > 0}
-                className="text-primary underline-offset-4 hover:underline disabled:text-muted-foreground disabled:no-underline disabled:cursor-not-allowed"
-              >
-                {cooldown > 0
-                  ? t(($) => $.verify.resend_cooldown, { seconds: cooldown })
-                  : t(($) => $.verify.resend)}
-              </button>
-            </div>
+            {error && <p className="text-center text-sm text-destructive">{error}</p>}
+            {verifiedSignupUserRef.current && error ? (
+              <Button type="button" variant="outline" onClick={() => void handleVerify(code)} disabled={loading}>
+                {t(($) => $.signup.retry_setup)}
+              </Button>
+            ) : null}
+            <button
+              type="button"
+              onClick={handleResend}
+              disabled={cooldown > 0}
+              className="text-sm text-primary underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline"
+            >
+              {cooldown > 0
+                ? t(($) => $.verify.resend_cooldown, { seconds: cooldown })
+                : t(($) => $.verify.resend)}
+            </button>
           </CardContent>
           <CardFooter>
             <Button
@@ -550,170 +372,109 @@ export function LoginPage({
     );
   }
 
-  // -------------------------------------------------------------------------
-  // Config loading gate
-  // -------------------------------------------------------------------------
-  // Which sign-in methods exist is server-driven (/api/config): a
-  // telegram_only deployment hides email/Google entirely. Until that fetch
-  // settles we don't know the method set, so render a neutral shell instead
-  // of flashing the email form and swapping it out from under the user.
-  if (!authConfigLoaded) {
-    return (
-      <div className="flex min-h-svh items-center justify-center">
-        <Card className="w-full max-w-sm">
-          <CardHeader className="text-center">
-            {logo && <div className="mx-auto mb-4">{logo}</div>}
-            <CardTitle className="text-2xl">
-              {t(($) => $.signin.title)}
-            </CardTitle>
-          </CardHeader>
-          <CardContent
-            className="flex justify-center py-6"
-            role="status"
-            aria-live="polite"
-          >
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" />
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  // -------------------------------------------------------------------------
-  // Email step
-  // -------------------------------------------------------------------------
-
   return (
-    <div className="flex min-h-svh items-center justify-center">
-      <Card className="w-full max-w-sm">
+    <div className="flex min-h-svh items-center justify-center px-4 py-8">
+      <Card className={`w-full ${isSignup ? "max-w-lg" : "max-w-sm"}`}>
         <CardHeader className="text-center">
           {logo && <div className="mx-auto mb-4">{logo}</div>}
           <CardTitle className="text-2xl">
-            {t(($) => $.signin.title)}
+            {isSignup ? t(($) => $.signup.title) : t(($) => $.signin.title)}
           </CardTitle>
           <CardDescription>
-            {telegramOnly
-              ? t(($) => $.signin.description_telegram)
-              : t(($) => $.signin.description)}
+            {isInvitationSignup
+              ? t(($) => $.signup.invitation_description)
+              : isSignup
+                ? t(($) => $.signup.description)
+                : t(($) => $.signin.description)}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          {/* Email OTP + Google SSO — primary sign-in for a dev-team product.
-              Hidden entirely in telegram_only mode (the SD fork), where the
-              Telegram button below is the sole way in. */}
-          {!telegramOnly && (
-            <>
-              <form id="login-form" onSubmit={handleSendCode} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="login-email">{t(($) => $.common.email)}</Label>
-                  <Input
-                    id="login-email"
-                    type="email"
-                    placeholder={t(($) => $.common.email_placeholder)}
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    autoFocus={!telegramBotUsername}
-                    required
-                  />
+        <CardContent className="flex flex-col gap-4">
+          <form id={`${mode}-form`} onSubmit={handleSendCode} className="space-y-4">
+            {isSignup ? (
+              <>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-first-name">{t(($) => $.signup.first_name)}</Label>
+                    <Input
+                      id="signup-first-name"
+                      value={firstName}
+                      onChange={(event) => setFirstName(event.target.value)}
+                      autoComplete="given-name"
+                      autoFocus
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-last-name">{t(($) => $.signup.last_name)}</Label>
+                    <Input
+                      id="signup-last-name"
+                      value={lastName}
+                      onChange={(event) => setLastName(event.target.value)}
+                      autoComplete="family-name"
+                      required
+                    />
+                  </div>
                 </div>
-                {error && (
-                  <p className="text-sm text-destructive">{error}</p>
+                {!isInvitationSignup ? (
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-company">{t(($) => $.signup.company_name)}</Label>
+                    <Input
+                      id="signup-company"
+                      value={companyName}
+                      onChange={(event) => setCompanyName(event.target.value)}
+                      autoComplete="organization"
+                      required
+                    />
+                  </div>
+                ) : (
+                  <p className="rounded-md border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+                    {t(($) => $.signup.invitation_hint)}
+                  </p>
                 )}
-              </form>
-              <Button
-                type="submit"
-                form="login-form"
-                className="w-full"
-                size="lg"
-                disabled={!email || loading}
-              >
-                {loading
-                  ? t(($) => $.signin.sending)
-                  : t(($) => $.signin.continue)}
-              </Button>
-              {(google || onGoogleLogin) && (
-                <>
-                  <div className="relative w-full">
-                    <div className="absolute inset-0 flex items-center">
-                      <span className="w-full border-t" />
-                    </div>
-                    <div className="relative flex justify-center text-xs uppercase">
-                      <span className="bg-card px-2 text-muted-foreground">
-                        {t(($) => $.signin.divider)}
-                      </span>
-                    </div>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full"
-                    size="lg"
-                    onClick={handleGoogleLogin}
-                    disabled={loading}
-                  >
-                    <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
-                      <path
-                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"
-                        fill="#4285F4"
-                      />
-                      <path
-                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                        fill="#34A853"
-                      />
-                      <path
-                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                        fill="#FBBC05"
-                      />
-                      <path
-                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                        fill="#EA4335"
-                      />
-                    </svg>
-                    {t(($) => $.signin.google)}
-                  </Button>
-                </>
-              )}
-            </>
-          )}
-          {/* Telegram — secondary option, shown after email/Google when the bot
-              is configured. In telegram_only mode it is the sole sign-in action
-              (the email/Google block above is hidden), so no leading divider. */}
-          {telegramBotUsername && (
-            <>
-              {!telegramOnly && (
-                <div className="relative w-full">
-                  <div className="absolute inset-0 flex items-center">
-                    <span className="w-full border-t" />
-                  </div>
-                  <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-card px-2 text-muted-foreground">
-                      {t(($) => $.signin.divider)}
-                    </span>
-                  </div>
-                </div>
-              )}
-              <Button
-                type="button"
-                variant={telegramOnly ? "default" : "outline"}
-                className="w-full"
-                size="lg"
-                onClick={handleTelegramStart}
-                disabled={loading}
-              >
-                <svg
-                  className="mr-2 h-4 w-4"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                >
-                  <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.56 8.21-1.86 8.77c-.14.62-.51.77-1.03.48l-2.85-2.1-1.37 1.32c-.15.15-.28.28-.57.28l.2-2.9 5.29-4.78c.23-.2-.05-.32-.36-.12L8.66 13.1l-2.82-.88c-.61-.19-.62-.61.13-.9l11.02-4.25c.51-.19.96.12.79.04z" />
-                </svg>
-                {t(($) => $.signin.telegram)}
-              </Button>
-            </>
-          )}
-          {telegramOnly && error && (
-            <p className="w-full text-sm text-destructive">{error}</p>
-          )}
+              </>
+            ) : null}
+            <div className="space-y-2">
+              <Label htmlFor={`${mode}-email`}>{t(($) => $.common.email)}</Label>
+              <Input
+                id={`${mode}-email`}
+                type="email"
+                placeholder={t(($) => $.common.email_placeholder)}
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                autoComplete="email"
+                autoFocus={!isSignup}
+                required
+              />
+            </div>
+            {isSignup ? (
+              <div className="space-y-2">
+                <Label htmlFor="signup-profile">{t(($) => $.signup.about_you)}</Label>
+                <Textarea
+                  id="signup-profile"
+                  value={profileDescription}
+                  onChange={(event) => setProfileDescription(event.target.value)}
+                  placeholder={t(($) => $.signup.about_you_placeholder)}
+                  rows={3}
+                  maxLength={2000}
+                />
+                <p className="text-xs text-muted-foreground">{t(($) => $.signup.about_you_hint)}</p>
+              </div>
+            ) : null}
+            {error && <p className="text-sm text-destructive">{error}</p>}
+          </form>
+          <Button
+            type="submit"
+            form={`${mode}-form`}
+            className="w-full"
+            size="lg"
+            disabled={!email || (isSignup && !signupFieldsComplete) || loading}
+          >
+            {loading
+              ? t(($) => $.signin.sending)
+              : isSignup
+                ? t(($) => $.signup.continue)
+                : t(($) => $.signin.continue)}
+          </Button>
           {extra && <div className="w-full pt-1 text-center">{extra}</div>}
         </CardContent>
       </Card>

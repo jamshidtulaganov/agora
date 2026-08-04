@@ -18,8 +18,8 @@ export interface AuthState {
   isLoading: boolean;
 
   initialize: () => Promise<void>;
-  sendCode: (email: string) => Promise<void>;
-  verifyCode: (email: string, code: string) => Promise<User>;
+  sendCode: (email: string, intent?: "login" | "signup") => Promise<void>;
+  verifyCode: (email: string, code: string, intent?: "login" | "signup") => Promise<User>;
   loginWithGoogle: (code: string, redirectUri: string) => Promise<User>;
   loginWithToken: (token: string) => Promise<User>;
   logout: () => void;
@@ -74,12 +74,12 @@ export function createAuthStore(options: AuthStoreOptions) {
       }
     },
 
-    sendCode: async (email: string) => {
-      await api.sendCode(email);
+    sendCode: async (email: string, intent?: "login" | "signup") => {
+      await api.sendCode(email, intent);
     },
 
-    verifyCode: async (email: string, code: string) => {
-      const { token, user } = await api.verifyCode(email, code);
+    verifyCode: async (email: string, code: string, intent?: "login" | "signup") => {
+      const { token, user } = await api.verifyCode(email, code, intent);
       if (!cookieAuth) {
         // Token mode: persist for Electron / legacy.
         storage.setItem("agora_token", token);

@@ -539,17 +539,21 @@ export class ApiClient {
   }
 
   // Auth
-  async sendCode(email: string): Promise<void> {
+  async sendCode(email: string, intent?: "login" | "signup"): Promise<void> {
     await this.fetch("/auth/send-code", {
       method: "POST",
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, ...(intent ? { intent } : {}) }),
     });
   }
 
-  async verifyCode(email: string, code: string): Promise<LoginResponse> {
+  async verifyCode(
+    email: string,
+    code: string,
+    intent?: "login" | "signup",
+  ): Promise<LoginResponse> {
     return this.fetch("/auth/verify-code", {
       method: "POST",
-      body: JSON.stringify({ email, code }),
+      body: JSON.stringify({ email, code, ...(intent ? { intent } : {}) }),
     });
   }
 

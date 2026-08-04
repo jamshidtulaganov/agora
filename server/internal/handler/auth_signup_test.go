@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -13,6 +14,39 @@ import (
 func newTestHandler(cfg Config) *Handler {
 	return &Handler{
 		cfg: cfg,
+	}
+}
+
+func TestValidateEmailAuthIntent(t *testing.T) {
+	tests := []struct {
+		name        string
+		intent      string
+		userErr     error
+		allowSignup bool
+		wantStatus  int
+	}{
+		{name: "existing user can log in", intent: emailAuthIntentLogin, allowSignup: false},
+		{name: "unknown user cannot log in", intent: emailAuthIntentLogin, userErr: pgx.ErrNoRows, allowSignup: true, wantStatus: http.StatusNotFound},
+		{name: "unknown user can sign up", intent: emailAuthIntentSignup, userErr: pgx.ErrNoRows, allowSignup: true},
+		{name: "existing user cannot sign up again", intent: emailAuthIntentSignup, allowSignup: true, wantStatus: http.StatusConflict},
+		{name: "signup policy still applies", intent: emailAuthIntentSignup, userErr: pgx.ErrNoRows, allowSignup: false, wantStatus: http.StatusForbidden},
+		{name: "invalid intent is rejected", intent: "social", allowSignup: true, wantStatus: http.StatusBadRequest},
+		{name: "legacy request remains compatible", intent: "", userErr: pgx.ErrNoRows, allowSignup: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newTestHandler(Config{AllowSignup: tt.allowSignup})
+			h.Queries = db.New(&mockDB{getUserErr: tt.userErr})
+
+			status, _, err := h.validateEmailAuthIntent(context.Background(), "user@example.com", tt.intent)
+			if err != nil {
+				t.Fatalf("validateEmailAuthIntent returned error: %v", err)
+			}
+			if status != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", status, tt.wantStatus)
+			}
+		})
 	}
 }
 

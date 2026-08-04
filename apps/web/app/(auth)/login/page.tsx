@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { sanitizeNextUrl, useAuthStore } from "@agora/core/auth";
-import { useConfigStore } from "@agora/core/config";
 import { workspaceKeys } from "@agora/core/workspace/queries";
 import {
   paths,
@@ -58,7 +57,6 @@ function LoginPageContent() {
   const router = useRouter();
   const qc = useQueryClient();
   const { t } = useT("auth");
-  const googleClientId = useConfigStore((state) => state.googleClientId);
   const user = useAuthStore((s) => s.user);
   const isLoading = useAuthStore((s) => s.isLoading);
   const searchParams = useSearchParams();
@@ -110,7 +108,7 @@ function LoginPageContent() {
     void resolveLoggedInDestination(qc, hasOnboarded, list).then((dest) =>
       router.replace(dest),
     );
-  }, [isLoading, user, router, nextUrl, cliCallbackRaw, isDesktopHandoff, hasOnboarded, qc]);
+  }, [isLoading, user, router, nextUrl, cliCallbackRaw, isDesktopHandoff, hasOnboarded, qc, t]);
 
   const handleSuccess = async () => {
     // Read the latest user snapshot directly — the closure's `hasOnboarded`
@@ -124,15 +122,6 @@ function LoginPageContent() {
     const list = qc.getQueryData<Workspace[]>(workspaceKeys.list()) ?? [];
     router.push(await resolveLoggedInDestination(qc, onboarded, list));
   };
-
-  // Build Google OAuth state: encode platform + next URL so the callback
-  // can redirect to the right place after login.
-  const googleState = [
-    platform === "desktop" ? "platform:desktop" : "",
-    nextUrl ? `next:${nextUrl}` : "",
-  ]
-    .filter(Boolean)
-    .join(",") || undefined;
 
   // While the desktop handoff is in progress (or has produced a token/error),
   // render a dedicated screen instead of flashing the login form or redirecting
@@ -195,15 +184,6 @@ function LoginPageContent() {
         </span>
       }
       onSuccess={handleSuccess}
-      google={
-        googleClientId
-          ? {
-              clientId: googleClientId,
-              redirectUri: `${window.location.origin}/auth/callback`,
-              state: googleState,
-            }
-          : undefined
-      }
       cliCallback={
         cliCallbackRaw && validateCliCallback(cliCallbackRaw)
           ? { url: cliCallbackRaw, state: cliState }
@@ -211,12 +191,23 @@ function LoginPageContent() {
       }
       onTokenObtained={setLoggedInCookie}
       extra={
-        <Link
-          href="/homepage"
-          className="block text-center text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          ← {t(($) => $.signin.back_home)}
-        </Link>
+        <div className="space-y-3 text-sm text-muted-foreground">
+          <p>
+            {t(($) => $.signin.no_account)}{" "}
+            <Link
+              href={nextUrl ? `${paths.signup()}?next=${encodeURIComponent(nextUrl)}` : paths.signup()}
+              className="font-medium text-foreground underline-offset-4 hover:underline"
+            >
+              {t(($) => $.signin.create_account)}
+            </Link>
+          </p>
+          <Link
+            href="/homepage"
+            className="block transition-colors hover:text-foreground"
+          >
+            ← {t(($) => $.signin.back_home)}
+          </Link>
+        </div>
       }
     />
   );

@@ -104,12 +104,55 @@ type LoginResponse struct {
 }
 
 type SendCodeRequest struct {
-	Email string `json:"email"`
+	Email  string `json:"email"`
+	Intent string `json:"intent,omitempty"`
 }
 
 type VerifyCodeRequest struct {
-	Email string `json:"email"`
-	Code  string `json:"code"`
+	Email  string `json:"email"`
+	Code   string `json:"code"`
+	Intent string `json:"intent,omitempty"`
+}
+
+const (
+	emailAuthIntentLogin  = "login"
+	emailAuthIntentSignup = "signup"
+)
+
+// validateEmailAuthIntent keeps the new split login/signup pages honest while
+// preserving the legacy intent-less API contract for installed desktop/mobile
+// clients. It returns an HTTP status/message for expected user-facing outcomes
+// and a Go error only for infrastructure failures.
+func (h *Handler) validateEmailAuthIntent(ctx context.Context, email, intent string) (int, string, error) {
+	intent = strings.ToLower(strings.TrimSpace(intent))
+	if intent != "" && intent != emailAuthIntentLogin && intent != emailAuthIntentSignup {
+		return http.StatusBadRequest, "invalid authentication intent", nil
+	}
+
+	_, err := h.Queries.GetUserByEmail(ctx, email)
+	isNewUser := false
+	if err != nil {
+		if !isNotFound(err) {
+			return 0, "", err
+		}
+		isNewUser = true
+	}
+
+	if intent == emailAuthIntentLogin && isNewUser {
+		return http.StatusNotFound, "account not found — create an account first", nil
+	}
+	if intent == emailAuthIntentSignup && !isNewUser {
+		return http.StatusConflict, "account already exists — sign in instead", nil
+	}
+
+	if err := h.checkSignupAllowed(email, isNewUser); err != nil {
+		var signupErr SignupError
+		if errors.As(err, &signupErr) {
+			return http.StatusForbidden, signupErr.Error(), nil
+		}
+		return http.StatusForbidden, "user registration is disabled", nil
+	}
+	return 0, "", nil
 }
 
 func generateCode() (string, error) {
@@ -332,38 +375,12 @@ func (h *Handler) SendCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check signup restrictions before sending magic link
-	_, err := h.Queries.GetUserByEmail(r.Context(), email)
-	if err != nil {
-		if !isNotFound(err) {
-			// Real database/query error → return 500
-			writeError(w, http.StatusInternalServerError, "failed to lookup user")
-			return
-		}
-		// User does not exist → treat as new user
-		isNewUser := true
-		if err := h.checkSignupAllowed(email, isNewUser); err != nil {
-			var signupErr SignupError
-			if errors.As(err, &signupErr) {
-				writeError(w, http.StatusForbidden, signupErr.Error())
-			} else {
-				writeError(w, http.StatusForbidden, "user registration is disabled")
-			}
-			return
-		}
-	} else {
-		// User already exists → always allowed to login
-		isNewUser := false
-		if err := h.checkSignupAllowed(email, isNewUser); err != nil {
-			// This should rarely happen, but handle it anyway
-			var signupErr SignupError
-			if errors.As(err, &signupErr) {
-				writeError(w, http.StatusForbidden, signupErr.Error())
-			} else {
-				writeError(w, http.StatusForbidden, "user registration is disabled")
-			}
-			return
-		}
+	if status, message, err := h.validateEmailAuthIntent(r.Context(), email, req.Intent); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to lookup user")
+		return
+	} else if status != 0 {
+		writeError(w, status, message)
+		return
 	}
 
 	// Rate limit: max 1 code per 60 seconds per email
@@ -432,6 +449,13 @@ func (h *Handler) VerifyCode(w http.ResponseWriter, r *http.Request) {
 	// email-login identity, so a code can never be verified against it. F5.
 	if isTelegramSyntheticEmail(email) {
 		writeError(w, http.StatusBadRequest, "this address cannot be used for email login")
+		return
+	}
+	if status, message, err := h.validateEmailAuthIntent(r.Context(), email, req.Intent); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to lookup user")
+		return
+	} else if status != 0 {
+		writeError(w, status, message)
 		return
 	}
 

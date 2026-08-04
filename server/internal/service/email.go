@@ -318,10 +318,7 @@ func (s *EmailService) SendVerificationCode(to, code string) error {
 // SendInvitationEmail notifies the invitee that they have been invited to a workspace.
 // invitationID is included in the URL so the email deep-links to /invite/{id}.
 func (s *EmailService) SendInvitationEmail(to, inviterName, workspaceName, invitationID string) error {
-	appURL := strings.TrimSpace(os.Getenv("FRONTEND_ORIGIN"))
-	if appURL == "" {
-		appURL = "https://app.agora.dev"
-	}
+	appURL := appBaseURL()
 	inviteURL := fmt.Sprintf("%s/invite/%s", appURL, invitationID)
 
 	if s.smtpHost != "" {
@@ -354,7 +351,7 @@ func buildInvitationParams(from, to, inviterName, workspaceName, inviteURL strin
 		<a href="%s" style="display:inline-block;padding:10px 22px;color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;">Accept invitation</a>
 		</td></tr>
 		</table>
-		<p style="margin:0;font-size:12px;color:#a1a1aa;line-height:1.5;">You'll need to log in to accept or decline the invitation.</p>`,
+		<p style="margin:0;font-size:12px;color:#a1a1aa;line-height:1.5;">Sign in or create an account with this email address to accept or decline the invitation.</p>`,
 		safeWorkspace, safeInviter, safeWorkspace, inviteURL)
 
 	return &resend.SendEmailRequest{
