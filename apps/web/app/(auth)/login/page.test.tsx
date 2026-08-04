@@ -25,12 +25,16 @@ const {
   mockSendCode,
   mockVerifyCode,
   mockIssueCliToken,
+  mockGetInvitationAuthInfo,
+  mockRouterReplace,
   searchParamsState,
   authStateRef,
 } = vi.hoisted(() => ({
   mockSendCode: vi.fn(),
   mockVerifyCode: vi.fn(),
   mockIssueCliToken: vi.fn(),
+  mockGetInvitationAuthInfo: vi.fn(),
+  mockRouterReplace: vi.fn(),
   searchParamsState: { params: new URLSearchParams() },
   authStateRef: {
     state: {
@@ -44,7 +48,7 @@ const {
 
 // Mock next/navigation
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace: mockRouterReplace }),
   usePathname: () => "/login",
   useSearchParams: () => searchParamsState.params,
 }));
@@ -81,6 +85,7 @@ vi.mock("@agora/core/api", () => ({
     setToken: vi.fn(),
     getMe: vi.fn(),
     issueCliToken: mockIssueCliToken,
+    getInvitationAuthInfo: mockGetInvitationAuthInfo,
   },
 }));
 
@@ -163,6 +168,41 @@ describe("LoginPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Network error")).toBeInTheDocument();
     });
+  });
+
+  it("redirects a brand-new invitee from login to invitation signup", async () => {
+    searchParamsState.params = new URLSearchParams({
+      next: "/invite/a7a369b1-e7fc-4388-a519-0f1eaa9373ec",
+    });
+    mockGetInvitationAuthInfo.mockResolvedValue({
+      invitee_email: "invited@example.com",
+      account_exists: false,
+    });
+
+    render(<LoginPage />, { wrapper: createWrapper() });
+
+    await waitFor(() =>
+      expect(mockRouterReplace).toHaveBeenCalledWith(
+        "/signup?next=%2Finvite%2Fa7a369b1-e7fc-4388-a519-0f1eaa9373ec",
+      ),
+    );
+  });
+
+  it("prefills and locks the invitation email for an existing account", async () => {
+    searchParamsState.params = new URLSearchParams({
+      next: "/invite/a7a369b1-e7fc-4388-a519-0f1eaa9373ec",
+    });
+    mockGetInvitationAuthInfo.mockResolvedValue({
+      invitee_email: "Member@Example.com",
+      account_exists: true,
+    });
+
+    render(<LoginPage />, { wrapper: createWrapper() });
+
+    const email = await screen.findByLabelText("Email");
+    expect(email).toHaveValue("member@example.com");
+    expect(email).toBeDisabled();
+    expect(mockRouterReplace).not.toHaveBeenCalled();
   });
 
   // Regression: MUL-1080 — if the user is already authenticated on the web

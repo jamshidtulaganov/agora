@@ -3,8 +3,12 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { sanitizeNextUrl, useAuthStore } from "@agora/core/auth";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import {
+  invitationIdFromNextUrl,
+  sanitizeNextUrl,
+  useAuthStore,
+} from "@agora/core/auth";
 import { workspaceKeys } from "@agora/core/workspace/queries";
 import {
   paths,
@@ -71,10 +75,28 @@ function LoginPageContent() {
   // the user's workspace list. Sanitize first so a crafted `?next=https://evil`
   // cannot bounce the user off-origin after a successful login.
   const nextUrl = sanitizeNextUrl(searchParams.get("next"));
+  const invitationId = invitationIdFromNextUrl(nextUrl);
+  const signupHref = nextUrl
+    ? `${paths.signup()}?next=${encodeURIComponent(nextUrl)}`
+    : paths.signup();
+  const { data: invitationAuthInfo, isLoading: invitationAuthLoading } = useQuery({
+    queryKey: ["invitation-auth", invitationId],
+    queryFn: () => api.getInvitationAuthInfo(invitationId!),
+    enabled: invitationId != null,
+  });
 
   const [desktopToken, setDesktopToken] = useState<string | null>(null);
   const [desktopError, setDesktopError] = useState("");
   const hasOnboarded = useHasOnboarded();
+
+  // Middleware sends protected invite URLs through /login. Resolve the
+  // bearer invitation here so brand-new invitees land on registration even
+  // when they never render the client-side /invite page first.
+  useEffect(() => {
+    if (invitationId && invitationAuthInfo?.account_exists === false) {
+      router.replace(signupHref);
+    }
+  }, [invitationAuthInfo?.account_exists, invitationId, router, signupHref]);
 
   // Already authenticated — honor ?next= or fall back to first workspace
   // (or /onboarding if the user has none). Skip this entire path when
@@ -173,8 +195,17 @@ function LoginPageContent() {
     );
   }
 
+  if (
+    invitationId &&
+    (invitationAuthLoading || invitationAuthInfo?.account_exists === false)
+  ) {
+    return null;
+  }
+
   return (
     <LoginPage
+      initialEmail={invitationAuthInfo?.invitee_email}
+      emailLocked={invitationId != null && invitationAuthInfo != null}
       logo={
         <span className="flex items-center gap-2">
           <AgoraIcon className="size-7 text-brand" noSpin />
@@ -195,7 +226,7 @@ function LoginPageContent() {
           <p>
             {t(($) => $.signin.no_account)}{" "}
             <Link
-              href={nextUrl ? `${paths.signup()}?next=${encodeURIComponent(nextUrl)}` : paths.signup()}
+              href={signupHref}
               className="font-medium text-foreground underline-offset-4 hover:underline"
             >
               {t(($) => $.signin.create_account)}
