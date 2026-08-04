@@ -71,6 +71,14 @@ func TestAcceptInvitation_BitrixPinned(t *testing.T) {
 	if !isMember(u1) {
 		t.Fatalf("u1 should be a member after accept")
 	}
+	var onboarded bool
+	if err := testPool.QueryRow(ctx,
+		`SELECT onboarded_at IS NOT NULL FROM "user" WHERE id=$1::uuid`, u1).Scan(&onboarded); err != nil {
+		t.Fatalf("load u1 onboarding state: %v", err)
+	}
+	if !onboarded {
+		t.Fatalf("u1 should be marked onboarded atomically with invitation acceptance")
+	}
 	var linked string
 	testPool.QueryRow(ctx,
 		`SELECT external_id FROM user_external_identity WHERE provider='bitrix' AND user_id=$1::uuid`,

@@ -45,10 +45,9 @@ func TestCreateWorkspace_RejectsReservedSlug(t *testing.T) {
 // set onboarded_at inside CreateWorkspace; this test makes the new
 // invariant explicit and regression-protected.
 //
-// CompleteOnboarding (Step 3 exit) is now the only handler that flips
-// onboarded_at. AcceptInvitation deliberately does NOT — invitees still go
-// through the onboarding runtime step (connect their own daemon), so the gate
-// must route them to /onboarding too.
+// CompleteOnboarding (Step 3 exit) flips onboarded_at for the normal workspace
+// creation flow. AcceptInvitation is the separate direct-join path and marks an
+// invitee onboarded atomically with their membership.
 func TestCreateWorkspace_DoesNotMarkOnboarded(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")

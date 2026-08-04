@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Workspace } from "../types";
 import { paths } from "./paths";
 import {
+  resolveAcceptedInvitationDestination,
   resolveInvitationAuthDestination,
   resolvePostAuthDestination,
 } from "./resolve";
@@ -46,6 +47,22 @@ describe("resolvePostAuthDestination", () => {
     // user whose last workspace got deleted or who left it. They skip
     // re-onboarding and go straight to workspace creation.
     expect(resolvePostAuthDestination([], true)).toBe(paths.newWorkspace());
+  });
+});
+
+describe("resolveAcceptedInvitationDestination", () => {
+  it("routes to the invited workspace instead of the first workspace", () => {
+    const ws = [makeWs("existing"), makeWs("invited")];
+    expect(resolveAcceptedInvitationDestination(ws, "id-invited")).toBe(
+      paths.workspace("invited").issues(),
+    );
+  });
+
+  it("uses an onboarded fallback while membership caches catch up", () => {
+    const ws = [makeWs("existing")];
+    expect(resolveAcceptedInvitationDestination(ws, "missing-id")).toBe(
+      paths.workspace("existing").myIssues(),
+    );
   });
 });
 

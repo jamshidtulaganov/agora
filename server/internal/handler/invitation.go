@@ -532,13 +532,19 @@ func (h *Handler) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Invitees are intentionally NOT marked onboarded here. A brand-new user who
-	// joins via invite still needs the onboarding runtime step — connecting their
-	// own Claude/Codex daemon — so we let the workspace layout's onboarded_at gate
-	// route them through /onboarding, where StepWorkspace shows "Continue with
-	// <workspace>" (no creation) followed by the runtime-connect step. Users who
-	// are already onboarded (joining an additional workspace) keep their existing
-	// onboarded_at, so the gate is a no-op for them.
+	// Accepting an invitation is a complete workspace-entry path: make the
+	// membership and onboarding state visible atomically. Without this, the web
+	// and desktop workspace guards send a freshly invited user to onboarding (and
+	// eventually /workspaces/new) even though they already joined the inviter's
+	// workspace. COALESCE in MarkUserOnboarded preserves an existing timestamp for
+	// users who are joining an additional workspace.
+	firstCompletion := !user.OnboardedAt.Valid
+	user, err = qtx.MarkUserOnboarded(r.Context(), user.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to complete invitation setup")
+		return
+	}
+
 	if err := tx.Commit(r.Context()); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to accept invitation")
 		return
@@ -559,6 +565,19 @@ func (h *Handler) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 
 	wsID := uuidToString(accepted.WorkspaceID)
 	memberResp := memberWithUserResponse(member, user)
+	if firstCompletion {
+		onboardedAt := ""
+		if user.OnboardedAt.Valid {
+			onboardedAt = user.OnboardedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00")
+		}
+		obsmetrics.RecordEvent(h.Analytics, h.Metrics, analytics.OnboardingCompleted(
+			userID,
+			wsID,
+			analytics.OnboardingPathInviteAccept,
+			onboardedAt,
+			user.CloudWaitlistEmail.Valid,
+		))
+	}
 
 	// Broadcast member:added so existing clients update their member lists.
 	eventPayload := map[string]any{"member": memberResp}
@@ -585,10 +604,6 @@ func (h *Handler) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 		wsID,
 		daysSinceInvite,
 	))
-	// OnboardingCompleted is emitted when the invitee finishes the runtime step
-	// in OnboardingFlow (completeOnboarding), not at accept time — they are no
-	// longer marked onboarded here.
-
 	writeJSON(w, http.StatusOK, memberResp)
 }
 

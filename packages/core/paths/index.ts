@@ -2,6 +2,7 @@ export { paths, isGlobalPath } from "./paths";
 export type { WorkspacePaths } from "./paths";
 export { RESERVED_SLUGS, isReservedSlug } from "./reserved-slugs";
 export {
+  resolveAcceptedInvitationDestination,
   resolveInvitationAuthDestination,
   resolvePostAuthDestination,
   useHasOnboarded,

@@ -54,6 +54,21 @@ export function resolveInvitationAuthDestination(
 }
 
 /**
+ * After an invitation is accepted, prefer the workspace named by the invite
+ * over list order. The backend marks the user onboarded in the same transaction
+ * as membership creation, so both web and desktop can enter it immediately.
+ */
+export function resolveAcceptedInvitationDestination(
+  workspaces: Workspace[],
+  invitedWorkspaceId: string,
+): string {
+  const joined = workspaces.find((workspace) => workspace.id === invitedWorkspaceId);
+  return joined
+    ? paths.workspace(joined.slug).issues()
+    : resolvePostAuthDestination(workspaces, true);
+}
+
+/**
  * Single source of truth: backed by `users.onboarded_at`, which
  * arrives with the user object on every auth response.
  */

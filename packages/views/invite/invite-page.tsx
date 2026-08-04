@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@agora/core/api";
 import { useAuthStore } from "@agora/core/auth";
@@ -9,7 +9,7 @@ import {
   workspaceListOptions,
 } from "@agora/core/workspace/queries";
 import {
-  paths,
+  resolveAcceptedInvitationDestination,
   resolvePostAuthDestination,
   useHasOnboarded,
 } from "@agora/core/paths";
@@ -60,36 +60,44 @@ export function InvitePage({ invitationId, onBack }: InvitePageProps) {
   const hasOnboarded = useHasOnboarded();
   const fallbackDest = resolvePostAuthDestination(wsList, hasOnboarded);
 
-  const handleAccept = async () => {
-    setAccepting(true);
-    setError(null);
-    try {
-      await api.acceptInvitation(invitationId);
-      // AcceptInvitation deliberately does NOT mark the user onboarded — a
-      // brand-new invitee still needs the onboarding runtime step (connect
-      // their own Claude/Codex daemon). Refresh local user state so the
-      // onboarded_at check below sees the true value.
+  const enterInvitationWorkspace = useCallback(
+    async (workspaceId: string) => {
       await useAuthStore.getState().refreshMe();
-      setDone("accepted");
-      // Fetch the refreshed workspace list so we know the joined workspace's slug.
       const nextList = await qc.fetchQuery({
         ...workspaceListOptions(),
         staleTime: 0,
       });
-      const joined = nextList.find((w) => w.id === invitation?.workspace_id);
       qc.invalidateQueries({ queryKey: workspaceKeys.myInvitations() });
-      // New invitees aren't onboarded yet → route them to the onboarding
-      // runtime step (StepWorkspace shows "Continue with <workspace>", then the
-      // daemon-connect step). Already-onboarded users joining an extra workspace
-      // land straight in it; the [workspaceSlug] layout syncs api client,
-      // stores, and the last_workspace_slug cookie from the URL.
-      const onboarded = useAuthStore.getState().user?.onboarded_at != null;
-      const dest = !onboarded
-        ? paths.onboarding()
-        : joined
-          ? paths.workspace(joined.slug).issues()
-          : fallbackDest;
-      setTimeout(() => push(dest), 1000);
+      push(resolveAcceptedInvitationDestination(nextList, workspaceId));
+    },
+    [push, qc],
+  );
+
+  // Recover users who accepted before the direct-entry fix (or reopened an
+  // already accepted link). Migration 182 repairs their onboarding flag; this
+  // client-side branch refreshes membership and enters the invited workspace.
+  useEffect(() => {
+    if (invitation?.status !== "accepted" || done === "accepted") return;
+    setDone("accepted");
+    void enterInvitationWorkspace(invitation.workspace_id).catch((e) => {
+      setError(e instanceof Error ? e.message : t(($) => $.errors.accept_failed));
+    });
+  }, [done, enterInvitationWorkspace, invitation, t]);
+
+  const handleAccept = async () => {
+    const acceptedInvitation = invitation;
+    if (!acceptedInvitation) {
+      setError(t(($) => $.errors.accept_failed));
+      return;
+    }
+    setAccepting(true);
+    setError(null);
+    try {
+      await api.acceptInvitation(invitationId);
+      // Acceptance creates membership and marks a new invitee onboarded in one
+      // backend transaction. Refresh both caches before entering the workspace.
+      setDone("accepted");
+      await enterInvitationWorkspace(acceptedInvitation.workspace_id);
     } catch (e) {
       setError(e instanceof Error ? e.message : t(($) => $.errors.accept_failed));
     } finally {
