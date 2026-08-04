@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -74,6 +75,48 @@ const migrationAdvisoryLockKey int64 = 7244554146635925501
 // Postgres without colliding with the production table.
 const defaultSchemaMigrationsTable = "schema_migrations"
 
+const (
+	databaseStartupTimeout = 5 * time.Minute
+	databasePingTimeout    = 10 * time.Second
+	databasePingRetryDelay = 5 * time.Second
+)
+
+type databasePinger interface {
+	Ping(context.Context) error
+}
+
+// waitForDatabase absorbs short database restarts during application startup.
+// It retries only the readiness check; once the database is reachable, actual
+// migration errors still fail immediately.
+func waitForDatabase(ctx context.Context, db databasePinger, retryDelay time.Duration) error {
+	attempt := 0
+	for {
+		attempt++
+		pingCtx, cancel := context.WithTimeout(ctx, databasePingTimeout)
+		err := db.Ping(pingCtx)
+		cancel()
+		if err == nil {
+			if attempt > 1 {
+				slog.Info("database is ready", "attempts", attempt)
+			}
+			return nil
+		}
+
+		slog.Warn("database is not ready; retrying",
+			"error", err,
+			"attempt", attempt,
+			"retry_in", retryDelay)
+
+		timer := time.NewTimer(retryDelay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return fmt.Errorf("database did not become ready after %d attempts: %w", attempt, err)
+		case <-timer.C:
+		}
+	}
+}
+
 // runOptions carries everything runMigrations needs that is not the
 // pool itself. Tests use it to inject a hermetic migrations directory,
 // a unique per-test bookkeeping table, and a unique advisory-lock key
@@ -130,8 +173,10 @@ func main() {
 	}
 	defer pool.Close()
 
-	if err := pool.Ping(ctx); err != nil {
-		slog.Error("unable to ping database", "error", err)
+	startupCtx, cancel := context.WithTimeout(ctx, databaseStartupTimeout)
+	defer cancel()
+	if err := waitForDatabase(startupCtx, pool, databasePingRetryDelay); err != nil {
+		slog.Error("unable to ping database before startup timeout", "error", err)
 		os.Exit(1)
 	}
 
