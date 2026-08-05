@@ -358,9 +358,9 @@ describe("ReviewLensBody", () => {
     await waitFor(() => expect(approveBtn).toBeEnabled());
   });
 
-  it("keeps code, product, and evidence as explicit deep-linked review views", async () => {
+  it("keeps changes, preview, and checks as deep-linked work views", async () => {
     renderLens();
-    fireEvent.click(await screen.findByRole("tab", { name: "Code" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Changes" }));
     expect(navigationMocks.replace).toHaveBeenCalledWith(
       "/demo/issues/issue-1?lens=review&review_tab=code",
     );

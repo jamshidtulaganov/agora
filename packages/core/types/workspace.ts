@@ -54,6 +54,14 @@ export interface McpCredentialInput {
   headers?: Record<string, string>;
 }
 
+// Dedicated workspace MCP document. This is intentionally separate from the
+// generic Workspace response because command/env/header values may contain
+// sensitive material and are only readable by workspace owners/admins.
+export interface WorkspaceMcpConfigResponse {
+  workspace_id: string;
+  mcp_config: unknown | null;
+}
+
 // A per-workspace release integration (release-hub Thread B). One of the named
 // connector kinds (webhook | slack | bitrix | github_release | gitlab_release |
 // sentry) fires on release-lifecycle events. The sealed secret (webhook/bot/API

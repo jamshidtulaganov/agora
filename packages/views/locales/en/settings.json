@@ -51,7 +51,24 @@
     "toast_avatar_updated": "Avatar updated",
     "toast_avatar_failed": "Failed to upload avatar",
     "toast_profile_updated": "Profile updated",
-    "toast_profile_failed": "Failed to update profile"
+    "toast_profile_failed": "Failed to update profile",
+    "danger_zone": "Danger Zone",
+    "delete_title": "Delete account",
+    "delete_description": "Permanently delete your account, personal credentials, and workspace memberships. Shared workspace data is preserved.",
+    "delete_button": "Delete account",
+    "toast_delete_failed": "Failed to delete account",
+    "delete_blocked": "Transfer ownership or delete these workspaces first: {{workspaces}}.",
+    "delete_blocked_fallback": "workspaces where you are the only owner"
+  },
+  "delete_account_dialog": {
+    "title": "Delete account",
+    "description": "This cannot be undone. Your account, personal credentials, and memberships will be permanently removed.",
+    "ownership_notice": "If you are the only owner of a workspace, assign another owner or delete that workspace first.",
+    "type_to_confirm_prefix": "To confirm, type",
+    "type_to_confirm_suffix": "below.",
+    "cancel": "Cancel",
+    "confirm": "Delete account",
+    "deleting": "Deleting..."
   },
   "notifications": {
     "title": "Inbox Notifications",
@@ -396,7 +413,7 @@
     "mcp": {
       "name": "MCP servers",
       "description": "Connect any tool your agents can use — GitHub, Linear, Postgres, or any MCP server.",
-      "body": "Review the Model Context Protocol servers each agent has configured, and add new servers across one or more agents at once.",
+      "body": "Import a shared Claude/Cursor-compatible mcp.json for the workspace, then add or override connections on selected agents.",
       "open": "Open MCP servers"
     },
     "release": {

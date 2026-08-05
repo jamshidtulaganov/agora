@@ -42,17 +42,19 @@ What the orchestrator owns:
 
 - **Casting.** It picks which agent runs QA and which agent reviews, per issue. In the UI this is the **stage-cast picker** on the issue — leave it on *Auto* and the workspace's default roster decides, or pin a specific agent.
 - **QA-fail feedback.** When a QA gate fails, the issue is routed **back to the orchestrator** (not left to rot in a queue) so it can dispatch a fix. See [failure & retry](#failure--retry).
-- **The narrative.** The stage stepper shows the orchestrator's hand-offs — "Dev Lead → QA Tester" — rather than whoever nudged the status.
+- **The narrative.** The execution surface shows the orchestrator's hand-offs — "Dev Lead → QA Tester" — rather than whoever nudged the status.
 
 When an issue has an orchestrator, the issue detail shows an **"Orchestrated by …"** row. A human-run or member-assigned issue has no orchestrator and no such row.
 
 ## Orchestration runs
 
-An **orchestration run** is the opt-in pipeline. You start it from the **execution panel** on an issue — the empty state has a **Start** button and a **Customize** disclosure. Only a human can start, approve, retry, or cancel a run; agents cannot.
+An **orchestration run** is the opt-in pipeline. You start it from the **execution panel** on an issue — the empty state has a **Build and run** button and a **Customize** disclosure. Only a human can start, approve, retry, or cancel a run; agents cannot.
 
 A run turns the issue into a **DAG** — a graph of steps where each step waits on the ones before it. Agora dispatches steps as their dependencies complete, runs independent branches in parallel, and pauses at approval gates.
 
 ### Choosing a strategy
+
+Set the normal policy once in the project's **Execution defaults** section. New runs inherit its strategy, progression, parallel-worker limit, and whether plans need review. The issue's **Customize** panel is a one-run override for exceptions; it does not rewrite the project. A project that defaults to `squad` must be bound to that squad.
 
 The **Customize** panel offers four strategies:
 
@@ -91,15 +93,17 @@ A **solo** run is only **work → release** — it has **no QA and no review ste
 
 There is no separate `deploy` stage and no `design` stage at the issue level. **Deploy** is a **sprint-level** concern — it lives in the [Release page](#the-release-page)'s Ship tab, not on the issue. **Design** is an input to the dev work (an optional design lens on the issue), not a stage.
 
-### What you see: the stage stepper
+### What you see: one Work workspace
 
-While a run is live, the issue shows a three-dot **stage stepper**: **Dev → QA → Review**. It's a derived view — there is no `stage` field stored on an issue. The five DAG stages fold onto these three dots:
+The old **Dev → Review** header strip is gone. Development and review are one issue lifecycle, surfaced as a single **Work** workspace opened from the execution panel:
 
-- `plan` + `dev` (including integrate) → **Dev**
-- `qa` → **QA**
-- `review` (and `release`, shown as "awaiting approval") → **Review**
+- **Activity** — live workers, task briefs, progress, and hand-offs.
+- **Changes** — the exact integrated code artifact.
+- **Preview** — the integrated product in an isolated runtime.
+- **Checks** — test evidence against that same artifact.
+- **Decision** — reviewer verdict, findings, merge gates, Request changes, and Approve & merge.
 
-Click a stage to open a live "what's happening now" popover. For human-run issues (no orchestrator), the stepper still shows the plain status projection; the orchestrator narrative only appears when a run or orchestrator owns the pipeline.
+Old `?lens=dev` and `?lens=review` links still open this same workspace, so bookmarks do not break. The full persisted DAG remains available under execution details when stage-level history is needed.
 
 ### The Release page
 
@@ -115,7 +119,7 @@ Two regimes, and they behave differently. Knowing which one you're in avoids the
 
 **Without a run (the default flow):** when a QA gate fails, Agora routes the issue **back to its orchestrator** — reassigns it, resets status to To-do, and posts a comment @mentioning the orchestrator with the failure summary — so a fix can be dispatched. This retries up to **5 times** per issue (the counter clears on a QA pass); past that, it's left for a human and stays visible in the QA queue. This behaviour is **on by default**.
 
-**Inside a run:** a failed step is **retried in place** — the same step, the same agent — up to its budget (dev / integrate / QA / review get **2** attempts; release and human-work get **1**). A QA step failing **does not bounce the work back to dev**; it retries QA, and if the budget is exhausted the **whole run fails**. From there a human uses the **Retry** or **Cancel branch** controls on the run. This asymmetry — auto-route-to-dev outside a run, retry-in-place inside one — is worth remembering when you move an issue into an orchestration run.
+**Inside a run:** a failed step is **retried in place** — the same step, the same agent — up to its budget (dev / integrate / QA / review get **2** attempts; release and human-work get **1**). The same rule applies when the server recovers a stale task or a daemon reports an orphan after restart; recovery stays attached to the persisted step. A QA step failing **does not bounce the work back to dev**; it retries QA, and if the budget is exhausted the **whole run fails**. From there a human uses the **Retry** or **Cancel branch** controls on the run. This asymmetry — auto-route-to-dev outside a run, retry-in-place inside one — is worth remembering when you move an issue into an orchestration run.
 
 Other states you may see on a run:
 
@@ -140,7 +144,7 @@ Everything else is **off** unless you enable it — don't assume these are runni
 - **Sprint modes** — shared sprint branch (`AGORA_SPRINT_PR_MODE`), sprint worktrees, sprint auto-merge — all **off**. The default dev flow is a per-task fork and a PR you merge yourself.
 - **Squad failure recovery**, **QA gate enforcement**, **risk-tier gates** — all **off**.
 
-Instance and project flags live in **Settings → Configs** (a project value overrides the instance value where a flag allows it). Workspace `labs.*` toggles live in **Settings → Labs**. Per-issue behaviour — the strategy, progression, and casting — is set on the issue's execution panel and stage-cast picker, not in settings.
+Instance and project flags live in **Settings → Configs** (a project value overrides the instance value where a flag allows it). Workspace `labs.*` toggles live in **Settings → Labs**. Execution strategy, progression, concurrency, and plan review live under the project's **Execution defaults**; the issue execution panel can override them for one run. Stage casting remains issue-specific.
 
 <Callout type="warning">
 Because so much is opt-in, an out-of-the-box Agora runs the **simple** flow: assign → agent works → PR → you review and merge. Orchestration runs, auto-QA, and sprint modes are things you reach for deliberately as a team grows into them — not defaults you have to configure around.

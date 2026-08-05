@@ -17,20 +17,19 @@ import type { SDLCStage } from "@agora/core/issues";
 import { useNavigation } from "../navigation";
 import { QALensBody } from "../qa/components/qa-lens";
 import { DesignLensBody } from "./components/design-lens";
-import { DevLensBody } from "./components/dev-lens";
-import { ReviewLensBody } from "./components/review-lens";
+import { WorkLensBody } from "./components/review-lens";
 
 export const LENS_QUERY_KEY = "lens";
 export const DEFAULT_LENS_KEY = "issue" as const;
 
-// "design" and "qa" are deliberately NOT part of SDLCStage
+// "work", "design" and "qa" are deliberately NOT part of SDLCStage
 // (packages/core/issues/stage.ts) — neither is a beat the issue walks through.
 // Design is a dev-build INPUT; QA is an ON-DEMAND action, not a gate on the way
-// to review. Both stay first-class LensKeys so their views remain reachable as
+// to review. These stay first-class LensKeys so their views remain reachable as
 // optional, deep-linkable surfaces (`?lens=design`, `?lens=qa`) — see
 // figma-links-section.tsx's "Open design view" entry point and the Release
 // page's per-issue links.
-export type LensKey = "issue" | "design" | "qa" | SDLCStage;
+export type LensKey = "issue" | "work" | "design" | "qa" | SDLCStage;
 
 export interface StageLens {
   key: LensKey;
@@ -53,8 +52,11 @@ export const LENS_REGISTRY: Partial<Record<LensKey, StageLens>> = {
   issue: { key: "issue", Body: IssueLensBody },
   qa: { key: "qa", Body: QALensBody },
   design: { key: "design", Body: DesignLensBody },
-  dev: { key: "dev", Body: DevLensBody },
-  review: { key: "review", Body: ReviewLensBody },
+  work: { key: "work", Body: WorkLensBody },
+  // Compatibility aliases: the retired header stages and their bookmarks
+  // converge on the unified workspace.
+  dev: { key: "dev", Body: WorkLensBody },
+  review: { key: "review", Body: WorkLensBody },
 };
 
 export function getLens(key: string): StageLens | undefined {

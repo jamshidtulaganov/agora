@@ -10,6 +10,31 @@ import (
 	"time"
 )
 
+func TestCloudFrontExpiredCookiesMatchSignedCookieNames(t *testing.T) {
+	signer := &CloudFrontSigner{cookieDomain: ".agora.test"}
+	cookies := signer.ExpiredCookies()
+	if len(cookies) != 3 {
+		t.Fatalf("expected 3 expired cookies, got %d", len(cookies))
+	}
+	want := map[string]bool{
+		"CloudFront-Policy":      true,
+		"CloudFront-Signature":   true,
+		"CloudFront-Key-Pair-Id": true,
+	}
+	for _, cookie := range cookies {
+		if !want[cookie.Name] {
+			t.Errorf("unexpected cookie %q", cookie.Name)
+		}
+		if cookie.Value != "" || cookie.MaxAge >= 0 || cookie.Domain != ".agora.test" || cookie.Path != "/" {
+			t.Errorf("cookie %q is not fully expired: %+v", cookie.Name, cookie)
+		}
+		delete(want, cookie.Name)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing expired cookies: %+v", want)
+	}
+}
+
 func decodeCloudFrontBase64(t *testing.T, encoded string) string {
 	t.Helper()
 	standard := strings.NewReplacer("-", "+", "_", "=", "~", "/").Replace(encoded)

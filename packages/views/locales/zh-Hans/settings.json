@@ -51,7 +51,24 @@
     "toast_avatar_updated": "头像已更新",
     "toast_avatar_failed": "上传头像失败",
     "toast_profile_updated": "资料已更新",
-    "toast_profile_failed": "更新资料失败"
+    "toast_profile_failed": "更新资料失败",
+    "danger_zone": "危险区域",
+    "delete_title": "删除账号",
+    "delete_description": "永久删除你的账号、个人凭据和工作区成员关系。共享工作区数据将保留。",
+    "delete_button": "删除账号",
+    "toast_delete_failed": "删除账号失败",
+    "delete_blocked": "请先转让所有权或删除以下工作区：{{workspaces}}。",
+    "delete_blocked_fallback": "你是唯一所有者的工作区"
+  },
+  "delete_account_dialog": {
+    "title": "删除账号",
+    "description": "此操作无法撤销。你的账号、个人凭据和成员关系将被永久删除。",
+    "ownership_notice": "如果你是某个工作区的唯一所有者，请先指定另一位所有者或删除该工作区。",
+    "type_to_confirm_prefix": "请输入",
+    "type_to_confirm_suffix": "以确认。",
+    "cancel": "取消",
+    "confirm": "删除账号",
+    "deleting": "正在删除..."
   },
   "notifications": {
     "title": "收件箱通知",
@@ -396,7 +413,7 @@
     "mcp": {
       "name": "MCP 服务器",
       "description": "为智能体连接任意工具 —— GitHub、Linear、Postgres 或任意 MCP 服务器。",
-      "body": "查看每个智能体已配置的 MCP 服务器，并一次性为一个或多个智能体添加新服务器。",
+      "body": "为工作区导入兼容 Claude 和 Cursor 的共享 mcp.json，再为选定智能体添加或覆盖连接。",
       "open": "打开 MCP 服务器"
     },
     "release": {

@@ -38,6 +38,7 @@ import type {
   FigmaCredentialStatus,
   McpCredentialStatus,
   McpCredentialInput,
+  WorkspaceMcpConfigResponse,
   ReleaseIntegration,
   ReleaseIntegrationInput,
   MemberWithUser,
@@ -653,6 +654,13 @@ export class ApiClient {
     });
     return parseWithFallback(raw, UserSchema, EMPTY_USER, {
       endpoint: "PATCH /api/me",
+    });
+  }
+
+  async deleteMe(confirmation: string): Promise<void> {
+    await this.fetch("/api/me", {
+      method: "DELETE",
+      body: JSON.stringify({ confirmation }),
     });
   }
 
@@ -1836,6 +1844,24 @@ export class ApiClient {
     return this.fetch(`/api/workspaces/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),
+    });
+  }
+
+  // Workspace-default MCP servers. The JSON document uses the same
+  // { mcpServers: { ... } } shape as Claude Desktop and Cursor mcp.json.
+  // It is merged into every claimed agent task; an agent-level server with
+  // the same name wins as an explicit override.
+  async getWorkspaceMcpConfig(id: string): Promise<WorkspaceMcpConfigResponse> {
+    return this.fetch(`/api/workspaces/${id}/default-mcp-config`);
+  }
+
+  async updateWorkspaceMcpConfig(
+    id: string,
+    mcpConfig: unknown | null,
+  ): Promise<WorkspaceMcpConfigResponse> {
+    return this.fetch(`/api/workspaces/${id}/default-mcp-config`, {
+      method: "PUT",
+      body: JSON.stringify({ mcp_config: mcpConfig }),
     });
   }
 

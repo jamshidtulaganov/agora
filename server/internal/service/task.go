@@ -1546,7 +1546,7 @@ func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 	// the agent's configured fallback runtime. Treated like a retry below so the
 	// generic failure comment / chat fallback is suppressed (failover posts its
 	// own note).
-	if retried == nil {
+	if retried == nil && !task.OrchestrationStepID.Valid {
 		retried, _ = s.maybeFailoverToFallbackRuntime(ctx, task, failureReason)
 	}
 
@@ -1640,6 +1640,13 @@ func (s *TaskService) MaybeRetryFailedTask(ctx context.Context, parent db.AgentT
 	if parent.Status != "failed" {
 		return nil, nil
 	}
+	// A persisted orchestration step owns its retry budget and must keep the
+	// replacement task linked to orchestration_step_id. The generic clone query
+	// intentionally does not copy that identity, so using it here would orphan
+	// the step and run a second, invisible task beside the DAG.
+	if parent.OrchestrationStepID.Valid {
+		return nil, nil
+	}
 	reason := ""
 	if parent.FailureReason.Valid {
 		reason = parent.FailureReason.String
@@ -1719,6 +1726,12 @@ func (s *TaskService) MaybeRetryFailedTask(ctx context.Context, parent db.AgentT
 // autopilot tasks are skipped (the scheduler owns their retry cadence); and an
 // issue with an in-flight PR is left alone (work already delivered).
 func (s *TaskService) maybeFailoverToFallbackRuntime(ctx context.Context, parent db.AgentTaskQueue, reason string) (*db.AgentTaskQueue, error) {
+	// Fallback routing for a persisted step must be orchestrator-aware. The
+	// generic failover clone does not carry orchestration_step_id and therefore
+	// cannot safely own this task.
+	if parent.OrchestrationStepID.Valid {
+		return nil, nil
+	}
 	if reason != taskfailure.ReasonAgentProviderQuotaLimit.String() &&
 		reason != taskfailure.ReasonAgentProviderCapacityOrRateLimit.String() {
 		return nil, nil
@@ -2032,12 +2045,23 @@ func (s *TaskService) HandleFailedTasks(ctx context.Context, tasks []db.AgentTas
 	retried := 0
 
 	for _, t := range tasks {
-		// Auto-retry first so the issue stays in_progress rather than
-		// flapping todo → in_progress within a tick.
-		if child, _ := s.MaybeRetryFailedTask(ctx, t); child != nil {
-			retried++
-			if t.IssueID.Valid {
-				retriedIssues[util.UUIDToString(t.IssueID)] = true
+		orchestrationOwned := t.OrchestrationStepID.Valid
+		if orchestrationOwned {
+			// Stale-task and orphan recovery update task rows directly, bypassing
+			// FailTask. Re-enter the same terminal callback used by the normal
+			// daemon failure path so the persisted step retries in place or fails
+			// its run instead of remaining queued/running forever.
+			if s.OnOrchestrationTaskTerminal != nil {
+				s.OnOrchestrationTaskTerminal(ctx, t)
+			}
+		} else {
+			// Auto-retry first so the issue stays in_progress rather than
+			// flapping todo → in_progress within a tick.
+			if child, _ := s.MaybeRetryFailedTask(ctx, t); child != nil {
+				retried++
+				if t.IssueID.Valid {
+					retriedIssues[util.UUIDToString(t.IssueID)] = true
+				}
 			}
 		}
 
@@ -2051,41 +2075,27 @@ func (s *TaskService) HandleFailedTasks(ctx context.Context, tasks []db.AgentTas
 		if t.IssueID.Valid {
 			if issue, err := s.Queries.GetIssue(ctx, t.IssueID); err == nil {
 				workspaceID = util.UUIDToString(issue.WorkspaceID)
-				// Reset stuck in_progress issues only when no other active
-				// task exists for the issue and no retry was just enqueued.
-				issueKey := util.UUIDToString(t.IssueID)
-				// A squad member's task failed → re-engage the leader so it can
-				// route around the failure. Counts as a retry for the stall-reset
-				// guard below: coordination is active, don't also bounce to todo.
-				if !retriedIssues[issueKey] && s.maybeReTriggerSquadLeaderOnMemberFailure(ctx, t, issue, failureReason) {
-					retriedIssues[issueKey] = true
-				}
-				if issue.Status == "in_progress" && !processedIssues[issueKey] && !retriedIssues[issueKey] {
-					processedIssues[issueKey] = true
-					hasActive, checkErr := s.Queries.HasActiveTaskForIssue(ctx, t.IssueID)
-					if checkErr != nil {
-						slog.Warn("handle failed tasks: active check failed",
-							"issue_id", issueKey,
-							"error", checkErr,
-						)
-					} else if !hasActive {
-						if s.issueHasInFlightPR(ctx, t.IssueID) {
-							// Delivered work awaiting review — a hung session
-							// that already pushed a PR. Leave the issue
-							// in_progress; regressing it to todo would tell the
-							// human owner nothing was done.
-							slog.Info("handle failed tasks: issue kept in_progress (in-flight PR present)",
-								"issue_id", issueKey,
-							)
-						} else if _, updateErr := s.Queries.UpdateIssueStatus(ctx, db.UpdateIssueStatusParams{
-							ID:          t.IssueID,
-							Status:      "todo",
-							WorkspaceID: issue.WorkspaceID,
-						}); updateErr != nil {
-							slog.Warn("handle failed tasks: reset stuck issue failed",
-								"issue_id", issueKey,
-								"error", updateErr,
-							)
+				if !orchestrationOwned {
+					// The run owns issue state and all follow-up dispatch. Generic
+					// squad re-trigger and todo rollback would create work outside
+					// the DAG or regress an issue while a step retry is already ready.
+					issueKey := util.UUIDToString(t.IssueID)
+					if !retriedIssues[issueKey] && s.maybeReTriggerSquadLeaderOnMemberFailure(ctx, t, issue, failureReason) {
+						retriedIssues[issueKey] = true
+					}
+					if issue.Status == "in_progress" && !processedIssues[issueKey] && !retriedIssues[issueKey] {
+						processedIssues[issueKey] = true
+						hasActive, checkErr := s.Queries.HasActiveTaskForIssue(ctx, t.IssueID)
+						if checkErr != nil {
+							slog.Warn("handle failed tasks: active check failed", "issue_id", issueKey, "error", checkErr)
+						} else if !hasActive {
+							if s.issueHasInFlightPR(ctx, t.IssueID) {
+								slog.Info("handle failed tasks: issue kept in_progress (in-flight PR present)", "issue_id", issueKey)
+							} else if _, updateErr := s.Queries.UpdateIssueStatus(ctx, db.UpdateIssueStatusParams{
+								ID: t.IssueID, Status: "todo", WorkspaceID: issue.WorkspaceID,
+							}); updateErr != nil {
+								slog.Warn("handle failed tasks: reset stuck issue failed", "issue_id", issueKey, "error", updateErr)
+							}
 						}
 					}
 				}

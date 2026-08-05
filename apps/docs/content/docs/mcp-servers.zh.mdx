@@ -1,0 +1,61 @@
+---
+title: MCP 服务器
+description: 通过共享 mcp.json 或智能体专用覆盖，将智能体连接到工具和数据源。
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Agora 接受 Claude Desktop 和 Cursor 使用的同一种顶层 `mcpServers` JSON 结构。在 **工作区 → MCP 服务器** 中粘贴或导入 `mcp.json` 文件。
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
+    },
+    "linear": {
+      "type": "http",
+      "url": "https://mcp.linear.app/mcp",
+      "headers": { "Authorization": "Bearer ${LINEAR_TOKEN}" }
+    }
+  }
+}
+```
+
+## 共享默认值与智能体覆盖
+
+配置分为两层：
+
+1. **工作区 `mcp.json`** — 在新任务启动时合并到每个智能体的项目级默认值。只有工作区所有者和管理员可以读取或修改。
+2. **智能体专用连接** — 只附加到选定智能体的服务器。如果智能体和工作区定义了同名服务器，以智能体配置为准。
+
+保存后的变更只影响**新任务**，不会改写已经运行中的任务。
+
+工作区 MCP 文档与普通工作区响应分开存储，因为命令、环境变量、URL 和请求头可能包含敏感值。更新审计只记录服务器名称，不记录服务器定义。
+
+<Callout type="warning">
+粘贴到 `env` 和 `headers` 的值对工作区所有者和管理员可见。远程 bearer token 请使用智能体专用服务器表单中的 **sealed auth** 字段；Agora 会单独加密存储，并仅在任务分发时注入。
+</Callout>
+
+## MCP 服务器与插件的区别
+
+- **MCP 服务器** — 到一个实时工具或数据源的直接连接。已有 `mcp.json` 条目或只需要一个连接器时使用。
+- **插件** — 可复用的能力包，包含工作区 skills，并可选包含一个或多个 MCP 连接器；可作为整体安装到选定智能体或卸载。
+- **Skill** — 教智能体如何完成某类工作的说明和配套文件，不是实时连接。
+
+所有智能体都需要的基础设施使用共享 MCP 默认值；专家智能体或不同凭据使用智能体覆盖；连接和操作说明需要一起分发时使用插件。
+
+## 运行时交付
+
+Agora 会把共享 JSON 转换为各受支持运行时的原生方式：Claude 在启动时接收 MCP 配置，Cursor 得到 `.cursor/mcp.json`，Codex 得到托管的 `mcp_servers` 配置，ACP 运行时接收 `mcpServers`，OpenCode/OpenClaw 接收各自的运行时配置。
+
+MCP 支持仍然取决于 provider。依赖某个服务器前，请先查看 [AI 编程工具对比](/providers)。
+
+## 故障排查
+
+- 服务器名称只能包含字母、数字、`_` 和 `-`。
+- 本地服务器需要非空 `command`；`args` 必须是字符串数组，`env` 的值必须是字符串。
+- 远程服务器需要非空 `url`；`headers` 的值必须是字符串。
+- 如果共享服务器没有出现，请检查智能体是否用同名条目覆盖了它。
+- 如果配置已保存但工具不可用，请确认运行时支持 MCP，且 daemon 机器上存在相应命令。

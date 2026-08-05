@@ -51,7 +51,24 @@
     "toast_avatar_updated": "Avatar yangilandi",
     "toast_avatar_failed": "Avatarni yuklashda xatolik",
     "toast_profile_updated": "Profil yangilandi",
-    "toast_profile_failed": "Profilni yangilashda xatolik"
+    "toast_profile_failed": "Profilni yangilashda xatolik",
+    "danger_zone": "Xavfli hudud",
+    "delete_title": "Accountni o‘chirish",
+    "delete_description": "Accountingiz, shaxsiy credentiallaringiz va workspace a’zoliklaringizni butunlay o‘chiradi. Umumiy workspace ma’lumotlari saqlanib qoladi.",
+    "delete_button": "Accountni o‘chirish",
+    "toast_delete_failed": "Accountni o‘chirib bo‘lmadi",
+    "delete_blocked": "Avval quyidagi workspace’larda ownershipni boshqa egaga o‘tkazing yoki ularni o‘chiring: {{workspaces}}.",
+    "delete_blocked_fallback": "siz yagona owner bo‘lgan workspace’lar"
+  },
+  "delete_account_dialog": {
+    "title": "Accountni o‘chirish",
+    "description": "Bu amalni bekor qilib bo‘lmaydi. Accountingiz, shaxsiy credentiallaringiz va a’zoliklaringiz butunlay o‘chiriladi.",
+    "ownership_notice": "Agar workspace’ning yagona owner’i bo‘lsangiz, avval boshqa owner tayinlang yoki o‘sha workspace’ni o‘chiring.",
+    "type_to_confirm_prefix": "Tasdiqlash uchun",
+    "type_to_confirm_suffix": "manzilini quyiga kiriting.",
+    "cancel": "Bekor qilish",
+    "confirm": "Accountni o‘chirish",
+    "deleting": "O‘chirilmoqda..."
   },
   "notifications": {
     "title": "Kiruvchilar bildirishnomalari",
@@ -396,7 +413,7 @@
     "mcp": {
       "name": "MCP serverlar",
       "description": "Agentlaringiz uchun istalgan vositani ulang — GitHub, Linear, Postgres yoki istalgan MCP server.",
-      "body": "Har bir agentda qaysi MCP serverlar sozlanganini ko'ring va bir nechta agentga bir vaqtda yangi serverlar qo'shing.",
+      "body": "Workspace uchun Claude va Cursor bilan mos umumiy mcp.json import qiling, so'ng tanlangan agentlarda ulanishlarni qo'shing yoki override qiling.",
       "open": "MCP serverlarni ochish"
     },
     "release": {

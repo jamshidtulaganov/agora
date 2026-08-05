@@ -6,6 +6,7 @@ import {
   upsertMcpServer,
   removeMcpServer,
   isRemoteMcpServer,
+  parseMcpConfigText,
   type McpServerEntry,
 } from "./types";
 
@@ -129,5 +130,50 @@ describe("upsert/list/read/remove with mixed transports", () => {
     const list = listMcpServers(legacy);
     expect(list).toEqual([{ name: "gh", command: "npx", args: ["-y", "server-github"] }]);
     expect(isRemoteMcpServer(list[0]!)).toBe(false);
+  });
+});
+
+describe("parseMcpConfigText", () => {
+  it("accepts the shared Claude Desktop and Cursor mcp.json shape", () => {
+    const result = parseMcpConfigText(JSON.stringify({
+      mcpServers: {
+        filesystem: { command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem"] },
+        linear: {
+          type: "http",
+          url: "https://mcp.linear.app/mcp",
+          headers: { Authorization: "Bearer token" },
+        },
+      },
+    }));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.serverCount).toBe(2);
+  });
+
+  it("accepts streamable-http and environment placeholders", () => {
+    const result = parseMcpConfigText(JSON.stringify({
+      mcpServers: {
+        api: {
+          type: "streamable-http",
+          url: "${API_URL:-https://api.example.com}/mcp",
+          headers: { Authorization: "Bearer ${API_TOKEN}" },
+        },
+      },
+    }));
+    expect(result.ok).toBe(true);
+  });
+
+  it.each([
+    ["array root", "[]", "JSON object"],
+    ["missing map", "{}", "mcpServers"],
+    ["bad name", '{"mcpServers":{"has space":{"command":"node"}}}', "may only contain"],
+    ["bad entry", '{"mcpServers":{"x":42}}', "must be an object"],
+    ["missing command", '{"mcpServers":{"x":{}}}', "command"],
+    ["bad args", '{"mcpServers":{"x":{"command":"node","args":[1]}}}', "array of strings"],
+    ["mixed transport", '{"mcpServers":{"x":{"command":"node","url":"https://x/mcp"}}}', "both url and command"],
+  ])("rejects %s", (_name, raw, message) => {
+    const result = parseMcpConfigText(raw);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain(message);
   });
 });

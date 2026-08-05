@@ -1,6 +1,6 @@
 ---
 title: MCP Injection
-description: Как Agora разворачивает единственный столбец mcp_config (по одному на агента) в MCP-обвязку для каждого runtime во всех бэкендах агентов, а также контракты strict-mode, трёх состояний, fail-closed и редактирования секретов.
+description: Как Agora объединяет настройки MCP рабочего пространства с переопределением агента и разворачивает результат для каждого runtime.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
@@ -10,9 +10,9 @@ import { Mermaid } from "@/components/mermaid";
 **Оба** — разработчик и агент. Прочтите это, если добавляете бэкенд агента, меняете форму `mcp_config`, разбираетесь, почему сервер не доходит до runtime, или вы агент, рассуждающий о том, почему не можете прочитать собственные MCP-секреты. Сопутствующие страницы: [обзор agentic](/developers/architecture) и [глоссарий соглашений](/developers/conventions). Границы пакетов регулируются файлом CLAUDE.md в корне репозитория.
 </Callout>
 
-## Один столбец
+## Два уровня конфигурации
 
-Каждый агент несёт единственный JSONB-столбец, `agent.mcp_config`. Его каноническая форма на диске — в стиле Claude:
+Agora хранит общий default рабочего пространства в `workspace.default_mcp_config`, а необязательное переопределение агента — в `agent.mcp_config`. Оба используют одну каноническую форму в стиле Claude:
 
 ```json
 {
@@ -29,7 +29,7 @@ import { Mermaid } from "@/components/mermaid";
 - `readMcpServers(config)` / `listMcpServers(config)` — защитные сужающие чтения; любое значение, не являющееся обычным объектом с картой `mcpServers`, сужается до `{}` (нет серверов).
 - `upsertMcpServer` / `removeMcpServer` — помощники read-modify-write для всего объекта, используемые админ-UI. Они сохраняют все остальные серверы: UI никогда не патчит частично один ключ, он читает весь объект, устанавливает/удаляет одну запись под `mcpServers` и записывает весь объект обратно.
 
-Демон копирует этот столбец дословно в `ExecOptions.McpConfig` (`json.RawMessage`) при диспетчеризации задачи. Оттуда каждый бэкенд в `server/pkg/agent/` разворачивает его в то, что понимает соответствующий CLI.
+При claim задачи `applyWorkspaceDefaultMcpServers` объединяет серверы рабочего пространства с конфигурацией агента; одноимённая запись агента имеет приоритет. Результат относится к конкретной задаче, поэтому изменения действуют только на новые задачи. Демон передаёт итоговый документ в `ExecOptions.McpConfig` (`json.RawMessage`), после чего каждый бэкенд преобразует его в формат своего CLI.
 
 ## Два слоя инъекции
 
@@ -37,7 +37,9 @@ import { Mermaid } from "@/components/mermaid";
 
 <Mermaid chart={`
 flowchart TD
-  COL["agent.mcp_config (JSONB)"] --> EXEC["ExecOptions.McpConfig (json.RawMessage)"]
+  WS["workspace.default_mcp_config"] --> MERGE["claim-time merge"]
+  AGENT["agent.mcp_config"] --> MERGE
+  MERGE --> EXEC["ExecOptions.McpConfig (json.RawMessage)"]
   EXEC --> L1["Layer 1: server/pkg/agent backends"]
   EXEC --> L2["Layer 2: server/internal/daemon/execenv preparers"]
   L1 --> CLAUDE["claude / codebuddy: --mcp-config file"]

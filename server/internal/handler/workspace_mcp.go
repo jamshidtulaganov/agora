@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -20,6 +21,8 @@ import (
 // Details carry server names only — never server definitions, which hold
 // auth material (hosted MCP URLs embed tokens).
 const workspaceMcpActivityUpdated = "workspace_default_mcp_updated"
+
+var workspaceMcpServerNameRE = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 // WorkspaceDefaultMcpConfigResponse is the wire shape for the dedicated
 // default-MCP-config endpoints. Kept distinct from `WorkspaceResponse` so
@@ -234,11 +237,96 @@ func validateMcpConfigShape(raw json.RawMessage) (string, bool) {
 		return `"mcpServers" must be an object`, false
 	}
 	for name, def := range servers {
-		if strings.TrimSpace(name) == "" {
-			return "mcpServers keys must be non-empty server names", false
+		if !workspaceMcpServerNameRE.MatchString(name) {
+			return `mcpServers server names may only contain letters, numbers, "_", and "-"`, false
 		}
-		if _, ok := def.(map[string]any); !ok {
+		entry, ok := def.(map[string]any)
+		if !ok {
 			return `mcpServers["` + name + `"] must be an object`, false
+		}
+		if msg, ok := validateMcpServerEntry(name, entry); !ok {
+			return msg, false
+		}
+	}
+	return "", true
+}
+
+func validateMcpServerEntry(name string, entry map[string]any) (string, bool) {
+	prefix := `mcpServers["` + name + `"]`
+	command, hasCommand := entry["command"]
+	url, hasURL := entry["url"]
+	remote := false
+	if hasURL {
+		urlString, ok := url.(string)
+		if !ok || strings.TrimSpace(urlString) == "" {
+			return prefix + `.url must be a non-empty string`, false
+		}
+		remote = true
+	}
+
+	if remote {
+		if hasCommand {
+			return prefix + ` cannot contain both url and command`, false
+		}
+		if rawType, exists := entry["type"]; exists {
+			typeString, ok := rawType.(string)
+			if !ok {
+				return prefix + `.type must be a string`, false
+			}
+			switch strings.ToLower(typeString) {
+			case "http", "sse", "streamable-http", "http_streamable":
+			default:
+				return prefix + `.type must be http, sse, or streamable-http`, false
+			}
+		}
+		if headers, exists := entry["headers"]; exists {
+			if msg, ok := validateMcpStringMap(prefix+`.headers`, headers); !ok {
+				return msg, false
+			}
+		}
+		return "", true
+	}
+
+	if rawType, exists := entry["type"]; exists {
+		typeString, ok := rawType.(string)
+		if !ok || typeString != "stdio" {
+			return prefix + `.type requires a URL unless it is "stdio"`, false
+		}
+	}
+	commandString, ok := command.(string)
+	if !hasCommand || !ok || strings.TrimSpace(commandString) == "" {
+		return prefix + `.command must be a non-empty string`, false
+	}
+	if args, exists := entry["args"]; exists {
+		items, ok := args.([]any)
+		if !ok {
+			return prefix + `.args must be an array of strings`, false
+		}
+		for _, item := range items {
+			if _, ok := item.(string); !ok {
+				return prefix + `.args must be an array of strings`, false
+			}
+		}
+	}
+	if env, exists := entry["env"]; exists {
+		if msg, ok := validateMcpStringMap(prefix+`.env`, env); !ok {
+			return msg, false
+		}
+	}
+	return "", true
+}
+
+func validateMcpStringMap(path string, value any) (string, bool) {
+	values, ok := value.(map[string]any)
+	if !ok {
+		return path + ` must be an object`, false
+	}
+	for key, value := range values {
+		if strings.TrimSpace(key) == "" {
+			return path + ` keys must not be empty`, false
+		}
+		if _, ok := value.(string); !ok {
+			return path + `["` + key + `"] must be a string`, false
 		}
 	}
 	return "", true

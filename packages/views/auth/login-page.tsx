@@ -295,7 +295,9 @@ export function LoginPage({
         <Card className="w-full max-w-sm">
           <CardHeader className="text-center">
             {logo && <div className="mx-auto mb-4">{logo}</div>}
-            <CardTitle className="text-2xl">{t(($) => $.cli.title)}</CardTitle>
+            <CardTitle role="heading" aria-level={1} className="text-2xl">
+              {t(($) => $.cli.title)}
+            </CardTitle>
             <CardDescription>
               {t(($) => $.cli.description, { email: existingUser.email })}
             </CardDescription>
@@ -326,7 +328,9 @@ export function LoginPage({
         <Card className="w-full max-w-sm">
           <CardHeader className="text-center">
             {logo && <div className="mx-auto mb-4">{logo}</div>}
-            <CardTitle className="text-2xl">{t(($) => $.verify.title)}</CardTitle>
+            <CardTitle role="heading" aria-level={1} className="text-2xl">
+              {t(($) => $.verify.title)}
+            </CardTitle>
             <CardDescription>
               {t(($) => $.verify.description, { email })}
             </CardDescription>
@@ -388,7 +392,7 @@ export function LoginPage({
       <Card className={`w-full ${isSignup ? "max-w-lg" : "max-w-sm"}`}>
         <CardHeader className="text-center">
           {logo && <div className="mx-auto mb-4">{logo}</div>}
-          <CardTitle className="text-2xl">
+          <CardTitle role="heading" aria-level={1} className="text-2xl">
             {isSignup ? t(($) => $.signup.title) : t(($) => $.signin.title)}
           </CardTitle>
           <CardDescription>
@@ -452,7 +456,8 @@ export function LoginPage({
                 placeholder={t(($) => $.common.email_placeholder)}
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                disabled={emailLocked}
+                readOnly={emailLocked}
+                aria-readonly={emailLocked || undefined}
                 autoComplete="email"
                 autoFocus={!isSignup}
                 required

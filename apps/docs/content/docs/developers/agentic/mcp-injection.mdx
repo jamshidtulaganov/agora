@@ -1,6 +1,6 @@
 ---
 title: MCP Injection
-description: How Agora materialises one per-agent mcp_config column into per-runtime MCP wiring across every agent backend, plus the strict-mode, three-state, fail-closed, and redaction contracts.
+description: How Agora merges workspace defaults with per-agent mcp_config and materialises the result across every agent backend, plus the strict-mode, three-state, fail-closed, and redaction contracts.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
@@ -10,9 +10,9 @@ import { Mermaid } from "@/components/mermaid";
 **Both** — dev and agent. Read this if you are adding an agent backend, changing the `mcp_config` shape, debugging why a server isn't reaching a runtime, or you are an agent reasoning about why you cannot read your own MCP secrets. Sibling pages: [agentic overview](/developers/architecture) and the [conventions glossary](/developers/conventions). Package boundaries are governed by the repo-root CLAUDE.md.
 </Callout>
 
-## The one column
+## Two configuration layers
 
-Every agent carries a single JSONB column, `agent.mcp_config`. Its canonical on-disk shape is Claude-style:
+Agora stores a workspace-wide default in `workspace.default_mcp_config` and an optional override in `agent.mcp_config`. Both use the canonical Claude-style shape:
 
 ```json
 {
@@ -29,7 +29,9 @@ A server entry may instead carry a `url` (plus optional `headers`) for a remote 
 - `readMcpServers(config)` / `listMcpServers(config)` — defensive narrowing reads; any value that is not a plain object with a `mcpServers` map narrows to `{}` (no servers).
 - `upsertMcpServer` / `removeMcpServer` — whole-object read-modify-write helpers used by the admin UI. They preserve every other server: the UI never partial-patches one key, it reads the whole object, sets/deletes one entry under `mcpServers`, and writes the whole object back.
 
-The daemon copies this column verbatim into `ExecOptions.McpConfig` (a `json.RawMessage`) when it dispatches a task. From there each backend in `server/pkg/agent/` materialises it into whatever the underlying CLI understands.
+At claim time, `applyWorkspaceDefaultMcpServers` merges the workspace servers into the agent config. An agent entry with the same server name wins. The merged document is task-scoped: changes affect newly claimed tasks and never mutate an already-running task. The daemon then copies that effective document into `ExecOptions.McpConfig` (a `json.RawMessage`) and each backend materialises it into the form its CLI understands.
+
+The workspace default is intentionally omitted from generic workspace responses. Its dedicated GET/PUT endpoints are owner/admin-only, reject agent actors, validate transport-defining fields, and write an audit event containing server-name diffs but no server definitions.
 
 ## Two injection layers
 
@@ -37,7 +39,9 @@ There are two distinct ways `mcp_config` reaches a CLI, and which one a provider
 
 <Mermaid chart={`
 flowchart TD
-  COL["agent.mcp_config (JSONB)"] --> EXEC["ExecOptions.McpConfig (json.RawMessage)"]
+  WS["workspace.default_mcp_config"] --> MERGE["claim-time merge"]
+  AGENT["agent.mcp_config"] --> MERGE
+  MERGE --> EXEC["ExecOptions.McpConfig (json.RawMessage)"]
   EXEC --> L1["Layer 1: server/pkg/agent backends"]
   EXEC --> L2["Layer 2: server/internal/daemon/execenv preparers"]
   L1 --> CLAUDE["claude / codebuddy: --mcp-config file"]
@@ -107,7 +111,7 @@ The managed config **replaces** the runtime's global servers; it never unions wi
 - codex → `stripCodexUserMcpServerTables` removes inherited `[mcp_servers.*]` tables when a managed set exists; the comment in `ensureCodexMcpConfig` explicitly states it "mirrors Claude's `--strict-mcp-config`".
 - opencode → `OPENCODE_CONFIG_CONTENT` merges at OpenCode's "local" scope, the latest merge position, giving daemon entries precedence over same-key user entries.
 
-The product rule: if an admin saves an explicit list in the MCP tab, that list is exactly what the agent sees — global/user-config servers are not silently added.
+The product rule: the workspace-plus-agent effective list is exactly what the runtime sees — global/user-config servers are not silently added. An agent-level same-name entry is the only supported override of a workspace default.
 
 ## Three-state semantics
 
@@ -159,6 +163,7 @@ But `codebuddy` **honors `--mcp-config`** — `codebuddyBackend.Execute` writes 
 | File | Symbols this page depends on |
 |---|---|
 | `packages/core/mcp/types.ts` | `McpConfig`, `McpServerEntry`, `NamedMcpServer`, `readMcpServers`, `listMcpServers`, `upsertMcpServer`, `removeMcpServer`, `buildServerEntry`, `MCP_SERVER_TEMPLATES` |
+| `server/internal/handler/workspace_mcp.go` | `GetWorkspaceDefaultMcpConfig`, `UpdateWorkspaceDefaultMcpConfig`, `applyWorkspaceDefaultMcpServers`, `validateMcpConfigShape` |
 | `packages/core/agents/mcp-support.ts` | `MCP_SUPPORTED_PROVIDERS`, `providerSupportsMcpConfig` |
 | `server/pkg/agent/claude.go` | `claudeBackend.Execute`, `buildClaudeArgs`, `claudeBlockedArgs`, `writeMcpConfigToTemp`, `filterCustomArgs`, `--mcp-config`, `--strict-mcp-config` |
 | `server/pkg/agent/codebuddy.go` | `codebuddyBackend.Execute`, `buildCodebuddyArgs`, `codebuddyBlockedArgs`, `--mcp-config`, `--strict-mcp-config` |

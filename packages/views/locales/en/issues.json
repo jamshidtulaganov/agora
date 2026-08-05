@@ -456,6 +456,7 @@
   },
   "execution_surface": {
     "details": "Details",
+    "open_work": "Open work",
     "active_work": "Active work",
     "active_work_hint": "Current ownership and handoffs",
     "action_required": "Action required",
@@ -472,6 +473,7 @@
     "full_plan": "Full plan",
     "handoffs": "Handoffs and decisions",
     "customize": "Customize",
+    "project_defaults_hint": "Uses this project's execution defaults. Customize only for this run.",
     "strategy_legend": "Who should execute?",
     "strategy_hint": "Automatic uses the issue owner and squad capabilities. Solo keeps one worker; Squad fans independent specialties out in parallel.",
     "squad_label": "Execution squad",
@@ -1303,7 +1305,7 @@
     "blocked_qa_stale": "The QA verdict is stale — re-run QA before review."
   },
   "review_workspace": {
-    "overview": "Overview",
+    "overview": "Decision",
     "code": "Code",
     "product": "Product",
     "evidence": "Evidence"

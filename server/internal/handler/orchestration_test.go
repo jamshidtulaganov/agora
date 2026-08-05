@@ -271,15 +271,19 @@ func TestExecutionStrategyInference(t *testing.T) {
 
 func TestProgressionPolicyCompatibility(t *testing.T) {
 	issue := db.Issue{Metadata: []byte(`{"pipeline_mode":"manual"}`)}
-	if got := progressionPolicyForIssue(issue, "", ""); got != "manual" {
+	if got := progressionPolicyForIssue(issue, "", "", "gated"); got != "manual" {
 		t.Fatalf("legacy pipeline mode = %q, want manual", got)
 	}
 	issue.Metadata = []byte(`{"pipeline_mode":"manual","progression_policy":"gated"}`)
-	if got := progressionPolicyForIssue(issue, "", ""); got != "gated" {
+	if got := progressionPolicyForIssue(issue, "", "", "manual"); got != "gated" {
 		t.Fatalf("new metadata must win, got %q", got)
 	}
-	if got := progressionPolicyForIssue(issue, "automatic", "manual"); got != "automatic" {
+	if got := progressionPolicyForIssue(issue, "automatic", "manual", "gated"); got != "automatic" {
 		t.Fatalf("request must win, got %q", got)
+	}
+	issue.Metadata = []byte(`{}`)
+	if got := progressionPolicyForIssue(issue, "", "", "gated"); got != "gated" {
+		t.Fatalf("project default = %q, want gated", got)
 	}
 }
 

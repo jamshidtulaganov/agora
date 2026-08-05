@@ -51,3 +51,19 @@ export function useDeleteMcpCredential(workspaceId: string) {
     },
   });
 }
+
+
+/** Save or clear the workspace-wide mcp.json document. */
+export function useUpdateWorkspaceMcpConfig(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (mcpConfig: unknown | null) =>
+      api.updateWorkspaceMcpConfig(workspaceId, mcpConfig),
+    onSuccess: (response) => {
+      qc.setQueryData(workspaceKeys.mcpConfig(workspaceId), response);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: workspaceKeys.mcpConfig(workspaceId) });
+    },
+  });
+}

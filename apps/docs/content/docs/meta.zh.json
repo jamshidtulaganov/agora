@@ -31,6 +31,7 @@
     "---收件箱---",
     "inbox",
     "---集成---",
+    "mcp-servers",
     "github-integration",
     "lark-bot-integration",
     "---自部署运维---",

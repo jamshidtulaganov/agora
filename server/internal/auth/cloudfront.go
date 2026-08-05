@@ -173,6 +173,33 @@ func (s *CloudFrontSigner) SignedCookies(expiry time.Time) []*http.Cookie {
 	}
 }
 
+// ExpiredCookies removes the same browser credentials issued by
+// SignedCookies. Account deletion and logout must clear these too; otherwise a
+// deleted/logged-out browser can keep reading CDN-protected files until the
+// original signed policy expires.
+func (s *CloudFrontSigner) ExpiredCookies() []*http.Cookie {
+	expires := time.Unix(0, 0)
+	makeExpired := func(name string) *http.Cookie {
+		return &http.Cookie{
+			Name:     name,
+			Value:    "",
+			Domain:   s.cookieDomain,
+			Path:     "/",
+			MaxAge:   -1,
+			Expires:  expires,
+			Secure:   true,
+			HttpOnly: true,
+			SameSite: http.SameSiteNoneMode,
+		}
+	}
+
+	return []*http.Cookie{
+		makeExpired("CloudFront-Policy"),
+		makeExpired("CloudFront-Signature"),
+		makeExpired("CloudFront-Key-Pair-Id"),
+	}
+}
+
 // SignedURL generates a CloudFront signed URL for the given resource URL.
 // Used by CLI/API clients that don't have browser cookies.
 func (s *CloudFrontSigner) SignedURL(rawURL string, expiry time.Time) string {

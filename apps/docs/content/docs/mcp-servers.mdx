@@ -1,0 +1,61 @@
+---
+title: MCP servers
+description: Connect agents to tools and data sources with a shared mcp.json or agent-specific overrides.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Agora accepts the same top-level `mcpServers` JSON shape used by Claude Desktop and Cursor. Open **Workspace → MCP servers** to paste or import an `mcp.json` file.
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
+    },
+    "linear": {
+      "type": "http",
+      "url": "https://mcp.linear.app/mcp",
+      "headers": { "Authorization": "Bearer ${LINEAR_TOKEN}" }
+    }
+  }
+}
+```
+
+## Shared defaults and agent overrides
+
+There are two configuration layers:
+
+1. **Workspace `mcp.json`** — a project-wide default merged into every agent when a new task starts. Only workspace owners and admins can read or change it.
+2. **Agent-specific connections** — servers attached to selected agents. If an agent and the workspace both define the same server name, the agent entry wins.
+
+Saving a change affects **new tasks**. It does not rewrite the configuration of a task that is already running.
+
+The workspace document is stored separately from the ordinary workspace response because commands, environment variables, URLs, and headers may contain sensitive values. Updates are audit logged by server name without recording server definitions.
+
+<Callout type="warning">
+Values pasted into `env` and `headers` are visible to workspace owners and admins. For a remote bearer token, use the **sealed auth** field in the agent-specific server form; Agora stores that secret separately and injects it only when dispatching a task.
+</Callout>
+
+## MCP servers vs. plugins
+
+- **MCP server** — one direct connection to a live tool or data source. Use it when you already have an `mcp.json` entry or need one connector.
+- **Plugin** — a reusable capability bundle containing workspace skills and optionally one or more MCP connectors. Install or uninstall the bundle on selected agents as a unit.
+- **Skill** — instructions and supporting files that teach an agent how to perform a kind of work; it is not a live connection.
+
+Use a shared MCP default for infrastructure every agent should reach. Use an agent override for a specialist or different credentials. Use a plugin when the connection and operating instructions should travel together.
+
+## Runtime delivery
+
+Agora translates the shared JSON into each supported runtime's native mechanism: Claude receives an MCP config at launch, Cursor gets `.cursor/mcp.json`, Codex gets managed `mcp_servers` entries, ACP runtimes receive `mcpServers`, and OpenCode/OpenClaw receive their runtime-specific config.
+
+MCP support remains provider-specific. Check [AI coding tools comparison](/providers) before relying on a server for a particular agent.
+
+## Troubleshooting
+
+- A server name may contain only letters, numbers, `_`, and `-`.
+- A local server needs a non-empty `command`; `args` must be an array of strings and `env` must contain string values.
+- A remote server needs a non-empty `url`; `headers` must contain string values.
+- If a shared server seems missing, check whether the agent defines the same name and therefore overrides it.
+- If a config saves but the tool is unavailable, confirm that the agent's runtime supports MCP and that the command exists on the daemon machine.

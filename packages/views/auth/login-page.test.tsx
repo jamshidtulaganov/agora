@@ -454,7 +454,11 @@ describe("LoginPage", () => {
     ).toBeInTheDocument();
     const emailInput = screen.getByLabelText(/email/i);
     expect(emailInput).toHaveValue("invited.user@example.com");
-    expect(emailInput).toBeDisabled();
+    expect(emailInput).toHaveAttribute("readonly");
+    expect(emailInput).not.toBeDisabled();
+    expect(
+      screen.getByRole("heading", { name: /create your agora account/i, level: 1 }),
+    ).toBeInTheDocument();
   });
 
   // -------------------------------------------------------------------------

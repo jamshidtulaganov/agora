@@ -362,7 +362,7 @@ API. Draft edits stay draft until the explicit Start action. Every accepted
 route is readiness- and capability-checked against the run controller or the
 step's squad before it becomes a versioned plan revision. Neither controller
 nor worker may treat an issue comment as proof that Git handoff or integration
-succeeded—the daemon and server verify the commit state.
+succeeded—the daemon/server verify commits; new runs inherit `project.settings.orchestration` unless explicitly overridden, and a started run remains the sole dispatcher through recovery.
 
 **Dev lead and QA lead are siblings, not a hierarchy.** Structure work as two
 squads per unit of work — one dev squad, one QA squad — each with its own

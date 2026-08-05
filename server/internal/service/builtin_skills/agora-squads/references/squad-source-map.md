@@ -501,6 +501,8 @@ server/internal/handler/daemon.go             # authoritative per-step model rou
 server/internal/daemon/prompt.go              # per-step handoff contract
 server/internal/daemon/local_worktree.go      # pinned bases, detached verification worktrees, Git evidence
 packages/views/issues/components/issue-execution.tsx # status bar, Active Work, advanced execution drawer
+packages/views/projects/components/project-execution-section.tsx # inherited project execution defaults
+packages/core/types/project.ts                  # project.settings.orchestration contract
 docs/orchestration-worktree-smoke.md                  # real Git branch→integration→QA/review smoke
 server/internal/handler/orchestration_squad_selection_test.go # capability proposal/reroute integration test
 ```
@@ -525,7 +527,13 @@ Contracts:
 - explicit orchestration `model_override` is authoritative and is not replaced
   by issue cost-tier labels;
 - orchestration owns retry for linked tasks, preventing the generic task retry
-  path from creating a second competing attempt;
+  and fallback paths from creating a second competing attempt; stale sweeps
+  and daemon orphan recovery re-enter the orchestration terminal callback;
+- project-level execution defaults are inherited at run creation, while
+  explicit issue-run fields remain one-run overrides;
+- a started run is the sole dispatcher: issue reassignment, backlog promotion,
+  QA/review reflexes, and child-done notifications do not enqueue ordinary
+  tasks beside its DAG; cancelling the issue first cancels the run and steps;
 - the first local worker atomically pins `orchestration_run.base_git_states`;
   every parallel worktree starts from that immutable per-repository snapshot;
 - integration completion records per-repository HEADs and daemon-verified

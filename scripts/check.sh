@@ -31,7 +31,11 @@ EXIT_CODE=0
 # Cleanup: kill only services this script started
 # --------------------------------------------------------------------------
 cleanup() {
-  echo ""
+	local status=$?
+	if [ "$EXIT_CODE" -eq 0 ] && [ "$status" -ne 0 ]; then
+		EXIT_CODE=$status
+	fi
+	echo ""
   if [ "$STARTED_BACKEND" = true ] && [ -n "$BACKEND_PID" ]; then
     kill "$BACKEND_PID" 2>/dev/null && wait "$BACKEND_PID" 2>/dev/null || true
     echo "    Stopped backend (PID $BACKEND_PID)"
@@ -48,7 +52,14 @@ cleanup() {
   fi
   exit "$EXIT_CODE"
 }
+
+interrupted() {
+  EXIT_CODE=130
+  exit 130
+}
+
 trap cleanup EXIT
+trap interrupted INT TERM
 
 # --------------------------------------------------------------------------
 # Utility: wait until a port responds
@@ -57,7 +68,7 @@ wait_for_port() {
   local port=$1 name=$2 max_wait=${3:-60} path=${4:-/}
   local elapsed=0
   echo "    Waiting for $name on :$port..."
-  while ! curl -sf "http://localhost:${port}${path}" > /dev/null 2>&1; do
+  while ! curl --connect-timeout 2 --max-time 5 -sf "http://localhost:${port}${path}" > /dev/null 2>&1; do
     sleep 1
     elapsed=$((elapsed + 1))
     if [ "$elapsed" -ge "$max_wait" ]; then
@@ -74,7 +85,7 @@ wait_for_port() {
 # --------------------------------------------------------------------------
 echo "==> Using env file: $ENV_FILE"
 echo "==> Checking PostgreSQL..."
-bash scripts/ensure-postgres.sh "$ENV_FILE"
+bash scripts/ensure-postgres.sh "$ENV_FILE" || { EXIT_CODE=1; exit 1; }
 
 # --------------------------------------------------------------------------
 # Step 1: TypeScript typecheck
@@ -97,7 +108,11 @@ echo ""
 echo "==> [3/5] Go tests..."
 echo "==> Running database migrations..."
 (cd server && go run ./cmd/migrate up) || { EXIT_CODE=1; exit 1; }
-(cd server && go test ./...) || { EXIT_CODE=1; exit 1; }
+# The adapter tests spawn many short-lived fake CLI processes with strict 5s
+# protocol deadlines. Package and in-package parallelism can exhaust process
+# capacity on a busy laptop/CI before the fixtures initialize, so keep the
+# verification run serialized and deterministic.
+(cd server && go test -p 1 -parallel 1 ./...) || { EXIT_CODE=1; exit 1; }
 
 # --------------------------------------------------------------------------
 # Step 4: Start services for E2E (only if not already running)
@@ -105,7 +120,7 @@ echo "==> Running database migrations..."
 echo ""
 echo "==> [4/5] Starting services for E2E..."
 
-if curl -sf "http://localhost:${PORT}/health" > /dev/null 2>&1; then
+if curl --connect-timeout 2 --max-time 5 -sf "http://localhost:${PORT}/health" > /dev/null 2>&1; then
   echo "    Backend already running on :$PORT"
 else
   echo "    Starting backend..."
@@ -115,14 +130,20 @@ else
   wait_for_port "$PORT" "Backend" 90 "/health"
 fi
 
-if curl -sf "http://localhost:${FRONTEND_PORT}" > /dev/null 2>&1; then
+if curl --connect-timeout 2 --max-time 15 -sf "http://localhost:${FRONTEND_PORT}/login" > /dev/null 2>&1; then
   echo "    Frontend already running on :$FRONTEND_PORT"
 else
   echo "    Starting frontend..."
-  pnpm dev:web > /tmp/agora-check-frontend.log 2>&1 &
+  # Launch Next directly so FRONTEND_PID is the long-lived server itself.
+  # Starting through pnpm/turbo leaves the child next-server orphaned when
+  # cleanup kills only the package-manager process; that stale server is the
+  # source of intermittent E2E hangs on subsequent runs.
+  (cd apps/web && exec ./node_modules/.bin/next dev --webpack --port "$FRONTEND_PORT") > /tmp/agora-check-frontend.log 2>&1 &
   FRONTEND_PID=$!
   STARTED_FRONTEND=true
-  wait_for_port "$FRONTEND_PORT" "Frontend" 120 "/"
+  # Probe the first E2E route, not only the landing page. Next dev compiles
+  # routes lazily; a stale process can still serve `/` while `/login` is hung.
+  wait_for_port "$FRONTEND_PORT" "Frontend" 120 "/login"
 fi
 
 # --------------------------------------------------------------------------

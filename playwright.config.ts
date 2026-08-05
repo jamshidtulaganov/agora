@@ -6,6 +6,10 @@ export default defineConfig({
   globalSetup: "./e2e/global-setup.ts",
   timeout: 30000,
   retries: 0,
+  // The suite intentionally shares one authenticated workspace. Serializing
+  // files prevents cleanup/navigation races between flows and avoids flooding
+  // the cold Next.js dev server with simultaneous route compilations.
+  workers: 1,
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? process.env.FRONTEND_ORIGIN ?? "http://localhost:3000",
     headless: true,

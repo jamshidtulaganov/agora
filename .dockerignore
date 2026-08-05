@@ -7,6 +7,7 @@
 **/dist
 server/bin
 server/tmp
+**/.gocache
 # `go build ./cmd/server` from server/ drops the binary here (gitignored, but
 # .gitignore does not apply to a Docker context) — 49MB re-uploaded every deploy.
 server/server
@@ -25,6 +26,11 @@ server/server
 .env
 .env.*
 !.env.example
+
+# Local database exports may contain production data and are never build inputs.
+*.dump
+*.sql
+*.sql.gz
 
 # IDE
 .idea

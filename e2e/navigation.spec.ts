@@ -30,7 +30,7 @@ test.describe("Navigation", () => {
     await page.waitForURL("**/settings");
 
     await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
-    await expect(page.getByText("Members")).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Members", exact: true })).toBeVisible();
   });
 
   test("agents page shows agent list", async ({ page }) => {

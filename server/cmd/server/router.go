@@ -311,7 +311,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// bot_union_id during the device-flow finalize, so this
 				// is bridge code — it will simply find no rows to update
 				// on a fresh deployment and exit. MUL-2671.
-				go lark.BackfillBotUnionIDs(context.Background(), queries, larkClient, installSvc, slog.Default())
+				// Some router-only tests intentionally construct the handler with
+				// a nil pool. db.New(nil) is sufficient for routes that never hit
+				// storage, but startup goroutines must not dereference that pool.
+				// Production always supplies a pool from main.
+				if pool != nil {
+					go lark.BackfillBotUnionIDs(context.Background(), queries, larkClient, installSvc, slog.Default())
+				}
 
 				// Upgrade repair for deployments that ran the whole
 				// integration against Lark international via the deployment-
@@ -321,10 +327,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// operator clears the override. No-op on mainland / fresh
 				// deployments. Off the hot startup path like the union_id
 				// backfill. MUL-3083.
-				go lark.BackfillRegionFromLegacyOverride(context.Background(), queries,
-					strings.TrimSpace(os.Getenv("AGORA_LARK_HTTP_BASE_URL")),
-					strings.TrimSpace(os.Getenv("AGORA_LARK_CALLBACK_BASE_URL")),
-					slog.Default())
+				if pool != nil {
+					go lark.BackfillRegionFromLegacyOverride(context.Background(), queries,
+						strings.TrimSpace(os.Getenv("AGORA_LARK_HTTP_BASE_URL")),
+						strings.TrimSpace(os.Getenv("AGORA_LARK_CALLBACK_BASE_URL")),
+						slog.Default())
+				}
 
 				// Device-flow registration service: end-to-end install
 				// pipeline that talks to accounts.feishu.cn (RFC 8628)
@@ -563,6 +571,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// --- User-scoped routes (no workspace context required) ---
 		r.Get("/api/me", h.GetMe)
 		r.Patch("/api/me", h.UpdateMe)
+		// Permanent and credential-revoking: never allow an agent/task token to
+		// delete the human account it is acting on behalf of.
+		r.With(handler.RequireHumanActor).Delete("/api/me", h.DeleteMe)
 		// Agora-hosted Zoho MCP server (Streamable HTTP). Agents reach it
 		// with their task-scoped mat_ token — the handler enforces
 		// X-Actor-Source=task_token and resolves the acting Zoho identity

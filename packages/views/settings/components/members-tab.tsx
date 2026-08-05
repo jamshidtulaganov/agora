@@ -38,6 +38,7 @@ import {
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@agora/core/auth";
+import { useConfigStore } from "@agora/core/config";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { useCurrentWorkspace, paths } from "@agora/core/paths";
 import { memberListOptions, invitationListOptions, workspaceKeys } from "@agora/core/workspace/queries";
@@ -262,22 +263,10 @@ export function MembersTab() {
   const { t } = useT("settings");
   const roleConfig = useRoleLabels();
   const user = useAuthStore((s) => s.user);
+  const bitrixEnabled = useConfigStore((s) => s.bitrixEnabled);
   const workspace = useCurrentWorkspace();
   const qc = useQueryClient();
   const wsId = useWorkspaceId();
-  const { data: members = [] } = useQuery(memberListOptions(wsId));
-  const { data: invitations = [] } = useQuery(invitationListOptions(wsId));
-  // Bitrix directory for the invite form's "link Bitrix user" recommendations.
-  // retry:false keeps the tab healthy when Bitrix is unconfigured (the endpoint
-  // 503s → empty list → no suggestions rendered).
-  const { data: bitrixUsers = [] } = useQuery({
-    queryKey: ["bitrix-users", wsId],
-    queryFn: () => api.listBitrixUsers(),
-    enabled: !!wsId,
-    retry: false,
-    staleTime: 5 * 60 * 1000,
-  });
-
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<MemberRole>("member");
   const [inviteLoading, setInviteLoading] = useState(false);
@@ -290,6 +279,18 @@ export function MembersTab() {
     variant?: "destructive";
     onConfirm: () => Promise<void>;
   } | null>(null);
+  const { data: members = [] } = useQuery(memberListOptions(wsId));
+  const { data: invitations = [] } = useQuery(invitationListOptions(wsId));
+  // Bitrix directory for the invite form's "link Bitrix user" recommendations.
+  // retry:false keeps the tab healthy when Bitrix is unconfigured (the endpoint
+  // 503s → empty list → no suggestions rendered).
+  const { data: bitrixUsers = [] } = useQuery({
+    queryKey: ["bitrix-users", wsId],
+    queryFn: () => api.listBitrixUsers(),
+    enabled: !!wsId && bitrixEnabled && inviteEmail.trim().length >= 2,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
 
   const currentMember = members.find((m) => m.user_id === user?.id) ?? null;
   const canManageWorkspace = currentMember?.role === "owner" || currentMember?.role === "admin";

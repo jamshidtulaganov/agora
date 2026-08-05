@@ -49,6 +49,23 @@ func (h *Handler) revokeAndRemoveMember(ctx context.Context, workspaceID, userID
 	defer tx.Rollback(ctx)
 
 	qtx := h.Queries.WithTx(tx)
+	result, err := h.revokeAndRemoveMemberTx(ctx, qtx, workspaceID, userID, memberID, archivedBy)
+	if err != nil {
+		return empty, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return empty, err
+	}
+
+	return result, nil
+}
+
+// revokeAndRemoveMemberTx is the transaction-scoped form used by account
+// deletion, where every workspace revocation and the final user delete must
+// commit atomically. The caller owns commit/rollback and post-commit events.
+func (h *Handler) revokeAndRemoveMemberTx(ctx context.Context, qtx *db.Queries, workspaceID, userID, memberID, archivedBy pgtype.UUID) (revocationResult, error) {
+	var empty revocationResult
 
 	runtimes, err := qtx.ListAgentRuntimesByOwner(ctx, db.ListAgentRuntimesByOwnerParams{
 		WorkspaceID: workspaceID,
@@ -117,10 +134,6 @@ func (h *Handler) revokeAndRemoveMember(ctx context.Context, workspaceID, userID
 	// still a member with a dead runtime), and a failed revoke never leaves
 	// the user out of the workspace with a still-online runtime.
 	if err := qtx.DeleteMember(ctx, memberID); err != nil {
-		return empty, err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
 		return empty, err
 	}
 

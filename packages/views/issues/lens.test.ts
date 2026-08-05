@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { NavigationProvider } from "../navigation";
 import type { NavigationAdapter } from "../navigation/types";
-import { LENS_QUERY_KEY, isLensRegistered, useLensParam } from "./lens";
+import { LENS_QUERY_KEY, getLens, isLensRegistered, useLensParam } from "./lens";
 
 function makeNav(overrides: Partial<NavigationAdapter> = {}): NavigationAdapter {
   return {
@@ -27,11 +27,15 @@ describe("lens registry", () => {
     expect(isLensRegistered("issue")).toBe(true);
   });
 
-  it("registers every SDLC stage lens (design/dev/qa/review)", () => {
+  it("registers the unified work lens and its legacy stage aliases", () => {
+    expect(isLensRegistered("work")).toBe(true);
     expect(isLensRegistered("design")).toBe(true);
     expect(isLensRegistered("dev")).toBe(true);
     expect(isLensRegistered("qa")).toBe(true);
     expect(isLensRegistered("review")).toBe(true);
+
+    expect(getLens("dev")?.Body).toBe(getLens("work")?.Body);
+    expect(getLens("review")?.Body).toBe(getLens("work")?.Body);
   });
 
   it("does not register a deploy lens — deploy moved to the sprint level", () => {
@@ -62,8 +66,8 @@ describe("useLensParam", () => {
     expect(result.current.lens).toBe("qa");
   });
 
-  it("recognizes the design/review/dev lens keys from the URL (phases E-F)", () => {
-    for (const key of ["design", "review", "dev"] as const) {
+  it("recognizes the unified work lens and compatibility aliases from the URL", () => {
+    for (const key of ["work", "design", "review", "dev"] as const) {
       const nav = makeNav({ searchParams: new URLSearchParams(`lens=${key}`) });
       const { result } = renderHook(() => useLensParam(), { wrapper: makeWrapper(nav) });
       expect(result.current.lens).toBe(key);

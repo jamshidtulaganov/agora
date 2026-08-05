@@ -53,6 +53,114 @@ export interface McpConfig {
   mcpServers: Record<string, McpServerEntry>;
 }
 
+export type McpConfigValidationResult =
+  | { ok: true; value: Record<string, unknown>; serverCount: number }
+  | { ok: false; error: string };
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function validateStringMap(value: unknown, path: string): string | null {
+  if (!isPlainObject(value)) return `${path} must be an object`;
+  for (const [key, item] of Object.entries(value)) {
+    if (!key.trim()) return `${path} keys must not be empty`;
+    if (typeof item !== "string") return `${path}.${key} must be a string`;
+  }
+  return null;
+}
+
+/**
+ * Validates the portable mcp.json subset Agora can materialise across Claude,
+ * Cursor, Codex, OpenCode, and ACP runtimes. Unknown top-level fields and
+ * unknown per-server fields are preserved for forward compatibility; the
+ * transport-defining fields are checked so a config cannot save successfully
+ * and then fail only when the next task launches.
+ */
+export function validateMcpConfigValue(value: unknown): McpConfigValidationResult {
+  if (!isPlainObject(value)) {
+    return { ok: false, error: "The file must contain a JSON object." };
+  }
+  if (!isPlainObject(value.mcpServers)) {
+    return { ok: false, error: 'Add a top-level "mcpServers" object.' };
+  }
+
+  for (const [name, rawEntry] of Object.entries(value.mcpServers)) {
+    if (!/^[A-Za-z0-9_-]+$/.test(name)) {
+      return {
+        ok: false,
+        error: `Server name "${name}" may only contain letters, numbers, _ and -.`,
+      };
+    }
+    if (!isPlainObject(rawEntry)) {
+      return { ok: false, error: `mcpServers.${name} must be an object.` };
+    }
+
+    const command = rawEntry.command;
+    const hasUrl = rawEntry.url !== undefined;
+    const url = rawEntry.url;
+    const transport = rawEntry.type;
+    if (hasUrl && (typeof url !== "string" || !url.trim())) {
+      return { ok: false, error: `mcpServers.${name}.url must be a non-empty string.` };
+    }
+    const remote = hasUrl;
+
+    if (remote) {
+      const acceptedRemoteTypes = [undefined, "http", "sse", "streamable-http", "http_streamable"];
+      const normalizedTransport = typeof transport === "string" ? transport.toLowerCase() : transport;
+      if (!acceptedRemoteTypes.includes(normalizedTransport as string | undefined)) {
+        return {
+          ok: false,
+          error: `mcpServers.${name}.type must be http, sse, or streamable-http.`,
+        };
+      }
+      if (command !== undefined) {
+        return { ok: false, error: `mcpServers.${name} cannot contain both url and command.` };
+      }
+      if (rawEntry.headers !== undefined) {
+        const error = validateStringMap(rawEntry.headers, `mcpServers.${name}.headers`);
+        if (error) return { ok: false, error: `${error}.` };
+      }
+    } else {
+      if (transport !== undefined && transport !== "stdio") {
+        return { ok: false, error: `mcpServers.${name} needs a URL for ${String(transport)}.` };
+      }
+      if (typeof command !== "string" || !command.trim()) {
+        return { ok: false, error: `mcpServers.${name}.command must be a non-empty string.` };
+      }
+      if (rawEntry.args !== undefined) {
+        if (!Array.isArray(rawEntry.args) || rawEntry.args.some((arg) => typeof arg !== "string")) {
+          return { ok: false, error: `mcpServers.${name}.args must be an array of strings.` };
+        }
+      }
+      if (rawEntry.env !== undefined) {
+        const error = validateStringMap(rawEntry.env, `mcpServers.${name}.env`);
+        if (error) return { ok: false, error: `${error}.` };
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    value,
+    serverCount: Object.keys(value.mcpServers).length,
+  };
+}
+
+/** Parse and validate a Claude Desktop/Cursor-compatible mcp.json document. */
+export function parseMcpConfigText(text: string): McpConfigValidationResult {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? `Invalid JSON: ${error.message}` : "Invalid JSON.",
+    };
+  }
+  return validateMcpConfigValue(value);
+}
+
 /**
  * A server entry paired with its name, for list rendering. All entry fields are
  * optional (the source is an untrusted `mcp_config` JSON blob where any field

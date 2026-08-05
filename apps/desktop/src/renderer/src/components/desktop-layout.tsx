@@ -16,6 +16,7 @@ import { ChatFab, ChatWindow } from "@agora/views/chat";
 import { WorkspaceSlugProvider, paths, useCurrentWorkspace } from "@agora/core/paths";
 import { useNavigation } from "@agora/views/navigation";
 import { getCurrentSlug, subscribeToCurrentSlug } from "@agora/core/platform";
+import { useChatStore } from "@agora/core/chat";
 import { useDesktopUnreadBadge } from "@agora/views/platform";
 import { DesktopNavigationProvider } from "@/platform/navigation";
 import { TabBar } from "./tab-bar";
@@ -168,6 +169,13 @@ export function DesktopShell() {
   // router) sets it. Once set, the sidebar and other shell-level components
   // can resolve workspace-scoped paths via useWorkspacePaths().
   const slug = useSyncExternalStore(subscribeToCurrentSlug, getCurrentSlug, () => null);
+  const isChatOpen = useChatStore((state) => state.isOpen);
+  const isChatExpanded = useChatStore((state) => state.isExpanded);
+  const chatWidth = useChatStore((state) => state.chatWidth);
+  const dockChat = isChatOpen && !isChatExpanded;
+  const chatDockStyle = {
+    "--chat-reserved-width": `min(${chatWidth + 16}px, 42vw)`,
+  } as React.CSSProperties;
 
   return (
     <DesktopNavigationProvider>
@@ -189,7 +197,13 @@ export function DesktopShell() {
             <div className="flex flex-1 min-w-0 flex-col">
               <MainTopBar />
               {/* Content area with inset styling — relative so ChatWindow/ChatFab are constrained here */}
-              <div className="relative flex flex-1 min-h-0 flex-col overflow-hidden mr-2 mb-2 ml-0.5 rounded-xl shadow-sm bg-background">
+              <div
+                className={cn(
+                  "relative flex flex-1 min-h-0 flex-col overflow-hidden mr-2 mb-2 ml-0.5 rounded-xl shadow-sm bg-background",
+                  dockChat && "xl:pr-[var(--chat-reserved-width)]",
+                )}
+                style={chatDockStyle}
+              >
                 <TabContent />
                 {slug && <ChatWindow />}
                 {slug && <ChatFab />}

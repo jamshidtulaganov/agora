@@ -26,6 +26,7 @@ import { api } from "@agora/core/api";
 import { issueDetailOptions, issueKeys, issueOrchestrationOptions } from "@agora/core/issues/queries";
 import { useWorkspaceId } from "@agora/core/hooks";
 import { agentListOptions, squadListOptions } from "@agora/core/workspace/queries";
+import { projectDetailOptions } from "@agora/core/projects/queries";
 import {
   useApproveOrchestrationStep,
   useCancelOrchestrationBranch,
@@ -198,9 +199,11 @@ function StatusRail({ steps }: { steps: OrchestrationStep[] }) {
 function ExecutionStatusBar({
   run,
   onOpen,
+  onOpenWork,
 }: {
   run: OrchestrationRun;
   onOpen: () => void;
+  onOpenWork?: () => void;
 }) {
   const { t } = useT("issues");
   const startRun = useStartIssueOrchestration();
@@ -229,7 +232,13 @@ function ExecutionStatusBar({
             {t(($) => $.detail.orchestration_run)}
           </Button>
         )}
-        <Button size="sm" variant="ghost" className="ml-auto" onClick={onOpen}>
+        {onOpenWork && (
+          <Button size="sm" variant="ghost" className="ml-auto" onClick={onOpenWork}>
+            <ListTree aria-hidden />
+            {t(($) => $.execution_surface.open_work)}
+          </Button>
+        )}
+        <Button size="sm" variant="ghost" className={cn(!onOpenWork && "ml-auto")} onClick={onOpen}>
           {t(($) => $.execution_surface.details)}
           <ChevronRight aria-hidden />
         </Button>
@@ -566,7 +575,7 @@ function ExecutionDrawer({ run, open, onOpenChange, agents }: { run: Orchestrati
   );
 }
 
-export function IssueExecution({ issueId }: { issueId: string }) {
+export function IssueExecution({ issueId, onOpenWork }: { issueId: string; onOpenWork?: () => void }) {
   const { t } = useT("issues");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [customizing, setCustomizing] = useState(false);
@@ -578,15 +587,37 @@ export function IssueExecution({ issueId }: { issueId: string }) {
   const { data: run, isLoading } = useQuery(issueOrchestrationOptions(issueId));
   const wsId = useWorkspaceId();
   const { data: issue } = useQuery(issueDetailOptions(wsId, issueId));
+  const projectId = issue?.project_id ?? "";
+  const { data: project } = useQuery({
+    ...projectDetailOptions(wsId, projectId),
+    enabled: !!projectId,
+  });
   const { data: squads = [] } = useQuery(squadListOptions(wsId));
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
   const activeSquads = useMemo(() => squads.filter((squad) => !squad.archived_at), [squads]);
   const assignedSquadId = issue?.assignee_type === "squad" ? issue.assignee_id ?? "" : "";
+  // Older cached/API project payloads may predate the settings object. Treat
+  // them as having no project defaults instead of breaking the issue surface.
+  const projectDefaults = project?.settings?.orchestration;
   useEffect(() => {
-    if (!squadId && assignedSquadId && activeSquads.some((squad) => squad.id === assignedSquadId)) {
-      setSquadId(assignedSquadId);
+    setStrategy(projectDefaults?.execution_strategy ?? "automatic");
+    setProgression(projectDefaults?.progression_policy ?? "automatic");
+    setMaxConcurrency(projectDefaults?.max_concurrency ?? 3);
+    setReviewPlanFirst(projectDefaults?.review_plan_first ?? false);
+  }, [
+    projectDefaults?.execution_strategy,
+    projectDefaults?.progression_policy,
+    projectDefaults?.max_concurrency,
+    projectDefaults?.review_plan_first,
+  ]);
+  useEffect(() => {
+    const inheritedSquadId = projectDefaults?.execution_strategy === "squad"
+      ? project?.squad_id ?? assignedSquadId
+      : assignedSquadId;
+    if (!squadId && inheritedSquadId && activeSquads.some((squad) => squad.id === inheritedSquadId)) {
+      setSquadId(inheritedSquadId);
     }
-  }, [activeSquads, assignedSquadId, squadId]);
+  }, [activeSquads, assignedSquadId, project?.squad_id, projectDefaults?.execution_strategy, squadId]);
   const { data: tasks = [] } = useQuery({
     queryKey: issueKeys.tasks(issueId),
     queryFn: () => api.listTasksByIssue(issueId),
@@ -594,6 +625,19 @@ export function IssueExecution({ issueId }: { issueId: string }) {
     staleTime: 30_000,
   });
   const createRun = useCreateIssueOrchestration();
+
+  const createInherited = () => {
+    createRun.mutate(
+      { issueId, data: {} },
+      {
+        onError: (error) => toast.error(
+          error instanceof Error && error.message
+            ? error.message
+            : t(($) => $.execution_surface.create_failed),
+        ),
+      },
+    );
+  };
 
   const createWithOptions = () => {
     createRun.mutate(
@@ -628,13 +672,24 @@ export function IssueExecution({ issueId }: { issueId: string }) {
           <div className="min-w-0">
             <h2 className="text-sm font-semibold">{t(($) => $.detail.orchestration_title)}</h2>
             <p className="mt-0.5 max-w-xl text-xs text-muted-foreground">{t(($) => $.detail.orchestration_empty)}</p>
+            {projectId && (
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {t(($) => $.execution_surface.project_defaults_hint)}
+              </p>
+            )}
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
+            {onOpenWork && (
+              <Button size="sm" variant="ghost" onClick={onOpenWork}>
+                <ListTree aria-hidden />
+                {t(($) => $.execution_surface.open_work)}
+              </Button>
+            )}
             <Button size="sm" variant="ghost" onClick={() => setCustomizing((open) => !open)} aria-expanded={customizing}>
               {t(($) => $.execution_surface.customize)}
               <ChevronDown className={cn("transition-transform motion-reduce:transition-none", customizing && "rotate-180")} aria-hidden />
             </Button>
-            <Button size="sm" disabled={createRun.isPending} onClick={() => createRun.mutate({ issueId, data: { auto_start: true } })}>
+            <Button size="sm" disabled={createRun.isPending} onClick={createInherited}>
               {createRun.isPending ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden /> : <Play aria-hidden />}
               {t(($) => $.detail.orchestration_start)}
             </Button>
@@ -746,7 +801,7 @@ export function IssueExecution({ issueId }: { issueId: string }) {
 
   return (
     <div>
-      <ExecutionStatusBar run={run} onOpen={() => setDrawerOpen(true)} />
+      <ExecutionStatusBar run={run} onOpen={() => setDrawerOpen(true)} onOpenWork={onOpenWork} />
       <ActiveWork run={run} tasks={tasks} />
       <ExecutionDrawer run={run} open={drawerOpen} onOpenChange={setDrawerOpen} agents={agents} />
     </div>

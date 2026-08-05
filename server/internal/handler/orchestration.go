@@ -20,13 +20,63 @@ import (
 type orchestrationPlanRequest struct {
 	// Mode is the deprecated auto/manual alias. New callers send the two
 	// orthogonal fields below: who executes and how ready work advances.
-	Mode              string                     `json:"mode"`
-	ExecutionStrategy string                     `json:"execution_strategy"`
-	ProgressionPolicy string                     `json:"progression_policy"`
-	SquadID           string                     `json:"squad_id"`
-	AutoStart         bool                       `json:"auto_start"`
-	Policy            map[string]any             `json:"policy"`
-	Steps             []orchestrationStepRequest `json:"steps"`
+	Mode              string `json:"mode"`
+	ExecutionStrategy string `json:"execution_strategy"`
+	ProgressionPolicy string `json:"progression_policy"`
+	SquadID           string `json:"squad_id"`
+	// AutoStart is a pointer so omission can inherit the project's
+	// review_plan_first default while an explicit false still creates a draft.
+	AutoStart *bool                      `json:"auto_start"`
+	Policy    map[string]any             `json:"policy"`
+	Steps     []orchestrationStepRequest `json:"steps"`
+}
+
+type projectOrchestrationDefaults struct {
+	ExecutionStrategy string `json:"execution_strategy"`
+	ProgressionPolicy string `json:"progression_policy"`
+	MaxConcurrency    int    `json:"max_concurrency"`
+	ReviewPlanFirst   *bool  `json:"review_plan_first"`
+	SquadID           string `json:"-"`
+}
+
+// orchestrationDefaultsForIssue reads the optional project-level execution
+// policy. Invalid or stale values fail open to the existing inferred defaults;
+// project settings must never make an issue impossible to run after a squad is
+// removed or an older client writes an unknown value.
+func (h *Handler) orchestrationDefaultsForIssue(ctx context.Context, issue db.Issue) projectOrchestrationDefaults {
+	if !issue.ProjectID.Valid {
+		return projectOrchestrationDefaults{}
+	}
+	project, err := h.Queries.GetProjectInWorkspace(ctx, db.GetProjectInWorkspaceParams{
+		ID: issue.ProjectID, WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		return projectOrchestrationDefaults{}
+	}
+	var settings struct {
+		Orchestration projectOrchestrationDefaults `json:"orchestration"`
+	}
+	if len(project.Settings) == 0 || json.Unmarshal(project.Settings, &settings) != nil {
+		return projectOrchestrationDefaults{}
+	}
+	defaults := settings.Orchestration
+	defaults.ExecutionStrategy = strings.ToLower(strings.TrimSpace(defaults.ExecutionStrategy))
+	if defaults.ExecutionStrategy != "automatic" && !validExecutionStrategy(defaults.ExecutionStrategy) {
+		defaults.ExecutionStrategy = ""
+	}
+	// A custom DAG cannot be a project default because it requires request-time
+	// steps. Treat a drifted custom value as automatic inference.
+	if defaults.ExecutionStrategy == "custom" {
+		defaults.ExecutionStrategy = ""
+	}
+	defaults.ProgressionPolicy = normalizeProgressionPolicy(defaults.ProgressionPolicy)
+	if defaults.MaxConcurrency < 1 || defaults.MaxConcurrency > 10 {
+		defaults.MaxConcurrency = 0
+	}
+	if project.SquadID.Valid {
+		defaults.SquadID = uuidToString(project.SquadID)
+	}
+	return defaults
 }
 
 type orchestrationStepRequest struct {
@@ -182,6 +232,33 @@ func (h *Handler) orchestrationOwnsIssuePipeline(ctx context.Context, issueID pg
 		return false
 	}
 	return run.Status == "running" || run.Status == "waiting_approval"
+}
+
+// cancelActiveOrchestrationForIssue closes the persisted DAG before a bulk
+// task cancellation. CancelTasksForIssue updates task rows directly and does
+// not invoke orchestration terminal callbacks, so cancelling tasks first would
+// leave queued/running steps and the run permanently active.
+func (h *Handler) cancelActiveOrchestrationForIssue(ctx context.Context, issueID pgtype.UUID, actorType string, actorID pgtype.UUID) bool {
+	run, err := h.Queries.GetActiveOrchestrationRunForIssue(ctx, issueID)
+	if err != nil {
+		return false
+	}
+	steps, err := h.Queries.ListOrchestrationSteps(ctx, run.ID)
+	if err != nil {
+		return false
+	}
+	for _, step := range steps {
+		cancelled, cancelErr := h.Queries.CancelOrchestrationStep(ctx, step.ID)
+		if cancelErr != nil {
+			continue
+		}
+		h.createOrchestrationEvent(ctx, run.ID, cancelled.ID, "step_cancelled", actorType, actorID, map[string]any{"reason": "issue_cancelled"})
+	}
+	if _, err := h.Queries.SetOrchestrationRunStatus(ctx, db.SetOrchestrationRunStatusParams{ID: run.ID, Status: "cancelled"}); err != nil {
+		return false
+	}
+	h.createOrchestrationEvent(ctx, run.ID, pgtype.UUID{}, "run_cancelled", actorType, actorID, map[string]any{"reason": "issue_cancelled"})
+	return true
 }
 
 func validExecutionStrategy(strategy string) bool {
@@ -431,7 +508,7 @@ func inferExecutionStrategy(routing orchestrationRouting, customPlan bool) strin
 	return "solo"
 }
 
-func progressionPolicyForIssue(issue db.Issue, requested, legacyMode string) string {
+func progressionPolicyForIssue(issue db.Issue, requested, legacyMode, projectDefault string) string {
 	if normalized := normalizeProgressionPolicy(requested); normalized != "" {
 		return normalized
 	}
@@ -443,6 +520,9 @@ func progressionPolicyForIssue(issue db.Issue, requested, legacyMode string) str
 	}
 	// Compatibility read only. New UI and writes use progression_policy.
 	if normalized := normalizeProgressionPolicy(issueMetadataString(issue.Metadata, "pipeline_mode")); normalized != "" {
+		return normalized
+	}
+	if normalized := normalizeProgressionPolicy(projectDefault); normalized != "" {
 		return normalized
 	}
 	return "automatic"
@@ -801,6 +881,7 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	projectDefaults := h.orchestrationDefaultsForIssue(r.Context(), issue)
 	if strings.TrimSpace(req.ProgressionPolicy) != "" && normalizeProgressionPolicy(req.ProgressionPolicy) == "" {
 		writeError(w, http.StatusBadRequest, "progression_policy must be automatic, gated, or manual")
 		return
@@ -809,7 +890,7 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "mode must be auto or manual")
 		return
 	}
-	progressionPolicy := progressionPolicyForIssue(issue, req.ProgressionPolicy, req.Mode)
+	progressionPolicy := progressionPolicyForIssue(issue, req.ProgressionPolicy, req.Mode, projectDefaults.ProgressionPolicy)
 	if progressionPolicy == "" {
 		writeError(w, http.StatusBadRequest, "progression_policy must be automatic, gated, or manual")
 		return
@@ -818,7 +899,10 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 	hasCustomPlan := len(req.Steps) > 0
 	executionStrategy := strings.ToLower(strings.TrimSpace(req.ExecutionStrategy))
 	if executionStrategy == "" {
-		executionStrategy = inferExecutionStrategy(routing, hasCustomPlan)
+		executionStrategy = projectDefaults.ExecutionStrategy
+		if executionStrategy == "automatic" || executionStrategy == "" {
+			executionStrategy = inferExecutionStrategy(routing, hasCustomPlan)
+		}
 	}
 	if !validExecutionStrategy(executionStrategy) {
 		writeError(w, http.StatusBadRequest, "execution_strategy must be human, solo, squad, or custom")
@@ -829,6 +913,9 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	requestedSquadID := strings.TrimSpace(req.SquadID)
+	if requestedSquadID == "" && executionStrategy == "squad" && routing.OwnerType != "squad" {
+		requestedSquadID = projectDefaults.SquadID
+	}
 	if requestedSquadID != "" {
 		if executionStrategy != "squad" {
 			writeError(w, http.StatusBadRequest, "squad_id is only valid for squad execution")
@@ -915,11 +1002,21 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 	// truth after the run row is created.
 	req.Policy["execution_mode"] = legacyExecutionMode(executionStrategy)
 	if _, configured := req.Policy["max_concurrency"]; !configured {
-		req.Policy["max_concurrency"] = 3
+		if projectDefaults.MaxConcurrency > 0 {
+			req.Policy["max_concurrency"] = projectDefaults.MaxConcurrency
+		} else {
+			req.Policy["max_concurrency"] = 3
+		}
+	}
+	autoStart := true
+	if req.AutoStart != nil {
+		autoStart = *req.AutoStart
+	} else if projectDefaults.ReviewPlanFirst != nil {
+		autoStart = !*projectDefaults.ReviewPlanFirst
 	}
 	policy, _ := json.Marshal(req.Policy)
 	takenOverTasks := 0
-	if req.AutoStart {
+	if autoStart {
 		activeTasks, activeErr := h.Queries.ListActiveTasksByIssue(r.Context(), issue.ID)
 		if activeErr != nil {
 			writeError(w, http.StatusInternalServerError, "check active issue tasks failed")
@@ -1074,11 +1171,11 @@ func (h *Handler) CreateIssueOrchestration(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	planEvent := "plan_proposed"
-	if req.AutoStart {
+	if autoStart {
 		planEvent = "plan_created"
 	}
 	h.createOrchestrationEvent(r.Context(), run.ID, pgtype.UUID{}, planEvent, "member", parseUUID(userID), map[string]any{"steps": len(req.Steps), "taken_over_tasks": takenOverTasks})
-	if req.AutoStart {
+	if autoStart {
 		if err := h.dispatchNextOrchestrationStep(r.Context(), run.ID, issue); err != nil {
 			slog.Warn("start orchestration failed", "run_id", uuidToString(run.ID), "error", err)
 		}

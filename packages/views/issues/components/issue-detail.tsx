@@ -66,11 +66,8 @@ import { PullRequestList } from "./pull-request-list";
 import { FigmaLinksSection } from "./figma-links-section";
 import { DesignProposalSection } from "./design-proposal-section";
 import { DesignAuditSection } from "./design-audit-section";
-import { SDLCStepper } from "./sdlc-stepper";
-import { StageTrailing } from "./stage-live-process";
 import { IssueExecution } from "./issue-execution";
-import { useStagePipeline } from "./use-stage-pipeline";
-import { useLensParam, getLens, isLensRegistered } from "../lens";
+import { useLensParam, getLens } from "../lens";
 import { useGitHubSettings } from "@agora/core/github";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@agora/core/auth";
@@ -1258,12 +1255,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     setAutoOpenProp(null);
   }, [autoOpenProp]);
 
-  // SDLC stepper — derives the Design/Dev/QA/Review pipeline from
-  // existing queries only (no new endpoints) and reads/writes the `?lens=`
-  // query param. Mounted via CockpitFrame's topStrip below. Called before
-  // the `if (loading)` / `if (!issue)` early returns so hook order stays
-  // stable. See docs/sdlc-stage-cockpit-plan.md phase C.
-  const stagePipeline = useStagePipeline(wsId, id);
+  // Dev and Review are one issue-work lifecycle in the primary UI, so the old
+  // two-beat header strip is gone. Keep deep-linked lenses working for focused
+  // tools and stale bookmarks without presenting them as separate stages.
   const { lens: activeLens, setLens } = useLensParam();
 
   if (loading) {
@@ -2001,7 +1995,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           {/* One execution surface: compact issue status, human-facing active
               work, and an advanced drawer for plan/history/Git evidence. */}
           <div className="mt-8">
-            <IssueExecution issueId={id} />
+            <IssueExecution issueId={id} onOpenWork={() => setLens("work")} />
           </div>
 
           {/* QA verdict — right under the plan, same reading flow: what the
@@ -2159,7 +2153,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // Soft-collapse the frame rail while a wide lens is active; the header
   // toggle still re-opens it on demand.
   const wideLens =
-    activeLens === "qa" || activeLens === "dev" || activeLens === "design" || activeLens === "review";
+    activeLens === "qa" || activeLens === "work" || activeLens === "dev" || activeLens === "design" || activeLens === "review";
 
   return (
     <CockpitFrame
@@ -2167,22 +2161,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       defaultRailOpen={defaultSidebarOpen && !wideLens}
       railCollapsed={wideLens}
       header={renderHeader}
-      topStrip={
-        <>
-          <SDLCStepper
-            pipeline={stagePipeline}
-            activeLens={activeLens}
-            isLensAvailable={(stage) => isLensRegistered(stage)}
-            onSelectStage={setLens}
-            trailing={
-              <StageTrailing
-                pipeline={stagePipeline}
-                orchestratorAgentId={issue.orchestrator_agent_id}
-              />
-            }
-          />
-        </>
-      }
       rail={sidebarContent}
     >
       {lensBody}

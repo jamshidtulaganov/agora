@@ -1,6 +1,6 @@
 ---
 title: MCP Injection
-description: Agora bitta agentga tegishli mcp_config ustunini har bir agent backendi boʻylab har bir runtimega xos MCP ulanishiga qanday aylantiradi, hamda strict-mode, uch holatli, fail-closed va redaksiya shartnomalari.
+description: Agora workspace defaultlarini agent mcp_config override'i bilan qanday merge qiladi va natijani har bir runtimega xos MCP ulanishiga aylantiradi.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
@@ -10,9 +10,9 @@ import { Mermaid } from "@/components/mermaid";
 **Ikkalasi ham** — dev va agent. Agar siz agent backendi qoʻshayotgan boʻlsangiz, `mcp_config` shaklini oʻzgartirayotgan boʻlsangiz, biror server nega runtimega yetib bormayotganini debug qilayotgan boʻlsangiz yoki oʻzingizning MCP sirlaringizni nega oʻqiy olmayotganingiz haqida mulohaza yuritayotgan agent boʻlsangiz — buni oʻqing. Qardosh sahifalar: [agentic overview](/developers/architecture) va [conventions glossary](/developers/conventions). Paket chegaralari repo-root CLAUDE.md tomonidan boshqariladi.
 </Callout>
 
-## Bitta ustun
+## Ikkita konfiguratsiya qatlami
 
-Har bir agent yagona JSONB ustunini, `agent.mcp_config`ni olib yuradi. Uning diskdagi kanonik shakli Claude uslubidadir:
+Agora workspace uchun umumiy defaultni `workspace.default_mcp_config`da, ixtiyoriy agent override'ini esa `agent.mcp_config`da saqlaydi. Ikkalasi ham Claude uslubidagi bir xil kanonik shakldan foydalanadi:
 
 ```json
 {
@@ -29,7 +29,7 @@ Server yozuvi `command` oʻrniga remote MCP serveri uchun `url` (va ixtiyoriy `h
 - `readMcpServers(config)` / `listMcpServers(config)` — himoyaviy toraytiruvchi oʻqishlar; `mcpServers` xaritasiga ega oddiy obyekt boʻlmagan har qanday qiymat `{}`ga toraytiriladi (serverlarsiz).
 - `upsertMcpServer` / `removeMcpServer` — admin UI tomonidan ishlatiladigan, butun obyektni oʻqish-oʻzgartirish-yozish yordamchilari. Ular boshqa har bir serverni saqlab qoladi: UI hech qachon bitta kalitni qisman patch qilmaydi, u butun obyektni oʻqiydi, `mcpServers` ostida bitta yozuvni oʻrnatadi/oʻchiradi va butun obyektni qaytarib yozadi.
 
-Daemon vazifa joʻnatganda bu ustunni aynan oʻzicha `ExecOptions.McpConfig`ga (`json.RawMessage`) nusxalaydi. U yerdan `server/pkg/agent/`dagi har bir backend uni ostidagi CLI tushunadigan koʻrinishga aylantiradi.
+Task claim vaqtida `applyWorkspaceDefaultMcpServers` workspace serverlarini agent configiga merge qiladi; bir xil nom bo'lsa agent yozuvi yutadi. Natija faqat shu task uchun ishlatiladi, shuning uchun o'zgarishlar yangi tasklarda kuchga kiradi. Daemon effective configni `ExecOptions.McpConfig`ga (`json.RawMessage`) o'tkazadi va har bir backend uni CLI tushunadigan ko'rinishga aylantiradi.
 
 ## Ikki injeksiya qatlami
 
@@ -37,7 +37,9 @@ Daemon vazifa joʻnatganda bu ustunni aynan oʻzicha `ExecOptions.McpConfig`ga (
 
 <Mermaid chart={`
 flowchart TD
-  COL["agent.mcp_config (JSONB)"] --> EXEC["ExecOptions.McpConfig (json.RawMessage)"]
+  WS["workspace.default_mcp_config"] --> MERGE["claim-time merge"]
+  AGENT["agent.mcp_config"] --> MERGE
+  MERGE --> EXEC["ExecOptions.McpConfig (json.RawMessage)"]
   EXEC --> L1["Layer 1: server/pkg/agent backends"]
   EXEC --> L2["Layer 2: server/internal/daemon/execenv preparers"]
   L1 --> CLAUDE["claude / codebuddy: --mcp-config file"]

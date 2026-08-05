@@ -2,9 +2,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Boxes, ChevronDown, Loader2, Plus, Trash2, X } from "lucide-react";
+import { Boxes, ChevronDown, Loader2, Plug, Plus, Trash2, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useWorkspaceId } from "@agora/core/hooks";
+import { useWorkspacePaths } from "@agora/core/paths";
 import {
   pluginListOptions,
   agentListOptions,
@@ -29,6 +30,7 @@ import { Checkbox } from "@agora/ui/components/ui/checkbox";
 import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import { toast } from "sonner";
 import { PageHeader } from "../../layout/page-header";
+import { AppLink } from "../../navigation";
 
 interface EnvRow {
   key: string;
@@ -46,6 +48,7 @@ interface EnvRow {
  */
 export function PluginsPanel() {
   const wsId = useWorkspaceId();
+  const paths = useWorkspacePaths();
   const pluginsQuery = useQuery(pluginListOptions(wsId));
   const agentsQuery = useQuery(agentListOptions(wsId));
   const skillsQuery = useQuery(skillListOptions(wsId));
@@ -193,6 +196,26 @@ export function PluginsPanel() {
           </code>{" "}
           — preserving everything the agent already has.
         </p>
+
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/15 p-4">
+          <div className="flex min-w-0 items-start gap-3">
+            <Plug className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-medium">Need one direct connection?</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                MCP servers connect tools or data sources directly. Plugins are
+                reusable bundles that can include skills and MCP connectors.
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            render={<AppLink href={paths.mcp()} />}
+          >
+            Configure MCP servers
+          </Button>
+        </div>
 
         {pluginsQuery.isError && (
           <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">

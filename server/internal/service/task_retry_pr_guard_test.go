@@ -73,3 +73,23 @@ func TestMaybeRetryFailedTask_SkipsWhenOpenPR(t *testing.T) {
 		t.Fatal("expected nil child (retry suppressed by an in-flight PR), got a retry task")
 	}
 }
+
+func TestGenericTaskRecoverySkipsOrchestrationOwnedTasks(t *testing.T) {
+	parent := db.AgentTaskQueue{
+		Status:              "failed",
+		FailureReason:       pgtype.Text{String: "runtime_recovery", Valid: true},
+		Attempt:             0,
+		MaxAttempts:         3,
+		OrchestrationStepID: testUUID(9),
+	}
+	svc := &TaskService{}
+
+	child, err := svc.MaybeRetryFailedTask(context.Background(), parent)
+	if err != nil || child != nil {
+		t.Fatalf("generic retry must skip orchestration task: child=%#v err=%v", child, err)
+	}
+	child, err = svc.maybeFailoverToFallbackRuntime(context.Background(), parent, "agent_provider_quota_limit")
+	if err != nil || child != nil {
+		t.Fatalf("generic failover must skip orchestration task: child=%#v err=%v", child, err)
+	}
+}

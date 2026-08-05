@@ -168,6 +168,12 @@ func TestWorkspaceDefaultMcpConfig_RejectsMalformedShapes(t *testing.T) {
 		{"missing mcpServers", map[string]any{"mcp_config": map[string]any{"servers": map[string]any{}}}},
 		{"mcpServers not object", map[string]any{"mcp_config": map[string]any{"mcpServers": "zoho"}}},
 		{"server def not object", map[string]any{"mcp_config": map[string]any{"mcpServers": map[string]any{"zoho": "https://x"}}}},
+		{"invalid server name", map[string]any{"mcp_config": map[string]any{"mcpServers": map[string]any{"has space": map[string]any{"command": "node"}}}}},
+		{"local missing command", map[string]any{"mcp_config": map[string]any{"mcpServers": map[string]any{"local": map[string]any{}}}}},
+		{"local args not strings", map[string]any{"mcp_config": map[string]any{"mcpServers": map[string]any{"local": map[string]any{"command": "node", "args": []any{1}}}}}},
+		{"remote missing url", map[string]any{"mcp_config": map[string]any{"mcpServers": map[string]any{"remote": map[string]any{"type": "http"}}}}},
+		{"remote headers not strings", map[string]any{"mcp_config": map[string]any{"mcpServers": map[string]any{"remote": map[string]any{"type": "http", "url": "https://x/mcp", "headers": map[string]any{"Authorization": 42}}}}}},
+		{"mixed command and url", map[string]any{"mcp_config": map[string]any{"mcpServers": map[string]any{"mixed": map[string]any{"command": "node", "url": "https://x/mcp"}}}}},
 	}
 	for _, tc := range cases {
 		if w := putDefaultMcpConfig(t, wsID, tc.body); w.Code != http.StatusBadRequest {

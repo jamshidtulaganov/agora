@@ -2,9 +2,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Globe, Loader2, Lock, Plug, Plus, ShieldCheck, Terminal, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Globe, Loader2, Lock, PackageOpen, Plug, Plus, ShieldCheck, Terminal, Trash2, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useWorkspaceId } from "@agora/core/hooks";
+import { useWorkspacePaths } from "@agora/core/paths";
 import {
   agentListOptions,
   mcpCredentialsOptions,
@@ -27,6 +28,8 @@ import { Checkbox } from "@agora/ui/components/ui/checkbox";
 import { Skeleton } from "@agora/ui/components/ui/skeleton";
 import { toast } from "sonner";
 import { PageHeader } from "../../layout/page-header";
+import { AppLink } from "../../navigation";
+import { WorkspaceMcpConfigSection } from "./workspace-mcp-config-section";
 
 interface EnvRow {
   key: string;
@@ -39,15 +42,15 @@ function isRemoteTransport(t: McpTransport): t is "http" | "sse" {
 }
 
 /**
- * Workspace-level MCP servers admin. Lists every agent and the MCP servers
- * each has configured (parsed from `agent.mcp_config`), and offers an
- * "Add MCP server" form that merges a new server into the selected agents'
- * configs. Mirrors the Bitrix import panel's structure (PageHeader + flat
- * scrolling body, hardcoded English copy). Drives `PUT /api/agents/{id}` via
- * useUpdateAgentMcpConfig.
+ * Workspace MCP admin. Owners/admins can manage the shared mcp.json document;
+ * every member can inspect accessible agent-level connections. The add-server
+ * form writes an override into selected agents' configs. Mirrors the Bitrix
+ * import panel's structure (PageHeader + flat scrolling body, hardcoded
+ * English copy).
  */
 export function McpServersPanel() {
   const wsId = useWorkspaceId();
+  const paths = useWorkspacePaths();
   const agentsQuery = useQuery(agentListOptions(wsId));
   const credsQuery = useQuery(mcpCredentialsOptions(wsId));
   const updateMut = useUpdateAgentMcpConfig(wsId);
@@ -245,19 +248,64 @@ export function McpServersPanel() {
 
       <div className="flex-1 overflow-auto p-5">
         <p className="mb-4 text-sm text-muted-foreground">
-          Configure Model Context Protocol servers for the agents in this
-          workspace. Each server is stored in the agent&apos;s{" "}
-          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-            mcp_config
-          </code>{" "}
-          and forwarded to its runtime at launch.
+          Configure direct Model Context Protocol connections. Shared defaults
+          are merged into every agent&apos;s next task; agent-specific entries
+          remain available below and override shared servers with the same name.
         </p>
+
+        <div className="mb-6 grid gap-3 md:grid-cols-2">
+          <div className="rounded-lg border border-primary/25 bg-primary/[0.035] p-4">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Plug className="size-4 text-primary" aria-hidden="true" />
+              MCP server
+              <span className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] text-primary">
+                connection
+              </span>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">
+              Connects an agent to one live tool or data source. Configure it
+              directly with a Claude Desktop/Cursor-compatible{" "}
+              <code className="font-mono">mcp.json</code> document.
+            </p>
+          </div>
+          <div className="rounded-lg border border-border bg-muted/15 p-4">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <PackageOpen className="size-4 text-muted-foreground" aria-hidden="true" />
+              Plugin
+              <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                capability bundle
+              </span>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">
+              Packages reusable skills and one or more MCP connectors, then
+              installs the whole capability onto selected agents as a unit.
+            </p>
+            <Button
+              variant="link"
+              size="sm"
+              className="mt-1 h-auto px-0"
+              render={<AppLink href={paths.plugins()} />}
+            >
+              Manage plugins
+            </Button>
+          </div>
+        </div>
+
+        <WorkspaceMcpConfigSection />
 
         {agentsQuery.isError && (
           <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
             Failed to load agents — {(agentsQuery.error as Error)?.message}
           </div>
         )}
+
+        <div className="mb-2">
+          <h2 className="text-sm font-medium">Agent-specific connections</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Add a server only to selected agents, or override a shared server by
+            using the same server name.
+          </p>
+        </div>
 
         {/* ---------------- Add MCP server form ---------------- */}
         <section className="mb-8 rounded-md border border-border">

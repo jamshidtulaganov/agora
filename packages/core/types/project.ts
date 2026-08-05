@@ -2,6 +2,17 @@ export type ProjectStatus = "planned" | "in_progress" | "paused" | "completed" |
 
 export type ProjectPriority = "urgent" | "high" | "medium" | "low" | "none";
 
+export type ProjectExecutionStrategy = "automatic" | "solo" | "squad" | "human";
+
+export interface ProjectOrchestrationDefaults {
+  // "automatic" infers solo/squad/human from the issue owner at run creation.
+  execution_strategy: ProjectExecutionStrategy;
+  progression_policy: "automatic" | "gated" | "manual";
+  max_concurrency: number;
+  // When true, Build and run creates a draft proposal and waits for Start.
+  review_plan_first: boolean;
+}
+
 // Per-project preferences blob (project.settings jsonb on the server, mirrors
 // Workspace.settings). Always an object — the server normalizes empty/null to
 // {}. Known keys are typed; the index signature keeps unknown server-side keys
@@ -10,6 +21,9 @@ export interface ProjectSettings {
   // Per-project "sprint mode". Absent means ON (the historical default from the
   // old localStorage stub); explicit false hides the Sprints UI for the project.
   sprint_mode?: boolean;
+  // Defaults inherited by every new persisted orchestration run in this
+  // project. A one-run issue customization can explicitly override them.
+  orchestration?: ProjectOrchestrationDefaults;
   // QA smoke configuration consumed by the run_qa slice action. qa_smoke_cmd is
   // how to bring the app up (e.g. "pnpm dev"); qa_smoke_url is where it serves
   // (e.g. "http://localhost:5173"). When set, the QA gate uses these instead of

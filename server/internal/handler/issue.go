@@ -2855,6 +2855,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 
 	// Determine actor identity: agent (via X-Agent-ID header) or member.
 	actorType, actorID := h.resolveActor(r, userID, workspaceID)
+	orchestrationOwned := h.orchestrationOwnsIssuePipeline(r.Context(), issue.ID)
 
 	h.publish(protocol.EventIssueUpdated, workspaceID, actorType, actorID, map[string]any{
 		"issue":               resp,
@@ -2878,7 +2879,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	})
 
 	// Reconcile task queue when assignee changes.
-	if assigneeChanged {
+	if assigneeChanged && !orchestrationOwned {
 		h.TaskService.CancelTasksForIssue(r.Context(), issue.ID)
 
 		if h.shouldEnqueueAgentTask(r.Context(), issue) {
@@ -2905,6 +2906,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	// chain.
 	if statusChanged && !assigneeChanged &&
 		prevIssue.Status == "backlog" && issue.Status != "done" && issue.Status != "cancelled" &&
+		!orchestrationOwned &&
 		!h.isAgentRunningOnIssue(r, actorType, issue) {
 		if h.isAgentAssigneeReady(r.Context(), issue) {
 			h.TaskService.EnqueueTaskForIssue(r.Context(), issue)
@@ -2945,7 +2947,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	// gate context carries the same case list) — and in six weeks of production
 	// it produced zero durable test_run rows.
 	if statusChanged && issue.Status == "in_review" && prevIssue.Status != "in_review" &&
-		!h.orchestrationOwnsIssuePipeline(r.Context(), issue.ID) {
+		!orchestrationOwned {
 		safeGo("freshReviewCycle:in_review", func() {
 			h.clearStaleQAGateLabels(context.Background(), issue)
 			h.maybeRunQAOnInReview(context.Background(), issue, actorType, actorID)
@@ -2965,7 +2967,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	// gets its own checkout. Either way it is prep, not a gate: the worst case is
 	// that the cases land later than intended and run_qa authors its own.
 	if statusChanged && issue.Status == "in_progress" && prevIssue.Status != "in_progress" &&
-		!h.orchestrationOwnsIssuePipeline(r.Context(), issue.ID) {
+		!orchestrationOwned {
 		safeGo("autoGenTests:in_progress", func() {
 			h.maybeGenTests(context.Background(), issue, actorType, actorID, true)
 		})
@@ -2975,6 +2977,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	// This is distinct from agent-managed status transitions — cancellation
 	// is a user-initiated terminal action that should stop execution.
 	if statusChanged && issue.Status == "cancelled" {
+		h.cancelActiveOrchestrationForIssue(r.Context(), issue.ID, actorType, parseUUID(actorID))
 		h.TaskService.CancelTasksForIssue(r.Context(), issue.ID)
 	}
 
@@ -3511,6 +3514,7 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		prefix := h.getIssuePrefix(r.Context(), issue.WorkspaceID)
 		resp := issueToResponse(issue, prefix)
 		actorType, actorID := h.resolveActor(r, userID, workspaceID)
+		orchestrationOwned := h.orchestrationOwnsIssuePipeline(r.Context(), issue.ID)
 
 		assigneeChanged := (req.Updates.AssigneeType != nil || req.Updates.AssigneeID != nil) &&
 			(prevIssue.AssigneeType.String != issue.AssigneeType.String || uuidToString(prevIssue.AssigneeID) != uuidToString(issue.AssigneeID))
@@ -3524,7 +3528,7 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			"priority_changed": priorityChanged,
 		})
 
-		if assigneeChanged {
+		if assigneeChanged && !orchestrationOwned {
 			h.TaskService.CancelTasksForIssue(r.Context(), issue.ID)
 			if h.shouldEnqueueAgentTask(r.Context(), issue) {
 				h.TaskService.EnqueueTaskForIssue(r.Context(), issue)
@@ -3540,6 +3544,7 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		// prevents an agent from re-triggering itself on the same issue.
 		if statusChanged && !assigneeChanged &&
 			prevIssue.Status == "backlog" && issue.Status != "done" && issue.Status != "cancelled" &&
+			!orchestrationOwned &&
 			!h.isAgentRunningOnIssue(r, actorType, issue) {
 			if h.isAgentAssigneeReady(r.Context(), issue) {
 				h.TaskService.EnqueueTaskForIssue(r.Context(), issue)
@@ -3557,7 +3562,7 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 
 		// Fresh review cycle + opt-in QA gate (batch-path mirror of UpdateIssue).
 		// See the single-update path for why the fan-out is gone.
-		if statusChanged && issue.Status == "in_review" && prevIssue.Status != "in_review" {
+		if statusChanged && issue.Status == "in_review" && prevIssue.Status != "in_review" && !orchestrationOwned {
 			issueCopy := issue
 			safeGo("freshReviewCycle:in_review:batch", func() {
 				h.clearStaleQAGateLabels(context.Background(), issueCopy)
@@ -3566,7 +3571,7 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Shift-left QA prep on dev start (batch-path mirror of UpdateIssue).
-		if statusChanged && issue.Status == "in_progress" && prevIssue.Status != "in_progress" {
+		if statusChanged && issue.Status == "in_progress" && prevIssue.Status != "in_progress" && !orchestrationOwned {
 			issueCopy := issue
 			safeGo("autoGenTests:in_progress:batch", func() {
 				h.maybeGenTests(context.Background(), issueCopy, actorType, actorID, true)
@@ -3575,6 +3580,7 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 
 		// Cancel active tasks when the issue is cancelled by a user.
 		if statusChanged && issue.Status == "cancelled" {
+			h.cancelActiveOrchestrationForIssue(r.Context(), issue.ID, actorType, parseUUID(actorID))
 			h.TaskService.CancelTasksForIssue(r.Context(), issue.ID)
 		}
 

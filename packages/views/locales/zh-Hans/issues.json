@@ -445,6 +445,7 @@
   },
   "execution_surface": {
     "details": "详情",
+    "open_work": "打开工作区",
     "active_work": "进行中的工作",
     "active_work_hint": "当前负责人和交接",
     "action_required": "需要操作",
@@ -461,6 +462,7 @@
     "full_plan": "完整计划",
     "handoffs": "交接与决策",
     "customize": "自定义",
+    "project_defaults_hint": "使用该项目的执行默认设置。仅在本次运行需要例外时自定义。",
     "strategy_legend": "由谁执行？",
     "strategy_hint": "自动模式使用任务负责人和小队能力。Solo 保留一个执行者；Squad 并行分配独立方向。",
     "squad_label": "执行小队",
@@ -1288,7 +1290,7 @@
     "blocked_qa_stale": "QA 结论已过期——评审前请重新运行 QA。"
   },
   "review_workspace": {
-    "overview": "概览",
+    "overview": "决策",
     "code": "代码",
     "product": "产品",
     "evidence": "证据"

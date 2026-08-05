@@ -120,6 +120,27 @@
     "local_preview_url_add": "Preview uchun dev-server URL kiriting",
     "local_preview_url_set": "Preview: {{url}}"
   },
+  "execution_defaults": {
+    "title": "Ijro standartlari",
+    "description": "Yangi ijro rejalari loyiha standartlarini meros oladi. Faqat alohida ishga istisno kerak bo‘lsa, issue ichida moslang.",
+    "strategy": "Kim bajarishi kerak?",
+    "strategy_automatic": "Avtomatik",
+    "strategy_solo": "Solo",
+    "strategy_squad": "Squad",
+    "strategy_human": "Inson boshqaruvida",
+    "squad_required": "Squad’ni standart ijrochi qilishdan oldin uni loyihaga biriktiring.",
+    "progression": "Ish qanday davom etsin?",
+    "progression_automatic": "Avtomatik",
+    "progression_gated": "Tasdiqlash darvozalari",
+    "progression_manual": "Qo‘lda boshqariladigan batchlar",
+    "parallel_workers": "Parallel workerlar",
+    "parallel_workers_hint": "Bir vaqtda ishlaydigan mustaqil steplar limiti",
+    "review_plan_first": "Rejani ishga tushirishdan oldin ko‘rish",
+    "review_plan_first_hint": "“Tuzish va ishga tushirish” draft taklif yaratadi va inson boshlashini kutadi.",
+    "save": "Standartlarni saqlash",
+    "saved": "Ijro standartlari saqlandi",
+    "save_failed": "Ijro standartlarini saqlab bo‘lmadi"
+  },
   "delete_dialog": {
     "title": "Loyihani o‘chirish",
     "description": "Bu loyihani o‘chiradi. Vazifalar o‘chirilmaydi, lekin ular bog‘liqlikdan ajratiladi.",

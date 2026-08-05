@@ -21,3 +21,16 @@ export function mcpCredentialsOptions(workspaceId: string) {
     queryFn: () => api.listMcpCredentials(workspaceId),
   });
 }
+
+/**
+ * Shared mcp.json document merged into every agent task in the workspace.
+ * The endpoint is owner/admin-only because the document can contain command,
+ * environment, URL, and header values.
+ */
+export function workspaceMcpConfigOptions(workspaceId: string, enabled = true) {
+  return queryOptions({
+    queryKey: workspaceKeys.mcpConfig(workspaceId),
+    queryFn: () => api.getWorkspaceMcpConfig(workspaceId),
+    enabled: enabled && !!workspaceId,
+  });
+}

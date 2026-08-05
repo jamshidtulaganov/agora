@@ -36,6 +36,35 @@ const (
 )
 
 func TestMain(m *testing.M) {
+	// The repository check script loads the developer's .env so migrations and
+	// E2E use the local stack. Handler tests must not inherit live integration
+	// credentials from that environment: doing so can change authorization
+	// branches and, worse, send test invitations through a real mail provider.
+	// Individual integration tests opt back in with t.Setenv and local fakes.
+	for _, key := range []string{
+		"AGORA_APP_URL",
+		"AGORA_LARK_SECRET_KEY",
+		"AGORA_PUBLIC_URL",
+		"AGORA_TELEGRAM_SECRET_KEY",
+		"BITRIX_GROUP_MAP",
+		"BITRIX_WEBHOOK_URL",
+		"BITRIX_WORKSPACE_SLUGS",
+		"BITRIX_SYNC_WORKSPACE_SLUG",
+		"FRONTEND_ORIGIN",
+		"RESEND_API_KEY",
+		"SMTP_HOST",
+		"TELEGRAM_BOT_TOKEN",
+		"TELEGRAM_BOT_USERNAME",
+		"TELEGRAM_MINIAPP_SHORTNAME",
+		"TELEGRAM_WEBHOOK_SECRET",
+		"TELEGRAM_WEBHOOK_URL",
+		"ZOHO_PROJECTS_CLIENT_ID",
+		"ZOHO_PROJECTS_CLIENT_SECRET",
+		"ZOHO_PROJECTS_REFRESH_TOKEN",
+	} {
+		_ = os.Unsetenv(key)
+	}
+
 	ctx := context.Background()
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {

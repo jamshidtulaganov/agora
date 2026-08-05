@@ -8,13 +8,13 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleDashed,
-  Code2,
   Eye,
   ExternalLink,
+  FileDiff,
   Info,
-  LayoutDashboard,
   Loader2,
   OctagonAlert,
+  Radio,
   Rocket,
   ShieldCheck,
 } from "lucide-react";
@@ -50,20 +50,22 @@ import { verdictIcon, verdictTone } from "../../qa/components/verdict";
 import { ArtifactCodeViewer } from "./artifact-code-viewer";
 import { ArtifactChecksPanel, ArtifactPreviewPanel } from "./artifact-runtime-panels";
 import { QAEvidenceSection } from "./qa-evidence-section";
+import { DevActivity } from "./dev-lens";
 
 const REVIEW_TAB_QUERY_KEY = "review_tab";
-const REVIEW_TABS = ["overview", "code", "product", "evidence"] as const;
+const REVIEW_TABS = ["activity", "overview", "code", "product", "evidence"] as const;
 type ReviewTab = (typeof REVIEW_TABS)[number];
 
 function isReviewTab(value: string | null): value is ReviewTab {
   return REVIEW_TABS.some((tab) => tab === value);
 }
 
-// Unified Review workspace. The overview is the human decision surface while
-// Code, Product, and Evidence expose the exact integrated artifact behind that
-// decision. Review and release execution remain DAG-owned: this surface can
-// approve the persisted release step or create a versioned correction cycle,
-// but it never creates parallel side tasks.
+// Unified Work workspace. Activity and artifact inspection cover the former
+// Dev surface; Decision, findings, gates, and release approval cover Review.
+// They are tabs of one lifecycle rather than separate header stages. Review
+// and release execution remain DAG-owned: this surface can approve the
+// persisted release step or create a versioned correction cycle, but it never
+// creates parallel side tasks.
 
 type IssuesT = ReturnType<typeof useT<"issues">>["t"];
 
@@ -345,14 +347,29 @@ function ReviewVerdictCard({
   );
 }
 
-export function ReviewLensBody({ issueId }: { issueId: string }) {
+export function WorkLensBody({ issueId }: { issueId: string }) {
   const wsId = useWorkspaceId();
   const wp = useWorkspacePaths();
   const navigation = useNavigation();
   const qc = useQueryClient();
   const { t } = useT("issues");
   const requestedTab = navigation.searchParams.get(REVIEW_TAB_QUERY_KEY);
-  const activeTab: ReviewTab = isReviewTab(requestedTab) ? requestedTab : "overview";
+  const legacyDevTab = navigation.searchParams.get("dev_tab");
+  const mappedDevTab = legacyDevTab === "changes"
+    ? "code"
+    : legacyDevTab === "preview"
+      ? "product"
+      : legacyDevTab === "checks"
+        ? "evidence"
+        : legacyDevTab === "activity"
+          ? "activity"
+          : null;
+  const defaultTab = navigation.searchParams.get("lens") === "review" ? "overview" : "activity";
+  const activeTab: ReviewTab = isReviewTab(requestedTab)
+    ? requestedTab
+    : isReviewTab(mappedDevTab)
+      ? mappedDevTab
+      : defaultTab;
 
   const [decision, setDecision] = useState<"approve" | "changes" | null>(null);
   const [note, setNote] = useState("");
@@ -456,6 +473,7 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
     if (!isReviewTab(value)) return;
     const params = new URLSearchParams(navigation.searchParams);
     params.set(REVIEW_TAB_QUERY_KEY, value);
+    params.delete("dev_tab");
     navigation.replace(`${navigation.pathname}?${params.toString()}`);
   };
 
@@ -564,24 +582,31 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
       <Tabs value={activeTab} onValueChange={setTab} className="min-h-0 flex-1 gap-3">
         <div className="flex min-w-0 items-center gap-3 border-b">
           <TabsList variant="line" className="no-scrollbar min-w-0 max-w-full justify-start overflow-x-auto">
+            <TabsTrigger value="activity">
+              <Radio aria-hidden />
+              {t(($) => $.dev_workspace.activity)}
+            </TabsTrigger>
             <TabsTrigger value="overview">
-              <LayoutDashboard aria-hidden />
+              <CheckCircle2 aria-hidden />
               {t(($) => $.review_workspace.overview)}
             </TabsTrigger>
             <TabsTrigger value="code">
-              <Code2 aria-hidden />
-              {t(($) => $.review_workspace.code)}
+              <FileDiff aria-hidden />
+              {t(($) => $.dev_workspace.changes)}
             </TabsTrigger>
             <TabsTrigger value="product">
               <Eye aria-hidden />
-              {t(($) => $.review_workspace.product)}
+              {t(($) => $.dev_workspace.preview)}
             </TabsTrigger>
             <TabsTrigger value="evidence">
               <ShieldCheck aria-hidden />
-              {t(($) => $.review_workspace.evidence)}
+              {t(($) => $.dev_workspace.checks)}
             </TabsTrigger>
           </TabsList>
         </div>
+        <TabsContent value="activity" className="min-h-0 overflow-auto">
+          <DevActivity issueId={issueId} />
+        </TabsContent>
         <TabsContent value="overview" className="min-h-0 overflow-auto">
           <div className="flex-1 overflow-y-auto">
       <div className="w-full px-8 py-8">
@@ -876,4 +901,10 @@ export function ReviewLensBody({ issueId }: { issueId: string }) {
       </Tabs>
     </div>
   );
+}
+
+// Old deep links and imports remain valid, but now land on the same unified
+// Work workspace instead of a separate Review stage.
+export function ReviewLensBody({ issueId }: { issueId: string }) {
+  return <WorkLensBody issueId={issueId} />;
 }

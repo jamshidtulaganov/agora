@@ -201,7 +201,8 @@ describe("LoginPage", () => {
 
     const email = await screen.findByLabelText("Email");
     expect(email).toHaveValue("member@example.com");
-    expect(email).toBeDisabled();
+    expect(email).toHaveAttribute("readonly");
+    expect(email).not.toBeDisabled();
     expect(mockRouterReplace).not.toHaveBeenCalled();
   });
 

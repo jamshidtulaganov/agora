@@ -266,6 +266,13 @@ func (h *Handler) dispatchParentAssigneeTrigger(ctx context.Context, parent, chi
 	if !parent.AssigneeType.Valid || !parent.AssigneeID.Valid {
 		return
 	}
+	// The persisted DAG is the sole dispatcher for a started run. Keep the
+	// child-done timeline evidence above, but do not enqueue a second ordinary
+	// task beside the run; the orchestration dependency graph decides what wakes
+	// next.
+	if h.orchestrationOwnsIssuePipeline(ctx, parent.ID) {
+		return
+	}
 
 	switch parent.AssigneeType.String {
 	case "agent":

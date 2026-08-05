@@ -742,6 +742,11 @@ func (h *Handler) IssueCliToken(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	auth.ClearAuthCookies(w)
+	if h.CFSigner != nil {
+		for _, cookie := range h.CFSigner.ExpiredCookies() {
+			http.SetCookie(w, cookie)
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "logged out"})
 }
 

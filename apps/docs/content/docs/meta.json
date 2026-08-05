@@ -33,6 +33,7 @@
     "---Inbox---",
     "inbox",
     "---Integrations---",
+    "mcp-servers",
     "github-integration",
     "lark-bot-integration",
     "---Self-hosting & ops---",

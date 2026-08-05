@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Camera, Loader2, Save } from "lucide-react";
+import { Camera, Loader2, Save, Trash2 } from "lucide-react";
 import { Input } from "@agora/ui/components/ui/input";
 import { Label } from "@agora/ui/components/ui/label";
 import { Button } from "@agora/ui/components/ui/button";
@@ -9,10 +9,11 @@ import { Card, CardContent } from "@agora/ui/components/ui/card";
 import { Textarea } from "@agora/ui/components/ui/textarea";
 import { toast } from "sonner";
 import { useAuthStore } from "@agora/core/auth";
-import { api } from "@agora/core/api";
+import { api, ApiError } from "@agora/core/api";
 import { resolvePublicFileUrl } from "@agora/core/workspace/avatar-url";
 import { useFileUpload } from "@agora/core/hooks/use-file-upload";
 import { useT } from "../../i18n";
+import { DeleteAccountDialog } from "./delete-account-dialog";
 
 // Mirror server/internal/handler/auth.go:MaxProfileDescriptionLen. Counted in
 // JS String.length (UTF-16 code units) here while the server counts runes,
@@ -24,12 +25,15 @@ export function AccountTab() {
   const { t } = useT("settings");
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
+  const logout = useAuthStore((s) => s.logout);
 
   const [profileName, setProfileName] = useState(user?.name ?? "");
   const [profileDescription, setProfileDescription] = useState(
     user?.profile_description ?? "",
   );
   const [profileSaving, setProfileSaving] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletePending, setDeletePending] = useState(false);
   const { upload, uploading } = useFileUpload(api);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -77,6 +81,41 @@ export function AccountTab() {
       toast.error(e instanceof Error ? e.message : t(($) => $.account.toast_profile_failed));
     } finally {
       setProfileSaving(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!user) return;
+    setDeletePending(true);
+    try {
+      await api.deleteMe(user.email);
+      logout();
+    } catch (error) {
+      if (error instanceof ApiError) {
+        const body = error.body as {
+          code?: string;
+          workspaces?: Array<{ name?: string }>;
+        } | undefined;
+        if (body?.code === "account_owns_workspaces") {
+          const names = body.workspaces
+            ?.map((workspace) => workspace.name)
+            .filter((name): name is string => Boolean(name))
+            .join(", ");
+          toast.error(
+            t(($) => $.account.delete_blocked, {
+              workspaces: names || t(($) => $.account.delete_blocked_fallback),
+            }),
+          );
+          return;
+        }
+      }
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : t(($) => $.account.toast_delete_failed),
+      );
+    } finally {
+      setDeletePending(false);
     }
   };
 
@@ -178,6 +217,43 @@ export function AccountTab() {
           </CardContent>
         </Card>
       </section>
+
+      <section className="space-y-4">
+        <h2 className="text-sm font-semibold text-destructive">
+          {t(($) => $.account.danger_zone)}
+        </h2>
+        <Card className="border-destructive/40">
+          <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <h3 className="text-sm font-medium">
+                {t(($) => $.account.delete_title)}
+              </h3>
+              <p className="max-w-2xl text-xs text-muted-foreground">
+                {t(($) => $.account.delete_description)}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              className="shrink-0"
+              onClick={() => setDeleteOpen(true)}
+              disabled={!user}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {t(($) => $.account.delete_button)}
+            </Button>
+          </CardContent>
+        </Card>
+      </section>
+
+      <DeleteAccountDialog
+        email={user?.email ?? ""}
+        loading={deletePending}
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        onConfirm={handleDeleteAccount}
+      />
     </div>
   );
 }

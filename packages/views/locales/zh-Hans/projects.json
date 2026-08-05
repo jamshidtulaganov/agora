@@ -120,6 +120,27 @@
     "local_preview_url_add": "设置用于预览的开发服务器地址",
     "local_preview_url_set": "预览：{{url}}"
   },
+  "execution_defaults": {
+    "title": "执行默认设置",
+    "description": "新建执行计划会继承这些项目默认设置。只有单次运行需要例外时，才在 issue 中自定义。",
+    "strategy": "由谁执行？",
+    "strategy_automatic": "自动",
+    "strategy_solo": "单个智能体",
+    "strategy_squad": "小队",
+    "strategy_human": "人工主导",
+    "squad_required": "先为项目绑定小队，才能将小队设为默认执行方式。",
+    "progression": "工作如何推进？",
+    "progression_automatic": "自动",
+    "progression_gated": "审批门禁",
+    "progression_manual": "手动批次",
+    "parallel_workers": "并行执行者",
+    "parallel_workers_hint": "同时运行的独立步骤上限",
+    "review_plan_first": "运行前审阅计划",
+    "review_plan_first_hint": "“构建并运行”会先创建草稿计划，等待人工启动。",
+    "save": "保存默认设置",
+    "saved": "已保存执行默认设置",
+    "save_failed": "无法保存执行默认设置"
+  },
   "delete_dialog": {
     "title": "删除项目",
     "description": "将删除这个项目。issue 不会被删除，只会从项目中解除关联。",

@@ -227,7 +227,7 @@ function DevActivityCard({
   );
 }
 
-function DevActivity({ issueId }: { issueId: string }) {
+export function DevActivity({ issueId }: { issueId: string }) {
   const { t } = useT("issues");
   const wsId = useWorkspaceId();
   const { data: issue } = useQuery({

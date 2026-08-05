@@ -456,6 +456,7 @@
   },
   "execution_surface": {
     "details": "Tafsilotlar",
+    "open_work": "Ish maydonini ochish",
     "active_work": "Faol ish",
     "active_work_hint": "Joriy mas’uliyat va handofflar",
     "action_required": "Harakat kerak",
@@ -472,6 +473,7 @@
     "full_plan": "To‘liq reja",
     "handoffs": "Handofflar va qarorlar",
     "customize": "Moslash",
+    "project_defaults_hint": "Loyihaning ijro standartlari ishlatiladi. Faqat shu ishga istisno kerak bo‘lsa moslang.",
     "strategy_legend": "Kim bajarishi kerak?",
     "strategy_hint": "Automatic issue egasi va squad imkoniyatlaridan foydalanadi. Solo bitta workerda qoladi; Squad mustaqil yo‘nalishlarni parallel tarqatadi.",
     "squad_label": "Ijro squadi",
