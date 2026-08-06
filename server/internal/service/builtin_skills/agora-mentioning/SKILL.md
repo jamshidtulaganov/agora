@@ -57,6 +57,23 @@ match, or the link resolves to the wrong entity (or to nothing).
 | link a person        | `member` | member.user_id  | renders a link; enqueues NOTHING — no agent run          |
 | reference an issue   | `issue`  | issue.id        | renders a link; enqueues NOTHING — always safe           |
 
+The `agent` row describes the normal issue-comment path. While a persisted
+orchestration owns the issue, normal mention tasks are suppressed so they
+cannot create a second session outside the DAG. There is one narrow exception:
+when a **member-authored** comment explicitly mentions the agent that owns
+exactly one `waiting_input` step, Agora records that comment as the durable
+answer to that step's exact open question and resumes that same orchestration
+step. Comment creation and the selected trigger are committed as one durable
+outbox record, so a server restart between comment creation and answer
+persistence is repaired without reviving a deliberately suppressed preview
+chip. Because the resumed task keeps
+the same `orchestration_step_id`, the daemon continues the provider session
+that asked the question when its runtime/session safety checks pass. Mentions
+of any other agent, ambiguous matches, inherited thread mentions, and
+agent-authored comments remain no-ops while the orchestration is active.
+The answer is persisted even when that bound runtime is temporarily offline;
+normal queue recovery is responsible for eventual dispatch.
+
 The mention trigger set is computed by `computeMentionedAgentCommentTriggers`
 (`server/internal/handler/comment.go`); the comment path folds that result into
 `computeCommentAgentTriggers` and enqueues it via `enqueueCommentAgentTriggers`.
@@ -117,6 +134,9 @@ These are all silent no-ops — no error, no run:
   `canAccessPrivateAgent` directly for both `@agent` and `@squad` (the
   `canEnqueueSquadLeader` wrapper is the assignment/child-done path, not this
   one).
+- **An agent mention during an active orchestration**, unless it is the narrow
+  member-authored answer case above. Agora's persisted DAG remains the sole
+  dispatcher; the mention cannot start unrelated work alongside it.
 
 ## Incorrect → Correct
 

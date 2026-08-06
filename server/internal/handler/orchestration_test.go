@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jamshidtulaganov/agora/server/internal/service"
 	db "github.com/jamshidtulaganov/agora/server/pkg/db/generated"
 )
 
@@ -32,31 +33,33 @@ func TestDefaultOrchestrationStepsRouteStageCast(t *testing.T) {
 		OwnerType: "agent", OwnerID: issue.AssigneeID, ControllerAgent: issue.AssigneeID,
 		DevelopmentAgent: issue.AssigneeID, ExecutionMode: "direct",
 	}, "squad")
-	if len(steps) != 6 {
-		t.Fatalf("got %d steps, want 6", len(steps))
+	if len(steps) != 5 {
+		t.Fatalf("got %d steps, want 5 (single development branch needs no integration hop)", len(steps))
 	}
-	if steps[1].AgentID != dev || steps[3].AgentID != qa || steps[4].AgentID != reviewer {
-		t.Fatalf("unexpected routing: dev=%s qa=%s review=%s", steps[1].AgentID, steps[3].AgentID, steps[4].AgentID)
+	if steps[1].AgentID != dev || steps[2].AgentID != qa || steps[3].AgentID != reviewer {
+		t.Fatalf("unexpected routing: dev=%s qa=%s review=%s", steps[1].AgentID, steps[2].AgentID, steps[3].AgentID)
 	}
-	if steps[2].Kind != "integration" || len(steps[2].DependsOnKeys) != 1 || steps[2].DependsOnKeys[0] != "dev" {
-		t.Fatalf("integration must join implementation before QA/review: %#v", steps[2])
+	for _, step := range steps {
+		if step.Kind == "integration" {
+			t.Fatalf("single development branch must not create a redundant integration stage: %#v", step)
+		}
 	}
 	// UNROUTED on purpose: the scheduler parks a step only while
 	// `ApprovalRequired && !AgentID`, so a release step carrying an agent_id is
 	// dispatched BEFORE the human approves. The agent is bound at approval time
 	// from controller_agent_id instead.
-	if !steps[5].ApprovalRequired || steps[5].AgentID != "" {
-		t.Fatalf("release step must stay unrouted until human approval: %#v", steps[5])
+	if !steps[4].ApprovalRequired || steps[4].AgentID != "" {
+		t.Fatalf("release step must stay unrouted until human approval: %#v", steps[4])
 	}
-	if steps[5].MaxAttempts < 2 {
-		t.Fatalf("release needs both attempts post-approval, got MaxAttempts=%d", steps[5].MaxAttempts)
+	if steps[4].MaxAttempts < 2 {
+		t.Fatalf("release needs both attempts post-approval, got MaxAttempts=%d", steps[4].MaxAttempts)
 	}
-	if len(steps[3].DependsOnKeys) != 1 || steps[3].DependsOnKeys[0] != "integrate" ||
-		len(steps[4].DependsOnKeys) != 1 || steps[4].DependsOnKeys[0] != "integrate" {
-		t.Fatalf("QA and review must form parallel branches after integration: qa=%v review=%v", steps[3].DependsOnKeys, steps[4].DependsOnKeys)
+	if len(steps[2].DependsOnKeys) != 1 || steps[2].DependsOnKeys[0] != "dev" ||
+		len(steps[3].DependsOnKeys) != 1 || steps[3].DependsOnKeys[0] != "dev" {
+		t.Fatalf("QA and review must inspect the sole exact development artifact: qa=%v review=%v", steps[2].DependsOnKeys, steps[3].DependsOnKeys)
 	}
-	if len(steps[5].DependsOnKeys) != 2 {
-		t.Fatalf("release must join QA and review branches: %v", steps[5].DependsOnKeys)
+	if len(steps[4].DependsOnKeys) != 2 {
+		t.Fatalf("release must join QA and review branches: %v", steps[4].DependsOnKeys)
 	}
 }
 
@@ -71,8 +74,8 @@ func TestDefaultOrchestrationStepsKeepControllerAndWorkerDistinct(t *testing.T) 
 	if steps[0].AgentID != uuidToString(controller) || steps[1].AgentID != uuidToString(worker) {
 		t.Fatalf("controller should plan and assigned worker should develop: plan=%s dev=%s", steps[0].AgentID, steps[1].AgentID)
 	}
-	if steps[3].AgentID != uuidToString(controller) || steps[4].AgentID != uuidToString(controller) {
-		t.Fatalf("uncast QA/review should return to controller: qa=%s review=%s", steps[3].AgentID, steps[4].AgentID)
+	if steps[2].AgentID != uuidToString(controller) || steps[3].AgentID != uuidToString(controller) {
+		t.Fatalf("uncast QA/review should return to controller: qa=%s review=%s", steps[2].AgentID, steps[3].AgentID)
 	}
 }
 
@@ -240,6 +243,49 @@ func TestModifyingDevGitEvidenceRejectsNoOpBranch(t *testing.T) {
 	}
 }
 
+func TestOrchestrationHandoffSuccessGatesPauseForClarification(t *testing.T) {
+	waiting := "```agora-handoff\n" + `{"schema_version":1,"stage":"dev","outcome":"waiting_input","summary":"Need a decision","question":{"prompt":"Which API?","target":"human","blocking":true}}` + "\n```"
+	if orchestrationHandoffRequiresSuccessGates("dev", waiting) {
+		t.Fatal("development clarification must be persisted before committed-delta success gates")
+	}
+	blocked := "```agora-handoff\n" + `{"schema_version":1,"stage":"dev","outcome":"blocked","summary":"Missing commit","blockers":["dependency unavailable"]}` + "\n```"
+	if orchestrationHandoffRequiresSuccessGates("dev", blocked) {
+		t.Fatal("integration blocker must be persisted before full-integration success gates")
+	}
+	completed := "```agora-handoff\n" + `{"schema_version":1,"stage":"dev","outcome":"completed","summary":"Done"}` + "\n```"
+	if !orchestrationHandoffRequiresSuccessGates("dev", completed) {
+		t.Fatal("completed handoff must enforce success gates")
+	}
+	if !orchestrationHandoffRequiresSuccessGates("dev", "legacy output") {
+		t.Fatal("legacy output must fail closed through success gates")
+	}
+}
+
+func TestQAPassRequiresPassedVerificationEvidence(t *testing.T) {
+	for name, verification := range map[string][]service.OrchestrationVerification{
+		"empty":       {},
+		"all skipped": {{Name: "browser smoke", Status: "skipped"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			handoff := service.OrchestrationHandoff{
+				Outcome: "completed", Verdict: "pass", Summary: "looks good", Verification: verification,
+			}
+			enforceOrchestrationVerificationGate("qa", &handoff)
+			if handoff.Outcome != "blocked" || len(handoff.Blockers) == 0 {
+				t.Fatalf("QA pass without executed evidence was accepted: %#v", handoff)
+			}
+		})
+	}
+	handoff := service.OrchestrationHandoff{
+		Outcome: "completed", Verdict: "pass", Summary: "verified",
+		Verification: []service.OrchestrationVerification{{Name: "unit tests", Status: "passed"}},
+	}
+	enforceOrchestrationVerificationGate("qa", &handoff)
+	if handoff.Outcome != "completed" {
+		t.Fatalf("QA pass with executed evidence was blocked: %#v", handoff)
+	}
+}
+
 func TestOrchestrationTerminalStatusDoesNotCompleteCancelledRelease(t *testing.T) {
 	steps := []db.OrchestrationStep{
 		{Stage: "dev", Status: "completed"},
@@ -251,6 +297,81 @@ func TestOrchestrationTerminalStatusDoesNotCompleteCancelledRelease(t *testing.T
 	steps[1].Status = "completed"
 	if status, terminal := orchestrationTerminalRunStatus(steps); !terminal || status != "completed" {
 		t.Fatalf("completed release = %q, terminal=%v; want completed", status, terminal)
+	}
+}
+
+func TestOrchestrationRunLifecycleStatusPrecedence(t *testing.T) {
+	tests := []struct {
+		name       string
+		steps      []db.OrchestrationStep
+		idleStatus string
+		wantStatus string
+		terminal   bool
+	}{
+		{
+			name: "blocker wins over question and active sibling",
+			steps: []db.OrchestrationStep{
+				{Status: "blocked"}, {Status: "waiting_input"}, {Status: "running"},
+			},
+			idleStatus: "running", wantStatus: "blocked",
+		},
+		{
+			name: "question wins over active sibling",
+			steps: []db.OrchestrationStep{
+				{Status: "waiting_input"}, {Status: "queued"},
+			},
+			idleStatus: "running", wantStatus: "waiting_input",
+		},
+		{
+			name: "approval waits for active sibling",
+			steps: []db.OrchestrationStep{
+				{Status: "waiting_approval"}, {Status: "running"},
+			},
+			idleStatus: "running", wantStatus: "running",
+		},
+		{
+			name: "approval becomes visible when idle",
+			steps: []db.OrchestrationStep{
+				{Status: "waiting_approval"}, {Status: "completed"},
+			},
+			idleStatus: "running", wantStatus: "waiting_approval",
+		},
+		{
+			name: "manual idle projection pauses",
+			steps: []db.OrchestrationStep{
+				{Status: "completed"}, {Status: "pending"},
+			},
+			idleStatus: "waiting_approval", wantStatus: "waiting_approval",
+		},
+		{
+			name: "completed release is terminal",
+			steps: []db.OrchestrationStep{
+				{Stage: "dev", Status: "completed"}, {Stage: "release", Status: "completed"},
+			},
+			idleStatus: "running", wantStatus: "completed", terminal: true,
+		},
+		{
+			name: "exhausted failure wins over active sibling",
+			steps: []db.OrchestrationStep{
+				{Status: "failed", Attempt: 2, MaxAttempts: 2}, {Status: "running", Attempt: 1, MaxAttempts: 2},
+			},
+			idleStatus: "running", wantStatus: "failed", terminal: true,
+		},
+		{
+			name: "retryable failure does not hide blocker",
+			steps: []db.OrchestrationStep{
+				{Status: "failed", Attempt: 1, MaxAttempts: 2}, {Status: "blocked", Attempt: 1, MaxAttempts: 2},
+			},
+			idleStatus: "running", wantStatus: "blocked",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			status, terminal := orchestrationRunLifecycleStatus(tt.steps, tt.idleStatus)
+			if status != tt.wantStatus || terminal != tt.terminal {
+				t.Fatalf("status=%q terminal=%v, want %q/%v", status, terminal, tt.wantStatus, tt.terminal)
+			}
+		})
 	}
 }
 
@@ -397,6 +518,22 @@ func TestOrchestrationDependencyArtifactBaseUsesExactIntegration(t *testing.T) {
 	}
 
 	base, readOnly, ok = orchestrationDependencyArtifactBase(
+		db.OrchestrationStep{Stage: "review", StepKind: "task"},
+		db.OrchestrationStep{Stage: "dev", Status: "completed", StepKind: "task"},
+		heads,
+	)
+	if !ok || !readOnly || !reflect.DeepEqual(base, heads) {
+		t.Fatalf("sequential review base = %#v readOnly=%v ok=%v; want exact read-only development artifact", base, readOnly, ok)
+	}
+	if _, _, ok = orchestrationDependencyArtifactBase(
+		db.OrchestrationStep{Stage: "qa", StepKind: "task"},
+		db.OrchestrationStep{Stage: "dev", Status: "failed", StepKind: "task"},
+		heads,
+	); ok {
+		t.Fatal("incomplete development must not become the QA artifact")
+	}
+
+	base, readOnly, ok = orchestrationDependencyArtifactBase(
 		db.OrchestrationStep{Stage: "release", StepKind: "task"},
 		db.OrchestrationStep{Stage: "review", Status: "completed", StepKind: "task"},
 		heads,
@@ -464,6 +601,18 @@ func TestPrepareOrchestrationPlanAllowsSequentialDevelopment(t *testing.T) {
 	}
 }
 
+func TestPrepareOrchestrationPlanRejectsMixedIntegratedAndDirectArtifacts(t *testing.T) {
+	steps := []orchestrationStepRequest{
+		{Key: "api", Title: "API", Stage: "dev", Capability: "backend"},
+		{Key: "web", Title: "Web", Stage: "dev", Capability: "frontend"},
+		{Key: "integrate", Title: "Integrate", Stage: "dev", Kind: "integration", DependsOnKeys: []string{"api", "web"}},
+		{Key: "qa", Title: "QA", Stage: "qa", DependsOnKeys: []string{"integrate", "api"}},
+	}
+	if err := prepareOrchestrationPlan(steps); err == nil || !strings.Contains(err.Error(), "cannot mix") {
+		t.Fatalf("verification must consume one canonical artifact, got %v", err)
+	}
+}
+
 func TestPrepareOrchestrationPlanRejectsForwardDependency(t *testing.T) {
 	steps := []orchestrationStepRequest{
 		{Key: "web", Title: "Web", Stage: "dev", DependsOnKeys: []string{"api"}},
@@ -471,5 +620,40 @@ func TestPrepareOrchestrationPlanRejectsForwardDependency(t *testing.T) {
 	}
 	if err := prepareOrchestrationPlan(steps); err == nil || !strings.Contains(err.Error(), "earlier step") {
 		t.Fatalf("forward dependency should fail DAG validation, got %v", err)
+	}
+}
+
+func TestMissingIntegrationDependencyHeadsRequiresRepoScopedEvidence(t *testing.T) {
+	dependencies := []db.ListOrchestrationStepGitDependenciesRow{
+		{
+			StepKey:   "multi-repo-dev",
+			GitStates: []byte(`[{"repo":"api","head_sha":"same-sha"},{"repo":"web","head_sha":"web-sha"}]`),
+		},
+	}
+	missing := missingIntegrationDependencyHeads(
+		dependencies,
+		[]string{"same-sha", "web-sha"},
+		[]OrchestrationGitHeadResponse{{Repo: "web", HeadSHA: "same-sha"}, {Repo: "web", HeadSHA: "web-sha"}},
+		nil,
+	)
+	if !reflect.DeepEqual(missing, []string{"api@same-sha"}) {
+		t.Fatalf("cross-repository SHA satisfied named dependency: %v", missing)
+	}
+
+	missing = missingIntegrationDependencyHeads(
+		dependencies,
+		nil,
+		[]OrchestrationGitHeadResponse{{Repo: "api", HeadSHA: "same-sha"}, {Repo: "web", HeadSHA: "web-sha"}},
+		nil,
+	)
+	if len(missing) != 0 {
+		t.Fatalf("complete repo-scoped evidence was rejected: %v", missing)
+	}
+
+	legacy := []db.ListOrchestrationStepGitDependenciesRow{{
+		StepKey: "legacy", HeadSha: pgtype.Text{String: "legacy-sha", Valid: true},
+	}}
+	if missing = missingIntegrationDependencyHeads(legacy, []string{"legacy-sha"}, nil, nil); len(missing) != 0 {
+		t.Fatalf("legacy scalar evidence was rejected: %v", missing)
 	}
 }

@@ -2,6 +2,8 @@ export type OrchestrationRunStatus =
   | "draft"
   | "running"
   | "waiting_approval"
+  | "waiting_input"
+  | "blocked"
   | "completed"
   | "failed"
   | "cancelled";
@@ -14,6 +16,8 @@ export type OrchestrationStepStatus =
   | "queued"
   | "running"
   | "waiting_approval"
+  | "waiting_input"
+  | "blocked"
   | "completed"
   | "failed"
   | "cancelled"
@@ -50,6 +54,7 @@ export interface OrchestrationStep {
   agent_id?: string;
   model?: string;
   task_id?: string;
+  question_id?: string;
   approval_required: boolean;
   approved_by?: string;
   attempt: number;
@@ -83,6 +88,50 @@ export interface OrchestrationEvent {
   created_at: string;
 }
 
+export interface OrchestrationQuestion {
+  prompt: string;
+  target: "human" | "controller" | "agent";
+  target_id?: string;
+  blocking: boolean;
+}
+
+export interface OrchestrationHandoff {
+  schema_version: 1;
+  stage: OrchestrationStage;
+  outcome: "completed" | "waiting_input" | "blocked";
+  verdict?: "pass" | "fail" | "not_applicable";
+  summary: string;
+  decisions: string[];
+  contracts: string[];
+  artifacts: Array<{ kind: string; ref: string; description?: string }>;
+  verification: Array<{ name: string; status: "passed" | "failed" | "skipped"; details?: string }>;
+  findings: string[];
+  risks: string[];
+  blockers: string[];
+  next_actions: string[];
+  question?: OrchestrationQuestion;
+  legacy?: boolean;
+}
+
+export interface OrchestrationMessage {
+  id: string;
+  step_id: string;
+  kind: "instruction" | "progress" | "question" | "answer" | "blocker" | "handoff" | "ack" | "escalation";
+  actor_type: "system" | "member" | "agent";
+  actor_id?: string;
+  target_type: "run" | "step" | "human" | "controller" | "agent";
+  target_id?: string;
+  body: Record<string, unknown>;
+  plan_version: number;
+  correlation_id: string;
+  causation_id?: string;
+  reply_to_id?: string;
+  expects_reply: boolean;
+  acknowledged_at?: string;
+  resolved_at?: string;
+  created_at: string;
+}
+
 export interface OrchestrationRun {
   id: string;
   issue_id: string;
@@ -106,6 +155,7 @@ export interface OrchestrationRun {
   updated_at: string;
   steps: OrchestrationStep[];
   events: OrchestrationEvent[];
+  messages: OrchestrationMessage[];
 }
 
 export interface OrchestrationPlanRevision {
@@ -127,6 +177,11 @@ export interface EditOrchestrationRequest {
   model?: string;
   instructions?: string;
   child?: CreateOrchestrationStepRequest;
+}
+
+export interface RespondToOrchestrationStepRequest {
+  question_id: string;
+  message: string;
 }
 
 export interface CreateOrchestrationStepRequest {

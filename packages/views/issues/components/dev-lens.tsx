@@ -16,7 +16,6 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { api } from "@agora/core/api";
-import { useWorkspaceId } from "@agora/core/hooks";
 import {
   issueArtifactOptions,
   issueKeys,
@@ -38,6 +37,12 @@ import { useT } from "../../i18n";
 import { useNavigation } from "../../navigation";
 import { ArtifactCodeViewer } from "./artifact-code-viewer";
 import { ArtifactChecksPanel, ArtifactPreviewPanel } from "./artifact-runtime-panels";
+import {
+  orchestrationDisplayGroups,
+  orchestrationHandoffText,
+  orchestrationStepDisplayTitle,
+  type OrchestrationDisplayKind,
+} from "./orchestration-display";
 import { StageLiveProcessBody } from "./stage-live-process";
 
 const DEV_TAB_QUERY_KEY = "dev_tab";
@@ -46,6 +51,19 @@ type DevTab = (typeof DEV_TABS)[number];
 
 function isDevTab(value: string | null): value is DevTab {
   return DEV_TABS.some((tab) => tab === value);
+}
+
+type IssuesT = ReturnType<typeof useT<"issues">>["t"];
+
+function activityStageLabel(kind: OrchestrationDisplayKind, t: IssuesT): string {
+  switch (kind) {
+    case "plan": return t(($) => $.execution_surface.stage_plan);
+    case "dev": return t(($) => $.execution_surface.stage_dev);
+    case "integration": return t(($) => $.execution_surface.stage_integration);
+    case "qa": return t(($) => $.execution_surface.stage_qa);
+    case "review": return t(($) => $.execution_surface.stage_review);
+    case "release": return t(($) => $.execution_surface.stage_release);
+  }
 }
 
 function activeTask(status?: AgentTask["status"] | OrchestrationStep["status"]): boolean {
@@ -62,30 +80,18 @@ function statusMeta(status?: AgentTask["status"] | OrchestrationStep["status"]) 
   return { Icon: Circle, tone: "text-muted-foreground", key: "waiting" as const };
 }
 
-function outputText(value: unknown): string {
-  if (typeof value === "string") return value.trim();
-  if (typeof value !== "object" || value === null) return "";
-  const output = (value as Record<string, unknown>).output;
-  return typeof output === "string" ? output.trim() : "";
-}
-
 // Completed model output contains the live PROGRESS stream as well as the
 // actual handoff. Activity keeps the useful final paragraphs and leaves the
 // full transcript in the issue conversation, avoiding a second chat surface.
 function handoffSummary(value: unknown): string {
-  const cleaned = outputText(value)
-    .replace(/```todo[\s\S]*?```/gi, "")
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("PROGRESS:"))
-    .join("\n")
-    .trim();
+  const cleaned = orchestrationHandoffText(value);
   if (!cleaned) return "";
   const paragraphs = cleaned.split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean);
   return paragraphs.slice(-2).join("\n\n");
 }
 
-// A worker's brief or handoff can be arbitrarily long (agents write a lot).
-// Clamp by default and reveal on demand so ten workers stay scannable.
+// A step brief or handoff can be arbitrarily long (agents write a lot).
+// Clamp by default and reveal on demand so large plans stay scannable.
 const CLAMP_THRESHOLD_CHARS = 280;
 const CLAMP_THRESHOLD_LINES = 4;
 
@@ -117,7 +123,7 @@ function DevActivityCard({
   instruction,
   defaultOpen,
 }: {
-  step?: OrchestrationStep;
+  step: OrchestrationStep;
   task?: AgentTask;
   instruction?: string;
   defaultOpen: boolean;
@@ -125,13 +131,13 @@ function DevActivityCard({
   const { t } = useT("issues");
   const { getAgentName } = useActorName();
   const [open, setOpen] = useState(defaultOpen);
-  const agentId = step?.agent_id ?? task?.agent_id ?? "";
-  const status = task?.status ?? step?.status;
+  const agentId = step.agent_id ?? task?.agent_id ?? "";
+  const status = step.status;
   const meta = statusMeta(status);
-  const title = step?.title ?? t(($) => $.dev_workspace.development_task);
-  const sha = step?.head_sha;
+  const title = orchestrationStepDisplayTitle(step);
+  const sha = step.head_sha;
   const failed = status === "failed" || status === "cancelled";
-  const handoff = handoffSummary(step?.output ?? task?.result);
+  const handoff = handoffSummary(step.output ?? task?.result);
 
   const labels = {
     completed: t(($) => $.dev_workspace.status_completed),
@@ -143,8 +149,8 @@ function DevActivityCard({
 
   return (
     <article className="min-w-0 overflow-hidden rounded-lg border bg-background">
-      {/* The whole header is the expand/collapse control: with ten workers on
-          screen, rows must scan like a checklist and open only on demand. */}
+      {/* The whole header is the expand/collapse control so a large persisted
+          plan scans like a checklist and opens only on demand. */}
       <button
         type="button"
         className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/30"
@@ -188,24 +194,30 @@ function DevActivityCard({
               <div className="space-y-2 text-xs">
                 <div className="flex items-center gap-1.5 text-success">
                   <CheckCircle2 className="size-3.5" aria-hidden />
-                  <span className="font-medium">{t(($) => $.dev_workspace.handoff_complete)}</span>
+                  <span className="font-medium">
+                    {handoff
+                      ? t(($) => $.dev_workspace.handoff_complete)
+                      : t(($) => $.dev_workspace.status_completed)}
+                  </span>
                 </div>
-                <p className="text-muted-foreground">{t(($) => $.dev_workspace.handoff_complete_description)}</p>
                 {handoff && (
-                  <div className="rounded-md border bg-muted/20 px-2.5 py-2">
-                    <p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-                      {t(($) => $.dev_workspace.agent_handoff)}
-                    </p>
-                    <div className="mt-1">
-                      <ClampedText text={handoff} clampClass="line-clamp-6" />
+                  <>
+                    <p className="text-muted-foreground">{t(($) => $.dev_workspace.handoff_complete_description)}</p>
+                    <div className="rounded-md border bg-muted/20 px-2.5 py-2">
+                      <p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                        {t(($) => $.dev_workspace.agent_handoff)}
+                      </p>
+                      <div className="mt-1">
+                        <ClampedText text={handoff} clampClass="line-clamp-6" />
+                      </div>
                     </div>
-                  </div>
+                  </>
                 )}
                 {sha && (
                   <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2 py-1.5 font-mono text-[11px]">
                     <span className="text-muted-foreground">HEAD</span>
                     <span>{sha.slice(0, 8)}</span>
-                    {step?.merge_status === "clean" && <span className="ml-auto text-success">{t(($) => $.dev_workspace.clean)}</span>}
+                    {step.merge_status === "clean" && <span className="ml-auto text-success">{t(($) => $.dev_workspace.clean)}</span>}
                   </div>
                 )}
               </div>
@@ -229,31 +241,26 @@ function DevActivityCard({
 
 export function DevActivity({ issueId }: { issueId: string }) {
   const { t } = useT("issues");
-  const wsId = useWorkspaceId();
-  const { data: issue } = useQuery({
-    queryKey: issueKeys.detail(wsId, issueId),
-    queryFn: () => api.getIssue(issueId),
-  });
   const { data: run, isLoading: runLoading } = useQuery(issueOrchestrationOptions(issueId));
   const { data: tasks = [], isLoading: tasksLoading } = useQuery({
     queryKey: issueKeys.tasks(issueId),
     queryFn: () => api.listTasksByIssue(issueId),
     staleTime: 30_000,
+    enabled: !!run,
   });
   const taskById = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks]);
-  const devSteps = useMemo(
-    () => (run?.steps ?? [])
-      .filter((step) => step.stage === "dev" && step.kind === "task")
-      .sort((left, right) => left.position - right.position),
+  const groups = useMemo(
+    () => orchestrationDisplayGroups(run?.steps ?? []),
     [run?.steps],
   );
-  const lanes = devSteps.length > 0
-    ? devSteps.map((step) => ({ step, task: step.task_id ? taskById.get(step.task_id) : undefined }))
-    : tasks.map((task) => ({ step: undefined, task }));
-  const working = lanes.filter(({ step, task }) => activeTask(task?.status ?? step?.status)).length;
-  const complete = lanes.filter(({ step, task }) => (task?.status ?? step?.status) === "completed").length;
+  const lanes = groups.flatMap((group) => group.steps.map((step) => ({
+    step,
+    task: step.task_id ? taskById.get(step.task_id) : undefined,
+  })));
+  const working = lanes.filter(({ step }) => activeTask(step.status)).length;
+  const complete = lanes.filter(({ step }) => step.status === "completed").length;
 
-  if (runLoading || tasksLoading) {
+  if (runLoading || (!!run && tasksLoading)) {
     return <div className="h-80 animate-pulse rounded-lg border bg-muted/30 motion-reduce:animate-none" aria-hidden />;
   }
   if (lanes.length === 0) {
@@ -271,7 +278,7 @@ export function DevActivity({ issueId }: { issueId: string }) {
   return (
     <section aria-label={t(($) => $.dev_workspace.activity)}>
       <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span>{t(($) => $.dev_workspace.worker_count, { count: lanes.length })}</span>
+        <span>{t(($) => $.dev_workspace.step_count, { count: lanes.length })}</span>
         {working > 0 && (
           <span className="inline-flex items-center gap-1.5 text-brand">
             <span className="size-1.5 rounded-full bg-brand motion-safe:animate-pulse" aria-hidden />
@@ -280,27 +287,34 @@ export function DevActivity({ issueId }: { issueId: string }) {
         )}
         {complete > 0 && <span>· {t(($) => $.dev_workspace.completed_count, { count: complete })}</span>}
       </div>
-      {/* One column of collapsible rows: with many parallel workers a grid of
-          fully-expanded cards is unreadable. Attention goes where action is —
-          active and failed workers open by default, settled ones stay folded
-          (small runs of ≤2 keep everything open, nothing to scan past). */}
-      <div className="space-y-2">
-        {lanes.map(({ step, task }, index) => {
-          const status = task?.status ?? step?.status;
-          // Queued/waiting rows stay folded too: in a big run most workers
-          // are queued, and their bodies carry no information beyond the
-          // status badge already on the row.
-          const inMotion = status === "running" || status === "dispatched";
-          return (
-            <DevActivityCard
-              key={step?.id ?? task?.id ?? index}
-              step={step}
-              task={task}
-              instruction={step?.instructions?.trim() || task?.trigger_summary?.trim() || issue?.description?.trim() || undefined}
-              defaultOpen={lanes.length <= 2 || inMotion || status === "failed" || status === "cancelled"}
-            />
-          );
-        })}
+      <div className="space-y-5">
+        {groups.map((group) => (
+          <section key={group.kind} aria-labelledby={`orchestration-group-${group.kind}`}>
+            <div className="mb-2 flex items-center gap-2">
+              <h3 id={`orchestration-group-${group.kind}`} className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                {activityStageLabel(group.kind, t)}
+              </h3>
+              {group.steps.length > 1 && (
+                <span className="font-mono text-[10px] tabular-nums text-muted-foreground">{group.steps.length}</span>
+              )}
+            </div>
+            <div className={cn("grid gap-2", group.kind === "dev" && group.steps.length > 1 && "md:grid-cols-2")}>
+              {group.steps.map((step) => {
+                const task = step.task_id ? taskById.get(step.task_id) : undefined;
+                const inMotion = step.status === "running" || step.status === "queued";
+                return (
+                  <DevActivityCard
+                    key={step.id}
+                    step={step}
+                    task={task}
+                    instruction={step.instructions.trim() || task?.trigger_summary?.trim() || undefined}
+                    defaultOpen={lanes.length <= 2 || inMotion || step.status === "failed" || step.status === "cancelled"}
+                  />
+                );
+              })}
+            </div>
+          </section>
+        ))}
       </div>
     </section>
   );
@@ -313,7 +327,7 @@ export function DevLensBody({ issueId }: { issueId: string }) {
   const activeTab: DevTab = isDevTab(requested) ? requested : "activity";
   const { data: run } = useQuery(issueOrchestrationOptions(issueId));
   const { data: artifactData } = useQuery(issueArtifactOptions(issueId));
-  const activeWorkers = (run?.steps ?? []).filter((step) => step.stage === "dev" && step.kind === "task" && activeTask(step.status)).length;
+  const activeSteps = (run?.steps ?? []).filter((step) => activeTask(step.status)).length;
 
   const setTab = (value: string) => {
     if (!isDevTab(value)) return;
@@ -341,7 +355,7 @@ export function DevLensBody({ issueId }: { issueId: string }) {
             <TabsTrigger value="activity">
               <Radio aria-hidden />
               {t(($) => $.dev_workspace.activity)}
-              {activeWorkers > 0 && <span className="size-1.5 rounded-full bg-brand motion-safe:animate-pulse" aria-label={t(($) => $.dev_workspace.workers_active)} />}
+              {activeSteps > 0 && <span className="size-1.5 rounded-full bg-brand motion-safe:animate-pulse" aria-label={t(($) => $.dev_workspace.workers_active)} />}
             </TabsTrigger>
             <TabsTrigger value="changes">
               <FileDiff aria-hidden />

@@ -29,7 +29,8 @@ func (q *Queries) AddOrchestrationStepDependency(ctx context.Context, arg AddOrc
 const advanceOrchestrationPlanVersion = `-- name: AdvanceOrchestrationPlanVersion :one
 UPDATE orchestration_run
 SET plan_version = plan_version + 1, updated_at = now()
-WHERE id = $1 AND plan_version = $2 AND status IN ('draft', 'running', 'waiting_approval')
+WHERE id = $1 AND plan_version = $2
+  AND status IN ('draft', 'running', 'waiting_approval', 'waiting_input', 'blocked')
 RETURNING id, workspace_id, issue_id, status, mode, policy, created_by, started_at, completed_at, created_at, updated_at, plan_version, execution_strategy, progression_policy, owner_type, owner_id, controller_agent_id, base_git_states
 `
 
@@ -131,7 +132,16 @@ func (q *Queries) ApproveOrchestrationStep(ctx context.Context, arg ApproveOrche
 
 const attachTaskToOrchestrationStep = `-- name: AttachTaskToOrchestrationStep :one
 UPDATE orchestration_step SET task_id = $2, updated_at = now()
-WHERE id = $1 AND status = 'queued'
+WHERE orchestration_step.id = $1
+  AND orchestration_step.status IN ('queued', 'running')
+  AND orchestration_step.task_id IS NULL
+  AND $2 = (
+      SELECT agent_task_queue.id
+      FROM agent_task_queue
+      WHERE orchestration_step_id = $1
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1
+  )
 RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
 `
 
@@ -188,10 +198,72 @@ func (q *Queries) AttachTaskToOrchestrationStep(ctx context.Context, arg AttachT
 	return i, err
 }
 
+const blockOrchestrationStep = `-- name: BlockOrchestrationStep :one
+UPDATE orchestration_step
+SET status = 'blocked', output = $2, completed_at = NULL, updated_at = now()
+WHERE orchestration_step.id = (SELECT orchestration_step_id FROM agent_task_queue WHERE agent_task_queue.id = $1)
+  AND status IN ('queued', 'running')
+RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
+`
+
+type BlockOrchestrationStepParams struct {
+	ID     pgtype.UUID `json:"id"`
+	Output []byte      `json:"output"`
+}
+
+func (q *Queries) BlockOrchestrationStep(ctx context.Context, arg BlockOrchestrationStepParams) (OrchestrationStep, error) {
+	row := q.db.QueryRow(ctx, blockOrchestrationStep, arg.ID, arg.Output)
+	var i OrchestrationStep
+	err := row.Scan(
+		&i.ID,
+		&i.RunID,
+		&i.StepKey,
+		&i.Title,
+		&i.Stage,
+		&i.Status,
+		&i.Position,
+		&i.AgentID,
+		&i.ModelOverride,
+		&i.TaskID,
+		&i.DependsOnStepID,
+		&i.ApprovalRequired,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.Instructions,
+		&i.Output,
+		&i.Error,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ParentStepID,
+		&i.IntroducedInVersion,
+		&i.RetiredInVersion,
+		&i.SupersedesStepID,
+		&i.SquadID,
+		&i.ControllerAgentID,
+		&i.WorktreeBranch,
+		&i.BaseSha,
+		&i.HeadSha,
+		&i.MergeStatus,
+		&i.ConflictFiles,
+		&i.StepKind,
+		&i.IntegrationStatus,
+		&i.IntegratedHeadShas,
+		&i.MissingHeadShas,
+		&i.GitStates,
+		&i.Capability,
+	)
+	return i, err
+}
+
 const cancelOrchestrationStep = `-- name: CancelOrchestrationStep :one
 UPDATE orchestration_step
 SET status = 'cancelled', completed_at = now(), updated_at = now(), error = 'cancelled by user'
-WHERE id = $1 AND status IN ('pending', 'queued', 'running', 'waiting_approval', 'blocked')
+WHERE id = $1
+  AND status IN ('pending', 'queued', 'running', 'waiting_approval', 'waiting_input', 'blocked')
 RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
 `
 
@@ -362,6 +434,18 @@ func (q *Queries) CompleteOrchestrationStep(ctx context.Context, arg CompleteOrc
 	return i, err
 }
 
+const countOrchestrationStepQuestions = `-- name: CountOrchestrationStepQuestions :one
+SELECT count(*) FROM orchestration_message
+WHERE step_id = $1 AND kind = 'question'
+`
+
+func (q *Queries) CountOrchestrationStepQuestions(ctx context.Context, stepID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countOrchestrationStepQuestions, stepID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createOrchestrationEvent = `-- name: CreateOrchestrationEvent :one
 INSERT INTO orchestration_event (run_id, step_id, kind, actor_type, actor_id, details)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -395,6 +479,77 @@ func (q *Queries) CreateOrchestrationEvent(ctx context.Context, arg CreateOrches
 		&i.ActorType,
 		&i.ActorID,
 		&i.Details,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createOrchestrationMessage = `-- name: CreateOrchestrationMessage :one
+INSERT INTO orchestration_message (
+    run_id, step_id, kind, actor_type, actor_id, target_type, target_id, body,
+    plan_version, correlation_id, causation_id, reply_to_id, idempotency_key,
+    expects_reply
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+)
+ON CONFLICT (run_id, idempotency_key) DO UPDATE
+SET idempotency_key = EXCLUDED.idempotency_key
+RETURNING id, run_id, step_id, kind, actor_type, actor_id, target_type, target_id, body, plan_version, correlation_id, causation_id, reply_to_id, idempotency_key, expects_reply, acknowledged_at, resolved_at, created_at
+`
+
+type CreateOrchestrationMessageParams struct {
+	RunID          pgtype.UUID `json:"run_id"`
+	StepID         pgtype.UUID `json:"step_id"`
+	Kind           string      `json:"kind"`
+	ActorType      string      `json:"actor_type"`
+	ActorID        pgtype.UUID `json:"actor_id"`
+	TargetType     string      `json:"target_type"`
+	TargetID       pgtype.UUID `json:"target_id"`
+	Body           []byte      `json:"body"`
+	PlanVersion    int32       `json:"plan_version"`
+	CorrelationID  pgtype.UUID `json:"correlation_id"`
+	CausationID    pgtype.UUID `json:"causation_id"`
+	ReplyToID      pgtype.UUID `json:"reply_to_id"`
+	IdempotencyKey string      `json:"idempotency_key"`
+	ExpectsReply   bool        `json:"expects_reply"`
+}
+
+func (q *Queries) CreateOrchestrationMessage(ctx context.Context, arg CreateOrchestrationMessageParams) (OrchestrationMessage, error) {
+	row := q.db.QueryRow(ctx, createOrchestrationMessage,
+		arg.RunID,
+		arg.StepID,
+		arg.Kind,
+		arg.ActorType,
+		arg.ActorID,
+		arg.TargetType,
+		arg.TargetID,
+		arg.Body,
+		arg.PlanVersion,
+		arg.CorrelationID,
+		arg.CausationID,
+		arg.ReplyToID,
+		arg.IdempotencyKey,
+		arg.ExpectsReply,
+	)
+	var i OrchestrationMessage
+	err := row.Scan(
+		&i.ID,
+		&i.RunID,
+		&i.StepID,
+		&i.Kind,
+		&i.ActorType,
+		&i.ActorID,
+		&i.TargetType,
+		&i.TargetID,
+		&i.Body,
+		&i.PlanVersion,
+		&i.CorrelationID,
+		&i.CausationID,
+		&i.ReplyToID,
+		&i.IdempotencyKey,
+		&i.ExpectsReply,
+		&i.AcknowledgedAt,
+		&i.ResolvedAt,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -776,6 +931,86 @@ func (q *Queries) FailOrchestrationStepByID(ctx context.Context, arg FailOrchest
 	return i, err
 }
 
+const finalizeOrchestrationStepAfterTerminalRun = `-- name: FinalizeOrchestrationStepAfterTerminalRun :one
+UPDATE orchestration_step
+SET status = $1,
+    output = $2,
+    error = $3,
+    completed_at = CASE WHEN $1 = 'completed' THEN now() ELSE NULL END,
+    updated_at = now()
+WHERE orchestration_step.id = (
+    SELECT orchestration_step_id
+    FROM agent_task_queue
+    WHERE agent_task_queue.id = $4
+)
+  AND status IN ('queued', 'running')
+  AND $1 IN ('completed', 'blocked')
+RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
+`
+
+type FinalizeOrchestrationStepAfterTerminalRunParams struct {
+	Status string      `json:"status"`
+	Output []byte      `json:"output"`
+	Error  pgtype.Text `json:"error"`
+	TaskID pgtype.UUID `json:"task_id"`
+}
+
+// A parallel task can finish after another branch has already made the run
+// terminal. Preserve its handoff for audit, but retire the work unit without
+// reopening the sticky run status or leaving a forever-running step behind.
+func (q *Queries) FinalizeOrchestrationStepAfterTerminalRun(ctx context.Context, arg FinalizeOrchestrationStepAfterTerminalRunParams) (OrchestrationStep, error) {
+	row := q.db.QueryRow(ctx, finalizeOrchestrationStepAfterTerminalRun,
+		arg.Status,
+		arg.Output,
+		arg.Error,
+		arg.TaskID,
+	)
+	var i OrchestrationStep
+	err := row.Scan(
+		&i.ID,
+		&i.RunID,
+		&i.StepKey,
+		&i.Title,
+		&i.Stage,
+		&i.Status,
+		&i.Position,
+		&i.AgentID,
+		&i.ModelOverride,
+		&i.TaskID,
+		&i.DependsOnStepID,
+		&i.ApprovalRequired,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.Instructions,
+		&i.Output,
+		&i.Error,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ParentStepID,
+		&i.IntroducedInVersion,
+		&i.RetiredInVersion,
+		&i.SupersedesStepID,
+		&i.SquadID,
+		&i.ControllerAgentID,
+		&i.WorktreeBranch,
+		&i.BaseSha,
+		&i.HeadSha,
+		&i.MergeStatus,
+		&i.ConflictFiles,
+		&i.StepKind,
+		&i.IntegrationStatus,
+		&i.IntegratedHeadShas,
+		&i.MissingHeadShas,
+		&i.GitStates,
+		&i.Capability,
+	)
+	return i, err
+}
+
 const finishOrchestrationStepPositionShift = `-- name: FinishOrchestrationStepPositionShift :exec
 UPDATE orchestration_step
 SET position = -position, updated_at = now()
@@ -789,7 +1024,8 @@ func (q *Queries) FinishOrchestrationStepPositionShift(ctx context.Context, runI
 
 const getActiveOrchestrationRunForIssue = `-- name: GetActiveOrchestrationRunForIssue :one
 SELECT id, workspace_id, issue_id, status, mode, policy, created_by, started_at, completed_at, created_at, updated_at, plan_version, execution_strategy, progression_policy, owner_type, owner_id, controller_agent_id, base_git_states FROM orchestration_run
-WHERE issue_id = $1 AND status IN ('draft', 'running', 'waiting_approval')
+WHERE issue_id = $1
+  AND status IN ('draft', 'running', 'waiting_approval', 'waiting_input', 'blocked')
 ORDER BY created_at DESC LIMIT 1
 `
 
@@ -815,6 +1051,76 @@ func (q *Queries) GetActiveOrchestrationRunForIssue(ctx context.Context, issueID
 		&i.OwnerID,
 		&i.ControllerAgentID,
 		&i.BaseGitStates,
+	)
+	return i, err
+}
+
+const getLatestOpenOrchestrationQuestion = `-- name: GetLatestOpenOrchestrationQuestion :one
+SELECT id, run_id, step_id, kind, actor_type, actor_id, target_type, target_id, body, plan_version, correlation_id, causation_id, reply_to_id, idempotency_key, expects_reply, acknowledged_at, resolved_at, created_at FROM orchestration_message
+WHERE step_id = $1 AND kind = 'question' AND expects_reply AND resolved_at IS NULL
+ORDER BY created_at DESC, id DESC
+LIMIT 1
+`
+
+func (q *Queries) GetLatestOpenOrchestrationQuestion(ctx context.Context, stepID pgtype.UUID) (OrchestrationMessage, error) {
+	row := q.db.QueryRow(ctx, getLatestOpenOrchestrationQuestion, stepID)
+	var i OrchestrationMessage
+	err := row.Scan(
+		&i.ID,
+		&i.RunID,
+		&i.StepID,
+		&i.Kind,
+		&i.ActorType,
+		&i.ActorID,
+		&i.TargetType,
+		&i.TargetID,
+		&i.Body,
+		&i.PlanVersion,
+		&i.CorrelationID,
+		&i.CausationID,
+		&i.ReplyToID,
+		&i.IdempotencyKey,
+		&i.ExpectsReply,
+		&i.AcknowledgedAt,
+		&i.ResolvedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getLatestOrchestrationQuestion = `-- name: GetLatestOrchestrationQuestion :one
+SELECT id, run_id, step_id, kind, actor_type, actor_id, target_type, target_id, body, plan_version, correlation_id, causation_id, reply_to_id, idempotency_key, expects_reply, acknowledged_at, resolved_at, created_at FROM orchestration_message
+WHERE step_id = $1 AND kind = 'question' AND expects_reply
+ORDER BY created_at DESC, id DESC
+LIMIT 1
+FOR UPDATE
+`
+
+// The response path runs this inside a transaction. Locking the question row
+// serializes concurrent answers; after one answer resolves it, a waiter sees
+// the new resolved_at value and can only replay the exact same answer.
+func (q *Queries) GetLatestOrchestrationQuestion(ctx context.Context, stepID pgtype.UUID) (OrchestrationMessage, error) {
+	row := q.db.QueryRow(ctx, getLatestOrchestrationQuestion, stepID)
+	var i OrchestrationMessage
+	err := row.Scan(
+		&i.ID,
+		&i.RunID,
+		&i.StepID,
+		&i.Kind,
+		&i.ActorType,
+		&i.ActorID,
+		&i.TargetType,
+		&i.TargetID,
+		&i.Body,
+		&i.PlanVersion,
+		&i.CorrelationID,
+		&i.CausationID,
+		&i.ReplyToID,
+		&i.IdempotencyKey,
+		&i.ExpectsReply,
+		&i.AcknowledgedAt,
+		&i.ResolvedAt,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -851,12 +1157,56 @@ func (q *Queries) GetLatestOrchestrationRunForIssue(ctx context.Context, issueID
 	return i, err
 }
 
+const getLatestTaskForOrchestrationStep = `-- name: GetLatestTaskForOrchestrationStep :one
+SELECT id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, model_override, orchestration_step_id FROM agent_task_queue
+WHERE orchestration_step_id = $1
+ORDER BY created_at DESC, id DESC
+LIMIT 1
+`
+
+func (q *Queries) GetLatestTaskForOrchestrationStep(ctx context.Context, orchestrationStepID pgtype.UUID) (AgentTaskQueue, error) {
+	row := q.db.QueryRow(ctx, getLatestTaskForOrchestrationStep, orchestrationStepID)
+	var i AgentTaskQueue
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.IssueID,
+		&i.Status,
+		&i.Priority,
+		&i.DispatchedAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.Error,
+		&i.CreatedAt,
+		&i.Context,
+		&i.RuntimeID,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.TriggerCommentID,
+		&i.ChatSessionID,
+		&i.AutopilotRunID,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.ParentTaskID,
+		&i.FailureReason,
+		&i.TriggerSummary,
+		&i.ForceFreshSession,
+		&i.IsLeaderTask,
+		&i.WaitReason,
+		&i.InitiatorUserID,
+		&i.ModelOverride,
+		&i.OrchestrationStepID,
+	)
+	return i, err
+}
+
 const getNextRunnableOrchestrationStep = `-- name: GetNextRunnableOrchestrationStep :one
 SELECT s.id, s.run_id, s.step_key, s.title, s.stage, s.status, s.position, s.agent_id, s.model_override, s.task_id, s.depends_on_step_id, s.approval_required, s.approved_by, s.approved_at, s.attempt, s.max_attempts, s.instructions, s.output, s.error, s.started_at, s.completed_at, s.created_at, s.updated_at, s.parent_step_id, s.introduced_in_version, s.retired_in_version, s.supersedes_step_id, s.squad_id, s.controller_agent_id, s.worktree_branch, s.base_sha, s.head_sha, s.merge_status, s.conflict_files, s.step_kind, s.integration_status, s.integrated_head_shas, s.missing_head_shas, s.git_states, s.capability FROM orchestration_step s
 LEFT JOIN orchestration_step dependency ON dependency.id = s.depends_on_step_id
 WHERE s.run_id = $1
   AND s.status = 'pending'
-  AND (s.depends_on_step_id IS NULL OR dependency.status = 'completed')
+  AND (s.depends_on_step_id IS NULL OR dependency.status IN ('completed', 'skipped'))
 ORDER BY s.position
 LIMIT 1
 `
@@ -905,6 +1255,81 @@ func (q *Queries) GetNextRunnableOrchestrationStep(ctx context.Context, runID pg
 		&i.MissingHeadShas,
 		&i.GitStates,
 		&i.Capability,
+	)
+	return i, err
+}
+
+const getOrchestrationMessageByIdempotencyKey = `-- name: GetOrchestrationMessageByIdempotencyKey :one
+SELECT id, run_id, step_id, kind, actor_type, actor_id, target_type, target_id, body, plan_version, correlation_id, causation_id, reply_to_id, idempotency_key, expects_reply, acknowledged_at, resolved_at, created_at FROM orchestration_message
+WHERE run_id = $1 AND idempotency_key = $2
+`
+
+type GetOrchestrationMessageByIdempotencyKeyParams struct {
+	RunID          pgtype.UUID `json:"run_id"`
+	IdempotencyKey string      `json:"idempotency_key"`
+}
+
+func (q *Queries) GetOrchestrationMessageByIdempotencyKey(ctx context.Context, arg GetOrchestrationMessageByIdempotencyKeyParams) (OrchestrationMessage, error) {
+	row := q.db.QueryRow(ctx, getOrchestrationMessageByIdempotencyKey, arg.RunID, arg.IdempotencyKey)
+	var i OrchestrationMessage
+	err := row.Scan(
+		&i.ID,
+		&i.RunID,
+		&i.StepID,
+		&i.Kind,
+		&i.ActorType,
+		&i.ActorID,
+		&i.TargetType,
+		&i.TargetID,
+		&i.Body,
+		&i.PlanVersion,
+		&i.CorrelationID,
+		&i.CausationID,
+		&i.ReplyToID,
+		&i.IdempotencyKey,
+		&i.ExpectsReply,
+		&i.AcknowledgedAt,
+		&i.ResolvedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getOrchestrationQuestionForUpdate = `-- name: GetOrchestrationQuestionForUpdate :one
+SELECT id, run_id, step_id, kind, actor_type, actor_id, target_type, target_id, body, plan_version, correlation_id, causation_id, reply_to_id, idempotency_key, expects_reply, acknowledged_at, resolved_at, created_at FROM orchestration_message
+WHERE id = $1 AND step_id = $2 AND kind = 'question' AND expects_reply
+FOR UPDATE
+`
+
+type GetOrchestrationQuestionForUpdateParams struct {
+	ID     pgtype.UUID `json:"id"`
+	StepID pgtype.UUID `json:"step_id"`
+}
+
+// The caller supplies the question identity it rendered. Lock that exact row
+// so a delayed response can never drift to a newer question on the same step.
+func (q *Queries) GetOrchestrationQuestionForUpdate(ctx context.Context, arg GetOrchestrationQuestionForUpdateParams) (OrchestrationMessage, error) {
+	row := q.db.QueryRow(ctx, getOrchestrationQuestionForUpdate, arg.ID, arg.StepID)
+	var i OrchestrationMessage
+	err := row.Scan(
+		&i.ID,
+		&i.RunID,
+		&i.StepID,
+		&i.Kind,
+		&i.ActorType,
+		&i.ActorID,
+		&i.TargetType,
+		&i.TargetID,
+		&i.Body,
+		&i.PlanVersion,
+		&i.CorrelationID,
+		&i.CausationID,
+		&i.ReplyToID,
+		&i.IdempotencyKey,
+		&i.ExpectsReply,
+		&i.AcknowledgedAt,
+		&i.ResolvedAt,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -1228,6 +1653,51 @@ func (q *Queries) ListOrchestrationEvents(ctx context.Context, runID pgtype.UUID
 	return items, nil
 }
 
+const listOrchestrationMessages = `-- name: ListOrchestrationMessages :many
+SELECT id, run_id, step_id, kind, actor_type, actor_id, target_type, target_id, body, plan_version, correlation_id, causation_id, reply_to_id, idempotency_key, expects_reply, acknowledged_at, resolved_at, created_at FROM orchestration_message
+WHERE run_id = $1
+ORDER BY created_at, id
+`
+
+func (q *Queries) ListOrchestrationMessages(ctx context.Context, runID pgtype.UUID) ([]OrchestrationMessage, error) {
+	rows, err := q.db.Query(ctx, listOrchestrationMessages, runID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []OrchestrationMessage{}
+	for rows.Next() {
+		var i OrchestrationMessage
+		if err := rows.Scan(
+			&i.ID,
+			&i.RunID,
+			&i.StepID,
+			&i.Kind,
+			&i.ActorType,
+			&i.ActorID,
+			&i.TargetType,
+			&i.TargetID,
+			&i.Body,
+			&i.PlanVersion,
+			&i.CorrelationID,
+			&i.CausationID,
+			&i.ReplyToID,
+			&i.IdempotencyKey,
+			&i.ExpectsReply,
+			&i.AcknowledgedAt,
+			&i.ResolvedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOrchestrationPlanRevisions = `-- name: ListOrchestrationPlanRevisions :many
 SELECT id, run_id, version, actor_type, actor_id, reason, patch, created_at FROM orchestration_plan_revision WHERE run_id = $1 ORDER BY version DESC
 `
@@ -1254,6 +1724,63 @@ func (q *Queries) ListOrchestrationPlanRevisions(ctx context.Context, runID pgty
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrchestrationRunsWithRunnablePendingSteps = `-- name: ListOrchestrationRunsWithRunnablePendingSteps :many
+SELECT run.id
+FROM orchestration_run run
+WHERE run.status IN ('running', 'waiting_approval', 'waiting_input', 'blocked')
+  AND (
+      run.progression_policy <> 'manual'
+      OR run.policy @> '{"manual_dispatch_authorized": true}'::jsonb
+  )
+  AND EXISTS (
+      SELECT 1
+      FROM orchestration_step candidate
+      WHERE candidate.run_id = run.id
+        AND candidate.status = 'pending'
+        AND (
+            candidate.depends_on_step_id IS NULL
+            OR EXISTS (
+                SELECT 1 FROM orchestration_step legacy_dependency
+                WHERE legacy_dependency.id = candidate.depends_on_step_id
+                  AND legacy_dependency.status IN ('completed', 'skipped')
+            )
+        )
+        AND NOT EXISTS (
+            SELECT 1
+            FROM orchestration_step_dependency dependency
+            JOIN orchestration_step required ON required.id = dependency.depends_on_step_id
+            WHERE dependency.step_id = candidate.id
+              AND required.status NOT IN ('completed', 'skipped')
+        )
+  )
+ORDER BY run.updated_at ASC
+LIMIT 100
+`
+
+// Durable repair edge for post-commit dispatch failures (human answer,
+// approval, explicit retry, or a completed predecessor). Manual runs are
+// eligible only while an explicit action's durable authorization bit is set;
+// completing or failing any work unit clears that bit before the next batch.
+func (q *Queries) ListOrchestrationRunsWithRunnablePendingSteps(ctx context.Context) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listOrchestrationRunsWithRunnablePendingSteps)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1290,7 +1817,7 @@ func (q *Queries) ListOrchestrationStepDependencies(ctx context.Context, runID p
 }
 
 const listOrchestrationStepGitDependencies = `-- name: ListOrchestrationStepGitDependencies :many
-SELECT dependency.id, dependency.step_key, dependency.worktree_branch, dependency.head_sha, dependency.git_states
+SELECT dependency.id, dependency.step_key, dependency.worktree_branch, dependency.head_sha, dependency.git_states, dependency.output
 FROM orchestration_step_dependency d
 JOIN orchestration_step dependency ON dependency.id = d.depends_on_step_id
 WHERE d.step_id = $1 AND dependency.status <> 'skipped'
@@ -1303,6 +1830,7 @@ type ListOrchestrationStepGitDependenciesRow struct {
 	WorktreeBranch pgtype.Text `json:"worktree_branch"`
 	HeadSha        pgtype.Text `json:"head_sha"`
 	GitStates      []byte      `json:"git_states"`
+	Output         []byte      `json:"output"`
 }
 
 func (q *Queries) ListOrchestrationStepGitDependencies(ctx context.Context, stepID pgtype.UUID) ([]ListOrchestrationStepGitDependenciesRow, error) {
@@ -1320,6 +1848,56 @@ func (q *Queries) ListOrchestrationStepGitDependencies(ctx context.Context, step
 			&i.WorktreeBranch,
 			&i.HeadSha,
 			&i.GitStates,
+			&i.Output,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrchestrationStepMessages = `-- name: ListOrchestrationStepMessages :many
+SELECT id, run_id, step_id, kind, actor_type, actor_id, target_type, target_id, body, plan_version, correlation_id, causation_id, reply_to_id, idempotency_key, expects_reply, acknowledged_at, resolved_at, created_at FROM (
+    SELECT id, run_id, step_id, kind, actor_type, actor_id, target_type, target_id, body, plan_version, correlation_id, causation_id, reply_to_id, idempotency_key, expects_reply, acknowledged_at, resolved_at, created_at FROM orchestration_message
+    WHERE step_id = $1
+    ORDER BY created_at DESC, id DESC
+    LIMIT 12
+) recent
+ORDER BY created_at, id
+`
+
+func (q *Queries) ListOrchestrationStepMessages(ctx context.Context, stepID pgtype.UUID) ([]OrchestrationMessage, error) {
+	rows, err := q.db.Query(ctx, listOrchestrationStepMessages, stepID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []OrchestrationMessage{}
+	for rows.Next() {
+		var i OrchestrationMessage
+		if err := rows.Scan(
+			&i.ID,
+			&i.RunID,
+			&i.StepID,
+			&i.Kind,
+			&i.ActorType,
+			&i.ActorID,
+			&i.TargetType,
+			&i.TargetID,
+			&i.Body,
+			&i.PlanVersion,
+			&i.CorrelationID,
+			&i.CausationID,
+			&i.ReplyToID,
+			&i.IdempotencyKey,
+			&i.ExpectsReply,
+			&i.AcknowledgedAt,
+			&i.ResolvedAt,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1469,6 +2047,82 @@ func (q *Queries) ListRunnableOrchestrationSteps(ctx context.Context, runID pgty
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockOrchestrationRun = `-- name: LockOrchestrationRun :one
+SELECT id, workspace_id, issue_id, status, mode, policy, created_by, started_at, completed_at, created_at, updated_at, plan_version, execution_strategy, progression_policy, owner_type, owner_id, controller_agent_id, base_git_states FROM orchestration_run WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) LockOrchestrationRun(ctx context.Context, id pgtype.UUID) (OrchestrationRun, error) {
+	row := q.db.QueryRow(ctx, lockOrchestrationRun, id)
+	var i OrchestrationRun
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.IssueID,
+		&i.Status,
+		&i.Mode,
+		&i.Policy,
+		&i.CreatedBy,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.PlanVersion,
+		&i.ExecutionStrategy,
+		&i.ProgressionPolicy,
+		&i.OwnerType,
+		&i.OwnerID,
+		&i.ControllerAgentID,
+		&i.BaseGitStates,
+	)
+	return i, err
+}
+
+const pinOrchestrationArtifactLocation = `-- name: PinOrchestrationArtifactLocation :one
+UPDATE orchestration_run
+SET policy = jsonb_set(COALESCE(policy, '{}'::jsonb), '{artifact_location}', to_jsonb($1::text), true),
+    updated_at = now()
+WHERE id = $2
+  AND (
+      COALESCE(policy->>'artifact_location', '') = ''
+      OR policy->>'artifact_location' = $1::text
+  )
+RETURNING id, workspace_id, issue_id, status, mode, policy, created_by, started_at, completed_at, created_at, updated_at, plan_version, execution_strategy, progression_policy, owner_type, owner_id, controller_agent_id, base_git_states
+`
+
+type PinOrchestrationArtifactLocationParams struct {
+	Location string      `json:"location"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+// Backfills the durable daemon/runtime admission decision for legacy active
+// runs. Once present it is immutable: later agent rebindings and plan edits
+// must continue to resolve to the same physical artifact location.
+func (q *Queries) PinOrchestrationArtifactLocation(ctx context.Context, arg PinOrchestrationArtifactLocationParams) (OrchestrationRun, error) {
+	row := q.db.QueryRow(ctx, pinOrchestrationArtifactLocation, arg.Location, arg.ID)
+	var i OrchestrationRun
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.IssueID,
+		&i.Status,
+		&i.Mode,
+		&i.Policy,
+		&i.CreatedBy,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.PlanVersion,
+		&i.ExecutionStrategy,
+		&i.ProgressionPolicy,
+		&i.OwnerType,
+		&i.OwnerID,
+		&i.ControllerAgentID,
+		&i.BaseGitStates,
+	)
+	return i, err
 }
 
 const pinOrchestrationRunBaseGitStates = `-- name: PinOrchestrationRunBaseGitStates :one
@@ -1657,13 +2311,105 @@ func (q *Queries) ReroutePendingOrchestrationStep(ctx context.Context, arg Rerou
 
 const resetOrchestrationStepForRetry = `-- name: ResetOrchestrationStepForRetry :one
 UPDATE orchestration_step
-SET status = 'pending', task_id = NULL, error = NULL, updated_at = now()
-WHERE id = $1 AND status = 'failed' AND attempt < max_attempts
+SET status = 'pending', task_id = NULL, error = NULL,
+    attempt = CASE WHEN status = 'blocked' THEN GREATEST(attempt - 1, 0) ELSE attempt END,
+    updated_at = now()
+WHERE id = $1 AND status IN ('failed', 'blocked')
+  AND (status = 'blocked' OR attempt < max_attempts)
 RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
 `
 
 func (q *Queries) ResetOrchestrationStepForRetry(ctx context.Context, id pgtype.UUID) (OrchestrationStep, error) {
 	row := q.db.QueryRow(ctx, resetOrchestrationStepForRetry, id)
+	var i OrchestrationStep
+	err := row.Scan(
+		&i.ID,
+		&i.RunID,
+		&i.StepKey,
+		&i.Title,
+		&i.Stage,
+		&i.Status,
+		&i.Position,
+		&i.AgentID,
+		&i.ModelOverride,
+		&i.TaskID,
+		&i.DependsOnStepID,
+		&i.ApprovalRequired,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.Instructions,
+		&i.Output,
+		&i.Error,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ParentStepID,
+		&i.IntroducedInVersion,
+		&i.RetiredInVersion,
+		&i.SupersedesStepID,
+		&i.SquadID,
+		&i.ControllerAgentID,
+		&i.WorktreeBranch,
+		&i.BaseSha,
+		&i.HeadSha,
+		&i.MergeStatus,
+		&i.ConflictFiles,
+		&i.StepKind,
+		&i.IntegrationStatus,
+		&i.IntegratedHeadShas,
+		&i.MissingHeadShas,
+		&i.GitStates,
+		&i.Capability,
+	)
+	return i, err
+}
+
+const resolveOrchestrationMessage = `-- name: ResolveOrchestrationMessage :one
+UPDATE orchestration_message
+SET acknowledged_at = COALESCE(acknowledged_at, now()), resolved_at = now()
+WHERE id = $1 AND resolved_at IS NULL
+RETURNING id, run_id, step_id, kind, actor_type, actor_id, target_type, target_id, body, plan_version, correlation_id, causation_id, reply_to_id, idempotency_key, expects_reply, acknowledged_at, resolved_at, created_at
+`
+
+func (q *Queries) ResolveOrchestrationMessage(ctx context.Context, id pgtype.UUID) (OrchestrationMessage, error) {
+	row := q.db.QueryRow(ctx, resolveOrchestrationMessage, id)
+	var i OrchestrationMessage
+	err := row.Scan(
+		&i.ID,
+		&i.RunID,
+		&i.StepID,
+		&i.Kind,
+		&i.ActorType,
+		&i.ActorID,
+		&i.TargetType,
+		&i.TargetID,
+		&i.Body,
+		&i.PlanVersion,
+		&i.CorrelationID,
+		&i.CausationID,
+		&i.ReplyToID,
+		&i.IdempotencyKey,
+		&i.ExpectsReply,
+		&i.AcknowledgedAt,
+		&i.ResolvedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const resumeOrchestrationStepAfterInput = `-- name: ResumeOrchestrationStepAfterInput :one
+UPDATE orchestration_step
+SET status = 'pending', task_id = NULL, error = NULL,
+    attempt = GREATEST(attempt - 1, 0), updated_at = now()
+WHERE id = $1 AND status = 'waiting_input'
+RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
+`
+
+func (q *Queries) ResumeOrchestrationStepAfterInput(ctx context.Context, id pgtype.UUID) (OrchestrationStep, error) {
+	row := q.db.QueryRow(ctx, resumeOrchestrationStepAfterInput, id)
 	var i OrchestrationStep
 	err := row.Scan(
 		&i.ID,
@@ -1770,10 +2516,58 @@ func (q *Queries) RetirePendingOrchestrationStep(ctx context.Context, arg Retire
 	return i, err
 }
 
+const setOrchestrationManualDispatchAuthorization = `-- name: SetOrchestrationManualDispatchAuthorization :one
+UPDATE orchestration_run
+SET policy = jsonb_set(COALESCE(policy, '{}'::jsonb), '{manual_dispatch_authorized}', to_jsonb($1::boolean), true),
+    updated_at = now()
+WHERE id = $2
+  AND progression_policy = 'manual'
+  AND status IN ('draft', 'running', 'waiting_approval', 'waiting_input', 'blocked')
+RETURNING id, workspace_id, issue_id, status, mode, policy, created_by, started_at, completed_at, created_at, updated_at, plan_version, execution_strategy, progression_policy, owner_type, owner_id, controller_agent_id, base_git_states
+`
+
+type SetOrchestrationManualDispatchAuthorizationParams struct {
+	Authorized bool        `json:"authorized"`
+	ID         pgtype.UUID `json:"id"`
+}
+
+// Manual runs use this durable bit to distinguish an explicit Start/answer/
+// retry/approval from an idle batch that must remain paused. Keeping it inside
+// policy avoids adding a public API field while still making crash recovery
+// queryable by the sweeper.
+func (q *Queries) SetOrchestrationManualDispatchAuthorization(ctx context.Context, arg SetOrchestrationManualDispatchAuthorizationParams) (OrchestrationRun, error) {
+	row := q.db.QueryRow(ctx, setOrchestrationManualDispatchAuthorization, arg.Authorized, arg.ID)
+	var i OrchestrationRun
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.IssueID,
+		&i.Status,
+		&i.Mode,
+		&i.Policy,
+		&i.CreatedBy,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.PlanVersion,
+		&i.ExecutionStrategy,
+		&i.ProgressionPolicy,
+		&i.OwnerType,
+		&i.OwnerID,
+		&i.ControllerAgentID,
+		&i.BaseGitStates,
+	)
+	return i, err
+}
+
 const setOrchestrationRunStatus = `-- name: SetOrchestrationRunStatus :one
 UPDATE orchestration_run
 SET status = $2,
-    completed_at = CASE WHEN $2 IN ('completed', 'failed', 'cancelled') THEN now() ELSE completed_at END,
+    completed_at = CASE
+        WHEN $2 IN ('completed', 'failed', 'cancelled') THEN COALESCE(completed_at, now())
+        ELSE NULL
+    END,
     updated_at = now()
 WHERE id = $1
 RETURNING id, workspace_id, issue_id, status, mode, policy, created_by, started_at, completed_at, created_at, updated_at, plan_version, execution_strategy, progression_policy, owner_type, owner_id, controller_agent_id, base_git_states
@@ -1960,13 +2754,74 @@ func (q *Queries) UpdateOrchestrationStepGitStateByTask(ctx context.Context, arg
 
 const waitOrchestrationStepApproval = `-- name: WaitOrchestrationStepApproval :one
 UPDATE orchestration_step
-SET status = 'waiting_approval', updated_at = now()
+SET status = 'waiting_approval', approved_by = NULL, approved_at = NULL, updated_at = now()
 WHERE id = $1 AND status = 'pending' AND approval_required
 RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
 `
 
 func (q *Queries) WaitOrchestrationStepApproval(ctx context.Context, id pgtype.UUID) (OrchestrationStep, error) {
 	row := q.db.QueryRow(ctx, waitOrchestrationStepApproval, id)
+	var i OrchestrationStep
+	err := row.Scan(
+		&i.ID,
+		&i.RunID,
+		&i.StepKey,
+		&i.Title,
+		&i.Stage,
+		&i.Status,
+		&i.Position,
+		&i.AgentID,
+		&i.ModelOverride,
+		&i.TaskID,
+		&i.DependsOnStepID,
+		&i.ApprovalRequired,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.Instructions,
+		&i.Output,
+		&i.Error,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ParentStepID,
+		&i.IntroducedInVersion,
+		&i.RetiredInVersion,
+		&i.SupersedesStepID,
+		&i.SquadID,
+		&i.ControllerAgentID,
+		&i.WorktreeBranch,
+		&i.BaseSha,
+		&i.HeadSha,
+		&i.MergeStatus,
+		&i.ConflictFiles,
+		&i.StepKind,
+		&i.IntegrationStatus,
+		&i.IntegratedHeadShas,
+		&i.MissingHeadShas,
+		&i.GitStates,
+		&i.Capability,
+	)
+	return i, err
+}
+
+const waitOrchestrationStepInput = `-- name: WaitOrchestrationStepInput :one
+UPDATE orchestration_step
+SET status = 'waiting_input', output = $2, completed_at = NULL, updated_at = now()
+WHERE orchestration_step.id = (SELECT orchestration_step_id FROM agent_task_queue WHERE agent_task_queue.id = $1)
+  AND status IN ('queued', 'running')
+RETURNING id, run_id, step_key, title, stage, status, position, agent_id, model_override, task_id, depends_on_step_id, approval_required, approved_by, approved_at, attempt, max_attempts, instructions, output, error, started_at, completed_at, created_at, updated_at, parent_step_id, introduced_in_version, retired_in_version, supersedes_step_id, squad_id, controller_agent_id, worktree_branch, base_sha, head_sha, merge_status, conflict_files, step_kind, integration_status, integrated_head_shas, missing_head_shas, git_states, capability
+`
+
+type WaitOrchestrationStepInputParams struct {
+	ID     pgtype.UUID `json:"id"`
+	Output []byte      `json:"output"`
+}
+
+func (q *Queries) WaitOrchestrationStepInput(ctx context.Context, arg WaitOrchestrationStepInputParams) (OrchestrationStep, error) {
+	row := q.db.QueryRow(ctx, waitOrchestrationStepInput, arg.ID, arg.Output)
 	var i OrchestrationStep
 	err := row.Scan(
 		&i.ID,

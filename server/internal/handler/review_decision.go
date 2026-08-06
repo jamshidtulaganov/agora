@@ -97,6 +97,12 @@ func (h *Handler) approveReviewDecision(w http.ResponseWriter, r *http.Request, 
 		writeError(w, http.StatusInternalServerError, "load active release gate failed")
 		return
 	}
+	if status, message := h.authorizeOrchestrationAgentIDs(
+		ctx, issue, "member", userID, orchestrationFutureAgentIDs(steps, run),
+	); status != 0 {
+		writeError(w, status, message)
+		return
+	}
 	var release db.OrchestrationStep
 	for index := len(steps) - 1; index >= 0; index-- {
 		if steps[index].Stage == "release" && steps[index].Status == "waiting_approval" {
@@ -474,7 +480,11 @@ func (h *Handler) requestReviewChanges(w http.ResponseWriter, r *http.Request, i
 	h.createOrchestrationEvent(ctx, run.ID, result.CorrectionStepID, "plan_revised", "member", parseUUID(userID), map[string]any{
 		"version": result.Version, "operation": "request_changes", "reason": note,
 	})
-	dispatchErr := h.dispatchNextOrchestrationStep(ctx, run.ID, result.UpdatedIssue)
+	run, authorizationErr := setManualOrchestrationDispatchAuthorization(ctx, h.Queries, run, true)
+	dispatchErr := authorizationErr
+	if dispatchErr == nil {
+		dispatchErr = h.dispatchNextOrchestrationStep(ctx, run.ID, result.UpdatedIssue)
+	}
 	slog.Info("review decision: changes requested",
 		"issue_id", uuidToString(issue.ID), "user_id", userID, "plan_version", result.Version, "dispatch_error", dispatchErr)
 	writeJSON(w, http.StatusOK, map[string]any{

@@ -56,9 +56,9 @@ func packArm(taskID string) int {
 //
 // The pack costs prompt tokens on every task that gets it, so it must only go
 // where a repository map could plausibly pay for itself. Quick-create (no
-// issue, no repo), chat, and autopilot dispatches are excluded; so are
-// comment replies, which are usually a short answer in an existing session
-// whose context already holds the relevant files.
+// issue, no repo), chat, and autopilot dispatches are excluded. A tagged
+// comment reply is excluded only when it actually resumed a warm provider
+// session; a newly tagged agent has no code context yet and needs the pack.
 func taskWantsRepoPack(task Task) bool {
 	switch {
 	case task.QuickCreatePrompt != "":
@@ -67,12 +67,20 @@ func taskWantsRepoPack(task Task) bool {
 		return false
 	case task.AutopilotRunID != "":
 		return false
-	case task.TriggerCommentID != "":
+	case task.TriggerCommentID != "" && task.PriorSessionID != "":
 		return false
 	case task.IssueID == "":
 		return false
 	}
 	return true
+}
+
+// taskRequiresRepoPack identifies work where code context is part of the
+// correctness contract rather than an experiment: persisted orchestration
+// stages and a newly tagged agent's first issue turn. These tasks always use
+// the treatment arm so a worker is not asked to guess repository structure.
+func taskRequiresRepoPack(task Task) bool {
+	return task.OrchestrationStepID != "" || (task.TriggerCommentID != "" && task.PriorSessionID == "")
 }
 
 // packQuery builds the retrieval query from what the claim carried. Title
@@ -115,6 +123,9 @@ func (d *Daemon) buildRepoPack(ctx context.Context, task Task, workDir string, t
 	}
 
 	arm := packArm(task.ID)
+	if taskRequiresRepoPack(task) {
+		arm = 1
+	}
 	if arm == 0 {
 		// Control arm: no pack, no hint, nothing. A control task must be
 		// indistinguishable from today's behavior — but it IS recorded, so

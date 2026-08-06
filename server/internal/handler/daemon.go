@@ -1296,30 +1296,74 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 	// Build response with fresh agent data (name + skills + custom_env + custom_args).
 	resp := taskToResponse(*task, runtimeWorkspaceID)
 	if task.OrchestrationStepID.Valid {
-		if step, err := h.Queries.GetOrchestrationStep(r.Context(), task.OrchestrationStepID); err == nil {
-			resp.OrchestrationStepID = uuidToString(step.ID)
-			resp.OrchestrationStepTitle = step.Title
-			resp.OrchestrationStage = step.Stage
-			resp.OrchestrationInstructions = step.Instructions
-			resp.OrchestrationStepKind = step.StepKind
-			if run, runErr := h.Queries.GetOrchestrationRunByStep(r.Context(), step.ID); runErr == nil {
-				resp.OrchestrationBaseRefs = decodeOrchestrationGitHeads(run.BaseGitStates)
+		failContext := func(part string, contextErr error) {
+			outcome = "error_orchestration_context"
+			slog.Error("claimed orchestration task context load failed",
+				"task_id", uuidToString(task.ID),
+				"step_id", uuidToString(task.OrchestrationStepID),
+				"part", part,
+				"error", contextErr,
+			)
+			writeError(w, http.StatusInternalServerError, "failed to build orchestration task context")
+		}
+		step, stepErr := h.Queries.GetOrchestrationStep(r.Context(), task.OrchestrationStepID)
+		if stepErr != nil {
+			// The task stays dispatched. The existing stale-dispatch reclaim path
+			// safely redelivers it after a transient database failure; returning a
+			// partial ordinary-task prompt here would lose the stage contract.
+			failContext("step", stepErr)
+			return
+		}
+		resp.OrchestrationStepID = uuidToString(step.ID)
+		resp.OrchestrationStepTitle = step.Title
+		resp.OrchestrationStage = step.Stage
+		resp.OrchestrationInstructions = step.Instructions
+		resp.OrchestrationStepKind = step.StepKind
+		run, runErr := h.Queries.GetOrchestrationRunByStep(r.Context(), step.ID)
+		if runErr != nil {
+			failContext("run", runErr)
+			return
+		}
+		resp.OrchestrationBaseRefs = decodeOrchestrationGitHeads(run.BaseGitStates)
+		dependencies, depErr := h.Queries.ListOrchestrationStepGitDependencies(r.Context(), step.ID)
+		if depErr != nil {
+			failContext("dependencies", depErr)
+			return
+		}
+		for _, dependency := range dependencies {
+			heads := decodeOrchestrationGitHeads(dependency.GitStates)
+			resp.OrchestrationDependencies = append(resp.OrchestrationDependencies, OrchestrationGitDependencyResponse{
+				StepID: uuidToString(dependency.ID), Key: dependency.StepKey,
+				Branch: dependency.WorktreeBranch.String, HeadSHA: dependency.HeadSha.String, Heads: heads,
+				Handoff: json.RawMessage(dependency.Output),
+			})
+			dependencyStep, dependencyErr := h.Queries.GetOrchestrationStep(r.Context(), dependency.ID)
+			if dependencyErr != nil {
+				failContext("dependency_step", dependencyErr)
+				return
 			}
-			if dependencies, depErr := h.Queries.ListOrchestrationStepGitDependencies(r.Context(), step.ID); depErr == nil {
-				for _, dependency := range dependencies {
-					heads := decodeOrchestrationGitHeads(dependency.GitStates)
-					resp.OrchestrationDependencies = append(resp.OrchestrationDependencies, OrchestrationGitDependencyResponse{
-						StepID: uuidToString(dependency.ID), Key: dependency.StepKey,
-						Branch: dependency.WorktreeBranch.String, HeadSHA: dependency.HeadSha.String, Heads: heads,
-					})
-					if dependencyStep, dependencyErr := h.Queries.GetOrchestrationStep(r.Context(), dependency.ID); dependencyErr == nil {
-						if baseRefs, readOnly, useDependency := orchestrationDependencyArtifactBase(step, dependencyStep, heads); useDependency {
-							resp.OrchestrationBaseRefs = baseRefs
-							resp.OrchestrationReadOnly = readOnly
-						}
-					}
-				}
+			if baseRefs, readOnly, useDependency := orchestrationDependencyArtifactBase(step, dependencyStep, heads); useDependency {
+				resp.OrchestrationBaseRefs = baseRefs
+				resp.OrchestrationReadOnly = readOnly
+			} else if orchestrationDependencyArtifactRequired(step, dependencyStep) {
+				// A verification/integration consumer must never silently fall
+				// back to the run base when its direct code artifact is missing.
+				// That would let QA validate a different commit than the one the
+				// dependency actually completed.
+				failContext("dependency_artifact", fmt.Errorf("dependency %s has no exact git heads", dependency.StepKey))
+				return
 			}
+		}
+		messages, messageErr := h.Queries.ListOrchestrationStepMessages(r.Context(), step.ID)
+		if messageErr != nil {
+			failContext("messages", messageErr)
+			return
+		}
+		for _, message := range messages {
+			resp.OrchestrationMessages = append(resp.OrchestrationMessages, OrchestrationMessageEnvelopeResponse{
+				ID: uuidToString(message.ID), Kind: message.Kind, ActorType: message.ActorType,
+				ActorID: uuidToString(message.ActorID), Body: json.RawMessage(message.Body), CreatedAt: message.CreatedAt.Time,
+			})
 		}
 	}
 	if agent, err := h.Queries.GetAgent(r.Context(), task.AgentID); err == nil {
@@ -1505,14 +1549,18 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			// Squad-leader briefing injection: when the issue is assigned
+			// Legacy squad-leader briefing injection: when an ordinary issue task is assigned
 			// to a squad and the claiming agent is that squad's current
 			// leader, append a full briefing (Operating Protocol + Roster
 			// + user Instructions) to the agent's own Instructions. We
 			// append (not replace) so per-agent instructions remain
 			// authoritative for general behavior; the squad briefing
-			// stacks on top as task-specific squad context.
-			if resp.Agent != nil && issue.AssigneeType.Valid && issue.AssigneeType.String == "squad" && issue.AssigneeID.Valid {
+			// stacks on top as task-specific squad context. Persisted
+			// orchestration steps carry their own operating protocol and must
+			// not receive this legacy, competing dispatcher protocol.
+			if resp.Agent != nil &&
+				!task.OrchestrationStepID.Valid &&
+				issue.AssigneeType.Valid && issue.AssigneeType.String == "squad" && issue.AssigneeID.Valid {
 				if squad, err := h.Queries.GetSquadInWorkspace(r.Context(), db.GetSquadInWorkspaceParams{
 					ID:          issue.AssigneeID,
 					WorkspaceID: issue.WorkspaceID,
@@ -1843,29 +1891,76 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Look up the prior session for this (agent, issue) pair so the daemon
-		// can resume the Claude Code conversation context.
+		// Look up the prior session so the daemon can resume the provider
+		// conversation context. Persisted orchestration work units prefer their
+		// own latest attempt before the broader (agent, issue) history. That
+		// distinction matters when another orchestration branch or an ordinary
+		// comment turn completed more recently: a waiting_input continuation must
+		// continue the session that asked the question, not whichever issue turn
+		// happened to finish last.
 		//
 		// Skip all prior state when the task was flagged as a manual rerun:
 		// the user just judged the prior output bad, so the daemon must start a
 		// fresh agent session in a fresh workdir instead of resuming anything
 		// from the same conversation that produced that output.
 		if !task.ForceFreshSession {
-			if prior, err := h.Queries.GetLastTaskSession(r.Context(), db.GetLastTaskSessionParams{
-				AgentID: task.AgentID,
-				IssueID: task.IssueID,
-			}); err == nil && prior.SessionID.Valid {
-				// Resume the prior session when it ran on the same runtime —
-				// including comment-triggered follow-ups, so the agent keeps the
-				// issue's conversation context across turns. The "Focus on THIS
-				// comment" guard in prompt.go defends against inheriting the prior
-				// turn's "Done." marker, and GetLastTaskSession already excludes
-				// poisoned sessions.
-				if prior.RuntimeID == task.RuntimeID {
-					resp.PriorSessionID = prior.SessionID.String
+			foundStepLineage := false
+			if task.OrchestrationStepID.Valid {
+				prior, err := h.Queries.GetLatestOrchestrationStepSessionCandidate(r.Context(), db.GetLatestOrchestrationStepSessionCandidateParams{
+					AgentID:             task.AgentID,
+					IssueID:             task.IssueID,
+					OrchestrationStepID: task.OrchestrationStepID,
+				})
+				switch {
+				case err == nil:
+					// A row means this is a continuation/retry, even if the
+					// latest attempt is deliberately not resume-safe. Do not
+					// fall through to an older issue-wide session in that case.
+					foundStepLineage = true
+					if prior.ResumeSafe {
+						resp.PriorSessionSameOrchestrationStep = true
+						if prior.SessionID.Valid && prior.RuntimeID == task.RuntimeID {
+							resp.PriorSessionID = prior.SessionID.String
+						}
+						if prior.WorkDir.Valid {
+							resp.PriorWorkDir = prior.WorkDir.String
+						}
+					}
+				case !errors.Is(err, pgx.ErrNoRows):
+					// Fail closed on an unexpected lineage lookup failure. A
+					// generic fallback here could cross orchestration branches.
+					foundStepLineage = true
+					slog.Warn("orchestration session lineage lookup failed",
+						"task_id", uuidToString(task.ID),
+						"step_id", uuidToString(task.OrchestrationStepID),
+						"error", err,
+					)
 				}
-				if prior.WorkDir.Valid {
-					resp.PriorWorkDir = prior.WorkDir.String
+			}
+			if !foundStepLineage {
+				if prior, err := h.Queries.GetLastTaskSession(r.Context(), db.GetLastTaskSessionParams{
+					AgentID: task.AgentID,
+					IssueID: task.IssueID,
+				}); err == nil && prior.SessionID.Valid {
+					// A new orchestration work unit may inherit the issue/comment
+					// conversation that brought this agent into the run, but never a
+					// different orchestration step's provider session/worktree. Durable
+					// dependency handoffs carry cross-step context without coupling
+					// independent branches or cwd-scoped session stores.
+					if !task.OrchestrationStepID.Valid || !prior.OrchestrationStepID.Valid {
+						// Resume the prior session when it ran on the same runtime —
+						// including comment-triggered follow-ups, so the agent keeps the
+						// issue's conversation context across turns. The "Focus on THIS
+						// comment" guard in prompt.go defends against inheriting the prior
+						// turn's "Done." marker, and GetLastTaskSession already excludes
+						// poisoned sessions.
+						if prior.RuntimeID == task.RuntimeID {
+							resp.PriorSessionID = prior.SessionID.String
+						}
+						if prior.WorkDir.Valid {
+							resp.PriorWorkDir = prior.WorkDir.String
+						}
+					}
 				}
 			}
 		}
@@ -2404,6 +2499,56 @@ func readOnlyVerificationMatches(expected []OrchestrationGitHeadResponse, report
 	return true
 }
 
+func missingIntegrationDependencyHeads(
+	dependencies []db.ListOrchestrationStepGitDependenciesRow,
+	integratedHeadSHAs []string,
+	integratedHeads []OrchestrationGitHeadResponse,
+	reportedMissing []string,
+) []string {
+	integrated := make(map[string]bool, len(integratedHeadSHAs)+len(integratedHeads))
+	for _, head := range integratedHeadSHAs {
+		integrated[strings.TrimSpace(head)] = true
+	}
+	integratedByRepo := make(map[string]bool, len(integratedHeads))
+	hasRepoScopedEvidence := len(integratedHeads) > 0
+	for _, head := range integratedHeads {
+		repo := strings.TrimSpace(head.Repo)
+		sha := strings.TrimSpace(head.HeadSHA)
+		if sha == "" {
+			continue
+		}
+		integrated[sha] = true
+		integratedByRepo[repo+"\x00"+sha] = true
+	}
+	missing := append([]string(nil), reportedMissing...)
+	for _, dependency := range dependencies {
+		expected := decodeOrchestrationGitHeads(dependency.GitStates)
+		if len(expected) == 0 {
+			head := strings.TrimSpace(dependency.HeadSha.String)
+			if head != "" {
+				expected = []OrchestrationGitHeadResponse{{HeadSHA: head}}
+			}
+		}
+		if len(expected) == 0 {
+			missing = append(missing, "step:"+dependency.StepKey)
+			continue
+		}
+		for _, head := range expected {
+			repo := strings.TrimSpace(head.Repo)
+			sha := strings.TrimSpace(head.HeadSHA)
+			switch {
+			case sha == "":
+				missing = append(missing, "step:"+dependency.StepKey)
+			case repo != "" && hasRepoScopedEvidence && !integratedByRepo[repo+"\x00"+sha]:
+				missing = append(missing, repo+"@"+sha)
+			case (repo == "" || !hasRepoScopedEvidence) && !integrated[sha]:
+				missing = append(missing, sha)
+			}
+		}
+	}
+	return uniqueStrings(missing)
+}
+
 // PinOrchestrationRunBase atomically records the first local repository
 // snapshot proposed for a run and returns the canonical snapshot. The server
 // cannot inspect local_directory resources itself, so concurrent workers use
@@ -2454,19 +2599,20 @@ func (h *Handler) PinOrchestrationRunBase(w http.ResponseWriter, r *http.Request
 
 // CompleteTask marks a running task as completed.
 type TaskCompleteRequest struct {
-	PRURL              string                 `json:"pr_url"`
-	Output             string                 `json:"output"`
-	SessionID          string                 `json:"session_id"` // Claude session ID for future resumption
-	WorkDir            string                 `json:"work_dir"`   // working directory used during execution
-	BranchName         string                 `json:"branch_name"`
-	BaseSHA            string                 `json:"base_sha"`
-	HeadSHA            string                 `json:"head_sha"`
-	MergeStatus        string                 `json:"merge_status"`
-	ConflictFiles      []string               `json:"conflict_files"`
-	IntegrationStatus  string                 `json:"integration_status"`
-	IntegratedHeadSHAs []string               `json:"integrated_head_shas"`
-	MissingHeadSHAs    []string               `json:"missing_head_shas"`
-	GitStates          []RepoGitStateResponse `json:"git_states"`
+	PRURL              string                         `json:"pr_url"`
+	Output             string                         `json:"output"`
+	SessionID          string                         `json:"session_id"` // Claude session ID for future resumption
+	WorkDir            string                         `json:"work_dir"`   // working directory used during execution
+	BranchName         string                         `json:"branch_name"`
+	BaseSHA            string                         `json:"base_sha"`
+	HeadSHA            string                         `json:"head_sha"`
+	MergeStatus        string                         `json:"merge_status"`
+	ConflictFiles      []string                       `json:"conflict_files"`
+	IntegrationStatus  string                         `json:"integration_status"`
+	IntegratedHeadSHAs []string                       `json:"integrated_head_shas"`
+	IntegratedHeads    []OrchestrationGitHeadResponse `json:"integrated_heads"`
+	MissingHeadSHAs    []string                       `json:"missing_head_shas"`
+	GitStates          []RepoGitStateResponse         `json:"git_states"`
 }
 
 type RepoGitStateResponse struct {
@@ -2539,6 +2685,11 @@ func modifyingDevGitEvidenceError(step db.OrchestrationStep, req TaskCompleteReq
 	return ""
 }
 
+func orchestrationHandoffRequiresSuccessGates(stage, output string) bool {
+	handoff, parsed := service.ParseOrchestrationHandoff(stage, output)
+	return !parsed || handoff.Outcome == "completed"
+}
+
 func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskId")
 
@@ -2558,6 +2709,9 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.IntegratedHeadSHAs == nil {
 		req.IntegratedHeadSHAs = []string{}
+	}
+	if req.IntegratedHeads == nil {
+		req.IntegratedHeads = []OrchestrationGitHeadResponse{}
 	}
 	if req.MissingHeadSHAs == nil {
 		req.MissingHeadSHAs = []string{}
@@ -2582,9 +2736,13 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, "orchestration step no longer exists")
 			return
 		}
-		developmentRejected = modifyingDevGitEvidenceError(step, req)
-		if step.Stage == "qa" || step.Stage == "review" {
+		requireSuccessGates := orchestrationHandoffRequiresSuccessGates(step.Stage, req.Output)
+		if requireSuccessGates {
+			developmentRejected = modifyingDevGitEvidenceError(step, req)
+		}
+		if requireSuccessGates && (step.Stage == "qa" || step.Stage == "review") {
 			var expected []OrchestrationGitHeadResponse
+			hasArtifactDependency := false
 			dependencies, depErr := h.Queries.ListOrchestrationStepGitDependencies(r.Context(), step.ID)
 			if depErr != nil {
 				writeError(w, http.StatusConflict, "could not verify integration handoff")
@@ -2592,11 +2750,22 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 			}
 			for _, dependency := range dependencies {
 				dependencyStep, dependencyErr := h.Queries.GetOrchestrationStep(r.Context(), dependency.ID)
-				if dependencyErr == nil && dependencyStep.StepKind == "integration" && dependencyStep.IntegrationStatus == "complete" {
-					expected = append(expected, decodeOrchestrationGitHeads(dependency.GitStates)...)
+				if dependencyErr != nil {
+					writeError(w, http.StatusConflict, "could not verify dependency handoff")
+					return
 				}
+				if !orchestrationDependencyArtifactRequired(step, dependencyStep) {
+					continue
+				}
+				hasArtifactDependency = true
+				heads := decodeOrchestrationGitHeads(dependency.GitStates)
+				if len(heads) == 0 {
+					writeError(w, http.StatusConflict, "verification dependency is missing exact git heads")
+					return
+				}
+				expected = append(expected, heads...)
 			}
-			if len(expected) > 0 && !readOnlyVerificationMatches(expected, req.GitStates, req.MergeStatus) {
+			if hasArtifactDependency && !readOnlyVerificationMatches(expected, req.GitStates, req.MergeStatus) {
 				writeError(w, http.StatusConflict, "verification worktree changed or no longer matches the integrated HEAD")
 				return
 			}
@@ -2605,32 +2774,23 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 			if req.MergeStatus == "conflicts" {
 				req.IntegrationStatus = "conflicts"
 			}
-			integrated := make(map[string]bool, len(req.IntegratedHeadSHAs))
-			for _, head := range req.IntegratedHeadSHAs {
-				integrated[strings.TrimSpace(head)] = true
+			for i := range req.IntegratedHeads {
+				req.IntegratedHeads[i].Repo = strings.TrimSpace(req.IntegratedHeads[i].Repo)
+				req.IntegratedHeads[i].HeadSHA = strings.TrimSpace(req.IntegratedHeads[i].HeadSHA)
 			}
 			dependencies, depErr := h.Queries.ListOrchestrationStepGitDependencies(r.Context(), step.ID)
 			if depErr != nil {
 				writeError(w, http.StatusConflict, "could not verify integration dependencies")
 				return
 			}
-			missing := append([]string(nil), req.MissingHeadSHAs...)
-			for _, dependency := range dependencies {
-				head := strings.TrimSpace(dependency.HeadSha.String)
-				if head == "" {
-					missing = append(missing, "step:"+dependency.StepKey)
-				} else if !integrated[head] {
-					missing = append(missing, head)
-				}
-			}
-			req.MissingHeadSHAs = uniqueStrings(missing)
+			req.MissingHeadSHAs = missingIntegrationDependencyHeads(dependencies, req.IntegratedHeadSHAs, req.IntegratedHeads, req.MissingHeadSHAs)
 			if len(req.MissingHeadSHAs) > 0 && req.IntegrationStatus != "conflicts" {
 				req.IntegrationStatus = "missing_heads"
 			}
 			if req.IntegrationStatus == "" || req.IntegrationStatus == "pending" || req.IntegrationStatus == "not_required" {
 				req.IntegrationStatus = "missing_heads"
 			}
-			integrationRejected = req.IntegrationStatus != "complete" || len(req.MissingHeadSHAs) > 0
+			integrationRejected = requireSuccessGates && (req.IntegrationStatus != "complete" || len(req.MissingHeadSHAs) > 0)
 		} else {
 			req.IntegrationStatus = "not_required"
 		}
@@ -2667,6 +2827,10 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 	task, err := h.TaskService.CompleteTask(r.Context(), parseUUID(taskID), result, req.SessionID, req.WorkDir)
 	if err != nil {
 		slog.Warn("complete task failed", "task_id", taskID, "error", err)
+		if errors.Is(err, service.ErrOrchestrationAdvance) {
+			writeError(w, http.StatusServiceUnavailable, "task completed; orchestration advancement will be retried")
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -2851,6 +3015,10 @@ func (h *Handler) FailTask(w http.ResponseWriter, r *http.Request) {
 	task, err := h.TaskService.FailTask(r.Context(), parseUUID(taskID), req.Error, req.SessionID, req.WorkDir, req.FailureReason)
 	if err != nil {
 		slog.Warn("fail task failed", "task_id", taskID, "error", err)
+		if errors.Is(err, service.ErrOrchestrationAdvance) {
+			writeError(w, http.StatusServiceUnavailable, "task failed; orchestration advancement will be retried")
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -2987,19 +3155,32 @@ func taskMessageToPayload(m db.TaskMessage, taskID, issueID string) protocol.Tas
 	}
 }
 
+// orchestrationDependencyArtifactRequired identifies direct dependencies whose
+// exact commit is the input contract for the consumer. Sequential plans may
+// legitimately go from one completed development worker straight to QA/review;
+// parallel plans are required to join through an integration step.
+func orchestrationDependencyArtifactRequired(step, dependency db.OrchestrationStep) bool {
+	if step.Stage == "release" {
+		return dependency.Status == "completed" && (dependency.Stage == "qa" || dependency.Stage == "review")
+	}
+	if dependency.StepKind == "integration" {
+		return dependency.IntegrationStatus == "complete" &&
+			(step.Stage == "qa" || step.Stage == "review" || (step.Stage == "dev" && step.StepKind == "task"))
+	}
+	return dependency.Status == "completed" && dependency.Stage == "dev" && dependency.StepKind == "task" &&
+		(step.Stage == "qa" || step.Stage == "review")
+}
+
 // orchestrationDependencyArtifactBase defines which consumers open an exact
-// completed integration artifact. QA/review are detached read-only consumers;
-// a development correction is writable but still branches from that exact
-// artifact rather than the original run base.
+// completed code/verification artifact. QA/review are detached read-only
+// consumers; a development correction is writable but still branches from an
+// exact integration artifact rather than the original run base.
 func orchestrationDependencyArtifactBase(step, dependency db.OrchestrationStep, heads []OrchestrationGitHeadResponse) ([]OrchestrationGitHeadResponse, bool, bool) {
-	if len(heads) == 0 {
+	if len(heads) == 0 || !orchestrationDependencyArtifactRequired(step, dependency) {
 		return nil, false, false
 	}
-	if step.Stage == "release" && dependency.Status == "completed" && (dependency.Stage == "qa" || dependency.Stage == "review") {
+	if step.Stage == "release" {
 		return heads, true, true
-	}
-	if dependency.StepKind != "integration" || dependency.IntegrationStatus != "complete" {
-		return nil, false, false
 	}
 	if step.Stage == "qa" || step.Stage == "review" {
 		return heads, true, true

@@ -801,15 +801,18 @@ type CommentTriggerAgentResponse struct {
 type commentAgentTriggerSource string
 
 const (
-	commentTriggerSourceIssueAssignee      commentAgentTriggerSource = "issue_assignee"
-	commentTriggerSourceMentionAgent       commentAgentTriggerSource = "mention_agent"
-	commentTriggerSourceMentionSquadLeader commentAgentTriggerSource = "mention_squad_leader"
+	commentTriggerSourceIssueAssignee       commentAgentTriggerSource = "issue_assignee"
+	commentTriggerSourceMentionAgent        commentAgentTriggerSource = "mention_agent"
+	commentTriggerSourceMentionSquadLeader  commentAgentTriggerSource = "mention_squad_leader"
+	commentTriggerSourceOrchestrationAnswer commentAgentTriggerSource = "orchestration_answer"
 )
 
 type commentAgentTrigger struct {
-	Agent  db.Agent
-	Source commentAgentTriggerSource
-	Squad  *db.Squad
+	Agent      db.Agent
+	Source     commentAgentTriggerSource
+	Squad      *db.Squad
+	StepID     pgtype.UUID
+	QuestionID pgtype.UUID
 }
 
 func commentAgentTriggerReason(trigger commentAgentTrigger) string {
@@ -820,6 +823,8 @@ func commentAgentTriggerReason(trigger commentAgentTrigger) string {
 		return "This agent was mentioned in the comment."
 	case commentTriggerSourceMentionSquadLeader:
 		return "A mentioned squad will trigger its leader."
+	case commentTriggerSourceOrchestrationAnswer:
+		return "This comment answers the agent's current orchestration question and continues the same work session."
 	default:
 		return "This comment will trigger this agent."
 	}
@@ -999,7 +1004,22 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	comment, err := h.Queries.CreateComment(r.Context(), db.CreateCommentParams{
+	// A selected waiting-input answer needs a durable delivery marker in the
+	// same commit as the comment. The marker is intentionally computed after
+	// suppress_agent_ids so a de-selected preview chip is never resurrected by
+	// the repair sweeper.
+	var answerOutboxTrigger *commentAgentTrigger
+	if !isNoteComment(req.Content) {
+		answerTriggers := h.computeOrchestrationAnswerCommentTrigger(
+			r.Context(), issue, req.Content, authorType, authorID,
+		)
+		answerTriggers = filterSuppressedCommentAgentTriggers(answerTriggers, suppressAgentIDs)
+		if len(answerTriggers) == 1 {
+			trigger := answerTriggers[0]
+			answerOutboxTrigger = &trigger
+		}
+	}
+	comment, err := h.createCommentWithOrchestrationAnswerOutbox(r.Context(), db.CreateCommentParams{
 		IssueID:     issue.ID,
 		WorkspaceID: issue.WorkspaceID,
 		AuthorType:  authorType,
@@ -1007,7 +1027,7 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 		Content:     req.Content,
 		Type:        req.Type,
 		ParentID:    parentID,
-	})
+	}, answerOutboxTrigger)
 	if err != nil {
 		slog.Warn("create comment failed", append(logger.RequestAttrs(r), "error", err, "issue_id", issueID)...)
 		writeError(w, http.StatusInternalServerError, "failed to create comment: "+err.Error())
@@ -1199,6 +1219,15 @@ func (h *Handler) enqueueCommentAgentTriggers(ctx context.Context, issue db.Issu
 					"agent_id", uuidToString(trigger.Agent.ID),
 					"error", err)
 			}
+		case commentTriggerSourceOrchestrationAnswer:
+			if err := h.respondToOrchestrationQuestionFromComment(ctx, issue, trigger, triggerCommentID); err != nil {
+				slog.Warn("answer orchestration question from comment failed",
+					"issue_id", uuidToString(issue.ID),
+					"step_id", uuidToString(trigger.StepID),
+					"agent_id", uuidToString(trigger.Agent.ID),
+					"comment_id", uuidToString(triggerCommentID),
+					"error", err)
+			}
 		}
 	}
 }
@@ -1213,7 +1242,7 @@ func (h *Handler) computeCommentAgentTriggers(ctx context.Context, issue db.Issu
 	// enqueue here creates a second session outside the graph, which can occupy
 	// the same agent's unique queue slot and certify a different worktree.
 	if h.orchestrationOwnsIssuePipeline(ctx, issue.ID) {
-		return nil
+		return h.computeOrchestrationAnswerCommentTrigger(ctx, issue, content, actorType, actorID)
 	}
 
 	seen := make(map[string]struct{})
@@ -1247,6 +1276,72 @@ func (h *Handler) computeCommentAgentTriggers(ctx context.Context, issue db.Issu
 	}
 
 	return triggers
+}
+
+// computeOrchestrationAnswerCommentTrigger recognizes the one safe kind of
+// agent mention while a persisted orchestration owns the issue: a member
+// explicitly answering the agent that owns one waiting_input step. The
+// comment is not inherited from a parent thread and exactly one step must
+// match, otherwise the answer would be ambiguous and is deliberately ignored.
+func (h *Handler) computeOrchestrationAnswerCommentTrigger(ctx context.Context, issue db.Issue, content, authorType, authorID string) []commentAgentTrigger {
+	if authorType != "member" {
+		return nil
+	}
+	run, err := h.Queries.GetActiveOrchestrationRunForIssue(ctx, issue.ID)
+	if err != nil || orchestrationRunStatusIsTerminal(run.Status) || run.Status == "draft" {
+		return nil
+	}
+
+	mentionedAgentIDs := make(map[string]struct{})
+	for _, parsedMention := range util.ParseMentions(content) {
+		if parsedMention.Type != "agent" {
+			continue
+		}
+		mentionedID, parseErr := util.ParseUUID(parsedMention.ID)
+		if parseErr != nil {
+			continue
+		}
+		mentionedAgentIDs[uuidToString(mentionedID)] = struct{}{}
+	}
+	if len(mentionedAgentIDs) == 0 {
+		return nil
+	}
+
+	steps, err := h.Queries.ListOrchestrationSteps(ctx, run.ID)
+	if err != nil {
+		return nil
+	}
+	var candidate db.OrchestrationStep
+	matches := 0
+	for _, step := range steps {
+		if step.Status != "waiting_input" || !step.AgentID.Valid {
+			continue
+		}
+		if _, mentioned := mentionedAgentIDs[uuidToString(step.AgentID)]; !mentioned {
+			continue
+		}
+		candidate = step
+		matches++
+	}
+	if matches != 1 {
+		return nil
+	}
+
+	agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
+		ID: candidate.AgentID, WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil || !agent.RuntimeID.Valid || agent.ArchivedAt.Valid ||
+		!h.canAccessPrivateAgent(ctx, agent, authorType, authorID, uuidToString(issue.WorkspaceID)) {
+		return nil
+	}
+	question, err := h.Queries.GetLatestOpenOrchestrationQuestion(ctx, candidate.ID)
+	if err != nil {
+		return nil
+	}
+	return []commentAgentTrigger{{
+		Agent: agent, Source: commentTriggerSourceOrchestrationAnswer,
+		StepID: candidate.ID, QuestionID: question.ID,
+	}}
 }
 
 func (h *Handler) computeAssignedSquadLeaderCommentTrigger(ctx context.Context, issue db.Issue, content, authorType, authorID string) (commentAgentTrigger, bool) {

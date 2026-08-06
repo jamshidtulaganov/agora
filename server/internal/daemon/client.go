@@ -212,12 +212,12 @@ type TaskMessageData struct {
 }
 
 func (c *Client) ReportTaskMessages(ctx context.Context, taskID string, messages []TaskMessageData) error {
-	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/messages", taskID), map[string]any{
+	return c.postJSONWithRetry(ctx, fmt.Sprintf("/api/daemon/tasks/%s/messages", taskID), map[string]any{
 		"messages": messages,
-	}, nil)
+	}, nil, defaultTaskMessageRetrySchedule)
 }
 
-func (c *Client) CompleteTask(ctx context.Context, taskID, output, branchName, sessionID, workDir, baseSHA, headSHA, mergeStatus string, conflictFiles []string, integrationStatus string, integratedHeadSHAs, missingHeadSHAs []string, gitStates []RepoGitState) error {
+func (c *Client) CompleteTask(ctx context.Context, taskID, output, branchName, sessionID, workDir, baseSHA, headSHA, mergeStatus string, conflictFiles []string, integrationStatus string, integratedHeadSHAs []string, integratedHeads []OrchestrationGitHead, missingHeadSHAs []string, gitStates []RepoGitState) error {
 	body := map[string]any{"output": output}
 	if branchName != "" {
 		body["branch_name"] = branchName
@@ -245,6 +245,9 @@ func (c *Client) CompleteTask(ctx context.Context, taskID, output, branchName, s
 	}
 	if len(integratedHeadSHAs) > 0 {
 		body["integrated_head_shas"] = integratedHeadSHAs
+	}
+	if len(integratedHeads) > 0 {
+		body["integrated_heads"] = integratedHeads
 	}
 	if len(missingHeadSHAs) > 0 {
 		body["missing_head_shas"] = missingHeadSHAs
@@ -528,6 +531,16 @@ var defaultTerminalRetrySchedule = []time.Duration{
 	16 * time.Second,
 	32 * time.Second,
 	64 * time.Second,
+}
+
+// defaultTaskMessageRetrySchedule covers short transport and upstream blips
+// without holding the live transcript sender for the terminal callback's full
+// two-minute retry window. The server treats (task_id, seq) as an idempotency
+// key, so retrying an ambiguously-acknowledged batch cannot duplicate rows.
+var defaultTaskMessageRetrySchedule = []time.Duration{
+	250 * time.Millisecond,
+	500 * time.Millisecond,
+	1 * time.Second,
 }
 
 // retrySleep is the sleep used between retry attempts. Pulled into a package

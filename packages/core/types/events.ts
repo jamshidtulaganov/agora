@@ -30,6 +30,7 @@ export type WSEventType =
   | "task:failed"
   | "task:message"
   | "task:cancelled"
+  | "orchestration:changed"
   | "inbox:new"
   | "inbox:read"
   | "inbox:archived"
@@ -110,6 +111,20 @@ export interface IssueLabelsChangedPayload {
 export interface IssueMetadataChangedPayload {
   issue_id: string;
   metadata: IssueMetadata;
+}
+
+/**
+ * Broadcast after a persisted orchestration run, step, or plan transition.
+ * `issue_id` selects the exact React Query cache entry while `run_id` lets
+ * consumers reject or diagnose events from superseded runs.
+ */
+export interface OrchestrationChangedPayload {
+  issue_id: string;
+  run_id: string;
+  step_id?: string;
+  kind: string;
+  event_id?: string;
+  plan_version?: number;
 }
 
 export interface AgentStatusPayload {
@@ -419,6 +434,7 @@ export interface WSEventPayloadMap {
   "task:message": TaskMessagePayload;
   "task:cancelled": TaskCancelledPayload;
   "task:progress": unknown;
+  "orchestration:changed": OrchestrationChangedPayload;
   "inbox:new": InboxNewPayload;
   "inbox:read": InboxReadPayload;
   "inbox:archived": InboxArchivedPayload;

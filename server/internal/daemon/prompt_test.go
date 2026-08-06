@@ -1,8 +1,10 @@
 package daemon
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestBuildOrchestrationPromptCarriesStepContract(t *testing.T) {
@@ -13,10 +15,20 @@ func TestBuildOrchestrationPromptCarriesStepContract(t *testing.T) {
 		OrchestrationStage:        "qa",
 		OrchestrationInstructions: "Run the browser suite and report failing cases.",
 	}, "codex")
-	for _, want := range []string{"Verify authentication", "Stage: qa", "Run the browser suite", "evidence the next agent needs", "engine owns issue status", "do not change the issue status", "run_qa", "@mention another agent"} {
+	for _, want := range []string{"Verify authentication", "Stage: qa", "Run the browser suite", "Stage contract", "verdict to pass or fail", "engine owns issue status", "do not change the issue status", "run_qa", "@mention another agent", "inspect the issue", "durable orchestration messages", "Do not guess", "outcome `waiting_input`", "one precise durable `question`", "```agora-handoff"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("orchestration prompt missing %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestBuildOrchestrationPromptUsesHumanClarificationTarget(t *testing.T) {
+	prompt := buildOrchestrationPrompt(Task{IssueID: "ISSUE-1", OrchestrationStepID: "step-1", OrchestrationStage: "dev"})
+	if !strings.Contains(prompt, "`target` set to `human`") {
+		t.Fatalf("prompt must route blocking questions to the implemented human consumer: %s", prompt)
+	}
+	if strings.Contains(prompt, "`human`, `controller`, or `agent`") {
+		t.Fatal("prompt advertises unsupported agent/controller question delivery")
 	}
 }
 
@@ -27,12 +39,14 @@ func TestBuildOrchestrationPromptCarriesIntegrationContract(t *testing.T) {
 		OrchestrationStepKind:  "integration",
 		OrchestrationStepTitle: "Integrate parallel branches",
 		OrchestrationStage:     "review",
+		OrchestrationBaseRefs:  []OrchestrationGitHead{{Repo: "api", HeadSHA: "base-api"}, {Repo: "web", HeadSHA: "base-web"}},
+		Repos:                  []RepoData{{URL: "https://github.com/acme/api.git"}, {URL: "https://github.com/acme/web.git"}},
 		OrchestrationDependencies: []OrchestrationGitDependency{
-			{Key: "api", Branch: "agent/api", HeadSHA: "abc123"},
+			{Key: "api", Branch: "agent/api", HeadSHA: "abc123", Heads: []OrchestrationGitHead{{Repo: "api", HeadSHA: "abc123"}, {Repo: "web", HeadSHA: "abc-web"}}, Handoff: []byte(`{"schema_version":1,"stage":"dev","outcome":"completed","summary":"API ready","contracts":["GET /items"]}`)},
 			{Key: "web", Branch: "agent/web", HeadSHA: "def456"},
 		},
 	}, "codex")
-	for _, want := range []string{"enforced integration gate", "agent/api", "abc123", "agent/web", "def456", "git merge --no-ff", "independently verify"} {
+	for _, want := range []string{"enforced integration gate", "base-api", "agora repo checkout \"https://github.com/acme/api.git\" --ref base-api", "repo=api", "abc123", "repo=web", "abc-web", "agent/web", "def456", "multi-repo dependencies", "git merge --no-ff", "independently verify", "Authoritative dependency handoffs", "API ready", "GET /items"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("integration prompt missing %q:\n%s", want, out)
 		}
@@ -46,12 +60,133 @@ func TestBuildOrchestrationPromptCarriesReadOnlyVerificationContract(t *testing.
 		OrchestrationStepTitle: "Verify integrated result",
 		OrchestrationStage:     "qa",
 		OrchestrationReadOnly:  true,
+		PreprovisionedWorktree: true,
 		OrchestrationBaseRefs:  []OrchestrationGitHead{{Repo: "api", HeadSHA: "abc"}},
 	}, "codex")
 	for _, want := range []string{"read-only verification step", "exact integrated commit", "repository is already present in the current working directory", "do not run `agora repo checkout`", "do not edit files", "move HEAD"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("read-only prompt missing %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestBuildOrchestrationPromptChecksOutRemoteVerificationHead(t *testing.T) {
+	out := BuildPrompt(Task{
+		IssueID:                "issue-remote",
+		OrchestrationStepID:    "step-review",
+		OrchestrationStepTitle: "Review integrated result",
+		OrchestrationStage:     "review",
+		OrchestrationReadOnly:  true,
+		Repos:                  []RepoData{{URL: "git@github.com:acme/api.git"}},
+		OrchestrationBaseRefs:  []OrchestrationGitHead{{Repo: "api", HeadSHA: "deadbeef"}},
+	}, "codex")
+	for _, want := range []string{"same-step continuation may already contain the exact checkout", "reuse it only when its HEAD matches", "repo=api head=deadbeef", "agora repo checkout \"git@github.com:acme/api.git\" --ref deadbeef", "managed checkout may create its task branch", "Run non-mutating checks only"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("remote verification prompt missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "repository is already present in the current working directory") {
+		t.Fatalf("remote verification prompt falsely claims a preprovisioned checkout:\n%s", out)
+	}
+}
+
+func TestBuildOrchestrationContextEnforcesAggregateBudgetAndKeepsCriticalRecentEntries(t *testing.T) {
+	largePayload := func(summary, tail string) json.RawMessage {
+		return json.RawMessage(`{"summary":"` + summary + strings.Repeat("界", 10_000) + `","next_actions":["` + tail + `"]}`)
+	}
+
+	dependencies := make([]OrchestrationGitDependency, 0, 6)
+	for i := 0; i < 5; i++ {
+		dependencies = append(dependencies, OrchestrationGitDependency{
+			Key:     "older-dependency-" + string(rune('a'+i)),
+			Handoff: largePayload("older-handoff-", "older-tail"),
+		})
+	}
+	dependencies = append(dependencies, OrchestrationGitDependency{
+		Key:     "latest-dependency",
+		Handoff: largePayload("LATEST-HANDOFF", "LATEST-HANDOFF-TAIL"),
+	})
+
+	messages := make([]OrchestrationMessageEnvelope, 0, 12)
+	for i := 0; i < 10; i++ {
+		messages = append(messages, OrchestrationMessageEnvelope{
+			Kind:      "handoff",
+			ActorType: "agent",
+			Body:      largePayload("older-message-", "older-message-tail"),
+		})
+	}
+	messages = append(messages,
+		OrchestrationMessageEnvelope{
+			Kind:      "question",
+			ActorType: "agent",
+			Body:      largePayload("LATEST-QUESTION", "LATEST-QUESTION-TAIL"),
+		},
+		OrchestrationMessageEnvelope{
+			Kind:      "answer",
+			ActorType: "member",
+			Body:      largePayload("LATEST-ANSWER", "LATEST-ANSWER-TAIL"),
+		},
+	)
+
+	task := Task{
+		OrchestrationDependencies: dependencies,
+		OrchestrationMessages:     messages,
+	}
+	context := buildOrchestrationContext(task)
+	if len(context) > orchestrationContextByteBudget {
+		t.Fatalf("orchestration context is %d bytes, budget is %d", len(context), orchestrationContextByteBudget)
+	}
+	if !utf8.ValidString(context) {
+		t.Fatal("byte truncation produced invalid UTF-8")
+	}
+	for _, want := range []string{
+		"latest-dependency",
+		"LATEST-HANDOFF",
+		"LATEST-HANDOFF-TAIL",
+		"LATEST-QUESTION",
+		"LATEST-QUESTION-TAIL",
+		"LATEST-ANSWER",
+		"LATEST-ANSWER-TAIL",
+		orchestrationContextTruncationMarker,
+	} {
+		if !strings.Contains(context, want) {
+			t.Fatalf("bounded context dropped critical marker %q:\n%s", want, context)
+		}
+	}
+	if strings.Contains(context, "older-dependency-a") {
+		t.Fatal("oldest dependency should yield to protected recent context")
+	}
+	if question, answer := strings.Index(context, "LATEST-QUESTION"), strings.Index(context, "LATEST-ANSWER"); question < 0 || answer < 0 || question >= answer {
+		t.Fatalf("selected messages were not restored to chronological order: question=%d answer=%d", question, answer)
+	}
+	if repeated := buildOrchestrationContext(task); repeated != context {
+		t.Fatal("bounded orchestration context is not deterministic")
+	}
+}
+
+func TestBuildOrchestrationContextPreservesSmallEntries(t *testing.T) {
+	task := Task{
+		OrchestrationDependencies: []OrchestrationGitDependency{
+			{Key: "implementation", Handoff: json.RawMessage(`{"summary":"ready"}`)},
+		},
+		OrchestrationMessages: []OrchestrationMessageEnvelope{
+			{Kind: "question", ActorType: "agent", Body: json.RawMessage(`{"prompt":"Which version?"}`)},
+			{Kind: "answer", ActorType: "member", Body: json.RawMessage(`{"answer":"v2"}`)},
+		},
+	}
+
+	context := buildOrchestrationContext(task)
+	for _, want := range []string{
+		`- implementation: {"summary":"ready"}`,
+		`- question from agent: {"prompt":"Which version?"}`,
+		`- answer from member: {"answer":"v2"}`,
+	} {
+		if !strings.Contains(context, want) {
+			t.Fatalf("small orchestration context missing %q:\n%s", want, context)
+		}
+	}
+	if strings.Contains(context, orchestrationContextTruncationMarker) {
+		t.Fatal("small orchestration context was unnecessarily truncated")
 	}
 }
 

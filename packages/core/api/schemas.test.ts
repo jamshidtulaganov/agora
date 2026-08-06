@@ -1319,6 +1319,30 @@ describe("OrchestrationRunSchema — execution semantics", () => {
     });
     expect(parsed.base_git_states.map((state) => state.repo)).toEqual(["api", "web"]);
   });
+
+  it("preserves the exact open question identity on a waiting step", () => {
+    const waitingRun = {
+      ...baseRun,
+      steps: [{
+        id: "step-1",
+        key: "plan",
+        title: "Clarify scope",
+        stage: "plan",
+        status: "waiting_input",
+        position: 0,
+        question_id: "question-2",
+      }],
+    };
+    const parsed = OrchestrationRunSchema.parse(waitingRun);
+
+    expect(parsed.steps[0]?.question_id).toBe("question-2");
+    expect(parseWithFallback(
+      { ...waitingRun, steps: [{ ...waitingRun.steps[0], question_id: 42 }] },
+      OrchestrationRunSchema,
+      null,
+      { endpoint: "GET /api/issues/{id}/orchestration" },
+    )).toBeNull();
+  });
 });
 
 describe("ListTelegramInstallationsSchema", () => {

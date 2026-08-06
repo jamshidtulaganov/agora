@@ -1454,6 +1454,12 @@ func squadFailureRecoveryEnabled() bool {
 //   - recovery already fired maxSquadFailureRecoveries times → give up and
 //     leave it for a human rather than loop on a member that always fails.
 func (h *Handler) maybeRecoverSquadTaskFailure(ctx context.Context, task db.AgentTaskQueue, failureReason string) {
+	if task.OrchestrationStepID.Valid {
+		// Persisted orchestration owns retries and controller communication.
+		// The legacy squad recovery comment would escape the DAG and enqueue an
+		// ordinary leader task after the run had already reached a terminal state.
+		return
+	}
 	if !squadFailureRecoveryEnabled() {
 		return
 	}

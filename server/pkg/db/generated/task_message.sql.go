@@ -14,6 +14,8 @@ import (
 const createTaskMessage = `-- name: CreateTaskMessage :one
 INSERT INTO task_message (task_id, seq, type, tool, content, input, output)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (task_id, seq) DO UPDATE
+SET seq = EXCLUDED.seq
 RETURNING id, task_id, seq, type, tool, content, input, output, created_at
 `
 
@@ -27,6 +29,9 @@ type CreateTaskMessageParams struct {
 	Output  pgtype.Text `json:"output"`
 }
 
+// Delivery is at-least-once. Returning the persisted row on a replay lets the
+// handler republish after a DB-commit/process-crash window; websocket clients
+// already deduplicate by (task_id, seq).
 func (q *Queries) CreateTaskMessage(ctx context.Context, arg CreateTaskMessageParams) (TaskMessage, error) {
 	row := q.db.QueryRow(ctx, createTaskMessage,
 		arg.TaskID,

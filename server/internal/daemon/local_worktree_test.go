@@ -545,6 +545,93 @@ func TestVerifyIntegratedHeadsRequiresEveryDependency(t *testing.T) {
 	}
 }
 
+func TestIntegratedHeadMustBeAncestorInNamedRepository(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	parent := t.TempDir()
+	api := filepath.Join(parent, "api")
+	makeRepo(t, api)
+	runGit := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git -C %s %v: %v\n%s", dir, args, err, out)
+		}
+	}
+	runGit(api, "checkout", "-q", "-b", "dependency")
+	if err := os.WriteFile(filepath.Join(api, "dependency.txt"), []byte("dependency"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(api, "add", "dependency.txt")
+	runGit(api, "commit", "-q", "-m", "dependency")
+	head := gitAt(t, api, "rev-parse", "HEAD")
+	runGit(api, "checkout", "-q", "main")
+
+	web := filepath.Join(parent, "web")
+	if out, err := exec.Command("git", "clone", "-q", api, web).CombinedOutput(); err != nil {
+		t.Fatalf("clone second repo: %v\n%s", err, out)
+	}
+	// Keep the copied object graph so the exact SHA exists in both repos, but
+	// give the second checkout its own repository identity. Otherwise its
+	// origin still points at the api fixture and correctly matches the `api`
+	// dependency despite the local directory being named web.
+	runGit(web, "remote", "set-url", "origin", "https://example.invalid/org/web.git")
+	runGit(web, "checkout", "-q", "-b", "integration", "origin/dependency")
+
+	if integratedInRepos(context.Background(), []string{api, web}, "api", head) {
+		t.Fatal("a commit integrated only in web satisfied the api dependency")
+	}
+	if !integratedInRepos(context.Background(), []string{api, web}, "", head) {
+		t.Fatal("legacy unscoped dependency should still locate its owning checkout")
+	}
+	runGit(api, "merge", "--no-ff", "-q", "-m", "integrate dependency", head)
+	if !integratedInRepos(context.Background(), []string{api, web}, "api", head) {
+		t.Fatal("named repository did not accept its own integrated dependency")
+	}
+}
+
+func TestReadOnlyInspectionIgnoresMovingSourceMergeability(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	source := filepath.Join(t.TempDir(), "app")
+	makeRepo(t, source)
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", source}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	runGit("checkout", "-q", "-b", "integrated")
+	if err := os.WriteFile(filepath.Join(source, "value.txt"), []byte("integrated\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", "value.txt")
+	runGit("commit", "-q", "-m", "integrated")
+	integratedHead := gitAt(t, source, "rev-parse", "HEAD")
+	runGit("checkout", "-q", "main")
+	if err := os.WriteFile(filepath.Join(source, "value.txt"), []byte("source moved\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", "value.txt")
+	runGit("commit", "-q", "-m", "source moved")
+
+	target := filepath.Join(t.TempDir(), "verification")
+	if err := addWorktreeAt(context.Background(), source, target, "", integratedHead, true); err != nil {
+		t.Fatal(err)
+	}
+	defer gitRun(context.Background(), source, "worktree", "remove", "--force", target)
+	run := &worktreeRun{worktrees: []provisionedWorktree{{SrcRepo: source, Path: target, BaseSHA: integratedHead}}}
+	readOnly := inspectWorktreeState(context.Background(), run, true)
+	if readOnly.Status != "clean" || len(readOnly.RepoStates) != 1 || readOnly.RepoStates[0].HeadSHA != integratedHead {
+		t.Fatalf("untouched pinned checkout was not clean: %+v", readOnly)
+	}
+}
+
 func TestProvisionOrReuse_ReusesDevWorktree(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
@@ -576,6 +663,63 @@ func TestProvisionOrReuse_ReusesDevWorktree(t *testing.T) {
 	if string(got) != "dev change" {
 		t.Errorf("QA must see the dev's change, got %q", got)
 	}
+}
+
+func TestProvisionOrReuse_PreservesActualBranchAcrossContinuationKey(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	parent := t.TempDir()
+	makeRepo(t, filepath.Join(parent, "svc"))
+	ctx := context.Background()
+	env := filepath.Join(t.TempDir(), "wt", "step-task-one")
+
+	first, reused, err := provisionOrReuseWorktrees(ctx, parent, "step-task-one", env, slog.Default())
+	if err != nil || reused {
+		t.Fatalf("first call should provision (reused=%v err=%v)", reused, err)
+	}
+	t.Cleanup(func() { cleanupWorktrees(context.Background(), first, slog.Default()) })
+	wantBranch := first.worktrees[0].Branch
+
+	continued, reused, err := provisionOrReuseWorktrees(ctx, parent, "step-task-two", env, slog.Default())
+	if err != nil || !reused {
+		t.Fatalf("continuation should reuse (reused=%v err=%v)", reused, err)
+	}
+	if got := continued.worktrees[0].Branch; got != wantBranch {
+		t.Fatalf("reused worktree branch = %q, want actual existing branch %q", got, wantBranch)
+	}
+}
+
+func TestSameStepOrchestrationWorkdir(t *testing.T) {
+	root := t.TempDir()
+	d := &Daemon{cfg: Config{WorkspacesRoot: root}}
+	task := Task{
+		WorkspaceID:                       "workspace-1",
+		IssueID:                           "issue-1",
+		OrchestrationStepID:               "step-11112222",
+		PriorSessionSameOrchestrationStep: true,
+	}
+	want := d.orchestrationWorktreeEnvDir(task.WorkspaceID, task.IssueID, task.OrchestrationStepID, "task-33334444")
+	task.PriorWorkDir = want
+	if got, ok := d.sameStepOrchestrationWorkdir(task, task.IssueID); !ok || got != want {
+		t.Fatalf("same-step workdir = (%q, %v), want (%q, true)", got, ok, want)
+	}
+
+	t.Run("generic issue fallback cannot bypass isolation", func(t *testing.T) {
+		candidate := task
+		candidate.PriorSessionSameOrchestrationStep = false
+		if got, ok := d.sameStepOrchestrationWorkdir(candidate, candidate.IssueID); ok || got != "" {
+			t.Fatalf("generic fallback accepted: (%q, %v)", got, ok)
+		}
+	})
+
+	t.Run("path must be direct child of expected step root", func(t *testing.T) {
+		candidate := task
+		candidate.PriorWorkDir = filepath.Join(root, "other-step", "task")
+		if got, ok := d.sameStepOrchestrationWorkdir(candidate, candidate.IssueID); ok || got != "" {
+			t.Fatalf("out-of-scope path accepted: (%q, %v)", got, ok)
+		}
+	})
 }
 
 func TestSweepWorktreeEnvs_RemovesStale(t *testing.T) {

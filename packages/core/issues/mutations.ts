@@ -1018,3 +1018,18 @@ export function useRetryOrchestrationStep() {
     },
   });
 }
+
+export function useRespondToOrchestrationStep() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { issueId: string; stepId: string; questionId: string; message: string }) =>
+      api.respondToOrchestrationStep(vars.issueId, vars.stepId, {
+        question_id: vars.questionId,
+        message: vars.message,
+      }),
+    onSettled: (_data, _err, vars) => {
+      qc.invalidateQueries({ queryKey: issueKeys.orchestration(vars.issueId) });
+      qc.invalidateQueries({ queryKey: issueKeys.artifact(vars.issueId) });
+    },
+  });
+}

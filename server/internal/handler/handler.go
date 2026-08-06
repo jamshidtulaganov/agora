@@ -241,9 +241,21 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 	taskSvc.OnReviewVerdictLabeled = func(ctx context.Context, issue db.Issue, verdict, actorID string) {
 		go h.maybeMergeOnQAPass(context.Background(), issue, "review:"+verdict, actorID)
 	}
-	taskSvc.OnOrchestrationTaskTerminal = func(ctx context.Context, task db.AgentTaskQueue) {
-		h.handleOrchestrationTaskTerminal(ctx, task)
+	taskSvc.OnOrchestrationTaskTerminal = func(ctx context.Context, task db.AgentTaskQueue) error {
+		return h.handleOrchestrationTaskTerminal(ctx, task)
 	}
+	taskSvc.OnOrchestrationRunReady = func(ctx context.Context, runID pgtype.UUID) error {
+		run, err := h.Queries.GetOrchestrationRun(ctx, runID)
+		if err != nil {
+			return err
+		}
+		issue, err := h.Queries.GetIssue(ctx, run.IssueID)
+		if err != nil {
+			return err
+		}
+		return h.dispatchNextOrchestrationStep(ctx, run.ID, issue)
+	}
+	taskSvc.OnOrchestrationAnswerCommentsReady = h.reconcileOrchestrationAnswerComments
 	// Bitrix24 outbound status mirror. No-op when BITRIX_WEBHOOK_URL is unset,
 	// so self-hosted deployments without Bitrix pay nothing.
 	h.registerBitrixOutbound()

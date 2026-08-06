@@ -6,6 +6,31 @@ afterEach(() => {
 });
 
 describe("ApiClient", () => {
+  it("sends the rendered orchestration question identity with an answer", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response("null", {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ApiClient("https://api.example.test");
+    await client.respondToOrchestrationStep("issue-1", "step-1", {
+      question_id: "question-2",
+      message: "Use the v2 contract.",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/api/issues/issue-1/orchestration/steps/step-1/respond",
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toEqual({
+      question_id: "question-2",
+      message: "Use the v2 contract.",
+    });
+  });
+
   it("preserves HTTP status on failed requests", async () => {
     vi.stubGlobal(
       "fetch",

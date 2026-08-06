@@ -883,6 +883,143 @@ type fakeBackend struct {
 	idx     atomic.Int32
 }
 
+type transcriptBackend struct {
+	messages []agent.Message
+	result   agent.Result
+}
+
+func (b transcriptBackend) Execute(context.Context, string, agent.ExecOptions) (*agent.Session, error) {
+	msgCh := make(chan agent.Message, len(b.messages))
+	for _, msg := range b.messages {
+		msgCh <- msg
+	}
+	close(msgCh)
+	resultCh := make(chan agent.Result, 1)
+	resultCh <- b.result
+	close(resultCh)
+	return &agent.Session{Messages: msgCh, Result: resultCh}, nil
+}
+
+func TestExecuteAndDrain_RetriesExhaustedBatchAndJoinsFinalFlush(t *testing.T) {
+	var calls atomic.Int32
+	finalRequestStarted := make(chan struct{})
+	releaseFinalRequest := make(chan struct{})
+	var startOnce sync.Once
+
+	// Exhaust the client's initial request plus its three short retries. The
+	// drain worker must retain that batch and start another final-flush round.
+	failuresBeforeSuccess := int32(len(defaultTaskMessageRetrySchedule) + 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/daemon/tasks/task-retry/messages" {
+			http.NotFound(w, r)
+			return
+		}
+		var body struct {
+			Messages []TaskMessageData `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode task messages: %v", err)
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		if len(body.Messages) != 1 || body.Messages[0].Seq != 1 || body.Messages[0].Content != "final answer" {
+			t.Errorf("unexpected task message batch: %+v", body.Messages)
+		}
+		n := calls.Add(1)
+		if n <= failuresBeforeSuccess {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		startOnce.Do(func() { close(finalRequestStarted) })
+		<-releaseFinalRequest
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	d := &Daemon{client: NewClient(srv.URL), logger: slog.Default()}
+	backend := transcriptBackend{
+		messages: []agent.Message{{Type: agent.MessageText, Content: "final answer"}},
+		result:   agent.Result{Status: "completed", Output: "final answer"},
+	}
+	type executionResult struct {
+		result agent.Result
+		err    error
+	}
+	returned := make(chan executionResult, 1)
+	go func() {
+		result, _, err := d.executeAndDrain(context.Background(), backend, "prompt", agent.ExecOptions{}, slog.Default(), "task-retry")
+		returned <- executionResult{result: result, err: err}
+	}()
+
+	select {
+	case <-finalRequestStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("retained batch was not retried; requests=%d", calls.Load())
+	}
+	select {
+	case got := <-returned:
+		t.Fatalf("executeAndDrain returned before final transcript flush completed: %+v", got)
+	default:
+	}
+
+	close(releaseFinalRequest)
+	select {
+	case got := <-returned:
+		if got.err != nil {
+			t.Fatalf("executeAndDrain: %v", got.err)
+		}
+		if got.result.Status != "completed" {
+			t.Fatalf("result status = %q, want completed", got.result.Status)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("executeAndDrain did not return after final transcript flush")
+	}
+	if want := failuresBeforeSuccess + 1; calls.Load() != want {
+		t.Fatalf("message delivery attempts = %d, want %d", calls.Load(), want)
+	}
+}
+
+func TestExecuteAndDrainWithMessageSequence_ContinuesAcrossSessions(t *testing.T) {
+	var mu sync.Mutex
+	var reported []TaskMessageData
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Messages []TaskMessageData `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode task messages: %v", err)
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		reported = append(reported, body.Messages...)
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	d := &Daemon{client: NewClient(srv.URL), logger: slog.Default()}
+	var messageSeq atomic.Int32
+	for _, content := range []string{"resume failed", "fresh session"} {
+		backend := transcriptBackend{
+			messages: []agent.Message{{Type: agent.MessageText, Content: content}},
+			result:   agent.Result{Status: "completed", Output: content},
+		}
+		if _, _, err := d.executeAndDrainWithMessageSequence(context.Background(), backend, "prompt", agent.ExecOptions{}, slog.Default(), "task-shared-seq", &messageSeq); err != nil {
+			t.Fatalf("executeAndDrainWithMessageSequence(%q): %v", content, err)
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(reported) != 2 {
+		t.Fatalf("reported messages = %+v, want two", reported)
+	}
+	if reported[0].Seq != 1 || reported[0].Content != "resume failed" || reported[1].Seq != 2 || reported[1].Content != "fresh session" {
+		t.Fatalf("reported messages = %+v, want monotonic seq 1,2 across sessions", reported)
+	}
+}
+
 func (b *fakeBackend) Execute(_ context.Context, _ string, opts agent.ExecOptions) (*agent.Session, error) {
 	i := int(b.idx.Add(1)) - 1
 	b.calls = append(b.calls, opts)

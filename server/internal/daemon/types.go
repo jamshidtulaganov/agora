@@ -52,47 +52,50 @@ type Task struct {
 	// prompt set in Settings → General). Server populates this on every claim
 	// regardless of task kind so the daemon can inject `## Workspace Context`
 	// into the brief. Empty when the owner hasn't set one.
-	WorkspaceContext          string                       `json:"workspace_context,omitempty"`
-	ThreadName                string                       `json:"thread_name,omitempty"` // semantic title for provider-native session/thread history
-	IssueBody                 string                       `json:"issue_body,omitempty"`  // truncated issue description; retrieval-query material for the repo context pack (see internal/repoindex). Empty against older servers — the pack then ranks on the title alone.
-	Agent                     *AgentData                   `json:"agent,omitempty"`
-	Repos                     []RepoData                   `json:"repos,omitempty"`
-	ProjectID                 string                       `json:"project_id,omitempty"`                  // issue's project, when present
-	ProjectTitle              string                       `json:"project_title,omitempty"`               // human-readable project title for context injection
-	ProjectResources          []ProjectResourceData        `json:"project_resources,omitempty"`           // project-scoped resources to expose to the agent
-	PriorSessionID            string                       `json:"prior_session_id,omitempty"`            // Claude session ID from a previous task on this issue
-	PriorWorkDir              string                       `json:"prior_work_dir,omitempty"`              // work_dir from a previous task on this issue
-	SprintBranch              string                       `json:"sprint_branch,omitempty"`               // sprint-worktree: SHARED remote branch (origin/<branch>) the daemon puts each worktree on via a per-task local alias so N concurrent tasks share one sprint branch; commits track this shared upstream. Set only when AGORA_SPRINT_WORKTREE_ENABLED and the issue's sprint has a branch. Old daemons ignore it (omitempty) and keep forking per-task branches.
-	TriggerCommentID          string                       `json:"trigger_comment_id,omitempty"`          // comment that triggered this task
-	TriggerThreadID           string                       `json:"trigger_thread_id,omitempty"`           // root comment ID for the triggering thread; falls back to trigger_comment_id on old servers
-	TriggerCommentContent     string                       `json:"trigger_comment_content,omitempty"`     // content of the triggering comment
-	TriggerAuthorType         string                       `json:"trigger_author_type,omitempty"`         // "agent" or "member" — author kind for the triggering comment
-	TriggerAuthorName         string                       `json:"trigger_author_name,omitempty"`         // display name of the triggering comment author
-	NewCommentCount           int                          `json:"new_comment_count,omitempty"`           // issue-wide comments since this agent's last run (excludes its own and the injected trigger); 0/omitted for old daemons or cold start
-	NewCommentsSince          string                       `json:"new_comments_since,omitempty"`          // RFC3339 anchor (last run's started_at) the count is measured from; empty on cold start
-	ChatSessionID             string                       `json:"chat_session_id,omitempty"`             // non-empty for chat tasks
-	ChatMessage               string                       `json:"chat_message,omitempty"`                // user message content for chat tasks
-	ChatMessageAttachments    []ChatAttachmentMeta         `json:"chat_message_attachments,omitempty"`    // attachments linked to the chat message; agent uses these to `agora attachment download <id>`
-	AutopilotRunID            string                       `json:"autopilot_run_id,omitempty"`            // non-empty for autopilot run_only tasks
-	AutopilotID               string                       `json:"autopilot_id,omitempty"`                // autopilot that spawned this run
-	AutopilotTitle            string                       `json:"autopilot_title,omitempty"`             // autopilot title used as task context
-	AutopilotDescription      string                       `json:"autopilot_description,omitempty"`       // autopilot description used as task prompt
-	AutopilotSource           string                       `json:"autopilot_source,omitempty"`            // manual, schedule, webhook, or api
-	AutopilotTriggerPayload   json.RawMessage              `json:"autopilot_trigger_payload,omitempty"`   // optional trigger payload for webhook/api runs
-	QuickCreatePrompt         string                       `json:"quick_create_prompt,omitempty"`         // user's natural-language input for quick-create tasks
-	QuickCreateAttachmentIDs  []string                     `json:"quick_create_attachment_ids,omitempty"` // attachments uploaded in the quick-create prompt and bound by issue create
-	OrchestrationStepID       string                       `json:"orchestration_step_id,omitempty"`
-	OrchestrationStepTitle    string                       `json:"orchestration_step_title,omitempty"`
-	OrchestrationStage        string                       `json:"orchestration_stage,omitempty"`
-	OrchestrationInstructions string                       `json:"orchestration_instructions,omitempty"`
-	OrchestrationStepKind     string                       `json:"orchestration_step_kind,omitempty"`
-	OrchestrationDependencies []OrchestrationGitDependency `json:"orchestration_dependencies,omitempty"`
-	OrchestrationBaseRefs     []OrchestrationGitHead       `json:"orchestration_base_refs,omitempty"`
-	OrchestrationReadOnly     bool                         `json:"orchestration_read_only,omitempty"`
-	SquadID                   string                       `json:"squad_id,omitempty"`                // when the picker was a squad, the squad's UUID; Agent is still the resolved leader
-	SquadName                 string                       `json:"squad_name,omitempty"`              // display name for the picker squad, used in prompt text
-	ParentIssueID             string                       `json:"parent_issue_id,omitempty"`         // for quick-create tasks opened from "Add sub issue" — UUID of the parent issue the new issue should be filed under
-	ParentIssueIdentifier     string                       `json:"parent_issue_identifier,omitempty"` // human-readable identifier (e.g. MUL-123) of the quick-create parent issue, used in prompt context
+	WorkspaceContext                  string                         `json:"workspace_context,omitempty"`
+	ThreadName                        string                         `json:"thread_name,omitempty"` // semantic title for provider-native session/thread history
+	IssueBody                         string                         `json:"issue_body,omitempty"`  // truncated issue description; retrieval-query material for the repo context pack (see internal/repoindex). Empty against older servers — the pack then ranks on the title alone.
+	Agent                             *AgentData                     `json:"agent,omitempty"`
+	Repos                             []RepoData                     `json:"repos,omitempty"`
+	ProjectID                         string                         `json:"project_id,omitempty"`                            // issue's project, when present
+	ProjectTitle                      string                         `json:"project_title,omitempty"`                         // human-readable project title for context injection
+	ProjectResources                  []ProjectResourceData          `json:"project_resources,omitempty"`                     // project-scoped resources to expose to the agent
+	PriorSessionID                    string                         `json:"prior_session_id,omitempty"`                      // Claude session ID from a previous task on this issue
+	PriorWorkDir                      string                         `json:"prior_work_dir,omitempty"`                        // work_dir from a previous task on this issue
+	PriorSessionSameOrchestrationStep bool                           `json:"prior_session_same_orchestration_step,omitempty"` // true only when the server selected this exact persisted work unit's lineage
+	SprintBranch                      string                         `json:"sprint_branch,omitempty"`                         // sprint-worktree: SHARED remote branch (origin/<branch>) the daemon puts each worktree on via a per-task local alias so N concurrent tasks share one sprint branch; commits track this shared upstream. Set only when AGORA_SPRINT_WORKTREE_ENABLED and the issue's sprint has a branch. Old daemons ignore it (omitempty) and keep forking per-task branches.
+	TriggerCommentID                  string                         `json:"trigger_comment_id,omitempty"`                    // comment that triggered this task
+	TriggerThreadID                   string                         `json:"trigger_thread_id,omitempty"`                     // root comment ID for the triggering thread; falls back to trigger_comment_id on old servers
+	TriggerCommentContent             string                         `json:"trigger_comment_content,omitempty"`               // content of the triggering comment
+	TriggerAuthorType                 string                         `json:"trigger_author_type,omitempty"`                   // "agent" or "member" — author kind for the triggering comment
+	TriggerAuthorName                 string                         `json:"trigger_author_name,omitempty"`                   // display name of the triggering comment author
+	NewCommentCount                   int                            `json:"new_comment_count,omitempty"`                     // issue-wide comments since this agent's last run (excludes its own and the injected trigger); 0/omitted for old daemons or cold start
+	NewCommentsSince                  string                         `json:"new_comments_since,omitempty"`                    // RFC3339 anchor (last run's started_at) the count is measured from; empty on cold start
+	ChatSessionID                     string                         `json:"chat_session_id,omitempty"`                       // non-empty for chat tasks
+	ChatMessage                       string                         `json:"chat_message,omitempty"`                          // user message content for chat tasks
+	ChatMessageAttachments            []ChatAttachmentMeta           `json:"chat_message_attachments,omitempty"`              // attachments linked to the chat message; agent uses these to `agora attachment download <id>`
+	AutopilotRunID                    string                         `json:"autopilot_run_id,omitempty"`                      // non-empty for autopilot run_only tasks
+	AutopilotID                       string                         `json:"autopilot_id,omitempty"`                          // autopilot that spawned this run
+	AutopilotTitle                    string                         `json:"autopilot_title,omitempty"`                       // autopilot title used as task context
+	AutopilotDescription              string                         `json:"autopilot_description,omitempty"`                 // autopilot description used as task prompt
+	AutopilotSource                   string                         `json:"autopilot_source,omitempty"`                      // manual, schedule, webhook, or api
+	AutopilotTriggerPayload           json.RawMessage                `json:"autopilot_trigger_payload,omitempty"`             // optional trigger payload for webhook/api runs
+	QuickCreatePrompt                 string                         `json:"quick_create_prompt,omitempty"`                   // user's natural-language input for quick-create tasks
+	QuickCreateAttachmentIDs          []string                       `json:"quick_create_attachment_ids,omitempty"`           // attachments uploaded in the quick-create prompt and bound by issue create
+	OrchestrationStepID               string                         `json:"orchestration_step_id,omitempty"`
+	OrchestrationStepTitle            string                         `json:"orchestration_step_title,omitempty"`
+	OrchestrationStage                string                         `json:"orchestration_stage,omitempty"`
+	OrchestrationInstructions         string                         `json:"orchestration_instructions,omitempty"`
+	OrchestrationStepKind             string                         `json:"orchestration_step_kind,omitempty"`
+	OrchestrationDependencies         []OrchestrationGitDependency   `json:"orchestration_dependencies,omitempty"`
+	OrchestrationMessages             []OrchestrationMessageEnvelope `json:"orchestration_messages,omitempty"`
+	OrchestrationBaseRefs             []OrchestrationGitHead         `json:"orchestration_base_refs,omitempty"`
+	OrchestrationReadOnly             bool                           `json:"orchestration_read_only,omitempty"`
+	PreprovisionedWorktree            bool                           `json:"-"`                                 // daemon-local fact set after resolving local_directory worktree mode
+	SquadID                           string                         `json:"squad_id,omitempty"`                // when the picker was a squad, the squad's UUID; Agent is still the resolved leader
+	SquadName                         string                         `json:"squad_name,omitempty"`              // display name for the picker squad, used in prompt text
+	ParentIssueID                     string                         `json:"parent_issue_id,omitempty"`         // for quick-create tasks opened from "Add sub issue" — UUID of the parent issue the new issue should be filed under
+	ParentIssueIdentifier             string                         `json:"parent_issue_identifier,omitempty"` // human-readable identifier (e.g. MUL-123) of the quick-create parent issue, used in prompt context
 	// RequestingUserName + RequestingUserProfileDescription describe the human
 	// the agent is working on behalf of. v1 sources them from the runtime
 	// owner (the user who registered the daemon). Empty when the runtime has
@@ -135,6 +138,16 @@ type OrchestrationGitDependency struct {
 	Branch  string                 `json:"branch,omitempty"`
 	HeadSHA string                 `json:"head_sha,omitempty"`
 	Heads   []OrchestrationGitHead `json:"heads,omitempty"`
+	Handoff json.RawMessage        `json:"handoff,omitempty"`
+}
+
+type OrchestrationMessageEnvelope struct {
+	ID        string          `json:"id"`
+	Kind      string          `json:"kind"`
+	ActorType string          `json:"actor_type"`
+	ActorID   string          `json:"actor_id,omitempty"`
+	Body      json.RawMessage `json:"body"`
+	CreatedAt any             `json:"created_at"`
 }
 
 // OrchestrationGitHead is one repo's committed tip within a dependency step.
@@ -211,23 +224,24 @@ type TaskUsageEntry struct {
 
 // TaskResult is the outcome of executing a task.
 type TaskResult struct {
-	Status             string           `json:"status"`
-	Comment            string           `json:"comment"`
-	BranchName         string           `json:"branch_name,omitempty"`
-	EnvType            string           `json:"env_type,omitempty"`
-	SessionID          string           `json:"session_id,omitempty"` // Claude session ID for future resumption
-	WorkDir            string           `json:"work_dir,omitempty"`   // working directory used during execution
-	EnvRoot            string           `json:"-"`                    // env root dir for writing GC metadata (not sent to server)
-	FailureReason      string           `json:"-"`                    // classifier forwarded to FailTask on the blocked path; empty falls back to 'agent_error'
-	BaseSHA            string           `json:"base_sha,omitempty"`
-	HeadSHA            string           `json:"head_sha,omitempty"`
-	MergeStatus        string           `json:"merge_status,omitempty"`
-	ConflictFiles      []string         `json:"conflict_files,omitempty"`
-	IntegrationStatus  string           `json:"integration_status,omitempty"`
-	IntegratedHeadSHAs []string         `json:"integrated_head_shas,omitempty"`
-	MissingHeadSHAs    []string         `json:"missing_head_shas,omitempty"`
-	GitStates          []RepoGitState   `json:"git_states,omitempty"` // per-repo evidence; legacy single fields mirror the primary repo
-	Usage              []TaskUsageEntry `json:"usage,omitempty"`      // per-model token usage
+	Status             string                 `json:"status"`
+	Comment            string                 `json:"comment"`
+	BranchName         string                 `json:"branch_name,omitempty"`
+	EnvType            string                 `json:"env_type,omitempty"`
+	SessionID          string                 `json:"session_id,omitempty"` // Claude session ID for future resumption
+	WorkDir            string                 `json:"work_dir,omitempty"`   // working directory used during execution
+	EnvRoot            string                 `json:"-"`                    // env root dir for writing GC metadata (not sent to server)
+	FailureReason      string                 `json:"-"`                    // classifier forwarded to FailTask on the blocked path; empty falls back to 'agent_error'
+	BaseSHA            string                 `json:"base_sha,omitempty"`
+	HeadSHA            string                 `json:"head_sha,omitempty"`
+	MergeStatus        string                 `json:"merge_status,omitempty"`
+	ConflictFiles      []string               `json:"conflict_files,omitempty"`
+	IntegrationStatus  string                 `json:"integration_status,omitempty"`
+	IntegratedHeadSHAs []string               `json:"integrated_head_shas,omitempty"`
+	IntegratedHeads    []OrchestrationGitHead `json:"integrated_heads,omitempty"`
+	MissingHeadSHAs    []string               `json:"missing_head_shas,omitempty"`
+	GitStates          []RepoGitState         `json:"git_states,omitempty"` // per-repo evidence; legacy single fields mirror the primary repo
+	Usage              []TaskUsageEntry       `json:"usage,omitempty"`      // per-model token usage
 	// ContextPack reports what the repo context pack did for this task.
 	// Nil when the daemon built no pack at all (control arm, non-code task,
 	// or opt-out). Read together with the A/B arm to separate "treatment"

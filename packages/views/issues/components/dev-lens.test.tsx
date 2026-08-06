@@ -133,10 +133,82 @@ describe("DevLensBody", () => {
     renderLens();
     expect(await screen.findByText("Build frontend")).toBeInTheDocument();
     expect(screen.getByText("Build backend")).toBeInTheDocument();
-    expect(screen.getByText("2 development workers")).toBeInTheDocument();
+    expect(screen.getByText("2 execution steps")).toBeInTheDocument();
     expect(screen.getByText("2 working now")).toBeInTheDocument();
     expect(screen.getByText("Live task-1")).toBeInTheDocument();
     expect(screen.queryByText(/editor worktree/i)).not.toBeInTheDocument();
+  });
+
+  it("shows every persisted stage, preserves parallel branches, and ignores orphan tasks", async () => {
+    mocks.getIssueOrchestration.mockResolvedValue({
+      id: "run-1",
+      issue_id: "issue-1",
+      status: "running",
+      steps: [
+        step({ id: "plan", key: "plan", title: "Plan the work", stage: "plan", capability: "coordination", status: "completed", position: 0, task_id: undefined }),
+        step({ id: "api", key: "api", title: "Backend API", capability: "backend", status: "completed", position: 1, task_id: "task-api" }),
+        step({ id: "web", key: "web", title: "Web application", capability: "frontend", status: "completed", position: 2, task_id: "task-web" }),
+        step({ id: "integration", key: "integration", title: "Integrate implementation branches", kind: "integration", capability: "integration", status: "completed", position: 3, task_id: undefined }),
+        step({ id: "qa", key: "qa", title: "Verify the integrated result", stage: "qa", capability: "qa", status: "completed", position: 4, task_id: undefined }),
+        step({ id: "review", key: "review", title: "Review the integrated result", stage: "review", capability: "review", status: "completed", position: 5, task_id: undefined }),
+        step({ id: "release", key: "release", title: "Approve and merge the change", stage: "release", capability: "release", status: "pending", position: 6, task_id: undefined }),
+      ],
+    });
+    mocks.listTasksByIssue.mockResolvedValue([
+      task({ id: "task-api", status: "completed", completed_at: "2026-07-15T00:10:00Z" }),
+      task({ id: "task-web", status: "completed", completed_at: "2026-07-15T00:11:00Z" }),
+      task({ id: "orphan-task", trigger_summary: "Historical task outside this plan" }),
+    ]);
+
+    renderLens();
+
+    expect(await screen.findByRole("heading", { name: "Plan" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Development" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Integration" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "QA" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Review" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Release" })).toBeInTheDocument();
+    expect(screen.getByText("Backend API")).toBeInTheDocument();
+    expect(screen.getByText("Web application")).toBeInTheDocument();
+    expect(screen.queryByText("Development task")).not.toBeInTheDocument();
+    expect(screen.queryByText("Historical task outside this plan")).not.toBeInTheDocument();
+  });
+
+  it("does not synthesize development rows from tasks outside the persisted plan", async () => {
+    mocks.getIssueOrchestration.mockResolvedValue({
+      id: "run-1",
+      issue_id: "issue-1",
+      status: "running",
+      steps: [
+        step({ id: "plan", key: "plan", title: "Plan the work", stage: "plan", capability: "coordination", status: "completed", position: 0, task_id: undefined }),
+        step({ id: "qa", key: "qa", title: "Verify the result", stage: "qa", capability: "qa", status: "pending", position: 1, task_id: undefined }),
+      ],
+    });
+    mocks.listTasksByIssue.mockResolvedValue([
+      task({ id: "old-task-1" }),
+      task({ id: "old-task-2" }),
+      task({ id: "old-task-3" }),
+    ]);
+
+    renderLens();
+
+    expect(await screen.findByText("Plan the work")).toBeInTheDocument();
+    expect(screen.getByText("Verify the result")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Development" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Development task")).not.toBeInTheDocument();
+    expect(screen.queryByText("Step handoff ready")).not.toBeInTheDocument();
+    expect(screen.getByText("2 execution steps")).toBeInTheDocument();
+  });
+
+  it("shows an orchestration empty state for a non-orchestrated issue", async () => {
+    mocks.getIssueOrchestration.mockResolvedValue(null);
+
+    renderLens();
+
+    expect(await screen.findByText("No orchestration work yet")).toBeInTheDocument();
+    expect(screen.getByText("Persisted execution steps will appear here when a plan is created.")).toBeInTheDocument();
+    expect(mocks.listTasksByIssue).not.toHaveBeenCalled();
+    expect(screen.queryByText("Development task")).not.toBeInTheDocument();
   });
 
   it("keeps the selected Dev workspace tab in the URL", async () => {
@@ -165,13 +237,15 @@ describe("DevLensBody", () => {
         status: "completed",
         head_sha: "a".repeat(40),
         merge_status: "clean",
+        instructions: "Implement this frontend workstream.",
         output: { output: "PROGRESS: Finishing\n\nImplemented the requested feature.\n\nExact commit is ready." },
       })],
     });
     mocks.listTasksByIssue.mockResolvedValue([task({ status: "completed", completed_at: "2026-07-15T00:10:00Z" })]);
     renderLens();
-    expect(await screen.findByText("Committed handoff ready")).toBeInTheDocument();
-    expect(screen.getByText("Use the issue acceptance criteria as the worker brief.")).toBeInTheDocument();
+    expect(await screen.findByText("Step handoff ready")).toBeInTheDocument();
+    expect(screen.getByText("Implement this frontend workstream.")).toBeInTheDocument();
+    expect(screen.queryByText("Use the issue acceptance criteria as the worker brief.")).not.toBeInTheDocument();
     expect(screen.getByText(/Implemented the requested feature/)).toBeInTheDocument();
     expect(screen.getByText("aaaaaaaa")).toBeInTheDocument();
     expect(screen.getByText("clean")).toBeInTheDocument();
@@ -207,13 +281,13 @@ describe("DevLensBody", () => {
 
     expect(await screen.findByText("Build frontend")).toBeInTheDocument();
     // Settled workers are folded: their handoff evidence is not rendered.
-    expect(screen.queryByText("Committed handoff ready")).not.toBeInTheDocument();
+    expect(screen.queryByText("Step handoff ready")).not.toBeInTheDocument();
     // The running worker stays open with its live process.
     expect(screen.getByText("Live task-2")).toBeInTheDocument();
 
     // Expanding a folded completed row reveals its handoff evidence.
     fireEvent.click(screen.getByRole("button", { name: /Build frontend/ }));
-    expect(await screen.findByText("Committed handoff ready")).toBeInTheDocument();
+    expect(await screen.findByText("Step handoff ready")).toBeInTheDocument();
     expect(screen.getByText(/Implemented the requested feature/)).toBeInTheDocument();
   });
 });

@@ -62,13 +62,34 @@ func TestTaskWantsRepoPack(t *testing.T) {
 		{"quick create has no issue or repo", Task{ID: "t3", QuickCreatePrompt: "make an issue"}, false},
 		{"chat", Task{ID: "t4", ChatSessionID: "c1", IssueID: "i1"}, false},
 		{"autopilot", Task{ID: "t5", AutopilotRunID: "a1", IssueID: "i1"}, false},
-		{"comment reply reuses a warm session", Task{ID: "t6", IssueID: "i1", TriggerCommentID: "c9"}, false},
-		{"no issue", Task{ID: "t7"}, false},
+		{"newly tagged agent gets code context", Task{ID: "t6", IssueID: "i1", TriggerCommentID: "c9"}, true},
+		{"comment reply reuses a warm session", Task{ID: "t7", IssueID: "i1", TriggerCommentID: "c9", PriorSessionID: "session-1"}, false},
+		{"no issue", Task{ID: "t8"}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := taskWantsRepoPack(tc.task); got != tc.want {
 				t.Errorf("taskWantsRepoPack = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTaskRequiresRepoPackForAccuracyCriticalTurns(t *testing.T) {
+	cases := []struct {
+		name string
+		task Task
+		want bool
+	}{
+		{"orchestration", Task{IssueID: "i1", OrchestrationStepID: "s1"}, true},
+		{"cold tagged turn", Task{IssueID: "i1", TriggerCommentID: "c1"}, true},
+		{"warm tagged turn", Task{IssueID: "i1", TriggerCommentID: "c1", PriorSessionID: "session-1"}, false},
+		{"ordinary issue task remains in experiment", Task{IssueID: "i1"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := taskRequiresRepoPack(tc.task); got != tc.want {
+				t.Fatalf("taskRequiresRepoPack = %v, want %v", got, tc.want)
 			}
 		})
 	}

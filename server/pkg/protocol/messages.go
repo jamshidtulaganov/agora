@@ -38,6 +38,19 @@ type TaskCompletedPayload struct {
 	Output string `json:"output,omitempty"`
 }
 
+// OrchestrationChangedPayload is broadcast after a persisted orchestration
+// transition. IssueID selects the exact client cache entry; RunID identifies
+// which run changed without duplicating the authoritative run response in the
+// WebSocket frame.
+type OrchestrationChangedPayload struct {
+	IssueID     string `json:"issue_id"`
+	RunID       string `json:"run_id"`
+	StepID      string `json:"step_id,omitempty"`
+	Kind        string `json:"kind"`
+	EventID     string `json:"event_id,omitempty"`
+	PlanVersion int32  `json:"plan_version,omitempty"`
+}
+
 // TaskMessagePayload represents a single agent execution message (tool call, text, etc.)
 type TaskMessagePayload struct {
 	TaskID    string         `json:"task_id"`

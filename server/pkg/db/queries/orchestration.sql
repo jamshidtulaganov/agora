@@ -10,6 +10,9 @@ RETURNING *;
 -- name: GetOrchestrationRun :one
 SELECT * FROM orchestration_run WHERE id = $1;
 
+-- name: LockOrchestrationRun :one
+SELECT * FROM orchestration_run WHERE id = $1 FOR UPDATE;
+
 -- name: GetOrchestrationRunByStep :one
 SELECT run.*
 FROM orchestration_run run
@@ -29,7 +32,8 @@ RETURNING *;
 
 -- name: GetActiveOrchestrationRunForIssue :one
 SELECT * FROM orchestration_run
-WHERE issue_id = $1 AND status IN ('draft', 'running', 'waiting_approval')
+WHERE issue_id = $1
+  AND status IN ('draft', 'running', 'waiting_approval', 'waiting_input', 'blocked')
 ORDER BY created_at DESC LIMIT 1;
 
 -- name: GetLatestOrchestrationRunForIssue :one
@@ -46,7 +50,10 @@ RETURNING *;
 -- name: SetOrchestrationRunStatus :one
 UPDATE orchestration_run
 SET status = $2,
-    completed_at = CASE WHEN $2 IN ('completed', 'failed', 'cancelled') THEN now() ELSE completed_at END,
+    completed_at = CASE
+        WHEN $2 IN ('completed', 'failed', 'cancelled') THEN COALESCE(completed_at, now())
+        ELSE NULL
+    END,
     updated_at = now()
 WHERE id = $1
 RETURNING *;
@@ -75,11 +82,80 @@ WHERE run_id = sqlc.arg('run_id') AND position < 0;
 -- name: ListOrchestrationSteps :many
 SELECT * FROM orchestration_step WHERE run_id = $1 ORDER BY position, created_at;
 
+-- name: ListOrchestrationRunsWithRunnablePendingSteps :many
+-- Durable repair edge for post-commit dispatch failures (human answer,
+-- approval, explicit retry, or a completed predecessor). Manual runs are
+-- eligible only while an explicit action's durable authorization bit is set;
+-- completing or failing any work unit clears that bit before the next batch.
+SELECT run.id
+FROM orchestration_run run
+WHERE run.status IN ('running', 'waiting_approval', 'waiting_input', 'blocked')
+  AND (
+      run.progression_policy <> 'manual'
+      OR run.policy @> '{"manual_dispatch_authorized": true}'::jsonb
+  )
+  AND EXISTS (
+      SELECT 1
+      FROM orchestration_step candidate
+      WHERE candidate.run_id = run.id
+        AND candidate.status = 'pending'
+        AND (
+            candidate.depends_on_step_id IS NULL
+            OR EXISTS (
+                SELECT 1 FROM orchestration_step legacy_dependency
+                WHERE legacy_dependency.id = candidate.depends_on_step_id
+                  AND legacy_dependency.status IN ('completed', 'skipped')
+            )
+        )
+        AND NOT EXISTS (
+            SELECT 1
+            FROM orchestration_step_dependency dependency
+            JOIN orchestration_step required ON required.id = dependency.depends_on_step_id
+            WHERE dependency.step_id = candidate.id
+              AND required.status NOT IN ('completed', 'skipped')
+        )
+  )
+ORDER BY run.updated_at ASC
+LIMIT 100;
+
 -- name: GetOrchestrationStep :one
 SELECT * FROM orchestration_step WHERE id = $1;
 
+-- name: SetOrchestrationManualDispatchAuthorization :one
+-- Manual runs use this durable bit to distinguish an explicit Start/answer/
+-- retry/approval from an idle batch that must remain paused. Keeping it inside
+-- policy avoids adding a public API field while still making crash recovery
+-- queryable by the sweeper.
+UPDATE orchestration_run
+SET policy = jsonb_set(COALESCE(policy, '{}'::jsonb), '{manual_dispatch_authorized}', to_jsonb(sqlc.arg('authorized')::boolean), true),
+    updated_at = now()
+WHERE id = sqlc.arg('id')
+  AND progression_policy = 'manual'
+  AND status IN ('draft', 'running', 'waiting_approval', 'waiting_input', 'blocked')
+RETURNING *;
+
+-- name: PinOrchestrationArtifactLocation :one
+-- Backfills the durable daemon/runtime admission decision for legacy active
+-- runs. Once present it is immutable: later agent rebindings and plan edits
+-- must continue to resolve to the same physical artifact location.
+UPDATE orchestration_run
+SET policy = jsonb_set(COALESCE(policy, '{}'::jsonb), '{artifact_location}', to_jsonb(sqlc.arg('location')::text), true),
+    updated_at = now()
+WHERE id = sqlc.arg('id')
+  AND (
+      COALESCE(policy->>'artifact_location', '') = ''
+      OR policy->>'artifact_location' = sqlc.arg('location')::text
+  )
+RETURNING *;
+
 -- name: GetOrchestrationStepByTask :one
 SELECT * FROM orchestration_step WHERE task_id = $1;
+
+-- name: GetLatestTaskForOrchestrationStep :one
+SELECT * FROM agent_task_queue
+WHERE orchestration_step_id = $1
+ORDER BY created_at DESC, id DESC
+LIMIT 1;
 
 -- name: UpdateOrchestrationStepGitStateByTask :exec
 UPDATE orchestration_step
@@ -100,7 +176,7 @@ SELECT s.* FROM orchestration_step s
 LEFT JOIN orchestration_step dependency ON dependency.id = s.depends_on_step_id
 WHERE s.run_id = $1
   AND s.status = 'pending'
-  AND (s.depends_on_step_id IS NULL OR dependency.status = 'completed')
+  AND (s.depends_on_step_id IS NULL OR dependency.status IN ('completed', 'skipped'))
 ORDER BY s.position
 LIMIT 1;
 
@@ -116,7 +192,7 @@ WHERE s.run_id = $1
 ORDER BY s.position, d.depends_on_step_id;
 
 -- name: ListOrchestrationStepGitDependencies :many
-SELECT dependency.id, dependency.step_key, dependency.worktree_branch, dependency.head_sha, dependency.git_states
+SELECT dependency.id, dependency.step_key, dependency.worktree_branch, dependency.head_sha, dependency.git_states, dependency.output
 FROM orchestration_step_dependency d
 JOIN orchestration_step dependency ON dependency.id = d.depends_on_step_id
 WHERE d.step_id = $1 AND dependency.status <> 'skipped'
@@ -158,7 +234,16 @@ RETURNING *;
 
 -- name: AttachTaskToOrchestrationStep :one
 UPDATE orchestration_step SET task_id = $2, updated_at = now()
-WHERE id = $1 AND status = 'queued'
+WHERE orchestration_step.id = $1
+  AND orchestration_step.status IN ('queued', 'running')
+  AND orchestration_step.task_id IS NULL
+  AND $2 = (
+      SELECT agent_task_queue.id
+      FROM agent_task_queue
+      WHERE orchestration_step_id = $1
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1
+  )
 RETURNING *;
 
 -- name: DeferOrchestrationStepDispatch :one
@@ -186,6 +271,39 @@ WHERE orchestration_step.id = (SELECT orchestration_step_id FROM agent_task_queu
   AND status IN ('queued', 'running')
 RETURNING *;
 
+-- name: FinalizeOrchestrationStepAfterTerminalRun :one
+-- A parallel task can finish after another branch has already made the run
+-- terminal. Preserve its handoff for audit, but retire the work unit without
+-- reopening the sticky run status or leaving a forever-running step behind.
+UPDATE orchestration_step
+SET status = sqlc.arg('status'),
+    output = sqlc.arg('output'),
+    error = sqlc.arg('error'),
+    completed_at = CASE WHEN sqlc.arg('status') = 'completed' THEN now() ELSE NULL END,
+    updated_at = now()
+WHERE orchestration_step.id = (
+    SELECT orchestration_step_id
+    FROM agent_task_queue
+    WHERE agent_task_queue.id = sqlc.arg('task_id')
+)
+  AND status IN ('queued', 'running')
+  AND sqlc.arg('status') IN ('completed', 'blocked')
+RETURNING *;
+
+-- name: WaitOrchestrationStepInput :one
+UPDATE orchestration_step
+SET status = 'waiting_input', output = $2, completed_at = NULL, updated_at = now()
+WHERE orchestration_step.id = (SELECT orchestration_step_id FROM agent_task_queue WHERE agent_task_queue.id = $1)
+  AND status IN ('queued', 'running')
+RETURNING *;
+
+-- name: BlockOrchestrationStep :one
+UPDATE orchestration_step
+SET status = 'blocked', output = $2, completed_at = NULL, updated_at = now()
+WHERE orchestration_step.id = (SELECT orchestration_step_id FROM agent_task_queue WHERE agent_task_queue.id = $1)
+  AND status IN ('queued', 'running')
+RETURNING *;
+
 -- name: FailOrchestrationStep :one
 UPDATE orchestration_step
 SET status = 'failed', error = $2, updated_at = now()
@@ -201,13 +319,23 @@ RETURNING *;
 
 -- name: ResetOrchestrationStepForRetry :one
 UPDATE orchestration_step
-SET status = 'pending', task_id = NULL, error = NULL, updated_at = now()
-WHERE id = $1 AND status = 'failed' AND attempt < max_attempts
+SET status = 'pending', task_id = NULL, error = NULL,
+    attempt = CASE WHEN status = 'blocked' THEN GREATEST(attempt - 1, 0) ELSE attempt END,
+    updated_at = now()
+WHERE id = $1 AND status IN ('failed', 'blocked')
+  AND (status = 'blocked' OR attempt < max_attempts)
+RETURNING *;
+
+-- name: ResumeOrchestrationStepAfterInput :one
+UPDATE orchestration_step
+SET status = 'pending', task_id = NULL, error = NULL,
+    attempt = GREATEST(attempt - 1, 0), updated_at = now()
+WHERE id = $1 AND status = 'waiting_input'
 RETURNING *;
 
 -- name: WaitOrchestrationStepApproval :one
 UPDATE orchestration_step
-SET status = 'waiting_approval', updated_at = now()
+SET status = 'waiting_approval', approved_by = NULL, approved_at = NULL, updated_at = now()
 WHERE id = $1 AND status = 'pending' AND approval_required
 RETURNING *;
 
@@ -230,10 +358,74 @@ RETURNING *;
 -- name: ListOrchestrationEvents :many
 SELECT * FROM orchestration_event WHERE run_id = $1 ORDER BY created_at, id;
 
+-- name: CreateOrchestrationMessage :one
+INSERT INTO orchestration_message (
+    run_id, step_id, kind, actor_type, actor_id, target_type, target_id, body,
+    plan_version, correlation_id, causation_id, reply_to_id, idempotency_key,
+    expects_reply
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+)
+ON CONFLICT (run_id, idempotency_key) DO UPDATE
+SET idempotency_key = EXCLUDED.idempotency_key
+RETURNING *;
+
+-- name: ListOrchestrationMessages :many
+SELECT * FROM orchestration_message
+WHERE run_id = $1
+ORDER BY created_at, id;
+
+-- name: ListOrchestrationStepMessages :many
+SELECT * FROM (
+    SELECT * FROM orchestration_message
+    WHERE step_id = $1
+    ORDER BY created_at DESC, id DESC
+    LIMIT 12
+) recent
+ORDER BY created_at, id;
+
+-- name: CountOrchestrationStepQuestions :one
+SELECT count(*) FROM orchestration_message
+WHERE step_id = $1 AND kind = 'question';
+
+-- name: GetLatestOpenOrchestrationQuestion :one
+SELECT * FROM orchestration_message
+WHERE step_id = $1 AND kind = 'question' AND expects_reply AND resolved_at IS NULL
+ORDER BY created_at DESC, id DESC
+LIMIT 1;
+
+-- name: GetLatestOrchestrationQuestion :one
+-- The response path runs this inside a transaction. Locking the question row
+-- serializes concurrent answers; after one answer resolves it, a waiter sees
+-- the new resolved_at value and can only replay the exact same answer.
+SELECT * FROM orchestration_message
+WHERE step_id = $1 AND kind = 'question' AND expects_reply
+ORDER BY created_at DESC, id DESC
+LIMIT 1
+FOR UPDATE;
+
+-- name: GetOrchestrationQuestionForUpdate :one
+-- The caller supplies the question identity it rendered. Lock that exact row
+-- so a delayed response can never drift to a newer question on the same step.
+SELECT * FROM orchestration_message
+WHERE id = $1 AND step_id = $2 AND kind = 'question' AND expects_reply
+FOR UPDATE;
+
+-- name: GetOrchestrationMessageByIdempotencyKey :one
+SELECT * FROM orchestration_message
+WHERE run_id = $1 AND idempotency_key = $2;
+
+-- name: ResolveOrchestrationMessage :one
+UPDATE orchestration_message
+SET acknowledged_at = COALESCE(acknowledged_at, now()), resolved_at = now()
+WHERE id = $1 AND resolved_at IS NULL
+RETURNING *;
+
 -- name: AdvanceOrchestrationPlanVersion :one
 UPDATE orchestration_run
 SET plan_version = plan_version + 1, updated_at = now()
-WHERE id = $1 AND plan_version = $2 AND status IN ('draft', 'running', 'waiting_approval')
+WHERE id = $1 AND plan_version = $2
+  AND status IN ('draft', 'running', 'waiting_approval', 'waiting_input', 'blocked')
 RETURNING *;
 
 -- name: CreateOrchestrationPlanRevision :one
@@ -254,7 +446,8 @@ RETURNING *;
 -- name: CancelOrchestrationStep :one
 UPDATE orchestration_step
 SET status = 'cancelled', completed_at = now(), updated_at = now(), error = 'cancelled by user'
-WHERE id = $1 AND status IN ('pending', 'queued', 'running', 'waiting_approval', 'blocked')
+WHERE id = $1
+  AND status IN ('pending', 'queued', 'running', 'waiting_approval', 'waiting_input', 'blocked')
 RETURNING *;
 
 -- name: RetirePendingOrchestrationStep :one

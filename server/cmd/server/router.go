@@ -1001,6 +1001,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.With(handler.RequireHumanActor).Post("/orchestration/start", h.StartIssueOrchestration)
 					r.With(handler.RequireHumanActor).Post("/orchestration/steps/{stepId}/approve", h.ApproveOrchestrationStep)
 					r.With(handler.RequireHumanActor).Post("/orchestration/steps/{stepId}/retry", h.RetryOrchestrationStep)
+					r.With(handler.RequireHumanActor).Post("/orchestration/steps/{stepId}/respond", h.RespondToOrchestrationStep)
 					r.With(handler.RequireHumanActor).Post("/orchestration/steps/{stepId}/cancel-branch", h.CancelOrchestrationBranch)
 					r.Get("/browser", h.GetIssueBrowser)
 					r.Get("/qa-preview-url", h.GetIssueQAPreviewURL)

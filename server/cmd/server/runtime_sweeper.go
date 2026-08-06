@@ -85,6 +85,15 @@ func runRuntimeSweeper(ctx context.Context, queries *db.Queries, liveness handle
 			sweepStaleRuntimes(ctx, queries, liveness, taskSvc, bus)
 			sweepStaleTasks(ctx, queries, taskSvc, bus)
 			sweepExpiredQueuedTasks(ctx, queries, taskSvc)
+			if repaired := taskSvc.ReconcileOrchestrationAnswerComments(ctx); repaired > 0 {
+				slog.Info("runtime sweeper: reconciled tagged orchestration answers", "count", repaired)
+			}
+			if repaired := taskSvc.ReconcileTerminalOrchestrationTasks(ctx); repaired > 0 {
+				slog.Info("runtime sweeper: reconciled terminal orchestration tasks", "count", repaired)
+			}
+			if repaired := taskSvc.ReconcileRunnableOrchestrationRuns(ctx); repaired > 0 {
+				slog.Info("runtime sweeper: dispatched runnable orchestration repairs", "count", repaired)
+			}
 			gcRuntimes(ctx, queries, bus)
 		}
 	}

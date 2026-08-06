@@ -297,8 +297,118 @@ SELECT atq.* FROM agent_task_queue atq
 JOIN agent a ON a.id = atq.agent_id
 WHERE atq.id = $1 AND a.workspace_id = $2;
 
--- name: ClaimAgentTask :one
--- Claims the next queued task for an agent, enforcing per-(issue, agent) serialization:
+-- name: ListUnreconciledTerminalOrchestrationTasks :many
+-- Terminal task persistence and orchestration advancement are separate
+-- transactions. If the callback loses a transient DB race, keep a durable
+-- repair edge: the runtime sweeper replays any terminal task whose linked step
+-- is still active. The handler callbacks are idempotent.
+SELECT atq.*
+FROM agent_task_queue atq
+JOIN orchestration_step step ON step.id = atq.orchestration_step_id
+JOIN orchestration_run run ON run.id = step.run_id
+WHERE atq.status IN ('completed', 'failed', 'cancelled')
+  AND atq.id = (
+      SELECT latest.id
+      FROM agent_task_queue latest
+      WHERE latest.orchestration_step_id = step.id
+      ORDER BY latest.created_at DESC, latest.id DESC
+      LIMIT 1
+  )
+  AND (
+      -- A terminal run may still have a sibling task whose callback arrived
+      -- late. Reconcile that active row too; the handler records the handoff
+      -- while keeping the run terminal.
+      (step.status IN ('queued', 'running') AND (step.task_id = atq.id OR step.task_id IS NULL))
+      OR (
+          run.status IN ('running', 'waiting_approval', 'waiting_input', 'blocked')
+          AND atq.status = 'failed'
+          AND (step.status = 'failed' OR (step.status = 'pending' AND run.status = 'running'))
+      )
+      OR (
+          run.status IN ('running', 'waiting_approval', 'waiting_input', 'blocked')
+          AND atq.status = 'cancelled'
+          AND step.status = 'cancelled'
+      )
+      OR (
+          -- A completed task/step pair still needs one replay to either queue
+          -- its successor or reduce an all-complete run to `completed`. Once a
+          -- manual batch has durably paused, replay is unnecessary. Pick one
+          -- representative completion per run so finished siblings cannot
+          -- hot-loop and starve real repairs while another sibling is active.
+          run.status IN ('running', 'waiting_approval', 'waiting_input', 'blocked')
+          AND atq.status = 'completed'
+          AND step.status = 'completed'
+          AND (
+              run.progression_policy <> 'manual'
+              OR run.policy @> '{"manual_dispatch_authorized": true}'::jsonb
+          )
+          AND atq.id = (
+              SELECT repair_task.id
+              FROM orchestration_step repair_step
+              JOIN agent_task_queue repair_task ON repair_task.orchestration_step_id = repair_step.id
+              WHERE repair_step.run_id = step.run_id
+                AND repair_step.status = 'completed'
+                AND repair_task.status = 'completed'
+                AND repair_task.id = (
+                    SELECT latest_repair.id
+                    FROM agent_task_queue latest_repair
+                    WHERE latest_repair.orchestration_step_id = repair_step.id
+                    ORDER BY latest_repair.created_at DESC, latest_repair.id DESC
+                    LIMIT 1
+                )
+              ORDER BY repair_task.completed_at DESC NULLS LAST, repair_task.created_at DESC, repair_task.id DESC
+              LIMIT 1
+          )
+          AND (
+              EXISTS (
+                  SELECT 1
+                  FROM orchestration_step candidate
+                  WHERE candidate.run_id = step.run_id
+                    AND candidate.status = 'pending'
+                    AND (
+                        candidate.depends_on_step_id IS NULL
+                        OR EXISTS (
+                            SELECT 1 FROM orchestration_step legacy_dependency
+                            WHERE legacy_dependency.id = candidate.depends_on_step_id
+                              AND legacy_dependency.status IN ('completed', 'skipped')
+                        )
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM orchestration_step_dependency dependency
+                        JOIN orchestration_step required ON required.id = dependency.depends_on_step_id
+                        WHERE dependency.step_id = candidate.id
+                          AND required.status NOT IN ('completed', 'skipped')
+                    )
+              )
+              OR NOT EXISTS (
+                  SELECT 1
+                  FROM orchestration_step remaining
+                  WHERE remaining.run_id = step.run_id
+                    AND remaining.status NOT IN ('completed', 'skipped')
+              )
+          )
+      )
+  )
+ORDER BY atq.completed_at ASC NULLS FIRST, atq.created_at ASC
+LIMIT 100;
+
+-- name: ClaimAgentTaskForRuntime :one
+-- Claims the next queued task for exactly one runtime while enforcing the
+-- selected agent's max_concurrent_tasks limit in the same statement.
+--
+-- Locking both the task row and its agent row is load-bearing. Concurrent
+-- runtime polls may select different queued tasks for the same agent; the
+-- shared agent-row lock makes all but one poll skip that agent until the first
+-- claim commits. A later poll then observes the newly-dispatched task in the
+-- active count, so capacity cannot be exceeded by a count-then-claim race.
+--
+-- The runtime predicate is applied directly to the row being updated. Do not
+-- route through an agent-only claim: one agent can legitimately have queued
+-- tasks pinned to different runtimes, and an agent-global claim can dispatch a
+-- task that the polling runtime cannot execute.
+--
+-- Per-(issue, agent) serialization is preserved:
 -- a task is only claimable when no other task for the same issue AND same agent is
 -- already dispatched or running. This allows different agents to work on the same
 -- issue in parallel while preventing a single agent from running duplicate tasks.
@@ -307,11 +417,18 @@ WHERE atq.id = $1 AND a.workspace_id = $2;
 -- "any other quick-create-shaped task" (all four FKs NULL) for the same agent —
 -- otherwise a user mashing the create button could fire concurrent quick-creates
 -- whose completion lookup would race over "most recent issue by this agent".
-UPDATE agent_task_queue
-SET status = 'dispatched', dispatched_at = now()
-WHERE id = (
-    SELECT atq.id FROM agent_task_queue atq
-    WHERE atq.agent_id = $1 AND atq.status = 'queued'
+WITH candidate AS (
+    SELECT atq.id
+    FROM agent_task_queue atq
+    JOIN agent a ON a.id = atq.agent_id
+    WHERE atq.runtime_id = @runtime_id
+      AND atq.status = 'queued'
+      AND (
+          SELECT count(*)
+          FROM agent_task_queue active_capacity
+          WHERE active_capacity.agent_id = atq.agent_id
+            AND active_capacity.status IN ('dispatched', 'running', 'waiting_local_directory')
+      ) < a.max_concurrent_tasks
       AND NOT EXISTS (
           SELECT 1 FROM agent_task_queue active
           WHERE active.agent_id = atq.agent_id
@@ -331,9 +448,15 @@ WHERE id = (
       )
     ORDER BY atq.priority DESC, atq.created_at ASC
     LIMIT 1
-    FOR UPDATE SKIP LOCKED
+    FOR UPDATE OF atq, a SKIP LOCKED
 )
-RETURNING *;
+UPDATE agent_task_queue claimed
+SET status = 'dispatched', dispatched_at = now()
+FROM candidate
+WHERE claimed.id = candidate.id
+  AND claimed.runtime_id = @runtime_id
+  AND claimed.status = 'queued'
+RETURNING claimed.*;
 
 -- name: ReclaimStaleDispatchedTaskForRuntime :one
 -- Re-delivers a task whose previous claim likely succeeded server-side but
@@ -421,7 +544,7 @@ RETURNING *;
 -- error text. Migration 079 backfills the failure_reason column itself,
 -- so observability stays accurate; this clause guarantees session resume
 -- never picks up a bad session even when failure_reason hasn't caught up.
-SELECT session_id, work_dir, runtime_id FROM agent_task_queue
+SELECT session_id, work_dir, runtime_id, orchestration_step_id FROM agent_task_queue
 WHERE agent_id = $1 AND issue_id = $2
   AND (
     status = 'completed'
@@ -433,6 +556,34 @@ WHERE agent_id = $1 AND issue_id = $2
   )
   AND session_id IS NOT NULL
 ORDER BY COALESCE(completed_at, started_at, dispatched_at, created_at) DESC
+LIMIT 1;
+
+-- name: GetLatestOrchestrationStepSessionCandidate :one
+-- Returns the latest terminal task in this exact orchestration work unit.
+-- Unlike GetLastTaskSession, this intentionally returns an unsafe/no-session
+-- row instead of skipping back to older issue history. The claim handler uses
+-- resume_safe to distinguish "this is the first attempt" from "the latest
+-- attempt poisoned its provider session", so a waiting_input continuation can
+-- resume its own turn without accidentally inheriting a parallel step or
+-- bypassing the poisoned-session guards.
+SELECT
+    session_id,
+    work_dir,
+    runtime_id,
+    (
+        status = 'completed'
+        OR (
+            status = 'failed'
+            AND COALESCE(failure_reason, '') NOT IN ('iteration_limit', 'agent_fallback_message', 'api_invalid_request', 'codex_semantic_inactivity')
+            AND NOT (COALESCE(error, '') ILIKE '%400%' AND COALESCE(error, '') ILIKE '%invalid_request_error%')
+        )
+    )::boolean AS resume_safe
+FROM agent_task_queue
+WHERE agent_id = sqlc.arg('agent_id')
+  AND issue_id = sqlc.arg('issue_id')
+  AND orchestration_step_id = sqlc.arg('orchestration_step_id')
+  AND status IN ('completed', 'failed')
+ORDER BY COALESCE(completed_at, started_at, dispatched_at, created_at) DESC, id DESC
 LIMIT 1;
 
 -- name: GetLastTaskStartedAtForIssueAndAgent :one
@@ -558,6 +709,9 @@ WHERE id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_d
 RETURNING *;
 
 -- name: CountRunningTasks :one
+-- Read-only load signal used by non-claim scheduling such as QA roster
+-- selection. Runtime task admission does not use this separate count; its
+-- capacity predicate is part of ClaimAgentTaskForRuntime above.
 SELECT count(*) FROM agent_task_queue
 WHERE agent_id = $1 AND status IN ('dispatched', 'running', 'waiting_local_directory');
 
@@ -596,19 +750,6 @@ LIMIT 1;
 -- name: ListPendingTasksByRuntime :many
 SELECT * FROM agent_task_queue
 WHERE runtime_id = $1 AND status IN ('queued', 'dispatched')
-ORDER BY priority DESC, created_at ASC;
-
--- name: ListQueuedClaimCandidatesByRuntime :many
--- Returns rows the runtime can attempt to claim. Status is restricted to
--- 'queued' (in contrast to ListPendingTasksByRuntime which also includes
--- 'dispatched') because dispatched rows are by definition already owned
--- and cannot be re-claimed — including them in the candidate list pads
--- the result with rows that always lose the per-(issue, agent) race in
--- ClaimAgentTask, wasting CPU and a SELECT every poll cycle when the
--- runtime is busy on a long-running task. Backed by the partial index
--- idx_agent_task_queue_claim_candidates so the warm path is cheap.
-SELECT * FROM agent_task_queue
-WHERE runtime_id = $1 AND status = 'queued'
 ORDER BY priority DESC, created_at ASC;
 
 -- name: ListActiveTasksByIssue :many

@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jamshidtulaganov/agora/server/internal/auth"
 	"github.com/jamshidtulaganov/agora/server/internal/daemonws"
 	"github.com/jamshidtulaganov/agora/server/internal/middleware"
@@ -79,6 +80,51 @@ func setHandlerTestWorkspaceRepos(t *testing.T, repos []map[string]string) {
 			t.Fatalf("reset workspace repos: %v", err)
 		}
 	})
+}
+
+func TestReportTaskMessages_DuplicateBatchIsIdempotent(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+
+	agentID := createHandlerTestAgent(t, "task-message-idempotency", nil)
+	var issueID string
+	if err := testPool.QueryRow(context.Background(), `
+		INSERT INTO issue (workspace_id, title, status, priority, creator_id, creator_type, number, position)
+		VALUES (
+			$1, 'task message idempotency fixture', 'in_progress', 'none', $2, 'member',
+			(SELECT COALESCE(MAX(number), 81000) + 1 FROM issue WHERE workspace_id = $1), 0
+		)
+		RETURNING id
+	`, testWorkspaceID, testUserID).Scan(&issueID); err != nil {
+		t.Fatalf("create task message issue: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM issue WHERE id = $1`, issueID) })
+	taskID := createHandlerTestTaskForAgentOnIssue(t, agentID, issueID)
+	body := TaskMessageBatchRequest{Messages: []TaskMessageRequest{{
+		Seq:     1,
+		Type:    "text",
+		Content: "persist me once",
+	}}}
+	for attempt := 0; attempt < 2; attempt++ {
+		req := newDaemonTokenRequest(http.MethodPost, "/api/daemon/tasks/"+taskID+"/messages", body, testWorkspaceID, "task-message-test")
+		req = withURLParam(req, "taskId", taskID)
+		w := httptest.NewRecorder()
+		testHandler.ReportTaskMessages(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("attempt %d: expected 200, got %d: %s", attempt+1, w.Code, w.Body.String())
+		}
+	}
+
+	var count int
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT count(*) FROM task_message WHERE task_id = $1 AND seq = 1
+	`, taskID).Scan(&count); err != nil {
+		t.Fatalf("count task messages: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("persisted task messages = %d, want 1", count)
+	}
 }
 
 // newDaemonTokenRequest creates an HTTP request with daemon token context set
@@ -2479,11 +2525,13 @@ func TestCompleteTask_AssignmentTriggered_DoesNotSuppressTrivialDoneOutput(t *te
 }
 
 type claimRuntimeGuardTask struct {
-	PriorSessionID           string   `json:"prior_session_id"`
-	PriorWorkDir             string   `json:"prior_work_dir"`
-	ChatMessage              string   `json:"chat_message"`
-	ThreadName               string   `json:"thread_name"`
-	QuickCreateAttachmentIDs []string `json:"quick_create_attachment_ids"`
+	ID                                string   `json:"id"`
+	PriorSessionID                    string   `json:"prior_session_id"`
+	PriorWorkDir                      string   `json:"prior_work_dir"`
+	PriorSessionSameOrchestrationStep bool     `json:"prior_session_same_orchestration_step"`
+	ChatMessage                       string   `json:"chat_message"`
+	ThreadName                        string   `json:"thread_name"`
+	QuickCreateAttachmentIDs          []string `json:"quick_create_attachment_ids"`
 }
 
 func claimTaskForRuntimeGuard(t *testing.T, runtimeID, daemonID string) *claimRuntimeGuardTask {
@@ -2870,6 +2918,177 @@ func TestClaimTask_IssuePriorSessionRuntimeGuard(t *testing.T) {
 	}
 	if task.PriorWorkDir != "" {
 		t.Fatalf("force fresh: expected empty PriorWorkDir, got %q", task.PriorWorkDir)
+	}
+}
+
+func TestClaimTask_OrchestrationSessionLineage(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+
+	ctx := context.Background()
+	agentID, runtimeID, daemonID := createRuntimeGuardAgent(t, ctx)
+
+	var issueID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO issue (workspace_id, title, status, priority, creator_id, creator_type, number, position)
+		VALUES (
+			$1, 'orchestration session lineage fixture', 'in_progress', 'none', $2, 'member',
+			(SELECT COALESCE(MAX(number), 81250) + 1 FROM issue WHERE workspace_id = $1), 0
+		)
+		RETURNING id
+	`, testWorkspaceID, testUserID).Scan(&issueID); err != nil {
+		t.Fatalf("setup: create issue: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM issue WHERE id = $1`, issueID) })
+
+	var triggerCommentID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO comment (issue_id, workspace_id, author_type, author_id, content, type)
+		VALUES ($1, $2, 'member', $3, 'tagged agent context', 'comment')
+		RETURNING id
+	`, issueID, testWorkspaceID, testUserID).Scan(&triggerCommentID); err != nil {
+		t.Fatalf("setup: create trigger comment: %v", err)
+	}
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, issue_id, trigger_comment_id, status, priority,
+			started_at, completed_at, session_id, work_dir
+		)
+		VALUES ($1, $2, $3, $4, 'completed', 0, now() - interval '10 minutes',
+		        now() - interval '9 minutes', 'tagged-comment-session', '/tmp/tagged-comment-workdir')
+	`, agentID, runtimeID, issueID, triggerCommentID); err != nil {
+		t.Fatalf("setup: create tagged comment task: %v", err)
+	}
+
+	var runID, stepID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO orchestration_run (workspace_id, issue_id, status, mode, policy, created_by)
+		VALUES ($1, $2, 'running', 'auto', '{}'::jsonb, $3)
+		RETURNING id
+	`, testWorkspaceID, issueID, testUserID).Scan(&runID); err != nil {
+		t.Fatalf("setup: create orchestration run: %v", err)
+	}
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO orchestration_step (
+			run_id, step_key, title, stage, status, position, agent_id, instructions
+		)
+		VALUES ($1, 'implement', 'Implement change', 'dev', 'queued', 0, $2, 'continue the tagged work')
+		RETURNING id
+	`, runID, agentID).Scan(&stepID); err != nil {
+		t.Fatalf("setup: create orchestration step: %v", err)
+	}
+	issue, err := testHandler.Queries.GetIssue(ctx, parseUUID(issueID))
+	if err != nil {
+		t.Fatalf("setup: load issue: %v", err)
+	}
+
+	queueStepTask := func(targetStepID string) {
+		t.Helper()
+		task, err := testHandler.TaskService.EnqueueOrchestrationTask(
+			ctx, issue, parseUUID(agentID), parseUUID(targetStepID), pgtype.Text{},
+		)
+		if err != nil {
+			t.Fatalf("setup: queue orchestration task: %v", err)
+		}
+		if task.ForceFreshSession {
+			t.Fatal("orchestration enqueue must leave safe session resumption enabled")
+		}
+	}
+
+	// First participation has no same-step history, so it inherits the safe
+	// issue/comment conversation that caused this agent to become involved.
+	queueStepTask(stepID)
+	first := claimTaskForRuntimeGuard(t, runtimeID, daemonID)
+	if first.PriorSessionID != "tagged-comment-session" || first.PriorWorkDir != "/tmp/tagged-comment-workdir" {
+		t.Fatalf("first orchestration turn did not inherit tagged comment context: %+v", first)
+	}
+	if first.PriorSessionSameOrchestrationStep {
+		t.Fatal("first orchestration turn must be an issue fallback, not same-step lineage")
+	}
+	if _, err := testPool.Exec(ctx, `
+		UPDATE agent_task_queue
+		SET status = 'completed', started_at = now() - interval '8 minutes',
+		    completed_at = now() - interval '7 minutes',
+		    session_id = 'same-step-session', work_dir = '/tmp/same-step-workdir'
+		WHERE id = $1
+	`, first.ID); err != nil {
+		t.Fatalf("setup: complete first orchestration turn: %v", err)
+	}
+
+	// A newer ordinary issue turn must not steal a waiting_input/retry
+	// continuation away from the exact step session that asked the question.
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, issue_id, status, priority,
+			started_at, completed_at, session_id, work_dir
+		)
+		VALUES ($1, $2, $3, 'completed', 0, now() - interval '6 minutes',
+		        now() - interval '5 minutes', 'newer-issue-session', '/tmp/newer-issue-workdir')
+	`, agentID, runtimeID, issueID); err != nil {
+		t.Fatalf("setup: create newer issue turn: %v", err)
+	}
+	queueStepTask(stepID)
+	continuation := claimTaskForRuntimeGuard(t, runtimeID, daemonID)
+	if continuation.PriorSessionID != "same-step-session" || continuation.PriorWorkDir != "/tmp/same-step-workdir" {
+		t.Fatalf("continuation did not prefer exact step lineage: %+v", continuation)
+	}
+	if !continuation.PriorSessionSameOrchestrationStep {
+		t.Fatal("continuation must mark exact-step lineage for daemon worktree safety")
+	}
+	if _, err := testPool.Exec(ctx, `
+		UPDATE agent_task_queue SET status = 'completed', completed_at = now() - interval '4 minutes'
+		WHERE id = $1
+	`, continuation.ID); err != nil {
+		t.Fatalf("setup: complete continuation: %v", err)
+	}
+
+	// The newest same-step attempt is authoritative even when poisoned. The
+	// lookup must fail closed instead of skipping back to either safe session.
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, issue_id, orchestration_step_id,
+			status, priority, started_at, completed_at, session_id, work_dir,
+			failure_reason
+		)
+		VALUES ($1, $2, $3, $4, 'failed', 0, now() - interval '2 minutes',
+		        now() - interval '1 minute', 'poisoned-step-session', '/tmp/poisoned-step-workdir',
+		        'codex_semantic_inactivity')
+	`, agentID, runtimeID, issueID, stepID); err != nil {
+		t.Fatalf("setup: create poisoned step attempt: %v", err)
+	}
+	queueStepTask(stepID)
+	poisoned := claimTaskForRuntimeGuard(t, runtimeID, daemonID)
+	if poisoned.PriorSessionID != "" || poisoned.PriorWorkDir != "" || poisoned.PriorSessionSameOrchestrationStep {
+		t.Fatalf("poisoned step lineage must force a fresh session/workdir: %+v", poisoned)
+	}
+	if _, err := testPool.Exec(ctx, `
+		UPDATE agent_task_queue
+		SET status = 'failed', completed_at = now(), failure_reason = 'agent_error'
+		WHERE id = $1
+	`, poisoned.ID); err != nil {
+		t.Fatalf("setup: finish poisoned-lineage claim: %v", err)
+	}
+
+	// A distinct work unit relies on durable handoffs, not another step's
+	// cwd-scoped provider session. This protects independent branch isolation.
+	var otherStepID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO orchestration_step (
+			run_id, step_key, title, stage, status, position, agent_id, instructions
+		)
+		VALUES ($1, 'other-workstream', 'Other workstream', 'dev', 'queued', 1, $2, 'independent branch')
+		RETURNING id
+	`, runID, agentID).Scan(&otherStepID); err != nil {
+		t.Fatalf("setup: create other orchestration step: %v", err)
+	}
+	queueStepTask(otherStepID)
+	other := claimTaskForRuntimeGuard(t, runtimeID, daemonID)
+	if other.PriorSessionID != "newer-issue-session" || other.PriorWorkDir != "/tmp/newer-issue-workdir" {
+		t.Fatalf("different step did not use the safe ordinary issue fallback: %+v", other)
+	}
+	if other.PriorSessionSameOrchestrationStep {
+		t.Fatal("ordinary issue fallback must not be marked as same-step lineage")
 	}
 }
 

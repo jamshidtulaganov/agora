@@ -2674,7 +2674,7 @@ func (d *Daemon) reportTaskResult(ctx context.Context, taskID string, result Tas
 	switch result.Status {
 	case "completed":
 		taskLog.Info("task completed", "status", result.Status)
-		err := d.client.CompleteTask(ctx, taskID, result.Comment, result.BranchName, result.SessionID, result.WorkDir, result.BaseSHA, result.HeadSHA, result.MergeStatus, result.ConflictFiles, result.IntegrationStatus, result.IntegratedHeadSHAs, result.MissingHeadSHAs, result.GitStates)
+		err := d.client.CompleteTask(ctx, taskID, result.Comment, result.BranchName, result.SessionID, result.WorkDir, result.BaseSHA, result.HeadSHA, result.MergeStatus, result.ConflictFiles, result.IntegrationStatus, result.IntegratedHeadSHAs, result.IntegratedHeads, result.MissingHeadSHAs, result.GitStates)
 		if err == nil {
 			return
 		}
@@ -2840,6 +2840,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	if a, _ := findLocalDirectoryAssignment(task.ProjectResources, d.cfg.DaemonID); a.isWorktreeMode() {
 		worktreeMode = true
 	}
+	task.PreprovisionedWorktree = task.OrchestrationStepID != "" && worktreeMode
 
 	// Prepare isolated execution environment.
 	// Repos are passed as metadata only — the agent checks them out on demand
@@ -2871,7 +2872,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		OrchestrationStep:                task.OrchestrationStepID != "",
 		OrchestrationStage:               task.OrchestrationStage,
 		OrchestrationReadOnly:            task.OrchestrationReadOnly,
-		PreprovisionedWorktree:           task.OrchestrationStepID != "" && worktreeMode,
+		PreprovisionedWorktree:           task.PreprovisionedWorktree,
 		RequestingUserName:               task.RequestingUserName,
 		RequestingUserProfileDescription: task.RequestingUserProfileDescription,
 		InitiatorType:                    task.InitiatorType,
@@ -2915,9 +2916,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 				agentName = task.Agent.Name
 			}
 			persistWorktreeRunChanges(ctx, orchestrationWorktrees, agentName, taskLog)
-			state = inspectWorktreeMergeState(ctx, orchestrationWorktrees)
+			state = inspectWorktreeState(ctx, orchestrationWorktrees, task.OrchestrationReadOnly)
 		} else if env != nil && env.WorkDir != "" {
-			state = inspectManagedWorktreeMergeState(ctx, env.WorkDir)
+			state = inspectManagedWorktreeState(ctx, env.WorkDir, task.OrchestrationReadOnly)
 		}
 		if task.OrchestrationStepKind == "integration" {
 			var repoDirs []string
@@ -2941,6 +2942,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		taskResult.ConflictFiles = state.ConflictFiles
 		taskResult.IntegrationStatus = state.IntegrationStatus
 		taskResult.IntegratedHeadSHAs = state.IntegratedHeadSHAs
+		taskResult.IntegratedHeads = state.IntegratedHeads
 		taskResult.MissingHeadSHAs = state.MissingHeadSHAs
 		taskResult.GitStates = state.RepoStates
 	}()
@@ -3017,7 +3019,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			if localAssignment.isWorktreeMode() {
 				// Worktree isolation: orchestration steps get task-scoped
 				// worktrees from a pinned run base (or the exact integration HEAD
-				// for read-only QA/review). Ordinary issue tasks retain the legacy
+				// for read-only QA/review). A proven same-step continuation reuses
+				// that work unit's prior worktree path so its provider session remains
+				// resolvable by cwd. Ordinary issue tasks retain the legacy
 				// issue-scoped reuse path.
 				issueKey := task.IssueID
 				if issueKey == "" {
@@ -3027,6 +3031,14 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 				if task.OrchestrationStepID != "" {
 					isolationKey = shortID(task.OrchestrationStepID) + "-" + shortID(task.ID)
 					prepParams.WorktreeEnvDir = d.orchestrationWorktreeEnvDir(task.WorkspaceID, issueKey, task.OrchestrationStepID, task.ID)
+					if priorWorkDir, ok := d.sameStepOrchestrationWorkdir(task, issueKey); ok {
+						prepParams.WorktreeEnvDir = priorWorkDir
+						// The branch name is derived from the original task key. If the
+						// worktree was swept between turns, recreating that branch keeps
+						// the prior committed state instead of cutting a new branch from
+						// the run base while reusing only the cwd string.
+						isolationKey = shortID(task.OrchestrationStepID) + "-" + filepath.Base(filepath.Clean(priorWorkDir))
+					}
 				} else {
 					prepParams.WorktreeEnvDir = d.worktreeEnvDir(task.WorkspaceID, issueKey)
 				}
@@ -3422,7 +3434,12 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		"timeout", execOpts.Timeout,
 	)
 
-	result, tools, err := d.executeAndDrain(ctx, backend, prompt, execOpts, taskLog, task.ID)
+	// A resume failure can execute the backend twice for the same task row.
+	// Keep transcript sequence numbers monotonic across both subprocess sessions
+	// so the server's (task_id, seq) idempotency key does not mistake fresh-
+	// session messages for retries of the failed resume attempt.
+	var taskMessageSeq atomic.Int32
+	result, tools, err := d.executeAndDrainWithMessageSequence(ctx, backend, prompt, execOpts, taskLog, task.ID, &taskMessageSeq)
 	if err != nil {
 		return TaskResult{}, err
 	}
@@ -3434,7 +3451,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		firstUsage := result.Usage
 		taskLog.Warn("session resume failed, retrying with fresh session", "error", result.Error)
 		execOpts.ResumeSessionID = ""
-		retryResult, retryTools, retryErr := d.executeAndDrain(ctx, backend, prompt, execOpts, taskLog, task.ID)
+		retryResult, retryTools, retryErr := d.executeAndDrainWithMessageSequence(ctx, backend, prompt, execOpts, taskLog, task.ID, &taskMessageSeq)
 		if retryErr != nil {
 			taskLog.Error("fresh session also failed to start", "error", retryErr)
 		} else {
@@ -3628,6 +3645,11 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 // executeAndDrain runs a backend, drains its message stream (forwarding to the
 // server), and waits for the final result.
 func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, prompt string, opts agent.ExecOptions, taskLog *slog.Logger, taskID string) (agent.Result, int32, error) {
+	var messageSeq atomic.Int32
+	return d.executeAndDrainWithMessageSequence(ctx, backend, prompt, opts, taskLog, taskID, &messageSeq)
+}
+
+func (d *Daemon) executeAndDrainWithMessageSequence(ctx context.Context, backend agent.Backend, prompt string, opts agent.ExecOptions, taskLog *slog.Logger, taskID string, messageSeq *atomic.Int32) (agent.Result, int32, error) {
 	// Wrap the caller's ctx so the idle watchdog (below) can interrupt both
 	// the agent subprocess (via the ctx passed to backend.Execute) AND the
 	// drain loop with a single cancel. Without this layer the backend would
@@ -3694,18 +3716,29 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 		go d.runIdleWatchdog(agentCtx, idleWindow, startupWindow, d.cfg.AgentToolWatchdog, &lastActivityAt, &sawFirstMessage, &inFlightTools, &idleWatchdogFired, &idleWatchdogThreshold, agentCancel, session.Messages, taskLog, taskID)
 	}
 
+	// Session implementations close Messages before publishing Result (the
+	// agent.Session contract). Join this worker before returning the result so
+	// the terminal callback can never overtake the final transcript flush.
+	messagesDrained := make(chan struct{})
 	go func() {
-		var seq atomic.Int32
+		defer close(messagesDrained)
 		var mu sync.Mutex
+		var flushMu sync.Mutex
 		var pendingText strings.Builder
 		var pendingThinking strings.Builder
 		var batch []TaskMessageData
 		callIDToTool := map[string]string{}
 
-		flush := func() {
+		flush := func() error {
+			// The periodic sender and the final drain may meet while an HTTP call is
+			// in flight. Serialize them so batches always reach the server in seq
+			// order and a failed older batch is requeued ahead of newer messages.
+			flushMu.Lock()
+			defer flushMu.Unlock()
+
 			mu.Lock()
 			if pendingThinking.Len() > 0 {
-				s := seq.Add(1)
+				s := messageSeq.Add(1)
 				batch = append(batch, TaskMessageData{
 					Seq:     int(s),
 					Type:    "thinking",
@@ -3714,7 +3747,7 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 				pendingThinking.Reset()
 			}
 			if pendingText.Len() > 0 {
-				s := seq.Add(1)
+				s := messageSeq.Add(1)
 				batch = append(batch, TaskMessageData{
 					Seq:     int(s),
 					Type:    "text",
@@ -3728,24 +3761,41 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 
 			if len(toSend) > 0 {
 				sendCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				if err := d.client.ReportTaskMessages(sendCtx, taskID, toSend); err != nil {
-					taskLog.Debug("failed to report task messages", "error", err)
+				err := d.client.ReportTaskMessages(sendCtx, taskID, toSend)
+				cancel()
+				if err != nil {
+					// ReportTaskMessages already retries transient failures. Retain the
+					// batch after that bounded schedule is exhausted so the next periodic
+					// or final flush tries again instead of creating a transcript hole.
+					mu.Lock()
+					batch = append(toSend, batch...)
+					mu.Unlock()
+					taskLog.Warn("failed to report task messages; batch retained for retry",
+						"error", err,
+						"count", len(toSend),
+						"first_seq", toSend[0].Seq,
+						"last_seq", toSend[len(toSend)-1].Seq,
+					)
+					return err
 				} else {
 					taskLog.Debug("reported task messages", "count", len(toSend), "last_seq", toSend[len(toSend)-1].Seq)
 				}
-				cancel()
 			}
+			return nil
 		}
 
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 
 		done := make(chan struct{})
+		var flusher sync.WaitGroup
+		flusher.Add(1)
 		go func() {
+			defer flusher.Done()
 			for {
 				select {
 				case <-ticker.C:
-					flush()
+					_ = flush()
 				case <-done:
 					return
 				}
@@ -3794,7 +3844,7 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 						callIDToTool[msg.CallID] = msg.Tool
 						mu.Unlock()
 					}
-					s := seq.Add(1)
+					s := messageSeq.Add(1)
 					mu.Lock()
 					batch = append(batch, TaskMessageData{
 						Seq:   int(s),
@@ -3818,7 +3868,7 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 							break
 						}
 					}
-					s := seq.Add(1)
+					s := messageSeq.Add(1)
 					output := msg.Output
 					if len(output) > 8192 {
 						output = output[:8192]
@@ -3853,7 +3903,7 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 					}
 				case agent.MessageError:
 					taskLog.Error("agent error", "content", msg.Content)
-					s := seq.Add(1)
+					s := messageSeq.Add(1)
 					mu.Lock()
 					batch = append(batch, TaskMessageData{
 						Seq:     int(s),
@@ -3868,11 +3918,26 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 		}
 	drainDone:
 		close(done)
-		flush()
+		flusher.Wait()
+		// The terminal path gets a few additional bounded delivery rounds after
+		// the periodic sender stops. Each round has its own short internal retry
+		// schedule; ambiguous partial commits are safe because the server dedupes
+		// by (task_id, seq).
+		var finalFlushErr error
+		for attempt := 0; attempt < 3; attempt++ {
+			finalFlushErr = flush()
+			if finalFlushErr == nil || !isTransientError(finalFlushErr) {
+				break
+			}
+		}
+		if finalFlushErr != nil {
+			taskLog.Error("final task message flush failed after retries", "error", finalFlushErr)
+		}
 	}()
 
 	select {
 	case result := <-session.Result:
+		<-messagesDrained
 		if idleWatchdogFired.Load() {
 			// The backend's wait goroutine (e.g. claude.go) translates the
 			// SIGKILL we delivered via agentCancel into Status="aborted".
@@ -3886,6 +3951,7 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 		}
 		return result, toolCount.Load(), nil
 	case <-drainCtx.Done():
+		<-messagesDrained
 		// Idle watchdog cancels via agentCancel(), which propagates here as
 		// context.Canceled. Check this BEFORE the generic cancelled/timeout
 		// classifiers so a watchdog-induced stop isn't misreported as

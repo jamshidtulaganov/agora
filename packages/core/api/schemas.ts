@@ -41,6 +41,7 @@ const OrchestrationStepSchema = z.object({
   agent_id: z.string().optional(),
   model: z.string().optional(),
   task_id: z.string().optional(),
+  question_id: z.string().optional(),
   approval_required: z.boolean().default(false),
   approved_by: z.string().optional(),
   attempt: z.number().default(0),
@@ -74,6 +75,25 @@ const OrchestrationEventSchema = z.object({
   created_at: z.string(),
 }).loose();
 
+const OrchestrationMessageSchema = z.object({
+  id: z.string(),
+  step_id: z.string(),
+  kind: z.enum(["instruction", "progress", "question", "answer", "blocker", "handoff", "ack", "escalation"]),
+  actor_type: z.enum(["system", "member", "agent"]),
+  actor_id: z.string().optional(),
+  target_type: z.enum(["run", "step", "human", "controller", "agent"]),
+  target_id: z.string().optional(),
+  body: z.record(z.string(), z.unknown()).default({}),
+  plan_version: z.number().default(1),
+  correlation_id: z.string(),
+  causation_id: z.string().optional(),
+  reply_to_id: z.string().optional(),
+  expects_reply: z.boolean().default(false),
+  acknowledged_at: z.string().optional(),
+  resolved_at: z.string().optional(),
+  created_at: z.string(),
+}).loose();
+
 const OrchestrationPlanRevisionSchema = z.object({
   id: z.string(), version: z.number(), actor_type: z.string(), actor_id: z.string().optional(),
   reason: z.string(), patch: z.record(z.string(), z.unknown()).default({}), created_at: z.string(),
@@ -100,6 +120,7 @@ export const OrchestrationRunSchema = z.object({
   updated_at: z.string(),
   steps: z.array(OrchestrationStepSchema).default([]),
   events: z.array(OrchestrationEventSchema).default([]),
+  messages: z.array(OrchestrationMessageSchema).default([]),
 }).loose();
 
 export const EMPTY_ORCHESTRATION_RUN: OrchestrationRun | null = null;

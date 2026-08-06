@@ -56,6 +56,7 @@ import type {
   IssueDeletedPayload,
   IssueLabelsChangedPayload,
   IssueMetadataChangedPayload,
+  OrchestrationChangedPayload,
   InboxNewPayload,
   InboxItem,
   NotificationPreferenceResponse,
@@ -185,6 +186,23 @@ export function applyWorkspaceUpdatedToCache(
     }
   }
   qc.invalidateQueries({ queryKey: workspaceKeys.list() });
+}
+
+/**
+ * Mark only the orchestration query named by the event stale. Task events do
+ * not carry an issue id, so orchestration cache coherence is deliberately
+ * owned by this precise path for plan edits, approvals, retries,
+ * cancellations, and run transitions.
+ */
+export function invalidateOrchestrationChanged(
+  qc: QueryClient,
+  payload: OrchestrationChangedPayload,
+): void {
+  if (!payload.issue_id || !payload.run_id) return;
+  qc.invalidateQueries({
+    queryKey: issueKeys.orchestration(payload.issue_id),
+    exact: true,
+  });
 }
 
 /**
@@ -532,7 +550,9 @@ export function useRealtimeSync(
         // shape as the tasks invalidation above — any task lifecycle
         // event shifts the aggregated usage numbers.
         qc.invalidateQueries({ queryKey: ["issues", "usage"] });
-        qc.invalidateQueries({ queryKey: issueKeys.orchestrationAll() });
+        // Orchestration state has its own issue-scoped event. Keeping it out
+        // of this workspace-wide task prefix avoids refetching every open run
+        // when one unrelated agent task changes lifecycle state.
         // Completed tasks publish immutable branch/base/head state. Refresh
         // the artifact selector at the same lifecycle boundary so Changes
         // does not keep showing the pre-completion "integration pending"
@@ -575,6 +595,7 @@ export function useRealtimeSync(
       "subscriber:added", "subscriber:removed",
       "qa_evidence:ready",
       "test_cases:changed",
+      "orchestration:changed",
       "daemon:heartbeat",
       // Chat events are handled explicitly below; do not double-invalidate.
       "chat:message", "chat:done", "chat:session_read", "chat:session_deleted",
@@ -644,6 +665,10 @@ export function useRealtimeSync(
       if (!issue_id) return;
       const wsId = getCurrentWsId();
       if (wsId) onIssueMetadataChanged(qc, wsId, issue_id, metadata ?? {});
+    });
+
+    const unsubOrchestrationChanged = ws.on("orchestration:changed", (p) => {
+      invalidateOrchestrationChanged(qc, p);
     });
 
     const unsubInboxNew = ws.on("inbox:new", async (p) => {
@@ -1114,6 +1139,7 @@ export function useRealtimeSync(
       unsubIssueDeleted();
       unsubIssueLabelsChanged();
       unsubIssueMetadataChanged();
+      unsubOrchestrationChanged();
       unsubInboxNew();
       unsubQAEvidenceReady();
       unsubTestCasesChanged();

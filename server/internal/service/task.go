@@ -51,7 +51,15 @@ type TaskService struct {
 	// It also observes ordinary issue-task terminals so a step deferred behind
 	// that task's per-agent queue slot can be scheduled immediately afterward.
 	// The handler layer wires it to avoid a service import cycle.
-	OnOrchestrationTaskTerminal func(ctx context.Context, task db.AgentTaskQueue)
+	OnOrchestrationTaskTerminal func(ctx context.Context, task db.AgentTaskQueue) error
+	// OnOrchestrationRunReady retries dispatch for active runs with persisted
+	// runnable work after a prior post-commit dispatch failure.
+	OnOrchestrationRunReady func(ctx context.Context, runID pgtype.UUID) error
+	// OnOrchestrationAnswerCommentsReady repairs the commit boundary between a
+	// durable member comment and the orchestration answer it was meant to
+	// create. The handler owns comment/mention semantics; the service exposes
+	// the periodic sweeper hook without importing the handler package.
+	OnOrchestrationAnswerCommentsReady func(ctx context.Context) (int, error)
 
 	analyticsContextMu    sync.Mutex
 	analyticsContextCache map[string]analytics.TaskContext
@@ -66,6 +74,10 @@ type TaskWakeupNotifier interface {
 // transmit (it ends up in every task list response). 200 is enough for a
 // recognisable preview of a one-paragraph comment.
 const triggerSummaryMaxLen = 200
+
+// ErrOrchestrationAdvance marks a task whose terminal row is durable but whose
+// persisted orchestration transition must be replayed.
+var ErrOrchestrationAdvance = errors.New("advance orchestration")
 
 // truncateForSummary returns s shortened to maxRunes, with a trailing
 // `…` when truncated. Operates on runes (not bytes) so multibyte characters
@@ -567,7 +579,27 @@ func (s *TaskService) EnqueueTaskForMentionWithModel(ctx context.Context, issue 
 // time, so even a very fast daemon completion can be reconciled without a
 // task-created/step-linked race.
 func (s *TaskService) EnqueueOrchestrationTask(ctx context.Context, issue db.Issue, agentID, stepID pgtype.UUID, modelOverride pgtype.Text) (db.AgentTaskQueue, error) {
-	return s.enqueueMentionTask(ctx, issue, agentID, pgtype.UUID{}, false, true, modelOverride, stepID)
+	// Orchestration is not a manual rerun. A waiting_input continuation or an
+	// infrastructure retry should keep the provider conversation when the
+	// claim/runtime safety checks can prove the lineage is compatible. Manual
+	// issue reruns remain the only ordinary path that deliberately forces a
+	// fresh session.
+	return s.enqueueMentionTask(ctx, issue, agentID, pgtype.UUID{}, false, false, modelOverride, stepID)
+}
+
+// CreateOrchestrationTaskInTx inserts an orchestration task through the
+// caller's transaction without publishing or waking a daemon. The handler uses
+// this to commit step queueing, task creation, and step↔task linkage as one
+// unit, then calls PublishTaskEnqueued only after commit.
+func (s *TaskService) CreateOrchestrationTaskInTx(
+	ctx context.Context,
+	queries *db.Queries,
+	issue db.Issue,
+	agentID, stepID pgtype.UUID,
+	modelOverride pgtype.Text,
+) (db.AgentTaskQueue, error) {
+	txService := &TaskService{Queries: queries}
+	return txService.createMentionTask(ctx, issue, agentID, pgtype.UUID{}, false, false, modelOverride, stepID, false)
 }
 
 // EnqueueTaskForSquadLeader is the leader-role variant of EnqueueTaskForMention.
@@ -581,6 +613,10 @@ func (s *TaskService) EnqueueTaskForSquadLeader(ctx context.Context, issue db.Is
 }
 
 func (s *TaskService) enqueueMentionTask(ctx context.Context, issue db.Issue, agentID pgtype.UUID, triggerCommentID pgtype.UUID, isLeader bool, forceFreshSession bool, modelOverride pgtype.Text, orchestrationStepID pgtype.UUID) (db.AgentTaskQueue, error) {
+	return s.createMentionTask(ctx, issue, agentID, triggerCommentID, isLeader, forceFreshSession, modelOverride, orchestrationStepID, true)
+}
+
+func (s *TaskService) createMentionTask(ctx context.Context, issue db.Issue, agentID pgtype.UUID, triggerCommentID pgtype.UUID, isLeader bool, forceFreshSession bool, modelOverride pgtype.Text, orchestrationStepID pgtype.UUID, publish bool) (db.AgentTaskQueue, error) {
 	agent, err := s.Queries.GetAgent(ctx, agentID)
 	if err != nil {
 		slog.Error("mention task enqueue failed: agent not found", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID), "error", err)
@@ -615,12 +651,14 @@ func (s *TaskService) enqueueMentionTask(ctx context.Context, issue db.Issue, ag
 	// Dev-runtime pinning (daemon-per-dev): a QA-squad mention on an issue
 	// whose developer serves the project locally executes on the dev's own
 	// daemon. Best-effort; no-op unless labs.qa_dev_runtimes is on.
-	task = s.maybePinTaskToDevRuntime(ctx, issue, agent, task)
+	task = s.maybePinTaskToDevRuntime(ctx, issue, agent, task, publish)
 
-	slog.Info("mention task enqueued", "task_id", util.UUIDToString(task.ID), "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID), "is_leader_task", isLeader)
-	// See EnqueueTaskForIssue for ordering rationale.
-	s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, task)
-	s.NotifyTaskEnqueued(ctx, task)
+	if publish {
+		slog.Info("mention task enqueued", "task_id", util.UUIDToString(task.ID), "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID), "is_leader_task", isLeader)
+		// See EnqueueTaskForIssue for ordering rationale.
+		s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, task)
+		s.NotifyTaskEnqueued(ctx, task)
+	}
 	return task, nil
 }
 
@@ -943,7 +981,9 @@ func (s *TaskService) CancelTaskWithResult(ctx context.Context, taskID pgtype.UU
 
 	// Broadcast cancellation as a task:failed event so frontends clear the live card
 	if task.IssueID.Valid && s.OnOrchestrationTaskTerminal != nil {
-		s.OnOrchestrationTaskTerminal(ctx, task)
+		if err := s.OnOrchestrationTaskTerminal(ctx, task); err != nil {
+			slog.Error("advance orchestration after task cancellation failed", "task_id", util.UUIDToString(task.ID), "error", err)
+		}
 	}
 	s.broadcastTaskEvent(ctx, protocol.EventTaskCancelled, task)
 
@@ -1000,74 +1040,10 @@ func (s *TaskService) finalizeCancelledChatMessage(ctx context.Context, task db.
 	return cancelled
 }
 
-// ClaimTask atomically claims the next queued task for an agent,
-// respecting max_concurrent_tasks.
-func (s *TaskService) ClaimTask(ctx context.Context, agentID pgtype.UUID) (*db.AgentTaskQueue, error) {
-	start := time.Now()
-	var (
-		outcome                                                              = "unknown"
-		getAgentMs, countRunningMs, claimAgentMs, updateStatusMs, dispatchMs int64
-	)
-	defer func() {
-		s.maybeLogClaimSlow(agentID, outcome, start, getAgentMs, countRunningMs, claimAgentMs, updateStatusMs, dispatchMs)
-	}()
-
-	t0 := start
-	agent, err := s.Queries.GetAgent(ctx, agentID)
-	getAgentMs = time.Since(t0).Milliseconds()
-	if err != nil {
-		outcome = "error_get_agent"
-		return nil, fmt.Errorf("agent not found: %w", err)
-	}
-
-	t0 = time.Now()
-	running, err := s.Queries.CountRunningTasks(ctx, agentID)
-	countRunningMs = time.Since(t0).Milliseconds()
-	if err != nil {
-		outcome = "error_count_running"
-		return nil, fmt.Errorf("count running tasks: %w", err)
-	}
-	if running >= int64(agent.MaxConcurrentTasks) {
-		slog.Debug("task claim: no capacity", "agent_id", util.UUIDToString(agentID), "running", running, "max", agent.MaxConcurrentTasks)
-		outcome = "no_capacity"
-		return nil, nil // No capacity
-	}
-
-	t0 = time.Now()
-	task, err := s.Queries.ClaimAgentTask(ctx, agentID)
-	claimAgentMs = time.Since(t0).Milliseconds()
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			slog.Debug("task claim: no tasks available", "agent_id", util.UUIDToString(agentID))
-			outcome = "no_tasks"
-			return nil, nil // No tasks available
-		}
-		outcome = "error_claim"
-		return nil, fmt.Errorf("claim task: %w", err)
-	}
-
-	slog.Info("task claimed", "task_id", util.UUIDToString(task.ID), "agent_id", util.UUIDToString(agentID))
-	s.captureTaskDispatched(ctx, task)
-
-	// Refresh agent status from active tasks. This avoids a stale unconditional
-	// working write racing after a just-cancelled claim.
-	t0 = time.Now()
-	s.ReconcileAgentStatus(ctx, agentID)
-	updateStatusMs = time.Since(t0).Milliseconds()
-
-	// Broadcast task:dispatch. ResolveTaskWorkspaceID inside this path can
-	// re-query issue/chat_session/autopilot_run, so it can also be a real
-	// contributor to claim latency.
-	t0 = time.Now()
-	s.broadcastTaskDispatch(ctx, task)
-	dispatchMs = time.Since(t0).Milliseconds()
-
-	outcome = "claimed"
-	return &task, nil
-}
-
-// ClaimTaskForRuntime claims the next runnable task for a runtime while
-// still respecting each agent's max_concurrent_tasks limit.
+// ClaimTaskForRuntime atomically claims the next runnable task for exactly one
+// runtime while respecting each agent's max_concurrent_tasks limit. Runtime
+// routing, capacity admission, task selection, and dispatch transition live in
+// one SQL statement; there is no agent-global count-then-claim window.
 //
 // Empty-claim fast path: when EmptyClaim is configured and a recent
 // check verified the runtime had no queued tasks, returns immediately
@@ -1077,10 +1053,9 @@ func (s *TaskService) ClaimTask(ctx context.Context, agentID pgtype.UUID) (*db.A
 func (s *TaskService) ClaimTaskForRuntime(ctx context.Context, runtimeID pgtype.UUID) (*db.AgentTaskQueue, error) {
 	start := time.Now()
 	var (
-		outcome          = "no_task"
-		listMs, loopMs   int64
-		listCount, tried int
-		claimedFlag      bool
+		outcome                                  = "no_task"
+		claimMs, pendingCheckMs, statusMs, busMs int64
+		claimedFlag                              bool
 	)
 	defer func() {
 		totalMs := time.Since(start).Milliseconds()
@@ -1091,10 +1066,10 @@ func (s *TaskService) ClaimTaskForRuntime(ctx context.Context, runtimeID pgtype.
 			"runtime_id", util.UUIDToString(runtimeID),
 			"outcome", outcome,
 			"total_ms", totalMs,
-			"list_pending_ms", listMs,
-			"list_pending_count", listCount,
-			"agents_tried", tried,
-			"claim_loop_ms", loopMs,
+			"claim_ms", claimMs,
+			"pending_check_ms", pendingCheckMs,
+			"update_status_ms", statusMs,
+			"dispatch_ms", busMs,
 			"claimed", claimedFlag,
 		)
 	}()
@@ -1135,71 +1110,65 @@ func (s *TaskService) ClaimTaskForRuntime(ctx context.Context, runtimeID pgtype.
 	preSelectVersion := s.EmptyClaim.CurrentVersion(ctx, runtimeKey)
 
 	t0 := time.Now()
-	tasks, err := s.Queries.ListQueuedClaimCandidatesByRuntime(ctx, runtimeID)
-	listMs = time.Since(t0).Milliseconds()
-	listCount = len(tasks)
+	task, err := s.Queries.ClaimAgentTaskForRuntime(ctx, runtimeID)
+	claimMs = time.Since(t0).Milliseconds()
 	if err != nil {
-		outcome = "error_list"
-		return nil, fmt.Errorf("list queued claim candidates: %w", err)
-	}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			outcome = "error_claim"
+			return nil, fmt.Errorf("claim runtime task: %w", err)
+		}
 
-	if len(tasks) == 0 {
-		s.EmptyClaim.MarkEmpty(ctx, runtimeKey, preSelectVersion)
-		outcome = "empty_db"
+		// A no-row result can mean either a truly empty runtime or queued work
+		// whose agent is at capacity / row-locked by another poll. Cache only
+		// the former: caching a capacity miss would strand queued work after the
+		// active task completes because completion does not bump the enqueue
+		// invalidation version.
+		t0 = time.Now()
+		pending, pendingErr := s.Queries.ListPendingTasksByRuntime(ctx, runtimeID)
+		pendingCheckMs = time.Since(t0).Milliseconds()
+		if pendingErr != nil {
+			outcome = "error_check_pending"
+			return nil, fmt.Errorf("check pending runtime tasks: %w", pendingErr)
+		}
+		hasQueued := false
+		for _, pendingTask := range pending {
+			if pendingTask.Status == "queued" {
+				hasQueued = true
+				break
+			}
+		}
+		if !hasQueued {
+			s.EmptyClaim.MarkEmpty(ctx, runtimeKey, preSelectVersion)
+			outcome = "empty_db"
+		} else {
+			outcome = "no_capacity"
+		}
 		return nil, nil
 	}
 
-	loopStart := time.Now()
-	triedAgents := map[string]struct{}{}
-	var claimed *db.AgentTaskQueue
-	for _, candidate := range tasks {
-		agentKey := util.UUIDToString(candidate.AgentID)
-		if _, seen := triedAgents[agentKey]; seen {
-			continue
-		}
-		triedAgents[agentKey] = struct{}{}
-		tried++
-
-		task, err := s.ClaimTask(ctx, candidate.AgentID)
-		if err != nil {
-			loopMs = time.Since(loopStart).Milliseconds()
-			outcome = "error_claim"
-			return nil, err
-		}
-		if task != nil && task.RuntimeID == runtimeID {
-			claimed = task
-			break
-		}
-	}
-	loopMs = time.Since(loopStart).Milliseconds()
-	if claimed != nil {
-		claimedFlag = true
-		outcome = "claimed"
-	}
-
-	return claimed, nil
-}
-
-// maybeLogClaimSlow emits one structured log per ClaimTask call when its total
-// latency exceeds 300ms, so the prod tail can be diagnosed without flooding
-// logs at normal poll rates. Called via defer so it captures the full path
-// including post-claim updateAgentStatus / broadcastTaskDispatch (both of
-// which can hit the DB) and any error exit.
-func (s *TaskService) maybeLogClaimSlow(agentID pgtype.UUID, outcome string, start time.Time, getAgentMs, countRunningMs, claimAgentMs, updateStatusMs, dispatchMs int64) {
-	totalMs := time.Since(start).Milliseconds()
-	if totalMs < 300 {
-		return
-	}
-	slog.Info("claim_task slow",
-		"agent_id", util.UUIDToString(agentID),
-		"outcome", outcome,
-		"total_ms", totalMs,
-		"get_agent_ms", getAgentMs,
-		"count_running_ms", countRunningMs,
-		"claim_agent_ms", claimAgentMs,
-		"update_status_ms", updateStatusMs,
-		"dispatch_ms", dispatchMs,
+	claimedFlag = true
+	outcome = "claimed"
+	slog.Info("task claimed",
+		"task_id", util.UUIDToString(task.ID),
+		"runtime_id", runtimeKey,
+		"agent_id", util.UUIDToString(task.AgentID),
 	)
+	s.captureTaskDispatched(ctx, task)
+
+	// Refresh agent status from active tasks. This avoids a stale unconditional
+	// working write racing after a just-cancelled claim.
+	t0 = time.Now()
+	s.ReconcileAgentStatus(ctx, task.AgentID)
+	statusMs = time.Since(t0).Milliseconds()
+
+	// Broadcast task:dispatch. ResolveTaskWorkspaceID inside this path can
+	// re-query issue/chat_session/autopilot_run, so it can also be a real
+	// contributor to claim latency.
+	t0 = time.Now()
+	s.broadcastTaskDispatch(ctx, task)
+	busMs = time.Since(t0).Milliseconds()
+
+	return &task, nil
 }
 
 // StartTask transitions a dispatched task to running.
@@ -1302,6 +1271,20 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 					"current_status", existing.Status,
 					"agent_id", util.UUIDToString(existing.AgentID),
 				)
+				if existing.Status == "completed" {
+					// Match the normal path for every issue task, not only a task
+					// already linked to a step. Ordinary issue tasks are also wake-up
+					// edges for DAG work deferred behind the same agent queue slot.
+					if existing.IssueID.Valid && s.OnOrchestrationTaskTerminal != nil {
+						if callbackErr := s.OnOrchestrationTaskTerminal(ctx, existing); callbackErr != nil {
+							return nil, fmt.Errorf("%w: %v", ErrOrchestrationAdvance, callbackErr)
+						}
+					}
+					// The original request may have committed the terminal row and
+					// died while advancing orchestration, before this invalidation.
+					// Re-emitting is safe and closes that realtime crash window.
+					s.broadcastTaskEvent(ctx, protocol.EventTaskCompleted, existing)
+				}
 				return &existing, nil
 			}
 			slog.Warn("complete task failed",
@@ -1433,7 +1416,9 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 	s.ReconcileAgentStatus(ctx, task.AgentID)
 
 	if task.IssueID.Valid && s.OnOrchestrationTaskTerminal != nil {
-		s.OnOrchestrationTaskTerminal(ctx, task)
+		if err := s.OnOrchestrationTaskTerminal(ctx, task); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrOrchestrationAdvance, err)
+		}
 	}
 	// Broadcast after orchestration advancement so clients invalidating from
 	// this event read the new step/run state rather than the just-finished one.
@@ -1512,6 +1497,14 @@ func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 					"current_status", existing.Status,
 					"agent_id", util.UUIDToString(existing.AgentID),
 				)
+				if existing.Status == "failed" {
+					if existing.IssueID.Valid && s.OnOrchestrationTaskTerminal != nil {
+						if callbackErr := s.OnOrchestrationTaskTerminal(ctx, existing); callbackErr != nil {
+							return nil, fmt.Errorf("%w: %v", ErrOrchestrationAdvance, callbackErr)
+						}
+					}
+					s.broadcastTaskEvent(ctx, protocol.EventTaskFailed, existing)
+				}
 				return &existing, nil
 			}
 			slog.Warn("fail task failed",
@@ -1597,7 +1590,9 @@ func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 
 	// Broadcast
 	if task.IssueID.Valid && s.OnOrchestrationTaskTerminal != nil {
-		s.OnOrchestrationTaskTerminal(ctx, task)
+		if err := s.OnOrchestrationTaskTerminal(ctx, task); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrOrchestrationAdvance, err)
+		}
 	}
 	s.broadcastTaskEvent(ctx, protocol.EventTaskFailed, task)
 
@@ -2052,7 +2047,9 @@ func (s *TaskService) HandleFailedTasks(ctx context.Context, tasks []db.AgentTas
 			// daemon failure path so the persisted step retries in place or fails
 			// its run instead of remaining queued/running forever.
 			if s.OnOrchestrationTaskTerminal != nil {
-				s.OnOrchestrationTaskTerminal(ctx, t)
+				if err := s.OnOrchestrationTaskTerminal(ctx, t); err != nil {
+					slog.Error("advance orchestration during stale-task recovery failed", "task_id", util.UUIDToString(t.ID), "error", err)
+				}
 			}
 		} else {
 			// Auto-retry first so the issue stays in_progress rather than
@@ -2127,6 +2124,74 @@ func (s *TaskService) HandleFailedTasks(ctx context.Context, tasks []db.AgentTas
 		s.ReconcileAgentStatus(ctx, agentID)
 	}
 	return retried
+}
+
+// ReconcileTerminalOrchestrationTasks repairs the transaction boundary between
+// a terminal agent_task_queue row and its persisted orchestration step. Normal
+// daemon callbacks retry immediately; stale/offline/cancel paths are
+// best-effort, so the periodic runtime sweeper uses this durable scan until the
+// idempotent terminal callback converges.
+func (s *TaskService) ReconcileTerminalOrchestrationTasks(ctx context.Context) int {
+	if s.OnOrchestrationTaskTerminal == nil {
+		return 0
+	}
+	tasks, err := s.Queries.ListUnreconciledTerminalOrchestrationTasks(ctx)
+	if err != nil {
+		slog.Warn("list unreconciled terminal orchestration tasks failed", "error", err)
+		return 0
+	}
+	reconciled := 0
+	for _, task := range tasks {
+		if err := s.OnOrchestrationTaskTerminal(ctx, task); err != nil {
+			slog.Warn("reconcile terminal orchestration task failed",
+				"task_id", util.UUIDToString(task.ID),
+				"step_id", util.UUIDToString(task.OrchestrationStepID),
+				"status", task.Status,
+				"error", err,
+			)
+			continue
+		}
+		reconciled++
+	}
+	return reconciled
+}
+
+// ReconcileRunnableOrchestrationRuns makes pending dispatch durable across the
+// transaction boundary used by answers, approvals, retries, and terminal
+// callbacks. The dispatcher is idempotent and owns its own queue guards.
+func (s *TaskService) ReconcileRunnableOrchestrationRuns(ctx context.Context) int {
+	if s.OnOrchestrationRunReady == nil {
+		return 0
+	}
+	runIDs, err := s.Queries.ListOrchestrationRunsWithRunnablePendingSteps(ctx)
+	if err != nil {
+		slog.Warn("list runnable orchestration repairs failed", "error", err)
+		return 0
+	}
+	repaired := 0
+	for _, runID := range runIDs {
+		if err := s.OnOrchestrationRunReady(ctx, runID); err != nil {
+			slog.Warn("repair runnable orchestration dispatch failed", "run_id", util.UUIDToString(runID), "error", err)
+			continue
+		}
+		repaired++
+	}
+	return repaired
+}
+
+// ReconcileOrchestrationAnswerComments repairs tagged member answers whose
+// comment committed but whose idempotent orchestration response did not. The
+// handler callback selects only still-open waiting_input questions, so every
+// successful replay is safe to repeat on later sweeper ticks.
+func (s *TaskService) ReconcileOrchestrationAnswerComments(ctx context.Context) int {
+	if s.OnOrchestrationAnswerCommentsReady == nil {
+		return 0
+	}
+	repaired, err := s.OnOrchestrationAnswerCommentsReady(ctx)
+	if err != nil {
+		slog.Warn("repair tagged orchestration answer comments failed", "error", err, "repaired", repaired)
+	}
+	return repaired
 }
 
 // runInTx executes fn inside a single DB transaction. If TxStarter is nil
@@ -2266,11 +2331,18 @@ func priorityToInt(p string) int32 {
 	}
 }
 
+// PublishTaskEnqueued emits the queued event and then wakes the owning runtime.
+// Transactional callers invoke it only after their task and source linkage
+// commit, so a daemon can never observe a half-created work unit.
+func (s *TaskService) PublishTaskEnqueued(ctx context.Context, task db.AgentTaskQueue) {
+	s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, task)
+	s.NotifyTaskEnqueued(ctx, task)
+}
+
 // NotifyTaskEnqueued is the cross-package shim for callers outside
-// TaskService (e.g. AutopilotService.dispatchRunOnly) that insert a
-// row into agent_task_queue directly. Invalidates the empty-claim
-// cache and kicks the daemon WS so the new task is claimed without
-// waiting for the next poll.
+// TaskService (e.g. AutopilotService.dispatchRunOnly) that insert a row into
+// agent_task_queue directly. It invalidates the empty-claim cache and wakes the
+// daemon without emitting a second queued event.
 func (s *TaskService) NotifyTaskEnqueued(ctx context.Context, task db.AgentTaskQueue) {
 	s.captureTaskQueued(ctx, task)
 	s.notifyTaskAvailable(task)

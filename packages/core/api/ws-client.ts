@@ -1,7 +1,12 @@
-import type { WSMessage, WSEventType } from "../types/events";
+import type { WSMessage, WSEventPayload, WSEventType } from "../types/events";
 import { type Logger, noopLogger } from "../logger";
 
 type EventHandler = (payload: unknown, actorId?: string, actorType?: string) => void;
+type TypedEventHandler<E extends WSEventType> = (
+  payload: WSEventPayload<E>,
+  actorId?: string,
+  actorType?: string,
+) => void;
 
 // Cap how much of an unparseable frame we put into the log. A malformed or
 // rogue server can stream arbitrarily large garbage, and the warn handler may
@@ -155,13 +160,16 @@ export class WSClient {
     this.onReconnectCallbacks.clear();
   }
 
-  on(event: WSEventType, handler: EventHandler) {
+  on<E extends WSEventType>(event: E, handler: TypedEventHandler<E>) {
+    // Handlers are stored together for runtime dispatch, while the generic
+    // call boundary preserves each event's payload contract for callers.
+    const storedHandler = handler as unknown as EventHandler;
     if (!this.handlers.has(event)) {
       this.handlers.set(event, new Set());
     }
-    this.handlers.get(event)!.add(handler);
+    this.handlers.get(event)!.add(storedHandler);
     return () => {
-      this.handlers.get(event)?.delete(handler);
+      this.handlers.get(event)?.delete(storedHandler);
     };
   }
 

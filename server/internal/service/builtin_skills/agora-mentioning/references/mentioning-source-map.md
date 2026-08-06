@@ -40,6 +40,18 @@ a pointer. Branch where verified: `feat/builtin-skills`.
 | `agent` → shared enqueue helper calls `EnqueueTaskForMention` (a run for that agent) | `server/internal/handler/comment.go:1113-1119` |
 | **`member` and `issue` mentions reach neither branch — they enqueue NOTHING.** A `member` mention fails the `!= "agent"` skip at lines 1394-1396 (the squad branch above it only matches `squad`); an `issue` mention does the same. | `server/internal/handler/comment.go:1352,1394-1396` |
 
+### Active-orchestration exception
+
+| Fact | Source |
+| --- | --- |
+| An active orchestration suppresses the normal assignee, squad, and agent-mention task paths | `server/internal/handler/comment.go` (search `orchestrationOwnsIssuePipeline`) |
+| A member's explicit agent mention is accepted only when exactly one `waiting_input` step is owned by that mentioned agent; inherited mentions, ambiguous matches, unbound/archived agents, and agent-authored comments are rejected. A temporarily offline bound runtime does not discard the answer. | `server/internal/handler/comment.go` (search `computeOrchestrationAnswerCommentTrigger`) |
+| The accepted comment is stored as an orchestration `answer`, resolves the exact open question captured with the comment, resumes the same step, records `input_received`, and dispatches the DAG continuation under a run-row lock | `server/internal/handler/orchestration.go` (search `respondToOrchestrationQuestionFromComment`) |
+| Comment creation and a `comment_answer_pending` outbox event commit atomically after `suppress_agent_ids` filtering. The periodic sweeper repairs a crash before answer persistence, while the pinned `question_id` prevents Q1 from drifting to Q2 | `server/internal/handler/orchestration_comment_answer_repair.go` |
+| Idempotency is keyed by the persisted comment id (`comment-answer:<comment-id>`), so replay cannot create another answer or continuation | `server/internal/handler/orchestration.go` (search `comment-answer:`) |
+| Same-session continuation is selected from the latest safe task with the same `orchestration_step_id` | `server/internal/handler/daemon.go` (search `GetLatestOrchestrationStepSessionCandidate`) |
+| DB integration coverage pins normal suppression, agent-loop suppression, durable answer causality, same-step task lineage, and replay idempotency | `server/internal/handler/orchestration_lifecycle_guard_test.go` (search `TestMentionedWaitingAgentContinuesSameOrchestrationStep`) |
+
 ## Preview and suppression
 
 | Fact | Source |

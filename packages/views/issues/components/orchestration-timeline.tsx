@@ -29,6 +29,7 @@ import { Button } from "@agora/ui/components/ui/button";
 import { cn } from "@agora/ui/lib/utils";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
+import { isManualOrchestrationBatchPaused } from "./orchestration-display";
 
 type DisplayStep = { step: OrchestrationStep; depth: number };
 
@@ -149,6 +150,8 @@ export function OrchestrationTimeline({ issueId }: { issueId: string }) {
   const stepByID = new Map(run.steps.map((step) => [step.id, step]));
   const completedCount = run.steps.filter((step) => step.status === "completed" || step.status === "skipped").length;
   const activeCount = run.steps.filter((step) => step.status === "running" || step.status === "queued").length;
+  const manualBatchPaused = isManualOrchestrationBatchPaused(run);
+  const canStart = run.status === "draft" || manualBatchPaused;
 
   return (
     <section className="overflow-hidden rounded-xl border bg-card" aria-labelledby={`orchestration-${run.id}`}>
@@ -192,10 +195,10 @@ export function OrchestrationTimeline({ issueId }: { issueId: string }) {
             <Badge variant="secondary" className="h-5 text-[10px] capitalize">
               {run.execution_strategy}
             </Badge>
-            {run.status === "draft" && (
+            {canStart && (
               <Button size="sm" disabled={startRun.isPending} onClick={() => startRun.mutate(issueId)}>
                 {startRun.isPending ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden /> : <Play aria-hidden />}
-                {t(($) => $.detail.orchestration_run)}
+                {manualBatchPaused ? t(($) => $.execution_surface.continue_batch) : t(($) => $.detail.orchestration_run)}
               </Button>
             )}
           </div>

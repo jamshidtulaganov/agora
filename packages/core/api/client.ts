@@ -79,6 +79,7 @@ import type {
   CancelTaskResponse,
   OrchestrationRun,
   CreateOrchestrationRequest,
+  RespondToOrchestrationStepRequest,
   Project,
   WorkspaceLabs,
   PolicyFleetHealth,
@@ -1685,6 +1686,16 @@ export class ApiClient {
     const raw = await this.fetch<unknown>(`/api/issues/${issueId}/orchestration/steps/${stepId}/retry`, { method: "POST" });
     return parseWithFallback(raw, OrchestrationRunSchema, EMPTY_ORCHESTRATION_RUN, {
       endpoint: "POST /api/issues/{id}/orchestration/steps/{stepId}/retry",
+    });
+  }
+
+  async respondToOrchestrationStep(issueId: string, stepId: string, data: RespondToOrchestrationStepRequest): Promise<OrchestrationRun | null> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/orchestration/steps/${stepId}/respond`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(raw, OrchestrationRunSchema, EMPTY_ORCHESTRATION_RUN, {
+      endpoint: "POST /api/issues/{id}/orchestration/steps/{stepId}/respond",
     });
   }
 

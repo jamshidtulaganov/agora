@@ -1,10 +1,31 @@
 package daemon
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jamshidtulaganov/agora/server/internal/daemon/execenv"
+)
+
+const (
+	// Orchestration handoffs can contain many artifacts, checks, and findings,
+	// while a resumed step can also carry several clarification rounds. Bound
+	// their aggregate prompt contribution so durable coordination context cannot
+	// crowd out the issue and stage contract.
+	orchestrationContextByteBudget       = 48 * 1024
+	orchestrationContextEntryByteBudget  = 12 * 1024
+	orchestrationContextTruncationMarker = " ... [entry truncated by orchestration context budget] ... "
+)
+
+const (
+	orchestrationDependencyContextHeader = "Authoritative dependency handoffs:\n"
+	orchestrationDependencyContextFooter = "Treat these handoffs as the stage-to-stage source of truth. Read issue comments only for additional human discussion.\n\n"
+	orchestrationMessageContextHeader    = "Messages for this work unit:\n"
+	orchestrationMessageContextFooter    = "An `answer` resolves the preceding blocking question and is authoritative input for this continuation. Do not ask the same question again unless the answer is genuinely ambiguous.\n\n"
+	orchestrationBoundedContextFooter    = "This coordination context is byte-bounded and prioritizes the latest dependency handoff and latest question/answer. Inspect the issue when an older detail is absent.\n\n"
 )
 
 // BuildPrompt constructs the task prompt for an agent CLI.
@@ -40,26 +61,277 @@ func BuildPrompt(task Task, provider string) string {
 
 func buildOrchestrationPrompt(task Task) string {
 	var b strings.Builder
-	b.WriteString("You are executing one step in a persisted multi-agent orchestration. Complete only this step, leave a concise issue comment with the evidence the next agent needs, and do not start a later stage yourself. The orchestration engine owns issue status, assignment, QA/review dispatch, and release: do not change the issue status or assignee, invoke run_qa/run_review/release actions, or @mention another agent to start work.\n\n")
+	b.WriteString("You are executing one step in a persisted multi-agent orchestration. Complete only this step and do not start a later stage yourself. The orchestration engine owns issue status, assignment, QA/review dispatch, and release: do not change the issue status or assignee, invoke run_qa/run_review/release actions, create side tasks, or @mention another agent to start work.\n\n")
 	fmt.Fprintf(&b, "Issue ID: %s\n", task.IssueID)
 	fmt.Fprintf(&b, "Orchestration step: %s\n", task.OrchestrationStepTitle)
 	fmt.Fprintf(&b, "Stage: %s\n\n", task.OrchestrationStage)
+	fmt.Fprintf(&b, "Stage contract:\n%s\n\n", orchestrationStageContract(task))
 	if strings.TrimSpace(task.OrchestrationInstructions) != "" {
 		fmt.Fprintf(&b, "Step instructions:\n%s\n\n", task.OrchestrationInstructions)
 	}
+	b.WriteString(buildOrchestrationContext(task))
 	if task.OrchestrationReadOnly {
-		b.WriteString("This is a read-only verification step opened at the exact integrated commit. The repository is already present in the current working directory: do not run `agora repo checkout` or any command that fetches and checks out another ref. Inspect and run non-mutating checks only; do not edit files, create commits or branches, switch branches, reset, pull, or move HEAD. The daemon reports the repository state and the server rejects verification that no longer matches the integration handoff.\n\n")
+		if task.PreprovisionedWorktree {
+			b.WriteString("This is a read-only verification step opened at the exact integrated commit. The repository is already present in the current working directory: do not run `agora repo checkout` or any command that fetches and checks out another ref. Inspect and run non-mutating checks only; do not edit files, create commits or branches, switch branches, reset, pull, or move HEAD. The daemon reports the repository state and the server rejects verification that no longer matches the integration handoff.\n\n")
+		} else {
+			b.WriteString("This is a read-only verification step for remote repositories. A same-step continuation may already contain the exact checkout: reuse it only when its HEAD matches the required SHA; otherwise fetch every exact integrated revision below with `agora repo checkout <url> --ref <exact-sha>` before inspecting it. That mandated managed checkout may create its task branch; after it completes, do not create or switch any additional branch, edit files, commit, reset, pull, or otherwise move HEAD. Run non-mutating checks only. The daemon reports repository state and the server rejects verification that does not match every integration head.\n")
+			writeOrchestrationCheckoutRefs(&b, task, task.OrchestrationBaseRefs)
+			b.WriteString("\n")
+		}
 	}
 	if task.OrchestrationStepKind == "integration" {
 		b.WriteString("This is an enforced integration gate. Merge every dependency commit below into this task's isolated branch, resolve conflicts, run the relevant verification, and leave the repository clean with all changes committed. Do not push, release, or claim success while a dependency is missing. The daemon will independently verify that every listed commit is an ancestor of your final HEAD; a prose summary cannot bypass this check.\n\n")
+		if !task.PreprovisionedWorktree && len(task.OrchestrationBaseRefs) > 0 {
+			b.WriteString("Check out each integration repository at its exact run base before merging dependencies:\n")
+			writeOrchestrationCheckoutRefs(&b, task, task.OrchestrationBaseRefs)
+			b.WriteString("\n")
+		}
 		b.WriteString("Dependency commits (merge in this order):\n")
 		for _, dependency := range task.OrchestrationDependencies {
-			fmt.Fprintf(&b, "- %s: branch=%s head=%s\n", dependency.Key, dependency.Branch, dependency.HeadSHA)
+			if len(dependency.Heads) > 0 {
+				fmt.Fprintf(&b, "- %s:\n", dependency.Key)
+				for _, head := range dependency.Heads {
+					fmt.Fprintf(&b, "  - repo=%s branch=%s head=%s\n", head.Repo, head.Branch, head.HeadSHA)
+				}
+			} else {
+				fmt.Fprintf(&b, "- %s: branch=%s head=%s\n", dependency.Key, dependency.Branch, dependency.HeadSHA)
+			}
 		}
-		b.WriteString("\nFor a GitHub resource, check out the project repository first, then merge each exact head SHA with `git merge --no-ff <sha>`. For a local-directory worktree, the repository is already present and the dependency branches live in its shared source repository. If a commit is unavailable or a conflict cannot be resolved safely, report the concrete blocker instead of completing the step. Finish with `git status --short`, `git log --oneline --decorate -n 12`, and the project checks appropriate to the changed code.\n\n")
+		b.WriteString("\nFor remote GitHub resources, use the matching repository URL and merge every listed head into that repository with `git merge --no-ff <sha>`; multi-repo dependencies must be integrated repo by repo. For a local-directory worktree, the repositories are already present and dependency branches live in their shared source repositories. If a commit is unavailable or a conflict cannot be resolved safely, report the concrete blocker instead of completing the step. Finish each repo with `git status --short`, `git log --oneline --decorate -n 12`, and the project checks appropriate to the changed code.\n\n")
 	}
-	fmt.Fprintf(&b, "Start with `agora issue get %s --output json` and `agora issue comment list %s --recent 20 --output json`. Use the shared issue as the handoff record. When the step is genuinely complete, post a comment summarizing what changed, evidence produced, risks, and anything the next stage must verify.\n", task.IssueID, task.IssueID)
+	fmt.Fprintf(&b, "Start with `agora issue get %s --output json`. Read comments when needed for human context, but do not use recent-comment scraping as the dependency handoff.\n\n", task.IssueID)
+	b.WriteString("If any instruction or answer appears incomplete or ambiguous, first inspect the issue, durable orchestration messages and dependency handoffs, relevant issue comments, and the repository context available in this worktree. Do not guess a product decision, ownership boundary, or coordination contract. If the required decision is still unavailable after that inspection, return outcome `waiting_input` with one precise durable `question` describing the decision, the evidence already checked, and who must answer it.\n\n")
+	b.WriteString("Your final response MUST end with exactly one fenced `agora-handoff` JSON object. The server persists this object and injects it directly into dependent stages. Use this shape:\n")
+	fmt.Fprintf(&b, "```agora-handoff\n{\"schema_version\":1,\"stage\":%q,\"outcome\":\"completed\",\"verdict\":\"not_applicable\",\"summary\":\"concise outcome\",\"decisions\":[],\"contracts\":[],\"artifacts\":[{\"kind\":\"commit|pr|document|report|deployment\",\"ref\":\"stable reference\",\"description\":\"\"}],\"verification\":[{\"name\":\"check run\",\"status\":\"passed|failed|skipped\",\"details\":\"\"}],\"findings\":[],\"risks\":[],\"blockers\":[],\"next_actions\":[]}\n```\n", task.OrchestrationStage)
+	b.WriteString("Use outcome `waiting_input` only when a human decision is required before this same step can continue; then include `question` with `prompt`, `target` set to `human`, and `blocking:true`. Cross-agent context must use the persisted dependency handoff, not a question target. Use outcome `blocked` only for a concrete external blocker and list it in `blockers`. QA and review must set verdict to `pass` or `fail`; other stages use `not_applicable`. Keep any existing stage-specific fenced evidence blocks required by the issue in addition to this final handoff.\n")
 	return b.String()
+}
+
+type orchestrationContextEntry struct {
+	section int
+	index   int
+	prefix  string
+	payload string
+}
+
+const (
+	orchestrationContextDependency = iota
+	orchestrationContextMessage
+)
+
+// buildOrchestrationContext selects context by semantic value before restoring
+// its stable database order for display. ListOrchestrationStepMessages already
+// returns the newest twelve rows in chronological order; selecting newest-first
+// here makes the byte bound deterministic without reversing the conversation.
+func buildOrchestrationContext(task Task) string {
+	if len(task.OrchestrationDependencies) == 0 && len(task.OrchestrationMessages) == 0 {
+		return ""
+	}
+
+	dependencies := make([]orchestrationContextEntry, 0, len(task.OrchestrationDependencies))
+	for i, dependency := range task.OrchestrationDependencies {
+		payload := "no structured handoff was recorded"
+		if len(dependency.Handoff) > 0 && string(dependency.Handoff) != "null" {
+			payload = compactOrchestrationJSON(dependency.Handoff)
+		}
+		dependencies = append(dependencies, orchestrationContextEntry{
+			section: orchestrationContextDependency,
+			index:   i,
+			prefix:  fmt.Sprintf("- %s: ", dependency.Key),
+			payload: payload,
+		})
+	}
+
+	messages := make([]orchestrationContextEntry, 0, len(task.OrchestrationMessages))
+	for i, message := range task.OrchestrationMessages {
+		messages = append(messages, orchestrationContextEntry{
+			section: orchestrationContextMessage,
+			index:   i,
+			prefix:  fmt.Sprintf("- %s from %s: ", message.Kind, message.ActorType),
+			payload: compactOrchestrationJSON(message.Body),
+		})
+	}
+
+	fixedBytes := len(orchestrationBoundedContextFooter)
+	if len(dependencies) > 0 {
+		fixedBytes += len(orchestrationDependencyContextHeader) + len(orchestrationDependencyContextFooter)
+	}
+	if len(messages) > 0 {
+		fixedBytes += len(orchestrationMessageContextHeader) + len(orchestrationMessageContextFooter)
+	}
+	remaining := orchestrationContextByteBudget - fixedBytes
+
+	selectedDependencies := make([]string, len(dependencies))
+	selectedMessages := make([]string, len(messages))
+	selected := make(map[[2]int]struct{}, len(dependencies)+len(messages))
+	add := func(entry orchestrationContextEntry) {
+		key := [2]int{entry.section, entry.index}
+		if _, exists := selected[key]; exists || remaining <= len(entry.prefix)+len(orchestrationContextTruncationMarker)+2 {
+			return
+		}
+		entryBudget := min(remaining, orchestrationContextEntryByteBudget)
+		rendered := renderOrchestrationContextEntry(entry, entryBudget)
+		if rendered == "" {
+			return
+		}
+		selected[key] = struct{}{}
+		remaining -= len(rendered)
+		if entry.section == orchestrationContextDependency {
+			selectedDependencies[entry.index] = rendered
+		} else {
+			selectedMessages[entry.index] = rendered
+		}
+	}
+
+	// Protect the continuation's newest clarification exchange first, then
+	// the most recent structured stage handoff. These three entries each have
+	// their own cap so one pathological payload cannot consume the aggregate.
+	for i := len(messages) - 1; i >= 0; i-- {
+		if task.OrchestrationMessages[i].Kind == "question" {
+			add(messages[i])
+			break
+		}
+	}
+	for i := len(messages) - 1; i >= 0; i-- {
+		if task.OrchestrationMessages[i].Kind == "answer" {
+			add(messages[i])
+			break
+		}
+	}
+	for i := len(dependencies) - 1; i >= 0; i-- {
+		handoff := task.OrchestrationDependencies[i].Handoff
+		if len(handoff) > 0 && string(handoff) != "null" {
+			add(dependencies[i])
+			break
+		}
+	}
+
+	// Dependency outputs remain more authoritative than older discussion.
+	// Within each class, newest entries win; rendering below restores the
+	// persisted order so question/answer causality stays easy to follow.
+	for i := len(dependencies) - 1; i >= 0; i-- {
+		add(dependencies[i])
+	}
+	for i := len(messages) - 1; i >= 0; i-- {
+		add(messages[i])
+	}
+
+	var b strings.Builder
+	b.Grow(orchestrationContextByteBudget - remaining)
+	if len(dependencies) > 0 {
+		b.WriteString(orchestrationDependencyContextHeader)
+		for _, rendered := range selectedDependencies {
+			b.WriteString(rendered)
+		}
+		b.WriteString(orchestrationDependencyContextFooter)
+	}
+	if len(messages) > 0 {
+		b.WriteString(orchestrationMessageContextHeader)
+		for _, rendered := range selectedMessages {
+			b.WriteString(rendered)
+		}
+		b.WriteString(orchestrationMessageContextFooter)
+	}
+	b.WriteString(orchestrationBoundedContextFooter)
+	return b.String()
+}
+
+func renderOrchestrationContextEntry(entry orchestrationContextEntry, budget int) string {
+	const newline = "\n"
+	full := entry.prefix + entry.payload + newline
+	if len(full) <= budget {
+		return full
+	}
+
+	payloadBudget := budget - len(entry.prefix) - len(orchestrationContextTruncationMarker) - len(newline)
+	if payloadBudget <= 0 {
+		return ""
+	}
+	headBudget := payloadBudget * 2 / 3
+	tailBudget := payloadBudget - headBudget
+	head := truncateUTF8Head(entry.payload, headBudget)
+	tail := truncateUTF8Tail(entry.payload, tailBudget)
+	return entry.prefix + head + orchestrationContextTruncationMarker + tail + newline
+}
+
+func truncateUTF8Head(value string, budget int) string {
+	if len(value) <= budget {
+		return value
+	}
+	end := budget
+	for end > 0 && !utf8.RuneStart(value[end]) {
+		end--
+	}
+	return value[:end]
+}
+
+func truncateUTF8Tail(value string, budget int) string {
+	if len(value) <= budget {
+		return value
+	}
+	start := len(value) - budget
+	for start < len(value) && !utf8.RuneStart(value[start]) {
+		start++
+	}
+	return value[start:]
+}
+
+func writeOrchestrationCheckoutRefs(b *strings.Builder, task Task, refs []OrchestrationGitHead) {
+	for _, ref := range refs {
+		if strings.TrimSpace(ref.HeadSHA) == "" {
+			continue
+		}
+		if repoURL := orchestrationRepoURL(task.Repos, ref.Repo); repoURL != "" {
+			fmt.Fprintf(b, "- repo=%s head=%s: `agora repo checkout %q --ref %s`\n", ref.Repo, ref.HeadSHA, repoURL, ref.HeadSHA)
+		} else {
+			fmt.Fprintf(b, "- repo=%s head=%s: match this repository name to its URL in the runtime brief, then run `agora repo checkout <url> --ref %s`\n", ref.Repo, ref.HeadSHA, ref.HeadSHA)
+		}
+	}
+}
+
+func orchestrationRepoURL(repos []RepoData, refName string) string {
+	want := strings.TrimSuffix(strings.TrimSpace(refName), ".git")
+	for _, repo := range repos {
+		raw := strings.TrimSpace(repo.URL)
+		trimmed := strings.TrimSuffix(strings.TrimRight(raw, "/"), ".git")
+		separator := strings.LastIndexAny(trimmed, "/:")
+		name := trimmed
+		if separator >= 0 {
+			name = trimmed[separator+1:]
+		}
+		if raw == refName || strings.EqualFold(name, want) {
+			return raw
+		}
+	}
+	return ""
+}
+
+func orchestrationStageContract(task Task) string {
+	if task.OrchestrationStepKind == "integration" {
+		return "Integrate every declared development artifact into one exact result. Record merged artifacts, conflict decisions, final checks, and the exact result the verification stages must inspect. Do not claim completion while any dependency is missing."
+	}
+	switch task.OrchestrationStage {
+	case "plan":
+		return "Produce the execution contract: non-overlapping workstream outcomes, cross-workstream interfaces, risks, ownership assumptions, and the checks integration must run. Do not implement the change."
+	case "dev":
+		return "Implement only this workstream. Record changed contracts, stable artifact references, checks actually run, remaining risks, and what integration must preserve. Leave all repository changes committed."
+	case "qa":
+		return "Verify the exact integrated artifact without modifying it. Set verdict to pass or fail and record observable evidence for every relevant acceptance criterion, including failed or skipped checks."
+	case "review":
+		return "Review the exact integrated artifact without modifying it. Set verdict to pass or fail and record correctness, security, maintainability, and regression findings with actionable references."
+	case "release":
+		return "Act only after the human gate. Release the exact artifact approved by QA and review, verify the destination/reference did not move, and record the final merge or deployment reference."
+	default:
+		return "Complete only the assigned outcome and leave a structured, verifiable handoff for the next stage."
+	}
+}
+
+func compactOrchestrationJSON(raw json.RawMessage) string {
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, raw); err != nil {
+		return "invalid handoff payload"
+	}
+	return compact.String()
 }
 
 // buildQuickCreatePrompt constructs a prompt for quick-create tasks. The

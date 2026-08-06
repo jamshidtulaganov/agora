@@ -89,10 +89,14 @@ export type {
   OrchestrationStepStatus,
   OrchestrationStage,
   OrchestrationEvent,
+  OrchestrationHandoff,
+  OrchestrationMessage,
+  OrchestrationQuestion,
   CreateOrchestrationRequest,
   CreateOrchestrationStepRequest,
   OrchestrationPlanRevision,
   EditOrchestrationRequest,
+  RespondToOrchestrationStepRequest,
 } from "./orchestration";
 export type {
   Project,

@@ -28,7 +28,7 @@ import (
 //
 // Best-effort: any miss leaves the task exactly where the normal enqueue put
 // it. Returns the (possibly updated) task.
-func (s *TaskService) maybePinTaskToDevRuntime(ctx context.Context, issue db.Issue, agent db.Agent, task db.AgentTaskQueue) db.AgentTaskQueue {
+func (s *TaskService) maybePinTaskToDevRuntime(ctx context.Context, issue db.Issue, agent db.Agent, task db.AgentTaskQueue, notify bool) db.AgentTaskQueue {
 	if !issue.ProjectID.Valid {
 		return task
 	}
@@ -105,8 +105,11 @@ func (s *TaskService) maybePinTaskToDevRuntime(ctx context.Context, issue db.Iss
 		"runtime_id", util.UUIDToString(runtime.ID),
 		"runtime_name", runtime.Name,
 		"issue_id", util.UUIDToString(issue.ID))
-	// The pin moved the task between runtimes' claim queues — wake the target.
-	s.NotifyTaskEnqueued(ctx, pinned)
+	// The pin moved the task between runtimes' claim queues. Transactional
+	// orchestration enqueue defers all notifications until the caller commits.
+	if notify {
+		s.NotifyTaskEnqueued(ctx, pinned)
+	}
 	return pinned
 }
 

@@ -650,6 +650,28 @@ type OrchestrationEvent struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+// Durable issue-scoped coordination log. Comments are a human-readable projection, not the delivery mechanism.
+type OrchestrationMessage struct {
+	ID             pgtype.UUID        `json:"id"`
+	RunID          pgtype.UUID        `json:"run_id"`
+	StepID         pgtype.UUID        `json:"step_id"`
+	Kind           string             `json:"kind"`
+	ActorType      string             `json:"actor_type"`
+	ActorID        pgtype.UUID        `json:"actor_id"`
+	TargetType     string             `json:"target_type"`
+	TargetID       pgtype.UUID        `json:"target_id"`
+	Body           []byte             `json:"body"`
+	PlanVersion    int32              `json:"plan_version"`
+	CorrelationID  pgtype.UUID        `json:"correlation_id"`
+	CausationID    pgtype.UUID        `json:"causation_id"`
+	ReplyToID      pgtype.UUID        `json:"reply_to_id"`
+	IdempotencyKey string             `json:"idempotency_key"`
+	ExpectsReply   bool               `json:"expects_reply"`
+	AcknowledgedAt pgtype.Timestamptz `json:"acknowledged_at"`
+	ResolvedAt     pgtype.Timestamptz `json:"resolved_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
 type OrchestrationPlanRevision struct {
 	ID        pgtype.UUID        `json:"id"`
 	RunID     pgtype.UUID        `json:"run_id"`

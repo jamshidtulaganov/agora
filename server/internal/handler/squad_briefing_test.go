@@ -276,6 +276,40 @@ RETURNING id
 	return
 }
 
+// markTaskAsPersistedOrchestration attaches an already queued task to a real
+// orchestration run and step, matching the persisted ownership invariant used
+// by ClaimTaskByRuntime.
+func markTaskAsPersistedOrchestration(t *testing.T, issueID, taskID, agentID string) {
+	t.Helper()
+	ctx := context.Background()
+
+	var runID string
+	if err := testPool.QueryRow(ctx, `
+INSERT INTO orchestration_run (workspace_id, issue_id, status, created_by)
+VALUES ($1, $2, 'running', $3)
+RETURNING id
+`, testWorkspaceID, issueID, testUserID).Scan(&runID); err != nil {
+		t.Fatalf("create orchestration run: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM orchestration_run WHERE id = $1`, runID) })
+
+	var stepID string
+	if err := testPool.QueryRow(ctx, `
+INSERT INTO orchestration_step (
+run_id, step_key, title, stage, status, position, agent_id, task_id
+) VALUES ($1, 'lead', 'Lead orchestration step', 'dev', 'queued', 0, $2, $3)
+RETURNING id
+`, runID, agentID, taskID).Scan(&stepID); err != nil {
+		t.Fatalf("create orchestration step: %v", err)
+	}
+	if _, err := testPool.Exec(ctx,
+		`UPDATE agent_task_queue SET orchestration_step_id = $1 WHERE id = $2`,
+		stepID, taskID,
+	); err != nil {
+		t.Fatalf("attach task to orchestration step: %v", err)
+	}
+}
+
 // TestClaimTask_LeaderGetsBriefing — when the squad leader claims a task on
 // a squad-assigned issue, the response's agent.instructions must include
 // the Operating Protocol + Roster + user instructions.
@@ -311,6 +345,44 @@ func TestClaimTask_LeaderGetsBriefing(t *testing.T) {
 	} {
 		if !strings.Contains(agent.Instructions, want) {
 			t.Errorf("expected agent.instructions to contain %q\n--- instructions ---\n%s", want, agent.Instructions)
+		}
+	}
+}
+
+// TestClaimTask_OrchestrationLeaderGetsNoLegacyBriefing verifies that the
+// persisted orchestration marker wins over the issue's squad assignment. The
+// orchestration prompt is authoritative, so the legacy leader dispatcher
+// protocol must not be stacked onto the claim.
+func TestClaimTask_OrchestrationLeaderGetsNoLegacyBriefing(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+
+	var leaderID, runtimeID string
+	if err := testPool.QueryRow(ctx,
+		`SELECT id, runtime_id FROM agent WHERE workspace_id = $1 ORDER BY created_at ASC LIMIT 1`,
+		testWorkspaceID,
+	).Scan(&leaderID, &runtimeID); err != nil {
+		t.Fatalf("get leader agent: %v", err)
+	}
+
+	squad := seedSquadForBriefing(t, leaderID, "Orchestration Briefing Squad", "Legacy squad instructions.")
+	helper := createHandlerTestAgent(t, "Orchestration Briefing Helper", []byte("[]"))
+	addAgentMember(t, squad.ID, helper, "implementer")
+
+	issueID, taskID := queueSquadIssueTaskFor(t, util.UUIDToString(squad.ID), leaderID, runtimeID, 95003)
+	markTaskAsPersistedOrchestration(t, issueID, taskID, leaderID)
+
+	agent := claimAndDecodeAgent(t, runtimeID)
+	for _, mustNot := range []string{
+		"Squad Operating Protocol",
+		"Squad Roster",
+		"Squad Instructions (Orchestration Briefing Squad)",
+		"mention://agent/" + helper,
+	} {
+		if strings.Contains(agent.Instructions, mustNot) {
+			t.Errorf("orchestration leader claim should NOT contain legacy briefing %q\n--- instructions ---\n%s", mustNot, agent.Instructions)
 		}
 	}
 }
