@@ -245,14 +245,20 @@ func buildAntigravityArgs(prompt, logPath string, timeout time.Duration, opts Ex
 	if opts.Model != "" {
 		args = append(args, "--model", opts.Model)
 	}
-	// Only pass --print-timeout when a positive wall-clock cap is configured.
-	// timeout <= 0 means "no cap" (MUL-3064): agy then runs without its own
-	// print-timeout guillotine, matching every other backend's runContext
-	// semantics. Passing antigravityFormatTimeout(0) would clamp to 1s and kill
-	// the run almost immediately — the opposite of "no cap".
-	if timeout > 0 {
-		args = append(args, "--print-timeout", antigravityFormatTimeout(timeout))
+	// Always pass --print-timeout explicitly. Omitting the flag does NOT mean
+	// "no cap" — agy 1.x defaults to 5m0s and exits with
+	// `Error: timeout waiting for response` (exit 1). That silently killed
+	// long Antigravity tasks (Deep Research, etc.) when Agora's
+	// AgentTimeout was 0 / unset (MUL-3064 "no wall-clock cap").
+	//
+	// timeout > 0  → honour the configured cap.
+	// timeout <= 0 → pass a large sentinel so agy's default 5m does not apply;
+	//                Agora's own runContext also has no deadline in that case.
+	printTimeout := timeout
+	if printTimeout <= 0 {
+		printTimeout = antigravityNoCapPrintTimeout
 	}
+	args = append(args, "--print-timeout", antigravityFormatTimeout(printTimeout))
 	args = append(args, "--log-file", logPath)
 	if opts.ResumeSessionID != "" {
 		args = append(args, "--conversation", opts.ResumeSessionID)
@@ -289,6 +295,12 @@ func antigravityModelError(model string, available []Model) error {
 		model, strings.Join(ids, ", "),
 	)
 }
+
+// antigravityNoCapPrintTimeout is the --print-timeout value used when Agora
+// has no wall-clock agent timeout (AgentTimeout <= 0). Large enough that a
+// normal task never hits it; not infinite because agy requires a positive
+// duration flag.
+const antigravityNoCapPrintTimeout = 24 * time.Hour
 
 // antigravityFormatTimeout renders a Go duration in the `<n>m<n>s` shape the
 // agy CLI accepts (e.g. 20m0s). Sub-second timeouts round up to 1s so the CLI

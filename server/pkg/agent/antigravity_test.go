@@ -71,12 +71,12 @@ func TestBuildAntigravityArgsModel(t *testing.T) {
 	}
 }
 
-func TestBuildAntigravityArgsNoTimeoutOmitsPrintTimeout(t *testing.T) {
+func TestBuildAntigravityArgsNoTimeoutUsesLargePrintTimeout(t *testing.T) {
 	t.Parallel()
 
-	// timeout <= 0 means "no wall-clock cap" (MUL-3064): agy must be launched
-	// WITHOUT --print-timeout, otherwise antigravityFormatTimeout(0) clamps to
-	// 1s and the run is killed almost immediately — the opposite of "no cap".
+	// timeout <= 0 means "no Agora wall-clock cap" (MUL-3064). We still MUST
+	// pass an explicit --print-timeout: omitting it leaves agy's own 5m
+	// default, which surfaces as `Error: timeout waiting for response`.
 	args := buildAntigravityArgs(
 		"hello",
 		"/tmp/agy.log",
@@ -88,14 +88,12 @@ func TestBuildAntigravityArgsNoTimeoutOmitsPrintTimeout(t *testing.T) {
 	want := []string{
 		"-p", "hello",
 		"--dangerously-skip-permissions",
+		"--print-timeout", antigravityFormatTimeout(antigravityNoCapPrintTimeout),
 		"--log-file", "/tmp/agy.log",
 		"--add-dir", "/work",
 	}
 	if !slices.Equal(args, want) {
 		t.Fatalf("buildAntigravityArgs(timeout=0) mismatch\n got: %v\nwant: %v", args, want)
-	}
-	if slices.Contains(args, "--print-timeout") {
-		t.Fatalf("--print-timeout must be omitted when timeout <= 0; got %v", args)
 	}
 }
 
