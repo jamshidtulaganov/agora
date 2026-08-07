@@ -69,6 +69,23 @@ func TestBuildAntigravityArgsModel(t *testing.T) {
 	if slices.Contains(bare, "--model") {
 		t.Fatalf("--model must be omitted when opts.Model is empty; got %v", bare)
 	}
+
+	// Persisted buggy TSV cell (`slug\tDisplay`) must be reduced to the
+	// display name before it reaches argv — agy 1.1.x rejects the raw cell.
+	tsv := buildAntigravityArgs(
+		"hello",
+		"/tmp/agy.log",
+		20*time.Minute,
+		ExecOptions{Model: "claude-opus-4-6-thinking\tClaude Opus 4.6 (Thinking)"},
+		quietAntigravityLogger(),
+	)
+	joined := strings.Join(tsv, "\x00")
+	if !strings.Contains(joined, "\x00--model\x00Claude Opus 4.6 (Thinking)\x00") {
+		t.Fatalf("TSV model must normalize to display name; got %v", tsv)
+	}
+	if slices.Contains(tsv, "claude-opus-4-6-thinking\tClaude Opus 4.6 (Thinking)") {
+		t.Fatalf("raw TSV cell must not appear in argv; got %v", tsv)
+	}
 }
 
 func TestBuildAntigravityArgsNoTimeoutUsesLargePrintTimeout(t *testing.T) {

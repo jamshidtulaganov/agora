@@ -870,13 +870,14 @@ func TestAntigravityModelSelectionSupported(t *testing.T) {
 	}
 }
 
-// TestParseAntigravityModels covers the `agy models` line-per-name format:
-// each non-blank line becomes a Model whose ID and Label are the verbatim
-// display string `--model` expects, duplicates collapse, and blanks drop.
+// TestParseAntigravityModels covers both catalog shapes agy has shipped:
+// legacy bare display names, and 1.1.x `slug\tDisplay Name` TSV. ID/Label
+// must always be the display string `--model` accepts — never the slug and
+// never the raw TSV cell.
 func TestParseAntigravityModels(t *testing.T) {
 	t.Parallel()
 
-	out := strings.Join([]string{
+	legacy := strings.Join([]string{
 		"Gemini 3.5 Flash (Medium)",
 		"Claude Opus 4.6 (Thinking)",
 		"", // blank line — skipped
@@ -884,18 +885,56 @@ func TestParseAntigravityModels(t *testing.T) {
 		"Claude Opus 4.6 (Thinking)", // duplicate — collapsed
 	}, "\n")
 
-	got := parseAntigravityModels(out)
+	got := parseAntigravityModels(legacy)
 	want := []Model{
 		{ID: "Gemini 3.5 Flash (Medium)", Label: "Gemini 3.5 Flash (Medium)", Provider: "antigravity"},
 		{ID: "Claude Opus 4.6 (Thinking)", Label: "Claude Opus 4.6 (Thinking)", Provider: "antigravity"},
 		{ID: "GPT-OSS 120B (Medium)", Label: "GPT-OSS 120B (Medium)", Provider: "antigravity"},
 	}
 	if len(got) != len(want) {
-		t.Fatalf("parseAntigravityModels len = %d, want %d (%+v)", len(got), len(want), got)
+		t.Fatalf("parseAntigravityModels(legacy) len = %d, want %d (%+v)", len(got), len(want), got)
 	}
 	for i := range want {
 		if got[i] != want[i] {
-			t.Errorf("model[%d] = %+v, want %+v", i, got[i], want[i])
+			t.Errorf("legacy model[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+
+	tsv := strings.Join([]string{
+		"Fetching available models...",
+		"gemini-3.5-flash-medium\tGemini 3.5 Flash (Medium)",
+		"claude-opus-4-6-thinking\tClaude Opus 4.6 (Thinking)",
+		"gpt-oss-120b-medium\tGPT-OSS 120B (Medium)",
+		"claude-opus-4-6-thinking\tClaude Opus 4.6 (Thinking)", // duplicate display — collapsed
+	}, "\n")
+	got = parseAntigravityModels(tsv)
+	if len(got) != len(want) {
+		t.Fatalf("parseAntigravityModels(tsv) len = %d, want %d (%+v)", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("tsv model[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+		if strings.Contains(got[i].ID, "\t") || strings.Contains(got[i].ID, "claude-opus") {
+			t.Errorf("tsv model[%d].ID must be display name, got %q", i, got[i].ID)
+		}
+	}
+}
+
+func TestAntigravityModelDisplayName(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in, want string
+	}{
+		{"", ""},
+		{"  Claude Opus 4.6 (Thinking)  ", "Claude Opus 4.6 (Thinking)"},
+		{"claude-opus-4-6-thinking\tClaude Opus 4.6 (Thinking)", "Claude Opus 4.6 (Thinking)"},
+		{"Fetching available models...", ""},
+		{"Available models:", ""},
+	}
+	for _, tc := range cases {
+		if got := antigravityModelDisplayName(tc.in); got != tc.want {
+			t.Errorf("antigravityModelDisplayName(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
 }

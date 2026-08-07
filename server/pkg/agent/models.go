@@ -1082,17 +1082,22 @@ func discoverAntigravityModels(ctx context.Context, executablePath string) ([]Mo
 	return parseAntigravityModels(string(out)), nil
 }
 
-// parseAntigravityModels turns `agy models` output — one model display name
-// per line — into Model entries. The display string IS the value `--model`
-// expects, so ID and Label are identical and the daemon ships opts.Model
-// verbatim. Blank and duplicate lines are skipped.
+// parseAntigravityModels turns `agy models` output into Model entries.
+//
+// agy 1.1.x emits TSV rows `slug\tDisplay Name` (e.g.
+// `claude-opus-4-6-thinking\tClaude Opus 4.6 (Thinking)`). Older builds
+// emitted the display name alone. `--model` wants the display string either
+// way, so ID and Label are always the display name — never the slug, and
+// never the raw TSV line (shipping the tab-joined form makes agy exit 1 with
+// "invalid model selection"). Blank lines, status chatter
+// ("Fetching available models..."), and duplicates are skipped.
 func parseAntigravityModels(output string) []Model {
 	scanner := bufio.NewScanner(strings.NewReader(output))
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	var models []Model
 	seen := map[string]bool{}
 	for scanner.Scan() {
-		name := strings.TrimSpace(scanner.Text())
+		name := antigravityModelDisplayName(scanner.Text())
 		if name == "" || seen[name] {
 			continue
 		}
@@ -1104,6 +1109,37 @@ func parseAntigravityModels(output string) []Model {
 		})
 	}
 	return models
+}
+
+// antigravityModelDisplayName extracts the human display string `--model`
+// accepts from one `agy models` line or a persisted agent.model value.
+//
+// Handles:
+//   - modern TSV: `slug\tDisplay Name` → `Display Name`
+//   - legacy bare display name → unchanged
+//   - already-persisted buggy values that stored the whole TSV cell
+//   - status lines like "Fetching available models..." → ""
+func antigravityModelDisplayName(raw string) string {
+	line := strings.TrimSpace(raw)
+	if line == "" {
+		return ""
+	}
+	// Status / progress chatter on stdout (rare) or a pasted header.
+	if strings.HasPrefix(strings.ToLower(line), "fetching ") {
+		return ""
+	}
+	if strings.HasPrefix(strings.ToLower(line), "available models") {
+		return ""
+	}
+	if i := strings.IndexByte(line, '\t'); i >= 0 {
+		display := strings.TrimSpace(line[i+1:])
+		if display != "" {
+			return display
+		}
+		// Degenerate `slug\t` — fall through to the slug rather than "".
+		line = strings.TrimSpace(line[:i])
+	}
+	return line
 }
 
 // discoverCursorModels runs `cursor-agent --list-models` and parses

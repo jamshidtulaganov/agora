@@ -38,6 +38,11 @@ func (b *antigravityBackend) Execute(ctx context.Context, prompt string, opts Ex
 		return nil, fmt.Errorf("agy executable not found at %q: %w", execPath, err)
 	}
 
+	// agy 1.1.x `agy models` is TSV (`slug\tDisplay Name`). A bug in the
+	// parser briefly persisted the whole TSV cell as agent.model; normalize
+	// to the display name `--model` actually accepts before validate/argv.
+	opts.Model = antigravityModelDisplayName(opts.Model)
+
 	// Guard against agy's silent no-op on an unrecognised --model: it exits 0
 	// with empty output, which would otherwise surface as a "completed" but
 	// empty task. opts.Model is the single funnel for both agent.model and the
@@ -242,8 +247,8 @@ func buildAntigravityArgs(prompt, logPath string, timeout time.Duration, opts Ex
 		"-p", prompt,
 		"--dangerously-skip-permissions",
 	}
-	if opts.Model != "" {
-		args = append(args, "--model", opts.Model)
+	if model := antigravityModelDisplayName(opts.Model); model != "" {
+		args = append(args, "--model", model)
 	}
 	// Always pass --print-timeout explicitly. Omitting the flag does NOT mean
 	// "no cap" — agy 1.x defaults to 5m0s and exits with
