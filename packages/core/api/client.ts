@@ -2248,6 +2248,22 @@ export class ApiClient {
     };
   }
 
+  // Fetches attachment bytes through the authenticated download endpoint.
+  //
+  // Used by token-mode clients (Electron desktop, mobile webview) that cannot
+  // attach an Authorization header to a bare <img>/<video> resource load.
+  // Web cookie-auth clients load `/api/attachments/{id}/download` natively
+  // via the same-origin proxy and do not need this path.
+  //
+  // Intended for proxy-mode deployments where the endpoint streams the
+  // object (HTTP 200). CloudFront / presign modes should prefer the signed
+  // `download_url` from metadata instead — following their 302 in a CORS
+  // fetch would fail because the CDN does not expose CORS headers.
+  async getAttachmentDownloadBlob(id: string): Promise<Blob> {
+    const res = await this.fetchRaw(`/api/attachments/${id}/download`);
+    return res.blob();
+  }
+
   // Projects
   async listProjects(params?: { status?: string }): Promise<ListProjectsResponse> {
     const search = new URLSearchParams();

@@ -1874,10 +1874,10 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 // therefore never matches, so the upload is never linked via
                 // `attachment_ids`. After reload it's absent from
                 // `issueAttachments`, the renderer can't resolve it to a
-                // freshly-signed `download_url`, and the persisted auth-gated
-                // download endpoint fails to load as a native <img> on clients
-                // whose origin isn't the API host (Desktop/Electron, mobile
-                // webview) — while still working on web via the cookie/proxy.
+                // freshly-signed `download_url`. Token-mode clients
+                // (Desktop/Electron) then resolve auth-gated download URLs
+                // via authenticated blob fetch in useAuthenticatedMediaSrc;
+                // web still loads them natively through the cookie/proxy.
                 // This mirrors the comment/reply/chat composers, which already
                 // bind via `contentReferencesAttachment` (MUL-3130 / MUL-3192).
                 const ids = descPendingAttachmentsRef.current
