@@ -41,6 +41,7 @@ import { useAttachmentPreview } from "./attachment-preview-modal";
 import { useDownloadAttachment } from "./use-download-attachment";
 import { AttachmentCard } from "./attachment-card";
 import { HtmlAttachmentPreview } from "./html-attachment-preview";
+import { useAuthenticatedMediaSrc } from "./hooks/use-authenticated-media-src";
 import { getPreviewKind, type PreviewKind } from "./utils/preview";
 import "./styles/attachment.css";
 
@@ -131,11 +132,10 @@ function normalize(
     // for legacy) is correct as a stable reference but doesn't
     // necessarily load as a native <img>/<video> resource for every
     // client — token-mode clients can't attach an Authorization header
-    // to bare /api/* fetches, and a CloudFront-signed `download_url`
-    // is the only working media src in that mode. `pickInlineMediaURL`
-    // picks the URL with embedded credentials when one exists and
-    // falls back to the input URL otherwise so legacy / unresolved
-    // markdown stays on its existing path. See MUL-3130 review.
+    // to bare /api/* fetches. `pickInlineMediaURL` prefers a
+    // CloudFront-signed `download_url` when one exists; otherwise
+    // `useAuthenticatedMediaSrc` fetches the auth-gated endpoint through
+    // ApiClient and swaps in a blob: URL for <img>. See MUL-3130 review.
     //
     // After picking the credential-bearing URL we run the absolutize
     // pass so a site-relative `/api/attachments/...` or `/uploads/...`
@@ -310,21 +310,32 @@ export function Attachment({
       ? getPreviewKind(state.contentType, state.filename)
       : null);
 
+  // Token-mode clients (desktop) cannot load auth-gated download URLs as
+  // bare <img> src — resolve to a blob: URL when needed. Web cookie-auth
+  // leaves `state.url` unchanged. Hook always runs (Rules of Hooks); the
+  // fetch is gated to image kinds so file-card hrefs aren't downloaded.
+  const loadableMediaSrc = useAuthenticatedMediaSrc(
+    state.url,
+    state.attachmentId,
+    kind === "image",
+  );
+
   const openPreview = () => {
+    const mediaUrl = loadableMediaSrc || state.url;
     if (state.record) {
       preview.tryOpen({
         kind: "full",
         attachment: {
           ...state.record,
-          download_url: state.url || state.record.download_url,
+          download_url: mediaUrl || state.record.download_url,
         },
       });
       return;
     }
-    if (state.url) {
+    if (mediaUrl) {
       preview.tryOpen({
         kind: "url",
-        url: state.url,
+        url: mediaUrl,
         filename: state.filename,
       });
     }
@@ -342,7 +353,8 @@ export function Attachment({
     return (
       <>
         <ImageAttachmentView
-          src={state.url}
+          durableSrc={state.url}
+          displaySrc={loadableMediaSrc}
           alt={state.filename}
           uploading={state.uploading}
           width={state.width}
@@ -402,7 +414,10 @@ export function Attachment({
 // without depending on the editor stylesheet being imported elsewhere.
 
 interface ImageAttachmentViewProps {
-  src: string;
+  /** Durable markdown / API URL — used for Copy Link, never a blob:. */
+  durableSrc: string;
+  /** Loadable <img> src — may be a blob: URL on token-mode clients. */
+  displaySrc: string;
   alt: string;
   uploading: boolean;
   width?: number;
@@ -416,7 +431,8 @@ interface ImageAttachmentViewProps {
 }
 
 function ImageAttachmentView({
-  src,
+  durableSrc,
+  displaySrc,
   alt,
   uploading,
   width,
@@ -431,7 +447,7 @@ function ImageAttachmentView({
   const { t } = useT("editor");
 
   const handleCopyLink = async () => {
-    if (await copyText(src)) {
+    if (await copyText(durableSrc)) {
       toast.success(t(($) => $.image.link_copied));
     } else {
       toast.error(t(($) => $.image.copy_link_failed));
@@ -462,14 +478,17 @@ function ImageAttachmentView({
         onClick={clickable ? onView : undefined}
       >
         <img
-          src={src || undefined}
+          src={displaySrc || undefined}
           alt={alt}
           width={width}
           height={height}
-          className={cn("image-content", uploading && "image-uploading")}
+          className={cn(
+            "image-content",
+            (uploading || (!!durableSrc && !displaySrc)) && "image-uploading",
+          )}
           draggable={false}
         />
-        {!uploading && src && (
+        {!uploading && durableSrc && (
           <span
             className="image-toolbar"
             onMouseDown={(e) => e.stopPropagation()}

@@ -1,17 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Attachment as AttachmentRecord } from "@agora/core/types";
 
 const {
   getAttachmentTextContentMock,
+  getAttachmentDownloadBlobMock,
   getBaseUrlMock,
   downloadMock,
   openExternalMock,
   openByUrlMock,
 } = vi.hoisted(() => ({
   getAttachmentTextContentMock: vi.fn(),
+  getAttachmentDownloadBlobMock: vi.fn(),
   // Default: empty base URL so existing tests render site-relative URLs
   // through the proxy (i.e. exactly the way the web app behaves). The
   // absolutize-specific suite below overrides this to simulate Desktop /
@@ -25,6 +27,7 @@ const {
 vi.mock("@agora/core/api", () => ({
   api: {
     getAttachmentTextContent: getAttachmentTextContentMock,
+    getAttachmentDownloadBlob: getAttachmentDownloadBlobMock,
     getBaseUrl: getBaseUrlMock,
   },
   PreviewTooLargeError: class extends Error {},
@@ -559,5 +562,109 @@ describe("Attachment — absolutize site-relative URLs (MUL-3192)", () => {
     // /api/* to the API host, so the relative path loads through the same
     // origin as the rendered HTML.
     expect(img?.getAttribute("src")).toBe("/api/attachments/abc-3/download");
+  });
+});
+
+// Token-mode clients (Desktop apiBaseUrl set, no cookie jar on file://) cannot
+// load auth-gated `/api/attachments/<id>/download` as a bare <img> src.
+// The renderer fetches bytes through ApiClient (Bearer) and swaps in a blob: URL.
+describe("Attachment — authenticated media src for token-mode (desktop)", () => {
+  const ATT_ID = "11111111-2222-3333-4444-555555555555";
+  const BLOB_URL = "blob:https://desktop.local/att-media";
+
+  beforeEach(() => {
+    getBaseUrlMock.mockReturnValue("https://api.example.test");
+    getAttachmentDownloadBlobMock.mockResolvedValue(new Blob(["png"], { type: "image/png" }));
+    vi.spyOn(URL, "createObjectURL").mockReturnValue(BLOB_URL);
+  });
+
+  it("fetches an auth-gated download URL via ApiClient and renders a blob: img src", async () => {
+    const markdownUrl = `https://api.example.test/api/attachments/${ATT_ID}/download`;
+    const att = makeRecord({
+      id: ATT_ID,
+      url: "https://prod.s3.amazonaws.com/private.png",
+      markdown_url: markdownUrl,
+      // Unsigned API path — proxy-mode shape; not a CloudFront signature.
+      download_url: `/api/attachments/${ATT_ID}/download`,
+    });
+    resolverState.attachments = [att];
+
+    renderWithQuery(
+      <Attachment
+        attachment={{
+          kind: "url",
+          url: markdownUrl,
+          filename: "shot.png",
+          forceKind: "image",
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(getAttachmentDownloadBlobMock).toHaveBeenCalledWith(ATT_ID);
+      expect(document.querySelector("img")?.getAttribute("src")).toBe(BLOB_URL);
+    });
+  });
+
+  it("does not blob-fetch on web (empty apiBaseUrl) — cookie/proxy loads the URL natively", () => {
+    getBaseUrlMock.mockReturnValue("");
+    const markdownUrl = `/api/attachments/${ATT_ID}/download`;
+    renderWithQuery(
+      <Attachment
+        attachment={{
+          kind: "url",
+          url: markdownUrl,
+          filename: "shot.png",
+          forceKind: "image",
+        }}
+      />,
+    );
+    expect(getAttachmentDownloadBlobMock).not.toHaveBeenCalled();
+    expect(document.querySelector("img")?.getAttribute("src")).toBe(markdownUrl);
+  });
+
+  it("does not blob-fetch CloudFront-signed URLs — they already carry credentials", () => {
+    const signed =
+      "https://cdn.example.test/att.png?Signature=s&Key-Pair-Id=k&Expires=999";
+    const att = makeRecord({
+      id: ATT_ID,
+      download_url: signed,
+      markdown_url: `https://api.example.test/api/attachments/${ATT_ID}/download`,
+    });
+    renderWithQuery(<Attachment attachment={{ kind: "record", attachment: att }} />);
+    expect(getAttachmentDownloadBlobMock).not.toHaveBeenCalled();
+    expect(document.querySelector("img")?.getAttribute("src")).toBe(signed);
+  });
+
+  it("Copy link still copies the durable API URL, not the blob: URL", async () => {
+    const markdownUrl = `https://api.example.test/api/attachments/${ATT_ID}/download`;
+    const att = makeRecord({
+      id: ATT_ID,
+      markdown_url: markdownUrl,
+      download_url: `/api/attachments/${ATT_ID}/download`,
+    });
+    resolverState.attachments = [att];
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    renderWithQuery(
+      <Attachment
+        attachment={{
+          kind: "url",
+          url: markdownUrl,
+          filename: "shot.png",
+          forceKind: "image",
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(document.querySelector("img")?.getAttribute("src")).toBe(BLOB_URL);
+    });
+
+    fireEvent.click(screen.getByTitle("Copy link"));
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(markdownUrl);
+    });
   });
 });

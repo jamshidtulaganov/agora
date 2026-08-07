@@ -396,6 +396,36 @@ describe("ApiClient", () => {
     });
   });
 
+  describe("getAttachmentDownloadBlob", () => {
+    it("returns the response body as a Blob from the download endpoint", async () => {
+      const body = new Uint8Array([137, 80, 78, 71]);
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          new Response(body, {
+            status: 200,
+            headers: { "Content-Type": "image/png" },
+          }),
+        ),
+      );
+
+      const client = new ApiClient("https://api.example.test");
+      client.setToken("jwt-test");
+      const blob = await client.getAttachmentDownloadBlob("att-1");
+
+      expect(blob).toBeInstanceOf(Blob);
+      expect(blob.type).toBe("image/png");
+      expect(fetch).toHaveBeenCalledWith(
+        "https://api.example.test/api/attachments/att-1/download",
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: "Bearer jwt-test",
+          }),
+        }),
+      );
+    });
+  });
+
   describe("getAttachmentTextContent", () => {
     it("returns body text and the original content type from the X-* header", async () => {
       vi.stubGlobal(
