@@ -19,11 +19,15 @@ var rootAssetRefs = regexp.MustCompile(
 // PrepareResponse makes an application response functional inside Agora's
 // isolated preview iframe. The app stays cross-origin and sandboxed; only
 // frame-ancestors and X-Frame-Options are removed. Every other CSP directive
-// continues to constrain the preview application.
+// continues to constrain the preview application. Sandboxing gives the frame
+// an opaque `null` origin, so its module, stylesheet, and font requests also
+// need credential-free CORS rather than the riskier allow-same-origin flag.
 func PrepareResponse(resp *http.Response, mountPrefix string) error {
 	removeCSPDirective(resp.Header, "Content-Security-Policy", "frame-ancestors")
 	removeCSPDirective(resp.Header, "Content-Security-Policy-Report-Only", "frame-ancestors")
 	resp.Header.Del("X-Frame-Options")
+	resp.Header.Set("Access-Control-Allow-Origin", "*")
+	resp.Header.Del("Access-Control-Allow-Credentials")
 
 	if !IsRewritableContentType(resp.Header.Get("Content-Type")) {
 		return nil

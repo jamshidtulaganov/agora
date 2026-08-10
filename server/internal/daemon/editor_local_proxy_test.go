@@ -65,6 +65,7 @@ func TestPreviewLocalProxyAllowsEmbeddingAndRewritesRootAssets(t *testing.T) {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'self'")
 		w.Header().Set("Content-Security-Policy-Report-Only", "frame-ancestors 'none'")
 		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		_, _ = fmt.Fprint(w, `<script src="/assets/app.js"></script>`)
 	}))
 	defer upstream.Close()
@@ -84,6 +85,12 @@ func TestPreviewLocalProxyAllowsEmbeddingAndRewritesRootAssets(t *testing.T) {
 	}
 	if got := rec.Header().Get("Content-Security-Policy"); got != "default-src 'self'" {
 		t.Errorf("non-framing CSP changed: %q", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Errorf("sandbox asset CORS = %q, want *", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Errorf("credentialed CORS must stay disabled, got %q", got)
 	}
 	want := fmt.Sprintf(`src="/editor/local/%d/assets/app.js"`, port)
 	if !strings.Contains(rec.Body.String(), want) {
